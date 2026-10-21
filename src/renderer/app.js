@@ -108,8 +108,9 @@ function moodFor(a){
   const c=STATS.agent(a.id).ctx, pct=c&&c.limit>0?window.DurbarStats.ctxLevel(c.tokens,c.limit).pct:null;
   const st=vis(a), body=MOODS.bodyOf(pct), failStreak=MOOD.failStreak(a.id);
   const waitingMs=st==='waiting'?MOOD.waitingMs(a.id):0; /* only while the figure is waiting: a request answered elsewhere must not leave it tapping */
-  const trouble=MOODS.troubleOf({state:st,ambulance:AMB_ID===a.id,limit:!!a.limit,waitingMs,failStreak});
-  return {body,trouble,pct,words:MOODS.phrases({body,pct,trouble,waitingMs,failStreak}).join(', ')};
+  const coffee=!!a.coffee; /* spec 068 FR-005: calm on a coffee break */
+  const trouble=MOODS.troubleOf({state:st,ambulance:AMB_ID===a.id,limit:!!a.limit,waitingMs,failStreak,coffee});
+  return {body,trouble,pct,coffee,words:MOODS.phrases({body,pct,trouble,waitingMs,failStreak,coffee}).join(', ')};
 }
 /* spec 052 FR-021: a problem that is not a status (stuck on failing tools, memory nearly full) also shows on the card's pill, in any mood
    setting: it is information, not decoration. '' when there is none. */
@@ -164,9 +165,9 @@ const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (
 let CUSTOM=[]; /* the user's own places [{id,name,icon}] (spec 024 FR-018), from the settings; changed only through setCustomPlaces */
 const customIds=()=>CUSTOM.map(p=>p.id);
 /* One name for a place everywhere it is shown (tile, card text, Settings options, toasts). A custom place shows the user's own text; callers escape it. */
-const placeLabel=id=>window.DurbarPlaces.IDS.includes(id)?wordOf('place-'+id):window.DurbarPlaces.placeName(id,CUSTOM);
+const placeLabel=id=>window.DurbarPlaces.IDS.includes(id)||id===window.DurbarPlaces.COFFEE?wordOf('place-'+id):window.DurbarPlaces.placeName(id,CUSTOM);
 /* spec 052 FR-013: a themed place name with its plain name, for tooltips and screen readers ("Cartridge Bay (Software library)") */
-const placeLabelFull=id=>{const t=placeLabel(id);if(!window.DurbarPlaces.IDS.includes(id)||!THEME.plainWord)return t;const p=THEME.plainWord('place-'+id);return p&&p!==t?t+' ('+p+')':t;};
+const placeLabelFull=id=>{const t=placeLabel(id);if(!(window.DurbarPlaces.IDS.includes(id)||id===window.DurbarPlaces.COFFEE)||!THEME.plainWord)return t;const p=THEME.plainWord('place-'+id);return p&&p!==t?t+' ('+p+')':t;};
 let PLACE_MAP={}; /* MCP server name -> place id | 'desk' (global setting); unmapped servers use the built-in rules */
 const RETURNING=new Set(); /* agents whose figure is still walking back to the desk: the desk keeps its empty chair until it arrives */
 const PLACE_ICON={
@@ -174,6 +175,7 @@ const PLACE_ICON={
   software:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3.5" width="14" height="5" rx="1.5"/><rect x="3" y="11.5" width="14" height="5" rx="1.5"/><path d="M6 6h.01M6 14h.01M10 6h4M10 14h4"/></svg>',
   terminal:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M6 8l3 2.5L6 13M11 13h3.5"/></svg>',
   web:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M3 10h14M10 3c2.5 2.2 2.5 11.8 0 14M10 3c-2.5 2.2-2.5 11.8 0 14"/></svg>',
+  coffee:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5h10v4.2a4 4 0 0 1-4 4h-2a4 4 0 0 1-4-4z"/><path d="M13.5 9.5h1.2a2.2 2.2 0 0 1 0 4.4h-1.6M6.5 2.8c-.8 1 .8 1.8 0 3M10 2.8c-.8 1 .8 1.8 0 3"/></svg>', /* spec 068: the coffee corner */
   other:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.4M10 15.1v2.4M2.5 10h2.4M15.1 10h2.4M4.7 4.7l1.7 1.7M13.6 13.6l1.7 1.7M15.3 4.7l-1.7 1.7M6.4 13.6l-1.7 1.7"/></svg>',
 };
 const placeIcon=p=>{
@@ -186,12 +188,14 @@ const lobbyArt=()=>{
   const v=THEME.slot('lobby-art');
   return v===null?'':`<svg class="lobby-art" data-slot="lobby-art" viewBox="0 0 320 36" preserveAspectRatio="none" aria-hidden="true" focusable="false">${v}</svg>`;
 };
+/* the lobby's tiles: the places, then the coffee corner (spec 068 FR-003; always shown, never a mapping choice) */
+const lobbyPlaces=()=>[...window.DurbarPlaces.allPlaces(CUSTOM),{id:window.DurbarPlaces.COFFEE,name:''}];
 const lobbyOn=()=>!demoOn&&agents.some(a=>a.live&&!a.parent);
 const MAX_TILES=8, canAddPlace=()=>!!(bridge&&bridge.addPlace)&&window.DurbarPlaces.allPlaces(CUSTOM).length<MAX_TILES;
 /* who is at a place and visible under the current filters (a hidden room or a filtered-out agent has no figure) */
 const placeVisitors=pid=>VISITS.occupants(pid).filter(id=>{const a=byId(id),r=a&&!a.parent&&roomOf(a);return roomShown(r)&&(ui.ws==='all'||wsOf(a)===ui.ws)&&matchStatus(a);});
 const isAway=a=>!a.parent&&(!!VISITS.at(a.id)||RETURNING.has(a.id));
-const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);return v?(SIMPLE?(PLACE_VERB[v.place]||'Using a tool')+' · '+taskText(a):'At '+placeLabel(v.place)+': '+v.label+' · '+taskText(a)):taskText(a);};
+const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);if(v&&v.place===window.DurbarPlaces.COFFEE)return taskText(a);return v?(SIMPLE?(PLACE_VERB[v.place]||'Using a tool')+' · '+taskText(a):'At '+placeLabel(v.place)+': '+v.label+' · '+taskText(a)):taskText(a);};
 /* A result of addPlace/updatePlace/removePlace (or a settings read): the places and the map as they are now. Agents standing at a place that is gone
    go back to their desk at once (spec 024 FR-025); a rename or an icon change only redraws. */
 function setCustomPlaces(list,map){
@@ -202,12 +206,13 @@ function setCustomPlaces(list,map){
 }
 function lobbyHTML(aw){
   if(!lobbyOn())return '';
-  const all=window.DurbarPlaces.allPlaces(CUSTOM), add=canAddPlace();
-  const cap=window.DurbarPlaces.tileSlots(aw,all.length,add);
+  const all=lobbyPlaces(), add=canAddPlace(), CT=window.DurbarPlaces.coffeeTile(aw), CF=window.DurbarPlaces.COFFEE;
+  const cap0=window.DurbarPlaces.tileSlots(aw,all.length-1,add,CT.width); /* spec 068: the coffee corner is narrower, with its own two slots */
   return `<section class="lobby" data-key="lobby" aria-label="${esc(wordOf('lobby-label'))}">${all.map(p=>{
-    const ids=placeVisitors(p.id), sp=window.DurbarPlaces.layoutSpots(ids.length,cap), names=ids.map(id=>byId(id).name);
+    const cf=p.id===CF, cap=cf?CT.slots:cap0;
+    const ids=placeVisitors(p.id), sp=window.DurbarPlaces.layoutSpots(ids.length,cap), names=ids.map(id=>cf?coffeeWho(byId(id)):byId(id).name);
     const slots=Array.from({length:cap},(_,i)=>i<sp.shown?`<span class="slot on" data-slot="${i}"></span>`:(sp.more&&i===cap-1?`<span class="slot more" data-slot="${i}">+${sp.more}</span>`:`<span class="slot" data-slot="${i}"></span>`)).join('');
-    return `<div class="place${ids.length?' busy':''}" data-key="place:${p.id}" data-place="${p.id}" tabindex="-1" role="group" title="${esc(placeLabelFull(p.id))}: ${names.length?esc(names.join(', ')):'nobody'}" aria-label="${esc(placeLabelFull(p.id))}: ${names.length?esc(names.join(', ')):'nobody'}">${placeIcon(p)}<span class="pn">${esc(placeLabel(p.id))}</span><span class="prow" aria-hidden="true"><span class="pslots">${slots}</span></span></div>`;
+    return `<div class="place${ids.length?' busy':''}${cf?' coffee'+(CT.named?'':' unnamed'):''}"${cf?` style="flex:0 0 ${CT.width}px"`:''} data-key="place:${p.id}" data-place="${p.id}" tabindex="-1" role="group" title="${esc(placeLabelFull(p.id))}: ${names.length?esc(names.join(', ')):'nobody'}" aria-label="${esc(placeLabelFull(p.id))}: ${names.length?esc(names.join(', ')):'nobody'}">${placeIcon(p)}${cf&&!CT.named?'':`<span class="pn">${esc(placeLabel(p.id))}</span>`}<span class="prow" aria-hidden="true"><span class="pslots">${slots}</span></span></div>`;
   }).join('')}${add?'<button class="place-add" type="button" data-key="place-add" title="Add a place" aria-label="Add a place">+</button>':''}${lobbyArt()}</section>`;
 }
 const WALK_MS=1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the others simply appear */
@@ -228,7 +233,7 @@ function syncWalkers(){
   if(!fr.width||!fr.height)return; /* office hidden (full-screen chat open): leave the figures as they are until it is shown again */
   const center=el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)};};
   const want=new Map(); /* agent id -> slot centre of the place it is visiting (only those that fit; the rest are the "+N") */
-  window.DurbarPlaces.allPlaces(CUSTOM).forEach(p=>{
+  lobbyPlaces().forEach(p=>{
     const tile=document.querySelector(`#stage .place[data-place="${p.id}"]`); if(!tile)return;
     const ids=placeVisitors(p.id), sp=window.DurbarPlaces.layoutSpots(ids.length,tile.querySelectorAll('.slot').length);
     ids.slice(0,sp.shown).forEach((id,i)=>{const sl=tile.querySelector(`.slot[data-slot="${i}"]`);if(sl)want.set(id,center(sl));});
@@ -274,7 +279,7 @@ function syncWalkers(){
   const tk=THEME.themeIdForCache();
   walkers.forEach((w,id)=>{const a=byId(id);if(a&&w.tk!==tk){const wk=w.el.querySelector('.wk');if(wk)wk.innerHTML=avatar(a);w.tk=tk;}});
   /* spec 034 FR-015: the figure away at a place keeps its mood (ring, horns, trouble dot); none in Serious mode (moodFor) */
-  walkers.forEach((w,id)=>{const m=moodFor(byId(id));w.el.dataset.body=m.body;w.el.dataset.trouble=m.trouble||'';});
+  walkers.forEach((w,id)=>{const a=byId(id),m=moodFor(a);w.el.dataset.body=m.body;w.el.dataset.trouble=m.trouble||'';w.el.dataset.coffee=a&&a.coffee?'1':'';}); /* spec 068: a cup in the hand */
 }
 function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key),usd=usdEstimates(r.id),m=t.calls&&!(t.unreported>=t.calls&&!usd)?approx(t.nano/1e9*AIU_USD+usd):'';return t.calls&&!demoOn?{long:m||window.DurbarUsage.fmtTotal(t),short:m||window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
 
@@ -415,7 +420,7 @@ function scene(a,mini,c){
   /* spec 040 FR-023: the signature names the theme too, so a theme switch redraws the desk (same signature = the old SVG is kept) */
   const tk=THEME.themeIdForCache();
   if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS,themeKey:tk,art:kitArt()});if(v)return c?v:stillSig(v);}
-  let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${tk}|${mood.body}${mood.trouble||''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
+  let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${tk}|${mood.body}${mood.trouble||''}${mood.coffee?'C':''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
   s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T_('--scene-shadow')}" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
   if(c){const hc={working:T_('--halo-working'),thinking:T_('--halo-thinking'),waiting:T_('--halo-waiting'),error:T_('--halo-error')}[st];
@@ -459,7 +464,7 @@ function scene(a,mini,c){
   if(st==='done') s+=`<circle cx="144" cy="54.5" r="10" fill="${T_('--done-bg')}"/><path class="done-tick" d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="${T_('--done-mark')}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
   const lap=artSlot('gadget-laptop'), cup=artSlot('gadget-cup'); /* spec 070 FR-011: a pack's own laptop and cup replace the app's */
   s+=lap||`<rect x="59" y="82.2" width="36" height="3.8" rx="1.9" fill="${T_('--laptop')}"/>`;
-  if(st==='idle') s+=(cup||`<rect x="98" y="76" width="10" height="10" rx="2.5" fill="${T_('--cup')}" stroke="${T_('--cup-line')}" stroke-width="1"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="${T_('--cup-line')}" stroke-width="1.4"/>`)+`<path class="steam" d="M101 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/><path class="steam" d="M105 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/>`;
+  if(st==='idle'||mood.coffee) s+=(cup||`<rect x="98" y="76" width="10" height="10" rx="2.5" fill="${T_('--cup')}" stroke="${T_('--cup-line')}" stroke-width="1"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="${T_('--cup-line')}" stroke-width="1.4"/>`)+`<path class="steam" d="M101 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/><path class="steam" d="M105 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/>`;
   const hand=(x,y)=>`<circle cx="${x}" cy="${y}" r="3.6" fill="${k.skin}"/>`;
   const armL=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${arm}" stroke-width="8" stroke-linecap="round"/>`;
   const typing = st==='working';
@@ -1776,10 +1781,10 @@ function attentionItems(list,withText){
   return list.map(a=>{
     const card=a.live||chats[a.id]?pendingCardOf(a):null; /* never build a demo chat just to look */
     if(card&&!cardKey.has(card))cardKey.set(card,++cardSeq);
-    const kind=card?(card.classList.contains('question')?'q':card.classList.contains('limit')?'l':'p'):(vis(a)==='error'?'e':a.limit?'l':'w');
+    const kind=card?(card.classList.contains('question')?'q':card.classList.contains('limit')?'l':card.classList.contains('coffee')?'c':'p'):(vis(a)==='error'?'e':a.limit?'l':'w');
     /* the OS notification never carries the request itself (a command can hold a token, and it would sit on the lock screen and in the
        notification history): only what kind of answer is needed (security review, 2026-10-20) */
-    const text=!withText?'':kind==='q'?'Has a question for you.':kind==='p'?'Asks for your OK.':kind==='e'?'Has an error. Please check it.':kind==='l'?'Reached its spending limit.':'Waiting for you.';
+    const text=!withText?'':kind==='q'?'Has a question for you.':kind==='p'?'Asks for your OK.':kind==='e'?'Has an error. Please check it.':kind==='l'?'Reached its spending limit.':kind==='c'?(DurbarCutText.cutText(coffeeTask(a),70)+'.'):'Waiting for you.';
     return {key:a.id+'|'+kind+'|'+(card?cardKey.get(card):''),id:a.id,name:a.name,text};
   });
 }
@@ -1878,7 +1883,7 @@ function paintInbox(focusIndex){
   body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1"><span class="ib-ok" aria-hidden="true"></span><span><b>All clear. Nobody needs you right now.</b><small>Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</small></span></p>'; /* spec 052 FR-048 */
   list.forEach((a,i)=>{
     const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
-    const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'stopped':'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
+    const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?(a.coffee?'is on a '+coffeeWord().toLowerCase():'stopped'):card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
     row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;
     row.innerHTML='<div class="ib-av" aria-hidden="true">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b></b> <span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
     row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;
@@ -3051,6 +3056,7 @@ function settleQuestion(a,answers,action){
 }
 function settleLimit(a,action){
   const L=a.limit;if(!L)return;a.limit=null;
+  if(a.coffee)endCoffee(a,action==='cancel'?'stopped':'limit raised'); /* spec 068: the cap's coffee break ends with the answer */
   if(L.row)L.row.remove();
   const word=action==='cancel'?'stopped here':action==='unset'?'limit removed':isUsdCap(a)?'limit raised':'credits added';
   L.st.textContent=' → '+word;L.n.classList.add('settled',action==='cancel'?'denied':'approved');
@@ -3058,6 +3064,84 @@ function settleLimit(a,action){
   if(action==='cancel'){closeTurn(a);a.worked=false;setState(a,'idle',null,'Stopped at '+what+'. Ready for your next message.');}
   else setState(a,'working',null,'Continuing after '+what);
   updateCapChip(a);stickyScroll(liveChat(a));
+}
+/* ---------------- coffee break (spec 068): a usage limit puts the agent in the coffee corner until the limit resets ---------------- */
+const COFFEE=window.DurbarCoffee;
+let BREAK_RESUME='auto'; /* the setting (FR-006): 'auto' resumes by itself when it costs nothing extra; 'ask' always asks */
+const SIM_BREAK=(()=>{try{const q=new URLSearchParams(location.search);return q.has('sim')&&q.has('simbreak');}catch(e){return false;}})(); /* simulator drivers: short waits (FR-017) */
+const BREAKS=COFFEE.createBreaks(SIM_BREAK?{marginMs:2000,gapMs:3000,lateMs:600000,remindMs:20000}:{});
+const coffeeWord=()=>'Coffee break'; /* a status word: plain in every theme (spec 035: status pills keep their size); only the corner's name is themed */
+const coffeeUntil=a=>{const b=BREAKS.get(a.id);return b?COFFEE.untilText(b,BREAKS.autoResumes(a.id),Date.now()):'';};
+const coffeeTask=a=>coffeeWord()+' — '+coffeeUntil(a);
+/* "Ada (until 14:30)" for the coffee corner's label (FR-014) */
+const coffeeWho=a=>{if(!a)return '';const b=BREAKS.get(a.id);const u=b?(b.kind==='cap'?'until you raise the limit':b.resetsAt?'until '+COFFEE.whenText(b.resetsAt,Date.now()):'until the limit resets'):'';return a.name+(u?' ('+u+')':'');};
+/* the card's sentence: what is used up, and what happens next */
+function coffeeSentence(a){
+  const b=BREAKS.get(a.id); if(!b)return '';
+  const when=b.resetsAt?COFFEE.whenText(b.resetsAt,Date.now())+(b.estimated?' (an estimate)':''):'';
+  const what=SIMPLE||!b.source?'The usage limit is used up.':b.source+' is used up.';
+  if(b.phase==='back')return 'The limit has reset. Resume sends one message so the agent continues where it stopped.';
+  const next=BREAKS.autoResumes(a.id)?' The agent comes back at '+when+' and continues by itself.':b.resetsAt?' The limit resets at '+when+'; the agent will ask you before it goes on'+(b.paid?' (going on may be billed).':'.'):' The agent app did not say when it resets.';
+  return what+next+' Try now sends one message to continue (after a long break it can cost a little more).';
+}
+/* the chat card (FR-009): Try now / Stay on break, or, once the limit has reset and the agent asks, Resume / Not now. The inbox copies the buttons. */
+function showCoffee(a,back){
+  const chat=liveChat(a), b=BREAKS.get(a.id); if(!b)return;
+  if(a.coffeeCard){a.coffeeCard.classList.add('settled');const r=a.coffeeCard.querySelector('.note-actions');if(r)r.remove();}
+  const n=document.createElement('div');n.className='note perm coffee';n.setAttribute('role','group');n.setAttribute('aria-label',coffeeWord());
+  n.innerHTML='<b></b> <span class="psum"></span><span class="pstate"></span>';
+  n.querySelector('b').textContent=(back?'Back from the '+coffeeWord().toLowerCase():coffeeWord())+':';
+  n.querySelector('.psum').textContent=coffeeSentence(a);
+  const row=document.createElement('div');row.className='note-actions';
+  const mk=(l,cls,title,fn)=>{const x=document.createElement('button');x.type='button';x.className='btn '+cls;x.textContent=l;x.title=title;x.onclick=fn;row.appendChild(x);return x;};
+  if(back){
+    mk('Resume','primary','Send one message so the agent continues where it stopped',()=>resumeCoffee(a,'user'));
+    mk('Not now','','Leave it here; the agent goes on with your next message',()=>{endCoffee(a,'not now');setState(a,'idle',null,'The usage limit has reset. Send a message to go on.');});
+  } else {
+    mk('Try now','primary','Send one message now so the agent continues (if the limit has not reset yet, it goes back on its break)',()=>resumeCoffee(a,'user'));
+    if(BREAKS.autoResumes(a.id))mk('Stay on break','','Do not continue by itself; ask me when the limit resets',()=>{BREAKS.stay(a.id);showCoffee(a,false);setState(a,'waiting',coffeeWord(),coffeeTask(a));});
+  }
+  n.appendChild(row);
+  chat.el.appendChild(n);stickyScroll(chat);
+  a.coffeeCard=n;
+  scheduleRender();
+}
+/* FR-001..FR-004: the agent goes on a break (a usage limit of its agent app, or Durbar's own cap) */
+function startCoffee(a,info){
+  const b=BREAKS.start(a.id,Object.assign({app:kindOf(a)},info),BREAK_RESUME); if(!b)return;
+  const isNew=!a.coffee;
+  a.coffee=true;if(isNew)a.coffeeShut=false;
+  if(b.kind==='provider'){closeTurn(a);a.worked=false;if(isNew||a.coffeeCard)showCoffee(a,false);}
+  if(VISITS.pin(a.id,window.DurbarPlaces.COFFEE,coffeeWord()))scheduleRender();
+  setState(a,'waiting',coffeeWord(),coffeeTask(a));
+  if(isNew)announce(a.name+': '+coffeeTask(a));
+}
+/* the break ends without a resume of ours (a message, Stop, the agent went on by itself, Not now) */
+function endCoffee(a,why){
+  if(!a||!a.coffee)return;
+  a.coffee=false;BREAKS.end(a.id);
+  if(VISITS.unpin(a.id))scheduleRender();
+  if(a.coffeeCard){const r=a.coffeeCard.querySelector('.note-actions');if(r)r.remove();a.coffeeCard.querySelector('.pstate').textContent=' → '+(why||'ended');a.coffeeCard.classList.add('settled');a.coffeeCard=null;}
+}
+/* FR-007: one fixed message to the same session (automatic at the reset, or Try now / Resume) */
+function resumeCoffee(a,how){
+  if(!a||!a.coffee)return;
+  const b=BREAKS.get(a.id); if(!b||b.kind!=='provider')return;
+  a.coffee=false;BREAKS.resumed(a.id);
+  if(VISITS.unpin(a.id))scheduleRender();
+  if(a.coffeeCard){const r=a.coffeeCard.querySelector('.note-actions');if(r)r.remove();a.coffeeCard.querySelector('.pstate').textContent=' → '+(how==='auto'?'resumed by itself':'resumed');a.coffeeCard.classList.add('settled','approved');a.coffeeCard=null;}
+  addNote(liveChat(a),'Back from the '+esc(coffeeWord().toLowerCase())+' ('+(how==='auto'?'resumed by itself after the limit reset':'resumed by you')+').');
+  void sendLive(COFFEE.RESUME_TEXT,a.id,{fromComposer:false,coffee:true});
+}
+/* the window's timer: what the break core says is due (FR-007, FR-011) */
+function coffeeTick(){
+  if(!BREAKS.size())return;
+  for(const x of BREAKS.tick()){
+    const a=byId(x.id); if(!a||!a.live){BREAKS.end(x.id);continue;}
+    if(x.type==='resume'&&!a.paused)resumeCoffee(a,'auto');
+    else if(x.type==='ask'||x.type==='resume') /* a paused agent asks instead of resuming by itself */{const bb=BREAKS.get(a.id);if(bb)bb.phase='back';if(VISITS.unpin(a.id))scheduleRender();showCoffee(a,true);setState(a,'waiting',coffeeWord(),coffeeTask(a));}
+    else if(x.type==='remind')showCoffee(a,false); /* a new card: one reminder in the inbox and as a notification (Q4) */
+  }
 }
 /* spec 052 FR-057: in Simple, a folder grant says what it lets the agent do: "Let Ada change files in “tools” until the session ends".
    Only for a "write in <folder>/" scope (the last path segment); any other scope keeps its label. The inbox and the answer bar copy the card's button. */
@@ -3259,6 +3343,7 @@ function onLiveEvent(e){
   if(e.type==='title'){if(!e.agentId)applyTitle(a,e.title);return;}
   if(e.type==='agentSchedule'){if(!e.agentId)onAgentSchedule(a,e);return;}
   if(e.type==='subagent')return onSubagent(a,e);
+  if(e.type==='usageLimit'){if(!e.agentId&&!(e.update&&!a.coffee))startCoffee(a,{kind:'provider',resetsAt:e.resetsAt,estimated:e.estimated,paid:e.paid,source:e.source});return;} /* spec 068 */
   if(e.agentId&&e.type!=='permission'&&e.type!=='grants'&&e.type!=='limit')return onSubEvent(a,e);
   const chat=liveChat(a), main=true;
   switch(e.type){
@@ -3266,6 +3351,15 @@ function onLiveEvent(e){
   case 'status':
     if(!main)return;
     if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files */
+    /* spec 068: the turn that hit a usage limit ends quietly (the coffee break says why); working again, Stop or the end of the session end the break */
+    if(a.coffee&&!a.limit){
+      /* only the turn's closing status keeps the break (2026-10-22): 'Usage limit reached', then at most one plain idle of the same turn */
+      if(e.status==='idle'&&e.intent==='Usage limit reached'){closeTurn(a);a.worked=false;a.coffeeShut=true;return;}
+      if(e.status==='idle'&&!e.intent&&a.coffeeShut){a.coffeeShut=false;closeTurn(a);a.worked=false;return;}
+      /* any other idle or error: the turn went on (and finished or failed) after the limit; the break ends and the status shows as usual */
+      const wentOn=e.status==='idle'&&!e.intent&&!a.coffeeShut;a.coffeeShut=false;
+      if(e.status==='working'||e.status==='stopped'||e.status==='idle'||e.status==='error'){endCoffee(a,e.status==='working'||wentOn?'the agent went on':e.status==='error'?'an error':'stopped');if(wentOn)a.worked=true;}
+    }
     if(e.status==='working'){a.worked=true; const tt=ensureTurn(a); if(e.intent){a.intent=e.intent;if(!/^(Thinking|Approved|Allowed|Denied|Waiting for permission)/.test(e.intent))tIntent(tt.T,e.intent);}
       if(a.state!=='working'&&a.state!=='thinking')setState(a,'working',null,e.intent||a.task); else if(e.intent)setState(a,a.state,undefined,e.intent);}
     else if(e.status==='needs-permission'){
@@ -3298,7 +3392,7 @@ function onLiveEvent(e){
   case 'grants':setGrants(a,e.grants||[]);return;
   case 'limit':
     if(e.phase==='changed'){a.info.maxAiCredits=e.maxAiCredits>0?e.maxAiCredits:undefined;a.usageText=usageLong(a);updateCapChip(a);updatePanelHeader();scheduleRender();}
-    else if(e.phase==='exhausted'){if(a.limit&&a.limit.requestId===e.requestId)return;showLimit(a,e);setState(a,'waiting','Limit reached','Stopped at '+fmtCapOf(a,e.maxAiCredits||0)+'. Raise the limit to go on.');updateCapChip(a);}
+    else if(e.phase==='exhausted'){if(a.limit&&a.limit.requestId===e.requestId)return;showLimit(a,e);startCoffee(a,{kind:'cap'});updateCapChip(a);} /* spec 068 Q2: Durbar's own spending limit is a coffee break, 'until you raise the limit' */
     else if(e.phase==='resolved'){if(a.limit&&a.limit.requestId===e.requestId)settleLimit(a,e.action||'add');}
     return;
   case 'plan': /* spec 066 */
@@ -3315,12 +3409,12 @@ function onLiveEvent(e){
     a.profile=p;updateAgentChip(a);scheduleRender();return;}
   case 'model':onModelEvent(a,e);return;
   case 'compaction':onCompaction(a,e);return;
-  case 'thinking':{const t=ensureTurn(a);tThink(t.T,e.reasoningId,e.delta);setState(a,'thinking',null);return;}
-  case 'output':{const t=ensureTurn(a);const out=tText(t.T,e);if(out!=null)a.lastOutput=out;setState(a,'working',null);return;}
+  case 'thinking':{if(a.coffee&&!a.limit)endCoffee(a,'the agent went on');const t=ensureTurn(a);tThink(t.T,e.reasoningId,e.delta);setState(a,'thinking',null);return;}
+  case 'output':{const t=ensureTurn(a);const out=tText(t.T,e);if(out!=null)a.lastOutput=out;if(!a.coffee)setState(a,'working',null);return;} /* spec 068: text after a usage limit does not end the break */
   case 'toolCall':{const t=ensureTurn(a);
     if(isTaskTool(e.tool)||(t.T.chipEls[e.callId]===undefined&&a.subs&&a.subs.has(e.callId)))onTaskTool(a,e);
     else tTool(t.T,e);
-    if(e.phase==='start'&&!isTaskTool(e.tool))setState(a,a.state==='thinking'?'working':a.state,null,a.intent||toolTask(e,a.info&&a.info.cwd,90));
+    if(e.phase==='start'&&!isTaskTool(e.tool)&&!a.coffee)setState(a,a.state==='thinking'?'working':a.state,null,a.intent||toolTask(e,a.info&&a.info.cwd,90));
     stickyScroll(chat);return;}
   case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
     a.usageText=usageLong(a);recordUsage(a,e);scheduleRender();
@@ -3336,6 +3430,7 @@ async function sendLive(text,forId,opts){
   /* spec 012 FR-157: an app that is known to be signed out gets the sign-in card first; the typed text stays in the box */
   if(SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))){PROMPTS.set(a.id,text,atts);showSignInCard(a,{before:true});return;}
   if(PROMPTS)PROMPTS.set(a.id,text,atts); /* memory only, for Send again after a sign-in (never stored) */
+  if(a.coffee&&!(opts&&opts.coffee))endCoffee(a,'you sent a message'); /* spec 068 FR-009: a message ends the coffee break */
   a.sent=true;
   const chat=liveChat(a);
   addUserMsg(chat,text||'(attachment)',atts);
@@ -4462,7 +4557,7 @@ async function removeSessionUi(a){
 function removeLiveAgent(id){
   STATS.forget(id); MOOD.forget(id);
   if(LIVEACT){LIVEACT.drop(id);clearTimeout(liveTimers.get(id));liveTimers.delete(id);} /* spec 001 FR-028 */
-  VISITS.leave(id); dropWalker(id);
+  VISITS.leave(id); dropWalker(id); BREAKS.end(id); /* spec 068: a removed agent's break is forgotten */
   for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}
   if(ui.selected&&!byId(ui.selected))closePanel();
 }
@@ -4818,7 +4913,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */
@@ -4863,8 +4958,9 @@ if(bridge){
       :apply();
     }).catch(()=>apply());}else apply();
   };
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();NOTIFY=!!(v&&v.notifyNeedsMe!==false);themeBoot(v);}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
+  setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
   agents=LIVE.agents; ROOMS=LIVE.rooms;
   setBadge();
 }

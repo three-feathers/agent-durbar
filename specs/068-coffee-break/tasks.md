@@ -1,0 +1,14 @@
+# Tasks 068: coffee break when a usage limit is reached
+
+- [x] T001 `usageLimit` event type and guard [FR-001]
+- [x] T002 Claude, Codex and Copilot mappers emit `usageLimit` (+ idle), Copilot reset from `account.getQuota`; fixtures [FR-002, FR-016]
+- [x] T003 Break core `coffeebreak.js` (policy, margin, stagger, re-hit, late, reminder, words); unit tests [FR-004, FR-006, FR-007]
+- [x] T004 Places: pinned visits and the coffee tile; mood calm on a break; unit tests [FR-003, FR-005, FR-013]
+- [x] T005 Renderer: state, card, inbox actions, resume/ask/remind, Durbar cap as a break, Simple text, notifications [FR-004, FR-008..FR-012, FR-014]
+- [x] T006 Scene words in every built-in theme and `GEN_WORDS` [FR-012]
+- [x] T007 Setting `breakResume` (parser, store, IPC, preload, simulator, Settings switch) [FR-006]
+- [x] T008 MCP read state mirrors the break [FR-004]
+- [x] T009 Simulator `simbreak=N` (Tomas, Rosa; Omar's cap) [FR-017]
+- [x] T010 Driver `shots-068-coffee.js`, screenshots 1440x900 and 1280x800, `check:office` / `check:geometry` [FR-013, FR-018]
+- [x] T011 Docs: README, CHANGELOG, specs README, cross-references in 011/024/034 [all]
+- [x] T012 Review fix (2026-10-22, PR #462): only the turn's closing status keeps the break (renderer and MCP read state); `usageLimit.update` for a late reset time; past reset times are unknown; tests [FR-002, FR-004]

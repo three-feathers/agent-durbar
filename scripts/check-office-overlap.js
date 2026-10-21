@@ -90,17 +90,20 @@ function pageCheck(expanded, expectPlaces) {
       if (ox > T && oy > T) problems.push(`lobby overlaps ${name(e)} by ${ox.toFixed(1)}x${oy.toFixed(1)}px`);
     });
     const places = [...lobby.querySelectorAll('.place')];
-    if (places.length !== expectPlaces) problems.push(`lobby has ${places.length} places, not ${expectPlaces}`);
+    /* spec 068 FR-003: the coffee corner is always the last tile (never a mapping choice), narrower, with its name only where the lobby is wide */
+    const coffee = places.filter((pl) => pl.dataset.place === 'coffee');
+    if (coffee.length !== 1 || places[places.length - 1] !== coffee[0]) problems.push('the coffee corner is not the last lobby tile');
+    if (places.length !== expectPlaces + 1) problems.push(`lobby has ${places.length} places, not ${expectPlaces} and the coffee corner`);
     /* spec 024 FR-022: custom places make tiles narrower, never a second row; the Add button is there below 8 tiles and gone at 8 */
     const tops = new Set(places.map((pl) => Math.round(R(pl).y)));
     if (tops.size > 1) problems.push(`lobby tiles are on ${tops.size} rows, not one`);
     if (L.h > 38) problems.push(`lobby is ${L.h.toFixed(0)}px tall, not 36`);
     const addBtns = lobby.querySelectorAll('.place-add');
-    if (addBtns.length !== (places.length < 8 ? 1 : 0)) problems.push(`${addBtns.length} Add buttons with ${places.length} places`);
+    if (addBtns.length !== (places.length - 1 < 8 ? 1 : 0)) problems.push(`${addBtns.length} Add buttons with ${places.length - 1} places`);
     addBtns.forEach((b) => { inside(b, L, 'the lobby'); if (!b.getAttribute('aria-label')) problems.push('the Add button has no accessible name'); });
     /* spec 052 FR-013: a themed place may add its plain name, "Cartridge Bay (Software library): …" */
     const fullName = (t, n) => t.startsWith(n + ':') || t.startsWith(n + ' (');
-    places.forEach((pl) => { const n = pl.querySelector('.pn'); if (!n || !fullName(pl.getAttribute('aria-label'), n.textContent) || !fullName(pl.title, n.textContent)) problems.push(`place ${pl.dataset.place}: its full name is not in the tooltip and the label`); });
+    places.forEach((pl) => { const n = pl.querySelector('.pn'); if (pl.classList.contains('unnamed')) { if (!/^Coffee corner|: /.test(pl.getAttribute('aria-label') || '') || !pl.title) problems.push('the unnamed coffee corner has no label'); return; } if (!n || !fullName(pl.getAttribute('aria-label'), n.textContent) || !fullName(pl.title, n.textContent)) problems.push(`place ${pl.dataset.place}: its full name is not in the tooltip and the label`); });
     places.forEach((pl) => { inside(pl, L, 'the lobby'); pl.querySelectorAll('.pic, .pn, .prow, .slot').forEach((e) => inside(e, R(pl), 'its place ' + pl.dataset.place)); });
     const slots = [...lobby.querySelectorAll('.slot.on')].map(R);
     const walkers = [...document.querySelectorAll('#walkers .walker')];
@@ -286,7 +289,7 @@ async function driver(ctx) {
     await forceFonts(w, h);
     await sleep(500);
     /* spec 024: agents go to the lobby after 600 ms and the walk takes about 1 s: wait until somebody is there and nobody is walking */
-    try { await ctx.waitFor(`!!document.querySelector('.place.busy')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await sleep(150); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
+    try { await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"])')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await sleep(150); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
   };
   /* spec 024 T027 (#406): a figure that is still walking (the renderer marks it `.walking`; under load that mark can end while the CSS transition is still running, so a running transition on the figure counts as walking too) is not on a slot yet, and under load
      the walk can still be going when the case is measured. Re-measure while a figure is walking, in small steps for up to SETTLE_MS; a figure

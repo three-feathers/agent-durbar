@@ -308,13 +308,40 @@ export class EventMapper {
         this.reasoningSeen.clear();
         this.edits.clear();
         return this.emit({ type: 'status', status: 'idle', intent: d.aborted ? 'Aborted' : undefined });
-      case 'session.error':
+      case 'session.error': {
+        // spec 068 FR-002: a used-up quota or a rate limit that stopped the turn is a coffee break, not an error
+        const lim = agentId ? null : copilotUsageLimit(d.errorType, d.errorCode);
+        if (lim) {
+          this.emit(lim);
+          return this.emit({ type: 'status', status: 'idle', intent: 'Usage limit reached' });
+        }
         // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)
         return this.emit({ type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType, d.message) });
+      }
       default:
         return;
     }
   }
+}
+
+/** Spec 068: Copilot's `rate_limit` codes and their fixed labels (`read:` SDK typings, `RateLimitErrorCode`). */
+const COPILOT_RATE: Record<string, string> = {
+  user_weekly_rate_limited: 'Copilot weekly limit',
+  user_global_rate_limited: 'Copilot rate limit',
+  rate_limited: 'Copilot rate limit',
+  user_model_rate_limited: 'Copilot model rate limit',
+  integration_rate_limited: 'Copilot rate limit',
+};
+/**
+ * Spec 068 FR-002: `session.error` -> coffee break. `rate_limit` (any code) is a rate window (no money); `quota` with `quota_exceeded` or
+ * `session_quota_exceeded` is the premium-request quota (going on may be billed as overage: `paid`). Other quota codes
+ * (`billing_not_configured`, ...) and every other category stay errors. The reset time comes later from the adapter (account.getQuota).
+ */
+export function copilotUsageLimit(errorType: unknown, errorCode: unknown): (EventBody & { type: 'usageLimit' }) | null {
+  const code = typeof errorCode === 'string' ? errorCode : '';
+  if (errorType === 'rate_limit') return { type: 'usageLimit', scope: 'rate', source: Object.prototype.hasOwnProperty.call(COPILOT_RATE, code) ? COPILOT_RATE[code] : 'Copilot rate limit' };
+  if (errorType === 'quota' && (code === 'quota_exceeded' || code === 'session_quota_exceeded')) return { type: 'usageLimit', scope: 'quota', paid: true, source: 'Copilot premium requests' };
+  return null;
 }
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' && v >= 0 ? v : undefined);

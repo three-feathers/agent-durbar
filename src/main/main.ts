@@ -442,9 +442,11 @@ const scheduleAgent = (s: { folder: string; target?: { session: string } }): Age
   return a && wsKey(a) === s.folder ? a : undefined;
 };
 const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
+/** Spec 068 FR-008: a schedule skips an agent on a coffee break as busy (never queued). */
+const busyOrBreak = (id: string): boolean => busyStatus(id) || agentState.onBreak(id);
 const scheduleDeps = (file: string): SchedulerDeps => ({
   now: () => Date.now(),
-  isBusy: (folder, session) => (session ? busyStatus(session) : [...agents.values()].some((x) => wsKey(x) === folder && busyStatus(x.id))),
+  isBusy: (folder, session) => (session ? busyOrBreak(session) : [...agents.values()].some((x) => wsKey(x) === folder && busyOrBreak(x.id))),
   hasSession: (session) => agents.has(session),
   capUnitOf: (s) => {
     const a = scheduleAgent(s);

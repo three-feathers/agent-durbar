@@ -17,6 +17,7 @@ export const GEN_WORDS: Record<string, string> = {
   'place-terminal': 'where agents run commands ("Terminal")',
   'place-web': 'where agents browse ("Web")',
   'place-other': 'other tools ("Other tools")',
+  'place-coffee': 'where agents wait while their usage limit resets ("Coffee corner")',
   'lobby-label': 'the lobby caption ("Lobby: the places where agents work")',
   'door-close': 'button to close a room ("Close room")',
   'door-open': 'button to open a room ("Open room")',

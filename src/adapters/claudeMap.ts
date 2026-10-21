@@ -8,6 +8,7 @@
  */
 import { isAuthError } from './autherrors';
 import { isMcpAuthChallenge } from './mcpauth';
+import { resetMs } from './usagelimit';
 import type { EventBody } from './map';
 import type { McpServerStatus } from './types';
 import { nonEmptyStr as str } from '../shared/guards';
@@ -138,12 +139,15 @@ export class ClaudeMapper {
   private abortExpected = false;
   /** FR-157: an assistant message of this turn carried Claude's `error: authentication_failed`. */
   private authFailed = false;
+  /** Spec 068: this turn reported a usage limit; its closing error result ends the turn quietly (the coffee break says why). */
+  private limited = false;
   expectAbort(): void {
     this.abortExpected = true;
   }
 
   reset(): void {
     this.abortExpected = false;
+    this.limited = false;
     this.servers = [];
     this.tools.clear();
     this.tasks.clear();
@@ -191,8 +195,12 @@ export class ClaudeMapper {
       case 'result':
         return this.result(m);
       case 'rate_limit_event': {
-        const info = (m.rate_limit_info ?? m) as Record<string, unknown>;
-        if (info.errorCode === 'credits_required' || m.errorCode === 'credits_required') this.emit({ type: 'status', status: 'error', intent: 'Claude usage limit reached' });
+        // spec 068 FR-002: a usage window that is used up (`rejected`) or `credits_required` puts the agent on a coffee break
+        const lim = claudeUsageLimit(m);
+        if (lim && !this.limited) {
+          this.limited = true;
+          this.emit(lim);
+        }
         return;
       }
       default:
@@ -420,13 +428,39 @@ export class ClaudeMapper {
     // The text of a turn that ended well is never read (an answer may well talk about a 401); Claude's own error marker is.
     const auth = this.authFailed || ((subtype !== 'success' || m.is_error === true) && isAuthError(m.result));
     this.authFailed = false;
+    const limited = this.limited;
+    this.limited = false;
     if (!auth && subtype === 'success' && m.is_error !== true) return this.emit({ type: 'status', status: 'idle' });
+    if (!auth && limited) return this.emit({ type: 'status', status: 'idle', intent: 'Usage limit reached' });
     if (!auth && aborted && subtype === 'error_during_execution') return; // the adapter already reported "Aborted"
     if (auth) return this.emit({ type: 'status', status: 'error', intent: (str(m.result) ?? 'Claude Code could not authenticate.').replace(/\s+/g, ' ').slice(0, 300), errorKind: 'auth' });
     const denials = Array.isArray(m.permission_denials) ? m.permission_denials.length : 0;
     const text = subtype === 'success' ? 'error' : subtype;
     this.emit({ type: 'status', status: 'error', intent: denials ? `${text} (${denials} permission denial${denials === 1 ? '' : 's'})` : text });
   }
+}
+
+/** Spec 068: the fixed labels a Claude usage window may get (never the provider's own text). */
+const CLAUDE_WINDOWS: Record<string, string> = { five_hour: '5-hour window', seven_day: 'weekly limit', seven_day_opus: 'weekly Opus limit', seven_day_sonnet: 'weekly Sonnet limit', overage: 'extra usage' };
+
+/**
+ * Spec 068 FR-002: a `rate_limit_event` that means the turn cannot go on: `rate_limit_info.status === 'rejected'` (a usage window is
+ * used up) or `errorCode: 'credits_required'` (extra usage needs credits: paid). `resetsAt` may be seconds or ms. `allowed` and
+ * `allowed_warning` are information only (null). `read:` the field names come from the SDK docs (spec 012 research), not a real run.
+ */
+export function claudeUsageLimit(m: ClaudeMessage, now = Date.now()): (EventBody & { type: 'usageLimit' }) | null {
+  const info = (m.rate_limit_info && typeof m.rate_limit_info === 'object' ? m.rate_limit_info : m) as Record<string, unknown>;
+  const credits = info.errorCode === 'credits_required' || m.errorCode === 'credits_required';
+  if (!credits && info.status !== 'rejected') return null;
+  const kind = typeof info.rateLimitType === 'string' && Object.prototype.hasOwnProperty.call(CLAUDE_WINDOWS, info.rateLimitType) ? CLAUDE_WINDOWS[info.rateLimitType] : undefined;
+  const resetsAt = resetMs(info.resetsAt, now);
+  return {
+    type: 'usageLimit',
+    scope: credits ? 'quota' : 'plan',
+    ...(resetsAt ? { resetsAt } : {}),
+    ...(credits ? { paid: true } : {}),
+    source: credits ? 'Claude extra usage' : `Claude ${kind ?? 'usage limit'}`,
+  };
 }
 
 /**

@@ -109,6 +109,8 @@ interface SimAgent {
   compacting?: boolean;
   /** Stay near the limit (no automatic compaction) so the start-fresh note can be shown. */
   noAuto?: boolean;
+  /** Spec 068: the simulated usage limit holds until this time (ms); a message before it hits the limit again. */
+  breakUntil?: number;
 }
 
 /** Fake models with prices in credits per million tokens (sim: made-up numbers, not Copilot's). Sim Preview reports no price on purpose. */
@@ -494,7 +496,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (due === undefined || due > now) continue;
         any = true;
         const s = simAgentOf(sc);
-        const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm);
+        const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm || (!!s.breakUntil && Date.now() < s.breakUntil)); // spec 068 FR-008: a coffee break counts as busy
         const outcome = simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
@@ -716,6 +718,22 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       s.state = 'done';
     }
 
+    /* spec 068 FR-017 (simbreak=N, seconds 5-3600): Tomas hits a 5-hour window that resets in N s (instead of the 429), Rosa the monthly
+       premium-request quota with no reset time (it really lifts after 2N s, which the app is not told); Omar keeps his 30 AIU cap. */
+    const simBreakSecs = ((): number => {
+      const q = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simbreak') : null;
+      if (q === null) return 0;
+      const n = Number(q);
+      return Number.isFinite(n) && n >= 5 && n <= 3600 ? Math.round(n) : 120;
+    })();
+    const simLimit = (s: SimAgent, kind: 'plan' | 'quota'): void => {
+      const id = sid(s);
+      s.state = 'idle';
+      closeOpen(s);
+      if (kind === 'plan') emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'plan', resetsAt: s.breakUntil, source: 'Simulated 5-hour window' });
+      else emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'quota', paid: true, source: 'Simulated premium requests' });
+      emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Usage limit reached' });
+    };
     function play(s: SimAgent): void {
       if (s.info.resumeLast) return; // spec 006 FR-021 (simresume=1): restored, nothing runs until its chat is opened
       emit({ type: 'user', sessionId: sid(s), timestamp: now(), text: s.prompt, attachments: (s.attachments ?? []).map((p) => ({ path: p, kind: /\.(png|jpe?g|gif)$/i.test(p) ? 'image' as const : 'file' as const })) });
@@ -744,6 +762,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: s.intent });
           toolStep(s, true);
           emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: 'Moved the company handlers first and kept a thin re-export in `registry.ts` so the public API is unchanged. Next I am running the **tests** for the three new modules.' });
+          if (simBreakSecs && s.info.name === 'Rosa') window.setTimeout(() => { s.breakUntil = Date.now() + 2 * simBreakSecs * 1000; simLimit(s, 'quota'); }, 1500); // spec 068
           break;
         case 'thinking':
           think(s, 2);
@@ -754,6 +773,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           break;
         }
         case 'error':
+          if (simBreakSecs && s.info.name === 'Tomas') { s.breakUntil = Date.now() + simBreakSecs * 1000; simLimit(s, 'plan'); break; }
           emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: sid(s) + '-fail', tool: 'bash', phase: 'start', args: { command: 'python evals/run.py --prompt v7 --concurrency 8' } });
           emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: sid(s) + '-fail', tool: 'bash', phase: 'failed', output: 'RateLimitError: 429 Too Many Requests (retry after 38s)\nStopped at case 38 of 120. Partial results saved to evals/out/v7-partial.json' });
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'error', intent: s.intent });
@@ -1008,13 +1028,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const placeMap: Record<string, string> = {};
     let seriousMode = false; /* spec 034 */
     let notifyNeedsMe = false; /* spec 052 FR-059: off in the demo until you turn it on */
+    let breakResume: 'auto' | 'ask' = 'auto'; /* spec 068 FR-006 */
     const PLACE_CHOICES = ['library', 'software', 'terminal', 'web', 'other', 'desk'];
     /* spec 024 FR-018..FR-020: custom places in memory, with the rules of src/shared/places.ts repeated here (the renderer bundle cannot import
        it; scripts/test-places.ts runs both on the same cases and compares them). */
     type SimPlace = { id: string; name: string; icon: string };
     const MAX_CUSTOM = 3;
     const CUSTOM_ICONS = ['star', 'flask', 'database', 'cloud', 'chart', 'chat', 'mail', 'calendar', 'shield', 'box', 'bolt', 'pin'];
-    const RESERVED_NAMES = ['library', 'software library', 'terminal', 'web', 'other tools', 'stay at desk', 'default'];
+    const RESERVED_NAMES = ['library', 'software library', 'terminal', 'web', 'other tools', 'stay at desk', 'default', 'coffee corner'];
     const customPlaces: SimPlace[] = [];
     let placeSeq = 0;
     const simPlaceResult = (ok: boolean, error?: string, place?: SimPlace) => ({
@@ -1109,10 +1130,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.10 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.10 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
+      setBreakResume: async (v) => { if (v === 'auto' || v === 'ask') breakResume = v; return { ok: true, breakResume }; },
       setBadge: async () => ({ ok: true }), /* spec 052 FR-059: no app icon in the demo */
       focusWindow: async () => { window.focus(); return { ok: true }; },
       setTheme: async (id) => { if (typeof id === 'string' && /^[a-z0-9_-]{1,64}$/.test(id)) simTheme = id; return { ok: true, theme: simTheme }; },
@@ -1657,6 +1679,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           }, 300);
           return { ok: true };
         }
+        if (s.breakUntil && Date.now() < s.breakUntil) { // spec 068: the limit has not reset yet: the turn hits it again
+          const kind = s.info.name === 'Rosa' ? 'quota' : 'plan';
+          window.setTimeout(() => { emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: 'Thinking' }); simLimit(s, kind); }, 400);
+          return { ok: true };
+        }
+        s.breakUntil = undefined;
         window.setTimeout(() => void reply(s, text), 400);
         return { ok: true };
       },
