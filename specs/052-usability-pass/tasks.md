@@ -219,4 +219,4 @@
 - [x] T145 Renderer: multi-file diff counts (`diffLines` ends a hunk by its counts), Simple words for a request with no file [FR-165]
 - [x] T146 Tests: `test-codex-modes`, `test-codex-adapter` with the fixture `codex/file-change-approval.json` (generated types), `test-truth`; mutation runs (no item store, no masking) [FR-165]
 - [x] T147 `simcodexfile` + `scripts/check-codex-file-card.js` (`check:codex-file-card`, in `check:ui`) at 1440x900 and 1280x800, Expert and Simple; screenshots; README, CHANGELOG, `specs/README.md`, agent notes [FR-165]
-- [ ] T148 Real check on a Codex session (one small edit in Ask first): the card names the file and shows the diff [FR-165, needs the owner's budget]
+- [x] T148 Real check on a Codex session (one small edit in Ask first): the card names the file and shows the diff [FR-165; real: 2026-10-21, codex-cli 0.163.0, Linux, 1 prompt]
