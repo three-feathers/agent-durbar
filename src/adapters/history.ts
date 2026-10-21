@@ -5,6 +5,7 @@
  * Never logs or uploads content. Tolerant: unknown or malformed events are skipped.
  */
 import * as path from 'path';
+import { isObj } from '../shared/guards';
 
 /** What the renderer shows in the "Previous sessions" list. */
 export interface PreviousSession {
@@ -128,7 +129,6 @@ export interface HistoryLimits {
 export const DEFAULT_HISTORY_LIMITS: HistoryLimits = { maxItems: 300, maxTextChars: 20_000, maxToolOutputChars: 2_000 };
 
 export const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s);
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 export function toolLabel(args: unknown): string {
   if (typeof args === 'string') return args.replace(/\s+/g, ' ').trim().slice(0, 300);

@@ -50,7 +50,7 @@
 - `[KNOWN GAP]` `excludedTools`/`availableTools` per MCP tool is not exposed (per-server on/off only); the runtime supports it (research: types only).
 - `[KNOWN GAP]` HTTP/SSE servers: configuration and passing are implemented from the SDK types but not tested against a real remote server.
 - `[KNOWN GAP]` Counts are not persisted across app restarts and do not include history of resumed sessions.
-- `[KNOWN GAP]` Context for models other than `auto` was not observed (this account only offers `auto`).
+- ~~`[KNOWN GAP]`~~ closed 2026-10-21 (see Changes): Context for models other than `auto` was not observed (this account only offers `auto`).
 
 ## Changes
 
@@ -63,3 +63,8 @@
 - **2026-10-20: MCP server errors are masked before they reach the window** (issue #360, FR-021, T013). A server's `error` text (from the runtime's MCP status) could carry a token, a URL with a key or `user:pass@host`; it now goes through the same masking as other text before it leaves main, and is cut to 300 characters after masking.
 - **2026-10-20, feature 058 delta (specified, not built; issue #364)**: the "No MCP OAuth flow" gap above is taken up by 058 FR-060..FR-074: a failed MCP tool with an OAuth challenge (the owner's real `MCP OAuth challenge required (HTTP 401)`) turns the server into "Needs sign-in" instead of reading as the agent app's sign-in; Durbar can start Copilot's, Claude Code's or Codex's own sign-in (the runtime keeps the token, Durbar only opens the https page it returns after a click) or show the exact terminal steps; and offers *Switch off for this session*. [058](../058-mcp-session-controls/spec.md).
 - **2026-10-20: one masked copy of the `mcp` event for every outward path** (FR-022, T014; retro sweep of the review notes on PR #362, owner rule 2026-10-20 "solvable findings are fixed, not left as notes"). `read:` `main.ts` sent the masked copy to the window only; the `DURBAR_LOG` sink got the raw event and redacted it without the session's MCP secret values. Now `maskMcpEvent(e, values)` (pure, `src/main/mcpmask.ts`) runs once per event and both outward consumers use it; the other `router.onEvent` consumers stay in main and store no MCP error text. test: `test-mcp-errormask` (the event helper: planted extra secret in an `mcp` event comes out masked, other events pass through unchanged and by identity).
+
+### 2026-10-21: known gaps revalidated
+
+- **Context for models other than `auto`** closed. `real:` 2026-10-20, Copilot Pro: `usage_info.tokenLimit` per model (`gpt-6-luna` 272000, long tier 872000, `mai-code-1.1-flash` 128000, `claude-haiku-4.5` 128000) and `contextInfo` after a call (spec 030 Changes in #399).
+- Still open: MCP OAuth (spec 058), per-tool `excludedTools`/`availableTools`, an HTTP/SSE server against a real remote server, and counts for resumed history.

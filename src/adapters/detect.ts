@@ -1,7 +1,7 @@
 /**
  * Binary lookup and version probe for the Claude and Codex CLIs (spec 012 FR-035..FR-041).
  * Pure apart from the injected `isFile` and `exec`; `nodeExec` is the only code that touches `child_process`.
- * Mirrors `src/main/vscode.ts` (LaunchEnv, PATH search, CMD_UNSAFE, planCmd) without importing it: adapters must not import `src/main`.
+ * Mirrors `src/main/vscode.ts` (LaunchEnv, PATH search, planCmd) without importing it: adapters must not import `src/main`. `CMD_UNSAFE` and `windowsCmd` are shared (`src/shared/wincmd.ts`).
  * Nothing here logs or returns an environment value or stderr.
  */
 
@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AdapterDescriptor, DetectResult } from './capabilities';
-import { windowsCmd } from '../shared/wincmd';
+import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
 
 export interface DetectEnv {
   platform: NodeJS.Platform;
@@ -18,6 +18,63 @@ export interface DetectEnv {
   homedir: string;
   /** True if the path exists and is a file. */
   isFile(p: string): boolean;
+  /** Spec 060 FR-003: the names of the folders inside `dir` (version managers keep one folder per Node.js version); [] when unreadable. */
+  listDir?(dir: string): string[];
+  /** Spec 060 FR-003: the login shell's PATH (absolute folders), read once by main; searched after PATH, before the fixed folders. */
+  loginPath?: readonly string[];
+}
+
+/** Version folders, newest first (`v22.3.0` before `v20.11.1`); names that are not versions go last, in name order. At most 20. */
+export function newestFirst(names: readonly string[]): string[] {
+  const ver = (n: string): string | undefined => (/^v?\d+\.\d+\.\d+$/.test(n) ? n.replace(/^v/, '') : undefined);
+  return [...names]
+    .filter((n) => n && !n.startsWith('.') && !/[\\/]/.test(n))
+    .sort((a, b) => {
+      const va = ver(a), vb = ver(b);
+      if (va && vb) return compareVersions(vb, va);
+      if (va) return -1;
+      if (vb) return 1;
+      return a < b ? -1 : a > b ? 1 : 0;
+    })
+    .slice(0, 20);
+}
+
+/**
+ * Spec 060 FR-003: where version managers and Linuxbrew put the CLIs that `npm install -g` (or brew) installs, after the fixed
+ * folders. macOS and Linux: nvm, fnm (both of its homes, and its default alias), Volta, asdf and mise shims, and Linuxbrew on
+ * Linux. Windows: Volta, nvm-windows (its current-version link, then its version folders).
+ */
+function managerDirs(env: DetectEnv, p: path.PlatformPath): string[] {
+  const home = env.homedir;
+  const list = (dir: string): string[] => {
+    try { return newestFirst(env.listDir ? env.listDir(dir) : []); } catch { return []; }
+  };
+  const out: string[] = [];
+  if (env.platform === 'win32') {
+    const local = env.env.LOCALAPPDATA;
+    if (local && p.isAbsolute(local)) out.push(p.join(local, 'Volta', 'bin'));
+    const link = env.env.NVM_SYMLINK;
+    if (link && p.isAbsolute(link)) out.push(link);
+    const appData = env.env.APPDATA;
+    const nvmHome = env.env.NVM_HOME && p.isAbsolute(env.env.NVM_HOME) ? env.env.NVM_HOME : appData && p.isAbsolute(appData) ? p.join(appData, 'nvm') : undefined;
+    if (nvmHome) for (const v of list(nvmHome)) out.push(p.join(nvmHome, v));
+    return out;
+  }
+  if (!home || !p.isAbsolute(home)) return out;
+  const nvmDir = env.env.NVM_DIR && p.isAbsolute(env.env.NVM_DIR) ? env.env.NVM_DIR : p.join(home, '.nvm');
+  const nvmVersions = p.join(nvmDir, 'versions', 'node');
+  for (const v of list(nvmVersions)) out.push(p.join(nvmVersions, v, 'bin'));
+  const fnmHomes = [p.join(home, '.fnm'), p.join(home, '.local', 'share', 'fnm')];
+  if (env.platform === 'darwin') fnmHomes.push(p.join(home, 'Library', 'Application Support', 'fnm'));
+  if (env.env.FNM_DIR && p.isAbsolute(env.env.FNM_DIR)) fnmHomes.unshift(env.env.FNM_DIR);
+  for (const f of fnmHomes) {
+    out.push(p.join(f, 'aliases', 'default', 'bin'));
+    const versions = p.join(f, 'node-versions');
+    for (const v of list(versions)) out.push(p.join(versions, v, 'installation', 'bin'));
+  }
+  out.push(p.join(home, '.volta', 'bin'), p.join(home, '.asdf', 'shims'), p.join(home, '.local', 'share', 'mise', 'shims'));
+  if (env.platform === 'linux') out.push('/home/linuxbrew/.linuxbrew/bin', p.join(home, '.linuxbrew', 'bin'));
+  return out;
 }
 
 export interface ExecResult {
@@ -58,7 +115,6 @@ const READY_HINT = 'Sign-in is checked when the agent starts.';
 const COPILOT_HINT = 'Uses the Copilot login on this computer when the agent starts.';
 
 /** Characters that cmd.exe would interpret, or that could break out of a quoted argument (same check as `src/main/vscode.ts`). */
-export const CMD_UNSAFE = /[\r\n\0"&|<>^%!`(),;=]/;
 
 function pathFor(platform: NodeJS.Platform): path.PlatformPath {
   return platform === 'win32' ? path.win32 : path.posix;
@@ -98,6 +154,8 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
     if (!dir || !p.isAbsolute(dir)) continue;
     addDir(dir);
   }
+  // spec 060 FR-003: an app opened from Finder or a desktop menu gets a short PATH; the login shell's adds nvm, fnm, asdf and the like
+  if (!win) for (const dir of env.loginPath ?? []) if (dir && p.isAbsolute(dir)) addDir(dir);
 
   const home = env.homedir;
   if (env.platform === 'darwin') {
@@ -114,7 +172,14 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
   } else {
     for (const d of [p.join(home, '.local/bin'), p.join(home, '.claude/local'), '/usr/local/bin', '/usr/bin', p.join(home, '.npm-global/bin')]) addDir(d);
   }
-  return out;
+  for (const d of managerDirs(env, p)) addDir(d);
+  const seen = new Set<string>();
+  return out.filter((c) => {
+    const k = win ? c.toLowerCase() : c;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
 
 /** The first `x.y.z` (optionally with a pre-release suffix) in the output, without a leading `v`. */
@@ -247,7 +312,13 @@ export async function detectCopilot(): Promise<DetectResult> {
   return { state: 'ready', hint: COPILOT_HINT };
 }
 
-/** The real environment for `detectBinary` (process env, home folder, file check). */
+let loginPathDirs: readonly string[] = [];
+/** Spec 060 FR-003: main hands in the login shell's PATH once it has read it (src/main/loginpath.ts); adapters never spawn a shell. */
+export function setLoginPath(dirs: readonly string[]): void {
+  loginPathDirs = Object.freeze([...dirs]);
+}
+
+/** The real environment for `detectBinary` (process env, home folder, file check, folder listing, the login shell's PATH when read). */
 export function nodeDetectEnv(): DetectEnv {
   return {
     platform: process.platform,
@@ -260,13 +331,29 @@ export function nodeDetectEnv(): DetectEnv {
         return false;
       }
     },
+    listDir: (dir) => {
+      try {
+        return fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => d.name).slice(0, 200);
+      } catch {
+        return [];
+      }
+    },
+    get loginPath() {
+      return loginPathDirs; // read at each search: the object may be kept (HarnessSetup) before main has read the login shell
+    },
   };
 }
 
+/** Adds where the app was found, safe to show (`~/…` or only the file name, never the user name: `displayPath`). */
+const withWhere = (r: DetectResult & { path?: string }, env: DetectEnv): DetectResult => {
+  const { path: p, ...rest } = r;
+  return p ? { ...rest, where: displayPath(p, env) } : rest;
+};
+
 export function detectorFor(id: string): ((d: AdapterDescriptor) => Promise<DetectResult>) | undefined {
   if (id === 'copilot') return () => detectCopilot();
-  if (id === 'claude') return () => detectClaude(nodeDetectEnv(), nodeExec).then(({ path: _p, ...r }) => r); // `--version`, then `auth status` (FR-132); never a prompt (FR-010)
-  if (id === 'codex') return () => detectCodex(nodeDetectEnv(), nodeExec).then(({ path: _p, ...r }) => r); // `--version`, then `login status` (FR-137)
+  if (id === 'claude') return () => { const env = nodeDetectEnv(); return detectClaude(env, nodeExec).then((r) => withWhere(r, env)); }; // `--version`, then `auth status` (FR-132); never a prompt (FR-010)
+  if (id === 'codex') return () => { const env = nodeDetectEnv(); return detectCodex(env, nodeExec).then((r) => withWhere(r, env)); }; // `--version`, then `login status` (FR-137)
   return undefined;
 }
 

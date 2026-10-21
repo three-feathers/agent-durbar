@@ -61,7 +61,9 @@
   const unverifiedPrice=m=>!!(m&&m.pricing&&m.pricing.unverified);
   function estimateInputCredits(tokens,model,tier){
     if(unverifiedPrice(model))return undefined; /* the unit of the runtime's prices was never checked: no credit figure is shown or compared with the cap */
-    const p=priceOf(model,tier);
+    /* spec 030 T044 (real 2026-10-20): on the long tier, a context that fits the default window is billed at the default price */
+    const def=model&&pos(model.contextWindow)?model.contextWindow:0;
+    const p=priceOf(model,tier==='long'&&def&&nn(tokens)&&tokens<=def?'default':tier);
     if(!p||p.input===undefined||!nn(tokens))return undefined;
     return tokens/1e6*p.input;
   }
@@ -182,6 +184,17 @@
         version:typeof a.version==='string'?a.version.slice(0,HINT_MAX):'',hint:typeof a.hint==='string'?a.hint.slice(0,HINT_MAX):''};
     });
   }
+  /* spec 030 FR-042 (#409): the agent apps a conversation can continue in: every ready app except its own, in the list's order. */
+  function handoverTargets(adapters,currentKind){
+    const cur=currentKind||'copilot';
+    return kindChoices(adapters).filter(k=>!k.disabled&&k.id!==cur);
+  }
+  /* FR-043: the first line of a summary that moves to another app, so the new session (and the user) see where it came from. */
+  function provenanceLine(fromApp,agentName){
+    const app=String(fromApp||'').replace(/\s+/g,' ').trim().slice(0,60);
+    const who=String(agentName||'').replace(/\s+/g,' ').trim().slice(0,60);
+    return 'Continued from '+(app?'a '+app+' session':'another agent app')+(who?' ('+who+')':'')+' in this folder. Its summary:';
+  }
   /* The kind select appears only when there is a real choice. */
   const showsKindPicker=adapters=>Array.isArray(adapters)&&adapters.filter(a=>a&&a.state==='ready').length>=2; /* spec 012 FR-136: only a real choice between ready harnesses */
   /* Is a control shown? A feature the adapter lacks is hidden, never shown disabled (SC-003). `modeList` takes the mode: shows(caps,'modeList','ask'). */
@@ -229,5 +242,5 @@
     return m.includes(cur)?cur:'read-only';
   }
 
-  return {modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
+  return {handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
 })());

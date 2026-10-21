@@ -5,9 +5,9 @@
  */
 import type { McpServerSpec } from '../shared/mcp';
 import type { McpServerStatus } from './types';
+import { isObj } from '../shared/guards';
 
 const NAME = /^[A-Za-z0-9_-]{1,64}$/;
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** `{mcp_servers: {...}}` for the thread `config`, or undefined when there is nothing to say. Disabled names get `enabled: false`. */
 export function codexMcpConfig(servers: Readonly<Record<string, McpServerSpec>> | undefined, disabled: readonly string[] = []): { mcp_servers: Record<string, Record<string, unknown>> } | undefined {

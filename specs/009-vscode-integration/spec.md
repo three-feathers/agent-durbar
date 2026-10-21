@@ -52,7 +52,7 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 - **FR-005** `[IMPLEMENTED]` test: Parsing is tolerant: append-log (`.jsonl`, VS Code 1.109+ format "version 3") and flat JSON; notes for unreadable lines, unknown part kinds, unknown/missing format versions and truncation; the format note is always shown.
 - **FR-006** `[IMPLEMENTED]` read: IPC `vschat:list` / `vschat:read` use opaque keys remembered per agent; the renderer never supplies a path.
 - **FR-007** `[IMPLEMENTED]` read: **Copy resume command** puts `copilot --resume <id>` on the clipboard and says to end the session here first and to switch on the VS Code sessions filter "External".
-- **FR-008** `[KNOWN GAP]` **README says Cursor is read too** ("also Insiders, VSCodium, Cursor") but the code lists only `Code`, `Code - Insiders`, `VSCodium` (`vscodeUserDirs`). Either the code or the README is wrong. `read:` (Task T020.)
+- **FR-008** ~~`[KNOWN GAP]`~~ closed 2026-10-21 (see Changes): **README says Cursor is read too** ("also Insiders, VSCodium, Cursor") but the code lists only `Code`, `Code - Insiders`, `VSCodium` (`vscodeUserDirs`). Either the code or the README is wrong. `read:` (Task T020.)
 - **FR-009** `[IMPLEMENTED]` (2026-10-19, FR-015) Was a known gap: "Open in VS Code" started only stable `code`; users with only VS Code Insiders or VSCodium get "VS Code was not found". `read:` (Task T021.)
 - **FR-010** `[KNOWN GAP]` Not covered: portable-mode VS Code data, Flatpak/Snap config locations, remote/WSL/Dev Container workspaces, VS Code profiles' separate stores, and empty-window chats. `read:`
 - **FR-011** `[KNOWN GAP]` The VS Code store format is **undocumented**; the reader follows VS Code sources and third-party readers and was only run on **synthetic fixtures** in `scripts/fixtures/vscode-fixture.ts`, never on a real store. It can break with any VS Code update (stated to the user in the UI). (Feature 013.)
@@ -108,3 +108,8 @@ README no longer says Cursor's chat history is read (the code lists only `Code`,
   
   Always one absolute path argument, no shell (except the guarded `.cmd` case). The result names the edition it used, and the "not found" message names all three. This closes FR-009.
 - `test:` `npm run test:vscode`: the plan for each edition on Linux, macOS and Windows (exe, app bundle, PATH, the guarded `.cmd`) with fake file systems, the order when several are installed, and the old stable cases unchanged. Not run with a real Insiders or VSCodium install; none is installed on the test machine.
+
+### 2026-10-21: known gaps revalidated
+
+- **FR-008** closed. The README no longer says Cursor is read (`grep -i cursor README.md`: no match). The code reads `Code`, `Code - Insiders` and `VSCodium`.
+- Still open, unchanged: FR-010..FR-014 (portable or Flatpak VS Code, the undocumented store format, sessions appearing in VS Code's list, window flags, the real `code` spawn on macOS and Windows).

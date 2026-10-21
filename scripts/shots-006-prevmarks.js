@@ -35,7 +35,9 @@ module.exports = async (ctx) => {
   };
   /* Escape from where the keyboard is: the focused item of the open menu */
   const escKey = () => js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`);
-  const openMore = async (key) => { await js(`document.querySelector('#prevLists .prev-row[data-pk="${key}"] .prev-more').click()`); await ctx.sleep(250); };
+  const openMore = async (key) => { await ctx.waitFor(`!!document.querySelector('#prevLists .prev-row[data-pk="${key}"] .prev-more')&&!document.getElementById('modeDlg')`, 8000); await js(`document.querySelector('#prevLists .prev-row[data-pk="${key}"] .prev-more').click()`); await ctx.waitFor(`!!document.querySelector('#modeMenu [data-pact]')`, 8000); };
+  /* a menu action, then (for Delete…) the confirmation dialog: waits for each instead of a fixed delay */
+  const pact = async (a) => { await js(`document.querySelector('#modeMenu [data-pact="${a}"]').click()`); if (a === 'delete') await ctx.waitFor(`!!document.querySelector('#modeDlg .dbtn .btn')`, 8000); else await ctx.waitFor(`!document.getElementById('modeMenu')`, 8000); await ctx.sleep(150); };
   const menuItems = () => js(`[...document.querySelectorAll('#modeMenu [data-pact]')].map(b=>b.querySelector('b').textContent)`);
   /* a row fits: its buttons are inside it, do not overlap, nothing wraps or scrolls sideways */
   const assertFit = async (label) => {
@@ -75,8 +77,8 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(await menuItems(), ['Pin to top', 'Hide', 'Delete…'], 'right-click opens the row menu');
       await escKey(); await ctx.sleep(150);
       // Pin the third and the VS Code chat: pinned rows come first in their group
-      await openMore('prev-3'); await js(`document.querySelector('#modeMenu [data-pact="pin"]').click()`); await ctx.sleep(250);
-      await openMore('h1/c2'); await js(`document.querySelector('#modeMenu [data-pact="pin"]').click()`); await ctx.sleep(250);
+      await openMore('prev-3'); await pact('pin');
+      await openMore('h1/c2'); await pact('pin');
       r = await rows();
       assert.deepStrictEqual(r.map((x) => x.k), ['prev-3', 'prev-1', 'prev-2', 'prev-4', 'h1/c2', 'h1/c1'], 'pinned first in each group');
       assert.ok(r[0].pin && r[4].pin && !r[1].pin, 'pin marks on the pinned rows only');
@@ -85,7 +87,7 @@ module.exports = async (ctx) => {
       const before = await js(`document.getElementById('prevBtn').textContent`);
       assert.strictEqual(before, 'Previous (6)');
       // Hide the fourth: it leaves the list, the count drops, Show hidden (1) appears, focus moves to the next row's ⋯
-      await openMore('prev-4'); await js(`document.querySelector('#modeMenu [data-pact="hide"]').click()`); await ctx.sleep(300);
+      await openMore('prev-4'); await pact('hide');
       r = await rows();
       assert.ok(!r.some((x) => x.k === 'prev-4'), 'hidden row is out');
       assert.strictEqual(await js(`document.getElementById('prevBtn').textContent`), 'Previous (5)');
@@ -102,13 +104,13 @@ module.exports = async (ctx) => {
       await escKey(); await ctx.sleep(150);
       await assertFit(L + ' hidden shown');
       // Delete…: the red confirmation, Cancel focused
-      await openMore('prev-2'); await js(`document.querySelector('#modeMenu [data-pact="delete"]').click()`); await ctx.sleep(300);
+      await openMore('prev-2'); await pact('delete');
       const dlg = await js(`({t:document.getElementById('mdT').textContent,b:document.getElementById('mdB').textContent,l:[...document.querySelectorAll('#mdL li')].map(x=>x.textContent),btn:[...document.querySelectorAll('#modeDlg .dbtn .btn')].map(x=>x.textContent+(x.className.includes('danger')?'*':'')),f:document.activeElement.textContent})`);
       assert.deepStrictEqual(dlg, { t: 'Delete this session?', b: '“Why does the canton lookup return duplicates?” will be deleted from GitHub Copilot on this computer.', l: ['It will also be gone from VS Code and the Copilot CLI, and it cannot be resumed again.', 'This cannot be undone. To only take it out of this list, use Hide.'], btn: ['Cancel', 'Delete*'], f: 'Cancel' }, 'delete confirmation');
       await shot('delete', w, h, level);
-      await js(`document.querySelector('#modeDlg [data-cancel]').click()`); await ctx.sleep(250);
+      await js(`document.querySelector('#modeDlg [data-cancel]').click()`); await ctx.waitFor(`!document.getElementById('modeDlg')`, 8000);
       assert.ok((await rows()).some((x) => x.k === 'prev-2'), 'Cancel keeps the row');
-      await openMore('prev-2'); await js(`document.querySelector('#modeMenu [data-pact="delete"]').click()`); await ctx.sleep(300);
+      await openMore('prev-2'); await pact('delete');
       await js(`[...document.querySelectorAll('#modeDlg .dbtn .btn')].find(x=>x.textContent==='Delete').click()`); await ctx.sleep(120);
       assert.ok(await js(`document.querySelector('#prevLists .prev-row[data-pk="prev-2"] .prev-more').getAttribute('aria-busy')==='true'`), 'busy state on the row while it runs');
       await ctx.waitFor(`!document.querySelector('#prevLists .prev-row[data-pk="prev-2"]')`, 4000);
@@ -119,13 +121,13 @@ module.exports = async (ctx) => {
     // the refusal for a session still in the office: with, and without, Remove from office
     for (const [variant, expectBtns, lines] of [['inoffice', ['Cancel', 'Go to session', 'Remove from office'], []], ['inoffice-solo', ['Cancel', 'Go to session'], ['It is the only session in this folder: start a new session there first.']]]) {
       await load(w, h, variant === 'inoffice' ? { simprev: variant } : { simprev: variant, simrooms: 'solo' }, 'expert');
-      await openMore('prev-1'); await js(`document.querySelector('#modeMenu [data-pact="delete"]').click()`); await ctx.sleep(300);
-      await js(`[...document.querySelectorAll('#modeDlg .dbtn .btn')].find(x=>x.textContent==='Delete').click()`); await ctx.sleep(900);
+      await openMore('prev-1'); await pact('delete');
+      await js(`[...document.querySelectorAll('#modeDlg .dbtn .btn')].find(x=>x.textContent==='Delete').click()`); await ctx.waitFor(`!!document.getElementById('mdT')&&document.getElementById('mdT').textContent==='This session is still in the office'`, 8000); await ctx.sleep(200);
       const d = await js(`({t:(document.getElementById('mdT')||{}).textContent,b:(document.getElementById('mdB')||{}).textContent,l:[...document.querySelectorAll('#mdL li')].map(x=>x.textContent),btn:[...document.querySelectorAll('#modeDlg .dbtn .btn')].map(x=>x.textContent)})`);
-      assert.deepStrictEqual(d, { t: 'This session is still in the office', b: 'This session is still in the office. End it and remove it from the office first.', l: lines, btn: expectBtns }, `refusal dialog (${variant})`);
+      assert.deepStrictEqual(d, { t: 'This session is still in the office', b: 'End it and remove it from the office first, then delete it here.', l: lines, btn: expectBtns }, `refusal dialog (${variant})`);
       assert.ok((await rows()).some((x) => x.k === 'prev-1'), 'the row stays');
       await shot(variant === 'inoffice' ? 'refused' : 'refused-only', w, h);
-      await js(`document.querySelector('#modeDlg [data-cancel]').click()`); await ctx.sleep(200);
+      await js(`document.querySelector('#modeDlg [data-cancel]').click()`); await ctx.waitFor(`!document.getElementById('modeDlg')`, 8000);
     }
     // an agent app with no delete: Delete… is shown disabled with the reason
     await load(w, h, { simkinds: 'mixed' }, 'expert'); // Ada is a Claude Code agent: no per-session delete

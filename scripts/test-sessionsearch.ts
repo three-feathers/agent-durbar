@@ -84,7 +84,7 @@ assert.strictEqual(visibleCount(null as unknown as unknown[], []), 0);
   assert.strictEqual(d.body, '\u201cFix the parser\u201d will be deleted from GitHub Copilot on this computer.');
   assert.deepStrictEqual(d.lines, ['It will also be gone from VS Code and the Copilot CLI, and it cannot be resumed again.', 'This cannot be undone. To only take it out of this list, use Hide.']);
   assert.deepStrictEqual(deleteDialogText({ title: 't', app: 'Codex', cli: 'Codex CLI', codex: true }).lines, ['It will also be gone from VS Code and the Codex CLI, and it cannot be resumed again.', 'Its helper threads are deleted too.', 'This cannot be undone. To only take it out of this list, use Hide.'], 'Codex only: helper threads, third in order');
-  assert.deepStrictEqual(refusalDialogText(true), { title: 'This session is still in the office', body: 'This session is still in the office. End it and remove it from the office first.', lines: [] });
+  assert.deepStrictEqual(refusalDialogText(true), { title: 'This session is still in the office', body: 'End it and remove it from the office first, then delete it here.', lines: [] });
   assert.deepStrictEqual(refusalDialogText(false).lines, ['It is the only session in this folder: start a new session there first.']);
   assert.strictEqual(noDeleteReason('Claude Code'), 'Claude Code cannot delete one session. Hide it instead.');
 }
