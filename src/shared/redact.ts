@@ -464,7 +464,7 @@ function maskCommandImpl(command: unknown, envIn: Env | undefined, cap: boolean)
 }
 
 /**
- * TEST ONLY (scripts/test-redact.ts, scripts/test-mcp-tools.ts): the same rules as the public functions without the `MASK_INPUT_MAX` cap, so the
+ * TEST ONLY (scripts/test-redact.ts): the same rules as the public functions without the `MASK_INPUT_MAX` cap, so the
  * linearity and cost rows measure the rule path and not the cap. Nothing under `src/` may use it.
  */
 export const _uncappedForTest = {

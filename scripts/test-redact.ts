@@ -1,5 +1,7 @@
 /** Unit test for secret redaction and the debug sink (spec 012 T051): `npm run test:runtime`. */
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Worker } from 'worker_threads';
 import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, splitCommand } from '../src/shared/redact';
 
@@ -751,6 +753,26 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.ok(!/[\ud800-\udbff] \[truncated\]$/.test(emoji) && !/[\ud800-\udbff]$/.test(emoji.slice(0, -12)), 'no lone surrogate');
   const emoji2 = cut('a'.repeat(4095) + '\u{1F600}', 4096);
   assert.ok(!/[\ud800-\udbff]/.test(emoji2), 'no lone surrogate (4095 a + emoji)');
+}
+
+// 16. guard: the test-only uncapped entry is used by tests only (nothing under src/ except its own file)
+{
+  const root = path.join(__dirname, '..', '..'); // compiled: dist/scripts -> repo root
+  const srcRoot = fs.existsSync(path.join(root, 'src')) ? root : path.join(__dirname, '..'); // run with tsx: scripts -> repo root
+  assert.ok(fs.existsSync(path.join(srcRoot, 'src', 'shared', 'redact.ts')), 'guard found src/');
+  const offenders: string[] = [];
+  const walk = (dir: string): void => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!/\.(?:ts|js|mjs|cjs|html)$/.test(e.name)) continue;
+      const rel = path.relative(srcRoot, p).split(path.sep).join('/');
+      if (rel === 'src/shared/redact.ts') continue;
+      if (fs.readFileSync(p, 'utf8').includes('_uncappedForTest')) offenders.push(rel);
+    }
+  };
+  walk(path.join(srcRoot, 'src'));
+  assert.deepStrictEqual(offenders, [], 'used in: ' + offenders.join(', '));
 }
 
 console.log('redact: all checks passed');
