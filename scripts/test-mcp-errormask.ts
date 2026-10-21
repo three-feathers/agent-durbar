@@ -1,6 +1,6 @@
 /** Unit test: MCP server error text is masked before it reaches the window (spec 019 FR-021). */
 import * as assert from 'assert';
-import { maskMcpError, maskMcpEvent, maskMcpStatuses, mcpSecretValues, MCP_ERROR_MAX_CHARS } from '../src/main/mcpmask';
+import { MCP_CARD_MAX_CHARS, maskMcpHistory, maskMcpError, maskMcpEvent, maskMcpText, maskMcpStatuses, mcpSecretValues, MCP_ERROR_MAX_CHARS } from '../src/main/mcpmask';
 import type { AgentEvent } from '../src/adapters/types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -69,5 +69,67 @@ assert.strictEqual(maskMcpError(undefined), undefined);
   assert.ok(sends.length >= 1 && sends.every((x) => x.includes('outward(')), `agent:event to the window goes through outward(): ${sends.join(' | ')}`);
   const sink = main.match(/write\(\{ t: Date\.now\(\), event: [^}]*\}/g) ?? [];
   assert.ok(sink.length === 1 && sink[0].includes('outward('), `the DURBAR_LOG sink writes outward(e): ${sink.join(' | ')}`);
+}
+// spec 058 FR-067: a failed MCP tool card is masked (session values, token shapes, URL keys), with no 300-character cut
+{
+  const HDR = 'hdr-secret-value-77';
+  const card = (over: Record<string, unknown>): AgentEvent => ({ type: 'toolCall', sessionId: 's1', timestamp: 1, callId: 'c1', tool: 'srv-search', phase: 'failed', mcpServer: 'srv', mcpTool: 'search', ...over }) as unknown as AgentEvent;
+  const long = 'detail line. '.repeat(60); // 780 characters
+  const out = maskMcpEvent(card({ output: `${long}X-Api-Key: ${HDR} token ${GH} GET https://api.example.com/mcp?key=sekretvalue99&x=1` }), [HDR]) as unknown as { output: string };
+  assert.ok(!out.output.includes(HDR) && !out.output.includes(GH) && !out.output.includes('sekretvalue99'), `card output masked: ${out.output.slice(-120)}`);
+  assert.ok(out.output.startsWith(long), 'no 300-character cut on the card');
+  assert.strictEqual(maskMcpText(undefined), undefined);
+  assert.strictEqual(maskMcpText('x'.repeat(1000)), 'x'.repeat(1000));
+  // only a FAILED call that names an MCP server
+  for (const e of [card({ mcpServer: undefined, output: HDR }), card({ output: undefined })]) assert.strictEqual(maskMcpEvent(e, [HDR]), e, 'other tool events pass through as the same object');
+  // a streaming update of an MCP tool is masked too
+  const upd = maskMcpEvent(card({ phase: 'update', output: `got ${GH}` }), []) as unknown as { output: string };
+  assert.ok(!upd.output.includes(GH), 'update output masked');
+  // 1 MB of URL-like text: cut to the card limit before the pattern masks, so it stays fast
+  {
+    maskMcpEvent(card({ output: '?a=&'.repeat(25_000) }), [HDR]); // warm the regexes
+    const t0 = Date.now();
+    const big = maskMcpEvent(card({ output: '?a=&'.repeat(250_000) }), [HDR]) as unknown as { output: string };
+    // the old order took ~700 ms; ~20-170 ms now depending on machine load, so 400 ms still catches the slow path without flaking
+    assert.ok(Date.now() - t0 < 400, `1 MB output masked in ${Date.now() - t0} ms`);
+    assert.ok(big.output.length <= MCP_CARD_MAX_CHARS + 20, 'cut to the card limit');
+    const sec = maskMcpEvent(card({ output: 'w '.repeat(30_000) + 'k=' + HDR + ' ' + GH }), [HDR]) as unknown as { output: string };
+    assert.ok(!sec.output.includes(HDR) && !sec.output.includes('ghp_'), 'a secret past the cut leaves nothing');
+  }
+  // an env value with non-token characters that straddles the cut leaves no head (redact runs on the whole text, then the cut)
+  {
+    const PW = 'hunter2!Secret#Part2,End';
+    process.env.DURBAR_PROBE_PASSWORD = PW;
+    try {
+      const txt = 'w '.repeat((MCP_CARD_MAX_CHARS - 15) / 2) + PW + ' tail ' + 'z '.repeat(100);
+      const o = maskMcpText(txt, [], MCP_CARD_MAX_CHARS) as string;
+      for (let n = 4; n <= PW.length; n++) assert.ok(!o.includes(PW.slice(0, n)), `no ${n}-character prefix of the straddling secret remains`);
+      const o2 = maskMcpText(txt, [PW], MCP_CARD_MAX_CHARS) as string;
+      assert.ok(!o2.includes('hunter2'), 'a session value straddling the cut leaves no head either');
+    } finally {
+      delete process.env.DURBAR_PROBE_PASSWORD;
+    }
+  }
+  // review on #466 (Vikram): a completed MCP card is masked too, not only failed/updating ones
+  { const c = maskMcpEvent(card({ phase: 'complete', output: 'x ' + HDR + ' y' }), [HDR]) as { output?: string }; assert.ok(c.output && !c.output.includes(HDR), 'completed MCP card output masked'); }
+  // replayed history: failed tool output is masked, the rest is the same object
+  {
+    const ok = { type: 'tool' as const, callId: 'a', tool: 't', label: 'l', output: HDR, failed: false };
+    const bad = { type: 'tool' as const, callId: 'b', tool: 't', label: 'l', output: `401 ${HDR} ${GH}`, failed: true };
+    const txt = { type: 'output' as const, text: HDR };
+    const h = maskMcpHistory({ items: [ok, bad, txt], total: 3, truncated: false }, [HDR]);
+    assert.strictEqual(h.items[0], ok); assert.strictEqual(h.items[2], txt);
+    assert.ok(!(h.items[1] as { output: string }).output.includes(HDR) && !(h.items[1] as { output: string }).output.includes('ghp_'), 'failed history output masked');
+    assert.ok(h.total === 3 && h.truncated === false);
+  }
+  // wiring: both resume replies send masked history
+  for (const f of ['agents.ts', 'previous.ts']) {
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', f), 'utf8');
+    assert.ok(/history = maskHistory\(.*historyOf\(/.test(src), `${f}: history goes through maskHistory`);
+  }
+  // wiring: main fetches the session's values for every MCP tool card after its start
+  const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+  const line = main.split('\n').find((l) => l.startsWith('const outward = ')) ?? '';
+  assert.ok(line.includes("'toolCall'") && line.includes("e.phase !== 'start'") && line.includes('mcpServer') && line.includes('secretValuesFor'), `outward() passes the session values for failed MCP tool cards: ${line}`);
 }
 console.log('mcp error mask: planted secrets, normal text, mask-then-cut, session values, event copy OK');

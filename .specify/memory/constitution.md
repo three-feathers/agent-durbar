@@ -2,7 +2,19 @@
 
 <!--
 Sync Impact Report
-Version change: 1.0.0 -> 1.1.0 (MINOR: a rule added to principle III), 2026-10-20, Amendment 1
+Version change: 1.1.0 -> 1.1.1 (PATCH: wording; no principle or rule added, removed or redefined), 2026-10-21, Amendment 2
+Modified sections: Additional Constraints: "Personal project of Vikram Gorla under his personal GitHub account; no org
+  infrastructure or credentials are used" is replaced by the project's current facts: a Three Feathers project (GitHub
+  organization `three-feathers`), built by a small team (vikramgorla, fjcabello and rubenlupi) with their coding agents.
+  Reason: the owner's request (Vikram Gorla, maintainer, 2026-10-21). The old line was no longer true (the repository,
+  board and app id are under the organization). Who maintains the project, CODEOWNERS and every governance power are
+  unchanged.
+Templates reviewed: plan, spec, tasks and checklist templates, AGENTS.md, CLAUDE.md, .github/copilot-instructions.md,
+  README.md, CONTRIBUTING.md, SECURITY.md, docs/, src/shared/about.ts, package.json (no other personal-project wording;
+  no edit needed)
+Follow-ups: none
+
+Previous: Version change: 1.0.0 -> 1.1.0 (MINOR: a rule added to principle III), 2026-10-20, Amendment 1
 Modified principles: III Safe by default: a folder's own agent setup (MCP servers, hooks, permission rules) applies after the
   user has seen it listed, unless turned off; the UI says plainly that hooks and allow rules act without asking.
   Reason: the owner's decision on issue #289 (transparency, not restriction; spec 061).
@@ -142,7 +154,8 @@ A change is done only when:
 - Releases: tag-triggered, built by GitHub Actions into a **draft** pre-release; the owner publishes by hand.
   Actions are pinned by commit SHA.
 - License MIT; contributions are MIT.
-- Personal project of Vikram Gorla under his personal GitHub account; no org infrastructure or credentials are used.
+- Agent Durbar is a Three Feathers project (GitHub organization `three-feathers`), built by a small team (vikramgorla,
+  fjcabello and rubenlupi, as credited in `src/shared/about.ts`) with their coding agents.
 
 ## Development Workflow
 
@@ -163,4 +176,4 @@ request that states the reason and bumps the version (MAJOR: a principle removed
 added; PATCH: wording). Every plan's Constitution Check and every pull request review verifies compliance; a violation
 needs a written, time-boxed justification in the plan's Complexity Tracking table.
 
-**Version**: 1.1.0 | **Ratified**: 2026-10-16 | **Last Amended**: 2026-10-20
+**Version**: 1.1.1 | **Ratified**: 2026-10-16 | **Last Amended**: 2026-10-21

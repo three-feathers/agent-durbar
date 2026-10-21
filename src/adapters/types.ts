@@ -4,6 +4,7 @@
  * Every adapter translates its native protocol into the normalized events below.
  */
 
+import type { FolderSetupStart } from '../shared/foldersetup';
 import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit';
 import type { McpServerSpec } from '../shared/mcp';
 import type { CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
@@ -59,6 +60,8 @@ export interface StartOptions {
   ask?: boolean;
   /** Do not emit the "Ready" status when the session is up (used when starting it for a message that is about to be sent). */
   quiet?: boolean;
+  /** Spec 061 FR-004: the folder's own hooks and permission rules the person accepted, for this agent app. Never logged. */
+  folderSetup?: FolderSetupStart;
   /** MCP servers (global Settings, spec 019) handed to this session, by name. Never logged: env/headers may hold secrets. */
   mcpServers?: Record<string, McpServerSpec>;
   /** Exact MCP server names that must not start in this session (also switches off servers the runtime loads by itself). */
@@ -173,6 +176,8 @@ export interface ToolCallEvent extends BaseEvent {
   /** Set when the tool belongs to an MCP server: the server's configured name and the tool's own name there. */
   mcpServer?: string;
   mcpTool?: string;
+  /** Spec 058 FR-063: this failed MCP tool call needs the user to sign in to `mcpServer` (set by the adapter, never carries vendor text). Only on `phase: 'failed'` with `mcpServer`. */
+  mcpAuth?: true;
 }
 
 export interface SubagentEvent extends BaseEvent {
@@ -252,6 +257,9 @@ export interface CompactionEvent extends BaseEvent {
   error?: string;
 }
 
+/** Result of `startMcpSignIn` (spec 058 FR-064). */
+export type McpSignInResult = { kind: 'browser'; url: string } | { kind: 'connected' };
+
 export interface McpServerStatus {
   name: string;
   /** connected | failed | needs-auth | pending | disabled | stopped | not_configured */
@@ -260,6 +268,8 @@ export interface McpServerStatus {
   source?: string;
   transport?: string;
   error?: string;
+  /** Spec 058 FR-011: normalized kind of failure, set by the adapter only when the vendor says so; missing = not said. */
+  errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config';
 }
 
 /** The MCP servers of a session and their state (full list; a new event replaces the previous one). */
@@ -490,6 +500,14 @@ export interface AgentAdapter {
   selectAgentProfile?(sessionId: string, id: string | null): Promise<AgentProfile | null>;
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */
   setMcpEnabled?(sessionId: string, name: string, enabled: boolean): Promise<void>;
+  /**
+   * Spec 058 FR-064: start the agent app's own sign-in for one MCP server of a running session. Optional (`capabilities.mcpSignIn`).
+   * `browser`: the user finishes in the browser at `url` (main keeps it, the window only gets the host); `connected`: already signed in.
+   * Rejects when the runtime has no such call or refuses it (the UI then shows `capabilities.mcpSignInSteps`).
+   */
+  startMcpSignIn?(sessionId: string, name: string): Promise<McpSignInResult>;
+  /** Spec 058 FR-064: stop a sign-in started by `startMcpSignIn` where the runtime can. Optional, only with `startMcpSignIn`. */
+  cancelMcpSignIn?(sessionId: string, name: string): Promise<void>;
   /** Change the model, effort or context tier of a live session; applies from the next message (spec 030). Optional: adapters that cannot omit it and the UI offers a new session instead. */
   setModel?(sessionId: string, request: ModelSwitchRequest): Promise<ModelSwitchResult>;
   /** Remove a switch the runtime queued while a turn was running (`queueId` from a `queued` result). Optional. */

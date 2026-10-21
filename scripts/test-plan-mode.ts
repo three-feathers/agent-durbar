@@ -127,9 +127,9 @@ async function main(): Promise<void> {
 
   // ---- main (FR-007): the answer IPC is window-only and plan-first needs the capability ----
   {
-    const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8').replace(/\r\n/g, '\n'); // Windows checkouts have CRLF
-    assert.match(main, /ipcHandle\('agents:resolvePlan', async \(e, id: unknown, requestId: unknown, answer: unknown\) => \{\n  if \(!fromApp\(e\)\) return/, 'only Durbar\'s own window answers a plan');
-    assert.match(main, /if \(plan && \(!fromApp\(e\) \|\| !ad\.capabilities\.planMode\)\)/, 'plan first only from the window, only with planMode');
+    const ipc = (f: string): string => fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', f), 'utf8').replace(/\r\n/g, '\n'); // Windows checkouts have CRLF; the handlers moved out of main.ts (spec 045 FR-060)
+    assert.match(ipc('questions.ts'), /ipcHandle\('agents:resolvePlan', async \(e, id: unknown, requestId: unknown, answer: unknown\) => \{\n\s+if \(!fromApp\(e\)\) return/, 'only Durbar\'s own window answers a plan');
+    assert.match(ipc('agents.ts'), /if \(plan && \(!fromApp\(e\) \|\| !ad\.capabilities\.planMode\)\)/, 'plan first only from the window, only with planMode');
   }
   fs.rmSync(ws, { recursive: true, force: true });
   console.log('plan mode: helpers, guard, Copilot (approve/revise/reject/stop), Codex (plan turn, approve), window-only IPC OK');

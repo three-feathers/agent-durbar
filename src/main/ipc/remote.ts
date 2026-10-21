@@ -1,0 +1,60 @@
+/** IPC for remote control of a live session (Copilot: github.com and GitHub Mobile): the confirmation, the events that end it, and the two handlers (spec 054 FR-003..FR-005, FR-011, FR-062; moved out of main.ts as it was, spec 045 FR-060). */
+import { BrowserWindow, dialog, shell } from 'electron';
+import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
+import type { AdapterRouter } from '../../adapters/router';
+import type { AgentInfo } from '../../shared/api';
+import type { ActivityDecision } from '../../shared/activity';
+import { createRemoteOps } from '../remoteops';
+
+export interface RemoteIpcDeps {
+  agents: Map<string, AgentInfo>;
+  router: AdapterRouter;
+  toRenderer(channel: string, payload: unknown): void;
+  getWin(): BrowserWindow | undefined;
+  logActivity(a: AgentInfo, decision: ActivityDecision, action: string): void;
+}
+
+/** Registers the handlers and returns the remote-control operations the rest of main uses (end a session, quit, sign-in). */
+export function register(deps: RemoteIpcDeps): ReturnType<typeof createRemoteOps> {
+  const { agents, router, toRenderer, logActivity } = deps;
+  // Spec 054 FR-003..FR-005: remote control of a live session (Copilot: github.com and GitHub Mobile). Validated in remoteops.ts; nothing is logged.
+  const remoteOps = createRemoteOps({
+    known: (id) => agents.has(id),
+    adapterOf: (id) => router.forAgent(id),
+    open: (url) => shell.openExternal(url),
+    modeOf: (id) => agents.get(id)?.permMode,
+    // FR-011: a native confirmation the page cannot answer (Cancel is the default), like harness setup's (spec 051 FR-004b)
+    confirm: async (id) => {
+      const a = agents.get(id);
+      const opts = {
+        type: 'warning' as const, buttons: ['Cancel', 'Turn on remote control'], defaultId: 0, cancelId: 0, noLink: true, title: 'Agent Durbar',
+        message: `Control ${a?.label || a?.name || 'this session'} from GitHub?`,
+        detail: 'Its messages are sent to GitHub, so it can be followed and steered from github.com and GitHub Mobile. Anyone who can see the session on GitHub can steer it.\n\nOnly continue if you started this in Durbar.',
+      };
+      const win = deps.getWin();
+      const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+      return r.response === 1;
+    },
+    record: (id, on) => {
+      const a = agents.get(id);
+      if (a) logActivity(a, on ? 'remote-on' : 'remote-off', on ? 'Remote control from GitHub turned on' : 'Remote control from GitHub turned off');
+    },
+  });
+  router.onEvent((e) => {
+    if (e.type === 'status' && e.status === 'stopped' && !e.agentId) remoteOps.forget(e.sessionId);
+  });
+  // spec 054 FR-062: the adapter says remote control ended on its own (for example a relaunch could not turn it back on)
+  router.onEvent((e) => {
+    if (e.type !== 'remote' || e.agentId) return;
+    if (e.on) {
+      const url = remoteOps.updateUrl(e.sessionId, e.url);
+      if (url) toRenderer('agents:remoteUrl', { id: e.sessionId, url });
+      return;
+    }
+    remoteOps.forget(e.sessionId);
+    toRenderer('agents:remoteOff', { id: e.sessionId, ...(e.reason ? { reason: e.reason } : {}) });
+  });
+  ipcHandle('agents:setRemote', (e, id: unknown, on: unknown) => (fromApp(e) ? remoteOps.setRemote(id, on) : { ok: false, error: 'invalid request' }));
+  ipcHandle('agents:openRemote', (e, id: unknown) => (fromApp(e) ? remoteOps.openRemote(id) : { ok: false }));
+  return remoteOps;
+}
