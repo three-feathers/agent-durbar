@@ -49,11 +49,11 @@ export function maskMcpStatuses(servers: readonly McpServerStatus[], values: rea
 
 /**
  * Spec 019 FR-022: the copy of an event that may leave main (window, debug sink): an `mcp` event with its errors masked; any other event
- * unchanged (same object). Spec 058 FR-067: a failed or updating `toolCall` that names an `mcpServer` has its `output` masked too, cut to `MCP_CARD_MAX_CHARS`.
+ * unchanged (same object). Spec 058 FR-067: every `toolCall` (update, complete or failed) that names an `mcpServer` has its `output` masked too, cut to `MCP_CARD_MAX_CHARS`.
  */
 export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string[] = []): E {
   if (e.type === 'mcp') return { ...e, servers: maskMcpStatuses(e.servers, values) };
-  if (e.type === 'toolCall' && (e.phase === 'failed' || e.phase === 'update') && e.mcpServer && e.output !== undefined) return { ...e, output: maskMcpText(e.output, values, MCP_CARD_MAX_CHARS) };
+  if (e.type === 'toolCall' && e.phase !== 'start' && e.mcpServer && e.output !== undefined) return { ...e, output: maskMcpText(e.output, values, MCP_CARD_MAX_CHARS) };
   return e;
 }
 

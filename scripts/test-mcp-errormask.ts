@@ -81,15 +81,17 @@ assert.strictEqual(maskMcpError(undefined), undefined);
   assert.strictEqual(maskMcpText(undefined), undefined);
   assert.strictEqual(maskMcpText('x'.repeat(1000)), 'x'.repeat(1000));
   // only a FAILED call that names an MCP server
-  for (const e of [card({ phase: 'complete', output: HDR }), card({ mcpServer: undefined, output: HDR }), card({ output: undefined })]) assert.strictEqual(maskMcpEvent(e, [HDR]), e, 'other tool events pass through as the same object');
+  for (const e of [card({ mcpServer: undefined, output: HDR }), card({ output: undefined })]) assert.strictEqual(maskMcpEvent(e, [HDR]), e, 'other tool events pass through as the same object');
   // a streaming update of an MCP tool is masked too
   const upd = maskMcpEvent(card({ phase: 'update', output: `got ${GH}` }), []) as unknown as { output: string };
   assert.ok(!upd.output.includes(GH), 'update output masked');
   // 1 MB of URL-like text: cut to the card limit before the pattern masks, so it stays fast
   {
+    maskMcpEvent(card({ output: '?a=&'.repeat(25_000) }), [HDR]); // warm the regexes
     const t0 = Date.now();
     const big = maskMcpEvent(card({ output: '?a=&'.repeat(250_000) }), [HDR]) as unknown as { output: string };
-    assert.ok(Date.now() - t0 < 150, `1 MB output masked in ${Date.now() - t0} ms`);
+    // the old order took ~700 ms; ~20-170 ms now depending on machine load, so 400 ms still catches the slow path without flaking
+    assert.ok(Date.now() - t0 < 400, `1 MB output masked in ${Date.now() - t0} ms`);
     assert.ok(big.output.length <= MCP_CARD_MAX_CHARS + 20, 'cut to the card limit');
     const sec = maskMcpEvent(card({ output: 'w '.repeat(30_000) + 'k=' + HDR + ' ' + GH }), [HDR]) as unknown as { output: string };
     assert.ok(!sec.output.includes(HDR) && !sec.output.includes('ghp_'), 'a secret past the cut leaves nothing');
@@ -108,6 +110,8 @@ assert.strictEqual(maskMcpError(undefined), undefined);
       delete process.env.DURBAR_PROBE_PASSWORD;
     }
   }
+  // review on #466 (Vikram): a completed MCP card is masked too, not only failed/updating ones
+  { const c = maskMcpEvent(card({ phase: 'complete', output: 'x ' + HDR + ' y' }), [HDR]) as { output?: string }; assert.ok(c.output && !c.output.includes(HDR), 'completed MCP card output masked'); }
   // replayed history: failed tool output is masked, the rest is the same object
   {
     const ok = { type: 'tool' as const, callId: 'a', tool: 't', label: 'l', output: HDR, failed: false };
@@ -123,9 +127,9 @@ assert.strictEqual(maskMcpError(undefined), undefined);
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', f), 'utf8');
     assert.ok(/history = maskHistory\(.*historyOf\(/.test(src), `${f}: history goes through maskHistory`);
   }
-  // wiring: main fetches the session's values for a failed MCP tool card
+  // wiring: main fetches the session's values for every MCP tool card after its start
   const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
   const line = main.split('\n').find((l) => l.startsWith('const outward = ')) ?? '';
-  assert.ok(line.includes("'toolCall'") && line.includes("'update'") && line.includes('mcpServer') && line.includes('secretValuesFor'), `outward() passes the session values for failed MCP tool cards: ${line}`);
+  assert.ok(line.includes("'toolCall'") && line.includes("e.phase !== 'start'") && line.includes('mcpServer') && line.includes('secretValuesFor'), `outward() passes the session values for failed MCP tool cards: ${line}`);
 }
 console.log('mcp error mask: planted secrets, normal text, mask-then-cut, session values, event copy OK');
