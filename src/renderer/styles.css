@@ -462,11 +462,11 @@ body:has(#aiTryBar) #toasts{bottom:100px}
   .topbar{padding:4px 14px;gap:6px 8px}
   .stat{padding:0 9px 0 8px}
 }
-/* spec 052 FR-105 (round 11): the one row fits by width, measured with DejaVu Sans (the widest font, CI's). Below 1920px (FR-162; 1800px before) the
+/* spec 052 FR-105 (round 11): the one row fits by width, measured with DejaVu Sans (the widest font, CI's). Below 1920px (FR-164; 1800px before) the
    counters show the dot and the number (the words stay in each title and label); below 1600px Needs you shows its icon and
    number; below 1440px the defaults chip, the segmented buttons, the folder filter and the gaps are a little narrower, so the
    row fits at 1280 with floors and several agent apps. The chip's full text is in its title and label. */
-@media (max-width:1919px){ /* FR-162: was 1799px (and 6px/5px padding), room for + Folder and + Workspace */
+@media (max-width:1919px){ /* FR-164: was 1799px (and 6px/5px padding), room for + Folder and + Workspace */
   .stats>.stat:not(.stat-aiu) span.l{display:none}
   .stats>.stat:not(.stat-aiu){padding:0 4px 0 3px}
   .topbar #defaultsBtn{max-width:200px}
@@ -475,7 +475,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
   .inbox-btn .ib-word{display:none}
   .inbox-btn{padding:0 10px}
 }
-/* spec 052 FR-162: room for + Folder and + Workspace (measured in DejaVu Sans, CI's font): a narrower defaults chip (its full text is in its
+/* spec 052 FR-164: room for + Folder and + Workspace (measured in DejaVu Sans, CI's font): a narrower defaults chip (its full text is in its
    title and label). Where the row still does not fit, app.js (fitTopbar) sets .tb-tight: the brand keeps its mark and its Live/Demo pill
    and the name moves to screen readers only (it is also the window's name) */
 .topbar.tb-tight .brand h1{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -1126,6 +1126,10 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .answer-bar .ab-act{display:flex;gap:6px;flex-wrap:wrap}
 .answer-bar .btn{height:var(--h-ctl)} /* spec 052 FR-076 */
 .answer-bar .btn.ghost{background:transparent;border-color:transparent;text-decoration:underline;color:var(--ink-2)}
+/* spec 052 FR-162: a short question is answered from the bar: its options, an "Other answer" box and Skip */
+.answer-bar .ab-q .tag{font-size:11px;margin-right:2px}
+.answer-bar .btn.ab-opt{background:var(--surface);font-weight:600;max-width:100%;white-space:normal;height:auto;min-height:var(--h-ctl);overflow-wrap:anywhere}
+.answer-bar .ab-other{box-sizing:border-box;height:var(--h-ctl);width:170px;min-width:120px;flex:1 1 150px;border:1px solid var(--line-ctl);border-radius:9px;padding:0 9px;font:inherit;font-size:12px;background:var(--surface);color:var(--ink)}
 
 /* spec 052 FR-015: a notice strip under the top bar (it takes its own room; the office lays out below it) */
 .notice-strip{flex:none;display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:1px 20px;background:var(--warn-bg);border-bottom:1px solid #e5be78;color:var(--ink);font-size:12px;line-height:1.35}
@@ -1150,7 +1154,7 @@ html:not([data-ui]) .seg button{border-radius:6px}
 
 /* spec 052 #308: the top bar in clusters: create, the defaults for new sessions (one quiet group), view; the rest under ⋯ */
 #liveBar{gap:8px}
-/* spec 052 FR-162: + Folder and + Workspace, two labelled buttons at the left end (they replace FR-105's "+ New" menu); the defaults are one chip with a small popover */
+/* spec 052 FR-164: + Folder and + Workspace, two labelled buttons at the left end (they replace FR-105's "+ New" menu); the defaults are one chip with a small popover */
 .top-add{display:flex;align-items:center;gap:4px}
 #defaultsBtn{display:inline-flex;align-items:center;gap:6px;max-width:240px}
 #defaultsBtn .dv{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1442,7 +1446,7 @@ html[data-platform="darwin"] .notice-strip:not([hidden]) ~ .workspace .strip{pad
    Office button below it never reaches into the 78x40 box. */
 html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}
 @media (max-width:1320px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}
-/* spec 052 FR-162: on a Mac the traffic lights take 58px more, so the counters keep their words only from 2040px and the defaults chip is
+/* spec 052 FR-164: on a Mac the traffic lights take 58px more, so the counters keep their words only from 2040px and the defaults chip is
    narrower from 1600 to 1799px (the brand name gives way by measurement, .tb-tight) */
 @media (max-width:2039px){html[data-platform="darwin"]:not([data-fullscreen]) .stats>.stat:not(.stat-aiu) span.l{display:none}}
 @media (min-width:1600px) and (max-width:1799px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar #defaultsBtn{max-width:140px}}

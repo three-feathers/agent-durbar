@@ -12,7 +12,7 @@ const KEYS=window.DurbarKeys;
 const IS_MAC=KEYS.isMac(navigator.platform);
 const keyText=parts=>KEYS.keyText(parts,IS_MAC), keyLabels=parts=>KEYS.keyLabels(parts,IS_MAC), ariaKeys=parts=>KEYS.ariaKeys(parts,IS_MAC);
 const INBOX_KEY=keyText(['mod','shift','A']), NEXT_KEY=keyText(['mod','shift','N']), PAL_KEY=keyText(['mod','K']);
-const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-162: + Folder, + Workspace (the Mac File menu has the same keys) */
+const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-164: + Folder, + Workspace (the Mac File menu has the same keys) */
 /* spec 052 FR-085: the window's platform from the preload (the Mac title bar styles are gated on html[data-platform="darwin"]) */
 if(window.agentDurbar&&window.agentDurbar.platform==='darwin')document.documentElement.dataset.platform='darwin';
 /* the keys written in index.html are the Windows/Linux ones: rewrite them for a Mac */
@@ -838,7 +838,7 @@ const EMPTY_DESK='<svg class="empty-desk" viewBox="0 0 120 72" aria-hidden="true
   +'<rect x="24" y="22" width="30" height="30" rx="9" fill="currentColor" stroke="none" opacity=".14"/>'
   +'<rect x="70" y="14" width="38" height="27" rx="3.5"/><rect x="74" y="18" width="30" height="19" rx="2" fill="currentColor" stroke="none" opacity=".1"/>'
   +'<path d="M89 41v7M81 49h16"/><path d="M8 52h104" stroke-width="3.5"/><rect x="13" y="54" width="94" height="14" rx="3" fill="currentColor" stroke="none" opacity=".1"/></svg>';
-/* spec 052 FR-070: when the first-run card shows, "+ Folder" (FR-162) in the top bar rings once (CSS pseudo-element, opacity and scale).
+/* spec 052 FR-070: when the first-run card shows, "+ Folder" (FR-164) in the top bar rings once (CSS pseudo-element, opacity and scale).
    It waits 600ms and checks the card is still there, so a start that loads agents a moment later does not ring. */
 function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFolder'),st=$('stage');if(!b||!st||!st.querySelector('.welcome')||!b.getClientRects().length)return;
   b.classList.remove('ring-once');void b.offsetWidth;b.classList.add('ring-once');setTimeout(()=>b.classList.remove('ring-once'),1600);},600);}
@@ -891,7 +891,7 @@ function fitUsage(root){
   }
 }
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{const s=document.getElementById('stage');if(s)fitUsage(s);}).catch(()=>{});
-/* spec 052 FR-162: the top bar is one row. When its parts do not fit (a narrow window, a wide theme or system font, the Mac traffic
+/* spec 052 FR-164: the top bar is one row. When its parts do not fit (a narrow window, a wide theme or system font, the Mac traffic
    lights), the brand name moves to screen readers only (the mark and the Live/Demo pill stay; the name is also the window's and the Mac
    menu bar's). Measured, not guessed by width: the class is removed, the row measured, and set again only if the parts still wrap. */
 function fitTopbar(){
@@ -1206,32 +1206,58 @@ function wireAnswerBar(a){
   if(answerObs){answerObs.m.disconnect();answerObs.i.disconnect();answerObs=null;}
   const bar=$('answerBar'), chat=$('chat'); if(!bar||!chat)return;
   let card=null, cardVisible=true;
-  /* in view = at least 60% of the card inside the chat's box; recomputed on scroll and on every change (plain geometry, no observer timing) */
-  const inView=()=>{if(!card||!card.isConnected)return true;const c=chat.getBoundingClientRect(),r=card.getBoundingClientRect();if(!r.height)return true;const vis=Math.min(r.bottom,c.bottom)-Math.max(r.top,c.top);return vis>=0.6*Math.min(r.height,c.height);};
+  /* in view = at least 60% of the card inside the chat's box; recomputed on scroll and on every change (plain geometry, no observer timing).
+     spec 052 FR-162: a card with no height (inside something folded or hidden) is not in view, so the bar shows it. */
+  const inView=()=>{if(!card||!card.isConnected)return true;const c=chat.getBoundingClientRect();if(!c.height)return true;const r=card.getBoundingClientRect();if(!r.height)return false;const vis=Math.min(r.bottom,c.bottom)-Math.max(r.top,c.top);return vis>=0.6*Math.min(r.height,c.height);};
   let raf=0;const recheck=()=>{if(raf)return;raf=requestAnimationFrame(()=>{raf=0;const v=inView();if(v!==cardVisible){cardVisible=v;paint();}});};
-  chat.addEventListener('scroll',recheck,{passive:true});
-  const io={observe(){},unobserve(){},disconnect(){chat.removeEventListener('scroll',recheck);}};
+  chat.addEventListener('scroll',recheck,{passive:true});window.addEventListener('resize',recheck);
+  const io={observe(){},unobserve(){},disconnect(){chat.removeEventListener('scroll',recheck);window.removeEventListener('resize',recheck);}};
   /* FR-016: the oldest waiting request first, and how many there are */
   const waiting=()=>[...chat.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));
   const pending=()=>waiting()[0]||null;
   const textOf=requestText;
   /* FR-016: to the request itself, not to its Approve button (an Enter right after must not approve) */
   const show=()=>{if(!card)return;card.scrollIntoView({block:'center'});const f=card.classList.contains('question')?card.querySelector('.q-opt,.q-other,.q-form input,.q-form select,.q-open'):null;if(f){f.focus();return;}if(!card.hasAttribute('tabindex'))card.setAttribute('tabindex','-1');card.focus();};
+  /* spec 052 FR-162: a short question with one choice and a few short options is answered from the bar itself: its option buttons, its
+     own "Other answer" box and Skip press the card's own controls (one code path: the card's Answer handler sends and settles). */
+  const qFits=c=>{if(!c.classList.contains('question')||c.classList.contains('elicit'))return null;const it=c.querySelectorAll('.q-item');if(it.length!==1)return null;
+    const opts=[...it[0].querySelectorAll('.q-opt')],other=it[0].querySelector('.q-other'),ok=c.querySelector(':scope > .note-actions .btn.primary'),skip=c.querySelector(':scope > .note-actions .btn.danger');
+    if(it[0].querySelector('.q-opts[role="group"]')||opts.length>4||!other||!ok||opts.some(o=>(o.querySelector('.q-lbl')||o).textContent.length>40))return null;
+    const qt=it[0].querySelector('.q-text').cloneNode(true),tag=qt.querySelector('.tag');if(tag)tag.remove();
+    return {opts,other,ok,skip,tag:tag?tag.textContent:'',q:qt.textContent.replace(/\s+/g,' ').trim()};};
+  let painted='';
   function paint(){
-    if(!card||cardVisible){bar.hidden=true;bar.innerHTML='';return;}
-    const q=card.classList.contains('question');
+    if(!card||cardVisible){if(painted||!bar.hidden){bar.hidden=true;bar.innerHTML='';painted='';}return;}
+    const n=waiting().length, text=textOf(card);
+    /* the same request, count and words: keep the bar as it is (a repaint would drop what you type in its box and its focus) */
+    const key=n+'\u0001'+text;if(painted&&bar._card===card&&painted===key&&!bar.hidden)return;
+    const hadFocus=bar.contains(document.activeElement);
+    painted=key;bar._card=card;
+    const q=card.classList.contains('question'), long=text.length>480, fit=q&&!long?qFits(card):null;
     bar.innerHTML='<span class="ab-q"><b></b> <span></span></span><span class="ab-act"></span>';
-    const n=waiting().length, text=textOf(card), long=text.length>480;
     bar.querySelector('b').textContent=(n>1?'1 of '+n+' · ':'')+a.name+(q?' asks:':card.classList.contains('limit')?' stopped:':' needs your OK:');
-    bar.querySelector('.ab-q span').textContent=long?'a long request; read it in the chat before you answer.':text;if(long)bar.querySelector('.ab-q span').title=text; /* spec 052 FR-160: the full text stays reachable */
+    const qs=bar.querySelector('.ab-q span');
+    if(fit){if(fit.tag){const tg=document.createElement('span');tg.className='tag';tg.textContent=fit.tag;qs.appendChild(tg);qs.appendChild(document.createTextNode(' '));}qs.appendChild(document.createTextNode(fit.q));}
+    else{qs.textContent=long?'a long request; read it in the chat before you answer.':text;if(long)qs.title=text;} /* spec 052 FR-160: the full text stays reachable */
     const act=bar.querySelector('.ab-act');
-    const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);};
-    if(q)add('Answer in chat','primary',show);
+    const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);return b;};
+    if(fit){
+      const said=w=>{announce('Answered: '+w);const m=$('msgInput');if(m)m.focus();};
+      for(const o of fit.opts){const lb=(o.querySelector('.q-lbl')||o).textContent;add(lb,'ab-opt',()=>{o.click();fit.ok.click();said(lb);},o.title);}
+      const box=document.createElement('input');box.type='text';box.className='ab-other';box.maxLength=500;box.placeholder='Other answer';box.setAttribute('aria-label','Other answer: '+fit.q);box.setAttribute('aria-keyshortcuts','Enter');box.title='Type your own answer; Enter sends it';
+      box.addEventListener('keydown',ev=>{if(ev.key!=='Enter'||ev.shiftKey||ev.isComposing||ev.altKey||ev.ctrlKey||ev.metaKey)return;ev.preventDefault();
+        const v=box.value.replace(/\s+/g,' ').trim();if(!v){announce('Type an answer first, or choose an option.');return;}
+        fit.other.value=v;fit.other.dispatchEvent(new Event('input',{bubbles:true}));fit.ok.click();said(v);});
+      act.appendChild(box);
+      if(fit.skip)add(fit.skip.textContent,'danger',()=>{fit.skip.click();announce('Skipped');const m=$('msgInput');if(m)m.focus();},fit.skip.title);
+    }
+    else if(q)add('Answer in chat','primary',show);
     /* FR-016: a long request is answered in the chat only; the wide grant (any arguments) stays in the card */
     /* FR-060: Alt+A / Alt+S / Alt+D (⌥⌘A/S/D on a Mac, FR-084) press the same buttons (permission requests only) */
     else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
-    add('Show in chat','ghost',show,'Scroll to the request in the chat');
+    add(q?'Show question':'Show in chat','ghost',show,q?'Scroll to the question in the chat':'Scroll to the request in the chat');
     bar.hidden=false;
+    if(hadFocus){const f=act.querySelector('button,input');if(f)f.focus();}
   }
   const check=()=>{const p=pending();if(p!==card){card=p;cardVisible=inView();}else cardVisible=inView();paint();};
   const mo=new MutationObserver(()=>check());mo.observe(chat,{childList:true,subtree:true});
@@ -1416,7 +1442,7 @@ document.addEventListener('keydown',e=>{
   /* spec 052 FR-042: Ctrl+K (⌘K on a Mac, FR-084) opens the command palette from anywhere, also from text fields */
   const mod=KEYS.modDown(e,IS_MAC);
   if(mod&&!e.shiftKey&&!e.altKey&&(e.key==='k'||e.key==='K'||e.code==='KeyK')){e.preventDefault();closeKbdHelp();openPalette();return;}
-  /* spec 052 FR-162: Ctrl+O adds a folder, Ctrl+Shift+O a VS Code workspace (the same buttons, so the same code path). On a Mac the
+  /* spec 052 FR-164: Ctrl+O adds a folder, Ctrl+Shift+O a VS Code workspace (the same buttons, so the same code path). On a Mac the
      File menu owns ⌘O / ⇧⌘O, so this handler stays out of the way there. Not under a dialog, and only with the app's bridge (the
      page without it has no add buttons). Like the Mac menu it also works from an open chat and in Simple. */
   if(!IS_MAC&&mod&&!e.altKey&&(e.key==='o'||e.key==='O'||e.code==='KeyO')&&document.body.classList.contains('has-bridge')&&!document.querySelector('[role="dialog"][aria-modal="true"]')){const b=$(e.shiftKey?'addWs':'addFolder');if(b&&!b.disabled){e.preventDefault();b.click();}return;}
@@ -1767,7 +1793,7 @@ function openKbdHelp(back){
   palBack=back instanceof Element?back:(document.activeElement&&document.activeElement!==document.body?document.activeElement:null);
   const rows=[
     [keyLabels(['mod','K']),'Command palette: agents, folders and actions'],
-    [keyLabels(['mod','O']),'Add a folder'], /* spec 052 FR-162 */
+    [keyLabels(['mod','O']),'Add a folder'], /* spec 052 FR-164 */
     ...(SIMPLE?[]:[[keyLabels(['mod','shift','O']),'Add a VS Code workspace']]),
     [['I'],'Needs you inbox',keyLabels(['mod','shift','A'])],
     [['N'],'Next agent that needs you',keyLabels(['mod','shift','N'])],
@@ -1916,7 +1942,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -3238,7 +3264,7 @@ function renderDefaultsChip(){
   const b=$('defaultsBtn'); if(!b)return;
   /* spec 052 (2026-10-21, round 1): the permission mode first, so a narrow chip cuts the model, never the mode */
   const parts=[optWord($('permMode')),optWord($('kindSel')),SIMPLE?'':optWord($('modelSel'))].filter(Boolean);
-  /* spec 052 FR-162: the mode and the rest in two spans (same text), so a narrow top bar shows the whole mode word, not "Read-on…" */
+  /* spec 052 FR-164: the mode and the rest in two spans (same text), so a narrow top bar shows the whole mode word, not "Read-on…" */
   const dv=b.querySelector('.dv'),m=document.createElement('span'),r=document.createElement('span');
   m.className='dv-m';r.className='dv-r';m.textContent=parts.length?parts[0]:'Defaults';r.textContent=parts.length>1?' · '+parts.slice(1).join(' · '):'';
   dv.replaceChildren(m,r);
@@ -3316,7 +3342,11 @@ function toastAction(html,label,onClick,ms){
   b.onclick=()=>{kill();onClick();};t.appendChild(b);$('toasts').appendChild(t);holdTimer(t,ms===0?0:(ms||8000),kill);
   return t;
 }
-function addInfoNote(chat,text,cls){const n=document.createElement('div');n.className='note info'+(cls?' '+cls:'');n.textContent=text;chat.el.appendChild(n);stickyScroll(chat);return n;}
+/* spec 052 FR-163: the same status line twice in a row is one line with a count ("… (×3)"), so repeated notes never push a request out of view */
+function addInfoNote(chat,text,cls){
+  const last=chat.el.lastElementChild;
+  if(last&&last.dataset.fold===text&&last.dataset.foldKind===(cls||'')){const k=(+last.dataset.foldN||1)+1;last.dataset.foldN=String(k);last.textContent=text+' (×'+k+')';stickyScroll(chat);return last;}
+  const n=document.createElement('div');n.className='note info'+(cls?' '+cls:'');n.textContent=text;n.dataset.fold=text;n.dataset.foldKind=cls||'';chat.el.appendChild(n);stickyScroll(chat);return n;}
 
 function modelChipHTML(a){
   const m=modelLabel(a.info),pend=a.pendingModel;
@@ -3508,14 +3538,25 @@ function onModelEvent(a,e){
   updateModelChip(a);updateCtxChip(a);scheduleRender();
 }
 function onCompaction(a,e){
-  const chat=liveChat(a),t=DM.compactionText(e);
-  if(e.phase==='start'){
-    if(a.compNote&&a.compNote.isConnected)a.compNote.remove();
-    a.compNote=addInfoNote(chat,t,'cline');a.compNote.setAttribute('role','status');a.compacting=true;
-  }else{
-    if(a.compNote&&a.compNote.isConnected){a.compNote.textContent=t;stickyScroll(chat);}else addInfoNote(chat,t,'cline');
-    if(e.phase==='failed'&&a.compNote)a.compNote.classList.add('failed');
-    a.compNote=null;a.compacting=false;
+  const chat=liveChat(a), at=()=>new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  /* spec 052 FR-163 (owner, 2026-10-21): compactions in a row (nothing else added to the chat in between) are one line that updates in
+     place: "Context compacted 4 times · last 10:21: …". Its tooltip lists each one. The line is found by its place in the chat, not by
+     isConnected: a chat that is not open is not in the page, and that check left a "Compacting the context…" line behind every time. */
+  let R=a.compRun;
+  if(!R||R.chat!==chat||!R.el||R.el.parentNode!==chat.el||(chat.el.lastElementChild!==R.el&&!(R.pending&&e.phase!=='start')))R=null; /* a started one ends on its own line */
+  const line=t=>{const el=document.createElement('div');el.className='note info cline';el.setAttribute('role','status');el.textContent=t;chat.el.appendChild(el);return el;};
+  if(!R)R=a.compRun={chat,n:0,at:'',el:null,log:[]};
+  const t=DM.compactionFoldText(e,R.n+(e.phase==='complete'?1:0),e.phase==='complete'?at():R.at);
+  if(R.el)R.el.textContent=t;else R.el=line(t);
+  R.el.classList.toggle('failed',e.phase==='failed');
+  stickyScroll(chat);
+  R.pending=e.phase==='start';
+  if(e.phase==='start'){a.compacting=true;}
+  else{
+    if(e.phase==='complete'){R.n++;R.at=at();}
+    R.log.push(at()+'  '+DM.compactionText(e));if(R.log.length>40)R.log.shift();
+    if(R.log.length>1)R.el.title=R.log.join('\n');
+    a.compacting=false;
     if(e.phase==='complete'){
       a.compactions=(a.compactions||0)+1;a.compactFailed=false;
       const old=STATS.agent(a.id).ctx;
@@ -4362,7 +4403,7 @@ if(bridge){
   $('settingsBtn').onclick=()=>window.DurbarScreens.openSettings();
   /* spec 052 FR-083: Settings… (⌘,) in the macOS app menu. The real window's preload carries it, also under the simulator. */
   {const real=window.agentDurbar;if(real&&real.onMenuSettings)real.onMenuSettings(()=>window.DurbarScreens.openSettings());
-    /* spec 052 FR-162: File > Add Folder… / Add VS Code Workspace… press the same top-bar buttons (one code path) */
+    /* spec 052 FR-164: File > Add Folder… / Add VS Code Workspace… press the same top-bar buttons (one code path) */
     if(real&&real.onMenuAdd)real.onMenuAdd(k=>{const b=$(k==='workspace'?'addWs':'addFolder');if(b&&!b.disabled)b.click();});
    /* FR-085: in full screen the top bar no longer keeps room for the traffic lights */
    if(real&&real.onFullScreen)real.onFullScreen(on=>{if(on)document.documentElement.dataset.fullscreen='';else delete document.documentElement.dataset.fullscreen;});}

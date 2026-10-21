@@ -151,6 +151,17 @@
     const span=nn(e.tokensBefore)&&nn(e.tokensAfter)?': '+fmtTokens(e.tokensBefore)+' → '+fmtTokens(e.tokensAfter)+' tokens'+(grew?' (too short to shrink)':''):nn(e.tokensRemoved)?': '+fmtTokens(e.tokensRemoved)+' tokens removed':'';
     return 'Context compacted ('+how+')'+span+'.';
   }
+  /* spec 052 FR-163: compactions in a row fold into one line that updates in place. `n` = compactions done in this run of lines
+     (after this event), `at` = the time of the last one ("10:21"). One compaction reads exactly like compactionText. */
+  function compactionFoldText(e,n,at){
+    if(!e)return '';
+    if(!(n>=1)||(n===1&&e.phase==='complete'))return compactionText(e);
+    const times=n===1?'once':n+' times', head='Context compacted '+times+(at?' · last '+at:'');
+    if(e.phase==='start')return head+' · compacting again…';
+    if(e.phase==='failed')return head+' · the next one failed'+(e.error?': '+String(e.error).slice(0,200):'')+'. The conversation is unchanged.';
+    const span=nn(e.tokensBefore)&&nn(e.tokensAfter)?': '+fmtTokens(e.tokensBefore)+' → '+fmtTokens(e.tokensAfter)+' tokens':nn(e.tokensRemoved)?': '+fmtTokens(e.tokensRemoved)+' tokens removed':'';
+    return head+span+'.';
+  }
   const CAUSE={'rate-limit':'because of a rate limit','fallback':'because the request was refused','runtime':'by the runtime','resume':'when the session resumed'};
   /* The line for a model change: ours says what happened; one the runtime made says so plainly (spec 030 FR-015). */
   function modelChangeText(e,nameOf){
@@ -242,5 +253,5 @@
     return m.includes(cur)?cur:'read-only';
   }
 
-  return {handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
+  return {handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,compactionFoldText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
 })());

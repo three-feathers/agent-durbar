@@ -16,6 +16,7 @@ const D = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'modelswit
   confirmFor: (a: M, b: M, c?: { tokens?: number; cap?: number; used?: number; tierFrom?: string; tierTo?: string }) => Conf;
   suggestFresh: (s: Record<string, unknown>) => boolean;
   compactionText: (e: Record<string, unknown>) => string;
+  compactionFoldText: (e: Record<string, unknown>, n: number, at: string) => string;
   modelChangeText: (e: Record<string, unknown>, nameOf?: (x: string) => string) => string;
   fmtCredits: (n: number) => string;
   fmtRatio: (n: number) => string;
@@ -134,6 +135,12 @@ assert.strictEqual(D.compactionText({ phase: 'start', trigger: 'manual' }), 'Com
 assert.strictEqual(D.compactionText({ phase: 'complete', trigger: 'auto', tokensBefore: 188000, tokensAfter: 52000 }), 'Context compacted (automatic): 188k → 52k tokens.');
 assert.strictEqual(D.compactionText({ phase: 'complete', trigger: 'model-switch', tokensRemoved: 9000 }), 'Context compacted (before the model switch): 9k tokens removed.');
 assert.match(D.compactionText({ phase: 'failed', trigger: 'manual', error: 'x'.repeat(500) }), /^Compaction failed: x{200}\. The conversation is unchanged\.$/);
+// spec 052 FR-163: compactions in a row fold into one line; one compaction reads as before
+assert.strictEqual(D.compactionFoldText({ phase: 'start', trigger: 'auto' }, 0, '10:20'), 'Compacting the context (automatic)…');
+assert.strictEqual(D.compactionFoldText({ phase: 'complete', trigger: 'auto', tokensBefore: 188000, tokensAfter: 52000 }, 1, '10:20'), 'Context compacted (automatic): 188k → 52k tokens.');
+assert.strictEqual(D.compactionFoldText({ phase: 'start', trigger: 'auto' }, 1, '10:20'), 'Context compacted once · last 10:20 · compacting again…');
+assert.strictEqual(D.compactionFoldText({ phase: 'complete', trigger: 'auto', tokensBefore: 188000, tokensAfter: 52000 }, 4, '10:21'), 'Context compacted 4 times · last 10:21: 188k → 52k tokens.');
+assert.strictEqual(D.compactionFoldText({ phase: 'failed', trigger: 'auto', error: 'refused' }, 2, '10:21'), 'Context compacted 2 times · last 10:21 · the next one failed: refused. The conversation is unchanged.');
 assert.strictEqual(D.modelChangeText({ cause: 'user', model: 'deep', tier: 'long' }, (x) => x.toUpperCase()), 'Model set to DEEP (long context). The next message uses it.');
 assert.strictEqual(D.modelChangeText({ cause: 'rate-limit', model: 'fast', previousModel: 'deep' }), 'The runtime changed the model from deep to fast because of a rate limit. The next message uses it.');
 assert.match(D.modelChangeText({ cause: 'runtime', model: 'x' }), /by the runtime/);

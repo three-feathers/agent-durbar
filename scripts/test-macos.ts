@@ -75,7 +75,7 @@ const help = all.find((m) => m.label === HELP_LINK_LABEL) as MenuItemConstructor
 (help.click as () => void)();
 assert.deepStrictEqual([settings, repo], [1, 1], 'the menu items call their actions');
 assert.ok(roles.includes('quit') && roles.includes('about'), 'About and Quit in the app menu');
-// ---- FR-162: File > Add Folder… ⌘O, Add VS Code Workspace… ⇧⌘O, Close Window ⌘W; Quit stays in the app menu ----
+// ---- FR-164: File > Add Folder… ⌘O, Add VS Code Workspace… ⇧⌘O, Close Window ⌘W; Quit stays in the app menu ----
 {
   const file = mac[1].submenu as MenuItemConstructorOptions[];
   assert.deepStrictEqual(file.map((m) => m.role ?? m.label ?? m.type), [ADD_FOLDER_LABEL, ADD_WORKSPACE_LABEL, 'separator', 'close'], 'File: the two add items, then Close Window');
@@ -122,7 +122,7 @@ const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8'
 assert.ok(!/\(e\.ctrlKey\|\|e\.metaKey\)/.test(app), 'app.js no longer takes Ctrl or Command on every platform');
 assert.ok(!app.includes('On a Mac, Cmd works where Ctrl is shown'), 'the Mac footnote is gone');
 assert.ok(app.includes("real.onMenuSettings(()=>window.DurbarScreens.openSettings())"), 'the menu opens Settings');
-// FR-162: the menu and Ctrl+O press the same top-bar buttons (one code path); main forwards only the kind
+// FR-164: the menu and Ctrl+O press the same top-bar buttons (one code path); main forwards only the kind
 assert.ok(app.includes("real.onMenuAdd(k=>{const b=$(k==='workspace'?'addWs':'addFolder');"), 'File > Add… presses the top-bar button');
 assert.ok(/if\(!IS_MAC&&mod&&!e\.altKey&&\(e\.key==='o'/.test(app), 'Ctrl+O / Ctrl+Shift+O in the page on Windows and Linux only (the Mac File menu owns ⌘O)');
 assert.ok(main.includes("toRenderer('menu:add', kind)"), 'main forwards File > Add… to the page');

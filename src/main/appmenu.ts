@@ -3,23 +3,23 @@
  * unit-tested on any OS; main.ts passes the platform and the two actions.
  *
  * - macOS: a menu built from Electron's roles (app menu with About, Settings… ⌘, Hide and Quit; File with Add Folder… ⌘O, Add VS
- *   Code Workspace… ⇧⌘O and Close Window ⌘W (spec 052 FR-162); Edit; View with full screen and zoom only, no Reload and no
+ *   Code Workspace… ⇧⌘O and Close Window ⌘W (spec 052 FR-164); Edit; View with full screen and zoom only, no Reload and no
  *   DevTools; Window; Help with a link to the project). Quit stays in the app menu, where a Mac app has it.
  * - Windows and Linux: no menu at all (null), so the default menu with Reload and Toggle Developer Tools is gone. Copy, cut and
  *   paste in text fields are Chromium's own keys and keep working. Ctrl+O and Ctrl+Shift+O are handled in the page instead
- *   (FR-162), and the window's own close button and Alt+F4 close it.
+ *   (FR-164), and the window's own close button and Alt+F4 close it.
  */
 import type { MenuItemConstructorOptions } from 'electron';
 
 export interface MenuActions {
   openSettings(): void;
   openRepo(): void;
-  /** FR-162: File > Add Folder… / Add VS Code Workspace…; main.ts forwards it to the page, which presses the same top-bar button. */
+  /** FR-164: File > Add Folder… / Add VS Code Workspace…; main.ts forwards it to the page, which presses the same top-bar button. */
   add(kind: 'folder' | 'workspace'): void;
 }
 
 export const SETTINGS_ACCELERATOR = 'CommandOrControl+,';
-/** Spec 052 FR-162: the File menu keys; the page uses the same ones on Windows and Linux. Unused elsewhere in the app (checked against FR-035, FR-042, FR-083, FR-091). */
+/** Spec 052 FR-164: the File menu keys; the page uses the same ones on Windows and Linux. Unused elsewhere in the app (checked against FR-035, FR-042, FR-083, FR-091). */
 export const ADD_FOLDER_ACCELERATOR = 'CommandOrControl+O';
 export const ADD_WORKSPACE_ACCELERATOR = 'CommandOrControl+Shift+O';
 export const ADD_FOLDER_LABEL = 'Add Folder…';

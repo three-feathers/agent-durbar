@@ -157,7 +157,7 @@ async function run(ctx) {
     await must('#vList'); await rec('list', size, 'plain'); await must('#vOffice');
     await must('#foldersBtn'); await rec('folders-popover', size, 'plain'); await reset();
     await must('#defaultsBtn'); await rec('defaults-popover', size, 'plain'); await reset();
-    /* spec 052 FR-162: + Folder and + Workspace are plain buttons (no menu); the office state above covers them */
+    /* spec 052 FR-164: + Folder and + Workspace are plain buttons (no menu); the office state above covers them */
     await must('#settingsBtn'); await rec('settings', size, 'plain'); await reset();
     await must('#toolsBtn'); await rec('tools', size, 'plain'); await reset();
     await openChat(); await rec('chat', size, 'chat');
