@@ -270,4 +270,22 @@ assert.ok(partial.art['lobby-art'], 'safe art on a real slot is kept');
   assert.deepStrictEqual(T.previewRoom('no-such-theme'), T.previewRoom(T.CLEAN_ID));
   assert.deepStrictEqual(T.previewRoom(42 as any), T.previewRoom(T.CLEAN_ID));
 }
+// spec 040 FR-023: every applied theme gets a new cache key (scene cache, scene signature, walkers), and a manifest with the same
+// id but other content (an AI theme made again with Try again, previewed before saving) is applied, not skipped
+{
+  T.setTheme(T.CLEAN_ID);
+  const k0 = T.themeIdForCache();
+  const pink = { id: 'ai-pink', name: 'Pink', tokens: { '--chair': '#c2185b' }, art: { 'char-robe': '<rect x="55" y="63" width="38" height="36" fill="#e0218a"/>' } };
+  assert.strictEqual(T.setTheme(pink), 'ai-pink');
+  const k1 = T.themeIdForCache();
+  assert.notStrictEqual(k1, k0, 'a theme switch changes the cache key');
+  assert.ok(k1.startsWith('ai-pink'), 'the key names the theme');
+  T.setTheme(pink);
+  assert.strictEqual(T.themeIdForCache(), k1, 'the same pack again changes nothing');
+  T.setTheme({ ...pink, tokens: { '--chair': '#880e4f' }, art: { 'char-robe': '<rect x="55" y="63" width="38" height="36" fill="#880e4f"/>' } });
+  assert.notStrictEqual(T.themeIdForCache(), k1, 'same id, other content: applied as a new theme');
+  assert.strictEqual(T.token('--chair'), '#880e4f', 'the new tokens are live');
+  assert.ok(String(T.slot('char-robe')).includes('#880e4f'), 'the new art is live');
+  T.setTheme(T.CLEAN_ID);
+}
 console.log('theme tests passed');

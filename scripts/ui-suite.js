@@ -45,6 +45,7 @@ const DRIVERS = [
   { name: 'check-sched-sendto' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
+  { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
 ];
 
 /** The screenshot variables the drivers read; all point at one folder. */
