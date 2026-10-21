@@ -412,6 +412,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   - a **failed MCP tool call** (the tool event names its `mcpServer`) whose text FR-061 classifies as an MCP OAuth challenge. Copilot
     can keep reporting such a server as `connected` while its cached tools fail (the issue's case), so the tool failure is the signal.
   The derived state is replaced by the next status the runtime reports for that server (for example `connected` after a sign-in).
+  `[IMPLEMENTED]` Copilot (T094) 2026-10-21: `src/adapters/map.ts` (`tool.execution_complete`). `test:` `scripts/test-events.ts`. Claude (T096) and Codex (T095) are not built yet.
 - **FR-061** **One pure classifier**, `isMcpAuthChallenge(text)` in `src/adapters/mcpauth.ts` (vendor phrases stay in adapters,
   constitution II): the issue's text (`MCP OAuth challenge required`), the Copilot runtime's `requires authentication. Run \`/mcp auth`
   and `Re-authentication required for MCP server` (`read:` runtime strings), and Claude's and Codex's equivalents once seen. It is applied
@@ -425,6 +426,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
 - **FR-063** **Tool card.** A failed MCP tool call classified by FR-061 carries `mcpAuth: true` on the normalized `toolCall` event (no
   vendor text). The card adds one line, "<server> needs you to sign in", with **Sign in…** (opens the MCP dialog with focus on that
   server's row) and **Switch off for this session** (FR-066). The card's text is masked (FR-067).
+  `[IMPLEMENTED]` Copilot (T094) 2026-10-21: `mcpAuth` is set on the failed card; no card line or button yet (UI). `test:` `scripts/test-events.ts`.
 - **FR-064** **Start the agent app's own sign-in.** Capability `mcpSignIn?: boolean` and the optional member
   `startMcpSignIn?(sessionId, name): Promise<{ kind: 'browser'; url: string } | { kind: 'connected' }>`, present exactly when the flag is
   true (contract C2). Each adapter feature-detects the call and rejects with a `manual` error when it is missing or refused:
