@@ -56,8 +56,8 @@ import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
 import { maskMcpEvent, maskMcpHistory } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
-import { globalFiles, offOf } from './mcpglobal';
-import { GlobalLists } from './mcpglobalio';
+import { globalFiles } from './mcpglobal';
+import { GlobalLists, sessionGlobalFor } from './mcpglobalio';
 import { register as registerMcpGlobalIpc } from './ipc/mcpglobal';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
@@ -135,7 +135,7 @@ const mcp = registerMcpIpc({
   router,
   dev,
   appOf: appIdOf,
-  globalFor: (id) => (appIdOf(id) === 'claude' && mcpStore ? globalLists.sessionServers('claude', new Set(offOf('claude', mcpStore.ambientDisabled()))) : {}),
+  globalFor: (id) => (mcpStore ? sessionGlobalFor(appIdOf(id), globalLists, mcpStore.ambientDisabled()) : {}),
   log: (a, action) => logActivity(a, 'mcp-restart', action),
   globalNames: () => Object.fromEntries(globalLists.state(() => []).apps.map((x) => [x.app, x.servers.map((v) => v.name)])),
 });

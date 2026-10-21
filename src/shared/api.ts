@@ -340,7 +340,7 @@ export interface GlobalDiffItem {
   name: string;
   in: GlobalApp[];
   missing: GlobalApp[];
-  /** Fields that differ between the lists that have it: type, command, arguments, URL, environment variables, headers, values. */
+  /** Fields that differ between the lists that have it: type, command, arguments, URL, environment variables, headers, values, tools, hidden tools, on/off. */
   differs: string[];
   /** Lists it can be copied from. */
   from: GlobalApp[];

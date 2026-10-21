@@ -7,8 +7,12 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { addToText, claudeOffKey, codexBlock, differences, neededVars, neutralFrom, globalFiles, headerVar, jsonEntry, MASK, offOf, previewText, readGlobal, removeFromText, sourcesFor, textHash, tomlStr } from '../src/main/mcpglobal';
-import { backupAndWrite, GlobalLists, KEEP_BACKUPS, pruneBackups, readFileSafe, TOKEN_MS } from '../src/main/mcpglobalio';
+import { stripTomlComment, tomlStringArray, tomlUnquote } from '../src/main/codextoml';
+import { readCodexMcpToml } from '../src/main/foldersetup';
+import { mcpSecretValues } from '../src/main/mcpmask';
+import { addToText, claudeOffKey, codexBlock, differences, mergeSessionServers, neededVars, neutralFrom, globalFiles, headerVar, jsonEntry, MASK, offOf, previewText, readGlobal, removeFromText, sourcesFor, textHash, tomlStr } from '../src/main/mcpglobal';
+import { backupAndWrite, GlobalLists, KEEP_BACKUPS, pruneBackups, readFileSafe, sessionGlobalFor, TOKEN_MS, writeTarget } from '../src/main/mcpglobalio';
+import type { AgentInfo } from '../src/shared/api';
 import { McpStore } from '../src/main/mcpstore';
 import type { McpServerInput } from '../src/shared/mcp';
 
@@ -484,6 +488,222 @@ ok('GlobalLists.diff: fewer than two readable lists gives nothing', () => {
   fs.mkdirSync(path.join(home, '.copilot'));
   fs.writeFileSync(path.join(home, '.copilot', 'mcp-config.json'), '{ broken');
   assert.deepStrictEqual(lists.diff(), { ok: true, apps: ['claude'], items: [] });
+});
+
+// ---------------------------------------------------------------- review on #489 (spec 069 change 2026-10-22)
+ok('TOML strings: one-pass unescape, literal strings unchanged, shared by both Codex readers', () => {
+  assert.strictEqual(tomlUnquote('"C:\\\\notes\\\\tmp"'), 'C:\\notes\\tmp', 'a Windows path is not a newline and a tab');
+  assert.strictEqual(tomlUnquote('"a\\tb"'), 'a\tb');
+  assert.strictEqual(tomlUnquote('"a\\nb\\rc\\bd\\fe"'), 'a\nb\rc\bd\fe');
+  assert.strictEqual(tomlUnquote('"caf\\u00e9"'), 'café');
+  assert.strictEqual(tomlUnquote('"\\U0001F600"'), '\u{1F600}');
+  assert.strictEqual(tomlUnquote('"say \\"hi\\" \\\\o/"'), 'say "hi" \\o/');
+  assert.strictEqual(tomlUnquote('"\\\\u00e9"'), '\\u00e9', 'an escaped backslash before u stays a backslash');
+  assert.strictEqual(tomlUnquote("'C:\\notes\\tmp'"), 'C:\\notes\\tmp', 'literal strings are taken as written');
+  assert.strictEqual(tomlUnquote("'\\u00e9'"), '\\u00e9');
+  assert.strictEqual(tomlUnquote('"\\uD800"'), '\\uD800', 'a surrogate is not decoded');
+  assert.strictEqual(tomlUnquote('bare'), undefined);
+  assert.deepStrictEqual(tomlStringArray('["C:\\\\a\\\\new", \'x\\n\']'), ['C:\\a\\new', 'x\\n']);
+  assert.strictEqual(stripTomlComment('k = "a#b" # c'), 'k = "a#b" ');
+  const toml = '[mcp_servers.win]\ncommand = "C:\\\\tools\\\\node.exe"\nargs = ["C:\\\\notes\\\\tmp", \'D:\\new\']\n';
+  const g = readGlobal('codex', toml);
+  assert.ok(g.ok);
+  assert.strictEqual(g.values.get('win')?.command, 'C:\\tools\\node.exe');
+  assert.deepStrictEqual(g.values.get('win')?.args, ['C:\\notes\\tmp', 'D:\\new']);
+  assert.deepStrictEqual(readCodexMcpToml(toml), [{ name: 'win', spec: { type: 'stdio', command: 'C:\\tools\\node.exe', args: ['C:\\notes\\tmp', 'D:\\new'] } }], 'spec 061 reads it the same way');
+  const q = readGlobal('codex', '[mcp_servers."a\\u0062c"]\ncommand = "x"\n');
+  assert.ok(q.ok && q.servers[0].name === 'abc', 'quoted table keys use the same unescape');
+});
+
+ok('symlinked file: written through the link, the link stays, backup next to the real file', () => {
+  const d = tmp();
+  const real = path.join(d, 'dotfiles', 'claude.json');
+  fs.mkdirSync(path.dirname(real));
+  fs.writeFileSync(real, '{"a":1}\n');
+  const link = path.join(d, '.claude.json');
+  try {
+    fs.symlinkSync(real, link);
+  } catch (e) {
+    if (process.platform === 'win32') {
+      console.log('skip symlink check (symlinks not permitted here):', (e as NodeJS.ErrnoException).code);
+      return;
+    }
+    throw e;
+  }
+  assert.strictEqual(writeTarget(link), real);
+  const w = backupAndWrite(link, '{"a":2}\n', textHash('{"a":1}\n'), Date.UTC(2026, 9, 22, 1, 0, 0));
+  assert.ok(w.ok && w.backup, JSON.stringify(w));
+  assert.ok(fs.lstatSync(link).isSymbolicLink(), 'the link is still a link');
+  assert.strictEqual(fs.readFileSync(real, 'utf8'), '{"a":2}\n', 'the link target changed');
+  assert.ok(fs.existsSync(path.join(path.dirname(real), w.backup as string)), 'backup next to the real file');
+  assert.ok(!fs.readdirSync(d).some((x) => x.includes('durbar')), 'nothing written next to the link');
+  // a dangling link (the app has not created the file yet): the file is created at the target
+  const real2 = path.join(d, 'dotfiles', 'config.toml');
+  const link2 = path.join(d, 'config.toml');
+  fs.symlinkSync(real2, link2);
+  assert.ok(backupAndWrite(link2, 'x = 1\n', textHash(undefined), Date.now()).ok);
+  assert.ok(fs.lstatSync(link2).isSymbolicLink());
+  assert.strictEqual(fs.readFileSync(real2, 'utf8'), 'x = 1\n');
+  // a loop is refused, nothing written
+  const l1 = path.join(d, 'l1');
+  const l2 = path.join(d, 'l2');
+  fs.symlinkSync(l2, l1);
+  fs.symlinkSync(l1, l2);
+  assert.strictEqual(writeTarget(l1), undefined);
+  assert.ok(!backupAndWrite(l1, '{}', textHash(undefined), Date.now()).ok);
+});
+
+ok('FR-009 wiring: Claude agents only, Settings off-list, folder extra wins, values masked (through registerMcpIpc)', () => {
+  // A stand-in for the electron module, so registerMcpIpc runs in plain Node (the handlers are recorded, never called here).
+  const electronPath = require.resolve('electron');
+  const handlers = new Map<string, unknown>();
+  const fake = { ipcMain: { handle: (ch: string, fn: unknown) => handlers.set(ch, fn), on: () => undefined }, safeStorage: { isEncryptionAvailable: () => false } };
+  const saved = require.cache[electronPath];
+  require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: fake } as unknown as NodeJS.Module;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { registerMcpIpc } = require('../src/main/mcpipc') as typeof import('../src/main/mcpipc');
+    const d = tmp();
+    const claudeFile = path.join(d, '.claude.json');
+    const GSECRET = 'glob-planted-SECRET-55aa66bb';
+    fs.writeFileSync(
+      claudeFile,
+      JSON.stringify({
+        projects: {},
+        mcpServers: {
+          notes: { type: 'stdio', command: 'node', args: ['n.js'], env: { NOTES_TOKEN: GSECRET } },
+          shared: { type: 'stdio', command: 'node', args: ['user.js'] },
+          gone: { type: 'stdio', command: 'node', args: ['g.js'] },
+        },
+      }),
+    );
+    const lists = new GlobalLists(() => ({ copilot: { app: 'copilot', file: path.join(d, 'none.json'), label: 'c' }, claude: { app: 'claude', file: claudeFile, label: 'l' }, codex: { app: 'codex', file: path.join(d, 'none.toml'), label: 'x' } }));
+    const store = new McpStore(path.join(d, 'm.json'));
+    store.load();
+    store.setAmbientDisabled(claudeOffKey('gone'), true);
+    const folder = path.join(d, 'proj');
+    const up = store.upsert(folder, { name: 'Shared', transport: 'stdio', command: 'node', args: ['folder.js'], env: [], headers: [] });
+    assert.ok(up.ok, JSON.stringify(up));
+    store.setEnabled(folder, 'Shared', true, true);
+    const agent = (id: string, adapterId: string): AgentInfo => ({ id, name: 'proj', cwd: folder, folders: [folder], permMode: 'read-only', adapterId }) as unknown as AgentInfo;
+    const agents = new Map<string, AgentInfo>([['c1', agent('c1', 'claude')], ['p1', agent('p1', 'copilot')], ['x1', agent('x1', 'codex')]]);
+    const appOf = (id: string): string | undefined => agents.get(id)?.adapterId;
+    const mcp = registerMcpIpc({
+      store: () => store,
+      agents,
+      router: { onEvent: () => undefined, forAgent: () => undefined } as never,
+      dev: {} as never,
+      appOf,
+      globalFor: (id) => sessionGlobalFor(appOf(id), lists, store.ambientDisabled()),
+    });
+    assert.ok(handlers.has('agents:mcp'));
+    const c = mcp.optionsFor('c1').mcpServers;
+    assert.deepStrictEqual(Object.keys(c).sort(), ['Shared', 'notes'], 'user list (minus the off-list) and the folder extra');
+    assert.deepStrictEqual(c.Shared.args, ['folder.js'], 'a folder extra wins over a user-list server of the same name');
+    assert.strictEqual(c.notes.env?.NOTES_TOKEN, GSECRET, 'the session gets the value (main only)');
+    assert.ok(!('gone' in c), 'the Settings off-list is honoured');
+    for (const id of ['p1', 'x1']) assert.deepStrictEqual(Object.keys(mcp.optionsFor(id).mcpServers), ['Shared'], `no Claude user list for ${id}`);
+    assert.ok(mcp.secretValuesFor('c1').includes(GSECRET), 'user-list values are masked in MCP events');
+    assert.ok(!mcp.secretValuesFor('p1').includes(GSECRET));
+    assert.deepStrictEqual(mcpSecretValues({ a: { type: 'stdio', command: 'x', env: { K: 'value-1' } } }, undefined, { b: { type: 'http', url: 'u', headers: { H: 'value-2' } } }).sort(), ['value-1', 'value-2']);
+    assert.deepStrictEqual(Object.keys(mergeSessionServers({ x: { type: 'http', url: 'u' }, y: { type: 'http', url: 'v' } }, {}, new Set(['y']))), ['x'], 'the agent\'s own off-switch drops a user-list server');
+  } finally {
+    if (saved) require.cache[electronPath] = saved;
+    else delete require.cache[electronPath];
+  }
+});
+
+// ---------------------------------------------------------------- review on #492 (spec 069 change 2026-10-22)
+ok('copy preview masks a secret in the source command, arguments and URL (FR-012, SC-002)', () => {
+  const home = tmp();
+  fs.mkdirSync(path.join(home, '.codex'));
+  const ARG = 'ghp_plantedARGsecret0123456789abcdefABCD';
+  const URLK = 'planted-url-key-SECRET-778899';
+  const CMDK = 'planted-cmd-SECRET-445566';
+  fs.writeFileSync(
+    path.join(home, '.codex', 'config.toml'),
+    `[mcp_servers.leaky]\ncommand = "env API_TOKEN=${CMDK} leaky-mcp"\nargs = ["--api-key", "${ARG}", "--token=${ARG}"]\n\n[mcp_servers.leakyhttp]\nurl = "https://mcp.example.com/mcp?api_key=${URLK}"\n`,
+  );
+  const lists = new GlobalLists(() => globalFiles({}, home));
+  for (const name of ['leaky', 'leakyhttp']) {
+    const pv = lists.copyPreview(name, 'codex', ['copilot', 'claude']);
+    assert.ok(pv.ok && pv.items.length === 2, JSON.stringify(pv));
+    const out = JSON.stringify(pv);
+    for (const x of [ARG, URLK, CMDK]) assert.ok(!out.includes(x), `${name}: the copy preview holds a planted value`);
+    const res = lists.apply(pv.token);
+    assert.ok(res.ok, 'the real values are still written');
+  }
+  const cl = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+  assert.deepStrictEqual(cl.mcpServers.leaky.args, ['--api-key', ARG, `--token=${ARG}`], 'the file gets the value, the window does not');
+  assert.ok(cl.mcpServers.leakyhttp.url.includes(URLK));
+  assert.ok(!previewText('codex', { name: 'a', transport: 'http', url: `https://x/mcp?token=${URLK}` }, 'ref').includes(URLK), 'the add review masks too');
+});
+
+ok('copy keeps switched off, hidden tools and tool lists, or refuses the file that cannot hold them', () => {
+  const toml = [
+    '[mcp_servers.offsrv]',
+    'command = "off-mcp"',
+    'enabled = false',
+    '',
+    '[mcp_servers.hide]',
+    'command = "hide-mcp"',
+    'disabled_tools = ["delete_repo", "push"]',
+    '',
+    '[mcp_servers.only]',
+    'url = "https://only.example.com/mcp"',
+    'enabled_tools = ["search"]',
+    '',
+  ].join('\n');
+  const g = readGlobal('codex', toml);
+  assert.ok(g.ok);
+  const off = neutralFrom('codex', 'offsrv', g.values.get('offsrv') ?? {});
+  assert.ok(off.ok && off.input.off === true, 'enabled = false is read');
+  for (const app of ['copilot', 'claude'] as const) {
+    const r = addToText(app, undefined, off.input, 'plain');
+    assert.ok(!r.ok && /enabled = false/.test(r.error), `${app}: a switched-off server is not copied as on`);
+  }
+  const back = addToText('codex', undefined, { ...off.input, name: 'offsrv2' }, 'plain');
+  assert.ok(back.ok && back.text.includes('enabled = false'), 'Codex keeps it off');
+  const hide = neutralFrom('codex', 'hide', g.values.get('hide') ?? {});
+  assert.ok(hide.ok && JSON.stringify(hide.input.disabledTools) === '["delete_repo","push"]');
+  for (const app of ['copilot', 'claude'] as const) {
+    const r = addToText(app, undefined, hide.input, 'plain');
+    assert.ok(!r.ok && /disabled_tools/.test(r.error), `${app}: hidden tools are not dropped silently`);
+  }
+  const hb = addToText('codex', undefined, { ...hide.input, name: 'hide2' }, 'plain');
+  assert.ok(hb.ok && hb.text.includes('disabled_tools = ["delete_repo", "push"]'), 'Codex takes the list (a list, not a string)');
+  const re = readGlobal('codex', hb.ok ? hb.text : '');
+  assert.ok(re.ok && JSON.stringify(re.values.get('hide2')?.disabled_tools) === '["delete_repo","push"]', 'and reads it back');
+  const only = neutralFrom('codex', 'only', g.values.get('only') ?? {});
+  assert.ok(only.ok);
+  const cop = addToText('copilot', undefined, only.input, 'plain');
+  assert.ok(cop.ok && JSON.parse(cop.text).mcpServers.only.tools[0] === 'search', 'Copilot keeps the tool list');
+  const cla = addToText('claude', undefined, only.input, 'plain');
+  assert.ok(!cla.ok && /tools/.test(cla.error), 'Claude Code cannot hold a tool list: refused');
+  const copTools = neutralFrom('copilot', 't', { type: 'local', command: 'x', tools: ['a', 'b'] });
+  assert.ok(copTools.ok && !addToText('claude', undefined, copTools.input, 'plain').ok, 'a Copilot tools list is not dropped for Claude');
+  const star = neutralFrom('copilot', 't', { type: 'local', command: 'x', tools: ['*'] });
+  assert.ok(star.ok && addToText('claude', undefined, star.input, 'plain').ok, 'tools ["*"] is no restriction');
+  assert.ok(addToText('claude', undefined, { name: 'f', transport: 'stdio', command: 'x', tools: ['a'] }, 'plain').ok, 'the add form keeps its old behaviour');
+  const cwd = neutralFrom('claude', 'w', { type: 'stdio', command: 'x', cwd: '/proj' });
+  assert.ok(!cwd.ok && /working directory/.test(cwd.error), 'a JSON cwd is refused like a Codex cwd');
+  const offJson = neutralFrom('copilot', 'd', { type: 'local', command: 'x', disabled: true });
+  assert.ok(offJson.ok && offJson.input.off, 'JSON disabled: true is read as off');
+  assert.ok(!neutralFrom('codex', 'e', { command: 'x', enabled: 'no' }).ok, 'an enabled that is not a boolean is not guessed');
+});
+
+ok('differences name tools, hidden tools and on/off; the diff lists them', () => {
+  const a = { name: 'n', transport: 'stdio' as const, command: 'c' };
+  assert.deepStrictEqual(differences(a, { ...a, tools: ['*'] }), [], '"*" is the same as no list');
+  assert.deepStrictEqual(differences(a, { ...a, tools: ['x'] }), ['tools']);
+  assert.deepStrictEqual(differences(a, { ...a, disabledTools: ['x'] }), ['hidden tools']);
+  assert.deepStrictEqual(differences(a, { ...a, off: true }), ['on/off']);
+  const home = tmp();
+  fs.mkdirSync(path.join(home, '.codex'));
+  fs.writeFileSync(path.join(home, '.codex', 'config.toml'), '[mcp_servers.s]\ncommand = "s"\nenabled = false\n');
+  fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { s: { type: 'stdio', command: 's', args: [] } } }));
+  const lists = new GlobalLists(() => globalFiles({}, home));
+  assert.deepStrictEqual(lists.diff().items.find((i) => i.name === 's')?.differs, ['on/off']);
 });
 
 console.log(`test-mcp-global: ${n} checks passed`);

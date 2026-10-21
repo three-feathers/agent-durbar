@@ -10,7 +10,7 @@ import * as path from 'path';
 import { NAME_RE, validateInput } from '../shared/mcp';
 import type { McpServerSpec } from '../shared/mcp';
 import type { GlobalApp, GlobalApplyItem, GlobalDiff, GlobalDiffItem, GlobalApplyResult, GlobalAppState, GlobalPreview, GlobalPreviewItem, GlobalSecretMode, GlobalState } from '../shared/api';
-import { addToText, APP_LABEL, differences, GLOBAL_APPS, neededVars, neutralFrom, previewText, readGlobal, removeFromText, textHash } from './mcpglobal';
+import { addToText, APP_LABEL, differences, GLOBAL_APPS, neededVars, neutralFrom, offOf, previewText, readGlobal, removeFromText, textHash } from './mcpglobal';
 import type { GlobalInput } from './mcpglobal';
 import type { GlobalFile } from './mcpglobal';
 
@@ -69,10 +69,37 @@ export function pruneBackups(file: string): void {
 }
 
 /**
+ * The file to write for `file`: itself, or the file a symbolic link (or a chain of them) points to, also when that file does not exist
+ * yet (a dangling link to a file the agent app has not created). Undefined when a link cannot be followed (a loop, too deep, unreadable).
+ */
+export function writeTarget(file: string): string | undefined {
+  let cur = path.resolve(file);
+  for (let hops = 0; hops < 32; hops++) {
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(cur);
+    } catch (e) {
+      return (e as NodeJS.ErrnoException).code === 'ENOENT' ? cur : undefined;
+    }
+    if (!st.isSymbolicLink()) return cur;
+    try {
+      cur = path.resolve(path.dirname(cur), fs.readlinkSync(cur));
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
  * FR-006: back up (when the file exists), then write through `<file>.durbar-tmp` and a rename. `expect` is the hash of the text that was
  * reviewed: a file that changed since is not written. Returns the backup's file name.
  */
-export function backupAndWrite(file: string, text: string, expect: string, now: number): { ok: true; backup?: string } | { ok: false; error: string } {
+export function backupAndWrite(link: string, text: string, expect: string, now: number): { ok: true; backup?: string } | { ok: false; error: string } {
+  // Spec 069 change 2026-10-22 (review on #489): a symlinked file (dotfile managers link ~/.claude.json or ~/.codex/config.toml) is
+  // written through the link: backup, temporary file and rename happen next to the real file, and the link stays a link.
+  const file = writeTarget(link);
+  if (file === undefined) return { ok: false, error: 'The file is a link that could not be followed. Nothing was written.' };
   const cur = readFileSafe(file);
   if (!cur.ok) return cur;
   if (textHash(cur.text) !== expect) return { ok: false, error: 'The file changed since you reviewed it. Review again.' };
@@ -356,4 +383,12 @@ export class GlobalLists {
   pendingCount(): number {
     return this.pending.size;
   }
+}
+
+/**
+ * FR-009: the user-list servers Durbar passes to one agent's session: Claude Code's list for a Claude agent (Claude sessions run with
+ * `--strict-mcp-config`), minus the Settings off-list; nothing for Copilot (it loads its own list) or Codex (it starts its own list).
+ */
+export function sessionGlobalFor(appId: string | undefined, lists: Pick<GlobalLists, 'sessionServers'>, offList: readonly string[]): Record<string, McpServerSpec> {
+  return appId === 'claude' ? lists.sessionServers('claude', new Set(offOf('claude', offList))) : {};
 }
