@@ -781,6 +781,19 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   cmd(`sh -c "a \\"b\\"" && bash -c "srv --opt=\\"token=${T}\\""`, `sh -c "a \\"b\\"" && bash -c "srv --opt=\\"token=${R}\\""`, 'two wrappers in one command');
   cmd(`cmd /c "C:\\Program Files\\srv\\srv.exe" --token ${T}`, `cmd /c "C:\\Program Files\\srv\\srv.exe" --token ${R}`, 'cmd /c with a quoted path and no escape: the usual rules');
   noT(maskSecretCommand(`cmd /c "C:\\Program Files\\x.exe" --opt=\\"token=${T}\\"`), 'cmd /c: quoted path, then an escaped value');
+  // backslashes in the payload are written back escaped too (CodeQL js/incomplete-sanitization #54/#55), so the shown text reads back the same
+  cmd(`sh -c "cd C:\\\\x\\\\y; srv --token \\"${T}\\""`, `sh -c "cd C:\\\\x\\\\y; srv --token \\"${R}\\""`, 'sh "...": \\\\ and \\" written back as they came');
+  cmd(`sh -c "a\\b --opt=\\"token=${T}\\""`, `sh -c "a\\\\b --opt=token=${R}"`, 'sh "...": a lone \\ is shown as \\\\ (same meaning in sh)');
+  cmd(`sh -c a\\\\b\\ --token\\ ${T}`, `sh -c a\\\\b\\ --token\\ ${R}`, 'sh unquoted: \\\\ stays \\\\ (it was shown as \\, which sh drops)');
+  for (const v of ['a\\b', 'a\\"b', 'a\\\\"b', 'end\\', 'x "y" z', 'C:\\dir\\', '\\\\\\"', '"\\\\', 'p\\\\\\q']) {
+    const rt = _uncappedForTest.payloadRoundTrip;
+    assert.strictEqual(rt('sh', '"', v), v, `round trip sh "...": ${v}`);
+    assert.strictEqual(rt('sh', '', v), v, `round trip sh unquoted: ${v}`);
+    assert.strictEqual(rt('sh', "'", v), v, `round trip sh '...': ${v}`);
+    assert.strictEqual(rt('cmd', '"', v, '\\"'), v, `round trip cmd "..." with \\": ${v}`);
+    assert.strictEqual(rt('cmd', '', v, '\\"'), v, `round trip cmd unquoted with \\": ${v}`);
+    assert.strictEqual(rt('ps', '"', v), v, `round trip PowerShell "...": ${v}`);
+  }
   // (d) nesting: two decodes are shown readable, a third level is masked whole
   cmd(`bash -c "sh -c \\"srv \\\\\\"--token ${T}\\\\\\"\\""`, `bash -c "sh -c \\"srv --token ${R}\\""`, 'two levels of escapes');
   cmd(`bash -c "sh -c \\"bash -c \\\\\\"srv \\\\\\\\\\\\\\"--token ${T}\\\\\\\\\\\\\\"\\\\\\"\\""`, `bash -c "sh -c \\"${R}\\""`, 'three levels: the script past two decodes is masked whole');

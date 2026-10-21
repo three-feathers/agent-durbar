@@ -447,20 +447,23 @@ function decodeCmd(s: string, i: number): Decoded {
   const rest = s.slice(i);
   const quoted = rest.length >= 2 && rest[0] === '"' && rest[rest.length - 1] === '"';
   const inner = quoted ? rest.slice(1, -1) : rest;
-  return { value: inner.replace(/\^([\s\S])|\\"/g, (_m, x?: string) => x ?? '"'), end: s.length, quote: quoted ? '"' : '' };
+  // `^x` is cmd's escape; a run of backslashes before `"` is halved (the program's command line: 2n+1 backslashes and `"` are n and a quote)
+  const value = inner.replace(/\^([\s\S])|(\\+)"/g, (_m, x?: string, b?: string) => x ?? '\\'.repeat((b ?? '').length >> 1) + '"');
+  return { value, end: s.length, quote: quoted ? '"' : '' };
 }
 /** The masked payload written back in the quoting it came in (display only; `$` and `` ` `` stay as they are in sh). */
 function encodePayload(kind: ShellKind, v: string, d: Decoded, raw: string): string {
   if (kind === 'sh') {
     if (d.quote === "'") return "'" + v.replace(/'/g, "'\\''") + "'";
-    if (d.quote === '"') return '"' + v.replace(/\\(?=["\\$`]|$)/g, '\\\\').replace(/"/g, '\\"') + '"';
-    return v.replace(/[\s"'\;&|<>()]/g, '\\$&');
+    if (d.quote === '"') return '"' + v.replace(/[\\"]/g, '\\$&') + '"'; // every backslash and quote escaped: each reads back as one char
+    return v.replace(/[\s"'\\;&|<>()]/g, '\\$&');
   }
   if (kind === 'ps') {
     if (d.quote === "'") return "'" + v.replace(/'/g, "''") + "'";
-    return d.quote + v.replace(/[`"]/g, '`$&') + d.quote;
+    return d.quote + v.replace(/[`"]|\\$/g, '`$&') + d.quote; // a last backslash too, or with the closing quote it reads as `\"`
   }
-  const body = v.replace(/"/g, raw.includes('\\"') ? '\\"' : '^"');
+  // the program's command line: the backslashes right before a `"` are doubled, then the quote is escaped (decodeCmd halves them back)
+  const body = raw.includes('\\"') ? v.replace(/(\\*)"/g, (_m, b: string) => b + b + '\\"') : v.replace(/"/g, '^"');
   return d.quote ? `"${body}"` : body;
 }
 const HAS_ESC: Record<ShellKind, RegExp> = { sh: /\\/, cmd: /\^|\\"/, ps: /`|""|\\"|''/ };
@@ -777,6 +780,11 @@ function maskCommandImpl(command: unknown, envIn: Env | undefined, cap: boolean,
 export const _uncappedForTest = {
   maskSecretArgs: (args: readonly string[], envIn?: Env): string[] => maskArgsImpl(args, envIn, false),
   maskSecretCommand: (command: unknown, envIn?: Env): string => maskCommandImpl(command, envIn, false),
+  /** A wrapper payload written back by `encodePayload` and read again by that shell's decoder (T067: it must read back the same). */
+  payloadRoundTrip: (kind: ShellKind, quote: string, v: string, raw = ''): string | undefined => {
+    const enc = encodePayload(kind, v, { value: v, end: 0, quote }, raw);
+    return (kind === 'sh' ? decodeSh(enc, 0) : kind === 'cmd' ? decodeCmd(enc, 0) : decodePs(enc, 0))?.value;
+  },
 };
 
 /**
