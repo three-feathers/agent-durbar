@@ -81,6 +81,9 @@ export function redact(text: unknown, env?: Env): string {
 }
 
 const MASK = '[redacted]';
+/** T065 (#374): a string longer than this is replaced by `[redacted]` whole, before any rule runs and never cut, so a 1 MB arg costs nothing. Above the 4096 display cap (T054) and the 4096 per-arg limit of per-folder extras (FR-022). */
+export const MASK_INPUT_MAX = 12288;
+const capped = (x: unknown): unknown => (typeof x === 'string' && x.length > MASK_INPUT_MAX ? MASK : x);
 const SECRET_SUB = /token|secret|passw|passphrase|apikey|privatekey|credential|cookie|signature|jwt/;
 const SECRET_WORDS = new Set(['key', 'pass', 'pwd', 'pw', 'pat', 'bearer', 'auth', 'authorization', 'session', 'sig']);
 const HEADER_FLAGS = new Set(['-h', '--header', '--headers', '--http-header']);
@@ -366,7 +369,7 @@ function unquote(a: string): [string, string] {
  * its inside, and everything goes through `redact()`. Never throws; returns a new array of the same length.
  */
 export function maskSecretArgs(args: readonly string[], envIn?: Env): string[] {
-  return maskArgs(args, snapshot(envIn), MAX_DEPTH, true);
+  return maskArgs((Array.isArray(args) ? args.map(capped) : args) as string[], snapshot(envIn), MAX_DEPTH, true);
 }
 
 function maskArgs(args: readonly string[], env: Env, d: number, top = false): string[] {
@@ -448,6 +451,7 @@ export function splitCommand(command: unknown): string[] {
 /** A command for display: `redact()` on the raw text first (R8: `Authorization: Bearer x` and `Bearer x` side by side), split like `splitCommand`, masked like `maskSecretArgs`, joined with one space. Never throws. */
 export function maskSecretCommand(command: unknown, envIn?: Env): string {
   try {
+    if (typeof command === 'string' && command.length > MASK_INPUT_MAX) return MASK;
     const env = snapshot(envIn);
     return maskArgs(splitCommand(redact(maskSchemeSecrets(typeof command === 'string' ? command : ''), env)), env, MAX_DEPTH, true).join(' ');
   } catch { return '[redaction failed]'; }

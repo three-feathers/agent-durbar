@@ -1,7 +1,7 @@
 /** Unit test for secret redaction and the debug sink (spec 012 T051): `npm run test:runtime`. */
 import * as assert from 'assert';
 import { Worker } from 'worker_threads';
-import { REDACT_MAX_CHARS, createDebugSink, cut, maskSchemeSecrets, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, cut, maskSchemeSecrets, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, splitCommand } from '../src/shared/redact';
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -692,6 +692,39 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     console.log(`redact: 14c run ${name} 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)} 200k=${Math.round(t200)} ms`);
     assert.ok(t200 < 5000 && tBig < 8000 && ratio < 24, `14c: run ${name} grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)}), 200k ${t200} ms`);
   }
+
+  // T065 (#374): a string over MASK_INPUT_MAX is hidden whole through the public helpers too, before any rule, in well under 100 ms
+  {
+    const MB = 1_000_000;
+    const timeIt = <T>(f: () => T): { v: T; ms: number } => { const t = process.hrtime.bigint(); const v = f(); return { v, ms: Number(process.hrtime.bigint() - t) / 1e6 }; };
+    const shapes: Array<[string, string]> = [['a=b;', 'token=' + SEC], ['x ', '--token ' + SEC]];
+    for (const [unit, tail] of shapes) {
+      const big = unit.repeat(Math.ceil(MB / unit.length)) + tail;
+      const a = timeIt(() => maskSecretArgs([big]));
+      const c = timeIt(() => maskSecretCommand(big));
+      console.log(`redact: 14c 1 MB ${JSON.stringify(unit)} arg ${a.ms.toFixed(1)} ms, command ${c.ms.toFixed(1)} ms`);
+      assert.deepStrictEqual(a.v, [R], `14c: 1 MB arg ${JSON.stringify(unit)} comes back [redacted]`);
+      assert.strictEqual(c.v, R, `14c: 1 MB command ${JSON.stringify(unit)} comes back [redacted]`);
+      assert.ok(a.ms < 100 && c.ms < 100, `14c: 1 MB ${JSON.stringify(unit)} took ${a.ms.toFixed(1)} / ${c.ms.toFixed(1)} ms`);
+      noSec([a.v, c.v], '14c: 1 MB');
+    }
+    const atArg = ('--password=' + SEC).padEnd(MASK_INPUT_MAX, 'y');
+    const atCmd = 'node --api-key=' + SEC + ' ' + 'y'.repeat(MASK_INPUT_MAX - 'node --api-key='.length - SEC.length - 1);
+    assert.strictEqual(atArg.length, MASK_INPUT_MAX);
+    assert.strictEqual(atCmd.length, MASK_INPUT_MAX);
+    const gotArg = maskSecretArgs([atArg]);
+    assert.ok(gotArg[0].startsWith('--password=' + R) && gotArg[0] !== R, '14c: an arg of exactly MASK_INPUT_MAX is masked by the rules, not hidden whole');
+    const gotCmd = maskSecretCommand(atCmd);
+    assert.ok(gotCmd.startsWith('node --api-key=' + R) && gotCmd !== R, '14c: a command of exactly MASK_INPUT_MAX is masked by the rules, not hidden whole');
+    noSec([gotArg, gotCmd], '14c: at the limit');
+    assert.deepStrictEqual(maskSecretArgs([atArg + 'y']), [R], '14c: MASK_INPUT_MAX + 1 arg is hidden whole');
+    assert.strictEqual(maskSecretCommand(atCmd + 'y'), R, '14c: MASK_INPUT_MAX + 1 command is hidden whole');
+    assert.deepStrictEqual(maskSecretArgs(['a', 'b'.repeat(MASK_INPUT_MAX + 1), '--token', SEC]), ['a', R, '--token', R], '14c: only the long arg is hidden; the others keep their rules');
+  }
+
+  // [KNOWN GAP] (spec 041 T064 follow-ups): a bare `token` word is not a flag, so the value after it is NOT masked. This row pins the gap;
+  // when it is closed, flip it on purpose (and update the spec).
+  assert.deepStrictEqual(maskSecretArgs(['token', SEC]), ['token', SEC], '14c [KNOWN GAP]: a bare `token` before a secret shows the secret');
 }
 
 // 15. T054: `cut` stops at a token boundary and never leaves half a surrogate pair

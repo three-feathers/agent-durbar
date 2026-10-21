@@ -12,7 +12,7 @@ import type { AppSettings } from '../../shared/credits';
 import { GROUND } from '../../shared/floors';
 import type { FloorsDoc } from '../../shared/floors';
 import type { McpServerView } from '../../shared/mcp';
-import { cut, maskSchemeSecrets, maskSecretArgs, maskSecretUrl, parseFlag, redact, shellWords, splitCommand } from '../../shared/redact';
+import { MASK_INPUT_MAX, cut, maskSchemeSecrets, maskSecretArgs, maskSecretUrl, parseFlag, redact, shellWords, splitCommand } from '../../shared/redact';
 import { officeTotals } from '../../shared/usagedoc';
 import type { UsageNumbers, UsageTotalsDoc } from '../../shared/usagedoc';
 import type { SavedFolder } from '../folders';
@@ -148,8 +148,6 @@ function replaceValues(text: string, values: readonly string[]): string {
   return t;
 }
 
-/** T065: a string longer than this is hidden whole before any rule runs (above the 4096 display cap, at most 16 384). */
-export const MASK_INPUT_MAX = 12288;
 /** T065: two budgets per tool call, because two costs differ. Fixed units: a string costs MASK_PER_ARG, a key name MASK_PER_KEY (about a microsecond each); characters: the length of every string that goes through the rules (about 2 microseconds each on hostile text). Past either, later values are hidden whole. */
 export const MASK_BUDGET = 90000;
 export const MASK_CHARS = 48000;
