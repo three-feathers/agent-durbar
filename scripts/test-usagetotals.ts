@@ -8,7 +8,7 @@ const U = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'usagetota
   validNano: (x: unknown) => boolean;
   fmtTotal: (t: Total, digits?: number) => string;
   fmtShort: (t: Total) => string;
-  tooltip: (t: Total, o?: { scope?: string; removed?: boolean; since?: string; run?: Total; offFloors?: Total }) => string;
+  tooltip: (t: Total, o?: { scope?: string; removed?: boolean; since?: string; run?: Total; offFloors?: Total; estimate?: string }) => string;
   sum: (list: Total[]) => Total;
 };
 
@@ -59,7 +59,7 @@ const mix = U.createLedger();
 mix.record('m', ev(100, 10, 2 * AIU));
 mix.record('m', ev(100, 10, undefined));
 assert.strictEqual(U.fmtTotal(mix.room('m')), '2.00 AIU');
-assert.ok(/1 call did not report credits/.test(U.tooltip(mix.room('m'))));
+assert.ok(/1 call without credits/.test(U.tooltip(mix.room('m'))));
 
 // bad token fields do not poison the sums; missing event or room is ignored
 const tk = U.createLedger();
@@ -79,7 +79,7 @@ assert.strictEqual(U.fmtTotal(h.office(), 3), '0.049 AIU');
 
 // tooltips
 const tip = U.tooltip(l.office(), { scope: 'office', removed: true });
-assert.ok(/^Office total: 2\.000 AIU/.test(tip) && /Includes folders no longer shown/.test(tip) && /ended sessions are included/.test(tip) && /1 AIU = 1 AI credit, not verified against billing/.test(tip));
+assert.ok(/^Office total: 2\.000 AIU/.test(tip) && /Includes folders no longer shown/.test(tip) && /ended sessions included/.test(tip) && /1 AIU = 1 credit, not a bill/.test(tip));
 assert.ok(/^Folder total: /.test(U.tooltip(l.room('a'), { scope: 'folder' })));
 assert.ok(!/no longer shown/.test(U.tooltip(l.office(), { scope: 'office' })));
 
@@ -117,11 +117,11 @@ for (const v of [undefined, null, 5, 'x', [], {}, { office: 'x', folders: 'y' },
 const half = U.createLedger(); half.setBaseline({ since: 5, office: nums(2, 1), folders: [] }); assert.strictEqual(half.since(), '', 'a since that is not text is ignored');
 // the tooltip: saved since, and this run alone
 const t2 = U.tooltip(nums(122, 42.2), { scope: 'office', since: '2026-10-01T09:00:00.000Z', run: nums(2, 0.5), removed: true });
-assert.ok(/Saved since 2026-10-01 \(reset in Settings\); ended sessions are included\./.test(t2), t2);
-assert.ok(/Since the app opened \(or the last reset\): 0\.500 AIU in 2 calls\./.test(t2), t2);
+assert.ok(/Saved since 2026-10-01; ended sessions included\./.test(t2), t2);
+assert.ok(/This run: 0\.500 AIU in 2 calls\./.test(t2), t2);
 assert.ok(/Includes folders no longer shown\./.test(t2));
-assert.ok(!/Since the app opened/.test(U.tooltip(nums(122, 42.2), { scope: 'office', since: '2026-10-01', run: nums(0, 0) })), 'no run line before this run recorded anything');
-assert.ok(/Since Agent Durbar opened; ended sessions are included\./.test(U.tooltip(nums(3, 1), { scope: 'office' })), 'without a saved baseline the old text stays');
+assert.ok(!/This run/.test(U.tooltip(nums(122, 42.2), { scope: 'office', since: '2026-10-01', run: nums(0, 0) })), 'no run line before this run recorded anything');
+assert.ok(/Since Agent Durbar opened; ended sessions included\./.test(U.tooltip(nums(3, 1), { scope: 'office' })), 'without a saved baseline the old text stays');
 assert.ok(!/Saved since/.test(U.tooltip(nums(3, 1), { scope: 'office', since: 'garbage' })), 'a since that is not a date is not shown');
 assert.ok(/cost not reported in 4 calls|cost not reported/.test(U.tooltip(nums(4, 0, 4), { scope: 'folder', since: '2026-10-01', run: nums(4, 0, 4) })));
 // spec 033 FR-016: the office total keeps counting floors that are off; the tooltip says how much of it is from them
@@ -143,3 +143,25 @@ assert.ok(/cost not reported in 4 calls|cost not reported/.test(U.tooltip(nums(4
 }
 
 console.log('usagetotals tests passed');
+
+// spec 052 FR-168 (T151): a data tooltip is at most 300 characters and 8 lines, also with every optional line (up to 9,999 calls, 999.999 AIU)
+{
+  const big = (calls: number, aiu: number, unreported: number): Total => ({ calls, inTokens: 99999, outTokens: 99999, nano: aiu * AIU, unreported });
+  const worst = [
+    U.tooltip(big(9999, 999.999, 5), { scope: 'office', since: '2026-10-01T09:00:00.000Z', run: big(9999, 999.999, 0), removed: true, offFloors: big(9999, 999.999, 0), estimate: '≈ $9999.99 = 999.99 AIU + $9999.99 Claude (est.). Codex: no cost.' }),
+    U.tooltip(big(9999, 999.999, 5), { scope: 'office', removed: true, offFloors: big(9999, 999.999, 0) }),
+    U.tooltip(big(9999, 999.999, 0), { scope: 'folder', since: '2026-10-01', run: big(2, 0.5, 0) }),
+  ];
+  for (const w of worst) {
+    assert.ok(w.length <= 300, `a totals tooltip has ${w.length} characters (limit 300):\n${w}`);
+    assert.ok(w.split('\n').length <= 8, `a totals tooltip has ${w.split('\n').length} lines (limit 8)`);
+  }
+  assert.ok(worst[0].split('\n').length >= 6, 'the worst case still has most of its lines');
+  // when the lines do not all fit, the lowest priority go first: the head, the calls, the since line and the footer always stay; off-floor spend outlives the estimate and "removed"
+  assert.ok(/^Office total: /.test(worst[0]) && /Saved since 2026-10-01/.test(worst[0]) && /not a bill\.$/.test(worst[0]) && /floors that are off/.test(worst[0]), worst[0]);
+  assert.ok(!/Includes folders no longer shown/.test(worst[0]), 'removed folders is dropped first');
+  // a short tooltip keeps all of it
+  const small = U.tooltip(big(3, 1.5, 0), { scope: 'office', removed: true, estimate: '≈ $0.02 = 1.50 AIU. Codex: no cost.' });
+  assert.ok(/no longer shown/.test(small) && /Codex: no cost/.test(small), small);
+}
+console.log('usagetotals tooltip: at most 300 characters and 8 lines OK');

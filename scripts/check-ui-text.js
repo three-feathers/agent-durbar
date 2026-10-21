@@ -6,8 +6,10 @@
  *   x-scroll (nothing in a dialog, popover or menu wider than its box), offscreen, dialog-width (the S/M/L tokens),
  *   dialog-padding (--dlg-pad), field-weight (values in dialog fields are 400/500), measure (--measure), and, in the dark
  *   theme only, dark-contrast (4.5:1 for the controls of FR-169).
- * TODO (PR 2, tasks T150-T155; the hooks exist, nothing is asserted yet): orphan menu hints, tooltip length (120/300),
- *   ellipsis without a title, long names (simnames=long), Tools/Settings sideways scroll, chat overlap (caret, Copy, toast).
+ * Part 2 (T150-T155): orphan + menu-width + menu-hints (menus), tooltip-length (static 120, data 300 characters / 8 lines), ellipsis-title,
+ *   label-wrap, kbd-align (the shortcut sheet), x-scroll on screens (also with simnames=long), heading-lines (Needs you), copy-overlap,
+ *   caret-after-copy and toast-over-composer (the chat), and tone-contrast (every rule that moved from a literal light colour to the
+ *   --tone-* tokens reads at 4.5:1 in the 6 built-in themes and the dark fixture; the CSS is parsed here, the colours are resolved in the page).
  *
  *   npm run check:ui-text
  *
@@ -27,6 +29,70 @@ const SIZES = (process.env.UITEXT_SIZES || '1440x900,1280x800').split(',').map((
 const OUT = process.env.OUT || process.env.UITEXT_OUT || '';
 const SHOTS = process.env.UITEXT_SHOTS === '1';
 
+
+/* the rules of a renderer stylesheet as {sel, decls[]} (comments dropped; @media blocks are read through, their inner rules counted) */
+const cssRules = (file) => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = []; const re = /([^{}@][^{}]*)\{([^{}]*)\}/g; let m;
+  while ((m = re.exec(css))) out.push({ sel: m[1].trim().replace(/\s+/g, ' '), decls: m[2].split(';') });
+  return out;
+};
+/* T152 round 2: the rules that used literal light colours before (their text colours were literal too). Each must read at 4.5:1 in every built-in theme and the dark fixture. */
+const TONE_RULES = [
+ "styles.css | .note .btn.session",
+ "styles.css | .note .btn.session:hover",
+ "styles.css | button.lrow[aria-pressed=\"true\"]",
+ "styles.css | .btn.danger:hover",
+ "styles.css | .quick button",
+ "styles.css | .quick button:hover",
+ "styles.css | .chip.fail",
+ "styles.css | .chip.att-chip",
+ "styles.css | .chip.att-chip.img",
+ "styles.css | .att",
+ "styles.css | .att.img",
+ "styles.css | .send[aria-disabled=\"true\"]",
+ "styles.css | .sitem.sel",
+ "styles.css | .fl-sw[aria-pressed=\"true\"]",
+ "styles.css | .nothink",
+ "styles.css | .md code",
+ "styles.css | .md th",
+ "styles.css | .md pre",
+ "styles.css | .subblk",
+ "styles.css | .subblk.failed",
+ "styles.css | .subblk.done",
+ "styles.css | .subblk.done .sub-st,.sub-st.done",
+ "styles.css | .sub-ro",
+ "styles.css | .mode-chip.mode-ask",
+ "styles.css | .btn.primary.warn:hover",
+ "styles.css | .mode-menu .mm-pend",
+ "styles.css | html:not([data-ui]) .inbox-btn.attn",
+ "screens.css | .scr-note.warn",
+ "screens.css | .scr-warn",
+ "screens.css | .srv.amb",
+ "screens.css | .mtag",
+ "screens.css | .mtag.warn",
+ "screens.css | .swt",
+ "screens.css | .dlg .derr",
+ "screens.css | .note.limit",
+ "screens.css | .note.limit.settled",
+ "screens.css | .mtag.extra",
+ "screens.css | .mtag.src",
+ "screens.css | .imp-block",
+ "screens.css | .pico-opt:has(input:checked)",
+ "screens.css | .hs-ok"
+];
+const toneList = () => {
+  const by = new Map();
+  for (const file of ['styles.css', 'screens.css']) for (const r of cssRules(file)) { const k = file + ' | ' + r.sel; by.set(k, Object.assign(by.get(k) || {}, ...r.decls.map((d) => { const m = /^\s*(background(?:-color)?|color)\s*:\s*(.+?)\s*$/.exec(d); return m ? { [m[1] === 'color' ? 'color' : 'bg']: m[2] } : {}; }))); }
+  const list = [];
+  for (const k of TONE_RULES) {
+    const r = by.get(k); if (!r || !r.bg) { list.push({ sel: k, bg: 'transparent', color: 'var(--ink)', missing: true }); continue; }
+    let color = r.color; if (!color && /:hover$/.test(k)) { const b = by.get(k.replace(/:hover$/, '')); color = b && b.color; } // a hover state keeps its base text colour
+    list.push({ sel: k, bg: r.bg.replace(/\s*!important/, ''), color });
+  }
+  return list;
+};
+
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until, settle } = H;
@@ -34,7 +100,6 @@ module.exports = async (ctx) => {
   const q = (theme, extra) => ({ simkinds: 'mixed', simfloors: '1', simgrants: 'many', simquestion: '1', simtotals: '1', ...(extra || {}), ...(theme === 'dark' ? { theme: 'audit-dark', usertheme: DARK } : { theme: themeId || 'clean-office' }) });
   let theme = 'light', W = 1440, Hh = 900, extraQuery = {}, themeId = '';
   const found = []; // every violation: { surface, theme, size, rule, el, detail }
-  const todo = new Map(); // the PR 2 rules: counted, not asserted
   const opened = new Set();
 
   const load = async () => {
@@ -106,6 +171,21 @@ module.exports = async (ctx) => {
   add('tools-activity-tab', 'screen', ['#screen'], async () => { await closeChat(); await H.click('#toolsBtn'); await until(`!document.getElementById('screen').hidden`, 3000); return js(`(()=>{const b=[...document.querySelectorAll('#screen [role=tab],#screen .ttab-btn,#screen button')].find(x=>/^Activity/.test(x.textContent.trim()));if(!b)return false;b.click();return true})()`); });
   add('tools-cost-tab', 'screen', ['#screen'], async () => { await closeChat(); await H.click('#toolsBtn'); await until(`!document.getElementById('screen').hidden`, 3000); return js(`(()=>{const b=[...document.querySelectorAll('#screen [role=tab],#screen button')].find(x=>/^(Cost|Spend|Usage)/.test(x.textContent.trim()));if(!b)return false;b.click();return true})()`); });
   add('chat-waiting', 'chat', ['#panel'], () => openChat('Jonas'));
+  add('chat-first', 'chat', ['#panel'], async () => !!(await openChatWhere('true'))); // the first desk, whoever it is (the 60-character names pass)
+  // T155: a toast ends above the composer while a chat is open (the real toast(): More > Copy resume command toasts either way)
+  add('chat-toast', 'chat', ['#panel'], async () => {
+    if (!(await openChat('Ada'))) return false;
+    await js(`document.getElementById('shotCalm')&&document.getElementById('shotCalm').remove()`); // H.calm() freezes the toast's pop animation at scale 0
+    await H.clearToasts();
+    await H.click('#moreBtn'); if (!(await H.exists('#copyResBtn'))) return false; await H.click('#copyResBtn');
+    if (!(await until(`document.querySelectorAll('#toasts .toast').length>0`, 3000))) return false;
+    await ctx.sleep(500); // the toast's pop animation scales it from 0
+    const over = await js(`(()=>{const t=[...document.querySelectorAll('#toasts .toast')].pop().getBoundingClientRect(),c=document.querySelector('#panel .composer').getBoundingClientRect();return t.bottom>c.top+1?'toast bottom '+Math.round(t.bottom)+' is below the composer top '+Math.round(c.top):''})()`);
+
+    if (over) found.push({ surface: 'chat-toast', theme: themeId || theme, size: `${W}x${Hh}`, rule: 'toast-over-composer', el: '#toasts', detail: over });
+    return true;
+  });
+  add('chat-reply', 'chat', ['#panel'], async () => !!(await openChatWhere(`document.querySelector('#chat .msg.agent .cp-btn')`))); // T155: a chat with an agent reply (its Copy button)
   add('chat-question', 'chat', ['#panel'], async () => !!(await openChatWhere(`document.querySelector('#chat .note.question')`)) && js(`(document.querySelector('#chat .note.question').scrollIntoView({block:'center'}),true)`));
   add('chat-more-menu', 'menu', ['#moreMenu'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); return until(`!document.getElementById('moreMenu').hidden`, 2000); });
   add('chat-mode-menu', 'menu', ['#modeMenu'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#modeChip'); return until(`!!document.getElementById('modeMenu')`, 2000); });
@@ -147,9 +227,20 @@ module.exports = async (ctx) => {
   const PASSES = [ // surfaces that need their own page address
     { name: 'chat-question-long', base: 'chat-question', query: { simquestion: 'long' } }, // T145: a 2,000-character question
     { name: 'send-several-long', base: 'send-several', query: { simnames: 'long' } }, // T148: 60-character names
+    { name: 'tools-agents-long', base: 'tools-agents-tab', query: { simnames: 'long' } }, // T154: Tools > Models and context with 60-character names
+    { name: 'inbox-long', base: 'inbox', query: { simnames: 'long' } }, // T154: the Needs you headings
+    { name: 'list-view-long', base: 'list-view', query: { simnames: 'long' } },
+    { name: 'palette-long', base: 'palette', query: { simnames: 'long' } },
+    { name: 'chat-first-long', base: 'chat-first', query: { simnames: 'long' } },
   ];
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];
   const BUILTIN = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
+
+  const tones = async (id) => { // T152 round 2: the contrast of the rules that moved to the --tone-* tokens, in this theme
+    const list = toneList();
+    for (const r of list) if (r.missing) found.push({ surface: '(tones)', theme: id, size: '-', rule: 'tone-rule-missing', el: r.sel, detail: 'the rule is not in the CSS (or has no background): update TONE_RULES' });
+    for (const x of await js(`window.__uitext.pairs(${jsLiteral(list.filter((r) => !r.missing))})`)) found.push({ surface: '(tones)', theme: id, size: '-', ...x });
+  };
 
   const run = async (s) => {
     if (!/toast/.test(s.name)) await H.calm();
@@ -165,21 +256,21 @@ module.exports = async (ctx) => {
     if (v.some((x) => x.rule === 'no-root')) { await ctx.sleep(400); v = await js(`window.__uitext.check(${jsLiteral(s.kind)},${jsLiteral(s.roots)},{dark:${jsLiteral(dark)}})`); }
     if (s.contrast) v = v.filter((x) => x.rule === 'dark-contrast'); // every built-in theme: the FR-169 controls only
     for (const x of v) {
-      if (x.rule.startsWith('todo-')) { todo.set(x.rule, (todo.get(x.rule) || 0) + 1); continue; }
       found.push({ ...tag, ...x });
     }
     if (!s.contrast && /^settings-/.test(s.name) && !/harnesses/.test(s.name)) for (const x of await js(`window.__uitext.measureRule()`)) found.push({ ...tag, ...x });
     if (dark) for (const sel of await js(`window.__uitext.darkControls.filter(s=>[...document.querySelectorAll(s)].some(window.__uitext.vis))`)) opened.add('dark-control ' + sel);
-    const pr2 = await js(`window.__uitext.pr2()`);
-    if (pr2.tooltips) todo.set('todo-tooltip-over-120', Math.max(todo.get('todo-tooltip-over-120') || 0, pr2.tooltips));
+    if (s.kind === 'chat') for (const sel of ['.cp-btn', '.sub-prompt .pt', '.bubble.caret']) if (await js(`document.querySelectorAll(${jsLiteral('#panel ' + sel)}).length>0`)) opened.add('chat ' + sel);
+    if (!s.contrast) for (const x of await js(`window.__uitext.tooltips()`)) found.push({ ...tag, ...x });
     if (SHOTS && OUT) await H.shot(path.join(OUT, `${s.name}-${theme === 'dark' ? 'dark' : 'light'}-${W}x${Hh}.png`), { prep: 'mouse', delay: 250 });
-    console.log(`[ui-text] ${s.name} ${themeId || theme} ${W}x${Hh}: ${v.filter((x) => !x.rule.startsWith('todo-')).length} violations`);
+    console.log(`[ui-text] ${s.name} ${themeId || theme} ${W}x${Hh}: ${v.length} violations`);
   };
 
   for (const [w, h] of SIZES) {
     for (const th of THEMES) {
       W = w; Hh = h; theme = th; extraQuery = {};
       await load();
+      if (th === 'dark' && w === SIZES[SIZES.length - 1][0]) await tones('audit-dark');
       for (const s of S) {
         if (ONLY && !ONLY.has(s.name)) continue;
         try { await run(s); } catch (e) {
@@ -204,6 +295,7 @@ module.exports = async (ctx) => {
     W = 1280; Hh = 800; theme = 'light'; extraQuery = {};
     for (const id of BUILTIN) {
       themeId = id; await load();
+      await tones(id);
       for (const n of CONTRAST_SURFACES) {
         const base = S.find((x) => x.name === n);
         try { await run({ ...base, contrast: true }); } catch (e) { found.push({ surface: n, theme: id, size: '1280x800', rule: 'error', el: '', detail: String((e && e.message) || e).slice(0, 200) }); }
@@ -213,22 +305,18 @@ module.exports = async (ctx) => {
     themeId = '';
   }
 
-  // FR-169, source side: the simulator cannot reach every control, so the CSS is read too. A literal light background (a hex of
-  // luminance over 0.6) in styles.css or screens.css must be in scripts/fixtures/ui-text-light-allow.json (the debt that was there
-  // before this pass, not in T152); the switch knob is the one intended white. A new one fails.
+  // FR-169, source side: the simulator cannot reach every control, so the CSS is read too. A literal light background (a hex of luminance over 0.6)
+  // in styles.css or screens.css fails: use a theme token (the --tone-* set in styles.css :root). The one exception is the switch knob (.swt i):
+  // it is a white disc with no text on a track that is a token, so there is no text contrast to keep. There is no allow-list.
   {
-    const allow = new Set(JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'ui-text-light-allow.json'), 'utf8')).allow);
     const lum = (h) => { h = h.slice(1); if (h.length === 3) h = [...h].map((c) => c + c).join(''); const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; const [r, g, b] = [0, 2, 4].map((i) => f(parseInt(h.slice(i, i + 2), 16))); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
     for (const file of ['styles.css', 'screens.css']) {
-      const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-      const re = /([^{}@][^{}]*)\{([^{}]*)\}/g; let m;
-      while ((m = re.exec(css))) {
-        const sel = m[1].trim().replace(/\s+/g, ' ');
-        for (const d of m[2].split(';')) {
+      for (const { sel, decls } of cssRules(file)) {
+        for (const d of decls) {
           const x = /^\s*background(?:-color)?\s*:\s*(?:[^;]*?\s)?(#[0-9a-fA-F]{3,8})\b/.exec(d);
           if (!x || lum(x[1].slice(0, 7)) <= 0.6) continue;
           if (file === 'screens.css' && sel === '.swt i') continue; // the knob carries no text
-          if (!allow.has(`${file} | ${sel} | ${x[1].toLowerCase()}`)) found.push({ surface: `(${file})`, theme: 'dark', size: '-', rule: 'literal-light', el: sel.slice(0, 80), detail: `background ${x[1]}: use a theme token` });
+          found.push({ surface: `(${file})`, theme: 'dark', size: '-', rule: 'literal-light', el: sel.slice(0, 80), detail: `background ${x[1]}: use a theme token` });
         }
       }
     }
@@ -240,6 +328,7 @@ module.exports = async (ctx) => {
     for (const sel of darkControls) if (!opened.has('dark-control ' + sel)) found.push({ surface: '(dark run)', theme: 'dark', size: '-', rule: 'dark-control-missing', el: sel, detail: 'never on screen in the dark run, so its contrast was not checked' });
   }
 
+  console.log('[ui-text] chat parts on screen: ' + [...opened].filter((x) => x.startsWith('chat ')).join(', '));
   // report: grouped by rule, then surface
   const byRule = new Map();
   for (const f of found) { if (!byRule.has(f.rule)) byRule.set(f.rule, []); byRule.get(f.rule).push(f); }
@@ -253,7 +342,6 @@ module.exports = async (ctx) => {
       console.log(`  ${f.surface} [${where}] ${f.el}: ${f.detail}`);
     }
   }
-  for (const [rule, n] of todo) console.log(`[ui-text] TODO (PR 2, not asserted) ${rule}: ${n}`);
   if (found.length) throw new Error(`ui-text: ${found.length} violations in ${byRule.size} rules (${[...byRule.keys()].join(', ')})`);
   console.log('[ui-text] all checks passed');
 };

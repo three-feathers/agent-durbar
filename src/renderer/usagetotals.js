@@ -5,6 +5,7 @@
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
   const MAX_NANO=1e15;
+  const MAX_TIP=300; /* spec 052 FR-168: a data tooltip is at most 300 characters and 8 lines */
   /* A usable credit figure: a finite, non-negative number up to 1e15 nano-AIU (a typo or a bad field is "not reported"). */
   const validNano=x=>typeof x==='number'&&Number.isFinite(x)&&x>=0&&x<=MAX_NANO;
   const tok=x=>typeof x==='number'&&Number.isFinite(x)&&x>0?x:0;
@@ -62,21 +63,26 @@
   const fmtTokens=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(n>=1e4?0:1)+'k':String(Math.round(n));
   const plural=(n,w)=>n+' '+w+(n===1?'':'s');
 
-  /* Tooltip text. opts.scope: 'office' | 'folder'; opts.removed: some spend belongs to folders no longer shown;
+  /* Tooltip text, at most 300 characters and 8 lines even with every optional line (spec 052 FR-168; test:usagetotals builds the worst case).
+     opts.scope: 'office' | 'folder'; opts.removed: some spend belongs to folders no longer shown;
      opts.offFloors: the part of the office total spent on floors that are off (spec 033 FR-016; still counted). */
   function tooltip(t,opts){
     if(none(t))return '';
     const o=opts||{}, office=o.scope!=='folder';
-    const lines=[(office?'Office total: ':'Folder total: ')+(allUnreported(t)?'cost not reported':aiu(t,3)),
-      plural(t.calls,'call')+' · '+fmtTokens(t.inTokens)+' in / '+fmtTokens(t.outTokens)+' out tokens'];
-    if(t.unreported&&!allUnreported(t))lines.push(plural(t.unreported,'call')+' did not report credits');
     const since=typeof o.since==='string'&&/^\d{4}-\d{2}-\d{2}/.test(o.since)?o.since.slice(0,10):'';
-    lines.push(since?'Saved since '+since+' (reset in Settings); ended sessions are included.':'Since Agent Durbar opened; ended sessions are included.');
-    if(since&&o.run&&!none(o.run))lines.push('Since the app opened (or the last reset): '+(allUnreported(o.run)?'cost not reported':aiu(o.run,3))+' in '+plural(o.run.calls,'call')+'.');
-    if(office&&o.removed)lines.push('Includes folders no longer shown.');
-    if(office&&o.offFloors&&!none(o.offFloors))lines.push('Includes '+(allUnreported(o.offFloors)?plural(o.offFloors.calls,'call')+' with cost not reported':aiu(o.offFloors,3))+' from floors that are off (their agents keep running).');
-    lines.push('As reported by the Copilot runtime (1 AIU = 1 AI credit, not verified against billing).');
-    return lines.join('\n');
+    /* [priority, line]: shown in this order; when the text would pass MAX characters the lines of the lowest priority (the highest number) go first */
+    const L=[[0,(office?'Office total: ':'Folder total: ')+(allUnreported(t)?'cost not reported':aiu(t,3))],
+      [0,plural(t.calls,'call')+' · '+fmtTokens(t.inTokens)+' in / '+fmtTokens(t.outTokens)+' out']];
+    if(t.unreported&&!allUnreported(t))L.push([1,plural(t.unreported,'call')+' without credits']);
+    L.push([0,since?'Saved since '+since+'; ended sessions included.':'Since Agent Durbar opened; ended sessions included.']);
+    if(since&&o.run&&!none(o.run))L.push([4,'This run: '+(allUnreported(o.run)?'cost not reported':aiu(o.run,3))+' in '+plural(o.run.calls,'call')+'.']);
+    if(office&&o.removed)L.push([5,'Includes folders no longer shown.']);
+    if(office&&o.offFloors&&!none(o.offFloors))L.push([2,'Includes '+(allUnreported(o.offFloors)?plural(o.offFloors.calls,'call')+' with cost not reported':aiu(o.offFloors,3))+' from floors that are off.']);
+    if(office&&typeof o.estimate==='string'&&o.estimate)L.push([3,o.estimate]);
+    L.push([0,'Copilot\'s figure: 1 AIU = 1 credit, not a bill.']);
+    const keep=L.map(()=>true), len=()=>L.reduce((n,x,i)=>n+(keep[i]?x[1].length+1:0),-1);
+    while(len()>MAX_TIP){let w=-1;L.forEach((x,i)=>{if(keep[i]&&x[0]>0&&(w<0||x[0]>L[w][0]))w=i;});if(w<0)break;keep[w]=false;}
+    return L.filter((x,i)=>keep[i]).map(x=>x[1]).join('\n');
   }
 
   return {createLedger,validNano,fmtTotal,fmtShort,tooltip,fmtTokens,sum};
