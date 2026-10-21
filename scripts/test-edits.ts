@@ -11,6 +11,7 @@ import { EventMapper } from '../src/adapters/map';
 import type { EventBody } from '../src/adapters/map';
 import { ClaudeMapper } from '../src/adapters/claudeMap';
 import { eventProblems } from '../src/adapters/eventguard';
+import { maskEditInfo, maskMcpEvent } from '../src/main/mcpmask';
 
 const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
 
@@ -242,6 +243,99 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   for (let i = 0, k = 0, sizes = [16, 11, 14, 1, 12, 1, 19, 4, 19, 10]; i < args.length; i += sizes[k++ % sizes.length]) steps.push(...st.delta('c1', args.slice(i, i + sizes[k % sizes.length])));
   assert.strictEqual(steps.filter((x) => x.phase === 'start').length, 1);
   for (const u of steps) if (u.phase === 'update') assert.ok(!u.edit.files[0].diff || /\+hello world/.test(u.edit.files[0].diff), 'no diff before the new text');
+}
+
+// 10. FR-024: linear time on hostile streamed arguments (review on #463: quadratic regexes took up to 61 s in the main process).
+// Each case took seconds with the old regexes (`/\s+$/` per open bracket, `(.+?)\s*$`, `/\n+$/`); linear code takes milliseconds.
+// The bound is generous for a loaded CI runner and still far below the old cost.
+{
+  const BOUND_MS = 1500;
+  const timed = (name: string, fn: () => unknown): void => {
+    const t0 = Date.now();
+    fn();
+    const ms = Date.now() - t0;
+    assert.ok(ms < BOUND_MS, `${name} took ${ms} ms (bound ${BOUND_MS} ms)`);
+  };
+  const N = 100_000;
+  // a whitespace run inside an open value, then more structure: partialJson trims once
+  timed('partialJson whitespace run', () => partialJson('{"a":[[[' + ' '.repeat(N) + '1,' + '[{"b":' + ' '.repeat(N)));
+  timed('partialJson whitespace then many open brackets', () => partialJson('{"a":' + '['.repeat(2000) + ' '.repeat(N) + ',1 x'));
+  // deep nesting: one closing suffix, not a rewrite of the whole text per bracket
+  timed('partialJson deep nesting', () => partialJson('['.repeat(N)));
+  timed('partialJson deep objects', () => partialJson('{"a":'.repeat(N / 2)));
+  // a streamed Write whose content is a long run of spaces, through the whole stream path
+  timed('EditStreams Write of spaces', () => {
+    const st = new EditStreams();
+    st.begin('w', 'Write');
+    const args = '{"file_path":"/tmp/d/a.txt","content":"' + ' '.repeat(N) + 'x' + ' '.repeat(N);
+    for (let i = 0; i < args.length; i += 4096) st.delta('w', args.slice(i, i + 4096));
+  });
+  // a Codex/plain diff whose `--- ` line ends in a long run of spaces followed by text (the lazy capture retried every position)
+  timed('patchFiles long --- line', () => patchFiles('--- a/x.ts' + ' '.repeat(N) + 'y\n+++ b/x.ts\n@@\n+1\n'));
+  timed('patchFiles long +++ line', () => patchFiles('--- a/x.ts\n+++ b/x.ts' + ' '.repeat(N) + 'y\n@@\n+1\n'));
+  // many blank lines inside a diff body (the trailing-newline regex retried at each one)
+  timed('codexEdit many blank lines', () => codexEdit([{ path: 'a.ts', kind: { type: 'update' }, diff: '@@\n+a' + '\n'.repeat(N) + '+b' }]));
+  // the cut at REDACT_MAX_CHARS (1 MB) keeps a long run of blanks before the last word (the trailing-blank regex retried each one)
+  timed('finishEdit blanks before the cut', () => finishEdit([{ path: 'a.ts', kind: 'write', diff: '@@\n+' + ' '.repeat(600_000) + 'x' + ' '.repeat(600_000) }]));
+  // results stay right
+  assert.deepStrictEqual(partialJson('{"a": [1, 2,   '), { a: [1, 2] });
+  assert.deepStrictEqual(partialJson('{"a":   '), { a: null });
+  assert.deepStrictEqual(partialJson('{"a":1,   '), { a: 1 });
+  assert.deepStrictEqual(partialJson('[[1,[2,'), [[1, [2]]]);
+  assert.deepStrictEqual(patchFiles('--- a/x.ts   \n+++ b/x.ts \t\n@@\n+1\n').map((f) => f.path), ['x.ts']);
+  assert.strictEqual(codexEdit([{ path: 'a.ts', kind: { type: 'update' }, diff: '@@\n+a\n\n\n' }])!.files[0].diff, '@@\n+a');
+}
+
+// 11. The event guard rejects malformed edits (review on #463: it was only tested with good ones)
+{
+  const ev = (edit: unknown): string[] => eventProblems({ type: 'toolCall', sessionId: 's', timestamp: 1, callId: 'c', tool: 'Edit', phase: 'start', edit });
+  const good = { files: [{ path: 'a.ts', kind: 'edit', diff: '@@\n+a', added: 1, removed: 0 }], more: 2 };
+  assert.deepStrictEqual(ev(good), []);
+  const bad = (edit: unknown, re: RegExp): void => {
+    const p = ev(edit);
+    assert.ok(p.some((x) => re.test(x)), `expected ${re} in ${JSON.stringify(p)}`);
+  };
+  bad({ files: [{ path: 'a.ts', kind: 'rename' }] }, /files\[0\]\.kind rename/);
+  bad({ files: [{ kind: 'edit' }] }, /files\[0\]\.path missing/);
+  bad({ files: [{ path: '', kind: 'edit' }] }, /files\[0\]\.path missing/);
+  bad({ files: [{ path: 'a.ts', kind: 'edit', diff: 42 }] }, /files\[0\] malformed/);
+  bad({ files: [{ path: 'a.ts', kind: 'edit', added: '1' }] }, /files\[0\] malformed/);
+  bad({ files: [{ path: 'a.ts', kind: 'edit' }], more: '3' }, /more is not a number/);
+  bad({ files: [] }, /has no files/);
+  bad({}, /has no files/);
+  bad({ files: [{ path: 'a.ts', kind: 'edit' }], partial: 'yes' }, /partial is not a boolean/);
+}
+
+// 12. review on #463: the early `start` (path only) is masked and kept on one line like the edit's own paths
+{
+  const st = new EditStreams();
+  st.begin('m', 'Write');
+  const steps = st.delta('m', JSON.stringify({ file_path: `/tmp/${TOKEN}/a\nb.txt`, content: 'x' }));
+  const start = steps.find((x) => x.phase === 'start');
+  assert.ok(start && start.phase === 'start');
+  assert.ok(!start.args.path.includes(TOKEN) && /\[redacted/.test(start.args.path) && !start.args.path.includes('\n'), start.args.path);
+}
+
+// 13. review on #463 (vs #465 FR-030): main's `outward` masks an edit's paths and diffs with the session's MCP secret values too
+{
+  const HDR = 'hdr-Value"with\\quote-1234';
+  const ev = { type: 'toolCall' as const, sessionId: 's', timestamp: 1, callId: 'c', tool: 'Write', phase: 'update' as const,
+    edit: { files: [{ path: `/w/${HDR}.env`, kind: 'move' as const, movedTo: `/w/${HDR}.bak`, diff: `@@\n+X_API_KEY=${HDR}\n+t=${TOKEN}`, added: 2, removed: 0 }], partial: true } };
+  const out = maskMcpEvent(ev, [HDR]);
+  const f = out.edit!.files[0];
+  for (const x of [f.path, f.movedTo!, f.diff!]) assert.ok(!x.includes(HDR) && x.includes('[redacted]'), x);
+  assert.ok(!f.diff!.includes(TOKEN), 'redact() runs again');
+  assert.deepStrictEqual([f.added, f.removed, f.kind, out.edit!.partial], [2, 0, 'move', true], 'the rest is kept');
+  assert.ok(ev.edit.files[0].path.includes(HDR), 'the event itself is not changed');
+  for (const p of ['start', 'complete', 'failed'] as const) assert.ok(!JSON.stringify(maskMcpEvent({ ...ev, phase: p }, [HDR])).includes(HDR), `phase ${p}`);
+  assert.strictEqual(maskMcpEvent(ev, []), ev, 'no session values: the same object');
+  assert.strictEqual(maskEditInfo(ev.edit, ['abc']), ev.edit, 'values under 4 characters are skipped');
+  // cost: 20 files of 20,000 characters, the most one update carries, with several values: linear steps only
+  const big = { files: Array.from({ length: 20 }, (_, i) => ({ path: `/w/${i}.ts`, kind: 'edit' as const, diff: '@@\n' + ('+a=1&b=2?c=3 ' + HDR + '\n').repeat(700).slice(0, 20000) })) };
+  const t0 = Date.now();
+  for (let i = 0; i < 10; i++) maskEditInfo(big, [HDR, 'another-secret-value', 'third-value-xyz']);
+  const ms = (Date.now() - t0) / 10;
+  assert.ok(ms < 150, `maskEditInfo on 400,000 characters took ${ms} ms`);
 }
 
 console.log('edits: ok');

@@ -50,7 +50,11 @@ export function countDiff(diff: string): { added: number; removed: number } {
 
 /** Drop a leading `--- a/x` / `+++ b/x` header (the row already names the file). */
 function bodyOf(diff: string): string {
-  return diff.replace(/\r\n?/g, '\n').replace(/^--- [^\n]*\n\+\+\+ [^\n]*\n/, '').replace(/\n+$/, '');
+  const d = diff.replace(/\r\n?/g, '\n').replace(/^--- [^\n]*\n\+\+\+ [^\n]*\n/, '');
+  // trailing newlines dropped with a loop: `/\n+$/` retries at every newline of a long run (quadratic, FR-024)
+  let end = d.length;
+  while (end > 0 && d.charCodeAt(end - 1) === 10) end--;
+  return d.slice(0, end);
 }
 
 /** A file from old and new text (an edit), or from new text only (`create`/`write`: all lines added). */
@@ -97,9 +101,10 @@ export function patchFiles(text: string): EditFile[] {
     else if ((m = /^\*\*\* Move to: (.+)$/.exec(l)) && cur) Object.assign(cur.f, { kind: 'move', movedTo: m[1].trim() });
     else if (/^\*\*\* (Begin Patch|End Patch|End of File)\s*$/.test(l)) continue;
     else if (/^diff --git /.test(l)) cur = undefined;
-    else if ((m = /^--- (?:a\/)?(.+?)\s*$/.exec(l)) && i + 1 < ls.length && /^\+\+\+ /.test(ls[i + 1])) {
-      const to = /^\+\+\+ (?:b\/)?(.+?)\s*$/.exec(ls[i + 1])![1];
-      const from = m[1];
+    // greedy `(.+)` and trimEnd: a lazy `(.+?)\s*$` retries the whitespace tail at every position (quadratic, FR-024)
+    else if ((m = /^--- (?:a\/)?(.+)$/.exec(l)) && i + 1 < ls.length && /^\+\+\+ /.test(ls[i + 1])) {
+      const to = (/^\+\+\+ (?:b\/)?(.+)$/.exec(ls[i + 1])?.[1] ?? '').trimEnd();
+      const from = m[1].trimEnd();
       start(to === '/dev/null' ? from : to, from === '/dev/null' ? 'create' : to === '/dev/null' ? 'delete' : 'edit');
       i++;
     } else if (cur && (/^[+\- ]/.test(l) || l.startsWith('@@') || l === '')) cur.body.push(l);
@@ -112,7 +117,8 @@ export function patchFiles(text: string): EditFile[] {
   });
 }
 
-const cleanPath = (p: string): string => redact(String(p).replace(/[\r\n\t]+/g, ' ')).slice(0, PATH_MAX);
+/** A path as shown: one line, masked (FR-024), at most `PATH_MAX` characters. Also for the early `start` of a streamed call. */
+export const cleanPath = (p: string): string => redact(String(p).replace(/[\r\n\t]+/g, ' ')).slice(0, PATH_MAX);
 
 /** Mask secrets in paths and diffs, cut each diff at `DIFF_MAX` characters, keep at most `EDIT_FILES_MAX` files (FR-024). */
 export function finishEdit(files: EditFile[], partial?: boolean): EditInfo | undefined {
@@ -201,20 +207,24 @@ export function partialJson(text: string): unknown {
     const top = stack[stack.length - 1];
     if (top && t.slice(lastStruct).trim() && top.st !== 'after') top.st = 'value';
   }
+  // Close the open brackets. Linear (FR-024): the text is trimmed once, and the closing characters are built apart from it.
+  // Only the innermost frame can meet the text's own end (a dangling `:` or `,`); every outer one follows a closer.
+  let base = out.trimEnd();
+  let close = '';
   for (let i = stack.length - 1; i >= 0; i--) {
     const f = stack[i];
-    out = out.replace(/\s+$/, '');
+    const atEnd = close === '';
     if (f.t === '{') {
-      if (f.st === 'colon') out += ':null';
-      else if (f.st === 'value') out += out.endsWith(':') ? 'null' : '';
-      if (f.st === 'key') out = out.replace(/,$/, '');
-      out += '}';
+      if (f.st === 'colon') close += ':null';
+      else if (f.st === 'value' && atEnd && base.endsWith(':')) close += 'null';
+      if (f.st === 'key' && atEnd && base.endsWith(',')) base = base.slice(0, -1);
+      close += '}';
     } else {
-      if (f.st === 'value') out = out.replace(/,$/, '');
-      out += ']';
+      if (f.st === 'value' && atEnd && base.endsWith(',')) base = base.slice(0, -1);
+      close += ']';
     }
   }
-  return safeParse(out);
+  return safeParse(base + close);
 }
 
 function safeParse(s: string): unknown {

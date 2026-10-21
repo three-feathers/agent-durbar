@@ -9,7 +9,7 @@
  * - Codex: `fileChange` items carry `changes[{path, kind, diff}]` (read: `codex app-server generate-ts`, codex-cli 0.163.0); the
  *   Codex mapper calls `codexEdit` directly.
  */
-import { diffFile, editFile, finishEdit, partialJson, patchFiles, type EditFile, type EditInfo, type EditKind } from '../shared/edits';
+import { cleanPath, diffFile, editFile, finishEdit, partialJson, patchFiles, type EditFile, type EditInfo, type EditKind } from '../shared/edits';
 
 /** Tool names (lower case) whose calls change files. */
 const EDIT_TOOLS = new Set(['edit', 'multiedit', 'write', 'notebookedit', 'create', 'str_replace_editor', 'str_replace_based_edit_tool', 'apply_patch']);
@@ -225,7 +225,7 @@ export class EditStreams {
       if (!path) return [];
       if (this.started.size >= STREAMS_MAX * 4) this.started.delete(this.started.values().next().value as string);
       this.started.add(callId);
-      out.push({ phase: 'start', args: { path } });
+      out.push({ phase: 'start', args: { path: cleanPath(path) } }); // masked like the edit's own paths (FR-024)
     }
     const edit = editOf(st.tool, st.value(), true);
     if (edit) out.push({ phase: 'update', edit });

@@ -41,6 +41,16 @@ assert.strictEqual(V.summary({ files: [] }, {}).text, '');
 assert.strictEqual(V.summary(null, {}).text, '');
 assert.strictEqual(V.summary({ files: [{ path: 'x', kind: 'weird' }] }, { running: true }).verb, 'Editing');
 
+// review on #463: a refused or failed edit never reads as done
+assert.strictEqual(V.summary(one, { failed: true, folder: '/p' }).text, 'Could not edit app.js');
+assert.strictEqual(V.summary(one, { failed: true, simple: true }).text, 'Not changed app.js');
+assert.strictEqual(V.summary({ files: [{ path: 'c.ts', kind: 'delete' }] }, { failed: true }).text, 'Could not delete c.ts');
+assert.strictEqual(V.summary({ files: [{ path: 'n.md', kind: 'create' }] }, { failed: true, simple: true }).text, 'Not created n.md');
+assert.strictEqual(V.summary({ files: [{ path: 'o.ts', kind: 'move', movedTo: 'p.ts' }] }, { failed: true }).text, 'Could not move o.ts → p.ts');
+assert.strictEqual(V.summary(two, { failed: true }).text, 'Could not edit 2 files');
+assert.strictEqual(V.summary(one, { failed: true, running: true }).text, 'Editing app.js', 'running wins over a stale failed flag');
+assert.ok(!/^(Edited|Wrote|Created|Deleted|Moved|Changed)\b/.test(V.summary({ files: [{ path: 'w.md', kind: 'write' }] }, { failed: true }).text));
+
 // FR-021: 12 lines open, at most 400 drawn
 assert.strictEqual(V.shown(5, false), 5);
 assert.strictEqual(V.shown(50, false), V.OPEN_LINES);

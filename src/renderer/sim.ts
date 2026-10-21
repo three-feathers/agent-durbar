@@ -63,7 +63,7 @@ interface SimOptions {
   places?: number;
   /** Pending permission requests carry a time 2 minutes in the past, so "impatient" (spec 034) can be seen at once. */
   waitOld?: boolean;
-  /** Spec 005 FR-026 (`simedits=1`): the first agent edits files: a two-file patch, a new file, then an edit whose arguments stream in and stay open. */
+  /** Spec 005 FR-026 (`simedits=1`): the first agent edits files: a two-file patch, a new file, a refused delete, then an edit whose arguments stream in and stay open. */
   edits?: boolean;
 }
 
@@ -670,6 +670,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const env = simEdit(base + '/config/.env.example', 'create', [], ['PORT=3000', 'API_TOKEN=ghp_simulatedTokenValue0123456789abcdef', 'LOG_LEVEL=info']);
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p2, tool: 'Write', phase: 'start', args: { path: env.files[0].path }, edit: env });
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p2, tool: 'Write', phase: 'complete', output: 'File created successfully', edit: env });
+      // a refused edit (this agent is in Read-only): the row must say it was not done (review on #463)
+      const p4 = sid(s) + '-refused';
+      const gone: EditInfo = { files: [{ path: base + '/src/legacy/old-routes.js', kind: 'delete', ...simDiffOf(['module.exports = require("./v0");'], [], 1) }] };
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p4, tool: 'apply_patch', phase: 'start', args: { path: gone.files[0].path }, edit: gone });
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p4, tool: 'apply_patch', phase: 'failed', output: 'declined', edit: gone });
       // the streamed Edit: start as soon as the path is known, then partial diffs; it stays open (the model is still writing)
       const p3 = sid(s) + '-stream';
       const path = base + '/src/server/app.js';

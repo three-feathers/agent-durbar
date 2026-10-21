@@ -9,6 +9,9 @@
   const VERB={edit:['Editing','Edited'],create:['Creating','Created'],write:['Writing','Wrote'],delete:['Deleting','Deleted'],move:['Moving','Moved']};
   /* FR-023: Simple says what happens to the file, not how */
   const PLAIN={edit:['Changing','Changed'],write:['Changing','Changed'],create:['Creating','Created'],delete:['Deleting','Deleted'],move:['Moving','Moved']};
+  /* a refused or failed call did not change the file: never the past tense of done (review on #463) */
+  const FAIL={edit:'Could not edit',create:'Could not create',write:'Could not write',delete:'Could not delete',move:'Could not move'};
+  const PLAIN_FAIL={edit:'Not changed',write:'Not changed',create:'Not created',delete:'Not deleted',move:'Not moved'};
   const kindOf=k=>VERB[k]?k:'edit';
   const isWin=p=>/^[a-z]:[\\/]/i.test(p)||/^\\\\/.test(p);
   /* FR-020, FR-025: { name, dir, full }. A path inside `folder` is shown relative to it; \ and / both split; a Windows path (drive
@@ -33,21 +36,23 @@
   }
   /* "+12 −3" (a real minus sign); '' when there is no diff at all */
   function countText(a,r,any){return any||a||r?'+'+(a||0)+' −'+(r||0):'';}
-  /* The row's words: { verb, name, dir, count, text, title }. running: present tense; simple: plain words (FR-023). */
+  /* The row's words: { verb, name, dir, count, text, title }. running: present tense; failed (a refused or failed call, not
+     running): "Could not edit" / Simple "Not changed"; simple: plain words (FR-023). */
   function summary(edit,o){
-    const opt=o||{}, fs=edit&&Array.isArray(edit.files)?edit.files:[], run=opt.running?0:1, W=opt.simple?PLAIN:VERB;
+    const opt=o||{}, fs=edit&&Array.isArray(edit.files)?edit.files:[], fail=!opt.running&&!!opt.failed, run=opt.running?0:1;
+    const W=opt.simple?PLAIN:VERB, F=opt.simple?PLAIN_FAIL:FAIL, verbOf=k=>fail?F[k]:W[k][run];
     const t=totals(edit), count=countText(t.added,t.removed,t.any), n=fs.length+(Number(edit&&edit.more)||0);
     if(!fs.length)return {verb:'',name:'',dir:'',count:'',text:'',title:''};
     if(n>1){
       const kinds=new Set(fs.map(f=>kindOf(f.kind))), k=kinds.size===1?[...kinds][0]:'edit';
-      const verb=W[k][run], name=n+' files';
+      const verb=verbOf(k), name=n+' files';
       return {verb,name,dir:'',count,text:verb+' '+name,title:fs.map(f=>f.path).join('\n')+(edit.more?'\n… and '+edit.more+' more':'')};
     }
-    const f=fs[0], k=kindOf(f.kind), d=displayPath(f.path,opt.folder), verb=W[k][run];
+    const f=fs[0], k=kindOf(f.kind), d=displayPath(f.path,opt.folder), verb=verbOf(k);
     const to=f.movedTo?displayPath(f.movedTo,opt.folder).rel:'';
     return {verb,name:d.name,dir:d.dir,count,text:verb+' '+d.name+(to?' → '+to:''),title:d.full+(f.movedTo?' → '+f.movedTo:''),to};
   }
   /* How many of `total` diff lines are drawn: OPEN_LINES until "Show all", then all (at most MAX_LINES) */
   function shown(total,all){const n=Math.max(0,Number(total)||0);return all?Math.min(n,MAX_LINES):Math.min(n,OPEN_LINES);}
-  return {displayPath,summary,totals,countText,shown,OPEN_LINES,MAX_LINES,VERB,PLAIN};
+  return {displayPath,summary,totals,countText,shown,OPEN_LINES,MAX_LINES,VERB,PLAIN,FAIL,PLAIN_FAIL};
 })());

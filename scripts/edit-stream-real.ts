@@ -104,7 +104,10 @@ async function main(): Promise<void> {
   // the throw-away session is removed where the adapter can (Copilot), or its transcript file (Claude Code, only this id)
   const del = (ad as unknown as { deleteSession?: (s: string) => Promise<void> }).deleteSession;
   if (app === 'copilot' && del) await del.call(ad, sid).catch(() => undefined);
-  if (app === 'claude') {
+  // only a UUID names a transcript file: anything else (a path part, `*`, `..`) is never put into a path to delete
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (app === 'claude' && !UUID.test(sid)) console.log('session id is not a UUID: transcript left in place');
+  else if (app === 'claude') {
     const projects = path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'), 'projects');
     for (const d of fs.existsSync(projects) ? fs.readdirSync(projects) : []) fs.rmSync(path.join(projects, d, `${sid}.jsonl`), { force: true });
   }

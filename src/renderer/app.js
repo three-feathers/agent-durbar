@@ -2323,7 +2323,7 @@ function tIntent(T,txt){
 function tTool(T,e){
   const box=tChips(T);
   if(e.phase==='start'){const label=editLabel(e)||toolLabel(e.args),cmd=toolFull(e.args);const el=makeChip({tool:e.tool,label,full:cmd,res:'running',state:'run'});addChip(box,el);
-    const c=T.chipEls[e.callId]={el,tool:e.tool,label,cmd,t0:e.timestamp,box,T,state:'run',res:'running',output:'',ms:null,edit:e.edit||null};
+    const c=T.chipEls[e.callId]={el,tool:e.tool,label,cmd,t0:e.timestamp,seen:Date.now(),box,T,state:'run',res:'running',output:'',ms:null,edit:e.edit||null};
     if(c.edit)edPaint(c);
     tAct(T,e.callId,c);}
   else{const c=T.chipEls[e.callId];if(c){
@@ -2333,7 +2333,7 @@ function tTool(T,e){
     if(e.phase!=='update'||e.output!=null){const full=String(e.output||''),done=e.phase!=='update';
       c.ms=done&&typeof c.t0==='number'&&typeof e.timestamp==='number'?e.timestamp-c.t0:null; /* spec 052 FR-063: duration from the start and end events' times */
       c.res=done?SHORT(full||(e.phase==='complete'?'ok':'failed'),60):'running';c.output=full;c.state=!done?'run':e.phase==='failed'?'failed':'ok';
-      if(done&&T.actId===e.callId)tAct(T,null);}
+      if(done&&T.actId===e.callId)tActNext(T);}
     if(c.edit)edQueue(c);
     else if(e.phase!=='update'||e.output!=null||e.args!==undefined)chipRepaint(c);
     if(c.edit&&T.actId===e.callId)tAct(T,e.callId,c);}}
@@ -2359,7 +2359,7 @@ const EDQ=new Set();let edRaf=0;
 function edQueue(c){EDQ.add(c);if(!edRaf)edRaf=requestAnimationFrame(()=>{edRaf=0;const l=[...EDQ];EDQ.clear();l.forEach(edPaint);});}
 function edPaint(c){
   chipRepaint(c);
-  const el=c.el,ed=c.edit,run=c.state==='run',sm=EV.summary(ed,{running:run,simple:SIMPLE,folder:c.T.folder});
+  const el=c.el,ed=c.edit,run=c.state==='run',sm=EV.summary(ed,{running:run,failed:c.state==='failed',simple:SIMPLE,folder:c.T.folder});
   el.classList.add('editchip');el._ed=c;
   el.querySelectorAll(':scope>.plain,:scope>b,:scope>code').forEach(x=>x.remove());
   const head=document.createElement('span');head.className='ed-head';
@@ -2383,13 +2383,14 @@ function edDiff(c,sm){
   if(!d){d=document.createElement('details');d.className='ediff pdiff';if(!SIMPLE){d._auto=true;d.open=true;}
     const su=document.createElement('summary');const pre=document.createElement('pre');pre.setAttribute('aria-label','The change, as removed and added lines');d.append(su,pre);
     d.addEventListener('toggle',()=>{if(d._auto)d._auto=false;else d.dataset.touched='1';});
-    d.addEventListener('click',ev=>{const b=ev.target.closest('.xall');if(!b)return;ev.preventDefault();c.all=true;edDiff(c,EV.summary(c.edit,{running:c.state==='run',simple:SIMPLE,folder:c.T.folder}));});
+    d.addEventListener('click',ev=>{const b=ev.target.closest('.xall');if(!b)return;ev.preventDefault();c.all=true;edDiff(c,EV.summary(c.edit,{running:c.state==='run',failed:c.state==='failed',simple:SIMPLE,folder:c.T.folder}));});
     c.diffEl=d;}
   if(d.previousElementSibling!==c.el)c.el.after(d);
   d.hidden=c.el.hidden;
   const cnt=sm.count?' ('+sm.count+')':'';
   const su=d.querySelector('summary'); /* the labels sit on the summary: relabelScopes switches them with the level, as on the permission card */
-  su.dataset.lblExpert=(files.length>1?'The changes':'The change')+cnt;su.dataset.lblSimple='See what changes'+cnt;
+  const notMade=c.state==='failed'; /* a refused or failed call: the lines were not written */
+  su.dataset.lblExpert=(files.length>1?'The changes':'The change')+(notMade?' (not made)':'')+cnt;su.dataset.lblSimple=(notMade?'See what would have changed':'See what changes')+cnt;
   su.textContent=SIMPLE?su.dataset.lblSimple:su.dataset.lblExpert;
   /* every file's lines in one list; a file line before each when there are several */
   const rows=[];
@@ -2413,16 +2414,23 @@ function relabelEdits(){const all=sel=>Object.values(chats).flatMap(ch=>ch&&ch.e
   all('.chip.editchip').forEach(el=>{const c=el._ed;if(!c)return;
   if(c.diffEl&&!c.diffEl.dataset.touched&&c.diffEl.open===SIMPLE){c.diffEl._auto=true;c.diffEl.open=!SIMPLE;}edPaint(c);});}
 /* spec 005 FR-022: the waiting line names what runs now ("Editing app.js · 12s"); null = no tool open */
+/* the current tool ended: name the newest tool still running (several can be open at once), else none */
+function tActNext(T){let id=null,c=null;
+  for(const [k,v] of Object.entries(T.chipEls||{}))if(v&&v.state==='run'&&(!c||(v.seen||0)>=(c.seen||0))){id=k;c=v;}
+  tAct(T,id,c);}
 function tAct(T,id,c){
   const ty=T.typing;if(!ty)return;
   if(!id||!c){delete ty.dataset.act;delete ty.dataset.a0;T.actId=null;ty._act=null;typingPaint(ty);return;}
   const k=toolKind(c.tool);
   const text=c.edit?EV.summary(c.edit,{running:true,simple:SIMPLE,folder:T.folder}).text:SIMPLE||k!=='tool'?plainChip(k,c.tool,c.label,true):'Using '+String(c.tool||'a tool');
-  if(T.actId!==id)ty.dataset.a0=String(Date.now());
+  if(T.actId!==id)ty.dataset.a0=String(c.seen||Date.now()); /* the tool's own time, also when it comes back after a newer one ended */
   T.actId=id;ty._act={T,id,c};ty.dataset.act=SHORT(text,80);typingPaint(ty);
 }
 function typingPaint(t){const l=t.querySelector('.t-l');if(!l)return;
   const now=Date.now(),sec=Math.max(0,Math.round((now-Number(t.dataset.t0))/1000));
+  /* a permission card waits in this turn: the agent is not editing, it waits for the user's answer (review on #463) */
+  const ask=t.parentNode&&t.parentNode.querySelector('.note.perm.pending');
+  if(ask){l.textContent='Waiting for your OK · '+Math.max(0,Math.round((now-Number(ask.dataset.t0||now))/1000))+'s';return;}
   if(t.dataset.act){l.textContent=t.dataset.act+' · '+Math.max(0,Math.round((now-Number(t.dataset.a0||now))/1000))+'s';return;}
   l.textContent=(t.parentNode&&t.parentNode.children.length>1?'Working':'Waiting for the model')+' · '+sec+'s';}
 /* end of a turn / sub-agent run: finish blocks; say honestly when the model sent no reasoning */
@@ -2931,8 +2939,10 @@ function showPerm(a,p){
     mk('Deny','danger','Deny this request',()=>answer(false,false));
     n.appendChild(row);
     a.pend.set(p.requestId,{n,row,st});
+    n.classList.add('pending');n.dataset.t0=String(Date.now()); /* the waiting line says "Waiting for your OK" meanwhile */
   }
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
+  if(t.T.typing)typingPaint(t.T.typing);
   if(p.state==='pending')announce(SIMPLE&&pl?plain:a.name+' needs your OK: '+p.summary);
   renderInboxBtn();
 }
@@ -2957,6 +2967,8 @@ function settlePerm(a,p){
   }
   a.pend.delete(p.requestId);a.settled.add(p.requestId);
   if(e.row)e.row.remove();
+  e.n.classList.remove('pending');
+  if(a.turn&&a.turn.T.typing)typingPaint(a.turn.T.typing);
   const word=p.state==='approved'?'approved':'denied';
   const why=p.via==='stopped'?' (session stopped)':p.via==='session'?' (allowed for this session)':p.remembered?' (and remembered for this session)':'';
   e.st.textContent=' → '+(word==='approved'?'allowed':'denied')+why;

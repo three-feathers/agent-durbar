@@ -51,7 +51,9 @@ export function cut(s: string, max: number): string {
   let end = max;
   if (end > 0 && /[\ud800-\udbff]/.test(s[end - 1])) end--; // never leave half a surrogate pair
   while (end > 0 && TOKEN_CHAR.test(s[end - 1])) end--;
-  return s.slice(0, end).replace(/[ \t]+$/, '') + TRUNCATED;
+  // a loop, not `/[ \t]+$/`: that regex retries at every blank of a long run (quadratic on a 1 MB run of spaces)
+  while (end > 0 && (s[end - 1] === ' ' || s[end - 1] === '\t')) end--;
+  return s.slice(0, end) + TRUNCATED;
 }
 
 /** Env snapshots made by the masking helpers: their secret list is computed once, so a 100 000-token command does not rescan the env per token. */

@@ -34,11 +34,26 @@ module.exports = async (ctx) => {
       const hs=[...document.querySelectorAll('#chat .chip.editchip')].filter(c=>!c.hidden).map(c=>c.querySelector('.ed-head').getBoundingClientRect());
       [...document.querySelectorAll('#chat .chip.editchip')].forEach(c=>{if(c.hidden)return;const r=c.getBoundingClientRect(),h=c.querySelector('.ed-head').getBoundingClientRect();if(h.right>r.right+0.5)bad.push('row text leaves its row');});
       return bad;})()`);
+  /* review on #463: with two tools open the waiting line goes back to the one still running when the newer ends; while a permission
+     card waits it says so instead of "Editing" (events sent with the simulator's test hook, the same path as its own events) */
+  const emit = (e) => js(`window.__durbarSimEmit(Object.assign(${jsLiteral(e)},{timestamp:Date.now()}))`);
+  const waitingLine = async () => {
+    const line = (re, why) => until(`new RegExp(${jsLiteral(re)}).test((document.querySelector('#chat .typing .t-l')||{}).textContent||'')`, 3000).then(async (ok) => assert.ok(ok, `${why}: "${await typing()}"`));
+    await emit({ type: 'toolCall', sessionId: 'sim-1', callId: 'sim-1-x-grep', tool: 'grep', phase: 'start', args: { pattern: 'listen' } });
+    await line('^(?!Editing app\\.js|Working|Waiting)\\S.* · \\d+s$', 'a newer tool names itself');
+    await emit({ type: 'toolCall', sessionId: 'sim-1', callId: 'sim-1-x-grep', tool: 'grep', phase: 'complete', output: '2 matches' });
+    await line('^Editing app\\.js · \\d+s$', 'the newer tool ended: the edit still running is named again, not "Working"');
+    const perm = { requestId: 'sim-1-x-perm', kind: 'write', summary: 'Write src/server/app.js', state: 'pending' };
+    await emit({ type: 'status', sessionId: 'sim-1', status: 'needs-permission', permission: perm });
+    await line('^Waiting for your OK · \\d+s$', 'a pending permission card: the line does not say Editing');
+    await emit({ type: 'permission', sessionId: 'sim-1', permission: { requestId: perm.requestId, state: 'approved', via: 'user', summary: perm.summary } });
+    await line('^Editing app\\.js · \\d+s$', 'answered: back to the edit');
+  };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, query: Q, settle: false });
     await level('expert');
     await js(`document.querySelector('#stage .desk[data-id="sim-1"]').click()`);
-    await until(`document.querySelectorAll('#chat .chip.editchip').length>=3&&[...document.querySelectorAll('#chat .chip.editchip .ed-name')].some(n=>n.textContent==='app.js')`, 10000);
+    await until(`document.querySelectorAll('#chat .chip.editchip').length>=4&&[...document.querySelectorAll('#chat .chip.editchip .ed-name')].some(n=>n.textContent==='app.js')`, 10000);
     await until(`(()=>{const c=[...document.querySelectorAll('#chat .chip.editchip')].find(c=>c.querySelector('.ed-name').textContent==='app.js');return c&&/\\+3[0-9]/.test(c.querySelector('.ed-count').textContent)})()`, 6000);
     await settle();
     let r = await rows();
@@ -58,6 +73,10 @@ module.exports = async (ctx) => {
     const env = r.find((x) => x.name === '.env.example');
     assert.ok(env && env.verb === 'Created' && env.dir === 'config', `${w}: the new file ${JSON.stringify(env)}`);
     assert.ok(!/ghp_/.test(env.diff.text) && /\[redacted\]/.test(env.diff.text), `${w}: the token is masked in the page (FR-024)`);
+    // a refused edit never reads as done (review on #463)
+    const refused = r.find((x) => x.name === 'old-routes.js');
+    assert.ok(refused && refused.verb === 'Could not delete' && refused.dir === 'src/legacy' && !refused.run, `${w}: the refused delete ${JSON.stringify(refused)}`);
+    assert.match(refused.diff.summary, /^The change \(not made\)/, `${w}: its diff says it was not made`);
     assert.deepStrictEqual(await layout(), [], `${w}: layout`);
     // scroll the streamed row into view for the picture
     await js(`(()=>{const c=[...document.querySelectorAll('#chat .chip.editchip')].find(c=>c.querySelector('.ed-name').textContent==='app.js');c.scrollIntoView({block:'start'});document.getElementById('chat').scrollTop-=60})()`);
@@ -78,6 +97,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(s2.diff.open, false, `${w}: Simple keeps the diff closed`);
     assert.match(s2.diff.summary, /^See what changes \(\+3\d −2\)$/);
     assert.strictEqual(r.find((x) => x.name === '2 files').verb, 'Changed');
+    assert.strictEqual(r.find((x) => x.name === 'old-routes.js').verb, 'Not deleted', `${w}: the refused delete in plain words`);
     assert.match(await typing(), /^Changing app\.js · \d+s$/);
     assert.deepStrictEqual(await layout(), [], `${w}: layout in Simple`);
     await shot(`005-edit-simple-${w}x${h}.png`);
@@ -87,6 +107,7 @@ module.exports = async (ctx) => {
     await level('expert'); await level('simple');
     assert.strictEqual((await rows()).find((x) => x.name === 'app.js').diff.open, true, `${w}: the user's choice is kept`);
     await level('expert');
+    if (w === 1440) await waitingLine(); // a second tool and a permission card: once (it does not depend on the size), after the pictures
   }
   console.log('[edits] all checks passed');
 };
