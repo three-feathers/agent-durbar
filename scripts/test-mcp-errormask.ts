@@ -1,6 +1,6 @@
 /** Unit test: MCP server error text is masked before it reaches the window (spec 019 FR-021). */
 import * as assert from 'assert';
-import { maskMcpError, maskMcpEvent, maskMcpStatuses, mcpSecretValues, MCP_ERROR_MAX_CHARS } from '../src/main/mcpmask';
+import { maskMcpError, maskMcpEvent, maskMcpText, maskMcpStatuses, mcpSecretValues, MCP_ERROR_MAX_CHARS } from '../src/main/mcpmask';
 import type { AgentEvent } from '../src/adapters/types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -69,5 +69,22 @@ assert.strictEqual(maskMcpError(undefined), undefined);
   assert.ok(sends.length >= 1 && sends.every((x) => x.includes('outward(')), `agent:event to the window goes through outward(): ${sends.join(' | ')}`);
   const sink = main.match(/write\(\{ t: Date\.now\(\), event: [^}]*\}/g) ?? [];
   assert.ok(sink.length === 1 && sink[0].includes('outward('), `the DURBAR_LOG sink writes outward(e): ${sink.join(' | ')}`);
+}
+// spec 058 FR-067: a failed MCP tool card is masked (session values, token shapes, URL keys), with no 300-character cut
+{
+  const HDR = 'hdr-secret-value-77';
+  const card = (over: Record<string, unknown>): AgentEvent => ({ type: 'toolCall', sessionId: 's1', timestamp: 1, callId: 'c1', tool: 'srv-search', phase: 'failed', mcpServer: 'srv', mcpTool: 'search', ...over }) as unknown as AgentEvent;
+  const long = 'detail line. '.repeat(60); // 780 characters
+  const out = maskMcpEvent(card({ output: `${long}X-Api-Key: ${HDR} token ${GH} GET https://api.example.com/mcp?key=sekretvalue99&x=1` }), [HDR]) as unknown as { output: string };
+  assert.ok(!out.output.includes(HDR) && !out.output.includes(GH) && !out.output.includes('sekretvalue99'), `card output masked: ${out.output.slice(-120)}`);
+  assert.ok(out.output.startsWith(long), 'no 300-character cut on the card');
+  assert.strictEqual(maskMcpText(undefined), undefined);
+  assert.strictEqual(maskMcpText('x'.repeat(1000)), 'x'.repeat(1000));
+  // only a FAILED call that names an MCP server
+  for (const e of [card({ phase: 'complete', output: HDR }), card({ mcpServer: undefined, output: HDR }), card({ output: undefined })]) assert.strictEqual(maskMcpEvent(e, [HDR]), e, 'other tool events pass through as the same object');
+  // wiring: main fetches the session's values for a failed MCP tool card
+  const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+  const line = main.split('\n').find((l) => l.startsWith('const outward = ')) ?? '';
+  assert.ok(line.includes("'toolCall'") && line.includes('mcpServer') && line.includes('secretValuesFor'), `outward() passes the session values for failed MCP tool cards: ${line}`);
 }
 console.log('mcp error mask: planted secrets, normal text, mask-then-cut, session values, event copy OK');

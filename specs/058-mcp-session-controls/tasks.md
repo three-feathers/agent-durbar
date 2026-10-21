@@ -148,22 +148,27 @@ references: `src/main/main.ts:123` is now `main.ts:142` (`outward`); `src/adapte
 
 1. T091 + T092 + T097: no prerequisite, no UI. Stops the false app sign-in card for the issue's text and masks failed MCP tool cards.
 2. T112 + T093: types, contract C2, fake.
-3. T094, T095 (folds T023 in), T096: one PR, or three in parallel (different files).
+3. T094, T095 (folds T023 in), T096: one PR per adapter (owner, 2026-10-21).
 4. T113 + T114 + T115: the dialog shows "Needs sign-in" with its hint and *Details*; simulator screenshots. After PRs 1-4 a 401 / OAuth
    challenge reads as needs-auth in the MCP dialog.
-5. T098 + T099 + T100: the adapters' `startMcpSignIn` and Copilot `persistent` storage, on the fakes (one PR or three).
+5. T098 + T099 + T100: the adapters' `startMcpSignIn` and Copilot `persistent` storage, on the fakes; one PR per adapter (owner, 2026-10-21).
 6. T101: main store, IPC, preload, `DurbarApi`.
 7. T102 + T110 + T104 (dialog part): Sign in, two-step open, origin tag, terminal steps, Switch off; screenshots.
 8. T103 + T111 + T104 (card part) + T108: tool card line, keychain sentence, README, CHANGELOG, specs index.
-9. T105-T107 only with the owner's go-ahead at the time; then T109.
+9. T105-T107 (8c) run on the owner's Mac with a remote OAuth MCP server he chooses, one adapter at a time, after PRs 5-8 merge (owner,
+   2026-10-21; still needs his go-ahead at the time); then T109.
+
+**Owner's answers, 2026-10-21 ("Ok todo").** (1) Until T040-T042 (Restart session, #349) exist, the manual steps (T102, T110 texts, FR-068)
+say "End this session (More > End session), then send a message to resume it"; they switch to the Restart button once T040-T042 are built.
+(2) One PR per adapter for steps 3 and 5. (3) Phase 8c as in step 9. (4) T112-T115 are tracked under #364, with a comment on #349.
 
 ### Phase 8a: clarify, signals, classifier, masking (only T090 needs the owner; T091-T097 do not wait for it)
 
 - [x] T090 Owner answers Q12-Q19 (spec *Changes*, open questions); record them under spec.md `## Clarifications` and adjust T098-T104
   (2026-10-20: Q12 B, Q13-Q19 A)
-- [ ] T091 [P] `src/adapters/mcpauth.ts` `isMcpAuthChallenge(text)`; `scripts/test-mcpauth.ts` (`test:mcpauth` in `test:serial`): the
+- [x] T091 [P] `src/adapters/mcpauth.ts` `isMcpAuthChallenge(text)`; `scripts/test-mcpauth.ts` (`test:mcpauth` in `test:serial`): the
   issue's exact text, the runtime phrases of research 7.2, negatives (model text, a usage limit, the app's own 401) [FR-061]
-- [ ] T092 [P] `isAuthError` returns false when `isMcpAuthChallenge` matches; cases in `scripts/test-autherrors.ts` (the issue's text as
+- [x] T092 [P] `isAuthError` returns false when `isMcpAuthChallenge` matches; cases in `scripts/test-autherrors.ts` (the issue's text as
   an `error` status gets no `errorKind: 'auth'`) [FR-062, SC-010]
 - [ ] T093 [P] Types: `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `cancelMcpSignIn?`, `ToolCallEvent.mcpAuth`; event guard (only
   on a failed `toolCall` with `mcpServer`); contract C2 lines; `fake.ts` members behind the flags [FR-063, FR-064, FR-068]
@@ -174,7 +179,7 @@ references: `src/main/main.ts:123` is now `main.ts:142` (`outward`); `src/adapte
   failed MCP tool with challenge text -> `mcpAuth` and a list refresh; `test-codex-adapter` [FR-011, FR-060]
 - [ ] T096 [P] Claude: a failed `mcp__<server>__<tool>` result with challenge text -> `mcpAuth` and one `mcp_status`; mapper and fake
   CLI tests [FR-060]
-- [ ] T097 Main masks failed MCP tool cards (`maskMcpText`, the session's secret values, no 300 cut) in the renderer hook
+- [x] T097 Main masks failed MCP tool cards (`maskMcpText`, the session's secret values, no 300 cut) in the renderer hook
   (`outward`, `src/main/main.ts:142`, next to `maskMcpEvent` in `src/main/mcpmask.ts:36`); extend the existing spec 019 test
   `scripts/test-mcp-errormask.ts` (a header value, a `ghp_` token, a URL with a key, and the wiring check for `toolCall`) [FR-067, SC-011]
 
@@ -194,19 +199,19 @@ references: `src/main/main.ts:123` is now `main.ts:142` (`outward`); `src/adapte
   `agents:mcpCancelSignIn`; `elicitHttpsUrl` check (Q16); host-only replies; drops on connected, Cancel, 10 minutes, End, Restart
   session (the Restart session hook waits for T040/T041, #349, not built on 2026-10-21); `canSignIn`, `signIn`, `signInSteps` in `agents:mcp`; preload and `DurbarApi`; tests: host only, `http:` and user:password
   refused, expiry, Cancel, End, no address in the `DURBAR_LOG` sink or activity log [FR-065, SC-011]
-- [ ] T102 Dialog: needs-auth row (hint, Sign in, Switch off for this session, terminal steps with Copy), two-step open (Q13), waiting and
+- [ ] T102 Dialog: needs-auth row (hint, Sign in, Switch off for this session, terminal steps with Copy; the steps end with "End this session (More > End session), then send a message to resume it" until T040-T042 exist, then the Restart button), two-step open (Q13), waiting and
   time-limit states, toasts, live region; Switch off calls the existing `setMcp` [FR-066, FR-068, FR-069]
 - [ ] T103 Tool card line for `mcpAuth`: "<server> needs you to sign in", **Sign in…** opens the dialog at that row (Q14), **Switch off
   for this session** [FR-063, FR-066]
 - [ ] T104 Simulator `simmcpauth=1` / `simmcpauth=manual`; screenshots at 1440x900 and 1280x800 (`docs/screenshots/058-mcp-signin-*.png`)
   [FR-071, FR-073]
 
-- [ ] T110 Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
+- [ ] T110 (its manual-steps wording follows T102's: End session, then a message, until T040-T042) Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
   domains differ (pure helper `signInSiteNote(serverUrl, pageHost)` with unit tests: same domain, other domain, `co.uk`, stdio) [FR-075]
 - [ ] T111 Trust confirmation of per-folder extras and the Copilot waiting text say a sign-in may be kept in the system keychain
   after the session [FR-076]
 
-### Phase 8c: real checks (needs-owner-approval; 0 AI credits, no prompt; a remote MCP server with OAuth; a browser sign-in on the owner's machine)
+### Phase 8c: real checks (on the owner's Mac, one adapter at a time, after PRs 5-8; needs-owner-approval; 0 AI credits, no prompt; a remote MCP server with OAuth; a browser sign-in on the owner's machine)
 
 Record results in research.md section 7 and change `read:` to `real:`. Do not open, copy or paste any token, keychain entry or log file.
 

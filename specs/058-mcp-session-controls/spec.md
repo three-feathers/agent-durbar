@@ -417,9 +417,11 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   and `Re-authentication required for MCP server` (`read:` runtime strings), and Claude's and Codex's equivalents once seen. It is applied
   only to failed MCP tool results and MCP status errors, never to model text or a turn that ended well. Unit-tested with the issue's
   exact text.
+  `[IMPLEMENTED]` the classifier `src/adapters/mcpauth.ts` (PR 1 of #364; the mappers that apply it are T094-T096). `test:` `scripts/test-mcpauth.ts`.
 - **FR-062** **An MCP challenge is not the agent app's sign-in.** Text that `isMcpAuthChallenge` matches never gets
   `errorKind: 'auth'` and never marks the app signed out (spec 012 FR-157): `isAuthError` returns false for it. If such text comes as a
   session-level error, the adapter maps it to the named server's needs-auth when it can name the server, else to a plain error.
+  `[IMPLEMENTED]` `isAuthError` returns false for it (T092); the adapters naming the server are T094-T096. `test:` `scripts/test-autherrors.ts`.
 - **FR-063** **Tool card.** A failed MCP tool call classified by FR-061 carries `mcpAuth: true` on the normalized `toolCall` event (no
   vendor text). The card adds one line, "<server> needs you to sign in", with **Sign in…** (opens the MCP dialog with focus on that
   server's row) and **Switch off for this session** (FR-066). The card's text is masked (FR-067).
@@ -461,6 +463,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   *Details* (it keeps today's card limit). Today only `mcp` events are masked (`src/main/main.ts:123`); tool output is not. The sign-in
   errors (adapter rejections, Codex completion `error`) are masked the same way. No authorization address appears in any text the window
   gets.
+  `[IMPLEMENTED]` for a failed MCP `toolCall` card's `output` (`maskMcpText` in `src/main/mcpmask.ts`, applied in `outward`, T097); the sign-in errors are not built yet. `test:` `scripts/test-mcp-errormask.ts`.
 - **FR-068** **Manual steps when the in-app sign-in cannot run** (no capability, method missing or refused, address refused, Claude not
   launched yet). One short block with the server name filled in and **Copy** for the command, from the adapter's plain capability text
   `mcpSignInSteps` (Durbar never runs it):

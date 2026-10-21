@@ -19,12 +19,18 @@ function maskFlagValues(s: string): string {
     .replace(/(^|\s)(-{0,2}[A-Za-z][\w.-]{0,60})=(?!\[redacted\])(\S+)/g, (m, lead: string, name: string) => (secretFlag(name) ? `${lead}${name}=[redacted]` : m));
 }
 
-/** Session secret values, then env secrets and secret shapes, then URL parts; the cut to 300 characters comes last, so a secret straddling it leaves no prefix. */
-export function maskMcpError(text: unknown, values: readonly string[] = []): string | undefined {
+/** Session secret values, then env secrets and secret shapes, then URL parts. No cut: the caller decides (spec 058 FR-067). */
+export function maskMcpText(text: unknown, values: readonly string[] = []): string | undefined {
   if (text === undefined || text === null) return undefined;
   let s = typeof text === 'string' ? text : String(text);
   for (const v of values) if (v.length >= 4 && s.includes(v)) s = s.split(v).join('[redacted]');
-  return cut(maskFlagValues(maskSecretUrl(redact(s))), MCP_ERROR_MAX_CHARS);
+  return maskFlagValues(maskSecretUrl(redact(s)));
+}
+
+/** `maskMcpText`, then the cut to 300 characters last, so a secret straddling it leaves no prefix. */
+export function maskMcpError(text: unknown, values: readonly string[] = []): string | undefined {
+  const s = maskMcpText(text, values);
+  return s === undefined ? undefined : cut(s, MCP_ERROR_MAX_CHARS);
 }
 
 /** The same list with every `error` masked. */
@@ -32,7 +38,12 @@ export function maskMcpStatuses(servers: readonly McpServerStatus[], values: rea
   return servers.map((x) => (x.error === undefined ? x : { ...x, error: maskMcpError(x.error, values) }));
 }
 
-/** Spec 019 FR-022: the copy of an event that may leave main (window, debug sink): an `mcp` event with its errors masked; any other event unchanged (same object). */
+/**
+ * Spec 019 FR-022: the copy of an event that may leave main (window, debug sink): an `mcp` event with its errors masked; any other event
+ * unchanged (same object). Spec 058 FR-067: a failed `toolCall` that names an `mcpServer` has its `output` masked too (no cut).
+ */
 export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string[] = []): E {
-  return e.type === 'mcp' ? { ...e, servers: maskMcpStatuses(e.servers, values) } : e;
+  if (e.type === 'mcp') return { ...e, servers: maskMcpStatuses(e.servers, values) };
+  if (e.type === 'toolCall' && e.phase === 'failed' && e.mcpServer && e.output !== undefined) return { ...e, output: maskMcpText(e.output, values) };
+  return e;
 }

@@ -13,6 +13,15 @@ import { eventProblems } from '../src/adapters/eventguard';
 
 const REAL_CLAUDE = 'Failed to authenticate. API Error: 401 OAuth access token is invalid.'; // the owner's real chat error (2026-10-20)
 
+// spec 058 FR-062 / SC-010: an MCP server's OAuth challenge is not the agent app's sign-in (issue #364)
+{
+  const ISSUE = 'MCP tool catalog changed before tool "srv-search" could be invoked: Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)';
+  assert.strictEqual(isAuthError(ISSUE), false, 'the issue text is not an app sign-in error');
+  assert.strictEqual(signInFromError(new Error(ISSUE)), 'unknown');
+  assert.strictEqual((markAuthError({ type: 'status', status: 'error', intent: ISSUE }) as { errorKind?: string }).errorKind, undefined, 'an error status with the issue text gets no errorKind auth');
+  assert.strictEqual(isAuthError('Failed to authenticate. API Error: 401'), true, 'a real app 401 still is');
+}
+
 // ---- the classifier
 const auth = [
   REAL_CLAUDE,

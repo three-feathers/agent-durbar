@@ -1,3 +1,5 @@
+import { isMcpAuthChallenge } from './mcpauth';
+
 /**
  * Spec 012 FR-156/FR-157: is an error message about the sign-in (an expired, missing or refused login)? Pure, unit-tested
  * (`npm run test:autherrors`). Shared by the adapters' `verifySignIn` and their session-error mapping; it only reads the text and
@@ -37,6 +39,7 @@ export function isAuthError(message: unknown): boolean {
   if (!text) return false;
   const t = text.slice(0, 2000);
   if (NOT_AUTH.test(t)) return false;
+  if (isMcpAuthChallenge(t)) return false; // spec 058 FR-062: an MCP server's sign-in, not the agent app's
   return AUTH.some((r) => r.test(t));
 }
 
