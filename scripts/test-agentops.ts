@@ -3,13 +3,12 @@ import * as assert from 'assert';
 import * as path from 'path';
 import * as os from 'os';
 import { FakeAdapter } from '../src/adapters/fake';
-import type { OptionalMember } from '../src/adapters/fake';
+import { ALL_OPTIONAL as ALL } from './test-adapter-contract';
 import { restorable, resumeModeOp, setCapOp, setMcpOp, setModeOp, stopTurnOp } from '../src/main/agentops';
 import type { OpsDeps } from '../src/main/agentops';
 import type { SavedFolder } from '../src/main/folders';
 import type { AgentInfo, PermMode } from '../src/shared/api';
 
-const ALL: OptionalMember[] = ['interrupt', 'resolvePermission', 'revokeGrant', 'setCap', 'resolveLimit', 'setMcpEnabled', 'setModel', 'cancelQueuedModel', 'compact', 'listModelOptions', 'listPreviousSessions', 'history', 'setPermMode'];
 const WS = path.join(os.tmpdir(), 'durbar-agentops-ws');
 
 function setup() {
