@@ -39,6 +39,8 @@ module.exports = async (ctx) => {
   const ALLOWFILE = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'ui-text-light-allow.json'), 'utf8'));
   const ALLOW_TEXT = new Set(ALLOWFILE.text || []); // elements whose text is under 4.5:1 in the dark fixture and are older debt
   const allowedText = new Set();
+  const hitSel = new Set();
+  const ALLOW_SEL = ALLOWFILE.textSel || []; // causes of older dark-text debt, matched with closest()
 
   const load = async () => {
     await H.load({ w: W, h: Hh, query: q(theme, extraQuery), ready: 'fit', settle: false });
@@ -169,8 +171,9 @@ module.exports = async (ctx) => {
     await until(`[...document.querySelectorAll('.dlg,.dlg-ov,.toast')].every(e=>e.getAnimations().every(a=>a.playState!=='running'))`, 2000); // the open animation (dlgin scales the box)
     const dark = theme === 'dark' || !!s.contrast;
     const darkAll = theme === 'dark' && !s.contrast; // the dark fixture: every text element, not only the FR-169 controls
-    const call = () => js(`window.__uitext.check(${jsLiteral(s.kind)},${jsLiteral(s.roots)},{dark:${jsLiteral(dark)},darkAll:${jsLiteral(darkAll)}})`);
+    const call = () => js(`window.__uitext.check(${jsLiteral(s.kind)},${jsLiteral(s.roots)},{dark:${jsLiteral(dark)},darkAll:${jsLiteral(darkAll)},allowSel:${jsLiteral(ALLOW_SEL)}})`);
     let v = await call();
+    if (darkAll) for (const q of await js(`[...window.__uitext.hits]`)) hitSel.add(q);
     if (v.some((x) => x.rule === 'no-root')) { await ctx.sleep(400); v = await call(); }
     if (s.contrast) v = v.filter((x) => x.rule === 'dark-contrast'); // every built-in theme: the FR-169 controls only
     for (const x of v) {
@@ -275,6 +278,7 @@ module.exports = async (ctx) => {
       }
     }
   }
+  if (!ONLY) { for (const q of ALLOW_SEL) if (!hitSel.has(q)) console.log(`[ui-text] note: allow-list textSel entry never needed: ${q}`); }
   for (const k of ALLOW_TEXT) if (!ONLY && !allowedText.has(k)) console.log(`[ui-text] note: allow-list text entry never needed: ${k}`);
 
   // the dark run has to have exercised every control FR-169 names, or the contrast rule checked nothing

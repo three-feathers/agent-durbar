@@ -1,5 +1,5 @@
 {
- "_note": "Spec 052 FR-169 / FR-171. `allow`: light backgrounds (hex, named, rgb/hsl, gradients) in the renderer stylesheets that are NOT in T152: older debt, plus themes.css `html[data-ui=\"corporate\"]` top bar buttons (a light theme, where white is meant). Any other light literal fails check-ui-text. `text`: elements (tag.class path) whose text is under 4.5:1 in the dark fixture and are older debt. Remove an entry when its rule moves to tokens.",
+ "_note": "Spec 052 FR-169 / FR-171. `allow`: light backgrounds (hex, named, rgb/hsl, gradients) in the renderer stylesheets that are NOT in T152: older debt, plus themes.css `html[data-ui=\"corporate\"]` top bar buttons (a light theme, where white is meant). Any other light literal fails check-ui-text. `text`: elements (tag.class path) whose text is under 4.5:1 in the dark fixture and are older debt. Remove an entry when its rule moves to tokens. `textSel`: causes matched with closest(): `.md code` (background #eeeae0) and `.subblk` (background #f5f8fb).",
  "allow": [
   "styles.css | .note .btn.session | #e8f0f6",
   "styles.css | .note .btn.session:hover | #dce8f1",
@@ -55,16 +55,11 @@
   "div.note-actions > button.btn.primary",
   "div.note-actions > button.btn.session",
   "div.prev-body.more-below > input.prev-q",
-  "div.pt.md > p",
   "div.scr-tools > button.btn.primary",
   "div.srv-main > code.srv-cmd",
   "div.srv-secrets > span.sec",
   "div.srv-top > b.srv-name",
   "div.srv-top > span.mtag.warn",
-  "div.sub-in > div.sub-foot",
-  "div.tl > div.intent-line",
-  "p > code",
-  "p > strong",
   "p.scr-note.ok > code",
   "p.scr-warn > b",
   "section.scr-sec > p.scr-note.ok",
@@ -72,5 +67,9 @@
   "span.ib-ans > button.btn.sm.primary",
   "span.ns-act > button.btn.primary",
   "th > span.mtag.warn"
+ ],
+ "textSel": [
+  ".md code",
+  ".subblk"
  ]
 }

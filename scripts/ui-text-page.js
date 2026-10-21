@@ -190,6 +190,8 @@
           const isField = /^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName);
           if (!(ownText(e) || isField) || !shown(e)) continue;
           if (e.disabled || e.closest('[aria-disabled="true"],.is-off,[disabled]')) continue;
+          const hit = (o.allowSel || []).find((q) => e.closest(q)); // older debt named by its cause (a rule with a light background)
+          if (hit) { window.__uitext.hits.add(hit); continue; }
           let faded = false; for (let a = e; a && !faded; a = a.parentElement) faded = parseFloat(getComputedStyle(a).opacity) < 0.9;
           if (faded) continue;
           const back = backdrop(e);
@@ -246,5 +248,5 @@
     return bad;
   }
 
-  window.__uitext = { check, measureRule, pr2, vis, darkControls: DARK_CONTROLS, measure: { probe, backdrop, contrast, rgba } };
+  window.__uitext = { hits: new Set(), check, measureRule, pr2, vis, darkControls: DARK_CONTROLS, measure: { probe, backdrop, contrast, rgba } };
 })();
