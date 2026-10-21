@@ -597,6 +597,50 @@ async function main(): Promise<void> {
       assert.ok(!decisions(server).includes('acceptForSession'));
       await ad.dispose();
     }
+    // spec 052 FR-172: the real approval names only itemId; the card gets the files, kind and diff from the fileChange item, secrets masked
+    {
+      const SECRET = 'planted-openai-key-value-0123456789';
+      const { server, ad, events } = make({ env: { OPENAI_API_KEY: SECRET } });
+      const sid = await ad.start({ workspace: ws, permissionMode: 'ask', quiet: true });
+      const child = server.childOfThread(sid)!;
+      const fx = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'codex', 'file-change-approval.json'), 'utf8'));
+      const ghp = 'ghp_' + 'Z9'.repeat(18);
+      const notes = JSON.parse(JSON.stringify(fx.notifications).replace('Retries are 3 now.', `key ${SECRET} and ${ghp}`)) as { method: string; params: unknown }[];
+      for (const n of notes) server.notifyAll(n.method, n.params);
+      await server.flush();
+      const p1 = req(server, fx.approval.method, fx.approval.params, child);
+      const pend = await until('pending with the files', () => pendingOf(events));
+      assert.strictEqual(pend.summary, 'write /work/app/src/config.ts (+1 more)', 'the files from the item: ' + pend.summary);
+      assert.ok(pend.diff && pend.diff.includes('--- a//work/app/src/config.ts') && pend.diff.includes('+  retries: 3,') && pend.diff.includes('+# Notes'), 'the diff of both changes (patchUpdated is the latest)');
+      assert.ok(!pend.diff!.includes(SECRET) && !pend.diff!.includes(ghp) && pend.diff!.includes('[redacted'), 'secrets in the diff are masked');
+      assert.strictEqual(pend.scopeLabel, 'write in app/src/', 'the grant scope is the first file\'s folder');
+      ad.resolvePermission(sid, pend.requestId, false);
+      assert.strictEqual(((await settles('p1', p1)).result as { decision: string }).decision, 'decline');
+      // the item completes: it is forgotten, and a request for an unknown item says so instead of a bare "write"
+      server.notifyAll(fx.completed.method, fx.completed.params);
+      await server.flush();
+      events.length = 0;
+      const p2 = req(server, fx.approval.method, fx.approval.params, child);
+      const pend2 = await until('pending without a file', () => pendingOf(events));
+      assert.strictEqual(pend2.summary, 'write (Codex did not say which file)');
+      assert.strictEqual(pend2.diff, undefined, 'no diff without an item');
+      ad.resolvePermission(sid, pend2.requestId, false);
+      await settles('p2', p2);
+      // at most 32 items are kept
+      for (let i = 0; i < 40; i++) server.notifyAll('item/started', { threadId: sid, item: { type: 'fileChange', id: `many_${i}`, status: 'inProgress', changes: [{ path: `/w/f${i}.txt`, kind: { type: 'add' }, diff: 'x\n' }] } });
+      await server.flush();
+      events.length = 0;
+      const p3 = req(server, 'item/fileChange/requestApproval', { threadId: sid, itemId: 'many_0' }, child);
+      assert.strictEqual((await until('oldest forgotten', () => pendingOf(events))).summary, 'write (Codex did not say which file)', 'the oldest item was dropped');
+      ad.resolvePermission(sid, pendingOf(events)!.requestId, false);
+      await settles('p3', p3);
+      events.length = 0;
+      const p4 = req(server, 'item/fileChange/requestApproval', { threadId: sid, itemId: 'many_39' }, child);
+      assert.strictEqual((await until('newest kept', () => pendingOf(events))).summary, 'write /w/f39.txt (new file)', 'the newest item is kept');
+      ad.resolvePermission(sid, pendingOf(events)!.requestId, false);
+      await settles('p4', p4);
+      await ad.dispose();
+    }
     // FR-140: the Linux sandbox error (real text, Ubuntu with unprivileged user namespaces blocked) gets a plain hint; other errors none
     // FR-140 delta: the macOS sandbox error (real text, GitHub macOS runner) gets its own plain hint; the Linux one does not apply
     assert.ok(macSandboxHint("error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 71: sandbox-exec: execvp() of '/Users/x/.local/bin/codex' failed: Operation not permitted").includes('could not start its macOS sandbox'));

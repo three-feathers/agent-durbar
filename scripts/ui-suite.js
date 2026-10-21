@@ -47,6 +47,7 @@ const DRIVERS = [
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
   { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows
+  { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
 ];
 
 /** The screenshot variables the drivers read; all point at one folder. */

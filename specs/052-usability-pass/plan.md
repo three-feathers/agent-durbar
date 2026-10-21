@@ -85,3 +85,9 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - Guard: `scripts/test-renderer-globals.ts` reads `src/renderer/*.js` as text (no DOM, no Electron), collects the names each file assigns on `root`/`window`/`self`/`globalThis` and fails on a name assigned in two files, or a `window.Durbar*` read with no file assigning it.
 - Driver: `scripts/check-activity-table.js` opens Tools > Activity in the simulator, whose bridge already returns 7 canned rows (`simActivity` in `sim.ts`), at both window sizes; added to `scripts/ui-suite.js`.
 
+## FR-172 (2026-10-21): a Codex write request names the file and shows the change
+
+- Adapter only, no new IPC, no renderer component: `codexFileChanges()` and `codexChangeDiff()` in `src/adapters/codexModes.ts` (pure); `codexPermission()` takes the known changes of the request's item; `CodexAdapter.noteFileChange()` keeps them per live session (`Live.fileChanges`, bounded). The diff goes through `redact()` before `PermissionBroker.request()`.
+- `PermissionLike.cardSummary` (new, optional): the adapter's own card line; the broker's `summarize()` uses it, and the grant scope is still built from `fileName`. Only the Codex adapter sets it, for writes.
+- Renderer: `diffLines()` (`activity.js`) ends a hunk by its header's line counts; `plainAsk()` reads "write (…)" as no file.
+- Testing: unit tests from a sanitized fixture of the generated types; `simcodexfile` in `sim.ts`; `scripts/check-codex-file-card.js`.
