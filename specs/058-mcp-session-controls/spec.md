@@ -2,7 +2,8 @@
 
 **Feature Branch**: `058-mcp-session-controls`
 **Created**: 2026-10-20
-**Status**: Specified and clarified (spec, research, plan and tasks; **no code**). The owner answered Q1-Q11 on 2026-10-20 (all option A,
+**Status**: Specified and clarified (spec, research, plan and tasks). Built 2026-10-21 (#349): per-server Restart and Restart session
+with these servers (US3, US4; tasks T030-T034, T040-T044), simulator and fakes only. The owner answered Q1-Q11 on 2026-10-20 (all option A,
 see *Clarifications*). Delta 2026-10-20 (issue #364, MCP OAuth sign-in, FR-060..FR-076): specified and clarified (the owner answered
 Q12-Q19 on 2026-10-20, all the recommended option), no code (see *Changes*).
 **Input**: Issue #349. Owner (Paco, 2026-10-20): "in a session, when I open MCP I can enable and disable servers, but I miss VS Code's
@@ -171,8 +172,8 @@ and nothing is opened; simulator shows the button and a toast.
   followed by the escaped token. A switch the adapter applies with the next message shows "Off from your next message" / "On from your
   next message" until the runtime reports the new state.
 - **FR-002** Under the list, **one line says how servers start for this agent app**, chosen from the adapter's normalized start mode
-  (FR-010): *with the session* ("Copilot starts these servers when the session starts: when the folder is added, when you open a
-  restored chat, or with the first message"), *with the next message* ("Claude Code starts these servers with your next message"), and
+  (FR-010): *with the session* ("Codex starts these servers when the session starts"), *with the next message* ("Copilot / Claude Code
+  starts these servers with your next message"; Copilot real 2026-10-21, *Changes*), and
   the switch timing (*at once* or *from your next message*). The current claim "a switch applies right away" is shown only when the
   adapter applies it live.
 - **FR-003** The dialog explains the two scopes in one sentence each: **This session** (the switch and Restart; kept until the app is
@@ -196,7 +197,8 @@ and nothing is opened; simulator shows the button and a toast.
 ### Adapter surface (adapter-neutral, constitution II)
 
 - **FR-010** `AdapterCapabilities` gains optional, plain fields (missing = today's behaviour):
-  - `mcpStart?: 'session' | 'next-message'`: when servers start (Copilot and Codex `session`, Claude `next-message`);
+  - `mcpStart?: 'session' | 'next-message'`: when servers start (Codex `session`; Copilot and Claude `next-message`: real 2026-10-21,
+    the Copilot runtime starts them with the first message, *Changes*);
   - `mcpToggleApplies?: 'live' | 'next-message'`: when the switch takes effect (Copilot and Claude `live`, Codex `next-message`);
   - `mcpRestart?: boolean`: `restartMcpServer()` exists (Copilot and Claude true, Codex false);
   - `mcpLogs?: 'session' | 'per-server'`: `mcpLogFolder()` exists (Copilot `session`, Claude `per-server`, Codex `session`;
@@ -205,9 +207,11 @@ and nothing is opened; simulator shows the button and a toast.
   only when the vendor says so: Copilot `errorClassification` values once seen, Codex `failureReason: reauthenticationRequired` ->
   `auth`, Codex `authStatus: notLoggedIn` -> `auth`) and `needsRestart?: boolean` (Copilot `session.mcp_server_needs_reconnect`).
   Claude's `init.mcp_server_errors` become `failed` rows with their text. No vendor type leaves the adapter.
-- **FR-012** `AgentAdapter.restartMcpServer?(sessionId, name): Promise<void>`, present exactly when `mcpRestart` is true (contract C2):
-  - Copilot: `session.rpc.mcp.restartServer({ serverName })` when the method exists; when it does not (an older runtime), off then on
-    for that server only (`disable` then `enable`) (Q3); never `stopServer` (Q2); never `reload()` (all servers);
+- **FR-012** `[IMPLEMENTED]` (`test:` fake SDK and fake CLI; not on a real account, FR-050) `AgentAdapter.restartMcpServer?(sessionId, name): Promise<void>`, present exactly when `mcpRestart` is true (contract C2):
+  - Copilot: `session.rpc.mcp.restartServer({ serverName })`; when the runtime does not know that method (an older runtime: it answers
+    JSON-RPC MethodNotFound, -32601, or "Unhandled method", as the SDK's own `connect` check reads it) or the SDK object has no such
+    method, off then on for that server only (`disable` then `enable`) (Q3); any other error is reported, with no fallback; never
+    `stopServer` (Q2); never `reload()` (all servers);
   - Claude: control request `mcp_reconnect { serverName }`, then `mcp_status` for the new list (as FR-133 does after a toggle). A server
     that was off at launch is not in the running CLI: "Switch it on first; it starts with your next message";
   - Codex: not present.
@@ -225,11 +229,11 @@ and nothing is opened; simulator shows the button and a toast.
 - **FR-020** `agents:mcp` adds to its reply: per server `canRestart`, `errorClass`, `needsRestart`, the masked error (FR-005), and a
   `logFolder` flag (FR-024); per agent `start` and `toggleApplies` (FR-010), `canRestartSession` (FR-022) and the agent app's display
   name. No path, no secret value.
-- **FR-021** `agents:mcpRestart(id, name)`: a known agent id, a server name of 1-64 characters that is in that agent's list; the adapter
+- **FR-021** `[IMPLEMENTED]` (`test:` test-mcp-session) `agents:mcpRestart(id, name)`: a known agent id, a server name of 1-64 characters that is in that agent's list; the adapter
   must have `restartMcpServer`; the session must be live. Returns `{ ok, error? }` with a short, masked error. One restart per server
   at a time per agent (a second call while one runs is refused). An activity-log row (spec 052) records "MCP server <name> restarted"
   with no error text.
-- **FR-022** `agents:mcpRestartSession(id, confirmed)`: Restart session with these servers.
+- **FR-022** `[IMPLEMENTED]` (`test:` test-mcp-session; `sim:` shots-058-mcp-restart) `agents:mcpRestartSession(id, confirmed)`: Restart session with these servers.
   - Allowed when the adapter has `resume` and the agent is a main agent with a session id that can be resumed.
   - When the agent is working, thinking or waiting (main's own state tracker, not the renderer's word), `confirmed` must be `true`;
     otherwise it returns `{ ok: false, needsConfirm: true }` and changes nothing. (The renderer may ask in more cases, FR-023; main
@@ -239,14 +243,14 @@ and nothing is opened; simulator shows the button and a toast.
     all apply. No prompt is sent.
   - The renderer is told the result; the chat keeps its history (nothing is reloaded unless the adapter reports a new session id).
   - If the resume fails, the agent stays ended (as after *End session*) and the error is shown; sending a message tries again.
-  - **FR-027** If the resume fails because the sign-in expired (review note 2, PR #359), the result carries `errorKind: 'auth'`
+  - **FR-027** `[IMPLEMENTED]` (`test:`, `sim:` simauth=expired) If the resume fails because the sign-in expired (review note 2, PR #359), the result carries `errorKind: 'auth'`
     (the thrown error classified with the existing `isAuthError` / the adapter's `auth` error status), and the renderer closes the MCP
     dialog and shows spec 012 FR-157's sign-in card in that chat (*Sign in*, *Open Settings > Agent apps*, raw text only in *Details*),
     not a plain toast; the app is marked signed out as FR-157 does. For Claude the CLI is not launched by the restart (Q11), so an
     expired sign-in shows with the next message through FR-157's existing path.
   - Always the same session (Q4); there is no new-session variant. For Claude the CLI is not launched by the restart: its servers start
     with the next message, and the dialog says so (Q11). The button lives only in the MCP dialog (Q10).
-- **FR-023** Confirmation text (renderer, Cancel focused): "Restart <name>'s session with the current MCP servers? The conversation is
+- **FR-023** `[IMPLEMENTED]` (`sim:`) Confirmation text (renderer, Cancel focused): "Restart <name>'s session with the current MCP servers? The conversation is
   kept and resuming spends no AI credits. <If working:> The running turn stops. <Always:> 'Approve for this session' grants are cleared.
   <If remote on:> Remote control turns off." Shown when the agent is working, thinking or waiting, or has session grants or remote
   control on.
@@ -271,9 +275,9 @@ and nothing is opened; simulator shows the button and a toast.
   documented by Anthropic", Q6),
   *Settings*, *Folder extras…*, *Done*. Text at least 10.5px; the dialog fits 1280x800 with 12 servers without page overflow (the list
   scrolls inside the dialog).
-- **FR-031** Restart feedback: the button shows "Restarting…" and is disabled until the call returns; then a toast "Restarted <name>" or
+- **FR-031** `[IMPLEMENTED]` (`sim:`) Restart feedback: the button shows "Restarting…" and is disabled until the call returns; then a toast "Restarted <name>" or
   the masked error; the row then follows the runtime's events (FR-004).
-- **FR-032** Codex rows: no Restart; the footer line says "Codex cannot restart one server; use Restart session with these servers".
+- **FR-032** `[IMPLEMENTED]` (`sim:`; the line sits next to the Restart session button) Codex rows: no Restart; the footer line says "Codex cannot restart one server; use Restart session with these servers".
   No "Reload servers" control (Q8).
 - **FR-033** Keyboard and screen readers: every new control is a focusable button with a name ("Restart <server> for <agent>"); state
   changes in the list are announced through the existing polite live region; Esc closes.
@@ -301,6 +305,8 @@ and nothing is opened; simulator shows the button and a toast.
   at that time, Q9), Copilot `restartServer`, Claude `mcp_reconnect`, the log folders,
   `errorClassification` values and resume with a changed server set are `read:` only; the README and the dialog's *More* text say
   "not checked on a real account yet" for Restart and the log folder.
+  Copilot part done 2026-10-21 (T060, real, Linux; *Changes*): `restartServer`, one `errorClassification` value (`os_not_found`),
+  resume with a changed server set, `~/.copilot/logs` exists. Claude `mcp_reconnect`, Codex, macOS and Windows stay `read:`.
 - **FR-051** `[KNOWN GAP]` Whether a server's stderr reaches any of the three log folders is not documented; the dialog says "the
   agent app's log folder" and never promises server output.
 - **FR-052** `[KNOWN GAP]` MCP sign-in (OAuth) stays out of scope (spec 019): "Needs sign-in" explains it and points to the agent app's
@@ -412,14 +418,16 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   - a **failed MCP tool call** (the tool event names its `mcpServer`) whose text FR-061 classifies as an MCP OAuth challenge. Copilot
     can keep reporting such a server as `connected` while its cached tools fail (the issue's case), so the tool failure is the signal.
   The derived state is replaced by the next status the runtime reports for that server (for example `connected` after a sign-in).
-  `[IMPLEMENTED]` Copilot (T094) 2026-10-21: `src/adapters/map.ts` (`tool.execution_complete`). `test:` `scripts/test-events.ts`. Claude (T096) is not built yet.
-  `[IMPLEMENTED]` Codex (T095, T023) 2026-10-21: the list (`authStatus: notLoggedIn` or `runtimeStatus: authenticationRequired`; list items have no `failureReason`), the startup notification (`failureReason`), and a failed `mcpToolCall` with challenge text (`mcpAuth`): the server is marked `needs-auth` + `errorClass: 'auth'` at once, even when the list says connected, kept through the re-read (one at a time) until the runtime's next status for it or until the server is switched off and on (no reconnect path exists in `codex.ts`). `test:` `scripts/test-codex-adapter.ts`, `scripts/test-codex-map.ts`. `read:` codex-cli 0.163.0 `codex app-server generate-ts` (checked by the PR reviewer; not installed on the author's machine): `v2/McpServerStatus.ts` has `runtimeStatus`, `authStatus`, `toolsError`, `httpOrigin`, `pluginId` and no `failureReason`; `v2/McpServerStatusUpdatedNotification.ts` has `failureReason: "reauthenticationRequired" | null`. Copilot (T094) is built (#480); Claude (T096) is not built yet.
+  `[IMPLEMENTED]` Copilot (T094) 2026-10-21: `src/adapters/map.ts` (`tool.execution_complete`). `test:` `scripts/test-events.ts`. `[IMPLEMENTED]` Claude (T096) `src/adapters/claude.ts` (`mcpAuthSeen`, `withAuthSeen`): the mark ends with the CLI's own fresh report, i.e. the `mcp` event mapped from `system/init`, and with `setMcpEnabled` for that server. `read:` the CLI sends `init` at the start of each turn in stream-json input as far as the code shows (spec 012's research says "one per session start", docs; `[KNOWN GAP]` not checked on a real run), so the mark may last only until the next message even if the CLI still says `connected`; that is the intended "next status the runtime reports replaces it". The challenge shows at once from the last list the session emitted (`lastMcp`), before `mcp_status` answers, so a slow or timed-out request still shows Needs sign-in (as Codex, #481). `test:` `scripts/test-claude-adapter.ts` (both clears and the immediate emit with `mcp_status` held, mutation-checked). `[KNOWN GAP]` the reconnect path of #473 (`mcp_reconnect`) is not on this branch: whichever PR merges second must also `delete` the name from `mcpAuthSeen` there and test it.
+  `[IMPLEMENTED]` Codex (T095, T023) 2026-10-21: the list (`authStatus: notLoggedIn` or `runtimeStatus: authenticationRequired`; list items have no `failureReason`), the startup notification (`failureReason`), and a failed `mcpToolCall` with challenge text (`mcpAuth`): the server is marked `needs-auth` + `errorClass: 'auth'` at once, even when the list says connected, kept through the re-read (one at a time) until the runtime's next status for it or until the server is switched off and on (no reconnect path exists in `codex.ts`). `test:` `scripts/test-codex-adapter.ts`, `scripts/test-codex-map.ts`. `read:` codex-cli 0.163.0 `codex app-server generate-ts` (checked by the PR reviewer; not installed on the author's machine): `v2/McpServerStatus.ts` has `runtimeStatus`, `authStatus`, `toolsError`, `httpOrigin`, `pluginId` and no `failureReason`; `v2/McpServerStatusUpdatedNotification.ts` has `failureReason: "reauthenticationRequired" | null`. Copilot (T094) is built (#480); Claude (T096) is built (#482).
 - **FR-061** **One pure classifier**, `isMcpAuthChallenge(text)` in `src/adapters/mcpauth.ts` (vendor phrases stay in adapters,
   constitution II): the issue's text (`MCP OAuth challenge required`), the Copilot runtime's `requires authentication. Run \`/mcp auth`
   and `Re-authentication required for MCP server` (`read:` runtime strings), and Claude's and Codex's equivalents once seen. It is applied
   only to failed MCP tool results and MCP status errors, never to model text or a turn that ended well. Unit-tested with the issue's
   exact text.
-  `[IMPLEMENTED]` the classifier `src/adapters/mcpauth.ts` (PR 1 of #364; the mappers that apply it are T094-T096). `test:` `scripts/test-mcpauth.ts`.
+  `[IMPLEMENTED]` Claude (T096): a failed MCP call with a challenge marks the server `needs-auth` + `errorClass: 'auth'` in the refreshed list even if the CLI says `connected`, until init or a toggle replaces it. `test:` `scripts/test-claude-adapter.ts`.
+  `[IMPLEMENTED]` Claude Code's own strings, both recognised: `MCP server "<name>" needs authentication` and `<name> requires authentication. Open this session and run /mcp to authenticate.` (`read:` from the 2.1.304 binary). `[KNOWN GAP]` neither was seen in a real `tool_result`.
+  `[IMPLEMENTED]` the classifier `src/adapters/mcpauth.ts` (PR 1 of #364; the mappers that apply it are T094-T096; Claude's is done, T096). `test:` `scripts/test-mcpauth.ts`.
 - **FR-062** **An MCP challenge is not the agent app's sign-in.** Text that `isMcpAuthChallenge` matches never gets
   `errorKind: 'auth'` and never marks the app signed out (spec 012 FR-157): `isAuthError` returns false for it. If such text comes as a
   session-level error, the adapter maps it to the named server's needs-auth when it can name the server, else to a plain error.
@@ -586,3 +594,51 @@ sign-in part lands.
 **Done**: FR-070 `[IMPLEMENTED]`; FR-076 trust sentence `[IMPLEMENTED]`; README *MCP servers*, *Keychain prompts on a Mac* and a
 *Known limits* line (Copilot CLI sharing unverified, FR-068/FR-074, T105); CHANGELOG. Not run on a real account.
 
+### 2026-10-21: review of PR #473 (Restart and Restart session; Paco's agent)
+
+Five small fixes found in review of the #349 slice, made in the same PR. No new FR; these lines record what changed.
+
+- **FR-030**: *Restart session with these servers* sits under the server list, not in the dialog's footer button row, so the dialog
+  stays open and refreshes after it (already noted in tasks.md, 2026-10-21; agreed with Paco's side on #473). The footer keeps
+  *Settings*, *Folder extras…* and *Done* (and *Open log folder* once T052 is built).
+- **FR-012**: SDK 1.0.22 always has the generated `rpc.mcp.restartServer` (`read:` `dist/generated/rpc.js:2830`), so "when the method
+  exists" never chose the fallback. The fallback now runs when the runtime rejects the call as unknown (MethodNotFound, -32601, or
+  "Unhandled method"); any other failure is reported (`test:` test-mcp-session).
+- **FR-022**: after a confirmed Restart session on a busy agent, the card is Ready, not "Done" with the old output: the window's
+  `stopped` handling clears the running turn, so the resume's `idle` is not read as a finished turn (`sim:` shots-058-mcp-restart).
+- **FR-022 / FR-023** ("Remote control turns off"): End session's order (remote control off, then the session stops) is a pure helper
+  `endSessionOp` in `src/main/agentops.ts`, shared by `agents:end`, `agents:remove` and Restart session, with an order test.
+- Tests: the "one restart at a time" checks for both Restart and Restart session now fail when the lock is removed (checked by removing
+  each lock), and `test-mcp-session` fails when it exits before its last check.
+
+### 2026-10-21: real Copilot check of Restart and Restart session (T060)
+
+Owner's go-ahead on 2026-10-21 (Telegram, "yes, both", about 1-2 prompts). One real Copilot session through Durbar's own
+`CopilotAdapter` (SDK and bundled runtime 1.0.22, Linux), Ask first, a throw-away folder under the OS temp folder, two throw-away local
+stdio servers given as the session's servers (`demo`: a 20-line echo server; `broken`: a command that does not exist). No secrets; only
+event types, field names, states and the throw-away servers' own text were recorded. Two prompts: one that calls `demo`'s `echo` tool
+(proves the server works and gives the session a turn) and one "reply ok" after Restart session.
+
+- real: **the Copilot runtime starts the session's MCP servers with the first message, not at session create**: no
+  `session.mcp_server_status_changed` and no server process for 30 s after `createSession`; `pending` then `connected` / `failed` within
+  about 60 ms of the first `send`. The same after a resume: no server event for 20 s, the servers started with the next message.
+  **Fix (FR-010)**: Copilot's `mcpStart` is now `'next-message'` (was `'session'`), so the dialog and the Restart session toast say the
+  servers start with the next message. FR-002's Copilot line reads "Copilot starts these servers with your next message".
+- real (FR-012): the runtime has `session.rpc.mcp.restartServer`; Restart used it (no fallback). The server's own events were
+  `session.mcp_server_removed`, then `status_changed` `not_configured` -> `pending` -> `connected`, in about 75 ms, with a new server
+  process. The dialog's row shows "Not set up for this session" for that moment (FR-001's word for `not_configured`).
+- real (FR-011, input for T022): a server whose command does not exist is `failed` with `error` "failed to spawn MCP server process: No
+  such file or directory (os error 2): …" and `errorClassification: "os_not_found"` (data keys `configSource, error,
+  errorClassification, serverName, status`). `session.mcp_servers_loaded` lists it with `error, name, status`. Mapping it to
+  `errorClass: 'not-found'` stays T022.
+- real (FR-012): Restart of that failed server: `restartServer` rejects with JSON-RPC -32603 and the text "Request
+  session.mcp.restartServer failed with message: failed to spawn MCP server process: …"; no fallback (correct: not MethodNotFound).
+  **Fix**: the adapter drops the SDK's "Request <method> failed with message: " prefix, so the dialog shows the server's own reason.
+- real (FR-022): Restart session (`stop`, then `start` with `sessionId` = the same id, as `ensureLive` does) kept the id and the
+  conversation (`history` 66 items: the first turn's messages and tool calls), and the next message started the **new** server set
+  (`demo` and a new `demo2` connected; `broken`, no longer given, absent). A `resumeSessionId` of a session that never had a message
+  fails ("Session not found"): `ensureLive` uses `sessionId` (resume when it exists, else create with this id) unless the session is
+  in the folder's previous sessions, so Restart session is not affected.
+- real (FR-024): `~/.copilot/logs` exists on this machine (checked for existence only; nothing opened).
+- Not checked: T061 (Claude Code `mcp_reconnect`) and T062 (Codex) on a real session; macOS and Windows; the off-then-on fallback on an
+  older runtime (this runtime has `restartServer`).
