@@ -1,7 +1,7 @@
 /** Unit test for secret redaction and the debug sink (spec 012 T051): `npm run test:runtime`. */
 import * as assert from 'assert';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, cut, maskSchemeSecrets, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, splitCommand } from '../src/shared/redact';
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -357,7 +357,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   const big = 200_000;
   const shapes = ['--token ' + 'a '.repeat(big / 2), '{"a":"'.repeat(big / 6), 'a=b;'.repeat(big / 4), 'x://' + '@'.repeat(big), 'http://' + 'a:'.repeat(big / 2), '/bot1:'.repeat(big / 6), ';token='.repeat(big / 7), '"k": "'.repeat(big / 6), '['.repeat(big)];
   const t0 = Date.now();
-  for (const x of shapes) { maskSecretArgs([x]); maskSecretUrl(x); maskSecretCommand(x); }
+  for (const x of shapes) { _uncappedForTest.maskSecretArgs([x]); maskSecretUrl(x); _uncappedForTest.maskSecretCommand(x); }
   const ms = Date.now() - t0;
   console.log(`redact: masking 200k-char adversarial inputs in ${ms} ms`);
   assert.ok(ms < 20000, `masking 200k-char adversarial inputs took ${ms} ms`);
@@ -626,6 +626,18 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     assert.deepStrictEqual(maskSecretArgs(['-c', 'curl Authorization: "a b" n']), ['-c', 'curl Authorization: ' + R + ' n'], 'rev13: exact output, closed, single [redacted]');
     assert.deepStrictEqual(maskSecretArgs(['-c', 'curl Accept: "a b" n']), ['-c', 'curl Accept: "a b" n'], 'rev13: a harmless name stays');
     noSec(maskSecretArgs(['-c', 'sh -c \'curl Authorization: "a ' + SEC + '\'']), 'rev13: nested shell string');
+    // round 9: a whole-quoted value after `=` on a non-secret flag is masked on its inside (Vikram's re-review)
+    masked(['docker', 'run', '--env="API_TOKEN=' + SEC + '"'], ['docker', 'run', '--env="API_TOKEN=' + R + '"'], 'rev14: --env="API_TOKEN=SEC"');
+    masked(['--opt=\'token=' + SEC + '\''], ['--opt=\'token=' + R + '\''], 'rev14: --opt=\'token=SEC\'');
+    masked(['--opt="token=' + SEC + '"'], ['--opt="token=' + R + '"'], 'rev14: --opt="token=SEC"');
+    cmd('docker run --env="API_TOKEN=' + SEC + '" img', 'docker run --env="API_TOKEN=' + R + '" img', 'rev14: command --env="API_TOKEN=SEC"');
+    cmd('srv --opt="token=' + SEC + '"', 'srv --opt="token=' + R + '"', 'rev14: command --opt="token=SEC"');
+    cmd("srv --opt='token=" + SEC + "'", "srv --opt='token=" + R + "'", "rev14: command --opt='token=SEC'");
+    assert.deepStrictEqual(maskSecretArgs(['--opt="plain value"']), ['--opt="plain value"'], 'rev14: a plain quoted value is unchanged');
+    assert.strictEqual(maskSecretCommand('srv --opt="plain value" x'), 'srv --opt="plain value" x', 'rev14: command, a plain quoted value is unchanged');
+    masked(['--cfg="a b"', '--token', SEC], ['--cfg="a b"', '--token', R], 'rev14: args, cfg kept, SEC masked');
+    cmd('srv --cfg="a b" --token ' + SEC, 'srv --cfg="a b" --token ' + R, 'rev14: command, cfg kept, SEC masked');
+    masked(['-c', 'docker run --env="API_TOKEN=' + SEC + '" img'], ['-c', 'docker run --env="API_TOKEN=' + R + '" img'], 'rev14: inside a shell string');
     // R7 on escaped objects
     const esc = (k: string, n: string, val: string, rest = ''): string => '{\\"' + k + '\\":\\"' + n + '\\",\\"value\\":\\"' + val + '\\"' + rest + '}';
     masked(['-c', 'srv --cfg "' + esc('name', 'Authorization', SEC) + '"'], ['-c', 'srv --cfg "' + esc('name', 'Authorization', R) + '"'], 'R7 esc: name');
@@ -642,7 +654,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const rshapes: Array<[string, string]> = [['Bearer ', 'Bearer '], ['--auth Bearer ', '--auth Bearer '], ['obj', '{\\"name\\":\\"token\\",\\"value\\":\\"x y\\"} '], ['arr', '{\\"name\\":\\"token\\",\\"value\\":[\\"x\\"]} '], ['hdr', 'Authorization: Bearer '], ['qhdr', '-H "Authorization: Bearer" '], ['eq', '--auth=Bearer '], ['sq', "Authorization: 'a "], ['dq', 'Authorization: "a '], ['mixed', `Authorization: "a Authorization: 'a `], ['tok', 'TOKEN=Auth: '], ['unclosed', 'x Authorization: "a '], ['unclosed1', "Cookie: 'a "], ['schemeq', 'Authorization: Basic "a '], ['argsq', 'curl Authorization: "a ']];
     for (const [, unit] of rshapes) {
       const mk = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
-      const time = (x: string): number => { const t = process.hrtime.bigint(); maskSecretArgs([x]); maskSecretArgs(['-c', x]); maskSecretCommand(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+      const time = (x: string): number => { const t = process.hrtime.bigint(); _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); return Number(process.hrtime.bigint() - t) / 1e6; };
       let tSmall = Infinity;
       let tBig = Infinity;
       for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(mk(50_000))); tBig = Math.min(tBig, time(mk(400_000))); }
@@ -655,7 +667,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
 
   // (n) timing: each shape linear in practice; doubling check on the shape the analyst suspected.
   const shapes: Array<[string, string]> = [['-c ', '-c '], ['"', '"'], ['"a ', '"a '], ["a 'b", "a 'b"], [', a=', ', a='], ['Cookie: ', 'Cookie: '], ['{"a":"x y ', '{"a":"x y '], ["'\"", "'\""], ['x ', 'x ']];
-  const run = (x: string): void => { maskSecretArgs([x]); maskSecretArgs(['-c', x]); maskSecretCommand(x); };
+  const run = (x: string): void => { _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); };
   const tt = Date.now();
   for (const [, unit] of shapes) run(unit.repeat(Math.ceil(200_000 / unit.length)).slice(0, 200_000));
   const total = Date.now() - tt;

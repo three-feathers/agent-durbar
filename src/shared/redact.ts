@@ -369,7 +369,10 @@ function unquote(a: string): [string, string] {
  * its inside, and everything goes through `redact()`. Never throws; returns a new array of the same length.
  */
 export function maskSecretArgs(args: readonly string[], envIn?: Env): string[] {
-  return maskArgs((Array.isArray(args) ? args.map(capped) : args) as string[], snapshot(envIn), MAX_DEPTH, true);
+  return maskArgsImpl(args, envIn, true);
+}
+function maskArgsImpl(args: readonly string[], envIn: Env | undefined, cap: boolean): string[] {
+  return maskArgs((cap && Array.isArray(args) ? args.map(capped) : args) as string[], snapshot(envIn), MAX_DEPTH, true);
 }
 
 function maskArgs(args: readonly string[], env: Env, d: number, top = false): string[] {
@@ -410,7 +413,7 @@ function maskArgs(args: readonly string[], env: Env, d: number, top = false): st
           out.push(W(`${f.name}${f.sep}${maskHeaderValue(f.rest, env, d)}`));
           if (schemeHeader(f.rest, true)) pending = 'secret'; // R11 b: `--header=Authorization: Bearer` and then the secret
         }
-        else out.push(W(`${f.name}${f.sep}${rd(maskText(f.rest, d, env))}`));
+        else { const [rv, rq] = unquote(f.rest); out.push(W(`${f.name}${f.sep}${rq}${rd(maskText(rv, d, env))}${rq}`)); } // a whole-quoted value (`--env="API_TOKEN=x"`) is masked on its inside, like a top-level arg (R2); same depth as that path
         continue;
       }
       {
@@ -450,12 +453,24 @@ export function splitCommand(command: unknown): string[] {
 
 /** A command for display: `redact()` on the raw text first (R8: `Authorization: Bearer x` and `Bearer x` side by side), split like `splitCommand`, masked like `maskSecretArgs`, joined with one space. Never throws. */
 export function maskSecretCommand(command: unknown, envIn?: Env): string {
+  return maskCommandImpl(command, envIn, true);
+}
+function maskCommandImpl(command: unknown, envIn: Env | undefined, cap: boolean): string {
   try {
-    if (typeof command === 'string' && command.length > MASK_INPUT_MAX) return MASK;
+    if (cap && typeof command === 'string' && command.length > MASK_INPUT_MAX) return MASK;
     const env = snapshot(envIn);
     return maskArgs(splitCommand(redact(maskSchemeSecrets(typeof command === 'string' ? command : ''), env)), env, MAX_DEPTH, true).join(' ');
   } catch { return '[redaction failed]'; }
 }
+
+/**
+ * TEST ONLY (scripts/test-redact.ts, scripts/test-mcp-tools.ts): the same rules as the public functions without the `MASK_INPUT_MAX` cap, so the
+ * linearity and cost rows measure the rule path and not the cap. Nothing under `src/` may use it.
+ */
+export const _uncappedForTest = {
+  maskSecretArgs: (args: readonly string[], envIn?: Env): string[] => maskArgsImpl(args, envIn, false),
+  maskSecretCommand: (command: unknown, envIn?: Env): string => maskCommandImpl(command, envIn, false),
+};
 
 /**
  * A URL for display (FR-053): everything between `://` and the last `@` of the authority becomes `[redacted]` (with or without a colon),
