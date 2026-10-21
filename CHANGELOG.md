@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
+- **Send to several sessions** (spec 064): one message to the running sessions you pick (top bar ⋯ or Ctrl+K), each with its own mode and spending limit; busy sessions can't be picked.
 - **Snappier with long chats and a busy office** (spec 052 FR-142..FR-145): a 1000-message conversation renders about 20× faster (it used to slow down with every message), the office updates only the room that changed, and the context chip keeps keyboard focus. New `npm run check:perf` measures it.
 - **Folder status in the chat** (spec 063): the folder chip shows the git branch and how many files changed; a click lists the changed files with their +/− lines. Read-only.
 - A GitHub account without Copilot access no longer shows as "Signed in (checked with GitHub)": the card now says the account has no Copilot access yet and how to turn it on (spec 012 FR-156).
