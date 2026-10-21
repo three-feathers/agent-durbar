@@ -27,6 +27,9 @@ export interface GenerateTextResult {
   nanoAiu?: number;
 }
 
+/** Spec 065 FR-001: the paths a file-edit tool is about to write (absolute, or relative to the session's folder). Never rejects. */
+export type WriteGuard = (sessionId: string, paths: string[]) => Promise<void>;
+
 export interface StartOptions {
   /** Folder or .code-workspace file; one session per workspace. */
   workspace: string;
@@ -422,6 +425,8 @@ export interface AgentAdapter {
   readonly capabilities: AdapterCapabilities;
   /** Optional debug sink (DURBAR_LOG); assigned by the main process; the sink redacts env values and key-like strings before writing, but callers should still not pass secrets. */
   debug?: (message: string) => void;
+  /** Spec 065 FR-001: called (and awaited, bounded) just before an agent's file-edit tool writes these paths; assigned by the main process. */
+  writeGuard?: WriteGuard;
   /** Start (or resume) a session for a workspace. Resolves with the session id. */
   start(options: StartOptions): Promise<string>;
   /** Send a user message (with optional files/images) to a running session. */

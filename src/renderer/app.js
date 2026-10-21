@@ -3832,6 +3832,39 @@ document.addEventListener('click',async e=>{
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAllSet'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;schedChanged();}});
 /* spec 012 FR-158: a new sign-in reconnected the agent app, so remote control ended for this session */
 if(bridge&&bridge.onRemoteUrl)bridge.onRemoteUrl(p=>{const a=p&&liveById(p.id);if(a&&a.remote&&typeof p.url==='string')a.remote.url=p.url;});
+/* spec 065: after a turn that changed files, one muted line with "Undo these changes…"; the dialog previews, then restores */
+const CKPT=window.DurbarCheckpoints||null;
+function checkpointNote(a,n){
+  if(!CKPT||!a)return;
+  const text=CKPT.noteText(n);if(!text)return;
+  const chat=liveChat(a);
+  const note=addNote(chat,esc(text));note.classList.add('ckpt-note');note.dataset.turn=String(n.turn);
+  if(!(n.files||[]).length||!bridge.checkpointPreview)return;
+  const row=document.createElement('div');row.className='note-actions';
+  const b=document.createElement('button');b.type='button';b.className='btn';b.textContent=CKPT.button(n);b.dataset.act='ckptUndo';
+  b.onclick=()=>undoCheckpoint(a,n.turn,b);
+  row.appendChild(b);note.appendChild(row);
+}
+async function undoCheckpoint(a,turn,btn){
+  const p=await bridge.checkpointPreview(a.id,turn).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!p||!p.ok){toast(esc((p&&p.error)||'Could not read these changes.')).classList.add('err');return;}
+  if(p.conflicts.length){
+    await askDialog({title:'These changes cannot be undone now',body:'These files changed after that turn, so nothing will be restored (your newer changes are kept):',lines:p.conflicts,buttons:[{label:'OK',value:null,cls:'primary'}],returnFocus:()=>btn});
+    return;
+  }
+  const r=await askDialog({title:'Undo these changes?',body:'These files will be put back as they were before the turn. A copy of them as they are now is kept, so you can undo this again.',lines:CKPT.previewLines(p),
+    buttons:[{label:'Cancel',value:null},{label:CKPT.confirmLabel(p),value:'undo',cls:'primary warn'}],returnFocus:()=>btn});
+  if(!r||r.value!=='undo')return;
+  const u=await bridge.checkpointUndo(a.id,turn).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!u||!u.ok){
+    if(u&&u.conflicts&&u.conflicts.length)await askDialog({title:'Nothing was restored',body:(u.error||'')+' Changed files:',lines:u.conflicts,buttons:[{label:'OK',value:null,cls:'primary'}],returnFocus:()=>btn});
+    else toast(esc((u&&u.error)||'Could not restore the files.')).classList.add('err');
+    return;
+  }
+  btn.disabled=true;btn.textContent='Undone';
+  checkpointNote(a,Object.assign({id:a.id},u.undo));
+}
+if(bridge&&bridge.onCheckpoint)bridge.onCheckpoint(n=>{const a=n&&liveById(n.id);if(a)checkpointNote(a,n);});
 if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(p=>{const id=typeof p==='string'?p:p&&p.id;const a=liveById(id);if(!a||!a.remote)return;a.remote=null;updateRemoteUi(a);
   /* spec 054 FR-062: the adapter's own reason when it has one; otherwise the sign-in reconnect (spec 012 FR-158) */
   const why=p&&typeof p==='object'&&typeof p.reason==='string'&&p.reason?esc(p.reason.slice(0,300)):esc(a.name)+' reconnected after the new sign-in';

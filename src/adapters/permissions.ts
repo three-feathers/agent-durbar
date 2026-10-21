@@ -24,6 +24,8 @@ export interface PermissionLike {
   path?: string;
   /** Spec 052 FR-063: the change an edit would make (unified diff text), shown on the pending card only. */
   diff?: string;
+  /** Spec 065: every file a write changes (Codex file changes name several); `fileName`/`path` otherwise. */
+  paths?: string[];
 }
 
 export type Decision = { kind: 'approve-once' } | { kind: 'reject'; feedback: string };
@@ -202,7 +204,11 @@ export interface BrokerOptions {
   roots?: string[];
   /** Test hooks for the path check. */
   pathCheck?: PathCheckOptions;
+  /** Spec 065 FR-001: awaited (at most 2 s, errors ignored) just before an approved `write` goes ahead, with the paths it writes. */
+  beforeWrite?: (paths: string[]) => Promise<void>;
 }
+
+const WRITE_GUARD_MS = 2000;
 
 type Answer = { approve: boolean; remember: boolean; broad: boolean; via: 'user' | 'stopped' };
 
@@ -272,6 +278,20 @@ export class PermissionBroker {
     return [...this.grants.values()];
   }
 
+  /** Spec 065 FR-001: let the write guard keep a copy before an approved write (bounded; a slow or failing guard never blocks it). */
+  private async approveWrite(req: PermissionLike): Promise<Decision> {
+    const guard = this.opts.beforeWrite;
+    if (guard && String(req.kind) === 'write') {
+      const paths = (req.paths?.length ? req.paths : [req.fileName ?? req.path]).filter((p): p is string => typeof p === 'string' && !!p).slice(0, 200);
+      if (paths.length) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([guard(paths).catch(() => undefined), new Promise<void>((r) => { timer = setTimeout(r, WRITE_GUARD_MS); })]);
+        if (timer) clearTimeout(timer);
+      }
+    }
+    return { kind: 'approve-once' };
+  }
+
   async request(req: PermissionLike, now: () => number = Date.now): Promise<Decision> {
     const kind = String(req.kind);
     const summary = summarize(req);
@@ -280,7 +300,7 @@ export class PermissionBroker {
     if (kind === 'read' && !outsideRead) return { kind: 'approve-once' };
     if (this.mode === 'allow') {
       if (kind !== 'read') this.opts.emit({ type: 'auto', permission: { requestId, kind, summary, state: 'approved', via: 'policy' } });
-      return { kind: 'approve-once' };
+      return this.approveWrite(req);
     }
     const scope = grantScope(req, this.opts.pathCheck?.flavor);
     const base = {
@@ -304,7 +324,7 @@ export class PermissionBroker {
     }
     if (this.grants.has(scope.key) || (scope.broad && this.grants.has(scope.broad.key))) {
       this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session' } });
-      return { kind: 'approve-once' };
+      return this.approveWrite(req);
     }
     const info: PermissionInfo = { ...base, state: 'pending', ...(typeof req.diff === 'string' && req.diff ? { diff: req.diff } : {}) }; // spec 052 FR-063: the diff rides on the pending request only
     this.opts.emit({ type: 'pending', permission: info });
@@ -316,7 +336,7 @@ export class PermissionBroker {
       this.opts.emit({ type: 'grants', grants: this.listGrants() });
     }
     this.opts.emit({ type: 'resolved', permission: { ...base, state: r.approve ? 'approved' : 'denied', via: r.via, remembered: r.approve && r.remember ? true : undefined } });
-    return r.approve ? { kind: 'approve-once' } : { kind: 'reject', feedback: r.via === 'stopped' ? 'Session was stopped in Agent Durbar.' : 'Denied by user in Agent Durbar.' };
+    return r.approve ? this.approveWrite(req) : { kind: 'reject', feedback: r.via === 'stopped' ? 'Session was stopped in Agent Durbar.' : 'Denied by user in Agent Durbar.' };
   }
 
   /**

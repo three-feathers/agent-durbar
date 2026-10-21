@@ -21,6 +21,7 @@ import type {
   SignInCheck,
   StartOptions,
   Unsubscribe,
+  WriteGuard,
 } from './types';
 import type { AdapterDescriptor } from './capabilities';
 import { EventMapper } from './map';
@@ -211,6 +212,8 @@ export class CopilotAdapter implements AgentAdapter {
   private capSeq = 0;
   /** Optional debug sink (DURBAR_LOG): what was actually handed to the SDK. */
   debug?: (message: string) => void;
+  /** Spec 065 FR-001: assigned by the main process (router.setWriteGuard). */
+  writeGuard?: WriteGuard;
   /** Spec 040 FR-015: the `generateText` time limit; protected so a test can shorten it. */
   protected oneShotTimeoutMs = ONE_SHOT_TIMEOUT_MS;
   /** One mapper per session (it remembers tool names, reasoning ids and sub-agent ids of that session). */
@@ -418,6 +421,7 @@ export class CopilotAdapter implements AgentAdapter {
     const broker = new PermissionBroker({
       roots: [cwd, ...folders],
       mode: startModeOf(options),
+      beforeWrite: (paths) => this.writeGuard?.(sid, paths) ?? Promise.resolve(), // spec 065 FR-001
       emit: (e: BrokerEvent) => {
         switch (e.type) {
           case 'pending':
