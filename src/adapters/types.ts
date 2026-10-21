@@ -506,6 +506,12 @@ export interface AgentAdapter {
   generateText?(prompt: string, opts?: GenerateTextOptions): Promise<GenerateTextResult>;
   /** Spec 054 FR-001: turn remote control (follow and steer from the vendor's web or mobile app) on or off for a live session. Optional (`capabilities.remote`). Never on by default. */
   setRemote?(sessionId: string, on: boolean): Promise<RemoteState>;
+  /**
+   * Spec 059 FR-007: store the user's name for a session in the agent app. Optional (`capabilities.renameSession`). `sessionId` is the
+   * vendor's own id (also of a stored session that is not live). `name` already passed Durbar's name rule. Throws when the app refuses
+   * (the caller keeps a Durbar-only name). `'next-turn'` adapters only remember the name here and report it as a `title` event once applied.
+   */
+  renameSession?(sessionId: string, name: string): Promise<void>;
   /** Spec 051 FR-007: whether this harness is signed in, checked without a prompt (no credits). Only the yes/no leaves the adapter. */
   authStatus?(): Promise<{ signedIn: boolean }>;
   /**

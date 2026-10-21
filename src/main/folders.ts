@@ -11,6 +11,8 @@ import { parseTier } from '../shared/modelswitch';
 import type { ContextTier } from '../shared/modelswitch';
 import * as floorOps from '../shared/floors';
 import type { FloorOp, FloorsDoc } from '../shared/floors';
+import { cleanDisplayName } from '../shared/names';
+import type { SessionNameEntry } from '../shared/sessionname';
 import { markIdOk, markSrcOk } from '../shared/sessionid';
 
 export type SavedPermMode = 'read-only' | 'ask' | 'allow';
@@ -40,6 +42,8 @@ export interface SavedFolder {
   lastSession?: { id: string; adapterId?: string };
   /** Spec 052 FR-088: every session open in this folder that got a message (oldest first, at most 6), restored after a restart. Ids and harness only. Absent in files written before; then `lastSession` alone is restored. */
   openSessions?: Array<{ id: string; adapterId?: string }>;
+  /** Spec 059 FR-005: the user's names for this folder's sessions (oldest set first, at most 200). Ids and short names, never content. */
+  sessionNames?: SessionNameEntry[];
   /** Spec 006 FR-026: rows of Previous sessions pinned to the top / hidden from the list. Ids only (`src` = adapter id or `vscode`), at most 200 each. */
   prevPinned?: PrevMark[];
   prevHidden?: PrevMark[];
@@ -164,6 +168,37 @@ export function sessionsToRestore(f: Pick<SavedFolder, 'lastSession' | 'openSess
   return out.slice(0, MAX_OPEN_SESSIONS);
 }
 
+/** Spec 059 FR-005: how many session names a folder keeps. */
+export const MAX_SESSION_NAMES = 200;
+/** The session id rule of spec 006 FR-026 / spec 059 FR-005. */
+export const SESSION_NAME_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
+
+/** One saved session-name entry, or `undefined` when malformed (bad shape, id, adapter id or name). */
+export function parseSessionNameEntry(v: unknown): SessionNameEntry | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const o = v as Record<string, unknown>;
+  const src = typeof o.src === 'string' && ADAPTER_ID.test(o.src) ? o.src : undefined;
+  const id = typeof o.id === 'string' && SESSION_NAME_ID.test(o.id) ? o.id : undefined;
+  const name = cleanDisplayName(o.name);
+  if (!src || !id || !name) return undefined;
+  return { src, id, name, ...(o.inApp === true ? { inApp: true as const } : {}), ...(o.pending === true && o.inApp !== true ? { pending: true as const } : {}) };
+}
+
+/** A saved name list: bad entries dropped, the same (src, id) collapses (the last wins and moves to the end), the newest 200 kept. Empty is `undefined`. */
+export function parseSessionNames(v: unknown): SavedFolder['sessionNames'] {
+  if (!Array.isArray(v)) return undefined;
+  const out: SessionNameEntry[] = [];
+  for (const e of v.slice(-1000)) {
+    const n = parseSessionNameEntry(e);
+    if (!n) continue;
+    const at = out.findIndex((x) => x.src === n.src && x.id === n.id);
+    if (at >= 0) out.splice(at, 1);
+    out.push(n);
+  }
+  const kept = out.slice(-MAX_SESSION_NAMES);
+  return kept.length ? kept : undefined;
+}
+
 /** Spec 006 FR-026: at most this many pins and this many hides per folder; the oldest are dropped. */
 export const MAX_PREV_MARKS = 200;
 
@@ -214,6 +249,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       ...(parseDefaultAgent(o.defaultAgent) ? { defaultAgent: parseDefaultAgent(o.defaultAgent) } : {}),
       ...(parseLastSession(o.lastSession) ? { lastSession: parseLastSession(o.lastSession) } : {}),
       ...(parseOpenSessions(o.openSessions) ? { openSessions: parseOpenSessions(o.openSessions) } : {}),
+      ...(parseSessionNames(o.sessionNames) ? { sessionNames: parseSessionNames(o.sessionNames) } : {}),
       ...(parsePrevMarks(o.prevPinned) ? { prevPinned: parsePrevMarks(o.prevPinned) } : {}),
       ...(parsePrevMarks(o.prevHidden) ? { prevHidden: parsePrevMarks(o.prevHidden) } : {}),
       ...(parseSessionModes(o.sessionModes) ? { sessionModes: parseSessionModes(o.sessionModes) } : {}),
@@ -437,6 +473,49 @@ export class FolderStore {
     this.save();
   }
 
+  /** The user's name entry for a session of this folder (spec 059 FR-005), or undefined. */
+  sessionNameOf(workspace: string, src: string, id: string): SessionNameEntry | undefined {
+    const e = this.get(workspace)?.sessionNames?.find((x) => x.src === src && x.id === id);
+    return e ? { ...e } : undefined;
+  }
+
+  /** All name entries of a folder (copies). */
+  sessionNames(workspace: string): SessionNameEntry[] {
+    return (this.get(workspace)?.sessionNames ?? []).map((e) => ({ ...e }));
+  }
+
+  /**
+   * Sets (a valid entry) or removes (`undefined` name) the user's name for a session (FR-005). The entry goes to the end of the list,
+   * so past 200 the least recently set one is dropped. No write when nothing changes. Returns false for an unknown folder, a bad id or
+   * name, or when the file could not be written (the in-memory list is then put back).
+   */
+  setSessionName(workspace: string, src: string, id: string, name: string | undefined, flags: { inApp?: boolean; pending?: boolean } = {}): boolean {
+    const cur = this.get(workspace);
+    if (!cur) return false;
+    const next = name === undefined ? undefined : parseSessionNameEntry({ src, id, name, inApp: flags.inApp === true, pending: flags.pending === true });
+    if (name !== undefined && !next) return false;
+    if (name === undefined && !SESSION_NAME_ID.test(id)) return false;
+    const list = cur.sessionNames ?? [];
+    const at = list.findIndex((x) => x.src === src && x.id === id);
+    if (!next) {
+      if (at < 0) return true;
+    } else if (at >= 0 && at === list.length - 1 && list[at].name === next.name && !!list[at].inApp === !!next.inApp && !!list[at].pending === !!next.pending) {
+      return true;
+    }
+    const before = cur.sessionNames;
+    const out = list.filter((_, i) => i !== at);
+    if (next) out.push(next);
+    cur.sessionNames = out.length ? out.slice(-MAX_SESSION_NAMES) : undefined;
+    if (this.save()) return true;
+    cur.sessionNames = before;
+    return false;
+  }
+
+  /** Removes the name of a session that Durbar deleted (spec 059 FR-005, spec 006 FR-029). */
+  dropSessionName(workspace: string, src: string, id: string): void {
+    this.setSessionName(workspace, src, id, undefined);
+  }
+
   /**
    * Pin, unpin, hide or unhide one row of Previous sessions (FR-024..FR-026). Pin and hide exclude each other: pinning clears a
    * hide and hiding clears a pin. A bad `src` or id, an unknown folder, or a no-op writes nothing. Returns false only for a refusal.
@@ -515,14 +594,16 @@ export class FolderStore {
   }
 
   /** Write atomically (temp file + rename). A failure is swallowed: the list just is not remembered. */
-  private save(): void {
+  private save(): boolean {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       const tmp = `${this.file}.${process.pid}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify({ version: 1, floors: this.floorsDoc.floors, lastFloor: this.floorsDoc.lastFloor, folders: this.folders }, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, this.file);
+      return true;
     } catch {
       /* read-only profile, disk full, ...: keep working without persistence */
+      return false;
     }
   }
 }
