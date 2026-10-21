@@ -1343,8 +1343,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       ...(simKinds ? [
         simKindsParam === 'solo' && !simInstalled.has('claude')
           ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
-          : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } },
-        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
+          : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', where: '~/.local/bin/claude', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } },
+        // spec 060 FR-003: found through a version manager's folder (nvm), shown as where it was found
+        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
     ];
     const notReady = (adapterId: string): string | undefined => {
