@@ -57,7 +57,7 @@ import { UserThemeStore } from './themes';
 import { HarnessSetup, confirmText, posixTrusted } from './harnesssetup';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
-import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind } from '../shared/harnesssetup';
+import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind, simManagers } from '../shared/harnesssetup';
 import { MAX_DESCRIPTION, MAX_PASSES, THEME_IDEAS, TOP_BAR_ISSUE, buildFixPrompt, buildRetryPrompt, buildThemePrompt, isBlocking, keepArt, parseGeneratedTheme } from '../shared/themegen';
 import { SettingsStore } from './settings';
 import { parseBadgeCount, shouldBounce, shouldFlash } from './badge';
@@ -762,10 +762,12 @@ const harnessSetup = new HarnessSetup({
   },
   realpath: (p: string) => fs.realpathSync(p),
   trustedPath: (p: string) => process.platform === 'win32' || posixTrusted(p, (q) => fs.statSync(q).mode),
+  isRoot: () => typeof process.getuid === 'function' && process.getuid() === 0, // spec 060 FR-001
 } as ConstructorParameters<typeof HarnessSetup>[0]);
 /** FR-004b: harness setup answers only the app's own page in the main frame. */
 const fromApp = (e: Electron.IpcMainInvokeEvent): boolean => senderAllowed(e.senderFrame ? { url: e.senderFrame.url, isMain: e.senderFrame === e.sender.mainFrame } : null, path.join(__dirname, '..', 'renderer', 'index.html'));
-ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op) : { plans: [], page: '', name: '' }));
+// spec 060 FR-002: under the simulator the routes are the real ones for this OS, with a typical new machine's package managers
+ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op, dev.DURBAR_SIM ? simManagers(process.platform, dev.DURBAR_SIM_MANAGERS) : undefined) : { plans: [], page: '', name: '' }));
 ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
   if (!fromApp(e) || !isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return { ok: false, error: 'invalid request' };
   const p = harnessSetup.prepare(kind, op, typeof planIndex === 'number' && Number.isInteger(planIndex) && planIndex >= 0 && planIndex < 8 ? planIndex : 0);
@@ -778,7 +780,10 @@ ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknow
     const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
     if (r.response !== 1) return { ok: false, cancelled: true, error: 'Cancelled.' };
   }
-  return harnessSetup.start(p.job);
+  // spec 060 FR-001: an official installer is downloaded only now, after the user confirmed, from the vendor's fixed hosts
+  const ready = await harnessSetup.withScript(p.job);
+  if (!ready.ok) return ready;
+  return harnessSetup.start(ready.job);
 });
 ipcHandle('harness:paste', (e, text: unknown) => (fromApp(e) ? harnessSetup.paste(text) : { ok: false, error: 'invalid request' }));
 ipcHandle('harness:cancel', (e) => fromApp(e) && harnessSetup.cancel());
@@ -1347,6 +1352,8 @@ function createWindow(): void {
     title: 'Agent Durbar',
     backgroundColor: '#f6f1e7',
     ...windowChrome(process.platform), // spec 052 FR-085: macOS hides the title bar; the top bar is the drag area (styles.css)
+    // spec 008 FR-093: test runs ask for exact sizes (1440x900, 1280x800); macOS otherwise clamps a window to its screen (CI: 677 px tall)
+    ...(dev.DURBAR_DRIVER || dev.DURBAR_SHOT ? { enableLargerThanScreen: true } : {}),
     // spec 008 FR-025: Windows and macOS take the icon from the .exe/.icns; Linux needs it on the window
     ...(process.platform === 'linux' ? { icon: path.join(__dirname, '..', 'icon.png') } : {}),
     webPreferences: {
@@ -1502,7 +1509,9 @@ app.whenReady().then(() => {
     };
     win?.webContents.once('did-finish-load', () => {
       const driver = require(dev.DURBAR_DRIVER as string) as (c: typeof ctx) => Promise<void>;
-      void driver(ctx).catch((err) => console.error('DRIVER FAILED', err)).finally(() => void router.disposeAll().finally(() => app.exit(0)));
+      // spec 008 FR-090: a failing driver exits 1, so CI on every OS sees it without reading the log
+      let failed = false;
+      void driver(ctx).catch((err) => { failed = true; console.error('DRIVER FAILED', err); }).finally(() => void router.disposeAll().finally(() => app.exit(failed ? 1 : 0)));
     });
   }
   // macOS: a click on the Dock icon brings back the hidden window (FR-085), or opens a new one

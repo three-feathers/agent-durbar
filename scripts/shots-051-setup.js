@@ -3,7 +3,7 @@
  * real sign-in runs (the simulator plays canned output).
  *
  *   npm run build
- *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
+ *   OUT=docs/screenshots DURBAR_SIM_MANAGERS=winget,brew,npm DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-051-setup.js xvfb-run -a npx electron . --no-sandbox
  *
  * Checks: Settings > Agent apps shows one card per agent app with its state (Ready / Not installed / Update needed); Install shows the
@@ -37,7 +37,10 @@ module.exports = async (ctx) => {
     // Install: the exact commands first
     await js(`document.querySelector('.hs-card[data-kind="claude"] [data-hs="install"]').click()`); await ctx.sleep(700);
     const plans = await js(`[...document.querySelectorAll('#hsDlg .hs-cmds code')].map(c=>c.textContent)`);
-    assert.ok(plans.length === 2 && /brew install --cask claude-code/.test(plans[0]), 'the commands are shown before they run: ' + plans.join(' | '));
+    // spec 060 FR-002: the routes are the real ones for this OS (the suite runs this driver with DURBAR_SIM_MANAGERS=winget,brew,npm)
+    const first = process.platform === 'win32' ? /^winget install --id Anthropic\.ClaudeCode/ : /^brew install --cask claude-code/;
+    assert.ok(plans.length === 2 && first.test(plans[0]) && /^npm install -g @anthropic-ai\/claude-code/.test(plans[1]), 'the commands are shown before they run: ' + plans.join(' | '));
+    assert.ok(process.platform === 'win32' ? !plans.some((p) => /^brew /.test(p)) : !plans.some((p) => /^winget /.test(p)), 'no other OS\'s package manager is offered');
     await shot(`051-install-plan-${w}x${h}.png`);
     await js(`[...document.querySelectorAll('#hsDlg .btn')].find(b=>b.textContent==='Install').click()`); await ctx.sleep(1200);
     assert.ok(await js(`!!document.getElementById('hsLog')`), 'the progress dialog shows the output');

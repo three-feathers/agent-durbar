@@ -11,7 +11,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 **Website:** <https://three-feathers.github.io/agent-durbar/>
 
 > **Status: alpha.**
-> - The newest pre-release is [`v0.1.0-alpha.9`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9). It is unsigned and not notarized.
+> - The newest pre-release is [`v0.1.0-alpha.10`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.10). It is unsigned and not notarized.
 > - What changed in each release is in the [CHANGELOG](CHANGELOG.md).
 > - **Where it has been run:** Linux by hand every day. macOS by hand on the owner's and a teammate's Macs (macOS 26, Apple Silicon), from source and the simulator, including real Copilot sessions; fixes from those runs are merged. Windows has not been run by hand on a real PC yet.
 > - **What CI checks on Linux, macOS and Windows:** every change builds and starts the packaged app (spec 012 T044). In review: the UI checks on all three ([#389](https://github.com/three-feathers/agent-durbar/pull/389)), real installs of each agent app as a standard and an admin user ([#393](https://github.com/three-feathers/agent-durbar/pull/393)), and real-account end-to-end runs, where Copilot, Claude Code and Codex each install, sign in and answer on all three OSes: 9 of 9 on 2026-10-20 ([#402](https://github.com/three-feathers/agent-durbar/pull/402)).
@@ -122,8 +122,8 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
 ## Install
 
 **Requirements**
-- At least one agent app: GitHub Copilot (a free plan works), Claude Code, or OpenAI Codex. **Settings > Agent apps** can install it through a package manager (winget, Homebrew, npm), with the command shown first, and sign you in with the vendor's own page and a one-time code. Or install and sign in yourself, for example with `copilot login`. Durbar finds an agent app on your `PATH`, on your login shell's `PATH` (macOS and Linux, read once at start, at most 3 s), in the usual install folders, and in the folders of Node.js version managers (nvm, fnm, Volta, asdf, mise; nvm-windows and Volta on Windows) and Linuxbrew. Settings shows where it was found.
-  - Not tried yet: installs through winget or Homebrew, and the flows on macOS and Windows.
+- At least one agent app: GitHub Copilot (a free plan works), Claude Code, or OpenAI Codex. **Settings > Agent apps** can install it, least administrator rights first: the vendor's **official installer** (into your home folder, no admin; downloaded only from the vendor's own address), then npm, then winget or Homebrew (which may ask for admin), with the command shown first, and sign you in with the vendor's own page and a one-time code. Or install and sign in yourself, for example with `copilot login`. Durbar finds an agent app on your `PATH`, on your login shell's `PATH` (macOS and Linux, read once at start, at most 3 s), in the usual install folders, and in the folders of Node.js version managers (nvm, fnm, Volta, asdf, mise; nvm-windows and Volta on Windows) and Linuxbrew. Settings shows where it was found.
+  - Not tried yet: installs through winget or Homebrew, the official installers on a real machine, and the flows on macOS and Windows (a manual CI check on clean macOS, Windows and Linux machines, with and without admin rights, is spec 060 T060).
 - Durbar never sees, stores or sends your tokens: each harness reads its own sign-in. Durbar has no accounts, no servers and no telemetry.
 - Usage bills against **your** plans. Several agents in parallel can use credits quickly; see [Costs and caps](#costs-and-caps).
 - Optional: VS Code, VS Code Insiders or VSCodium, for *Open in VS Code*.
@@ -144,8 +144,10 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
   - Edge may block the download ("isn't commonly downloaded"): open Downloads (**…**), choose **Keep**, then **Show more > Keep anyway**.
   - Check the file in PowerShell: `Get-FileHash .\Agent-Durbar-Setup-<version>.exe -Algorithm SHA256` and compare the hash with the line for that file in `SHA256SUMS.txt`.
   - On "Windows protected your PC", click **More info**, then **Run anyway**.
-  - Copilot runs shell commands with PowerShell 7 (from GitHub's docs, not checked by us). If the Copilot card says so, install it with `winget install --id Microsoft.PowerShell -e`.
+  - The Copilot CLI needs PowerShell 6 or later (GitHub's docs, not checked by us); Windows only ships 5.1. If the Copilot card says so, install it with `winget install --id Microsoft.PowerShell -e`.
 - **Linux:** run `chmod +x Agent-Durbar-*.AppImage && ./Agent-Durbar-*.AppImage`. Add `--no-sandbox` on systems without unprivileged user namespaces.
+  - An AppImage needs FUSE 2. Ubuntu 22.04 and later do not install it: if the app does not start ("libfuse.so.2" / "dlopen()"), run `sudo apt install libfuse2t64` (Ubuntu 24.04 and later) or `sudo apt install libfuse2` (22.04), or start it without FUSE: `./Agent-Durbar-*.AppImage --appimage-extract-and-run`.
+  - Saved MCP secrets need a desktop keyring (GNOME Keyring or KWallet). Without one, Durbar refuses to store them rather than keep them with a fixed key (spec 019): add a keyring, or pass secrets through the server's own environment.
 
 **On a Mac** (spec 052 FR-083..FR-086; tried on real Macs, macOS 26 on Apple Silicon, and fixed after those runs: moving the window from an open chat, the traffic-light room, question cards and the chat strip):
 - Shortcuts use ⌘ and are shown that way: ⌘K command palette, ⇧⌘A the Needs you inbox, ⇧⌘N the next agent. In a chat that waits for you, ⌥⌘A / ⌥⌘S / ⌥⌘D answer and ⌥⌘N goes to the next agent (Option alone types accents on a Mac). macOS itself uses ⌥⌘D to show or hide the Dock, so Deny may not reach Durbar with the keys; click it instead.
@@ -230,12 +232,13 @@ npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvf
 npm run check:question-options  # question card options wrap and are never cut off (simulator, xvfb on Linux)
 npm run check:sched-sendto      # Schedules dialog: Send to / Limit labels on one line, every option fits, session name on a hint line (simulator, xvfb on Linux)
 npm run check:geometry    # every theme lays out exactly like Clean Office (about a minute)
+npm run check:ui          # every simulator driver that asserts, one after another, on any OS (UI_SUITE_XVFB=1 keeps windows off a Linux desktop)
 npm run check:themes      # on demand: the full layout check in every theme, a few at a time, low priority, memory limits
 npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned); then checks the Electron fuses
 npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app opens its window and offers no debugger (xvfb on Linux)
 ```
 
-`npm run smoke` and `npm run verify:cap` use a real Copilot login and may spend credits: run them only on purpose. Releases are built by GitHub Actions from `v*` tags into a draft release that the maintainer publishes by hand.
+`npm run smoke` and `npm run verify:cap` use a real Copilot login and may spend credits: run them only on purpose. GitHub Actions also runs the UI checks (geometry, office layout, the Mac title bar, `check:ui`) on macOS, Windows and Linux runners and keeps the screenshots of each run (workflow *UI on three OSes*; simulator only). Releases are built by GitHub Actions from `v*` tags into a draft release that the maintainer publishes by hand.
 
 **Layout of the repository:**
 - `src/main` (Electron main), `src/preload`, `src/renderer` (plain HTML/CSS/JS, the simulator);

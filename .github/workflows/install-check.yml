@@ -1,0 +1,94 @@
+name: Install check
+
+# spec 060 T060 (owner, 2026-10-20): on clean macOS, Windows and Linux runners, install each agent app through every route Durbar
+# offers there, first as a new STANDARD (non-admin) user, then as the runner's admin user, and record what works. It uses the app's
+# own code (`scripts/install-check.ts` → HarnessSetup). No account, no sign-in, no AI credits, no secrets. Results: the job summary
+# and an artifact. Manual, or on a pull request that changes the install code or this check.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/install-check.ts'
+      - 'src/shared/harnesssetup.ts'
+      - 'src/main/harnesssetup.ts'
+      - 'src/main/officialinstall.ts'
+      - '.github/workflows/install-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  install:
+    name: Install check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc -p tsconfig.scripts.json
+
+      # ---- 1. a standard user without admin rights ----
+      - name: Standard user (Linux)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          sudo useradd -m -s /bin/bash durbaruser
+          sudo chmod o+x "$HOME" "$(dirname "$GITHUB_WORKSPACE")" "$GITHUB_WORKSPACE"
+          sudo -u durbaruser -H env "PATH=$PATH" node dist-scripts/scripts/install-check.js standard-user /tmp/standard.json | tee "$RUNNER_TEMP/standard.md"
+      - name: Standard user (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        run: |
+          sudo sysadminctl -addUser durbaruser -password 'Durb4r-Test-only' 2>&1 | tail -1
+          sudo createhomedir -c -u durbaruser >/dev/null
+          sudo chmod o+x "$HOME" "$(dirname "$GITHUB_WORKSPACE")" "$GITHUB_WORKSPACE"
+          sudo -u durbaruser -H env "PATH=$PATH" node dist-scripts/scripts/install-check.js standard-user /tmp/standard.json | tee "$RUNNER_TEMP/standard.md"
+      - name: Standard user (Windows)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $pw = ConvertTo-SecureString 'Durb4r-Test-only-1' -AsPlainText -Force
+          New-LocalUser -Name durbaruser -Password $pw -PasswordNeverExpires | Out-Null   # a standard user: not in Administrators
+          icacls $env:GITHUB_WORKSPACE /grant 'durbaruser:(OI)(CI)RX' /T /Q | Out-Null
+          icacls $env:RUNNER_TEMP /grant 'durbaruser:(OI)(CI)M' /Q | Out-Null
+          $cred = New-Object System.Management.Automation.PSCredential('durbaruser', $pw)
+          $node = (Get-Command node).Source
+          $p = Start-Process -FilePath $node -ArgumentList 'dist-scripts\scripts\install-check.js','standard-user',"$env:RUNNER_TEMP\standard.json" -Credential $cred -LoadUserProfile -WorkingDirectory $env:GITHUB_WORKSPACE -Wait -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP\standard.md" -RedirectStandardError "$env:RUNNER_TEMP\standard.err"
+          Get-Content "$env:RUNNER_TEMP\standard.md"; Get-Content "$env:RUNNER_TEMP\standard.err" -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+
+      # ---- 2. the runner's admin user ----
+      - name: Admin user
+        if: success() || failure()
+        continue-on-error: true
+        shell: bash
+        run: node dist-scripts/scripts/install-check.js admin-user "$RUNNER_TEMP/admin.json" | tee "$RUNNER_TEMP/admin.md"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          [ -f /tmp/standard.json ] && cp /tmp/standard.json "$RUNNER_TEMP/" || true
+          for f in standard admin; do [ -f "$RUNNER_TEMP/$f.md" ] && sed -n '/^### Install check/,$p' "$RUNNER_TEMP/$f.md" >> "$GITHUB_STEP_SUMMARY"; done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: install-check-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/*.json
+            ${{ runner.temp }}/*.md
+          retention-days: 30
+          if-no-files-found: ignore
