@@ -125,6 +125,16 @@ module.exports = async (ctx) => {
         await js(`localStorage.setItem('durbar.detail','simple')`); await H.load({ w, h, query: q }); await openAgent('Ada'); await ctx.waitFor(`!document.getElementById('prev').hidden`, 8000); await settle();
         S = await sect(); assert.strictEqual(S.label, 'Earlier chats'); assert.strictEqual(S.region, 'Earlier chats');
         await shotSafe(path.join(OUT, `006-sessions-simple-${w}x${h}.png`));
+        // FR-034/FR-036 (review on #497): the key pressed while the lists still load never says "none"; it opens once they are back
+        await js(`localStorage.removeItem('durbar.detail')`); await forget();
+        await H.load({ w, h, query: { ...q, simprevdelay: '2500' } }); await openAgent('Ada');
+        assert.ok(await js(`document.getElementById('prev').hidden`), T + ': no row while loading');
+        await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove());document.getElementById('msgInput').focus()`);
+        await H.key('H', MODS, { char: 'never' });
+        assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some(t=>/Looking for previous sessions/.test(t.textContent))`, 1500), T + ': says it is looking');
+        assert.ok(await js(`![...document.querySelectorAll('#toasts .toast')].some(t=>/No previous sessions/.test(t.textContent))`), T + ': no false "none" while loading');
+        assert.ok(await until(`!document.getElementById('prev').hidden&&document.getElementById('prevBtn').getAttribute('aria-expanded')==='true'&&document.activeElement===document.getElementById('prevQ')`, 8000), T + ': opens with focus on the search once loaded');
+        assert.ok(await js(`![...document.querySelectorAll('#toasts .toast')].some(t=>/No previous sessions/.test(t.textContent))`), T + ': still no "none" after loading');
       }
       await forget();
     }

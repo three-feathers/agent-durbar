@@ -4368,13 +4368,15 @@ function prevCounts(st){const S=window.DurbarSessionSearch,c=st.cli,v=st.vs,mc=p
 const DEL_WORDS={copilot:{app:'GitHub Copilot',cli:'Copilot CLI'},codex:{app:'Codex',cli:'Codex CLI'}};
 const prevSrc=(a,g)=>g==='vs'?'vscode':((liveRoot(a).info||{}).adapterId||'copilot');
 async function loadPrev(a){
-  const st=prevOf(a);
+  const st=prevOf(a); st.loading=true;
   const safe=(f,empty)=>f?f(a.id).catch(e=>Object.assign({ok:false,error:String(e&&e.message||e)},empty)):null;
   const [c,v]=await Promise.all([safe(feat(a,'history')?bridge.listPrevious:null,{sessions:[]}),safe(bridge.listVsChats,{sessions:[],storesFound:0,unreadable:0,tooLarge:0,formatNote:''})]);
-  st.cli=namePrev(c); st.vs=v;
+  st.cli=namePrev(c); st.vs=v; st.loading=false;
   const vis=prevCounts(st);
   if(!st.touched&&pristine(a)&&(vis.nc||vis.nv))st.open=true; /* spec 006 FR-025: hidden rows do not open the panel by themselves */
   if(ui.selected===a.id)renderPrev(a);
+  /* spec 006 FR-036: Ctrl+Shift+H pressed while the lists loaded: open now, or say there are none only now that it is known */
+  if(st.wantOpen){st.wantOpen=false;if(ui.selected===a.id&&!vsViewing){if(prevShows(st))setPrevOpen(a,true,true);else toast(SIMPLE?'No earlier chats in this folder.':'No previous sessions in this folder.',2600);}}
   return st;
 }
 /* spec 059 FR-009: a row with the user's name shows it as its title (its tooltip and the search too); the runtime title is kept apart and not searched */
@@ -4413,7 +4415,10 @@ function setPrevOpen(ra,open,byKey){
 function togglePrevByKey(){
   const a=byId(ui.selected); if(!a||a.parent||vsViewing||!a.live)return;
   const ra=liveRoot(a), box=$('prev'), btn=$('prevBtn');
-  if(!box||!btn||box.hidden){toast(SIMPLE?'No earlier chats in this folder.':'No previous sessions in this folder.',2600);return;}
+  if(!box||!btn||box.hidden){
+    const st=prevOf(ra);
+    if(st.loading&&!prevShows(st)){st.wantOpen=true;toast(SIMPLE?'Looking for earlier chats…':'Looking for previous sessions…',2600);return;} /* FR-034: never "none" before the lists are back */
+    toast(SIMPLE?'No earlier chats in this folder.':'No previous sessions in this folder.',2600);return;}
   setPrevOpen(ra,!prevOf(ra).open,true);
 }
 /* the two groups of Previous sessions, pinned first, hidden ones out unless shown, filtered by the title query (spec 006 FR-023..FR-027) */
