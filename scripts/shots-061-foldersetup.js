@@ -40,6 +40,11 @@ module.exports = async (ctx) => {
     assert.ok(v.curl && v.note && v.confirm, 'the exact command, the plain warning, the hooks confirmation');
     assert.ok(v.inside, `${w}: the dialog fits the window`);
     assert.deepStrictEqual(v.small, [], `${w}: no text under 10.5px`);
+    // the confirmation tick sits inline at the start of its text: box centre within the text's first line, box to its left
+    const ck = await js(`(()=>{const l=document.querySelector('#scrDlg .fs-confirm');const b=l.querySelector('#fsHooksOk').getBoundingClientRect();
+      const r=document.createRange();r.selectNodeContents(l.querySelector('span'));const f=r.getClientRects()[0];const cy=(b.top+b.bottom)/2;
+      return {cy,top:f.top,bottom:f.bottom,boxRight:b.right,textLeft:f.left,lines:Math.round(l.querySelector('span').getBoundingClientRect().height/f.height)}})()`);
+    assert.ok(ck.cy >= ck.top && ck.cy <= ck.bottom && ck.boxRight <= ck.textLeft, `${w}: the confirmation box is inline before its first line: ${JSON.stringify(ck)}`);
     await shot('dialog', w, h);
     // FR-015: an AI explanation on demand, advisory, with its source
     await js(`[...document.querySelectorAll('#scrDlg [data-explain]')].find(b=>b.closest('.fs-row').textContent.includes('curl')).click()`);

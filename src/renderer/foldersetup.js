@@ -77,7 +77,7 @@
     const folder=String(v.key||'').split(/[\\/]/).filter(Boolean).pop()||info.name||'This folder';
     return `<p class="dsub">The folder <b>${esc(folder)}</b> has its own agent setup in its files. It is on unless you turn it off; nothing of it runs before you answer here. Durbar's own mode still decides everything these items do not.</p>
       ${groups}${probs}
-      ${hooks||broad?`<label class="fs-confirm"><input type="checkbox" id="fsHooksOk"> <span>${hooks&&broad?'I have read these hooks and broad allow rules, and I know what they run and allow.':hooks?'I have read these hooks and I know what they run.':'I have read these broad allow rules and I know what they allow.'}</span></label><p class="scr-note small">Without this tick the ${hooks&&broad?'hooks and broad allow rules':hooks?'hooks':'broad allow rules'} stay off; the rest is used.</p>`:''}
+      ${hooks||broad?`<label class="chk fs-confirm"><input type="checkbox" id="fsHooksOk"> <span>${hooks&&broad?'I have read these hooks and broad allow rules, and I know what they run and allow.':hooks?'I have read these hooks and I know what they run.':'I have read these broad allow rules and I know what they allow.'}</span></label><p class="scr-note small">Without this tick the ${hooks&&broad?'hooks and broad allow rules':hooks?'hooks':'broad allow rules'} stay off; the rest is used.</p>`:''}
       <p class="scr-note small">Changes apply from the agent's next start in this folder. A file that changes later is shown again before it is used.</p>`;
   }
 

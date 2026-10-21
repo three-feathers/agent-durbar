@@ -280,5 +280,7 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-ai.err{color:var(--ink-2)}
 .dlg.fs .fs-ai-src{font-size:11px;color:var(--ink-2)}
 .dlg.fs .fs-ai div{white-space:pre-wrap;margin-top:2px}
-.dlg.fs .fs-confirm{display:flex;gap:8px;align-items:flex-start;margin:14px 0 2px;font-weight:600}
-.dlg.fs .fs-confirm input{width:16px;height:16px;margin:2px 0 0}
+/* the shared ".dlg .chk" row (box beside its text, not stacked by ".dlg label"); a long text wraps aligned after the box */
+.dlg.fs .fs-confirm{align-items:flex-start;margin:14px 0 2px;font-weight:600}
+.dlg.fs .fs-confirm input{flex:none;width:16px;height:16px;margin:2px 0 0}
+.dlg.fs .fs-confirm>span{flex:1;min-width:0}
