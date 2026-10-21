@@ -2,9 +2,12 @@
 
 Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on Linux (see "Honest limits"). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the alpha.9 tag)
+## Unreleased (on `main`, after the alpha.10 tag)
 
 - **Packaged display names (spec 008 FR-040..FR-045, T039, issue #384).** A packaged Windows build sets its AppUserModelId (`build.appId`), so toasts and the taskbar match the Start menu shortcut; the Mac app menu has an explicit `Agent Durbar` title; the Linux AppImage launcher entry no longer forces `--no-sandbox` (`AppRun` still adds it when needed). `scripts/check-names.js` runs after the fuse check on every package build, and the installed-app CI asserts the names a user sees. Checked on Linux (unit tests, `dist:linux`, the installed AppImage on the simulator); Windows and macOS names are asserted only in CI, not seen on a real PC or Mac.
+## v0.1.0-alpha.10 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.10), 2026-10-21)
+
+- Agent apps installed with nvm, fnm, Volta, asdf, mise or Linuxbrew are now found, also when Durbar is opened from Finder or a desktop menu (the login shell's `PATH` is read once); Settings > Agent apps says where each was found (spec 060 FR-003).
 - `npm run check:office` no longer fails at random with "a walking figure is not on a slot": it waits (up to 3 s) for a figure that is still walking and fails only if it never arrives (spec 024, #406).
 - Reasoning effort **none** (offered by GPT-6 Luna and the Codex models) can be chosen and is kept; before, the menu offered it but the switch refused it (spec 007 FR-008).
 - **App name and profile folder (spec 008 FR-033..FR-036, issue #353).** The Mac menu says About/Hide/Quit Agent Durbar through explicit labels; the app's identity (`agent-durbar`, so the Keychain item and saved MCP secrets) does not change, there is no `app.setName`. And the profile folder is chosen in code: an installed app keeps `agent-durbar` (nothing moves), while `npm start` and the simulator now use `agent-durbar-dev`, so a dev run no longer shares the installed app's data. To keep old dev data, run once with `DURBAR_USER_DATA=<old folder>` or copy it by hand. Unit tests and a simulator run on Linux; the dev folder and an earlier menu version were seen on a real Mac (Paco, #377), the menu, dev folder and Keychain checked on a real Mac by Paco (dev run); a packaged Mac build and Windows not run.

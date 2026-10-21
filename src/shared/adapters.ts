@@ -7,5 +7,7 @@ export interface AdapterInfo {
   state: AdapterState;
   version?: string;
   hint?: string;
+  /** Spec 060 FR-003: where the app was found, `~/…` or only the file name (never the user name). */
+  where?: string;
   capabilities: AdapterCapabilities;
 }
