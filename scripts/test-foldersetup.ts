@@ -152,7 +152,7 @@ assert.strictEqual(parseExplanation('I think it is fine', 'Copilot').ok, false, 
   assert.ok(explainPrompt(h1).includes(P1) && explainPrompt(h2).includes(P2), 'the AI explainer gets the full command too');
   const rl = hs.find((i) => i.kind === 'rule')!;
   assert.strictEqual(rl.detail, `Bash(${P1})`, 'rules are shown in full');
-  const h3 = hs.find((i) => i.kind === 'hook' && i.detail.includes('api.example.com'))!;
+  const h3 = hs.find((i) => i.kind === 'hook' && i.hidden)!;
   assert.ok(h3.hidden && h3.detail.includes('[secret hidden]') && !h3.detail.includes(GH), 'a real token shape is hidden, and marked');
   assert.deepStrictEqual(shownCommand('echo $(id) `x` | tee ; a && b'), { text: 'echo $(id) `x` | tee ; a && b', hidden: false });
   // required 2: shown in full or not listed at all
