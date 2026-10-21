@@ -296,6 +296,84 @@ export interface McpState {
   secretsPersist: boolean;
 }
 
+/** Spec 069: an agent app whose user-level MCP list Durbar can read and, after a confirmation, edit. */
+export type GlobalApp = 'copilot' | 'claude' | 'codex';
+/** Spec 069 FR-004: secret values as `${NAME}` references (default) or written as plain text into the app's file. */
+export type GlobalSecretMode = 'ref' | 'plain';
+/** Spec 069 FR-011: where a server comes from. */
+export type McpSourceTag = GlobalApp | 'folder' | 'builtin' | 'runtime';
+
+/** One server of an app's user-level list, names only (no env or header value). */
+export interface GlobalEntryView {
+  name: string;
+  transport: 'stdio' | 'http' | 'sse' | 'other';
+  command?: string;
+  args?: string[];
+  url?: string;
+  envKeys: string[];
+  headerKeys: string[];
+  /** Some value is a `${NAME}` reference (or Codex `env_vars` / `env_http_headers`). */
+  refs?: boolean;
+}
+
+/** One app's list as read now (spec 069 FR-002, FR-008). */
+export interface GlobalAppState {
+  app: GlobalApp;
+  label: string;
+  /** The file label (`~/...`), never the user name. */
+  file: string;
+  found: boolean;
+  /** The file could not be read or would not be edited (nothing is written to it). */
+  error?: string;
+  servers: GlobalEntryView[];
+  /** Names of this list that new Durbar sessions skip (Settings switches; Copilot and Claude Code). */
+  off: string[];
+}
+
+export interface GlobalState {
+  ok: boolean;
+  apps: GlobalAppState[];
+}
+
+/** Spec 069 FR-005: what will be written to one file, shown before anything is written. */
+export interface GlobalPreviewItem {
+  app: GlobalApp;
+  label: string;
+  file: string;
+  exists: boolean;
+  /** The entry as it will be written, secret values masked; removal: the entry being removed (names only). */
+  entry: string;
+  error?: string;
+  /** The name is already in this file (add): replaced only when the user ticks it. */
+  conflict?: boolean;
+  /** With `conflict`: the entry that is there now (names only). */
+  current?: GlobalEntryView;
+}
+
+export interface GlobalPreview {
+  ok: boolean;
+  error?: string;
+  token?: string;
+  items: GlobalPreviewItem[];
+  /** Reference mode: the environment variables the user must set. */
+  vars?: string[];
+}
+
+export interface GlobalApplyItem {
+  app: GlobalApp;
+  file: string;
+  ok: boolean;
+  /** Label of the backup made before the write (no backup when the file did not exist). */
+  backup?: string;
+  error?: string;
+}
+
+export interface GlobalApplyResult {
+  ok: boolean;
+  error?: string;
+  items: GlobalApplyItem[];
+}
+
 /** The optional extras of ONE folder/workspace (spec 020). */
 export interface McpFolderState {
   ok: boolean;
@@ -401,6 +479,8 @@ export interface AgentMcpEntry {
   defaultOn: boolean;
   /** This agent switched it off. */
   off: boolean;
+  /** Spec 069 FR-011: every list that has this name. */
+  sources?: McpSourceTag[];
 }
 
 /** Bridge exposed by the preload script as `window.agentDurbar`. */
@@ -569,6 +649,16 @@ export interface DurbarApi {
   folderSetupExplain?(key: string, id: string): Promise<HookExplanation>;
   mcpImportApply?(key: string, ids: string[], digest: string): Promise<McpImportResult>;
   mcpRemoveLegacy?(name: string): Promise<{ ok: boolean }>;
+  /** Spec 069: the agent apps' user-level MCP lists (names only), read now. */
+  mcpGlobalState?(): Promise<GlobalState>;
+  /** Spec 069 FR-005: what adding `input` to the chosen apps' lists would write; nothing is written. */
+  mcpGlobalPreview?(input: unknown, apps: GlobalApp[], mode: GlobalSecretMode): Promise<GlobalPreview>;
+  /** Spec 069 FR-005: write a reviewed preview; `replace` = apps where an existing entry of that name may be replaced. */
+  mcpGlobalApply?(token: string, replace: GlobalApp[]): Promise<GlobalApplyResult>;
+  mcpGlobalRemovePreview?(name: string, apps: GlobalApp[]): Promise<GlobalPreview>;
+  mcpGlobalRemoveApply?(token: string): Promise<GlobalApplyResult>;
+  /** Spec 069 FR-009: switch one server of an app's list off (or on) for new Durbar sessions (Copilot and Claude Code). */
+  mcpGlobalSetOff?(app: GlobalApp, name: string, off: boolean): Promise<{ ok: boolean }>;
   agentMcp?(id: string): Promise<{ ok: boolean; servers: AgentMcpEntry[]; live: boolean }>;
   /** Per-agent override: `enabled=false` turns the server off for this agent (now when the session runs, else at its next start). */
   setAgentMcp?(id: string, name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;

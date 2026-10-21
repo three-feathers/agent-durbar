@@ -2,8 +2,10 @@
 
 **Feature Branch**: `069-mcp-global-controls`
 **Created**: 2026-10-21
-**Status**: Specified (spec, research, plan, tasks). Part 1 (add to global with one writer per agent app, backups, sources) is being built
-in the first pull request; parts 2 (harmonize) and 3 (tools list and per-row controls) follow in their own pull requests (see *Delivery*).
+**Status**: Part 1 **built** 2026-10-21 (add to and remove from the agent apps' own lists with a per-file review and backups, source
+chips, Claude Code's user list in Durbar's Claude sessions): unit tests (`test:mcpglobal`) and a simulator driver (`shots-069-mcp-global`),
+no real agent app has read a written file yet (T060). Parts 2 (harmonize) and 3 (tools list and per-row controls) are specified, not
+built (see *Delivery*). Owner questions Q1-Q6 open; their defaults are what is built.
 **Input**: Owner (Vikram, Telegram 2026-10-21 21:03 UTC): "For the MCP server addition UI, give an option to also add to the list of
 global MCP servers, and those controls to start/stop/restart/auth... we should have those options for all servers. Also show the list of
 tools per MCP server when you expand it." Owner decision (Vikram, Telegram 2026-10-21 21:06 UTC): "global" is written to the agent apps'
@@ -112,7 +114,7 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   reviewed it; review again"), nothing else in it is lost.
 - A Codex file that defines `mcp_servers` as an inline table or dotted keys, or a name that needs quoting: refused with a message (Durbar
   only edits `[mcp_servers.<name>]` tables).
-- A file larger than 2 MiB, not UTF-8, or not an object at the top: refused.
+- A file larger than 8 MiB (`~/.claude.json` also holds Claude Code's project state), not UTF-8, or not an object at the top: refused.
 - An app's list holds a server Durbar cannot express (WebSocket, a plugin entry): shown read-only with *managed by <app>*.
 - Remove of a server that is in some of the chosen files only: only those are edited.
 
@@ -120,17 +122,17 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 
 ### Global lists (part 1)
 
-- **FR-001** **Files per agent app**, resolved in main only (the window gets a label with `~`, never the user name):
+- **FR-001** `[IMPLEMENTED]` **Files per agent app**, resolved in main only (the window gets a label with `~`, never the user name):
   - Copilot CLI: `<COPILOT dir>/mcp-config.json` (`copilotDir`, spec 019), top-level `mcpServers` map.
   - Claude Code: `<CLAUDE_CONFIG_DIR>/.claude.json` when that variable is set, else `<home>/.claude.json`; top-level `mcpServers` map
     (user scope).
   - Codex: `<CODEX_HOME>/config.toml` when set, else `<home>/.codex/config.toml`; `[mcp_servers.<name>]` tables.
   - `<home>` is `os.homedir()` (`%USERPROFILE%` on Windows). Paths are joined with `path`, never with `/` literals.
-- **FR-002** **Read** (pure parsers, `src/main/mcpglobal.ts`): each file gives a list of `{name, transport, command?, args?, url?,
+- **FR-002** `[IMPLEMENTED]` **Read** (pure parsers, `src/main/mcpglobal.ts`): each file gives a list of `{name, transport, command?, args?, url?,
   envKeys, headerKeys, envRefs, managed?}`; secret values are read only when a write needs them (harmonize copies) and stay in main.
   JSON: strict JSON (Copilot, Claude); Codex: the line-based reader of spec 061 (`readCodexMcpToml`), extended to `env_vars`,
   `bearer_token_env_var`, `http_headers` and `env_http_headers` key names.
-- **FR-003** **Write** (pure editors that return the new text or a refusal):
+- **FR-003** `[IMPLEMENTED]` **Write** (pure editors that return the new text or a refusal):
   - JSON: parse, set or delete `mcpServers[name]`, write back with 2-space indentation; every other key is kept (key order of the
     rest kept by `JSON.parse`/`stringify`). A file that is not an object, has `mcpServers` that is not an object, or fails to parse is
     refused.
@@ -141,37 +143,37 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   - Entry shapes: Copilot `{type: "local"|"http"|"sse", command, args, env, url, headers, tools: ["*"]}`; Claude Code `{type: "stdio"|"http"|"sse",
     command, args, env, url, headers}`; Codex `command`, `args`, `cwd`, `env` / `env_vars`, `url`, `http_headers` / `env_http_headers` /
     `bearer_token_env_var`.
-- **FR-004** **Secrets** (Q2): per server, *Reference environment variables* (default) or *Write the values into the files*. Reference:
+- **FR-004** `[IMPLEMENTED]` **Secrets** (Q2): per server, *Reference environment variables* (default) or *Write the values into the files*. Reference:
   Codex `env_vars = ["NAME"]`, an `Authorization: Bearer` header as `bearer_token_env_var`, other headers as `env_http_headers`; Claude
   Code and Copilot `"NAME": "${NAME}"` (Q6). Plain: the values, with the warning "<App> keeps these values in its own config file in plain
   text; any program running as you can read them." Durbar never stores the values itself beyond the confirmation (in main memory, at most
   5 minutes, dropped after the write or cancel), and never logs them.
-- **FR-005** **Two steps, one token.** `mcp:globalPreview(input, apps, secretMode)` validates the input (spec 019 `validateInput`), reads
+- **FR-005** `[IMPLEMENTED]` **Two steps, one token.** `mcp:globalPreview(input, apps, secretMode)` validates the input (spec 019 `validateInput`), reads
   each chosen file, builds the new text, and returns per app `{app, label, exists, entry (values masked), error?, conflict?}` and a
   token; main keeps the new texts, the file's size and modification time and a hash of its text. `mcp:globalApply(token, replace)`
   writes only apps without an error, and only when the file still has the same hash (else "changed since you reviewed it").
   `mcp:globalRemovePreview(name, apps)` / `mcp:globalRemoveApply(token)` do the same for a remove. Unknown, used or expired tokens are
   refused.
-- **FR-006** **Safe write**: backup first (Q3: `<file>.durbar-<YYYYMMDDTHHMMSSZ>.bak`, mode 0600, the oldest Durbar backups beyond 3 per
+- **FR-006** `[IMPLEMENTED]` **Safe write**: backup first (Q3: `<file>.durbar-<YYYYMMDDTHHMMSSZ>.bak`, mode 0600, the oldest Durbar backups beyond 3 per
   file deleted, never another app's backup), then write `<file>.durbar-tmp` with the original file's mode (0600 for a new file) and
   `rename` over the file. A failure leaves the original in place and reports "Could not write <label>". Each result names the backup's
   label.
-- **FR-007** **Which apps** (owner 21:06): the form lists the three apps with their install state from `adapters:list`. More than one
+- **FR-007** `[IMPLEMENTED]` **Which apps** (owner 21:06): the form lists the three apps with their install state from `adapters:list`. More than one
   installed: ticks, all installed ones ticked. One installed: a single choice (radio), that app selected. None installed: a single choice
   of the three, none selected; the confirmation then asks for one. A file that exists for an app that is not installed can still be chosen.
-- **FR-008** **Global list in Settings**: "MCP servers" lists the union of the three files by name, each with its source chips (FR-011)
+- **FR-008** `[IMPLEMENTED]` **Global list in Settings**: "MCP servers" lists the union of the three files by name, each with its source chips (FR-011)
   and, for Durbar-editable entries, *Remove…* (FR-005 remove with the chosen apps ticked where the server is). The Copilot switch for new
   sessions (spec 019 FR-007) stays on Copilot rows. The section says which files were read and their errors. Re-read on every open.
-- **FR-009** **Claude Code's user list in Durbar's Claude sessions** (Q1 A): main reads `mcpServers` of the Claude file (values in main
+- **FR-009** `[IMPLEMENTED]` **Claude Code's user list in Durbar's Claude sessions** (Q1 A): main reads `mcpServers` of the Claude file (values in main
   only) and adds the switched-on entries to the `mcpServers` of a Claude agent's start options (only for agents whose adapter is
   `claude`); a name that is also a folder extra keeps the folder extra. Settings has a switch per Claude entry for new Durbar sessions,
   kept with the Copilot switches (`disabledAmbient`). `${NAME}` references are passed as written (Claude Code expands them, `read:` docs).
-- **FR-010** **Trust**: the per-file confirmation (exact file, exact entry, the command or URL in full) is the trust step for a global
+- **FR-010** `[IMPLEMENTED]` **Trust**: the per-file confirmation (exact file, exact entry, the command or URL in full) is the trust step for a global
   server; Durbar adds no second trust prompt. Folder extras keep spec 020's trust per folder.
 
 ### Sources (part 1)
 
-- **FR-011** `McpSourceTag = 'copilot' | 'claude' | 'codex' | 'folder' | 'builtin' | 'runtime'`. Settings rows and the agent dialog
+- **FR-011** `[IMPLEMENTED]` `McpSourceTag = 'copilot' | 'claude' | 'codex' | 'folder' | 'builtin' | 'runtime'`. Settings rows and the agent dialog
   (`agents:mcp`, `AgentMcpEntry.sources?: McpSourceTag[]`) carry every source that has the name; chip words: *Copilot*, *Claude Code*,
   *Codex*, *Durbar folder*, *built-in*, *runtime*. The existing single `origin` stays for compatibility.
 
@@ -204,15 +206,19 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 
 ### Simulator and tests (constitution IV)
 
-- **FR-040** Simulator: the three global lists come from fixture files under a temp folder (`DURBAR_COPILOT_DIR`, `CODEX_HOME`,
+- **FR-040** (part 1 `[IMPLEMENTED]`: the fake lists live in the simulator page, `sim.ts`; the temp-folder fixtures are in `test:mcpglobal`) Simulator: the three global lists come from fixture files under a temp folder (`DURBAR_COPILOT_DIR`, `CODEX_HOME`,
   `CLAUDE_CONFIG_DIR` dev hooks), so the add, confirmation and harmonize flows run without touching the user's files; the sim adapters
   answer `listMcpTools` with fake tools.
-- **FR-041** Unit tests (0 credits): parsers and editors per format with fixtures (comments, unknown keys, CRLF, Windows paths in args,
+- **FR-041** (part 1 `[IMPLEMENTED]`, `scripts/test-mcp-global.ts`, mutation-checked on the hash check and the marker removal) Unit tests (0 credits): parsers and editors per format with fixtures (comments, unknown keys, CRLF, Windows paths in args,
   a Codex file with other tables before and after, inline-table refusal, parse-fail refusal), backup made and pruned to 3, atomic
   write, changed-since refusal, token expiry, masking of the preview, no secret value in any IPC reply or log line (planted-value scan),
   Claude list merged only into Claude agents' options.
-- **FR-042** Screenshots at 1440x900 and 1280x800: the add form with the global choice, the per-file confirmation, the Settings list with
+- **FR-042** (part 1 `[IMPLEMENTED]`: `docs/screenshots/069-mcp-global-{settings,add,review}-<w>x<h>.png`) Screenshots at 1440x900 and 1280x800: the add form with the global choice, the per-file confirmation, the Settings list with
   source chips (part 1); harmonize (part 2); the expanded tools list (part 3).
+
+- **FR-012** `[IMPLEMENTED]` (found while building) Views of the apps' files mask secret-shaped arguments, flag values and URL keys with
+  the shared rules (`maskSecretCommand`, `maskSecretArgs`, `maskSecretUrl`), because another app's file may hold a token in an argument.
+  The add form's hint under *Environment variables* and *Headers* says what happens to a typed value for the chosen scope and mode.
 
 ### Honest limits
 

@@ -51,6 +51,8 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 
 ## Agent apps (checked behaviour)
 
+- **Durbar's Claude Code sessions do not load the user's MCP list** (2026-10-21, `read:` `src/adapters/claudeModes.ts`, spec 069). Every Claude launch passes `--strict-mcp-config --setting-sources ""`, so servers in `~/.claude.json` (user scope, what `claude mcp add -s user` writes) reach a terminal `claude` but not Durbar's sessions unless Durbar passes them in `--mcp-config` itself (spec 069 FR-009). Copilot's runtime loads `~/.copilot/mcp-config.json` by itself, and Codex's app-server reads `~/.codex/config.toml` (Durbar sets no `CODEX_HOME`).
+- **Codex's app-server protocol, offline** (2026-10-21, `real:` codex-cli 0.163.0). `codex app-server generate-json-schema --out <dir>` writes the full JSON schema of every request and reply without signing in or any model call; read field names there (for example `v2/ListMcpServerStatusResponse.json`: each server's `tools` map) instead of guessing. Run it in a temp folder.
 - **Copilot, MCP tools in Read-only** (2026-10-20, `real:`, spec 044). A tool its server marks `readOnlyHint: true` runs without a permission request; the same tool without the hint arrives as kind `mcp` and Read-only denies it. Claude Code and Codex send every MCP call to the broker as `mcp` (`read:`).
 - **Copilot remote control outside a GitHub repository** (2026-10-20, `real:`, spec 054): `remote.enable` answers `started: false` with no error and no URL. Treat that as "not started".
 - **Copilot theme maker replies** (2026-10-20, `real:`, spec 040): Copilot's `auto` wrote colour token names without the leading `--`; the parser accepts both.

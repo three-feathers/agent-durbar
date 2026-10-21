@@ -2,16 +2,16 @@
 
 ## Part 1: add to global (PR 1)
 
-- [ ] T001 Research and spec (this folder); owner questions Q1-Q6 with defaults; split posted on #349 and #364
-- [ ] T002 `src/main/mcpglobal.ts`: file paths per app, readers (JSON, Codex TOML), entry builders with reference/plain secrets, add/remove editors with refusals [FR-001..FR-004]
-- [ ] T003 `src/main/mcpglobalio.ts`: safe read, backup next to the file (keep 3), tmp + rename, hash check, preview tokens [FR-005, FR-006]
-- [ ] T004 IPC `mcp:globalState`, `mcp:globalPreview`, `mcp:globalApply`, `mcp:globalRemovePreview`, `mcp:globalRemoveApply`; preload, api types, channel list [FR-005, FR-008]
-- [ ] T005 Claude user list into Claude agents' start options, Settings switch; `sources` on `agents:mcp` [FR-009, FR-011]
-- [ ] T006 Renderer: *Add to* choice, app ticks or single choice, secret mode, per-file confirmation; Settings global list with source chips and Remove [FR-007, FR-008, FR-010, FR-011]
-- [ ] T007 Simulator bridge and fixtures [FR-040]
-- [ ] T008 Unit tests `test-mcp-global` [FR-041]
-- [ ] T009 Driver and screenshots (form, confirmation, Settings list) at 1440x900 and 1280x800 [FR-042]
-- [ ] T010 README *MCP servers*, CHANGELOG, specs index, 019/020 dated notes, agent-notes
+- [x] T001 Research and spec (this folder); owner questions Q1-Q6 with defaults; split posted on #349 and #364
+- [x] T002 `src/main/mcpglobal.ts`: file paths per app, readers (JSON, Codex TOML), entry builders with reference/plain secrets, add/remove editors with refusals [FR-001..FR-004]
+- [x] T003 `src/main/mcpglobalio.ts`: safe read, backup next to the file (keep 3), tmp + rename, hash check, preview tokens [FR-005, FR-006]
+- [x] T004 IPC `mcp:globalState`, `mcp:globalPreview`, `mcp:globalApply`, `mcp:globalRemovePreview`, `mcp:globalRemoveApply`; preload, api types, channel list [FR-005, FR-008]
+- [x] T005 Claude user list into Claude agents' start options, Settings switch; `sources` on `agents:mcp` [FR-009, FR-011]
+- [x] T006 Renderer: *Add to* choice, app ticks or single choice, secret mode, per-file confirmation; Settings global list with source chips and Remove [FR-007, FR-008, FR-010, FR-011]
+- [x] T007 Simulator bridge and fixtures [FR-040]
+- [x] T008 Unit tests `test-mcp-global` [FR-041]
+- [x] T009 Driver and screenshots (form, confirmation, Settings list) at 1440x900 and 1280x800 [FR-042]
+- [x] T010 README *MCP servers*, CHANGELOG, specs index, 019/020 dated notes, agent-notes
 
 ## Part 2: harmonize (PR 2)
 
