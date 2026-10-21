@@ -10,29 +10,20 @@
  * Sim agents used: Noor (sim-4, idle, 91% full, compacted once, Sim Fast), Ada (sim-1, working), Jonas (card menu), Priya (sim-7, behaves like today's real adapter).
  */
 const path = require('path');
-const { waits } = require('./driver-helpers');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
+const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.MODEL_OUT || '/tmp';
 const W = Number(process.env.MODEL_W || 1440), H = Number(process.env.MODEL_H || 900);
 
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const js = (code) => ctx.js(code);
-  const click = (sel) => js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return false;e.click();return true})()`);
-  const text = (sel) => js(`(document.querySelector(${jsLiteral(sel)})||{}).innerText||''`);
-  const exists = (sel) => js(`!!document.querySelector(${jsLiteral(sel)})`);
+  const HP = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle, js, click, text, exists, key, idOf } = HP;
   const active = () => js(`(document.activeElement||{}).id||(document.activeElement||{}).tagName||''`);
-  const key = async (keyCode) => {
-    const wc = ctx.win.webContents;
-    wc.sendInputEvent({ type: 'keyDown', keyCode });
-    if (keyCode === 'Return') wc.sendInputEvent({ type: 'char', keyCode: '\r' });
-    wc.sendInputEvent({ type: 'keyUp', keyCode });
-    await ctx.sleep(50); // what the key changes is waited for by the caller
+  const shot = async (name, ringFree = true) => {
+    await HP.calm({ keepActions: true }); // the toasts that carry a button stay
+    if (ringFree) await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.id!=='mdIn'&&document.activeElement.blur()`);
+    await HP.shot(path.join(OUT, `030-${name}-${W}x${H}.png`), { settle: true, tag: 'model', what: name });
   };
-  const calm = () => js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts .toast:not(.with-act){display:none!important}';document.head.append(s);}})()`);
-  const shot = async (name, ringFree = true) => { await settle(); await ctx.sleep(150); await calm(); if (ringFree) await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.id!=='mdIn'&&document.activeElement.blur()`); await ctx.shot(path.join(OUT, `030-${name}-${W}x${H}.png`)); console.log('[model] saved', name); };
-  const idOf = (name) => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith(${jsLiteral(name)}));return d?d.dataset.id:null})()`);
   const open = async (name) => { const id = await idOf(name); assert.ok(id, name + ' is on the floor'); await click(`#stage [data-id="${id}"]`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('modelChip')`);
     await js(`(()=>{const t=document.querySelector('.prev-toggle[aria-expanded="true"]');if(t)t.click();})()`); await until(`!document.querySelector('.prev-toggle[aria-expanded="true"]')`); await settle(); return id; };
   const dlgButton = (label) => js(`(()=>{const b=[...document.querySelectorAll('#modeDlg .btn')].find(x=>x.textContent===${jsLiteral(label)});if(!b)return false;b.click();return true})()`);
@@ -145,7 +136,7 @@ module.exports = async (ctx) => {
   // ---- 9) office: "Model and context..." in the card menu ----
   await click('#backBtn'); await until(`!document.body.classList.contains('panel-open')`); await settle();
   const jonas = await idOf('Jonas'); assert.ok(jonas);
-  await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="${jonas}"]');const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+20,clientY:r.top+20}));})()`);
+  await js(`(()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${jonas}"]`)});const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+20,clientY:r.top+20}));})()`);
   await until(`!!document.querySelector('#modeMenu [data-act="model"]')`);
   assert.match(await text('#modeMenu'), /Model and context…/);
   await shot('card-menu', false);

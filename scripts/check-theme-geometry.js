@@ -16,7 +16,8 @@
  * The full layout matrix in every theme stays available on demand: npm run check:themes.
  */
 const fs = require('fs');
-const { pageCheck, jsLiteral } = require('./check-office-overlap.js');
+const { pageCheck } = require('./check-office-overlap.js');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const os = require('os');
 const path = require('path');
 
@@ -48,6 +49,7 @@ function measure() {
 }
 
 async function driver(ctx) {
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const userTheme = JSON.parse(fs.readFileSync(USER, 'utf8'));
   const query = (theme, sim) => {
     const q = { sim: String(sim), simfreeze: '1' };
@@ -55,9 +57,7 @@ async function driver(ctx) {
     return q;
   };
   const snap = async (theme, sim, w, h) => {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: query(theme, sim) });
-    await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+    await H.load({ w, h, query: query(theme, sim), ready: 'fit', settle: false });
     const want = theme === 'user' ? userTheme.id : theme;
     await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(want)}`, 5000);
     const on = await ctx.js(`window.THEME.current().id`);

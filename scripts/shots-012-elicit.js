@@ -7,22 +7,22 @@
  * Prints "[012-elicit] PASS", or "DRIVER FAILED" with an assertion.
  */
 const path = require('path');
+const { helpers } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.OUT || require('os').tmpdir();
-const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 module.exports = async (ctx) => {
-  const js = (c) => ctx.js(c);
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(400); await ctx.shot(path.join(OUT, name)); console.log('[012-elicit] saved', name); };
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
+  const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', delay: 400, tag: '012-elicit' });
   const openElicit = async () => {
     for (let i = 0; i < 40; i++) { const id = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>/needs your|asks you|MCP server/i.test(x.innerText));return d?d.dataset.id:''})()`); if (id) return id; await ctx.sleep(250); }
     return '';
   };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const mode of ['1', 'url']) {
-      ctx.win.setContentSize(w, h);
-      await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simelicit: mode } });
-      await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-      await ctx.sleep(2500);
+      await H.load({ w, h, query: { simelicit: mode }, ready: 'fit' });
+      // the simulator raises the request 400 ms after start: wait for a desk that shows it, not for the page to go quiet
+      await H.until(`[...document.querySelectorAll('#stage .desk[data-id]')].some(x=>/needs your|asks you|MCP server/i.test(x.innerText))`, 15000);
       // the request card lives in the agent's chat; find the agent whose chat has it
       const id = await js(`(()=>{for(const d of document.querySelectorAll('#stage .desk[data-id]')){d.click();const c=document.querySelector('#chat .note.elicit');if(c)return d.dataset.id;const b=document.getElementById('backBtn');if(b)b.click();}return ''})()`);
       assert.ok(id, `${w} ${mode}: an agent has the MCP request in its chat`);

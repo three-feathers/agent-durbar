@@ -10,19 +10,15 @@
  * It asserts that "Allow all" is shown and "Allow edits" is not, and exits non-zero (driver failure) on a miss.
  */
 const path = require('path');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
+const { helpers, jsLiteral } = require('./driver-helpers'); /* jsLiteral: CodeQL js/bad-code-sanitization, values spliced into page code */
 const assert = require('assert');
 const OUT = process.env.MODE_OUT || '/tmp';
 const W = 1440, H = 900;
 
 module.exports = async (ctx) => {
-  const click = (sel) => ctx.js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return false;e.click();return true})()`);
-  const text = (sel) => ctx.js(`(document.querySelector(${jsLiteral(sel)})||{}).innerText||''`);
-  // calm picture: no startup toast over the cards, no focus ring on the menu item
-  const calm = () => ctx.js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts{display:none!important}';document.head.appendChild(s);}
-    if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();})()`);
-  const shot = async (name) => { await ctx.sleep(450); await calm(); await ctx.shot(path.join(OUT, `m7-mode-${name}.png`)); console.log('[mode] saved', name); };
-  const idOf = (name) => ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.querySelector('.name,.nm,h3,b')&&x.innerText.trim().startsWith(${jsLiteral(name)}));return d?d.dataset.id:null})()`);
+  const HP = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { click, text, idOf } = HP;
+  const shot = (name) => HP.shot(path.join(OUT, `m7-mode-${name}.png`), { prep: 'calm', blur: true, settle: true, delay: 250, tag: 'mode', what: name });
   ctx.win.setContentSize(W, H);
   await ctx.sleep(2500);
 
@@ -45,7 +41,7 @@ module.exports = async (ctx) => {
   // 3) right-click menu on a card in the office
   await click('#backBtn'); await ctx.sleep(900);
   const jonas = await idOf('Jonas'); assert.ok(jonas, 'Jonas is on the floor');
-  await ctx.js(`(()=>{const d=document.querySelector('#stage .desk[data-id="${jonas}"]');const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+60,clientY:r.top+50}));})()`);
+  await ctx.js(`(()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${jonas}"]`)});const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+60,clientY:r.top+50}));})()`);
   await ctx.sleep(400);
   const ctxMenu = await text('#modeMenu');
   assert.match(ctxMenu, /Allow all/); assert.doesNotMatch(ctxMenu, /Allow edits/);

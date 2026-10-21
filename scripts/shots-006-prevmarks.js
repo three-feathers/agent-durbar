@@ -12,22 +12,17 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { waits } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const js = (c) => ctx.js(c);
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle, js } = H;
   const log = (...a) => console.log('[006-prev]', ...a);
   const rows = () => js(`[...document.querySelectorAll('#prevLists .prev-row')].map(r=>({g:r.dataset.pg,k:r.dataset.pk,t:r.querySelector('.prev-t').textContent,pin:!!r.querySelector('.prev-pin'),hid:r.classList.contains('is-hidden')}))`);
-  const hideToasts = () => js(`(()=>{if(!document.getElementById('shotsNoToast')){const s=document.createElement('style');s.id='shotsNoToast';s.textContent='#toasts{display:none!important}';document.head.appendChild(s);}})()`);
-  const shot = async (name, w, h, level) => { await hideToasts(); await ctx.sleep(150); await ctx.shot(path.join(OUT, `006-prev-${name}-${w}x${h}${level === 'simple' ? '-simple' : ''}.png`)); };
+  const shot = (name, w, h, level) => H.shot(path.join(OUT, `006-prev-${name}-${w}x${h}${level === 'simple' ? '-simple' : ''}.png`), { prep: 'calm' });
   const load = async (w, h, query, level) => {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', ...query } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await settle();
+    await H.load({ w, h, query });
     await js(`document.body.classList.toggle('simple',${level === 'simple'})`);
     await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>/Ada/.test(x.innerText));d.click();})()`);
     await ctx.waitFor(`!!document.getElementById('prevBtn')&&!document.getElementById('prevBtn').hidden`, 8000);
@@ -37,9 +32,9 @@ module.exports = async (ctx) => {
   };
   /* Escape from where the keyboard is: the focused item of the open menu */
   const escKey = () => js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`);
-  const openMore = async (key) => { await ctx.waitFor(`!!document.querySelector('#prevLists .prev-row[data-pk="${key}"] .prev-more')&&!document.getElementById('modeDlg')`, 8000); await js(`document.querySelector('#prevLists .prev-row[data-pk="${key}"] .prev-more').click()`); await ctx.waitFor(`!!document.querySelector('#modeMenu [data-pact]')`, 8000); };
+  const openMore = async (key) => { await ctx.waitFor(`!!document.querySelector(${jsLiteral(`#prevLists .prev-row[data-pk="${key}"] .prev-more`)})&&!document.getElementById('modeDlg')`, 8000); await js(`document.querySelector(${jsLiteral(`#prevLists .prev-row[data-pk="${key}"] .prev-more`)}).click()`); await ctx.waitFor(`!!document.querySelector('#modeMenu [data-pact]')`, 8000); };
   /* a menu action, then (for Delete…) the confirmation dialog: waits for each instead of a fixed delay */
-  const pact = async (a) => { await js(`document.querySelector('#modeMenu [data-pact="${a}"]').click()`); if (a === 'delete') await ctx.waitFor(`!!document.querySelector('#modeDlg .dbtn .btn')`, 8000); else await ctx.waitFor(`!document.getElementById('modeMenu')`, 8000); await ctx.sleep(150); };
+  const pact = async (a) => { await js(`document.querySelector(${jsLiteral(`#modeMenu [data-pact="${a}"]`)}).click()`); if (a === 'delete') await ctx.waitFor(`!!document.querySelector('#modeDlg .dbtn .btn')`, 8000); else await ctx.waitFor(`!document.getElementById('modeMenu')`, 8000); await ctx.sleep(150); };
   const menuItems = () => js(`[...document.querySelectorAll('#modeMenu [data-pact]')].map(b=>b.querySelector('b').textContent)`);
   /* a row fits: its buttons are inside it, do not overlap, nothing wraps or scrolls sideways */
   const assertFit = async (label) => {

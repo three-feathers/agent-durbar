@@ -74,3 +74,4 @@
   6. *Packaged check* on `main` runs `check-names.js` on macOS and Windows (`--dir`) and passes. This is checked after the merge and noted here with the run id.
   7. The spec records `[KNOWN GAP]` for: taskbar and toasts on a real PC (#9), the Mac menu-bar title by eye, and the Linux launcher name on a desktop.
   8. `npm run typecheck && npm run build && npm test` pass.
+- [x] T094 (2026-10-21, #414) Simulator drivers share `scripts/driver-helpers.js` (FR-097): `js`, `shot`, `key`, `clickText`, load-and-wait move there; every driver uses them; no assertion changes. Done: `ui-suite` all green after each batch, `check:office`, `check:geometry`, Mac title bar check, `npm run typecheck && npm run build && npm test`; screenshot-only drivers run once by hand.
