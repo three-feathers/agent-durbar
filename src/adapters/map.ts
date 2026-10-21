@@ -6,6 +6,7 @@
  * instance to the parent's `task` tool call (`data.toolCallId`). Normalized sub-agent events carry that tool call id as
  * `agentId`, which is also the id of the helper card (`SubagentEvent.subagentId`).
  */
+import { isMcpAuthChallenge } from './mcpauth';
 import type { AgentEvent, CompactionEvent, ContextTier, McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import { nonEmptyStr as str } from '../shared/guards';
@@ -139,7 +140,16 @@ export class EventMapper {
         const meta = this.toolNames.get(d.toolCallId) ?? { tool: '' };
         this.toolNames.delete(d.toolCallId);
         const output = d.success ? contentOf(d.result) : d.error?.message;
-        return this.emit({ type: 'toolCall', callId: d.toolCallId, ...meta, phase: d.success ? 'complete' : 'failed', output, agentId });
+        // spec 058 FR-060/FR-063 (T094): a failed MCP tool whose text is the server's OAuth challenge says "sign in"; the server shows
+        // needs-auth until the runtime's next status for it (status_changed or servers_loaded replaces the row)
+        const mcpAuth = !d.success && !!meta.mcpServer && isMcpAuthChallenge(output);
+        this.emit({ type: 'toolCall', callId: d.toolCallId, ...meta, phase: d.success ? 'complete' : 'failed', output, ...(mcpAuth ? { mcpAuth: true } : {}), agentId });
+        if (mcpAuth && meta.mcpServer) {
+          const prev = this.mcp.get(meta.mcpServer);
+          this.mcp.set(meta.mcpServer, { ...(prev ?? { name: meta.mcpServer }), status: 'needs-auth', errorClass: 'auth' });
+          this.emitMcp();
+        }
+        return;
       }
       case 'session.usage_info':
         // Context window of the main agent (a sub-agent has its own window and is not shown).
