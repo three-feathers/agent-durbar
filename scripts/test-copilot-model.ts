@@ -259,6 +259,7 @@ async function main(): Promise<void> {
     assert.strictEqual(fake.created[0].model, 'auto');
     assert.ok(!('contextTier' in fake.created[0]));
     assert.strictEqual(fake.created[0].enableFileHooks, false, 'spec 061 FR-017: a repository\'s own hooks never run unasked');
+    assert.strictEqual(fake.created[0].mcpOAuthTokenStorage, 'persistent', 'spec 058 FR-070: MCP sign-ins kept in the OS keychain (create)');
     await ad.setModel(sid, { model: 'sim-deep', effort: 'high', contextTier: 'long' });
     await ad.stop(sid);
     // main saves the switched choice with the folder and passes it on the next start under the same id
@@ -270,12 +271,14 @@ async function main(): Promise<void> {
     assert.strictEqual(rc.reasoningEffort, 'high');
     assert.strictEqual(rc.contextTier, 'long_context');
     assert.ok(!('capi' in rc));
+    assert.strictEqual(rc.mcpOAuthTokenStorage, 'persistent', 'spec 058 FR-070: also on resume by session id');
     await ad.stop(sid);
     // an auto session that is resumed keeps the runtime's own routing
     const a2 = await ad.start({ workspace: dir, resumeSessionId: sid, model: 'auto', autoTier: 'efficiency', quiet: true });
     assert.ok(!('capi' in fake.resumed[1].config), 'no autoTier override on resume');
     assert.strictEqual(fake.resumed[1].config.model, 'auto');
     assert.strictEqual(fake.resumed[1].config.enableFileHooks, false, 'spec 061 FR-017: also on resume');
+    assert.strictEqual(fake.resumed[1].config.mcpOAuthTokenStorage, 'persistent', 'spec 058 FR-070: also on resume (resumeSessionId)');
     await ad.stop(a2);
     // a session id not on disk is created with exactly that id and the saved choice
     const a3 = await ad.start({ workspace: dir, sessionId: 'brand-new', model: 'sim-fast', contextTier: 'long', quiet: true });

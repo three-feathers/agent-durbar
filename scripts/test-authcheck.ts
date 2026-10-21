@@ -168,6 +168,8 @@ void (async () => {
     // spec 061 FR-017: the reconnect re-resume keeps the folder's file hooks off, like create and resume
     assert.strictEqual(ra.enableFileHooks, false, 'refreshAuth re-resume: repository file hooks stay off (FR-017)');
     assert.strictEqual(rb.enableFileHooks, false, 'refreshAuth re-resume: repository file hooks stay off (FR-017)');
+    // spec 058 FR-070: the re-resume keeps MCP sign-ins in the OS keychain too
+    assert.strictEqual(ra.mcpOAuthTokenStorage, 'persistent', 'refreshAuth re-resume: persistent MCP token storage (058 FR-070)');
     assert.ok(c2.sessions.get(b)!.calls.some((x) => x.name === 'mcp.disable'), 'an MCP server switched off stays off');
     const intents = (sid: string) => events.filter((e) => e.sessionId === sid && e.type === 'status').map((e) => (e as { intent?: string }).intent);
     assert.ok(intents(a).includes('Reconnecting Copilot…'));

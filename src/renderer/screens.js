@@ -532,6 +532,7 @@
       const t=r.needsTrust;
       const run=t.transport==='stdio'?[t.command].concat(t.args||[]).join(' '):t.url;
       const ok=await dialog({title:'Trust "'+t.name+'" in '+st.name+'?',wide:true,html:`<p class="dsub"><b>This will run a program on your computer</b> every time a session starts in <b>${esc(st.name)}</b>, with your user rights, and give it access to what you pass in its environment. Agents there will be able to call its tools${t.transport==='stdio'?'':' (a remote server: requests and your header values go to that URL)'}.</p>
+        ${t.transport==='stdio'?'':'<p class="dsub">If this server asks you to sign in, the agent app may keep that sign-in in your system keychain after the session ends (Copilot does).</p>'}
         <p class="dsub">${t.transport==='stdio'?'Command':'URL'}:</p><pre class="trustcmd" tabindex="0">${esc(run)}</pre>${t.workingDirectory?`<p class="dsub">Working directory: <code>${esc(t.workingDirectory)}</code></p>`:''}
         <p class="dsub">Only continue if you know where this comes from. You will be asked again if the command or URL changes.</p>`,
         buttons:[{label:'Cancel',value:null},{label:'Trust and enable',value:'ok',cls:'primary warn'}]});

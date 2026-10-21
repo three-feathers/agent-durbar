@@ -182,6 +182,11 @@ Record results in research.md section 7 and change `read:` to `real:`. Do not op
   CHANGELOG *Unreleased* line; specs index row; spec 019 `[KNOWN GAP]` line from "specified" to "built" [FR-074]
 - [ ] T109 `/speckit-converge` for the delta: spec, plan and tasks match what was built; tick tasks
 
+**Note 2026-10-21 (spec *Changes* 2026-10-21; numbers unchanged).** Done ahead of the PR sequence, by agreement in the team chat
+(Vikram's agent): the FR-070 part of T098 (`mcpOAuthTokenStorage: 'persistent'` on create, resume and the reconnect re-resume, with
+fake SDK checks in `test-copilot-model`, `test-authcheck` and `test-copilot-oneshot`) and the trust-confirmation part of T111 (remote
+extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copilot waiting text (T102).
+
 ## Out of scope (owner decisions 2026-10-20)
 
 - No in-app log viewer (Q5); T080 removed. A viewer would need a new spec and the owner's approval.

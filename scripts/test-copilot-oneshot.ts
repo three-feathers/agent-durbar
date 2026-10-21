@@ -38,6 +38,7 @@ async function main(): Promise<void> {
   assert.strictEqual(c.skipCustomInstructions, true);
   assert.strictEqual(c.enableOnDemandInstructionDiscovery, false);
   assert.strictEqual(c.enableFileHooks, false);
+  assert.ok(!('mcpOAuthTokenStorage' in c), 'spec 058 FR-070: the one-shot (no MCP) keeps the SDK default');
   assert.strictEqual(c.enableHostGitOperations, false);
   assert.strictEqual(c.enableSessionStore, false);
   assert.deepStrictEqual(c.memory, { enabled: false });
