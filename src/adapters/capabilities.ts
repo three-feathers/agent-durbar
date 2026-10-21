@@ -44,6 +44,8 @@ export interface AdapterCapabilities {
    * `'next-turn'`: the call remembers the name and the adapter applies it the next time it starts that session's CLI.
    */
   readonly renameSession?: 'any' | 'next-turn';
+  /** Spec 066: plan first: the app's own plan mode (nothing runs while planning), answered with `resolvePlan`; missing = false. */
+  readonly planMode?: boolean;
   /** `deleteSession()` exists: one earlier session can be removed through the vendor's own API, never by deleting files (spec 006 FR-028); missing = false. */
   readonly deleteSession?: boolean;
   /** Spec 054 FR-060: the service a session is controlled from when `remote` is on: its name, the only host its links may use, and its phone app. */
@@ -59,6 +61,8 @@ export interface DetectResult {
   state: AdapterState;
   version?: string;
   hint?: string;
+  /** Spec 060 FR-003: where the app was found, safe to show: `~/…` under the home folder, otherwise only the file name. */
+  where?: string;
 }
 
 /** Static description of an adapter plus a factory; creating the adapter is lazy (FR-031). */

@@ -1,6 +1,6 @@
 /** Harness setup inside the app (spec 051): plans per OS, sign-in output parsing, link allowlist, paste rules. `npm run test:harnesssetup`. No process runs, nothing is installed. */
 import * as assert from 'assert';
-import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, parseSignIn, stripAnsi, updatePlans, validPaste } from '../src/shared/harnesssetup';
+import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, parseSignIn, simFoundFor, simManagers, stripAnsi, updatePlans, validPaste } from '../src/shared/harnesssetup';
 import type { PackageManager } from '../src/shared/harnesssetup';
 import { EventEmitter } from 'events';
 import { HarnessSetup, confirmText, maskOAuth, posixTrusted } from '../src/main/harnesssetup';
@@ -18,10 +18,11 @@ const only = (...m: PackageManager[]) => new Set<PackageManager>(m);
   ]);
   assert.deepStrictEqual(installPlans('claude', 'darwin', all).map((p) => p.display), ['brew install --cask claude-code', 'npm install -g @anthropic-ai/claude-code']);
   assert.match(installPlans('claude', 'darwin', all)[1].note ?? '', /Deprecated/);
-  assert.deepStrictEqual(installPlans('copilot', 'darwin', all).map((p) => p.display), ['brew install --cask copilot-cli', 'npm install -g @github/copilot']);
-  assert.deepStrictEqual(installPlans('copilot', 'win32', all)[0].args, ['install', '--id', 'GitHub.Copilot', '-e', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements']);
+  // spec 060 Q1: least privilege first: npm (a home-folder install) before Homebrew, and before winget on Windows
+  assert.deepStrictEqual(installPlans('copilot', 'darwin', all).map((p) => p.display), ['npm install -g @github/copilot', 'brew install --cask copilot-cli']);
+  assert.deepStrictEqual(installPlans('copilot', 'win32', all)[1].args, ['install', '--id', 'GitHub.Copilot', '-e', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements']);
   assert.deepStrictEqual(installPlans('codex', 'linux', all).map((p) => p.display), ['npm install -g @openai/codex']);
-  assert.deepStrictEqual(installPlans('codex', 'darwin', all).map((p) => p.display), ['brew install --cask codex', 'npm install -g @openai/codex']);
+  assert.deepStrictEqual(installPlans('codex', 'darwin', all).map((p) => p.display), ['npm install -g @openai/codex', 'brew install --cask codex']);
   assert.match(installPlans('codex', 'win32', all)[0].note ?? '', /experimental/);
   // only what was found on PATH
   assert.deepStrictEqual(installPlans('claude', 'darwin', only('npm')).map((p) => p.manager), ['npm']);
@@ -36,8 +37,31 @@ const only = (...m: PackageManager[]) => new Set<PackageManager>(m);
   assert.deepStrictEqual(installPlans('codex', 'linux', all)[0].args, ['install', '-g', '@openai/codex']);
   // every arg is a plain word: no shell syntax anywhere
   for (const k of ['claude', 'codex', 'copilot'] as const) for (const os of ['win32', 'darwin', 'linux']) for (const pl of [...installPlans(k, os, all), ...updatePlans(k, os, all)]) for (const a of pl.args) assert.match(a, /^[A-Za-z0-9@/._-]+$/, `${k} ${os}: ${a}`);
-  assert.deepStrictEqual(managersFor('win32'), ['winget', 'npm']);
-  assert.deepStrictEqual(managersFor('darwin'), ['brew', 'npm']);
+  assert.deepStrictEqual(managersFor('win32'), ['powershell', 'winget', 'npm']);
+  assert.deepStrictEqual(managersFor('darwin'), ['bash', 'brew', 'npm']);
+  // spec 060 FR-001: with the interpreter found, the vendor's official installer comes first (least privilege), then the rest
+  const full = new Set<PackageManager>(['winget', 'brew', 'npm', 'bash', 'powershell']);
+  const order = (k: 'claude' | 'copilot' | 'codex', os: string) => installPlans(k, os, full).map((p) => p.manager);
+  assert.deepStrictEqual(order('claude', 'win32'), ['official', 'winget', 'npm']);
+  assert.deepStrictEqual(order('claude', 'darwin'), ['official', 'brew', 'npm']);
+  assert.deepStrictEqual(order('claude', 'linux'), ['official', 'brew', 'npm']);
+  assert.deepStrictEqual(order('copilot', 'win32'), ['npm', 'winget'], 'no official script for Copilot on Windows');
+  assert.deepStrictEqual(order('copilot', 'darwin'), ['official', 'npm', 'brew']);
+  assert.deepStrictEqual(order('codex', 'win32'), ['official', 'npm']);
+  assert.deepStrictEqual(order('codex', 'linux'), ['official', 'npm']);
+  const cw = installPlans('claude', 'win32', full)[0];
+  assert.deepStrictEqual([cw.bin, cw.args, cw.script?.url], ['powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'], 'https://claude.ai/install.ps1']);
+  const cl = installPlans('codex', 'linux', full)[0];
+  assert.deepStrictEqual([cl.bin, cl.args, cl.script?.url], ['bash', [], 'https://chatgpt.com/codex/install.sh']);
+  assert.match(cl.display, /^https:\/\/chatgpt\.com\/codex\/install\.sh \(downloaded, then run with bash\)$/);
+  assert.match(cl.note ?? '', /no administrator rights/);
+  for (const k of ['claude', 'codex', 'copilot'] as const) for (const os of ['win32', 'darwin', 'linux']) for (const pl of installPlans(k, os, full)) {
+    if (pl.manager === 'winget' || pl.manager === 'brew') assert.match(pl.note ?? '', /administrator rights/, `${k} ${os} ${pl.manager}: says it may ask for admin`);
+    if (pl.script) for (const h of pl.script.hosts) assert.ok(/^[a-z0-9.-]+\.(ai|io|com)$/.test(h.host), 'fixed vendor hosts only');
+  }
+  assert.deepStrictEqual(updatePlans('claude', 'darwin', full)[0].script?.url, 'https://claude.ai/install.sh', 'the official script also updates');
+  // without the interpreter there is no official route (a fresh machine always has one: bash, or Windows PowerShell 5.1)
+  assert.ok(!installPlans('claude', 'linux', only('npm')).some((p) => p.manager === 'official'));
   for (const u of Object.values(OFFICIAL_PAGES)) assert.match(u, /^https:\/\//);
 }
 
@@ -300,6 +324,28 @@ void (async () => {
     assert.ok(!t.setup.busy);
     t.child().emit('close', 1); await tick(); await tick();
     assert.strictEqual(t.done.length, 1, 'ends once');
+  }
+  // spec 060 FR-002: the simulator shows the real routes for a typical new machine of each OS, never Homebrew on Windows or Linux
+  {
+    assert.deepStrictEqual(simFoundFor('win32'), ['powershell', 'winget']);
+    assert.deepStrictEqual(simFoundFor('darwin'), ['bash'], 'a new Mac has bash but no Homebrew and no Node');
+    assert.deepStrictEqual(simFoundFor('linux'), ['bash']);
+    const simPlans = (k: 'claude' | 'copilot' | 'codex', os: string) => installPlans(k, os, new Set(simFoundFor(os))).map((p) => p.manager);
+    assert.deepStrictEqual(simPlans('claude', 'win32'), ['official', 'winget']);
+    assert.deepStrictEqual(simPlans('copilot', 'win32'), ['winget']);
+    for (const os of ['win32', 'linux']) for (const k of ['claude', 'copilot', 'codex'] as const) assert.ok(!simPlans(k, os).includes('brew'), `no Homebrew offered on ${os} for ${k}`);
+    assert.deepStrictEqual(simPlans('claude', 'darwin'), ['official'], 'a new Mac: the official installer (FR-001), no Homebrew, no npm');
+    assert.deepStrictEqual(simPlans('codex', 'linux'), ['official']);
+    assert.deepStrictEqual(simManagers('darwin'), ['bash'], 'no override: a new machine');
+    assert.deepStrictEqual(simManagers('linux', 'winget, brew,npm,apt,brew'), ['winget', 'brew', 'npm'], 'override: known names, once each');
+    const looked: string[] = [];
+    const hs = new HarnessSetup({
+      detectEnv: { platform: 'linux', env: { PATH: '/usr/bin' }, homedir: '/home/u', isFile: (f: string) => { looked.push(f); return true; } },
+      spawn: () => { throw new Error('nothing runs'); }, killTree: () => undefined, send: () => undefined, redetect: async () => undefined,
+    } as never);
+    assert.deepStrictEqual(hs.plans('copilot', 'install', []).plans, [], 'nothing assumed: no route');
+    assert.deepStrictEqual(looked, [], 'an assumed set does not look at this machine');
+    assert.deepStrictEqual(hs.plans('copilot', 'install').plans.map((p) => p.manager), ['official', 'npm', 'brew'], 'without it, what is found here is used (least privilege first)');
   }
   console.log('harnesssetup: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

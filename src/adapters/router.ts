@@ -1,5 +1,5 @@
 import type { AdapterRegistry } from './registry';
-import type { AgentAdapter, AgentEvent, ModelOption, PermissionMode, Unsubscribe } from './types';
+import type { AgentAdapter, AgentEvent, ModelOption, PermissionMode, Unsubscribe, WriteGuard } from './types';
 import type { HistoryResult, PreviousSession } from './history';
 
 /**
@@ -18,6 +18,8 @@ export interface AdapterRouter {
   onEvent(listener: (e: AgentEvent) => void): Unsubscribe;
   /** Debug sink for every adapter, existing and created later. */
   setDebug(fn: ((message: string) => void) | undefined): void;
+  /** Spec 065 FR-001: the write guard every adapter instance calls before a file-edit write. */
+  setWriteGuard(fn: WriteGuard | undefined): void;
   created(): readonly AgentAdapter[];
   /** Disposes only the adapters that were created. Never throws and never creates one. */
   disposeAll(): Promise<void>;
@@ -43,10 +45,12 @@ export function createRouter(reg: AdapterRegistry): AdapterRouter {
   const bound = new Map<string, string>();
   const listeners = new Set<{ fn: (e: AgentEvent) => void; offs: Map<string, Unsubscribe> }>();
   let debug: ((message: string) => void) | undefined;
+  let writeGuard: WriteGuard | undefined;
 
   const attach = (id: string, ad: AgentAdapter): void => {
     for (const l of listeners) l.offs.set(id, ad.onEvent(l.fn));
     if (debug) ad.debug = debug;
+    if (writeGuard) ad.writeGuard = writeGuard;
   };
 
   const instance = (adapterId: string): AgentAdapter => {
@@ -84,6 +88,10 @@ export function createRouter(reg: AdapterRegistry): AdapterRouter {
         for (const off of l.offs.values()) off();
         l.offs.clear();
       };
+    },
+    setWriteGuard(fn) {
+      writeGuard = fn;
+      for (const ad of instances.values()) ad.writeGuard = fn;
     },
     setDebug(fn) {
       debug = fn;

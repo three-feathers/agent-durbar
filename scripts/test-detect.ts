@@ -2,6 +2,9 @@
 import * as assert from 'assert';
 import { CLAUDE_BINARY, CLAUDE_SIGN_IN_HINT, CODEX_BINARY, CODEX_SIGN_IN_HINT, detectCodex, candidates, compareVersions, detectBinary, detectClaude, detectCopilot, detectorFor, parseVersion } from '../src/adapters/detect';
 import type { DetectEnv, Exec, ExecResult } from '../src/adapters/detect';
+import { newestFirst } from '../src/adapters/detect';
+import { loginShellCommand, mergeLoginPath, parseLoginPath, readLoginShellPath, MAX_LOGIN_DIRS } from '../src/main/loginpath';
+import { EventEmitter } from 'events';
 import { createRegistry, detectAll } from '../src/adapters/registry';
 import type { AdapterDescriptor } from '../src/adapters/capabilities';
 
@@ -43,6 +46,11 @@ async function main(): Promise<void> {
     const e = mkEnv('win32', { Path: '"C:\\Program Files\\x";rel\\dir;;C:\\bin' }, ['C:\\Program Files\\x\\codex.cmd', 'C:\\Program Files\\x\\codex.exe'], 'C:\\Users\\u');
     const c = candidates(CODEX_BINARY, e);
     assert.deepStrictEqual(c.slice(0, 2), ['C:\\Program Files\\x\\codex.exe', 'C:\\Program Files\\x\\codex.cmd'], 'b: .exe before .cmd, quoted entry works, Path used');
+    // spec 060 FR-094: a repeated PATH folder (also in another case on Windows) gives its candidates once
+    const dp = candidates(CODEX_BINARY, mkEnv('linux', { PATH: '/opt/a:/opt/b:/opt/a' }, [], '/home/u'));
+    assert.deepStrictEqual(dp.slice(0, 2), ['/opt/a/codex', '/opt/b/codex'], 'duplicate PATH entry: first wins, order kept');
+    const dw = candidates(CODEX_BINARY, mkEnv('win32', { PATH: 'C:\\bin;"c:\\BIN";C:\\other' }, [], 'C:\\Users\\u'));
+    assert.deepStrictEqual(dw.slice(0, 4), ['C:\\bin\\codex.exe', 'C:\\bin\\codex.cmd', 'C:\\other\\codex.exe', 'C:\\other\\codex.cmd'], 'Windows duplicate, other case and quoted: once');
     assert.ok(!c.some((x) => x.startsWith('rel')), 'b: relative entry skipped');
     const x = mkExec(ok('0.200.0'));
     const r = await detectBinary(CODEX_BINARY, e, x.exec);
@@ -50,7 +58,7 @@ async function main(): Promise<void> {
     assert.strictEqual(x.calls[0].file, 'C:\\Program Files\\x\\codex.exe', 'b: exe runs directly');
     assert.ok(!x.calls[0].verbatim, 'd: .exe is not verbatim');
     const k = candidates(CODEX_BINARY, mkEnv('win32', { APPDATA: 'C:\\A', LOCALAPPDATA: 'C:\\L' }, [], 'C:\\Users\\u'));
-    assert.ok(k.includes('C:\\Users\\u\\.local\\bin\\codex.exe') && k.includes('C:\\A\\npm\\codex.cmd') && k.includes('C:\\L\\Programs\\codex\\codex.exe'), 'b: Windows known folders');
+    assert.ok(k.includes('C:\\Users\\u\\.local\\bin\\codex.exe') && k.includes('C:\\A\\npm\\codex.cmd') && k.includes('C:\\L\\Programs\\codex\\codex.exe') && k.includes('C:\\L\\Programs\\OpenAI\\Codex\\bin\\codex.exe'), 'b: Windows known folders (and the official install.ps1 folder)');
     // spec 052 FR-072: winget's command shims folder, built from LOCALAPPDATA with Windows path rules
     assert.ok(k.includes('C:\\L\\Microsoft\\WinGet\\Links\\codex.exe'), 'b: winget Links folder is searched');
     const w = mkEnv('win32', { LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' }, ['C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Links\\codex.exe'], 'C:\\Users\\u');
@@ -249,6 +257,81 @@ async function main(): Promise<void> {
     for (const bad of [{ code: 1, stdout: '', stderr: "error: unrecognized subcommand 'login'" }, { code: null, stdout: '', stderr: '', timedOut: true }, ok('something else')] as ExecResult[]) {
       assert.strictEqual((await detectCodex(e, seq([ok('codex-cli 0.163.0'), bad]).exec)).state, 'ready', 'unclear sign-in keeps ready: ' + JSON.stringify(bad));
     }
+  }
+  // spec 060 FR-003: version-manager and Linuxbrew folders, after PATH, the login shell's PATH and the fixed folders
+  {
+    const dirs: Record<string, string[]> = {
+      '/home/u/.nvm/versions/node': ['v20.11.1', 'v22.3.0', 'v18.20.0', '.cache', 'notes'],
+      '/home/u/.local/share/fnm/node-versions': ['v21.0.0'],
+    };
+    const mk = (platform: NodeJS.Platform, env: Record<string, string>, home: string, extra: Partial<DetectEnv> = {}): DetectEnv => ({ platform, env, homedir: home, isFile: () => false, listDir: (d) => dirs[d] ?? [], ...extra });
+    const c = candidates(CLAUDE_BINARY, mk('linux', { PATH: '/usr/bin' }, '/home/u'));
+    const nvm = ['v22.3.0', 'v20.11.1', 'v18.20.0'].map((v) => `/home/u/.nvm/versions/node/${v}/bin/claude`);
+    assert.deepStrictEqual(c.filter((x) => x.includes('/.nvm/')), [...nvm, '/home/u/.nvm/versions/node/notes/bin/claude'], 'nvm: newest first, hidden names skipped, other names last');
+    for (const want of ['/home/u/.fnm/aliases/default/bin/claude', '/home/u/.local/share/fnm/aliases/default/bin/claude', '/home/u/.local/share/fnm/node-versions/v21.0.0/installation/bin/claude', '/home/u/.volta/bin/claude', '/home/u/.asdf/shims/claude', '/home/u/.local/share/mise/shims/claude', '/home/linuxbrew/.linuxbrew/bin/claude', '/home/u/.linuxbrew/bin/claude'])
+      assert.ok(c.includes(want), 'linux folder: ' + want);
+    assert.ok(c.indexOf('/home/u/.npm-global/bin/claude') < c.indexOf(nvm[0]), 'new folders come after the fixed ones');
+    assert.strictEqual(c.filter((x) => x === '/usr/bin/claude').length, 1, 'deduplicated (PATH and the fixed /usr/bin)');
+    const mac = candidates(CLAUDE_BINARY, mk('darwin', { NVM_DIR: '/opt/nvm', FNM_DIR: '/opt/fnm' }, '/Users/u'));
+    assert.ok(mac.includes('/opt/fnm/aliases/default/bin/claude') && mac.includes('/Users/u/Library/Application Support/fnm/aliases/default/bin/claude') && mac.includes('/Users/u/.volta/bin/claude'), 'macOS: FNM_DIR, fnm in Application Support, Volta');
+    assert.ok(!mac.some((x) => x.includes('linuxbrew')), 'no Linuxbrew on macOS');
+    assert.ok(!candidates(CLAUDE_BINARY, mk('linux', { NVM_DIR: 'rel/nvm' }, '/home/u')).some((x) => x.startsWith('rel')), 'a relative NVM_DIR is ignored');
+    // the login shell's PATH: after PATH, before the fixed folders; relative entries skipped
+    const lp = candidates(CLAUDE_BINARY, mk('linux', { PATH: '/usr/bin' }, '/home/u', { loginPath: ['/home/u/.nvm/versions/node/v22.3.0/bin', 'rel'] }));
+    assert.ok(lp.indexOf('/usr/bin/claude') < lp.indexOf(nvm[0]) && lp.indexOf(nvm[0]) < lp.indexOf('/home/u/.local/bin/claude'), 'login PATH between PATH and the fixed folders');
+    assert.strictEqual(lp.filter((x) => x === nvm[0]).length, 1, 'login PATH entry not repeated by the nvm scan');
+    // a listDir that throws costs nothing
+    assert.ok(candidates(CLAUDE_BINARY, mk('linux', {}, '/home/u', { listDir: () => { throw new Error('EACCES'); } })).includes('/home/u/.volta/bin/claude'));
+    // Windows: Volta, nvm-windows link and version folders; case-insensitive dedupe
+    const w = candidates(CODEX_BINARY, { platform: 'win32', env: { LOCALAPPDATA: 'C:\\L', APPDATA: 'C:\\A', NVM_SYMLINK: 'C:\\Program Files\\nodejs', Path: 'C:\\program files\\NODEJS' }, homedir: 'C:\\Users\\u', isFile: () => false, listDir: (d) => (d === 'C:\\A\\nvm' ? ['v20.0.0', 'v22.1.0'] : []) });
+    assert.ok(w.includes('C:\\L\\Volta\\bin\\codex.exe'), 'Windows Volta');
+    assert.ok(w.indexOf('C:\\A\\nvm\\v22.1.0\\codex.cmd') < w.indexOf('C:\\A\\nvm\\v20.0.0\\codex.cmd'), 'nvm-windows newest first');
+    assert.ok(!w.includes('C:\\Program Files\\nodejs\\codex.exe'), 'NVM_SYMLINK already on Path (other case): not repeated');
+    assert.ok(!candidates(CODEX_BINARY, { platform: 'win32', env: { LOCALAPPDATA: 'C:\\L' }, homedir: 'C:\\Users\\u', isFile: () => false }).some((x) => x.includes('.nvm') || x.includes('.volta')), 'no POSIX folders on Windows');
+    assert.deepStrictEqual(newestFirst(['1.2.3', 'v1.10.0', 'a/b', 'z', 'b']), ['v1.10.0', '1.2.3', 'b', 'z']);
+    // the registry passes `where` on (trimmed, a string only) and drops anything else
+    const reg = createRegistry([{ id: 'codex', displayName: 'Codex', capabilities: {}, create: () => { throw new Error('no'); } } as unknown as AdapterDescriptor]);
+    assert.strictEqual((await detectAll(reg, async () => ({ state: 'ready', where: ' ~/.volta/bin/codex ' })))[0].where, '~/.volta/bin/codex');
+    assert.ok(!('where' in (await detectAll(reg, async () => ({ state: 'ready', where: 42 as never })))[0]), 'a non-string where is dropped');
+  }
+  // spec 060 FR-003: the login shell, its command and parser; a fake spawn (no real shell in unit tests)
+  {
+    const isFile = (p: string) => ['/bin/zsh', '/usr/local/bin/fish', '/opt/evil/notashell'].includes(p);
+    assert.deepStrictEqual(loginShellCommand('/bin/zsh', isFile), { file: '/bin/zsh', args: ['-l', '-c', 'printf "__DURBAR_PATH__%s__END__" "$PATH"'] });
+    assert.deepStrictEqual(loginShellCommand('/usr/local/bin/fish', isFile).args[2], 'printf "__DURBAR_PATH__%s__END__" (string join : $PATH)');
+    for (const bad of [undefined, 'zsh', '/opt/evil/notashell', '/bin/bash' /* not a file here */, '/bin/zsh\n'])
+      assert.strictEqual(loginShellCommand(bad, isFile).file, '/bin/sh', 'fallback for ' + String(bad));
+  // the login PATH is added after the process's own, without duplicates: an nvm `claude` then finds its `node` when it runs
+  assert.strictEqual(mergeLoginPath('/usr/bin:/bin', ['/home/u/.nvm/versions/node/v22.3.0/bin', '/usr/bin']), '/usr/bin:/bin:/home/u/.nvm/versions/node/v22.3.0/bin');
+  assert.strictEqual(mergeLoginPath(undefined, ['/opt/x']), '/opt/x');
+  assert.strictEqual(mergeLoginPath('/a::/b', []), '/a:/b');
+    assert.deepStrictEqual(parseLoginPath('motd junk\n__DURBAR_PATH__/a/bin:rel:/b/bin::/a/bin__END__trailing'), ['/a/bin', '/b/bin'], 'markers, junk, relative and duplicate entries');
+    assert.deepStrictEqual(parseLoginPath('no markers /a/bin'), []);
+    assert.deepStrictEqual(parseLoginPath('__DURBAR_PATH__/a/bin'), [], 'no end marker');
+    assert.deepStrictEqual(parseLoginPath('__DURBAR_PATH__/' + 'x'.repeat(9000) + '__END__'), [], 'too long');
+    assert.strictEqual(parseLoginPath('__DURBAR_PATH__' + Array.from({ length: 100 }, (_, i) => '/d' + i).join(':') + '__END__').length, MAX_LOGIN_DIRS, 'capped');
+    type Fake = EventEmitter & { pid: number; stdout: EventEmitter; kill: () => boolean };
+    const spawned: Array<{ file: string; args: readonly string[]; opts: { shell?: boolean; stdio?: unknown; detached?: boolean } }> = [];
+    let child!: Fake;
+    const fakeSpawn = ((file: string, args: readonly string[], opts: never) => {
+      spawned.push({ file, args, opts });
+      child = Object.assign(new EventEmitter(), { pid: 0, stdout: new EventEmitter(), kill: () => true });
+      return child;
+    }) as never;
+    const p1 = readLoginShellPath({ platform: 'darwin', shellEnv: '/bin/zsh', isFile, spawn: fakeSpawn });
+    child.stdout.emit('data', Buffer.from('hello\n__DURBAR_PATH__/opt/homebrew/bin:/Users/u/.nvm/versions/node/v22.3.0/bin__END__'));
+    child.emit('close', 0);
+    assert.deepStrictEqual(await p1, ['/opt/homebrew/bin', '/Users/u/.nvm/versions/node/v22.3.0/bin']);
+    assert.deepStrictEqual([spawned[0].file, spawned[0].opts.shell, spawned[0].opts.detached, (spawned[0].opts.stdio as string[])[0]], ['/bin/zsh', false, true, 'ignore'], 'argv only, own group, stdin closed');
+    // a profile that hangs: the time limit gives an empty list
+    const p2 = readLoginShellPath({ platform: 'linux', shellEnv: '/bin/zsh', isFile, spawn: fakeSpawn, timeoutMs: 20 });
+    assert.deepStrictEqual(await p2, [], 'timeout: empty, falls back to the fixed folders');
+    const p3 = readLoginShellPath({ platform: 'linux', shellEnv: '/bin/zsh', isFile, spawn: fakeSpawn });
+    child.emit('error', new Error('ENOENT'));
+    assert.deepStrictEqual(await p3, []);
+    const before = spawned.length;
+    assert.deepStrictEqual(await readLoginShellPath({ platform: 'win32', shellEnv: undefined, isFile, spawn: fakeSpawn }), [], 'not on Windows');
+    assert.strictEqual(spawned.length, before, 'no spawn on Windows');
   }
   console.log('detect tests passed');
 }

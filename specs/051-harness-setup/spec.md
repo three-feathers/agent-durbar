@@ -145,3 +145,10 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
 - **No sign-in completed through the app** is unchanged (it would replace the real logins on this machine). The e2e signs in with tokens and API keys instead, which is not the app's browser or device-code flow.
 - **Windows ACLs are not read** is unchanged (world-writable checks are macOS and Linux only).
 
+### 2026-10-21: D1 superseded by spec 060 FR-001 (official installers)
+
+- **D1 delta.** D1 said a package manager only, never a downloaded script, and otherwise the vendor's page. Spec 060 FR-001 (owner Q1, least privilege first) supersedes it:
+  - the vendor's official installer is downloaded **after** the native confirmation, from that vendor's fixed hosts only (checked on every redirect);
+  - it is saved into a private temp folder, checked to look like a script (not a web page), and **run as a file, never piped**;
+  - package managers come after it, or first when they own the installed copy (Update).
+  - Details and tests: spec 060 `## Changes`.

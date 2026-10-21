@@ -42,6 +42,7 @@ export class FakeSession {
   rpc = {
     eventLog: { registerInterest: async (a: unknown) => this.rec('registerInterest', undefined, a) },
     options: { update: async (a: unknown) => this.rec('options.update', undefined, a) },
+    mode: { set: async (a: unknown) => this.rec('mode.set', { mode: (a as { mode?: string }).mode }, a) }, // spec 066 (plan first)
     model: { switchTo: async (a: unknown) => this.rec('switchTo', this.switchAnswer, a) },
     queue: { removeAt: async (a: unknown) => this.rec('removeAt', { removed: this.removed }, a) },
     history: { compact: async (a: unknown) => this.rec('compact', this.compactAnswer, a) },

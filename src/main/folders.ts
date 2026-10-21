@@ -47,6 +47,13 @@ export interface SavedFolder {
   /** Spec 006 FR-026: rows of Previous sessions pinned to the top / hidden from the list. Ids only (`src` = adapter id or `vscode`), at most 200 each. */
   prevPinned?: PrevMark[];
   prevHidden?: PrevMark[];
+  /** Spec 003 (2026-10-21 delta): the permission mode last chosen for each session of this folder (newest 50), so a session comes back in its own mode, not the folder's last one. Ids and modes only. */
+  sessionModes?: SessionMode[];
+}
+
+export interface SessionMode {
+  id: string;
+  mode: SavedPermMode;
 }
 
 export interface PrevMark {
@@ -78,6 +85,39 @@ export function restoreMode(saved: SavedPermMode): { mode: SavedPermMode; restor
   return { mode: saved, restored: saved === 'allow' };
 }
 
+const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
+
+/** Spec 003 (2026-10-21): how many per-session modes a folder remembers; the oldest are dropped. */
+export const MAX_SESSION_MODES = 50;
+
+const parseMode = (v: unknown): SavedPermMode | undefined => (v === 'read-only' || v === 'ask' || v === 'allow' ? v : undefined);
+
+/** A saved per-session mode list: well-formed `{id, mode}` entries only, one per id (the later wins), the newest 50 kept; empty or malformed is `undefined`. */
+export function parseSessionModes(v: unknown): SessionMode[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: SessionMode[] = [];
+  for (const e of v.slice(-1000)) {
+    if (!e || typeof e !== 'object') continue;
+    const o = e as Record<string, unknown>;
+    const mode = parseMode(o.mode);
+    if (typeof o.id !== 'string' || !SESSION_ID.test(o.id) || !mode) continue;
+    const at = out.findIndex((x) => x.id === o.id);
+    if (at >= 0) out.splice(at, 1);
+    out.push({ id: o.id, mode });
+  }
+  const kept = out.slice(-MAX_SESSION_MODES);
+  return kept.length ? kept : undefined;
+}
+
+/** Where a session's mode comes from when it comes back (spec 003, 2026-10-21): its own remembered mode, else the fallback (the folder's saved mode after a restart, the opening session's mode for Previous sessions). */
+export function modeForSession(f: Pick<SavedFolder, 'sessionModes'> | undefined, ids: ReadonlyArray<string | undefined>, fallback: SavedPermMode): { mode: SavedPermMode; fromSession: boolean } {
+  for (const id of ids) {
+    const hit = id ? f?.sessionModes?.find((x) => x.id === id) : undefined;
+    if (hit) return { mode: hit.mode, fromSession: true };
+  }
+  return { mode: fallback, fromSession: false };
+}
+
 export const MAX_LABEL = 40;
 
 /** A folder display name (spec 006 FR-018): trimmed, 1 to 40 characters, no control characters; anything else is `undefined` (the folder's own name). */
@@ -96,7 +136,6 @@ export function parseDefaultAgent(v: unknown): string | undefined {
   return typeof v === 'string' && PROFILE_ID.test(v) ? v : undefined;
 }
 
-const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
 
 /** A saved last session (spec 006 FR-020); anything malformed is `undefined` (the folder starts fresh, as before). */
 export function parseLastSession(v: unknown): SavedFolder['lastSession'] {
@@ -213,6 +252,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       ...(parseSessionNames(o.sessionNames) ? { sessionNames: parseSessionNames(o.sessionNames) } : {}),
       ...(parsePrevMarks(o.prevPinned) ? { prevPinned: parsePrevMarks(o.prevPinned) } : {}),
       ...(parsePrevMarks(o.prevHidden) ? { prevHidden: parsePrevMarks(o.prevHidden) } : {}),
+      ...(parseSessionModes(o.sessionModes) ? { sessionModes: parseSessionModes(o.sessionModes) } : {}),
     });
     if (out.length >= MAX_FOLDERS) break;
   }
@@ -528,6 +568,19 @@ export class FolderStore {
     const cur = this.get(workspace);
     if (!cur) return false;
     cur.permMode = permMode;
+    this.save();
+    return true;
+  }
+
+  /** Spec 003 (2026-10-21): remember the mode of one session of this folder (written only when it changes; newest 50 kept, a re-chosen mode moves to the end). */
+  setSessionMode(workspace: string, id: string, permMode: SavedPermMode): boolean {
+    const cur = this.get(workspace);
+    if (!cur || !SESSION_ID.test(id) || !parseMode(permMode)) return false;
+    const list = cur.sessionModes ?? [];
+    if (list.some((x) => x.id === id && x.mode === permMode)) return true; // unchanged: no write (it is called on every message)
+    const out = list.filter((x) => x.id !== id);
+    out.push({ id, mode: permMode });
+    cur.sessionModes = out.slice(-MAX_SESSION_MODES);
     this.save();
     return true;
   }

@@ -13,12 +13,14 @@
  */
 const path = require('path');
 const assert = require('assert');
+const { waits } = require('./driver-helpers');
 const OUT = process.env.OUT || require('os').tmpdir();
 const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 const Q = { sim: '15', simfreeze: '1', simgrants: 'many' };
 module.exports = async (ctx) => {
+  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
   const js = async (c) => { try { return await ctx.js(c); } catch (e) { console.log('JS ERR for', c.slice(0, 90)); throw e; } };
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(400); await ctx.shot(path.join(OUT, name)); console.log('[grant-chips] saved', name); };
+  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); console.log('[grant-chips] saved', name); };
   const measure = () => js(`(()=>{
     const R=e=>e.getBoundingClientRect(), ph=document.getElementById('panelHead'), meta=ph.querySelector('.ph-meta'), g=document.getElementById('grants');
     const kids=[...meta.children].filter(c=>R(c).height>0&&getComputedStyle(c).visibility!=='hidden');
@@ -39,12 +41,13 @@ module.exports = async (ctx) => {
       await js(`localStorage.setItem('durbar.detail',${JSON.stringify(level)})`); // remembered: reload so the office is drawn in it
       await ctx.win.loadFile(INDEX, { query: Q });
       await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-      await ctx.sleep(2000);
+      await settle();
       const tag = `${w} ${level}`;
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${tag}: the detail level is on`);
-      const id = await js(`(()=>{for(const d of document.querySelectorAll('#stage .desk[data-id]')){d.click();const g=document.getElementById('grants');if(g&&!g.hidden)return d.dataset.id;const b=document.getElementById('backBtn');if(b)b.click();}return ''})()`);
+      let id = null;
+      for (const end = Date.now() + 8000; !id && Date.now() < end;) { id = await js(`(()=>{for(const d of document.querySelectorAll('#stage .desk[data-id]')){d.click();const g=document.getElementById('grants');if(g&&!g.hidden)return d.dataset.id;const b=document.getElementById('backBtn');if(b)b.click();}return ''})()`); if (!id) await ctx.sleep(100); }
       assert.ok(id, `${tag}: an agent has grants in its chat`);
-      await ctx.sleep(500);
+      await until(`!!document.getElementById('grantsBtn')`); await settle();
       // 1. one chip
       const c = await js(`(()=>{const g=document.getElementById('grants');const b=document.getElementById('grantsBtn');return {chips:g.querySelectorAll(':scope > .gchip').length,all:g.querySelectorAll('.gchip').length,text:b&&b.textContent.trim(),exp:b&&b.getAttribute('aria-expanded'),ctl:b&&b.getAttribute('aria-controls'),tag:b&&b.tagName,popHidden:document.getElementById('grantsPop').hidden,single:g.querySelectorAll('.gchip:not(.gchip-btn)').length}})()`);
       assert.strictEqual(c.chips, 1, `${tag}: exactly one Allowed chip: ${JSON.stringify(c)}`);
@@ -62,7 +65,7 @@ module.exports = async (ctx) => {
       if (level === 'expert') await shot(`052-grant-chips-closed-${w}x${h}.png`);
       if (level === 'simple') await shot(`052-grant-chips-simple-${w}x${h}.png`);
       // 3. open: all eight, revoke buttons, short labels
-      await js(`document.getElementById('grantsBtn').click()`); await ctx.sleep(300);
+      await js(`document.getElementById('grantsBtn').click()`); await until(`!document.getElementById('grantsPop').hidden&&document.activeElement&&document.activeElement.dataset.revoke!==undefined`);
       const o = await js(`(()=>{const p=document.getElementById('grantsPop'),pr=p.getBoundingClientRect();const rows=[...p.querySelectorAll('.gp-row')];
         return {hidden:p.hidden,exp:document.getElementById('grantsBtn').getAttribute('aria-expanded'),list:p.querySelector('ul').getAttribute('role'),popRole:p.getAttribute('role'),popLabel:p.getAttribute('aria-label'),n:rows.length,
           revokes:rows.filter(r=>/^Revoke permission: /.test((r.querySelector('button')||{}).getAttribute&&r.querySelector('button').getAttribute('aria-label')||'')).length,
@@ -81,46 +84,47 @@ module.exports = async (ctx) => {
       assert.ok(m.rows <= 2 && m.overlap === '', `${tag}: header unchanged with the list open: ${JSON.stringify(m)}`);
       if (level === 'expert' || w === 1440) await shot(`052-grant-chips-open-${level === 'simple' ? 'simple-' : ''}${w}x${h}.png`);
       // 4. Escape closes and returns focus to the chip
-      await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`); await ctx.sleep(200);
+      await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`); await until(`document.getElementById('grantsPop').hidden&&document.activeElement.id==='grantsBtn'`);
       const e = await js(`({hidden:document.getElementById('grantsPop').hidden,exp:document.getElementById('grantsBtn').getAttribute('aria-expanded'),focus:document.activeElement.id})`);
       assert.ok(e.hidden && e.exp === 'false' && e.focus === 'grantsBtn', `${tag}: Escape closes the list and focuses the chip: ${JSON.stringify(e)}`);
       assert.ok(await js(`!!document.getElementById('panelHead')`), `${tag}: Escape did not leave the chat`);
       // 5. a revoke keeps the list open and the focus on a revoke button
-      await js(`document.getElementById('grantsBtn').click()`); await ctx.sleep(200);
-      await js(`document.querySelectorAll('#grantsPop [data-revoke]')[1].click()`); await ctx.sleep(400);
+      await js(`document.getElementById('grantsBtn').click()`); await until(`!document.getElementById('grantsPop').hidden`);
+      await js(`document.querySelectorAll('#grantsPop [data-revoke]')[1].click()`); await until(`document.querySelectorAll('#grantsPop .gp-row').length===7&&document.activeElement&&document.activeElement.dataset.revoke!==undefined`);
       const r = await js(`({n:document.querySelectorAll('#grantsPop .gp-row').length,hidden:document.getElementById('grantsPop').hidden,focus:document.activeElement.dataset.revoke!==undefined,chip:document.getElementById('grantsBtn').textContent.trim()})`);
       assert.ok(r.n === 7 && !r.hidden && r.focus && /\(7\)/.test(r.chip), `${tag}: after a revoke seven remain, the list is open, focus on a revoke button: ${JSON.stringify(r)}`);
       // 6. click outside closes
-      await js(`document.getElementById('chat').click()`); await ctx.sleep(200);
+      await js(`document.getElementById('chat').click()`); await until(`document.getElementById('grantsPop').hidden`);
       assert.ok(await js(`document.getElementById('grantsPop').hidden`), `${tag}: a click outside closes the list`);
       if (first) {
         first = false;
         // 7. down to two: single chips, then one, then none
-        await js(`document.getElementById('grantsBtn').click()`); await ctx.sleep(200);
-        for (let n = 7; n > 2; n--) { await js(`document.querySelector('#grantsPop [data-revoke]').click()`); await ctx.sleep(250); }
+        await js(`document.getElementById('grantsBtn').click()`); await until(`!document.getElementById('grantsPop').hidden`);
+        const left = `(()=>{const p=document.getElementById('grantsPop');return p&&!p.hidden?p.querySelectorAll('.gp-row').length:document.querySelectorAll('#grants .gchip').length})()`;
+        for (let n = 7; n > 2; n--) { await js(`document.querySelector('#grantsPop [data-revoke]').click()`); await until(`${left}===${n - 1}&&document.activeElement&&document.activeElement.dataset.revoke!==undefined`); }
         const two = await js(`(()=>{const g=document.getElementById('grants');return {btn:!!document.getElementById('grantsBtn'),chips:[...g.querySelectorAll('.gchip')].map(c=>c.firstElementChild.textContent),x:g.querySelectorAll('.gchip button[aria-label^="Revoke permission: "]').length,focus:document.activeElement.dataset.revoke!==undefined}})()`);
         assert.ok(!two.btn && two.chips.length === 2 && two.x === 2 && two.chips.every((t) => t.startsWith('Allowed: ')), `${tag}: two grants are two single chips: ${JSON.stringify(two)}`);
         assert.ok(two.focus, `${tag}: the focus stays on a revoke button after the list turns into chips`);
         await shot(`052-grant-chips-two-${w}x${h}.png`);
-        await js(`document.querySelector('#grants [data-revoke]').click()`); await ctx.sleep(250);
+        await js(`document.querySelector('#grants [data-revoke]').click()`); await until(`document.querySelectorAll('#grants .gchip').length===1`);
         assert.strictEqual(await js(`document.querySelectorAll('#grants .gchip').length`), 1, `${tag}: one grant is one chip`);
-        await js(`document.querySelector('#grants [data-revoke]').click()`); await ctx.sleep(250);
+        await js(`document.querySelector('#grants [data-revoke]').click()`); await until(`document.getElementById('grants').hidden&&document.activeElement.id==='msgInput'`);
         assert.ok(await js(`document.getElementById('grants').hidden`), `${tag}: no grants, no row`);
         assert.strictEqual(await js(`document.activeElement.id`), 'msgInput', `${tag}: after the last single chip is revoked the focus is on the composer, not <body>`);
       } else {
         // 8. Revoke all asks first: Cancel keeps them, the confirmation revokes them
-        await js(`document.getElementById('grantsBtn').click()`); await ctx.sleep(200);
-        await js(`document.getElementById('grantsAll').click()`); await ctx.sleep(400);
+        await js(`document.getElementById('grantsBtn').click()`); await until(`!document.getElementById('grantsPop').hidden`);
+        await js(`document.getElementById('grantsAll').click()`); await until(`[...document.querySelectorAll('.dlg-ov button')].some(x=>x.textContent.trim()==='Cancel')`);
         const d = await js(`(()=>{const b=[...document.querySelectorAll('.dlg-ov button')].map(x=>x.textContent.trim());return b})()`);
         assert.ok(d.includes('Cancel') && d.includes('Revoke all'), `${tag}: Revoke all asks first: ${d}`);
-        await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Cancel').click()`); await ctx.sleep(400);
+        await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Cancel').click()`); await until(`!document.querySelector('.dlg-ov')`);
         assert.strictEqual(await js(`document.querySelectorAll('#grantsPop .gp-row').length`), 7, `${tag}: Cancel keeps the grants`);
         assert.strictEqual(await js(`document.getElementById('grantsBtn').getAttribute('aria-expanded')+'/'+document.getElementById('grantsPop').hidden`), 'true/false', `${tag}: Cancel keeps the list open, like Esc`);
-        await js(`document.getElementById('grantsBtn').getAttribute('aria-expanded')==='true'||document.getElementById('grantsBtn').click()`); await ctx.sleep(200);
-        await js(`document.getElementById('grantsAll').click()`); await ctx.sleep(400);
-        await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Revoke all').click()`); await ctx.sleep(500);
+        await js(`document.getElementById('grantsBtn').getAttribute('aria-expanded')==='true'||document.getElementById('grantsBtn').click()`); await until(`!document.getElementById('grantsPop').hidden`);
+        await js(`document.getElementById('grantsAll').click()`); await until(`[...document.querySelectorAll('.dlg-ov button')].some(x=>x.textContent.trim()==='Revoke all')`);
+        await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Revoke all').click()`);
+        await until(`document.getElementById('grants').hidden&&document.activeElement.id==='msgInput'&&document.getElementById('srAnnounce').textContent==='All permissions revoked.'`);
         assert.ok(await js(`document.getElementById('grants').hidden`), `${tag}: Revoke all removes every grant`);
-        await ctx.sleep(300);
         assert.strictEqual(await js(`document.activeElement.id`), 'msgInput', `${tag}: after Revoke all the focus is on the composer, not <body>`);
         assert.strictEqual(await js(`document.getElementById('srAnnounce').textContent`), 'All permissions revoked.', `${tag}: it is announced`);
       }
@@ -133,15 +137,17 @@ module.exports = async (ctx) => {
   const QS = { sim: '15', simfreeze: '1', simgrants: 'stuck' };
   await ctx.win.loadFile(INDEX, { query: QS });
   await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-  await ctx.sleep(2000);
-  const ids = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')];let a='';for(const x of d){x.click();const g=document.getElementById('grants');if(g&&!g.hidden){a=x.dataset.id;break;}const b=document.getElementById('backBtn');if(b)b.click();}return [a,d.map(x=>x.dataset.id).find(i=>i!==a)]})()`);
-  await ctx.sleep(500);
-  await js(`document.getElementById('grantsBtn').click()`); await ctx.sleep(200);
-  await js(`document.getElementById('grantsAll').click()`); await ctx.sleep(400);
+  await settle();
+  let ids = null;
+  for (const end = Date.now() + 8000; !(ids && ids[0]) && Date.now() < end;) { ids = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')];let a='';for(const x of d){x.click();const g=document.getElementById('grants');if(g&&!g.hidden){a=x.dataset.id;break;}const b=document.getElementById('backBtn');if(b)b.click();}return [a,d.map(x=>x.dataset.id).find(i=>i!==a)]})()`); if (!(ids && ids[0])) await ctx.sleep(100); }
+  await until(`!!document.getElementById('grantsBtn')`); await settle();
+  await js(`document.getElementById('grantsBtn').click()`); await until(`!document.getElementById('grantsPop').hidden`);
+  await js(`document.getElementById('grantsAll').click()`); await until(`[...document.querySelectorAll('.dlg-ov button')].some(x=>x.textContent.trim()==='Revoke all')`);
   await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Revoke all').click()`); await ctx.sleep(100); // quick: inside the 1s the flag may live
   assert.strictEqual(await js(`document.querySelectorAll('#grantsPop .gp-row').length`), 8, 'stuck: a revoke that fails leaves the grants');
-  await js(`document.getElementById('backBtn').click()`); await ctx.sleep(100);
-  await js(`document.querySelector('#stage .desk[data-id="${ids[1]}"]').click()`); await ctx.sleep(150);
+  await js(`document.getElementById('backBtn').click()`); await until(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#stage .desk[data-id="${ids[1]}"]')`);
+  await js(`document.querySelector('#stage .desk[data-id="${ids[1]}"]').click()`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('grants')`);
+  await ctx.sleep(150); // the checks below are that nothing happens (no announcement, no focus move): give a late handler its chance
   assert.ok(await js(`document.getElementById('grants').hidden`), 'stuck: the other agent has no grants');
   assert.notStrictEqual(await js(`document.getElementById('srAnnounce').textContent`), 'All permissions revoked.', 'stuck: a failed Revoke all on one agent does not announce for another');
   assert.notStrictEqual(await js(`document.activeElement.id`), 'msgInput', 'stuck: the focus is not taken to the composer of another agent');

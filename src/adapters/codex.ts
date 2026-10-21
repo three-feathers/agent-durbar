@@ -6,11 +6,13 @@
  *
  * Not in this file yet (T043b): resume of a known thread (FR-093) and its folder and profile checks.
  */
+import { randomUUID } from 'crypto';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, SignInCheck, StartOptions, Unsubscribe } from './types';
+import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import { cleanPlanText, reviseText } from './plan';
 import type { AdapterDescriptor } from './capabilities';
 import type { EventBody } from './map';
 import { CodexMapper } from './codexMap';
@@ -47,6 +49,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   resume: true, // FR-093 (T043b): thread/read, then thread/resume on a fresh child
   images: true,
   models: true, // FR-142: model/list, model and effort per turn
+  planMode: true, // spec 066 FR-005: turn/start collaborationMode plan (experimental) and the `plan` item
   modelSwitch: Object.freeze({ verified: true, contextTier: false }), // spec 030 FR-038/FR-039 (real 2026-10-20): from the next message; no separate tier
   effort: true,
   permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as const),
@@ -168,10 +171,21 @@ export function codexElicitationHasFields(params: unknown): boolean {
 /**
  * FR-140 (real, Ubuntu 24.04+): Codex's Linux sandbox (bubblewrap) cannot start where unprivileged user namespaces are blocked
  * (`kernel.apparmor_restrict_unprivileged_userns=1`). Read-only and Ask first then fail at start (closed, as they must); say why.
+ * FR-087 (owner 2026-10-20, option c): the text never suggests Allow all; the window adds a "Change mode…" button instead.
  */
 export function linuxSandboxHint(reason: string): string {
   return /bwrap|bubblewrap|user namespace|RTM_NEWADDR/i.test(reason)
-    ? ' Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox; allow it for bubblewrap (see the README, Codex) or use Allow all in a folder you trust.'
+    ? ' Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox, so nothing ran. To allow it for bubblewrap, see the README (Codex).'
+    : '';
+}
+
+/**
+ * FR-140 delta (real, GitHub's macOS runners 2026-10-20): Codex's macOS sandbox (`sandbox-exec`) was refused, so Read-only and Ask
+ * first fail at start (closed, as they must). The cause on an ordinary Mac is not known yet; say what happened and what to do.
+ */
+export function macSandboxHint(reason: string): string {
+  return /sandbox-exec/i.test(reason)
+    ? ' Codex could not start its macOS sandbox (macOS refused sandbox-exec). Read-only and Ask first need that sandbox, so nothing ran. This can happen when Agent Durbar itself runs restricted (a managed Mac or a CI machine); start Durbar normally and try again.'
     : '';
 }
 
@@ -186,6 +200,10 @@ const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : Strin
 
 interface Live {
   sid: string;
+  /** Spec 066: a plan-first turn is running (its `plan` item text so far); plans waiting for the user; the last turn's collaboration mode. */
+  planTurn?: { text: string };
+  plans?: Map<string, (answer: PlanAnswer) => void>;
+  lastCollab?: 'plan' | 'default';
   /** Spec 030 FR-034: forked threads making a hand-off summary; their events never reach the chat. */
   forks?: Map<string, { text: string; done: (text: string) => void }>;
   /** The start options, for a relaunch with a new mode (FR-144). */
@@ -242,6 +260,8 @@ export class CodexAdapter implements AgentAdapter {
   readonly capabilities: AdapterCapabilities = CODEX_CAPABILITIES;
   /** Optional debug sink (DURBAR_LOG). Receives short lines: rpc diagnostics, and on an unexpected exit the last stderr lines after `redact()` (FR-097). Never env values or prompts. */
   debug?: (message: string) => void;
+  /** Spec 065 FR-001: assigned by the main process (router.setWriteGuard). */
+  writeGuard?: WriteGuard;
   private listeners = new Set<(event: AgentEvent) => void>();
   private sessions = new Map<string, Live>();
   /** Ids this run has used, live or not: a stopped one cannot be silently restarted as a new thread (resume is T043b). */
@@ -409,7 +429,13 @@ export class CodexAdapter implements AgentAdapter {
           await rpc.request('account/rateLimits/read', {});
           return { status: 'signed-in', detail: 'Signed in (checked with OpenAI).' } as SignInCheck;
         } catch (e) {
-          if (isAuthError(e)) return { status: 'signed-out', detail: 'OpenAI did not accept the Codex sign-in.' } as SignInCheck;
+          if (isAuthError(e)) {
+            // spec 012 FR-156 delta (real e2e 2026-10-20): rate limits belong to a ChatGPT sign-in, so an API-key sign-in is
+            // refused here although it works (`codex login status`: "Logged in using an API key", model/list and turns work)
+            const a = await rpc.request('getAuthStatus', { includeToken: false, refreshToken: false }).catch(() => undefined);
+            if (isObj(a) && a.authMethod === 'apikey') return { status: 'signed-in', detail: 'Signed in with an OpenAI API key.' } as SignInCheck;
+            return { status: 'signed-out', detail: 'OpenAI did not accept the Codex sign-in.' } as SignInCheck;
+          }
           if (!(e instanceof CodexRpcError && e.kind === 'rpc' && (e.code === -32601 || /method not found|unknown variant|unknown method/i.test(e.message)))) return { status: 'unknown' } as SignInCheck;
         }
         const r = await rpc.request('getAuthStatus', { includeToken: false, refreshToken: false });
@@ -608,7 +634,7 @@ export class CodexAdapter implements AgentAdapter {
           : await child.rpc.request('thread/start', threadParams);
       } catch (e) {
         // Never retried with a weaker setting (FR-087).
-        throw new Error(`Codex refused the session settings: ${reasonOf(e)}${linuxSandboxHint(reasonOf(e))}`);
+        throw new Error(`Codex refused the session settings: ${reasonOf(e)}${linuxSandboxHint(reasonOf(e))}${macSandboxHint(reasonOf(e))}`);
       }
       if (resumeId !== undefined) codexResumeCheck(started, { cwd: (limited ? realCwd : cwd) as string, limited, realpath: this.realpath });
       const thread = isObj(started) && isObj(started.thread) ? started.thread : undefined;
@@ -660,10 +686,23 @@ export class CodexAdapter implements AgentAdapter {
       ...files.map((f) => ({ type: 'text', text: `Attached file: ${f.path}` })),
       ...images.map((i) => ({ type: 'localImage', path: i.path })),
     ];
+    // spec 066 FR-005: plan first through Codex's own collaboration mode (experimental); after a plan turn, back to `default` explicitly
+    let collaborationMode: Record<string, unknown> | undefined;
+    if (message.plan || live.lastCollab === 'plan') {
+      const model = live.model ?? (await this.defaultModelId());
+      if (!model) {
+        this.emit(sessionId, { type: 'status', status: 'error', intent: 'Codex could not plan first: no model to plan with.' });
+        return;
+      }
+      collaborationMode = { mode: message.plan ? 'plan' : 'default', settings: { model, developer_instructions: null, ...(live.effort ? { reasoning_effort: live.effort } : {}) } };
+      live.lastCollab = message.plan ? 'plan' : 'default';
+      live.planTurn = message.plan ? { text: '' } : undefined;
+    }
     const params = {
       threadId: live.threadId,
       input,
       ...modeFields,
+      ...(collaborationMode ? { collaborationMode } : {}),
       // `sandboxPolicy` is an object on turn/start, not the `sandbox` string of thread/start. [KNOWN GAP] T062: shape unverified.
       ...(sandbox ? { sandboxPolicy: { type: 'dangerFullAccess' } } : { runtimeWorkspaceRoots: live.roots }),
       ...(live.model ? { model: live.model } : {}),
@@ -683,6 +722,32 @@ export class CodexAdapter implements AgentAdapter {
       if (isRpcError(e) || (e as { kind?: string }).kind === 'timeout') this.emit(sessionId, { type: 'status', status: 'error', intent: `Codex refused the message: ${reasonOf(e)}`.slice(0, 300) });
       throw e;
     }
+  }
+
+  /** Spec 066: the model Codex would use by default (for a plan turn when the session has no model of its own). */
+  private async defaultModelId(): Promise<string | undefined> {
+    const list = (await this.listModelOptions().catch(() => [])) as Array<{ id: string; isDefault?: boolean }>;
+    return (list.find((m) => m.isDefault) ?? list[0])?.id;
+  }
+
+  /** Spec 066 FR-002: the user's answer to a proposed plan. */
+  async resolvePlan(sessionId: string, requestId: string, answer: PlanAnswer): Promise<void> {
+    const w = this.sessions.get(sessionId)?.plans?.get(requestId);
+    if (w) w(answer);
+  }
+
+  /** Spec 066 FR-005: a plan turn ended: show its plan; approve runs the next turn in `default` mode, revise plans again. */
+  private proposePlan(live: Live, text: string): void {
+    const requestId = `codex-plan-${randomUUID()}`;
+    live.plans ??= new Map();
+    live.plans.set(requestId, (answer) => {
+      live.plans?.delete(requestId);
+      this.emit(live.sid, { type: 'plan', phase: 'resolved', requestId, action: answer.kind });
+      if (this.sessions.get(live.sid) !== live) return;
+      if (answer.kind === 'approve') void this.send(live.sid, { text: 'Go ahead with the plan above.' }).catch(() => undefined);
+      else if (answer.kind === 'revise') void this.send(live.sid, { text: reviseText(answer), plan: true }).catch(() => undefined);
+    });
+    this.emit(live.sid, { type: 'plan', phase: 'proposed', requestId, text });
   }
 
   /** Interrupt the running turn; the session stays live and grants stay (C10). With no turn running nothing is sent. */
@@ -735,6 +800,8 @@ export class CodexAdapter implements AgentAdapter {
     try {
       live.broker.denyPending();
       for (const answer of [...live.questions.values()]) answer(null); // FR-146: an open question is skipped
+      for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop rejects an open plan
+      live.planTurn = undefined;
       cancelElicitations(live.elicitations); // FR-151
       const turnId = live.turnId;
       if (!turnId) {
@@ -807,6 +874,7 @@ export class CodexAdapter implements AgentAdapter {
     live.broker.stop();
     for (const answer of [...live.questions.values()]) answer(null); // FR-146
     cancelElicitations(live.elicitations); // FR-151
+    for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: End rejects an open plan
     // Let the denied requests' answers (wire `cancel`) go out before the interrupt and the close.
     await new Promise<void>((r) => setImmediate(r));
     if (!live.rpc.exited) {
@@ -900,7 +968,13 @@ export class CodexAdapter implements AgentAdapter {
           if (live.pendingInterrupt) void this.fireInterrupt(live, turn.id);
         }
       }
+      else if (method === 'item/completed' && live.planTurn && isObj(params.item) && params.item.type === 'plan' && typeof params.item.text === 'string') {
+        live.planTurn.text = cleanPlanText(params.item.text); // spec 066: the completed plan item is authoritative (not the deltas)
+      }
       else if (method === 'turn/completed') {
+        const plan = live.planTurn;
+        live.planTurn = undefined;
+        if (plan?.text) queueMicrotask(() => this.proposePlan(live, plan.text)); // after the turn's own idle status
         const done = turn && typeof turn.id === 'string' ? turn.id : live.turnId;
         if (done) live.doneTurns = [...live.doneTurns, done].slice(-32);
         live.turnId = undefined;
@@ -915,6 +989,7 @@ export class CodexAdapter implements AgentAdapter {
     return new PermissionBroker({
       roots: live.roots,
       mode: live.mode,
+      beforeWrite: (paths) => this.writeGuard?.(live.sid, paths) ?? Promise.resolve(), // spec 065 FR-001
       emit: (e: BrokerEvent) => {
         const sid = live.sid;
         switch (e.type) {
@@ -959,6 +1034,7 @@ export class CodexAdapter implements AgentAdapter {
       toolCallId,
       fullCommandText: perm.fullCommandText,
       fileName: perm.fileName,
+      ...(perm.paths ? { paths: perm.paths } : {}),
       url: perm.url,
       toolName: perm.toolName,
       serverName: perm.serverName,
