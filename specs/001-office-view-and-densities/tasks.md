@@ -51,3 +51,8 @@
 - [x] T036 Layout search: `full` candidates with a side panel first (fixed width, reserved per main desk), only when it fits; layout key follows the setting; `styles.css` with theme tokens [FR-029, FR-030]
 - [x] T037 Settings > General: *Live activity on desks* switch (default on, `localStorage`) [FR-032]
 - [x] T038 `scripts/shots-001-live-activity.js`: simulator driver and screenshots at 1440x900 and 1280x800, dense (15) and sparse (3); `check:office`, `check:geometry`; README, CHANGELOG, specs index [FR-029]
+
+## Changes 2026-10-21 (layout speed, PR #457 finding)
+
+- [x] T039 `src/renderer/probe.js` (`svgHollow`, `styleSplit`), `probeSet` in `chooseLayout`, `@property` for `--w`/`--min`/`--cols` in `styles.css`; `scripts/test-probe.ts` (`npm run test:probe`) [FR-033]
+- [x] T040 Before/after timing and a layout comparison over 54 cases on the simulator; `check:office`, `check:geometry`, `shots-033`; spec 001 and 033 Verification, `specs/README.md`, CHANGELOG, `docs/agent-notes.md` [SC-004]
