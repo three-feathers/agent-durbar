@@ -174,8 +174,9 @@ say "End this session (More > End session), then send a message to resume it"; t
 - [x] T093 [P] Types: `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `cancelMcpSignIn?`, `ToolCallEvent.mcpAuth`; event guard (only
   on a failed `toolCall` with `mcpServer`); contract C2 lines; `fake.ts` members behind the flags [FR-063, FR-064, FR-068]
   [IMPLEMENTED] types, guard (refuses `mcpAuth` unless `true` on a failed `toolCall` with a non-empty `mcpServer`), C2 lines (`startMcpSignIn` <=> `mcpSignIn`; `cancelMcpSignIn` only with it), fake (`signInCalls`, `signInResult`, omit `startMcpSignIn` / `cancelMcpSignIn`). test: `scripts/test-adapter-contract.ts` (guard cases, mutation-checked; fake-signin setup). No adapter sets the flags yet
-- [ ] T094 [P] Copilot mapper: a failed MCP tool with challenge text -> `mcpAuth: true` and that server `needs-auth` + `errorClass:
+- [x] T094 [P] Copilot mapper: a failed MCP tool with challenge text -> `mcpAuth: true` and that server `needs-auth` + `errorClass:
   'auth'` (emit `mcp`); the next status replaces it; `remediation` ignored; mapper test with the issue's text [FR-060, FR-063, SC-010]
+  [IMPLEMENTED] `src/adapters/map.ts` (`tool.execution_complete`): failed + `mcpServer` + `isMcpAuthChallenge` -> `mcpAuth: true`, row `needs-auth`/`errorClass: 'auth'` (created if absent), one `mcp` event; `status_changed`/`servers_loaded` replace it; `remediation` not read. test: `scripts/test-events.ts` (issue #364 text; negatives: built-in tool with same text, MCP failure with other text)
 - [ ] T095 [P] Codex: `failureReason: reauthenticationRequired` -> `needs-auth` + `errorClass: 'auth'` (extends T023, which this
   task now includes: also `authStatus: notLoggedIn` -> `errorClass: 'auth'`; the notification is read at `src/adapters/codex.ts:953-959`); a
   failed MCP tool with challenge text -> `mcpAuth` and a list refresh; `test-codex-adapter` [FR-011, FR-060]
