@@ -76,3 +76,14 @@ In a chat, the user opens the mode menu and picks **Plan first (next message)**;
   - Claude's plan text depends on Claude following that sentence; if it writes nothing, the card says the plan is empty, and Reject or Revise still work;
   - Copilot `planContent` versus `summary` was seen only with `gpt-6-luna`;
   - macOS and Windows by hand.
+
+### 2026-10-21: review fixes (reviewer pass on #441)
+
+- **FR-003 delta** `[IMPLEMENTED]`: Copilot left plan mode only when a plan was approved or rejected. A plan-first turn that ended without a plan (the model just answered) left the runtime in plan mode, so later normal messages could never act. The adapter now remembers that it set plan mode, and the next normal message switches back to `interactive` first. `test:` `scripts/test-plan-mode.ts`.
+- **FR-004 delta** `[IMPLEMENTED]`: Claude's plan draft (the turn's own text, used when `ExitPlanMode` carries no plan) is now bounded as it grows, keeping the last 40,000 characters; the card shows at most 20,000.
+- Checked and unchanged:
+  - approve restores the folder's own mode before the plan runs (Claude), and Codex runs it as a normal turn, so Read-only is never weakened;
+  - Copilot approves with `interactive`, never `autopilot`;
+  - `ToolSearch` and `ExitPlanMode` pass only while a plan-first turn is open;
+  - sending plan-first and answering a plan are window-only (`fromApp`).
+- `[KNOWN GAP]`: a Codex plan turn that ends with an empty plan shows no card; the chat shows Codex's reply as usual.

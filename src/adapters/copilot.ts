@@ -67,8 +67,9 @@ interface Live {
   askedTitle?: boolean;
   /** `ask_user` questions waiting for the user (spec 002 FR-058): request id -> waiter. */
   questions?: Map<string, { choices: string[]; resolve: (answer: string | null) => void }>;
-  /** Spec 066: plans waiting for the user (request id -> answer). */
+  /** Spec 066: plans waiting for the user (request id -> answer); the runtime is in plan mode (set by a plan-first send). */
   plans?: Map<string, (answer: PlanAnswer) => void>;
+  planMode?: boolean;
   /** MCP elicitations waiting for the user (spec 012 FR-151): request id -> waiter. */
   elicitations?: Map<string, ElicitWaiter>;
   /** The session's folders (spec 043: a profile file inside one is the repository's). */
@@ -460,8 +461,12 @@ export class CopilotAdapter implements AgentAdapter {
       });
       live.plans.delete(requestId);
       this.emit(sid, { type: 'plan', phase: 'resolved', requestId, action: answer.kind });
-      if (answer.kind === 'approve') return { approved: true, selectedAction: 'interactive' };
+      if (answer.kind === 'approve') {
+        live.planMode = false; // the runtime leaves plan mode with the selected action
+        return { approved: true, selectedAction: 'interactive' };
+      }
       if (answer.kind === 'revise') return { approved: false, feedback: answer.feedback };
+      live.planMode = false;
       void live.session.rpc.mode.set({ mode: 'interactive' }).catch(() => undefined); // rejected: leave plan mode, nothing runs
       return { approved: false };
     };
@@ -576,7 +581,15 @@ export class CopilotAdapter implements AgentAdapter {
     }
     live.turnOpen = true;
     // spec 066 FR-003: plan first: the runtime's own plan mode (it reads and proposes; nothing changes until the user approves)
-    if (message.plan) await live.session.rpc.mode.set({ mode: 'plan' });
+    if (message.plan) {
+      await live.session.rpc.mode.set({ mode: 'plan' });
+      live.planMode = true;
+    } else if (live.planMode) {
+      // review on #441: a plan-first turn that ended without a plan (the model just answered) left the runtime in plan mode, so a
+      // normal message would never act: back to interactive first
+      await live.session.rpc.mode.set({ mode: 'interactive' });
+      live.planMode = false;
+    }
     // Files the user attached are theirs to share: the runtime may read them even outside the folders (spec 003 FR-023).
     if (message.attachments?.length) live.broker.allowReadPaths(message.attachments.map((a) => a.path));
     this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });

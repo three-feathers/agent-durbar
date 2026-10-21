@@ -815,7 +815,7 @@ export class ClaudeAdapter implements AgentAdapter {
   private onMessage(s: Session, m: ClaudeMessage): void {
     if (m.type === 'system' && m.subtype === 'init') s.initSeen = true;
     if (m.type === 'result') s.turnOpen = false;
-    if (s.planTurn && m.type === 'assistant') s.planDraft = (s.planDraft ?? '') + assistantText(m); // spec 066
+    if (s.planTurn && m.type === 'assistant') s.planDraft = ((s.planDraft ?? '') + assistantText(m)).slice(-40_000); // spec 066: bounded (the card shows 20k)
     if (m.type === 'result' && s.planTurn && !s.plans?.size) void this.leavePlanMode(s); // spec 066: a plan turn that ended without ExitPlanMode
     s.mapper.map(m);
     if (m.type === 'result' && this.capReached(s)) this.openLimit(s);

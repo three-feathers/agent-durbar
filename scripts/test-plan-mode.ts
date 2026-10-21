@@ -76,6 +76,17 @@ async function main(): Promise<void> {
     await until('fourth', () => events.filter((e) => e.type === 'plan' && e.phase === 'proposed')[3]);
     await ad.interrupt(sid);
     assert.deepStrictEqual(await p4, { approved: false });
+    // review on #441: a plan-first turn that ends without a plan leaves plan mode before the next normal message
+    {
+      const before = modeCalls().length;
+      await ad.send(sid, { text: 'Plan this', plan: true });
+      await ad.send(sid, { text: 'Now just do it' });
+      assert.deepStrictEqual(modeCalls().slice(before), ['plan', 'interactive'], 'the next normal message leaves plan mode first');
+      const last = s.calls.filter((c) => c.name === 'send').pop()!;
+      assert.ok(s.calls.lastIndexOf(s.calls.filter((c) => c.name === 'mode.set').pop()!) < s.calls.lastIndexOf(last), 'mode first, then the message');
+      await ad.send(sid, { text: 'Another one' });
+      assert.deepStrictEqual(modeCalls().slice(before), ['plan', 'interactive'], 'no extra mode switch once interactive');
+    }
     // an unknown request id does nothing
     await ad.resolvePlan!(sid, 'nope', { kind: 'approve' });
     await ad.stop(sid).catch(() => undefined);
