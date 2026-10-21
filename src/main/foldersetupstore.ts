@@ -48,11 +48,12 @@ export class FolderSetupStore {
 
   /**
    * Records an answer for the items the dialog showed (`shown`: the current ids). Ids not shown are dropped (stale items go away).
-   * FR-011: a hook is accepted only when `hooksConfirmed` is true; otherwise it is recorded as declined.
+   * FR-011: a hook (and, S1, a broad allow rule) is accepted only when `hooksConfirmed` is true; otherwise it is recorded as declined.
    */
-  decide(key: string, shown: ReadonlyMap<string, { kind: string }>, d: FolderSetupDecision): Entry {
+  decide(key: string, shown: ReadonlyMap<string, { kind: string; confirm?: boolean }>, d: FolderSetupDecision): Entry {
     const acc = new Set(d.accepted.filter((id) => shown.has(id)));
-    if (!d.hooksConfirmed) for (const id of [...acc]) if (shown.get(id)?.kind === 'hook') acc.delete(id);
+    // FR-011 + S1 (review #424): hooks and broad allow rules need the explicit tick
+    if (!d.hooksConfirmed) for (const id of [...acc]) { const s = shown.get(id); if (s?.kind === 'hook' || s?.confirm) acc.delete(id); }
     const dec = new Set([...shown.keys()].filter((id) => !acc.has(id) && (d.declined.includes(id) || d.accepted.includes(id))));
     this.data[key] = { accepted: [...acc].slice(0, MAX_IDS), declined: [...dec].slice(0, MAX_IDS) };
     const keys = Object.keys(this.data);

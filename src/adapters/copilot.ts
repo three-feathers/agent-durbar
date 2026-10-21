@@ -160,6 +160,22 @@ export const NO_COPILOT_ACCESS = /not authorized to use this Copilot feature/i;
 export const NO_COPILOT_ACCESS_DETAIL = 'Signed in to GitHub, but this account has no Copilot access yet: turn on Copilot for it (Copilot Free is enough) at github.com/settings/copilot, then choose Check again.';
 const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e ?? ''));
 
+/** Spec 061: the private folder that holds a session's accepted folder hooks (removed when the session ends). */
+export const HOOK_DIR_PREFIX = 'durbar-folder-hooks-';
+let hookDirsSwept = false;
+/** Review nit #424: once per run, remove copies left by a crash (older than a day, so another running Durbar's are never touched). */
+export function sweepOldHookDirs(now = Date.now(), dir = os.tmpdir()): void {
+  if (hookDirsSwept) return;
+  hookDirsSwept = true;
+  try {
+    for (const n of fs.readdirSync(dir)) {
+      if (!n.startsWith(HOOK_DIR_PREFIX)) continue;
+      const p = path.join(dir, n);
+      try { const st = fs.lstatSync(p); if (st.isDirectory() && !st.isSymbolicLink() && now - st.mtimeMs > 24 * 3600_000) fs.rmSync(p, { recursive: true, force: true }); } catch { /* gone or not ours */ }
+    }
+  } catch { /* the temp folder cannot be listed: nothing to sweep */ }
+}
+
 export const REMOTE_NOT_STARTED = 'Copilot did not start remote control and gave no reason. It needs a paid Copilot plan: on Copilot Free it never started in our checks, on Copilot Pro it did.';
 
 /** Spec 040 FR-015: how long one `generateText` may take before it is aborted (the same 3 minutes as Claude and Codex). */
@@ -481,7 +497,8 @@ export class CopilotAdapter implements AgentAdapter {
     const hooksJson = copilotHooksJson(options.folderSetup);
     let hookDir: string | undefined;
     if (hooksJson) {
-      hookDir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folder-hooks-'));
+      sweepOldHookDirs();
+      hookDir = fs.mkdtempSync(path.join(os.tmpdir(), HOOK_DIR_PREFIX));
       fs.chmodSync(hookDir, 0o700);
       fs.writeFileSync(path.join(hookDir, 'durbar-folder.json'), hooksJson, { mode: 0o600 });
     }
@@ -514,18 +531,24 @@ export class CopilotAdapter implements AgentAdapter {
     const resumed = (): Record<string, unknown> => ({ ...config, ...modelConfig(options, true) });
     const created = (): Record<string, unknown> => ({ ...config, ...modelConfig(options, false) });
     let resumedExisting = false; // its title is asked once (issue #126): the runtime may not send it again
-    if (options.resumeSessionId) {
-      session = await client.resumeSession(options.resumeSessionId, resumed() as unknown as ResumeSessionConfig);
-      resumedExisting = true;
-    } else if (options.sessionId) {
-      // An agent that was ended (or restored from the saved folder list) keeps its id: resume it when it has
-      // history on disk, otherwise start a fresh session under that same id.
-      const known = await client.getSessionMetadata(options.sessionId).catch(() => undefined);
-      resumedExisting = !!known;
-      session = known
-        ? await client.resumeSession(options.sessionId, resumed() as unknown as ResumeSessionConfig)
-        : await client.createSession({ ...created(), sessionId: options.sessionId } as unknown as SessionConfig);
-    } else session = await client.createSession(created() as unknown as SessionConfig);
+    try {
+      if (options.resumeSessionId) {
+        session = await client.resumeSession(options.resumeSessionId, resumed() as unknown as ResumeSessionConfig);
+        resumedExisting = true;
+      } else if (options.sessionId) {
+        // An agent that was ended (or restored from the saved folder list) keeps its id: resume it when it has
+        // history on disk, otherwise start a fresh session under that same id.
+        const known = await client.getSessionMetadata(options.sessionId).catch(() => undefined);
+        resumedExisting = !!known;
+        session = known
+          ? await client.resumeSession(options.sessionId, resumed() as unknown as ResumeSessionConfig)
+          : await client.createSession({ ...created(), sessionId: options.sessionId } as unknown as SessionConfig);
+      } else session = await client.createSession(created() as unknown as SessionConfig);
+    } catch (e) {
+      // review nit #424: the private copy of the accepted folder hooks does not outlive a session that never started
+      if (hookDir) fs.rmSync(hookDir, { recursive: true, force: true });
+      throw e;
+    }
     sid = session.sessionId;
     const onSessionEvent = (ev: SessionEvent): void => {
       // Remember an open limit request so Stop / End can answer it (the runtime waits for a consumer once interest is registered).

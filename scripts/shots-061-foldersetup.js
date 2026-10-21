@@ -32,7 +32,9 @@ module.exports = async (ctx) => {
     assert.strictEqual(v.title, 'This folder brings its own agent setup');
     assert.strictEqual(v.rows, 7, `${w}: every item listed`);
     assert.strictEqual(v.disabled, 1, 'the Codex hook is shown as not supported');
-    assert.strictEqual(v.checked, 6, 'Q1: on by default (the unsupported one cannot be)');
+    assert.strictEqual(v.checked, 5, 'Q1: on by default, except the unsupported one and the broad allow rule (S1: needs the explicit tick)');
+    assert.ok(await js(`!document.querySelector('#scrDlg [data-fs="${'d'.repeat(32)}"]').checked`), 'S1: the broad allow rule (Bash) starts unticked');
+    assert.ok(await js(`/hooks and broad allow rules/.test(document.querySelector('#scrDlg .fs-confirm').textContent)`), 'the tick names the broad allow rules too');
     assert.ok(v.broad.includes('broad'), 'the broad rule is marked');
     assert.ok(v.curl && v.note && v.confirm, 'the exact command, the plain warning, the hooks confirmation');
     assert.ok(v.inside, `${w}: the dialog fits the window`);

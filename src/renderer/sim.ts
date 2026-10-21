@@ -802,7 +802,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, key, items, problems: [], accepted: d.accepted, declined: d.declined, pending: items.map((i) => i.id).filter((id) => !d.accepted.includes(id) && !d.declined.includes(id)) };
       },
       folderSetupDecide: async (key, dec) => {
-        const hooks = new Set(SIM_FOLDER_SETUP.filter((i) => i.kind === 'hook').map((i) => i.id));
+        // like the store: hooks and (S1, owner 2026-10-21) broad allow rules need the explicit tick
+        const hooks = new Set(SIM_FOLDER_SETUP.filter((i) => i.kind === 'hook' || (i.kind === 'rule' && i.ruleKind === 'allow' && i.broad)).map((i) => i.id));
         const accepted = dec.accepted.filter((id) => dec.hooksConfirmed || !hooks.has(id));
         simSetupDecisions.set(key, { accepted, declined: SIM_FOLDER_SETUP.map((i) => i.id).filter((id) => !accepted.includes(id)) });
         const rules = accepted.some((id) => hooks.has(id) || SIM_FOLDER_SETUP.some((i) => i.id === id && i.kind === 'rule' && i.ruleKind !== 'deny'));

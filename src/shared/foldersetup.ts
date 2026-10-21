@@ -25,6 +25,8 @@ export interface FolderSetupItem {
   ruleKind?: RuleKind;
   /** FR-014: a rule that approves (or asks for) a whole tool rather than a pattern, such as `Bash` or `Bash(*)`. */
   broad?: boolean;
+  /** FR-014 (review #424): part of the text was replaced because it has a token's shape; shown as such, and left unticked. */
+  hidden?: boolean;
   /** Names of env variables or headers (values never shown). */
   secretNames?: string[];
   /** False when the agent app cannot apply this item from Durbar (FR-006), with the reason. */
@@ -49,7 +51,10 @@ export interface FolderSetupView {
 export interface FolderSetupDecision {
   accepted: string[];
   declined: string[];
-  /** FR-011: hooks are accepted only with this explicit confirmation ("I have read these hooks and I know what they run"). */
+  /**
+   * FR-011: hooks are accepted only with this explicit confirmation ("I have read these hooks and I know what they run"). The same tick
+   * covers broad allow rules (S1, review #424: `Bash`, `Read(*)`, a bare tool name), which act without asking for a whole tool.
+   */
   hooksConfirmed: boolean;
 }
 
@@ -61,14 +66,29 @@ export interface HookExplanation {
   text?: string;
   /** Which agent app explained it (shown, so the person knows where the hook text was sent). */
   by?: string;
+  /** FR-016: what the explanation cost, as the app reported it (`≈ $0.0012` or `0.071 AIU`), shown like any one-shot. */
+  cost?: string;
 }
 
-/** FR-014: a rule that covers a whole tool (no pattern, an empty pattern or only `*`) is broad. */
+/** S1 (review #424): items that need the explicit tick: every hook, and every broad allow rule. */
+export function needsConfirm(i: Pick<FolderSetupItem, 'kind' | 'ruleKind' | 'broad'>): boolean {
+  return i.kind === 'hook' || (i.kind === 'rule' && i.ruleKind === 'allow' && !!i.broad);
+}
+
+/**
+ * FR-014 + S1 (owner, 2026-10-21: "broad allow rules need explicit tick like hooks"): a rule is broad when it covers a whole tool or
+ * more than one narrow place: a bare tool name; a pattern of only wildcards and separators (`*`, `:*`, `**`, `*:*`, `/**`); a file tool
+ * (`Read`, `Edit`, `Write`, `MultiEdit`, `NotebookEdit`) on a path from the root, the home folder or a drive with `**`; a `Bash`
+ * prefix that names no command (`Bash( :*)`).
+ */
 export function isBroadRule(rule: string): boolean {
   const m = /^([A-Za-z_][A-Za-z0-9_:.-]*)(?:\((.*)\))?$/.exec(rule.trim());
   if (!m) return false;
-  const pat = m[2];
-  return pat === undefined || /^\s*(\*|:\*|\*\*|)\s*$/.test(pat);
+  const [, tool, pat] = m;
+  if (pat === undefined || /^[\s*:/.\\]*$/.test(pat)) return true;
+  if (/^(Read|Edit|Write|MultiEdit|NotebookEdit)$/.test(tool) && /^\s*(~|\/|[A-Za-z]:)/.test(pat) && /\*\*/.test(pat)) return true;
+  if (tool === 'Bash' && /^\s*:\*\s*$/.test(pat)) return true;
+  return false;
 }
 
 /** Spec 061 FR-004: one accepted hook, as its app's own file wrote it (Claude/Codex: `command`; Copilot: `bash` / `powershell`). */

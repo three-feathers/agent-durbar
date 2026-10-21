@@ -42,13 +42,37 @@ export interface FolderSetupApply {
 
 const str = (v: unknown, max = MAX_TEXT): string | undefined => (typeof v === 'string' && v.length > 0 && v.length <= max ? v : undefined);
 const digest = (v: unknown): string => createHash('sha256').update(JSON.stringify(v)).digest('hex').slice(0, 32);
-const cap = (s: string, n = 600): string => (s.length > n ? s.slice(0, n) + '…' : s);
+/** FR-014 (review #424): an item is shown in full or not listed at all; longer than this, it is a problem, never applied. */
+export const MAX_SHOWN = 8000;
+
+/**
+ * FR-014 / FR-016 (review #424): what a hook command or a rule shows. Only real token shapes are hidden (GitHub and OpenAI/Anthropic
+ * keys, bearer tokens, JWTs, AWS keys): their classes cannot contain shell syntax, so `--auth=$(curl …|sh)` or a backtick payload is
+ * always shown. The flag- and name-based masking used for MCP arguments is NOT used here: it let a repository choose what is hidden.
+ * `hidden` marks that something was replaced, so the window shows it and leaves the item unticked.
+ */
+const TOKEN_SHAPES: RegExp[] = [
+  /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
+  /\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/g,
+  /\bBearer\s{1,8}[A-Za-z0-9._~+/=-]{8,}/g,
+  /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}/g,
+  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
+];
+export function shownCommand(cmd: string): { text: string; hidden: boolean } {
+  let text = cmd;
+  for (const re of TOKEN_SHAPES) text = text.replace(re, '[secret hidden]');
+  return { text, hidden: text !== cmd };
+}
 
 type Read = { state: 'ok'; json: unknown; text: string } | { state: 'missing' } | { state: 'error'; message: string };
-function readFile(file: string, asJson: boolean): Read {
+/** S2 (review #424): never through a link, and never outside the folder (a linked `.claude/` or `.mcp.json` pointing elsewhere is a problem). */
+function readFile(file: string, asJson: boolean, root: string): Read {
   try {
-    const st = fs.statSync(file);
+    const st = fs.lstatSync(file);
+    if (st.isSymbolicLink()) return { state: 'error', message: 'a link: not followed' };
     if (!st.isFile()) return { state: 'error', message: 'not a file' };
+    if (!inside(root, file)) return { state: 'error', message: 'outside the folder: not read' };
     if (st.size > MAX_FILE_BYTES) return { state: 'error', message: 'larger than 256 KiB: not read' };
     const text = fs.readFileSync(file, 'utf8');
     if (!asJson) return { state: 'ok', json: undefined, text };
@@ -65,13 +89,26 @@ function readFile(file: string, asJson: boolean): Read {
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
+/** The file's real folder is the root or below it (links in between resolved). */
+function inside(root: string, file: string): boolean {
+  try {
+    const r = fs.realpathSync(root);
+    const d = fs.realpathSync(path.dirname(file));
+    const rel = path.relative(r, d);
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  } catch {
+    return false;
+  }
+}
+
 function mcpItem(app: FolderSetupApp, file: string, name: string, spec: McpServerSpec, note?: string): { item: FolderSetupItem; raw: RawItem } {
   const secretNames = [...Object.keys(spec.env ?? {}), ...Object.keys(spec.headers ?? {})].slice(0, 30);
   const env = spec.env ?? {};
   const detail = spec.type === 'stdio' ? [maskSecretCommand(spec.command ?? '', env), ...maskSecretArgs(spec.args ?? [], env)].join(' ') : maskSecretUrl(spec.url ?? '', env);
-  const id = digest(['mcp', name, spec]);
+  // S3 (review #424): the digest holds env and header NAMES only (FR-010), never their values (a weak secret could be brute-forced)
+  const id = digest(['mcp', name, { ...spec, ...(spec.env ? { env: Object.keys(spec.env).sort() } : {}), ...(spec.headers ? { headers: Object.keys(spec.headers).sort() } : {}) }]);
   return {
-    item: { id, app, kind: 'mcp', file, label: `MCP server ${name}`, detail: cap(detail), ...(secretNames.length ? { secretNames } : {}), supported: true, ...(note ? { unsupportedWhy: note } : {}) },
+    item: { id, app, kind: 'mcp', file, label: `MCP server ${name}`, detail, ...(secretNames.length ? { secretNames } : {}), supported: true, ...(note ? { unsupportedWhy: note } : {}) },
     raw: { kind: 'mcp', name, spec },
   };
 }
@@ -95,6 +132,19 @@ function readMcpJson(json: unknown): { name: string; spec: McpServerSpec }[] {
   return out;
 }
 
+const MAX_TOML_LINE = 4096;
+/** Cuts a `#` comment that is outside quotes, in one pass (no regex backtracking). */
+function stripTomlComment(line: string): string {
+  let q = '';
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) { if (c === '\\' && q === '"') i++; else if (c === q) q = ''; }
+    else if (c === '"' || c === "'") q = c;
+    else if (c === '#') return line.slice(0, i);
+  }
+  return line;
+}
+
 /** The `[mcp_servers.<name>]` tables of a Codex `config.toml`: `command`, `args`, `url`, `env` (names), nothing else. */
 export function readCodexMcpToml(text: string): { name: string; spec: McpServerSpec }[] {
   const out = new Map<string, { command?: string; args?: string[]; url?: string; env?: Record<string, string> }>();
@@ -105,7 +155,9 @@ export function readCodexMcpToml(text: string): { name: string; spec: McpServerS
     return m ? (m[1] !== undefined ? m[1].replace(/\\(["\\])/g, '$1') : m[2]) : undefined;
   };
   for (const lineRaw of text.split(/\r?\n/).slice(0, 5000)) {
-    const line = lineRaw.replace(/\s+#.*$/, '').trim();
+    // review #424: linear only (a hostile 256 KiB value must not block main): long lines are skipped, comments cut by a scan
+    if (lineRaw.length > MAX_TOML_LINE) continue;
+    const line = stripTomlComment(lineRaw).trim();
     if (!line || line.startsWith('#')) continue;
     const head = /^\[([^\]]+)\]$/.exec(line);
     if (head) {
@@ -131,7 +183,7 @@ export function readCodexMcpToml(text: string): { name: string; spec: McpServerS
       if (m) cur.args = (m[1].match(/"(?:[^"\\]|\\.)*"|'[^']*'/g) ?? []).map((x) => unq(x) ?? '').slice(0, 64);
     } else if (k === 'env') {
       const m = /^\{(.*)\}$/.exec(v.trim());
-      if (m) for (const pair of m[1].split(',')) { const p = /^\s*([A-Za-z0-9_-]+)\s*=\s*(.+?)\s*$/.exec(pair); const s = p ? unq(p[2]) : undefined; if (p && s !== undefined) (cur.env ??= {})[p[1]] = s; }
+      if (m) for (const pair of m[1].split(',')) { const p = /^([A-Za-z0-9_-]+)\s*=\s*(.*)$/.exec(pair.trim()); const s = p ? unq(p[2]) : undefined; if (p && s !== undefined) (cur.env ??= {})[p[1]] = s; }
     }
   }
   const list: { name: string; spec: McpServerSpec }[] = [];
@@ -143,7 +195,7 @@ export function readCodexMcpToml(text: string): { name: string; spec: McpServerS
 }
 
 /** Claude-style hooks (`{ hooks: { Event: [{ matcher?, hooks: [{ type: 'command', command }] }] } }`), also Codex's `hooks.json`. */
-function readClaudeHooks(json: unknown, app: 'claude' | 'codex'): Extract<RawItem, { kind: 'hook' }>[] {
+function readClaudeHooks(json: unknown, app: 'claude' | 'codex', tooLong: () => void): Extract<RawItem, { kind: 'hook' }>[] {
   const hooks = isObj(json) && isObj(json.hooks) ? json.hooks : {};
   const out: Extract<RawItem, { kind: 'hook' }>[] = [];
   for (const [event, groups] of Object.entries(hooks)) {
@@ -153,6 +205,7 @@ function readClaudeHooks(json: unknown, app: 'claude' | 'codex'): Extract<RawIte
       const matcher = str(g.matcher, 200);
       for (const h of g.hooks) {
         if (!isObj(h) || h.type !== 'command') continue;
+        if (typeof h.command === 'string' && h.command.length > MAX_TEXT) { tooLong(); continue; }
         const command = str(h.command);
         if (command) out.push({ kind: 'hook', app, event, ...(matcher ? { matcher } : {}), command, ...(typeof h.timeout === 'number' ? { timeout: h.timeout } : {}) });
       }
@@ -162,13 +215,14 @@ function readClaudeHooks(json: unknown, app: 'claude' | 'codex'): Extract<RawIte
 }
 
 /** Copilot hooks (`{ version?, hooks: { event: [{ type: 'command', bash?, powershell?, timeoutSec? }] } }`). */
-function readCopilotHooks(json: unknown): Extract<RawItem, { kind: 'hook' }>[] {
+function readCopilotHooks(json: unknown, tooLong: () => void): Extract<RawItem, { kind: 'hook' }>[] {
   const hooks = isObj(json) && isObj(json.hooks) ? json.hooks : {};
   const out: Extract<RawItem, { kind: 'hook' }>[] = [];
   for (const [event, list] of Object.entries(hooks)) {
     if (!/^[A-Za-z]{1,40}$/.test(event) || !Array.isArray(list)) continue;
     for (const h of list) {
       if (!isObj(h) || (h.type !== undefined && h.type !== 'command')) continue;
+      if ((typeof h.bash === 'string' && h.bash.length > MAX_TEXT) || (typeof h.powershell === 'string' && h.powershell.length > MAX_TEXT)) { tooLong(); continue; }
       const bash = str(h.bash), powershell = str(h.powershell);
       if (bash || powershell) out.push({ kind: 'hook', app: 'copilot', event, ...(bash ? { bash } : {}), ...(powershell ? { powershell } : {}), ...(typeof h.timeoutSec === 'number' ? { timeout: h.timeoutSec } : {}) });
     }
@@ -188,11 +242,14 @@ export function scanFolderSetup(dirs: readonly string[]): ScanResult {
     items.push(item);
     raw.set(item.id, r);
   };
-  const many = dirs.length > 1;
-  for (const dir of dirs.slice(0, 8)) {
-    const rel = (f: string): string => (many ? `${path.basename(dir)}/` : '') + f;
+  const list = dirs.slice(0, 8);
+  const labels = rootLabels(list);
+  list.forEach((dir, di) => {
+    const rel = (f: string): string => (list.length > 1 ? `${labels[di]}/` : '') + f;
+    const tooLong = (f: string) => (): void => { problems.push({ file: rel(f), message: `a hook longer than ${MAX_TEXT} characters: not shown, never used` }); };
     const hookItem = (file: string, h: Extract<RawItem, { kind: 'hook' }>): void => {
-      const cmd = h.command ?? h.bash ?? h.powershell ?? '';
+      const main = shownCommand(h.command ?? h.bash ?? h.powershell ?? '');
+      const ps = h.bash && h.powershell ? shownCommand(h.powershell) : undefined;
       const supported = h.app !== 'codex';
       add(
         {
@@ -201,7 +258,9 @@ export function scanFolderSetup(dirs: readonly string[]): ScanResult {
           kind: 'hook',
           file: rel(file),
           label: `${h.event} hook`,
-          detail: cap(maskSecretCommand(cmd), 1200) + (h.bash && h.powershell ? `  (PowerShell: ${cap(maskSecretCommand(h.powershell), 400)})` : ''),
+          // FR-014 (review #424): the whole command, never cut (the window scrolls); only real token shapes are hidden
+          detail: main.text + (ps ? `\n(PowerShell) ${ps.text}` : ''),
+          ...(main.hidden || ps?.hidden ? { hidden: true } : {}),
           event: h.event,
           ...(h.matcher ? { matcher: h.matcher } : {}),
           supported,
@@ -210,12 +269,17 @@ export function scanFolderSetup(dirs: readonly string[]): ScanResult {
         h,
       );
     };
+    const mcpAdd = (f: string, app: FolderSetupApp, name: string, spec: McpServerSpec): void => {
+      const m = mcpItem(app, rel(f), name, spec);
+      if (m.item.detail.length > MAX_SHOWN) problems.push({ file: rel(f), message: `MCP server ${name}: too long to show in full, never used` });
+      else add(m.item, m.raw);
+    };
     // Claude Code
     for (const f of ['.claude/settings.json', '.claude/settings.local.json']) {
-      const r = readFile(path.join(dir, ...f.split('/')), true);
+      const r = readFile(path.join(dir, ...f.split('/')), true, dir);
       if (r.state === 'error') { problems.push({ file: rel(f), message: r.message }); continue; }
       if (r.state !== 'ok') continue;
-      for (const h of readClaudeHooks(r.json, 'claude')) hookItem(f, h);
+      for (const h of readClaudeHooks(r.json, 'claude', tooLong(f))) hookItem(f, h);
       const perms = isObj(r.json) && isObj(r.json.permissions) ? r.json.permissions : {};
       for (const ruleKind of ['allow', 'deny', 'ask'] as const) {
         const list = Array.isArray(perms[ruleKind]) ? (perms[ruleKind] as unknown[]) : [];
@@ -223,8 +287,9 @@ export function scanFolderSetup(dirs: readonly string[]): ScanResult {
           const s = str(rule, 500);
           if (!s) continue;
           const word = ruleKind === 'allow' ? 'Allow' : ruleKind === 'deny' ? 'Deny' : 'Ask';
+          const shown = shownCommand(s);
           add(
-            { id: digest(['rule', ruleKind, s]), app: 'claude', kind: 'rule', file: rel(f), label: `${word} rule`, detail: maskSecretCommand(s), ruleKind, ...(ruleKind !== 'deny' && isBroadRule(s) ? { broad: true } : {}), supported: true },
+            { id: digest(['rule', ruleKind, s]), app: 'claude', kind: 'rule', file: rel(f), label: `${word} rule`, detail: shown.text, ...(shown.hidden ? { hidden: true } : {}), ruleKind, ...(ruleKind !== 'deny' && isBroadRule(s) ? { broad: true } : {}), supported: true },
             { kind: 'rule', ruleKind, rule: s },
           );
         }
@@ -233,39 +298,77 @@ export function scanFolderSetup(dirs: readonly string[]): ScanResult {
     // MCP servers in .mcp.json: Durbar can hand them to any app's session (Copilot itself does not read the file, R3)
     {
       const f = '.mcp.json';
-      const r = readFile(path.join(dir, f), true);
+      const r = readFile(path.join(dir, f), true, dir);
       if (r.state === 'error') problems.push({ file: rel(f), message: r.message });
-      else if (r.state === 'ok') for (const s of readMcpJson(r.json)) { const m = mcpItem('any', rel(f), s.name, s.spec); add(m.item, m.raw); }
+      else if (r.state === 'ok') for (const s of readMcpJson(r.json)) mcpAdd(f, 'any', s.name, s.spec);
     }
     // Codex
     {
       const f = '.codex/config.toml';
-      const r = readFile(path.join(dir, '.codex', 'config.toml'), false);
+      const r = readFile(path.join(dir, '.codex', 'config.toml'), false, dir);
       if (r.state === 'error') problems.push({ file: rel(f), message: r.message });
-      else if (r.state === 'ok') for (const s of readCodexMcpToml(r.text)) { const m = mcpItem('codex', rel(f), s.name, s.spec); add(m.item, m.raw); }
+      else if (r.state === 'ok') for (const s of readCodexMcpToml(r.text)) mcpAdd(f, 'codex', s.name, s.spec);
       const fh = '.codex/hooks.json';
-      const rh = readFile(path.join(dir, '.codex', 'hooks.json'), true);
+      const rh = readFile(path.join(dir, '.codex', 'hooks.json'), true, dir);
       if (rh.state === 'error') problems.push({ file: rel(fh), message: rh.message });
-      else if (rh.state === 'ok') for (const h of readClaudeHooks(rh.json, 'codex')) hookItem(fh, h);
+      else if (rh.state === 'ok') for (const h of readClaudeHooks(rh.json, 'codex', tooLong(fh))) hookItem(fh, h);
     }
     // Copilot
     {
       const hdir = path.join(dir, '.github', 'hooks');
       let names: string[] = [];
-      try { names = fs.readdirSync(hdir).filter((n) => n.endsWith('.json')).sort().slice(0, MAX_HOOK_FILES); } catch { names = []; }
+      // S2: a linked hooks folder is not followed (readFile also checks each file stays inside the folder)
+      let linked = false;
+      try { linked = fs.lstatSync(hdir).isSymbolicLink(); } catch { linked = false; }
+      if (linked) problems.push({ file: rel('.github/hooks'), message: 'a link: not followed' });
+      else try { names = fs.readdirSync(hdir).filter((n) => n.endsWith('.json')).sort().slice(0, MAX_HOOK_FILES); } catch { names = []; }
       for (const n of names) {
         const f = `.github/hooks/${n}`;
-        const r = readFile(path.join(hdir, n), true);
+        const r = readFile(path.join(hdir, n), true, dir);
         if (r.state === 'error') { problems.push({ file: rel(f), message: r.message }); continue; }
-        if (r.state === 'ok') for (const h of readCopilotHooks(r.json)) hookItem(f, h);
+        if (r.state === 'ok') for (const h of readCopilotHooks(r.json, tooLong(f))) hookItem(f, h);
       }
       const f = '.github/copilot/settings.json';
-      const r = readFile(path.join(dir, '.github', 'copilot', 'settings.json'), true);
+      const r = readFile(path.join(dir, '.github', 'copilot', 'settings.json'), true, dir);
       if (r.state === 'error') problems.push({ file: rel(f), message: r.message });
-      else if (r.state === 'ok') for (const h of readCopilotHooks(r.json)) hookItem(f, h);
+      else if (r.state === 'ok') for (const h of readCopilotHooks(r.json, tooLong(f))) hookItem(f, h);
     }
-  }
+  });
   return { items, raw, problems };
+}
+
+/** Review nit #424: folder labels for a multi-root workspace that never collide (`app`, `web/app`, then a number). */
+export function rootLabels(dirs: readonly string[]): string[] {
+  const base = dirs.map((d) => path.basename(d) || d);
+  const two = dirs.map((d, i) => (base.filter((b) => b === base[i]).length > 1 ? `${path.basename(path.dirname(d))}/${base[i]}` : base[i]));
+  return two.map((l, i) => (two.filter((x) => x === l).length > 1 ? `${l} (${two.slice(0, i + 1).filter((x) => x === l).length})` : l));
+}
+
+const SIGNATURE_FILES = ['.claude/settings.json', '.claude/settings.local.json', '.mcp.json', '.codex/config.toml', '.codex/hooks.json', '.github/copilot/settings.json'];
+const scanCache = new Map<string, { sig: string; scan: ScanResult }>();
+/**
+ * Review nit #424: the same scan while no setup file changed (size and change time of each file, and the hooks folder's entries).
+ * Used where main asks often (every agent's info and start); the dialog and `decide` always read the disk afresh.
+ */
+export function scanFolderSetupCached(dirs: readonly string[]): ScanResult {
+  const parts: string[] = [];
+  for (const dir of dirs.slice(0, 8)) {
+    for (const f of SIGNATURE_FILES) {
+      try { const st = fs.lstatSync(path.join(dir, ...f.split('/'))); parts.push(`${f}:${st.size}:${st.mtimeMs}`); } catch { parts.push(`${f}:-`); }
+    }
+    try {
+      const hd = path.join(dir, '.github', 'hooks');
+      for (const n of fs.readdirSync(hd).sort().slice(0, MAX_HOOK_FILES)) { const st = fs.lstatSync(path.join(hd, n)); parts.push(`h/${n}:${st.size}:${st.mtimeMs}`); }
+    } catch { parts.push('h:-'); }
+  }
+  const key = dirs.join('\0');
+  const sig = parts.join('|');
+  const hit = scanCache.get(key);
+  if (hit && hit.sig === sig) return hit.scan;
+  const scan = scanFolderSetup(dirs);
+  scanCache.set(key, { sig, scan });
+  if (scanCache.size > 200) scanCache.delete(scanCache.keys().next().value as string);
+  return scan;
 }
 
 /**

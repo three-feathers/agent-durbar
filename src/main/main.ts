@@ -1,5 +1,5 @@
 import { FolderSetupStore } from './foldersetupstore';
-import { acceptedFor, hasFolderRules, scanFolderSetup } from './foldersetup';
+import { acceptedFor, hasFolderRules, scanFolderSetupCached } from './foldersetup';
 import { registerFolderSetupIpc } from './foldersetupipc';
 import type { FolderSetupStart } from '../shared/foldersetup';
 import type { McpServerSpec } from '../shared/mcp';
@@ -271,7 +271,7 @@ function folderSetupStart(key: string, dirs: readonly string[], appId: string, t
   if (!folderSetupStore || (appId !== 'claude' && appId !== 'codex' && appId !== 'copilot')) return { mcpServers: {} };
   const accepted = new Set(folderSetupStore.get(key).accepted);
   if (!accepted.size) return { mcpServers: {} };
-  const ap = acceptedFor(scanFolderSetup(dirs.length ? dirs : [key]), accepted, appId, taken);
+  const ap = acceptedFor(scanFolderSetupCached(dirs.length ? dirs : [key]), accepted, appId, taken); // review nit #424: no rescan per call
   const any = ap.hooks.length || ap.rules.allow.length || ap.rules.deny.length || ap.rules.ask.length;
   return { mcpServers: ap.mcpServers, ...(any ? { folderSetup: { hooks: ap.hooks, rules: ap.rules } } : {}), ...(hasFolderRules(ap) ? { rules: true as const } : {}) };
 }
@@ -716,7 +716,7 @@ registerFolderSetupIpc({
       const ad = router.instance(id);
       if (typeof ad.generateText !== 'function') continue;
       const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
-      return { name: registry.get(id)?.displayName ?? id, generate: async (prompt: string) => (await ad.generateText!(prompt, opts)).text };
+      return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
     }
     return undefined;
   },

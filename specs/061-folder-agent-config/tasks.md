@@ -12,3 +12,5 @@
 - [x] T045 AI explanation of each hook through generateText, advisory only [FR-015, FR-016]
 - [x] T040 Mode chip "Read-only + folder rules" [FR-012]
 - [x] T050 Simulator driver + screenshots at 1440x900 and 1280x800; README, CHANGELOG; one real check per app [FR-006]
+
+- [x] T050 Review on #424 (Paco's agent): required 1-6, S1-S3 and nits fixed with tests (2026-10-21) [FR-010, FR-011, FR-013, FR-014, FR-016]

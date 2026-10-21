@@ -3,6 +3,7 @@
  * window, nothing else), and nothing else calls the store's `decide`: not the Durbar MCP server, remote control, schedules or an
  * agent (`scripts/test-foldersetup.ts` pins it). The core functions are pure apart from the injected deps (unit-tested).
  */
+import { needsConfirm } from '../shared/foldersetup';
 import type { FolderSetupDecision, FolderSetupItem, FolderSetupView, HookExplanation } from '../shared/foldersetup';
 import { scanFolderSetup } from './foldersetup';
 import type { FolderSetupStore } from './foldersetupstore';
@@ -13,7 +14,7 @@ export interface FolderSetupDeps {
   /** The folders of a known folder key (an agent's workspace), or undefined for a key the app does not know. */
   dirsOf: (key: string) => readonly string[] | undefined;
   /** FR-015: an installed, signed-in agent app that answers one prompt with no tools (`generateText`), or undefined. */
-  explainer: () => { name: string; generate: (prompt: string) => Promise<string> } | undefined;
+  explainer: () => { name: string; generate: (prompt: string) => Promise<{ text: string; costUsd?: number; nanoAiu?: number }> } | undefined;
   /** After a decision: the agents of that folder, their "+ folder rules" flag (FR-012) for the window. */
   afterDecide: (key: string) => Record<string, boolean>;
 }
@@ -43,7 +44,7 @@ export function decide(deps: FolderSetupDeps, keyIn: unknown, raw: unknown): { o
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const d: FolderSetupDecision = { accepted: idList(o.accepted), declined: idList(o.declined), hooksConfirmed: o.hooksConfirmed === true };
   // the decision covers exactly the items on disk now: an id the window kept from an older scan cannot accept a changed item
-  const shown = new Map(scanFolderSetup(dirs).items.map((i) => [i.id, { kind: i.kind }]));
+  const shown = new Map(scanFolderSetup(dirs).items.map((i) => [i.id, { kind: i.kind, confirm: needsConfirm(i) }]));
   store.decide(key, shown, d);
   return { ok: true, view: scanView(deps, key), folderRules: deps.afterDecide(key) };
 }
@@ -76,6 +77,13 @@ export function parseExplanation(text: string, by: string): HookExplanation {
   return { ok: true, verdict: v[1].toLowerCase() as HookExplanation['verdict'], text: body, by };
 }
 
+/** FR-016: the reported cost of one explanation, in the app's own unit; nothing when the app reports none. */
+export function costText(r: { costUsd?: number; nanoAiu?: number }): string | undefined {
+  if (typeof r.costUsd === 'number' && Number.isFinite(r.costUsd) && r.costUsd >= 0) return `≈ $${r.costUsd < 0.0001 ? r.costUsd.toFixed(6) : r.costUsd.toFixed(4)}`;
+  if (typeof r.nanoAiu === 'number' && Number.isFinite(r.nanoAiu) && r.nanoAiu >= 0) return `${(r.nanoAiu / 1e9).toFixed(3)} AIU`;
+  return undefined;
+}
+
 export async function explain(deps: FolderSetupDeps, keyIn: unknown, idIn: unknown): Promise<HookExplanation> {
   const view = scanView(deps, keyIn);
   const item = view.ok && typeof idIn === 'string' ? view.items.find((i) => i.id === idIn && i.kind === 'hook') : undefined;
@@ -83,7 +91,10 @@ export async function explain(deps: FolderSetupDeps, keyIn: unknown, idIn: unkno
   const ex = deps.explainer();
   if (!ex) return { ok: false, error: 'No AI explanation: no installed and signed-in agent app can answer one prompt.' };
   try {
-    return parseExplanation(await ex.generate(explainPrompt(item)), ex.name);
+    const r = await ex.generate(explainPrompt(item));
+    const out = parseExplanation(r.text, ex.name);
+    const cost = costText(r);
+    return cost ? { ...out, cost } : out;
   } catch (e) {
     return { ok: false, error: 'No AI explanation: ' + (e instanceof Error ? e.message : String(e)).slice(0, 160), by: ex.name };
   }
