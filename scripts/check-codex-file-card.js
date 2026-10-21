@@ -27,7 +27,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${w} ${level}: the detail level is on`);
     const id = await H.idOf('Lena');
     assert.ok(id, `${w}: Lena is in the office`);
-    await js(`document.querySelector('#stage .desk[data-id=${JSON.stringify(id)}]').click()`);
+    await js(`document.querySelector('#stage .desk[data-id="'+${jsLiteral(id)}+'"]').click()`);
     await until(`!!document.querySelector('#chat .note.perm:not(.settled)')`); await settle();
   };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
