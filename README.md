@@ -245,10 +245,11 @@ Status, permission and credit wording, and the layout, are the same in every the
 npm ci
 npm run typecheck && npm run build && npm test   # unit suites in parallel (~20 s); `npm test -- folders` filters
 npm start                 # the app, with the harnesses you have installed and signed in
-DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits
+DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits (main refuses every call that could reach a real agent app)
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
 npm run check:question-options  # question card text, options and descriptions in full; Enter sends a custom answer (simulator, xvfb on Linux)
 npm run check:question-visible  # a waiting question stays visible in the answer bar; compactions in a row fold into one line (simulator, xvfb on Linux)
+npm run check:sim-guard         # under DURBAR_SIM the real preload API is refused by main and no agent app is started (simulator, xvfb on Linux)
 npm run check:sched-sendto      # Schedules dialog: Send to / Limit labels on one line, every option fits, session name on a hint line (simulator, xvfb on Linux)
 npm run check:geometry    # every theme lays out exactly like Clean Office (about a minute)
 npm run check:ui          # every simulator driver that asserts, one after another, on any OS (UI_SUITE_XVFB=1 keeps windows off a Linux desktop)
@@ -257,7 +258,7 @@ npm run pack:dir          # unpacked app for this OS in release/ (also dist, dis
 npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app opens its window and offers no debugger (xvfb on Linux)
 ```
 
-`npm run smoke` and `npm run verify:cap` use a real Copilot login and may spend credits: run them only on purpose. The **E2E real accounts** workflow (spec 062) installs the three agent apps on Linux, macOS and Windows, signs in with the CI account's secrets and runs one tiny turn each; it runs by hand, weekly and on `main`, never on pull requests. The supported CI platforms are listed once, in `.github/platforms.json`. GitHub Actions also runs the UI checks (geometry, office layout, the Mac title bar, `check:ui`) on macOS, Windows and Linux runners and keeps the screenshots of each run (workflow *UI on three OSes*; simulator only). Releases are built by GitHub Actions from `v*` tags into a draft release that the maintainer publishes by hand.
+`npm run smoke` and `npm run verify:cap` use a real Copilot login and may spend credits: run them only on purpose. Under `DURBAR_SIM` the main process refuses every window call except the install-route list and never creates a real adapter, so a simulator run or driver cannot spend credits; a deliberate real check runs without `DURBAR_SIM` (spec 010 FR-022..FR-027). The **E2E real accounts** workflow (spec 062) installs the three agent apps on Linux, macOS and Windows, signs in with the CI account's secrets and runs one tiny turn each; it runs by hand, weekly and on `main`, never on pull requests. The supported CI platforms are listed once, in `.github/platforms.json`. GitHub Actions also runs the UI checks (geometry, office layout, the Mac title bar, `check:ui`) on macOS, Windows and Linux runners and keeps the screenshots of each run (workflow *UI on three OSes*; simulator only). Releases are built by GitHub Actions from `v*` tags into a draft release that the maintainer publishes by hand.
 
 **Layout of the repository:**
 - `src/main` (Electron main), `src/preload`, `src/renderer` (plain HTML/CSS/JS, the simulator);

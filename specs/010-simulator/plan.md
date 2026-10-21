@@ -59,7 +59,7 @@ specs/010-simulator/
 ```text
 src/main/simguard.ts   pure: simulatorOn(dev) | SIM_OPEN_CHANNELS {channel: reason} | SIM_REFUSAL(channel)
                        simGuardDescriptors(descs, on) -> create() returns blockedAdapter(d) (no real create call)
-src/main/ipcguard.ts   const SIM = simulatorOn(devEnv(process.env, app.isPackaged))   (module load: before any handler runs)
+src/main/ipcguard.ts   simulator ??= simulatorOn(devEnv(process.env, app.isPackaged))   (decided once, at the first call)
                        ipcHandle: sender check -> if SIM && !simChannelOpen(channel) throw SIM_REFUSAL -> handler
                        ipcOn:     sender check -> if SIM && !open: drop (one console.warn per channel)
 src/main/main.ts       createRegistry(simGuardDescriptors([...PRODUCTION, ...offered], simulatorOn(dev)))

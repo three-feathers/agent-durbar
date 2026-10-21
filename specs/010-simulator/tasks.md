@@ -19,8 +19,8 @@
 
 ## 2026-10-22: the simulator never reaches a real agent app (incident on PR #505)
 
-- [ ] T024 `src/main/simguard.ts` (pure): `simulatorOn(dev)`, `SIM_OPEN_CHANNELS` with reasons, the refusal text, `simGuardDescriptors` and the inert stand-in adapter. [FR-022, FR-024]
-- [ ] T025 `src/main/ipcguard.ts`: `ipcHandle` refuses and `ipcOn` drops every channel not on `SIM_OPEN_CHANNELS` in simulator mode, before the handler runs. `main.ts`: registry through `simGuardDescriptors`; scheduler not started and `DURBAR_OPEN` ignored under the simulator; `createdAdapters()` on the driver context; `loginPathReady` uses `simulatorOn`. [FR-023, FR-024, FR-025]
-- [ ] T026 `scripts/test-simguard.ts` (`npm run test:simguard`, in `npm test`): dynamic refusal of every preload channel, the named spending list, allow-list hygiene, `main.ts` wiring, the stand-in adapter. [FR-026]
-- [ ] T027 `scripts/check-sim-guard.js` (`npm run check:sim-guard`, in `scripts/ui-suite.js`): the real preload API refused from the page under `DURBAR_SIM=15`, `harnessPlans` still answers, no real adapter created. [FR-026]
-- [ ] T028 Docs: `docs/agent-notes.md` entry on the driver trap (moved here from PR #505's branch), README *Development*, CHANGELOG, `specs/README.md` row. Check that `scripts/*-real.ts` never set `DURBAR_SIM`. [FR-027]
+- [x] T024 `src/main/simguard.ts` (pure): `simulatorOn(dev)`, `SIM_OPEN_CHANNELS` with reasons, the refusal text, `simGuardDescriptors` and the inert stand-in adapter. [FR-022, FR-024]
+- [x] T025 `src/main/ipcguard.ts`: `ipcHandle` refuses and `ipcOn` drops every channel not on `SIM_OPEN_CHANNELS` in simulator mode, before the handler runs. `main.ts`: registry through `simGuardDescriptors`; scheduler not started and `DURBAR_OPEN` ignored under the simulator; `createdAdapters()` on the driver context; `loginPathReady` uses `simulatorOn`. [FR-023, FR-024, FR-025]
+- [x] T026 `scripts/test-simguard.ts` (`npm run test:simguard`, in `npm test`): dynamic refusal of every preload channel, the named spending list, allow-list hygiene, `main.ts` wiring, the stand-in adapter. [FR-026]
+- [x] T027 `scripts/check-sim-guard.js` (`npm run check:sim-guard`, in `scripts/ui-suite.js`): the real preload API refused from the page under `DURBAR_SIM=15`, `harnessPlans` still answers, no real adapter created. [FR-026]
+- [x] T028 Docs: `docs/agent-notes.md` entry on the driver trap (moved here from PR #505's branch), README *Development*, CHANGELOG, `specs/README.md` row. Check that `scripts/*-real.ts` never set `DURBAR_SIM`. [FR-027]
