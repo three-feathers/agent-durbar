@@ -116,7 +116,7 @@ const PE = require(R('profileeditor.js')) as {
       if (conflictOnce && !over) { conflictOnce = false; return { ok: false, conflict: true, error: 'The file changed on disk since you opened it.' }; }
       return { ok: true, sha256: 'h' + saved.length, info };
     },
-    listProfileFiles: async () => ({ ok: true, folders: ['/w'], files: [info] }),
+    listProfileFiles: async () => ({ ok: true, folders: [{ id: 'a'.repeat(32), path: '/w' }], files: [info] }),
     openExternal: async (u: string) => { opened.push(u); },
   };
   const askDialog = w.DurbarDialog(w.document);

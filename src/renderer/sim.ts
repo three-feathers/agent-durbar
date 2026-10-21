@@ -448,7 +448,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       pf('copilot', 'folder', BLOG, BLOG + '/.github/agents/blogger.agent.md', '---\nname: Blogger\ndescription: Use when: drafting a post\n---\n\nDraft blog posts in a friendly tone.\n'),
     ];
     const pfInfo = (f: SimPF) => { const h = pfHead(f.text); return { id: f.id, app: f.app, scope: f.scope, ...(f.folder ? { folder: f.folder } : {}), fileName: f.fileName, path: f.path, name: h.name || f.fileName.replace(/(\.agent)?\.md$/, ''), ...(h.description ? { description: h.description } : {}), size: f.text.length, writable: f.writable, ...(f.note ? { note: f.note } : {}) }; };
-    const pfFolders = (): string[] => [...new Set(sims.map((s) => s.info.cwd))];
+    /** As main (FR-020): each folder with an id (a hash of its path); New profile sends the id back. */
+    const pfFolders = (): { id: string; path: string }[] => [...new Set(sims.map((s) => s.info.cwd))].map((p) => ({ id: pfHash('folder\0' + p).slice(0, 32), path: p }));
     const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
       attrib: new Map<string, string>() };
@@ -1149,8 +1150,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       createProfileFile: async (app, place, name, template) => {
         if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) return { ok: false as const, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
-        const folder = place === 'user' ? undefined : pfFolders()[place];
-        if (place !== 'user' && !folder) return { ok: false as const, error: 'Choose where to save it.' };
+        const folder = place === 'user' ? undefined : pfFolders().find((x) => x.id === place)?.path;
+        if (place !== 'user' && !folder) return { ok: false as const, error: 'That folder is not in the office any more: choose where to save it again.' };
         const dir = place === 'user' ? (app === 'copilot' ? '~/.copilot/agents' : '~/.claude/agents') : folder + (app === 'copilot' ? '/.github/agents' : '/.claude/agents');
         const file = dir + '/' + (app === 'copilot' ? name + '.agent.md' : name + '.md');
         if (simPF.some((x) => x.path === file)) return { ok: false as const, error: file.slice(file.lastIndexOf('/') + 1) + ' exists already.' };

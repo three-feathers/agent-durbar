@@ -23,3 +23,4 @@
   - [x] T012d simulator files and the driver `shots-043-editor.js` (modes, widths, save round trip, unsaved guard), screenshots at 1440x900 and 1280x800, light and dark; `check:ui`
   - [x] T012e docs: README, CHANGELOG, specs index
 - [x] T013 (2026-10-21, owner decisions on #488) Agent Success Profile and Standard agent templates, the default preselected; editor words "Agent Success Profiles" [FR-018, FR-019]
+- [x] T014 (2026-10-22, review on #488) New profile sends a folder id, main accepts it only if it is an office folder now [FR-020]; `test:profilefiles`; Copilot `*.md` vs `*.agent.md` recorded as a known gap
