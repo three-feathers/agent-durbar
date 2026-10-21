@@ -1147,14 +1147,17 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         f.text = String(text);
         return { ok: true as const, sha256: pfHash(f.text), info: pfInfo(f) };
       },
-      createProfileFile: async (app, place, name) => {
+      createProfileFile: async (app, place, name, template) => {
         if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) return { ok: false as const, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
         const folder = place === 'user' ? undefined : pfFolders()[place];
         if (place !== 'user' && !folder) return { ok: false as const, error: 'Choose where to save it.' };
         const dir = place === 'user' ? (app === 'copilot' ? '~/.copilot/agents' : '~/.claude/agents') : folder + (app === 'copilot' ? '/.github/agents' : '/.claude/agents');
         const file = dir + '/' + (app === 'copilot' ? name + '.agent.md' : name + '.md');
         if (simPF.some((x) => x.path === file)) return { ok: false as const, error: file.slice(file.lastIndexOf('/') + 1) + ' exists already.' };
-        const f = pf(app, place === 'user' ? 'user' : 'folder', folder, file, `---\nname: ${name}\ndescription: What this agent does, in one line\n---\n\nDescribe how the agent works, what it checks and what it never does.\n`);
+        // the shared templates (src/shared/profiletemplates.ts), loaded after exports-shim.js; read at call time
+        const tpl = (self as unknown as { exports?: { profileTemplate?: (a: string, n: string, k?: string) => string } }).exports?.profileTemplate;
+        if (!tpl) return { ok: false as const, error: 'The templates are not loaded.' };
+        const f = pf(app, place === 'user' ? 'user' : 'folder', folder, file, tpl(app, name, template === 'standard' ? 'standard' : 'success'));
         simPF.push(f);
         return { ok: true as const, id: f.id, info: pfInfo(f) };
       },

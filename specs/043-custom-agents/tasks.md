@@ -22,4 +22,4 @@
   - [x] T012c renderer: `profileeditor.js` (Edit / Split / Preview, front matter check, throttled preview, Save and Ctrl/Cmd+S, unsaved guard, conflict, New profile), Edit in the Profile menu, Settings section; `test:profileeditor` (front matter, preview sanitisation)
   - [x] T012d simulator files and the driver `shots-043-editor.js` (modes, widths, save round trip, unsaved guard), screenshots at 1440x900 and 1280x800, light and dark; `check:ui`
   - [x] T012e docs: README, CHANGELOG, specs index
-- [ ] T013 (2026-10-21, owner decisions on #488) Agent Success Profile and Standard agent templates, the default preselected; editor words "Agent Success Profiles" [FR-018, FR-019]
+- [x] T013 (2026-10-21, owner decisions on #488) Agent Success Profile and Standard agent templates, the default preselected; editor words "Agent Success Profiles" [FR-018, FR-019]

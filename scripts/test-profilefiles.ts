@@ -8,6 +8,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { parseClaudeAgent } from '../src/adapters/claudeAgents';
+import { DEFAULT_TEMPLATE, PROFILE_TEMPLATES, profileTemplate, SUCCESS_SECTIONS } from '../src/shared/profiletemplates';
 import { createProfileFile, encodeLike, fileIdOf, headOf, listProfileFiles, MAX_PROFILE_BYTES, pathOfProfile, profileDirs, readProfileFile, saveProfileFile } from '../src/main/profilefiles';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-profilefiles-'));
@@ -169,6 +171,42 @@ if (process.platform !== 'win32') {
   }
   fs.chmodSync(ro, 0o644);
   fs.unlinkSync(ro);
+}
+
+// templates (FR-018): both kinds for both apps parse with no front matter error, Claude's discovery accepts the Claude ones, the
+// Agent Success Profile has its eight sections in order, the default is the Agent Success Profile, and no paths or secrets
+{
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const PE = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'profileeditor.js')) as { parseFrontmatter(t: string): { closed: boolean; errors: unknown[]; entries: { key: string; value: string }[] } };
+  assert.strictEqual(DEFAULT_TEMPLATE, 'success');
+  assert.deepStrictEqual(PROFILE_TEMPLATES.map((t) => t.id), ['success', 'standard'], 'the default is listed first');
+  for (const app of ['copilot', 'claude'] as const) {
+    for (const kind of ['success', 'standard'] as const) {
+      const t = profileTemplate(app, 'helper-1', kind);
+      const fm = PE.parseFrontmatter(t);
+      assert.ok(fm.closed && fm.errors.length === 0, `${app}/${kind}: front matter parses ${JSON.stringify(fm.errors)}`);
+      const v = Object.fromEntries(fm.entries.map((e) => [e.key, e.value]));
+      assert.strictEqual(v.name, 'helper-1');
+      assert.ok(v.description && v.tools, `${app}/${kind}: description and tools`);
+      assert.match(v.tools, app === 'claude' ? /^Read, Grep, Glob$/ : /^view, grep, glob$/, 'read-only tools only');
+      assert.ok(!/[~\\]|\/[a-z]|https?:|token|secret|password|api[_-]?key/i.test(t), `${app}/${kind}: no paths, URLs or secrets`);
+      if (app === 'claude') {
+        const def = parseClaudeAgent(t, 'helper-1.md', 'repo');
+        assert.ok(def && def.profile.id === 'helper-1' && def.prompt.length > 20, `${kind}: Claude Code discovery accepts it`);
+        assert.deepStrictEqual(def!.profile.tools, ['Read', 'Grep', 'Glob']);
+      }
+      if (kind === 'success') {
+        const heads = [...t.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
+        assert.deepStrictEqual(heads, SUCCESS_SECTIONS.map((s) => s.heading), 'the eight sections in order');
+        assert.ok(t.includes('# Agent Success Profile: helper-1'));
+      }
+    }
+  }
+  const std = createProfileFile(dirs(), 'claude', 0, 'plain', 'standard');
+  assert.ok(std.ok && !fs.readFileSync(path.join(WS, '.claude', 'agents', 'plain.md'), 'utf8').includes('## Behaviors'), 'Standard agent template written');
+  const def = createProfileFile(dirs(), 'claude', 0, 'asp');
+  assert.ok(def.ok && fs.readFileSync(path.join(WS, '.claude', 'agents', 'asp.md'), 'utf8').includes('## Key Success Criteria'), 'no template given: the Agent Success Profile');
+  assert.ok(!createProfileFile(dirs(), 'claude', 0, 'odd', 'evil').ok, 'unknown template refused');
 }
 
 // symbolic links: a file linking out is not listed; a link inside is read-only; a .claude that links out of the folder is ignored

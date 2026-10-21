@@ -559,8 +559,8 @@ export interface DurbarApi {
   readProfileFile?(fileId: string): Promise<{ ok: true; info: ProfileFileInfo; text: string; sha256: string; eol: 'lf' | 'crlf' } | { ok: false; error: string }>;
   /** Writes atomically; `conflict` when the file changed since `baseSha` (unless `overwrite`). */
   saveProfileFile?(fileId: string, text: string, baseSha: string, overwrite?: boolean): Promise<{ ok: true; sha256: string; info: ProfileFileInfo } | { ok: false; error: string; conflict?: boolean }>;
-  /** Spec 043 FR-013: `place` = an index into `listProfileFiles().folders`, or 'user'. */
-  createProfileFile?(app: 'copilot' | 'claude', place: number | 'user', name: string): Promise<{ ok: true; id: string; info: ProfileFileInfo } | { ok: false; error: string }>;
+  /** Spec 043 FR-013/FR-018: `place` = an index into `listProfileFiles().folders`, or 'user'; `template` defaults to the Agent Success Profile. */
+  createProfileFile?(app: 'copilot' | 'claude', place: number | 'user', name: string, template?: 'success' | 'standard'): Promise<{ ok: true; id: string; info: ProfileFileInfo } | { ok: false; error: string }>;
   openProfileInVSCode?(fileId: string): Promise<{ ok: boolean; error?: string }>;
 
   /** Tool usage over all runs (spec 020). */

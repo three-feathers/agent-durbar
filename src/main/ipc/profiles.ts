@@ -71,9 +71,9 @@ export function register(deps: ProfilesIpcDeps): void {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
     return saveProfileFile(dirs(), id, text, baseSha, overwrite === true);
   });
-  ipcHandle('profiles:create', (e, app: unknown, place: unknown, name: unknown) => {
+  ipcHandle('profiles:create', (e, app: unknown, place: unknown, name: unknown, template: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
-    return createProfileFile(dirs(), app, place, name);
+    return createProfileFile(dirs(), app, place, name, template === undefined ? 'success' : template);
   });
   ipcHandle('profiles:openInVSCode', (_e, id: unknown) => {
     const file = pathOfProfile(dirs(), id);

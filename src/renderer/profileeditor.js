@@ -208,7 +208,7 @@
   function paintHead(){
     const f=st.info;
     setText($('peT'),f.name||f.fileName);
-    setText($('peSub'),(APP_LABEL[f.app]||f.app)+' · '+placeText(f)+' · '+f.fileName);
+    setText($('peSub'),'Agent Success Profile · '+(APP_LABEL[f.app]||f.app)+' · '+placeText(f)+' · '+f.fileName); /* owner decision 2026-10-21 (FR-019) */
     $('peSub').title=f.path||'';
     const ro=$('peRo');ro.hidden=st.writable;setText(ro,st.writable?'':'Read-only: '+(f.note||'you cannot write this file.'));
     const sv=$('peSave');if(sv)sv.hidden=!st.writable;
@@ -219,7 +219,7 @@
     if(!X||!X.bridge.readProfileFile)return;
     if(isOpen()&&!(await close()))return;
     const r=await X.bridge.readProfileFile(id).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-    if(!r||!r.ok){X.toast('Could not open the profile: '+X.esc((r&&r.error)||'unknown error'),5000);return;}
+    if(!r||!r.ok){X.toast('Could not open the Agent Success Profile: '+X.esc((r&&r.error)||'unknown error'),5000);return;}
     const opener=(opts&&opts.returnFocus)||(doc.activeElement&&doc.activeElement!==doc.body?doc.activeElement:null);
     st={id,info:r.info,sha:r.sha256,saved:r.text,writable:!!r.info.writable,mode:loadMode(store()),opener,fmErrors:0};
     st.preview=throttle(renderPreview,150);
@@ -266,13 +266,18 @@
     const folders=(l&&l.folders)||[];
     const opener=(opts&&opts.returnFocus)||doc.activeElement;
     const ov=doc.createElement('div');ov.id='peNewOv';ov.className='dlg-ov';
-    ov.innerHTML=`<div class="dlg pe-new" role="dialog" aria-modal="true" aria-labelledby="peNT"><h3 id="peNT">New profile</h3>
-      <p class="dsub">A profile is a Markdown file with a short front matter that the agent app loads as a custom agent.</p>
+    ov.innerHTML=`<div class="dlg pe-new" role="dialog" aria-modal="true" aria-labelledby="peNT"><h3 id="peNT">New Agent Success Profile</h3>
+      <p class="dsub">A Markdown file with a short front matter that the agent app loads as a custom agent.</p>
+      <fieldset class="pe-tpl" id="peNTpl"><legend>Template</legend></fieldset>
       <label>Agent app<select id="peNApp"><option value="copilot">GitHub Copilot</option><option value="claude">Claude Code</option></select></label>
       <label>Where<select id="peNPlace"></select></label>
       <label>Name<input type="text" id="peNName" maxlength="64" autocomplete="off" spellcheck="false" placeholder="reviewer"></label>
       <p class="dsub small" id="peNHint"></p><p class="derr" id="peNErr" role="alert" hidden></p>
       <div class="dbtn"><button class="btn" type="button" id="peNCancel" data-cancel="1">Cancel</button><button class="btn primary" type="button" id="peNGo">Create</button></div></div>`;
+    /* FR-018: the templates from src/shared/profiletemplates.ts (read at call time); the Agent Success Profile is preselected */
+    const TPL=(win.exports&&win.exports.PROFILE_TEMPLATES)||[{id:'success',label:'Agent Success Profile',note:''},{id:'standard',label:'Standard agent',note:''}];
+    const DEF=(win.exports&&win.exports.DEFAULT_TEMPLATE)||'success';
+    TPL.forEach(t=>{const l=doc.createElement('label');l.className='pe-tpl-opt';const r=doc.createElement('input');r.type='radio';r.name='peNTpl';r.value=t.id;r.checked=t.id===DEF;const b=doc.createElement('span');b.className='pe-tpl-t';setText(b,t.label+(t.id===DEF?' (default)':''));l.append(r,b);if(t.note){const n=doc.createElement('small');setText(n,t.note);l.appendChild(n);}ov.querySelector('#peNTpl').appendChild(l);});
     const sel=ov.querySelector('#peNPlace');
     folders.forEach((f,i)=>{const o=doc.createElement('option');o.value=String(i);o.textContent='This folder: '+baseName(f);o.title=f;sel.appendChild(o);});
     const u=doc.createElement('option');u.value='user';u.textContent='Your user folder (all folders)';sel.appendChild(u);
@@ -286,13 +291,14 @@
         const name=$('peNName').value.trim(),er=$('peNErr');
         if(!NAME_RE.test(name)){er.hidden=false;setText(er,'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');$('peNName').focus();return;}
         const pl=$('peNPlace').value;
-        const r=await X.bridge.createProfileFile($('peNApp').value,pl==='user'?'user':Number(pl),name).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+        const tp=(ov.querySelector('input[name="peNTpl"]:checked')||{}).value||DEF;
+        const r=await X.bridge.createProfileFile($('peNApp').value,pl==='user'?'user':Number(pl),name,tp).catch(e=>({ok:false,error:String(e&&e.message||e)}));
         if(!r.ok){er.hidden=false;setText(er,r.error||'Could not create the file.');return;}
         done(r.id);changed(r.info);open(r.id,{returnFocus:opener});
       };
       ov.querySelector('#peNGo').onclick=go;ov.querySelector('#peNCancel').onclick=()=>done(null);
       ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done(null);}else if(e.key==='Enter'&&e.target.id==='peNName'){e.preventDefault();go();}
-        else if(e.key==='Tab'){const it=[...ov.querySelectorAll('select,input,button')];const i=it.indexOf(doc.activeElement);if(e.shiftKey&&i<=0){e.preventDefault();it[it.length-1].focus();}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();it[0].focus();}}});
+        else if(e.key==='Tab'){const it=[...ov.querySelectorAll('select,input:not([type=radio]),input[type=radio]:checked,button')];const i=it.indexOf(doc.activeElement);if(e.shiftKey&&i<=0){e.preventDefault();it[it.length-1].focus();}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();it[0].focus();}}});
       ov.addEventListener('click',e=>{if(e.target===ov)done(null);});
       $('peNName').focus();
     });

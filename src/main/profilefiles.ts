@@ -11,6 +11,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { agentDirsFor } from '../adapters/copilot';
 import type { ProfileFileInfo } from '../shared/api';
+import { DEFAULT_TEMPLATE, profileTemplate } from '../shared/profiletemplates';
+import type { TemplateKind } from '../shared/profiletemplates';
 
 export type { ProfileFileInfo };
 
@@ -305,17 +307,15 @@ export function saveProfileFile(dirs: readonly ProfileDir[], id: unknown, text: 
   return { ok: true, sha256: sha256(data), info };
 }
 
-/** Front matter and a short body for a new profile (FR-013). */
-export function templateFor(app: ProfileApp, name: string): string {
-  const desc = 'What this agent does, in one line';
-  return app === 'claude'
-    ? `---\nname: ${name}\ndescription: ${desc}\n---\n\nYou are ${name}. Describe how the agent works, what it checks and what it never does.\n`
-    : `---\nname: ${name}\ndescription: ${desc}\n---\n\n# ${name}\n\nDescribe how the agent works, what it checks and what it never does.\n`;
+/** The text of a new profile (FR-013, FR-018): the shared templates, the Agent Success Profile by default. */
+export function templateFor(app: ProfileApp, name: string, kind: TemplateKind = DEFAULT_TEMPLATE): string {
+  return profileTemplate(app, name, kind);
 }
 
 /** `place`: an index into the office folders (as `profileDirs` got them) or 'user'. */
-export function createProfileFile(dirs: readonly ProfileDir[], app: unknown, place: unknown, name: unknown): { ok: true; id: string; info: ProfileFileInfo } | Fail {
+export function createProfileFile(dirs: readonly ProfileDir[], app: unknown, place: unknown, name: unknown, template: unknown = DEFAULT_TEMPLATE): { ok: true; id: string; info: ProfileFileInfo } | Fail {
   if (app !== 'copilot' && app !== 'claude') return { ok: false, error: 'Choose an agent app.' };
+  if (template !== 'success' && template !== 'standard') return { ok: false, error: 'Choose a template.' };
   if (typeof name !== 'string' || !PROFILE_NAME.test(name) || name.includes('..')) return { ok: false, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
   const own = dirs.filter((d) => d.app === app);
   const folderDirs = own.filter((d) => d.scope === 'folder');
@@ -349,7 +349,7 @@ export function createProfileFile(dirs: readonly ProfileDir[], app: unknown, pla
   const file = path.join(d.dir, fileName);
   if (fs.existsSync(file)) return { ok: false, error: `${fileName} exists already.` };
   try {
-    writeAtomic(file, Buffer.from(templateFor(app, name), 'utf8'), true);
+    writeAtomic(file, Buffer.from(templateFor(app, name, template), 'utf8'), true);
   } catch {
     return { ok: false, error: `${fileName} could not be written (it may exist already).` };
   }

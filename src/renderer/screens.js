@@ -70,10 +70,10 @@
     const files=(l&&l.files)||[];
     const row=f=>`<li class="pf-row" data-pf="${esc(f.id)}"><div class="pf-main"><div class="pf-top"><b>${esc(f.name)}</b><span class="mtag">${esc(PE().placeText(f))}</span>${f.writable?'':`<span class="mtag warn" title="${esc(f.note||'')}">read-only</span>`}</div>${f.description?`<small>${esc(f.description)}</small>`:''}<small><code title="${esc(f.path)}">${esc(f.fileName)}</code></small></div>${f.tooBig?`<span class="scr-note small">${esc(f.note||'Too large to open here.')}</span>`:`<button class="btn sm" type="button" data-pf-open="${esc(f.id)}" aria-label="${esc('Open '+f.name)}">Open</button>`}</li>`;
     const groups=PF_APPS.map(([app,label])=>{const fs=files.filter(f=>f.app===app);return `<h4 class="scr-sub">${esc(label)} <small>${fs.length}</small></h4>${fs.length?`<ul class="pf-list">${fs.map(row).join('')}</ul>`:`<p class="scr-note small">None yet. ${app==='copilot'?'Copilot loads <code>.github/agents/*.agent.md</code> in a folder and <code>~/.copilot/agents</code>.':'Claude Code profiles are <code>.claude/agents/*.md</code> in a folder and <code>~/.claude/agents</code>.'}</p>`}`;}).join('');
-    return `<h3 id="pfH">Profiles (custom agents)</h3>
-      <p class="scr-note">Markdown files that give an agent its own instructions, tools and model. Open one to read it, change it and save it; changes apply to sessions started after saving. Codex has no profiles in Durbar yet.</p>
+    return `<h3 id="pfH">Agent Success Profiles (custom agents)</h3>
+      <p class="scr-note">Markdown files that give an agent its role, instructions, tools and model. Open one to read it, change it and save it; changes apply to sessions started after saving. Codex has no profiles in Durbar yet.</p>
       ${l&&l.ok?groups:'<p class="scr-note">Could not list the profile files.</p>'}
-      ${X.bridge.createProfileFile?'<div class="scr-tools"><button class="btn" type="button" id="pfNew">New profile…</button></div>':''}`;
+      ${X.bridge.createProfileFile?'<div class="scr-tools"><button class="btn" type="button" id="pfNew">New Agent Success Profile…</button></div>':''}`;
   }
   function wireProfiles(){
     const sec=$('pfSec');if(!sec||sec.dataset.wired)return;sec.dataset.wired='1';
@@ -188,7 +188,7 @@
       if(X.bridge.copilotAuth&&kinds.some(k=>k.id==='copilot'&&k.state==='ready')){try{cp=await X.bridge.copilotAuth();}catch(e){cp=null;}}
       hsSec=window.DurbarHarnesses.sectionHTML(kinds,cp);
     }
-    /* spec 043 FR-010: Settings > Profiles (custom agents): the profile files of the office's folders and yours */
+    /* spec 043 FR-010, FR-019: Settings > Agent Success Profiles (custom agents): the profile files of the office's folders and yours */
     const pfSec=profilesOn()?`<section class="scr-sec" id="pfSec" aria-labelledby="pfH">${await profilesInner()}</section>`:'';
     /* spec 052 FR-031 (#306): Simple or Expert */
     const dl=X.detail?X.detail.get():'expert';
