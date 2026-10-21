@@ -35,8 +35,9 @@ small PR-sized step with its own test. No task spends AI credits except Phase 6,
   `agentMcpReply` in `src/main/mcpsession.ts`; the test is in `scripts/test-mcp-session.ts`)
 - [ ] T022 [P] [US2] Copilot mapper: `errorClassification` (known values only) -> `errorClass`, `session.mcp_server_needs_reconnect` ->
   `needsRestart`; mapper test [FR-011]
-- [ ] T023 [P] [US2] Codex: `failureReason: reauthenticationRequired` and `authStatus: notLoggedIn` -> `errorClass: 'auth'`; test in
+- [x] T023 [P] [US2] Codex: `failureReason: reauthenticationRequired` and `authStatus: notLoggedIn` -> `errorClass: 'auth'`; test in
   `test-codex-adapter` [FR-011] (note 2026-10-21: done as part of T095 for #364; tick both there)
+  [IMPLEMENTED] with T095 below
 - [ ] T024 [P] [US2] Claude mapper: `init.mcp_server_errors` -> `failed` rows with their text; mapper test [FR-011]
 - [x] T025 [P] [US1] Capability values in the three adapters: Copilot `session`/`live`, Claude `next-message`/`live`, Codex
   `session`/`next-message` (restart and logs stay false here); contract test [FR-010] (done 2026-10-21, #349, with T030/T031: `mcpRestart`
@@ -202,11 +203,13 @@ say "End this session (More > End session), then send a message to resume it"; t
 - [x] T093 [P] Types: `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `cancelMcpSignIn?`, `ToolCallEvent.mcpAuth`; event guard (only
   on a failed `toolCall` with `mcpServer`); contract C2 lines; `fake.ts` members behind the flags [FR-063, FR-064, FR-068]
   [IMPLEMENTED] types, guard (refuses `mcpAuth` unless `true` on a failed `toolCall` with a non-empty `mcpServer`), C2 lines (`startMcpSignIn` <=> `mcpSignIn`; `cancelMcpSignIn` only with it), fake (`signInCalls`, `signInResult`, omit `startMcpSignIn` / `cancelMcpSignIn`). test: `scripts/test-adapter-contract.ts` (guard cases, mutation-checked; fake-signin setup). No adapter sets the flags yet
-- [ ] T094 [P] Copilot mapper: a failed MCP tool with challenge text -> `mcpAuth: true` and that server `needs-auth` + `errorClass:
+- [x] T094 [P] Copilot mapper: a failed MCP tool with challenge text -> `mcpAuth: true` and that server `needs-auth` + `errorClass:
   'auth'` (emit `mcp`); the next status replaces it; `remediation` ignored; mapper test with the issue's text [FR-060, FR-063, SC-010]
-- [ ] T095 [P] Codex: `failureReason: reauthenticationRequired` -> `needs-auth` + `errorClass: 'auth'` (extends T023, which this
+  [IMPLEMENTED] `src/adapters/map.ts` (`tool.execution_complete`): failed + `mcpServer` + `isMcpAuthChallenge` -> `mcpAuth: true`, row `needs-auth`/`errorClass: 'auth'` (created if absent), one `mcp` event; `status_changed`/`servers_loaded` replace it; `remediation` not read. test: `scripts/test-events.ts` (issue #364 text; negatives: built-in tool with same text, MCP failure with other text)
+- [x] T095 [P] Codex: `failureReason: reauthenticationRequired` -> `needs-auth` + `errorClass: 'auth'` (extends T023, which this
   task now includes: also `authStatus: notLoggedIn` -> `errorClass: 'auth'`; the notification is read at `src/adapters/codex.ts:953-959`); a
   failed MCP tool with challenge text -> `mcpAuth` and a list refresh; `test-codex-adapter` [FR-011, FR-060]
+  [IMPLEMENTED] 2026-10-21: `codexMcp.ts` (list: `authStatus: notLoggedIn`, `runtimeStatus: authenticationRequired` -> `needs-auth` + `errorClass: 'auth'`), `codex.ts` (startup notification, same rule; a later plain status clears the class; `mcpAuth` on a toolCall -> the server is marked `needs-auth` at once and kept through one in-flight `refreshMcp` at a time), `codexMap.ts` (`mcpToolCall` failed with `isMcpAuthChallenge` text -> `mcpAuth: true`). test: `scripts/test-codex-adapter.ts` (list, notification, refresh, negatives), `scripts/test-codex-map.ts` (mapper positives and negatives); mutation-checked.
 - [ ] T096 [P] Claude: a failed `mcp__<server>__<tool>` result with challenge text -> `mcpAuth` and one `mcp_status`; mapper and fake
   CLI tests [FR-060]
 - [x] T097 Main masks failed MCP tool cards (`maskMcpText`, the session's secret values, no 300 cut) in the renderer hook
