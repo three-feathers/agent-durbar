@@ -932,6 +932,7 @@ export class CodexAdapter implements AgentAdapter {
       return;
     }
     this.emit(live.sid, body);
+    if (body.type === 'toolCall' && body.mcpAuth) void this.refreshMcp(live); // FR-060: a sign-in challenge; the server's own state, from the runtime
   }
 
   private onNotification(live: Live, method: string, params: unknown): void {
@@ -954,7 +955,11 @@ export class CodexAdapter implements AgentAdapter {
       const name = params.name.slice(0, 64);
       const disabled = (live.options.disabledMcpServers ?? []).includes(name);
       const err = typeof params.error === 'string' && params.error ? { error: params.error.slice(0, 300) } : {};
-      live.mcp.set(name, { ...(live.mcp.get(name) ?? {}), name, status: disabled ? 'disabled' : codexMcpState(params.status), ...err });
+      const state = params.failureReason === 'reauthenticationRequired' ? 'needs-auth' : codexMcpState(params.status); // FR-060
+      const auth = !disabled && state === 'needs-auth';
+      const prev = live.mcp.get(name);
+      const { errorClass: _drop, ...rest } = prev ?? { name };
+      live.mcp.set(name, { ...rest, name, status: disabled ? 'disabled' : state, ...(auth ? { errorClass: 'auth' as const } : {}), ...err });
       if (this.sessions.get(live.sid) === live) this.emitMcp(live);
       return;
     }

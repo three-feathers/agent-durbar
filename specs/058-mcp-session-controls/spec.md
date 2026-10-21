@@ -412,6 +412,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   - a **failed MCP tool call** (the tool event names its `mcpServer`) whose text FR-061 classifies as an MCP OAuth challenge. Copilot
     can keep reporting such a server as `connected` while its cached tools fail (the issue's case), so the tool failure is the signal.
   The derived state is replaced by the next status the runtime reports for that server (for example `connected` after a sign-in).
+  `[IMPLEMENTED]` Codex (T095, T023) 2026-10-21: the list, the startup notification (`failureReason`) and a failed `mcpToolCall` with challenge text (`mcpAuth` + list re-read). `test:` `scripts/test-codex-adapter.ts`, `scripts/test-codex-map.ts`. Copilot (T094) and Claude (T096) are not built yet.
 - **FR-061** **One pure classifier**, `isMcpAuthChallenge(text)` in `src/adapters/mcpauth.ts` (vendor phrases stay in adapters,
   constitution II): the issue's text (`MCP OAuth challenge required`), the Copilot runtime's `requires authentication. Run \`/mcp auth`
   and `Re-authentication required for MCP server` (`read:` runtime strings), and Claude's and Codex's equivalents once seen. It is applied

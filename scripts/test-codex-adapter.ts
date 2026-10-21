@@ -630,6 +630,53 @@ async function main(): Promise<void> {
       assert.strictEqual(rc?.mcp_servers?.echo?.enabled, false, 'the resumed thread gets the server switched off');
       await ad.dispose();
     }
+    // Spec 058 T095 / FR-060: sign-in signals become needs-auth + errorClass 'auth'; a failed MCP call with the challenge text says mcpAuth and re-reads the list
+    {
+      const { server, ad, events } = make();
+      type Srv = { name: string; status: string; errorClass?: string };
+      const lastMcp = (): Srv[] => (events.filter((e) => e.type === 'mcp').pop() as { servers: Srv[] }).servers;
+      server.mcpList = [
+        { name: 'a', authStatus: 'notLoggedIn', runtimeStatus: 'connected' },
+        { name: 'b', authStatus: 'oAuth', runtimeStatus: 'failed', failureReason: 'reauthenticationRequired' },
+        { name: 'c', authStatus: 'oAuth', runtimeStatus: 'failed', failureReason: 'startupFailed' },
+        { name: 'd', authStatus: 'oAuth', runtimeStatus: 'connected' },
+      ];
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only' });
+      await until('mcp list', () => (events.some((e) => e.type === 'mcp')) || undefined);
+      assert.deepStrictEqual(lastMcp(), [
+        { name: 'a', status: 'needs-auth', errorClass: 'auth' },
+        { name: 'b', status: 'needs-auth', errorClass: 'auth' },
+        { name: 'c', status: 'failed' },
+        { name: 'd', status: 'connected' },
+      ]);
+      // the startup notification: reason -> needs-auth; the next plain status clears the class
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'd', status: 'failed', failureReason: 'reauthenticationRequired', threadId: sid });
+      await until('d needs auth', () => (lastMcp().some((s) => s.name === 'd' && s.status === 'needs-auth')) || undefined);
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.errorClass, 'auth');
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'c', status: 'failed', failureReason: 'startupFailed', error: 'boom', threadId: sid });
+      await until('c boom', () => (lastMcp().some((s) => s.name === 'c' && s.status === 'failed' && (s as { error?: string }).error === 'boom')) || undefined);
+      assert.strictEqual(lastMcp().find((s) => s.name === 'c')?.errorClass, undefined, 'another failure reason is not an auth error');
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'd', status: 'ready', threadId: sid });
+      await until('d ready', () => (lastMcp().some((s) => s.name === 'd' && s.status === 'connected')) || undefined);
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.errorClass, undefined, 'a later status replaces the derived class');
+      // a failed MCP call with the challenge: mcpAuth, and the list is read again; plain failures and non-MCP tools do none of it
+      const reads = (): number => server.requests('mcpServerStatus/list').length;
+      const item = (id: string, over: Record<string, unknown>): unknown => ({ id, type: 'mcpToolCall', server: 'a', tool: 't', status: 'failed', arguments: {}, ...over });
+      const before = reads();
+      server.notifyAll('item/completed', { threadId: sid, item: item('m1', { error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
+      await until('refresh', () => (reads() > before) || undefined);
+      const authCall = events.find((e) => e.type === 'toolCall' && e.callId === 'm1') as { mcpAuth?: boolean };
+      assert.strictEqual(authCall?.mcpAuth, true);
+      const after = reads();
+      server.notifyAll('item/completed', { threadId: sid, item: item('m2', { error: { message: 'HTTP 401 Unauthorized' } }) });
+      server.notifyAll('item/completed', { threadId: sid, item: item('m3', { status: 'completed', result: { content: [{ type: 'text', text: 'MCP OAuth challenge required' }] } }) });
+      server.notifyAll('item/completed', { threadId: sid, item: { id: 'm4', type: 'commandExecution', status: 'failed', command: 'x', aggregatedOutput: 'MCP OAuth challenge required' } });
+      server.notifyAll('item/completed', { threadId: sid, item: item('m5', { server: undefined, error: { message: 'MCP OAuth challenge required' } }) });
+      await until('m5', () => (events.some((e) => e.type === 'toolCall' && e.callId === 'm5')) || undefined);
+      for (const id of ['m2', 'm3', 'm4', 'm5']) assert.strictEqual((events.find((e) => e.type === 'toolCall' && e.callId === id) as { mcpAuth?: boolean } | undefined)?.mcpAuth, undefined, `${id}: no mcpAuth`);
+      assert.strictEqual(reads(), after, 'no list refresh for them');
+      await ad.dispose();
+    }
     // FR-146: Codex's request_user_input goes to the question card; the answer goes back by question id; secret questions never shown
     {
       const { server, ad, events } = make({ server: { holdTurn: true } });

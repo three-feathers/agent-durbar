@@ -44,9 +44,10 @@ export function codexMcpServers(data: unknown, disabled: readonly string[] = [])
   for (const s of Array.isArray(data) ? data.slice(0, 100) : []) {
     if (!isObj(s) || typeof s.name !== 'string' || !s.name) continue;
     const name = s.name.slice(0, 64);
-    const status = disabled.includes(name) ? 'disabled' : s.authStatus === 'notLoggedIn' ? 'needs-auth' : codexMcpState(s.runtimeStatus ?? 'notStarted');
+    const auth = s.authStatus === 'notLoggedIn' || s.failureReason === 'reauthenticationRequired' || s.runtimeStatus === 'authenticationRequired';
+    const status = disabled.includes(name) ? 'disabled' : auth ? 'needs-auth' : codexMcpState(s.runtimeStatus ?? 'notStarted');
     const err = typeof s.toolsError === 'string' && s.toolsError ? { error: s.toolsError.slice(0, 300) } : {};
-    out.push({ name, status, ...(s.pluginId ? { source: 'plugin' } : {}), ...(s.httpOrigin ? { transport: 'http' } : {}), ...err });
+    out.push({ name, status, ...(status === 'needs-auth' ? { errorClass: 'auth' as const } : {}), ...(s.pluginId ? { source: 'plugin' } : {}), ...(s.httpOrigin ? { transport: 'http' } : {}), ...err });
   }
   return out;
 }
