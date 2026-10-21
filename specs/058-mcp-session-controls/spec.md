@@ -417,9 +417,11 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   and `Re-authentication required for MCP server` (`read:` runtime strings), and Claude's and Codex's equivalents once seen. It is applied
   only to failed MCP tool results and MCP status errors, never to model text or a turn that ended well. Unit-tested with the issue's
   exact text.
+  `[IMPLEMENTED]` the classifier `src/adapters/mcpauth.ts` (PR 1 of #364; the mappers that apply it are T094-T096). `test:` `scripts/test-mcpauth.ts`.
 - **FR-062** **An MCP challenge is not the agent app's sign-in.** Text that `isMcpAuthChallenge` matches never gets
   `errorKind: 'auth'` and never marks the app signed out (spec 012 FR-157): `isAuthError` returns false for it. If such text comes as a
   session-level error, the adapter maps it to the named server's needs-auth when it can name the server, else to a plain error.
+  `[IMPLEMENTED]` `isAuthError` returns false for it (T092); the adapters naming the server are T094-T096. `test:` `scripts/test-autherrors.ts`.
 - **FR-063** **Tool card.** A failed MCP tool call classified by FR-061 carries `mcpAuth: true` on the normalized `toolCall` event (no
   vendor text). The card adds one line, "<server> needs you to sign in", with **Sign in…** (opens the MCP dialog with focus on that
   server's row) and **Switch off for this session** (FR-066). The card's text is masked (FR-067).
@@ -458,9 +460,10 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   switch (a runtime-only server whose default is off).
 - **FR-067** **Masking.** The text of a failed MCP tool card is masked in main before the window gets it, with the session's own MCP secret
   values and the same steps as spec 019 FR-021 (`maskMcpError` in `src/main/mcpmask.ts`), but without the 300-character cut for the card's
-  *Details* (it keeps today's card limit). Today only `mcp` events are masked (`src/main/main.ts:123`); tool output is not. The sign-in
+  *Details* (it keeps today's card limit). Before spec 058 only `mcp` events were masked (the `outward` hook in `src/main/main.ts`); tool output was not. The sign-in
   errors (adapter rejections, Codex completion `error`) are masked the same way. No authorization address appears in any text the window
   gets.
+  `[IMPLEMENTED]` for the `output` of every MCP `toolCall` after its start (update, complete, failed; review on #466) (the secret masks run on the whole text, then the cut to 50 000 characters, then the slow URL and flag masks on the shorter text, so a secret straddling the cut leaves no head) (`maskMcpText` in `src/main/mcpmask.ts`, applied in `outward`, T097), and for the `output` of every failed tool item in a resumed session's history (`maskMcpHistory`, both resume replies `agents:wake` and `sessions:resume`; history items carry no `mcpServer`, so all failed tools are masked); the sign-in errors are not built yet. `[KNOWN GAP]` not masked: a completed (not failed) tool item in a resumed session's history (spec 005's #361 delta, PR #465, widens history masking to every tool item); a failed Copilot output whose start event was not seen (no `mcpServer`, `map.ts:118-122`), a Codex `mcpToolCall` without `server` (`codexMap.ts:256`), and a JSON key with an unknown value shape (`{"apiKey":"zzzz"}`; the shared rules, inherited from FR-021). `test:` `scripts/test-mcp-errormask.ts` (straddling secret, history), `scripts/test-autherrors.ts` (an app 401 on the same line as the MCP advice stays an auth error).
 - **FR-068** **Manual steps when the in-app sign-in cannot run** (no capability, method missing or refused, address refused, Claude not
   launched yet). One short block with the server name filled in and **Copy** for the command, from the adapter's plain capability text
   `mcpSignInSteps` (Durbar never runs it):
@@ -485,6 +488,12 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   runtime's own store, not Durbar storage: Durbar never reads, lists, copies or clears it, and never logs the setting's effect. The
   one-shot session (spec 040 `oneShotConfig`, no MCP) is unchanged. Whether the entry is shared with the Copilot CLI is unverified
   (FR-074, T105).
+  `[IMPLEMENTED]` 2026-10-21 (the FR-070 part of T098, see *Changes* 2026-10-21): in the shared `config` of `start()` in
+  `src/adapters/copilot.ts`, so create, both resume paths and the FR-158 reconnect re-resume carry it; not in `oneShotConfig` or
+  `renameResumeConfig`. `test:` `scripts/test-copilot-model.ts` (create, resume by id, `resumeSessionId`), `scripts/test-authcheck.ts`
+  (reconnect), `scripts/test-copilot-oneshot.ts` (one-shot without it). `[KNOWN GAP]` not run on a real account: that the runtime
+  really writes the keychain entry, how many macOS Keychain prompts it adds, Linux without a desktop keyring, and sharing with the
+  CLI (T105).
 - **FR-071** **Simulator** (constitution IV): page address `simmcpauth=1` gives each sim kind one server in needs-auth and a Copilot tool
   card with the issue's exact text; **Sign in** -> host `auth.example.com` -> **Open sign-in page** shows a toast and opens nothing ->
   "Running" after 2 s (Codex: "applies with your next message"). `simmcpauth=manual` shows the FR-068 steps instead.
@@ -508,6 +517,10 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   per-folder extra stays in the OS keychain after the session ends. The per-folder extras trust confirmation (spec 019) gets one
   more sentence: "If one of these servers asks you to sign in, <App> may keep that sign-in in your system keychain after the session
   ends." The FR-069 waiting text says the same for Copilot ("Copilot keeps this sign-in in your system keychain").
+  `[IMPLEMENTED]` 2026-10-21 for the trust confirmation, remote extras only (a stdio server has no OAuth sign-in), with the app left
+  generic because the confirmation belongs to the folder, not to one agent app: "If this server asks you to sign in, the agent app may
+  keep that sign-in in your system keychain after the session ends (Copilot does)." (`src/renderer/screens.js`, `sim:`
+  `scripts/shots-m10.js`, screenshots `m10-folder-trust-*`). The waiting text waits for T102.
 - **FR-074** `[KNOWN GAP]` Until the real checks (tasks T105-T107, needs-owner-approval, 0 AI credits, no prompt) run, everything above is
   `read:`: the three login calls, the Claude stream-json handler (the docs say `-p` and SDK runs cannot sign in; the 2.1.304 program
   strings handle `mcp_authenticate` there), whether Codex 0.163 has `mcpServer/oauth/login`, how long each runtime's callback listener
@@ -555,3 +568,18 @@ below as the record of what was offered.
   these servers* by itself after the sign-in.
 - **Q19 "Sign in with another account"** (Copilot `forceReauth`, Claude `mcp_clear_auth`). A) Not offered now (recommended). B) Offer it in
   the row's *Details*.
+
+### 2026-10-21: Copilot keeps MCP sign-ins (FR-070 and the T111 wording first)
+
+**Why now**: the owner (Vikram) found on Windows that an MCP sign-in made in one Durbar Copilot session was not kept for the next
+one: `src/adapters/copilot.ts` never set `mcpOAuthTokenStorage`, so the SDK default `in-memory` applied (`read:`
+`types.d.ts:2386-2393`). FR-070 is independent of the sign-in flow (T098's `startMcpSignIn`), so it ships on its own.
+
+**Who**: by agreement in the team chat, Vikram's agent takes the FR-070 part of **T098** and the trust-confirmation part of **T111**
+(FR-076); Paco (spec owner) keeps the rest of T098 (`startMcpSignIn`, fake SDK recorder) and T111's waiting text (with T102). Task
+numbers and Paco's open work (PR #466, branch `058-mcp-oauth-impl`, T112-T115) are unchanged; T098 is ticked by Paco's PR when its
+sign-in part lands.
+
+**Done**: FR-070 `[IMPLEMENTED]`; FR-076 trust sentence `[IMPLEMENTED]`; README *MCP servers*, *Keychain prompts on a Mac* and a
+*Known limits* line (Copilot CLI sharing unverified, FR-068/FR-074, T105); CHANGELOG. Not run on a real account.
+

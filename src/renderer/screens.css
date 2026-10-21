@@ -258,3 +258,30 @@ body.has-bridge #topBtns{display:flex}
 /* spec 052 FR-099 (round 10): Settings > Detail level > Spacing, a second labelled segment under the first */
 .scr-row{display:flex;align-items:center;gap:12px;margin-top:8px}
 .scr-row-l{font-size:var(--t4-size);font-weight:600;color:var(--ink-2)}
+/* spec 061: "This folder brings its own agent setup" (the import list's look; each item in full) */
+.dlg.fs .fs-app{margin:12px 0 4px}
+.dlg.fs .fs-app h4{margin:0 0 6px;font-size:14px}
+.dlg.fs .fs-kind h5{margin:10px 0 2px;font-size:12.5px;color:var(--ink-2)}
+.dlg.fs .fs-row{display:flex;flex-direction:column;gap:6px}
+.dlg.fs .fs-row>.btn{align-self:flex-start;margin:0 0 8px 34px}
+.dlg.fs .fs-cmd{white-space:pre-wrap;word-break:break-all;max-height:7.5em;overflow:auto}
+.dlg.fs .fs-sec{font-size:11px;color:var(--ink-2)}
+.dlg.fs .fs-hidden{display:block;font-size:11px;color:var(--amber-ink);font-weight:600}
+.dlg.fs .fs-cmd{max-height:12em}
+.dlg.fs .fs-more{display:block;font-size:11px;color:var(--ink-2);font-style:italic}
+.dlg.fs .mtag.fs-allow{background:#eaf4ee;border-color:#c5dccd;color:var(--green-ink,#2f6b47)}
+.dlg.fs .mtag.fs-deny{background:#fbe7e4;border-color:#efc2bb;color:#9a2f22}
+.dlg.fs .mtag.warn,.dlg.fs .mtag.new{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
+.dlg.fs .fs-ai{margin:0 0 8px 34px;font-size:12px;line-height:1.45}
+.dlg.fs .fs-ai:empty{display:none}
+.dlg.fs .fs-ai b{margin-right:6px}
+.dlg.fs .fs-ai.v-risky b{color:#9a2f22}
+.dlg.fs .fs-ai.v-care b{color:var(--amber-ink)}
+.dlg.fs .fs-ai.v-harmless b{color:var(--green-ink,#2f6b47)}
+.dlg.fs .fs-ai.err{color:var(--ink-2)}
+.dlg.fs .fs-ai-src{font-size:11px;color:var(--ink-2)}
+.dlg.fs .fs-ai div{white-space:pre-wrap;margin-top:2px}
+/* the shared ".dlg .chk" row (box beside its text, not stacked by ".dlg label"); a long text wraps aligned after the box */
+.dlg.fs .fs-confirm{align-items:flex-start;margin:14px 0 2px;font-weight:600}
+.dlg.fs .fs-confirm input{flex:none;width:16px;height:16px;margin:2px 0 0}
+.dlg.fs .fs-confirm>span{flex:1;min-width:0}

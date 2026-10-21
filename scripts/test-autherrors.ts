@@ -13,6 +13,22 @@ import { eventProblems } from '../src/adapters/eventguard';
 
 const REAL_CLAUDE = 'Failed to authenticate. API Error: 401 OAuth access token is invalid.'; // the owner's real chat error (2026-10-20)
 
+// spec 058 FR-062 / SC-010: an MCP server's OAuth challenge is not the agent app's sign-in (issue #364)
+{
+  const ISSUE = 'MCP tool catalog changed before tool "srv-search" could be invoked: Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)';
+  assert.strictEqual(isAuthError(ISSUE), false, 'the issue text is not an app sign-in error');
+  assert.strictEqual(signInFromError(new Error(ISSUE)), 'unknown');
+  assert.strictEqual((markAuthError({ type: 'status', status: 'error', intent: ISSUE }) as { errorKind?: string }).errorKind, undefined, 'an error status with the issue text gets no errorKind auth');
+  assert.strictEqual(isAuthError('Failed to authenticate. API Error: 401'), true, 'a real app 401 still is');
+  // a mixed text (multi-line stderr): the app's own sign-in error next to an MCP challenge stays an auth error
+  assert.strictEqual(isAuthError('Failed to authenticate. API Error: 401 OAuth access token is invalid. Please run /login. (while loading MCP server "x": MCP OAuth challenge required (HTTP 401))'), true, 'mixed text is still an app sign-in error');
+  assert.strictEqual(isAuthError('MCP server "x" requires authentication. Run `/mcp auth x` to authenticate.'), false, 'pure runtime phrase');
+  assert.strictEqual(isAuthError('Re-authentication required for MCP server "x". Run /mcp auth x'), false, 'pure re-auth phrase');
+  assert.strictEqual(isAuthError('MCP server "x" requires authentication. Run /mcp auth x to authenticate. Error: 401 Unauthorized, please run copilot login'), true, 'an app 401 after the MCP advice on one line stays an auth error');
+  assert.strictEqual(isAuthError('Re-authentication required for MCP server "x". Run /mcp auth x; also Failed to authenticate. API Error: 401 OAuth access token is invalid'), true, 'an app 401 after the re-auth advice on one line stays an auth error');
+  assert.strictEqual(isAuthError('Re-authentication required for MCP server access. Please run copilot login'), true, 'app text that merely starts alike is not swallowed');
+}
+
 // ---- the classifier
 const auth = [
   REAL_CLAUDE,

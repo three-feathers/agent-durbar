@@ -1,5 +1,5 @@
 /**
- * "Needs you" count on the app icon (spec 052 FR-059): pure checks, wired in main.ts.
+ * "Needs you" count on the app icon (spec 052 FR-059): pure checks, wired in src/main/ipc/app.ts.
  * The renderer is not trusted: only an integer from 0 to 999 is used.
  */
 

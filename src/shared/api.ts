@@ -1,3 +1,4 @@
+import type { FolderSetupDecision, FolderSetupView, HookExplanation } from './foldersetup';
 import type { BroadKind } from './broadfolder';
 import type { AgentEvent } from '../adapters/types';
 import type { HistoryItem, PreviousSession } from '../adapters/history';
@@ -47,6 +48,8 @@ export interface AgentInfo {
   modelControl?: ModelControl;
   /** The agent's kind can select custom agents (spec 043). */
   profiles?: boolean;
+  /** Spec 061 FR-012: the folder's own hooks or allow rules (accepted by the person) apply to this agent's sessions. */
+  folderRules?: boolean;
   /** Restored from the saved folder list: no runtime session yet, it starts with the first message. */
   lazy?: boolean;
   /** Credit cap of this session in AIU (spec 011); unset = no cap. */
@@ -560,6 +563,10 @@ export interface DurbarApi {
   mcpMoveLegacy?(name: string, key: string): Promise<McpResult>;
   /** Per-folder import from VS Code's `.vscode/mcp.json` (spec 020 FR-020): a preview, then the ticked ids. Imported servers are off and untrusted. */
   mcpImportPreview?(key: string): Promise<McpImportPreview>;
+  /** Spec 061: a folder's own agent setup (masked), the person's decision (window only, FR-013), and an AI explanation of a hook (FR-015). */
+  folderSetupScan?(key: string): Promise<FolderSetupView>;
+  folderSetupDecide?(key: string, decision: FolderSetupDecision): Promise<{ ok: boolean; error?: string; view?: FolderSetupView; folderRules?: Record<string, boolean> }>;
+  folderSetupExplain?(key: string, id: string): Promise<HookExplanation>;
   mcpImportApply?(key: string, ids: string[], digest: string): Promise<McpImportResult>;
   mcpRemoveLegacy?(name: string): Promise<{ ok: boolean }>;
   agentMcp?(id: string): Promise<{ ok: boolean; servers: AgentMcpEntry[]; live: boolean }>;

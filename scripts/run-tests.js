@@ -35,6 +35,13 @@ const tsc = spawnSync(process.execPath, [require.resolve('typescript/bin/tsc'), 
 if (tsc.status !== 0) process.exit(tsc.status || 1);
 console.log(`compiled the test scripts once in ${((Date.now() - t0) / 1000).toFixed(1)} s; ${suites.length} suites`);
 
+// Electron 44 has no postinstall: the first `require('electron')` downloads the binary. Two suites doing that in parallel (test:checkfuses,
+// test:macos) raced on a fresh CI runner and one read a half-written binary ("Could not find sentinel", Windows, #424). Fetch it once here.
+if (suites.some((s) => /checkfuses|macos/.test(s.name))) {
+  const e = spawnSync(process.execPath, ['-e', "require('electron')"], { cwd: ROOT, stdio: 'inherit' });
+  if (e.status !== 0) console.log('note: the Electron binary could not be fetched up front; the suites that need it will say why');
+}
+
 // leave a core for the desktop and run at low priority, so the machine stays usable while the suites run
 const jobs = Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length - 1, 8));
 try { os.setPriority(10); } catch (_) { /* not allowed: normal priority */ }

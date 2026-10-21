@@ -3,7 +3,7 @@
  * agents, router, store and log, so they are tested with the fake adapter and no Electron.
  *
  * Delete goes only through the agent app's own API (`AgentAdapter.deleteSession`): Durbar never removes, moves or rewrites a session
- * file (constitution III). `sessions:delete` is registered ONLY in `main.ts` through `ipcHandle` (the window's own page); nothing
+ * file (constitution III). `sessions:delete` is registered ONLY in `ipc/previous.ts` (called from `main.ts`) through `ipcHandle` (the window's own page); nothing
  * here is reachable from the MCP read/change tools, remote control, schedules or any agent-driven path (`test-prevsessions.ts` pins it).
  * Everything the window sends is an id, checked against a strict allow-list (`src/shared/sessionid.ts`); no path crosses the IPC.
  */
