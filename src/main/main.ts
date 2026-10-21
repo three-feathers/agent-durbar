@@ -1502,7 +1502,7 @@ app.whenReady().then(() => {
         const end = Date.now() + ms;
         while (Date.now() < end) {
           if (await (win as BrowserWindow).webContents.executeJavaScript(`!!(${expr})`)) return true;
-          await new Promise((r) => setTimeout(r, 300));
+          await new Promise((r) => setTimeout(r, 50)); // spec 008 FR-096: a wait ends as soon as the page is ready
         }
         return false;
       },
