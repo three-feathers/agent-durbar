@@ -24,6 +24,7 @@ export function appMenuTemplate(platform: NodeJS.Platform, actions: MenuActions)
   return [
     {
       role: 'appMenu',
+      label: MENU_APP_NAME, // spec 008 FR-044: the first menu's title, whatever macOS takes from the bundle
       submenu: [
         { role: 'about', label: `About ${MENU_APP_NAME}` },
         { type: 'separator' },
