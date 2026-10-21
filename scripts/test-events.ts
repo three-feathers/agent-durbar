@@ -142,6 +142,28 @@ const run = (events: RawEvent[]): EventBody[] => {
   const t2 = out2.find((e) => e.type === 'toolCall') as { mcpServer?: string };
   assert.strictEqual(t2.mcpServer, undefined, 'built-in tools carry no MCP fields');
 }
+// Spec 058 T094: a failed MCP tool with the server's OAuth challenge -> mcpAuth and needs-auth; the next status replaces it.
+{
+  const text = 'MCP tool catalog changed before tool "x" could be invoked: Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)';
+  const out = run([
+    { type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'srv', status: 'connected', source: 'user' }] } },
+    { type: 'tool.execution_start', data: { toolCallId: 'a', toolName: 'srv-x', mcpServerName: 'srv', mcpToolName: 'x', arguments: {} } },
+    { type: 'tool.execution_complete', data: { toolCallId: 'a', success: false, error: { message: text } } },
+    { type: 'session.mcp_server_status_changed', data: { serverName: 'srv', status: 'connected', remediation: 'x' } },
+    { type: 'tool.execution_start', data: { toolCallId: 'b', toolName: 'view', arguments: {} } },
+    { type: 'tool.execution_complete', data: { toolCallId: 'b', success: false, error: { message: text } } },
+    { type: 'tool.execution_start', data: { toolCallId: 'c', toolName: 'srv-x', mcpServerName: 'srv', mcpToolName: 'x', arguments: {} } },
+    { type: 'tool.execution_complete', data: { toolCallId: 'c', success: false, error: { message: 'HTTP 500 boom' } } },
+    { type: 'tool.execution_start', data: { toolCallId: 'd', toolName: 'srv-x', mcpServerName: 'srv', mcpToolName: 'x', arguments: {} } },
+    { type: 'tool.execution_complete', data: { toolCallId: 'd', success: true, result: { content: text } } },
+  ]);
+  const failed = out.filter((e) => e.type === 'toolCall' && (e as { phase: string }).phase !== 'start') as { callId: string; mcpAuth?: boolean }[];
+  assert.deepStrictEqual(failed.map((f) => [f.callId, f.mcpAuth]), [['a', true], ['b', undefined], ['c', undefined], ['d', undefined]]);
+  const ms = out.filter((e) => e.type === 'mcp') as { servers: { name: string; status: string; errorClass?: string; source?: string }[] }[];
+  assert.strictEqual(ms.length, 3, 'loaded, needs-auth, next status; non-matching failures and a successful call quoting the text emit no list');
+  assert.deepStrictEqual([ms[1].servers[0].status, ms[1].servers[0].errorClass, ms[1].servers[0].source], ['needs-auth', 'auth', 'user']);
+  assert.deepStrictEqual([ms[2].servers[0].status, ms[2].servers[0].errorClass], ['connected', undefined], 'next runtime status replaces it');
+}
 // Credit cap events (spec 011). Shapes are taken from the SDK 1.0.22 type definitions (session-events.d.ts), NOT recorded from a real session.
 {
   const out = run([
