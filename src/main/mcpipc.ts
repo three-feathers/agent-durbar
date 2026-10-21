@@ -17,10 +17,15 @@ import type { SecretCodec } from './mcpstore';
 /**
  * OS-protected secret storage. On Linux Electron may fall back to a hard-coded key ("basic_text"): that is not protection,
  * so it counts as unavailable and secrets stay in memory only.
+ *
+ * macOS (spec 019 FR-023): `isEncryptionAvailable()` reads the Keychain item `agent-durbar Safe Storage` to answer (`read:` Chromium
+ * `os_crypt_mac`), which can show a Keychain prompt just for opening Settings. Every Mac has a login Keychain, so it is not asked:
+ * a refused or failing Keychain shows up as a failed encrypt/decrypt, which `McpStore` handles (values stay in memory or show as missing).
  */
 export const safeStorageCodec: SecretCodec = {
   available: () => {
     try {
+      if (process.platform === 'darwin') return true;
       if (!safeStorage.isEncryptionAvailable()) return false;
       const ss = safeStorage as unknown as { getSelectedStorageBackend?: () => string };
       if (process.platform === 'linux' && typeof ss.getSelectedStorageBackend === 'function') {
