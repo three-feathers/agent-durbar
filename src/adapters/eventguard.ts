@@ -9,7 +9,7 @@ const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string'
 const optNum = (v: unknown): boolean => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
 const oneOf = (v: unknown, xs: readonly string[]): boolean => typeof v === 'string' && xs.includes(v);
 
-export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'title', 'agentSchedule', 'remote'] as const;
+export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'title', 'agentSchedule', 'remote', 'plan'] as const;
 const STATUSES = ['idle', 'working', 'needs-permission', 'error', 'stopped'] as const;
 
 function permissionProblems(p: unknown, where: string): string[] {
@@ -91,6 +91,12 @@ export function eventProblems(e: unknown): string[] {
       if (e.phase === 'asked' && (!Array.isArray(e.questions) || !e.questions.length || e.questions.some((q) => !isObj(q) || !str(q.question) || !Array.isArray(q.options)))) out.push('question.questions malformed');
       if (e.elicitation !== undefined && (!isObj(e.elicitation) || !str(e.elicitation.message) || !(Array.isArray(e.elicitation.fields) || str(e.elicitation.url)))) out.push('question.elicitation malformed');
       if (e.elicitAction !== undefined && !oneOf(e.elicitAction, ['accept', 'decline', 'cancel'])) out.push(`question.elicitAction ${String(e.elicitAction)}`);
+      break;
+    case 'plan':
+      if (!oneOf(e.phase, ['proposed', 'resolved'])) out.push(`plan.phase ${String(e.phase)}`);
+      if (!str(e.requestId) || !e.requestId) out.push('plan.requestId missing');
+      if (!optStr(e.text)) out.push('plan.text is not a string');
+      if (e.action !== undefined && !oneOf(e.action, ['approve', 'reject', 'revise'])) out.push(`plan.action ${String(e.action)}`);
       break;
     case 'remote':
       if (typeof e.on !== 'boolean') out.push('remote.on is not a boolean');

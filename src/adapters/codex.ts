@@ -6,11 +6,13 @@
  *
  * Not in this file yet (T043b): resume of a known thread (FR-093) and its folder and profile checks.
  */
+import { randomUUID } from 'crypto';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import { cleanPlanText, reviseText } from './plan';
 import type { AdapterDescriptor } from './capabilities';
 import type { EventBody } from './map';
 import { CodexMapper } from './codexMap';
@@ -46,6 +48,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   resume: true, // FR-093 (T043b): thread/read, then thread/resume on a fresh child
   images: true,
   models: true, // FR-142: model/list, model and effort per turn
+  planMode: true, // spec 066 FR-005: turn/start collaborationMode plan (experimental) and the `plan` item
   modelSwitch: Object.freeze({ verified: true, contextTier: false }), // spec 030 FR-038/FR-039 (real 2026-10-20): from the next message; no separate tier
   effort: true,
   permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as const),
@@ -195,6 +198,10 @@ const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : Strin
 
 interface Live {
   sid: string;
+  /** Spec 066: a plan-first turn is running (its `plan` item text so far); plans waiting for the user; the last turn's collaboration mode. */
+  planTurn?: { text: string };
+  plans?: Map<string, (answer: PlanAnswer) => void>;
+  lastCollab?: 'plan' | 'default';
   /** Spec 030 FR-034: forked threads making a hand-off summary; their events never reach the chat. */
   forks?: Map<string, { text: string; done: (text: string) => void }>;
   /** The start options, for a relaunch with a new mode (FR-144). */
@@ -662,10 +669,23 @@ export class CodexAdapter implements AgentAdapter {
       ...files.map((f) => ({ type: 'text', text: `Attached file: ${f.path}` })),
       ...images.map((i) => ({ type: 'localImage', path: i.path })),
     ];
+    // spec 066 FR-005: plan first through Codex's own collaboration mode (experimental); after a plan turn, back to `default` explicitly
+    let collaborationMode: Record<string, unknown> | undefined;
+    if (message.plan || live.lastCollab === 'plan') {
+      const model = live.model ?? (await this.defaultModelId());
+      if (!model) {
+        this.emit(sessionId, { type: 'status', status: 'error', intent: 'Codex could not plan first: no model to plan with.' });
+        return;
+      }
+      collaborationMode = { mode: message.plan ? 'plan' : 'default', settings: { model, developer_instructions: null, ...(live.effort ? { reasoning_effort: live.effort } : {}) } };
+      live.lastCollab = message.plan ? 'plan' : 'default';
+      live.planTurn = message.plan ? { text: '' } : undefined;
+    }
     const params = {
       threadId: live.threadId,
       input,
       ...modeFields,
+      ...(collaborationMode ? { collaborationMode } : {}),
       // `sandboxPolicy` is an object on turn/start, not the `sandbox` string of thread/start. [KNOWN GAP] T062: shape unverified.
       ...(sandbox ? { sandboxPolicy: { type: 'dangerFullAccess' } } : { runtimeWorkspaceRoots: live.roots }),
       ...(live.model ? { model: live.model } : {}),
@@ -685,6 +705,32 @@ export class CodexAdapter implements AgentAdapter {
       if (isRpcError(e) || (e as { kind?: string }).kind === 'timeout') this.emit(sessionId, { type: 'status', status: 'error', intent: `Codex refused the message: ${reasonOf(e)}`.slice(0, 300) });
       throw e;
     }
+  }
+
+  /** Spec 066: the model Codex would use by default (for a plan turn when the session has no model of its own). */
+  private async defaultModelId(): Promise<string | undefined> {
+    const list = (await this.listModelOptions().catch(() => [])) as Array<{ id: string; isDefault?: boolean }>;
+    return (list.find((m) => m.isDefault) ?? list[0])?.id;
+  }
+
+  /** Spec 066 FR-002: the user's answer to a proposed plan. */
+  async resolvePlan(sessionId: string, requestId: string, answer: PlanAnswer): Promise<void> {
+    const w = this.sessions.get(sessionId)?.plans?.get(requestId);
+    if (w) w(answer);
+  }
+
+  /** Spec 066 FR-005: a plan turn ended: show its plan; approve runs the next turn in `default` mode, revise plans again. */
+  private proposePlan(live: Live, text: string): void {
+    const requestId = `codex-plan-${randomUUID()}`;
+    live.plans ??= new Map();
+    live.plans.set(requestId, (answer) => {
+      live.plans?.delete(requestId);
+      this.emit(live.sid, { type: 'plan', phase: 'resolved', requestId, action: answer.kind });
+      if (this.sessions.get(live.sid) !== live) return;
+      if (answer.kind === 'approve') void this.send(live.sid, { text: 'Go ahead with the plan above.' }).catch(() => undefined);
+      else if (answer.kind === 'revise') void this.send(live.sid, { text: reviseText(answer), plan: true }).catch(() => undefined);
+    });
+    this.emit(live.sid, { type: 'plan', phase: 'proposed', requestId, text });
   }
 
   /** Interrupt the running turn; the session stays live and grants stay (C10). With no turn running nothing is sent. */
@@ -737,6 +783,8 @@ export class CodexAdapter implements AgentAdapter {
     try {
       live.broker.denyPending();
       for (const answer of [...live.questions.values()]) answer(null); // FR-146: an open question is skipped
+      for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop rejects an open plan
+      live.planTurn = undefined;
       cancelElicitations(live.elicitations); // FR-151
       const turnId = live.turnId;
       if (!turnId) {
@@ -809,6 +857,7 @@ export class CodexAdapter implements AgentAdapter {
     live.broker.stop();
     for (const answer of [...live.questions.values()]) answer(null); // FR-146
     cancelElicitations(live.elicitations); // FR-151
+    for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: End rejects an open plan
     // Let the denied requests' answers (wire `cancel`) go out before the interrupt and the close.
     await new Promise<void>((r) => setImmediate(r));
     if (!live.rpc.exited) {
@@ -896,7 +945,13 @@ export class CodexAdapter implements AgentAdapter {
           if (live.pendingInterrupt) void this.fireInterrupt(live, turn.id);
         }
       }
+      else if (method === 'item/completed' && live.planTurn && isObj(params.item) && params.item.type === 'plan' && typeof params.item.text === 'string') {
+        live.planTurn.text = cleanPlanText(params.item.text); // spec 066: the completed plan item is authoritative (not the deltas)
+      }
       else if (method === 'turn/completed') {
+        const plan = live.planTurn;
+        live.planTurn = undefined;
+        if (plan?.text) queueMicrotask(() => this.proposePlan(live, plan.text)); // after the turn's own idle status
         const done = turn && typeof turn.id === 'string' ? turn.id : live.turnId;
         if (done) live.doneTurns = [...live.doneTurns, done].slice(-32);
         live.turnId = undefined;

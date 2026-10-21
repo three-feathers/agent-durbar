@@ -26,7 +26,8 @@ import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './c
 import type { EventBody } from './map';
 import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
-import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
 
 /** FR-156: what Settings says of a Claude Code that `auth status` calls signed in: only the first message can confirm it. */
 export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
@@ -68,9 +69,21 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true, // FR-133: mcp_toggle + mcp_status
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
   oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
+  planMode: true, // spec 066 FR-004: set_permission_mode plan + ExitPlanMode through can_use_tool
   remote: true, // spec 054 FR-061 (real 2026-10-20): `remote_control` over stream-json; claude.ai sign-in on Pro/Max/Team/Enterprise
   remoteService: Object.freeze({ name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }),
 }) as AdapterCapabilities;
+
+/** Spec 066: one sentence added to a plan-first message, so the plan reaches the card (Claude's plan file cannot be written in Read-only). */
+export const CLAUDE_PLAN_NOTE = '(Plan first: write the full plan in your reply, not in a file, then call ExitPlanMode. Do not change anything yet.)';
+/** The text blocks of one assistant message (top level). */
+const assistantText = (m: ClaudeMessage): string => {
+  const c = (m as { message?: { content?: unknown } }).message?.content;
+  return Array.isArray(c) ? c.map((b) => (b && typeof b === 'object' && (b as { type?: unknown }).type === 'text' && typeof (b as { text?: unknown }).text === 'string' ? (b as { text: string }).text + '\n' : '')).join('') : '';
+};
+
+/** Spec 066: the tools a plan-first turn may use beyond the mode's own reads: the proposal itself, and the loader of deferred tools. */
+const PLAN_TOOLS: ReadonlySet<string> = new Set(['ExitPlanMode', 'ToolSearch']);
 
 /** The hook callback id Durbar registers for `PreToolUse` (any string the CLI echoes back). */
 export const PRE_TOOL_USE_HOOK = 'durbar_pre_tool_use';
@@ -406,6 +419,11 @@ export function parseHandoffOutput(stdout: string): HandoffResult {
 
 interface Session {
   id: string;
+  /** Spec 066: a plan-first turn is open (the CLI is in permission mode `plan`); plans waiting for the user. */
+  planTurn?: boolean;
+  plans?: Map<string, (answer: PlanAnswer) => void>;
+  /** Spec 066: what Claude wrote during the plan-first turn (the plan when ExitPlanMode carries none). */
+  planDraft?: string;
   cwd: string;
   roots: string[];
   options: StartOptions;
@@ -584,8 +602,33 @@ export class ClaudeAdapter implements AgentAdapter {
       this.emit(sessionId, { type: 'status', status: 'error', intent: e instanceof Error ? e.message : 'Claude could not start' });
       return;
     }
+    // spec 066 FR-004: plan first: Claude Code's own plan mode for this turn (it reads and proposes with ExitPlanMode; nothing changes)
+    if (message.plan) {
+      try {
+        await t.request({ subtype: 'set_permission_mode', mode: 'plan' }, 15_000);
+        s.planTurn = true;
+        s.planDraft = '';
+      } catch (e) {
+        this.emit(sessionId, { type: 'status', status: 'error', intent: `Claude could not switch to plan mode: ${e instanceof Error ? e.message : String(e)}` });
+        return;
+      }
+    }
     s.turnOpen = true;
-    t.sendUser(userContentOf(message, this.deps.readImage));
+    t.sendUser(userContentOf(message.plan ? { ...message, text: `${message.text}\n\n${CLAUDE_PLAN_NOTE}` } : message, this.deps.readImage));
+  }
+
+  /** Spec 066 FR-004: back to the launch mode of the folder's permission mode after a plan-first turn (never wider). */
+  private async leavePlanMode(s: Session): Promise<void> {
+    if (!s.planTurn) return;
+    s.planTurn = false;
+    const mode = claudeOptionsFor(s.launchedMode ?? s.broker.getMode()).permissionMode;
+    await s.transport?.request({ subtype: 'set_permission_mode', mode }, 15_000).catch(() => undefined);
+  }
+
+  /** Spec 066 FR-002: the user's answer to a proposed plan. */
+  async resolvePlan(sessionId: string, requestId: string, answer: PlanAnswer): Promise<void> {
+    const w = this.sessions.get(sessionId)?.plans?.get(requestId);
+    if (w) w(answer);
   }
 
   async interrupt(sessionId: string): Promise<void> {
@@ -774,6 +817,8 @@ export class ClaudeAdapter implements AgentAdapter {
   private onMessage(s: Session, m: ClaudeMessage): void {
     if (m.type === 'system' && m.subtype === 'init') s.initSeen = true;
     if (m.type === 'result') s.turnOpen = false;
+    if (s.planTurn && m.type === 'assistant') s.planDraft = ((s.planDraft ?? '') + assistantText(m)).slice(-40_000); // spec 066: bounded (the card shows 20k)
+    if (m.type === 'result' && s.planTurn && !s.plans?.size) void this.leavePlanMode(s); // spec 066: a plan turn that ended without ExitPlanMode
     s.mapper.map(m);
     if (m.type === 'result' && this.capReached(s)) this.openLimit(s);
   }
@@ -918,6 +963,24 @@ export class ClaudeAdapter implements AgentAdapter {
       const tool = typeof r.tool_name === 'string' ? r.tool_name : '';
       const input = r.input && typeof r.input === 'object' && !Array.isArray(r.input) ? (r.input as Record<string, unknown>) : {};
       const toolUseID = typeof r.tool_use_id === 'string' ? r.tool_use_id : undefined;
+      if (tool === 'ToolSearch' && s.planTurn) return { response: { behavior: 'allow', updatedInput: input, ...(toolUseID ? { toolUseID } : {}) } }; // spec 066: loads definitions only
+      if (tool === 'ExitPlanMode' && s.planTurn) {
+        // spec 066 FR-004: Claude's proposed plan goes to the plan card; approve continues in the folder's own mode
+        const requestId = `claude-plan-${toolUseID ?? randomUUID()}`.slice(0, 200);
+        s.plans ??= new Map();
+        const answer = await new Promise<PlanAnswer>((resolve) => {
+          s.plans!.set(requestId, resolve);
+          // real 2026-10-21 (Claude Code 2.1.305): ExitPlanMode's input is empty (the plan lives in Claude's plan file, which Read-only
+          // rightly blocks); the plan is then the text Claude wrote in this turn
+          this.emit(s.id, { type: 'plan', phase: 'proposed', requestId, text: cleanPlanText(input.plan) || cleanPlanText(s.planDraft) });
+        });
+        s.plans.delete(requestId);
+        this.emit(s.id, { type: 'plan', phase: 'resolved', requestId, action: answer.kind });
+        if (answer.kind === 'revise') return { response: { behavior: 'deny', message: reviseText(answer), ...(toolUseID ? { toolUseID } : {}) } };
+        await this.leavePlanMode(s);
+        if (answer.kind === 'approve') return { response: { behavior: 'allow', updatedInput: input, ...(toolUseID ? { toolUseID } : {}) } };
+        return { response: { behavior: 'deny', message: PLAN_REJECTED, ...(toolUseID ? { toolUseID } : {}) } };
+      }
       if (tool === 'AskUserQuestion') {
         // FR-129 fallback: the hook normally answers first; if Claude still asks for permission, ask the user here
         if (input.answers && typeof input.answers === 'object') return { response: { behavior: 'allow', updatedInput: input, ...(toolUseID ? { toolUseID } : {}) } };
@@ -968,6 +1031,9 @@ export class ClaudeAdapter implements AgentAdapter {
    */
   private async hookDecision(s: Session, tool: string, toolInput: Record<string, unknown> | undefined, toolUseID: string | undefined): Promise<Record<string, unknown>> {
     if (tool === 'AskUserQuestion') return this.askUser(s, toolInput ?? {}, toolUseID); // FR-129: a question, not an action: every mode
+    // spec 066: in a plan-first turn only the plan proposal passes (to the plan card, through can_use_tool), plus ToolSearch,
+    // which only loads tool definitions (real 2026-10-21: Claude Code 2.1.305 defers ExitPlanMode behind ToolSearch)
+    if (s.planTurn && PLAN_TOOLS.has(tool)) return {};
     const current = s.broker.getMode();
     const launched = s.launchedMode ?? current;
     if (current === 'read-only' || launched === 'read-only') {
@@ -1018,6 +1084,7 @@ export class ClaudeAdapter implements AgentAdapter {
   /** Stop, interrupt or a crash: unanswered questions are skipped (the hook answers deny). */
   private cancelQuestions(s: Session): void {
     for (const q of [...(s.questions?.values() ?? [])]) q.resolve(null);
+    for (const p of [...(s.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop / End reject an open plan
     cancelElicitations(s.elicitations);
   }
 

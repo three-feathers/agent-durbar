@@ -1459,3 +1459,7 @@ button.room-aiu::after,.lsort::after,.linkbtn::after{content:"";position:absolut
 /* spec 052 (2026-10-21, round 6, design): no lone word on the last line of a paragraph, balanced headings */
 p,.dsub,.scr-note,.note,li{text-wrap:pretty}
 h2,h3,h4{text-wrap:balance}
+/* spec 066: plan first. The proposed plan scrolls inside its card; the one-shot chip above the composer */
+.note.plan-card .plan-body{max-height:min(42vh,360px);overflow:auto;margin:6px 0 4px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
+.note.plan-card .plan-why{margin:4px 0 0;color:var(--ink-2);font-size:var(--t4-size)}
+.att.plan-chip{border-color:var(--accent,#2a6f5a);color:var(--accent-ink,var(--ink))}
