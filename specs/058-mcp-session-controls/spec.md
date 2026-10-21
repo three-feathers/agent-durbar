@@ -489,6 +489,12 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   runtime's own store, not Durbar storage: Durbar never reads, lists, copies or clears it, and never logs the setting's effect. The
   one-shot session (spec 040 `oneShotConfig`, no MCP) is unchanged. Whether the entry is shared with the Copilot CLI is unverified
   (FR-074, T105).
+  `[IMPLEMENTED]` 2026-10-21 (the FR-070 part of T098, see *Changes* 2026-10-21): in the shared `config` of `start()` in
+  `src/adapters/copilot.ts`, so create, both resume paths and the FR-158 reconnect re-resume carry it; not in `oneShotConfig` or
+  `renameResumeConfig`. `test:` `scripts/test-copilot-model.ts` (create, resume by id, `resumeSessionId`), `scripts/test-authcheck.ts`
+  (reconnect), `scripts/test-copilot-oneshot.ts` (one-shot without it). `[KNOWN GAP]` not run on a real account: that the runtime
+  really writes the keychain entry, how many macOS Keychain prompts it adds, Linux without a desktop keyring, and sharing with the
+  CLI (T105).
 - **FR-071** **Simulator** (constitution IV): page address `simmcpauth=1` gives each sim kind one server in needs-auth and a Copilot tool
   card with the issue's exact text; **Sign in** -> host `auth.example.com` -> **Open sign-in page** shows a toast and opens nothing ->
   "Running" after 2 s (Codex: "applies with your next message"). `simmcpauth=manual` shows the FR-068 steps instead.
@@ -512,6 +518,10 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   per-folder extra stays in the OS keychain after the session ends. The per-folder extras trust confirmation (spec 019) gets one
   more sentence: "If one of these servers asks you to sign in, <App> may keep that sign-in in your system keychain after the session
   ends." The FR-069 waiting text says the same for Copilot ("Copilot keeps this sign-in in your system keychain").
+  `[IMPLEMENTED]` 2026-10-21 for the trust confirmation, remote extras only (a stdio server has no OAuth sign-in), with the app left
+  generic because the confirmation belongs to the folder, not to one agent app: "If this server asks you to sign in, the agent app may
+  keep that sign-in in your system keychain after the session ends (Copilot does)." (`src/renderer/screens.js`, `sim:`
+  `scripts/shots-m10.js`, screenshots `m10-folder-trust-*`). The waiting text waits for T102.
 - **FR-074** `[KNOWN GAP]` Until the real checks (tasks T105-T107, needs-owner-approval, 0 AI credits, no prompt) run, everything above is
   `read:`: the three login calls, the Claude stream-json handler (the docs say `-p` and SDK runs cannot sign in; the 2.1.304 program
   strings handle `mcp_authenticate` there), whether Codex 0.163 has `mcpServer/oauth/login`, how long each runtime's callback listener
@@ -559,3 +569,18 @@ below as the record of what was offered.
   these servers* by itself after the sign-in.
 - **Q19 "Sign in with another account"** (Copilot `forceReauth`, Claude `mcp_clear_auth`). A) Not offered now (recommended). B) Offer it in
   the row's *Details*.
+
+### 2026-10-21: Copilot keeps MCP sign-ins (FR-070 and the T111 wording first)
+
+**Why now**: the owner (Vikram) found on Windows that an MCP sign-in made in one Durbar Copilot session was not kept for the next
+one: `src/adapters/copilot.ts` never set `mcpOAuthTokenStorage`, so the SDK default `in-memory` applied (`read:`
+`types.d.ts:2386-2393`). FR-070 is independent of the sign-in flow (T098's `startMcpSignIn`), so it ships on its own.
+
+**Who**: by agreement in the team chat, Vikram's agent takes the FR-070 part of **T098** and the trust-confirmation part of **T111**
+(FR-076); Paco (spec owner) keeps the rest of T098 (`startMcpSignIn`, fake SDK recorder) and T111's waiting text (with T102). Task
+numbers and Paco's open work (PR #466, branch `058-mcp-oauth-impl`, T112-T115) are unchanged; T098 is ticked by Paco's PR when its
+sign-in part lands.
+
+**Done**: FR-070 `[IMPLEMENTED]`; FR-076 trust sentence `[IMPLEMENTED]`; README *MCP servers*, *Keychain prompts on a Mac* and a
+*Known limits* line (Copilot CLI sharing unverified, FR-068/FR-074, T105); CHANGELOG. Not run on a real account.
+
