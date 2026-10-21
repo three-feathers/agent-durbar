@@ -46,6 +46,11 @@ async function main(): Promise<void> {
     const e = mkEnv('win32', { Path: '"C:\\Program Files\\x";rel\\dir;;C:\\bin' }, ['C:\\Program Files\\x\\codex.cmd', 'C:\\Program Files\\x\\codex.exe'], 'C:\\Users\\u');
     const c = candidates(CODEX_BINARY, e);
     assert.deepStrictEqual(c.slice(0, 2), ['C:\\Program Files\\x\\codex.exe', 'C:\\Program Files\\x\\codex.cmd'], 'b: .exe before .cmd, quoted entry works, Path used');
+    // spec 060 FR-094: a repeated PATH folder (also in another case on Windows) gives its candidates once
+    const dp = candidates(CODEX_BINARY, mkEnv('linux', { PATH: '/opt/a:/opt/b:/opt/a' }, [], '/home/u'));
+    assert.deepStrictEqual(dp.slice(0, 2), ['/opt/a/codex', '/opt/b/codex'], 'duplicate PATH entry: first wins, order kept');
+    const dw = candidates(CODEX_BINARY, mkEnv('win32', { PATH: 'C:\\bin;"c:\\BIN";C:\\other' }, [], 'C:\\Users\\u'));
+    assert.deepStrictEqual(dw.slice(0, 4), ['C:\\bin\\codex.exe', 'C:\\bin\\codex.cmd', 'C:\\other\\codex.exe', 'C:\\other\\codex.cmd'], 'Windows duplicate, other case and quoted: once');
     assert.ok(!c.some((x) => x.startsWith('rel')), 'b: relative entry skipped');
     const x = mkExec(ok('0.200.0'));
     const r = await detectBinary(CODEX_BINARY, e, x.exec);
@@ -53,7 +58,7 @@ async function main(): Promise<void> {
     assert.strictEqual(x.calls[0].file, 'C:\\Program Files\\x\\codex.exe', 'b: exe runs directly');
     assert.ok(!x.calls[0].verbatim, 'd: .exe is not verbatim');
     const k = candidates(CODEX_BINARY, mkEnv('win32', { APPDATA: 'C:\\A', LOCALAPPDATA: 'C:\\L' }, [], 'C:\\Users\\u'));
-    assert.ok(k.includes('C:\\Users\\u\\.local\\bin\\codex.exe') && k.includes('C:\\A\\npm\\codex.cmd') && k.includes('C:\\L\\Programs\\codex\\codex.exe'), 'b: Windows known folders');
+    assert.ok(k.includes('C:\\Users\\u\\.local\\bin\\codex.exe') && k.includes('C:\\A\\npm\\codex.cmd') && k.includes('C:\\L\\Programs\\codex\\codex.exe') && k.includes('C:\\L\\Programs\\OpenAI\\Codex\\bin\\codex.exe'), 'b: Windows known folders (and the official install.ps1 folder)');
     // spec 052 FR-072: winget's command shims folder, built from LOCALAPPDATA with Windows path rules
     assert.ok(k.includes('C:\\L\\Microsoft\\WinGet\\Links\\codex.exe'), 'b: winget Links folder is searched');
     const w = mkEnv('win32', { LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' }, ['C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Links\\codex.exe'], 'C:\\Users\\u');

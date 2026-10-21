@@ -26,7 +26,7 @@ import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './c
 import type { EventBody } from './map';
 import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
-import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, PlanAnswer, SignInCheck, StartOptions, Unsubscribe } from './types';
+import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
 import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
 
 /** FR-156: what Settings says of a Claude Code that `auth status` calls signed in: only the first message can confirm it. */
@@ -466,6 +466,8 @@ export class ClaudeAdapter implements AgentAdapter {
   readonly displayName = CLAUDE_NAME;
   readonly capabilities = CLAUDE_CAPABILITIES;
   debug?: (message: string) => void;
+  /** Spec 065 FR-001: assigned by the main process (router.setWriteGuard). */
+  writeGuard?: WriteGuard;
   private sessions = new Map<string, Session>();
   private listeners = new Set<(event: AgentEvent) => void>();
 
@@ -575,7 +577,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const exists = this.deps.sessionExists ?? claudeSessionExists;
     const resumable = options.resumeSessionId !== undefined || (given !== undefined && exists(id));
     const roots = [...new Set([ws.cwd, ...ws.folders])];
-    const broker = new PermissionBroker({ roots, mode, emit: (e) => this.onBroker(id, e) });
+    const broker = new PermissionBroker({ roots, mode, emit: (e) => this.onBroker(id, e), beforeWrite: (paths) => this.writeGuard?.(id, paths) ?? Promise.resolve() }); // spec 065 FR-001
     const mapper = new ClaudeMapper((b) => this.onMapped(id, b), { quiet: true, onDropped: (why) => this.debug?.(`claude: dropped ${why}`) });
     this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable, capUsd: usdCap(options.maxAiCredits), spentUsd: 0 });
     if (!options.quiet) this.emit(id, { type: 'status', status: 'idle', intent: `Ready in ${ws.cwd}` });
@@ -997,7 +999,18 @@ export class ClaudeAdapter implements AgentAdapter {
       const input = r.input && typeof r.input === 'object' ? (r.input as Record<string, unknown>) : {};
       const tool = typeof input.tool_name === 'string' ? input.tool_name : '';
       const toolInput = input.tool_input && typeof input.tool_input === 'object' ? (input.tool_input as Record<string, unknown>) : undefined;
-      return { response: await this.hookDecision(s, tool, toolInput, typeof input.tool_use_id === 'string' ? input.tool_use_id : undefined) };
+      const decision = await this.hookDecision(s, tool, toolInput, typeof input.tool_use_id === 'string' ? input.tool_use_id : undefined);
+      // spec 065 FR-001: the hook runs before every tool in every mode; a write the hook does not deny gets its copy kept first
+      const denied = (decision as { hookSpecificOutput?: { permissionDecision?: string } }).hookSpecificOutput?.permissionDecision === 'deny';
+      if (!denied && toolKind(tool) === 'write' && this.writeGuard) {
+        const like = permissionLikeOf(tool, toolInput);
+        if (like.path) {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          await Promise.race([this.writeGuard(s.id, [like.path]).catch(() => undefined), new Promise<void>((res) => { timer = setTimeout(res, 2000); })]);
+          if (timer) clearTimeout(timer);
+        }
+      }
+      return { response: decision };
     }
     // FR-151: an MCP server's elicitation (a form or a URL flow) goes to the question card; the answer is the MCP `{action, content?}`.
     // The field names follow the Agent SDK's control request (read:, not yet seen from a real CLI).

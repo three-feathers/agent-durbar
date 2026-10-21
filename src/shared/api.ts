@@ -417,6 +417,10 @@ export interface DurbarApi {
   setRemote?(id: string, on: boolean): Promise<RemoteState>;
   /** Open agent `id`'s remote link (stored in main, https://github.com only) in the system browser (spec 054 FR-005). */
   openRemote?(id: string): Promise<{ ok: boolean }>;
+  /** Spec 065: a turn's file changes (what an undo would do), the undo itself, and the note after a turn that changed files. */
+  checkpointPreview?(id: string, turn: number): Promise<CheckpointPreview | { ok: false; error: string }>;
+  checkpointUndo?(id: string, turn: number): Promise<CheckpointUndo>;
+  onCheckpoint?(cb: (p: CheckpointNote) => void): () => void;
   /** Close or open the door of the room (folder) of agent `id`; remembered. */
   setRoomClosed?(id: string, closed: boolean): Promise<{ ok: boolean }>;
   /** Hide or show the folder of agent `id`; the choice is remembered. */
@@ -590,3 +594,10 @@ export interface DurbarApi {
 export type FolderGitStatus =
   | { repo: false }
   | { repo: true; branch: string; detached?: boolean; ahead?: number; behind?: number; files: Array<{ path: string; state: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict'; added?: number; removed?: number; binary?: boolean }>; more: number };
+
+/** Spec 065: the note after a turn whose file-edit tools changed files. */
+export interface CheckpointNote { id: string; turn: number; kind: 'turn' | 'undo'; files: { path: string; change: 'changed' | 'created' | 'deleted' }[]; notCovered: { path: string; why: string }[] }
+export interface CheckpointPreview { ok: true; turn: number; files: { path: string; action: 'restore' | 'remove' | 'create'; diff?: string; binary?: boolean }[]; conflicts: string[]; notCovered: { path: string; why: string }[] }
+export type CheckpointUndo =
+  | { ok: true; restored: number; removed: number; created: number; undo: Omit<CheckpointNote, 'id'> }
+  | { ok: false; error: string; conflicts?: string[] };

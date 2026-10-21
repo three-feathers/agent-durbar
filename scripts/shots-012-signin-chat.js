@@ -16,13 +16,15 @@
  */
 const assert = require('assert');
 const path = require('path');
+const { waits } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 const { jsLiteral } = require('./check-office-overlap.js');
 const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
+  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
   const js = (c) => ctx.js(c);
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(400); await ctx.shot(path.join(OUT, name)); console.log('[012-signin] saved', name); };
+  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); console.log('[012-signin] saved', name); };
   const card = () => js(`(()=>{const c=[...document.querySelectorAll('#chat .note.signin')].pop();if(!c)return null;const d=c.querySelector('details');return {title:(c.querySelector('.signin-title')||{}).textContent,text:c.textContent,btns:[...c.querySelectorAll('button')].map(b=>b.textContent.trim()),details:d?{open:d.open,text:d.textContent}:null};})()`);
   const waitCard = async (want) => { for (let i = 0; i < 40; i++) { const c = await card(); if (c && (!want || want(c))) return c; await ctx.sleep(200); } return card(); };
   const clickCard = (label) => js(`(()=>{const c=[...document.querySelectorAll('#chat .note.signin')].pop();const b=c&&[...c.querySelectorAll('button')].find(x=>x.textContent.trim()===${jsLiteral(label)});if(b)b.click();return !!b;})()`);
@@ -32,7 +34,7 @@ module.exports = async (ctx) => {
   const finishSignIn = async () => {
     for (let i = 0; i < 20 && !(await js(`!!document.getElementById('hsPaste')`)); i++) await ctx.sleep(200);
     assert.ok(await js(`!!document.getElementById('hsDlg')`), 'Sign in opens the in-app sign-in dialog');
-    await ctx.sleep(500);
+    await until(`!!document.getElementById('hsPasteGo')`); await settle();
     await js(`(()=>{document.getElementById('hsPasteBox').hidden=false;document.getElementById('hsPaste').value='SIM';document.getElementById('hsPasteGo').click();})()`);
     for (let i = 0; i < 20 && (await js(`!!document.getElementById('hsDlg')`)); i++) await ctx.sleep(200);
     assert.ok(await js(`!document.getElementById('hsDlg')`), 'the dialog closes when the sign-in ends');
@@ -44,9 +46,9 @@ module.exports = async (ctx) => {
     ctx.win.setContentSize(w, h);
     await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simauth: 'expired' } });
     await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-    await ctx.sleep(1500);
+    await settle();
     assert.ok(await openIdleAgent(), 'an agent chat opens');
-    await ctx.sleep(600);
+    await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`); await settle();
     await type('hello after expiry');
     let c = await waitCard();
     assert.ok(c, 'the sign-in card is shown');
@@ -62,7 +64,7 @@ module.exports = async (ctx) => {
     assert.ok(c.btns.includes('Send again') && /restarts the session/.test(c.text), 'Send again, and it says the session restarts: ' + c.text);
     await shot(`012-signin-done-${w}x${h}.png`);
     assert.ok(await clickCard('Send again'));
-    await ctx.sleep(1500);
+    await until(`[...document.querySelectorAll('#chat .msg.user .bubble')].filter(b=>b.textContent==='hello after expiry').length>=2&&/sent your last message again/.test(([...document.querySelectorAll('#chat .note.signin')].pop()||{}).textContent||'')`);
     const sent = await userMsgs();
     assert.strictEqual(sent.filter((t) => t === 'hello after expiry').length, 2, 'the last message was sent again: ' + JSON.stringify(sent));
     c = await card();
@@ -71,9 +73,9 @@ module.exports = async (ctx) => {
     // ---- not signed in from the start: the card comes before anything is sent; the text stays in the box
     await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simauth: 'out' } });
     await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-    await ctx.sleep(1500);
+    await settle();
     assert.ok(await openIdleAgent());
-    await ctx.sleep(600);
+    await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`); await settle();
     const before = (await userMsgs()).length;
     await type('first message');
     c = await waitCard();
@@ -86,7 +88,7 @@ module.exports = async (ctx) => {
     c = await waitCard((x) => /Signed in/.test(x.title));
     assert.ok(c.btns.includes('Send'), 'Send: ' + JSON.stringify(c.btns));
     assert.ok(await clickCard('Send'));
-    await ctx.sleep(1200);
+    await until(`[...document.querySelectorAll('#chat .msg.user .bubble')].some(b=>b.textContent==='first message')&&document.getElementById('msgInput').value===''`);
     assert.ok((await userMsgs()).includes('first message'), 'sent after the sign-in');
     assert.strictEqual(await js(`document.getElementById('msgInput').value`), '', 'the box is empty after sending');
     console.log('[012-signin]', w, 'ok');

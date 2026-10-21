@@ -24,6 +24,7 @@ const os = require('os');
 const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const fs = require('fs');
 const path = require('path');
+const { waits } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.SHOTS_012 || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-012-'));
 const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
@@ -34,22 +35,23 @@ const CODEX = ['sim-5', 'sim-8', 'sim-10'];
 const BASIC = ['sim-7'];
 
 module.exports = async (ctx) => {
+  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
   const js = (code) => ctx.js(code);
   const wc = () => ctx.win.webContents;
-  const shot = async (name, w, h) => { await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`); await ctx.sleep(300); await ctx.shot(path.join(OUT, `${name}-${w}x${h}.png`)); console.log('[018] saved', name, w, h); };
+  const shot = async (name, w, h) => { await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`); await ctx.sleep(150); await ctx.shot(path.join(OUT, `${name}-${w}x${h}.png`)); console.log('[018] saved', name, w, h); };
   const load = async (w, h, extra) => {
     ctx.win.setContentSize(w, h);
     await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simkinds: 'mixed', ...(extra || {}) } });
     await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await ctx.sleep(1200);
+    await settle();
     wc().focus();
   };
-  const closePanel = async () => { await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click()})()`); await ctx.sleep(250); };
+  const closePanel = async () => { await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click()})()`); await until(`!document.body.classList.contains('panel-open')`); };
   const openPanel = async (id) => {
     await closePanel();
     await js(`document.querySelector('#stage .desk[data-id="${id}"]').click()`);
     assert.ok(await ctx.waitFor(`(()=>{const h=document.getElementById('panelTitle');return !!h&&!!document.getElementById('vscodeBtn')})()`, 4000), `${id}: the panel opens`);
-    await ctx.sleep(200);
+    await settle();
   };
   const toasts = () => js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`);
   const minFont = (root) => js(`(()=>{let min=99,who='';document.querySelectorAll('${root}, ${root} *').forEach(e=>{if(!e.getClientRects().length)return;const own=[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());if(!own&&!/^(INPUT|SELECT|BUTTON)$/.test(e.tagName))return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'#'+e.id+'.'+e.className}});return {min,who}})()`);
@@ -98,7 +100,7 @@ module.exports = async (ctx) => {
     const about = await js(`document.getElementById('modeDlg').innerText.replace(/\\s+/g,' ')`);
     for (const need of ['Copilot: ready', 'Claude Code (simulated): ready', 'Codex (simulated): ready', 'Basic agent (simulated): ready']) assert.ok(about.includes(need), `${w}: About says "${need}": ${about}`);
     await js(`[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Close').click()`);
-    await ctx.sleep(200);
+    await until(`!document.getElementById('modeDlg')`);
 
     // ---- toolbar: one row, fonts ----
     const row = await js(`(()=>{const t=[...document.querySelectorAll('#liveBar > button, #liveBar > select')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().top));return {min:Math.min(...t),max:Math.max(...t),n:t.length}})()`);
@@ -141,7 +143,7 @@ module.exports = async (ctx) => {
         assert.strictEqual(p.modeBtn, null, `${w} ${id}: basic mode chip is not a button`);
         assert.ok(p.modeSpan && p.modeSpan.tag === 'SPAN' && p.modeSpan.title === 'Set when the session starts' && p.modeSpan.text === 'Read-only', `${w} ${id}: plain-text mode chip (${JSON.stringify(p.modeSpan)})`);
         await js(`document.querySelector('#panel .modechip').click()`);
-        await ctx.sleep(150);
+        await ctx.sleep(150); // checks that nothing opens: give a late handler its chance
         assert.strictEqual(await exists('#modeMenu'), false, 'clicking the plain-text chip opens nothing');
         if (w === SIZES[0][0]) await shot('012-mixed-basic', w, h);
       }
@@ -166,7 +168,7 @@ module.exports = async (ctx) => {
         assert.ok(m.text.includes('The switches are off for this agent app'), `${w} ${id}: the reason is written in the dialog`);
       }
       await js(`[...document.querySelectorAll('.dlg .btn, #modeDlg .btn, [role="dialog"] .btn')].find(b=>b.textContent==='Done').click()`);
-      await ctx.sleep(250);
+      await until(`!document.querySelector('.dlg-ov, #modeDlg')`);
     }
     await closePanel();
 
@@ -176,14 +178,14 @@ module.exports = async (ctx) => {
     assert.ok(await ctx.waitFor(`!!document.getElementById('modeMenu')`, 2000), 'the mode menu opens');
     assert.strictEqual(await js(`document.querySelectorAll('#modeMenu [data-mode]').length`), 3, 'codex lists three modes');
     await js(`document.querySelector('#modeMenu [data-mode="read-only"]').click()`);
-    await ctx.sleep(500);
+    await until(`/Applies from the next message\./.test([...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | '))`);
     assert.match(await toasts(), /Applies from the next message\./, `${w}: a codex mode switch says when it applies: ${await toasts()}`);
     await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
     await openPanel('sim-4'); // Noor, claude, Read-only
     await js(`document.getElementById('modeChip').click()`);
     await ctx.waitFor(`!!document.getElementById('modeMenu')`, 2000);
     await js(`document.querySelector('#modeMenu [data-mode="ask"]').click()`);
-    await ctx.sleep(500);
+    await until(`/Ask first/.test([...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | '))`); await ctx.sleep(150); // and no late "next message" note
     const tc = await toasts();
     assert.ok(/Ask first/.test(tc) && !/next message/.test(tc), `${w}: a live (claude) mode switch has no next-message note: ${tc}`);
     await closePanel();
@@ -203,7 +205,6 @@ module.exports = async (ctx) => {
     // adding with basic chosen: a new folder starts Read-only (the simulator creates it with the kind and mode it was given)
     await setSel('kindSel', 'basic');
     await js(`document.getElementById('addFolder').click()`);
-    await ctx.sleep(500);
     assert.ok(await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=16`, 3000), 'a basic folder was added');
     await setSel('kindSel', 'copilot');
 

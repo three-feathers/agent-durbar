@@ -29,6 +29,7 @@ import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
 import { checkElicitAnswer, createElicitTracker, elicitHttpsUrl } from '../shared/elicit';
 import { createRemoteOps } from './remoteops';
+import { CheckpointStore } from './checkpoints';
 import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode, sessionsToRestore } from './folders';
 import { AppStateStore, buildSinceAway, placeWindow, quitMessage } from './daily';
 import type { SinceAway } from './daily';
@@ -57,7 +58,7 @@ import { UserThemeStore } from './themes';
 import { HarnessSetup, confirmText, posixTrusted } from './harnesssetup';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
-import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind } from '../shared/harnesssetup';
+import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind, simManagers } from '../shared/harnesssetup';
 import { MAX_DESCRIPTION, MAX_PASSES, THEME_IDEAS, TOP_BAR_ISSUE, buildFixPrompt, buildRetryPrompt, buildThemePrompt, isBlocking, keepArt, parseGeneratedTheme } from '../shared/themegen';
 import { SettingsStore } from './settings';
 import { parseBadgeCount, shouldBounce, shouldFlash } from './badge';
@@ -70,9 +71,14 @@ import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitc
 import { createDebugSink } from '../shared/redact';
 import { profileDir } from './profiledir';
 import { debugSwitchesToRemove } from './debugguard';
+import { aumidToSet } from './aumid';
 
 // Spec 008 FR-038: no DevTools endpoint in a packaged build. No fuse covers these switches; removing them before ready is shown to work on the packed Linux app (npm run check:fuses-launch).
 for (const sw of debugSwitchesToRemove(app.isPackaged)) app.commandLine.removeSwitch(sw);
+
+// Spec 008 FR-043: packaged Windows only, before ready and any window, so toasts and the taskbar button use the Start menu shortcut's AUMID (build.appId).
+const aumid = aumidToSet(process.platform, app.isPackaged);
+if (aumid) app.setAppUserModelId(aumid);
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
@@ -520,6 +526,32 @@ ipcHandle('agents:send', async (e, id: string, text: string, attachments: Picked
   if (!r.ok) agentState.noteSendFailed(id); // and Error when the send fails (app.js sendLive)
   return r;
 });
+// ---- spec 065: undo an agent's file changes per turn (copies kept just before each file-edit write, while the app runs) ----
+let checkpointStore: CheckpointStore | undefined;
+const checkpoints = (): CheckpointStore => (checkpointStore ??= new CheckpointStore(path.join(app.getPath('userData'), 'checkpoints')));
+const rootsOf = (a: AgentInfo): string[] => (a.folders?.length ? a.folders : [a.cwd]);
+router.setWriteGuard(async (sid, paths) => {
+  const a = agents.get(sid);
+  if (!a) return;
+  for (const p of paths) checkpoints().capture(sid, rootsOf(a), p);
+});
+router.onEvent((e) => {
+  if (e.type !== 'status' || e.agentId || (e.status !== 'idle' && e.status !== 'stopped' && e.status !== 'error')) return;
+  const s = checkpointStore?.endTurn(e.sessionId);
+  if (s) toRenderer('agents:checkpoint', { id: e.sessionId, ...s });
+});
+const checkpointArgs = (id: unknown, turn: unknown): string | undefined => (typeof id === 'string' && agents.has(id) && Number.isInteger(turn) && (turn as number) > 0 ? id : undefined);
+ipcHandle('agents:checkpointPreview', (e, id: unknown, turn: unknown) => {
+  const a = fromApp(e) ? checkpointArgs(id, turn) : undefined; // FR-005: Durbar's own window only, never MCP, remote control or schedules
+  return a && checkpointStore ? checkpointStore.preview(a, turn) : { ok: false, error: 'invalid request' };
+});
+ipcHandle('agents:checkpointUndo', (e, id: unknown, turn: unknown) => {
+  const a = fromApp(e) ? checkpointArgs(id, turn) : undefined;
+  if (!a || !checkpointStore) return { ok: false, error: 'invalid request' };
+  if (busyStatus(a)) return { ok: false, error: 'The agent is working. Stop it or wait for the turn to end, then undo.' };
+  return checkpointStore.undo(a, turn);
+});
+
 async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string }> {
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
@@ -531,6 +563,7 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
   }
   try {
     await ensureLive(agents.get(id) as AgentInfo); // an ended or not-yet-started agent starts (resumes) its session here
+    checkpoints().beginTurn(id, rootsOf(agents.get(id) as AgentInfo)); // spec 065 FR-002: a send starts a turn (scheduled prompts too)
     await ad.send(id, {
       text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
@@ -766,10 +799,12 @@ const harnessSetup = new HarnessSetup({
   },
   realpath: (p: string) => fs.realpathSync(p),
   trustedPath: (p: string) => process.platform === 'win32' || posixTrusted(p, (q) => fs.statSync(q).mode),
+  isRoot: () => typeof process.getuid === 'function' && process.getuid() === 0, // spec 060 FR-001
 } as ConstructorParameters<typeof HarnessSetup>[0]);
 /** FR-004b: harness setup answers only the app's own page in the main frame. */
 const fromApp = (e: Electron.IpcMainInvokeEvent): boolean => senderAllowed(e.senderFrame ? { url: e.senderFrame.url, isMain: e.senderFrame === e.sender.mainFrame } : null, path.join(__dirname, '..', 'renderer', 'index.html'));
-ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op) : { plans: [], page: '', name: '' }));
+// spec 060 FR-002: under the simulator the routes are the real ones for this OS, with a typical new machine's package managers
+ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op, dev.DURBAR_SIM ? simManagers(process.platform, dev.DURBAR_SIM_MANAGERS) : undefined) : { plans: [], page: '', name: '' }));
 ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
   if (!fromApp(e) || !isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return { ok: false, error: 'invalid request' };
   const p = harnessSetup.prepare(kind, op, typeof planIndex === 'number' && Number.isInteger(planIndex) && planIndex >= 0 && planIndex < 8 ? planIndex : 0);
@@ -782,7 +817,10 @@ ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknow
     const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
     if (r.response !== 1) return { ok: false, cancelled: true, error: 'Cancelled.' };
   }
-  return harnessSetup.start(p.job);
+  // spec 060 FR-001: an official installer is downloaded only now, after the user confirmed, from the vendor's fixed hosts
+  const ready = await harnessSetup.withScript(p.job);
+  if (!ready.ok) return ready;
+  return harnessSetup.start(ready.job);
 });
 ipcHandle('harness:paste', (e, text: unknown) => (fromApp(e) ? harnessSetup.paste(text) : { ok: false, error: 'invalid request' }));
 ipcHandle('harness:cancel', (e) => fromApp(e) && harnessSetup.cancel());
@@ -1234,6 +1272,7 @@ ipcHandle('agents:remove', async (_e, id: unknown) => {
     /* already gone */
   }
   router.unbind(a.id);
+  checkpointStore?.forget(a.id); // spec 065 FR-006
   agents.delete(a.id);
   agentState.remove(a.id);
   vsChatRefs.delete(a.id);
@@ -1368,6 +1407,8 @@ function createWindow(): void {
     title: 'Agent Durbar',
     backgroundColor: '#f6f1e7',
     ...windowChrome(process.platform), // spec 052 FR-085: macOS hides the title bar; the top bar is the drag area (styles.css)
+    // spec 008 FR-093: test runs ask for exact sizes (1440x900, 1280x800); macOS otherwise clamps a window to its screen (CI: 677 px tall)
+    ...(dev.DURBAR_DRIVER || dev.DURBAR_SHOT ? { enableLargerThanScreen: true } : {}),
     // spec 008 FR-025: Windows and macOS take the icon from the .exe/.icns; Linux needs it on the window
     ...(process.platform === 'linux' ? { icon: path.join(__dirname, '..', 'icon.png') } : {}),
     webPreferences: {
@@ -1516,14 +1557,16 @@ app.whenReady().then(() => {
         const end = Date.now() + ms;
         while (Date.now() < end) {
           if (await (win as BrowserWindow).webContents.executeJavaScript(`!!(${expr})`)) return true;
-          await new Promise((r) => setTimeout(r, 300));
+          await new Promise((r) => setTimeout(r, 50)); // spec 008 FR-096: a wait ends as soon as the page is ready
         }
         return false;
       },
     };
     win?.webContents.once('did-finish-load', () => {
       const driver = require(dev.DURBAR_DRIVER as string) as (c: typeof ctx) => Promise<void>;
-      void driver(ctx).catch((err) => console.error('DRIVER FAILED', err)).finally(() => void router.disposeAll().finally(() => app.exit(0)));
+      // spec 008 FR-090: a failing driver exits 1, so CI on every OS sees it without reading the log
+      let failed = false;
+      void driver(ctx).catch((err) => { failed = true; console.error('DRIVER FAILED', err); }).finally(() => void router.disposeAll().finally(() => app.exit(failed ? 1 : 0)));
     });
   }
   // macOS: a click on the Dock icon brings back the hidden window (FR-085), or opens a new one

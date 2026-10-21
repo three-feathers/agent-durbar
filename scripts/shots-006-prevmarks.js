@@ -12,30 +12,34 @@
  */
 const assert = require('assert');
 const path = require('path');
+const { waits } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
+  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
   const js = (c) => ctx.js(c);
   const log = (...a) => console.log('[006-prev]', ...a);
   const rows = () => js(`[...document.querySelectorAll('#prevLists .prev-row')].map(r=>({g:r.dataset.pg,k:r.dataset.pk,t:r.querySelector('.prev-t').textContent,pin:!!r.querySelector('.prev-pin'),hid:r.classList.contains('is-hidden')}))`);
   const hideToasts = () => js(`(()=>{if(!document.getElementById('shotsNoToast')){const s=document.createElement('style');s.id='shotsNoToast';s.textContent='#toasts{display:none!important}';document.head.appendChild(s);}})()`);
-  const shot = async (name, w, h, level) => { await hideToasts(); await ctx.sleep(250); await ctx.shot(path.join(OUT, `006-prev-${name}-${w}x${h}${level === 'simple' ? '-simple' : ''}.png`)); };
+  const shot = async (name, w, h, level) => { await hideToasts(); await ctx.sleep(150); await ctx.shot(path.join(OUT, `006-prev-${name}-${w}x${h}${level === 'simple' ? '-simple' : ''}.png`)); };
   const load = async (w, h, query, level) => {
     ctx.win.setContentSize(w, h);
     await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', ...query } });
     await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await ctx.sleep(800);
+    await settle();
     await js(`document.body.classList.toggle('simple',${level === 'simple'})`);
     await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>/Ada/.test(x.innerText));d.click();})()`);
     await ctx.waitFor(`!!document.getElementById('prevBtn')&&!document.getElementById('prevBtn').hidden`, 8000);
     if (!(await js(`!!document.querySelector('#prev .prev-row')`))) { await js(`document.getElementById('prevBtn').click()`); }
     await ctx.waitFor(`document.querySelectorAll('#prevLists .prev-row').length>=4`, 8000);
-    await ctx.sleep(300);
+    await settle();
   };
   /* Escape from where the keyboard is: the focused item of the open menu */
   const escKey = () => js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`);
-  const openMore = async (key) => { await js(`document.querySelector('#prevLists .prev-row[data-pk="${key}"] .prev-more').click()`); await ctx.sleep(250); };
+  const openMore = async (key) => { await ctx.waitFor(`!!document.querySelector('#prevLists .prev-row[data-pk="${key}"] .prev-more')&&!document.getElementById('modeDlg')`, 8000); await js(`document.querySelector('#prevLists .prev-row[data-pk="${key}"] .prev-more').click()`); await ctx.waitFor(`!!document.querySelector('#modeMenu [data-pact]')`, 8000); };
+  /* a menu action, then (for Delete…) the confirmation dialog: waits for each instead of a fixed delay */
+  const pact = async (a) => { await js(`document.querySelector('#modeMenu [data-pact="${a}"]').click()`); if (a === 'delete') await ctx.waitFor(`!!document.querySelector('#modeDlg .dbtn .btn')`, 8000); else await ctx.waitFor(`!document.getElementById('modeMenu')`, 8000); await ctx.sleep(150); };
   const menuItems = () => js(`[...document.querySelectorAll('#modeMenu [data-pact]')].map(b=>b.querySelector('b').textContent)`);
   /* a row fits: its buttons are inside it, do not overlap, nothing wraps or scrolls sideways */
   const assertFit = async (label) => {
@@ -64,19 +68,19 @@ module.exports = async (ctx) => {
       assert.ok(await js(`document.activeElement.closest('#modeMenu')!==null`), 'focus is in the menu');
       assert.ok(await js(`document.querySelector('#modeMenu').getAttribute('role')==='menu'&&document.querySelector('#prevLists .prev-row[data-pk="prev-3"] .prev-more').getAttribute('aria-label')==='Actions for Add a retry with backoff to the registry client'`), 'roles and labels');
       await shot('menu', w, h, level);
-      await escKey(); await ctx.sleep(200);
+      await escKey(); await until(`!document.getElementById('modeMenu')&&document.activeElement===document.querySelector('#prevLists .prev-row[data-pk="prev-3"] .prev-more')`);
       assert.ok(await js(`!document.getElementById('modeMenu')`), 'Escape closes the menu');
       assert.ok(await js(`document.activeElement===document.querySelector('#prevLists .prev-row[data-pk="prev-3"] .prev-more')`), 'focus returns to the ⋯');
       await openMore('h1/c1');
       assert.deepStrictEqual(await menuItems(), ['Pin to top', 'Hide'], 'a VS Code chat has no Delete…');
-      await escKey(); await ctx.sleep(150);
+      await escKey(); await until(`!document.getElementById('modeMenu')`);
       // right-click opens the same menu
-      await js(`document.querySelector('#prevLists .prev-row[data-pk="prev-2"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:300,clientY:300}))`); await ctx.sleep(200);
+      await js(`document.querySelector('#prevLists .prev-row[data-pk="prev-2"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:300,clientY:300}))`); await until(`!!document.querySelector('#modeMenu [data-pact]')`);
       assert.deepStrictEqual(await menuItems(), ['Pin to top', 'Hide', 'Delete…'], 'right-click opens the row menu');
-      await escKey(); await ctx.sleep(150);
+      await escKey(); await until(`!document.getElementById('modeMenu')`);
       // Pin the third and the VS Code chat: pinned rows come first in their group
-      await openMore('prev-3'); await js(`document.querySelector('#modeMenu [data-pact="pin"]').click()`); await ctx.sleep(250);
-      await openMore('h1/c2'); await js(`document.querySelector('#modeMenu [data-pact="pin"]').click()`); await ctx.sleep(250);
+      await openMore('prev-3'); await pact('pin');
+      await openMore('h1/c2'); await pact('pin');
       r = await rows();
       assert.deepStrictEqual(r.map((x) => x.k), ['prev-3', 'prev-1', 'prev-2', 'prev-4', 'h1/c2', 'h1/c1'], 'pinned first in each group');
       assert.ok(r[0].pin && r[4].pin && !r[1].pin, 'pin marks on the pinned rows only');
@@ -85,33 +89,36 @@ module.exports = async (ctx) => {
       const before = await js(`document.getElementById('prevBtn').textContent`);
       assert.strictEqual(before, 'Previous (6)');
       // Hide the fourth: it leaves the list, the count drops, Show hidden (1) appears, focus moves to the next row's ⋯
-      await openMore('prev-4'); await js(`document.querySelector('#modeMenu [data-pact="hide"]').click()`); await ctx.sleep(300);
+      await openMore('prev-4'); await pact('hide');
       r = await rows();
       assert.ok(!r.some((x) => x.k === 'prev-4'), 'hidden row is out');
       assert.strictEqual(await js(`document.getElementById('prevBtn').textContent`), 'Previous (5)');
       assert.ok(/1 hidden/.test(await js(`document.getElementById('prevBtn').title`)), 'tooltip says 1 hidden');
       assert.strictEqual(await js(`document.querySelector('[data-pv="showhidden"]').textContent`), 'Show hidden (1)');
       assert.ok(await js(`document.activeElement.classList.contains('prev-more')`), 'focus is on a ⋯ after Hide');
-      await js(`document.querySelector('[data-pv="showhidden"]').click()`); await ctx.sleep(250);
+      await js(`document.querySelector('[data-pv="showhidden"]').click()`); await until(`!!document.querySelector('#prevLists .prev-row.is-hidden[data-pk="prev-4"]')`);
       r = await rows();
       assert.ok(r.find((x) => x.k === 'prev-4').hid, 'Show hidden brings it back, tagged');
       assert.ok(await js(`!!document.querySelector('#prevLists .prev-row[data-pk="prev-4"] .prev-hidtag')`), 'Hidden tag');
       await openMore('prev-4');
       assert.deepStrictEqual(await menuItems(), ['Unhide', 'Delete…'], 'a hidden row offers Unhide (no Pin)');
       await shot('hidden', w, h, level);
-      await escKey(); await ctx.sleep(150);
+      await escKey(); await until(`!document.getElementById('modeMenu')`);
       await assertFit(L + ' hidden shown');
       // Delete…: the red confirmation, Cancel focused
-      await openMore('prev-2'); await js(`document.querySelector('#modeMenu [data-pact="delete"]').click()`); await ctx.sleep(300);
+      await openMore('prev-2'); await pact('delete');
       const dlg = await js(`({t:document.getElementById('mdT').textContent,b:document.getElementById('mdB').textContent,l:[...document.querySelectorAll('#mdL li')].map(x=>x.textContent),btn:[...document.querySelectorAll('#modeDlg .dbtn .btn')].map(x=>x.textContent+(x.className.includes('danger')?'*':'')),f:document.activeElement.textContent})`);
       assert.deepStrictEqual(dlg, { t: 'Delete this session?', b: '“Why does the canton lookup return duplicates?” will be deleted from GitHub Copilot on this computer.', l: ['It will also be gone from VS Code and the Copilot CLI, and it cannot be resumed again.', 'This cannot be undone. To only take it out of this list, use Hide.'], btn: ['Cancel', 'Delete*'], f: 'Cancel' }, 'delete confirmation');
       await shot('delete', w, h, level);
-      await js(`document.querySelector('#modeDlg [data-cancel]').click()`); await ctx.sleep(250);
+      await js(`document.querySelector('#modeDlg [data-cancel]').click()`); await ctx.waitFor(`!document.getElementById('modeDlg')`, 8000);
       assert.ok((await rows()).some((x) => x.k === 'prev-2'), 'Cancel keeps the row');
-      await openMore('prev-2'); await js(`document.querySelector('#modeMenu [data-pact="delete"]').click()`); await ctx.sleep(300);
-      await js(`[...document.querySelectorAll('#modeDlg .dbtn .btn')].find(x=>x.textContent==='Delete').click()`); await ctx.sleep(120);
-      assert.ok(await js(`document.querySelector('#prevLists .prev-row[data-pk="prev-2"] .prev-more').getAttribute('aria-busy')==='true'`), 'busy state on the row while it runs');
-      await ctx.waitFor(`!document.querySelector('#prevLists .prev-row[data-pk="prev-2"]')`, 4000);
+      await openMore('prev-2'); await pact('delete');
+      // the busy state can be short (a fast delete): record it from before the click, so a slow runner cannot miss it
+      await js(`(()=>{window.__busySeen=false;const o=new MutationObserver(()=>{const b=document.querySelector('#prevLists .prev-row[data-pk="prev-2"] .prev-more');if(b&&b.getAttribute('aria-busy')==='true')window.__busySeen=true;});o.observe(document.getElementById('prevLists'),{subtree:true,attributes:true,attributeFilter:['aria-busy']});window.__busyObs=o;})()`);
+      await js(`[...document.querySelectorAll('#modeDlg .dbtn .btn')].find(x=>x.textContent==='Delete').click()`);
+      await ctx.waitFor(`!document.querySelector('#prevLists .prev-row[data-pk="prev-2"]')`, 8000);
+      assert.ok(await js(`(()=>{window.__busyObs.disconnect();return window.__busySeen})()`), 'busy state on the row while it runs');
+      await settle();
       assert.strictEqual(await js(`document.getElementById('prevBtn').textContent`), 'Previous (4)');
       assert.ok(await js(`document.activeElement.classList.contains('prev-more')`), 'focus on the next ⋯ after Delete');
       await assertFit(L + ' after delete');
@@ -119,20 +126,20 @@ module.exports = async (ctx) => {
     // the refusal for a session still in the office: with, and without, Remove from office
     for (const [variant, expectBtns, lines] of [['inoffice', ['Cancel', 'Go to session', 'Remove from office'], []], ['inoffice-solo', ['Cancel', 'Go to session'], ['It is the only session in this folder: start a new session there first.']]]) {
       await load(w, h, variant === 'inoffice' ? { simprev: variant } : { simprev: variant, simrooms: 'solo' }, 'expert');
-      await openMore('prev-1'); await js(`document.querySelector('#modeMenu [data-pact="delete"]').click()`); await ctx.sleep(300);
-      await js(`[...document.querySelectorAll('#modeDlg .dbtn .btn')].find(x=>x.textContent==='Delete').click()`); await ctx.sleep(900);
+      await openMore('prev-1'); await pact('delete');
+      await js(`[...document.querySelectorAll('#modeDlg .dbtn .btn')].find(x=>x.textContent==='Delete').click()`); await ctx.waitFor(`!!document.getElementById('mdT')&&document.getElementById('mdT').textContent==='This session is still in the office'`, 8000); await ctx.sleep(200);
       const d = await js(`({t:(document.getElementById('mdT')||{}).textContent,b:(document.getElementById('mdB')||{}).textContent,l:[...document.querySelectorAll('#mdL li')].map(x=>x.textContent),btn:[...document.querySelectorAll('#modeDlg .dbtn .btn')].map(x=>x.textContent)})`);
       assert.deepStrictEqual(d, { t: 'This session is still in the office', b: 'End it and remove it from the office first, then delete it here.', l: lines, btn: expectBtns }, `refusal dialog (${variant})`);
       assert.ok((await rows()).some((x) => x.k === 'prev-1'), 'the row stays');
       await shot(variant === 'inoffice' ? 'refused' : 'refused-only', w, h);
-      await js(`document.querySelector('#modeDlg [data-cancel]').click()`); await ctx.sleep(200);
+      await js(`document.querySelector('#modeDlg [data-cancel]').click()`); await ctx.waitFor(`!document.getElementById('modeDlg')`, 8000);
     }
     // an agent app with no delete: Delete… is shown disabled with the reason
     await load(w, h, { simkinds: 'mixed' }, 'expert'); // Ada is a Claude Code agent: no per-session delete
     await openMore('prev-1');
     const dis = await js(`(()=>{const b=document.querySelector('#modeMenu [data-pact="delete"]');return {dis:b.getAttribute('aria-disabled'),tip:b.title,tab:b.tabIndex}})()`);
     assert.deepStrictEqual(dis, { dis: 'true', tip: 'Claude Code cannot delete one session. Hide it instead.', tab: 0 }, 'disabled, focusable, with the reason');
-    await js(`document.querySelector('#modeMenu [data-pact="delete"]').click()`); await ctx.sleep(250);
+    await js(`document.querySelector('#modeMenu [data-pact="delete"]').click()`); await ctx.sleep(250); // a disabled item: wait for nothing to happen
     assert.ok(await js(`!document.getElementById('modeDlg')`), 'a disabled Delete… does nothing');
     await shot('nodelete', w, h);
   }

@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AdapterDescriptor, DetectResult } from './capabilities';
+import { pathDirs } from '../shared/pathdirs';
 import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
 
 export interface DetectEnv {
@@ -131,11 +132,6 @@ export function displayPath(file: string, env: Pick<DetectEnv, 'platform' | 'hom
   return p.basename(file);
 }
 
-function stripQuotes(s: string): string {
-  const t = s.trim();
-  return t.length >= 2 && t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1).trim() : t;
-}
-
 /** Candidate file paths in search order: configured path, PATH entries, known install folders. */
 export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: string): string[] {
   const p = pathFor(env.platform);
@@ -148,12 +144,7 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
 
   if (typeof configuredPath === 'string' && configuredPath && p.isAbsolute(configuredPath)) out.push(configuredPath);
 
-  const rawPath = win ? (env.env.PATH ?? env.env.Path ?? '') : (env.env.PATH ?? '');
-  for (const raw of rawPath.split(win ? ';' : ':')) {
-    const dir = win ? stripQuotes(raw) : raw;
-    if (!dir || !p.isAbsolute(dir)) continue;
-    addDir(dir);
-  }
+  for (const dir of pathDirs(env.env, env.platform)) addDir(dir);
   // spec 060 FR-003: an app opened from Finder or a desktop menu gets a short PATH; the login shell's adds nvm, fnm, asdf and the like
   if (!win) for (const dir of env.loginPath ?? []) if (dir && p.isAbsolute(dir)) addDir(dir);
 
@@ -167,6 +158,8 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
     const local = env.env.LOCALAPPDATA;
     if (local && p.isAbsolute(local)) {
       addDir(p.join(local, 'Programs', spec.name));
+      // OpenAI's official install.ps1 (spec 060, real 2026-10-20): %LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe
+      if (spec.name === 'codex') addDir(p.join(local, 'Programs', 'OpenAI', 'Codex', 'bin'));
       addDir(p.join(local, 'Microsoft', 'WinGet', 'Links')); // winget's command shims (spec 052 FR-072): found even before PATH is re-read
     }
   } else {
