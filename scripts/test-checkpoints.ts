@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CheckpointStore } from '../src/main/checkpoints';
+import { CheckpointStore, unsafeTarget } from '../src/main/checkpoints';
 import { PermissionBroker } from '../src/adapters/permissions';
 
 const base = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ckpt-test-'));
@@ -193,5 +193,63 @@ assert.strictEqual(C.confirmLabel({ files: [{}] }), 'Restore 1 file');
 
 brokerChecks().then(() => {
 fs.rmSync(base, { recursive: true, force: true });
-console.log('checkpoints: capture, preview, conflicts, undo, undo of undo, links, outside paths, binary, limits, forget OK');
+// ---- review on #440: containment is checked again at undo time (a parent folder swapped for a link to outside after the turn)
+if (process.platform !== 'win32') {
+  const B = 'agent-swap';
+  const ws2 = path.join(base, 'ws2'), out2 = path.join(base, 'out2');
+  fs.mkdirSync(path.join(ws2, 'sub'), { recursive: true });
+  fs.mkdirSync(out2);
+  const r2 = [ws2];
+  const st2 = new CheckpointStore(path.join(base, 'store2'));
+  const swap = (): void => { fs.renameSync(path.join(ws2, 'sub'), path.join(ws2, 'sub.moved')); fs.symlinkSync(out2, path.join(ws2, 'sub')); };
+  const unswap = (): void => { fs.unlinkSync(path.join(ws2, 'sub')); fs.rmSync(path.join(ws2, 'sub'), { force: true, recursive: true }); fs.renameSync(path.join(ws2, 'sub.moved'), path.join(ws2, 'sub')); };
+  // (a) a deleted file would be created back through the link
+  w(path.join(ws2, 'sub', 'gone.txt'), 'keep me\n');
+  let t = st2.beginTurn(B, r2);
+  st2.capture(B, r2, path.join(ws2, 'sub', 'gone.txt'));
+  fs.unlinkSync(path.join(ws2, 'sub', 'gone.txt'));
+  st2.endTurn(B);
+  swap();
+  assert.ok(unsafeTarget(r2, path.join(ws2, 'sub', 'gone.txt')), 'a linked parent is unsafe');
+  let u = st2.undo(B, t);
+  assert.ok(!u.ok && /changed/.test(u.error) && (u.conflicts ?? []).length === 1, 'restore through a swapped parent is refused: ' + JSON.stringify(u));
+  assert.deepStrictEqual(fs.readdirSync(out2), [], 'nothing written outside');
+  unswap();
+  // (b) a created file would be removed through the link
+  t = st2.beginTurn(B, r2);
+  st2.capture(B, r2, path.join(ws2, 'sub', 'new.txt'));
+  w(path.join(ws2, 'sub', 'new.txt'), 'agent made this\n');
+  st2.endTurn(B);
+  w(path.join(out2, 'new.txt'), 'agent made this\n'); // the same content outside, so only containment can stop it
+  swap();
+  u = st2.undo(B, t);
+  assert.ok(!u.ok, 'remove through a swapped parent is refused');
+  assert.strictEqual(r(path.join(out2, 'new.txt')), 'agent made this\n', 'the outside file is untouched');
+  unswap();
+  // (c) the file itself replaced by a link: refused
+  w(path.join(ws2, 'f.txt'), 'v1\n');
+  t = st2.beginTurn(B, r2);
+  st2.capture(B, r2, path.join(ws2, 'f.txt'));
+  w(path.join(ws2, 'f.txt'), 'v2\n');
+  st2.endTurn(B);
+  fs.unlinkSync(path.join(ws2, 'f.txt'));
+  fs.symlinkSync(path.join(out2, 'new.txt'), path.join(ws2, 'f.txt'));
+  assert.ok(unsafeTarget(r2, path.join(ws2, 'f.txt')), 'a linked file is unsafe');
+  u = st2.undo(B, t);
+  assert.ok(!u.ok, 'restore onto a link is refused');
+  assert.strictEqual(r(path.join(out2, 'new.txt')), 'agent made this\n', 'the link target is untouched');
+  // (d) a clean case still works, and missing parents are recreated as real folders
+  fs.unlinkSync(path.join(ws2, 'f.txt'));
+  w(path.join(ws2, 'deep', 'x', 'y.txt'), 'deep\n');
+  t = st2.beginTurn(B, r2);
+  st2.capture(B, r2, path.join(ws2, 'deep', 'x', 'y.txt'));
+  fs.rmSync(path.join(ws2, 'deep'), { recursive: true });
+  st2.endTurn(B);
+  u = st2.undo(B, t);
+  assert.ok(u.ok && u.created === 1, 'a deleted file in deleted folders comes back: ' + JSON.stringify(u));
+  assert.ok(!fs.lstatSync(path.join(ws2, 'deep')).isSymbolicLink() && r(path.join(ws2, 'deep', 'x', 'y.txt')) === 'deep\n');
+  assert.strictEqual(unsafeTarget(r2, path.join(base, 'elsewhere.txt')), 'outside the session’s folders');
+}
+
+console.log('checkpoints: capture, preview, conflicts, undo, undo of undo, links, outside paths, swapped parents at undo, binary, limits, forget OK');
 }).catch((e) => { console.error(e); process.exit(1); });

@@ -81,6 +81,52 @@ function realAncestor(p: string): string | undefined {
 }
 const looksBinary = (b: Buffer): boolean => b.subarray(0, 8192).includes(0);
 
+/**
+ * FR-005 at undo time (review on #440): the folders may have changed since the copy was taken, for example a parent folder swapped
+ * for a link to somewhere outside. A target is safe only when it is lexically inside one of the roots, no existing component between
+ * that root and the target (the target included) is a link or a non-folder, and the nearest existing parent's real path is inside the
+ * root's real path. Returns why it is not safe, or undefined.
+ */
+export function unsafeTarget(roots: readonly string[], abs: string): string | undefined {
+  const root = roots.find((r) => isInside(r, abs) && abs !== r);
+  if (!root) return 'outside the session’s folders';
+  const realRoot = realOr(root);
+  if (!realRoot) return 'the session’s folder is gone';
+  const parts = path.relative(root, abs).split(path.sep).filter(Boolean);
+  let cur = root;
+  for (let i = 0; i < parts.length; i++) {
+    cur = path.join(cur, parts[i]);
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(cur);
+    } catch {
+      break; // missing from here on: created one level at a time, each checked again
+    }
+    if (st.isSymbolicLink()) return 'a folder or file on its path is now a link';
+    if (i < parts.length - 1 && !st.isDirectory()) return 'a folder on its path is no longer a folder';
+  }
+  const realParent = realAncestor(path.dirname(abs));
+  if (!realParent || !isInside(realRoot, realParent)) return 'its folder now leads outside the session’s folders';
+  return undefined;
+}
+
+/** Creates the missing folders of `dir` one level at a time, each checked to be a real folder (never a link) inside the root. */
+function makeParents(roots: readonly string[], dir: string): void {
+  const root = roots.find((r) => isInside(r, dir));
+  if (!root) throw new Error('outside the session’s folders');
+  let cur = root;
+  for (const part of path.relative(root, dir).split(path.sep).filter(Boolean)) {
+    cur = path.join(cur, part);
+    try {
+      fs.mkdirSync(cur);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+    }
+    const st = fs.lstatSync(cur);
+    if (st.isSymbolicLink() || !st.isDirectory()) throw new Error('a folder on its path is now a link');
+  }
+}
+
 export class CheckpointStore {
   private readonly turns = new Map<string, TurnRecord[]>();
   private readonly open = new Map<string, TurnRecord>();
@@ -221,6 +267,9 @@ export class CheckpointStore {
     if (!p.ok) return { ok: false, error: p.error };
     if (p.conflicts.length) return { ok: false, error: 'Some of these files changed after that turn, so nothing was restored.', conflicts: p.conflicts };
     const t = this.find(agent, turn) as TurnRecord;
+    // containment again, now (the copy-time check is not enough: a parent may have become a link to somewhere outside)
+    const unsafe = [...t.files.values()].filter((f) => unsafeTarget(t.roots, f.abs)).map((f) => f.rel);
+    if (unsafe.length) return { ok: false, error: 'A folder on the way to some of these files changed (for example it is now a link), so nothing was restored.', conflicts: unsafe };
     if (this.open.has(agent)) this.endTurn(agent);
     const back = this.newTurn(agent, t.roots, 'undo');
     for (const f of t.files.values()) this.capture(agent, t.roots, f.abs);
@@ -233,6 +282,9 @@ export class CheckpointStore {
     let restored = 0, removed = 0, created = 0;
     try {
       for (const f of t.files.values()) {
+        // checked again right before each change, so a swap during the undo is caught too
+        const why = unsafeTarget(t.roots, f.abs);
+        if (why) throw new Error(`${f.rel}: ${why}`);
         if (!f.existed) {
           const st = fs.lstatSync(f.abs);
           if (st.isFile()) fs.unlinkSync(f.abs);
@@ -242,7 +294,8 @@ export class CheckpointStore {
         const data = f.blob ? fs.readFileSync(f.blob) : Buffer.alloc(0);
         const dir = path.dirname(f.abs);
         const wasMissing = stateOf(f.abs) === MISSING;
-        fs.mkdirSync(dir, { recursive: true });
+        makeParents(t.roots, dir);
+        if (unsafeTarget(t.roots, f.abs)) throw new Error(`${f.rel}: its folder changed during the undo`);
         const tmp = path.join(dir, `.${path.basename(f.abs)}.durbar-${randomBytes(6).toString('hex')}`);
         fs.writeFileSync(tmp, data, { mode: f.mode, flag: 'wx' });
         fs.chmodSync(tmp, f.mode);
@@ -250,9 +303,13 @@ export class CheckpointStore {
         if (wasMissing) created++;
         else restored++;
       }
+    } catch (e) {
+      // stopped part way (a path changed during the undo): what was already restored can be undone again from the new checkpoint
+      this.endTurn(agent);
+      const done = restored + removed + created;
+      return { ok: false, error: `The undo stopped${done ? ` after ${done} file${done === 1 ? '' : 's'}` : ''}: ${e instanceof Error ? e.message : String(e)}. Nothing outside the session’s folders was touched.` };
     } finally {
-      const summary = this.endTurn(agent);
-      void summary;
+      if (this.open.has(agent)) this.endTurn(agent);
     }
     const recs = this.turns.get(agent) ?? [];
     const u = recs.find((x) => x.id === back.id);

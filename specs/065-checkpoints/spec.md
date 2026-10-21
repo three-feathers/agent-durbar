@@ -60,3 +60,16 @@ Native rewind features (Claude Code's checkpoints / rewind, any Copilot snapshot
   - **Claude Code** (haiku, ≈ $0.0072): the hook's guard saw `notes.txt` before the Edit; the turn summary listed it as changed; the undo restored `line two`; the undo of the undo brought `line TWO (edited)` back.
   - **Copilot** (`auto`, 0.197 AIU): the same through the broker path, same results.
 - `[KNOWN GAP]`: Codex is unit-tested only (its file-change approval path; Codex in Allow all asks nothing, so it is not covered at all); changes by shell commands, MCP tools or outside the folders are not covered (the dialog and README say so); macOS and Windows by hand (the atomic rename and modes are POSIX-tested; Windows has no symlink check without rights).
+
+### 2026-10-21: containment checked again at undo time (review on #440)
+
+- **FR-005 delta** `[IMPLEMENTED]`: the folders may change after a copy is taken; for example, a parent folder swapped for a link to somewhere outside. Before anything is copied or written, `undo()` checks every file of the turn with `unsafeTarget()`:
+  - it is lexically inside one of the session's folders;
+  - no existing component from that folder down to the file, the file included, is a link, and every component above the file is a real folder;
+  - the nearest existing parent's real path is inside the folder's real path.
+
+  If any file fails, the whole undo is refused and those files are listed, as for a conflict. The same check runs again right before each write or removal, so a swap during the undo is caught too. Missing folders are created one level at a time, each checked to be a real folder (never `mkdir -p`). Writes still go through a new temp file (`wx`, never an existing path) in the checked folder, then a rename. A failure part way returns an error instead of throwing, and what was already restored can be undone from the new checkpoint.
+- `test:` `scripts/test-checkpoints.ts`:
+  - a parent swapped for a link after the turn, for both create-back and remove (nothing outside written or removed);
+  - the file itself replaced by a link (refused, link target untouched);
+  - deleted nested folders recreated as real folders.
