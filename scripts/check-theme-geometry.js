@@ -32,6 +32,7 @@ const THEMES = (process.env.GEOMETRY_THEMES || 'corporate,retro,durbar-indian,du
    their own), keyed by order and class, plus the font size of each text element; the DOM must be the same in every theme */
 function measure() {
   const out = {};
+  if (window.__durbarSimUi) window.__durbarSimUi.settleNow(); /* spec 008 FR-113: a frame still queued is drawn before measuring */
   const st = document.createElement('style');
   st.textContent = '#stage *, .lobby *, header *{font-family:sans-serif!important;font-weight:400!important;font-style:normal!important;letter-spacing:normal!important;text-transform:none!important;word-spacing:normal!important;font-variant:normal!important;font-feature-settings:normal!important;font-stretch:normal!important}';
   document.head.appendChild(st);
@@ -63,8 +64,14 @@ async function driver(ctx) {
     const on = await ctx.js(`window.THEME.current().id`);
     if (on !== want) throw new Error(`theme ${want} was not applied (on screen: ${on})`);
     await ctx.js(`document.fonts.ready.then(()=>true)`);
+    /* spec 008 FR-113: a steady simulator before every capture, the reference included. PR #535's CI once measured a Clean Office
+       page whose agents were added but whose replayed events were never drawn (no animation frame for over 3 s): every theme then
+       "differed" from it the same way. settleNow() is true once the agents are listed, the frozen simulator has replayed every
+       script and the saved totals are read, and it draws a queued frame at once. Each capture is a fresh page, so nothing is left
+       expanded from an earlier one. A wait that times out fails the run instead of measuring a page that is not ready. */
+    if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()`, 8000))) throw new Error(`${theme} sim${sim}-${w}x${h}: the simulator never became steady (agents listed, scripts replayed, totals read)`);
     // agents go to the lobby after about 600 ms (instant with reduced motion): wait until somebody is there
-    await ctx.waitFor(`!!document.querySelector('.place.busy')`, 3000);
+    if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()&&!!document.querySelector('.place.busy')`, 8000))) throw new Error(`${theme} sim${sim}-${w}x${h}: nobody reached a place in the lobby`);
     // the pointer of the virtual display rests mid-window: a hover style (retro nudges a card by 1px) is not layout
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
     await ctx.sleep(300);

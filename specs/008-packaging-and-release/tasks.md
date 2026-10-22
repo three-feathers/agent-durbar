@@ -78,4 +78,4 @@
 
 ## 2026-10-22: steady geometry captures (flake on PR #535)
 
-- [ ] T100 `settleNow()` simulator hook in `src/renderer/app.js` (listed + replayed + usage totals read; draws a queued frame), replay flag in `src/renderer/sim.ts`; `scripts/check-theme-geometry.js` waits for it before every capture and fails on a timed-out wait; 5 local runs and a one-theme mutation; `docs/agent-notes.md`, CHANGELOG [FR-113]
+- [x] T100 `settleNow()` simulator hook in `src/renderer/app.js` (listed + replayed + usage totals read; draws a queued frame), replay flag in `src/renderer/sim.ts`; `scripts/check-theme-geometry.js` waits for it before every capture and fails on a timed-out wait; 5 local runs and a one-theme mutation; `docs/agent-notes.md`, CHANGELOG [FR-113]
