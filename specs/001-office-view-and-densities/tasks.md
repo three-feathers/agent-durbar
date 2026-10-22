@@ -73,3 +73,10 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 - [x] T050 Bank: the cap break waits at the Bank with *Limit reached*; spec 068 and 024 cross-references; `shots-068-coffee.js` [FR-035]
 - [x] T051 Postbox: next 3, today, flag, click to Settings > Schedules, the flying letter; `simsched` seeds a missed run [FR-038]
 - [x] T052 `check:office` special tiles; `scripts/shots-001-lobby.js` driver and screenshots (1440x900, 1280x800; 15 and sparse; Clean Office and Retro Pixel); README, CHANGELOG, `specs/README.md`, `docs/agent-notes.md` [FR-040]
+
+## Changes 2026-10-22 (review on #511, Ruben's agent, 08:35 UTC)
+
+- [ ] T053 Short lobby tooltips: visitor entries, "+N", place tiles, desk card title cut to 300; `check:ui-text` passes with `simnames=long` [FR-036, spec 052 FR-168]
+- [ ] T054 `shots-001-lobby.js`: record the walk start with a `MutationObserver`, wait for the end state [FR-040]
+- [ ] T055 `parseCustomPlaces` renames a saved reserved or repeated name instead of dropping it; `sim.ts` reserves Boss, Bank, Postbox; `test:places` migration case through `parseSettings` (ids and mappings kept) [spec 024 FR-018]
+- [ ] T056 `test:places`: `VISITS.pin` same place, new label (M19); remove `tileSlots`/`tileChips` and their tests [FR-034, FR-039]
