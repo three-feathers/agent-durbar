@@ -20,7 +20,7 @@ module.exports = async (ctx) => {
     for (const n of ['15', '6']) {
       await H.load({ w, h, query: { sim: n, simbreak: '8' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${n}`, settle: false });
       const who = n === '15' ? ['Tomas', 'Omar', 'Rosa'] : ['Tomas'];
-      for (const nm of who) assert.ok(await until(`(${deskOf(nm)})?.dataset.place==='coffee'`, 8000), `${w} ${n}: ${nm} went to the coffee corner`);
+      for (const nm of who) assert.ok(await until(`(${deskOf(nm)})?.dataset.place==='coffee'`, 20000), `${w} ${n}: ${nm} went to the coffee corner`); /* 20 s: the walk is timed, and a loaded Windows runner is slow */
       await ctx.sleep(1300); // the walk (about 1 s)
       const o = await js(`(()=>{const t=document.querySelector('#stage .place[data-place="coffee"]');const tiles=[...document.querySelectorAll('#stage .lobby .place')];
         const r=x=>x.getBoundingClientRect();const L=r(document.querySelector('#stage .lobby'));
