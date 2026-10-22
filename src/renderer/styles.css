@@ -517,17 +517,21 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 /* spec 052 FR-164: room for + Folder and + Workspace (measured in DejaVu Sans, CI's font): a narrower defaults chip (its full text is in its
    title and label). Where the row still does not fit, app.js (fitTopbar) sets .tb-tight: the brand keeps its mark and its Live/Demo pill
    and the name moves to screen readers only (it is also the window's name) */
+/* spec 044 FR-034 (review on PR 560): the folder filter is narrowed only when the row would otherwise wrap, by fitTopbar, in this order: less padding
+   (the text "All folders" still shows whole), then the short value "All", then the brand name moves (tb-tight). A select has no ellipsis, so a cut is never used. */
+.topbar.tb-filter .select-wrap select{padding:0 20px 0 7px}
+.topbar.tb-filter .select-wrap::after{right:8px}
+.topbar.tb-filter2 .select-wrap select{max-width:80px}
 .topbar.tb-tight .brand h1{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:1799px){.topbar #defaultsBtn{max-width:170px}}
 @media (max-width:1599px){.topbar #defaultsBtn{max-width:130px}.topbar #defaultsBtn .dv-r{display:none}.topbar .select-wrap select{max-width:104px}} /* the mode word only ("Read-only"); the rest is in the title, the label and the popover */
-@media (max-width:1440px){ .topbar{column-gap:8px} .topbar .select-wrap select{max-width:88px} .topbar .controls,.topbar #liveBar{gap:4px} .topbar .sched-top{padding:0 8px} } /* also the folder filter (104 to 88px), the groups' gaps and the button's padding, so the brand name stays shown in Durbar European at 1440 (it needs 102px) */ /* spec 044 FR-034: room for Schedules at 1440x900 (the 1440 window), step 3 of the levers: the bar's gaps */
+@media (max-width:1440px){ .topbar{column-gap:8px} .topbar .controls,.topbar #liveBar{gap:4px} .topbar .sched-top{padding:0 8px} } /* also the folder filter (a fitTopbar step below), the groups' gaps and the button's padding, so the brand name stays shown in Durbar European at 1440 (it needs 102px) */ /* spec 044 FR-034: room for Schedules at 1440x900 (the 1440 window), step 3 of the levers: the bar's gaps */
 @media (max-width:1439px){
   .topbar #liveBar .top-add .btn{padding:0 8px}
   .topbar .seg button{padding:0 7px}
   .topbar #liveBar{gap:4px}
   /* spec 044 FR-034: room for Schedules at 1280x800 in Expert, measured in DejaVu Sans with floors and mixed agent apps, in the documented
      order: the chip's cap (not binding there: the chip is 106px), the folder filter (to 80px; its full text is in its title), the gaps */
-  .topbar .select-wrap select{max-width:80px}
   .topbar .sched-top{gap:4px}
 }
 @media (prefers-reduced-motion:reduce){
@@ -1264,8 +1268,8 @@ body.has-bridge:not(.simple) .folder-ctl #foldersBtn{border-top-left-radius:0;bo
 .sched-top{font-variant-numeric:tabular-nums}
 .sched-top .st-ico{position:relative;display:inline-flex;flex:none}
 .sched-top .st-mark,.sched-top .st-pause{display:none;position:absolute;pointer-events:none}
-.sched-top.trouble .st-mark{display:block;right:-5px;top:-4px;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--surface);box-sizing:content-box;background:
-  linear-gradient(var(--surface),var(--surface)) 50% 2px/1.5px 3.5px no-repeat,linear-gradient(var(--surface),var(--surface)) 50% 6.5px/1.5px 1.5px no-repeat,var(--tone-warn-ink)}
+.sched-top.trouble .st-mark{display:block;right:-5px;top:-4px;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--c-waiting);box-sizing:content-box;background:
+  linear-gradient(var(--surface),var(--surface)) 50% 2px/1.5px 3.5px no-repeat,linear-gradient(var(--surface),var(--surface)) 50% 6.5px/1.5px 1.5px no-repeat,currentColor} /* the disc is the button's text colour (3:1 or more against the button in every theme, checked by check-sched-top); the amber ring gives the warning tone, the drawn "!" the meaning */
 .sched-top.paused{opacity:.62}
 .sched-top.paused .st-pause{display:block;right:-4px;bottom:-3px;width:7px;height:7px;background:linear-gradient(currentColor,currentColor) 0 0/2px 7px no-repeat,linear-gradient(currentColor,currentColor) 5px 0/2px 7px no-repeat}
 .sched-top.none b{display:none}

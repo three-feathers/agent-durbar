@@ -44,7 +44,30 @@ function barCheck(simple, width) {
   if (!/^Schedules/.test(sc.getAttribute('aria-label') || '')) P.push('aria-label: ' + sc.getAttribute('aria-label'));
   if (sc.getAttribute('aria-keyshortcuts') !== 'Control+Shift+S') P.push('aria-keyshortcuts: ' + sc.getAttribute('aria-keyshortcuts'));
   if ((sc.title || '').length > 120 || (sc.getAttribute('aria-label') || '').length > 120) P.push('title or name over 120 characters');
+  /* the folder filter shows its value whole: a select has no ellipsis, so a cut would read "All folde" (scrollWidth cannot tell; measure the text) */
+  const sel = document.getElementById('wsFilter'), cs = getComputedStyle(sel), shown = sel.options[sel.selectedIndex].text;
+  const cx = document.createElement('canvas').getContext('2d');
+  cx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const need = cx.measureText(shown).width, have = sel.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  if (need > have + 0.5) P.push(`the folder filter cuts "${shown}": text ${Math.round(need)}px in ${Math.round(have)}px`);
   return P;
+}
+
+/* runs in the page: the badge disc against what is behind it (WCAG 1.4.11, 3:1), in the colours the page really draws */
+function discContrast() {
+  const cx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  cx.canvas.width = cx.canvas.height = 1;
+  const rgb = (c) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = '#000'; cx.fillStyle = c; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+  const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const mark = document.querySelector('#schedTopBtn .st-mark');
+  if (!mark || getComputedStyle(mark).display === 'none') return { err: 'no badge' };
+  const disc = rgb(getComputedStyle(mark).backgroundColor);
+  let behind = [255, 255, 255, 1];
+  const stack = [];
+  for (let e = document.getElementById('schedTopBtn'); e; e = e.parentElement) stack.unshift(rgb(getComputedStyle(e).backgroundColor));
+  for (const c of stack) if (c[3] > 0) { const a = c[3]; behind = [0, 1, 2].map((i) => c[i] * a + behind[i] * (1 - a)).concat([1]); }
+  const l1 = lum(disc), l2 = lum(behind), hi = Math.max(l1, l2), lo = Math.min(l1, l2);
+  return { ratio: Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100, disc, behind };
 }
 
 module.exports = async (ctx) => {
@@ -244,16 +267,28 @@ module.exports = async (ctx) => {
   }
 
   /* FR-034: widths between 1440 and 1920 stay one row in Expert and Simple with floors and mixed agent apps, also with the Mac room forced */
-  for (const level of ['expert', 'simple']) for (const mac of [false, true]) for (const w of [1441, 1512, 1600, 1728]) {
-    await H.load({ w, h: 900, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
+  for (const level of ['expert', 'simple']) for (const mac of [false, true]) for (const w of [1280, 1440, 1441, 1512, 1600, 1728]) {
+    if (w <= 1440 && mac) continue; /* the Mac room at 1280 wraps (known gap); the Mac room at 1440 is covered by shots-052-addleft */
+    const hh = w === 1280 ? 800 : 900;
+    await H.load({ w, h: hh, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
     await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)});true`);
-    await H.load({ w, h: 900, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
+    await H.load({ w, h: hh, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
     await until(`!document.getElementById('schedTopBtn').hidden`);
     if (mac) { await js(`document.documentElement.dataset.platform='darwin';window.DurbarFit&&window.DurbarFit();true`); await js(`new Promise(r=>setTimeout(r,0))`); }
     const P = await js(`(${barCheck.toString()})(${level === 'simple'},${w})`);
     check(!P.length, `${w}px ${level}${mac ? ' with the Mac room' : ''}: ${P.join('; ')}`);
   }
   await js(`localStorage.setItem('durbar.detail','expert');true`);
+
+  /* the badge disc holds 3:1 against the button in every built-in theme (WCAG 1.4.11) */
+  for (const theme of ['clean', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese']) {
+    await H.load({ w: 1440, h: 900, query: { simsched: '1', theme }, ready: 'fit', settle: false });
+    await js(`localStorage.removeItem('durbar.schedSeen');true`);
+    await H.load({ w: 1440, h: 900, query: { simsched: '1', theme }, ready: 'fit', settle: false });
+    await until(`document.getElementById('schedTopBtn').classList.contains('trouble')`);
+    const c = await js(`(${discContrast.toString()})()`);
+    check(c && c.ratio >= 3, `${theme}: badge disc contrast ${JSON.stringify(c)} (needs 3:1)`);
+  }
 
   /* reduced motion (as the OS asks): the count changes at once, no roll boxes */
   {

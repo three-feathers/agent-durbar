@@ -545,6 +545,7 @@ function renderFilter(){
   if(ui.ws!=='all'&&!roomShown(ROOMS.find(r=>r.id===ui.ws)))ui.ws='all'; /* its floor went off or it was hidden */
   sel.innerHTML='<option value="all">All folders</option>'+roomsInOrder().filter(roomShown).map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
   sel.value=ui.ws;
+  fitTopbar(); /* the narrow value is reapplied to the new options */
 }
 const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thinking'].includes(vis(a)):vis(a)===ui.status);
 
@@ -993,11 +994,20 @@ if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{const s=d
    menu bar's). Measured, not guessed by width: the class is removed, the row measured, and set again only if the parts still wrap. */
 function fitTopbar(){
   const bar=document.querySelector('.topbar');if(!bar||!bar.getClientRects().length)return;
-  bar.classList.remove('tb-tight');
-  const kids=[...bar.children].filter(k=>k.getClientRects().length);if(kids.length<2)return;
-  const mid=k=>{const r=k.getBoundingClientRect();return (r.top+r.bottom)/2;};
-  const m0=mid(kids[0]);
-  if(kids.some(k=>Math.abs(mid(k)-m0)>8))bar.classList.add('tb-tight');
+  /* spec 044 FR-034: the steps, in order, each only if the row still wraps: the folder filter's padding, its short value "All", then the brand name */
+  const sel=$('wsFilter'), first=sel&&sel.options[0];
+  const label=short=>{if(first&&first.value==='all')first.textContent=short?'All':'All folders';};
+  bar.classList.remove('tb-tight','tb-filter','tb-filter2'); label(false);
+  const wraps=()=>{
+    const kids=[...bar.children].filter(k=>k.getClientRects().length);if(kids.length<2)return false;
+    const mid=k=>{const r=k.getBoundingClientRect();return (r.top+r.bottom)/2;};
+    const m0=mid(kids[0]);
+    return kids.some(k=>Math.abs(mid(k)-m0)>8);
+  };
+  if(!wraps())return;
+  bar.classList.add('tb-filter'); if(!wraps())return;
+  bar.classList.add('tb-filter2'); label(true); if(!wraps())return;
+  bar.classList.add('tb-tight');
 }
 {const bar=document.querySelector('.topbar');
   if(bar&&window.ResizeObserver){const ro=new ResizeObserver(()=>fitTopbar());ro.observe(bar);bar.querySelectorAll(':scope > .controls, :scope > .stats').forEach(e=>ro.observe(e));}
