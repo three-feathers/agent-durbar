@@ -1,5 +1,11 @@
 # Feature Specification: Undo an agent's file changes (checkpoints per turn)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Undo an agent's file changes per turn: a copy kept just before each file-edit write, a previewed and confirmed restore, refusal when a file changed since, undo of the undo (issue #431)
+status: **built** 2026-10-21: unit tests, simulator driver, real checks on Claude Code and Copilot; Codex unit-tested only (not covered in Allow all)
+-->
+
 **Feature Branch**: `065-checkpoints`
 **Created**: 2026-10-21
 **Status**: Built 2026-10-21 (unit tests, simulator driver, real checks on Claude Code and Copilot); see `## Changes`.

@@ -265,6 +265,16 @@ export const validPlanIndex = (v: unknown): number | undefined => (typeof v === 
 export const isSetupKind = (k: unknown): k is SetupKind => k === 'claude' || k === 'codex' || k === 'copilot';
 
 /**
+ * Spec 060 FR-012: what `harness:run` may run, checked from the window's raw arguments. The window sends only an index into main's
+ * fixed table; an unknown kind, op or index is refused (`undefined`), never read as "the first". Sign-in has one fixed command (0).
+ */
+export function runRequest(kind: unknown, op: unknown, planIndex: unknown): { kind: SetupKind; op: 'install' | 'update' | 'signin'; idx: number } | undefined {
+  if (!isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return undefined;
+  const idx = op === 'signin' ? 0 : validPlanIndex(planIndex);
+  return idx === undefined ? undefined : { kind, op, idx };
+}
+
+/**
  * Spec 060 FR-001 (review on #393): which install route owns an installed binary, from its real path, so Update uses that route
  * and never leaves a second copy (the official script would install into ~/.local/bin while detection still finds the old one).
  * Pure; `undefined` when the path says nothing (then the usual order applies).

@@ -30,3 +30,45 @@ TypeScript main process, plain JS renderer, Electron 44. Storage: one JSON file 
 - Adapters: `agentSchedule` normalized event (types, event guard, Copilot mapper). No change for Claude Code or Codex (nothing to map).
 - Renderer: the form gets *On a calendar* (select, time, day checkboxes for weekly), *Send to* when opened from a chat, and *Limit*; rows show the target, the spend and the pause reason; a read-only list of the agent's own schedules.
 - Constitution: I (normalized event, no Copilot types in the renderer), II (an ended session pauses, never redirected; caps only stop runs), III (no new logging of prompts), IV (fake clock and simulator only), V (the dialog grows by one line of form; no office layout change), VI (`Date` local time, no OS scheduler). Pass.
+
+## 2026-10-22: edit a schedule (issue #522)
+
+What exists (read on `origin/main` b76b79a3):
+- `Scheduler.save` (`src/main/schedules.ts:333`) is already an upsert by id: `cleanSchedule` keeps a valid renderer id (`:118`), `save` replaces the entry with that id and keeps `last`, the spend in the same unit and a pause reason (`:354-366`), and the limit of 50 applies to new ones only (`:343`). It recomputes `next` (it passes `next: undefined`, `:337`) except for a paused recurring schedule, which keeps its old `next` (`:365`). It takes `paused` from the renderer, which is how Pause and Resume work (`app.js` `schedAct`, `:3979-3983`). An unknown but well-formed id is added as a new schedule.
+- IPC `schedules:save` (`src/main/ipc/schedules.ts:16`) checks the frame and calls `save`; preload `saveSchedule` (`src/preload/preload.ts:81`); type `DurbarApi.saveSchedule` (`src/shared/api.ts:520`).
+- Renderer: `schedRow`/`schedBtns`/`schedLine` (`src/renderer/app.js:3967-3977`) draw a row with Pause/Resume (or *Use the folder's agent*) and Delete; the prompt is `cutText(prompt, 90)` with the whole prompt in `title`. `openSchedules(r, from)` (`:4008`) builds the dialog and its add form; *Add schedule* builds the input (`:4033-4056`). Send to exists only when opened from a chat (`ag`, `:4010`). Settings > Schedules is `renderSchedSettings` (`:4084`), whose folder row button is `data-ss="open"` with the text **Open…** (`:4090`).
+- Simulator: `saveSchedule` in `src/renderer/sim.ts:1119` mirrors main, but keeps `old.next` for an interval on any save (`:1136`), so an edit would not move the next run there.
+- Tests: `scripts/test-schedules.ts` (fake clock); drivers `scripts/shots-044-everywhere.js` (uses `data-ss="pause"`/`"del"`, not the **Open…** text), `scripts/shots-044-templates.js`, `scripts/check-sched-sendto.js`; all three are in `scripts/ui-suite.js`.
+
+Decision on IPC: **no new channel.** `schedules:save` gets an optional `edit: true`. In `Scheduler.save`:
+1. If the input has an `id`: look it up; missing means refused ("That schedule is gone."), with or without `edit` (fixes the resurrection by a stale Pause).
+2. With `edit: true`: build the candidate from main's copy (`id`, `folder`, `paused`, `done`) plus only the editable fields from the input (`prompt`, `every`, `at`, `rule`, `target`, `cap`), then run the same `cleanSchedule` and the same checks as today. A done one-time schedule may be edited (owner, Q2): the new when must be in the future (a one-time `at`) and saving clears `done`.
+3. The past-time check: for an edit, refuse a one-time `at` in the past when it differs from the old `at`, paused or not; otherwise the current rule.
+4. Keep `last`, `pausedReason` (when paused), and `spent`/`spentUnknown` for the same unit, as today. Do **not** keep the old `next` for an edit (skip `:365` when `edit`), so the next run follows the new when.
+Why not a new `schedules:update` channel: it would add a preload method, a `DurbarApi` member, a `test:ipcchannels` entry and a second copy of the checks; the edit flag reuses one validated path. The renderer stays untrusted: with `edit`, it cannot set `paused`, `done`, `last` or the spend.
+
+Keep the change inside `save` (and a small helper beside it). Open PR #462 adds `scheduleBusy` after `dueAt` (`schedules.ts:175-196`); do not touch those lines, so the two merge cleanly.
+
+Renderer:
+- `schedBtns` gets **Edit…** (`data-sc|ss="edit"`) for rows that are not done. In the dialog it fills the form; in Settings it calls `openSchedules(room, null, { edit: id })`.
+- `openSchedules` gains an edit mode: a heading line **Edit schedule**, **Save** and **Cancel** buttons, template picker hidden, form filled from the schedule (radio, minutes, calendar kind, time and days, `datetime-local` from `at`, limit amount). Send to is shown when the schedule has a target or the dialog came from a chat; the target's option uses its live agent's name, else `target.name`. Save sends `{ id, edit: true, folder, prompt, when, target|null, cap|null }`.
+- One function builds the input for Add and Save, so the client checks stay the same.
+- Settings folder button: **Schedules for this folder…** with a short `title` (FR-168: at most 120 characters).
+- Prompt in a row: a `button.sc-p` (cut text, `title` = `cutText(prompt, 300)`, `aria-expanded`) that toggles a `div.sc-full` (`white-space: pre-wrap`, `overflow-wrap: anywhere`, at least 12px). Rows of the agent app's own schedules get the same treatment.
+
+Simulator: `sim.ts` `saveSchedule` follows the same edit rules (unknown id refused, main-kept fields, `next` computed again on edit).
+
+New driver `scripts/check-sched-edit.js` (`npm run check:sched-edit`, added to `scripts/ui-suite.js`), built on `scripts/driver-helpers.js` (`helpers(ctx)`: `until`, `settle`, `load`, `calm`, `js`, `shot`; values through `jsLiteral`), no fixed sleeps, no desk sweeps (pick the desk by selector, as `check-sched-sendto.js` does). At 1440x900 and 1280x800, `DURBAR_SIM=15 DURBAR_SIM_FREEZE=1`:
+1. open a folder's dialog from a chat, add *every 60 minutes*; the row shows Edit…, Pause and Delete inside the dialog box;
+2. Edit…: the form shows the prompt, *Every* 60, **Save** and **Cancel**, no template picker; change the prompt and pick *Weekdays at 09:00*; Save: same number of rows, same `data-id`, the line reads "weekdays at 09:00", the next run changed;
+3. Edit…, change the prompt, Cancel: the row is unchanged; Escape the same;
+4. Pause, Edit…, Save: still paused;
+5. a targeted schedule edited from Settings shows Send to with the session's name;
+6. Settings > Schedules: the folder button reads **Schedules for this folder…**, is one line, inside the panel; Edit… there opens the dialog in edit mode on that schedule;
+7. a 2,000-character prompt: the row is one line with "…", its `title` is at most 300 characters, the toggle shows the whole text, nothing in the dialog scrolls sideways, all text at least 10.5px;
+8. screenshots `docs/screenshots/044-edit-{dialog,settings,long}-{1440x900,1280x800}.png`.
+Then run `check:ui-text`, `shots-044-everywhere`, `shots-044-templates` and `check-sched-sendto` again (the form and the Settings row change).
+
+Constitution: I (no adapter change), II/III (the renderer gains no power: with `edit` it cannot set pause, done, last or spend; no new logging of prompts; an unknown id is refused), IV (fake clock and simulator only, no credits), V (one more button per row, the full prompt only on request; 10.5px minimum; checked at both sizes), VI (no platform code; `datetime-local` and `time` inputs as today). Pass.
+
+Docs in the build PR: README *Scheduled prompts* line (`README.md:68`: say a schedule can be edited, and where); CHANGELOG under *Unreleased*, or a `changelog.d/` fragment if PR #518 is merged by then (follow `origin/main`); the spec 044 row in `specs/README.md` (or the spec's index header if #518 has merged); tick the tasks and mark FR-022..FR-026 `[IMPLEMENTED]`; screenshots.

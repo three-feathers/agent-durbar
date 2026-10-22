@@ -8,7 +8,7 @@
  *
  * Part 2 rules (T150-T155): orphan (a menu hint's last line is one word), menu-width, menu-hints (a menu has a hint on every item or on none),
  * tooltip-length (static titles 120, data titles 300 characters and 8 lines), ellipsis-title, label-wrap, kbd-align, x-scroll on screens,
- * copy-overlap and caret-after-copy in the chat, heading-lines in the inbox; `pairs()` is the contrast of the rules that moved to theme tokens.
+ * popover-width (a popover is the S or M token wide, with --pop-pad), copy-overlap and caret-after-copy in the chat, heading-lines in the inbox; `pairs()` is the contrast of the rules that moved to theme tokens.
  */
 (function () {
   if (window.__uitext) return;
@@ -290,6 +290,28 @@
           const got = ['Top', 'Right', 'Bottom', 'Left'].map((k) => parseFloat(cs['padding' + k]));
           if (pad.some((v, i) => Math.abs(v - got[i]) > 0.5)) add('dialog-padding', root, root, `padding ${got.join(' ')} but --dlg-pad is ${pad.join(' ')}`);
         }
+      }
+      if (kind === 'popover') {
+        // T171: a name cut to a sliver is the bug even with a title (the Folders popover's first row sat beside a floated checkbox: "mc...")
+        for (const el of root.querySelectorAll('*')) {
+          if (!vis(el) || getComputedStyle(el).textOverflow !== 'ellipsis') continue;
+          if (el.scrollWidth > el.clientWidth + 1 && el.clientWidth < 120) add('popover-squeezed', root, el, `"${snip(el.textContent, 30)}" is cut to ${el.clientWidth}px (scrollWidth ${el.scrollWidth})`);
+        }
+        // FR-167 (T169, issue #508): width is the S or M token (or the window minus 32px), padding is --pop-pad
+        const rs = getComputedStyle(document.documentElement);
+        const toks = [['--pop-w-s', 420], ['--pop-w-m', 660]].map(([n, want]) => ({ n, want, v: rs.getPropertyValue(n).trim() }));
+        const px = toks.map((x) => (x.v ? probe(root, 'width', x.v) : NaN));
+        px.forEach((v, i) => { if (Math.abs(v - Math.min(toks[i].want, innerWidth - 32)) > 1) add('popover-width', root, root, `${toks[i].n} is "${toks[i].v}" (${v}px), expected ${toks[i].want}px`); });
+        const w = root.offsetWidth;
+        if (!px.some((v) => Math.abs(v - w) <= 1) && Math.abs(w - (innerWidth - 32)) > 1) add('popover-width', root, root, `width ${Math.round(w)}px is none of ${px.map(Math.round).join('/')} (nor ${innerWidth - 32})`);
+        // the assignment is fixed: Defaults and Allowed grants are S, Folders and Floors are M (a popover on the other size fails)
+        const SIZE = { defaultsPop: 0, grantsPop: 0, foldersPop: 1, floorsPop: 1 };
+        if (!(root.id in SIZE)) add('popover-width', root, root, `popover "${root.id || root.className}" is not in the S/M map (add it to SIZE in ui-text-page.js)`);
+        else if (Math.abs(px[SIZE[root.id]] - w) > 1 && Math.abs(w - (innerWidth - 32)) > 1) add('popover-width', root, root, `${root.id} is ${Math.round(w)}px but must be ${toks[SIZE[root.id]].n} (${Math.round(px[SIZE[root.id]])}px)`);
+        const want = probe(root, 'padding', 'var(--pop-pad)');
+        const pcs = getComputedStyle(root);
+        const got = ['Top', 'Right', 'Bottom', 'Left'].map((k) => parseFloat(pcs['padding' + k]));
+        if (want.some((v, i) => Math.abs(v - got[i]) > 0.5) || want.join() !== '12,14,12,14') add('popover-width', root, root, `padding ${got.join(' ')} but --pop-pad is ${want.join(' ')} (expected 12 14 12 14)`);
       }
       if (kind === 'popover' || kind === 'menu') {
         const cs = getComputedStyle(root);
