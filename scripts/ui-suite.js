@@ -46,6 +46,7 @@ const DRIVERS = [
   { name: 'check-sched-sendto' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
+  { name: 'shots-059-long-url' }, // spec 059 FR-019: a long unbroken name stays in its card, the inbox and the Schedules rows
   { name: 'check-ui-text' }, // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast
 ];
 

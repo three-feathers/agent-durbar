@@ -253,7 +253,7 @@ FR-023) use the new name; Resume opens an agent with that name.
   at most 2 lines and then ends in "…" (line clamp), and a token with no space may break anywhere (`overflow-wrap:anywhere`); this is the one exception to the
   "words move whole to the next line" rule of spec 052 FR-165, which is for help text, because a name is data the user does not control. The other surfaces keep one line
   with an ellipsis. The full name stays in the existing tooltip (`nameTipAttr`, spec 052 FR-168). Card sizes and office geometry do not change. `simnames=long`
-  (FR-016) adds one agent whose name is a single URL-like token (no real address, `example.invalid`), and `check:office` fails when any `.name` on a card overflows
+  (FR-016) adds one agent (the third, which waits for you, so it is also in the inbox) whose name is a single URL-like token (no real address, `example.invalid`), and `check:office` fails when any `.name` on a card overflows
   its box at 1440x900 and 1280x800.
 
 - **FR-017** `[IMPLEMENTED]` **The dialog says where the name goes and that it may sync** (Vikram's requirement on #372 and PR #376). For
@@ -361,5 +361,6 @@ gets a pointer. Fix: line clamp on full cards, ellipsis elsewhere, simulator nam
 - `test:` built 2026-10-22 (simulator only). The roomy and compact cards (`.l1 .name`), the chat header, strip, list row and Previous sessions row already cut a long name to one line;
   the full card (`.who .name`) was the only one that did not, so only it got the 2-line clamp (a roomy card keeps its one line so card sizes do not change). `check:office` (new `sim=3` full-layout case
   and the 12 and 15 agent offices) and `check:rename` (step 7, a 60-character token on the header, strip, card, list row and a Previous sessions row) fail when a name leaves its box; `scripts/shots-059-long-url.js`
-  took `docs/screenshots/059-long-url-name-{before,after}-{1440x900,1280x800}.png`. Before the fix the name ran 4 lines and out of its card at 1440x900, and at 1280x800 made the layout fall back to roomy.
-- `[KNOWN GAP]` The Needs you inbox row and the Schedules list were not given the URL-like name (the Schedules hint shows the name cut to 40, FR-008); `check:ui-text` x-scroll covers the inbox with `simnames=long`.
+  took `docs/screenshots/059-long-url-name-{before,after}-{1440x900,1280x800}.png` (and `-inbox-` after). Before the fix the name ran 4 lines and out of its card.
+- `test:` the Needs you inbox row (`.ib-n`), the Schedules dialog (row and the "Send to" hint) and the Settings schedule row were checked with the URL-like name (agent 3, which waits for you) and a schedule whose prompt is one long token, at both sizes, by `scripts/shots-059-long-url.js` (in `check:ui`). It found a real overflow: the Schedules list rows (`.sc-list` grid, `.sc-t b`) let a prompt that is one token run out of the row; fixed with `minmax(0,1fr)` and `min-width:0;max-width:100%` (ellipsis, full prompt in the tooltip). The inbox needed no change.
+- `[KNOWN GAP]` The OS notification text and the activity log were read, not rendered (plain text, no layout).

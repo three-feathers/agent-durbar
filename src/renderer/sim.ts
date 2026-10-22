@@ -35,7 +35,7 @@ interface SimOptions {
   floors?: boolean;
   /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`). */
   titles?: boolean;
-  /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits; agent 2 has one long unbroken URL-like name (FR-019). */
+  /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits; agent 3 has one long unbroken URL-like name (FR-019). */
   names?: 'long';
   /** Spec 052 FR-170 (T155): long replies and long sub-agent prompts that run to the right edge of the chat, to check that the Copy button covers no text (page address `simreply=long`). */
   reply?: 'long';
@@ -296,7 +296,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       (info as AgentInfo & { roomName?: string; role?: string }).role = role;
       info.renameCap = caps(info.adapterId ?? 'copilot').renameSession; // spec 059: what a rename does in the agent app
       if (opts.names === 'long') info.alias = (SIM_LONG_NAMES[i % SIM_LONG_NAMES.length] + ' ' + (i + 1)).padEnd(60, '.').slice(0, 60);
-      if (opts.names === 'long' && i === 1) info.alias = SIM_LONG_URL_NAME; // FR-019: one agent whose name has no space
+      if (opts.names === 'long' && i === 2) info.alias = SIM_LONG_URL_NAME; // FR-019: the third agent (it waits for you, so it is in the inbox) has a name with no space
       return {
         info, room, state, intent, helpers, files,
         prompt: i === 0
