@@ -493,6 +493,43 @@ async function main(): Promise<void> {
     assert.deepStrictEqual([cur(h2).loop?.ended?.reason, cur(h2).loop?.errorStreak ?? 0, cur(h2).last?.outcome], ['user', 0, 'ended']);
   }
 
+  {
+    // M5: a late failed send of pass 1 returns after pass 2 has started; it must not land on pass 2
+    const h = harness();
+    let go1!: () => void;
+    h.gate.p = new Promise<void>((r) => (go1 = r));
+    const s = await h.loop();
+    assert.ok(s.loop?.inPass && h.sent.length === 1);
+    h.sch.turnEnded('s1', {}); // pass 1's turn ends while its send is still pending
+    h.gate.p = new Promise<void>(() => undefined); // pass 2's send stays pending
+    (h.sch as unknown as { running: boolean }).running = false; // the guard is defensive: tick() is serial, so free it by hand to reach this order
+    await h.advance(30 * MIN);
+    assert.deepStrictEqual([h.sent.length, cur(h).loop?.passes, cur(h).loop?.inPass], [2, 2, true]);
+    h.failSend.v = true;
+    go1();
+    await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual([cur(h).loop?.passes, cur(h).loop?.inPass, cur(h).loop?.errorStreak ?? 0, cur(h).loop?.ended], [2, true, 0, undefined], 'pass 1 result does not land on pass 2');
+    assert.notStrictEqual(cur(h).last?.outcome, 'failed');
+  }
+  {
+    // M5: Stop then Start again while a send is pending; the late result must not land on the restarted loop
+    const h = harness();
+    let go1!: () => void;
+    h.gate.p = new Promise<void>((r) => (go1 = r));
+    const s = await h.loop();
+    assert.ok(h.sch.stopLoop(s.id));
+    await h.advance(MIN); // the restart gets a different startedAt
+    h.gate.p = new Promise<void>(() => undefined);
+    (h.sch as unknown as { running: boolean }).running = false; // the guard is defensive: tick() is serial, so free it by hand to reach this order
+    assert.ok(h.sch.restartLoop(s.id).ok);
+    await h.advance(0);
+    assert.deepStrictEqual([h.sent.length, cur(h).loop?.passes, cur(h).loop?.inPass], [2, 1, true]);
+    h.failSend.v = true;
+    go1();
+    await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual([cur(h).loop?.passes, cur(h).loop?.inPass, cur(h).loop?.errorStreak ?? 0, cur(h).loop?.ended], [1, true, 0, undefined], 'the old send does not land on the restarted loop');
+  }
+
   // --- the end time is a boundary: no pass at or after endAt, and a loop does not stay "running" past it ---
   {
     // a busy skip whose next wake is exactly endAt: nothing is sent, it ends with reason time

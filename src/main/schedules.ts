@@ -546,13 +546,14 @@ export class Scheduler {
     delete s.next;
     this.attrib.set(session, s.id);
     const pass = l.passes;
+    const started = l.startedAt; // restartLoop edits this object in place, so keep the value from before the await
     const r = await this.deps.send(s.folder, s.prompt, s).catch(() => false);
     const after = this.deps.now();
     // `save` (Pause, Resume, an edit) may have replaced the object while send was awaited: act on the current one, and only if it is
     // still this loop in this pass (not stopped, removed, or its turn already ended)
     const cur = this.doc.schedules.find((x) => x.id === s.id);
     const cl = cur?.loop;
-    if (!cur || !cl || cl.ended || !cl.inPass || cl.passes !== pass || cl.startedAt !== l.startedAt) return;
+    if (!cur || !cl || cl.ended || !cl.inPass || cl.passes !== pass || cl.startedAt !== started) return;
     if (r) {
       cur.last = { at: now, outcome: 'sent' };
       return;
