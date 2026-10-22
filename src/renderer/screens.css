@@ -353,11 +353,16 @@ body.has-bridge #topBtns{display:flex}
 .dlg .pe-tpl-t{font-size:13px;font-weight:600;color:var(--ink)}
 .dlg label.pe-tpl-opt small{grid-column:2;font-size:var(--t4-size);color:var(--muted);font-weight:400}
 /* Create with AI (spec 043 FR-021) */
-.dlg.pe-ai{width:min(860px,calc(100vw - 32px))}
+.dlg.pe-ai{width:min(var(--dlg-w-l),calc(100vw - 32px))}
 .dlg .pe-ai-how{width:max-content}
-.dlg .pe-ai-qs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:8px 14px}
+.dlg .pe-ai-qs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 14px}
 .dlg .pe-ai-qs[hidden]{display:none}
-.dlg .pe-ai-qs textarea{min-height:34px}
+.dlg .pe-ai-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 14px;align-items:start}
+.dlg .pe-ai-row>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.dlg .pe-ai-row p{margin:0}
+.dlg .pe-ai-qs textarea{min-height:48px;resize:vertical}
+.dlg .dbtn #peALate[hidden]{display:none}
+.dlg .dbtn #peALate{align-self:center;margin:0}
 .dlg #peADesc[hidden]{display:none}
 .dlg .pe-ai-wait{margin:0;font-size:var(--t3-size);color:var(--ink-2)}
 .dlg .pe-ai-wait[hidden]{display:none}

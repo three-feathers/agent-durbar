@@ -11,7 +11,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { agentDirsFor } from '../adapters/copilot';
 import type { ProfileFileInfo, ProfileFolderInfo } from '../shared/api';
-import { DEFAULT_TEMPLATE, profileTemplate } from '../shared/profiletemplates';
+import { DEFAULT_TEMPLATE, MAX_PROFILE_BYTES, profileTemplate } from '../shared/profiletemplates';
 import type { TemplateKind } from '../shared/profiletemplates';
 
 export type { ProfileFileInfo, ProfileFolderInfo };
@@ -19,7 +19,7 @@ export type { ProfileFileInfo, ProfileFolderInfo };
 export type ProfileApp = 'copilot' | 'claude';
 export const PROFILE_APPS: readonly ProfileApp[] = ['copilot', 'claude'];
 export const APP_LABEL: Record<ProfileApp, string> = { copilot: 'GitHub Copilot', claude: 'Claude Code' };
-export const MAX_PROFILE_BYTES = 256 * 1024;
+export { MAX_PROFILE_BYTES }; // shared with the AI reply check (spec 043 FR-030)
 export const MAX_PROFILE_FOLDERS = 50;
 export const MAX_FILES_PER_DIR = 50;
 /** All files listed at most (50 folders x 2 apps x 50 files would be 5,000); the list reads only the first 8 KB of each. */

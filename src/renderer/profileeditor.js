@@ -351,30 +351,37 @@
   async function aiCreate(t){
     let kinds=[];
     if(X.bridge.listAdapters){try{kinds=((await X.bridge.listAdapters())||[]).filter(k=>k&&k.state==='ready'&&k.capabilities&&k.capabilities.oneShot);}catch(e){kinds=[];}}
+    kinds.sort((a,b)=>(b.id===t.app)-(a.id===t.app)); /* FR-023: the target app first */
+    const RO=((win.exports&&win.exports.DEFAULT_READ_TOOLS)||{})[t.app]||[];
     const QS=(win.exports&&win.exports.PROFILE_QUESTIONS)||[];
     const costLine=k=>win.DurbarScreens&&win.DurbarScreens.oneShotCostLine?win.DurbarScreens.oneShotCostLine(k):'Uses your own '+(k.displayName||k.id)+' account.';
     const ov=doc.createElement('div');ov.id='peAiOv';ov.className='dlg-ov';
     ov.innerHTML=`<div class="dlg pe-ai" role="dialog" aria-modal="true" aria-labelledby="peAT"><h3 id="peAT"></h3>
-      <p class="dsub">Describe the agent, or answer a few questions. An agent app writes the Agent Success Profile in one request, with no tools and nothing kept; you read it in the editor before anything is saved. It never gets tools you did not name.</p>
+      <p class="dsub">Describe the agent, or answer a few questions. An agent app writes the Agent Success Profile in one request, with no tools and nothing kept; you read it in the editor before anything is saved.</p>
       ${kinds.length?`<div class="seg pe-ai-how" role="group" aria-label="How"><button type="button" data-am="describe" aria-pressed="true">Describe it</button><button type="button" data-am="questions" aria-pressed="false">Questionnaire</button></div>
       <div id="peADesc"><label>What does this agent do?<textarea id="peADescT" rows="5" maxlength="2000" placeholder="A careful reviewer for the payments service. It reports to me, reads code with Read, Grep and Glob, never edits files, and flags security and rounding risks in short notes."></textarea></label></div>
       <div id="peAQ" class="pe-ai-qs" hidden></div>
-      <label>Written by<select id="peABy"></select></label>
-      <p class="scr-note small" id="peACost"></p>`:'<p class="dsub">This needs Claude Code, OpenAI Codex or GitHub Copilot, installed and signed in on this computer.</p>'}
+      <div class="pe-ai-row"><div><label>Extra tools (optional)<input type="text" id="peATools" maxlength="2000" autocomplete="off" spellcheck="false"></label>
+      <p class="scr-note small" id="peAToolsNote"></p></div>
+      <div><label>Written by<select id="peABy"></select></label>
+      <p class="scr-note small" id="peACost"></p></div></div>`:'<p class="dsub">This needs Claude Code, OpenAI Codex or GitHub Copilot, installed and signed in on this computer.</p>'}
       <p class="derr" id="peAErr" role="alert" hidden></p><p class="pe-ai-wait" id="peAWait" role="status" hidden>Writing the profile… this can take up to a minute.</p>
-      <div class="dbtn"><button class="btn" type="button" id="peACancel" data-cancel="1">${kinds.length?'Cancel':'Close'}</button><button class="btn" type="button" id="peAStop" hidden>Stop waiting</button>${kinds.length?'<button class="btn primary" type="button" id="peAGo">Create with AI</button>':''}</div></div>`;
+      <div class="dbtn"><button class="btn" type="button" id="peACancel" data-cancel="1">${kinds.length?'Cancel':'Close'}</button><button class="btn" type="button" id="peAStop" hidden>Stop waiting</button><span class="scr-note small" id="peALate" hidden>Create is available again when the first request ends.</span>${kinds.length?'<button class="btn primary" type="button" id="peAGo">Create with AI</button>':''}</div></div>`;
     setText(ov.querySelector('#peAT'),'Create '+t.name+' with AI');
+    /* FR-026: tools come only from this line, never from the text above */
+    const toolsIn=ov.querySelector('#peATools');
+    if(toolsIn){toolsIn.placeholder=t.app==='copilot'?'edit, shell':'Bash(git:*), Edit';setText(ov.querySelector('#peAToolsNote'),'The agent gets only the read-only tools ('+RO.join(', ')+') and the ones you list here, separated by commas. Tools named in your text are not granted.');}
     const q=ov.querySelector('#peAQ');
-    if(q)QS.forEach(x=>{const l=doc.createElement('label');const sp=doc.createElement('span');setText(sp,x.question);const ta=doc.createElement('textarea');ta.rows=1;ta.maxLength=600;ta.dataset.q=x.id;ta.placeholder=x.hint;l.append(sp,ta);q.appendChild(l);});
+    if(q)QS.forEach(x=>{const l=doc.createElement('label');const sp=doc.createElement('span');setText(sp,x.question);const ta=doc.createElement('textarea');ta.rows=2;ta.maxLength=600;ta.dataset.q=x.id;ta.placeholder=x.hint;l.append(sp,ta);q.appendChild(l);});
     const by=ov.querySelector('#peABy');
     if(by){kinds.forEach(k=>{const o=doc.createElement('option');o.value=k.id;setText(o,k.displayName||k.id);by.appendChild(o);});by.value=kinds.some(k=>k.id===t.app)?t.app:kinds[0].id;}
     doc.body.appendChild(ov);
-    let mode='describe',waiting=null;
+    let mode='describe',waiting=null,inFlight=0; /* inFlight: requests not ended yet, also after Stop waiting (FR-031) */
     const paintCost=()=>{if(!by)return;const k=kinds.find(x=>x.id===by.value)||kinds[0];setText(ov.querySelector('#peACost'),'1 prompt. '+costLine(k)+' No tools, nothing kept.');setText(ov.querySelector('#peAGo'),'Create with AI (1 prompt, '+(k.displayName||k.id)+')');};
     paintCost();if(by)by.addEventListener('change',paintCost);
     const setHow=m=>{mode=m;ov.querySelectorAll('[data-am]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.am===m)));ov.querySelector('#peADesc').hidden=m!=='describe';ov.querySelector('#peAQ').hidden=m!=='questions';const f=ov.querySelector(m==='describe'?'#peADescT':'#peAQ textarea');if(f)f.focus();};
     ov.addEventListener('click',e=>{const b=e.target.closest('[data-am]');if(b&&!waiting)setHow(b.dataset.am);});
-    const busy=on=>{ov.querySelectorAll('textarea,select,[data-am]').forEach(x=>{x.disabled=on;});const g=ov.querySelector('#peAGo');if(g)g.hidden=on;ov.querySelector('#peAStop').hidden=!on;ov.querySelector('#peAWait').hidden=!on;};
+    const busy=on=>{ov.querySelectorAll('textarea,select,input,[data-am]').forEach(x=>{x.disabled=on;});const g=ov.querySelector('#peAGo');if(g){g.hidden=on;g.disabled=inFlight>0;}ov.querySelector('#peALate').hidden=on||!inFlight;ov.querySelector('#peAStop').hidden=!on;ov.querySelector('#peAWait').hidden=!on;};
     const err=m=>{const e=ov.querySelector('#peAErr');e.hidden=!m;setText(e,m||'');};
     return new Promise(resolve=>{
       const done=v=>{ov.remove();resolve(v);};
@@ -382,12 +389,14 @@
       ov.querySelector('#peAStop').onclick=()=>{waiting=null;busy(false);err('Stopped waiting. The request may still finish on the agent app and be charged.');};
       const go=ov.querySelector('#peAGo');
       if(go)go.onclick=async()=>{
-        const req={app:t.app,name:t.name,by:by.value,mode};
+        if(inFlight)return;
+        const req={app:t.app,name:t.name,by:by.value,mode,tools:toolsIn?toolsIn.value.trim():''};
         if(mode==='describe'){req.description=ov.querySelector('#peADescT').value.trim();if(req.description.length<10){err('Describe what the agent does in a sentence or two.');return;}}
         else{req.answers={};ov.querySelectorAll('#peAQ textarea').forEach(x=>{if(x.value.trim())req.answers[x.dataset.q]=x.value.trim();});if(!Object.keys(req.answers).length){err('Answer at least one question.');return;}}
-        err('');busy(true);const token={};waiting=token;
+        err('');inFlight++;busy(true);const token={};waiting=token;
         const r=await X.bridge.generateProfile(req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-        if(waiting!==token)return; /* Stop waiting or Cancel: the answer is dropped */
+        inFlight--;
+        if(waiting!==token){if(!waiting&&ov.isConnected)busy(false);return;} /* Stop waiting or Cancel: the answer is dropped; Create comes back */
         waiting=null;busy(false);
         const spent=r&&r.costUsd?' Cost: about $'+r.costUsd.toFixed(4)+' (estimate).':r&&r.nanoAiu?' Used '+(r.nanoAiu/1e9).toFixed(2)+' AI credits (as reported by Copilot).':'';
         if(!r||!r.ok){err(((r&&r.error)||'Unknown error.')+spent+' Your answers are kept: change them and try again.');return;}
