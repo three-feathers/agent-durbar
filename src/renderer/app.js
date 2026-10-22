@@ -3973,10 +3973,19 @@ function schedLine(s){
     +(s.last?' · last '+clock(s.last.at)+': '+(OUTCOME_WORD[s.last.outcome]||s.last.outcome):'');
 }
 /* the row's buttons; `k` is the data attribute (sc in the dialog, ss in Settings). An ended session cannot be resumed, only moved to the folder's agent (FR-014). */
-const schedBtns=(s,k)=>(s.done?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
+const schedBtns=(s,k)=>`<button class="btn" type="button" data-${k}="edit" data-id="${esc(s.id)}">Edit…</button>`+(s.done?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
   :`<button class="btn" type="button" data-${k}="pause" data-id="${esc(s.id)}"${s.pausedReason==='cap'?' title="Resume starts counting its spending again from zero"':''}>${s.paused?'Resume':'Pause'}</button>`)
   +`<button class="btn danger" type="button" data-${k}="del" data-id="${esc(s.id)}">Delete</button>`;
-const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(DurbarCutText.cutText(s.prompt,90))}</b><small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}</div>`;
+/* spec 044 FR-025: the prompt is one line cut to 90 characters; it is a button that shows the whole prompt under the row (aria-expanded) and folds it again; its tooltip is at most 300 characters (spec 052 FR-168) */
+const SCHED_OPEN=new Set();
+const promptToggle=(key,prompt)=>{const open=SCHED_OPEN.has(key);return `<button class="sc-p" type="button" data-pkey="${esc(key)}" aria-expanded="${open}" title="${esc(DurbarCutText.cutText(prompt,300))}">${esc(DurbarCutText.cutText(prompt,90))}</button><p class="sc-full"${open?'':' hidden'}>${esc(prompt)}</p>`;};
+document.addEventListener('click',e=>{
+  const b=e.target.closest&&e.target.closest('.sc-p');if(!b)return;
+  const k=b.dataset.pkey,open=!SCHED_OPEN.has(k);
+  if(open)SCHED_OPEN.add(k);else SCHED_OPEN.delete(k);
+  b.setAttribute('aria-expanded',String(open));const f=b.nextElementSibling;if(f)f.hidden=!open;
+});
+const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}" data-id="${esc(s.id)}"><div class="sc-t">${promptToggle('s:'+s.id,s.prompt)}<small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}</div>`;
 /* pause/resume/retarget/delete from a row (dialog or Settings) */
 async function schedAct(act,s){
   if(act==='del')await bridge.removeSchedule(s.id);
@@ -4001,13 +4010,13 @@ function renderSchedDlg(){
   list.innerHTML=ss.length?ss.map(s=>schedRow(s,'sc')).join(''):'<p class="sc-empty">No schedules for this folder yet.</p>';
   $('sdPausedNote').hidden=!SCHED.pausedAll;
   /* FR-016: the agent app's own schedules of this folder's live sessions, read-only */
-  const own=agents.filter(x=>x.live&&!x.parent&&x.room===r.id&&x.agentScheds&&x.agentScheds.size).flatMap(x=>[...x.agentScheds.values()].map(v=>({x,v})));
+  const own=agents.filter(x=>x.live&&!x.parent&&x.room===r.id&&x.agentScheds&&x.agentScheds.size).flatMap(x=>[...x.agentScheds.entries()].map(([id,v])=>({x,v,id})));
   const ow=$('sdOwn');if(ow){ow.hidden=!own.length;ow.innerHTML=own.length?'<h4>Scheduled in the agent app (read-only)</h4><p class="sc-tpl-note">Made with the app\'s own commands or by the agent. Agent Durbar shows them but cannot change them; ask the agent, or use the app\'s own schedule manager.</p>'
-    +own.map(({x,v})=>`<div class="sc-row off"><div class="sc-t"><b title="${esc(v.prompt)}">${esc(v.prompt||'(no prompt text)')}</b><small>${esc(ownWhen(v)+' · '+(x.name)+(v.origin==='model'?' · made by the agent':v.origin==='user'?' · made by you':''))}</small></div></div>`).join(''):'';}
+    +own.map(({x,v,id})=>`<div class="sc-row off"><div class="sc-t">${v.prompt?promptToggle('o:'+x.id+':'+id,v.prompt):'<b>(no prompt text)</b>'}<small>${esc(ownWhen(v)+' · '+(x.name)+(v.origin==='model'?' · made by the agent':v.origin==='user'?' · made by you':''))}</small></div></div>`).join(''):'';}
 }
 function closeSchedDlg(){const d=$('schedDlg');if(d)d.remove();}
 /* `from`: the chat it was opened from (FR-014: then it can send to that session instead of the folder's agent) */
-function openSchedules(r,from){
+function openSchedules(r,from,opts){
   closeSchedDlg();toggleFolders(false);
   const ag=from&&from.live&&!from.parent&&from.info&&from.room===r.id?from:null;
   const folderAg=agents.find(x=>!x.parent&&x.room===r.id&&x.live)||null;
@@ -4021,50 +4030,106 @@ function openSchedules(r,from){
    <p class="sc-paused" id="sdPausedNote" hidden>All schedules are paused (Folders panel).</p>
    <div class="sc-list" id="sdList"></div>
    <div class="sc-own" id="sdOwn" hidden></div>
-   <div class="sc-form">${window.DurbarSchedTemplates?`<label>Start from a template<select id="scTpl"><option value="">Blank prompt</option>${DurbarSchedTemplates.TEMPLATES.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</select></label><p class="sc-tpl-note" id="scTplNote" hidden></p>`:''}<label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
+   <div class="sc-form"><h4 id="scFormT" hidden>Edit schedule</h4>${window.DurbarSchedTemplates?`<label id="scTplL">Start from a template<select id="scTpl"><option value="">Blank prompt</option>${DurbarSchedTemplates.TEMPLATES.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</select></label><p class="sc-tpl-note" id="scTplNote" hidden></p>`:''}<label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
     <div class="sc-when"><label class="chk"><input type="radio" name="scKind" value="every" checked> Every <input type="number" id="scEvery" min="5" max="1440" step="5" value="60" aria-label="Minutes between runs"> minutes</label>
     <label class="chk"><input type="radio" name="scKind" value="daily"> <select id="scCal" aria-label="Which days"><option value="daily">Every day</option><option value="weekdays">Weekdays (Mon–Fri)</option><option value="weekly">Weekly on</option></select> at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
     <div class="sc-days" id="scDays" role="group" aria-label="Days of the week" hidden>${[1,2,3,4,5,6,0].map(n=>`<label class="chk"><input type="checkbox" value="${n}"${n===today?' checked':''}> ${DAY3[n]}</label>`).join('')}</div>
-    <div class="sc-opts">${ag?`<label class="sc-to"><span class="sc-lbl">Send to</span> <select id="scTarget" aria-describedby="scToHint"><option value="">This folder's agent</option><option value="${esc(ag.id)}">This session</option></select></label>`:''}
-     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div>${ag?`<p class="sc-hint" id="scToHint" title="${esc(ag.name)}" hidden>${esc(ag.name)}</p>`:''}</div>
-   <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
+    <div class="sc-opts"><label class="sc-to" id="scToL"${ag?'':' hidden'}><span class="sc-lbl">Send to</span> <select id="scTarget" aria-describedby="scToHint"><option value="">This folder's agent</option><option value="${ag?esc(ag.id):''}">This session</option></select></label>
+     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div><p class="sc-hint" id="scToHint" title="${ag?esc(ag.name):''}" hidden>${ag?esc(ag.name):''}</p></div><p class="sc-tpl-note" id="scCapKeep" hidden></p>
+   <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn" id="scCancel" type="button" hidden>Cancel</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
   renderSchedDlg();
+  const toLocal=ms=>{const x=new Date(ms);return `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}T${pad(x.getHours())}:${pad(x.getMinutes())}`;};
+  /* what "This session" means: the chat the dialog came from, or (editing) the schedule's own session; `live` is its agent when it still exists */
+  let tgt=ag?{id:ag.id,agent:ag.info.adapterId||'copilot',name:ag.name,live:ag}:null;
+  let editing=null; /* spec 044 FR-022: the schedule the form edits (main's copy when Edit… was pressed), or null when it adds one */
+  const applyTgt=()=>{
+    $('scToL').hidden=!tgt;
+    const sel=$('scTarget');sel.options[1].value=tgt?tgt.id:'';
+    $('scToHint').textContent=tgt?tgt.name:'';$('scToHint').title=tgt?tgt.name:'';
+    $('scToHint').hidden=!sel.value;
+  };
+  let capUnitNow=schedCapUnit(folderAg); /* a number typed for one unit is never carried to another (5 dollars must not become 5 AI credits) */
+  const syncCap=()=>{const sel=$('scTarget'),u=schedCapUnit(sel.value&&tgt?tgt.live||folderAg:folderAg);if(u!==capUnitNow&&$('scCap'))$('scCap').value='';capUnitNow=u;$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);const keep=$('scCapKeep'),gone=!!editing&&!!editing.cap&&!u,same=!editing||(editing.target?editing.target.session:'')===(sel.value||'');keep.hidden=!gone;
+    keep.textContent=same?'The limit this schedule has is kept: this agent app does not report what a run costs, so it cannot be changed here.':'This agent app does not report what a run costs, so the limit will be removed.';};
+  const setKind=k=>{d.querySelector(`input[name="scKind"][value="${k}"]`).checked=true;};
+  const showDays=()=>{$('scDays').hidden=$('scCal').value!=='weekly';};
+  /* the form back to a blank new schedule */
+  const blankForm=()=>{
+    $('scPrompt').value='';setKind('every');$('scEvery').value='60';$('scCal').value='daily';$('scDaily').value='08:30';$('scAt').value=local;
+    d.querySelectorAll('#scDays input').forEach(x=>{x.checked=Number(x.value)===today;});showDays();
+    tgt=ag?{id:ag.id,agent:ag.info.adapterId||'copilot',name:ag.name,live:ag}:null;applyTgt();$('scTarget').value='';$('scToHint').hidden=true;
+    if($('scCap'))$('scCap').value='';if($('scTpl')){$('scTpl').value='';$('scTplNote').hidden=true;}syncCap();
+  };
+  const setMode=on=>{
+    $('scFormT').hidden=!on;$('scCancel').hidden=!on;$('scAdd').textContent=on?'Save':'Add schedule';
+    if($('scTplL'))$('scTplL').hidden=on;if($('scTplNote'))$('scTplNote').hidden=true; /* owner Q3: no template picker while editing */
+  };
+  const stopEdit=()=>{editing=null;blankForm();setMode(false);};
+  /* FR-022: Edit… fills the form from the schedule */
+  const startEdit=s=>{
+    editing=s;blankForm();setMode(true);
+    $('scPrompt').value=s.prompt;
+    if(s.rule){setKind('daily');$('scCal').value=s.rule.kind;$('scDaily').value=s.rule.time;d.querySelectorAll('#scDays input').forEach(x=>{x.checked=(s.rule.days||[]).includes(Number(x.value));});showDays();}
+    else if(s.every!==undefined){setKind('every');$('scEvery').value=String(s.every);}
+    else{setKind('once');$('scAt').value=toLocal(s.at);}
+    if(s.target){const a=agents.find(x=>x.id===s.target.session&&x.live&&x.info);tgt={id:s.target.session,agent:s.target.agent,name:a?a.name:(s.target.name||'one session'),live:a||null};}
+    applyTgt();$('scTarget').value=s.target?s.target.session:'';$('scToHint').hidden=!$('scTarget').value;syncCap();
+    if(s.cap&&$('scCap')&&!$('scCapL').hidden)$('scCap').value=String(s.cap.amount);
+    $('scFormT').scrollIntoView({block:'nearest'});$('scPrompt').focus();
+  };
+  /* one builder for Add and Save (FR-023: main checks it again); null after telling the user what is missing */
+  const buildInput=()=>{
+    const prompt=$('scPrompt').value.trim();if(!prompt){$('scPrompt').focus();toast('Write the prompt first.',3000);return null;}
+    const kind=d.querySelector('input[name="scKind"]:checked').value;
+    const input={folder:editing?editing.folder:folderKeyOf(r),prompt};
+    if(editing){input.id=editing.id;input.edit=true;}
+    if(kind==='daily'){ /* spec 044 FR-012: a calendar rule; main computes the next run from the local wall clock */
+      const time=$('scDaily').value;if(!/^\d\d:\d\d$/.test(time)){toast('Choose a time of day.',3500);return null;}
+      const cal=$('scCal').value,rule={kind:cal,time};
+      if(cal==='weekly'){rule.days=[...d.querySelectorAll('#scDays input:checked')].map(x=>Number(x.value));if(!rule.days.length){toast('Choose at least one day.',3500);return null;}}
+      input.rule=rule;
+    }
+    else if(kind==='once'){
+      let t=new Date($('scAt').value).getTime();
+      if(editing&&!editing.done&&editing.at!==undefined&&$('scAt').value===toLocal(editing.at))t=editing.at; /* an unchanged time stays as it is */
+      if(!(t>Date.now())&&!(editing&&!editing.done&&t===editing.at)){toast(editing&&editing.done?'Pick a time in the future to run it again.':'Choose a time in the future.',3500);return null;}
+      input.at=t;
+    }
+    else{const m=Math.round(Number($('scEvery').value));if(!(m>=5&&m<=1440)){toast('Choose 5 to 1440 minutes.',3500);return null;}input.every=m;if(editing&&editing.every===m&&editing.at!==undefined)input.at=editing.at; /* FR-007: an anchored interval keeps its first time */}
+    const tsel=$('scTarget'),tag=tsel&&tsel.value&&tgt?tgt:null; /* FR-014 */
+    if(tag)input.target={session:tag.id,agent:tag.agent,name:SN().shortName(tag.name||'',40)};
+    else if(editing)input.target=null;
+    const capV=$('scCap')&&!$('scCapL').hidden?String($('scCap').value).trim():''; /* FR-015 */
+    if(capV){const n=Number(capV),u=schedCapUnit(tag?tag.live||folderAg:folderAg);if(!(n>0)||!u){toast('A limit must be a positive amount.',3500);return null;}input.cap={amount:n,unit:u};}
+    else if(editing&&(!$('scCapL').hidden||(editing.cap&&!$('scCapKeep').hidden&&(editing.target?editing.target.session:'')!==($('scTarget').value||''))))input.cap=null; /* an empty field removes the limit; a hidden one keeps it, unless Send to moved to an app with no unit (then main would refuse it) */
+    return input;
+  };
   d.addEventListener('click',async e=>{
     if(e.target===d){closeSchedDlg();return;}
     const b=e.target.closest('button');if(!b)return;
     if(b.id==='scClose'){closeSchedDlg();return;}
+    if(b.id==='scCancel'){stopEdit();return;}
     if(b.id==='scAdd'){
-      const prompt=$('scPrompt').value.trim();if(!prompt){$('scPrompt').focus();toast('Write the prompt first.',3000);return;}
-      const kind=d.querySelector('input[name="scKind"]:checked').value,once=kind==='once';
-      const input={folder:folderKeyOf(r),prompt};
-      if(kind==='daily'){ /* spec 044 FR-012: a calendar rule; main computes the next run from the local wall clock */
-        const time=$('scDaily').value;if(!/^\d\d:\d\d$/.test(time)){toast('Choose a time of day.',3500);return;}
-        const cal=$('scCal').value,rule={kind:cal,time};
-        if(cal==='weekly'){rule.days=[...d.querySelectorAll('#scDays input:checked')].map(x=>Number(x.value));if(!rule.days.length){toast('Choose at least one day.',3500);return;}}
-        input.rule=rule;
-      }
-      else if(once){const t=new Date($('scAt').value).getTime();if(!(t>Date.now())){toast('Choose a time in the future.',3500);return;}input.at=t;}
-      else{const m=Math.round(Number($('scEvery').value));if(!(m>=5&&m<=1440)){toast('Choose 5 to 1440 minutes.',3500);return;}input.every=m;}
-      const tsel=$('scTarget'),tag=tsel&&tsel.value?ag:null; /* FR-014 */
-      if(tag&&tag.info)input.target={session:tag.id,agent:tag.info.adapterId||'copilot',name:SN().shortName(tag.name||'',40)};
-      const capV=$('scCap')&&!$('scCapL').hidden?String($('scCap').value).trim():''; /* FR-015 */
-      if(capV){const n=Number(capV),u=schedCapUnit(tag||folderAg);if(!(n>0)||!u){toast('A limit must be a positive amount.',3500);return;}input.cap={amount:n,unit:u};}
+      const input=buildInput();if(!input)return;
+      const was=editing;
       const res=await bridge.saveSchedule(input);
-      if(!res.ok){toast(esc(res.error||'Could not add the schedule.'),5000);return;}
-      $('scPrompt').value='';if($('scCap'))$('scCap').value='';await refreshSchedules();toast('Schedule added: '+esc(whenOf(res.schedule))+'.',3000);return;
+      if(!res.ok){toast(esc(res.error||(was?'Could not save the schedule.':'Could not add the schedule.')),5000);if(was&&res.error==='That schedule is gone.'){stopEdit();await refreshSchedules();}return;}
+      if(was)stopEdit();else{$('scPrompt').value='';if($('scCap'))$('scCap').value='';}await refreshSchedules();toast((was?'Schedule saved: ':'Schedule added: ')+esc(whenOf(res.schedule))+'.',3000);return;
     }
     const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s||!b.dataset.sc)return;
+    if(b.dataset.sc==='edit'){startEdit(s);return;}
     await schedAct(b.dataset.sc,s);
   });
   /* the calendar choice: weekly shows the days; touching any of it picks "On a calendar" */
-  const calKind=()=>{d.querySelector('input[name="scKind"][value="daily"]').checked=true;};
-  const showDays=()=>{$('scDays').hidden=$('scCal').value!=='weekly';};
+  const calKind=()=>{setKind('daily');};
   $('scCal').addEventListener('change',()=>{calKind();showDays();});
   $('scDaily').addEventListener('input',calKind);
   $('scDays').addEventListener('change',calKind);
-  if($('scTarget'))$('scTarget').addEventListener('change',()=>{$('scToHint').hidden=!$('scTarget').value;const t=$('scTarget').value?ag:folderAg,u=schedCapUnit(t);$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);});
+  $('scTarget').addEventListener('change',()=>{$('scToHint').hidden=!$('scTarget').value;syncCap();});
+  applyTgt();
+  if(opts&&opts.edit){const s=SCHED.schedules.find(x=>x.id===opts.edit);if(s)startEdit(s);}
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
   /* spec 044 FR-006: a template fills the form (prompt and when); nothing is saved until Add schedule */
   const tpl=$('scTpl');if(tpl)tpl.addEventListener('change',()=>{
@@ -4075,7 +4140,7 @@ function openSchedules(r,from){
     else if(t.every){d.querySelector('input[name="scKind"][value="every"]').checked=true;$('scEvery').value=String(t.every);}
     note.textContent=t.needs+(t.decides?' At the end it asks you what to do next: the agent shows as Waiting, with a question card in its chat.':'')+' You can edit the prompt and the time before adding it.';note.hidden=false;
   });
-  (tpl||$('scPrompt')).focus();
+  if(!editing)(tpl||$('scPrompt')).focus();
 }
 async function refreshSchedules(){if(!bridge.listSchedules)return;SCHED=await bridge.listSchedules();schedChanged();}
 /* everything that shows schedules: the Folders panel, the open dialog, room chips (office render), Settings (spec 044 FR-009..FR-011) */
@@ -4089,7 +4154,7 @@ function renderSchedSettings(){
   const groups=rooms.map(r=>({r,ss:schedulesOf(r)})).filter(g=>g.ss.length);
   const without=rooms.filter(r=>!schedulesOf(r).length);
   host.innerHTML=`<label class="fp-pause"><input type="checkbox" id="schedPauseAllSet"${SCHED.pausedAll?' checked':''}> Pause all schedules</label>`
-    +(groups.length?groups.map(({r,ss})=>`<div class="ss-group"><div class="ss-head"><b>${esc(r.name)}</b><small>${esc(r.path)}</small><button class="btn" type="button" data-ss="open" data-room="${esc(r.id)}">Open…</button></div>`
+    +(groups.length?groups.map(({r,ss})=>`<div class="ss-group"><div class="ss-head"><b>${esc(r.name)}</b><small>${esc(r.path)}</small><button class="btn" type="button" data-ss="open" data-room="${esc(r.id)}" title="See this folder's schedules and add one">Schedules for this folder…</button></div>`
       +ss.map(s=>schedRow(s,'ss')).join('')+'</div>').join('')
       :'<p class="scr-note small">No schedules yet.</p>')
     +(without.length?`<div class="scr-tools"><label class="ss-add">Add a schedule to<select id="ssRoom">${without.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><button class="btn" type="button" data-ss="add">Add…</button></div>`:'');
@@ -4100,6 +4165,7 @@ document.addEventListener('click',async e=>{
   if(act==='open'){const r=ROOMS.find(x=>x.id===b.dataset.room);if(r)openSchedules(r);return;}
   if(act==='add'){const r=ROOMS.find(x=>x.id===$('ssRoom').value);if(r)openSchedules(r);return;}
   const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s)return;
+  if(act==='edit'){const r=ROOMS.find(x=>folderKeyOf(x)===s.folder);if(r)openSchedules(r,null,{edit:s.id});else toast('That folder is not in the office.',3500);return;}
   await schedAct(act,s);
 });
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAllSet'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;schedChanged();}});

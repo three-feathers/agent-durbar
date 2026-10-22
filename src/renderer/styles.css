@@ -855,11 +855,17 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .fp-row .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
 /* scheduled prompts (spec 044) */
 .fp-h .fp-pause{margin:6px 0 2px;font-size:12px;font-weight:400;color:var(--ink-2);display:flex;gap:6px;align-items:center;cursor:pointer}
-.sched-dlg .sc-list{display:grid;gap:6px;margin:6px 0 12px;max-height:240px;overflow-y:auto}
+.sched-dlg .sc-list{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;margin:6px 0 12px;max-height:240px;overflow-y:auto}
 .sched-dlg .sc-row,.sched-set .sc-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
 .sched-dlg .sc-row.off .sc-t,.sched-set .sc-row.off .sc-t{opacity:.6}
 .sched-dlg .sc-t,.sched-set .sc-t{flex:1;min-width:0;display:flex;flex-direction:column}
 .sched-dlg .sc-t b,.sched-set .sc-t b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sched-dlg .sc-t .sc-p,.sched-set .sc-t .sc-p{font:inherit;font-size:13px;font-weight:600;color:inherit;background:none;border:0;padding:0;text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%} /* spec 044 FR-025: the cut prompt is a button */
+.sched-dlg .sc-t .sc-p:hover,.sched-set .sc-t .sc-p:hover{text-decoration:underline}
+.sched-dlg .sc-full,.sched-set .sc-full{margin:4px 0;font-size:12px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
+.sched-dlg .sc-full[hidden],.sched-set .sc-full[hidden]{display:none}
+.sched-dlg .sc-form h4{margin:0;font-size:13px}
+.sched-dlg .sc-form h4[hidden]{display:none}
 .sched-dlg .sc-t small,.sched-set .sc-t small{font-size:11px;color:var(--muted)}
 .sched-dlg .sc-row .btn,.sched-set .sc-row .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
 .sched-dlg .sc-empty,.sched-dlg .sc-paused{font-size:12px;color:var(--muted);margin:6px 0}
