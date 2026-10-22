@@ -43,6 +43,8 @@ module.exports = async (ctx) => {
       const c2 = await card();
       assert.ok(c2.lines.includes('+++ b/docs/a11y.md') && c2.lines.includes('+  outline: 2px solid var(--blue);'), `${tag}: the diff of both files: ${JSON.stringify(c2.lines)}`);
       assert.ok(c2.btns.includes('Allow once') && c2.btns.includes('Deny'), `${tag}: the answers: ${JSON.stringify(c2.btns)}`);
+      // review on #470: the session grant names the folder of every file, in Expert and in Simple
+      assert.ok(c2.btns.includes(simple ? 'Let Lena change files in “styles” and “docs” until the session ends' : 'Allow “write in src/styles/, docs/” for this session'), `${tag}: the session grant names both folders: ${JSON.stringify(c2.btns)}`);
       await js(`document.querySelector('#chat .note.perm:not(.settled)').scrollIntoView({block:'end'})`); await settle();
       await H.shot(path.join(OUT, `052-codex-file-card${sfx}-${w}x${h}.png`), { prep: 'mouse', tag: 'codex-file-card' });
       await openLena(w, h, 'none', level);
