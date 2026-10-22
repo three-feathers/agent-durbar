@@ -53,3 +53,14 @@
 ## 2026-10-20: retro review sweep
 
 - [x] T047 Accent fold in `sessionsearch.js` written as `\u0300-\u036f` escapes (FR-023; review note on PR #273)
+
+## Changes 2026-10-21: Previous sessions as a collapsible section (owner request)
+
+- [x] T048 Spec delta FR-033..FR-037 with the patterns compared and the owner questions; plan section [FR-033..FR-037]
+- [x] T049 Renderer: `#prevBtn` moves from the header actions to a slim disclosure row (`.prev-bar`, chevron, label, count, breakdown) over `#prevPanel`; FR-034 visibility; Simple wording [FR-033, FR-034]
+- [x] T050 Saved open/closed choice (`durbar.prevOpen`), with the FR-002 auto-open only before a first choice [FR-035]
+- [x] T051 Ctrl+Shift+H / ⇧⌘H toggle with focus moves, `aria-keyshortcuts`, palette item and keyboard sheet row [FR-036]
+- [x] T052 Drivers: `shots-006-prevmarks.js` asserts the row (collapsed, expanded, counts, shortcut per platform, saved choice, fit, light and dark); the other drivers that use `#prevBtn` run unchanged (checked: `check-rename`, `shots-003-mode-back`, `shots-009-vschat`, `shots-017`, `shots-052-ux`, `check-dialog-focus`); `npm run check:office` [FR-033..FR-037]
+- [x] T053 Screenshots `docs/screenshots/006-sessions-*.png` (collapsed, expanded and Simple, 1440x900 and 1280x800, light and dark) and the chat screenshots that showed the old button; README, CHANGELOG, `docs/agent-notes.md` (the driver note on `#prevBtn`, the macOS key note), specs index [all]
+- [x] T054 Review on #497: Ctrl+Shift+H while the lists load says "Looking…" and opens once they are back, never a false "none"; `simprevdelay` in the simulator; driver check with a mutation [FR-034, FR-036]
+- [x] T055 Stack on PR #498 (composer toolbar, now the top of the night release stack): merge its branch, keep its header line without the old button, lower the `theme-literals.json` ratchet of #500 (styles.css 213 → 211 literal colours: `.prev-q` and `.prev-row` use tokens), run `npm test`, `check:composer-toolbar`, `shots-006-prevmarks`, `check:rename` and `check:office` on the combination [FR-033, FR-037]
