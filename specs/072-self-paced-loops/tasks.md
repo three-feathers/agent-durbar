@@ -8,15 +8,15 @@ Owner answered Q1-Q9 on 2026-10-22 (see spec.md); Q6 is (b), no Read-only except
 
 ### Foundation
 
-- [ ] T001 `src/shared/looppace.ts`: `parsePace`, `clampPace`, `cleanReason`, `loopFooter`; unit tests (forms, last line only, sub-agent text ignored by the caller, long or hostile lines, linear time, bidi and control characters, `redact`) [FR-009, FR-010, FR-011]
-- [ ] T002 `src/main/schedules.ts`: `loop` field in `Schedule`, validation of the limits in `cleanSchedule`, main-owned fields stripped in `save`; `test:schedules` cases (ranges, target required, no `every`/`at`/`rule`, 50-schedule cap, one loop per session) [FR-001..FR-004]
-- [ ] T003 Scheduler loop core: `tick` order for loops (Pause all, ended, cap, hold, busy, send), `inPass`, `turnEnded` taking the pace request, clamping, default delay and the two-pass stop, two errors stop, max passes and end time; `scripts/test-loops.ts` with a fake clock including the SC-002 fuzz [FR-011..FR-014, FR-018, SC-002]
-- [ ] T004 Holds: the `waitOf` dep, person-wait hold and release (next = release + last delay), Pause all hold and release without a burst, Durbar's cap pause needing Resume; tests [FR-015, FR-017, FR-019, SC-003]
-- [ ] T005 Restart rule: `start()` ends running loops "when Durbar closed"; `restartLoop` resets passes and spend; tests [FR-008]
+- [x] T001 `src/shared/looppace.ts`: `parsePace`, `clampPace`, `cleanReason`, `loopFooter`; unit tests (forms, last line only, sub-agent text ignored by the caller, long or hostile lines, linear time, bidi and control characters, `redact`) [FR-009, FR-010, FR-011]
+- [x] T002 `src/main/schedules.ts`: `loop` field in `Schedule`, validation of the limits in `cleanSchedule`, main-owned fields stripped in `save`; `test:schedules` cases (ranges, target required, no `every`/`at`/`rule`, 50-schedule cap, one loop per session) [FR-001..FR-004]
+- [x] T003 Scheduler loop core: `tick` order for loops (Pause all, ended, cap, hold, busy, send), `inPass`, `turnEnded` taking the pace request, clamping, default delay and the two-pass stop, two errors stop, max passes and end time; `scripts/test-loops.ts` with a fake clock including the SC-002 fuzz [FR-011..FR-014, FR-018, SC-002]
+- [x] T004 Holds: the `waitOf` dep, person-wait hold and release (next = release + last delay), Pause all hold and release without a burst, Durbar's cap pause needing Resume; tests [FR-015, FR-017, FR-019, SC-003]
+- [x] T005 Restart rule: `start()` ends running loops "when Durbar closed"; `restartLoop` resets passes and spend; tests [FR-008]
 
 ### Wiring
 
-- [ ] T006 `main.ts`: feed final assistant text to the scheduler during a pass, the loop footer in `scheduleDeps.send`, holds from `agentState`, Stop and End session end the loop; a `loop:pass` push to the window [FR-006, FR-007, FR-009, FR-015]
+- [ ] T006 `main.ts`: feed final assistant text to the scheduler during a pass, the loop footer in `scheduleDeps.send`, holds from `agentState`, Stop and End session end the loop; a `loop:pass` push to the window; route late `usage` events to `noteUsage` and check the usage/idle order per adapter (spec `[KNOWN GAP]`) [FR-006, FR-007, FR-009, FR-015]
 - [ ] T007 IPC `schedules:stopLoop` and `schedules:restartLoop` (validated, `fromApp`), `ScheduleInfo.loop` in `src/shared/api.ts`, preload; `test:ipcchannels` [FR-005, FR-007, FR-008]
 - [ ] T008 Activity log: decisions `loop-start|pass|skip|hold|end`, rows recorded in main with cleaned reasons and never the prompt; `test:activity` [FR-024, SC-005]
 
