@@ -17,10 +17,13 @@ const LONG_OK_NAME = /^(PATH|PATHEXT|PSMODULEPATH|HOME|HOMEPATH|HOMEDRIVE|USERPR
    base64url run is never rescanned from inside and the pattern stays linear); the wrapping is a bounded prefix instead: up to 8
    underscores and up to 4 snake_case words (`my_eyJ…`, `MY__eyJ…`, `____eyJ…`), kept in the output (T128). */
 /* A token may also start right after a percent-encoded byte (`?q=token%3Dghp_…`, `%22ghp_…%22`, `%2F`, `%3A`), where the char before
-   it is a hex digit, and after a `%` that is itself encoded up to 4 times (`%253D`) (spec 012 FR-080 delta 2026-10-22, T129, review
-   of PR #543). The lookbehind is bounded and `%` is in no shape's own class, so a run gains at most one extra start: still linear. */
-const PCT = String.raw`(?<=%(?:25){0,4}[0-9A-Fa-f]{2})`;
-/** Where a token shape may start: no letter or digit before it, or right after a `%XX` escape. */
+   it is a hex digit (spec 012 FR-080 delta 2026-10-22, T129, review of PR #543), and after a `%` encoded any number of times
+   (`%253D`, `%2525253D`): the last escape of a re-encoded `%` always follows `25`, so `(?:%|25)XX` covers every depth with a
+   fixed-width lookbehind (T130; over-masks a token glued to a literal `25XX`, fail-safe). It may also start right after a backslash
+   escape (`\n`, `\t`, `\uXXXX`, `\xXX`), because the debug log redacts *after* `JSON.stringify`, which turns a token at the start of a
+   line into `\nghp_…` (T130, review of PR #549). Every branch is fixed-width, so each position costs O(1): still linear. */
+const PCT = String.raw`(?<=(?:%|25)[0-9A-Fa-f]{2}|\\(?:[nrtbfv]|u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2}))`;
+/** Where a token shape may start: no letter or digit before it, or right after a `%XX` or backslash escape. */
 const START = String.raw`(?:(?<![A-Za-z0-9])|${PCT})`;
 const shape = (body: string, flags = 'g'): RegExp => new RegExp(START + body, flags);
 /** Bare token shapes (GitHub, OpenAI/Anthropic, Bearer, JWT, AWS); also used by the folder-setup display (spec 061 FR-014). */

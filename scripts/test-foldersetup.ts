@@ -178,9 +178,11 @@ assert.strictEqual(parseExplanation('I think it is fine', 'Copilot').ok, false, 
   for (const tok of ['ghp_' + 'x'.repeat(36), 'github_pat_' + '11ABCDEFG0abcdefghij_' + 'z'.repeat(30), 'sk-ant-' + 'Q9w8'.repeat(10), 'AKIA' + 'ABCDEFGH12345678',
     'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTYifQ.FakeSignatureForTests0']) {
     // T129: and after a percent-encoded byte (`%3D`, `%22`, double-encoded `%253D`)
-    for (const cmd of [`GH_TOKEN=_${tok}_ run`, `echo my_${tok}`, `echo __${tok}__`, `curl 'https://x/?q=token%3D${tok}&x=1'`, `curl https://x/?q=%22${tok}%22`, `curl https://x/?q=token%253D${tok}`]) {
+    // T130: after `%25` encoded 4 and 6 times, after `=`, and after a backslash escape (`\n`, `\t`)
+    for (const cmd of [`GH_TOKEN=_${tok}_ run`, `echo my_${tok}`, `echo __${tok}__`, `curl 'https://x/?q=token%3D${tok}&x=1'`, `curl https://x/?q=%22${tok}%22`, `curl https://x/?q=token%253D${tok}`,
+      `curl https://x/?q=token%${'25'.repeat(4)}3D${tok}`, `curl https://x/?q=token%${'25'.repeat(6)}3D${tok}`, `X=${tok} run`, `printf 'a\\n${tok}\\n'`, `printf 'a\\t${tok}'`]) {
       const sh = shownCommand(cmd);
-      assert.ok(sh.hidden && sh.text.includes('[secret hidden]') && !sh.text.includes(tok.slice(-12)), `token after _ or %XX hidden: ${sh.text}`);
+      assert.ok(sh.hidden && sh.text.includes('[secret hidden]') && !sh.text.includes(tok.slice(-12)), `token after _, %XX or \\n hidden: ${sh.text}`);
     }
   }
   // required 2: shown in full or not listed at all
