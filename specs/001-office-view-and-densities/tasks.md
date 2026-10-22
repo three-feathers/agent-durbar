@@ -65,6 +65,15 @@
 - [x] T065 (review of #532) `check:office-fill`: `ghp_` and `github_pat_` tokens in the done reply; FR-042, README and CHANGELOG say *f* may drop several steps at once [FR-042, FR-046]
 - [ ] T066 (review of #532) One helper for "mask the raw text, then strip the Markdown": #541's shared `safetext.js` and `DurbarLiveAct.excerpt` become a single helper. Whichever of #532 and #541 lands second points `grownLine` and the non-grown Done desk text (`taskOf`) at that helper and removes the other [FR-043]
 
+## Changes 2026-10-22 (finished agents roll in, owner)
+
+- [ ] T067 `src/renderer/shutters.js` (`finished`, `kindOf`, `roomPlan`, `split`, `RECENT_MS`, `OLD_CAP`) + `scripts/test-shutters.ts` (`npm run test:shutters`, in `test:serial`); `copy-assets.js`, `index.html` [FR-047, FR-048, FR-053]
+- [ ] T068 `app.js`: `officeModel` splits `mains`/`rolled`; layout key; `roomHTML` shutter row (strips, chips, `+N`), `.peek`, labels, `rolling` class; `__durbarSimUi.render` [FR-047..FR-050]
+- [ ] T069 `styles.css`: `.shutters`, `.desk.shut` strip and chip, `.peek` roll, roll-in; theme tokens; >= 10.5 px [FR-050, FR-051]
+- [ ] T070 Settings > Detail level: *Roll up finished agents* switch (`screens.js`, `durbar.shutters`) [FR-052]
+- [ ] T071 `check:office` (15 agents with rolled ones, keyboard reach and labels) and `check:office-fill` (2 working + 3 finished, 1 recent + 2 old, at 1440x900 and 1280x800; open desks get the space); mutation checks [FR-049, FR-053]
+- [ ] T072 Screenshots `docs/screenshots/001-shutters-{1440x900,1280x800}.png` (simulator); README office section, `changelog.d/001-office-shutters.md`, the specs-index block [FR-053]
+
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 
 - [x] T039 `src/renderer/probe.js` (`svgHollow`, `styleSplit`), `probeSet` in `chooseLayout`, `@property` for `--w`/`--min`/`--cols` in `styles.css`; `scripts/test-probe.ts` (`npm run test:probe`) [FR-033]
