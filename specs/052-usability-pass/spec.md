@@ -861,11 +861,11 @@ Follow-up of the FR-165..FR-171 pass: the popovers (Defaults, Folders, Floors, t
 
 - **Rule (FR-167):** popovers use two width tokens, as menus and dialogs do, and one padding token, in `styles.css` `:root`:
   - **S** `--pop-w-s: 420px` for a short form or list (Defaults, Allowed grants);
-  - **M** `--pop-w-m: 660px` for a list of rows with several buttons (Folders, Floors). One width cannot fit all: a Folders row holds four buttons, so a 320px token would wrap them.
+  - **M** `--pop-w-m: 660px` for a list of rows with several buttons (Folders, Floors). One width cannot fit all: a Folders row holds five buttons (Schedules, New session, Rename, Hide, Remove), so a 320px token would wrap them.
   - Each is `min(W, 100vw - 32px)`; the padding is `--pop-pad: 12px 14px` (the value FR-167 already named). No popover sets its own width or padding.
   - Long content wraps (a name, a path, a grant label ends in an ellipsis with a `title`); a popover never scrolls sideways (`scrollWidth <= clientWidth`) and never cuts text; text is 10.5px or more.
 - **Folders first row (2026-10-22):** the "Pause all schedules" checkbox sits on its own line under the help (it was floated right and squeezed the first folder's name to "mc..."). A name or path in a popover (any element ending in an ellipsis) is never cut to under 120px: rule `popover-squeezed` (an ellipsis with a `title` was not enough to catch it). Also (review): the popover borders and the Floors error use theme tokens (`--line`, `--tone-bad-ink`); `literal-light` now reads `border` and `outline` colours too (16 literal light borders in the stylesheets became `--line` or `--tone-*-line`); `check:ui-text` has `folders-pop-long`, `floors-pop-long` and `floors-pop-error` passes.
-- **Check:** `check:ui-text` rule `popover-width`: on each `popover` surface the width is the S or M token (or `100vw - 32px` in a small window) and the padding is `--pop-pad`.
+- **Check:** `check:ui-text` rule `popover-width` (it also holds the assignment: `defaultsPop` and `grantsPop` are S, `foldersPop` and `floorsPop` are M, so a popover on the other size fails): on each `popover` surface the width is the S or M token (or `100vw - 32px` in a small window) and the padding is `--pop-pad`.
 
 ### 2026-10-21: help and UI text pass: wrapping, box widths, tooltips (FR-165..FR-171)
 

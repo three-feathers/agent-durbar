@@ -304,6 +304,10 @@
         px.forEach((v, i) => { if (Math.abs(v - Math.min(toks[i].want, innerWidth - 32)) > 1) add('popover-width', root, root, `${toks[i].n} is "${toks[i].v}" (${v}px), expected ${toks[i].want}px`); });
         const w = root.offsetWidth;
         if (!px.some((v) => Math.abs(v - w) <= 1) && Math.abs(w - (innerWidth - 32)) > 1) add('popover-width', root, root, `width ${Math.round(w)}px is none of ${px.map(Math.round).join('/')} (nor ${innerWidth - 32})`);
+        // the assignment is fixed: Defaults and Allowed grants are S, Folders and Floors are M (a popover on the other size fails)
+        const SIZE = { defaultsPop: 0, grantsPop: 0, foldersPop: 1, floorsPop: 1 };
+        if (!(root.id in SIZE)) add('popover-width', root, root, `popover "${root.id || root.className}" is not in the S/M map (add it to SIZE in ui-text-page.js)`);
+        else if (Math.abs(px[SIZE[root.id]] - w) > 1 && Math.abs(w - (innerWidth - 32)) > 1) add('popover-width', root, root, `${root.id} is ${Math.round(w)}px but must be ${toks[SIZE[root.id]].n} (${Math.round(px[SIZE[root.id]])}px)`);
         const want = probe(root, 'padding', 'var(--pop-pad)');
         const pcs = getComputedStyle(root);
         const got = ['Top', 'Right', 'Bottom', 'Left'].map((k) => parseFloat(pcs['padding' + k]));

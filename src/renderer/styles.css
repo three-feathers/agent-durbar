@@ -399,7 +399,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .chip b{font-weight:600;color:var(--ink);flex:none}
 .chip code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0}
 .chip .res{font-size:11px;padding-left:6px;border-left:1px solid var(--line);color:var(--sage-ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;max-width:40%}
-.chip.fail{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}.chip.fail .res{color:var(--red-ink);border-color:#e3bdb7}
+.chip.fail{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}.chip.fail .res{color:var(--red-ink);border-color:var(--tone-bad-line)}
 .chip.run .res{color:var(--blue-ink)}
 .chip[hidden]{display:none}
 .chip .detail,.chip .xbody{display:none}
@@ -1025,7 +1025,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .modeic svg{width:13px;height:13px}
 .modeic.mode-ask{color:var(--blue-ink)}.modeic.mode-allow{color:var(--red-ink)} /* spec 052 FR-018: Allow all in the warning ink (amber is waiting) */
 /* spec 052 FR-065: the "Allow all" words on every card of an Allow all folder, in the icon's slot; same 15px line, so the card keeps its size */
-.modebadge{display:inline-block;flex:none;align-self:center;height:15px;line-height:13px;padding:0 4px;border:1px solid #e3bdb7;border-radius:4px;background:var(--pb-error);color:var(--red-ink);font-size:10.5px;font-weight:700;letter-spacing:.01em;white-space:nowrap;margin-left:2px}
+.modebadge{display:inline-block;flex:none;align-self:center;height:15px;line-height:13px;padding:0 4px;border:1px solid var(--tone-bad-line);border-radius:4px;background:var(--pb-error);color:var(--red-ink);font-size:10.5px;font-weight:700;letter-spacing:.01em;white-space:nowrap;margin-left:2px}
 .stage[data-d="mini"] .l1:has(.modebadge) .name,.stage[data-d="micro"] .l1:has(.modebadge) .name{max-width:calc(100% - 3.7em - 52px)} /* room for the badge and a short status; the name still shows 3+ characters */
 .stage[data-d="full"] .who{align-items:center}
 .mode-chip{display:inline-flex;align-items:center;gap:6px;height:var(--h-chip);padding:0 8px 0 8px;border-radius:999px;border:1px solid var(--line-2);background:var(--raised);font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer}
@@ -1034,7 +1034,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .mode-chip .chev{width:10px;height:10px;transform:rotate(90deg);opacity:.6}
 .mode-chip.mode-ask{color:var(--tone-info-ink);background:var(--tone-info-faint);border-color:var(--tone-info-line)}
 .mode-chip .mode-restored{font-size:10.5px;font-weight:600;letter-spacing:.02em;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid #e5be78;color:var(--amber-ink)}
-.mode-chip.mode-allow{color:var(--red-ink);background:var(--pb-error);border-color:#e3bdb7} /* spec 052 FR-065: the chat header says Allow all in the same red as the cards */
+.mode-chip.mode-allow{color:var(--red-ink);background:var(--pb-error);border-color:var(--tone-bad-line)} /* spec 052 FR-065: the chat header says Allow all in the same red as the cards */
 .mode-menu{position:fixed;z-index:70;width:min(var(--menu-w),calc(100vw - 16px));background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 14px 40px rgba(40,35,25,.22);display:flex;flex-direction:column;gap:2px}
 .mode-menu button{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:8px 10px;border:0;border-radius:10px;background:transparent;cursor:pointer}
 .mode-menu button:hover,.mode-menu button:focus-visible{background:var(--surface-2)}
