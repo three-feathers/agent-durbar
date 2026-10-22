@@ -176,7 +176,7 @@ export interface ClaudeLaunch {
   effort?: string;
   /** spec 043 FR-008: the custom agent for this launch (`--agents` JSON and `--agent` name). */
   agent?: { name: string; json: string };
-  /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged. */
+  /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged, never on the command line (`cliLaunchArgs` passes a private file). */
   mcpConfig?: string;
   appendSystemPrompt?: string;
   /** spec 006 FR-019: the workspace's other folders (`--add-dir`, once each). */
@@ -371,7 +371,59 @@ export type TransportFactory = (o: TransportInput) => ClaudeTransport | Promise<
 /** Spec 012 FR-159: the entrypoint Claude records for the chat sessions Durbar starts (not an SDK value, so `claude --resume` lists them). */
 export const CLAUDE_ENTRYPOINT = 'agent-durbar';
 
-export const cliTransportFactory: TransportFactory = (o) => createCliTransport({ file: o.file, args: claudeArgs(o.launch), cwd: o.cwd, env: o.env, handlers: o.handlers });
+/**
+ * Spec 069 FR-009 (change 2026-10-22, review 6 on #489): the `--mcp-config` JSON holds env and header values (Claude Code's user list
+ * and the folder's extras), and a command line is visible to every local user (`ps`). It goes into `mcp-config.json`, mode 0600, in a
+ * new private temp folder (`mkdtemp`, 0700); `--mcp-config` gets the path; `cleanup` deletes the folder (on the CLI's exit).
+ */
+export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): { file: string; cleanup: () => void } {
+  const dir = fs.mkdtempSync(path.join(tmpRoot, 'durbar-mcp-'));
+  const cleanup = (): void => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* the OS cleans its temp folder */
+    }
+  };
+  try {
+    if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
+    const file = path.join(dir, 'mcp-config.json');
+    fs.writeFileSync(file, json, { mode: 0o600, flag: 'wx' });
+    return { file, cleanup };
+  } catch (e) {
+    cleanup();
+    throw e;
+  }
+}
+
+/** The CLI argv for a launch, with the MCP JSON moved to a private file (`privateMcpConfig`). */
+export function cliLaunchArgs(launch: ClaudeLaunch, tmpRoot?: string): { args: string[]; cleanup: () => void } {
+  if (!launch.mcpConfig) return { args: claudeArgs(launch), cleanup: () => undefined };
+  const p = privateMcpConfig(launch.mcpConfig, tmpRoot);
+  return { args: claudeArgs({ ...launch, mcpConfig: p.file }), cleanup: p.cleanup };
+}
+
+export const cliTransportFactory: TransportFactory = (o) => {
+  const { args, cleanup } = cliLaunchArgs(o.launch);
+  try {
+    return createCliTransport({
+      file: o.file,
+      args,
+      cwd: o.cwd,
+      env: o.env,
+      handlers: {
+        ...o.handlers,
+        exit: (info) => {
+          cleanup();
+          o.handlers.exit(info);
+        },
+      },
+    });
+  } catch (e) {
+    cleanup();
+    throw e;
+  }
+};
 
 export interface ClaudeAdapterDeps {
   /** Absolute path of `claude` (from detect); resolved lazily at the first start of a CLI. */

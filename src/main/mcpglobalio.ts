@@ -17,6 +17,8 @@ import type { GlobalFile } from './mcpglobal';
 const MAX_BYTES = 8 * 1024 * 1024; // ~/.claude.json also keeps Claude Code's project state and can be a few MiB
 export const TOKEN_MS = 5 * 60 * 1000;
 export const KEEP_BACKUPS = 3;
+/** FR-051: shown on a Copilot item of a review in reference mode. */
+export const COPILOT_REF_NOTE = 'Not verified for Copilot: whether the Copilot CLI replaces ${NAME} with the variable\'s value. Check the server starts in a Copilot session.';
 
 export type FileRead = { ok: true; text: string | undefined } | { ok: false; error: string };
 
@@ -92,8 +94,16 @@ export function writeTarget(file: string): string | undefined {
 }
 
 /**
+ * FR-006 (change 2026-10-22, review 1 on #489): the mode of the written file: the original mode without its group and other bits (a
+ * stricter one is kept), 0600 for a new file, so a value written in plain text is never readable by other local users. Windows has no
+ * POSIX mode; the temporary file in the same folder takes that folder's inherited ACL.
+ */
+export const ownerOnlyMode = (mode: number | undefined): number => (mode === undefined ? 0o600 : mode & 0o700 || 0o600);
+
+/**
  * FR-006: back up (when the file exists), then write through `<file>.durbar-tmp` and a rename. `expect` is the hash of the text that was
- * reviewed: a file that changed since is not written. Returns the backup's file name.
+ * reviewed: a file that changed since is not written (checked before the backup and again right before the rename). Returns the
+ * backup's file name.
  */
 export function backupAndWrite(link: string, text: string, expect: string, now: number): { ok: true; backup?: string } | { ok: false; error: string } {
   // Spec 069 change 2026-10-22 (review on #489): a symlinked file (dotfile managers link ~/.claude.json or ~/.codex/config.toml) is
@@ -103,11 +113,11 @@ export function backupAndWrite(link: string, text: string, expect: string, now: 
   const cur = readFileSafe(file);
   if (!cur.ok) return cur;
   if (textHash(cur.text) !== expect) return { ok: false, error: 'The file changed since you reviewed it. Review again.' };
-  let mode = 0o600;
+  let mode = ownerOnlyMode(undefined);
   let backup: string | undefined;
   try {
     if (cur.text !== undefined) {
-      mode = fs.statSync(file).mode & 0o777;
+      mode = ownerOnlyMode(fs.statSync(file).mode & 0o777);
       let bak = `${file}.durbar-${stamp(now)}.bak`;
       for (let i = 2; fs.existsSync(bak) && i < 100; i++) bak = `${file}.durbar-${stamp(now)}-${i}.bak`;
       fs.copyFileSync(file, bak, fs.constants.COPYFILE_EXCL);
@@ -118,16 +128,31 @@ export function backupAndWrite(link: string, text: string, expect: string, now: 
     return { ok: false, error: 'Could not make a backup, so nothing was written.' };
   }
   const tmp = `${file}.durbar-tmp`;
-  try {
-    fs.writeFileSync(tmp, text, { mode });
-    if (process.platform !== 'win32') fs.chmodSync(tmp, mode);
-    fs.renameSync(tmp, file);
-  } catch {
+  const drop = (): void => {
     try {
       fs.unlinkSync(tmp);
     } catch {
       /* nothing to clean */
     }
+  };
+  try {
+    drop(); // a stale temporary file would keep its own mode: always create a new one (`wx`) with the owner-only mode
+    fs.writeFileSync(tmp, text, { mode, flag: 'wx' });
+    if (process.platform !== 'win32') fs.chmodSync(tmp, mode); // the umask may have taken bits away; never adds group or other
+  } catch {
+    drop();
+    return { ok: false, error: 'Could not write the file; it was left as it was.' };
+  }
+  // narrow the window in which the agent app itself rewrites the file (Claude Code rewrites ~/.claude.json) between review and rename
+  const again = readFileSafe(file);
+  if (!again.ok || textHash(again.text) !== expect) {
+    drop();
+    return { ok: false, error: 'The file changed while it was being written. Nothing was written; review again.' };
+  }
+  try {
+    fs.renameSync(tmp, file);
+  } catch {
+    drop();
     return { ok: false, error: 'Could not write the file; it was left as it was.' };
   }
   pruneBackups(file);
@@ -257,14 +282,16 @@ export class GlobalLists {
         continue;
       }
       const add = addToText(app, r.text, x, sm, false);
+      // FR-004, FR-051 (change 2026-10-22, review 4 on #489): Copilot expanding `${NAME}` was not observed in the real check
+      const note = app === 'copilot' && sm === 'ref' && neededVars(x).length ? COPILOT_REF_NOTE : undefined;
       if (add.ok) {
-        items.push(base);
+        items.push(note ? { ...base, note } : base);
         files.push({ app, file: gf, hash: textHash(r.text), text: add.text });
       } else if (add.conflict) {
         const rep = addToText(app, r.text, x, sm, true);
         const g = readGlobal(app, r.text);
         const current = g.ok ? g.servers.find((s) => s.name === x.name) : undefined;
-        items.push({ ...base, conflict: true, ...(current ? { current } : {}), ...(rep.ok ? {} : { error: rep.error }) });
+        items.push({ ...base, conflict: true, ...(current ? { current } : {}), ...(rep.ok ? {} : { error: rep.error }), ...(note ? { note } : {}) });
         files.push({ app, file: gf, hash: textHash(r.text), replaceText: rep.ok ? rep.text : undefined, error: rep.ok ? undefined : rep.error });
       } else {
         items.push({ ...base, error: add.error });

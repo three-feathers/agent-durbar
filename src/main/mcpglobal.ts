@@ -471,9 +471,182 @@ export type EditResult = { ok: true; text: string } | { ok: false; error: string
 
 const eolOf = (text: string | undefined): string => (text && /\r\n/.test(text) ? '\r\n' : '\n');
 
-function jsonWrite(doc: Record<string, unknown>, text: string | undefined): string {
-  const out = JSON.stringify(doc, null, 2) + '\n';
-  return eolOf(text) === '\r\n' ? out.replace(/\n/g, '\r\n') : out;
+// ---------------------------------------------------------------- JSON: surgical text edit (change 2026-10-22, review 2 on #489)
+
+interface JMember {
+  key: string;
+  keyStart: number;
+  valStart: number;
+  valEnd: number;
+}
+/** An object of the text: `start` is its `{`, `end` its `}`. */
+interface JObject {
+  start: number;
+  end: number;
+  members: JMember[];
+}
+
+class JsonShapeError extends Error {}
+
+const skipWs = (t: string, i: number): number => {
+  while (i < t.length && (t[i] === ' ' || t[i] === '\t' || t[i] === '\r' || t[i] === '\n')) i++;
+  return i;
+};
+
+/** `t[i]` is `"`: the index after the closing quote. */
+function strEnd(t: string, i: number): number {
+  for (let j = i + 1; j < t.length; j++) {
+    if (t[j] === '\\') j++;
+    else if (t[j] === '"') return j + 1;
+  }
+  throw new JsonShapeError('string');
+}
+
+/** The index after the value that starts at `i` (the text already passed `JSON.parse`). */
+function valueEnd(t: string, i: number): number {
+  const c = t[i];
+  if (c === '"') return strEnd(t, i);
+  if (c === '{' || c === '[') {
+    let depth = 0;
+    for (let j = i; j < t.length; j++) {
+      const d = t[j];
+      if (d === '"') j = strEnd(t, j) - 1;
+      else if (d === '{' || d === '[') depth++;
+      else if (d === '}' || d === ']') {
+        depth--;
+        if (depth === 0) return j + 1;
+      }
+    }
+    throw new JsonShapeError('bracket');
+  }
+  let j = i;
+  while (j < t.length && !/[\s,}\]]/.test(t[j])) j++;
+  if (j === i) throw new JsonShapeError('value');
+  return j;
+}
+
+/** The members of the object whose `{` is at `start`, with their positions in the text. */
+function objectAt(t: string, start: number): JObject {
+  if (t[start] !== '{') throw new JsonShapeError('object');
+  const members: JMember[] = [];
+  let i = skipWs(t, start + 1);
+  if (t[i] === '}') return { start, end: i, members };
+  for (;;) {
+    if (t[i] !== '"') throw new JsonShapeError('key');
+    const keyStart = i;
+    const ke = strEnd(t, i);
+    const key = JSON.parse(t.slice(keyStart, ke)) as string;
+    i = skipWs(t, ke);
+    if (t[i] !== ':') throw new JsonShapeError('colon');
+    const valStart = skipWs(t, i + 1);
+    const valEnd = valueEnd(t, valStart);
+    members.push({ key, keyStart, valStart, valEnd });
+    i = skipWs(t, valEnd);
+    if (t[i] === ',') {
+      i = skipWs(t, i + 1);
+      continue;
+    }
+    if (t[i] === '}') return { start, end: i, members };
+    throw new JsonShapeError('member');
+  }
+}
+
+/** The spaces or tabs that start the line holding `pos`. */
+const lineIndent = (t: string, pos: number): string => /^[ \t]*/.exec(t.slice(t.lastIndexOf('\n', pos - 1) + 1, pos))![0];
+/** A member that starts on its own line. */
+const ownLine = (t: string, m: JMember): boolean => /\n[ \t]*$/.test(t.slice(0, m.keyStart));
+
+interface JsonStyle {
+  /** One indent level (spaces or a tab); undefined: the file is on one line, so new members are compact too. */
+  unit?: string;
+  eol: string;
+}
+
+/** The file's own style: the first member on its own line gives the indent unit (relative to its object's line). */
+function jsonStyle(t: string, objs: JObject[]): JsonStyle {
+  const eol = eolOf(t);
+  if (!t.trim().includes('\n')) return { eol };
+  for (const o of objs) {
+    const m = o.members.find((x) => ownLine(t, x));
+    if (!m) continue;
+    const mi = lineIndent(t, m.keyStart);
+    const oi = lineIndent(t, o.start);
+    if (mi.length > oi.length && mi.startsWith(oi)) return { unit: mi.slice(oi.length), eol };
+  }
+  return { unit: '  ', eol };
+}
+
+/** `value` as JSON text in the file's style; continuation lines start with `indent`. */
+const jsonText = (value: unknown, st: JsonStyle, indent: string): string =>
+  st.unit === undefined ? JSON.stringify(value) : JSON.stringify(value, null, st.unit).split('\n').join(st.eol + indent);
+
+/** Set member `key` of object `o` to `value`: its value replaced in place, or a new member after the last one. */
+function setMember(t: string, o: JObject, key: string, value: unknown, st: JsonStyle): string {
+  const hit = o.members.filter((m) => m.key === key);
+  if (hit.length > 1) throw new JsonShapeError('duplicate');
+  if (hit.length === 1) {
+    const m = hit[0];
+    return t.slice(0, m.valStart) + jsonText(value, st, lineIndent(t, m.keyStart)) + t.slice(m.valEnd);
+  }
+  const sep = st.unit === undefined ? ':' : ': ';
+  if (!o.members.length) {
+    const ci = lineIndent(t, o.start);
+    if (st.unit === undefined) return t.slice(0, o.start + 1) + JSON.stringify(key) + sep + jsonText(value, st, '') + t.slice(o.end);
+    const mi = ci + st.unit;
+    return t.slice(0, o.start + 1) + st.eol + mi + JSON.stringify(key) + sep + jsonText(value, st, mi) + st.eol + ci + t.slice(o.end);
+  }
+  const last = o.members[o.members.length - 1];
+  const multi = st.unit !== undefined && ownLine(t, last);
+  const mi = multi ? lineIndent(t, last.keyStart) : '';
+  const lead = multi ? ',' + st.eol + mi : t.slice(last.valEnd, skipWs(t, last.valEnd)) === '' && /,\s/.test(t.slice(o.start, o.end)) ? ', ' : ',';
+  return t.slice(0, last.valEnd) + lead + JSON.stringify(key) + sep + jsonText(value, st, mi) + t.slice(last.valEnd);
+}
+
+/** Delete member `key` of object `o` with the comma and the line break that belong to it. */
+function deleteMember(t: string, o: JObject, key: string): string {
+  const idx = o.members.findIndex((m) => m.key === key);
+  if (idx < 0 || o.members.filter((m) => m.key === key).length > 1) throw new JsonShapeError('member');
+  const m = o.members[idx];
+  if (o.members.length === 1) return t.slice(0, o.start + 1) + t.slice(o.end);
+  if (idx > 0) return t.slice(0, o.members[idx - 1].valEnd) + t.slice(m.valEnd);
+  return t.slice(0, m.keyStart) + t.slice(o.members[1].keyStart);
+}
+
+/**
+ * FR-003 (change 2026-10-22): set (`entry`) or delete (`undefined`) `mcpServers[name]` in the text itself. Every other byte stays as
+ * written: indentation, key order, number literals (`12345678901234567890`, `1.0`), escapes and line ends. The result is parsed again
+ * and must hold exactly the intended change, else the edit is refused.
+ */
+function jsonEdit(text: string | undefined, doc: Record<string, unknown>, name: string, entry: Record<string, unknown> | undefined): EditResult {
+  const servers = isObj(doc.mcpServers) ? doc.mcpServers : undefined;
+  const want: Record<string, unknown> = { ...doc, mcpServers: { ...(servers ?? {}) } };
+  if (entry) (want.mcpServers as Record<string, unknown>)[name] = entry;
+  else delete (want.mcpServers as Record<string, unknown>)[name];
+  if (text === undefined || text.trim() === '') {
+    const eol = eolOf(text);
+    return { ok: true, text: (JSON.stringify(want, null, 2) + '\n').replace(/\n/g, eol) };
+  }
+  const refuse = { ok: false as const, error: 'Agent Durbar could not change only this server in the file (an unusual layout, such as a key written twice). Nothing was written.' };
+  let out: string;
+  try {
+    const top = objectAt(text, skipWs(text, text.startsWith('\uFEFF') ? 1 : 0));
+    if (top.members.filter((m) => m.key === 'mcpServers').length > 1) return refuse;
+    const ms = top.members.find((m) => m.key === 'mcpServers');
+    const inner = ms ? objectAt(text, ms.valStart) : undefined;
+    const st = jsonStyle(text, inner ? [inner, top] : [top]);
+    if (!entry) out = deleteMember(text, inner as JObject, name);
+    else if (inner) out = setMember(text, inner, name, entry, st);
+    else out = setMember(text, top, 'mcpServers', { [name]: entry }, st);
+  } catch {
+    return refuse;
+  }
+  let got: unknown;
+  try {
+    got = JSON.parse(out.replace(/^\uFEFF/, ''));
+  } catch {
+    return refuse;
+  }
+  return JSON.stringify(got) === JSON.stringify(want) ? { ok: true, text: out } : refuse;
 }
 
 /** FR-003: add (or with `replace`, replace) one server in an app's file text. `text` undefined = the file does not exist yet. */
@@ -489,8 +662,7 @@ export function addToText(app: GlobalApp, text: string | undefined, input: Globa
   const servers = isObj(p.doc.mcpServers) ? p.doc.mcpServers : {};
   if (Object.prototype.hasOwnProperty.call(servers, input.name) && !replace) return { ok: false, conflict: true, error: `"${input.name}" is already in this file.` };
   if (!Object.prototype.hasOwnProperty.call(servers, input.name) && Object.keys(servers).length >= MAX_SERVERS) return { ok: false, error: `At most ${MAX_SERVERS} servers.` };
-  const next = { ...servers, [input.name]: jsonEntry(app, input, mode) };
-  return { ok: true, text: jsonWrite({ ...p.doc, mcpServers: next }, text) };
+  return jsonEdit(text, p.doc, input.name, jsonEntry(app, input, mode));
 }
 
 /** FR-003: remove one server. */
@@ -501,9 +673,7 @@ export function removeFromText(app: GlobalApp, text: string | undefined, name: s
   if (!p.ok) return p;
   const servers = isObj(p.doc.mcpServers) ? p.doc.mcpServers : undefined;
   if (!servers || !Object.prototype.hasOwnProperty.call(servers, name)) return { ok: false, error: `"${name}" is not in this file.` };
-  const next = { ...servers };
-  delete next[name];
-  return { ok: true, text: jsonWrite({ ...p.doc, mcpServers: next }, text) };
+  return jsonEdit(text, p.doc, name, undefined);
 }
 
 /** Line ranges `[start, end)` of every table of server `name` (its own and its sub-tables). */

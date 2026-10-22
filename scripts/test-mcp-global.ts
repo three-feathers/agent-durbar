@@ -11,7 +11,7 @@ import { stripTomlComment, tomlStringArray, tomlUnquote } from '../src/main/code
 import { readCodexMcpToml } from '../src/main/foldersetup';
 import { mcpSecretValues } from '../src/main/mcpmask';
 import { addToText, claudeOffKey, codexBlock, differences, mergeSessionServers, neededVars, neutralFrom, globalFiles, headerVar, jsonEntry, MASK, offOf, previewText, readGlobal, removeFromText, sourcesFor, textHash, tomlStr } from '../src/main/mcpglobal';
-import { backupAndWrite, GlobalLists, KEEP_BACKUPS, pruneBackups, readFileSafe, sessionGlobalFor, TOKEN_MS, writeTarget } from '../src/main/mcpglobalio';
+import { backupAndWrite, COPILOT_REF_NOTE, GlobalLists, KEEP_BACKUPS, ownerOnlyMode, pruneBackups, readFileSafe, sessionGlobalFor, TOKEN_MS, writeTarget } from '../src/main/mcpglobalio';
 import type { AgentInfo } from '../src/shared/api';
 import { McpStore } from '../src/main/mcpstore';
 import type { McpServerInput } from '../src/shared/mcp';
@@ -115,6 +115,43 @@ ok('JSON: new file, CRLF kept, BOM read, views carry key names only', () => {
   assert.ok(v.ok);
   assert.deepStrictEqual(v.servers, [{ name: 'existing', transport: 'stdio', command: 'node', args: ['s.js'], envKeys: ['K'], headerKeys: [] }]);
   assert.ok(!JSON.stringify(v.servers).includes('v-secret'));
+});
+ok('JSON surgical edit (review 2 on #489): every other byte kept: big integers, 1.0, escapes, indent, key order', () => {
+  const four = '{\n    "zeta": 12345678901234567890,\n    "ratio": 1.0,\n    "esc": "caf\\u00e9 \\/ \\"q\\"",\n    "mcpServers": {\n        "existing": {\n            "command": "node"\n        }\n    },\n    "alpha": [1e3, -0.0]\n}\n';
+  const r = addToText('claude', four, stdio, 'ref');
+  assert.ok(r.ok);
+  for (const kept of ['"zeta": 12345678901234567890', '"ratio": 1.0', '"esc": "caf\\u00e9 \\/ \\"q\\""', '"alpha": [1e3, -0.0]']) assert.ok(r.text.includes(kept), `kept ${kept}`);
+  assert.ok(r.text.includes('\n        "notes": {\n            "type": "stdio",'), 'the new member uses the file\'s 4-space indent');
+  assert.deepStrictEqual(Object.keys(JSON.parse(r.text)), ['zeta', 'ratio', 'esc', 'mcpServers', 'alpha'], 'key order kept');
+  const rm = removeFromText('claude', r.text, 'notes');
+  assert.ok(rm.ok && rm.text === four, 'add then remove gives the same bytes');
+  const rep = addToText('claude', r.text, { ...stdio, command: 'node2' }, 'ref', true);
+  assert.ok(rep.ok && rep.text.startsWith('{\n    "zeta": 12345678901234567890,') && JSON.parse(rep.text).mcpServers.notes.command === 'node2');
+  // tabs, CRLF and a file on one line
+  const tab = '{\r\n\t"a": 1.50,\r\n\t"mcpServers": {}\r\n}\r\n';
+  const t = addToText('copilot', tab, remote, 'ref');
+  assert.ok(t.ok && t.text.startsWith('{\r\n\t"a": 1.50,\r\n\t"mcpServers": {\r\n\t\t"docs": {\r\n\t\t\t"type": "http"') && !/[^\r]\n/.test(t.text), JSON.stringify(t));
+  assert.ok(removeFromText('copilot', t.text, 'docs').ok && (removeFromText('copilot', t.text, 'docs') as { text: string }).text === '{\r\n\t"a": 1.50,\r\n\t"mcpServers": {}\r\n}\r\n');
+  const one = '{"n":10000000000000000001,"mcpServers":{"a":{"command":"x"}}}';
+  const o = addToText('claude', one, stdio, 'ref');
+  assert.ok(o.ok && o.text.startsWith('{"n":10000000000000000001,"mcpServers":{"a":{"command":"x"},"notes":{"type":"stdio"') && !o.text.includes('\n'), JSON.stringify(o));
+  // no mcpServers yet: a new member at the end of the top-level object
+  const none = '{\n  "numStartups": 3,\n  "big": 98765432109876543210\n}\n';
+  const nn = addToText('claude', none, stdio, 'ref');
+  assert.ok(nn.ok && nn.text.startsWith('{\n  "numStartups": 3,\n  "big": 98765432109876543210,\n  "mcpServers": {\n    "notes": {'), JSON.stringify(nn));
+  // remove the first, a middle, the last and the only member
+  const three = '{\n  "mcpServers": {\n    "a": {"command": "1"},\n    "b": {"command": "2"},\n    "c": {"command": "3"}\n  },\n  "x": 1.0\n}';
+  const del = (name: string): string => (removeFromText('claude', three, name) as { text: string }).text;
+  assert.strictEqual(del('a'), '{\n  "mcpServers": {\n    "b": {"command": "2"},\n    "c": {"command": "3"}\n  },\n  "x": 1.0\n}');
+  assert.strictEqual(del('b'), '{\n  "mcpServers": {\n    "a": {"command": "1"},\n    "c": {"command": "3"}\n  },\n  "x": 1.0\n}');
+  assert.strictEqual(del('c'), '{\n  "mcpServers": {\n    "a": {"command": "1"},\n    "b": {"command": "2"}\n  },\n  "x": 1.0\n}');
+  assert.strictEqual((removeFromText('claude', '{"mcpServers": {"only": {"command": "x"}}, "k": 1.0}', 'only') as { text: string }).text, '{"mcpServers": {}, "k": 1.0}');
+  // refused: comments (strict JSON), a duplicate key; the file is never re-serialised as a fallback
+  for (const bad of ['{\n  // note\n  "mcpServers": {}\n}', '{"mcpServers": {}, "mcpServers": {}}', '{"mcpServers": {"notes": {"command": "a"}, "notes": {"command": "b"}}}']) {
+    const b = addToText('claude', bad, stdio, 'ref', true);
+    assert.ok(!b.ok, bad);
+  }
+  assert.ok(!removeFromText('claude', '{"mcpServers": {"notes": {"command": "a"}, "notes": {"command": "b"}}}', 'notes').ok, 'duplicate on remove');
 });
 
 // ---------------------------------------------------------------- Codex TOML
@@ -262,10 +299,16 @@ ok('readFileSafe: missing, folder, too big, not UTF-8', () => {
   fs.writeFileSync(path.join(d, 'big'), Buffer.alloc(8 * 1024 * 1024 + 1, 0x20));
   assert.ok(!readFileSafe(path.join(d, 'big')).ok);
 });
-ok('backupAndWrite: backup, mode kept, changed-since refusal, prune to 3, no temp left', () => {
+ok('backupAndWrite: backup bytes, owner-only mode, changed-since refusal, prune to 3, no temp left', () => {
   const d = tmp();
   const f = path.join(d, '.claude.json');
   fs.writeFileSync(f, claudeFixture, { mode: 0o640 });
+  if (process.platform !== 'win32') fs.chmodSync(f, 0o640);
+  // review 3 on #489: the backup holds exactly the previous bytes (an empty backup failed no test before)
+  const first = backupAndWrite(f, claudeFixture + '\n', textHash(claudeFixture), Date.UTC(2026, 9, 21, 20, 0, 0));
+  assert.ok(first.ok && first.backup);
+  assert.ok(fs.readFileSync(path.join(d, first.backup as string)).equals(Buffer.from(claudeFixture, 'utf8')), 'backup bytes equal the previous file');
+  fs.writeFileSync(f, claudeFixture);
   if (process.platform !== 'win32') fs.chmodSync(f, 0o640);
   const stale = backupAndWrite(f, '{}', textHash('other'), Date.UTC(2026, 9, 21, 21, 0, 0));
   assert.ok(!stale.ok && /changed since/.test(stale.error));
@@ -276,6 +319,7 @@ ok('backupAndWrite: backup, mode kept, changed-since refusal, prune to 3, no tem
     const next = text + ' ';
     const w = backupAndWrite(f, next, textHash(text), t);
     assert.ok(w.ok && w.backup, `write ${i}`);
+    assert.strictEqual(fs.readFileSync(path.join(d, w.backup as string), 'utf8'), text, `backup ${i} holds the text before write ${i}`);
     text = next;
     t += i === 1 ? 0 : 1000; // two writes in the same second get distinct names
   }
@@ -284,7 +328,7 @@ ok('backupAndWrite: backup, mode kept, changed-since refusal, prune to 3, no tem
   assert.strictEqual(baks.length, KEEP_BACKUPS, baks.join());
   assert.ok(!fs.readdirSync(d).some((x) => x.endsWith('.durbar-tmp')));
   if (process.platform !== 'win32') {
-    assert.strictEqual(fs.statSync(f).mode & 0o777, 0o640, 'mode kept');
+    assert.strictEqual(fs.statSync(f).mode & 0o777, 0o600, 'group bits removed (review 1 on #489)');
     for (const b of baks) assert.strictEqual(fs.statSync(path.join(d, b)).mode & 0o777, 0o600);
   }
   fs.writeFileSync(path.join(d, '.claude.json.backup'), 'claude own backup');
@@ -298,6 +342,51 @@ ok('backupAndWrite: a new file and its folder are created, mode 0600, no backup'
   const w = backupAndWrite(f, 'x = 1\n', textHash(undefined), Date.now());
   assert.ok(w.ok && !w.backup);
   if (process.platform !== 'win32') assert.strictEqual(fs.statSync(f).mode & 0o777, 0o600);
+});
+
+ok('owner-only writes (review 1 on #489): 0644 becomes 0600, a stricter mode is kept, a stale temp file never lends its mode', () => {
+  assert.strictEqual(ownerOnlyMode(0o644), 0o600);
+  assert.strictEqual(ownerOnlyMode(0o664), 0o600);
+  assert.strictEqual(ownerOnlyMode(0o755), 0o700);
+  assert.strictEqual(ownerOnlyMode(0o600), 0o600);
+  assert.strictEqual(ownerOnlyMode(0o400), 0o400);
+  assert.strictEqual(ownerOnlyMode(0o044), 0o600);
+  assert.strictEqual(ownerOnlyMode(undefined), 0o600);
+  if (process.platform === 'win32') return;
+  const d = tmp();
+  const f = path.join(d, 'config.toml');
+  fs.writeFileSync(f, 'model = "o3"\n');
+  fs.chmodSync(f, 0o644);
+  fs.writeFileSync(f + '.durbar-tmp', 'stale');
+  fs.chmodSync(f + '.durbar-tmp', 0o666);
+  const w = backupAndWrite(f, 'model = "o3"\nsecret = "x"\n', textHash('model = "o3"\n'), Date.now());
+  assert.ok(w.ok, JSON.stringify(w));
+  assert.strictEqual(fs.statSync(f).mode & 0o777, 0o600);
+  fs.chmodSync(f, 0o400);
+  assert.ok(backupAndWrite(f, 'a = 1\n', textHash('model = "o3"\nsecret = "x"\n'), Date.now()).ok);
+  assert.strictEqual(fs.statSync(f).mode & 0o777, 0o400, 'a stricter mode is kept');
+});
+ok('hash checked again right before the rename (review 6 on #489): a rewrite during the write is refused, temp removed', () => {
+  const d = tmp();
+  const f = path.join(d, '.claude.json');
+  fs.writeFileSync(f, '{"a":1}\n');
+  // the real module object (the `import * as` namespace has getters only; mcpglobalio's namespace reads through to this one)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const nodeFs = require('fs') as { writeFileSync: typeof fs.writeFileSync };
+  const real = nodeFs.writeFileSync;
+  nodeFs.writeFileSync = ((file: fs.PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView, opts?: fs.WriteFileOptions) => {
+    real(file, data, opts);
+    if (String(file).endsWith('.durbar-tmp')) real(f, '{"a":1,"firstStartTime":"now"}\n'); // the agent app rewrites its file meanwhile
+  }) as typeof fs.writeFileSync;
+  let w: ReturnType<typeof backupAndWrite>;
+  try {
+    w = backupAndWrite(f, '{"a":2}\n', textHash('{"a":1}\n'), Date.now());
+  } finally {
+    nodeFs.writeFileSync = real;
+  }
+  assert.ok(!w.ok && /changed while/.test(w.error), JSON.stringify(w));
+  assert.strictEqual(fs.readFileSync(f, 'utf8'), '{"a":1,"firstStartTime":"now"}\n', 'the app\'s own write is kept');
+  assert.ok(!fs.existsSync(f + '.durbar-tmp'));
 });
 
 function fixtureHome(): { home: string; lists: GlobalLists; clock: { t: number } } {
@@ -333,6 +422,10 @@ ok('GlobalLists: preview -> apply writes three files with backups; reply and pre
   assert.ok(res.ok && res.items.every((i) => i.ok && i.backup), JSON.stringify(res));
   noSecret(res, 'apply result');
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8')).mcpServers.notes.env.NOTES_TOKEN, SECRET, 'plain mode: the value is in the file');
+  if (process.platform !== 'win32')
+    for (const f of [path.join(home, '.copilot', 'mcp-config.json'), path.join(home, '.claude.json'), path.join(home, '.codex', 'config.toml')])
+      assert.strictEqual(fs.statSync(f).mode & 0o077, 0, `${f}: plain values never in a group- or world-readable file`);
+  assert.ok(!pv.items.some((i) => i.note), 'no Copilot ${NAME} note in plain mode');
   assert.ok(fs.readFileSync(path.join(home, '.codex', 'config.toml'), 'utf8').startsWith(codexFixture));
   assert.strictEqual(fs.readdirSync(path.join(home, '.codex')).filter((x) => x.endsWith('.bak')).length, 1);
   assert.ok(!lists.apply(pv.token).ok, 'a token is single use');
@@ -356,6 +449,10 @@ ok('GlobalLists: reference mode lists the variables; conflicts need a tick; erro
   fs.writeFileSync(path.join(home, '.codex', 'config.toml'), 'mcp_servers = { a = { command = "x" } }\n');
   const pv = lists.preview({ ...stdio, name: 'existing' }, ['claude', 'codex'], 'ref');
   assert.deepStrictEqual(pv.vars, ['NOTES_TOKEN']);
+  assert.ok(!pv.items.some((i) => i.note), 'the ${NAME} note is Copilot\'s only');
+  const cp = lists.preview(stdio, ['copilot', 'claude'], 'ref');
+  assert.strictEqual(cp.items.find((i) => i.app === 'copilot')?.note, COPILOT_REF_NOTE, 'FR-051: Copilot in reference mode says not verified');
+  assert.ok(!lists.preview({ ...stdio, env: [] }, ['copilot'], 'ref').items[0].note, 'no variable, no note');
   const claude = pv.items.find((i) => i.app === 'claude');
   assert.ok(claude?.conflict && claude.current?.command === 'node');
   assert.ok(pv.items.find((i) => i.app === 'codex')?.error);
