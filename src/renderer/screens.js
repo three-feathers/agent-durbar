@@ -436,7 +436,7 @@
         <div class="scr-tools"><button class="btn" type="button" id="globAdd" title="Write a server into the lists of the agent apps you choose, after you review each file">+ Add server for all folders…</button></div>
         ${rows?`<ul class="srvs" id="globList">${rows}</ul>`:'<p class="scr-note small">No other servers in Claude Code\'s or Codex\'s lists.</p>'}
         ${harmonizeSection()}
-        <details class="scr-more"><summary>Files read</summary><ul class="scr-note small gfiles">${files}</ul><p class="scr-note small">Read again every time this screen opens. Agent Durbar writes these files only after you confirm, with a backup next to each. The Claude Code switch decides whether Agent Durbar passes that server to its own Claude Code sessions; Codex starts the servers of its list itself.</p></details>`;
+        <details class="scr-more"><summary>Files read</summary><ul class="scr-note small gfiles">${files}</ul><p class="scr-note small">Read again every time this screen opens. Agent Durbar writes these files only after you confirm, with a backup next to each (to undo a change, copy the <code>.bak</code> file back by hand), and leaves them readable only by you. The Claude Code switch decides whether Agent Durbar passes that server to its own Claude Code sessions; Codex starts the servers of its list itself.</p></details>`;
   }
   /* spec 069 FR-021/FR-022: servers to bring in step, shown when two or more lists can be read and something differs */
   function harmonizeSection(){
@@ -478,14 +478,15 @@
     const writable=pv.items.filter(i=>!i.error);
     const items=pv.items.map(i=>`<li class="gpv${i.error?' bad':''}"><div class="srv-top"><b>${esc(i.label)}</b><code>${esc(i.file)}</code>${i.exists?'':'<span class="mtag">new file</span>'}${i.conflict?'<span class="mtag warn">already there</span>':''}</div>
         ${i.error?`<p class="scr-note warn" role="note">Not written: ${esc(i.error)}</p>`:''}
+        ${i.note&&!i.error?`<p class="scr-note small" role="note">${esc(i.note)}</p>`:''}
         ${i.conflict&&i.current?`<p class="dsub small">Now: <code>${esc(cap(runOf(i.current),160))}</code></p>`:''}
         ${i.entry&&!i.error?`<p class="dsub small">${kind==='add'?(i.conflict?'Would become':'Adds'):'Removes'}:</p><pre class="trustcmd" tabindex="0">${esc(i.entry)}</pre>`:''}
         ${i.conflict&&!i.error?`<label class="grep"><input type="checkbox" data-rep="${esc(i.app)}"> Replace it in ${esc(i.label)}</label>`:''}</li>`).join('');
-    const intro=kind==='add'?`<p class="dsub"><b>This changes your agent apps' own settings</b> for every folder: they will run this server with your user rights, also outside Agent Durbar. Each file is backed up next to it first; nothing else in it changes.</p>`
+    const intro=kind==='add'?`<p class="dsub"><b>This changes your agent apps' own settings</b> for every folder: they will run this server with your user rights, also outside Agent Durbar. Each file is backed up next to it first and left readable only by you; nothing else in it changes.</p>`
       :`<p class="dsub">This removes <b>${esc(what)}</b> from these files, for every folder, also outside Agent Durbar. Each file is backed up next to it first.</p>`;
     const vars=pv.vars&&pv.vars.length?`<p class="dsub" role="note">The files name environment variables instead of holding the values. Set <b>${pv.vars.map(esc).join(', ')}</b> in your environment before the agent apps start.</p>`:'';
-    const copy=what==='copy'?'<p class="dsub" role="note">Values are copied as they are in the source list: references stay references, and a value written there in plain text is written in plain text here too (masked below).</p>':'';
-    const plain=kind==='add'&&what==='plain'?'<p class="scr-warn" role="note"><b>The values are written in plain text.</b> Each agent app keeps them in its own config file; any program running as you can read them.</p>':'';
+    const copy=what==='copy'?'<p class="dsub" role="note">Values are copied as they are in the source list: references stay references, and a value written there in plain text is written in plain text here too (masked below), in a file left readable only by you.</p>':'';
+    const plain=kind==='add'&&what==='plain'?'<p class="scr-warn" role="note"><b>The values are written in plain text.</b> Agent Durbar makes each file it writes readable only by you; programs running as you can still read them.</p>':'';
     const r=await dialog({title:kind==='add'?'Review: add to your agent apps':'Review: remove from your agent apps',wide:true,cls:'gpvd',html:intro+vars+copy+plain+`<ul class="gpvl">${items}</ul>`,
       buttons:writable.length?[{label:'Cancel',value:null},{label:kind==='add'?'Write to '+(writable.length===1?'1 file':writable.length+' files'):'Remove from '+(writable.length===1?'1 file':writable.length+' files'),value:'ok',cls:'primary warn'}]:[{label:'Close',value:null,cls:'primary'}]});
     if(!r)return false;
@@ -497,12 +498,18 @@
     if(cur&&cur.kind==='settings')paintSettings();
     return done.length>0;
   }
-  async function removeGlobal(name){
-    const apps=appsWith(name);if(!apps.length||!X.bridge.mcpGlobalRemovePreview)return;
-    const r=await dialog({title:'Remove "'+name+'" from…',html:`<p class="dsub">It is in these agent apps' lists. Pick where to remove it; you review each file next.</p><div class="gapps" role="group" aria-label="Agent apps">${apps.map(id=>`<label><input type="checkbox" name="gApp" value="${id}" checked> ${esc(APPN[id])}</label>`).join('')}</div>`,
-      buttons:[{label:'Cancel',value:null},{label:'Review…',value:'ok',cls:'primary'}],validate:d=>pickedApps(d).length?'':'Pick at least one agent app.'});
+  /* spec 069 FR-005; FR-030 (change 2026-10-22, review on PR 499): `folder` = {label, remove()} when the server is also this folder's
+     extra: one picker lists every place it comes from, all ticked, so Remove never leaves a copy behind without saying so */
+  async function removeGlobal(name,folder){
+    const apps=appsWith(name);
+    if((!apps.length||!X.bridge.mcpGlobalRemovePreview)&&!folder)return;
+    const fRow=folder?`<label><input type="checkbox" name="gFolder" checked> ${esc(folder.label)}</label>`:'';
+    const r=await dialog({title:'Remove "'+name+'" from…',html:`<p class="dsub">It is in ${folder&&apps.length?'these places':folder?'this folder\'s extras':'these agent apps\' lists'}. Pick where to remove it${apps.length?'; you review each agent app\'s file next':''}.</p><div class="gapps" role="group" aria-label="Where to remove it">${apps.map(id=>`<label><input type="checkbox" name="gApp" value="${id}" checked> ${esc(APPN[id])}</label>`).join('')}${fRow}</div>`,
+      buttons:[{label:'Cancel',value:null},{label:apps.length?'Review…':'Remove',value:'ok',cls:'primary'}],validate:d=>pickedApps(d).length||(d.querySelector('[name=gFolder]')||{}).checked?'':'Pick at least one place.'});
     if(!r)return;
-    await reviewGlobal('remove',await X.bridge.mcpGlobalRemovePreview(name,pickedApps(r.root)),name);
+    const picked=pickedApps(r.root),inFolder=!!(r.root.querySelector('[name=gFolder]')||{}).checked;
+    if(inFolder)await folder.remove();
+    if(picked.length)await reviewGlobal('remove',await X.bridge.mcpGlobalRemovePreview(name,picked),name);
   }
   const secretChip=(kind,s)=>`<span class="sec" title="${kind==='env'?'Environment variable':'Header'}: ${s.set?'value stored, hidden':'no value'}">${esc(s.key)}<i>${s.set?'••••••':'not set'}</i></span>`;
   /* spec 052 FR-099 (round 10): Spacing, under Detail level; Compact tightens the chat, screens, dialogs and inbox (never the office) */
@@ -885,10 +892,10 @@
         const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
         return `<li class="srv sm${open?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
-          <div class="srv-act">${rs}${rmb}${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+' in this session','data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div>${open?toolsHTML(x.name):''}</li>`;}).join('');
+          <div class="srv-act">${rs}${rmb}${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts'),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div>${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">Applies to this agent until the app is closed.</p>`;
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
     };
     let dlg=null;
     /* spec 069 FR-032/FR-033: expanded rows and their tools, loaded once per open dialog (again after a Restart) */
@@ -927,13 +934,14 @@
     const removeOne=async n=>{
       const x=(st.servers||[]).find(y=>y.name===n);if(!x)return;
       const srcs=x.sources||[];
+      const f=srcs.includes('folder')&&X.folderOf&&X.bridge.mcpRemove?X.folderOf(a):null;
+      const folder=f?{label:"This folder's extras in Agent Durbar ("+(f.name||'this folder')+')',remove:async()=>{await X.bridge.mcpRemove(f.key,n);X.toast('Removed '+esc(n)+' from this folder\'s extras.',2600);}}:null;
       if(srcs.some(t=>t==='copilot'||t==='claude'||t==='codex')&&X.bridge.mcpGlobalState){
         try{glob=await X.bridge.mcpGlobalState();}catch(e){glob=null;}
-        await removeGlobal(n);
-      }else if(srcs.includes('folder')&&X.folderOf&&X.bridge.mcpRemove){
-        const f=X.folderOf(a);if(!f)return;
+        await removeGlobal(n,folder); /* every copy in one picker (review on PR 499) */
+      }else if(folder){
         const r=await dialog({title:'Remove "'+n+'"?',html:'<p class="dsub">The server and its stored secret values are deleted from this folder in Agent Durbar. Running sessions keep it until they end.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary danger'}]});
-        if(r){await X.bridge.mcpRemove(f.key,n);X.toast('Removed '+esc(n)+'.',2600);}
+        if(r)await folder.remove();
       }
       /* the review replaced this dialog: open it again with the new lists */
       if(!dlg||!dlg.isConnected)void agentMcp(a,o);else await repaint();

@@ -13,6 +13,8 @@
 - [x] T009 Driver and screenshots (form, confirmation, Settings list) at 1440x900 and 1280x800 [FR-042]
 - [x] T010 README *MCP servers*, CHANGELOG, specs index, 019/020 dated notes, agent-notes
 
+- [x] T065 Review on #489 (Paco's agent, change 2026-10-22): owner-only writes (0600, stricter kept; Windows: same-folder temp + rename), hash re-check before the rename, surgical JSON edit keeping every other byte, backup bytes asserted, Copilot `${NAME}` note in the review, FR-004 aligned (`env_http_headers` for `Authorization`), Claude `--mcp-config` through a 0600 temp file, restore-is-manual in docs; mutation-checked [FR-003, FR-004, FR-006, FR-009, FR-051]
+
 ## Part 2: harmonize (PR 2)
 
 - [x] T020 `mcp:globalDiff` and copy preview reusing the part 1 pipeline [FR-020, FR-021]
@@ -26,6 +28,7 @@
 - [x] T032 Agent dialog: expand row with tools; the switch named for this session, Remove, *managed by* words; Sign in placeholder wired to spec 058 when `canSignIn` exists [FR-030, FR-033]
 - [x] T033 Tests (fake SDK, fake CLI, fake app-server), simulator tools, screenshots, docs
 - [x] T034 Merge with spec 058's MCP words (#538): one row and one repaint path (058's), 058's state words, hints and Details/Copy, the switch named "Switch off/on ... in this session", sim tools follow the row's state; driver and screenshots updated [FR-030, FR-033; delta 2026-10-22]
+- [x] T067 Review on #499 (Paco's agent, change 2026-10-22): Remove offers every source (app lists + folder extra) in one picker; switch label by session state with FR-066's words and a true footer; Codex `listMcpTools` pages through `mcpServerStatus/list` [FR-030, FR-031]
 
 ## Part 4: single tools on and off (PR 4, owner 2026-10-21 22:10 UTC)
 
@@ -42,3 +45,4 @@
 - [x] T062 Review on #489 (change 2026-10-22): write through a symlinked file; one-pass TOML unescape shared with spec 061 (`codextoml.ts`); `copilotDir` reused; FR-009 wiring tested through `registerMcpIpc` [FR-002, FR-006, FR-009, FR-041]
 - [x] T063 Review on #492 (change 2026-10-22): mask command, arguments and URL in the copy review; keep or refuse `enabled = false`, `disabled_tools`, tool lists and JSON `cwd` in copies; diff names tools and on/off [FR-012, FR-020, FR-023, SC-002]
 - [x] T064 Review on #503 (change 2026-10-22): `excludedTools` form checked in the SDK (`read:`); Codex user-server merge `[KNOWN GAP]`; tool names outside `[A-Za-z0-9_.-]` cannot be turned off (UI disabled, main refuses) [FR-062, FR-063]
+- [x] T066 Second review on #492 (Paco's agent, change 2026-10-22): copies refuse unknown fields and non-string values (named), Codex `env` numbers and multi-line strings not copyable, copy into a 0644 file leaves it 0600 (via T065), copy review wording; mutation-checked [FR-006, FR-023]

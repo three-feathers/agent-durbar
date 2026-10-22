@@ -154,9 +154,13 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   `env_http_headers` key names too. Both Codex readers share the string, string-array and comment helpers (`src/main/codextoml.ts`,
   change 2026-10-22).
 - **FR-003** `[IMPLEMENTED]` **Write** (pure editors that return the new text or a refusal):
-  - JSON: parse, set or delete `mcpServers[name]`, write back with 2-space indentation; every other key is kept (key order of the
-    rest kept by `JSON.parse`/`stringify`). A file that is not an object, has `mcpServers` that is not an object, or fails to parse is
-    refused.
+  - JSON (change 2026-10-22, review 2 on #489): parse to check, then a **surgical text edit**: only the `"<name>": {...}` member (or,
+    when the file has none, a new `"mcpServers"` member at the end of the top-level object) is inserted, replaced or deleted; every
+    other byte stays as written (indentation, key order, number literals such as `12345678901234567890` or `1.0`, escapes, line ends).
+    The new member uses the file's own indent unit (spaces or a tab; compact when the file is on one line). A file that is not an
+    object, has `mcpServers` that is not an object, has a duplicate `mcpServers` or server key, or fails to parse (comments included:
+    these files are strict JSON) is refused; the edited text is parsed again and refused when it does not hold exactly the intended
+    change.
   - Codex TOML: a minimal edit. Add appends a block `[mcp_servers.<name>]` (and `[mcp_servers.<name>.env]` for plain env values) at the end,
     after one blank line and a comment `# added by Agent Durbar`; remove deletes the lines from that table's header up to the next table
     header that is not one of its sub-tables. Every other line, comment and blank line stays byte for byte. Refused: `mcp_servers` as an
@@ -167,9 +171,12 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
     command, args, env, url, headers}`; Codex `command`, `args`, `cwd`, `env` / `env_vars`, `url`, `http_headers` / `env_http_headers` /
     `bearer_token_env_var`.
 - **FR-004** `[IMPLEMENTED]` **Secrets** (Q2): per server, *Reference environment variables* (default) or *Write the values into the files*. Reference:
-  Codex `env_vars = ["NAME"]`, an `Authorization: Bearer` header as `bearer_token_env_var`, other headers as `env_http_headers`; Claude
-  Code and Copilot `"NAME": "${NAME}"` (Q6). Plain: the values, with the warning "<App> keeps these values in its own config file in plain
-  text; any program running as you can read them." Durbar never stores the values itself beyond the confirmation (in main memory, at most
+  Codex `env_vars = ["NAME"]` and every header (also `Authorization`) as `env_http_headers` (`Authorization` -> `AUTHORIZATION`, holding
+  the whole value such as `Bearer <token>`; change 2026-10-22, review 5 on #489: the code never wrote `bearer_token_env_var`, which the
+  reader still lists); Claude Code and Copilot `"NAME": "${NAME}"` (Q6). With Copilot ticked in reference mode the review says, per
+  Copilot file, that Copilot expanding `${NAME}` is not verified (FR-051). Plain: the values, with the warning "The values are written
+  in plain text. Agent Durbar makes each file it writes readable only by you; programs running as you can still read them." (change
+  2026-10-22: the old text named only programs running as you, while a 0644 file is open to every local user; see FR-006). Durbar never stores the values itself beyond the confirmation (in main memory, at most
   5 minutes, dropped after the write or cancel), and never logs them.
 - **FR-005** `[IMPLEMENTED]` **Two steps, one token.** `mcp:globalPreview(input, apps, secretMode)` validates the input (spec 019 `validateInput`), reads
   each chosen file, builds the new text, and returns per app `{app, label, exists, entry (values masked), error?, conflict?}` and a
@@ -178,8 +185,15 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   `mcp:globalRemovePreview(name, apps)` / `mcp:globalRemoveApply(token)` do the same for a remove. Unknown, used or expired tokens are
   refused.
 - **FR-006** `[IMPLEMENTED]` **Safe write**: backup first (Q3: `<file>.durbar-<YYYYMMDDTHHMMSSZ>.bak`, mode 0600, the oldest Durbar backups beyond 3 per
-  file deleted, never another app's backup), then write `<file>.durbar-tmp` with the original file's mode (0600 for a new file) and
-  `rename` over the file. A failure leaves the original in place and reports "Could not write <label>". Each result names the backup's
+  file deleted, never another app's backup), then write `<file>.durbar-tmp` and
+  `rename` over the file. Mode (change 2026-10-22, review 1 on #489 and 1 on #492): every file Durbar writes is **owner-only**: the
+  original mode with the group and other bits removed (a 0644 file becomes 0600, a stricter 0600 or 0400 stays), 0600 for a new file;
+  the temporary file is created with that mode (`wx`, a stale one removed first), so plain values never sit in a group- or
+  world-readable file, also when copied from another app (FR-021). Windows has no POSIX mode: the temporary file is made in the same
+  folder and renamed, so it gets that folder's inherited ACL (under the user profile: the user, SYSTEM and Administrators); `read:`
+  Node docs, not checked on Windows `[KNOWN GAP]`. The text's hash is checked again right after the temporary file is written, just
+  before the rename, so a concurrent rewrite (Claude Code rewrites `~/.claude.json`) between the backup and the rename is refused too
+  (the temporary file is removed). Restoring a backup is manual (copy the `.bak` over the file); the docs say so. A failure leaves the original in place and reports "Could not write <label>". Each result names the backup's
   label.
 - **FR-007** `[IMPLEMENTED]` **Which apps** (owner 21:06): the form lists the three apps with their install state from `adapters:list`. More than one
   installed: ticks, all installed ones ticked. One installed: a single choice (radio), that app selected. None installed: a single choice
@@ -192,6 +206,9 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   `claude`); a name that is also a folder extra keeps the folder extra (compared without case). The values also mask that session's
   MCP errors (`secretValuesFor`). Settings has a switch per Claude entry for new Durbar sessions,
   kept with the Copilot switches (`disabledAmbient`). `${NAME}` references are passed as written (Claude Code expands them, `read:` docs).
+  (change 2026-10-22, review 6 on #489) The CLI transport no longer puts the MCP JSON (values included) on the command line, where
+  `ps` shows it: it is written to `mcp-config.json` (mode 0600) in a new private temp folder (`mkdtemp`, 0700), `--mcp-config` gets that
+  path, and the folder is deleted when the CLI exits (spec 072 FR-031's pattern). The SDK transport passes the servers in memory.
 - **FR-010** `[IMPLEMENTED]` **Trust**: the per-file confirmation (exact file, exact entry, the command or URL in full) is the trust step for a global
   server; Durbar adds no second trust prompt. Folder extras keep spec 020's trust per folder.
 
@@ -218,6 +235,12 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   `disabled: true`), hidden tools (Codex `disabled_tools`, written as a list) and a tool allow list (Codex `enabled_tools`, Copilot
   `tools`) travel with it where the target list has the same field (Codex all three; Copilot the allow list); a target without it
   refuses that file with a note naming the field.
+  (change 2026-10-22, review 2 and 3 on #492) **Nothing is dropped silently.** A copy is refused, naming the fields, when the source
+  entry has a field the writers do not carry (for example Claude Code `oauth` or `headersHelper`, Copilot `timeout`, Codex
+  `startup_timeout_sec` or a sub-table other than `env`, `http_headers`, `env_http_headers`), or a value that is not a plain string
+  where one is expected (a number or a `"""` multi-line string in Codex `env`, a non-string in a JSON `env`, `headers` or `args`):
+  such a copy would lose that field or write the value empty. The diff still lists the server, with the reason. Plain values copied
+  from an owner-only file never land in a more open one: every written file is owner-only (FR-006), and the copy review says so.
 
 ### Session controls and tools (part 3; depends on spec 058 #473)
 
@@ -319,7 +342,7 @@ VS Code UI supports, as some people may want to give access to read email but no
   - Every other key of the JSON files (unknown top-level keys, `projects`, an unknown key inside another server) and every other byte of
     the Codex file (comments, odd spacing, other tables) are kept: add then remove of all three gave the same Codex bytes and the same
     JSON content. Backups next to each file, mode 600, pruned to the newest 3 after six writes; the write is a rename (new inode, no
-    `.durbar-tmp` left), the file mode is kept (664 stayed 664), new files are created 600. A file changed after the review is refused.
+    `.durbar-tmp` left), the file mode was kept (664 stayed 664; since the change of 2026-10-22 a written file is made owner-only, FR-006, `test:` only), new files are created 600. A file changed after the review is refused.
     Missing files are created (`~/.claude.json` as `{"mcpServers": ...}` only) and all three CLIs list the entry.
   - Remove: each CLI no longer lists the server.
   - Found and fixed: a Codex file that does not parse (an unclosed `[table` header) was appended to instead of refused; see *Changes*.
@@ -370,6 +393,30 @@ VS Code UI supports, as some people may want to give access to read email but no
   4. **FR-009 tested** (FR-041): the merge is one function (`mergeSessionServers`, `sessionGlobalFor`) and `test:mcpglobal` runs
      `registerMcpIpc`: Claude agents only, the Settings off-list honoured, a folder extra wins, the user list's values masked. (T062)
 
+- **2026-10-22 (review on #489 by Paco's agent, CHANGES_REQUESTED at b09e5ed5):** all findings fixed (T065).
+  1. **Owner-only files** (FR-006): plain values were written into a file that kept its 0644 mode. Every write now leaves the file
+     owner-only (group and other bits removed, a stricter mode kept), the temporary file is created with that mode, and the plain
+     warning names the real exposure (FR-004).
+  2. **Surgical JSON edit** (FR-003): `jsonWrite` re-serialised the whole file (4-space indent became 2, `12345678901234567890` became
+     `12345678901234567000`, `1.0` became `1`, escapes changed) while the review says nothing else changes. Only the server's member is
+     now inserted, replaced or deleted in the text; the rest stays byte for byte. Tests: big integers, `1.0`, escapes, 4-space and tab
+     indent, CRLF, one-line files, key order, add/replace/remove of the first, middle, last and only member, comments refused.
+  3. **Backup content tested**: `test:mcpglobal` asserts the backup's bytes equal the file's previous bytes (an empty backup failed no
+     test before).
+  4. **Copilot note** (FR-004, FR-051): with Copilot ticked in reference mode, its review item says `${NAME}` expansion is not verified.
+  5. **FR-004 aligned with the code**: an `Authorization` header is referenced through `env_http_headers` like any header.
+  6. **Smaller**: the Claude MCP JSON goes through a 0600 temp file instead of argv (FR-009); the hash is checked again right before the
+     rename (FR-006); README and the Settings note say that restoring a backup is manual.
+
+- **2026-10-22 (second review on #492 by Paco's agent, CHANGES_REQUESTED at 00d26a4d):** all findings fixed (T066).
+  1. **Copying a secret into a more open file**: `copyPreview` writes plain values as they are; with #489's owner-only writes (FR-006)
+     the target file is 0600 after the copy (`test:` a plain secret from a 0600 `~/.claude.json` copied into a 0644 Codex
+     `config.toml` leaves it 0600), and the copy review says the file is left readable only by you.
+  2. **Fields lost on replace** (FR-023): unknown fields (Claude `oauth`, `headersHelper`, Copilot `timeout`, Codex keys and
+     sub-tables the writer does not know) made a silent partial copy; now the copy is refused naming them.
+  3. **Values that became empty** (FR-023): a Codex `env` value that is not a simple string (a number, a multi-line string) was read
+     as `""`; now it is not copyable, with the key named. The same for non-string JSON values and Codex `args` that are not strings.
+
 - **2026-10-22 (review on #492):** two findings fixed.
   1. **Secret in the copy review** (FR-012, SC-002): the review of a copy masked env and header values only; a token in the source
      entry's command, arguments or URL reached the window. The review (`previewText`, also the add review) now masks command,
@@ -385,6 +432,20 @@ VS Code UI supports, as some people may want to give access to read email but no
   (`read:`, FR-062; wire names of every server still `[KNOWN GAP]`); Codex merging `{disabled_tools}` into a user's own server marked
   `[KNOWN GAP]` (FR-062); tool names outside `[A-Za-z0-9_.-]` can no longer be turned off (they were not blocked at all in Claude Code's
   Allow all; FR-063, `test:mcpservertools`); the `<server>-<tool>` key collision documented (over-blocks only). (T064)
+- **2026-10-22 (review on #499 by Paco's agent, CHANGES_REQUESTED at 1776c6c3):** all findings fixed (T067).
+  1. **Remove removes every copy** (FR-030): a server that is both in an agent app's list and a folder extra kept its row after
+     *Remove…*, which removed only the list copies. The Remove picker (the Settings `removeGlobal` dialog, reused) now lists every place
+     the server comes from, all ticked: each agent app's list and "This folder's extras in Agent Durbar"; the folder copy is deleted with
+     the folder's existing remove (`mcpRemove`), the app lists through the usual per-file review.
+  2. **Switch words** (FR-030, spec 058 FR-066): with a running session the switch keeps FR-066's words, "Switch off <server> for
+     <agent> in this session"; with no running session it says "Switch off <server> for <agent> when its session starts". The footer
+     says the true scope (`agents:setMcp` keeps it per agent for this app run): "A switch stays for this agent, also in its next
+     sessions, until the app is closed."
+  3. **Codex tools past the first page** (FR-031): `listMcpTools` asked `mcpServerStatus/list` with `limit: 10` and read one page, so if
+     Codex ignored `serverName`, a server past the tenth read as not running. It now asks 100 per page and follows `nextCursor` (at
+     most 20 pages) until the server is found; only then "not running in this session". `test:` the fake app-server ignores
+     `serverName` and pages 10 at a time; the 23rd server's tools are found on page 3.
+
 - **2026-10-22 (merge with spec 058's MCP words, #538; author's call, owner's scope kept):** part 3 now sits on spec 058's row instead
   of beside it. One row, one repaint path (058's: in-place repaint that keeps focus and scroll, live refresh from `mcp` events with the
   polite announcement). Changed against FR-030 and FR-033 as first built:

@@ -671,6 +671,18 @@ async function main(): Promise<void> {
       await assert.rejects(ad.listMcpTools!(sid, 'broken'), /spawn broken-mcp ENOENT/, 'toolsError is the failure');
       await assert.rejects(ad.listMcpTools!(sid, 'nope'), /not running in this session/);
       await assert.rejects(ad.listMcpTools!('no-such', 'echo'), /not running/);
+      // review on #499: a Codex that ignores serverName and pages 10 at a time: the 23rd server is found on page 3
+      server.mcpList = Array.from({ length: 25 }, (_v, i) => ({ name: `srv-${i}`, authStatus: 'unsupported', runtimeStatus: 'connected', tools: { [`t${i}`]: { name: `t${i}`, inputSchema: {} } }, resources: [], resourceTemplates: [] }));
+      server.mcpPageSize = 10;
+      server.mcpIgnoreServerName = true;
+      const before = server.requests('mcpServerStatus/list').length;
+      assert.deepStrictEqual(await ad.listMcpTools!(sid, 'srv-22'), [{ name: 't22' }]);
+      assert.strictEqual(server.requests('mcpServerStatus/list').length - before, 3, 'three pages asked');
+      assert.strictEqual((server.requests('mcpServerStatus/list').pop()!.params as Record<string, unknown>).cursor, '20');
+      await assert.rejects(ad.listMcpTools!(sid, 'srv-99'), /not running in this session/, 'not on any page');
+      server.mcpList = undefined;
+      server.mcpPageSize = undefined;
+      server.mcpIgnoreServerName = false;
       await ad.setMcpEnabled!(sid, 'echo', false);
       const last = events.filter((e) => e.type === 'mcp').pop() as { servers: Array<{ name: string; status: string }> };
       assert.strictEqual(last.servers.find((s) => s.name === 'echo')?.status, 'disabled', 'shown as off at once');
