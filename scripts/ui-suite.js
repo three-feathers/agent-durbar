@@ -39,11 +39,13 @@ const DRIVERS = [
   { name: 'shots-003-mode-back' },
   { name: 'shots-012-signin-chat' },
   { name: 'shots-058-mcp-restart' }, // spec 058: per-server Restart and Restart session with these servers
+  { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog
   { name: 'shots-model', label: 'shots-model 1440', env: { MODEL_W: '1440', MODEL_H: '900' } },
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },
   { name: 'check-dialog-focus' },
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },
+  { name: 'check-sched-edit' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
   { name: 'shots-059-long-url' }, // spec 059 FR-019: a long unbroken name stays in its card, the inbox and the Schedules rows

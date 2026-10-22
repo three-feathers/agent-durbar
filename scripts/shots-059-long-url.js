@@ -55,8 +55,8 @@ module.exports = async (ctx) => {
     await W(`!!document.getElementById('scTarget')`, 'the Schedules dialog');
     // one schedule whose prompt is one long token, sent to this session (through the dialog, as a user would)
     await H.js(`(()=>{const s=document.getElementById('scTarget');const o=[...s.options].find(x=>x.value);if(o){s.value=o.value;s.dispatchEvent(new Event('change',{bubbles:true}));}const p=document.getElementById('scPrompt');p.value=${jsLiteral('https://example.invalid/teams/consumer-sites/SitePages/Consumer-Onboarding-Checklist-Overview/Details-2026-Q4-Planning/Appendix-A-Long-Token')};p.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('scAdd').click()})()`);
-    await W(`!!document.querySelector('#schedDlg .sc-row')`, 'the schedule row in the dialog');
-    const sd = [...await outside('#schedDlg .sc-row b', '.sc-row'), ...await outside('#scToHint', '.dlg'), ...await outside('#schedDlg .sc-row b', '.dlg')];
+    await W(`!!document.querySelector('#schedDlg .sc-row .sc-p')`, 'the schedule row in the dialog');
+    const sd = [...await outside('#schedDlg .sc-row .sc-p', '.sc-row'), ...await outside('#scToHint', '.dlg'), ...await outside('#schedDlg .sc-row .sc-p', '.dlg')];
     assert.deepStrictEqual(sd, [], `${tag}: the Schedules dialog row and hint stay in their boxes`);
     const hint = await H.js(`(()=>{const h=document.getElementById('scToHint');return {hidden:h.hidden,tip:h.title}})()`);
     assert.ok(!hint.hidden && hint.tip.includes('https://example.invalid/'), `${tag}: the hint shows the session and keeps its tooltip: ${JSON.stringify(hint)}`);
@@ -64,8 +64,8 @@ module.exports = async (ctx) => {
     // Settings > Schedules
     await H.click('#backBtn');
     await H.click('#settingsBtn');
-    await W(`!!document.querySelector('#schedSet .sc-row')`, 'the Settings schedule row');
-    const ss = [...await outside('#schedSet .sc-row b', '.sc-row'), ...await outside('#schedSet .sc-row b', '#schedSet')];
+    await W(`!!document.querySelector('#schedSet .sc-row .sc-p')`, 'the Settings schedule row');
+    const ss = [...await outside('#schedSet .sc-row .sc-p', '.sc-row'), ...await outside('#schedSet .sc-row .sc-p', '#schedSet')];
     assert.deepStrictEqual(ss, [], `${tag}: the Settings schedule row stays in its box`);
     console.log(`[059-url] ${tag} inbox, Schedules dialog and Settings rows ok`);
   }
