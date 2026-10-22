@@ -258,6 +258,8 @@ body.has-bridge #topBtns{display:flex}
 /* spec 052 FR-099 (round 10): Settings > Detail level > Spacing, a second labelled segment under the first */
 .scr-row{display:flex;align-items:center;gap:12px;margin-top:8px}
 .scr-row-l{font-size:var(--t4-size);font-weight:600;color:var(--ink-2)}
+.mcp-rsess{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:10px 0 2px}
+.mcp-rsess .dsub{margin:0;flex:1 1 260px}
 /* spec 061: "This folder brings its own agent setup" (the import list's look; each item in full) */
 .dlg.fs .fs-app{margin:12px 0 4px}
 .dlg.fs .fs-app h4{margin:0 0 6px;font-size:14px}

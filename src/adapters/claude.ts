@@ -68,6 +68,9 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   history: true, // FR-125/FR-126: read-only from Claude's own session files
   mcpStatus: true,
   mcpToggle: true, // FR-133: mcp_toggle + mcp_status
+  mcpStart: 'next-message', // spec 058 FR-010: the CLI (and its servers) is launched with the next message
+  mcpToggleApplies: 'live', // FR-133 (a server that was off at launch: next message)
+  mcpRestart: true, // spec 058 FR-012: control request mcp_reconnect (read: CLI 2.1.304 strings; not checked on a real account)
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
   oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
   renameSession: 'next-turn', // spec 059 FR-007: `--name` on the session's next CLI start (real: Vikram's agent, 2026-10-20, CLI 2.1.304)
@@ -78,8 +81,10 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
 
 /** Spec 059 FR-007: the SDK transport (dev opt-in, `DURBAR_CLAUDE_TRANSPORT=sdk`) does not apply `--name`, so it does not offer a rename. */
 export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() => {
-  const { renameSession: _r, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown };
+  // the SDK transport sends only a few control requests (claudeSdk.ts): no rename, no mcp_reconnect
+  const { renameSession: _r, mcpRestart: _m, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown };
   void _r;
+  void _m;
   return rest;
 })()) as AdapterCapabilities;
 /** Spec 066: one sentence added to a plan-first message, so the plan reaches the card (Claude's plan file cannot be written in Read-only). */
@@ -510,6 +515,7 @@ export class ClaudeAdapter implements AgentAdapter {
     // spec 059 FR-007: on the SDK transport `--name` is not applied, so no rename is offered (capability and member agree, contract C2)
     this.capabilities = deps.sdkTransport ? CLAUDE_SDK_CAPABILITIES : CLAUDE_CAPABILITIES;
     if (deps.sdkTransport) (this as { renameSession?: unknown }).renameSession = undefined;
+    if (deps.sdkTransport) (this as { restartMcpServer?: unknown }).restartMcpServer = undefined;
   }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
@@ -764,6 +770,25 @@ export class ClaudeAdapter implements AgentAdapter {
       this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
     } catch {
       /* the toggle worked; the list comes with the next init */
+    }
+  }
+
+  /**
+   * Spec 058 FR-012: restart one MCP server of the running CLI with the control request `mcp_reconnect` ("Reconnects a disconnected
+   * or failed MCP server", read: CLI 2.1.304), then `mcp_status` for the new list. The CLI is not launched for it: before the first
+   * message there is nothing to restart. A server that was off at launch is not in the CLI's config at all.
+   */
+  async restartMcpServer(sessionId: string, name: string): Promise<void> {
+    const s = this.sessions.get(sessionId);
+    if (!s) throw new Error('This session is not running. Send a message to start it.');
+    if (!s.transport?.alive) throw new Error('Claude Code starts its MCP servers with your next message; there is nothing to restart yet.');
+    if (s.launchedOff?.has(name) || (s.options.disabledMcpServers ?? []).includes(name)) throw new Error('Switch it on first; it starts with your next message.');
+    await s.transport.request({ subtype: 'mcp_reconnect', serverName: name }, 30_000);
+    try {
+      const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
+      this.emit(s.id, { type: 'mcp', servers: claudeMcpServers(r.mcpServers) });
+    } catch {
+      /* the reconnect worked; the list comes with the next init */
     }
   }
 
