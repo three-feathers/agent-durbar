@@ -64,6 +64,8 @@
       </div>
     </div>
   </div>
+  <!-- spec 044 FR-027 (#523): Schedules, left of Needs you: a clock and the count of active schedules; opens Settings > Schedules. The mark (!) shows a run that did not happen since you last looked; the pause glyph shows Pause all. -->
+  <button class="btn sched-top" id="schedTopBtn" type="button" data-keys-text title="Schedules (Ctrl+Shift+S)" aria-keyshortcuts="Control+Shift+S" hidden><span class="st-ico" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.6V8l2.4 1.6"/></svg><i class="st-mark"></i><i class="st-pause"></i></span><span class="st-word">Schedules</span> <b>0</b></button>
   <!-- spec 052 FR-027 (#305): the Needs you inbox -->
   <button class="btn inbox-btn" id="inboxBtn" type="button" data-keys-text title="Needs you: every request in one queue (I or Ctrl+Shift+A). N or Ctrl+Shift+N opens the next agent." aria-keyshortcuts="Control+Shift+A I" hidden><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5l1.6-5.2A1.4 1.4 0 0 1 5 3.3h6a1.4 1.4 0 0 1 1.4 1l1.6 5.2v2.8a1.4 1.4 0 0 1-1.4 1.4H3.4A1.4 1.4 0 0 1 2 12.3z"/><path d="M2 9.5h3.2l.9 1.6h3.8l.9-1.6H14"/></svg><span class="ib-word">Needs you</span> <b>0</b></button>
   <div class="stats" id="stats" role="group" aria-label="Agent status counts. Select one to filter. Press N for the next agent that needs you." title="Select a count to filter. Press N for the next agent that needs you."></div>
@@ -114,6 +116,7 @@
 <script src="activitytable.js"></script>
 <script src="modelswitch.js"></script>
 <script src="schedtemplates.js"></script>
+<script src="schedtop.js"></script>
 <script src="places.js"></script>
 <script src="cuttext.js"></script>
 <script src="probe.js"></script>

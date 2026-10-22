@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '..');
 const srcDir = path.join(root, 'src', 'renderer');
 const outDir = path.join(root, 'dist', 'renderer');
 fs.mkdirSync(outDir, { recursive: true });
-for (const f of ['index.html', 'styles.css', 'app.js', 'harnesses.js', 'signin.js', 'demo.js', 'markdown.js', 'dialog.js', 'sessionname.js', 'roomsummary.js', 'sessionsearch.js', 'usagetotals.js', 'costtable.js', 'modelswitch.js', 'schedtemplates.js', 'places.js', 'cuttext.js', 'probe.js', 'grantlabel.js', 'mcpwords.js', 'place-icons.js', 'mood.js', 'attention.js', 'keys.js', 'activity.js', 'toolstats.js', 'theme.js', 'themes.css', 'scenekits.js', 'screens.js', 'screens.css', 'activitytable.js', 'gitstatus.js', 'checkpoints.js', 'exports-shim.js', 'liveact.js', 'foldersetup.js']) {
+for (const f of ['index.html', 'styles.css', 'app.js', 'harnesses.js', 'signin.js', 'demo.js', 'markdown.js', 'dialog.js', 'sessionname.js', 'roomsummary.js', 'sessionsearch.js', 'usagetotals.js', 'costtable.js', 'modelswitch.js', 'schedtemplates.js', 'schedtop.js', 'places.js', 'cuttext.js', 'probe.js', 'grantlabel.js', 'mcpwords.js', 'place-icons.js', 'mood.js', 'attention.js', 'keys.js', 'activity.js', 'toolstats.js', 'theme.js', 'themes.css', 'scenekits.js', 'screens.js', 'screens.css', 'activitytable.js', 'gitstatus.js', 'checkpoints.js', 'exports-shim.js', 'liveact.js', 'foldersetup.js']) {
   fs.copyFileSync(path.join(srcDir, f), path.join(outDir, f));
 }
 // Markdown parser and sanitiser, bundled from node_modules (no CDN); exact versions are pinned in package.json.

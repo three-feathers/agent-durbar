@@ -3,7 +3,8 @@
      npm run build && DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=$PWD/scripts/shots-052-addleft.js xvfb-run -a npx electron . --no-sandbox
    Per size (1440x900, 1280x800), level (Expert, Simple) and built-in theme, with floors and several agent apps (the widest bar):
      - the add buttons are the first controls after the brand (leftmost, and first in tab order), labelled, text at least 10.5px;
-     - the top bar is one row (about 48px) and no control leaves the window or overlaps another.
+     - the top bar is one row (about 48px) and no control leaves the window or overlaps another;
+     - spec 044 FR-034: with simsched=1 the Schedules button is shown, after the ⋯ button and before Needs you, in that same row.
    Then, once: the File menu built from the real template (src/main/appmenu.ts, darwin) as the application menu: File > Add Folder…
    adds a room through the page's own button, File > Add VS Code Workspace… presses + Workspace, Ctrl+O (Windows and Linux, in the
    page) adds a room too, and on this platform (not a Mac) the app has no menu at all (FR-083).
@@ -30,6 +31,14 @@ function topCheck(simple) {
   if (simple ? w && vis(w) : !w || !vis(w)) P.push(simple ? '+ Workspace shows in Simple' : '+ Workspace is not shown');
   if (f && f.textContent.trim() !== '+ Folder') P.push('+ Folder label: ' + f.textContent.trim());
   if (!simple && w && w.textContent.trim() !== '+ Workspace') P.push('+ Workspace label: ' + w.textContent.trim());
+  /* spec 044 FR-027, FR-034: Schedules (run with simsched=1, so it is shown) sits after the ⋯ button and before Needs you, inside the one row */
+  const sc = document.getElementById('schedTopBtn'), more = document.getElementById('topMoreBtn'), ib = document.getElementById('inboxBtn');
+  if (!sc || !vis(sc)) P.push('Schedules is not shown');
+  else {
+    if (more && R(sc).left < R(more).right) P.push('Schedules is not right of the ⋯ button');
+    if (ib && vis(ib) && R(sc).right > R(ib).left) P.push('Schedules is not left of Needs you');
+    if (parseFloat(getComputedStyle(sc).fontSize) < 10.5) P.push('Schedules text below 10.5px');
+  }
   const adds = simple ? [f] : [f, w];
   const others = ctl.filter((c) => !adds.includes(c));
   const brand = R(document.querySelector('.brand'));
@@ -65,12 +74,12 @@ module.exports = async (ctx) => {
       await load({ sim: '15', simfreeze: '1' }, w, h);
       await ctx.js(`localStorage.setItem('durbar.detail',${jsLiteral(level)});true`);
       for (const theme of THEMES) {
-        await load({ sim: '15', simfreeze: '1', simfloors: '1', simkinds: 'mixed', theme }, w, h);
+        await load({ sim: '15', simfreeze: '1', simfloors: '1', simkinds: 'mixed', simsched: '1', theme }, w, h);
         const p = await ctx.js(`(${topCheck.toString()})(${level === 'simple'})`);
         total++;
         if (p.length) fail(`${w}x${h} ${level} ${theme}: ${p.join('; ')}`);
       }
-      await load({ sim: '15', simfreeze: '1' }, w, h);
+      await load({ sim: '15', simfreeze: '1', simsched: '1' }, w, h);
       await ctx.js(`document.querySelectorAll('#toasts > *').forEach((t)=>t.remove());true`);
       await ctx.shot(path.join(process.env.SHOTS_OUT || path.join(ROOT, 'docs', 'screenshots'), `052-add-left${level === 'simple' ? '-simple' : ''}-${w}x${h}.png`));
     }

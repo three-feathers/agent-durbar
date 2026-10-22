@@ -13,6 +13,7 @@ const KEYS=window.DurbarKeys;
 const IS_MAC=KEYS.isMac(navigator.platform);
 const keyText=parts=>KEYS.keyText(parts,IS_MAC), keyLabels=parts=>KEYS.keyLabels(parts,IS_MAC), ariaKeys=parts=>KEYS.ariaKeys(parts,IS_MAC);
 const INBOX_KEY=keyText(['mod','shift','A']), NEXT_KEY=keyText(['mod','shift','N']), PAL_KEY=keyText(['mod','K']);
+const SCHED_KEY=keyText(['mod','shift','S']); /* spec 044 FR-031: the top-bar Schedules button */
 const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-164: + Folder, + Workspace (the Mac File menu has the same keys) */
 /* spec 052 FR-085: the window's platform from the preload (the Mac title bar styles are gated on html[data-platform="darwin"]) */
 if(window.agentDurbar&&window.agentDurbar.platform==='darwin')document.documentElement.dataset.platform='darwin';
@@ -512,7 +513,7 @@ const unesc=s=>String(s).replace(/&(amp|lt|gt|quot);/g,(m,k)=>({amp:'&',lt:'<',g
 /* ---------------- top bar ---------------- */
 function visibleAgents(){return agents.filter(a=>roomShown(roomOf(a))&&(ui.ws==='all'||wsOf(a)===ui.ws));}
 function renderStats(){
-  renderInboxBtn();
+  renderInboxBtn(); renderSchedTop();
   const list=visibleAgents().filter(a=>!a.parent); const c={working:0,waiting:0,idle:0,error:0,done:0};
   list.forEach(a=>{const s=vis(a); if(s==='working'||s==='thinking')c.working++; else c[s]++;});
   const defs=[['working','Working','working or thinking'],['waiting','Waiting','waiting for you'],['idle','Idle','idle or paused'],['error',c.error===1?'Error':'Errors','with errors'],['done','Done','done']];
@@ -1528,6 +1529,8 @@ document.addEventListener('keydown',e=>{
   if(e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey&&e.code==='Backquote'&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openPreviousChat();return;}
   if(mod&&e.shiftKey&&!e.altKey&&(e.key==='A'||e.key==='a'||e.code==='KeyA')){e.preventDefault();openInbox();return;}
   if(mod&&e.shiftKey&&!e.altKey&&(e.key==='N'||e.key==='n'||e.code==='KeyN')){e.preventDefault();closeInbox();openNextNeedsMe();return;}
+  /* spec 044 FR-031: Ctrl+Shift+S (⇧⌘S on a Mac) opens Schedules, from text fields and from a chat; not under a dialog, and only where the button is shown */
+  if(mod&&e.shiftKey&&!e.altKey&&(e.key==='S'||e.key==='s'||e.code==='KeyS')&&schedTopShown()&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openSchedulesView();return;}
   /* spec 052 FR-060: in an open chat, Alt+A allow once, Alt+S allow for this session, Alt+D deny (the request the answer bar shows), Alt+N the
      next agent that needs you. By the key's position (e.code). On a Mac it is Option+Command (FR-084): Option+letter alone types accents
      or dead keys there. Not while you type in a field with text, and not under a dialog. Windows and Linux have no app menu (FR-083). */
@@ -1659,6 +1662,35 @@ function renderInboxBtn(){
   rollCount(b.querySelector('b'),n);
   b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or '+INBOX_KEY+').':'Nobody needs you. Open the inbox (I or '+INBOX_KEY+').');
 }
+/* spec 044 FR-027..FR-029, FR-033 (#523): the Schedules button left of Needs you. The facts and the words are in schedtop.js (unit-tested). */
+const SCHED_SEEN='durbar.schedSeen'; /* epoch ms of the last time Schedules was opened here; no prompt text, per computer (FR-029) */
+let schedSeenMem;
+function schedSeenAt(){
+  if(schedSeenMem===undefined){let v=null;try{const n=Number(localStorage.getItem(SCHED_SEEN));if(n>0&&isFinite(n))v=n;}catch(e){}schedSeenMem=v;}
+  return schedSeenMem;
+}
+function schedTopShown(){
+  try{return !!bridge&&!!bridge.listSchedules&&!demoOn&&(ROOMS.length>0||SCHED.schedules.length>0);}catch(e){return false;} /* SCHED is declared further down */
+}
+let schedTrouble=null; /* the badge count last drawn; null until the first schedule list has arrived (no announcement at start) */
+function renderSchedTop(fromList){
+  const b=$('schedTopBtn'); if(!b)return;
+  let doc; try{doc=SCHED;}catch(e){return;}
+  const show=schedTopShown(); b.hidden=!show; if(!show)return;
+  const t=window.DurbarSchedTop.topText(doc,schedSeenAt(),Date.now(),{keys:SCHED_KEY,clockOf:clock});
+  rollCount(b.querySelector('b'),t.count);
+  b.classList.toggle('none',!t.count); b.classList.toggle('paused',t.paused); b.classList.toggle('trouble',t.trouble>0);
+  if(b.getAttribute('aria-label')!==t.label)b.setAttribute('aria-label',t.label);
+  if(b.title!==t.title)b.title=t.title;
+  if(schedTrouble===null){if(fromList)schedTrouble=t.trouble;}
+  else{if(t.trouble>schedTrouble)announce('A scheduled prompt did not run. See Schedules ('+SCHED_KEY+').');schedTrouble=t.trouble;}
+}
+/* FR-030: the one way in to "go to Schedules": Settings at its Schedules section, and the stamp that clears the badge */
+function openSchedulesView(){
+  window.DurbarScreens.openSettings('schedules');
+  schedSeenMem=Date.now(); try{localStorage.setItem(SCHED_SEEN,String(schedSeenMem));}catch(e){}
+  renderSchedTop();
+}
 /* spec 052 FR-068: the count rolls (old number out, new one in, 220ms) inside a box that keeps its width; up when it grows */
 function rollCount(box,n){
   if(!box)return; const txt=String(n), prev=box.dataset.n;
@@ -1772,6 +1804,7 @@ function palActions(){
   return [
     {label:'Needs you',hint:'The inbox of agents that need you ('+INBOX_KEY+')',kw:'inbox attention waiting approve',keys:['I'],run:openInbox},
     {label:'Next agent that needs you',hint:'Open the next waiting chat ('+NEXT_KEY+')',kw:'next waiting jump',keys:['N'],run:openNextNeedsMe},
+    {label:'Schedules',hint:"Every folder's scheduled prompts",kw:'schedule scheduled prompts timer every daily morning cron',keys:keyLabels(['mod','shift','S']),run:openSchedulesView,ok:schedTopShown}, /* spec 044 FR-032 */
     {label:'Office view',kw:'view office desks rooms',run:palClick('vOffice'),ok:()=>palUsable('vOffice')},
     {label:'List view',kw:'view list table rows',run:palClick('vList'),ok:()=>palUsable('vList')},
     {label:'Tools',kw:'tools usage mcp',run:palClick('toolsBtn'),ok:()=>palUsable('toolsBtn')},
@@ -1875,6 +1908,7 @@ function openKbdHelp(back){
     ...(SIMPLE?[]:[[keyLabels(['mod','shift','O']),'Add a VS Code workspace']]),
     [['I'],'Needs you inbox',keyLabels(['mod','shift','A'])],
     [['N'],'Next agent that needs you',keyLabels(['mod','shift','N'])],
+    ...(schedTopShown()?[[keyLabels(['mod','shift','S']),"Schedules: every folder's scheduled prompts"]]:[]), /* spec 044 FR-031 */
     ...(IS_MAC?[[keyLabels(['mod',',']),'Settings']]:[]), /* FR-083: the app menu's Settings… item */
     [['Ctrl','`'],'Back to the previous chat (on a Mac too: Control, not Cmd)'],
     [['←','→','↑','↓'],'Move between desks'],
@@ -2020,7 +2054,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', sched:qs.get('simsched')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -4144,7 +4178,7 @@ function openSchedules(r,from,opts){
 }
 async function refreshSchedules(){if(!bridge.listSchedules)return;SCHED=await bridge.listSchedules();schedChanged();}
 /* everything that shows schedules: the Folders panel, the open dialog, room chips (office render), Settings (spec 044 FR-009..FR-011) */
-function schedChanged(){renderFolders();renderSchedDlg();renderSchedSettings();scheduleRender();if(ui.selected&&$('schedHdrBtn'))updatePanelHeader();}
+function schedChanged(){renderSchedTop(true);renderFolders();renderSchedDlg();renderSchedSettings();scheduleRender();if(ui.selected&&$('schedHdrBtn'))updatePanelHeader();}
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAll'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;schedChanged();}});
 if(bridge&&bridge.onSchedules){bridge.onSchedules(doc=>{SCHED=doc;schedChanged();});}
 /* spec 044 FR-011: Settings > Schedules, every folder's schedules in one list; pause, resume, delete, add (opens that folder's dialog), Pause all */
@@ -4635,6 +4669,7 @@ if(bridge){
   document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.place-add'))window.DurbarScreens.placeDialog(null);});
   $('toolsBtn').onclick=()=>window.DurbarScreens.isOpen()?window.DurbarScreens.close():window.DurbarScreens.openTools(null);
   $('settingsBtn').onclick=()=>window.DurbarScreens.openSettings();
+  $('schedTopBtn').onclick=openSchedulesView; /* spec 044 FR-030 */
   /* spec 052 FR-083: Settings… (⌘,) in the macOS app menu. The real window's preload carries it, also under the simulator. */
   {const real=window.agentDurbar;if(real&&real.onMenuSettings)real.onMenuSettings(()=>window.DurbarScreens.openSettings());
     /* spec 052 FR-164: File > Add Folder… / Add VS Code Workspace… press the same top-bar buttons (one code path) */

@@ -54,6 +54,8 @@ interface SimOptions {
   seedTotals?: boolean;
   /** Spec 024 FR-026: start with this many custom places (0 to 3) and two fake servers mapped to them. Without it the page address (`simplaces=N`) decides. */
   places?: number;
+  /** Spec 044 FR-035 / spec 001 FR-038: start with schedules over two folders, one that missed its last run and one that failed (page address `simsched=1`). */
+  sched?: boolean;
   /** Pending permission requests carry a time 2 minutes in the past, so "impatient" (spec 034) can be seen at once. */
   waitOld?: boolean;
 }
@@ -442,6 +444,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
       attrib: new Map<string, string>() };
+    if (opts.sched) {
+      /* spec 044 FR-035: four future schedules (nothing is due during a driver run); one missed its last run and one failed, a few hours ago */
+      const t0 = Date.now(), key = (x: SimAgent | undefined): string => (x ? x.info.workspaceFile ?? x.info.cwd ?? '' : '');
+      const a = sims[0], b = sims.find((x) => x.room !== a?.room) ?? sims[1];
+      const seed: ScheduleInfo[] = [
+        { id: 'sched-s1', folder: key(a), prompt: 'PR and issue sweep: list what changed since the last run', every: 30, next: t0 + 12 * 60000 },
+        { id: 'sched-s2', folder: key(b), prompt: 'Cut the pre-release notes from the merged pull requests', at: t0 + 3 * 3600000 },
+        { id: 'sched-s3', folder: key(a), prompt: 'Morning summary of failing checks', rule: { kind: 'weekdays', time: '08:30' }, next: t0 + 20 * 3600000, last: { at: t0 - 4 * 3600000, outcome: 'missed' } },
+        { id: 'sched-s4', folder: key(b), prompt: 'Nightly dependency check', rule: { kind: 'daily', time: '23:00' }, next: t0 + 30 * 3600000, last: { at: t0 - 6 * 3600000, outcome: 'failed' } },
+      ];
+      simSched.list.push(...seed.filter((x) => x.folder)); simSched.n = 4;
+    }
     /* spec 044 FR-012: the rule copy in schedtemplates.js (main uses src/shared/schedrules.ts; test:schedules keeps them equal) */
     type SimRules = { parseRule(v: unknown): ScheduleInfo['rule']; nextRuleRun(r: NonNullable<ScheduleInfo['rule']>, after: number): number | undefined };
     const simRules = (): SimRules | undefined => (window as unknown as { DurbarSchedTemplates?: SimRules }).DurbarSchedTemplates;

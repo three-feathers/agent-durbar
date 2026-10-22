@@ -130,9 +130,9 @@
         <details class="scr-more"><summary>More</summary><p class="scr-note small">An off floor is not counted in Working, Waiting, Idle, Errors and Done. The office credit total still counts its agents, and an agent there that waits for you or has an error is shown <b>only here</b>, on its floor's row (for example "Off, 1 waiting"). With two or more floors, the same controls are also in the <b>Floors</b> button of the top bar.</p></details>
         <div class="floors-ui floors-set" id="floorsSet" tabindex="-1"></div></section>`:'';
     /* Schedules (spec 044 FR-011): every folder's schedules, painted by app.js into #schedSet */
-    const schedSec=X.sched&&X.sched.on()?`<section class="scr-sec" aria-labelledby="schH"><h3 id="schH">Schedules</h3>
+    const schedSec=X.sched&&X.sched.on()?`<section class="scr-sec" aria-labelledby="schH"><h3 id="schH" tabindex="-1">Schedules</h3>
         <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>.</p>
-        <details class="scr-more"><summary>More</summary><p class="scr-note small">A run is skipped when the agent is busy or waiting for you; the agent's own permission mode and cap apply. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p></details>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">A run is skipped when the agent is busy or waiting for you; the agent's own permission mode and cap apply. The Schedules button in the top bar (Ctrl+Shift+S) opens this list. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p></details>
         <div class="sched-set" id="schedSet"></div></section>`:'';
     /* Theme (specs 037-040): pick a built-in or imported pack; applies live, no restart. */
     const curTheme=(app.theme||'clean-office');
@@ -957,7 +957,7 @@
   window.DurbarScreens={
     init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onChange:(again)=>{X._hsRefresh=true;if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
-    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'?{section}:null);},
+    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
     mcpEvent:id=>{if(mcpDlgHook)mcpDlgHook(id);},
