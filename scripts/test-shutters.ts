@@ -12,8 +12,14 @@ type X = { id: string; state: string; paused?: boolean; limit?: boolean; away?: 
 const S = require(path.join(R, 'shutters.js')) as {
   RECENT_MS: number;
   OLD_CAP: number;
-  PANEL_W: number;
-  SLAT_W: number;
+  COUCH_SEATS: number;
+  SEAT_W: number;
+  COUCH_PAD: number;
+  BED_W: number;
+  MORE_W: number;
+  PAD: number;
+  couches: (n: number) => number[];
+  turn: (t: number, n: number) => number;
   GAP: number;
   width: (nRecent: number, nSlats: number, more: boolean) => number;
   finished: (x: X) => boolean;
@@ -28,8 +34,8 @@ const eq = (a: unknown, b: unknown, m: string): void => { assert.deepStrictEqual
 
 // owner defaults (FR-052)
 eq(S.RECENT_MS, 10 * MIN, 'recent means the last 10 minutes');
-eq(S.OLD_CAP, 5, 'up to 6 slats; past that 5 and a +N slat');
-eq([S.PANEL_W, S.SLAT_W, S.GAP], [136, 40, 6], 'panel 136px, slat 40px, 6px apart (styles.css uses the same)');
+eq([S.OLD_CAP, S.COUCH_SEATS], [4, 3], 'up to 4 beds; 3 seats a couch');
+eq([S.SEAT_W, S.COUCH_PAD, S.BED_W, S.MORE_W, S.GAP, S.PAD], [40, 8, 44, 52, 6, 8], 'seat 40px, couch frame 8px, bed 44px, "+N asleep" 52px, gaps 6px, padding 8px (styles.css uses the same)');
 
 // ---- classification (FR-051, FR-052) ----
 const done = (since: number | null, o: Partial<X> = {}): X => Object.assign({ id: 'a', state: 'done', replied: true, since }, o);
@@ -67,20 +73,33 @@ eq(plan([Object.assign(f('a', MIN), { helpersBusy: true }), f('c', MIN)]), { c: 
 eq(plan([]), {}, 'an empty room');
 eq(plan(undefined as unknown as X[]), {}, 'no list');
 
-// ---- the old chips and "+N" (FR-052, the helper strip's rule: never "+1") ----
+// ---- beds and "+N asleep" (FR-052) ----
 const L = (k: number): number[] => Array.from({ length: k }, (_, i) => i);
-eq(S.split(L(5), 5, false), { shown: L(5), hidden: [] }, '5 slats: all shown');
-eq(S.split(L(6), 5, false), { shown: L(6), hidden: [] }, '6 slats: all shown (never "+1")');
-eq(S.split(L(9), 5, false), { shown: L(5), hidden: [5, 6, 7, 8] }, '9 slats: 5 and +4');
-eq(S.split(L(9), 5, true), { shown: L(9), hidden: [] }, 'expanded: all');
-eq(S.split([], 5, false), { shown: [], hidden: [] }, 'none');
+eq(S.split(L(4), 4, false), { shown: L(4), hidden: [] }, '4 sleepers: 4 beds');
+eq(S.split(L(5), 4, false), { shown: L(3), hidden: [3, 4] }, '5 sleepers: 3 beds and +2 asleep');
+eq(S.split(L(9), 4, false), { shown: L(3), hidden: [3, 4, 5, 6, 7, 8] }, '9 sleepers: 3 beds and +6 asleep');
+eq(S.split(L(9), 4, true), { shown: L(9), hidden: [] }, 'expanded: all');
+eq(S.split([], 4, false), { shown: [], hidden: [] }, 'none');
 
-// ---- the group's width (FR-053): what the layout gives up for the squeezed desks ----
-eq(S.width(0, 0, false), 0, 'no group, no width');
-eq(S.width(1, 0, false), 136, 'one panel');
-eq(S.width(1, 2, false), 136 + 2 * 40 + 2 * 6, '1 panel + 2 slats');
-eq(S.width(0, 5, true), 6 * 40 + 5 * 6, '5 slats and a +N slat');
-eq(S.width(2, 0, false), 2 * 136 + 6, 'two panels');
+// ---- couches (FR-052): 3 seats a couch, then another couch ----
+eq(S.couches(0), [], 'nobody on a couch');
+eq(S.couches(2), [2], 'two share a couch');
+eq(S.couches(3), [3], 'a full couch');
+eq(S.couches(5), [3, 2], 'then a second couch');
+
+// ---- whose bubble shows (FR-055): turns go round, deterministic ----
+eq([0, 1, 2, 3, 4].map((t) => S.turn(t, 3)), [0, 1, 2, 0, 1], 'turns go round the sleepers');
+eq(S.turn(5, 1), 0, 'one sleeper: always that one');
+eq(S.turn(3, 0), 0, 'nobody: 0');
+eq(S.turn(-1, 3), 2, 'never negative');
+
+// ---- the lounge corner's width (FR-053): what the layout gives up for the resting agents ----
+eq(S.width(0, 0, false), 0, 'nobody resting, no corner');
+eq(S.width(2, 0, false), 2 * 8 + 2 * 40 + 8, 'two on a couch');
+eq(S.width(0, 3, false), 2 * 8 + 3 * 44 + 2 * 6, 'three beds');
+eq(S.width(2, 3, false), 2 * 8 + (2 * 40 + 8) + 6 + 3 * 44 + 2 * 6, 'a couch of two and three beds (about one narrow desk)');
+eq(S.width(0, 3, true), 2 * 8 + 3 * 44 + 52 + 3 * 6, 'three beds and "+N asleep"');
+eq(S.width(5, 0, false), 2 * 8 + (3 * 40 + 8) + 6 + (2 * 40 + 8), 'two couches');
 
 // ---- spoken time (FR-054) ----
 eq(S.spoken('just now'), 'just now', 'just now');
@@ -96,17 +115,18 @@ const css = fs.readFileSync(path.join(R, 'styles.css'), 'utf8');
 const ok = (c: boolean, m: string): void => { assert.ok(c, m); n++; };
 ok(/const mains=shown\.filter\(a=>!plan\.has\(a\.id\)\)/.test(app), 'officeModel: rolled agents are not desks in the layout search (FR-053)');
 ok(/function shutPlan\(r\)\{\s*if\(!shutOn\(\)\)return new Map\(\);\s*return SHUT\.roomPlan\(agents\.filter\(a=>!a\.parent&&a\.room===r\.id\)\.map\(shutInput\)\)/.test(app), 'the room rule reads the whole room, not the status filter, and the setting turns it off');
-ok(/\$\{shuttersHTML\(r,rolled\)\}<\/div><\/section>`/.test(app) && /<div class="units-in" style="--cols:\$\{cols\}">\$\{mains\.map\(a=>unitHTML\(a,d\)\)\.join\(''\)\}<\/div>\$\{shuttersHTML\(r,rolled\)\}/.test(app), 'the squeezed group sits at the end of the desk row, in both the full and the compact room');
-ok(/sw=shutW\(r,rolled\), over=2\*D\.rp\+4\+\(sw\?sw\+D\.gap:0\)/.test(app) && /sw\?Math\.floor\(\(aw-over\+D\.gap\)\/\(D\.cw\+D\.gap\)\):Infinity/.test(app) && /widths=mains\.map\(a=>unitWidth\(a,d\)\)\.concat\(sw\?\[sw\]:\[\]\)/.test(app), 'the room width counts the squeezed group, compact and full (FR-053)');
-ok(/w:SHUT\.width\(recent\.length,shown\.length,hidden\.length>0\|\|fewer\)/.test(app), 'the group width comes from shutters.js');
-ok(/\.stage \.desk\.shut\.is-recent\{width:136px/.test(css) && /\.stage \.desk\.shut\.is-old\{width:40px/.test(css) && /\.sh-in>\.shut-more\{width:40px/.test(css) && /\.shutters>\.sh-in\{[^}]*gap:6px/.test(css), 'the CSS widths match PANEL_W, SLAT_W and GAP');
-ok(/\.desk\.shut\.is-old \.sh-name[^{]*\{writing-mode:vertical-rl;font-size:11\.5px/.test(css), 'the slat name is vertical text at 11.5px');
-ok(/\(m\.rolled\|\|\[\]\)\.map\(x=>\[x\.a\.id,x\.k\]\)/.test(app), 'the layout key follows who is rolled and how far');
+ok(/\$\{shuttersHTML\(r,rolled\)\}<\/div><\/section>`/.test(app) && /<div class="units-in" style="--cols:\$\{cols\}">\$\{mains\.map\(a=>unitHTML\(a,d\)\)\.join\(''\)\}<\/div>\$\{shuttersHTML\(r,rolled\)\}/.test(app), 'the lounge sits at the end of the desk row, in both the full and the compact room');
+ok(/sw=shutW\(r,rolled\), over=2\*D\.rp\+4\+\(sw\?sw\+D\.gap:0\)/.test(app) && /sw\?Math\.floor\(\(aw-over\+D\.gap\)\/\(D\.cw\+D\.gap\)\):Infinity/.test(app) && /widths=mains\.map\(a=>unitWidth\(a,d\)\)\.concat\(sw\?\[sw\]:\[\]\)/.test(app), 'the room width counts the lounge, compact and full (FR-053)');
+ok(/w:SHUT\.width\(recent\.length,shown\.length,more\)/.test(app), 'the corner width comes from shutters.js');
+ok(/\.stage \.desk\.shut\{[^}]*width:40px/.test(css) && /\.stage \.desk\.shut\.is-old\{width:44px\}/.test(css) && /\.lg-beds>\.shut-more\{width:52px/.test(css) && /\.lg-in\{[^}]*gap:6px/.test(css) && /\.lounge\{[^}]*padding:3px 8px 4px/.test(css), 'the CSS sizes match SEAT_W, BED_W, MORE_W, GAP and PAD');
+ok(/<span class="lg-av">\$\{avatar\(a\)\}<\/span>/.test(app) && /<span class="lg-av lying">\$\{avatar\(a\)\}<\/span>/.test(app), 'each resting agent is drawn as its own character (avatar, the theme scene kit)');
+ok(/const on=SHUT\.turn\(LOUNGE_TURN,list\.length\)/.test(app) && /k=SHUT\.turn\(LOUNGE_TURN,ts\.length\)/.test(app), 'the render and the timer pick the same bubble (FR-055)');
+ok(/\.lg-t\{[^}]*font-size:10\.5px/.test(css) && /\.lg-t\{[^}]*transition:opacity \.6s/.test(css), 'bubble text 10.5px, a gentle fade (off with reduced motion, the global rule)');
+ok(/\(m\.rolled\|\|\[\]\)\.map\(x=>\[x\.a\.id,x\.k\]\)/.test(app), 'the layout key follows who rests and where');
 ok(/L\.excerpt\(a\.lastOutput,R&&typeof R\.redact==='function'\?x=>R\.redact\(x\):null\)/.test(app), 'the reply line is masked on the raw text (FR-043 excerpt), fail closed');
-ok(/class="desk shut is-\$\{k\}/.test(app) && /data-id="\$\{esc\(a\.id\)\}" aria-pressed/.test(app), 'strips and chips are desk buttons with data-id (click, Enter, arrow keys)');
-ok(/\.desk\.shut \.sh-ago\{font-size:10\.5px/.test(css), 'the smallest shutter text is 10.5px');
+ok(/class="desk shut is-\$\{k\}/.test(app) && /data-id="\$\{esc\(a\.id\)\}" aria-pressed/.test(app), 'resting agents are desk buttons with data-id (click, Enter, arrow keys)');
 const sizes = [...css.slice(css.indexOf('spec 001 FR-051..FR-055')).matchAll(/font-size:([\d.]+)px/g)].map((m) => parseFloat(m[1]));
-ok(sizes.length > 5 && sizes.every((s) => s >= 10.5), `no shutter text under 10.5px (${sizes.join(', ')})`);
-ok(/\.desk\.shut:hover \.peek,\.desk\.shut:focus-visible \.peek\{display:flex/.test(css), 'hover and keyboard focus unroll');
+ok(sizes.length > 5 && sizes.every((s) => s >= 10.5), `no lounge text under 10.5px (${sizes.join(', ')})`);
+ok(/\.desk\.shut:hover \.peek,\.desk\.shut:focus-visible \.peek\{display:flex/.test(css), 'hover and keyboard focus open the peek card');
 
 console.log(`[shutters] ${n} checks passed`);

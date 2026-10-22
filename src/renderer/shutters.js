@@ -7,10 +7,9 @@
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarShutters=api;
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
-  /* owner defaults (FR-052): a narrow panel for 10 minutes after finishing, then a slat; up to 6 slats, else 5 and a "+N" slat.
-     Widths in px (styles.css uses the same): the layout counts them so the open desks get the rest of the row (FR-053). */
-  const RECENT_MS=10*60000, OLD_CAP=5, PANEL_W=136, SLAT_W=40, GAP=6;
-
+  /* owner defaults (FR-052): on the couch for 10 minutes after finishing, then on a nap bed; 3 seats a couch; up to 4 beds, else 3 and
+     "+N asleep". Sizes in px (styles.css uses the same): the layout counts the corner so the open desks get the rest of the row (FR-053). */
+  const RECENT_MS=10*60000, OLD_CAP=4, COUCH_SEATS=3, SEAT_W=40, COUCH_PAD=8, BED_W=44, MORE_W=52, GAP=6, PAD=8;
   /* FR-051: Done, or Idle after a finished turn; never paused (coffee break), at a limit, away at a place, or with a busy helper */
   function finished(x){
     if(!x||x.paused||x.limit||x.away||x.helpersBusy)return false;
@@ -30,12 +29,16 @@
     xs.forEach((x,i)=>{if(kinds[i])out.set(x.id,kinds[i]);});
     return out;
   }
-  /* FR-052: the slats shown and the ones behind "+N" (all shown when expanded, or when only one would hide) */
+  /* FR-052: the beds shown and the sleepers behind "+N asleep": all when expanded or when they fit, else cap-1 beds and the rest */
   function split(old,cap,expanded){
-    const xs=Array.isArray(old)?old:[], c=Math.max(1,cap==null?OLD_CAP:cap|0);
-    if(expanded||xs.length<=c+1)return {shown:xs.slice(),hidden:[]};
-    return {shown:xs.slice(0,c),hidden:xs.slice(c)};
+    const xs=Array.isArray(old)?old:[], c=Math.max(2,cap==null?OLD_CAP:cap|0);
+    if(expanded||xs.length<=c)return {shown:xs.slice(),hidden:[]};
+    return {shown:xs.slice(0,c-1),hidden:xs.slice(c-1)};
   }
+  /* FR-052: how many sit on each couch: 3 a couch, then another couch ([3,2] for 5) */
+  function couches(n){const out=[];let k=Math.max(0,n|0);while(k>0){out.push(Math.min(COUCH_SEATS,k));k-=COUCH_SEATS;}return out;}
+  /* FR-055: whose bubble shows at turn t (the page moves t every few seconds; a test moves it by hand) */
+  function turn(t,n){n=n|0;if(n<=0)return 0;const k=Math.floor(Number(t)||0);return ((k%n)+n)%n;}
   /* FR-054: the "last activity" words (DurbarActivity.agoLong: "just now", "12 min ago", "3 h ago", "2 d ago") for a screen reader */
   function spoken(ago){
     const m=/^(\d+) (min|h|d) ago$/.exec(String(ago||''));
@@ -43,10 +46,13 @@
     const n=+m[1], w={min:'minute',h:'hour',d:'day'}[m[2]];
     return n+' '+w+(n===1?'':'s')+' ago';
   }
-  /* FR-053: the width of a room's group: its panels, its slats and one "+N" or "Show fewer" slat when there is one; 0 when empty */
-  function width(nRecent,nSlats,more){
-    const p=Math.max(0,nRecent|0), q=Math.max(0,nSlats|0)+(more?1:0), n=p+q;
-    return n?p*PANEL_W+q*SLAT_W+(n-1)*GAP:0;
+  /* FR-053: the lounge corner's width: couches (seats and their frame), beds, the "+N asleep" button, gaps and padding; 0 when empty */
+  function width(nRecent,nBeds,more){
+    const cs=couches(nRecent), b=Math.max(0,nBeds|0)+(more?0:0);
+    const couch=cs.length?cs.reduce((w,k)=>w+k*SEAT_W+COUCH_PAD,0)+(cs.length-1)*GAP:0;
+    const bedItems=b+(more?1:0), beds=bedItems?b*BED_W+(more?MORE_W:0)+(bedItems-1)*GAP:0;
+    if(!couch&&!beds)return 0;
+    return 2*PAD+couch+beds+(couch&&beds?GAP:0);
   }
-  return {RECENT_MS,OLD_CAP,PANEL_W,SLAT_W,GAP,finished,kindOf,roomPlan,split,spoken,width};
+  return {RECENT_MS,OLD_CAP,COUCH_SEATS,SEAT_W,COUCH_PAD,BED_W,MORE_W,GAP,PAD,finished,kindOf,roomPlan,split,couches,turn,spoken,width};
 })());

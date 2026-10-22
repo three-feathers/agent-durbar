@@ -362,7 +362,7 @@
   /* spec 001 FR-056: finished agents roll in when their room has others at work */
   function shuttersRow(){
     const on=!!X.shutters.get();
-    return `<div class="scr-row"><span class="scr-row-l" id="shL">Roll up finished agents</span>${sw(on,'Roll up finished agents: in a room where others still work, finished agents become a slim strip, then a small chip','id="shutSw" aria-describedby="shN"')}<span class="scr-note small" id="shN">In a room where others still work, finished agents become a slim strip, and after 10 minutes a small chip, so the busy desks get the space.</span></div>`;
+    return `<div class="scr-row"><span class="scr-row-l" id="shL">Finished agents rest in the lounge</span>${sw(on,'Finished agents rest in the lounge: in a room where others still work, finished agents move to a couch, then to a nap bed','id="shutSw" aria-describedby="shN"')}<span class="scr-note small" id="shN">In a room where others still work, finished agents rest on a couch, and after 10 minutes on a nap bed, so the busy desks get the space.</span></div>`;
   }
   function liveActRow(){
     const on=!!X.liveAct.get();

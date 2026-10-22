@@ -17,12 +17,13 @@
  *   at least 10.5px, the desk stays at most 92 x 2.5 px tall, streaming moves nothing.
  * Screenshots (simulator, `OUT=<folder>`): 001-fill-{4,6,15}-{1440x900,1280x800}.png (the simulator's own folders and helpers),
  *   001-fill-1-{1440x900,1920x1080}.png (one agent, the columns).
- * Spec 001 FR-051..FR-057 (finished agents roll in), at 1440x900 and 1280x800: a folder with 2 working and 3 finished agents (1 recent,
- * 2 old) next to a busy folder: the finished ones are a panel and two slats in the desk row at its height and widths (the open desks
- * wider, the row no taller than with the setting off, slat names vertical, >= 10.5px and inside), the page rules hold, every rolled agent is a focusable button
- * with its label, hover opens a card sideways without moving anything, Enter opens the chat, the open desks are at least as large as with the
- * setting off (Settings switch), a panel becomes a slat after 10 minutes, an agent that starts again gets its desk back, a reply's tokens
- * are masked on the panel; and the simulator's 15 agents (Noor and Maya roll in) still fit with no scroll and are not grown.
+ * Spec 001 FR-051..FR-057 (finished agents rest in the lounge), at 1440x900 and 1280x800: a folder with 2 working agents, 2 that finished
+ * minutes ago (couch) and 3 long ago (nap beds), next to a busy folder: the lounge is in the desk row at its height and its width is counted,
+ * the bubbles are inside it and >= 10.5px (a masked token), every resting agent is a focusable character button with its label and in the
+ * arrow-key order, the dreams take turns (a deterministic tick), the peek card opens beside the lounge without moving anything, Enter
+ * opens the chat, the working desks are wider than with the setting off and the row no taller, the couch agents go to bed after 10
+ * minutes and past 4 sleepers there is "+N asleep", an agent that starts again gets its desk back; and the simulator's 15 agents (Noor
+ * and Maya on the couch) still fit with no scroll and are not grown, the lounge as tall as the desks in its room.
  * Screenshots: 001-shutters-{1440x900,1280x800}.png and 001-shutters-peek-1440x900.png.
  *
  *   npm run check:office-fill            (builds first; Linux runs it under xvfb)
@@ -117,8 +118,8 @@ module.exports = async (ctx) => {
       const st = await one(`${n} agents with helpers, ${w}x${h}`, n, w, h);
       if (n === 15 && w !== 1920) check(!st.gf, `15 agents with helpers at ${w}x${h} are grown`);
       /* FR-053: Noor and Maya (done, each in a folder where others work) roll in; the 15 agents still fit (checked by one()) */
-      if (n === 15) { const sh = await js(`[...document.querySelectorAll('#stage .desk.shut')].map(e=>e.querySelector('.sh-name').textContent).sort().join(',')`); check(sh === 'Maya,Noor', `15 agents at ${w}x${h}: rolled ${sh}, not Maya,Noor`);
-        const hh = await js(`[...document.querySelectorAll('#stage .desk.shut')].map(e=>{const d=e.closest('.room').querySelector('.desk.card');return d?Math.abs(e.getBoundingClientRect().height-d.getBoundingClientRect().height):99})`);
+      if (n === 15) { const sh = await js(`[...document.querySelectorAll('#stage .desk.shut')].map(e=>(e.getAttribute('aria-label')||'').split(',')[0]).sort().join(',')`); check(sh === 'Maya,Noor', `15 agents at ${w}x${h}: rolled ${sh}, not Maya,Noor`);
+        const hh = await js(`[...document.querySelectorAll('#stage .lounge')].map(e=>{const d=e.closest('.room').querySelector('.desk.card');return d?Math.abs(e.getBoundingClientRect().height-d.getBoundingClientRect().height):99})`);
         check(hh.every((x) => x <= 1), `15 agents at ${w}x${h}: a rolled agent is not as tall as the desks in its room (${hh})`); }
       if (OUT && w !== 1920) await ctx.shot(path.join(OUT, `001-fill-${n}-${w}x${h}.png`));
     }
@@ -193,7 +194,7 @@ module.exports = async (ctx) => {
 
   await js(`localStorage.removeItem('durbar.shutters')`);
 
-  /* ---- finished agents roll in (FR-051..FR-057) ---- */
+  /* ---- finished agents rest in the lounge (FR-051..FR-057) ---- */
   const finish = async (id, text) => {
     await emit({ type: 'status', sessionId: id, status: 'working', intent: 'Working' });
     await emit({ type: 'output', sessionId: id, final: true, text });
@@ -201,93 +202,107 @@ module.exports = async (ctx) => {
   };
   /* the time an agent finished is its last event (FR-052): set it back, then lay out again (simulator-only hook) */
   const ago = (id, min) => js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${q(id)});a.lastEventAt=Date.now()-${q(min)}*60000;window.__durbarSimUi.render();})()`);
-  const shut = () => js(`(()=>{const s=document.getElementById('stage'),room=s.querySelector('.room'),f=document.getElementById('floor');
+  const lounge = () => js(`(()=>{const s=document.getElementById('stage'),room=s.querySelector('.room'),f=document.getElementById('floor'),lg=room.querySelector('.lounge');
+    const R=e=>{const r=e.getBoundingClientRect();return {l:r.left,t:r.top,r:r.right,b:r.bottom,w:r.width,h:r.height};};
     const rs=[...room.querySelectorAll('.desk.shut')];
-    const small=[...s.querySelectorAll('.shutters *')].filter(e=>e.getClientRects().length&&[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>parseFloat(getComputedStyle(e).fontSize)).filter(x=>x<10.5);
+    const small=[...s.querySelectorAll('.lounge *')].filter(e=>e.getClientRects().length&&[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>parseFloat(getComputedStyle(e).fontSize)).filter(x=>x<10.5);
     const cards=[...room.querySelectorAll('.desk.card, .desk:not(.shut):not(.card)')].map(e=>e.getBoundingClientRect());
+    const rm=R(room), L=lg?R(lg):null;
+    const bubs=[...room.querySelectorAll('.lg-bub:not(.none)')].map(b=>{const r=R(b),on=b.querySelector('.lg-t.on');return {cls:b.className,in:r.l>=rm.l-0.5&&r.r<=rm.r+0.5&&r.t>=rm.t-0.5&&r.b<=rm.b+0.5&&(!L||(r.l>=L.l-0.5&&r.r<=L.r+0.5)),
+      on:on?on.textContent:'',all:[...b.querySelectorAll('.lg-t')].map(t=>t.textContent),font:on?parseFloat(getComputedStyle(on).fontSize):0,tail:b.style.getPropertyValue('--tail'),tip:b.getAttribute('title')||''};});
     return {d:s.dataset.d,gf:parseFloat(s.style.getPropertyValue('--gf'))||0,fit:s.dataset.fit,floorScroll:f.scrollHeight>f.clientHeight+1,
       open:cards.length,deskW:cards.length?Math.round(Math.min(...cards.map(r=>r.width))):0,deskH:cards.length?Math.round(Math.min(...cards.map(r=>r.height))):0,
-      recent:rs.filter(e=>e.classList.contains('is-recent')).map(e=>e.dataset.id),old:rs.filter(e=>e.classList.contains('is-old')).map(e=>e.dataset.id),
-      labels:rs.map(e=>({id:e.dataset.id,tag:e.tagName,tab:e.tabIndex,l:e.getAttribute('aria-label')||'',text:e.innerText})),small,
-      roomH:Math.round(room.getBoundingClientRect().height),
-      shut:rs.map(e=>{const r=e.getBoundingClientRect(),n=e.querySelector('.sh-name'),q=n.getBoundingClientRect(),cs=getComputedStyle(n);
-        return {id:e.dataset.id,k:e.classList.contains('is-old')?'old':'recent',w:Math.round(r.width),h:Math.round(r.height),top:Math.round(r.top),wm:cs.writingMode,font:parseFloat(cs.fontSize),
-          nameIn:q.left>=r.left-0.5&&q.right<=r.right+0.5&&q.top>=r.top-0.5&&q.bottom<=r.bottom+0.5}}),
       deskTop:cards.length?Math.round(Math.min(...cards.map(r=>r.top))):0,
+      recent:rs.filter(e=>e.classList.contains('is-recent')).map(e=>e.dataset.id),old:rs.filter(e=>e.classList.contains('is-old')).map(e=>e.dataset.id).sort(),
+      labels:rs.map(e=>({id:e.dataset.id,tag:e.tagName,tab:e.tabIndex,l:e.getAttribute('aria-label')||'',inL:!!L&&R(e).l>=L.l-0.5&&R(e).r<=L.r+0.5&&R(e).t>=L.t-0.5&&R(e).b<=L.b+0.5,av:!!e.querySelector('.lg-av svg')})),
+      small,bubs,roomH:Math.round(rm.h),lg:L?{t:Math.round(L.t),h:Math.round(L.h),w:Math.round(L.w),inRoom:L.l>=rm.l-0.5&&L.r<=rm.r+0.5}:null,
+      more:(room.querySelector('.lounge .shut-more')||{}).textContent||'',
       wVar:parseFloat(room.style.getPropertyValue('--w'))||0,cols:parseFloat((room.querySelector('.units-in')||room.querySelector('.units')).style.getPropertyValue('--cols'))||1,
-      shw:parseFloat(((room.querySelector('.shutters')||{}).style||{getPropertyValue:()=>''}).getPropertyValue('--shw'))||0}})()`);
+      shw:lg?parseFloat(lg.style.getPropertyValue('--shw'))||0:0}})()`);
   const openShot = (w, h) => (OUT ? ctx.shot(path.join(OUT, `001-shutters-${w}x${h}.png`)) : null);
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    const tag = `shutters ${w}x${h}`;
-    /* 10 agents in 2 folders: Ada, Mira, Jonas, Elif, Tomas | Kenji, Sven, Lena, Clara, Rosa. Mira, Jonas and Tomas finish; Ada and Elif work. */
-    await load(10, w, h, { simrooms: '2', simhelpers: '0' });
+    const tag = `lounge ${w}x${h}`;
+    /* 14 agents in 2 folders: Ada, Mira, Jonas, Noor, Elif, Tomas, Priya | Kenji ... Rosa. Ada and Elif work; Mira and Jonas finished
+       a few minutes ago (couch); Noor, Tomas and Priya long ago (beds). */
+    await load(14, w, h, { simrooms: '2', simhelpers: '0' });
     await finish('sim-2', `**Done.** The edge cases for the canton lookup are listed and tested, key \`${GHP}\` removed.`);
     await finish('sim-3', 'Renamed the tool and kept the old name as an alias for one release.');
-    await finish('sim-5', 'The eval ran again after the rate limit and the baseline is saved.');
-    await ago('sim-3', 25); await ago('sim-5', 50); await ago('sim-2', 2);
-    await H.until(`document.querySelectorAll('#stage .desk.shut').length===3`, 4000);
+    await finish('sim-4', 'The README tool table is updated and linked from the docs index.');
+    await finish('sim-6', 'The eval ran again after the rate limit and the baseline is saved.');
+    await finish('sim-7', 'Migration 0007 adds the clauses table with an index on the contract id.');
+    await ago('sim-4', 25); await ago('sim-6', 50); await ago('sim-7', 70); await ago('sim-3', 4); await ago('sim-2', 2);
+    await H.until(`document.querySelectorAll('#stage .desk.shut').length===5`, 4000);
     await ctx.sleep(400);
-    const a = await shut(), problems = await page();
-    check(JSON.stringify(a.recent) === '["sim-2"]' && JSON.stringify(a.old.sort()) === '["sim-3","sim-5"]', `${tag}: rolled recent ${a.recent} old ${a.old}`);
+    const a = await lounge(), problems = await page();
+    check(JSON.stringify(a.recent) === '["sim-2","sim-3"]' && JSON.stringify(a.old) === '["sim-4","sim-6","sim-7"]', `${tag}: couch ${a.recent}, beds ${a.old}`);
     check(a.open === 2, `${tag}: ${a.open} open desks in the folder, not 2 (Ada and Elif)`);
-    /* FR-052, FR-053: squeezed sideways in the desk row, at the desks' full height; a panel 136px, a slat 40px with vertical text inside it */
+    /* FR-052, FR-053: the corner is in the desk row at its height, its width counted by the room */
+    check(a.lg && a.lg.inRoom && Math.abs(a.lg.h - a.deskH) <= 1 && Math.abs(a.lg.t - a.deskTop) <= 1 && Math.abs(a.lg.w - a.shw) <= 1, `${tag}: lounge ${JSON.stringify(a.lg)} vs desks ${a.deskH}px at ${a.deskTop}, width ${a.shw}`);
     const CW = { roomy: 262, card: 236, mini: 216, micro: 190 }[a.d] || 0;
-    check(a.shw > 0 && a.wVar >= a.cols * CW + a.shw, `${tag}: the room's width (${a.wVar}) does not count the squeezed group (${a.shw}px) beside ${a.cols} columns of ${CW}px`);
-    for (const x of a.shut) {
-      check(Math.abs(x.h - a.deskH) <= 1 && Math.abs(x.top - a.deskTop) <= 1, `${tag}: ${x.id} is ${x.h}px tall at ${x.top}, the desks ${a.deskH}px at ${a.deskTop}`);
-      check(x.w === (x.k === 'recent' ? 136 : 40), `${tag}: ${x.id} (${x.k}) is ${x.w}px wide`);
-      if (x.k === 'old') check(/^vertical/.test(x.wm) && x.font >= 10.5 && x.nameIn, `${tag}: ${x.id} slat name ${JSON.stringify(x)}`);
-    }
+    check(a.shw > 0 && a.wVar >= a.cols * CW + a.shw, `${tag}: the room's width (${a.wVar}) does not count the lounge (${a.shw}px) beside ${a.cols} columns of ${CW}px`);
     check(a.fit === 'ok' && !a.floorScroll, `${tag}: does not fit (fit=${a.fit}, floor scroll ${a.floorScroll})`);
     check(!problems.length, `${tag}: ${problems.slice(0, 4).join('; ')}`);
-    check(!a.small.length, `${tag}: shutter text under 10.5px: ${a.small.join(', ')}`);
+    check(!a.small.length, `${tag}: lounge text under 10.5px: ${a.small.join(', ')}`);
     for (const x of a.labels) {
-      check(x.tag === 'BUTTON' && x.tab === 0, `${tag}: ${x.id} is not a focusable button (${x.tag}, tabIndex ${x.tab})`);
-      check(/, rolled up: /.test(x.l) && /finished (just now|\d+ minutes? ago)/.test(x.l) && /Open chat panel\.$/.test(x.l), `${tag}: ${x.id} label "${x.l}"`);
+      check(x.tag === 'BUTTON' && x.tab === 0 && x.inL && x.av, `${tag}: ${x.id} is not a focusable character inside the lounge (${JSON.stringify(x)})`);
+      check(/, (resting on the couch|asleep on a nap bed), finished (just now|\d+ (minute|hour|day)s? ago): /.test(x.l) && /[^.]\. Open chat panel\.$/.test(x.l), `${tag}: ${x.id} label "${x.l}"`);
     }
-    const strip = a.labels.find((x) => x.id === 'sim-2') || { text: '', l: '' };
-    check(/^Mira/.test(strip.text) && /2 min ago/.test(strip.text) && /Done\. The edge cases/.test(strip.text), `${tag}: the strip shows name, reply and time: ${strip.text}`);
-    check(!/Fill0Token0Value|0123456789ab/.test(strip.text + strip.l) && /\[redacted\]/.test(strip.l), `${tag}: the token in the reply is masked on the panel: ${strip.l}`);
-    /* keyboard: the arrow keys of FR-019 reach the rolled agents (they are in the desk order) */
+    check(/resting on the couch, finished 2 minutes ago: Done\. The edge cases/.test((a.labels.find((x) => x.id === 'sim-2') || {}).l || ''), `${tag}: Mira's label`);
+    /* the bubbles: a speech bubble over the couch, a dream cloud over the beds, inside the lounge, >= 10.5px, masked */
+    const say = a.bubs.find((b) => /\bsay\b/.test(b.cls)), dream = a.bubs.find((b) => /\bdream\b/.test(b.cls));
+    check(say && dream && a.bubs.every((b) => b.in && b.font >= 10.5), `${tag}: bubbles ${JSON.stringify(a.bubs)}`);
+    check(say && /^Done\. The edge cases/.test(say.on) && say.all.length === 2, `${tag}: the couch bubble says what Mira did: ${say && say.on}`);
+    check(say && !say.all.join(' ').match(/Fill0Token0Value|0123456789ab/) && /\[redacted\]/.test(say.all.join(' ')), `${tag}: the token is masked in the bubble: ${say && say.all}`);
+    check(dream && /^z z The README tool table/.test(dream.on) && dream.all.length === 3 && /Noor: .*\nTomas: .*\nPriya: /.test(dream.tip), `${tag}: the dream shows Noor's work first and the tooltip lists every dream: ${dream && dream.on} / ${dream && dream.tip}`);
+    /* FR-055: the dreams take turns (the frozen simulator has no timer: one tick moves to the next sleeper, its tail follows) */
+    await js(`window.__durbarSimUi.loungeTurn()`);
+    const b2 = (await lounge()).bubs.find((b) => /\bdream\b/.test(b.cls)) || {};
+    check(/^z z The eval ran again/.test(b2.on || '') && b2.tail !== dream.tail, `${tag}: one turn later the dream is Tomas's (${b2.on}, tail ${dream && dream.tail} -> ${b2.tail})`);
+    await js(`window.__durbarSimUi.loungeTurn()`); await js(`window.__durbarSimUi.loungeTurn()`);
+    const b3 = (await lounge()).bubs.find((b) => /\bdream\b/.test(b.cls)) || {};
+    check(/^z z The README tool table/.test(b3.on || ''), `${tag}: three turns later the dream is Noor's again (${b3.on})`);
+    /* keyboard: the arrow keys of FR-019 reach every resting agent */
     const nav = await js(`[...document.querySelectorAll('#stage .desk, #stage .helper, #stage .plate')].filter(x=>x.getClientRects().length).map(x=>x.dataset.id||'')`);
-    check(['sim-2', 'sim-3', 'sim-5'].every((id) => nav.includes(id)), `${tag}: rolled agents missing from the arrow-key order: ${nav}`);
+    check(['sim-2', 'sim-3', 'sim-4', 'sim-6', 'sim-7'].every((id) => nav.includes(id)), `${tag}: resting agents missing from the arrow-key order: ${nav}`);
     await openShot(w, h);
-    /* hover unrolls a card above the row, inside the room, and nothing moves */
-    const rects = () => js(`[...document.querySelectorAll('#stage .desk, #stage .shutters')].map(e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.width,r.height].map(Math.round).join(',')}).join(';')`);
+    /* hover opens the peek card beside the lounge, inside the room, and nothing moves */
+    const rects = () => js(`[...document.querySelectorAll('#stage .desk, #stage .lounge, #stage .lg-bub')].map(e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.width,r.height].map(Math.round).join(',')}).join(';')`);
     const before = await rects();
-    const c = await js(`(()=>{const e=document.querySelector('#stage .desk.shut[data-id="sim-3"]').getBoundingClientRect();return {x:Math.round(e.left+e.width/2),y:Math.round(e.top+e.height/2)}})()`);
+    const c = await js(`(()=>{const e=document.querySelector('#stage .desk.shut[data-id="sim-4"]').getBoundingClientRect();return {x:Math.round(e.left+e.width/2),y:Math.round(e.top+e.height/2)}})()`);
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
     await ctx.sleep(350);
-    const pk = await js(`(()=>{const p=document.querySelector('#stage .desk.shut[data-id="sim-3"] .peek'),room=p.closest('.room').getBoundingClientRect(),r=p.getBoundingClientRect(),f=document.getElementById('floor');
-      const s=p.closest('.desk.shut').getBoundingClientRect();
-      return {shown:getComputedStyle(p).display!=='none'&&r.height>0,inRoom:r.left>=room.left-1&&r.right<=room.right+1,side:r.right<=s.left+1||r.left>=s.right-1,text:p.innerText,floorScroll:f.scrollHeight>f.clientHeight+1||f.scrollWidth>f.clientWidth+1}})()`);
-    check(pk.shown && pk.inRoom && pk.side && !pk.floorScroll, `${tag}: hover card (sideways, inside the room) ${JSON.stringify(pk)}`);
-    check(/^Jonas/.test(pk.text) && /finished 25 min ago/.test(pk.text) && /Renamed the tool/.test(pk.text), `${tag}: the hover card says who, when and what: ${pk.text}`);
-    check((await rects()) === before, `${tag}: hovering a chip moved something`);
+    const pk = await js(`(()=>{const p=document.querySelector('#stage .desk.shut[data-id="sim-4"] .peek'),room=p.closest('.room').getBoundingClientRect(),r=p.getBoundingClientRect(),f=document.getElementById('floor');
+      const g=p.closest('.lounge').getBoundingClientRect();
+      return {shown:getComputedStyle(p).display!=='none'&&r.height>0,inRoom:r.left>=room.left-1&&r.right<=room.right+1,side:r.right<=g.left+1||r.left>=g.right-1,text:p.innerText,floorScroll:f.scrollHeight>f.clientHeight+1||f.scrollWidth>f.clientWidth+1}})()`);
+    check(pk.shown && pk.inRoom && pk.side && !pk.floorScroll, `${tag}: peek card (beside the lounge, inside the room) ${JSON.stringify(pk)}`);
+    check(/^Noor/.test(pk.text) && /finished 25 min ago/.test(pk.text) && /asleep on a nap bed/.test(pk.text) && /README tool table/.test(pk.text), `${tag}: the peek says who, when, where and what: ${pk.text}`);
+    check((await rects()) === before, `${tag}: hovering a sleeper moved something`);
     if (OUT && w === 1440) await ctx.shot(path.join(OUT, '001-shutters-peek-1440x900.png'));
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
-    /* Enter opens the chat, as on a desk */
-    await js(`document.querySelector('#stage .desk.shut[data-id="sim-5"]').focus()`);
+    /* Enter opens that agent's chat, as on a desk */
+    await js(`document.querySelector('#stage .desk.shut[data-id="sim-6"]').focus()`);
     await H.key('Enter');
-    check(await H.until(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent==='Tomas'`, 4000), `${tag}: Enter on a chip does not open the chat`);
+    check(await H.until(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent==='Tomas'`, 4000), `${tag}: Enter on a sleeper does not open the chat`);
     await H.key('Escape'); await H.until(`!document.body.classList.contains('panel-open')`, 3000); await ctx.sleep(300);
-    /* the space goes to the open desks: as large as, or larger than, with the setting off */
+    /* the width goes to the working desks: wider than with the setting off, the row no taller */
     const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('shutSw')`, 4000); await js(`document.getElementById('shutSw').click()`); await H.key('Escape'); await ctx.sleep(500); };
-    const on = await shut();
+    const on = await lounge();
     await toggle();
-    const off = await shut();
-    check(off.recent.length + off.old.length === 0 && off.open === 5, `${tag}: with the setting off ${off.open} desks and ${off.recent.length + off.old.length} rolled`);
+    const off = await lounge();
+    check(off.recent.length + off.old.length === 0 && off.open === 7, `${tag}: with the setting off ${off.open} desks and ${off.recent.length + off.old.length} resting`);
     check(on.deskW > off.deskW && on.roomH <= off.roomH + 1, `${tag}: the width did not go to the working desks or the row grew: on ${on.deskW}px wide, room ${on.roomH}px; off ${off.deskW}px, room ${off.roomH}px`);
-    check((on.gf || 1) >= (off.gf || 1) && on.deskH >= off.deskH - 1 && ['full', 'roomy', 'card', 'mini', 'micro'].indexOf(on.d) <= ['full', 'roomy', 'card', 'mini', 'micro'].indexOf(off.d),
-      `${tag}: the open desks did not get the space: on ${on.d} f=${on.gf} ${on.deskW}x${on.deskH}, off ${off.d} f=${off.gf} ${off.deskW}x${off.deskH}`);
-    rows.push(`${tag}: on ${on.d}${on.gf ? ' f=' + on.gf : ''} desk ${on.deskW}x${on.deskH}; off ${off.d}${off.gf ? ' f=' + off.gf : ''} desk ${off.deskW}x${off.deskH}`);
+    rows.push(`${tag}: on ${on.d}${on.gf ? ' f=' + on.gf : ''} desk ${on.deskW}x${on.deskH}, room ${on.roomH}px; off ${off.d}${off.gf ? ' f=' + off.gf : ''} desk ${off.deskW}x${off.deskH}, room ${off.roomH}px`);
     await toggle();
-    check((await shut()).old.length === 2, `${tag}: the setting does not turn back on`);
-    /* a strip becomes a chip after 10 minutes; an agent that starts again unrolls to its desk */
-    await ago('sim-2', 11);
-    check(await H.until(`!!document.querySelector('#stage .desk.shut.is-old[data-id="sim-2"]')`, 3000), `${tag}: the panel did not become a slat after 10 minutes`);
-    await emit({ type: 'status', sessionId: 'sim-5', status: 'working', intent: 'Running the eval again' });
-    check(await H.until(`!document.querySelector('#stage .desk.shut[data-id="sim-5"]')&&!!document.querySelector('#stage .desk.card[data-id="sim-5"]')`, 3000), `${tag}: Tomas did not get his desk back when he started again`);
+    check((await lounge()).old.length === 3, `${tag}: the setting does not turn back on`);
+    /* after 10 minutes the couch agents go to bed; past 4 sleepers, 3 beds and "+N asleep" */
+    await ago('sim-2', 11); await ago('sim-3', 12);
+    check(await H.until(`!!document.querySelector('#stage .desk.shut.is-old[data-id="sim-2"]')&&!document.querySelector('#stage .desk.shut.is-recent')`, 3000), `${tag}: the couch agents did not go to bed after 10 minutes`);
+    const m = await lounge();
+    check(m.old.length === 3 && /^\+2 asleep$/.test(m.more.trim()), `${tag}: 5 sleepers show ${m.old.length} beds and "${m.more}"`);
+    const p3 = await page(); check(!p3.length, `${tag} with "+N asleep": ${p3.slice(0, 4).join('; ')}`);
+    /* an agent that starts again goes back to its desk */
+    await emit({ type: 'status', sessionId: 'sim-6', status: 'working', intent: 'Running the eval again' });
+    check(await H.until(`!document.querySelector('#stage .desk.shut[data-id="sim-6"]')&&!!document.querySelector('#stage .desk.card[data-id="sim-6"]')`, 3000), `${tag}: Tomas did not get his desk back when he started again`);
     const p2 = await page(); check(!p2.length, `${tag} after changes: ${p2.slice(0, 4).join('; ')}`);
   }
 

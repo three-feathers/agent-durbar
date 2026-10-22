@@ -726,33 +726,60 @@ function shutReply(a,n){
   const t=a.lastOutput&&L&&L.excerpt?L.excerpt(a.lastOutput,R&&typeof R.redact==='function'?x=>R.redact(x):null):'';
   return t?DurbarCutText.cutText(t,n):vis(a)==='done'?'Finished.':'Ready.';
 }
-function shutHTML(x){
+/* FR-052: the lounge. Each resting agent is its own character (avatar(a): the theme's scene kit, the same person as on its desk) on a couch
+   seat (recent) or a nap bed (old); a speech bubble over the couch and a dream cloud over the beds take turns (LOUNGE_TURN, FR-055). */
+let LOUNGE_TURN=0;
+function restHTML(x,i){
   const {a,k}=x, st=vis(a), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140);
   const who=a.profile?a.profile.name+' · '+a.role:a.role;
   const roll=SHUT_PREV&&!SHUT_PREV.has(a.id)?' rolling':'';
-  const lab=`${esc(a.name)}, ${esc(who)}, folder ${esc(roomOf(a).path)}, ${st==='done'?'finished':'idle after its reply'}${said?' '+esc(said):''}, rolled up: ${esc(line)}. Open chat panel.`; /* every part escaped here */
-  const peek=`<span class="peek" aria-hidden="true"><span class="pk-h"><b>${esc(a.name)}</b><span class="pk-role">${esc(who)}</span></span><span class="pk-st">${SHUT_MARK}${esc(stWord(a))}${ago?' · finished '+esc(ago):''}</span><span class="pk-tx">${esc(shutReply(a,300))}</span></span>`;
-  /* FR-052: a narrow panel (recent) or a slat with the name in vertical text (old; with a tooltip) */
-  const body=k==='recent'
-    ?`<span class="sh-top"><span class="sh-av" aria-hidden="true">${avatar(a)}</span><span class="sh-name name">${esc(a.name)}</span></span><span class="sh-st">${SHUT_MARK}<span>${esc(stWord(a,true))}</span>${ago?`<span class="sh-ago">${esc(ago)}</span>`:''}</span><span class="sh-line">${esc(line)}</span>`
-    :`${SHUT_MARK}<span class="sh-name name">${esc(a.name)}</span>`;
-  const tip=k==='old'?` title="${esc(a.name)} · ${esc(stWord(a))}${ago?' · finished '+esc(ago):''}"`:'';
-  return `<button class="desk shut is-${k} is-${st}${roll}" type="button" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${lab}"${tip}>${body}${peek}</button>`;
+  const where=k==='recent'?'resting on the couch':'asleep on a nap bed';
+  const lab=`${esc(a.name)}, ${esc(who)}, folder ${esc(roomOf(a).path)}, ${where}, ${st==='done'?'finished':'idle after its reply'}${said?' '+esc(said):''}: ${esc(line)}${/[.!?…]$/.test(line)?'':'.'} Open chat panel.`; /* every part escaped here */
+  const peek=`<span class="peek" aria-hidden="true"><span class="pk-h"><b>${esc(a.name)}</b><span class="pk-role">${esc(who)}</span></span><span class="pk-st">${SHUT_MARK}${esc(stWord(a))}${ago?' · finished '+esc(ago):''} · ${where}</span><span class="pk-tx">${esc(shutReply(a,300))}</span></span>`;
+  const art=k==='recent'
+    ?`<span class="lg-av">${avatar(a)}</span>`
+    :`<svg class="lg-bed" viewBox="0 0 44 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bd-frame" x="1" y="10" width="42" height="11" rx="3"/><rect class="bd-head" x="1" y="3" width="5" height="18" rx="2"/><rect class="bd-mat" x="5" y="8" width="37" height="6" rx="2.5"/><rect class="bd-pil" x="6" y="5" width="10" height="5" rx="2.5"/><rect class="bd-leg" x="3" y="20" width="3" height="4"/><rect class="bd-leg" x="38" y="20" width="3" height="4"/></svg><span class="lg-av lying">${avatar(a)}</span><svg class="lg-blanket" viewBox="0 0 44 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="bd-blk" d="M17 6.5q12-3 25 1V14H17z"/></svg>`;
+  return `<button class="desk shut is-${k} is-${st}${roll}" type="button" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${lab}"><span class="name lg-name">${esc(a.name)}</span><span class="lg-sp">${art}</span>${peek}</button>`;
 }
-/* FR-053: a room's rolled agents squeeze to the end of its desk row: panels, then slats, side by side; the room's width counts the group */
+/* FR-053: a room's resting agents, their couches and beds, and the corner's width (DurbarShutters.width, counted by the layout) */
 function shutGroup(r,rolled){
   if(!rolled||!rolled.length)return null;
   const recent=rolled.filter(x=>x.k==='recent'), old=rolled.filter(x=>x.k==='old'), key='shut:'+r.id, open=!!ui.expanded[key];
-  const {shown,hidden}=SHUT.split(old,SHUT.OLD_CAP,open), fewer=open&&old.length>SHUT.OLD_CAP+1;
-  return {recent,shown,hidden,fewer,key,w:SHUT.width(recent.length,shown.length,hidden.length>0||fewer)};
+  const {shown,hidden}=SHUT.split(old,SHUT.OLD_CAP,open), fewer=open&&old.length>SHUT.OLD_CAP;
+  const more=hidden.length>0||fewer, couchW=SHUT.width(recent.length,0,false), bedW=SHUT.width(0,shown.length,more);
+  return {recent,old,shown,hidden,fewer,key,couchW:couchW?couchW-2*SHUT.PAD:0,bedW:bedW?bedW-2*SHUT.PAD:0,w:SHUT.width(recent.length,shown.length,more)};
 }
 const shutW=(r,rolled)=>{const g=shutGroup(r,rolled);return g?g.w:0;};
+/* one bubble: every resident's line, the one whose turn it is shown; its tail points at that resident (x: the centre of its seat or bed) */
+function bubbleHTML(cls,list,width,xOf,lineOf,tip){
+  if(!list.length)return width?`<span class="lg-bub none" style="flex-basis:${width}px"></span>`:'';
+  const on=SHUT.turn(LOUNGE_TURN,list.length);
+  return `<span class="lg-bub ${cls}" style="flex-basis:${width}px;--tail:${xOf(on)}px" aria-hidden="true"${tip?` title="${esc(tip)}"`:''}>${list.map((x,i)=>`<span class="lg-t${i===on?' on':''}" style="--tx:${xOf(i)}px">${cls==='dream'?'<b class="lg-zz">z z</b> ':''}${esc(lineOf(x))}</span>`).join('')}</span>`;
+}
 function shuttersHTML(r,rolled){
   const g=shutGroup(r,rolled); if(!g)return '';
-  return `<div class="shutters" data-key="${esc(g.key)}" style="--shw:${g.w}px" role="group" aria-label="${rolled.length} finished agent${rolled.length>1?'s':''} in ${esc(r.name)}, rolled up"><div class="sh-in">${g.recent.map(shutHTML).join('')}${g.shown.map(shutHTML).join('')}${g.hidden.length?`<button class="more shut-more" type="button" data-more="${esc(g.key)}" aria-expanded="false" aria-label="Show ${g.hidden.length} more finished agents in ${esc(r.name)}" title="${g.hidden.length} more finished agents">+${g.hidden.length}</button>`:''}${g.fewer?`<button class="more shut-more fewer" type="button" data-more="${esc(g.key)}" aria-expanded="true" aria-label="Show fewer finished agents in ${esc(r.name)}" title="Show fewer"><span class="sh-name">Fewer</span></button>`:''}</div></div>`;
+  const cs=SHUT.couches(g.recent.length);
+  /* the centre of seat i and of bed i, from the left of their zone */
+  const seatX=i=>{let x=0,n=i;for(const k of cs){if(n<k)return x+SHUT.COUCH_PAD/2+n*SHUT.SEAT_W+SHUT.SEAT_W/2;x+=k*SHUT.SEAT_W+SHUT.COUCH_PAD+SHUT.GAP;n-=k;}return x;};
+  const bedX=i=>Math.min(i,Math.max(0,g.shown.length-1))*(SHUT.BED_W+SHUT.GAP)+SHUT.BED_W/2;
+  let seat=0;
+  const couches=cs.map(k=>{const xs=g.recent.slice(seat,seat+k);seat+=k;
+    return `<span class="lg-couch" style="flex-basis:${k*SHUT.SEAT_W+SHUT.COUCH_PAD}px"><svg class="lg-sofa" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="sf-back" x="4" y="2" width="92" height="24" rx="7"/><rect class="sf-seat" x="4" y="20" width="92" height="14" rx="4"/><rect class="sf-arm" x="0" y="12" width="9" height="24" rx="4"/><rect class="sf-arm" x="91" y="12" width="9" height="24" rx="4"/><rect class="sf-leg" x="8" y="34" width="5" height="6"/><rect class="sf-leg" x="87" y="34" width="5" height="6"/></svg>${xs.map(restHTML).join('')}</span>`;}).join('');
+  const all=g.old, dreams=all.map(x=>x.a.name+': '+shutReply(x.a,90)).join('\n');
+  const say=bubbleHTML('say',g.recent,g.couchW,seatX,x=>shutReply(x.a,90),'');
+  const dream=bubbleHTML('dream',all,g.bedW,i=>bedX(i),x=>shutReply(x.a,90),dreams);
+  const beds=g.shown.map(restHTML).join('')+(g.hidden.length?`<button class="more shut-more" type="button" data-more="${esc(g.key)}" aria-expanded="false" aria-label="Show ${g.hidden.length} more finished agents asleep in ${esc(r.name)}" title="${g.hidden.length} more asleep">+${g.hidden.length} asleep</button>`:'')+(g.fewer?`<button class="more shut-more fewer" type="button" data-more="${esc(g.key)}" aria-expanded="true" aria-label="Show fewer finished agents in ${esc(r.name)}">Fewer</button>`:'');
+  const n=g.recent.length+g.old.length;
+  return `<div class="lounge" data-key="${esc(g.key)}" style="--shw:${g.w}px" role="group" aria-label="${n} finished agent${n>1?'s':''} resting in ${esc(r.name)}"><div class="lg-bubs">${say}${g.couchW&&g.bedW?'<span class="lg-gap"></span>':''}${dream}</div><div class="lg-in">${couches?`<span class="lg-couches" style="flex-basis:${g.couchW}px">${couches}</span>`:''}${beds?`<span class="lg-beds" style="flex-basis:${g.bedW}px">${beds}</span>`:''}</div></div>`;
 }
-/* FR-054: the unrolled card opens sideways: left of the group, or right when its room has no space on the left (measured on hover and focus) */
-const shutAim=e=>{const b=e.target&&e.target.closest&&e.target.closest('#stage .desk.shut');if(!b)return;const g=b.closest('.sh-in'),room=b.closest('.room');if(!g||!room)return;
+/* FR-055: the bubbles take turns without a re-render (classes only); the page's own timer, or a driver's tick in the frozen simulator */
+function loungeTurn(){
+  LOUNGE_TURN++;
+  document.querySelectorAll('#stage .lg-bub').forEach(b=>{const ts=b.querySelectorAll('.lg-t'),k=SHUT.turn(LOUNGE_TURN,ts.length);ts.forEach((t,i)=>t.classList.toggle('on',i===k));if(ts[k])b.style.setProperty('--tail',ts[k].style.getPropertyValue('--tx'));});
+}
+if(!(qs.has('sim')&&qs.get('simfreeze')==='1'))setInterval(()=>{if(document.querySelector('#stage .lg-bub .lg-t + .lg-t'))loungeTurn();},7000);
+/* FR-054: the peek card opens beside the lounge: to its left, or to its right when the room has no space on the left (measured on hover and focus) */
+const shutAim=e=>{const b=e.target&&e.target.closest&&e.target.closest('#stage .desk.shut');if(!b)return;const g=b.closest('.lounge'),room=b.closest('.room');if(!g||!room)return;
   b.classList.toggle('pk-right',g.getBoundingClientRect().left-room.getBoundingClientRect().left<330);};
 document.addEventListener('pointerover',shutAim);document.addEventListener('focusin',shutAim);
 function officeModel(ignoreStatus){
@@ -4825,5 +4852,5 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 /* spec 008 FR-113, simulator only: false until the agents are listed, the frozen simulator has replayed every script and the saved usage
    totals are read; then any queued frame is drawn now (a stalled animation frame once left a comparison driver measuring a stale page) */
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
-if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow,settleNow,render:()=>{layoutKey='';scheduleRender();}}; /* render: spec 001 FR-057 drivers move a finish time back */
+if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow,settleNow,render:()=>{layoutKey='';scheduleRender();},loungeTurn}; /* render: spec 001 FR-057 drivers move a finish time back */
 })();

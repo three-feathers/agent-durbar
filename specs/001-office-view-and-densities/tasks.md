@@ -84,9 +84,9 @@
 - [x] T078 (owner on #554, 18:48) Spec: horizontal squeeze (FR-052..FR-055, FR-057 amended, dated note) [FR-052..FR-057]
 - [x] T079 Squeeze: `shutters.js` widths and slat cap; `roomHTML` desk grid plus a side group of panels and slats (room width counts them); `styles.css` panel, slat (vertical text), side card, squeeze animation; `test:shutters` [FR-052..FR-055]
 - [x] T080 `check:office-fill` (row height kept, widths freed, slat text, side card), mutation checks, `check:office`, `npm test`; screenshots retaken; README, changelog fragment [FR-057]
-- [ ] T081 (owner on #554, 19:55) Spec: the lounge (couch, nap beds, speech bubble, rotating dreams; FR-052..FR-057 amended, dated note) [FR-052..FR-057]
-- [ ] T082 Lounge: `shutters.js` (couches, bed cap, width, turn); `app.js` lounge corner with the agents' own characters (`avatar`), bubbles and their turn, setting renamed; `styles.css` couch and bed art from theme tokens; `test:shutters` [FR-052..FR-056]
-- [ ] T083 `check:office-fill` (corner in the row, bubbles inside and >= 10.5 px, keyboard, deterministic turn), mutation checks, `check:office`, `npm test`; screenshots retaken; README, changelog fragment [FR-057]
+- [x] T081 (owner on #554, 19:55) Spec: the lounge (couch, nap beds, speech bubble, rotating dreams; FR-052..FR-057 amended, dated note) [FR-052..FR-057]
+- [x] T082 Lounge: `shutters.js` (couches, bed cap, width, turn); `app.js` lounge corner with the agents' own characters (`avatar`), bubbles and their turn, setting renamed; `styles.css` couch and bed art from theme tokens; `test:shutters` [FR-052..FR-056]
+- [x] T083 `check:office-fill` (corner in the row, bubbles inside and >= 10.5 px, keyboard, deterministic turn), mutation checks, `check:office`, `npm test`; screenshots retaken; README, changelog fragment [FR-057]
 
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 

@@ -1540,36 +1540,57 @@ h2,h3,h4{text-wrap:balance}
 .dlg.l{width:min(var(--dlg-w-l),calc(100vw - 32px))}
 .sched-dlg .sc-form{display:flex;flex-direction:column;gap:var(--dlg-gap)} /* FR-167: groups of fields are one gap apart (the Prompt label touched the select above it) */
 
-/* spec 001 FR-051..FR-055: finished agents roll in when their room has others at work, squeezing sideways like a folding screen: they keep
-   the desk row's height and give up width. Recent: a narrow panel (136px); old: a slat (40px) with the name in vertical text. The widths
-   match shutters.js (PANEL_W, SLAT_W, GAP), which the layout counts. Hover or focus opens a card sideways (no layout change); reduced
-   motion: no squeeze (the global rule). Text never under 10.5px. */
+/* spec 001 FR-051..FR-055: finished agents rest in a lounge corner at the end of the desk row, at the row's height: a couch (recent) and
+   power-nap beds (old), with the agents' own characters, a speech bubble and a dream cloud that take turns. Sizes match shutters.js
+   (SEAT_W 40, COUCH_PAD 8, BED_W 44, MORE_W 52, GAP 6, PAD 8), which the layout counts. Furniture from theme tokens only. Reduced
+   motion: no settle-in and no fade (the global rule). Text never under 10.5px. */
 .stage:not([data-d="full"]) .units.has-shut{display:flex;flex-wrap:nowrap;align-items:flex-start;gap:var(--gap);max-width:none}
 .stage:not([data-d="full"]) .units-in{flex:1 1 0;min-width:0;display:grid;grid-template-columns:repeat(var(--cols,1),minmax(0,1fr));gap:calc(var(--gap) + 2px) var(--gap);align-content:start;align-items:start;max-width:calc(var(--cols,1)*var(--cmax) + (var(--cols,1) - 1)*var(--gap))}
-.shutters{flex:none;width:var(--shw);min-width:0;display:flex}
-.stage:not([data-d="full"]) .shutters{height:var(--ch)}
-.stage[data-d="roomy"][data-grow] .shutters{height:calc(var(--ch) * var(--gf,1))}
-.stage[data-d="full"] .shutters{align-self:stretch;min-height:120px}
-.shutters>.sh-in{position:relative;display:flex;flex-wrap:nowrap;align-items:stretch;gap:6px;width:100%;min-width:0}
-.stage .desk.shut{position:static;flex:none;height:auto;min-width:0;padding:6px 8px;border:1px solid var(--line-hair);border-radius:10px;overflow:hidden;
-  background:repeating-linear-gradient(90deg,var(--surface) 0 5px,color-mix(in srgb,var(--line-hair) 55%,var(--surface)) 5px 6px);box-shadow:none;transform-origin:100% 50%}
-.stage .desk.shut.is-recent{width:136px;display:flex;flex-direction:column;gap:3px;background:var(--surface)}
-.stage .desk.shut.is-old{width:40px;padding:6px 0;display:flex;flex-direction:column;align-items:center;gap:6px}
-.stage .desk.shut:hover{background:var(--raised);border-color:var(--line-2);transform:none}
-.stage .desk.shut[aria-pressed="true"]{border-color:var(--sel-border,#7fa0bd);box-shadow:0 0 0 1.5px var(--sel-border,#7fa0bd)}
-.desk.shut .sh-mark{width:12px;height:12px;flex:none;color:var(--c-done)}
-.desk.shut.is-idle .sh-mark{color:var(--c-idle)}
-.desk.shut .sh-top{display:flex;align-items:center;gap:5px;min-width:0;flex:none}
-.desk.shut .sh-av{width:20px;height:20px;flex:none;border-radius:50%;overflow:hidden;background:var(--avatar-bg,var(--surface-2))}
-.desk.shut .sh-av>svg{display:block}
-.desk.shut .sh-name{font-size:12px;line-height:16px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.desk.shut .sh-st{display:flex;align-items:center;gap:4px;font-size:11px;line-height:15px;color:var(--ink-2);white-space:nowrap;min-width:0;flex:none}
-.desk.shut .sh-ago{font-size:10.5px;color:var(--muted);margin-left:auto;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
-.desk.shut .sh-line{font-size:11px;line-height:14px;color:var(--ink-2);overflow:hidden;flex:1 1 0;min-height:0;overflow-wrap:anywhere;-webkit-mask-image:linear-gradient(to bottom,#000 70%,transparent);mask-image:linear-gradient(to bottom,#000 70%,transparent)}
-/* the slat: the name runs down the slat (vertical text, ellipsis when long) */
-.desk.shut.is-old .sh-name,.shut-more.fewer .sh-name{writing-mode:vertical-rl;font-size:11.5px;line-height:16px;max-height:100%;flex:1 1 0;min-height:0}
-.sh-in>.shut-more{width:40px;height:auto;padding:0;font-size:11.5px;flex:none;border-radius:10px;flex-direction:column}
-/* the unrolled card: beside the group (left, or right when measured too close to the room's edge), never moving anything */
+.lounge{flex:none;width:var(--shw);min-width:0;position:relative;display:flex;flex-direction:column;justify-content:flex-end;gap:3px;padding:3px 8px 4px;border-radius:12px;
+  background:color-mix(in srgb,var(--chair) 22%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--chair) 45%,transparent)}
+.stage:not([data-d="full"]) .lounge{height:var(--ch)}
+.stage[data-d="roomy"][data-grow] .lounge{height:calc(var(--ch) * var(--gf,1))}
+.stage[data-d="full"] .lounge{align-self:stretch;min-height:120px}
+/* the bubbles: one over the couch, one (a dream cloud) over the beds; each line in turn, the tail pointing at its speaker */
+.lg-bubs{display:flex;gap:6px;height:18px;flex:none;min-width:0}
+.lg-gap{display:none}
+.lg-bub{position:relative;flex:0 0 auto;min-width:0;height:17px;border-radius:9px;background:var(--bubble,var(--surface));border:1px solid var(--bubble-line,var(--line-2))}
+.lg-bub.none{visibility:hidden}
+.lg-bub.dream{border-radius:9px 9px 9px 9px;border-style:dashed}
+.lg-t{position:absolute;inset:0 6px;font-size:10.5px;line-height:15px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .6s ease}
+.lg-t.on{opacity:1}
+.lg-bub::after{content:"";position:absolute;bottom:-5px;left:calc(var(--tail,50%) - 4px);width:7px;height:7px;background:var(--bubble,var(--surface));border-right:1px solid var(--bubble-line,var(--line-2));border-bottom:1px solid var(--bubble-line,var(--line-2));transform:rotate(45deg)}
+.lg-bub.dream::after{border-radius:50%;transform:none;width:5px;height:5px;bottom:-6px;border:1px solid var(--bubble-line,var(--line-2))}
+.lg-bub.none::after{display:none}
+.lg-zz{font-weight:700;color:var(--muted);font-size:10.5px;letter-spacing:1px}
+/* the furniture band */
+.lg-in{flex:none;height:clamp(24px,calc(100% - 24px),58px);min-height:0;display:flex;align-items:flex-end;gap:6px} /* the furniture, with the bubbles just above the heads */
+.lg-couches,.lg-beds{flex:0 0 auto;display:flex;align-items:flex-end;gap:6px;height:100%;min-width:0}
+.lg-couch{position:relative;flex:0 0 auto;display:flex;align-items:flex-end;justify-content:center;height:100%;padding:0 4px}
+.lg-sofa{position:absolute;left:0;right:0;bottom:0;width:100%;height:min(70%,40px);z-index:0}
+.lg-sofa .sf-back{fill:color-mix(in srgb,var(--chair) 85%,var(--ink))}
+.lg-sofa .sf-seat{fill:var(--chair)}
+.lg-sofa .sf-arm{fill:color-mix(in srgb,var(--chair) 70%,var(--ink))}
+.lg-sofa .sf-leg,.lg-bed .bd-leg{fill:color-mix(in srgb,var(--ink) 55%,transparent)}
+.stage .desk.shut{position:static;flex:none;width:40px;height:100%;min-width:0;padding:0;border:0;border-radius:8px;background:transparent;box-shadow:none;cursor:pointer}
+.stage .desk.shut.is-old{width:44px}
+.stage .desk.shut:hover{background:color-mix(in srgb,var(--raised) 50%,transparent);border:0;transform:none}
+.stage .desk.shut[aria-pressed="true"]{box-shadow:0 0 0 1.5px var(--sel-border,#7fa0bd)}
+.desk.shut .lg-name{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;font-size:12px} /* for name lookups; the label speaks */
+.lg-sp{position:relative;display:block;width:100%;height:100%;z-index:1;transform-origin:50% 100%}
+.lg-av{position:absolute;left:50%;bottom:min(28%,16px);width:min(30px,calc(100% - 6px));aspect-ratio:1;max-height:calc(100% - 4px);transform:translateX(-50%);border-radius:50% 50% 30% 30%;overflow:hidden}
+.lg-av>svg{display:block;width:100%;height:100%}
+/* a nap bed: frame, mattress and pillow behind, the character lying with its head on the pillow, a blanket over it */
+.lg-bed,.lg-blanket{position:absolute;left:0;bottom:0;width:100%;height:min(62%,30px)}
+.lg-blanket{z-index:2;pointer-events:none}
+.lg-bed .bd-frame{fill:var(--desk-front,var(--desk))}
+.lg-bed .bd-head{fill:color-mix(in srgb,var(--desk-front,var(--desk)) 80%,var(--ink))}
+.lg-bed .bd-mat{fill:var(--surface)}
+.lg-bed .bd-pil{fill:var(--bubble,var(--surface));stroke:var(--line-2);stroke-width:.6}
+.lg-blanket .bd-blk{fill:color-mix(in srgb,var(--sage) 55%,var(--surface))}
+.lg-av.lying{left:4px;bottom:calc(min(62%,30px) * .45);width:min(22px,calc(100% - 6px));transform:rotate(-80deg);border-radius:50%}
+.lg-beds>.shut-more{width:52px;height:calc(100% - 4px);padding:0 2px;font-size:10.5px;line-height:13px;flex:none;border-radius:10px;white-space:normal}
+/* the peek card: beside the lounge (left, or right when measured too close to the room's edge), never moving anything */
 .desk.shut .peek{display:none;position:absolute;right:calc(100% + 6px);top:0;z-index:30;width:300px;flex-direction:column;gap:3px;padding:8px 10px;border-radius:10px;
   background:var(--surface);border:1px solid var(--line-2);box-shadow:0 10px 28px color-mix(in srgb,var(--ink) 16%,transparent);transform-origin:100% 0;pointer-events:none;text-align:left}
 .desk.shut.pk-right .peek{right:auto;left:calc(100% + 6px);transform-origin:0 0}
@@ -1578,11 +1599,11 @@ h2,h3,h4{text-wrap:balance}
 .peek .pk-h b{font-size:13px;line-height:17px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .peek .pk-role{font-size:11px;line-height:17px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .peek .pk-st{display:flex;align-items:center;gap:5px;font-size:11px;line-height:15px;color:var(--ink-2)}
-.peek .pk-st .sh-mark{width:11px;height:11px;color:var(--c-done)}
+.peek .sh-mark{width:11px;height:11px;flex:none;color:var(--c-done)}
 .peek .pk-tx{font-size:11.5px;line-height:15px;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:normal}
-/* FR-055: one squeeze when a desk rolls in, one opening when it rolls out (transform only, so nothing else re-lays out) */
-.desk.shut.rolling{animation:shut-in .22s ease-out}
-.unit.unrolling{animation:shut-out .22s ease-out;transform-origin:100% 50%}
-@keyframes shut-in{from{transform:scaleX(.3);opacity:.2}to{transform:none;opacity:1}}
-@keyframes shut-out{from{transform:scaleX(.5);opacity:.35}to{transform:none;opacity:1}}
-@keyframes shut-peek{from{transform:scaleX(.6);opacity:0}to{transform:none;opacity:1}}
+/* FR-055: one settle-in when an agent arrives in the lounge, one rise when it goes back to its desk (transform only) */
+.desk.shut.rolling .lg-sp{animation:shut-in .22s ease-out}
+.unit.unrolling{animation:shut-out .22s ease-out;transform-origin:50% 100%}
+@keyframes shut-in{from{transform:translateY(25%) scale(.85);opacity:.2}to{transform:none;opacity:1}}
+@keyframes shut-out{from{transform:scale(.92);opacity:.35}to{transform:none;opacity:1}}
+@keyframes shut-peek{from{transform:scale(.9);opacity:0}to{transform:none;opacity:1}}
