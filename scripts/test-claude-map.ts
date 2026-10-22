@@ -145,10 +145,10 @@ for (const f of files) {
   assert.deepStrictEqual(m.stats(), { tools: 0, tasks: 0, openSubagents: 0, streamMessage: 0, thinkingStreamed: 0 }, 'all tables empty after the turn');
 }
 
-// 5. Errors: an error result maps to an error status; success to idle; the usage limit to an error.
+// 5. Errors: an error result maps to an error status; success to idle; the usage limit to a coffee break (spec 068).
 {
   const st = run(load('error.json').messages).filter((e) => e.type === 'status');
-  assert.deepStrictEqual(st.map((e) => (e.type === 'status' ? e.status : '')), ['error', 'error', 'idle', 'error']);
+  assert.deepStrictEqual(st.map((e) => (e.type === 'status' ? e.status : '')), ['error', 'error', 'idle']); // spec 068: credits_required is a coffee break (usageLimit), not an error status
   const ok = run(load('result-success.json').messages);
   assert.strictEqual(ok[ok.length - 1].type === 'status' && (ok[ok.length - 1] as { status: string }).status, 'idle');
 }

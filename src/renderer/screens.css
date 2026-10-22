@@ -301,8 +301,82 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-confirm{align-items:flex-start;margin:14px 0 2px;font-weight:600}
 .dlg.fs .fs-confirm input{flex:none;width:16px;height:16px;margin:2px 0 0}
 .dlg.fs .fs-confirm>span{flex:1;min-width:0}
+/* spec 069: the add form's scope choice, the agent app ticks and the per-file review */
+.mscope{border:1px solid var(--line);border-radius:8px;padding:8px 12px 10px;margin:0 0 10px;display:flex;flex-direction:column;gap:6px}
+.mscope legend{font-weight:650;padding:0 4px}
+.mscope label,.gapps label,.gsec label{display:flex;flex-direction:row;align-items:baseline;gap:6px;font-weight:500;font-size:12.5px;color:var(--ink-2)}
+.mscope label>small,.gapps label>small,.gsec label>small{display:inline}
+.mscope input[type=radio],.mscope input[type=checkbox],.dlg .gapps input{flex:none;margin:0;width:auto}
+.mscope small,.gapps small,.gsec small{color:var(--muted)}
+.gapps{display:flex;flex-wrap:wrap;gap:4px 16px;margin:4px 0 2px 22px}
+.dlg .gapps{margin-left:0}
+.gsec{display:flex;flex-direction:column;gap:4px;margin:6px 0 0 22px}
+.gpvl{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:10px;max-height:52vh;overflow:auto}
+.gpv{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.gpv.bad{border-color:var(--card-waiting-line)}
+.gpv .srv-top{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+.gpv pre.trustcmd{max-height:180px;overflow:auto;margin:4px 0 0;white-space:pre-wrap;word-break:break-word}
+.grep{display:flex;gap:6px;align-items:baseline;margin-top:6px}
+.gfiles{margin:4px 0;padding-left:18px}
+.gfiles .warn{color:var(--amber-ink)}
 /* spec 060 FR-012: a tall setup dialog (three routes and the vendor's commands) scrolls inside its body, so the rows never slide under Cancel/Install */
 #hsDlg .dlg .dbody{overflow:auto;padding-right:2px}
+
+/* spec 043 FR-014: the profile file editor (profileeditor.js); theme tokens only, text 10.5px or larger */
+.dlg.pe{width:calc(100vw - 32px);height:calc(100vh - 48px);max-height:none;overflow:hidden;gap:var(--dlg-gap);padding:var(--dlg-pad)} /* spec 052 FR-167: the window minus 32px (a full-size editor), the dialog padding and gap tokens */
+.pe-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex:none}
+.pe-tt{flex:1 1 260px;min-width:0;display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:10px;row-gap:2px}
+.pe-tt h3{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.pe-dirty{justify-self:start;font-size:var(--t5-size);font-weight:600;color:var(--amber-ink);background:var(--warn-bg);border:1px solid var(--card-waiting-line);border-radius:999px;padding:1px 8px}
+.pe-dirty[hidden]{display:none}
+.pe-sub{grid-column:1/-1;margin:0;font-size:var(--t4-size);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pe-modes{flex:none}
+.pe-acts{display:flex;gap:8px;flex:none}
+.pe-acts .btn[hidden]{display:none}
+.pe-ro{margin:0;font-size:var(--t4-size);color:var(--ink-2);background:var(--note);border:1px solid var(--line);border-radius:var(--r-md);padding:5px 10px;flex:none}
+.pe-ro[hidden]{display:none}
+.pe-main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.pe-main[data-mode="edit"]{grid-template-columns:minmax(0,1fr)}
+.pe-main[data-mode="preview"]{grid-template-columns:minmax(0,1fr)}
+.pe-main[data-mode="edit"] .pe-prev,.pe-main[data-mode="preview"] .pe-edit{display:none}
+.pe-edit{display:flex;flex-direction:column;gap:6px;min-height:0;min-width:0}
+.dlg .pe-src{flex:1;min-height:0;width:100%;box-sizing:border-box;resize:none;font-family:var(--font-mono);font-size:12.5px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2;padding:10px 12px;border-radius:10px;background:var(--raised);color:var(--ink)}
+.dlg .pe-src[readonly]{background:var(--surface-2)}
+.pe-fmerr{margin:0;font-size:var(--t4-size);color:var(--amber-ink);background:var(--warn-bg);border:1px solid var(--card-waiting-line);border-radius:var(--r-md);padding:5px 10px;flex:none}
+.pe-fmerr[hidden]{display:none}
+.pe-prev{min-height:0;min-width:0;overflow:auto;background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:13px;line-height:1.55;color:var(--ink)}
+.pe-prev:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.pe-fm{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:3px 12px;margin:0 0 12px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-md);font-size:var(--t4-size)}
+.pe-fm[hidden]{display:none}
+.pe-fm dt{font-weight:600;color:var(--ink-2);font-family:var(--font-mono)}
+.pe-fm dd{margin:0;color:var(--ink);overflow-wrap:anywhere}
+.pe-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;min-height:18px}
+.pe-status,.pe-hint{margin:0;font-size:var(--t4-size);color:var(--muted)}
+.pe-status{color:var(--ink-2)}
+/* the Profile menu: an Edit button beside a profile row (spec 043 FR-014) */
+.mode-menu .mm-prow{display:flex;align-items:stretch;gap:2px}
+.mode-menu .mm-prow>button[data-prof]{flex:1;min-width:0}
+.mode-menu button.mm-edit{flex:none;align-self:center;align-items:center;padding:4px 8px;font-size:var(--t4-size);font-weight:600;color:var(--blue-ink);border-radius:8px}
+/* Settings > Profiles (custom agents) */
+.pf-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.pf-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--raised)}
+.pf-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pf-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.pf-top b{font-size:13px}
+.pf-row small{font-size:var(--t4-size);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-row code{font-family:var(--font-mono);font-size:11px;color:var(--ink-2)}
+/* the chat's Markdown colours for code and tables are light-only; in the editor's preview they follow the theme (dark themes too) */
+.pe-md code,.pe-md pre{background:var(--surface-2);color:var(--ink)}
+.pe-md pre code{background:transparent}
+.pe-md th{background:var(--surface-2)}
+.pe-md blockquote{border-left-color:var(--line-2)}
+/* New Agent Success Profile: the template choice (FR-018) */
+.dlg .pe-tpl{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.dlg .pe-tpl legend{font-size:var(--t4-size);font-weight:600;color:var(--ink-2);padding:0;margin-bottom:4px}
+.dlg label.pe-tpl-opt{display:grid;grid-template-columns:auto 1fr;column-gap:8px;row-gap:2px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-md);cursor:pointer;font-weight:400}
+.dlg label.pe-tpl-opt:has(:checked){border-color:var(--focus);background:var(--surface-2)}
+.dlg .pe-tpl-t{font-size:13px;font-weight:600;color:var(--ink)}
+.dlg label.pe-tpl-opt small{grid-column:2;font-size:var(--t4-size);color:var(--muted);font-weight:400}
 /* spec 052 FR-170 (T154): Tools > Models and context never grows past its box: a fixed layout, the agent and folder names cut with an ellipsis (their title has the whole name) */
 .agt{table-layout:fixed}
 .agt thead th:nth-child(1){width:26%}.agt thead th:nth-child(2){width:24%}.agt thead th.num{width:88px}
@@ -310,3 +384,18 @@ body.has-bridge #topBtns{display:flex}
 .agt .by-chip{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;text-align:left}
 .agt .mdl-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agt td{min-width:0;overflow-wrap:anywhere}
+/* Create with AI (spec 043 FR-026) */
+.dlg.pe-ai{width:min(var(--dlg-w-l),calc(100vw - 32px))}
+.dlg .pe-ai-how{width:max-content}
+.dlg .pe-ai-qs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 14px}
+.dlg .pe-ai-qs[hidden]{display:none}
+.dlg .pe-ai-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 14px;align-items:start}
+.dlg .pe-ai-row>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.dlg .pe-ai-row p{margin:0}
+.dlg .pe-ai-qs textarea{min-height:48px;resize:vertical}
+.dlg .dbtn #peALate[hidden]{display:none}
+.dlg .dbtn #peALate{align-self:center;margin:0}
+.dlg #peADesc[hidden]{display:none}
+.dlg .pe-ai-wait{margin:0;font-size:var(--t3-size);color:var(--ink-2)}
+.dlg .pe-ai-wait[hidden]{display:none}
+.dlg .dbtn .btn[hidden]{display:none}

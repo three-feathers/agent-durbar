@@ -8,8 +8,9 @@
 import { isAuthError } from '../adapters/autherrors';
 import type { AdapterRouter } from '../adapters/router';
 import type { AgentAdapter, McpServerStatus } from '../adapters/types';
-import type { AgentInfo, AgentMcpEntry, AgentMcpReply, McpRestartResult, McpRestartSessionResult } from '../shared/api';
+import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRestartResult, McpRestartSessionResult } from '../shared/api';
 import { maskMcpError } from './mcpmask';
+import { sourcesFor } from './mcpglobal';
 
 const NOT_RUNNING = 'This session is not running. Send a message to start it.';
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -31,6 +32,13 @@ export interface McpReplyInput {
   extras: ReadonlyArray<{ name: string; enabled: boolean; trusted: boolean; needsSecrets?: boolean }>;
   /** Names switched off in Settings. */
   ambientDisabled: ReadonlySet<string>;
+  /** Spec 069 FR-009: the agent app (`copilot`, `claude`, `codex`); Claude and Codex agents do not list the Copilot CLI list. */
+  app?: string;
+  /** Spec 069 FR-009: Claude Code's user list with its Settings switch (listed for Claude agents). */
+  claudeList?: ReadonlyArray<{ name: string; enabled: boolean }>;
+  /** Spec 069 FR-011: the names of each app's user list, and the built-in servers, for the source chips. */
+  global?: Partial<Record<GlobalApp, readonly string[]>>;
+  builtin?: ReadonlySet<string>;
 }
 
 /** `agents:mcp` (spec 019 FR-009, spec 058 FR-020). No path and no secret value: names, states and masked errors only. */
@@ -50,10 +58,17 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const canRestart = canRestartAny && on && !!st && st.status !== 'disabled';
     entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}) });
   };
-  for (const am of i.cli) add(am.name, 'cli', am.enabled);
-  const names = new Set(i.cli.map((x) => x.name.toLowerCase()));
+  const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
+  const own = i.app === 'claude' ? (i.claudeList ?? []) : [];
+  for (const am of cli) add(am.name, 'cli', am.enabled);
+  for (const g of own) add(g.name, 'cli', g.enabled);
+  const names = new Set([...cli, ...own].map((x) => x.name.toLowerCase()));
   for (const v of i.extras) if (!names.has(v.name.toLowerCase())) add(v.name, 'folder', v.enabled && v.trusted && !v.needsSecrets);
   for (const x of i.live) add(x.name, 'runtime', !i.ambientDisabled.has(x.name));
+  if (i.global) {
+    const folder = new Set(i.extras.map((v) => v.name));
+    for (const e of entries) e.sources = sourcesFor(e.name, i.global, folder, i.builtin ?? new Set());
+  }
   const caps = ad?.capabilities;
   return {
     ok: true,

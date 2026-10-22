@@ -33,7 +33,8 @@ import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
 /** FR-156: what Settings says of a Claude Code that `auth status` calls signed in: only the first message can confirm it. */
 export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
 import { parseUsdCap } from '../shared/credits';
-import { simpleDiff, clipDiff } from '../shared/diff';
+import { clipDiff } from '../shared/diff';
+import { editOf } from './edits';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
@@ -147,16 +148,11 @@ export function editDiffOf(toolName: string, input: Record<string, unknown> | un
   if (!input) return undefined;
   const f = file ?? 'file';
   const str = (v: unknown): v is string => typeof v === 'string';
-  if (toolName === 'Edit' && str(input.old_string) && str(input.new_string)) return simpleDiff(f, input.old_string, input.new_string) || undefined;
-  if (toolName === 'Write' && str(input.content)) return simpleDiff(f, '', input.content) || undefined;
-  if (toolName === 'MultiEdit' && Array.isArray(input.edits)) {
-    const parts = input.edits
-      .slice(0, 50)
-      .map((e) => (e && typeof e === 'object' && str((e as Record<string, unknown>).old_string) && str((e as Record<string, unknown>).new_string) ? simpleDiff(f, (e as Record<string, string>).old_string, (e as Record<string, string>).new_string) : ''))
-      .filter(Boolean);
-    return parts.length ? clipDiff(parts.join('\n')) : undefined;
-  }
-  return undefined;
+  // the inputs that carry text to compare; spec 005 FR-018: the diff itself comes from the shared edit normalizer (masked, cut)
+  const ok = (toolName === 'Edit' && str(input.old_string) && str(input.new_string)) || (toolName === 'Write' && str(input.content)) || (toolName === 'MultiEdit' && Array.isArray(input.edits));
+  if (!ok) return undefined;
+  const body = editOf(toolName, { ...input, edits: Array.isArray(input.edits) ? input.edits.slice(0, 50) : undefined, file_path: f })?.files[0]?.diff;
+  return body ? clipDiff(`--- a/${f.replace(/[\r\n]+/g, ' ')}\n+++ b/${f.replace(/[\r\n]+/g, ' ')}\n${body}`) : undefined;
 }
 
 /** Durbar's MCP servers as the CLI's `--mcp-config` JSON (`disabled` names left out). Never logged: env and headers may hold secrets. */
@@ -180,7 +176,7 @@ export interface ClaudeLaunch {
   effort?: string;
   /** spec 043 FR-008: the custom agent for this launch (`--agents` JSON and `--agent` name). */
   agent?: { name: string; json: string };
-  /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged. */
+  /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged, never on the command line (`cliLaunchArgs` passes a private file). */
   mcpConfig?: string;
   appendSystemPrompt?: string;
   /** spec 006 FR-019: the workspace's other folders (`--add-dir`, once each). */
@@ -375,7 +371,59 @@ export type TransportFactory = (o: TransportInput) => ClaudeTransport | Promise<
 /** Spec 012 FR-159: the entrypoint Claude records for the chat sessions Durbar starts (not an SDK value, so `claude --resume` lists them). */
 export const CLAUDE_ENTRYPOINT = 'agent-durbar';
 
-export const cliTransportFactory: TransportFactory = (o) => createCliTransport({ file: o.file, args: claudeArgs(o.launch), cwd: o.cwd, env: o.env, handlers: o.handlers });
+/**
+ * Spec 069 FR-009 (change 2026-10-22, review 6 on #489): the `--mcp-config` JSON holds env and header values (Claude Code's user list
+ * and the folder's extras), and a command line is visible to every local user (`ps`). It goes into `mcp-config.json`, mode 0600, in a
+ * new private temp folder (`mkdtemp`, 0700); `--mcp-config` gets the path; `cleanup` deletes the folder (on the CLI's exit).
+ */
+export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): { file: string; cleanup: () => void } {
+  const dir = fs.mkdtempSync(path.join(tmpRoot, 'durbar-mcp-'));
+  const cleanup = (): void => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* the OS cleans its temp folder */
+    }
+  };
+  try {
+    if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
+    const file = path.join(dir, 'mcp-config.json');
+    fs.writeFileSync(file, json, { mode: 0o600, flag: 'wx' });
+    return { file, cleanup };
+  } catch (e) {
+    cleanup();
+    throw e;
+  }
+}
+
+/** The CLI argv for a launch, with the MCP JSON moved to a private file (`privateMcpConfig`). */
+export function cliLaunchArgs(launch: ClaudeLaunch, tmpRoot?: string): { args: string[]; cleanup: () => void } {
+  if (!launch.mcpConfig) return { args: claudeArgs(launch), cleanup: () => undefined };
+  const p = privateMcpConfig(launch.mcpConfig, tmpRoot);
+  return { args: claudeArgs({ ...launch, mcpConfig: p.file }), cleanup: p.cleanup };
+}
+
+export const cliTransportFactory: TransportFactory = (o) => {
+  const { args, cleanup } = cliLaunchArgs(o.launch);
+  try {
+    return createCliTransport({
+      file: o.file,
+      args,
+      cwd: o.cwd,
+      env: o.env,
+      handlers: {
+        ...o.handlers,
+        exit: (info) => {
+          cleanup();
+          o.handlers.exit(info);
+        },
+      },
+    });
+  } catch (e) {
+    cleanup();
+    throw e;
+  }
+};
 
 export interface ClaudeAdapterDeps {
   /** Absolute path of `claude` (from detect); resolved lazily at the first start of a CLI. */

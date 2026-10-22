@@ -9,7 +9,7 @@ const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string'
 const optNum = (v: unknown): boolean => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
 const oneOf = (v: unknown, xs: readonly string[]): boolean => typeof v === 'string' && xs.includes(v);
 
-export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'title', 'agentSchedule', 'remote', 'plan'] as const;
+export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'title', 'agentSchedule', 'remote', 'plan'] as const;
 const STATUSES = ['idle', 'working', 'needs-permission', 'error', 'stopped'] as const;
 
 function permissionProblems(p: unknown, where: string): string[] {
@@ -19,6 +19,22 @@ function permissionProblems(p: unknown, where: string): string[] {
   if (!str(p.kind)) out.push(`${where}.kind missing`);
   if (!str(p.summary)) out.push(`${where}.summary missing`);
   if (!oneOf(p.state, ['pending', 'approved', 'denied'])) out.push(`${where}.state is ${String(p.state)}`);
+  return out;
+}
+
+/** Spec 005 FR-018: the optional `edit` of a toolCall. */
+function editProblems(x: unknown): string[] {
+  if (!isObj(x) || !Array.isArray(x.files) || !x.files.length) return ['toolCall.edit has no files'];
+  const out: string[] = [];
+  x.files.forEach((f, i) => {
+    if (!isObj(f) || !str(f.path) || !f.path) out.push(`toolCall.edit.files[${i}].path missing`);
+    else {
+      if (!oneOf(f.kind, ['edit', 'create', 'write', 'delete', 'move'])) out.push(`toolCall.edit.files[${i}].kind ${String(f.kind)}`);
+      if (!optStr(f.diff) || !optNum(f.added) || !optNum(f.removed) || !optStr(f.movedTo)) out.push(`toolCall.edit.files[${i}] malformed`);
+    }
+  });
+  if (x.partial !== undefined && typeof x.partial !== 'boolean') out.push('toolCall.edit.partial is not a boolean');
+  if (!optNum(x.more)) out.push('toolCall.edit.more is not a number');
   return out;
 }
 
@@ -36,6 +52,7 @@ export function eventProblems(e: unknown): string[] {
       if (!optStr(e.intent)) out.push('intent is not a string');
       if (e.permission !== undefined) out.push(...permissionProblems(e.permission, 'permission'));
       if (e.errorKind !== undefined && (e.errorKind !== 'auth' || e.status !== 'error')) out.push(`errorKind ${String(e.errorKind)} on status ${String(e.status)}`);
+      if (e.reason !== undefined && (e.reason !== 'usage-limit' || e.status !== 'idle')) out.push(`reason ${String(e.reason)} on status ${String(e.status)}`);
       break;
     case 'permission':
       out.push(...permissionProblems(e.permission, 'permission'));
@@ -54,6 +71,7 @@ export function eventProblems(e: unknown): string[] {
       if (!str(e.tool)) out.push('toolCall.tool missing');
       if (!oneOf(e.phase, ['start', 'update', 'complete', 'failed'])) out.push(`toolCall.phase ${String(e.phase)}`);
       if (!optStr(e.output)) out.push('toolCall.output is not a string');
+      if (e.edit !== undefined) out.push(...editProblems(e.edit));
       if (e.mcpAuth !== undefined && (e.mcpAuth !== true || e.phase !== 'failed' || !str(e.mcpServer) || !e.mcpServer)) out.push(`toolCall.mcpAuth on phase ${String(e.phase)} without a failed MCP call`);
       break;
     case 'subagent':
@@ -79,6 +97,14 @@ export function eventProblems(e: unknown): string[] {
       break;
     case 'limit':
       if (!oneOf(e.phase, ['exhausted', 'changed', 'resolved'])) out.push(`limit.phase ${String(e.phase)}`);
+      break;
+    case 'usageLimit':
+      if (!oneOf(e.scope, ['plan', 'quota', 'rate'])) out.push(`usageLimit.scope ${String(e.scope)}`);
+      if (e.resetsAt !== undefined && !(typeof e.resetsAt === 'number' && Number.isFinite(e.resetsAt) && e.resetsAt > 0)) out.push('usageLimit.resetsAt is not a positive time');
+      if (!str(e.source) || !e.source || String(e.source).length > 60) out.push('usageLimit.source missing or too long');
+      if (e.estimated !== undefined && typeof e.estimated !== 'boolean') out.push('usageLimit.estimated is not a boolean');
+      if (e.paid !== undefined && typeof e.paid !== 'boolean') out.push('usageLimit.paid is not a boolean');
+      if (e.update !== undefined && typeof e.update !== 'boolean') out.push('usageLimit.update is not a boolean');
       break;
     case 'title':
       if (!str(e.title) || !e.title) out.push('title.title missing');
