@@ -528,7 +528,7 @@ function docsHtml({ readme, intro, feats, gallery, changes, specsMd = '' }) {
     { id: 'gallery', title: 'Screenshots', html: `<div class="gallery">${gallery.map((g) => `<figure><a href="screenshots/${esc(g.file)}">${img(g.file, g.alt || g.caption)}</a><figcaption>${esc(g.caption)}</figcaption></figure>`).join('')}</div>` },
     // the whole specs index (generated; specs/README.md on GitHub has only its text), links to the specs on GitHub
     { id: 'specs-index', title: 'Specs index', html: makeMd('specs/').parse(specsMd.replace(/^# .*\n/, '')) },
-        { id: 'whats-new', title: "What's new", html: changes ? `<h3>${esc(changes.head)}</h3>${mdRoot.parse(changes.body)}<p><a href="${GH}/blob/main/CHANGELOG.md">Full changelog</a></p>` : '' },
+    { id: 'whats-new', title: "What's new", html: changes ? `<h3>${esc(changes.head)}</h3>${mdRoot.parse(changes.body)}<p><a href="${GH}/blob/main/CHANGELOG.md">Full changelog</a></p>` : '' },
   ];
   const all = [...secs, ...extra];
   const nav = `<a href="index.html#features">Features</a><a class="keep" href="index.html#download">Download</a><a class="keep" href="docs.html">Docs</a><a class="keep gh" href="${GH}">GitHub</a>`;
