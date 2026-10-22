@@ -31,7 +31,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const STRICT_RE = /^<!--\s*specs-index: strict\s*-->$/m;
 const HEADER = ['| # | Feature | Status |', '| --- | --- | --- |'];
-const BLOCK_RE = /<!--\s*specs-index\b[^\n]*\n([\s\S]*?)^-->[ \t]*(?:\n|$)/m; // the block ends at a line that is only "-->"
+const BLOCK_RE = /<!--\s*specs-index\b[^\n]*\n([\s\S]*?)^--!?>[ \t]*(?:\n|$)/m; // the block ends at a line that is only "-->" (or "--!>", which also ends an HTML comment)
 const MARK_RE = /^<!--\s*specs-index group=([A-Za-z0-9._-]+)\s*-->$/;
 const ROW_RE = /^\| \[(\d{3})\]\((\d{3}-[a-z0-9-]+)\/spec\.md\) \| (.*?) \| (.*) \|$/;
 const KEYS = ['group', 'title', 'status'];

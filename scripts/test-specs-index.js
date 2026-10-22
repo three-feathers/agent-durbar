@@ -39,6 +39,7 @@ for (const v of ['a --> b', 'a --!> b']) {
   assert.throws(() => si.setBlock('# T\n', { group: 'g', title: 'T', status: v }), /end the comment block/, `"${v}" is never written`);
 }
 
+assert.deepStrictEqual(si.parseBlock('# X\n\n<!-- specs-index (n)\ngroup: g\ntitle: T\nstatus: S\n--!>\n').meta, { group: 'g', title: 'T', status: 'S' }, 'a block closed by "--!>" (also an HTML comment end) is read');
 const meta = { group: 'g', title: 'T', status: 'S' };
 const spec = '# Feature Specification: X\n\n**Feature Branch**: `x`\n';
 const once = si.setBlock(spec, meta);
