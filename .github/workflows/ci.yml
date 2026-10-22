@@ -125,6 +125,8 @@ jobs:
       CHECK_SHARDS: '3'
       CHECK_JOBS: '3'
       CHECK_MOTION: '1'
+      # FR-111 (owner decision 2026-10-22): theme geometry checks Retro on pull requests and queue entries, every theme otherwise
+      CHECK_ALL_THEMES: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -54,6 +54,9 @@ jobs:
       # macOS runners are slow: one driver at a time and one retry, reported as FLAKY (until the drivers wait instead of sleeping)
       UI_SUITE_JOBS: ${{ matrix.os == 'macos-latest' && '1' || '3' }}
       UI_SUITE_RETRY: ${{ matrix.os == 'macos-latest' && '1' || '0' }}
+      # FR-111 (owner decision 2026-10-22): theme geometry and shots-052-addleft check Clean Office and Retro on pull requests,
+      # every built-in theme on main, nightly and by hand
+      CHECK_ALL_THEMES: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       # FR-100/FR-108: on Linux, ci.yml's office job runs the same office layout (same script, runner image and motion) for pull
       # requests and pushes to main, so it is not run a second time here then; nightly and by hand it runs here too
       OFFICE_HERE: ${{ (matrix.os != 'ubuntu-latest' || (github.event_name != 'pull_request' && github.event_name != 'push')) && '1' || '0' }}
