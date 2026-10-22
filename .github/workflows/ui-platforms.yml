@@ -1,12 +1,16 @@
 name: UI on three OSes
 
-# spec 008 FR-092: the simulator UI checks on macOS, Windows and Linux. The unit tests already run on all three in ci.yml; this
-# adds what only ran on Linux before: theme geometry, the 15-agent office layout (1440x900 and 1280x800, with that OS's fonts),
-# the Mac title bar check (on the Mac runner), and every assertion-bearing driver (`scripts/ui-suite.js`). Screenshots are
-# uploaded per OS so the real Mac and Windows rendering can be looked at. Simulator only: no account, no agent session, no
-# credits. Not a required check until it has been green for a while (making it required is a repo setting: the owner's call).
+# spec 008 FR-092: the simulator UI checks on macOS, Windows and Linux. The unit tests already run in ci.yml; this adds theme
+# geometry, the 15-agent office layout (1440x900 and 1280x800, with that OS's fonts), the Mac title bar check (on the Mac runner)
+# and every assertion-bearing driver (`scripts/ui-suite.js`). Screenshots are uploaded per OS. Simulator only: no account, no
+# agent session, no credits. Not a required check (making it required is a repo setting: the owner's call).
+#
+# Spec 008 FR-108 (owner decision 2026-10-22): ONE job per OS (the 3 jobs per OS of FR-100 cost more queue than they saved), and
+# macOS only nightly and by hand (`gh workflow run ui-platforms.yml --ref <branch>`); a nightly failure opens or updates an issue
+# (nightly-watch.yml). Pull requests and pushes to main run Linux and Windows.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'src/**'
       - 'scripts/**'
@@ -29,33 +33,32 @@ permissions:
   contents: read
 
 concurrency:
-  group: ui-platforms-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }} # only superseded PR runs; main and nightly always finish (as ci.yml, #286)
+  # FR-107: superseded PR runs are cancelled; main, nightly and by-hand runs each have their own group and always finish (#286)
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # spec 008 FR-100: three jobs per OS instead of one (the macOS job alone took 15 min): the office layout in two halves (it already
-  # shards, FR-021) and the drivers. Same checks on every OS; on Linux, pull requests and pushes to main do not run the office layout
-  # a second time here, because ci.yml's office shards run it in the same event (same script, runner image and motion).
   ui:
-    name: UI checks (${{ matrix.os }}, ${{ matrix.part }})
+    name: UI checks (${{ matrix.os }})
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        part: [layout-1, layout-2, drivers]
-        # Linux, PR and push: the office layout runs in ci.yml, so only the drivers job is left (theme geometry runs there, first)
-        exclude: ${{ fromJSON((github.event_name == 'pull_request' || github.event_name == 'push') && '[{"os":"ubuntu-latest","part":"layout-1"},{"os":"ubuntu-latest","part":"layout-2"}]' || '[]') }}
+        # FR-108: macOS nightly and by hand only
+        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest","windows-latest"]') }}
     env:
       UI_SUITE_OUT: ${{ github.workspace }}/ui-shots
-      # fast checks: drivers in parallel (measured 2026-10-20 on Linux: 18/18 in 222 s at 3, against about 560 s one by one); the macOS runner is smaller
+      # fast checks: drivers in parallel (measured 2026-10-20 on Linux: 18/18 in 222 s at 3, against about 560 s one by one)
       # macOS runners are slow: one driver at a time and one retry, reported as FLAKY (until the drivers wait instead of sleeping)
       UI_SUITE_JOBS: ${{ matrix.os == 'macos-latest' && '1' || '3' }}
       UI_SUITE_RETRY: ${{ matrix.os == 'macos-latest' && '1' || '0' }}
-      OFFICE_SHARDS: '2'
-      OFFICE_SHARD: ${{ matrix.part == 'layout-2' && '1' || '0' }}
-      # FR-100: on Linux, ci.yml's office shards run the office layout for pull requests and pushes to main
+      # FR-111 (owner decision 2026-10-22): theme geometry and shots-052-addleft check Clean Office and Retro on pull requests,
+      # every built-in theme on main, nightly and by hand
+      CHECK_ALL_THEMES: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+      # FR-100/FR-108: on Linux, ci.yml's office job runs the same office layout (same script, runner image and motion) for pull
+      # requests and pushes to main, so it is not run a second time here then; nightly and by hand it runs here too
       OFFICE_HERE: ${{ (matrix.os != 'ubuntu-latest' || (github.event_name != 'pull_request' && github.event_name != 'push')) && '1' || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -67,25 +70,26 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: npm ci
       - run: npm run build
-      # On Linux theme geometry runs in the drivers job, before the drivers: the first Electron on a fresh Linux runner failed its first
-      # frame capture (shots-001-welcome, UnknownVizError, PR #507 three times, also when started alone); after geometry it passes, as before
+      # Theme geometry runs first on every OS: the first Electron on a fresh Linux runner failed its first frame capture when a
+      # driver was first (shots-001-welcome, UnknownVizError, PR #507); after geometry it passes
       - name: Theme geometry
-        if: (runner.os != 'Linux' && matrix.part == 'layout-1') || (runner.os == 'Linux' && matrix.part == 'drivers')
         run: node scripts/check-theme-geometry.js
-      - name: Office layout (15 agents, 1440x900 and 1280x800), half ${{ matrix.part == 'layout-2' && '2' || '1' }} of 2
-        if: (matrix.part == 'layout-1' || matrix.part == 'layout-2') && env.OFFICE_HERE == '1' && (success() || failure())
+      # the whole office layout, one Electron at a time (on Windows and macOS all windows share one desktop, and a covered test
+      # window can stop drawing: spec 008 FR-103, PR #516)
+      - name: Office layout (15 agents, 1440x900 and 1280x800)
+        if: env.OFFICE_HERE == '1' && (success() || failure())
         run: node scripts/check-office-overlap.js
       - name: Mac title bar
-        if: runner.os == 'macOS' && matrix.part == 'layout-2' && (success() || failure())
+        if: runner.os == 'macOS' && (success() || failure())
         run: node scripts/check-mac-titlebar.js
       - name: Simulator drivers (scripts/ui-suite.js)
-        if: matrix.part == 'drivers' && (success() || failure())
+        if: success() || failure()
         run: node scripts/ui-suite.js
       - name: Screenshots
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ui-shots-${{ matrix.os }}-${{ matrix.part }}
+          name: ui-shots-${{ matrix.os }}
           path: ui-shots
           retention-days: 14
           if-no-files-found: ignore

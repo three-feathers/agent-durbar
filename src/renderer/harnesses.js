@@ -24,7 +24,7 @@
   /* FR-045: a plain label for each package manager in the install dialog; the command stays visible below it */
   const MANAGER = { official: 'Official installer', brew: 'Homebrew', npm: 'npm', winget: 'winget (Windows Package Manager)' }; /* spec 060 FR-001 */
   /* spec 060 FR-012: on Windows the official installer is the vendor's PowerShell script, so its label says so */
-  const mgr = (pl) => (pl.manager === 'official' && pl.bin === 'powershell' ? 'Official installer (PowerShell)' : MANAGER[pl.manager] || pl.manager);
+  const mgr = (pl) => (pl.manager === 'official' && pl.bin === 'powershell' ? 'Official PowerShell installer' : MANAGER[pl.manager] || pl.manager);
   /* spec 052 FR-073: two plain hints for Copilot (the second only on Windows when PowerShell 7 is missing; text only, nothing is installed) */
   const COPILOT_VSCODE_NOTE = 'Signed in to Copilot in VS Code? That sign-in is separate: this signs in the Copilot CLI once, with the same GitHub account.';
   const PWSH_HINT = 'Copilot runs shell commands with PowerShell 7. Install it with winget: winget install --id Microsoft.PowerShell -e';

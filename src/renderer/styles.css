@@ -47,7 +47,7 @@
   /* spec 052 FR-099: density tokens (Comfortable; html[data-density="compact"] overrides them for the chrome only) */
   --sec-pad:12px 16px; --sec-gap:12px; --dlg-pad:16px 24px; --dlg-gap:12px; --row-pad:8px 12px;
   /* spec 052 FR-165/FR-167: one measure for help text; three dialog widths (S a confirmation, M a form or list, L two columns or a table) */
-  --measure:560px; --menu-w:320px; --dlg-w-s:420px; --dlg-w-m:560px; --dlg-w-l:760px;
+  --measure:560px; --menu-w:320px; --pop-w-s:420px; --pop-w-m:660px; --pop-pad:12px 14px; --dlg-w-s:420px; --dlg-w-m:560px; --dlg-w-l:760px;
   --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   /* spec 070 FR-001: typed theme tokens (theme.js TYPED_TOKENS); a pack may set them, these are Clean Office's */
   --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
@@ -74,7 +74,7 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .brand-mark{width:32px;height:32px;border-radius:10px;background:var(--brand-bg,#e4ece6);display:grid;place-items:center;flex:none}
 .brand h1{margin:0;font-size:15px;line-height:1.15;font-weight:650;letter-spacing:-.01em;white-space:nowrap}
 .proto{display:inline-block;margin-top:2px;font-size:11px;font-weight:600;color:var(--pc-waiting);background:var(--pb-waiting);border:1px solid var(--proto-line);border-radius:999px;padding:0 8px;white-space:nowrap}
-.proto.sim{color:var(--blue-ink);background:var(--pb-working,#e3ecf4);border-color:#c5d6e5}
+.proto.sim{color:var(--blue-ink);background:var(--pb-working,#e3ecf4);border-color:var(--tone-info-line)}
 .stats{display:flex;gap:5px;flex:none;border-radius:var(--r-md);box-shadow:inset 0 0 0 1px var(--line)}
 /* spec 052 FR-103: the counters are one segmented strip. The frame is an inset shadow on the group and each counter keeps its 1px
    (transparent) border and the 5px gap, with a hairline divider drawn in the gap, so every width and the 32px height stay */
@@ -109,8 +109,8 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 body.has-bridge #liveBar{display:flex}
 #liveBar .tgl{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
 #liveBar .btn{height:var(--h-ctl);padding:0 9px;font-size:12.5px}
-.note{font-size:var(--t3-size);color:var(--ink-2);background:var(--pb-waiting,#fbefd6);border:1px solid #f0d9a6;border-radius:12px;padding:8px 12px;max-width:92%;align-self:flex-start;overflow-wrap:break-word}
-.note.err{background:var(--pb-error,#f6e2df);border-color:#ebc7c2;color:var(--red-ink)}
+.note{font-size:var(--t3-size);color:var(--ink-2);background:var(--pb-waiting,#fbefd6);border:1px solid var(--tone-warn-line);border-radius:12px;padding:8px 12px;max-width:92%;align-self:flex-start;overflow-wrap:break-word}
+.note.err{background:var(--pb-error,#f6e2df);border-color:var(--tone-bad-line);color:var(--red-ink)}
 .note .btn{height:28px;margin:0;padding:0 10px}
 .note-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 /* spec 012 FR-157: the chat's sign-in card; the raw error only in a small, closed Details */
@@ -119,8 +119,8 @@ body.has-bridge #liveBar{display:flex}
 .note .btn{margin:0}
 .note.perm{flex:1 1 100%;max-width:100%;align-self:stretch}
 .chips>.note.perm{box-sizing:border-box}
-.note.perm.settled{background:var(--note);border-color:#e4dcc6}
-.note.perm.settled.denied{background:var(--bad-bg);border-color:#ebc7c2}
+.note.perm.settled{background:var(--note);border-color:var(--line)}
+.note.perm.settled.denied{background:var(--bad-bg);border-color:var(--tone-bad-line)}
 /* questions from the agent (spec 012 FR-130) */
 .note.question .q-item{margin-top:8px}
 .note.question .q-text{margin:0 0 6px;font-size:13px;line-height:1.4;color:var(--ink)}
@@ -155,7 +155,7 @@ body.has-bridge #liveBar{display:flex}
 .note .btn.session:hover{background:var(--tone-info-hover)}
 .grants{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .grants[hidden]{display:none}
-.gchip{display:inline-flex;align-items:center;gap:2px;height:22px;padding:0 2px 0 9px;border-radius:999px;background:var(--pb-done,#e0eee6);border:1px solid #bcd6c6;color:var(--pc-done,#2f6a47);font-size:11px;font-weight:600;max-width:100%;min-width:0}
+.gchip{display:inline-flex;align-items:center;gap:2px;height:22px;padding:0 2px 0 9px;border-radius:999px;background:var(--pb-done,#e0eee6);border:1px solid var(--tone-ok-line);color:var(--pc-done,#2f6a47);font-size:11px;font-weight:600;max-width:100%;min-width:0}
 .gchip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .gchip button{flex:none;width:18px;height:18px;border:0;background:transparent;border-radius:50%;cursor:pointer;display:grid;place-items:center;color:inherit;padding:0}
 .gchip button:hover{background:rgba(0,0,0,.09)}
@@ -165,16 +165,16 @@ body.has-bridge #liveBar{display:flex}
 .gchip.gchip-btn{padding:0 9px;gap:5px;cursor:pointer;font-family:inherit;height:22px;width:auto;border-radius:999px}
 .gchip.gchip-btn:hover{filter:brightness(.97)}
 .gchip.gchip-btn svg{width:10px;height:10px;opacity:.8}
-.grants-pop{position:absolute;left:0;top:calc(100% + 4px);z-index:70;width:min(420px,100%);max-height:min(320px,50vh);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:4px;box-shadow:var(--shadow-pop);display:flex;flex-direction:column;gap:2px}
+.grants-pop{position:absolute;left:0;top:calc(100% + 4px);z-index:70;width:min(var(--pop-w-s),calc(100vw - 32px));max-height:min(320px,50vh);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--pop-pad);box-shadow:var(--shadow-pop);display:flex;flex-direction:column;gap:2px}
 .grants-pop[hidden]{display:none}
 .gp-list{list-style:none;margin:0;padding:0}
-.gp-row{display:flex;align-items:center;gap:8px;min-height:28px;padding:2px 4px 2px 10px;border-radius:var(--r-md);font-size:var(--t4-size);color:var(--ink)}
+.gp-row{display:flex;align-items:center;gap:8px;min-height:28px;padding:2px 4px 2px 8px;border-radius:var(--r-md);font-size:var(--t4-size);color:var(--ink)}
 .gp-row:hover{background:var(--surface-2)}
 .gp-t{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gp-row button{flex:none;width:24px;height:24px;border:0;background:transparent;border-radius:50%;cursor:pointer;display:grid;place-items:center;color:var(--ink-2);padding:0}
 .gp-row button:hover{background:var(--surface-2);color:var(--ink)}
 .gp-row button svg{width:10px;height:10px}
-.gp-all{align-self:flex-end;margin:2px 4px 2px 0}
+.gp-all{align-self:flex-end;margin:4px 0 0}
 .btn[hidden]{display:none}
 
 /* ---------- workspace ---------- */
@@ -401,8 +401,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .chip svg{width:13px;height:13px;flex:none}
 .chip b{font-weight:600;color:var(--ink);flex:none}
 .chip code{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0}
-.chip .res{font-size:11px;padding-left:6px;border-left:1px solid #cfd8d2;color:var(--sage-ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;max-width:40%}
-.chip.fail{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}.chip.fail .res{color:var(--red-ink);border-color:#e3bdb7}
+.chip .res{font-size:11px;padding-left:6px;border-left:1px solid var(--line);color:var(--sage-ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;max-width:40%}
+.chip.fail{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}.chip.fail .res{color:var(--red-ink);border-color:var(--tone-bad-line)}
 .chip.run .res{color:var(--blue-ink)}
 .chip[hidden]{display:none}
 .chip .detail,.chip .xbody{display:none}
@@ -489,7 +489,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* spec 052 (2026-10-21, round 1): while a theme is being tried, toasts sit above its bar instead of on top of it (1280x800 overlap) */
 body:has(#aiTryBar) #toasts{bottom:100px}
 .toast{overflow-wrap:break-word;pointer-events:auto;background:#2f3a36;color:#f7f4ee;padding:10px 16px;border-radius:12px;font-size:13px;line-height:1.45;box-shadow:0 8px 24px rgba(40,35,25,.18);animation:pop .25s ease-out;max-width:420px}
-.toast.warn{border-left:4px solid #e5be78}
+.toast.warn{border-left:4px solid var(--tone-warn-line)}
 .toast code{font-family:var(--font-mono);background:color-mix(in srgb,var(--raised) 14%,transparent);padding:1px 6px;border-radius:6px}
 
 @media (max-width:1320px){
@@ -681,7 +681,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sc{contain:paint}
 
 /* attachments: cap message, counter, drop overlay */
-.att-note{margin:0 0 8px;padding:6px 10px;border-radius:9px;background:var(--bad-bg);border:1px solid #ebc7c2;color:var(--red-ink);font-size:12px;line-height:1.4;overflow-wrap:break-word}
+.att-note{margin:0 0 8px;padding:6px 10px;border-radius:9px;background:var(--bad-bg);border:1px solid var(--tone-bad-line);color:var(--red-ink);font-size:12px;line-height:1.4;overflow-wrap:break-word}
 .att-note[hidden]{display:none}
 .att-count{align-self:center;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;padding-left:2px}
 .panel-in{position:relative}
@@ -796,7 +796,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .prev-n{font-weight:500;color:var(--muted);font-size:var(--t4-size);margin-left:4px}
 .prev-h{font-size:var(--t4-size);font-weight:650;color:var(--ink);margin:8px 0 4px}
 .prev-h small{font-size:var(--t5-size);font-weight:500;color:var(--muted);margin-left:4px} /* FR-166: the browser's own "smaller" gave 10px */
-.tag{display:inline-block;font-size:10.5px;font-weight:650;padding:0 7px;border-radius:999px;background:var(--pb-waiting,#fbefd6);border:1px solid #f0d9a6;color:var(--amber-ink);vertical-align:1px}
+.tag{display:inline-block;font-size:10.5px;font-weight:650;padding:0 7px;border-radius:999px;background:var(--pb-waiting,#fbefd6);border:1px solid var(--tone-warn-line);color:var(--amber-ink);vertical-align:1px}
 .prev-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid var(--line)}
 .prev-tx{flex:1;min-width:0;display:flex;flex-direction:column}
 .prev-tx b{font-size:var(--t4-size);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -816,7 +816,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 
 /* read-only VS Code transcript */
 .vsview{display:flex;flex-direction:column;gap:12px;min-width:0}
-.vsbar{position:sticky;top:-16px;z-index:2;display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:12px;background:var(--pb-waiting,#fbefd6);border:1px solid #f0d9a6;color:var(--amber-ink)}
+.vsbar{position:sticky;top:-16px;z-index:2;display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:12px;background:var(--pb-waiting,#fbefd6);border:1px solid var(--tone-warn-line);color:var(--amber-ink)}
 .vsbar div{flex:1;min-width:0;display:flex;flex-direction:column;font-size:12px}
 .vsbar b{font-size:13px}
 .vst{margin:4px 0 0;font-size:16px}
@@ -839,10 +839,10 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .dlg textarea{border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:8px 10px;font:inherit;font-size:13px;font-weight:400;color:var(--ink);resize:vertical}
 .ho-dlg textarea{width:100%;box-sizing:border-box;min-height:260px;max-height:55vh;resize:vertical;border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:10px 12px;font:inherit;font-family:var(--font-mono);font-size:12px;line-height:1.5;color:var(--ink)}
 .dlg .dbtn{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
-#foldersPop{position:fixed;top:58px;right:14px;z-index:40;width:min(660px,calc(100vw - 28px));max-height:min(70vh,520px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:8px 14px 12px}
+#foldersPop{position:fixed;top:58px;right:14px;z-index:40;width:min(var(--pop-w-m),calc(100vw - 32px));max-height:min(70vh,520px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:var(--pop-pad)}
 #foldersPop[hidden]{display:none}
 /* floors (spec 033): panel like the folders popover; floor tag in room headers and door plates */
-#floorsPop{position:fixed;top:58px;right:14px;z-index:40;width:min(600px,calc(100vw - 28px));max-height:min(72vh,560px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:8px 14px 12px}
+#floorsPop{position:fixed;top:58px;right:14px;z-index:40;width:min(var(--pop-w-m),calc(100vw - 32px));max-height:min(72vh,560px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:var(--pop-pad)}
 #floorsPop[hidden]{display:none}
 #floorsPop:focus{outline:none}
 #liveBar #floorsBtn{display:inline-flex;align-items:center;gap:4px;padding:0 7px}
@@ -851,7 +851,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .fl-cnt{font-variant-numeric:tabular-nums}
 .floors-set{max-width:640px}
 .floors-set:focus{outline:none}
-.fl-floor{border-top:1px solid #efe9dd;padding:6px 0}
+.fl-floor{border-top:1px solid var(--line);padding:6px 0}
 .fl-row{display:flex;align-items:center;gap:6px}
 .fl-row .btn{height:var(--h-ctl);padding:0 9px;font-size:12px}
 .fl-sw{min-width:44px;height:28px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:12px;font-weight:650;color:var(--muted);cursor:pointer}
@@ -865,31 +865,37 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .fl-folder{display:flex;align-items:center;gap:6px;padding:4px 0 0 52px;font-size:12px}
 .fl-fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fl-folder select{height:26px;max-width:170px;border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:8px;font:inherit;font-size:12px;color:var(--ink)}
-.fl-new{display:flex;gap:6px;border-top:1px solid #efe9dd;padding-top:8px;margin-top:2px}
+.fl-new{display:flex;gap:6px;border-top:1px solid var(--line);padding-top:8px;margin-top:2px}
 .fl-new input{flex:1;min-width:0;height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:8px;padding:0 8px;font:inherit;font-size:12px;background:var(--surface-2);color:var(--ink)}
 .fl-new .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
-.fl-err{margin:6px 0 0;font-size:12px;color:#9a3b30}
+.fl-err{margin:6px 0 0;font-size:12px;color:var(--tone-bad-ink)}
 .fl-err[hidden]{display:none}
-.floor-tag{flex:0 1 auto;min-width:0;max-width:16ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;font-weight:650;line-height:16px;padding:0 6px;border-radius:999px;border:1px solid #d9d1c0;background:color-mix(in srgb,var(--raised) 60%,transparent);color:var(--ink-2)}
+.floor-tag{flex:0 1 auto;min-width:0;max-width:16ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;font-weight:650;line-height:16px;padding:0 6px;border-radius:999px;border:1px solid var(--line);background:color-mix(in srgb,var(--raised) 60%,transparent);color:var(--ink-2)}
 .plate-tx .floor-tag{display:inline-block;vertical-align:1px;margin-left:5px;max-width:12ch}
 .fl-into{display:flex;align-items:center;gap:8px;padding:2px 0 8px;font-size:12.5px;color:var(--ink-2)}
 .fl-into select{height:var(--h-ctl);max-width:220px;border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:8px;font:inherit;font-size:12.5px;color:var(--ink)}
 .fp-h{font-size:13px;font-weight:650;padding:8px 0 4px}
 .fp-h small{display:block;margin:2px 0 0;font-size:12px;font-weight:400;line-height:1.4;color:var(--muted)} /* spec 052 FR-170: the help sits on its own line under the title */
 .fp-empty{font-size:12px;color:var(--muted)}
-.fp-row{display:flex;align-items:center;gap:6px;padding:7px 0;border-top:1px solid #efe9dd}
+.fp-row{display:flex;align-items:center;gap:6px;padding:7px 0;border-top:1px solid var(--line)}
 .fp-row.hid .fp-t{opacity:.65}
 .fp-t{flex:1;min-width:0;display:flex;flex-direction:column}
 .fp-t b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fp-t small{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fp-row .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
 /* scheduled prompts (spec 044) */
-.fp-h .fp-pause{float:right;font-size:12px;color:var(--ink-2);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
-.sched-dlg .sc-list{display:grid;gap:6px;margin:6px 0 12px;max-height:240px;overflow-y:auto}
+.fp-h .fp-pause{margin:6px 0 2px;font-size:12px;font-weight:400;color:var(--ink-2);display:flex;gap:6px;align-items:center;cursor:pointer}
+.sched-dlg .sc-list{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;margin:6px 0 12px;max-height:240px;overflow-y:auto}
 .sched-dlg .sc-row,.sched-set .sc-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
 .sched-dlg .sc-row.off .sc-t,.sched-set .sc-row.off .sc-t{opacity:.6}
 .sched-dlg .sc-t,.sched-set .sc-t{flex:1;min-width:0;display:flex;flex-direction:column}
 .sched-dlg .sc-t b,.sched-set .sc-t b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sched-dlg .sc-t .sc-p,.sched-set .sc-t .sc-p{font:inherit;font-size:13px;font-weight:600;color:inherit;background:none;border:0;padding:0;text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%} /* spec 044 FR-025: the cut prompt is a button */
+.sched-dlg .sc-t .sc-p:hover,.sched-set .sc-t .sc-p:hover{text-decoration:underline}
+.sched-dlg .sc-full,.sched-set .sc-full{margin:4px 0;font-size:12px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
+.sched-dlg .sc-full[hidden],.sched-set .sc-full[hidden]{display:none}
+.sched-dlg .sc-form h4{margin:0;font-size:13px}
+.sched-dlg .sc-form h4[hidden]{display:none}
 .sched-dlg .sc-t small,.sched-set .sc-t small{font-size:11px;color:var(--muted)}
 .sched-dlg .sc-row .btn,.sched-set .sc-row .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
 .sched-dlg .sc-empty,.sched-dlg .sc-paused{font-size:12px;color:var(--muted);margin:6px 0}
@@ -1055,7 +1061,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .modeic svg{width:13px;height:13px}
 .modeic.mode-ask{color:var(--blue-ink)}.modeic.mode-allow{color:var(--red-ink)} /* spec 052 FR-018: Allow all in the warning ink (amber is waiting) */
 /* spec 052 FR-065: the "Allow all" words on every card of an Allow all folder, in the icon's slot; same 15px line, so the card keeps its size */
-.modebadge{display:inline-block;flex:none;align-self:center;height:15px;line-height:13px;padding:0 4px;border:1px solid #e3bdb7;border-radius:4px;background:var(--pb-error);color:var(--red-ink);font-size:10.5px;font-weight:700;letter-spacing:.01em;white-space:nowrap;margin-left:2px}
+.modebadge{display:inline-block;flex:none;align-self:center;height:15px;line-height:13px;padding:0 4px;border:1px solid var(--tone-bad-line);border-radius:4px;background:var(--pb-error);color:var(--red-ink);font-size:10.5px;font-weight:700;letter-spacing:.01em;white-space:nowrap;margin-left:2px}
 .stage[data-d="mini"] .l1:has(.modebadge) .name,.stage[data-d="micro"] .l1:has(.modebadge) .name{max-width:calc(100% - 3.7em - 52px)} /* room for the badge and a short status; the name still shows 3+ characters */
 .stage[data-d="full"] .who{align-items:center}
 .mode-chip{display:inline-flex;align-items:center;gap:6px;height:var(--h-chip);padding:0 8px 0 8px;border-radius:999px;border:1px solid var(--line-2);background:var(--raised);font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer}
@@ -1063,8 +1069,8 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .mode-chip .mi{display:grid;width:14px;height:14px}.mode-chip .mi svg{width:14px;height:14px}
 .mode-chip .chev{width:10px;height:10px;transform:rotate(90deg);opacity:.6}
 .mode-chip.mode-ask{color:var(--tone-info-ink);background:var(--tone-info-faint);border-color:var(--tone-info-line)}
-.mode-chip .mode-restored{font-size:10.5px;font-weight:600;letter-spacing:.02em;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid #e5be78;color:var(--amber-ink)}
-.mode-chip.mode-allow{color:var(--red-ink);background:var(--pb-error);border-color:#e3bdb7} /* spec 052 FR-065: the chat header says Allow all in the same red as the cards */
+.mode-chip .mode-restored{font-size:10.5px;font-weight:600;letter-spacing:.02em;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid var(--tone-warn-line);color:var(--amber-ink)}
+.mode-chip.mode-allow{color:var(--red-ink);background:var(--pb-error);border-color:var(--tone-bad-line)} /* spec 052 FR-065: the chat header says Allow all in the same red as the cards */
 .mode-menu{position:fixed;z-index:70;width:min(var(--menu-w),calc(100vw - 16px));background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:var(--shadow-pop);display:flex;flex-direction:column;gap:2px}
 .mode-menu button{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:8px 10px;border:0;border-radius:10px;background:transparent;cursor:pointer}
 .mode-menu button:hover,.mode-menu button:focus-visible{background:var(--surface-2)}
@@ -1085,7 +1091,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .dlg .dpick small{color:var(--muted);font-size:11px;flex:none;white-space:nowrap}
 .dlg .dpick.is-off{cursor:default;color:var(--muted)}
 .dlg .btn:disabled{opacity:.55;cursor:default}
-.btn.primary.warn{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
+.btn.primary.warn{background:var(--warn-bg);border-color:var(--tone-warn-line);color:var(--amber-ink)}
 .btn.primary.warn:hover{background:var(--tone-warn-hover)}
 /* spec 052 FR-076: red means it deletes or ends (End session, Remove, Delete floor, Clear); amber .primary.warn only grants more power (Allow all, Turn on remote) */
 .btn.primary.danger{background:var(--red-ink);border-color:transparent;color:var(--surface)}
@@ -1103,7 +1109,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .ctxgrp{display:inline-flex;align-items:center;gap:6px;min-width:0}
 .model-menu{max-height:min(540px,calc(100vh - 24px));overflow:auto}
 .mode-menu .mm-h{margin:6px 10px 2px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
-.mode-menu .mm-why{margin:4px 6px 2px;padding:8px 10px;font-size:12px;line-height:1.4;color:var(--amber-ink);background:var(--warn-bg);border:1px solid #e5be78;border-radius:10px}
+.mode-menu .mm-why{margin:4px 6px 2px;padding:8px 10px;font-size:12px;line-height:1.4;color:var(--amber-ink);background:var(--warn-bg);border:1px solid var(--tone-warn-line);border-radius:10px}
 .mode-menu button[aria-disabled=true]{opacity:1;color:var(--muted);cursor:not-allowed}
 .mode-menu .mm-seg{display:flex;flex-wrap:wrap;gap:4px;padding:2px 10px 6px}
 .mode-menu .mm-seg button{align-items:center;padding:3px 10px;border:1px solid var(--line-2);border-radius:999px;font-size:11px;background:var(--raised)}
@@ -1113,8 +1119,8 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .mode-menu .mm-pend button{padding:2px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--raised);font-size:11px;align-items:center}
 .mode-menu .mm-foot{padding:6px 10px 8px}
 .mode-menu .mm-model{margin-top:4px;border-top:1px solid var(--line);border-radius:0 0 10px 10px}
-.note.info{background:var(--note);border-color:#e4dcc6;font-size:12px;padding:5px 10px;color:var(--ink-2)}
-.note.info.cline.failed{background:var(--bad-bg);border-color:#ebc7c2;color:var(--red-ink)}
+.note.info{background:var(--note);border-color:var(--line);font-size:12px;padding:5px 10px;color:var(--ink-2)}
+.note.info.cline.failed{background:var(--bad-bg);border-color:var(--tone-bad-line);color:var(--red-ink)}
 .note.fresh{max-width:560px}
 .toast.with-act{display:flex;align-items:center;gap:14px}
 .toast-act{white-space:nowrap;flex:none;background:transparent;color:#f7f4ee;border:1px solid color-mix(in srgb,var(--raised) 45%,transparent);border-radius:8px;padding:2px 12px;font-size:12px;font-weight:700;cursor:pointer}
@@ -1167,7 +1173,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .ai-trybar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:calc(100vw - 32px);padding:10px 12px 10px 16px;border-radius:14px;background:var(--surface);color:var(--ink);border:1px solid var(--line-2);box-shadow:0 12px 36px rgba(0,0,0,.28);font-size:13px}.ai-trybar span{margin-right:6px}
 
 /* spec 052 FR-001: the answer bar above the composer, while a waiting request is out of view */
-.answer-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 auto 8px;width:min(860px,calc(100% - 32px));padding:8px 10px 8px 14px;background:var(--warn-bg);border:1px solid #e5be78;border-radius:12px;box-shadow:0 4px 14px rgba(40,35,25,.08)}
+.answer-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 auto 8px;width:min(860px,calc(100% - 32px));padding:8px 10px 8px 14px;background:var(--warn-bg);border:1px solid var(--tone-warn-line);border-radius:12px;box-shadow:0 4px 14px rgba(40,35,25,.08)}
 .answer-bar[hidden]{display:none}
 .answer-bar .ab-q{flex:1 1 280px;min-width:0;font-size:13px;line-height:1.4;color:var(--ink);max-height:8.6em;overflow:auto;overflow-wrap:break-word}
 .answer-bar .ab-q b{color:var(--amber-ink)}
@@ -1180,7 +1186,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .answer-bar .ab-other{box-sizing:border-box;height:var(--h-ctl);width:170px;min-width:120px;flex:1 1 150px;border:1px solid var(--line-ctl);border-radius:9px;padding:0 9px;font:inherit;font-size:12px;background:var(--surface);color:var(--ink)}
 
 /* spec 052 FR-015: a notice strip under the top bar (it takes its own room; the office lays out below it) */
-.notice-strip{flex:none;display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:1px 20px;background:var(--warn-bg);border-bottom:1px solid #e5be78;color:var(--ink);font-size:12px;line-height:1.35}
+.notice-strip{flex:none;display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:1px 20px;background:var(--warn-bg);border-bottom:1px solid var(--tone-warn-line);color:var(--ink);font-size:12px;line-height:1.35}
 .notice-strip[hidden]{display:none}
 .notice-strip .ns-ic{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:999px;background:var(--amber-ink);color:var(--surface);font-weight:800;font-size:12px;flex:none}
 .notice-strip .ns-t{flex:1 1 360px;min-width:0}
@@ -1208,7 +1214,7 @@ html:not([data-ui]) .seg button{border-radius:6px}
 #defaultsBtn .dv{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #defaultsBtn.is-allow{color:var(--red-ink);border-color:color-mix(in srgb,var(--red) 45%,var(--line));background:color-mix(in srgb,var(--red) 9%,var(--surface))} /* spec 052 (2026-10-21, round 5): new sessions start in Allow all */
 #defaultsBtn::after{content:"";flex:none;width:5px;height:5px;margin:-3px 1px 0 2px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);opacity:.7}
-#defaultsPop{position:fixed;top:52px;left:14px;z-index:55;width:max-content;max-width:calc(100vw - 28px);background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--r-lg);padding:10px 12px 12px;box-shadow:var(--shadow-pop);font-size:13px}
+#defaultsPop{position:fixed;top:52px;left:14px;z-index:55;width:min(var(--pop-w-s),calc(100vw - 32px));background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--pop-pad);box-shadow:var(--shadow-pop);font-size:13px}
 #defaultsPop[hidden]{display:none}
 #defaultsPop .dp-h{margin:0 0 8px;font-size:var(--t3-size);font-weight:600;display:flex;flex-direction:column;gap:1px}
 #defaultsPop .dp-h small{font-size:var(--t5-size);font-weight:400;color:var(--muted)}
@@ -1238,7 +1244,7 @@ body.has-bridge:not(.simple) .folder-ctl #foldersBtn{border-top-left-radius:0;bo
 /* FR-105: the counters and Needs you sit at the right end of the one row */
 .inbox-btn:not([hidden]),.inbox-btn[hidden]+.stats{margin-left:auto}
 .inbox-btn b{font-variant-numeric:tabular-nums}
-.inbox-btn.attn{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
+.inbox-btn.attn{background:var(--warn-bg);border-color:var(--tone-warn-line);color:var(--amber-ink)}
 /* FR-167: the inbox is an L dialog (class `l`) on the dialog padding tokens; the compact rows of round 10 stay */
 .inbox-dlg .dbody{max-height:min(64vh,620px);overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px}
 .inbox-row{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;padding:var(--row-pad);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--raised)}
@@ -1370,7 +1376,7 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .inbox-empty{display:flex;align-items:flex-start;gap:10px}
 .inbox-empty b{display:block;color:var(--ink);font-size:var(--t2-size);font-weight:650}
 .inbox-empty small{display:block;margin-top:2px;font-size:12px}
-.ib-ok{flex:none;position:relative;width:22px;height:22px;border-radius:50%;background:var(--pb-done);border:1px solid #bcd6c6}
+.ib-ok{flex:none;position:relative;width:22px;height:22px;border-radius:50%;background:var(--pb-done);border:1px solid var(--tone-ok-line)}
 .ib-ok::after{content:"";position:absolute;left:7px;top:3.5px;width:5px;height:10px;border:solid var(--pc-done);border-width:0 2px 2px 0;transform:rotate(45deg)}
 .ib-ok{animation:ibpop .26s cubic-bezier(.3,1.4,.5,1) both} /* spec 052 FR-068: All clear pops in, its tick follows */
 .ib-ok::after{animation:ibtick .2s ease-out .16s both}

@@ -1,11 +1,24 @@
 name: CI
 
+# Spec 008 FR-104..FR-110 (owner decision 2026-10-22, "come out of this CI bottleneck"): a pull request costs as few runner
+# tickets as possible, because on the Free plan the queue wait (10-30 min) is much longer than any job (1-3 min).
+#   - no separate "What changed" job: each job works out what changed itself (.github/scripts/ci-changes.sh), so no job waits
+#     for another job's runner first;
+#   - one office layout job instead of 6 shards and a summary job: the parts run in parallel on one runner (check-parallel.js);
+#   - macOS does not run on pull requests or merge queue entries (it had the longest queue): the required check
+#     "Build and test (macos-latest)" reports from a short Linux job that says so; the real macOS build and test runs on every
+#     push to main, nightly and by hand, and a nightly failure opens or updates an issue (nightly-watch.yml);
+#   - drafts run nothing until they are marked ready for review; a newer push cancels the PR's older run.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
-  # spec 008 FR-098: the merge queue runs the required checks on each queue entry (treated like a push to main: everything runs)
+  # spec 008 FR-098: the merge queue runs the required checks on each queue entry (like a push to main, without macOS: FR-106)
   merge_group:
+  # FR-106: nightly, with the real macOS build and test
+  schedule:
+    - cron: '41 2 * * *'
   # spec 008 FR-031: the full layout matrix in every theme runs only on demand:
   #   gh workflow run ci.yml --ref <branch> -f full_themes=true
   workflow_dispatch:
@@ -19,123 +32,130 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  # A newer push cancels a PR's older run; on main every merge commit runs to the end (a release is tagged on one).
+  # FR-107: one group per pull request (a newer push cancels the older run); every other run has its own group, so runs on main,
+  # merge queue entries and nightly runs never cancel or wait for each other (a release is tagged on a main commit)
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Spec 008 delta 2026-10-19 (faster CI): a pull request that only touches docs, specs or Markdown skips the build, test and
-  # office jobs (a skipped required job counts as passed). Pushes to main and merge queue entries (FR-098) always run everything.
-  changes:
-    name: What changed
-    runs-on: ubuntu-latest
-    outputs:
-      code: ${{ steps.diff.outputs.code }}
-      themes: ${{ steps.diff.outputs.themes }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - id: diff
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then echo "code=true" >> "$GITHUB_OUTPUT"; echo "themes=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
-          echo "$files"
-          # spec 008 FR-031: the theme geometry check runs when the look or the checks themselves can change
-          if echo "$files" | grep -qE '^(src/renderer/|scripts/check-office-overlap\.js|scripts/check-theme-geometry\.js|scripts/check-parallel\.js|scripts/fixtures/themes/|\.github/workflows/ci\.yml)'; then echo "themes=true" >> "$GITHUB_OUTPUT"; else echo "themes=false" >> "$GITHUB_OUTPUT"; fi
-          if echo "$files" | grep -qvE '^(docs/|specs/)|\.md$'; then echo "code=true" >> "$GITHUB_OUTPUT"; else echo "code=false" >> "$GITHUB_OUTPUT"; echo "Docs, specs and Markdown only: build, test and office checks are skipped."; fi
-
   build-test:
     name: Build and test (${{ matrix.os }})
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run build
-      # compiles the test scripts once and runs the suites in parallel (scripts/run-tests.js)
-      - run: npm test
-
-  package-smoke:
-    name: Package smoke (unpacked Linux app)
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      # Builds the app with electron-builder and fails if the Copilot runtime is not unpacked (scripts/after-pack.js).
-      - run: npm run pack:dir
-
-  office-shard:
-    name: Office layout shard ${{ matrix.shard }}/6
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { shard: 1, index: 0 }
-          - { shard: 2, index: 1 }
-          - { shard: 3, index: 2 }
-          - { shard: 4, index: 3 }
-          - { shard: 5, index: 4 }
-          - { shard: 6, index: 5 }
+          - os: ubuntu-latest
+            runner: ubuntu-latest
+            real: 'yes'
+          - os: windows-latest
+            runner: windows-latest
+            real: 'yes'
+          # FR-106: on pull requests and merge queue entries the macOS entry runs on Linux and only reports (the check is required)
+          - os: macos-latest
+            runner: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'ubuntu-latest' || 'macos-latest' }}
+            real: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'no' || 'yes' }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: macOS runs after the merge
+        if: matrix.real != 'yes'
+        run: |
+          echo "macOS build and test does not run on pull requests or merge queue entries (spec 008 FR-106, owner decision 2026-10-22)." | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "It runs on every push to main, nightly (a failure opens or updates an issue) and by hand: gh workflow run ci.yml --ref <branch>" | tee -a "$GITHUB_STEP_SUMMARY"
+      - if: matrix.real == 'yes'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      # Simulator only (no Copilot login, no AI credits). Runs Electron under xvfb; each shard takes every 6th unit of the check
-      # (spec 008 FR-099: 6 shards, was 4; measured 2.3-3.3 min per shard at 4).
-      - run: sudo apt-get update && sudo apt-get install -y xvfb
-      - run: npm run check:office
+          fetch-depth: 2
+      - id: changes
+        if: matrix.real == 'yes'
+        shell: bash
         env:
-          OFFICE_SHARDS: 6
-          OFFICE_SHARD: ${{ matrix.index }}
-
-  # Spec 008 FR-031: a theme may not change sizes, so the full layout check above runs in Clean Office only, and this job proves
-  # every other theme lays out the same (every box and font size, display text neutralised) and passes the office rules in its
-  # own fonts. About a minute for all themes.
-  theme-geometry:
-    name: Theme geometry
-    needs: changes
-    if: needs.changes.outputs.themes == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+          EVENT_NAME: ${{ github.event_name }}
+        run: bash .github/scripts/ci-changes.sh
+      - if: steps.changes.outputs.code == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: sudo apt-get update && sudo apt-get install -y xvfb
-      - run: npm run check:geometry
+      - if: steps.changes.outputs.code == 'true'
+        run: npm ci
+      - if: steps.changes.outputs.code == 'true'
+        run: npm run typecheck
+      - if: steps.changes.outputs.code == 'true'
+        run: npm run build
+      # compiles the test scripts once and runs the suites in parallel (scripts/run-tests.js)
+      - if: steps.changes.outputs.code == 'true'
+        run: npm test
+
+  package-smoke:
+    name: Package smoke (unpacked Linux app)
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: bash .github/scripts/ci-changes.sh
+      - if: steps.changes.outputs.code == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.changes.outputs.code == 'true'
+        run: npm ci
+      # Builds the app with electron-builder and fails if the Copilot runtime is not unpacked (scripts/after-pack.js).
+      - if: steps.changes.outputs.code == 'true'
+        run: npm run pack:dir
+
+  # The required check "Office layout check (xvfb)" is this one job (FR-105; it was 6 shard jobs and a summary job). Simulator
+  # only (no login, no credits). Theme geometry first (spec 008 FR-031: a theme may not change sizes, so the full layout check
+  # runs in Clean Office only and geometry proves every other theme lays out the same), then the office layout in CHECK_SHARDS
+  # parts, CHECK_JOBS at a time, each in its own Electron and xvfb display (scripts/check-parallel.js), motion on as before.
+  office-check:
+    name: Office layout check (xvfb)
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CHECK_SHARDS: '3'
+      CHECK_JOBS: '3'
+      CHECK_MOTION: '1'
+      # FR-111 (owner decision 2026-10-22): theme geometry checks Retro on pull requests and queue entries, every theme otherwise
+      CHECK_ALL_THEMES: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: bash .github/scripts/ci-changes.sh
+      - if: steps.changes.outputs.code == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.changes.outputs.code == 'true'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - if: steps.changes.outputs.code == 'true'
+        run: npm ci
+      - if: steps.changes.outputs.code == 'true'
+        run: npm run build
+      - name: Theme geometry
+        if: steps.changes.outputs.code == 'true' && steps.changes.outputs.themes == 'true'
+        run: node scripts/check-theme-geometry.js
+      - name: Office layout (15 agents, 1440x900 and 1280x800), parts in parallel
+        if: steps.changes.outputs.code == 'true' && (success() || failure())
+        run: node scripts/check-parallel.js
 
   # On demand only (workflow_dispatch with full_themes): the full office check in every other theme, reduced motion, 2 shards each.
   theme-shard:
     name: Theme layout ${{ matrix.theme }} ${{ matrix.shard }}/2
-    needs: changes
     if: github.event_name == 'workflow_dispatch' && inputs.full_themes
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -161,20 +181,3 @@ jobs:
         run: |
           if [ "$THEME" = user ]; then export OFFICE_USER_THEME=scripts/fixtures/themes/check-user.json; else export DURBAR_THEME="$THEME" OFFICE_THEME="$THEME"; fi
           npm run check:office
-
-  # The required check keeps its name: it passes when the office shards, the theme geometry and (on demand) the full theme
-  # shards passed or were skipped.
-  office-check:
-    name: Office layout check (xvfb)
-    needs: [changes, office-shard, theme-geometry, theme-shard]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - shell: bash
-        run: |
-          r="${{ needs.office-shard.result }}"; g="${{ needs.theme-geometry.result }}"; t="${{ needs.theme-shard.result }}"
-          echo "office shards: $r; theme geometry: $g; full theme shards: $t"
-          if [ "${{ needs.changes.result }}" != "success" ]; then exit 1; fi
-          ok() { [ "$1" = "success" ] || [ "$1" = "skipped" ]; }
-          if ok "$r" && ok "$g" && ok "$t"; then exit 0; fi
-          exit 1
