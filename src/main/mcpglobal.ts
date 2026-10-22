@@ -199,6 +199,25 @@ const tomlInline2 = (v: string): Record<string, string> => {
   return out;
 };
 
+/** Every key of an inline table (any value kind); undefined when it is not one inline table on this line. */
+const tomlInlineKeyNames = (v: string): string[] | undefined => {
+  const m = /^\{(.*)\}$/.exec(v.trim());
+  if (!m) return undefined;
+  return (m[1].match(/(?:^|,)\s*("(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+)\s*=/g) ?? []).map((k) => {
+    const key = k.replace(/^,?\s*/, '').replace(/\s*=$/, '');
+    return unq(key) ?? key;
+  });
+};
+
+/** A one-line array of strings only (`[]`, `["a", 'b']`). */
+const stringArrayOnly = (v: string): boolean => {
+  const m = /^\[(.*)\]$/.exec(v.trim());
+  return !!m && m[1].replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '').replace(/[\s,]/g, '') === '';
+};
+
+/** Key of a Codex entry (in `values`, main only) listing the fields and values the writers would not carry. */
+export const ODD = '\0odd';
+
 /** Lines that define `mcp_servers` some other way than `[mcp_servers.<name>]` tables (FR-003 refuses to edit those files). */
 function codexOddShape(lines: TomlLine[]): boolean {
   let top = true;
@@ -294,14 +313,30 @@ function readCodex(text: string | undefined): ReadResult {
     if (!kv) continue;
     const k = unq(kv[1]) ?? kv[1];
     const v = kv[2];
-    if (sub === 'env') ((cur.env ??= {}) as Record<string, unknown>)[k] = unq(v) ?? '';
-    else if (sub === 'http_headers') ((cur.http_headers ??= {}) as Record<string, unknown>)[k] = unq(v) ?? '';
-    else if (sub === 'env_http_headers') ((cur.env_http_headers ??= {}) as Record<string, unknown>)[k] = unq(v) ?? '';
-    else if (sub) continue;
-    else if (k === 'command' || k === 'url' || k === 'bearer_token_env_var' || k === 'cwd') cur[k] = unq(v);
-    else if (k === 'args' || k === 'env_vars' || k === 'enabled_tools' || k === 'disabled_tools') cur[k] = tomlArray(v);
-    else if (k === 'enabled') cur[k] = v.trim() === 'false' ? false : v.trim() === 'true' ? true : v.trim();
-    else if (k === 'env' || k === 'http_headers' || k === 'env_http_headers') cur[k] = tomlInline2(v);
+    // change 2026-10-22 (review 2, 3 on #492): what the writers would not carry is named in `ODD` (a copy of it is refused)
+    const odd = (what: string): void => {
+      const list = (cur![ODD] ??= []) as string[];
+      if (!list.includes(what) && list.length < 20) list.push(what);
+    };
+    if (sub === 'env' || sub === 'http_headers' || sub === 'env_http_headers') {
+      const s = unq(v);
+      if (s === undefined) odd(`${sub}.${k}`); // a number, a multi-line string, ...: never copied as ""
+      ((cur[sub] ??= {}) as Record<string, unknown>)[k] = s ?? '';
+    } else if (sub) odd(`[${sub}]`);
+    else if (k === 'command' || k === 'url' || k === 'bearer_token_env_var' || k === 'cwd') {
+      cur[k] = unq(v);
+      if (cur[k] === undefined) odd(k);
+    } else if (k === 'args' || k === 'env_vars' || k === 'enabled_tools' || k === 'disabled_tools') {
+      cur[k] = tomlArray(v);
+      if (!stringArrayOnly(v)) odd(k); // spans several lines or holds something other than strings
+    } else if (k === 'enabled') cur[k] = v.trim() === 'false' ? false : v.trim() === 'true' ? true : v.trim();
+    else if (k === 'env' || k === 'http_headers' || k === 'env_http_headers') {
+      const m = tomlInline2(v);
+      cur[k] = m;
+      const all = tomlInlineKeyNames(v);
+      if (all === undefined) odd(k);
+      else for (const x of all) if (!(x in m)) odd(`${k}.${x}`);
+    } else odd(k);
   }
   for (const [name, r] of recs) {
     const envKeys = [...keysOf(r.env), ...(strs(r.env_vars) ?? [])];
@@ -768,12 +803,38 @@ const toItems = (m: Record<string, string>): GlobalItem[] =>
     return r ? { key, ref: r[1] } : { key, value };
   });
 
+const JSON_FIELDS: Record<'copilot' | 'claude', ReadonlySet<string>> = {
+  copilot: new Set(['type', 'command', 'args', 'env', 'url', 'headers', 'tools', 'disabled', 'enabled', 'cwd']),
+  claude: new Set(['type', 'command', 'args', 'env', 'url', 'headers', 'disabled', 'enabled', 'cwd']),
+};
+
+/**
+ * FR-023 (change 2026-10-22, review 2, 3 on #492): the fields of an entry that a copy would drop or write empty: keys the writers do not
+ * carry (Claude `oauth`, `headersHelper`, Copilot `timeout`, Codex `startup_timeout_sec`, a Codex sub-table) and values that are not
+ * plain strings where the writers expect one. Names only.
+ */
+export function uncopyable(app: GlobalApp, raw: Record<string, unknown>): string[] {
+  if (app === 'codex') return Array.isArray(raw[ODD]) ? (raw[ODD] as string[]) : [];
+  const out = Object.keys(raw).filter((k) => !JSON_FIELDS[app].has(k));
+  for (const k of ['type', 'command', 'url'] as const) if (raw[k] !== undefined && typeof raw[k] !== 'string') out.push(k);
+  for (const k of ['args', ...(app === 'copilot' ? ['tools'] : [])]) if (raw[k] !== undefined && !(Array.isArray(raw[k]) && (raw[k] as unknown[]).every((x) => typeof x === 'string'))) out.push(k);
+  for (const k of ['env', 'headers'] as const) {
+    if (raw[k] === undefined) continue;
+    if (!isObj(raw[k])) out.push(k);
+    else for (const [x, v] of Object.entries(raw[k] as Record<string, unknown>)) if (typeof v !== 'string') out.push(`${k}.${x}`);
+  }
+  return out.slice(0, 20);
+}
+
 /**
  * FR-021: one app's entry (as `readGlobal` keeps it, values included; main only) in the neutral form the writers take, or why it cannot
  * be copied. References stay references (`${X}`, Codex `env_vars`, `env_http_headers`, `bearer_token_env_var` -> `Bearer ${X}`).
  */
 export function neutralFrom(app: GlobalApp, name: string, raw: Record<string, unknown>): { ok: true; input: GlobalInput } | { ok: false; error: string } {
   const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+  const lost = uncopyable(app, raw);
+  if (lost.length)
+    return { ok: false, error: `It has ${lost.length === 1 ? 'a field' : 'fields'} Agent Durbar cannot copy as written (${lost.join(', ')}); a copy would drop ${lost.length === 1 ? 'it or write it empty' : 'them or write them empty'}. Nothing was written.` };
   const tools = strs(app === 'codex' ? raw.enabled_tools : raw.tools);
   const hidden = app === 'codex' ? strs(raw.disabled_tools) : undefined;
   // Change 2026-10-22 (review on #492): switched off and tool lists travel with the copy (checkFor refuses a target that cannot hold them).

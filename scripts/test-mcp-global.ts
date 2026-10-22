@@ -10,7 +10,7 @@ import * as path from 'path';
 import { stripTomlComment, tomlStringArray, tomlUnquote } from '../src/main/codextoml';
 import { readCodexMcpToml } from '../src/main/foldersetup';
 import { mcpSecretValues } from '../src/main/mcpmask';
-import { addToText, claudeOffKey, codexBlock, differences, mergeSessionServers, neededVars, neutralFrom, globalFiles, headerVar, jsonEntry, MASK, offOf, previewText, readGlobal, removeFromText, sourcesFor, textHash, tomlStr } from '../src/main/mcpglobal';
+import { addToText, claudeOffKey, codexBlock, differences, mergeSessionServers, neededVars, neutralFrom, uncopyable, globalFiles, headerVar, jsonEntry, MASK, offOf, previewText, readGlobal, removeFromText, sourcesFor, textHash, tomlStr } from '../src/main/mcpglobal';
 import { backupAndWrite, COPILOT_REF_NOTE, GlobalLists, KEEP_BACKUPS, ownerOnlyMode, pruneBackups, readFileSafe, sessionGlobalFor, TOKEN_MS, writeTarget } from '../src/main/mcpglobalio';
 import type { AgentInfo } from '../src/shared/api';
 import { McpStore } from '../src/main/mcpstore';
@@ -801,6 +801,68 @@ ok('differences name tools, hidden tools and on/off; the diff lists them', () =>
   fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { s: { type: 'stdio', command: 's', args: [] } } }));
   const lists = new GlobalLists(() => globalFiles({}, home));
   assert.deepStrictEqual(lists.diff().items.find((i) => i.name === 's')?.differs, ['on/off']);
+});
+
+ok('copies drop nothing silently (second review on #492): unknown fields and non-string values are named and refused', () => {
+  const claude = neutralFrom('claude', 'c', { type: 'http', url: 'https://x/mcp', oauth: { clientId: 'id' }, headersHelper: 'get-h.sh' });
+  assert.ok(!claude.ok && /oauth, headersHelper/.test(claude.error) && /Nothing was written/.test(claude.error), JSON.stringify(claude));
+  const cop = neutralFrom('copilot', 'p', { type: 'local', command: 'x', tools: ['*'], timeout: 30000 });
+  assert.ok(!cop.ok && /\(timeout\)/.test(cop.error));
+  assert.deepStrictEqual(uncopyable('claude', { type: 'stdio', command: 'x', env: { A: 'a', N: 5 }, args: ['a', 2] }), ['args', 'env.N']);
+  assert.deepStrictEqual(uncopyable('copilot', { type: 'local', command: 'x', args: [], env: {}, tools: ['*'] }), [], 'a plain entry is copyable');
+  const toml = [
+    '[mcp_servers.num]', 'command = "n"', '', '[mcp_servers.num.env]', 'PORT = 8080', 'OK = "fine"', '',
+    '[mcp_servers.multi]', 'command = "m"', '', '[mcp_servers.multi.env]', 'KEY = """', 'line one', '"""', '',
+    '[mcp_servers.slow]', 'command = "s"', 'startup_timeout_sec = 20', '',
+    '[mcp_servers.inl]', 'command = "i"', 'env = { A = "a", B = 2 }', '',
+    '[mcp_servers.margs]', 'command = "a"', 'args = [', '  "x",', ']', '',
+    '[mcp_servers.sub]', 'command = "u"', '', '[mcp_servers.sub.tools]', 'x = "y"', '',
+    '[mcp_servers.good]', 'command = "g"', 'args = ["--a", \'lit\']', 'env = { "A" = "a" }', '',
+  ].join('\n');
+  const g = readGlobal('codex', toml);
+  assert.ok(g.ok, JSON.stringify(g));
+  const why = (n: string): string => {
+    const r = neutralFrom('codex', n, g.values.get(n) ?? {});
+    return r.ok ? 'OK' : r.error;
+  };
+  assert.ok(/env\.PORT/.test(why('num')) && !/env\.OK/.test(why('num')), why('num'));
+  assert.ok(/env\.KEY/.test(why('multi')), 'a multi-line string is not copied empty: ' + why('multi'));
+  assert.ok(/startup_timeout_sec/.test(why('slow')));
+  assert.ok(/env\.B/.test(why('inl')));
+  assert.ok(/\(args\)/.test(why('margs')), 'a multi-line args array is not dropped: ' + why('margs'));
+  assert.ok(/\[tools\]/.test(why('sub')));
+  assert.strictEqual(why('good'), 'OK');
+  // the diff names the entry that cannot be copied, and a replace says what it drops
+  const home = tmp();
+  fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { web: { type: 'http', url: 'https://w/mcp', oauth: { clientId: 'id' } } } }, null, 2));
+  fs.mkdirSync(path.join(home, '.copilot'));
+  fs.writeFileSync(path.join(home, '.copilot', 'mcp-config.json'), JSON.stringify({ mcpServers: { web: { type: 'http', url: 'https://w/mcp', tools: ['*'] } } }, null, 2));
+  fs.mkdirSync(path.join(home, '.codex'));
+  fs.writeFileSync(path.join(home, '.codex', 'config.toml'), '[mcp_servers.web]\nurl = "https://w/mcp"\n');
+  const lists = new GlobalLists(() => globalFiles({}, home));
+  const d = lists.diff().items.find((i) => i.name === 'web');
+  assert.ok(d && !d.missing.length && !d.differs.length, 'in all three, the copyable two the same: ' + JSON.stringify(d));
+  assert.ok(/Claude Code: .*oauth/.test(d.error ?? '') && JSON.stringify(d.from) === '["copilot","codex"]', JSON.stringify(d));
+  const pv = lists.copyPreview('web', 'copilot', ['claude']);
+  assert.ok(pv.ok && pv.items[0].conflict && /drops what Agent Durbar does not write: oauth/.test(pv.items[0].note ?? ''), JSON.stringify(pv.items));
+});
+ok('a plain secret copied from an owner-only file never lands in a more open one (review 1 on #492)', () => {
+  if (process.platform === 'win32') return;
+  const home = tmp();
+  const cj = path.join(home, '.claude.json');
+  fs.writeFileSync(cj, JSON.stringify({ mcpServers: { tok: { type: 'stdio', command: 'tok-mcp', env: { TOKEN: SECRET } } } }, null, 2));
+  fs.chmodSync(cj, 0o600);
+  fs.mkdirSync(path.join(home, '.codex'));
+  const ct = path.join(home, '.codex', 'config.toml');
+  fs.writeFileSync(ct, 'model = "o3"\n');
+  fs.chmodSync(ct, 0o644);
+  const lists = new GlobalLists(() => globalFiles({}, home));
+  const pv = lists.copyPreview('tok', 'claude', ['codex']);
+  assert.ok(pv.ok && !JSON.stringify(pv).includes(SECRET));
+  const res = lists.apply(pv.token, []);
+  assert.ok(res.ok, JSON.stringify(res));
+  assert.ok(fs.readFileSync(ct, 'utf8').includes(SECRET), 'the value is copied as it is');
+  assert.strictEqual(fs.statSync(ct).mode & 0o777, 0o600, 'the 0644 target is left 0600');
 });
 
 console.log(`test-mcp-global: ${n} checks passed`);

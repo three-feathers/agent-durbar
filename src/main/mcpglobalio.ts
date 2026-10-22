@@ -10,7 +10,7 @@ import * as path from 'path';
 import { NAME_RE, validateInput } from '../shared/mcp';
 import type { McpServerSpec } from '../shared/mcp';
 import type { GlobalApp, GlobalApplyItem, GlobalDiff, GlobalDiffItem, GlobalApplyResult, GlobalAppState, GlobalPreview, GlobalPreviewItem, GlobalSecretMode, GlobalState } from '../shared/api';
-import { addToText, APP_LABEL, differences, GLOBAL_APPS, neededVars, neutralFrom, offOf, previewText, readGlobal, removeFromText, textHash } from './mcpglobal';
+import { addToText, APP_LABEL, differences, uncopyable, GLOBAL_APPS, neededVars, neutralFrom, offOf, previewText, readGlobal, removeFromText, textHash } from './mcpglobal';
 import type { GlobalInput } from './mcpglobal';
 import type { GlobalFile } from './mcpglobal';
 
@@ -291,7 +291,11 @@ export class GlobalLists {
         const rep = addToText(app, r.text, x, sm, true);
         const g = readGlobal(app, r.text);
         const current = g.ok ? g.servers.find((s) => s.name === x.name) : undefined;
-        items.push({ ...base, conflict: true, ...(current ? { current } : {}), ...(rep.ok ? {} : { error: rep.error }), ...(note ? { note } : {}) });
+        // FR-023 (change 2026-10-22, review 2 on #492): say what a replace drops from the entry that is there now
+        const raw = g.ok ? g.values.get(x.name) : undefined;
+        const lost = raw ? uncopyable(app, raw) : [];
+        const both = [note, lost.length ? `Replacing it drops what Agent Durbar does not write: ${lost.join(', ')}.` : undefined].filter(Boolean).join(' ');
+        items.push({ ...base, conflict: true, ...(current ? { current } : {}), ...(rep.ok ? {} : { error: rep.error }), ...(both ? { note: both } : {}) });
         files.push({ app, file: gf, hash: textHash(r.text), replaceText: rep.ok ? rep.text : undefined, error: rep.ok ? undefined : rep.error });
       } else {
         items.push({ ...base, error: add.error });
@@ -327,9 +331,11 @@ export class GlobalLists {
       const ok = conv.filter((c) => c.n.ok) as { a: GlobalApp; n: { ok: true; input: GlobalInput } }[];
       const diffs = new Set<string>();
       for (const c of ok.slice(1)) for (const d of differences(ok[0].n.input, c.n.input)) diffs.add(d);
-      if (!missing.length && !diffs.size) continue;
+      // FR-023 (change 2026-10-22, review 2 on #492): an entry that cannot be copied (fields a copy would drop) is named, not skipped
+      const bad = conv.filter((c) => !c.n.ok).map((c) => `${APP_LABEL[c.a]}: ${(c.n as { error: string }).error}`);
+      if (!missing.length && !diffs.size && !bad.length) continue;
       const copyable = ok.map((c) => c.a);
-      items.push({ name, in: inApps, missing, differs: [...diffs], from: copyable, ...(copyable.length ? {} : { error: (conv[0]?.n as { error?: string })?.error ?? 'Agent Durbar cannot copy this server.' }) });
+      items.push({ name, in: inApps, missing, differs: [...diffs], from: copyable, ...(bad.length ? { error: bad.join(' ') } : {}) });
     }
     return { ok: true, apps, items };
   }
