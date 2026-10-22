@@ -15,9 +15,14 @@
  *   - and back to Clean Office: no desk, walker or chip keeps the pack's art (the stale-drawing bug in reverse).
  *
  *   npm run check:theme-art            (builds first; in check:ui too)
- *   SHOTS_OUT=<folder>                 screenshots (default /tmp/theme-art-shots)
+ * In the office kit it also checks the drawing order: the headwear comes after the head circle and the hair (over them, not under).
+ * Then, at 1440x900, the same pack with `scene: "court-indian"`: the other scene kits get the art too (desks and walkers).
+ *
+ *   npm run check:theme-art            (builds first; in check:ui too)
+ *   SHOTS_OUT=<folder>                 screenshots (default: theme-art-shots in the OS temp folder)
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
@@ -34,18 +39,26 @@ function survey(shirts) {
   const wears = (el) => shirts.some((c) => !!el.querySelector(`[fill="${c}"]`));
   const q = (s) => [...document.querySelectorAll(s)];
   const has = (el, slot) => !!el.querySelector(`[data-slot="${slot}"]`);
+  /* the headwear is drawn over the head circle and the hair (spec 040 FR-023): it follows both in document order */
+  const hatOver = (el) => {
+    const hw = el.querySelector('[data-slot="char-headwear"]');
+    const circle = hw && hw.parentElement.querySelector(':scope > circle[r="12.5"]');
+    const hair = circle && circle.nextElementSibling;
+    const after = (a) => !!(a.compareDocumentPosition(hw) & Node.DOCUMENT_POSITION_FOLLOWING);
+    return !!(hw && circle && hair && hair !== hw && after(circle) && after(hair));
+  };
   const box = (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round); };
   const deskScenes = q('#stage .desk[data-id] svg.scene, #stage .helper svg.scene').filter((s) => s.getClientRects().length);
   // main desks whose agent sits at the desk (an agent away at a place leaves an empty chair: its figure is a walker)
   const mainScenes = q('#stage .desk[data-id]:not(.is-away) svg.scene').filter((s) => s.getClientRects().length && !s.closest('.helper'));
   return {
     theme: window.THEME.current().id,
-    desks: deskScenes.map((s) => ({ shirt: wears(s), cup: has(s, 'gadget-cup'), laptop: has(s, 'gadget-laptop'), idle: /^(still\|)?idle\|/.test(s.dataset.sig || ''), robe: has(s, 'char-robe'), collar: has(s, 'char-collar'), hat: has(s, 'char-headwear'), deskArt: has(s, 'desk-art'), monitor: has(s, 'monitor-art'), anyArt: !!s.querySelector('.art-slot') })),
+    desks: deskScenes.map((s) => ({ shirt: wears(s), cup: has(s, 'gadget-cup'), laptop: has(s, 'gadget-laptop'), idle: /^(still\|)?idle\|/.test(s.dataset.sig || ''), robe: has(s, 'char-robe'), collar: has(s, 'char-collar'), hat: has(s, 'char-headwear'), hatOver: hatOver(s), deskArt: has(s, 'desk-art'), monitor: has(s, 'monitor-art'), anyArt: !!s.querySelector('.art-slot') })),
     mainBoxes: mainScenes.map((s) => ({ box: box(s), st: (/^(\w+)\|/.exec(s.dataset.sig || '') || [])[1] })),
-    walkers: q('.walker').map((w) => ({ shirt: wears(w), robe: has(w, 'char-robe'), hat: has(w, 'char-headwear'), anyArt: !!w.querySelector('.art-slot'), box: box(w.querySelector('svg') || w) })),
+    walkers: q('.walker').map((w) => ({ shirt: wears(w), robe: has(w, 'char-robe'), hat: has(w, 'char-headwear'), hatOver: hatOver(w), anyArt: !!w.querySelector('.art-slot'), box: box(w.querySelector('svg') || w) })),
     places: q('#stage .place [data-slot^="place-"]').map((e) => e.getAttribute('data-slot')),
     lobbyArt: q('#stage .lobby-art[data-slot="lobby-art"]').length,
-    chips: q('#stripList .sitem .sav').filter((e) => e.getClientRects().length).map((e) => ({ shirt: wears(e), robe: has(e, 'char-robe'), anyArt: !!e.querySelector('.art-slot') })),
+    chips: q('#stripList .sitem .sav').filter((e) => e.getClientRects().length).map((e) => ({ shirt: wears(e), robe: has(e, 'char-robe'), hatOver: hatOver(e), anyArt: !!e.querySelector('.art-slot') })),
     css: (() => {
       const cs = (sel, prop) => { const e = document.querySelector(sel); return e ? getComputedStyle(e)[prop] : ''; };
       return { font: getComputedStyle(document.body).fontFamily, mono: cs('.room-path', 'fontFamily'), radius: cs('.select-wrap select', 'borderTopLeftRadius'), shadow: cs('#stage .desk.card:not(.is-waiting):not(.is-error):not(.is-failing)', 'boxShadow'), plate: cs('.plate-tx b', 'fontFamily') };
@@ -55,7 +68,7 @@ function survey(shirts) {
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
-  const out = process.env.SHOTS_OUT || '/tmp/theme-art-shots';
+  const out = process.env.SHOTS_OUT || path.join(os.tmpdir(), 'theme-art-shots');
   fs.mkdirSync(out, { recursive: true });
   /* pixels of a page rectangle that pass a colour test (BGRA bitmap of capturePage) */
   const count = async (rect, test) => {
@@ -99,6 +112,7 @@ module.exports = async (ctx) => {
     assert.ok(s.desks.length >= 15, `${tag}: desks on screen (${s.desks.length})`);
     s.desks.forEach((d, i) => {
       for (const k of ['robe', 'collar', 'hat', 'deskArt', 'monitor']) assert.ok(d[k], `${tag}: desk scene ${i} draws the pack's ${k} (was the Clean Office drawing kept?)`);
+      assert.ok(d.hatOver, `${tag}: desk scene ${i} draws the headwear over the head and the hair`);
     });
     // spec 070: clothes, gadgets, fonts, corners and shadows
     s.desks.forEach((d, i) => {
@@ -118,6 +132,7 @@ module.exports = async (ctx) => {
     assert.ok(s.walkers.length >= 1, `${tag}: somebody is at a place`);
     for (const [i, wk] of s.walkers.entries()) {
       assert.ok(wk.robe && wk.hat, `${tag}: walker ${i} wears the pack's robe and headwear`);
+      assert.ok(wk.hatOver, `${tag}: walker ${i} wears the headwear over the head and the hair`);
       assert.ok(await count(wk.box, PINK) >= 2, `${tag}: walker ${i} shows the pack's pink on screen`);
     }
     for (const p of ['place-library', 'place-terminal', 'place-web']) assert.ok(s.places.includes(p), `${tag}: the lobby draws the pack's ${p} icon`);
@@ -130,7 +145,7 @@ module.exports = async (ctx) => {
     await H.settle();
     const chat = await H.js(`(${survey.toString()})(${jsLiteral(SHIRTS)})`);
     assert.ok(chat.chips.length >= 1, `${tag}: the agent strip is on screen`);
-    chat.chips.forEach((c, i) => assert.ok(c.robe && c.shirt, `${tag}: chip ${i} wears the robe and the pack's clothes`));
+    chat.chips.forEach((c, i) => assert.ok(c.robe && c.shirt && c.hatOver, `${tag}: chip ${i} wears the robe, the pack's clothes and the headwear over the hair`));
     await H.shot(path.join(out, `040-theme-art-chat-${tag}.png`), { prep: 'toasts', tag: 'theme-art' });
     await H.js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click()})()`);
     await H.until(`!document.body.classList.contains('panel-open')`);
@@ -143,6 +158,27 @@ module.exports = async (ctx) => {
     assert.ok(back.desks.every((d) => !d.shirt), `${tag}: back in Clean Office nobody wears the pack's clothes`);
     assert.deepStrictEqual(back.css, before.css, `${tag}: back in Clean Office the fonts, corners and shadows are Clean's again`);
     for (const [i, b] of back.mainBoxes.entries()) assert.strictEqual(await count(b.box, PINK), 0, `${tag}: desk ${i} has no pink left`);
+  }
+  /* another scene kit (spec 040 FR-023, root cause 4): app.js hands the pack's art to the kits too, so the same pack on the Indian court
+     kit draws its robe, headwear and gadgets on every desk and walker */
+  {
+    const tag = 'court-indian 1440x900';
+    const KPACK = Object.assign({}, PACK, { scene: 'court-indian' });
+    await H.load({ w: 1440, h: 900, query: { usertheme: JSON.stringify(KPACK) }, ready: 'fit', settle: false });
+    await H.office(15);
+    assert.ok(await H.until(`!!document.querySelector('.walker')`, 6000), `${tag}: agents walk to the lobby`);
+    await H.until(`!document.querySelector('.walker.walking')`, 6000);
+    await pick(KPACK.id);
+    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'court-indian', `${tag}: the pack draws with the court-indian kit`);
+    const s = await H.js(`(${survey.toString()})(${jsLiteral(SHIRTS)})`);
+    console.log(`[theme-art] ${tag}`, JSON.stringify({ desks: s.desks.length, walkers: s.walkers.length }));
+    assert.ok(s.desks.length >= 15, `${tag}: desks on screen (${s.desks.length})`);
+    s.desks.forEach((d, i) => {
+      for (const k of ['robe', 'hat', 'deskArt', 'monitor']) assert.ok(d[k], `${tag}: desk scene ${i} draws the pack's ${k} on the kit (does app.js pass the art?)`);
+    });
+    assert.ok(s.walkers.length >= 1, `${tag}: somebody is at a place`);
+    s.walkers.forEach((wk, i) => assert.ok(wk.robe && wk.hat, `${tag}: walker ${i} wears the pack's robe and headwear on the kit`));
+    await H.shot(path.join(out, `040-theme-art-court-indian-1440x900.png`), { prep: 'toasts', tag: 'theme-art' });
   }
   console.log('[theme-art] all checks passed');
 };
