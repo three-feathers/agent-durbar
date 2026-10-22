@@ -554,7 +554,7 @@ export interface DurbarApi {
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
   /** Scheduled prompts (spec 044). */
   listSchedules?(): Promise<SchedulesInfo>;
-  saveSchedule?(input: Partial<ScheduleInfo> & { folder: string; prompt: string }): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
+  saveSchedule?(input: Partial<ScheduleInfo> & { folder: string; prompt: string; edit?: boolean }): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
   removeSchedule?(id: string): Promise<{ ok: boolean }>;
   setSchedulesPaused?(on: boolean): Promise<{ ok: boolean; pausedAll: boolean }>;
   /** Spec 052 FR-089: one run of a schedule now ("Run missed now"), through the same path as a scheduled run. */
