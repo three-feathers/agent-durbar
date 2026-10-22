@@ -303,7 +303,7 @@ export class FakeCodexServer {
       }
       case 'mcpServerStatus/list': {
         // spec 069 FR-031: one server's tools when `serverName` is given (a map by tool name, as the generated schema says)
-        const all: Array<{ name?: unknown }> = (this.mcpList as Array<{ name?: unknown }> | undefined) ?? [
+        const all: Array<Record<string, unknown>> = (this.mcpList as Array<Record<string, unknown>> | undefined) ?? [
           { name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: { echo: { name: 'echo', description: 'Echo the text back\nSecond line', inputSchema: {} }, ping: { name: 'ping', inputSchema: {} } }, resources: [], resourceTemplates: [] },
           { name: 'broken', authStatus: 'unsupported', runtimeStatus: 'failed', tools: {}, toolsError: 'tools/list failed: spawn broken-mcp ENOENT', resources: [], resourceTemplates: [] },
         ];
