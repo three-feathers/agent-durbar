@@ -8,7 +8,7 @@ const THEME=window.THEME; /* theme packs (specs 035-040): tokens, words, motion;
 const T_=n=>THEME.token(n);
 const wordOf=k=>THEME.word(k);
 const qs = new URLSearchParams(location.search);
-if(qs.has('sim')&&qs.get('noredact')==='1')window.DurbarRedact=undefined; /* spec 041 FR-065 test only (simulator): the page as if the redact module were missing, to check it fails closed */
+const NO_REDACT=qs.has('sim')&&qs.get('noredact')==='1'; /* spec 041 FR-065 test only (simulator): the page as if the redact module were missing, to check it fails closed */
 /* spec 052 FR-084: Command (⌘) on a Mac, Ctrl elsewhere; keys are shown per platform (src/renderer/keys.js) */
 const KEYS=window.DurbarKeys;
 const IS_MAC=KEYS.isMac(navigator.platform);
@@ -550,7 +550,7 @@ const CANDIDATES=[['full',3,'side'],['full',2,'side'],['full',3],['full',2],['ro
    Painted by textContent at most 4 times a second, never by a re-layout. ---- */
 let LIVE_SIDE=false; const SIDE_W=196, SIDE_GAP=8;
 let LIVE_PREF=(()=>{try{return localStorage.getItem('durbar.liveActivity')!=='off';}catch(e){return true;}})();
-const LIVEACT=(()=>{const L=window.DurbarLiveAct,R=window.DurbarRedact;if(!L||!R||typeof R.redact!=='function')return null;
+const LIVEACT=(()=>{const L=window.DurbarLiveAct,R=NO_REDACT?null:window.DurbarRedact;if(!L||!R||typeof R.redact!=='function')return null;
   return L.create({mask:{redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t)}});})();
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
@@ -2541,7 +2541,7 @@ function setState(a,state,label,task){
   if(ch)scheduleRender();
 }
 const SHORT=(v,n)=>DurbarCutText.cutText(v,n);
-const RED=window.DurbarRedact&&typeof window.DurbarRedact.redact==='function'?window.DurbarRedact:null;
+const RED=!NO_REDACT&&window.DurbarRedact&&typeof window.DurbarRedact.redact==='function'?window.DurbarRedact:null;
 const SAFE=window.DurbarSafeText.create({redact:RED?t=>RED.redact(t):null,cut:SHORT}); /* spec 041 FR-065: agent text is masked on the raw text, then made plain, then cut; no redact module: neutral words, never the raw text */
 const safeExcerpt=(t,n,fb)=>SAFE.excerpt(t,n,fb),safeMask=t=>SAFE.mask(t);
 /* the tool label of a task line, masked like the chat chip (a command by maskSecretCommand, a URL by maskSecretUrl, else redact), then cut */

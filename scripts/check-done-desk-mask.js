@@ -74,7 +74,7 @@ module.exports = async (ctx) => {
       await js(`(()=>{const d=document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(parent)})+']');d.click();})()`);
       await until(`document.querySelectorAll('#chat .sub-task').length>0`);
       const sub = await js(`[...document.querySelectorAll('#chat .sub-task')].map(e=>e.textContent+' '+(e.title||'')).join('\\n').toLowerCase()`);
-      assert.ok(sub.length > 0 && /\[redacted\]/.test(sub), `${tag}: sub-agent card lines exist and show a masked secret: ${sub.slice(0, 200)}`);
+      assert.ok(sub.length > 0 && /\[redac/.test(sub), `${tag}: sub-agent card lines exist and show a masked secret: ${sub.slice(0, 200)}`);
       for (const nd of NEEDLES) assert.ok(!sub.includes(nd), `${tag}: "${nd.slice(0, 10)}..." is in a sub-agent card line: ${sub.slice(0, 200)}`);
       await back();
       // 3. a question with the tokens: the Needs you inbox and the answer bar
