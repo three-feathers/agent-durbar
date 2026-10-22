@@ -730,12 +730,12 @@ function shutHTML(x){
   const {a,k}=x, st=vis(a), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140);
   const who=a.profile?a.profile.name+' · '+a.role:a.role;
   const roll=SHUT_PREV&&!SHUT_PREV.has(a.id)?' rolling':'';
-  const lab=`${a.name}, ${who}, folder ${roomOf(a).path}, ${st==='done'?'finished':'idle after its reply'}${said?' '+said:''}, ${k==='recent'?'half rolled up':'rolled up'}: ${line}. Open chat panel.`;
+  const lab=`${esc(a.name)}, ${esc(who)}, folder ${esc(roomOf(a).path)}, ${st==='done'?'finished':'idle after its reply'}${said?' '+esc(said):''}, ${k==='recent'?'half rolled up':'rolled up'}: ${esc(line)}. Open chat panel.`; /* every part escaped here */
   const peek=`<span class="peek" aria-hidden="true"><span class="pk-h"><b>${esc(a.name)}</b><span class="pk-role">${esc(who)}</span></span><span class="pk-st">${SHUT_MARK}${esc(stWord(a))}${ago?' · finished '+esc(ago):''}</span><span class="pk-tx">${esc(shutReply(a,300))}</span></span>`;
   const body=k==='recent'
     ?`${SHUT_MARK}<span class="sh-name name">${esc(a.name)}</span><span class="sh-line">${esc(line)}</span>${ago?`<span class="sh-ago">${esc(ago)}</span>`:''}`
     :`${SHUT_MARK}<span class="sh-name name">${esc(a.name)}</span>`;
-  return `<button class="desk shut is-${k} is-${st}${roll}" type="button" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(lab)}">${body}${peek}</button>`;
+  return `<button class="desk shut is-${k} is-${st}${roll}" type="button" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${lab}">${body}${peek}</button>`;
 }
 /* FR-053: the rolled agents of a room share one slot of its desk grid (the free cells of the last row, else a slim row of its own) */
 const shutSlots=m=>m.mains.length+(m.rolled&&m.rolled.length?1:0);
