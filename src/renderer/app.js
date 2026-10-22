@@ -2939,7 +2939,7 @@ function feedStats(a,e){
   if(e.type==='toolCall')STATS.recordTool(a.id,e);
   else if(e.type==='usage')STATS.recordModel(a.id,e.model);
   else if(e.type==='context'&&!e.agentId){STATS.setContext(a.id,e);if(a.ctxWaiting){a.ctxWaiting=false;}}
-  else if(e.type==='mcp')a.mcp=e.servers;
+  else if(e.type==='mcp'){a.mcp=e.servers;if(window.DurbarScreens.mcpEvent)window.DurbarScreens.mcpEvent(a.id);} /* spec 058 FR-004: an open MCP dialog follows it */
   else return;
   if(e.type==='usage'||e.type==='context'||(e.type==='toolCall'&&e.phase==='start')){
     updateCtxChip(a);
