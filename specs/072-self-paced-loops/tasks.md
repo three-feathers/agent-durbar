@@ -16,7 +16,7 @@ Owner answered Q1-Q9 on 2026-10-22 (see spec.md); Q6 is (b), no Read-only except
 
 ### Wiring
 
-- [ ] T006 `main.ts`: feed final assistant text to the scheduler during a pass, the loop footer in `scheduleDeps.send`, holds from `agentState`, Stop and End session end the loop; a `loop:pass` push to the window [FR-006, FR-007, FR-009, FR-015]
+- [ ] T006 `main.ts`: feed final assistant text to the scheduler during a pass, the loop footer in `scheduleDeps.send`, holds from `agentState`, Stop and End session end the loop; a `loop:pass` push to the window; route late `usage` events to `noteUsage` and check the usage/idle order per adapter (spec `[KNOWN GAP]`) [FR-006, FR-007, FR-009, FR-015]
 - [ ] T007 IPC `schedules:stopLoop` and `schedules:restartLoop` (validated, `fromApp`), `ScheduleInfo.loop` in `src/shared/api.ts`, preload; `test:ipcchannels` [FR-005, FR-007, FR-008]
 - [ ] T008 Activity log: decisions `loop-start|pass|skip|hold|end`, rows recorded in main with cleaned reasons and never the prompt; `test:activity` [FR-024, SC-005]
 

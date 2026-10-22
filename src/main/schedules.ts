@@ -292,7 +292,11 @@ export function parseSchedules(text: string, now: number): SchedulesDoc {
 /** When a schedule runs next, or undefined when it never will (done, or paused). */
 export function dueAt(s: Schedule): number | undefined {
   if (s.done || s.paused) return undefined;
-  if (s.loop) return s.loop.ended || s.loop.inPass || s.loop.hold ? undefined : s.next; // spec 072 FR-004
+  if (s.loop) {
+    // spec 072 FR-004: nothing while a pass runs or after the end. A loop also wakes at its end time (held or not) so it ends then, not at its next wake.
+    if (s.loop.ended || s.loop.inPass) return undefined;
+    return s.loop.hold ? s.loop.endAt : s.next === undefined ? undefined : Math.min(s.next, s.loop.endAt);
+  }
   return recurring(s) ? s.next : s.at;
 }
 
@@ -391,7 +395,9 @@ export class Scheduler {
    * assistant message of the pass (`finalText`, read for the `LOOP:` line), or `error` / `stopped` for how the turn ended.
    */
   turnEnded(session: string, end?: { finalText?: string; error?: boolean; stopped?: boolean }): void {
-    this.attrib.delete(session);
+    // spec 072: a running loop keeps the session's spend until its next pass starts (a `usage` event may come after `idle`); a plain schedule does not
+    const owner = this.doc.schedules.find((x) => x.id === this.attrib.get(session));
+    if (!(owner?.loop && !owner.loop.ended)) this.attrib.delete(session);
     const s = this.doc.schedules.find((x) => x.loop?.inPass && !x.loop.ended && x.target?.session === session);
     if (!s?.loop) return;
     this.passEnded(s, end ?? {}, this.deps.now());
@@ -474,6 +480,7 @@ export class Scheduler {
   private passEnded(s: Schedule, end: { finalText?: string; error?: boolean; stopped?: boolean }, now: number): void {
     const l = s.loop as LoopSpec;
     l.inPass = false;
+    this.lastSent.set(s.id, this.mono()); // FR-011: the minimum between two passes runs from the END of this one
     if (end.stopped) return this.endLoop(s, 'user', now);
     let delay = l.defaultDelay;
     if (end.error) {
@@ -510,13 +517,13 @@ export class Scheduler {
   private async tickLoop(s: Schedule, now: number): Promise<void> {
     const l = s.loop as LoopSpec;
     const session = (s.target as ScheduleTarget).session;
+    if (!this.deps.hasSession(session)) return this.endLoop(s, 'session', now);
+    if (this.limitReached(s, now)) return; // also while held or paused by Pause all: a loop past its end time ends, it does not stay "running"
     if (this.doc.pausedAll) {
       l.hold = 'pause-all';
       s.last = { at: now, outcome: 'skipped-paused' };
       return;
     }
-    if (!this.deps.hasSession(session)) return this.endLoop(s, 'session', now);
-    if (this.limitReached(s, now)) return;
     if (this.settle(s, now)) {
       s.last = { at: now, outcome: 'held' };
       return;
@@ -538,17 +545,22 @@ export class Scheduler {
     l.passes = (l.passes ?? 0) + 1;
     delete s.next;
     this.attrib.set(session, s.id);
+    const pass = l.passes;
     const r = await this.deps.send(s.folder, s.prompt, s).catch(() => false);
     const after = this.deps.now();
+    // `save` (Pause, Resume, an edit) may have replaced the object while send was awaited: act on the current one, and only if it is
+    // still this loop in this pass (not stopped, removed, or its turn already ended)
+    const cur = this.doc.schedules.find((x) => x.id === s.id);
+    const cl = cur?.loop;
+    if (!cur || !cl || cl.ended || !cl.inPass || cl.passes !== pass || cl.startedAt !== l.startedAt) return;
     if (r) {
-      if (!l.ended) s.last = { at: now, outcome: 'sent' };
+      cur.last = { at: now, outcome: 'sent' };
       return;
     }
-    // the pass could not be sent: it counts as a failed pass (FR-013), unless its turn already ended while send was awaited
-    if (!l.inPass) return;
-    this.attrib.delete(session);
-    this.passEnded(s, { error: true }, after);
-    s.last = { at: now, outcome: l.ended ? 'ended' : 'failed' };
+    // the pass could not be sent: it counts as a failed pass (FR-013)
+    if (this.attrib.get(session) === cur.id) this.attrib.delete(session);
+    this.passEnded(cur, { error: true }, after);
+    cur.last = { at: now, outcome: cl.ended ? 'ended' : 'failed' };
   }
 
   /** FR-007: ends a running loop at once. False when there is none with that id. */

@@ -18,6 +18,8 @@ function harness(doc: SchedulesDoc = { pausedAll: false, schedules: [] }) {
   const wait: { v: LoopWait | undefined } = { v: undefined };
   const failSend = { v: false };
   const onSend: { fn?: () => void } = {};
+  /** When set, `send` waits for it (so a test can act while a send is in flight), then fails or not by `failSend`. */
+  const gate: { p?: Promise<void> } = {};
   /** Wall-clock jumps the monotonic clock does not see. */
   const skew = { v: 0 };
   const timers: { at: number; fn: () => void }[] = [];
@@ -28,7 +30,12 @@ function harness(doc: SchedulesDoc = { pausedAll: false, schedules: [] }) {
     capUnitOf: () => 'aiu',
     waitOf: () => wait.v,
     mono: () => now - skew.v,
-    send: async (f, p, s) => (sent.push(p), onSend.fn?.(), failSend.v ? false : s.target ? s.target.session : 'x'),
+    send: async (f, p, s) => {
+      sent.push(p);
+      onSend.fn?.();
+      if (gate.p) await gate.p;
+      return failSend.v ? false : s.target ? s.target.session : 'x';
+    },
     setTimer: (ms, fn) => { const t = { at: now + ms, fn }; timers.push(t); return t; },
     clearTimer: (t) => { const i = timers.indexOf(t as never); if (i >= 0) timers.splice(i, 1); },
     save: () => undefined,
@@ -50,7 +57,7 @@ function harness(doc: SchedulesDoc = { pausedAll: false, schedules: [] }) {
     await advance(0);
     return sch.doc.schedules.find((x) => x.id === (r as { schedule: Schedule }).schedule.id) as Schedule;
   };
-  return { sch, sent, busy, sessions, wait, failSend, onSend, skew, advance, loop, get now() { return now; } };
+  return { sch, sent, busy, sessions, wait, failSend, onSend, gate, skew, advance, loop, get now() { return now; } };
 }
 
 async function main(): Promise<void> {
@@ -421,6 +428,155 @@ async function main(): Promise<void> {
     assert.strictEqual(s.loop?.ended?.text, 'abc d');
   }
 
+  // --- review of #546: a send in flight while Pause, Resume or an edit replaces the schedule object ---
+  const gated = (h: ReturnType<typeof harness>): (() => Promise<void>) => {
+    let go!: () => void;
+    h.gate.p = new Promise<void>((r) => (go = r));
+    return async () => { h.gate.p = undefined; go(); await new Promise((r) => setImmediate(r)); };
+  };
+  const cur = (h: ReturnType<typeof harness>): Schedule => h.sch.doc.schedules[0];
+  {
+    // the exact repro: Pause during the send, the send fails, Resume
+    const h = harness();
+    h.failSend.v = true;
+    const release = gated(h);
+    const s = await h.loop();
+    assert.ok(s.loop?.inPass && h.sent.length === 1);
+    assert.ok(h.sch.save({ ...s, paused: true }, () => true).ok);
+    assert.ok(cur(h) !== s, 'save replaced the object');
+    await release();
+    assert.deepStrictEqual([cur(h).loop?.inPass, cur(h).loop?.errorStreak, cur(h).last?.outcome], [false, 1, 'failed'], 'the failed pass lands on the live loop');
+    h.failSend.v = false;
+    assert.ok(h.sch.save({ ...cur(h), paused: false }, () => true).ok);
+    assert.strictEqual(cur(h).next, h.now + 30 * MIN);
+    await h.advance(30 * MIN);
+    assert.strictEqual(h.sent.length, 2, 'the loop sends again after Resume');
+    assert.ok(cur(h).loop?.inPass);
+  }
+  {
+    // a second failed pass after the same interleaving still ends the loop (it is not stuck)
+    const h = harness();
+    h.failSend.v = true;
+    const release = gated(h);
+    const s = await h.loop();
+    assert.ok(h.sch.save({ ...s, paused: true }, () => true).ok);
+    await release();
+    assert.ok(h.sch.save({ ...cur(h), paused: false }, () => true).ok);
+    await h.advance(30 * MIN);
+    assert.strictEqual(cur(h).loop?.ended?.reason, 'errors');
+  }
+  {
+    // the turn ended in error during the await, then the send "succeeds": last stays failed, nothing is overwritten
+    const h = harness();
+    const release = gated(h);
+    const s = await h.loop();
+    assert.ok(h.sch.save({ ...s, paused: true }, () => true).ok);
+    h.sch.turnEnded('s1', { error: true });
+    await release();
+    assert.deepStrictEqual([cur(h).last?.outcome, cur(h).loop?.inPass], ['failed', false]);
+  }
+  {
+    // an edit during the send; a stop during the send is not undone; a removed loop is not touched
+    const h = harness();
+    h.failSend.v = true;
+    const release = gated(h);
+    const s = await h.loop();
+    assert.ok(h.sch.save({ ...s, edit: true, loop: { ...s.loop, maxPasses: 20 } }, () => true).ok);
+    await release();
+    assert.deepStrictEqual([cur(h).loop?.inPass, cur(h).loop?.errorStreak, cur(h).loop?.maxPasses], [false, 1, 20]);
+    const h2 = harness();
+    h2.failSend.v = true;
+    const release2 = gated(h2);
+    const s2 = await h2.loop();
+    assert.ok(h2.sch.stopLoop(s2.id));
+    await release2();
+    assert.deepStrictEqual([cur(h2).loop?.ended?.reason, cur(h2).loop?.errorStreak ?? 0, cur(h2).last?.outcome], ['user', 0, 'ended']);
+  }
+
+  // --- the end time is a boundary: no pass at or after endAt, and a loop does not stay "running" past it ---
+  {
+    // a busy skip whose next wake is exactly endAt: nothing is sent, it ends with reason time
+    const h = harness();
+    const s = await h.loop({}, { endAt: T0 + 60 * MIN });
+    h.sch.turnEnded('s1', { finalText: 'LOOP: next 20 min' });
+    h.busy.add('s1');
+    await h.advance(20 * MIN);
+    await h.advance(20 * MIN); // busy skip at T0+40, next = T0+60 = endAt
+    assert.ok(!s.loop?.ended || s.loop.ended.at <= T0 + 60 * MIN);
+    h.busy.delete('s1');
+    await h.advance(20 * MIN);
+    assert.strictEqual(h.sent.length, 1, 'nothing sent at endAt');
+    assert.deepStrictEqual([s.loop?.ended?.reason, s.loop?.ended?.at], ['time', T0 + 60 * MIN]);
+  }
+  {
+    // a hold released so that the next wake is exactly endAt
+    const h = harness();
+    const s = await h.loop({}, { endAt: T0 + 60 * MIN });
+    h.sch.turnEnded('s1', { finalText: 'LOOP: next 30 min' });
+    h.wait.v = 'person';
+    h.sch.holdsChanged('s1');
+    await h.advance(30 * MIN);
+    h.wait.v = undefined;
+    h.sch.holdsChanged('s1'); // at T0+30, next = T0+60 = endAt
+    await h.advance(30 * MIN);
+    assert.strictEqual(h.sent.length, 1);
+    assert.deepStrictEqual([s.loop?.ended?.reason, s.loop?.ended?.at], ['time', T0 + 60 * MIN]);
+  }
+  {
+    // a held loop (a person is needed) ends at its end time, not when the hold clears; so does one on Pause all
+    for (const how of ['person', 'pause-all'] as const) {
+      const h = harness();
+      const s = await h.loop({}, { endAt: T0 + 60 * MIN });
+      h.sch.turnEnded('s1', { finalText: 'LOOP: next 10 min' });
+      if (how === 'person') {
+        h.wait.v = 'person';
+        h.sch.holdsChanged('s1');
+      } else h.sch.setPausedAll(true);
+      assert.strictEqual(s.loop?.hold, how);
+      await h.advance(59 * MIN);
+      assert.ok(!s.loop?.ended, 'still held before the end time');
+      await h.advance(MIN);
+      assert.deepStrictEqual([(s as Schedule).loop?.ended?.reason, (s as Schedule).loop?.ended?.at, h.sent.length], ['time', T0 + 60 * MIN, 1], how);
+    }
+    // a next wake beyond endAt (a long busy streak) ends at endAt too
+    const h = harness();
+    const s = await h.loop({}, { endAt: T0 + 50 * MIN });
+    h.sch.turnEnded('s1', { finalText: 'LOOP: next 40 min' });
+    h.busy.add('s1');
+    await h.advance(40 * MIN); // skip: next = T0+40+40 > endAt
+    assert.ok(!s.loop?.ended);
+    await h.advance(10 * MIN);
+    assert.deepStrictEqual([(s as Schedule).loop?.ended?.reason, (s as Schedule).loop?.ended?.at], ['time', T0 + 50 * MIN]);
+  }
+
+  // --- the minimum delay runs from the END of the pass, also on the monotonic clock ---
+  {
+    const h = harness();
+    const s = await h.loop();
+    await h.advance(20 * MIN); // a long pass
+    h.sch.turnEnded('s1', { finalText: 'LOOP: next 5 min' });
+    h.skew.v += 5 * MIN; // the wall clock jumps; the monotonic clock saw nothing since the pass ended
+    await h.advance(5 * MIN);
+    assert.strictEqual(h.sent.length, 1, 'not sent: the minimum counts from the end of the pass, not from the send');
+    await h.advance(5 * MIN);
+    assert.strictEqual(h.sent.length, 2);
+    void s;
+  }
+
+  // --- usage that arrives after the turn ended still counts toward the loop's cap until its next pass starts ---
+  {
+    const h = harness();
+    const s = await h.loop({ cap: { amount: 3, unit: 'aiu' } });
+    h.sch.noteUsage('s1', { nanoAiu: 1e9 });
+    h.sch.turnEnded('s1', { finalText: 'LOOP: next 5 min' });
+    h.sch.noteUsage('s1', { nanoAiu: 2.5e9 }); // `usage` after `idle`
+    assert.strictEqual(s.spent, 3.5);
+    await h.advance(5 * MIN);
+    assert.deepStrictEqual([s.loop?.ended?.reason, h.sent.length], ['limit', 1], 'the late spend stops the next pass');
+    h.sch.noteUsage('s1', { nanoAiu: 1e9 });
+    assert.strictEqual(s.spent, 3.5, 'an ended loop counts nothing more');
+  }
+
   // --- restart (T005) ---
   {
     const h = harness();
@@ -528,6 +684,70 @@ async function main(): Promise<void> {
         }
       }
       assert.ok(sendTimes.length <= 8);
+    }
+  }
+  // fuzz: Pause, Resume, an edit or a stop while a send is in flight, the send then fails or not: a loop is never stuck in a pass,
+  // never sends after its end time or over its passes, and `last` is never "sent" for a failed pass
+  {
+    let seed = 4242;
+    const rnd = (): number => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    for (let run = 0; run < 80; run++) {
+      const h = harness();
+      const maxPasses = 2 + Math.floor(rnd() * 6);
+      const endAt = T0 + (60 + Math.floor(rnd() * 300)) * MIN;
+      const sendTimes: number[] = [];
+      let id = '';
+      for (let step = 0; step < 60; step++) {
+        const c = h.sch.doc.schedules[0];
+        if (c?.loop?.ended) break;
+        const release = gated(h);
+        h.failSend.v = rnd() < 0.5;
+        const before = h.sent.length;
+        if (!c) {
+          const r = h.sch.save({ folder: '/w', prompt: 'p', target: { session: 's1', agent: 'copilot' }, cap: { amount: 50, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 10, maxPasses, endAt } }, () => true);
+          assert.ok(r.ok);
+          id = (r as { schedule: Schedule }).schedule.id;
+          await h.advance(0);
+        } else {
+          await h.advance(Math.max(0, (c.next ?? h.now) - h.now));
+        }
+        if (h.sent.length > before) sendTimes.push(h.now);
+        const live = (): Schedule => h.sch.doc.schedules.find((x) => x.id === id) as Schedule;
+        // during the send
+        const act = rnd();
+        if (live()?.loop?.inPass) {
+          const l = live();
+          if (act < 0.3) h.sch.save({ ...l, paused: true }, () => true);
+          else if (act < 0.5) h.sch.save({ ...l, edit: true, loop: { ...l.loop, maxPasses } }, () => true);
+          else if (act < 0.6) {
+            h.sch.save({ ...l, paused: true }, () => true);
+            h.sch.save({ ...live(), paused: false }, () => true);
+          } else if (act < 0.65) h.sch.stopLoop(id);
+          else if (act < 0.75) h.sch.turnEnded('s1', { error: true });
+        }
+        await release();
+        const l = live();
+        if (l?.loop && !l.loop.ended && h.gate.p === undefined && !(h.sch as unknown as { running: boolean }).running) {
+          if (l.loop.inPass) {
+            // the send succeeded: the turn is still running; it ends now
+            h.sch.turnEnded('s1', { finalText: rnd() < 0.5 ? 'LOOP: next 7 min' : 'LOOP: next 1 min' });
+          }
+          assert.ok(!live().loop?.inPass, `run ${run}: left the pass`);
+        }
+        if (live()?.paused && !live().loop?.ended) h.sch.save({ ...live(), paused: false }, () => true);
+        assert.ok(h.sent.length <= maxPasses, `run ${run}: at most maxPasses`);
+        for (const at of sendTimes) assert.ok(at < endAt, `run ${run}: sent at or after endAt`);
+      }
+      h.failSend.v = false;
+      h.gate.p = undefined;
+      for (let k = 0; k < 40 && !h.sch.doc.schedules[0].loop?.ended; k++) {
+        const f = h.sch.doc.schedules[0];
+        if (f.paused) h.sch.save({ ...f, paused: false }, () => true);
+        else if (f.loop?.inPass) h.sch.turnEnded('s1', { finalText: 'LOOP: next 5 min' });
+        await h.advance(60 * MIN);
+        assert.ok(h.sent.length <= maxPasses, `run ${run}: at most maxPasses at the end`);
+      }
+      assert.ok(h.sch.doc.schedules[0].loop?.ended, `run ${run}: the loop always ends (never stuck in a pass)`);
     }
   }
 }

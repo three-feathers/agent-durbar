@@ -164,7 +164,7 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
   - the cap uses 044 FR-017's ranges.
 
   Defaults (Q1, Q2): 30 / 5 / 60 min, 12 passes, end 8 h after the start, cap 50 AI credits or $0.50.
-- **FR-004** `[IMPLEMENTED]` (test: `scripts/test-schedules.ts`, `scripts/test-loops.ts`) A loop has no `every`, `at` or `rule`. Its `next` is set only by FR-010/FR-011 from the end of a pass, or by a hold being released (FR-015). `dueAt` returns `undefined` while a pass is in progress or the loop is on hold or ended.
+- **FR-004** `[IMPLEMENTED]` (test: `scripts/test-schedules.ts`, `scripts/test-loops.ts`) A loop has no `every`, `at` or `rule`. Its `next` is set only by FR-010/FR-011 from the end of a pass, or by a hold being released (FR-015). `dueAt` returns `undefined` while a pass is in progress or the loop has ended. A loop never wakes later than its `endAt`, held or not (`dueAt` is at most `endAt`; a held loop wakes at `endAt`), so a loop past its end time ends with "reached its end time" and does not stay shown as running. A send in flight when Pause, Resume or an edit replaces the schedule acts on the current copy, and only if it is still the same pass.
 
 **Start and stop (R2, R4)**
 
@@ -192,7 +192,7 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
   - `LOOP: stop [- <reason>]`.
 
   The line may be wrapped in `**...**`, `*...*` or backticks and may end with a full stop (models do this); the 200 characters count the wrapping. Anything else is "no line". The parser is pure and has no shell and no regular expression with catastrophic backtracking. The reason is cleaned to one line of at most 120 characters (bidi and zero-width characters removed, controls turned into a space, whitespace collapsed and redacted before the cut) and passed through `redact()` before it is shown or logged.
-- **FR-011** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) The next wake = the end of the pass + the asked delay, clamped to [`minDelay`, `maxDelay`]. A clamped ask is recorded with `source: 'clamped'` and shown ("asked 2 min, waited 5"). `stop` ends the loop with `ended.reason: 'agent'` and the agent's reason.
+- **FR-011** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) The next wake = the end of the pass + the asked delay, clamped to [`minDelay`, `maxDelay`]. The monotonic backstop (a wall-clock jump never shortens the minimum) also counts from the end of the pass, not from the send. A clamped ask is recorded with `source: 'clamped'` and shown ("asked 2 min, waited 5"). `stop` ends the loop with `ended.reason: 'agent'` and the agent's reason.
 - **FR-012** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) A pass with no line (or, in Phase 2, no tool call) uses `defaultDelay` with the reason "the agent did not say". Two such passes in a row end the loop: "Stopped: the agent did not pace the loop" (Q3). A pass that ends in `error` (FR-013) counts only toward the error streak: it neither adds to nor resets this no-line streak.
 - **FR-013** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) A pass that ends in `error` counts as a pass. The loop waits `defaultDelay`. Two errors in a row end the loop: "Stopped after two failed passes".
 
@@ -279,6 +279,7 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 
 ## Honest limits and gaps (to keep in the README when built)
 
+- `[KNOWN GAP]` (T006) **Usage after `idle`.** The scheduler keeps a running loop's attribution of the session's `usage` events after the pass ends, until the next pass starts or the loop ends (`turnEnded` does not clear it for a loop; test: `scripts/test-loops.ts`). Over-counting is accepted: anything the session spends between passes, including the user's own turns, counts toward the loop's cap. What is not verified is the order of `usage` and `idle` per adapter (Copilot, Claude, Codex). T006 must route every `usage` event of the loop's session to `noteUsage` (also when it arrives after `idle`) and check the order per adapter; a spend that only arrives after the next pass has started is counted for that next pass.
 - `[KNOWN GAP]` The spend of a pass is known only from the app's `usage` events. A pass that starts under the cap can end over it, and Claude's dollar figure is an estimate (044 FR-015, spec 012 FR-150).
 - `[KNOWN GAP]` Phase 2 token secrecy is best effort against the **same** OS user. Other local users cannot read it: it is never on a command line or in an environment variable, and its file is mode 0600 in a 0700 folder (FR-031). Another process of the same OS user (for example an agent in Allow all with a shell) could read it. The damage is bounded: it can only re-pace or stop that one loop, within its limits. This is the same same-user limit 041 states in FR-035.
 - `read:` `busyStatus` (`main.ts:443`) may not count a pending question or a credit-limit request as busy. This spec uses the agentstate flags instead. Whether spec 044 has a real gap there is **unverified**; worth a separate check.
