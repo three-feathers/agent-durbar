@@ -400,14 +400,20 @@ height and its rows spilled over the footer instead of scrolling. (2) Six server
 #### Requirements (delta)
 
 - **FR-077** **The footer never overlaps the rows.** In a wide dialog (`.dlg.wide`, so the agent's MCP dialog) the title and the
-  buttons stay in view and only the body scrolls, with the same scrollbar room for the switches' focus ring as `.dlg.imp`. At 1440x900,
-  1280x800 and 1280x600 with 14 or more servers, no row's box meets the button row and *Done* is visible and clickable. Other
+  buttons stay in view and only the body scrolls, with a few pixels of padding so the switches' focus ring is not clipped (`.dlg.imp` does the same). At 1440x900,
+  1280x800 and 1280x600 with 14 or more servers, no row's box meets the button row and *Done* is visible and clickable. The *Restart session with these servers* row and the "Applies to this agent until the app is closed" line are part of the scrolling body, never on the buttons (owner, macOS, issue #544). Other
   `dialog()` users with a wide body behave the same. [IMPLEMENTED] `sim:` `shots-058-mcp-words.js`.
 - **FR-078** **A word says who turned the server off, and never contradicts the switch.** A server the runtime reports `disabled`:
-  reads "Off for this session" only when the user switched it off here (`off`); "Off in Settings" / "Off in folder extras" when the
-  tag says so; otherwise the agent app or its config turned it off and the word is "Off in <app name>" (`app` of the reply; without it
-  "Turned off by the agent app"). That row's switch shows off and is disabled, and its hint says where to change it ("Turn it on in
-  <app>'s own MCP settings, then restart the session."). Agent Durbar does not claim it can switch it on. [IMPLEMENTED] `test:` `test-mcpwords.ts`; `sim:` the same driver.
+  - reads "Off for this session" only when the user's switch here is off (`off`);
+  - "Off in Settings" / "Off in folder extras" when the Settings or extras default is off (the separate "off in ..." tag is then left out);
+  - "Off until the session restarts" when Agent Durbar itself passed it as off when the session started (`launchedOff` on the `agents:mcp`
+    entry, kept by main from the start options: Copilot `disabledMcpServers`, Codex's disabled list) and the user has since switched it on
+    in Settings; its switch stays on, and its hint points to *Restart session with these servers*;
+  - "Starting" while the user has just switched it on here (`switchedHere`) and the runtime's old `disabled` has not been replaced yet (no flicker);
+  - otherwise the agent app or its config turned it off, and the word is "Off in <app name>" (`app` of the reply; without it
+    "Turned off by the agent app"). That row's switch shows off and is disabled, and its hint says where to change it ("Turn it on in
+    <app>'s own MCP settings, then restart the session."). Agent Durbar does not claim it can switch it on.
+  [IMPLEMENTED] `test:` `test-mcpwords.ts`, `test-mcp-session.ts` (`launchedOff`, `switchedHere`); `sim:` `shots-058-mcp-words.js`.
 
 ### 2026-10-20: MCP OAuth sign-in (issue #364)
 

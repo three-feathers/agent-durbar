@@ -137,6 +137,9 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
   });
   ipcHandle('mcp:removeLegacy', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().removeLegacy(name) }));
 
+  /** Spec 058 FR-078: what Agent Durbar passed as disabled at the last session start, and what the user switched since: a runtime `disabled` for these is ours, not the agent app's. */
+  const launched = new Map<string, Set<string>>();
+  const touched = new Map<string, Set<string>>();
   ipcHandle('agents:mcp', (_e, id: unknown): AgentMcpReply => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, servers: [], live: false };
@@ -150,13 +153,19 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
       cli: cli().servers,
       extras: s.list(keyOf(a)),
       ambientDisabled: new Set(s.ambientDisabled()),
+      launchedOff: launched.get(a.id),
+      switchedHere: touched.get(a.id),
     });
   });
   /** Spec 058 FR-021: restart one server of this agent's running session; one at a time per server. */
   const restarting = new Set<string>();
   ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
     mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled()]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
-  ipcHandle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
+  ipcHandle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
+    const r = await setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled);
+    if (r.ok && typeof id === 'string' && typeof name === 'string') { const t = touched.get(id) ?? new Set<string>(); t.add(name); touched.set(id, t); }
+    return r;
+  });
 
   return {
     secretValuesFor,
@@ -165,6 +174,8 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
       if (!a) return { mcpServers: {}, disabledMcpServers: [...(off.get(agentId) ?? [])] };
       // Only this agent's own folder's extras are passed (spec 020 FR-012).
       const r = store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames());
+      launched.set(agentId, new Set(r.disabledMcpServers));
+      touched.delete(agentId);
       return { mcpServers: r.mcpServers, disabledMcpServers: r.disabledMcpServers };
     },
   };

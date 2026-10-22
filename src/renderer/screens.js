@@ -670,20 +670,21 @@
     const body=s=>{
       const rows=s.servers.map(x=>{
         const W=window.DurbarMcpWords, app=s.app||o&&o.appName;
-        const octx={off:x.off,defaultOn:x.defaultOn,origin:x.origin,app};
+        const octx={off:x.off,defaultOn:x.defaultOn,origin:x.origin,app,launchedOff:x.launchedOff,switchedHere:x.switchedHere};
+        const by=x.status==='disabled'?W.offBy(octx):'';
         /* FR-078: a server the agent app turned off (runtime `disabled`, but not off here or in Settings) shows its switch off, so the word and the switch agree */
-        const appOff=x.status==='disabled'&&W.offBy(octx)==='app';
+        const appOff=by==='app';
         const eff=x.defaultOn&&!x.off&&!appOff;
         const sv=W.stateOf(x.status,octx);
         const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span></span>`;
-        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by:appOff?'app':''});
+        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by});
         const detOpen=x.error&&openDet.has(x.name);
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
         const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-err="${esc(x.name)}" aria-label="${esc('Error text of '+x.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-copy="${esc(x.name)}" aria-label="${esc('Copy the error text of '+x.name)}">Copy</button></div>`:'';
         const rs=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
-        return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name" title="${esc(W.plain(x.name,120))}">${esc(x.name)}</b><span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
-          <div class="srv-act">${rs}${sw(eff,(appOff?x.name+' is off in '+(app||'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff?' disabled':''))}</div></li>`;}).join('');
+        return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name" title="${esc(W.plain(x.name,120))}">${esc(x.name)}</b><span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>${stat}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
+          <div class="srv-act">${rs}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff?' disabled':''))}</div></li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
       return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Your Copilot CLI servers are global (see <b>Settings</b>); extras belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">Applies to this agent until the app is closed.</p>`;
@@ -708,7 +709,7 @@
         }
       }
       const W=window.DurbarMcpWords,ch=[];
-      for(const x of st.servers){const was=seen.get(x.name);if(was!==undefined&&was!==(x.status||''))ch.push(x.name+': '+W.stateOf(x.status,{off:x.off,defaultOn:x.defaultOn,origin:x.origin,app:st.app||o&&o.appName}).word);}
+      for(const x of st.servers){const was=seen.get(x.name);if(was!==undefined&&was!==(x.status||''))ch.push(x.name+': '+W.stateOf(x.status,{off:x.off,defaultOn:x.defaultOn,origin:x.origin,app:st.app||o&&o.appName,launchedOff:x.launchedOff,switchedHere:x.switchedHere}).word);}
       seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
       return ch;};
     /* FR-004 / FR-033: an `mcp` event for this agent repaints the open dialog (no re-open) and says what changed through the polite live region.

@@ -38,6 +38,12 @@ module.exports = async (ctx) => {
       det:li.querySelector('button[data-det]')?li.querySelector('button[data-det]').getAttribute('aria-expanded'):null,err:(li.querySelector('.srv-err')||{}).textContent||null,text:li.textContent};})()`);
   const fits = () => js(`(()=>{const d=document.querySelector('#scrDlg .dlg').getBoundingClientRect();return d.top>=0&&d.left>=0&&d.bottom<=innerHeight+1&&d.right<=innerWidth+1&&document.documentElement.scrollWidth<=innerWidth;})()`);
   const minFont = () => js(`(()=>{let min=99,who='';document.querySelectorAll('#scrDlg .dlg, #scrDlg .dlg *').forEach(e=>{if(!e.getClientRects().length)return;const own=[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());if(!own)return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'.'+e.className}});return {min,who}})()`);
+  /* issue #544 (Mac): the "Applies to this agent..." line and the Restart session row sit in the scrolling body, never on the buttons */
+  const footerClear = () => js(`(()=>{const q=s=>document.querySelector(s),btn=q('#scrDlg .dbtn').getBoundingClientRect(),body=q('#scrDlg .dbody'),bb=body.getBoundingClientRect();
+    const els=[q('#scrDlg .mcp-rsess'),[...document.querySelectorAll('#scrDlg .dbody > p.dsub.small')].pop()].filter(Boolean);
+    const rs=q('#scrDlg .mcp-rsess').getBoundingClientRect(),note=els[els.length-1].getBoundingClientRect();
+    return {inBody:els.every(e=>body.contains(e)),clear:els.every(e=>{const r=e.getBoundingClientRect();return r.bottom<=btn.top+0.5||r.top>=btn.bottom-0.5||r.top<bb.top||r.bottom>bb.bottom;}),
+      vis:els.every(e=>{const r=e.getBoundingClientRect();return r.top>=bb.top-0.5&&r.bottom<=bb.bottom+0.5;}),btnTop:btn.top,rsBottom:rs.bottom,noteBottom:note.bottom,noteAfterRs:note.top>=rs.bottom-0.5};})()`);
   const emit = (id, servers) => js(`window.__durbarSimEmit({type:'mcp',sessionId:${jsLiteral(id)},timestamp:Date.now(),servers:${jsLiteral(servers)}})`);
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
@@ -185,6 +191,8 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#scrDlg .dbody').scrollTop=0`);
     await shot(`058-mcp-dialog-fit-${w}x${h}.png`);
     await js(`document.querySelector('#scrDlg .dbody').scrollTop=1e6`);
+    const fc = await footerClear();
+    assert.ok(fc.inBody && fc.clear && fc.vis && fc.noteAfterRs && fc.noteBottom <= fc.btnTop + 0.5, `${w}x${h}: the Restart session row and the note are inside the body, above the buttons ${JSON.stringify(fc)}`);
     await shot(`058-mcp-dialog-fit-end-${w}x${h}.png`);
     await closeDlg();
     await closePanel();

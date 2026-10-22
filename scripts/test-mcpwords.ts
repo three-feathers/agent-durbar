@@ -3,8 +3,8 @@ import * as assert from 'assert';
 import * as path from 'path';
 
 interface Words {
-  stateOf: (s: unknown, ctx?: { off?: boolean; defaultOn?: boolean; origin?: string; app?: string }) => { word: string; icon: string; cls: string };
-  offBy: (ctx?: { off?: boolean; defaultOn?: boolean }) => string;
+  stateOf: (s: unknown, ctx?: { off?: boolean; defaultOn?: boolean; origin?: string; app?: string; launchedOff?: boolean; switchedHere?: boolean }) => { word: string; icon: string; cls: string };
+  offBy: (ctx?: { off?: boolean; defaultOn?: boolean; launchedOff?: boolean; switchedHere?: boolean }) => string;
   iconSvg: (n: string) => string;
   hintFor: (o: { by?: string; status?: string; errorClass?: string; error?: string; app?: string }) => string;
   plain: (t: unknown, n: number) => string;
@@ -48,6 +48,14 @@ assert.strictEqual(W.stateOf('disabled', { off: false, defaultOn: true, app: 'A\
 assert.strictEqual(W.stateOf('disabled', { off: false, defaultOn: true, app: 'X' }).icon, 'off');
 assert.strictEqual(W.stateOf('connected', { off: true, defaultOn: true }).word, 'Running', 'only `disabled` is reworded');
 assert.deepStrictEqual([{ off: true, defaultOn: true }, { off: false, defaultOn: false }, { off: false, defaultOn: true }].map((c) => W.offBy(c)), ['here', 'settings', 'app']);
+// FR-078: a server Durbar itself passed as off at the session start is never blamed on the agent app
+assert.strictEqual(W.offBy({ off: false, defaultOn: true, launchedOff: true }), 'start');
+assert.strictEqual(W.stateOf('disabled', { off: false, defaultOn: true, launchedOff: true, app: 'GitHub Copilot' }).word, 'Off until the session restarts');
+assert.strictEqual(W.offBy({ off: false, defaultOn: true, switchedHere: true }), 'pending');
+assert.strictEqual(W.stateOf('disabled', { off: false, defaultOn: true, switchedHere: true }).word, 'Starting', 'no flicker: switched on here, the old `disabled` reads Starting');
+assert.strictEqual(W.offBy({ off: true, defaultOn: true, launchedOff: true }), 'here', 'the switch wins');
+assert.strictEqual(W.offBy({ off: false, defaultOn: false, launchedOff: true }), 'settings');
+assert.match(W.hintFor({ status: 'disabled', by: 'start' }), /Restart session with these servers/);
 assert.match(W.hintFor({ status: 'disabled', by: 'app', app: 'GitHub Copilot' }), /^Turn it on in GitHub Copilot\u2019s own MCP settings, then restart the session\./);
 assert.match(W.hintFor({ status: 'disabled', by: 'app' }), /^Turn it on in the agent app\u2019s own MCP settings/, 'no app name: the fallback');
 assert.strictEqual(W.hintFor({ status: 'disabled', by: 'here', app: 'X' }), '', 'a server switched off here needs no hint');

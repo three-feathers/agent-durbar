@@ -86,6 +86,7 @@ interface SimAgent {
   mcpRestarting?: Set<string>;
   mcpFixed?: Set<string>;
   /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
+  mcpReported?: SimAgent['mcpLive']; /* the last list a driver reported through `__durbarSimEmit` (not the simulator's own): its names stay in the dialog */
   mcpAppOff?: Set<string>; /* servers a reported `mcp` list had as `disabled` that this agent's switch did not turn off (the agent app's own config) */
   mcpLive?: { name: string; status: string; error?: string; errorClass?: McpServerStatus['errorClass'] }[];
   /** Simulated credit use in nano-AIU, and the open "limit reached" question (spec 011). */
@@ -384,6 +385,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (server) (simDoc.servers[server] ??= { calls: 0, failed: 0 })[f]++;
     };
     let simSchedHook: ((e: AgentEvent) => void) | undefined; // spec 044 FR-018: usage of a scheduled run counts toward its limit
+    let selfMcp = false; /* the simulator's own `mcp` event, as opposed to one a driver reports */
     const emit = (e: AgentEvent): void => {
       listeners.forEach((l) => l(e));
       simSchedHook?.(e);
@@ -391,7 +393,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const q = sims.find((x) => x.info.id === e.sessionId);
         if (q?.pendingModel) window.setTimeout(() => void applyPending(q), 0); // the turn ended: the queued switch applies
       }
-      if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { q.mcpLive = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } }
+      if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { q.mcpLive = e.servers; if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
       const src = e.type === 'toolCall' ? sims.find((x) => x.info.id === e.sessionId) : undefined;
       if (src) simCount(e, src.info.name + ' · ' + src.info.cwd.replace(/\/+$/, '').split('/').pop());
     };
@@ -579,7 +581,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       return { status: 'connected' };
     };
     const mcpStatus = (s: SimAgent, i: number): void => {
-      emit({ type: 'mcp', sessionId: sid(s), timestamp: now(), servers: (s.mcpLive ?? serversOf(s)).map((m) => ({ ...m, status: 'connected', ...simServer(s, i, m.name, true), ...(s.mcpAppOff?.has(m.name) && !s.mcpOff?.has(m.name) ? { status: 'disabled' } : {}) })) }); /* a list a driver reported keeps its servers and the ones the app turned off */
+      const own = serversOf(s), names = new Set(own.map((m) => m.name));
+      const base = [...own, ...(s.mcpReported ?? []).filter((m) => !names.has(m.name))]; /* rebuilt each time: a removed extra goes, a driver-reported server stays */
+      selfMcp = true;
+      try { emit({ type: 'mcp', sessionId: sid(s), timestamp: now(), servers: base.map((m) => ({ ...m, status: 'connected', ...simServer(s, i, m.name, true), ...(s.mcpAppOff?.has(m.name) && !s.mcpOff?.has(m.name) ? { status: 'disabled' } : {}) })) }); } finally { selfMcp = false; }
     };
 
     let openSeq = 0;

@@ -31,6 +31,10 @@ export interface McpReplyInput {
   extras: ReadonlyArray<{ name: string; enabled: boolean; trusted: boolean; needsSecrets?: boolean }>;
   /** Names switched off in Settings. */
   ambientDisabled: ReadonlySet<string>;
+  /** Spec 058 FR-078: names Agent Durbar passed as disabled when this session started. */
+  launchedOff?: ReadonlySet<string>;
+  /** Spec 058 FR-078: names the user switched here since the session started. */
+  switchedHere?: ReadonlySet<string>;
 }
 
 /** `agents:mcp` (spec 019 FR-009, spec 058 FR-020). No path and no secret value: names, states and masked errors only. */
@@ -48,7 +52,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const on = defaultOn && !off.has(name);
     // FR-030: Restart only for a server the running session knows (the runtime reported it) and that is switched on
     const canRestart = canRestartAny && on && !!st && st.status !== 'disabled';
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}) });
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   for (const am of i.cli) add(am.name, 'cli', am.enabled);
   const names = new Set(i.cli.map((x) => x.name.toLowerCase()));
