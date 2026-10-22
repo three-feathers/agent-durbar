@@ -357,4 +357,9 @@ Owner (Paco, 2026-10-20, about 14:35 CEST): accept Vikram's requirements on issu
 ### 2026-10-22: a long unbroken name overflowed the desk card (issue #536, FR-019)
 
 Spec 001 owns the card layout, but this spec owns where names are shown and `simnames=long` (FR-016), so the rule is here (FR-019) and spec 001 only
-gets a pointer. Fix: line clamp on full/roomy cards, ellipsis elsewhere, simulator name and `check:office` assertion. Task T061.
+gets a pointer. Fix: line clamp on full cards, ellipsis elsewhere, simulator name and `check:office` assertion. Task T061.
+- `test:` built 2026-10-22 (simulator only). The roomy and compact cards (`.l1 .name`), the chat header, strip, list row and Previous sessions row already cut a long name to one line;
+  the full card (`.who .name`) was the only one that did not, so only it got the 2-line clamp (a roomy card keeps its one line so card sizes do not change). `check:office` (new `sim=3` full-layout case
+  and the 12 and 15 agent offices) and `check:rename` (step 7, a 60-character token on the header, strip, card, list row and a Previous sessions row) fail when a name leaves its box; `scripts/shots-059-long-url.js`
+  took `docs/screenshots/059-long-url-name-{before,after}-{1440x900,1280x800}.png`. Before the fix the name ran 4 lines and out of its card at 1440x900, and at 1280x800 made the layout fall back to roomy.
+- `[KNOWN GAP]` The Needs you inbox row and the Schedules list were not given the URL-like name (the Schedules hint shows the name cut to 40, FR-008); `check:ui-text` x-scroll covers the inbox with `simnames=long`.
