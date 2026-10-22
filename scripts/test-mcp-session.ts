@@ -47,6 +47,7 @@ async function main(): Promise<void> {
       const live: McpServerStatus[] = [
         { name: 'notes', status: 'failed', error: `401 from https://user:pw@api.example.com/mcp with Authorization: Bearer ${secret} and ghp_abcdefghijklmnopqrstuvwxyz0123456789` },
         { name: 'web', status: 'connected' },
+        { name: 'signed-out', status: 'needs-auth', errorClass: 'auth', error: `needs sign-in at https://x.example.com/?token=${secret}` },
         { name: 'off-one', status: 'disabled' },
         { name: 'rt-only', status: 'connected' },
       ];
@@ -69,6 +70,13 @@ async function main(): Promise<void> {
       assert.strictEqual(by('later').canRestart, undefined, 'a server the running session never reported: no Restart');
       assert.strictEqual(by('local').canRestart, undefined, 'an untrusted extra (off): no Restart');
       assert.strictEqual(by('rt-only').origin, 'runtime');
+      // T114: errorClass passes through only when the adapter set it; the app's display name rides on the reply
+      assert.strictEqual(by('signed-out').errorClass, 'auth');
+      assert.strictEqual(by('signed-out').status, 'needs-auth');
+      assert.ok(!JSON.stringify(by('signed-out')).includes(secret), 'a needs-sign-in error is masked too');
+      assert.ok(!('errorClass' in by('notes')) && !('errorClass' in by('web')), 'no errorClass unless the adapter said so');
+      assert.strictEqual(r.app, ad.displayName, 'the reply names the agent app');
+      assert.strictEqual(agentMcpReply({ ...base, ad: undefined }).app, undefined, 'no adapter: no name');
       assert.deepStrictEqual([r.live, r.start, r.toggleApplies, r.canRestartSession], [true, 'session', 'live', true]);
 
       const noMember = agentMcpReply({ ...base, ad: new FakeAdapter({ omit: ['restartMcpServer'] }) });

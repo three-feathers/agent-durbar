@@ -10,8 +10,9 @@ pass=0; failn=0
 mkrepo() {
   rm -rf "$TMP/r"; mkdir -p "$TMP/r"; cd "$TMP/r"
   git init -q -b main; git config user.email t@t; git config user.name t
-  mkdir -p src docs specs/003-x
-  echo a > src/a.ts; echo r > README.md; echo d > docs/d.md; echo c > CHANGELOG.md; echo t > specs/003-x/tasks.md
+  mkdir -p src docs specs/003-x changelog.d
+  echo a > src/a.ts; echo r > README.md; echo d > docs/d.md; printf '# Changelog\n\n## Unreleased\n\n## v1 (x)\n\n- old\n' > CHANGELOG.md; echo t > specs/003-x/tasks.md
+  echo '# about' > changelog.d/README.md; echo '| row |' > specs/README.md; echo '# s' > specs/003-x/spec.md
   printf '{\n  "name": "x",\n  "version": "1.0.0",\n  "scripts": {\n    "build": "tsc",\n    "test": "node t.js"\n  }\n}\n' > package.json
   git add -A; git commit -qm base; BASE="$(git rev-parse HEAD)"
 }
@@ -27,7 +28,12 @@ run_case() {
 src_only()      { echo b >> src/a.ts; }
 src_readme()    { echo b >> src/a.ts; echo n >> README.md; }
 src_docs()      { echo b >> src/a.ts; echo n >> docs/d.md; }
-src_changelog() { echo b >> src/a.ts; echo n >> CHANGELOG.md; }
+src_changelog() { echo b >> src/a.ts; echo '- n' >> CHANGELOG.md; }
+src_fragment()  { echo b >> src/a.ts; echo '- n' > changelog.d/003-x.md; }
+release_cl()    { printf '# Changelog\n\n## Unreleased\n\n## v2 (y)\n\n- new\n\n## v1 (x)\n\n- old\n' > CHANGELOG.md; }
+cl_prose()      { echo 'More intro words.' >> CHANGELOG.md; }
+index_row()     { echo '| [003](003-x/spec.md) | X | built |' >> specs/README.md; echo 'status: built' >> specs/003-x/spec.md; }
+index_text()    { echo 'More hand-written intro.' >> specs/README.md; }
 src_tasks_only(){ echo b >> src/a.ts; echo n >> specs/003-x/tasks.md; }
 docs_only()     { echo n >> docs/d.md; }
 add_script()    { sed -i 's|"test": "node t.js"|"test": "node t.js",\n    "lint": "eslint ."|' package.json; }
@@ -41,7 +47,12 @@ reset_env() { PR_BODY=""; PR_LABELS_JSON="[]"; }
 reset_env; MUTATE=src_only;      run_case "src only warns" 1
 reset_env; MUTATE=src_readme;    run_case "src + README passes" 0
 reset_env; MUTATE=src_docs;      run_case "src + docs/ passes" 0
-reset_env; MUTATE=src_changelog; run_case "src + CHANGELOG passes" 0
+reset_env; MUTATE=src_changelog; run_case "src + a new CHANGELOG bullet warns (use a fragment)" 1
+reset_env; MUTATE=src_fragment;  run_case "src + changelog.d fragment passes" 0
+reset_env; MUTATE=release_cl;    run_case "a release (new ## v heading) may add CHANGELOG bullets" 0
+reset_env; MUTATE=cl_prose;      run_case "CHANGELOG prose without a bullet does not warn" 0
+reset_env; MUTATE=index_row;     run_case "a spec row added to specs/README.md warns (rows are generated)" 1
+reset_env; MUTATE=index_text;    run_case "hand-written text in specs/README.md does not warn" 0
 reset_env; MUTATE=src_tasks_only; run_case "src + only spec tasks still warns" 1
 reset_env; MUTATE=docs_only;     run_case "docs only passes" 0
 reset_env; MUTATE=src_only; PR_BODY=$'Fix.\n\nDocs: n/a internal refactor, no visible change'; run_case "Docs: n/a with reason passes" 0

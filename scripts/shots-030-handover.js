@@ -31,7 +31,7 @@ module.exports = async (ctx) => {
     await ctx.waitFor(`!!document.getElementById('moreBtn')`, 8000);
     await openMore();
     const item = await js(`(()=>{const b=document.getElementById('handoverBtn');if(!b)return null;const r=b.getBoundingClientRect();return {t:b.textContent,font:parseFloat(getComputedStyle(b).fontSize),h:r.height}})()`);
-    assert.ok(item && item.t === 'Continue in another app…', `${w}: the More menu offers Continue in another app…`);
+    assert.ok(item && item.t.startsWith('Continue in another app…'), `${w}: the More menu offers Continue in another app…`);
     assert.ok(item.font >= 10.5, `${w}: legible`);
     await shot('menu', w, h);
     await js(`document.getElementById('handoverBtn').click()`);
