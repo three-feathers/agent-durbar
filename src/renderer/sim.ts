@@ -132,6 +132,12 @@ function simSlash(kind: string): SimSlash[] {
   return kind === 'codex' ? skills.concat([{ name: 'prompts:draft-pr', description: 'Draft a pull request description', argumentHint: 'TITLE', source: 'user', kind: 'prompt', where: '~/.codex/prompts/draft-pr.md' }]) : skills;
 }
 
+const SIM_SLASH_DESC = 'Draft the release notes from every merged pull request since the last tag, grouped by area, with breaking changes first and a link to each pull request and the issues it closes';
+const SIM_SLASH_LONG: SimSlash[] = [
+  { name: 'x'.repeat(64), description: SIM_SLASH_DESC.slice(0, 200), argumentHint: '<from-tag> <to-tag> <area> <audience>', source: 'folder', kind: 'command', where: '.claude/commands/' + 'x'.repeat(64) + '.md' },
+  { name: 'release-notes-for-the-customer-reconciliation-batch-jobs-2026', description: SIM_SLASH_DESC.slice(0, 120), source: 'user', kind: 'skill', where: '~/.claude/skills/release-notes-long/SKILL.md' },
+];
+
 const SIM_PROFILES = [
   { id: 'reviewer', name: 'Reviewer', description: 'Reviews changes and points at risks; never edits files', source: 'repo' as const, path: '~/work/mcp-swiss/.github/agents/reviewer.agent.md', tools: ['view', 'grep', 'glob'], model: 'sim-deep' },
   { id: 'docs-writer', name: 'Docs writer', description: 'Writes and tidies documentation in plain English', source: 'user' as const, path: '~/.copilot/agents/docs-writer.agent.md' },
@@ -1151,7 +1157,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       slashCommands: async (id) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent', entries: [] };
-        return { ok: true, entries: simSlash(s.info.adapterId ?? 'copilot') };
+        // page address simslash=long (spec 073 FR-008, review on #535): a 64-character name, a long hint and a 200-character description
+        // come first, for check:ui-text's long-text pass
+        const long = simQuery.get('simslash') === 'long' ? SIM_SLASH_LONG : [];
+        return { ok: true, entries: [...long, ...simSlash(s.info.adapterId ?? 'copilot')] };
       },
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);

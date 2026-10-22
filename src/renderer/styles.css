@@ -1040,13 +1040,13 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .mode-chip.mode-allow{color:var(--red-ink);background:var(--pb-error);border-color:#e3bdb7} /* spec 052 FR-065: the chat header says Allow all in the same red as the cards */
 .mode-menu{position:fixed;z-index:70;width:min(var(--menu-w),calc(100vw - 16px));background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:var(--shadow-pop);display:flex;flex-direction:column;gap:2px}
 /* spec 073: the composer's "/" list: the menus' look (.mode-menu), as wide as the message box, at most 8 rows then it scrolls; tokens only, 10.5px floor */
-.slash-list{gap:0;overflow-y:auto;overscroll-behavior:contain;padding:4px}
+.slash-list{gap:0;overflow-y:auto;overscroll-behavior:contain} /* a menu: --menu-w and the 6px padding of .mode-menu (FR-008) */
 .slash-list .sl-opt{display:flex;flex-direction:column;gap:1px;min-height:40px;justify-content:center;padding:4px 10px;border-radius:10px;cursor:pointer;color:var(--ink)}
 .slash-list .sl-opt[aria-selected="true"]{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--focus)}
 .slash-list .sl-opt:hover{background:var(--surface-2)}
 .slash-list .sl-line{display:flex;align-items:baseline;gap:8px;min-width:0}
-.slash-list .sl-name{font:600 13px/1.3 var(--font-mono);color:var(--ink);white-space:nowrap}
-.slash-list .sl-hint{font:11px/1.3 var(--font-mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.slash-list .sl-name{font:600 13px/1.3 var(--font-mono);color:var(--ink);white-space:nowrap;min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis} /* the row's title has the full name */
+.slash-list .sl-hint{font:11px/1.3 var(--font-mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 0} /* the hint takes only the room the name and the source word leave */
 .slash-list .sl-src{margin-left:auto;flex:none;font-size:10.5px;font-weight:600;letter-spacing:.02em;color:var(--ink-2);white-space:nowrap}
 .slash-list .sl-desc{font-size:11.5px;line-height:1.35;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .slash-list .sl-empty{margin:0;padding:8px 10px;font-size:12px;color:var(--ink-2)}

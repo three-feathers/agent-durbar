@@ -1569,17 +1569,23 @@ function drawSlash(src){
   const W=SLASH.SOURCE_WORD, K=SLASH.KIND_WORD;
   const err=src&&src.error?`<p class="sl-empty" role="presentation">Could not list commands: ${esc(DurbarCutText.cutText(src.error,120))}</p>`:'';
   el.innerHTML=u.loading?'<p class="sl-empty" role="presentation">Looking for commands…</p>'
-    :u.items.length?u.items.map((x,i)=>`<div class="sl-opt" role="option" id="slashOpt-${i}" data-i="${i}" aria-selected="${i===u.active}"${x.where?` title="${esc((x.source==='app'?'':'Sends the text of ')+x.where)}"`:''}><span class="sl-line"><b class="sl-name">/${esc(x.name)}</b>${x.argumentHint?`<span class="sl-hint">${esc(x.argumentHint)}</span>`:''}<span class="sl-src sl-${esc(x.source)}">${esc(W[x.source]||x.source)} · ${esc(K[x.kind]||x.kind)}</span></span>${x.description?`<span class="sl-desc">${esc(x.description)}</span>`:''}</div>`).join('')
+    :u.items.length?u.items.map((x,i)=>`<div class="sl-opt" role="option" id="slashOpt-${i}" data-i="${i}" aria-selected="${i===u.active}" title="${esc(slashTip(x))}"><span class="sl-line"><b class="sl-name">/${esc(x.name)}</b>${x.argumentHint?`<span class="sl-hint">${esc(x.argumentHint)}</span>`:''}<span class="sl-src sl-${esc(x.source)}">${esc(W[x.source]||x.source)} · ${esc(K[x.kind]||x.kind)}</span></span>${x.description?`<span class="sl-desc">${esc(x.description)}</span>`:''}</div>`).join('')
     :err||`<p class="sl-empty" role="presentation">${u.tok.query?'No matching commands':'No commands for this agent app here'}</p>`;
   u.input.setAttribute('aria-expanded','true');
   if(u.items.length)u.input.setAttribute('aria-activedescendant','slashOpt-'+u.active);else u.input.removeAttribute('aria-activedescendant');
   placeSlash(el,u.input);
   const act=document.getElementById('slashOpt-'+u.active); if(act)act.scrollIntoView({block:'nearest'});
 }
-/* above the message box, as wide as it, at most 8 rows (the rest scroll inside), never over the box (SC-003) */
+/* FR-008 (review on PR 535): the row's tooltip has what an ellipsis may cut: the full name, the description and the place (a data
+   tooltip, at most 300 characters) */
+function slashTip(x){
+  const place=x.source==='app'?'Built-in command of the agent app':x.where?'Sends the text of '+x.where:'';
+  return DurbarCutText.cutText(['/'+x.name,x.description,place].filter(Boolean).join('\n'),300);
+}
+/* a menu (--menu-w, design-rules.md) above the message box at its left edge, at most 8 rows (the rest scroll inside), never over the
+   box (SC-003) */
 function placeSlash(el,input){
   const box=input.closest('.inbox')||input, br=box.getBoundingClientRect(), panel=$('panel'), pr=panel?panel.getBoundingClientRect():{top:8};
-  el.style.width=Math.round(br.width)+'px';
   const row=el.querySelector('.sl-opt'), rh=row?row.getBoundingClientRect().height:40;
   const room=Math.max(rh+12,br.top-Math.max(8,pr.top)-12);
   el.style.maxHeight=Math.min(room,Math.ceil(rh*SLASH_ROWS+10))+'px'; /* 8 rows, the padding and the border */

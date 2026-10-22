@@ -33,8 +33,8 @@ import { PermissionBroker, isInsideRoots, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import type { AgentProfile, PlanAnswer, SlashCommand } from './types';
-import { copilotSlashPlaces, discoverSlash, expandSlash } from './slashcommands';
-import type { SlashEntry } from './slashcommands';
+import { copilotHomeDir, copilotSlashPlaces, SlashCache } from './slashcommands';
+import type { SlashPlace } from './slashcommands';
 import { cleanPlanText } from './plan';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
 import type { HistoryResult, PreviousSession } from './history';
@@ -744,18 +744,19 @@ export class CopilotAdapter implements AgentAdapter {
    * Spec 073 FR-004/FR-009: the folder's and the user's skills, read by Durbar (the session has no config discovery, so the runtime does
    * not load them; real 2026-10-22). No built-ins: `session.send` hands a typed built-in to the model as text (real 2026-10-22).
    */
-  private slashFiles(live: { cwd: string; folders?: string[] }): SlashEntry[] {
-    return discoverSlash(copilotSlashPlaces([live.cwd, ...(live.folders ?? [])]));
+  private readonly slash = new SlashCache();
+  private slashPlaces(live: { cwd: string; folders?: string[] }): SlashPlace[] {
+    return copilotSlashPlaces([live.cwd, ...(live.folders ?? [])], copilotHomeDir());
   }
 
   async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
     const live = this.sessions.get(sessionId);
-    return live ? this.slashFiles(live) : [];
+    return live ? this.slash.list(this.slashPlaces(live), { refresh: true }) : []; // the window opening its list: read afresh
   }
 
   async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined> {
     const live = this.sessions.get(sessionId);
-    return live ? expandSlash(text, this.slashFiles(live)) : undefined;
+    return live ? this.slash.expand(text, () => this.slashPlaces(live)) : undefined; // no IO unless the text is a `/name` line
   }
 
   /** spec 043 FR-002: the session's selectable custom agents (`rpc.agent.list`, @experimental). */

@@ -6,7 +6,9 @@
  *   only inside the session's folders and the documented user directories, with real paths checked (no symbolic link leads out of
  *   its folder or user directory), at most 100 files per directory and 300 in all, files over 64 KB skipped, 8 KB read per file.
  * - `expandSlash` turns a message that starts with `/<name>` of a folder or user entry into that entry's text (FR-005).
- * - `cleanBuiltins` keeps the app built-ins Durbar may offer (FR-007).
+ * - `SlashCache` keeps one discovery per set of places (30 s, unchanged directory mtimes) so a send never rescans: a message that is
+ *   not `/<name>` causes no IO at all, and a `/<name>` one reads only that entry's file (review on #535).
+ * - `cleanBuiltins` keeps the allow-listed app built-ins (FR-007).
  * No Electron, no shell, nothing executed; file contents are never logged. Unit tests: `npm run test:slashcommands`.
  */
 import * as fs from 'fs';
@@ -81,6 +83,8 @@ export interface SlashFs {
   readdir(p: string): string[];
   /** At most `max` bytes of a file, as UTF-8; throws when the file is larger than `limit`. */
   readHead(p: string, max: number, limit: number): string;
+  /** A directory's modification time (follows links); throws when it is missing. Used only to check a cached discovery. */
+  mtime(p: string): number;
 }
 
 const realFs: SlashFs = {
@@ -99,6 +103,7 @@ const realFs: SlashFs = {
       fs.closeSync(fd);
     }
   },
+  mtime: (p) => fs.statSync(p).mtimeMs,
 };
 
 export interface DiscoverOptions {
@@ -206,17 +211,13 @@ export function mergeSlash<T extends SlashCommand>(...groups: readonly (readonly
 }
 
 /**
- * FR-007: Claude Code built-ins that are never offered: they change settings, permissions, model, effort, MCP, the session's identity
- * or output (Durbar has its own controls for those), or reach paid cloud or account features. Typing one by hand still sends it.
+ * FR-007 (constitution III): the only Claude Code built-ins Durbar offers, and only when the CLI lists them. Checked, harmless names:
+ * `context` real: (run by the CLI, no model call); the others read: (Claude Code's docs and `initialize` list). Anything else, including
+ * a built-in a later Claude Code adds (`sandbox`, `add-dir`, `hooks`, ...), is not offered. Typing one by hand still sends it.
  */
-export const BUILTIN_DENY: ReadonlySet<string> = new Set([
-  'config', 'permissions', 'model', 'effort', 'fast', 'advisor', 'mcp', 'clear', 'rename', 'color', 'focus', 'output-style', 'autocompact',
-  'auto-mode-setup', 'reload-plugins', 'reload-skills', 'heapdump', 'doctor', 'debug', 'ultrareview', 'schedule', 'remote-control',
-  'usage-credits', 'extra-usage', 'team-onboarding', 'import', 'agents', 'login', 'logout', 'resume', 'exit', 'quit',
-]);
-const DENY_PREFIX = /^(design|remote-|workflow-|_)/;
+export const BUILTIN_ALLOW: ReadonlySet<string> = new Set(['compact', 'context', 'cost', 'init', 'review', 'security-review']);
 
-/** FR-006/FR-007: an app's built-in list (Claude's `initialize` `commands`) as entries, minus the denied ones. */
+/** FR-006/FR-007: an app's built-in list (Claude's `initialize` `commands`) as entries, only the allow-listed ones. */
 export function cleanBuiltins(list: unknown): SlashEntry[] {
   if (!Array.isArray(list)) return [];
   const out: SlashEntry[] = [];
@@ -224,7 +225,7 @@ export function cleanBuiltins(list: unknown): SlashEntry[] {
     if (!c || typeof c !== 'object') continue;
     const r = c as { name?: unknown; description?: unknown; argumentHint?: unknown };
     const name = typeof r.name === 'string' ? r.name.replace(/^\//, '') : '';
-    if (!isSlashName(name) || BUILTIN_DENY.has(name.toLowerCase()) || DENY_PREFIX.test(name.toLowerCase())) continue;
+    if (!isSlashName(name) || !BUILTIN_ALLOW.has(name.toLowerCase())) continue;
     const description = oneLine(r.description, 200);
     if (description && /^\(removed\)|^renamed to /i.test(description)) continue;
     const argumentHint = oneLine(r.argumentHint, 80);
@@ -274,6 +275,59 @@ export function expandSlash(text: string, entries: readonly SlashEntry[], opts: 
   return out === undefined ? undefined : { text: out, where: e.where ?? e.name };
 }
 
+const placesKey = (places: readonly SlashPlace[]): string => JSON.stringify(places.map((p) => [p.dir, p.root, p.scope, p.kind, p.layout, p.prefix ?? '', p.whereBase]));
+
+/**
+ * One discovery per set of places (a folder or workspace and its user directories), FR-002 / FR-005 (review on #535). `list` with
+ * `refresh` (the window opening the list) always reads afresh; otherwise a discovery under `ttlMs` old whose place directories still
+ * have the same mtimes is reused. `expand` tests the `/name` line pattern first, so a message like "hi" causes no IO at all.
+ */
+export class SlashCache {
+  private readonly cache = new Map<string, { at: number; stamps: number[]; entries: SlashEntry[] }>();
+  private readonly ttlMs: number;
+  private readonly now: () => number;
+  private readonly opts: DiscoverOptions;
+  private readonly max: number;
+  constructor(o: DiscoverOptions & { ttlMs?: number; now?: () => number; max?: number } = {}) {
+    this.ttlMs = o.ttlMs ?? 30_000;
+    this.now = o.now ?? Date.now;
+    this.opts = { ...(o.fs ? { fs: o.fs } : {}), ...(o.caseInsensitive !== undefined ? { caseInsensitive: o.caseInsensitive } : {}) };
+    this.max = o.max ?? 32;
+  }
+  private stamps(places: readonly SlashPlace[]): number[] {
+    const f = this.opts.fs ?? realFs;
+    return places.map((p) => {
+      try {
+        return f.mtime(p.dir);
+      } catch {
+        return -1;
+      }
+    });
+  }
+  list(places: readonly SlashPlace[], o: { refresh?: boolean } = {}): SlashEntry[] {
+    const key = placesKey(places);
+    const hit = this.cache.get(key);
+    const stamps = this.stamps(places);
+    if (!o.refresh && hit && this.now() - hit.at < this.ttlMs && hit.stamps.every((v, i) => v === stamps[i])) return hit.entries;
+    const entries = discoverSlash(places, this.opts);
+    this.cache.delete(key);
+    this.cache.set(key, { at: this.now(), stamps, entries });
+    while (this.cache.size > this.max) this.cache.delete(this.cache.keys().next().value as string); // oldest set of places first
+    return entries;
+  }
+  /** FR-005: `expandSlash` over the cached entries; no IO unless the text is a `/name` line. */
+  expand(text: string, places: () => readonly SlashPlace[]): { text: string; where: string } | undefined {
+    if (!slashLineName(text)) return undefined;
+    return expandSlash(text, this.list(places()), this.opts);
+  }
+}
+
+/** The `<name>` of a message that starts with `/<name>` (the FR-005 line pattern), else undefined. No IO. */
+export function slashLineName(text: unknown): string | undefined {
+  const m = SLASH_LINE.exec(String(text ?? '').trim());
+  return m ? m[1] : undefined;
+}
+
 /** `~/…` for a path under the home folder, else the path's last two parts (never a full absolute path in the window). */
 export function displayBase(dir: string, home = os.homedir()): string {
   const rel = path.relative(home, dir);
@@ -298,13 +352,20 @@ export function claudeSlashPlaces(roots: readonly string[], configDir: string, h
   return out;
 }
 
-/** FR-004 GitHub Copilot CLI: each folder's `.github/skills`, `.claude/skills`, `.agents/skills`; the user's `~/.copilot/skills`, `~/.agents/skills`. */
-export function copilotSlashPlaces(roots: readonly string[], home = os.homedir()): SlashPlace[] {
+/** The Copilot CLI's home: `COPILOT_HOME` replaces the whole `~/.copilot` path (GitHub's config-dir reference, read:). */
+export function copilotHomeDir(env: NodeJS.ProcessEnv = process.env, home = os.homedir()): string {
+  return env.COPILOT_HOME || path.join(home, '.copilot');
+}
+
+/**
+ * FR-004 GitHub Copilot CLI: each folder's `.github/skills`, `.claude/skills`, `.agents/skills`; the user's `$COPILOT_HOME/skills`
+ * (default `~/.copilot`) and `~/.agents/skills`.
+ */
+export function copilotSlashPlaces(roots: readonly string[], copilotHome: string, home = os.homedir()): SlashPlace[] {
   const rs = uniq(roots);
   const out: SlashPlace[] = [];
   for (const f of rs) for (const d of ['.github', '.claude', '.agents']) out.push({ dir: path.join(f, d, 'skills'), root: f, scope: 'folder', kind: 'skill', layout: 'skill-dirs', whereBase: folderBase(rs, f) });
-  for (const d of ['.copilot', '.agents']) {
-    const root = path.join(home, d);
+  for (const root of [copilotHome, path.join(home, '.agents')]) {
     out.push({ dir: path.join(root, 'skills'), root, scope: 'user', kind: 'skill', layout: 'skill-dirs', whereBase: displayBase(root, home) });
   }
   return out;

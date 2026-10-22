@@ -12,8 +12,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, SlashCommand, StartOptions, Unsubscribe, WriteGuard } from './types';
-import { codexSlashPlaces, discoverSlash, expandSlash } from './slashcommands';
-import type { SlashEntry } from './slashcommands';
+import { codexSlashPlaces, SlashCache } from './slashcommands';
+import type { SlashPlace } from './slashcommands';
 import { cleanPlanText, reviseText } from './plan';
 import type { AdapterDescriptor } from './capabilities';
 import type { EventBody } from './map';
@@ -679,20 +679,20 @@ export class CodexAdapter implements AgentAdapter {
    * Spec 073 FR-004/FR-009: the folder's and the user's skills and the user's custom prompts (`prompts:<name>`), read by Durbar: the
    * app-server lists no commands or prompts and expands neither (that is the TUI's work, read: 0.163.0 schema). No built-ins.
    */
-  private slashFiles(live: { roots: string[] }): SlashEntry[] {
+  private readonly slash = new SlashCache();
+  private slashPlaces(live: { roots: string[] }): SlashPlace[] {
     const env = this.env ?? process.env;
-    const codexHome = env.CODEX_HOME || path.join(os.homedir(), '.codex');
-    return discoverSlash(codexSlashPlaces(live.roots, codexHome));
+    return codexSlashPlaces(live.roots, env.CODEX_HOME || path.join(os.homedir(), '.codex'));
   }
 
   async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
     const live = this.sessions.get(sessionId);
-    return live ? this.slashFiles(live) : [];
+    return live ? this.slash.list(this.slashPlaces(live), { refresh: true }) : []; // the window opening its list: read afresh
   }
 
   async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined> {
     const live = this.sessions.get(sessionId);
-    return live ? expandSlash(text, this.slashFiles(live)) : undefined;
+    return live ? this.slash.expand(text, () => this.slashPlaces(live)) : undefined; // no IO unless the text is a `/name` line
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {

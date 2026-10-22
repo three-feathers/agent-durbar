@@ -36,7 +36,7 @@ import { detectorFor, setLoginPath } from '../adapters/detect';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
-import { restorable, validMode } from './agentops';
+import { restorable, sendWithSlash, validMode } from './agentops';
 import type { OpsDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
@@ -426,15 +426,14 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
     checkpoints().beginTurn(id, rootsOf(agents.get(id) as AgentInfo)); // spec 065 FR-002: a send starts a turn (scheduled prompts too)
     // spec 073 FR-005: a leading `/name` of a folder or user entry is sent as that entry's text (the apps do not load them in Durbar's
     // sessions); built-ins and anything else go as typed. Scheduled prompts come through here too.
-    const slash = ad.expandSlashCommand ? await ad.expandSlashCommand(id, String(text)).catch(() => undefined) : undefined;
-    await ad.send(id, {
-      text: slash ? slash.text : String(text),
+    const { slash } = await sendWithSlash(ad, id, {
+      text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
       ...(plan ? { plan: true } : {}),
     });
     for (const a of safe) pickedFiles.delete(a.path); // spec 004 FR-015: a sent file must be picked again to be sent again
     noteLastSession(agents.get(id));
-    return slash ? { ok: true, slash: slash.where } : { ok: true };
+    return slash ? { ok: true, slash } : { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

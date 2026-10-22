@@ -7,7 +7,8 @@
  * At 1440x900 and 1280x800 (simkinds=mixed: Noor is an idle Claude Code agent, Hugo an idle Copilot one):
  *   - "/" at the start of the box opens a listbox (ARIA: combobox on the box, aria-expanded, aria-controls, aria-activedescendant);
  *     folder entries, then user, then app built-ins; at most 8 rows visible, the rest scroll inside the list;
- *   - the list sits above the message box, inside the panel, never over the box; no text under 10.5px;
+ *   - the list sits above the message box, inside the panel, never over the box; no text under 10.5px; a name of up to 24 characters
+ *     is never cut by a long argument hint (review on #535);
  *   - typing filters; ArrowDown / ArrowUp move and wrap; Tab and Enter insert "/name " and do not send; a click inserts;
  *   - Esc closes only the list (the chat stays open), a second Esc then closes the chat as before;
  *   - "/" inside a word or a URL opens nothing;
@@ -42,6 +43,12 @@ function measure() {
   if (full.length > 8) P.push(`${full.length} rows visible (at most 8)`);
   const small = [...list.querySelectorAll('*')].filter((e) => e.getClientRects().length && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 10.5).map((e) => e.className);
   if (small.length) P.push('text under 10.5px: ' + small.slice(0, 3).join(', '));
+  // review on #535: a long hint gives way before the name; a name of up to 24 characters is never cut
+  for (const o of opts) {
+    const n = o.querySelector('.sl-name'), has = R(n).width;
+    n.style.flex = 'none'; const need = R(n).width; n.style.flex = ''; /* its own width: an ellipsis shows for a fraction of a pixel */
+    if (n.textContent.length <= 24 && need > has + 0.01) P.push(`the name ${n.textContent} is cut (${has.toFixed(3)} of ${need.toFixed(3)}px)`);
+  }
   if (list.getAttribute('role') !== 'listbox') P.push('the list is not a listbox');
   if (input.getAttribute('role') !== 'combobox' || input.getAttribute('aria-expanded') !== 'true' || input.getAttribute('aria-controls') !== 'slashList') P.push('the box is not an expanded combobox for the list');
   const act = input.getAttribute('aria-activedescendant');
@@ -92,6 +99,7 @@ module.exports = async (ctx) => {
     check(m.active === 'slashOpt-0', `${tag}: the first row is not active (${m.active})`);
     check(await until(`/10 commands/.test(document.getElementById('srAnnounce').textContent)`, 2000), `${tag}: the count is not announced`);
     await shot(`073-slash-${tag}.png`);
+    (await M()).P.forEach((p) => check(false, `${tag} (at the screenshot, fonts loaded): ${p}`));
 
     /* arrows wrap; typing filters */
     await key('Down'); m = await M();

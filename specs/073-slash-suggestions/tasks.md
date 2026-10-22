@@ -64,18 +64,19 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
 
 ## Phase 7: Review on #535 (rubenlupi, 2026-10-22; spec *Changes*)
 
-- [ ] T019 `src/adapters/slashcommands.ts`: `SlashCache` (per set of places; 30 s and unchanged dir mtimes; `refresh` on list) and
+- [x] T019 `src/adapters/slashcommands.ts`: `SlashCache` (per set of places; 30 s and unchanged dir mtimes; `refresh` on list) and
   `expand` that tests the line pattern before any IO and reads only the named entry's file; Claude, Copilot and Codex adapters use it
   [FR-002, FR-005]
-- [ ] T020 `src/main/agentops.ts`: `sendWithSlash(ad, id, msg)` used by `sendOp` in `src/main/main.ts` [FR-005]
-- [ ] T021 `src/adapters/slashcommands.ts`: `BUILTIN_ALLOW` replaces `BUILTIN_DENY` in `cleanBuiltins` [FR-007, FR-009]
-- [ ] T022 `copilotSlashPlaces` takes the Copilot home (`COPILOT_HOME`, default `~/.copilot`); Claude uses `claudeConfigDir()` [FR-004]
-- [ ] T023 Tests: `scripts/test-slashcommands.ts` (counting fake fs: 0 reads for "hi", one file for a warm `/name`, cache invalidation by
+- [x] T020 `src/main/agentops.ts`: `sendWithSlash(ad, id, msg)` used by `sendOp` in `src/main/main.ts` [FR-005]
+- [x] T021 `src/adapters/slashcommands.ts`: `BUILTIN_ALLOW` replaces `BUILTIN_DENY` in `cleanBuiltins` [FR-007, FR-009]
+- [x] T022 `copilotSlashPlaces` takes the Copilot home (`COPILOT_HOME`, default `~/.copilot`); Claude uses `claudeConfigDir()` [FR-004]
+- [x] T023 Tests: `scripts/test-slashcommands.ts` (counting fake fs: 0 reads for "hi", one file for a warm `/name`, cache invalidation by
   mtime and age, refresh; unknown built-in such as `sandbox` not offered; Copilot home), `scripts/test-agentops.ts` (`sendWithSlash`)
-- [ ] T024 `src/renderer/app.js` / `styles.css`: the list at `--menu-w` with the menu padding, name with an ellipsis, the row's `title`
-  with name, description and place; `scripts/check-ui-text.js` surfaces `chat-slash-list` and `chat-slash-long` (64-character name,
-  200-character description, 480px panel); `docs/design-rules.md` names the list among the menus [FR-008]
-- [ ] T025 `npm run typecheck && npm run build && npm test`, `check:slash-suggest`, `check:ui-text` for the new surfaces; mutation checks
+- [x] T024 `src/renderer/app.js` / `styles.css`: the list at `--menu-w` with the menu padding, name with an ellipsis, the row's `title`
+  with name, description and place, the hint takes only the room left (a short name is never cut: `check:slash-suggest`);
+  `scripts/check-ui-text.js` surface `chat-slash-list` and its pass `chat-slash-long` (`simslash=long` in `sim.ts`: 64-character name,
+  long hint, 200-character description, 480px panel); `docs/design-rules.md` names the list among the menus [FR-008, FR-011]
+- [x] T025 `npm run typecheck && npm run build && npm test`, `check:slash-suggest`, `check:ui-text` for the new surfaces; mutation checks
 
 ## Known gaps (open tasks, not this PR)
 

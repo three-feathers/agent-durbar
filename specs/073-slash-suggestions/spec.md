@@ -128,7 +128,8 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   in the FR-001 shape (strings re-checked and cut). The window fetches the list the first time the list opens in a chat (so opening a chat never starts a
   session) and again when it opens with a copy older than 30 s.
 - **FR-011 Simulator.** Every simulated agent kind answers `slashCommands` with canned folder, user and (Claude only) built-in entries,
-  and the simulated send shows the FR-005 note for a folder entry. No disk reads, no real app.
+  and the simulated send shows the FR-005 note for a folder entry. No disk reads, no real app. The page address `simslash=long` puts two entries with long names,
+  hint and description first (for `check:ui-text`).
 
 ### Key Entities
 
@@ -165,7 +166,8 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   fake adapter: the expanded text reaches `send`, `where` comes back, a rejected expansion sends the typed text.
 - **Menu rule (FR-008).** The list uses `--menu-w` and the menu padding instead of the box's width and 4px; `check:ui-text` has a
   `chat-slash-list` surface and a long-name pass in a 480px panel.
-- **Long text (FR-008).** The name ends in an ellipsis; the row's `title` has the full name, description and place.
+- **Long text (FR-008, FR-011).** The name ends in an ellipsis; the row's `title` has the full name, description and place; a long
+  argument hint gives way first, so a short name is never cut. `simslash=long` gives the simulator long entries.
 - **Allow list (FR-007, FR-009).** Claude built-ins are offered from an allow list, not filtered by a deny list; an unknown built-in is
   not offered (test). FR-007 now names exactly what the code allows.
 - **Copilot home (FR-004).** The user's Copilot skills are under `$COPILOT_HOME` (default `~/.copilot`); Claude's config folder comes

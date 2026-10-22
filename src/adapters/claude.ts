@@ -40,11 +40,11 @@ import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shar
 import { allowedRemoteUrl, cleanRemoteError } from '../shared/remote';
 import type { RemoteState } from '../shared/remote';
 import { resolveWorkspaceCwd } from './workspace';
-import { listClaudeSessions, readClaudeHistory } from './claudeHistory';
+import { claudeConfigDir, listClaudeSessions, readClaudeHistory } from './claudeHistory';
 import type { HistoryResult, PreviousSession } from './history';
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
-import { claudeSlashPlaces, cleanBuiltins, discoverSlash, expandSlash, mergeSlash } from './slashcommands';
-import type { SlashEntry } from './slashcommands';
+import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache } from './slashcommands';
+import type { SlashPlace } from './slashcommands';
 import { agentsArg, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
 import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand } from './types';
@@ -584,8 +584,9 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   /** Spec 073 FR-004: the folder's and the user's skills and commands (Claude does not load them: `--setting-sources ""`). */
-  private slashFiles(s: Session): SlashEntry[] {
-    return discoverSlash(claudeSlashPlaces(s.roots, this.deps.configDir ?? (process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'))));
+  private readonly slash = new SlashCache();
+  private slashPlaces(s: Session): SlashPlace[] {
+    return claudeSlashPlaces(s.roots, this.deps.configDir ?? claudeConfigDir());
   }
 
   /** Spec 073 FR-001: files first, then the built-ins of the CLI's `initialize` reply that run in Durbar's sessions (FR-006, FR-007). */
@@ -593,13 +594,13 @@ export class ClaudeAdapter implements AgentAdapter {
     const s = this.sessions.get(sessionId);
     if (!s) return [];
     const builtins = cleanBuiltins((await this.initReply()).commands);
-    return mergeSlash(this.slashFiles(s), builtins);
+    return mergeSlash(this.slash.list(this.slashPlaces(s), { refresh: true }), builtins); // the window opening its list: read afresh
   }
 
   /** Spec 073 FR-005: a folder or user entry is sent as its text (real 2026-10-22: Claude sends an unknown `/name` to the model as is). */
   async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined> {
     const s = this.sessions.get(sessionId);
-    return s ? expandSlash(text, this.slashFiles(s)) : undefined;
+    return s ? this.slash.expand(text, () => this.slashPlaces(s)) : undefined; // no IO unless the text is a `/name` line
   }
 
   /** spec 043 FR-008: the custom agents of the session's folders and of the user (read by the adapter; Claude does not load them). */

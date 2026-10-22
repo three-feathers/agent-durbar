@@ -5,7 +5,9 @@
  *  - the places of each app (Claude Code, Copilot, Codex), also as Windows paths;
  *  - safety: symbolic links out of a folder or user directory, oversized files, the per-directory and total caps, bad names;
  *  - expansion: `$ARGUMENTS`, `$1`..`$9`, no placeholder, skills, built-ins and unknown names left alone, a vanished file;
- *  - the built-in filter (FR-007) and what crosses to the window (`publicSlash`);
+ *  - the built-in allow list (FR-007: an unknown built-in is not offered) and what crosses to the window (`publicSlash`);
+ *  - the per-folder cache (review on #535): a message that is not `/name` reads nothing, a warm `/name` reads only its file, and the
+ *    cache is renewed by a changed directory, by age and by the list opening;
  *  - the Claude adapter merges files with the probe's built-ins; the Copilot and Codex adapters list their places;
  *  - the renderer's pure helpers (`slashsuggest.js`): the word at the caret, filtering, insertion.
  */
@@ -15,10 +17,10 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vm from 'vm';
 import {
-  BUILTIN_DENY, MAX_SLASH_BYTES, MAX_SLASH_FILES, MAX_SLASH_PER_DIR, claudeSlashPlaces, cleanBuiltins, codexSlashPlaces, copilotSlashPlaces,
-  discoverSlash, displayBase, expandSlash, mergeSlash, parseFrontMatter, publicSlash,
+  BUILTIN_ALLOW, MAX_SLASH_BYTES, MAX_SLASH_FILES, MAX_SLASH_PER_DIR, SlashCache, claudeSlashPlaces, cleanBuiltins, codexSlashPlaces,
+  copilotHomeDir, copilotSlashPlaces, discoverSlash, displayBase, expandSlash, mergeSlash, parseFrontMatter, publicSlash, slashLineName,
 } from '../src/adapters/slashcommands';
-import type { SlashPlace } from '../src/adapters/slashcommands';
+import type { SlashFs, SlashPlace } from '../src/adapters/slashcommands';
 import { parseClaudeAgent } from '../src/adapters/claudeAgents';
 import { ClaudeAdapter } from '../src/adapters/claude';
 import { CodexAdapter } from '../src/adapters/codex';
@@ -98,8 +100,11 @@ async function main(): Promise<void> {
       ['/h/.claude/skills', 'user', 'skill', '~/.claude'], ['/h/.claude/commands', 'user', 'command', '~/.claude'],
     ]);
     assert.strictEqual(claudeSlashPlaces(['/w/a'], '/h/.claude', '/h')[0].whereBase, '', 'one folder: paths relative to it');
-    const cp = copilotSlashPlaces(['/w/a'], '/h').map((p) => p.dir.split(path.sep).join('/'));
+    const cp = copilotSlashPlaces(['/w/a'], copilotHomeDir({}, '/h'), '/h').map((p) => p.dir.split(path.sep).join('/'));
     assert.deepStrictEqual(cp.map((d) => d.replace(/^[A-Za-z]:/, '')), ['/w/a/.github/skills', '/w/a/.claude/skills', '/w/a/.agents/skills', '/h/.copilot/skills', '/h/.agents/skills']);
+    // COPILOT_HOME replaces the whole ~/.copilot path (GitHub's config-dir reference, read:)
+    const ch = copilotSlashPlaces(['/w/a'], copilotHomeDir({ COPILOT_HOME: '/c/cop' }, '/h'), '/h').filter((p) => p.scope === 'user');
+    assert.deepStrictEqual(ch.map((p) => [p.dir.split(path.sep).join('/').replace(/^[A-Za-z]:/, ''), p.whereBase]), [['/c/cop/skills', 'c/cop'], ['/h/.agents/skills', '~/.agents']]);
     const cx = codexSlashPlaces(['/w/a'], '/h/.codex', '/h');
     assert.deepStrictEqual(cx.map((p) => [p.dir.split(path.sep).join('/').replace(/^[A-Za-z]:/, ''), p.kind, p.prefix ?? '']), [
       ['/w/a/.agents/skills', 'skill', ''], ['/h/.agents/skills', 'skill', ''], ['/h/.codex/skills', 'skill', ''], ['/h/.codex/prompts', 'prompt', 'prompts:'],
@@ -180,14 +185,18 @@ async function main(): Promise<void> {
     assert.strictEqual(expandSlash('/prompts:fix 7 auth', l)!.text, 'Fix issue 7 in auth.');
   });
 
-  await test('built-ins: the FR-007 list is never offered; removed and renamed ones neither', () => {
-    const raw = [...BUILTIN_DENY].map((name) => ({ name, description: 'x' })).concat([
-      { name: 'compact', description: 'Free up context' }, { name: 'context', description: 'Show context' }, { name: 'init', description: 'Init' },
-      { name: 'design-sync', description: 'x' }, { name: '__remote-workflow', description: 'x' }, { name: 'extra', description: 'Renamed to /usage-credits' },
-      { name: 'old', description: '(removed) gone' }, { name: 'bad name', description: 'x' },
+  await test('built-ins: only the FR-007 allow list; an unknown or new built-in is not offered; removed ones neither', () => {
+    assert.deepStrictEqual([...BUILTIN_ALLOW].sort(), ['compact', 'context', 'cost', 'init', 'review', 'security-review']);
+    // the old deny list and built-ins a later Claude Code may add: none of them is offered by default (constitution III)
+    const others = ['config', 'permissions', 'model', 'effort', 'mcp', 'clear', 'rename', 'agents', 'login', 'resume', 'remote-control',
+      'sandbox', 'add-dir', 'hooks', 'privacy-settings', 'design-sync', '__remote-workflow', 'brand-new-thing'];
+    const raw = others.map((name) => ({ name, description: 'x' })).concat([
+      { name: '/compact', description: 'Free up context' }, { name: 'context', description: 'Show context' }, { name: 'INIT', description: 'Init' },
+      { name: 'review', description: '(removed) gone' }, { name: 'cost', description: 'Renamed to /usage' }, { name: 'bad name', description: 'x' },
     ]);
     const b = cleanBuiltins(raw);
-    assert.deepStrictEqual(b.map((e) => e.name), ['compact', 'context', 'init']);
+    assert.deepStrictEqual(b.map((e) => e.name), ['compact', 'context', 'INIT']);
+    assert.deepStrictEqual(cleanBuiltins([{ name: 'sandbox', description: 'Run in a sandbox' }]), [], 'an unknown built-in from the startup list is not offered');
     assert.ok(b.every((e) => e.source === 'app' && e.kind === 'builtin'));
     assert.deepStrictEqual(cleanBuiltins('nope'), []);
   });
@@ -218,7 +227,7 @@ async function main(): Promise<void> {
       env: () => ({}),
       makeTransport: (() => {
         probes++;
-        return { request: async () => ({ models: [], commands: [{ name: 'compact', description: 'Free up context' }, { name: 'model', description: 'Set model' }, { name: 'review-pr', description: 'shadowed' }] }), close: async () => undefined };
+        return { request: async () => ({ models: [], commands: [{ name: 'compact', description: 'Free up context' }, { name: 'model', description: 'Set model' }, { name: 'sandbox', description: 'A new built-in' }, { name: 'review-pr', description: 'shadowed' }] }), close: async () => undefined };
       }) as unknown as ConstructorParameters<typeof ClaudeAdapter>[0]['makeTransport'],
     });
     const sid = await ad.start({ workspace: repo, quiet: true });
@@ -229,6 +238,86 @@ async function main(): Promise<void> {
     assert.strictEqual((await ad.expandSlashCommand(sid, '/plain'))!.text, 'Do the plain thing.');
     assert.strictEqual(await ad.expandSlashCommand(sid, '/compact'), undefined);
     assert.deepStrictEqual(await ad.listSlashCommands('unknown'), []);
+    // review on #535: a plain message reads nothing from disk (spied on the real fs; the call's synchronous part is the expansion)
+    const realFsMod = require('fs') as Record<string, unknown>;
+    const spied = ['readdirSync', 'openSync', 'readSync', 'statSync', 'lstatSync', 'realpathSync', 'fstatSync'];
+    const saved = spied.map((k) => realFsMod[k]);
+    let calls = 0;
+    spied.forEach((k, i) => { realFsMod[k] = (...a: unknown[]) => { calls++; return (saved[i] as (...x: unknown[]) => unknown)(...a); }; });
+    let plain: Promise<unknown>, named: Promise<unknown>;
+    let plainCalls: number;
+    try {
+      plain = ad.expandSlashCommand(sid, 'hi');
+      plainCalls = calls;
+      calls = 0;
+      named = ad.expandSlashCommand(sid, '/plain');
+    } finally {
+      spied.forEach((k, i) => { realFsMod[k] = saved[i]; });
+    }
+    assert.strictEqual(await plain, undefined);
+    assert.strictEqual(plainCalls, 0, '"hi" reads nothing');
+    assert.strictEqual(((await named) as { text: string }).text, 'Do the plain thing.');
+    assert.ok(calls > 0 && calls < 20, `a warm "/plain" stats the places and reads its one file (${calls} calls)`);
+  });
+
+  await test('cache (review on #535): "hi" does no IO, a warm "/name" reads one file, renewed by a changed directory, age and refresh', () => {
+    const real: SlashFs = { realpath: (p) => fs.realpathSync(p), lstat: (p) => fs.lstatSync(p), readdir: (p) => fs.readdirSync(p),
+      readHead: (p, max) => fs.readFileSync(p, 'utf8').slice(0, max), mtime: (p) => fs.statSync(p).mtimeMs };
+    const n = { realpath: 0, lstat: 0, readdir: 0, readHead: 0, mtime: 0 };
+    const bump = new Map<string, number>();
+    const spy: SlashFs = {
+      realpath: (p) => (n.realpath++, real.realpath(p)), lstat: (p) => (n.lstat++, real.lstat(p)), readdir: (p) => (n.readdir++, real.readdir(p)),
+      readHead: (p, m, l) => (n.readHead++, real.readHead(p, m, l)), mtime: (p) => (n.mtime++, real.mtime(p) + (bump.get(p) ?? 0)),
+    };
+    const reset = (): void => { for (const k of Object.keys(n) as (keyof typeof n)[]) n[k] = 0; };
+    const total = (): number => Object.values(n).reduce((a, b) => a + b, 0);
+    let t = 1000;
+    const cache = new SlashCache({ fs: spy, now: () => t });
+    const places = claudeSlashPlaces([repo], cfg, path.join(tmp, 'home'));
+    let asked = 0;
+    const get = (): SlashPlace[] => (asked++, places);
+    for (const msg of ['hi', '', 'please /plain', '/usr/bin/env is here', '//x', 'hi\n/plain']) {
+      assert.strictEqual(cache.expand(msg, get), undefined, msg);
+    }
+    assert.strictEqual(total(), 0, 'a message that is not "/name" causes no IO');
+    assert.strictEqual(asked, 0, 'nor even builds the places');
+    assert.strictEqual(slashLineName('  /plain  x'), 'plain');
+    // cold: one discovery
+    assert.strictEqual(cache.expand('/plain', get)!.text, 'Do the plain thing.');
+    assert.ok(n.readdir > 0 && n.readHead > 1);
+    // warm: no directory listing, one file read
+    reset();
+    assert.strictEqual(cache.expand('/plain go', get)!.text, 'Do the plain thing.\n\nARGUMENTS: go');
+    assert.deepStrictEqual([n.readdir, n.lstat, n.readHead, n.mtime], [0, 0, 1, places.length]);
+    reset();
+    assert.strictEqual(cache.expand('/compact', get), undefined);
+    assert.deepStrictEqual([n.readdir, n.readHead], [0, 0], 'a built-in or unknown name reads no file when warm');
+    // a changed directory (new file): read again
+    reset();
+    bump.set(places[1].dir, 5);
+    cache.expand('/plain', get);
+    assert.ok(n.readdir > 0, 'a changed directory mtime renews the discovery');
+    // age: after 30 s, read again
+    reset();
+    cache.expand('/plain', get);
+    assert.strictEqual(n.readdir, 0);
+    t += 30_001;
+    cache.expand('/plain', get);
+    assert.ok(n.readdir > 0, 'a discovery older than 30 s is renewed');
+    // the window opening its list always reads afresh
+    reset();
+    cache.list(places, { refresh: true });
+    assert.ok(n.readdir > 0);
+    reset();
+    cache.list(places);
+    assert.strictEqual(n.readdir, 0, 'without refresh a fresh discovery is reused');
+    // a missing place directory is stamped too (an added .claude/skills folder renews it)
+    const r2 = path.join(tmp, 'noskills');
+    write(path.join(r2, '.claude', 'commands', 'one.md'), 'One.');
+    const p2 = claudeSlashPlaces([r2], path.join(tmp, 'none'), tmp);
+    cache.list(p2);
+    write(path.join(r2, '.claude', 'skills', 'two', 'SKILL.md'), 'Two.');
+    assert.ok(cache.list(p2).some((e) => e.name === 'two'), 'a place directory that appears renews the discovery');
   });
 
   await test('Codex adapter: lists the folder skills and CODEX_HOME prompts of its session', async () => {
