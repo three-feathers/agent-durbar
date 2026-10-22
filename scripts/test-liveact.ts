@@ -155,9 +155,16 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
 // long, fast thinking stays cheap (the block keeps its newest 1200 characters)
 {
   const f = mk();
-  const t0 = Date.now();
+  // CPU time, not wall time, so a loaded machine cannot fail it; wall time only has a loose 10x backstop for a blocking wait
+  // (spec 041 T068, review of PR #527)
+  const w0 = process.hrtime.bigint();
+  const c0 = process.cpuUsage();
   for (let i = 0; i < 4000; i++) f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: 'Word '.repeat(10) + 'end. ' }));
-  ok(Date.now() - t0 < 3000, '4000 deltas in under 3 s (' + (Date.now() - t0) + ' ms)');
+  const cpu = process.cpuUsage(c0);
+  const ms = (cpu.user + cpu.system) / 1000;
+  const wall = Number(process.hrtime.bigint() - w0) / 1e6;
+  ok(ms < 3000, '4000 deltas in under 3 s of CPU (' + ms + ' ms)');
+  ok(wall < 30000, '4000 deltas: wall-time backstop (' + wall.toFixed(1) + ' ms wall, limit 30000 ms)');
   ok(Array.from(f.of('a')!.lines).length <= L.PANEL_MAX, 'panel text bounded');
   ok(Array.from(f.of('a')!.long).length <= L.STREAM_MAX, 'grown desk text bounded');
 }
