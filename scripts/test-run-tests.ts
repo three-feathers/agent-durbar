@@ -5,7 +5,7 @@ import { EventEmitter } from 'events';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const rt = require(path.join(__dirname, '..', '..', 'scripts', 'run-tests.js')) as {
-  parseArgs: (argv: string[], env: Record<string, string | undefined>) => { bail: boolean; filters: string[] };
+  parseArgs: (argv: string[], env: Record<string, string | undefined>) => { bail: boolean; ignoredBail: boolean; filters: string[] };
   loadSuites: (pkg: unknown, filters: string[]) => { name: string; steps: string[][] }[];
   stopChild: (c: unknown, o: unknown) => void;
   runSuites: (o: Record<string, unknown>) => Promise<{ failed: string[]; bailed: string | null }>;
@@ -45,7 +45,7 @@ function harness(plan: Record<string, number>) {
 const suite = (name: string) => ({ name, steps: [[`dist/${name}.js`]] });
 const run = (h: ReturnType<typeof harness>, suites: ReturnType<typeof suite>[], o: Record<string, unknown>) => {
   const out: string[] = [];
-  return rt.runSuites({ suites, spawnFn: h.spawnFn, kill: h.kill, write: (t: string) => out.push(t), now: () => 0, ...o }).then((r) => ({ ...r, out: out.join('') }));
+  return rt.runSuites({ suites, spawnFn: h.spawnFn, kill: h.kill, stopOpts: { setTimer: () => 0, clearTimer: () => undefined }, write: (t: string) => out.push(t), now: () => 0, ...o }).then((r) => ({ ...r, out: out.join('') }));
 };
 
 // an unfinished promise would let node exit 0 in silence: fail then
@@ -54,12 +54,19 @@ process.on('exit', () => { if (!done) { console.error('test-run-tests: did not f
 
 (async () => {
   // flag, env var and filters
-  assert.deepStrictEqual(rt.parseArgs([], {}), { bail: false, filters: [] });
+  assert.deepStrictEqual(rt.parseArgs([], {}), { bail: false, ignoredBail: false, filters: [] });
   assert.strictEqual(rt.parseArgs(['--bail'], {}).bail, true, '--bail turns it on');
   assert.strictEqual(rt.parseArgs([], { TEST_BAIL: '1' }).bail, true, 'TEST_BAIL=1 turns it on');
   assert.strictEqual(rt.parseArgs([], { TEST_BAIL: '0' }).bail, false, 'TEST_BAIL=0 is off');
   assert.strictEqual(rt.parseArgs([], { TEST_BAIL: '' }).bail, false, 'an empty TEST_BAIL is off');
-  assert.deepStrictEqual(rt.parseArgs(['folders', '--bail', 'claude'], {}), { bail: true, filters: ['folders', 'claude'] }, 'filters combine with --bail');
+  assert.deepStrictEqual(rt.parseArgs(['folders', '--bail', 'claude'], {}), { bail: true, ignoredBail: false, filters: ['folders', 'claude'] }, 'filters combine with --bail');
+  // under CI the flag and the env var are ignored (any non-empty CI value except false/0)
+  for (const ci of ['true', '1', 'yes']) {
+    assert.deepStrictEqual(rt.parseArgs(['--bail'], { CI: ci }), { bail: false, ignoredBail: true, filters: [] }, `CI=${ci} ignores --bail`);
+    assert.deepStrictEqual(rt.parseArgs([], { CI: ci, TEST_BAIL: '1' }), { bail: false, ignoredBail: true, filters: [] }, `CI=${ci} ignores TEST_BAIL`);
+  }
+  for (const ci of ['', '0', 'false']) assert.strictEqual(rt.parseArgs(['--bail'], { CI: ci }).bail, true, `CI=${ci} is not CI`);
+  assert.deepStrictEqual(rt.parseArgs([], { CI: 'true' }), { bail: false, ignoredBail: false, filters: [] }, 'nothing asked, nothing ignored');
   const pkg = { scripts: { 'test:serial': 'npm run test:a && npm run test:folders && npm run test:folderx', 'test:a': 'tsc -p tsconfig.scripts.json && node a.js && node a2.js', 'test:folders': 'node f.js', 'test:folderx': 'node x.js' } };
   assert.deepStrictEqual(rt.loadSuites(pkg, []).map((s) => s.name), ['test:a', 'test:folders', 'test:folderx']);
   assert.deepStrictEqual(rt.loadSuites(pkg, ['folder']).map((s) => s.name), ['test:folders', 'test:folderx'], 'the name filter still works');
@@ -74,6 +81,7 @@ process.on('exit', () => { if (!done) { console.error('test-run-tests: did not f
     assert.strictEqual(r.bailed, null);
     assert.strictEqual(h.spawned.length, 4, 'all four suites ran');
     assert.strictEqual(h.kills.length, 0, 'nothing was killed');
+    assert.ok(h.spawned.every((x) => x.opts.detached === false), 'without --bail the suites are spawned as before (not detached)');
     assert.ok(/ok   a/.test(r.out) && /FAIL b/.test(r.out) && /ok   d/.test(r.out) && /out of b\.js/.test(r.out));
   }
   // --bail, one at a time: nothing starts after the failure
@@ -94,8 +102,9 @@ process.on('exit', () => { if (!done) { console.error('test-run-tests: did not f
     assert.strictEqual(h.spawned.length, 3, 'd never started');
     assert.ok(h.spawned.every((s) => s.opts.detached === true && s.opts.shell === undefined), 'POSIX children are detached (own group), no shell');
     const hung = h.children.filter((c) => c.file !== 'dist/b.js').map((c) => c.pid).sort();
-    assert.deepStrictEqual(h.kills.map((k) => k[0]).sort(), hung.map((p) => -p).sort(), 'exactly the two running suites got a kill of their group (-pid)');
-    assert.ok(h.kills.every((k) => k[1] === 'SIGTERM'));
+    const term = h.kills.filter((k) => k[1] === 'SIGTERM');
+    assert.deepStrictEqual(term.map((k) => k[0]).sort(), hung.map((p) => -p).sort(), 'exactly the two running suites got a TERM to their group (-pid)');
+    assert.deepStrictEqual(h.kills.filter((k) => k[1] === 'SIGKILL').map((k) => k[0]).sort(), hung.map((p) => -p).sort(), 'once their pipes closed, the group is killed for sure');
     assert.ok(!/FAIL a|FAIL c|ok   a|ok   c/.test(r.out));
   }
   // --bail on Windows: taskkill /T /F per running pid, no process.kill, no shell
@@ -117,6 +126,24 @@ process.on('exit', () => { if (!done) { console.error('test-run-tests: did not f
     const r = await run(h, [{ name: 'a', steps: [['a.js'], ['a2.js']] }], { jobs: 1, bail: false });
     assert.deepStrictEqual(r.failed, ['a']);
     assert.strictEqual(h.spawned.length, 1, 'step 2 does not run after step 1 failed');
+  }
+  // the grace period: TERM first, SIGKILL to the group only when the timer fires (a grandchild that ignores TERM keeps the child open)
+  {
+    const kills: [number, string][] = [];
+    let fire: (() => void) | null = null;
+    let cleared = false;
+    const child = Object.assign(new EventEmitter(), { pid: 77 });
+    rt.stopChild(child, { platform: 'linux', kill: (p: number, sg: string) => kills.push([p, sg]), graceMs: 5000, setTimer: (f: () => void, ms: number) => { assert.strictEqual(ms, 5000); fire = f; return 1; }, clearTimer: () => { cleared = true; } });
+    assert.deepStrictEqual(kills, [[-77, 'SIGTERM']], 'TERM first, nothing harsher yet');
+    assert.ok(fire, 'a force timer was set');
+    (fire as unknown as () => void)();
+    assert.deepStrictEqual(kills, [[-77, 'SIGTERM'], [-77, 'SIGKILL']], 'after the grace period the group gets SIGKILL');
+    child.emit('close', null);
+    assert.ok(cleared, 'the timer is cleared when the child closes');
+    // Windows: one forced tree kill, no timer
+    const calls: string[][] = [];
+    rt.stopChild({ pid: 8 }, { platform: 'win32', spawnFn: (c: string, a: string[]) => { calls.push([c, ...a]); return new EventEmitter(); }, setTimer: () => { throw new Error('no timer on Windows'); } });
+    assert.deepStrictEqual(calls, [['taskkill', '/PID', '8', '/T', '/F']]);
   }
   // stopChild alone: no pid, nothing happens; an already gone group is not an error
   rt.stopChild(null, {});

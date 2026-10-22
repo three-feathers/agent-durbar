@@ -98,4 +98,4 @@
 
 ## 2026-10-22: `npm test -- --bail` (issue #563)
 
-- [x] T102 (2026-10-22, issue #563) Opt-in fail-fast for `npm test` [FR-115]. Files: `scripts/run-tests.js` (`parseArgs`, `loadSuites`, `stopChild`, `runSuites` exported; detached spawn, group kill / `taskkill /T /F`), `scripts/test-run-tests.ts` (new), `package.json` (`test:runtests`, in `test:serial`), `README.md`, `docs/agent-notes.md`, `changelog.d/008-test-bail.md`. Done when the unit test passes and fails with the stop removed, and `npm run typecheck && npm run build && npm test` pass.
+- [x] T102 (2026-10-22, issue #563) Opt-in fail-fast for `npm test` [FR-115]. Files: `scripts/run-tests.js` (`parseArgs`, `loadSuites`, `stopChild`, `runSuites` exported; detached spawn, group kill / `taskkill /T /F`), `scripts/test-run-tests.ts` and `scripts/test-run-tests-real.ts` (new), `package.json` (`test:runtests`, `test:runtestsreal`, in `test:serial`), `README.md`, `docs/agent-notes.md`, `changelog.d/008-test-bail.md`. Done when the unit test passes and fails with the stop removed, and `npm run typecheck && npm run build && npm test` pass.

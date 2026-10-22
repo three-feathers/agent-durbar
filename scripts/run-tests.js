@@ -21,9 +21,12 @@ const ROOT = path.join(__dirname, '..');
 const TSC_PREFIX = /^tsc -p tsconfig\.scripts\.json\s*&&\s*/;
 
 // spec 008 FR-115: `--bail` or TEST_BAIL=1 (anything but empty, 0, false); the other arguments are name filters
+// Under CI (CI set, not empty/0/false) the flag is ignored: CI always runs everything (ignoredBail says so, the caller prints a line).
+const truthy = (v) => !['', '0', 'false'].includes(String(v || '').toLowerCase());
 function parseArgs(argv, env) {
-  const bail = argv.includes('--bail') || !['', '0', 'false'].includes(String(env.TEST_BAIL || '').toLowerCase());
-  return { bail, filters: argv.filter((a) => !a.startsWith('-')) };
+  const asked = argv.includes('--bail') || truthy(env.TEST_BAIL);
+  const ci = truthy(env.CI);
+  return { bail: asked && !ci, ignoredBail: asked && ci, filters: argv.filter((a) => !a.startsWith('-')) };
 }
 
 // the suites: the `npm run test:*` names of test:serial, each as the ordered `node <file>` steps of its script
@@ -40,28 +43,36 @@ function loadSuites(pkg, filters) {
     });
 }
 
-// Stop one child this runner started, with everything it started: POSIX kills the process group (the child is spawned detached, so
-// its pid is the group id); Windows kills the tree with taskkill, spawned without a shell.
-function stopChild(child, { platform = process.platform, spawnFn = spawn, kill = process.kill } = {}) {
+// Stop one child this runner started, with everything it started, and only that. POSIX: the child was spawned detached (its pid is
+// its process group id), so SIGTERM goes to the group; anything still alive after GRACE_MS gets SIGKILL, and so does the group once the
+// child's pipes close (a grandchild that ignores TERM keeps them open, so the child would never close). Windows: taskkill /T /F forces
+// the whole tree at once, spawned without a shell.
+const GRACE_MS = 5000;
+function stopChild(child, { platform = process.platform, spawnFn = spawn, kill = process.kill, graceMs = GRACE_MS, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
   if (!child || !child.pid) return;
   try {
     if (platform === 'win32') {
       const t = spawnFn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
       if (t && t.on) t.on('error', () => {});
-    } else kill(-child.pid, 'SIGTERM');
-  } catch (_) { /* already gone */ }
+      return;
+    }
+    kill(-child.pid, 'SIGTERM');
+  } catch (_) { return; /* already gone */ }
+  const force = () => { try { kill(-child.pid, 'SIGKILL'); } catch (_) { /* nothing left */ } };
+  const timer = setTimer(force, graceMs);
+  if (child.once) child.once('close', () => { clearTimer(timer); force(); });
 }
 
 // Run the suites with `jobs` at a time. Returns { failed: [names], bailed: name | null }. Everything the outside world touches
 // (spawn, kill, platform, output, clock) is injected so scripts/test-run-tests.ts can drive it with fakes.
 async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process.env, platform = process.platform, spawnFn = spawn, kill = process.kill,
-  write = (t) => process.stdout.write(t), now = Date.now, running = new Set() }) {
+  write = (t) => process.stdout.write(t), now = Date.now, running = new Set(), stopOpts = {} }) {
   const failed = [];
   let bailed = null;
   let next = 0;
   const runStep = (args) =>
     new Promise((resolve) => {
-      const p = spawnFn(process.execPath, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: platform !== 'win32' });
+      const p = spawnFn(process.execPath, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: bail && platform !== 'win32' });
       running.add(p);
       let out = '';
       p.stdout.on('data', (d) => (out += d));
@@ -69,7 +80,7 @@ async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process
       p.on('close', (code) => { running.delete(p); resolve({ code, out }); });
       p.on('error', (e) => { running.delete(p); resolve({ code: 1, out: out + String(e) }); });
     });
-  const stopAll = () => { for (const p of running) stopChild(p, { platform, spawnFn, kill }); };
+  const stopAll = () => { for (const p of running) stopChild(p, { platform, spawnFn, kill, ...stopOpts }); };
   const worker = async () => {
     while (next < suites.length && !bailed) {
       const s = suites[next++];
@@ -100,7 +111,8 @@ module.exports = { parseArgs, loadSuites, stopChild, runSuites };
 if (require.main === module) {
   const { ensureElectron } = require('./ensure-electron');
   const pkg = require(path.join(ROOT, 'package.json'));
-  const { bail, filters } = parseArgs(process.argv.slice(2), process.env);
+  const { bail, ignoredBail, filters } = parseArgs(process.argv.slice(2), process.env);
+  if (ignoredBail) console.log('--bail ignored under CI: running every suite');
   const suites = loadSuites(pkg, filters);
 
   const t0 = Date.now();
@@ -119,8 +131,18 @@ if (require.main === module) {
   const jobs = Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length - 1, 8));
   try { os.setPriority(10); } catch (_) { /* not allowed: normal priority */ }
   const running = new Set();
-  // the suites have their own process groups (POSIX), so Ctrl-C or a kill of this runner must take them along
-  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { for (const p of running) stopChild(p); process.exit(130); });
+  // only when bailing are the suites detached (their own process groups), so Ctrl-C or a kill of this runner must take them along:
+  // same stop as a bail (TERM, then KILL after the grace period), then exit 128 + the signal number (SIGINT 130, SIGTERM 143, SIGHUP 129)
+  if (bail) {
+    for (const [sig, n] of [['SIGINT', 2], ['SIGHUP', 1], ['SIGTERM', 15]]) {
+      process.on(sig, () => {
+        for (const p of running) stopChild(p);
+        const end = Date.now() + GRACE_MS + 1000;
+        const t = setInterval(() => { if (!running.size || Date.now() > end) process.exit(128 + n); }, 100);
+        void t;
+      });
+    }
+  }
   runSuites({ suites, jobs, bail, running }).then(({ failed, bailed }) => {
     const total = ((Date.now() - t0) / 1000).toFixed(1);
     if (bailed) {
