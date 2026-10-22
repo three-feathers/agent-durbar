@@ -1022,14 +1022,15 @@ document.addEventListener('click',e=>{const b=e.target.closest('#list [data-lsor
 function renderAll(){
   AMB_ID=pickAmbulanceId();
   prepareWalkers();
-  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door||ae.dataset.lsort), inPanel=ae&&ae.closest&&ae.closest('#panel');
+  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door||ae.dataset.lsort), inPanel=ae&&ae.closest&&ae.closest('#panel'), scope=ae&&ae.closest?(ae.closest('#list')?'#list ':ae.closest('#stage')?'#stage ':''):''; /* FR-173: read before the render detaches it */
   const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':ae.dataset.lsort?'data-lsort':''); /* spec 052 FR-064: a sort header keeps focus too */
   renderStats();
   updateFloorAttention();
   if(ui.view==='office')renderOffice(); else renderList();
   renderDoorBar();
   syncWalkers();
-  if(id&&!inPanel){const n=document.querySelector(`[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
+  /* spec 052 FR-173: look in the view the focus was in. The office desks stay in the page (hidden) while the list shows, with the same data-id, so a document-wide lookup found the hidden desk and the focus fell to the page. */
+  if(id&&!inPanel){const n=document.querySelector(`${scope}[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
   if(ui.selected){updatePanelHeader();renderStrip();}
   rememberUi();
   if(floorSwitchTimed)endFloorSwitchTiming();
