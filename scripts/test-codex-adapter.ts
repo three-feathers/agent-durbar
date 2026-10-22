@@ -95,7 +95,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, planMode: true, effort: true, modelSwitch: { verified: true, contextTier: false },
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any',
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpToolFilter: true, mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any',
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
@@ -652,12 +652,13 @@ async function main(): Promise<void> {
     // FR-147: Durbar's MCP servers go to Codex as config.mcp_servers; the list and startup states become `mcp` events; a switch applies next message
     {
       const { server, ad, events } = make();
-      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', mcpServers: { echo: { type: 'stdio', command: 'node', args: ['s.js'], env: { TOKEN: 'x' } }, web: { type: 'http', url: 'https://example.com/mcp', headers: { Authorization: 'Bearer y' }, tools: ['search'] } }, disabledMcpServers: ['github'] });
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', mcpServers: { echo: { type: 'stdio', command: 'node', args: ['s.js'], env: { TOKEN: 'x' } }, web: { type: 'http', url: 'https://example.com/mcp', headers: { Authorization: 'Bearer y' }, tools: ['search'] } }, disabledMcpServers: ['github'], disabledMcpTools: { echo: ['ping'], usersrv: ['send'] } });
       const cfg = (server.requests('thread/start').pop()!.params as { config?: { mcp_servers?: Record<string, Record<string, unknown>> } }).config;
       assert.deepStrictEqual(cfg?.mcp_servers, {
-        echo: { command: 'node', args: ['s.js'], env: { TOKEN: 'x' } },
+        echo: { command: 'node', args: ['s.js'], env: { TOKEN: 'x' }, disabled_tools: ['ping'] }, // spec 069 FR-062
         web: { url: 'https://example.com/mcp', http_headers: { Authorization: 'Bearer y' }, enabled_tools: ['search'] },
         github: { enabled: false },
+        usersrv: { disabled_tools: ['send'] }, // spec 069 FR-062: an override of the user's own server
       });
       await until('mcp list', () => events.some((e) => e.type === 'mcp'));
       assert.deepStrictEqual((events.filter((e) => e.type === 'mcp').pop() as { servers: unknown[] }).servers, [{ name: 'echo', status: 'connected' }]);

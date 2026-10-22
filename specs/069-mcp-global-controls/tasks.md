@@ -31,10 +31,20 @@
 - [x] T067 Review on #499 (Paco's agent, change 2026-10-22): Remove offers every source (app lists + folder extra) in one picker; switch label by session state with FR-066's words and a true footer; Codex `listMcpTools` pages through `mcpServerStatus/list` [FR-030, FR-031]
 - [x] T068 Re-review on #499 (Paco's agent, change 2026-10-22): test the repeated-cursor stop of Codex `listMcpTools`; the folder copy in the combined Remove picker is deleted only after the review is confirmed, and its row says its stored secret values are deleted; mutation-checked (dropping `next === cursor` fails `test:codexadapter`; removing the folder copy before the review fails `shots-069-mcp-tools`) [FR-030, FR-031]
 
+## Part 4: single tools on and off (PR 4, owner 2026-10-21 22:10 UTC)
+
+- [x] T040 Store `toolsOff` per folder, `agents:setMcpToolsOff`, `toolsOff` on `agents:mcp`, `disabledMcpTools` in start options [FR-061]
+- [x] T041 Adapters: Copilot `excludedTools`, Claude `--disallowedTools`, Codex `disabled_tools`; capability `mcpToolFilter` [FR-062, FR-064]
+- [x] T042 Broker refusal of a turned-off tool in every adapter's broker [FR-063]
+- [x] T043 Renderer: checkboxes and tri-state in the expanded list, applies-when note, disabled with tooltip without the capability [FR-060, FR-064]
+- [x] T044 Tests (store, adapters on fakes, broker), simulator, driver and screenshots, docs
+
 ## Real check (needs the owner's go-ahead)
 
 - [x] T060 In a scratch home: add a server globally to the three apps, then `copilot`, `claude mcp list`, `codex mcp list` read it (no prompt, 0 credits); check Copilot `${NAME}` (Q6) [FR-050, FR-051]. `real:` 2026-10-22, Copilot CLI 1.0.101, Claude Code 2.1.304, codex-cli 0.163.0: all three list the written stdio and http entries and no longer list them after Remove; backups (last 3), rename write, refusal of a changed file, unknown keys and Codex bytes kept; Claude Code and Codex pass the referenced variable's value; Copilot `${NAME}` expansion not observable without a signed-in session (FR-051 stays a gap for Copilot). Found T061.
 - [x] T061 Codex `config.toml` that does not parse is refused with its line number (change 2026-10-22; found by T060) [FR-003]; tests in `test:mcpglobal`, verdicts matched against codex-cli 0.163.0
 - [x] T062 Review on #489 (change 2026-10-22): write through a symlinked file; one-pass TOML unescape shared with spec 061 (`codextoml.ts`); `copilotDir` reused; FR-009 wiring tested through `registerMcpIpc` [FR-002, FR-006, FR-009, FR-041]
 - [x] T063 Review on #492 (change 2026-10-22): mask command, arguments and URL in the copy review; keep or refuse `enabled = false`, `disabled_tools`, tool lists and JSON `cwd` in copies; diff names tools and on/off [FR-012, FR-020, FR-023, SC-002]
+- [x] T064 Review on #503 (change 2026-10-22): `excludedTools` form checked in the SDK (`read:`); Codex user-server merge `[KNOWN GAP]`; tool names outside `[A-Za-z0-9_.-]` cannot be turned off (UI disabled, main refuses) [FR-062, FR-063]
+- [x] T068 Review on #503 (Paco's agent, change 2026-10-22): repaint focus keyed on server + tool with fallback to the server's tools toggle; driver focus + Space with a shared tool name; unchangeable boxes `aria-disabled` + visible reason [FR-060, FR-063, FR-064]
 - [x] T066 Second review on #492 (Paco's agent, change 2026-10-22): copies refuse unknown fields and non-string values (named), Codex `env` numbers and multi-line strings not copyable, copy into a 0644 file leaves it 0600 (via T065), copy review wording; mutation-checked [FR-006, FR-023]

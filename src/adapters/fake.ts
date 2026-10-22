@@ -8,7 +8,7 @@
 import type { AdapterCapabilities } from './capabilities';
 import type { HandoffResult } from './handoff';
 import type { EventBody } from './map';
-import { PermissionBroker, startModeOf } from './permissions';
+import { PermissionBroker, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { normMcpTools } from './mcptools';
 import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction, McpSignInResult, McpToolInfo, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
@@ -54,6 +54,7 @@ const DEFAULT_CAPS: AdapterCapabilities = {
   mcpToggle: true,
   mcpRestart: true,
   mcpTools: true,
+  mcpToolFilter: true,
   handoff: true,
   oneShot: true,
 };
@@ -231,9 +232,11 @@ export class FakeAdapter implements AgentAdapter {
     const mode = startModeOf(options);
     if (!this.capabilities.permissionModes.includes(mode)) throw new Error(`The ${this.displayName} adapter does not support the ${mode} permission mode.`);
     const sid = options.resumeSessionId ?? options.sessionId ?? `fake-${++this.counter}`;
+    const blocked = mcpToolBlockList(options.disabledMcpTools); // spec 069 FR-063
     const broker = new PermissionBroker({
       roots: [options.workspace],
       mode,
+      blockedTools: () => blocked,
       emit: (e: BrokerEvent) => {
         switch (e.type) {
           case 'pending':

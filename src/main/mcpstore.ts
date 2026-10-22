@@ -16,7 +16,7 @@
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { MAX_SERVERS, NAME_RE, trustHash, validateInput } from '../shared/mcp';
+import { MAX_SERVERS, MCP_TOOL_OFF_RE, NAME_RE, trustHash, validateInput } from '../shared/mcp';
 import type { McpSecretKey, McpServerInput, McpServerSpec, McpServerView, McpTransport, McpTrustInfo } from '../shared/mcp';
 
 export interface SecretCodec {
@@ -68,6 +68,8 @@ const MAX_FILE = 2 * 1024 * 1024;
 const MAX_FOLDERS = 200;
 const MAX_KEY = 4096;
 const MAX_EXTRA_NAMES = 500;
+const MAX_TOOL_SERVERS = 200;
+const MAX_TOOLS_OFF = 500;
 const lc = (s: string): string => String(s).toLowerCase();
 /** Run `f`; on any error give `fallback` (a codec error never reaches a log or the window). */
 function safe<T>(f: () => T, fallback: T): T {
@@ -84,6 +86,8 @@ export class McpStore {
   /** Servers of the old app-level list (milestone 8): kept, never passed to a session, movable into a folder. */
   private legacyRecs: Rec[] = [];
   private disabledAmbient = new Set<string>();
+  /** Spec 069 FR-061: single MCP tools turned off, per folder key, by server name (names only). */
+  private toolsOff = new Map<string, Record<string, string[]>>();
   /** The encrypted vault as read from or last written to disk (never decrypted on load). */
   private vaultBlob?: string;
   /** True once the vault (and any old per-value blobs) was decrypted, or found to need nothing: never decrypted twice. */
@@ -197,6 +201,7 @@ export class McpStore {
     this.folders = new Map();
     this.legacyRecs = [];
     this.disabledAmbient = new Set();
+    this.toolsOff = new Map();
     this.vaultBlob = undefined;
     this.unlocked = false;
     this.vaultDirty = false;
@@ -209,6 +214,17 @@ export class McpStore {
     }
     const o = (doc && typeof doc === 'object' ? doc : {}) as Record<string, unknown>;
     if (typeof o.vault === 'string') this.vaultBlob = o.vault;
+    const to = o.toolsOff && typeof o.toolsOff === 'object' && !Array.isArray(o.toolsOff) ? (o.toolsOff as Record<string, unknown>) : {};
+    for (const key of Object.keys(to).slice(0, MAX_FOLDERS)) {
+      const m = to[key];
+      if (!key || key.length > MAX_KEY || !m || typeof m !== 'object' || Array.isArray(m)) continue;
+      const rec: Record<string, string[]> = {};
+      for (const [srv, list] of Object.entries(m as Record<string, unknown>).slice(0, MAX_TOOL_SERVERS)) {
+        const tools = McpStore.toolList(list);
+        if (srv && srv.length <= 64 && srv !== '__proto__' && tools.length) rec[srv] = tools;
+      }
+      if (Object.keys(rec).length) this.toolsOff.set(key, rec);
+    }
     if (Array.isArray(o.disabledAmbient)) for (const n of o.disabledAmbient) if (typeof n === 'string' && n.length <= 80) this.disabledAmbient.add(n);
     // Version 1 (milestone 8) had one global `servers` list: it becomes `legacy`. Version 2 has `legacy` too.
     this.legacyRecs = this.parseList([...(Array.isArray(o.servers) ? o.servers : []), ...(Array.isArray(o.legacy) ? o.legacy : [])]);
@@ -260,7 +276,9 @@ export class McpStore {
     });
     const folders: Record<string, unknown[]> = {};
     for (const [k, list] of this.folders) if (list.length) folders[k] = list.map(ser);
-    const doc = { version: 3, folders, legacy: this.legacyRecs.map(ser), disabledAmbient: [...this.disabledAmbient], ...(vault !== undefined ? { vault } : {}) };
+    const toolsOff: Record<string, Record<string, string[]>> = {};
+    for (const [k, m] of this.toolsOff) if (Object.keys(m).length) toolsOff[k] = m;
+    const doc = { version: 3, folders, legacy: this.legacyRecs.map(ser), disabledAmbient: [...this.disabledAmbient], ...(Object.keys(toolsOff).length ? { toolsOff } : {}), ...(vault !== undefined ? { vault } : {}) };
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(doc, null, 1), { mode: 0o600 });
@@ -441,6 +459,37 @@ export class McpStore {
     if ([...r.env, ...r.headers].some((s) => s.ref !== undefined || s.value !== undefined)) this.vaultDirty = true;
     this.save();
     return true;
+  }
+
+  private static toolList(v: unknown): string[] {
+    if (!Array.isArray(v)) return [];
+    return [...new Set(v.filter((t): t is string => typeof t === 'string' && MCP_TOOL_OFF_RE.test(t)))].slice(0, MAX_TOOLS_OFF);
+  }
+
+  /** Spec 069 FR-061: the tools turned off in this folder, by server (a copy). */
+  toolsOffFor(key: string): Record<string, string[]> {
+    const m = this.validKey(key) ? this.toolsOff.get(key) : undefined;
+    return m ? Object.fromEntries(Object.entries(m).map(([s, l]) => [s, [...l]])) : {};
+  }
+
+  /** Spec 069 FR-061: replace the list of turned-off tools of one server in one folder (empty = all on). */
+  setToolsOff(key: string, server: string, tools: unknown): { ok: boolean; error?: string } {
+    if (!this.validKey(key) || typeof server !== 'string' || !server || server.length > 64 || server === '__proto__') return { ok: false, error: 'Unknown server.' };
+    // FR-063 (change 2026-10-22): a name the agent apps' filters cannot carry is refused, not stored as "off" while it stays usable.
+    const odd = Array.isArray(tools) ? tools.find((t) => typeof t === 'string' && t.length > 0 && t.length <= 128 && !MCP_TOOL_OFF_RE.test(t)) : undefined;
+    if (odd !== undefined) return { ok: false, error: `"${String(odd).slice(0, 64)}" cannot be turned off: Agent Durbar can only turn off tools named with letters, digits, "_", "." or "-".` };
+    const list = McpStore.toolList(tools);
+    const m = { ...(this.toolsOff.get(key) ?? {}) };
+    if (list.length) m[server] = list;
+    else delete m[server];
+    if (!(server in m) && !Object.keys(m).length) this.toolsOff.delete(key);
+    else {
+      if (Object.keys(m).length > MAX_TOOL_SERVERS) return { ok: false, error: 'Too many servers with tools turned off in this folder.' };
+      if (!this.toolsOff.has(key) && this.toolsOff.size >= MAX_FOLDERS) return { ok: false, error: `Kept for at most ${MAX_FOLDERS} folders.` };
+      this.toolsOff.set(key, m);
+    }
+    this.save();
+    return { ok: true };
   }
 
   ambientDisabled(): string[] {

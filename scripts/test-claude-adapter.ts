@@ -654,6 +654,15 @@ async function main(): Promise<void> {
     const sdk = new ClaudeAdapter({ sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
     assert.deepStrictEqual([sdk.capabilities.mcpRestart, typeof sdk.restartMcpServer], [undefined, 'undefined'], 'SDK transport: no restartMcpServer');
     assert.deepStrictEqual([sdk.capabilities.mcpTools, typeof sdk.listMcpTools], [undefined, 'undefined'], 'SDK transport: no listMcpTools (spec 069)');
+    // spec 069 FR-062: the launch carries the turned-off tools into --disallowedTools
+    const sp2 = fakeSpawn();
+    const ad2 = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const sid2 = await ad2.start({ workspace: WS, quiet: true, disabledMcpTools: { notes: ['archive'] } });
+    void ad2.send(sid2, { text: 'hi' });
+    await until('launch', () => (sp2.calls.length ? true : undefined));
+    const a2 = sp2.calls[0].args;
+    assert.ok(a2[a2.indexOf('--disallowedTools') + 1].split(',').includes('mcp__notes__archive'), 'the CLI gets the turned-off tool');
+    await ad2.stop(sid2);
   }
 
   // ---- MCP sign-in challenge (spec 058 T096): a failed MCP tool result with the challenge -> mcpAuth and one mcp_status at a time ----

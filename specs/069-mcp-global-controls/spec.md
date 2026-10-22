@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Global MCP servers written to the agent apps' own lists (Copilot CLI, Claude Code, Codex) after a per-file confirmation with backups, harmonize the lists, source chips, switch/Restart/Sign in/Remove on every server row, a server's tools on expand (owner 2026-10-21)
-status: parts 1-3 **built** 2026-10-21 (add/remove for all folders, harmonize, tools on expand and Remove in the agent dialog on top of spec 058's state words and Details; unit tests on fakes, simulator drivers; real check T060 2026-10-22: Copilot CLI, Claude Code and Codex list the written entries, 0 credits; part 3 not run on a real account); owner questions Q1-Q6 answered 2026-10-22 (defaults kept)
+status: parts 1-4 **built** 2026-10-21 (add/remove for all folders, harmonize, tools on expand and Remove in the agent dialog on top of spec 058's state words and Details, single tools on and off per folder; unit tests on fakes, simulator drivers; real check T060 2026-10-22: Copilot CLI, Claude Code and Codex list the written entries, 0 credits; Codex `disabled_tools` seen hiding a tool; parts 3-4 otherwise not run on a real account); owner questions Q1-Q6 answered 2026-10-22 (defaults kept)
 -->
 
 **Feature Branch**: `069-mcp-global-controls`
@@ -261,6 +261,55 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 - **FR-033** `[IMPLEMENTED]` The expanded row lists the tools (text at least 10.5px, scrolls inside the dialog at 1280x800), "N tools", and the empty,
   not-running and failed states (Story 5).
 
+### Single tools on and off (part 4; owner, 2026-10-21 22:10 UTC)
+
+Owner decision (Vikram, Telegram 2026-10-21 22:10 UTC): "We should also have the ability to enable/disable individual tools, like the
+VS Code UI supports, as some people may want to give access to read email but not send email."
+
+- **FR-060** `[IMPLEMENTED]` In the expanded tools list (FR-033) each tool has an on/off checkbox and the server a tri-state checkbox (all / some / none).
+  Nothing is turned off automatically (no "write-like" guess): only what the user unticks.
+- **FR-061** `[IMPLEMENTED]` **Scope and storage**: per folder (the agent's folder key, as folder extras), for every server of that folder's agents
+  whatever its source; kept in Durbar's MCP store file next to the extras (`toolsOff: {<folder>: {<server>: [tool...]}}`, names only, at
+  most 200 servers x 500 tools per folder). No per-session override (not cheap: it would need its own store; a follow-up if wanted).
+  `agents:setMcpToolsOff(id, server, off[])` maps the agent to its folder in main (the window never sends a folder key).
+- **FR-062** `[IMPLEMENTED]` **Enforced by the agent app**, passed with every start and resume as `StartOptions.disabledMcpTools` (`{server: tools[]}`):
+  - Copilot: session config `excludedTools: ["mcp:<server>-<tool>", ...]` (`read:` SDK 1.0.22 `types.d.ts` `excludedTools` "always
+    takes precedence" and takes the source-qualified patterns `mcp:<name>`; `toolSet.d.ts` `addMcp(toolName)` takes "the runtime's
+    canonical wire name for the MCP tool (e.g. `github-list_issues`)" and `toolSet.js` builds the filter string as `` `mcp:${toolName}` ``,
+    so `mcp:github-list_issues` is the SDK's own form; checked 2026-10-22, review on #503). `[KNOWN GAP]` not run on a real account:
+    that every server's wire name is exactly `<server>-<tool>` (for example a server name with a dot) is not verified; the broker
+    (FR-063) is the second guard for calls that ask;
+  - Claude Code: `--disallowedTools mcp__<server>__<tool>` (server name with characters outside `[A-Za-z0-9_-]` as `_`, as the CLI builds it;
+    `read:` CLI docs and `claudeMap.ts`), added to the mode's own list;
+  - Codex: `config.mcp_servers.<server>.disabled_tools = [...]` on thread start/resume (`read:` codex-cli 0.163.0 strings: the
+    `codex mcp get` printout lists `disabled_tools`), merged with Durbar's own entry or as an override of the user's server (as
+    `enabled = false` already is, spec 012 FR-147). `real:` 2026-10-22, codex-cli 0.163.0, spec 069 T060 scratch home, 0 credits:
+    with `-c 'mcp_servers.durbar-demo.disabled_tools=["echo"]'`, `codex app-server` `mcpServerStatus/list` listed only `secret_env`
+    of the demo server's two tools (`echo` hidden), `codex mcp get` shows `disabled_tools: echo`, and a string instead of an array is
+    refused at load. The same key in thread/start `config` (what Durbar sends) was not run. `[KNOWN GAP]` (review on #503): for a
+    server from the user's own `config.toml`, Durbar sends only `{disabled_tools}` for it and relies on Codex merging that into the
+    user's entry (as the `-c` dotted override above did) rather than replacing the entry; no Codex schema or docs are in the repo to
+    confirm this for thread `config`, so Codex enforcement of single tools on a user's server is unverified (the broker refuses the
+    calls that ask; Codex in Allow all does not ask).
+  A change applies to **new sessions and after Restart session with these servers**; the expanded list says so. No app is known to switch
+  one tool live, so none is claimed.
+- **FR-063** `[IMPLEMENTED]` **Defence in depth**: each adapter's permission broker refuses an MCP request for a turned-off tool (server and tool name, or
+  Claude's `mcp__<server>__<tool>`), in every mode, with "This tool is turned off in Agent Durbar (<server> › <tool>). Do not retry it." and
+  a denied card in the chat. (Calls an app approves on its own, such as Claude Code or Codex in Allow all, never reach the broker; there
+  the app's own filter above is the guard.) Change 2026-10-22 (review on #503): only tools named with `[A-Za-z0-9_.-]` (1-128
+  characters, `MCP_TOOL_OFF_RE`) can be turned off, because Claude Code's `--disallowedTools` cannot carry other names and, in Allow
+  all, nothing else would block them; for other names the checkbox is disabled with "Agent Durbar can only turn off tools named with
+  letters, digits, _ . or -", the server's *all off* skips them and the list says how many cannot be turned off, and main refuses
+  such a name (`agents:setMcpToolsOff`) and drops it from the stored file. The broker's wire-name key `<server>-<tool>` can match two
+  pairs (server `a-b` tool `c`, server `a` tool `b-c`): that is Copilot's own name, which carries no separator either, so the broker
+  can only over-block (refuse the other tool too), never let a turned-off tool through; a request with a server name is matched on
+  `<server>/<tool>` first.
+- **FR-064** `[IMPLEMENTED]` An app whose adapter does not offer per-tool filtering (capability `mcpToolFilter` missing) shows the checkboxes disabled with
+  the tooltip "This app can't turn off single tools". All three adapters set it.
+- **FR-065** `[KNOWN GAP]` A global server's per-tool list is not written into the agent apps' own files (only Codex's format has a
+  `disabled_tools` key; Copilot's `tools` is an allow list that would need the full tool list; Claude Code's user file has none). The
+  Durbar per-folder list applies to Durbar's sessions only.
+
 ### Simulator and tests (constitution IV)
 
 - **FR-040** (part 1 `[IMPLEMENTED]`: the fake lists live in the simulator page, `sim.ts`; the temp-folder fixtures are in `test:mcpglobal`) Simulator: the three global lists come from fixture files under a temp folder (`DURBAR_COPILOT_DIR`, `CODEX_HOME`,
@@ -318,6 +367,7 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 1. PR 1 (this branch): FR-001..FR-011, FR-040/041 parts, screenshots of the form and confirmation.
 2. PR 2: FR-020..FR-022.
 3. PR 3, after #473: FR-030..FR-033. Sign in stays with spec 058 (Paco, #364).
+4. PR 4 (stacked on PR 3): FR-060..FR-064.
 
 ## Changes
 
@@ -378,6 +428,21 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
      target has the field, and otherwise the copy to that file is refused naming the field; the diff names `tools`, `hidden tools`
      and `on/off`. The add form is unchanged. (T063)
 
+- **2026-10-22 (review on #503 by Paco's agent, CHANGES_REQUESTED at f31db855):** both findings fixed (T068).
+  1. **Focus keyed on server and tool** (FR-060): after a tool checkbox is toggled, the repaint restored focus by tool name only, so with
+     two open servers that share a tool name (`search`) it jumped to the first server's box, and when the list closed it fell to `body`.
+     The repaint now keys a checkbox on `data-tsrv` + `data-tool` (and the tri-state on its server), falls back to that server's tools
+     toggle (`data-tools`), then to its switch. `shots-069-mcp-tools` focuses a checkbox and presses Space (a real key event), with two
+     open servers sharing a tool name.
+  2. **Disabled checkboxes say why, visibly, and stay focusable** (FR-063, FR-064): a box that cannot be changed (the app cannot filter
+     single tools, or a tool name the filters cannot carry) is `aria-disabled="true"` instead of `disabled`: it stays in the Tab order,
+     a click or Space does nothing, and `aria-describedby` points to the visible reason (the header note for the app; a short
+     "can't be turned off: name has other characters" next to that tool).
+
+- **2026-10-22 (review on #503):** Copilot's `excludedTools` form `mcp:<server>-<tool>` checked against the SDK's own `ToolSet.addMcp`
+  (`read:`, FR-062; wire names of every server still `[KNOWN GAP]`); Codex merging `{disabled_tools}` into a user's own server marked
+  `[KNOWN GAP]` (FR-062); tool names outside `[A-Za-z0-9_.-]` can no longer be turned off (they were not blocked at all in Claude Code's
+  Allow all; FR-063, `test:mcpservertools`); the `<server>-<tool>` key collision documented (over-blocks only). (T064)
 - **2026-10-22 (review on #499 by Paco's agent, CHANGES_REQUESTED at 1776c6c3):** all findings fixed (T067).
   1. **Remove removes every copy** (FR-030): a server that is both in an agent app's list and a folder extra kept its row after
      *Remove…*, which removed only the list copies. The Remove picker (the Settings `removeGlobal` dialog, reused) now lists every place
@@ -414,6 +479,9 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   3. **Simulator:** the canned tools follow the row's state (`simServer`), so a server that 058's sim shows as failed or needing sign-in
      says "Could not list the tools: ... is not connected", and lists its tools after a Restart fixes it.
   `sim:` `shots-069-mcp-tools` (asserts 058's word and Details on the failed row too), `shots-058-mcp-words`, `shots-058-mcp-restart`.
+- **2026-10-22 (part 4 on the merged row):** the tool checkboxes and the server's tri-state box stay inside the tools list of spec 058's
+  row; 058's repaint keeps the focus on them too (`data-tool`, `data-tall`) along with its scroll position, and turning a tool off is
+  never announced as a state change. `sim:` `shots-069-mcp-tools` (part 4 steps) after the merge.
 
 ## Relationship to other specs
 

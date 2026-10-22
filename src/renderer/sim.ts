@@ -958,6 +958,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       codex: [{ name: 'context7', transport: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp'], envKeys: [], headerKeys: [] }],
     };
     const gOff = new Set<string>();
+    const simToolsOff: Record<string, Record<string, string[]>> = {};
     let gSeq = 0;
     const gPending = new Map<string, { kind: 'add' | 'remove'; apps: GApp[]; view?: GView; name: string }>();
     const G_APPS: GApp[] = ['copilot', 'claude', 'codex'];
@@ -1196,15 +1197,26 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         /* what the last `mcp` event said wins over the canned rule, as main's live list does for a real session */
         const reported = (n: string): ReturnType<typeof simServer> => { const m = live ? s.mcpLive?.find((x) => x.name === n) : undefined; return m ? { status: s.mcpOff?.has(n) ? 'disabled' : m.status, error: m.error, errorClass: m.errorClass } : simServer(s, idx, n, live); };
         const known = new Set([...fakeCli.map((c) => c.name), ...extrasOf(s.info.cwd).map((v) => v.name)]);
+        const toolsOffOf = (n: string) => (simToolsOff[s.info.cwd]?.[n] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[n] ?? [])] } : {});
         const servers = [
-          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, ...reported(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), sources: gSources(a.name, false), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
-          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), sources: gSources(v.name, true), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
-          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name) })) : []),
+          /* spec 069 FR-061: this folder's turned-off tools */
+          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, ...reported(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), sources: gSources(a.name, false), ...toolsOffOf(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
+          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), sources: gSources(v.name, true), ...toolsOffOf(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
+          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name) })) : []),
         ];
-        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true };
+        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
       /* spec 069 FR-031/FR-032: canned tools per server; a session that is not running, a failed server and an empty one show their states */
+      /* spec 069 FR-061: tools turned off per folder, in memory */
+      setAgentMcpToolsOff: async (id, name, off) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'Unknown agent.' };
+        const m = (simToolsOff[s.info.cwd] ??= {});
+        if (off.length) m[name] = [...new Set(off)];
+        else delete m[name];
+        return { ok: true };
+      },
       agentMcpTools: async (id, name) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'Unknown agent or server.' };
@@ -1212,7 +1224,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         await new Promise((r) => setTimeout(r, 250));
         const canned: Record<string, [string, string?][]> = {
           github: [['search_issues', 'Search issues and pull requests in a repository'], ['get_pull_request', 'Get one pull request with its files and checks'], ['create_issue', 'Open a new issue'], ['list_commits', 'List the commits of a branch'], ['get_file_contents', 'Read a file at a ref']],
-          'github-mcp-server': [['get_me', 'Your GitHub account'], ['search_code', 'Search code on GitHub']],
+          // `search` is also a tool of my-notes (two servers, one tool name: spec 069 review on PR 503); `run query` cannot be turned off (FR-063)
+          'github-mcp-server': [['get_me', 'Your GitHub account'], ['search_code', 'Search code on GitHub'], ['search', 'Search GitHub'], ['run query', 'A tool name with a space']],
           playwright: [['browser_navigate', 'Open a URL in the browser'], ['browser_click', 'Click an element'], ['browser_snapshot', 'Accessibility snapshot of the page'], ['browser_take_screenshot']],
           'docs-search': [],
         };

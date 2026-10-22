@@ -29,7 +29,7 @@ import { EventMapper } from './map';
 import type { EventBody, RawEvent } from './map';
 import { compactResultFrom, modelConfig, modelOptionFrom, runtimeMessage, sdkTier, switchResultFrom } from './copilotmodel';
 import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel';
-import { PermissionBroker, isInsideRoots, startModeOf } from './permissions';
+import { PermissionBroker, isInsideRoots, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import type { AgentProfile, PlanAnswer } from './types';
@@ -158,6 +158,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true,
   mcpStart: 'next-message', // spec 058 FR-010 (real 2026-10-21, runtime 1.0.22: the servers start with the first message, not at create or resume)
   mcpToggleApplies: 'live', // spec 019 (real: mcp.enable/disable)
+  mcpToolFilter: true, // spec 069 FR-062: session excludedTools (read: SDK types; not run on a real account)
   mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
@@ -236,6 +237,13 @@ export const ONE_SHOT_TIMEOUT_MS = 180_000;
  * switched off by name, no skills, custom agents, discovered config, instructions, hooks, git context, memory, session store or
  * infinite-session workspace, an empty temp folder as the working directory, and the cheapest `auto` routing (as a new `auto` session).
  */
+/** Spec 069 FR-062: Copilot's filter strings for the tools turned off in Durbar (`mcp:<server>-<tool>`). */
+export function copilotExcludedTools(off: Readonly<Record<string, readonly string[]>> | undefined): string[] {
+  const out: string[] = [];
+  for (const [server, tools] of Object.entries(off ?? {})) for (const t of tools ?? []) if (typeof t === 'string' && t) out.push(`mcp:${server}-${t}`);
+  return out.slice(0, 5000);
+}
+
 export function oneShotConfig(dir: string, disabledMcpServers: readonly string[] = []): Record<string, unknown> {
   return {
     workingDirectory: dir,
@@ -490,9 +498,11 @@ export class CopilotAdapter implements AgentAdapter {
     const { cwd, folders } = resolveWorkspaceCwd(options.workspace);
     const client = await this.getClient();
     let sid = options.resumeSessionId ?? options.sessionId ?? '';
+    const blocked = mcpToolBlockList(options.disabledMcpTools); // spec 069 FR-063
     const broker = new PermissionBroker({
       roots: [cwd, ...folders],
       mode: startModeOf(options),
+      blockedTools: () => blocked,
       beforeWrite: (paths) => this.writeGuard?.(sid, paths) ?? Promise.resolve(), // spec 065 FR-001
       emit: (e: BrokerEvent) => {
         switch (e.type) {
@@ -592,6 +602,9 @@ export class CopilotAdapter implements AgentAdapter {
       // `disabledMcpServers` switches those off by name. Values (env, headers) are secrets: never logged, only names.
       ...(options.mcpServers && Object.keys(options.mcpServers).length ? { mcpServers: options.mcpServers as unknown as Record<string, MCPServerConfig> } : {}),
       ...(options.disabledMcpServers?.length ? { disabledMcpServers: options.disabledMcpServers } : {}),
+      // spec 069 FR-062: single MCP tools turned off in Durbar; `excludedTools` "always takes precedence" (read: SDK 1.0.22 types.d.ts), MCP
+      // tools by the runtime's wire name `<server>-<tool>` (read: toolSet.d.ts addMcp("github-list_issues")); not run on a real account
+      ...(copilotExcludedTools(options.disabledMcpTools).length ? { excludedTools: copilotExcludedTools(options.disabledMcpTools) } : {}),
       // AI-credit cap (spec 011): the SDK calls it "AI Credits"; the app treats 1 AIU = 1 credit. `sessionLimits` is @experimental in SDK 1.0.22.
       ...(options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? { sessionLimits: { maxAiCredits: options.maxAiCredits } } : {}),
       onPermissionRequest,

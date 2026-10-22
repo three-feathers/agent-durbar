@@ -68,6 +68,11 @@ export interface StartOptions {
   mcpServers?: Record<string, McpServerSpec>;
   /** Exact MCP server names that must not start in this session (also switches off servers the runtime loads by itself). */
   disabledMcpServers?: string[];
+  /**
+   * Spec 069 FR-062: single MCP tools the user turned off for this folder, by server name (tool names as the server lists them). Each adapter
+   * passes them to its agent app's own filter and refuses them in its permission broker (FR-063).
+   */
+  disabledMcpTools?: Record<string, string[]>;
 }
 
 export interface Attachment {
