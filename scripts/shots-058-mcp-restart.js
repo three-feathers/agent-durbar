@@ -49,7 +49,7 @@ module.exports = async (ctx) => {
     await openMcp('sim-6');
     let r = await rows();
     const notes = r.find((x) => x.n === 'my-notes');
-    assert.ok(notes && notes.status === 'failed', 'my-notes failed in this simulated session: ' + JSON.stringify(r));
+    assert.ok(notes && notes.status === 'Failed', 'my-notes failed in this simulated session: ' + JSON.stringify(r));
     assert.ok(/^Restart my-notes for .+/.test(notes.restart || ''), 'the failed server has Restart with an accessible name: ' + JSON.stringify(notes));
     assert.ok(r.filter((x) => x.restart).length >= 2, 'every running server that is on has Restart');
     assert.ok(await js(`!!document.getElementById('mcpRestartSess')`), 'Restart session with these servers is offered');
@@ -63,9 +63,9 @@ module.exports = async (ctx) => {
     assert.ok(await until(`[...document.querySelectorAll('#agMcp li.srv')].some(li=>li.dataset.n==='my-notes'&&/Restarting/.test(li.textContent))`), 'the page reached the expected state (wait 3)');
     r = await rows();
     assert.ok(r.find((x) => x.n === 'my-notes').busy, 'while it runs the button reads Restarting… and is disabled');
-    assert.strictEqual(r.find((x) => x.n === 'my-notes').status, 'pending', 'the row shows the server starting');
+    assert.strictEqual(r.find((x) => x.n === 'my-notes').status, 'Starting', 'the row shows the server starting');
     assert.ok(await until(`/Restarted my-notes\\./.test([...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' '))`), 'the page reached the expected state (wait 4)');
-    assert.ok(await until(`[...document.querySelectorAll('#agMcp li.srv')].some(li=>li.dataset.n==='my-notes'&&(li.querySelector('.mst')||{}).textContent==='connected')`), 'the page reached the expected state (wait 5)');
+    assert.ok(await until(`[...document.querySelectorAll('#agMcp li.srv')].some(li=>li.dataset.n==='my-notes'&&(li.querySelector('.mst')||{}).textContent==='Running')`), 'the page reached the expected state (wait 5)');
     assert.ok(await js(`document.getElementById('scrDlg').contains(document.activeElement)`), 'focus stays in the dialog after the repaint');
 
     // ---- Restart session on this agent (asked first only when it is busy, has session grants or remote control) ----
