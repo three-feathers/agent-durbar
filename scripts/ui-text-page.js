@@ -293,8 +293,8 @@
       }
       if (kind === 'popover') {
         // T171: a name cut to a sliver is the bug even with a title (the Folders popover's first row sat beside a floated checkbox: "mc...")
-        for (const el of root.querySelectorAll('.fp-t b, .fp-t small, .gp-t')) {
-          if (!vis(el)) continue;
+        for (const el of root.querySelectorAll('*')) {
+          if (!vis(el) || getComputedStyle(el).textOverflow !== 'ellipsis') continue;
           if (el.scrollWidth > el.clientWidth + 1 && el.clientWidth < 120) add('popover-squeezed', root, el, `"${snip(el.textContent, 30)}" is cut to ${el.clientWidth}px (scrollWidth ${el.scrollWidth})`);
         }
         // FR-167 (T169, issue #508): width is the S or M token (or the window minus 32px), padding is --pop-pad
@@ -303,7 +303,7 @@
         const px = toks.map((x) => (x.v ? probe(root, 'width', x.v) : NaN));
         px.forEach((v, i) => { if (Math.abs(v - Math.min(toks[i].want, innerWidth - 32)) > 1) add('popover-width', root, root, `${toks[i].n} is "${toks[i].v}" (${v}px), expected ${toks[i].want}px`); });
         const w = root.offsetWidth;
-        if (!px.some((v) => Math.abs(v - w) <= 1)) add('popover-width', root, root, `width ${Math.round(w)}px is none of ${px.map(Math.round).join('/')}`);
+        if (!px.some((v) => Math.abs(v - w) <= 1) && Math.abs(w - (innerWidth - 32)) > 1) add('popover-width', root, root, `width ${Math.round(w)}px is none of ${px.map(Math.round).join('/')} (nor ${innerWidth - 32})`);
         const want = probe(root, 'padding', 'var(--pop-pad)');
         const pcs = getComputedStyle(root);
         const got = ['Top', 'Right', 'Bottom', 'Left'].map((k) => parseFloat(pcs['padding' + k]));

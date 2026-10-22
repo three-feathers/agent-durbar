@@ -4,7 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.11 tag)
 
-- **Popovers share one width pair and one padding** (spec 052 FR-167, issue #508): Defaults and Allowed grants are 420px (`--pop-w-s`), Folders and Floors 660px (`--pop-w-m`), all with the padding `--pop-pad` (12px 14px); each is the window minus 32px when the window is smaller. New `popover-width` rule in `check:ui-text`. Checked in the simulator only (Linux fonts).
+- **Popovers share one width pair and one padding** (spec 052 FR-167, issue #508): Defaults and Allowed grants are 420px (`--pop-w-s`), Folders and Floors 660px (`--pop-w-m`), all with the padding `--pop-pad` (12px 14px); each is the window minus 32px when the window is smaller. "Pause all schedules" in the Folders popover is on its own line (it squeezed the first folder's name to "mc..."); the border and error colours there and in 15 other rules are theme tokens, so they read in dark themes. New `check:ui-text` rules: `popover-width`, `popover-squeezed` (a cut name or path under 120px), literal light borders and outlines, long-name passes for Folders and Floors, and a Floors error shown in the dark run. Checked in the simulator only (Linux fonts).
 
 ## v0.1.0-alpha.11 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.11), 2026-10-22)
 

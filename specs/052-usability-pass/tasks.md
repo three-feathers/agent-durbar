@@ -275,9 +275,12 @@
 - [x] T169 Check rule `popover-width` in `check-ui-text` / `ui-text-page.js` for every `popover` surface [FR-167, FR-171]
   - Accept: a popover whose width is not S, M or `100vw - 32px`, or whose padding is not `--pop-pad`, fails.
   - Check: mutation (one popover given its own `width`) fails `popover-width`; the code is restored byte for byte and the check passes.
-- [x] T170 Screenshots (both sizes, light and dark where it matters) in `docs/screenshots/052-popover-*`; docs: FR-167 `[IMPLEMENTED]`, `docs/design-rules.md`, CHANGELOG [FR-167]
+- [x] T170 Screenshots (both sizes, light and dark) in `docs/screenshots/052-popover-*`; docs: FR-167 `[IMPLEMENTED]`, `docs/design-rules.md`, CHANGELOG [FR-167]
   - Accept: FR-167 has no popover `[KNOWN GAP]`; the design rules describe the two tokens.
   - Check: `typecheck`, `build`, `npm test`, `check:ui-text`, `check:office`, `check:geometry`.
 - [x] T171 Folders popover: the Pause all schedules checkbox on its own line; rule `popover-squeezed` in `check:ui-text` [FR-167]
   - Accept: the first folder row shows its full name at both sizes; no popover name or path is cut to under 120px.
   - Check: mutation (`float:right` back on `.fp-pause`) fails `popover-squeezed`; code restored byte for byte.
+- [x] T172 Review fixes on #508: `popover-squeezed` covers every ellipsis in a popover (mutation `.fl-t{max-width:80px}` fails); long-name passes `folders-pop-long`, `floors-pop-long`; `popover-width` accepts the window minus 32px; popover borders and `.fl-err` to tokens, `literal-light` also reads borders and outlines (16 rules fixed), a Floors error shown in `floors-pop-error` so `dark-text` measures it; dark screenshots for all four popovers [FR-167]
+  - Accept: no literal light border or outline in `src/renderer/*.css`; `.fl-err` reads at 4.5:1 in the dark fixture.
+  - Check: mutation `#efe9dd` back on `.fl-floor` fails `literal-light`; restored byte for byte.
