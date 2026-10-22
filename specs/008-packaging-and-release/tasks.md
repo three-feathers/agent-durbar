@@ -95,3 +95,7 @@
 ## 2026-10-22: Electron installed once before the office parts start (CI flake on PR #546)
 
 - [x] T101 (2026-10-22, reported by fjcabello on PR #546) Install Electron once before any fan-out [FR-114]. Files: `scripts/ensure-electron.js` (new, the #424 step moved out of `run-tests.js`), `scripts/run-tests.js`, `scripts/check-parallel.js` and `scripts/ui-suite.js` (call it before the first job; export their runners for the test; side effects only when run as a script), `scripts/test-ui-suite.ts`, `docs/agent-notes.md`, `changelog.d/008-shard-electron-once.md`. Done when the test shows one install before the first job in both runners, a local repro of the race (parallel first runs of a copy of `node_modules/electron` with no binary) fails without the step and passes with it, a quick `check-parallel.js` run (`OFFICE_QUICK=1`) and the PR's CI office job pass, and `npm run typecheck && npm run build && npm test` pass.
+
+## 2026-10-22: `npm test -- --bail` (issue #563)
+
+- [x] T102 (2026-10-22, issue #563) Opt-in fail-fast for `npm test` [FR-115]. Files: `scripts/run-tests.js` (`parseArgs`, `loadSuites`, `stopChild`, `runSuites` exported; detached spawn, group kill / `taskkill /T /F`), `scripts/test-run-tests.ts` (new), `package.json` (`test:runtests`, in `test:serial`), `README.md`, `docs/agent-notes.md`, `changelog.d/008-test-bail.md`. Done when the unit test passes and fails with the stop removed, and `npm run typecheck && npm run build && npm test` pass.
