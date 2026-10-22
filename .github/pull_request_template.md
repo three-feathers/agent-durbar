@@ -39,7 +39,7 @@ Spec-Exempt: <reason>
 
 ## Docs
 
-- [ ] **Docs updated** in this PR: whichever of `README.md`, `docs/`, `CHANGELOG.md`, the spec's `tasks.md` and the screenshots it shows are affected (list in [AGENTS.md](../AGENTS.md#keep-docs-in-sync)) — links:
+- [ ] **Docs updated** in this PR: whichever of `README.md`, `docs/`, the spec's `tasks.md` and the screenshots it shows are affected, plus a `changelog.d/<branch>.md` fragment (not `CHANGELOG.md`) and the spec's `specs-index` block with `npm run specs:index` (not a hand-edited `specs/README.md` row) (list in [AGENTS.md](../AGENTS.md#keep-docs-in-sync)) — links:
 - [ ] ...or **no docs impact**: I wrote a `Docs: n/a <reason>` line below (only a reminder check reads it; it never blocks)
 
 <!--

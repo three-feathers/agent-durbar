@@ -1,5 +1,11 @@
 # Feature Specification: Change the permission mode at any time
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 015-018
+title: Change permission mode any time
+status: milestone 7
+-->
+
 **Feature Branch**: `018-permission-mode-switch` (milestone 7; amends 003)
 **Created**: 2026-10-16
 **Status**: Implemented (milestone 7)

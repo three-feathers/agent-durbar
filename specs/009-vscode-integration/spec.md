@@ -1,5 +1,11 @@
 # Feature Specification: VS Code integration (open folder, read-only chat history)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: index
+title: Open in VS Code, VS Code chat history (read-only)
+status: implemented; delta 2026-10-19: FR-016..017 (opens at latest message, question kinds, Continue in VS Code) built
+-->
+
 **Feature Branch**: `009-vscode-integration` (reverse-engineered; milestones 1, 6 and packaging)
 **Created**: 2026-10-16
 **Status**: Implemented (reverse-engineered from `src/main/vscode.ts`, `src/adapters/vscodeChat.ts`, `main.ts`, README, `docs/research.md`)

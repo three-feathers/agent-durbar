@@ -1,5 +1,11 @@
 # Feature Specification: Continue a VS Code chat in Durbar
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 046
+title: Continue a VS Code chat in Durbar: from the read-only VS Code chat view (spec 009), a new session in the same folder with a chosen ready agent app; the first message is a reviewed, editable, redacted copy of the chat under an estimated 30,000-token cap, with a size and cost estimate in the app's unit; option B (summarise first) later and owner-gated, option C rejected (issue #344)
+status: **specified** (spec, plan, tasks; spec PR, not built); owner answered Q1-Q9 on 2026-10-20 (option B parked)
+-->
+
 **Feature Branch**: `056-continue-vscode-chat`
 
 **Created**: 2026-10-20

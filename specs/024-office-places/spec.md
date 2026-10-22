@@ -1,5 +1,11 @@
 # Feature Specification: Places in the office (agents walk to the systems they use)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 024
+title: Places in a shared lobby (Library, Software library, Terminal, Web, Other tools); main agents walk to the place of the tool they use; place per MCP server in Settings
+status: built 2026-10-17 (issue #18); simulator and unit tests, plus one short real check (3 prompts, 0.84 AIU: Terminal and Software library walks only); delta 2026-10-18 *one GitHub server in Settings > Places* (issue #117, T012) built (T012-T015); delta 2026-10-18 *per-folder extras listed before use* (issue #116, T011) built (T016-T018); delta 2026-10-18 *custom places* (issue #115) built (T019-T026); both unit tests and simulator, not checked on a real session; delta 2026-10-21 *the layout check waits for walking figures to arrive* (issue #406, T027): `check:office` re-measures a figure that is still walking for up to 3 s, and the walk ends on `transitionend` (simulator: 4 full runs on the final code, 5 on the check-only version)
+-->
+
 **Feature Branch**: `024-office-places` (amends 001 office view, 017 room doors; uses 019/020 MCP data)
 **Created**: 2026-10-17
 **Status**: Built 2026-10-17 (issue #18): clarified with Ruben, implemented and verified on the simulator and with unit tests (`test:places`, `test:credits`, `check:office` 105/105, `scripts/shots-024.js`). CI (PR #109): unit tests pass on Linux, macOS and Windows, `check:office` with the lobby checks passes on Linux (xvfb). One short check on a real Copilot session (see *Verification on a real session*: 3 prompts, 0.84 AIU, model `auto`, *Ask first*): a shell call walked to the Terminal (the request was denied) and a GitHub code search walked to the Software library. Not seen on a real session: the Library, Web and Other tools places, a place set in Settings (T012), several agents walking at once and *reduce motion*. The Windows layout was not looked at. Deltas 2026-10-18: #117 (one GitHub server), #116 (per-folder extras listed before use) and #115 (custom places) built and checked on the simulator and in unit tests only.

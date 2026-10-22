@@ -1,5 +1,11 @@
 # Feature Specification: Project website on GitHub Pages
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 046
+title: Project website on GitHub Pages, generated from the README, the specs index, screenshots, the CHANGELOG and the latest release; deployed by CI (issue #293)
+status: **built and live** at https://three-feathers.github.io/agent-durbar/; delta 2026-10-20: a curated landing page from `docs/site/landing.json` (checked against the README) plus a docs page with the whole README (FR-006..FR-010) built
+-->
+
 **Feature Branch**: `050-project-site`
 **Created**: 2026-10-19
 **Status**: Built and **live** at <https://three-feathers.github.io/agent-durbar/> (first deploy 2026-10-19, run 39300604574)

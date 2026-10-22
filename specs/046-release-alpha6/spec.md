@@ -1,5 +1,11 @@
 # Feature Specification: Release v0.1.0-alpha.6 (pre-release)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 046
+title: Release v0.1.0-alpha.6 as a pre-release (version bump, changelog, download notes)
+status: built; **published as a pre-release** (2026-10-19)
+-->
+
 **Feature Branch**: `046-release-alpha6`
 **Created**: 2026-10-19
 **Status**: Built and **published as a pre-release on 2026-10-19** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.6>; release PR #244; the new app icon from #246 included; tag on `b0e0565`, CI green on that commit).

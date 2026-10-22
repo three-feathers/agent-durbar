@@ -1,5 +1,11 @@
 # Feature Specification: Change the model and the context window inside a session
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 030
+title: Switch model, effort and context tier of a live session (chat header and office card menu), see window and % full, compact, start-fresh hint, per-folder default; simulator first, adapter-neutral
+status: **Phases 1-4 built**; Phase 3 run on Copilot Pro 2026-10-20 (switch between real models, effort, long tier, `confirmation_required`, compact and switch; Copilot `modelSwitch.verified`); open: long-tier price above the default window, `compactionDecision` values; 2026-10-21: continue a conversation in another agent app (#409, FR-042..FR-045, real Copilot → Claude → Codex)
+-->
+
 **Feature Branch**: `030-switch-model-context` (spec, research, plan and tasks only; code comes in later `030-<slug>` branches per task)
 **Created**: 2026-10-17
 **Status**: Phases 1-4 built. Phase 3 (real Copilot checks) run on a free plan on 2026-10-17 and on **Copilot Pro on 2026-10-20** (T041, T044, T045: switch between real models, effort, long tier, `confirmation_required`, compact and switch; see `## Changes`). Open: the long-tier price above the default window and the `compactionDecision` values (`[KNOWN GAP]`).

@@ -1,5 +1,11 @@
 # Feature Specification: Release v0.1.0-alpha.4 (pre-release)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 031
+title: Release v0.1.0-alpha.4 as a pre-release (version bump, changelog, download notes)
+status: built; **published as a pre-release** (2026-10-17)
+-->
+
 **Feature Branch**: `031-release-alpha4`
 **Created**: 2026-10-17
 **Status**: Built and **published as a pre-release on 2026-10-17** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4>; PR #118, tag on `c1115ca`; the maintainer asked for it explicitly: "proceed until pre-release"). Release engineering only: a version bump, a changelog section and README download notes. No behavior change (the only `src/` edit is the simulator's displayed version string).

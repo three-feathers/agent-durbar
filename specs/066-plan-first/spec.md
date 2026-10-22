@@ -1,5 +1,11 @@
 # Feature Specification: Plan first (the agent proposes, you approve)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 046
+title: Plan first: for one message, the agent proposes a plan in its app's own plan mode and you Approve, Revise or Reject; the approved plan still runs in the folder's mode (issue #429)
+status: **built**; real 2026-10-21 on Copilot, Claude Code and Codex (reject: nothing changed; Copilot approve in Read-only: the change was refused)
+-->
+
 **Feature Branch**: `066-plan-mode`
 **Created**: 2026-10-21
 **Status**: Built, and checked on real Copilot, Claude Code and Codex sessions (2026-10-21, `## Changes`).
