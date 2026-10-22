@@ -306,3 +306,7 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 - `real:` 2026-10-21, owner (Vikram) hand-check, closed by the owner's decision: macOS in daily use; Windows looked at with a colleague on 2026-10-21. Findings filed from that Windows session: #467 (Settings > Agent apps offered no install option; Copilot was not detected or installable without Node.js; PowerShell/winget commands in PR #469) and the MCP sign-in sharing (#471, merged; real check in PR #478).
 - Owner decision (Vikram, team chat 2026-10-21): "You can close issue #10 as we hand-checked them already many times, I am using it daily on macOS and I looked at everything today with my colleague on Windows and you already have feedback."
 - **Not covered** (honest limits): the owner reported use, not a scripted check. The T024 items (15 agents at 1440x900 and 1280x800, no overlap, text at least 10.5px, fonts, window chrome) were not measured one by one on a real Mac or Windows PC, and no screenshots from real machines are in `docs/screenshots/` (the simulator screenshots and the CI *UI on three OSes* runs are the measured evidence). Text metrics across OSes stay unmeasured (Assumptions).
+
+### 2026-10-22: a long unbroken name on a full desk card (issue #536)
+
+The full card's name (`.who .name`) wraps to two lines and ends in "…"; a token with no spaces may break anywhere. The rule is spec 059 FR-019 (it owns where names are shown); card widths do not change, and a full card with a long name can only get shorter.

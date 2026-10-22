@@ -97,7 +97,7 @@ for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'I
 // FR-111 (owner decision 2026-10-22): theme layout checks run Clean Office and Retro on pull requests, every theme elsewhere
 assert.ok(office.includes(`CHECK_ALL_THEMES: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}`) && wf.includes(`CHECK_ALL_THEMES: \${{ github.event_name == 'pull_request' && '0' || '1' }}`), 'every theme on main, nightly and by hand');
 const geo = fs.readFileSync(path.join(ROOT, 'scripts', 'check-theme-geometry.js'), 'utf8');
-assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'retro'/.test(geo) && /const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user'/.test(geo), 'check-theme-geometry: Retro by default, all with CHECK_ALL_THEMES=1');
+assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'retro'/.test(geo) && /const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user,pink-studio'/.test(geo), 'check-theme-geometry: Retro by default, all with CHECK_ALL_THEMES=1');
 assert.ok(/CHECK_ALL_THEMES === '1' \? \[[^\]]*durbar-japanese[^\]]*\] : \['clean', 'retro'\]/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean and Retro by default');
 // FR-110: every job of every workflow has a time limit
 for (const f of fs.readdirSync(WF).filter((x) => x.endsWith('.yml'))) for (const [id, body] of Object.entries(jobsOf(fs.readFileSync(path.join(WF, f), 'utf8')))) assert.ok(/^ {4}timeout-minutes: /m.test(body), `${f} ${id} has timeout-minutes`);
@@ -209,3 +209,55 @@ for (const [what, add] of [
   ['jsLiteral from the overlap check', "const { jsLiteral } = require('./check-office-overlap.js');"],
 ]) assert.ok(checkDriverSource('x.js', clean + add + '\n').length > 0, `the guard catches ${what}`);
 console.log(`ui-suite: ${names.length} drivers listed and present; no shell; driver failures exit 1; workflow covers 3 OSes`);
+// ---- spec 008 FR-114: Electron is installed once, before any parallel job starts (PR #546: parts racing on the binary exited 126) ----
+// a promise that never settles would let node exit 0 without the rest of the checks (docs/agent-notes.md, PR #473): fail then
+let fr114Done = false;
+process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did not finish'); process.exitCode = 1; } });
+(async () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  type Step = string;
+  const { ensureElectron } = require(path.join(ROOT, 'scripts', 'ensure-electron.js')) as { ensureElectron: (o?: { spawn?: (...a: unknown[]) => { status: number | null } }) => boolean };
+  // the helper itself: one child `node -e "require('electron')"`, no shell; true only on exit 0
+  const calls: unknown[][] = [];
+  assert.strictEqual(ensureElectron({ spawn: (...a: unknown[]) => { calls.push(a); return { status: 0 }; } }), true, 'ensureElectron: exit 0 is installed');
+  assert.ok(calls.length === 1 && calls[0][0] === process.execPath && JSON.stringify(calls[0][1]) === JSON.stringify(['-e', "require('electron')"]) && (calls[0][2] as { shell?: boolean }).shell === false, 'ensureElectron: one child node, require(electron), no shell');
+  assert.strictEqual(ensureElectron({ spawn: () => ({ status: 1 }) }), false, 'ensureElectron: a failed fetch is reported');
+  for (const f of ['run-tests.js', 'check-parallel.js', 'ui-suite.js']) {
+    const s = fs.readFileSync(path.join(ROOT, 'scripts', f), 'utf8');
+    assert.ok(s.includes("require('./ensure-electron')") && !s.includes(`['-e', "require('electron')"]`), `${f} uses the shared install step, not its own copy`);
+  }
+  // check-parallel.js: the install runs once, before the first part; a failed install starts no part
+  const par = require(path.join(ROOT, 'scripts', 'check-parallel.js')) as { main: (o: object) => Promise<number>; jobs: { label: string }[] };
+  const fakeJobs = [{ label: 'a' }, { label: 'b' }, { label: 'c' }];
+  let order: Step[] = [];
+  const quiet = () => undefined;
+  let failed = await par.main({ ensure: () => { order.push('ensure'); return true; }, runJob: async (j: { label: string }) => { order.push('run ' + j.label); return 'ok'; }, available: () => Infinity, jobs: fakeJobs, workers: 3, log: quiet });
+  assert.strictEqual(failed, 0);
+  assert.deepStrictEqual(order.filter((x) => x === 'ensure'), ['ensure'], 'check-parallel: Electron installed exactly once');
+  assert.ok(order[0] === 'ensure' && order.length === 4, `check-parallel: the install comes before every part (${order.join(', ')})`);
+  order = [];
+  failed = await par.main({ ensure: () => { order.push('ensure'); return false; }, runJob: async (j: { label: string }) => { order.push('run ' + j.label); return 'ok'; }, available: () => Infinity, jobs: fakeJobs, workers: 3, log: quiet });
+  assert.ok(failed === 3 && order.join() === 'ensure', 'check-parallel: no Electron, no part started, every part counts as failed');
+  assert.ok(par.jobs.length >= 2, 'check-parallel still splits the office check into parts');
+  // ui-suite.js: the same, after the syntax pass and before the first driver
+  const suite = require(SUITE) as { main: (o: object) => Promise<void> };
+  const outDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-ensure-'));
+  const prevOut = process.env.UI_SUITE_OUT;
+  process.env.UI_SUITE_OUT = outDir;
+  const realLog = console.log;
+  console.log = quiet;
+  try {
+    order = [];
+    await suite.main({ argv: ['--only', `${names[1].split(' ')[0]},${names[2].split(' ')[0]}`], ensure: () => { order.push('ensure'); return true; }, run: async (d: { name: string }) => { order.push('run ' + d.name); return { ok: true, secs: 0, why: '', log: '' }; } });
+    assert.ok(order[0] === 'ensure' && order.length === 3 && order.filter((x) => x === 'ensure').length === 1, `ui-suite: Electron installed once, before the drivers (${order.join(', ')})`);
+    order = [];
+    await assert.rejects(suite.main({ argv: ['--only', names[1].split(' ')[0]], ensure: () => { order.push('ensure'); return false; }, run: async () => { order.push('run'); return { ok: true, secs: 0, why: '', log: '' }; } }), /no driver was started/);
+    assert.strictEqual(order.join(), 'ensure', 'ui-suite: no Electron, no driver started');
+  } finally {
+    console.log = realLog;
+    if (prevOut === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = prevOut;
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+  fr114Done = true;
+  console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
+})().catch((e) => { console.error(e); process.exitCode = 1; });

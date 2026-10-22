@@ -228,6 +228,36 @@ export interface BrokerOptions {
   pathCheck?: PathCheckOptions;
   /** Spec 065 FR-001: awaited (at most 2 s, errors ignored) just before an approved `write` goes ahead, with the paths it writes. */
   beforeWrite?: (paths: string[]) => Promise<void>;
+  /** Spec 069 FR-063: MCP tools turned off in Durbar (from `mcpToolBlockList`); a request for one is refused in every mode. */
+  blockedTools?: () => ReadonlySet<string>;
+}
+
+/** Claude Code's wire name for a server: characters outside [A-Za-z0-9_-] become `_` (`mcp__<server>__<tool>`). */
+export const claudeServerPart = (server: string): string => server.replace(/[^A-Za-z0-9_-]/g, '_');
+
+/**
+ * Spec 069 FR-063: the keys a request for a turned-off tool can match: `<server>/<tool>` (split names), Claude Code's
+ * `mcp__<server>__<tool>` and Copilot's wire name `<server>-<tool>` (when a request carries only the tool's full name).
+ */
+export function mcpToolBlockList(off: Readonly<Record<string, readonly string[]>> | undefined): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const [server, tools] of Object.entries(off ?? {}))
+    for (const t of tools ?? []) {
+      if (typeof t !== 'string' || !t) continue;
+      out.add(`${server}/${t}`);
+      out.add(`mcp__${claudeServerPart(server)}__${t}`);
+      out.add(`${server}-${t}`);
+    }
+  return out;
+}
+
+function blockedMcp(req: PermissionLike, set: ReadonlySet<string> | undefined): { server?: string; tool: string } | undefined {
+  if (!set || !set.size || String(req.kind) !== 'mcp') return undefined;
+  const tool = typeof req.toolName === 'string' ? req.toolName : '';
+  const server = typeof req.serverName === 'string' ? req.serverName : undefined;
+  if (server && tool && set.has(`${server}/${tool}`)) return { server, tool };
+  if (tool && set.has(tool)) return { server, tool };
+  return undefined;
 }
 
 const WRITE_GUARD_MS = 2000;
@@ -320,6 +350,12 @@ export class PermissionBroker {
     const kind = String(req.kind);
     const summary = summarize(req);
     const requestId = String(req.toolCallId ?? `${kind}-${now()}-${++this.seq}`); // T026: two requests in the same millisecond get different ids
+    const off = blockedMcp(req, this.opts.blockedTools?.());
+    if (off) {
+      const what = off.server ? `${off.server} › ${off.tool}` : off.tool;
+      this.opts.emit({ type: 'denied-policy', permission: { requestId, kind, summary, state: 'denied' } });
+      return { kind: 'reject', feedback: `This tool is turned off in Agent Durbar (${what}). Do not retry it.` };
+    }
     const outsideRead = kind === 'read' && this.mode !== 'allow' && this.readIsOutside(req);
     if (kind === 'read' && !outsideRead) return { kind: 'approve-once' };
     if (this.mode === 'allow') {

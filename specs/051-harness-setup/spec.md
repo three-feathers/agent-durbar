@@ -30,7 +30,7 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
 - **Copilot in Durbar does not use the Copilot CLI.** The runtime bundled with `@github/copilot-sdk` has no login command (`copilot-runtime login` → "unsupported argument"). It uses a sign-in already stored on the computer: a `copilot login`, or a **GitHub CLI** (`gh`) login (`getAuthStatus()` reported `authType: "gh-cli"` here). Passing a token to the SDK would mean Durbar holds it (constitution III), so the Copilot sign-in goes through the official Copilot CLI.
 - `CopilotClient.getAuthStatus()` starts the runtime and answers in about 1 s; no prompt, nothing billed.
 - **Install routes**, from the vendors' docs (read 2026-10-19; not all tried, see `[KNOWN GAP]`):
-  - Claude Code: native installer script (recommended by Anthropic), `brew install --cask claude-code`, `winget install Anthropic.ClaudeCode`; npm `@anthropic-ai/claude-code` is deprecated.
+  - Claude Code: native installer script (recommended by Anthropic), `brew install --cask claude-code`, `winget install Anthropic.ClaudeCode`; npm `@anthropic-ai/claude-code` was called deprecated by Anthropic until 2026-10-20; since 2026-10-21 the page lists it as an advanced option (spec 060).
   - Copilot CLI: `npm install -g @github/copilot` (Node 22+), `brew install copilot-cli`, `winget install GitHub.Copilot`, an install script.
   - Codex: `npm install -g @openai/codex`, `brew install --cask codex`; Windows support is experimental.
 
@@ -56,7 +56,7 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
   | Copilot CLI | `winget install --id GitHub.Copilot -e`, npm | `brew install copilot-cli`, npm | `brew install copilot-cli`, npm |
   | Codex | npm (Codex on Windows is experimental) | `brew install --cask codex`, npm | npm |
 
-  npm is `npm install -g <package>` (`@anthropic-ai/claude-code`, `@github/copilot`, `@openai/codex`). The Claude npm route is labelled "deprecated by Anthropic, use only if nothing else works". winget runs with `--accept-source-agreements --accept-package-agreements` only after the user has seen the agreement note in the dialog. **Update** uses the same manager: `winget upgrade …`, `brew upgrade [--cask] …`, `npm install -g <package>@latest`.
+  npm is `npm install -g <package>` (`@anthropic-ai/claude-code`, `@github/copilot`, `@openai/codex`). The Claude npm route was labelled "deprecated by Anthropic, use only if nothing else works" (since 2026-10-21, spec 060: "Needs Node.js 22 or later. Anthropic recommends its native installer."). winget runs with `--accept-source-agreements --accept-package-agreements` only after the user has seen the agreement note in the dialog. **Update** uses the same manager: `winget upgrade …`, `brew upgrade [--cask] …`, `npm install -g <package>@latest`.
 - **FR-003** **No usable route:** the dialog explains that no package manager was found and opens the vendor's official install page (a fixed https URL per harness) on click. It never runs a downloaded script.
 - **FR-004** **Running an install or update** (`src/main/harnesssetup.ts`):
   - the exact command line is shown before it runs, and the user confirms;

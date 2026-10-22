@@ -31,9 +31,9 @@ body.screen-open .workspace{display:none}
 .srv-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .srv-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 .srv-name{font-size:13px}
-.srv-cmd{font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink-2);overflow-wrap:anywhere;white-space:pre-wrap}
+.srv-cmd{font:11px/1.35 var(--font-mono);color:var(--ink-2);overflow-wrap:anywhere;white-space:pre-wrap}
 .srv-secrets{display:flex;flex-wrap:wrap;gap:5px}
-.sec{display:inline-flex;gap:6px;align-items:center;height:20px;padding:0 8px;border-radius:var(--r-sm);background:var(--surface-2);border:1px solid var(--line);font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink-2)}
+.sec{display:inline-flex;gap:6px;align-items:center;height:20px;padding:0 8px;border-radius:var(--r-sm);background:var(--surface-2);border:1px solid var(--line);font:11px var(--font-mono);color:var(--ink-2)}
 .sec i{font-style:normal;letter-spacing:.06em;color:var(--muted)}
 .srv-act{display:flex;align-items:center;gap:8px;flex:none}
 .mtag{display:inline-block;font-size:10.5px;font-weight:650;padding:1px 7px;border-radius:999px;background:var(--tone-info-faint);border:1px solid var(--tone-info-line);color:var(--tone-info-ink)}
@@ -67,7 +67,7 @@ body.screen-open .workspace{display:none}
 .mform label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--ink-2)}
 .mform label small,.kvh small{font-weight:500;color:var(--muted);font-size:11px}
 .mform input[type=text],.mform input[type=password],.mform select,.mform textarea{border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:7px 9px;font:inherit;font-size:13px;color:var(--ink);min-width:0}
-.mform textarea{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical}
+.mform textarea{font:12px/1.4 var(--font-mono);resize:vertical}
 .mform [hidden]{display:none}
 .mform>div{display:flex;flex-direction:column;gap:10px}
 .kv{gap:6px!important}
@@ -76,7 +76,7 @@ body.screen-open .workspace{display:none}
 .krow .k{flex:0 0 38%}
 .krow .v{flex:1}
 #envRows,#hdrRows{display:flex;flex-direction:column;gap:6px}
-.trustcmd{margin:0;padding:10px 12px;background:#2c3733;color:#f1efe6;border-radius:10px;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto}
+.trustcmd{margin:0;padding:10px 12px;background:#2c3733;color:#f1efe6;border-radius:10px;font:12px/1.45 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto}
 .imps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto}
 .imp{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface-2)}
 .imp .chk{align-items:flex-start}
@@ -99,7 +99,7 @@ body.screen-open .workspace{display:none}
 .ttab .num{text-align:right;width:64px;font-variant-numeric:tabular-nums}
 .ttab td.num,.ttab th.num{text-align:right}
 .ttab .barc{width:30%}
-.ttab code{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.ttab code{font:12px var(--font-mono)}
 .agt{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .bar{display:block;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
 .bar i{display:block;height:100%;border-radius:2px;background:var(--blue)}
@@ -229,10 +229,10 @@ body.has-bridge #topBtns{display:flex}
 /* spec 051: Settings > Harnesses */
 .hs-list{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px} /* spec 052 FR-097: a fluid grid */
 .hs-card{border:1px solid var(--line);border-radius:var(--r-lg);padding:12px;background:var(--raised);display:flex;flex-direction:column;gap:4px}
-.hs-where code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;overflow-wrap:anywhere} /* spec 060 FR-003: where the app was found; a long path wraps after a folder separator (<wbr>), inside the card */
+.hs-where code{font-family:var(--font-mono);font-size:11px;overflow-wrap:anywhere} /* spec 060 FR-003: where the app was found; a long path wraps after a folder separator (<wbr>), inside the card */
 .hs-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .hs-st{font-size:var(--t5-size);font-weight:650;padding:2px 9px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
-.hs-ok{color:var(--tone-ok-ink);background:var(--tone-ok-bg);border-color:var(--tone-ok-line)}.hs-warn{color:var(--amber-ink);background:var(--warn-bg);border-color:#e5be78}.hs-off{color:var(--ink-2);background:var(--surface-2)}
+.hs-ok{color:var(--tone-ok-ink);background:var(--tone-ok-bg);border-color:var(--tone-ok-line)}.hs-warn{color:var(--amber-ink);background:var(--warn-bg);border-color:var(--tone-warn-line)}.hs-off{color:var(--ink-2);background:var(--surface-2)}
 .hs-act{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
 .hs-log:empty{display:none} /* spec 052 FR-055: no empty box before output arrives */
 .hs-log{max-height:9em;overflow:auto;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -241,6 +241,12 @@ body.has-bridge #topBtns{display:flex}
 .hs-plan{display:flex;gap:8px;align-items:flex-start;margin:6px 0}.hs-plan small{display:block;color:var(--muted);font-size:11px}
 .hs-plan b{display:block;font-weight:600}.hs-plan code{display:block}
 .hs-name{min-width:0}.hs-name>b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hs-for{display:block;color:var(--muted);font-size:11px;white-space:nowrap} /* spec 052 FR-092: "for ChatGPT" on its own small line, never split */.hs-cmds{margin:6px 0}.hs-cmds>summary{cursor:pointer;font-size:12px;color:var(--ink-2)}.hs-cmds code{overflow-wrap:anywhere} /* spec 052 FR-056 */
+/* spec 060 FR-009: the vendor's commands to run yourself, one per row, with the shared Copy button (.cp-btn) at the row's right */
+.hs-man{position:relative;margin:6px 0;padding:6px 64px 6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
+.hs-man-l{display:block;font-size:11px;font-weight:600;color:var(--ink-2)}.hs-man-l small{font-weight:400;color:var(--muted);font-size:11px}
+.hs-man code{display:block;font-size:11px;overflow-wrap:anywhere;user-select:all}.hs-man .cp-btn{top:50%;transform:translateY(-50%)}
+/* spec 060 FR-012: Run (Durbar runs that route) sits left of Copy (room for its wider "Copied ✓") when the route is found here */
+.hs-man.has-run{padding-right:136px}.hs-man .hs-man-run{position:absolute;top:50%;right:80px;transform:translateY(-50%);height:24px;min-height:0;padding:0 10px;font-size:11px}
 #hsPaste{flex:1 1 240px;height:32px;border:1px solid var(--line-ctl);border-radius:8px;padding:0 10px;font:inherit}
 /* Tools > Cost (spec 052 FR-044): one row per folder, a total row; folders with no usage in grey */
 .scr-body .ttab.cost{table-layout:auto}
@@ -281,7 +287,7 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-more{display:block;font-size:11px;color:var(--ink-2);font-style:italic}
 .dlg.fs .mtag.fs-allow{background:color-mix(in srgb,var(--sage) 14%,var(--surface));border-color:var(--line-2);color:var(--sage-ink)}
 .dlg.fs .mtag.fs-deny{background:color-mix(in srgb,var(--red) 14%,var(--surface));border-color:var(--line-2);color:var(--red-ink)}
-.dlg.fs .mtag.warn,.dlg.fs .mtag.new{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
+.dlg.fs .mtag.warn,.dlg.fs .mtag.new{background:var(--warn-bg);border-color:var(--tone-warn-line);color:var(--amber-ink)}
 .dlg.fs .fs-ai{margin:0 0 8px 34px;font-size:12px;line-height:1.45}
 .dlg.fs .fs-ai:empty{display:none}
 .dlg.fs .fs-ai b{margin-right:6px}
@@ -295,6 +301,106 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-confirm{align-items:flex-start;margin:14px 0 2px;font-weight:600}
 .dlg.fs .fs-confirm input{flex:none;width:16px;height:16px;margin:2px 0 0}
 .dlg.fs .fs-confirm>span{flex:1;min-width:0}
+/* spec 069: the add form's scope choice, the agent app ticks and the per-file review */
+.mscope{border:1px solid var(--line);border-radius:8px;padding:8px 12px 10px;margin:0 0 10px;display:flex;flex-direction:column;gap:6px}
+.mscope legend{font-weight:650;padding:0 4px}
+.mscope label,.gapps label,.gsec label{display:flex;flex-direction:row;align-items:baseline;gap:6px;font-weight:500;font-size:12.5px;color:var(--ink-2)}
+.mscope label>small,.gapps label>small,.gsec label>small{display:inline}
+.mscope input[type=radio],.mscope input[type=checkbox],.dlg .gapps input{flex:none;margin:0;width:auto}
+.mscope small,.gapps small,.gsec small{color:var(--muted)}
+.gapps{display:flex;flex-wrap:wrap;gap:4px 16px;margin:4px 0 2px 22px}
+.dlg .gapps{margin-left:0}
+.gsec{display:flex;flex-direction:column;gap:4px;margin:6px 0 0 22px}
+.gpvl{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:10px;max-height:52vh;overflow:auto}
+.gpv{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.gpv.bad{border-color:var(--card-waiting-line)}
+.gpv .srv-top{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+.gpv pre.trustcmd{max-height:180px;overflow:auto;margin:4px 0 0;white-space:pre-wrap;word-break:break-word}
+.grep{display:flex;gap:6px;align-items:baseline;margin-top:6px}
+.gfiles{margin:4px 0;padding-left:18px}
+.gfiles .warn{color:var(--amber-ink)}
+/* spec 069 part 2: Harmonize */
+.hm .hmlbl{font-size:11px;color:var(--muted)}
+.hmfrom{display:flex;gap:8px;align-items:center;font-weight:600;font-size:12.5px}
+.hmfrom select{font:inherit;padding:4px 6px}
+.dlg .gapps label{display:flex;gap:6px;align-items:baseline}
+/* spec 069 part 3: a server row opens its tools list */
+.mcp-tg{display:inline-flex;align-items:baseline;gap:4px;background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer}
+.mcp-tg:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
+.mcp-car{font-size:11px;color:var(--muted);width:10px}
+.srv.sm.open{flex-wrap:wrap}
+.mcp-tools{flex:1 0 100%;margin:6px 0 0 14px;font-size:12px;color:var(--ink-2)}
+.mcp-tcount{margin:0 0 4px;font-size:11px;font-weight:650;color:var(--muted)}
+.mcp-tlist{list-style:none;margin:0;padding:0;max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:3px}
+.mcp-tlist li{display:flex;gap:8px;align-items:baseline;min-width:0}
+.mcp-tlist code{flex:none;font-size:11.5px}
+.mcp-tlist span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:11.5px}
+/* spec 069 part 4: single tools on and off */
+.mcp-thead{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;margin:0 0 4px}
+.mcp-all{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:0;font:inherit;font-size:11.5px;font-weight:650;color:var(--ink-2);cursor:pointer}
+.mcp-all[disabled]{cursor:not-allowed;opacity:.7}
+.mcp-box{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border:1px solid var(--line-ctl);border-radius:3px;font-size:10.5px;line-height:1}
+.mcp-tnote{font-size:11px;color:var(--muted)}
+.mcp-tlist label{display:inline-flex;flex-direction:row;align-items:center;gap:6px;flex:none;font-weight:500;margin:0}
+.mcp-tlist input{margin:0}
+/* spec 060 FR-012: a tall setup dialog (three routes and the vendor's commands) scrolls inside its body, so the rows never slide under Cancel/Install */
+#hsDlg .dlg .dbody{overflow:auto;padding-right:2px}
+
+/* spec 043 FR-014: the profile file editor (profileeditor.js); theme tokens only, text 10.5px or larger */
+.dlg.pe{width:calc(100vw - 32px);height:calc(100vh - 48px);max-height:none;overflow:hidden;gap:var(--dlg-gap);padding:var(--dlg-pad)} /* spec 052 FR-167: the window minus 32px (a full-size editor), the dialog padding and gap tokens */
+.pe-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex:none}
+.pe-tt{flex:1 1 260px;min-width:0;display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:10px;row-gap:2px}
+.pe-tt h3{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.pe-dirty{justify-self:start;font-size:var(--t5-size);font-weight:600;color:var(--amber-ink);background:var(--warn-bg);border:1px solid var(--card-waiting-line);border-radius:999px;padding:1px 8px}
+.pe-dirty[hidden]{display:none}
+.pe-sub{grid-column:1/-1;margin:0;font-size:var(--t4-size);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pe-modes{flex:none}
+.pe-acts{display:flex;gap:8px;flex:none}
+.pe-acts .btn[hidden]{display:none}
+.pe-ro{margin:0;font-size:var(--t4-size);color:var(--ink-2);background:var(--note);border:1px solid var(--line);border-radius:var(--r-md);padding:5px 10px;flex:none}
+.pe-ro[hidden]{display:none}
+.pe-main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.pe-main[data-mode="edit"]{grid-template-columns:minmax(0,1fr)}
+.pe-main[data-mode="preview"]{grid-template-columns:minmax(0,1fr)}
+.pe-main[data-mode="edit"] .pe-prev,.pe-main[data-mode="preview"] .pe-edit{display:none}
+.pe-edit{display:flex;flex-direction:column;gap:6px;min-height:0;min-width:0}
+.dlg .pe-src{flex:1;min-height:0;width:100%;box-sizing:border-box;resize:none;font-family:var(--font-mono);font-size:12.5px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2;padding:10px 12px;border-radius:10px;background:var(--raised);color:var(--ink)}
+.dlg .pe-src[readonly]{background:var(--surface-2)}
+.pe-fmerr{margin:0;font-size:var(--t4-size);color:var(--amber-ink);background:var(--warn-bg);border:1px solid var(--card-waiting-line);border-radius:var(--r-md);padding:5px 10px;flex:none}
+.pe-fmerr[hidden]{display:none}
+.pe-prev{min-height:0;min-width:0;overflow:auto;background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:13px;line-height:1.55;color:var(--ink)}
+.pe-prev:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.pe-fm{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:3px 12px;margin:0 0 12px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-md);font-size:var(--t4-size)}
+.pe-fm[hidden]{display:none}
+.pe-fm dt{font-weight:600;color:var(--ink-2);font-family:var(--font-mono)}
+.pe-fm dd{margin:0;color:var(--ink);overflow-wrap:anywhere}
+.pe-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;min-height:18px}
+.pe-status,.pe-hint{margin:0;font-size:var(--t4-size);color:var(--muted)}
+.pe-status{color:var(--ink-2)}
+/* the Profile menu: an Edit button beside a profile row (spec 043 FR-014) */
+.mode-menu .mm-prow{display:flex;align-items:stretch;gap:2px}
+.mode-menu .mm-prow>button[data-prof]{flex:1;min-width:0}
+.mode-menu button.mm-edit{flex:none;align-self:center;align-items:center;padding:4px 8px;font-size:var(--t4-size);font-weight:600;color:var(--blue-ink);border-radius:8px}
+/* Settings > Profiles (custom agents) */
+.pf-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.pf-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--raised)}
+.pf-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pf-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.pf-top b{font-size:13px}
+.pf-row small{font-size:var(--t4-size);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-row code{font-family:var(--font-mono);font-size:11px;color:var(--ink-2)}
+/* the chat's Markdown colours for code and tables are light-only; in the editor's preview they follow the theme (dark themes too) */
+.pe-md code,.pe-md pre{background:var(--surface-2);color:var(--ink)}
+.pe-md pre code{background:transparent}
+.pe-md th{background:var(--surface-2)}
+.pe-md blockquote{border-left-color:var(--line-2)}
+/* New Agent Success Profile: the template choice (FR-018) */
+.dlg .pe-tpl{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.dlg .pe-tpl legend{font-size:var(--t4-size);font-weight:600;color:var(--ink-2);padding:0;margin-bottom:4px}
+.dlg label.pe-tpl-opt{display:grid;grid-template-columns:auto 1fr;column-gap:8px;row-gap:2px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-md);cursor:pointer;font-weight:400}
+.dlg label.pe-tpl-opt:has(:checked){border-color:var(--focus);background:var(--surface-2)}
+.dlg .pe-tpl-t{font-size:13px;font-weight:600;color:var(--ink)}
+.dlg label.pe-tpl-opt small{grid-column:2;font-size:var(--t4-size);color:var(--muted);font-weight:400}
 /* spec 052 FR-170 (T154): Tools > Models and context never grows past its box: a fixed layout, the agent and folder names cut with an ellipsis (their title has the whole name) */
 .agt{table-layout:fixed}
 .agt thead th:nth-child(1){width:26%}.agt thead th:nth-child(2){width:24%}.agt thead th.num{width:88px}
@@ -302,3 +408,18 @@ body.has-bridge #topBtns{display:flex}
 .agt .by-chip{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;text-align:left}
 .agt .mdl-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agt td{min-width:0;overflow-wrap:anywhere}
+/* Create with AI (spec 043 FR-026) */
+.dlg.pe-ai{width:min(var(--dlg-w-l),calc(100vw - 32px))}
+.dlg .pe-ai-how{width:max-content}
+.dlg .pe-ai-qs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 14px}
+.dlg .pe-ai-qs[hidden]{display:none}
+.dlg .pe-ai-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 14px;align-items:start}
+.dlg .pe-ai-row>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.dlg .pe-ai-row p{margin:0}
+.dlg .pe-ai-qs textarea{min-height:48px;resize:vertical}
+.dlg .dbtn #peALate[hidden]{display:none}
+.dlg .dbtn #peALate{align-self:center;margin:0}
+.dlg #peADesc[hidden]{display:none}
+.dlg .pe-ai-wait{margin:0;font-size:var(--t3-size);color:var(--ink-2)}
+.dlg .pe-ai-wait[hidden]{display:none}
+.dlg .dbtn .btn[hidden]{display:none}
