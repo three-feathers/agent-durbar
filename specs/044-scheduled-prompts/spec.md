@@ -107,7 +107,6 @@ A trial 54px button (inserted by script, not built) kept one row everywhere at 1
   - It opens Schedules (FR-030) from anywhere, also from a text field and from an open chat (like Ctrl+Shift+A, spec 052 FR-035), but not under a modal dialog (like Ctrl+O, spec 052 FR-164). The page handles it on every platform; it is not a Mac menu item.
   - Why this key: free in the app and in every open PR on 2026-10-22 (the app uses Ctrl+K, Ctrl+O, Ctrl+Shift+O, Ctrl+Shift+A, Ctrl+Shift+N, Ctrl+`, ⌘, and the single letters I, N and ? outside fields; open PR #497 and the PRs stacked on it add Ctrl+Shift+H). The Mac menu's roles (Edit, View, Window) do not use ⇧⌘S (`read:` `src/main/appmenu.ts`; not checked on a real Mac). Not a single letter: S already means *Allow for this session* inside the inbox and, with Alt (⌥⌘ on a Mac), in a chat.
   - The button has `aria-keyshortcuts="Control+Shift+S"` (rewritten for a Mac by the existing code) and its title names the key. The shortcut sheet (`openKbdHelp`) gets a row **Schedules** after the Needs you rows.
-- *Decisions (2026-10-22, Paco's agent with the owner's delegation to decide small UI points):* the badge counts runs missed or failed **since Schedules was last opened** (not "last run missed", which can stay up for days); with **Pause all** on, the button keeps its number, dimmed with a pause glyph; the shortcut is **Ctrl+Shift+S / ⇧⌘S** plus the Ctrl+K item.
 - **FR-032** **Ctrl+K.** The palette's actions get **Schedules** (hint "Every folder's scheduled prompts", the keys of FR-031, keywords "schedule scheduled prompts timer every daily morning cron") that runs FR-030. It is listed whenever the top-bar button would be shown (FR-027), also from a chat.
 - **FR-033** **Screen readers.**
   - The accessible name says what the eye sees, in words: "Schedules: 3 active, next at 08:30. 1 run missed or failed." / "Schedules: all paused." / "Schedules: none yet."
@@ -122,6 +121,8 @@ A trial 54px button (inserted by script, not built) kept one row everywhere at 1
   - `test:` a pure module `src/renderer/schedtop.js` (`activeCount(doc)`, `troubleSince(doc, seenAt, now)`, `topText(doc, seenAt, now, keys)` for the accessible name and the title), unit-tested by `npm run test:schedtop`.
   - `sim:` a new driver `scripts/check-sched-top.js` (`npm run check:sched-top`, in `ui-suite.js`); `shots-052-addleft` and `check-office-overlap` also hold with the button shown (see the plan).
 - Tests to add: `test:schedtop`: the count ignores done and paused schedules; Pause all keeps the count and says "all paused"; the mark counts `missed` and `failed` last runs newer than the stamp, a done one-time missed one included, and ignores every `skipped-*`; no stamp means the last 24 hours; a later `sent` clears it; the texts stay at most 120 characters with 50 schedules; the keys text for Windows/Linux and for a Mac.
+
+- *Decisions (2026-10-22, Paco's agent with the owner's delegation to decide small UI points):* the badge counts runs missed or failed **since Schedules was last opened** (not "last run missed", which can stay up for days); with **Pause all** on, the button keeps its number, dimmed with a pause glyph; the shortcut is **Ctrl+Shift+S / ⇧⌘S** plus the Ctrl+K item.
 
 ### 2026-10-22: edit a schedule (issue #522)
 
