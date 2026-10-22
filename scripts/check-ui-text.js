@@ -185,7 +185,7 @@ module.exports = async (ctx) => {
     if (over) found.push({ surface: 'chat-toast', theme: themeId || theme, size: `${W}x${Hh}`, rule: 'toast-over-composer', el: '#toasts', detail: over });
     return true;
   });
-  add('chat-reply', 'chat', ['#panel'], async () => !!(await openChatWhere(`document.querySelector('#chat .msg.agent .cp-btn')`))); // T155: a chat with an agent reply (its Copy button)
+  add('chat-reply', 'chat', ['#panel'], async () => !!(await openChatWhere(`document.querySelector('#chat .bubble.md>.cp-msg')`))); // T155: a chat with an agent reply (its Copy button)
   add('chat-question', 'chat', ['#panel'], async () => !!(await openChatWhere(`document.querySelector('#chat .note.question')`)) && js(`(document.querySelector('#chat .note.question').scrollIntoView({block:'center'}),true)`));
   add('chat-more-menu', 'menu', ['#moreMenu'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); return until(`!document.getElementById('moreMenu').hidden`, 2000); });
   add('chat-mode-menu', 'menu', ['#modeMenu'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#modeChip'); return until(`!!document.getElementById('modeMenu')`, 2000); });
