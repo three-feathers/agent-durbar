@@ -67,11 +67,11 @@
 
 ## Changes 2026-10-22 (owner decisions on #532: grown desks first; a wide grown desk shows more in columns)
 
-- [ ] T067 Spec: owner decisions recorded (FR-029 order, decision (2) replaced), FR-047..FR-050; plan delta [FR-029, FR-047..FR-050]
-- [ ] T068 `src/renderer/probe.js` `GCOL`, `grownCols`; `scripts/test-probe.ts` cases [FR-047, FR-048]
-- [ ] T069 `liveact.js` last tool phrase (`tool` in `of()`) + `test:liveact`; `a.busySince` in `setState`, the 30 s tick [FR-047]
-- [ ] T070 `cardHTML` grown side column (`.gx`: reply excerpt, facts); `renderOffice` sets `data-gc`, `--gm/--gr/--gs`, `fitLines` on reply; `styles.css` grid columns, measure, collapse [FR-047..FR-049]
-- [ ] T071 `check:office-fill`: 1 and 2 agents at 1440x900, 1280x800, 1920x1080 (multi-column, measure <= 90 characters per line, page rules); mutation check; `npm test`, `check:office`; screenshots `001-fill-{1,4,6}-1440x900.png`, `001-fill-1-1920x1080.png`; changelog fragment, README [FR-050]
+- [x] T067 Spec: owner decisions recorded (FR-029 order, decision (2) replaced), FR-047..FR-050; plan delta [FR-029, FR-047..FR-050]
+- [x] T068 `src/renderer/probe.js` `GCOL`, `grownCols`; `scripts/test-probe.ts` cases [FR-047, FR-048]
+- [x] T069 `liveact.js` last tool phrase (`tool` in `of()`) + `test:liveact`; `a.busySince` in `setState`, the 30 s tick [FR-047]
+- [x] T070 `cardHTML` grown side column (`.gx`: reply excerpt, facts); `renderOffice` sets `data-gc`, `--gm/--gr/--gs`, `fitLines` on reply; `styles.css` grid columns, measure, collapse [FR-047..FR-049]
+- [x] T071 `check:office-fill`: 1 and 2 agents at 1440x900, 1280x800, 1920x1080 (multi-column, measure <= 90 characters per line, page rules); mutation check; `npm test`, `check:office`; screenshots `001-fill-{1,4,6}-1440x900.png`, `001-fill-1-1920x1080.png`; changelog fragment, README [FR-050]
 
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 

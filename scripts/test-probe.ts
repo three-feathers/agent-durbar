@@ -158,4 +158,43 @@ for (const [w, h] of [[1280, 800], [1440, 900], [1920, 1080]]) {
   assert.ok(grown.every((l) => !/font-size/.test(l)), 'grown desks keep the text sizes');
   assert.ok(grown.some((l) => /height:calc\(var\(--ch\) \* var\(--gf,1\)\)/.test(l)), 'the card height scales with --gf');
 }
+// ---- spec 001 FR-047, FR-048 (owner 2026-10-22): columns on a wide grown desk. More information, never longer lines ----
+{
+  type Cols = { n: number; main: number; reply: number; side: number };
+  const P = require(path.join(R, 'probe.js')) as { GCOL: { GAP: number; MAIN: number[]; MAIN3: number[]; REPLY: number[]; SIDE: number[] }; grownCols: (room: number, o?: { reply?: boolean }) => Cols };
+  const C = P.GCOL;
+  assert.ok(C.MAIN[1] <= 450 && C.REPLY[1] <= 420 && C.SIDE[1] <= 320 && C.MAIN[0] + C.SIDE[0] + C.GAP - 1 <= 460, 'the measure: main <= 450 px (also a single column, below the two-column threshold, stays under 460 px), reply <= 420 px, facts <= 320 px (about 80-85 characters at 11.5-12 px)');
+  const two = C.MAIN[0] + C.SIDE[0] + C.GAP, three = C.MAIN3[0] + C.REPLY[0] + C.SIDE[0] + 2 * C.GAP;
+  // thresholds: one column below `two`, two from it, three from `three` (only with a reply to show)
+  assert.deepStrictEqual(P.grownCols(two - 1, { reply: true }), { n: 1, main: two - 1, reply: 0, side: 0 }, 'narrow: the single-column grown desk');
+  assert.strictEqual(P.grownCols(two, {}).n, 2, 'two columns from the threshold');
+  assert.strictEqual(P.grownCols(three - 1, { reply: true }).n, 2, 'just under three: two');
+  assert.strictEqual(P.grownCols(three, { reply: true }).n, 3, 'three columns with a reply');
+  assert.strictEqual(P.grownCols(5000, {}).n, 2, 'no reply to show: never a reply column');
+  assert.strictEqual(P.grownCols(5000).n, 2, 'no options: no reply column');
+  assert.deepStrictEqual(P.grownCols(5000, { reply: true }), { n: 3, main: C.MAIN[1], reply: C.REPLY[1], side: C.SIDE[1] }, 'very wide: every column at its measure, the rest stays outside the desk');
+  assert.deepStrictEqual(P.grownCols(0, { reply: true }), { n: 1, main: 0, reply: 0, side: 0 }, 'nothing');
+  assert.deepStrictEqual(P.grownCols(NaN as unknown as number), { n: 1, main: 0, reply: 0, side: 0 }, 'not a number');
+  // every width: the columns fit the room, stay within their measure, and the count never drops as the room grows
+  for (const reply of [false, true]) {
+    let prevN = 1;
+    for (let w = 200; w <= 2400; w += 7) {
+      const c = P.grownCols(w, { reply });
+      const used = c.main + (c.n > 1 ? C.GAP + c.side : 0) + (c.n === 3 ? C.GAP + c.reply : 0);
+      assert.ok(used <= w, `${w}${reply ? ' reply' : ''}: ${used} px used`);
+      assert.ok(c.n >= prevN, `${w}${reply ? ' reply' : ''}: ${c.n} columns after ${prevN}`);
+      if (c.n > 1) {
+        assert.ok(c.main >= C.MAIN[0] && c.main <= C.MAIN[1], `${w}: main ${c.main}`);
+        assert.ok(c.side >= C.SIDE[0] && c.side <= (c.n === 2 && reply ? C.REPLY[1] : C.SIDE[1]), `${w}: side ${c.side}`);
+      }
+      if (c.n === 3) assert.ok(c.reply >= C.REPLY[0] && c.reply <= C.REPLY[1] && c.main >= C.MAIN3[0], `${w}: reply ${c.reply}, main ${c.main}`);
+      prevN = c.n;
+    }
+  }
+  // the page: the render pass uses it on grown cards, and the probe never shows the side (the height does not depend on it)
+  assert.ok(/function setGrownCols\(card\)\{[\s\S]*?window\.DurbarProbe\.grownCols\(room,\{reply:gx\.dataset\.rep==='1'\}\)/.test(app), 'setGrownCols uses grownCols');
+  assert.ok(/if\(layout\.grow\)\{stage\.querySelectorAll\('\.desk\.card'\)\.forEach\(setGrownCols\);stage\.querySelectorAll\('\.desk\.card \.intent'\)\.forEach\(fitLines\);/.test(app), 'columns before the whole-line fit, only when grown');
+  assert.ok(css.some((l) => /^\.desk\.card \.gx\{display:none\}/.test(l)), 'the side is hidden without data-gc (and in the probe)');
+  assert.ok(css.filter((l) => /\.gx|gx-/.test(l)).every((l) => !/font-size:(\d+(\.\d+)?)px/.test(l) || parseFloat(/font-size:(\d+(\.\d+)?)px/.exec(l)![1]) >= 10.5), 'side text at least 10.5 px');
+}
 console.log('test-probe: ok');

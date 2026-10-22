@@ -68,5 +68,23 @@
     }
     return best;
   }
-  return {svgHollow,styleSplit,GROW,largest,better,pick};
+  /* ---- Columns on a wide grown desk (spec 001 FR-047, FR-048, owner 2026-10-22): more information, not longer lines.
+        grownCols(room, {reply}): room is the text room of the card in px (its width less the illustration and padding). Returns
+        {n, main, reply, side}: n = 1 (the single-column grown desk), 2 (main | one side column: the reply above the facts) or 3 (main |
+        reply | facts; only with a reply to show). Widths in px, 0 for a column not shown; main, reply and side never exceed their maxima,
+        so no line is longer than about 85 characters, and their sum with the gaps never exceeds the room. ---- */
+  const GCOL={GAP:16, MAIN:[260,450], MAIN3:[360,450], REPLY:[240,420], SIDE:[180,320]}; /* MAIN3: the main column's min beside two others */
+  const spread=(room,cols)=>{ /* each column from its min towards its max, by the same share of the room left */
+    const gaps=(cols.length-1)*GCOL.GAP, min=cols.reduce((t,c)=>t+c[0],0), span=cols.reduce((t,c)=>t+c[1]-c[0],0);
+    const t=Math.max(0,Math.min(1,(room-gaps-min)/(span||1)));
+    return cols.map(c=>Math.floor(c[0]+t*(c[1]-c[0])));
+  };
+  function grownCols(room,o){
+    const reply=!!(o&&o.reply), G=GCOL, w=Math.max(0,Math.floor(Number(room)||0));
+    if(reply&&w>=G.MAIN3[0]+G.REPLY[0]+G.SIDE[0]+2*G.GAP){const [m,r,s]=spread(w,[G.MAIN3,G.REPLY,G.SIDE]);return {n:3,main:m,reply:r,side:s};}
+    const sideR=reply?[G.SIDE[0],G.REPLY[1]]:G.SIDE; /* two columns: with a reply, the side column holds it (up to the reply's measure) */
+    if(w>=G.MAIN[0]+sideR[0]+G.GAP){const [m,s]=spread(w,[G.MAIN,sideR]);return {n:2,main:m,reply:0,side:s};}
+    return {n:1,main:w,reply:0,side:0};
+  }
+  return {svgHollow,styleSplit,GROW,largest,better,pick,GCOL,grownCols};
 })());

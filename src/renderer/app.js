@@ -157,7 +157,7 @@ let moodSig='';
 setInterval(()=>{if(SERIOUS||demoOn)return;const sig=agents.map(x=>x.live&&!x.parent?moodFor(x).trouble+'/'+moodFor(x).body:'').join('|');if(sig!==moodSig){moodSig=sig;scheduleRender();}},5000);
 /* spec 052 FR-062: "Last activity" labels follow the clock through the normal render, every 30 s and only when a label changed */
 let agoSig='';
-setInterval(()=>{if(demoOn)return;const sig=agents.map(x=>x.lastEventAt?ACT.agoShort(Date.now()-x.lastEventAt):'').join('|');if(sig!==agoSig){agoSig=sig;scheduleRender();}},30000);
+setInterval(()=>{if(demoOn)return;const sig=agents.map(x=>(x.lastEventAt?ACT.agoShort(Date.now()-x.lastEventAt):'')+(x.busySince?'/'+ACT.agoShort(Date.now()-x.busySince):'')).join('|');if(sig!==agoSig){agoSig=sig;scheduleRender();}},30000);
 /* ---- places in the office (spec 024): a shared lobby; main agents walk to the place of the tool they are using ---- */
 const VISITS=window.DurbarPlaces.createVisits();
 const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (per-folder extras included): the Places settings list them */
@@ -558,15 +558,32 @@ const GR=window.DurbarProbe.GROW;
 function setGrow(el,f){if(f){el.style.setProperty('--gf',String(f));el.dataset.grow=f>=GR.TWO_LINES?'2':'1';}else{el.style.removeProperty('--gf');delete el.dataset.grow;}}
 /* the text of a grown desk: the readout with its newest sentences, else the start of the last reply (Done, Idle), else the desk text.
    The reply is masked on the raw text before Markdown is removed (excerpt); with no working mask nothing from it shows (fail closed). */
+/* the start of the last reply, masked on the raw text, plain, cut to 600; '' without a reply or a working mask (fail closed) */
+function replyExcerpt(a){
+  const R=window.DurbarRedact;
+  const t=a.lastOutput?window.DurbarLiveAct.excerpt(a.lastOutput,R&&typeof R.redact==='function'?x=>R.redact(x):null):'';
+  return t?DurbarCutText.cutText(t,600):'';
+}
+/* does the main text of a grown desk show the last reply (a Done or Idle desk with one)? Then no reply column repeats it (FR-047) */
+const grownShowsReply=a=>!a.parent&&!liveShown(a)&&(vis(a)==='done'||vis(a)==='idle')&&!!a.lastOutput;
 function grownLine(a){
   const r=liveShown(a);
   if(r)return r.kind==='tool'?r.long:(window.DurbarLiveAct.KIND_WORD[r.kind]||'')+': '+r.long;
-  const st=vis(a), R=window.DurbarRedact;
-  if(!a.parent&&(st==='done'||st==='idle')&&a.lastOutput){
-    const t=window.DurbarLiveAct.excerpt(a.lastOutput,R&&typeof R.redact==='function'?x=>R.redact(x):null);
-    return t?DurbarCutText.cutText(t,600):st==='done'?'Finished.':'Ready.';
-  }
+  if(grownShowsReply(a))return replyExcerpt(a)||(vis(a)==='done'?'Finished.':'Ready.');
   return taskOf(a);
+}
+/* spec 001 FR-047: the side of a wide grown desk: the last reply (when the main text is not already showing it) and the facts (the tool of
+   this turn, usage, context, time). Shown only when the render pass gives the card two or three columns (data-gc); hidden in the probe. */
+function grownSideHTML(a){
+  if(a.parent)return '';
+  const rep=grownShowsReply(a)?'':replyExcerpt(a), r=liveShown(a), facts=[];
+  if(r&&r.tool)facts.push([r.kind==='tool'?'Now':'Last tool',r.tool]);
+  const u=usageLong(a);
+  if(u){const p=u.split(' · ');if(p.length>2){facts.push(['Usage',p.slice(0,2).join(' · ')]);facts.push(['Cost',p.slice(2).join(' · ')]);}else facts.push([SIMPLE?'Cost':'Usage',u.replace(/^Cost so far: /,'')]);}
+  try{const c=window.DurbarScreens&&window.DurbarScreens.ctxChip(a);if(c&&c.cls!=='unk')facts.push([SIMPLE?'Memory':'Context',SIMPLE?c.pct+'% full':c.text.replace(/^Context /,'')]);}catch(e){}
+  const busy=a.busySince&&(a.state==='working'||a.state==='thinking')?ACT.agoLong(Date.now()-a.busySince):'', last=ACT.agoLong(sinceLast(a));
+  if(busy)facts.push(['On this task',busy==='just now'?'just started':busy.replace(/ ago$/,'')]); else if(last)facts.push(['Last activity',last]);
+  return `<span class="gx"${rep?' data-rep="1"':''}>${rep?`<span class="gx-r"><span class="gx-h">Last reply</span><span class="gx-t">${esc(rep)}</span></span>`:''}<span class="gx-f">${facts.map(([k,v])=>`<span class="gx-l"><span class="gx-k">${esc(k)}</span> ${esc(v)}</span>`).join('')}</span></span>`;
 }
 const liveAttrs=a=>{if(a.parent)return '';const r=LIVE_SIDE?null:liveShown(a);return ` data-live="${esc(a.id)}"${r?` data-lk="${r.kind}"`:''}`;};
 function sideHTML(a){
@@ -590,6 +607,26 @@ function fitLines(tx){
   const lh=parseFloat(getComputedStyle(tx).lineHeight)||16, n=Math.max(1,Math.floor((tx.clientHeight+0.5)/lh));
   tx.style.flex='none';tx.style.height=(n*lh)+'px';
   fitSide(tx);
+}
+/* spec 001 FR-047, FR-048: a grown card's columns from its width (its grid cell, before any cap): DurbarProbe.grownCols; the card is at most as
+   wide as its columns, so a wide room never stretches the lines */
+function setGrownCols(card){
+  const cell=card.parentElement, sc=card.querySelector('.sc'), gx=card.querySelector('.gx');
+  card.style.maxWidth='';
+  const cs=getComputedStyle(card), pad=parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight), cg=parseFloat(cs.columnGap)||0;
+  const room=(cell?cell.clientWidth:card.clientWidth)-pad-(sc?sc.getBoundingClientRect().width:0)-cg;
+  const c=gx?window.DurbarProbe.grownCols(room,{reply:gx.dataset.rep==='1'}):{n:1};
+  if(c.n<2){delete card.dataset.gc;['--gm','--gr','--gs'].forEach(k=>card.style.removeProperty(k));return;}
+  const G=window.DurbarProbe.GCOL, side=c.n===3?c.reply+G.GAP+c.side:c.side;
+  card.dataset.gc=String(c.n); card.style.setProperty('--gm',c.main+'px'); card.style.setProperty('--gr',c.reply+'px'); card.style.setProperty('--gs',c.side+'px');
+  card.style.maxWidth=Math.ceil(pad+(sc?sc.getBoundingClientRect().width:0)+cg+c.main+G.GAP+side)+'px';
+}
+/* the reply column: whole lines from the top, the last one with an ellipsis */
+function fitClamp(tx){
+  tx.style.height='';tx.style.webkitLineClamp='';tx.style.flex='';
+  const lh=parseFloat(getComputedStyle(tx).lineHeight)||15, n=Math.floor((tx.clientHeight+0.5)/lh);
+  tx.parentElement.classList.toggle('is-empty',n<1);
+  if(n>=1){tx.style.flex='none';tx.style.height=(n*lh)+'px';tx.style.webkitLineClamp=String(n);}
 }
 const liveTimers=new Map();
 function livePaintSoon(a){
@@ -637,7 +674,7 @@ function cardHTML(a,d,nSubs){
   return `<button class="desk card is-${st}${isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${esc((a.profile?a.profile.name+' · '+a.role:a.role)+kindTag(a)+remoteTag(a))} · ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1"><span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</span>
-    <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span></button>`;
+    <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span>${GROW?grownSideHTML(a):''}</button>`;
 }
 function linksSVG(d,rows,extraMore){
   const D=DENS[d]; const n=rows+(extraMore?1:0);
@@ -990,7 +1027,7 @@ function renderOffice(){
   stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap); stage.dataset.side=layout.side?'1':'0';
   fitUsage(stage);
   if(layout.side)stage.querySelectorAll('.liveside .ls-t').forEach(fitSide);
-  if(layout.grow)stage.querySelectorAll('.desk.card .intent').forEach(fitLines); /* FR-043: whole lines, the newest in view */
+  if(layout.grow){stage.querySelectorAll('.desk.card').forEach(setGrownCols);stage.querySelectorAll('.desk.card .intent').forEach(fitLines);stage.querySelectorAll('.desk.card[data-gc] .gx-t').forEach(fitClamp);} /* FR-043, FR-047: columns, then whole lines, the newest in view */
   floor.classList.toggle('scrolls',!layout.fit);
   if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
 }
@@ -2577,6 +2614,7 @@ function closeTurn(a){
 function setState(a,state,label,task){
   const ch=a.state!==state||(label!==undefined&&a.label!==label)||(task!==undefined&&a.task!==task);
   a.state=state; if(label!==undefined)a.label=label; if(task!==undefined)a.task=task;
+  if(state==='working'||state==='thinking'){if(!a.busySince)a.busySince=Date.now();}else if(state==='done'||state==='idle')a.busySince=null; /* spec 001 FR-047: time on task */
   if(ch&&a.live&&a.info&&a.info.modelControl&&a.info.modelControl.compact&&!a.parent)updateCtxChip(a); /* the Compact button is greyed while the agent works */
   if(ch)scheduleRender();
 }
