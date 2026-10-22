@@ -121,7 +121,29 @@ function helpers(ctx) {
     await ctx.shot(file);
     if (o.tag) console.log(`[${o.tag}] saved`, o.what !== undefined ? o.what : path.basename(file));
   };
-  return { ...w, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, load, shot, INDEX };
+  /**
+   * Spec 052 FR-173 (review on #516): open the chat of the simulated agent that `pick` finds, without clicking every desk. `pick` is page
+   * code for an `Array.find` callback over the simulator's agents (`window.__durbarSimUi.agents()`), for example `a=>!a.parent&&a.question`.
+   * It waits (at most `o.ms`, default 20 s) for the simulator's own state, clicks that one desk, then waits (at most `o.cardMs`, default
+   * 15 s) for the chat to be open with `card` in it. Returns `{ id, ok, seen }`; `seen` is the observed state for the driver's failure message.
+   * A synchronous sweep over all desks could never see a request that arrived, or a chat that rendered, between two sweeps.
+   */
+  const openSimAgent = async (pick, card, o = {}) => {
+    const find = `((window.__durbarSimUi&&window.__durbarSimUi.agents().find(${pick}))||{}).id||''`;
+    await w.until(find, o.ms || 20000);
+    const id = await js(find);
+    const desk = `document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(String(id))})+'"]')`;
+    if (id) {
+      await w.until(`!!${desk}`, 8000);
+      await js(`(()=>{const d=${desk};if(d)d.click();})()`);
+      await w.until(`document.body.classList.contains('panel-open')&&!!document.querySelector(${jsLiteral(card)})`, o.cardMs || 15000);
+    }
+    const seen = await js(`(()=>{const ag=(window.__durbarSimUi&&window.__durbarSimUi.agents())||[];let m=[];try{m=ag.filter(${pick}).map(a=>a.id);}catch(e){m=['pick threw: '+String(e.message).slice(0,80)];}
+      return {sim:!!window.__durbarSimUi,matching:m,desk:!!${desk},desks:document.querySelectorAll('#stage .desk[data-id]').length,panel:document.body.classList.contains('panel-open'),
+        title:(document.getElementById('panelTitle')||{}).textContent||'',card:!!document.querySelector(${jsLiteral(card)}),visibility:document.visibilityState}})()`);
+    return { id, ok: !!id && seen.panel && seen.card, seen };
+  };
+  return { ...w, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, load, shot, openSimAgent, INDEX };
 }
 
 module.exports = { waits, helpers, jsLiteral, LIMIT, INDEX };
