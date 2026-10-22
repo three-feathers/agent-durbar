@@ -91,3 +91,7 @@
 ## 2026-10-22: steady geometry captures (flake on PR #535)
 
 - [x] T100 `settleNow()` simulator hook in `src/renderer/app.js` (listed + replayed + usage totals read; draws a queued frame), replay flag in `src/renderer/sim.ts`; `scripts/check-theme-geometry.js` waits for it before every capture and fails on a timed-out wait; 5 local runs and a one-theme mutation; `docs/agent-notes.md`, CHANGELOG [FR-113]
+
+## 2026-10-22: Electron installed once before the office parts start (CI flake on PR #546)
+
+- [x] T101 (2026-10-22, reported by fjcabello on PR #546) Install Electron once before any fan-out [FR-114]. Files: `scripts/ensure-electron.js` (new, the #424 step moved out of `run-tests.js`), `scripts/run-tests.js`, `scripts/check-parallel.js` and `scripts/ui-suite.js` (call it before the first job; export their runners for the test; side effects only when run as a script), `scripts/test-ui-suite.ts`, `docs/agent-notes.md`, `changelog.d/008-shard-electron-once.md`. Done when the test shows one install before the first job in both runners, a local repro of the race (parallel first runs of a copy of `node_modules/electron` with no binary) fails without the step and passes with it, a quick `check-parallel.js` run (`OFFICE_QUICK=1`) and the PR's CI office job pass, and `npm run typecheck && npm run build && npm test` pass.

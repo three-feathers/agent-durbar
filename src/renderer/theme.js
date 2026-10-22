@@ -349,6 +349,7 @@
   /* ---------- Theme store ---------- */
   let currentId=CLEAN_ID;
   let currentManifest=null;
+  let themeRev=0; /* +1 on every applied theme: drawings made with another theme's tokens and art are stale (spec 040 FR-023) */
   let listeners=[];
 
   function resolveTokens(manifest){
@@ -456,9 +457,12 @@
       manifest=loadManifest(CLEAN_ID);
     }
     const id=manifest.id;
-    if(id===currentId&&currentManifest)return id;
+    /* the same pack again: nothing to do. A manifest with the same id but other content (an AI theme regenerated with Try again,
+       previewed before it is saved, spec 040 FR-023) is applied like a new theme */
+    if(id===currentId&&currentManifest&&JSON.stringify(manifest)===JSON.stringify(currentManifest))return id;
     currentId=id;
     currentManifest=manifest;
+    themeRev++;
     applyTokens(resolveTokens(manifest));
     /* Clean Office itself has no data-ui (as at startup), so its `html:not([data-ui])` polish in styles.css also returns
        after switching back from another theme (spec 052 FR-053); other themes, generated ones too, name their style */
@@ -515,7 +519,9 @@
       }
     }
   }
-  function themeIdForCache(){ return currentId; }
+  /* spec 040 FR-023: the key of everything drawn with the active theme's tokens and art (scene cache, scene signature, walkers).
+     The revision changes on every applied theme, so a regenerated pack with the same id never reuses an old drawing. */
+  function themeIdForCache(){ return currentId+'.'+themeRev; }
   function sceneKit(){ return (currentManifest&&currentManifest.scene)||'office'; }
 
   /* ================================= built-in packs (specs 037-039) =================================

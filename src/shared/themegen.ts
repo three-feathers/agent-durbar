@@ -72,7 +72,7 @@ export function buildThemePrompt(description: string, clean: Record<string, stri
     'Reply with ONE JSON object and nothing else (no code fence, no explanation). Fields:',
     '- "name": a short theme name, at most 40 characters.',
     `- "ui": one of ${UI_STYLES.map((u) => JSON.stringify(u)).join(', ')} (the shape of buttons and panels; "retro" suits pixel and arcade looks, the court styles suit palaces).`,
-    `- "scene": one of ${SCENE_KITS.map((u) => JSON.stringify(u)).join(', ')} (how people and furniture are drawn; only "office" shows your character art).`,
+    `- "scene": one of ${SCENE_KITS.map((u) => JSON.stringify(u)).join(', ')} (how people and furniture are drawn; your character, desk and monitor art is drawn over any of them, and "office" is the plainest base for it).`,
     '- "tokens": colours as hex like "#1a2b3c", for ALL of these keys. The value after each key is the default light theme, so you can see what the token is for:',
     Object.entries(clean).map(([k, v]) => `${k}=${v}`).join(' '),
     '- "words": short plain-text names (at most 40 characters) that fit the look, for:',
