@@ -54,6 +54,75 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 
 ## Changes
 
+### 2026-10-22: Schedules in the top bar (issue #523)
+
+*Owner idea (Paco, 2026-10-22):* scheduled prompts are hard to find. Today they are reached from Settings > Schedules (FR-011), a room's ⋯ menu and its clock chip (FR-009, FR-010; the chip shows only once the room has a schedule), and the Schedules item in a main agent's More menu (`#schedHdrBtn`). None of these is visible from the top bar, from the list view or from an empty office. The issue proposes a top-bar **Schedules** button (a clock and the count of active schedules) that opens the all-folders view, an optional badge for a missed or failed run, a keyboard shortcut and a Ctrl+K entry.
+
+*Status:* specified 2026-10-22; not built.
+
+*Related:* open PR #511 (spec 001 FR-038, Vikram) adds a **Postbox** tile in the lobby: the next 3 runs, the runs still due today, a flag when a schedule's last run was missed or failed, and a click that opens Settings > Schedules. The two complement each other: the Postbox shows *what is next* inside the office view; the button is a one-click way in from any view (office, list, a chat through the shortcut or Ctrl+K), also when the lobby is not on screen. Both open Schedules through the same entry (FR-030), so there is one way in, not two.
+
+*What exists (read on `origin/main` 045e4e94):* the top bar markup `src/renderer/index.html:15-70` (brand; `.controls` with `#liveBar`, `.folder-ctl`, `#topBtns` Tools/Settings, Office/List, `.top-more` ⋯; then `#inboxBtn` and `#stats` on the right); the inbox button's pattern of an icon, a word and a rolling count (`renderInboxBtn`, `app.js:1654-1661`; word hidden below 1600px, `styles.css:489-491`); the fit rules `styles.css:476-503` and `fitTopbar` (`app.js:972-983`, class `tb-tight` moves the brand name to screen readers when the row would wrap); the schedule state `SCHED`, `clock`, `nextRunOf` and `schedChanged()` (`app.js:3955-3960`, `:4147`); Settings > Schedules `#schedSet` (`screens.js:133-136`), shown when `bridge.listSchedules` exists and the demo is off (`app.js:4625`, `sched.on`); `DurbarScreens.openSettings(section)`, which scrolls to and focuses a heading only for `mcp` and `harnesses` (`screens.js:960`, `:191-192`, with `scrollInBody`, spec 052 FR-055); the palette's actions (`palActions`, `app.js:1770-1792`); the global keys (`app.js:1517-1562`) and the shortcut sheet (`openKbdHelp`, `app.js:1869-1880`); the polite live region `announce()` (`app.js:1680`).
+
+*Measured (simulator, `DURBAR_SIM=15 DURBAR_SIM_FREEZE=1`, Electron under xvfb, this machine's default fonts, not forced to DejaVu Sans; 2026-10-22 on 045e4e94, a throwaway measuring script, not committed):* free width left in the one-row top bar (between the last control and Needs you):
+
+| Window | Level | Case | Free | Brand name |
+|---|---|---|---|---|
+| 1440x900 | Expert | plain | 129px | shown |
+| 1440x900 | Expert | floors + mixed agent apps | 64px | shown |
+| 1440x900 | Expert | floors + mixed, Durbar · Indian | 57px | shown |
+| 1440x900 | Expert | floors + mixed, Mac room forced | 6px | shown |
+| 1280x800 | Expert | plain | 31px | shown |
+| 1280x800 | Expert | floors + mixed | 27px | already hidden (`tb-tight`) |
+| 1280x800 | Expert | floors + mixed, Mac room forced | wraps already (79px tall) | hidden |
+| 1280x800 | Simple | floors + mixed, Durbar · Indian | 145px | shown |
+
+A trial 54px button (inserted by script, not built) kept one row everywhere at 1440 (with floors it switched on `tb-tight`), and wrapped the bar at 1280x800 Expert with floors and mixed agent apps. So the button **needs room made for it** at 1280 in Expert, as `docs/design-rules.md` asks of any new top-bar control ("make room with the width rules in `styles.css` ... and re-measure").
+
+- **FR-027** **A Schedules button in the top bar.**
+  - **Where:** on the right, directly left of **Needs you** (`#inboxBtn`), with the other glanceable counts; it takes the `margin-left:auto` that Needs you (or the counters) has today, so the left cluster does not move. Tab order: after ⋯ and before Needs you. Id `schedTopBtn`.
+  - **Look:** a calm ghost button like Needs you when nobody needs you: the bar's control height (32px), a clock icon (`currentColor`, 14px, the same clock as the room chip), the word **Schedules** and the count (FR-028), 12.5px text, never under 10.5px.
+  - **Two forms, the rule of Needs you:** the word shows from 1600px wide, and in Simple at any width (Simple has room: 145px or more free at 1280x800); below 1600px in Expert it is the clock and the count only (about 40px), the word moving to its accessible name and title.
+  - **When shown:** when schedules are available (`bridge.listSchedules` and not the demo, the same test as Settings > Schedules) and there is at least one folder or one schedule. Shown with zero schedules: finding the feature is the point of the button. Hidden otherwise (empty office, demo), like Needs you with no agents.
+  - In the Office and List views alike. With a chat open the top bar is hidden (`body.panel-open`); the shortcut (FR-031) and Ctrl+K (FR-032) still work there.
+  - Themes only recolour it (Constitution V; `check:geometry`).
+- **FR-028** **The count means active schedules.**
+  - The number is Durbar's schedules that are not done and not paused (`!done && !paused`), over every folder, including hidden folders and floors that are off (they still run, spec 033). The agent app's own schedules (FR-016) are not counted: they are read-only and known only to the open window.
+  - No number when there are none (the clock and, where shown, the word only). At most two digits: the store keeps at most 50 (FR-001).
+  - **Pause all** on: the button is dimmed like the room chip (FR-010), the clock gets a small pause mark (not colour alone), and the number stays (what would run).
+  - The count rolls like Needs you's (`rollCount`, spec 052 FR-068; not under reduced motion).
+  - The title says it in words, at most 120 characters (spec 052 FR-168): "Schedules: 3 active, next 08:30 (Ctrl+Shift+S)"; "Schedules: all paused (3 set) (Ctrl+Shift+S)"; "Schedules: none yet. Add one to a folder (Ctrl+Shift+S)". The next run uses the room chip's clock text (`clock`, `nextRunOf`).
+- **FR-029** **A badge for a run that did not happen, until you look.**
+  - A small mark on the clock (a dot with a "!" glyph, warning tone, never colour alone) when at least one schedule's **last run** is `missed` or `failed` and that run is **newer than the last time Schedules was opened** through FR-030. Done one-time schedules count too: a missed one-time schedule is marked done at start (FR-002), and it is exactly the one the user would not see otherwise.
+  - Busy skips (`skipped-busy`), *Pause all* skips (`skipped-paused`), a reached limit (`skipped-cap`: the schedule pauses and its row says so) and an ended session (`skipped-ended`) do not mark it: they are expected, or already shown on the row.
+  - The mark clears when Schedules is opened through FR-030 (the button, the shortcut, Ctrl+K, and the Postbox once #511 uses it). It also clears by itself when that schedule's next run is sent (its `last` changes).
+  - "Last opened" is one time stamp in the window's `localStorage` (`durbar.schedSeen`, epoch ms; no prompt text, nothing sent to main, per computer). With no stamp yet (first start after the update) only runs of the last 24 hours count, so an old miss does not greet the user.
+  - The number of such runs is in the accessible name and the title: "1 run missed or failed".
+- **FR-030** **It opens Settings > Schedules, at the Schedules section.**
+  - No new view. The button opens Settings with the Schedules section (FR-011) at the top of Settings' own scroller and its heading focused, through a new section name `DurbarScreens.openSettings('schedules')`, done like `mcp` and `harnesses` (`scrollInBody`, never `scrollIntoView`, spec 052 FR-055). If Settings is already open it scrolls there again. The heading `#schH` gets `tabindex="-1"`.
+  - This is the one entry for "go to Schedules": the button, the shortcut, the Ctrl+K item, and the Postbox of #511 (whichever of the two PRs lands second points its click at it). Opening it sets the FR-029 stamp.
+  - Closing Settings (Esc, its Close button) works as today; the Settings button shows pressed while it is open, as today. Where focus goes after closing is not specified for Settings today and is not changed here.
+  - *Why not a dedicated view:* Settings > Schedules already lists every folder's schedules with Edit…, Pause/Resume, Delete, Pause all and *Add a schedule to* (FR-011, FR-022). A second view would duplicate it and would have to follow every change.
+- **FR-031** **Keyboard shortcut: Ctrl+Shift+S (⇧⌘S on a Mac).**
+  - It opens Schedules (FR-030) from anywhere, also from a text field and from an open chat (like Ctrl+Shift+A, spec 052 FR-035), but not under a modal dialog (like Ctrl+O, spec 052 FR-164). The page handles it on every platform; it is not a Mac menu item.
+  - Why this key: free in the app and in every open PR on 2026-10-22 (the app uses Ctrl+K, Ctrl+O, Ctrl+Shift+O, Ctrl+Shift+A, Ctrl+Shift+N, Ctrl+`, ⌘, and the single letters I, N and ? outside fields; open PR #497 and the PRs stacked on it add Ctrl+Shift+H). The Mac menu's roles (Edit, View, Window) do not use ⇧⌘S (`read:` `src/main/appmenu.ts`; not checked on a real Mac). Not a single letter: S already means *Allow for this session* inside the inbox and, with Alt (⌥⌘ on a Mac), in a chat.
+  - The button has `aria-keyshortcuts="Control+Shift+S"` (rewritten for a Mac by the existing code) and its title names the key. The shortcut sheet (`openKbdHelp`) gets a row **Schedules** after the Needs you rows.
+- *Decisions (2026-10-22, Paco's agent with the owner's delegation to decide small UI points):* the badge counts runs missed or failed **since Schedules was last opened** (not "last run missed", which can stay up for days); with **Pause all** on, the button keeps its number, dimmed with a pause glyph; the shortcut is **Ctrl+Shift+S / ⇧⌘S** plus the Ctrl+K item.
+- **FR-032** **Ctrl+K.** The palette's actions get **Schedules** (hint "Every folder's scheduled prompts", the keys of FR-031, keywords "schedule scheduled prompts timer every daily morning cron") that runs FR-030. It is listed whenever the top-bar button would be shown (FR-027), also from a chat.
+- **FR-033** **Screen readers.**
+  - The accessible name says what the eye sees, in words: "Schedules: 3 active, next at 08:30. 1 run missed or failed." / "Schedules: all paused." / "Schedules: none yet."
+  - When the FR-029 number grows while the app runs, one polite message through `announce()`: "A scheduled prompt did not run. See Schedules (Ctrl+Shift+S)." Not at start (the *Since you were away* strip, spec 052, already tells about runs missed while the app was closed), and not twice for the same run.
+- **FR-034** **The top bar still fits** (amends spec 052 FR-105 and FR-164 for this button).
+  - The bar stays **one row** (at most 52px) with no overlap and nothing outside the window, at 1440x900 and 1280x800, Expert and Simple, all six built-in themes, with floors and mixed agent apps, in DejaVu Sans (CI's font) and Noto Sans: every case `shots-052-addleft` and `check:office` measure today.
+  - At 1440x900 the brand name stays visible wherever it is visible on `origin/main` today (Linux). At 1280x800 the existing `tb-tight` step may move it to screen readers (the mark and the Live/Demo pill stay), as it already does there with floors.
+  - Room is made with the width rules `docs/design-rules.md` names, in this order, only below 1440px and only as much as measured: the Defaults chip's cap (130px below 1600 today), then the folder filter (104px), then the top bar's gaps (`styles.css:476-503`). + Folder and + Workspace keep their words (FR-164). A value that is cut keeps its full text in its title and accessible name, as today.
+  - `[KNOWN GAP]` carried from FR-164: with the Mac traffic-light room forced at 1280x800 in Expert the bar already wraps today. This change must not make it wrap at 1440x900 with the Mac room forced (6px free there today: `tb-tight` or the same room-making rules take it).
+- **FR-035** **Simulator and checks.**
+  - The simulator seeds schedules on request: `simsched=1` (three schedules over two folders, one with a missed last run), the option #511 adds for the Postbox. If this change lands first it adds the same option with the same data, plus one schedule whose last run `failed`. All seeded runs are in the future, so nothing runs during a driver.
+  - `test:` a pure module `src/renderer/schedtop.js` (`activeCount(doc)`, `troubleSince(doc, seenAt, now)`, `topText(doc, seenAt, now, keys)` for the accessible name and the title), unit-tested by `npm run test:schedtop`.
+  - `sim:` a new driver `scripts/check-sched-top.js` (`npm run check:sched-top`, in `ui-suite.js`); `shots-052-addleft` and `check-office-overlap` also hold with the button shown (see the plan).
+- Tests to add: `test:schedtop`: the count ignores done and paused schedules; Pause all keeps the count and says "all paused"; the mark counts `missed` and `failed` last runs newer than the stamp, a done one-time missed one included, and ignores every `skipped-*`; no stamp means the last 24 hours; a later `sent` clears it; the texts stay at most 120 characters with 50 schedules; the keys text for Windows/Linux and for a Mac.
+
 ### 2026-10-22: edit a schedule (issue #522)
 
 *Found (owner, v0.1.0-alpha.11, macOS):* in **Settings > Schedules** he pressed **Open…** on the folder row to change a schedule ("every day at 10:00") and got the folder's *Schedules for <folder>* dialog, which only adds one. A schedule could only be paused, resumed or deleted; to change its prompt or time he had to delete it and type it again, losing its last run. The prompt is cut with "…" in both places, and its tooltip is the whole prompt (up to 2,000 characters, over spec 052 FR-168).
