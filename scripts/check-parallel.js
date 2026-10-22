@@ -14,12 +14,15 @@
  *   - a job that takes longer than CHECK_TIMEOUT seconds (default 900) is stopped and counts as failed.
  * CHECK_SHARDS=n splits each theme into n shards (default 2). A failing job prints its full output; the rest print one line.
  * Motion is reduced (OFFICE_REDUCED_MOTION=1: walks are instant, nothing animates; about 30% faster): these runs check the layout
- * per theme, and the plain `npm run check:office` (CI's office shards) keeps motion on. CHECK_MOTION=1 keeps it on here too.
+ * per theme, and the plain `npm run check:office` keeps motion on. CHECK_MOTION=1 keeps it on here too (CI's office job, spec 008 FR-105).
+ * Before the first job, Electron is installed once (scripts/ensure-electron.js, spec 008 FR-114): parts that each fetched it raced on
+ * the same file and exited 126 "Text file busy" (PR #546).
  */
 const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { ensureElectron } = require('./ensure-electron');
 
 const ROOT = path.join(__dirname, '..');
 const themes = process.argv.includes('--themes');
@@ -40,8 +43,6 @@ const available = () => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-try { os.setPriority(10); } catch (_) { /* not allowed: run at normal priority */ }
-
 const variants = themes
   ? ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'].map((t) => ({ name: t, env: { DURBAR_THEME: t, OFFICE_THEME: t } }))
       .concat([{ name: 'user theme', env: { OFFICE_USER_THEME: 'scripts/fixtures/themes/check-user.json' } }])
@@ -57,9 +58,6 @@ const stop = (r) => {
     else process.kill(-r.child.pid, 'SIGKILL');
   } catch (_) { /* already gone */ }
 };
-
-// the jobs have their own process groups, so Ctrl-C or a kill of this runner must take them along
-for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { for (const r of running) stop(r); process.exit(130); });
 
 const run = (job) => new Promise((resolve) => {
   const t0 = Date.now();
@@ -83,27 +81,45 @@ const run = (job) => new Promise((resolve) => {
   });
 });
 
-(async () => {
+/**
+ * Run every job and return how many failed. `ensure`, `runJob`, `available` and `log` are for tests (scripts/test-ui-suite.ts):
+ * the defaults install Electron, start check-office-overlap.js and read the real memory.
+ */
+async function main({ ensure = ensureElectron, runJob = run, available: avail = available, jobs: list = jobs, workers = JOBS, log = console.log } = {}) {
   const t0 = Date.now();
-  console.log(`check:parallel: ${jobs.length} jobs (${variants.length} x ${SHARDS} shards), up to ${JOBS} at a time, nice 10, motion ${process.env.CHECK_MOTION === '1' ? 'on' : 'reduced'}`);
+  log(`check:parallel: ${list.length} jobs (${variants.length} x ${SHARDS} shards), up to ${workers} at a time, nice 10, motion ${process.env.CHECK_MOTION === '1' ? 'on' : 'reduced'}`);
+  // FR-114: one install before the fan-out; without the binary every part would fail, so stop here and say why
+  if (!ensure()) {
+    log('check:parallel: the Electron binary is not installed and could not be fetched (see above); no part was started');
+    return list.length;
+  }
   // the guard: under PANIC_MIN, stop the newest job (it has done the least work) and queue it again
   const guard = setInterval(() => {
-    if (running.size < 2 || available() >= PANIC_MIN) return;
+    if (running.size < 2 || avail() >= PANIC_MIN) return;
     const newest = [...running].sort((a, b) => b.t0 - a.t0)[0];
     newest.why = 'memory';
     stop(newest);
   }, 1000);
-  const queue = jobs.slice();
+  const queue = list.slice();
   let failed = 0;
-  await Promise.all(Array.from({ length: Math.min(JOBS, jobs.length) }, async (_, worker) => {
+  await Promise.all(Array.from({ length: Math.min(workers, list.length) }, async (_, worker) => {
     for (let j = queue.shift(); j; j = queue.shift()) {
       // worker 0 always runs (one job at a time is what the serial check did); the others wait for memory
-      while (worker > 0 && available() < START_MIN) await sleep(2000);
-      const res = await run(j);
+      while (worker > 0 && avail() < START_MIN) await sleep(2000);
+      const res = await runJob(j);
       if (res === 'again') { queue.push(j); await sleep(5000); } else if (res === 'fail') failed++;
     }
   }));
   clearInterval(guard);
-  console.log(`\ncheck:parallel: ${jobs.length - failed}/${jobs.length} jobs passed in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
-  process.exit(failed ? 1 : 0);
-})();
+  log(`\ncheck:parallel: ${list.length - failed}/${list.length} jobs passed in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+  return failed;
+}
+
+module.exports = { main, jobs };
+
+if (require.main === module) {
+  try { os.setPriority(10); } catch (_) { /* not allowed: run at normal priority */ }
+  // the jobs have their own process groups, so Ctrl-C or a kill of this runner must take them along
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { for (const r of running) stop(r); process.exit(130); });
+  main().then((failed) => process.exit(failed ? 1 : 0));
+}
