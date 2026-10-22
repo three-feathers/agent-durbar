@@ -730,24 +730,30 @@ function shutHTML(x){
   const {a,k}=x, st=vis(a), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140);
   const who=a.profile?a.profile.name+' · '+a.role:a.role;
   const roll=SHUT_PREV&&!SHUT_PREV.has(a.id)?' rolling':'';
-  const lab=`${esc(a.name)}, ${esc(who)}, folder ${esc(roomOf(a).path)}, ${st==='done'?'finished':'idle after its reply'}${said?' '+esc(said):''}, ${k==='recent'?'half rolled up':'rolled up'}: ${esc(line)}. Open chat panel.`; /* every part escaped here */
+  const lab=`${esc(a.name)}, ${esc(who)}, folder ${esc(roomOf(a).path)}, ${st==='done'?'finished':'idle after its reply'}${said?' '+esc(said):''}, rolled up: ${esc(line)}. Open chat panel.`; /* every part escaped here */
   const peek=`<span class="peek" aria-hidden="true"><span class="pk-h"><b>${esc(a.name)}</b><span class="pk-role">${esc(who)}</span></span><span class="pk-st">${SHUT_MARK}${esc(stWord(a))}${ago?' · finished '+esc(ago):''}</span><span class="pk-tx">${esc(shutReply(a,300))}</span></span>`;
+  /* FR-052: a narrow panel (recent) or a slat with the name in vertical text (old; with a tooltip) */
   const body=k==='recent'
-    ?`${SHUT_MARK}<span class="sh-name name">${esc(a.name)}</span><span class="sh-line">${esc(line)}</span>${ago?`<span class="sh-ago">${esc(ago)}</span>`:''}`
+    ?`<span class="sh-top"><span class="sh-av" aria-hidden="true">${avatar(a)}</span><span class="sh-name name">${esc(a.name)}</span></span><span class="sh-st">${SHUT_MARK}<span>${esc(stWord(a,true))}</span>${ago?`<span class="sh-ago">${esc(ago)}</span>`:''}</span><span class="sh-line">${esc(line)}</span>`
     :`${SHUT_MARK}<span class="sh-name name">${esc(a.name)}</span>`;
-  return `<button class="desk shut is-${k} is-${st}${roll}" type="button" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${lab}">${body}${peek}</button>`;
+  const tip=k==='old'?` title="${esc(a.name)} · ${esc(stWord(a))}${ago?' · finished '+esc(ago):''}"`:'';
+  return `<button class="desk shut is-${k} is-${st}${roll}" type="button" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${lab}"${tip}>${body}${peek}</button>`;
 }
-/* FR-053: the rolled agents of a room share one slot of its desk grid (the free cells of the last row, else a slim row of its own) */
-const shutSlots=m=>m.mains.length+(m.rolled&&m.rolled.length?1:0);
-function shuttersHTML(r,rolled,span,row){
-  if(!rolled||!rolled.length)return '';
+/* FR-053: a room's rolled agents squeeze to the end of its desk row: panels, then slats, side by side; the room's width counts the group */
+function shutGroup(r,rolled){
+  if(!rolled||!rolled.length)return null;
   const recent=rolled.filter(x=>x.k==='recent'), old=rolled.filter(x=>x.k==='old'), key='shut:'+r.id, open=!!ui.expanded[key];
   const {shown,hidden}=SHUT.split(old,SHUT.OLD_CAP,open), fewer=open&&old.length>SHUT.OLD_CAP+1;
-  return `<div class="shutters${row?' own-row':''}" data-key="${esc(key)}"${span?` style="--span:${span}"`:''} role="group" aria-label="${rolled.length} finished agent${rolled.length>1?'s':''} in ${esc(r.name)}, rolled up"><div class="sh-in">${recent.map(shutHTML).join('')}${shown.map(shutHTML).join('')}${hidden.length?`<button class="more shut-more" type="button" data-more="${esc(key)}" aria-expanded="false" aria-label="Show ${hidden.length} more finished agents in ${esc(r.name)}">+${hidden.length}</button>`:''}${fewer?`<button class="more shut-more fewer" type="button" data-more="${esc(key)}" aria-expanded="true">Show fewer</button>`:''}</div></div>`;
+  return {recent,shown,hidden,fewer,key,w:SHUT.width(recent.length,shown.length,hidden.length>0||fewer)};
 }
-/* FR-054: the unrolled card opens above its row, or below it when the floor has no room above (measured on hover and focus) */
-const shutAim=e=>{const b=e.target&&e.target.closest&&e.target.closest('#stage .desk.shut');if(!b)return;const g=b.closest('.sh-in'),f=$('floor');if(!g||!f)return;
-  b.classList.toggle('pk-down',g.getBoundingClientRect().top-f.getBoundingClientRect().top<120);};
+const shutW=(r,rolled)=>{const g=shutGroup(r,rolled);return g?g.w:0;};
+function shuttersHTML(r,rolled){
+  const g=shutGroup(r,rolled); if(!g)return '';
+  return `<div class="shutters" data-key="${esc(g.key)}" style="--shw:${g.w}px" role="group" aria-label="${rolled.length} finished agent${rolled.length>1?'s':''} in ${esc(r.name)}, rolled up"><div class="sh-in">${g.recent.map(shutHTML).join('')}${g.shown.map(shutHTML).join('')}${g.hidden.length?`<button class="more shut-more" type="button" data-more="${esc(g.key)}" aria-expanded="false" aria-label="Show ${g.hidden.length} more finished agents in ${esc(r.name)}" title="${g.hidden.length} more finished agents">+${g.hidden.length}</button>`:''}${g.fewer?`<button class="more shut-more fewer" type="button" data-more="${esc(g.key)}" aria-expanded="true" aria-label="Show fewer finished agents in ${esc(r.name)}" title="Show fewer"><span class="sh-name">Fewer</span></button>`:''}</div></div>`;
+}
+/* FR-054: the unrolled card opens sideways: left of the group, or right when its room has no space on the left (measured on hover and focus) */
+const shutAim=e=>{const b=e.target&&e.target.closest&&e.target.closest('#stage .desk.shut');if(!b)return;const g=b.closest('.sh-in'),room=b.closest('.room');if(!g||!room)return;
+  b.classList.toggle('pk-right',g.getBoundingClientRect().left-room.getBoundingClientRect().left<330);};
 document.addEventListener('pointerover',shutAim);document.addEventListener('focusin',shutAim);
 function officeModel(ignoreStatus){
   const rooms=[];
@@ -856,17 +862,18 @@ function roomHTML({r,mains,all,rolled},d,aw,cap){
   const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${al.siren?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(showPath(r.path))}</span>${(()=>{const u=roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
-    const widths=mains.map(a=>unitWidth(a,d)).concat(rolled&&rolled.length?[220]:[]); /* FR-053: the shutter group sits beside the desks when it fits */
+    const sw=shutW(r,rolled), widths=mains.map(a=>unitWidth(a,d)).concat(sw?[sw]:[]); /* FR-053: the squeezed group sits in the desks' row */
     const basis=Math.min(aw,widths.reduce((x,y)=>x+y,0)+gap*(widths.length-1)+2*pad+30);
     const min=Math.max(DENS.full.cw,...widths)+2*pad+30;
     return `<section class="room" data-key="room:${esc(r.id)}" data-tint="${r.tint}"${alAttr} style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Folder ${esc(r.name)}${alLabel}">${head}
       <div class="units">${roomArt()}${mains.map(a=>unitHTML(a,d)).join('')}${shuttersHTML(r,rolled)}</div></section>`;
   }
   /* compact: the room is a floor-plan zone with `cols` desk columns */
-  const D=DENS[d], cols=Math.max(1,Math.min(shutSlots({mains,rolled}),cap)), over=2*D.rp+4, free=(cols-mains.length%cols)%cols;
+  const D=DENS[d], sw=shutW(r,rolled), over=2*D.rp+4+(sw?sw+D.gap:0); /* FR-053: the room's width counts the squeezed group */
+  const cols=Math.max(1,Math.min(mains.length||1,cap,sw?Math.floor((aw-over+D.gap)/(D.cw+D.gap)):Infinity)); /* and its columns still get a whole cell each */
   const basis=cols*D.cw+(cols-1)*D.gap+over, min=D.cw+over;
   return `<section class="room" data-key="room:${esc(r.id)}" data-tint="${r.tint}"${alAttr} style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Folder ${esc(r.name)}${alLabel}">${head}
-    <div class="units" style="--cols:${cols}">${roomArt()}${mains.map(a=>unitHTML(a,d)).join('')}${shuttersHTML(r,rolled,free||cols,!free&&mains.length>0)}</div></section>`;
+    ${sw?`<div class="units has-shut">${roomArt()}<div class="units-in" style="--cols:${cols}">${mains.map(a=>unitHTML(a,d)).join('')}</div>${shuttersHTML(r,rolled)}</div>`:`<div class="units" style="--cols:${cols}">${roomArt()}${mains.map(a=>unitHTML(a,d)).join('')}</div>`}</section>`;
 }
 /* ---- keyed DOM updates: patch only what changed, so desk animations keep running ---- */
 const keyOf=n=>n.nodeType===1?(n.getAttribute('data-key')||(n.dataset.id!=null?'id:'+n.dataset.id:null)||(n.dataset.more!=null?'more:'+n.dataset.more+(n.classList.contains('fewer')||n.getAttribute('aria-expanded')==='true'?':f':''):null)):null;
@@ -960,7 +967,7 @@ function chooseLayout(sizing,aw,ah){
       lastAny={d,hcap,cap:0,fit:false,boost:[],side:!!side};continue;
     }
     const D=DENS[d], over=2*D.rp+4;
-    const maxCap=Math.max(1,Math.min(Math.max(...openOnly.map(shutSlots)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
+    const maxCap=Math.max(1,Math.min(Math.max(...openOnly.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
     let best=null, any=null;
     for(let c=maxCap;c>=1;c--){
       probeSet(probe,stageHTML(sizing,d,aw,c));
@@ -1001,7 +1008,7 @@ function chooseLayout(sizing,aw,ah){
    count (probeSet sets the column change in place) and each f only changes --gf on the probe. Returns {c, f, h} or null. */
 function growSearch(sizing,aw,ah,openOnly,lo){
   const probe=$('probe'), D=DENS.roomy, over=2*D.rp+4;
-  const maxCap=Math.max(1,Math.min(Math.max(...openOnly.map(shutSlots)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
+  const maxCap=Math.max(1,Math.min(Math.max(...openOnly.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
   HCAP=3; HBOOST=new Map(); LIVE_SIDE=false; GROW=1; probe.dataset.d='roomy'; probe.style.height='auto';
   const cols=[]; for(let c=maxCap;c>=1;c--)cols.push(c);
   let cur=0;

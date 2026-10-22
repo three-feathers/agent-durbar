@@ -70,7 +70,7 @@ const css = fs.readFileSync(path.join(R, 'styles.css'), 'utf8').split(/\r?\n/);
 for (const p of ['w', 'min', 'cols']) {
   assert.ok(css.some((l) => new RegExp(`@property --${p}\\{syntax:"\\*";inherits:false\\}`).test(l)), `--${p} is registered as not inherited`);
   const users = css.filter((l) => new RegExp(`var\\(--${p}[,)]`).test(l));
-  for (const l of users) assert.ok(/^\.room\{|\.units\{/.test(l.trim()) || /^\.stage:not\(\[data-d="full"\]\) \.units\{/.test(l.trim()), `--${p} read only by .room / .units: ${l.slice(0, 80)}`);
+  for (const l of users) assert.ok(/^\.room\{|\.units\{/.test(l.trim()) || /^\.stage:not\(\[data-d="full"\]\) \.units(-in)?\{/.test(l.trim()), `--${p} read only by .room / .units / .units-in (spec 001 FR-053: the desk grid beside squeezed desks carries its own --cols): ${l.slice(0, 80)}`);
 }
 for (const f of fs.readdirSync(R).filter((x) => /\.(css|js)$/.test(x) && x !== 'styles.css')) {
   const s = fs.readFileSync(path.join(R, f), 'utf8');

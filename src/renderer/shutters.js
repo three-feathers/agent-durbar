@@ -7,8 +7,9 @@
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarShutters=api;
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
-  /* owner defaults (FR-052): half rolled for 10 minutes after finishing, then fully rolled; 4 old chips before "+N" */
-  const RECENT_MS=10*60000, OLD_CAP=4;
+  /* owner defaults (FR-052): a narrow panel for 10 minutes after finishing, then a slat; up to 6 slats, else 5 and a "+N" slat.
+     Widths in px (styles.css uses the same): the layout counts them so the open desks get the rest of the row (FR-053). */
+  const RECENT_MS=10*60000, OLD_CAP=5, PANEL_W=136, SLAT_W=40, GAP=6;
 
   /* FR-051: Done, or Idle after a finished turn; never paused (coffee break), at a limit, away at a place, or with a busy helper */
   function finished(x){
@@ -29,7 +30,7 @@
     xs.forEach((x,i)=>{if(kinds[i])out.set(x.id,kinds[i]);});
     return out;
   }
-  /* FR-052: the old chips shown and the ones behind "+N" (all shown when expanded, or when only one would hide) */
+  /* FR-052: the slats shown and the ones behind "+N" (all shown when expanded, or when only one would hide) */
   function split(old,cap,expanded){
     const xs=Array.isArray(old)?old:[], c=Math.max(1,cap==null?OLD_CAP:cap|0);
     if(expanded||xs.length<=c+1)return {shown:xs.slice(),hidden:[]};
@@ -42,5 +43,10 @@
     const n=+m[1], w={min:'minute',h:'hour',d:'day'}[m[2]];
     return n+' '+w+(n===1?'':'s')+' ago';
   }
-  return {RECENT_MS,OLD_CAP,finished,kindOf,roomPlan,split,spoken};
+  /* FR-053: the width of a room's group: its panels, its slats and one "+N" or "Show fewer" slat when there is one; 0 when empty */
+  function width(nRecent,nSlats,more){
+    const p=Math.max(0,nRecent|0), q=Math.max(0,nSlats|0)+(more?1:0), n=p+q;
+    return n?p*PANEL_W+q*SLAT_W+(n-1)*GAP:0;
+  }
+  return {RECENT_MS,OLD_CAP,PANEL_W,SLAT_W,GAP,finished,kindOf,roomPlan,split,spoken,width};
 })());
