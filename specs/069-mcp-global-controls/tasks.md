@@ -13,6 +13,8 @@
 - [x] T009 Driver and screenshots (form, confirmation, Settings list) at 1440x900 and 1280x800 [FR-042]
 - [x] T010 README *MCP servers*, CHANGELOG, specs index, 019/020 dated notes, agent-notes
 
+- [x] T065 Review on #489 (Paco's agent, change 2026-10-22): owner-only writes (0600, stricter kept; Windows: same-folder temp + rename), hash re-check before the rename, surgical JSON edit keeping every other byte, backup bytes asserted, Copilot `${NAME}` note in the review, FR-004 aligned (`env_http_headers` for `Authorization`), Claude `--mcp-config` through a 0600 temp file, restore-is-manual in docs; mutation-checked [FR-003, FR-004, FR-006, FR-009, FR-051]
+
 ## Part 2: harmonize (PR 2)
 
 - [x] T020 `mcp:globalDiff` and copy preview reusing the part 1 pipeline [FR-020, FR-021]
@@ -33,3 +35,4 @@
 - [x] T061 Codex `config.toml` that does not parse is refused with its line number (change 2026-10-22; found by T060) [FR-003]; tests in `test:mcpglobal`, verdicts matched against codex-cli 0.163.0
 - [x] T062 Review on #489 (change 2026-10-22): write through a symlinked file; one-pass TOML unescape shared with spec 061 (`codextoml.ts`); `copilotDir` reused; FR-009 wiring tested through `registerMcpIpc` [FR-002, FR-006, FR-009, FR-041]
 - [x] T063 Review on #492 (change 2026-10-22): mask command, arguments and URL in the copy review; keep or refuse `enabled = false`, `disabled_tools`, tool lists and JSON `cwd` in copies; diff names tools and on/off [FR-012, FR-020, FR-023, SC-002]
+- [x] T066 Second review on #492 (Paco's agent, change 2026-10-22): copies refuse unknown fields and non-string values (named), Codex `env` numbers and multi-line strings not copyable, copy into a 0644 file leaves it 0600 (via T065), copy review wording; mutation-checked [FR-006, FR-023]

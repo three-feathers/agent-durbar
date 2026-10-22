@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
+import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, cliLaunchArgs, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn } from './fakes/claude-cli';
@@ -132,6 +132,22 @@ async function main(): Promise<void> {
     const cfg = JSON.parse(mcpConfigOf({ fs: { type: 'stdio', command: 'npx', args: ['-y', 'mcp-fs'], env: { K: 'v' } }, web: { type: 'http', url: 'https://x/mcp', headers: { A: 'b' } }, off: { type: 'stdio', command: 'x' }, bad: { type: 'http' } as never }, ['off'])!);
     assert.deepStrictEqual(Object.keys(cfg.mcpServers), ['fs', 'web'], 'disabled and incomplete servers left out');
     assert.deepStrictEqual(cfg.mcpServers.fs, { type: 'stdio', command: 'npx', args: ['-y', 'mcp-fs'], env: { K: 'v' } });
+    // spec 069 FR-009 (review 6 on #489): the JSON, values included, never goes on the command line (`ps` shows argv)
+    const json = mcpConfigOf({ fs: { type: 'stdio', command: 'npx', args: [], env: { TOKEN: 'sk-planted-ARGV-secret' } } })!;
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-069-argv-'));
+    const l = cliLaunchArgs({ mode: 'read-only', sessionId: 's', resume: false, mcpConfig: json }, root);
+    assert.ok(!l.args.join(' ').includes('sk-planted-ARGV-secret') && !l.args.includes(json), 'no MCP JSON on argv');
+    const file = l.args[l.args.indexOf('--mcp-config') + 1];
+    assert.ok(path.isAbsolute(file) && file.startsWith(root), file);
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), json);
+    if (process.platform !== 'win32') {
+      assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600, 'file 0600');
+      assert.strictEqual(fs.statSync(path.dirname(file)).mode & 0o777, 0o700, 'folder 0700');
+    }
+    l.cleanup();
+    assert.ok(!fs.existsSync(path.dirname(file)), 'removed on exit');
+    assert.deepStrictEqual(cliLaunchArgs({ mode: 'read-only', sessionId: 's', resume: false }, root).args, claudeArgs({ mode: 'read-only', sessionId: 's', resume: false }), 'no MCP: argv unchanged');
+    fs.rmSync(root, { recursive: true, force: true });
   }
   {
     const files: Record<string, string> = {

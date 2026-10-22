@@ -199,6 +199,25 @@ const tomlInline2 = (v: string): Record<string, string> => {
   return out;
 };
 
+/** Every key of an inline table (any value kind); undefined when it is not one inline table on this line. */
+const tomlInlineKeyNames = (v: string): string[] | undefined => {
+  const m = /^\{(.*)\}$/.exec(v.trim());
+  if (!m) return undefined;
+  return (m[1].match(/(?:^|,)\s*("(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+)\s*=/g) ?? []).map((k) => {
+    const key = k.replace(/^,?\s*/, '').replace(/\s*=$/, '');
+    return unq(key) ?? key;
+  });
+};
+
+/** A one-line array of strings only (`[]`, `["a", 'b']`). */
+const stringArrayOnly = (v: string): boolean => {
+  const m = /^\[(.*)\]$/.exec(v.trim());
+  return !!m && m[1].replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '').replace(/[\s,]/g, '') === '';
+};
+
+/** Key of a Codex entry (in `values`, main only) listing the fields and values the writers would not carry. */
+export const ODD = '\0odd';
+
 /** Lines that define `mcp_servers` some other way than `[mcp_servers.<name>]` tables (FR-003 refuses to edit those files). */
 function codexOddShape(lines: TomlLine[]): boolean {
   let top = true;
@@ -294,14 +313,30 @@ function readCodex(text: string | undefined): ReadResult {
     if (!kv) continue;
     const k = unq(kv[1]) ?? kv[1];
     const v = kv[2];
-    if (sub === 'env') ((cur.env ??= {}) as Record<string, unknown>)[k] = unq(v) ?? '';
-    else if (sub === 'http_headers') ((cur.http_headers ??= {}) as Record<string, unknown>)[k] = unq(v) ?? '';
-    else if (sub === 'env_http_headers') ((cur.env_http_headers ??= {}) as Record<string, unknown>)[k] = unq(v) ?? '';
-    else if (sub) continue;
-    else if (k === 'command' || k === 'url' || k === 'bearer_token_env_var' || k === 'cwd') cur[k] = unq(v);
-    else if (k === 'args' || k === 'env_vars' || k === 'enabled_tools' || k === 'disabled_tools') cur[k] = tomlArray(v);
-    else if (k === 'enabled') cur[k] = v.trim() === 'false' ? false : v.trim() === 'true' ? true : v.trim();
-    else if (k === 'env' || k === 'http_headers' || k === 'env_http_headers') cur[k] = tomlInline2(v);
+    // change 2026-10-22 (review 2, 3 on #492): what the writers would not carry is named in `ODD` (a copy of it is refused)
+    const odd = (what: string): void => {
+      const list = (cur![ODD] ??= []) as string[];
+      if (!list.includes(what) && list.length < 20) list.push(what);
+    };
+    if (sub === 'env' || sub === 'http_headers' || sub === 'env_http_headers') {
+      const s = unq(v);
+      if (s === undefined) odd(`${sub}.${k}`); // a number, a multi-line string, ...: never copied as ""
+      ((cur[sub] ??= {}) as Record<string, unknown>)[k] = s ?? '';
+    } else if (sub) odd(`[${sub}]`);
+    else if (k === 'command' || k === 'url' || k === 'bearer_token_env_var' || k === 'cwd') {
+      cur[k] = unq(v);
+      if (cur[k] === undefined) odd(k);
+    } else if (k === 'args' || k === 'env_vars' || k === 'enabled_tools' || k === 'disabled_tools') {
+      cur[k] = tomlArray(v);
+      if (!stringArrayOnly(v)) odd(k); // spans several lines or holds something other than strings
+    } else if (k === 'enabled') cur[k] = v.trim() === 'false' ? false : v.trim() === 'true' ? true : v.trim();
+    else if (k === 'env' || k === 'http_headers' || k === 'env_http_headers') {
+      const m = tomlInline2(v);
+      cur[k] = m;
+      const all = tomlInlineKeyNames(v);
+      if (all === undefined) odd(k);
+      else for (const x of all) if (!(x in m)) odd(`${k}.${x}`);
+    } else odd(k);
   }
   for (const [name, r] of recs) {
     const envKeys = [...keysOf(r.env), ...(strs(r.env_vars) ?? [])];
@@ -471,9 +506,182 @@ export type EditResult = { ok: true; text: string } | { ok: false; error: string
 
 const eolOf = (text: string | undefined): string => (text && /\r\n/.test(text) ? '\r\n' : '\n');
 
-function jsonWrite(doc: Record<string, unknown>, text: string | undefined): string {
-  const out = JSON.stringify(doc, null, 2) + '\n';
-  return eolOf(text) === '\r\n' ? out.replace(/\n/g, '\r\n') : out;
+// ---------------------------------------------------------------- JSON: surgical text edit (change 2026-10-22, review 2 on #489)
+
+interface JMember {
+  key: string;
+  keyStart: number;
+  valStart: number;
+  valEnd: number;
+}
+/** An object of the text: `start` is its `{`, `end` its `}`. */
+interface JObject {
+  start: number;
+  end: number;
+  members: JMember[];
+}
+
+class JsonShapeError extends Error {}
+
+const skipWs = (t: string, i: number): number => {
+  while (i < t.length && (t[i] === ' ' || t[i] === '\t' || t[i] === '\r' || t[i] === '\n')) i++;
+  return i;
+};
+
+/** `t[i]` is `"`: the index after the closing quote. */
+function strEnd(t: string, i: number): number {
+  for (let j = i + 1; j < t.length; j++) {
+    if (t[j] === '\\') j++;
+    else if (t[j] === '"') return j + 1;
+  }
+  throw new JsonShapeError('string');
+}
+
+/** The index after the value that starts at `i` (the text already passed `JSON.parse`). */
+function valueEnd(t: string, i: number): number {
+  const c = t[i];
+  if (c === '"') return strEnd(t, i);
+  if (c === '{' || c === '[') {
+    let depth = 0;
+    for (let j = i; j < t.length; j++) {
+      const d = t[j];
+      if (d === '"') j = strEnd(t, j) - 1;
+      else if (d === '{' || d === '[') depth++;
+      else if (d === '}' || d === ']') {
+        depth--;
+        if (depth === 0) return j + 1;
+      }
+    }
+    throw new JsonShapeError('bracket');
+  }
+  let j = i;
+  while (j < t.length && !/[\s,}\]]/.test(t[j])) j++;
+  if (j === i) throw new JsonShapeError('value');
+  return j;
+}
+
+/** The members of the object whose `{` is at `start`, with their positions in the text. */
+function objectAt(t: string, start: number): JObject {
+  if (t[start] !== '{') throw new JsonShapeError('object');
+  const members: JMember[] = [];
+  let i = skipWs(t, start + 1);
+  if (t[i] === '}') return { start, end: i, members };
+  for (;;) {
+    if (t[i] !== '"') throw new JsonShapeError('key');
+    const keyStart = i;
+    const ke = strEnd(t, i);
+    const key = JSON.parse(t.slice(keyStart, ke)) as string;
+    i = skipWs(t, ke);
+    if (t[i] !== ':') throw new JsonShapeError('colon');
+    const valStart = skipWs(t, i + 1);
+    const valEnd = valueEnd(t, valStart);
+    members.push({ key, keyStart, valStart, valEnd });
+    i = skipWs(t, valEnd);
+    if (t[i] === ',') {
+      i = skipWs(t, i + 1);
+      continue;
+    }
+    if (t[i] === '}') return { start, end: i, members };
+    throw new JsonShapeError('member');
+  }
+}
+
+/** The spaces or tabs that start the line holding `pos`. */
+const lineIndent = (t: string, pos: number): string => /^[ \t]*/.exec(t.slice(t.lastIndexOf('\n', pos - 1) + 1, pos))![0];
+/** A member that starts on its own line. */
+const ownLine = (t: string, m: JMember): boolean => /\n[ \t]*$/.test(t.slice(0, m.keyStart));
+
+interface JsonStyle {
+  /** One indent level (spaces or a tab); undefined: the file is on one line, so new members are compact too. */
+  unit?: string;
+  eol: string;
+}
+
+/** The file's own style: the first member on its own line gives the indent unit (relative to its object's line). */
+function jsonStyle(t: string, objs: JObject[]): JsonStyle {
+  const eol = eolOf(t);
+  if (!t.trim().includes('\n')) return { eol };
+  for (const o of objs) {
+    const m = o.members.find((x) => ownLine(t, x));
+    if (!m) continue;
+    const mi = lineIndent(t, m.keyStart);
+    const oi = lineIndent(t, o.start);
+    if (mi.length > oi.length && mi.startsWith(oi)) return { unit: mi.slice(oi.length), eol };
+  }
+  return { unit: '  ', eol };
+}
+
+/** `value` as JSON text in the file's style; continuation lines start with `indent`. */
+const jsonText = (value: unknown, st: JsonStyle, indent: string): string =>
+  st.unit === undefined ? JSON.stringify(value) : JSON.stringify(value, null, st.unit).split('\n').join(st.eol + indent);
+
+/** Set member `key` of object `o` to `value`: its value replaced in place, or a new member after the last one. */
+function setMember(t: string, o: JObject, key: string, value: unknown, st: JsonStyle): string {
+  const hit = o.members.filter((m) => m.key === key);
+  if (hit.length > 1) throw new JsonShapeError('duplicate');
+  if (hit.length === 1) {
+    const m = hit[0];
+    return t.slice(0, m.valStart) + jsonText(value, st, lineIndent(t, m.keyStart)) + t.slice(m.valEnd);
+  }
+  const sep = st.unit === undefined ? ':' : ': ';
+  if (!o.members.length) {
+    const ci = lineIndent(t, o.start);
+    if (st.unit === undefined) return t.slice(0, o.start + 1) + JSON.stringify(key) + sep + jsonText(value, st, '') + t.slice(o.end);
+    const mi = ci + st.unit;
+    return t.slice(0, o.start + 1) + st.eol + mi + JSON.stringify(key) + sep + jsonText(value, st, mi) + st.eol + ci + t.slice(o.end);
+  }
+  const last = o.members[o.members.length - 1];
+  const multi = st.unit !== undefined && ownLine(t, last);
+  const mi = multi ? lineIndent(t, last.keyStart) : '';
+  const lead = multi ? ',' + st.eol + mi : t.slice(last.valEnd, skipWs(t, last.valEnd)) === '' && /,\s/.test(t.slice(o.start, o.end)) ? ', ' : ',';
+  return t.slice(0, last.valEnd) + lead + JSON.stringify(key) + sep + jsonText(value, st, mi) + t.slice(last.valEnd);
+}
+
+/** Delete member `key` of object `o` with the comma and the line break that belong to it. */
+function deleteMember(t: string, o: JObject, key: string): string {
+  const idx = o.members.findIndex((m) => m.key === key);
+  if (idx < 0 || o.members.filter((m) => m.key === key).length > 1) throw new JsonShapeError('member');
+  const m = o.members[idx];
+  if (o.members.length === 1) return t.slice(0, o.start + 1) + t.slice(o.end);
+  if (idx > 0) return t.slice(0, o.members[idx - 1].valEnd) + t.slice(m.valEnd);
+  return t.slice(0, m.keyStart) + t.slice(o.members[1].keyStart);
+}
+
+/**
+ * FR-003 (change 2026-10-22): set (`entry`) or delete (`undefined`) `mcpServers[name]` in the text itself. Every other byte stays as
+ * written: indentation, key order, number literals (`12345678901234567890`, `1.0`), escapes and line ends. The result is parsed again
+ * and must hold exactly the intended change, else the edit is refused.
+ */
+function jsonEdit(text: string | undefined, doc: Record<string, unknown>, name: string, entry: Record<string, unknown> | undefined): EditResult {
+  const servers = isObj(doc.mcpServers) ? doc.mcpServers : undefined;
+  const want: Record<string, unknown> = { ...doc, mcpServers: { ...(servers ?? {}) } };
+  if (entry) (want.mcpServers as Record<string, unknown>)[name] = entry;
+  else delete (want.mcpServers as Record<string, unknown>)[name];
+  if (text === undefined || text.trim() === '') {
+    const eol = eolOf(text);
+    return { ok: true, text: (JSON.stringify(want, null, 2) + '\n').replace(/\n/g, eol) };
+  }
+  const refuse = { ok: false as const, error: 'Agent Durbar could not change only this server in the file (an unusual layout, such as a key written twice). Nothing was written.' };
+  let out: string;
+  try {
+    const top = objectAt(text, skipWs(text, text.startsWith('\uFEFF') ? 1 : 0));
+    if (top.members.filter((m) => m.key === 'mcpServers').length > 1) return refuse;
+    const ms = top.members.find((m) => m.key === 'mcpServers');
+    const inner = ms ? objectAt(text, ms.valStart) : undefined;
+    const st = jsonStyle(text, inner ? [inner, top] : [top]);
+    if (!entry) out = deleteMember(text, inner as JObject, name);
+    else if (inner) out = setMember(text, inner, name, entry, st);
+    else out = setMember(text, top, 'mcpServers', { [name]: entry }, st);
+  } catch {
+    return refuse;
+  }
+  let got: unknown;
+  try {
+    got = JSON.parse(out.replace(/^\uFEFF/, ''));
+  } catch {
+    return refuse;
+  }
+  return JSON.stringify(got) === JSON.stringify(want) ? { ok: true, text: out } : refuse;
 }
 
 /** FR-003: add (or with `replace`, replace) one server in an app's file text. `text` undefined = the file does not exist yet. */
@@ -489,8 +697,7 @@ export function addToText(app: GlobalApp, text: string | undefined, input: Globa
   const servers = isObj(p.doc.mcpServers) ? p.doc.mcpServers : {};
   if (Object.prototype.hasOwnProperty.call(servers, input.name) && !replace) return { ok: false, conflict: true, error: `"${input.name}" is already in this file.` };
   if (!Object.prototype.hasOwnProperty.call(servers, input.name) && Object.keys(servers).length >= MAX_SERVERS) return { ok: false, error: `At most ${MAX_SERVERS} servers.` };
-  const next = { ...servers, [input.name]: jsonEntry(app, input, mode) };
-  return { ok: true, text: jsonWrite({ ...p.doc, mcpServers: next }, text) };
+  return jsonEdit(text, p.doc, input.name, jsonEntry(app, input, mode));
 }
 
 /** FR-003: remove one server. */
@@ -501,9 +708,7 @@ export function removeFromText(app: GlobalApp, text: string | undefined, name: s
   if (!p.ok) return p;
   const servers = isObj(p.doc.mcpServers) ? p.doc.mcpServers : undefined;
   if (!servers || !Object.prototype.hasOwnProperty.call(servers, name)) return { ok: false, error: `"${name}" is not in this file.` };
-  const next = { ...servers };
-  delete next[name];
-  return { ok: true, text: jsonWrite({ ...p.doc, mcpServers: next }, text) };
+  return jsonEdit(text, p.doc, name, undefined);
 }
 
 /** Line ranges `[start, end)` of every table of server `name` (its own and its sub-tables). */
@@ -598,12 +803,38 @@ const toItems = (m: Record<string, string>): GlobalItem[] =>
     return r ? { key, ref: r[1] } : { key, value };
   });
 
+const JSON_FIELDS: Record<'copilot' | 'claude', ReadonlySet<string>> = {
+  copilot: new Set(['type', 'command', 'args', 'env', 'url', 'headers', 'tools', 'disabled', 'enabled', 'cwd']),
+  claude: new Set(['type', 'command', 'args', 'env', 'url', 'headers', 'disabled', 'enabled', 'cwd']),
+};
+
+/**
+ * FR-023 (change 2026-10-22, review 2, 3 on #492): the fields of an entry that a copy would drop or write empty: keys the writers do not
+ * carry (Claude `oauth`, `headersHelper`, Copilot `timeout`, Codex `startup_timeout_sec`, a Codex sub-table) and values that are not
+ * plain strings where the writers expect one. Names only.
+ */
+export function uncopyable(app: GlobalApp, raw: Record<string, unknown>): string[] {
+  if (app === 'codex') return Array.isArray(raw[ODD]) ? (raw[ODD] as string[]) : [];
+  const out = Object.keys(raw).filter((k) => !JSON_FIELDS[app].has(k));
+  for (const k of ['type', 'command', 'url'] as const) if (raw[k] !== undefined && typeof raw[k] !== 'string') out.push(k);
+  for (const k of ['args', ...(app === 'copilot' ? ['tools'] : [])]) if (raw[k] !== undefined && !(Array.isArray(raw[k]) && (raw[k] as unknown[]).every((x) => typeof x === 'string'))) out.push(k);
+  for (const k of ['env', 'headers'] as const) {
+    if (raw[k] === undefined) continue;
+    if (!isObj(raw[k])) out.push(k);
+    else for (const [x, v] of Object.entries(raw[k] as Record<string, unknown>)) if (typeof v !== 'string') out.push(`${k}.${x}`);
+  }
+  return out.slice(0, 20);
+}
+
 /**
  * FR-021: one app's entry (as `readGlobal` keeps it, values included; main only) in the neutral form the writers take, or why it cannot
  * be copied. References stay references (`${X}`, Codex `env_vars`, `env_http_headers`, `bearer_token_env_var` -> `Bearer ${X}`).
  */
 export function neutralFrom(app: GlobalApp, name: string, raw: Record<string, unknown>): { ok: true; input: GlobalInput } | { ok: false; error: string } {
   const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+  const lost = uncopyable(app, raw);
+  if (lost.length)
+    return { ok: false, error: `It has ${lost.length === 1 ? 'a field' : 'fields'} Agent Durbar cannot copy as written (${lost.join(', ')}); a copy would drop ${lost.length === 1 ? 'it or write it empty' : 'them or write them empty'}. Nothing was written.` };
   const tools = strs(app === 'codex' ? raw.enabled_tools : raw.tools);
   const hidden = app === 'codex' ? strs(raw.disabled_tools) : undefined;
   // Change 2026-10-22 (review on #492): switched off and tool lists travel with the copy (checkFor refuses a target that cannot hold them).

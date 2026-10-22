@@ -73,6 +73,10 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(items, ['Copilot CLI ~/.copilot/mcp-config.json', 'Claude Code ~/.claude.json', 'Codex ~/.codex/config.toml'], JSON.stringify(items));
     assert.ok(/\$\{NOTES_TOKEN\}/.test(await js(`document.querySelector('#scrDlg .gpvl').textContent`)), 'the JSON entries name the variable');
     assert.ok(/env_vars = \["NOTES_TOKEN"\]/.test(await js(`document.querySelector('#scrDlg .gpvl').textContent`)), 'the Codex entry uses env_vars');
+    // FR-051 (review 4 on #489): the Copilot item says ${NAME} expansion is not verified; the others do not
+    const notes = await js(`[...document.querySelectorAll('#scrDlg .gpv')].map(li=>li.querySelector('b').textContent+'|'+(/Not verified for Copilot/.test(li.textContent)))`);
+    assert.deepStrictEqual(notes.filter((x) => x.endsWith('|true')).map((x) => x.split('|')[0]), ['Copilot CLI'], `Copilot note only: ${notes}`);
+    assert.ok(/readable only by you/.test(await js(`document.querySelector('#scrDlg').textContent`)), 'the review says the files are left readable only by you');
     assert.ok(/Set NOTES_TOKEN/.test(await js(`document.querySelector('#scrDlg .dbody').textContent`)), 'the variable to set is named');
     assert.ok(!(await js(`document.documentElement.outerHTML.includes(${jsLiteral(SECRET)})`)), 'the secret value is nowhere in the page');
     assert.ok(await fits(), `${w}: the review fits`);
