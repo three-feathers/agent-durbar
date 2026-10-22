@@ -428,6 +428,17 @@ VS Code UI supports, as some people may want to give access to read email but no
      target has the field, and otherwise the copy to that file is refused naming the field; the diff names `tools`, `hidden tools`
      and `on/off`. The add form is unchanged. (T063)
 
+- **2026-10-22 (review on #503 by Paco's agent, CHANGES_REQUESTED at f31db855):** both findings fixed (T068).
+  1. **Focus keyed on server and tool** (FR-060): after a tool checkbox is toggled, the repaint restored focus by tool name only, so with
+     two open servers that share a tool name (`search`) it jumped to the first server's box, and when the list closed it fell to `body`.
+     The repaint now keys a checkbox on `data-tsrv` + `data-tool` (and the tri-state on its server), falls back to that server's tools
+     toggle (`data-tools`), then to its switch. `shots-069-mcp-tools` focuses a checkbox and presses Space (a real key event), with two
+     open servers sharing a tool name.
+  2. **Disabled checkboxes say why, visibly, and stay focusable** (FR-063, FR-064): a box that cannot be changed (the app cannot filter
+     single tools, or a tool name the filters cannot carry) is `aria-disabled="true"` instead of `disabled`: it stays in the Tab order,
+     a click or Space does nothing, and `aria-describedby` points to the visible reason (the header note for the app; a short
+     "can't be turned off: name has other characters" next to that tool).
+
 - **2026-10-22 (review on #503):** Copilot's `excludedTools` form `mcp:<server>-<tool>` checked against the SDK's own `ToolSet.addMcp`
   (`read:`, FR-062; wire names of every server still `[KNOWN GAP]`); Codex merging `{disabled_tools}` into a user's own server marked
   `[KNOWN GAP]` (FR-062); tool names outside `[A-Za-z0-9_.-]` can no longer be turned off (they were not blocked at all in Claude Code's
