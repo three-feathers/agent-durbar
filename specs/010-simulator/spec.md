@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Simulator and dev/test hooks
-status: implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-021); delta 2026-10-22: the simulator never reaches a real agent app (FR-022..FR-031: main refuses every IPC channel but one, creates no real adapter, runs no detection probe and starts no child process under `DURBAR_SIM`; incident on PR #505)
+status: implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-021); delta 2026-10-22: the simulator never reaches a real agent app (FR-022..FR-032: main refuses every IPC channel but two (install routes, app version), creates no real adapter, runs no detection probe and starts no child process under `DURBAR_SIM`; incident on PR #505)
 -->
 
 **Feature Branch**: `010-simulator` (reverse-engineered; milestones 2-6)
@@ -73,7 +73,7 @@ Developers capture screenshots at fixed sizes and drive the real window with scr
 ### Key Entities
 
 - **SimAgent**: info, room, state, intent, prompt, helpers, files, pending permission, grants.
-- **Driver context**: `{ win, addMany, js, sleep, shot, waitFor, createdAdapters }` (`createdAdapters()`, 2026-10-22: the adapters main has created, each `{ id, simBlocked }`).
+- **Driver context**: `{ win, addMany, js, sleep, shot, waitFor, createdAdapters, childProcessAttempts, simRefused }` (2026-10-22: `createdAdapters()`, the adapters main has created, each `{ id, simBlocked }`; `childProcessAttempts()`, the child processes main tried to start under the simulator, each refused (FR-030); 2026-10-23: `simRefused()`, the channels main has refused under the simulator since startup (FR-032)).
 
 ## Success Criteria *(mandatory)*
 
@@ -140,3 +140,11 @@ For spec [024](../024-office-places/spec.md): `bash`, `github`, `playwright` and
   `test:` `test:simguard` (with `child_process` replaced by counting spies that never start anything: detection and the sign-in check of the stand-in registry under `simDetectorFor(true, detectorFor)` make zero calls, while the same detection with `false` does call `execFile`, which proves the spy sees it; the seal throws for every function and never calls the original; `main.ts` wiring). `sim:` `check:sim-guard` calls `ctx.addMany([folder], 'read-only', { adapterId: 'claude' })` and checks that zero child processes were attempted since startup.
 - **FR-031** `[IMPLEMENTED]` (review on #514, rubenlupi, 2026-10-22) **One decision.** `ipcguard.ts` no longer reads `DURBAR_SIM` itself: `main.ts` calls `initSimGuard(SIMULATOR)` before any `register*` call, and `ipcHandle` / `ipcOn` throw at registration time when it was not called (a second call with another value throws too), so main's and the guard's simulator modes are one value by construction. `test:` `test:simguard` (registration before `initSimGuard` throws; wiring order in `main.ts`).
 - **Documented**: `docs/agent-notes.md` (the driver trap: a page expression's `bridge` is the real preload API; it is now refused in main, but drivers should still drive the UI), README *Development*.
+
+
+### 2026-10-23: review on #514 (Paco's agent, 2026-10-22 23:45 UTC): the version call under the simulator (task T033)
+
+**What was wrong.** `src/renderer/renderer.ts` asks main for `app:version` on every page load. Under `DURBAR_SIM` main refused it (not on `SIM_OPEN_CHANNELS`), and the call had no `.catch`, so every simulator start logged "Error occurred in handler for 'app:version'" in main and an unhandled promise rejection in the page. `check:sim-guard` did not notice, because it only checked the calls it made itself.
+
+- **FR-032** `[IMPLEMENTED]` **A plain simulator start causes no refusal and no unhandled rejection.** `app:version` is on `SIM_OPEN_CHANNELS` with its reason (it only returns `app.getVersion()`: no adapter, no process, no profile file). `renderer.ts` also catches a failed version call, so a refused call can never become an unhandled rejection. `ipcguard.ts` records each channel it refuses under the simulator (`simRefusedChannels()`), and the driver context exposes it as `simRefused()`. `check:sim-guard` reloads the page with a listener on the page's console and asserts that the start refused no channel and logged no unhandled rejection, before it makes its own (refused) calls. `test:simguard` checks the open channel's handler like `harness:plans` (it reaches no adapter).
+- **Documented**: the stale 2026-10-22 entry in `docs/agent-notes.md` that still said "main's IPC stays live in simulator mode" (from PR #505's branch) is removed; the updated entry stays.

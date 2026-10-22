@@ -74,3 +74,9 @@ src/main/main.ts       createRegistry(simGuardDescriptors([...PRODUCTION, ...off
 **Tests.** `test:simguard` runs the real `ipcguard.js` under a stand-in `electron` module (`Module._load` hook), so the decision that ships is the one tested; `check:sim-guard` proves the wiring through the real preload and contextBridge in Electron.
 
 **Constitution.** IV (no credits in tests): enforced by main instead of trusted to the renderer. III (safe by default): a packaged build never has `DURBAR_SIM` (FR-018), so users are unaffected. VI (parity): no platform code; the driver runs on all three OSes in `ui-platforms.yml`.
+
+### Review on #514 (Paco's agent, 2026-10-22 23:45 UTC): FR-032
+
+- `simguard.ts` `SIM_OPEN_CHANNELS` gains `app:version` (reads `app.getVersion()` only). `renderer.ts`: `bridge?.version().then(...).catch(() => {})`, so a refusal is never unhandled.
+- `ipcguard.ts`: the `warned` set becomes the record of refused channels, `simRefusedChannels()`; `main.ts` driver context `simRefused()`.
+- `check-sim-guard.js`: listen to the page's `console-message`, reload, wait for the 15 desks, then assert `simRefused()` is empty and no "Uncaught (in promise)" line was logged; mutation: take `app:version` off the open list and drop the `.catch`.
