@@ -231,7 +231,7 @@
 - [x] T161 Tests: `test-codex-modes`, `test-codex-adapter` with the fixture `codex/file-change-approval.json` (generated types), `test-truth`; mutation runs (no item store, no masking) [FR-172]
 - [x] T162 `simcodexfile` + `scripts/check-codex-file-card.js` (`check:codex-file-card`, in `check:ui`) at 1440x900 and 1280x800, Expert and Simple; screenshots; README, CHANGELOG, `specs/README.md`, agent notes [FR-172]
 - [x] T163 Real check on a Codex session (one small edit in Ask first): the card names the file and shows the diff [FR-172; real: 2026-10-21, codex-cli 0.163.0, Linux, 1 prompt]
-- [x] T167 Review on #470: the write grant scope covers every path (several folders: every folder must be granted; a session grant grants each); paths kept uncut for decisions (one line only in the card and diff headers); every path of more than 100 changes reaches the guard, real "+N more", the 200-file guard cap flagged on the card; the "No newline" test asserts the marker; tests + mutation runs [FR-172]
+- [x] T167 Review on #470: the write grant scope covers every path (several folders: every folder must be granted; a session grant grants each); paths kept uncut for decisions (one line only in the card and diff headers); every path of more than 100 changes reaches the guard, real "+N more", the 200-file guard cap flagged on the card; the "No newline" test asserts the marker; tests + mutation runs; re-review: the Expert button keeps every folder or "and N more folders", the simulator grants one chip per folder (`check-codex-file-card`) [FR-172]
 
 ## UI help and text pass (2026-10-21, issue #464)
 - [x] T143 Spec delta FR-165..FR-171, plan note, `docs/design-rules.md` rules (widths, measure, tooltip length; also fix its stale "+ New" line) [FR-165..FR-171]
