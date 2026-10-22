@@ -34,7 +34,7 @@
     if(mark==='pin')pin.push(key); else if(mark==='hide')hide.push(key);
     return {pinned:pin,hidden:hide};
   }
-  /* Rows of a list that show: hidden rows are out. Used for Previous (N), the toast and the auto-open (FR-025). */
+  /* Rows of a list that show: hidden rows are out. Used for the count on the Previous sessions row (spec 006 FR-033), the toast and the auto-open (FR-025). */
   const visibleCount=(list,hidden)=>{const h=new Set(hidden||[]);return (Array.isArray(list)?list:[]).filter(x=>!h.has(String(x&&x.id!=null?x.id:x&&x.key))).length;};
   /* Words of the delete confirmation (FR-030). `app` = "GitHub Copilot" or "Codex"; `cli` = "Copilot CLI" or "Codex CLI". */
   function deleteDialogText(o){
