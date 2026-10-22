@@ -171,6 +171,62 @@ module.exports = async (ctx) => {
     console.log('[001-lobby]', `${w}x${h}`, 'long names: d=' + info.d, 'cut texts=' + cut.length);
   }
 
+  /* ---- hostile names (review on #511, Paco 23:45 UTC): session titles and a schedule prompt with markup stay text everywhere in the lobby,
+     and the desk card's title is masked before its 200-character cut (a token across the cut leaves no piece of itself; spec 041 FR-065) ---- */
+  {
+    const [w, h] = [1440, 900];
+    await load(15, w, h, { simbreak: '8', simquestion: '1' });
+    assert.ok(await H.until(`(document.querySelector('#stage .place.bank .pc')||{}).textContent==='1'&&!!document.querySelector('#stage .place.coffee .pv')`, 8000), 'hostile: someone at the Bank and in the coffee corner');
+    /* fill the Boss until it shows a "+N" (more permissions from agents at their desks) */
+    for (let i = 0; i < 12 && !(await js(`!!document.querySelector('#stage .place.boss .pv-more')`)); i++) {
+      const idle = await js(`(window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&!a.coffee&&!a.limit&&!document.querySelector('#stage .desk.is-away[data-id="'+CSS.escape(a.id)+'"]'))||{}).id`);
+      if (!idle) break;
+      await emit({ type: 'status', sessionId: idle, status: 'needs-permission', intent: 'Wants to run npm publish', permission: { requestId: 'drv-hostile-' + i, kind: 'shell', summary: 'run npm publish --dry-run', scopeKey: 'shell:npm', scopeLabel: 'run npm', state: 'pending' } });
+      await H.until(`!!document.querySelector('#stage .place.boss [data-visitor="'+CSS.escape(${q(idle)})+'"]')`, 4000); await ctx.sleep(200);
+    }
+    assert.ok(await js(`!!document.querySelector('#stage .place.boss .pv-more')`), 'hostile: the Boss shows a "+N"');
+    await settleWalk();
+    const hostile = (n) => `<img src=x onerror="window.__pwn=${n}"><b>Mal${n}</b>`;
+    const at = await js(`(()=>{const q=s=>[...document.querySelectorAll(s)].map(e=>e.dataset.visitor);return {boss:q('#stage .place.boss .pv[data-visitor]'),bank:q('#stage .place.bank .pv[data-visitor]'),coffee:q('#stage .place.coffee .pv[data-visitor]')}})()`);
+    const rest = await js(`(()=>{const shown=new Set([...document.querySelectorAll('#stage .place.boss .pv[data-visitor]')].map(e=>e.dataset.visitor));return window.__durbarSimUi.agents().filter(a=>!a.parent&&a.live&&!shown.has(a.id)&&!!document.querySelector('#stage .desk.is-away[data-place="boss"][data-id="'+CSS.escape(a.id)+'"]')).map(a=>a.id)})()`);
+    assert.ok(at.boss.length && at.bank.length && at.coffee.length && rest.length, `hostile: visitors everywhere and one inside "+N": ${JSON.stringify({ ...at, rest })}`);
+    const targets = [at.boss[0], at.bank[0], at.coffee[0], rest[0]];
+    for (const [i, id] of targets.entries()) await emit({ type: 'title', sessionId: id, title: hostile(i + 1) });
+    const folder = await js(`(()=>{const a=window.__durbarSimUi.agents().find(a=>!a.parent&&a.live);return a?(a.info.workspaceFile||a.info.cwd||''):''})()`);
+    const saved = await js(`window.__durbarSimUi.bridge().saveSchedule({folder:${q(folder)},prompt:${q(hostile(9) + ' sweep')},at:Date.now()+60000})`);
+    assert.ok(saved && saved.ok !== false, `hostile: the schedule is saved: ${JSON.stringify(saved)}`);
+    assert.ok(await H.until(`[...document.querySelectorAll('#stage .place.boss .pv-n, #stage .place.bank .pv-n, #stage .place.coffee .pv-n')].some(e=>e.textContent.includes('<img'))&&(document.querySelector('#stage .place.postbox').getAttribute('aria-label')||'').includes('<img src=x')`, 6000), 'hostile: the new names and the prompt are drawn');
+    await settleWalk();
+    const none = `!document.querySelector('#stage img, #walkers img, #modeMenu img')&&![...document.querySelectorAll('#stage b, #walkers b, #modeMenu b')].some(b=>/^Mal\\d$/.test(b.textContent))&&window.__pwn===undefined`;
+    assert.ok(await js(none), 'hostile: no element created in the office or the walkers, nothing ran');
+    const seen = await js(`(()=>{const tx=s=>[...document.querySelectorAll(s)].map(e=>e.textContent),lb=s=>[...document.querySelectorAll(s)].map(e=>(e.getAttribute('aria-label')||'')+' | '+(e.title||''));
+      return {entries:tx('#stage .lobby .pv-n'),labels:lb('#stage .lobby .place, #stage .lobby .pv, #stage .lobby .pv-more'),post:tx('#stage .place.postbox .pb-line')}})()`);
+    for (const n of [1, 2, 3]) assert.ok(seen.labels.some((l) => l.includes(hostile(n))), `hostile: tile label or tooltip ${n} shows the literal title: ${JSON.stringify(seen.labels)}`);
+    assert.ok(seen.entries.filter((e) => e.includes('<img src=x')).length >= 1 || seen.entries.some((e) => e.startsWith('<')), `hostile: an entry shows the literal name: ${JSON.stringify(seen.entries)}`);
+    assert.ok(seen.post.some((l) => l.includes('<img src=x')), `hostile: the Postbox line shows the literal prompt: ${JSON.stringify(seen.post)}`);
+    /* the "+N" list (#modeMenu): the hidden visitor's literal name, no element */
+    await js(`document.querySelector('#stage .place.boss .pv-more').click()`);
+    assert.ok(await H.until(`!!document.getElementById('modeMenu')`, 3000), 'hostile: the "+N" list opens');
+    const menu = await js(`[...document.querySelectorAll('#modeMenu [data-pvopen] b')].map(b=>b.textContent)`);
+    assert.ok(menu.includes(hostile(4)), `hostile: the "+N" list shows the literal title: ${JSON.stringify(menu)}`);
+    assert.ok(await js(none), 'hostile: no element created in the "+N" list, nothing ran');
+    await js(`document.getElementById('modeMenu').querySelector('[data-pvopen]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    await H.until(`!document.getElementById('modeMenu')`, 2000);
+    /* a token across the desk title's 200th character: masked first, then cut, so no piece of it is left */
+    const tok = 'ghp_' + 'Q7'.repeat(18);
+    const desk = await js(`(window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&!a.coffee&&!a.limit&&!document.querySelector('#stage .desk.is-away[data-id="'+CSS.escape(a.id)+'"]'))||{}).id`);
+    await emit({ type: 'status', sessionId: desk, status: 'working', intent: 'MARKSTART' });
+    assert.ok(await H.until(`(document.querySelector('#stage .desk[data-id="'+CSS.escape(${q(desk)})+'"]')||{title:''}).title.includes('MARKSTART')`, 4000), 'token: the desk title shows the task');
+    const pre = await js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${q(desk)})+'"]').title.indexOf('MARKSTART')`);
+    const pad = Math.max(0, 200 - pre - 12);
+    await emit({ type: 'status', sessionId: desk, status: 'working', intent: 'x'.repeat(pad) + ' ' + tok + ' and more after it' });
+    assert.ok(await H.until(`!(document.querySelector('#stage .desk[data-id="'+CSS.escape(${q(desk)})+'"]')||{title:'MARKSTART'}).title.includes('MARKSTART')`, 4000), 'token: the desk title has the new task');
+    const dt = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="'+CSS.escape(${q(desk)})+'"]');return {title:d.title,label:d.getAttribute('aria-label')}})()`);
+    const head = dt.title.split('…')[0];
+    assert.ok(head.length >= 190 && !/ghp_|Q7Q7/.test(dt.title) && !/ghp_|Q7Q7/.test(dt.label), `token: no piece of the token in the desk title or label: ${JSON.stringify(dt)}`);
+    console.log('[001-lobby] hostile names: text only; token across the desk title cut: masked');
+  }
+
   /* ---- a schedule fires: one letter flies from the Postbox to that desk (none under reduced motion) ---- */
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await hload({ w, h, query: { sim: '15', simsched: '1', simschedfire: '6' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=15&&!!document.querySelector('#stage .place.postbox')` });
