@@ -397,6 +397,8 @@ export interface AgentMcpEntry {
   /** Runtime state when the session is running (connected, failed, needs-auth, disabled, ...). */
   status?: string;
   error?: string;
+  /** Spec 058 FR-011/FR-020: what kind of failure the adapter said it was (only when the vendor said so). */
+  errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config';
   /** The default from Settings: on for new sessions. */
   defaultOn: boolean;
   /** This agent switched it off. */
@@ -410,6 +412,8 @@ export interface AgentMcpReply {
   ok: boolean;
   servers: AgentMcpEntry[];
   live: boolean;
+  /** Spec 058 FR-020: the agent app's display name (for hints); missing when no adapter answers. */
+  app?: string;
   /** Spec 058 FR-010: when this agent app starts its servers; missing = not said. */
   start?: 'session' | 'next-message';
   /** Spec 058 FR-010: when a switch takes effect in a running session; missing = not said. */
