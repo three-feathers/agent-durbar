@@ -1146,28 +1146,40 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       // spec 044: scheduled prompts in memory; a 1 s check sends through the simulated agents (no credits)
       listSchedules: async () => ({ pausedAll: simSched.pausedAll, schedules: simSched.list.map((x) => ({ ...x })) }),
-      saveSchedule: async (input) => {
+      saveSchedule: async (inputIn) => {
         const now = Date.now();
+        // FR-026 / FR-023: an id the store does not have is refused; an edit keeps what the form does not edit
+        const edit = inputIn.edit === true;
+        const prev = inputIn.id === undefined ? undefined : simSched.list.find((x) => x.id === inputIn.id);
+        if ((inputIn.id !== undefined && !prev) || (edit && !prev)) return { ok: false as const, error: 'That schedule is gone.' };
+        const input = edit && prev ? { ...inputIn, folder: prev.folder, paused: prev.paused, pausedReason: prev.pausedReason, done: undefined, cap: inputIn.cap === undefined ? prev.cap : inputIn.cap, at: inputIn.at === undefined && inputIn.rule === undefined && prev.every !== undefined && Number(inputIn.every) === prev.every ? prev.at : inputIn.at } : inputIn;
         const every = input.every !== undefined ? Math.round(Number(input.every)) : undefined;
         const rule = input.rule !== undefined ? simRules()?.parseRule(input.rule) : undefined;
         if (input.rule !== undefined && !rule) return { ok: false as const, error: 'That calendar rule is not valid.' };
         const old = simSched.list.find((x) => x.id === input.id);
-        if (!input.folder || !String(input.prompt ?? '').trim() || (!rule && every === undefined && !(Number(input.at) > now) && !(old && input.paused)) || (!rule && every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time, 5 to 1440 minutes or a calendar rule.' };
+        // a save that is not an edit never moves a schedule to another folder or revives a done one (as main)
+        if (!edit && old) input.folder = old.folder;
+        if (!rule && every === undefined && edit && prev && Number(input.at) <= now && (prev.done || Number(input.at) !== prev.at)) return { ok: false as const, error: prev.done ? 'Pick a time in the future to run it again.' : 'That time has already passed.' };
+        if (!rule && every === undefined && edit && prev && (prev.every !== undefined || prev.rule) && Number(input.at) <= now) return { ok: false as const, error: 'That time has already passed.' };
+        if (!input.folder || !String(input.prompt ?? '').trim() || (!rule && every === undefined && !(Number(input.at) > now) && !(edit && prev && !prev.done && Number(input.at) === prev.at) && !(!edit && old && input.paused)) || (!rule && every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time, 5 to 1440 minutes or a calendar rule.' };
         const target = input.target && typeof input.target === 'object' ? input.target : undefined;
         if (target && !input.paused && !sims.some((x) => x.info.id === target.session)) return { ok: false as const, error: "That session has ended. Send it to the folder's agent instead." };
         let cap = input.cap && typeof input.cap === 'object' ? input.cap : undefined;
-        if (cap) {
+        const targetChanged = edit && !!prev && (prev.target?.session ?? '') + '|' + (prev.target?.agent ?? '') !== (target?.session ?? '') + '|' + (target ? String(target.agent) : '');
+        const capSame = edit && !!prev?.cap && !!cap && Number(cap.amount) === prev.cap.amount && cap.unit === prev.cap.unit;
+        if (cap && !(capSame && !targetChanged)) { // a limit moved to another target is checked like a new one (as main)
           const u = simUnit(simAgentOf({ folder: input.folder, target }));
           if (!u) return { ok: false as const, error: 'This agent app does not report what a run costs, so a limit cannot be kept.' };
+          if (capSame && u !== cap.unit) return { ok: false as const, error: `This agent app counts in ${u === 'usd' ? 'dollars' : 'AI credits'}, not ${cap.unit === 'usd' ? 'dollars' : 'AI credits'}: set the limit again.` };
           const amount = Math.round(Number(cap.amount) * 100) / 100;
           if (!(amount >= 0.01 && amount <= (u === 'usd' ? 10_000 : 1_000_000))) return { ok: false as const, error: 'That limit is out of range.' };
           cap = { amount, unit: u };
         }
-        const when: Partial<ScheduleInfo> = rule ? { rule, next: old?.rule && old.paused && input.paused ? old.next : simRules()?.nextRuleRun(rule, now) } : every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: old?.next ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) };
+        const when: Partial<ScheduleInfo> = rule ? { rule, next: !edit && old?.rule && old.paused && input.paused ? old.next : simRules()?.nextRuleRun(rule, now) } : every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: (edit ? undefined : old?.next) ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) };
         const resumedCap = !!old && old.pausedReason === 'cap' && !input.paused; // FR-015: Resume after the limit counts from zero
-        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...when, ...(input.paused ? { paused: true } : {}), ...(input.paused && old?.paused && old.pausedReason ? { pausedReason: old.pausedReason } : {}), ...(old?.last ? { last: old.last } : {}),
+        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...when, ...(input.paused ? { paused: true } : {}), ...(input.paused && old?.paused && old.pausedReason && !(edit && old.pausedReason === 'session-ended' && targetChanged) && !(edit && old.pausedReason === 'cap' && (!cap || cap.amount > (old.cap?.unit === cap.unit ? old.spent ?? 0 : 0))) ? { pausedReason: old.pausedReason } : {}), ...(old?.last ? { last: old.last } : {}), ...(!edit && old?.done ? { done: true } : {}),
           ...(target ? { target: { session: String(target.session), agent: String(target.agent), ...(target.name ? { name: String(target.name).slice(0, 80) } : {}) } } : {}),
-          ...(cap ? { cap, ...(!resumedCap && old?.spent ? { spent: old.spent } : {}), ...(!resumedCap && old?.spentUnknown ? { spentUnknown: true } : {}) } : {}) };
+          ...(cap ? { cap, ...(!resumedCap && old?.cap?.unit === cap.unit && old?.spent ? { spent: old.spent } : {}), ...(!resumedCap && old?.cap?.unit === cap.unit && old?.spentUnknown ? { spentUnknown: true } : {}) } : {}) };
         if (sc.next === undefined && (sc.rule || sc.every !== undefined)) return { ok: false as const, error: 'That calendar rule never runs.' };
         simSched.list = old ? simSched.list.map((x) => (x.id === sc.id ? sc : x)) : [...simSched.list, sc];
         simSched.changed();

@@ -154,6 +154,24 @@ export function cleanSchedule(o: unknown, now: number, keepId = true): Schedule 
   return s;
 }
 
+/** FR-023: the candidate of an edit: main's copy for what the form does not edit, the input for the rest. `done` is cleared. */
+function editCandidate(input: Record<string, unknown>, prev: Schedule): Record<string, unknown> {
+  return {
+    id: prev.id,
+    folder: prev.folder,
+    paused: prev.paused,
+    pausedReason: prev.pausedReason,
+    prompt: input.prompt,
+    every: input.every,
+    // an interval edit that keeps `every` and sends no time keeps its anchor (FR-007)
+    at: input.at === undefined && input.rule === undefined && prev.every !== undefined && num(input.every) === prev.every ? prev.at : input.at,
+    rule: input.rule,
+    target: input.target,
+    // a limit is dropped only by an explicit `cap: null`; no key keeps it (and its spend, below)
+    cap: input.cap === undefined ? prev.cap : input.cap,
+  };
+}
+
 export function parseSchedules(text: string, now: number): SchedulesDoc {
   let doc: unknown;
   try {
@@ -333,18 +351,38 @@ export class Scheduler {
   save(input: unknown, folderExists: (f: string) => boolean): { ok: true; schedule: Schedule } | { ok: false; error: string } {
     const now = this.deps.now();
     if (!input || typeof input !== 'object') return { ok: false, error: 'A schedule needs a prompt and either a time, an interval of 5 to 1440 minutes or a calendar rule.' };
+    // FR-023: a save that carries an id main does not have is refused (it never brings a deleted schedule back)
+    const rawId = (input as { id?: unknown }).id;
+    const edit = (input as { edit?: unknown }).edit === true;
+    const prev = rawId === undefined || rawId === null ? undefined : this.doc.schedules.find((x) => x.id === rawId);
+    if ((rawId !== undefined && rawId !== null && !prev) || (edit && !prev)) return { ok: false, error: 'That schedule is gone.' };
     // FR-017: what main keeps itself is never taken from the renderer
-    const s = cleanSchedule({ ...(input as object), next: undefined, spent: undefined, spentUnknown: undefined, pausedReason: undefined }, now);
+    const s = cleanSchedule(edit && prev ? editCandidate(input as Record<string, unknown>, prev) : { ...(input as object), next: undefined, spent: undefined, spentUnknown: undefined, pausedReason: undefined }, now);
     if (!s) return { ok: false, error: 'A schedule needs a prompt and either a time, an interval of 5 to 1440 minutes or a calendar rule. A limit must be a positive amount.' };
+    // a save of an existing schedule that is not an edit (Pause, Resume, "Use the folder's agent") never moves it to another folder or revives a done one
+    if (!edit && prev) {
+      s.folder = prev.folder;
+      if (prev.done) s.done = true;
+      else delete s.done;
+    }
     if (!folderExists(s.folder)) return { ok: false, error: 'Unknown folder.' };
-    if (s.at !== undefined && !recurring(s) && s.at < now && !s.paused) return { ok: false, error: 'That time has already passed.' };
+    if (edit && prev) {
+      // FR-023: an edit may change the time of a paused schedule only to the future, and a done one only to run again
+      if (s.at !== undefined && !recurring(s) && s.at < now && (prev.done || recurring(prev) || s.at !== prev.at)) return { ok: false, error: prev.done ? 'Pick a time in the future to run it again.' : 'That time has already passed.' };
+    } else if (s.at !== undefined && !recurring(s) && s.at < now && !s.paused) return { ok: false, error: 'That time has already passed.' };
     const i = this.doc.schedules.findIndex((x) => x.id === s.id);
     const old = i >= 0 ? this.doc.schedules[i] : undefined;
     if (!old && this.doc.schedules.length >= MAX_SCHEDULES) return { ok: false, error: `At most ${MAX_SCHEDULES} schedules.` };
     if (s.target && !s.paused && !this.deps.hasSession(s.target.session)) return { ok: false, error: "That session has ended. Send it to the folder's agent instead." };
-    if (s.cap) {
+    // an edit that carries its limit over unchanged needs no unit now (the agent may be gone or report no cost); a new or changed one does
+    // ... but only while the target is unchanged: a limit moved to another agent is checked like a new one
+    const tkey = (t?: ScheduleTarget): string => (t?.session ?? '') + '|' + (t?.agent ?? '');
+    const targetChanged = edit && !!prev && tkey(prev.target) !== tkey(s.target);
+    const capSame = edit && !!prev?.cap && !!s.cap && s.cap.amount === prev.cap.amount && s.cap.unit === prev.cap.unit;
+    if (s.cap && !(capSame && !targetChanged)) {
       const unit = this.deps.capUnitOf(s);
       if (!unit) return { ok: false, error: 'This agent app does not report what a run costs, so a limit cannot be kept.' };
+      if (unit !== s.cap.unit && capSame) return { ok: false, error: `This agent app counts in ${unit === 'usd' ? 'dollars' : 'AI credits'}, not ${s.cap.unit === 'usd' ? 'dollars' : 'AI credits'}: set the limit again.` };
       if (unit !== s.cap.unit) {
         const amount = parseCapAmount(unit, s.cap.amount);
         if (amount === undefined) return { ok: false, error: 'That limit is out of range.' };
@@ -357,12 +395,17 @@ export class Scheduler {
         if (old.spent) s.spent = old.spent;
         if (old.spentUnknown) s.spentUnknown = true;
       }
-      if (s.paused && old.paused && old.pausedReason) s.pausedReason = old.pausedReason;
+      // an edit that moves a schedule whose session ended to another target clears the reason; it stays paused, so the row offers Resume
+      const retargeted = edit && old.pausedReason === 'session-ended' && targetChanged;
+      // an edit that removes the limit, or raises it above what was spent, clears the reason "reached its limit"; it stays paused, so the row offers Resume
+      const capFreed = edit && old.pausedReason === 'cap' && (!s.cap || s.cap.amount > (old.cap && old.cap.unit === s.cap.unit ? old.spent ?? 0 : 0));
+      if (s.paused && old.paused && old.pausedReason && !retargeted && !capFreed) s.pausedReason = old.pausedReason;
+      else if (retargeted || capFreed) delete s.pausedReason;
       if (!s.paused && old.pausedReason === 'cap') {
         delete s.spent; // FR-015: Resume after the limit starts counting again from zero
         delete s.spentUnknown;
       }
-      if (s.paused && old.paused && old.next !== undefined && recurring(s) && recurring(old)) s.next = old.next;
+      if (!edit && s.paused && old.paused && old.next !== undefined && recurring(s) && recurring(old)) s.next = old.next;
       this.doc.schedules[i] = s;
     } else this.doc.schedules.push(s);
     this.commit();
