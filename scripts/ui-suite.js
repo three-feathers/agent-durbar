@@ -13,13 +13,15 @@
  * Each driver gets a fresh DURBAR_USER_DATA, its own settings and the same output folder for all screenshot variables. A driver fails on
  * a non-zero exit (a failing driver exits 1, FR-090), a "DRIVER FAILED" line or its time limit. Before any Electron starts, every
  * selected driver and the shared helpers get a `node --check` syntax pass (spec 008 FR-112): a syntax error used to hang Electron with no
- * DRIVER FAILED line until the time limit. Linux without a display runs under xvfb-run.
+ * DRIVER FAILED line until the time limit. Then Electron is installed once (scripts/ensure-electron.js, FR-114), so parallel drivers never
+ * race to fetch it. Linux without a display runs under xvfb-run.
  * Simulator only: no real agent session, no account, no AI credits (constitution IV). Prints one line per driver; exits 1 if any failed.
  */
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
+const { ensureElectron } = require('./ensure-electron');
 
 const ROOT = path.join(__dirname, '..');
 const SIM = { DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
@@ -59,8 +61,7 @@ const DRIVERS = [
 const OUT_VARS = ['OUT', 'SHOTS_012', 'SHOTS_021', 'SHOTS_024', 'SHOTS_033', 'SHOTS_034', 'SHOTS_OUT', 'MODEL_OUT', 'CARDMENU_OUT', 'MODE_OUT', 'ABOUT_OUT'];
 const TIMEOUT_MS = Number(process.env.UI_SUITE_TIMEOUT_MS || 600_000);
 
-function args() {
-  const a = process.argv.slice(2);
+function args(a = process.argv.slice(2)) {
   const i = a.indexOf('--only');
   return { list: a.includes('--list'), only: i >= 0 ? new Set(String(a[i + 1] || '').split(',').filter(Boolean)) : undefined };
 }
@@ -101,8 +102,9 @@ function runOne(d, outDir) {
   });
 }
 
-async function main() {
-  const a = args();
+/** `ensure`, `run` and `argv` are for tests (scripts/test-ui-suite.ts); the defaults install Electron and start the real drivers. */
+async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
+  const a = args(argv);
   const todo = DRIVERS.filter((d) => !a.only || a.only.has(d.name) || a.only.has(d.label || ''));
   if (a.list) { for (const d of DRIVERS) console.log(d.label || d.name); return; }
   for (const d of todo) if (!fs.existsSync(path.join(__dirname, d.name + '.js'))) throw new Error(`no such driver: ${d.name}`);
@@ -112,6 +114,8 @@ async function main() {
     for (const b of bad) console.error(`ui-suite: syntax error in ${b.file}\n${b.error.split(/\r?\n/).map((l) => '      | ' + l).join('\n')}`);
     throw new Error(`${bad.length} file(s) do not parse: ${bad.map((b) => b.file).join(', ')}; no driver was started`);
   }
+  // FR-114: install Electron once before the drivers start in parallel (two first runs racing on the same binary fail, PR #546)
+  if (!ensure()) throw new Error('the Electron binary is not installed and could not be fetched (see above); no driver was started');
   const outDir = process.env.UI_SUITE_OUT ? path.resolve(process.env.UI_SUITE_OUT) : fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-shots-'));
   fs.mkdirSync(outDir, { recursive: true });
   console.log(`ui-suite: ${todo.length} drivers on ${process.platform}, screenshots in ${outDir}`);
@@ -123,7 +127,7 @@ async function main() {
   const worker = async () => {
     while (next < todo.length) {
       const d = todo[next++];
-      const r = await runOne(d, outDir);
+      const r = await run(d, outDir);
       console.log(`  ${r.ok ? 'ok  ' : 'FAIL'} ${(d.label || d.name).padEnd(26)} ${String(r.secs).padStart(4)} s${r.ok ? '' : '  ' + r.why.trim().slice(0, 300)}`);
       if (!r.ok) {
         failed.push(d.label || d.name);
@@ -137,7 +141,7 @@ async function main() {
   if (process.env.UI_SUITE_RETRY === '1' && failed.length) {
     for (const label of [...failed]) {
       const d = todo.find((x) => (x.label || x.name) === label);
-      const r = await runOne(d, outDir);
+      const r = await run(d, outDir);
       console.log(`  ${r.ok ? 'FLAKY (passed on retry)' : 'FAIL again'} ${label}${r.ok ? '' : '  ' + r.why.trim().slice(0, 300)}`);
       if (r.ok) { failed.splice(failed.indexOf(label), 1); flaky.push(label); }
     }
@@ -148,5 +152,5 @@ async function main() {
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { syntaxErrors };
+module.exports = { syntaxErrors, main };
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });
