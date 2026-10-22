@@ -25,6 +25,8 @@ module.exports = async (ctx) => {
     await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`); // the level is remembered: reload so the page is drawn in it
     await H.load({ query, ready: 'fit' });
     assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${w} ${level}: the detail level is on`);
+    // the office must be in view with Lena's desk drawn (a slower runner may still show the chat restored by the reload, where desks have no innerText)
+    await until(`(()=>{const b=document.getElementById('backBtn');if(b&&document.body.classList.contains('panel-open'))b.click();return [...document.querySelectorAll('#stage .desk[data-id]')].some((x)=>x.innerText.trim().startsWith('Lena'))})()`, 8000);
     const id = await H.idOf('Lena');
     assert.ok(id, `${w}: Lena is in the office`);
     await js(`document.querySelector('#stage .desk[data-id="'+${jsLiteral(id)}+'"]').click()`);
