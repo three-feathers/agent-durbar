@@ -29,7 +29,7 @@ module.exports = async (ctx) => {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const { js } = H;
   const shot = (name, w, h) => H.shot(path.join(OUT, `024-${name}-${w}x${h}.png`), { delay: 300, tag: '024', what: `${name} ${w} ${h}` });
-  const settle = async () => { await ctx.waitFor(`!!document.querySelector('.place.busy')`, 6000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 6000); await ctx.sleep(200); };
+  const settle = async () => { await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"])')`, 6000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 6000); await ctx.sleep(200); };
   /* every figure must stand on a lit slot of the lobby */
   const onSlots = () => js(`(()=>{const sl=[...document.querySelectorAll('.lobby .slot.on')].map(e=>e.getBoundingClientRect());const bad=[];document.querySelectorAll('#walkers .walker').forEach(w=>{const b=w.getBoundingClientRect(),cx=b.left+b.width/2,cy=b.top+b.height/2;if(!sl.some(s=>Math.abs(s.left+s.width/2-cx)<4&&Math.abs(s.top+s.height/2-cy)<4))bad.push([Math.round(cx),Math.round(cy)]);});return {walkers:document.querySelectorAll('#walkers .walker').length,bad}})()`);
   /* which place an away desk is visiting: the data-place id, never the rendered words (spec 036 FR-004) */

@@ -158,6 +158,30 @@ export interface AppSettingsView {
   theme?: string;
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
+  /** Spec 068 FR-006: after a coffee break, `auto` resumes by itself when it costs nothing extra; `ask` always asks. */
+  breakResume?: 'auto' | 'ask';
+}
+
+/** A profile file (spec 043 FR-010); `path` is for display only, the window sends `id` back. */
+export interface ProfileFileInfo {
+  id: string;
+  app: 'copilot' | 'claude';
+  scope: 'folder' | 'user';
+  folder?: string;
+  fileName: string;
+  path: string;
+  name: string;
+  description?: string;
+  size: number;
+  writable: boolean;
+  note?: string;
+  tooBig?: boolean;
+}
+
+/** An office folder a new profile can go into (spec 043 FR-013); the window sends `id` back, never the path. */
+export interface ProfileFolderInfo {
+  id: string;
+  path: string;
 }
 
 /** A custom agent profile as the renderer sees it (spec 043; same shape as the adapter's `AgentProfile`). */
@@ -296,6 +320,105 @@ export interface McpState {
   secretsPersist: boolean;
 }
 
+/** Spec 069: an agent app whose user-level MCP list Durbar can read and, after a confirmation, edit. */
+export type GlobalApp = 'copilot' | 'claude' | 'codex';
+/** Spec 069 FR-004: secret values as `${NAME}` references (default) or written as plain text into the app's file. */
+export type GlobalSecretMode = 'ref' | 'plain';
+/** Spec 069 FR-011: where a server comes from. */
+export type McpSourceTag = GlobalApp | 'folder' | 'builtin' | 'runtime';
+
+/** One server of an app's user-level list, names only (no env or header value). */
+export interface GlobalEntryView {
+  name: string;
+  transport: 'stdio' | 'http' | 'sse' | 'other';
+  command?: string;
+  args?: string[];
+  url?: string;
+  envKeys: string[];
+  headerKeys: string[];
+  /** Some value is a `${NAME}` reference (or Codex `env_vars` / `env_http_headers`). */
+  refs?: boolean;
+}
+
+/** One app's list as read now (spec 069 FR-002, FR-008). */
+export interface GlobalAppState {
+  app: GlobalApp;
+  label: string;
+  /** The file label (`~/...`), never the user name. */
+  file: string;
+  found: boolean;
+  /** The file could not be read or would not be edited (nothing is written to it). */
+  error?: string;
+  servers: GlobalEntryView[];
+  /** Names of this list that new Durbar sessions skip (Settings switches; Copilot and Claude Code). */
+  off: string[];
+}
+
+export interface GlobalState {
+  ok: boolean;
+  apps: GlobalAppState[];
+}
+
+/** Spec 069 FR-020: a server missing in some agent apps' lists, or defined differently (field names only, never values). */
+export interface GlobalDiffItem {
+  name: string;
+  in: GlobalApp[];
+  missing: GlobalApp[];
+  /** Fields that differ between the lists that have it: type, command, arguments, URL, environment variables, headers, values, tools, hidden tools, on/off. */
+  differs: string[];
+  /** Lists it can be copied from. */
+  from: GlobalApp[];
+  error?: string;
+}
+
+export interface GlobalDiff {
+  ok: boolean;
+  /** The lists that could be read. */
+  apps: GlobalApp[];
+  items: GlobalDiffItem[];
+}
+
+/** Spec 069 FR-005: what will be written to one file, shown before anything is written. */
+export interface GlobalPreviewItem {
+  app: GlobalApp;
+  label: string;
+  file: string;
+  exists: boolean;
+  /** The entry as it will be written, secret values masked; removal: the entry being removed (names only). */
+  entry: string;
+  error?: string;
+  /** The name is already in this file (add): replaced only when the user ticks it. */
+  conflict?: boolean;
+  /** With `conflict`: the entry that is there now (names only). */
+  current?: GlobalEntryView;
+  /** Spec 069 FR-051: a limit to say on this item (Copilot `${NAME}` expansion not verified). */
+  note?: string;
+}
+
+export interface GlobalPreview {
+  ok: boolean;
+  error?: string;
+  token?: string;
+  items: GlobalPreviewItem[];
+  /** Reference mode: the environment variables the user must set. */
+  vars?: string[];
+}
+
+export interface GlobalApplyItem {
+  app: GlobalApp;
+  file: string;
+  ok: boolean;
+  /** Label of the backup made before the write (no backup when the file did not exist). */
+  backup?: string;
+  error?: string;
+}
+
+export interface GlobalApplyResult {
+  ok: boolean;
+  error?: string;
+  items: GlobalApplyItem[];
+}
+
 /** The optional extras of ONE folder/workspace (spec 020). */
 export interface McpFolderState {
   ok: boolean;
@@ -403,6 +526,10 @@ export interface AgentMcpEntry {
   defaultOn: boolean;
   /** This agent switched it off. */
   off: boolean;
+  /** Spec 069 FR-011: every list that has this name. */
+  sources?: McpSourceTag[];
+  /** Spec 069 FR-061: tools of this server turned off in this agent's folder. */
+  toolsOff?: string[];
   /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
   canRestart?: boolean;
 }
@@ -420,6 +547,21 @@ export interface AgentMcpReply {
   toggleApplies?: 'live' | 'next-message';
   /** Spec 058 FR-022: *Restart session with these servers* is offered (the app can resume and the session runs). */
   canRestartSession?: boolean;
+  /** Spec 069 FR-031: this agent app can list a server's tools (`agents:mcpTools`). */
+  canListTools?: boolean;
+  /** Spec 069 FR-064: this agent app can turn single tools off (`agents:setMcpToolsOff`); missing = the checkboxes are disabled. */
+  toolFilter?: boolean;
+}
+
+/** `agents:mcpTools` (spec 069 FR-032): one server's tools, masked and cut in main. */
+export interface McpToolsResult {
+  ok: boolean;
+  tools?: { name: string; description?: string }[];
+  /** How many the server listed (more than `tools` when it listed over 500). */
+  total?: number;
+  /** The session is not running: nothing was asked. */
+  notRunning?: boolean;
+  error?: string;
 }
 
 /** `agents:mcpRestart` (spec 058 FR-021): the error is short and masked. */
@@ -516,6 +658,8 @@ export interface DurbarApi {
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
   /** Turn the "needs you" OS notifications on or off (spec 052 FR-059). */
   setNotifyNeedsMe?(on: boolean): Promise<{ ok: boolean; notifyNeedsMe?: boolean }>;
+  /** Spec 068 FR-006: what happens when a coffee break ends. */
+  setBreakResume?(v: 'auto' | 'ask'): Promise<{ ok: boolean; breakResume?: 'auto' | 'ask' }>;
   /** The "needs you" count on the app icon (spec 052 FR-059): an integer from 0 to 999. Badge on macOS and Linux where supported; on Windows the taskbar button flashes when it grows in the background. */
   setBadge?(count: number): Promise<{ ok: boolean }>;
   /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
@@ -574,6 +718,17 @@ export interface DurbarApi {
   listProfiles?(id: string): Promise<{ ok: boolean; error?: string; profiles: (ProfileInfo & { trusted: boolean })[] }>;
   /** Select a custom agent (null = default). A repository agent not yet confirmed answers `needsConfirm`; call again with `confirm` after the user agreed. */
   selectProfile?(id: string, profileId: string | null, confirm?: boolean): Promise<{ ok: boolean; error?: string; needsConfirm?: boolean; profile?: ProfileInfo | null }>;
+  /** Spec 043 FR-010: the profile files of the office's folders and the user (main lists them; `folders` = the places a new file can go, by id, FR-020; `userDirs` = each app's user agent folder, for the New profile hint, FR-013). */
+  listProfileFiles?(): Promise<{ ok: boolean; error?: string; folders: ProfileFolderInfo[]; files: ProfileFileInfo[]; userDirs?: { copilot?: string; claude?: string } }>;
+  /** Spec 043 FR-011/FR-012: read by id only (never a path); text with LF line endings, `sha256` of the bytes on disk. */
+  readProfileFile?(fileId: string): Promise<{ ok: true; info: ProfileFileInfo; text: string; sha256: string; eol: 'lf' | 'crlf' } | { ok: false; error: string }>;
+  /** Writes atomically; `conflict` when the file changed since `baseSha` (unless `overwrite`). */
+  saveProfileFile?(fileId: string, text: string, baseSha: string, overwrite?: boolean): Promise<{ ok: true; sha256: string; info: ProfileFileInfo } | { ok: false; error: string; conflict?: boolean }>;
+  /** Spec 043 FR-013/FR-018: `place` = the `id` of one of `listProfileFiles().folders`, or 'user'; `template` defaults to the Agent Success Profile; `text`: a reviewed AI draft (FR-029). */
+  createProfileFile?(app: 'copilot' | 'claude', place: string, name: string, template?: 'success' | 'standard', text?: string): Promise<{ ok: true; id: string; info: ProfileFileInfo } | { ok: false; error: string }>;
+  openProfileInVSCode?(fileId: string): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 043 FR-026..FR-028: one prompt to an agent app's one-shot path (`by`); a checked draft, nothing written. */
+  generateProfile?(req: { app: 'copilot' | 'claude'; name: string; by: string; mode: 'describe' | 'questions'; description?: string; answers?: Record<string, string>; tools?: string }): Promise<{ ok: true; text: string; warnings: string[]; extraTools?: string[]; by: string; costUsd?: number; nanoAiu?: number } | { ok: false; error: string; busy?: true; costUsd?: number; nanoAiu?: number }>; // busy: a request is still running (spec 043 FR-039)
 
   /** Tool usage over all runs (spec 020). */
   usageAllTime?(): Promise<UsageView>;
@@ -606,9 +761,27 @@ export interface DurbarApi {
   folderSetupExplain?(key: string, id: string): Promise<HookExplanation>;
   mcpImportApply?(key: string, ids: string[], digest: string): Promise<McpImportResult>;
   mcpRemoveLegacy?(name: string): Promise<{ ok: boolean }>;
+  /** Spec 069: the agent apps' user-level MCP lists (names only), read now. */
+  mcpGlobalState?(): Promise<GlobalState>;
+  /** Spec 069 FR-005: what adding `input` to the chosen apps' lists would write; nothing is written. */
+  mcpGlobalPreview?(input: unknown, apps: GlobalApp[], mode: GlobalSecretMode): Promise<GlobalPreview>;
+  /** Spec 069 FR-005: write a reviewed preview; `replace` = apps where an existing entry of that name may be replaced. */
+  mcpGlobalApply?(token: string, replace: GlobalApp[]): Promise<GlobalApplyResult>;
+  mcpGlobalRemovePreview?(name: string, apps: GlobalApp[]): Promise<GlobalPreview>;
+  /** Spec 069 FR-020: servers missing or different between the agent apps' lists. */
+  mcpGlobalDiff?(): Promise<GlobalDiff>;
+  /** Spec 069 FR-021: the review of copying one server from `from`'s list to `to`; written with `mcpGlobalApply`. */
+  mcpGlobalCopyPreview?(name: string, from: GlobalApp, to: GlobalApp[]): Promise<GlobalPreview>;
+  mcpGlobalRemoveApply?(token: string): Promise<GlobalApplyResult>;
+  /** Spec 069 FR-009: switch one server of an app's list off (or on) for new Durbar sessions (Copilot and Claude Code). */
+  mcpGlobalSetOff?(app: GlobalApp, name: string, off: boolean): Promise<{ ok: boolean }>;
   agentMcp?(id: string): Promise<AgentMcpReply>;
   /** Spec 058 FR-021: restart one MCP server of this agent's running session. */
   agentMcpRestart?(id: string, name: string): Promise<McpRestartResult>;
+  /** Spec 069 FR-032: the tools of one MCP server of this agent's running session. */
+  agentMcpTools?(id: string, name: string): Promise<McpToolsResult>;
+  /** Spec 069 FR-061: the tools of one server turned off in this agent's folder (applies to new sessions and after Restart session). */
+  setAgentMcpToolsOff?(id: string, name: string, off: string[]): Promise<{ ok: boolean; error?: string }>;
   /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked. */
   agentMcpRestartSession?(id: string, confirmed: boolean): Promise<McpRestartSessionResult>;
   /** Per-agent override: `enabled=false` turns the server off for this agent (now when the session runs, else at its next start). */
