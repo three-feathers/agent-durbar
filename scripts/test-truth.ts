@@ -56,6 +56,15 @@ assert.deepStrictEqual(A.diffLines(null), { lines: [], more: 0 });
 assert.strictEqual(A.diffLines('-- not a header\n--- a/f').lines[0].t, 'del', 'a removed line that starts with "--" stays a removed line');
 assert.deepStrictEqual(A.diffLines('--- a/f\n+++ b/f\n@@ -1 +1 @@\n--- SQL comment\n+++ x').lines.map((l) => l.t), ['file', 'file', 'hunk', 'del', 'add'], 'inside a hunk "---" is a removed line');
 
+// spec 052 FR-172: a multi-file diff (Codex file changes, Claude MultiEdit): a hunk ends when its line counts are used up, so the next
+// file's "---"/"+++" are headers again and the card's counts are right
+const two = A.diffLines('--- a/x\n+++ b/x\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n--- a/y\n+++ b/y\n@@ -0,0 +1,2 @@\n+1\n+2\n--- a/z\n+++ /dev/null\n@@ -1 +0,0 @@\n-gone');
+assert.deepStrictEqual(two.lines.map((l) => l.t), ['file', 'file', 'hunk', 'ctx', 'del', 'add', 'ctx', 'file', 'file', 'hunk', 'add', 'add', 'file', 'file', 'hunk', 'del']);
+assert.deepStrictEqual(A.diffLines('--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n--- SQL\n+++ x\n keep').lines.map((l) => l.t), ['file', 'file', 'hunk', 'del', 'add', 'ctx'], 'counted: "---" inside the hunk is still a removed line');
+assert.deepStrictEqual(A.diffLines('@@ hunk @@\n--- x\n+++ y').lines.map((l) => l.t), ['hunk', 'del', 'add'], 'a header without counts keeps the hunk open');
+assert.deepStrictEqual(A.diffLines('--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+b').lines.map((l) => l.t), ['file', 'file', 'hunk', 'del', 'ctx', 'add'], 'a "No newline" marker uses no count');
+assert.deepStrictEqual(A.diffLines('@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+++ y').lines.map((l) => l.t), ['hunk', 'del', 'ctx', 'add'], 'the marker uses no count: "+++ y" is still the hunk\'s added line (review on #470: a counted marker ends the hunk early and makes it a header)');
+
 // the diff builder (shared, used by the Claude Code mapper)
 assert.strictEqual(simpleDiff('a.ts', 'x', 'x'), '', 'no change');
 assert.strictEqual(simpleDiff('a.ts', 'one\ntwo\nthree', 'one\nTWO\nthree'), '--- a/a.ts\n+++ b/a.ts\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three');

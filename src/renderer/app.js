@@ -39,10 +39,10 @@ const LEDGER=window.DurbarUsage.createLedger();
 const ledgerRemoved=()=>LEDGER.hasUnlisted()||LEDGER.roomIds().some(id=>{const r=ROOMS.find(x=>x.id===id);return !r||r.hidden;});
 /* Totals saved before this run (spec 011 FR-027, issue #21): asked from the main process once agents exist, and again when one is added
    (its folder may have a saved total). The baseline is frozen in main, so asking again never double counts what this run recorded. */
-let baselineQueued=false, usageSaveError='';
+let baselineQueued=false, baselineAsking=0, usageSaveError='';
 function loadUsageBaseline(){
   if(baselineQueued||!bridge||!bridge.usageTotals)return; baselineQueued=true;
-  setTimeout(()=>{baselineQueued=false;bridge.usageTotals().then(v=>{if(v&&v.ok){LEDGER.setBaseline(v);usageSaveError=typeof v.error==='string'?v.error:'';scheduleRender();}}).catch(()=>{});},50);
+  setTimeout(()=>{baselineQueued=false;baselineAsking++;bridge.usageTotals().then(v=>{if(v&&v.ok){LEDGER.setBaseline(v);usageSaveError=typeof v.error==='string'?v.error:'';scheduleRender();}}).catch(()=>{}).finally(()=>{baselineAsking--;});},50);
 }
 /* After "Reset usage totals" in Settings: this run's figures and the baseline both start from zero. */
 function onUsageReset(view){LEDGER.clearRun();LEDGER.setBaseline(view&&view.ok?view:{});usageSaveError=view&&typeof view.error==='string'?view.error:'';scheduleRender();}
@@ -255,7 +255,7 @@ function syncWalkers(){
     if(!w){
       const a=byId(id); if(!a)return;
       const el=document.createElement('span'); el.className='walker'; el.setAttribute('aria-hidden','true'); el.innerHTML='<span class="wk">'+avatar(a)+'</span>'; layer.appendChild(el);
-      w={el,back:false,walking:false,shown:false,timer:0,to:''}; walkers.set(id,w);
+      w={el,back:false,walking:false,shown:false,timer:0,to:'',tk:THEME.themeIdForCache()}; walkers.set(id,w);
       const from=deskPos(id)||pos; el.style.transition='none'; el.style.transform=`translate(${from.x}px,${from.y}px)`; void el.offsetWidth; w.shown=true;
       move(w,pos); return;
     }
@@ -271,6 +271,9 @@ function syncWalkers(){
     w.back=true; RETURNING.add(id);
     move(w,dp,()=>{dropWalker(id);scheduleRender();});
   });
+  /* spec 040 FR-023: a figure drawn before a theme switch is drawn again in the new theme (it is not rebuilt while it walks or rests) */
+  const tk=THEME.themeIdForCache();
+  walkers.forEach((w,id)=>{const a=byId(id);if(a&&w.tk!==tk){const wk=w.el.querySelector('.wk');if(wk)wk.innerHTML=avatar(a);w.tk=tk;}});
   /* spec 034 FR-015: the figure away at a place keeps its mood (ring, horns, trouble dot); none in Serious mode (moodFor) */
   walkers.forEach((w,id)=>{const m=moodFor(byId(id));w.el.dataset.body=m.body;w.el.dataset.trouble=m.trouble||'';});
 }
@@ -325,7 +328,7 @@ const clipName=s=>DurbarCutText.cutText(s,40); /* shared helper (cuttext.js): a 
 function plainAsk(kind,summary){
   const s=String(summary||'').trim(), k=String(kind||'');
   if(k==='write'||k==='read'){
-    let rest=s.replace(/^(write|edit|create|read)(\s+|$)/i,''), more='';
+    let rest=s.replace(/^(write|edit|create|read)(\s+|$)/i,'').replace(/^\([^()]*\)$/,''), more=''; /* spec 052 FR-172: "write (Codex did not say which file)" names no file */
     const m=/\s+\(\+(\d+) more\)$/.exec(rest);if(m){more=' and '+m[1]+' more file'+(m[1]==='1'?'':'s');rest=rest.slice(0,m.index);}
     const {base,dir}=baseOf(rest.replace(/\s+\([^()]*\)$/,'').trim());
     return {what:(k==='write'?'change ':'read ')+(base?clipName(base):'a file')+more,folder:dir?'in '+dir:'',cmd:''};
@@ -391,19 +394,21 @@ function hairFront(style,c){
   if(style==='curly')return `<circle cx="64" cy="36" r="6.2" fill="${c}"/><circle cx="74" cy="31.5" r="7" fill="${c}"/><circle cx="84" cy="36" r="6.2" fill="${c}"/>`+fr+(acc||'');
   return fr+(acc||'');
 }
-function charArt(){
-  let s='';
-  for(const name of ['char-body','char-robe','char-headwear','char-collar']){
-    const v=THEME.slot(name);
-    s+=v===null?'':`<g class="art-slot" data-slot="${name}">${v}</g>`;
-  }
-  return s;
+/* a theme's character art (spec 040 FR-010): the body layers go under the head, the headwear over the hair (spec 040 FR-023: drawn
+   before the head, a hat was hidden by the head and the hair) */
+const artSlot=name=>{const v=THEME.slot(name);return v===null?'':`<g class="art-slot" data-slot="${name}">${v}</g>`;};
+function charArt(part){
+  return (part==='head'?['char-headwear']:['char-body','char-robe','char-collar']).map(artSlot).join('');
 }
+/* the same overlays for the other scene kits (spec 040 FR-023): a pack's art is drawn on every kit, not only the office one */
+const kitArt=()=>({body:charArt('body'),head:charArt('head')+artSlot('hair-acc'),desk:artSlot('desk-back')+artSlot('desk-art'),monitor:artSlot('monitor-art')});
 function scene(a,mini,c){
   const st=vis(a), mood=moodFor(a), k=mood.body==='monster'?Object.assign({},a.look,{skin:T_('--monster-skin')}):a.look, shirt=k.shirt, arm=shade(shirt,-.14), skinD=shade(k.skin,-.08);
   const kit=THEME.sceneKit(); /* another theme's people and desks (spec 035 FR-013); the office kit is the code below */
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS});if(v)return c?v:stillSig(v);}
-  let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${mood.body}${mood.trouble||''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
+  /* spec 040 FR-023: the signature names the theme too, so a theme switch redraws the desk (same signature = the old SVG is kept) */
+  const tk=THEME.themeIdForCache();
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS,themeKey:tk,art:kitArt()});if(v)return c?v:stillSig(v);}
+  let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${tk}|${mood.body}${mood.trouble||''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
   s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T_('--scene-shadow')}" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
   if(c){const hc={working:T_('--halo-working'),thinking:T_('--halo-thinking'),waiting:T_('--halo-waiting'),error:T_('--halo-error')}[st];
@@ -415,11 +420,11 @@ function scene(a,mini,c){
   s+=`<path d="${mood.body==='normal'?'M55 99V77q0-14 14-14h10q14 0 14 14v22z':'M52 99V77q0-14 14-14h16q14 0 14 14v22z'}" fill="${shirt}"/>`; /* heavy and monster: a wider body, still inside the chair */
   s+=`<path d="M69.5 63.5q4.5 5 9 0" fill="none" stroke="${shade(shirt,.35)}" stroke-width="2" stroke-linecap="round"/>`;
   s+=`<rect x="70" y="53" width="8" height="10" rx="3" fill="${skinD}"/>`;
-  s+=charArt();
+  s+=charArt('body');
   const eyesClosed = st==='idle'||mood.trouble==='faint';
   const tilt = mood.trouble==='faint'?'rotate(-24 74 56)': st==='idle'?'rotate(-7 74 56)': st==='error'?'rotate(4 74 56)':'';
   s+=`<g ${tilt?`transform="${tilt}"`:''}${mood.trouble==='faint'?' style="transform-box:view-box"':''}><g class="${st==='working'?'head':''}"><circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>`;
-  s+=hairFront(k.style,k.hair);
+  s+=hairFront(k.style,k.hair)+charArt('head');
   if(mood.body==='monster') s+=`<path d="M64.5 35.5l-4.2-9.5 9 5.2zM83.5 35.5l4.2-9.5-9 5.2z" fill="${T_('--monster-horn')}"/><path d="M65 33l2.4-4.6 2.6 3.6 2.8-5 2.8 4.6 2.6-3.6 2.4 4.6" fill="none" stroke="${k.hair}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
   const ex = eyesClosed?0:1.4;
   if(eyesClosed) s+=`<path d="M67.5 45.6q2 1.7 4 0M76.5 45.6q2 1.7 4 0" fill="none" stroke="${T_('--face-dark')}" stroke-width="1.3" stroke-linecap="round"/>`;
@@ -472,8 +477,8 @@ function stillSig(svg){return SERIOUS?svg.replace(' data-sig="',' data-sig="stil
 function avatar(a){
   const k=a.look;
   const kit=THEME.sceneKit();
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED});if(v)return v;}
-  return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/>${charArt()}<circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}<circle cx="71.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><circle cx="79.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="${T_('--mouth')}" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt()});if(v)return v;}
+  return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/>${charArt('body')}<circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}${charArt('head')}<circle cx="71.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><circle cx="79.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="${T_('--mouth')}" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 }
 const PLANT=()=>'<svg class="room-plant" width="26" height="30" viewBox="0 0 26 30" aria-hidden="true" focusable="false">'+THEME.slot('plant')+'</svg>';
 /* ---------------- toast ---------------- */
@@ -2065,8 +2070,8 @@ const hashN=str=>{let h=0;for(const c of str)h=(h*31+c.charCodeAt(0))>>>0;return
 const lookFor=key=>{const h=hashN(key);return L(S.sk[h%5],S.hr[(h>>>3)%6],['bun','short','long','curly'][(h>>>6)%4],S.sh[(h>>>9)%7],(h>>>12)%3===0);};
 const liveById=id=>LIVE.agents.find(a=>a.id===id);
 const liveRoot=a=>a.parent?byId(a.parent):a;
-let renderQueued=false;
-function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{renderQueued=false;renderAll();});}
+let renderQueued=false, agentsListed=false;
+function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{if(!renderQueued)return;renderQueued=false;renderAll();});} /* settleNow() may have drawn it already */
 function setBadge(){const b=$('protoBadge'); if(!b)return; b.className='proto'+(SIM&&!demoOn?' sim':'');
   /* spec 001 FR-027: not one agent app; the tooltip names the ready ones */
   const ready=DMK().kindChoices(KINDS).filter(k=>!k.disabled).map(k=>k.name);
@@ -2843,8 +2848,15 @@ function settleLimit(a,action){
 }
 /* spec 052 FR-057: in Simple, a folder grant says what it lets the agent do: "Let Ada change files in “tools” until the session ends".
    Only for a "write in <folder>/" scope (the last path segment); any other scope keeps its label. The inbox and the answer bar copy the card's button. */
-const simpleScopeLabel=(a,label)=>{const m=/^write in (.+?)\/*$/.exec(String(label||''));if(!m)return '';const seg=m[1].split(/[\\/]/).filter(Boolean).pop();if(!seg)return '';
-  return 'Let '+a.name+' change files in “'+DurbarCutText.cutText(seg,28)+'” until the session ends';};
+/* spec 052 FR-172 (review on #470): a write in several folders ("write in src/, docs/", "… and N more folders") names each folder's last segment. */
+const simpleScopeLabel=(a,label)=>{const m=/^write in (.+)$/.exec(String(label||''));if(!m)return '';let rest=m[1],more=0;const mm=/ and (\d+) more folders$/.exec(rest);if(mm){more=+mm[1];rest=rest.slice(0,mm.index);}
+  const segs=rest.split(/\/, /).map(x=>x.replace(/\/+$/,'').split(/[\\/]/).filter(Boolean).pop()).filter(Boolean);if(!segs.length)return '';
+  const q=segs.map(x=>'“'+DurbarCutText.cutText(x,28)+'”'),list=more?q.join(', ')+' and '+more+' more folders':q.length>1?q.slice(0,-1).join(', ')+' and '+q[q.length-1]:q[0];
+  return 'Let '+a.name+' change files in '+list+' until the session ends';};
+/* spec 052 FR-172 (review on #470): a write in several folders cuts each folder name, never the list, and keeps "and N more folders" whole,
+   so the Expert button names every folder it grants (or says how many more). Any other scope label is cut at 32 characters as before. */
+const expertScopeLabel=l=>{const m=/^write in (.+\/, .+)$/.exec(String(l||''));if(!m)return DurbarCutText.cutText(String(l||''),32);let rest=m[1],tail='';const mm=/ and \d+ more folders$/.exec(rest);if(mm){tail=mm[0];rest=rest.slice(0,mm.index);}
+  return 'write in '+rest.split(/\/, /).map(x=>DurbarCutText.cutText(x.replace(/\/+$/,''),16)+'/').join(', ')+tail;};
 const relabelScopes=()=>{document.querySelectorAll('[data-lbl-simple]').forEach(b=>{b.textContent=SIMPLE?b.dataset.lblSimple:b.dataset.lblExpert;});document.querySelectorAll('.note.perm .pfold').forEach(f=>{f.hidden=!SIMPLE;});};
 /* spec 052 FR-063: "Show the change", collapsed: the request's diff as + / - lines in monospace (text only, escaped by textContent) */
 function diffBlock(diff){
@@ -2879,7 +2891,7 @@ function showPerm(a,p){
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
     const answer=(approve,remember,broad)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember,!!broad);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:broad?p.broadScopeLabel:p.scopeLabel,summary:p.summary});};
     mk('Allow once','primary','Allow this one request',()=>answer(true,false)); /* spec 052 FR-037/FR-051: the same plain words in Simple and Expert */
-    if(p.scopeKey){const ex='Allow “'+DurbarCutText.cutText(p.scopeLabel||p.kind||'this',32)+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
+    if(p.scopeKey){const ex='Allow “'+expertScopeLabel(p.scopeLabel||p.kind||'this')+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
       mk(SIMPLE&&sl?sl:ex,'session','Allow "'+DurbarCutText.cutText(p.scopeLabel||p.kind,30)+'" until you end this session'+(p.kind==='shell'?' (this exact command)':'')+'. Revoke from its chip.',()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';if(sl){sb.dataset.lblSimple=sl;sb.dataset.lblExpert=ex;}}
     if(p.broadScopeKey){mk('Allow for this session: any arguments','session','Allow every simple "'+DurbarCutText.cutText(p.broadScopeLabel||p.kind,18)+'" command (no pipes, redirects or substitutions) until you end this session.',()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
     mk('Deny','danger','Deny this request',()=>answer(false,false));
@@ -4684,7 +4696,7 @@ if(bridge){
   if(bridge.onAgentRenamed)bridge.onAgentRenamed(onAgentRenamed);
   /* spec 061: a folder's own agent setup is shown when its agent joins the office (once per folder in this run) */
   if(window.DurbarFolderSetup){window.DurbarFolderSetup.init({bridge,esc,toast:(t,ms)=>toast(esc(t),ms),onRules:map=>{for(const id of Object.keys(map)){const a=liveById(id);if(!a||!a.info)continue;a.info.folderRules=map[id]||undefined;const c=$('modeChip'),sel=ui.selected&&liveRoot(byId(ui.selected)||a);if(c&&sel&&sel.id===a.id)c.outerHTML=modeChipHTML(a);}}});}
-  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
+  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);agentsListed=true;renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
     restoreUi();renderAwayStrip(); /* spec 052 FR-087 / FR-089 */
     /* spec 052 FR-059: what already needs you a few seconds after start is remembered, not notified */
     setTimeout(()=>{renderInboxBtn();ATT_ARMED=true;},3000);});
@@ -4712,5 +4724,8 @@ renderFilter(); renderAll();
 if(qs.get('view')==='list')setView('list');
 if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 /* spec 059 test hook, simulator only: a driver reads agents and calls what the Previous sessions row menu will call */
-if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow};
+/* spec 008 FR-113, simulator only: false until the agents are listed, the frozen simulator has replayed every script and the saved usage
+   totals are read; then any queued frame is drawn now (a stalled animation frame once left a comparison driver measuring a stale page) */
+const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
+if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow,settleNow};
 })();

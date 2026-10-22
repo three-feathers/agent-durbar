@@ -45,9 +45,16 @@
   function diffLines(diff,maxLines){
     const all=String(diff==null?'':diff).replace(/\r\n?/g,'\n').replace(/\n$/,'').split('\n'), max=maxLines>0?maxLines:400;
     if(all.length===1&&all[0]==='')return {lines:[],more:0};
-    let hunk=false; /* "--- a/x" and "+++ b/x" are file headers only before the first hunk; inside one they are a removed or added line */
-    const lines=all.slice(0,max).map(s=>{if(s.startsWith('@@')){hunk=true;return {t:'hunk',s};}
-      return {t:!hunk&&/^(\+\+\+|---)( |$)/.test(s)?'file':s.startsWith('+')?'add':s.startsWith('-')?'del':'ctx',s};});
+    /* "--- a/x" and "+++ b/x" are file headers outside a hunk; inside one they are a removed or added line. A hunk ends when the line
+       counts of its "@@ -a,b +c,d @@" header are used up, so the next file's header in a multi-file diff (spec 052 FR-172, Codex; Claude
+       MultiEdit) is a header again. A header without counts keeps the hunk open to the end, as before. */
+    let hunk=false, oldN=0, newN=0, counted=false;
+    const lines=all.slice(0,max).map(s=>{
+      if(s.startsWith('@@')){const m=/^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(s);hunk=true;counted=!!m;if(m){oldN=m[1]==null?1:+m[1];newN=m[2]==null?1:+m[2];}return {t:'hunk',s};}
+      if(!hunk&&/^(\+\+\+|---)( |$)/.test(s))return {t:'file',s};
+      const t=s.startsWith('+')?'add':s.startsWith('-')?'del':'ctx';
+      if(hunk&&counted&&!s.startsWith('\\')){if(t!=='add')oldN--;if(t!=='del')newN--;if(oldN<=0&&newN<=0)hunk=false;}
+      return {t,s};});
     return {lines,more:Math.max(0,all.length-max)};
   }
 
