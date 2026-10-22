@@ -61,7 +61,7 @@ import { GlobalLists, sessionGlobalFor } from './mcpglobalio';
 import { register as registerMcpGlobalIpc } from './ipc/mcpglobal';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
-import { Scheduler, loadSchedules, saveSchedules } from './schedules';
+import { Scheduler, loadSchedules, saveSchedules, scheduleBusy } from './schedules';
 import type { SchedulerDeps } from './schedules';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
@@ -470,11 +470,10 @@ const scheduleAgent = (s: { folder: string; target?: { session: string } }): Age
   return a && wsKey(a) === s.folder ? a : undefined;
 };
 const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
-/** Spec 068 FR-008: a schedule skips an agent on a coffee break as busy (never queued). */
-const busyOrBreak = (id: string): boolean => busyStatus(id) || agentState.onBreak(id);
 const scheduleDeps = (file: string): SchedulerDeps => ({
   now: () => Date.now(),
-  isBusy: (folder, session) => (session ? busyOrBreak(session) : [...agents.values()].some((x) => wsKey(x) === folder && busyOrBreak(x.id))),
+  /* spec 068 FR-008: an agent on a coffee break is busy too (the rule and its test: schedules.ts scheduleBusy) */
+  isBusy: (folder, session) => scheduleBusy(folder, session, { sessions: () => [...agents.values()].map((x) => ({ id: x.id, folder: wsKey(x) })), busy: busyStatus, breaks: agentState }),
   hasSession: (session) => agents.has(session),
   capUnitOf: (s) => {
     const a = scheduleAgent(s);
@@ -649,7 +648,7 @@ registerHarnessIpc({ dev, registry, router, remoteOps, toRenderer, getWin: () =>
 registerActivityIpc({ getActivityStore: () => activityStore, getWin: () => win });
 registerQuestionsIpc({ agents, router, elicitTracker });
 /**
- * Spec 040 FR-015 (reused by spec 061 FR-015 and spec 043 FR-023): an agent app's one-shot text call: one prompt, no tools, no
+ * Spec 040 FR-015 (reused by spec 061 FR-015 and spec 043 FR-028): an agent app's one-shot text call: one prompt, no tools, no
  * session kept, an empty temp folder; Copilot's own MCP servers switched off by name. Undefined when the app has none.
  */
 function oneShotFor(id: string): { name: string; generate: (prompt: string) => ReturnType<NonNullable<AgentAdapter['generateText']>> } | undefined {

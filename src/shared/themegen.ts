@@ -18,6 +18,10 @@ export const GEN_WORDS: Record<string, string> = {
   'place-web': 'where agents browse ("Web")',
   'place-other': 'other tools ("Other tools")',
   'place-coffee': 'where agents wait while their usage limit resets ("Coffee corner")',
+  'place-boss': 'the manager\'s office where agents queue with a question or a permission ("Boss")',
+  'place-bank': 'where agents wait at their spending limit ("Bank")',
+  'place-postbox': 'the tile with the next scheduled runs ("Postbox")',
+  'boss-note': 'the note on an empty desk while its agent is at the boss ("Went to see the boss")',
   'lobby-label': 'the lobby caption ("Lobby: the places where agents work")',
   'door-close': 'button to close a room ("Close room")',
   'door-open': 'button to open a room ("Open room")',
@@ -82,7 +86,7 @@ export function buildThemePrompt(description: string, clean: Record<string, stri
     `  --font (body text), --ui-display (titles, brand, room plates), --font-mono (paths and code): a font stack of 1-4 names, ONLY from: ${FONT_ALLOW.join(', ')}. Installed system fonts only; never a URL.`,
     '  --t1-weight: the title weight, one of 500, 550, 600, 650, 700, 750, 800.',
     '  --r-sm, --r-md, --r-lg, --r-xl (buttons, chips, panels, dialogs) and --radius (desk cards): corner radius "0" to "24px".',
-    '  --shadow-card (desk cards; default "none") and --shadow-pop (menus and dialogs): "none" or one or two layers like "0 2px 8px rgba(0,0,0,.12)" (offsets up to 40px, blur up to 64px).',
+    '  --shadow-card (desk cards; default "none") and --shadow-pop (menus and popovers): "none" or one or two layers like "0 2px 8px rgba(0,0,0,.12)" (offsets up to 40px, blur up to 64px).',
     'Sizes, spacing and borders are fixed by the app and cannot be set.',
     '- "figures": {"shirts": [up to 8 hex colours], "hairs": [up to 8 hex colours]}: the clothes and hair colours of the people (their skin tones stay as they are).',
     '- "words": short plain-text names (at most 40 characters) that fit the look, for:',
@@ -158,6 +162,7 @@ export function contrast(a: string, b: string): number {
 export const CONTRAST_PAIRS: Array<[string, string, number]> = [
   ['--ink', '--bg', 4.5], ['--ink', '--surface', 4.5], ['--ink', '--raised', 4.5], ['--ink', '--card', 4.5], ['--ink', '--card-waiting', 4.5], ['--ink', '--card-error', 4.5], ['--ink-2', '--soft', 4.5], ['--ink-2', '--note', 4.5], ['--ink-2', '--surface', 4.5], ['--muted', '--surface', 4.5] /* spec 052 FR-052: muted text is read, not decoration (was 3:1) */, ['--room-path', '--bg', 3],
   ...['working', 'thinking', 'waiting', 'idle', 'error', 'done'].map((s): [string, string, number] => [`--pc-${s}`, `--pb-${s}`, 4.5]),
+  ['--surface', '--sage-ink', 4.5], ['--surface', '--red-ink', 4.5], ['--surface', '--amber-ink', 4.5] /* spec 052 FR-169: the text of a primary, danger or warn button is --surface on these three */,
   ['--drop-ink', '--drop-bg', 4.5], ['--brand-mark', '--brand-bg', 3], ['--idle-stub-ink', '--idle-stub', 3],
 ];
 

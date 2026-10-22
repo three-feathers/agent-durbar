@@ -1,5 +1,11 @@
 # Feature Specification: Release v0.1.0-alpha.10 (pre-release)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Release v0.1.0-alpha.10 (pre-release)
+status: **published as a pre-release 2026-10-21** (tag on `176d888`)
+-->
+
 **Feature Branch**: `067-release-alpha10`
 **Created**: 2026-10-21
 **Status**: **Published as a pre-release on 2026-10-21** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.10>; release PR #442; tag on `176d888`, whose CI, packaged check and installed-app check were green on all three OSes). The draft had 8 files; the AppImage was checked against `SHA256SUMS.txt`.

@@ -28,15 +28,10 @@ module.exports = async (ctx) => {
       await H.load({ query: { simquestion: 'long' }, ready: 'fit' });
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${w} ${level}: the detail level is on`);
       // Wait for the simulated question itself (the simulator asks it 300 ms after the load; a busy runner is later), then open the asking
-      // agent's chat from its desk and wait for its card. The old way clicked every desk in one synchronous sweep for at most 8 s and
-      // could never see a question that arrived, or a chat that rendered, between two sweeps.
-      await js(`window.__qoErr=[];addEventListener('error',e=>window.__qoErr.push(String(e.message).slice(0,160)))`);
-      const asking = `((window.__durbarSimUi&&window.__durbarSimUi.agents().find(a=>!a.parent&&a.question))||{}).id||''`;
-      await until(asking, 20000);
-      const id = await js(asking);
-      if (id) { await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(id)})+'"]');if(d)d.click();})()`); await until(`!!document.querySelector('#chat .note.question .q-opt')`, 15000); }
-      const seen = await js(`(()=>{const ag=(window.__durbarSimUi&&window.__durbarSimUi.agents())||[];return {asking:ag.filter(a=>a.question).map(a=>a.id+' '+a.question.requestId+' inPage='+!!(a.question.n&&a.question.n.isConnected)),desk:!!document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(id)})+'"]'),desks:document.querySelectorAll('#stage .desk[data-id]').length,panel:document.body.classList.contains('panel-open'),title:(document.getElementById('panelTitle')||{}).textContent||'',cards:document.querySelectorAll('#chat .note.question .q-opt').length,visibility:document.visibilityState,errors:window.__qoErr||[]}})()`);
-      assert.ok(id && seen.cards > 0, `${w} ${level}: an agent has the question in its chat: ${JSON.stringify({ id, ...seen })}`);
+      // agent's chat from its desk and wait for its card: the shared openSimAgent (driver-helpers.js). The old way clicked every desk in one
+      // synchronous sweep for at most 8 s and could never see a question that arrived, or a chat that rendered, between two sweeps.
+      const opened = await H.openSimAgent('a=>!a.parent&&a.question', '#chat .note.question .q-opt');
+      assert.ok(opened.ok, `${w} ${level}: an agent has the question in its chat: ${JSON.stringify({ id: opened.id, ...opened.seen })}`);
       await settle();
       await js(`document.querySelector('#chat .note.question').scrollIntoView({block:'center'})`); await settle();
       const r = await js(`(()=>{const card=document.querySelector('#chat .note.question'),cr=card.getBoundingClientRect();

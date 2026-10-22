@@ -1,0 +1,1 @@
+- **Process: Paco and Ruben are code owners next to Vikram** for `.specify/`, `.claude/`, `.github/`, `AGENTS.md` and `CLAUDE.md` (owner decision 2026-10-22). An approval from any one of the three owners now satisfies the code-owner review, so PRs touching those paths no longer wait for the maintainer's admin merge.

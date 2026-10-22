@@ -5,7 +5,7 @@
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_DRIVER=$PWD/scripts/shots-068-coffee.js xvfb-run -a npx electron . --no-sandbox
  *
  * simbreak=8: Tomas hits a 5-hour window that resets in 8 s (resumes by itself), Rosa the premium-request quota with no reset time
- * (paid: never by itself), Omar his 30 AIU Durbar cap (until you raise it). The window's waits are shortened for drivers (2 s margin).
+ * (paid: never by itself), Omar his 30 AIU Durbar cap (until you raise it; since spec 001 FR-035 he waits at the Bank). The window's waits are shortened for drivers (2 s margin).
  */
 const assert = require('assert');
 const path = require('path');
@@ -19,32 +19,33 @@ module.exports = async (ctx) => {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const n of ['15', '6']) {
       await H.load({ w, h, query: { sim: n, simbreak: '8' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${n}`, settle: false });
-      const who = n === '15' ? ['Tomas', 'Omar', 'Rosa'] : ['Tomas'];
-      for (const nm of who) assert.ok(await until(`(${deskOf(nm)})?.dataset.place==='coffee'`, 20000), `${w} ${n}: ${nm} went to the coffee corner`); /* 20 s: the walk is timed, and a loaded Windows runner is slow */
+      const who = n === '15' ? ['Tomas', 'Rosa'] : ['Tomas'];
+      for (const nm of who) assert.ok(await until(`(${deskOf(nm)})?.dataset.place==='coffee'`, 20000), `${w} ${n}: ${nm} went to the coffee corner`);
+      /* spec 001 FR-035 (owner 2026-10-22): Durbar's own cap waits at the Bank, not in the coffee corner */
+      if (n === '15') assert.ok(await until(`(${deskOf('Omar')})?.dataset.place==='bank'`, 20000), `${w}: Omar (his Durbar cap) went to the Bank`); /* 20 s: the walk is timed, and a loaded Windows runner is slow */
       await ctx.sleep(1300); // the walk (about 1 s)
       const o = await js(`(()=>{const t=document.querySelector('#stage .place[data-place="coffee"]');const tiles=[...document.querySelectorAll('#stage .lobby .place')];
         const r=x=>x.getBoundingClientRect();const L=r(document.querySelector('#stage .lobby'));
         return {label:t&&t.getAttribute('aria-label'),name:t&&(t.querySelector('.pn')||{}).textContent,named:!!(t&&t.querySelector('.pn')),tiles:tiles.length,inLobby:tiles.every(x=>r(x).right<=L.right+0.5&&r(x).left>=L.left-0.5),
           font:Math.min(...tiles.filter(x=>x.querySelector('.pn')).map(x=>parseFloat(getComputedStyle(x.querySelector('.pn')).fontSize))),
-          wide:window.DurbarPlaces.coffeeTile(L.width,tiles.length-1,!!document.querySelector('#stage .place-add')).named,caps:window.DurbarPlaces.tileChips(L.width,tiles.length-1,!!document.querySelector('#stage .place-add'),r(t).width),
+          fit:window.DurbarPlaces.lobbyFit(L.width,5,!!document.querySelector('#stage .place-add'),!!document.querySelector('#stage .place.postbox')),
           cfFigures:t?t.querySelectorAll('.pv:not(.pv-more)').length:0,
           walkers:document.querySelectorAll('.walker[data-coffee="1"]').length,
           tomas:(${deskOf('Tomas')}).innerText, err:(${deskOf('Tomas')}).className.includes('is-error'),
           sirens:document.querySelectorAll('#stage .siren-light, #stage .amb').length,
           scrollY:document.getElementById('floor').scrollHeight>document.getElementById('floor').clientHeight+1}})()`);
-      /* spec 001 FR-034 (2026-10-22): with the office rail the lobby is 1000-1200 px wide; the name shows where it is at least 1100 px */
-      if (o.wide) assert.strictEqual(o.name, 'Coffee corner'); else assert.ok(!o.named, `${w} ${n}: icon only where the lobby is narrow`); /* the rule: places.js coffeeTile */
-      if (w === 1440) assert.ok(o.wide, `${w} ${n}: the corner is named at 1440x900`);
+      /* spec 001 FR-039 (2026-10-22): the corner's width and name come from places.js lobbyFit (named from 148 px, never a cut name) */
+      if (o.fit.coffee.named) assert.strictEqual(o.name, 'Coffee corner'); else assert.ok(!o.named, `${w} ${n}: icon only where the corner is narrow`);
       assert.ok(/^Coffee corner: /.test(o.label), o.label);
       /* spec 001 FR-036: visitor entries instead of slots; the other places keep room for two visitors (initials), the corner shows a figure */
-      assert.ok(o.caps.initials >= 2, `${w} ${n}: every other tile keeps room for two visitors: ${JSON.stringify(o.caps)}`);
+      if (w === 1440) assert.ok(o.fit.caps.initials >= 2, `${w} ${n}: every other tile keeps room for two visitors: ${JSON.stringify(o.fit.caps)}`);
       assert.ok(o.cfFigures >= 1, `${w} ${n}: the coffee corner shows at least one visitor, not only "+N"`);
-      assert.strictEqual(o.tiles, 6, `${w} ${n}: five places and the coffee corner`);
+      assert.strictEqual(o.tiles, 9, `${w} ${n}: five places, the Boss, the coffee corner, the Bank and the Postbox`);
       assert.ok(o.inLobby, `${w} ${n}: the tiles fit the lobby`);
       assert.ok(o.font >= 10.5, `${w} ${n}: legible tile names (${o.font}px)`);
       assert.ok(/Tomas \(until \d{1,2}:\d\d( [AP]M)?\)/.test(o.label), `${w} ${n}: the corner says who and until when: ${o.label}`);
       if (n === '15') {
-        assert.ok(/Omar \(until you raise the limit\)/.test(o.label) && /Rosa \(until the limit resets\)/.test(o.label), o.label);
+        assert.ok(!/Omar/.test(o.label) && /Rosa \(until the limit resets\)/.test(o.label), o.label);
         assert.ok(o.walkers >= 1, `${w}: the figure in the corner holds a cup (${o.walkers}; the rest are the +N)`);
       }
       assert.ok(/Coffee break/.test(o.tomas) && !o.err, `${w} ${n}: Tomas's card says coffee break, not error: ${o.tomas}`);
@@ -81,7 +82,9 @@ module.exports = async (ctx) => {
       await ctx.waitFor(`!!document.querySelector('#inboxBody .inbox-row')`, 3000);
       await ctx.sleep(500);
       const ib = await js(`[...document.querySelectorAll('#inboxBody .inbox-row')].map(r=>r.querySelector('.ib-h').textContent.replace(/\\s+/g,' ')).filter(t=>/coffee break/.test(t))`);
-      assert.ok(ib.some((t) => /Rosa/.test(t)) && ib.some((t) => /Omar/.test(t)), `${w}: inbox rows: ${JSON.stringify(ib)}`);
+      assert.ok(ib.some((t) => /Rosa/.test(t)) && !ib.some((t) => /Omar/.test(t)), `${w}: inbox rows: ${JSON.stringify(ib)}`);
+      const lim = await js(`[...document.querySelectorAll('#inboxBody .inbox-row')].map(r=>r.querySelector('.ib-h').textContent.replace(/\\s+/g,' ')).filter(t=>/Omar/.test(t))`);
+      assert.ok(lim.length === 1 && /spending limit/.test(lim[0]), `${w}: Omar's inbox row says he reached his spending limit: ${JSON.stringify(lim)}`);
       if (w === 1440) await ctx.shot(path.join(OUT, `068-coffee-inbox-${w}x${h}.png`));
       await js(`document.getElementById('inboxClose')&&document.getElementById('inboxClose').click()`);
     }

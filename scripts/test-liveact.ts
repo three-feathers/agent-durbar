@@ -155,9 +155,16 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
 // long, fast thinking stays cheap (the block keeps its newest 1200 characters)
 {
   const f = mk();
-  const t0 = Date.now();
+  // CPU time, not wall time, so a loaded machine cannot fail it; wall time only has a loose 10x backstop for a blocking wait
+  // (spec 041 T068, review of PR #527)
+  const w0 = process.hrtime.bigint();
+  const c0 = process.cpuUsage();
   for (let i = 0; i < 4000; i++) f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: 'Word '.repeat(10) + 'end. ' }));
-  ok(Date.now() - t0 < 3000, '4000 deltas in under 3 s (' + (Date.now() - t0) + ' ms)');
+  const cpu = process.cpuUsage(c0);
+  const ms = (cpu.user + cpu.system) / 1000;
+  const wall = Number(process.hrtime.bigint() - w0) / 1e6;
+  ok(ms < 3000, '4000 deltas in under 3 s of CPU (' + ms + ' ms)');
+  ok(wall < 30000, '4000 deltas: wall-time backstop (' + wall.toFixed(1) + ' ms wall, limit 30000 ms)');
   ok(Array.from(f.of('a')!.lines).length <= L.PANEL_MAX, 'panel text bounded');
 }
 
@@ -175,7 +182,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(/if\(!L\|\|!R\|\|typeof R\.redact!=='function'\)return null;/.test(app), 'no masking module: the feature stays off (fail closed)');
   ok(/\[\['full',3,'side'\],\['full',2,'side'\],\['full',3\],\['full',2\]/.test(app), 'side panel candidates first');
   ok(/if\(side&&!liveOn\(\)\)continue;/.test(app), 'setting off: never the side panel');
-  ok(/const key=JSON\.stringify\(\[both,ah,FORCE_DENSITY,liveOn\(\),/.test(app), 'layout key follows the setting');
+  ok(/if\(e\.phase==='start'&&LIVE_MASK&&window\.DurbarPlaces\.classify\(/.test(app), 'place activity words only with the masking loaded (spec 001 FR-036, fail closed; review on #511, M7)');
+  ok(/return \(liveOn\(\)&&PLACE_DOING\.get\(a\.id\)\)\|\|v\.label/.test(app), 'place entries show the command only with Live activity on desks (FR-028)');
+  ok(/const key=JSON\.stringify\(\[aw,ah,FORCE_DENSITY,liveOn\(\),/.test(app), 'layout key follows the setting');
   const scr = fs.readFileSync(path.join(R, 'screens.js'), 'utf8');
   ok(scr.includes('id="liveActSw"') && scr.includes('Live activity on desks'), 'Settings switch');
 }

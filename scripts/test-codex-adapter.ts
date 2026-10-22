@@ -613,7 +613,7 @@ async function main(): Promise<void> {
       assert.strictEqual(pend.summary, 'write /work/app/src/config.ts (+1 more)', 'the files from the item: ' + pend.summary);
       assert.ok(pend.diff && pend.diff.includes('--- a//work/app/src/config.ts') && pend.diff.includes('+  retries: 3,') && pend.diff.includes('+# Notes'), 'the diff of both changes (patchUpdated is the latest)');
       assert.ok(!pend.diff!.includes(SECRET) && !pend.diff!.includes(ghp) && pend.diff!.includes('[redacted'), 'secrets in the diff are masked');
-      assert.strictEqual(pend.scopeLabel, 'write in app/src/', 'the grant scope is the first file\'s folder');
+      assert.strictEqual(pend.scopeLabel, 'write in app/src/, work/app/', 'the grant scope names the folder of every file (review on #470: not only the first)');
       ad.resolvePermission(sid, pend.requestId, false);
       assert.strictEqual(((await settles('p1', p1)).result as { decision: string }).decision, 'decline');
       // the item completes: it is forgotten, and a request for an unknown item says so instead of a bare "write"
@@ -671,6 +671,24 @@ async function main(): Promise<void> {
       await assert.rejects(ad.listMcpTools!(sid, 'broken'), /spawn broken-mcp ENOENT/, 'toolsError is the failure');
       await assert.rejects(ad.listMcpTools!(sid, 'nope'), /not running in this session/);
       await assert.rejects(ad.listMcpTools!('no-such', 'echo'), /not running/);
+      // review on #499: a Codex that ignores serverName and pages 10 at a time: the 23rd server is found on page 3
+      server.mcpList = Array.from({ length: 25 }, (_v, i) => ({ name: `srv-${i}`, authStatus: 'unsupported', runtimeStatus: 'connected', tools: { [`t${i}`]: { name: `t${i}`, inputSchema: {} } }, resources: [], resourceTemplates: [] }));
+      server.mcpPageSize = 10;
+      server.mcpIgnoreServerName = true;
+      const before = server.requests('mcpServerStatus/list').length;
+      assert.deepStrictEqual(await ad.listMcpTools!(sid, 'srv-22'), [{ name: 't22' }]);
+      assert.strictEqual(server.requests('mcpServerStatus/list').length - before, 3, 'three pages asked');
+      assert.strictEqual((server.requests('mcpServerStatus/list').pop()!.params as Record<string, unknown>).cursor, '20');
+      await assert.rejects(ad.listMcpTools!(sid, 'srv-99'), /not running in this session/, 'not on any page');
+      // re-review on #499: a pager that always answers the same nextCursor: the second request repeats it, so the search stops there
+      server.mcpStuckCursor = 'same';
+      const stuck = server.requests('mcpServerStatus/list').length;
+      await assert.rejects(ad.listMcpTools!(sid, 'srv-99'), /not running in this session/, 'a repeated cursor ends the search');
+      assert.strictEqual(server.requests('mcpServerStatus/list').length - stuck, 2, 'two requests, then stop on the repeated cursor');
+      server.mcpStuckCursor = undefined;
+      server.mcpList = undefined;
+      server.mcpPageSize = undefined;
+      server.mcpIgnoreServerName = false;
       await ad.setMcpEnabled!(sid, 'echo', false);
       const last = events.filter((e) => e.type === 'mcp').pop() as { servers: Array<{ name: string; status: string }> };
       assert.strictEqual(last.servers.find((s) => s.name === 'echo')?.status, 'disabled', 'shown as off at once');

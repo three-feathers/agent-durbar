@@ -189,6 +189,10 @@
     'place-web':'Web',
     'place-other':'Other tools',
     'place-coffee':'Coffee corner',  /* spec 068: where an agent waits while its usage limit resets */
+    'place-boss':'Boss',             /* spec 001 FR-034: where agents with a question or a permission queue */
+    'place-bank':'Bank',             /* spec 001 FR-035: where an agent waits at Durbar's spending limit */
+    'place-postbox':'Postbox',       /* spec 001 FR-038: the next scheduled runs */
+    'boss-note':'Went to see the boss', /* spec 001 FR-034: the empty desk's note */
     'lobby-label':'Lobby: the places where agents work',
     'door-close':'Close room',
     'door-open':'Open room',
@@ -274,7 +278,9 @@
     'Cascadia Code','Roboto','Noto Sans','Noto Serif','DejaVu Sans','DejaVu Serif','DejaVu Sans Mono','Liberation Sans','Liberation Serif',
     'Liberation Mono','Ubuntu','Ubuntu Mono','Cantarell','Comic Neue','Hiragino Mincho ProN','Yu Mincho','YuMincho','Noto Serif CJK JP',
     'Noto Serif JP','Source Han Serif']);
-  const FONT_INDEX={};FONT_ALLOW.forEach(f=>{FONT_INDEX[f.toLowerCase()]=f;});
+  /* own-property lookups only: a name such as constructor or __proto__ must not reach Object.prototype (review on #500) */
+  const own=(o,k)=>o!=null&&Object.prototype.hasOwnProperty.call(o,k);
+  const FONT_INDEX=Object.create(null);FONT_ALLOW.forEach(f=>{FONT_INDEX[f.toLowerCase()]=f;});
   const TYPED_TOKENS={
     '--font':{type:'font',def:'system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif',generic:'sans-serif'},
     '--ui-display':{type:'font',def:'system-ui',generic:'system-ui'},
@@ -294,7 +300,7 @@
     for(let n of names){
       const q=/^(["'])(.*)\1$/.exec(n); if(q)n=q[2].trim();
       if(!/^[A-Za-z0-9 -]{1,40}$/.test(n))return null;
-      const canon=FONT_INDEX[n.toLowerCase()]; if(!canon)return null;
+      const canon=own(FONT_INDEX,n.toLowerCase())?FONT_INDEX[n.toLowerCase()]:null; if(!canon)return null;
       out.push(/\s/.test(canon)?'"'+canon+'"':canon);
     }
     if(!out.some(n=>FONT_GENERIC.includes(n)))out.push(generic);
@@ -314,12 +320,14 @@
     }
     return layers.join(',');
   }
+  /* markup or CSS syntax in a value (spec 070 D6, FR-020); equal to themetokens.ts HOSTILE_RE (test:theme-tokens) */
+  const HOSTILE_RE=/[<>{};\\@]|url\s*\(|expression\s*\(|var\s*\(/i;
   /* a typed token's value as it is applied, or null (wrong type, out of range, a font not on the list) */
   function typedValue(key,v){
-    const spec=TYPED_TOKENS[key];
+    const spec=own(TYPED_TOKENS,key)?TYPED_TOKENS[key]:null;
     if(!spec||typeof v!=='string')return null;
     const t=v.trim();
-    if(!t||t.length>160||/[<>{};\\@]|url\s*\(|expression\s*\(|var\s*\(/i.test(t))return null;
+    if(!t||t.length>160||HOSTILE_RE.test(t))return null;
     if(spec.type==='font')return fontStack(t,spec.generic);
     if(spec.type==='weight')return /^(500|550|600|650|700|750|800)$/.test(t)?t:null;
     if(spec.type==='radius')return LEN_RE.test(t)&&lenPx(t)>=0&&lenPx(t)<=24?t:null;
@@ -433,6 +441,7 @@
   /* spec 070 FR-021: the text pairs of the AI maker's checks (themegen.ts CONTRAST_PAIRS; test:theme-tokens keeps them equal) */
   const CONTRAST_PAIRS=[['--ink','--bg',4.5],['--ink','--surface',4.5],['--ink','--raised',4.5],['--ink','--card',4.5],['--ink','--card-waiting',4.5],['--ink','--card-error',4.5],['--ink-2','--soft',4.5],['--ink-2','--note',4.5],['--ink-2','--surface',4.5],['--muted','--surface',4.5],['--room-path','--bg',3]]
     .concat(['working','thinking','waiting','idle','error','done'].map(s=>['--pc-'+s,'--pb-'+s,4.5]))
+    .concat([['--surface','--sage-ink',4.5],['--surface','--red-ink',4.5],['--surface','--amber-ink',4.5]]) /* spec 052 FR-169: primary, danger and warn button text */
     .concat([['--drop-ink','--drop-bg',4.5],['--brand-mark','--brand-bg',3],['--idle-stub-ink','--idle-stub',3]]);
   const HEX_ANY=/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
   function lum(hex){
@@ -441,7 +450,23 @@
     return 0.2126*ch[0]+0.7152*ch[1]+0.0722*ch[2];
   }
   function ratio(a,b){const [x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+0.05)/(y+0.05);}
-  /* sets failing pairs back to Clean Office in place; returns the keys it set back */
+  /* spec 070 FR-023: the surfaces a theme is built on. A failing pair never changes them, so a dark theme stays dark and a light one light */
+  const BASE_SURFACE=/^--(bg|surface|surface-2|raised|card(-[a-z]+)?|soft|note|pb-[a-z]+|drop-bg|brand-bg|idle-stub)$/;
+  function hex6(v){let h=HEX_ANY.exec(v)[1];if(h.length===3)h=h.split('').map(c=>c+c).join('');return h;}
+  function mixHex(v,to,w){
+    const h=hex6(v),t=hex6(to);
+    const ch=[0,2,4].map(i=>Math.round(parseInt(h.slice(i,i+2),16)*(1-w)+parseInt(t.slice(i,i+2),16)*w));
+    return '#'+ch.map(c=>c.toString(16).padStart(2,'0')).join('')+h.slice(6);
+  }
+  /* the least mix of `v` toward white or black (whichever reads better on `on`) that reaches `min`: the hue stays */
+  function readableOn(v,on,min){
+    const to=ratio('#ffffff',on)>=ratio('#000000',on)?'#ffffff':'#000000';
+    if(ratio(mixHex(v,to,1),on)<min)return mixHex(v,to,1);
+    let lo=0,hi=1;
+    for(let i=0;i<12;i++){const mid=(lo+hi)/2;if(ratio(mixHex(v,to,mid),on)>=min)hi=mid;else lo=mid;}
+    return mixHex(v,to,hi);
+  }
+  /* fixes failing pairs in place, minimally, on the side that is not a base surface (FR-023); returns the keys it changed */
   function contrastFix(t){
     const back=[];
     for(let pass=0;pass<4;pass++){
@@ -450,9 +475,11 @@
         const a=t[fg],b=t[bg];
         if(!HEX_ANY.test(String(a||''))||!HEX_ANY.test(String(b||'')))continue;
         if(ratio(a,b)>=min)continue;
-        if(t[fg]===CLEAN_TOKENS[fg]&&t[bg]===CLEAN_TOKENS[bg])continue;
-        t[fg]=CLEAN_TOKENS[fg];t[bg]=CLEAN_TOKENS[bg];changed=true;
-        for(const k of [fg,bg])if(!back.includes(k))back.push(k);
+        const k=BASE_SURFACE.test(fg)&&!BASE_SURFACE.test(bg)?bg:fg;
+        const v=readableOn(t[k],t[k===fg?bg:fg],min);
+        if(v===t[k])continue;
+        t[k]=v;changed=true;
+        if(!back.includes(k))back.push(k);
       }
       if(!changed)break;
     }
@@ -542,7 +569,7 @@
   }
 
   function loadManifest(idOrManifest){
-    if(typeof idOrManifest==='string'){if(BUILT_IN[idOrManifest])return validateManifest(BUILT_IN[idOrManifest]);if(USER_MANIFESTS[idOrManifest])return validateManifest(USER_MANIFESTS[idOrManifest]);return null;}
+    if(typeof idOrManifest==='string'){if(own(BUILT_IN,idOrManifest))return validateManifest(BUILT_IN[idOrManifest]);if(own(USER_MANIFESTS,idOrManifest))return validateManifest(USER_MANIFESTS[idOrManifest]);return null;}
     if(typeof idOrManifest==='object')return validateManifest(idOrManifest);
     return null;
   }
@@ -577,9 +604,9 @@
     currentId=id;
     currentManifest=manifest;
     themeRev++;
-    /* spec 070 FR-021: a text pair that is hard to read falls back as a pair to Clean Office's two values */
+    /* spec 070 FR-021/FR-023: a text pair that is hard to read is fixed minimally on its text or accent side */
     const resolved=resolveTokens(manifest);
-    if(!BUILT_IN[id])contrastFix(resolved); /* built-in packs are designed and tested by hand (test:theme); retro's ink is a fill, not text on --bg */
+    if(!own(BUILT_IN,id))contrastFix(resolved); /* built-in packs are designed and tested by hand (test:theme); retro's ink is a fill, not text on --bg */
     currentResolved=resolved;
     applyTokens(resolved);
     /* spec 070 FR-001: a typed token the pack does not give is removed, so the CSS default (and the UI style's display font) applies */
@@ -611,7 +638,7 @@
     const key=name.startsWith('--')?name:'--'+name;
     /* the resolved map: the pack's values after the contrast fallback (spec 070 FR-021), so the scenes draw what the CSS shows */
     if(currentResolved&&Object.prototype.hasOwnProperty.call(currentResolved,key))return currentResolved[key];
-    return CLEAN_TOKENS[key]||(TYPED_TOKENS[key]?TYPED_TOKENS[key].def:null);
+    return own(CLEAN_TOKENS,key)?CLEAN_TOKENS[key]:(own(TYPED_TOKENS,key)?TYPED_TOKENS[key].def:null);
   }
   /* spec 070 FR-010: the pack's shirt and hair palettes, or null */
   function figures(){const f=currentManifest&&currentManifest.figures;return f&&(f.shirts||f.hairs)?f:null;}
@@ -619,7 +646,12 @@
   function fallbacks(id){
     const m=loadManifest(id);
     if(!m)return {dropped:[],contrast:[]};
-    return {dropped:(m.dropped||[]).slice(),contrast:BUILT_IN[m.id]?[]:contrastFix(resolveTokens(m))};
+    return {dropped:(m.dropped||[]).slice(),contrast:own(BUILT_IN,m.id)?[]:contrastFix(resolveTokens(m))};
+  }
+  /* spec 070 FR-024: the colours the fix would adjust in a manifest not saved yet (the AI dialog's preview) */
+  function contrastCheck(manifest){
+    const m=loadManifest(manifest);
+    return m?contrastFix(resolveTokens(m)):[];
   }
   function slot(name){
     const art=currentManifest&&currentManifest.art;
@@ -645,7 +677,7 @@
     if(listOrMap&&typeof listOrMap==='object'){
       for(const [id,m] of Object.entries(listOrMap)){
         const v=validateManifest(m);
-        if(v&&v.id===id&&!BUILT_IN[id])USER_MANIFESTS[id]=v;
+        if(v&&v.id===id&&!own(BUILT_IN,id))USER_MANIFESTS[id]=v;
         else console.warn('[theme] user theme dropped on registration:',id);
       }
     }
@@ -692,7 +724,7 @@
       '--proto-line':'#eed9ac',
       '--ic-read':'#4c6f8a','--ic-edit':'#6d7f52','--ic-run':'#37658a','--ic-search':'#7d6a44','--ic-tool':'#6c7683',
     },
-    words:{'place-library':'Records','place-coffee':'Break room','place-software':'Repository','place-terminal':'Server room','place-web':'Network','place-other':'Facilities','lobby-label':'Reception: the places where agents work'},
+    words:{'place-library':'Records','place-coffee':'Break room','place-boss':'Corner office','place-bank':'Finance','place-postbox':'Mailroom','boss-note':'Went to the corner office','place-software':'Repository','place-terminal':'Server room','place-web':'Network','place-other':'Facilities','lobby-label':'Reception: the places where agents work'},
     motion:{preset:'calm'},
     art:{
       /* suit collar + tie under the neck, briefcase on the desk, glass wall with a skyline, blinds,
@@ -790,7 +822,7 @@
       'place-web':'<rect x="3" y="5" width="4" height="4" fill="currentColor"/><rect x="13" y="5" width="4" height="4" fill="currentColor"/><rect x="8" y="2.5" width="4" height="4" fill="currentColor"/><path d="M7 7h3v3H7zM13 7h-3v3h3z"/>',
       'place-other':'<circle cx="10" cy="10" r="2.6"/><rect x="9" y="2.5" width="2" height="2.4" fill="currentColor"/><rect x="9" y="15.1" width="2" height="2.4" fill="currentColor"/><rect x="2.5" y="9" width="2.4" height="2" fill="currentColor"/><rect x="15.1" y="9" width="2.4" height="2" fill="currentColor"/>',
     },
-    words:{'place-library':'Arcade','place-coffee':'Snack bar','place-software':'Cartridge Bay','place-terminal':'Console','place-web':'Modem','place-other':'Gadgets','lobby-label':'Game lobby: the places where agents work'},
+    words:{'place-library':'Arcade','place-coffee':'Snack bar','place-boss':'Boss level','place-bank':'Coin bank','place-postbox':'Mailbox','boss-note':'Went to the boss level','place-software':'Cartridge Bay','place-terminal':'Console','place-web':'Modem','place-other':'Gadgets','lobby-label':'Game lobby: the places where agents work'},
     motion:{preset:'arcade'},
   });
 
@@ -842,7 +874,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.6"/><path d="M3.4 10h13.2M10 3.4q3.6 3.2 0 13.2M10 3.4q-3.6 3.2 0 13.2"/>',
       'place-other':'<path d="M10 3l2.2 4.6L17 8.6l-3.7 3.4 1 5-4.3-2.6L5.7 17l1-5L3 8.6l4.8-1z"/>',
     },
-    words:{'place-library':'Records Kothi','place-coffee':'Chai stall','place-software':'Shastra Ghar','place-terminal':'Yantra Kaksh','place-web':'Jaal Khidki','place-other':'Chhota Kaam','lobby-label':'The durbar: the places where agents work','door-close':'Close gate','door-open':'Open gate','door-title-prefix':'Close the gate'},
+    words:{'place-library':'Records Kothi','place-coffee':'Chai stall','place-boss':'Diwan-e-Khas','place-bank':'Khazana','place-postbox':'Dak ghar','boss-note':'Went to the Diwan-e-Khas','place-software':'Shastra Ghar','place-terminal':'Yantra Kaksh','place-web':'Jaal Khidki','place-other':'Chhota Kaam','lobby-label':'The durbar: the places where agents work','door-close':'Close gate','door-open':'Open gate','door-title-prefix':'Close the gate'},
     motion:{preset:'court'},
   });
 
@@ -894,7 +926,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.4"/><path d="M3.6 10h12.8M10 3.6q3.4 3 0 12.8M10 3.6q-3.4 3 0 12.8"/>',
       'place-other':'<path d="M10 4.2l1.8 3.8 4.2.6-3 3 .7 4.2-3.7-2-3.7 2 .7-4.2-3-3 4.2-.6z"/>',
     },
-    words:{'place-library':'The Archive','place-coffee':'The Tea Room','place-software':'The Atelier','place-terminal':'The Forge','place-web':'The Messenger Hall','place-other':'The Household', /* spec 052 FR-023: court words, not Victorian industry */'lobby-label':'The court: the places where agents work'},
+    words:{'place-library':'The Archive','place-coffee':'The Tea Room','place-boss':'The Chancellor','place-bank':'The Treasury','place-postbox':'The Post','boss-note':'Went to see the Chancellor','place-software':'The Atelier','place-terminal':'The Forge','place-web':'The Messenger Hall','place-other':'The Household', /* spec 052 FR-023: court words, not Victorian industry */'lobby-label':'The court: the places where agents work'},
     motion:{preset:'court'},
   });
 
@@ -947,7 +979,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.2"/><path d="M4 10h12M10 3.8q3.3 3 0 12.4M10 3.8q-3.3 3 0 12.4"/>',
       'place-other':'<path d="M7 16.6V9.8L10 5.4l3 4.4v6.8"/><path d="M7 13h6"/>',
     },
-    words:{'place-library':'Bunko','place-coffee':'Chashitsu','place-software':'Kōbō','place-terminal':'Tanmatsu-shitsu','place-web':'Tsūshinjo','place-other':'Dōgu-beya', /* spec 052 FR-023: Japanese words in the Japanese court (the plain names are in the tooltips, FR-013) */'lobby-label':'The Ō-hiroma: the places where agents work','door-close':'Slide shut','door-open':'Slide open','door-title-prefix':'Slide the fusuma shut'},
+    words:{'place-library':'Bunko','place-coffee':'Chashitsu','place-boss':'Tono','place-bank':'Kura','place-postbox':'Yūbinkyoku','boss-note':'Went to see the Tono','place-software':'Kōbō','place-terminal':'Tanmatsu-shitsu','place-web':'Tsūshinjo','place-other':'Dōgu-beya', /* spec 052 FR-023: Japanese words in the Japanese court (the plain names are in the tooltips, FR-013) */'lobby-label':'The Ō-hiroma: the places where agents work','door-close':'Slide shut','door-open':'Slide open','door-title-prefix':'Slide the fusuma shut'},
     motion:{preset:'court'},
   });
 
@@ -973,10 +1005,12 @@
     themeIdForCache,
     figures,
     fallbacks,
+    contrastCheck,
     TYPED_TOKENS:JSON.parse(JSON.stringify(TYPED_TOKENS)),
     FONT_ALLOW:FONT_ALLOW.slice(),
     CONTRAST_PAIRS:CONTRAST_PAIRS.map(p=>p.slice()),
     _typedValue:typedValue,
+    _HOSTILE_RE:HOSTILE_RE,
     registerBuiltIn,
     registerUserThemes,
     MOTION_PRESETS,

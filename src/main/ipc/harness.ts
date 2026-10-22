@@ -8,7 +8,7 @@ import type { AdapterRegistry } from '../../adapters/registry';
 import type { AdapterRouter } from '../../adapters/router';
 import { nodeDetectEnv } from '../../adapters/detect';
 import type { AdapterInfo } from '../../shared/adapters';
-import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind, simManagers, validPlanIndex } from '../../shared/harnesssetup';
+import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind, runRequest, simManagers } from '../../shared/harnesssetup';
 import type { DevEnv } from '../devhooks';
 import { HarnessSetup, confirmText, posixTrusted } from '../harnesssetup';
 import { simulatorOn } from '../simguard';
@@ -64,15 +64,14 @@ export function register(deps: HarnessIpcDeps): void {
   const simOs = (): NodeJS.Platform => (['win32', 'darwin', 'linux'].includes(dev.DURBAR_SIM_PLATFORM ?? '') ? dev.DURBAR_SIM_PLATFORM as NodeJS.Platform : process.platform);
   ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? (simulatorOn(dev) ? harnessSetup.plans(kind, op, simManagers(simOs(), dev.DURBAR_SIM_MANAGERS), simOs()) : harnessSetup.plans(kind, op)) : { plans: [], page: '', name: '', manual: [] }));
   ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
-    if (!fromApp(e) || !isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return { ok: false, error: 'invalid request' };
     // spec 060 FR-012: the window sends only an index into main's fixed table; anything else is refused, never read as "the first"
-    const idx = op === 'signin' ? 0 : validPlanIndex(planIndex);
-    if (idx === undefined) return { ok: false, error: 'invalid request' };
-    const p = harnessSetup.prepare(kind, op, idx);
+    const req = fromApp(e) ? runRequest(kind, op, planIndex) : undefined;
+    if (!req) return { ok: false, error: 'invalid request' };
+    const p = harnessSetup.prepare(req.kind, req.op, req.idx);
     if (!p.ok) return p;
     // FR-004b: an install or update changes the computer, so the main process asks itself, in a native dialog the page cannot
     // answer, showing the real path and arguments. Sign-in runs the harness's own fixed login and changes nothing else.
-    if (op !== 'signin') {
+    if (req.op !== 'signin') {
       const t = confirmText(p.job);
       const opts = { type: 'question' as const, buttons: ['Cancel', t.button], defaultId: 0, cancelId: 0, noLink: true, title: 'Agent Durbar', message: t.message, detail: t.detail };
       const win = deps.getWin();

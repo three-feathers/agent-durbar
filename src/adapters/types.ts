@@ -110,6 +110,11 @@ export interface StatusEvent extends BaseEvent {
    * invalid. Main then marks the app `not-signed-in` and the chat offers Sign in. Only this word leaves the adapter, never the account.
    */
   errorKind?: 'auth';
+  /**
+   * Spec 068 FR-002: set on the `idle` status that closes a turn the agent app ended at a usage limit (right after its `usageLimit`).
+   * The window and the MCP read state key the coffee break on this marker, never on the display text of `intent` (2026-10-22).
+   */
+  reason?: 'usage-limit';
 }
 
 export interface PermissionInfo {

@@ -14,7 +14,7 @@
 import { codexEdit } from './edits';
 import type { EventBody } from './map';
 import type { EditInfo } from './types';
-import { resetMs } from './usagelimit';
+import { resetMs, usageLimitClosing } from './usagelimit';
 import { isObj, nonEmptyStr as str } from '../shared/guards';
 import { isMcpAuthChallenge } from './mcpauth';
 
@@ -249,7 +249,7 @@ export class CodexMapper {
         const rl = this.rateLimit;
         const at = rl?.resetsAt && rl.resetsAt > Date.now() ? rl.resetsAt : undefined; // a window update read long ago may have reset already: unknown
         this.emit({ type: 'usageLimit', scope: 'plan', ...(at ? { resetsAt: at } : {}), source: `Codex ${rl?.label ?? 'usage limit'}` });
-        return this.emit({ type: 'status', status: 'idle', intent: 'Usage limit reached' });
+        return this.emit(usageLimitClosing());
       }
       const text = kind === 'UsageLimitExceeded' ? 'Codex usage limit reached' : kind && message ? `${kind}: ${message}` : (kind ?? message ?? 'Turn failed');
       return this.emit({ type: 'status', status: 'error', intent: capIntent(text), agentId });

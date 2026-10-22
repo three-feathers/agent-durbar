@@ -1,5 +1,11 @@
 # Feature Specification: Simulator and developer/test hooks
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: index
+title: Simulator and dev/test hooks
+status: implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-021); delta 2026-10-22: the simulator never reaches a real agent app (FR-022..FR-031: main refuses every IPC channel but one, creates no real adapter, runs no detection probe and starts no child process under `DURBAR_SIM`; incident on PR #505)
+-->
+
 **Feature Branch**: `010-simulator` (reverse-engineered; milestones 2-6)
 **Created**: 2026-10-16
 **Status**: Implemented (reverse-engineered from `src/renderer/sim.ts`, `main.ts`, `scripts/e2e-driver.js`, README, CONTRIBUTING)

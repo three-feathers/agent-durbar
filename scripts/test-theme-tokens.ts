@@ -12,8 +12,8 @@
 import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { FONT_ALLOW, TYPED_TOKENS, typedValue } from '../src/shared/themetokens';
-import { CONTRAST_PAIRS } from '../src/shared/themegen';
+import { FONT_ALLOW, HOSTILE_RE, TYPED_TOKENS, typedValue } from '../src/shared/themetokens';
+import { CONTRAST_PAIRS, contrast, luminance } from '../src/shared/themegen';
 import { ART_SLOTS, checkUserManifest } from '../src/shared/themes';
 
 const ROOT = process.cwd();
@@ -25,6 +25,7 @@ assert.deepStrictEqual(T.TYPED_TOKENS, TYPED_TOKENS, 'theme.js and themetokens.t
 assert.deepStrictEqual(T.FONT_ALLOW, FONT_ALLOW, 'the same font allow-list');
 assert.deepStrictEqual(T.CONTRAST_PAIRS, CONTRAST_PAIRS, 'theme.js checks the same text pairs as the AI maker');
 assert.deepStrictEqual(T.ART_SLOTS, ART_SLOTS, 'the same art slots');
+assert.strictEqual(T._HOSTILE_RE.source + '/' + T._HOSTILE_RE.flags, HOSTILE_RE.source + '/' + HOSTILE_RE.flags, 'the same hostile-value rule (FR-020)');
 const corpus = [
   'Georgia', 'georgia, serif', '"Palatino Linotype", Palatino, serif', "'Segoe UI'", 'Comic Sans MS', 'Arial;}body{x', 'url(https://x/f.woff2)', '@import x',
   'Georgia, Georgia, Georgia, Georgia, Georgia, Georgia, Georgia', '', '   ', 'var(--x)', 'Arial\\,x',
@@ -46,6 +47,15 @@ assert.strictEqual(typedValue('--r-md', '30px'), null, 'radius over 24px');
 assert.strictEqual(typedValue('--t1-weight', '900'), null, 'weight out of range');
 assert.strictEqual(typedValue('--shadow-card', '0 2px 8px rgba(0,0,0,.12)'), '0 2px 8px rgba(0,0,0,.12)');
 assert.strictEqual(typedValue('--shadow-card', '0 2px 4px expression(x)'), null);
+// names that live on Object.prototype are not fonts (review on #500): the allow-list is looked up by own property only
+for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf', 'Georgia, constructor']) for (const k of ['--font', '--ui-display', '--font-mono']) {
+  assert.strictEqual(typedValue(k, name), null, `${k} ${JSON.stringify(name)} is not on the font list`);
+  assert.strictEqual(T._typedValue(k, name), null, `and not in the renderer: ${k} ${JSON.stringify(name)}`);
+}
+for (const k of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+  assert.strictEqual(typedValue(k, 'Georgia'), null, `${k} is not a typed token`);
+  assert.strictEqual(T._typedValue(k, 'Georgia'), null, `and not in the renderer: ${k}`);
+}
 for (const v of ['Arial\\', '\\41 rial', 'Georgia\\;x', '0 2px 4px #000\\']) for (const k of ['--font', '--shadow-card']) {
   assert.strictEqual(typedValue(k, v), null, `a backslash is refused: ${k} ${JSON.stringify(v)}`);
   assert.strictEqual(T._typedValue(k, v), null, `and in the renderer: ${k} ${JSON.stringify(v)}`);
@@ -103,21 +113,73 @@ for (const f of FILES) {
   const v = T._validateManifest(pack);
   assert.deepStrictEqual(v.tokens, { '--bg': '#fff', '--t1-weight': '700' }, 'the renderer keeps only the usable values');
   assert.deepStrictEqual(v.dropped.sort(), ['--chair', '--font', '--nope', '--r-md'].sort(), 'and counts the dropped ones for the Settings note');
+  // FR-020: each hostile character or function refuses the pack on its own (one case per part of HOSTILE_RE, so removing any part fails here)
+  const hostile: [string, Record<string, string>][] = [
+    [';', { '--font': 'Georgia; color:red' }], [';', { '--bg': '#fff;x' }], ['<', { '--bg': '<b' }], ['>', { '--bg': 'a>b' }],
+    ['{', { '--bg': 'a{b' }], ['}', { '--bg': 'a}b' }], ['\\', { '--font': 'Georgia\\' }], ['@', { '--bg': '@x' }],
+    ['url(', { '--bg': 'url(x)' }], ['expression(', { '--bg': 'expression(1)' }], ['var(', { '--bg': 'var(--ink)' }], ['var(', { '--shadow-card': '0 2px 4px var(--ink)' }],
+  ];
+  for (const [part, tokens] of hostile) {
+    const r = checkUserManifest(JSON.stringify({ id: 'h', tokens }));
+    assert.strictEqual(r.ok, false, `${part} alone refuses the pack: ${JSON.stringify(tokens)}`);
+    for (const [k, v] of Object.entries(tokens)) assert.strictEqual(T._validateManifest({ id: 'h', tokens: { [k]: v } }).tokens[k], undefined, `and the renderer never applies ${JSON.stringify(v)}`);
+  }
+  // prototype names as fonts: unusable, not hostile (the pack imports, the font is dropped); the AI maker drops it with a warning
+  for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+    const r = checkUserManifest(JSON.stringify({ id: 'p', tokens: { '--bg': '#fff', '--font': name } }));
+    assert.ok(r.ok && r.dropped!.includes('--font'), `--font ${name}: the pack imports and the font is dropped`);
+    assert.strictEqual(T._validateManifest({ id: 'p', tokens: { '--font': name } }).tokens['--font'], undefined, `the renderer drops --font ${name}`);
+  }
   for (const bad of ['Georgia;}*{display:none', 'url(https://example.com/x.woff2)', '<b>', '@font-face']) {
     assert.strictEqual(checkUserManifest(JSON.stringify({ id: 'h', tokens: { '--font': bad } })).ok, false, `hostile ${bad} refuses the pack`);
     assert.strictEqual(T._validateManifest({ id: 'h', tokens: { '--font': bad } }).tokens['--font'], undefined, 'and the renderer never applies it');
   }
 }
-// contrast: a user pack's unreadable pair falls back as a pair; built-ins are left as designed
+// contrast (FR-021, FR-023): a user pack's unreadable pair is fixed minimally on its text side; the surfaces stay; built-ins are left as designed
 {
-  const pack = { id: 'lowc', tokens: { '--ink': '#cccccc', '--bg': '#ffffff', '--surface': '#202020', '--chair': '#c2185b' } };
+  const ratio = (x: string, y: string): number => contrast(x, y);
+  const pairsPass = (id: string): string[] => {
+    T.setTheme(id);
+    return CONTRAST_PAIRS.filter(([fg, bg, min]) => /^#/.test(T.token(fg)) && /^#/.test(T.token(bg)) && ratio(T.token(fg), T.token(bg)) < min).map(([fg, bg]) => `${fg} on ${bg}`);
+  };
+  const pack = { id: 'lowc', tokens: { '--ink': '#cccccc', '--bg': '#ffffff', '--surface': '#ffffff', '--chair': '#c2185b' } };
   T.registerUserThemes({ lowc: pack });
   T.setTheme('lowc');
   const fb = T.fallbacks('lowc');
-  assert.ok(fb.contrast.includes('--ink') && fb.contrast.includes('--bg'), 'ink on bg failed: both set back');
-  assert.strictEqual(T.token('--ink'), '#2c3733', 'the scenes read the set-back value (Clean Office\'s ink)');
+  assert.ok(fb.contrast.includes('--ink') && !fb.contrast.includes('--bg') && !fb.contrast.includes('--surface'), `ink on bg failed: only the ink changes (${fb.contrast})`);
+  assert.strictEqual(T.token('--bg'), '#ffffff', 'the surface stays the pack\'s');
+  // just enough: the ink sits on several of Clean Office's light surfaces, so the darkest one (--card-waiting...) decides, at 4.5:1
+  const inkOn = CONTRAST_PAIRS.filter(([fg]) => fg === '--ink').map(([, bg]) => ratio(T.token('--ink'), T.token(bg)));
+  assert.ok(Math.min(...inkOn) >= 4.5 && Math.min(...inkOn) < 4.7, `the ink is darkened just enough (${T.token('--ink')}: ${inkOn.map((r) => r.toFixed(2))})`);
   assert.strictEqual(T.token('--chair'), '#c2185b', 'a value with no contrast pair is kept');
+  assert.deepStrictEqual(pairsPass('lowc'), [], 'every pair passes');
+
+  // the dark fixture as designed: nothing to adjust
+  const DARK = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'themes', 'dark-audit.json'), 'utf8'));
+  T.registerUserThemes({ 'audit-dark': DARK });
+  assert.deepStrictEqual(T.fallbacks('audit-dark').contrast, [], 'the dark fixture reads as designed');
+  // ... with one dim text colour and one dim button accent: it stays dark (the probe of the review on #500)
+  const dim = { ...DARK, id: 'dim-dark', tokens: { ...DARK.tokens, '--muted': '#4a4a44', '--sage-ink': '#2a3a30' } };
+  T.registerUserThemes({ 'dim-dark': dim });
+  const fd = T.fallbacks('dim-dark');
+  assert.deepStrictEqual(fd.contrast.slice().sort(), ['--muted', '--sage-ink'], `only the two failing colours change (${fd.contrast})`);
+  T.setTheme('dim-dark');
+  for (const k of ['--bg', '--surface', '--surface-2', '--raised', '--card', '--soft', '--note', '--ink', '--ink-2']) assert.strictEqual(T.token(k), DARK.tokens[k], `${k} stays the pack's`);
+  assert.ok(luminance(T.token('--surface')) < 0.2 && luminance(T.token('--muted')) > luminance(DARK.tokens['--surface']), 'still a dark theme with light text');
+  assert.ok(luminance(T.token('--sage-ink')) > luminance('#2a3a30'), 'the accent is lifted so the dark button text reads on it');
+  assert.deepStrictEqual(pairsPass('dim-dark'), [], 'every pair passes');
+  assert.deepStrictEqual(T.contrastCheck(dim).slice().sort(), ['--muted', '--sage-ink'], 'the AI preview sees the same adjustments (FR-024)');
+  assert.deepStrictEqual(T.contrastCheck(DARK), [], 'and none for a readable theme');
+
+  // built-ins: no fallbacks reported, and applying one leaves every pair token exactly as designed (a fix on built-ins would change Retro's ink)
   for (const t of T.list()) assert.deepStrictEqual(T.fallbacks(t.id), { dropped: [], contrast: [] }, `built-in ${t.id} uses all of its values`);
+  const keys = [...new Set(CONTRAST_PAIRS.flatMap(([fg, bg]) => [fg, bg]))];
+  for (const id of Object.keys(T._builtins())) {
+    const own = { ...T._builtins()[T.CLEAN_ID].tokens, ...(T._builtins()[id].tokens || {}) };
+    T.setTheme(id);
+    assert.strictEqual(T.current().id, id);
+    for (const k of keys) if (own[k] !== undefined) assert.strictEqual(T.token(k), own[k], `built-in ${id}: ${k} is applied as designed`);
+  }
   T.setTheme(T.CLEAN_ID);
 }
 // ---- 5. figures and gadgets ----

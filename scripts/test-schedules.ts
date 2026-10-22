@@ -1,6 +1,6 @@
 /** Scheduled prompts (spec 044): the store and the scheduler with a fake clock and sender. `npm run test:schedules`. No session, no credits. */
 import * as assert from 'assert';
-import { Scheduler, alignedNext, cleanSchedule, dueAt, parseSchedules } from '../src/main/schedules';
+import { Scheduler, alignedNext, loopSupport, cleanSchedule, dueAt, parseSchedules } from '../src/main/schedules';
 import type { Schedule, SchedulesDoc } from '../src/main/schedules';
 
 const MIN = 60_000;
@@ -351,6 +351,234 @@ async function phase2(): Promise<void> {
     assert.deepStrictEqual(await h.sch.runNow('tgt-1'), { ok: false, error: 'That session has ended.' });
     assert.strictEqual(h.sent.length, 2, 'refusals send nothing');
   }
+
+  // spec 044 FR-023: edit a schedule through save({ edit: true })
+  {
+    const t0 = 1_000_000_000_000;
+    const base = (id: string, extra: Partial<Schedule> = {}): Schedule => ({ id, folder: '/w', prompt: 'old', every: 60, next: t0 + 60 * MIN, ...extra });
+    const h = harness({ pausedAll: false, schedules: [
+      base('edit-iv-001', { last: { at: t0 - MIN, outcome: 'sent' }, cap: { amount: 5, unit: 'aiu' }, spent: 1.5 }),
+      base('edit-pa-001', { paused: true, pausedReason: 'session-ended', target: { session: 's1', agent: 'copilot' } }),
+      { id: 'edit-once-1', folder: '/w', prompt: 'once', at: t0 + 10 * MIN },
+      { id: 'edit-pone-1', folder: '/w', prompt: 'pone', at: t0 - 10 * MIN, paused: true },
+      { id: 'edit-done-1', folder: '/w', prompt: 'done', at: t0 - 10 * MIN, done: true, last: { at: t0 - 10 * MIN, outcome: 'sent' } },
+    ] });
+    const iv = (id: string) => h.sch.doc.schedules.find((s) => s.id === id)!;
+    // interval: keeps id/last/spend, the renderer cannot set paused/done/last/spent/folder/next/pausedReason
+    let r = h.sch.save({ id: 'edit-iv-001', edit: true, folder: '/other', prompt: 'new', every: 30, paused: true, done: true, last: { at: 1, outcome: 'failed' }, spent: 99, spentUnknown: true, next: 5, pausedReason: 'cap', cap: { amount: 7, unit: 'aiu' } }, () => true);
+    assert.ok(r.ok);
+    let s = iv('edit-iv-001');
+    assert.deepStrictEqual([s.id, s.folder, s.prompt, s.every, s.paused, s.done, s.pausedReason], ['edit-iv-001', '/w', 'new', 30, undefined, undefined, undefined]);
+    assert.deepStrictEqual(s.last, { at: t0 - MIN, outcome: 'sent' }, 'last is main\'s');
+    assert.strictEqual(s.spent, 1.5, 'spend is kept in the same unit');
+    assert.strictEqual(s.spentUnknown, undefined);
+    assert.deepStrictEqual(s.cap, { amount: 7, unit: 'aiu' });
+    assert.strictEqual(s.next, t0 + 30 * MIN, 'next follows the new interval');
+    assert.strictEqual(h.sch.doc.schedules.length, 5, 'same list, same order');
+    assert.strictEqual(h.sch.doc.schedules[0].id, 'edit-iv-001');
+    // another unit: the spend starts again
+    h.unit.v = 'usd';
+    assert.ok(h.sch.save({ id: 'edit-iv-001', edit: true, folder: '/w', prompt: 'new', every: 30, cap: { amount: 2, unit: 'usd' } }, () => true).ok);
+    assert.strictEqual(iv('edit-iv-001').spent, undefined, 'a different unit drops the spend');
+    h.unit.v = 'aiu';
+    // rule: next from the rule
+    assert.ok(h.sch.save({ id: 'edit-iv-001', edit: true, folder: '/w', prompt: 'new', rule: { kind: 'weekdays', time: '09:00' } }, () => true).ok);
+    s = iv('edit-iv-001');
+    assert.deepStrictEqual([s.rule?.kind, s.every], ['weekdays', undefined]);
+    assert.ok(s.next !== undefined && s.next > t0 && s.next !== t0 + 30 * MIN, 'next moved to the rule');
+    // paused: stays paused with its reason, next computed again
+    r = h.sch.save({ id: 'edit-pa-001', edit: true, folder: '/w', prompt: 'p2', every: 15, target: { session: 's1', agent: 'copilot' } }, () => true);
+    assert.ok(r.ok);
+    s = iv('edit-pa-001');
+    assert.deepStrictEqual([s.paused, s.pausedReason, s.next, s.prompt], [true, 'session-ended', t0 + 15 * MIN, 'p2']);
+    // once: a changed past time is refused and nothing changes; a future one moves
+    const before = JSON.stringify(h.sch.doc);
+    assert.deepStrictEqual(h.sch.save({ id: 'edit-once-1', edit: true, folder: '/w', prompt: 'once', at: t0 - MIN }, () => true), { ok: false, error: 'That time has already passed.' });
+    assert.deepStrictEqual(h.sch.save({ id: 'edit-pone-1', edit: true, folder: '/w', prompt: 'pone', at: t0 - 5 * MIN }, () => true), { ok: false, error: 'That time has already passed.' });
+    assert.strictEqual(JSON.stringify(h.sch.doc), before, 'a refused edit changes nothing');
+    assert.ok(h.sch.save({ id: 'edit-once-1', edit: true, folder: '/w', prompt: 'once2', at: t0 + 20 * MIN }, () => true).ok);
+    assert.strictEqual(iv('edit-once-1').at, t0 + 20 * MIN);
+    // a paused one-time schedule whose time is unchanged (past) can be edited
+    assert.ok(h.sch.save({ id: 'edit-pone-1', edit: true, folder: '/w', prompt: 'pone2', at: t0 - 10 * MIN }, () => true).ok);
+    assert.deepStrictEqual([iv('edit-pone-1').prompt, iv('edit-pone-1').paused, iv('edit-pone-1').at], ['pone2', true, t0 - 10 * MIN]);
+    // done (owner Q2): needs a future time, then it runs again and keeps last
+    assert.deepStrictEqual(h.sch.save({ id: 'edit-done-1', edit: true, folder: '/w', prompt: 'done', at: t0 - 10 * MIN }, () => true), { ok: false, error: 'Pick a time in the future to run it again.' });
+    assert.strictEqual(iv('edit-done-1').done, true);
+    assert.ok(h.sch.save({ id: 'edit-done-1', edit: true, folder: '/w', prompt: 'again', at: t0 + 5 * MIN }, () => true).ok);
+    s = iv('edit-done-1');
+    assert.deepStrictEqual([s.done, s.last?.outcome], [undefined, 'sent']);
+    assert.strictEqual(dueAt(s), t0 + 5 * MIN);
+    assert.ok(h.sch.save({ id: 'edit-done-1', edit: true, folder: '/w', prompt: 'again', every: 20 }, () => true).ok, 'a done schedule may become an interval');
+    // an edit never drops a limit by accident: no `cap` key keeps it and its spend, only `cap: null` removes it
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-cap-001', { cap: { amount: 5, unit: 'aiu' }, spent: 1.5, at: t0 + 10 * MIN, next: t0 + 10 * MIN })] });
+      const c = () => g.sch.doc.schedules[0];
+      assert.ok(g.sch.save({ id: 'edit-cap-001', edit: true, folder: '/w', prompt: 'no cap key', every: 60, at: t0 + 10 * MIN }, () => true).ok);
+      assert.deepStrictEqual([c().cap, c().spent], [{ amount: 5, unit: 'aiu' }, 1.5], 'no cap key keeps the limit and the spend');
+      assert.ok(g.sch.save({ id: 'edit-cap-001', edit: true, folder: '/w', prompt: 'null cap', every: 60, at: t0 + 10 * MIN, cap: null }, () => true).ok);
+      assert.deepStrictEqual([c().cap, c().spent], [undefined, undefined], 'an explicit null removes it');
+    }
+    // an anchored interval keeps its first time when the edit keeps `every` and sends no `at`
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-anc-001', { at: t0 + 7 * MIN, next: t0 + 7 * MIN })] });
+      assert.ok(g.sch.save({ id: 'edit-anc-001', edit: true, folder: '/w', prompt: 'same every', every: 60 }, () => true).ok);
+      assert.strictEqual(g.sch.doc.schedules[0].at, t0 + 7 * MIN, 'same every, no at: the anchor stays');
+      assert.ok(g.sch.save({ id: 'edit-anc-001', edit: true, folder: '/w', prompt: 'other every', every: 30 }, () => true).ok);
+      assert.strictEqual(g.sch.doc.schedules[0].at, undefined, 'another every without at drops the anchor');
+    }
+    // a limit carried over by an edit needs no unit now; a new or changed one still does
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-unit-01', { cap: { amount: 5, unit: 'aiu' }, spent: 1.5 })] });
+      g.unit.v = undefined;
+      const c = () => g.sch.doc.schedules[0];
+      assert.ok(g.sch.save({ id: 'edit-unit-01', edit: true, folder: '/w', prompt: 'no cap key', every: 60 }, () => true).ok, 'no cap key, unit unknown');
+      assert.ok(g.sch.save({ id: 'edit-unit-01', edit: true, folder: '/w', prompt: 'same cap', every: 60, cap: { amount: 5, unit: 'aiu' } }, () => true).ok, 'same cap, unit unknown');
+      assert.deepStrictEqual([c().cap, c().spent, c().prompt], [{ amount: 5, unit: 'aiu' }, 1.5, 'same cap']);
+      assert.ok(!g.sch.save({ id: 'edit-unit-01', edit: true, folder: '/w', prompt: 'changed cap', every: 60, cap: { amount: 6, unit: 'aiu' } }, () => true).ok, 'a changed cap needs a unit');
+      assert.strictEqual(c().prompt, 'same cap');
+      assert.ok(g.sch.save({ id: 'edit-unit-01', edit: true, folder: '/w', prompt: 'removed', every: 60, cap: null }, () => true).ok, 'removing it needs no unit');
+    }
+    // a limit moved to another target is checked like a new one (it could never be enforced on an agent with another or no unit)
+    {
+      const mk = () => harness({ pausedAll: false, schedules: [base('edit-tgt-001', { cap: { amount: 5, unit: 'usd' }, spent: 1, target: { session: 's1', agent: 'claude' } })] });
+      const cap = { amount: 5, unit: 'usd' as const };
+      let g = mk();
+      g.unit.v = undefined;
+      assert.ok(g.sch.save({ id: 'edit-tgt-001', edit: true, folder: '/w', prompt: 'same target', every: 60, target: { session: 's1', agent: 'claude' }, cap }, () => true).ok, 'same target, unit unknown: carried');
+      assert.ok(!g.sch.save({ id: 'edit-tgt-001', edit: true, folder: '/w', prompt: 'moved', every: 60, target: { session: 's2', agent: 'copilot' }, cap }, () => true).ok, 'new target without a unit: refused');
+      assert.ok(!g.sch.save({ id: 'edit-tgt-001', edit: true, folder: '/w', prompt: 'moved', every: 60, cap }, () => true).ok, 'folder agent without a unit: refused (no cap key)');
+      g = mk();
+      g.unit.v = 'aiu';
+      const bad = g.sch.save({ id: 'edit-tgt-001', edit: true, folder: '/w', prompt: 'moved', every: 60, target: { session: 's2', agent: 'copilot' }, cap }, () => true);
+      assert.ok(!bad.ok && /AI credits, not dollars/.test(bad.error), 'another unit: refused with a clear message');
+      assert.strictEqual(g.sch.doc.schedules[0].target?.session, 's1', 'a refused edit changes nothing');
+      const ok2 = g.sch.save({ id: 'edit-tgt-001', edit: true, folder: '/w', prompt: 'moved', every: 60, target: { session: 's2', agent: 'copilot' }, cap: { amount: 3, unit: 'aiu' } }, () => true);
+      assert.ok(ok2.ok && ok2.schedule.cap?.unit === 'aiu' && ok2.schedule.spent === undefined, 'a new limit in the new unit is accepted, the spend starts again');
+    }
+    // an edit that removes the limit or raises it above the spend clears "reached its limit"; it stays paused
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-capp-001', { paused: true, pausedReason: 'cap', cap: { amount: 5, unit: 'aiu' }, spent: 5 })] });
+      const c = () => g.sch.doc.schedules[0];
+      assert.ok(g.sch.save({ id: 'edit-capp-001', edit: true, folder: '/w', prompt: 'same', every: 60 }, () => true).ok);
+      assert.deepStrictEqual([c().paused, c().pausedReason], [true, 'cap'], 'a prompt-only edit keeps the reason');
+      assert.ok(g.sch.save({ id: 'edit-capp-001', edit: true, folder: '/w', prompt: 'same', every: 60, cap: { amount: 4, unit: 'aiu' } }, () => true).ok);
+      assert.strictEqual(c().pausedReason, 'cap', 'a limit below the spend keeps it');
+      assert.ok(g.sch.save({ id: 'edit-capp-001', edit: true, folder: '/w', prompt: 'same', every: 60, cap: { amount: 9, unit: 'aiu' } }, () => true).ok);
+      assert.deepStrictEqual([c().paused, c().pausedReason, c().spent], [true, undefined, 5], 'a raised limit clears the reason, stays paused, keeps the spend');
+      const h2 = harness({ pausedAll: false, schedules: [base('edit-capp-002', { paused: true, pausedReason: 'cap', cap: { amount: 5, unit: 'aiu' }, spent: 5 })] });
+      assert.ok(h2.sch.save({ id: 'edit-capp-002', edit: true, folder: '/w', prompt: 'same', every: 60, cap: null }, () => true).ok);
+      assert.deepStrictEqual([h2.sch.doc.schedules[0].paused, h2.sch.doc.schedules[0].pausedReason], [true, undefined], 'removing the limit clears the reason');
+    }
+    // a prompt-only edit of an interval without an anchor recomputes next as now + every
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-nxt-001', { next: t0 + 3 * MIN })] });
+      assert.ok(g.sch.save({ id: 'edit-nxt-001', edit: true, folder: '/w', prompt: 'same', every: 60 }, () => true).ok);
+      assert.strictEqual(g.sch.doc.schedules[0].next, g.now + 60 * MIN);
+    }
+    // an anchored interval whose anchor is past cannot become a one-time schedule at that past time
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-anp-001', { at: t0 - 30 * MIN, next: t0 + 30 * MIN })] });
+      assert.deepStrictEqual(g.sch.save({ id: 'edit-anp-001', edit: true, folder: '/w', prompt: 'once now', at: t0 - 30 * MIN }, () => true), { ok: false, error: 'That time has already passed.' });
+      assert.strictEqual(g.sch.doc.schedules[0].every, 60);
+    }
+    // a save that is not an edit never moves an existing schedule to another folder or revives a done one
+    {
+      const g = harness({ pausedAll: false, schedules: [base('sav-ex-0001', {}), { id: 'sav-done-001', folder: '/w', prompt: 'done', at: t0 - 10 * MIN, done: true }] });
+      const r2 = g.sch.save({ id: 'sav-ex-0001', folder: '/elsewhere', prompt: 'old', every: 60, paused: true }, () => true);
+      assert.ok(r2.ok && r2.schedule.folder === '/w' && r2.schedule.paused, 'Pause keeps the folder');
+      assert.ok(g.sch.save({ id: 'sav-done-001', folder: '/w', prompt: 'done', at: t0 - 10 * MIN, done: false, paused: true }, () => true).ok);
+      assert.strictEqual(g.sch.doc.schedules[1].done, true, 'a done schedule stays done');
+      const r3 = g.sch.save({ ...g.sch.doc.schedules[0], paused: false }, () => true);
+      assert.ok(r3.ok && !r3.schedule.paused, 'Resume still works');
+    }
+    // an edit that moves a schedule whose session ended to another target clears the reason; it stays paused
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-rt-0001', { paused: true, pausedReason: 'session-ended', target: { session: 'gone', agent: 'copilot' } })] });
+      const r4 = g.sch.save({ id: 'edit-rt-0001', edit: true, folder: '/w', prompt: 'moved', every: 60, target: null }, () => true);
+      assert.ok(r4.ok && r4.schedule.paused === true && r4.schedule.pausedReason === undefined && r4.schedule.target === undefined, 'folder agent: paused, no reason');
+    }
+    // unknown id: refused with and without edit, nothing added
+    const n = h.sch.doc.schedules.length;
+    assert.deepStrictEqual(h.sch.save({ id: 'nope-nope-1', edit: true, folder: '/w', prompt: 'x', every: 10 }, () => true), { ok: false, error: 'That schedule is gone.' });
+    assert.deepStrictEqual(h.sch.save({ id: 'nope-nope-1', folder: '/w', prompt: 'x', every: 10 }, () => true), { ok: false, error: 'That schedule is gone.' });
+    assert.deepStrictEqual(h.sch.save({ edit: true, folder: '/w', prompt: 'x', every: 10 }, () => true), { ok: false, error: 'That schedule is gone.' });
+    assert.strictEqual(h.sch.doc.schedules.length, n);
+    // the same checks as a new schedule (prompt, interval)
+    assert.ok(!h.sch.save({ id: 'edit-iv-001', edit: true, folder: '/w', prompt: '  ', every: 30 }, () => true).ok);
+    assert.ok(!h.sch.save({ id: 'edit-iv-001', edit: true, folder: '/w', prompt: 'x', every: 2 }, () => true).ok);
+    assert.strictEqual(iv('edit-iv-001').rule?.kind, 'weekdays');
+  }
+  // an edit at 50 schedules passes; a new one does not
+  {
+    const h = harness({ pausedAll: false, schedules: Array.from({ length: 50 }, (_, i) => ({ id: `full-sched-${i}`, folder: '/w', prompt: 'p', every: 60, next: 1_000_000_000_000 + 60 * MIN }) as Schedule) });
+    assert.ok(h.sch.save({ id: 'full-sched-3', edit: true, folder: '/w', prompt: 'edited', every: 45 }, () => true).ok);
+    assert.strictEqual(h.sch.doc.schedules.length, 50);
+    assert.ok(!h.sch.save({ folder: '/w', prompt: 'new', every: 45 }, () => true).ok);
+  }
+  // spec 072: until main wires loops (T006) `save` refuses them
+  {
+    const h = harness({ pausedAll: false, schedules: [] });
+    const input = { folder: '/w', prompt: 'p', target: { session: 's1', agent: 'copilot' }, cap: { amount: 5, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 3, endAt: now + 60 * MIN } };
+    assert.deepStrictEqual(h.sch.save(input, () => true), { ok: false, error: 'Loops are not available yet.' });
+    assert.strictEqual(h.sch.doc.schedules.length, 0);
+    loopSupport.enabled = true;
+    assert.ok(h.sch.save(input, () => true).ok, 'with the switch on');
+    loopSupport.enabled = false;
+  }
+  loopSupport.enabled = true;
+  // spec 072 (T002): a loop is a schedule with a `loop` field: session target, no every/at/rule, validated limits, main-owned state stripped
+  {
+    const LIM = { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 12, endAt: now + 8 * 60 * MIN };
+    const mk = (over: Record<string, unknown> = {}) => ({ folder: '/w', prompt: 'check CI', target: { session: 's1', agent: 'copilot' }, loop: { ...LIM }, cap: { amount: 50, unit: 'aiu' }, ...over });
+    assert.ok(cleanSchedule(mk(), now)?.loop, 'a valid loop');
+    assert.strictEqual(cleanSchedule(mk({ target: undefined }), now), undefined, 'a loop needs a session target');
+    assert.strictEqual(cleanSchedule(mk({ every: 30 }), now), undefined, 'no every');
+    assert.strictEqual(cleanSchedule(mk({ at: now + MIN }), now), undefined, 'no at');
+    assert.strictEqual(cleanSchedule(mk({ rule: { kind: 'daily', time: '08:30' } }), now), undefined, 'no rule');
+    for (const bad of [{ minDelay: 4 }, { maxDelay: 1441 }, { defaultDelay: 4 }, { defaultDelay: 61 }, { maxPasses: 0 }, { maxPasses: 101 }, { minDelay: 61 }, { minDelay: 7.5 }, { endAt: 'x' }, { endAt: 0 }, { maxPasses: undefined }]) {
+      assert.strictEqual(cleanSchedule(mk({ loop: { ...LIM, ...bad } }), now), undefined, JSON.stringify(bad));
+    }
+    assert.ok(cleanSchedule(mk({ loop: { ...LIM, maxDelay: 1440, defaultDelay: 90 } }), now), 'the max may be raised to 1440');
+    const h = harness({ pausedAll: false, schedules: [] });
+    h.sch.start();
+    const r = h.sch.save(mk({ loop: { ...LIM, passes: 9, inPass: true, noPaceStreak: 1, errorStreak: 1, hold: 'person', startedAt: 1, lastAsk: { minutes: 5, reason: 'x', source: 'agent' }, ended: { at: 1, reason: 'user', text: 'x' } }, next: 5, spent: 40 }), () => true);
+    assert.ok(r.ok && r.schedule.loop);
+    if (r.ok && r.schedule.loop) {
+      const l = r.schedule.loop;
+      assert.deepStrictEqual([l.passes, l.inPass, l.noPaceStreak, l.errorStreak, l.hold, l.lastAsk, l.ended, l.startedAt, r.schedule.spent], [0, undefined, undefined, undefined, undefined, undefined, undefined, now, undefined], 'main-owned fields are not taken from the renderer');
+      assert.strictEqual(r.schedule.next, now, 'the first pass is due at once');
+      assert.ok(r.schedule.loop && !r.schedule.every && !r.schedule.at && !r.schedule.rule);
+    }
+    assert.deepStrictEqual(h.sch.save(mk(), () => true), { ok: false, error: 'That session already has a loop.' }, 'one loop per session');
+    assert.ok(h.sch.save(mk({ target: { session: 's2', agent: 'copilot' } }), () => true).ok, 'another session may loop');
+    assert.ok(!h.sch.save(mk({ target: { session: 'gone', agent: 'copilot' } }), () => true).ok, 'the session must exist');
+    assert.ok(!h.sch.save(mk({ target: { session: 's3', agent: 'copilot' }, loop: { ...LIM, endAt: now } }), () => true).ok, 'the end time must be in the future');
+    h.sessions.add('s3');
+    assert.ok(!h.sch.save(mk({ target: { session: 's3', agent: 'copilot' }, loop: { ...LIM, endAt: now + 25 * 60 * MIN } }), () => true).ok, 'at most 24 h');
+    assert.ok(!h.sch.save(mk({ target: { session: 's3', agent: 'copilot' }, cap: undefined }), () => true).ok, 'a limit is required when the app reports one');
+    h.unit.v = undefined;
+    const nc = h.sch.save(mk({ target: { session: 's3', agent: 'copilot' } }), () => true);
+    assert.ok(nc.ok && nc.schedule.cap === undefined, 'Q4: an app that reports no spend gets a loop bounded by passes and time');
+    h.unit.v = 'aiu';
+    // counts toward the 50 limit
+    const full = harness({ pausedAll: false, schedules: Array.from({ length: 50 }, (_, i) => ({ id: `full-sched-${i}`, folder: '/w', prompt: 'p', every: 60, next: now + 60 * MIN }) as Schedule) });
+    assert.ok(!full.sch.save(mk(), () => true).ok, 'a loop counts toward the 50 schedules');
+    // a loop cannot become a plain schedule or the reverse, nor move to another session
+    const id = r.ok ? r.schedule.id : '';
+    assert.ok(!h.sch.save({ id, edit: true, folder: '/w', prompt: 'x', every: 30 }, () => true).ok);
+    assert.ok(!h.sch.save({ ...mk({ target: { session: 's3', agent: 'copilot' } }), id, edit: true }, () => true).ok, 'a loop stays on its session');
+    const plain = h.sch.save({ folder: '/w', prompt: 'p', every: 30 }, () => true);
+    assert.ok(plain.ok && !h.sch.save({ ...mk(), id: plain.ok ? plain.schedule.id : '', edit: true }, () => true).ok, 'a schedule cannot become a loop');
+    // an edit changes the limits and keeps main's state
+    h.sch.doc.schedules.find((x) => x.id === id)!.loop!.passes = 4;
+    const ed = h.sch.save({ ...mk({ loop: { ...LIM, maxPasses: 20, passes: 0 } }), id, edit: true }, () => true);
+    assert.ok(ed.ok && ed.schedule.loop?.maxPasses === 20 && ed.schedule.loop.passes === 4, 'edit keeps passes');
+    assert.deepStrictEqual(await h.sch.runNow(id), { ok: false, error: 'A loop sends its own passes.' });
+    // the file keeps the state but never hold or inPass
+    const round = parseSchedules(JSON.stringify(h.sch.doc), now);
+    assert.strictEqual(round.schedules.find((x) => x.id === id)?.loop?.passes, 4);
+  }
+  loopSupport.enabled = false;
 }
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });

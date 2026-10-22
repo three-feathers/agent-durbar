@@ -40,7 +40,7 @@
 
 ### Part 3 (after #473)
 
-`listMcpTools` in the three adapters and the fake; `agents:mcpTools`; the row's expand, Start/Stop and Remove buttons in `agentMcp`.
+`listMcpTools` in the three adapters and the fake; `agents:mcpTools`; the row's expand and Remove buttons in `agentMcp`, on spec 058's row (its switch, state words, Details and repaint; delta 2026-10-22).
 
 ## Tests
 
