@@ -1009,9 +1009,13 @@ function fitTopbar(){
   bar.classList.add('tb-filter2'); label(true); if(!wraps())return;
   bar.classList.add('tb-tight');
 }
+/* fitTopbar changes classes and the filter's text, which resizes what the observer watches: from the observer and the window resize it runs in the next frame, one at a time
+   (inside the callback it raised "ResizeObserver loop completed with undelivered notifications"); renderFilter and DurbarFit call it directly */
+let fitTopbarFrame=0;
+const fitTopbarSoon=()=>{if(fitTopbarFrame)return;fitTopbarFrame=requestAnimationFrame(()=>{fitTopbarFrame=0;fitTopbar();});};
 {const bar=document.querySelector('.topbar');
-  if(bar&&window.ResizeObserver){const ro=new ResizeObserver(()=>fitTopbar());ro.observe(bar);bar.querySelectorAll(':scope > .controls, :scope > .stats').forEach(e=>ro.observe(e));}
-  window.addEventListener('resize',fitTopbar);
+  if(bar&&window.ResizeObserver){const ro=new ResizeObserver(fitTopbarSoon);ro.observe(bar);bar.querySelectorAll(':scope > .controls, :scope > .stats').forEach(e=>ro.observe(e));}
+  window.addEventListener('resize',fitTopbarSoon);
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fitTopbar).catch(()=>{});}
 window.DurbarFit=()=>{const s=document.getElementById('stage');if(s)fitUsage(s);fitTopbar();}; /* the layout checks refit after forcing a font */
 /* ---------------- list view ---------------- */

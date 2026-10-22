@@ -284,6 +284,19 @@ module.exports = async (ctx) => {
   }
   await js(`localStorage.setItem('durbar.detail','expert');true`);
 
+  /* resizing the window while fitTopbar narrows the folder filter raises no "ResizeObserver loop" error (it runs in the next frame, not inside the observer) */
+  {
+    await H.load({ w: 1440, h: 900, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
+    await js(`window.__roErr=[];addEventListener('error',e=>{if(/ResizeObserver loop/.test(String(e.message)))window.__roErr.push(String(e.message))});true`);
+    for (const w of [1280, 1440, 1100, 1728, 1280, 1440]) {
+      ctx.win.setContentSize(w, 800);
+      await until(`innerWidth===${Number(w)}`);
+      await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))`);
+    }
+    const roErr = await js('window.__roErr');
+    check(roErr.length === 0, 'ResizeObserver loop errors during resizes: ' + roErr.join(' | '));
+  }
+
   /* the badge disc holds 3:1 against the button in every built-in theme (WCAG 1.4.11) */
   for (const theme of ['clean', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese']) {
     await H.load({ w: 1440, h: 900, query: { simsched: '1', theme }, ready: 'fit', settle: false });
