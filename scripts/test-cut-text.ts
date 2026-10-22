@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 
 const R = path.join(__dirname, '..', '..', 'src', 'renderer');
-const { cutText } = require(path.join(R, 'cuttext.js')) as { cutText: (t: unknown, max: number, o?: { wordBoundary?: boolean; trimPunct?: boolean }) => string };
+const { cutText, fitCut } = require(path.join(R, 'cuttext.js')) as { fitCut: (t: string, fits: (x: string) => boolean) => string; cutText: (t: unknown, max: number, o?: { wordBoundary?: boolean; trimPunct?: boolean }) => string };
 const len = (s: string) => Array.from(s).length;
 
 // fits: unchanged (whitespace collapsed); exactly max is not cut
@@ -48,6 +48,24 @@ assert.ok(len(c) <= 6);
 const fam = '👨‍👩‍👧'; // man ZWJ woman ZWJ girl
 const f = cutText('ab' + fam + 'cdefgh', 5);
 assert.ok(!/‍…$/.test(f) && len(f) <= 5, 'no dangling joiner: ' + JSON.stringify(f));
+
+// flags (pairs of regional indicators) are never split
+assert.strictEqual(cutText('Message 🇨🇭🇨🇭🇨🇭', 10), 'Message…');
+assert.strictEqual(cutText('🇨🇭'.repeat(10), 5), '🇨🇭'.repeat(2) + '…', 'a flag run cuts between pairs');
+assert.strictEqual(cutText('🇨🇭'.repeat(10), 4), '🇨🇭' + '…');
+assert.strictEqual(cutText('ab🇨🇭🇨🇭', 4), 'ab…');
+const oddRun = (t: string) => { const a = Array.from(t.replace(/…$/, '')); let n = 0; while (n < a.length && /[\u{1F1E6}-\u{1F1FF}]/u.test(a[a.length - 1 - n])) n++; return n % 2 === 1; };
+for (let m = 3; m < 12; m++) assert.ok(!oddRun(cutText('Hi 🇨🇭🇨🇭🇨🇭🇨🇭', m)), 'no odd run before the ellipsis at ' + m);
+// fitCut (FR-174): the longest cut that fits; the band where the text fits but not with the ellipsis
+const full = 'Message abcdefghij'; // 18 characters
+const at = (w: number) => (x: string) => x.length <= w;
+assert.strictEqual(fitCut(full, at(19)), full + '…');
+assert.strictEqual(fitCut(full, at(18)), 'Message abcdefgh…', 'fits without the ellipsis: still cut, and ends in an ellipsis');
+assert.strictEqual(fitCut(full, at(17)), 'Message abcdefgh…');
+assert.strictEqual(fitCut(full, at(9)), 'Message…');
+assert.ok(fitCut(full, at(18)).endsWith('…') && fitCut(full, at(18)) !== full);
+assert.strictEqual(fitCut(full, at(0)), '…', 'nothing fits: the ellipsis alone');
+assert.ok(!/[\ud800-\udbff](?![\udc00-\udfff])/.test(fitCut('😀'.repeat(30), at(9))), 'fitCut never splits an emoji');
 
 // the three callers use it (static check), and none keeps its own slice-and-ellipsis
 const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8'), att = fs.readFileSync(path.join(R, 'attention.js'), 'utf8');
