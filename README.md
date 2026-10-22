@@ -258,7 +258,7 @@ DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits (mai
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
 npm run check:question-options  # question card text, options and descriptions in full; Enter sends a custom answer (simulator, xvfb on Linux)
 npm run check:question-visible  # a waiting question stays visible in the answer bar; compactions in a row fold into one line (simulator, xvfb on Linux)
-npm run check:sim-guard         # under DURBAR_SIM the real preload API is refused by main and no agent app is started (simulator, xvfb on Linux)
+npm run check:sim-guard         # under DURBAR_SIM the real preload API is refused by main, no agent app is started and main starts no child process (simulator, xvfb on Linux)
 npm run check:activity-table    # Tools > Activity shows the activity log table with the simulator's rows (simulator, xvfb on Linux)
 npm run check:composer-toolbar  # chat settings under the message box, Send / Stop with a spinner, narrow panel overflow (simulator, xvfb on Linux)
 npm run check:sched-sendto      # Schedules dialog: Send to / Limit labels on one line, every option fits, session name on a hint line (simulator, xvfb on Linux)

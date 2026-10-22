@@ -563,6 +563,9 @@ ok('FR-009 wiring: Claude agents only, Settings off-list, folder extra wins, val
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { registerMcpIpc } = require('../src/main/mcpipc') as typeof import('../src/main/mcpipc');
+    // spec 010 FR-031: main hands its simulator decision to the guard before registering anything; here: not the simulator
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
     const d = tmp();
     const claudeFile = path.join(d, '.claude.json');
     const GSECRET = 'glob-planted-SECRET-55aa66bb';
