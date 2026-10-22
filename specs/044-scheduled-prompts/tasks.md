@@ -38,3 +38,12 @@
 
 - [x] T041 Schedules dialog: the Send to and Limit labels never wrap or sit under their control; the session name moves from the option to a hint line under the select (after the first design was still cut on a real Mac); simulator check `check:sched-sendto`, CHANGELOG [FR-020, FR-021]
 - [x] T042 One shared text cutter `cuttext.js` (code points, whitespace, optional word boundary) used by `clipName`, `SHORT`, the grant and schedule-row texts and `attention.clip`, with `test:cuttext` [FR-021]
+
+## 2026-10-22: edit a schedule (issue #522)
+
+- [ ] T043 Scheduler: `save` with `edit: true` (editable fields only, main keeps id, folder, pause, done, last and spend; next computed again; a changed past one-time time refused; a done one-time schedule edited with a future time runs again, `done` cleared); any unknown id refused; unit tests in `test:schedules` (keeps id/last/paused/pausedReason/spend, next moves for interval, rule and once and when paused, past time refused and schedule unchanged, edit at 50 schedules passes, a done one-time edited to a future time runs again and to a past time is refused, unknown id refused with and without `edit`, the renderer cannot set paused/done/last/spent) [FR-022, FR-023]
+- [ ] T044 Simulator `saveSchedule`: the same edit rules (unknown id refused, main-kept fields, next computed again) [FR-026]
+- [ ] T045 Renderer: Edit… on rows (dialog and Settings), the form in edit mode (filled, Save, Cancel, no template picker, Send to for a targeted schedule), one shared input builder for Add and Save [FR-022]
+- [ ] T046 Renderer: Settings folder button **Schedules for this folder…**; the prompt toggle with a tooltip of at most 300 characters, also for the agent app's own schedules [FR-024, FR-025]
+- [ ] T047 Driver `scripts/check-sched-edit.js` (`npm run check:sched-edit`, in `ui-suite.js`) at 1440x900 and 1280x800 with the shared helpers and condition waits; screenshots `docs/screenshots/044-edit-*.png`; re-run `check:ui-text`, `shots-044-everywhere`, `shots-044-templates`, `check-sched-sendto` [FR-022..FR-026]
+- [ ] T048 Docs: README *Scheduled prompts* line, CHANGELOG (or a `changelog.d/` fragment if #518 has merged), the specs index row, tags in spec 044 [all]

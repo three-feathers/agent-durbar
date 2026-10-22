@@ -54,6 +54,35 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 
 ## Changes
 
+### 2026-10-22: edit a schedule (issue #522)
+
+*Found (owner, v0.1.0-alpha.11, macOS):* in **Settings > Schedules** he pressed **Open…** on the folder row to change a schedule ("every day at 10:00") and got the folder's *Schedules for <folder>* dialog, which only adds one. A schedule could only be paused, resumed or deleted; to change its prompt or time he had to delete it and type it again, losing its last run. The prompt is cut with "…" in both places, and its tooltip is the whole prompt (up to 2,000 characters, over spec 052 FR-168).
+
+*Status:* planned (spec, plan and tasks only). Nothing below is built yet.
+
+- **FR-022** **Edit… on every schedule row.**
+  - Each Durbar schedule row, in the folder's dialog and in Settings > Schedules, has **Edit…** next to Pause/Resume and Delete. A done one-time schedule has Edit too (owner, Q2): saving it with a new time in the future makes it run again. The agent app's own schedules (FR-016) stay read-only: no Edit.
+  - Edit… opens the folder's dialog (from Settings too) with the form filled from the schedule: the prompt; the when (*Every N minutes*, *On a calendar* with its kind, time and days, or *Once at* its date and time); **Send to** (the folder's agent, or the schedule's session, shown with its name even when the dialog was not opened from that chat); and the **Limit** in its unit.
+  - While editing, the form says **Edit schedule**, the primary button reads **Save** and a **Cancel** button puts the form back to adding a new one. Cancel, Close and Escape change nothing. The template picker is hidden while editing (owner, Q3).
+  - Save keeps the schedule's id, folder, last run, pause state and its reason, and what it has spent when the limit's unit is the same (FR-015). The next run is computed again from the new when, also for a paused schedule. An anchored interval (FR-007) keeps its first time when its minutes are unchanged.
+  - The toast says "Schedule saved: <when>." The row shows the new prompt and when in place; the list order does not change.
+  - If the schedule was deleted or changed by the app meanwhile (a run, a pause at its limit, an ended session), main's copy wins for everything the form does not edit; a deleted one is refused with "That schedule is gone." and the form goes back to adding.
+- **FR-023** **Same checks as a new schedule.** An edit goes through `schedules:save` (no new IPC channel) with `edit: true` and the schedule's `id`, and is validated in main exactly like a new one (FR-017): prompt, interval, rule, target and limit.
+  - With `edit: true`, main takes only the prompt, the when, the target and the limit from the renderer. The id must exist; the folder, `paused`, `pausedReason`, `done`, `last`, `spent` and `spentUnknown` come from main's own copy.
+  - A one-time time that the edit changes must be in the future, paused or not ("That time has already passed."). An unchanged time of a paused one-time schedule stays as it is.
+  - An edit never counts toward the limit of 50.
+  - An edit of a done one-time schedule (Q2) must set a new time in the future ("Pick a time in the future to run it again."); saving clears `done`, so it runs again, and keeps its `last`. The edit may also change it to an interval or calendar schedule; `done` is cleared either way.
+  - Any save that carries an `id` main does not have is refused ("That schedule is gone."), with or without `edit`. Today such a save adds a new schedule with that id, so Pause on a row that another window just deleted brings it back. New schedules never send an id.
+- **FR-024** **The folder button says what it does.** In Settings > Schedules the folder row's **Open…** becomes **Schedules for this folder…** (owner, Q1), with the title "See this folder's schedules and add one". It stays one line at 1440x900 and 1280x800; the folder path beside it shrinks with an ellipsis first (spec 052 FR-167).
+- **FR-025** **The whole prompt can be read.**
+  - The row keeps the prompt on one line, cut to 90 characters with "…" (`cutText`). Its tooltip is at most 300 characters (spec 052 FR-168, data tooltip), cut with "…".
+  - The cut prompt is a button (keyboard focusable, `aria-expanded`): pressing it shows the whole prompt wrapped under the row, and pressing it again folds it. A 2,000-character prompt then takes about 25 lines in the M dialog; the dialog body scrolls vertically, never sideways (FR-167). Edit… also shows it in full in the form.
+  - The same applies to the agent app's own schedules in the dialog (FR-016).
+- **FR-026** **Simulator.** The simulator's `saveSchedule` behaves like main for edits: the same fields kept, the next run computed again, an unknown id refused.
+- Tests to add: `test:schedules`: an edit keeps the id, `last`, `paused` and `pausedReason`, and the spend in the same unit; the next run moves to the new when (interval, rule, once), also when paused; a past one-time time is refused as for a new one, and the schedule is unchanged; an edit with 50 schedules passes; an unknown id is refused with and without `edit`; the renderer cannot set `paused`, `done`, `last` or `spent` through an edit. `sim:` a new driver `check:sched-edit` at 1440x900 and 1280x800 (see the plan).
+- *Owner answers (Paco, 2026-10-22):* **Q1** the folder button reads **Schedules for this folder…**; **Q2** a done one-time schedule can be edited, and a new time in the future makes it run again; **Q3** the template picker is hidden while editing.
+- `[KNOWN GAP]` (to check when built): the owner reported that the dialog row had no Pause or Delete. The code on main renders both there (`src/renderer/app.js` `schedRow`, `renderSchedDlg`); not reproduced. The new driver asserts that every row shows Edit…, Pause and Delete inside the dialog.
+
 ### 2026-10-20: Schedules dialog, Send to row and session names (issue #371)
 
 *Found (owner, real Mac, main):* in **Schedules for <folder>** the label "Send to" wrapped inside its own cell ("Sen" / "to") and was half covered by the select; the **Limit … AI credits** row was misaligned too. The **This session (…)** option showed the session's whole first prompt, a long sentence with private content.
