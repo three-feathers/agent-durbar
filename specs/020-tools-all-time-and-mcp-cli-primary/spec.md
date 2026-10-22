@@ -1,5 +1,11 @@
 # Feature Specification: Tools "This session / All time" and the Copilot CLI MCP list as the primary source
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 020
+title: Tools "This session / All time", Copilot CLI MCP list first, MCP extras per folder, per-folder import from VS Code `mcp.json` (delta 2026-10-17, issue #7)
+status: milestone 10 (implemented, simulator + unit tests); import delta implemented (simulator + unit tests)
+-->
+
 **Feature Branch**: `020-tools-all-time-and-mcp-cli-primary` (milestone 10)
 **Created**: 2026-10-16
 **Status**: Implemented (milestone 10; see tasks.md). Evidence tags: test: unit tests, sim: simulator driver `scripts/shots-m10.js`; nothing here was run against a real account (no credits). Changes spec 019 (MCP settings, FR-001, FR-003, FR-006, FR-007) and adds to its Tools view (FR-012, FR-013). Delta 2026-10-17 (issue #7): per-folder import from VS Code's `.vscode/mcp.json`, FR-020..FR-031 (`test:` mcp §9, `sim:` `scripts/shots-i7.js`).

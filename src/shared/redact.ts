@@ -11,17 +11,34 @@ const SECRET_PREFIX = /^(GH_|GITHUB_|OPENAI_|ANTHROPIC_|COPILOT_)/i;
 /** Long but harmless values: excluded from the "20+ characters" rule only (the name rule still applies). */
 const LONG_OK_NAME = /^(PATH|PATHEXT|PSMODULEPATH|HOME|HOMEPATH|HOMEDRIVE|USERPROFILE|PWD|OLDPWD|SHELL|TMPDIR|TEMP|TMP|APPDATA|LOCALAPPDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|PROGRAMDATA|SYSTEMROOT|WINDIR|COMSPEC|NODE_PATH|MANPATH|INFOPATH|LS_COLORS|LSCOLORS|TERM_PROGRAM_VERSION|DISPLAY|DBUS_SESSION_BUS_ADDRESS|SSH_AUTH_SOCK|INIT_CWD|_|__CF.*|SSL_CERT_FILE|NODE_EXTRA_CA_CERTS|.*_HOME|ONEDRIVE.*|COMMONPROGRAMFILES.*|PROGRAMW6432|ALLUSERSPROFILE|PUBLIC|TERM_SESSION_ID|XPC_SERVICE_NAME|VSCODE_.*|TERM_PROGRAM.*|ITERM_.*|COLORTERM|DURBAR_.*|XDG_.*|LC_.*|npm_.*)$/i;
 
+/* Token and key shapes start where no letter or digit precedes them, not at `\b`: there is no word boundary between `_` and a
+   letter, so `\b` let a token wrapped in Markdown emphasis (`_ghp_…_`, `__sk-…__`) or glued to a snake_case word (`my_ghp_…`)
+   through (spec 012 FR-080 delta 2026-10-22). JWTs keep their stricter start (never after a letter, digit, `_` or `-`, so a long
+   base64url run is never rescanned from inside and the pattern stays linear); the wrapping is a bounded prefix instead: up to 8
+   underscores and up to 4 snake_case words (`my_eyJ…`, `MY__eyJ…`, `____eyJ…`), kept in the output (T128). */
+/** Bare token shapes (GitHub, OpenAI/Anthropic, Bearer, JWT, AWS); also used by the folder-setup display (spec 061 FR-014). */
+const TOKEN_SHAPES: RegExp[] = [
+  /(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{20,}/g,
+  /(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}/g,
+  /(?<![A-Za-z0-9])sk-(?:ant-)?[A-Za-z0-9_-]{20,}/g,
+  /(?<![A-Za-z0-9])Bearer\s{1,8}[A-Za-z0-9._~+/=-]{8,}/g,
+  /(?<![A-Za-z0-9_-])(_{0,8}(?:[A-Za-z0-9]{1,40}_{1,3}){0,4})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}/g,
+  /(?<![A-Za-z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])/g,
+];
+
+/** Replaces every bare token shape with `mask` (a JWT's leading underscores and words stay). Linear; no env rules, no header or URL rules. */
+export function maskTokenShapes(text: string, mask: string): string {
+  let out = text;
+  // The only capture group is a JWT's prefix (underscores and snake_case words); without a group the second argument is the offset (a number).
+  for (const re of TOKEN_SHAPES) out = out.replace(re, (_m: string, lead: unknown) => (typeof lead === 'string' ? lead : '') + mask);
+  return out;
+}
+
 /** Key-like shapes. Each is linear: bounded classes, no nested quantifiers, starts anchored where a token cannot already be running. Order matters: header and URL first. */
 const PATTERNS: Array<[RegExp, string]> = [
-  [/\b(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?[^\s",;]+/gi, '$1[redacted]'],
-  [/\b([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{1,200}:[^\s/@"]{1,200}@/gi, '$1[redacted]@'],
+  [/(?<![A-Za-z0-9])(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?[^\s",;]+/gi, '$1[redacted]'],
+  [/(?<![A-Za-z0-9])([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{1,200}:[^\s/@"]{1,200}@/gi, '$1[redacted]@'],
   [/(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"]{0,2000}/g, '[redacted]'],
-  [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, '[redacted]'],
-  [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, '[redacted]'],
-  [/\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/g, '[redacted]'],
-  [/\bBearer\s{1,8}[A-Za-z0-9._~+/=-]{8,}/g, '[redacted]'],
-  [/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}/g, '[redacted]'],
-  [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, '[redacted]'],
 ];
 
 type Env = Record<string, string | undefined>;
@@ -74,7 +91,7 @@ export function redact(text: unknown, env?: Env): string {
     }
     s = cut(s, REDACT_MAX_CHARS);
     for (const [re, rep] of PATTERNS) s = s.replace(re, rep);
-    return s;
+    return maskTokenShapes(s, '[redacted]');
   } catch {
     return '[redaction failed]';
   }

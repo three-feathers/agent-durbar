@@ -1,5 +1,11 @@
 # Spec 060: Platform parity: install, find and run agent apps on macOS, Windows and Linux
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Platform parity: install, find and run the agent apps on macOS, Windows and Linux (official installers without Homebrew or Node, version-manager paths, Windows prerequisites, Linux AppImage needs, folder identity)
+status: **in progress**: owner answered Q1-Q6 (2026-10-20); T010 simulator truth (#392), T020 official installers least-privilege first with a checked download, real install check as standard and admin user on 3 OSes (#393), T030 detection folders (#398), T063 Windows install options (winget found as an App Execution Alias, vendor commands to copy: PowerShell / PowerShell (winget) / npm), T064 Run beside each command Durbar can run (PowerShell installer downloaded and run as a file, winget, npm; not run on a real Windows PC); open: T040 Windows prerequisites, T050 folder identity, T061 `.deb`/arm64
+-->
+
 **Status:** clarified 2026-10-20 (owner answered Q1-Q6, see *Clarifications*); being built in the order of Q6.
 **Owner request (2026-10-20):** "brew does not work on windows, also for linux, and on macos what if brew is not installed? Look at all such things which are platform specific, look at the full code and specs and research, and come up with a plan."
 **Builds on:** 008 (packaging, CI), 012 (adapters, detection), 045 (Windows `.cmd` shims), 051 (harness setup), 052 (Mac title bar, shortcuts), 040/041 (secrets).

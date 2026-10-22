@@ -1,5 +1,11 @@
 # Feature Specification: Release v0.1.0-alpha.5 (pre-release)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 042
+title: Release v0.1.0-alpha.5 as a pre-release (version bump, changelog, download notes)
+status: built; **published as a pre-release** (2026-10-18)
+-->
+
 **Feature Branch**: `042-release-alpha5`
 **Created**: 2026-10-18
 **Status**: Built and **published as a pre-release on 2026-10-18** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.5>; release PR #164 merged by Vikram after Ruben's approval; tag on `995947d`, the merge of #172, after #171 and #172 landed; CI green on that commit).
