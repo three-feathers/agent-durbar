@@ -51,7 +51,10 @@ module.exports = async (ctx) => {
       onScene:ds.filter(d=>{const b=d.querySelector('.chatno'),n=d.querySelector('.name'),sc=d.querySelector('.sc');if(!b||!n||!sc||!d.classList.contains('card'))return false;
         const r=b.getBoundingClientRect(),q=n.getBoundingClientRect(),c=sc.getBoundingClientRect(),hit=(x,y)=>x.left<y.right&&y.left<x.right&&x.top<y.bottom&&y.top<x.bottom;
         return !(hit(r,c)&&!hit(r,q));}).map(d=>d.innerText.trim().slice(0,20)),
-      names:Math.min(...ds.map(d=>{const n=d.querySelector('.name');return n?n.getBoundingClientRect().width:99;})),
+      /* a name is squeezed when its text is wider than its box. (Not "the box is at least 20px": Elif is 19.3px wide in Windows fonts, 20px
+         on Linux, with no badge near it; the width of a short name is its text, so a fixed floor tests the font, not the badge.) */
+      squeezed:ds.filter(d=>{const n=d.querySelector('.name');if(!n)return false;const rg=document.createRange();rg.selectNodeContents(n);
+        return rg.getBoundingClientRect().width>n.getBoundingClientRect().width+0.5||n.scrollWidth>n.clientWidth+0.5;}).map(d=>d.innerText.trim().slice(0,20)),
       first:ds.filter(d=>{const n=d.querySelector('.name');return n&&!d.innerText.trim().startsWith(n.innerText.trim());}).map(d=>d.innerText.trim().slice(0,20)),
       aria:ds.filter(d=>/, chat \\d+,/.test(d.getAttribute('aria-label')||'')).length,
       uniq:new Set([...document.querySelectorAll('#stage .chatno')].map(b=>b.dataset.n)).size,
@@ -60,7 +63,7 @@ module.exports = async (ctx) => {
     assert.ok(badges.font >= 10.5, `${w}: badge text ${badges.font}px`);
     assert.ok(badges.inside, `${w}: every badge stays inside its desk`);
     assert.deepStrictEqual(badges.onScene, [], `${w}: every desk card's badge sits on its scene, clear of the name`);
-    assert.ok(badges.names >= 20, `${w}: names keep room next to the badge (${badges.names}px)`);
+    assert.deepStrictEqual(badges.squeezed, [], `${w}: no desk name is squeezed or cut by the badge`);
     assert.deepStrictEqual(badges.first, [], `${w}: a desk's text still starts with its name (drivers and the office check find desks that way)`);
     assert.strictEqual(badges.aria, badges.n, `${w}: screen readers hear "chat N"`);
     assert.strictEqual(badges.uniq, badges.with, `${w}: chat numbers are unique`);
