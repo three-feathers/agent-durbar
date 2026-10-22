@@ -33,6 +33,8 @@ import { PermissionBroker, isInsideRoots, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import type { AgentProfile, PlanAnswer } from './types';
+import type { McpToolInfo } from './types';
+import { normMcpTools } from './mcptools';
 import { cleanPlanText } from './plan';
 import { copilotQuotaReset } from './usagelimit';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
@@ -156,6 +158,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true,
   mcpStart: 'next-message', // spec 058 FR-010 (real 2026-10-21, runtime 1.0.22: the servers start with the first message, not at create or resume)
   mcpToggleApplies: 'live', // spec 019 (real: mcp.enable/disable)
+  mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
@@ -1186,6 +1189,20 @@ export class CopilotAdapter implements AgentAdapter {
     }
     await mcp.disable({ serverName: name });
     await mcp.enable({ serverName: name });
+  }
+
+  /** Spec 069 FR-031: a live `tools/list` through the runtime; it throws when the server is not connected. */
+  async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
+    const live = this.sessions.get(sessionId);
+    if (!live) throw new Error('This session is not running. Send a message to start it.');
+    const mcp = live.session.rpc.mcp as unknown as { listTools?: (p: { serverName: string }) => Promise<{ tools?: unknown }> };
+    if (typeof mcp.listTools !== 'function') throw new Error('This Copilot version cannot list a server\'s tools.');
+    try {
+      const r = await mcp.listTools({ serverName: name });
+      return normMcpTools(r?.tools);
+    } catch (err) {
+      throw new Error(sdkErrorText(err));
+    }
   }
 
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {

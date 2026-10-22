@@ -2,8 +2,8 @@
 
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
-title: Global MCP servers written to the agent apps' own lists (Copilot CLI, Claude Code, Codex) after a per-file confirmation with backups, harmonize the lists, source chips, Start/Stop/Restart/Sign in/Remove on every server row, a server's tools on expand (owner 2026-10-21)
-status: parts 1-2 **built** 2026-10-21 (add/remove for all folders, harmonize; unit tests, simulator drivers; real check T060 2026-10-22: Copilot CLI, Claude Code and Codex list the written entries, 0 credits); part 3 specified; owner questions Q1-Q6 answered 2026-10-22 (defaults kept)
+title: Global MCP servers written to the agent apps' own lists (Copilot CLI, Claude Code, Codex) after a per-file confirmation with backups, harmonize the lists, source chips, switch/Restart/Sign in/Remove on every server row, a server's tools on expand (owner 2026-10-21)
+status: parts 1-3 **built** 2026-10-21 (add/remove for all folders, harmonize, tools on expand and Remove in the agent dialog on top of spec 058's state words and Details; unit tests on fakes, simulator drivers; real check T060 2026-10-22: Copilot CLI, Claude Code and Codex list the written entries, 0 credits; part 3 not run on a real account); owner questions Q1-Q6 answered 2026-10-22 (defaults kept)
 -->
 
 **Feature Branch**: `069-mcp-global-controls`
@@ -11,7 +11,9 @@ status: parts 1-2 **built** 2026-10-21 (add/remove for all folders, harmonize; u
 **Status**: Part 1 **built** 2026-10-21 (add to and remove from the agent apps' own lists with a per-file review and backups, source
 chips, Claude Code's user list in Durbar's Claude sessions): unit tests (`test:mcpglobal`) and a simulator driver (`shots-069-mcp-global`),
 and the real check T060 (2026-10-22, scratch home, 0 credits: Copilot CLI, Claude Code and Codex list the written entries; see *Changes*). Part 2 (harmonize) **built** 2026-10-21 the same way (`test:mcpglobal`,
-`shots-069-harmonize`). Part 3 (tools list and per-row controls) is specified, not built (see *Delivery*). Owner questions Q1-Q6 answered 2026-10-22: the built defaults are kept.
+`shots-069-harmonize`). Part 3 (tools list and per-row controls) **built** 2026-10-21 on top of
+spec 058's Restart (#473): unit tests on the fake SDK, fake CLI and fake app-server (`test:mcpservertools`, `test-claude-adapter`,
+`test-codex-adapter`) and `shots-069-mcp-tools`; not run on a real account. Sign in stays with spec 058 (#364). Owner questions Q1-Q6 answered 2026-10-22: the built defaults are kept.
 **Input**: Owner (Vikram, Telegram 2026-10-21 21:03 UTC): "For the MCP server addition UI, give an option to also add to the list of
 global MCP servers, and those controls to start/stop/restart/auth... we should have those options for all servers. Also show the list of
 tools per MCP server when you expand it." Owner decision (Vikram, Telegram 2026-10-21 21:06 UTC): "global" is written to the agent apps'
@@ -242,20 +244,21 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 
 ### Session controls and tools (part 3; depends on spec 058 #473)
 
-- **FR-030** Agent dialog rows (spec 058 FR-030 layout, coordinated with its owner): **Stop** / **Start** buttons for this session using
-  `agents:setMcp` (same rules: a folder extra that is off in the folder cannot be started here and says why); **Restart** as spec 058
-  FR-031; **Sign in** only when spec 058 FR-064 reports `canSignIn` (not built here); **Remove…** for entries from a global file or a
+- **FR-030** `[IMPLEMENTED]` Agent dialog rows (spec 058 FR-030 layout, coordinated with its owner): **Switch off** / **Switch on** for this session using
+  `agents:setMcp` (the row's existing switch, named "Switch off/on <server> for <agent> in this session": 058's verb, this session's
+  scope; delta 2026-10-22, merge with 058's words; no separate Start/Stop buttons, 058 Q1) (same rules: a folder extra that is off in the folder cannot be started here and says why); **Restart** as spec 058
+  FR-031; **Sign in** only when spec 058 FR-064 reports `canSignIn` (not built here; nothing is shown until then); **Remove…** for entries from a global file or a
   folder extra; other rows say *managed by <app>* or *built-in*.
-- **FR-031** `AgentAdapter.listMcpTools?(sessionId, server): Promise<{name: string; description?: string}[]>`, capability
+- **FR-031** `[IMPLEMENTED]` `AgentAdapter.listMcpTools?(sessionId, server): Promise<{name: string; description?: string}[]>`, capability
   `mcpTools?: boolean`:
   - Copilot: `session.rpc.mcp.listTools({serverName})` (`read:` SDK `rpc.d.ts`, experimental; throws when not connected).
   - Claude Code: the `tools` of that server in the `mcp_status` reply (`read:` docs `McpServerStatus.tools`).
   - Codex: `mcpServerStatus/list {threadId, serverName, detail: "toolsAndAuthOnly"}`, the `tools` map (`read:` generated app-server schema
     `ListMcpServerStatusResponse`, codex-cli 0.163.0).
-- **FR-032** `agents:mcpTools(id, name)`: known agent, valid name, running session; at most 500 tools, names cut at 128 characters,
+- **FR-032** `[IMPLEMENTED]` `agents:mcpTools(id, name)`: known agent, valid name, running session; at most 500 tools, names cut at 128 characters,
   descriptions reduced to their first line, cut at 200 characters and masked (`maskMcpError` with the session's secret values); 10 s
   timeout; errors masked. Loaded only when a row is expanded, cached in the window until the dialog closes or the server restarts.
-- **FR-033** The expanded row lists the tools (text at least 10.5px, scrolls inside the dialog at 1280x800), "N tools", and the empty,
+- **FR-033** `[IMPLEMENTED]` The expanded row lists the tools (text at least 10.5px, scrolls inside the dialog at 1280x800), "N tools", and the empty,
   not-running and failed states (Story 5).
 
 ### Simulator and tests (constitution IV)
@@ -375,11 +378,49 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
      target has the field, and otherwise the copy to that file is refused naming the field; the diff names `tools`, `hidden tools`
      and `on/off`. The add form is unchanged. (T063)
 
+- **2026-10-22 (review on #499 by Paco's agent, CHANGES_REQUESTED at 1776c6c3):** all findings fixed (T067).
+  1. **Remove removes every copy** (FR-030): a server that is both in an agent app's list and a folder extra kept its row after
+     *Remove…*, which removed only the list copies. The Remove picker (the Settings `removeGlobal` dialog, reused) now lists every place
+     the server comes from, all ticked: each agent app's list and "This folder's extras in Agent Durbar"; the folder copy is deleted with
+     the folder's existing remove (`mcpRemove`), the app lists through the usual per-file review.
+  2. **Switch words** (FR-030, spec 058 FR-066): with a running session the switch keeps FR-066's words, "Switch off <server> for
+     <agent> in this session"; with no running session it says "Switch off <server> for <agent> when its session starts". The footer
+     says the true scope (`agents:setMcp` keeps it per agent for this app run): "A switch stays for this agent, also in its next
+     sessions, until the app is closed."
+  3. **Codex tools past the first page** (FR-031): `listMcpTools` asked `mcpServerStatus/list` with `limit: 10` and read one page, so if
+     Codex ignored `serverName`, a server past the tenth read as not running. It now asks 100 per page and follows `nextCursor` (at
+     most 20 pages) until the server is found; only then "not running in this session". `test:` the fake app-server ignores
+     `serverName` and pages 10 at a time; the 23rd server's tools are found on page 3.
+
+- **2026-10-22 (re-review on #499 by Paco's agent, CHANGES_REQUESTED at c6bdc3d4):** two findings fixed (T068).
+  1. **Repeated cursor** (FR-031): the stop on a `nextCursor` already asked for was not tested (the 20-page bound hid its loss). `test:`
+     a fake app-server that always answers the same `nextCursor`: two requests, then "not running in this session".
+  2. **Cancel keeps the folder copy** (FR-030): in the combined Remove picker the folder copy was deleted before the agent apps' file
+     review, so cancelling the review left it deleted. The folder copy is now one more entry of that review ("This folder's extras in
+     Agent Durbar": the server and its stored secret values are deleted) and is deleted only when the review is confirmed; with only
+     the folder ticked, the picker's *Remove* is the confirmation. The picker's folder row says that its stored secret values are
+     deleted. `sim:` `shots-069-mcp-tools` cancels the review and finds the folder copy still there, then confirms and finds both gone.
+
+- **2026-10-22 (merge with spec 058's MCP words, #538; author's call, owner's scope kept):** part 3 now sits on spec 058's row instead
+  of beside it. One row, one repaint path (058's: in-place repaint that keeps focus and scroll, live refresh from `mcp` events with the
+  polite announcement). Changed against FR-030 and FR-033 as first built:
+  1. **Words.** The server state is 058's word and icon (Running, Failed, Needs sign-in, ...; FR-001), its hint and *Details* / *Copy*
+     (FR-006, FR-007); the raw status text and the 160-character error note of part 3 are gone. The switch keeps 058's verb with this
+     spec's scope: "Switch off/on <server> for <agent> in this session" (was "Stop/Start ..."). Same `agents:setMcp` control, so no
+     extra Start or Stop button (058 Q1: one control per meaning).
+  2. **Kept from part 3:** the name button that opens the tools list (with 058's full-name tooltip on the name), **Remove…**, the
+     *managed by* / *built-in* row tooltip, and the tools refetch after a Restart. 058's 1.5 s follow-up repaint after Restart is not
+     brought back: the `mcp` event refresh replaces it.
+  3. **Simulator:** the canned tools follow the row's state (`simServer`), so a server that 058's sim shows as failed or needing sign-in
+     says "Could not list the tools: ... is not connected", and lists its tools after a Restart fixes it.
+  `sim:` `shots-069-mcp-tools` (asserts 058's word and Details on the failed row too), `shots-058-mcp-words`, `shots-058-mcp-restart`.
+
 ## Relationship to other specs
 
 - **019 / 020**: the Copilot CLI list stays the source of Copilot's servers; Durbar now also *writes* it (only after confirmation), which
   replaces 019/020's "never written". Folder extras unchanged. Dated note under 019's and 020's `## Changes`.
-- **058**: Restart, Restart session and Sign in are 058's; this spec only places them on every row and adds Start/Stop and Remove.
+- **058**: Restart, Restart session, Sign in, the state words, hints, *Details* / *Copy* and the live refresh are 058's; this spec adds the
+  tools list, Remove and the session scope in the switch's name to 058's row (delta 2026-10-22).
 - **061**: shares the TOML string and comment helpers with `readCodexMcpToml` (`codextoml.ts`; the two line loops differ: 061 is
   lenient, 069 strict) and reuses `copilotDir`; folder-level files are not written by this feature.
 - **012** Q8: Claude sessions stay `--strict-mcp-config`; FR-009 passes the user list explicitly.

@@ -324,6 +324,17 @@ body.has-bridge #topBtns{display:flex}
 .hmfrom{display:flex;gap:8px;align-items:center;font-weight:600;font-size:12.5px}
 .hmfrom select{font:inherit;padding:4px 6px}
 .dlg .gapps label{display:flex;gap:6px;align-items:baseline}
+/* spec 069 part 3: a server row opens its tools list */
+.mcp-tg{display:inline-flex;align-items:baseline;gap:4px;background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer}
+.mcp-tg:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
+.mcp-car{font-size:11px;color:var(--muted);width:10px}
+.srv.sm.open{flex-wrap:wrap}
+.mcp-tools{flex:1 0 100%;margin:6px 0 0 14px;font-size:12px;color:var(--ink-2)}
+.mcp-tcount{margin:0 0 4px;font-size:11px;font-weight:650;color:var(--muted)}
+.mcp-tlist{list-style:none;margin:0;padding:0;max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:3px}
+.mcp-tlist li{display:flex;gap:8px;align-items:baseline;min-width:0}
+.mcp-tlist code{flex:none;font-size:11.5px}
+.mcp-tlist span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:11.5px}
 /* spec 060 FR-012: a tall setup dialog (three routes and the vendor's commands) scrolls inside its body, so the rows never slide under Cancel/Install */
 #hsDlg .dlg .dbody{overflow:auto;padding-right:2px}
 

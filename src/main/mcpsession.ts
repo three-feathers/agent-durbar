@@ -80,6 +80,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     ...(caps?.mcpToggleApplies ? { toggleApplies: caps.mcpToggleApplies } : {}),
     // FR-022: an adapter that can resume, and a running session to restart
     canRestartSession: !!caps?.resume && isLive,
+    ...(typeof ad?.listMcpTools === 'function' ? { canListTools: true } : {}),
   };
 }
 

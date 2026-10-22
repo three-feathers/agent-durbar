@@ -1201,9 +1201,27 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), sources: gSources(v.name, true), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
           ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name) })) : []),
         ];
-        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume };
+        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
+      /* spec 069 FR-031/FR-032: canned tools per server; a session that is not running, a failed server and an empty one show their states */
+      agentMcpTools: async (id, name) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'Unknown agent or server.' };
+        if (s.state === 'idle' && !s.ctx) return { ok: false, notRunning: true, error: 'Start the session to see its tools.' };
+        await new Promise((r) => setTimeout(r, 250));
+        const canned: Record<string, [string, string?][]> = {
+          github: [['search_issues', 'Search issues and pull requests in a repository'], ['get_pull_request', 'Get one pull request with its files and checks'], ['create_issue', 'Open a new issue'], ['list_commits', 'List the commits of a branch'], ['get_file_contents', 'Read a file at a ref']],
+          'github-mcp-server': [['get_me', 'Your GitHub account'], ['search_code', 'Search code on GitHub']],
+          playwright: [['browser_navigate', 'Open a URL in the browser'], ['browser_click', 'Click an element'], ['browser_snapshot', 'Accessibility snapshot of the page'], ['browser_take_screenshot']],
+          'docs-search': [],
+        };
+        /* the same state the row shows (spec 058's canned failures; a Restart fixes them): only a running server lists tools */
+        const st = simServer(s, sims.indexOf(s), name, true);
+        if (st.status && st.status !== 'connected') return { ok: false, error: name + ' is not connected' + (st.error ? ': ' + st.error : ' (' + st.status + ')') };
+        const list = canned[name] ?? [['search', 'Search the notes'], ['read_note', 'Read one note by its title']];
+        return { ok: true, total: list.length, tools: list.map(([n, d]) => ({ name: n, ...(d ? { description: d } : {}) })) };
+      },
       agentMcpRestart: async (id, name) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || !caps(s.info.adapterId ?? 'copilot').mcpRestart) return { ok: false, error: 'This agent app cannot restart one MCP server. Use Restart session with these servers.' };

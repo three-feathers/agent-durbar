@@ -301,9 +301,18 @@ export class FakeCodexServer {
         this.enqueue(child, { method: 'thread/deleted', params: { threadId: tid } });
         return;
       }
-      case 'mcpServerStatus/list':
-      {
-        const answer = (): void => this.reply(child, id, { data: this.mcpList ?? [{ name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: {}, resources: [], resourceTemplates: [] }], nextCursor: null });
+      case 'mcpServerStatus/list': {
+        // spec 069 FR-031: one server's tools when `serverName` is given (a map by tool name, as the generated schema says)
+        const all: Array<Record<string, unknown>> = (this.mcpList as Array<Record<string, unknown>> | undefined) ?? [
+          { name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: { echo: { name: 'echo', description: 'Echo the text back\nSecond line', inputSchema: {} }, ping: { name: 'ping', inputSchema: {} } }, resources: [], resourceTemplates: [] },
+          { name: 'broken', authStatus: 'unsupported', runtimeStatus: 'failed', tools: {}, toolsError: 'tools/list failed: spawn broken-mcp ENOENT', resources: [], resourceTemplates: [] },
+        ];
+        const want = isObj(params) && typeof params.serverName === 'string' && !this.mcpIgnoreServerName ? params.serverName : undefined;
+        // spec 069 (review on #499): an app-server that pages (`mcpPageSize`, `cursor` = the next index) and may ignore `serverName`
+        const list = want ? all.filter((x) => x.name === want) : this.mcpList ?? all.slice(0, 1);
+        const from = isObj(params) && typeof params.cursor === 'string' ? Number(params.cursor) || 0 : 0;
+        const size = this.mcpPageSize ?? list.length;
+        const answer = (): void => this.reply(child, id, { data: list.slice(from, from + size), nextCursor: this.mcpStuckCursor ?? (from + size < list.length ? String(from + size) : null) });
         if (this.holdMcpList) return void this.heldMcpList.push(answer);
         return answer();
       }
@@ -429,6 +438,12 @@ export class FakeCodexServer {
   mcpList: unknown[] | undefined;
   /** Tests: hold the `mcpServerStatus/list` replies until `releaseMcpList()`. */
   holdMcpList = false;
+  /** Spec 069: page `mcpServerStatus/list` this many servers at a time (unset: one page). */
+  mcpPageSize: number | undefined;
+  /** Spec 069: answer as if `serverName` were not supported (the whole list, paged). */
+  mcpIgnoreServerName = false;
+  /** Spec 069 (re-review on #499): a broken pager that always answers this `nextCursor`. */
+  mcpStuckCursor: string | undefined;
   private heldMcpList: Array<() => void> = [];
   releaseMcpList(): void {
     this.holdMcpList = false;

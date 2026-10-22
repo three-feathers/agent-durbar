@@ -10,12 +10,13 @@ import type { HandoffResult } from './handoff';
 import type { EventBody } from './map';
 import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
-import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction, McpSignInResult, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
+import { normMcpTools } from './mcptools';
+import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction, McpSignInResult, McpToolInfo, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
 import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
-  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer'
+  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer' | 'listMcpTools'
   | 'startMcpSignIn' | 'cancelMcpSignIn';
 
 export type Step =
@@ -52,6 +53,7 @@ const DEFAULT_CAPS: AdapterCapabilities = {
   mcpStatus: true,
   mcpToggle: true,
   mcpRestart: true,
+  mcpTools: true,
   handoff: true,
   oneShot: true,
 };
@@ -83,6 +85,10 @@ export class FakeAdapter implements AgentAdapter {
   readonly restartCalls: Array<{ sessionId: string; name: string }> = [];
   /** Spec 058: when set, `restartMcpServer` rejects with this message. */
   failRestart?: string;
+  declare listMcpTools?: (sessionId: string, name: string) => Promise<McpToolInfo[]>;
+  /** Spec 069: what `listMcpTools` answers per server name (raw, as an agent app would send it), or a rejection text. */
+  toolsByServer: Record<string, unknown> = {};
+  failTools?: string;
   declare setModel?: (sessionId: string, request: ModelSwitchRequest) => Promise<ModelSwitchResult>;
   declare cancelQueuedModel?: (sessionId: string, queueId: string) => Promise<void>;
   declare compact?: (sessionId: string, focus?: string) => Promise<CompactResult>;
@@ -131,6 +137,7 @@ export class FakeAdapter implements AgentAdapter {
       caps: c.caps && !omit.has('setCap') && !omit.has('resolveLimit'),
       mcpToggle: c.mcpToggle && !omit.has('setMcpEnabled'),
       mcpRestart: !!c.mcpRestart && !omit.has('restartMcpServer'),
+      mcpTools: !!c.mcpTools && !omit.has('listMcpTools'),
       handoff: !!c.handoff && !omit.has('handoffSummary'),
       oneShot: !!c.oneShot && !omit.has('generateText'),
       mcpSignIn: !!c.mcpSignIn && !omit.has('startMcpSignIn'),
@@ -163,6 +170,14 @@ export class FakeAdapter implements AgentAdapter {
         if (!this.sessions.has(sid)) throw new Error('This session is not running. Send a message to start it.');
         if (this.failRestart !== undefined) throw new Error(this.failRestart);
         this.emit(sid, { type: 'mcp', servers: [{ name, status: 'connected' }] });
+      };
+    }
+    if (caps.mcpTools) {
+      this.listMcpTools = async (sid, name) => {
+        if (!this.sessions.has(sid)) throw new Error('This session is not running. Send a message to start it.');
+        if (this.failTools !== undefined) throw new Error(this.failTools);
+        if (!(name in this.toolsByServer)) throw new Error(`${name} is not running in this session.`);
+        return normMcpTools(this.toolsByServer[name]);
       };
     }
     if (caps.mcpSignIn) {
