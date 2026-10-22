@@ -11,7 +11,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { NAME_RE } from '../shared/mcp';
-import { secretFlag, shQuote } from '../shared/redact';
+import { maskTokenShapes, secretFlag, shQuote } from '../shared/redact';
 import type { McpServerSpec } from '../shared/mcp';
 import { isBroadRule } from '../shared/foldersetup';
 import type { FolderSetupApp, FolderSetupItem, RuleKind } from '../shared/foldersetup';
@@ -48,20 +48,12 @@ export const MAX_SHOWN = 8000;
 /**
  * FR-014 / FR-016 (review #424): what a hook command or a rule shows. Only real token shapes are hidden (GitHub and OpenAI/Anthropic
  * keys, bearer tokens, JWTs, AWS keys): their classes cannot contain shell syntax, so `--auth=$(curl …|sh)` or a backtick payload is
- * always shown. The flag- and name-based masking used for MCP arguments is NOT used here: it let a repository choose what is hidden.
+ * always shown. The shapes are `redact`'s own (`maskTokenShapes`, spec 012 FR-080), not a copy, so a token after `_` is hidden too.
+ * The flag- and name-based masking used for MCP arguments is NOT used here: it let a repository choose what is hidden.
  * `hidden` marks that something was replaced, so the window shows it and leaves the item unticked.
  */
-const TOKEN_SHAPES: RegExp[] = [
-  /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
-  /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
-  /\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/g,
-  /\bBearer\s{1,8}[A-Za-z0-9._~+/=-]{8,}/g,
-  /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}/g,
-  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
-];
 export function shownCommand(cmd: string): { text: string; hidden: boolean } {
-  let text = cmd;
-  for (const re of TOKEN_SHAPES) text = text.replace(re, '[secret hidden]');
+  const text = maskTokenShapes(cmd, '[secret hidden]');
   return { text, hidden: text !== cmd };
 }
 

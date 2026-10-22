@@ -1,5 +1,11 @@
 # Feature Specification: MCP servers in a session: clear status, Restart, last error and log folder
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: MCP servers in a session (issue #349): plain state words and how servers start per agent app, the masked failure reason with a hint, per-server Restart where the agent app has one (Copilot, Claude Code), Restart session with these servers, Open log folder (reveal only)
+status: **Specified and clarified** (spec, research, plan, tasks); the owner answered Q1-Q11 on 2026-10-20 (all option A). Built so far: MCP error and event masking (`maskMcpError`, `maskMcpEvent`; #362, #382); per-server Restart (Copilot, Claude Code) and Restart session with these servers (T030-T034, T040-T044, #349; simulator and fakes, not on a real account); state words and icons, hints, *Details* with *Copy* and live refresh of the open dialog (T113-T115, #364 step 4; simulator and tests; the start line, toggle timing and logs are not built yet); delta 2026-10-20 (issue #364): MCP OAuth sign-in (needs-auth from a 401, start the agent app's own sign-in or show terminal steps, switch off for this session), specified and clarified (owner answered Q12-Q19 on 2026-10-20); built so far (PR 1): the classifier `isMcpAuthChallenge`, `isAuthError` ignoring it, and masking of failed MCP tool cards (T091, T092, T097); PR 2: the types, event guard and fake for sign-in (`errorClass`, `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `mcpAuth`; T112, T093); no adapter sets them yet, no sign-in yet
+-->
+
 **Feature Branch**: `058-mcp-session-controls`
 **Created**: 2026-10-20
 **Status**: Specified and clarified (spec, research, plan and tasks). Built 2026-10-21 (#349): per-server Restart and Restart session
@@ -166,7 +172,7 @@ and nothing is opened; simulator shows the button and a toast.
 
 ### Words and status (P1)
 
-- **FR-001** Every server row shows one **word and icon** for its state, from one pure table (no colour alone, constitution V):
+- **FR-001** `[IMPLEMENTED]` (`test:` test-mcpwords; `sim:` shots-058-mcp-words; the "Off from/On from your next message" line waits for T010's `mcpToggleApplies` use in the row, T026) Every server row shows one **word and icon** for its state, from one pure table (no colour alone, constitution V): 
   `connected` "Running"; `pending` "Starting"; `failed` "Failed"; `needs-auth` "Needs sign-in"; `disabled` "Off for this session";
   `stopped` "Stopped"; `not_configured` "Not set up for this session"; no state yet "Not started yet"; anything else "Unknown state"
   followed by the escaped token. A switch the adapter applies with the next message shows "Off from your next message" / "On from your
@@ -179,7 +185,7 @@ and nothing is opened; simulator shows the button and a toast.
 - **FR-003** The dialog explains the two scopes in one sentence each: **This session** (the switch and Restart; kept until the app is
   closed, as today) and **New sessions** (Settings and the folder's extras; spec 019 FR-008). Wording reviewed against the README's MCP
   section (one word per concept, spec 052).
-- **FR-004** The dialog **updates while open** when an `mcp` event for that agent arrives (state, error), without losing focus or
+- **FR-004** `[IMPLEMENTED]` (`sim:` shots-058-mcp-words; not against a real event stream) The dialog **updates while open** when an `mcp` event for that agent arrives (state, error), without losing focus or
   scroll position.
 
 ### Errors (P1)
@@ -188,11 +194,11 @@ and nothing is opened; simulator shows the button and a toast.
   values of the session's own MCP servers (the folder's extras, known to main only) plus the process environment, then
   `maskSecretUrl` for URLs, cut to 300 characters. This also closes today's gap where the error reached the renderer unmasked
   (research section 1). Never logged; the `DURBAR_LOG` sink stays as it is.
-- **FR-006** A **hint** is chosen from the masked text, the state and a normalized error class (FR-011): needs sign-in; command not found
+- **FR-006** `[IMPLEMENTED]` (`test:` test-mcpwords) A **hint** is chosen from the masked text, the state and a normalized error class (FR-011): needs sign-in; command not found
   (`ENOENT`, "command not found", "is not recognized"); permission denied (`EACCES`); timed out; connection refused or host not found;
   the server exited or crashed; configuration error; otherwise none. One short sentence with what to check (Settings, the folder's
   extras, the Copilot CLI list). Pure, unit-tested.
-- **FR-007** A failed row has a *Details* toggle with the masked text and *Copy* (copies the masked text only).
+- **FR-007** `[IMPLEMENTED]` (`sim:` shots-058-mcp-words; a needs-sign-in row has it too) A failed row has a *Details* toggle with the masked text and *Copy* (copies the masked text only).
 
 ### Adapter surface (adapter-neutral, constitution II)
 

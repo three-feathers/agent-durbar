@@ -32,14 +32,14 @@ Closes #<!-- issue number: one issue = one Spec Kit task -->
 
 <!--
 Only for changes with NO behavior change (typo, comment, formatting, dependency bump, CI-only fix, revert), replace this
-comment with a line like the next one (or ask a maintainer for the `spec-exempt` label). "Small" is not a reason.
+comment with a line like the next one (or ask a maintainer for the `spec-exempt` label, then save the description once: a label alone does not re-run the check). "Small" is not a reason.
 
 Spec-Exempt: <reason>
 -->
 
 ## Docs
 
-- [ ] **Docs updated** in this PR: whichever of `README.md`, `docs/`, `CHANGELOG.md`, the spec's `tasks.md` and the screenshots it shows are affected (list in [AGENTS.md](../AGENTS.md#keep-docs-in-sync)) — links:
+- [ ] **Docs updated** in this PR: whichever of `README.md`, `docs/`, the spec's `tasks.md` and the screenshots it shows are affected, plus a `changelog.d/<branch>.md` fragment (not `CHANGELOG.md`) and the spec's `specs-index` block (new spec: `npm run specs:index -- --add specs/NNN-name`; never a row in `specs/README.md`) (list in [AGENTS.md](../AGENTS.md#keep-docs-in-sync)) — links:
 - [ ] ...or **no docs impact**: I wrote a `Docs: n/a <reason>` line below (only a reminder check reads it; it never blocks)
 
 <!--
