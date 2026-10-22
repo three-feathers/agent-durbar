@@ -1116,13 +1116,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       // spec 044: scheduled prompts in memory; a 1 s check sends through the simulated agents (no credits)
       listSchedules: async () => ({ pausedAll: simSched.pausedAll, schedules: simSched.list.map((x) => ({ ...x })) }),
-      saveSchedule: async (input) => {
+      saveSchedule: async (inputIn) => {
         const now = Date.now();
+        // FR-026 / FR-023: an id the store does not have is refused; an edit keeps what the form does not edit
+        const edit = inputIn.edit === true;
+        const prev = inputIn.id === undefined ? undefined : simSched.list.find((x) => x.id === inputIn.id);
+        if ((inputIn.id !== undefined && !prev) || (edit && !prev)) return { ok: false as const, error: 'That schedule is gone.' };
+        const input = edit && prev ? { ...inputIn, folder: prev.folder, paused: prev.paused, pausedReason: prev.pausedReason, done: undefined } : inputIn;
         const every = input.every !== undefined ? Math.round(Number(input.every)) : undefined;
         const rule = input.rule !== undefined ? simRules()?.parseRule(input.rule) : undefined;
         if (input.rule !== undefined && !rule) return { ok: false as const, error: 'That calendar rule is not valid.' };
         const old = simSched.list.find((x) => x.id === input.id);
-        if (!input.folder || !String(input.prompt ?? '').trim() || (!rule && every === undefined && !(Number(input.at) > now) && !(old && input.paused)) || (!rule && every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time, 5 to 1440 minutes or a calendar rule.' };
+        if (!input.folder || !String(input.prompt ?? '').trim() || (!rule && every === undefined && !(Number(input.at) > now) && !(edit && prev && !prev.done && Number(input.at) === prev.at) && !(!edit && old && input.paused)) || (!rule && every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time, 5 to 1440 minutes or a calendar rule.' };
         const target = input.target && typeof input.target === 'object' ? input.target : undefined;
         if (target && !input.paused && !sims.some((x) => x.info.id === target.session)) return { ok: false as const, error: "That session has ended. Send it to the folder's agent instead." };
         let cap = input.cap && typeof input.cap === 'object' ? input.cap : undefined;
@@ -1133,7 +1138,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           if (!(amount >= 0.01 && amount <= (u === 'usd' ? 10_000 : 1_000_000))) return { ok: false as const, error: 'That limit is out of range.' };
           cap = { amount, unit: u };
         }
-        const when: Partial<ScheduleInfo> = rule ? { rule, next: old?.rule && old.paused && input.paused ? old.next : simRules()?.nextRuleRun(rule, now) } : every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: old?.next ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) };
+        const when: Partial<ScheduleInfo> = rule ? { rule, next: !edit && old?.rule && old.paused && input.paused ? old.next : simRules()?.nextRuleRun(rule, now) } : every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: (edit ? undefined : old?.next) ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) };
         const resumedCap = !!old && old.pausedReason === 'cap' && !input.paused; // FR-015: Resume after the limit counts from zero
         const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...when, ...(input.paused ? { paused: true } : {}), ...(input.paused && old?.paused && old.pausedReason ? { pausedReason: old.pausedReason } : {}), ...(old?.last ? { last: old.last } : {}),
           ...(target ? { target: { session: String(target.session), agent: String(target.agent), ...(target.name ? { name: String(target.name).slice(0, 80) } : {}) } } : {}),
