@@ -184,6 +184,14 @@ module.exports = async (ctx) => {
     await ctx.sleep(500); // the toast's pop animation scales it from 0
     const over = await js(`(()=>{const t=[...document.querySelectorAll('#toasts .toast')].pop().getBoundingClientRect();let top=innerHeight,what='';for(const [n,e] of [['composer',document.querySelector('#panel .composer')],['answer bar',document.getElementById('answerBar')]])if(e&&!e.hidden&&e.getClientRects().length&&e.getBoundingClientRect().top<top){top=e.getBoundingClientRect().top;what=n;}return t.bottom>top+1?'toast bottom '+Math.round(t.bottom)+' is below the '+what+' top '+Math.round(top):''})()`);
     if (over) found.push({ surface: name, theme: themeId || theme, size: `${W}x${Hh}`, rule: 'toast-over-composer', el: '#toasts', detail: over });
+    // the composer grows under the open toast (a long message): the ResizeObserver moves the toast up. A child div, not padding: the observer watches the content box.
+    if (name === 'chat-toast') {
+      await js(`(()=>{const c=document.querySelector('#panel .composer'),d=document.createElement('div');d.id='uitextGrow';d.style.height='120px';c.appendChild(d);})()`);
+      await ctx.sleep(300);
+      const grown = await js(`(()=>{const t=[...document.querySelectorAll('#toasts .toast')].pop();if(!t)return 'the toast went away';const c=document.querySelector('#panel .composer').getBoundingClientRect(),b=t.getBoundingClientRect();return b.bottom>c.top+1?'toast bottom '+Math.round(b.bottom)+' is below the grown composer top '+Math.round(c.top):''})()`);
+      await js(`document.getElementById('uitextGrow')&&document.getElementById('uitextGrow').remove()`);
+      if (grown) found.push({ surface: name, theme: themeId || theme, size: `${W}x${Hh}`, rule: 'toast-over-composer', el: '#toasts', detail: grown });
+    }
     return true;
   });
   toastSurface('chat-toast', () => openChat('Ada'));

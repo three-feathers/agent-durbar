@@ -889,6 +889,7 @@ Owner request (Ruben, 2026-10-21, issue #464): text that breaks badly (cut, over
   - The shortcut sheet aligns its description column across its tables (one key-column width per column of the sheet).
   - Long names (60 characters, the maximum of spec 059) never widen a table, a heading or a list past its box: Tools > Models and context, Needs you, the list view, the palette, Send to several.
   - In the chat, the streaming caret follows the text, the Copy button never covers text, and a toast never covers the composer.
+  - Change notes (2026-10-22): Tools > Models and context shows the folder name, not the room id; a code block has a 32px strip above its first line for its own Copy button; `simnames=long` (spec 059 FR-016, used by the T148 and T154 passes) now also makes every folder name long (the agent names were already 60 characters).
 - **FR-171** **A check that keeps it fixed** `[IMPLEMENTED]`
   - `scripts/check-ui-text.js` (in `npm run check:ui`, `npm run check:ui-text`): opens every surface listed in FR-165..FR-170 in the simulator at 1440x900 and 1280x800, in Clean Office and in a dark fixture theme (`scripts/fixtures/themes/dark-audit.json`), and asserts on each:
     - no visible text under 10.5px (computed);
