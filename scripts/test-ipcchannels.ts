@@ -3,23 +3,22 @@
  * channel, register one twice, or drop an owner-only `fromApp(e)` check. `npm run test:ipcchannels`. No Electron, no network, no credits.
  *
  *  1. every channel the preload calls (`ipcRenderer.invoke` / `send`) is registered exactly once with `ipcHandle` / `ipcOn` somewhere in src/main;
- *  2. no channel is registered twice, and nothing in src/main/ipc/ uses `ipcMain` (the sender check in ipcguard.ts would be skipped);
+ *  2. no channel is registered twice, and no file in src/ but ipcguard.ts uses `ipcMain` or `webContents.ipc` (the sender check and the
+ *     simulator's default deny in ipcguard.ts would be skipped; spec 010 FR-029);
  *  3. the channels whose handler calls `fromApp(e)` are exactly the static list below (taken from main.ts before the move).
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
+import { preloadChannels, stripComments } from './ipc-channel-list';
 
 const ROOT = path.join(__dirname, '..', '..');
 const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.ts') ? [path.join(dir, e.name)] : []));
-/** Block and line comments out (a line comment starts at the beginning of a line or after a space, so `https://` in a string stays). */
-const stripComments = (s: string): string => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
 const read = (f: string): string => stripComments(fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n'));
 
 // 1. what the renderer can call
-const preload = read(path.join(ROOT, 'src', 'preload', 'preload.ts'));
-const called = new Set([...preload.matchAll(/ipcRenderer\.(?:invoke|send)\(\s*'([^']+)'/g)].map((m) => m[1]));
+const called = preloadChannels().all;
 assert.ok(called.size > 100, `the preload calls many channels (found ${called.size})`);
 
 // what main registers: channel -> [{ file, block }]; a block runs from the registration to the next one (or the end of the file)
@@ -45,7 +44,27 @@ const ipcDir = path.join(mainDir, 'ipc');
 const ipcFiles = walk(ipcDir);
 const modules = ipcFiles.filter((f) => path.basename(f) !== 'types.ts');
 assert.ok(modules.length >= 10, `the handlers are in src/main/ipc (${modules.length} modules)`);
-for (const f of ipcFiles) assert.ok(!/\bipcMain\b/.test(read(f)), `${path.relative(ROOT, f)} must not use ipcMain: register through ipcHandle / ipcOn (ipcguard.ts)`);
+// spec 010 FR-029 (review on #514): anywhere in src/, not only src/main/ipc. A raw ipcMain.on / handleOnce, or webContents.ipc.handle (which
+// Electron checks before ipcMain), would reach the real handler under DURBAR_SIM and skip the sender check. Strings count too (require('electron').ipcMain).
+const BYPASS: [RegExp, string][] = [
+  [/\bipcMain\b/, 'ipcMain'],
+  [/\.\s*ipc\b(?!\w)/, 'a webContents .ipc property'],
+  [/\[\s*['"`]ipc['"`]\s*\]/, "a ['ipc'] property"],
+  [/\{[^{}]*\bipc\b\s*(?:[,}:])[^{}]*\}?\s*=/, 'a destructured ipc'],
+];
+const srcFiles = walk(path.join(ROOT, 'src'));
+assert.ok(srcFiles.length > 100, `src/ has many .ts files (${srcFiles.length})`);
+for (const f of srcFiles) {
+  const rel = path.relative(ROOT, f).replace(/\\/g, '/');
+  if (rel === 'src/main/ipcguard.ts') continue;
+  const src = read(f);
+  for (const [re, what] of BYPASS) assert.ok(!re.test(src), `${rel} uses ${what}: register through ipcHandle / ipcOn (ipcguard.ts), the only file that may touch ipcMain or webContents.ipc`);
+}
+// the scan is not vacuous: each pattern catches the bypass it is for (mutations M8, M9 of the review on #514)
+for (const [sample, n] of [["win.webContents.ipc.handle('theme:generate', h)", 1], ["ipcMain.on('agents:setPaused', h)", 0], ["ipcMain.handleOnce('x', h)", 0], ["wc['ipc'].on('x', h)", 2], ["const { ipc } = win.webContents;", 3], ["const { ipc: x, id } = w;", 3]] as const) {
+  assert.ok(BYPASS[n][0].test(sample), `the bypass scan catches: ${sample}`);
+}
+assert.ok(BYPASS.every(([re]) => !re.test("ipcHandle('a', (e) => ipcRenderer.invoke('b'))") && !re.test('const { ipcHandle, ipcOn } = g;')), 'the scan leaves ipcHandle, ipcOn and ipcRenderer alone');
 assert.ok(!/\bipc(?:Handle|On)\(/.test(read(path.join(mainDir, 'main.ts'))), 'main.ts only calls the register functions of src/main/ipc, it registers no channel itself');
 // a module that main.ts never calls registers nothing at run time: every module is imported with its `register` and called
 const mainSrc = read(path.join(mainDir, 'main.ts'));

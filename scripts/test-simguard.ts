@@ -7,19 +7,21 @@
  *  2. every channel that starts or talks to an agent app (the list in the spec) is registered and not open; an open channel's handler
  *     names no adapter, router, addWorkspace, generateText, spawn or install run;
  *  3. main.ts builds the registry through simGuardDescriptors and gates the scheduler and DURBAR_OPEN on simulatorOn;
- *  4. the stand-in adapter: the real create is never called, every member but the inert ones throws the refusal.
+ *  4. the stand-in adapter: the real create is never called, every member but the inert ones throws the refusal;
+ *  5. FR-030: under the simulator detection and the sign-in check start no child process (child_process replaced by counting spies),
+ *     and sealChildProcess refuses every starter; FR-031: ipcguard takes main's decision (initSimGuard) and refuses to register before it.
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
-import { SIM_OPEN_CHANNELS, SIM_OPTIONAL_MEMBERS, blockedAdapter, isSimBlocked, simChannelOpen, simGuardDescriptors, simRefusal, simulatorOn } from '../src/main/simguard';
+import { CHILD_PROCESS_STARTERS, SIM_DETECT_HINT, SIM_OPEN_CHANNELS, SIM_OPTIONAL_MEMBERS, blockedAdapter, isSimBlocked, sealChildProcess, simChannelOpen, simDetectorFor, simGuardDescriptors, simRefusal, simulatorOn } from '../src/main/simguard';
+import { preloadChannels, stripComments } from './ipc-channel-list';
 import { interfaceOptionalMembers } from './test-adapter-contract';
-import type { AdapterDescriptor } from '../src/adapters/capabilities';
+import type { AdapterDescriptor, DetectResult } from '../src/adapters/capabilities';
 import type { AgentAdapter } from '../src/adapters/types';
 
 const ROOT = path.join(__dirname, '..', '..');
-const stripComments = (s: string): string => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
 const read = (f: string): string => stripComments(fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\r\n/g, '\n'));
 
 // ---- FR-022: one rule, the window's ----
@@ -29,9 +31,7 @@ for (const [v, on] of [['15', true], ['1', true], [' 12 ', true], ['40', true], 
 assert.strictEqual(simulatorOn({}), false, 'no hooks (a packaged build) -> off');
 
 // ---- 1. the shipped ipcguard decision, under a stand-in electron ----
-const preload = read('src/preload/preload.ts');
-const invoked = [...new Set([...preload.matchAll(/ipcRenderer\.invoke\(\s*'([^']+)'/g)].map((m) => m[1]))].sort();
-const sent = [...new Set([...preload.matchAll(/ipcRenderer\.send\(\s*'([^']+)'/g)].map((m) => m[1]))].sort();
+const { invoked, sent } = preloadChannels(); // the same list test:ipcchannels checks (FR-029)
 assert.ok(invoked.length > 100, `the preload invokes many channels (${invoked.length})`);
 assert.ok(sent.length >= 1, 'the preload sends at least one message (agents:setPaused)');
 
@@ -49,15 +49,23 @@ const indexUrl = pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'in
 const mainFrame = { url: indexUrl };
 const event = { senderFrame: mainFrame, sender: { mainFrame } };
 
-interface Guard { ipcHandle: (c: string, f: (...a: unknown[]) => unknown) => void; ipcOn: (c: string, f: (...a: unknown[]) => void) => void }
+interface Guard { initSimGuard: (on: boolean) => void; ipcHandle: (c: string, f: (...a: unknown[]) => unknown) => void; ipcOn: (c: string, f: (...a: unknown[]) => void) => void }
+/** A fresh ipcguard module with main's decision handed in, as main.ts does (FR-031): `simulatorOn` of the given DURBAR_SIM. */
 function loadGuard(sim: string | undefined): Guard {
   delete require.cache[require.resolve(guardFile)];
-  if (sim === undefined) delete process.env.DURBAR_SIM;
-  else process.env.DURBAR_SIM = sim;
   handles.clear();
   ons.clear();
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require(guardFile) as Guard;
+  const g = require(guardFile) as Guard;
+  // FR-031: registering before main's decision throws (it would otherwise guess); so does changing the decision later
+  assert.throws(() => g.ipcHandle('x:y', () => 'ok'), /initSimGuard\(SIMULATOR\) must run before "x:y"/);
+  assert.throws(() => g.ipcOn('x:z', () => undefined), /initSimGuard/);
+  assert.strictEqual(handles.size + ons.size, 0, 'nothing is registered before initSimGuard');
+  const on = simulatorOn({ DURBAR_SIM: sim });
+  g.initSimGuard(on);
+  g.initSimGuard(on); // the same value again is fine
+  assert.throws(() => g.initSimGuard(!on), /already decided/);
+  return g;
 }
 
 async function run(sim: string | undefined): Promise<{ ran: Set<string>; refused: Map<string, string> }> {
@@ -104,7 +112,6 @@ async function run(sim: string | undefined): Promise<{ ran: Set<string>; refused
     assert.strictEqual(real.refused.size, 0, `DURBAR_SIM=${String(v)}: nothing is refused (${[...real.refused.keys()].join(', ')})`);
     for (const c of [...invoked, ...sent]) assert.ok(real.ran.has(c), `DURBAR_SIM=${String(v)}: "${c}" reaches its handler`);
   }
-  delete process.env.DURBAR_SIM;
   Module._load = realLoad;
   console.log(`simguard: under DURBAR_SIM ${invoked.length + sent.length - Object.keys(SIM_OPEN_CHANNELS).length} channels refused, ${Object.keys(SIM_OPEN_CHANNELS).length} open; all answered without it`);
 })().catch((e) => {
@@ -162,7 +169,22 @@ assert.ok(/if \(SIMULATOR\) \{\s*\n\s*query\.sim = /.test(mainSrc), 'the window 
 assert.ok(!/dev\.DURBAR_SIM\b(?!_)/.test(mainSrc), 'main.ts reads DURBAR_SIM only through simulatorOn');
 assert.ok(/createdAdapters: \(\) => router\.created\(\)/.test(mainSrc), 'the driver context reports the created adapters (FR-026)');
 const guardSrc = read('src/main/ipcguard.ts');
-assert.ok(/simulator \?\?= simulatorOn\(devEnv\(process\.env, app\.isPackaged\)\);/.test(guardSrc), 'ipcguard decides with devEnv (packaged builds have no hooks)');
+// FR-031: one decision. main.ts hands SIMULATOR to the guard right after deciding it, before the first register* call; the guard reads no environment
+assert.ok(!/process\.env|devEnv|simulatorOn\(/.test(guardSrc), 'ipcguard reads no environment: the mode is main.ts\'s (FR-031)');
+assert.ok(/const SIMULATOR = simulatorOn\(dev\);\n\s*initSimGuard\(SIMULATOR\);/.test(mainSrc), 'main.ts calls initSimGuard(SIMULATOR) right after deciding (FR-031)');
+{
+  const init = mainSrc.indexOf('initSimGuard(SIMULATOR)');
+  const firstReg = mainSrc.search(/\bregister\w*\(\{/);
+  assert.ok(init > 0 && firstReg > init, 'initSimGuard runs before the first register*() call (FR-031)');
+  // FR-030: the seal comes right after, detection goes through simDetectorFor, the sign-in check asks nothing, the driver can count
+  assert.ok(/initSimGuard\(SIMULATOR\);[^\n]*\n[^\n]*\n\s*const childSeal = SIMULATOR \? sealChildProcess\(childProcess as unknown as Record<string, unknown>\) : undefined;/.test(mainSrc), 'main.ts seals child_process under the simulator before anything is registered (FR-030)');
+  assert.ok(/^import childProcess = require\('child_process'\);$/m.test(mainSrc), 'the seal gets the real child_process module object (an import-equals, not an importStar copy)');
+  assert.ok(/detectAll\(registry, simDetectorFor\(SIMULATOR, detectorFor\)\)/.test(mainSrc), 'adaptersList detects through simDetectorFor(SIMULATOR, ...) (FR-030)');
+  assert.strictEqual((mainSrc.match(/\bdetectAll\(/g) ?? []).length, 1, 'one detection call in main.ts');
+  assert.strictEqual((mainSrc.match(/\bdetectorFor\b/g) ?? []).length, 2, 'detectorFor is only imported and handed to simDetectorFor');
+  assert.ok(/const signInCheck = [^\n]*\n\s*if \(SIMULATOR\) return undefined;/.test(mainSrc), 'the sign-in check asks nothing under the simulator (FR-030)');
+  assert.ok(/childProcessAttempts: \(\) => childSeal\?\.tried\(\)/.test(mainSrc), 'the driver context reports child process attempts (FR-030)');
+}
 assert.ok(/fromAppFrame\(e\)\) throw [^\n]*\n\s*if \(!simAllows\(channel\)\) throw new Error\(simRefusal\(channel\)\);\n\s*return fn\(/.test(guardSrc), 'ipcHandle refuses before the handler');
 assert.ok(/if \(fromAppFrame\(e\) && simAllows\(channel\)\) fn\(/.test(guardSrc), 'ipcOn drops before the handler');
 
@@ -218,6 +240,75 @@ assert.ok(/if \(fromAppFrame\(e\) && simAllows\(channel\)\) fn\(/.test(guardSrc)
   // the gates are the contract's: with every capability on, every gated member exists; with none, none does
   const gated = inIface.filter((m) => SIM_OPTIONAL_MEMBERS[m]);
   assert.ok(gated.length >= 17, 'the C2 members are gated');
+}
+
+// ---- 5. FR-030 (review on #514): detection and sign-in under the simulator start no process; the seal refuses every starter ----
+{
+  // the canned detector never calls the real one; off, it does
+  let realCalls = 0;
+  const spyReal = (): ((d: AdapterDescriptor) => Promise<DetectResult>) => { realCalls++; return () => Promise.resolve({ state: 'ready' }); };
+  const desc = { id: 'claude', displayName: 'Claude Code', capabilities: {} } as unknown as AdapterDescriptor;
+  // the seal: every starter throws the refusal and is counted; the original is never called
+  let origCalls = 0;
+  const fake: Record<string, unknown> = Object.fromEntries(CHILD_PROCESS_STARTERS.map((n) => [n, () => { origCalls++; }]));
+  const seal = sealChildProcess(fake);
+  for (const n of CHILD_PROCESS_STARTERS) assert.throws(() => (fake[n] as (...a: unknown[]) => unknown)('/usr/bin/claude', ['--version']), (e: Error) => e.message === simRefusal(`child_process.${n}`), `sealed ${n} refuses`);
+  assert.strictEqual(origCalls, 0, 'the sealed starters never call the original');
+  assert.strictEqual(seal.attempts(), CHILD_PROCESS_STARTERS.length, 'each attempt is counted');
+  assert.ok(seal.tried().every((t) => t.endsWith(' claude')), 'an attempt names only the program, never a path');
+  assert.ok(CHILD_PROCESS_STARTERS.length === 7 && CHILD_PROCESS_STARTERS.includes('fork' as never), 'all seven starters are sealed');
+
+  // the real child_process, replaced by counting spies that never start anything
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const cp = require('child_process') as Record<string, unknown>;
+  const saved = Object.fromEntries(CHILD_PROCESS_STARTERS.map((n) => [n, cp[n]]));
+  const calls: string[] = [];
+  for (const n of CHILD_PROCESS_STARTERS) {
+    cp[n] = (file: string, ...rest: unknown[]) => {
+      calls.push(`${n} ${file}`);
+      const cb = rest.find((r) => typeof r === 'function') as ((e: Error | null, so: string, se: string) => void) | undefined;
+      const err = Object.assign(new Error('spy: not started'), { code: 'ENOENT' });
+      if (cb) setImmediate(() => cb(err, '', ''));
+      else if (n.endsWith('Sync')) throw err;
+      return { on: () => undefined, kill: () => undefined, stdout: null, stderr: null, pid: undefined };
+    };
+  }
+  const restore = (): void => { for (const n of CHILD_PROCESS_STARTERS) cp[n] = saved[n]; };
+  (async () => {
+    try {
+      /* eslint-disable @typescript-eslint/no-require-imports */
+      const { detectorFor, nodeExec } = require('../src/adapters/detect') as typeof import('../src/adapters/detect');
+      const { createRegistry, detectAll } = require('../src/adapters/registry') as typeof import('../src/adapters/registry');
+      const { PRODUCTION_DESCRIPTORS } = require('../src/adapters/descriptors') as typeof import('../src/adapters/descriptors');
+      const { offeredDescriptors } = require('../src/adapters/experimental') as typeof import('../src/adapters/experimental');
+      const { withSignIn } = require('../src/main/authcheck') as typeof import('../src/main/authcheck');
+      /* eslint-enable @typescript-eslint/no-require-imports */
+      // the spy sees the real exec path (so zero below means nothing ran, not a blind spy)
+      await nodeExec('claude', ['--version'], { timeoutMs: 100 });
+      assert.deepStrictEqual(calls, ['execFile claude'], 'the spy sees nodeExec (positive control)');
+      calls.length = 0;
+      // what adaptersList does under the simulator: stand-in registry, canned detection, sign-in check through the stand-ins
+      const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors({})], true)); // as main.ts builds it
+      const infos = await detectAll(registry, simDetectorFor(true, detectorFor));
+      assert.deepStrictEqual(infos.map((i) => i.id), ['copilot', 'claude', 'codex'], 'Copilot, Claude Code and Codex are detected');
+      assert.ok(infos.every((i) => i.state === 'ready' && i.hint === SIM_DETECT_HINT), 'every adapter is canned ready under the simulator');
+      const signedIn = await withSignIn(infos, () => undefined); // main.ts's signInCheck returns undefined under the simulator
+      assert.deepStrictEqual(signedIn.map((i) => i.state), infos.map((i) => i.state));
+      assert.deepStrictEqual(calls, [], `no child process under the simulator during detection (got ${calls.join(', ')})`);
+      // the canned detector never asks the real one; off, the real one is asked
+      await simDetectorFor(true, spyReal)(desc);
+      assert.strictEqual(realCalls, 0, 'simDetectorFor(true) never calls the real detector');
+      await simDetectorFor(false, spyReal)(desc);
+      assert.strictEqual(realCalls, 1, 'simDetectorFor(false) uses the real detector');
+      assert.deepStrictEqual(await simDetectorFor(false, () => undefined)(desc), { state: 'unknown' }, 'off, an adapter without a detector is unknown (as before)');
+      console.log('simguard: detection under the simulator started 0 child processes; the seal refuses all 7 starters');
+    } finally {
+      restore();
+    }
+  })().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
 }
 
 console.log('simguard: simulatorOn, the spending list, the open list, main.ts wiring and the stand-in adapter pass');

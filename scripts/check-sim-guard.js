@@ -8,6 +8,8 @@
  * Asserts: the one-shot prompts (theme maker, folder-setup explainer), new folders and sessions, send, resume, deleting a previous session,
  * listing the agent apps and their models, installs and the CLI sign-in are all refused with the simulator message; `harnessPlans`
  * (the one open channel) still answers; main has created no real adapter (`ctx.createdAdapters()`); the simulator itself still works.
+ * FR-030 (review on #514): a driver's `ctx.addMany(..., { adapterId: 'claude' })`, which reaches detection without IPC, starts no
+ * child process (no `claude --version` / `auth status`), and main tried none since startup (`ctx.childProcessAttempts()`).
  */
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers'); /* shared plumbing; jsLiteral: values spliced into page code */
@@ -40,6 +42,21 @@ module.exports = async (ctx) => {
   }
   const plans = await H.js(`window.agentDurbar.harnessPlans(${jsLiteral('claude')},${jsLiteral('install')})`);
   assert.ok(plans && Array.isArray(plans.plans) && plans.plans.length > 0, 'harness:plans (open) still answers with the simulated routes');
+  // FR-030: addMany with a picked agent app goes through detection (readyAdapterIds) without IPC; under the simulator it asks no app
+  const fs = require('fs'); const os = require('os'); const path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-simguard-'));
+  let added;
+  try {
+    added = await ctx.addMany([dir], 'read-only', { adapterId: 'claude' });
+  } catch (e) {
+    added = { error: String(e && e.message || e) };
+  }
+  console.log(`[sim-guard] addMany with adapterId claude: ${JSON.stringify(added).slice(0, 200)}`);
+  const tried = ctx.childProcessAttempts();
+  assert.ok(Array.isArray(tried), 'the driver context counts child process attempts under the simulator');
+  assert.deepStrictEqual(tried, [], `main tried no child process under DURBAR_SIM (it tried: ${JSON.stringify(tried)})`);
+  console.log('[sim-guard] child processes tried by main since startup: 0');
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* the stand-in agent may still hold it; it is in the temp folder */ }
   const created = ctx.createdAdapters();
   assert.ok(created.every((a) => a.simBlocked), `no real adapter was created (${JSON.stringify(created)})`);
   console.log(`[sim-guard] adapters created in main: ${created.length} (all stand-ins)`);

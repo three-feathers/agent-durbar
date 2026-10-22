@@ -7,7 +7,7 @@
  *  - the adapter registry gets inert stand-ins, so no real adapter is ever constructed (FR-024).
  * Pure: no Electron import, so `scripts/test-simguard.ts` tests it.
  */
-import type { AdapterDescriptor } from '../adapters/capabilities';
+import type { AdapterDescriptor, DetectResult } from '../adapters/capabilities';
 import type { AgentAdapter } from '../adapters/types';
 
 /** FR-022: simulator mode, as the window sees it (`main.ts` puts `?sim=N` on the page only for a whole number above 0). */
@@ -121,4 +121,34 @@ export function blockedAdapter(d: AdapterDescriptor): AgentAdapter {
 export function simGuardDescriptors(descs: readonly AdapterDescriptor[], on: boolean): AdapterDescriptor[] {
   if (!on) return [...descs];
   return descs.map((d) => ({ ...d, create: () => blockedAdapter(d) }));
+}
+
+/** FR-030: what detection reports for every adapter under the simulator (no agent app is asked). */
+export const SIM_DETECT_HINT = 'Simulator (DURBAR_SIM): not checked; no agent app is started.';
+type Detector = (d: AdapterDescriptor) => Promise<DetectResult>;
+/**
+ * FR-030 (review on #514): the detector `adaptersList` uses. On: a canned `ready` per adapter and the real detector (`--version`,
+ * `auth status`, `login status`) is never called, so a driver's `addMany(..., { adapterId })` starts nothing. Off: the real one.
+ */
+export function simDetectorFor(on: boolean, real: (id: string) => Detector | undefined): Detector {
+  if (on) return () => Promise.resolve({ state: 'ready', hint: SIM_DETECT_HINT });
+  return (d) => real(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' });
+}
+
+/** FR-030: the `child_process` functions that start a process; under the simulator each one refuses. */
+export const CHILD_PROCESS_STARTERS = Object.freeze(['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork'] as const);
+/**
+ * FR-030 backstop: replaces every starter on the given `child_process` module object with a function that counts the attempt and
+ * throws the refusal, so a probe nobody listed cannot start a process under the simulator. Callers that import `child_process` by
+ * name (TypeScript's CommonJS output reads the property at call time) see the sealed function. Returns the attempt counter.
+ */
+export function sealChildProcess(cp: Record<string, unknown>): { attempts(): number; tried(): readonly string[] } {
+  const tried: string[] = [];
+  for (const name of CHILD_PROCESS_STARTERS) {
+    cp[name] = (file?: unknown) => {
+      tried.push(`${name} ${typeof file === 'string' ? file.split(/[\\/]/).pop() : '?'}`);
+      throw new Error(simRefusal(`child_process.${name}`));
+    };
+  }
+  return { attempts: () => tried.length, tried: () => [...tried] };
 }
