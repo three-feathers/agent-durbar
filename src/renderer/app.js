@@ -38,10 +38,10 @@ const LEDGER=window.DurbarUsage.createLedger();
 const ledgerRemoved=()=>LEDGER.hasUnlisted()||LEDGER.roomIds().some(id=>{const r=ROOMS.find(x=>x.id===id);return !r||r.hidden;});
 /* Totals saved before this run (spec 011 FR-027, issue #21): asked from the main process once agents exist, and again when one is added
    (its folder may have a saved total). The baseline is frozen in main, so asking again never double counts what this run recorded. */
-let baselineQueued=false, usageSaveError='';
+let baselineQueued=false, baselineAsking=0, usageSaveError='';
 function loadUsageBaseline(){
   if(baselineQueued||!bridge||!bridge.usageTotals)return; baselineQueued=true;
-  setTimeout(()=>{baselineQueued=false;bridge.usageTotals().then(v=>{if(v&&v.ok){LEDGER.setBaseline(v);usageSaveError=typeof v.error==='string'?v.error:'';scheduleRender();}}).catch(()=>{});},50);
+  setTimeout(()=>{baselineQueued=false;baselineAsking++;bridge.usageTotals().then(v=>{if(v&&v.ok){LEDGER.setBaseline(v);usageSaveError=typeof v.error==='string'?v.error:'';scheduleRender();}}).catch(()=>{}).finally(()=>{baselineAsking--;});},50);
 }
 /* After "Reset usage totals" in Settings: this run's figures and the baseline both start from zero. */
 function onUsageReset(view){LEDGER.clearRun();LEDGER.setBaseline(view&&view.ok?view:{});usageSaveError=view&&typeof view.error==='string'?view.error:'';scheduleRender();}
@@ -157,7 +157,7 @@ let moodSig='';
 setInterval(()=>{if(SERIOUS||demoOn)return;const sig=agents.map(x=>x.live&&!x.parent?moodFor(x).trouble+'/'+moodFor(x).body:'').join('|');if(sig!==moodSig){moodSig=sig;scheduleRender();}},5000);
 /* spec 052 FR-062: "Last activity" labels follow the clock through the normal render, every 30 s and only when a label changed */
 let agoSig='';
-setInterval(()=>{if(demoOn)return;const sig=agents.map(x=>x.lastEventAt?ACT.agoShort(Date.now()-x.lastEventAt):'').join('|');if(sig!==agoSig){agoSig=sig;scheduleRender();}},30000);
+setInterval(()=>{if(demoOn)return;const sig=agents.map(x=>(x.lastEventAt?ACT.agoShort(Date.now()-x.lastEventAt):'')+(x.busySince?'/'+ACT.agoShort(Date.now()-x.busySince):'')).join('|');if(sig!==agoSig){agoSig=sig;scheduleRender();}},30000);
 /* ---- places in the office (spec 024): a shared lobby; main agents walk to the place of the tool they are using ---- */
 const VISITS=window.DurbarPlaces.createVisits();
 const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (per-folder extras included): the Places settings list them */
@@ -324,7 +324,7 @@ const clipName=s=>DurbarCutText.cutText(s,40); /* shared helper (cuttext.js): a 
 function plainAsk(kind,summary){
   const s=String(summary||'').trim(), k=String(kind||'');
   if(k==='write'||k==='read'){
-    let rest=s.replace(/^(write|edit|create|read)(\s+|$)/i,''), more='';
+    let rest=s.replace(/^(write|edit|create|read)(\s+|$)/i,'').replace(/^\([^()]*\)$/,''), more=''; /* spec 052 FR-172: "write (Codex did not say which file)" names no file */
     const m=/\s+\(\+(\d+) more\)$/.exec(rest);if(m){more=' and '+m[1]+' more file'+(m[1]==='1'?'':'s');rest=rest.slice(0,m.index);}
     const {base,dir}=baseOf(rest.replace(/\s+\([^()]*\)$/,'').trim());
     return {what:(k==='write'?'change ':'read ')+(base?clipName(base):'a file')+more,folder:dir?'in '+dir:'',cmd:''};
@@ -558,15 +558,32 @@ const GR=window.DurbarProbe.GROW;
 function setGrow(el,f){if(f){el.style.setProperty('--gf',String(f));el.dataset.grow=f>=GR.TWO_LINES?'2':'1';}else{el.style.removeProperty('--gf');delete el.dataset.grow;}}
 /* the text of a grown desk: the readout with its newest sentences, else the start of the last reply (Done, Idle), else the desk text.
    The reply is masked on the raw text before Markdown is removed (excerpt); with no working mask nothing from it shows (fail closed). */
+/* the start of the last reply, masked on the raw text, plain, cut to 600; '' without a reply or a working mask (fail closed) */
+function replyExcerpt(a){
+  const R=window.DurbarRedact;
+  const t=a.lastOutput?window.DurbarLiveAct.excerpt(a.lastOutput,R&&typeof R.redact==='function'?x=>R.redact(x):null):'';
+  return t?DurbarCutText.cutText(t,600):'';
+}
+/* does the main text of a grown desk show the last reply (a Done or Idle desk with one)? Then no reply column repeats it (FR-047) */
+const grownShowsReply=a=>!a.parent&&!liveShown(a)&&(vis(a)==='done'||vis(a)==='idle')&&!!a.lastOutput;
 function grownLine(a){
   const r=liveShown(a);
   if(r)return r.kind==='tool'?r.long:(window.DurbarLiveAct.KIND_WORD[r.kind]||'')+': '+r.long;
-  const st=vis(a), R=window.DurbarRedact;
-  if(!a.parent&&(st==='done'||st==='idle')&&a.lastOutput){
-    const t=window.DurbarLiveAct.excerpt(a.lastOutput,R&&typeof R.redact==='function'?x=>R.redact(x):null);
-    return t?DurbarCutText.cutText(t,600):st==='done'?'Finished.':'Ready.';
-  }
+  if(grownShowsReply(a))return replyExcerpt(a)||(vis(a)==='done'?'Finished.':'Ready.');
   return taskOf(a);
+}
+/* spec 001 FR-047: the side of a wide grown desk: the last reply (when the main text is not already showing it) and the facts (the tool of
+   this turn, usage, context, time). Shown only when the render pass gives the card two or three columns (data-gc); hidden in the probe. */
+function grownSideHTML(a){
+  if(a.parent)return '';
+  const rep=grownShowsReply(a)?'':replyExcerpt(a), r=liveShown(a), facts=[];
+  if(r&&r.tool)facts.push([r.kind==='tool'?'Now':'Last tool',r.tool]);
+  const u=usageLong(a);
+  if(u){const p=u.split(' · ');if(p.length>2){facts.push(['Usage',p.slice(0,2).join(' · ')]);facts.push(['Cost',p.slice(2).join(' · ')]);}else facts.push([SIMPLE?'Cost':'Usage',u.replace(/^Cost so far: /,'')]);}
+  try{const c=window.DurbarScreens&&window.DurbarScreens.ctxChip(a);if(c&&c.cls!=='unk')facts.push([SIMPLE?'Memory':'Context',SIMPLE?c.pct+'% full':c.text.replace(/^Context /,'')]);}catch(e){}
+  const busy=a.busySince&&(a.state==='working'||a.state==='thinking')?ACT.agoLong(Date.now()-a.busySince):'', last=ACT.agoLong(sinceLast(a));
+  if(busy)facts.push(['On this task',busy==='just now'?'just started':busy.replace(/ ago$/,'')]); else if(last)facts.push(['Last activity',last]);
+  return `<span class="gx"${rep?' data-rep="1"':''}>${rep?`<span class="gx-r"><span class="gx-h">Last reply</span><span class="gx-t">${esc(rep)}</span></span>`:''}<span class="gx-f">${facts.map(([k,v])=>`<span class="gx-l"><span class="gx-k">${esc(k)}</span> ${esc(v)}</span>`).join('')}</span></span>`;
 }
 const liveAttrs=a=>{if(a.parent)return '';const r=LIVE_SIDE?null:liveShown(a);return ` data-live="${esc(a.id)}"${r?` data-lk="${r.kind}"`:''}`;};
 function sideHTML(a){
@@ -590,6 +607,26 @@ function fitLines(tx){
   const lh=parseFloat(getComputedStyle(tx).lineHeight)||16, n=Math.max(1,Math.floor((tx.clientHeight+0.5)/lh));
   tx.style.flex='none';tx.style.height=(n*lh)+'px';
   fitSide(tx);
+}
+/* spec 001 FR-047, FR-048: a grown card's columns from its width (its grid cell, before any cap): DurbarProbe.grownCols; the card is at most as
+   wide as its columns, so a wide room never stretches the lines */
+function setGrownCols(card){
+  const cell=card.parentElement, sc=card.querySelector('.sc'), gx=card.querySelector('.gx');
+  card.style.maxWidth='';
+  const cs=getComputedStyle(card), pad=parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight), cg=parseFloat(cs.columnGap)||0;
+  const room=(cell?cell.clientWidth:card.clientWidth)-pad-(sc?sc.getBoundingClientRect().width:0)-cg;
+  const c=gx?window.DurbarProbe.grownCols(room,{reply:gx.dataset.rep==='1'}):{n:1};
+  if(c.n<2){delete card.dataset.gc;['--gm','--gr','--gs'].forEach(k=>card.style.removeProperty(k));return;}
+  const G=window.DurbarProbe.GCOL, side=c.n===3?c.reply+G.GAP+c.side:c.side;
+  card.dataset.gc=String(c.n); card.style.setProperty('--gm',c.main+'px'); card.style.setProperty('--gr',c.reply+'px'); card.style.setProperty('--gs',c.side+'px');
+  card.style.maxWidth=Math.ceil(pad+(sc?sc.getBoundingClientRect().width:0)+cg+c.main+G.GAP+side)+'px';
+}
+/* the reply column: whole lines from the top, the last one with an ellipsis */
+function fitClamp(tx){
+  tx.style.height='';tx.style.webkitLineClamp='';tx.style.flex='';
+  const lh=parseFloat(getComputedStyle(tx).lineHeight)||15, n=Math.floor((tx.clientHeight+0.5)/lh);
+  tx.parentElement.classList.toggle('is-empty',n<1);
+  if(n>=1){tx.style.flex='none';tx.style.height=(n*lh)+'px';tx.style.webkitLineClamp=String(n);}
 }
 const liveTimers=new Map();
 function livePaintSoon(a){
@@ -637,7 +674,7 @@ function cardHTML(a,d,nSubs){
   return `<button class="desk card is-${st}${isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${esc((a.profile?a.profile.name+' · '+a.role:a.role)+kindTag(a)+remoteTag(a))} · ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1"><span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</span>
-    <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span></button>`;
+    <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span>${GROW?grownSideHTML(a):''}</button>`;
 }
 function linksSVG(d,rows,extraMore){
   const D=DENS[d]; const n=rows+(extraMore?1:0);
@@ -1035,7 +1072,7 @@ function renderOffice(){
   stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap); stage.dataset.side=layout.side?'1':'0';
   fitUsage(stage);
   if(layout.side)stage.querySelectorAll('.liveside .ls-t').forEach(fitSide);
-  if(layout.grow)stage.querySelectorAll('.desk.card .intent').forEach(fitLines); /* FR-043: whole lines, the newest in view */
+  if(layout.grow){stage.querySelectorAll('.desk.card').forEach(setGrownCols);stage.querySelectorAll('.desk.card .intent').forEach(fitLines);stage.querySelectorAll('.desk.card[data-gc] .gx-t').forEach(fitClamp);} /* FR-043, FR-047: columns, then whole lines, the newest in view */
   floor.classList.toggle('scrolls',!layout.fit);
   if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
 }
@@ -2124,8 +2161,8 @@ const hashN=str=>{let h=0;for(const c of str)h=(h*31+c.charCodeAt(0))>>>0;return
 const lookFor=key=>{const h=hashN(key);return L(S.sk[h%5],S.hr[(h>>>3)%6],['bun','short','long','curly'][(h>>>6)%4],S.sh[(h>>>9)%7],(h>>>12)%3===0);};
 const liveById=id=>LIVE.agents.find(a=>a.id===id);
 const liveRoot=a=>a.parent?byId(a.parent):a;
-let renderQueued=false;
-function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{renderQueued=false;renderAll();});}
+let renderQueued=false, agentsListed=false;
+function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{if(!renderQueued)return;renderQueued=false;renderAll();});} /* settleNow() may have drawn it already */
 function setBadge(){const b=$('protoBadge'); if(!b)return; b.className='proto'+(SIM&&!demoOn?' sim':'');
   /* spec 001 FR-027: not one agent app; the tooltip names the ready ones */
   const ready=DMK().kindChoices(KINDS).filter(k=>!k.disabled).map(k=>k.name);
@@ -2622,6 +2659,7 @@ function closeTurn(a){
 function setState(a,state,label,task){
   const ch=a.state!==state||(label!==undefined&&a.label!==label)||(task!==undefined&&a.task!==task);
   a.state=state; if(label!==undefined)a.label=label; if(task!==undefined)a.task=task;
+  if(state==='working'||state==='thinking'){if(!a.busySince)a.busySince=Date.now();}else if(state==='done'||state==='idle')a.busySince=null; /* spec 001 FR-047: time on task */
   if(ch&&a.live&&a.info&&a.info.modelControl&&a.info.modelControl.compact&&!a.parent)updateCtxChip(a); /* the Compact button is greyed while the agent works */
   if(ch)scheduleRender();
 }
@@ -2902,8 +2940,15 @@ function settleLimit(a,action){
 }
 /* spec 052 FR-057: in Simple, a folder grant says what it lets the agent do: "Let Ada change files in “tools” until the session ends".
    Only for a "write in <folder>/" scope (the last path segment); any other scope keeps its label. The inbox and the answer bar copy the card's button. */
-const simpleScopeLabel=(a,label)=>{const m=/^write in (.+?)\/*$/.exec(String(label||''));if(!m)return '';const seg=m[1].split(/[\\/]/).filter(Boolean).pop();if(!seg)return '';
-  return 'Let '+a.name+' change files in “'+DurbarCutText.cutText(seg,28)+'” until the session ends';};
+/* spec 052 FR-172 (review on #470): a write in several folders ("write in src/, docs/", "… and N more folders") names each folder's last segment. */
+const simpleScopeLabel=(a,label)=>{const m=/^write in (.+)$/.exec(String(label||''));if(!m)return '';let rest=m[1],more=0;const mm=/ and (\d+) more folders$/.exec(rest);if(mm){more=+mm[1];rest=rest.slice(0,mm.index);}
+  const segs=rest.split(/\/, /).map(x=>x.replace(/\/+$/,'').split(/[\\/]/).filter(Boolean).pop()).filter(Boolean);if(!segs.length)return '';
+  const q=segs.map(x=>'“'+DurbarCutText.cutText(x,28)+'”'),list=more?q.join(', ')+' and '+more+' more folders':q.length>1?q.slice(0,-1).join(', ')+' and '+q[q.length-1]:q[0];
+  return 'Let '+a.name+' change files in '+list+' until the session ends';};
+/* spec 052 FR-172 (review on #470): a write in several folders cuts each folder name, never the list, and keeps "and N more folders" whole,
+   so the Expert button names every folder it grants (or says how many more). Any other scope label is cut at 32 characters as before. */
+const expertScopeLabel=l=>{const m=/^write in (.+\/, .+)$/.exec(String(l||''));if(!m)return DurbarCutText.cutText(String(l||''),32);let rest=m[1],tail='';const mm=/ and \d+ more folders$/.exec(rest);if(mm){tail=mm[0];rest=rest.slice(0,mm.index);}
+  return 'write in '+rest.split(/\/, /).map(x=>DurbarCutText.cutText(x.replace(/\/+$/,''),16)+'/').join(', ')+tail;};
 const relabelScopes=()=>{document.querySelectorAll('[data-lbl-simple]').forEach(b=>{b.textContent=SIMPLE?b.dataset.lblSimple:b.dataset.lblExpert;});document.querySelectorAll('.note.perm .pfold').forEach(f=>{f.hidden=!SIMPLE;});};
 /* spec 052 FR-063: "Show the change", collapsed: the request's diff as + / - lines in monospace (text only, escaped by textContent) */
 function diffBlock(diff){
@@ -2938,7 +2983,7 @@ function showPerm(a,p){
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
     const answer=(approve,remember,broad)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember,!!broad);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:broad?p.broadScopeLabel:p.scopeLabel,summary:p.summary});};
     mk('Allow once','primary','Allow this one request',()=>answer(true,false)); /* spec 052 FR-037/FR-051: the same plain words in Simple and Expert */
-    if(p.scopeKey){const ex='Allow “'+DurbarCutText.cutText(p.scopeLabel||p.kind||'this',32)+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
+    if(p.scopeKey){const ex='Allow “'+expertScopeLabel(p.scopeLabel||p.kind||'this')+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
       mk(SIMPLE&&sl?sl:ex,'session','Allow "'+DurbarCutText.cutText(p.scopeLabel||p.kind,30)+'" until you end this session'+(p.kind==='shell'?' (this exact command)':'')+'. Revoke from its chip.',()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';if(sl){sb.dataset.lblSimple=sl;sb.dataset.lblExpert=ex;}}
     if(p.broadScopeKey){mk('Allow for this session: any arguments','session','Allow every simple "'+DurbarCutText.cutText(p.broadScopeLabel||p.kind,18)+'" command (no pipes, redirects or substitutions) until you end this session.',()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
     mk('Deny','danger','Deny this request',()=>answer(false,false));
@@ -4742,7 +4787,7 @@ if(bridge){
   if(bridge.onAgentRenamed)bridge.onAgentRenamed(onAgentRenamed);
   /* spec 061: a folder's own agent setup is shown when its agent joins the office (once per folder in this run) */
   if(window.DurbarFolderSetup){window.DurbarFolderSetup.init({bridge,esc,toast:(t,ms)=>toast(esc(t),ms),onRules:map=>{for(const id of Object.keys(map)){const a=liveById(id);if(!a||!a.info)continue;a.info.folderRules=map[id]||undefined;const c=$('modeChip'),sel=ui.selected&&liveRoot(byId(ui.selected)||a);if(c&&sel&&sel.id===a.id)c.outerHTML=modeChipHTML(a);}}});}
-  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
+  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);agentsListed=true;renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
     restoreUi();renderAwayStrip(); /* spec 052 FR-087 / FR-089 */
     /* spec 052 FR-059: what already needs you a few seconds after start is remembered, not notified */
     setTimeout(()=>{renderInboxBtn();ATT_ARMED=true;},3000);});
@@ -4770,5 +4815,8 @@ renderFilter(); renderAll();
 if(qs.get('view')==='list')setView('list');
 if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 /* spec 059 test hook, simulator only: a driver reads agents and calls what the Previous sessions row menu will call */
-if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow,render:()=>{layoutKey='';scheduleRender();}}; /* render: spec 001 FR-057 drivers move a finish time back */
+/* spec 008 FR-113, simulator only: false until the agents are listed, the frozen simulator has replayed every script and the saved usage
+   totals are read; then any queued frame is drawn now (a stalled animation frame once left a comparison driver measuring a stale page) */
+const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
+if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow,settleNow,render:()=>{layoutKey='';scheduleRender();}}; /* render: spec 001 FR-057 drivers move a finish time back */
 })();

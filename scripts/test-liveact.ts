@@ -7,7 +7,7 @@ import { redact, maskSecretCommand, maskSecretUrl } from '../src/shared/redact';
 
 const ROOT = path.join(__dirname, '..', '..');
 const R = path.join(ROOT, 'src', 'renderer');
-type Readout = { kind: string; text: string; lines: string; long: string } | null;
+type Readout = { kind: string; text: string; lines: string; long: string; tool: string } | null;
 type Feed = {
   onEvent(id: string, e: Record<string, unknown>, x?: Record<string, unknown>): boolean;
   of(id: string): Readout; clear(id: string): void; due(id: string, now: number): boolean; wait(id: string, now: number): number; mark(id: string, now: number): void;
@@ -65,7 +65,7 @@ eq(L.lastSentences('', 50), '', 'empty');
 {
   const f = mk();
   f.onEvent('a', ev({ type: 'toolCall', callId: 'c', tool: 'view', phase: 'start' }), { kind: 'read', label: 'src/tools/registry.ts' });
-  eq(f.of('a'), { kind: 'tool', text: 'Reading src/tools/registry.ts', lines: 'Reading src/tools/registry.ts', long: 'Reading src/tools/registry.ts' }, 'read');
+  eq(f.of('a'), { kind: 'tool', text: 'Reading src/tools/registry.ts', lines: 'Reading src/tools/registry.ts', long: 'Reading src/tools/registry.ts', tool: 'Reading src/tools/registry.ts' }, 'read');
   f.onEvent('a', ev({ type: 'toolCall', callId: 'c', tool: 'bash', phase: 'start' }), { kind: 'run', label: 'npm test' });
   eq(f.of('a')!.text, 'Running npm test', 'run');
   eq(L.phrase({ kind: 'edit', tool: 'edit_file', label: 'a.ts' }, mask), 'Editing a.ts', 'edit');
@@ -76,6 +76,30 @@ eq(L.lastSentences('', 50), '', 'empty');
   eq(f.onEvent('a', ev({ type: 'toolCall', callId: 'c', tool: 'bash', phase: 'complete' }), { kind: 'run', label: 'x' }), false, 'complete: no change');
   eq(f.onEvent('a', ev({ type: 'toolCall', callId: 't', tool: 'task', phase: 'start' }), { kind: 'tool', label: 'x', skip: true }), false, 'task tool skipped');
   ok(Array.from(L.phrase({ kind: 'read', tool: 'view', label: 'a/'.repeat(400) }, mask)).length <= L.LINE_MAX, 'phrase cut');
+}
+// spec 001 FR-047: the last tool phrase of the turn stays (masked) while the agent thinks or replies; the turn's end and a new message clear it
+{
+  const f = mk();
+  const key = 'sk-' + 'LiveTool0Secret0Value0123456789';
+  f.onEvent('a', ev({ type: 'toolCall', callId: 'c', tool: 'bash', phase: 'start' }), { kind: 'run', label: `curl -H "Authorization: Bearer ${key}" https://x.test` });
+  const t0 = f.of('a')!.tool;
+  ok(t0.startsWith('Running') && !t0.includes(key), `tool phrase masked: ${t0}`);
+  f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r9', delta: 'The call worked. ' }));
+  eq([f.of('a')!.kind, f.of('a')!.tool], ['think', t0], 'thinking keeps the last tool');
+  f.onEvent('a', ev({ type: 'output', delta: 'All done here. ' }));
+  eq(f.of('a')!.tool, t0, 'replying keeps the last tool');
+  f.onEvent('a', ev({ type: 'status', status: 'idle' }));
+  eq(f.of('a'), null, 'the turn ends: nothing');
+  f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r10', delta: 'Next turn. ' }));
+  eq(f.of('a')!.tool, '', 'a new turn starts with no tool');
+  f.onEvent('a', ev({ type: 'toolCall', callId: 'd', tool: 'view', phase: 'start' }), { kind: 'read', label: 'a.ts' });
+  f.onEvent('a', ev({ type: 'user', text: 'stop' }));
+  f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r11', delta: 'Again. ' }));
+  eq(f.of('a')!.tool, '', 'a new message clears the tool');
+  f.onEvent('a', ev({ type: 'toolCall', callId: 'e', tool: 'view', phase: 'start' }), { kind: 'read', label: 'b.ts' });
+  f.clear('a');
+  f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r12', delta: 'Once more. ' }));
+  eq(f.of('a')!.tool, '', 'clear drops the tool');
 }
 // a turn that ends, waits for you or is stopped clears it; working keeps it; a new message clears it
 for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
@@ -155,9 +179,16 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
 // long, fast thinking stays cheap (the block keeps its newest 1200 characters)
 {
   const f = mk();
-  const t0 = Date.now();
+  // CPU time, not wall time, so a loaded machine cannot fail it; wall time only has a loose 10x backstop for a blocking wait
+  // (spec 041 T068, review of PR #527)
+  const w0 = process.hrtime.bigint();
+  const c0 = process.cpuUsage();
   for (let i = 0; i < 4000; i++) f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: 'Word '.repeat(10) + 'end. ' }));
-  ok(Date.now() - t0 < 3000, '4000 deltas in under 3 s (' + (Date.now() - t0) + ' ms)');
+  const cpu = process.cpuUsage(c0);
+  const ms = (cpu.user + cpu.system) / 1000;
+  const wall = Number(process.hrtime.bigint() - w0) / 1e6;
+  ok(ms < 3000, '4000 deltas in under 3 s of CPU (' + ms + ' ms)');
+  ok(wall < 30000, '4000 deltas: wall-time backstop (' + wall.toFixed(1) + ' ms wall, limit 30000 ms)');
   ok(Array.from(f.of('a')!.lines).length <= L.PANEL_MAX, 'panel text bounded');
   ok(Array.from(f.of('a')!.long).length <= L.STREAM_MAX, 'grown desk text bounded');
 }
@@ -208,7 +239,8 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   eq(X.excerpt('text', () => { throw new Error('x'); }), '', 'excerpt: a mask that throws, nothing');
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
   ok(/DurbarLiveAct\.excerpt\(a\.lastOutput,/.test(app) && !/redact\([^)]*plain\(a\.lastOutput/.test(app), 'grownLine masks through excerpt');
-  ok(/return t\?DurbarCutText\.cutText\(t,600\):st==='done'\?'Finished\.':'Ready\.';/.test(app), 'grownLine: nothing from the reply without a mask');
+  ok(/return t\?DurbarCutText\.cutText\(t,600\):'';/.test(app) && /if\(grownShowsReply\(a\)\)return replyExcerpt\(a\)\|\|\(vis\(a\)==='done'\?'Finished\.':'Ready\.'\);/.test(app), 'grownLine: nothing from the reply without a mask');
+  ok(/const rep=grownShowsReply\(a\)\?'':replyExcerpt\(a\)/.test(app) && !/gx-t">\$\{esc\((a\.lastOutput|taskOf)/.test(app), 'the reply column (FR-047) uses the same masked excerpt');
 }
 // review of #532: `long` is made only when a grown desk reads it; a desk that never does costs what it did before
 {

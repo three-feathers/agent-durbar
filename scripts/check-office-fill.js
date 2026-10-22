@@ -12,7 +12,11 @@
  *   - 1 and 2 agents always get grown desks; the simulator's 15 agents (5 folders, helpers) never do at 1440x900 and 1280x800.
  * Then, at 1440x900 and 1280x800 with 3 agents (default folders): a thinking stream shows its newest sentences on the grown desk,
  * streaming text moves nothing, and a finished reply shows its start, with a secret in it masked.
- * Screenshots (simulator, `OUT=<folder>`): 001-fill-{4,6,15}-{1440x900,1280x800}.png (the simulator's own folders and helpers).
+ * Then (FR-047..FR-050, owner 2026-10-22), 1 and 2 agents at 1440x900, 1280x800 and 1920x1080: the desk shows its columns (main, last reply
+ *   masked, facts), every grown line is at most 90 characters (measured per line), the columns stay apart and inside the desk, side text is
+ *   at least 10.5px, the desk stays at most 92 x 2.5 px tall, streaming moves nothing.
+ * Screenshots (simulator, `OUT=<folder>`): 001-fill-{4,6,15}-{1440x900,1280x800}.png (the simulator's own folders and helpers),
+ *   001-fill-1-{1440x900,1920x1080}.png (one agent, the columns).
  * Spec 001 FR-051..FR-057 (finished agents roll in), at 1440x900 and 1280x800: a folder with 2 working and 3 finished agents (1 recent,
  * 2 old) next to a busy folder: the finished ones are a strip and two chips, the page rules hold, every rolled agent is a focusable button
  * with its label, hover unrolls a card without moving anything, Enter opens the chat, the open desks are at least as large as with the
@@ -30,6 +34,22 @@ const q = jsLiteral; /* every value put into page code goes through jsLiteral (C
 const OUT = process.env.OUT || '';
 const SECRET = 'sk-Fill0Secret0Value0123456789';
 /* review of #532: `plain` strips `_`, so these must be masked before it (raw text first); each in a Markdown form */
+/* FR-048: the longest line (in characters) of any grown desk text, measured per line in the page (a Range per character, grouped by its top) */
+function MEASURE(root) {
+  let worst = 0;
+  for (const el of root.querySelectorAll('.desk.card .intent, .desk.card .gx-t, .desk.card .gx-l, .desk.card .l1 .name')) {
+    if (!el.getClientRects().length) continue;
+    const box = el.getBoundingClientRect(), tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), rows = new Map(), g = document.createRange();
+    for (let t = tw.nextNode(); t; t = tw.nextNode()) for (let i = 0; i < t.data.length; i++) {
+      g.setStart(t, i); g.setEnd(t, i + 1); const r = g.getClientRects()[0];
+      if (!r || r.bottom <= box.top || r.top >= box.bottom || r.left >= box.right || r.right <= box.left) continue; /* only characters that show (a one-line fact ends in an ellipsis) */
+      const k = Math.round(r.top); rows.set(k, (rows.get(k) || 0) + 1);
+    }
+    for (const v of rows.values()) worst = Math.max(worst, v);
+  }
+  return worst;
+}
+const MAX_CHARS = 90; /* owner 2026-10-22: a readable measure, about 80-90 characters a line */
 const GHP = 'ghp_' + 'Fill0Token0Value0123456789ab', PAT = 'github_pat_' + '11FILL0TOKEN_value0123456789abcdef';
 
 module.exports = async (ctx) => {
@@ -52,7 +72,8 @@ module.exports = async (ctx) => {
     return {d:s.dataset.d,fit:s.dataset.fit,gf:parseFloat(s.style.getPropertyValue('--gf'))||0,grow:s.dataset.grow||'',desks:ds.length,
       deskH:ds.length?Math.round(Math.min(...ds.map(r=>r.height))):0,deskW:ds.length?Math.round(Math.min(...ds.map(r=>r.width))):0,
       floorScroll:f.scrollHeight>f.clientHeight+1,pageScroll:de.scrollHeight>innerHeight+1||de.scrollWidth>innerWidth+1,
-      rooms:s.querySelectorAll('.room').length,lines,used:Math.round(s.getBoundingClientRect().height/f.clientHeight*100)}})()`);
+      rooms:s.querySelectorAll('.room').length,lines,used:Math.round(s.getBoundingClientRect().height/f.clientHeight*100),
+      gcs:[...s.querySelectorAll('.desk.card')].map(c=>+(c.dataset.gc||1)),measure:s.dataset.grow?(${MEASURE.toString()})(s):0}})()`);
   const page = async () => (await js(`(${pageCheck.toString()})(false, 5)`)).problems;
   const failures = [];
   const check = (cond, msg) => { if (!cond) failures.push(msg); };
@@ -67,6 +88,7 @@ module.exports = async (ctx) => {
     check(!problems.length, `${label}: ${problems.slice(0, 4).join('; ')}`);
     check(st.lines.every((l) => l <= 8.01 && Math.abs(l - Math.round(l)) < 0.02), `${label}: grown text boxes of ${st.lines.map((l) => l.toFixed(2)).join(', ')} lines`);
     if (st.gf) check(st.d === 'roomy' && st.gf >= 1.1 && st.gf <= 2.5, `${label}: grown f=${st.gf} on ${st.d}`);
+    check(st.measure <= MAX_CHARS, `${label}: a grown desk line of ${st.measure} characters (limit ${MAX_CHARS})`);
     return st;
   };
 
@@ -129,6 +151,41 @@ module.exports = async (ctx) => {
     check(/^Done\. I moved the handlers and kept the public API\./.test(d), `${w}: a done desk shows the start of its reply: ${d}`);
     check(!d.includes(SECRET) && /\[redacted\]/.test(d), `${w}: the secret in the reply is masked: ${d}`);
     check(!/Fill0Token0Value|0123456789ab|FILL0TOKEN|value0123456789/.test(d) && (d.match(/\[redacted\]/g) || []).length === 3, `${w}: the ghp_ and github_pat_ tokens are masked too: ${d}`);
+  }
+
+  /* ---- FR-047..FR-049 (owner 2026-10-22): one and two agents: the wide grown desk shows more, in columns, with a readable measure ---- */
+  for (const [w, h] of [[1440, 900], [1280, 800], [1920, 1080]]) {
+    for (const n of [1, 2]) {
+      const label = `${n} agent${n > 1 ? 's' : ''} in columns, ${w}x${h}`;
+      await load(n, w, h, { simrooms: '1', simhelpers: '0' });
+      /* a reply from an earlier turn, a tool and then a long thinking stream on sim-1: main, reply and facts all have something to show */
+      await emit({ type: 'output', sessionId: 'sim-1', final: true, text: `**Earlier.** I moved the handlers into registry.ts and kept a thin re-export, so the public API is unchanged. The old key ${SECRET} and \`${GHP}\` were in the config; both are gone now. Next I would run the filings module against the staging data.` });
+      await emit({ type: 'toolCall', sessionId: 'sim-1', callId: 'col-' + n, tool: 'view', phase: 'start', args: { path: 'src/tools/registry.ts' } });
+      for (let i = 0; i < 10; i++) await emit({ type: 'thinking', sessionId: 'sim-1', reasoningId: 'col-r' + n, delta: `Step ${i}: the request touches a few files, so I read them before changing anything and keep the public API stable for every client. ` });
+      await ctx.sleep(600);
+      const rects = () => js(`[...document.querySelectorAll('#stage .desk, #stage .desk .gx, #stage .desk .gx-r, #stage .desk .gx-f, #stage .intent')].map(e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.width,r.height].map(Math.round).join(',')}).join(';')`);
+      const st = await state(), problems = await page();
+      const c = await js(`(()=>{const d=document.querySelector('#stage .desk.card[data-id="sim-1"]');if(!d)return null;const b=d.getBoundingClientRect(),cols=[d.querySelector('.ci'),d.querySelector('.gx-r'),d.querySelector('.gx-f')].map(e=>e&&e.getClientRects().length?e.getBoundingClientRect():null);
+        const font=Math.min(...[...d.querySelectorAll('.gx, .gx *')].filter(e=>e.getClientRects().length&&[...e.childNodes].some(t=>t.nodeType===3&&t.data.trim())).map(e=>parseFloat(getComputedStyle(e).fontSize)));
+        const inside=cols.every(r=>!r||(r.left>=b.left-0.5&&r.right<=b.right+0.5&&r.top>=b.top-0.5&&r.bottom<=b.bottom+0.5));
+        const apart=cols.every((r,i)=>cols.every((q,j)=>j<=i||!r||!q||r.right<=q.left+0.5||q.right<=r.left+0.5||r.bottom<=q.top+0.5||q.bottom<=r.top+0.5));
+        return {gc:+(d.dataset.gc||1),w:Math.round(b.width),h:Math.round(b.height),font,inside,apart,rep:(d.querySelector('.gx-t')||{}).textContent||'',facts:[...d.querySelectorAll('.gx-l')].map(e=>e.textContent)}})()`);
+      rows.push(`${label}: f=${st.gf} desk ${c && c.w}x${c && c.h}, ${c && c.gc} columns, longest line ${st.measure} characters`);
+      check(st.gf >= 1.5 && c && c.gc >= 2, `${label}: no multi-column desk (f=${st.gf}, ${JSON.stringify(c)})`);
+      check(c && c.gc === 3 && /^Earlier\. I moved the handlers/.test(c.rep), `${label}: the reply column shows the last reply (${c && c.gc}: ${c && c.rep})`);
+      check(c && !c.rep.includes(SECRET) && !/Fill0Token0Value/.test(c.rep) && (c.rep.match(/\[redacted\]/g) || []).length === 2, `${label}: the reply column is masked: ${c && c.rep}`);
+      check(c && c.facts.some((f) => /^Last tool Reading src\/tools\/registry\.ts/.test(f)) && c.facts.some((f) => /^Usage /.test(f)), `${label}: the facts show the tool and the usage: ${c && c.facts.join(' | ')}`);
+      check(c && c.inside && c.apart, `${label}: the columns overlap or leave the desk`);
+      check(c && c.font >= 10.5, `${label}: side text of ${c && c.font}px`);
+      check(c && c.h <= 231, `${label}: the desk is ${c && c.h}px tall (capped at 92 x 2.5)`);
+      check(st.measure > 40 && st.measure <= MAX_CHARS, `${label}: longest line ${st.measure} characters (limit ${MAX_CHARS})`);
+      check(!problems.length, `${label}: ${problems.slice(0, 4).join('; ')}`);
+      const before = await rects();
+      for (let i = 10; i < 16; i++) { await emit({ type: 'thinking', sessionId: 'sim-1', reasoningId: 'col-r' + n, delta: `Step ${i} streams in while nothing moves. ` }); await ctx.sleep(40); }
+      await ctx.sleep(400);
+      check((await rects()) === before, `${label}: streaming text moved a box`);
+      if (OUT && n === 1 && (w === 1440 || w === 1920)) await ctx.shot(path.join(OUT, `001-fill-1-${w}x${h}.png`));
+    }
   }
 
   await js(`localStorage.removeItem('durbar.shutters')`);

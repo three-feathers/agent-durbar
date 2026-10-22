@@ -108,6 +108,6 @@ summary "Every behavior change goes through the Spec Kit workflow (AGENTS.md, CO
 summary "  1. spec, plan and tasks in specs/NNN-*/ (a bug fix is a dated spec delta in the owning spec), committed in this pull request"
 summary "  2. branch name NNN-slug, same NNN as the spec folder"
 summary "Only for changes with no behavior change (typo, comment, formatting, dependency bump, CI-only) add a line"
-summary "'Spec-Exempt: <reason>' to the pull request description, or ask a maintainer for the 'spec-exempt' label."
+summary "'Spec-Exempt: <reason>' to the pull request description, or ask a maintainer for the 'spec-exempt' label and then save the description once (a label alone does not re-run this check)."
 summary "Spec Kit tooling broken or missing skills? Run 'specify integration status' (see docs/collaboration.md)."
 exit 1

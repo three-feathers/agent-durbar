@@ -55,7 +55,7 @@
   function create(opts){
     const o=opts||{}, mask=o.mask||{}, red=s=>mask.redact?mask.redact(s):s;
     const st=new Map();
-    const get=id=>{let s=st.get(id);if(!s){s={kind:'',text:'',lines:'',long:null,body:'',buf:'',rid:null,lastPaint:-Infinity};st.set(id,s);}return s;};
+    const get=id=>{let s=st.get(id);if(!s){s={kind:'',text:'',lines:'',long:null,body:'',tool:'',buf:'',rid:null,lastPaint:-Infinity};st.set(id,s);}return s;};
     /* body: the masked text a grown desk's `long` is made from, only when one asks (of()); a tool phrase or '' has none (long = lines) */
     const set=(s,kind,text,lines,body)=>{body=body||'';const ch=s.kind!==kind||s.text!==text||s.lines!==lines||(s.body!==body&&s.long!==null);
       if(s.body!==body)s.long=null;s.kind=kind;s.text=text;s.lines=lines;s.body=body;return ch;};
@@ -79,20 +79,22 @@
         if(e.phase!=='start'||x.skip)return false;
         s.buf='';
         const p=phrase({kind:x.kind,tool:e.tool,label:x.label,simple:x.simple},mask);
+        s.tool=p; /* spec 001 FR-047: the last tool of this turn stays for a wide grown desk while the agent thinks or replies */
         return set(s,'tool',p,p);}
-      case 'user':s.buf='';return set(s,'','','');
+      case 'user':s.buf='';s.tool='';return set(s,'','','');
       case 'status':
         if(e.status==='working')return false;
-        s.buf='';return set(s,'','','');
+        s.buf='';s.tool='';return set(s,'','','');
       default:return false;
       }
     }
     return {
       onEvent,
-      /* {kind, text, lines, long} or null when there is nothing to show (long: a grown desk's newest sentences, spec 001 FR-043) */
-      of:id=>{const s=st.get(id);if(!s||!s.text)return null;const o={kind:s.kind,text:s.text,lines:s.lines||s.text};
+      /* {kind, text, lines, long, tool} or null when there is nothing to show (long: a grown desk's newest sentences, spec 001 FR-043;
+         tool: the last tool phrase of this turn, masked, or '', FR-047) */
+      of:id=>{const s=st.get(id);if(!s||!s.text)return null;const o={kind:s.kind,text:s.text,lines:s.lines||s.text,tool:s.tool||''};
         Object.defineProperty(o,'long',{enumerable:true,get:()=>longOf(s)||o.lines});return o;},
-      clear:id=>{const s=st.get(id);if(s){s.buf='';set(s,'','','');}},
+      clear:id=>{const s=st.get(id);if(s){s.buf='';s.tool='';set(s,'','','');}},
       drop:id=>{st.delete(id);},
       /* FR-030: may this desk be painted now? Records the paint when it may. */
       due:(id,now)=>{const s=get(id);if(now-s.lastPaint>=PAINT_MS){s.lastPaint=now;return true;}return false;},
