@@ -1,0 +1,126 @@
+/** Unit test (spec 008 FR-115): `npm test --bail` stops at the first failing suite and kills what runs, with fakes (no process is started or killed). */
+import * as assert from 'assert';
+import * as path from 'path';
+import { EventEmitter } from 'events';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const rt = require(path.join(__dirname, '..', '..', 'scripts', 'run-tests.js')) as {
+  parseArgs: (argv: string[], env: Record<string, string | undefined>) => { bail: boolean; filters: string[] };
+  loadSuites: (pkg: unknown, filters: string[]) => { name: string; steps: string[][] }[];
+  stopChild: (c: unknown, o: unknown) => void;
+  runSuites: (o: Record<string, unknown>) => Promise<{ failed: string[]; bailed: string | null }>;
+};
+
+type Fake = EventEmitter & { pid: number; stdout: EventEmitter; stderr: EventEmitter; file: string };
+// A fake spawn: every call makes a child that stays "running" until the test ends it (exit(code)) or it is killed.
+function harness(plan: Record<string, number>) {
+  const children: Fake[] = [];
+  const spawned: { cmd: string; args: string[]; opts: { detached?: boolean; shell?: unknown } }[] = [];
+  const kills: [number, string][] = [];
+  const spawnFn = (cmd: string, args: string[], opts: { detached?: boolean; shell?: unknown }) => {
+    spawned.push({ cmd, args, opts });
+    const c = new EventEmitter() as Fake;
+    c.pid = 1000 + spawned.length;
+    c.stdout = new EventEmitter();
+    c.stderr = new EventEmitter();
+    c.file = args[0];
+    if (cmd === 'taskkill') {
+      const target = children.find((x) => String(x.pid) === args[1]);
+      if (target) setImmediate(() => target.emit('close', null));
+    } else {
+      children.push(c);
+      // a suite that is in `plan` ends by itself with that code (next tick); others hang until killed
+      const code = plan[path.basename(args[0])];
+      if (code !== undefined) setImmediate(() => { c.stdout.emit('data', `out of ${path.basename(args[0])}\n`); c.emit('close', code); });
+    }
+    return c;
+  };
+  const kill = (pid: number, sig: string) => {
+    kills.push([pid, sig]);
+    const c = children.find((x) => -x.pid === pid);
+    if (c) setImmediate(() => c.emit('close', null));
+  };
+  return { spawnFn, kill, spawned, kills, children };
+}
+const suite = (name: string) => ({ name, steps: [[`dist/${name}.js`]] });
+const run = (h: ReturnType<typeof harness>, suites: ReturnType<typeof suite>[], o: Record<string, unknown>) => {
+  const out: string[] = [];
+  return rt.runSuites({ suites, spawnFn: h.spawnFn, kill: h.kill, write: (t: string) => out.push(t), now: () => 0, ...o }).then((r) => ({ ...r, out: out.join('') }));
+};
+
+// an unfinished promise would let node exit 0 in silence: fail then
+let done = false;
+process.on('exit', () => { if (!done) { console.error('test-run-tests: did not finish'); process.exitCode = 1; } });
+
+(async () => {
+  // flag, env var and filters
+  assert.deepStrictEqual(rt.parseArgs([], {}), { bail: false, filters: [] });
+  assert.strictEqual(rt.parseArgs(['--bail'], {}).bail, true, '--bail turns it on');
+  assert.strictEqual(rt.parseArgs([], { TEST_BAIL: '1' }).bail, true, 'TEST_BAIL=1 turns it on');
+  assert.strictEqual(rt.parseArgs([], { TEST_BAIL: '0' }).bail, false, 'TEST_BAIL=0 is off');
+  assert.strictEqual(rt.parseArgs([], { TEST_BAIL: '' }).bail, false, 'an empty TEST_BAIL is off');
+  assert.deepStrictEqual(rt.parseArgs(['folders', '--bail', 'claude'], {}), { bail: true, filters: ['folders', 'claude'] }, 'filters combine with --bail');
+  const pkg = { scripts: { 'test:serial': 'npm run test:a && npm run test:folders && npm run test:folderx', 'test:a': 'tsc -p tsconfig.scripts.json && node a.js && node a2.js', 'test:folders': 'node f.js', 'test:folderx': 'node x.js' } };
+  assert.deepStrictEqual(rt.loadSuites(pkg, []).map((s) => s.name), ['test:a', 'test:folders', 'test:folderx']);
+  assert.deepStrictEqual(rt.loadSuites(pkg, ['folder']).map((s) => s.name), ['test:folders', 'test:folderx'], 'the name filter still works');
+  assert.deepStrictEqual(rt.loadSuites(pkg, [])[0].steps, [['a.js'], ['a2.js']], 'a suite keeps its steps in order');
+  assert.throws(() => rt.loadSuites({ scripts: { 'test:serial': 'npm run test:z', 'test:z': 'echo hi' } }, []), /only "node <file>"/);
+
+  // default: everything runs even after a failure
+  {
+    const h = harness({ 'a.js': 0, 'b.js': 1, 'c.js': 0, 'd.js': 0 });
+    const r = await run(h, ['a', 'b', 'c', 'd'].map(suite), { jobs: 1, bail: false });
+    assert.deepStrictEqual(r.failed, ['b']);
+    assert.strictEqual(r.bailed, null);
+    assert.strictEqual(h.spawned.length, 4, 'all four suites ran');
+    assert.strictEqual(h.kills.length, 0, 'nothing was killed');
+    assert.ok(/ok   a/.test(r.out) && /FAIL b/.test(r.out) && /ok   d/.test(r.out) && /out of b\.js/.test(r.out));
+  }
+  // --bail, one at a time: nothing starts after the failure
+  {
+    const h = harness({ 'a.js': 0, 'b.js': 1, 'c.js': 0, 'd.js': 0 });
+    const r = await run(h, ['a', 'b', 'c', 'd'].map(suite), { jobs: 1, bail: true });
+    assert.deepStrictEqual(r.failed, ['b']);
+    assert.strictEqual(r.bailed, 'b');
+    assert.strictEqual(h.spawned.length, 2, 'c and d never started');
+    assert.ok(/FAIL b[\s\S]*out of b\.js/.test(r.out), 'the failing suite output is printed');
+  }
+  // --bail, in parallel: the ones still running are killed by group (POSIX), their results are not reported
+  {
+    const h = harness({ 'b.js': 1 }); // a and c hang
+    const r = await run(h, ['a', 'b', 'c', 'd'].map(suite), { jobs: 3, bail: true, platform: 'linux' });
+    assert.strictEqual(r.bailed, 'b');
+    assert.deepStrictEqual(r.failed, ['b'], 'the killed suites are not counted as failures');
+    assert.strictEqual(h.spawned.length, 3, 'd never started');
+    assert.ok(h.spawned.every((s) => s.opts.detached === true && s.opts.shell === undefined), 'POSIX children are detached (own group), no shell');
+    const hung = h.children.filter((c) => c.file !== 'dist/b.js').map((c) => c.pid).sort();
+    assert.deepStrictEqual(h.kills.map((k) => k[0]).sort(), hung.map((p) => -p).sort(), 'exactly the two running suites got a kill of their group (-pid)');
+    assert.ok(h.kills.every((k) => k[1] === 'SIGTERM'));
+    assert.ok(!/FAIL a|FAIL c|ok   a|ok   c/.test(r.out));
+  }
+  // --bail on Windows: taskkill /T /F per running pid, no process.kill, no shell
+  {
+    const h = harness({ 'b.js': 1 });
+    const r = await run(h, ['a', 'b', 'c'].map(suite), { jobs: 3, bail: true, platform: 'win32' });
+    assert.strictEqual(r.bailed, 'b');
+    assert.strictEqual(h.kills.length, 0, 'no group kill on Windows');
+    const tk = h.spawned.filter((s) => s.cmd === 'taskkill');
+    assert.strictEqual(tk.length, 2, 'one taskkill per running suite');
+    const pids = h.children.filter((c) => c.file !== 'dist/b.js').map((c) => String(c.pid)).sort();
+    assert.deepStrictEqual(tk.map((t) => t.args[1]).sort(), pids);
+    assert.ok(tk.every((t) => t.args[0] === '/PID' && t.args[2] === '/T' && t.args[3] === '/F' && t.opts.shell === undefined));
+    assert.ok(h.spawned.filter((s) => s.cmd !== 'taskkill').every((s) => s.opts.detached === false));
+  }
+  // a failing first step stops the rest of that suite, and with --bail a later step of a stopped suite does not start
+  {
+    const h = harness({ 'a.js': 1, 'a2.js': 0 });
+    const r = await run(h, [{ name: 'a', steps: [['a.js'], ['a2.js']] }], { jobs: 1, bail: false });
+    assert.deepStrictEqual(r.failed, ['a']);
+    assert.strictEqual(h.spawned.length, 1, 'step 2 does not run after step 1 failed');
+  }
+  // stopChild alone: no pid, nothing happens; an already gone group is not an error
+  rt.stopChild(null, {});
+  rt.stopChild({ pid: 5 }, { platform: 'linux', kill: () => { throw new Error('ESRCH'); } });
+  done = true;
+  console.log('run-tests --bail: ok');
+})().catch((e) => { console.error(e); process.exit(1); });
