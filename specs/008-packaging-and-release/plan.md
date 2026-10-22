@@ -58,6 +58,10 @@ specs/008-packaging-and-release/
 - Measuring: `gh api .../actions/runs/<id>/jobs` for the PR's own runs against the 45-run baseline in the spec.
 - The ruleset (`main protection`, id 25258904) gets a `merge_queue` rule with `gh api -X PUT` after the workflows are on `main` (owner approval 2026-10-22), read back afterwards.
 
+## 2026-10-22: test runs not backgrounded when covered (T096, FR-103)
+
+- **FR-103 (2026-10-22):** two lines in `src/main/main.ts`, next to the other test-run window options (`enableLargerThanScreen`, FR-093): `app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')` before ready, and `backgroundThrottling: false` in `webPreferences`, both only when `dev.DURBAR_DRIVER || dev.DURBAR_SHOT`.
+
 ## 2026-10-22: fewer runner tickets per PR, macOS after the merge (T097, FR-104..FR-110, owner decision)
 
 - Workflows and one shell script only; no app code. The ruleset (`main protection`, 25258904) is not changed: its six required check names keep reporting (`Build and test (macos-latest)` from a Linux report job on PRs and queue entries, `Office layout check (xvfb)` from the single office job).

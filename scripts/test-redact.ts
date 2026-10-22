@@ -3,7 +3,23 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
+
+// CPU time of f in ms (user + system of this process), not wall time: it does not grow when other processes take the CPU, so the
+// timing checks below hold on a loaded machine or runner (spec 041 `## Changes` 2026-10-22, T068). It still counts every step the
+// masking takes, so super-linear (ReDoS-style) growth fails as before. CPU time does not see a blocking wait (Atomics.wait, a sync
+// sleep, execSync, sync I/O), so wall time gets a loose backstop of 10x the check's CPU limit `capMs`: load cannot reach it, a long
+// wait does. A wait shorter than that still passes (the accepted limit; spec 041 `## Changes` 2026-10-22, review of PR #527).
+const cpuMs = (f: () => void, capMs: number): number => {
+  const w = process.hrtime.bigint();
+  const c = process.cpuUsage();
+  f();
+  const d = process.cpuUsage(c);
+  const cpu = (d.user + d.system) / 1000;
+  const wall = Number(process.hrtime.bigint() - w) / 1e6;
+  assert.ok(wall < 10 * capMs, `wall-time backstop: ${wall.toFixed(1)} ms wall for ${cpu.toFixed(1)} ms CPU, limit ${10 * capMs} ms (a blocking wait in the timed code?)`);
+  return cpu;
+};
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -57,6 +73,44 @@ for (const [k, v] of Object.entries(planted)) {
   assert.ok(out.startsWith('before ') && out.endsWith(' after') || k === 'authHeader', `pattern ${k}: surroundings kept`);
 }
 assert.strictEqual(redact('git clone https://alice:hunter2pass@example.com/r.git', {}), 'git clone https://[redacted]@example.com/r.git', 'url creds: host kept');
+// 3b. `\b` does not separate `_` from a letter: a token in Markdown emphasis or glued to a snake_case word is masked too
+//     (spec 012 FR-080 delta 2026-10-22). Every kind x every wrapping; the whole secret part must be gone.
+const secretPartOf = (k: string, v: string): string =>
+  k === 'urlCreds' ? 'hunter2pass' : k === 'authHeader' ? 'dXNlcjpwYXNzd29yZA' : k === 'bearer' ? 'abcdef1234567890' : v.slice(-12);
+const WRAPS: Array<(v: string) => string> = [
+  (v) => `_${v}_`, (v) => `__${v}__`, (v) => `___${v}___`, (v) => `*_${v}_*`, (v) => `**${v}**`, (v) => `~~${v}~~`,
+  (v) => '`' + v + '`', (v) => `_\`${v}\`_`, (v) => `(${v})`, (v) => `[${v}](x)`, (v) => `"${v}"`, (v) => `${v}_`,
+  (v) => `my_${v}`, (v) => `MY__${v}`, (v) => `____${v}____`, (v) => `a_b_c_d_${v}`, (v) => `my_long_snake_case_${v}`,
+];
+for (const [k, v] of Object.entries(planted)) {
+  for (const wrap of WRAPS) {
+    const w = wrap(v);
+    const out = redact(`see ${w} now`, {});
+    assert.ok(!out.includes(secretPartOf(k, v)), `pattern ${k} in ${w.slice(0, 9)}…: secret part gone (${out})`);
+    assert.ok(out.startsWith('see ') && out.endsWith(' now'), `pattern ${k} in ${w.slice(0, 9)}…: surroundings kept`);
+  }
+}
+assert.strictEqual(redact('_' + planted.ghp + '_', {}), '_[redacted]_', 'emphasis kept around a GitHub token');
+assert.strictEqual(redact('__' + planted.aws + '__', {}), '__[redacted]__', 'aws key between underscores');
+assert.strictEqual(redact('**' + planted.sk + '**', {}), '**[redacted]**', 'sk- key in bold');
+assert.strictEqual(redact('_' + planted.jwt + '_', {}), '_[redacted]', 'a JWT keeps its leading underscore (its class takes the closing one)');
+// T128: a JWT glued to a word or after 4+ underscores is masked too, and its prefix stays
+assert.strictEqual(redact('x_' + planted.jwt, {}), 'x_[redacted]', 'a JWT glued to a word');
+assert.strictEqual(redact('MY__' + planted.jwt, {}), 'MY__[redacted]', 'a JWT after a word and two underscores');
+assert.strictEqual(redact('____' + planted.jwt, {}), '____[redacted]', 'a JWT after four underscores');
+assert.strictEqual(redact('a_b_c_d_' + planted.jwt, {}), 'a_b_c_d_[redacted]', 'a JWT after four snake_case words');
+assert.strictEqual(redact('my_eyJ.a.b plain_snake_case risk_eyJ', {}), 'my_eyJ.a.b plain_snake_case risk_eyJ', 'snake_case words without a JWT stay');
+// the shared shapes (spec 061 FR-014's folder-setup display reuses them) with their own mask word
+for (const [k, v] of Object.entries(planted)) {
+  if (k === 'authHeader' || k === 'urlCreds') continue; // header and URL rules belong to redact() only
+  for (const wrap of WRAPS) {
+    const w = wrap(v);
+    const out = maskTokenShapes(`see ${w} now`, '[secret hidden]');
+    assert.ok(out.includes('[secret hidden]') && !out.includes(secretPartOf(k, v)), `maskTokenShapes ${k} in ${w.slice(0, 9)}…: hidden (${out})`);
+  }
+}
+assert.strictEqual(maskTokenShapes('$1 $& plain text', '[x]'), '$1 $& plain text', 'maskTokenShapes: no shape, no change');
+assert.strictEqual(maskTokenShapes('_' + planted.ghp + '_', '$&'), '_$&_', 'maskTokenShapes: the mask is literal, not a replacement pattern');
 
 // 4. near misses stay intact
 for (const ok of ['risk-management and task-list', 'sk-short', 'the sk- prefix', 'ghp', 'ghp_short', 'AKIA123', 'v1.2.3', 'file.name.ext', 'https://example.com/a:b', 'user@example.com', 'Bearer', 'a Bearer of news', 'eyJ.a.b']) {
@@ -70,15 +124,13 @@ assert.strictEqual(redact(`l1\n${planted.ghp}\r\nl3\n`, {}), 'l1\n[redacted]\r\n
 {
   const big = ('word '.repeat(19) + 'sk-' + 'a'.repeat(10) + '\n').repeat(12000); // > 1 MB
   assert.ok(big.length > REDACT_MAX_CHARS);
-  const t = Date.now();
-  const out = redact(big, env);
-  const ms = Date.now() - t;
+  let out = '';
+  const ms = cpuMs(() => { out = redact(big, env); }, 1500);
   assert.ok(ms < 1500, `1 MB redaction took ${ms} ms`);
   assert.ok(out.length <= REDACT_MAX_CHARS + 20, 'input capped at 1 MB');
   const pathological = 'a'.repeat(REDACT_MAX_CHARS);
-  const t2 = Date.now();
-  redact(pathological + ':' + pathological, env);
-  assert.ok(Date.now() - t2 < 1500, 'pathological single token is fast');
+  const ms2 = cpuMs(() => { redact(pathological + ':' + pathological, env); }, 1500);
+  assert.ok(ms2 < 1500, `pathological single token is fast (${ms2} ms)`);
 }
 
 // 7. never throws
@@ -128,31 +180,54 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
     tidLong: 'tid=0123abcd;' + 'a;'.repeat(MB / 2),
     aws: 'AKIA'.repeat(MB / 4),
     awsLong: 'ASIA' + 'A'.repeat(MB),
+    // starts after `_` (spec 012 FR-080 delta 2026-10-22): runs of underscore-led and snake_case-glued shapes
+    ghUnder: '_ghp_'.repeat(MB / 5),
+    ghGlued: 'a_ghp_'.repeat(MB / 6),
+    patUnder: '_github_pat_'.repeat(MB / 12),
+    skUnder: '_sk-'.repeat(MB / 4),
+    skShort: ('_sk-' + 'a'.repeat(19) + ' ').repeat(MB / 24),
+    bearerUnder: '_Bearer _'.repeat(MB / 9),
+    authUnder: '_authorization '.repeat(MB / 15),
+    urlUnder: '_a://x:'.repeat(MB / 7),
+    jwtUnder: '___eyJ'.repeat(MB / 6),
+    jwtUnderDot: '_eyJaaaaa.'.repeat(MB / 10),
+    jwtUnderLong: '_eyJ' + 'a_'.repeat(MB / 2),
+    // T128: the JWT's bounded prefix (underscores and up to 4 snake_case words)
+    jwtGlued: ('a_eyJ'.repeat(4) + 'a'.repeat(4000)).repeat(MB / 4020),
+    jwtWords40: (' ' + 'a'.repeat(40) + '_').repeat(MB / 42),
+    jwtWords5: (' ' + ('a'.repeat(40) + '_').repeat(5) + 'eyJ' + 'b'.repeat(4096)).repeat(MB / 4400),
+    jwtWordsDot: (' a_b_c_d_eyJaaaaa.aaaaa').repeat(MB / 23),
+    jwtUnderRun: '_'.repeat(MB),
+    awsUnder: '_AKIA'.repeat(MB / 5),
   };
-  // Each case runs in a worker thread that times redact() itself, so a busy runner cannot fail the test; the 1 s assertion is the
-  // real ReDoS check. Workers, not child processes: a child fed 1 MB on stdin hung for 30 s twice on a busy macOS runner (#303).
+  // Each case runs in a worker thread that times redact() itself with the thread's own CPU time (`process.threadCpuUsage()`, Node 22
+  // and later; wall time from `hrtime` only on Node 20.19, which has no per-thread CPU time), so a busy runner cannot fail the test;
+  // the 1 s assertion is the real ReDoS check, and wall time has the 10 s backstop of `cpuMs` (spec 041 `## Changes` 2026-10-22,
+  // review of PR #527). Workers, not child processes: a child fed 1 MB on stdin hung for 30 s twice on a busy macOS runner (#303).
   // The test stays synchronous: the worker writes the time into shared memory and wakes this thread (Atomics), with a 30 s hang
   // guard; a worker that does not answer in time is stopped and the case retried once.
   const mod = require.resolve('../src/shared/redact');
-  const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,1);` +
-    `try{const {redact}=require(w.mod);const t=process.hrtime.bigint();redact(w.input,{});out[0]=Number(process.hrtime.bigint()-t)/1e6;Atomics.store(flag,0,1)}` +
+  const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
+    `try{const {redact}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   for (const [k, v] of Object.entries(adversarial)) {
     let ms = NaN;
+    let wall = NaN;
     let why = '';
     for (let attempt = 0; attempt < 2; attempt++) {
-      const sab = new SharedArrayBuffer(16);
+      const sab = new SharedArrayBuffer(24);
       const flag = new Int32Array(sab, 0, 1);
       const worker = new Worker(code, { eval: true, workerData: { mod, input: v, sab } });
       const waited = Atomics.wait(flag, 0, 0, 30000);
       void worker.terminate();
       if (waited === 'timed-out') { why = 'no answer in 30 s'; continue; }
       assert.strictEqual(Atomics.load(flag, 0), 1, `adversarial ${k}: redact() threw in the worker`);
-      ms = new Float64Array(sab, 8, 1)[0];
+      [ms, wall] = new Float64Array(sab, 8, 2);
       break;
     }
     assert.ok(!Number.isNaN(ms), `adversarial ${k}: worker hung twice (${why})`);
     assert.ok(ms < 1000, `adversarial ${k}: redact() took ${ms.toFixed(1)} ms, limit 1000 ms`);
+    assert.ok(wall < 10000, `adversarial ${k}: wall-time backstop: ${wall.toFixed(1)} ms wall for ${ms.toFixed(1)} ms CPU, limit 10000 ms (a blocking wait?)`);
   }
 }
 
@@ -358,9 +433,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.doesNotThrow(() => { maskSecretArgs([null as any, undefined as any, 5 as any]); maskSecretCommand(null); maskSecretUrl(null); });
   const big = 200_000;
   const shapes = ['--token ' + 'a '.repeat(big / 2), '{"a":"'.repeat(big / 6), 'a=b;'.repeat(big / 4), 'x://' + '@'.repeat(big), 'http://' + 'a:'.repeat(big / 2), '/bot1:'.repeat(big / 6), ';token='.repeat(big / 7), '"k": "'.repeat(big / 6), '['.repeat(big)];
-  const t0 = Date.now();
-  for (const x of shapes) { _uncappedForTest.maskSecretArgs([x]); maskSecretUrl(x); _uncappedForTest.maskSecretCommand(x); }
-  const ms = Date.now() - t0;
+  const ms = cpuMs(() => { for (const x of shapes) { _uncappedForTest.maskSecretArgs([x]); maskSecretUrl(x); _uncappedForTest.maskSecretCommand(x); } }, 20000);
   console.log(`redact: masking 200k-char adversarial inputs in ${ms} ms`);
   assert.ok(ms < 20000, `masking 200k-char adversarial inputs took ${ms} ms`);
 }
@@ -516,7 +589,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // the plain-whitespace fallback on its own: one glued word with spaces, no whole-quoted word, no leading quote
   assert.strictEqual(maskSecretArgs(['-c', 'srv a"b --token ' + SEC + '"c'])[1], 'srv a"b --token ' + R, 'fallback: plain split of a glued word');
   // Paco's review: a flag opened inside a KV value behind a stray quote marks the next word (three forms)
-  assert.strictEqual(maskSecretArgs(['-c', 'bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'])[1], 'bash -c "OPTS=\\"--token ' + R, 'Paco 2a: args');
+  assert.strictEqual(maskSecretArgs(['-c', 'bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'])[1], 'bash -c "OPTS=\\"--token ' + R + '"', 'Paco 2a: args (T067: the payload is unescaped one level, masked, and written back in its quotes)');
   noSec(maskSecretCommand('bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'), 'Paco 2b: command');
   noSec(maskSecretArgs(['X="X=\\"--token ' + SEC + '\\""']), 'Paco 2c: X="X=\\"--token SEC\\""');
   noSec(maskSecretArgs(['OPTS=\\"--token=' + SEC + '\\"']), 'Paco 2d: --token=SEC behind a stray quote');
@@ -524,7 +597,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.deepStrictEqual(maskSecretArgs(['OPTS=\\"--token=' + SEC + '\\"', 'next']), ['OPTS=\\"--token=' + R, 'next'], 'guard: the next arg stays visible');
   assert.strictEqual(maskSecretCommand('OPTS=\\"--token=' + SEC + '\\" next'), 'OPTS=\\"--token=' + R + ' next', 'guard: the next word of a command stays visible');
   // display limit, on purpose: after a secret flag the whole next word is masked, so `SEC\\" srv"` (which may itself hold a `\\"`) loses its tail
-  assert.strictEqual(maskSecretCommand('bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'), 'bash -c "OPTS=\\"--token ' + R, 'display: the tail of the secret word is dropped, never shown');
+  assert.strictEqual(maskSecretCommand('bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'), 'bash -c "OPTS=\\"--token ' + R + '"', 'display: the tail of the secret word is dropped, never shown (T067: the payload keeps its closing quote)');
   // (m of 14b still) env prefix keeps other names
   assert.deepStrictEqual(maskSecretArgs(["$env:PORT='8080'; srv"]), ["$env:PORT='8080'; srv"], 'b: $env:PORT unchanged');
 
@@ -656,7 +729,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const rshapes: Array<[string, string]> = [['Bearer ', 'Bearer '], ['--auth Bearer ', '--auth Bearer '], ['obj', '{\\"name\\":\\"token\\",\\"value\\":\\"x y\\"} '], ['arr', '{\\"name\\":\\"token\\",\\"value\\":[\\"x\\"]} '], ['hdr', 'Authorization: Bearer '], ['qhdr', '-H "Authorization: Bearer" '], ['eq', '--auth=Bearer '], ['sq', "Authorization: 'a "], ['dq', 'Authorization: "a '], ['mixed', `Authorization: "a Authorization: 'a `], ['tok', 'TOKEN=Auth: '], ['unclosed', 'x Authorization: "a '], ['unclosed1', "Cookie: 'a "], ['schemeq', 'Authorization: Basic "a '], ['argsq', 'curl Authorization: "a ']];
     for (const [, unit] of rshapes) {
       const mk = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
-      const time = (x: string): number => { const t = process.hrtime.bigint(); _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+      const time = (x: string): number => cpuMs(() => { _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); }, 8000);
       let tSmall = Infinity;
       let tBig = Infinity;
       for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(mk(50_000))); tBig = Math.min(tBig, time(mk(400_000))); }
@@ -670,17 +743,16 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // (n) timing: each shape linear in practice; doubling check on the shape the analyst suspected.
   const shapes: Array<[string, string]> = [['-c ', '-c '], ['"', '"'], ['"a ', '"a '], ["a 'b", "a 'b"], [', a=', ', a='], ['Cookie: ', 'Cookie: '], ['{"a":"x y ', '{"a":"x y '], ["'\"", "'\""], ['x ', 'x ']];
   const run = (x: string): void => { _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); };
-  const tt = Date.now();
-  for (const [, unit] of shapes) run(unit.repeat(Math.ceil(200_000 / unit.length)).slice(0, 200_000));
-  const total = Date.now() - tt;
+  const total = cpuMs(() => { for (const [, unit] of shapes) run(unit.repeat(Math.ceil(200_000 / unit.length)).slice(0, 200_000)); }, 20000);
   console.log(`redact: 14c masking 200k-char adversarial inputs in ${total} ms`);
   assert.ok(total < 20000, `14c: masking 200k-char adversarial inputs took ${total} ms`);
-  // linearity: 50k vs 400k (8x apart), 5 interleaved pairs, min of each size, so a load burst hits both sizes.
+  // linearity: 50k vs 400k (8x apart), 5 interleaved pairs, min CPU time of each size (cpuMs), so neither a load burst nor other
+  // processes on the CPU move the ratio.
   // Linear is a ratio of about 8; three doublings at up to 3x each allow 24; quadratic would be about 64.
   for (const unit of ['{"a":"x y ', 'x ', '"a ']) {
     const small = unit.repeat(Math.ceil(50_000 / unit.length));
     const big = unit.repeat(Math.ceil(400_000 / unit.length));
-    const time = (x: string): number => { const t = process.hrtime.bigint(); run(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+    const time = (x: string): number => cpuMs(() => run(x), 8000);
     let tSmall = Infinity;
     let tBig = Infinity;
     for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(small)); tBig = Math.min(tBig, time(big)); }
@@ -694,7 +766,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     [';;;x y', (n) => ';'.repeat(n) + 'x y'], ['&&&x y', (n) => '&'.repeat(n) + 'x y'], ['|||x y', (n) => '|'.repeat(n) + 'x y'], ['a```b y', (n) => 'a' + '`'.repeat(n) + 'b y'],
   ];
   for (const [name, gen] of runs) {
-    const time = (x: string): number => { const t = process.hrtime.bigint(); run(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+    const time = (x: string): number => cpuMs(() => run(x), 8000);
     const small = gen(50_000);
     const big = gen(400_000);
     let tSmall = time(small);
@@ -710,7 +782,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // T065 (#374): a string over MASK_INPUT_MAX is hidden whole through the public helpers too, before any rule, in well under 100 ms
   {
     const MB = 1_000_000;
-    const timeIt = <T>(f: () => T): { v: T; ms: number } => { const t = process.hrtime.bigint(); const v = f(); return { v, ms: Number(process.hrtime.bigint() - t) / 1e6 }; };
+    const timeIt = <T>(f: () => T): { v: T; ms: number } => { let v!: T; const ms = cpuMs(() => { v = f(); }, 100); return { v, ms }; };
     const shapes: Array<[string, string]> = [['a=b;', 'token=' + SEC], ['x ', '--token ' + SEC]];
     for (const [unit, tail] of shapes) {
       const big = unit.repeat(Math.ceil(MB / unit.length)) + tail;
@@ -739,6 +811,142 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // [KNOWN GAP] (spec 041 T064 follow-ups): a bare `token` word is not a flag, so the value after it is NOT masked. This row pins the gap;
   // when it is closed, flip it on purpose (and update the spec).
   assert.deepStrictEqual(maskSecretArgs(['token', SEC]), ['token', SEC], '14c [KNOWN GAP]: a bare `token` before a secret shows the secret');
+}
+
+// 14c2. spec 061 T057: `shQuote` is the one display-quoting helper (folder setup list and the sh payload written back by T067).
+{
+  assert.deepStrictEqual(['-y', 'a b', '', "it's", '$(id)', 'x;y', '@scope/pkg@1.2', '--port=9', 'C:/x'].map((w) => shQuote(w)), ['-y', "'a b'", "''", `'it'\\''s'`, "'$(id)'", "'x;y'", '@scope/pkg@1.2', '--port=9', 'C:/x']);
+  assert.strictEqual(shQuote('x', true), "'x'", 'T057: always quotes a safe word');
+  assert.strictEqual(shQuote("a'b", true), `'a'\\''b'`, 'T057: a quote inside');
+  // the single-quoted sh payload is written back through shQuote: the `'\''` survives and the secret is masked
+  assert.strictEqual(maskSecretCommand("sh -c 'echo it'\\''s; srv --api-key SEC'"), "sh -c 'echo it'\\''s; srv --api-key [redacted]'");
+}
+
+// 14d. T067 (#447): secrets inside escaped quotes. The payload of `sh|bash -c`, `cmd /c` and `powershell|pwsh -Command` is unescaped one
+// level with that shell's own rules, then masked; a leading quote that closes nowhere is set aside (fail closed). T is the issue's placeholder.
+{
+  const T = 'TOKEN' + '123';
+  const R = '[redacted]';
+  const noT = (x: unknown, what: string): void => assert.ok(!JSON.stringify(x).includes(T), `${what}: no secret in ${JSON.stringify(x)}`);
+  const masked = (args: string[], want: string[], what: string): void => { const got = maskSecretArgs(args); assert.deepStrictEqual(got, want, what); noT(got, what); };
+  const cmd = (c: string, want: string, what: string): void => { const got = maskSecretCommand(c); assert.strictEqual(got, want, what); noT(got, what); };
+  const BT = '`';
+  // (a) the ten leaking rows of the issue (fuzz on PR #369 at 0e0737e), each now masked
+  masked(['srv', '-H', '"X-Api-Key:', T + '"'], ['srv', '-H', '"X-Api-Key:', R], 'issue row 1: naive split, leading unmatched quote');
+  cmd(`sh -c "srv -H \\"X-Api-Key: ${T}\\""`, `sh -c "srv -H \\"X-Api-Key: ${R}\\""`, 'issue row 2: sh -c, \\"');
+  cmd(`powershell -Command "srv -H ${BT}"X-Api-Key: ${T}${BT}""`, `powershell -Command "srv -H ${BT}"X-Api-Key: ${R}${BT}""`, 'issue row 3: PowerShell backtick quotes');
+  cmd(`powershell -Command "srv {${BT}"api_key${BT}":${BT}"${T}${BT}"}"`, `powershell -Command "srv {${BT}"api_key${BT}":${BT}"${R}${BT}"}"`, 'issue row 4: JSON pair, backtick quotes (was masked only partly)');
+  cmd(`powershell -Command "srv {${BT}"name${BT}":${BT}"api_key${BT}",${BT}"value${BT}":${BT}"${T}${BT}"}"`, `powershell -Command "srv {${BT}"name${BT}":${BT}"api_key${BT}",${BT}"value${BT}":${BT}"${R}${BT}"}"`, 'issue row 5: R7 name/value, backtick quotes');
+  cmd(`powershell -Command "srv {\\${BT}"token\\${BT}":\\${BT}"${T}\\${BT}"}"`, `powershell -Command "srv {\\${BT}"token\\${BT}":\\${BT}"${R}\\${BT}"}"`, 'issue row 6: \\ and backtick quote mixed');
+  cmd(`sh -c "srv --env=\\"API_TOKEN=${T}\\""`, `sh -c "srv --env=\\"API_TOKEN=${R}\\""`, 'issue row 7: sh -c, --env=\\"NAME=x\\"');
+  cmd(`powershell -Command "srv --env=${BT}"API_TOKEN=${T}${BT}""`, `powershell -Command "srv --env=${BT}"API_TOKEN=${R}${BT}""`, 'issue row 8: PowerShell --env');
+  cmd(`sh -c "srv --opt=\\"token=${T}\\""`, `sh -c "srv --opt=\\"token=${R}\\""`, 'issue row 9: sh -c, --opt=\\"token=x\\"');
+  cmd(`powershell -Command "srv --opt=${BT}"token=${T}${BT}""`, `powershell -Command "srv --opt=${BT}"token=${R}${BT}""`, 'issue row 10: PowerShell --opt');
+  // (a2) review of #455 (Paco's agent, d40f1ab): cmd wrapping PowerShell, `bash -c --`, `bash -O`, PowerShell's short -Command forms
+  const leakFree = (c: string, what: string): void => { const got = maskSecretCommand(c); noT(got, what); assert.ok(got.includes(R), `${what}: masked in ${got}`); };
+  leakFree(`cmd /c powershell -Command "srv -H ${BT}"X-Api-Key: ${T}${BT}""`, 'cmd /c powershell -Command, header');
+  leakFree(`cmd /c powershell -Command "srv --env=${BT}"API_TOKEN=${T}${BT}""`, 'cmd /c powershell -Command, --env=');
+  leakFree(`cmd /c powershell -Command "srv --opt=${BT}"token=${T}${BT}""`, 'cmd /c powershell -Command, --opt=');
+  leakFree(`cmd /c powershell -Command "srv --header=${BT}"X-Api-Key: ${T}${BT}""`, 'cmd /c powershell -Command, --header=');
+  leakFree(`cmd /c powershell -Command "srv --config '{${BT}"name${BT}":${BT}"api_key${BT}",${BT}"value${BT}":${BT}"${T}${BT}"}'"`, 'cmd /c powershell -Command, R7 name/value');
+  leakFree(`cmd /c powershell -Command "echo '{${BT}"api_key${BT}":${BT}"${T}${BT}"}' | srv"`, 'cmd /c powershell -Command, JSON pair in echo');
+  masked(['cmd', '/c', 'powershell', '-Command', `srv -H ${BT}"X-Api-Key: ${T}${BT}"`], ['cmd', '/c', 'powershell', '-Command', `srv -H "X-Api-Key: ${R}"`], 'args: cmd /c powershell -Command, one script arg');
+  masked(['cmd', '/c', 'powershell', '-Command', 'srv', `--env=${BT}"API_TOKEN=${T}${BT}"`], ['cmd', '/c', 'powershell', '-Command', 'srv', `--env="API_TOKEN=${R}"`], 'args: cmd /c powershell -Command, --env= arg');
+  cmd(`bash -c -- "srv -H \\"X-Api-Key: ${T}\\""`, `bash -c -- "srv -H \\"X-Api-Key: ${R}\\""`, 'bash -c -- "..."');
+  cmd(`bash -O extglob -c "srv -H \\"X-Api-Key: ${T}\\""`, `bash -O extglob -c "srv -H \\"X-Api-Key: ${R}\\""`, 'bash -O extglob -c "..."');
+  masked(['bash', '-c', '--', `srv --opt=\\"token=${T}\\"`], ['bash', '-c', '--', `srv --opt=\\"token=${R}\\"`], 'args: bash -c -- <script>');
+  cmd(`pwsh -c "srv -H ${BT}"X-Api-Key: ${T}${BT}""`, `pwsh -c "srv -H ${BT}"X-Api-Key: ${R}${BT}""`, 'pwsh -c');
+  cmd(`powershell -NoP -Comm "srv -H ${BT}"X-Api-Key: ${T}${BT}""`, `powershell -NoP -Comm "srv -H ${BT}"X-Api-Key: ${R}${BT}""`, 'powershell -NoP -Comm (a prefix of -Command)');
+  // cmd: a backslash run without a quote reads back unchanged through encode + decode (whole runs, review item 1)
+  for (const v of ['a\\\\\\b', 'a\\\\\\"b', 'x"y\\\\', '\\\\\\\\']) assert.strictEqual(_uncappedForTest.payloadRoundTrip('cmd', '"', v, '\\"'), v, 'cmd round trip ' + JSON.stringify(v));
+  // (b) the issue's controls (no escapes) stay masked as before
+  cmd(`sh -c 'srv -H "X-Api-Key: ${T}"'`, `sh -c 'srv -H "X-Api-Key: ${R}"'`, 'control: single-quoted payload');
+  cmd(`sh -c 'srv --env="API_TOKEN=${T}"'`, `sh -c 'srv --env="API_TOKEN=${R}"'`, 'control: --env in single quotes');
+  cmd(`powershell -Command 'srv {"name":"api_key","value":"${T}"}'`, `powershell -Command 'srv {"name":"api_key","value":"${R}"}'`, 'control: PowerShell single quotes');
+  masked(['srv', '-H', 'X-Api-Key:', T], ['srv', '-H', 'X-Api-Key:', R], 'control: args without the stray quote');
+  // (c) the other escape forms of each shell
+  cmd(`cmd /c "srv -H \\"X-Api-Key: ${T}\\""`, `cmd /c "srv -H \\"X-Api-Key: ${R}\\""`, 'cmd /c with \\"');
+  cmd(`cmd /c srv -H ^"X-Api-Key: ${T}^"`, `cmd /c srv -H ^"X-Api-Key: ${R}^"`, 'cmd /c with ^"');
+  cmd(`cmd.exe /C "srv --opt=\\"token=${T}\\""`, `cmd.exe /C "srv --opt=\\"token=${R}\\""`, 'cmd.exe /C');
+  cmd(`powershell -c "srv --token ""${T}"""`, `powershell -c "srv --token ${R}"`, 'PowerShell doubled quotes ""');
+  cmd(`powershell -Command 'srv --opt=''token=${T}'''`, `powershell -Command 'srv --opt=''token=${R}'''`, "PowerShell '' inside '...'");
+  cmd(`pwsh -NoProfile -ExecutionPolicy Bypass -Command "srv --api-key ${BT}"${T}${BT}""`, `pwsh -NoProfile -ExecutionPolicy Bypass -Command "srv --api-key ${R}"`, 'pwsh with flags and a flag value before -Command');
+  cmd(`/bin/bash -o pipefail -c "srv -H \\"Authorization: Bearer ${T}\\""`, `/bin/bash -o pipefail -c "srv -H \\"Authorization: ${R}\\""`, 'bash path, -o value, then -c');
+  cmd(`bash -lc "srv --token \\"${T} x\\""`, `bash -lc "srv --token ${R}"`, 'bash -lc, an escaped value with a space');
+  cmd(`sh -c 'it'\\''s --token ${T}'`, `sh -c 'it'\\''s --token ${R}'`, "sh '\\'' in single quotes");
+  cmd(`TOKEN=${T} sh -c "srv \\"x\\""`, `TOKEN=${R} sh -c "srv \\"x\\""`, 'text before the wrapper is masked by the usual rules');
+  cmd(`sh -c "srv \\"x\\"" --token ${T}`, `sh -c "srv \\"x\\"" --token ${R}`, 'text after a sh payload word is masked by the usual rules');
+  cmd(`sh -c "a \\"b\\"" && bash -c "srv --opt=\\"token=${T}\\""`, `sh -c "a \\"b\\"" && bash -c "srv --opt=\\"token=${R}\\""`, 'two wrappers in one command');
+  cmd(`cmd /c "C:\\Program Files\\srv\\srv.exe" --token ${T}`, `cmd /c "C:\\Program Files\\srv\\srv.exe" --token ${R}`, 'cmd /c with a quoted path and no escape: the usual rules');
+  noT(maskSecretCommand(`cmd /c "C:\\Program Files\\x.exe" --opt=\\"token=${T}\\"`), 'cmd /c: quoted path, then an escaped value');
+  // backslashes in the payload are written back escaped too (CodeQL js/incomplete-sanitization #54/#55), so the shown text reads back the same
+  cmd(`sh -c "cd C:\\\\x\\\\y; srv --token \\"${T}\\""`, `sh -c "cd C:\\\\x\\\\y; srv --token \\"${R}\\""`, 'sh "...": \\\\ and \\" written back as they came');
+  cmd(`sh -c "a\\b --opt=\\"token=${T}\\""`, `sh -c "a\\\\b --opt=token=${R}"`, 'sh "...": a lone \\ is shown as \\\\ (same meaning in sh)');
+  cmd(`sh -c a\\\\b\\ --token\\ ${T}`, `sh -c a\\\\b\\ --token\\ ${R}`, 'sh unquoted: \\\\ stays \\\\ (it was shown as \\, which sh drops)');
+  for (const v of ['a\\b', 'a\\"b', 'a\\\\"b', 'end\\', 'x "y" z', 'C:\\dir\\', '\\\\\\"', '"\\\\', 'p\\\\\\q']) {
+    const rt = _uncappedForTest.payloadRoundTrip;
+    assert.strictEqual(rt('sh', '"', v), v, `round trip sh "...": ${v}`);
+    assert.strictEqual(rt('sh', '', v), v, `round trip sh unquoted: ${v}`);
+    assert.strictEqual(rt('sh', "'", v), v, `round trip sh '...': ${v}`);
+    assert.strictEqual(rt('cmd', '"', v, '\\"'), v, `round trip cmd "..." with \\": ${v}`);
+    assert.strictEqual(rt('cmd', '', v, '\\"'), v, `round trip cmd unquoted with \\": ${v}`);
+    assert.strictEqual(rt('ps', '"', v), v, `round trip PowerShell "...": ${v}`);
+  }
+  // (d) nesting: two decodes are shown readable, a third level is masked whole
+  cmd(`bash -c "sh -c \\"srv \\\\\\"--token ${T}\\\\\\"\\""`, `bash -c "sh -c \\"srv --token ${R}\\""`, 'two levels of escapes');
+  cmd(`bash -c "sh -c \\"bash -c \\\\\\"srv \\\\\\\\\\\\\\"--token ${T}\\\\\\\\\\\\\\"\\\\\\"\\""`, `bash -c "sh -c \\"${R}\\""`, 'three levels: the script past two decodes is masked whole');
+  masked(['bash', '-c', `sh -c "srv \\"--token ${T}\\""`], ['bash', '-c', `sh -c "srv --token ${R}"`], 'args: a wrapper inside the script arg');
+  // (e) a quote that does not close: masked to the end of the payload
+  cmd(`sh -c "srv \\"--token ${T}`, `sh -c ${R}`, 'sh payload with no closing quote');
+  cmd(`powershell -Command "srv ${BT}"--token ${T}`, `powershell -Command ${R}`, 'PowerShell payload with no closing quote');
+  // (f) args form: the script arg after the shell and its flag keeps that shell's escapes (cmd and PowerShell join every later arg)
+  masked(['sh', '-c', `srv --opt=\\"token=${T}\\"`], ['sh', '-c', `srv --opt=\\"token=${R}\\"`], 'args: sh script with \\"');
+  masked(['sh', '-c', `srv {\\\\"token\\\\":\\\\"${T}\\\\"}`], ['sh', '-c', `srv {\\\\"token\\\\":\\\\"${R}\\\\"}`], 'args: sh script with escaped JSON');
+  masked(['powershell', '-Command', `srv --opt=${BT}"token=${T}${BT}"`], ['powershell', '-Command', `srv --opt="token=${R}"`], 'args: PowerShell script with backtick quotes (shown unescaped once masked)');
+  masked(['powershell', '-Command', `'srv --opt=''token=${T}'''`], ['powershell', '-Command', `srv --opt='token=${R}'`], "args: PowerShell '' in a single-quoted script");
+  masked(['powershell', '-Command', 'srv', `--header=${BT}"X-Api-Key:`, `${T}${BT}"`], ['powershell', '-Command', 'srv', '--header="X-Api-Key: ' + R, R], 'args: PowerShell, the script split over args');
+  masked(['cmd.exe', '/d', '/c', 'srv', '--header=^"X-Api-Key:', `${T}^"`], ['cmd.exe', '/d', '/c', 'srv', '--header="X-Api-Key: ' + R, R], 'args: cmd, the script split over args');
+  masked(['cmd', '/c', `srv -H ^"X-Api-Key: ${T}^"`], ['cmd', '/c', `srv -H "X-Api-Key: ${R}"`], 'args: cmd script with ^"');
+  // (g) the leading unmatched quote (#369 review): the flag, header name or NAME= behind it is seen; the rest of the argument is masked
+  masked(['srv', `"--token=${T}`], ['srv', `"--token=${R}`], 'unmatched quote: "--token=x');
+  masked(['srv', "'--api-key", T], ['srv', "'--api-key", R], "unmatched quote: '--api-key then the value");
+  masked(['srv', `"X-Api-Key: ${T}`], ['srv', `"X-Api-Key: ${R}`], 'unmatched quote: "Name: value');
+  cmd(`srv "--token ${T}`, `srv "--token ${R}`, 'command: an unclosed quote runs to the end (was a [KNOWN GAP])');
+  cmd(`srv "--token ${T} more`, `srv "--token ${R}`, 'command: an unclosed quote is one argument to the end, masked whole after the flag');
+  cmd(`srv --opt="token=${T}`, `srv --opt="token=${R}`, 'command: a flag value with an unclosed quote');
+  // (h) no over-masking: harmless commands and args come back unchanged, byte for byte
+  for (const same of [`sh -c "echo hello"`, `sh -c "echo \\"hello world\\""`, `bash -lc 'npm run build && npm test'`, `powershell -Command "Write-Host ${BT}"hi there${BT}""`,
+    `pwsh -c "Get-ChildItem ""C:\\Program Files"""`, `powershell -Command 'Write-Host ''hi'''`, `cmd /c "echo \\"hi\\""`, `cmd /c echo ^"hi^"`, `cmd /c "echo ^"hi^" & dir"`, `cmd /c dir C:\\Users\\me`,
+    `sh -c "cd \\"$HOME\\" && ls"`, `sh -c "printf \\"%s\\\\n\\" a"`, `node -e "console.log(\\"hi\\")"`, `bash -c "sh -c \\"echo \\\\\\"x y\\\\\\"\\""`]) {
+    assert.strictEqual(maskSecretCommand(same), same, 'no over-masking: ' + same);
+  }
+  for (const same of [['sh', '-c', 'echo "a \\"b\\""'], ['powershell', '-Command', `Write-Host ${BT}"hi${BT}"`], ['cmd', '/c', 'echo', '^"hi^"'], ['srv', '"hello', 'world"'], ['srv', "it's"]]) {
+    assert.deepStrictEqual(maskSecretArgs(same), same, 'no over-masking: ' + JSON.stringify(same));
+  }
+  // (i) cost: wrapper shapes stay linear (50k vs 400k, 3 interleaved pairs, min CPU time of each (cpuMs, T068); linear is about 8, quadratic about 64)
+  const run = (x: string): void => { _uncappedForTest.maskSecretArgs(['sh', '-c', x]); _uncappedForTest.maskSecretArgs(['powershell', '-Command', x]); _uncappedForTest.maskSecretCommand(x); };
+  for (const unit of ['sh -c "x \\"y\\"" ', `powershell -Command "a ${BT}" `, 'cmd /c a ^" ', 'bash -c "sh -c \\"a ', "pwsh -c 'a '' ", '"--token ']) {
+    const mk = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
+    const time = (x: string): number => cpuMs(() => run(x), 8000);
+    let tSmall = Infinity;
+    let tBig = Infinity;
+    for (let i = 0; i < 3; i++) { tSmall = Math.min(tSmall, time(mk(50_000))); tBig = Math.min(tBig, time(mk(400_000))); }
+    const ratio = tBig / Math.max(tSmall, 20);
+    console.log(`redact: 14d linearity ${JSON.stringify(unit)} 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)}`);
+    assert.ok(tBig < 8000 && ratio < 24, `14d: ${JSON.stringify(unit)} grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)})`);
+  }
+  // review of #455 item 1: one long backslash run after a cmd wrapper (no quote after it) is not retried from each position
+  for (const head of ['cmd /c ^x ', 'cmd /c \\"x ']) {
+    const time = (n: number): number => { const x = head + '\\'.repeat(n); return cpuMs(() => { _uncappedForTest.maskSecretCommand(x); }, 8000); };
+    let tSmall = Infinity;
+    let tBig = Infinity;
+    for (let i = 0; i < 3; i++) { tSmall = Math.min(tSmall, time(50_000)); tBig = Math.min(tBig, time(400_000)); }
+    const ratio = tBig / Math.max(tSmall, 20);
+    console.log(`redact: 14d linearity ${JSON.stringify(head)} + run 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)}`);
+    assert.ok(tBig < 8000 && ratio < 24, `14d: ${JSON.stringify(head)} + backslash run grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)})`);
+  }
+  // the public helpers still hide a string over MASK_INPUT_MAX whole, before the wrapper decode
+  assert.strictEqual(maskSecretCommand('sh -c "' + 'a \\"'.repeat(MASK_INPUT_MAX) + '"'), R, '14d: over MASK_INPUT_MAX, hidden whole');
 }
 
 // 15. T054: `cut` stops at a token boundary and never leaves half a surrogate pair

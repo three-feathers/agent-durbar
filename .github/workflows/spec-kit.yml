@@ -53,8 +53,9 @@ jobs:
           PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
         run: bash .github/scripts/spec-gate.sh
 
-  # Reminder only: warns (annotation + summary) when src/ changes without README/docs/CHANGELOG, or npm scripts change without
-  # README, unless the PR says "Docs: n/a <reason>". It cannot block: continue-on-error, the script always exits 0, and this job
+  # Reminder only: warns (annotation + summary) when src/ changes without README/docs/a changelog.d fragment, or npm scripts change
+  # without README, or a PR hand-edits CHANGELOG.md's Unreleased or the generated specs/README.md (spec 025 delta 2026-10-22),
+  # unless the PR says "Docs: n/a <reason>". It cannot block: continue-on-error, the script always exits 0, and this job
   # is deliberately NOT in the required checks of the main ruleset (.github/ruleset-main.json).
   docs-check:
     name: Docs check (warning only)

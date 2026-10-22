@@ -10,6 +10,8 @@ on:
       - 'README.md'
       - 'CHANGELOG.md'
       - 'specs/README.md'
+      - 'specs/*/spec.md'
+      - 'scripts/specs-index.js'
       - 'docs/screenshots/**'
       - 'docs/site/**'
       - 'build/icon.svg'
@@ -21,6 +23,8 @@ on:
     paths:
       - 'README.md'
       - 'specs/README.md'
+      - 'specs/*/spec.md'
+      - 'scripts/specs-index.js'
       - 'docs/site/**'
       - 'scripts/build-site.js'
       - 'scripts/test-site.js'

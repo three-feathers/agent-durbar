@@ -129,3 +129,12 @@ export function restorable(folders: SavedFolder[], has: (id: string) => boolean,
   }
   return out;
 }
+
+/**
+ * *End session* (spec 005), also *Restart session*'s first step (spec 058 FR-022): remote control off first (spec 054 FR-003 and
+ * FR-011, off on GitHub too), then the adapter frees the session. In this order so remote control never outlives the session.
+ */
+export async function endSessionOp(d: { release(id: string): Promise<void>; router: Pick<AdapterRouter, 'forAgent'> }, id: string): Promise<void> {
+  await d.release(id);
+  await d.router.forAgent(id)?.stop(id);
+}
