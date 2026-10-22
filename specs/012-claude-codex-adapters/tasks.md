@@ -183,3 +183,4 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 ## Changes 2026-10-22 (a token after an underscore, FR-080 delta, issue #541)
 
 - [x] T127 (2026-10-22) `redact`'s token shapes start where no letter or digit precedes them instead of at `\b` (`_ghp_…_`, `__sk-…__`, `my_github_pat_…` are masked); a JWT may follow up to 3 underscores; `maskTokenShapes` exported and reused by `shownCommand` in `src/main/foldersetup.ts` (its `\b` copy removed); wrapping matrix, adversarial underscore runs and mutation checks in `test:redact` and `test:foldersetup` [FR-080]
+- [ ] T128 (2026-10-22, review of PR #543) The JWT shape takes the underscore and `snake_case` wrappings too (`my_eyJ…`, `MY__eyJ…`, `____eyJ…`; prefix kept, start still linear); the `[KNOWN GAP]` exemptions leave `test:redact`; `test:foldersetup` gets JWT cases in the `shownCommand` token loop; mutation checks [FR-080]
