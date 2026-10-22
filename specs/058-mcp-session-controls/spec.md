@@ -418,12 +418,16 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   - a **failed MCP tool call** (the tool event names its `mcpServer`) whose text FR-061 classifies as an MCP OAuth challenge. Copilot
     can keep reporting such a server as `connected` while its cached tools fail (the issue's case), so the tool failure is the signal.
   The derived state is replaced by the next status the runtime reports for that server (for example `connected` after a sign-in).
+  `[IMPLEMENTED]` Copilot (T094) 2026-10-21: `src/adapters/map.ts` (`tool.execution_complete`). `test:` `scripts/test-events.ts`. `[IMPLEMENTED]` Claude (T096) `src/adapters/claude.ts` (`mcpAuthSeen`, `withAuthSeen`): the mark ends with the CLI's own fresh report, i.e. the `mcp` event mapped from `system/init`, and with `setMcpEnabled` for that server. `read:` the CLI sends `init` at the start of each turn in stream-json input as far as the code shows (spec 012's research says "one per session start", docs; `[KNOWN GAP]` not checked on a real run), so the mark may last only until the next message even if the CLI still says `connected`; that is the intended "next status the runtime reports replaces it". The challenge shows at once from the last list the session emitted (`lastMcp`), before `mcp_status` answers, so a slow or timed-out request still shows Needs sign-in (as Codex, #481). `test:` `scripts/test-claude-adapter.ts` (both clears and the immediate emit with `mcp_status` held, mutation-checked). `[KNOWN GAP]` the reconnect path of #473 (`mcp_reconnect`) is not on this branch: whichever PR merges second must also `delete` the name from `mcpAuthSeen` there and test it.
+  `[IMPLEMENTED]` Codex (T095, T023) 2026-10-21: the list (`authStatus: notLoggedIn` or `runtimeStatus: authenticationRequired`; list items have no `failureReason`), the startup notification (`failureReason`), and a failed `mcpToolCall` with challenge text (`mcpAuth`): the server is marked `needs-auth` + `errorClass: 'auth'` at once, even when the list says connected, kept through the re-read (one at a time) until the runtime's next status for it or until the server is switched off and on (no reconnect path exists in `codex.ts`). `test:` `scripts/test-codex-adapter.ts`, `scripts/test-codex-map.ts`. `read:` codex-cli 0.163.0 `codex app-server generate-ts` (checked by the PR reviewer; not installed on the author's machine): `v2/McpServerStatus.ts` has `runtimeStatus`, `authStatus`, `toolsError`, `httpOrigin`, `pluginId` and no `failureReason`; `v2/McpServerStatusUpdatedNotification.ts` has `failureReason: "reauthenticationRequired" | null`. Copilot (T094) is built (#480); Claude (T096) is built (#482).
 - **FR-061** **One pure classifier**, `isMcpAuthChallenge(text)` in `src/adapters/mcpauth.ts` (vendor phrases stay in adapters,
   constitution II): the issue's text (`MCP OAuth challenge required`), the Copilot runtime's `requires authentication. Run \`/mcp auth`
   and `Re-authentication required for MCP server` (`read:` runtime strings), and Claude's and Codex's equivalents once seen. It is applied
   only to failed MCP tool results and MCP status errors, never to model text or a turn that ended well. Unit-tested with the issue's
   exact text.
-  `[IMPLEMENTED]` the classifier `src/adapters/mcpauth.ts` (PR 1 of #364; the mappers that apply it are T094-T096). `test:` `scripts/test-mcpauth.ts`.
+  `[IMPLEMENTED]` Claude (T096): a failed MCP call with a challenge marks the server `needs-auth` + `errorClass: 'auth'` in the refreshed list even if the CLI says `connected`, until init or a toggle replaces it. `test:` `scripts/test-claude-adapter.ts`.
+  `[IMPLEMENTED]` Claude Code's own strings, both recognised: `MCP server "<name>" needs authentication` and `<name> requires authentication. Open this session and run /mcp to authenticate.` (`read:` from the 2.1.304 binary). `[KNOWN GAP]` neither was seen in a real `tool_result`.
+  `[IMPLEMENTED]` the classifier `src/adapters/mcpauth.ts` (PR 1 of #364; the mappers that apply it are T094-T096; Claude's is done, T096). `test:` `scripts/test-mcpauth.ts`.
 - **FR-062** **An MCP challenge is not the agent app's sign-in.** Text that `isMcpAuthChallenge` matches never gets
   `errorKind: 'auth'` and never marks the app signed out (spec 012 FR-157): `isAuthError` returns false for it. If such text comes as a
   session-level error, the adapter maps it to the named server's needs-auth when it can name the server, else to a plain error.
@@ -431,6 +435,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
 - **FR-063** **Tool card.** A failed MCP tool call classified by FR-061 carries `mcpAuth: true` on the normalized `toolCall` event (no
   vendor text). The card adds one line, "<server> needs you to sign in", with **Sign in…** (opens the MCP dialog with focus on that
   server's row) and **Switch off for this session** (FR-066). The card's text is masked (FR-067).
+  `[IMPLEMENTED]` Copilot (T094) 2026-10-21: `mcpAuth` is set on the failed card; no card line or button yet (UI). `test:` `scripts/test-events.ts`.
 - **FR-064** **Start the agent app's own sign-in.** Capability `mcpSignIn?: boolean` and the optional member
   `startMcpSignIn?(sessionId, name): Promise<{ kind: 'browser'; url: string } | { kind: 'connected' }>`, present exactly when the flag is
   true (contract C2). Each adapter feature-detects the call and rejects with a `manual` error when it is missing or refused:
@@ -497,9 +502,14 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   `[IMPLEMENTED]` 2026-10-21 (the FR-070 part of T098, see *Changes* 2026-10-21): in the shared `config` of `start()` in
   `src/adapters/copilot.ts`, so create, both resume paths and the FR-158 reconnect re-resume carry it; not in `oneShotConfig` or
   `renameResumeConfig`. `test:` `scripts/test-copilot-model.ts` (create, resume by id, `resumeSessionId`), `scripts/test-authcheck.ts`
-  (reconnect), `scripts/test-copilot-oneshot.ts` (one-shot without it). `[KNOWN GAP]` not run on a real account: that the runtime
-  really writes the keychain entry, how many macOS Keychain prompts it adds, Linux without a desktop keyring, and sharing with the
-  CLI (T105).
+  (reconnect), `scripts/test-copilot-oneshot.ts` (one-shot without it). `real:` 2026-10-21 (T116, run 39680461023, CI account,
+  runtime 1.0.22, demo OAuth server on loopback): a sign-in in one session served a later session in a new runtime process on
+  `windows-latest` (Credential Manager targets `<hex>.copilot-mcp-oauth`) and `ubuntu-latest` (no desktop keyring: files under
+  `~/.copilot/mcp-oauth-config/`, research.md 7.7). `[KNOWN GAP]` how many macOS Keychain prompts it adds, a Linux desktop with a
+  keyring, a third-party https server, and sharing with the CLI (T105). `[KNOWN GAP]` on Linux without a keyring the kept sign-in is a
+  tokens file (`~/.copilot/mcp-oauth-config/<hex>.tokens.json`); whether it is encrypted and its file permissions are unverified (the
+  check logs the mode bits from the next dispatch on). `[KNOWN GAP]` whether a tool call with a cached tool catalog and a kept token
+  gets a 401 (needs a prompt).
 - **FR-071** **Simulator** (constitution IV): page address `simmcpauth=1` gives each sim kind one server in needs-auth and a Copilot tool
   card with the issue's exact text; **Sign in** -> host `auth.example.com` -> **Open sign-in page** shows a toast and opens nothing ->
   "Running" after 2 s (Codex: "applies with your next message"). `simmcpauth=manual` shows the FR-068 steps instead.
@@ -637,3 +647,41 @@ event types, field names, states and the throw-away servers' own text were recor
 - real (FR-024): `~/.copilot/logs` exists on this machine (checked for existence only; nothing opened).
 - Not checked: T061 (Claude Code `mcp_reconnect`) and T062 (Codex) on a real session; macOS and Windows; the off-then-on fallback on an
   older runtime (this runtime has `restartServer`).
+
+### 2026-10-21: real check of FR-070 on CI runners (Windows first; T116)
+
+**Why**: the owner (Vikram, team chat 2026-10-21 20:46 UTC) asked to test the kept MCP sign-in (FR-070, #471) on Windows with a demo
+MCP server that needs a real OAuth sign-in. Nobody on the team has a Windows machine, so the check runs on GitHub's `windows-latest`
+(and `ubuntu-latest` to compare), started by hand (`workflow_dispatch` only, never on a pull request).
+
+**What** (task T116; it covers the "later session" part of T105 and does not replace T105 on the owner's machine):
+- `scripts/demo-oauth-mcp.ts`: a dependency-free demo remote MCP server on loopback that **requires** OAuth (MCP authorization
+  2025-06-18): 401 with `WWW-Authenticate: Bearer resource_metadata=...`, protected-resource and authorization-server metadata, dynamic
+  client registration, S256 PKCE only, one-use codes, registered redirect URIs only, refresh-token rotation. It auto-approves (no
+  consent page) and counts registrations, sign-ins (`/authorize`), grants and requests, never tokens. Its MCP part is Durbar's own
+  `McpSession` (spec 041). `scripts/test-demo-oauth-mcp.ts` (in `npm test`) proves the flow is enforced.
+- `scripts/mcp-oauth-real.ts`: through Durbar's Copilot adapter and its session config (`persistent`), session A shows the server's
+  state, calls `session.rpc.mcp.oauth.login` with only `serverName`, `clientName`, `callbackSuccessMessage` (the call T098 will make;
+  until T098 lands the script reaches the live session object, test code only), completes the authorization URL with a plain HTTP
+  client (the demo's 302 goes to the runtime's own loopback callback), and waits for `connected`. Session A2 (same runtime) and session
+  B (a new adapter, so a new runtime process) must connect with **no new `/authorize`**. Also, names only: Windows Credential Manager
+  targets (`cmdkey /list`) and new file names under `~/.copilot`, before and after. **0 prompts**: no message is sent.
+- `.github/workflows/mcp-oauth-real.yml`: `workflow_dispatch` only, `contents: read`, the CI Copilot token in the one step's env,
+  artifact = the sanitized step log and verdict (no token, no authorization URL beyond host and path, no credential values).
+
+**Limits**: a loopback `http` demo server, not a third-party https one; the browser step is an HTTP client, not a browser; the
+Copilot CLI's `/mcp auth` sharing (rest of T105) and the Durbar UI flow (T098-T102) are not part of this check.
+
+Results: see research.md section 7.7. `real:` 2026-10-21, run 39680461023 (runtime 1.0.22, 0 prompts): PASS on `windows-latest`
+and `ubuntu-latest`; session B in a new runtime process connected with no new sign-in. Windows keeps it in Credential Manager
+(`<hex>.copilot-mcp-oauth`); the Linux runner, with no desktop keyring, kept it in files under `~/.copilot/mcp-oauth-config/`.
+
+**Review on #478 (fjcabello, 2026-10-21; fixed 2026-10-22, no new dispatch)**: research 7.7 now says "one 401 each; the settled state
+was connected within 1 s; transient states were not recorded". The check script logs every `mcp` state per session in order
+(`statusSequence`, unit-tested in `scripts/test-demo-oauth-mcp.ts`), one log line per new file or Credential Manager target (the
+300-character line cap cut the Linux list), and on Linux and macOS each new file's permission bits (`fs.statSync`, never the
+contents); these run on the next dispatch. The demo server now binds access tokens to the `resource` (RFC 8707): `/mcp` refuses a
+token issued for another resource, and a refresh keeps its resource; the test also redeems a code with a different `redirect_uri`
+(400) and checks the server's address is `http://127.0.0.1:` (taken from the bound address). New `[KNOWN GAP]`s in FR-070: the
+Linux tokens file's encryption and permissions; the cached-catalog tool call 401.
+

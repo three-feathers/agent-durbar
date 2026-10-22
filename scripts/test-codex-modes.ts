@@ -1,10 +1,10 @@
 /** Codex mode and approval mapping (spec 012 T022, FR-004, FR-013). `npm run test:runtime`. No Codex binary, no credits. */
 import * as assert from 'assert';
-import { grantScope } from '../src/adapters/permissions';
+import { grantScope, summarize } from '../src/adapters/permissions';
 import { CODEX_BINARY, CODEX_MIN_VERSION, compareVersions, parseVersion } from '../src/adapters/detect';
 import {
   CODEX_APPROVAL_METHODS, CODEX_INITIALIZE_CAPABILITIES, CODEX_MIN_PERMISSIONS_VERSION, CODEX_RO_FILESYSTEM,
-  codexInstallRoot, codexModeSettings, codexProfileArgs, codexProfileToml, codexReadRoot, codexReadEnforceable, codexWorkspaceRoots, codexPermission, codexReply,
+  codexInstallRoot, codexModeSettings, codexProfileArgs, codexProfileToml, codexReadRoot, codexReadEnforceable, codexWorkspaceRoots, codexPermission, codexReply, codexFileChanges, codexChangeDiff, CODEX_NO_FILE,
 } from '../src/adapters/codexModes';
 
 // modes (FR-086): profile instead of sandbox in Read-only and Ask first
@@ -130,6 +130,43 @@ const fc = codexPermission('item/fileChange/requestApproval', { changes: [{ path
 assert.deepStrictEqual([fc.kind, fc.fileName], ['write', '/a/b.ts'], 'file change is write, first path');
 assert.ok(fc.summary.includes('+1 more'), 'summary counts the rest');
 assert.strictEqual(codexPermission('item/fileChange/requestApproval', { grantRoot: '/r' }).fileName, '/r', 'grantRoot fallback');
+// spec 052 FR-172: the real request names only itemId; the files, kind and diff come from the fileChange item (generated types, 0.163.0)
+{
+  const ch = codexFileChanges([
+    { path: '/w/src/a.ts', kind: { type: 'update', move_path: null }, diff: '@@ -1,2 +1,2 @@\n x\n-old\n+new\n' },
+    { path: '/w/NEW.md', kind: { type: 'add' }, diff: 'one\ntwo\n' },
+    { path: '/w/gone.txt', kind: { type: 'delete' }, diff: 'bye\n' },
+    { path: '/w/b.ts', kind: { type: 'update', move_path: '/w/c.ts' }, diff: '@@ -1 +1 @@\n-b\n+c\n' },
+    { path: '/w/plain.ts', kind: 'add', diff: 'p\n' },
+    { kind: { type: 'add' }, diff: 'no path' },
+    null,
+    { path: 'evil\nname', kind: { type: 'add' }, diff: '' },
+  ]);
+  assert.deepStrictEqual(ch.map((c) => [c.path, c.kind, c.movePath]), [['/w/src/a.ts', 'update', undefined], ['/w/NEW.md', 'add', undefined], ['/w/gone.txt', 'delete', undefined], ['/w/b.ts', 'update', '/w/c.ts'], ['/w/plain.ts', 'add', undefined], ['evil name', 'add', undefined]], 'changes read field by field; a plain kind word is taken; no path is left out; a newline in a path is a space');
+  assert.deepStrictEqual(codexFileChanges('x'), [], 'not an array: nothing');
+  const d = codexChangeDiff(ch.slice(0, 4));
+  assert.ok(d.startsWith('--- a//w/src/a.ts\n+++ b//w/src/a.ts\n@@ -1,2 +1,2 @@\n x\n-old\n+new'), 'an update hunk gets a header: ' + d.slice(0, 80));
+  assert.ok(d.includes('--- a//w/NEW.md\n+++ b//w/NEW.md\n@@ -0,0 +1,2 @@\n+one\n+two'), 'an add shows the new text as added lines');
+  assert.ok(d.includes('--- a//w/gone.txt\n+++ b//w/gone.txt\n@@ -1,1 +0,0 @@\n-bye'), 'a delete shows the old text as removed lines');
+  assert.ok(d.includes('--- a//w/b.ts\n+++ b//w/c.ts'), 'a move names the new path');
+  assert.strictEqual(codexChangeDiff([{ path: '/x', kind: 'update', diff: '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n' }]), '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b', 'a diff that has its header keeps it');
+  assert.strictEqual(codexChangeDiff([{ path: '/x', kind: 'delete', diff: '' }]), '--- a//x\n+++ /dev/null', 'a delete without text still says so');
+  assert.strictEqual(codexChangeDiff([]), '', 'no changes: no diff');
+  const big = codexChangeDiff([{ path: '/x', kind: 'add', diff: 'line\n'.repeat(20000) }]);
+  assert.ok(big.length <= 20100 && Number(/… (\d+) more lines not shown$/.exec(big)?.[1]) > 15000, 'a long diff is cut once at DIFF_MAX and counts the lines left out');
+  const one = codexPermission('item/fileChange/requestApproval', { threadId: 't', turnId: 'u', itemId: 'i1', startedAtMs: 1 }, ch.slice(0, 2));
+  assert.deepStrictEqual([one.kind, one.fileName, one.paths, one.summary], ['write', '/w/src/a.ts', ['/w/src/a.ts', '/w/NEW.md'], 'write /w/src/a.ts (+1 more)'], 'files from the item');
+  assert.ok(one.diff && one.diff.includes('+new') && one.diff.includes('+one'), 'the diff of every change');
+  assert.strictEqual(codexPermission('item/fileChange/requestApproval', { itemId: 'i' }, [ch[1]]).summary, 'write /w/NEW.md (new file)', 'kind: a new file');
+  assert.strictEqual(codexPermission('item/fileChange/requestApproval', { itemId: 'i' }, [ch[2]]).summary, 'write /w/gone.txt (delete)', 'kind: a deletion');
+  assert.strictEqual(codexPermission('item/fileChange/requestApproval', { itemId: 'i' }, [ch[3]]).summary, 'write /w/b.ts (move to /w/c.ts)', 'kind: a move');
+  const none = codexPermission('item/fileChange/requestApproval', { threadId: 't', turnId: 'u', itemId: 'i9', startedAtMs: 1 });
+  assert.deepStrictEqual([none.kind, none.fileName, none.diff, none.summary], ['write', undefined, undefined, `write (${CODEX_NO_FILE})`], 'no item known: the card says Codex did not say which file');
+  assert.strictEqual(grantScope(none).key, 'write:', 'the grant key is unchanged without a file');
+  assert.strictEqual(summarize({ kind: 'write', cardSummary: none.summary }), 'write (Codex did not say which file)', 'the broker uses the adapter card line');
+  assert.strictEqual(summarize({ kind: 'write', fileName: '/a', cardSummary: 'x\ny' }), 'x y', 'one line');
+  assert.strictEqual(summarize({ kind: 'write', fileName: '/a', cardSummary: '  ' }), 'write /a', 'a blank card line is ignored');
+}
 const perm = codexPermission('item/permissions/requestApproval', { reason: 'net' });
 assert.deepStrictEqual([perm.kind, perm.toolName], ['custom-tool', 'request_permissions']);
 const mcp = codexPermission('mcpServer/elicitation/request', { serverName: 's', toolName: 't' });

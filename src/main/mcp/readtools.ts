@@ -12,7 +12,7 @@ import type { AppSettings } from '../../shared/credits';
 import { GROUND } from '../../shared/floors';
 import type { FloorsDoc } from '../../shared/floors';
 import type { McpServerView } from '../../shared/mcp';
-import { MASK_INPUT_MAX, cut, maskSchemeSecrets, maskSecretArgs, maskSecretUrl, parseFlag, redact, shellWords, splitCommand } from '../../shared/redact';
+import { MASK_INPUT_MAX, cut, maskSecretArgs, maskSecretCommand, maskSecretUrl, parseFlag, redact, shellWords } from '../../shared/redact';
 import { officeTotals } from '../../shared/usagedoc';
 import type { UsageNumbers, UsageTotalsDoc } from '../../shared/usagedoc';
 import type { SavedFolder } from '../folders';
@@ -188,7 +188,7 @@ function maskers(deps: ReadToolsDeps, budget: MaskBudget, folderKey?: string) {
       budget.chars += len;
       return true;
     },
-    command: (c: string | undefined): string | undefined => (c === undefined ? undefined : !admit(c.length, MASK_PER_ARG) ? R : maskSecretArgs(splitCommand(redact(maskSchemeSecrets(replaceValues(c, values))))).map(reduce).join(' ')),
+    command: (c: string | undefined): string | undefined => (c === undefined ? undefined : !admit(c.length, MASK_PER_ARG) ? R : maskSecretCommand(replaceValues(c, values), undefined, reduce)),
     args: (a: readonly string[] | undefined): string[] | undefined => {
       if (a === undefined) return undefined;
       // the budget admits a prefix; it is masked as ONE list (so a flag still masks its next arg), the rest is ONE [redacted] element (not one per arg, so the result stays small)

@@ -1,6 +1,7 @@
 /** Masking of MCP server status text before it leaves main (spec 019 FR-021). Pure: no Electron, so it is unit tested. */
 import type { AgentEvent, McpServerStatus } from '../adapters/types';
 import type { McpServerSpec } from '../shared/mcp';
+import type { EditInfo } from '../shared/edits';
 import { cut, maskSecretUrl, redact, secretFlag } from '../shared/redact';
 
 export const MCP_ERROR_MAX_CHARS = 300;
@@ -48,13 +49,35 @@ export function maskMcpStatuses(servers: readonly McpServerStatus[], values: rea
 }
 
 /**
+ * Spec 005 FR-024 (review on #463): a file edit's paths and diffs with the session's secret values removed, then `redact()` again. Only the
+ * linear steps: no URL pass (a partial update can carry 20 files of 20,000 characters, many times a second) and no cut (the adapter already
+ * cut each diff at a line). Without session values the edit is returned as it is (the adapter's `redact()` already ran).
+ */
+export function maskEditInfo(edit: EditInfo, values: readonly string[] = []): EditInfo {
+  const vs = values.filter((v) => typeof v === 'string' && v.length >= 4);
+  if (!vs.length || !edit || !Array.isArray(edit.files)) return edit;
+  const m = (s: string): string => {
+    for (const v of vs) if (s.includes(v)) s = s.split(v).join('[redacted]');
+    return redact(s);
+  };
+  return {
+    ...edit,
+    files: edit.files.map((f) => ({ ...f, path: m(String(f.path)), ...(typeof f.diff === 'string' ? { diff: m(f.diff) } : {}), ...(typeof f.movedTo === 'string' ? { movedTo: m(f.movedTo) } : {}) })),
+  };
+}
+
+/**
  * Spec 019 FR-022: the copy of an event that may leave main (window, debug sink): an `mcp` event with its errors masked; any other event
  * unchanged (same object). Spec 058 FR-067: every `toolCall` (update, complete or failed) that names an `mcpServer` has its `output` masked too, cut to `MCP_CARD_MAX_CHARS`.
+ * Spec 005 FR-024: a `toolCall` with an `edit` (any phase) has its paths and diffs masked with the session values (`maskEditInfo`).
  */
 export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string[] = []): E {
   if (e.type === 'mcp') return { ...e, servers: maskMcpStatuses(e.servers, values) };
-  if (e.type === 'toolCall' && e.phase !== 'start' && e.mcpServer && e.output !== undefined) return { ...e, output: maskMcpText(e.output, values, MCP_CARD_MAX_CHARS) };
-  return e;
+  if (e.type !== 'toolCall') return e;
+  let out = e;
+  if (e.phase !== 'start' && e.mcpServer && e.output !== undefined) out = { ...out, output: maskMcpText(e.output, values, MCP_CARD_MAX_CHARS) };
+  if (e.edit && values.length) out = { ...out, edit: maskEditInfo(e.edit, values) };
+  return out;
 }
 
 /** Spec 058 FR-067: replayed history (resumed session) with every failed tool's output masked like a live MCP card; other items are the same objects. */

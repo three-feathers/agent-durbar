@@ -35,7 +35,8 @@ import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
 /** FR-156: what Settings says of a Claude Code that `auth status` calls signed in: only the first message can confirm it. */
 export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
 import { parseUsdCap } from '../shared/credits';
-import { simpleDiff, clipDiff } from '../shared/diff';
+import { clipDiff } from '../shared/diff';
+import { editOf } from './edits';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
@@ -151,16 +152,11 @@ export function editDiffOf(toolName: string, input: Record<string, unknown> | un
   if (!input) return undefined;
   const f = file ?? 'file';
   const str = (v: unknown): v is string => typeof v === 'string';
-  if (toolName === 'Edit' && str(input.old_string) && str(input.new_string)) return simpleDiff(f, input.old_string, input.new_string) || undefined;
-  if (toolName === 'Write' && str(input.content)) return simpleDiff(f, '', input.content) || undefined;
-  if (toolName === 'MultiEdit' && Array.isArray(input.edits)) {
-    const parts = input.edits
-      .slice(0, 50)
-      .map((e) => (e && typeof e === 'object' && str((e as Record<string, unknown>).old_string) && str((e as Record<string, unknown>).new_string) ? simpleDiff(f, (e as Record<string, string>).old_string, (e as Record<string, string>).new_string) : ''))
-      .filter(Boolean);
-    return parts.length ? clipDiff(parts.join('\n')) : undefined;
-  }
-  return undefined;
+  // the inputs that carry text to compare; spec 005 FR-018: the diff itself comes from the shared edit normalizer (masked, cut)
+  const ok = (toolName === 'Edit' && str(input.old_string) && str(input.new_string)) || (toolName === 'Write' && str(input.content)) || (toolName === 'MultiEdit' && Array.isArray(input.edits));
+  if (!ok) return undefined;
+  const body = editOf(toolName, { ...input, edits: Array.isArray(input.edits) ? input.edits.slice(0, 50) : undefined, file_path: f })?.files[0]?.diff;
+  return body ? clipDiff(`--- a/${f.replace(/[\r\n]+/g, ' ')}\n+++ b/${f.replace(/[\r\n]+/g, ' ')}\n${body}`) : undefined;
 }
 
 /** Durbar's MCP servers as the CLI's `--mcp-config` JSON (`disabled` names left out). Never logged: env and headers may hold secrets. */
@@ -481,6 +477,12 @@ interface Session {
   /** MCP servers left out of the running CLI's config at launch (FR-133): turning one on needs a relaunch. */
   launchedOff?: Set<string>;
   needsRelaunch?: boolean;
+  /** An `mcp_status` request for an MCP sign-in challenge is in flight. */
+  mcpRefreshing?: boolean;
+  /** Spec 058 FR-060: servers whose tool call showed a sign-in challenge; read as needs-auth until the CLI reports a real change for them. */
+  mcpAuthSeen?: Set<string>;
+  /** The last server list this session emitted (before the sign-in mark), so a challenge can show at once. */
+  lastMcp?: ReturnType<typeof claudeMcpServers>;
   /** Spec 059 FR-007: the user's name waiting for the next CLI start, and the one the running CLI was started with (reported as the title after its first turn). */
   pendingName?: string;
   launchedName?: string;
@@ -762,9 +764,11 @@ export class ClaudeAdapter implements AgentAdapter {
       return;
     }
     await s.transport.request({ subtype: 'mcp_toggle', serverName: name, enabled }, 15_000);
+    s.mcpAuthSeen?.delete(name); // a real change for this server
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      this.emit(s.id, { type: 'mcp', servers: claudeMcpServers(r.mcpServers) });
+      s.lastMcp = claudeMcpServers(r.mcpServers);
+      this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
     } catch {
       /* the toggle worked; the list comes with the next init */
     }
@@ -940,7 +944,37 @@ export class ClaudeAdapter implements AgentAdapter {
       this.openLimit(s);
       return;
     }
+    if (s && b.type === 'mcp') {
+      s.mcpAuthSeen?.clear(); // the CLI's own list (init) replaces the derived state
+      s.lastMcp = b.servers as ReturnType<typeof claudeMcpServers>;
+    }
     this.emit(sid, b);
+    if (s && b.type === 'toolCall' && b.mcpAuth === true && b.mcpServer) {
+      (s.mcpAuthSeen ??= new Set()).add(b.mcpServer);
+      if (s.lastMcp) this.emit(sid, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) }); // at once, from the last known list: a slow or failed mcp_status still shows it
+      void this.refreshMcp(s);
+    }
+  }
+
+  /** FR-060: what the CLI reports, but a server it still calls `connected` after this session's challenge reads needs-auth. */
+  private withAuthSeen(s: Session, list: ReturnType<typeof claudeMcpServers>): ReturnType<typeof claudeMcpServers> {
+    if (!s.mcpAuthSeen?.size) return list;
+    return list.map((x) => (s.mcpAuthSeen!.has(x.name) && x.status === 'connected' ? { ...x, status: 'needs-auth' as const, errorClass: 'auth' as const } : x));
+  }
+
+  /** Spec 058 FR-060: a tool call showed an MCP sign-in challenge: ask the CLI for the server list once (not per failure while one is in flight). */
+  private async refreshMcp(s: Session): Promise<void> {
+    if (s.mcpRefreshing || !s.transport?.alive) return;
+    s.mcpRefreshing = true;
+    try {
+      const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
+      s.lastMcp = claudeMcpServers(r.mcpServers);
+      this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
+    } catch {
+      /* the list comes with the next init */
+    } finally {
+      s.mcpRefreshing = false;
+    }
   }
 
   private capReached(s: Session): boolean {

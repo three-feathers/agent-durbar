@@ -61,6 +61,32 @@ for (const f of files) {
   assert.deepStrictEqual(calls.map((e) => (e.type === 'toolCall' ? [e.mcpServer, e.mcpTool] : [])), [['github', 'create_issue'], ['my-server', 'do__thing'], [undefined, undefined], [undefined, undefined], [undefined, undefined], ['a__b', 't']], 'mcp origin on tool calls');
 }
 
+// 3b. Spec 058 T096: a failed MCP tool result with an OAuth challenge -> mcpAuth (judged before the 4000-char cut); statuses carry errorClass.
+{
+  const init = { type: 'system', subtype: 'init', session_id: 's', mcp_servers: [{ name: 'notes', status: 'needs-auth' }, { name: 'web', status: 'connected' }, { name: 'bad', status: 'failed', error: 'boom' }] } as ClaudeMessage;
+  const call = (id: string, name: string): ClaudeMessage => ({ type: 'assistant', message: { id: `m${id}`, content: [{ type: 'tool_use', id, name, input: {} }] } }) as ClaudeMessage;
+  const res = (id: string, content: unknown, isError: boolean): ClaudeMessage => ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content, is_error: isError }] } }) as ClaudeMessage;
+  const challenge = 'MCP OAuth challenge required (HTTP 401)';
+  const outcome = (name: string, content: unknown, isError: boolean) => {
+    const e = run([init, call('t1', name), res('t1', content, isError)]).filter((x) => x.type === 'toolCall' && x.phase !== 'start');
+    assert.strictEqual(e.length, 1);
+    return e[0] as { mcpAuth?: true; output?: string };
+  };
+  assert.strictEqual(outcome('mcp__notes__q', challenge, true).mcpAuth, true, 'failed MCP call with a challenge');
+  assert.strictEqual(outcome('mcp__notes__q', 'MCP server "notes" needs authentication', true).mcpAuth, true, "Claude Code's own wording (read: 2.1.304)");
+  assert.strictEqual('mcpAuth' in outcome('mcp__notes__q', 'The app needs authentication', true), false, 'not the MCP wording');
+  assert.strictEqual(outcome('mcp__notes__q', [{ type: 'text', text: challenge }], true).mcpAuth, true, 'text blocks too');
+  assert.strictEqual(outcome('mcp__notes__q', 'x'.repeat(4500) + challenge, true).mcpAuth, undefined, 'only the first 4000 characters are judged (classifier bound)');
+  assert.strictEqual(outcome('mcp__notes__q', `MCP OAuth challenge required ${'y'.repeat(5000)}`, true).mcpAuth, true, 'detected although the stored output is cut');
+  assert.strictEqual(outcome('mcp__notes__q', `MCP OAuth challenge required ${'y'.repeat(5000)}`, true).output?.length, 4000, 'output still capped');
+  assert.strictEqual('mcpAuth' in outcome('mcp__notes__q', challenge, false), false, 'a successful result never');
+  assert.strictEqual('mcpAuth' in outcome('mcp__notes__q', 'HTTP 500 server error', true), false, 'another failure');
+  assert.strictEqual('mcpAuth' in outcome('Bash', challenge, true), false, 'not an MCP tool');
+  assert.strictEqual('mcpAuth' in outcome('mcp__ghost__q', challenge, true), false, 'unknown server: never guessed');
+  const mcp = run([init]).find((e) => e.type === 'mcp') as { servers: { name: string; status: string; errorClass?: string }[] };
+  assert.deepStrictEqual(mcp.servers.map((x) => [x.name, x.status, x.errorClass]), [['notes', 'needs-auth', 'auth'], ['web', 'connected', undefined], ['bad', 'failed', undefined]], 'needs-auth carries errorClass auth; failed is not guessed');
+}
+
 // 4. Sub-agents: events carry their parent (the spawning tool_use id), by parent_tool_use_id and by agent_id via task_started.
 {
   const out = run(load('subagent-task.json').messages);
@@ -119,10 +145,10 @@ for (const f of files) {
   assert.deepStrictEqual(m.stats(), { tools: 0, tasks: 0, openSubagents: 0, streamMessage: 0, thinkingStreamed: 0 }, 'all tables empty after the turn');
 }
 
-// 5. Errors: an error result maps to an error status; success to idle; the usage limit to an error.
+// 5. Errors: an error result maps to an error status; success to idle; the usage limit to a coffee break (spec 068).
 {
   const st = run(load('error.json').messages).filter((e) => e.type === 'status');
-  assert.deepStrictEqual(st.map((e) => (e.type === 'status' ? e.status : '')), ['error', 'error', 'idle', 'error']);
+  assert.deepStrictEqual(st.map((e) => (e.type === 'status' ? e.status : '')), ['error', 'error', 'idle']); // spec 068: credits_required is a coffee break (usageLimit), not an error status
   const ok = run(load('result-success.json').messages);
   assert.strictEqual(ok[ok.length - 1].type === 'status' && (ok[ok.length - 1] as { status: string }).status, 'idle');
 }
