@@ -199,7 +199,10 @@ module.exports = async (ctx) => {
       await type('Please look at the README.');
       check(await until(`document.getElementById('sendBtn').getAttribute('aria-disabled')==='false'`, 5000), `${tag} demo: the typed text did not reach the box`);
       await js(`document.getElementById('sendBtn').click()`);
-      check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return v(g('stopBtn'))})()`, 12000), `${tag} demo: a canned turn shows no Stop`);
+      const shown = await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return v(g('stopBtn'))})()`, 12000);
+      /* on a miss, say what the page holds (the renderer's state is private, so from the DOM), so a runner-only failure names its cause */
+      const why = shown ? '' : ' ' + JSON.stringify(await js(`(()=>{const g=x=>document.getElementById(x),u=[...document.querySelectorAll('#panel .msg.user .bubble')],s=g('stopBtn'),slot=g('runSlot');return {title:((g('panelTitle')||{}).textContent||'').slice(0,40),users:u.length,lastUser:u.length?u[u.length-1].textContent.slice(0,40):'',streaming:!!document.querySelector('#panel .streaming, #panel .caret'),box:(g('msgInput')||{}).value,send:(g('sendBtn')||{getAttribute:()=>null}).getAttribute('aria-disabled'),stopHidden:s?s.hidden:'none',stopDisplay:s?getComputedStyle(s).display:'',slot:slot?slot.className:'none',ids:[document.querySelectorAll('#stopBtn').length,document.querySelectorAll('#sendBtn').length,document.querySelectorAll('#msgInput').length],toast:[...document.querySelectorAll('.toast')].map(t=>t.textContent.slice(0,80)),hidden:document.hidden,focus:document.hasFocus()}})()`));
+      check(shown, `${tag} demo: a canned turn shows no Stop${why}`);
       await js(`document.getElementById('stopBtn').click()`);
       check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return !v(g('stopBtn'))&&!v(g('runSpin'))&&v(g('sendBtn'))})()`, 4000), `${tag} demo: Stop does not end the canned turn`);
       const len = () => js(`(document.querySelector('#panel .chat-inner')||{textContent:''}).textContent.length`);
