@@ -72,7 +72,7 @@ function parseFragment(text) {
     else errors.push(`line ${n}: every entry starts with "- " (a Markdown bullet)`);
   });
   if (!bullets.length && !errors.length) errors.push('empty: write at least one "- " bullet');
-  if (/<!--|-->/.test(text)) errors.push('no HTML comments in a fragment');
+  if (/<!--|--!?>/.test(text)) errors.push('no HTML comments in a fragment');
   return { bullets: bullets.map((b) => b.join('\n')), errors };
 }
 
