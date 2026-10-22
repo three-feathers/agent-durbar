@@ -237,7 +237,7 @@
     if($('pfSec'))wireProfiles();
     if(X.floors&&$('floorsSet'))X.floors.render();
     if(X.sched&&$('schedSet'))X.sched.render();
-    /* spec 001 FR-038 (review on #511): the Postbox (and #523's Schedules button) open Settings at Schedules; scrollInBody, not scrollIntoView (spec 052 FR-055) */
+    /* spec 001 FR-038 (review on PR 511): the Postbox (and issue 523's Schedules button) open Settings at Schedules; scrollInBody, not scrollIntoView (spec 052 FR-055) */
     if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');

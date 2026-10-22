@@ -12,11 +12,11 @@
     "fonts": 0
   },
   "app.js": {
-    "colors": 19,
+    "colors": 17,
     "fonts": 0
   },
   "screens.js": {
-    "colors": 5,
+    "colors": 3,
     "fonts": 0
   },
   "scenekits.js": {
