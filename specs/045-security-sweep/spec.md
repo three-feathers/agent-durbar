@@ -1,5 +1,11 @@
 # Feature Specification: Security and quality sweep before v0.1.0-alpha.6
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 045
+title: Security and quality sweep before alpha.6: uniform place ids, one-pass unescape, Windows `cmd.exe` from SystemRoot, window navigation and web-permission hardening, alert triage
+status: built 2026-10-19 (unit tests, Electron check on the simulator); T021 (2026-10-21, #411): `main.ts` split into 18 IPC modules under `src/main/ipc/` (FR-060), every channel registered once and the 23 `fromApp` checks kept (`test:ipcchannels`)
+-->
+
 **Feature Branch**: `045-security-sweep`
 **Created**: 2026-10-19
 **Status**: Built (2026-10-19)
