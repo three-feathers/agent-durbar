@@ -7,6 +7,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as ts from 'typescript';
 import { FakeAdapter } from '../src/adapters/fake';
 import type { OptionalMember } from '../src/adapters/fake';
 import { eventProblems } from '../src/adapters/eventguard';
@@ -341,10 +342,47 @@ export async function runContract(name: string, make: () => ContractTarget, hook
 
 // ---- T015: the three FakeAdapter setups ----
 
-const ALL_OPTIONAL: OptionalMember[] = [
-  'interrupt', 'resolvePermission', 'revokeGrant', 'setCap', 'resolveLimit', 'setMcpEnabled', 'setModel', 'cancelQueuedModel', 'compact',
-  'listModelOptions', 'listPreviousSessions', 'history', 'setPermMode', 'startMcpSignIn', 'cancelMcpSignIn', 'restartMcpServer',
+// Every member FakeAdapter can omit. A Record, so the scripts build (`tsc -p tsconfig.scripts.json`, run by `npm test`) fails when `OptionalMember` gains a name not listed here.
+const OMITTABLE: Record<OptionalMember, true> = {
+  interrupt: true, resolvePermission: true, revokeGrant: true, setCap: true, resolveLimit: true, setMcpEnabled: true, setModel: true,
+  cancelQueuedModel: true, compact: true, listModelOptions: true, listPreviousSessions: true, history: true, setPermMode: true,
+  handoffSummary: true, generateText: true, deleteSession: true, renameSession: true, startMcpSignIn: true, cancelMcpSignIn: true,
+  restartMcpServer: true,
+};
+export const ALL_OPTIONAL = Object.keys(OMITTABLE) as OptionalMember[];
+/** Optional `AgentAdapter` members FakeAdapter does not implement (so it cannot omit them): fields, and methods no fake test needs yet. */
+const NOT_IN_FAKE = [
+  'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'selectAgentProfile', 'setRemote',
+  'authStatus', 'verifySignIn', 'refreshAuth', 'resumeIdOf',
 ];
+
+/** The optional members of `interface AgentAdapter`, read from `src/adapters/types.ts` with the TypeScript parser (no hand-kept copy). */
+export function interfaceOptionalMembers(): string[] {
+  const file = path.join(__dirname, '..', '..', 'src', 'adapters', 'types.ts');
+  const sf = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+  const decl = sf.statements.find((s): s is ts.InterfaceDeclaration => ts.isInterfaceDeclaration(s) && s.name.text === 'AgentAdapter');
+  assert.ok(decl, 'src/adapters/types.ts declares interface AgentAdapter');
+  assert.strictEqual(decl.heritageClauses, undefined, 'AgentAdapter extends nothing (an inherited optional member would be missed here)');
+  return decl.members.filter((m) => m.questionToken !== undefined && m.name !== undefined).map((m) => (m.name as ts.Identifier).text);
+}
+
+/** ALL_OPTIONAL plus NOT_IN_FAKE is exactly the interface's optional members, and the fakes really have or lack them. */
+function checkOptionalLists(): void {
+  const inIface = interfaceOptionalMembers();
+  assert.ok(inIface.length > 0, 'the parser found optional members');
+  const listed = [...ALL_OPTIONAL, ...NOT_IN_FAKE];
+  assert.strictEqual(new Set(listed).size, listed.length, 'ALL_OPTIONAL and NOT_IN_FAKE do not overlap');
+  const missing = inIface.filter((m) => !listed.includes(m));
+  const stale = listed.filter((m) => !inIface.includes(m));
+  assert.deepStrictEqual(missing, [], `optional AgentAdapter members in neither ALL_OPTIONAL (via FakeAdapter's OptionalMember) nor NOT_IN_FAKE: ${missing.join(', ')}`);
+  assert.deepStrictEqual(stale, [], `listed but not optional members of AgentAdapter: ${stale.join(', ')}`);
+  const fn = (ad: FakeAdapter, m: string): boolean => typeof (ad as unknown as Record<string, unknown>)[m] === 'function';
+  const bare = new FakeAdapter({ omit: ALL_OPTIONAL });
+  assert.deepStrictEqual(inIface.filter((m) => fn(bare, m)), [], 'fake-bare has no optional AgentAdapter method');
+  const full = new FakeAdapter({ capabilities: { deleteSession: true, renameSession: 'any', mcpSignIn: true, mcpRestart: true } });
+  assert.deepStrictEqual(ALL_OPTIONAL.filter((m) => !fn(full, m)), [], 'FakeAdapter implements every member in ALL_OPTIONAL');
+  assert.deepStrictEqual(NOT_IN_FAKE.filter((m) => fn(full, m)), [], 'a member FakeAdapter implements belongs in OptionalMember, not NOT_IN_FAKE');
+}
 const SCRIPT = [
   { thinking: 'Considering' },
   { tool: 'ls', args: { path: '.' } },
@@ -358,6 +396,7 @@ const HOOKS: ContractHooks = {
 const WS = path.join(os.tmpdir(), 'durbar-contract-ws');
 
 async function main(): Promise<void> {
+  checkOptionalLists();
   // Spec 058 FR-063: `mcpAuth` only on a failed toolCall that has an MCP server; FR-064: sign-in members behind the flag.
   {
     const base = { type: 'toolCall', sessionId: 's', timestamp: 1, callId: 'c', tool: 'mcp__notes__read' };
