@@ -1,0 +1,41 @@
+name: Nightly watch
+
+# Spec 008 FR-106 (owner decision 2026-10-22): macOS (and the other every-OS checks) no longer run on pull requests, so a
+# scheduled run that fails must not go unseen. When a scheduled run of one of the workflows below fails, this opens an issue
+# "Nightly CI failing" (label area:ci), or comments on the open one, with the run link and the failed jobs. It never runs PR code:
+# workflow_run always uses this file from main, it does not check anything out, and it reads only job names and links.
+on:
+  workflow_run:
+    workflows: [CI, UI on three OSes, Installed app, Packaged check, Install check]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-watch
+  cancel-in-progress: false
+
+jobs:
+  report:
+    name: Report a failed nightly run
+    if: github.event.workflow_run.event == 'schedule' && github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          WF_NAME: ${{ github.event.workflow_run.name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          title="Nightly CI failing"
+          failed=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" --jq '.jobs[] | select(.conclusion == "failure") | "- \(.name)"')
+          body=$(printf '**%s** failed on its nightly run: %s\n\nCommit: %s\n\nFailed jobs:\n%s\n\nmacOS and the every-OS checks run nightly, not on pull requests (spec 008 FR-106). Fix it in a PR, then re-run with `gh workflow run <workflow> --ref main`; close this issue when the nightly runs are green again.' "$WF_NAME" "$RUN_URL" "$HEAD_SHA" "${failed:-(none listed)}")
+          n=$(gh issue list -R "$REPO" --state open --label area:ci --search "\"$title\" in:title" --json number,title --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ -n "$n" ]; then gh issue comment "$n" -R "$REPO" --body "$body"; else gh issue create -R "$REPO" --title "$title" --label area:ci --body "$body"; fi

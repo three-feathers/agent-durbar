@@ -109,6 +109,24 @@ module.exports = async (ctx) => {
     check(await js(`document.getElementById('sendBtn').getAttribute('aria-disabled')==='true'`), `${tag}: Send is not disabled while the box is empty`);
     await shot(`005-composer-expert-light-${tag}.png`);
 
+    /* spec 005 T070 (review on #498): the context chip's tooltip ends one sentence with one full stop, also when the size line ends with one */
+    const ctxTitle = () => js(`(document.getElementById('ctxChip')||{}).title||''`);
+    let ct = await ctxTitle();
+    check(/\. Click to /.test(ct) && !/\.\./.test(ct), `${tag}: context chip tooltip (with the breakdown) "${ct}"`);
+    if (w === SIZES[0][0]) {
+      const unk = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.live&&!x.parent&&/unknown|after the first message/i.test((window.DurbarScreens.ctxChip(x)||{}).title||''));return a?a.name:null})()`);
+      check(!!unk, `${tag}: no agent with an unknown context to check the tooltip`);
+      if (unk) {
+        const uid = await H.idOf(unk);
+        await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`);
+        await until(`!!document.querySelector(${jsLiteral(`#stage .desk[data-id="${uid}"]`)})`, 4000);
+        await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${uid}"]`)}).click()`);
+        await until(`!!document.getElementById('ctxChip')&&document.body.classList.contains('panel-open')`, 4000);
+        ct = await ctxTitle();
+        check(/after the first message\. Click to /.test(ct) && !/\.\./.test(ct), `${tag}: context chip tooltip (unknown) "${ct}"`);
+        await openIdle();
+      }
+    }
     /* the context menu: above the chip, Compact in it, Escape back to the chip */
     await js(`document.getElementById('ctxChip').click()`);
     check(await until(`!!document.getElementById('ctxMenu')`, 3000), `${tag}: the context chip opens no menu`);
@@ -126,7 +144,23 @@ module.exports = async (ctx) => {
     /* the MCP chip opens the existing dialog */
     await js(`document.getElementById('mcpBtn').click()`);
     check(await until(`/MCP servers for /.test((document.querySelector('#scrDlg h3, .dlg-ov h3, .dlg h3')||{}).textContent||'')`, 4000), `${tag}: the MCP chip does not open the MCP dialog`);
+    /* spec 005 T072 (review on #498): switching a server off in the dialog drops the chip's count by one when it closes (FR-037 item 5: on and not switched off) */
+    const mcpN = () => js(`Number(((document.querySelector('#mcpBtn .ct-n')||{}).textContent)||NaN)`);
+    const n0 = await mcpN();
+    const swOff = await until(`!!document.querySelector('.dlg .srv-act button.swt[aria-checked="true"]:not([disabled])')`, 4000)
+      && await js(`(()=>{const b=document.querySelector('.dlg .srv-act button.swt[aria-checked="true"]:not([disabled])');const n=b.dataset.n;b.click();return n})()`);
+    check(!!swOff, `${tag}: the MCP dialog has no server to switch off`);
+    if (swOff) await until(`!!document.querySelector(${jsLiteral(`.dlg .srv-act button.swt[aria-checked="false"][data-n="${swOff}"]`)})`, 4000);
     await key('Escape'); await until(`!/MCP servers for /.test((document.querySelector('.dlg h3')||{}).textContent||'')`, 3000);
+    check(await until(`Number(((document.querySelector('#mcpBtn .ct-n')||{}).textContent)||NaN)===${jsLiteral(n0 - 1)}`, 4000), `${tag}: switching ${swOff} off does not drop the MCP count from ${n0} to ${n0 - 1} (now ${await mcpN()})`);
+    if (swOff) { /* switch it back on, so the rest of the run sees the same servers */
+      await js(`document.getElementById('mcpBtn').click()`);
+      await until(`!!document.querySelector(${jsLiteral(`.dlg .srv-act button.swt[data-n="${swOff}"]`)})`, 4000);
+      await js(`document.querySelector(${jsLiteral(`.dlg .srv-act button.swt[data-n="${swOff}"]`)}).click()`);
+      await until(`!!document.querySelector(${jsLiteral(`.dlg .srv-act button.swt[aria-checked="true"][data-n="${swOff}"]`)})`, 4000);
+      await key('Escape'); await until(`!/MCP servers for /.test((document.querySelector('.dlg h3')||{}).textContent||'')`, 3000);
+      check(await until(`Number(((document.querySelector('#mcpBtn .ct-n')||{}).textContent)||NaN)===${jsLiteral(n0)}`, 4000), `${tag}: switching ${swOff} back on does not restore the MCP count ${n0}`);
+    }
 
     /* Send -> Stop with the spinner -> Send */
     await type('Please look at the README.');
@@ -136,13 +170,22 @@ module.exports = async (ctx) => {
     m = await M();
     m.P.forEach((p) => check(false, `${tag} running: ${p}`));
     check(await js(`document.getElementById('runSpin').getBoundingClientRect().right<=document.getElementById('stopBtn').getBoundingClientRect().left+0.5`), `${tag}: the spinner is not left of Stop`);
+    /* spec 005 T074: the spinner is decorative (no empty role="status"); the shared live region says the turn started */
+    check(await js(`(()=>{const s=document.getElementById('runSpin');return s.getAttribute('aria-hidden')==='true'&&!s.hasAttribute('role')})()`), `${tag}: the spinner is not decorative (aria-hidden, no role)`);
+    const said = () => js(`document.getElementById('srAnnounce').textContent`);
+    const workSaid = await until(`/Working/.test(document.getElementById('srAnnounce').textContent)`, 3000);
+    if (!workSaid) check(false, `${tag}: a starting turn is not announced (live region: ${await said()})`);
     await shot(`005-composer-running-${tag}.png`);
     await type('and the tests');
     check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0;return v(document.getElementById('sendBtn'))&&v(document.getElementById('stopBtn'))})()`, 3000), `${tag}: typing during a turn does not offer Send beside Stop`);
     m = await M();
     m.P.forEach((p) => check(false, `${tag} running+text: ${p}`));
     await type('');
-    await js(`document.getElementById('stopBtn').click()`);
+    /* spec 005 T073 (review on #498): a second click while the first Stop is under way is ignored (aria-busy guard): one bridge.stop call.
+       The fake's stop is held for 400 ms so the second click lands while the first is still running. */
+    const stops = await js(`(async()=>{const b=window.__durbarSimUi.bridge(),orig=b.stop;let n=0;b.stop=async(...x)=>{n++;await new Promise(r=>setTimeout(r,400));return orig.apply(b,x);};
+      try{const s=document.getElementById('stopBtn');s.click();s.click();await new Promise(r=>setTimeout(r,700));return {n};}finally{b.stop=orig;}})()`);
+    check(stops.n === 1, `${tag}: two clicks on Stop call bridge.stop ${stops.n} times (want 1)`);
     check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0;return v(document.getElementById('sendBtn'))&&!v(document.getElementById('stopBtn'))&&!v(document.getElementById('runSpin'))})()`, 6000), `${tag}: Stop does not bring Send back`);
 
     /* narrow panel (spec #452's docking may give it 480px): one row, "⋯", the mode stays */
@@ -198,13 +241,20 @@ module.exports = async (ctx) => {
       await js(`(()=>{const m=document.getElementById('msgInput');m.focus();m.select&&m.select();})()`); /* keys go to the box (on macOS the focus stayed on the desk) */
       await type('Please look at the README.');
       check(await until(`document.getElementById('sendBtn').getAttribute('aria-disabled')==='false'`, 5000), `${tag} demo: the typed text did not reach the box`);
-      await js(`document.getElementById('sendBtn').click()`);
-      check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return v(g('stopBtn'))})()`, 12000), `${tag} demo: a canned turn shows no Stop`);
-      await js(`document.getElementById('stopBtn').click()`);
+      /* Send, look and Stop in one page task (spec 005 T075). The canned turn is a transient: under reduced motion (or on a slow runner) it can
+         end between two polls, so a separate "wait for Stop" step could miss it (the macOS drivers job failed there). Read synchronously after
+         the click, Stop is either there or the app is wrong; Stop then cancels the turn before its first await, so the reply must never come. */
+      const sent = await js(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);g('sendBtn').click();
+        const r={stop:v(g('stopBtn')),spin:v(g('runSpin')),send:v(g('sendBtn')),users:document.querySelectorAll('#panel .msg.user .bubble').length,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,hidden:document.hidden,focus:document.hasFocus()};
+        if(r.stop)g('stopBtn').click();return r;})()`);
+      check(sent.stop && sent.spin && !sent.send, `${tag} demo: a canned turn shows no Stop with the spinner ${JSON.stringify(sent)}`);
       check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return !v(g('stopBtn'))&&!v(g('runSpin'))&&v(g('sendBtn'))})()`, 4000), `${tag} demo: Stop does not end the canned turn`);
+      const stopSaid = await until(`/^Stopped$/.test(document.getElementById('srAnnounce').textContent)`, 3000); /* spec 005 T074 */
+      if (!stopSaid) check(false, `${tag} demo: Stop is not announced (live region: ${await said()})`);
       const len = () => js(`(document.querySelector('#panel .chat-inner')||{textContent:''}).textContent.length`);
       const l0 = await len(); await ctx.sleep(900);
       check((await len()) === l0, `${tag} demo: the reply keeps streaming after Stop`);
+      check(!(await js(`/Got it\\. I looked at/.test((document.querySelector('#panel .chat-inner')||{textContent:''}).textContent)`)), `${tag} demo: the stopped turn's reply arrived anyway`);
       await js(`(()=>{const t=document.getElementById('demoToggle');t.checked=false;t.dispatchEvent(new Event('change'));})()`);
     }
 

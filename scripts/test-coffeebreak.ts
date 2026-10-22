@@ -9,7 +9,8 @@ import { ClaudeMapper, claudeUsageLimit } from '../src/adapters/claudeMap';
 import { CodexMapper, codexRateLimit } from '../src/adapters/codexMap';
 import { EventMapper, copilotUsageLimit } from '../src/adapters/map';
 import type { EventBody } from '../src/adapters/map';
-import { copilotQuotaReset, resetMs } from '../src/adapters/usagelimit';
+import { copilotQuotaReset, resetMs, usageLimitClosing } from '../src/adapters/usagelimit';
+import { scheduleBusy } from '../src/main/schedules';
 import { eventProblems as validateEvent } from '../src/adapters/eventguard';
 import { AgentStateTracker } from '../src/main/mcp/agentstate';
 import type { AgentEvent } from '../src/adapters/types';
@@ -19,11 +20,13 @@ interface Breaks {
   start(id: string, info: Record<string, unknown>, policy: string): Break | null;
   get(id: string): Break | null; has(id: string): boolean; autoResumes(id: string): boolean;
   end(id: string): boolean; resumed(id: string): boolean; stay(id: string): boolean;
-  tick(): { type: string; id: string }[]; size(): number;
+  tick(o?: { hold?: Set<string> }): { type: string; id: string }[]; size(): number;
 }
 const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'coffeebreak.js')) as {
   RESUME_TEXT: string;
   createBreaks(o: Record<string, unknown>): Breaks;
+  holdIds(agents: { id: string; paused?: boolean; limit?: unknown }[]): Set<string>;
+  atWhen(ts: number, now: number, o?: Record<string, unknown>): string;
   whenText(ts: number, now: number, o?: Record<string, unknown>): string;
   untilText(b: Break | null, auto: boolean, now: number, o?: Record<string, unknown>): string;
 };
@@ -55,6 +58,38 @@ const mk = (o: Record<string, unknown> = {}): Breaks => C.createBreaks({ now, ..
   clock += 2 * MIN;
   assert.deepStrictEqual(b.tick(), [{ type: 'ask', id: 'a' }, { type: 'ask', id: 'p' }], 'they ask at the reset; the cap waits for the user');
   clock += 2 * 3600_000; assert.deepStrictEqual(b.tick(), [], 'no reminder for a cap, nothing twice');
+}
+// 2b. FR-007 "never after a Durbar spending limit" (review on #462, 2026-10-22): a provider limit while the cap is pending does not
+// replace the cap break, so nothing resumes by itself; after the cap is answered, a new provider break follows the usual rules.
+{
+  const b = mk();
+  b.start('a', { kind: 'cap', app: 'claude' }, 'auto');
+  const cap = b.get('a')!;
+  b.start('a', { kind: 'provider', app: 'claude', resetsAt: clock + MIN, source: 'Claude 5-hour window' }, 'auto');
+  assert.strictEqual(b.get('a'), cap, 'the cap break stays');
+  assert.strictEqual(b.get('a')!.kind, 'cap');
+  assert.strictEqual(b.autoResumes('a'), false, 'cap then provider: no automatic resume');
+  clock += 10 * MIN; assert.deepStrictEqual(b.tick(), [], 'cap then provider: no resume and no ask at the reset');
+  b.end('a'); // the user raised the limit
+  b.start('a', { kind: 'provider', app: 'claude', resetsAt: clock + MIN }, 'auto');
+  assert.ok(b.autoResumes('a'), 'a provider break after the cap is answered resumes as usual');
+  // provider first, then the cap: the cap takes over (no resume either)
+  b.start('p', { kind: 'provider', app: 'codex', resetsAt: clock + MIN }, 'auto');
+  b.start('p', { kind: 'cap', app: 'codex' }, 'auto');
+  assert.strictEqual(b.get('p')!.kind, 'cap');
+  clock += 3 * MIN; assert.deepStrictEqual(b.tick(), [{ type: 'resume', id: 'a' }], 'only the provider break of a resumes; p (cap) waits for the user');
+}
+// 2c. FR-007: an agent the page holds (paused, or a Durbar spending limit pending) asks instead of resuming by itself (holdIds is the rule).
+{
+  assert.deepStrictEqual([...C.holdIds([{ id: 'a' }, { id: 'p', paused: true }, { id: 'l', limit: { requestId: 'r' } }, { id: 'n', paused: false, limit: null }])], ['p', 'l']);
+  assert.deepStrictEqual([...C.holdIds([])], []);
+  const b = mk();
+  for (const id of ['p', 'l', 'free']) b.start(id, { kind: 'provider', app: id, resetsAt: clock + MIN }, 'auto');
+  clock += 2 * MIN;
+  const hold = C.holdIds([{ id: 'p', paused: true }, { id: 'l', limit: { requestId: 'r' } }, { id: 'free' }]);
+  assert.deepStrictEqual(b.tick({ hold }), [{ type: 'ask', id: 'p' }, { type: 'ask', id: 'l' }, { type: 'resume', id: 'free' }], 'paused and capped agents ask; the free one resumes');
+  assert.strictEqual(b.get('p')!.phase, 'back');
+  assert.deepStrictEqual(b.tick({ hold: new Set() }), [], 'each action once, also after the hold ends');
 }
 // 3. No reset time (Q4): no resume, one reminder after an hour.
 {
@@ -108,6 +143,11 @@ const mk = (o: Record<string, unknown> = {}): Breaks => C.createBreaks({ now, ..
   assert.strictEqual(C.whenText(Date.UTC(2026, 10, 1, 0, 0), n, o), '1 Nov');
   const b = { id: 'a', kind: 'provider', phase: 'on', resetsAt: Date.UTC(2026, 9, 21, 14, 30), estimated: false, paid: false, source: '', noAuto: false };
   assert.strictEqual(C.untilText(b, true, n, o), 'resumes at 14:30');
+  // FR-004 (review on #462): "resumes at 14:30" today, "resumes Fri 9:00" within six days, "resumes 1 Nov" further away (no "at" before a day or a date)
+  assert.strictEqual(C.untilText({ ...b, resetsAt: Date.UTC(2026, 9, 23, 9, 0) }, true, n, o), 'resumes Fri 9:00');
+  assert.strictEqual(C.untilText({ ...b, resetsAt: Date.UTC(2026, 10, 1, 0, 0) }, true, n, o), 'resumes 1 Nov');
+  assert.strictEqual(C.untilText({ ...b, resetsAt: Date.UTC(2026, 9, 23, 9, 0) }, false, n, o), 'the limit resets Fri 9:00');
+  assert.strictEqual(C.atWhen(Date.UTC(2026, 9, 21, 14, 30), n, o), 'at 14:30');
   assert.strictEqual(C.untilText(b, false, n, o), 'the limit resets at 14:30');
   assert.strictEqual(C.untilText({ ...b, estimated: true }, true, n, o), 'resumes at 14:30 (estimate)');
   assert.strictEqual(C.untilText({ ...b, resetsAt: undefined }, false, n, o), 'the limit resets later');
@@ -168,7 +208,7 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   assert.strictEqual(out.length, 2);
   const l = out[0] as EventBody & { type: 'usageLimit' };
   assert.ok(l.type === 'usageLimit' && l.scope === 'plan' && l.source === 'Codex weekly limit' && typeof l.resetsAt === 'number'); valid(l);
-  assert.deepStrictEqual(out[1], { type: 'status', status: 'idle', intent: 'Usage limit reached' });
+  assert.deepStrictEqual(out[1], usageLimitClosing());
   // 2026-10-22: a window update read long ago whose reset has passed gives no reset time (not a resume at once)
   out.length = 0;
   const realNow = Date.now;
@@ -208,6 +248,26 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   assert.deepStrictEqual(bad({ scope: 'rate', source: 'a', resetsAt: 5, estimated: true, paid: false, update: true }), []);
 }
 
+// 7b. FR-002 (review on #462, 2026-10-22): every adapter closes the limited turn with the same marked status; the break keys on
+// `reason: 'usage-limit'`, never on the words. A mapper that writes its own status (other words, no marker) fails here.
+{
+  const closing = usageLimitClosing();
+  assert.deepStrictEqual(closing, { type: 'status', status: 'idle', intent: 'Usage limit reached', reason: 'usage-limit' });
+  valid(closing);
+  const runs: [string, EventBody[]][] = [];
+  { const o: EventBody[] = []; const m = new ClaudeMapper((b) => o.push(b)); m.map({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour' } }); m.map({ type: 'result', subtype: 'success', is_error: true, result: 'limit' }); runs.push(['claude', o]); }
+  { const o: EventBody[] = []; const m = new CodexMapper((b) => o.push(b)); m.map({ method: 'thread/started', params: { thread: { id: 'th', cwd: '/w' } } }); o.length = 0; m.map({ method: 'turn/completed', params: { threadId: 'th', turn: { status: 'failed', error: { message: 'x', codexErrorInfo: 'UsageLimitExceeded' } } } }); runs.push(['codex', o]); }
+  { const o: EventBody[] = []; const m = new EventMapper((b) => o.push(b)); m.map({ type: 'session.error', data: { errorType: 'rate_limit', errorCode: 'rate_limited', message: 'x' } }); runs.push(['copilot', o]); }
+  for (const [name, o] of runs) {
+    assert.strictEqual(o[0].type, 'usageLimit', name);
+    assert.deepStrictEqual(o[o.length - 1], closing, `${name}: the closing status is usageLimitClosing()`);
+  }
+  // the guard: the marker only on an idle status
+  const bad = (o: Record<string, unknown>): string[] => validateEvent({ type: 'status', sessionId: 's', timestamp: 1, ...o });
+  assert.ok(bad({ status: 'error', reason: 'usage-limit' }).length, 'the marker on an error');
+  assert.ok(bad({ status: 'idle', reason: 'limit' }).length, 'an unknown reason');
+}
+
 // 8. The MCP read state mirrors the window (spec 041): Waiting, Coffee break; the turn's closing idle keeps it; working or a send ends it.
 {
   const ev = (o: Record<string, unknown>): AgentEvent => ({ sessionId: 'a', timestamp: 1, ...o }) as unknown as AgentEvent;
@@ -215,7 +275,7 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   t.ensure('a');
   t.onEvent(ev({ type: 'status', status: 'working' }));
   t.onEvent(ev({ type: 'usageLimit', scope: 'plan', source: 'x' }));
-  t.onEvent(ev({ type: 'status', status: 'idle', intent: 'Usage limit reached' }));
+  t.onEvent(ev({ ...usageLimitClosing(), intent: 'Other words' })); // the marker keeps the break, whatever the words
   assert.deepStrictEqual([t.get('a')!.word, t.get('a')!.subLabel], ['Waiting', 'Coffee break']);
   t.onEvent(ev({ type: 'status', status: 'idle' }));
   assert.deepStrictEqual([t.get('a')!.word, t.get('a')!.subLabel], ['Waiting', 'Coffee break'], 'one trailing plain idle of the same turn keeps the break');
@@ -251,6 +311,31 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   t.onEvent(ev({ type: 'limit', phase: 'exhausted', requestId: 'r' }));
   assert.strictEqual(t.onBreak('a'), true, 'the cap is a break too');
   assert.strictEqual(t.onBreak('nobody'), false);
+  // the words alone, without the marker, do not keep a break (2026-10-22: nothing depends on the display text)
+  const w = new AgentStateTracker();
+  w.ensure('a');
+  w.onEvent(ev({ type: 'usageLimit', scope: 'plan', source: 'x' }));
+  w.onEvent(ev({ type: 'status', status: 'idle', intent: 'Usage limit reached' }));
+  assert.strictEqual(w.onBreak('a'), false, 'an idle without the marker ends the break');
+}
+
+// 8b. FR-008: the schedule busy rule main uses (scheduleBusy): working or waiting for permission, or on a coffee break; a session or the folder.
+{
+  const sessions = [{ id: 's1', folder: 'f' }, { id: 's2', folder: 'f' }, { id: 's3', folder: 'g' }];
+  const rule = (busy: string[], onBreak: string[]) => ({ sessions: () => sessions, busy: (id: string) => busy.includes(id), breaks: { onBreak: (id: string) => onBreak.includes(id) } });
+  assert.strictEqual(scheduleBusy('f', 's1', rule([], [])), false, 'free');
+  assert.strictEqual(scheduleBusy('f', 's1', rule(['s1'], [])), true, 'working');
+  assert.strictEqual(scheduleBusy('f', 's1', rule([], ['s1'])), true, 'on a coffee break (FR-008)');
+  assert.strictEqual(scheduleBusy('f', undefined, rule([], ['s2'])), true, 'a folder schedule: any session of the folder on a break');
+  assert.strictEqual(scheduleBusy('f', undefined, rule([], ['s3'])), false, 'a break in another folder');
+  assert.strictEqual(scheduleBusy('g', undefined, rule(['s1'], [])), false);
+  // with the real tracker: a usage limit, then the cap, both skip the run
+  const t = new AgentStateTracker();
+  t.ensure('s1');
+  const real = { sessions: () => sessions, busy: () => false, breaks: t };
+  assert.strictEqual(scheduleBusy('f', 's1', real), false);
+  t.onEvent({ sessionId: 's1', timestamp: 1, type: 'usageLimit', scope: 'plan', source: 'x' } as AgentEvent);
+  assert.strictEqual(scheduleBusy('f', 's1', real), true, 'the tracker\'s break makes the schedule busy');
 }
 
 // 9. The setting (FR-006): resume by itself by default; only 'ask' is written; junk keeps the value.
@@ -277,6 +362,12 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
   assert.ok(html.indexOf('src="coffeebreak.js"') > 0 && html.indexOf('src="coffeebreak.js"') < html.indexOf('src="app.js"'));
   assert.ok(/'coffeebreak\.js'/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8')));
+  // review on #462: the window's timer passes the held agents to the core (FR-007), and main's schedule busy check is scheduleBusy with the tracker (FR-008)
+  const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+  assert.ok(app.includes('BREAKS.tick({hold:COFFEE.holdIds(agents)})'), 'coffeeTick passes holdIds(agents)');
+  assert.ok(/function resumeCoffee[\s\S]{0,200}if\(a\.limit\)return;/.test(app), 'resumeCoffee sends nothing while a Durbar spending limit is pending');
+  const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
+  assert.ok(/isBusy: \(folder, session\) => scheduleBusy\(folder, session, \{[^\n]*busy: busyStatus, breaks: agentState \}\)/.test(main), 'scheduleDeps.isBusy is scheduleBusy with busyStatus and the tracker');
 }
 
 console.log('coffee break tests passed');

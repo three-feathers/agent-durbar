@@ -12,3 +12,8 @@
 - [x] T010 Driver `shots-068-coffee.js`, screenshots 1440x900 and 1280x800, `check:office` / `check:geometry` [FR-013, FR-018]
 - [x] T011 Docs: README, CHANGELOG, specs README, cross-references in 011/024/034 [all]
 - [x] T012 Review fix (2026-10-22, PR #462): only the turn's closing status keeps the break (renderer and MCP read state); `usageLimit.update` for a late reset time; past reset times are unknown; tests [FR-002, FR-004]
+- [x] T013 Review fix (2026-10-22, PR #462): a provider limit never replaces a pending Durbar cap break; held agents (paused, cap pending) ask instead of resuming (`holdIds`, `tick({hold})`); fake-clock tests [FR-007]
+- [x] T014 Review fix: `scheduleBusy` in `schedules.ts`, used by `main.ts` `scheduleDeps`; unit test and wiring check [FR-008]
+- [x] T015 Review fix: `StatusEvent.reason: 'usage-limit'` on the closing status (`usageLimitClosing()` in every adapter, the event guard); the window and the MCP read state key on it; tests [FR-002]
+- [x] T016 Review fix: FR-004 words ("at" only before a time of today) and FR-012 converged; tests §6 [FR-004, FR-012]
+- [x] T017 Merge main (#515: `check:ui-text` without an allow list) [all]

@@ -40,10 +40,10 @@ const LEDGER=window.DurbarUsage.createLedger();
 const ledgerRemoved=()=>LEDGER.hasUnlisted()||LEDGER.roomIds().some(id=>{const r=ROOMS.find(x=>x.id===id);return !r||r.hidden;});
 /* Totals saved before this run (spec 011 FR-027, issue #21): asked from the main process once agents exist, and again when one is added
    (its folder may have a saved total). The baseline is frozen in main, so asking again never double counts what this run recorded. */
-let baselineQueued=false, usageSaveError='';
+let baselineQueued=false, baselineAsking=0, usageSaveError='';
 function loadUsageBaseline(){
   if(baselineQueued||!bridge||!bridge.usageTotals)return; baselineQueued=true;
-  setTimeout(()=>{baselineQueued=false;bridge.usageTotals().then(v=>{if(v&&v.ok){LEDGER.setBaseline(v);usageSaveError=typeof v.error==='string'?v.error:'';scheduleRender();}}).catch(()=>{});},50);
+  setTimeout(()=>{baselineQueued=false;baselineAsking++;bridge.usageTotals().then(v=>{if(v&&v.ok){LEDGER.setBaseline(v);usageSaveError=typeof v.error==='string'?v.error:'';scheduleRender();}}).catch(()=>{}).finally(()=>{baselineAsking--;});},50);
 }
 /* After "Reset usage totals" in Settings: this run's figures and the baseline both start from zero. */
 function onUsageReset(view){LEDGER.clearRun();LEDGER.setBaseline(view&&view.ok?view:{});usageSaveError=view&&typeof view.error==='string'?view.error:'';scheduleRender();}
@@ -78,12 +78,12 @@ function costData(period){
 function usdEstimates(roomId){return agents.filter(a=>!a.parent&&a.usage&&(!roomId||a.room===roomId)&&usageCaps(a).costUsd&&!usageCaps(a).nanoAiu).reduce((n,a)=>n+(a.usage.usd||0),0);}
 function aiuChip(){
   const t=LEDGER.office(); if(!t.calls||demoOn)return '';
-  const tip=window.DurbarUsage.tooltip(t,{scope:'office',removed:ledgerRemoved(),since:LEDGER.since(),run:LEDGER.officeRun(),offFloors:offFloorSpend()});
-  /* spec 052 FR-028 (#307): one unit, money: Copilot credits at USD 0.01 plus Claude's own estimates; the split is in the tooltip */
+  /* spec 052 FR-028 (#307): one unit, money: Copilot credits at USD 0.01 plus Claude's own estimates; the split is in the tooltip (FR-168: it is built there, within 300 characters) */
   const usd=usdEstimates(), aiu=t.nano/1e9, none=t.unreported>=t.calls&&!usd;
-  const tip2=tip+'\nEstimated cost: ≈ '+fmtMoney(aiu*AIU_USD+usd)+' = '+aiu.toFixed(2)+' AIU (Copilot credits, USD 0.01 each)'+(usd?' + '+fmtMoney(usd)+' Claude estimate (not a bill)':'')+'. Codex does not report cost.';
+  const tipOpts={scope:'office',removed:ledgerRemoved(),since:LEDGER.since(),run:LEDGER.officeRun(),offFloors:offFloorSpend(),estimate:'≈ '+fmtMoney(aiu*AIU_USD+usd)+' = '+aiu.toFixed(2)+' AIU'+(usd?' + '+fmtMoney(usd)+' Claude (est.)':'')+'. Codex: no cost.'};
+  const tip2=window.DurbarUsage.tooltip(t,tipOpts),tipFull=window.DurbarUsage.tooltip(t,{...tipOpts,full:true});
   const inner=none?'<span class="l">cost not reported</span>':`<span class="l">≈</span><b>${esc(fmtMoney(aiu*AIU_USD+usd))}</b>`;
-  return `<span class="stat stat-aiu" role="note" title="${esc(tip2)}" aria-label="${esc(tip2.replace(/\n/g,' '))}">${inner}</span>`;
+  return `<span class="stat stat-aiu" role="note" title="${esc(tip2)}" aria-label="${esc(tipFull.replace(/\n/g,' '))}">${inner}</span>`;
 }
 /* ---- how an agent is doing (spec 034, issue #20): the body follows the context window, trouble gets a drawing ---- */
 const MOODS=window.DurbarMood;
@@ -504,7 +504,15 @@ function holdTimer(t,ms,kill){
   const resume=()=>{if(id||t.matches(':hover')||t.contains(document.activeElement))return;start=Date.now();id=setTimeout(kill,Math.max(left,1500));};
   t.addEventListener('mouseenter',pause);t.addEventListener('focusin',pause);t.addEventListener('mouseleave',resume);t.addEventListener('focusout',()=>setTimeout(resume,0));
 }
-function toast(html,ms){const t=document.createElement('div');t.className='toast';t.innerHTML=html;$('toasts').appendChild(t);holdTimer(t,ms||3200,()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320)});return t;}
+/* spec 052 FR-170: with a chat open the toasts end above the composer (they sat on its left end); the bottom edge is read when a toast arrives */
+function placeToasts(){const box=$('toasts');if(!box)return;let top=innerHeight; /* the highest box a toast must stay above: the answer bar when it shows, else the composer */
+  if(document.body.classList.contains('panel-open'))for(const e of [document.querySelector('#panel .composer'),$('answerBar')])if(e&&!e.hidden&&e.getClientRects().length)top=Math.min(top,e.getBoundingClientRect().top);
+  box.style.setProperty('--toast-b',(top<innerHeight?Math.ceil(innerHeight-top+12):16)+'px');}
+let toastRO=null;
+function mountToast(t){const box=$('toasts');placeToasts();box.appendChild(t);
+  if(window.ResizeObserver){if(!toastRO)toastRO=new ResizeObserver(placeToasts);toastRO.disconnect();for(const e of [document.querySelector('#panel .composer'),$('answerBar'),$('panel')])if(e)toastRO.observe(e);} /* the composer grows with a long message, the answer bar appears and goes */}
+window.addEventListener('resize',placeToasts);
+function toast(html,ms){const t=document.createElement('div');t.className='toast';t.innerHTML=html;mountToast(t);holdTimer(t,ms||3200,()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320)});return t;}
 /* spec 052 FR-047: a button that awaits a bridge call shows it is busy: disabled + aria-busy, same width, the given label, and a 12px spinner
    after 150ms (none under reduced motion: the label alone). Returns done(), which restores the button. busy(null) is a no-op. */
 const reducedMotion=()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){return false;}};
@@ -1016,7 +1024,7 @@ function renderList(){
   const rows=[];sorted.forEach(a=>{rows.push([a,false]);(LSORT?ACT.sortBy(helpersOf(a),LVAL[LSORT.key],LSORT.dir):helpersOf(a)).forEach(h=>rows.push([h,true]));});
   /* spec 034 FR-014: no figures here, so the mood words (cards: drawing + label) are written at the start of the task cell */
   const row=([a,sub])=>{const st=pillSt(a),mw=moodFor(a).words,ago=ACT.agoShort(sinceLast(a)),agoL=ACT.agoLong(sinceLast(a)),cost=costText(a),app=appOf(a);return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}${app?', '+esc(app):''}, ${esc(roomOf(a).name)}, ${esc(stWord(a))}: ${esc(taskText(a))}${moodWords(a)}${agoL?'. Last activity '+agoL:''}${cost?'. Cost '+esc(cost):''}">
-    <span class="lname"><span class="dot ${st}"></span><span class="${sub?'sub':''}">${esc(a.name)}</span>${modeIcon(a,true)}</span><span class="lcell">${esc(app)}</span><span class="lcell">${esc(a.role)}</span><span class="lcell mono lfold">${esc(roomOf(a).name)}</span><span class="lcell"${mw?` title="${esc(mw)}"`:''}>${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(taskText(a))}</span><span class="lcell num"${agoL?` title="Last activity ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"${cost&&cost.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${esc(cost)}</span><span><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}</span></span></button>`};
+    <span class="lname"><span class="dot ${st}"></span><span class="${sub?'sub':''}" title="${esc(a.name)}">${esc(a.name)}</span>${modeIcon(a,true)}</span><span class="lcell" title="${esc(app)}">${esc(app)}</span><span class="lcell" title="${esc(a.role)}">${esc(a.role)}</span><span class="lcell mono lfold" title="${esc(roomOf(a).name)}">${esc(roomOf(a).name)}</span><span class="lcell" title="${esc(DurbarCutText.cutText((mw?mw+'. ':'')+taskText(a),300))}">${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(taskText(a))}</span><span class="lcell num"${agoL?` title="Last activity ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"${cost&&cost.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${esc(cost)}</span><span><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}</span></span></button>`};
   const head=LCOLS.map(([k,t])=>{const on=LSORT&&LSORT.key===k,dir=on?(LSORT.dir==='asc'?'ascending':'descending'):'none';
     return `<span role="columnheader" aria-sort="${dir}"${k==='folder'?' class="lfold"':k==='ago'||k==='cost'?' class="num"':''}><button type="button" class="lsort" data-lsort="${k}" title="Sort by ${esc(t.toLowerCase())}">${esc(t)}<span class="sarr" aria-hidden="true">${on?(LSORT.dir==='asc'?'▲':'▼'):'↕'}</span></button></span>`;}).join('');
   $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents"><div class="lrow lhead" role="row">${head}</div>${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
@@ -1335,7 +1343,7 @@ function wireAnswerBar(a){
     bar.querySelector('b').textContent=(n>1?'1 of '+n+' · ':'')+a.name+(q?' asks:':card.classList.contains('limit')?' stopped:':' needs your OK:');
     const qs=bar.querySelector('.ab-q span');
     if(fit){if(fit.tag){const tg=document.createElement('span');tg.className='tag';tg.textContent=fit.tag;qs.appendChild(tg);qs.appendChild(document.createTextNode(' '));}qs.appendChild(document.createTextNode(fit.q));}
-    else{qs.textContent=long?'a long request; read it in the chat before you answer.':text;if(long)qs.title=text;} /* spec 052 FR-160: the full text stays reachable */
+    else{qs.textContent=long?'a long request; read it in the chat before you answer.':text;if(long)qs.title=DurbarCutText.cutText(text,300);} /* spec 052 FR-160: the full text is in the chat; FR-168: a data tooltip is at most 300 characters */
     const act=bar.querySelector('.ab-act');
     const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);return b;};
     if(fit){
@@ -1413,7 +1421,7 @@ function openPanel(id,focus){
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${nameTipAttr(a)}>${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
       <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span></div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); spec 006 FR-033 (2026-10-21): Previous sessions moved out of the actions, to their own section above the chat -->${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}<button class="btn sm primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
-        <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation (you review it first); this one keeps its history">Continue in another app…</button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}${canRenameSession(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="renameSessBtn" type="button" title="Give this session a short name"><span class="mt">Rename…<small>A short name for this session</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
+        <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window"><span class="mt">Tools and usage<small>Tools used, models, context window</small></span></button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval"><span class="mt">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}<small>Prompts sent at a set time</small></span></button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder"><span class="mt">+ New session<small>Another agent in this folder</small></span></button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation. You review it first."><span class="mt">Continue in another app…<small>Start there from a summary</small></span></button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}${canRenameSession(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="renameSessBtn" type="button" title="Give this session a short name"><span class="mt">Rename…<small>A short name for this session</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>A later message resumes it</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The folder's other sessions stay."><span class="mt">Remove from office<small>Ends it; history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Forget ${esc(DurbarCutText.cutText(room.name,30))} in Agent Durbar. Its session ends; nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; files stay on disk</small></span></button>`:'')}</div></div></div>
     <div class="ph-line"><p class="ptask" data-f="task"></p><p class="pusage" data-f="usage"></p></div>
     <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div></div>
    <div class="prev" id="prev" role="region" aria-label="${SIMPLE?'Earlier chats':'Previous sessions'}" hidden>${a.live&&!a.parent?`<div class="prev-bar"><button class="prev-toggle" id="prevBtn" type="button" data-pv="toggle" aria-expanded="false" aria-controls="prevPanel" aria-keyshortcuts="${esc(ariaKeys(PREV_KEYS))}">${ICON('chev')}<span class="prev-l">${SIMPLE?'Earlier chats':'Previous sessions'}</span><span class="prev-c" hidden></span><span class="prev-sub"></span></button></div><div class="prev-panel" id="prevPanel" hidden></div>`:''}</div>
@@ -1455,7 +1463,7 @@ function openPanel(id,focus){
   wireAnswerBar(a);
   if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c));}
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
-  if($('stopBtn'))$('stopBtn').onclick=e=>{if(a.live){const b=e.currentTarget;if(b.getAttribute('aria-busy')==='true')return;b.setAttribute('aria-busy','true');return stopLive(a).catch(failToast('stop')).finally(()=>{b.removeAttribute('aria-busy');syncRunState();});}stopDemoTurn(a);a.paused=false;a.state='idle';a.label=null;a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
+  if($('stopBtn'))$('stopBtn').onclick=e=>{RUN_SAID.stopped=true;if(a.live){const b=e.currentTarget;if(b.getAttribute('aria-busy')==='true')return;b.setAttribute('aria-busy','true');return stopLive(a).catch(failToast('stop')).finally(()=>{b.removeAttribute('aria-busy');syncRunState();});}stopDemoTurn(a);a.paused=false;a.state='idle';a.label=null;a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
   $('attFile').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_FILES[fi++%SAMPLE_FILES.length],kind:'file',size:12*1024}]);};
   $('attImg').onclick=()=>{if(a.live)return pickLive('image');addPicked([{name:SAMPLE_IMGS[ii++%SAMPLE_IMGS.length],kind:'image',size:240*1024}]);};
   /* drag and drop anywhere on the panel, paste into the message box */
@@ -1508,7 +1516,7 @@ const STOP_TIP='Stop: interrupts this reply. The chat stays open and ready; noth
 /* FR-038: Send while idle; Stop with a spinner left of it while a turn runs. Stop only where the app can interrupt (spec 012 FR-050). */
 function runSlotHTML(a){
   const canStop=!(a.live&&!feat(liveRoot(a),'stop'));
-  return `<div class="run-slot" id="runSlot"><button class="ib send" id="sendBtn" type="button" aria-label="Send message" title="Send (Enter)" aria-disabled="true">${CT_IC.send}</button><span class="run-spin" id="runSpin" role="status" aria-label="Working" title="Working on a reply" hidden><i aria-hidden="true"></i></span>${canStop?`<button class="ib stop" id="stopBtn" type="button" aria-label="Stop" title="${esc(a.live?STOP_TIP:'Stop')}" hidden>${CT_IC.stop}</button>`:''}</div>`;
+  return `<div class="run-slot" id="runSlot"><button class="ib send" id="sendBtn" type="button" aria-label="Send message" title="Send (Enter)" aria-disabled="true">${CT_IC.send}</button><span class="run-spin" id="runSpin" aria-hidden="true" title="Working on a reply" hidden><i aria-hidden="true"></i></span>${canStop?`<button class="ib stop" id="stopBtn" type="button" aria-label="Stop" title="${esc(a.live?STOP_TIP:'Stop')}" hidden>${CT_IC.stop}</button>`:''}</div>`;
 }
 /* FR-037: left to right Profile, Mode, Model (with its window), Context, MCP, then the attachments; data-ct = overflow rank (FR-040, 1 goes first) */
 function composerToolbarHTML(a,mdlName){
@@ -1541,6 +1549,7 @@ async function refreshMcpCount(a){
   const el=$('mcpBtn'),cur=ui.selected&&byId(ui.selected);if(!el||!cur||liveRoot(cur)!==a)return;
   const had=document.activeElement===el;el.outerHTML=mcpChipHTML(a);if(had){const f=$('mcpBtn');if(f)f.focus({preventScroll:true});}
 }
+const RUN_SAID={id:null,run:false,stopped:false}; /* spec 005 T074: what the live region last said about the open chat's turn */
 /* FR-038: a turn runs (live: the same rule that greys Compact; demo: the canned turn plays) */
 function runningNow(a){
   if(!a)return false;
@@ -1556,6 +1565,10 @@ function syncRunState(){
   /* a live agent takes a message mid-turn (Enter sends, as before): then Send shows beside Stop; without Stop the slot keeps Send */
   set(send,run&&!!stop&&!(a.live&&has));
   if(slot.classList.contains('running')!==run)slot.classList.toggle('running',run);
+  /* spec 005 T074 (review on PR 498): the spinner is decorative; a screen reader hears the change once through the shared live region.
+     Only a change in the same chat speaks: opening a chat (or redrawing it) is not a turn starting or ending */
+  const was=RUN_SAID.id===a.id?RUN_SAID.run:null; RUN_SAID.id=a.id; RUN_SAID.run=run;
+  if(was!==null&&was!==run){announce(run?'Working…':RUN_SAID.stopped?'Stopped':'Reply finished');RUN_SAID.stopped=false;} /* a new turn forgets an earlier Stop */
 }
 /* the mode, model, profile and context menus: below their chip, or above it when the chip sits in the composer toolbar (FR-037) */
 function placeMenu(m,x,y,anchor){
@@ -1890,8 +1903,8 @@ function paintInbox(focusIndex){
     const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
     const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?(a.coffee?'is on a '+coffeeWord().toLowerCase():'stopped'):card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
     row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;
-    row.innerHTML='<div class="ib-av" aria-hidden="true">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b></b> <span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
-    row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;
+    row.innerHTML='<div class="ib-av" aria-hidden="true">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
+    row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-h b').title=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;row.querySelector('.ib-f').title=roomOf(a).name; /* spec 052 FR-170: the name is its own line, the rest wraps below it */
     {const t=NEED_SINCE.get(a.id);row.querySelector('.ib-wait').textContent=t!=null?'· '+ATT.waitLabel(Date.now()-t):'';} /* FR-061 */
     const text=card?requestText(card):(taskOf(a)||'');row.querySelector('.ib-t').textContent=text;
     const act=row.querySelector('.ib-act');
@@ -2007,7 +2020,7 @@ function palPaint(q){
   let html='',g='';
   palItems.forEach((x,i)=>{
     if(x.group!==g){g=x.group;html+='<div class="pal-g" role="presentation">'+esc(g)+'</div>';}
-    html+='<div class="pal-o" role="option" id="palO'+i+'" data-i="'+i+'" aria-selected="false"><span class="pal-l">'+esc(x.label)+'</span>'+(x.hint?'<span class="pal-h">'+esc(x.hint)+'</span>':'')+(x.keys?'<span class="pal-k">'+kbdHTML(x.keys)+'</span>':'')+'</div>';
+    html+='<div class="pal-o" role="option" id="palO'+i+'" data-i="'+i+'" aria-selected="false"><span class="pal-l" title="'+esc(x.label)+'">'+esc(x.label)+'</span>'+(x.hint?'<span class="pal-h" title="'+esc(x.hint)+'">'+esc(x.hint)+'</span>':'')+(x.keys?'<span class="pal-k">'+kbdHTML(x.keys)+'</span>':'')+'</div>';
   });
   list.innerHTML=html||'<p class="pal-empty">No matches.</p>';
   palSetActive(0);
@@ -2186,7 +2199,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -2197,8 +2210,8 @@ const hashN=str=>{let h=0;for(const c of str)h=(h*31+c.charCodeAt(0))>>>0;return
 const lookFor=key=>{const h=hashN(key);return L(S.sk[h%5],S.hr[(h>>>3)%6],['bun','short','long','curly'][(h>>>6)%4],S.sh[(h>>>9)%7],(h>>>12)%3===0);};
 const liveById=id=>LIVE.agents.find(a=>a.id===id);
 const liveRoot=a=>a.parent?byId(a.parent):a;
-let renderQueued=false;
-function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{renderQueued=false;renderAll();});}
+let renderQueued=false, agentsListed=false;
+function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{if(!renderQueued)return;renderQueued=false;renderAll();});} /* settleNow() may have drawn it already */
 function setBadge(){const b=$('protoBadge'); if(!b)return; b.className='proto'+(SIM&&!demoOn?' sim':'');
   /* spec 001 FR-027: not one agent app; the tooltip names the ready ones */
   const ready=DMK().kindChoices(KINDS).filter(k=>!k.disabled).map(k=>k.name);
@@ -2230,7 +2243,7 @@ function modeBackNote(a,was){
 }
 const MODE_TEXT={'read-only':'read-only','allow':'no prompts','ask':'asks first'};
 /* spec 052 FR-077: one short line per mode in the menu; the full explanation stays in its title */
-const MODE_SHORT={'read-only':"Reads only: can't change files or run commands",'ask':'Asks before each change or command','allow':'Never asks: edits, commands, web'}; /* spec 052 FR-093: one line each, but accurate (full help in the title) */
+const MODE_SHORT={'read-only':"Reads only: can't change files or run commands",'ask':'Asks before each change or command','allow':'Never asks: edits, commands, web'}; /* spec 052 FR-093, FR-165: short but accurate; a hint wraps into at most two balanced lines at --menu-w (the full help is in the title) */
 const MODE_HELP={'read-only':'Reads only. Edits, commands and other changes are denied. An MCP tool runs only if its server marks it read-only.','ask':'Asks before every edit or command. You can approve for the rest of the session.','allow':'Everything runs without asking: edits, shell commands, web requests and tools.'};
 /* spec 012 FR-123: the agent kind's own name in agent-facing text; Copilot's wording is unchanged */
 const KIND_WORD={copilot:'Copilot',claude:'Claude Code',codex:'Codex'};
@@ -2253,7 +2266,7 @@ const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+MODE_NAME[
 /* spec 052 FR-065: Allow all is a small red "Allow all" text badge in the icon's slot (the words, not only a padlock); the other modes keep the icon */
 /* spec 052 FR-065: the list row says "Allow all" in a red badge (text=true); a desk card keeps the red icon, because a text badge
    there hides the agent's name at 1280x800 (office check) */
-const modeIcon=(a,text)=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?(a.info.permMode==='allow'&&text?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP.allow)} (right-click for options)" aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`):'';
+const modeIcon=(a,text)=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?(a.info.permMode==='allow'&&text?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT.allow)}. Right-click for options." aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT[a.info.permMode])}. Right-click for options." aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`):'';
 /* spec 033 SC-003 (2026-10-21, issue #454): a floor switch is timed inside the app, from the click to the end of the office render
    that shows it (that render measures the stage, so its layout is done). One User Timing entry, replaced on each switch; the
    simulator check reads it. Nothing else uses it. */
@@ -2424,7 +2437,10 @@ function mdPaint(el){el._mdq=false;if(el._raw==null)return;const t=document.crea
 function addCopyButtons(el){
   const mk=(cls,label)=>{const b=document.createElement('button');b.type='button';b.className='cp-btn '+cls;b.textContent='Copy';b.setAttribute('aria-label',label);b.title=label;return b;};
   el.querySelectorAll('pre').forEach(p=>{if(!p.querySelector(':scope > .cp-code'))p.appendChild(mk('cp-code','Copy this code'));});
-  if(el.closest('.msg.agent')&&!el.querySelector(':scope > .cp-msg'))el.appendChild(mk('cp-msg','Copy this reply'));
+  /* spec 052 FR-170: while the reply streams the caret is the last thing in the bubble, so the Copy button waits for the end (else the caret sat inside it) */
+  const streaming=el.classList.contains('caret'),cp=el.querySelector(':scope > .cp-msg');
+  if(streaming&&cp)cp.remove();
+  else if(!streaming&&el.closest('.msg.agent')&&!cp)el.appendChild(mk('cp-msg','Copy this reply'));
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('.cp-btn');if(!b)return;
@@ -2489,7 +2505,7 @@ function tThinkEnd(b){
 }
 function tText(T,e){
   if(!T.bubble){T.bubble=document.createElement('div');T.bubble.className='bubble caret md';T.bubble._acc='';tAppend(T,T.bubble);}
-  if(e.final){T.bubble._acc=e.text||T.bubble._acc;mdSet(T.bubble,T.bubble._acc,true);T.bubble.classList.remove('caret');const out=T.bubble._acc;T.bubble=null;tScroll(T);return out;}
+  if(e.final){T.bubble._acc=e.text||T.bubble._acc;mdSet(T.bubble,T.bubble._acc,true);T.bubble.classList.remove('caret');addCopyButtons(T.bubble);const out=T.bubble._acc;T.bubble=null;tScroll(T);return out;}
   T.bubble._acc+=e.delta;mdSet(T.bubble,T.bubble._acc);tScroll(T);return null;
 }
 function tIntent(T,txt){
@@ -2613,12 +2629,12 @@ function typingPaint(t){const l=t.querySelector('.t-l');if(!l)return;
 function tEnd(T,opts){
   mdFlush();
   if(T.think)tThinkEnd(T.think);
-  if(T.bubble){T.bubble.classList.remove('caret');T.bubble=null;}
+  if(T.bubble){T.bubble.classList.remove('caret');addCopyButtons(T.bubble);T.bubble=null;}
   if(T.typing){T.typing.remove();T.typing=null;}
   if(!T.thinkN&&opts&&opts.note&&T.tl.children.length&&!T.tl.querySelector('.nothink')){
     const n=document.createElement('div');n.className='nothink';
     n.textContent='This model does not send reasoning for this step. The tool timeline shows what it did.';
-    n.title='Some turns (often plain tool use or delegation) come back without any reasoning summary. Nothing is hidden by Agent Durbar.';
+    n.title='Some turns come back without a reasoning summary. Agent Durbar hides nothing.';
     T.tl.insertBefore(n,T.tl.firstChild);
   }
 }
@@ -2812,11 +2828,11 @@ function capChipHTML(a){
   const cls=!c?'unk':a.limit?'high':pct>=80?'warn':'ok';
   if(isUsdCap(a)){
     const t2=c?'$'+used.toFixed(2)+' / $'+c.toFixed(2):SIMPLE?'No spending limit':'Limit: none'; /* spec 052 FR-093: plain words in Simple */
-    const ti=c?'Spending limit: about $'+used.toFixed(2)+' of $'+c.toFixed(2)+' used by this session while Agent Durbar ran it ('+pct+'%). Claude\'s own estimate of the API price, not a bill; with a Claude subscription nothing is billed per token. Soft limit: one turn can go a little past it. Click to change or remove it.':'No spending limit for this session. Click to set one in dollars (Claude\'s estimate, min $0.01).';
+    const ti=c?'Spending limit: about $'+used.toFixed(2)+' of $'+c.toFixed(2)+' used ('+pct+'%). Claude\'s estimate, not a bill. Click to change or remove it.':'No spending limit for this session. Click to set one in dollars (Claude\'s estimate, min $0.01).';
     return `<button class="ctxchip capchip ${cls}" id="capChip" type="button" title="${esc(ti)}"><span class="bar" aria-hidden="true"><i style="width:${c?pct:0}%"></i></span><span>${esc(t2)}</span></button>`;
   }
   const text=c?used.toFixed(capDigits(c))+' / '+fmtCap(c)+' AIU':SIMPLE?'No spending limit':'Limit: none';
-  const title=c?'Spending limit: '+used.toFixed(2)+' of '+fmtCap(c)+' AIU used by this session ('+pct+'%). AIU as reported by the Copilot runtime. Soft limit: checked after each model response, so one response can overshoot it. Click to change or remove it.':'No spending limit for this session. Click to set one (min 30 AIU, as reported by the Copilot runtime).';
+  const title=c?'Spending limit: '+used.toFixed(2)+' of '+fmtCap(c)+' AIU used ('+pct+'%). A soft limit: one response can pass it. Click to change or remove it.':'No spending limit for this session. Click to set one (at least 30 AIU).';
   return `<button class="ctxchip capchip ${cls}" id="capChip" type="button" title="${esc(title)}"><span class="bar" aria-hidden="true"><i style="width:${c?pct:0}%"></i></span><span>${esc(text)}</span></button>`;
 }
 function updateCapChip(a){
@@ -2829,8 +2845,10 @@ function openCapDialog(a){
   const cur=capOf(a),usd=isUsdCap(a),min=usd?MIN_USD_CAP:MIN_CAP;
   const d=document.createElement('div');d.id='capDlg';d.className='dlg-ov';
   d.innerHTML=`<div class="dlg m" role="dialog" aria-modal="true" aria-labelledby="cdT"><h3 id="cdT">Spending limit for ${esc(a.name)}</h3>
-   ${usd?`<p class="dsub">The most this session may cost, in dollars of Claude's own estimate (not a bill; with a Claude subscription nothing is billed per token). When it is reached the agent stops and asks you. It is a <b>soft</b> limit: one turn can go a little past it. It counts what the session used while Agent Durbar ran it, and it is not saved with the folder. The minimum is $${MIN_USD_CAP}.</p>`
-   :`<p class="dsub">The most AI credits this session may use (1 credit = USD 0.01; shown as AIU, the unit the Copilot runtime reports). When it is reached the agent stops and asks you. It is a <b>soft</b> limit: it is checked after each model response, so one response can go past it. The minimum is ${MIN_CAP}.</p>`}
+   ${usd?`<p class="dsub">The most this session may cost. When it is reached the agent stops and asks you.</p>
+   <ul class="dlist"><li>In dollars, Claude's own estimate: not a bill.</li><li>A <b>soft</b> limit: one turn can go a little past it.</li><li>It counts what the session used while Agent Durbar ran it, and is not saved with the folder. The minimum is $${MIN_USD_CAP}.</li></ul>`
+   :`<p class="dsub">The most AI credits this session may use. When it is reached the agent stops and asks you.</p>
+   <ul class="dlist"><li>1 credit = USD 0.01; shown as AIU, the unit the Copilot runtime reports.</li><li>A <b>soft</b> limit: it is checked after each model response, so one response can go past it.</li><li>The minimum is ${MIN_CAP}.</li></ul>`}
    <label>${usd?'Limit ($, estimate)':'Limit (AI credits)'}<input id="cdVal" type="number" min="${min}" step="${usd?'0.01':'1'}" placeholder="No limit" value="${cur||''}"></label>
    <p class="dsub small cd-plan">${esc(window.DurbarCost.PLAN_NOTE)}</p><!-- spec 052 FR-058 --><!-- spec 052 (2026-10-21): the Copilot plan note said the same as the line above; it stays in Tools > Cost --><!-- spec 052 FR-075 -->
    <p class="derr" id="cdErr" role="alert" hidden></p>
@@ -2915,7 +2933,7 @@ function showQuestion(a,e){
     qt.appendChild(document.createTextNode(q.question));box.appendChild(qt);
     const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',q.question);
     (q.options||[]).forEach(o=>{const b=document.createElement('button');b.type='button';b.className='btn q-opt';b.setAttribute(q.multiSelect?'aria-pressed':'aria-checked','false');if(!q.multiSelect)b.setAttribute('role','radio');
-      const lb=document.createElement('span');lb.className='q-lbl';lb.textContent=o.label;b.appendChild(lb);b.title=o.description?o.label+' — '+o.description:o.label; /* FR-140: the title always has the label */
+      const lb=document.createElement('span');lb.className='q-lbl';lb.textContent=o.label;b.appendChild(lb);b.title=DurbarCutText.cutText(o.description?o.label+' — '+o.description:o.label,300); /* FR-140: the title always has the label; FR-168: a data tooltip is at most 300 characters */
       if(o.description){const d=document.createElement('span');d.className='q-desc';d.textContent=o.description;b.appendChild(d);} /* spec 052 FR-160: the description is on screen, not only in the tooltip */
       b.onclick=()=>{const s=picks[i];if(q.multiSelect){s.has(o.label)?s.delete(o.label):s.add(o.label);b.setAttribute('aria-pressed',String(s.has(o.label)));b.classList.toggle('primary',s.has(o.label));}
         else{s.clear();s.add(o.label);opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked',String(x===b));x.classList.toggle('primary',x===b);});others[i].value='';others[i].classList.remove('chosen');others[i].style.height='';}};
@@ -3085,10 +3103,10 @@ const coffeeWho=a=>{if(!a)return '';const b=BREAKS.get(a.id);const u=b?(b.kind==
 /* the card's sentence: what is used up, and what happens next */
 function coffeeSentence(a){
   const b=BREAKS.get(a.id); if(!b)return '';
-  const when=b.resetsAt?COFFEE.whenText(b.resetsAt,Date.now())+(b.estimated?' (an estimate)':''):'';
+  const when=b.resetsAt?COFFEE.atWhen(b.resetsAt,Date.now())+(b.estimated?' (an estimate)':''):''; /* "at 14:30", "Fri 9:00", "1 Nov" (FR-004) */
   const what=SIMPLE||!b.source?'The usage limit is used up.':b.source+' is used up.';
   if(b.phase==='back')return 'The limit has reset. Resume sends one message so the agent continues where it stopped.';
-  const next=BREAKS.autoResumes(a.id)?' The agent comes back at '+when+' and continues by itself.':b.resetsAt?' The limit resets at '+when+'; the agent will ask you before it goes on'+(b.paid?' (going on may be billed).':'.'):' The agent app did not say when it resets.';
+  const next=BREAKS.autoResumes(a.id)?' The agent comes back '+when+' and continues by itself.':b.resetsAt?' The limit resets '+when+'; the agent will ask you before it goes on'+(b.paid?' (going on may be billed).':'.'):' The agent app did not say when it resets.';
   return what+next+' Try now sends one message to continue (after a long break it can cost a little more).';
 }
 /* the chat card (FR-009): Try now / Stay on break, or, once the limit has reset and the agent asks, Resume / Not now. The inbox copies the buttons. */
@@ -3134,6 +3152,7 @@ function endCoffee(a,why){
 function resumeCoffee(a,how){
   if(!a||!a.coffee)return;
   const b=BREAKS.get(a.id); if(!b||b.kind!=='provider')return;
+  if(a.limit)return; /* FR-007: never while Durbar's spending limit is pending (main would hold the message anyway) */
   a.coffee=false;BREAKS.resumed(a.id);
   if(VISITS.unpin(a.id))scheduleRender();
   if(a.coffeeCard){const r=a.coffeeCard.querySelector('.note-actions');if(r)r.remove();a.coffeeCard.querySelector('.pstate').textContent=' → '+(how==='auto'?'resumed by itself':'resumed');a.coffeeCard.classList.add('settled','approved');a.coffeeCard=null;}
@@ -3143,17 +3162,25 @@ function resumeCoffee(a,how){
 /* the window's timer: what the break core says is due (FR-007, FR-011) */
 function coffeeTick(){
   if(!BREAKS.size())return;
-  for(const x of BREAKS.tick()){
+  /* FR-007: a paused agent, or one whose Durbar spending limit is pending, asks instead of resuming by itself (the rule is holdIds in coffeebreak.js) */
+  for(const x of BREAKS.tick({hold:COFFEE.holdIds(agents)})){
     const a=byId(x.id); if(!a||!a.live){BREAKS.end(x.id);continue;}
-    if(x.type==='resume'&&!a.paused)resumeCoffee(a,'auto');
-    else if(x.type==='ask'||x.type==='resume') /* a paused agent asks instead of resuming by itself */{const bb=BREAKS.get(a.id);if(bb)bb.phase='back';if(VISITS.unpin(a.id))scheduleRender();showCoffee(a,true);setState(a,'waiting',coffeeWord(),coffeeTask(a));}
+    if(x.type==='resume')resumeCoffee(a,'auto');
+    else if(x.type==='ask'){const bb=BREAKS.get(a.id);if(bb)bb.phase='back';if(VISITS.unpin(a.id))scheduleRender();showCoffee(a,true);setState(a,'waiting',coffeeWord(),coffeeTask(a));}
     else if(x.type==='remind')showCoffee(a,false); /* a new card: one reminder in the inbox and as a notification (Q4) */
   }
 }
 /* spec 052 FR-057: in Simple, a folder grant says what it lets the agent do: "Let Ada change files in “tools” until the session ends".
    Only for a "write in <folder>/" scope (the last path segment); any other scope keeps its label. The inbox and the answer bar copy the card's button. */
-const simpleScopeLabel=(a,label)=>{const m=/^write in (.+?)\/*$/.exec(String(label||''));if(!m)return '';const seg=m[1].split(/[\\/]/).filter(Boolean).pop();if(!seg)return '';
-  return 'Let '+a.name+' change files in “'+DurbarCutText.cutText(seg,28)+'” until the session ends';};
+/* spec 052 FR-172 (review on #470): a write in several folders ("write in src/, docs/", "… and N more folders") names each folder's last segment. */
+const simpleScopeLabel=(a,label)=>{const m=/^write in (.+)$/.exec(String(label||''));if(!m)return '';let rest=m[1],more=0;const mm=/ and (\d+) more folders$/.exec(rest);if(mm){more=+mm[1];rest=rest.slice(0,mm.index);}
+  const segs=rest.split(/\/, /).map(x=>x.replace(/\/+$/,'').split(/[\\/]/).filter(Boolean).pop()).filter(Boolean);if(!segs.length)return '';
+  const q=segs.map(x=>'“'+DurbarCutText.cutText(x,28)+'”'),list=more?q.join(', ')+' and '+more+' more folders':q.length>1?q.slice(0,-1).join(', ')+' and '+q[q.length-1]:q[0];
+  return 'Let '+a.name+' change files in '+list+' until the session ends';};
+/* spec 052 FR-172 (review on #470): a write in several folders cuts each folder name, never the list, and keeps "and N more folders" whole,
+   so the Expert button names every folder it grants (or says how many more). Any other scope label is cut at 32 characters as before. */
+const expertScopeLabel=l=>{const m=/^write in (.+\/, .+)$/.exec(String(l||''));if(!m)return DurbarCutText.cutText(String(l||''),32);let rest=m[1],tail='';const mm=/ and \d+ more folders$/.exec(rest);if(mm){tail=mm[0];rest=rest.slice(0,mm.index);}
+  return 'write in '+rest.split(/\/, /).map(x=>DurbarCutText.cutText(x.replace(/\/+$/,''),16)+'/').join(', ')+tail;};
 const relabelScopes=()=>{document.querySelectorAll('[data-lbl-simple]').forEach(b=>{b.textContent=SIMPLE?b.dataset.lblSimple:b.dataset.lblExpert;});document.querySelectorAll('.note.perm .pfold').forEach(f=>{f.hidden=!SIMPLE;});};
 /* spec 052 FR-063: "Show the change", collapsed: the request's diff as + / - lines in monospace (text only, escaped by textContent) */
 function diffBlock(diff){
@@ -3188,9 +3215,9 @@ function showPerm(a,p){
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
     const answer=(approve,remember,broad)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember,!!broad);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:broad?p.broadScopeLabel:p.scopeLabel,summary:p.summary});};
     mk('Allow once','primary','Allow this one request',()=>answer(true,false)); /* spec 052 FR-037/FR-051: the same plain words in Simple and Expert */
-    if(p.scopeKey){const ex='Allow “'+DurbarCutText.cutText(p.scopeLabel||p.kind||'this',32)+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
-      mk(SIMPLE&&sl?sl:ex,'session','Allow "'+(p.scopeLabel||p.kind)+'" until you end this session'+(p.kind==='shell'?' (this exact command only)':'')+'. Shown as a chip you can revoke.',()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';if(sl){sb.dataset.lblSimple=sl;sb.dataset.lblExpert=ex;}}
-    if(p.broadScopeKey){mk('Allow for this session: any arguments','session','Allow every simple "'+(p.broadScopeLabel||p.kind)+'" command (no pipes, redirects or substitutions) until you end this session. Wider than the exact command above; shown as a chip you can revoke.',()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
+    if(p.scopeKey){const ex='Allow “'+expertScopeLabel(p.scopeLabel||p.kind||'this')+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
+      mk(SIMPLE&&sl?sl:ex,'session','Allow "'+DurbarCutText.cutText(p.scopeLabel||p.kind,30)+'" until you end this session'+(p.kind==='shell'?' (this exact command)':'')+'. Revoke from its chip.',()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';if(sl){sb.dataset.lblSimple=sl;sb.dataset.lblExpert=ex;}}
+    if(p.broadScopeKey){mk('Allow for this session: any arguments','session','Allow every simple "'+DurbarCutText.cutText(p.broadScopeLabel||p.kind,18)+'" command (no pipes, redirects or substitutions) until you end this session.',()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
     mk('Deny','danger','Deny this request',()=>answer(false,false));
     n.appendChild(row);
     a.pend.set(p.requestId,{n,row,st});
@@ -3246,10 +3273,10 @@ function renderGrants(){
   const hadFocus=box.contains(document.activeElement)||grantsFocus!==null||grantsAllBusy!==''; /* the user is working in the grants: do not let the focus fall to <body> when they all go */
   if(gs.length<=2){
     grantsOpen=false;
-    box.innerHTML=gs.map(g=>`<span class="gchip" title="Allowed for this session: ${esc(g.label)}. Revoke to be asked again."><span>Allowed: ${esc(short(g))}</span>${grantChipX(g)}</span>`).join('');
+    box.innerHTML=gs.map(g=>`<span class="gchip" title="Allowed for this session: ${esc(DurbarCutText.cutText(g.label,240))}. Revoke to be asked again."><span>Allowed: ${esc(short(g))}</span>${grantChipX(g)}</span>`).join('');
   }else{
     box.innerHTML=`<button type="button" class="gchip gchip-btn" id="grantsBtn" aria-expanded="${grantsOpen}" aria-controls="grantsPop" title="${gs.length} permissions allowed for this session. Open the list to revoke them."><span>Allowed (${gs.length})</span><svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
-      <div class="grants-pop" id="grantsPop" role="group" aria-label="Allowed for this session"${grantsOpen?'':' hidden'}><ul role="list" class="gp-list">${gs.map(g=>`<li class="gp-row" title="Allowed for this session: ${esc(g.label)}. Revoke to be asked again."><span class="gp-t">${esc(short(g))}</span>${grantChipX(g)}</li>`).join('')}</ul><button type="button" class="btn sm gp-all" id="grantsAll">Revoke all</button></div>`;
+      <div class="grants-pop" id="grantsPop" role="group" aria-label="Allowed for this session"${grantsOpen?'':' hidden'}><ul role="list" class="gp-list">${gs.map(g=>`<li class="gp-row" title="Allowed for this session: ${esc(DurbarCutText.cutText(g.label,240))}. Revoke to be asked again."><span class="gp-t">${esc(short(g))}</span>${grantChipX(g)}</li>`).join('')}</ul><button type="button" class="btn sm gp-all" id="grantsAll">Revoke all</button></div>`;
   }
   box.hidden=!gs.length;
   if(grantsFocus!==null){
@@ -3287,7 +3314,7 @@ function feedStats(a,e){
   if(e.type==='toolCall')STATS.recordTool(a.id,e);
   else if(e.type==='usage')STATS.recordModel(a.id,e.model);
   else if(e.type==='context'&&!e.agentId){STATS.setContext(a.id,e);if(a.ctxWaiting){a.ctxWaiting=false;}}
-  else if(e.type==='mcp'){a.mcp=e.servers;refreshMcpCount(a);} /* spec 005 FR-037: the MCP chip's count */
+  else if(e.type==='mcp'){a.mcp=e.servers;refreshMcpCount(a);if(window.DurbarScreens.mcpEvent)window.DurbarScreens.mcpEvent(a.id);} /* spec 005 FR-037: the MCP chip's count; spec 058 FR-004: an open MCP dialog follows it */
   else return;
   if(e.type==='usage'||e.type==='context'||(e.type==='toolCall'&&e.phase==='start')){
     updateCtxChip(a);
@@ -3301,7 +3328,7 @@ function ctxChipHTML(a){const c=window.DurbarScreens.ctxChip(a);
 /* spec 052 FR-081: Simple says "Memory 74% full" (same id, same click). FR-093: Simple shows it only from 70% full (class mem-low hides it) */
 function ctxChipBtn(a,c){
   const canC=ctxCanCompact(a), acts=ctxHasActs(a);
-  const text=SIMPLE?(c.cls==='unk'?'Memory: not known yet':'Memory '+c.pct+'% full'):c.text, title=SIMPLE?'How full the agent\'s memory of this conversation is. '+(canC?'Click to tidy up memory.':'Click for details.'):c.title+(canC?'. Click to compact or see all agents.':'. Click to see all agents.');
+  const text=SIMPLE?(c.cls==='unk'?'Memory: not known yet':'Memory '+c.pct+'% full'):c.text, title=SIMPLE?'How full the agent\'s memory of this conversation is. '+(canC?'Click to tidy up memory.':'Click for details.'):String(c.title||'').replace(/[.\s]+$/,'')+'. '+(canC?'Click to compact or see all agents.':'Click to see all agents.'); /* spec 005 T070: one full stop, whether the title ends with one or not */
   return `<button class="ctxchip ${c.cls}${c.cls==='unk'||!(c.pct>=70)?' mem-low':''}" id="ctxChip" type="button" aria-haspopup="${acts?'menu':'dialog'}" aria-expanded="${!!document.getElementById('ctxMenu')}" title="${esc(title)}"><span class="bar" aria-hidden="true"><i style="width:${c.pct}%"></i></span><span>${esc(text)}</span></button>`;}
 function updateCtxChip(a){
   const el=$('ctxGrp');if(!el||!ui.selected)return;const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a)return;
@@ -3360,8 +3387,8 @@ function onLiveEvent(e){
     if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files */
     /* spec 068: the turn that hit a usage limit ends quietly (the coffee break says why); working again, Stop or the end of the session end the break */
     if(a.coffee&&!a.limit){
-      /* only the turn's closing status keeps the break (2026-10-22): 'Usage limit reached', then at most one plain idle of the same turn */
-      if(e.status==='idle'&&e.intent==='Usage limit reached'){closeTurn(a);a.worked=false;a.coffeeShut=true;return;}
+      /* only the turn's closing status keeps the break (2026-10-22): the adapters' marker reason 'usage-limit' (never the words), then at most one plain idle of the same turn */
+      if(e.status==='idle'&&e.reason==='usage-limit'){closeTurn(a);a.worked=false;a.coffeeShut=true;return;}
       if(e.status==='idle'&&!e.intent&&a.coffeeShut){a.coffeeShut=false;closeTurn(a);a.worked=false;return;}
       /* any other idle or error: the turn went on (and finished or failed) after the limit; the break ends and the status shows as usual */
       const wentOn=e.status==='idle'&&!e.intent&&!a.coffeeShut;a.coffeeShut=false;
@@ -3537,9 +3564,9 @@ function renderStrip(){
 /* ---------------- permission mode: change it at any time (spec 018) ---------------- */
 function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
   /* spec 061 FR-012: Read-only still means something: when the folder's own hooks or allow rules apply, the chip says so */
-  const fr=a.info.folderRules?' + folder rules':'', frT=a.info.folderRules?' This folder\u2019s own hooks or allow rules also apply (you accepted them): open the mode menu, then This folder\u2019s setup.':'';
-  if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts${frT?'.'+esc(frT):''}">${esc(MODE_NAME[m]+fr)}</span>`; /* spec 052 FR-065 */
-  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?(a.info.permFrom==='session'?' Restored: the mode you last chose for this session.':' Restored from your last run.'):''} Click to change; it applies from the next request.${esc(frT)}"><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
+  const fr=a.info.folderRules?' + folder rules':'';
+  if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m]+fr)}</span>`; /* spec 052 FR-065 */
+  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
 function openModeMenu(a0,x,y,anchor){
   const a=liveRoot(a0); if(!a||!a.live)return false;
@@ -3550,7 +3577,7 @@ function openModeMenu(a0,x,y,anchor){
   if(!hasMode&&!hasOps)return false;
   closeModeMenu();
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
-  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}" title="${esc(MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>The agent proposes a plan; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
+  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}" title="${esc(MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
   m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)mi.focus();return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
@@ -3850,7 +3877,7 @@ function toastAction(html,label,onClick,ms){
   const s=document.createElement('span');s.innerHTML=html;t.appendChild(s);
   const b=document.createElement('button');b.type='button';b.className='toast-act';b.textContent=label;
   let gone=false;const kill=()=>{if(gone)return;gone=true;t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320);};
-  b.onclick=()=>{kill();onClick();};t.appendChild(b);$('toasts').appendChild(t);holdTimer(t,ms===0?0:(ms||8000),kill);
+  b.onclick=()=>{kill();onClick();};t.appendChild(b);mountToast(t);holdTimer(t,ms===0?0:(ms||8000),kill);
   return t;
 }
 /* spec 052 FR-163: the same status line twice in a row is one line with a count ("… (×3)"), so repeated notes never push a request out of view */
@@ -3863,7 +3890,7 @@ function modelChipHTML(a){
   const m=modelLabel(a.info),pend=a.pendingModel;
   const win=modelWindow(a), txt=m.text+(win?' · '+DM.fmtTokens(win):'')+(pend?' → '+pend.name:''); /* spec 005 FR-037: name, effort and the window; the icon and the label say it is the model (FR-077) */
   const title=m.title+(pend?'. Next: '+pend.name+(pend.tier==='long'?' (long context)':'')+', when the current reply ends.':'')+(ctrlOf(a).switch==='none'?' This agent cannot switch in place; click for why.':' Click to change the model or the context.');
-  return `<button class="mchip mchip-btn" id="modelChip" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="${esc('Model: '+txt+(win?' tokens context window':''))}" title="${esc(title+(win?' Context window: '+DM.fmtTokens(win)+' tokens.':''))}">${CT_IC.model}<span>${esc(txt)}</span><svg class="chev" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg></button>`;
+  return `<button class="mchip mchip-btn" id="modelChip" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="${esc('Model: '+m.text+(win?', '+DM.fmtTokens(win)+' tokens context window':'')+(pend?'; next: '+pend.name:''))}" title="${esc(title+(win?' Context window: '+DM.fmtTokens(win)+' tokens.':''))}">${CT_IC.model}<span>${esc(txt)}</span><svg class="chev" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg></button>`;
 }
 /* spec 005 FR-037: the window in use: as the runtime reported it for this session, else the model list's (spec 030), else none */
 function modelWindow(a){
@@ -4093,7 +4120,7 @@ async function compactDialog(a,anchor){
   const lines=['Summarises the conversation so it takes less room. It costs one model call'+(est!==undefined?' (about '+DM.fmtCredits(est)+' AI credits to read the conversation, an estimate if nothing is cached)':' (the price of '+cur.name+' is not reported)')+' and cannot be undone.'];
   if(c&&c.limit>0)lines.push('Now: '+DM.fmtTokens(c.tokens)+' of '+DM.fmtTokens(c.limit)+' tokens.');
   if(ctrlOf(a).unverified)lines.push('Not verified on a real account yet; if it fails, the conversation stays as it is.');
-  const r=await askDialog({title:'Compact the context of '+a.name+'?',body:'Older messages are replaced by a summary; the agent keeps working in the same session.',lines,input:{label:'Focus (optional): what the summary should keep',placeholder:'e.g. the API decisions',max:200},returnFocus:anchor,
+  const r=await askDialog({title:'Compact the context of '+a.name+'?',body:'Older messages are replaced by a summary; the agent keeps working in the same session.',lines,input:{label:'Focus (optional)',hint:'What the summary should keep',placeholder:'e.g. the API decisions',max:200},returnFocus:anchor,
     buttons:[{label:'Cancel',value:null},{label:'Compact',value:'ok',cls:'primary'}]});
   if(!r)return;
   const res=await bridge.compact(a.id,(r.text||'').trim()||undefined).catch(e=>({ok:false,error:String(e&&e.message||e)}));
@@ -4132,7 +4159,7 @@ const canRemote=a=>!!(bridge.setRemote&&a&&a.live&&!a.parent&&a.info&&feat(a,'re
 /* spec 054 FR-060: the service this agent app is controlled from (GitHub for Copilot before the field existed) */
 const svc=a=>{const r=capsFor(a)&&capsFor(a).remoteService;return r&&r.name?r:{name:'GitHub',host:'github.com',mobile:'GitHub Mobile'};};
 const remoteVisText=v=>v==='repo'?'Visible to: anyone who can read the repository.':v==='unshared'?'Visible to: you and the repository\'s collaborators.':'';
-const remoteItemInner=a=>a.remote?'<span class="mt">Stop remote control<small>'+esc(svc(a).name)+' can no longer follow or steer it</small></span>':'<span class="mt">Control from '+esc(svc(a).name)+' (web and mobile)<small>Follow and steer it from your phone</small></span>';
+const remoteItemInner=a=>a.remote?'<span class="mt">Stop remote control<small>Ends following and steering</small></span>':'<span class="mt">Control from '+esc(svc(a).name)+' (web and mobile)<small>Follow and steer it from your phone</small></span>';
 const remoteChipHTML=a=>`<button class="mchip mchip-btn" id="remoteChip" type="button" title="Remote control is on: this session can be followed and steered from ${esc(svc(a).name)}. Click for the link."${a.remote?'':' hidden'}>Remote</button>`;
 function remotePalItems(){
   const a=ui.selected?byId(ui.selected):null; if(!canRemote(a))return [];
@@ -4209,7 +4236,7 @@ function newSession(a0,o){
    <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
    ${bridge.listProfiles&&a.info&&a.info.profiles?`<div id="sdAgentL" class="sd-agent" hidden><label>Profile<select id="sdAgent"><option value="">Default</option></select></label>${bridge.setFolderDefaultAgent?'<label class="chk"><input type="checkbox" id="sdAgentDef"> Default for new sessions here</label>':''}</div>`:''}
    ${canHandoff(a)?`<label class="chk" id="sdSumL"><input type="checkbox" id="sdSum"${o.summary?' checked':''}> Start with a summary of this conversation (you review it before it is sent)</label>`:''}
-   ${bridge.setCap?'<label id="sdCapL"><span id="sdCapT">Spending limit (AI credits). Leave empty for none.</span><input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No limit"></label>':''}
+   ${bridge.setCap?'<label id="sdCapL"><span id="sdCapT">Spending limit</span><input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No limit" aria-describedby="sdCapH"></label><small class="dhint" id="sdCapH">In AI credits. Empty means no limit.</small>':''}
    <div class="dbtn"><button class="btn" id="sdCancel" type="button">Cancel</button><button class="btn primary" id="sdGo" type="button">Start session</button></div></div>`;
   document.body.appendChild(d);
   $('sdPerm').value=a.info.permMode||'read-only';
@@ -4226,9 +4253,9 @@ function newSession(a0,o){
     const off=c&&!DMK().shows(c,'effort');
     fillEffortSelect($('sdEff'),$('sdModel').value,a.info.effort,off||$('sdModelL').hidden,lk);$('sdEffL').hidden=$('sdEff').hidden;
     if($('sdCapL')){
-      $('sdCapL').hidden=!!c&&!DMK().shows(c,'cap');
+      $('sdCapL').hidden=!!c&&!DMK().shows(c,'cap');$('sdCapH').hidden=$('sdCapL').hidden;
       const cc=c||capsFor(a),usd=!!cc&&cc.capUnit==='usd';
-      if(usd!==capUsd){capUsd=usd;$('sdCapT').textContent=usd?'Spending limit ($, Claude\'s estimate). Leave empty for none.':'Spending limit (AI credits). Leave empty for none.';$('sdCap').min=usd?String(MIN_USD_CAP):'0.001';$('sdCap').value=usd?'':(APP_SETTINGS.defaultMaxAiCredits||'');}
+      if(usd!==capUsd){capUsd=usd;$('sdCapH').textContent=usd?'Claude\'s estimate, in dollars. Empty means no limit.':'In AI credits. Empty means no limit.';$('sdCap').min=usd?String(MIN_USD_CAP):'0.001';$('sdCap').value=usd?'':(APP_SETTINGS.defaultMaxAiCredits||'');}
     }
     if(c)fillPermSelect($('sdPerm'),c);
   };
@@ -4345,10 +4372,19 @@ function schedLine(s){
     +(s.last?' · last '+clock(s.last.at)+': '+(OUTCOME_WORD[s.last.outcome]||s.last.outcome):'');
 }
 /* the row's buttons; `k` is the data attribute (sc in the dialog, ss in Settings). An ended session cannot be resumed, only moved to the folder's agent (FR-014). */
-const schedBtns=(s,k)=>(s.done?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
+const schedBtns=(s,k)=>`<button class="btn" type="button" data-${k}="edit" data-id="${esc(s.id)}">Edit…</button>`+(s.done?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
   :`<button class="btn" type="button" data-${k}="pause" data-id="${esc(s.id)}"${s.pausedReason==='cap'?' title="Resume starts counting its spending again from zero"':''}>${s.paused?'Resume':'Pause'}</button>`)
   +`<button class="btn danger" type="button" data-${k}="del" data-id="${esc(s.id)}">Delete</button>`;
-const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(DurbarCutText.cutText(s.prompt,90))}</b><small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}</div>`;
+/* spec 044 FR-025: the prompt is one line cut to 90 characters; it is a button that shows the whole prompt under the row (aria-expanded) and folds it again; its tooltip is at most 300 characters (spec 052 FR-168) */
+const SCHED_OPEN=new Set();
+const promptToggle=(key,prompt)=>{const open=SCHED_OPEN.has(key);return `<button class="sc-p" type="button" data-pkey="${esc(key)}" aria-expanded="${open}" title="${esc(DurbarCutText.cutText(prompt,300))}">${esc(DurbarCutText.cutText(prompt,90))}</button><p class="sc-full"${open?'':' hidden'}>${esc(prompt)}</p>`;};
+document.addEventListener('click',e=>{
+  const b=e.target.closest&&e.target.closest('.sc-p');if(!b)return;
+  const k=b.dataset.pkey,open=!SCHED_OPEN.has(k);
+  if(open)SCHED_OPEN.add(k);else SCHED_OPEN.delete(k);
+  b.setAttribute('aria-expanded',String(open));const f=b.nextElementSibling;if(f)f.hidden=!open;
+});
+const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}" data-id="${esc(s.id)}"><div class="sc-t">${promptToggle('s:'+s.id,s.prompt)}<small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}</div>`;
 /* pause/resume/retarget/delete from a row (dialog or Settings) */
 async function schedAct(act,s){
   if(act==='del')await bridge.removeSchedule(s.id);
@@ -4373,13 +4409,13 @@ function renderSchedDlg(){
   list.innerHTML=ss.length?ss.map(s=>schedRow(s,'sc')).join(''):'<p class="sc-empty">No schedules for this folder yet.</p>';
   $('sdPausedNote').hidden=!SCHED.pausedAll;
   /* FR-016: the agent app's own schedules of this folder's live sessions, read-only */
-  const own=agents.filter(x=>x.live&&!x.parent&&x.room===r.id&&x.agentScheds&&x.agentScheds.size).flatMap(x=>[...x.agentScheds.values()].map(v=>({x,v})));
+  const own=agents.filter(x=>x.live&&!x.parent&&x.room===r.id&&x.agentScheds&&x.agentScheds.size).flatMap(x=>[...x.agentScheds.entries()].map(([id,v])=>({x,v,id})));
   const ow=$('sdOwn');if(ow){ow.hidden=!own.length;ow.innerHTML=own.length?'<h4>Scheduled in the agent app (read-only)</h4><p class="sc-tpl-note">Made with the app\'s own commands or by the agent. Agent Durbar shows them but cannot change them; ask the agent, or use the app\'s own schedule manager.</p>'
-    +own.map(({x,v})=>`<div class="sc-row off"><div class="sc-t"><b title="${esc(v.prompt)}">${esc(v.prompt||'(no prompt text)')}</b><small>${esc(ownWhen(v)+' · '+(x.name)+(v.origin==='model'?' · made by the agent':v.origin==='user'?' · made by you':''))}</small></div></div>`).join(''):'';}
+    +own.map(({x,v,id})=>`<div class="sc-row off"><div class="sc-t">${v.prompt?promptToggle('o:'+x.id+':'+id,v.prompt):'<b>(no prompt text)</b>'}<small>${esc(ownWhen(v)+' · '+(x.name)+(v.origin==='model'?' · made by the agent':v.origin==='user'?' · made by you':''))}</small></div></div>`).join(''):'';}
 }
 function closeSchedDlg(){const d=$('schedDlg');if(d)d.remove();}
 /* `from`: the chat it was opened from (FR-014: then it can send to that session instead of the folder's agent) */
-function openSchedules(r,from){
+function openSchedules(r,from,opts){
   closeSchedDlg();toggleFolders(false);
   const ag=from&&from.live&&!from.parent&&from.info&&from.room===r.id?from:null;
   const folderAg=agents.find(x=>!x.parent&&x.room===r.id&&x.live)||null;
@@ -4393,50 +4429,106 @@ function openSchedules(r,from){
    <p class="sc-paused" id="sdPausedNote" hidden>All schedules are paused (Folders panel).</p>
    <div class="sc-list" id="sdList"></div>
    <div class="sc-own" id="sdOwn" hidden></div>
-   <div class="sc-form">${window.DurbarSchedTemplates?`<label>Start from a template<select id="scTpl"><option value="">Blank prompt</option>${DurbarSchedTemplates.TEMPLATES.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</select></label><p class="sc-tpl-note" id="scTplNote" hidden></p>`:''}<label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
+   <div class="sc-form"><h4 id="scFormT" hidden>Edit schedule</h4>${window.DurbarSchedTemplates?`<label id="scTplL">Start from a template<select id="scTpl"><option value="">Blank prompt</option>${DurbarSchedTemplates.TEMPLATES.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</select></label><p class="sc-tpl-note" id="scTplNote" hidden></p>`:''}<label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
     <div class="sc-when"><label class="chk"><input type="radio" name="scKind" value="every" checked> Every <input type="number" id="scEvery" min="5" max="1440" step="5" value="60" aria-label="Minutes between runs"> minutes</label>
     <label class="chk"><input type="radio" name="scKind" value="daily"> <select id="scCal" aria-label="Which days"><option value="daily">Every day</option><option value="weekdays">Weekdays (Mon–Fri)</option><option value="weekly">Weekly on</option></select> at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
     <div class="sc-days" id="scDays" role="group" aria-label="Days of the week" hidden>${[1,2,3,4,5,6,0].map(n=>`<label class="chk"><input type="checkbox" value="${n}"${n===today?' checked':''}> ${DAY3[n]}</label>`).join('')}</div>
-    <div class="sc-opts">${ag?`<label class="sc-to"><span class="sc-lbl">Send to</span> <select id="scTarget" aria-describedby="scToHint"><option value="">This folder's agent</option><option value="${esc(ag.id)}">This session</option></select></label>`:''}
-     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div>${ag?`<p class="sc-hint" id="scToHint" title="${esc(ag.name)}" hidden>${esc(ag.name)}</p>`:''}</div>
-   <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
+    <div class="sc-opts"><label class="sc-to" id="scToL"${ag?'':' hidden'}><span class="sc-lbl">Send to</span> <select id="scTarget" aria-describedby="scToHint"><option value="">This folder's agent</option><option value="${ag?esc(ag.id):''}">This session</option></select></label>
+     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div><p class="sc-hint" id="scToHint" title="${ag?esc(ag.name):''}" hidden>${ag?esc(ag.name):''}</p></div><p class="sc-tpl-note" id="scCapKeep" hidden></p>
+   <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn" id="scCancel" type="button" hidden>Cancel</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
   renderSchedDlg();
+  const toLocal=ms=>{const x=new Date(ms);return `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}T${pad(x.getHours())}:${pad(x.getMinutes())}`;};
+  /* what "This session" means: the chat the dialog came from, or (editing) the schedule's own session; `live` is its agent when it still exists */
+  let tgt=ag?{id:ag.id,agent:ag.info.adapterId||'copilot',name:ag.name,live:ag}:null;
+  let editing=null; /* spec 044 FR-022: the schedule the form edits (main's copy when Edit… was pressed), or null when it adds one */
+  const applyTgt=()=>{
+    $('scToL').hidden=!tgt;
+    const sel=$('scTarget');sel.options[1].value=tgt?tgt.id:'';
+    $('scToHint').textContent=tgt?tgt.name:'';$('scToHint').title=tgt?tgt.name:'';
+    $('scToHint').hidden=!sel.value;
+  };
+  let capUnitNow=schedCapUnit(folderAg); /* a number typed for one unit is never carried to another (5 dollars must not become 5 AI credits) */
+  const syncCap=()=>{const sel=$('scTarget'),u=schedCapUnit(sel.value&&tgt?tgt.live||folderAg:folderAg);if(u!==capUnitNow&&$('scCap'))$('scCap').value='';capUnitNow=u;$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);const keep=$('scCapKeep'),gone=!!editing&&!!editing.cap&&!u,same=!editing||(editing.target?editing.target.session:'')===(sel.value||'');keep.hidden=!gone;
+    keep.textContent=same?'The limit this schedule has is kept: this agent app does not report what a run costs, so it cannot be changed here.':'This agent app does not report what a run costs, so the limit will be removed.';};
+  const setKind=k=>{d.querySelector(`input[name="scKind"][value="${k}"]`).checked=true;};
+  const showDays=()=>{$('scDays').hidden=$('scCal').value!=='weekly';};
+  /* the form back to a blank new schedule */
+  const blankForm=()=>{
+    $('scPrompt').value='';setKind('every');$('scEvery').value='60';$('scCal').value='daily';$('scDaily').value='08:30';$('scAt').value=local;
+    d.querySelectorAll('#scDays input').forEach(x=>{x.checked=Number(x.value)===today;});showDays();
+    tgt=ag?{id:ag.id,agent:ag.info.adapterId||'copilot',name:ag.name,live:ag}:null;applyTgt();$('scTarget').value='';$('scToHint').hidden=true;
+    if($('scCap'))$('scCap').value='';if($('scTpl')){$('scTpl').value='';$('scTplNote').hidden=true;}syncCap();
+  };
+  const setMode=on=>{
+    $('scFormT').hidden=!on;$('scCancel').hidden=!on;$('scAdd').textContent=on?'Save':'Add schedule';
+    if($('scTplL'))$('scTplL').hidden=on;if($('scTplNote'))$('scTplNote').hidden=true; /* owner Q3: no template picker while editing */
+  };
+  const stopEdit=()=>{editing=null;blankForm();setMode(false);};
+  /* FR-022: Edit… fills the form from the schedule */
+  const startEdit=s=>{
+    editing=s;blankForm();setMode(true);
+    $('scPrompt').value=s.prompt;
+    if(s.rule){setKind('daily');$('scCal').value=s.rule.kind;$('scDaily').value=s.rule.time;d.querySelectorAll('#scDays input').forEach(x=>{x.checked=(s.rule.days||[]).includes(Number(x.value));});showDays();}
+    else if(s.every!==undefined){setKind('every');$('scEvery').value=String(s.every);}
+    else{setKind('once');$('scAt').value=toLocal(s.at);}
+    if(s.target){const a=agents.find(x=>x.id===s.target.session&&x.live&&x.info);tgt={id:s.target.session,agent:s.target.agent,name:a?a.name:(s.target.name||'one session'),live:a||null};}
+    applyTgt();$('scTarget').value=s.target?s.target.session:'';$('scToHint').hidden=!$('scTarget').value;syncCap();
+    if(s.cap&&$('scCap')&&!$('scCapL').hidden)$('scCap').value=String(s.cap.amount);
+    $('scFormT').scrollIntoView({block:'nearest'});$('scPrompt').focus();
+  };
+  /* one builder for Add and Save (FR-023: main checks it again); null after telling the user what is missing */
+  const buildInput=()=>{
+    const prompt=$('scPrompt').value.trim();if(!prompt){$('scPrompt').focus();toast('Write the prompt first.',3000);return null;}
+    const kind=d.querySelector('input[name="scKind"]:checked').value;
+    const input={folder:editing?editing.folder:folderKeyOf(r),prompt};
+    if(editing){input.id=editing.id;input.edit=true;}
+    if(kind==='daily'){ /* spec 044 FR-012: a calendar rule; main computes the next run from the local wall clock */
+      const time=$('scDaily').value;if(!/^\d\d:\d\d$/.test(time)){toast('Choose a time of day.',3500);return null;}
+      const cal=$('scCal').value,rule={kind:cal,time};
+      if(cal==='weekly'){rule.days=[...d.querySelectorAll('#scDays input:checked')].map(x=>Number(x.value));if(!rule.days.length){toast('Choose at least one day.',3500);return null;}}
+      input.rule=rule;
+    }
+    else if(kind==='once'){
+      let t=new Date($('scAt').value).getTime();
+      if(editing&&!editing.done&&editing.at!==undefined&&$('scAt').value===toLocal(editing.at))t=editing.at; /* an unchanged time stays as it is */
+      if(!(t>Date.now())&&!(editing&&!editing.done&&t===editing.at)){toast(editing&&editing.done?'Pick a time in the future to run it again.':'Choose a time in the future.',3500);return null;}
+      input.at=t;
+    }
+    else{const m=Math.round(Number($('scEvery').value));if(!(m>=5&&m<=1440)){toast('Choose 5 to 1440 minutes.',3500);return null;}input.every=m;if(editing&&editing.every===m&&editing.at!==undefined)input.at=editing.at; /* FR-007: an anchored interval keeps its first time */}
+    const tsel=$('scTarget'),tag=tsel&&tsel.value&&tgt?tgt:null; /* FR-014 */
+    if(tag)input.target={session:tag.id,agent:tag.agent,name:SN().shortName(tag.name||'',40)};
+    else if(editing)input.target=null;
+    const capV=$('scCap')&&!$('scCapL').hidden?String($('scCap').value).trim():''; /* FR-015 */
+    if(capV){const n=Number(capV),u=schedCapUnit(tag?tag.live||folderAg:folderAg);if(!(n>0)||!u){toast('A limit must be a positive amount.',3500);return null;}input.cap={amount:n,unit:u};}
+    else if(editing&&(!$('scCapL').hidden||(editing.cap&&!$('scCapKeep').hidden&&(editing.target?editing.target.session:'')!==($('scTarget').value||''))))input.cap=null; /* an empty field removes the limit; a hidden one keeps it, unless Send to moved to an app with no unit (then main would refuse it) */
+    return input;
+  };
   d.addEventListener('click',async e=>{
     if(e.target===d){closeSchedDlg();return;}
     const b=e.target.closest('button');if(!b)return;
     if(b.id==='scClose'){closeSchedDlg();return;}
+    if(b.id==='scCancel'){stopEdit();return;}
     if(b.id==='scAdd'){
-      const prompt=$('scPrompt').value.trim();if(!prompt){$('scPrompt').focus();toast('Write the prompt first.',3000);return;}
-      const kind=d.querySelector('input[name="scKind"]:checked').value,once=kind==='once';
-      const input={folder:folderKeyOf(r),prompt};
-      if(kind==='daily'){ /* spec 044 FR-012: a calendar rule; main computes the next run from the local wall clock */
-        const time=$('scDaily').value;if(!/^\d\d:\d\d$/.test(time)){toast('Choose a time of day.',3500);return;}
-        const cal=$('scCal').value,rule={kind:cal,time};
-        if(cal==='weekly'){rule.days=[...d.querySelectorAll('#scDays input:checked')].map(x=>Number(x.value));if(!rule.days.length){toast('Choose at least one day.',3500);return;}}
-        input.rule=rule;
-      }
-      else if(once){const t=new Date($('scAt').value).getTime();if(!(t>Date.now())){toast('Choose a time in the future.',3500);return;}input.at=t;}
-      else{const m=Math.round(Number($('scEvery').value));if(!(m>=5&&m<=1440)){toast('Choose 5 to 1440 minutes.',3500);return;}input.every=m;}
-      const tsel=$('scTarget'),tag=tsel&&tsel.value?ag:null; /* FR-014 */
-      if(tag&&tag.info)input.target={session:tag.id,agent:tag.info.adapterId||'copilot',name:SN().shortName(tag.name||'',40)};
-      const capV=$('scCap')&&!$('scCapL').hidden?String($('scCap').value).trim():''; /* FR-015 */
-      if(capV){const n=Number(capV),u=schedCapUnit(tag||folderAg);if(!(n>0)||!u){toast('A limit must be a positive amount.',3500);return;}input.cap={amount:n,unit:u};}
+      const input=buildInput();if(!input)return;
+      const was=editing;
       const res=await bridge.saveSchedule(input);
-      if(!res.ok){toast(esc(res.error||'Could not add the schedule.'),5000);return;}
-      $('scPrompt').value='';if($('scCap'))$('scCap').value='';await refreshSchedules();toast('Schedule added: '+esc(whenOf(res.schedule))+'.',3000);return;
+      if(!res.ok){toast(esc(res.error||(was?'Could not save the schedule.':'Could not add the schedule.')),5000);if(was&&res.error==='That schedule is gone.'){stopEdit();await refreshSchedules();}return;}
+      if(was)stopEdit();else{$('scPrompt').value='';if($('scCap'))$('scCap').value='';}await refreshSchedules();toast((was?'Schedule saved: ':'Schedule added: ')+esc(whenOf(res.schedule))+'.',3000);return;
     }
     const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s||!b.dataset.sc)return;
+    if(b.dataset.sc==='edit'){startEdit(s);return;}
     await schedAct(b.dataset.sc,s);
   });
   /* the calendar choice: weekly shows the days; touching any of it picks "On a calendar" */
-  const calKind=()=>{d.querySelector('input[name="scKind"][value="daily"]').checked=true;};
-  const showDays=()=>{$('scDays').hidden=$('scCal').value!=='weekly';};
+  const calKind=()=>{setKind('daily');};
   $('scCal').addEventListener('change',()=>{calKind();showDays();});
   $('scDaily').addEventListener('input',calKind);
   $('scDays').addEventListener('change',calKind);
-  if($('scTarget'))$('scTarget').addEventListener('change',()=>{$('scToHint').hidden=!$('scTarget').value;const t=$('scTarget').value?ag:folderAg,u=schedCapUnit(t);$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);});
+  $('scTarget').addEventListener('change',()=>{$('scToHint').hidden=!$('scTarget').value;syncCap();});
+  applyTgt();
+  if(opts&&opts.edit){const s=SCHED.schedules.find(x=>x.id===opts.edit);if(s)startEdit(s);}
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
   /* spec 044 FR-006: a template fills the form (prompt and when); nothing is saved until Add schedule */
   const tpl=$('scTpl');if(tpl)tpl.addEventListener('change',()=>{
@@ -4447,7 +4539,7 @@ function openSchedules(r,from){
     else if(t.every){d.querySelector('input[name="scKind"][value="every"]').checked=true;$('scEvery').value=String(t.every);}
     note.textContent=t.needs+(t.decides?' At the end it asks you what to do next: the agent shows as Waiting, with a question card in its chat.':'')+' You can edit the prompt and the time before adding it.';note.hidden=false;
   });
-  (tpl||$('scPrompt')).focus();
+  if(!editing)(tpl||$('scPrompt')).focus();
 }
 async function refreshSchedules(){if(!bridge.listSchedules)return;SCHED=await bridge.listSchedules();schedChanged();}
 /* everything that shows schedules: the Folders panel, the open dialog, room chips (office render), Settings (spec 044 FR-009..FR-011) */
@@ -4461,7 +4553,7 @@ function renderSchedSettings(){
   const groups=rooms.map(r=>({r,ss:schedulesOf(r)})).filter(g=>g.ss.length);
   const without=rooms.filter(r=>!schedulesOf(r).length);
   host.innerHTML=`<label class="fp-pause"><input type="checkbox" id="schedPauseAllSet"${SCHED.pausedAll?' checked':''}> Pause all schedules</label>`
-    +(groups.length?groups.map(({r,ss})=>`<div class="ss-group"><div class="ss-head"><b>${esc(r.name)}</b><small>${esc(r.path)}</small><button class="btn" type="button" data-ss="open" data-room="${esc(r.id)}">Open…</button></div>`
+    +(groups.length?groups.map(({r,ss})=>`<div class="ss-group"><div class="ss-head"><b>${esc(r.name)}</b><small>${esc(r.path)}</small><button class="btn" type="button" data-ss="open" data-room="${esc(r.id)}" title="See this folder's schedules and add one">Schedules for this folder…</button></div>`
       +ss.map(s=>schedRow(s,'ss')).join('')+'</div>').join('')
       :'<p class="scr-note small">No schedules yet.</p>')
     +(without.length?`<div class="scr-tools"><label class="ss-add">Add a schedule to<select id="ssRoom">${without.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><button class="btn" type="button" data-ss="add">Add…</button></div>`:'');
@@ -4472,6 +4564,7 @@ document.addEventListener('click',async e=>{
   if(act==='open'){const r=ROOMS.find(x=>x.id===b.dataset.room);if(r)openSchedules(r);return;}
   if(act==='add'){const r=ROOMS.find(x=>x.id===$('ssRoom').value);if(r)openSchedules(r);return;}
   const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s)return;
+  if(act==='edit'){const r=ROOMS.find(x=>folderKeyOf(x)===s.folder);if(r)openSchedules(r,null,{edit:s.id});else toast('That folder is not in the office.',3500);return;}
   await schedAct(act,s);
 });
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAllSet'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;schedChanged();}});
@@ -4628,6 +4721,7 @@ function initPrev(a){
   if((!bridge.listPrevious||!feat(a,'history'))&&!bridge.listVsChats){box.hidden=true;return;}
   const st=prevOf(a), p=prevPref();
   if(p!==null){st.open=p;st.touched=true;} /* a saved choice wins over the FR-002 auto-open */
+  st.wantOpen=false; /* FR-036 (review on PR 497): a Ctrl+Shift+H pressed before leaving this chat is dropped, not fulfilled when an old load comes back */
   vsViewing=false; st.showHidden=false; renderPrev(a); loadPrev(a); /* Show hidden is per panel, not saved */
 }
 /* FR-036: Ctrl+Shift+H (⇧⌘H) opens or closes the section; focus goes to the search (or the first row) when it opens, back to the toggle when it closes */
@@ -4708,6 +4802,7 @@ function renderPrev(a){
   if(!prevShows(st)){box.hidden=true;box.classList.remove('open');panel.hidden=true;panel.innerHTML='';return;}
   const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0; /* the search box counts every row, hidden or not */
   const keepScroll=(panel.querySelector('.prev-body')||{}).scrollTop||0;
+  const qf=document.activeElement&&document.activeElement.id==='prevQ'?document.activeElement:null, qSel=qf?[qf.selectionStart,qf.selectionEnd]:null; /* a re-render (a list coming back) keeps focus in the search */
   let h='';
   if(st.open){
     h+='<div class="prev-body">';
@@ -4718,6 +4813,7 @@ function renderPrev(a){
     h+='</div>';
   }
   box.hidden=false; box.classList.toggle('open',!!st.open); panel.hidden=!st.open; panel.innerHTML=h;
+  if(qf){const nq=$('prevQ');if(nq){nq.focus();try{nq.setSelectionRange(qSel[0],qSel[1]);}catch(e){}}}
   const nb=panel.querySelector('.prev-body'); if(nb){nb.scrollTop=keepScroll;
     /* spec 052 (2026-10-21, round 1): a cut last row read like text over the chat; fade it while more rows are below */
     const more=()=>nb.classList.toggle('more-below',nb.scrollTop+nb.clientHeight<nb.scrollHeight-2);
@@ -4965,7 +5061,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */
@@ -4992,7 +5088,7 @@ if(bridge){
   if(bridge.onAgentRenamed)bridge.onAgentRenamed(onAgentRenamed);
   /* spec 061: a folder's own agent setup is shown when its agent joins the office (once per folder in this run) */
   if(window.DurbarFolderSetup){window.DurbarFolderSetup.init({bridge,esc,toast:(t,ms)=>toast(esc(t),ms),onRules:map=>{for(const id of Object.keys(map)){const a=liveById(id);if(!a||!a.info)continue;a.info.folderRules=map[id]||undefined;const c=$('modeChip'),sel=ui.selected&&liveRoot(byId(ui.selected)||a);if(c&&sel&&sel.id===a.id)c.outerHTML=modeChipHTML(a);}}});}
-  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
+  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);agentsListed=true;renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
     restoreUi();renderAwayStrip(); /* spec 052 FR-087 / FR-089 */
     /* spec 052 FR-059: what already needs you a few seconds after start is remembered, not notified */
     setTimeout(()=>{renderInboxBtn();ATT_ARMED=true;},3000);});
@@ -5021,5 +5117,8 @@ renderFilter(); renderAll();
 if(qs.get('view')==='list')setView('list');
 if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 /* spec 059 test hook, simulator only: a driver reads agents and calls what the Previous sessions row menu will call */
-if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow};
+/* spec 008 FR-113, simulator only: false until the agents are listed, the frozen simulator has replayed every script and the saved usage
+   totals are read; then any queued frame is drawn now (a stalled animation frame once left a comparison driver measuring a stale page) */
+const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
+if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow,settleNow,bridge:()=>bridge}; /* bridge: the simulator's fake (spec 005 T073: a driver counts Stop calls); never set outside DURBAR_SIM */
 })();
