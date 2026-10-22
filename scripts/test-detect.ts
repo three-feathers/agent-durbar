@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import { CLAUDE_BINARY, CLAUDE_SIGN_IN_HINT, CODEX_BINARY, CODEX_SIGN_IN_HINT, detectCodex, candidates, compareVersions, detectBinary, detectClaude, detectCopilot, detectorFor, parseVersion } from '../src/adapters/detect';
 import type { DetectEnv, Exec, ExecResult } from '../src/adapters/detect';
-import { newestFirst } from '../src/adapters/detect';
+import { newestFirst, isAppAlias, statIsFile, windowsAppsDir } from '../src/adapters/detect';
 import { loginShellCommand, mergeLoginPath, parseLoginPath, readLoginShellPath, MAX_LOGIN_DIRS } from '../src/main/loginpath';
 import { EventEmitter } from 'events';
 import { createRegistry, detectAll } from '../src/adapters/registry';
@@ -332,6 +332,37 @@ async function main(): Promise<void> {
     const before = spawned.length;
     assert.deepStrictEqual(await readLoginShellPath({ platform: 'win32', shellEnv: undefined, isFile, spawn: fakeSpawn }), [], 'not on Windows');
     assert.strictEqual(spawned.length, before, 'no spawn on Windows');
+  }
+  // spec 060 FR-010: App Execution Aliases (winget.exe) in %LOCALAPPDATA%\Microsoft\WindowsApps
+  {
+    const env = { LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' };
+    const dir = 'C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps';
+    assert.strictEqual(windowsAppsDir({ platform: 'win32', env }), dir);
+    assert.strictEqual(windowsAppsDir({ platform: 'linux', env }), undefined);
+    assert.strictEqual(windowsAppsDir({ platform: 'win32', env: { LOCALAPPDATA: 'relative' } }), undefined, 'only an absolute LOCALAPPDATA');
+    const spec = (name: string) => ({ name, versionArgs: [], installHint: '' });
+    const w = candidates(spec('winget'), { platform: 'win32', env, homedir: 'C:\\Users\\u', isFile: () => false });
+    assert.ok(w.includes(dir + '\\winget.exe'), 'winget is looked for in WindowsApps');
+    assert.ok(candidates(spec('pwsh'), { platform: 'win32', env, homedir: 'C:\\Users\\u', isFile: () => false }).includes(dir + '\\pwsh.exe'), 'a Store PowerShell 7 too');
+    for (const n of ['claude', 'codex', 'copilot', 'npm']) assert.ok(!candidates(spec(n), { platform: 'win32', env, homedir: 'C:\\Users\\u', isFile: () => false }).some((c) => c.startsWith(dir)), `no WindowsApps look-up for ${n}`);
+    assert.ok(isAppAlias(dir.toLowerCase() + '\\winget.exe', { platform: 'win32', env }), 'case-insensitive');
+    assert.ok(!isAppAlias(dir + '\\sub\\winget.exe', { platform: 'win32', env }), 'directly in the folder only');
+    assert.ok(!isAppAlias('/home/u/winget', { platform: 'linux', env }));
+    // Node's stat throws EACCES on an alias; lstat answers. Only in WindowsApps is lstat asked.
+    const eacces = () => { throw Object.assign(new Error('EACCES'), { code: 'EACCES' }); };
+    let lstats = 0;
+    const fsx = (lstatOk: boolean, isDir = false) => ({ statSync: eacces, lstatSync: () => { lstats++; if (!lstatOk) eacces(); return { isDirectory: () => isDir }; } });
+    assert.strictEqual(statIsFile(dir + '\\winget.exe', 'win32', env, fsx(true)), true, 'an alias counts as a file');
+    assert.strictEqual(statIsFile(dir + '\\winget.exe', 'win32', env, fsx(false)), false, 'missing: no');
+    assert.strictEqual(statIsFile(dir + '\\winget.exe', 'win32', env, fsx(true, true)), false, 'a folder: no');
+    assert.strictEqual(statIsFile(dir + '\\PWSH.EXE', 'win32', env, fsx(true)), true, 'a Store pwsh too, any case');
+    // review on #469: only the aliases FR-010 names; claude, codex, copilot or anything else in WindowsApps stays "no"
+    for (const n of ['claude.exe', 'codex.exe', 'copilot.exe', 'python.exe', 'winget.cmd', 'winget']) assert.strictEqual(statIsFile(dir + '\\' + n, 'win32', env, fsx(true)), false, `no alias fallback for ${n}`);
+    lstats = 0;
+    assert.strictEqual(statIsFile('C:\\Program Files\\nodejs\\npm.cmd', 'win32', env, fsx(true)), false, 'elsewhere a failing stat stays no');
+    assert.strictEqual(statIsFile('/usr/bin/x', 'linux', env, fsx(true)), false);
+    assert.strictEqual(lstats, 0, 'lstat is asked only in WindowsApps');
+    assert.strictEqual(statIsFile('/usr/bin/x', 'linux', env, { statSync: () => ({ isFile: () => true }), lstatSync: eacces as never }), true, 'stat first');
   }
   console.log('detect tests passed');
 }
