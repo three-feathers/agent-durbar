@@ -75,3 +75,7 @@
   7. The spec records `[KNOWN GAP]` for: taskbar and toasts on a real PC (#9), the Mac menu-bar title by eye, and the Linux launcher name on a desktop.
   8. `npm run typecheck && npm run build && npm test` pass.
 - [x] T094 (2026-10-21, #414) Simulator drivers share `scripts/driver-helpers.js` (FR-097): `js`, `shot`, `key`, `clickText`, load-and-wait move there; every driver uses them; no assertion changes. Done: `ui-suite` all green after each batch, `check:office`, `check:geometry`, Mac title bar check, `npm run typecheck && npm run build && npm test`; screenshot-only drivers run once by hand.
+
+## 2026-10-22: steady geometry captures (flake on PR #535)
+
+- [ ] T100 `settleNow()` simulator hook in `src/renderer/app.js` (listed + replayed + usage totals read; draws a queued frame), replay flag in `src/renderer/sim.ts`; `scripts/check-theme-geometry.js` waits for it before every capture and fails on a timed-out wait; 5 local runs and a one-theme mutation; `docs/agent-notes.md`, CHANGELOG [FR-113]
