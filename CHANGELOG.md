@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.11 tag)
 
+- Test tooling only: the masking time checks in `test-redact` and the 200,000-line flood check in `test-mcp-protocol` measure CPU time instead of wall time, so a loaded machine or runner no longer fails them at random; same sizes and limits, and a deliberately quadratic rule still fails (spec 041 T068, Ruben's note on #455).
+
 ## v0.1.0-alpha.11 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.11), 2026-10-22)
 
 - **Help text and UI text that fit** (spec 052 FR-165..FR-171, issue #464): prose wraps between words and is never under 10.5px, help text shares one 560px measure, dialogs have three widths (420, 560, 760px), menus one width (320px) with no one-word last line in a hint, tooltips are at most 120 characters (data tooltips such as the totals, 300 characters and 8 lines), Send to several and Tools > Models and context no longer scroll sideways or cut names without a `title`, Needs you headings give the name its own line, Models and context shows the folder name (not its id), code blocks keep a strip for their Copy button, field labels stay one line with a hint under them, the shortcut sheet aligns its columns, the streaming caret and the Copy button no longer collide, a toast sits above the composer, and the 42 old light-colour rules (chips, notes, code, sub-agent blocks) now use theme tokens, so they read in dark themes. New check `npm run check:ui-text` (in `check:ui`). Checked in the simulator only (Linux, Noto Sans and DejaVu Sans); not on Windows or macOS fonts.

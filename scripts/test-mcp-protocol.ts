@@ -301,10 +301,12 @@ async function main(): Promise<void> {
     const c4 = loopback(mk(), 0, { onClose: () => { closed++; } });
     const flood = Buffer.from('x\n'.repeat(200000));
     assert.strictEqual(flood.length, 400000);
-    const t0 = Date.now();
+    // CPU time, not wall time, so a loaded machine cannot fail it (spec 041 T068); it still counts every line the parser touches
+    const c0 = process.cpuUsage();
     c4.conn.onData(flood);
-    const ms = Date.now() - t0;
-    assert.ok(ms < 1000, `flood handled quickly (${ms} ms)`);
+    const cpu = process.cpuUsage(c0);
+    const ms = (cpu.user + cpu.system) / 1000;
+    assert.ok(ms < 1000, `flood handled quickly (${ms} ms CPU)`);
     assert.ok(c4.replies.length <= RATE_PER_SECOND, `at most a handful of replies (${c4.replies.length})`);
     assert.strictEqual(closed, 1, 'close signalled once');
     assert.ok(c4.conn.closed);
