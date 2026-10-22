@@ -57,11 +57,19 @@
 - [x] T039 `src/renderer/probe.js` (`svgHollow`, `styleSplit`), `probeSet` in `chooseLayout`, `@property` for `--w`/`--min`/`--cols` in `styles.css`; `scripts/test-probe.ts` (`npm run test:probe`) [FR-033]
 - [x] T040 Before/after timing and a layout comparison over 54 cases on the simulator; `check:office`, `check:geometry`, `shots-033`; spec 001 and 033 Verification, `specs/README.md`, CHANGELOG, `docs/agent-notes.md` [SC-004]
 
-## Changes 2026-10-22 (office rail, who is at a place; owner)
+## Changes 2026-10-22 (who is where, who waits, what is scheduled; owner)
+
+First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were removed by the owner's decision of 2026-10-22 06:53 Zurich and replaced by T047..T052.
 
 - [x] T041 `places.js` `tileChips` + `test:places` cases [FR-036]
-- [x] T042 `app.js`/`index.html`/`styles.css`: the rail (Needs you, Scheduled, legend), strip mode, `renderRail` [FR-034]
-- [x] T043 `renderOffice`: rail then strip by the fit rule, width of `.workspace` in the layout key [FR-035]
+- [x] T042 ~~the rail (Needs you, Scheduled, legend), strip mode, `renderRail`~~ built, then removed in T047 (owner)
+- [x] T043 ~~`renderOffice`: rail then strip by the fit rule~~ built, then removed in T047 (owner)
 - [x] T044 Lobby entries (name, activity, initials, count, "nobody", +N menu) and the 58 px lobby; `check:office` lobby rules [FR-036]
 - [x] T045 Room header words and their fitting [FR-037]
-- [x] T046 `sim.ts` `simsched=1`; `scripts/shots-001-rail.js` driver and screenshots (1440x900, 1280x800; 15 and sparse; light and dark); `check:office`, `check:geometry`; README office section and hero if it changes, CHANGELOG, `specs/README.md` [FR-038]
+- [x] T046 `sim.ts` `simsched=1` (kept); the rail driver and screenshots (removed in T047)
+- [ ] T047 Remove the rail: `#rail`, `renderRail`/`railHTML`, rail CSS, the rail/strip search and room-name fold in `renderOffice`, `check:office` rail rules, `scripts/shots-001-rail.js` and `docs/screenshots/001-rail-*` [FR-034..FR-039]
+- [ ] T048 `places.js`: `BOSS`, `BANK`, `POSTBOX`, `lobbyFit`, `lobbyOrder`, `postLines`, `lettersToday`; `test:places` [FR-038, FR-039]
+- [ ] T049 Boss: `syncDesks` pins, queue entries (badge, wait, order), click to the request, desk note, theme words (`theme.js`, `themegen.ts`) [FR-034]
+- [ ] T050 Bank: the cap break waits at the Bank with *Limit reached*; spec 068 and 024 cross-references; `shots-068-coffee.js` [FR-035]
+- [ ] T051 Postbox: next 3, today, flag, click to Settings > Schedules, the flying letter; `simsched` seeds a missed run [FR-038]
+- [ ] T052 `check:office` special tiles; `scripts/shots-001-lobby.js` driver and screenshots (1440x900, 1280x800; 15 and sparse; Clean Office and Retro Pixel); README, CHANGELOG, `specs/README.md`, `docs/agent-notes.md` [FR-040]
