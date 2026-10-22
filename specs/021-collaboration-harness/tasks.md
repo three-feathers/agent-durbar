@@ -15,3 +15,4 @@
 - [ ] T013 Review the gate strictness after two weeks of use
 - [x] T015 (2026-10-20) Team rules into `AGENTS.md` (review findings fixed in the PR, existing-capability check, re-approval by patch id, admin merge, OKs in chat, working hours, branch cleanup, spec numbers, share what you learn) and the mirrors (`CLAUDE.md`, `.github/copilot-instructions.md`, PR template, `docs/collaboration.md`); new `docs/agent-notes.md` seeded from the agents' memory [FR-030..FR-034]
 - [x] T016 (2026-10-20) Rule *read every review and comment before a merge* in AGENTS.md and its mirrors; `scripts/pr-gate.sh` [FR-035]
+- [x] T017 (2026-10-22) Rule *test once, then trust the record* in AGENTS.md and its mirrors; `scripts/pr-gate.sh` skips `reviewing at` / `checks run at` notes [FR-036]

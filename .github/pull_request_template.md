@@ -14,7 +14,7 @@ Closes #<!-- issue number: one issue = one Spec Kit task -->
 - [ ] I claimed the issue (assigned + `status:claimed`) before starting
 - [ ] Every point of the linked issue is done (`Closes #N`), or what is left is written on the issue and it stays open (`Refs #N`)
 - [ ] The agent did a final review of the whole diff as a reviewer (not only CI) and says below what it checked; another team's agent or a human may review too
-- [ ] I posted `checks run at <sha>: …` as a PR comment, and reviewers read CI for that sha instead of re-running the suites (AGENTS.md, *Test once, then trust the record*)
+- [ ] I posted my own `checks run at <sha>: …` comment on this PR (AGENTS.md, *Test once, then trust the record*)
 - [ ] Before merging: every review, review thread and PR comment is read and answered, and `scripts/pr-gate.sh <N>` says *ready to merge*
 - [ ] Every solvable review finding is fixed in this PR (no "non-blocking" notes or small follow-up issues left behind; AGENTS.md, *Review findings are fixed in the PR*)
 - [ ] I checked that the app has no existing capability doing the same job, or this PR reuses/extends it (name it below)
