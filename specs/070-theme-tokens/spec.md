@@ -27,9 +27,9 @@ A theme pack today can set 147 colour tokens, name one UI style and one scene ki
 ## User Scenarios & Testing
 
 ### Story 1 - A theme with its own fonts and shapes (P1)
-A user imports (or the AI makes) a pack that sets a rounded display font, softer corners and deeper card shadows. After picking it, room plates, dialog titles and the brand use the display font, cards and buttons use the new radii and shadows, and the layout is exactly the same as in Clean Office.
+A user imports (or the AI makes) a pack that sets a rounded display font, softer corners and deeper card shadows. After picking it, room plates, dialog titles and the brand use the display font, cards and buttons use the new radii, cards use `--shadow-card` and menus and popovers use `--shadow-pop` (dialogs keep the app's own shadow), and the layout is exactly the same as in Clean Office.
 
-**Acceptance**: `check:geometry` passes with the pack; the computed `font-family`, `border-radius` and `box-shadow` of a card, a button and a dialog title are the pack's.
+**Acceptance**: `check:geometry` passes with the pack; the computed `font-family` of a dialog title, the `border-radius` of a card and a button, and the `box-shadow` of a card and a menu are the pack's.
 
 ### Story 2 - People and gadgets that fit the look (P1)
 The pack gives a shirt palette (pinks), hair colours and its own cup and laptop drawings. Every desk, helper tile, walker and chip draws people in the pack's clothes, and an idle desk shows the pack's cup.
@@ -37,7 +37,7 @@ The pack gives a shirt palette (pinks), hair colours and its own cup and laptop 
 **Acceptance**: `check:theme-art` (spec 040 FR-023) with the sample pack asserts the shirt colours on desks, walkers and chips and the gadget slots on desks.
 
 ### Story 3 - Bad values do not break the look (P2)
-A pack with a script in an SVG, a remote font URL, a 2px font size, a 40px radius and unreadable text colours still loads: each bad value uses the default, the failing text pair falls back as a pair, and the card says how many values fell back.
+A pack with a script in an SVG, a font that is not on the allow-list, a 2px font size, a 40px radius and unreadable text colours still loads: each unusable value uses the default, the failing text pair falls back as a pair, and the card says how many values fell back. (A remote font URL is not unusable but hostile: any `url(` refuses the whole pack, FR-020 and D6.)
 
 ## Requirements
 
@@ -59,7 +59,7 @@ A pack with a script in an SVG, a remote font URL, a 2px font size, a 40px radiu
 - **FR-011** `[IMPLEMENTED]` New art slots `gadget-cup` (the idle cup, replaces the app's drawing; area x 96-114, y 66-87 of the 200x124 stage) and `gadget-laptop` (the laptop on the desk, replaces it; area x 55-99, y 79-88). Same sanitizer as every slot (spec 040 FR-005: rebuilt from a tag and attribute allow-list, no text, no scripts, no `foreignObject`, no `image`, no `href`, no external `url()`), at most 24,000 characters per slot (a compiled pixel map of a built-in pack reaches about 17,000). Drawn in every scene kit; the steam over an idle cup stays (it is a status cue).
 
 ### Validation, fallbacks, contrast
-- **FR-020** `[IMPLEMENTED]` Two levels. A value that looks **hostile** (markup or CSS syntax: `<`, `>`, `{`, `}`, `;`, `\`, `@`, `url(`, `expression(`, `var(`, or a key that is not `--name`) still refuses the whole pack at import, as since spec 040 FR-006: a crafted pack is not installed. A value that is only **unusable** (a known token with a value of the wrong type or out of range, a font not on the allow-list, an unknown `--name`) is dropped on its own and Clean Office's value is used (D5); `checkUserManifest` returns the dropped keys (`dropped`), and the renderer drops the same ones.
+- **FR-020** `[IMPLEMENTED]` Two levels. A value that looks **hostile** (markup or CSS syntax: `<`, `>`, `{`, `}`, `;`, `\`, `@`, `url(`, `expression(`, `var(`, or a key that is not `--name`) still refuses the whole pack at import, as since spec 040 FR-006: a crafted pack is not installed. A value that is only **unusable** (a known token with a value of the wrong type or out of range, a font not on the allow-list, an unknown `--name`) is dropped on its own and Clean Office's value is used (D5); `checkUserManifest` returns the dropped keys (`dropped`), and the renderer drops the same ones, with one difference: an unknown `--name` is kept on disk by main (it is not in `dropped`), and the renderer ignores it and counts it in the Settings note. Allow-lists (fonts, typed tokens, built-in ids) are looked up by own property only, so a name such as `constructor` or `__proto__` is a font not on the list (unusable), never a match.
 - **FR-021** `[IMPLEMENTED]` After the type check, the text pairs of spec 040 FR-017 (`CONTRAST_PAIRS`) are checked on the resolved tokens of a **user** theme (imported or made with AI); a failing pair is fixed as D4 and FR-023 say when the theme is applied, and the scenes read the same resolved values. Built-in packs are designed and tested by hand and are left as they are (Retro's `--ink` is a fill under fixed light text, not text on `--bg`).
 - **FR-022** `[IMPLEMENTED]` Settings shows, under the theme list, one line per user theme with fallbacks: "N values use the defaults (not usable)" and/or "M colours adjusted so text stays readable". The AI dialog's preview shows the adjusted count for the theme it made (FR-024) next to its warnings.
 - **FR-023** `[IMPLEMENTED]` (spec delta 2026-10-22, review on #500) The contrast fix changes **only the failing pair, minimally, and never a base surface**. Base surfaces: `--bg`, `--surface`, `--surface-2`, `--raised`, `--card` and `--card-*`, `--soft`, `--note`, `--pb-*`, `--drop-bg`, `--brand-bg`, `--idle-stub`. Of a failing pair, the side that is not a base surface is changed (the text, or the accent of a button whose text is `--surface`); its colour is mixed toward white or black (whichever reads better on the other side) by the smallest step that reaches the pair's minimum, so its hue stays and the theme keeps its light or dark polarity. Up to 4 passes, because one text colour sits on several surfaces. A theme whose surfaces mix polarities so far that one text colour cannot read on all of them keeps the last pass's values (`[KNOWN GAP]`: the AI maker's own fix passes catch it for generated themes; an imported one shows the adjusted count).
@@ -81,11 +81,17 @@ A pack with a script in an SVG, a remote font URL, a 2px font size, a 40px radiu
 ## Success Criteria
 
 - **SC-001** A pack with fonts, radii, shadows, figures and gadgets changes all of them on screen, and `check:geometry` still reports the same layout as Clean Office.
-- **SC-002** A pack full of bad values loads, falls back value by value, and says how many.
+- **SC-002** A pack full of unusable values loads, falls back value by value, and says how many.
 - **SC-003** The literal count of the guard never goes up; it goes down with each Phase 2 change.
 - **SC-004** No theme can fetch anything from the network or load a file other than its `manifest.json`.
 
 ## Changes
+
+- **2026-10-22 (review on #500 by Paco's agent)**
+  - FR-020: the allow-lists are looked up by own property (`FONT_INDEX` is a `Map` in `themetokens.ts` and a null-prototype object in `theme.js`; `typedValue`, `token()` and the built-in id checks in `theme.js` use an own-property check), so `"--font":"constructor"` (or `__proto__`, `toString`, `hasOwnProperty`) is an unusable font: an imported pack drops it and the AI maker drops it with a warning instead of refusing the whole theme. FR-020 also says that main keeps unknown `--names` on disk while the renderer counts them.
+  - Story 1 says `--shadow-pop` covers menus and popovers (dialogs keep their literal shadow, the AI prompt says the same: moving `.dlg` onto the token would change the look, since its shadow is `0 18px 50px rgba(40,35,25,.25)` and Clean Office's is three layers, more than the shadow grammar's two), Story 3 no longer lists a remote font URL among the values that fall back (a `url(` is hostile and refuses the pack), and SC-002 says "unusable values".
+  - Merge of main (be26cabe): the literal ratchet for `app.js` goes 17 -> 18 for main's comment `(#453)` (spec 052 FR-174), which the counter reads as a colour; not a colour in this PR.
+  - Evidence: `test:` `test:theme-tokens` (prototype names as fonts and as token keys in both copies; one hostile case per part of `HOSTILE_RE`, each on its own; `theme.js`'s rule pinned equal to `themetokens.ts`'s), `test:themegen` (an AI reply with a prototype name as `--font` is kept, the font dropped with a warning). Mutation-checked: removing any one of `<`, `>`, `{`, `}`, `;`, `\`, `@`, `url(`, `expression(`, `var(` from `HOSTILE_RE`, `;` from the renderer's copy, or going back to a plain-object `FONT_INDEX` in either copy fails the suite. Not caught by a test: dropping the own-property check on `TYPED_TOKENS` in `theme.js`'s `typedValue` alone (an equivalent mutant: a prototype entry has no `type`, so the value is refused anyway, and `validateManifest` checks the key first).
 
 - **2026-10-22 (review on #500 by Ruben's agent)**
   - `theme.js` `CONTRAST_PAIRS` takes spec 052's three button-text pairs (`--surface` on `--sage-ink`, `--red-ink`, `--amber-ink`, #515) in `themegen.ts`'s order; the equivalence test caught the drift once main merged.

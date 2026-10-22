@@ -14,7 +14,8 @@ export const FONT_ALLOW = FONT_GENERIC.concat(['-apple-system', 'BlinkMacSystemF
   'Cascadia Code', 'Roboto', 'Noto Sans', 'Noto Serif', 'DejaVu Sans', 'DejaVu Serif', 'DejaVu Sans Mono', 'Liberation Sans', 'Liberation Serif',
   'Liberation Mono', 'Ubuntu', 'Ubuntu Mono', 'Cantarell', 'Comic Neue', 'Hiragino Mincho ProN', 'Yu Mincho', 'YuMincho', 'Noto Serif CJK JP',
   'Noto Serif JP', 'Source Han Serif']);
-const FONT_INDEX: Record<string, string> = Object.fromEntries(FONT_ALLOW.map((f) => [f.toLowerCase(), f]));
+/** A Map, not a plain object: a name such as `constructor` or `__proto__` must not reach Object.prototype (review on #500). */
+const FONT_INDEX: ReadonlyMap<string, string> = new Map(FONT_ALLOW.map((f) => [f.toLowerCase(), f]));
 
 export const TYPED_TOKENS: Record<string, TypedToken> = {
   '--font': { type: 'font', def: 'system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif', generic: 'sans-serif' },
@@ -40,7 +41,7 @@ function fontStack(v: string, generic: string): string | null {
     const q = /^(["'])(.*)\1$/.exec(n);
     if (q) n = q[2].trim();
     if (!/^[A-Za-z0-9 -]{1,40}$/.test(n)) return null;
-    const canon = FONT_INDEX[n.toLowerCase()];
+    const canon = FONT_INDEX.get(n.toLowerCase());
     if (!canon) return null;
     out.push(/\s/.test(canon) ? '"' + canon + '"' : canon);
   }
