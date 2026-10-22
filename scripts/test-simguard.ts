@@ -13,7 +13,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
-import { SIM_OPEN_CHANNELS, blockedAdapter, isSimBlocked, simChannelOpen, simGuardDescriptors, simRefusal, simulatorOn } from '../src/main/simguard';
+import { SIM_OPEN_CHANNELS, SIM_OPTIONAL_MEMBERS, blockedAdapter, isSimBlocked, simChannelOpen, simGuardDescriptors, simRefusal, simulatorOn } from '../src/main/simguard';
+import { interfaceOptionalMembers } from './test-adapter-contract';
 import type { AdapterDescriptor } from '../src/adapters/capabilities';
 import type { AgentAdapter } from '../src/adapters/types';
 
@@ -186,10 +187,37 @@ assert.ok(/if \(fromAppFrame\(e\) && simAllows\(channel\)\) fn\(/.test(guardSrc)
   assert.strictEqual((ad as unknown as { then?: unknown }).then, undefined, 'not a thenable');
   assert.throws(() => { (ad as unknown as Record<string, unknown>).id = 'other'; }, TypeError, 'other members cannot be set');
   const r = ad as unknown as Record<string, (...a: unknown[]) => unknown>;
-  for (const m of ['start', 'send', 'stop', 'interrupt', 'generateText', 'verifySignIn', 'authStatus', 'refreshAuth', 'listModelOptions', 'listPreviousSessions', 'history', 'deleteSession', 'renameSession', 'setModel', 'compact', 'handoffSummary', 'startMcpSignIn', 'setRemote', 'resumeIdOf', 'generateProfile', 'somethingAddedLater']) {
+  // required members (and names added later) exist and throw the refusal; optional members follow the capabilities (FR-028, below)
+  for (const m of ['start', 'send', 'stop', 'generateProfile', 'somethingAddedLater']) {
     assert.throws(() => r[m]('a', 'b'), (e: Error) => e.message === simRefusal(`spy.${m}`), `${m} throws the refusal`);
   }
   assert.strictEqual(blockedAdapter(d).id, 'spy');
+}
+
+// ---- 4b. the stand-in's optional members agree with its capabilities, as contract C2 asks of a real adapter (FR-028, review on #514) ----
+{
+  const inIface = interfaceOptionalMembers().sort();
+  assert.deepStrictEqual(Object.keys(SIM_OPTIONAL_MEMBERS).sort(), inIface, 'SIM_OPTIONAL_MEMBERS lists exactly the optional members of interface AgentAdapter');
+  const full = {
+    capUnit: 'credits', interrupt: true, models: true, history: true, caps: true, mcpToggle: true, mcpRestart: true, mcpTools: true, handoff: true,
+    oneShot: true, remote: true, renameSession: 'any', deleteSession: true, mcpSignIn: true, permModeSwitch: 'live',
+  };
+  const none = { capUnit: 'credits', permModeSwitch: 'none' };
+  for (const [tag, caps] of [['all on', full], ['all off', none], ['some', { ...none, history: true, mcpSignIn: true, permModeSwitch: 'live' }]] as const) {
+    const d: AdapterDescriptor = { id: 'c2', displayName: 'C2', capabilities: caps as unknown as AdapterDescriptor['capabilities'], create: () => ({}) as AgentAdapter };
+    const ad = simGuardDescriptors([d], true)[0].create() as unknown as Record<string, unknown>;
+    for (const m of inIface) {
+      const gate = SIM_OPTIONAL_MEMBERS[m];
+      const want = !!gate && gate(d.capabilities);
+      assert.strictEqual(typeof ad[m] === 'function', want, `${tag}: typeof ${m} follows the capabilities`);
+      assert.strictEqual(m in ad, want, `${tag}: "${m}" in the stand-in agrees with typeof`);
+      if (want) assert.throws(() => (ad[m] as (...a: unknown[]) => unknown)('a'), (e: Error) => e.message === simRefusal(`c2.${m}`), `${tag}: ${m} throws the refusal`);
+    }
+    assert.ok('start' in ad && typeof ad.start === 'function', `${tag}: a required member exists (and refuses)`);
+  }
+  // the gates are the contract's: with every capability on, every gated member exists; with none, none does
+  const gated = inIface.filter((m) => SIM_OPTIONAL_MEMBERS[m]);
+  assert.ok(gated.length >= 17, 'the C2 members are gated');
 }
 
 console.log('simguard: simulatorOn, the spending list, the open list, main.ts wiring and the stand-in adapter pass');
