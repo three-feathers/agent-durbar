@@ -309,3 +309,15 @@
 - [x] T172 Review fixes on #508: `popover-squeezed` covers every ellipsis in a popover (mutation `.fl-t{max-width:80px}` fails); long-name passes `folders-pop-long`, `floors-pop-long`; `popover-width` accepts the window minus 32px; popover borders and `.fl-err` to tokens, `literal-light` also reads borders and outlines (16 rules fixed), a Floors error shown in `floors-pop-error` so `dark-text` measures it; dark screenshots for all four popovers [FR-167]
   - Accept: no literal light border or outline in `src/renderer/*.css`; `.fl-err` reads at 4.5:1 in the dark fixture.
   - Check: mutation `#efe9dd` back on `.fl-floor` fails `literal-light`; restored byte for byte.
+
+## FR-174: the composer placeholder stays on one line (2026-10-22, #453)
+- [x] T173 Spec delta FR-174
+- [x] T174 `fitPlaceholder()` in `app.js`: placeholder cut from a measured width with `DurbarCutText`, full text in the `aria-label`, refit on resize and from `repaintName` [FR-174]
+  - Accept: with a 120-character title the placeholder is one line ending in `…` at 1440x900 and 1280x800; a short name is untouched.
+- [x] T175 Rule `placeholder-line` in `check-ui-text` / `ui-text-page.js` for the chat surfaces (`simtitles=long`; one `chat-late` pass: late title, rename, emoji, flags, no spaces, window resize) [FR-174, FR-171]
+  - Check: mutation (`fitPlaceholder` made a no-op) fails `placeholder-line`; code restored byte for byte.
+- [x] T176 Screenshots before and after (both sizes, light) in `docs/screenshots/052-placeholder-*`; CHANGELOG line; spec tags
+- [x] T177 Review fixes on #453: late title and rename, `cutText`, no `title`/`data-ph`, mirror copies `overflow-wrap`/`word-break`, prefix and emoji checks, sim hook `__durbarSimRetitle`
+
+- [x] T178 Review on #545: `.ph-id h2` is cut and `.sub` kept whole; `fitCut` (pure, unit-tested incl. the band where the text fits but not with `…`); `cutText` keeps flags whole; resize case (ResizeObserver mutation fails); the four late cases folded into one `chat-late` pass [FR-174]
+- [x] T179 Review on #545: a helper's role line stays inside the heading (`.sub` flex-shrink 1, `h2` 4, titles on both); surface `chat-helper-long` and rule `heading-spill` in `check:ui-text` (mutation `.sub{flex:0 0 auto}` fails) [FR-174]
