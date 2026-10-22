@@ -9,7 +9,7 @@ const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string'
 const optNum = (v: unknown): boolean => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
 const oneOf = (v: unknown, xs: readonly string[]): boolean => typeof v === 'string' && xs.includes(v);
 
-export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'title', 'agentSchedule', 'remote', 'plan'] as const;
+export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'title', 'agentSchedule', 'remote', 'plan'] as const;
 const STATUSES = ['idle', 'working', 'needs-permission', 'error', 'stopped'] as const;
 
 function permissionProblems(p: unknown, where: string): string[] {
@@ -36,6 +36,7 @@ export function eventProblems(e: unknown): string[] {
       if (!optStr(e.intent)) out.push('intent is not a string');
       if (e.permission !== undefined) out.push(...permissionProblems(e.permission, 'permission'));
       if (e.errorKind !== undefined && (e.errorKind !== 'auth' || e.status !== 'error')) out.push(`errorKind ${String(e.errorKind)} on status ${String(e.status)}`);
+      if (e.reason !== undefined && (e.reason !== 'usage-limit' || e.status !== 'idle')) out.push(`reason ${String(e.reason)} on status ${String(e.status)}`);
       break;
     case 'permission':
       out.push(...permissionProblems(e.permission, 'permission'));
@@ -79,6 +80,14 @@ export function eventProblems(e: unknown): string[] {
       break;
     case 'limit':
       if (!oneOf(e.phase, ['exhausted', 'changed', 'resolved'])) out.push(`limit.phase ${String(e.phase)}`);
+      break;
+    case 'usageLimit':
+      if (!oneOf(e.scope, ['plan', 'quota', 'rate'])) out.push(`usageLimit.scope ${String(e.scope)}`);
+      if (e.resetsAt !== undefined && !(typeof e.resetsAt === 'number' && Number.isFinite(e.resetsAt) && e.resetsAt > 0)) out.push('usageLimit.resetsAt is not a positive time');
+      if (!str(e.source) || !e.source || String(e.source).length > 60) out.push('usageLimit.source missing or too long');
+      if (e.estimated !== undefined && typeof e.estimated !== 'boolean') out.push('usageLimit.estimated is not a boolean');
+      if (e.paid !== undefined && typeof e.paid !== 'boolean') out.push('usageLimit.paid is not a boolean');
+      if (e.update !== undefined && typeof e.update !== 'boolean') out.push('usageLimit.update is not a boolean');
       break;
     case 'title':
       if (!str(e.title) || !e.title) out.push('title.title missing');

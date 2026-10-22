@@ -158,6 +158,8 @@ export interface AppSettingsView {
   theme?: string;
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
+  /** Spec 068 FR-006: after a coffee break, `auto` resumes by itself when it costs nothing extra; `ask` always asks. */
+  breakResume?: 'auto' | 'ask';
 }
 
 /** A custom agent profile as the renderer sees it (spec 043; same shape as the adapter's `AgentProfile`). */
@@ -516,6 +518,8 @@ export interface DurbarApi {
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
   /** Turn the "needs you" OS notifications on or off (spec 052 FR-059). */
   setNotifyNeedsMe?(on: boolean): Promise<{ ok: boolean; notifyNeedsMe?: boolean }>;
+  /** Spec 068 FR-006: what happens when a coffee break ends. */
+  setBreakResume?(v: 'auto' | 'ask'): Promise<{ ok: boolean; breakResume?: 'auto' | 'ask' }>;
   /** The "needs you" count on the app icon (spec 052 FR-059): an integer from 0 to 999. Badge on macOS and Linux where supported; on Windows the taskbar button flashes when it grows in the background. */
   setBadge?(count: number): Promise<{ ok: boolean }>;
   /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */

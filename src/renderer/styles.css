@@ -1010,6 +1010,8 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .walker[data-body="monster"]::before{content:"";position:absolute;left:3px;right:3px;top:-5px;height:7px;background:#6f8a6a;clip-path:polygon(0 100%,14% 0,30% 100%,70% 100%,86% 0,100% 100%)}
 .walker[data-trouble]:not([data-trouble=""])::after{content:"";position:absolute;right:-3px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--amber-ink);border:1.5px solid var(--surface)}
 .walker[data-trouble="ambulance"]::after,.walker[data-trouble="faint"]::after{background:var(--red-ink)}
+/* spec 068: an agent on a coffee break holds a cup (calm: no trouble dot) */
+.walker[data-coffee="1"]::after{content:"";position:absolute;right:-4px;bottom:-2px;width:8px;height:8px;border-radius:1px 1px 3px 3px;background:var(--cup);border:1.5px solid var(--cup-line);box-shadow:2px 0 0 -0.5px var(--cup-line)}
 @media (prefers-reduced-motion:reduce){.walker.walking .wk{animation:none}.walker,.place{transition:none!important}}
 .doors{flex:0 0 100%;display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
 .plate{--tone:#c9c2b2;--tonebg:#f6f2e9;display:flex;align-items:center;gap:9px;min-width:210px;max-width:320px;flex:0 1 auto;min-height:44px;padding:5px 12px 5px 8px;border-radius:14px;border:1.5px solid var(--tone);background:var(--tonebg);cursor:pointer;text-align:left;transition:background .15s,border-color .15s,transform .15s}

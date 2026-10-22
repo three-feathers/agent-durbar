@@ -15,10 +15,12 @@ export interface SettingsIpcDeps {
 export function register(deps: SettingsIpcDeps): void {
   const { getRunTheme, clearRunTheme } = deps;
   const settingsStore = deps.getSettingsStore;
-  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
+  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
   ipcHandle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore()?.setSeriousMode(on) ?? false }));
   /* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */
   ipcHandle('settings:setNotifyNeedsMe', (_e, on: unknown) => ({ ok: true, notifyNeedsMe: settingsStore()?.setNotifyNeedsMe(on) ?? true }));
+  /* spec 068 FR-006: what happens when a coffee break ends ('auto' or 'ask'; anything else keeps the setting) */
+  ipcHandle('settings:setBreakResume', (_e, v: unknown) => ({ ok: true, breakResume: settingsStore()?.setBreakResume(v) ?? 'auto' }));
   /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
   ipcHandle('settings:setTheme', (_e, id: unknown) => {
     clearRunTheme();

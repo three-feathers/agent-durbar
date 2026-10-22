@@ -58,7 +58,7 @@ import { maskMcpEvent, maskMcpHistory } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
-import { Scheduler, loadSchedules, saveSchedules } from './schedules';
+import { Scheduler, loadSchedules, saveSchedules, scheduleBusy } from './schedules';
 import type { SchedulerDeps } from './schedules';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
@@ -447,7 +447,8 @@ const scheduleAgent = (s: { folder: string; target?: { session: string } }): Age
 const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
 const scheduleDeps = (file: string): SchedulerDeps => ({
   now: () => Date.now(),
-  isBusy: (folder, session) => (session ? busyStatus(session) : [...agents.values()].some((x) => wsKey(x) === folder && busyStatus(x.id))),
+  /* spec 068 FR-008: an agent on a coffee break is busy too (the rule and its test: schedules.ts scheduleBusy) */
+  isBusy: (folder, session) => scheduleBusy(folder, session, { sessions: () => [...agents.values()].map((x) => ({ id: x.id, folder: wsKey(x) })), busy: busyStatus, breaks: agentState }),
   hasSession: (session) => agents.has(session),
   capUnitOf: (s) => {
     const a = scheduleAgent(s);
