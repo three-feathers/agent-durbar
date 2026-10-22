@@ -23,3 +23,6 @@ Thumbs.db
 .claude/settings.local.json
 .claude/worktrees/
 _site/
+
+# generated specs index (spec 025): npm run specs:index
+specs/INDEX.md

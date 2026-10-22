@@ -6,7 +6,9 @@
  *   kind: 'dialog' | 'popover' | 'menu' | 'screen' | 'chat'
  *   o.dark: also check the contrast of the FR-169 controls
  *
- * PR2 rules (T150-T155) have hooks at the bottom (`pr2`) that only report and are not asserted yet.
+ * Part 2 rules (T150-T155): orphan (a menu hint's last line is one word), menu-width, menu-hints (a menu has a hint on every item or on none),
+ * tooltip-length (static titles 120, data titles 300 characters and 8 lines), ellipsis-title, label-wrap, kbd-align, x-scroll on screens,
+ * popover-width (a popover is the S or M token wide, with --pop-pad), copy-overlap and caret-after-copy in the chat, heading-lines in the inbox; `pairs()` is the contrast of the rules that moved to theme tokens.
  */
 (function () {
   if (window.__uitext) return;
@@ -114,6 +116,111 @@
     return out;
   }
 
+  /* ---- part 2 (T150-T155) ---- */
+  /* the visual lines of an element's text: [{top, text}] */
+  function textLines(el) {
+    const chars = [];
+    const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+      for (let i = 0; i < n.textContent.length; i++) {
+        const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + 1);
+        const cr = [...r.getClientRects()].find((x) => x.width > 0);
+        chars.push({ c: n.textContent[i], top: cr ? Math.round(cr.top) : null });
+      }
+    }
+    const lines = [];
+    for (const ch of chars) {
+      if (ch.top === null) { if (lines.length) lines[lines.length - 1].text += ch.c; continue; }
+      const last = lines[lines.length - 1];
+      if (last && Math.abs(last.top - ch.top) <= 3) last.text += ch.c; else lines.push({ top: ch.top, text: ch.c });
+    }
+    return lines.map((l) => ({ top: l.top, text: l.text.replace(/\s+/g, ' ').trim() })).filter((l) => l.text);
+  }
+  /* FR-165/FR-167: menus share one width and padding; a hint is one line or two even lines; a menu has a hint on every item or on none */
+  function menuRules(root, add) {
+    const tok = getComputedStyle(document.documentElement).getPropertyValue('--menu-w').trim();
+    const want = tok ? probe(root, 'width', tok) : NaN;
+    if (Math.abs(want - 320) > 1) add('menu-width', root, root, `--menu-w is "${tok}" (${want}px), expected 320px`);
+    const w = root.offsetWidth;
+    if (!(Math.abs(w - Math.min(want, innerWidth - 16)) <= 1)) add('menu-width', root, root, `width ${Math.round(w)}px but --menu-w is ${want}px`);
+    const cs = getComputedStyle(root);
+    const pads = ['Top', 'Right', 'Bottom', 'Left'].map((k) => parseFloat(cs['padding' + k]));
+    if (pads.some((v) => Math.abs(v - 6) > 0.5)) add('menu-width', root, root, `padding ${pads.join(' ')}, expected 6px all round`);
+    for (const sm of root.querySelectorAll('small')) {
+      if (!vis(sm)) continue;
+      const ls = textLines(sm);
+      if (ls.length >= 2 && !/\s/.test(ls[ls.length - 1].text)) add('orphan', root, sm, `last line is one word "${ls[ls.length - 1].text}" in "${snip(ls.map((l) => l.text).join(' '), 70)}"`);
+    }
+    const items = [...root.querySelectorAll('.more-it')].filter(vis);
+    const withHint = items.filter((i) => i.querySelector('small')).length;
+    if (withHint && withHint < items.length) add('menu-hints', root, root, `${withHint} of ${items.length} items have a hint line (all or none)`);
+  }
+  /* FR-170 / T147: the body of a dialog (its paragraphs and lists, not its fields) is at most 8 lines at its width; more is split into a first paragraph and a list or a "More" */
+  function bodyLines(root, add) {
+    let n = 0;
+    for (const el of root.querySelectorAll(':scope > p.dsub, :scope > ul.dlist, :scope > .dsub, :scope > .dlist')) {
+      if (!vis(el)) continue;
+      n += textLines(el).length;
+    }
+    if (n > 8) add('body-lines', root, root, `${n} lines of body text (limit 8)`);
+  }
+  /* FR-170: a field label is one short line */
+  function labelWrap(root, add) {
+    for (const lb of root.querySelectorAll('label')) {
+      if (!vis(lb) || lb.matches('.chk,.pico-opt,.dpick,.tgl') || lb.closest('.imp-row')) continue; // a pick row of a list is not a field label
+      const lead = [...lb.childNodes].filter((n) => (n.nodeType === 3 && n.textContent.trim()) || (n.nodeType === 1 && n.matches('span:not(.dpick-t)') && n.textContent.trim()));
+      if (!lead.length) continue;
+      const tops = new Set();
+      for (const n of lead) { const r = document.createRange(); r.selectNodeContents(n); [...r.getClientRects()].filter((x) => x.width > 0).forEach((x) => tops.add(Math.round(x.top / 3))); }
+      if (tops.size > 1) add('label-wrap', root, lb, `the label wraps to ${tops.size} lines "${snip(lead.map((n) => n.textContent).join('').trim(), 60)}"`);
+    }
+  }
+  /* FR-170: the description columns of the shortcut sheet start at one x per column of the sheet */
+  function kbdAlign(root, add) {
+    for (const k of root.querySelectorAll('.kb-t .kb-k')) { // the key column is wide enough for its keys (a fixed layout with a too narrow column would align the tables and cut the keys)
+      const w = [...k.children].reduce((n, c) => Math.max(n, c.getBoundingClientRect().right), 0) - k.getBoundingClientRect().left;
+      const room = k.clientWidth - parseFloat(getComputedStyle(k).paddingRight);
+      if (vis(k) && w > room + 1) add('kbd-align', root, k, `the keys need ${Math.round(w)}px but the key column has ${Math.round(room)}px`);
+    }
+    const byX = new Map();
+    for (const t of root.querySelectorAll('.kb-t')) { const k = Math.round(t.getBoundingClientRect().left); byX.set(k, (byX.get(k) || []).concat(t)); }
+    for (const [, tables] of byX) {
+      const xs = tables.flatMap((t) => [...t.querySelectorAll('tr')].map((tr) => (tr.children[1] ? Math.round(tr.children[1].getBoundingClientRect().left * 10) / 10 : null)).filter((x) => x !== null));
+      if (xs.length && Math.max(...xs) - Math.min(...xs) > 2) add('kbd-align', root, tables[0], `description columns start at x ${[...new Set(xs.map(Math.round))].join(', ')}`);
+    }
+  }
+  /* FR-170: the Copy button never covers text; the streaming caret is not after it */
+  function chatRules(root, add) {
+    for (const b of root.querySelectorAll('.cp-btn,.md .copy')) {
+      if (!vis(b)) continue;
+      const ch = document.getElementById('chat'); // the text around it has to be on screen to be measured: only the chat scrolls, never the page
+      if (ch && ch.contains(b)) ch.scrollTop += b.getBoundingClientRect().top - ch.getBoundingClientRect().top - ch.clientHeight / 2;
+      const msg = b.closest('#chat,.chat-inner') || b.closest('.msg,.sub-prompt,.sub-res,.think,.codebox') || b.parentElement; // the whole chat: the button also sticks out of its bubble
+      const br = b.getBoundingClientRect();
+      const tw = document.createTreeWalker(msg, NodeFilter.SHOW_TEXT);
+      for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+        const el = n.parentElement; if (!n.textContent.trim() || !el || el.closest('button') || !vis(el) || !shown(el)) continue;
+        const r = document.createRange(); r.selectNodeContents(n);
+        const hit = [...r.getClientRects()].find((x) => x.width > 1 && x.right > br.left + 1 && x.left < br.right - 1 && x.bottom > br.top + 1 && x.top < br.bottom - 1);
+        if (hit) { add('copy-overlap', root, b, `the Copy button covers the text "${snip(n.textContent.trim(), 40)}"`); break; }
+      }
+    }
+    for (const bub of root.querySelectorAll('.bubble.caret')) {
+      const last = bub.lastElementChild;
+      if (last && last.matches('.cp-btn')) add('caret-after-copy', root, bub, 'the streaming caret follows the Copy button');
+    }
+  }
+  /* FR-170: Needs you heading: the name has its own line and a title; its status, folder and wait sit below */
+  function inboxRules(root, add) {
+    for (const h of root.querySelectorAll('.ib-h')) {
+      if (!vis(h)) continue;
+      const n = h.querySelector('.ib-n') || h.querySelector('b'), sub = h.querySelector('.ib-sub');
+      if (!n || !sub) { add('heading-lines', root, h, 'no .ib-n / .ib-sub'); continue; }
+      if (sub.getBoundingClientRect().top < n.getBoundingClientRect().bottom - 1) add('heading-lines', root, h, 'the status line is not under the name');
+      if (!n.getAttribute('title')) add('ellipsis-title', root, n, `the name has no title "${snip(n.textContent, 40)}"`);
+    }
+  }
+
   function check(kind, sels, o = {}) {
     const roots = [];
     // each box once: a root that holds, or sits in, another is skipped
@@ -133,11 +240,11 @@
         if ((t || (isCtl && (el.value || el.placeholder))) && parseFloat(cs.fontSize) < MIN_PX && shown(el)) add('font-size', root, el, `${cs.fontSize} "${snip(t || el.value || '', 40)}"`);
         // clipping
         const textish = (el.innerText || '').trim().length > 0;
-        const clipX = textish && /(hidden|clip)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1 && !isCtl;
+        const clipX = textish && /(hidden|clip)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1 && (!isCtl || cs.textOverflow === 'ellipsis'); // a control cut with an ellipsis needs its title too
         if (clipX) {
           const titled = cs.textOverflow === 'ellipsis' && (el.getAttribute('title') || (el.closest('[title]') || {}).title);
           if (!titled) {
-            if (cs.textOverflow === 'ellipsis' && !el.closest('.dpick')) add('todo-ellipsis-title', root, el, `T151/T154: ellipsis without its full text "${snip(el.innerText.trim(), 50)}"`);
+            if (cs.textOverflow === 'ellipsis' && !el.closest('.dpick')) add('ellipsis-title', root, el, `ellipsis without its full text in a title "${snip(el.innerText.trim(), 50)}"`);
             else add('clipped', root, el, `x: shows ${el.clientWidth}px of ${el.scrollWidth}px "${snip(el.innerText.trim(), 50)}"`);
           }
         }
@@ -147,7 +254,7 @@
         if ((boxy || /(auto|scroll|hidden|clip)/.test(cs.overflowX)) && el.scrollWidth > el.clientWidth + (/(auto|scroll|hidden|clip)/.test(cs.overflowX) ? 1 : 3) && /* content over a visible edge: under 3px is a rounding or focus-ring artifact (the inbox heading line is 2px over) */ !isCtl && !el.matches('textarea,input,select') && cs.display !== 'inline') {
           // a label cut with an ellipsis is not a scroll (the clipped rule asks for its title); anything else that overflows sideways is
           if (boxy) { if (!(cs.textOverflow === 'ellipsis' && /(hidden|clip)/.test(cs.overflowX))) add('x-scroll', root, el, `scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth}`); }
-          else if (/(auto|scroll)/.test(cs.overflowX)) add('todo-x-scroll', root, el, `T154: scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth}`);
+          else if (/(auto|scroll)/.test(cs.overflowX) && !el.closest(MACHINE) && !el.matches('.strip-list')) /* the agent strip is a horizontal scroller by design (15 sessions in a row) */ add('x-scroll', root, el, `scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth}`);
         }
         // a box that sticks out of its dialog / popover / menu (visible overflow)
         if (boxy && el !== root && shown(el) && (t || isCtl)) {
@@ -162,6 +269,11 @@
       }
       if (kind !== 'chat' && (rr.right > innerWidth + 1 || rr.bottom > innerHeight + 1 || rr.left < -1 || rr.top < -1)) add('offscreen', root, root, `box ${Math.round(rr.left)},${Math.round(rr.top)}..${Math.round(rr.right)},${Math.round(rr.bottom)} in ${innerWidth}x${innerHeight}`);
       bad.push(...brokenWords(root));
+      if (kind === 'menu' && root.matches('.more-menu,.mode-menu')) menuRules(root, add);
+      if (kind === 'dialog' && root.classList.contains('dlg')) bodyLines(root, add);
+      if (kind === 'dialog') { labelWrap(root, add); if (root.matches('.kbd-dlg')) kbdAlign(root, add); }
+      if (kind === 'chat') chatRules(root, add);
+      if (root.matches('#inboxDlg,#inboxDlg *') || root.querySelector('.inbox-row')) inboxRules(root, add);
 
       if (kind === 'dialog' && root.classList.contains('dlg')) {
         // width: one of the three tokens, or the window minus 32px
@@ -179,6 +291,28 @@
           if (pad.some((v, i) => Math.abs(v - got[i]) > 0.5)) add('dialog-padding', root, root, `padding ${got.join(' ')} but --dlg-pad is ${pad.join(' ')}`);
         }
       }
+      if (kind === 'popover') {
+        // T171: a name cut to a sliver is the bug even with a title (the Folders popover's first row sat beside a floated checkbox: "mc...")
+        for (const el of root.querySelectorAll('*')) {
+          if (!vis(el) || getComputedStyle(el).textOverflow !== 'ellipsis') continue;
+          if (el.scrollWidth > el.clientWidth + 1 && el.clientWidth < 120) add('popover-squeezed', root, el, `"${snip(el.textContent, 30)}" is cut to ${el.clientWidth}px (scrollWidth ${el.scrollWidth})`);
+        }
+        // FR-167 (T169, issue #508): width is the S or M token (or the window minus 32px), padding is --pop-pad
+        const rs = getComputedStyle(document.documentElement);
+        const toks = [['--pop-w-s', 420], ['--pop-w-m', 660]].map(([n, want]) => ({ n, want, v: rs.getPropertyValue(n).trim() }));
+        const px = toks.map((x) => (x.v ? probe(root, 'width', x.v) : NaN));
+        px.forEach((v, i) => { if (Math.abs(v - Math.min(toks[i].want, innerWidth - 32)) > 1) add('popover-width', root, root, `${toks[i].n} is "${toks[i].v}" (${v}px), expected ${toks[i].want}px`); });
+        const w = root.offsetWidth;
+        if (!px.some((v) => Math.abs(v - w) <= 1) && Math.abs(w - (innerWidth - 32)) > 1) add('popover-width', root, root, `width ${Math.round(w)}px is none of ${px.map(Math.round).join('/')} (nor ${innerWidth - 32})`);
+        // the assignment is fixed: Defaults and Allowed grants are S, Folders and Floors are M (a popover on the other size fails)
+        const SIZE = { defaultsPop: 0, grantsPop: 0, foldersPop: 1, floorsPop: 1 };
+        if (!(root.id in SIZE)) add('popover-width', root, root, `popover "${root.id || root.className}" is not in the S/M map (add it to SIZE in ui-text-page.js)`);
+        else if (Math.abs(px[SIZE[root.id]] - w) > 1 && Math.abs(w - (innerWidth - 32)) > 1) add('popover-width', root, root, `${root.id} is ${Math.round(w)}px but must be ${toks[SIZE[root.id]].n} (${Math.round(px[SIZE[root.id]])}px)`);
+        const want = probe(root, 'padding', 'var(--pop-pad)');
+        const pcs = getComputedStyle(root);
+        const got = ['Top', 'Right', 'Bottom', 'Left'].map((k) => parseFloat(pcs['padding' + k]));
+        if (want.some((v, i) => Math.abs(v - got[i]) > 0.5) || want.join() !== '12,14,12,14') add('popover-width', root, root, `padding ${got.join(' ')} but --pop-pad is ${want.join(' ')} (expected 12 14 12 14)`);
+      }
       if (kind === 'popover' || kind === 'menu') {
         const cs = getComputedStyle(root);
         if (kind === 'popover' && root.scrollWidth > root.clientWidth + 1) add('x-scroll', root, root, `scrollWidth ${root.scrollWidth} > ${root.clientWidth}`);
@@ -190,8 +324,6 @@
           const isField = /^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName);
           if (!(ownText(e) || isField) || !shown(e)) continue;
           if (e.disabled || e.closest('[aria-disabled="true"],.is-off,[disabled]')) continue;
-          const hit = (o.allowSel || []).find((q) => e.closest(q)); // older debt named by its cause (a rule with a light background)
-          if (hit) { window.__uitext.hits.add(hit); continue; }
           let faded = false; for (let a = e; a && !faded; a = a.parentElement) faded = parseFloat(getComputedStyle(a).opacity) < 0.9;
           if (faded) continue;
           const back = backdrop(e);
@@ -220,12 +352,41 @@
     return bad;
   }
 
-  /* PR2 hooks (T150-T155): present so the driver can call them; they report and are not asserted yet.
-     TODO T150 orphan menu hints, T151 tooltip length, T154 long names, T155 chat overlap. */
-  function pr2() {
-    const tips = [];
-    document.querySelectorAll('[title]').forEach((el) => { const t = (el.getAttribute('title') || '').trim(); if (t && vis(el)) tips.push({ el: desc(el), len: t.length }); });
-    return { tooltips: tips.filter((x) => x.len > 120).length };
+  /* FR-168: a static tooltip explains a control in at most 120 characters; a data tooltip (the full text of a cut name, a card or the totals) may be
+     longer, at most 300 characters and 8 lines. Whole page: chrome titles are not in a surface's root. */
+  const DATA_TIP = '.gchip,.gchip *,.gp-row,.ptask,.ab-q,.ab-q *,.q-opt,.place,.intent,.room-aiu,.chip,.chip *,.desk,.helper,.lrow,.lrow *,.sitem,.sitem *,#stats,#stats *,.stat-aiu,.room-head *,.room-path,.prev-row *,.pal-o *,.ib-n,.ib-f,.by-chip,.mdl-sub,.dpick-t,.hs-name b,.sc-t b,.grant,.chip.att-chip,.att,.cmdbox,.pill,.ph-t,.folder,.sub-title,.lmood,.tile,.ttab td,.ttab th';
+  function tooltips() {
+    const out = [];
+    document.querySelectorAll('[title]').forEach((el) => {
+      const t = el.getAttribute('title') || '';
+      if (!t.trim() || !vis(el)) return;
+      const data = el.matches(DATA_TIP);
+      const lines = t.split('\n').length;
+      if (data ? (t.length > 300 || lines > 8) : t.length > 120) out.push({ rule: 'tooltip-length', el: desc(el), detail: `${data ? 'data' : 'static'} tooltip of ${t.length} characters${lines > 1 ? ', ' + lines + ' lines' : ''}: "${snip(t, 60)}"` });
+    });
+    return out;
+  }
+
+  /* the contrast of the rules that moved from literal light colours to theme tokens (T152, round 2). list: [{sel, bg, color, border?}] read from the CSS by the driver. */
+  function pairs(list) {
+    const out = [];
+    const host = document.createElement('div');
+    host.style.cssText = 'position:absolute;left:-9999px;top:0;width:10px;height:10px;color:var(--ink);background:var(--surface)';
+    document.body.appendChild(host);
+    const base = backdrop(host);
+    for (const r of list) {
+      const p = document.createElement('div');
+      p.style.cssText = 'background:' + r.bg + ';color:' + (r.color || 'var(--ink)');
+      host.appendChild(p);
+      const cs = getComputedStyle(p);
+      const bg = over(rgba(cs.backgroundColor), base);
+      const fg = over(rgba(cs.color), bg);
+      const k = contrast(fg, bg);
+      if (k < 4.5) out.push({ rule: 'tone-contrast', el: r.sel, detail: `${k.toFixed(2)}:1 for text ${r.color || 'var(--ink) (inherited)'} on ${r.bg}` });
+      p.remove();
+    }
+    host.remove();
+    return out;
   }
 
   /* FR-165: help text uses one measure (--measure); paragraphs of the same section end at the same x (+-8px) */
@@ -248,5 +409,5 @@
     return bad;
   }
 
-  window.__uitext = { hits: new Set(), check, measureRule, pr2, vis, darkControls: DARK_CONTROLS, measure: { probe, backdrop, contrast, rgba } };
+  window.__uitext = { check, measureRule, tooltips, pairs, vis, darkControls: DARK_CONTROLS, measure: { probe, backdrop, contrast, rgba } };
 })();

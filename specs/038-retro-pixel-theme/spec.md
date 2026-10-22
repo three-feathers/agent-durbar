@@ -1,5 +1,11 @@
 # Feature Specification: Retro pixel theme (spec 038)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 035-040
+title: Retro pixel theme: 8-bit palette, palette pixel maps in art slots, arcade motion
+status: **built**; dark arcade page allowed (FR-001 amended 2026-10-18)
+-->
+
 **Feature Branch**: `035-theme-foundation` (issue #129)
 **Created**: 2026-10-18
 **Status**: Implemented on branch `035-theme-foundation` (PR #137): simulator and unit tests, 0 AIU; not released

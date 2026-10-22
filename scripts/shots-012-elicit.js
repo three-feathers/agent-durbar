@@ -14,18 +14,13 @@ module.exports = async (ctx) => {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const { js } = H;
   const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', delay: 400, tag: '012-elicit' });
-  const openElicit = async () => {
-    for (let i = 0; i < 40; i++) { const id = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>/needs your|asks you|MCP server/i.test(x.innerText));return d?d.dataset.id:''})()`); if (id) return id; await ctx.sleep(250); }
-    return '';
-  };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const mode of ['1', 'url']) {
       await H.load({ w, h, query: { simelicit: mode }, ready: 'fit' });
-      // the simulator raises the request 400 ms after start: wait for a desk that shows it, not for the page to go quiet
-      await H.until(`[...document.querySelectorAll('#stage .desk[data-id]')].some(x=>/needs your|asks you|MCP server/i.test(x.innerText))`, 15000);
-      // the request card lives in the agent's chat; find the agent whose chat has it
-      const id = await js(`(()=>{for(const d of document.querySelectorAll('#stage .desk[data-id]')){d.click();const c=document.querySelector('#chat .note.elicit');if(c)return d.dataset.id;const b=document.getElementById('backBtn');if(b)b.click();}return ''})()`);
-      assert.ok(id, `${w} ${mode}: an agent has the MCP request in its chat`);
+      // the simulator raises the request 400 ms after start: wait for the simulator's own state, then open that one agent's chat
+      // (no sweep over every desk: docs/agent-notes.md)
+      const o = await H.openSimAgent(`a=>a.question&&a.question.elicit`, '#chat .note.elicit');
+      assert.ok(o.ok, `${w} ${mode}: an agent has the MCP request in its chat: ${JSON.stringify({ id: o.id, ...o.seen })}`);
       await ctx.sleep(600);
       await js(`(()=>{const c=document.querySelector('#chat .note.elicit');if(c)c.scrollIntoView({block:'center'});})()`); await ctx.sleep(300);
       if (mode === '1') {

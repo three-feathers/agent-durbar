@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Marked } = require('marked');
+const specsIndex = require('./specs-index.js');
 
 const ROOT = path.join(__dirname, '..');
 const OUT = process.env.SITE_OUT ? path.resolve(process.env.SITE_OUT) : path.join(ROOT, '_site');
@@ -474,7 +475,7 @@ ${landing.aiTheme ? `<p class="ai">${zoom(landing.aiTheme.screenshot, img(landin
 <section class="sec" id="apps"><div class="head"><p class="eyebrow">Agent apps</p><h2>Works with the agents you already use</h2><p>Durbar drives the agent apps you installed and signed in to yourself. What we checked, and what we have not yet:</p></div>
 <div class="apps">${landing.harnesses.map((x) => `<article class="app"><h3>${esc(x.name)}</h3><p class="ok">${esc(x.verified)}</p><p class="no">${esc(x.notYet)}</p></article>`).join('')}</div>
 <p class="small"><a href="docs.html#harnesses">Details for each agent app</a></p>
-${landing.proof ? `<p class="proof">${esc(landing.proof)} <a href="${GH}/blob/main/specs/README.md">The specs</a> · <a href="https://github.com/orgs/three-feathers/projects/1">The board</a></p>` : ''}
+${landing.proof ? `<p class="proof">${esc(landing.proof)} <a href="docs.html#specs-index">The specs</a> · <a href="https://github.com/orgs/three-feathers/projects/1">The board</a></p>` : ''}
 </section>
 
 <section class="sec" id="safety"><div class="head"><p class="eyebrow">Safety and cost</p><h2>Agents act only as far as you allow</h2></div>
@@ -516,7 +517,7 @@ ${news ? `<section class="sec" id="new"><div class="head"><p class="eyebrow">Wha
   });
 }
 
-function docsHtml({ readme, intro, feats, gallery, changes }) {
+function docsHtml({ readme, intro, feats, gallery, changes, specsMd = '' }) {
   const mdDocs = makeMd('', { ids: true });
   const titles = sectionTitles(readme).filter((t) => t !== 'Contents');
   const slug = slugger();
@@ -525,6 +526,8 @@ function docsHtml({ readme, intro, feats, gallery, changes }) {
   const extra = [
     { id: 'features', title: 'Every built feature', html: `<p class="small">Each card is a built feature with its spec: what it does, how it was checked, and its honest limits.</p><ul class="grid">${feats.map((f) => `<li><a href="${esc(f.href)}"><small>Spec ${esc(f.num)}</small>${esc(f.title)}</a></li>`).join('')}</ul>` },
     { id: 'gallery', title: 'Screenshots', html: `<div class="gallery">${gallery.map((g) => `<figure><a href="screenshots/${esc(g.file)}">${img(g.file, g.alt || g.caption)}</a><figcaption>${esc(g.caption)}</figcaption></figure>`).join('')}</div>` },
+    // the whole specs index (generated; specs/README.md on GitHub has only its text), links to the specs on GitHub
+    { id: 'specs-index', title: 'Specs index', html: makeMd('specs/').parse(specsMd.replace(/^# .*\n/, '')) },
     { id: 'whats-new', title: "What's new", html: changes ? `<h3>${esc(changes.head)}</h3>${mdRoot.parse(changes.body)}<p><a href="${GH}/blob/main/CHANGELOG.md">Full changelog</a></p>` : '' },
   ];
   const all = [...secs, ...extra];
@@ -548,12 +551,16 @@ async function main() {
   const errs = validateLanding(landing, { readme });
   if (errs.length) throw new Error(`docs/site/landing.json is out of step:\n- ${errs.join('\n- ')}`);
   const gallery = JSON.parse(read('docs/site/gallery.json'));
-  const feats = features(read('specs/README.md'), landing.featuresExclude);
+  // spec 025 delta 2026-10-22: the index rows are not committed; they are built from each spec's specs-index block
+  const specsGen = specsIndex.generate(ROOT);
+  if (specsGen.errors.length) console.warn(`specs index: ${specsGen.errors.length} problem(s) (npm run specs:check)`);
+  const specsMd = specsGen.text;
+  const feats = features(specsMd, landing.featuresExclude);
   const changes = latestChanges(read('CHANGELOG.md'));
   const rel = await latestRelease();
 
   const index = landingHtml({ landing, readme, rel, changes });
-  const docs = docsHtml({ readme, intro, feats, gallery, changes });
+  const docs = docsHtml({ readme, intro, feats, gallery, changes, specsMd });
 
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(path.join(OUT, 'screenshots'), { recursive: true });
