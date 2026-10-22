@@ -2,7 +2,7 @@
 
 **Feature Branch**: `071-release-alpha11`
 **Created**: 2026-10-22
-**Status**: **In progress**: release PR, then tag and publish on a green `main`.
+**Status**: **Published as a pre-release on 2026-10-22** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.11>; release PR #517; tag on `b76b79a`, whose CI, CodeQL, packaged check, installed-app check and UI checks on all three OSes were green; the Windows UI job passed on a rerun after the known `check-question-options` flake that #516 fixes). The draft had 8 files; every package matched `SHA256SUMS.txt` (against GitHub's own asset digests).
 **Input**: Vikram (Telegram, 2026-10-21 21:48 UTC): "yes, prepare that pre release tomorrow" (for his morning test).
 
 ## Requirements
