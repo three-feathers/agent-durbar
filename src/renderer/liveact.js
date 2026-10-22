@@ -10,6 +10,7 @@
   const PAINT_MS=250;       /* FR-030: at most 4 paints a second per desk */
   const LINE_MAX=160;       /* one-line readout (desk text line) */
   const PANEL_MAX=200;      /* side panel, a few lines */
+  const STREAM_MAX=600;     /* a grown desk (spec 001 FR-043): up to 8 lines, the newest sentences */
   const cutOf=(s,n)=>{s=String(s==null?'':s).replace(/\s+/g,' ').trim();const c=Array.from(s);return c.length<=n?s:c.slice(0,n-1).join('').trimEnd()+'…';};
   /* Markdown to plain words: code blocks, links, emphasis, headings and list marks go; whitespace collapses */
   const plain=t=>String(t==null?'':t).replace(/```[\s\S]*?(```|$)/g,' ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*+\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
@@ -51,8 +52,8 @@
   function create(opts){
     const o=opts||{}, mask=o.mask||{}, red=s=>mask.redact?mask.redact(s):s;
     const st=new Map();
-    const get=id=>{let s=st.get(id);if(!s){s={kind:'',text:'',lines:'',buf:'',rid:null,lastPaint:-Infinity};st.set(id,s);}return s;};
-    const set=(s,kind,text,lines)=>{const ch=s.kind!==kind||s.text!==text||s.lines!==lines;s.kind=kind;s.text=text;s.lines=lines;return ch;};
+    const get=id=>{let s=st.get(id);if(!s){s={kind:'',text:'',lines:'',long:'',buf:'',rid:null,lastPaint:-Infinity};st.set(id,s);}return s;};
+    const set=(s,kind,text,lines,long)=>{long=long==null?lines:long;const ch=s.kind!==kind||s.text!==text||s.lines!==lines||s.long!==long;s.kind=kind;s.text=text;s.lines=lines;s.long=long;return ch;};
     function onEvent(id,e,extra){
       if(!e||e.agentId)return false; /* helpers' events never change the main desk */
       const s=get(id), x=extra||{};
@@ -61,13 +62,13 @@
         if(s.kind!=='think'||(e.reasoningId&&e.reasoningId!==s.rid)){s.buf='';s.rid=e.reasoningId||null;}
         s.buf=(s.buf+String(e.delta||'')).slice(-KEEP);
         const body=red(s.buf);
-        return set(s,'think','Thinking: '+lastSentences(body,LINE_MAX-10,true),lastSentences(body,PANEL_MAX));}
+        return set(s,'think','Thinking: '+lastSentences(body,LINE_MAX-10,true),lastSentences(body,PANEL_MAX),lastSentences(body,STREAM_MAX));}
       case 'output':{
         if(s.kind!=='reply')s.buf='';
         s.buf=e.final&&typeof e.text==='string'?e.text.slice(-KEEP):(s.buf+String(e.delta||'')).slice(-KEEP);
         const body=red(s.buf), l=lastSentences(body,LINE_MAX-10,true);
         if(!l)return false;
-        return set(s,'reply','Replying: '+l,lastSentences(body,PANEL_MAX));}
+        return set(s,'reply','Replying: '+l,lastSentences(body,PANEL_MAX),lastSentences(body,STREAM_MAX));}
       case 'toolCall':{
         if(e.phase!=='start'||x.skip)return false;
         s.buf='';
@@ -82,8 +83,8 @@
     }
     return {
       onEvent,
-      /* {kind, text, lines} or null when there is nothing to show */
-      of:id=>{const s=st.get(id);return s&&s.text?{kind:s.kind,text:s.text,lines:s.lines||s.text}:null;},
+      /* {kind, text, lines, long} or null when there is nothing to show (long: a grown desk's newest sentences, spec 001 FR-043) */
+      of:id=>{const s=st.get(id);return s&&s.text?{kind:s.kind,text:s.text,lines:s.lines||s.text,long:s.long||s.lines||s.text}:null;},
       clear:id=>{const s=st.get(id);if(s){s.buf='';set(s,'','','');}},
       drop:id=>{st.delete(id);},
       /* FR-030: may this desk be painted now? Records the paint when it may. */
@@ -94,5 +95,5 @@
     };
   }
   const KIND_WORD={think:'Thinking',tool:'Working',reply:'Replying'};
-  return {create,phrase,lastSentences,plain,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX};
+  return {create,phrase,lastSentences,plain,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX};
 })());

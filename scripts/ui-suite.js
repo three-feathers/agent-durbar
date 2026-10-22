@@ -25,6 +25,7 @@ const SIM = { DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
 /** Every driver that asserts (not only screenshots), with the settings its header documents. */
 const DRIVERS = [
   { name: 'shots-001-welcome', sim: false }, // the first-run screen: no simulator
+  { name: 'check-office-fill' }, // spec 001 FR-041..FR-046: grown desks with few agents (its own sim, simrooms and simhelpers per layout)
   { name: 'shots-017' },
   { name: 'shots-018' },
   { name: 'shots-033', env: { DURBAR_SIM_FLOORS: '1' } },

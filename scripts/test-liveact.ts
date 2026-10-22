@@ -7,7 +7,7 @@ import { redact, maskSecretCommand, maskSecretUrl } from '../src/shared/redact';
 
 const ROOT = path.join(__dirname, '..', '..');
 const R = path.join(ROOT, 'src', 'renderer');
-type Readout = { kind: string; text: string; lines: string } | null;
+type Readout = { kind: string; text: string; lines: string; long: string } | null;
 type Feed = {
   onEvent(id: string, e: Record<string, unknown>, x?: Record<string, unknown>): boolean;
   of(id: string): Readout; clear(id: string): void; due(id: string, now: number): boolean; wait(id: string, now: number): number; mark(id: string, now: number): void;
@@ -16,7 +16,7 @@ const L = require(path.join(R, 'liveact.js')) as {
   create(o: { mask: { redact(s: string): string; cmd(s: string): string; url(s: string): string } }): Feed;
   lastSentences(t: string, max: number, one?: boolean): string;
   phrase(o: Record<string, unknown>, mask?: Record<string, (s: string) => string>): string;
-  PAINT_MS: number; LINE_MAX: number; PANEL_MAX: number;
+  PAINT_MS: number; LINE_MAX: number; PANEL_MAX: number; STREAM_MAX: number;
 };
 const mask = { redact: (s: string) => redact(s, {}), cmd: (s: string) => maskSecretCommand(s, {}), url: (s: string) => maskSecretUrl(s, {}) };
 const mk = () => L.create({ mask });
@@ -65,7 +65,7 @@ eq(L.lastSentences('', 50), '', 'empty');
 {
   const f = mk();
   f.onEvent('a', ev({ type: 'toolCall', callId: 'c', tool: 'view', phase: 'start' }), { kind: 'read', label: 'src/tools/registry.ts' });
-  eq(f.of('a'), { kind: 'tool', text: 'Reading src/tools/registry.ts', lines: 'Reading src/tools/registry.ts' }, 'read');
+  eq(f.of('a'), { kind: 'tool', text: 'Reading src/tools/registry.ts', lines: 'Reading src/tools/registry.ts', long: 'Reading src/tools/registry.ts' }, 'read');
   f.onEvent('a', ev({ type: 'toolCall', callId: 'c', tool: 'bash', phase: 'start' }), { kind: 'run', label: 'npm test' });
   eq(f.of('a')!.text, 'Running npm test', 'run');
   eq(L.phrase({ kind: 'edit', tool: 'edit_file', label: 'a.ts' }, mask), 'Editing a.ts', 'edit');
@@ -159,6 +159,22 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   for (let i = 0; i < 4000; i++) f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: 'Word '.repeat(10) + 'end. ' }));
   ok(Date.now() - t0 < 3000, '4000 deltas in under 3 s (' + (Date.now() - t0) + ' ms)');
   ok(Array.from(f.of('a')!.lines).length <= L.PANEL_MAX, 'panel text bounded');
+  ok(Array.from(f.of('a')!.long).length <= L.STREAM_MAX, 'grown desk text bounded');
+}
+// spec 001 FR-043: a grown desk gets the newest sentences, more of them than the panel, the newest last, masked
+{
+  const f = mk();
+  const SECRET = 'sk-ant-' + 'A1b2C3d4E5f6G7h8I9j0K1L2';
+  for (let i = 0; i < 30; i++) f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: `Step ${i} is checked against the tests. ` }));
+  f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: `The key ${SECRET} is not needed. ` }));
+  const r = f.of('a')!;
+  ok(/The key \[redacted\] is not needed\.$/.test(r.long), 'long: newest sentence last, masked: ' + r.long.slice(-60));
+  ok(!r.long.includes(SECRET), 'long: no secret');
+  ok(r.long.length > r.lines.length && r.long.endsWith(r.lines), 'long holds more of the same newest sentences than the panel');
+  ok(Array.from(r.long).length <= L.STREAM_MAX && Array.from(r.long).length > L.PANEL_MAX * 2, 'long is up to STREAM_MAX characters');
+  ok(/^Step \d+ is checked/.test(r.long), 'long starts at a whole sentence');
+  f.onEvent('a', ev({ type: 'output', delta: 'Moved the handlers. Tests pass.' }));
+  eq(f.of('a')!.long, 'Moved the handlers. Tests pass.', 'long follows the reply');
 }
 
 // page wiring: the shim, the compiled redact module and liveact.js load in order before app.js; redact.ts stays import-free

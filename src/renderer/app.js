@@ -550,7 +550,23 @@ const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
 /* the readout to show now, or null: a live main agent that is Working or Thinking (Waiting, Error, Done and Idle keep their own text) */
 const liveShown=a=>liveOn()&&a&&!a.parent&&a.live&&!a.paused&&(a.state==='working'||a.state==='thinking')?LIVEACT.of(a.id):null;
-const deskLine=a=>{const r=LIVE_SIDE?null:liveShown(a);return r?r.text:taskOf(a);};
+const deskLine=a=>{if(GROW)return grownLine(a);const r=LIVE_SIDE?null:liveShown(a);return r?r.text:taskOf(a);};
+/* ---- spec 001 FR-041..FR-045: grown desks. With few agents a `roomy` card grows by a factor f (--gf and data-grow on the stage; chosen by
+   growSearch in chooseLayout). GROW is set while grown cards are probed or shown: their text line is a box that holds more (FR-043). ---- */
+let GROW=0;
+const GR=window.DurbarProbe.GROW;
+function setGrow(el,f){if(f){el.style.setProperty('--gf',String(f));el.dataset.grow=f>=GR.TWO_LINES?'2':'1';}else{el.style.removeProperty('--gf');delete el.dataset.grow;}}
+/* the text of a grown desk: the readout with its newest sentences, else the start of the last reply (Done, Idle; masked), else the desk text */
+function grownLine(a){
+  const r=liveShown(a);
+  if(r)return r.kind==='tool'?r.long:(window.DurbarLiveAct.KIND_WORD[r.kind]||'')+': '+r.long;
+  const st=vis(a), R=window.DurbarRedact;
+  if(!a.parent&&(st==='done'||st==='idle')&&a.lastOutput&&R&&typeof R.redact==='function'){
+    const t=R.redact(window.DurbarLiveAct.plain(a.lastOutput));
+    if(t)return DurbarCutText.cutText(t,600);
+  }
+  return taskOf(a);
+}
 const liveAttrs=a=>{if(a.parent)return '';const r=LIVE_SIDE?null:liveShown(a);return ` data-live="${esc(a.id)}"${r?` data-lk="${r.kind}"`:''}`;};
 function sideHTML(a){
   const r=liveShown(a);
@@ -559,7 +575,7 @@ function sideHTML(a){
 function paintLive(a){
   const st=$('stage'); if(!st)return;
   const id=CSS.escape(a.id), r=liveShown(a);
-  st.querySelectorAll(`[data-live="${id}"]`).forEach(el=>{const t=deskLine(a);if(el.textContent!==t)el.textContent=t;const k=LIVE_SIDE||!r?'':r.kind;if((el.dataset.lk||'')!==k){if(k)el.dataset.lk=k;else delete el.dataset.lk;}});
+  st.querySelectorAll(`[data-live="${id}"]`).forEach(el=>{const t=deskLine(a);if(el.textContent!==t){el.textContent=t;if(GROW)fitSide(el);}const k=LIVE_SIDE||!r?'':r.kind;if((el.dataset.lk||'')!==k){if(k)el.dataset.lk=k;else delete el.dataset.lk;}});
   const sp=st.querySelector(`[data-side="${id}"]`);
   if(sp){const k=r?r.kind:'',w=r?window.DurbarLiveAct.KIND_WORD[k]||'':'',t=r?r.lines:'';
     sp.classList.toggle('is-empty',!r);if((sp.dataset.lk||'')!==k){if(k)sp.dataset.lk=k;else delete sp.dataset.lk;}
@@ -567,6 +583,13 @@ function paintLive(a){
 }
 /* text taller than the panel keeps its newest lines in view (bottom-anchored, the top fades): measured, so any font works */
 function fitSide(tx){tx.classList.remove('over');if(tx.scrollHeight>tx.clientHeight+1)tx.classList.add('over');}
+/* spec 001 FR-043: a grown desk's text box is the room its card leaves, cut to whole lines (so no half line shows), then fitted like the panel */
+function fitLines(tx){
+  tx.style.flex='';tx.style.height='';
+  const lh=parseFloat(getComputedStyle(tx).lineHeight)||16, n=Math.max(1,Math.floor((tx.clientHeight+0.5)/lh));
+  tx.style.flex='none';tx.style.height=(n*lh)+'px';
+  fitSide(tx);
+}
 const liveTimers=new Map();
 function livePaintSoon(a){
   if(liveTimers.has(a.id))return; /* a trailing paint is already due: it reads the newest text */
@@ -869,20 +892,42 @@ function chooseLayout(sizing,aw,ah){
     if(best){res={d,hcap,cap:best.c,fit:true,boost:[]};break;}
     lastAny={d,hcap,cap:any.c,fit:false,boost:[]};
   }
+  /* spec 001 FR-042: when the search picked `full` or `roomy` (few agents), grown `roomy` desks win if they fit at least one step larger
+     than `roomy`. Never after card/mini/micro (15 agents lay out as before) or with a forced density. */
+  if(res&&res.fit&&!FORCE_DENSITY&&(res.d==='full'||res.d==='roomy')){
+    const g=growSearch(sizing,aw,ah,openOnly,GR.MIN+GR.STEP);
+    if(g)res={d:'roomy',hcap:3,cap:g.c,fit:true,boost:[],grow:g.f};
+  }
   /* Leftover floor space (also what closed rooms free up): give the agents with the most helpers more of them, one step up
      (1 -> 3, 2 -> 3, 3 -> 6 shown before "+N more"), attention first, while the layout still fits. */
   if(res&&res.fit){
     const up={1:3,2:3,3:6}[res.hcap]||res.hcap;
     const many=openOnly.flatMap(m=>m.mains).filter(a=>helpersOf(a).length>res.hcap+1).sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))||helpersOf(y).length-helpersOf(x).length);
-    HCAP=res.hcap; LIVE_SIDE=!!res.side; probe.dataset.d=res.d;
+    HCAP=res.hcap; LIVE_SIDE=!!res.side; probe.dataset.d=res.d; GROW=res.grow?1:0; setGrow(probe,res.grow||0);
     for(const a of many){
       HBOOST.set(a.id,up); probe.style.height='auto';
       probeSet(probe,stageHTML(sizing,res.d,aw,res.cap));
       if(fits())res.boost.push([a.id,up]); else HBOOST.delete(a.id);
     }
   }
-  probe.innerHTML=''; probePrev=null; LIVE_SIDE=false;
+  probe.innerHTML=''; probePrev=null; LIVE_SIDE=false; GROW=0; setGrow(probe,0);
   return res||lastAny;
+}
+/* FR-042: for each column count (most first), the largest f at which the office fits; the stage HTML goes into the probe once per column
+   count (probeSet sets the column change in place) and each f only changes --gf on the probe. Returns {c, f, h} or null. */
+function growSearch(sizing,aw,ah,openOnly,lo){
+  const probe=$('probe'), D=DENS.roomy, over=2*D.rp+4;
+  const maxCap=Math.max(1,Math.min(Math.max(...openOnly.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
+  HCAP=3; HBOOST=new Map(); LIVE_SIDE=false; GROW=1; probe.dataset.d='roomy'; probe.style.height='auto';
+  const cols=[]; for(let c=maxCap;c>=1;c--)cols.push(c);
+  let cur=0;
+  const best=window.DurbarProbe.pick(cols,lo,(c,f)=>{
+    if(cur!==c){probeSet(probe,stageHTML(sizing,'roomy',aw,c));cur=c;}
+    setGrow(probe,f);
+    return {fits:probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1,h:probe.scrollHeight};
+  });
+  GROW=0; setGrow(probe,0);
+  return best;
 }
 let layoutKey='', layout=null;
 /* spec 001 FR-026: what a new user needs before the first folder: sign in once (spec 052 FR-056: named by the AI account, not the app), add a folder (Read-only), or look around in the demo */
@@ -924,7 +969,7 @@ function renderOffice(){
   if(aw<=0||ah<=0)return;
   const model=officeModel();
   if(!model.length){
-    stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
+    stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey=''; GROW=0; setGrow(stage,0);
     stagePrev=null;
     if(!agents.length&&!demoOn){if(!stage.querySelector('.welcome'))ringFolder();stage.innerHTML=welcomeHTML();floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" at the top left to add a folder'+(SIMPLE?'.':' (or "+ Workspace" for a VS Code .code-workspace file).'):(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?(SIMPLE?'"Floors" above, or ':'"Floors" or "Folders" above, or '):(SIMPLE?'':'"Folders" above, or '))+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
@@ -934,15 +979,16 @@ function renderOffice(){
   const sizing=ui.status?officeModel(true):model;
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
-  HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side;
+  HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side; GROW=layout.grow?1:0;
   const parts=stageParts(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
-  stage.style.width=aw+'px'; stage.style.height='auto'; stage.dataset.d=layout.d;
+  stage.style.width=aw+'px'; stage.style.height='auto'; stage.dataset.d=layout.d; setGrow(stage,layout.grow||0);
   if(fresh)stage.innerHTML=parts.join(''); else if(!morphParts(stage,parts))morphHTML(stage,parts.join(''));
   stagePrev=parts;
   stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap); stage.dataset.side=layout.side?'1':'0';
   fitUsage(stage);
   if(layout.side)stage.querySelectorAll('.liveside .ls-t').forEach(fitSide);
+  if(layout.grow)stage.querySelectorAll('.desk.card .intent').forEach(fitLines); /* FR-043: whole lines, the newest in view */
   floor.classList.toggle('scrolls',!layout.fit);
   if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
 }
@@ -2019,7 +2065,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', rooms:/^[1-5]$/.test(qs.get('simrooms')||'')?parseInt(qs.get('simrooms'),10):undefined, noHelpers:qs.get('simhelpers')==='0', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;

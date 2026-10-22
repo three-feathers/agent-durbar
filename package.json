@@ -72,6 +72,7 @@
     "test:handoff": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-handoff.js",
     "test:devhooks": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-devhooks.js",
     "check:office": "npm run build && node scripts/check-office-overlap.js",
+    "check:office-fill": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-office-fill.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'office-fill] all checks passed' \\$L\"",
     "test:usagestore": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-usagestore.js",
     "test:usagetotals": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-usagetotals.js",
     "test:costtable": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-costtable.js",

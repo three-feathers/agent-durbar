@@ -54,11 +54,11 @@
 
 ## Changes 2026-10-22 (grown desks when there are few agents, owner)
 
-- [ ] T057 `src/renderer/grow.js` (`largest`, `better`, `pick`, constants) and `scripts/test-grow.ts` + `npm run test:grow` (synthetic fit tests; box model with 1, 2, 4, 6, 10, 15 agents in 1-3 folders at 1280x800, 1440x900, 1920x1080) [FR-041, FR-042, FR-046]
-- [ ] T058 `chooseLayout`: grow search after the candidates (`full` at f >= 1.5, `roomy` above 1.0; never `card`/`mini`/`micro` or a forced density); `renderOffice` sets `--gf` and `data-grow`; helper boost after [FR-041, FR-042, FR-044]
-- [ ] T059 Grown card text: `liveact.js` `long` readout (+ `test:liveact` cases); `deskLine` grown text (readout, last reply excerpt masked, task); `fitSide` on grown text lines after render and paint; `styles.css` grown rules (height, widths, two-line title, max 8 lines, fade) [FR-043, FR-045]
-- [ ] T060 `sim.ts` `simrooms=1..5`, `simhelpers=0`; `scripts/check-office-fill.js` driver + `npm run check:office-fill` + `scripts/ui-suite.js`; `shots-001-live-activity.js` forces `full` for the side-panel part [FR-046]
-- [ ] T061 `check:office`, `check:geometry`, `npm test`; screenshots `docs/screenshots/001-fill-{4,6,15}-{1440x900,1280x800}.png` (simulator); README office section, CHANGELOG, `specs/README.md` [FR-045, FR-046]
+- [x] T057 `src/renderer/probe.js` (`GROW`, `largest`, `better`, `pick`) and their cases in `scripts/test-probe.ts` (`npm run test:probe`) (synthetic fit tests; box model with 1, 2, 4, 6, 10, 15 agents in 1-3 folders at 1280x800, 1440x900, 1920x1080) [FR-041, FR-042, FR-046]
+- [x] T058 `chooseLayout`: grow search after the candidates (after `full` or `roomy`, at f >= 1.1; never `card`/`mini`/`micro` or a forced density); `renderOffice` sets `--gf` and `data-grow`; helper boost after [FR-041, FR-042, FR-044]
+- [x] T059 Grown card text: `liveact.js` `long` readout (+ `test:liveact` cases); `deskLine` grown text (readout, last reply excerpt masked, task); `fitSide` on grown text lines after render and paint; `styles.css` grown rules (height, widths, two-line title, max 8 lines, fade) [FR-043, FR-045]
+- [x] T060 `sim.ts` `simrooms=1..5`, `simhelpers=0`; `scripts/check-office-fill.js` driver + `npm run check:office-fill` + `scripts/ui-suite.js`; `shots-001-live-activity.js` forces `full` for the side-panel part [FR-046]
+- [x] T061 `check:office`, `check:geometry`, `npm test`; screenshots `docs/screenshots/001-fill-{4,6,15}-{1440x900,1280x800}.png` (simulator); README office section, CHANGELOG, `specs/README.md` [FR-045, FR-046]
 
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 
