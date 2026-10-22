@@ -544,6 +544,9 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 @container room (max-width:340px){.stage .room-head .room-new:not(.room-more){display:none}}
 @container room (max-width:460px){.stage .room .room-head .room-path{display:none}} /* the path (also in the name's tooltip) goes before the name is cut */
 @container (max-width:250px){.rd.calm{display:none}}
+/* spec 001 FR-035 (CI font, one-agent rooms beside the strip): in the narrowest rooms the name takes all the shrinking (a flex-shrink below 1
+   only absorbs that fraction of the overflow), so the ⋯ and MCP buttons stay inside the header; the full name is in its tooltip */
+@container room (max-width:260px){.stage:not([data-d="full"]) .room-head .room-name{flex-shrink:1}}
 .stage:not([data-d="full"]) .room-name{flex:0 .05 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .stage:not([data-d="full"]) .room-path{font-size:11px;flex-shrink:1000} /* spec 052 (2026-10-21): the path gives way completely before the room name is cut */
 .stage:not([data-d="full"]) .room-dots{gap:6px;min-width:0}
