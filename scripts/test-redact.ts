@@ -7,8 +7,19 @@ import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cu
 
 // CPU time of f in ms (user + system of this process), not wall time: it does not grow when other processes take the CPU, so the
 // timing checks below hold on a loaded machine or runner (spec 041 `## Changes` 2026-10-22, T068). It still counts every step the
-// masking takes, so super-linear (ReDoS-style) growth fails as before.
-const cpuMs = (f: () => void): number => { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); return (d.user + d.system) / 1000; };
+// masking takes, so super-linear (ReDoS-style) growth fails as before. CPU time does not see a blocking wait (Atomics.wait, a sync
+// sleep, execSync, sync I/O), so wall time gets a loose backstop of 10x the check's CPU limit `capMs`: load cannot reach it, a long
+// wait does. A wait shorter than that still passes (the accepted limit; spec 041 `## Changes` 2026-10-22, review of PR #527).
+const cpuMs = (f: () => void, capMs: number): number => {
+  const w = process.hrtime.bigint();
+  const c = process.cpuUsage();
+  f();
+  const d = process.cpuUsage(c);
+  const cpu = (d.user + d.system) / 1000;
+  const wall = Number(process.hrtime.bigint() - w) / 1e6;
+  assert.ok(wall < 10 * capMs, `wall-time backstop: ${wall.toFixed(1)} ms wall for ${cpu.toFixed(1)} ms CPU, limit ${10 * capMs} ms (a blocking wait in the timed code?)`);
+  return cpu;
+};
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -76,11 +87,11 @@ assert.strictEqual(redact(`l1\n${planted.ghp}\r\nl3\n`, {}), 'l1\n[redacted]\r\n
   const big = ('word '.repeat(19) + 'sk-' + 'a'.repeat(10) + '\n').repeat(12000); // > 1 MB
   assert.ok(big.length > REDACT_MAX_CHARS);
   let out = '';
-  const ms = cpuMs(() => { out = redact(big, env); });
+  const ms = cpuMs(() => { out = redact(big, env); }, 1500);
   assert.ok(ms < 1500, `1 MB redaction took ${ms} ms`);
   assert.ok(out.length <= REDACT_MAX_CHARS + 20, 'input capped at 1 MB');
   const pathological = 'a'.repeat(REDACT_MAX_CHARS);
-  const ms2 = cpuMs(() => { redact(pathological + ':' + pathological, env); });
+  const ms2 = cpuMs(() => { redact(pathological + ':' + pathological, env); }, 1500);
   assert.ok(ms2 < 1500, `pathological single token is fast (${ms2} ms)`);
 }
 
@@ -132,30 +143,34 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
     aws: 'AKIA'.repeat(MB / 4),
     awsLong: 'ASIA' + 'A'.repeat(MB),
   };
-  // Each case runs in a worker thread that times redact() itself, so a busy runner cannot fail the test; the 1 s assertion is the
-  // real ReDoS check. Workers, not child processes: a child fed 1 MB on stdin hung for 30 s twice on a busy macOS runner (#303).
+  // Each case runs in a worker thread that times redact() itself with the thread's own CPU time (`process.threadCpuUsage()`, Node 22
+  // and later; wall time from `hrtime` only on Node 20.19, which has no per-thread CPU time), so a busy runner cannot fail the test;
+  // the 1 s assertion is the real ReDoS check, and wall time has the 10 s backstop of `cpuMs` (spec 041 `## Changes` 2026-10-22,
+  // review of PR #527). Workers, not child processes: a child fed 1 MB on stdin hung for 30 s twice on a busy macOS runner (#303).
   // The test stays synchronous: the worker writes the time into shared memory and wakes this thread (Atomics), with a 30 s hang
   // guard; a worker that does not answer in time is stopped and the case retried once.
   const mod = require.resolve('../src/shared/redact');
-  const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,1);` +
-    `try{const {redact}=require(w.mod);const t=process.hrtime.bigint();redact(w.input,{});out[0]=Number(process.hrtime.bigint()-t)/1e6;Atomics.store(flag,0,1)}` +
+  const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
+    `try{const {redact}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   for (const [k, v] of Object.entries(adversarial)) {
     let ms = NaN;
+    let wall = NaN;
     let why = '';
     for (let attempt = 0; attempt < 2; attempt++) {
-      const sab = new SharedArrayBuffer(16);
+      const sab = new SharedArrayBuffer(24);
       const flag = new Int32Array(sab, 0, 1);
       const worker = new Worker(code, { eval: true, workerData: { mod, input: v, sab } });
       const waited = Atomics.wait(flag, 0, 0, 30000);
       void worker.terminate();
       if (waited === 'timed-out') { why = 'no answer in 30 s'; continue; }
       assert.strictEqual(Atomics.load(flag, 0), 1, `adversarial ${k}: redact() threw in the worker`);
-      ms = new Float64Array(sab, 8, 1)[0];
+      [ms, wall] = new Float64Array(sab, 8, 2);
       break;
     }
     assert.ok(!Number.isNaN(ms), `adversarial ${k}: worker hung twice (${why})`);
     assert.ok(ms < 1000, `adversarial ${k}: redact() took ${ms.toFixed(1)} ms, limit 1000 ms`);
+    assert.ok(wall < 10000, `adversarial ${k}: wall-time backstop: ${wall.toFixed(1)} ms wall for ${ms.toFixed(1)} ms CPU, limit 10000 ms (a blocking wait?)`);
   }
 }
 
@@ -361,7 +376,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.doesNotThrow(() => { maskSecretArgs([null as any, undefined as any, 5 as any]); maskSecretCommand(null); maskSecretUrl(null); });
   const big = 200_000;
   const shapes = ['--token ' + 'a '.repeat(big / 2), '{"a":"'.repeat(big / 6), 'a=b;'.repeat(big / 4), 'x://' + '@'.repeat(big), 'http://' + 'a:'.repeat(big / 2), '/bot1:'.repeat(big / 6), ';token='.repeat(big / 7), '"k": "'.repeat(big / 6), '['.repeat(big)];
-  const ms = cpuMs(() => { for (const x of shapes) { _uncappedForTest.maskSecretArgs([x]); maskSecretUrl(x); _uncappedForTest.maskSecretCommand(x); } });
+  const ms = cpuMs(() => { for (const x of shapes) { _uncappedForTest.maskSecretArgs([x]); maskSecretUrl(x); _uncappedForTest.maskSecretCommand(x); } }, 20000);
   console.log(`redact: masking 200k-char adversarial inputs in ${ms} ms`);
   assert.ok(ms < 20000, `masking 200k-char adversarial inputs took ${ms} ms`);
 }
@@ -657,7 +672,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const rshapes: Array<[string, string]> = [['Bearer ', 'Bearer '], ['--auth Bearer ', '--auth Bearer '], ['obj', '{\\"name\\":\\"token\\",\\"value\\":\\"x y\\"} '], ['arr', '{\\"name\\":\\"token\\",\\"value\\":[\\"x\\"]} '], ['hdr', 'Authorization: Bearer '], ['qhdr', '-H "Authorization: Bearer" '], ['eq', '--auth=Bearer '], ['sq', "Authorization: 'a "], ['dq', 'Authorization: "a '], ['mixed', `Authorization: "a Authorization: 'a `], ['tok', 'TOKEN=Auth: '], ['unclosed', 'x Authorization: "a '], ['unclosed1', "Cookie: 'a "], ['schemeq', 'Authorization: Basic "a '], ['argsq', 'curl Authorization: "a ']];
     for (const [, unit] of rshapes) {
       const mk = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
-      const time = (x: string): number => cpuMs(() => { _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); });
+      const time = (x: string): number => cpuMs(() => { _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); }, 8000);
       let tSmall = Infinity;
       let tBig = Infinity;
       for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(mk(50_000))); tBig = Math.min(tBig, time(mk(400_000))); }
@@ -671,7 +686,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // (n) timing: each shape linear in practice; doubling check on the shape the analyst suspected.
   const shapes: Array<[string, string]> = [['-c ', '-c '], ['"', '"'], ['"a ', '"a '], ["a 'b", "a 'b"], [', a=', ', a='], ['Cookie: ', 'Cookie: '], ['{"a":"x y ', '{"a":"x y '], ["'\"", "'\""], ['x ', 'x ']];
   const run = (x: string): void => { _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); };
-  const total = cpuMs(() => { for (const [, unit] of shapes) run(unit.repeat(Math.ceil(200_000 / unit.length)).slice(0, 200_000)); });
+  const total = cpuMs(() => { for (const [, unit] of shapes) run(unit.repeat(Math.ceil(200_000 / unit.length)).slice(0, 200_000)); }, 20000);
   console.log(`redact: 14c masking 200k-char adversarial inputs in ${total} ms`);
   assert.ok(total < 20000, `14c: masking 200k-char adversarial inputs took ${total} ms`);
   // linearity: 50k vs 400k (8x apart), 5 interleaved pairs, min CPU time of each size (cpuMs), so neither a load burst nor other
@@ -680,7 +695,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   for (const unit of ['{"a":"x y ', 'x ', '"a ']) {
     const small = unit.repeat(Math.ceil(50_000 / unit.length));
     const big = unit.repeat(Math.ceil(400_000 / unit.length));
-    const time = (x: string): number => cpuMs(() => run(x));
+    const time = (x: string): number => cpuMs(() => run(x), 8000);
     let tSmall = Infinity;
     let tBig = Infinity;
     for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(small)); tBig = Math.min(tBig, time(big)); }
@@ -694,7 +709,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     [';;;x y', (n) => ';'.repeat(n) + 'x y'], ['&&&x y', (n) => '&'.repeat(n) + 'x y'], ['|||x y', (n) => '|'.repeat(n) + 'x y'], ['a```b y', (n) => 'a' + '`'.repeat(n) + 'b y'],
   ];
   for (const [name, gen] of runs) {
-    const time = (x: string): number => cpuMs(() => run(x));
+    const time = (x: string): number => cpuMs(() => run(x), 8000);
     const small = gen(50_000);
     const big = gen(400_000);
     let tSmall = time(small);
@@ -710,7 +725,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // T065 (#374): a string over MASK_INPUT_MAX is hidden whole through the public helpers too, before any rule, in well under 100 ms
   {
     const MB = 1_000_000;
-    const timeIt = <T>(f: () => T): { v: T; ms: number } => { let v!: T; const ms = cpuMs(() => { v = f(); }); return { v, ms }; };
+    const timeIt = <T>(f: () => T): { v: T; ms: number } => { let v!: T; const ms = cpuMs(() => { v = f(); }, 100); return { v, ms }; };
     const shapes: Array<[string, string]> = [['a=b;', 'token=' + SEC], ['x ', '--token ' + SEC]];
     for (const [unit, tail] of shapes) {
       const big = unit.repeat(Math.ceil(MB / unit.length)) + tail;
@@ -855,7 +870,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   const run = (x: string): void => { _uncappedForTest.maskSecretArgs(['sh', '-c', x]); _uncappedForTest.maskSecretArgs(['powershell', '-Command', x]); _uncappedForTest.maskSecretCommand(x); };
   for (const unit of ['sh -c "x \\"y\\"" ', `powershell -Command "a ${BT}" `, 'cmd /c a ^" ', 'bash -c "sh -c \\"a ', "pwsh -c 'a '' ", '"--token ']) {
     const mk = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
-    const time = (x: string): number => cpuMs(() => run(x));
+    const time = (x: string): number => cpuMs(() => run(x), 8000);
     let tSmall = Infinity;
     let tBig = Infinity;
     for (let i = 0; i < 3; i++) { tSmall = Math.min(tSmall, time(mk(50_000))); tBig = Math.min(tBig, time(mk(400_000))); }
@@ -865,7 +880,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   }
   // review of #455 item 1: one long backslash run after a cmd wrapper (no quote after it) is not retried from each position
   for (const head of ['cmd /c ^x ', 'cmd /c \\"x ']) {
-    const time = (n: number): number => { const x = head + '\\'.repeat(n); return cpuMs(() => { _uncappedForTest.maskSecretCommand(x); }); };
+    const time = (n: number): number => { const x = head + '\\'.repeat(n); return cpuMs(() => { _uncappedForTest.maskSecretCommand(x); }, 8000); };
     let tSmall = Infinity;
     let tBig = Infinity;
     for (let i = 0; i < 3; i++) { tSmall = Math.min(tSmall, time(50_000)); tBig = Math.min(tBig, time(400_000)); }

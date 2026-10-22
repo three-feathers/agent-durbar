@@ -301,12 +301,16 @@ async function main(): Promise<void> {
     const c4 = loopback(mk(), 0, { onClose: () => { closed++; } });
     const flood = Buffer.from('x\n'.repeat(200000));
     assert.strictEqual(flood.length, 400000);
-    // CPU time, not wall time, so a loaded machine cannot fail it (spec 041 T068); it still counts every line the parser touches
+    // CPU time, not wall time, so a loaded machine cannot fail it (spec 041 T068); it still counts every line the parser touches.
+    // CPU time does not see a blocking wait, so wall time has a loose backstop of 10x the limit (review of PR #527).
+    const w0 = process.hrtime.bigint();
     const c0 = process.cpuUsage();
     c4.conn.onData(flood);
     const cpu = process.cpuUsage(c0);
     const ms = (cpu.user + cpu.system) / 1000;
+    const wall = Number(process.hrtime.bigint() - w0) / 1e6;
     assert.ok(ms < 1000, `flood handled quickly (${ms} ms CPU)`);
+    assert.ok(wall < 10000, `flood wall-time backstop: ${wall.toFixed(1)} ms wall for ${ms} ms CPU, limit 10000 ms (a blocking wait?)`);
     assert.ok(c4.replies.length <= RATE_PER_SECOND, `at most a handful of replies (${c4.replies.length})`);
     assert.strictEqual(closed, 1, 'close signalled once');
     assert.ok(c4.conn.closed);
