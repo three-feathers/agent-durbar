@@ -240,7 +240,9 @@ async function main(): Promise<void> {
     const guarded = [...walk('src/main/mcp'), 'src/main/mcpipc.ts', 'src/main/mcpstore.ts', 'src/main/mcpfiles.ts', 'src/main/remoteops.ts', 'src/main/schedules.ts', 'src/main/agentops.ts', 'src/main/daily.ts', ...walk('src/shared').filter((f) => !/shared[\\/]api\.ts$/.test(f))]; // api.ts only types the bridge
     for (const f of guarded) assert.ok(!DELETE_WORDS.test(read(f)), `${f} has no path to delete a session`);
     // in src/main only src/main/ipc/previous.ts (the window's IPC, spec 045 FR-060) and prevsessions.ts name it; main.ts only passes the dependencies to it
-    for (const f of walk('src/main')) if (!/src\/main\/(ipc\/previous|prevsessions)\.ts$/.test(f.replace(/\\/g, '/'))) assert.ok(!DELETE_WORDS.test(read(f)), `${f} does not reach the delete`);
+    // simguard.ts (spec 010 FR-028) only names the capability flag for the simulator's stand-in, whose every member refuses
+    for (const f of walk('src/main')) if (!/src\/main\/(ipc\/previous|prevsessions|simguard)\.ts$/.test(f.replace(/\\/g, '/'))) assert.ok(!DELETE_WORDS.test(read(f)), `${f} does not reach the delete`);
+    assert.ok(!/\.deleteSession\s*\(/.test(read('src/main/simguard.ts')), 'simguard.ts never calls deleteSession');
     // adapters: only the delete members themselves and the router helper
     for (const f of walk('src/adapters')) if (!/\/(copilot|codex|fake|router|types|capabilities)\.ts$/.test(f.replace(/\\/g, '/'))) assert.ok(!/\bdeleteSession\b/.test(read(f)), `${f} does not delete sessions`);
     const main = read('src/main/ipc/previous.ts');

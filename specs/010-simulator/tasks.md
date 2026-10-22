@@ -24,3 +24,4 @@
 - [x] T026 `scripts/test-simguard.ts` (`npm run test:simguard`, in `npm test`): dynamic refusal of every preload channel, the named spending list, allow-list hygiene, `main.ts` wiring, the stand-in adapter. [FR-026]
 - [x] T027 `scripts/check-sim-guard.js` (`npm run check:sim-guard`, in `scripts/ui-suite.js`): the real preload API refused from the page under `DURBAR_SIM=15`, `harnessPlans` still answers, no real adapter created. [FR-026]
 - [x] T028 Docs: `docs/agent-notes.md` entry on the driver trap (moved here from PR #505's branch), README *Development*, CHANGELOG, `specs/README.md` row. Check that `scripts/*-real.ts` never set `DURBAR_SIM`. [FR-027]
+- [x] T029 Review on #514 (fjcabello): the stand-in's optional members follow contract C2 (`SIM_OPTIONAL_MEMBERS`, `has` trap); `test-simguard` checks `typeof`, `in` and the capabilities for every optional member [FR-028]

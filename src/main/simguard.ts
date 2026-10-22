@@ -47,8 +47,38 @@ export function isSimBlocked(ad: unknown): boolean {
 
 /**
  * FR-024: an inert adapter with the descriptor's identity. `isLive` is false, `onEvent` and `dispose` do nothing, `debug` and
- * `writeGuard` can be set (the router sets them); any other member is a function that throws the refusal. Not a thenable.
+ * `writeGuard` can be set (the router sets them); every other member that exists is a function that throws the refusal. Not a thenable.
+ * FR-028: an optional member exists exactly when the real adapter's contract (C2) says so for these capabilities, so `typeof`, `in`
+ * and the capabilities agree; optional members with no capability behind them are absent (callers check before calling).
  */
+/**
+ * The optional members of `AgentAdapter` (spec 012 FR-027) and, for the ones a capability decides, that capability (contract C2 in
+ * scripts/test-adapter-contract.ts). `scripts/test-simguard.ts` checks this list against the interface, so a new optional member fails there.
+ */
+type Caps = AdapterDescriptor['capabilities'];
+export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean) | null>> = Object.freeze({
+  interrupt: (c: Caps) => !!c.interrupt,
+  listModelOptions: (c: Caps) => !!c.models,
+  listPreviousSessions: (c: Caps) => !!c.history,
+  history: (c: Caps) => !!c.history,
+  setCap: (c: Caps) => !!c.caps,
+  resolveLimit: (c: Caps) => !!c.caps,
+  setMcpEnabled: (c: Caps) => !!c.mcpToggle,
+  restartMcpServer: (c: Caps) => !!c.mcpRestart,
+  listMcpTools: (c: Caps) => !!c.mcpTools,
+  handoffSummary: (c: Caps) => !!c.handoff,
+  generateText: (c: Caps) => !!c.oneShot,
+  setRemote: (c: Caps) => !!c.remote,
+  renameSession: (c: Caps) => !!c.renameSession,
+  deleteSession: (c: Caps) => !!c.deleteSession,
+  startMcpSignIn: (c: Caps) => !!c.mcpSignIn,
+  cancelMcpSignIn: (c: Caps) => !!c.mcpSignIn,
+  setPermMode: (c: Caps) => c.permModeSwitch !== 'none',
+  resolvePermission: null, revokeGrant: null, setModel: null, cancelQueuedModel: null, compact: null, resolvePlan: null,
+  answerQuestion: null, answerElicitation: null, listAgentProfiles: null, selectAgentProfile: null, authStatus: null, verifySignIn: null,
+  refreshAuth: null, resumeIdOf: null, debug: null, writeGuard: null,
+});
+
 export function blockedAdapter(d: AdapterDescriptor): AgentAdapter {
   const base: Record<string | symbol, unknown> = {
     id: d.id,
@@ -60,13 +90,24 @@ export function blockedAdapter(d: AdapterDescriptor): AgentAdapter {
     [BLOCKED]: true,
   };
   const settable = new Set<string | symbol>(['debug', 'writeGuard']);
+  const caps = (d.capabilities ?? {}) as Caps;
+  /** An optional member the contract does not give these capabilities is absent, not a throwing function (FR-028). */
+  const absent = (prop: string | symbol): boolean => {
+    if (typeof prop === 'symbol' || prop === 'then' || prop === 'toJSON') return true;
+    if (!Object.prototype.hasOwnProperty.call(SIM_OPTIONAL_MEMBERS, prop)) return false;
+    const gate = SIM_OPTIONAL_MEMBERS[prop];
+    return !gate || !gate(caps);
+  };
   return new Proxy(base, {
     get(t, prop) {
       if (prop in t) return t[prop];
-      if (typeof prop === 'symbol' || prop === 'then' || prop === 'toJSON' || settable.has(prop)) return undefined;
+      if (absent(prop)) return undefined;
       return () => {
-        throw new Error(simRefusal(`${d.id}.${prop}`));
+        throw new Error(simRefusal(`${d.id}.${String(prop)}`));
       };
+    },
+    has(t, prop) {
+      return prop in t || !absent(prop);
     },
     set(t, prop, value) {
       if (!settable.has(prop)) return false;
