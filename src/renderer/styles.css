@@ -490,7 +490,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
   .inbox-btn .ib-word{display:none}
   .inbox-btn{padding:0 10px}
   body:not(.simple) .sched-top .st-word{display:none} /* spec 044 FR-027: the word moves to the name and the title; Simple has room for it */
-  .sched-top{padding:0 10px}
+  .topbar .sched-top{padding:0 10px}
 }
 /* spec 052 FR-164: room for + Folder and + Workspace (measured in DejaVu Sans, CI's font): a narrower defaults chip (its full text is in its
    title and label). Where the row still does not fit, app.js (fitTopbar) sets .tb-tight: the brand keeps its mark and its Live/Demo pill
@@ -498,10 +498,16 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .topbar.tb-tight .brand h1{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:1799px){.topbar #defaultsBtn{max-width:170px}}
 @media (max-width:1599px){.topbar #defaultsBtn{max-width:130px}.topbar #defaultsBtn .dv-r{display:none}.topbar .select-wrap select{max-width:104px}} /* the mode word only ("Read-only"); the rest is in the title, the label and the popover */
+@media (max-width:1440px){ .topbar{column-gap:8px} } /* spec 044 FR-034: room for Schedules at 1440x900 (the 1440 window), step 3 of the levers: the bar's gaps */
 @media (max-width:1439px){
   .topbar #liveBar .top-add .btn{padding:0 8px}
   .topbar .seg button{padding:0 7px}
   .topbar #liveBar{gap:6px}
+  /* spec 044 FR-034: room for Schedules at 1280x800 in Expert, measured in DejaVu Sans with floors and mixed agent apps, in the documented
+     order: the chip's cap (not binding there: the chip is 106px), the folder filter (104 to 80px; its full text is in its title), the gaps */
+  .topbar .select-wrap select{max-width:80px}
+  .topbar .controls,.topbar #liveBar{gap:4px}
+  .topbar .sched-top{padding:0 8px;gap:4px}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
