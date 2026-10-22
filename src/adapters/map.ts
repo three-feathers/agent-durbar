@@ -11,6 +11,7 @@ import type { AgentEvent, CompactionEvent, ContextTier, McpServerStatus } from '
 import { cleanSessionTitle } from './history';
 import { nonEmptyStr as str } from '../shared/guards';
 import { EditStreams, editOf } from './edits';
+import { usageLimitClosing } from './usagelimit';
 
 export type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> : never) : never;
 
@@ -313,7 +314,7 @@ export class EventMapper {
         const lim = agentId ? null : copilotUsageLimit(d.errorType, d.errorCode);
         if (lim) {
           this.emit(lim);
-          return this.emit({ type: 'status', status: 'idle', intent: 'Usage limit reached' });
+          return this.emit(usageLimitClosing());
         }
         // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)
         return this.emit({ type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType, d.message) });

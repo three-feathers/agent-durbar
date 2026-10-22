@@ -1,5 +1,6 @@
 /** Codex mode and approval mapping (spec 012 T022, FR-004, FR-013). `npm run test:runtime`. No Codex binary, no credits. */
 import * as assert from 'assert';
+import * as path from 'path';
 import { grantScope, summarize } from '../src/adapters/permissions';
 import { CODEX_BINARY, CODEX_MIN_VERSION, compareVersions, parseVersion } from '../src/adapters/detect';
 import {
@@ -142,7 +143,33 @@ assert.strictEqual(codexPermission('item/fileChange/requestApproval', { grantRoo
     null,
     { path: 'evil\nname', kind: { type: 'add' }, diff: '' },
   ]);
-  assert.deepStrictEqual(ch.map((c) => [c.path, c.kind, c.movePath]), [['/w/src/a.ts', 'update', undefined], ['/w/NEW.md', 'add', undefined], ['/w/gone.txt', 'delete', undefined], ['/w/b.ts', 'update', '/w/c.ts'], ['/w/plain.ts', 'add', undefined], ['evil name', 'add', undefined]], 'changes read field by field; a plain kind word is taken; no path is left out; a newline in a path is a space');
+  assert.deepStrictEqual(ch.map((c) => [c.path, c.kind, c.movePath]), [['/w/src/a.ts', 'update', undefined], ['/w/NEW.md', 'add', undefined], ['/w/gone.txt', 'delete', undefined], ['/w/b.ts', 'update', '/w/c.ts'], ['/w/plain.ts', 'add', undefined], ['evil\nname', 'add', undefined]], 'changes read field by field; a plain kind word is taken; no path is left out; a path is kept exactly as sent (review on #470)');
+  assert.ok(codexChangeDiff([{ ...ch[5], diff: 'x\n' }]).startsWith('--- a/evil name\n+++ b/evil name\n'), 'a newline in a path is a space in the diff headers only (display)');
+  assert.strictEqual(codexPermission('item/fileChange/requestApproval', { itemId: 'i' }, [ch[5]]).summary, 'write evil name (new file)', 'and in the card line');
+  // review on #470: a path is never cut or rewritten before the grant scope and the undo guard read it
+  {
+    const long = '/w/src/' + 'a'.repeat(1100) + '/../../../../home/u/.bashrc';
+    const lp = codexPermission('item/fileChange/requestApproval', { itemId: 'i' }, codexFileChanges([{ path: long, kind: { type: 'update' }, diff: '' }]));
+    assert.deepStrictEqual([lp.fileName, lp.paths], [long, [long]], 'a path over 1024 characters reaches the broker whole');
+    assert.strictEqual(grantScope(lp, path.posix).key, 'write:' + path.posix.dirname(long), 'its scope is its real folder, not the folder of a cut path');
+    assert.notStrictEqual(grantScope(lp, path.posix).key, 'write:/w/src', 'it never gets the narrower "write in src/" key');
+    assert.ok(lp.summary.length <= 1100 && !lp.summary.includes('\n'), 'the card line is still one bounded line');
+    const nl = codexPermission('item/fileChange/requestApproval', { itemId: 'i' }, codexFileChanges([{ path: '/w/src/x\n/home/u/.bashrc', kind: { type: 'update' }, diff: '' }]));
+    assert.strictEqual(grantScope(nl, path.posix).key, 'write:/w/src/x\n/home/u', 'a path with a newline keeps its real folder');
+    assert.deepStrictEqual(nl.paths, ['/w/src/x\n/home/u/.bashrc'], 'and the guard gets the real path');
+  }
+  // review on #470: more than 100 changes: every path reaches the guard and the "+N more" count is real; the diff text stays bounded
+  {
+    const many = codexFileChanges(Array.from({ length: 150 }, (_, i) => ({ path: `/w/f${i}.ts`, kind: { type: 'add' }, diff: 'x\n' })));
+    assert.strictEqual(many.length, 150, 'all 150 changes are kept');
+    assert.ok(many.slice(100).every((c) => c.diff === '') && many[99].diff === 'x\n', 'the diff text of the first 100 only');
+    const mp = codexPermission('item/fileChange/requestApproval', { itemId: 'i' }, many);
+    assert.strictEqual(mp.paths?.length, 150, 'the undo guard gets all 150 paths');
+    assert.ok(mp.summary.endsWith('(+149 more)'), 'the card counts the real rest: ' + mp.summary);
+    const huge = codexPermission('item/fileChange/requestApproval', { itemId: 'i' }, codexFileChanges(Array.from({ length: 250 }, (_, i) => ({ path: `/w/g${i}.ts`, kind: 'update', diff: '' }))));
+    assert.strictEqual(huge.paths?.length, 250, 'every path, also over the guard cap');
+    assert.ok(huge.summary.endsWith('(+249 more) (undo keeps copies of the first 200 files only)'), 'over the guard cap the card says so: ' + huge.summary);
+  }
   assert.deepStrictEqual(codexFileChanges('x'), [], 'not an array: nothing');
   const d = codexChangeDiff(ch.slice(0, 4));
   assert.ok(d.startsWith('--- a//w/src/a.ts\n+++ b//w/src/a.ts\n@@ -1,2 +1,2 @@\n x\n-old\n+new'), 'an update hunk gets a header: ' + d.slice(0, 80));

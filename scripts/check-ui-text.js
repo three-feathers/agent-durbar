@@ -6,8 +6,10 @@
  *   x-scroll (nothing in a dialog, popover or menu wider than its box), offscreen, dialog-width (the S/M/L tokens),
  *   dialog-padding (--dlg-pad), field-weight (values in dialog fields are 400/500), measure (--measure), and, in the dark
  *   theme only, dark-contrast (4.5:1 for the controls of FR-169).
- * TODO (PR 2, tasks T150-T155; the hooks exist, nothing is asserted yet): orphan menu hints, tooltip length (120/300),
- *   ellipsis without a title, long names (simnames=long), Tools/Settings sideways scroll, chat overlap (caret, Copy, toast).
+ * Part 2 (T150-T155): orphan + menu-width + menu-hints (menus), tooltip-length (static 120, data 300 characters / 8 lines), ellipsis-title,
+ *   label-wrap, kbd-align (the shortcut sheet), x-scroll on screens (also with simnames=long), heading-lines (Needs you), copy-overlap,
+ *   caret-after-copy and toast-over-composer (the chat), popover-width (T169: the S/M token and --pop-pad), and tone-contrast (every rule that moved from a literal light colour to the
+ *   --tone-* tokens reads at 4.5:1 in the 6 built-in themes and the dark fixture; the CSS is parsed here, the colours are resolved in the page).
  *
  *   npm run check:ui-text
  *
@@ -27,6 +29,71 @@ const SIZES = (process.env.UITEXT_SIZES || '1440x900,1280x800').split(',').map((
 const OUT = process.env.OUT || process.env.UITEXT_OUT || '';
 const SHOTS = process.env.UITEXT_SHOTS === '1';
 
+
+/* the rules of a renderer stylesheet as {sel, decls[]} (comments dropped; @media blocks are read through, their inner rules counted) */
+const cssRules = (file) => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = []; const re = /([^{}@][^{}]*)\{([^{}]*)\}/g; let m;
+  while ((m = re.exec(css))) out.push({ sel: m[1].trim().replace(/\s+/g, ' '), decls: m[2].split(';') });
+  return out;
+};
+/* T152 round 2: the rules that used literal light colours before (their text colours were literal too). Each must read at 4.5:1 in every built-in theme and the dark fixture. */
+const TONE_RULES = [
+ "styles.css | .note .btn.session",
+ "styles.css | .note .btn.session:hover",
+ "styles.css | button.lrow[aria-pressed=\"true\"]",
+ "styles.css | .btn.danger:hover",
+ "styles.css | .quick button",
+ "styles.css | .quick button:hover",
+ "styles.css | .chip.fail",
+ "styles.css | .chip.att-chip",
+ "styles.css | .chip.att-chip.img",
+ "styles.css | .att",
+ "styles.css | .att.img",
+ "styles.css | .send[aria-disabled=\"true\"]",
+ "styles.css | .sitem.sel",
+ "styles.css | .fl-sw[aria-pressed=\"true\"]",
+ "styles.css | .nothink",
+ "styles.css | .md code",
+ "styles.css | .md th",
+ "styles.css | .md pre",
+ "styles.css | .subblk",
+ "styles.css | .subblk.failed",
+ "styles.css | .subblk.done",
+ "styles.css | .subblk.done .sub-st,.sub-st.done",
+ "styles.css | .sub-ro",
+ "styles.css | .mode-chip.mode-ask",
+ "styles.css | .btn.primary.warn:hover",
+ "styles.css | .mode-menu .mm-pend",
+ "styles.css | html:not([data-ui]) .inbox-btn.attn",
+ "screens.css | .scr-note.warn",
+ "screens.css | .scr-warn",
+ "screens.css | .srv.amb",
+ "screens.css | .mtag",
+ "screens.css | .mtag.warn",
+ "screens.css | .swt",
+ "screens.css | .dlg .derr",
+ "screens.css | .note.limit",
+ "screens.css | .note.limit.settled",
+ "screens.css | .mtag.extra",
+ "screens.css | .mtag.src",
+ "screens.css | .imp-block",
+ "screens.css | .pico-opt:has(input:checked)",
+ "screens.css | .hs-ok"
+];
+const toneList = () => {
+  const by = new Map();
+  for (const file of ['styles.css', 'screens.css']) for (const r of cssRules(file)) { const k = file + ' | ' + r.sel; by.set(k, Object.assign(by.get(k) || {}, ...r.decls.map((d) => { const m = /^\s*(background(?:-color)?|color)\s*:\s*(.+?)\s*$/.exec(d); return m ? { [m[1] === 'color' ? 'color' : 'bg']: m[2] } : {}; }))); }
+  const list = [];
+  for (const ink of ['--sage-ink', '--red-ink', '--amber-ink']) list.push({ sel: `button text: --surface on ${ink}`, bg: `var(${ink})`, color: 'var(--surface)' }); // primary, danger and warn buttons (themegen CONTRAST_PAIRS)
+  for (const k of TONE_RULES) {
+    const r = by.get(k); if (!r || !r.bg) { list.push({ sel: k, bg: 'transparent', color: 'var(--ink)', missing: true }); continue; }
+    let color = r.color; if (!color && /:hover$/.test(k)) { const b = by.get(k.replace(/:hover$/, '')); color = b && b.color; } // a hover state keeps its base text colour
+    list.push({ sel: k, bg: r.bg.replace(/\s*!important/, ''), color });
+  }
+  return list;
+};
+
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until, settle } = H;
@@ -34,13 +101,7 @@ module.exports = async (ctx) => {
   const q = (theme, extra) => ({ simkinds: 'mixed', simfloors: '1', simgrants: 'many', simquestion: '1', simtotals: '1', ...(extra || {}), ...(theme === 'dark' ? { theme: 'audit-dark', usertheme: DARK } : { theme: themeId || 'clean-office' }) });
   let theme = 'light', W = 1440, Hh = 900, extraQuery = {}, themeId = '';
   const found = []; // every violation: { surface, theme, size, rule, el, detail }
-  const todo = new Map(); // the PR 2 rules: counted, not asserted
   const opened = new Set();
-  const ALLOWFILE = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'ui-text-light-allow.json'), 'utf8'));
-  const ALLOW_TEXT = new Set(ALLOWFILE.text || []); // elements whose text is under 4.5:1 in the dark fixture and are older debt
-  const allowedText = new Set();
-  const hitSel = new Set();
-  const ALLOW_SEL = ALLOWFILE.textSel || []; // causes of older dark-text debt, matched with closest()
 
   const load = async () => {
     await H.load({ w: W, h: Hh, query: q(theme, extraQuery), ready: 'fit', settle: false });
@@ -95,6 +156,9 @@ module.exports = async (ctx) => {
   add('top-more-menu', 'menu', ['#topMoreMenu'], async () => { await closeChat(); await H.click('#topMoreBtn'); return until(`!document.getElementById('topMoreMenu').hidden`, 3000); });
   add('folders-pop', 'popover', ['#foldersPop'], async () => { await closeChat(); await H.click('#foldersBtn'); return until(`!document.getElementById('foldersPop').hidden`, 3000); });
   add('floors-pop', 'popover', ['#floorsPop'], async () => { await closeChat(); if (await js(`document.getElementById('floorsBtn').hidden`)) return false; await H.click('#floorsBtn'); return until(`!document.getElementById('floorsPop').hidden`, 3000); });
+  // T172: a Floors error shown (a duplicate name), so the dark-text rule measures .fl-err
+  add('floors-pop-error', 'popover', ['#floorsPop'], async () => { await closeChat(); if (await js(`document.getElementById('floorsBtn').hidden`)) return false; await H.click('#floorsBtn'); if (!(await until(`!document.getElementById('floorsPop').hidden`, 3000))) return false;
+    await js(`(()=>{const i=document.getElementById('fpNew');i.value='Personal';document.querySelector('#floorsPop [data-fl=create]').click();})()`); return until(`!document.querySelector('#floorsPop .fl-err').hidden`, 3000); });
   add('palette', 'dialog', ['#palDlg .dlg', '#palDlg'], async () => { await closeChat(); await js(`document.activeElement&&document.activeElement.blur()`); await key('K', [process.platform === 'darwin' ? 'meta' : 'control'], 'never'); return until(`!!document.getElementById('palDlg')`, 3000); });
   add('inbox', 'dialog', ['#inboxDlg .dlg', '#inboxDlg'], async () => { await closeChat(); await js(`document.activeElement&&document.activeElement.blur()`); await key('I'); return until(`!!document.getElementById('inboxDlg')`, 3000); });
   add('folder-menu', 'menu', ['#modeMenu'], async () => { await closeChat(); await js(`(()=>{const h=document.querySelector('#stage .room-head');const r=h.getBoundingClientRect();h.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+40,clientY:r.top+10}));})()`); return until(`!!document.getElementById('modeMenu')`, 2000); });
@@ -114,14 +178,62 @@ module.exports = async (ctx) => {
   // spec 005 FR-020..FR-026: the edit rows and their diffs (only with simedits=1, the `chat-edits` pass below; without it the chat has none)
   add('chat-edits-base', 'chat', ['#panel'], async () => { if (!(await openChat('Ada'))) return false; if (!(await until(`document.querySelectorAll('#chat .chip.editchip').length>=4`, 8000))) return false; return js(`(document.querySelector('#chat .chip.editchip').scrollIntoView({block:'start'}),true)`); });
   S[S.length - 1].onlyPass = true; // runs under the `chat-edits` pass only
+  add('chat-first', 'chat', ['#panel'], async () => !!(await openChatWhere('true'))); // the first desk, whoever it is (the 60-character names pass)
+  // T155: a toast ends above the composer while a chat is open (the real toast(): More > Copy resume command toasts either way)
+  // T155: a toast ends above the composer, and above the answer bar when it shows (the real toast(): More > Copy resume command toasts either way)
+  const toastSurface = (name, opener) => add(name, 'chat', ['#panel'], async () => {
+    if (!(await opener())) return false;
+    await js(`document.getElementById('shotCalm')&&document.getElementById('shotCalm').remove()`); // H.calm() freezes the toast's pop animation at scale 0
+    await H.clearToasts();
+    await H.click('#moreBtn'); if (!(await H.exists('#copyResBtn'))) return false; await H.click('#copyResBtn');
+    if (!(await until(`document.querySelectorAll('#toasts .toast').length>0`, 3000))) return false;
+    await ctx.sleep(500); // the toast's pop animation scales it from 0
+    const over = await js(`(()=>{const t=[...document.querySelectorAll('#toasts .toast')].pop().getBoundingClientRect();let top=innerHeight,what='';for(const [n,e] of [['composer',document.querySelector('#panel .composer')],['answer bar',document.getElementById('answerBar')]])if(e&&!e.hidden&&e.getClientRects().length&&e.getBoundingClientRect().top<top){top=e.getBoundingClientRect().top;what=n;}return t.bottom>top+1?'toast bottom '+Math.round(t.bottom)+' is below the '+what+' top '+Math.round(top):''})()`);
+    if (over) found.push({ surface: name, theme: themeId || theme, size: `${W}x${Hh}`, rule: 'toast-over-composer', el: '#toasts', detail: over });
+    // the composer grows under the open toast (a long message): the ResizeObserver moves the toast up. A child div, not padding: the observer watches the content box.
+    if (name === 'chat-toast') {
+      await js(`(()=>{const c=document.querySelector('#panel .composer'),d=document.createElement('div');d.id='uitextGrow';d.style.height='120px';c.appendChild(d);})()`);
+      await ctx.sleep(300);
+      const grown = await js(`(()=>{const t=[...document.querySelectorAll('#toasts .toast')].pop();if(!t)return 'the toast went away';const c=document.querySelector('#panel .composer').getBoundingClientRect(),b=t.getBoundingClientRect();return b.bottom>c.top+1?'toast bottom '+Math.round(b.bottom)+' is below the grown composer top '+Math.round(c.top):''})()`);
+      await js(`document.getElementById('uitextGrow')&&document.getElementById('uitextGrow').remove()`);
+      if (grown) found.push({ surface: name, theme: themeId || theme, size: `${W}x${Hh}`, rule: 'toast-over-composer', el: '#toasts', detail: grown });
+    }
+    return true;
+  });
+  toastSurface('chat-toast', () => openChat('Ada'));
+  toastSurface('chat-toast-answer', async () => { // a waiting question scrolled out of view: the answer bar shows above the composer (spec 052 FR-162)
+    if (!(await openChat('Ada'))) return false;
+    await js(`document.getElementById('chat').scrollTop=0`);
+    return until(`!document.getElementById('answerBar').hidden`, 3000);
+  });
+  // T155: a chat with an agent reply (its Copy button). With simreply=long the reply gets a last paragraph whose last line is filled up to the right edge of
+  // the bubble (a run of letters is lengthened until one more would wrap), so a misplaced Copy button always sits over text; the fill is asserted.
+  add('chat-reply', 'chat', ['#panel'], async () => {
+    if (!(await openChatWhere(`document.querySelector('#chat .bubble.md>.cp-msg')`))) return false;
+    if (extraQuery.simreply !== 'long') return true;
+    const gap = await js(`(()=>{const cp=document.querySelector('#chat .bubble.md>.cp-msg'),b=cp.parentElement;b.scrollIntoView({block:'end'});const p=document.createElement('p');b.insertBefore(p,cp);
+      const lines=()=>{const r=document.createRange();r.selectNodeContents(p);return new Set([...r.getClientRects()].filter(x=>x.width>0).map(x=>Math.round(x.top))).size;};
+      p.textContent='x'.repeat(120);const n=lines();for(let i=0;i<400&&lines()===n;i++)p.textContent+='x';p.textContent=p.textContent.slice(0,-1);
+      const r=document.createRange();r.selectNodeContents(p);const rs=[...r.getClientRects()].filter(x=>x.width>0),last=rs[rs.length-1],bb=b.getBoundingClientRect();return Math.round(bb.right-parseFloat(getComputedStyle(b).paddingRight)-last.right);})()`);
+    if (!(gap >= 0 && gap <= 12)) found.push({ surface: 'chat-reply-long', theme: themeId || theme, size: `${W}x${Hh}`, rule: 'fixture', el: '#chat .bubble.md', detail: `the last line of the reply stops ${gap}px short of the right edge (fixture must fill it to within 12px)` });
+    return true;
+  });
   add('chat-question', 'chat', ['#panel'], async () => !!(await openChatWhere(`document.querySelector('#chat .note.question')`)) && js(`(document.querySelector('#chat .note.question').scrollIntoView({block:'center'}),true)`));
   add('chat-more-menu', 'menu', ['#moreMenu'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); return until(`!document.getElementById('moreMenu').hidden`, 2000); });
   add('chat-mode-menu', 'menu', ['#modeMenu'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#modeChip'); return until(`!!document.getElementById('modeMenu')`, 2000); });
   add('allow-all-confirm', 'dialog', ['#modeDlg .dlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#modeChip'); await until(`!!document.getElementById('modeMenu')`, 2000); await H.click('#modeMenu [data-mode="allow"]'); return until(`!!document.querySelector('#modeDlg .dlg')`, 2000); });
   add('chat-model-menu', 'menu', ['#modelMenu'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#modelChip'); return until(`!!document.getElementById('modelMenu')`, 2000); });
   add('chat-agent-menu', 'menu', ['#agentMenu'], async () => { if (!(await openChatWhere(`document.getElementById('agentChip')`))) return false; await H.click('#agentChip'); return until(`!!document.getElementById('agentMenu')`, 2000); });
+  // spec 043 FR-014 (review on #488): the Profile menu with its Edit and New profile rows, the profile editor and the New profile form
+  add('profile-menu', 'menu', ['#agentMenu'], async () => { if (!(await openChatWhere(`document.getElementById('agentChip')`))) return false; await H.click('#agentChip'); return until(`!!document.querySelector('#agentMenu .mm-edit')&&!!document.querySelector('#agentMenu [data-newprof]')`, 3000); });
+  add('profile-editor', 'dialog', ['#peOv .dlg'], async () => { await openSettingsAt(null); if (!(await until(`!!document.querySelector('#pfSec .pf-row [data-pf-open]')`, 4000))) return false; await js(`document.querySelector('#pfSec .pf-row [data-pf-open]').click()`); return until(`!!document.getElementById('peOv')&&document.getElementById('peSrc').value.length>0`, 4000); });
+  add('profile-new', 'dialog', ['#peNewOv .dlg'], async () => { await openSettingsAt(null); if (!(await until(`!!document.getElementById('pfNew')`, 4000))) return false; await H.click('#pfNew'); return until(`!!document.getElementById('peNewOv')`, 3000); });
   add('cap-dialog', 'dialog', ['#capDlg .dlg', '#capDlg'], async () => { if (!(await openChatWhere(`document.getElementById('capChip')`))) return false; await H.click('#capChip'); return until(`!!document.getElementById('capDlg')`, 2000); });
   add('agent-mcp', 'dialog', ['#scrDlg .dlg', '.dlg-ov .dlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); await H.click('#mcpBtn'); return until(`!!document.querySelector('.dlg-ov .dlg')`, 3000); });
+  // spec 058 T115: the rows with a hint, Details and the error box (Elif: needs sign-in; Tomas: failed)
+  for (const [id, who] of [['agent-mcp-signin', 'Elif'], ['agent-mcp-failed', 'Tomas']]) {
+    add(id, 'dialog', ['#scrDlg .dlg', '.dlg-ov .dlg'], async () => { if (!(await openChat(who))) return false; await H.click('#moreBtn'); await H.click('#mcpBtn'); if (!(await until(`!!document.querySelector('.dlg-ov .dlg')`, 3000))) return false; await js(`document.querySelectorAll('#agMcp button[data-det]').forEach(b=>b.click())`); return until(`!!document.querySelector('#agMcp .srv-err')`, 2000); });
+  }
   add('schedules', 'dialog', ['#schedDlg .dlg', '#schedDlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); await H.click('#schedHdrBtn'); return until(`!!document.getElementById('schedDlg')`, 3000); });
   add('new-session', 'dialog', ['#sessDlg .dlg', '#sessDlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#newSessHdrBtn'); return until(`!!document.getElementById('sessDlg')`, 3000); });
   add('handover', 'dialog', ['#sessDlg .dlg', '#sessDlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); if (!(await H.exists('#handoverBtn'))) return false; await H.click('#handoverBtn'); return until(`!!document.getElementById('sessDlg')`, 3000); });
@@ -130,7 +242,11 @@ module.exports = async (ctx) => {
   add('folder-status', 'dialog', ['#modeDlg .dlg', '.dlg-ov .dlg'], async () => { if (!(await openChatWhere(`document.querySelector('#panelHead .folder[role=button]')`))) return false; await js(`document.querySelector('#panelHead .folder[role=button]').click()`); return until(`!!document.querySelector('.dlg-ov .dlg')`, 3000); });
   add('compact', 'dialog', ['#modeDlg .dlg'], async () => { if (!(await openChatWhere(`(()=>{const c=document.getElementById('ctxChip');if(!c)return false;if(!document.getElementById('ctxMenu'))c.click();const b=document.querySelector('#ctxMenu #compactBtn:not([aria-disabled])');if(!b){const m=document.getElementById('ctxMenu');if(m)m.remove();}return !!b})()`))) return false; await H.click('#compactBtn'); return until(`!!document.querySelector('#modeDlg .dlg')`, 3000); });
   add('grants', 'chat', ['#grants', '#grantsPop'], async () => { if (!(await openChatWhere(`document.querySelector('#grants .grant,#grants button')`))) return false; return true; });
-  add('grants-pop', 'popover', ['#grantsPop'], async () => { if (!(await openChatWhere(`document.querySelector('#grants button')`))) return false; await js(`(()=>{const b=[...document.querySelectorAll('#grants button')].find(x=>x.getAttribute('aria-haspopup')||/more|\\+\\d/i.test(x.textContent))||document.querySelector('#grants button');b.click();})()`); return until(`!!document.getElementById('grantsPop')`, 2000); });
+  add('grants-pop', 'popover', ['#grantsPop'], async () => { if (!(await openChatWhere(`document.querySelector('#grants button')`))) return false; await js(`(()=>{const b=[...document.querySelectorAll('#grants button')].find(x=>x.getAttribute('aria-haspopup')||/more|\\+\\d/i.test(x.textContent))||document.querySelector('#grants button');b.click();})()`); if (!(await until(`!!document.getElementById('grantsPop')`, 2000))) return false;
+    // FR-141.2: the full label of a grant stays in its title (simgrants=many has a 70-character one), not cut to a short form
+    const miss = await js(`(()=>{const L='server-x-ListItemsInTheWholeCatalogueIncludingArchivedOnes';const r=[...document.querySelectorAll('#grantsPop .gp-row')].find(x=>x.textContent.includes('ListItemsInTheWhole')||x.title.includes('ListItemsInTheWhole'));return r&&r.title.includes(L)?'':'the grant row title does not hold the full label: '+(r?r.title:'no row')})()`);
+    if (miss) found.push({ surface: 'grants-pop', theme: themeId || theme, size: `${W}x${Hh}`, rule: 'grant-title', el: '.gp-row', detail: miss });
+    return true; });
   add('prev-sessions', 'chat', ['#prev'], async () => { if (!(await openChat('Ada'))) return false; await js(`(()=>{const t=document.querySelector('.prev-toggle[aria-expanded="false"]')||document.getElementById('prevBtn');if(t&&t.getAttribute('aria-expanded')!=='true')t.click();})()`); return until(`document.querySelectorAll('#prev .prev-row').length>0`, 3000); });
   add('prev-row-menu', 'menu', ['#modeMenu'], async () => { if (!(await openChat('Ada'))) return false; await js(`(()=>{const t=document.querySelector('.prev-toggle[aria-expanded="false"]')||document.getElementById('prevBtn');if(t&&t.getAttribute('aria-expanded')!=='true')t.click();})()`); await until(`!!document.querySelector('#prev .prev-more')`, 3000); await H.click('#prev .prev-more'); return until(`!!document.getElementById('modeMenu')`, 2000); });
   add('harness-cards', 'screen', ['#screen'], async () => { await closeChat(); await js(`window.DurbarScreens.openSettings('harnesses')`); await until(`document.querySelectorAll('.hs-card').length>=3&&[...document.querySelectorAll('.hs-card .hs-st')].every(s=>s.textContent&&!/Checking/i.test(s.textContent))`, 5000); return true; });
@@ -158,11 +274,25 @@ module.exports = async (ctx) => {
   const PASSES = [
     { name: 'folder-setup', base: 'folder-setup', query: { simfoldersetup: '1' } }, // surfaces that need their own page address
     { name: 'chat-question-long', base: 'chat-question', query: { simquestion: 'long' } }, // T145: a 2,000-character question
+    { name: 'folders-pop-long', base: 'folders-pop', query: { simnames: 'long' } }, // T172: long folder names in the Folders popover
+    { name: 'floors-pop-long', base: 'floors-pop', query: { simnames: 'long' } },
     { name: 'send-several-long', base: 'send-several', query: { simnames: 'long' } }, // T148: 60-character names
     { name: 'chat-edits', base: 'chat-edits-base', query: { simedits: '1' } }, // spec 005: edit rows, a refused edit, the streamed diff
+    { name: 'tools-agents-long', base: 'tools-agents-tab', query: { simnames: 'long' } }, // T154: Tools > Models and context with 60-character names
+    { name: 'inbox-long', base: 'inbox', query: { simnames: 'long' } }, // T154: the Needs you headings
+    { name: 'list-view-long', base: 'list-view', query: { simnames: 'long' } },
+    { name: 'palette-long', base: 'palette', query: { simnames: 'long' } },
+    { name: 'chat-first-long', base: 'chat-first', query: { simnames: 'long' } },
+    { name: 'chat-reply-long', base: 'chat-reply', query: { simreply: 'long' } }, // T155: replies and sub-agent prompts that run to the right edge (the Copy button covers no text)
   ];
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];
   const BUILTIN = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
+
+  const tones = async (id) => { // T152 round 2: the contrast of the rules that moved to the --tone-* tokens, in this theme
+    const list = toneList();
+    for (const r of list) if (r.missing) found.push({ surface: '(tones)', theme: id, size: '-', rule: 'tone-rule-missing', el: r.sel, detail: 'the rule is not in the CSS (or has no background): update TONE_RULES' });
+    for (const x of await js(`window.__uitext.pairs(${jsLiteral(list.filter((r) => !r.missing))})`)) found.push({ surface: '(tones)', theme: id, size: '-', ...x });
+  };
 
   const run = async (s) => {
     if (!/toast/.test(s.name)) await H.calm();
@@ -175,28 +305,26 @@ module.exports = async (ctx) => {
     await until(`[...document.querySelectorAll('.dlg,.dlg-ov,.toast')].every(e=>e.getAnimations().every(a=>a.playState!=='running'))`, 2000); // the open animation (dlgin scales the box)
     const dark = theme === 'dark' || !!s.contrast;
     const darkAll = theme === 'dark' && !s.contrast; // the dark fixture: every text element, not only the FR-169 controls
-    const call = () => js(`window.__uitext.check(${jsLiteral(s.kind)},${jsLiteral(s.roots)},{dark:${jsLiteral(dark)},darkAll:${jsLiteral(darkAll)},allowSel:${jsLiteral(ALLOW_SEL)}})`);
+    const call = () => js(`window.__uitext.check(${jsLiteral(s.kind)},${jsLiteral(s.roots)},{dark:${jsLiteral(dark)},darkAll:${jsLiteral(darkAll)}})`);
     let v = await call();
-    if (darkAll) for (const q of await js(`[...window.__uitext.hits]`)) hitSel.add(q);
     if (v.some((x) => x.rule === 'no-root')) { await ctx.sleep(400); v = await call(); }
     if (s.contrast) v = v.filter((x) => x.rule === 'dark-contrast'); // every built-in theme: the FR-169 controls only
     for (const x of v) {
-      if (x.rule === 'dark-text' && ALLOW_TEXT.has(x.key)) { allowedText.add(x.key); continue; } // older debt, listed in the allow file
-      if (x.rule.startsWith('todo-')) { todo.set(x.rule, (todo.get(x.rule) || 0) + 1); continue; }
       found.push({ ...tag, ...x });
     }
     if (!s.contrast && /^settings-/.test(s.name) && !/harnesses/.test(s.name)) for (const x of await js(`window.__uitext.measureRule()`)) found.push({ ...tag, ...x });
     if (dark) for (const sel of await js(`window.__uitext.darkControls.filter(s=>[...document.querySelectorAll(s)].some(window.__uitext.vis))`)) opened.add('dark-control ' + sel);
-    const pr2 = await js(`window.__uitext.pr2()`);
-    if (pr2.tooltips) todo.set('todo-tooltip-over-120', Math.max(todo.get('todo-tooltip-over-120') || 0, pr2.tooltips));
+    if (s.kind === 'chat') for (const sel of ['.cp-btn', '.sub-prompt .pt', '.bubble.caret']) if (await js(`document.querySelectorAll(${jsLiteral('#panel ' + sel)}).length>0`)) opened.add('chat ' + sel);
+    if (!s.contrast) for (const x of await js(`window.__uitext.tooltips()`)) found.push({ ...tag, ...x });
     if (SHOTS && OUT) await H.shot(path.join(OUT, `${s.name}-${theme === 'dark' ? 'dark' : 'light'}-${W}x${Hh}.png`), { prep: 'mouse', delay: 250 });
-    console.log(`[ui-text] ${s.name} ${themeId || theme} ${W}x${Hh}: ${v.filter((x) => !x.rule.startsWith('todo-')).length} violations`);
+    console.log(`[ui-text] ${s.name} ${themeId || theme} ${W}x${Hh}: ${v.length} violations`);
   };
 
   for (const [w, h] of SIZES) {
     for (const th of THEMES) {
       W = w; Hh = h; theme = th; extraQuery = {};
       await load();
+      if (th === 'dark' && w === SIZES[SIZES.length - 1][0]) await tones('audit-dark');
       for (const s of S) {
         if (s.onlyPass || (ONLY && !ONLY.has(s.name))) continue;
         try { await run(s); } catch (e) {
@@ -221,6 +349,7 @@ module.exports = async (ctx) => {
     W = 1280; Hh = 800; theme = 'light'; extraQuery = {};
     for (const id of BUILTIN) {
       themeId = id; await load();
+      await tones(id);
       for (const n of CONTRAST_SURFACES) {
         const base = S.find((x) => x.name === n);
         try { await run({ ...base, contrast: true }); } catch (e) { found.push({ surface: n, theme: id, size: '1280x800', rule: 'error', el: '', detail: String((e && e.message) || e).slice(0, 200) }); }
@@ -234,12 +363,11 @@ module.exports = async (ctx) => {
   }
 
   // FR-169, source side: the simulator cannot reach every control, so every stylesheet of the renderer is read too. A light colour
-  // (relative luminance over 0.6, from src/shared/themegen.ts) in a background must be in scripts/fixtures/ui-text-light-allow.json
-  // (older debt, listed); the switch knob is the one intended white. Hex, named colours, rgb()/hsl() with numbers and gradients are read;
+  // (relative luminance over 0.6, from src/shared/themegen.ts) in a background fails: use a theme token (the --tone-* set in styles.css :root); there is no allow-list
+  // (older debt, listed); T172: a literal light border or outline colour fails the same way; the switch knob is the one intended white. Hex, named colours, rgb()/hsl() with numbers and gradients are read;
   // translucent colours (alpha under 0.6) and var() are not light by themselves.
   {
     const { luminance } = require('../dist/shared/themegen.js'); // one luminance helper; the check runs after the build
-    const allow = new Set(ALLOWFILE.allow);
     const NAMED = { white: '#ffffff', snow: '#fffafa', ivory: '#fffff0', ghostwhite: '#f8f8ff', whitesmoke: '#f5f5f5', floralwhite: '#fffaf0', linen: '#faf0e6', seashell: '#fff5ee', beige: '#f5f5dc', lightyellow: '#ffffe0', azure: '#f0ffff', mintcream: '#f5fffa', aliceblue: '#f0f8ff', lavenderblush: '#fff0f5', honeydew: '#f0fff0', cornsilk: '#fff8dc', oldlace: '#fdf5e6', lightgray: '#d3d3d3', lightgrey: '#d3d3d3', gainsboro: '#dcdcdc', lavender: '#e6e6fa', mistyrose: '#ffe4e1', papayawhip: '#ffefd5', antiquewhite: '#faebd7', bisque: '#ffe4c4', wheat: '#f5deb3', lemonchiffon: '#fffacd', lightcyan: '#e0ffff', moccasin: '#ffe4b5', silver: '#c0c0c0' };
     const hex2 = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
     const hsl = (h, sa, l) => { sa /= 100; l /= 100; const a = sa * Math.min(l, 1 - l); const f = (n) => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); }; return '#' + [f(0), f(8), f(4)].map((v) => hex2(v * 255)).join(''); };
@@ -272,18 +400,16 @@ module.exports = async (ctx) => {
       while ((m = re.exec(css))) {
         const sel = m[1].trim().replace(/\s+/g, ' ');
         for (const d of m[2].split(/;(?![^(]*\))/)) {
-          const x = /^\s*(background(?:-color|-image)?)\s*:\s*([\s\S]*)$/.exec(d);
+          const x = /^\s*(background(?:-color|-image)?|border(?:-(?:top|right|bottom|left))?(?:-color)?|outline(?:-color)?)\s*:\s*([\s\S]*)$/.exec(d);
           if (!x) continue;
           for (const l of lights(x[2])) {
             if (file === 'screens.css' && sel === '.swt i') continue; // the knob carries no text
-            if (!allow.has(`${file} | ${sel} | ${l.text}`)) found.push({ surface: `(${file})`, theme: 'dark', size: '-', rule: 'literal-light', el: sel, detail: `${x[1]}: ${l.text}: use a theme token` });
+            found.push({ surface: `(${file})`, theme: 'dark', size: '-', rule: 'literal-light', el: sel, detail: `${x[1]}: ${l.text}: use a theme token` });
           }
         }
       }
     }
   }
-  if (!ONLY) { for (const q of ALLOW_SEL) if (!hitSel.has(q)) console.log(`[ui-text] note: allow-list textSel entry never needed: ${q}`); }
-  for (const k of ALLOW_TEXT) if (!ONLY && !allowedText.has(k)) console.log(`[ui-text] note: allow-list text entry never needed: ${k}`);
 
   // the dark run has to have exercised every control FR-169 names, or the contrast rule checked nothing
   if (THEMES.includes('dark') && !ONLY) {
@@ -291,6 +417,7 @@ module.exports = async (ctx) => {
     for (const sel of darkControls) if (!opened.has('dark-control ' + sel)) found.push({ surface: '(dark run)', theme: 'dark', size: '-', rule: 'dark-control-missing', el: sel, detail: 'never on screen in the dark run, so its contrast was not checked' });
   }
 
+  console.log('[ui-text] chat parts on screen: ' + [...opened].filter((x) => x.startsWith('chat ')).join(', '));
   // report: grouped by rule, then surface
   const byRule = new Map();
   for (const f of found) { if (!byRule.has(f.rule)) byRule.set(f.rule, []); byRule.get(f.rule).push(f); }
@@ -304,7 +431,6 @@ module.exports = async (ctx) => {
       console.log(`  ${f.surface} [${where}] ${f.el}: ${f.detail}`);
     }
   }
-  for (const [rule, n] of todo) console.log(`[ui-text] TODO (PR 2, not asserted) ${rule}: ${n}`);
   if (found.length) throw new Error(`ui-text: ${found.length} violations in ${byRule.size} rules (${[...byRule.keys()].join(', ')})`);
   console.log('[ui-text] all checks passed');
 };

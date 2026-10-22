@@ -52,6 +52,7 @@ export function eventProblems(e: unknown): string[] {
       if (!optStr(e.intent)) out.push('intent is not a string');
       if (e.permission !== undefined) out.push(...permissionProblems(e.permission, 'permission'));
       if (e.errorKind !== undefined && (e.errorKind !== 'auth' || e.status !== 'error')) out.push(`errorKind ${String(e.errorKind)} on status ${String(e.status)}`);
+      if (e.reason !== undefined && (e.reason !== 'usage-limit' || e.status !== 'idle')) out.push(`reason ${String(e.reason)} on status ${String(e.status)}`);
       break;
     case 'permission':
       out.push(...permissionProblems(e.permission, 'permission'));

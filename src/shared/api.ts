@@ -1,6 +1,6 @@
 import type { FolderSetupDecision, FolderSetupView, HookExplanation } from './foldersetup';
 import type { BroadKind } from './broadfolder';
-import type { AgentEvent } from '../adapters/types';
+import type { AgentEvent, McpServerStatus } from '../adapters/types';
 import type { HistoryItem, PreviousSession } from '../adapters/history';
 import type { VsChatSummary, VsChatTranscript } from '../adapters/vscodeChat';
 import type { UsageDoc } from './toolusage';
@@ -499,6 +499,8 @@ export interface AgentMcpEntry {
   /** Runtime state when the session is running (connected, failed, needs-auth, disabled, ...). */
   status?: string;
   error?: string;
+  /** Spec 058 FR-011/FR-020: what kind of failure the adapter said it was (only when the vendor said so). */
+  errorClass?: McpServerStatus['errorClass'];
   /** The default from Settings: on for new sessions. */
   defaultOn: boolean;
   /** This agent switched it off. */
@@ -514,6 +516,8 @@ export interface AgentMcpReply {
   ok: boolean;
   servers: AgentMcpEntry[];
   live: boolean;
+  /** Spec 058 FR-020: the agent app's display name (for hints); missing when no adapter answers. */
+  app?: string;
   /** Spec 058 FR-010: when this agent app starts its servers; missing = not said. */
   start?: 'session' | 'next-message';
   /** Spec 058 FR-010: when a switch takes effect in a running session; missing = not said. */
@@ -656,7 +660,7 @@ export interface DurbarApi {
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
   /** Scheduled prompts (spec 044). */
   listSchedules?(): Promise<SchedulesInfo>;
-  saveSchedule?(input: Partial<ScheduleInfo> & { folder: string; prompt: string }): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
+  saveSchedule?(input: Partial<ScheduleInfo> & { folder: string; prompt: string; edit?: boolean }): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
   removeSchedule?(id: string): Promise<{ ok: boolean }>;
   setSchedulesPaused?(on: boolean): Promise<{ ok: boolean; pausedAll: boolean }>;
   /** Spec 052 FR-089: one run of a schedule now ("Run missed now"), through the same path as a scheduled run. */
@@ -676,17 +680,17 @@ export interface DurbarApi {
   listProfiles?(id: string): Promise<{ ok: boolean; error?: string; profiles: (ProfileInfo & { trusted: boolean })[] }>;
   /** Select a custom agent (null = default). A repository agent not yet confirmed answers `needsConfirm`; call again with `confirm` after the user agreed. */
   selectProfile?(id: string, profileId: string | null, confirm?: boolean): Promise<{ ok: boolean; error?: string; needsConfirm?: boolean; profile?: ProfileInfo | null }>;
-  /** Spec 043 FR-010: the profile files of the office's folders and the user (main lists them; `folders` = the places a new file can go, by index). */
-  listProfileFiles?(): Promise<{ ok: boolean; error?: string; folders: ProfileFolderInfo[]; files: ProfileFileInfo[] }>;
+  /** Spec 043 FR-010: the profile files of the office's folders and the user (main lists them; `folders` = the places a new file can go, by id, FR-020; `userDirs` = each app's user agent folder, for the New profile hint, FR-013). */
+  listProfileFiles?(): Promise<{ ok: boolean; error?: string; folders: ProfileFolderInfo[]; files: ProfileFileInfo[]; userDirs?: { copilot?: string; claude?: string } }>;
   /** Spec 043 FR-011/FR-012: read by id only (never a path); text with LF line endings, `sha256` of the bytes on disk. */
   readProfileFile?(fileId: string): Promise<{ ok: true; info: ProfileFileInfo; text: string; sha256: string; eol: 'lf' | 'crlf' } | { ok: false; error: string }>;
   /** Writes atomically; `conflict` when the file changed since `baseSha` (unless `overwrite`). */
   saveProfileFile?(fileId: string, text: string, baseSha: string, overwrite?: boolean): Promise<{ ok: true; sha256: string; info: ProfileFileInfo } | { ok: false; error: string; conflict?: boolean }>;
-  /** Spec 043 FR-013/FR-018: `place` = the `id` of one of `listProfileFiles().folders`, or 'user'; `template` defaults to the Agent Success Profile; `text`: a reviewed AI draft (FR-024). */
+  /** Spec 043 FR-013/FR-018: `place` = the `id` of one of `listProfileFiles().folders`, or 'user'; `template` defaults to the Agent Success Profile; `text`: a reviewed AI draft (FR-029). */
   createProfileFile?(app: 'copilot' | 'claude', place: string, name: string, template?: 'success' | 'standard', text?: string): Promise<{ ok: true; id: string; info: ProfileFileInfo } | { ok: false; error: string }>;
   openProfileInVSCode?(fileId: string): Promise<{ ok: boolean; error?: string }>;
-  /** Spec 043 FR-021..FR-023: one prompt to an agent app's one-shot path (`by`); a checked draft, nothing written. */
-  generateProfile?(req: { app: 'copilot' | 'claude'; name: string; by: string; mode: 'describe' | 'questions'; description?: string; answers?: Record<string, string> }): Promise<{ ok: true; text: string; warnings: string[]; by: string; costUsd?: number; nanoAiu?: number } | { ok: false; error: string; costUsd?: number; nanoAiu?: number }>;
+  /** Spec 043 FR-026..FR-028: one prompt to an agent app's one-shot path (`by`); a checked draft, nothing written. */
+  generateProfile?(req: { app: 'copilot' | 'claude'; name: string; by: string; mode: 'describe' | 'questions'; description?: string; answers?: Record<string, string>; tools?: string }): Promise<{ ok: true; text: string; warnings: string[]; extraTools?: string[]; by: string; costUsd?: number; nanoAiu?: number } | { ok: false; error: string; busy?: true; costUsd?: number; nanoAiu?: number }>; // busy: a request is still running (spec 043 FR-039)
 
   /** Tool usage over all runs (spec 020). */
   usageAllTime?(): Promise<UsageView>;

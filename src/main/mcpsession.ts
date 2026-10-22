@@ -56,7 +56,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const on = defaultOn && !off.has(name);
     // FR-030: Restart only for a server the running session knows (the runtime reported it) and that is switched on
     const canRestart = canRestartAny && on && !!st && st.status !== 'disabled';
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}) });
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];
@@ -74,6 +74,8 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     ok: true,
     servers: entries,
     live: isLive,
+    // FR-020: the agent app's own name, for the hints ("Copilot keeps the sign-in")
+    ...(ad?.displayName ? { app: ad.displayName } : {}),
     ...(caps?.mcpStart ? { start: caps.mcpStart } : {}),
     ...(caps?.mcpToggleApplies ? { toggleApplies: caps.mcpToggleApplies } : {}),
     // FR-022: an adapter that can resume, and a running session to restart
