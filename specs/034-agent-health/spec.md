@@ -166,3 +166,5 @@
   - a trouble: a dot at its top right, red for needs help or fainted, amber for impatient or dizzy.
   
   It follows the agent's mood on every render while the figure is away. The figure stays `aria-hidden`; the words are on the card and in the List view. Serious mode shows none of it. This closes the other half of T009. `sim:` `scripts/shots-034-list.js` in the office view at both sizes: in the simulator's lobby a dizzy walker shows its dot, a monster and a heavy one show their rings, and no figure without a trouble has a dot. Screenshots `docs/screenshots/mood-walker-*.png`.
+
+- **2026-10-21, spec 068 (coffee break), supersedes the faint look.** An agent at its credit limit, or at a usage limit of its agent app, is on a coffee break: no trouble drawing (`troubleOf` returns null for `coffee`), a calm room without a siren, and the words "On a coffee break". User Story 2 scenario 2 (fainted at *Limit reached*) no longer happens in the app; the faint drawing stays in the code for any caller that passes `limit` without `coffee`. `test:` mood.

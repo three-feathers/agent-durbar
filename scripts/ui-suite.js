@@ -31,21 +31,34 @@ const DRIVERS = [
   { name: 'shots-034-list' },
   { name: 'shots-044-everywhere' },
   { name: 'shots-044-templates' },
-  { name: 'shots-051-setup', env: { DURBAR_SIM_MANAGERS: 'winget,brew,npm' } }, // spec 060 FR-002: the per-OS assertion needs a known manager set
+  // spec 060 FR-002: the per-OS assertion needs a known manager set, the one the driver expects for the host OS (a real Windows host
+  // has PowerShell; winget,brew,npm there hid the PowerShell route and failed the check)
+  { name: 'shots-051-setup', env: { DURBAR_SIM_MANAGERS: process.platform === 'win32' ? 'powershell,winget,npm' : 'winget,brew,npm' } },
+  { name: 'shots-051-setup', label: 'shots-051-setup win32', env: { DURBAR_SIM_MANAGERS: 'powershell,winget,npm', DURBAR_SIM_PLATFORM: 'win32' } }, // spec 060 FR-011/FR-012: Windows' routes (PowerShell installer, winget, npm) and Run beside each command, on every OS
   { name: 'shots-052-ux', env: { DURBAR_SIM_KINDS: 'mixed' } },
   { name: 'shots-052-addleft' }, // FR-164: + Folder / + Workspace leftmost, one row in every theme, the File menu and Ctrl+O
   { name: 'shots-054-remote' },
   { name: 'shots-006-prevmarks' },
   { name: 'shots-003-mode-back' },
   { name: 'shots-012-signin-chat' },
+  { name: 'shots-058-mcp-restart' }, // spec 058: per-server Restart and Restart session with these servers
   { name: 'shots-model', label: 'shots-model 1440', env: { MODEL_W: '1440', MODEL_H: '900' } },
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },
+  { name: 'shots-043-editor' },
+  { name: 'shots-043-ai' }, // spec 043 FR-021..FR-025: Create with AI (canned generation) // spec 043 FR-014: the profile file editor (modes, split widths, save round trip, unsaved guard)
   { name: 'check-dialog-focus' },
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
   { name: 'shots-069-mcp-global' }, // spec 069: add to the agent apps' own lists, review, remove, source chips
+  { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows
+  { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
+  { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
+  { name: 'check-composer-toolbar' }, // spec 005 FR-037..FR-043: chat settings under the message box, one Send / Stop slot
+  { name: 'check-edits' }, // spec 005 FR-020..FR-026: file edits in the chat
+  { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
+  { name: 'check-ui-text' }, // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast
 ];
 
 /** The screenshot variables the drivers read; all point at one folder. */

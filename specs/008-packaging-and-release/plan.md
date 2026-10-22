@@ -50,3 +50,10 @@ specs/008-packaging-and-release/
 | CI green on main (3 OS + smoke), tag run produced a draft release | `gh run list`, `gh release list` 2026-10-16 | pass; release is **Draft** |
 | Packaged app launch on macOS/Windows, Gatekeeper/SmartScreen steps in README | none | **not verified** |
 | Signing/notarization | none | not done (feature 014) |
+
+## 2026-10-22: merge queue and shorter UI runs (T095, FR-098..FR-102)
+
+- Workflows only; no app code. `merge_group` triggers on the two workflows whose checks are required (`ci.yml`, `spec-kit.yml`); `ui-platforms.yml` is not required and keeps running on PRs, `main` and nightly.
+- The office layout and the UI suite already shard (`OFFICE_SHARDS`/`OFFICE_SHARD`, FR-021), so the split is matrix only. Linux's second office run in `ui-platforms.yml` is skipped for PR and push events by a matrix `exclude` built from an expression, and its first-half step checks the event.
+- Measuring: `gh api .../actions/runs/<id>/jobs` for the PR's own runs against the 45-run baseline in the spec.
+- The ruleset (`main protection`, id 25258904) gets a `merge_queue` rule with `gh api -X PUT` after the workflows are on `main` (owner approval 2026-10-22), read back afterwards.

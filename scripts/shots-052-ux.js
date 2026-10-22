@@ -100,7 +100,7 @@ module.exports = async (ctx) => {
     // waiting agent's chat
     const jonas = await deskId('Jonas');
     await js(`document.querySelector(${jsLiteral(`#stage [data-id="${jonas}"]`)}).click()`); await chatOf('Jonas');
-    // round 10 (FR-095): "Previous (N)" is a toggle for a panel, not an action, so it is not counted
+    // round 10 (FR-095): "Previous (N)" was a toggle, not an action; since spec 006 FR-033 it is not in the header at all (the :not() stays harmless)
     const hdr = await js(`[...document.querySelectorAll('#panelHead .actions > button:not(#prevBtn):not(#newSessHdrBtn)')].filter(b=>b.getClientRects().length).map(b=>b.id)`);
     assert.ok(hdr.length <= 3, 'at most 3 header actions besides Previous and + New (FR-139): ' + hdr.join(','));
     assert.strictEqual(await js(`(document.querySelector('.prev-toggle')||{}).getAttribute?document.querySelector('.prev-toggle').getAttribute('aria-expanded'):'none'`), 'false', 'Previous sessions closed for a chat with a conversation');

@@ -16,3 +16,17 @@
 - [x] T010 (2026-10-19) Per-folder default agent [FR-009]: `defaultAgent` in the folder store (parse, set, clear on remove), IPC `folders:setDefaultAgent`, the dialog checkbox and preselect, simulator driver at both sizes, docs
 - [ ] T011 Claude and Codex mapping (spec 012); Claude half: T011a
 - [x] T011a (Claude) agent files listed by the adapter, `--agents`/`--agent` on relaunch [FR-008]
+- [x] T012 (2026-10-21, owner request) View and edit profile files [FR-010..FR-017]
+  - [x] T012a main: `profilefiles.ts` (list, resolve by id, read, atomic save with EOL/BOM kept and conflict check, create) and its unit test `test:profilefiles` (path escape, symlink, size, round trip in a temp folder)
+  - [x] T012b IPC `profiles:*` in `ipc/profiles.ts`, preload and `api.ts`; `test:ipcchannels` list
+  - [x] T012c renderer: `profileeditor.js` (Edit / Split / Preview, front matter check, throttled preview, Save and Ctrl/Cmd+S, unsaved guard, conflict, New profile), Edit in the Profile menu, Settings section; `test:profileeditor` (front matter, preview sanitisation)
+  - [x] T012d simulator files and the driver `shots-043-editor.js` (modes, widths, save round trip, unsaved guard), screenshots at 1440x900 and 1280x800, light and dark; `check:ui`
+  - [x] T012e docs: README, CHANGELOG, specs index
+- [x] T015 (2026-10-21, owner request) Create an Agent Success Profile with AI: describe or questionnaire, one-shot through the theme maker's path, checked reply, draft in the editor [FR-021..FR-025]
+  - [x] T015a shared prompt builder and reply check; unit tests (answers in, no paths; missing sections, broader tools, `*`, HTML refused)
+  - [x] T015b IPC `profiles:generate`, the shared one-shot helper in main, `profiles:create` with text
+  - [x] T015c editor draft, the Create with AI dialog, simulator canned generation, driver and screenshots at both sizes
+  - [x] T015d docs
+  - [x] T016 (real, owner's go-ahead 2026-10-22) One questionnaire generation on Claude haiku through the one-shot path, checked, opened as a draft in Split view (`scripts/profilegen-real.ts`; spec Evidence). Named programs such as `git` are not tools yet: `[KNOWN GAP]`, owner decision
+- [x] T013 (2026-10-21, owner decisions on #488) Agent Success Profile and Standard agent templates, the default preselected; editor words "Agent Success Profiles" [FR-018, FR-019]
+- [x] T014 (2026-10-22, review on #488) New profile sends a folder id, main accepts it only if it is an office folder now [FR-020]; `test:profilefiles`; Copilot `*.md` vs `*.agent.md` recorded as a known gap

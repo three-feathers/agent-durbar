@@ -591,6 +591,145 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
 
+  // ---- spec 058 FR-012: Restart one server = mcp_reconnect then mcp_status; nothing before the CLI runs; an off server is refused ----
+  {
+    const sp = fakeSpawn();
+    const reqs: Record<string, unknown>[] = [];
+    let servers = [{ name: 'notes', status: 'failed', error: 'spawn notes ENOENT' }, { name: 'web', status: 'connected' }];
+    sp.next = (c) => {
+      c.onWrite = (o) => {
+        if (o.type !== 'control_request') {
+          if (o.type === 'user') setTimeout(() => { c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, tools: [], mcp_servers: servers }); c.send({ type: 'result', subtype: 'success', is_error: false }); }, 0);
+          return;
+        }
+        const r = o.request as { subtype: string; serverName?: string };
+        if (r.subtype.startsWith('mcp_')) reqs.push(r);
+        if (r.subtype === 'mcp_reconnect') servers = servers.map((x) => (x.name === r.serverName ? { name: x.name, status: 'connected' } : x));
+        const response = r.subtype === 'mcp_status' ? { mcpServers: servers } : {};
+        setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
+      };
+    };
+    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    assert.deepStrictEqual([ad.capabilities.mcpRestart, ad.capabilities.mcpStart, ad.capabilities.mcpToggleApplies, typeof ad.restartMcpServer], [true, 'next-message', 'live', 'function']);
+    const ev: AgentEvent[] = [];
+    ad.onEvent((e) => ev.push(e));
+    const mcp = { notes: { type: 'stdio', command: 'node', args: ['n.js'] }, web: { type: 'stdio', command: 'node', args: ['w.js'] } } as never;
+    const sid = await ad.start({ workspace: WS, quiet: true, mcpServers: mcp, disabledMcpServers: ['web'] });
+    await assert.rejects(ad.restartMcpServer(sid, 'notes'), /starts its MCP servers with your next message/, 'before the first message: nothing to restart');
+    assert.strictEqual(sp.calls.length, 0, 'the CLI is not launched for a restart (Q11)');
+    await ad.send(sid, { text: 'hi' });
+    await until('idle', () => ev.some((e) => e.type === 'status' && (e as { status: string }).status === 'idle'));
+    await assert.rejects(ad.restartMcpServer(sid, 'web'), /Switch it on first/, 'a server off at launch is not in the CLI');
+    await ad.restartMcpServer(sid, 'notes');
+    assert.deepStrictEqual(reqs, [{ subtype: 'mcp_reconnect', serverName: 'notes' }, { subtype: 'mcp_status' }], 'one mcp_reconnect for that server, then the new list');
+    const last = [...ev].reverse().find((e) => e.type === 'mcp') as { servers: { name: string; status: string }[] };
+    assert.strictEqual(last.servers.find((x) => x.name === 'notes')?.status, 'connected', 'the new state from mcp_status');
+    await assert.rejects(ad.restartMcpServer('no-such', 'notes'), /not running/);
+    await ad.stop(sid);
+    // the SDK transport (dev opt-in) sends no mcp_reconnect: no Restart there (C2)
+    const sdk = new ClaudeAdapter({ sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
+    assert.deepStrictEqual([sdk.capabilities.mcpRestart, typeof sdk.restartMcpServer], [undefined, 'undefined'], 'SDK transport: no restartMcpServer');
+  }
+
+  // ---- MCP sign-in challenge (spec 058 T096): a failed MCP tool result with the challenge -> mcpAuth and one mcp_status at a time ----
+  {
+    const sp = fakeSpawn();
+    let statusCalls = 0;
+    let hold: (() => void) | undefined;
+    const servers = [{ name: 'notes', status: 'connected' }]; // the CLI still says connected: the challenge is the signal
+    sp.next = (c) => {
+      c.onWrite = (o) => {
+        if (o.type === 'control_request') {
+          const r = o.request as { subtype: string };
+          if (r.subtype !== 'mcp_status') return void setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response: {} } }), 0);
+          statusCalls++;
+          const answer = (): void => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response: { mcpServers: servers } } });
+          if (statusCalls === 1) hold = answer; // the first stays in flight until released
+          else setTimeout(answer, 0);
+          return;
+        }
+        if (o.type !== 'user') return;
+        const fail = (id: string, name: string, text: string): void => {
+          c.send({ type: 'assistant', message: { id: `m-${id}`, content: [{ type: 'tool_use', id, name, input: {} }] } });
+          c.send({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: text, is_error: true }] } });
+        };
+        setTimeout(() => {
+          c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, tools: [], mcp_servers: servers });
+          fail('a1', 'mcp__notes__q', 'MCP OAuth challenge required (HTTP 401)');
+          fail('a2', 'mcp__notes__q', 'MCP OAuth challenge required (HTTP 401)');
+          fail('a3', 'mcp__notes__q', 'plain failure'); // no challenge: no request
+          fail('a4', 'Bash', 'MCP OAuth challenge required (HTTP 401)'); // not an MCP tool
+          c.send({ type: 'result', subtype: 'success', is_error: false });
+        }, 0);
+      };
+    };
+    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ev: AgentEvent[] = [];
+    ad.onEvent((e) => ev.push(e));
+    const sid = await ad.start({ workspace: WS, quiet: true });
+    await ad.send(sid, { text: 'go' });
+    await until('all four results', () => (ev.filter((e) => e.type === 'toolCall' && (e as { phase?: string }).phase === 'failed').length === 4 ? true : undefined));
+    await until('one request', () => (statusCalls === 1 ? true : undefined));
+    const auth = ev.filter((e) => e.type === 'toolCall' && (e as { mcpAuth?: boolean }).mcpAuth === true) as { callId: string; mcpServer?: string }[];
+    assert.deepStrictEqual(auth.map((e) => [e.callId, e.mcpServer]), [['a1', 'notes'], ['a2', 'notes']], 'mcpAuth only on the failed MCP calls with the challenge');
+    assert.strictEqual(statusCalls, 1, 'two failures while one request is in flight: one mcp_status');
+    const early = [...ev].reverse().find((e) => e.type === 'mcp') as { servers: { status: string; errorClass?: string }[] };
+    assert.deepStrictEqual([early.servers[0].status, early.servers[0].errorClass], ['needs-auth', 'auth'], 'shown at once from the last known list, while mcp_status is still held');
+    const before = ev.filter((e) => e.type === 'mcp').length;
+    hold!();
+    await until('list', () => (ev.filter((e) => e.type === 'mcp').length > before ? true : undefined));
+    const last = [...ev].reverse().find((e) => e.type === 'mcp') as { servers: { name: string; status: string; errorClass?: string }[] };
+    assert.deepStrictEqual([last.servers[0].status, last.servers[0].errorClass], ['needs-auth', 'auth'], 'the refreshed list');
+    await ad.stop(sid);
+  }
+
+  // ---- FR-060: the sign-in mark ends with the CLI's own fresh list (init) and with a toggle of that server ----
+  {
+    const sp = fakeSpawn();
+    const servers = [{ name: 'notes', status: 'connected' }, { name: 'other', status: 'connected' }];
+    sp.next = (c) => {
+      c.onWrite = (o) => {
+        if (o.type === 'control_request') {
+          const r = o.request as { subtype: string };
+          const body = r.subtype === 'mcp_status' ? { mcpServers: servers } : {};
+          return void setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response: body } }), 0);
+        }
+        if (o.type !== 'user') return;
+        const text = JSON.stringify(o);
+        const fail = (id: string, name: string): void => {
+          c.send({ type: 'assistant', message: { id: `m-${id}`, content: [{ type: 'tool_use', id, name, input: {} }] } });
+          c.send({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'MCP OAuth challenge required (HTTP 401)', is_error: true }] } });
+        };
+        setTimeout(() => {
+          if (text.includes('first')) { c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, tools: [], mcp_servers: servers }); fail('b1', 'mcp__notes__q'); }
+          else if (text.includes('fresh')) { c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, tools: [], mcp_servers: servers }); fail('b2', 'mcp__other__q'); }
+          else fail('b3', 'mcp__notes__q');
+          c.send({ type: 'result', subtype: 'success', is_error: false });
+        }, 0);
+      };
+    };
+    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ev: AgentEvent[] = [];
+    ad.onEvent((e) => ev.push(e));
+    type Row = { name: string; status: string };
+    const lastList = (): Row[] => ([...ev].reverse().find((e) => e.type === 'mcp') as unknown as { servers: Row[] }).servers;
+    const st = (n: string): string | undefined => lastList().find((x) => x.name === n)?.status;
+    const waitList = async (what: string, name: string, status: string): Promise<void> => void (await until(what, () => (ev.some((e) => e.type === 'mcp') && st(name) === status ? true : undefined)));
+    const sid = await ad.start({ workspace: WS, quiet: true });
+    await ad.send(sid, { text: 'first' });
+    await waitList('notes marked', 'notes', 'needs-auth');
+    // a fresh init (connected) clears the mark: a later list for another server's challenge shows notes connected
+    await ad.send(sid, { text: 'fresh' });
+    await waitList('other marked, notes cleared', 'other', 'needs-auth');
+    assert.strictEqual(st('notes'), 'connected', 'init cleared the mark of notes');
+    // a toggle of that server also ends it
+    await ad.send(sid, { text: 'again' });
+    await until('marked again', () => (st('notes') === 'needs-auth' ? true : undefined));
+    await ad.setMcpEnabled(sid, 'notes', false);
+    assert.strictEqual(st('notes'), 'connected', 'a toggle ends the mark: the next list is the CLI\'s');
+    await ad.stop(sid);
+  }
+
   // ---- custom agents (spec 043 FR-008): chosen before the first message, passed on the first launch; a started session refuses ----
   {
     const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cagent-cfg-'));

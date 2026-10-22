@@ -180,6 +180,13 @@ cannot run; offer *Switch off for this session* next to each signal; mask failed
 8. **Docs**: README MCP section ("Needs sign-in", Sign in, terminal steps, "not checked on a real account yet"), CHANGELOG, spec 019
    pointer (done in this spec PR), specs index.
 
+9. **Real check on CI** (T116, owner request 2026-10-21): a dependency-free demo MCP server that requires OAuth
+   (`scripts/demo-oauth-mcp.ts`, MCP part reuses `src/main/mcp/protocol.ts` `McpSession`), a check script through the Copilot adapter
+   (`scripts/mcp-oauth-real.ts`, `scripts/e2e-real.ts` pattern: secrets from env, every line through `redact`), and a manual workflow
+   (`.github/workflows/mcp-oauth-real.yml`, `e2e-real.yml` pattern, `workflow_dispatch` only). No browser dependency: the demo
+   auto-approves, so the "browser" is two HTTP requests (authorize, then the runtime's loopback callback). The SDK's own OAuth demo
+   (`@modelcontextprotocol/sdk` examples) was not reused: it is not a dependency here and needs `express` and the SDK.
+
 ### Order
 
 Phase 8a (no answers needed): T091-T097. Phase 8b (T090 done): T098-T104. Phase 8c (owner go-ahead): T105-T107. Then T108-T109.

@@ -4,8 +4,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vm from 'vm';
-import { acceptedFor, codeLoadingEnv, secretEnvName, hasFolderRules, readCodexMcpToml, rootLabels, runsGivenCode, scanFolderSetup, scanFolderSetupCached, shownCommand, shownWord, MAX_FILE_BYTES } from '../src/main/foldersetup';
+import { acceptedFor, codeLoadingEnv, secretEnvName, hasFolderRules, readCodexMcpToml, rootLabels, runsGivenCode, scanFolderSetup, scanFolderSetupCached, shownCommand, MAX_FILE_BYTES } from '../src/main/foldersetup';
 import { FolderSetupStore } from '../src/main/foldersetupstore';
+import { shQuote } from '../src/shared/redact';
 import { costText, decide, explainPrompt, parseExplanation, scanView } from '../src/main/ipc/foldersetupipc';
 import type { FolderSetupDeps } from '../src/main/ipc/foldersetupipc';
 import { claudeSettingsJson, copilotHooksJson, isBroadRule, needsConfirm } from '../src/shared/foldersetup';
@@ -367,7 +368,7 @@ assert.deepStrictEqual(rootLabels(['/x/app', '/y/x/app']), ['x/app (1)', 'x/app 
   const [sk] = mcp({ sk: { command: 'npx', args: ['srv'], env: { NPM_CONFIG__AUTH: 'x', LOG_LEVEL: 'debug' } } });
   assert.ok(sk.hidden && /NPM_CONFIG__AUTH/.test(sk.hiddenWhy ?? '') && sk.detail.startsWith('NPM_CONFIG__AUTH=[hidden] LOG_LEVEL=debug'), 'a secret-looking code-loading name: value hidden AND unticked with the reason');
   // nit: quoting
-  assert.deepStrictEqual(['-y', 'a b', '', "it's", '$(id)', 'x;y', '@scope/pkg@1.2', '--port=9', 'C:/x'].map(shownWord), ['-y', "'a b'", "''", `'it'\\''s'`, "'$(id)'", "'x;y'", '@scope/pkg@1.2', '--port=9', 'C:/x']);
+  assert.deepStrictEqual(['-y', 'a b', '', "it's", '$(id)', 'x;y', '@scope/pkg@1.2', '--port=9', 'C:/x'].map((w) => shQuote(w)), ['-y', "'a b'", "''", `'it'\\''s'`, "'$(id)'", "'x;y'", '@scope/pkg@1.2', '--port=9', 'C:/x']);
   // nit: a rule over 500 characters is a problem, not dropped silently
   fs.mkdirSync(path.join(d4, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(d4, '.claude', 'settings.json'), JSON.stringify({ permissions: { allow: [`Bash(${'a'.repeat(600)})`, 'Bash(npm test:*)'] } }));

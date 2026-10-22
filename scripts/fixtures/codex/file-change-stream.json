@@ -1,0 +1,19 @@
+{
+  "provenance": "synthetic",
+  "description": "Spec 005 FR-019: item/fileChange/patchUpdated (shape from codex app-server generate-ts, codex-cli 0.163.0) starts the row before item/started, which then is an update; kinds as objects; a token in a new file is masked.",
+  "notifications": [
+    {"method":"thread/started","params":{"thread":{"id":"thr_main","cwd":"/work/app"}}},
+    {"method":"item/fileChange/patchUpdated","params":{"threadId":"thr_main","turnId":"t1","itemId":"fc_9","changes":[{"path":"/work/app/src/a.ts","kind":{"type":"update","move_path":null},"diff":"@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n"}]}},
+    {"method":"item/fileChange/patchUpdated","params":{"threadId":"thr_main","turnId":"t1","itemId":"fc_9","changes":[{"path":"/work/app/src/a.ts","kind":{"type":"update","move_path":null},"diff":"@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n export { a };\n"},{"path":"/work/app/src/new.ts","kind":{"type":"add"},"diff":"export const b = 3;\nexport const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';\n"}]}},
+    {"method":"item/started","params":{"threadId":"thr_main","item":{"id":"fc_9","type":"fileChange","status":"inProgress","changes":[{"path":"/work/app/src/a.ts","kind":{"type":"update","move_path":null},"diff":"@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n export { a };\n"},{"path":"/work/app/src/new.ts","kind":{"type":"add"},"diff":"export const b = 3;\nexport const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';\n"}]}}},
+    {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"fc_9","type":"fileChange","status":"completed","changes":[{"path":"/work/app/src/a.ts","kind":{"type":"update","move_path":null},"diff":"@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n export { a };\n"},{"path":"/work/app/src/old.ts","kind":{"type":"update","move_path":"/work/app/src/renamed.ts"},"diff":""}]}}}
+  ],
+  "expected": [
+    {"type":"status","status":"idle","intent":"Ready in /work/app"},
+    {"type":"toolCall","callId":"fc_9","tool":"apply_patch","phase":"start","args":{"files":["/work/app/src/a.ts"]}},
+    {"type":"toolCall","callId":"fc_9","tool":"apply_patch","phase":"update","edit":{"files":[{"path":"/work/app/src/a.ts","kind":"edit","diff":"@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;","added":1,"removed":1}],"partial":true}},
+    {"type":"toolCall","callId":"fc_9","tool":"apply_patch","phase":"update","edit":{"files":[{"path":"/work/app/src/a.ts","kind":"edit","diff":"@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n export { a };","added":1,"removed":1},{"path":"/work/app/src/new.ts","kind":"create","diff":"@@ -0,0 +1,2 @@\n+export const b = 3;\n+export const token = '[redacted]';","added":2,"removed":0}],"partial":true}},
+    {"type":"toolCall","callId":"fc_9","tool":"apply_patch","phase":"update","args":{"files":["/work/app/src/a.ts","/work/app/src/new.ts"]},"edit":{"files":[{"path":"/work/app/src/a.ts","kind":"edit","diff":"@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n export { a };","added":1,"removed":1},{"path":"/work/app/src/new.ts","kind":"create","diff":"@@ -0,0 +1,2 @@\n+export const b = 3;\n+export const token = '[redacted]';","added":2,"removed":0}]}},
+    {"type":"toolCall","callId":"fc_9","tool":"apply_patch","phase":"complete","output":"2 files changed","edit":{"files":[{"path":"/work/app/src/a.ts","kind":"edit","diff":"@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n export { a };","added":1,"removed":1},{"path":"/work/app/src/old.ts","kind":"move","movedTo":"/work/app/src/renamed.ts"}]}}
+  ]
+}
