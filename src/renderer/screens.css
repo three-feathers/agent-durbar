@@ -319,6 +319,11 @@ body.has-bridge #topBtns{display:flex}
 .grep{display:flex;gap:6px;align-items:baseline;margin-top:6px}
 .gfiles{margin:4px 0;padding-left:18px}
 .gfiles .warn{color:var(--amber-ink)}
+/* spec 069 part 2: Harmonize */
+.hm .hmlbl{font-size:11px;color:var(--muted)}
+.hmfrom{display:flex;gap:8px;align-items:center;font-weight:600;font-size:12.5px}
+.hmfrom select{font:inherit;padding:4px 6px}
+.dlg .gapps label{display:flex;gap:6px;align-items:baseline}
 /* spec 060 FR-012: a tall setup dialog (three routes and the vendor's commands) scrolls inside its body, so the rows never slide under Cancel/Install */
 #hsDlg .dlg .dbody{overflow:auto;padding-right:2px}
 

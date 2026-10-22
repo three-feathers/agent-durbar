@@ -3,15 +3,15 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Global MCP servers written to the agent apps' own lists (Copilot CLI, Claude Code, Codex) after a per-file confirmation with backups, harmonize the lists, source chips, Start/Stop/Restart/Sign in/Remove on every server row, a server's tools on expand (owner 2026-10-21)
-status: part 1 **built** 2026-10-21 (unit tests, simulator driver; real check T060 2026-10-22: Copilot CLI, Claude Code and Codex list the written entries, 0 credits); parts 2-3 specified; owner questions Q1-Q6 answered 2026-10-22 (defaults kept)
+status: parts 1-2 **built** 2026-10-21 (add/remove for all folders, harmonize; unit tests, simulator drivers; real check T060 2026-10-22: Copilot CLI, Claude Code and Codex list the written entries, 0 credits); part 3 specified; owner questions Q1-Q6 answered 2026-10-22 (defaults kept)
 -->
 
 **Feature Branch**: `069-mcp-global-controls`
 **Created**: 2026-10-21
 **Status**: Part 1 **built** 2026-10-21 (add to and remove from the agent apps' own lists with a per-file review and backups, source
 chips, Claude Code's user list in Durbar's Claude sessions): unit tests (`test:mcpglobal`) and a simulator driver (`shots-069-mcp-global`),
-and the real check T060 (2026-10-22, scratch home, 0 credits: Copilot CLI, Claude Code and Codex list the written entries; see *Changes*). Parts 2 (harmonize) and 3 (tools list and per-row controls) are specified, not
-built (see *Delivery*). Owner questions Q1-Q6 answered 2026-10-22: the built defaults are kept.
+and the real check T060 (2026-10-22, scratch home, 0 credits: Copilot CLI, Claude Code and Codex list the written entries; see *Changes*). Part 2 (harmonize) **built** 2026-10-21 the same way (`test:mcpglobal`,
+`shots-069-harmonize`). Part 3 (tools list and per-row controls) is specified, not built (see *Delivery*). Owner questions Q1-Q6 answered 2026-10-22: the built defaults are kept.
 **Input**: Owner (Vikram, Telegram 2026-10-21 21:03 UTC): "For the MCP server addition UI, give an option to also add to the list of
 global MCP servers, and those controls to start/stop/restart/auth... we should have those options for all servers. Also show the list of
 tools per MCP server when you expand it." Owner decision (Vikram, Telegram 2026-10-21 21:06 UTC): "global" is written to the agent apps'
@@ -218,12 +218,27 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 
 ### Harmonize (part 2)
 
-- **FR-020** `mcp:globalDiff()` returns per name: in which apps it is, and, where present in two or more, the differences (transport,
-  command, arguments, URL, env and header *names*); values are compared in main only and reported as "values differ" without them.
-- **FR-021** Settings shows **Harmonize (N)** when N > 0 and more than one app has a readable file. Each row: *Copy to <missing apps>*
+- **FR-020** `[IMPLEMENTED]` `mcp:globalDiff()` returns per name: in which apps it is, and, where present in two or more, the differences (transport,
+  command, arguments, URL, env and header *names*, tool list, hidden tools, on/off); values are compared in main only and reported as
+  "values differ" without them.
+- **FR-021** `[IMPLEMENTED]` Settings shows **Harmonize (N)** when N > 0 and more than one app has a readable file. Each row: *Copy to <missing apps>*
   ticks; a different definition offers *Use the <app> version in <other apps>* (Q5: never ticked by default). Applying uses FR-005's
   preview and confirmation; the copied entry keeps the source's references or values as they are (no value reaches the window).
-- **FR-022** With a single app, Harmonize is not shown.
+- **FR-022** `[IMPLEMENTED]` With a single app, Harmonize is not shown.
+- **FR-023** `[IMPLEMENTED]` (found while building) A copy converts between formats and keeps references: JSON `${X}` <-> Codex
+  `env_vars` (same name only; another name is refused for Codex) and `env_http_headers`; JSON `Authorization: Bearer ${X}` <-> Codex
+  `bearer_token_env_var`. A value with `${...}` inside other text is refused for Codex (it does not expand it). A server with a working
+  directory (Codex `cwd` or JSON `cwd`), or of a kind Durbar does not write (WebSocket, plugin), is listed but not copyable. A missing file
+  counts as an empty list. A copy never widens what the server may do (change 2026-10-22): switched off (Codex `enabled = false`, JSON
+  `disabled: true`), hidden tools (Codex `disabled_tools`, written as a list) and a tool allow list (Codex `enabled_tools`, Copilot
+  `tools`) travel with it where the target list has the same field (Codex all three; Copilot the allow list); a target without it
+  refuses that file with a note naming the field.
+  (change 2026-10-22, review 2 and 3 on #492) **Nothing is dropped silently.** A copy is refused, naming the fields, when the source
+  entry has a field the writers do not carry (for example Claude Code `oauth` or `headersHelper`, Copilot `timeout`, Codex
+  `startup_timeout_sec` or a sub-table other than `env`, `http_headers`, `env_http_headers`), or a value that is not a plain string
+  where one is expected (a number or a `"""` multi-line string in Codex `env`, a non-string in a JSON `env`, `headers` or `args`):
+  such a copy would lose that field or write the value empty. The diff still lists the server, with the reason. Plain values copied
+  from an owner-only file never land in a more open one: every written file is owner-only (FR-006), and the copy review says so.
 
 ### Session controls and tools (part 3; depends on spec 058 #473)
 
@@ -339,6 +354,26 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   5. **FR-004 aligned with the code**: an `Authorization` header is referenced through `env_http_headers` like any header.
   6. **Smaller**: the Claude MCP JSON goes through a 0600 temp file instead of argv (FR-009); the hash is checked again right before the
      rename (FR-006); README and the Settings note say that restoring a backup is manual.
+
+- **2026-10-22 (second review on #492 by Paco's agent, CHANGES_REQUESTED at 00d26a4d):** all findings fixed (T066).
+  1. **Copying a secret into a more open file**: `copyPreview` writes plain values as they are; with #489's owner-only writes (FR-006)
+     the target file is 0600 after the copy (`test:` a plain secret from a 0600 `~/.claude.json` copied into a 0644 Codex
+     `config.toml` leaves it 0600), and the copy review says the file is left readable only by you.
+  2. **Fields lost on replace** (FR-023): unknown fields (Claude `oauth`, `headersHelper`, Copilot `timeout`, Codex keys and
+     sub-tables the writer does not know) made a silent partial copy; now the copy is refused naming them.
+  3. **Values that became empty** (FR-023): a Codex `env` value that is not a simple string (a number, a multi-line string) was read
+     as `""`; now it is not copyable, with the key named. The same for non-string JSON values and Codex `args` that are not strings.
+
+- **2026-10-22 (review on #492):** two findings fixed.
+  1. **Secret in the copy review** (FR-012, SC-002): the review of a copy masked env and header values only; a token in the source
+     entry's command, arguments or URL reached the window. The review (`previewText`, also the add review) now masks command,
+     arguments and URL with the shared rules (`maskSecretCommand`, `maskSecretArgs`, `maskSecretUrl`); the file still gets the real
+     values. `test:` planted values in a Codex entry's command, `--api-key` argument and `?api_key=` URL never appear in `copyPreview`.
+  2. **A copy lost meaning** (FR-020, FR-023): Codex `enabled = false` and `disabled_tools` were not read (a switched-off server was
+     copied as on, and Claude sessions would then start it through FR-009); a Copilot `tools` allow list was dropped for Claude Code;
+     a JSON `cwd` was dropped while a Codex `cwd` was refused; the diff ignored tools and on/off. Now they are read, kept where the
+     target has the field, and otherwise the copy to that file is refused naming the field; the diff names `tools`, `hidden tools`
+     and `on/off`. The add form is unchanged. (T063)
 
 ## Relationship to other specs
 
