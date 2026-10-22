@@ -739,15 +739,19 @@ function restHTML(x,i){
   const art=k==='recent'
     ?`<span class="lg-av">${avatar(a)}</span>`
     :`<svg class="lg-bed" viewBox="0 0 44 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bd-frame" x="1" y="10" width="42" height="11" rx="3"/><rect class="bd-head" x="1" y="3" width="5" height="18" rx="2"/><rect class="bd-mat" x="5" y="8" width="37" height="6" rx="2.5"/><rect class="bd-pil" x="6" y="5" width="10" height="5" rx="2.5"/><rect class="bd-leg" x="3" y="20" width="3" height="4"/><rect class="bd-leg" x="38" y="20" width="3" height="4"/></svg><span class="lg-av lying">${avatar(a)}</span><svg class="lg-blanket" viewBox="0 0 44 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="bd-blk" d="M17 6.5q12-3 25 1V14H17z"/></svg>`;
-  return `<button class="desk shut is-${k} is-${st}${roll}" type="button" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${lab}"><span class="name lg-name">${esc(a.name)}</span><span class="lg-sp">${art}</span>${peek}</button>`;
+  return `<button class="desk shut is-${k} is-${st}${roll}" type="button" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${lab}"><span class="lg-sp">${art}<span class="name lg-name">${esc(a.name)}</span></span>${peek}</button>`;
 }
 /* FR-053: a room's resting agents, their couches and beds, and the corner's width (DurbarShutters.width, counted by the layout) */
 function shutGroup(r,rolled){
   if(!rolled||!rolled.length)return null;
   const recent=rolled.filter(x=>x.k==='recent'), old=rolled.filter(x=>x.k==='old'), key='shut:'+r.id, open=!!ui.expanded[key];
   const {shown,hidden}=SHUT.split(old,SHUT.OLD_CAP,open), fewer=open&&old.length>SHUT.OLD_CAP;
-  const more=hidden.length>0||fewer, couchW=SHUT.width(recent.length,0,false), bedW=SHUT.width(0,shown.length,more);
-  return {recent,old,shown,hidden,fewer,key,couchW:couchW?couchW-2*SHUT.PAD:0,bedW:bedW?bedW-2*SHUT.PAD:0,w:SHUT.width(recent.length,shown.length,more)};
+  const more=hidden.length>0||fewer, cs=SHUT.couches(recent.length), cols=SHUT.bunks(shown.length), items=cols+(more?1:0);
+  const w=SHUT.width(recent.length,shown.length,more), inner=w-2*SHUT.PAD;
+  let couchW=cs.length?cs.reduce((x,k)=>x+k*SHUT.SEAT_W+SHUT.COUCH_PAD,0)+(cs.length-1)*SHUT.GAP:0, bedW=items?cols*SHUT.BUNK_W+(more?SHUT.MORE_W:0)+(items-1)*SHUT.GAP:0;
+  /* one kind only: its bubble takes the whole width (the corner is at least MIN_W wide); both: each over its own furniture */
+  const sayW=couchW&&!bedW?inner:couchW, dreamW=bedW&&!couchW?inner:bedW;
+  return {recent,old,shown,hidden,fewer,key,cs,couchW,bedW,sayW,dreamW,w};
 }
 const shutW=(r,rolled)=>{const g=shutGroup(r,rolled);return g?g.w:0;};
 /* one bubble: every resident's line, the one whose turn it is shown; its tail points at that resident (x: the centre of its seat or bed) */
@@ -758,17 +762,19 @@ function bubbleHTML(cls,list,width,xOf,lineOf,tip){
 }
 function shuttersHTML(r,rolled){
   const g=shutGroup(r,rolled); if(!g)return '';
-  const cs=SHUT.couches(g.recent.length);
+  const cs=g.cs;
   /* the centre of seat i and of bed i, from the left of their zone */
   const seatX=i=>{let x=0,n=i;for(const k of cs){if(n<k)return x+SHUT.COUCH_PAD/2+n*SHUT.SEAT_W+SHUT.SEAT_W/2;x+=k*SHUT.SEAT_W+SHUT.COUCH_PAD+SHUT.GAP;n-=k;}return x;};
-  const bedX=i=>Math.min(i,Math.max(0,g.shown.length-1))*(SHUT.BED_W+SHUT.GAP)+SHUT.BED_W/2;
+  const bedX=i=>Math.floor(Math.min(i,Math.max(0,g.shown.length-1))/2)*(SHUT.BUNK_W+SHUT.GAP)+SHUT.BUNK_W/2;
   let seat=0;
   const couches=cs.map(k=>{const xs=g.recent.slice(seat,seat+k);seat+=k;
     return `<span class="lg-couch" style="flex-basis:${k*SHUT.SEAT_W+SHUT.COUCH_PAD}px"><svg class="lg-sofa" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="sf-back" x="4" y="2" width="92" height="24" rx="7"/><rect class="sf-seat" x="4" y="20" width="92" height="14" rx="4"/><rect class="sf-arm" x="0" y="12" width="9" height="24" rx="4"/><rect class="sf-arm" x="91" y="12" width="9" height="24" rx="4"/><rect class="sf-leg" x="8" y="34" width="5" height="6"/><rect class="sf-leg" x="87" y="34" width="5" height="6"/></svg>${xs.map(restHTML).join('')}</span>`;}).join('');
   const all=g.old, dreams=all.map(x=>x.a.name+': '+shutReply(x.a,90)).join('\n');
-  const say=bubbleHTML('say',g.recent,g.couchW,seatX,x=>shutReply(x.a,90),'');
-  const dream=bubbleHTML('dream',all,g.bedW,i=>bedX(i),x=>shutReply(x.a,90),dreams);
-  const beds=g.shown.map(restHTML).join('')+(g.hidden.length?`<button class="more shut-more" type="button" data-more="${esc(g.key)}" aria-expanded="false" aria-label="Show ${g.hidden.length} more finished agents asleep in ${esc(r.name)}" title="${g.hidden.length} more asleep">+${g.hidden.length} asleep</button>`:'')+(g.fewer?`<button class="more shut-more fewer" type="button" data-more="${esc(g.key)}" aria-expanded="true" aria-label="Show fewer finished agents in ${esc(r.name)}">Fewer</button>`:'');
+  const say=bubbleHTML('say',g.recent,g.sayW,seatX,x=>shutReply(x.a,160),'');
+  const dream=bubbleHTML('dream',all,g.dreamW,i=>bedX(i),x=>shutReply(x.a,160),dreams);
+  /* bunks: two beds to a column (the lower bunk first) */
+  const bunks=[];for(let i=0;i<g.shown.length;i+=2)bunks.push(`<span class="lg-bunk">${g.shown.slice(i,i+2).map(restHTML).join('')}</span>`);
+  const beds=bunks.join('')+(g.hidden.length?`<button class="more shut-more" type="button" data-more="${esc(g.key)}" aria-expanded="false" aria-label="Show ${g.hidden.length} more finished agents asleep in ${esc(r.name)}" title="${g.hidden.length} more asleep">+${g.hidden.length} asleep</button>`:'')+(g.fewer?`<button class="more shut-more fewer" type="button" data-more="${esc(g.key)}" aria-expanded="true" aria-label="Show fewer finished agents in ${esc(r.name)}">Fewer</button>`:'');
   const n=g.recent.length+g.old.length;
   return `<div class="lounge" data-key="${esc(g.key)}" style="--shw:${g.w}px" role="group" aria-label="${n} finished agent${n>1?'s':''} resting in ${esc(r.name)}"><div class="lg-bubs">${say}${g.couchW&&g.bedW?'<span class="lg-gap"></span>':''}${dream}</div><div class="lg-in">${couches?`<span class="lg-couches" style="flex-basis:${g.couchW}px">${couches}</span>`:''}${beds?`<span class="lg-beds" style="flex-basis:${g.bedW}px">${beds}</span>`:''}</div></div>`;
 }

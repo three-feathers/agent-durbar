@@ -1547,49 +1547,58 @@ h2,h3,h4{text-wrap:balance}
 .stage:not([data-d="full"]) .units.has-shut{display:flex;flex-wrap:nowrap;align-items:flex-start;gap:var(--gap);max-width:none}
 .stage:not([data-d="full"]) .units-in{flex:1 1 0;min-width:0;display:grid;grid-template-columns:repeat(var(--cols,1),minmax(0,1fr));gap:calc(var(--gap) + 2px) var(--gap);align-content:start;align-items:start;max-width:calc(var(--cols,1)*var(--cmax) + (var(--cols,1) - 1)*var(--gap))}
 .lounge{flex:none;width:var(--shw);min-width:0;position:relative;display:flex;flex-direction:column;justify-content:flex-end;gap:3px;padding:3px 8px 4px;border-radius:12px;
-  background:color-mix(in srgb,var(--chair) 22%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--chair) 45%,transparent)}
+  background:color-mix(in srgb,var(--chair) 22%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--chair) 45%,transparent);container:lounge / size;--bubh:18px}
 .stage:not([data-d="full"]) .lounge{height:var(--ch)}
 .stage[data-d="roomy"][data-grow] .lounge{height:calc(var(--ch) * var(--gf,1))}
 .stage[data-d="full"] .lounge{align-self:stretch;min-height:120px}
-/* the bubbles: one over the couch, one (a dream cloud) over the beds; each line in turn, the tail pointing at its speaker */
-.lg-bubs{display:flex;gap:6px;height:18px;flex:none;min-width:0}
+/* the bubbles, in the upper part: one over the couch, one (a dream cloud) over the beds; each line in turn, the tail at its speaker.
+   1 line in a short row, 2 from 100px, 3 from 150px (the corner's inner height) (FR-052: fewer lines at small densities) */
+.lg-bubs{display:flex;gap:6px;height:var(--bubh);flex:none;min-width:0}
 .lg-gap{display:none}
-.lg-bub{position:relative;flex:0 0 auto;min-width:0;height:17px;border-radius:9px;background:var(--bubble,var(--surface));border:1px solid var(--bubble-line,var(--line-2))}
+.lg-bub{position:relative;flex:0 0 auto;min-width:0;height:100%;border-radius:9px;background:var(--bubble,var(--surface));border:1px solid var(--bubble-line,var(--line-2))}
 .lg-bub.none{visibility:hidden}
-.lg-bub.dream{border-radius:9px 9px 9px 9px;border-style:dashed}
-.lg-t{position:absolute;inset:0 6px;font-size:10.5px;line-height:15px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .6s ease}
+.lg-bub.dream{border-style:dashed;border-radius:12px}
+.lg-t{position:absolute;inset:1px 7px;font-size:10.5px;line-height:15px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .6s ease}
 .lg-t.on{opacity:1}
 .lg-bub::after{content:"";position:absolute;bottom:-5px;left:calc(var(--tail,50%) - 4px);width:7px;height:7px;background:var(--bubble,var(--surface));border-right:1px solid var(--bubble-line,var(--line-2));border-bottom:1px solid var(--bubble-line,var(--line-2));transform:rotate(45deg)}
-.lg-bub.dream::after{border-radius:50%;transform:none;width:5px;height:5px;bottom:-6px;border:1px solid var(--bubble-line,var(--line-2))}
+.lg-bub.dream::after{border-radius:50%;transform:none;width:6px;height:6px;bottom:-8px;border:1px solid var(--bubble-line,var(--line-2))}
 .lg-bub.none::after{display:none}
 .lg-zz{font-weight:700;color:var(--muted);font-size:10.5px;letter-spacing:1px}
-/* the furniture band */
-.lg-in{flex:none;height:clamp(24px,calc(100% - 24px),58px);min-height:0;display:flex;align-items:flex-end;gap:6px} /* the furniture, with the bubbles just above the heads */
-.lg-couches,.lg-beds{flex:0 0 auto;display:flex;align-items:flex-end;gap:6px;height:100%;min-width:0}
-.lg-couch{position:relative;flex:0 0 auto;display:flex;align-items:flex-end;justify-content:center;height:100%;padding:0 4px}
-.lg-sofa{position:absolute;left:0;right:0;bottom:0;width:100%;height:min(70%,40px);z-index:0}
+@container lounge (min-height:100px){.lg-bubs{height:36px}.lg-t{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:14px;inset:3px 8px}}
+@container lounge (min-height:150px){.lg-bubs{height:51px}.lg-t{-webkit-line-clamp:3;font-size:11px}}
+/* the furniture: the rest of the corner's height */
+.lg-in{flex:1 1 0;min-height:0;display:flex;align-items:stretch;gap:6px;margin-top:3px}
+.lg-couches,.lg-beds{flex:0 0 auto;display:flex;align-items:stretch;gap:6px;min-width:0}
+.lg-couch{position:relative;flex:0 0 auto;display:flex;align-items:stretch;justify-content:center;padding:0 4px}
+.lg-sofa{position:absolute;left:0;right:0;bottom:0;width:100%;height:min(46%,64px);z-index:0}
 .lg-sofa .sf-back{fill:color-mix(in srgb,var(--chair) 85%,var(--ink))}
 .lg-sofa .sf-seat{fill:var(--chair)}
 .lg-sofa .sf-arm{fill:color-mix(in srgb,var(--chair) 70%,var(--ink))}
 .lg-sofa .sf-leg,.lg-bed .bd-leg{fill:color-mix(in srgb,var(--ink) 55%,transparent)}
-.stage .desk.shut{position:static;flex:none;width:40px;height:100%;min-width:0;padding:0;border:0;border-radius:8px;background:transparent;box-shadow:none;cursor:pointer}
-.stage .desk.shut.is-old{width:44px}
+.stage .desk.shut{position:static;flex:none;width:64px;height:auto;min-width:0;padding:0;border:0;border-radius:8px;background:transparent;box-shadow:none;cursor:pointer}
 .stage .desk.shut:hover{background:color-mix(in srgb,var(--raised) 50%,transparent);border:0;transform:none}
 .stage .desk.shut[aria-pressed="true"]{box-shadow:0 0 0 1.5px var(--sel-border,#7fa0bd)}
-.desk.shut .lg-name{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;font-size:12px} /* for name lookups; the label speaks */
 .lg-sp{position:relative;display:block;width:100%;height:100%;z-index:1;transform-origin:50% 100%}
-.lg-av{position:absolute;left:50%;bottom:min(28%,16px);width:min(30px,calc(100% - 6px));aspect-ratio:1;max-height:calc(100% - 4px);transform:translateX(-50%);border-radius:50% 50% 30% 30%;overflow:hidden}
+/* a character on the couch: as large as the corner allows (up to a desk figure), its name on the cushion */
+.desk.shut.is-recent .lg-av{position:absolute;left:50%;bottom:calc(min(46%,64px) * .42);height:min(56px,calc(100% - min(46%,64px) * .42 - 2px));aspect-ratio:1;transform:translateX(-50%);border-radius:50% 50% 30% 30%;overflow:hidden}
 .lg-av>svg{display:block;width:100%;height:100%}
-/* a nap bed: frame, mattress and pillow behind, the character lying with its head on the pillow, a blanket over it */
-.lg-bed,.lg-blanket{position:absolute;left:0;bottom:0;width:100%;height:min(62%,30px)}
+.desk.shut .lg-name{position:absolute;left:1px;right:1px;bottom:2px;z-index:3;font-size:10.5px;line-height:13px;font-weight:600;color:var(--ink);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:color-mix(in srgb,var(--surface) 78%,transparent);border-radius:6px;padding:0 2px}
+/* nap beds as bunks: two to a column (the lower bunk first); in a short row the two lie side by side */
+.lg-bunk{flex:0 0 72px;width:72px;display:flex;flex-direction:column-reverse;gap:3px;min-height:0}
+.lg-bunk{background:linear-gradient(var(--desk-front,var(--desk)),var(--desk-front,var(--desk))) left bottom/3px 100% no-repeat,linear-gradient(var(--desk-front,var(--desk)),var(--desk-front,var(--desk))) right bottom/3px 100% no-repeat} /* the bunk's posts */
+.stage .lg-bunk>.desk.shut{width:100%;flex:0 0 calc(50% - 1.5px);min-height:0}
+@container lounge (max-height:99px){.desk.shut.is-recent .lg-av{bottom:13px;height:calc(100% - 13px)}.desk.shut .lg-name{line-height:12px}.lg-bunk{flex-direction:row;background:none}.stage .lg-bunk>.desk.shut{width:auto;flex:1 1 0;min-width:0}}
+.lg-bed,.lg-blanket{position:absolute;left:0;bottom:0;width:100%;height:min(62%,34px)}
 .lg-blanket{z-index:2;pointer-events:none}
 .lg-bed .bd-frame{fill:var(--desk-front,var(--desk))}
 .lg-bed .bd-head{fill:color-mix(in srgb,var(--desk-front,var(--desk)) 80%,var(--ink))}
 .lg-bed .bd-mat{fill:var(--surface)}
 .lg-bed .bd-pil{fill:var(--bubble,var(--surface));stroke:var(--line-2);stroke-width:.6}
 .lg-blanket .bd-blk{fill:color-mix(in srgb,var(--sage) 55%,var(--surface))}
-.lg-av.lying{left:4px;bottom:calc(min(62%,30px) * .45);width:min(22px,calc(100% - 6px));transform:rotate(-80deg);border-radius:50%}
-.lg-beds>.shut-more{width:52px;height:calc(100% - 4px);padding:0 2px;font-size:10.5px;line-height:13px;flex:none;border-radius:10px;white-space:normal}
+.lg-av.lying{position:absolute;left:3px;bottom:calc(min(62%,34px) * .42);height:min(34px,calc(100% - 15px));aspect-ratio:1;transform:rotate(-80deg);border-radius:50%;overflow:hidden}
+.desk.shut.is-old .lg-name{top:0;bottom:auto;background:transparent;font-weight:500;color:var(--ink-2)}
+.lg-beds>.shut-more{width:52px;height:auto;padding:0 2px;font-size:10.5px;line-height:13px;flex:none;border-radius:10px;white-space:normal}
 /* the peek card: beside the lounge (left, or right when measured too close to the room's edge), never moving anything */
 .desk.shut .peek{display:none;position:absolute;right:calc(100% + 6px);top:0;z-index:30;width:300px;flex-direction:column;gap:3px;padding:8px 10px;border-radius:10px;
   background:var(--surface);border:1px solid var(--line-2);box-shadow:0 10px 28px color-mix(in srgb,var(--ink) 16%,transparent);transform-origin:100% 0;pointer-events:none;text-align:left}

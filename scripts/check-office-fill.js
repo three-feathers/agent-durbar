@@ -209,12 +209,12 @@ module.exports = async (ctx) => {
     const cards=[...room.querySelectorAll('.desk.card, .desk:not(.shut):not(.card)')].map(e=>e.getBoundingClientRect());
     const rm=R(room), L=lg?R(lg):null;
     const bubs=[...room.querySelectorAll('.lg-bub:not(.none)')].map(b=>{const r=R(b),on=b.querySelector('.lg-t.on');return {cls:b.className,in:r.l>=rm.l-0.5&&r.r<=rm.r+0.5&&r.t>=rm.t-0.5&&r.b<=rm.b+0.5&&(!L||(r.l>=L.l-0.5&&r.r<=L.r+0.5)),
-      on:on?on.textContent:'',all:[...b.querySelectorAll('.lg-t')].map(t=>t.textContent),font:on?parseFloat(getComputedStyle(on).fontSize):0,tail:b.style.getPropertyValue('--tail'),tip:b.getAttribute('title')||''};});
+      on:on?on.textContent:'',lines:on?(getComputedStyle(on).whiteSpace==='nowrap'?1:Math.min(parseInt(getComputedStyle(on).webkitLineClamp,10)||1,Math.round(on.clientHeight/(parseFloat(getComputedStyle(on).lineHeight)||15)))):0,all:[...b.querySelectorAll('.lg-t')].map(t=>t.textContent),font:on?parseFloat(getComputedStyle(on).fontSize):0,tail:b.style.getPropertyValue('--tail'),tip:b.getAttribute('title')||''};});
     return {d:s.dataset.d,gf:parseFloat(s.style.getPropertyValue('--gf'))||0,fit:s.dataset.fit,floorScroll:f.scrollHeight>f.clientHeight+1,
       open:cards.length,deskW:cards.length?Math.round(Math.min(...cards.map(r=>r.width))):0,deskH:cards.length?Math.round(Math.min(...cards.map(r=>r.height))):0,
       deskTop:cards.length?Math.round(Math.min(...cards.map(r=>r.top))):0,
       recent:rs.filter(e=>e.classList.contains('is-recent')).map(e=>e.dataset.id),old:rs.filter(e=>e.classList.contains('is-old')).map(e=>e.dataset.id).sort(),
-      labels:rs.map(e=>({id:e.dataset.id,tag:e.tagName,tab:e.tabIndex,l:e.getAttribute('aria-label')||'',inL:!!L&&R(e).l>=L.l-0.5&&R(e).r<=L.r+0.5&&R(e).t>=L.t-0.5&&R(e).b<=L.b+0.5,av:!!e.querySelector('.lg-av svg')})),
+      labels:rs.map(e=>({id:e.dataset.id,tag:e.tagName,tab:e.tabIndex,l:e.getAttribute('aria-label')||'',inL:!!L&&R(e).l>=L.l-0.5&&R(e).r<=L.r+0.5&&R(e).t>=L.t-0.5&&R(e).b<=L.b+0.5,av:!!e.querySelector('.lg-av svg'),nm:(()=>{const n=e.querySelector('.lg-name'),r=n.getBoundingClientRect(),b=e.getBoundingClientRect();return {t:n.textContent,font:parseFloat(getComputedStyle(n).fontSize),shown:r.width>8&&r.height>=10&&getComputedStyle(n).visibility!=='hidden',in:r.left>=b.left-0.5&&r.right<=b.right+0.5&&r.top>=b.top-0.5&&r.bottom<=b.bottom+0.5};})(),avH:Math.round((e.querySelector('.lg-av')||{getBoundingClientRect:()=>({height:0})}).getBoundingClientRect().height)})),
       small,bubs,roomH:Math.round(rm.h),lg:L?{t:Math.round(L.t),h:Math.round(L.h),w:Math.round(L.w),inRoom:L.l>=rm.l-0.5&&L.r<=rm.r+0.5}:null,
       more:(room.querySelector('.lounge .shut-more')||{}).textContent||'',
       wVar:parseFloat(room.style.getPropertyValue('--w'))||0,cols:parseFloat((room.querySelector('.units-in')||room.querySelector('.units')).style.getPropertyValue('--cols'))||1,
@@ -247,18 +247,24 @@ module.exports = async (ctx) => {
       check(x.tag === 'BUTTON' && x.tab === 0 && x.inL && x.av, `${tag}: ${x.id} is not a focusable character inside the lounge (${JSON.stringify(x)})`);
       check(/, (resting on the couch|asleep on a nap bed), finished (just now|\d+ (minute|hour|day)s? ago): /.test(x.l) && /[^.]\. Open chat panel\.$/.test(x.l), `${tag}: ${x.id} label "${x.l}"`);
     }
+    for (const x of a.labels) check(x.nm.shown && x.nm.in && x.nm.font >= 10.5 && x.l.startsWith(x.nm.t + ','), `${tag}: ${x.id} does not show its name on its character (${JSON.stringify(x.nm)})`);
+    check(a.labels.filter((x) => a.recent.includes(x.id)).every((x) => x.avH >= (a.lg.h >= 150 ? 44 : 24)), `${tag}: the couch characters are too small for a ${a.lg.h}px lounge (${a.labels.map((x) => x.avH)})`);
     check(/resting on the couch, finished 2 minutes ago: Done\. The edge cases/.test((a.labels.find((x) => x.id === 'sim-2') || {}).l || ''), `${tag}: Mira's label`);
     /* the bubbles: a speech bubble over the couch, a dream cloud over the beds, inside the lounge, >= 10.5px, masked */
     const say = a.bubs.find((b) => /\bsay\b/.test(b.cls)), dream = a.bubs.find((b) => /\bdream\b/.test(b.cls));
     check(say && dream && a.bubs.every((b) => b.in && b.font >= 10.5), `${tag}: bubbles ${JSON.stringify(a.bubs)}`);
+    check(a.bubs.every((b) => b.lines >= (a.lg.h - 7 >= 150 ? 3 : a.lg.h - 7 >= 100 ? 2 : 1)), `${tag}: bubbles of ${a.bubs.map((b) => b.lines)} lines in a ${a.lg.h}px lounge`);
     check(say && /^Done\. The edge cases/.test(say.on) && say.all.length === 2, `${tag}: the couch bubble says what Mira did: ${say && say.on}`);
     check(say && !say.all.join(' ').match(/Fill0Token0Value|0123456789ab/) && /\[redacted\]/.test(say.all.join(' ')), `${tag}: the token is masked in the bubble: ${say && say.all}`);
     check(dream && /^z z The README tool table/.test(dream.on) && dream.all.length === 3 && /Noor: .*\nTomas: .*\nPriya: /.test(dream.tip), `${tag}: the dream shows Noor's work first and the tooltip lists every dream: ${dream && dream.on} / ${dream && dream.tip}`);
     /* FR-055: the dreams take turns (the frozen simulator has no timer: one tick moves to the next sleeper, its tail follows) */
     await js(`window.__durbarSimUi.loungeTurn()`);
     const b2 = (await lounge()).bubs.find((b) => /\bdream\b/.test(b.cls)) || {};
-    check(/^z z The eval ran again/.test(b2.on || '') && b2.tail !== dream.tail, `${tag}: one turn later the dream is Tomas's (${b2.on}, tail ${dream && dream.tail} -> ${b2.tail})`);
-    await js(`window.__durbarSimUi.loungeTurn()`); await js(`window.__durbarSimUi.loungeTurn()`);
+    check(/^z z The eval ran again/.test(b2.on || '') && b2.tail === dream.tail, `${tag}: one turn later the dream is Tomas's, in the same bunk as Noor (${b2.on}, tail ${dream && dream.tail} -> ${b2.tail})`);
+    await js(`window.__durbarSimUi.loungeTurn()`);
+    const b4 = (await lounge()).bubs.find((b) => /\bdream\b/.test(b.cls)) || {};
+    check(/^z z Migration 0007/.test(b4.on || '') && b4.tail !== dream.tail, `${tag}: two turns later the dream is Priya's and its tail points at the next bunk (${b4.on}, tail ${dream && dream.tail} -> ${b4.tail})`);
+    await js(`window.__durbarSimUi.loungeTurn()`);
     const b3 = (await lounge()).bubs.find((b) => /\bdream\b/.test(b.cls)) || {};
     check(/^z z The README tool table/.test(b3.on || ''), `${tag}: three turns later the dream is Noor's again (${b3.on})`);
     /* keyboard: the arrow keys of FR-019 reach every resting agent */

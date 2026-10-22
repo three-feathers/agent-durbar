@@ -15,7 +15,9 @@ const S = require(path.join(R, 'shutters.js')) as {
   COUCH_SEATS: number;
   SEAT_W: number;
   COUCH_PAD: number;
-  BED_W: number;
+  BUNK_W: number;
+  MIN_W: number;
+  bunks: (n: number) => number;
   MORE_W: number;
   PAD: number;
   couches: (n: number) => number[];
@@ -35,7 +37,8 @@ const eq = (a: unknown, b: unknown, m: string): void => { assert.deepStrictEqual
 // owner defaults (FR-052)
 eq(S.RECENT_MS, 10 * MIN, 'recent means the last 10 minutes');
 eq([S.OLD_CAP, S.COUCH_SEATS], [4, 3], 'up to 4 beds; 3 seats a couch');
-eq([S.SEAT_W, S.COUCH_PAD, S.BED_W, S.MORE_W, S.GAP, S.PAD], [40, 8, 44, 52, 6, 8], 'seat 40px, couch frame 8px, bed 44px, "+N asleep" 52px, gaps 6px, padding 8px (styles.css uses the same)');
+eq([S.SEAT_W, S.COUCH_PAD, S.BUNK_W, S.MORE_W, S.GAP, S.PAD, S.MIN_W], [64, 8, 72, 52, 6, 8, 150], 'seat 64px, couch frame 8px, bunk 72px, "+N asleep" 52px, gaps 6px, padding 8px, at least 150px (styles.css uses the same)');
+eq([0, 1, 2, 3, 4].map(S.bunks), [0, 1, 1, 2, 2], 'two beds to a bunk');
 
 // ---- classification (FR-051, FR-052) ----
 const done = (since: number | null, o: Partial<X> = {}): X => Object.assign({ id: 'a', state: 'done', replied: true, since }, o);
@@ -95,11 +98,12 @@ eq(S.turn(-1, 3), 2, 'never negative');
 
 // ---- the lounge corner's width (FR-053): what the layout gives up for the resting agents ----
 eq(S.width(0, 0, false), 0, 'nobody resting, no corner');
-eq(S.width(2, 0, false), 2 * 8 + 2 * 40 + 8, 'two on a couch');
-eq(S.width(0, 3, false), 2 * 8 + 3 * 44 + 2 * 6, 'three beds');
-eq(S.width(2, 3, false), 2 * 8 + (2 * 40 + 8) + 6 + 3 * 44 + 2 * 6, 'a couch of two and three beds (about one narrow desk)');
-eq(S.width(0, 3, true), 2 * 8 + 3 * 44 + 52 + 3 * 6, 'three beds and "+N asleep"');
-eq(S.width(5, 0, false), 2 * 8 + (3 * 40 + 8) + 6 + (2 * 40 + 8), 'two couches');
+eq(S.width(2, 3, false), 2 * 8 + (2 * 64 + 8) + 6 + 2 * 72 + 6, 'a couch of two and two bunks (the owner\'s 280-320px)');
+eq(S.width(3, 4, false), 2 * 8 + (3 * 64 + 8) + 6 + 2 * 72 + 6, 'a full couch and two full bunks');
+eq(S.width(0, 3, true), 2 * 8 + 2 * 72 + 52 + 2 * 6, 'two bunks and "+N asleep"');
+eq(S.width(5, 0, false), 2 * 8 + (3 * 64 + 8) + 6 + (2 * 64 + 8), 'two couches');
+eq(S.width(1, 0, false), 150, 'one on the couch: the corner keeps 150px for its bubble');
+eq(S.width(0, 1, false), 150, 'one asleep: 150px');
 
 // ---- spoken time (FR-054) ----
 eq(S.spoken('just now'), 'just now', 'just now');
@@ -117,8 +121,10 @@ ok(/const mains=shown\.filter\(a=>!plan\.has\(a\.id\)\)/.test(app), 'officeModel
 ok(/function shutPlan\(r\)\{\s*if\(!shutOn\(\)\)return new Map\(\);\s*return SHUT\.roomPlan\(agents\.filter\(a=>!a\.parent&&a\.room===r\.id\)\.map\(shutInput\)\)/.test(app), 'the room rule reads the whole room, not the status filter, and the setting turns it off');
 ok(/\$\{shuttersHTML\(r,rolled\)\}<\/div><\/section>`/.test(app) && /<div class="units-in" style="--cols:\$\{cols\}">\$\{mains\.map\(a=>unitHTML\(a,d\)\)\.join\(''\)\}<\/div>\$\{shuttersHTML\(r,rolled\)\}/.test(app), 'the lounge sits at the end of the desk row, in both the full and the compact room');
 ok(/sw=shutW\(r,rolled\), over=2\*D\.rp\+4\+\(sw\?sw\+D\.gap:0\)/.test(app) && /sw\?Math\.floor\(\(aw-over\+D\.gap\)\/\(D\.cw\+D\.gap\)\):Infinity/.test(app) && /widths=mains\.map\(a=>unitWidth\(a,d\)\)\.concat\(sw\?\[sw\]:\[\]\)/.test(app), 'the room width counts the lounge, compact and full (FR-053)');
-ok(/w:SHUT\.width\(recent\.length,shown\.length,more\)/.test(app), 'the corner width comes from shutters.js');
-ok(/\.stage \.desk\.shut\{[^}]*width:40px/.test(css) && /\.stage \.desk\.shut\.is-old\{width:44px\}/.test(css) && /\.lg-beds>\.shut-more\{width:52px/.test(css) && /\.lg-in\{[^}]*gap:6px/.test(css) && /\.lounge\{[^}]*padding:3px 8px 4px/.test(css), 'the CSS sizes match SEAT_W, BED_W, MORE_W, GAP and PAD');
+ok(/const w=SHUT\.width\(recent\.length,shown\.length,more\)/.test(app), 'the corner width comes from shutters.js');
+ok(/\.stage \.desk\.shut\{[^}]*width:64px/.test(css) && /\.lg-bunk\{flex:0 0 72px;width:72px/.test(css) && /\.lg-beds>\.shut-more\{width:52px/.test(css) && /\.lg-in\{[^}]*gap:6px/.test(css) && /\.lounge\{[^}]*padding:3px 8px 4px/.test(css), 'the CSS sizes match SEAT_W, BUNK_W, MORE_W, GAP and PAD');
+ok(/@container lounge \(min-height:100px\)\{[^}]*\}\.lg-t\{[^}]*-webkit-line-clamp:2/.test(css) && /@container lounge \(min-height:150px\)\{[^}]*\}\.lg-t\{-webkit-line-clamp:3/.test(css), 'bubbles: 1 line in a short row, 2 from 100px, 3 from 150px');
+ok(/<span class="name lg-name">\$\{esc\(a\.name\)\}<\/span>/.test(app) && /\.desk\.shut \.lg-name\{[^}]*font-size:10\.5px/.test(css), 'each character shows its name (10.5px)');
 ok(/<span class="lg-av">\$\{avatar\(a\)\}<\/span>/.test(app) && /<span class="lg-av lying">\$\{avatar\(a\)\}<\/span>/.test(app), 'each resting agent is drawn as its own character (avatar, the theme scene kit)');
 ok(/const on=SHUT\.turn\(LOUNGE_TURN,list\.length\)/.test(app) && /k=SHUT\.turn\(LOUNGE_TURN,ts\.length\)/.test(app), 'the render and the timer pick the same bubble (FR-055)');
 ok(/\.lg-t\{[^}]*font-size:10\.5px/.test(css) && /\.lg-t\{[^}]*transition:opacity \.6s/.test(css), 'bubble text 10.5px, a gentle fade (off with reduced motion, the global rule)');

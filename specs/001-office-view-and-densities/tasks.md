@@ -87,6 +87,7 @@
 - [x] T081 (owner on #554, 19:55) Spec: the lounge (couch, nap beds, speech bubble, rotating dreams; FR-052..FR-057 amended, dated note) [FR-052..FR-057]
 - [x] T082 Lounge: `shutters.js` (couches, bed cap, width, turn); `app.js` lounge corner with the agents' own characters (`avatar`), bubbles and their turn, setting renamed; `styles.css` couch and bed art from theme tokens; `test:shutters` [FR-052..FR-056]
 - [x] T083 `check:office-fill` (corner in the row, bubbles inside and >= 10.5 px, keyboard, deterministic turn), mutation checks, `check:office`, `npm test`; screenshots retaken; README, changelog fragment [FR-057]
+- [x] T084 Lounge polish (coordinator review): 64 px seats and bunk beds so the characters fill the height, bubbles on up to 3 lines in the upper part, names on the characters, corner at least 150 px; `test:shutters`, `check:office-fill` (names, character size, bubble lines), screenshots retaken [FR-052, FR-053, FR-057]
 
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 

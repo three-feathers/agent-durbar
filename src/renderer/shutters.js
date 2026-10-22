@@ -7,9 +7,9 @@
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarShutters=api;
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
-  /* owner defaults (FR-052): on the couch for 10 minutes after finishing, then on a nap bed; 3 seats a couch; up to 4 beds, else 3 and
-     "+N asleep". Sizes in px (styles.css uses the same): the layout counts the corner so the open desks get the rest of the row (FR-053). */
-  const RECENT_MS=10*60000, OLD_CAP=4, COUCH_SEATS=3, SEAT_W=40, COUCH_PAD=8, BED_W=44, MORE_W=52, GAP=6, PAD=8;
+  /* owner defaults (FR-052): on the couch for 10 minutes after finishing, then on a nap bed; 3 seats a couch; beds are bunks (2 to a
+     column); up to 4 beds, else 3 and "+N asleep"; the corner is at least 150px wide so a bubble has room for its lines. Sizes in px (styles.css uses the same): the layout counts the corner so the open desks get the rest of the row (FR-053). */
+  const RECENT_MS=10*60000, OLD_CAP=4, COUCH_SEATS=3, SEAT_W=64, COUCH_PAD=8, BUNK_W=72, MORE_W=52, GAP=6, PAD=8, MIN_W=150;
   /* FR-051: Done, or Idle after a finished turn; never paused (coffee break), at a limit, away at a place, or with a busy helper */
   function finished(x){
     if(!x||x.paused||x.limit||x.away||x.helpersBusy)return false;
@@ -46,13 +46,16 @@
     const n=+m[1], w={min:'minute',h:'hour',d:'day'}[m[2]];
     return n+' '+w+(n===1?'':'s')+' ago';
   }
-  /* FR-053: the lounge corner's width: couches (seats and their frame), beds, the "+N asleep" button, gaps and padding; 0 when empty */
+  /* FR-052: bunk columns for n beds (two beds to a column) */
+  function bunks(n){return Math.ceil(Math.max(0,n|0)/2);}
+  /* FR-053: the lounge corner's width: couches (seats and their frame), bunk columns, the "+N asleep" button, gaps and padding, at least
+     MIN_W; 0 when empty */
   function width(nRecent,nBeds,more){
-    const cs=couches(nRecent), b=Math.max(0,nBeds|0)+(more?0:0);
+    const cs=couches(nRecent), cols=bunks(nBeds);
     const couch=cs.length?cs.reduce((w,k)=>w+k*SEAT_W+COUCH_PAD,0)+(cs.length-1)*GAP:0;
-    const bedItems=b+(more?1:0), beds=bedItems?b*BED_W+(more?MORE_W:0)+(bedItems-1)*GAP:0;
+    const items=cols+(more?1:0), beds=items?cols*BUNK_W+(more?MORE_W:0)+(items-1)*GAP:0;
     if(!couch&&!beds)return 0;
-    return 2*PAD+couch+beds+(couch&&beds?GAP:0);
+    return Math.max(MIN_W,2*PAD+couch+beds+(couch&&beds?GAP:0));
   }
-  return {RECENT_MS,OLD_CAP,COUCH_SEATS,SEAT_W,COUCH_PAD,BED_W,MORE_W,GAP,PAD,finished,kindOf,roomPlan,split,couches,turn,spoken,width};
+  return {RECENT_MS,OLD_CAP,COUCH_SEATS,SEAT_W,COUCH_PAD,BUNK_W,MORE_W,GAP,PAD,MIN_W,finished,kindOf,roomPlan,split,couches,bunks,turn,spoken,width};
 })());
