@@ -27,10 +27,12 @@ module.exports = async (ctx) => {
       await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`); // the level is remembered: reload so the office is drawn in it
       await H.load({ query: { simquestion: 'long' }, ready: 'fit' });
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${w} ${level}: the detail level is on`);
-      let id = null;
-      for (const end = Date.now() + 8000; !id && Date.now() < end;) { id = await js(`(()=>{for(const d of document.querySelectorAll('#stage .desk[data-id]')){d.click();const c=document.querySelector('#chat .note.question');if(c)return d.dataset.id;const b=document.getElementById('backBtn');if(b)b.click();}return ''})()`); if (!id) await ctx.sleep(100); }
-      assert.ok(id, `${w} ${level}: an agent has the question in its chat`);
-      await until(`!!document.querySelector('#chat .note.question .q-opt')`); await settle();
+      // Wait for the simulated question itself (the simulator asks it 300 ms after the load; a busy runner is later), then open the asking
+      // agent's chat from its desk and wait for its card: the shared openSimAgent (driver-helpers.js). The old way clicked every desk in one
+      // synchronous sweep for at most 8 s and could never see a question that arrived, or a chat that rendered, between two sweeps.
+      const opened = await H.openSimAgent('a=>!a.parent&&a.question', '#chat .note.question .q-opt');
+      assert.ok(opened.ok, `${w} ${level}: an agent has the question in its chat: ${JSON.stringify({ id: opened.id, ...opened.seen })}`);
+      await settle();
       await js(`document.querySelector('#chat .note.question').scrollIntoView({block:'center'})`); await settle();
       const r = await js(`(()=>{const card=document.querySelector('#chat .note.question'),cr=card.getBoundingClientRect();
         const cut=el=>{const c=getComputedStyle(el);return el.scrollWidth>el.clientWidth+1||el.scrollHeight>el.clientHeight+1||c.textOverflow==='ellipsis'||c.whiteSpace==='nowrap'||(c.webkitLineClamp&&c.webkitLineClamp!=='none')||((c.overflow==='hidden'||c.overflowY==='hidden')&&el.scrollHeight>el.clientHeight+1);};

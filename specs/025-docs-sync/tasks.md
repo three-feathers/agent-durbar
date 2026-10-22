@@ -16,7 +16,7 @@
 - [x] T011 `scripts/specs-index.js` (generate, check, import), group markers in `specs/README.md`, blocks backfilled into all 63 `spec.md` files, `test:specsindex` in `npm test` [FR-011..FR-013]
 - [x] T012 Docs check accepts fragments, warns on hand edits of CHANGELOG *Unreleased* and `specs/README.md`; `test-docs-check.sh` cases [FR-015]
 - [x] T013 Rules and docs: AGENTS.md, copilot-instructions, PR template, CONTRIBUTING, collaboration (release step), agent-notes, README, specs intro; README status block is release-only [FR-014, FR-016]
-- [ ] T014 At merge time (after the 2026-10-22 stack): merge `main`, `npm run specs:index -- --import`, `npm test` (#520) [FR-012, FR-013]
+- [x] T014 At merge time (after the 2026-10-22 stack): merge `main`, `npm run specs:index -- --import`, `npm test` (#520) [FR-012, FR-013]. Done 2026-10-22 on #534 after #530, #531, #533: rows 008, 044, 052 imported; their 4 Unreleased bullets moved to `changelog.d/`
 - [ ] T017 After T014, once no open PR edits `specs/README.md` rows: add `<!-- specs-index: strict -->` (#520) [FR-012]
 - [ ] T015 First release with `npm run changelog:build` (alpha.12 or later) writes the cut-over marker; check that the release notes read well (#520)
 - [x] T016 Review on #518 (rubenlupi): rows not committed (website and `specs/INDEX.md`), strict by a marker instead of a date, `--add` for new specs, `-->`/`--!>` refused in values, one section per version, CLI and group-twice tests, CLAUDE.md, `migrate` dropped [FR-010..FR-013, FR-016]
