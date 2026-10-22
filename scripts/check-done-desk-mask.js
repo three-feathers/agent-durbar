@@ -74,7 +74,7 @@ module.exports = async (ctx) => {
       await js(`(()=>{const d=document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(parent)})+']');d.click();})()`);
       await until(`document.querySelectorAll('#chat .sub-task').length>0`);
       const sub = await js(`[...document.querySelectorAll('#chat .sub-task')].map(e=>e.textContent+' '+(e.title||'')).join('\\n').toLowerCase()`);
-      assert.ok(/\[redacted\]|^$/.test(sub) || sub.length > 0, `${tag}: sub-agent cards are there`);
+      assert.ok(sub.length > 0 && /\[redacted\]/.test(sub), `${tag}: sub-agent card lines exist and show a masked secret: ${sub.slice(0, 200)}`);
       for (const nd of NEEDLES) assert.ok(!sub.includes(nd), `${tag}: "${nd.slice(0, 10)}..." is in a sub-agent card line: ${sub.slice(0, 200)}`);
       await back();
       // 3. a question with the tokens: the Needs you inbox and the answer bar
@@ -126,6 +126,11 @@ module.exports = async (ctx) => {
   const nr = await js(`(()=>({done:[...document.querySelectorAll('#stage .desk.is-done')].map(d=>d.title),page:document.body.innerText}))()`);
   assert.ok(nr.done.length > 0 && nr.done.every((t) => /Done: Finished\./.test(t)), `noredact: done desks read "Finished.": ${JSON.stringify(nr.done.slice(0, 2))}`);
   assert.ok(/Thinking/.test(nr.page), 'noredact: Durbar\'s own "Thinking" stays');
+  // Durbar's own prefixes must not carry agent text through when redact is missing
+  const nm = await js(`window.__durbarSimUi.agents().filter(x=>!x.parent&&x.live).map(x=>x.id)`);
+  for (const [i, pre] of ['Stopped at ', 'Continued: ', 'Resumed: ', 'Send failed: ', 'Continuing after '].entries()) {
+    await emit({ type: 'status', sessionId: nm[i], timestamp: Date.now(), status: 'working', intent: pre + GHP + ' ' + PAT + ' ' + SK });
+  }
   await scan('noredact', 'no redact module');
   console.log('[done-desk-mask] all checks passed');
 };
