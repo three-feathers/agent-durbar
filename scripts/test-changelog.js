@@ -43,6 +43,7 @@ assert.match(cl.parseFragment('').errors[0], /empty/);
 assert.match(cl.parseFragment('## Heading\n- x\n').errors[0], /no headings/);
 assert.match(cl.parseFragment('Prose line\n').errors[0], /starts with "- "/);
 assert.match(cl.parseFragment('  indented first\n').errors[0], /must follow/);
+assert.ok(cl.parseFragment('- x --!> y\n').errors.some((e) => /HTML comments/.test(e)), 'the --!> comment end too');
 assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML comments/.test(e)), 'comments refused (they could hide the cut-over marker)');
 
 // --- check ---
