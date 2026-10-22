@@ -8,6 +8,10 @@ import { hashAgentFile } from '../agenttrust';
 import { PROFILE_ID } from '../folders';
 import { createProfileFile, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../profilefiles';
 import { openInVSCode } from '../vscode';
+import * as path from 'path';
+import type { FrontmatterParse } from '../../shared/profiletemplates';
+import { generateProfile } from '../profilegen';
+import type { OneShot } from '../profilegen';
 import type { EnsureLive } from './types';
 
 export interface ProfilesIpcDeps {
@@ -17,6 +21,8 @@ export interface ProfilesIpcDeps {
   getAgentTrust(): AgentTrustStore | undefined;
   wsKey(a: AgentInfo): string;
   ensureLive: EnsureLive;
+  /** Spec 043 FR-028: an app's one-shot text call (the theme maker's path: no tools, no session), or undefined. */
+  oneShot(id: string): OneShot | undefined;
 }
 
 export function register(deps: ProfilesIpcDeps): void {
@@ -74,9 +80,16 @@ export function register(deps: ProfilesIpcDeps): void {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
     return saveProfileFile(dirs(), id, text, baseSha, overwrite === true);
   });
-  ipcHandle('profiles:create', (e, app: unknown, place: unknown, name: unknown, template: unknown) => {
+  ipcHandle('profiles:create', (e, app: unknown, place: unknown, name: unknown, template: unknown, text: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
-    return createProfileFile(dirs(), app, place, name, template === undefined ? 'success' : template);
+    return createProfileFile(dirs(), app, place, name, template === undefined ? 'success' : template, text); // text: a reviewed AI draft (FR-029)
+  });
+  /* spec 043 FR-026..FR-028: one prompt to an agent app's one-shot path; the reply is checked and handed back as a draft (nothing written) */
+  ipcHandle('profiles:generate', async (e, req: unknown) => {
+    if (!fromApp(e)) return { ok: false, error: 'invalid request' };
+    // the editor's own front matter check (FR-015): one parser for the editor and this check
+    const PE = require(path.join(__dirname, '..', '..', 'renderer', 'profileeditor.js')) as { parseFrontmatter(t: string): FrontmatterParse };
+    return generateProfile(req, { oneShot: deps.oneShot, parse: (t) => PE.parseFrontmatter(t), errText });
   });
   ipcHandle('profiles:openInVSCode', (_e, id: unknown) => {
     const file = pathOfProfile(dirs(), id);

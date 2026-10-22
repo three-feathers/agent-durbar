@@ -358,3 +358,18 @@ body.has-bridge #topBtns{display:flex}
 .agt .by-chip{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;text-align:left}
 .agt .mdl-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agt td{min-width:0;overflow-wrap:anywhere}
+/* Create with AI (spec 043 FR-026) */
+.dlg.pe-ai{width:min(var(--dlg-w-l),calc(100vw - 32px))}
+.dlg .pe-ai-how{width:max-content}
+.dlg .pe-ai-qs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 14px}
+.dlg .pe-ai-qs[hidden]{display:none}
+.dlg .pe-ai-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 14px;align-items:start}
+.dlg .pe-ai-row>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.dlg .pe-ai-row p{margin:0}
+.dlg .pe-ai-qs textarea{min-height:48px;resize:vertical}
+.dlg .dbtn #peALate[hidden]{display:none}
+.dlg .dbtn #peALate{align-self:center;margin:0}
+.dlg #peADesc[hidden]{display:none}
+.dlg .pe-ai-wait{margin:0;font-size:var(--t3-size);color:var(--ink-2)}
+.dlg .pe-ai-wait[hidden]{display:none}
+.dlg .dbtn .btn[hidden]{display:none}

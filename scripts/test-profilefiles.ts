@@ -253,6 +253,25 @@ const W0 = folderIdOf(WS);
   if (u.ok) assert.strictEqual(readProfileFile(dirs(), u.id).ok, true, 'the new id opens');
 }
 
+// spec 043 FR-029 (review on #505, change 4): create with a reviewed AI draft's text: checked like a save, exclusive
+{
+  for (const [bad, why] of [['', 'empty'], ['  \n ', 'blank'], [42, 'not a string'], [{}, 'an object'], ['é'.repeat(MAX_PROFILE_BYTES / 2 + 1), 'too large in bytes']] as [unknown, string][]) {
+    const r = createProfileFile(dirs(), 'claude', W0, 'draft-x', 'success', bad);
+    assert.ok(!r.ok && /empty or too large/.test(r.error), `text refused: ${why}`);
+    assert.ok(!fs.existsSync(path.join(WS, '.claude', 'agents', 'draft-x.md')), `nothing written: ${why}`);
+  }
+  const text = '---\nname: draft-x\ndescription: d\ntools: Read\n---\n\n# Draft é\n';
+  const ok = createProfileFile(dirs(), 'claude', W0, 'draft-x', 'success', text);
+  assert.ok(ok.ok, JSON.stringify(ok));
+  assert.strictEqual(fs.readFileSync(path.join(WS, '.claude', 'agents', 'draft-x.md'), 'utf8'), text, 'the draft text is written, not the template');
+  const again = createProfileFile(dirs(), 'claude', W0, 'draft-x', 'success', 'other text');
+  assert.ok(!again.ok && /exists/.test(again.error), 'exclusive: an existing file is never overwritten');
+  assert.strictEqual(fs.readFileSync(path.join(WS, '.claude', 'agents', 'draft-x.md'), 'utf8'), text, 'unchanged');
+  assert.ok(!createProfileFile(dirs(), 'claude', W0, 'draft-z', 'success', 'x'.repeat(maxBytesFor('claude') + 1)).ok, 'Claude: one byte over its 64 KB is refused');
+  assert.ok(createProfileFile(dirs(), 'claude', W0, 'draft-y', 'success', 'x'.repeat(maxBytesFor('claude'))).ok, 'Claude: exactly its limit is accepted');
+  assert.ok(createProfileFile(dirs(), 'copilot', W0, 'draft-c', 'success', 'x'.repeat(MAX_PROFILE_BYTES)).ok, 'Copilot: exactly 256 KB is accepted');
+}
+
 // review on #488: the form's folder is an id (a hash of the path), checked against the office's folders at create time
 {
   const A = path.join(tmp, 'fa');
