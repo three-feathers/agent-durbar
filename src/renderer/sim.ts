@@ -11,6 +11,7 @@
  * Plain script (no imports/exports) so it runs unchanged in the sandboxed renderer.
  */
 type AgentEvent = import('../adapters/types').AgentEvent;
+type McpServerStatus = import('../adapters/types').McpServerStatus;
 type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
 type FolderSetupItem = import('../shared/foldersetup').FolderSetupItem;
@@ -82,6 +83,8 @@ interface SimAgent {
   /** Spec 058 (simulator): servers under a canned Restart, and failed servers a Restart brought back. */
   mcpRestarting?: Set<string>;
   mcpFixed?: Set<string>;
+  /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
+  mcpLive?: { name: string; status: string; error?: string; errorClass?: McpServerStatus['errorClass'] }[];
   /** Simulated credit use in nano-AIU, and the open "limit reached" question (spec 011). */
   used?: number;
   /** Dollar estimate used (kinds with `capUnit: 'usd'`). */
@@ -160,6 +163,8 @@ const SIM_FOLDER_SETUP: FolderSetupItem[] = [
 ];
 const simSetupDecisions = new Map<string, { accepted: string[]; declined: string[] }>();
  const SIM_PLAN_CAPS = { planMode: true }; // spec 066: every simulated kind can plan first
+/** Spec 058 FR-020: the agent app's name the simulator gives the MCP dialog (the real one is the adapter's `displayName`). */
+const SIM_APP_NAME: Record<string, string> = { copilot: 'GitHub Copilot', claude: 'Claude Code', codex: 'OpenAI Codex' };
 const SIM_COPILOT_CAPS = { ...SIM_PLAN_CAPS, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'next-message', mcpToggleApplies: 'live', mcpRestart: true, handoff: true, remote: true, oneShot: true, deleteSession: true, renameSession: 'any' } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
   { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: true, remoteService: { name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }, mcpToggle: true, mcpStart: 'next-message', permModeSwitch: 'live', helpers: true, history: true, deleteSession: false, renameSession: 'next-turn' } }, // spec 006 FR-028: Claude Code has no per-session delete
@@ -354,6 +359,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const q = sims.find((x) => x.info.id === e.sessionId);
         if (q?.pendingModel) window.setTimeout(() => void applyPending(q), 0); // the turn ended: the queued switch applies
       }
+      if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpLive = e.servers; }
       const src = e.type === 'toolCall' ? sims.find((x) => x.info.id === e.sessionId) : undefined;
       if (src) simCount(e, src.info.name + ' · ' + src.info.cwd.replace(/\/+$/, '').split('/').pop());
     };
@@ -529,13 +535,20 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       ...CLI_SERVERS,
       ...(fakeExtras[s.info.cwd] ?? []).filter((v) => v.enabled && v.trusted).map((v) => ({ name: v.name, transport: v.transport, source: 'workspace' })),
     ];
+    /* spec 058: the state of one simulated server, for the dialog's reply and the `mcp` events alike (FR-001, FR-006, FR-040).
+       The sixth agent's "my-notes" failed to start (until a Restart); every fifth agent from the fifth one (5, 10, 15) has it asking for a sign-in. */
+    const simServer = (s: SimAgent, i: number, name: string, live: boolean): { status?: string; error?: string; errorClass?: McpServerStatus['errorClass'] } => {
+      if (s.mcpOff?.has(name)) return { status: 'disabled' };
+      if (!live) return {};
+      if (s.mcpRestarting?.has(name)) return { status: 'pending' };
+      if (name === 'my-notes' && !s.mcpFixed?.has(name)) {
+        if (i === 5) return { status: 'failed', error: 'spawn notes-mcp ENOENT', errorClass: 'not-found' };
+        if (i % 5 === 4) return { status: 'needs-auth', error: 'The server answered 401 Unauthorized: sign in to use its tools.', errorClass: 'auth' };
+      }
+      return { status: 'connected' };
+    };
     const mcpStatus = (s: SimAgent, i: number): void => {
-      const off = s.mcpOff ?? new Set<string>();
-      emit({ type: 'mcp', sessionId: sid(s), timestamp: now(), servers: serversOf(s).map((m) => ({
-        ...m,
-        status: off.has(m.name) ? 'disabled' : m.name === 'my-notes' && i % 5 === 4 ? 'needs-auth' : m.name === 'playwright' && i === 5 ? 'failed' : 'connected',
-        error: m.name === 'playwright' && i === 5 && !off.has(m.name) ? 'spawn npx ENOENT' : undefined,
-      })) });
+      emit({ type: 'mcp', sessionId: sid(s), timestamp: now(), servers: serversOf(s).map((m) => ({ ...m, status: 'connected', ...simServer(s, i, m.name, true) })) });
     };
 
     let openSeq = 0;
@@ -912,15 +925,17 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s) return { ok: false, servers: [], live: false };
         const live = s.state !== 'idle' || !!s.ctx;
         const kc = caps(s.info.adapterId ?? 'copilot');
-        /* spec 058: the sixth agent's "my-notes" failed to start (until a Restart); a server under Restart reads pending */
-        const failed = (n: string) => live && sims.indexOf(s) === 5 && n === 'my-notes' && !s.mcpFixed?.has(n);
-        const stat = (n: string) => (s.mcpOff?.has(n) ? 'disabled' : !live ? undefined : s.mcpRestarting?.has(n) ? 'pending' : failed(n) ? 'failed' : 'connected');
+        const idx = sims.indexOf(s);
         const restartable = (n: string, on: boolean) => live && kc.mcpRestart === true && on && !s.mcpOff?.has(n);
+        /* what the last `mcp` event said wins over the canned rule, as main's live list does for a real session */
+        const reported = (n: string): ReturnType<typeof simServer> => { const m = live ? s.mcpLive?.find((x) => x.name === n) : undefined; return m ? { status: s.mcpOff?.has(n) ? 'disabled' : m.status, error: m.error, errorClass: m.errorClass } : simServer(s, idx, n, live); };
+        const known = new Set([...fakeCli.map((c) => c.name), ...extrasOf(s.info.cwd).map((v) => v.name)]);
         const servers = [
-          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, status: stat(a.name), error: failed(a.name) ? 'spawn notes-mcp ENOENT' : undefined, defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
-          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, status: stat(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
+          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, ...reported(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
+          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
+          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name) })) : []),
         ];
-        return { ok: true, servers, live, ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume };
+        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
       agentMcpRestart: async (id, name) => {
@@ -928,9 +943,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s || !caps(s.info.adapterId ?? 'copilot').mcpRestart) return { ok: false, error: 'This agent app cannot restart one MCP server. Use Restart session with these servers.' };
         if (s.mcpOff?.has(name)) return { ok: false, error: 'Switch it on first.' };
         (s.mcpRestarting ??= new Set()).add(name);
+        mcpStatus(s, sims.indexOf(s)); // the runtime's own report, like a real one: the open dialog follows it (FR-004)
         await new Promise((r) => setTimeout(r, 700));
         s.mcpRestarting.delete(name);
         (s.mcpFixed ??= new Set()).add(name);
+        mcpStatus(s, sims.indexOf(s));
         return { ok: true };
       },
       setAgentMcp: async (id, name, enabled) => {

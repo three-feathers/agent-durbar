@@ -234,6 +234,10 @@ module.exports = async (ctx) => {
   add('chat-agent-menu', 'menu', ['#agentMenu'], async () => { if (!(await openChatWhere(`document.getElementById('agentChip')`))) return false; await H.click('#agentChip'); return until(`!!document.getElementById('agentMenu')`, 2000); });
   add('cap-dialog', 'dialog', ['#capDlg .dlg', '#capDlg'], async () => { if (!(await openChatWhere(`document.getElementById('capChip')`))) return false; await H.click('#capChip'); return until(`!!document.getElementById('capDlg')`, 2000); });
   add('agent-mcp', 'dialog', ['#scrDlg .dlg', '.dlg-ov .dlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); await H.click('#mcpBtn'); return until(`!!document.querySelector('.dlg-ov .dlg')`, 3000); });
+  // spec 058 T115: the rows with a hint, Details and the error box (Elif: needs sign-in; Tomas: failed)
+  for (const [id, who] of [['agent-mcp-signin', 'Elif'], ['agent-mcp-failed', 'Tomas']]) {
+    add(id, 'dialog', ['#scrDlg .dlg', '.dlg-ov .dlg'], async () => { if (!(await openChat(who))) return false; await H.click('#moreBtn'); await H.click('#mcpBtn'); if (!(await until(`!!document.querySelector('.dlg-ov .dlg')`, 3000))) return false; await js(`document.querySelectorAll('#agMcp button[data-det]').forEach(b=>b.click())`); return until(`!!document.querySelector('#agMcp .srv-err')`, 2000); });
+  }
   add('schedules', 'dialog', ['#schedDlg .dlg', '#schedDlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); await H.click('#schedHdrBtn'); return until(`!!document.getElementById('schedDlg')`, 3000); });
   add('new-session', 'dialog', ['#sessDlg .dlg', '#sessDlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#newSessHdrBtn'); return until(`!!document.getElementById('sessDlg')`, 3000); });
   add('handover', 'dialog', ['#sessDlg .dlg', '#sessDlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); if (!(await H.exists('#handoverBtn'))) return false; await H.click('#handoverBtn'); return until(`!!document.getElementById('sessDlg')`, 3000); });
