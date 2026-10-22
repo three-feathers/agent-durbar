@@ -1915,6 +1915,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           setTimeout(() => {
             sims.forEach(play);
             if (opts.edits && sims[0]) simEdits(sims[0]); // spec 005 FR-026
+            /* spec 008 FR-113: every script has run (a frozen simulator emits nothing more); the page's settleNow() test hook reads it */
+            (window as unknown as { __durbarSimReplayed?: boolean }).__durbarSimReplayed = true;
             // simspeed=N (perf checks, spec 052): background activity N times faster
             const speed = Math.max(1, Math.min(50, Number(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simspeed') : null) || 1));
             if (!opts.freeze) timer = window.setInterval(tick, Math.round(2600 / speed));
