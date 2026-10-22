@@ -175,6 +175,9 @@ module.exports = async (ctx) => {
   add('tools-activity-tab', 'screen', ['#screen'], async () => { await closeChat(); await H.click('#toolsBtn'); await until(`!document.getElementById('screen').hidden`, 3000); return js(`(()=>{const b=[...document.querySelectorAll('#screen [role=tab],#screen .ttab-btn,#screen button')].find(x=>/^Activity/.test(x.textContent.trim()));if(!b)return false;b.click();return true})()`); });
   add('tools-cost-tab', 'screen', ['#screen'], async () => { await closeChat(); await H.click('#toolsBtn'); await until(`!document.getElementById('screen').hidden`, 3000); return js(`(()=>{const b=[...document.querySelectorAll('#screen [role=tab],#screen button')].find(x=>/^(Cost|Spend|Usage)/.test(x.textContent.trim()));if(!b)return false;b.click();return true})()`); });
   add('chat-waiting', 'chat', ['#panel'], () => openChat('Jonas'));
+  // spec 005 FR-020..FR-026: the edit rows and their diffs (only with simedits=1, the `chat-edits` pass below; without it the chat has none)
+  add('chat-edits-base', 'chat', ['#panel'], async () => { if (!(await openChat('Ada'))) return false; if (!(await until(`document.querySelectorAll('#chat .chip.editchip').length>=4`, 8000))) return false; return js(`(document.querySelector('#chat .chip.editchip').scrollIntoView({block:'start'}),true)`); });
+  S[S.length - 1].onlyPass = true; // runs under the `chat-edits` pass only
   add('chat-first', 'chat', ['#panel'], async () => !!(await openChatWhere('true'))); // the first desk, whoever it is (the 60-character names pass)
   // T155: a toast ends above the composer while a chat is open (the real toast(): More > Copy resume command toasts either way)
   // T155: a toast ends above the composer, and above the answer bar when it shows (the real toast(): More > Copy resume command toasts either way)
@@ -270,6 +273,7 @@ module.exports = async (ctx) => {
     { name: 'folders-pop-long', base: 'folders-pop', query: { simnames: 'long' } }, // T172: long folder names in the Folders popover
     { name: 'floors-pop-long', base: 'floors-pop', query: { simnames: 'long' } },
     { name: 'send-several-long', base: 'send-several', query: { simnames: 'long' } }, // T148: 60-character names
+    { name: 'chat-edits', base: 'chat-edits-base', query: { simedits: '1' } }, // spec 005: edit rows, a refused edit, the streamed diff
     { name: 'tools-agents-long', base: 'tools-agents-tab', query: { simnames: 'long' } }, // T154: Tools > Models and context with 60-character names
     { name: 'inbox-long', base: 'inbox', query: { simnames: 'long' } }, // T154: the Needs you headings
     { name: 'list-view-long', base: 'list-view', query: { simnames: 'long' } },

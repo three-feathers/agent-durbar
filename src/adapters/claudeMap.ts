@@ -11,6 +11,7 @@ import { isMcpAuthChallenge } from './mcpauth';
 import type { EventBody } from './map';
 import type { McpServerStatus } from './types';
 import { nonEmptyStr as str } from '../shared/guards';
+import { EditStreams, editOf } from './edits';
 
 /** Fields of the SDK messages this mapper reads (structural subset; shapes from the SDK docs, unverified on a real account). */
 export interface ClaudeContentBlock {
@@ -112,6 +113,9 @@ export class ClaudeMapper {
   private thinkingStreamed = new Set<string>();
   /** Sub-agents started and not yet closed (by `task_notification` or by the Agent tool's own result): each gets exactly one closing event. */
   private openSubagents = new Set<string>();
+  /** Spec 005 FR-019: streamed arguments of file-changing tool_use blocks, and stream block index -> tool_use id per stream. */
+  private edits = new EditStreams();
+  private blockIds = new Map<string, string>();
   /** Running `total_cost_usd` already reported (streaming mode: the SDK sends totals, Durbar wants per-call amounts). */
   private lastCostTotal = 0;
   /** Per assistant message id, the usage already emitted (the most recent USAGE_IDS_CAP ids, oldest dropped first; FR-082). */
@@ -146,6 +150,8 @@ export class ClaudeMapper {
     this.openSubagents.clear();
     this.streamMessage.clear();
     this.thinkingStreamed.clear();
+    this.edits.clear();
+    this.blockIds.clear();
     this.lastCostTotal = 0;
     this.usageCounted.clear();
     this.info = {};
@@ -244,15 +250,40 @@ export class ClaudeMapper {
   }
 
   private stream(m: ClaudeMessage, agentId: string | undefined): void {
-    const ev = m.event as { type?: string; index?: number; message?: { id?: string }; delta?: { type?: string; text?: unknown; thinking?: unknown } } | undefined;
+    const ev = m.event as { type?: string; index?: number; message?: { id?: string }; content_block?: { type?: string; id?: unknown; name?: unknown }; delta?: { type?: string; text?: unknown; thinking?: unknown; partial_json?: unknown } } | undefined;
     if (!ev || typeof ev !== 'object') return;
     const key = agentId ?? '';
     if (ev.type === 'message_start') {
       const id = str(ev.message?.id);
       if (id) this.streamMessage.set(key, id);
+      for (const k of this.blockIds.keys()) if (k.startsWith(key + '\u0000')) this.blockIds.delete(k);
+      return;
+    }
+    // Spec 005 FR-019: a file-changing tool_use streams its arguments; the call starts as soon as they name the file
+    if (ev.type === 'content_block_start' && ev.content_block && ev.content_block.type === 'tool_use') {
+      const id = str(ev.content_block.id);
+      const name = str(ev.content_block.name);
+      if (id && name && num(ev.index) !== undefined) {
+        if (this.blockIds.size >= 64) this.blockIds.delete(this.blockIds.keys().next().value as string);
+        this.blockIds.set(`${key}\u0000${ev.index}`, id);
+        this.edits.begin(id, name);
+      }
       return;
     }
     if (ev.type !== 'content_block_delta' || !ev.delta || typeof ev.delta !== 'object') return;
+    if (ev.delta.type === 'input_json_delta') {
+      const id = this.blockIds.get(`${key}\u0000${num(ev.index) ?? -1}`);
+      const part = typeof ev.delta.partial_json === 'string' ? ev.delta.partial_json : '';
+      if (!id || !part || !this.edits.toolOf(id)) return; // only file-changing tools are streamed
+      for (const step of this.edits.delta(id, part)) {
+        if (step.phase === 'start') {
+          const tool = this.edits.toolOf(id) ?? '';
+          this.tools.set(id, { tool });
+          this.emit({ type: 'toolCall', callId: id, tool, phase: 'start', args: step.args, agentId });
+        } else this.emit({ type: 'toolCall', callId: id, ...(this.tools.get(id) ?? { tool: '' }), phase: 'update', edit: step.edit, agentId });
+      }
+      return;
+    }
     const text = str(ev.delta.text);
     const thinking = str(ev.delta.thinking);
     if (ev.delta.type === 'text_delta' && text) return this.emit({ type: 'output', delta: text, agentId });
@@ -283,7 +314,10 @@ export class ClaudeMapper {
           const mcp = parseMcpToolName(name, this.servers);
           const meta = { tool: name, ...(mcp ?? {}) };
           this.tools.set(callId, meta);
-          this.emit({ type: 'toolCall', callId, ...meta, phase: 'start', args: b.input, agentId });
+          const edit = editOf(name, b.input);
+          // FR-019: a call that already started from its streamed arguments gets its whole arguments as an update (no second row)
+          const early = this.edits.takeStarted(callId);
+          this.emit({ type: 'toolCall', callId, ...meta, phase: early ? 'update' : 'start', args: b.input, ...(edit ? { edit } : {}), agentId });
           if (isSubagentTool(name) && !this.openSubagents.has(callId)) {
             this.openSubagents.add(callId);
             const input = (b.input ?? {}) as { prompt?: unknown; description?: unknown; subagent_type?: unknown };
@@ -361,6 +395,8 @@ export class ClaudeMapper {
   private result(m: ClaudeMessage): void {
     // End of turn: forget per-turn stream state so the tables stay bounded.
     this.thinkingStreamed.clear();
+    this.edits.clear();
+    this.blockIds.clear();
     this.streamMessage.clear();
     const mu = m.modelUsage;
     if (mu && typeof mu === 'object') {

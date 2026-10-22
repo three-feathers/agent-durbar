@@ -33,7 +33,8 @@ import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
 /** FR-156: what Settings says of a Claude Code that `auth status` calls signed in: only the first message can confirm it. */
 export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
 import { parseUsdCap } from '../shared/credits';
-import { simpleDiff, clipDiff } from '../shared/diff';
+import { clipDiff } from '../shared/diff';
+import { editOf } from './edits';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
@@ -147,16 +148,11 @@ export function editDiffOf(toolName: string, input: Record<string, unknown> | un
   if (!input) return undefined;
   const f = file ?? 'file';
   const str = (v: unknown): v is string => typeof v === 'string';
-  if (toolName === 'Edit' && str(input.old_string) && str(input.new_string)) return simpleDiff(f, input.old_string, input.new_string) || undefined;
-  if (toolName === 'Write' && str(input.content)) return simpleDiff(f, '', input.content) || undefined;
-  if (toolName === 'MultiEdit' && Array.isArray(input.edits)) {
-    const parts = input.edits
-      .slice(0, 50)
-      .map((e) => (e && typeof e === 'object' && str((e as Record<string, unknown>).old_string) && str((e as Record<string, unknown>).new_string) ? simpleDiff(f, (e as Record<string, string>).old_string, (e as Record<string, string>).new_string) : ''))
-      .filter(Boolean);
-    return parts.length ? clipDiff(parts.join('\n')) : undefined;
-  }
-  return undefined;
+  // the inputs that carry text to compare; spec 005 FR-018: the diff itself comes from the shared edit normalizer (masked, cut)
+  const ok = (toolName === 'Edit' && str(input.old_string) && str(input.new_string)) || (toolName === 'Write' && str(input.content)) || (toolName === 'MultiEdit' && Array.isArray(input.edits));
+  if (!ok) return undefined;
+  const body = editOf(toolName, { ...input, edits: Array.isArray(input.edits) ? input.edits.slice(0, 50) : undefined, file_path: f })?.files[0]?.diff;
+  return body ? clipDiff(`--- a/${f.replace(/[\r\n]+/g, ' ')}\n+++ b/${f.replace(/[\r\n]+/g, ' ')}\n${body}`) : undefined;
 }
 
 /** Durbar's MCP servers as the CLI's `--mcp-config` JSON (`disabled` names left out). Never logged: env and headers may hold secrets. */
