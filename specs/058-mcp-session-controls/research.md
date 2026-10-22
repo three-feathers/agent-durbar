@@ -127,6 +127,7 @@ Logs:
 | Method / notification | What it does | Use in 058 | Evidence |
 | --- | --- | --- | --- |
 | `mcpServerStatus/list {cursor?, limit?, detail?, threadId?, serverName?}` | Per server: `runtimeStatus` (`notStarted`, `starting`, `connected`, `authenticationRequired`, `failed`, `cancelled`; null when unavailable), `authStatus` (`unknown`, `unsupported`, `notLoggedIn`, `bearerToken`, ...), `toolsError`, `serverInfo`, `httpOrigin`. With `threadId` it "reuses the thread's current MCP connection". | Already used. | `read:` `v2/mcp.rs:19-108`, `common.rs:1271-1275`, README "MCP server capabilities"; `real:` spec 012 FR-147 |
+| `mcpServerStatus/list` item `McpServerStatus` | `runtimeStatus`, `authStatus`, `toolsError`, `httpOrigin`, `pluginId`; **no `failureReason`**. | `read:` codex-cli 0.163.0 `generate-ts` `v2/McpServerStatus.ts` (2026-10-21, PR #481 review). | |
 | `mcpServer/startupStatus/updated {threadId?, name, status, error?, failureReason?}` | `status`: `starting`, `ready`, `failed`, `cancelled`; `failureReason`: `reauthenticationRequired`. | Already mapped; add `failureReason`. | `read:` `v2/mcp.rs:360-376`, `protocol.rs:3920-3922`, `common.rs:2028` |
 | `config/mcpServer/reload {}` | Reloads MCP configuration for loaded threads ("an error does not imply that no changes were applied"). Global scope `mcp-registry`, **no server name**. | **Not used** (owner, Q8 A): not per-server, and whether it keeps the thread's `config.mcp_servers` overrides that Durbar passes is unknown. | `read:` `common.rs:1265-1269`, `v2/mcp.rs:286-291`, README "MCP configuration reload" |
 | `mcpServer/oauth/login`, `mcpServer/resource/read`, `mcpServer/tool/call`, `mcpServer/event/stream/*` (experimental) | Sign-in, resources, direct tool calls, a server's notification stream. | Out of scope. `event/stream` carries MCP notifications, not logs. | `read:` `common.rs:1259-1300`, `v2/mcp.rs:156-198` |
@@ -262,3 +263,34 @@ was opened.** Sources (program files and public docs only):
 5. Owner answers (2026-10-20): Copilot sessions set `mcpOAuthTokenStorage: 'persistent'` (Q12 B); two-step open (Q13); Sign in in the
    dialog row, the card opens the dialog there (Q14); Claude not launched: "Send a message first" + steps (Q15); https only (Q16);
    switch-off offered, never automatic (Q17); Codex "applies with your next message" (Q18); no "another account" (Q19).
+
+### 7.7 Real check on CI runners (T116, 2026-10-21)
+
+Workflow *MCP OAuth real check* (`.github/workflows/mcp-oauth-real.yml`, manual), demo server `scripts/demo-oauth-mcp.ts`, check
+`scripts/mcp-oauth-real.ts`. 0 prompts. Results (filled in from the runs):
+
+| Runner | Runtime | A: first state | A: `oauth.login` | A: after the browser step | A2 (same runtime) | B (new runtime) | Keychain / files | Run |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `windows-latest` (win32 10.0.26100 x64, Node 22.23.3) | 1.0.22 (SDK 1.0.22) | `needs-auth` (1 s) | authorization URL on the demo's `/authorize` | `connected` (1 s); demo: +1 registration, +1 `/authorize`, +1 code grant; tool `demo_echo` | `connected`, +0 `/authorize`, +0 grants | **`connected`, +0 `/authorize`, +0 grants (PASS)**; tool `demo_echo` | Credential Manager 1 -> 3 targets: two `LegacyGeneric:target=<64 hex>.copilot-mcp-oauth`; file `~/.copilot/mcp-oauth-config/<hex>.json` | [39680461023](https://github.com/three-feathers/agent-durbar/actions/runs/39680461023) |
+| `ubuntu-latest` (linux 7.0.0-1017-azure x64, Node 22.23.3) | 1.0.22 (SDK 1.0.22) | `needs-auth` (1 s) | authorization URL on the demo's `/authorize` | `connected` (1 s); demo: +1 registration, +1 `/authorize`, +1 code grant; tool `demo_echo` | `connected`, +0 `/authorize`, +0 grants | **`connected`, +0 `/authorize`, +0 grants (PASS)**; tool `demo_echo` | no keychain entry; files `~/.copilot/mcp-oauth-config/<hex>.json` and two `<hex>.tokens.json` | [39680461023](https://github.com/three-feathers/agent-durbar/actions/runs/39680461023) |
+
+- `real:` 2026-10-21, run 39680461023 (commit f9458b31, Copilot runtime and SDK 1.0.22, 0 prompts): **FR-070 PASS on Windows and
+  Linux.** Session A signed in once (`oauth.login` with `serverName`, `clientName`, `callbackSuccessMessage` only; one registration,
+  one `/authorize`, one code grant); A2 in the same runtime and B in a NEW runtime process connected with no new `/authorize`, no new
+  grant and no refresh. One 401 each; the settled state was connected within 1 s; transient states were not recorded (the check
+  sampled the latest `mcp` event once a second, so a short `needs-auth` before `connected` would not show; review on #478). Since
+  2026-10-22 the script logs every `mcp` state per session in order; that runs on the next dispatch (not dispatched yet). Whether a
+  tool call with a cached tool catalog and a kept token gets a 401 (the text of #364) stays unverified: it needs a prompt.
+- `real:` Windows: `persistent` storage writes Windows Credential Manager generic credentials named
+  `<64 hex>.copilot-mcp-oauth` (two new targets for one demo server) plus a client file `~/.copilot/mcp-oauth-config/<hex>.json`
+  (names only; no value was read).
+- `real:` Linux runner with no desktop keyring (GitHub `ubuntu-latest`): no keyring entry; the runtime fell back to files
+  `~/.copilot/mcp-oauth-config/<hex>.json` and `<hex>.tokens.json` (names only; contents not read, so "tokens" is inferred from the
+  name). On such a Linux machine the kept MCP sign-in is a file in the user's home folder, not a keyring entry. `[KNOWN GAP]`
+  whether that file is encrypted and what its permission bits are was not checked. Since 2026-10-22 the script logs each new file's
+  mode bits (`fs.statSync`, never the contents, one line per file); that runs on the next dispatch.
+- `real:` `session.rpc.mcp.oauth.probe` on the connected server returned `failed: MCP server probe returned HTTP 404 Not Found`
+  against the demo server on both runners (the demo serves only the endpoints listed in its header); the probe is not used by FR-070.
+- Run 39680132357 (the first dispatch, commit db47a560) failed before any session: the script read
+  `require.resolve('@github/copilot-sdk/package.json')`, which the SDK's `exports` map refuses; fixed in f9458b31.
+

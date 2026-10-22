@@ -26,6 +26,8 @@ html[data-ui]:not([data-ui="clean"]) option{color:var(--ink);background:var(--su
 /* display text: a style may give it another font; it is ellipsized, never wrapped, if that font is wider */
 html[data-ui]:not([data-ui="clean"]) .brand h1,html[data-ui]:not([data-ui="clean"]) .room-name,html[data-ui]:not([data-ui="clean"]) .place .pn,
 html[data-ui]:not([data-ui="clean"]) .plate-tx b,html[data-ui]:not([data-ui="clean"]) .scr h2,html[data-ui]:not([data-ui="clean"]) .dlg h2{font-family:var(--ui-display,inherit)}
+/* spec 070 FR-001: a pack that names a display font (data-display, set by theme.js) gets it on the same titles in any UI style, Clean included */
+html[data-display] .plate-tx b,html[data-display] .scr-head h2,html[data-display] .dlg h2{font-family:var(--ui-display,inherit)}
 html[data-ui]:not([data-ui="clean"]) .room-name{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
 /* a dark top bar (corporate, retro, the courts): light text, ghost controls, a focus ring that shows on it */
 :is(html[data-ui="corporate"],html[data-ui="retro"],html[data-ui="court-indian"],html[data-ui="court-european"]) .topbar .brand h1{color:var(--ui-top-ink)}

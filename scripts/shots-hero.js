@@ -31,6 +31,6 @@ module.exports = async (ctx) => {
   await ctx.js(`(()=>{const t=document.querySelector('.prev-toggle[aria-expanded="true"]');if(t)t.click();})()`); await ctx.sleep(400);
   // the start of the conversation, and the agent strip from its first agent (the strip scrolls to the open agent)
   await ctx.js(`(()=>{const c=document.getElementById('chat');if(c)c.scrollTop=0;const s=document.querySelector('.strip .sitem');if(s&&s.parentElement)s.parentElement.scrollLeft=0;})()`); await ctx.sleep(400);
-  assert.match(await ctx.js(`document.getElementById('modeChip').innerText`), /Read-only/, 'the mode chip is in the header');
+  assert.match(await ctx.js(`document.getElementById('modeChip').innerText`), /Read-only/, 'the mode chip is in the chat (under the message box, spec 005 FR-037)');
   await shot('m6-fullchat-sim15-1280x800.png');
 };

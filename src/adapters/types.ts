@@ -12,6 +12,8 @@ import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
+import type { EditInfo } from '../shared/edits';
+export type { EditInfo };
 export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
@@ -181,6 +183,11 @@ export interface ToolCallEvent extends BaseEvent {
   /** Set when the tool belongs to an MCP server: the server's configured name and the tool's own name there. */
   mcpServer?: string;
   mcpTool?: string;
+  /**
+   * Spec 005 FR-018: set on calls of file-changing tools (edit, create, write, patch): the files, their kind and a masked, cut
+   * unified diff with line counts. `partial` while the model is still writing the arguments (FR-019). Display only.
+   */
+  edit?: EditInfo;
   /** Spec 058 FR-063: this failed MCP tool call needs the user to sign in to `mcpServer` (set by the adapter, never carries vendor text). Only on `phase: 'failed'` with `mcpServer`. */
   mcpAuth?: true;
 }
@@ -317,6 +324,24 @@ export interface LimitEvent extends BaseEvent {
 }
 
 /**
+ * Spec 068 FR-001: a usage limit of the agent app stopped or blocked the turn (a plan window, a quota or a rate limit), so the
+ * agent goes on a coffee break. Never a vendor field: `source` is a short fixed label chosen by the adapter ("5-hour window"),
+ * never the provider's message, account or plan name. `resetsAt` (epoch ms) only when the agent app said when it resets;
+ * `estimated` when it said the time is a guess; `update` for a later detail of the same break; `paid` when going on after the reset may lead to paid usage (the default asks first).
+ * Durbar's own spending limit is the `limit` event, not this one.
+ */
+export interface UsageLimitEvent extends BaseEvent {
+  type: 'usageLimit';
+  scope: 'plan' | 'quota' | 'rate';
+  resetsAt?: number;
+  estimated?: boolean;
+  paid?: boolean;
+  source: string;
+  /** A later detail of the break this turn already reported (a reset time read afterwards); ignored when the agent is no longer on a break. */
+  update?: boolean;
+}
+
+/**
  * The session's display title from the runtime (spec 002 delta 2026-10-18, issue #126): a title made from the first prompt,
  * an auto summary or a name given elsewhere. Top-level agent only, already cleaned (one line, ≤ 80 characters). User text:
  * shown, never put in tool-usage labels or usage totals.
@@ -443,6 +468,7 @@ export type AgentEvent =
   | CompactionEvent
   | McpStatusEvent
   | LimitEvent
+  | UsageLimitEvent
   | TitleEvent;
 
 /** Spec 012 FR-156: the answer of `verifySignIn`. */

@@ -162,7 +162,7 @@ const toRenderer = (channel: string, payload: unknown): void => {
 
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
-const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && e.phase !== 'start' && e.mcpServer) ? mcp.secretValuesFor(e.sessionId) : []);
+const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too
 router.onEvent((e) => toRenderer('agent:event', outward(e)));
 const maskHistory = <H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H => maskMcpHistory(h, mcp.secretValuesFor(id)); // FR-067: resume replies skip outward()
 /** Open MCP elicitations (spec 012 FR-151): main checks each answer against the fields it was asked with. */
@@ -458,9 +458,11 @@ const scheduleAgent = (s: { folder: string; target?: { session: string } }): Age
   return a && wsKey(a) === s.folder ? a : undefined;
 };
 const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
+/** Spec 068 FR-008: a schedule skips an agent on a coffee break as busy (never queued). */
+const busyOrBreak = (id: string): boolean => busyStatus(id) || agentState.onBreak(id);
 const scheduleDeps = (file: string): SchedulerDeps => ({
   now: () => Date.now(),
-  isBusy: (folder, session) => (session ? busyStatus(session) : [...agents.values()].some((x) => wsKey(x) === folder && busyStatus(x.id))),
+  isBusy: (folder, session) => (session ? busyOrBreak(session) : [...agents.values()].some((x) => wsKey(x) === folder && busyOrBreak(x.id))),
   hasSession: (session) => agents.has(session),
   capUnitOf: (s) => {
     const a = scheduleAgent(s);
@@ -633,7 +635,18 @@ registerThemesIpc({ dev, registry, router });
 registerHarnessIpc({ dev, registry, router, remoteOps, toRenderer, getWin: () => win, adaptersList });
 registerActivityIpc({ getActivityStore: () => activityStore, getWin: () => win });
 registerQuestionsIpc({ agents, router, elicitTracker });
-registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive });
+/**
+ * Spec 040 FR-015 (reused by spec 061 FR-015 and spec 043 FR-023): an agent app's one-shot text call: one prompt, no tools, no
+ * session kept, an empty temp folder; Copilot's own MCP servers switched off by name. Undefined when the app has none.
+ */
+function oneShotFor(id: string): { name: string; generate: (prompt: string) => ReturnType<NonNullable<AgentAdapter['generateText']>> } | undefined {
+  if (!registry.has(id)) return undefined;
+  const ad = router.instance(id);
+  if (typeof ad.generateText !== 'function') return undefined;
+  const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
+  return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
+}
+registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id) });
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey });
 registerAdaptersIpc({ adaptersList });
 registerFoldersIpc({ agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
@@ -648,11 +661,8 @@ registerFolderSetupIpc({
   explainer: () => {
     // FR-015: the first installed app that answers one prompt with no tools; Copilot first (its `auto` is the cheapest)
     for (const id of ['copilot', 'claude', 'codex']) {
-      if (!registry.has(id)) continue;
-      const ad = router.instance(id);
-      if (typeof ad.generateText !== 'function') continue;
-      const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
-      return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
+      const g = oneShotFor(id);
+      if (g) return g;
     }
     return undefined;
   },

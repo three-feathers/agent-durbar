@@ -61,7 +61,7 @@ async function until<T>(what: string, f: () => T | undefined, ms = 1000): Promis
   const end = Date.now() + ms;
   for (;;) {
     const v = f();
-    if (v !== undefined) return v;
+    if (v !== undefined && (v as unknown) !== false) return v; // `false` means "not yet", like undefined (a boolean condition used to pass at once)
     if (Date.now() > end) throw new assert.AssertionError({ message: `timed out waiting for ${what}` });
     await settle(2);
   }
@@ -597,6 +597,50 @@ async function main(): Promise<void> {
       assert.ok(!decisions(server).includes('acceptForSession'));
       await ad.dispose();
     }
+    // spec 052 FR-172: the real approval names only itemId; the card gets the files, kind and diff from the fileChange item, secrets masked
+    {
+      const SECRET = 'planted-openai-key-value-0123456789';
+      const { server, ad, events } = make({ env: { OPENAI_API_KEY: SECRET } });
+      const sid = await ad.start({ workspace: ws, permissionMode: 'ask', quiet: true });
+      const child = server.childOfThread(sid)!;
+      const fx = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'codex', 'file-change-approval.json'), 'utf8'));
+      const ghp = 'ghp_' + 'Z9'.repeat(18);
+      const notes = JSON.parse(JSON.stringify(fx.notifications).replace('Retries are 3 now.', `key ${SECRET} and ${ghp}`)) as { method: string; params: unknown }[];
+      for (const n of notes) server.notifyAll(n.method, n.params);
+      await server.flush();
+      const p1 = req(server, fx.approval.method, fx.approval.params, child);
+      const pend = await until('pending with the files', () => pendingOf(events));
+      assert.strictEqual(pend.summary, 'write /work/app/src/config.ts (+1 more)', 'the files from the item: ' + pend.summary);
+      assert.ok(pend.diff && pend.diff.includes('--- a//work/app/src/config.ts') && pend.diff.includes('+  retries: 3,') && pend.diff.includes('+# Notes'), 'the diff of both changes (patchUpdated is the latest)');
+      assert.ok(!pend.diff!.includes(SECRET) && !pend.diff!.includes(ghp) && pend.diff!.includes('[redacted'), 'secrets in the diff are masked');
+      assert.strictEqual(pend.scopeLabel, 'write in app/src/', 'the grant scope is the first file\'s folder');
+      ad.resolvePermission(sid, pend.requestId, false);
+      assert.strictEqual(((await settles('p1', p1)).result as { decision: string }).decision, 'decline');
+      // the item completes: it is forgotten, and a request for an unknown item says so instead of a bare "write"
+      server.notifyAll(fx.completed.method, fx.completed.params);
+      await server.flush();
+      events.length = 0;
+      const p2 = req(server, fx.approval.method, fx.approval.params, child);
+      const pend2 = await until('pending without a file', () => pendingOf(events));
+      assert.strictEqual(pend2.summary, 'write (Codex did not say which file)');
+      assert.strictEqual(pend2.diff, undefined, 'no diff without an item');
+      ad.resolvePermission(sid, pend2.requestId, false);
+      await settles('p2', p2);
+      // at most 32 items are kept
+      for (let i = 0; i < 40; i++) server.notifyAll('item/started', { threadId: sid, item: { type: 'fileChange', id: `many_${i}`, status: 'inProgress', changes: [{ path: `/w/f${i}.txt`, kind: { type: 'add' }, diff: 'x\n' }] } });
+      await server.flush();
+      events.length = 0;
+      const p3 = req(server, 'item/fileChange/requestApproval', { threadId: sid, itemId: 'many_0' }, child);
+      assert.strictEqual((await until('oldest forgotten', () => pendingOf(events))).summary, 'write (Codex did not say which file)', 'the oldest item was dropped');
+      ad.resolvePermission(sid, pendingOf(events)!.requestId, false);
+      await settles('p3', p3);
+      events.length = 0;
+      const p4 = req(server, 'item/fileChange/requestApproval', { threadId: sid, itemId: 'many_39' }, child);
+      assert.strictEqual((await until('newest kept', () => pendingOf(events))).summary, 'write /w/f39.txt (new file)', 'the newest item is kept');
+      ad.resolvePermission(sid, pendingOf(events)!.requestId, false);
+      await settles('p4', p4);
+      await ad.dispose();
+    }
     // FR-140: the Linux sandbox error (real text, Ubuntu with unprivileged user namespaces blocked) gets a plain hint; other errors none
     // FR-140 delta: the macOS sandbox error (real text, GitHub macOS runner) gets its own plain hint; the Linux one does not apply
     assert.ok(macSandboxHint("error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 71: sandbox-exec: execvp() of '/Users/x/.local/bin/codex' failed: Operation not permitted").includes('could not start its macOS sandbox'));
@@ -636,6 +680,92 @@ async function main(): Promise<void> {
       assert.strictEqual(server.spawns.length, starts + 1, 'applies with the next message on a fresh child');
       const rc = (server.requests('thread/resume').pop()!.params as { config?: { mcp_servers?: Record<string, Record<string, unknown>> } }).config;
       assert.strictEqual(rc?.mcp_servers?.echo?.enabled, false, 'the resumed thread gets the server switched off');
+      await ad.dispose();
+    }
+    // Spec 058 T095 / FR-060: sign-in signals become needs-auth + errorClass 'auth'; a failed MCP call with the challenge text says mcpAuth and re-reads the list
+    {
+      const { server, ad, events } = make();
+      type Srv = { name: string; status: string; errorClass?: string };
+      const lastMcp = (): Srv[] => (events.filter((e) => e.type === 'mcp').pop() as { servers: Srv[] }).servers;
+      server.mcpList = [
+        { name: 'a', authStatus: 'notLoggedIn', runtimeStatus: 'connected' },
+        { name: 'b', authStatus: 'oAuth', runtimeStatus: 'authenticationRequired' },
+        { name: 'c', authStatus: 'oAuth', runtimeStatus: 'failed' },
+        { name: 'd', authStatus: 'oAuth', runtimeStatus: 'connected' },
+      ];
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only' });
+      await until('mcp list', () => (events.some((e) => e.type === 'mcp')) || undefined);
+      assert.deepStrictEqual(lastMcp(), [
+        { name: 'a', status: 'needs-auth', errorClass: 'auth' },
+        { name: 'b', status: 'needs-auth', errorClass: 'auth' },
+        { name: 'c', status: 'failed' },
+        { name: 'd', status: 'connected' },
+      ]);
+      // the startup notification: reason -> needs-auth; the next plain status clears the class
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'd', status: 'failed', failureReason: 'reauthenticationRequired', threadId: sid });
+      await until('d needs auth', () => (lastMcp().some((s) => s.name === 'd' && s.status === 'needs-auth')) || undefined);
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.errorClass, 'auth');
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'c', status: 'failed', failureReason: 'startupFailed', error: 'boom', threadId: sid });
+      await until('c boom', () => (lastMcp().some((s) => s.name === 'c' && s.status === 'failed' && (s as { error?: string }).error === 'boom')) || undefined);
+      assert.strictEqual(lastMcp().find((s) => s.name === 'c')?.errorClass, undefined, 'another failure reason is not an auth error');
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'd', status: 'ready', threadId: sid });
+      await until('d ready', () => (lastMcp().some((s) => s.name === 'd' && s.status === 'connected')) || undefined);
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.errorClass, undefined, 'a later status replaces the derived class');
+      // a failed MCP call with the challenge: mcpAuth, and the list is read again; plain failures and non-MCP tools do none of it
+      const reads = (): number => server.requests('mcpServerStatus/list').length;
+      const item = (id: string, over: Record<string, unknown>): unknown => ({ id, type: 'mcpToolCall', server: 'a', tool: 't', status: 'failed', arguments: {}, ...over });
+      const before = reads();
+      server.notifyAll('item/completed', { threadId: sid, item: item('m1', { error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
+      await until('refresh', () => (reads() > before) || undefined);
+      const authCall = events.find((e) => e.type === 'toolCall' && e.callId === 'm1') as { mcpAuth?: boolean };
+      assert.strictEqual(authCall?.mcpAuth, true);
+      const after = reads();
+      server.notifyAll('item/completed', { threadId: sid, item: item('m2', { error: { message: 'HTTP 401 Unauthorized' } }) });
+      server.notifyAll('item/completed', { threadId: sid, item: item('m3', { status: 'completed', result: { content: [{ type: 'text', text: 'MCP OAuth challenge required' }] } }) });
+      server.notifyAll('item/completed', { threadId: sid, item: { id: 'm4', type: 'commandExecution', status: 'failed', command: 'x', aggregatedOutput: 'MCP OAuth challenge required' } });
+      server.notifyAll('item/completed', { threadId: sid, item: item('m5', { server: undefined, error: { message: 'MCP OAuth challenge required' } }) });
+      await until('m5', () => (events.some((e) => e.type === 'toolCall' && e.callId === 'm5')) || undefined);
+      for (const id of ['m2', 'm3', 'm4', 'm5']) assert.strictEqual((events.find((e) => e.type === 'toolCall' && e.callId === id) as { mcpAuth?: boolean } | undefined)?.mcpAuth, undefined, `${id}: no mcpAuth`);
+      assert.strictEqual(reads(), after, 'no list refresh for them');
+      // the challenge marks the server needs-auth although the runtime list still says connected, and the mark survives the re-read
+      const n0 = reads();
+      server.holdMcpList = true; // the re-read is pending, so only the adapter's own mark can show
+      server.notifyAll('item/completed', { threadId: sid, item: item('m6', { server: 'd', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
+      await until('d marked', () => (lastMcp().some((s) => s.name === 'd' && s.status === 'needs-auth')) || undefined);
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.errorClass, 'auth');
+      await until('re-read', () => (reads() > n0) || undefined);
+      server.releaseMcpList();
+      await new Promise((r) => setTimeout(r, 50));
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.status, 'needs-auth', 'a list that still says connected does not clear it');
+      // the runtime's next status for the server replaces the mark
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'd', status: 'ready', threadId: sid });
+      await until('d connected again', () => (lastMcp().some((s) => s.name === 'd' && s.status === 'connected')) || undefined);
+      const n2 = reads();
+      server.notifyAll('item/completed', { threadId: sid, item: item('m6b', { server: 'c', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
+      await until('re-read for c', () => (reads() > n2) || undefined);
+      await new Promise((r) => setTimeout(r, 50));
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.status, 'connected', 'a re-read does not bring back a mark the runtime replaced');
+      // a burst of challenges while one re-read is pending sends one request
+      server.holdMcpList = true;
+      const n1 = reads();
+      for (const id of ['m7', 'm8', 'm9']) server.notifyAll('item/completed', { threadId: sid, item: item(id, { server: 'd', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
+      await until('m9', () => (events.some((e) => e.type === 'toolCall' && e.callId === 'm9')) || undefined);
+      await new Promise((r) => setTimeout(r, 50));
+      assert.strictEqual(reads() - n1, 1, 'three challenges, one list request while it is pending');
+      server.releaseMcpList();
+      await new Promise((r) => setTimeout(r, 50));
+      server.notifyAll('item/completed', { threadId: sid, item: item('m10', { server: 'd', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
+      await until('read again after it settled', () => (reads() - n1 >= 2) || undefined);
+      // switching the server off and on drops the challenge mark: a later re-read that lists it connected shows it connected
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.status, 'needs-auth', 'marked before the switch');
+      await ad.setMcpEnabled!(sid, 'd', false);
+      await ad.setMcpEnabled!(sid, 'd', true);
+      const n3 = reads();
+      server.notifyAll('item/completed', { threadId: sid, item: item('m11', { server: 'c', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
+      await until('re-read after the switch', () => (reads() > n3) || undefined);
+      await new Promise((r) => setTimeout(r, 50));
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.status, 'connected', 'a switch off and on drops the challenge mark');
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.errorClass, undefined);
       await ad.dispose();
     }
     // FR-146: Codex's request_user_input goes to the question card; the answer goes back by question id; secret questions never shown

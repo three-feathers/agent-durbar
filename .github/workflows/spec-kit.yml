@@ -8,13 +8,16 @@ name: Spec Kit
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+  # spec 008 FR-098: the required Spec Kit gate must report on merge queue entries too, or the queue waits for it forever
+  merge_group:
 
 permissions:
   contents: read
 
 concurrency:
-  group: spec-kit-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  # a queue entry has no PR number: its own ref keeps entries from cancelling each other
+  group: spec-kit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   spec-gate:
@@ -24,9 +27,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # FR-098: a merge queue entry was gated on its pull request (branch name, spec folder, PR description); the queue entry has
+      # no PR description to read, so the gate reports success and says why
+      - name: Merge queue entry (gated on its pull request)
+        if: github.event_name == 'merge_group'
+        run: |
+          echo "Merge queue entry: the Spec Kit gate ran on the pull request that joined the queue." >> "$GITHUB_STEP_SUMMARY"
       - name: Gate script self-test (throwaway repos, no network)
+        if: github.event_name == 'pull_request'
         run: bash .github/scripts/test-spec-gate.sh
       - name: Branch is NNN-slug; src/ changes need the spec folder
+        if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -42,6 +53,7 @@ jobs:
   # is deliberately NOT in the required checks of the main ruleset (.github/ruleset-main.json).
   docs-check:
     name: Docs check (warning only)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:

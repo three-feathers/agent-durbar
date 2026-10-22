@@ -36,6 +36,7 @@ import type { AgentProfile, PlanAnswer } from './types';
 import type { McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
 import { cleanPlanText } from './plan';
+import { copilotQuotaReset } from './usagelimit';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import { unpackedRuntimePath } from './runtime';
@@ -1250,11 +1251,31 @@ export class CopilotAdapter implements AgentAdapter {
     for (const l of this.listeners) l(event);
   }
 
+  /**
+   * Spec 068 FR-002: the premium-request quota is used up but the error said nothing about when it resets: ask `account.getQuota` once
+   * (a read that spends nothing, spec 012 FR-156) and send the same break again with the reset date. Best effort: any failure keeps the
+   * break without a time ("resets later").
+   */
+  private async quotaReset(sid: string, body: EventBody & { type: 'usageLimit' }): Promise<void> {
+    try {
+      const client = await this.getClient();
+      const rpc = (client as unknown as { rpc?: { account?: { getQuota?: (p: object) => Promise<unknown> } } }).rpc;
+      if (typeof rpc?.account?.getQuota !== 'function') return;
+      const r = copilotQuotaReset(await rpc.account.getQuota({}));
+      if (r && this.sessions.has(sid)) this.emit(sid, { ...body, resetsAt: r.resetsAt, ...(r.estimated ? { estimated: true } : {}), update: true }); // update: ignored when the break already ended (Try now, a message)
+    } catch (e) {
+      this.debug?.(`quota reset not read: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   /** SDK SessionEvent -> normalized event(s): see map.ts (pure, unit-tested with recorded fixtures). */
   private mapperFor(sid: string): EventMapper {
     let m = this.mappers.get(sid);
     if (!m) {
-      m = new EventMapper((body) => this.emit(sid, body));
+      m = new EventMapper((body) => {
+        this.emit(sid, body);
+        if (body.type === 'usageLimit' && body.scope === 'quota' && !body.resetsAt) void this.quotaReset(sid, body);
+      });
       this.mappers.set(sid, m);
     }
     return m;

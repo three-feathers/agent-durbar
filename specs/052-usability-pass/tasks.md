@@ -66,6 +66,7 @@
 ## Command palette (2026-10-20)
 
 - [x] T045 Command palette (Ctrl+K) and keyboard shortcut sheet (?), ⋯ menu entry, driver section in `scripts/shots-052-ux.js` (#316) [FR-042, FR-043]
+
 ## Cost per folder (2026-10-20)
 
 - [x] T046 Tools > Cost: one row per folder, This run / Since <date>, Copy as CSV, room cost opens it (#315) [FR-044]
@@ -116,15 +117,20 @@
 - [x] T067 List: 34px rows, Agent app / Last activity / Cost columns, sort by header with `aria-sort` (memory only), J/K and Enter, Simple keeps the columns aligned; drivers `shots-052-ux.js`, `shots-034-list.js` [FR-064]
 - [x] T068 Red "Allow all" badge in the mode icon's slot on cards and list rows, the chat header's chip in the same red [FR-065]
 - [x] T069 "What Durbar does not do" in Settings and the README, each claim checked against the README [FR-066]
+
 ## Round 6: motion with meaning (2026-10-20)
 
 - [x] T070 Desk scene cross-fade on a signature change, done tick draws in, done pill pulses once, waiting badge pings 3 times [FR-067]
 - [x] T071 Inbox answer fades in place and the rows below slide up (FLIP), Needs you count rolls in a fixed box, All clear pops in [FR-068]
 - [x] T072 Ambulance light and siren breathe slowly for about 10 s instead of strobing; Serious mode stops every looping animation [FR-069]
 - [x] T073 Theme change cross-fades through a view transition; empty office shows an empty desk; "+ Folder" rings once on first run [FR-070]
+
 ## Round 6: activity log and Windows first run (2026-10-20)
 
 - [x] T074 Activity log: `activitystore.ts` (5000 rows, redacted 160-character action, base folder names), recorded in main from permission events (broker `auto` event for Allow all) and `setModeOp`/`setCapOp`; `activity:list/export/clear`; Tools > Activity tab; simulator rows; `test-activity` [FR-071]
+- [x] T074a Fix (2026-10-21, issue #474): `activitytable.js` publishes `window.DurbarActivityTable`, `screens.js` `activityView()` reads it; spec delta [FR-071]
+- [x] T074b `scripts/test-renderer-globals.ts` (`npm run test:globals`, in `npm test`): one file per window global, every `window.Durbar*` read is assigned; mutation run on the old code [FR-071]
+- [x] T074c `scripts/check-activity-table.js` (`npm run check:activity-table`, in `check:ui`): Tools > Activity renders the simulator rows at 1440x900 and 1280x800; mutation run; screenshots; README, CHANGELOG, `specs/README.md`, agent notes [FR-071]
 - [x] T075 Windows: search `%LOCALAPPDATA%\Microsoft\WinGet\Links`; "close and reopen Durbar" dialog when an install still is not found; PATH re-read left as a known gap; `test-detect` [FR-072]
 - [x] T076 Copilot sign-in line about VS Code; PowerShell 7 hint on the Windows Copilot card (`pwshMissing`); `test-harnesssetup` [FR-073]
 - [x] T077 "Switch this agent to Ask first" under a Read-only denial, once per agent until the mode changes [FR-074]
@@ -150,17 +156,21 @@
 - [x] T092 Quit time saved; "Since you were away" strip with missed schedule runs and **Run missed now** (`schedules:runNow`); tests for the summary and `runNow` [FR-089]
 - [x] T093 Quit prompt while agents work (one chained `before-quit`, the window's close shares it); **End all sessions** in ⋯ and the palette [FR-090]
 - [x] T094 Palette "Recent" group (5 chats) and Ctrl+` back to the previous chat; shortcut sheet; driver `shots-052-ux.js` [FR-091]
+
 ## Round 8: macOS conventions (2026-10-20)
 - [x] T086 Mac app menu from roles (Settings… ⌘, sends `menu:settings`; View with zoom and full screen only; Help links the repo); no menu on Windows and Linux; preload `onMenuSettings`, simulator no-op; `appmenu.ts` + `test-macos` [FR-083]
 - [x] T087 ⌘ on a Mac: `keys.js` (`modDown`, `chatKeyDown`, labels, aria); shortcut sheet, palette, titles and `aria-keyshortcuts` per platform; footnote removed; ⌥⌘A/S/D/N in a chat, dead keys ignored [FR-084]
 - [x] T088 Mac window: close hides (agents keep running), `quitting` in `before-quit`, agents ended on ⌘Q after the remote release, `activate` shows; `hiddenInset` title bar with darwin-only drag CSS and full-screen events; `color-scheme` per theme; Dock bounce [FR-085]
 - [x] T089 README "On a Mac" note (not verified on a real Mac), CHANGELOG line [FR-086]
+
 ## Round 9: pre-release fixes (2026-10-20)
 - [x] T095 Inbox session button shrinks with an ellipsis (Deny always visible); Thinking full width with no inner scroll; Failing in the palette, strip and list dot; folder note only next to plain words; Cost "This session / All time" before the tabs with a "since" subtitle; Agent apps "for …" line; wider Agent app column [FR-092]
 - [x] T096 Mode menu lines, "What Durbar does not do" (Settings and README), AI theme cost line per selected app, Simple limit and memory chips; Remove from office confirmation checked [FR-093]
 - [x] T097 Drivers grepped for every changed string; `shots-052-ux.js` memory chip check; README Tools line; CHANGELOG [FR-094]
+
 ## FR-085 fix: Mac window from an open chat (2026-10-20)
 - [x] T120 Mac: the chat's agent strip is the drag area with the traffic-light room when the top bar is hidden, and so is a screen's header (Settings, Tools, folder) opened over a chat; `test-macos` checks both [FR-085 fix, 2026-10-20]
+
 ## Round 10: chrome density and type (2026-10-20)
 - [x] T098 Chat header on one row (32px avatar, T1 name, chips and `.btn.sm` at 28px, actions pinned right), task and usage on one line, **Previous (N)** in the actions instead of the bar, 48px strip, shorter composer hint, 13px bubbles [FR-095]
 - [x] T099 Compact inbox rows (32px avatar, 8px gaps, `.btn.sm`, **Open** on the heading line) [FR-096]
@@ -187,6 +197,7 @@
 
 ## New session in the chat header (2026-10-20, issue #363)
 - [x] T127 `+ New` button next to Previous in the chat header (title and aria-label "New session in <folder>", same flow and conditions as the More item plus `!demoOn`, main agents only); icon-only if it does not fit; More item kept; `check-office-overlap.js` asserts it and the one-row header at both sizes; mutation; screenshots; README, CHANGELOG [FR-139]
+
 ## FR-138: macOS title bar on every screen (2026-10-20, #345)
 - [x] T121 Spec delta FR-138 (this entry), tasks and plan note [FR-138]
 - [x] T122 Darwin-only CSS: notice strip is the drag row with a chat open and the strip below drops the 78px; overlays, popovers and menus `no-drag`; chat strip grab area and no-drag `.strip-list`; `.scr-head` `max(78px, ...)` [FR-138]
@@ -212,3 +223,57 @@
 - [x] T140 macOS File menu (Add Folder… ⌘O, Add VS Code Workspace… ⇧⌘O, Close Window) through `menu:add` → `onMenuAdd` → the same buttons; `test-macos` [FR-164]
 - [x] T141 `scripts/shots-052-addleft.js` in `check:ui`; `check-mac-titlebar.js` without the + New state; `check:office`, `check:geometry`, `check:mac-titlebar`; screenshots at 1440x900 and 1280x800 [FR-164]
 - [x] T142 Docs: README, CHANGELOG, `specs/README.md` row [FR-164]
+
+## FR-172: a Codex write request names the file and shows the change (2026-10-21, real Codex finding)
+- [x] T158 Spec delta FR-172, plan note [FR-172]
+- [x] T159 Codex adapter: keep `fileChange` items by id (started, patchUpdated; forget on completed; at most 32), fill the write card from the item (files, kind, diff with secrets masked), "Codex did not say which file" when none is known; `PermissionLike.cardSummary` [FR-172]
+- [x] T160 Renderer: multi-file diff counts (`diffLines` ends a hunk by its counts), Simple words for a request with no file [FR-172]
+- [x] T161 Tests: `test-codex-modes`, `test-codex-adapter` with the fixture `codex/file-change-approval.json` (generated types), `test-truth`; mutation runs (no item store, no masking) [FR-172]
+- [x] T162 `simcodexfile` + `scripts/check-codex-file-card.js` (`check:codex-file-card`, in `check:ui`) at 1440x900 and 1280x800, Expert and Simple; screenshots; README, CHANGELOG, `specs/README.md`, agent notes [FR-172]
+- [x] T163 Real check on a Codex session (one small edit in Ask first): the card names the file and shows the diff [FR-172; real: 2026-10-21, codex-cli 0.163.0, Linux, 1 prompt]
+
+## UI help and text pass (2026-10-21, issue #464)
+- [x] T143 Spec delta FR-165..FR-171, plan note, `docs/design-rules.md` rules (widths, measure, tooltip length; also fix its stale "+ New" line) [FR-165..FR-171]
+  - Accept: the entry is under `## Changes`, every FR says planned until its task is done; design-rules lists the three dialog widths, `--menu-w`, `--measure`, the 120/300 tooltip limits.
+- [x] T144 `scripts/check-ui-text.js` + page helper + `scripts/fixtures/themes/dark-audit.json`; `npm run check:ui-text`; added to `ui-suite.js` [FR-171]
+  - Accept: run on `main` before any fix, it fails and lists at least: Send to several x-scroll and cut rows, `.prev-h small` 10px, bold dialog values, the long static tooltips, the white surfaces in the dark fixture. Each later task turns its part green.
+  - Check: the driver itself; mutation runs listed in FR-171.
+  - Done (PR 1): `check-ui-text.js` asserts font-size, word-split, clipped, x-scroll, offscreen, dialog-width, dialog-padding, field-weight, measure and dark-contrast (plus a source check that `screens.css` keeps no `background:#fff` but the switch knob); the PR 2 rules are counted, not asserted (`todo-*`). Not opened by it (the simulator cannot reach them): the install and update plan dialogs, the VS Code import list, the hand-off review and the limit-reached note; `.note.limit .limit-amt` is covered by the source check only. The old head fails it (1,819 violations in 10 rules on main at 86a83ba2 (rules widened, each root once)).
+  - Review fixes (PR #479): the folder-setup dialog is a surface (`simfoldersetup=1`) and `.dlg.fs .mtag` is a dark control; the dark run checks every text element (older debt in the allow file); every renderer stylesheet is scanned for light backgrounds, including named colours, rgb()/hsl() and gradients; each root is measured once; the luminance comes from `src/shared/themegen.ts`; `.dlg.imp` no longer loses its dialog padding to the generic `.imp` box rule.
+  - Review fixes (PR 1): contrast on all six built-in themes; dead `.ho-dlg`/`.sched-dlg`/`.inbox-dlg`/`.kbd-dlg` width rules removed (a dialog's width comes from its class `m`/`l` only; the shortcut sheet is M below 900px, L from 900px); `dialog({size:'l'})` is `.dlg.l`, not `.imp`; `.toast` and `.dlg .dlist li` wrap long text; check cases `send-several-long` (`simnames=long`), a toast and a dialog list with a long unbroken word; the widths are read with `offsetWidth` after the open animation.
+- [x] T145 Wrapping: `overflow-wrap:break-word` on prose (`styles.css` `.dlg .dsub`, `.note`, `.ptask`, `.bubble`, `.md`, `.att-note`, `.inbox-row .ib-t`, `.answer-bar .ab-q`, `.answer-bar .ab-opt`, `.note.question .q-opt`, `.think-body`, `.liveside .ls-t`, `.sched-dlg .sc-hint`; `screens.css` `.scr-note`, `.ttab.act .act-a`); `anywhere` kept on machine text; quoted examples with a hyphen do not break [FR-165]
+  - Accept: no prose word split at 1440x900 and 1280x800 in any of the three themes, also with a 2,000-character question (`simquestion=long`) and long names (`simnames=long`).
+  - Check: `check-ui-text` word rule; mutation: `anywhere` back on `.dlg .dsub` inside a narrow flex box fails it.
+- [x] T146 Help text size and measure: `--measure`; `.scr-note.small` paragraphs 12px with the same measure as `.scr-note`; explicit size for `.prev-h small` (11px) and every chrome `small`; dialog field notes 12px [FR-165, FR-166]
+  - Accept: nothing under 10.5px on any surface; the "More" text in Settings ends at the same x as the paragraph above it (±8px).
+  - Check: `check-ui-text` size rule, plus a measure assertion on the Settings sections; mutation: remove the `small` size.
+- [x] T147 Dialog widths and padding tokens: `--dlg-w-s/m/l`; assign each dialog (S: confirmations, rename, folder status, remote, compact, end all; M: new session, hand-off, spending limit, theme maker, place, Send to several, About agent apps, schedules, agent MCP; L: shortcuts, Needs you, import, hand-off review); inbox padding from `--dlg-pad`; field label/control and group spacing (schedules "Prompt") [FR-167]
+  - Accept: every dialog's width is one token (or the window minus 32px); no dialog body over 8 lines of 13px text at its width.
+  - Check: `check-ui-text` width and padding rule; mutation: one dialog at 500px fails.
+- [x] T148 Send to several: pick rows never wider than the dialog (label ellipsis with `title`, note under the label or shrinking), no horizontal scroll, M width [FR-167, FR-168]
+  - Accept: at 1280x800 and 1440x900 every row's note ("waits for you", "busy", "at its spending limit") is fully visible; no x-scrollbar.
+  - Check: `check-ui-text` x-scroll rule; mutation: `.dlg .dpick small{flex:none}` back fails.
+  - Done (PR 1): the cause was the fieldset's default `min-width: min-content` (`.dlg .dpicks{min-width:0}`) at 420px; `.dlg .dpick small{flex:none}` was already there, so restoring it alone fails nothing. The mutation that fails is `min-width:0` removed with the dialog back at S width. The row label has a `title` (`dialog.js`).
+- [x] T149 Field values regular weight in dialogs: `.dlg :is(input,select,textarea)` and their placeholders `font-weight:400` (askDialog textarea, schedules prompt, new session and hand-off selects and inputs, compact focus, spending-limit number) [FR-167]
+  - Accept: computed weight ≤ 500 on every field in every dialog.
+  - Check: `check-ui-text` weight rule.
+- [ ] T150 Menus: `--menu-w`; one padding; hints on one line or two balanced lines; shorten "One message, the sessions you pick", "The chats stay; a message resumes one", "Sample agents to look around; nothing runs", the Plan first hint; chat More: all items with a hint or none [FR-165, FR-167]
+  - Accept: no hint ends in a one-word line at either size.
+  - Check: `check-ui-text` orphan rule.
+- [ ] T151 Tooltips: static titles over 120 characters shortened (the spending-limit chip 274, mode chip 158-192, mode icon 145-150, context chip 130, session-approval button 130, hand-off 122, Remove folder, the "no reasoning summary" note); the theme maker list's `title` replaced by on-screen text; `title` on the cut agent-app name and Send to several rows; data tooltips (cards, totals) capped at 300 characters / 8 lines [FR-168]
+  - Accept: tooltip length rule green on every surface; no ellipsis without its full text.
+  - Check: `check-ui-text` tooltip and ellipsis rules; `test:` a unit test for the totals tooltip line count where it is built (`usagetotals.js`).
+- [x] T152 Dark themes: the `background:#fff` rules in `screens.css` (79, 126, 136, 138, 173, 181, 212; the switch knob at 41 stays) and the light literals of `.ctxchip` / `.ctxchip.warn` / `.ctxchip.unk` (`screens.css:115-119`) and `.sitem.attn.st-error` (`styles.css:694`) to tokens [FR-169]
+  - Accept: in the dark fixture the pressed Tools/Settings segment, the selected Tools tab, the selected theme card, the limit field, the Places selects and icon options, the context and limit chips read at 4.5:1.
+  - Check: `check-ui-text` contrast rule (dark fixture only); `check:geometry` stays green.
+- [ ] T153 Wording that fits: label + hint for the spending-limit fields (new session, hand-off) and compact's focus; split the per-agent spending-limit body; floors popover help on its own line; shortcut sheet description column aligned [FR-170]
+  - Accept: no field label wraps at either size; the description columns of the shortcut sheet start at the same x.
+  - Check: `check-ui-text` (label height = one line; kbd column x within 2px).
+- [ ] T154 Long names: Tools > Models and context (Agent column capped, ellipsis + `title`, fixed layout, no horizontal scroll in `.scr-body`); Needs you heading (name on its own line with ellipsis + `title`, status, folder and wait below); `title` on cut cells in the list view, the palette and the Agent apps cards [FR-167, FR-168]
+  - Accept: with `simnames=long` at 1280x800 the Tools screen has no horizontal scroll and every column is visible; no inbox heading has a lone "· folder" line.
+  - Check: `check-ui-text` runs these surfaces a second time with `simnames=long`.
+- [ ] T155 Chat: the streaming caret sits at the end of the text, not after the Copy button; the Copy button never covers text (sub-agent prompt blocks); a toast never covers the composer [FR-170]
+  - Accept: at both sizes, the Copy button's box does not intersect any text box of its message; the caret's x is at the end of the last text line; toasts end above the composer while a chat is open.
+  - Check: `check-ui-text` overlap rule on the chat (text leaves only, inline wraps excluded).
+- [ ] T156 Screenshots before and after (both sizes, light and dark) for each surface changed, under `docs/screenshots/052-uitext-*`; `check:office`, `check:geometry`, `check:ui` green [FR-165..FR-171]
+- [ ] T157 Docs: CHANGELOG (Unreleased), `specs/README.md` row, spec status tags, README only if a visible label changed [FR-165..FR-171]

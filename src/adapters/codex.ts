@@ -29,8 +29,8 @@ import type { McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
-import { CODEX_INITIALIZE_CAPABILITIES, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
-import type { DurbarAnswer } from './codexModes';
+import { CODEX_INITIALIZE_CAPABILITIES, codexFileChanges, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
+import type { CodexFileChange, DurbarAnswer } from './codexModes';
 import { CODEX_BINARY, detectBinary, nodeExec } from './detect';
 import type { DetectEnv } from './detect';
 import { PermissionBroker, mcpToolBlockList, startModeOf } from './permissions';
@@ -234,6 +234,10 @@ interface Live {
   relaunch?: boolean;
   /** The MCP list was read for this child (FR-147). */
   mcpRead?: boolean;
+  /** FR-060: a list re-read is in flight (one at a time). */
+  mcpRefreshing?: boolean;
+  /** FR-060: servers whose tool call met an OAuth challenge; kept as needs-auth until the runtime's next status for them. */
+  mcpAuthSeen?: Set<string>;
   /** FR-146: questions waiting for the user, by request id. */
   questions: Map<string, (answers: Record<string, string> | null) => void>;
   /** FR-151: MCP elicitations (forms, URL flows) waiting for the user, by request id. */
@@ -254,6 +258,8 @@ interface Live {
   /** The next mapper `Aborted` is the one `interrupt` already reported itself. */
   expectAborted: boolean;
   anon: number;
+  /** Spec 052 FR-172: the changes of `fileChange` items not yet completed, by item id (bounded): an approval names only the id. */
+  fileChanges?: Map<string, CodexFileChange[]>;
 }
 
 interface Child {
@@ -939,6 +945,17 @@ export class CodexAdapter implements AgentAdapter {
       return;
     }
     this.emit(live.sid, body);
+    if (body.type === 'toolCall' && body.mcpAuth && body.mcpServer) {
+      // FR-060: a sign-in challenge marks the server now (even when the list says connected), then one re-read at a time
+      const prev = live.mcp.get(body.mcpServer);
+      live.mcp.set(body.mcpServer, { ...(prev ?? { name: body.mcpServer }), status: 'needs-auth', errorClass: 'auth' });
+      (live.mcpAuthSeen ??= new Set()).add(body.mcpServer);
+      this.emitMcp(live);
+      if (!live.mcpRefreshing) {
+        live.mcpRefreshing = true;
+        void this.refreshMcp(live).finally(() => { live.mcpRefreshing = false; });
+      }
+    }
   }
 
   private onNotification(live: Live, method: string, params: unknown): void {
@@ -961,7 +978,12 @@ export class CodexAdapter implements AgentAdapter {
       const name = params.name.slice(0, 64);
       const disabled = (live.options.disabledMcpServers ?? []).includes(name);
       const err = typeof params.error === 'string' && params.error ? { error: params.error.slice(0, 300) } : {};
-      live.mcp.set(name, { ...(live.mcp.get(name) ?? {}), name, status: disabled ? 'disabled' : codexMcpState(params.status), ...err });
+      const state = params.failureReason === 'reauthenticationRequired' ? 'needs-auth' : codexMcpState(params.status); // FR-060
+      const auth = !disabled && state === 'needs-auth';
+      const prev = live.mcp.get(name);
+      const { errorClass: _drop, ...rest } = prev ?? { name };
+      live.mcpAuthSeen?.delete(name); // the runtime's own status replaces a challenge mark
+      live.mcp.set(name, { ...rest, name, status: disabled ? 'disabled' : state, ...(auth ? { errorClass: 'auth' as const } : {}), ...err });
       if (this.sessions.get(live.sid) === live) this.emitMcp(live);
       return;
     }
@@ -989,7 +1011,38 @@ export class CodexAdapter implements AgentAdapter {
         live.pendingInterrupt = false;
       }
     }
+    this.noteFileChange(live, method, params);
     live.mapper.map({ method, params });
+  }
+
+  /**
+   * Spec 052 FR-172: keep the changes of each `fileChange` item while it runs (`item/started`, `item/fileChange/patchUpdated`), so an
+   * approval that names only the item id can show the files and the diff; forget them on `item/completed`. At most 32 items.
+   */
+  private noteFileChange(live: Live, method: string, params: unknown): void {
+    if (!isObj(params)) return;
+    const item = isObj(params.item) ? params.item : undefined;
+    const isFc = item?.type === 'fileChange' && typeof item.id === 'string' && item.id;
+    if (method === 'item/completed' && isFc) {
+      live.fileChanges?.delete(item.id as string);
+      return;
+    }
+    let id: string | undefined;
+    let changes: unknown;
+    if (method === 'item/started' && isFc) {
+      id = item.id as string;
+      changes = item.changes;
+    } else if (method === 'item/fileChange/patchUpdated' && typeof params.itemId === 'string' && params.itemId) {
+      id = params.itemId;
+      changes = params.changes;
+    }
+    if (!id) return;
+    const list = codexFileChanges(changes);
+    if (!list.length) return;
+    const map = (live.fileChanges ??= new Map());
+    map.delete(id);
+    map.set(id, list);
+    while (map.size > 32) map.delete(map.keys().next().value as string);
   }
 
   private makeBroker(live: Live): PermissionBroker {
@@ -1034,8 +1087,8 @@ export class CodexAdapter implements AgentAdapter {
       const a = await runElicitation((b) => this.emit(live.sid, b), live.elicitations, `codex-e-${++live.anon}`, { message: p.message, schema: p.requestedSchema, mode: p.mode, url: p.url, source: p.serverName }, (m) => this.debug?.(`codex: ${m}`));
       return { result: { ...a } };
     }
-    const perm = codexPermission(method, params);
     const itemId = isObj(params) && typeof params.itemId === 'string' && params.itemId ? params.itemId : undefined;
+    const perm = codexPermission(method, params, itemId ? live.fileChanges?.get(itemId) : undefined);
     const toolCallId = itemId ?? `${method}#${++live.anon}`;
     const decision = await live.broker.request({
       kind: perm.kind,
@@ -1046,6 +1099,9 @@ export class CodexAdapter implements AgentAdapter {
       url: perm.url,
       toolName: perm.toolName,
       serverName: perm.serverName,
+      // FR-172: the file change's diff with secrets masked (env values and key shapes), and its own card line
+      ...(perm.kind === 'write' ? { cardSummary: perm.summary } : {}),
+      ...(perm.diff ? { diff: redact(perm.diff, { ...process.env, ...this.env }) } : {}),
     });
     const answer: DurbarAnswer = decision.kind === 'approve-once' ? 'approve' : live.stopping || live.interrupting ? 'stop' : 'deny';
     const reply = codexReply(answer, live.broker.getMode());
@@ -1099,6 +1155,10 @@ export class CodexAdapter implements AgentAdapter {
       const res = await live.rpc.request('mcpServerStatus/list', { threadId: live.threadId, detail: 'toolsAndAuthOnly', limit: 100 });
       if (this.sessions.get(live.sid) !== live) return;
       live.mcp = new Map(codexMcpServers(isObj(res) ? res.data : undefined, live.options.disabledMcpServers ?? []).map((s) => [s.name, s]));
+      for (const n of live.mcpAuthSeen ?? []) { // a re-read that still says connected does not clear a challenge seen in this session
+        const s = live.mcp.get(n);
+        if (s?.status === 'connected') live.mcp.set(n, { ...s, status: 'needs-auth', errorClass: 'auth' });
+      }
       this.emitMcp(live);
     } catch {
       /* an older Codex without the method: no list */
@@ -1117,6 +1177,7 @@ export class CodexAdapter implements AgentAdapter {
     else off.add(name);
     live.options = { ...live.options, disabledMcpServers: [...off] };
     live.relaunch = true;
+    live.mcpAuthSeen?.delete(name);
     const cur = live.mcp.get(name) ?? { name, status: 'pending' };
     live.mcp.set(name, { ...cur, status: enabled ? 'pending' : 'disabled' });
     this.emitMcp(live);

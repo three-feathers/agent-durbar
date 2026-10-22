@@ -303,12 +303,14 @@ export class FakeCodexServer {
       }
       case 'mcpServerStatus/list': {
         // spec 069 FR-031: one server's tools when `serverName` is given (a map by tool name, as the generated schema says)
-        const all = [
+        const all: Array<Record<string, unknown>> = (this.mcpList as Array<Record<string, unknown>> | undefined) ?? [
           { name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: { echo: { name: 'echo', description: 'Echo the text back\nSecond line', inputSchema: {} }, ping: { name: 'ping', inputSchema: {} } }, resources: [], resourceTemplates: [] },
           { name: 'broken', authStatus: 'unsupported', runtimeStatus: 'failed', tools: {}, toolsError: 'tools/list failed: spawn broken-mcp ENOENT', resources: [], resourceTemplates: [] },
         ];
         const want = isObj(params) && typeof params.serverName === 'string' ? params.serverName : undefined;
-        return this.reply(child, id, { data: want ? all.filter((x) => x.name === want) : all.slice(0, 1), nextCursor: null });
+        const answer = (): void => this.reply(child, id, { data: want ? all.filter((x) => x.name === want) : this.mcpList ?? all.slice(0, 1), nextCursor: null });
+        if (this.holdMcpList) return void this.heldMcpList.push(answer);
+        return answer();
       }
       case 'model/list':
         return this.reply(child, id, { data: [
@@ -426,6 +428,16 @@ export class FakeCodexServer {
       this.serverPending.set(`${child.index}:${id}`, { childIndex: child.index, method, resolve });
       child.send({ id, method, params });
     });
+  }
+
+  /** What `mcpServerStatus/list` answers (default: one connected `echo`). */
+  mcpList: unknown[] | undefined;
+  /** Tests: hold the `mcpServerStatus/list` replies until `releaseMcpList()`. */
+  holdMcpList = false;
+  private heldMcpList: Array<() => void> = [];
+  releaseMcpList(): void {
+    this.holdMcpList = false;
+    for (const f of this.heldMcpList.splice(0)) f();
   }
 
   /** A notification to every live child (tests: MCP startup states, spec 012 FR-147). */

@@ -23,7 +23,7 @@ const run = (notes: unknown[]): any[] => {
 
 // 1. Every fixture gives its expected event list, and says it is synthetic.
 const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
-assert.deepStrictEqual(files, ['command.json', 'deltas.json', 'failure.json', 'file-change.json', 'mcp-tool.json', 'subagent.json', 'thread-turn.json', 'unknown.json', 'usage.json']);
+assert.deepStrictEqual(files, ['command.json', 'deltas.json', 'failure.json', 'file-change-approval.json', 'file-change-stream.json', 'file-change.json', 'mcp-tool.json', 'subagent.json', 'thread-turn.json', 'unknown.json', 'usage.json']);
 for (const f of files) {
   const j = fx(f);
   assert.strictEqual(j.provenance, 'synthetic', `${f} is marked synthetic`);
@@ -45,6 +45,20 @@ for (const f of files) {
   // Reasoning: streamed block is not repeated by its completed item; a never-streamed one is shown whole.
   const th = run(fx('deltas.json').notifications).filter((e) => e.type === 'thinking');
   assert.deepStrictEqual(th.map((e) => `${e.reasoningId}=${e.delta}`), ['rs_1:0=Checking ', 'rs_1:0=the tests', 'rs_1:1=Then fixing', 'rs_2:0=Never streamed']);
+}
+
+// 3b. Spec 058 FR-060: a failed MCP call with the OAuth challenge says mcpAuth; nothing else does.
+{
+  const done = (item: Record<string, unknown>): any => run([{ method: 'item/completed', params: { item: { id: 'x', type: 'mcpToolCall', server: 'gh', tool: 't', ...item } } }])[0];
+  assert.strictEqual(done({ status: 'failed', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }).mcpAuth, true);
+  assert.strictEqual(done({ status: 'failed', error: { message: 'Re-authentication required for MCP server "gh". Run /mcp auth gh' } }).mcpAuth, true);
+  assert.strictEqual(done({ status: 'failed', error: { message: 'HTTP 401 Unauthorized' } }).mcpAuth, undefined, 'a plain 401 is not the challenge');
+  assert.strictEqual(done({ status: 'completed', result: { content: [{ type: 'text', text: 'MCP OAuth challenge required' }] } }).mcpAuth, undefined, 'a successful result');
+  assert.strictEqual(done({ status: 'failed', server: undefined, error: { message: 'MCP OAuth challenge required' } }).mcpAuth, undefined, 'no server named');
+  const started = run([{ method: 'item/started', params: { item: { id: 'y', type: 'mcpToolCall', server: 'gh', tool: 't', status: 'inProgress' } } }])[0];
+  assert.strictEqual(started.mcpAuth, undefined);
+  const cmd = run([{ method: 'item/completed', params: { item: { id: 'z', type: 'commandExecution', status: 'failed', aggregatedOutput: 'MCP OAuth challenge required' } } }])[0];
+  assert.strictEqual(cmd.mcpAuth, undefined, 'a shell command');
 }
 
 // 3. An MCP tool call carries its server and tool; other tool kinds do not claim an MCP origin.
@@ -70,12 +84,12 @@ for (const f of files) {
   assert.ok(!out.some((e) => e.delta === 'ignored'), 'a thread nobody announced is ignored');
 }
 
-// 5. Failure maps to an error status; usage-limit has its own wording; interrupted is not an error.
+// 5. Failure maps to an error status; a usage limit is a coffee break (spec 068: usageLimit, then idle); interrupted is not an error.
 {
   const st = run(fx('failure.json').notifications).filter((e) => e.type === 'status');
   assert.deepStrictEqual(st.map((e) => `${e.status}|${e.intent}`).slice(2), [
     'error|SandboxError: Sandbox denied the write',
-    'error|Codex usage limit reached',
+    'idle|Usage limit reached',
     'error|HttpConnectionFailed: connection reset',
     'error|Turn failed',
     'idle|Aborted',
