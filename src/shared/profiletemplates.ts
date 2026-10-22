@@ -45,6 +45,10 @@ export const MAX_GEN_DESCRIPTION = 2000;
 export const MAX_GEN_ANSWER = 600;
 /** The save path's limit (spec 043 FR-011), shared so a checked reply can always be saved (FR-035). UTF-8 bytes. */
 export const MAX_PROFILE_BYTES = 256 * 1024;
+/** Claude Code's own cap on an agent file (the Claude adapter's MAX_AGENT_BYTES, spec 043 FR-021; `test:profilegen` keeps them equal). */
+export const MAX_CLAUDE_PROFILE_BYTES = 64 * 1024;
+/** The most a profile file may hold for its app: the same numbers as `maxBytesFor` in main (FR-012, FR-021, FR-035). */
+export const maxProfileBytes = (app: TemplateApp): number => (app === 'claude' ? MAX_CLAUDE_PROFILE_BYTES : MAX_PROFILE_BYTES);
 export const MAX_GEN_TOOLS = 20;
 const utf8Bytes = (s: string): number => new TextEncoder().encode(s).length;
 
@@ -194,7 +198,7 @@ export function validateGeneratedProfile(reply: string, input: GenInput, parse: 
   // the chosen name, whatever the reply said, only inside the front matter (FR-034)
   t = setFrontmatterName(t, input.name);
   if (!t.endsWith('\n')) t += '\n';
-  if (utf8Bytes(t) > MAX_PROFILE_BYTES) return { ok: false, error: `The reply is too long (over ${MAX_PROFILE_BYTES / 1024} KB).` };
+  if (utf8Bytes(t) > maxProfileBytes(input.app)) return { ok: false, error: `The reply is too long (over ${maxProfileBytes(input.app) / 1024} KB, the most ${input.app === 'claude' ? 'Claude Code' : 'Copilot'} takes in an agent file).` };
   // FR-033: what the draft grants beyond read-only, and tools the text mentions that are not granted
   const defaults = new Set(DEFAULT_READ_TOOLS[input.app].map((x) => x.toLowerCase()));
   const extraTools = tools.filter((x) => !defaults.has(x.toLowerCase()));

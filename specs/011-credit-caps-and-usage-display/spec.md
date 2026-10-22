@@ -208,3 +208,10 @@ Spec 012 adds two agent kinds that do not report AI credits. The units stay sepa
 - `[KNOWN GAP]`: a long agentic turn is stopped only after the call that crosses the cap; that call's own cost is never cut. Durbar learns a resumed session's earlier spending only from the runtime's first checkpoint, so the first message after a resume is never held.
 
 - **2026-10-21, spec 068 (coffee break), cross-reference.** When the cap is reached the agent now shows a coffee break "until you raise the limit" (card label *Coffee break* instead of *Limit reached*, figure in the lobby's coffee corner). The limit notice, its choices and the `limit` events are unchanged, and it never resumes by itself. `sim:` `scripts/shots-068-coffee.js` (Omar).
+
+### 2026-10-22: tooltip wording of the totals (spec 052 FR-168, issue #464)
+
+A data tooltip is at most 300 characters and 8 lines (spec 052), so the text of FR-019, FR-020 and spec 033 FR-016 is shortened and built in `usagetotals.js` `tooltip()`:
+
+- **FR-019 (wording).** "Office total: X AIU", "N calls · 12k in / 3.4k out" (the word "tokens" is gone), "Saved since 2026-10-01 (reset in Settings); ended sessions included." (or "Since Agent Durbar opened; ended sessions included."), "This run: X AIU in N calls." (replaces "Since the app opened (or the last reset): ..."), "N calls without credits" (replaces "N calls did not report credits"), "Copilot's figure: 1 AIU = 1 credit, not a bill." (replaces "As reported by the Copilot runtime (1 AIU = 1 AI credit, not verified against billing)."). The office chip adds one more line, built there too (`opts.estimate`): "≈ $X = N AIU + $Y Claude (est.). Codex: no cost." (replaces "Estimated cost: ..."). `[IMPLEMENTED]` (test: usagetotals, worst case 300 characters and 8 lines).
+- **Priority.** When the lines would pass 300 characters, the lowest priority go first: "Includes folders no longer shown", "This run", "N calls without credits". The head, the calls, the since line, the off-floor spend (spec 033 FR-016), the estimate and the footer always stay. The `aria-label` of the chip has every line (`opts.full`).

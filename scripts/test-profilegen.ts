@@ -5,10 +5,10 @@
  */
 import * as assert from 'assert';
 import * as path from 'path';
-import { buildProfilePrompt, MAX_GEN_ANSWER, MAX_PROFILE_BYTES, parseToolList, PROFILE_QUESTIONS, profileTemplate, SUCCESS_SECTIONS, userTextOf, validateGeneratedProfile } from '../src/shared/profiletemplates';
+import { buildProfilePrompt, MAX_GEN_ANSWER, MAX_PROFILE_BYTES, maxProfileBytes, parseToolList, PROFILE_QUESTIONS, profileTemplate, SUCCESS_SECTIONS, userTextOf, validateGeneratedProfile } from '../src/shared/profiletemplates';
 import { generateProfile } from '../src/main/profilegen';
 import type { OneShot } from '../src/main/profilegen';
-import { MAX_PROFILE_BYTES as SAVE_LIMIT } from '../src/main/profilefiles';
+import { maxBytesFor } from '../src/main/profilefiles';
 import type { FrontmatterParse, GenInput } from '../src/shared/profiletemplates';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -123,17 +123,23 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
 
 // ---- FR-035: size in bytes, after neutralising, the save path's limit (review on #505, change 3) ----
 {
-  assert.strictEqual(MAX_PROFILE_BYTES, SAVE_LIMIT, 'one limit for the reply and the save path');
-  const withSkills = (x: string): string => filled('claude', 'pay-reviewer').replace('## Skills\n', '## Skills\n' + x + '\n');
-  const grow = withSkills('<b'.repeat(Math.floor(MAX_PROFILE_BYTES / 3)));
-  assert.ok(grow.length < MAX_PROFILE_BYTES, 'under the cap before neutralising');
+  for (const app of ['claude', 'copilot'] as const) assert.strictEqual(maxProfileBytes(app), maxBytesFor(app), `one limit for the reply and the save path (${app})`);
+  const cap = maxProfileBytes('claude'); // 64 KB: Claude Code's own cap (FR-021)
+  const withSkills = (x: string, app: 'claude' | 'copilot' = 'claude'): string => filled(app, 'pay-reviewer').replace('## Skills\n', '## Skills\n' + x + '\n');
+  const grow = withSkills('<b'.repeat(Math.floor(cap / 3)));
+  assert.ok(Buffer.byteLength(grow) < cap, 'under the cap before neutralising');
   const g = validateGeneratedProfile(grow, Q, parse);
   assert.ok(!g.ok && /too long/.test(g.error), 'grows past the cap through &lt;');
-  const multi = withSkills('é'.repeat(Math.floor(MAX_PROFILE_BYTES * 0.6)));
-  assert.ok(multi.length < MAX_PROFILE_BYTES, 'under the cap in characters');
+  const multi = withSkills('é'.repeat(Math.floor(cap * 0.6)));
+  assert.ok(multi.length < cap, 'under the cap in characters');
   const m = validateGeneratedProfile(multi, Q, parse);
   assert.ok(!m.ok && /too long/.test(m.error), 'over the cap in bytes: refused only on size');
-  assert.ok(validateGeneratedProfile(withSkills('é'.repeat(Math.floor(MAX_PROFILE_BYTES * 0.45))), Q, parse).ok, 'the same reply under the cap passes');
+  assert.ok(validateGeneratedProfile(withSkills('é'.repeat(Math.floor(cap * 0.45))), Q, parse).ok, 'the same reply under the cap passes');
+  // per app: 100 KB is too much for a Claude Code file, fine for Copilot (256 KB)
+  const big = 'x'.repeat(100 * 1024);
+  assert.ok(!validateGeneratedProfile(withSkills(big), Q, parse).ok, 'Claude: over 64 KB refused');
+  assert.ok(validateGeneratedProfile(withSkills(big, 'copilot'), { ...Q, app: 'copilot' }, parse).ok, 'Copilot: 100 KB passes');
+  assert.ok(MAX_PROFILE_BYTES === maxProfileBytes('copilot'));
 }
 
 // ---- profiles:generate with a fake one-shot (review on #505, change 4) ----

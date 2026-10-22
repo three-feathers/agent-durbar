@@ -45,8 +45,10 @@ interface SimOptions {
   floors?: boolean;
   /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`). */
   titles?: boolean;
-  /** Spec 059 FR-016: every main agent carries a 60-character user name (page address `simnames=long`), to check that the office still fits. */
+  /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits. */
   names?: 'long';
+  /** Spec 052 FR-170 (T155): long replies and long sub-agent prompts that run to the right edge of the chat, to check that the Copy button covers no text (page address `simreply=long`). */
+  reply?: 'long';
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
   /** Spec 052 FR-141 (issue #367): the first agent has eight session grants with long names (page address `simgrants=many`). */
   grants?: 'many' | 'stuck'; /* 'stuck': revokes are accepted but never remove anything (a failed revoke) */
@@ -150,6 +152,7 @@ function simNameError(v: unknown): string {
   if (/gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}/.test(n)) return 'That looks like a secret. Use another name.';
   return '';
 }
+const LONG_TEXT = 'Every paragraph here is long on purpose so that its lines run to the right edge of the chat, where a Copy button must never cover a word. '.repeat(6).trim() + '\n\n```\nconst aLineThatRunsPastTheRightEdgeOfTheChat = "' + 'x'.repeat(300) + '";\n```'; // ends in a code block whose last line runs to the right edge (clipped by its own scroll), so the reply's Copy button always sits over text when it is misplaced
 const SIM_LONG_NAMES = ['Billing refactor: split invoice and credit-note flows', 'Canton lookup duplicates: reproduce and fix the join', 'Release notes for the next minor version and changelog', 'Tidy the registry modules and update every import path'];
 const SIM_USD_CAPS: Record<string, number> = { Ada: 0.01 };
 const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
@@ -296,7 +299,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
 
     const sims: SimAgent[] = rows.map((r, i) => {
       const [name, role, room, state, intent, helpers, files] = r;
-      const roomName = opts.solo ? name.toLowerCase() + '-app' : room;
+      const roomName = opts.solo ? name.toLowerCase() + '-app' : room + (opts.names === 'long' ? '-customer-reconciliation-batch-jobs-2026'.slice(0, 55 - room.length) : ''); // simnames=long: a folder name is long too (60 characters at most, spec 059)
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
       const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true } as AgentInfo;
       // Spec 052 FR-046: a pending permission card only happens in Ask first, so a waiting agent starts in Ask first (Jonas was Allow all
@@ -616,7 +619,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     }
     function subRun(s: SimAgent, h: number, name: string, task: string, st: 'working' | 'thinking' | 'done' | 'failed'): void {
       const call = sid(s) + '-task' + h, base = { sessionId: sid(s), timestamp: now() };
-      const prompt = 'You are a helper for the **' + name + '** step.\n\n' + task + '.\n\nOnly read files; report back in two sentences.';
+      const prompt = 'You are a helper for the **' + name + '** step.\n\n' + task + '.\n\nOnly read files; report back in two sentences.' + (opts.reply === 'long' ? '\n\n' + LONG_TEXT : '');
       emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'start', args: { description: task, prompt, agent_type: 'explore' } });
       emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'started', task, agentName: 'explore', model: 'gpt-5.6-luna' });
       emit({ ...base, type: 'user', agentId: call, text: prompt });
@@ -784,7 +787,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         case 'working':
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: s.intent });
           toolStep(s, true);
-          emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: 'Moved the company handlers first and kept a thin re-export in `registry.ts` so the public API is unchanged. Next I am running the **tests** for the three new modules.' });
+          emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: 'Moved the company handlers first and kept a thin re-export in `registry.ts` so the public API is unchanged. Next I am running the **tests** for the three new modules.' + (opts.reply === 'long' ? ' ' + LONG_TEXT : '') });
           if (simBreakSecs && s.info.name === 'Rosa') window.setTimeout(() => { s.breakUntil = Date.now() + 2 * simBreakSecs * 1000; simLimit(s, 'quota'); }, 1500); // spec 068
           break;
         case 'thinking':
@@ -802,7 +805,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'error', intent: s.intent });
           break;
         case 'done': {
-          const text = '**Done.** ' + s.intent + ' Every link in the docs index resolves and the tests pass.';
+          const text = '**Done.** ' + s.intent + ' Every link in the docs index resolves and the tests pass.' + (opts.reply === 'long' ? ' ' + LONG_TEXT : '');
           emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: text, final: true, text });
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
           break;
@@ -1153,7 +1156,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.10 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.11 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
@@ -1238,7 +1241,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, profile: p };
       },
       // spec 043 FR-017: profile files in memory
-      listProfileFiles: async () => ({ ok: true, folders: pfFolders(), files: simPF.map(pfInfo) }),
+      listProfileFiles: async () => ({ ok: true, folders: pfFolders(), files: simPF.map(pfInfo), userDirs: { copilot: '~/.copilot/agents', claude: '~/.claude/agents' } }),
       readProfileFile: async (fileId) => {
         const f = simPF.find((x) => x.id === fileId);
         return f ? { ok: true as const, info: pfInfo(f), text: f.text, sha256: pfHash(f.text), eol: 'lf' as const } : { ok: false as const, error: 'That profile file is not in the list any more.' };
@@ -1252,7 +1255,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true as const, sha256: pfHash(f.text), info: pfInfo(f) };
       },
       createProfileFile: async (app, place, name, template, text) => {
-        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) return { ok: false as const, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) || name.includes('..') || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(name)) return { ok: false as const, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
         const folder = place === 'user' ? undefined : pfFolders().find((x) => x.id === place)?.path;
         if (place !== 'user' && !folder) return { ok: false as const, error: 'That folder is not in the office any more: choose where to save it again.' };
         const dir = place === 'user' ? (app === 'copilot' ? '~/.copilot/agents' : '~/.claude/agents') : folder + (app === 'copilot' ? '/.github/agents' : '/.claude/agents');

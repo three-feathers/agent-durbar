@@ -12,6 +12,9 @@
   const MODE_KEY='durbar.profileEditor.mode';
   const APP_LABEL={copilot:'GitHub Copilot',claude:'Claude Code'};
   const NAME_RE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+  /* Windows device names (FR-011): CON.md is a device there; refused in any case, with or without an extension. A copy of main's rule (src/main/profilefiles.ts isProfileName; test:profilefiles keeps them equal). */
+  const RESERVED_RE=/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+  const validName=n=>typeof n==='string'&&NAME_RE.test(n)&&!n.includes('..')&&!RESERVED_RE.test(n);
 
   /* ---------------- pure parts (unit tested: scripts/test-profileeditor.ts) ---------------- */
   /** Strips a ` # comment` that is outside quotes. */
@@ -108,9 +111,12 @@
   function baseName(p){const s=String(p||'').replace(/[\\/]+$/,'');const i=Math.max(s.lastIndexOf('/'),s.lastIndexOf('\\'));return i>=0?s.slice(i+1):s;}
   /** The file a new profile gets (FR-013), for the form's hint; main decides the real one. */
   const newFileName=(app,name)=>app==='copilot'?name+'.agent.md':name+'.md';
-  const newDirHint=(app,scope)=>scope==='user'?(app==='copilot'?'~/.copilot/agents':'~/.claude/agents'):(app==='copilot'?'.github/agents':'.claude/agents');
+  /** The folder for the hint: for the user folder, main's real one (`userDirs` from profiles:listFiles, so CLAUDE_CONFIG_DIR shows); the ~ form only when main sent none. */
+  const newDirHint=(app,scope,userDirs)=>scope==='user'?((userDirs&&typeof userDirs[app]==='string'&&userDirs[app])||(app==='copilot'?'~/.copilot/agents':'~/.claude/agents')):(app==='copilot'?'.github/agents':'.claude/agents');
+  /** dir + file with the folder's own separator (a Windows user folder uses backslashes). */
+  const joinHint=(dir,file)=>{const d=String(dir);const sep=d.includes('\\')&&!d.includes('/')?'\\':'/';return d.replace(/[\\/]+$/,'')+sep+file;};
 
-  const pure={parseFrontmatter,throttle,loadMode,saveMode,MODES,MODE_KEY,NAME_RE,newFileName,newDirHint,placeText,baseName};
+  const pure={parseFrontmatter,throttle,loadMode,saveMode,MODES,MODE_KEY,NAME_RE,RESERVED_RE,validName,newFileName,newDirHint,joinHint,placeText,baseName};
   if(!win)return pure;
 
   /* ---------------- the editor (page only) ---------------- */
@@ -297,7 +303,7 @@
     const folders=(l&&l.folders)||[];
     const opener=(opts&&opts.returnFocus)||doc.activeElement;
     const ov=doc.createElement('div');ov.id='peNewOv';ov.className='dlg-ov';
-    ov.innerHTML=`<div class="dlg pe-new" role="dialog" aria-modal="true" aria-labelledby="peNT"><h3 id="peNT">New Agent Success Profile</h3>
+    ov.innerHTML=`<div class="dlg m pe-new" role="dialog" aria-modal="true" aria-labelledby="peNT"><h3 id="peNT">New Agent Success Profile</h3>
       <p class="dsub">A Markdown file with a short front matter that the agent app loads as a custom agent.</p>
       <fieldset class="pe-tpl" id="peNTpl"><legend>Template</legend></fieldset>
       <label>Agent app<select id="peNApp"><option value="copilot">GitHub Copilot</option><option value="claude">Claude Code</option></select></label>
@@ -314,13 +320,13 @@
     const u=doc.createElement('option');u.value='user';u.textContent='Your user folder (all folders)';sel.appendChild(u);
     if(opts&&opts.app&&APP_LABEL[opts.app])ov.querySelector('#peNApp').value=opts.app;
     doc.body.appendChild(ov);
-    const hint=()=>{const app=$('peNApp').value,pl=$('peNPlace').value,n=$('peNName').value.trim()||'<name>';setText($('peNHint'),'File: '+newDirHint(app,pl==='user'?'user':'folder')+'/'+newFileName(app,n)+(pl==='user'?'':' in '+baseName((folders.find(f=>f&&f.id===pl)||{}).path||'')));};
+    const hint=()=>{const app=$('peNApp').value,pl=$('peNPlace').value,n=$('peNName').value.trim()||'<name>';setText($('peNHint'),'File: '+joinHint(newDirHint(app,pl==='user'?'user':'folder',l&&l.userDirs),newFileName(app,n))+(pl==='user'?'':' in '+baseName((folders.find(f=>f&&f.id===pl)||{}).path||'')));};
     hint();ov.addEventListener('input',hint);ov.addEventListener('change',hint);
     return new Promise(resolve=>{
       const done=v=>{ov.remove();if(opener&&opener.focus&&doc.contains(opener)&&!v)opener.focus();resolve(v);};
       const go=async()=>{
         const name=$('peNName').value.trim(),er=$('peNErr');
-        if(!NAME_RE.test(name)){er.hidden=false;setText(er,'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');$('peNName').focus();return;}
+        if(!validName(name)){er.hidden=false;setText(er,NAME_RE.test(name)&&RESERVED_RE.test(name)?'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9): choose another.':'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');$('peNName').focus();return;}
         const pl=$('peNPlace').value;
         const tp=(ov.querySelector('input[name="peNTpl"]:checked')||{}).value||DEF;
         const r=await X.bridge.createProfileFile($('peNApp').value,pl,name,tp).catch(e=>({ok:false,error:String(e&&e.message||e)}));
