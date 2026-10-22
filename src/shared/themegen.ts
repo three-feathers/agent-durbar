@@ -82,7 +82,7 @@ export function buildThemePrompt(description: string, clean: Record<string, stri
     `  --font (body text), --ui-display (titles, brand, room plates), --font-mono (paths and code): a font stack of 1-4 names, ONLY from: ${FONT_ALLOW.join(', ')}. Installed system fonts only; never a URL.`,
     '  --t1-weight: the title weight, one of 500, 550, 600, 650, 700, 750, 800.',
     '  --r-sm, --r-md, --r-lg, --r-xl (buttons, chips, panels, dialogs) and --radius (desk cards): corner radius "0" to "24px".',
-    '  --shadow-card (desk cards; default "none") and --shadow-pop (menus and dialogs): "none" or one or two layers like "0 2px 8px rgba(0,0,0,.12)" (offsets up to 40px, blur up to 64px).',
+    '  --shadow-card (desk cards; default "none") and --shadow-pop (menus and popovers): "none" or one or two layers like "0 2px 8px rgba(0,0,0,.12)" (offsets up to 40px, blur up to 64px).',
     'Sizes, spacing and borders are fixed by the app and cannot be set.',
     '- "figures": {"shirts": [up to 8 hex colours], "hairs": [up to 8 hex colours]}: the clothes and hair colours of the people (their skin tones stay as they are).',
     '- "words": short plain-text names (at most 40 characters) that fit the look, for:',
