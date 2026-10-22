@@ -55,12 +55,12 @@
         </div>
         <button class="more-it" role="menuitem" tabindex="-1" id="kbdHelpBtn" type="button" data-keys-text title="Every keyboard shortcut (?)"><span class="mt">Keyboard shortcuts<small>Ctrl+K palette, I inbox, N next (?)</small></span></button>
         <!-- spec 064 FR-001: one message to several running sessions (a dialog; nothing is sent until you pick sessions) -->
-        <button class="more-it" role="menuitem" tabindex="-1" id="sendSeveralBtn" type="button" title="Send one message to the running sessions you pick" hidden><span class="mt">Send to several sessions…<small>One message, the sessions you pick</small></span></button>
+        <button class="more-it" role="menuitem" tabindex="-1" id="sendSeveralBtn" type="button" title="Send one message to the running sessions you pick" hidden><span class="mt">Send to several sessions…<small>One message, several sessions</small></span></button>
         <div class="more-sep" role="separator"></div>
         <!-- spec 052 FR-090: end of day; asks first (red confirmation) -->
-        <button class="more-it danger" role="menuitem" tabindex="-1" id="endAllBtn" type="button" title="End every running session and free them. The chats stay; sending a message resumes one." hidden><span class="mt">End all sessions<small>The chats stay; a message resumes one</small></span></button>
+        <button class="more-it danger" role="menuitem" tabindex="-1" id="endAllBtn" type="button" title="End every running session and free them. The chats stay; sending a message resumes one." hidden><span class="mt">End all sessions<small>Chats stay; a message resumes one</small></span></button>
         <div class="more-sep" role="separator" id="endAllSep" hidden></div>
-        <label class="more-it tgl"><input type="checkbox" id="demoToggle"> <span class="mt"><span id="demoWord">Turn on demo</span><small>Sample agents to look around; nothing runs</small></span></label>
+        <label class="more-it tgl"><input type="checkbox" id="demoToggle"> <span class="mt"><span id="demoWord">Turn on demo</span><small>Sample agents; no real sessions</small></span></label>
       </div>
     </div>
   </div>
@@ -78,7 +78,7 @@
     <label class="dp-l" for="permMode">Permission mode</label>
     <select id="permMode" title="Default permission mode for new sessions. Each agent shows its own mode in its chat."><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow all</option></select>
     <label class="dp-l" for="modelSel">Model</label>
-    <select id="modelSel" title="Default model for new sessions (what your account offers). Each agent shows its own model in its chat."><option value="auto">Model: Auto</option></select>
+    <select id="modelSel" title="Default model for new sessions, from what your account offers. Each chat shows its own."><option value="auto">Model: Auto</option></select>
     <label class="dp-l" for="effortSel">Reasoning effort</label>
     <select id="effortSel" title="Reasoning effort (only for models that support it)" hidden></select>
   </div>

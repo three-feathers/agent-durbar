@@ -157,6 +157,7 @@ export function contrast(a: string, b: string): number {
 export const CONTRAST_PAIRS: Array<[string, string, number]> = [
   ['--ink', '--bg', 4.5], ['--ink', '--surface', 4.5], ['--ink', '--raised', 4.5], ['--ink', '--card', 4.5], ['--ink', '--card-waiting', 4.5], ['--ink', '--card-error', 4.5], ['--ink-2', '--soft', 4.5], ['--ink-2', '--note', 4.5], ['--ink-2', '--surface', 4.5], ['--muted', '--surface', 4.5] /* spec 052 FR-052: muted text is read, not decoration (was 3:1) */, ['--room-path', '--bg', 3],
   ...['working', 'thinking', 'waiting', 'idle', 'error', 'done'].map((s): [string, string, number] => [`--pc-${s}`, `--pb-${s}`, 4.5]),
+  ['--surface', '--sage-ink', 4.5], ['--surface', '--red-ink', 4.5], ['--surface', '--amber-ink', 4.5] /* spec 052 FR-169: the text of a primary, danger or warn button is --surface on these three */,
   ['--drop-ink', '--drop-bg', 4.5], ['--brand-mark', '--brand-bg', 3], ['--idle-stub-ink', '--idle-stub', 3],
 ];
 
