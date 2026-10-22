@@ -25,14 +25,20 @@ module.exports = async (ctx) => {
       const o = await js(`(()=>{const t=document.querySelector('#stage .place[data-place="coffee"]');const tiles=[...document.querySelectorAll('#stage .lobby .place')];
         const r=x=>x.getBoundingClientRect();const L=r(document.querySelector('#stage .lobby'));
         return {label:t&&t.getAttribute('aria-label'),name:t&&(t.querySelector('.pn')||{}).textContent,named:!!(t&&t.querySelector('.pn')),tiles:tiles.length,inLobby:tiles.every(x=>r(x).right<=L.right+0.5&&r(x).left>=L.left-0.5),
-          font:Math.min(...tiles.filter(x=>x.querySelector('.pn')).map(x=>parseFloat(getComputedStyle(x.querySelector('.pn')).fontSize))),slots:tiles.map(x=>x.querySelectorAll('.slot').length),
+          font:Math.min(...tiles.filter(x=>x.querySelector('.pn')).map(x=>parseFloat(getComputedStyle(x.querySelector('.pn')).fontSize))),
+          wide:window.DurbarPlaces.coffeeTile(L.width,tiles.length-1,!!document.querySelector('#stage .place-add')).named,caps:window.DurbarPlaces.tileChips(L.width,tiles.length-1,!!document.querySelector('#stage .place-add'),r(t).width),
+          cfFigures:t?t.querySelectorAll('.pv:not(.pv-more)').length:0,
           walkers:document.querySelectorAll('.walker[data-coffee="1"]').length,
           tomas:(${deskOf('Tomas')}).innerText, err:(${deskOf('Tomas')}).className.includes('is-error'),
           sirens:document.querySelectorAll('#stage .siren-light, #stage .amb').length,
           scrollY:document.getElementById('floor').scrollHeight>document.getElementById('floor').clientHeight+1}})()`);
-      if (w === 1440) assert.strictEqual(o.name, 'Coffee corner'); else assert.ok(!o.named, `${w}: icon only where the lobby is narrow`);
+      /* spec 001 FR-034 (2026-10-22): with the office rail the lobby is 1000-1200 px wide; the name shows where it is at least 1100 px */
+      if (o.wide) assert.strictEqual(o.name, 'Coffee corner'); else assert.ok(!o.named, `${w} ${n}: icon only where the lobby is narrow`); /* the rule: places.js coffeeTile */
+      if (w === 1440) assert.ok(o.wide, `${w} ${n}: the corner is named at 1440x900`);
       assert.ok(/^Coffee corner: /.test(o.label), o.label);
-      assert.ok(o.slots.every((k) => k >= 2), `${w} ${n}: every tile keeps at least two slots: ${o.slots}`);
+      /* spec 001 FR-036: visitor entries instead of slots; the other places keep room for two visitors (initials), the corner shows a figure */
+      assert.ok(o.caps.initials >= 2, `${w} ${n}: every other tile keeps room for two visitors: ${JSON.stringify(o.caps)}`);
+      assert.ok(o.cfFigures >= 1, `${w} ${n}: the coffee corner shows at least one visitor, not only "+N"`);
       assert.strictEqual(o.tiles, 6, `${w} ${n}: five places and the coffee corner`);
       assert.ok(o.inLobby, `${w} ${n}: the tiles fit the lobby`);
       assert.ok(o.font >= 10.5, `${w} ${n}: legible tile names (${o.font}px)`);

@@ -189,10 +189,16 @@
     return {shown:cap-1,more:count-(cap-1)};
   }
 
-  /* Spec 068 FR-003/FR-013: the coffee corner is a narrow tile of its own width (two slots): with its name where the lobby is wide, icon only
-     (the name in its tooltip and label) where it is not, so the other places keep their room. */
-  const COFFEE_SLOTS=2, COFFEE_NAMED_MIN=1300;
-  const coffeeTile=aw=>{const named=Number(aw)>=COFFEE_NAMED_MIN;return {named,width:named?200:96,slots:COFFEE_SLOTS};};
+  /* Spec 068 FR-003/FR-013: the coffee corner is a narrow tile of its own width: with its name where the lobby is wide, icon only (the name in
+     its tooltip and label) where it is not, so the other places keep their room. Since the office rail (spec 001 FR-034, 2026-10-22) the lobby
+     is 1000-1200 px wide, so "wide" starts at 1100 px; the icon-only tile is 118 px, room for two initials entries (a figure and "+N"), and
+     `chips` is its own visitor capacity (chipsIn below: 200 px = one named entry or three initials). With `tiles` (the other places) and
+     `addButton`, the name also needs the other tiles to keep room for two visitors (tileChips initials >= 2), as with eight places. */
+  const COFFEE_NAMED_MIN=1100, COFFEE_W=200, COFFEE_W_ICON=118;
+  const coffeeTile=(aw,tiles,addButton)=>{
+    const named=Number(aw)>=COFFEE_NAMED_MIN&&(tiles===undefined||tileChips(aw,tiles,addButton,COFFEE_W).initials>=2), width=named?COFFEE_W:COFFEE_W_ICON;
+    return {named,width,chips:chipsIn(width)};
+  };
   /* Slots that fit in one lobby tile (spec 024 FR-022). `aw` = width of the lobby row, `tiles` = how many place tiles, `addButton` = whether the
      26px Add button shares the row. Tiles are equal (flex:1 1 0) with an 8px gap; a tile needs about 150px for padding, icon and name before its
      first slot, and a slot takes 25px. Clamped to 1..8. With 5 tiles and no button this is the old `floor((aw/5-150)/25)` less the gaps. */

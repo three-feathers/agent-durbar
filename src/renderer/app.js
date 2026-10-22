@@ -218,8 +218,8 @@ function visitDoing(a,v){
 const visitorWords=(a,v)=>{if(v&&v.place===window.DurbarPlaces.COFFEE)return coffeeWho(a);const r=roomOf(a);return a.name+(r?' ('+r.name+')':'')+(v?': '+visitDoing(a,v):'');};
 function lobbyHTML(aw){
   if(!lobbyOn())return '';
-  const all=lobbyPlaces(), add=canAddPlace(), CT=window.DurbarPlaces.coffeeTile(aw), CF=window.DurbarPlaces.COFFEE;
-  const caps=window.DurbarPlaces.tileChips(aw,all.length-1,add,CT.width), capsCF=window.DurbarPlaces.chipsIn(CT.width); /* spec 068: the coffee corner is narrower, with its own capacity */
+  const all=lobbyPlaces(), add=canAddPlace(), CT=window.DurbarPlaces.coffeeTile(aw,all.length-1,add), CF=window.DurbarPlaces.COFFEE;
+  const caps=window.DurbarPlaces.tileChips(aw,all.length-1,add,CT.width), capsCF=CT.chips; /* spec 068: the coffee corner is narrower, with its own capacity */
   return `<section class="lobby" data-key="lobby" aria-label="${esc(wordOf('lobby-label'))}">${all.map(p=>{
     const cf=p.id===CF;
     const ids=placeVisitors(p.id), {mode,slots:cap}=window.DurbarPlaces.chipsFor(cf?capsCF:caps,ids.length), sp=window.DurbarPlaces.layoutSpots(ids.length,cap), who=ids.map(id=>{const a=byId(id);return visitorWords(a,VISITS.at(id));});

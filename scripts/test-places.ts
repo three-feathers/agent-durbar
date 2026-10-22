@@ -28,7 +28,9 @@ const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js
   allPlaces: (custom?: unknown) => { id: string; name: string; icon?: string }[];
   isChoice: (v: unknown, customIds?: unknown) => boolean;
   tileSlots: (aw: unknown, tiles: unknown, addButton: unknown) => number;
-  tileChips: (aw: unknown, tiles: unknown, addButton: unknown) => { named: number; initials: number };
+  tileChips: (aw: unknown, tiles: unknown, addButton: unknown, reserve?: unknown) => { named: number; initials: number };
+  chipsIn: (tileW: unknown) => { named: number; initials: number };
+  coffeeTile: (aw: unknown, tiles?: unknown, addButton?: unknown) => { named: boolean; width: number; chips: { named: number; initials: number } };
   chipsFor: (cap: { named: number; initials: number }, visitors: unknown) => { mode: 'named' | 'initials'; slots: number };
   initialsOf: (name: unknown) => string;
   classify: (e: unknown, map?: unknown, customIds?: unknown) => string;
@@ -547,6 +549,16 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   assert.deepStrictEqual(f(2, 4, 5), { mode: 'named', slots: 2 }, 'two named entries fit: names and +N');
   assert.deepStrictEqual(f(0, 1, 1), { mode: 'initials', slots: 1 }, 'no named entry fits');
   assert.deepStrictEqual(f(2, 4, 0), { mode: 'named', slots: 2 }, 'nobody there');
+  // spec 068 + 001 FR-036 (2026-10-22): the coffee corner's own width and capacity, and the width it takes from the other tiles
+  assert.deepStrictEqual(P.chipsIn(200), { named: 1, initials: 3 }, 'the named corner: one named entry or three initials');
+  assert.deepStrictEqual(P.chipsIn(118), { named: 1, initials: 2 }, 'the icon-only corner: one named entry, or two initials (a figure and +N)');
+  assert.deepStrictEqual(P.tileChips(1160, 5, true, 0), P.tileChips(1160, 5, true), 'no reserve: as before');
+  assert.deepStrictEqual(P.tileChips(1160, 5, true, 200), { named: 1, initials: 3 }, '1440x900 with the rail and the named corner');
+  for (const aw of [900, 1160, 1408]) assert.ok(P.tileChips(aw, 5, true, 200).initials <= P.tileChips(aw, 5, true, 118).initials, 'a wider corner never gives the others more room');
+  assert.deepStrictEqual([1160, 1196, 1000, 1099].map((aw) => P.coffeeTile(aw, 5, true).named), [true, true, false, false], 'named from 1100 px of lobby');
+  assert.strictEqual(P.coffeeTile(1160, 8, false).named, false, 'eight places at 1440x900: icon only, so the others keep two entries');
+  assert.ok(P.tileChips(1160, 8, false, P.coffeeTile(1160, 8, false).width).initials >= 2, 'eight places keep room for two visitors');
+  assert.deepStrictEqual(P.coffeeTile(1300), { named: true, width: 200, chips: { named: 1, initials: 3 } }, 'without the other tiles: by width only');
   assert.deepStrictEqual(['Omar', 'Ada Lovelace', '  ', '', null, 'émile zola', 'X'].map((n) => P.initialsOf(n)), ['Om', 'AL', '', '', '', 'ÉZ', 'X']);
 }
 

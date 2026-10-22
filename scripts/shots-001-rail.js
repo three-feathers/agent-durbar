@@ -4,7 +4,7 @@
  * simulator's test hook. Checks, at 1440x900 and 1280x800, 15 agents and a sparse office (3), Clean Office and Retro (the one theme with
  * a dark page): the rail lists exactly the inbox's agents in its order and the schedules soonest first; a row opens the chat or the
  * folder's Schedules; the strip opens the inbox and Settings; place entries name their visitors with the masked activity; +N lists
- * everyone; eight places switch to initials; the office page rules (overlap, clipping, no scroll, text >= 10.5px) hold. Linux:
+ * everyone; eight places switch to initials; the coffee corner (spec 068, `simbreak=8`) uses the same entries; the office page rules (overlap, clipping, no scroll, text >= 10.5px) hold. Linux:
  *
  *   npm run build
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 \
@@ -158,6 +158,35 @@ module.exports = async (ctx) => {
     const info = await page(`${w} eight places`, 8);
     console.log(`[001-rail] ${w}x${h} eight places: d=${info.d} initials tiles=${ini.length}`);
     await H.shot(path.join(OUT, `001-rail-places8-${w}x${h}.png`), { prep: 'calm', blur: true });
+  }
+  /* ---- the coffee corner (spec 068) on the rail's place tiles: the same entries, count, label and +N (2026-10-22, night stack) ---- */
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    await load(15, w, h, { simbreak: '8' });
+    assert.ok(await H.until(`document.querySelectorAll('#stage .place[data-place="coffee"] .pv').length>=1&&(document.querySelector('#stage .place[data-place="coffee"] .pc')||{}).textContent==='3'`, 8000), `${w}: three agents on a break in the coffee corner`);
+    await settleWalk(); await ctx.sleep(300);
+    const ent = await entries(), nm = await names();
+    assert.strictEqual(ent[ent.length - 1].id, 'coffee', `${w}: the coffee corner is the last tile`);
+    const cf = ent[ent.length - 1];
+    const cfN = cf.pv.length + (cf.more ? Number(cf.more.replace('+', '')) : 0);
+    assert.ok(cf.pv.length >= 1 && cfN === 3 && Number(cf.count) === 3, `${w}: the corner shows a visitor and counts all three: ${JSON.stringify(cf)}`);
+    assert.ok(/^Coffee corner: /.test(cf.label) && /Omar \(until you raise the limit\)/.test(cf.label) && /Rosa \(until the limit resets\)/.test(cf.label), `${w}: the corner's label says who and until when: ${cf.label}`);
+    for (const v of cf.pv) {
+      assert.ok(v.font >= 10.5, `${w}: corner entry text ${v.font}px`);
+      assert.ok(v.title.startsWith(nm[v.id]) && /\(until /.test(v.title), `${w}: the corner entry's tooltip names ${nm[v.id]} and until when: ${v.title}`);
+      if (cf.mode === 'named') { assert.strictEqual(v.n, nm[v.id]); assert.ok(/^until /.test(v.a), `${w}: the entry says until when, not a tool: ${v.a}`); }
+      else assert.ok(v.n.length > 0 && v.n.length <= 2, `${w}: initials ${v.n}`);
+    }
+    if (cf.more) {
+      await js(`document.querySelector('#stage .place[data-place="coffee"] .pv-more').click()`); await H.until(`document.getElementById('modeMenu')`);
+      const items = await js(`[...document.querySelectorAll('#modeMenu [data-pvopen]')].map(b=>b.querySelector('b').textContent)`);
+      assert.strictEqual(items.length, 3, `${w}: +N at the corner lists everyone on a break`);
+      await js(`document.querySelector('#modeMenu [data-pvopen]').click()`); await H.until(`document.body.classList.contains('panel-open')`);
+      assert.strictEqual(await H.text('#panelTitle', 'textContent'), items[0], `${w}: choosing one opens its chat`);
+      await H.click('#backBtn'); await H.office(15);
+    }
+    const info = await page(`${w} coffee corner`);
+    console.log(`[001-rail] ${w}x${h} coffee corner: mode=${cf.mode} shown=${cf.pv.length} more=${cf.more || 0} d=${info.d}`);
+    await H.shot(path.join(OUT, `001-rail-coffee-${w}x${h}.png`), { prep: 'calm', blur: true });
   }
   console.log('[001-rail] all checks passed');
 };
