@@ -43,6 +43,7 @@ const DRIVERS = [
   { name: 'check-dialog-focus' },
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },
+  { name: 'check-sched-edit' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
   { name: 'check-ui-text' }, // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast
