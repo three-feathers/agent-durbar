@@ -56,3 +56,12 @@
 
 - [x] T039 `src/renderer/probe.js` (`svgHollow`, `styleSplit`), `probeSet` in `chooseLayout`, `@property` for `--w`/`--min`/`--cols` in `styles.css`; `scripts/test-probe.ts` (`npm run test:probe`) [FR-033]
 - [x] T040 Before/after timing and a layout comparison over 54 cases on the simulator; `check:office`, `check:geometry`, `shots-033`; spec 001 and 033 Verification, `specs/README.md`, CHANGELOG, `docs/agent-notes.md` [SC-004]
+
+## Changes 2026-10-22 (office rail, who is at a place; owner)
+
+- [x] T041 `places.js` `tileChips` + `test:places` cases [FR-036]
+- [x] T042 `app.js`/`index.html`/`styles.css`: the rail (Needs you, Scheduled, legend), strip mode, `renderRail` [FR-034]
+- [x] T043 `renderOffice`: rail then strip by the fit rule, width of `.workspace` in the layout key [FR-035]
+- [x] T044 Lobby entries (name, activity, initials, count, "nobody", +N menu) and the 58 px lobby; `check:office` lobby rules [FR-036]
+- [x] T045 Room header words and their fitting [FR-037]
+- [x] T046 `sim.ts` `simsched=1`; `scripts/shots-001-rail.js` driver and screenshots (1440x900, 1280x800; 15 and sparse; light and dark); `check:office`, `check:geometry`; README office section and hero if it changes, CHANGELOG, `specs/README.md` [FR-038]

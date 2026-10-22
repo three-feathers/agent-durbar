@@ -301,9 +301,14 @@ export class FakeCodexServer {
         this.enqueue(child, { method: 'thread/deleted', params: { threadId: tid } });
         return;
       }
-      case 'mcpServerStatus/list':
-      {
-        const answer = (): void => this.reply(child, id, { data: this.mcpList ?? [{ name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: {}, resources: [], resourceTemplates: [] }], nextCursor: null });
+      case 'mcpServerStatus/list': {
+        // spec 069 FR-031: one server's tools when `serverName` is given (a map by tool name, as the generated schema says)
+        const all: Array<Record<string, unknown>> = (this.mcpList as Array<Record<string, unknown>> | undefined) ?? [
+          { name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: { echo: { name: 'echo', description: 'Echo the text back\nSecond line', inputSchema: {} }, ping: { name: 'ping', inputSchema: {} } }, resources: [], resourceTemplates: [] },
+          { name: 'broken', authStatus: 'unsupported', runtimeStatus: 'failed', tools: {}, toolsError: 'tools/list failed: spawn broken-mcp ENOENT', resources: [], resourceTemplates: [] },
+        ];
+        const want = isObj(params) && typeof params.serverName === 'string' ? params.serverName : undefined;
+        const answer = (): void => this.reply(child, id, { data: want ? all.filter((x) => x.name === want) : this.mcpList ?? all.slice(0, 1), nextCursor: null });
         if (this.holdMcpList) return void this.heldMcpList.push(answer);
         return answer();
       }

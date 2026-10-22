@@ -371,7 +371,7 @@ async function main(): Promise<void> {
       tracker.noteSend('ag-1');
       tracker.setPaused('ag-0', true);
       const a = (await call('durbar_list_agents')).data.agents;
-      assert.deepStrictEqual([a[2].state, a[2].subLabel], ['Waiting', 'Limit reached']);
+      assert.deepStrictEqual([a[2].state, a[2].subLabel], ['Waiting', 'Coffee break']);
       assert.deepStrictEqual([a[1].state, a[1].subLabel], ['Thinking', null]);
       assert.deepStrictEqual([a[0].state, a[0].subLabel], ['Paused', null]);
     }
@@ -460,6 +460,25 @@ async function main(): Promise<void> {
       // round 8: the same eight shapes as a shell-string ARG (`['-c', command]`), in extras and CLI args
       const plantedR7A = r7Cmd('A').map((c2, i) => ({ ...planted2, name: 'plantedr7a-' + i, command: 'srv', args: ['-c', c2], env: [], headers: [] } as any));
       const cliR7A = r7Cmd('B').map((c2, i) => ({ name: 'clir7a-' + i, origin: 'copilot-config', transport: 'stdio', command: 'sh', args: ['-c', c2], enabled: true }));
+      // T067 (#447): escaped quotes in `sh -c`, `cmd /c` and PowerShell payloads, and a leading unmatched quote, as a `command` and as a
+      // shell-string arg (`['-c', command]`), in extras and CLI entries; plus the naive-split arg form of the issue's row 1
+      const escSecs: string[] = [];
+      const escCmd = (tag: string): string[] => {
+        const sec = (k: string): string => { const v = `E7${tag}${k}-` + 'z9x8c7v6b5n4'; escSecs.push(v); return v; };
+        return [`sh -c "srv -H \\"X-Api-Key: ${sec('a')}\\""`, `powershell -Command "srv -H \`"X-Api-Key: ${sec('b')}\`""`,
+          `powershell -Command "srv {\`"api_key\`":\`"${sec('c')}\`"}"`, `powershell -Command "srv {\`"name\`":\`"api_key\`",\`"value\`":\`"${sec('d')}\`"}"`,
+          `powershell -Command "srv {\\\`"token\\\`":\\\`"${sec('e')}\\\`"}"`, `sh -c "srv --env=\\"API_TOKEN=${sec('f')}\\""`,
+          `powershell -Command "srv --env=\`"API_TOKEN=${sec('g')}\`""`, `sh -c "srv --opt=\\"token=${sec('h')}\\""`, `powershell -Command "srv --opt=\`"token=${sec('i')}\`""`,
+          `cmd /c "srv -H \\"X-Api-Key: ${sec('j')}\\""`, `cmd /c srv -H ^"X-Api-Key: ${sec('k')}^"`, `srv "--token=${sec('l')}`];
+      };
+      const plantedE = escCmd('E').map((command, i) => ({ ...planted2, name: 'plantede-' + i, command, args: [], env: [], headers: [] } as any));
+      const cliE = escCmd('C').map((command, i) => ({ name: 'clie-' + i, origin: 'copilot-config', transport: 'stdio', command, args: [], enabled: true }));
+      const plantedEA = escCmd('A').map((c2, i) => ({ ...planted2, name: 'plantedea-' + i, command: 'srv', args: ['-c', c2], env: [], headers: [] } as any));
+      const cliEA = escCmd('B').map((c2, i) => ({ name: 'cliea-' + i, origin: 'copilot-config', transport: 'stdio', command: 'bash', args: ['-c', c2], enabled: true }));
+      const row1 = ['E7R1E-q1w2e3r4t5y6', 'E7R1C-q1w2e3r4t5y6'];
+      escSecs.push(...row1);
+      const plantedR1 = { ...planted2, name: 'plantedr1', command: 'srv', args: ['-H', '"X-Api-Key:', row1[0] + '"'], env: [], headers: [] } as any;
+      const cliR1 = { name: 'clir1', origin: 'copilot-config', transport: 'stdio', command: 'srv', args: ['-H', '"X-Api-Key:', row1[1] + '"'], enabled: true };
       const forms = ['nospace', 'space', 'quoted'] as const;
       const plantedF = forms.map((f) => ({ ...planted2, name: 'plantedf-' + f, command: hdrFlagCmd(f, 'F' + f[0].toUpperCase()), args: [], env: [], headers: [] } as any));
       const cliF = forms.map((f) => ({ name: 'clif-' + f, origin: 'copilot-config', transport: 'stdio', command: hdrFlagCmd(f, 'G' + f[0].toUpperCase()), args: [], enabled: true }));
@@ -471,8 +490,8 @@ async function main(): Promise<void> {
       ];
       const cliEntry = { name: 'cli2', origin: 'copilot-config', transport: 'stdio', command: 'sh', args: ['-c', `npx srv --api-key=${S.shellTok} --config ${S.pathDir}/c.json`], enabled: true };
       const { call } = mk(15, 40, {
-        mcpExtras: (k: string) => (k === path.join(os.tmpdir(), 'durbar-t016-f0') ? [planted2, planted3, planted4, ...plantedF, plantedQ, ...plantedR7, ...plantedR7A] : []),
-        mcpCli: () => ({ cli: [cliEntry as any, ...(cliSchemes as any[]), ...cliF, cliQ as any, ...(cliR7 as any[]), ...(cliR7A as any[])], file: { label: 'x', found: true, skipped: 0 }, secretsPersist: false }),
+        mcpExtras: (k: string) => (k === path.join(os.tmpdir(), 'durbar-t016-f0') ? [planted2, planted3, planted4, ...plantedF, plantedQ, ...plantedR7, ...plantedR7A, ...plantedE, ...plantedEA, plantedR1] : []),
+        mcpCli: () => ({ cli: [cliEntry as any, ...(cliSchemes as any[]), ...cliF, cliQ as any, ...(cliR7 as any[]), ...(cliR7A as any[]), ...(cliE as any[]), ...(cliEA as any[]), cliR1 as any], file: { label: 'x', found: true, skipped: 0 }, secretsPersist: false }),
       });
       const all = (await Promise.all(READ_TOOLS.map((t) => call(t.name, t.name === 'durbar_request_status' ? { requestId: 'x' } : {})))).map((r) => r.raw).join('\n');
       for (const k of ['shellTok', 'exportTok', 'hdrAfter', 'cookieSemi', 'spaceColon', 'quotedHdr', 'commaPw', 'nameValue', 'wholeQuoted', 'shellUrl'] as const) assert.ok(!all.includes(S[k]), `12f: T064 ${k} never appears in any result`);
@@ -483,6 +502,8 @@ async function main(): Promise<void> {
       for (const sec of quotedSecs) assert.ok(!all.includes(sec), `12f: quoted header value ${sec.slice(0, 5)} never appears in any result`);
       assert.strictEqual(schemeSecs.length, 24 + 36, '12f: 60 planted scheme secrets');
       for (const sec of schemeSecs) assert.ok(!all.includes(sec), `12f: T066 command scheme secret ${sec.slice(0, 12)} never appears in any result`);
+      assert.strictEqual(escSecs.length, 4 * 12 + 2, '12f: 50 planted T067 escaped-quote secrets');
+      for (const sec of escSecs) assert.ok(!all.includes(sec), `12f: T067 escaped-quote secret ${sec.slice(0, 6)} never appears in any result`);
       assert.ok(!all.includes('.config'), '12f: no .config directory in the T064 shapes');
       assert.ok(all.includes('…/x.json') && all.includes('…/c.json'), '12f: the shell-string paths are reduced');
     }

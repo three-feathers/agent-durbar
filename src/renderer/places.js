@@ -13,6 +13,8 @@
     {id:'other',name:'Other tools'},
   ];
   const IDS=PLACES.map(p=>p.id);
+  /* Spec 068 FR-003: the coffee corner. A lobby tile of its own, after the other places; never a mapping choice (not in PLACES or IDS). */
+  const COFFEE='coffee';
   /* Custom places (spec 024 FR-021) come from the settings: [{id,name,icon}]. Entries that are not objects with string id and name are skipped. */
   const customList=c=>(Array.isArray(c)?c:[]).filter(p=>p&&typeof p==='object'&&typeof p.id==='string'&&p.id&&typeof p.name==='string');
   /* The five built-ins in their order, then the custom places in creation order. */
@@ -118,6 +120,7 @@
       /* returns true when what is on screen changed */
       onTool(agentId,e,placeMap,customIds){
         if(!agentId||!e)return false;
+        if(v.has(agentId)&&v.get(agentId).pinned)return false; /* spec 068: an agent on a coffee break stays in the coffee corner */
         if(e.phase==='start'){
           const place=classify(e,placeMap,customIds);
           if(place==='desk')return false;
@@ -142,16 +145,28 @@
       onStatus(agentId,status){
         if(!v.has(agentId))return false;
         if(status!=='idle'&&status!=='error'&&status!=='stopped')return false;
+        if(v.get(agentId).pinned)return false; /* spec 068: the break ends through unpin, not through the turn's end */
         const r=v.get(agentId); v.delete(agentId); return r.atSince!==null;
       },
       /* a place was deleted: forget every visit to it, shown or still pending; true if one was on screen */
       dropPlace(placeId){let changed=false;v.forEach((r,id)=>{if(r.place===placeId){if(r.atSince!==null)changed=true;v.delete(id);}});return changed;},
+      /* Spec 068: the agent stands at `placeId` (the coffee corner) until unpin: no debounce, no dwell; tools and statuses do not move it.
+         True when what is on screen changed. */
+      pin(agentId,placeId,label){
+        if(!agentId)return false;
+        const cur=v.get(agentId);
+        if(cur&&cur.pinned&&cur.place===placeId)return false;
+        v.set(agentId,{place:placeId,label:String(label||''),callId:'',startedAt:now(),atSince:now(),ended:false,pinned:true});
+        return true;
+      },
+      unpin(agentId){const r=v.get(agentId);if(!r||!r.pinned)return false;v.delete(agentId);return true;},
+      pinned(agentId){const r=v.get(agentId);return !!r&&!!r.pinned;},
       leave(agentId){const r=v.get(agentId); v.delete(agentId); return !!r&&r.atSince!==null;},
       tick(){
         let changed=false;
         v.forEach((r,id)=>{
           if(settle(r))changed=true;
-          if(r.ended&&r.atSince!==null&&now()-r.atSince>=dwellMs){v.delete(id);changed=true;}
+          if(!r.pinned&&r.ended&&r.atSince!==null&&now()-r.atSince>=dwellMs){v.delete(id);changed=true;}
         });
         return changed;
       },
@@ -174,14 +189,54 @@
     return {shown:cap-1,more:count-(cap-1)};
   }
 
+  /* Spec 068 FR-003/FR-013: the coffee corner is a narrow tile of its own width: with its name where the lobby is wide, icon only (the name in
+     its tooltip and label) where it is not, so the other places keep their room. Since the office rail (spec 001 FR-034, 2026-10-22) the lobby
+     is 1000-1200 px wide, so "wide" starts at 1100 px; the icon-only tile is 118 px, room for two initials entries (a figure and "+N"), and
+     `chips` is its own visitor capacity (chipsIn below: 200 px = one named entry or three initials). With `tiles` (the other places) and
+     `addButton`, the name also needs the other tiles to keep room for two visitors (tileChips initials >= 2), as with eight places. */
+  const COFFEE_NAMED_MIN=1100, COFFEE_W=200, COFFEE_W_ICON=118;
+  const coffeeTile=(aw,tiles,addButton)=>{
+    const named=Number(aw)>=COFFEE_NAMED_MIN&&(tiles===undefined||tileChips(aw,tiles,addButton,COFFEE_W).initials>=2), width=named?COFFEE_W:COFFEE_W_ICON;
+    return {named,width,chips:chipsIn(width)};
+  };
   /* Slots that fit in one lobby tile (spec 024 FR-022). `aw` = width of the lobby row, `tiles` = how many place tiles, `addButton` = whether the
      26px Add button shares the row. Tiles are equal (flex:1 1 0) with an 8px gap; a tile needs about 150px for padding, icon and name before its
      first slot, and a slot takes 25px. Clamped to 1..8. With 5 tiles and no button this is the old `floor((aw/5-150)/25)` less the gaps. */
-  function tileSlots(aw,tiles,addButton){
-    const n=Math.max(1,Math.floor(Number(tiles)||0)), width=Number(aw)>0?Number(aw):800;
-    const tileW=(width-8*(n-1)-(addButton?26+8:0))/n;
+  function tileSlots(aw,tiles,addButton,reserve){
+    const n=Math.max(1,Math.floor(Number(tiles)||0)), width=Number(aw)>0?Number(aw):800, r=Number(reserve)>0?Number(reserve)+8:0; /* spec 068: a fixed-width tile (the coffee corner) takes `reserve` px and one gap */
+    const tileW=(width-8*(n-1)-(addButton?26+8:0)-r)/n;
     return Math.max(1,Math.min(8,Math.floor((tileW-150)/25)));
   }
 
-  return {PLACES,IDS,allPlaces,placeName,isChoice,tileSlots,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
+  /* Visitor entries on one lobby tile (spec 001 FR-036): who is there, by name. Same tile width as tileSlots. A named entry (figure, name and
+     activity) takes about 92px, an initials entry 46px, 6px apart, inside 20px of padding. Returns how many of each fit (1..6 each; 0 named
+     when not even one fits). chipsFor() picks per tile: names when every visitor fits by name, or when two or more named entries fit (the last
+     becomes "+N"); else initials. */
+  const NAMED_W=92, INIT_W=46, CHIP_GAP=6, TILE_PAD=20;
+  /* `reserve` as in tileSlots: a fixed-width tile (the coffee corner, spec 068) takes that many px and one gap. chipsIn(w) = the same capacities
+     for one tile `w` px wide (the coffee corner's own width). */
+  function chipsIn(tileW){
+    const inner=(Number(tileW)||0)-TILE_PAD;
+    const fit=w=>Math.max(0,Math.min(6,Math.floor((inner+CHIP_GAP)/(w+CHIP_GAP))));
+    return {named:fit(NAMED_W),initials:Math.max(1,fit(INIT_W))};
+  }
+  function tileChips(aw,tiles,addButton,reserve){
+    const n=Math.max(1,Math.floor(Number(tiles)||0)), width=Number(aw)>0?Number(aw):800, r=Number(reserve)>0?Number(reserve)+8:0;
+    return chipsIn((width-8*(n-1)-(addButton?26+8:0)-r)/n);
+  }
+  /* {mode:'named'|'initials', slots} for a tile with `visitors` people, from tileChips()'s capacities */
+  function chipsFor(cap,visitors){
+    const v=Math.max(0,Math.floor(Number(visitors)||0)), c=cap||{named:0,initials:1};
+    if(c.named>=1&&(v<=c.named||c.named>=2))return {mode:'named',slots:c.named};
+    return {mode:'initials',slots:Math.max(1,c.initials)};
+  }
+  /* Two letters for a name ("Omar" -> "Om", "Ada Lovelace" -> "AL"); '' for nothing. Callers escape it. */
+  function initialsOf(name){
+    const w=String(name||'').trim().split(/\s+/).filter(Boolean);
+    if(!w.length)return '';
+    const c=s=>Array.from(s);
+    return w.length>1?(c(w[0])[0]+c(w[w.length-1])[0]).toUpperCase():c(w[0]).slice(0,2).join('');
+  }
+
+  return {PLACES,IDS,COFFEE,coffeeTile,allPlaces,placeName,isChoice,tileSlots,tileChips,chipsIn,chipsFor,initialsOf,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
 })());

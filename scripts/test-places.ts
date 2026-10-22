@@ -28,6 +28,11 @@ const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js
   allPlaces: (custom?: unknown) => { id: string; name: string; icon?: string }[];
   isChoice: (v: unknown, customIds?: unknown) => boolean;
   tileSlots: (aw: unknown, tiles: unknown, addButton: unknown) => number;
+  tileChips: (aw: unknown, tiles: unknown, addButton: unknown, reserve?: unknown) => { named: number; initials: number };
+  chipsIn: (tileW: unknown) => { named: number; initials: number };
+  coffeeTile: (aw: unknown, tiles?: unknown, addButton?: unknown) => { named: boolean; width: number; chips: { named: number; initials: number } };
+  chipsFor: (cap: { named: number; initials: number }, visitors: unknown) => { mode: 'named' | 'initials'; slots: number };
+  initialsOf: (name: unknown) => string;
   classify: (e: unknown, map?: unknown, customIds?: unknown) => string;
   canonicalServer: (s: unknown) => unknown;
   placeRows: (names: unknown, map?: unknown, customIds?: unknown) => { name: string; aliases: string[]; value: string }[];
@@ -284,7 +289,7 @@ const names = (list: readonly { name: string }[]): string[] => list.map((p) => p
 assert.strictEqual(MAX_CUSTOM_PLACES, 3);
 assert.strictEqual(MAX_PLACE_NAME, 24);
 assert.deepStrictEqual([...CUSTOM_ICON_IDS], ['star', 'flask', 'database', 'cloud', 'chart', 'chat', 'mail', 'calendar', 'shield', 'box', 'bolt', 'pin']);
-assert.deepStrictEqual([...RESERVED_PLACE_NAMES], [...P.PLACES.map((p) => p.name), 'Stay at desk', 'Default'], 'reserved = the five built-in names, Stay at desk, Default');
+assert.deepStrictEqual([...RESERVED_PLACE_NAMES], [...P.PLACES.map((p) => p.name), 'Stay at desk', 'Default', 'Coffee corner'], 'reserved = the five built-in names, Stay at desk, Default, the coffee corner (spec 068)');
 assert.ok(CUSTOM_ID_PATTERN.test('c-ab12z9') && !CUSTOM_ID_PATTERN.test('c-AB12z9') && !CUSTOM_ID_PATTERN.test('c-ab12z') && !CUSTOM_ID_PATTERN.test('c-ab12z9x') && !CUSTOM_ID_PATTERN.test('desk') && !CUSTOM_ID_PATTERN.test('library'), 'id pattern');
 
 // cleanPlaceName: trimmed, 1..24 code points, no control characters
@@ -523,6 +528,40 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   for (const aw of [1248, 1408]) for (let n = 5; n < 8; n++) assert.ok(t(aw, n, true) <= t(aw, n, false), 'the Add button never gives more slots');
 }
 
+// spec 001 FR-036: visitor entries per tile: names when everyone fits by name or two named entries fit, else initials; 0..6 / 1..6
+{
+  const c = (aw: number, tiles: number, btn: boolean) => P.tileChips(aw, tiles, btn);
+  assert.deepStrictEqual(c(1160, 5, true), { named: 2, initials: 3 }, '1440x900 with the rail');
+  assert.deepStrictEqual(c(970, 5, true), { named: 1, initials: 3 }, 'a sparse office at 1280x800 with the rail');
+  assert.deepStrictEqual(c(1160, 8, false), { named: 1, initials: 2 }, 'eight places');
+  assert.deepStrictEqual(c(99999, 5, false), { named: 6, initials: 6 }, 'at most 6');
+  for (const [aw, n, b] of [[0, 5, false], [-5, 6, true], [NaN, 5, false], [undefined, 5, false], [1248, 0, false], [100, 8, true], [1248, 'x', false]] as [unknown, unknown, unknown][]) {
+    const r = P.tileChips(aw, n, b);
+    assert.ok(Number.isInteger(r.named) && r.named >= 0 && r.named <= 6 && Number.isInteger(r.initials) && r.initials >= 1 && r.initials <= 6, 'always in range: ' + String([aw, n, b]));
+  }
+  for (const aw of [900, 1160, 1408, 1900]) for (let n = 5; n < 8; n++) {
+    const a = c(aw, n, false), z = c(aw, n + 1, false);
+    assert.ok(z.named <= a.named && z.initials <= a.initials, `more tiles never give more entries (${aw}, ${n})`);
+  }
+  const f = (named: number, initials: number, v: number) => P.chipsFor({ named, initials }, v);
+  assert.deepStrictEqual(f(1, 3, 1), { mode: 'named', slots: 1 }, 'one visitor, one named entry fits: the name');
+  assert.deepStrictEqual(f(1, 3, 2), { mode: 'initials', slots: 3 }, 'two visitors, one named entry fits: initials');
+  assert.deepStrictEqual(f(2, 4, 5), { mode: 'named', slots: 2 }, 'two named entries fit: names and +N');
+  assert.deepStrictEqual(f(0, 1, 1), { mode: 'initials', slots: 1 }, 'no named entry fits');
+  assert.deepStrictEqual(f(2, 4, 0), { mode: 'named', slots: 2 }, 'nobody there');
+  // spec 068 + 001 FR-036 (2026-10-22): the coffee corner's own width and capacity, and the width it takes from the other tiles
+  assert.deepStrictEqual(P.chipsIn(200), { named: 1, initials: 3 }, 'the named corner: one named entry or three initials');
+  assert.deepStrictEqual(P.chipsIn(118), { named: 1, initials: 2 }, 'the icon-only corner: one named entry, or two initials (a figure and +N)');
+  assert.deepStrictEqual(P.tileChips(1160, 5, true, 0), P.tileChips(1160, 5, true), 'no reserve: as before');
+  assert.deepStrictEqual(P.tileChips(1160, 5, true, 200), { named: 1, initials: 3 }, '1440x900 with the rail and the named corner');
+  for (const aw of [900, 1160, 1408]) assert.ok(P.tileChips(aw, 5, true, 200).initials <= P.tileChips(aw, 5, true, 118).initials, 'a wider corner never gives the others more room');
+  assert.deepStrictEqual([1160, 1196, 1000, 1099].map((aw) => P.coffeeTile(aw, 5, true).named), [true, true, false, false], 'named from 1100 px of lobby');
+  assert.strictEqual(P.coffeeTile(1160, 8, false).named, false, 'eight places at 1440x900: icon only, so the others keep two entries');
+  assert.ok(P.tileChips(1160, 8, false, P.coffeeTile(1160, 8, false).width).initials >= 2, 'eight places keep room for two visitors');
+  assert.deepStrictEqual(P.coffeeTile(1300), { named: true, width: 200, chips: { named: 1, initials: 3 } }, 'without the other tiles: by width only');
+  assert.deepStrictEqual(['Omar', 'Ada Lovelace', '  ', '', null, 'émile zola', 'X'].map((n) => P.initialsOf(n)), ['Om', 'AL', '', '', '', 'ÉZ', 'X']);
+}
+
 // icons: the 12 drawings match the shared icon ids
 {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -642,6 +681,31 @@ async function simChecks(): Promise<void> {
   const sp = (await seeded.getSettings!()).customPlaces ?? [];
   const rm = await seeded.removePlace!(sp[0].id);
   assert.ok(rm.ok && !Object.values(rm.placeMap).includes(sp[0].id) && !('my-notes' in rm.placeMap), 'removing the first seeded place clears its mapping');
+}
+
+// spec 068 FR-003: the coffee corner is a pinned visit; tools and the turn's end never move it; it is not a mapping choice
+{
+  let n = 0;
+  const v = P.createVisits({ now: () => n, debounceMs: 600, dwellMs: 2000 }) as Visits & { pin: (id: string, p: string, l?: string) => boolean; unpin: (id: string) => boolean; pinned: (id: string) => boolean };
+  const C = (P as unknown as { COFFEE: string }).COFFEE;
+  assert.strictEqual(C, 'coffee');
+  assert.ok(!P.IDS.includes(C) && !P.isChoice(C), 'never a mapping target');
+  assert.strictEqual(v.pin('a', C, 'Coffee break'), true);
+  assert.strictEqual(v.pin('a', C, 'Coffee break'), false, 'pinning twice changes nothing');
+  assert.deepStrictEqual(v.at('a'), { place: C, label: 'Coffee break', since: 0 }, 'at once, no debounce');
+  assert.strictEqual(v.onTool('a', { phase: 'start', tool: 'bash', callId: 'x' }), false);
+  assert.strictEqual(v.onStatus('a', 'idle'), false);
+  assert.strictEqual(v.onStatus('a', 'error'), false);
+  n = 60000; v.tick();
+  assert.deepStrictEqual(v.occupants(C), ['a'], 'no dwell timeout');
+  assert.ok(v.pinned('a'));
+  assert.strictEqual(v.unpin('a'), true);
+  assert.strictEqual(v.at('a'), null);
+  assert.strictEqual(v.unpin('a'), false);
+  // an agent at the Terminal that goes on a break moves to the coffee corner
+  v.onTool('b', { phase: 'start', tool: 'bash', callId: 'y' }); n += 700; v.tick();
+  assert.strictEqual(v.at('b')!.place, 'terminal');
+  v.pin('b', C); assert.strictEqual(v.at('b')!.place, C);
 }
 
 simChecks().then(

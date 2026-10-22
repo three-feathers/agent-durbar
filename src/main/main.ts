@@ -56,6 +56,9 @@ import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
 import { maskMcpEvent, maskMcpHistory } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
+import { globalFiles } from './mcpglobal';
+import { GlobalLists, sessionGlobalFor } from './mcpglobalio';
+import { register as registerMcpGlobalIpc } from './ipc/mcpglobal';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
 import { Scheduler, loadSchedules, saveSchedules } from './schedules';
@@ -127,7 +130,20 @@ const SIMULATOR = simulatorOn(dev);
 const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)], SIMULATOR)); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
 const agents = new Map<string, AgentInfo>();
-const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, router, dev });
+/** Spec 069: the agent apps' own user-level MCP lists (read live; written only after the window's per-file confirmation). */
+const globalLists = new GlobalLists(() => globalFiles({ CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CODEX_HOME: process.env.CODEX_HOME, ...dev }, os.homedir()));
+const appIdOf = (id: string): string | undefined => router.adapterIdOf(id) ?? agents.get(id)?.adapterId;
+const mcp = registerMcpIpc({
+  store: () => mcpStore as McpStore,
+  agents,
+  router,
+  dev,
+  appOf: appIdOf,
+  globalFor: (id) => (mcpStore ? sessionGlobalFor(appIdOf(id), globalLists, mcpStore.ambientDisabled()) : {}),
+  log: (a, action) => logActivity(a, 'mcp-restart', action),
+  globalNames: () => Object.fromEntries(globalLists.state(() => []).apps.map((x) => [x.app, x.servers.map((v) => v.name)])),
+});
+registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
 /** Files the user picked through the native dialog; only these can be attached. */
 const pickedFiles = new Set<string>();
 /** Private folder for pasted / dropped files (removed on quit). */
@@ -150,7 +166,7 @@ const toRenderer = (channel: string, payload: unknown): void => {
 
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
-const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && e.phase !== 'start' && e.mcpServer) ? mcp.secretValuesFor(e.sessionId) : []);
+const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too
 router.onEvent((e) => toRenderer('agent:event', outward(e)));
 const maskHistory = <H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H => maskMcpHistory(h, mcp.secretValuesFor(id)); // FR-067: resume replies skip outward()
 /** Open MCP elicitations (spec 012 FR-151): main checks each answer against the fields it was asked with. */
@@ -313,7 +329,8 @@ const starting = new Map<string, Promise<void>>();
 /** Spec 006 FR-021: agents restored as their folder's last session, how that went, until their chat asks for it (agents:wake). */
 const continued = new Map<string, { resumed: boolean; title?: string }>();
 
-async function ensureLive(a: AgentInfo): Promise<void> {
+/** `quiet: false` (spec 058 FR-022, Restart session): the adapter says "Ready" so the window leaves "Ended"; every other caller starts quietly. */
+async function ensureLive(a: AgentInfo, opts: { quiet?: boolean } = {}): Promise<void> {
   const ad = router.forAgent(a.id);
   if (!ad) throw new Error('unknown agent');
   if (ad.isLive(a.id)) return;
@@ -328,7 +345,7 @@ async function ensureLive(a: AgentInfo): Promise<void> {
         resume = !!prev;
         continued.set(a.id, { resumed: resume, title: prev?.title });
       }
-      await ad.start({ ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: true });
+      await ad.start({ ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true });
       a.lazy = false;
       a.resumeLast = undefined;
     })();
@@ -445,9 +462,11 @@ const scheduleAgent = (s: { folder: string; target?: { session: string } }): Age
   return a && wsKey(a) === s.folder ? a : undefined;
 };
 const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
+/** Spec 068 FR-008: a schedule skips an agent on a coffee break as busy (never queued). */
+const busyOrBreak = (id: string): boolean => busyStatus(id) || agentState.onBreak(id);
 const scheduleDeps = (file: string): SchedulerDeps => ({
   now: () => Date.now(),
-  isBusy: (folder, session) => (session ? busyStatus(session) : [...agents.values()].some((x) => wsKey(x) === folder && busyStatus(x.id))),
+  isBusy: (folder, session) => (session ? busyOrBreak(session) : [...agents.values()].some((x) => wsKey(x) === folder && busyOrBreak(x.id))),
   hasSession: (session) => agents.has(session),
   capUnitOf: (s) => {
     const a = scheduleAgent(s);
@@ -609,7 +628,7 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
 const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
 registerAppIpc({ getSinceAway: () => sinceAway, clearSinceAway: () => { sinceAway = null; }, getWin: () => win });
-registerAgentsIpc({ agents, router, agentState, opsDeps, remoteOps, getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory });
+registerAgentsIpc({ agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory });
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
 registerPreviousIpc({ renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
@@ -620,7 +639,18 @@ registerThemesIpc({ dev, registry, router });
 registerHarnessIpc({ dev, registry, router, remoteOps, toRenderer, getWin: () => win, adaptersList });
 registerActivityIpc({ getActivityStore: () => activityStore, getWin: () => win });
 registerQuestionsIpc({ agents, router, elicitTracker });
-registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive });
+/**
+ * Spec 040 FR-015 (reused by spec 061 FR-015 and spec 043 FR-023): an agent app's one-shot text call: one prompt, no tools, no
+ * session kept, an empty temp folder; Copilot's own MCP servers switched off by name. Undefined when the app has none.
+ */
+function oneShotFor(id: string): { name: string; generate: (prompt: string) => ReturnType<NonNullable<AgentAdapter['generateText']>> } | undefined {
+  if (!registry.has(id)) return undefined;
+  const ad = router.instance(id);
+  if (typeof ad.generateText !== 'function') return undefined;
+  const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
+  return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
+}
+registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id) });
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey });
 registerAdaptersIpc({ adaptersList });
 registerFoldersIpc({ agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
@@ -635,11 +665,8 @@ registerFolderSetupIpc({
   explainer: () => {
     // FR-015: the first installed app that answers one prompt with no tools; Copilot first (its `auto` is the cheapest)
     for (const id of ['copilot', 'claude', 'codex']) {
-      if (!registry.has(id)) continue;
-      const ad = router.instance(id);
-      if (typeof ad.generateText !== 'function') continue;
-      const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
-      return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
+      const g = oneShotFor(id);
+      if (g) return g;
     }
     return undefined;
   },

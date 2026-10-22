@@ -16,6 +16,8 @@ export class FakeSession {
   switchAnswer: unknown = { modelId: 'sim-deep' };
   /** What `rpc.name.get` answers (issue #126); null = no name yet. */
   nameAnswer: string | null = null;
+  toolsAnswer: unknown = { tools: [{ name: 'search', description: 'Search the notes' }, { name: 'read' }] };
+  toolsFail?: string;
   compactAnswer: unknown = { success: true, tokensRemoved: 5000, messagesRemoved: 4, contextWindow: { tokenLimit: 100000, currentTokens: 12000, messagesLength: 3 } };
   removed = true;
   /** Events `send` replays through the handler, in order (a recorded fixture). */
@@ -54,7 +56,13 @@ export class FakeSession {
     mcp: {
       enable: async (a: unknown) => this.rec('mcp.enable', undefined, a),
       disable: async (a: unknown) => this.rec('mcp.disable', undefined, a),
-    },
+      // spec 058 FR-012: per-server restart (@experimental); a test deletes it to act as an older runtime. stopServer and reload are recorded so a test can say they were never used.
+      restartServer: async (a: unknown) => this.rec('mcp.restartServer', undefined, a),
+      // spec 069 FR-031: a live tools/list for one server; `toolsFail` makes it reject (the runtime throws when not connected)
+      listTools: async (a: unknown) => { this.calls.push({ name: 'mcp.listTools', args: [a] }); if (this.toolsFail) throw new Error(this.toolsFail); return this.toolsAnswer; },
+      stopServer: async (a: unknown) => this.rec('mcp.stopServer', undefined, a),
+      reload: async () => this.rec('mcp.reload', undefined),
+    } as Record<string, unknown>,
     // spec 054: remote control (@experimental). `remoteFail` / `visibilityFail` make the call reject with that message.
     remote: {
       enable: async (a: unknown) => { this.calls.push({ name: 'remote.enable', args: [a] }); if (this.remoteFail) throw new Error(this.remoteFail); return this.remoteAnswer; },

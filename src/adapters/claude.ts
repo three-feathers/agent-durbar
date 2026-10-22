@@ -25,15 +25,19 @@ import { createCliTransport } from './claudeTransport';
 import type { ClaudeTransport, ControlAnswer, IncomingControl, TransportHandlers, UserContent } from './claudeTransport';
 import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './capabilities';
 import type { EventBody } from './map';
-import { PermissionBroker, startModeOf } from './permissions';
+import { PermissionBroker, claudeServerPart, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { McpToolInfo } from './types';
+import { normMcpTools } from './mcptools';
 import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
 
 /** FR-156: what Settings says of a Claude Code that `auth status` calls signed in: only the first message can confirm it. */
 export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
 import { parseUsdCap } from '../shared/credits';
-import { simpleDiff, clipDiff } from '../shared/diff';
+import { clipDiff } from '../shared/diff';
+import { MCP_TOOL_OFF_RE } from '../shared/mcp';
+import { editOf } from './edits';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
@@ -68,6 +72,11 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   history: true, // FR-125/FR-126: read-only from Claude's own session files
   mcpStatus: true,
   mcpToggle: true, // FR-133: mcp_toggle + mcp_status
+  mcpStart: 'next-message', // spec 058 FR-010: the CLI (and its servers) is launched with the next message
+  mcpToggleApplies: 'live', // FR-133 (a server that was off at launch: next message)
+  mcpToolFilter: true, // spec 069 FR-062: --disallowedTools mcp__<server>__<tool> (read: CLI docs; not run on a real account)
+  mcpTools: true, // spec 069 FR-031: the tools of a server in the mcp_status reply (read: docs McpServerStatus.tools; not run on a real account)
+  mcpRestart: true, // spec 058 FR-012: control request mcp_reconnect (read: CLI 2.1.304 strings; not checked on a real account)
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
   oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
   renameSession: 'next-turn', // spec 059 FR-007: `--name` on the session's next CLI start (real: Vikram's agent, 2026-10-20, CLI 2.1.304)
@@ -78,8 +87,11 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
 
 /** Spec 059 FR-007: the SDK transport (dev opt-in, `DURBAR_CLAUDE_TRANSPORT=sdk`) does not apply `--name`, so it does not offer a rename. */
 export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() => {
-  const { renameSession: _r, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown };
+  // the SDK transport sends only a few control requests (claudeSdk.ts): no rename, no mcp_reconnect
+  const { renameSession: _r, mcpRestart: _m, mcpTools: _t, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown; mcpTools?: unknown };
   void _r;
+  void _m;
+  void _t;
   return rest;
 })()) as AdapterCapabilities;
 /** Spec 066: one sentence added to a plan-first message, so the plan reaches the card (Claude's plan file cannot be written in Read-only). */
@@ -142,16 +154,11 @@ export function editDiffOf(toolName: string, input: Record<string, unknown> | un
   if (!input) return undefined;
   const f = file ?? 'file';
   const str = (v: unknown): v is string => typeof v === 'string';
-  if (toolName === 'Edit' && str(input.old_string) && str(input.new_string)) return simpleDiff(f, input.old_string, input.new_string) || undefined;
-  if (toolName === 'Write' && str(input.content)) return simpleDiff(f, '', input.content) || undefined;
-  if (toolName === 'MultiEdit' && Array.isArray(input.edits)) {
-    const parts = input.edits
-      .slice(0, 50)
-      .map((e) => (e && typeof e === 'object' && str((e as Record<string, unknown>).old_string) && str((e as Record<string, unknown>).new_string) ? simpleDiff(f, (e as Record<string, string>).old_string, (e as Record<string, string>).new_string) : ''))
-      .filter(Boolean);
-    return parts.length ? clipDiff(parts.join('\n')) : undefined;
-  }
-  return undefined;
+  // the inputs that carry text to compare; spec 005 FR-018: the diff itself comes from the shared edit normalizer (masked, cut)
+  const ok = (toolName === 'Edit' && str(input.old_string) && str(input.new_string)) || (toolName === 'Write' && str(input.content)) || (toolName === 'MultiEdit' && Array.isArray(input.edits));
+  if (!ok) return undefined;
+  const body = editOf(toolName, { ...input, edits: Array.isArray(input.edits) ? input.edits.slice(0, 50) : undefined, file_path: f })?.files[0]?.diff;
+  return body ? clipDiff(`--- a/${f.replace(/[\r\n]+/g, ' ')}\n+++ b/${f.replace(/[\r\n]+/g, ' ')}\n${body}`) : undefined;
 }
 
 /** Durbar's MCP servers as the CLI's `--mcp-config` JSON (`disabled` names left out). Never logged: env and headers may hold secrets. */
@@ -188,6 +195,8 @@ export interface ClaudeLaunch {
   folderAllow?: string[];
   /** Spec 059 FR-007: the user's name for the session; the CLI stores it as the session title (`--name`, also with `--resume`). */
   name?: string;
+  /** Spec 069 FR-062: single MCP tools turned off in Durbar, as `mcp__<server>__<tool>`, added to the mode's `--disallowedTools`. */
+  disallowedMcpTools?: string[];
 }
 
 export const CLAUDE_EFFORTS: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -229,13 +238,21 @@ export function claudeNameOk(name: unknown): boolean {
 }
 
 /** The CLI argv (FR-111). Mode flags come from `claudeOptionsFor`, so an unknown mode gets Read-only. */
+/** Spec 069 FR-062: Claude Code's names of the tools turned off in Durbar (other names cannot be turned off at all: FR-063, `MCP_TOOL_OFF_RE`). */
+export function claudeDisallowedMcp(off: Readonly<Record<string, readonly string[]>> | undefined): string[] {
+  const out: string[] = [];
+  for (const [server, tools] of Object.entries(off ?? {})) for (const t of tools ?? []) if (typeof t === 'string' && MCP_TOOL_OFF_RE.test(t)) out.push(`mcp__${claudeServerPart(server)}__${t}`);
+  return out.slice(0, 5000);
+}
+
 export function claudeArgs(i: ClaudeLaunch): string[] {
   const o = claudeOptionsFor(i.mode, i.folderAllow);
   const a = ['-p', '--output-format', 'stream-json', '--verbose', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio', '--include-partial-messages'];
   a.push('--permission-mode', o.permissionMode);
   if (o.allowDangerouslySkipPermissions) a.push('--allow-dangerously-skip-permissions');
   if (o.allowedTools?.length) a.push('--allowedTools', o.allowedTools.join(','));
-  if (o.disallowedTools?.length) a.push('--disallowedTools', o.disallowedTools.join(','));
+  const deny = [...(o.disallowedTools ?? []), ...(i.disallowedMcpTools ?? [])];
+  if (deny.length) a.push('--disallowedTools', deny.join(','));
   a.push('--setting-sources', o.settingSources.join(','));
   if (o.strictMcpConfig) a.push('--strict-mcp-config');
   if (i.mcpConfig) a.push('--mcp-config', i.mcpConfig);
@@ -510,6 +527,8 @@ export class ClaudeAdapter implements AgentAdapter {
     // spec 059 FR-007: on the SDK transport `--name` is not applied, so no rename is offered (capability and member agree, contract C2)
     this.capabilities = deps.sdkTransport ? CLAUDE_SDK_CAPABILITIES : CLAUDE_CAPABILITIES;
     if (deps.sdkTransport) (this as { renameSession?: unknown }).renameSession = undefined;
+    if (deps.sdkTransport) (this as { restartMcpServer?: unknown }).restartMcpServer = undefined;
+    if (deps.sdkTransport) (this as { listMcpTools?: unknown }).listMcpTools = undefined;
   }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
@@ -636,7 +655,8 @@ export class ClaudeAdapter implements AgentAdapter {
     const exists = this.deps.sessionExists ?? claudeSessionExists;
     const resumable = options.resumeSessionId !== undefined || (given !== undefined && exists(id));
     const roots = [...new Set([ws.cwd, ...ws.folders])];
-    const broker = new PermissionBroker({ roots, mode, emit: (e) => this.onBroker(id, e), beforeWrite: (paths) => this.writeGuard?.(id, paths) ?? Promise.resolve() }); // spec 065 FR-001
+    const blocked = mcpToolBlockList(options.disabledMcpTools); // spec 069 FR-063
+    const broker = new PermissionBroker({ roots, mode, blockedTools: () => blocked, emit: (e) => this.onBroker(id, e), beforeWrite: (paths) => this.writeGuard?.(id, paths) ?? Promise.resolve() }); // spec 065 FR-001
     const mapper = new ClaudeMapper((b) => this.onMapped(id, b), { quiet: true, onDropped: (why) => this.debug?.(`claude: dropped ${why}`) });
     this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable, capUsd: usdCap(options.maxAiCredits), spentUsd: 0, ...(this.pendingNames.has(id) ? { pendingName: this.pendingNames.get(id), needsRelaunch: false } : {}) });
     this.pendingNames.delete(id);
@@ -767,6 +787,37 @@ export class ClaudeAdapter implements AgentAdapter {
     }
   }
 
+  /**
+   * Spec 058 FR-012: restart one MCP server of the running CLI with the control request `mcp_reconnect` ("Reconnects a disconnected
+   * or failed MCP server", read: CLI 2.1.304), then `mcp_status` for the new list. The CLI is not launched for it: before the first
+   * message there is nothing to restart. A server that was off at launch is not in the CLI's config at all.
+   */
+  async restartMcpServer(sessionId: string, name: string): Promise<void> {
+    const s = this.sessions.get(sessionId);
+    if (!s) throw new Error('This session is not running. Send a message to start it.');
+    if (!s.transport?.alive) throw new Error('Claude Code starts its MCP servers with your next message; there is nothing to restart yet.');
+    if (s.launchedOff?.has(name) || (s.options.disabledMcpServers ?? []).includes(name)) throw new Error('Switch it on first; it starts with your next message.');
+    await s.transport.request({ subtype: 'mcp_reconnect', serverName: name }, 30_000);
+    try {
+      const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
+      this.emit(s.id, { type: 'mcp', servers: claudeMcpServers(r.mcpServers) });
+    } catch {
+      /* the reconnect worked; the list comes with the next init */
+    }
+  }
+
+  /** Spec 069 FR-031: the tools of one server, from the CLI's `mcp_status` reply (no extra start: only a running CLI is asked). */
+  async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
+    const s = this.sessions.get(sessionId);
+    if (!s) throw new Error('This session is not running. Send a message to start it.');
+    if (!s.transport?.alive) throw new Error('Claude Code starts its MCP servers with your next message; send one to see the tools.');
+    const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
+    const list: unknown[] = Array.isArray(r?.mcpServers) ? r.mcpServers : [];
+    const srv = list.find((x) => !!x && typeof x === 'object' && (x as { name?: unknown }).name === name) as { tools?: unknown; status?: unknown } | undefined;
+    if (!srv) throw new Error(`${name} is not running in this session.`);
+    return normMcpTools(srv.tools);
+  }
+
   /** FR-128: the user's answers (question text -> label(s)), or null when they skipped. */
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
     const q = this.sessions.get(sessionId)?.questions?.get(requestId);
@@ -836,6 +887,7 @@ export class ClaudeAdapter implements AgentAdapter {
       effort: o.reasoningEffort,
       ...(s.agent ? { agent: { name: s.agent.profile.id, json: agentsArg(s.agent) } } : {}),
       mcpConfig: mcpConfigOf(o.mcpServers, o.disabledMcpServers),
+      ...(claudeDisallowedMcp(o.disabledMcpTools).length ? { disallowedMcpTools: claudeDisallowedMcp(o.disabledMcpTools) } : {}),
       settingsJson: claudeSettingsJson(o.folderSetup),
       ...(o.folderSetup?.rules?.allow.length ? { folderAllow: o.folderSetup.rules.allow } : {}),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),

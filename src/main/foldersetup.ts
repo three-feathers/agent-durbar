@@ -11,9 +11,10 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { NAME_RE } from '../shared/mcp';
-import { secretFlag } from '../shared/redact';
+import { secretFlag, shQuote } from '../shared/redact';
 import type { McpServerSpec } from '../shared/mcp';
 import { isBroadRule } from '../shared/foldersetup';
+import { stripTomlComment, tomlStringArray, tomlUnquote as unq } from './codextoml';
 import type { FolderSetupApp, FolderSetupItem, RuleKind } from '../shared/foldersetup';
 
 export const MAX_FILE_BYTES = 256 * 1024;
@@ -158,21 +159,16 @@ export function secretEnvName(name: string): boolean {
   return secretFlag(name) || /private|cert/i.test(name);
 }
 
-/** Re-review #424 nit: one word as a POSIX shell would read it, so an argument with spaces or shell characters is not mistaken for several. */
-export function shownWord(w: string): string {
-  return /^[A-Za-z0-9_@%+=:,./~^-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`;
-}
-
 function mcpItem(app: FolderSetupApp, file: string, name: string, spec: McpServerSpec, note?: string): { item: FolderSetupItem; raw: RawItem } {
   const env = spec.type === 'stdio' ? Object.entries(spec.env ?? {}) : [];
   const envNames = env.map(([k]) => k);
   const headerNames = Object.keys(spec.headers ?? {}).slice(0, 30);
   const secretEnv = envNames.filter(secretEnvName);
   // FR-014 (re-review #424): the same token-shape masking as hooks and rules; anything hidden is marked (and starts unticked).
-  // Re-review at 7537f86: env values are shown too (`NAME=value` before the command), and every word is quoted where needed.
+  // Re-review at 7537f86: env values are shown too (`NAME=value` before the command), and every word is quoted where needed (`shQuote`, shared with spec 041; T057).
   // a secret-looking NAME shows `NAME=[hidden]` (never the value, never in the digest) and is listed as "value hidden"
-  const envParts = env.map(([k, v]) => (secretEnvName(k) ? { text: `${k}=[hidden]`, hidden: false } : shownCommand(`${k}=${shownWord(v)}`)));
-  const parts = [...envParts, ...(spec.type === 'stdio' ? [spec.command ?? '', ...(spec.args ?? [])].map((w) => shownCommand(shownWord(w))) : [shownCommand(spec.url ?? '')])];
+  const envParts = env.map(([k, v]) => (secretEnvName(k) ? { text: `${k}=[hidden]`, hidden: false } : shownCommand(`${k}=${shQuote(v)}`)));
+  const parts = [...envParts, ...(spec.type === 'stdio' ? [spec.command ?? '', ...(spec.args ?? [])].map((w) => shownCommand(shQuote(w))) : [shownCommand(spec.url ?? '')])];
   const detail = parts.map((p) => p.text).join(' ');
   const tokenHidden = parts.some((p) => p.hidden);
   const shell = spec.type === 'stdio' && envNames.length ? runsGivenCode(spec.command ?? '', spec.args ?? []) : undefined;
@@ -222,27 +218,11 @@ function readMcpJson(json: unknown): { name: string; spec: McpServerSpec }[] {
 }
 
 const MAX_TOML_LINE = 4096;
-/** Cuts a `#` comment that is outside quotes, in one pass (no regex backtracking). */
-function stripTomlComment(line: string): string {
-  let q = '';
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (q) { if (c === '\\' && q === '"') i++; else if (c === q) q = ''; }
-    else if (c === '"' || c === "'") q = c;
-    else if (c === '#') return line.slice(0, i);
-  }
-  return line;
-}
-
 /** The `[mcp_servers.<name>]` tables of a Codex `config.toml`: `command`, `args`, `url`, `env` (names), nothing else. */
 export function readCodexMcpToml(text: string): { name: string; spec: McpServerSpec }[] {
   const out = new Map<string, { command?: string; args?: string[]; url?: string; env?: Record<string, string> }>();
   let cur: { command?: string; args?: string[]; url?: string; env?: Record<string, string> } | undefined;
   let inEnv = false;
-  const unq = (v: string): string | undefined => {
-    const m = /^"((?:[^"\\]|\\.)*)"$|^'([^']*)'$/.exec(v.trim());
-    return m ? (m[1] !== undefined ? m[1].replace(/\\(["\\])/g, '$1') : m[2]) : undefined;
-  };
   for (const lineRaw of text.split(/\r?\n/).slice(0, 5000)) {
     // review #424: linear only (a hostile 256 KiB value must not block main): long lines are skipped, comments cut by a scan
     if (lineRaw.length > MAX_TOML_LINE) continue;
@@ -268,8 +248,8 @@ export function readCodexMcpToml(text: string): { name: string; spec: McpServerS
     if (k === 'command') cur.command = unq(v);
     else if (k === 'url') cur.url = unq(v);
     else if (k === 'args') {
-      const m = /^\[(.*)\]$/.exec(v.trim());
-      if (m) cur.args = (m[1].match(/"(?:[^"\\]|\\.)*"|'[^']*'/g) ?? []).map((x) => unq(x) ?? '').slice(0, 64);
+      const a = tomlStringArray(v);
+      if (a) cur.args = a;
     } else if (k === 'env') {
       const m = /^\{(.*)\}$/.exec(v.trim());
       if (m) for (const pair of m[1].split(',')) { const p = /^([A-Za-z0-9_-]+)\s*=\s*(.*)$/.exec(pair.trim()); const s = p ? unq(p[2]) : undefined; if (p && s !== undefined) (cur.env ??= {})[p[1]] = s; }

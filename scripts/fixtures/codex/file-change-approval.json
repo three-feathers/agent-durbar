@@ -1,0 +1,16 @@
+{
+  "provenance": "synthetic",
+  "note": "Spec 052 FR-172. Shapes from the types `codex app-server generate-ts` writes for codex-cli 0.163.0 (ItemStartedNotification, ThreadItem fileChange, FileUpdateChange, PatchChangeKind, FileChangePatchUpdatedNotification, FileChangeRequestApprovalParams); values made up. The approval names only itemId: the files and the diff are on the item.",
+  "notifications": [
+    {"method":"thread/started","params":{"thread":{"id":"thr_main","cwd":"/work/app"}}},
+    {"method":"item/started","params":{"threadId":"thr_main","turnId":"turn_1","startedAtMs":1760000000000,"item":{"type":"fileChange","id":"call_fc_1","status":"inProgress","changes":[{"path":"/work/app/src/config.ts","kind":{"type":"update","move_path":null},"diff":"@@ -1,3 +1,3 @@\n export const config = {\n-  retries: 1,\n+  retries: 3,\n };\n"}]}}},
+    {"method":"item/fileChange/patchUpdated","params":{"threadId":"thr_main","turnId":"turn_1","itemId":"call_fc_1","changes":[{"path":"/work/app/src/config.ts","kind":{"type":"update","move_path":null},"diff":"@@ -1,3 +1,3 @@\n export const config = {\n-  retries: 1,\n+  retries: 3,\n };\n"},{"path":"/work/app/NOTES.md","kind":{"type":"add"},"diff":"# Notes\nRetries are 3 now.\n"}]}}
+  ],
+  "approval": {"method":"item/fileChange/requestApproval","params":{"threadId":"thr_main","turnId":"turn_1","itemId":"call_fc_1","startedAtMs":1760000000100,"reason":null,"grantRoot":null}},
+  "completed": {"method":"item/completed","params":{"threadId":"thr_main","turnId":"turn_1","completedAtMs":1760000000500,"item":{"type":"fileChange","id":"call_fc_1","status":"completed","changes":[]}}},
+  "expected": [
+    {"type":"status","status":"idle","intent":"Ready in /work/app"},
+    {"type":"toolCall","callId":"call_fc_1","tool":"apply_patch","phase":"start","args":{"files":["/work/app/src/config.ts"]},"edit":{"files":[{"path":"/work/app/src/config.ts","kind":"edit","diff":"@@ -1,3 +1,3 @@\n export const config = {\n-  retries: 1,\n+  retries: 3,\n };","added":1,"removed":1}]}},
+    {"type":"toolCall","callId":"call_fc_1","tool":"apply_patch","phase":"update","edit":{"files":[{"path":"/work/app/src/config.ts","kind":"edit","diff":"@@ -1,3 +1,3 @@\n export const config = {\n-  retries: 1,\n+  retries: 3,\n };","added":1,"removed":1},{"path":"/work/app/NOTES.md","kind":"create","diff":"@@ -0,0 +1,2 @@\n+# Notes\n+Retries are 3 now.","added":2,"removed":0}],"partial":true}}
+  ]
+}
