@@ -75,6 +75,15 @@ specs/001-office-view-and-densities/
 | macOS and Windows rendering | none | untested |
 | Layout search speed and same layout (FR-033, SC-004) | instrumented simulator build, alternating with `main`; 54-case layout and box comparison | pass, 2026-10-21: floor switch 438-526 ms -> 134-146 ms, `chooseLayout` 388-480 -> 97-105 ms (Linux, 4 cores, Xvfb); macOS and Windows not timed |
 
+## Delta 2026-10-22 (owner decisions on #532): columns on a wide grown desk (FR-047..FR-050)
+
+- **Reuse.** The grown card from `cardHTML` (one more `<span class="gx">` only while `GROW`), `grownLine` for the main column, `DurbarLiveAct.excerpt` for the reply column, `fitLines` for whole lines, `usageLong`, `DurbarScreens.ctxChip`, `ACT.agoLong`, the readout's tool phrase. No new module, no new layout search.
+- **Pure helper** in `src/renderer/probe.js`: `GCOL` (main 300-520 px, reply 260-440 px, facts 200-320 px, gap 16 px) and `grownCols(room, {reply})` -> `{n, main, reply, side}` (n = 1, 2 or 3; widths never above the maxima; 0 for a column not shown). `test:probe` covers it.
+- **Render.** After `renderOffice` (where `fitLines` already runs), for each grown card: measure its width, `grownCols`, set `data-gc` and `--gm`/`--gr`/`--gs` on the card, then `fitLines` on the stream and the reply. The card's `max-width` is the sum of its columns, so a wide room does not stretch the lines. The probe never sets `data-gc` (the height does not depend on it).
+- **Data.** `liveact.js` keeps the last tool phrase of the turn (`tool`, cleared with the readout at the turn's end) and `of()` returns it; `setState` sets `a.busySince` when an agent turns busy and clears it when it is Done or Idle; the 30 s tick includes it.
+- **CSS.** `.stage[data-d="roomy"][data-grow]`: `--cmax` 1600 px; `.desk.card[data-gc]` grid columns `var(--sw) var(--gm) [var(--gr)] [var(--gs)]`; `.gx` hidden without `data-gc` and in the probe; `data-gc="2"` stacks reply over facts; facts one line each with an ellipsis. Theme tokens only, no font-size under 10.5 px, no transition.
+- **Checks.** `test:probe` (`grownCols`), `test:liveact` (`tool`), `check:office-fill` (1 and 2 agents at 1440x900, 1280x800, 1920x1080: `data-gc` >= 2, characters per line <= 90 measured per line, page rules); screenshots `001-fill-{1,4,6}-1440x900.png`, `001-fill-1-1920x1080.png`.
+
 ## Delta 2026-10-22: grown desks when there are few agents (FR-041..FR-046)
 
 - **Reuse.** `chooseLayout` and `probeSet` (one probe, the same fit test), the `roomy` card from `cardHTML`, its column search and grid (`--cols`, `--cmax`), the readout from `liveact.js` (`of(id)`), `paintLive`, `fitSide` (bottom-anchored text with a top fade, from the side panel), `fitUsage`. No new layout system: a grown desk is a `roomy` card with one more custom property.

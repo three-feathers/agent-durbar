@@ -65,6 +65,14 @@
 - [x] T065 (review of #532) `check:office-fill`: `ghp_` and `github_pat_` tokens in the done reply; FR-042, README and CHANGELOG say *f* may drop several steps at once [FR-042, FR-046]
 - [ ] T066 (review of #532) One helper for "mask the raw text, then strip the Markdown": #541's shared `safetext.js` and `DurbarLiveAct.excerpt` become a single helper. Whichever of #532 and #541 lands second points `grownLine` and the non-grown Done desk text (`taskOf`) at that helper and removes the other [FR-043]
 
+## Changes 2026-10-22 (owner decisions on #532: grown desks first; a wide grown desk shows more in columns)
+
+- [ ] T067 Spec: owner decisions recorded (FR-029 order, decision (2) replaced), FR-047..FR-050; plan delta [FR-029, FR-047..FR-050]
+- [ ] T068 `src/renderer/probe.js` `GCOL`, `grownCols`; `scripts/test-probe.ts` cases [FR-047, FR-048]
+- [ ] T069 `liveact.js` last tool phrase (`tool` in `of()`) + `test:liveact`; `a.busySince` in `setState`, the 30 s tick [FR-047]
+- [ ] T070 `cardHTML` grown side column (`.gx`: reply excerpt, facts); `renderOffice` sets `data-gc`, `--gm/--gr/--gs`, `fitLines` on reply; `styles.css` grid columns, measure, collapse [FR-047..FR-049]
+- [ ] T071 `check:office-fill`: 1 and 2 agents at 1440x900, 1280x800, 1920x1080 (multi-column, measure <= 90 characters per line, page rules); mutation check; `npm test`, `check:office`; screenshots `001-fill-{1,4,6}-1440x900.png`, `001-fill-1-1920x1080.png`; changelog fragment, README [FR-050]
+
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 
 - [x] T039 `src/renderer/probe.js` (`svgHollow`, `styleSplit`), `probeSet` in `chooseLayout`, `@property` for `--w`/`--min`/`--cols` in `styles.css`; `scripts/test-probe.ts` (`npm run test:probe`) [FR-033]
