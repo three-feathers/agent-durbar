@@ -651,11 +651,11 @@
     return ['The conversation is kept and resuming spends no AI credits.',busy?'The running turn stops.':'','"Approve for this session" grants are cleared.',remote?'Remote control turns off.':''].filter(Boolean);
   }
   let mcpDlgHook=null; /* set while a per-agent MCP dialog is open: called with an agent id on each `mcp` event */
-  async function copyText(text,okMsg){
+  async function copyText(text,okMsg,ms){
     try{
       if(!navigator.clipboard||!navigator.clipboard.writeText)throw new Error('no clipboard');
       await navigator.clipboard.writeText(text);
-      X.toast(okMsg,2400).classList.add('ok');
+      X.toast(okMsg,ms||2400).classList.add('ok');
     }catch(e){X.toast('Could not copy to the clipboard.',3200).classList.add('err');}
   }
   async function agentMcp(a,o){
@@ -710,12 +710,11 @@
     /* FR-004 / FR-033: an `mcp` event for this agent repaints the open dialog (no re-open) and says what changed through the polite live region.
        A throttle: the first event starts a 150 ms timer and the events that arrive meanwhile share its one repaint. The hook is dropped when the dialog closes. */
     let evT=0;
-    const say=text=>{const el=document.getElementById('srAnnounce');if(el&&text){el.textContent='';setTimeout(()=>{el.textContent=String(text).slice(0,300);},60);}};
     const onEvent=id=>{
       if(id!==a.id||!dlg||!dlg.isConnected||evT)return;
       evT=setTimeout(async()=>{evT=0;
         let ch;try{ch=await repaint();}catch(e){return;}
-        if(ch.length)say(ch.slice(0,3).join('. ')+(ch.length>3?' and '+(ch.length-3)+' more':''));
+        if(ch.length)X.announce(ch.slice(0,3).join('. ')+(ch.length>3?' and '+(ch.length-3)+' more':''));
       },150);
     };
     mcpDlgHook=onEvent;
@@ -885,12 +884,8 @@
     return {seg,built,label,html:sum+`<table class="ttab cost">${head}<tbody>${built.rows.map(row).join('')}</tbody><tfoot>${row(Object.assign({empty:false,other:false,path:''},built.total,{tokensOnly:false}))}</tfoot></table>`+notes+plan};
   }
   async function copyCostCsv(cost){
-    const text=window.DurbarCost.toCsv(cost.built,cost.label), k=cost.built.rows.length;
-    try{
-      if(!navigator.clipboard||!navigator.clipboard.writeText)throw new Error('no clipboard');
-      await navigator.clipboard.writeText(text);
-      X.toast('Copied '+k+' folder'+(k===1?'':'s')+' as CSV',2600).classList.add('ok'); /* FR-050 */
-    }catch(e){X.toast('Could not copy to the clipboard.',3200).classList.add('err');}
+    const k=cost.built.rows.length;
+    await copyText(window.DurbarCost.toCsv(cost.built,cost.label),'Copied '+k+' folder'+(k===1?'':'s')+' as CSV',2600); /* FR-050 */
   }
   const fmtDate=iso=>{const d=new Date(iso);return isNaN(d)?'':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});};
   async function toolsTab(scope,tot,groups,all){
