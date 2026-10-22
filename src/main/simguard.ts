@@ -65,7 +65,6 @@ export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean
   resolveLimit: (c: Caps) => !!c.caps,
   setMcpEnabled: (c: Caps) => !!c.mcpToggle,
   restartMcpServer: (c: Caps) => !!c.mcpRestart,
-  listMcpTools: (c: Caps) => !!c.mcpTools,
   handoffSummary: (c: Caps) => !!c.handoff,
   generateText: (c: Caps) => !!c.oneShot,
   setRemote: (c: Caps) => !!c.remote,

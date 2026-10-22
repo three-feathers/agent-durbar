@@ -221,7 +221,7 @@ assert.ok(/if \(fromAppFrame\(e\) && simAllows\(channel\)\) fn\(/.test(guardSrc)
   const inIface = interfaceOptionalMembers().sort();
   assert.deepStrictEqual(Object.keys(SIM_OPTIONAL_MEMBERS).sort(), inIface, 'SIM_OPTIONAL_MEMBERS lists exactly the optional members of interface AgentAdapter');
   const full = {
-    capUnit: 'credits', interrupt: true, models: true, history: true, caps: true, mcpToggle: true, mcpRestart: true, mcpTools: true, handoff: true,
+    capUnit: 'credits', interrupt: true, models: true, history: true, caps: true, mcpToggle: true, mcpRestart: true, handoff: true,
     oneShot: true, remote: true, renameSession: 'any', deleteSession: true, mcpSignIn: true, permModeSwitch: 'live',
   };
   const none = { capUnit: 'credits', permModeSwitch: 'none' };
@@ -239,7 +239,7 @@ assert.ok(/if \(fromAppFrame\(e\) && simAllows\(channel\)\) fn\(/.test(guardSrc)
   }
   // the gates are the contract's: with every capability on, every gated member exists; with none, none does
   const gated = inIface.filter((m) => SIM_OPTIONAL_MEMBERS[m]);
-  assert.ok(gated.length >= 17, 'the C2 members are gated');
+  assert.ok(gated.length >= 16, 'the C2 members are gated');
 }
 
 // ---- 5. FR-030 (review on #514): detection and sign-in under the simulator start no process; the seal refuses every starter ----
