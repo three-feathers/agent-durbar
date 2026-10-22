@@ -5,11 +5,12 @@ import type { AdapterRouter } from '../../adapters/router';
 import { historyOf } from '../../adapters/router';
 import type { AddResult, AgentInfo, PickedFile, ResumeResult, SessionOptions } from '../../shared/api';
 import { parseAmount, parseCapIn } from '../../shared/credits';
-import { errText, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
+import { endSessionOp, errText, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
 import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
 import type { GitStatus } from '../gitstatus';
 import { applySetPaused } from '../mcp/agentstate';
+import { mcpRestartSessionOp } from '../mcpsession';
 import type { AgentStateTracker } from '../mcp/agentstate';
 import type { CheckpointStore } from '../checkpoints';
 import type { createRemoteOps } from '../remoteops';
@@ -40,10 +41,14 @@ export interface AgentsIpcDeps {
   forgetOpenSession(key: string, id: string): void;
   /** Spec 058 FR-067: replayed history with failed tool output masked (session secret values from main). */
   maskHistory<H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H;
+  /** Spec 058: the secret values handed to an agent's session (its folder's MCP extras), masked out of errors. */
+  mcpSecrets(id: string): string[];
+  /** Spec 052 activity log row for Restart session (spec 058 FR-022). */
+  logMcp(a: AgentInfo, action: string): void;
 }
 
 export function register(deps: AgentsIpcDeps): void {
-  const { agents, router, agentState, opsDeps, remoteOps, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, vsChatRefs, continued, maskHistory } = deps;
+  const { agents, router, agentState, opsDeps, remoteOps, mcpSecrets, logMcp, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, vsChatRefs, continued, maskHistory } = deps;
   const scheduler = deps.getScheduler;
   const checkpointStore = deps.getCheckpointStore;
   ipcHandle('agents:list', () => [...agents.values()]);
@@ -81,11 +86,24 @@ export function register(deps: AgentsIpcDeps): void {
   // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
   ipcHandle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
 
+  /** End session (spec 005): remote control off first (spec 054 FR-011: off on GitHub too), then the adapter frees the session. Also Restart session's first step (spec 058 FR-022). */
+  const endSession = (id: string): Promise<void> => endSessionOp({ release: (k) => remoteOps.release(k), router }, id);
   ipcHandle('agents:end', async (_e, id: string) => {
     if (!agents.has(id)) return;
-    await remoteOps.release(id); // spec 054 FR-011: off on GitHub too before the session ends
-    await router.forAgent(id)?.stop(id);
+    await endSession(id);
   });
+  /** Spec 058 FR-022: Restart session with these servers: End session, then the same id through the resume path; no prompt is sent. */
+  const restartingSessions = new Set<string>();
+  ipcHandle('agents:mcpRestartSession', (_e, id: unknown, confirmed: unknown) =>
+    mcpRestartSessionOp({
+      agents,
+      router,
+      busy: (k) => agentState.isBusy(k),
+      endSession,
+      resume: (a) => ensureLive(a, { quiet: false }),
+      secrets: mcpSecrets,
+      log: logMcp,
+    }, restartingSessions, id, confirmed));
 
   ipcHandle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -140,8 +158,7 @@ export function register(deps: AgentsIpcDeps): void {
     if ([...agents.values()].filter((x) => wsKey(x) === key).length < 2) return { ok: false, error: 'This is the only session in the folder. Remove the folder from Folders instead.' };
     forgetOpenSession(key, a.id); // FR-020 and spec 052 FR-088: a removed session does not come back after a restart
     try {
-      await remoteOps.release(a.id); // spec 054 FR-011
-      await router.forAgent(a.id)?.stop(a.id); // the history stays on disk and is listed under Previous sessions
+      await endSession(a.id); // spec 054 FR-011: remote control off first; the history stays on disk and is listed under Previous sessions
     } catch {
       /* already gone */
     }

@@ -401,6 +401,39 @@ export interface AgentMcpEntry {
   defaultOn: boolean;
   /** This agent switched it off. */
   off: boolean;
+  /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
+  canRestart?: boolean;
+}
+
+/** `agents:mcp` (spec 019 FR-009, spec 058 FR-020). */
+export interface AgentMcpReply {
+  ok: boolean;
+  servers: AgentMcpEntry[];
+  live: boolean;
+  /** Spec 058 FR-010: when this agent app starts its servers; missing = not said. */
+  start?: 'session' | 'next-message';
+  /** Spec 058 FR-010: when a switch takes effect in a running session; missing = not said. */
+  toggleApplies?: 'live' | 'next-message';
+  /** Spec 058 FR-022: *Restart session with these servers* is offered (the app can resume and the session runs). */
+  canRestartSession?: boolean;
+}
+
+/** `agents:mcpRestart` (spec 058 FR-021): the error is short and masked. */
+export interface McpRestartResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** `agents:mcpRestartSession` (spec 058 FR-022, FR-027). */
+export interface McpRestartSessionResult {
+  ok: boolean;
+  error?: string;
+  /** The agent is working, thinking or waiting: ask, then call again with `confirmed`. Nothing changed. */
+  needsConfirm?: boolean;
+  /** The session ended but could not be resumed (as after *End session*; a message tries again). */
+  ended?: boolean;
+  /** The resume failed because the agent app's sign-in expired (FR-027). */
+  errorKind?: 'auth';
 }
 
 /** Bridge exposed by the preload script as `window.agentDurbar`. */
@@ -569,7 +602,11 @@ export interface DurbarApi {
   folderSetupExplain?(key: string, id: string): Promise<HookExplanation>;
   mcpImportApply?(key: string, ids: string[], digest: string): Promise<McpImportResult>;
   mcpRemoveLegacy?(name: string): Promise<{ ok: boolean }>;
-  agentMcp?(id: string): Promise<{ ok: boolean; servers: AgentMcpEntry[]; live: boolean }>;
+  agentMcp?(id: string): Promise<AgentMcpReply>;
+  /** Spec 058 FR-021: restart one MCP server of this agent's running session. */
+  agentMcpRestart?(id: string, name: string): Promise<McpRestartResult>;
+  /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked. */
+  agentMcpRestartSession?(id: string, confirmed: boolean): Promise<McpRestartSessionResult>;
   /** Per-agent override: `enabled=false` turns the server off for this agent (now when the session runs, else at its next start). */
   setAgentMcp?(id: string, name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;
 

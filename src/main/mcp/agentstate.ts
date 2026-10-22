@@ -87,6 +87,12 @@ export class AgentStateTracker {
     a.label = null;
   }
 
+  /** Spec 058 FR-022: working, thinking or waiting, also while the window shows it paused (a pause hides the state, it does not end the turn). */
+  isBusy(id: string): boolean {
+    const st = this.agents.get(id)?.state;
+    return st === 'working' || st === 'thinking' || st === 'waiting';
+  }
+
   get(id: string): AgentStateView | undefined {
     const a = this.agents.get(id);
     if (!a) return undefined;

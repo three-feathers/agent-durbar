@@ -591,6 +591,46 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
 
+  // ---- spec 058 FR-012: Restart one server = mcp_reconnect then mcp_status; nothing before the CLI runs; an off server is refused ----
+  {
+    const sp = fakeSpawn();
+    const reqs: Record<string, unknown>[] = [];
+    let servers = [{ name: 'notes', status: 'failed', error: 'spawn notes ENOENT' }, { name: 'web', status: 'connected' }];
+    sp.next = (c) => {
+      c.onWrite = (o) => {
+        if (o.type !== 'control_request') {
+          if (o.type === 'user') setTimeout(() => { c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, tools: [], mcp_servers: servers }); c.send({ type: 'result', subtype: 'success', is_error: false }); }, 0);
+          return;
+        }
+        const r = o.request as { subtype: string; serverName?: string };
+        if (r.subtype.startsWith('mcp_')) reqs.push(r);
+        if (r.subtype === 'mcp_reconnect') servers = servers.map((x) => (x.name === r.serverName ? { name: x.name, status: 'connected' } : x));
+        const response = r.subtype === 'mcp_status' ? { mcpServers: servers } : {};
+        setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
+      };
+    };
+    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    assert.deepStrictEqual([ad.capabilities.mcpRestart, ad.capabilities.mcpStart, ad.capabilities.mcpToggleApplies, typeof ad.restartMcpServer], [true, 'next-message', 'live', 'function']);
+    const ev: AgentEvent[] = [];
+    ad.onEvent((e) => ev.push(e));
+    const mcp = { notes: { type: 'stdio', command: 'node', args: ['n.js'] }, web: { type: 'stdio', command: 'node', args: ['w.js'] } } as never;
+    const sid = await ad.start({ workspace: WS, quiet: true, mcpServers: mcp, disabledMcpServers: ['web'] });
+    await assert.rejects(ad.restartMcpServer(sid, 'notes'), /starts its MCP servers with your next message/, 'before the first message: nothing to restart');
+    assert.strictEqual(sp.calls.length, 0, 'the CLI is not launched for a restart (Q11)');
+    await ad.send(sid, { text: 'hi' });
+    await until('idle', () => ev.some((e) => e.type === 'status' && (e as { status: string }).status === 'idle'));
+    await assert.rejects(ad.restartMcpServer(sid, 'web'), /Switch it on first/, 'a server off at launch is not in the CLI');
+    await ad.restartMcpServer(sid, 'notes');
+    assert.deepStrictEqual(reqs, [{ subtype: 'mcp_reconnect', serverName: 'notes' }, { subtype: 'mcp_status' }], 'one mcp_reconnect for that server, then the new list');
+    const last = [...ev].reverse().find((e) => e.type === 'mcp') as { servers: { name: string; status: string }[] };
+    assert.strictEqual(last.servers.find((x) => x.name === 'notes')?.status, 'connected', 'the new state from mcp_status');
+    await assert.rejects(ad.restartMcpServer('no-such', 'notes'), /not running/);
+    await ad.stop(sid);
+    // the SDK transport (dev opt-in) sends no mcp_reconnect: no Restart there (C2)
+    const sdk = new ClaudeAdapter({ sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
+    assert.deepStrictEqual([sdk.capabilities.mcpRestart, typeof sdk.restartMcpServer], [undefined, 'undefined'], 'SDK transport: no restartMcpServer');
+  }
+
   // ---- MCP sign-in challenge (spec 058 T096): a failed MCP tool result with the challenge -> mcpAuth and one mcp_status at a time ----
   {
     const sp = fakeSpawn();
