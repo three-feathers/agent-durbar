@@ -2,12 +2,17 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
-import { redact } from '../src/shared/redact';
+import { redact, maskSecretCommand, maskSecretUrl } from '../src/shared/redact';
 
 const ROOT = path.join(__dirname, '..', '..');
 const R = path.join(ROOT, 'src', 'renderer');
 const { cutText } = require(path.join(R, 'cuttext.js')) as { cutText: (t: unknown, max: number) => string };
-const S = require(path.join(R, 'safetext.js')) as { create(o: { redact?: ((s: string) => string) | null; cut?: ((s: string, n: number) => string) | null }): { mask(t: unknown): string; excerpt(t: unknown, n: number, fb?: string): string; plain(t: unknown): string } };
+const S = require(path.join(R, 'safetext.js')) as {
+  create(o: { redact?: ((s: string) => string) | null; cut?: ((s: string, n: number) => string) | null }): { mask(t: unknown): string; excerpt(t: unknown, n: number, fb?: string): string; plain(t: unknown): string; ready: boolean };
+  plain(t: unknown, codeWord?: boolean): string;
+  excerpt(raw: unknown, redact: unknown, n?: number, codeWord?: boolean): string;
+  maskLabel(raw: unknown, kind: string, mask: Record<string, unknown>): string;
+};
 let n = 0;
 const ok = (c: unknown, m: string) => { assert.ok(c, m); n++; };
 const eq = (a: unknown, b: unknown, m: string) => { assert.strictEqual(a, b, m); n++; };
@@ -60,15 +65,50 @@ eq(boom.mask(raw), '', 'a throwing redact: mask gives nothing');
   ok(!hasSecret(out), 'big input masked');
 }
 
+// the stateless parts (liveact.js and the page share them)
+eq(S.plain('a\n```js\nx\n```\nb'), 'a b', 'plain: a code block leaves a space');
+eq(S.plain('a\n```js\nx\n```\nb', true), 'a code b', 'plain: the desk variant leaves the word "code"');
+eq(S.plain('start ```never closed ghost'), 'start', 'plain: a code fence that never closes is dropped to the end');
+eq(S.plain('+ one\n- two\n* three\n> four\n# five'), 'one two three four five', 'plain: list marks (+ - *), quotes and headings go');
+eq(S.plain('[a link](http://x) and ![img](y) **bold** _it_ `code` ~~gone~~'), 'a link and img bold it code gone', 'plain: links, emphasis, backticks');
+eq(S.excerpt('x '.repeat(100), redact_(), 10), S.excerpt('x '.repeat(100), redact_(), 10), 'excerpt: deterministic');
+eq(S.excerpt(`**${ghp}**`, redact_()).includes('ghp'), false, 'excerpt: masked before plain');
+eq(S.excerpt('a '.repeat(50), redact_()).length, 99, 'excerpt: no n, not cut');
+eq(S.excerpt(raw, undefined), '', 'excerpt: missing redact gives nothing');
+eq(S.excerpt(raw, () => { throw new Error('x'); }), '', 'excerpt: a throwing redact gives nothing');
+eq(S.excerpt(raw, () => 42), '', 'excerpt: a non-string result gives nothing');
+function redact_() { return (x: string) => redact(x, {}); }
+// the tool label: a command, a URL and anything else are masked the way the chat chip masks them
+{
+  const KEY = 'Kd93' + 'LmP27xQvB' + 'w5Zt';
+  const mk = { redact: (x: string) => redact(x, {}), cmd: (x: string) => maskSecretCommand(x, {}), url: (x: string) => maskSecretUrl(x, {}) };
+  for (const [kind, raw, what] of [
+    ['run', `curl --api-key ${KEY} https://example.test/a`, 'a flag in a command'],
+    ['run', `curl -H "X-Api-Key: ${KEY}" https://example.test/a`, 'a header in a command'],
+    ['fetch', `https://example.test/a?key=${KEY}`, 'a URL query'],
+    ['read', `notes ${ghp} end`, 'anything else'],
+  ] as const) {
+    const out = S.maskLabel(raw, kind, mk);
+    ok(out && !out.includes(KEY) && !out.includes(ghp), `label hides the secret in ${what}: ${out}`);
+  }
+  ok(redact(`curl --api-key ${KEY} https://example.test/a`, {}).includes(KEY), 'plain redact() alone misses --api-key: the label needs the command mask');
+  eq(S.maskLabel('x', 'run', { redact: mk.redact }), '', 'a missing command mask fails closed');
+  eq(S.maskLabel('', 'run', mk), '', 'empty label');
+}
+// the stored-task backstop: with no redact the wrapper reports it (the page then keeps only its own words)
+eq(none.ready, false, 'no redact: not ready');
+eq(T.ready, true, 'redact: ready');
 // page wiring
 {
   const html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');
-  ok(/<script src="liveact\.js"><\/script>\s*<script src="safetext\.js"><\/script>\s*<script src="app\.js">/.test(html), 'safetext.js loads after liveact.js (which sets DurbarRedact) and before app.js');
+  ok(/<script src="exports-shim\.js"><\/script>\s*<script src="\.\.\/shared\/redact\.js"><\/script>\s*<script src="safetext\.js"><\/script>\s*<script src="liveact\.js"><\/script>\s*<script src="app\.js">/.test(html), 'script order: exports-shim, redact, safetext, liveact, app');
+  const la = fs.readFileSync(path.join(R, 'liveact.js'), 'utf8');
+  ok(/ST\.plain\(t\)/.test(la) && !/replace\(\/\[\*_`~\]\//.test(la), 'liveact.js keeps no plain() of its own');
   ok(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8').includes("'safetext.js'"), 'copied to dist');
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
   ok(!/plainMd\(/.test(app), 'app.js has no plain-then-cut path of its own left');
   ok(!/SHORT\(plainMd/.test(app), 'no SHORT(plainMd(...))');
-  ok(/function setState\(a,state,label,task\)\{\s*if\(typeof task==='string'\)task=safeMask\(task\);/.test(app), 'setState masks the stored task (backstop)');
+  ok(/function setState\(a,state,label,task\)\{\s*if\(typeof task==='string'\)task=taskMask\(task\);/.test(app), 'setState masks the stored task (backstop)');
   ok(/a\.lastOutput\?safeExcerpt\(a\.lastOutput,140\):'Finished\.'/.test(app), 'the done desk uses the excerpt helper');
 }
 console.log(`safetext: ${n} checks passed`);

@@ -8,6 +8,7 @@ const THEME=window.THEME; /* theme packs (specs 035-040): tokens, words, motion;
 const T_=n=>THEME.token(n);
 const wordOf=k=>THEME.word(k);
 const qs = new URLSearchParams(location.search);
+if(qs.has('sim')&&qs.get('noredact')==='1')window.DurbarRedact=undefined; /* spec 041 FR-065 test only (simulator): the page as if the redact module were missing, to check it fails closed */
 /* spec 052 FR-084: Command (⌘) on a Mac, Ctrl elsewhere; keys are shown per platform (src/renderer/keys.js) */
 const KEYS=window.DurbarKeys;
 const IS_MAC=KEYS.isMac(navigator.platform);
@@ -1274,7 +1275,7 @@ function wireMenu(btnId,menuId){
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
-function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff,.pcmd,.pfold[hidden]'+(SIMPLE?'':',.pfold')).forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}let answerObs=null;
+function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff,.pcmd,.pfold[hidden]'+(SIMPLE?'':',.pfold')).forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */const q=n.querySelector('.q-text');return safeMask((q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,''));} /* spec 041 FR-065: the question is agent text; the answer bar, the inbox and announcements read it from here */let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
 const chatKeyText=k=>keyText(KEYS.chatParts(k,IS_MAC)), chatKeyAria=k=>ariaKeys(KEYS.chatParts(k,IS_MAC)); /* FR-084: Alt+A elsewhere, ⌥⌘A on a Mac */
@@ -1301,7 +1302,7 @@ function wireAnswerBar(a){
     const opts=[...it[0].querySelectorAll('.q-opt')],other=it[0].querySelector('.q-other'),ok=c.querySelector(':scope > .note-actions .btn.primary'),skip=c.querySelector(':scope > .note-actions .btn.danger');
     if(it[0].querySelector('.q-opts[role="group"]')||opts.length>4||!other||!ok||opts.some(o=>(o.querySelector('.q-lbl')||o).textContent.length>40))return null;
     const qt=it[0].querySelector('.q-text').cloneNode(true),tag=qt.querySelector('.tag');if(tag)tag.remove();
-    return {opts,other,ok,skip,tag:tag?tag.textContent:'',q:qt.textContent.replace(/\s+/g,' ').trim()};};
+    return {opts,other,ok,skip,tag:tag?tag.textContent:'',q:safeMask(qt.textContent.replace(/\s+/g,' ').trim())};};
   let painted='';
   function paint(){
     if(!card||cardVisible){if(painted||!bar.hidden){bar.hidden=true;bar.innerHTML='';painted='';}return;}
@@ -2453,7 +2454,7 @@ function onSubEvent(a,e){
   /* helper card: what it is doing right now */
   if(e.type==='thinking')setState(card,'thinking',null);
   else if(e.type==='output')setState(card,'working',null,e.final?safeExcerpt(e.text,100):undefined);
-  else if(e.type==='toolCall'&&e.phase==='start'){const l=toolLabel(e.args);setState(card,'working',null,e.tool+(l?' '+SHORT(safeMask(l),80):''));}
+  else if(e.type==='toolCall'&&e.phase==='start'){const l=toolLabel(e.args);setState(card,'working',null,e.tool+(l?' '+safeToolLabel(e.tool,l,80):''));}
   else if(e.type==='status'&&e.intent)setState(card,'working',null,safeExcerpt(e.intent,100));
   if(ui.selected===card.id)updatePanelHeader();
 }
@@ -2527,15 +2528,23 @@ function closeTurn(a){
   a.turn=null;
 }
 function setState(a,state,label,task){
-  if(typeof task==='string')task=safeMask(task); /* spec 041 FR-065: backstop, whatever path built the line (the helper masks before cutting; this one cannot repair a cut token) */
+  if(typeof task==='string')task=taskMask(task); /* spec 041 FR-065: backstop, whatever path built the line (the helper masks before cutting; this one cannot repair a cut token) */
   const ch=a.state!==state||(label!==undefined&&a.label!==label)||(task!==undefined&&a.task!==task);
   a.state=state; if(label!==undefined)a.label=label; if(task!==undefined)a.task=task;
   if(ch&&a.live&&a.info&&a.info.modelControl&&a.info.modelControl.compact&&!a.parent)updateCtxChip(a); /* the Compact button is greyed while the agent works */
   if(ch)scheduleRender();
 }
 const SHORT=(v,n)=>DurbarCutText.cutText(v,n);
-const SAFE=window.DurbarSafeText.create({redact:window.DurbarRedact&&typeof window.DurbarRedact.redact==='function'?t=>window.DurbarRedact.redact(t):null,cut:SHORT}); /* spec 041 FR-065: agent text is masked on the raw text, then made plain, then cut; no redact module: neutral words, never the raw text */
+const RED=window.DurbarRedact&&typeof window.DurbarRedact.redact==='function'?window.DurbarRedact:null;
+const SAFE=window.DurbarSafeText.create({redact:RED?t=>RED.redact(t):null,cut:SHORT}); /* spec 041 FR-065: agent text is masked on the raw text, then made plain, then cut; no redact module: neutral words, never the raw text */
 const safeExcerpt=(t,n,fb)=>SAFE.excerpt(t,n,fb),safeMask=t=>SAFE.mask(t);
+/* the tool label of a task line, masked like the chat chip (a command by maskSecretCommand, a URL by maskSecretUrl, else redact), then cut */
+const TOOLMASK=RED?{redact:t=>RED.redact(t),cmd:t=>RED.maskSecretCommand(t),url:t=>RED.maskSecretUrl(t)}:{};
+const safeToolLabel=(tool,l,n)=>{const m=window.DurbarSafeText.maskLabel(l,toolKind(tool),TOOLMASK);return m?SHORT(m,n):'';};
+/* setState's backstop (FR-065): the task text is masked. With no redact module only Durbar's own fixed words stay (agent text is blanked) */
+const FIXED_TASK=new Set(['Ready','Thinking','Working','Finished.','Waiting for permission','Waiting for your OK on a plan','The agent asks you a question','Stopped. Ready for your next message.','Signed in again. Ready for your message.','Session ended. Send a message to resume it.','Ready. Send a message to start.','Plan rejected. Nothing was changed.','Continuing your last session…','Your last session here. It continues when you open it.']);
+const FIXED_TASK_PREFIX=/^(Continued: |Resumed: |Send failed: |Continuing after |Stopped at )/;
+const taskMask=t=>SAFE.ready?SAFE.mask(t):(FIXED_TASK.has(t)||FIXED_TASK_PREFIX.test(t)?t:'');
 const toolArg=args=>!args||typeof args!=='object'?'':String(args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'');
 function toolLabel(args){return toolArg(args).replace(/\s+/g,' ').slice(0,400);}
 /* spec 052 FR-063: the whole argument as written (line breaks kept), for the open chip; at most 20000 characters */
@@ -2682,7 +2691,7 @@ function showQuestion(a,e){
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st};
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce(a.name+' asks: '+((qs[0]&&qs[0].question)||'a question'));renderInboxBtn();
+  announce(a.name+' asks: '+(safeMask((qs[0]&&qs[0].question)||'')||'a question'));renderInboxBtn();
 }
 /* ---------- MCP elicitation (spec 012 FR-151): a form in the question card, or an https page opened only after a click.
    Text only, never HTML; values are never logged or shown afterwards. Main checks the answer again before the agent gets it. ---------- */
@@ -2786,7 +2795,7 @@ function showElicitation(a,e){
   n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st,elicit:isUrl?'url':'form'};
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce(a.name+': '+(R.source?R.source+' ':'an MCP server ')+(isUrl?'asks you to open a page on '+(R.host||'the web'):'asks for input')+'. '+SHORT(R.message||'',160));renderInboxBtn();
+  announce(a.name+': '+(R.source?R.source+' ':'an MCP server ')+(isUrl?'asks you to open a page on '+(R.host||'the web'):'asks for input')+'. '+safeExcerpt(R.message||'',160,''));renderInboxBtn();
 }
 function settleQuestion(a,answers,action){
   const Q=a.question;if(!Q)return;a.question=null;
@@ -3064,7 +3073,7 @@ function onLiveEvent(e){
   case 'toolCall':{const t=ensureTurn(a);
     if(isTaskTool(e.tool)||(t.T.chipEls[e.callId]===undefined&&a.subs&&a.subs.has(e.callId)))onTaskTool(a,e);
     else tTool(t.T,e);
-    if(e.phase==='start'&&!isTaskTool(e.tool)){const label=toolLabel(e.args);setState(a,a.state==='thinking'?'working':a.state,null,a.intent||(e.tool+(label?' '+SHORT(safeMask(label),90):'')));}
+    if(e.phase==='start'&&!isTaskTool(e.tool)){const label=toolLabel(e.args);setState(a,a.state==='thinking'?'working':a.state,null,a.intent||(e.tool+(label?' '+safeToolLabel(e.tool,label,90):'')));}
     stickyScroll(chat);return;}
   case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
     a.usageText=usageLong(a);recordUsage(a,e);scheduleRender();
@@ -3091,7 +3100,7 @@ async function sendLive(text,forId,opts){
   if(a.planNext){a.planNext=false;renderAttached();}
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
-  if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
+  if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'Send failed'));}
 }
 /* spec 012 FR-087 (owner 2026-10-20, option c): a refusal of Read-only / Ask first (Codex's sandbox could not start, or Codex cannot
    limit reads) never suggests a mode in its text; a "Change mode…" button opens the usual mode menu, with every mode and its help */
@@ -4321,6 +4330,7 @@ function initPrev(a){
 /* the two groups of Previous sessions, pinned first, hidden ones out unless shown, filtered by the title query (spec 006 FR-023..FR-027) */
 const PIN_SVG='<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false"><path d="M9.5 1.5l5 5-2 .5-2.5 2.5.5 3.5-1 1L6.5 10 3 13.5l-.5-.5L6 9.5 2.5 6l1-1 3.5.5L9.5 3z" fill="currentColor"/></svg>';
 function prevRow(x,g,k,title,sub,main,info,a){
+  title=safeMask(title)||'Session'; /* spec 041 FR-065: a session title is agent text */
   const hid=info.hidden, mark=(info.pinned?`<span class="prev-pin" title="Pinned">${PIN_SVG}<span class="sr-only">Pinned</span></span>`:'')+(hid?'<span class="tag prev-hidtag">Hidden</span>':'');
   return `<div class="prev-row${hid?' is-hidden':''}" data-pg="${g}" data-pk="${esc(k)}"><div class="prev-tx"><b title="${esc(title)}">${mark}<span class="prev-t">${esc(title)}</span></b><small>${sub}</small></div>${main}<button class="btn sm prev-more" type="button" data-pv="more" aria-haspopup="menu" aria-label="Actions for ${esc(title)}" title="${g==='cli'?'Pin, rename, hide or delete':'Pin, hide or delete'}">⋯</button></div>`;
 }
@@ -4679,5 +4689,5 @@ renderFilter(); renderAll();
 if(qs.get('view')==='list')setView('list');
 if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 /* spec 059 test hook, simulator only: a driver reads agents and calls what the Previous sessions row menu will call */
-if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow};
+if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow,emit:onLiveEvent}; /* spec 041 FR-065: the driver feeds events through the real handler */
 })();

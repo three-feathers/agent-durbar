@@ -164,7 +164,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
 // page wiring: the shim, the compiled redact module and liveact.js load in order before app.js; redact.ts stays import-free
 {
   const html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');
-  ok(/<script src="exports-shim\.js"><\/script>\s*<script src="\.\.\/shared\/redact\.js"><\/script>\s*<script src="liveact\.js"><\/script>\s*<script src="safetext\.js"><\/script>\s*<script src="app\.js">/.test(html), 'script order');
+  ok(/<script src="exports-shim\.js"><\/script>\s*<script src="\.\.\/shared\/redact\.js"><\/script>\s*<script src="safetext\.js"><\/script>\s*<script src="liveact\.js"><\/script>\s*<script src="app\.js">/.test(html), 'script order');
   const red = fs.readFileSync(path.join(ROOT, 'src', 'shared', 'redact.ts'), 'utf8');
   ok(!/^\s*import\s/m.test(red) && !/\brequire\(/.test(red), 'redact.ts has no imports (it loads as a page script)');
   const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8');

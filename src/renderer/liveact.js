@@ -6,13 +6,14 @@
   else{root.DurbarLiveAct=api; if(root.exports&&typeof root.exports.redact==='function')root.DurbarRedact=root.exports;} /* the global `exports` stays: the compiled module reads its own constants from it */
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
+  const ST=typeof module==='object'&&module.exports?require('./safetext.js'):self.DurbarSafeText; /* spec 041 FR-065: the one owner of plain() and the label mask (safetext.js loads first) */
   const KEEP=1200;          /* characters of the current thinking block or reply kept (the newest) */
   const PAINT_MS=250;       /* FR-030: at most 4 paints a second per desk */
   const LINE_MAX=160;       /* one-line readout (desk text line) */
   const PANEL_MAX=200;      /* side panel, a few lines */
   const cutOf=(s,n)=>{s=String(s==null?'':s).replace(/\s+/g,' ').trim();const c=Array.from(s);return c.length<=n?s:c.slice(0,n-1).join('').trimEnd()+'…';};
   /* Markdown to plain words: code blocks, links, emphasis, headings and list marks go; whitespace collapses */
-  const plain=t=>String(t==null?'':t).replace(/```[\s\S]*?(```|$)/g,' ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*+\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
+  const plain=t=>ST.plain(t);
   /* a heading line ("**Planning the change**", "## Plan") is a title, not a sentence: it is left out */
   const HEAD=/^[ \t]*(?:#{1,6}[ \t].*|\*\*[^*\n]+\*\*[ \t]*)$/gm;
   /* The newest whole sentences that fit in `max` characters (only the newest one with `one`). A sentence ends at . ! ? or … followed by a
@@ -36,7 +37,7 @@
     const m=mask||{}, kind=o&&o.kind||'tool', tool=String(o&&o.tool||'tool'), raw=String(o&&o.label||'').trim();
     if(o&&o.simple)return cutOf(o.simple,LINE_MAX);
     const isUrl=/^[a-z][a-z0-9+.-]{1,20}:\/\//i.test(raw);
-    const lab=!raw?'':kind==='run'&&m.cmd?m.cmd(raw):isUrl&&m.url?m.url(raw):m.redact?m.redact(raw):raw;
+    const lab=ST.maskLabel(raw,kind,m);
     const t=tool.toLowerCase();
     let verb;
     if(isUrl||/fetch|web|url|http/.test(t))verb='Opening';
