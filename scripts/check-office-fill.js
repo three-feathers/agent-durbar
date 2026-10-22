@@ -53,6 +53,17 @@ function MEASURE(root) {
   }
   return worst;
 }
+/* review of #554: each open desk's scene, in the page: its box inside its card (size and position) and its own flat colours (fills drawn at full
+   opacity, not the halo or the glow), to measure how sharp it is drawn */
+function SCENES() {
+  return [...document.querySelectorAll('#stage .desk.card[data-id]')].map((d) => {
+    const s = d.querySelector('svg.scene');
+    if (!s || !s.getClientRects().length) return null;
+    const c = d.getBoundingClientRect(), r = s.getBoundingClientRect(), flat = new Set();
+    s.querySelectorAll('[fill^="#"]').forEach((e) => { const v = e.getAttribute('fill').toLowerCase(); if (v.length === 7 && !e.closest('[opacity],.halo,.glow')) flat.add(v); });
+    return { id: d.dataset.id, card: [c.width, c.height].map((x) => Math.round(x * 100) / 100), rel: [r.left - c.left, r.top - c.top, r.width, r.height].map((x) => Math.round(x * 100) / 100), box: [r.left, r.top, r.width, r.height].map(Math.round), flat: [...flat] };
+  }).filter(Boolean);
+}
 const MAX_CHARS = 90; /* owner 2026-10-22: a readable measure, about 80-90 characters a line */
 const GHP = 'ghp_' + 'Fill0Token0Value0123456789ab', PAT = 'github_pat_' + '11FILL0TOKEN_value0123456789abcdef';
 
@@ -82,6 +93,25 @@ module.exports = async (ctx) => {
   const failures = [];
   const check = (cond, msg) => { if (!cond) failures.push(msg); };
   const rows = [];
+
+  /* the lounge setting, as a person turns it (Settings) */
+  const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('shutSw')`, 4000); await js(`document.getElementById('shutSw').click()`); await H.key('Escape'); await ctx.sleep(500); };
+  /* how sharp a scene is drawn: the share (%) of its pixels that are exactly one of its flat colours (+-2 per channel); a blurred drawing
+     loses most of them. Under load a capture can show an older frame: read again (up to 3 times) and keep the best */
+  const sharp = async (sc) => {
+    const cs = sc.flat.map((h) => { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; });
+    let best = 0;
+    for (let i = 0; i < 3; i++) {
+      if (i) await js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
+      const img = await ctx.win.webContents.capturePage({ x: sc.box[0], y: sc.box[1], width: Math.max(1, sc.box[2]), height: Math.max(1, sc.box[3]) });
+      const buf = img.toBitmap();
+      let n = 0;
+      for (let k = 0; k < buf.length; k += 4) if (cs.some((c) => Math.abs(c[0] - buf[k + 2]) <= 2 && Math.abs(c[1] - buf[k + 1]) <= 2 && Math.abs(c[2] - buf[k]) <= 2)) n++;
+      best = Math.max(best, Math.round((1000 * n) / (buf.length / 4)) / 10);
+    }
+    return best;
+  };
+  const looks = async () => { const out = new Map(); for (const sc of await js(`(${SCENES.toString()})()`)) out.set(sc.id, { card: sc.card, rel: sc.rel, sharp: await sharp(sc) }); return out; };
 
   const one = async (label, n, w, h, query) => {
     await load(n, w, h, query);
@@ -122,7 +152,30 @@ module.exports = async (ctx) => {
       /* FR-053: Noor and Maya (done, each in a folder where others work) roll in; the 15 agents still fit (checked by one()) */
       if (n === 15) { const sh = await js(`[...document.querySelectorAll('#stage .desk.shut')].map(e=>(e.getAttribute('aria-label')||'').split(',')[0]).sort().join(',')`); check(sh === 'Maya,Noor', `15 agents at ${w}x${h}: rolled ${sh}, not Maya,Noor`);
         const hh = await js(`[...document.querySelectorAll('#stage .lounge')].map(e=>{const d=e.closest('.room').querySelector('.desk.card');return d?Math.abs(e.getBoundingClientRect().height-d.getBoundingClientRect().height):99})`);
-        check(hh.every((x) => x <= 1), `15 agents at ${w}x${h}: a rolled agent is not as tall as the desks in its room (${hh})`); }
+        check(hh.every((x) => x <= 1), `15 agents at ${w}x${h}: a rolled agent is not as tall as the desks in its room (${hh})`);
+        /* review of #554 (Paco): the lounge changes no working desk's scene. Every desk open with the setting on and off has the same scene box
+           inside its card (size and position), and is drawn as sharp (its flat colours, within 3 points); Jonas's scene was drawn blurred
+           beside the lounge at 1280x800 (21% against 33%) while its box was the same */
+        await H.settle(); await ctx.sleep(300);
+        const lon = await looks();
+        await toggle(); await H.settle(); await ctx.sleep(300);
+        const loff = await looks();
+        await toggle();
+        check(await H.until(`document.querySelectorAll('#stage .desk.shut').length===2`, 3000), `15 agents at ${w}x${h}: the lounge does not come back on`);
+        let same = 0;
+        for (const [id, a] of lon) {
+          const b = loff.get(id);
+          if (!b) continue;
+          same++;
+          /* a desk of the same size: the same box; a grown desk the lounge made wider (1920x1080): the same rules, i.e. the same aspect, the
+             same left inset and centred in its card's height */
+          if (a.card.every((x, i) => Math.abs(x - b.card[i]) <= 0.5)) check(a.rel.every((x, i) => Math.abs(x - b.rel[i]) <= 0.5), `15 agents at ${w}x${h}: desk ${id} (${a.card}) has its scene at ${a.rel} with the lounge, ${b.rel} without`);
+          else for (const [k, v] of [['on', a], ['off', b]]) check(Math.abs(v.rel[0] - b.rel[0]) <= 0.5 && Math.abs(v.rel[2] / v.rel[3] - b.rel[2] / b.rel[3]) <= 0.01 && Math.abs(v.rel[1] - (v.card[1] - v.rel[3]) / 2) <= 1, `15 agents at ${w}x${h}: desk ${id}'s scene (lounge ${k}) is at ${v.rel} in a ${v.card} card: not the grown desk's aspect, inset or centring`);
+          check(a.sharp >= b.sharp - 3, `15 agents at ${w}x${h}: desk ${id}'s scene is drawn less sharp with the lounge (${a.sharp}% of its pixels in its flat colours, ${b.sharp}% without)`);
+        }
+        check(same >= 10, `15 agents at ${w}x${h}: only ${same} desks open with the lounge on and off`);
+        rows.push(`15 agents at ${w}x${h}: ${same} scenes the same with the lounge on and off (sharpness ${[...lon].map(([id, a]) => id + ' ' + a.sharp + '/' + (loff.get(id) || {}).sharp).join(', ')})`);
+      }
       if (OUT && w !== 1920) await ctx.shot(path.join(OUT, `001-fill-${n}-${w}x${h}.png`));
     }
   }
@@ -293,7 +346,6 @@ module.exports = async (ctx) => {
     check(await H.until(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent==='Tomas'`, 4000), `${tag}: Enter on a sleeper does not open the chat`);
     await H.key('Escape'); await H.until(`!document.body.classList.contains('panel-open')`, 3000); await ctx.sleep(300);
     /* the width goes to the working desks: wider than with the setting off, the row no taller */
-    const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('shutSw')`, 4000); await js(`document.getElementById('shutSw').click()`); await H.key('Escape'); await ctx.sleep(500); };
     const on = await lounge();
     await toggle();
     const off = await lounge();

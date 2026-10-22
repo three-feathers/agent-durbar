@@ -666,7 +666,10 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sc-c .halo{animation:halo var(--m-halo,3.6s ease-in-out infinite alternate)}
 .sc-c .halo-waiting{animation-duration:2.6s}
 .sc-c .halo-error{animation:none}
-@keyframes halo{from{opacity:.5}to{opacity:1}}
+/* the halo pulses its fill-opacity, not its opacity (review of #554): an opacity animation runs on the compositor, so the chair and the figure drawn
+   over the halo go to a layer of their own, and where Chromium cannot merge that layer into the page (it depends on the desks around: the lounge's
+   two-row room did it) it draws them blurred. fill-opacity is painted with the scene, a few steps a second like the other compact animations. */
+@keyframes halo{from{fill-opacity:.5}to{fill-opacity:1}}
 .sc-c .wave{transform-origin:20% 90%;animation:wave var(--m-wave,2.8s ease-in-out infinite)}
 @keyframes wave{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(6deg)}}
 .sc-c .cursor{animation:dotp var(--m-cursor,1.6s ease-in-out infinite)}

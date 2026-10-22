@@ -90,6 +90,7 @@
 - [x] T084 Lounge polish (coordinator review): 64 px seats and bunk beds so the characters fill the height, bubbles on up to 3 lines in the upper part, names on the characters, corner at least 150 px; `test:shutters`, `check:office-fill` (names, character size, bubble lines), screenshots retaken [FR-052, FR-053, FR-057]
 - [x] T085 (review of #554, fjcabello) Spec: the state is `data-state` and the first `is-*` class, the resting kind `rest-recent`/`rest-old`; FR-051's helper and away rules checked in the page; stale wording [FR-051, FR-054, FR-057]
 - [x] T086 `app.js` desk buttons `data-state` (state class first, `rest-*` kind, `data-rest`); `styles.css`, `shots-033`, `shots-034`, `check:office-fill` selectors; `test:shutters` source checks of `shutInput` (away, busy helper); `check:office-fill` cases (a Done agent with a working helper keeps its desk and helper; an agent away at a place is not in the lounge), mutation checks; stale strip/chip wording (`app.js`, `shutters.js`, `styles.css`, `driver-helpers.js`, `test-shutters.ts`) [FR-051, FR-054, FR-057]
+- [x] T087 (review of #554, fjcabello, 23:09) Cause of the blurred desk scene beside the lounge (a composited halo animation, not the layout); `styles.css` halo pulses `fill-opacity`; `check:office-fill` same scene box and sharpness with the lounge on and off, mutation checks (old halo; a rule that moves scenes beside the lounge); `check-theme-art`; spec note, `docs/agent-notes.md` [FR-057]
 
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 
