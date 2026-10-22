@@ -27,10 +27,17 @@ module.exports = async (ctx) => {
       await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`); // the level is remembered: reload so the office is drawn in it
       await H.load({ query: { simquestion: 'long' }, ready: 'fit' });
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${w} ${level}: the detail level is on`);
-      let id = null;
-      for (const end = Date.now() + 8000; !id && Date.now() < end;) { id = await js(`(()=>{for(const d of document.querySelectorAll('#stage .desk[data-id]')){d.click();const c=document.querySelector('#chat .note.question');if(c)return d.dataset.id;const b=document.getElementById('backBtn');if(b)b.click();}return ''})()`); if (!id) await ctx.sleep(100); }
-      assert.ok(id, `${w} ${level}: an agent has the question in its chat`);
-      await until(`!!document.querySelector('#chat .note.question .q-opt')`); await settle();
+      // Wait for the simulated question itself (the simulator asks it 300 ms after the load; a busy runner is later), then open the asking
+      // agent's chat from its desk and wait for its card. The old way clicked every desk in one synchronous sweep for at most 8 s and
+      // could never see a question that arrived, or a chat that rendered, between two sweeps.
+      await js(`window.__qoErr=[];addEventListener('error',e=>window.__qoErr.push(String(e.message).slice(0,160)))`);
+      const asking = `((window.__durbarSimUi&&window.__durbarSimUi.agents().find(a=>!a.parent&&a.question))||{}).id||''`;
+      await until(asking, 20000);
+      const id = await js(asking);
+      if (id) { await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(id)})+'"]');if(d)d.click();})()`); await until(`!!document.querySelector('#chat .note.question .q-opt')`, 15000); }
+      const seen = await js(`(()=>{const ag=(window.__durbarSimUi&&window.__durbarSimUi.agents())||[];return {asking:ag.filter(a=>a.question).map(a=>a.id+' '+a.question.requestId+' inPage='+!!(a.question.n&&a.question.n.isConnected)),desk:!!document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(id)})+'"]'),desks:document.querySelectorAll('#stage .desk[data-id]').length,panel:document.body.classList.contains('panel-open'),title:(document.getElementById('panelTitle')||{}).textContent||'',cards:document.querySelectorAll('#chat .note.question .q-opt').length,visibility:document.visibilityState,errors:window.__qoErr||[]}})()`);
+      assert.ok(id && seen.cards > 0, `${w} ${level}: an agent has the question in its chat: ${JSON.stringify({ id, ...seen })}`);
+      await settle();
       await js(`document.querySelector('#chat .note.question').scrollIntoView({block:'center'})`); await settle();
       const r = await js(`(()=>{const card=document.querySelector('#chat .note.question'),cr=card.getBoundingClientRect();
         const cut=el=>{const c=getComputedStyle(el);return el.scrollWidth>el.clientWidth+1||el.scrollHeight>el.clientHeight+1||c.textOverflow==='ellipsis'||c.whiteSpace==='nowrap'||(c.webkitLineClamp&&c.webkitLineClamp!=='none')||((c.overflow==='hidden'||c.overflowY==='hidden')&&el.scrollHeight>el.clientHeight+1);};
