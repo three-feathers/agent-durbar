@@ -148,3 +148,22 @@ The owner set these rules in the team chat on 2026-10-20 and asked for them, and
 
 - **FR-035** Before any merge, the merging agent reads every review, review thread, line comment and PR comment; a required change in a plain comment counts as *request changes*; nothing is merged while a request, an unresolved thread or an unanswered comment from someone else is open. `scripts/pr-gate.sh <N>` (bash and `gh`, verdict only, never merges) checks it together with the checks, CodeQL and the open alerts on the merge and head refs. `real:` it held #369 on an unanswered comment and passed #390 (2026-10-20). Mirrors: PR template checkbox, `docs/collaboration.md` step 9, `docs/agent-notes.md`.
 
+### 2026-10-22: decisions taken in the team chat (recorded by Paco's agent; wording checked by Vikram's agent)
+
+Numbers follow FR-036 (*test once*, PR #561), which lands first.
+
+- **FR-037** **Record team decisions the same day.** A decision about how the team or its agents work, taken in the team chat, is written the same day as a dated FR in this spec: who decided, a link to the message or PR, and where it applies. If it changes how agents work, it also goes into `AGENTS.md` (and its mirrors). A decision that only lives in the chat or in one agent's memory does not count yet.
+- **FR-038** **Sub-agents by the size of the change** (both agents' sides adopted it 2026-10-22).
+  - Small (a doc, a spec line, one file, no security impact): one sub-agent on a smaller model. It reads CI for the sha, posts `checks run at <sha>`, and runs no extra local suite. The other team's review is the review.
+  - Medium: one implementer that mutation-checks its own fix; a reviewer only for the risks named for that change.
+  - Large or sensitive (secrets, writing user files, IPC, redaction, permissions, spending): the full analyst → implementer → reviewer, on the top model.
+  - The analyst only when there are decisions to make. At most two heavy agents at a time on one machine. The same implementer keeps a PR through its fix rounds. A recurring sweep does a quick check first and starts an agent only if something new arrived.
+- **FR-039** **Land before building** (Vikram's side, 2026-10-22, after Vikram asked to clear the backlog). While 10 or more PRs are open, that side opens no new feature PRs, and its fixers only work on PRs that are already open. Team-wide only once Vikram and Ruben agree; a feature the owners order still gets its spec.
+- **FR-040** **Unstack with a replacement PR.** A stacked PR whose own change does not depend on the PRs below it is rebuilt off main as a new branch and a new PR (as #533 replaced #516). The new PR closes the old one with a link and refers to its review history. Never force-push, rename an open PR's branch or use a stack tool's "unstack" just to get past a refused merge.
+- **FR-041** **Using the merge queue** (on since 2026-10-22, #507).
+  - Approve, then `gh pr merge <N> --auto --match-head-commit <sha>`; the queue runs the required checks and merges. `--delete-branch` does not work with the queue, so delete the branch and worktree by hand after the merge.
+  - `gh pr view` shows a queued PR as `autoMergeRequest: null`; check `isInMergeQueue` and `mergeQueueEntry` with the GraphQL API instead.
+  - When an approval was dismissed only by a base move or a merge of main, and the PR's own patch-id is unchanged, re-approving (or an admin merge with a PR comment) is a formality (FR-032).
+- **FR-042** **One combined review list per round.** Each review round gets one message in the team chat, in landing order, instead of many separate nudges. Agents answer `taking #N, #M` before they review (FR-036).
+- **FR-043** **Review teammates' PRs first.** Their approvals are what unblock ours, so a teammate's PR waiting for review comes before starting new work.
+
