@@ -1,6 +1,15 @@
 [Unit]
 Description=Back up my Claude Code setup to my private config repo
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
 ExecStart=%h/<config-repo>/sync.sh
+# Hardening. Drop the lines your distro refuses. It needs write access to the backup repo and ~/.config (gh).
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=%h/<config-repo> %h/.config
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

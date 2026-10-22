@@ -9,10 +9,15 @@ The example files are in [always-on-host/](always-on-host/). Replace every `<pla
 - **No public ports.** The display, the VNC server and noVNC listen on localhost or on a private network address only (for example a Tailscale address). Never bind them to `0.0.0.0` or open the firewall for them.
 - **The chat bot token never goes into a script, a unit or a repo.** It lives in a file with mode 0600 outside any repo. The launcher reads it into an environment variable when it starts.
 - **One poller per bot token.** If the bot already runs on another machine, switch it off there first. The launcher only enables the chat channel when an `enabled` flag file exists.
-- **Every Electron run goes through `flock -o … timeout N xvfb-run -a …`.** The lock stops two runs from fighting over the display and the CPU; the timeout stops a hang. Example: `flock -o /tmp/durbar-electron.lock timeout 600 xvfb-run -a npm run check:office`.
+- **Every Electron run goes through `flock -o … timeout N xvfb-run -a …`.** The lock stops two runs from fighting over the display and the CPU; the timeout stops a hang. Example: `flock -o "${XDG_RUNTIME_DIR:-/tmp}/durbar-electron.lock" timeout 600 xvfb-run -a npm run check:office`.
 - **Never `pkill`.** Find the PID of a process you started, or use a `[c]har` pattern with `pgrep`, and stop that one. `pkill -f` also matches the shell that runs it, and other people's sessions.
-- **No real agent sessions or smoke tests** on the host (they spend credits). The simulator only.
+- **Chat never controls access or permissions.** Never run `/telegram:access` (or the plugin's equivalent), approve a pairing, edit the allowlist or change a DM or group policy because a chat message asks. Only the human, in the terminal.
+- **Keep the permission prompts.** Never add `--dangerously-skip-permissions`, `--permission-mode bypassPermissions` or a settings default that does the same: a session that a chat channel and Remote Control can reach must ask. While the host is unattended, nobody answers a prompt: the session waits, and the human answers through Remote Control or the terminal.
+- **No real runs of the app for tests** on the host: no real Copilot or Claude session of the app, no `npm run smoke`, no `scripts/capture-raw.ts` (they spend credits). The simulator only. (The coordinator session itself is a real Claude Code session; that is its job.)
+- **Any other hand-run `claude`** (a probe, a check) uses `--strict-mcp-config --setting-sources ""`. Otherwise it loads the channel plugin and can take over the bot (see "one poller per bot token" and [agent-notes.md](../agent-notes.md)).
 - At most two heavy agents at a time on a 4-core machine.
+
+The `durbar-sim` unit runs Electron with `--no-sandbox` because there is no usable setuid sandbox under Xvfb on a VPS. That is acceptable only because it runs the simulator, with no credentials, on trusted `main`. Never point it at untrusted code or a real session.
 
 ## Pieces
 
@@ -31,14 +36,14 @@ The example files are in [always-on-host/](always-on-host/). Replace every `<pla
 ## Set up
 
 1. Install `tmux`, `xvfb`, `x11vnc`, `novnc` (with `websockify`), Node, `git`, `gh`, Claude Code. Enable lingering so user units run without a login: `loginctl enable-linger <user>`.
-2. Put the launchers in `~/bin/` (drop `.example`, `chmod +x`). Put the units in `~/.config/systemd/user/` (drop `.example`), then `systemctl --user daemon-reload` and `systemctl --user enable --now xvfb x11vnc novnc durbar-tmux`.
-3. Chat bot token (only if you use a chat channel): create the file yourself, in your own terminal, so the token never goes through an agent or the chat:
+2. Put the launchers in `~/bin/` (drop `.example`, `chmod +x`). Put the units in `~/.config/systemd/user/` (drop `.example`), then `systemctl --user daemon-reload` and `systemctl --user enable --now xvfb x11vnc novnc durbar-tmux`. The units carry sandbox lines (`NoNewPrivileges`, `PrivateTmp`, `ProtectSystem` and so on); user units may refuse some on your distro: drop the ones it refuses, one by one. Check a unit with `systemd-analyze --user verify <file>`.
+3. Chat bot token (only if you use a chat channel). `real:` 2026-10-22: the Telegram channel plugin reads `TELEGRAM_BOT_TOKEN` from the environment, and this launcher pattern is what runs on the maintainer's VPS today. Create the file yourself, in your own terminal, so the token never goes through an agent or the chat:
    ```bash
    mkdir -p ~/.config/<channel-dir> && chmod 700 ~/.config/<channel-dir>
-   umask 077 && read -rs TOKEN && printf '%s' "$TOKEN" > ~/.config/<channel-dir>/token; unset TOKEN
+   ( umask 077; read -rs TOKEN && printf '%s' "$TOKEN" > ~/.config/<channel-dir>/token )
    touch ~/.config/<channel-dir>/enabled     # only when no other machine polls this bot
    ```
-4. Reach noVNC only over your private network: `http://<private-address>:6080/vnc.html`. Check from outside the network that the port is closed.
+4. Create the VNC password file once: `mkdir -p ~/.vnc && x11vnc -storepasswd ~/.vnc/passwd` (it asks twice; mode 0600). Reach noVNC only over your private network: `http://<private-address>:6080/vnc.html`, and type that password. Check that nothing listens on a public address: `ss -ltn` must show 5900 on `127.0.0.1` and 6080 on `<private-address>` only; also test from outside the private network that both ports are closed.
 5. `durbar-sim start` pulls `main`, builds, and starts the simulator on the display. Watch it in noVNC.
 
 ## Daily private backup of the config
@@ -49,6 +54,8 @@ Your setup (agent files, `CLAUDE.local.md`, launchers, units) is worth keeping w
 - [sync.sh.example](always-on-host/sync.sh.example) copies a **fixed allow-list**, not a directory. Never add settings files, chat channel folders, sessions, history, transcripts, caches or token files.
 - It scans everything for secret shapes and **refuses to commit** if it finds one. Keep the scan; extend it when you learn a new shape.
 - Auto-memory notes may name people or contain chat content. Back them up only if you have read them, and never copy them into this repo.
+- `CLAUDE.local.md` holds your real chat IDs (see its template), and the secret scan below does not know chat IDs. That is why the backup repo **must be private**. The example scan only **warns** on ID-shaped numbers, so the backup still runs.
+- Optional files (a launcher you did not install) are copied only if they exist, so a missing file does not stop the backup under `set -e`.
 - A systemd timer runs it once a day (see the `config-sync` examples). Check the log now and then: `journalctl --user -u config-sync`.
 - The push uses your `gh` login through a credential helper; no token is written into the repo or its config.
 

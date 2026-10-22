@@ -1,10 +1,17 @@
 [Unit]
-Description=VNC of :99, localhost only
+Description=VNC of :99, localhost only, with a password
 After=xvfb.service
 Requires=xvfb.service
 [Service]
-# -localhost: only this machine can connect. noVNC (next unit) is the one door in, over the private network.
-ExecStart=/usr/bin/x11vnc -display :99 -localhost -forever -shared -nopw -quiet
+# -localhost: only this machine can connect; noVNC (next unit) is the one door in, over the private network.
+# -rfbauth: password file made once with `x11vnc -storepasswd ~/.vnc/passwd` (mode 0600). Never -nopw:
+# with -nopw every device on the private network controls the desktop.
+ExecStart=/usr/bin/x11vnc -display :99 -localhost -forever -shared -rfbauth %h/.vnc/passwd -quiet
 Restart=on-failure
+# Hardening. Drop the lines your distro refuses. No PrivateTmp: x11vnc must reach the X socket in /tmp.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 [Install]
 WantedBy=default.target

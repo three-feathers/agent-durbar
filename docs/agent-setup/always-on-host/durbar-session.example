@@ -2,6 +2,10 @@
 # Starts Claude Code in the repo, with Remote Control (name: <session-name>).
 # The chat channel is on only when BOTH the token file and the "enabled" flag exist
 # (one poller per bot token: switch it off on any other machine before creating the flag).
+# NEVER add --dangerously-skip-permissions, --permission-mode bypassPermissions or a settings default that does
+# the same: a session that a chat channel and Remote Control can reach must keep its permission prompts.
+# While the host is unattended nobody answers them: the session waits, and the human answers through
+# Remote Control or the terminal.
 # The token is read into an environment variable here; it is never written in this script or in a repo.
 cd ~/<workspace>/agent-durbar || exit 1
 export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
