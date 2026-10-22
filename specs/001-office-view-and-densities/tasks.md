@@ -81,6 +81,9 @@
 - [x] T075 Settings > Detail level: *Roll up finished agents* switch (`screens.js`, `durbar.shutters`) [FR-056]
 - [x] T076 `check:office` (unchanged; its 15 agents now include rolled ones) and `check:office-fill` (keyboard reach, labels, hover card; 2 working + 3 finished, 1 recent + 2 old, at 1440x900 and 1280x800; open desks get the space); mutation checks [FR-053, FR-057]
 - [x] T077 Screenshots `docs/screenshots/001-shutters-{1440x900,1280x800}.png` (simulator); README office section, `changelog.d/001-office-shutters.md`, the specs-index block [FR-057]
+- [ ] T078 (owner on #554, 18:48) Spec: horizontal squeeze (FR-052..FR-055, FR-057 amended, dated note) [FR-052..FR-057]
+- [ ] T079 Squeeze: `shutters.js` widths and slat cap; `roomHTML` desk grid plus a side group of panels and slats (room width counts them); `styles.css` panel, slat (vertical text), side card, squeeze animation; `test:shutters` [FR-052..FR-055]
+- [ ] T080 `check:office-fill` (row height kept, widths freed, slat text, side card), mutation checks, `check:office`, `npm test`; screenshots retaken; README, changelog fragment [FR-057]
 
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 
