@@ -312,7 +312,7 @@ export class FakeCodexServer {
         const list = want ? all.filter((x) => x.name === want) : this.mcpList ?? all.slice(0, 1);
         const from = isObj(params) && typeof params.cursor === 'string' ? Number(params.cursor) || 0 : 0;
         const size = this.mcpPageSize ?? list.length;
-        const answer = (): void => this.reply(child, id, { data: list.slice(from, from + size), nextCursor: from + size < list.length ? String(from + size) : null });
+        const answer = (): void => this.reply(child, id, { data: list.slice(from, from + size), nextCursor: this.mcpStuckCursor ?? (from + size < list.length ? String(from + size) : null) });
         if (this.holdMcpList) return void this.heldMcpList.push(answer);
         return answer();
       }
@@ -442,6 +442,8 @@ export class FakeCodexServer {
   mcpPageSize: number | undefined;
   /** Spec 069: answer as if `serverName` were not supported (the whole list, paged). */
   mcpIgnoreServerName = false;
+  /** Spec 069 (re-review on #499): a broken pager that always answers this `nextCursor`. */
+  mcpStuckCursor: string | undefined;
   private heldMcpList: Array<() => void> = [];
   releaseMcpList(): void {
     this.holdMcpList = false;
