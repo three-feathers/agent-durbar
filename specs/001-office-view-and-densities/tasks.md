@@ -67,12 +67,12 @@
 
 ## Changes 2026-10-22 (finished agents roll in, owner)
 
-- [ ] T067 `src/renderer/shutters.js` (`finished`, `kindOf`, `roomPlan`, `split`, `RECENT_MS`, `OLD_CAP`) + `scripts/test-shutters.ts` (`npm run test:shutters`, in `test:serial`); `copy-assets.js`, `index.html` [FR-047, FR-048, FR-053]
-- [ ] T068 `app.js`: `officeModel` splits `mains`/`rolled`; layout key; `roomHTML` shutter row (strips, chips, `+N`), `.peek`, labels, `rolling` class; `__durbarSimUi.render` [FR-047..FR-050]
-- [ ] T069 `styles.css`: `.shutters`, `.desk.shut` strip and chip, `.peek` roll, roll-in; theme tokens; >= 10.5 px [FR-050, FR-051]
-- [ ] T070 Settings > Detail level: *Roll up finished agents* switch (`screens.js`, `durbar.shutters`) [FR-052]
-- [ ] T071 `check:office` (15 agents with rolled ones, keyboard reach and labels) and `check:office-fill` (2 working + 3 finished, 1 recent + 2 old, at 1440x900 and 1280x800; open desks get the space); mutation checks [FR-049, FR-053]
-- [ ] T072 Screenshots `docs/screenshots/001-shutters-{1440x900,1280x800}.png` (simulator); README office section, `changelog.d/001-office-shutters.md`, the specs-index block [FR-053]
+- [ ] T072 `src/renderer/shutters.js` (`finished`, `kindOf`, `roomPlan`, `split`, `RECENT_MS`, `OLD_CAP`) + `scripts/test-shutters.ts` (`npm run test:shutters`, in `test:serial`); `copy-assets.js`, `index.html` [FR-051, FR-052, FR-057]
+- [ ] T073 `app.js`: `officeModel` splits `mains`/`rolled`; layout key; `roomHTML` shutter row (strips, chips, `+N`), `.peek`, labels, `rolling` class; `__durbarSimUi.render` [FR-051..FR-054]
+- [ ] T074 `styles.css`: `.shutters`, `.desk.shut` strip and chip, `.peek` roll, roll-in; theme tokens; >= 10.5 px [FR-054, FR-055]
+- [ ] T075 Settings > Detail level: *Roll up finished agents* switch (`screens.js`, `durbar.shutters`) [FR-056]
+- [ ] T076 `check:office` (15 agents with rolled ones, keyboard reach and labels) and `check:office-fill` (2 working + 3 finished, 1 recent + 2 old, at 1440x900 and 1280x800; open desks get the space); mutation checks [FR-053, FR-057]
+- [ ] T077 Screenshots `docs/screenshots/001-shutters-{1440x900,1280x800}.png` (simulator); README office section, `changelog.d/001-office-shutters.md`, the specs-index block [FR-057]
 
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 

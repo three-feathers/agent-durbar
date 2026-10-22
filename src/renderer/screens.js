@@ -163,7 +163,7 @@
     const dl=X.detail?X.detail.get():'expert';
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
         <p class="scr-note">Expert adds tokens, models, context and paths. Permissions work the same in both.</p>
-        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}</section>`:'';
+        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}${X.shutters&&X.shutters.usable()?shuttersRow():''}</section>`:'';
     /* spec 052 FR-066, FR-093: what Durbar does not do, in calm plain words (checked against the README's Safety model and Costs and caps) */
     const notSec=`<section class="scr-sec" aria-labelledby="notH"><h3 id="notH">What Durbar does not do</h3><ul class="scr-not">
         <li>Durbar asks Claude Code and Copilot to stay in their folders but cannot force them; only Codex is held there by the system (in Read-only and Ask first).</li>
@@ -359,6 +359,11 @@
     return `<div class="scr-row"><span class="scr-row-l" id="denL">Spacing</span><div class="seg" role="group" aria-labelledby="denL"><button type="button" data-density="comfortable" aria-pressed="${d!=='compact'}">Comfortable</button><button type="button" data-density="compact" aria-pressed="${d==='compact'}" title="Tighter chat, screens, dialogs and inbox. The office and the top bar keep their sizes.">Compact</button></div></div>`;
   }
   /* spec 001 FR-032: the live readout on the desks (thinking, tool, reply), on by default; kept per computer like Spacing */
+  /* spec 001 FR-056: finished agents roll in when their room has others at work */
+  function shuttersRow(){
+    const on=!!X.shutters.get();
+    return `<div class="scr-row"><span class="scr-row-l" id="shL">Roll up finished agents</span>${sw(on,'Roll up finished agents: in a room where others still work, finished agents become a slim strip, then a small chip','id="shutSw" aria-describedby="shN"')}<span class="scr-note small" id="shN">In a room where others still work, finished agents become a slim strip, and after 10 minutes a small chip, so the busy desks get the space.</span></div>`;
+  }
   function liveActRow(){
     const on=!!X.liveAct.get();
     return `<div class="scr-row"><span class="scr-row-l" id="laL">Live activity on desks</span>${sw(on,'Live activity on desks: what each working agent is thinking or doing, on its desk','id="liveActSw" aria-describedby="laN"')}<span class="scr-note small" id="laN">What each working agent is thinking or doing, on its desk. Secrets are masked.</span></div>`;
@@ -447,6 +452,8 @@
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
       return;
     }
+    const shs=e.target.closest('#shutSw');
+    if(shs&&X.shutters){const on=!X.shutters.get();X.shutters.set(on);shs.classList.toggle('on',on);shs.setAttribute('aria-checked',on?'true':'false');return;}
     const la=e.target.closest('#liveActSw');
     if(la&&X.liveAct){const on=!X.liveAct.get();X.liveAct.set(on);la.classList.toggle('on',on);la.setAttribute('aria-checked',on?'true':'false');return;}
     const ns=e.target.closest('#notifySw');
@@ -869,7 +876,7 @@
     const allTime=costPer==='since'&&!!day, label=allTime?'All time (since '+day+')':'This session';
     const seg=`<div class="seg" role="tablist" aria-label="Period"><button role="tab" id="costRun" aria-selected="${!allTime}" type="button" title="Since Agent Durbar opened (or the last reset)">This session</button>${day?`<button role="tab" id="costSince" aria-selected="${allTime}" type="button" title="The saved totals since the last reset in Settings (${esc(day)}), plus this session">All time</button>`:''}</div>${allTime?`<small class="per-since">since ${esc(day)}</small>`:''}`;
     if(!built.rows.length)return {seg,built,label,html:'<p class="scr-empty">No folders yet.<br><small>Add a folder and start a session; the cost of each folder shows here.</small></p>'};
-    /* spec 052 FR-050: no usage at all yet: a plain sentence instead of a table of dashes */
+    /* spec 052 FR-054: no usage at all yet: a plain sentence instead of a table of dashes */
     /* spec 052 FR-075: a Copilot agent in the office: say the plan has a fixed price (the same words as the spending-limit dialog) */
     const plan=X.agents().some(a=>(a.adapterId||'copilot')==='copilot')?`<p class="scr-note small cost-plan">${esc(C.COPILOT_PLAN_NOTE)}</p>`:'';
     if(built.rows.every(r=>r.empty))return {seg,built,label,none:true,html:'<p class="scr-empty">No costs yet. Numbers appear after an agent\'s first reply.</p>'+plan};
@@ -885,7 +892,7 @@
   }
   async function copyCostCsv(cost){
     const k=cost.built.rows.length;
-    await copyText(window.DurbarCost.toCsv(cost.built,cost.label),'Copied '+k+' folder'+(k===1?'':'s')+' as CSV',2600); /* FR-050 */
+    await copyText(window.DurbarCost.toCsv(cost.built,cost.label),'Copied '+k+' folder'+(k===1?'':'s')+' as CSV',2600); /* FR-054 */
   }
   const fmtDate=iso=>{const d=new Date(iso);return isNaN(d)?'':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});};
   async function toolsTab(scope,tot,groups,all){

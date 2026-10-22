@@ -13,6 +13,12 @@
  * Then, at 1440x900 and 1280x800 with 3 agents (default folders): a thinking stream shows its newest sentences on the grown desk,
  * streaming text moves nothing, and a finished reply shows its start, with a secret in it masked.
  * Screenshots (simulator, `OUT=<folder>`): 001-fill-{4,6,15}-{1440x900,1280x800}.png (the simulator's own folders and helpers).
+ * Spec 001 FR-051..FR-057 (finished agents roll in), at 1440x900 and 1280x800: a folder with 2 working and 3 finished agents (1 recent,
+ * 2 old) next to a busy folder: the finished ones are a strip and two chips, the page rules hold, every rolled agent is a focusable button
+ * with its label, hover unrolls a card without moving anything, Enter opens the chat, the open desks are at least as large as with the
+ * setting off (Settings switch), a strip becomes a chip after 10 minutes, an agent that starts again gets its desk back, a reply's tokens
+ * are masked on the strip; and the simulator's 15 agents (Noor and Maya roll in) still fit with no scroll and are not grown.
+ * Screenshots: 001-shutters-{1440x900,1280x800}.png and 001-shutters-peek-1440x900.png.
  *
  *   npm run check:office-fill            (builds first; Linux runs it under xvfb)
  */
@@ -87,11 +93,15 @@ module.exports = async (ctx) => {
     for (const n of [4, 6, 15]) {
       const st = await one(`${n} agents with helpers, ${w}x${h}`, n, w, h);
       if (n === 15 && w !== 1920) check(!st.gf, `15 agents with helpers at ${w}x${h} are grown`);
+      /* FR-053: Noor and Maya (done, each in a folder where others work) roll in; the 15 agents still fit (checked by one()) */
+      if (n === 15) { const sh = await js(`[...document.querySelectorAll('#stage .desk.shut')].map(e=>e.querySelector('.sh-name').textContent).sort().join(',')`); check(sh === 'Maya,Noor', `15 agents at ${w}x${h}: rolled ${sh}, not Maya,Noor`); }
       if (OUT && w !== 1920) await ctx.shot(path.join(OUT, `001-fill-${n}-${w}x${h}.png`));
     }
   }
 
   /* ---- what a grown desk shows (FR-043) ---- */
+  /* Ada finishes below while Mira and Jonas work in her folder, so she would roll in (FR-051): this part runs with that setting off */
+  await js(`localStorage.setItem('durbar.shutters','off')`);
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await load(3, w, h);
     const st = await state();
@@ -119,6 +129,89 @@ module.exports = async (ctx) => {
     check(/^Done\. I moved the handlers and kept the public API\./.test(d), `${w}: a done desk shows the start of its reply: ${d}`);
     check(!d.includes(SECRET) && /\[redacted\]/.test(d), `${w}: the secret in the reply is masked: ${d}`);
     check(!/Fill0Token0Value|0123456789ab|FILL0TOKEN|value0123456789/.test(d) && (d.match(/\[redacted\]/g) || []).length === 3, `${w}: the ghp_ and github_pat_ tokens are masked too: ${d}`);
+  }
+
+  await js(`localStorage.removeItem('durbar.shutters')`);
+
+  /* ---- finished agents roll in (FR-051..FR-057) ---- */
+  const finish = async (id, text) => {
+    await emit({ type: 'status', sessionId: id, status: 'working', intent: 'Working' });
+    await emit({ type: 'output', sessionId: id, final: true, text });
+    await emit({ type: 'status', sessionId: id, status: 'idle' });
+  };
+  /* the time an agent finished is its last event (FR-052): set it back, then lay out again (simulator-only hook) */
+  const ago = (id, min) => js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${q(id)});a.lastEventAt=Date.now()-${q(min)}*60000;window.__durbarSimUi.render();})()`);
+  const shut = () => js(`(()=>{const s=document.getElementById('stage'),room=s.querySelector('.room'),f=document.getElementById('floor');
+    const rs=[...room.querySelectorAll('.desk.shut')];
+    const small=[...s.querySelectorAll('.shutters *')].filter(e=>e.getClientRects().length&&[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>parseFloat(getComputedStyle(e).fontSize)).filter(x=>x<10.5);
+    const cards=[...room.querySelectorAll('.desk.card, .desk:not(.shut):not(.card)')].map(e=>e.getBoundingClientRect());
+    return {d:s.dataset.d,gf:parseFloat(s.style.getPropertyValue('--gf'))||0,fit:s.dataset.fit,floorScroll:f.scrollHeight>f.clientHeight+1,
+      open:cards.length,deskW:cards.length?Math.round(Math.min(...cards.map(r=>r.width))):0,deskH:cards.length?Math.round(Math.min(...cards.map(r=>r.height))):0,
+      recent:rs.filter(e=>e.classList.contains('is-recent')).map(e=>e.dataset.id),old:rs.filter(e=>e.classList.contains('is-old')).map(e=>e.dataset.id),
+      labels:rs.map(e=>({id:e.dataset.id,tag:e.tagName,tab:e.tabIndex,l:e.getAttribute('aria-label')||'',text:e.innerText})),small}})()`);
+  const openShot = (w, h) => (OUT ? ctx.shot(path.join(OUT, `001-shutters-${w}x${h}.png`)) : null);
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    const tag = `shutters ${w}x${h}`;
+    /* 10 agents in 2 folders: Ada, Mira, Jonas, Elif, Tomas | Kenji, Sven, Lena, Clara, Rosa. Mira, Jonas and Tomas finish; Ada and Elif work. */
+    await load(10, w, h, { simrooms: '2', simhelpers: '0' });
+    await finish('sim-2', `**Done.** The edge cases for the canton lookup are listed and tested, key \`${GHP}\` removed.`);
+    await finish('sim-3', 'Renamed the tool and kept the old name as an alias for one release.');
+    await finish('sim-5', 'The eval ran again after the rate limit and the baseline is saved.');
+    await ago('sim-3', 25); await ago('sim-5', 50); await ago('sim-2', 2);
+    await H.until(`document.querySelectorAll('#stage .desk.shut').length===3`, 4000);
+    await ctx.sleep(400);
+    const a = await shut(), problems = await page();
+    check(JSON.stringify(a.recent) === '["sim-2"]' && JSON.stringify(a.old.sort()) === '["sim-3","sim-5"]', `${tag}: rolled recent ${a.recent} old ${a.old}`);
+    check(a.open === 2, `${tag}: ${a.open} open desks in the folder, not 2 (Ada and Elif)`);
+    check(a.fit === 'ok' && !a.floorScroll, `${tag}: does not fit (fit=${a.fit}, floor scroll ${a.floorScroll})`);
+    check(!problems.length, `${tag}: ${problems.slice(0, 4).join('; ')}`);
+    check(!a.small.length, `${tag}: shutter text under 10.5px: ${a.small.join(', ')}`);
+    for (const x of a.labels) {
+      check(x.tag === 'BUTTON' && x.tab === 0, `${tag}: ${x.id} is not a focusable button (${x.tag}, tabIndex ${x.tab})`);
+      check(/, (half )?rolled up: /.test(x.l) && /finished (just now|\d+ minutes? ago)/.test(x.l) && /Open chat panel\.$/.test(x.l), `${tag}: ${x.id} label "${x.l}"`);
+    }
+    const strip = a.labels.find((x) => x.id === 'sim-2') || { text: '', l: '' };
+    check(/^Mira/.test(strip.text) && /2 min ago/.test(strip.text) && /Done\. The edge cases/.test(strip.text), `${tag}: the strip shows name, reply and time: ${strip.text}`);
+    check(!/Fill0Token0Value|0123456789ab/.test(strip.text + strip.l) && /\[redacted\]/.test(strip.l), `${tag}: the token in the reply is masked on the strip: ${strip.l}`);
+    /* keyboard: the arrow keys of FR-019 reach the rolled agents (they are in the desk order) */
+    const nav = await js(`[...document.querySelectorAll('#stage .desk, #stage .helper, #stage .plate')].filter(x=>x.getClientRects().length).map(x=>x.dataset.id||'')`);
+    check(['sim-2', 'sim-3', 'sim-5'].every((id) => nav.includes(id)), `${tag}: rolled agents missing from the arrow-key order: ${nav}`);
+    await openShot(w, h);
+    /* hover unrolls a card above the row, inside the room, and nothing moves */
+    const rects = () => js(`[...document.querySelectorAll('#stage .desk, #stage .shutters')].map(e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.width,r.height].map(Math.round).join(',')}).join(';')`);
+    const before = await rects();
+    const c = await js(`(()=>{const e=document.querySelector('#stage .desk.shut[data-id="sim-3"]').getBoundingClientRect();return {x:Math.round(e.left+e.width/2),y:Math.round(e.top+e.height/2)}})()`);
+    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
+    await ctx.sleep(350);
+    const pk = await js(`(()=>{const p=document.querySelector('#stage .desk.shut[data-id="sim-3"] .peek'),room=p.closest('.room').getBoundingClientRect(),r=p.getBoundingClientRect(),f=document.getElementById('floor');
+      return {shown:getComputedStyle(p).display!=='none'&&r.height>0,inRoom:r.left>=room.left-1&&r.right<=room.right+1,text:p.innerText,floorScroll:f.scrollHeight>f.clientHeight+1||f.scrollWidth>f.clientWidth+1}})()`);
+    check(pk.shown && pk.inRoom && !pk.floorScroll, `${tag}: hover card ${JSON.stringify(pk)}`);
+    check(/^Jonas/.test(pk.text) && /finished 25 min ago/.test(pk.text) && /Renamed the tool/.test(pk.text), `${tag}: the hover card says who, when and what: ${pk.text}`);
+    check((await rects()) === before, `${tag}: hovering a chip moved something`);
+    if (OUT && w === 1440) await ctx.shot(path.join(OUT, '001-shutters-peek-1440x900.png'));
+    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+    /* Enter opens the chat, as on a desk */
+    await js(`document.querySelector('#stage .desk.shut[data-id="sim-5"]').focus()`);
+    await H.key('Enter');
+    check(await H.until(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent==='Tomas'`, 4000), `${tag}: Enter on a chip does not open the chat`);
+    await H.key('Escape'); await H.until(`!document.body.classList.contains('panel-open')`, 3000); await ctx.sleep(300);
+    /* the space goes to the open desks: as large as, or larger than, with the setting off */
+    const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('shutSw')`, 4000); await js(`document.getElementById('shutSw').click()`); await H.key('Escape'); await ctx.sleep(500); };
+    const on = await shut();
+    await toggle();
+    const off = await shut();
+    check(off.recent.length + off.old.length === 0 && off.open === 5, `${tag}: with the setting off ${off.open} desks and ${off.recent.length + off.old.length} rolled`);
+    check((on.gf || 1) >= (off.gf || 1) && on.deskH >= off.deskH - 1 && ['full', 'roomy', 'card', 'mini', 'micro'].indexOf(on.d) <= ['full', 'roomy', 'card', 'mini', 'micro'].indexOf(off.d),
+      `${tag}: the open desks did not get the space: on ${on.d} f=${on.gf} ${on.deskW}x${on.deskH}, off ${off.d} f=${off.gf} ${off.deskW}x${off.deskH}`);
+    rows.push(`${tag}: on ${on.d}${on.gf ? ' f=' + on.gf : ''} desk ${on.deskW}x${on.deskH}; off ${off.d}${off.gf ? ' f=' + off.gf : ''} desk ${off.deskW}x${off.deskH}`);
+    await toggle();
+    check((await shut()).old.length === 2, `${tag}: the setting does not turn back on`);
+    /* a strip becomes a chip after 10 minutes; an agent that starts again unrolls to its desk */
+    await ago('sim-2', 11);
+    check(await H.until(`!!document.querySelector('#stage .desk.shut.is-old[data-id="sim-2"]')`, 3000), `${tag}: the strip did not become a chip after 10 minutes`);
+    await emit({ type: 'status', sessionId: 'sim-5', status: 'working', intent: 'Running the eval again' });
+    check(await H.until(`!document.querySelector('#stage .desk.shut[data-id="sim-5"]')&&!!document.querySelector('#stage .desk.card[data-id="sim-5"]')`, 3000), `${tag}: Tomas did not get his desk back when he started again`);
+    const p2 = await page(); check(!p2.length, `${tag} after changes: ${p2.slice(0, 4).join('; ')}`);
   }
 
   rows.forEach((r) => console.log('[office-fill]', r));
