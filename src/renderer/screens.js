@@ -38,11 +38,11 @@
     if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else paintSettings(focus);
   }
   /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open and shows it), `true` (keeps it open; the caller already showed the error) or a promise of either. */
-  function dialog({title,html,buttons,wide,cls,validate,onOpen}){
+  function dialog({title,html,buttons,wide,size,cls,validate,onOpen}){
     return new Promise(resolve=>{
       const old=document.getElementById('scrDlg');if(old)old.remove();
       const d=document.createElement('div');d.id='scrDlg';d.className='dlg-ov';
-      d.innerHTML=`<div class="dlg${wide?' wide':''}${cls?' '+cls:''}" role="dialog" aria-modal="true" aria-labelledby="scrDlgT"><h3 id="scrDlgT"></h3><div class="dbody">${html||''}</div><p class="derr" id="scrDlgErr" role="alert" hidden></p><div class="dbtn"></div></div>`;
+      d.innerHTML=`<div class="dlg${wide?' wide':''}${size==='m'||size==='l'?' '+size:''}${cls?' '+cls:''}" role="dialog" aria-modal="true" aria-labelledby="scrDlgT"><h3 id="scrDlgT"></h3><div class="dbody">${html||''}</div><p class="derr" id="scrDlgErr" role="alert" hidden></p><div class="dbtn"></div></div>`;
       d.querySelector('#scrDlgT').textContent=title;
       const row=d.querySelector('.dbtn');
       const done=v=>{d.remove();resolve(v);};
@@ -305,7 +305,7 @@
     const pick=()=>{const p=ideas.slice(),o=[];while(o.length<4&&p.length)o.push(p.splice(Math.floor(Math.random()*p.length),1)[0]);return o;};
     const ideaHtml=()=>ideas.length?`<div class="ai-ideas" id="aiIdeas"><span class="scr-note small">Ideas:</span>${pick().map((i)=>`<button class="btn ai-idea" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn ai-more" type="button" id="aiMore" title="Show other ideas">More ideas</button></div>`:'';
     for(;;){
-      const r=await dialog({title:'Make a theme with AI',html:`<p class="dsub">Describe a look in a few words, for example “a night-shift newsroom” or “a ship's bridge at dawn”.</p>
+      const r=await dialog({title:'Make a theme with AI',size:'m',html:`<p class="dsub">Describe a look in a few words, for example “a night-shift newsroom” or “a ship's bridge at dawn”.</p>
         <ul class="dlist ai-pts" title="The agent app you pick designs a light or dark theme in one request, with no tools and nothing kept, at a small cost on your own plan. Durbar keeps only safe values and checks that text stays readable, and you can try the theme before you save it."><li>One request, small cost</li><li>No tools, nothing kept</li><li>Preview before saving</li></ul>
         <label>Look<textarea id="aiDesc" rows="3" maxlength="300" placeholder="A calm library at night">${esc(desc)}</textarea></label>
         ${ideaHtml()}
@@ -433,7 +433,7 @@
     const html=`<label>Name<input id="plName" type="text" autocomplete="off" spellcheck="false" value="${esc(existing?existing.name:'')}" aria-describedby="plNameHelp plNameErr"></label>
       <p class="dsub small" id="plNameHelp">Up to 24 characters.</p><p class="pl-err" id="plNameErr" role="alert" hidden></p>
       <div class="pico-grid" role="radiogroup" aria-label="Icon">${radios}</div>`;
-    const r=await dialog({title:existing?'Edit place':'Add a place',html,buttons:[{label:'Cancel',value:null},{label:'Save',value:'ok',cls:'primary'}],
+    const r=await dialog({title:existing?'Edit place':'Add a place',size:'m',html,buttons:[{label:'Cancel',value:null},{label:'Save',value:'ok',cls:'primary'}],
       onOpen:d=>{const inp=d.querySelector('#plName');inp.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();d.querySelector('.dbtn .primary').click();}});inp.addEventListener('input',()=>{d.querySelector('#plNameErr').hidden=true;});},
       validate:async d=>{
         const name=d.querySelector('#plName').value, ic=(d.querySelector('input[name="plIcon"]:checked')||{}).value;
