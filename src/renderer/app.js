@@ -13,6 +13,8 @@ const KEYS=window.DurbarKeys;
 const IS_MAC=KEYS.isMac(navigator.platform);
 const keyText=parts=>KEYS.keyText(parts,IS_MAC), keyLabels=parts=>KEYS.keyLabels(parts,IS_MAC), ariaKeys=parts=>KEYS.ariaKeys(parts,IS_MAC);
 const INBOX_KEY=keyText(['mod','shift','A']), NEXT_KEY=keyText(['mod','shift','N']), PAL_KEY=keyText(['mod','K']);
+/* spec 006 FR-036: show or hide Previous sessions (H for history) */
+const PREV_KEYS=['mod','shift','H'], PREV_KEY=keyText(PREV_KEYS);
 const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-164: + Folder, + Workspace (the Mac File menu has the same keys) */
 /* spec 052 FR-085: the window's platform from the preload (the Mac title bar styles are gated on html[data-platform="darwin"]) */
 if(window.agentDurbar&&window.agentDurbar.platform==='darwin')document.documentElement.dataset.platform='darwin';
@@ -1408,12 +1410,12 @@ function openPanel(id,focus){
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${nameTipAttr(a)}>${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
-      <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span></div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); FR-095: Previous (N) replaces the Previous sessions bar -->${a.live&&!a.parent?'<button class="btn sm prev-toggle" id="prevBtn" type="button" data-pv="toggle" aria-expanded="false" aria-controls="prev" title="Previous sessions in this folder" hidden>Previous</button>':''}${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}<button class="btn sm primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
+      <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span></div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); spec 006 FR-033 (2026-10-21): Previous sessions moved out of the actions, to their own section above the chat -->${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}<button class="btn sm primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation (you review it first); this one keeps its history">Continue in another app…</button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}${canRenameSession(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="renameSessBtn" type="button" title="Give this session a short name"><span class="mt">Rename…<small>A short name for this session</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
     <div class="ph-line"><p class="ptask" data-f="task"></p><p class="pusage" data-f="usage"></p></div>
     <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div></div>
-   <div class="prev" id="prev" role="region" aria-label="Previous sessions" hidden></div>
+   <div class="prev" id="prev" role="region" aria-label="${SIMPLE?'Earlier chats':'Previous sessions'}" hidden>${a.live&&!a.parent?`<div class="prev-bar"><button class="prev-toggle" id="prevBtn" type="button" data-pv="toggle" aria-expanded="false" aria-controls="prevPanel" aria-keyshortcuts="${esc(ariaKeys(PREV_KEYS))}">${ICON('chev')}<span class="prev-l">${SIMPLE?'Earlier chats':'Previous sessions'}</span><span class="prev-c" hidden></span><span class="prev-sub"></span></button></div><div class="prev-panel" id="prevPanel" hidden></div>`:''}</div>
    <div id="chat" role="log" aria-live="off" aria-label="Chat with ${esc(a.name)}" tabindex="0"></div>
    <div class="answer-bar" id="answerBar" role="region" aria-label="Waiting for your answer" hidden></div>
    <div class="composer"><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
@@ -1686,6 +1688,8 @@ document.addEventListener('keydown',e=>{
   /* spec 052 FR-091: Ctrl+` goes back to the previous chat (and again, back). Control also on a Mac: Cmd+` switches windows there. Not under a dialog. */
   if(e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey&&e.code==='Backquote'&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openPreviousChat();return;}
   if(mod&&e.shiftKey&&!e.altKey&&(e.key==='A'||e.key==='a'||e.code==='KeyA')){e.preventDefault();openInbox();return;}
+  /* spec 006 FR-036: Ctrl+Shift+H (⇧⌘H) shows or hides Previous sessions in the open chat, also from the message box; not under a dialog */
+  if(mod&&e.shiftKey&&!e.altKey&&e.code==='KeyH'&&ui.selected&&$('prevBtn')&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();togglePrevByKey();return;}
   if(mod&&e.shiftKey&&!e.altKey&&(e.key==='N'||e.key==='n'||e.code==='KeyN')){e.preventDefault();closeInbox();openNextNeedsMe();return;}
   /* spec 052 FR-060: in an open chat, Alt+A allow once, Alt+S allow for this session, Alt+D deny (the request the answer bar shows), Alt+N the
      next agent that needs you. By the key's position (e.code). On a Mac it is Option+Command (FR-084): Option+letter alone types accents
@@ -1841,7 +1845,7 @@ function openInbox(focusId){
   const back=$('inboxDlg')?inboxBack:document.activeElement;
   closeInbox(); inboxBack=back&&back!==document.body?back:null;
   const d=document.createElement('div');d.id='inboxDlg';d.className='dlg-ov';
-  d.innerHTML='<div class="dlg wide inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT" aria-describedby="inboxKeys"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys"'+(SIMPLE?' hidden':'')+'>Keys: J/K move · A allow · S session · D deny · O open</p><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
+  d.innerHTML='<div class="dlg l inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT" aria-describedby="inboxKeys"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys"'+(SIMPLE?' hidden':'')+'>Keys: J/K move · A allow · S session · D deny · O open</p><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeInbox();});
   d.addEventListener('keydown',inboxKey);
@@ -1943,6 +1947,7 @@ function palActions(){
     {label:'Collapse all folders',kw:'doors close collapse compact plates rooms',run:palClick('closeAll'),ok:()=>palUsable('closeAll')},
     {label:'Expand all folders',kw:'doors open expand rooms',run:palClick('openAll'),ok:()=>palUsable('openAll')},
     {label:'Back to the previous chat',kw:'previous last recent chat toggle switch',keys:['Ctrl','`'],run:openPreviousChat,ok:()=>!!previousChat()},
+    {label:SIMPLE?'Show or hide earlier chats':'Show or hide previous sessions',kw:'previous earlier sessions chats history resume list collapse expand',keys:keyLabels(PREV_KEYS),run:togglePrevByKey,ok:()=>{const b=$('prevBtn'),x=$('prev');return !!b&&!!x&&!x.hidden&&!vsViewing;}}, /* spec 006 FR-036 */
     {label:'Keyboard shortcuts',kw:'keys shortcuts help hotkeys',keys:['?'],run:openKbdHelp},
     {label:'Send to several sessions…',hint:'One message to the running sessions you pick',kw:'send several many all broadcast message group sessions',run:()=>sendToSeveral(),ok:()=>!!bridge&&!!bridge.send&&sendTargets().filter(x=>!x.why).length>=2}, /* spec 064 FR-001 */
     {label:'End all sessions',hint:'Ends every running session; the chats stay',kw:'end stop all sessions quit day close',run:()=>endAllSessions(),ok:()=>!!bridge&&!!bridge.end&&endAllTargets().length>0},
@@ -2036,6 +2041,7 @@ function openKbdHelp(back){
     [['N'],'Next agent that needs you',keyLabels(['mod','shift','N'])],
     ...(IS_MAC?[[keyLabels(['mod',',']),'Settings']]:[]), /* FR-083: the app menu's Settings… item */
     [['Ctrl','`'],'Back to the previous chat (on a Mac too: Control, not Cmd)'],
+    [keyLabels(PREV_KEYS),SIMPLE?'Show or hide earlier chats in a chat':'Show or hide previous sessions in a chat'], /* spec 006 FR-036 */
     [['←','→','↑','↓'],'Move between desks'],
     [['Esc'],'Back, or close'],
     [['?'],'This list'],
@@ -2113,7 +2119,7 @@ function sendTargets(){
 async function sendToSeveral(anchor){
   const list=sendTargets();
   if(list.filter(x=>!x.why).length<1){toast('No running session is free to take a message right now.',3200);return;}
-  const r=await askDialog({title:'Send to several sessions',
+  const r=await askDialog({title:'Send to several sessions',size:'m',
     body:'Each session you tick gets this message as if you typed it in its chat, with its own agent app, mode and spending limit.',
     input:{label:'Message',multiline:true,max:4000,focus:true,placeholder:'For example: pull the latest main and run the tests again'},
     picks:list.map(({a,why})=>({label:a.name+' \u00b7 '+(folderOfAgentName(a)||'')+' \u00b7 '+kindWord(kindOf(a))+' \u00b7 '+(MODE_NAME[a.info.permMode]||'Read-only'),note:why,value:a.id,disabled:!!why})),
@@ -2821,7 +2827,7 @@ function openCapDialog(a){
   closeCapDlg();
   const cur=capOf(a),usd=isUsdCap(a),min=usd?MIN_USD_CAP:MIN_CAP;
   const d=document.createElement('div');d.id='capDlg';d.className='dlg-ov';
-  d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="cdT"><h3 id="cdT">Spending limit for ${esc(a.name)}</h3>
+  d.innerHTML=`<div class="dlg m" role="dialog" aria-modal="true" aria-labelledby="cdT"><h3 id="cdT">Spending limit for ${esc(a.name)}</h3>
    ${usd?`<p class="dsub">The most this session may cost, in dollars of Claude's own estimate (not a bill; with a Claude subscription nothing is billed per token). When it is reached the agent stops and asks you. It is a <b>soft</b> limit: one turn can go a little past it. It counts what the session used while Agent Durbar ran it, and it is not saved with the folder. The minimum is $${MIN_USD_CAP}.</p>`
    :`<p class="dsub">The most AI credits this session may use (1 credit = USD 0.01; shown as AIU, the unit the Copilot runtime reports). When it is reached the agent stops and asks you. It is a <b>soft</b> limit: it is checked after each model response, so one response can go past it. The minimum is ${MIN_CAP}.</p>`}
    <label>${usd?'Limit ($, estimate)':'Limit (AI credits)'}<input id="cdVal" type="number" min="${min}" step="${usd?'0.01':'1'}" placeholder="No limit" value="${cur||''}"></label>
@@ -3818,7 +3824,7 @@ function notReadyToast(ch){toast(esc((ch&&ch.shortName)||'That agent app')+' isn
 async function aboutKinds(){
   for(;;){
     const ch=DMK().kindChoices(KINDS);
-    const r=await askDialog({title:'About agent apps',body:'Each agent app (Copilot, Claude Code, Codex) runs agents its own way. Only an app that is ready can be chosen. Settings > Agent apps can install, update or sign in to one for you.',
+    const r=await askDialog({title:'About agent apps',size:'m',body:'Each agent app (Copilot, Claude Code, Codex) runs agents its own way. Only an app that is ready can be chosen. Settings > Agent apps can install, update or sign in to one for you.',
       lines:ch.map(k=>k.name+': '+(k.state==='ready'?'ready':k.stateText)+(k.version?' · version '+k.version:'')+(k.hint?' · '+k.hint:'')),
       buttons:[{label:'Close',value:null},{label:'Check again',value:'again'},{label:'Set up agent apps…',value:'setup',cls:'primary'}],returnFocus:()=>$('kindHelp')});
     if(r&&r.value==='setup'){window.DurbarScreens.openSettings('harnesses');return;} /* spec 051 FR-008 */
@@ -4186,7 +4192,7 @@ function newSession(a0,o){
   closeSessDlg();
   const d=document.createElement('div');d.id='sessDlg';d.className='dlg-ov';
   const ho=!!o.handover&&canHandover(a); /* spec 030 FR-042: the "Continue in another app" preset of this dialog */
-  d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="sdT"><h3 id="sdT">${ho?'Continue in another agent app':'New session in '+esc(roomOf(a).name)}</h3>
+  d.innerHTML=`<div class="dlg m" role="dialog" aria-modal="true" aria-labelledby="sdT"><h3 id="sdT">${ho?'Continue in another agent app':'New session in '+esc(roomOf(a).name)}</h3>
    <p class="dsub">${ho?'A new session in <code>'+esc(roomOf(a).path)+'</code>, in the agent app you pick, starting from a summary of this conversation (you review it first). '+esc(a.name)+' keeps its history.':'Another agent with its own chat in <code>'+esc(roomOf(a).path)+'</code>.'}</p>
    ${DMK().showsKindPicker(KINDS)?`<label>Agent app<select id="sdKind">${kindOptions()}</select></label>`:''}
    <label>Permissions<select id="sdPerm"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow all (no prompts)</option></select></label>
@@ -4281,7 +4287,7 @@ function reviewHandoff(a,text,costUsd,toApp){
   return new Promise(resolve=>{
     const d=document.createElement('div');d.id='hoDlg';d.className='dlg-ov';
     const cost=costUsd>0?' (about $'+(costUsd<0.01?costUsd.toFixed(4):costUsd.toFixed(2))+', Claude\'s estimate)':'';
-    d.innerHTML=`<div class="dlg ho-dlg" role="dialog" aria-modal="true" aria-labelledby="hoT"><h3 id="hoT">Summary for the new session</h3>
+    d.innerHTML=`<div class="dlg l ho-dlg" role="dialog" aria-modal="true" aria-labelledby="hoT"><h3 id="hoT">Summary for the new session</h3>
      <p class="dsub">This becomes the first message of the new session in ${esc(roomOf(a).name)}${toApp?' ('+esc(toApp)+')':''}. Edit it as you like; nothing is sent until you press Start. Making it used the model of ${esc(a.name)}${esc(cost)}; this session keeps its history.</p>
      <textarea id="hoText" rows="14" aria-label="Summary for the new session"></textarea>
      <div class="dbtn"><button class="btn" id="hoCancel" type="button">Cancel</button><button class="btn primary" id="hoGo" type="button">${toApp?'Start in '+esc(toApp):'Start new session'}</button></div></div>`;
@@ -4373,7 +4379,7 @@ function openSchedules(r,from){
   const unitWord=u=>u==='usd'?'dollars (estimate)':u==='aiu'?'AI credits':'';
   const soon=new Date(Date.now()+60*60000);soon.setSeconds(0,0);const pad=n=>String(n).padStart(2,'0');
   const local=`${soon.getFullYear()}-${pad(soon.getMonth()+1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`;
-  d.innerHTML=`<div class="dlg sched-dlg" role="dialog" aria-modal="true" aria-labelledby="sdhT"><h3 id="sdhT">Schedules for ${esc(r.name)}</h3>
+  d.innerHTML=`<div class="dlg m sched-dlg" role="dialog" aria-modal="true" aria-labelledby="sdhT"><h3 id="sdhT">Schedules for ${esc(r.name)}</h3>
    <p class="dsub">A prompt sent to this folder's agent at a time or an interval, <b>only while Agent Durbar is open</b>. A run is skipped when the agent is busy or waiting for you; missed runs are not caught up. The agent's own permission mode and spending limit apply.</p>
    <p class="sc-paused" id="sdPausedNote" hidden>All schedules are paused (Folders panel).</p>
    <div class="sc-list" id="sdList"></div>
@@ -4578,13 +4584,15 @@ function prevCounts(st){const S=window.DurbarSessionSearch,c=st.cli,v=st.vs,mc=p
 const DEL_WORDS={copilot:{app:'GitHub Copilot',cli:'Copilot CLI'},codex:{app:'Codex',cli:'Codex CLI'}};
 const prevSrc=(a,g)=>g==='vs'?'vscode':((liveRoot(a).info||{}).adapterId||'copilot');
 async function loadPrev(a){
-  const st=prevOf(a);
+  const st=prevOf(a); st.loading=true;
   const safe=(f,empty)=>f?f(a.id).catch(e=>Object.assign({ok:false,error:String(e&&e.message||e)},empty)):null;
   const [c,v]=await Promise.all([safe(feat(a,'history')?bridge.listPrevious:null,{sessions:[]}),safe(bridge.listVsChats,{sessions:[],storesFound:0,unreadable:0,tooLarge:0,formatNote:''})]);
-  st.cli=namePrev(c); st.vs=v;
+  st.cli=namePrev(c); st.vs=v; st.loading=false;
   const vis=prevCounts(st);
   if(!st.touched&&pristine(a)&&(vis.nc||vis.nv))st.open=true; /* spec 006 FR-025: hidden rows do not open the panel by themselves */
   if(ui.selected===a.id)renderPrev(a);
+  /* spec 006 FR-036: Ctrl+Shift+H pressed while the lists loaded: open now, or say there are none only now that it is known */
+  if(st.wantOpen){st.wantOpen=false;if(ui.selected===a.id&&!vsViewing){if(prevShows(st))setPrevOpen(a,true,true);else toast(SIMPLE?'No earlier chats in this folder.':'No previous sessions in this folder.',2600);}}
   return st;
 }
 /* spec 059 FR-009: a row with the user's name shows it as its title (its tooltip and the search too); the runtime title is kept apart and not searched */
@@ -4602,10 +4610,32 @@ async function renamePrevRow(a0,id,opener){
     if(ui.selected===a.id){renderPrev(a);const r=[...document.querySelectorAll('.prev-row')].find(x=>x.dataset.pk===id),f=r&&r.querySelector('.prev-more');if(f)f.focus();}
   }});
 }
+/* spec 006 FR-035: open or closed is one display preference of this computer (localStorage, like the detail level; no session data) */
+const PREV_PREF='durbar.prevOpen';
+function prevPref(){try{const v=localStorage.getItem(PREV_PREF);return v==='open'?true:v==='closed'?false:null;}catch(e){return null;}}
+function setPrevPref(open){try{localStorage.setItem(PREV_PREF,open?'open':'closed');}catch(e){}}
 function initPrev(a){
   const box=$('prev'); if(!box)return;
-  if((!bridge.listPrevious||!feat(a,'history'))&&!bridge.listVsChats){box.hidden=true;const pb=$('prevBtn');if(pb)pb.hidden=true;return;}
-  vsViewing=false; prevOf(a).showHidden=false; renderPrev(a); loadPrev(a); /* Show hidden is per panel, not saved */
+  if((!bridge.listPrevious||!feat(a,'history'))&&!bridge.listVsChats){box.hidden=true;return;}
+  const st=prevOf(a), p=prevPref();
+  if(p!==null){st.open=p;st.touched=true;} /* a saved choice wins over the FR-002 auto-open */
+  vsViewing=false; st.showHidden=false; renderPrev(a); loadPrev(a); /* Show hidden is per panel, not saved */
+}
+/* FR-036: Ctrl+Shift+H (⇧⌘H) opens or closes the section; focus goes to the search (or the first row) when it opens, back to the toggle when it closes */
+function setPrevOpen(ra,open,byKey){
+  const st=prevOf(ra); st.open=open; st.touched=true; setPrevPref(open); renderPrev(ra);
+  const btn=$('prevBtn');
+  if(byKey){const f=open?($('prevQ')||document.querySelector('#prevLists .prev-row .btn')):null;(f||btn)&&(f||btn).focus();}
+  if(byKey&&open)announce(SIMPLE?'Earlier chats shown.':'Previous sessions shown.'); /* a click already says it through aria-expanded; closing returns focus to the toggle, which says it */
+}
+function togglePrevByKey(){
+  const a=byId(ui.selected); if(!a||a.parent||vsViewing||!a.live)return;
+  const ra=liveRoot(a), box=$('prev'), btn=$('prevBtn');
+  if(!box||!btn||box.hidden){
+    const st=prevOf(ra);
+    if(st.loading&&!prevShows(st)){st.wantOpen=true;toast(SIMPLE?'Looking for earlier chats…':'Looking for previous sessions…',2600);return;} /* FR-034: never "none" before the lists are back */
+    toast(SIMPLE?'No earlier chats in this folder.':'No previous sessions in this folder.',2600);return;}
+  setPrevOpen(ra,!prevOf(ra).open,true);
 }
 /* the two groups of Previous sessions, pinned first, hidden ones out unless shown, filtered by the title query (spec 006 FR-023..FR-027) */
 const PIN_SVG='<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false"><path d="M9.5 1.5l5 5-2 .5-2.5 2.5.5 3.5-1 1L6.5 10 3 13.5l-.5-.5L6 9.5 2.5 6l1-1 3.5.5L9.5 3z" fill="currentColor"/></svg>';
@@ -4640,22 +4670,35 @@ function prevListsHtml(a){
   if(nh>0)h+=`<div class="prev-showhid"><button class="btn sm" type="button" data-pv="showhidden" aria-pressed="${sh}">${sh?'Hide the hidden ones':'Show hidden ('+nh+')'}</button></div>`;
   return h;
 }
-/* the header's Previous (N) button: visible rows only, "K hidden" in its tooltip (spec 006 FR-025) */
+/* the section's toggle row (spec 006 FR-033): chevron, label, the count of rows that show and a breakdown with "K hidden" (FR-025) */
 function prevButton(a){
   const btn=$('prevBtn'); if(!btn)return;
-  const st=prevOf(a), kw=kindWord(a.info&&a.info.adapterId), n=prevCounts(st);
-  btn.hidden=false;btn.textContent='Previous ('+(n.nc+n.nv)+')';
-  btn.title='Previous sessions: '+(st.cli?n.nc+' '+kw+' · ':'')+n.nv+' VS Code chat'+(n.nv===1?'':'s')+(n.hid?' · '+n.hid+' hidden':'');
+  const st=prevOf(a), kw=kindWord(a.info&&a.info.adapterId), word=SIMPLE?'Earlier chats':'Previous sessions';
+  const lab=btn.querySelector('.prev-l'), cnt=btn.querySelector('.prev-c'), sub=btn.querySelector('.prev-sub');
+  if(lab)lab.textContent=word; const box=$('prev'); if(box)box.setAttribute('aria-label',word);
+  let what='';
+  if(st.cli||st.vs){const n=prevCounts(st);
+    if(cnt){cnt.hidden=false;cnt.textContent=String(n.nc+n.nv);}
+    what=[st.cli?n.nc+' '+kw:'',st.vs?n.nv+' VS Code chat'+(n.nv===1?'':'s'):'',n.hid?n.hid+' hidden':''].filter(Boolean).join(' · ');}
+  else{if(cnt)cnt.hidden=true;what='Looking…';}
+  if(sub)sub.textContent=what;
+  btn.title=word+': '+what+'. '+(st.open?'Hide':'Show')+' ('+PREV_KEY+')';
   btn.setAttribute('aria-expanded',String(!!st.open));
 }
+/* FR-034: the section shows once its lists are back and hold a row (shown or hidden) or an error to read; never empty, never while loading */
+function prevShows(st){
+  const c=st.cli, v=st.vs; if(!c&&!v)return false;
+  if((c&&!c.ok)||(v&&!v.ok))return true;
+  return !!((c&&c.sessions&&c.sessions.length)||(v&&v.sessions&&v.sessions.length));
+}
 function renderPrev(a){
-  const box=$('prev'), btn=$('prevBtn'); if(!box||a.parent)return;
+  const box=$('prev'), panel=$('prevPanel'); if(!box||!panel||a.parent)return;
   const st=prevOf(a), c=st.cli, v=st.vs;
-  /* spec 052 FR-095 (round 10): "Previous (N)" in the header's actions; the panel under the header shows only while it is open */
-  if(!c&&!v){if(btn){btn.hidden=false;btn.textContent='Previous';btn.title='Previous sessions: looking…';btn.setAttribute('aria-expanded','false');}box.hidden=true;box.innerHTML='';return;}
-  const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0; /* the search box counts every row, hidden or not */
-  const keepScroll=(box.querySelector('.prev-body')||{}).scrollTop||0;
+  /* spec 006 FR-033: a section of its own above the chat; its toggle row stays, the lists under it show only while it is open */
   prevButton(a);
+  if(!prevShows(st)){box.hidden=true;box.classList.remove('open');panel.hidden=true;panel.innerHTML='';return;}
+  const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0; /* the search box counts every row, hidden or not */
+  const keepScroll=(panel.querySelector('.prev-body')||{}).scrollTop||0;
   let h='';
   if(st.open){
     h+='<div class="prev-body">';
@@ -4665,8 +4708,8 @@ function renderPrev(a){
     h+='<div class="prev-lists" id="prevLists">'+prevListsHtml(a)+'</div>';
     h+='</div>';
   }
-  box.hidden=!st.open; box.innerHTML=h;
-  const nb=box.querySelector('.prev-body'); if(nb){nb.scrollTop=keepScroll;
+  box.hidden=false; box.classList.toggle('open',!!st.open); panel.hidden=!st.open; panel.innerHTML=h;
+  const nb=panel.querySelector('.prev-body'); if(nb){nb.scrollTop=keepScroll;
     /* spec 052 (2026-10-21, round 1): a cut last row read like text over the chat; fade it while more rows are below */
     const more=()=>nb.classList.toggle('more-below',nb.scrollTop+nb.clientHeight<nb.scrollHeight-2);
     more();nb.addEventListener('scroll',more,{passive:true});}
@@ -4829,7 +4872,7 @@ document.addEventListener('input',e=>{
 document.addEventListener('click',e=>{
   const b=e.target.closest('[data-pv]'); if(!b||!(b.closest('#prev')||b.id==='prevBtn'))return;
   const a=byId(ui.selected); if(!a)return; const ra=liveRoot(a);
-  if(b.dataset.pv==='toggle'){const st=prevOf(ra);st.open=!st.open;st.touched=true;renderPrev(ra);}
+  if(b.dataset.pv==='toggle'){if(ra.parent)return;setPrevOpen(ra,!prevOf(ra).open,false);}
   else if(b.dataset.pv==='resume')resumePrev(ra,b.dataset.sid,b);
   else if(b.dataset.pv==='view')viewVs(ra,b.dataset.key,b);
   else if(b.dataset.pv==='showhidden'){const st=prevOf(ra);st.showHidden=!st.showHidden;refreshPrevLists(ra);const nb=document.querySelector('#prevLists [data-pv="showhidden"]');if(nb)nb.focus();}
