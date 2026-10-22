@@ -47,6 +47,10 @@ module.exports = async (ctx) => {
       with:ds.filter(d=>d.querySelector('.chatno')).length,
       font:Math.min(...[...document.querySelectorAll('#stage .chatno')].map(e=>parseFloat(getComputedStyle(e).fontSize))),
       inside:ds.every(d=>{const b=d.querySelector('.chatno');if(!b)return true;const r=b.getBoundingClientRect(),q=d.getBoundingClientRect();return r.width>0&&r.left>=q.left-0.5&&r.right<=q.right+0.5&&r.top>=q.top-0.5&&r.bottom<=q.bottom+0.5;}),
+      /* 2026-10-23 (Windows UI failure at 1280): on a desk card the badge sits on the scene, never in the name row */
+      onScene:ds.filter(d=>{const b=d.querySelector('.chatno'),n=d.querySelector('.name'),sc=d.querySelector('.sc');if(!b||!n||!sc||!d.classList.contains('card'))return false;
+        const r=b.getBoundingClientRect(),q=n.getBoundingClientRect(),c=sc.getBoundingClientRect(),hit=(x,y)=>x.left<y.right&&y.left<x.right&&x.top<y.bottom&&y.top<x.bottom;
+        return !(hit(r,c)&&!hit(r,q));}).map(d=>d.innerText.trim().slice(0,20)),
       names:Math.min(...ds.map(d=>{const n=d.querySelector('.name');return n?n.getBoundingClientRect().width:99;})),
       first:ds.filter(d=>{const n=d.querySelector('.name');return n&&!d.innerText.trim().startsWith(n.innerText.trim());}).map(d=>d.innerText.trim().slice(0,20)),
       aria:ds.filter(d=>/, chat \\d+,/.test(d.getAttribute('aria-label')||'')).length,
@@ -55,6 +59,7 @@ module.exports = async (ctx) => {
     assert.ok(badges.n >= 15 && badges.with === badges.n, `${w}: every main desk has a chat number (${badges.with}/${badges.n})`);
     assert.ok(badges.font >= 10.5, `${w}: badge text ${badges.font}px`);
     assert.ok(badges.inside, `${w}: every badge stays inside its desk`);
+    assert.deepStrictEqual(badges.onScene, [], `${w}: every desk card's badge sits on its scene, clear of the name`);
     assert.ok(badges.names >= 20, `${w}: names keep room next to the badge (${badges.names}px)`);
     assert.deepStrictEqual(badges.first, [], `${w}: a desk's text still starts with its name (drivers and the office check find desks that way)`);
     assert.strictEqual(badges.aria, badges.n, `${w}: screen readers hear "chat N"`);
@@ -133,6 +138,27 @@ module.exports = async (ctx) => {
     await shot('chat', w, h);
     await key('Escape', [], { char: 'never' });
     await H.office();
+
+    // ---- review 2026-10-23: the empty reason is announced; a hostile agent name stays plain text ----
+    await open();
+    await type('c 99');
+    s = await nav();
+    assert.ok(s.crumb === 'Go to › Chats' && s.opts.length === 0 && /^No chat 99 here/.test(s.empty), `${w}: no chat 99: ${JSON.stringify(s.empty)}`);
+    assert.ok(await js(`!document.querySelector('#palList [role="status"]')`), `${w}: no status role inside the listbox`);
+    assert.ok(await until(`/^Chats: No chat 99 here/.test(document.getElementById('srAnnounce').textContent)`, 3000), `${w}: the reason is announced, not "0 results"`);
+    await key('Escape', [], { char: 'never' });
+    await key('Escape', [], { char: 'never' });
+    const HOSTILE = '<img src=x onerror="window.__pwned074=1">"\'&<b>bold</b>';
+    const hostileId = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>!x.parent&&x.name==='Mira')||window.__durbarSimUi.agents().find(x=>!x.parent);a.__name074=a.name;a.name=${jsLiteral(HOSTILE)};return a.id})()`);
+    await open();
+    await type('c ');
+    const hostile = await js(`(()=>{const d=document.getElementById('palDlg');return {els:d.querySelectorAll('img,b,script,iframe').length,
+      label:[...d.querySelectorAll('[role="option"] .pal-l')].map(l=>l.lastChild.textContent).includes(${jsLiteral(HOSTILE)}),pwned:!!window.__pwned074}})()`);
+    await ctx.sleep(200);
+    assert.ok(hostile.els === 0 && hostile.label && !hostile.pwned && !(await js(`!!window.__pwned074`)), `${w}: a hostile agent name is literal text in Go to: ${JSON.stringify(hostile)}`);
+    await key('Escape', [], { char: 'never' });
+    await key('Escape', [], { char: 'never' });
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(hostileId)});a.name=a.__name074;delete a.__name074;})()`);
 
     // ---- US3: the Esc chain and focus return ----
     await js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(deskId)})+'"]').focus()`);

@@ -8,8 +8,8 @@ const ROOT = path.join(__dirname, '..', '..');
 type Item = { kind: string; id?: string; label: string; hint?: string; kw?: string; n?: number; no?: number; to?: string };
 type Level = { kind: string; floor?: string; folder?: string; q?: string; active?: number };
 type Snap = { floors: { id: string; name: string }[]; folders: { id: string; name: string; floor: string; hint?: string }[]; chats: { id: string; name: string; folder: string; no: number; hint?: string }[] };
-type Combo = { mod?: boolean; ctrl?: boolean; alt?: boolean; shift?: boolean; code: string; sup?: boolean };
-type Ev = Partial<{ code: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }>;
+type Combo = { mod?: boolean; ctrl?: boolean; alt?: boolean; shift?: boolean; code: string; sup?: boolean; typed?: string };
+type Ev = Partial<{ code: string; key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }>;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const N = require(path.join(ROOT, 'src', 'renderer', 'navigator.js')) as {
   rank: (items: Item[], q: string) => Item[];
@@ -176,6 +176,63 @@ for (const [c, mac, re] of refused) {
   assert.ok(why && re.test(why), `${JSON.stringify(c)} on ${mac ? 'a Mac' : 'Windows/Linux'} is refused for ${re}: got "${why}"`);
 }
 assert.ok(ok({ mod: true, alt: true, shift: true, code: 'KeyJ' }, false), 'Ctrl+Alt+Shift+J does not type a character');
+
+// review 2026-10-23 (fjcabello, PR #552): Mac text-editing Control keys, IBus keys on Linux, Schedules (#560)
+for (const L of 'ABDEFHKLNOPTVY') {
+  for (const shift of [false, true]) {
+    const why = N.clashOf({ ctrl: true, shift, code: 'Key' + L }, true);
+    assert.ok(/edits text/.test(why) && why.includes(L), `⌃${shift ? '⇧' : ''}${L} on a Mac is a text-editing key: got "${why}"`);
+  }
+}
+assert.ok(ok({ ctrl: true, code: 'KeyG' }, true) && ok({ ctrl: true, code: 'KeyJ' }, true), '⌃G and ⌃J are not text-editing keys');
+assert.ok(ok({ mod: true, ctrl: true, code: 'KeyE' }, true), '⌃⌘E is not the text key ⌃E');
+assert.ok(/Unicode input/.test(N.clashOf({ mod: true, shift: true, code: 'KeyU' }, false)), 'Ctrl+Shift+U is IBus Unicode input');
+assert.ok(/emoji input/.test(N.clashOf({ mod: true, shift: true, code: 'KeyE' }, false)), 'Ctrl+Shift+E is IBus emoji input');
+assert.ok(ok({ mod: true, shift: true, code: 'KeyU' }, true), '⇧⌘U is free on a Mac');
+for (const mac of [false, true]) assert.ok(/Schedules/.test(N.clashOf({ mod: true, shift: true, code: 'KeyS' }, mac)), 'Ctrl/⌘+Shift+S is reserved for Schedules (#560)');
+
+// FR-017 (2026-10-23): the typed letter counts too. Dvorak: the key labelled C is at the position of I (code KeyI, key "c").
+const dvC: Ev = { code: 'KeyI', key: 'c', ctrlKey: true };
+const rec = N.comboFromEvent(dvC, false)!;
+assert.deepStrictEqual(rec, { mod: true, ctrl: false, alt: false, shift: false, code: 'KeyI', sup: false, typed: 'KeyC' }, 'the recorded combination keeps the typed letter');
+let whyDv = N.clashOf(rec, false);
+assert.ok(/types C/.test(whyDv) && /Copy/.test(whyDv), `Dvorak Ctrl+C is refused as Copy: got "${whyDv}"`);
+whyDv = N.clashOf(N.comboFromEvent({ code: 'KeyS', key: 'o', metaKey: true }, true)!, true);
+assert.ok(/types O/.test(whyDv) && /Add folder/.test(whyDv), `Dvorak ⌘O (position S, free there) is refused as Add folder: got "${whyDv}"`);
+assert.ok(!('typed' in N.comboFromEvent({ code: 'KeyJ', key: 'j', ctrlKey: true }, false)!), 'QWERTY: no typed letter when it is the position');
+assert.ok(ok(N.comboFromEvent({ code: 'KeyB', key: 'X', ctrlKey: true, shiftKey: true }, false)!, false), 'Dvorak Ctrl+Shift+X (position B) is free');
+const ctrlI: Combo = { mod: true, code: 'KeyI' };
+assert.ok(N.comboMatches({ code: 'KeyI', key: 'i', ctrlKey: true }, ctrlI, false), 'QWERTY: Ctrl+I matches');
+assert.ok(!N.comboMatches(dvC, ctrlI, false), 'Dvorak: the press types C, so Copy keeps it');
+assert.ok(!N.comboMatches({ code: 'KeyJ', key: 'h', metaKey: true }, D, true), 'Mac Dvorak: ⌘ at J types H (Hide), left to macOS');
+assert.ok(N.comboMatches({ code: 'KeyJ', key: 'h', ctrlKey: true }, D, false), 'Linux/Windows Dvorak: Ctrl+H is nobody\'s, so the default still works');
+assert.ok(N.comboMatches({ code: 'KeyJ', key: 'J', ctrlKey: true }, D, false), 'an upper-case key is the same letter');
+
+// every Ctrl/⌘ shortcut of the global keydown handler in app.js is refused (so Go to cannot take one over)
+{
+  const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+  const start = src.indexOf("document.addEventListener('keydown',e=>{\n  /* spec 052 FR-035");
+  assert.ok(start > 0, 'found the global keydown handler');
+  const body = src.slice(start, src.indexOf('\n});\n', start));
+  let n = 0;
+  for (const line of body.split('\n')) {
+    if (!/^\s*if\(/.test(line) || /KEYS\.chatKeyDown|NAV\.comboMatches/.test(line)) continue;
+    const viaMod = /\bmod&&/.test(line), viaCtrl = /\be\.ctrlKey&&/.test(line);
+    if (!viaMod && !viaCtrl) continue;
+    /* a modifier the line requires (e.shiftKey&&), refuses (!e.shiftKey) or leaves open (both are checked) */
+    const states = (k: string) => (new RegExp('(^|[^!])e\\.' + k + '&&').test(line) ? [true] : new RegExp('!e\\.' + k).test(line) ? [false] : [false, true]);
+    const codes = [...line.matchAll(/e\.code==='((?:Key|Digit)[A-Z0-9]|Backquote)'/g)].map((x) => x[1]);
+    for (const mac of [false, true]) {
+      if (mac && /!IS_MAC&&/.test(line)) continue;
+      for (const code of codes) for (const shift of states('shiftKey')) for (const alt of states('altKey')) {
+        const c: Combo = viaMod || !mac ? { mod: true, shift, alt, code } : { ctrl: true, shift, alt, code };
+        assert.ok(N.clashOf(c, mac) !== '', `the handler's ${JSON.stringify(c)} on ${mac ? 'a Mac' : 'Windows/Linux'} is in TAKEN`);
+        n++;
+      }
+    }
+  }
+  assert.ok(n >= 12, `checked the handler's shortcuts (${n})`);
+}
 
 // ---- saved shortcut ----
 assert.deepStrictEqual(N.loadCombo(null, false), D);

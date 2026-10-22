@@ -2094,7 +2094,7 @@ function navShow(typed){
   palRender(empty);
   const act=typed?v.active:Math.min(lv.active||0,Math.max(0,palItems.length-1));
   palSetActive(act);
-  announce(words[words.length-1]+': '+(palItems.length===1?'1 result':palItems.length+' results'));
+  announce(words[words.length-1]+': '+(palItems.length?(palItems.length===1?'1 result':palItems.length+' results'):empty)); /* FR-016: the reason, not "0 results" */
 }
 function navChoose(snap,item){
   const r=NAV.pick(snap,item); if(!r)return;
@@ -2118,7 +2118,7 @@ function palPaint(q){
   palItems=palFilter(q); palActive=0;
   palRender('No matches.');
   palSetActive(0);
-  announce(palItems.length===1?'1 result':palItems.length+' results');
+  announce(palItems.length?(palItems.length===1?'1 result':palItems.length+' results'):'No matches.');
 }
 function palRender(empty){
   const list=$('palList'); if(!list)return;
@@ -2127,7 +2127,7 @@ function palRender(empty){
     if(x.group!==g){g=x.group;html+='<div class="pal-g" role="presentation">'+esc(g)+'</div>';}
     html+='<div class="pal-o" role="option" id="palO'+i+'" data-i="'+i+'" aria-selected="false">'+(x.num?'<span class="pal-n" aria-hidden="true">'+esc(x.num)+'</span>':'')+'<span class="pal-l" title="'+esc(x.label)+'">'+(x.num?'<span class="sr-only">'+esc(x.num.startsWith('C')?'Chat '+x.num.slice(1):x.num)+': </span>':'')+esc(x.label)+'</span>'+(x.hint?'<span class="pal-h" title="'+esc(x.hint)+'">'+esc(x.hint)+'</span>':'')+(x.keys?'<span class="pal-k">'+kbdHTML(x.keys)+'</span>':'')+'</div>';
   });
-  list.innerHTML=html||'<p class="pal-empty" role="status">'+esc(empty)+'</p>';
+  list.innerHTML=html||'<p class="pal-empty">'+esc(empty)+'</p>'; /* no role inside the listbox: the reason is announced (spec 074 FR-016) */
 }
 function palSetActive(i){
   const list=$('palList'),inp=$('palIn'); if(!list||!inp)return;

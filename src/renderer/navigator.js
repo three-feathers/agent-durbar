@@ -130,15 +130,23 @@
   const PUNCT={Backquote:'`',Minus:'-',Equal:'=',BracketLeft:'[',BracketRight:']',Backslash:'\\',Semicolon:';',Quote:"'",Comma:',',Period:'.',Slash:'/'};
   const validCode=c=>/^Key[A-Z]$/.test(c)||/^Digit[0-9]$/.test(c)||/^F([1-9]|1[0-2])$/.test(c)||c==='Space'||Object.prototype.hasOwnProperty.call(PUNCT,c);
   const keyName=c=>/^Key[A-Z]$/.test(c)?c.slice(3):/^Digit[0-9]$/.test(c)?c.slice(5):c==='Space'?'Space':PUNCT[c]||c;
-  /* the combination of a keydown, or null for a modifier key alone. sup = the Windows/Super key on Windows and Linux. */
+  /* the code of the letter or digit a key types on this keyboard layout ('KeyC' for "c" or "C"), or '' (FR-017, 2026-10-23) */
+  const typedCode=k=>/^[a-zA-Z]$/.test(String(k||''))?'Key'+String(k).toUpperCase():/^[0-9]$/.test(String(k||''))?'Digit'+k:'';
+  /* the combination of a keydown, or null for a modifier key alone. sup = the Windows/Super key on Windows and Linux. typed = the code
+     of the letter the key types on this layout when it is not the key's position (Dvorak: the position of I types "c"). */
   function comboFromEvent(e,mac){
     if(!e||!e.code||/^(Shift|Control|Alt|Meta|OS|CapsLock|Fn)/.test(e.code))return null;
-    return {mod:mac?!!e.metaKey:!!e.ctrlKey,ctrl:mac?!!e.ctrlKey:false,alt:!!e.altKey,shift:!!e.shiftKey,code:e.code,sup:mac?false:!!e.metaKey};
+    const c={mod:mac?!!e.metaKey:!!e.ctrlKey,ctrl:mac?!!e.ctrlKey:false,alt:!!e.altKey,shift:!!e.shiftKey,code:e.code,sup:mac?false:!!e.metaKey};
+    const t=typedCode(e.key); if(t&&t!==e.code)c.typed=t;
+    return c;
   }
   function comboMatches(e,combo,mac){
     if(!combo||e.isComposing)return false;
     const x=comboFromEvent(e,mac); if(!x||x.sup)return false;
-    return x.code===combo.code&&x.mod===!!combo.mod&&x.ctrl===!!combo.ctrl&&x.alt===!!combo.alt&&x.shift===!!combo.shift;
+    if(!(x.code===combo.code&&x.mod===!!combo.mod&&x.ctrl===!!combo.ctrl&&x.alt===!!combo.alt&&x.shift===!!combo.shift))return false;
+    /* the app's other shortcuts match the typed letter too (e.key==='k'||e.code==='KeyK'): on another layout, a press that types
+       another shortcut's letter is left to it (FR-017, 2026-10-23) */
+    return !(x.typed&&takenBy(Object.assign({},x,{code:x.typed}),mac));
   }
   /* the parts for keys.js's keyLabels / keyText: ['mod','shift','J'] */
   function comboParts(combo){
@@ -152,6 +160,7 @@
     /* the app's own shortcuts */
     ['mod+KeyK','the command palette'],['mod+KeyO','Add folder'],['mod+shift+KeyO','Add VS Code workspace'],
     ['mod+shift+KeyA','the Needs you inbox'],['mod+shift+KeyN','the next agent that needs you'],['mod+shift+KeyH','Previous sessions'],
+    ['mod+shift+KeyS','Schedules'], /* PR #560 (Schedules in the top bar); reserved here before it lands */
     ['mod+Backquote','Back to the previous chat','other'],['ctrl+Backquote','Back to the previous chat','mac'],['mod+Comma','Settings','mac'],
     ['alt+KeyA','Allow once in a waiting chat','other'],['alt+KeyS','Allow for this session in a waiting chat','other'],['alt+KeyD','Deny in a waiting chat','other'],['alt+KeyN','the next agent that needs you','other'],
     ['mod+alt+KeyA','Allow once in a waiting chat','mac'],['mod+alt+KeyS','Allow for this session in a waiting chat','mac'],['mod+alt+KeyD','Deny in a waiting chat (and the Dock)','mac'],['mod+alt+KeyN','the next agent that needs you','mac'],
@@ -167,7 +176,11 @@
     ['mod+Space','Spotlight (macOS)','mac'],['mod+alt+Space','Finder search (macOS)','mac'],['ctrl+Space','switching input sources (macOS)','mac'],['ctrl+alt+Space','switching input sources (macOS)','mac'],
     ['mod+ctrl+Space','Emoji and Symbols (macOS)','mac'],['mod+Tab','switching apps (macOS)','mac'],['mod+shift+Digit3','screenshots (macOS)','mac'],['mod+shift+Digit4','screenshots (macOS)','mac'],['mod+shift+Digit5','screenshots (macOS)','mac'],
     ['mod+ctrl+KeyQ','locking the screen (macOS)','mac'],
+    ['mod+shift+KeyU','Unicode input (Ctrl+Shift+U, IBus on Linux)','other'],['mod+shift+KeyE','emoji input (Ctrl+Shift+E, IBus on Linux)','other'],
   ];
+  /* Mac text fields edit with Control and these letters (Cocoa, Emacs style): ⌃A line start, ⌃E line end, ⌃K delete to the end… */
+  const MAC_TEXT_KEYS=/^Key[ABDEFHKLNOPTVY]$/;
+  const takenBy=(c,mac)=>{const s=sig(c);return TAKEN.find(t=>t[0]===s&&(!t[2]||t[2]===(mac?'mac':'other')))||null;};
   /* '' when the combination may be used, otherwise a sentence that says why not (FR-014) */
   function clashOf(combo,mac){
     const c=combo||{};
@@ -178,8 +191,14 @@
     if(mac&&c.alt&&!c.mod&&!c.ctrl&&letter)return 'On a Mac, Option with a letter types accented characters. Add ⌘ or ⌃.';
     if(!mac&&c.mod&&c.alt&&letter&&!c.shift)return 'Ctrl+Alt with a letter is AltGr on many keyboard layouts and types characters. Add Shift or pick another key.';
     if(!mac&&c.mod&&c.alt&&/^F/.test(c.code))return 'Ctrl+Alt with a function key switches consoles on Linux.';
-    const s=sig(c), hit=TAKEN.find(t=>t[0]===s&&(!t[2]||t[2]===(mac?'mac':'other')));
+    if(mac&&c.ctrl&&!c.mod&&!c.alt&&MAC_TEXT_KEYS.test(c.code))return 'On a Mac, Control with '+keyName(c.code)+' edits text in every text field (⌃A, ⌃E, ⌃K…). Add ⌘ or pick another key.';
+    const hit=takenBy(c,mac);
     if(hit)return 'Already used for '+hit[1]+'.';
+    /* FR-017: the letter it types on this keyboard layout counts too (Dvorak: Ctrl and the key labelled C is the position of I) */
+    if(c.typed&&c.typed!==c.code){
+      const t=Object.assign({},c,{code:c.typed,typed:''}), why=clashOf(t,mac);
+      if(why)return 'On this keyboard layout it types '+keyName(c.typed)+'. '+why;
+    }
     return '';
   }
   /* saved JSON -> a usable combination, or the default when it is missing, damaged or no longer allowed */
