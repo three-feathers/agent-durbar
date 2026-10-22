@@ -34,3 +34,4 @@
 - [x] T061 Codex `config.toml` that does not parse is refused with its line number (change 2026-10-22; found by T060) [FR-003]; tests in `test:mcpglobal`, verdicts matched against codex-cli 0.163.0
 - [x] T062 Review on #489 (change 2026-10-22): write through a symlinked file; one-pass TOML unescape shared with spec 061 (`codextoml.ts`); `copilotDir` reused; FR-009 wiring tested through `registerMcpIpc` [FR-002, FR-006, FR-009, FR-041]
 - [x] T063 Review on #492 (change 2026-10-22): mask command, arguments and URL in the copy review; keep or refuse `enabled = false`, `disabled_tools`, tool lists and JSON `cwd` in copies; diff names tools and on/off [FR-012, FR-020, FR-023, SC-002]
+- [ ] T066 Second review on #492 (Paco's agent, change 2026-10-22): copies refuse unknown fields and non-string values (named), Codex `env` numbers and multi-line strings not copyable, copy into a 0644 file leaves it 0600 (via T065), copy review wording; mutation-checked [FR-006, FR-023]

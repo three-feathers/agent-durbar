@@ -233,6 +233,12 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   `disabled: true`), hidden tools (Codex `disabled_tools`, written as a list) and a tool allow list (Codex `enabled_tools`, Copilot
   `tools`) travel with it where the target list has the same field (Codex all three; Copilot the allow list); a target without it
   refuses that file with a note naming the field.
+  (change 2026-10-22, review 2 and 3 on #492) **Nothing is dropped silently.** A copy is refused, naming the fields, when the source
+  entry has a field the writers do not carry (for example Claude Code `oauth` or `headersHelper`, Copilot `timeout`, Codex
+  `startup_timeout_sec` or a sub-table other than `env`, `http_headers`, `env_http_headers`), or a value that is not a plain string
+  where one is expected (a number or a `"""` multi-line string in Codex `env`, a non-string in a JSON `env`, `headers` or `args`):
+  such a copy would lose that field or write the value empty. The diff still lists the server, with the reason. Plain values copied
+  from an owner-only file never land in a more open one: every written file is owner-only (FR-006), and the copy review says so.
 
 ### Session controls and tools (part 3; depends on spec 058 #473)
 
@@ -348,6 +354,15 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   5. **FR-004 aligned with the code**: an `Authorization` header is referenced through `env_http_headers` like any header.
   6. **Smaller**: the Claude MCP JSON goes through a 0600 temp file instead of argv (FR-009); the hash is checked again right before the
      rename (FR-006); README and the Settings note say that restoring a backup is manual.
+
+- **2026-10-22 (second review on #492 by Paco's agent, CHANGES_REQUESTED at 00d26a4d):** all findings fixed (T066).
+  1. **Copying a secret into a more open file**: `copyPreview` writes plain values as they are; with #489's owner-only writes (FR-006)
+     the target file is 0600 after the copy (`test:` a plain secret from a 0600 `~/.claude.json` copied into a 0644 Codex
+     `config.toml` leaves it 0600), and the copy review says the file is left readable only by you.
+  2. **Fields lost on replace** (FR-023): unknown fields (Claude `oauth`, `headersHelper`, Copilot `timeout`, Codex keys and
+     sub-tables the writer does not know) made a silent partial copy; now the copy is refused naming them.
+  3. **Values that became empty** (FR-023): a Codex `env` value that is not a simple string (a number, a multi-line string) was read
+     as `""`; now it is not copyable, with the key named. The same for non-string JSON values and Codex `args` that are not strings.
 
 - **2026-10-22 (review on #492):** two findings fixed.
   1. **Secret in the copy review** (FR-012, SC-002): the review of a copy masked env and header values only; a token in the source
