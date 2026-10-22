@@ -300,6 +300,22 @@ export function dueAt(s: Schedule): number | undefined {
   return recurring(s) ? s.next : s.at;
 }
 
+/**
+ * Spec 044 busy rule with spec 068 FR-008: the schedule's session (or, without one, any session in its folder) is busy when its last
+ * status is working or waiting for permission (`busy`) or it is on a coffee break (`breaks.onBreak`: a usage limit or Durbar's cap).
+ * A busy run is skipped and recorded as busy, never queued. Main's `scheduleDeps().isBusy` is this function.
+ */
+export function scheduleBusy(
+  folder: string,
+  session: string | undefined,
+  d: { sessions(): Iterable<{ id: string; folder: string }>; busy(id: string): boolean; breaks: { onBreak(id: string): boolean } },
+): boolean {
+  const b = (id: string): boolean => d.busy(id) || d.breaks.onBreak(id);
+  if (session) return b(session);
+  for (const x of d.sessions()) if (x.folder === folder && b(x.id)) return true;
+  return false;
+}
+
 export interface SchedulerDeps {
   now(): number;
   /** The folder's agent (or, with `session`, that session) is working or waiting for the user. */
