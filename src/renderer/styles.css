@@ -498,16 +498,15 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .topbar.tb-tight .brand h1{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:1799px){.topbar #defaultsBtn{max-width:170px}}
 @media (max-width:1599px){.topbar #defaultsBtn{max-width:130px}.topbar #defaultsBtn .dv-r{display:none}.topbar .select-wrap select{max-width:104px}} /* the mode word only ("Read-only"); the rest is in the title, the label and the popover */
-@media (max-width:1440px){ .topbar{column-gap:8px} } /* spec 044 FR-034: room for Schedules at 1440x900 (the 1440 window), step 3 of the levers: the bar's gaps */
+@media (max-width:1440px){ .topbar{column-gap:8px} .topbar .select-wrap select{max-width:88px} .topbar .controls,.topbar #liveBar{gap:4px} .topbar .sched-top{padding:0 8px} } /* also the folder filter (104 to 88px), the groups' gaps and the button's padding, so the brand name stays shown in Durbar European at 1440 (it needs 102px) */ /* spec 044 FR-034: room for Schedules at 1440x900 (the 1440 window), step 3 of the levers: the bar's gaps */
 @media (max-width:1439px){
   .topbar #liveBar .top-add .btn{padding:0 8px}
   .topbar .seg button{padding:0 7px}
-  .topbar #liveBar{gap:6px}
+  .topbar #liveBar{gap:4px}
   /* spec 044 FR-034: room for Schedules at 1280x800 in Expert, measured in DejaVu Sans with floors and mixed agent apps, in the documented
-     order: the chip's cap (not binding there: the chip is 106px), the folder filter (104 to 80px; its full text is in its title), the gaps */
+     order: the chip's cap (not binding there: the chip is 106px), the folder filter (to 80px; its full text is in its title), the gaps */
   .topbar .select-wrap select{max-width:80px}
-  .topbar .controls,.topbar #liveBar{gap:4px}
-  .topbar .sched-top{padding:0 8px;gap:4px}
+  .topbar .sched-top{gap:4px}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
@@ -1488,6 +1487,7 @@ html[data-platform="darwin"] .notice-strip:not([hidden]) ~ .workspace .strip{pad
    flex item that is 78px minus the padding wide and takes back the gap after it. A notice strip that is the first row is at least 40px tall, so the
    Office button below it never reaches into the 78x40 box. */
 html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}
+@media (max-width:1440px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{margin-right:-8px}} /* spec 044 FR-034: the bar's column gap is 8px up to 1440px; the traffic-light room stays 78px */
 @media (max-width:1320px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}
 /* spec 052 FR-164: on a Mac the traffic lights take 58px more, so the counters keep their words only from 2040px and the defaults chip is
    narrower from 1600 to 1799px (the brand name gives way by measurement, .tb-tight) */
