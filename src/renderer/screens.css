@@ -45,6 +45,14 @@ body.screen-open .workspace{display:none}
 .swt:disabled{opacity:1;border-style:dashed;background:var(--surface-2);cursor:not-allowed} /* spec 052 FR-052: readable, not faded */
 .swt:disabled i{box-shadow:0 0 0 1px var(--line-ctl)}
 .mst{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-2)}
+.mst-ic{flex:none}
+.mst.connected .mst-ic{color:var(--c-done)} .mst.failed .mst-ic,.mst.needs-auth .mst-ic{color:var(--c-error)} .mst.pending .mst-ic{color:var(--c-thinking)} .mst.disabled .mst-ic,.mst.stopped .mst-ic{color:var(--muted)} .mst.unknown{color:var(--muted)}
+.mst-w{font-weight:500}
+.srv-hint{display:block;font-size:11px;color:var(--ink-2);overflow-wrap:anywhere}
+.srv-detbtn{align-self:flex-start;margin-top:2px}
+.srv-det{display:flex;align-items:flex-start;gap:8px;margin-top:4px}
+.srv-err{flex:1;min-width:0;margin:0;max-height:96px;overflow:auto;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+.srv-name{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .mst i{width:8px;height:8px;border-radius:50%;background:var(--gray)}
 .mst.connected i{background:var(--c-done)} .mst.failed i,.mst.needs-auth i{background:var(--c-error)} .mst.pending i{background:var(--c-thinking)} .mst.disabled i{background:transparent;border:2px solid var(--c-idle)}
 .mst.none{color:var(--muted)}
