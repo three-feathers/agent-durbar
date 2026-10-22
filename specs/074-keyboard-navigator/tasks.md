@@ -48,6 +48,16 @@
 - [x] T018 [P] Docs: README keyboard section, `changelog.d` fragment, spec status and index block (`npm run specs:index`), `docs/agent-notes.md` entry if something was learned
 - [x] T019 `nice -n 19 npm run typecheck && npm run build && npm test`; `git merge-tree` against `origin/005-composer-toolbar` (#498) and `origin/073-slash-suggestions` (#535) before the PR
 
+## Phase 9: Review round 1 (fjcabello, PR #552, spec Changes 2026-10-23)
+
+- [ ] T020 FR-012: the desk-card chat number on the scene's corner in every card density (`src/renderer/styles.css`); `check:office` and `shots-074-navigator` at both sizes
+- [ ] T021 FR-014: refuse ⌃+Cocoa text keys on a Mac and Ctrl+Shift+U / E elsewhere, with reasons; unit tests (`src/renderer/navigator.js`, `scripts/test-navigator.ts`)
+- [ ] T022 FR-014: reserve `mod+shift+KeyS` (Schedules, #560) in `TAKEN`; a unit test that every Ctrl/⌘ shortcut of the global keydown handler is refused
+- [ ] T023 FR-017: `comboFromEvent` keeps the typed letter; `clashOf` refuses a taken position or letter; `comboMatches` leaves a press whose letter is another shortcut's; unit tests with a Dvorak press
+- [ ] T024 FR-016: the empty reason in the announcement, no `role` on the empty text (`src/renderer/app.js`)
+- [ ] T025 Driver: a hostile agent name in Go to stays literal text (`scripts/shots-074-navigator.js`)
+- [ ] T026 Mutation-check T020-T023, then `nice -n 19 npm run typecheck && npm run build && npm test`, `shots-074-navigator` and `check:office` once on the final head
+
 ## Dependencies
 
 T001 → T003-T007 → T008-T010 (US1) → T011 (US2) → T012 (US3); T013-T014 (US4) need T007; T015 needs T008 and T014; T016-T019 last. US2 and US3 extend the same palette code as US1, so they follow it.
