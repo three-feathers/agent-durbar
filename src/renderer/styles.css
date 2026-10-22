@@ -717,8 +717,8 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .ph{--h-chip:28px} /* one control height in the header: chips and .btn.sm buttons are both 28px */
 .ph-top{flex-wrap:wrap;gap:8px 12px;align-items:flex-start}
 .ph-id{min-width:0;flex:0 0 auto;max-width:40%;min-height:28px;display:flex;align-items:center;gap:8px} /* name, then the role in T5 on the same line */
-.ph-id h2{flex:0 0 auto;min-width:3.5em;max-width:100%} /* round 10 check: the name never shrinks before the chips do */
-.ph-id .sub{flex:0 1 auto;min-width:0}
+.ph-id h2{flex:0 1 auto;min-width:3.5em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} /* round 10 check: the name never shrinks before the chips do (.ph-id has its own max-width); the name is cut, the role is not (spec 052 FR-174 review: the h2 has its title) */
+.ph-id .sub{flex:0 0 auto;min-width:0}
 .ph-meta{margin-top:0;flex:1 1 760px;row-gap:4px;min-height:28px}
 /* spec 052 FR-141: the chips stay beside the name when 760px are left for them; otherwise they take a full row under the name and the
    actions (before, they were squeezed into the leftover width, one chip per row: 5 to 8 rows). The actions never move down. */

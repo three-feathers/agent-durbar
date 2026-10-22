@@ -204,6 +204,7 @@
     const label = (t.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim(), head = document.getElementById('panelTitle');
     if (head && label !== 'Message ' + head.textContent.replace(/\s+/g, ' ').trim()) add('placeholder-line', root, t, `the composer is named "${snip(label, 50)}" but the heading says "${snip(head.textContent, 50)}"`);
     if (/[\ud800-\udbff](?![\udc00-\udfff])|(?:^|[^\ud800-\udbff])[\udc00-\udfff]/.test(t.placeholder)) add('placeholder-line', root, t, `the placeholder cuts a character in two: "${snip(t.placeholder, 50)}"`);
+    { const a = Array.from(t.placeholder.replace(/\u2026$/, '')); let k = 0; while (k < a.length && /[\u{1F1E6}-\u{1F1FF}]/u.test(a[a.length - 1 - k])) k++; if (k % 2 === 1) add('placeholder-line', root, t, `the placeholder cuts a flag in two: "${snip(t.placeholder, 50)}"`); }
     if (t.placeholder !== label + '\u2026' && !(t.placeholder.endsWith('\u2026') && label.startsWith(t.placeholder.slice(0, -1).trimEnd()))) add('placeholder-line', root, t, `the shortened placeholder "${snip(t.placeholder, 50)}" has no ellipsis or is not the start of "${snip(label, 50)}"`);
   }
   function chatRules(root, add) {

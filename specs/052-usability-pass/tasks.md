@@ -294,7 +294,9 @@
 - [x] T173 Spec delta FR-174
 - [x] T174 `fitPlaceholder()` in `app.js`: placeholder cut from a measured width with `DurbarCutText`, full text in the `aria-label`, refit on resize and from `repaintName` [FR-174]
   - Accept: with a 120-character title the placeholder is one line ending in `…` at 1440x900 and 1280x800; a short name is untouched.
-- [x] T175 Rule `placeholder-line` in `check-ui-text` / `ui-text-page.js` for the chat surfaces (`simtitles=long`, late title, rename, emoji, no spaces) [FR-174, FR-171]
+- [x] T175 Rule `placeholder-line` in `check-ui-text` / `ui-text-page.js` for the chat surfaces (`simtitles=long`; one `chat-late` pass: late title, rename, emoji, flags, no spaces, window resize) [FR-174, FR-171]
   - Check: mutation (`fitPlaceholder` made a no-op) fails `placeholder-line`; code restored byte for byte.
 - [x] T176 Screenshots before and after (both sizes, light) in `docs/screenshots/052-placeholder-*`; CHANGELOG line; spec tags
 - [x] T177 Review fixes on #453: late title and rename, `cutText`, no `title`/`data-ph`, mirror copies `overflow-wrap`/`word-break`, prefix and emoji checks, sim hook `__durbarSimRetitle`
+
+- [x] T178 Review on #545: `.ph-id h2` is cut and `.sub` kept whole; `fitCut` (pure, unit-tested incl. the band where the text fits but not with `…`); `cutText` keeps flags whole; resize case (ResizeObserver mutation fails); the four late cases folded into one `chat-late` pass [FR-174]

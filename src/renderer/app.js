@@ -1235,9 +1235,8 @@ function renderAttached(){
 /* spec 052 FR-174 (#453): the placeholder is one line. A textarea placeholder wraps and takes no text-overflow, so the name is cut here with DurbarCutText (code points, never inside an emoji), from the measured width of the textarea, and ends in an ellipsis. The full text is the aria-label (repaintName keeps it current). */
 let phCtx=null,phRO=null;
 function fitPlaceholder(){const t=$('msgInput');if(!t)return;const full=t.getAttribute('aria-label')||'',cs=getComputedStyle(t),w=t.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);if(!full||!(w>0))return;
-  if(!phCtx)phCtx=document.createElement('canvas').getContext('2d');phCtx.font=cs.font;const fits=x=>phCtx.measureText(x).width<=w-1,cut=window.DurbarCutText.cutText;
-  let text=full+'\u2026';
-  if(!fits(text)){let lo=1,hi=Array.from(full).length;while(lo<hi){const m=(lo+hi+1)>>1;if(fits(cut(full,m)))lo=m;else hi=m-1;}text=cut(full,lo);}
+  if(!phCtx)phCtx=document.createElement('canvas').getContext('2d');phCtx.font=cs.font;const fits=x=>phCtx.measureText(x).width<=w-1;
+  const text=window.DurbarCutText.fitCut(full,fits);
   if(t.placeholder!==text)t.placeholder=text;}
 function autoGrow(){const t=$('msgInput');if(!t)return;t.style.height='auto';t.style.height=Math.min(110,t.scrollHeight)+'px';setSend();}
 function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a=byId(ui.selected);const busy=a&&chats[a.id]&&chats[a.id].busy;b.setAttribute('aria-disabled',String(!!busy||(!t.value.trim()&&!attached.length)));}
