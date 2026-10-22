@@ -39,16 +39,16 @@ export function profileTemplate(app: TemplateApp, name: string, kind: TemplateKi
   return `---\nname: ${name}\ndescription: What this agent is accountable for and when to use it, in one line\n${READ_TOOLS[app]}\n${MODEL[app]}---\n\n# Agent Success Profile: ${name}\n\n${sections}`;
 }
 
-/* ---------------- Create with AI (spec 043 FR-021, FR-022) ---------------- */
+/* ---------------- Create with AI (spec 043 FR-026, FR-027) ---------------- */
 
 export const MAX_GEN_DESCRIPTION = 2000;
 export const MAX_GEN_ANSWER = 600;
-/** The save path's limit (spec 043 FR-011), shared so a checked reply can always be saved (FR-030). UTF-8 bytes. */
+/** The save path's limit (spec 043 FR-011), shared so a checked reply can always be saved (FR-035). UTF-8 bytes. */
 export const MAX_PROFILE_BYTES = 256 * 1024;
 export const MAX_GEN_TOOLS = 20;
 const utf8Bytes = (s: string): number => new TextEncoder().encode(s).length;
 
-/** The questionnaire: one optional question per section (FR-021). */
+/** The questionnaire: one optional question per section (FR-026). */
 export const PROFILE_QUESTIONS: readonly { id: string; section: string; question: string; hint: string }[] = [
   { id: 'title', section: 'Title', question: "What is this agent's job or title?", hint: 'Release reviewer for the payments service' },
   { id: 'reportsTo', section: 'Reporting to', question: 'Who does it report to?', hint: 'Me; it checks in before any change' },
@@ -60,16 +60,16 @@ export const PROFILE_QUESTIONS: readonly { id: string; section: string; question
   { id: 'behavior', section: 'Behaviors', question: 'How should it behave and when should it escalate?', hint: 'Calm, brief; asks me when unsure' },
 ];
 
-/** Read-only tools a template starts with: the only tools allowed without the Extra tools line listing them (FR-022, FR-027). */
+/** Read-only tools a template starts with: the only tools allowed without the Extra tools line listing them (FR-027, FR-032). */
 export const DEFAULT_READ_TOOLS: Record<TemplateApp, readonly string[]> = { claude: ['Read', 'Grep', 'Glob'], copilot: ['view', 'grep', 'glob'] };
-/** Tools beyond read-only that a user's text may mention (FR-028): a mention is warned about, never granted. */
+/** Tools beyond read-only that a user's text may mention (FR-033): a mention is warned about, never granted. */
 export const KNOWN_EXTRA_TOOLS: Record<TemplateApp, readonly string[]> = {
   claude: ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task'],
   copilot: ['shell', 'bash', 'powershell', 'edit', 'write', 'web', 'fetch'],
 };
 const TOOL_ENTRY = /^[A-Za-z][\w.:-]{0,60}(?:\([^(),\n\r]{1,80}\))?$/;
 
-/** FR-026: the Extra tools line, parsed (main parses it again; the renderer's copy is only a hint). Empty or missing: no extra tools. */
+/** FR-031: the Extra tools line, parsed (main parses it again; the renderer's copy is only a hint). Empty or missing: no extra tools. */
 export function parseToolList(line: unknown): { ok: true; tools: string[] } | { ok: false; error: string } {
   if (line === undefined || line === null) return { ok: true, tools: [] };
   if (typeof line !== 'string') return { ok: false, error: 'The Extra tools line is not text.' };
@@ -94,18 +94,18 @@ export interface GenInput {
   mode: 'describe' | 'questions';
   description?: string;
   answers?: Record<string, string>;
-  /** FR-026: the parsed Extra tools line; the only source of tools beyond the read-only defaults. */
+  /** FR-031: the parsed Extra tools line; the only source of tools beyond the read-only defaults. */
   tools?: string[];
 }
 
-/** The user's own text from the input, capped: what the prompt carries (it never grants a tool, FR-027). */
+/** The user's own text from the input, capped: what the prompt carries (it never grants a tool, FR-032). */
 export function userTextOf(input: GenInput): string {
   if (input.mode === 'describe') return oneLine(input.description, MAX_GEN_DESCRIPTION);
   const a = input.answers ?? {};
   return PROFILE_QUESTIONS.map((q) => oneLine(a[q.id], MAX_GEN_ANSWER)).filter(Boolean).join('\n');
 }
 
-/** One prompt (FR-021): the target app's front matter rules, the skeleton and only what the user typed. */
+/** One prompt (FR-026): the target app's front matter rules, the skeleton and only what the user typed. */
 export function buildProfilePrompt(input: GenInput): string {
   const app = input.app;
   const appName = app === 'claude' ? 'Claude Code (a subagent file)' : 'GitHub Copilot (a custom agent file)';
@@ -131,14 +131,14 @@ export function buildProfilePrompt(input: GenInput): string {
   ].join('\n');
 }
 
-/** FR-027: the read-only defaults plus the Extra tools line. */
+/** FR-032: the read-only defaults plus the Extra tools line. */
 export function allowedTools(input: GenInput): string[] {
   const out = [...DEFAULT_READ_TOOLS[input.app]];
   for (const t of input.tools ?? []) if (!out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t);
   return out;
 }
 
-/** FR-029: `name: <name>` inside the front matter only (rewritten, or inserted first when missing); body lines are never touched. */
+/** FR-034: `name: <name>` inside the front matter only (rewritten, or inserted first when missing); body lines are never touched. */
 function setFrontmatterName(t: string, name: string): string {
   const lines = t.split('\n');
   const end = lines.findIndex((l, i) => i > 0 && (l.trimEnd() === '---' || l.trimEnd() === '...'));
@@ -158,19 +158,19 @@ export interface FrontmatterParse {
 }
 
 /**
- * The check of a generated file (FR-022). `parse` is the editor's front matter check (profileeditor.js), passed in so there is
+ * The check of a generated file (FR-027). `parse` is the editor's front matter check (profileeditor.js), passed in so there is
  * one parser. Returns the cleaned text, or the reason it is refused. Never adds a tool.
  */
 export function validateGeneratedProfile(reply: string, input: GenInput, parse: (t: string) => FrontmatterParse): { ok: true; text: string; warnings: string[]; extraTools: string[] } | { ok: false; error: string } {
   let t = String(reply ?? '').replace(/\r\n/g, '\n').trim();
-  // a cheap early stop (a character is at least one byte); the real cap is in bytes, after neutralising (FR-030)
+  // a cheap early stop (a character is at least one byte); the real cap is in bytes, after neutralising (FR-035)
   if (t.length > MAX_PROFILE_BYTES) return { ok: false, error: 'The reply is too long.' };
   const fence = /^```[A-Za-z]*\n([\s\S]*?)\n```$/.exec(t);
   if (fence) t = fence[1].trim();
   const warnings: string[] = [];
   const before = t;
   // HTML is neutralised, not stripped: every "<" that could open a tag (or a comment, doctype or processing instruction) becomes
-  // "&lt;" in one pass, so no tag can survive or be re-formed (`<scr<script>ipt>` included); the preview shows it as text (FR-022)
+  // "&lt;" in one pass, so no tag can survive or be re-formed (`<scr<script>ipt>` included); the preview shows it as text (FR-027)
   t = t.replace(/<(?=[A-Za-z!/?])/g, '&lt;');
   if (t !== before) warnings.push('HTML in the reply is kept as plain text');
   const fm = parse(t);
@@ -183,7 +183,7 @@ export function validateGeneratedProfile(reply: string, input: GenInput, parse: 
   if (!v.description) return { ok: false, error: 'The reply has no description.' };
   if (!('tools' in v) || !String(v.tools).trim()) return { ok: false, error: 'The reply has no tools line (that would allow every tool).' };
   const tools = String(v.tools).split(',').map((x) => x.trim()).filter(Boolean);
-  // FR-027: only the read-only defaults and the Extra tools line; the user's text never grants a tool
+  // FR-032: only the read-only defaults and the Extra tools line; the user's text never grants a tool
   const allowed = new Set(allowedTools(input).map((x) => x.toLowerCase()));
   const broader = tools.filter((x) => !allowed.has(x.toLowerCase()));
   if (tools.includes('*') || broader.length) return { ok: false, error: `The reply gives tools you did not list: ${(tools.includes('*') ? ['*', ...broader] : broader).join(', ')}. Durbar never adds tools; list them under Extra tools if the agent needs them.` };
@@ -191,11 +191,11 @@ export function validateGeneratedProfile(reply: string, input: GenInput, parse: 
   const heads = [...fm.body.matchAll(/^##\s+(.+?)\s*$/gm)].map((m) => m[1].toLowerCase());
   const missing = SUCCESS_SECTIONS.filter((s) => !heads.includes(s.heading.toLowerCase())).map((s) => s.heading);
   if (missing.length) return { ok: false, error: `The reply misses sections: ${missing.join(', ')}.` };
-  // the chosen name, whatever the reply said, only inside the front matter (FR-029)
+  // the chosen name, whatever the reply said, only inside the front matter (FR-034)
   t = setFrontmatterName(t, input.name);
   if (!t.endsWith('\n')) t += '\n';
   if (utf8Bytes(t) > MAX_PROFILE_BYTES) return { ok: false, error: `The reply is too long (over ${MAX_PROFILE_BYTES / 1024} KB).` };
-  // FR-028: what the draft grants beyond read-only, and tools the text mentions that are not granted
+  // FR-033: what the draft grants beyond read-only, and tools the text mentions that are not granted
   const defaults = new Set(DEFAULT_READ_TOOLS[input.app].map((x) => x.toLowerCase()));
   const extraTools = tools.filter((x) => !defaults.has(x.toLowerCase()));
   const words = new Set(userTextOf(input).toLowerCase().split(/[^a-z0-9_]+/).filter(Boolean));

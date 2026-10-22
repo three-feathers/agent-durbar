@@ -623,7 +623,7 @@ registerHarnessIpc({ dev, registry, router, remoteOps, toRenderer, getWin: () =>
 registerActivityIpc({ getActivityStore: () => activityStore, getWin: () => win });
 registerQuestionsIpc({ agents, router, elicitTracker });
 /**
- * Spec 040 FR-015 (reused by spec 061 FR-015 and spec 043 FR-023): an agent app's one-shot text call: one prompt, no tools, no
+ * Spec 040 FR-015 (reused by spec 061 FR-015 and spec 043 FR-028): an agent app's one-shot text call: one prompt, no tools, no
  * session kept, an empty temp folder; Copilot's own MCP servers switched off by name. Undefined when the app has none.
  */
 function oneShotFor(id: string): { name: string; generate: (prompt: string) => ReturnType<NonNullable<AgentAdapter['generateText']>> } | undefined {

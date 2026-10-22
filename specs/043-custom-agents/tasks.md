@@ -22,16 +22,16 @@
   - [x] T012c renderer: `profileeditor.js` (Edit / Split / Preview, front matter check, throttled preview, Save and Ctrl/Cmd+S, unsaved guard, conflict, New profile), Edit in the Profile menu, Settings section; `test:profileeditor` (front matter, preview sanitisation)
   - [x] T012d simulator files and the driver `shots-043-editor.js` (modes, widths, save round trip, unsaved guard), screenshots at 1440x900 and 1280x800, light and dark; `check:ui`
   - [x] T012e docs: README, CHANGELOG, specs index
-- [x] T015 (2026-10-21, owner request) Create an Agent Success Profile with AI: describe or questionnaire, one-shot through the theme maker's path, checked reply, draft in the editor [FR-021..FR-025]
-  - [x] T015a shared prompt builder and reply check; unit tests (answers in, no paths; missing sections, broader tools, `*`, HTML refused)
-  - [x] T015b IPC `profiles:generate`, the shared one-shot helper in main, `profiles:create` with text
-  - [x] T015c editor draft, the Create with AI dialog, simulator canned generation, driver and screenshots at both sizes
-  - [x] T015d docs
-  - [x] T016 (real, owner's go-ahead 2026-10-22) One questionnaire generation on Claude haiku through the one-shot path, checked, opened as a draft in Split view (`scripts/profilegen-real.ts`; spec Evidence). Named programs such as `git` are not tools yet: `[KNOWN GAP]`, owner decision
-- [x] T017 (2026-10-22, review on #505) Tools only from the Extra tools field; stricter reply check [FR-026..FR-032]
-  - [x] T017a shared `parseToolList`, grant rule from the field only, mentioned-tool warnings and the granted-tools note, `name` set only inside the front matter (inserted when missing), byte cap after neutralising (`MAX_PROFILE_BYTES` shared); `test:profilegen` ("never use Bash", "no bash", "don't let it run Bash", "never Edit files" grant nothing; `Bash(git:*)` only when listed; no-name key; `name:` in the body; growth past the cap through `&lt;`; a reply that fails only on size)
-  - [x] T017b `profiles:generate` as a testable function with an injected one-shot (`src/main/profilegen.ts`); `test:profilegen` handler cases (bad name, unknown `by`, caps, short description, bad tools entry, a refused reply writes nothing); `test:profilefiles` `createProfileFile` with text (empty, non-string, too large, valid, exclusive)
-  - [x] T017c dialog: Extra tools line and its words, `--dlg-w-l`, two-row answers, target app first, Create disabled after Stop waiting until the first request ends; simulator passes the tools; `shots-043-ai` (tool note and warning, Stop waiting: loading text, answers kept, Create disabled, late reply dropped)
-  - [x] T017d merge leftovers (ui-suite comment, agent-notes entry moved to #514), docs
+- [x] T016 (2026-10-21, owner request) Create an Agent Success Profile with AI: describe or questionnaire, one-shot through the theme maker's path, checked reply, draft in the editor [FR-026..FR-030]
+  - [x] T016a shared prompt builder and reply check; unit tests (answers in, no paths; missing sections, broader tools, `*`, HTML refused)
+  - [x] T016b IPC `profiles:generate`, the shared one-shot helper in main, `profiles:create` with text
+  - [x] T016c editor draft, the Create with AI dialog, simulator canned generation, driver and screenshots at both sizes
+  - [x] T016d docs
+  - [x] T017 (real, owner's go-ahead 2026-10-22) One questionnaire generation on Claude haiku through the one-shot path, checked, opened as a draft in Split view (`scripts/profilegen-real.ts`; spec Evidence). Named programs such as `git` are not tools yet: `[KNOWN GAP]`, owner decision
+- [x] T018 (2026-10-22, review on #505) Tools only from the Extra tools field; stricter reply check [FR-031..FR-037]
+  - [x] T018a shared `parseToolList`, grant rule from the field only, mentioned-tool warnings and the granted-tools note, `name` set only inside the front matter (inserted when missing), byte cap after neutralising (`MAX_PROFILE_BYTES` shared); `test:profilegen` ("never use Bash", "no bash", "don't let it run Bash", "never Edit files" grant nothing; `Bash(git:*)` only when listed; no-name key; `name:` in the body; growth past the cap through `&lt;`; a reply that fails only on size)
+  - [x] T018b `profiles:generate` as a testable function with an injected one-shot (`src/main/profilegen.ts`); `test:profilegen` handler cases (bad name, unknown `by`, caps, short description, bad tools entry, a refused reply writes nothing); `test:profilefiles` `createProfileFile` with text (empty, non-string, too large, valid, exclusive)
+  - [x] T018c dialog: Extra tools line and its words, `--dlg-w-l`, two-row answers, target app first, Create disabled after Stop waiting until the first request ends; simulator passes the tools; `shots-043-ai` (tool note and warning, Stop waiting: loading text, answers kept, Create disabled, late reply dropped)
+  - [x] T018d merge leftovers (ui-suite comment, agent-notes entry moved to #514), docs
 - [x] T013 (2026-10-21, owner decisions on #488) Agent Success Profile and Standard agent templates, the default preselected; editor words "Agent Success Profiles" [FR-018, FR-019]
 - [x] T014 (2026-10-22, review on #488) New profile sends a folder id, main accepts it only if it is an office folder now [FR-020]; `test:profilefiles`; Copilot `*.md` vs `*.agent.md` recorded as a known gap

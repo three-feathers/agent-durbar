@@ -352,7 +352,7 @@ body.has-bridge #topBtns{display:flex}
 .dlg label.pe-tpl-opt:has(:checked){border-color:var(--focus);background:var(--surface-2)}
 .dlg .pe-tpl-t{font-size:13px;font-weight:600;color:var(--ink)}
 .dlg label.pe-tpl-opt small{grid-column:2;font-size:var(--t4-size);color:var(--muted);font-weight:400}
-/* Create with AI (spec 043 FR-021) */
+/* Create with AI (spec 043 FR-026) */
 .dlg.pe-ai{width:min(var(--dlg-w-l),calc(100vw - 32px))}
 .dlg .pe-ai-how{width:max-content}
 .dlg .pe-ai-qs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 14px}

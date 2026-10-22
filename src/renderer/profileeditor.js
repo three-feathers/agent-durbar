@@ -197,7 +197,7 @@
     status(st.fmErrors?'Saved. The front matter has an error, so the agent app may skip this profile.':'Saved. Changes apply to sessions started after saving.');
     changed(st.info);
   }
-  /* FR-024: the first Save of a draft creates the file (exclusive), then it is an ordinary open file */
+  /* FR-029: the first Save of a draft creates the file (exclusive), then it is an ordinary open file */
   async function saveDraft(text){
     st.saving=true;status('Saving…');
     const d=st.draft;
@@ -241,7 +241,7 @@
     const opener=(opts&&opts.returnFocus)||(doc.activeElement&&doc.activeElement!==doc.body?doc.activeElement:null);
     mount({id,info:r.info,sha:r.sha256,saved:r.text,writable:!!r.info.writable,mode:loadMode(store()),opener,fmErrors:0},r.text);
   }
-  /** FR-024: a draft that has no file yet (an AI result); Save creates the file. Opens in `opts.mode` (Split for a new draft). */
+  /** FR-029: a draft that has no file yet (an AI result); Save creates the file. Opens in `opts.mode` (Split for a new draft). */
   async function openDraft(d,opts){
     if(!X||!X.bridge.createProfileFile)return;
     if(isOpen()&&!(await close()))return;
@@ -328,7 +328,7 @@
         done(r.id);changed(r.info);open(r.id,{returnFocus:opener});
       };
       ov.querySelector('#peNGo').onclick=go;
-      /* spec 043 FR-021: Create with AI, only for the Agent Success Profile template */
+      /* spec 043 FR-026: Create with AI, only for the Agent Success Profile template */
       const aiB=ov.querySelector('#peNAi');
       if(aiB){const tplNow=()=>(ov.querySelector('input[name="peNTpl"]:checked')||{}).value||DEF;const sync=()=>{aiB.hidden=tplNow()!=='success';};sync();ov.addEventListener('change',sync);
         aiB.onclick=async()=>{const name=$('peNName').value.trim(),er=$('peNErr');
@@ -344,14 +344,14 @@
   }
 
   /**
-   * Spec 043 FR-021..FR-025: Create with AI. Describe it, or a questionnaire (each question optional); the cost line and the button
+   * Spec 043 FR-026..FR-030: Create with AI. Describe it, or a questionnaire (each question optional); the cost line and the button
    * name the app and the one request; the reply is checked in main and opens as an unsaved draft in Split view. Answers are kept on
    * an error. Resolves 'done' when a draft opened, else null.
    */
   async function aiCreate(t){
     let kinds=[];
     if(X.bridge.listAdapters){try{kinds=((await X.bridge.listAdapters())||[]).filter(k=>k&&k.state==='ready'&&k.capabilities&&k.capabilities.oneShot);}catch(e){kinds=[];}}
-    kinds.sort((a,b)=>(b.id===t.app)-(a.id===t.app)); /* FR-023: the target app first */
+    kinds.sort((a,b)=>(b.id===t.app)-(a.id===t.app)); /* FR-028: the target app first */
     const RO=((win.exports&&win.exports.DEFAULT_READ_TOOLS)||{})[t.app]||[];
     const QS=(win.exports&&win.exports.PROFILE_QUESTIONS)||[];
     const costLine=k=>win.DurbarScreens&&win.DurbarScreens.oneShotCostLine?win.DurbarScreens.oneShotCostLine(k):'Uses your own '+(k.displayName||k.id)+' account.';
@@ -368,7 +368,7 @@
       <p class="derr" id="peAErr" role="alert" hidden></p><p class="pe-ai-wait" id="peAWait" role="status" hidden>Writing the profile… this can take up to a minute.</p>
       <div class="dbtn"><button class="btn" type="button" id="peACancel" data-cancel="1">${kinds.length?'Cancel':'Close'}</button><button class="btn" type="button" id="peAStop" hidden>Stop waiting</button><span class="scr-note small" id="peALate" hidden>Create is available again when the first request ends.</span>${kinds.length?'<button class="btn primary" type="button" id="peAGo">Create with AI</button>':''}</div></div>`;
     setText(ov.querySelector('#peAT'),'Create '+t.name+' with AI');
-    /* FR-026: tools come only from this line, never from the text above */
+    /* FR-031: tools come only from this line, never from the text above */
     const toolsIn=ov.querySelector('#peATools');
     if(toolsIn){toolsIn.placeholder=t.app==='copilot'?'edit, shell':'Bash(git:*), Edit';setText(ov.querySelector('#peAToolsNote'),'The agent gets only the read-only tools ('+RO.join(', ')+') and the ones you list here, separated by commas. Tools named in your text are not granted.');}
     const q=ov.querySelector('#peAQ');
@@ -376,7 +376,7 @@
     const by=ov.querySelector('#peABy');
     if(by){kinds.forEach(k=>{const o=doc.createElement('option');o.value=k.id;setText(o,k.displayName||k.id);by.appendChild(o);});by.value=kinds.some(k=>k.id===t.app)?t.app:kinds[0].id;}
     doc.body.appendChild(ov);
-    let mode='describe',waiting=null,inFlight=0; /* inFlight: requests not ended yet, also after Stop waiting (FR-031) */
+    let mode='describe',waiting=null,inFlight=0; /* inFlight: requests not ended yet, also after Stop waiting (FR-036) */
     const paintCost=()=>{if(!by)return;const k=kinds.find(x=>x.id===by.value)||kinds[0];setText(ov.querySelector('#peACost'),'1 prompt. '+costLine(k)+' No tools, nothing kept.');setText(ov.querySelector('#peAGo'),'Create with AI (1 prompt, '+(k.displayName||k.id)+')');};
     paintCost();if(by)by.addEventListener('change',paintCost);
     const setHow=m=>{mode=m;ov.querySelectorAll('[data-am]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.am===m)));ov.querySelector('#peADesc').hidden=m!=='describe';ov.querySelector('#peAQ').hidden=m!=='questions';const f=ov.querySelector(m==='describe'?'#peADescT':'#peAQ textarea');if(f)f.focus();};

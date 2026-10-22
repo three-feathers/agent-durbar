@@ -151,7 +151,7 @@ const W0 = folderIdOf(WS);
   if (u.ok) assert.strictEqual(readProfileFile(dirs(), u.id).ok, true, 'the new id opens');
 }
 
-// spec 043 FR-024 (review on #505, change 4): create with a reviewed AI draft's text: checked like a save, exclusive
+// spec 043 FR-029 (review on #505, change 4): create with a reviewed AI draft's text: checked like a save, exclusive
 {
   for (const [bad, why] of [['', 'empty'], ['  \n ', 'blank'], [42, 'not a string'], [{}, 'an object'], ['é'.repeat(MAX_PROFILE_BYTES / 2 + 1), 'too large in bytes']] as [unknown, string][]) {
     const r = createProfileFile(dirs(), 'claude', W0, 'draft-x', 'success', bad);

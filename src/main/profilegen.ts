@@ -1,5 +1,5 @@
 /**
- * Spec 043 FR-021..FR-023, FR-026..FR-030: the `profiles:generate` request, apart from Electron so it can be tested with a fake
+ * Spec 043 FR-026..FR-028, FR-031..FR-035: the `profiles:generate` request, apart from Electron so it can be tested with a fake
  * one-shot (`test:profilegen`). It checks the request, asks the one-shot path once, checks the reply and hands back a draft;
  * it never writes a file.
  */

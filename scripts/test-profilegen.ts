@@ -1,5 +1,5 @@
 /**
- * Create an Agent Success Profile with AI (spec 043 FR-021/FR-022, T015a): the prompt carries the skeleton, the target app's front
+ * Create an Agent Success Profile with AI (spec 043 FR-026/FR-027, T016a): the prompt carries the skeleton, the target app's front
  * matter rules and only what the user typed; the reply check refuses missing sections, tools the user did not name, `*`, no tools
  * line, extra front matter keys and no front matter, and strips HTML. `npm run test:profilegen`. No agent app, no credits.
  */
@@ -44,7 +44,7 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
   const ok = validateGeneratedProfile(filled('claude', 'pay-reviewer'), Q, parse);
   assert.ok(ok.ok, JSON.stringify(ok));
   const named = validateGeneratedProfile(filled('claude', 'pay-reviewer', 'tools: Read, Grep, Edit'), Q, parse);
-  assert.ok(!named.ok && /Edit/.test(named.error), 'Edit named only in an answer is refused (FR-027: text never grants)');
+  assert.ok(!named.ok && /Edit/.test(named.error), 'Edit named only in an answer is refused (FR-032: text never grants)');
   const listed = validateGeneratedProfile(filled('claude', 'pay-reviewer', 'tools: Read, Grep, Edit'), { ...Q, tools: ['Edit'] }, parse);
   assert.ok(listed.ok && listed.extraTools.join() === 'Edit' && listed.warnings.some((w) => /Tools beyond read-only: Edit\. Check them/.test(w)), 'Edit listed under Extra tools: granted and shown');
   const broader = validateGeneratedProfile(filled('claude', 'pay-reviewer', 'tools: Read, Bash'), Q, parse);
@@ -80,7 +80,7 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
   assert.ok(!validateGeneratedProfile(filled('claude', 'p', 'tools: Read, mcpXsrv:do-x'), D('uses the server tool', ['mcp.srv:do-x']), parse).ok, '"." in a listed tool is not a wildcard');
 }
 
-// ---- FR-026..FR-028: tools only from the Extra tools line; text never grants (review on #505, change 1) ----
+// ---- FR-031..FR-033: tools only from the Extra tools line; text never grants (review on #505, change 1) ----
 {
   const D = (description: string, tools?: string[], app: 'claude' | 'copilot' = 'claude'): GenInput => ({ app, name: 'p', mode: 'describe', description, tools });
   for (const [said, tool] of [['A reviewer that must never use Bash or Write', 'Bash'], ['A docs helper, no bash at all', 'Bash'], ["A reader: don't let it run Bash", 'Bash'], ['A reviewer that should never Edit files', 'Edit'], ['must never use Bash or Write', 'Write']]) {
@@ -110,7 +110,7 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
   assert.ok(!parseToolList(Array.from({ length: 21 }, (_, i) => 't' + i).join(',')).ok, 'at most 20');
 }
 
-// ---- FR-029: name (review on #505, change 2) ----
+// ---- FR-034: name (review on #505, change 2) ----
 {
   const noName = validateGeneratedProfile(filled('claude', 'x').replace(/^name: .*\n/m, ''), Q, parse);
   assert.ok(noName.ok && /^---\nname: pay-reviewer\n/.test(noName.text), 'no name key: inserted');
@@ -121,7 +121,7 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
   assert.ok(both.ok && both.text.includes('name: keep-this-line') && (both.text.match(/^name: pay-reviewer$/gm) ?? []).length === 1, 'front matter name rewritten, body untouched');
 }
 
-// ---- FR-030: size in bytes, after neutralising, the save path's limit (review on #505, change 3) ----
+// ---- FR-035: size in bytes, after neutralising, the save path's limit (review on #505, change 3) ----
 {
   assert.strictEqual(MAX_PROFILE_BYTES, SAVE_LIMIT, 'one limit for the reply and the save path');
   const withSkills = (x: string): string => filled('claude', 'pay-reviewer').replace('## Skills\n', '## Skills\n' + x + '\n');
