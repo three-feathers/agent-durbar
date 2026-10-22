@@ -25,3 +25,6 @@
 - [x] T027 `scripts/check-sim-guard.js` (`npm run check:sim-guard`, in `scripts/ui-suite.js`): the real preload API refused from the page under `DURBAR_SIM=15`, `harnessPlans` still answers, no real adapter created. [FR-026]
 - [x] T028 Docs: `docs/agent-notes.md` entry on the driver trap (moved here from PR #505's branch), README *Development*, CHANGELOG, `specs/README.md` row. Check that `scripts/*-real.ts` never set `DURBAR_SIM`. [FR-027]
 - [x] T029 Review on #514 (fjcabello): the stand-in's optional members follow contract C2 (`SIM_OPTIONAL_MEMBERS`, `has` trap); `test-simguard` checks `typeof`, `in` and the capabilities for every optional member [FR-028]
+- [ ] T030 Review on #514 (rubenlupi), change 1: `test:ipcchannels` bans `ipcMain`, `.ipc` and a destructured `ipc` in every `src/` file but `ipcguard.ts`; one preload channel list helper for both tests; mutations M8/M9 fail [FR-029]
+- [ ] T031 Review on #514 (rubenlupi), change 2: `simDetectorFor` (canned detection), no sign-in check, `sealChildProcess` under the simulator; `test:simguard` spies on `child_process`; `check:sim-guard` runs `addMany` with `adapterId` and checks zero child processes [FR-030]
+- [ ] T032 Review on #514 (rubenlupi), question 2: `initSimGuard(SIMULATOR)` from `main.ts`, registration throws before it [FR-031]
