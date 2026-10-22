@@ -77,8 +77,8 @@
 
 - [x] T072 `src/renderer/shutters.js` (`finished`, `kindOf`, `roomPlan`, `split`, `RECENT_MS`, `OLD_CAP`) + `scripts/test-shutters.ts` (`npm run test:shutters`, in `test:serial`); `copy-assets.js`, `index.html` [FR-051, FR-052, FR-057]
 - [x] T073 `app.js`: `officeModel` splits `mains`/`rolled`; layout key; `roomHTML` shutter row (strips, chips, `+N`), `.peek`, labels, `rolling` class; `__durbarSimUi.render` [FR-051..FR-054]
-- [x] T074 `styles.css`: `.shutters`, `.desk.shut` strip and chip, `.peek` roll, roll-in; theme tokens; >= 10.5 px [FR-054, FR-055]
-- [x] T075 Settings > Detail level: *Roll up finished agents* switch (`screens.js`, `durbar.shutters`) [FR-056]
+- [x] T074 (replaced by T081/T082: the strip and chip became the lounge) `styles.css`: `.shutters`, `.desk.shut` strip and chip, `.peek` roll, roll-in; theme tokens; >= 10.5 px [FR-054, FR-055]
+- [x] T075 (replaced by T082: the switch is now *Finished agents rest in the lounge*) Settings > Detail level: *Roll up finished agents* switch (`screens.js`, `durbar.shutters`) [FR-056]
 - [x] T076 `check:office` (unchanged; its 15 agents now include rolled ones) and `check:office-fill` (keyboard reach, labels, hover card; 2 working + 3 finished, 1 recent + 2 old, at 1440x900 and 1280x800; open desks get the space); mutation checks [FR-053, FR-057]
 - [x] T077 Screenshots `docs/screenshots/001-shutters-{1440x900,1280x800}.png` (simulator); README office section, `changelog.d/001-office-shutters.md`, the specs-index block [FR-057]
 - [x] T078 (owner on #554, 18:48) Spec: horizontal squeeze (FR-052..FR-055, FR-057 amended, dated note) [FR-052..FR-057]
@@ -88,6 +88,8 @@
 - [x] T082 Lounge: `shutters.js` (couches, bed cap, width, turn); `app.js` lounge corner with the agents' own characters (`avatar`), bubbles and their turn, setting renamed; `styles.css` couch and bed art from theme tokens; `test:shutters` [FR-052..FR-056]
 - [x] T083 `check:office-fill` (corner in the row, bubbles inside and >= 10.5 px, keyboard, deterministic turn), mutation checks, `check:office`, `npm test`; screenshots retaken; README, changelog fragment [FR-057]
 - [x] T084 Lounge polish (coordinator review): 64 px seats and bunk beds so the characters fill the height, bubbles on up to 3 lines in the upper part, names on the characters, corner at least 150 px; `test:shutters`, `check:office-fill` (names, character size, bubble lines), screenshots retaken [FR-052, FR-053, FR-057]
+- [x] T085 (review of #554, fjcabello) Spec: the state is `data-state` and the first `is-*` class, the resting kind `rest-recent`/`rest-old`; FR-051's helper and away rules checked in the page; stale wording [FR-051, FR-054, FR-057]
+- [ ] T086 `app.js` desk buttons `data-state` (state class first, `rest-*` kind, `data-rest`); `styles.css`, `shots-033`, `shots-034`, `check:office-fill` selectors; `test:shutters` source checks of `shutInput` (away, busy helper); `check:office-fill` cases (a Done agent with a working helper keeps its desk and helper; an agent away at a place is not in the lounge), mutation checks; stale strip/chip wording (`app.js`, `shutters.js`, `styles.css`, `driver-helpers.js`, `test-shutters.ts`) [FR-051, FR-054, FR-057]
 
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 
