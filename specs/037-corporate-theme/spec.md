@@ -1,5 +1,11 @@
 # Feature Specification: Corporate theme + theme picker (spec 037)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 035-040
+title: Corporate theme (glass/steel) + Settings theme picker with live switch
+status: **built**; delta 2026-10-19: each swatch shows its own theme (FR-014)
+-->
+
 **Feature Branch**: `035-theme-foundation` (builds on 035/036, issue #129)
 **Created**: 2026-10-18
 **Status**: Implemented on branch `035-theme-foundation` (PR #137): simulator and unit tests, 0 AIU; not released

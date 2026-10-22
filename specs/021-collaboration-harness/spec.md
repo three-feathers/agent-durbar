@@ -1,5 +1,11 @@
 # Feature Specification: Collaboration harness (humans plus their own coding agents)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 021
+title: Collaboration harness: Claude + Copilot Spec Kit, labels/issues/board, CODEOWNERS, stricter spec gate, ruleset
+status: built (tooling only): harness, board, ruleset in place; open: T010 (board workflows, web UI) and T013 (gate review)
+-->
+
 **Feature Branch**: `021-collab-harness`
 **Created**: 2026-10-16
 **Status**: Specified, planned and built in this feature (tooling and process only: no change to `src/`).

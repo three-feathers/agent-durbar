@@ -1,5 +1,11 @@
 # Feature Specification: AI-credit caps and usage display
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 011-014
+title: AI-credit caps and usage display
+status: per-session cap slice and office/folder usage totals built, totals kept across restarts with a reset (2026-10-17, issue #21); exhausted flow unverified on a real account; multiplier estimate covered by spec 030; 2026-10-20: Copilot cap enforced by Durbar (the runtime does not stop at it; real check)
+-->
+
 **Feature Branch**: `011-credit-caps-and-usage-display`
 **Created**: 2026-10-16
 **Status**: Partly specified for implementation 2026-10-16 (per-session cap + global default + usage-vs-cap display + limit-exhausted handling: see Clarifications, `plan.md`, `tasks.md`). Office-wide and per-folder totals built 2026-10-17 (FR-018..FR-023). Persistence of usage and the multiplier estimate (User Stories 1 and 3) stay backlog. Totals kept across restarts with a reset: built 2026-10-17 (second delta, issue #21), simulator and unit tests; User Story 3 (multiplier) is covered by spec 030.

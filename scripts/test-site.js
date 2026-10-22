@@ -85,6 +85,11 @@ for (const t of titles) assert.ok(docs.includes(`<h2>${t.replace(/&/g, '&amp;')}
 for (const id of ['what-you-can-do', 'harnesses', 'install', 'safety-model', 'costs-and-caps', 'themes', 'known-limits', 'how-we-work', 'features', 'gallery', 'whats-new']) assert.ok(docs.includes(`id="${id}"`), `docs section id ${id}`);
 assert.match(docs, /<nav class="toc"/, 'table of contents');
 assert.ok((docs.match(/class="grid"><li>/g) || []).length === 1 && (docs.match(/<li><a href="https:\/\/github\.com\/[^"]+\/specs\//g) || []).length >= 10, 'the feature grid comes from the specs index');
+// spec 025 delta 2026-10-22: the specs index rows are not committed; the site builds them from each spec's specs-index block
+const specsSec = (docs.match(/<section id="specs-index">[\s\S]*?<\/section>/) || [''])[0];
+assert.ok(specsSec.includes('href="https://github.com/three-feathers/agent-durbar/blob/main/specs/001-office-view-and-densities/spec.md"'), 'the docs page shows the generated specs index, linked to the specs');
+assert.ok(!/specs-index group=index|specs-index group=046/.test(specsSec), 'no marker comments on the page');
+assert.ok(index.includes('href="docs.html#specs-index"'), 'the landing page links the index');
 for (const n of landing.featuresExclude) assert.ok(!docs.includes(`<small>Spec ${n}</small>`), `process spec ${n} is not a feature`);
 for (const c of landing.cards) assert.ok(docs.includes(`id="${c.readmeAnchor}"`), `card anchor ${c.readmeAnchor} exists on the docs page`);
 

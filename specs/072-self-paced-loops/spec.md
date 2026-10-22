@@ -1,5 +1,11 @@
 # Feature Specification: Self-paced loops (the agent decides when its next turn runs)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Self-paced loops (issue #526): a prompt looped on one session; the agent says when its next pass runs or stops it, within Durbar's limits (min/max delay, passes, end time, credit cap); a kind of scheduled prompt (044), shown in Schedules, on the desk and in the Postbox
+status: **draft for the owner's review** (spec, plan, tasks; no code); owner answered Q1-Q9 2026-10-22 (Q6 (b): no broker exception); Phase 1 needs no spec 041
+-->
+
 **Feature Branch**: `072-self-paced-loops` (touches 044 scheduled prompts, 001 lobby Postbox, 011 caps, 041 Durbar MCP, 052 activity log, 068 coffee break)
 **Created**: 2026-10-22
 **Status**: Draft, discussion first. Spec, plan and tasks only; no code. Owner answers Q1-Q9 recorded at the end (Paco, fjcabello, 2026-10-22). Every requirement is `[PLANNED]`; what exists today is cited as `read:`.
