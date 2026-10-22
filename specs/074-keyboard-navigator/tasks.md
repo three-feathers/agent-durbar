@@ -58,6 +58,7 @@
 - [x] T025 Driver: a hostile agent name in Go to stays literal text (`scripts/shots-074-navigator.js`)
 - [x] T027 Review round 2: handler scan normalises CRLF, finds `e.key` matches, planted-shortcut mutation test (`scripts/test-navigator.ts`)
 - [x] T028 Review round 2: Mac Dvorak gap in FR-017, README, Settings note, research R4/R5; FR-012 wording (card densities only)
+- [x] T029 Review round 3 (fjcabello): the handler scan normalises app.js to LF before it derives the CRLF/BOM variants (a Windows checkout is already CRLF, so the old CRLF case made \r\r\n and the locator failed); unit cases for CRLF and BOM input
 - [ ] T026 Mutation-check T020-T023, then `nice -n 19 npm run typecheck && npm run build && npm test`, `shots-074-navigator` and `check:office` once on the final head
 
 ## Dependencies

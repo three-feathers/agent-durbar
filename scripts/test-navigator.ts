@@ -213,7 +213,7 @@ const HANDLER_START = "document.addEventListener('keydown',e=>{\n  /* spec 052 F
 /* Scans the handler's source (CRLF turned into LF first: Windows checks the file out with CRLF) and returns the number
    of combinations checked against TAKEN; throws when one is free or when a Ctrl/mod line yields no key at all. */
 function scanHandler(raw: string): number {
-  const src = raw.replace(/\r\n/g, '\n');
+  const src = raw.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
   const start = src.indexOf(HANDLER_START);
   assert.ok(start > 0, 'found the global keydown handler');
   const end = src.indexOf('\n});\n', start);
@@ -242,10 +242,12 @@ function scanHandler(raw: string): number {
   return n;
 }
 {
-  const appSrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+  /* normalised to LF first: a Windows checkout is already CRLF, and turning that into CRLF again gives \r\r\n */
+  const appSrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
   const n = scanHandler(appSrc);
   assert.ok(n >= 12, `checked the handler's shortcuts (${n})`);
   assert.strictEqual(scanHandler(appSrc.replace(/\n/g, '\r\n')), n, 'CRLF checkout (Windows) scans the same');
+  assert.strictEqual(scanHandler('\uFEFF' + appSrc.replace(/\n/g, '\r\n')), n, 'a BOM and CRLF scan the same');
   /* mutation: a shortcut planted into the handler is found, whether it matches by code or only by key */
   const plant = (cond: string) => appSrc.replace(HANDLER_START, HANDLER_START + `\n  if(${cond}){e.preventDefault();return;}`);
   const planted = (cond: string) => { try { scanHandler(plant(cond)); return false; } catch { return true; } };
