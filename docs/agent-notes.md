@@ -96,3 +96,8 @@ Each entry has the date it was learned, what happened, and how to apply it, with
   - To try the workflow before it is on `main`, add a temporary `push` branch trigger and remove it before the PR (`test:platforms` checks that the trigger is `main` only).
   - Never print a CLI's own sign-in line: Codex's shows a masked key tail.
   - Copilot Free lists no models but runs `auto`.
+
+- **CI speed and the merge queue** (2026-10-22, `read:` `gh api` over the last 45 runs of each workflow, spec 008 FR-098..FR-102).
+  - *What*: a code PR waited about 17 min for *UI on three OSes* (macOS job 15 min), while CI itself took about 6 min; in a burst, macOS jobs queue for up to 23 min (Free plan: 5 macOS jobs at once). `npm ci` (6-13 s) and the build (5-7 s) are already cached and cheap: more caching saves seconds.
+  - *Why PRs kept merging `main`*: the ruleset does **not** require up-to-date branches. 8 of 9 conflicting PRs conflicted only in `CHANGELOG.md`, `README.md` or `specs/README.md`. `.gitattributes` `merge=union` works locally (`git merge-tree` says clean) but GitHub ignores custom merge drivers, so GitHub says `CONFLICTING`.
+  - *How to apply*: merge `main` into a branch only on a real conflict. A workflow whose check is required must also run on `merge_group` before a merge queue is switched on, or the queue waits forever. A `concurrency` group keyed on `github.event.pull_request.number` is empty on `merge_group`: add `|| github.ref`, or queue entries cancel each other. To see GitHub's conflict files, compare `git diff --name-only` of both sides from `git merge-base`, not `git merge-tree` (it applies the union driver).
