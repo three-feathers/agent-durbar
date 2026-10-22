@@ -67,7 +67,11 @@ function discContrast() {
   for (let e = document.getElementById('schedTopBtn'); e; e = e.parentElement) stack.unshift(rgb(getComputedStyle(e).backgroundColor));
   for (const c of stack) if (c[3] > 0) { const a = c[3]; behind = [0, 1, 2].map((i) => c[i] * a + behind[i] * (1 - a)).concat([1]); }
   const l1 = lum(disc), l2 = lum(behind), hi = Math.max(l1, l2), lo = Math.min(l1, l2);
-  return { ratio: Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100, disc, behind };
+  const ratio = (x, y) => { const p = lum(x), q = lum(y); return Math.round(((Math.max(p, q) + 0.05) / (Math.min(p, q) + 0.05)) * 100) / 100; };
+  /* the drawn "!" is the first colour of the mark's background layers */
+  const m = getComputedStyle(mark).backgroundImage.match(/rgba?\([^)]*\)|color\([^)]*\)/);
+  const glyph = m ? rgb(m[0]) : null;
+  return { ratio: Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100, glyphRatio: glyph ? ratio(glyph, disc) : 0, disc, glyph, behind };
 }
 
 module.exports = async (ctx) => {
@@ -288,6 +292,7 @@ module.exports = async (ctx) => {
     await until(`document.getElementById('schedTopBtn').classList.contains('trouble')`);
     const c = await js(`(${discContrast.toString()})()`);
     check(c && c.ratio >= 3, `${theme}: badge disc contrast ${JSON.stringify(c)} (needs 3:1)`);
+    check(c && c.glyphRatio >= 3, `${theme}: the "!" against the disc ${JSON.stringify(c)} (needs 3:1)`);
   }
 
   /* reduced motion (as the OS asks): the count changes at once, no roll boxes */
