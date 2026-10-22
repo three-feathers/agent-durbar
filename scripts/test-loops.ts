@@ -1,7 +1,7 @@
 /** Self-paced loops (spec 072, Phase 1 core): the pace line parser and the scheduler's loop rules with a fake clock and sender. `npm run test:loops`. No session, no credits. */
 import * as assert from 'assert';
 import { LOOP_DEFAULTS, clampPace, cleanReason, loopFooter, parsePace } from '../src/shared/looppace';
-import { Scheduler, parseSchedules, saveSchedules } from '../src/main/schedules';
+import { Scheduler, loopSupport, parseSchedules, saveSchedules } from '../src/main/schedules';
 import type { LoopWait, Schedule, SchedulesDoc } from '../src/main/schedules';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -17,6 +17,9 @@ function harness(doc: SchedulesDoc = { pausedAll: false, schedules: [] }) {
   const sessions = new Set<string>(['s1', 's2']);
   const wait: { v: LoopWait | undefined } = { v: undefined };
   const failSend = { v: false };
+  const onSend: { fn?: () => void } = {};
+  /** Wall-clock jumps the monotonic clock does not see. */
+  const skew = { v: 0 };
   const timers: { at: number; fn: () => void }[] = [];
   const sch = new Scheduler(doc, {
     now: () => now,
@@ -24,7 +27,8 @@ function harness(doc: SchedulesDoc = { pausedAll: false, schedules: [] }) {
     hasSession: (id) => sessions.has(id),
     capUnitOf: () => 'aiu',
     waitOf: () => wait.v,
-    send: async (f, p, s) => (sent.push(p), failSend.v ? false : s.target ? s.target.session : 'x'),
+    mono: () => now - skew.v,
+    send: async (f, p, s) => (sent.push(p), onSend.fn?.(), failSend.v ? false : s.target ? s.target.session : 'x'),
     setTimer: (ms, fn) => { const t = { at: now + ms, fn }; timers.push(t); return t; },
     clearTimer: (t) => { const i = timers.indexOf(t as never); if (i >= 0) timers.splice(i, 1); },
     save: () => undefined,
@@ -46,10 +50,11 @@ function harness(doc: SchedulesDoc = { pausedAll: false, schedules: [] }) {
     await advance(0);
     return sch.doc.schedules.find((x) => x.id === (r as { schedule: Schedule }).schedule.id) as Schedule;
   };
-  return { sch, sent, busy, sessions, wait, failSend, advance, loop, get now() { return now; } };
+  return { sch, sent, busy, sessions, wait, failSend, onSend, skew, advance, loop, get now() { return now; } };
 }
 
 async function main(): Promise<void> {
+  loopSupport.enabled = true;
   // --- the pace line (T001) ---
   assert.deepStrictEqual(parsePace('did it\nLOOP: next 25 min - waiting for CI'), { kind: 'next', minutes: 25, reason: 'waiting for CI' });
   assert.deepStrictEqual(parsePace('LOOP: next 25 minutes'), { kind: 'next', minutes: 25 });
@@ -62,6 +67,14 @@ async function main(): Promise<void> {
   for (const no of ['', 'LOOP: next', 'LOOP: next min', 'LOOP: next 5', 'LOOP: next -5 min', 'LOOP: next 5 days', 'LOOP: next 1.5 h', 'LOOP: stopping', 'LOOP: stop now', 'LOOP:next5min!', 'x LOOP: stop', 'LOOP: next 1234567 min', 'LOOP: next 5 min reason']) {
     assert.strictEqual(parsePace(no), undefined, JSON.stringify(no));
   }
+  // markdown wrapping and a trailing full stop (7c)
+  for (const w of ['**LOOP: next 25 min - CI.**', '*LOOP: next 25 min - CI*.', '`LOOP: next 25 min - CI`', '**LOOP: next 25 min - CI**.', 'LOOP: next 25 min - CI.']) {
+    assert.deepStrictEqual(parsePace('text\n' + w), { kind: 'next', minutes: 25, reason: 'CI' }, w);
+  }
+  assert.deepStrictEqual(parsePace('`LOOP: stop`.'), { kind: 'stop' });
+  assert.strictEqual(parsePace('**LOOP: next 25 min - CI'), undefined, 'unbalanced wrapping is no line');
+  assert.strictEqual(parsePace('**' + 'x'.repeat(200) + '**'), undefined);
+  assert.strictEqual(parsePace('**LOOP: stop - ' + 'x'.repeat(190) + '**'), undefined, 'the 200 character cap counts the wrapping');
   assert.strictEqual(parsePace('LOOP: stop - all merged\nthanks'), undefined, 'last line only');
   assert.strictEqual(parsePace('LOOP: next 5 min - ' + 'x'.repeat(200)), undefined, 'a line over 200 characters is no line');
   assert.strictEqual(parsePace(undefined), undefined);
@@ -70,6 +83,19 @@ async function main(): Promise<void> {
   const hostile = parsePace('LOOP: stop - a‮b​c\u0000d\u001b[31m token ghp_' + 'A'.repeat(36));
   assert.ok(hostile?.kind === 'stop' && !/[\u0000-\u001f​‮]/.test(hostile.reason ?? '') && !(hostile.reason ?? '').includes('ghp_AAAA'), String(hostile && (hostile as { reason?: string }).reason));
   assert.strictEqual(cleanReason('x'.repeat(500))?.length, 120);
+  // zero-width and bidi characters are removed, not replaced by a space, so they cannot split a secret past redact
+  const tok = 'ghp_' + 'A'.repeat(36);
+  for (const inv of ['\u200b', '\u202e', '\u2060', '\ufeff', '\u061c']) {
+    const r = cleanReason('see ' + tok.slice(0, 10) + inv + tok.slice(10));
+    assert.ok(r && !r.includes('AAAA') && !r.includes(inv), JSON.stringify(r));
+  }
+  assert.strictEqual(cleanReason('a\u200bb'), 'ab');
+  assert.strictEqual(cleanReason('a\u2028b\u0085c'), 'a b c');
+  // a long run of spaces does not push a secret past the cut
+  const far = cleanReason(' '.repeat(985) + tok);
+  assert.ok(far && !far.includes('AAAA'), String(far));
+  const far2 = cleanReason('x ' + ' '.repeat(1500) + tok);
+  assert.ok(far2 && !far2.includes('AAAA'), String(far2));
   assert.strictEqual(cleanReason('a\nb\tc'), 'a b c');
   assert.strictEqual(cleanReason('​‮ '), undefined);
   assert.strictEqual(cleanReason(42), undefined);
@@ -322,6 +348,77 @@ async function main(): Promise<void> {
     const k = harness();
     const u = await k.loop();
     assert.ok(k.sch.stopLoopFor('s1') && u.loop?.ended?.reason === 'user' && !k.sch.stopLoop(u.id));
+  }
+
+  // Resume after Durbar's cap keeps the loop's spend (3)
+  {
+    const h = harness();
+    const s = await h.loop();
+    h.sch.noteUsage('s1', { nanoAiu: 2e9 });
+    h.sch.turnEnded('s1', { finalText: 'LOOP: next 10 min' });
+    h.wait.v = 'cap';
+    await h.advance(10 * MIN);
+    assert.strictEqual(s.pausedReason, 'cap');
+    h.wait.v = undefined;
+    assert.ok(h.sch.save({ ...s, paused: false }, () => true).ok);
+    assert.deepStrictEqual([h.sch.doc.schedules[0].spent, h.sch.doc.schedules[0].loop?.passes], [2, 1], 'spend and passes are kept on Resume');
+  }
+  // a non-edit save (Pause, Resume) never changes the limits; an edit is bounded by the loop's start (1)
+  {
+    const h = harness();
+    const s = await h.loop();
+    h.sch.turnEnded('s1', { finalText: 'LOOP: next 10 min' });
+    const end0 = s.loop?.endAt as number;
+    assert.ok(h.sch.save({ ...s, paused: true, loop: { ...s.loop, endAt: h.now + 400 * 60 * MIN, maxPasses: 100, minDelay: 5 } }, () => true).ok);
+    assert.deepStrictEqual([end0, h.sch.doc.schedules[0].loop?.endAt, h.sch.doc.schedules[0].loop?.maxPasses], [end0, end0, 12], 'limits sent with a Pause are ignored');
+    await h.advance(60 * MIN);
+    const lim = { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 12 };
+    const bad = h.sch.save({ ...s, edit: true, loop: { ...lim, endAt: T0 + 25 * 60 * MIN } }, () => true);
+    assert.ok(!bad.ok, 'an edit may not end later than 24 h after the loop started, even if now is later');
+    assert.ok(h.sch.save({ ...s, edit: true, loop: { ...lim, endAt: T0 + 23 * 60 * MIN } }, () => true).ok);
+  }
+  // the last ask is clamped to the current limits (4)
+  {
+    const h = harness();
+    const s = await h.loop();
+    h.sch.turnEnded('s1', { finalText: 'LOOP: next 5 min' });
+    assert.ok(h.sch.save({ ...s, edit: true, loop: { minDelay: 20, maxDelay: 60, defaultDelay: 30, maxPasses: 12, endAt: s.loop?.endAt } }, () => true).ok);
+    h.busy.add('s1');
+    await h.advance(5 * MIN);
+    assert.strictEqual(h.sch.doc.schedules[0].last?.outcome, 'skipped-busy');
+    assert.strictEqual(h.sch.doc.schedules[0].next, h.now + 20 * MIN, 'a busy skip waits the new minimum');
+    h.busy.delete('s1');
+    h.wait.v = 'person';
+    h.sch.holdsChanged('s1');
+    h.wait.v = undefined;
+    h.sch.holdsChanged('s1');
+    assert.strictEqual(h.sch.doc.schedules[0].next, h.now + 20 * MIN, 'a hold release waits the new minimum');
+  }
+  // a failed send after the turn already ended does not end the pass twice (6)
+  {
+    const h = harness();
+    h.failSend.v = true;
+    h.onSend.fn = () => h.sch.turnEnded('s1', { finalText: 'LOOP: next 10 min - hi' });
+    const s = await h.loop();
+    h.onSend.fn = undefined;
+    assert.deepStrictEqual([s.loop?.errorStreak, s.loop?.ended, s.loop?.passes, s.loop?.lastAsk?.minutes, s.next], [0, undefined, 1, 10, h.now + 10 * MIN], 'the pass ended once, with the agent ask');
+  }
+  // a wall-clock jump forward does not shorten the minimum between two passes (7a)
+  {
+    const h = harness();
+    const s = await h.loop();
+    h.sch.turnEnded('s1', { finalText: 'LOOP: next 5 min' });
+    h.skew.v += 5 * MIN; // the wall clock jumps; the monotonic clock saw no time pass
+    await h.advance(5 * MIN);
+    assert.deepStrictEqual([h.sent.length, s.loop?.passes], [1, 1], 'not sent: only a jump of the wall clock');
+    assert.ok(s.next !== undefined && s.next > h.now, 'it waits for the real minimum');
+    await h.advance(5 * MIN);
+    assert.strictEqual(h.sent.length, 2);
+  }
+  // the ended text has no invisible characters (7b)
+  {
+    const s = parseSchedules(JSON.stringify({ schedules: [{ id: 'aaaaaaaa-1', folder: '/w', prompt: 'p', target: { session: 's1', agent: 'copilot' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 3, endAt: T0 + MIN, ended: { at: 1, reason: 'agent', text: 'a\u202eb\u200bc\nd' } } }] }), T0).schedules[0];
+    assert.strictEqual(s.loop?.ended?.text, 'abc d');
   }
 
   // --- restart (T005) ---

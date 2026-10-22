@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import { localTime, nextRuleRun, parseRule } from '../shared/schedrules';
 import type { CalendarRule } from '../shared/schedrules';
-import { LOOP_MAX_DELAY, LOOP_MAX_HOURS, LOOP_MAX_PASSES, LOOP_MIN_DELAY, clampPace, cleanReason, parsePace } from '../shared/looppace';
+import { LOOP_MAX_DELAY, LOOP_MAX_HOURS, LOOP_MAX_PASSES, LOOP_MIN_DELAY, clampPace, cleanReason, oneLine, parsePace } from '../shared/looppace';
 
 export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended';
 export type CapUnit = 'aiu' | 'usd';
@@ -83,6 +83,11 @@ export interface SchedulesDoc {
   schedules: Schedule[];
 }
 
+/**
+ * Spec 072: `save` refuses a `loop` until main wires it (T006: the loop footer in `send`, `turnEnded` with the pass result, `waitOf`).
+ * T006 sets `enabled` to true; without that wiring a loop would run with no pace line and no holds.
+ */
+export const loopSupport = { enabled: false };
 export const MAX_SCHEDULES = 50;
 export const MAX_PROMPT = 2000;
 export const MIN_EVERY = 5;
@@ -175,8 +180,7 @@ function cleanLoop(v: unknown): LoopSpec | undefined {
   if (count(r.errorStreak)) l.errorStreak = r.errorStreak as number;
   const e = r.ended as Record<string, unknown> | undefined;
   if (e && typeof e === 'object' && num(e.at) !== undefined && END_REASONS.includes(e.reason as LoopEndReason)) {
-    // eslint-disable-next-line no-control-regex
-    const text = typeof e.text === 'string' ? e.text.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, ' ').trim().slice(0, 200) : '';
+    const text = typeof e.text === 'string' ? oneLine(e.text).slice(0, 200) : '';
     l.ended = { at: e.at as number, reason: e.reason as LoopEndReason, text };
   }
   return l;
@@ -302,6 +306,8 @@ export interface SchedulerDeps {
   hasSession(session: string): boolean;
   /** FR-015: the cap unit of the agent app that would run the schedule, or undefined when it reports no spending in a unit. */
   capUnitOf(s: Schedule): CapUnit | undefined;
+  /** A monotonic clock in ms (default `performance.now`); a loop never sends two passes closer than its minimum on it, whatever the wall clock does. */
+  mono?(): number;
   setTimer(ms: number, fn: () => void): unknown;
   clearTimer(t: unknown): void;
   save(doc: SchedulesDoc): void;
@@ -316,6 +322,8 @@ export class Scheduler {
   private running = false;
   /** FR-015: session id -> the schedule whose run is in progress there (until the turn ends). Not saved. */
   private attrib = new Map<string, string>();
+  /** Spec 072: loop id -> monotonic stamp of its last pass sent. Memory only (loops end when the app restarts). */
+  private lastSent = new Map<string, number>();
   constructor(public doc: SchedulesDoc, private readonly deps: SchedulerDeps) {}
 
   /** At start: once-schedules that are past are `missed`; intervals continue from now, anchored ones at their next time of day (missed runs are not caught up). */
@@ -390,8 +398,12 @@ export class Scheduler {
     this.commit();
   }
 
+  private mono(): number {
+    return this.deps.mono ? this.deps.mono() : performance.now();
+  }
+
   private lastDelay(l: LoopSpec): number {
-    return l.lastAsk?.minutes ?? l.defaultDelay;
+    return Math.min(l.maxDelay, Math.max(l.minDelay, l.lastAsk?.minutes ?? l.defaultDelay)); // the limits may have been edited since the ask
   }
 
   private endLoop(s: Schedule, reason: LoopEndReason, now: number, detail?: string): void {
@@ -514,6 +526,14 @@ export class Scheduler {
       s.next = now + this.lastDelay(l) * MIN; // FR-014: not a pass, not queued
       return;
     }
+    // the wall clock can jump forward; the monotonic clock cannot, and it holds the minimum between two passes
+    const mono = this.mono();
+    const since = this.lastSent.get(s.id);
+    if (since !== undefined && mono - since < l.minDelay * MIN) {
+      s.next = now + (l.minDelay * MIN - (mono - since));
+      return;
+    }
+    this.lastSent.set(s.id, mono);
     l.inPass = true;
     l.passes = (l.passes ?? 0) + 1;
     delete s.next;
@@ -521,10 +541,11 @@ export class Scheduler {
     const r = await this.deps.send(s.folder, s.prompt, s).catch(() => false);
     const after = this.deps.now();
     if (r) {
-      s.last = { at: now, outcome: 'sent' };
+      if (!l.ended) s.last = { at: now, outcome: 'sent' };
       return;
     }
-    // the pass could not be sent: it counts as a failed pass (FR-013)
+    // the pass could not be sent: it counts as a failed pass (FR-013), unless its turn already ended while send was awaited
+    if (!l.inPass) return;
     this.attrib.delete(session);
     this.passEnded(s, { error: true }, after);
     s.last = { at: now, outcome: l.ended ? 'ended' : 'failed' };
@@ -567,6 +588,7 @@ export class Scheduler {
     delete l.ended;
     delete l.hold;
     l.inPass = false;
+    this.lastSent.delete(s.id);
     delete s.spent;
     delete s.spentUnknown;
     delete s.paused;
@@ -664,6 +686,7 @@ export class Scheduler {
     // FR-023: a save that carries an id main does not have is refused (it never brings a deleted schedule back)
     const rawId = (input as { id?: unknown }).id;
     const edit = (input as { edit?: unknown }).edit === true;
+    if ((input as { loop?: unknown }).loop !== undefined && (input as { loop?: unknown }).loop !== null && !loopSupport.enabled) return { ok: false, error: 'Loops are not available yet.' };
     const prev = rawId === undefined || rawId === null ? undefined : this.doc.schedules.find((x) => x.id === rawId);
     if ((rawId !== undefined && rawId !== null && !prev) || (edit && !prev)) return { ok: false, error: 'That schedule is gone.' };
     // FR-017: what main keeps itself is never taken from the renderer
@@ -678,6 +701,8 @@ export class Scheduler {
     if (!folderExists(s.folder)) return { ok: false, error: 'Unknown folder.' };
     // spec 072 FR-001..FR-004: a loop keeps its session, there is one per session, and its end time is within 24 h of its start
     if (prev && !!prev.loop !== !!s.loop) return { ok: false, error: prev.loop ? 'A loop stays a loop.' : 'A schedule cannot become a loop. Make a new one.' };
+    // a Pause or Resume save (not an edit) never changes a loop's limits: they are main's copy
+    if (!edit && prev?.loop && s.loop) s.loop = { minDelay: prev.loop.minDelay, maxDelay: prev.loop.maxDelay, defaultDelay: prev.loop.defaultDelay, maxPasses: prev.loop.maxPasses, endAt: prev.loop.endAt };
     if (s.loop && s.target) {
       const session = s.target.session;
       if (prev && prev.target?.session !== session) return { ok: false, error: 'A loop stays on its session.' };

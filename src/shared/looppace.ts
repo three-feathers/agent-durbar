@@ -20,19 +20,37 @@ export interface DelayLimits {
   maxDelay: number;
 }
 
+/** Zero-width and bidi characters are removed (they must not split a secret past `redact`); controls and line separators become a space. */
+const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2060-\u2069\u061c\ufeff]/g;
 // eslint-disable-next-line no-control-regex
-const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\u061c\ufeff\u2028\u2029]/g;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
 const SEP = '[-\\u2013\\u2014]';
 const NEXT_RE = new RegExp(`^loop:[ \\t]*next[ \\t]+(\\d{1,6})[ \\t]*(min(?:utes?)?|h(?:ours?)?)(?:[ \\t]+${SEP}(?:[ \\t]+(.*))?)?$`, 'i');
 const STOP_RE = new RegExp(`^loop:[ \\t]*stop(?:[ \\t]+${SEP}(?:[ \\t]+(.*))?)?$`, 'i');
 
+/** One line of text with no invisible, bidi or control characters and single spaces; the caller cuts the length. */
+export function oneLine(v: string): string {
+  return v.replace(INVISIBLE, '').replace(CONTROL, ' ').replace(/\s+/g, ' ').trim();
+}
+
 /** FR-010: a reason as one line of at most 120 characters: control, bidi and zero-width characters removed, `redact()`ed. Undefined when nothing is left. */
 export function cleanReason(v: unknown): string | undefined {
   if (typeof v !== 'string') return undefined;
-  // clean first (a zero-width character cannot split a secret), redact, then cut
-  const one = v.slice(0, 1000).replace(UNSAFE, ' ').replace(/\s+/g, ' ').trim();
-  const r = redact(one).replace(UNSAFE, ' ').replace(/\s+/g, ' ').trim().slice(0, REASON_MAX).trim();
+  // clean and collapse first (an invisible character or a run of spaces cannot hide or split a secret), redact, then cut
+  const r = oneLine(redact(oneLine(v.slice(0, 20_000)))).slice(0, REASON_MAX).trim();
   return r || undefined;
+}
+
+/** Models often wrap the line in markdown (`**...**`, `*...*`, backticks) or end it with a full stop; both are accepted. */
+function unwrap(line: string): string {
+  let s = line;
+  for (let i = 0; i < 3; i++) {
+    s = s.replace(/\.+$/, '').trim();
+    const w = s.startsWith('**') && s.endsWith('**') ? 2 : (s[0] === '*' || s[0] === '`') && s[s.length - 1] === s[0] ? 1 : 0;
+    if (!w || s.length <= 2 * w) break;
+    s = s.slice(w, s.length - w).trim();
+  }
+  return s;
 }
 
 /** FR-010: the pace request in the last non-empty line of a final message; undefined ("no line") for anything else. */
@@ -45,6 +63,7 @@ export function parsePace(text: unknown): PaceRequest | undefined {
     if (line) break;
   }
   if (!line || line.length > PACE_LINE_MAX) return undefined;
+  line = unwrap(line);
   const n = NEXT_RE.exec(line);
   if (n) {
     const reason = cleanReason(n[3]);

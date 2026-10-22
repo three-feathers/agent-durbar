@@ -1,6 +1,6 @@
 /** Scheduled prompts (spec 044): the store and the scheduler with a fake clock and sender. `npm run test:schedules`. No session, no credits. */
 import * as assert from 'assert';
-import { Scheduler, alignedNext, cleanSchedule, dueAt, parseSchedules } from '../src/main/schedules';
+import { Scheduler, alignedNext, loopSupport, cleanSchedule, dueAt, parseSchedules } from '../src/main/schedules';
 import type { Schedule, SchedulesDoc } from '../src/main/schedules';
 
 const MIN = 60_000;
@@ -515,6 +515,17 @@ async function phase2(): Promise<void> {
     assert.strictEqual(h.sch.doc.schedules.length, 50);
     assert.ok(!h.sch.save({ folder: '/w', prompt: 'new', every: 45 }, () => true).ok);
   }
+  // spec 072: until main wires loops (T006) `save` refuses them
+  {
+    const h = harness({ pausedAll: false, schedules: [] });
+    const input = { folder: '/w', prompt: 'p', target: { session: 's1', agent: 'copilot' }, cap: { amount: 5, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 3, endAt: now + 60 * MIN } };
+    assert.deepStrictEqual(h.sch.save(input, () => true), { ok: false, error: 'Loops are not available yet.' });
+    assert.strictEqual(h.sch.doc.schedules.length, 0);
+    loopSupport.enabled = true;
+    assert.ok(h.sch.save(input, () => true).ok, 'with the switch on');
+    loopSupport.enabled = false;
+  }
+  loopSupport.enabled = true;
   // spec 072 (T002): a loop is a schedule with a `loop` field: session target, no every/at/rule, validated limits, main-owned state stripped
   {
     const LIM = { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 12, endAt: now + 8 * 60 * MIN };
@@ -567,6 +578,7 @@ async function phase2(): Promise<void> {
     const round = parseSchedules(JSON.stringify(h.sch.doc), now);
     assert.strictEqual(round.schedules.find((x) => x.id === id)?.loop?.passes, 4);
   }
+  loopSupport.enabled = false;
 }
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });

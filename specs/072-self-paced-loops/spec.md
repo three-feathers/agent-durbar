@@ -2,7 +2,7 @@
 
 **Feature Branch**: `072-self-paced-loops` (touches 044 scheduled prompts, 001 lobby Postbox, 011 caps, 041 Durbar MCP, 052 activity log, 068 coffee break)
 **Created**: 2026-10-22
-**Status**: Phase 1 foundation built (T001-T005: pace parser, `Schedule.loop`, scheduler core, holds, restart rule; unit tests only, not wired to `main.ts`, no UI yet). Before that: spec, plan and tasks only. Owner answers Q1-Q9 recorded at the end (Paco, fjcabello, 2026-10-22). A requirement not tagged otherwise is `[PLANNED]`; what exists today is cited as `read:`.
+**Status**: Phase 1 foundation built (T001-T005: pace parser, `Schedule.loop`, scheduler core, holds, restart rule; unit tests only, not wired to `main.ts`, no UI yet; until T006 wires it, `Scheduler.save` refuses a `loop` with "Loops are not available yet." through the `loopSupport.enabled` switch in `schedules.ts`, so no loop can run unwired). Before that: spec, plan and tasks only. Owner answers Q1-Q9 recorded at the end (Paco, fjcabello, 2026-10-22). A requirement not tagged otherwise is `[PLANNED]`; what exists today is cited as `read:`.
 **Input**: Issue #526 (owner idea, Paco, 2026-10-22), inspired by Claude Code's `/loop` dynamic mode: on a loop, the agent itself says when its next turn runs ("wake me in 25 min, I'm waiting for CI") or that it is done. Input from Vikram's agent on Telegram (2026-10-22; Vikram decides for his side), folded in as requirements R1-R5 below.
 
 ## Summary
@@ -185,7 +185,7 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
   - `LOOP: next <H> h[ours] [- <reason>]`;
   - `LOOP: stop [- <reason>]`.
 
-  Anything else is "no line". The parser is pure and has no shell and no regular expression with catastrophic backtracking. The reason is cleaned to one line of at most 120 characters (control, bidi and zero-width characters removed) and passed through `redact()` before it is shown or logged.
+  The line may be wrapped in `**...**`, `*...*` or backticks and may end with a full stop (models do this); the 200 characters count the wrapping. Anything else is "no line". The parser is pure and has no shell and no regular expression with catastrophic backtracking. The reason is cleaned to one line of at most 120 characters (bidi and zero-width characters removed, controls turned into a space, whitespace collapsed and redacted before the cut) and passed through `redact()` before it is shown or logged.
 - **FR-011** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) The next wake = the end of the pass + the asked delay, clamped to [`minDelay`, `maxDelay`]. A clamped ask is recorded with `source: 'clamped'` and shown ("asked 2 min, waited 5"). `stop` ends the loop with `ended.reason: 'agent'` and the agent's reason.
 - **FR-012** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) A pass with no line (or, in Phase 2, no tool call) uses `defaultDelay` with the reason "the agent did not say". Two such passes in a row end the loop: "Stopped: the agent did not pace the loop" (Q3). A pass that ends in `error` (FR-013) counts only toward the error streak: it neither adds to nor resets this no-line streak.
 - **FR-013** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) A pass that ends in `error` counts as a pass. The loop waits `defaultDelay`. Two errors in a row end the loop: "Stopped after two failed passes".
