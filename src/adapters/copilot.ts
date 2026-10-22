@@ -741,7 +741,7 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   /**
-   * Spec 072 FR-004/FR-009: the folder's and the user's skills, read by Durbar (the session has no config discovery, so the runtime does
+   * Spec 073 FR-004/FR-009: the folder's and the user's skills, read by Durbar (the session has no config discovery, so the runtime does
    * not load them; real 2026-10-22). No built-ins: `session.send` hands a typed built-in to the model as text (real 2026-10-22).
    */
   private slashFiles(live: { cwd: string; folders?: string[] }): SlashEntry[] {

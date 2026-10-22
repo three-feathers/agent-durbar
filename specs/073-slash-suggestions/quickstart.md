@@ -1,4 +1,4 @@
-# Quickstart 072 (simulator, no credits)
+# Quickstart 073 (simulator, no credits)
 
 1. `npm run build && DURBAR_SIM=15 npm start`, open any chat.
 2. Type `/` in the message box: the list opens above it with folder, user and (Claude chats) app entries, at most 8 rows.

@@ -109,7 +109,7 @@ const SIM_CLAUDE_MODELS: ModelChoice[] = [
   { id: 'haiku', name: 'Sim Haiku', efforts: [] },
 ];
 /* spec 043: what a session's custom agents look like (made up; no real agent files) */
-/** Spec 072 FR-011: canned "/" entries per agent app (folder, user, and Claude Code's built-ins); nothing is read from disk. */
+/** Spec 073 FR-011: canned "/" entries per agent app (folder, user, and Claude Code's built-ins); nothing is read from disk. */
 type SimSlash = { name: string; description?: string; argumentHint?: string; source: 'folder' | 'user' | 'app'; kind: 'skill' | 'command' | 'prompt' | 'builtin'; where?: string };
 function simSlash(kind: string): SimSlash[] {
   const common: SimSlash[] = [
@@ -1639,7 +1639,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           return { ok: true };
         }
         window.setTimeout(() => void reply(s, text), 400);
-        // spec 072 FR-011: a folder or user entry is "sent as its text", as the real adapters do (FR-005)
+        // spec 073 FR-011: a folder or user entry is "sent as its text", as the real adapters do (FR-005)
         const sl = /^\/([A-Za-z0-9][A-Za-z0-9._:-]{0,63})(?:\s|$)/.exec(String(text).trim());
         const hit = sl ? simSlash(kind).find((e) => e.source !== 'app' && e.name.toLowerCase() === sl[1].toLowerCase()) : undefined;
         return hit ? { ok: true, slash: hit.where ?? hit.name } : { ok: true };

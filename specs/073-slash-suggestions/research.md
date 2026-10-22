@@ -1,4 +1,4 @@
-# Research 072: what each agent app offers as "/" entries
+# Research 073: what each agent app offers as "/" entries
 
 All checks 2026-10-22, Linux. Real prompts: 3 (owner budget 3).
 

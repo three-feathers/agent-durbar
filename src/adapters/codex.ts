@@ -676,7 +676,7 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   /**
-   * Spec 072 FR-004/FR-009: the folder's and the user's skills and the user's custom prompts (`prompts:<name>`), read by Durbar: the
+   * Spec 073 FR-004/FR-009: the folder's and the user's skills and the user's custom prompts (`prompts:<name>`), read by Durbar: the
    * app-server lists no commands or prompts and expands neither (that is the TUI's work, read: 0.163.0 schema). No built-ins.
    */
   private slashFiles(live: { roots: string[] }): SlashEntry[] {

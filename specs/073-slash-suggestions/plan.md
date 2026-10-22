@@ -1,6 +1,6 @@
 # Implementation Plan: Slash suggestions in the chat composer
 
-**Branch**: `072-slash-suggestions` (stacked on `005-composer-toolbar`, PR #498) | **Date**: 2026-10-22 | **Spec**: [spec.md](spec.md)
+**Branch**: `073-slash-suggestions` (stacked on `005-composer-toolbar`, PR #498) | **Date**: 2026-10-22 | **Spec**: [spec.md](spec.md)
 
 ## Summary
 

@@ -1483,7 +1483,7 @@ function openPanel(id,focus){
   $('attached').onclick=e=>{const po=e.target.closest('[data-planoff]');if(po){const pa=byId(ui.selected);if(pa)pa.planNext=false;renderAttached();const m=$('msgInput');if(m)m.focus();return;}const b=e.target.closest('[data-rm]');if(b){attached.splice(+b.dataset.rm,1);renderAttached();setSend();attNotice([]);}};
   const input=$('msgInput');
   input.addEventListener('input',autoGrow);
-  initSlash(a,input); /* spec 072: the "/" list; its keydown runs first, so Enter / Tab / Esc pick or close while it is open */
+  initSlash(a,input); /* spec 073: the "/" list; its keydown runs first, so Enter / Tab / Esc pick or close while it is open */
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
@@ -1497,7 +1497,7 @@ function composerHint(a){
   const r=liveRoot(a)||a, m=MODE_NAME[((r.info||a.info)||{}).permMode];
   return base+' · '+(SIM?'Demo, no credits used':'Live '+kindWord(r.info&&r.info.adapterId))+(m?' · '+m:'');
 }
-/* ---------------- spec 072: the "/" list in the message box (an ARIA combobox with a listbox; focus stays in the box) ----------------
+/* ---------------- spec 073: the "/" list in the message box (an ARIA combobox with a listbox; focus stays in the box) ----------------
    Entries come from main (agents:slashCommands: the folder's, the user's, and the app's built-ins that run when typed) or the simulator;
    a demo chat has a few canned ones. Typing filters; ArrowUp/Down move; Tab or Enter put "/name " in the box; Esc closes the list only. */
 var SLASH=window.DurbarSlash||null; /* var: openPanel can run before this line during start-up (restored chat) */
@@ -1671,7 +1671,7 @@ function syncRunState(){
   const was=RUN_SAID.id===a.id?RUN_SAID.run:null; RUN_SAID.id=a.id; RUN_SAID.run=run;
   if(was!==null&&was!==run){announce(run?'Working…':RUN_SAID.stopped?'Stopped':'Reply finished');RUN_SAID.stopped=false;} /* a new turn forgets an earlier Stop */
 }
-/* the mode, model, profile and context menus: below their chip, or above it when the chip sits in the composer toolbar (FR-037); spec 072's "/" list too */
+/* the mode, model, profile and context menus: below their chip, or above it when the chip sits in the composer toolbar (FR-037); spec 073's "/" list too */
 function placeMenu(m,x,y,anchor){
   const r=m.getBoundingClientRect();
   let py=y;
@@ -3368,7 +3368,7 @@ async function sendLive(text,forId,opts){
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
   if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
-  else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(r.slash,160))+'</code> (the agent app does not load it in Durbar’s sessions).'); /* spec 072 FR-005 */
+  else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(r.slash,160))+'</code> (the agent app does not load it in Durbar’s sessions).'); /* spec 073 FR-005 */
 }
 /* spec 012 FR-087 (owner 2026-10-20, option c): a refusal of Read-only / Ask first (Codex's sandbox could not start, or Codex cannot
    limit reads) never suggests a mode in its text; a "Change mode…" button opens the usual mode menu, with every mode and its help */

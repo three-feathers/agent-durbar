@@ -1,4 +1,4 @@
-# Data model 072
+# Data model 073
 
 ## SlashCommand (adapter boundary, `src/adapters/types.ts`)
 

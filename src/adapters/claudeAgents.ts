@@ -22,7 +22,7 @@ export interface ClaudeAgentDef {
 
 /** Parses an agent file: `---` front matter (`name`, `description`, `tools`, `model`) then the prompt. Undefined when unusable. */
 export function parseClaudeAgent(text: string, fileName: string, source: AgentProfile['source'], file?: string): ClaudeAgentDef | undefined {
-  const { fm, lists, body: rawBody } = parseFrontMatter(text); // spec 072: one front-matter reader for agents and slash entries
+  const { fm, lists, body: rawBody } = parseFrontMatter(text); // spec 073: one front-matter reader for agents and slash entries
   const body = rawBody.trim();
   const name = (fm.name || fileName.replace(/\.md$/i, '')).trim();
   if (!NAME.test(name) || !body) return undefined;

@@ -1,5 +1,5 @@
 /**
- * Spec 072: the composer's "/" entries. `npm run test:slashcommands`. No Electron, no network, no credits.
+ * Spec 073: the composer's "/" entries. `npm run test:slashcommands`. No Electron, no network, no credits.
  *
  *  - front matter, names, `user-invocable: false`, de-duplication and order (folder, user, app);
  *  - the places of each app (Claude Code, Copilot, Codex), also as Windows paths;

@@ -1,5 +1,5 @@
 /**
- * Slash entries (spec 072): the skills, commands and prompt files an agent app offers after "/", read by Durbar because its sessions
+ * Slash entries (spec 073): the skills, commands and prompt files an agent app offers after "/", read by Durbar because its sessions
  * start the apps without their own settings and skill discovery (spec 012 Q8, spec 043, spec 061), so the apps do not know them.
  *
  * - `discoverSlash` lists entries from the places an adapter names (`claudeSlashPlaces`, `copilotSlashPlaces`, `codexSlashPlaces`):

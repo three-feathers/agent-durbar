@@ -1,5 +1,5 @@
 /**
- * IPC for the composer's "/" list (spec 072 FR-010): the window asks by agent id; main looks the agent up, makes sure its session is
+ * IPC for the composer's "/" list (spec 073 FR-010): the window asks by agent id; main looks the agent up, makes sure its session is
  * live (no prompt, no credits, like the profile list) and returns the adapter's entries re-checked and cut (`publicSlash`): names,
  * one-line descriptions and display paths only, never an absolute path or a file's contents.
  */

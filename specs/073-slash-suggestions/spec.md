@@ -1,6 +1,6 @@
 # Feature Specification: Slash suggestions in the chat composer
 
-**Feature Branch**: `072-slash-suggestions` (stacked on `005-composer-toolbar`, PR #498)
+**Feature Branch**: `073-slash-suggestions` (stacked on `005-composer-toolbar`, PR #498)
 **Created**: 2026-10-22
 **Status**: Built 2026-10-22 (unit tests, simulator driver; vendor behaviour checked with 3 real prompts, Codex read only)
 **Input**: Owner request (Vikram, Telegram, 2026-10-22): "When there are skills or prompts in the folder or workspace - show autofill suggestions and options when you type /".

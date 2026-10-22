@@ -355,7 +355,7 @@ export interface AgentProfile {
 }
 
 /**
- * Spec 072 FR-001: one entry of the "/" list in the composer: a skill, command or prompt file of the session's folder or of the user,
+ * Spec 073 FR-001: one entry of the "/" list in the composer: a skill, command or prompt file of the session's folder or of the user,
  * or a built-in of the agent app. Generic across adapters; `where` is a display path (folder-relative or `~/…`), never absolute.
  */
 export interface SlashCommand {
@@ -494,9 +494,9 @@ export interface AgentAdapter {
   listAgentProfiles?(sessionId: string): Promise<AgentProfile[]>;
   /** Select a profile for the next turns, or null for the default agent (spec 043 FR-001). Emits `agentProfile`. */
   selectAgentProfile?(sessionId: string, id: string | null): Promise<AgentProfile | null>;
-  /** Spec 072 FR-001: the "/" entries this session's agent app offers (folder, then user, then app built-ins that run when typed). */
+  /** Spec 073 FR-001: the "/" entries this session's agent app offers (folder, then user, then app built-ins that run when typed). */
   listSlashCommands?(sessionId: string): Promise<SlashCommand[]>;
-  /** Spec 072 FR-005: the text to send for a message that starts with a folder or user entry's `/name`, and where it came from; undefined = send as typed. */
+  /** Spec 073 FR-005: the text to send for a message that starts with a folder or user entry's `/name`, and where it came from; undefined = send as typed. */
   expandSlashCommand?(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined>;
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */
   setMcpEnabled?(sessionId: string, name: string, enabled: boolean): Promise<void>;

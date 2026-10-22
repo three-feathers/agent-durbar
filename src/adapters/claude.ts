@@ -552,7 +552,7 @@ export class ClaudeAdapter implements AgentAdapter {
     return this.initReply().then((r) => claudeModelOptions(r.models));
   }
 
-  /** The probe's `initialize` reply (models, and spec 072's built-in `commands`), cached 10 minutes; a failure is `{}` and is retried next time. */
+  /** The probe's `initialize` reply (models, and spec 073's built-in `commands`), cached 10 minutes; a failure is `{}` and is retried next time. */
   private initReply(): Promise<Record<string, unknown>> {
     const now = Date.now();
     if (this.initCache && now - this.initCache.at < 10 * 60_000) return this.initCache.reply;
@@ -583,12 +583,12 @@ export class ClaudeAdapter implements AgentAdapter {
     }
   }
 
-  /** Spec 072 FR-004: the folder's and the user's skills and commands (Claude does not load them: `--setting-sources ""`). */
+  /** Spec 073 FR-004: the folder's and the user's skills and commands (Claude does not load them: `--setting-sources ""`). */
   private slashFiles(s: Session): SlashEntry[] {
     return discoverSlash(claudeSlashPlaces(s.roots, this.deps.configDir ?? (process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'))));
   }
 
-  /** Spec 072 FR-001: files first, then the built-ins of the CLI's `initialize` reply that run in Durbar's sessions (FR-006, FR-007). */
+  /** Spec 073 FR-001: files first, then the built-ins of the CLI's `initialize` reply that run in Durbar's sessions (FR-006, FR-007). */
   async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
     const s = this.sessions.get(sessionId);
     if (!s) return [];
@@ -596,7 +596,7 @@ export class ClaudeAdapter implements AgentAdapter {
     return mergeSlash(this.slashFiles(s), builtins);
   }
 
-  /** Spec 072 FR-005: a folder or user entry is sent as its text (real 2026-10-22: Claude sends an unknown `/name` to the model as is). */
+  /** Spec 073 FR-005: a folder or user entry is sent as its text (real 2026-10-22: Claude sends an unknown `/name` to the model as is). */
   async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined> {
     const s = this.sessions.get(sessionId);
     return s ? expandSlash(text, this.slashFiles(s)) : undefined;

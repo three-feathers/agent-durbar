@@ -61,7 +61,7 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 
 ## Agent apps (checked behaviour)
 
-- **"/" commands and skills in Durbar's sessions** (2026-10-22, spec 072; `real:` Claude Code 2.1.304 and Copilot CLI 1.0.98 / SDK 1.0.22, 3 tiny prompts; `read:` codex-cli 0.163.0 app-server schema).
+- **"/" commands and skills in Durbar's sessions** (2026-10-22, spec 073; `real:` Claude Code 2.1.304 and Copilot CLI 1.0.98 / SDK 1.0.22, 3 tiny prompts; `read:` codex-cli 0.163.0 app-server schema).
   - **Claude Code** with Durbar's `--setting-sources ""`: the `initialize` control answer's `commands` lists only built-ins and bundled skills (55); a folder's `.claude/commands` and `.claude/skills` appear only with `--setting-sources project`. A folder command typed as `/hello Bob` reached the model as plain text ("isn't installed in this session"). A built-in typed as `/context` ran in the CLI itself (cost 0, no turn). Zero-cost probe: send `{"type":"control_request","request":{"subtype":"initialize"}}` on stdin and read `commands`.
   - **Copilot** (no config discovery): `session.rpc.commands.list({includeBuiltins:true})` lists 31 built-ins (including `allow-all`, `permissions`, `autopilot`) and `session.rpc.skills.list()` only the runtime's own skills, both at no cost. But `session.send({prompt:'/list-dirs'})` does **not** run the built-in: the model got the text. Prompt files (`.github/prompts/*.prompt.md`) are VS Code only (not in the runtime binary).
   - **Codex**: no app-server method lists commands or prompts; built-in slash commands and `/prompts:` expansion live in the TUI. `skills/list` and a `{type:'skill'}` input item exist (not used yet).

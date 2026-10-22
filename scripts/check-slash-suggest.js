@@ -1,5 +1,5 @@
 /*
- * Check for spec 072 (owner request, 2026-10-22): the "/" list in the chat's message box. Simulator only (no AI credits).
+ * Check for spec 073 (owner request, 2026-10-22): the "/" list in the chat's message box. Simulator only (no AI credits).
  *
  *   npm run check:slash-suggest
  *   OUT=docs/screenshots  (optional) where the screenshots go (default: a temp folder)
@@ -12,7 +12,7 @@
  *   - Esc closes only the list (the chat stays open), a second Esc then closes the chat as before;
  *   - "/" inside a word or a URL opens nothing;
  *   - sending "/<folder or user entry> words" shows the note "Sent the text of …";
- *   - a Copilot chat lists no app built-ins (spec 072 FR-009);
+ *   - a Copilot chat lists no app built-ins (spec 073 FR-009);
  *   - with the entries fetched, the list opens in under 100 ms (SC-002);
  *   - a dark user theme: the same geometry; screenshots.
  * A miss throws (DRIVER FAILED); the npm script exits non-zero unless "all checks passed" is printed.
@@ -91,7 +91,7 @@ module.exports = async (ctx) => {
     check(/^(folder,)+(user,)+(app,?)+$/.test(ord + ','), `${tag}: order folder, user, app (${ord})`);
     check(m.active === 'slashOpt-0', `${tag}: the first row is not active (${m.active})`);
     check(await until(`/10 commands/.test(document.getElementById('srAnnounce').textContent)`, 2000), `${tag}: the count is not announced`);
-    await shot(`072-slash-${tag}.png`);
+    await shot(`073-slash-${tag}.png`);
 
     /* arrows wrap; typing filters */
     await key('Down'); m = await M();
@@ -170,7 +170,7 @@ module.exports = async (ctx) => {
     await until(`!!document.querySelector('#slashList [role="option"]')`, 4000);
     m = await M();
     m.P.forEach((p) => check(false, `${tag} dark: ${p}`));
-    if (w === SIZES[0][0]) await shot(`072-slash-dark-${tag}.png`);
+    if (w === SIZES[0][0]) await shot(`073-slash-dark-${tag}.png`);
   }
   console.log('[slash-suggest] screenshots in ' + OUT);
   assert.deepStrictEqual(fails, [], fails.join('\n'));

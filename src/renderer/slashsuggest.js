@@ -1,4 +1,4 @@
-/* The composer's "/" list (spec 072 FR-008), pure helpers: which word the caret is in, which entries match, and the text after
+/* The composer's "/" list (spec 073 FR-008), pure helpers: which word the caret is in, which entries match, and the text after
    picking one. No DOM. In the page: window.DurbarSlash; in Node (test-slashcommands): module.exports. app.js draws the list. */
 (function(root, api){
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarSlash=api;

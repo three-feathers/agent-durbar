@@ -1,4 +1,4 @@
-# Tasks 072: Slash suggestions in the chat composer
+# Tasks 073: Slash suggestions in the chat composer
 
 Spec: [spec.md](spec.md) · Plan: [plan.md](plan.md). One issue = this feature (owner request 2026-10-22). Tests are written with the code.
 
@@ -56,7 +56,7 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
 - [x] T013 New `scripts/check-slash-suggest.js` driver + `check:slash-suggest` script + `ui-suite.js` entry: keyboard flow, ARIA attributes,
   Esc order, no overlap with the box, inside the panel, at most 8 rows visible, no text under 10.5px, at 1440x900 and 1280x800, a dark
   theme pass; time from `/` to the list showing under 100 ms; the "Sent the text of" note; screenshots
-  `docs/screenshots/072-slash-1440x900.png`, `072-slash-1280x800.png` [SC-001..SC-003]
+  `docs/screenshots/073-slash-1440x900.png`, `073-slash-1280x800.png` [SC-001..SC-003]
 - [x] T014 [P] Docs: `README.md` feature list and known limits, CHANGELOG line under Unreleased, `specs/README.md` row, `docs/agent-notes.md`
   entries (Claude `--setting-sources ""` hides folder commands; built-ins run in print mode; Copilot `session.send` does not run
   built-ins; Codex prompts are TUI-only) [VIII]
