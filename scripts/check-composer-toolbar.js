@@ -195,8 +195,9 @@ module.exports = async (ctx) => {
       await js(`document.querySelector('#stage .desk[data-id]').click()`);
       await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 3000);
       await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return v(g('sendBtn'))&&!v(g('stopBtn'))})()`, 15000); /* the opening canned turn */
+      await js(`(()=>{const m=document.getElementById('msgInput');m.focus();m.select&&m.select();})()`); /* keys go to the box (on macOS the focus stayed on the desk) */
       await type('Please look at the README.');
-      await until(`document.getElementById('sendBtn').getAttribute('aria-disabled')==='false'`, 5000); /* the typed text has reached the box */
+      check(await until(`document.getElementById('sendBtn').getAttribute('aria-disabled')==='false'`, 5000), `${tag} demo: the typed text did not reach the box`);
       await js(`document.getElementById('sendBtn').click()`);
       check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return v(g('stopBtn'))})()`, 12000), `${tag} demo: a canned turn shows no Stop`);
       await js(`document.getElementById('stopBtn').click()`);
