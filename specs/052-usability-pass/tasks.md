@@ -269,12 +269,12 @@
 
 ## Popover widths (2026-10-22, issue #508)
 
-- [ ] T168 Inventory the popovers and add the tokens `--pop-w-s` (420px), `--pop-w-m` (660px) and `--pop-pad` (12px 14px) to `styles.css` `:root`; Defaults and Allowed grants use S, Folders and Floors use M, all use `--pop-pad`; the per-popover widths and paddings are deleted [FR-167]
+- [x] T168 Inventory the popovers and add the tokens `--pop-w-s` (420px), `--pop-w-m` (660px) and `--pop-pad` (12px 14px) to `styles.css` `:root`; Defaults and Allowed grants use S, Folders and Floors use M, all use `--pop-pad`; the per-popover widths and paddings are deleted [FR-167]
   - Accept: `#defaultsPop`, `#foldersPop`, `#floorsPop` and `.grants-pop` have no `width` or `padding` of their own except through the tokens; no text is cut or scrolls sideways at 1440x900 and 1280x800, light and dark; text 10.5px or more.
   - Check: `check:ui-text` (`x-scroll`, `font-size`, clipped text on the four popover surfaces).
-- [ ] T169 Check rule `popover-width` in `check-ui-text` / `ui-text-page.js` for every `popover` surface [FR-167, FR-171]
+- [x] T169 Check rule `popover-width` in `check-ui-text` / `ui-text-page.js` for every `popover` surface [FR-167, FR-171]
   - Accept: a popover whose width is not S, M or `100vw - 32px`, or whose padding is not `--pop-pad`, fails.
   - Check: mutation (one popover given its own `width`) fails `popover-width`; the code is restored byte for byte and the check passes.
-- [ ] T170 Screenshots (both sizes, light and dark where it matters) in `docs/screenshots/052-popover-*`; docs: FR-167 `[IMPLEMENTED]`, `docs/design-rules.md`, CHANGELOG [FR-167]
+- [x] T170 Screenshots (both sizes, light and dark where it matters) in `docs/screenshots/052-popover-*`; docs: FR-167 `[IMPLEMENTED]`, `docs/design-rules.md`, CHANGELOG [FR-167]
   - Accept: FR-167 has no popover `[KNOWN GAP]`; the design rules describe the two tokens.
   - Check: `typecheck`, `build`, `npm test`, `check:ui-text`, `check:office`, `check:geometry`.

@@ -8,7 +8,7 @@
  *
  * Part 2 rules (T150-T155): orphan (a menu hint's last line is one word), menu-width, menu-hints (a menu has a hint on every item or on none),
  * tooltip-length (static titles 120, data titles 300 characters and 8 lines), ellipsis-title, label-wrap, kbd-align, x-scroll on screens,
- * copy-overlap and caret-after-copy in the chat, heading-lines in the inbox; `pairs()` is the contrast of the rules that moved to theme tokens.
+ * popover-width (a popover is the S or M token wide, with --pop-pad), copy-overlap and caret-after-copy in the chat, heading-lines in the inbox; `pairs()` is the contrast of the rules that moved to theme tokens.
  */
 (function () {
   if (window.__uitext) return;
@@ -290,6 +290,19 @@
           const got = ['Top', 'Right', 'Bottom', 'Left'].map((k) => parseFloat(cs['padding' + k]));
           if (pad.some((v, i) => Math.abs(v - got[i]) > 0.5)) add('dialog-padding', root, root, `padding ${got.join(' ')} but --dlg-pad is ${pad.join(' ')}`);
         }
+      }
+      if (kind === 'popover') {
+        // FR-167 (T169, issue #508): width is the S or M token (or the window minus 32px), padding is --pop-pad
+        const rs = getComputedStyle(document.documentElement);
+        const toks = [['--pop-w-s', 420], ['--pop-w-m', 660]].map(([n, want]) => ({ n, want, v: rs.getPropertyValue(n).trim() }));
+        const px = toks.map((x) => (x.v ? probe(root, 'width', x.v) : NaN));
+        px.forEach((v, i) => { if (Math.abs(v - Math.min(toks[i].want, innerWidth - 32)) > 1) add('popover-width', root, root, `${toks[i].n} is "${toks[i].v}" (${v}px), expected ${toks[i].want}px`); });
+        const w = root.offsetWidth;
+        if (!px.some((v) => Math.abs(v - w) <= 1)) add('popover-width', root, root, `width ${Math.round(w)}px is none of ${px.map(Math.round).join('/')}`);
+        const want = probe(root, 'padding', 'var(--pop-pad)');
+        const pcs = getComputedStyle(root);
+        const got = ['Top', 'Right', 'Bottom', 'Left'].map((k) => parseFloat(pcs['padding' + k]));
+        if (want.some((v, i) => Math.abs(v - got[i]) > 0.5) || want.join() !== '12,14,12,14') add('popover-width', root, root, `padding ${got.join(' ')} but --pop-pad is ${want.join(' ')} (expected 12 14 12 14)`);
       }
       if (kind === 'popover' || kind === 'menu') {
         const cs = getComputedStyle(root);

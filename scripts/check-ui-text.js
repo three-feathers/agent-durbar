@@ -8,7 +8,7 @@
  *   theme only, dark-contrast (4.5:1 for the controls of FR-169).
  * Part 2 (T150-T155): orphan + menu-width + menu-hints (menus), tooltip-length (static 120, data 300 characters / 8 lines), ellipsis-title,
  *   label-wrap, kbd-align (the shortcut sheet), x-scroll on screens (also with simnames=long), heading-lines (Needs you), copy-overlap,
- *   caret-after-copy and toast-over-composer (the chat), and tone-contrast (every rule that moved from a literal light colour to the
+ *   caret-after-copy and toast-over-composer (the chat), popover-width (T169: the S/M token and --pop-pad), and tone-contrast (every rule that moved from a literal light colour to the
  *   --tone-* tokens reads at 4.5:1 in the 6 built-in themes and the dark fixture; the CSS is parsed here, the colours are resolved in the page).
  *
  *   npm run check:ui-text
