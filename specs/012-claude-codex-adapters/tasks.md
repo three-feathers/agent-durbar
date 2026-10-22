@@ -179,3 +179,7 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 
 - [x] T125 (fakes) Optional `refreshAuth()` in the adapter interface; Copilot stops and recreates its shared client and resumes the live sessions on it ("Reconnecting Copilot…"); main calls it after a sign-in that ended well, before detection and `harness:done` (`afterSignIn`); `RestartingFakeCopilot` and tests in `test:authcheck` [FR-158]
 - [x] T126 (2026-10-20) Chat sessions start with `CLAUDE_CODE_ENTRYPOINT=agent-durbar` so `claude --resume` lists them; probe, handoff and one-shot runs unchanged; unit test; real check recorded [FR-159]
+
+## Changes 2026-10-22 (a token after an underscore, FR-080 delta, issue #541)
+
+- [x] T127 (2026-10-22) `redact`'s token shapes start where no letter or digit precedes them instead of at `\b` (`_ghp_…_`, `__sk-…__`, `my_github_pat_…` are masked); a JWT may follow up to 3 underscores; `maskTokenShapes` exported and reused by `shownCommand` in `src/main/foldersetup.ts` (its `\b` copy removed); wrapping matrix, adversarial underscore runs and mutation checks in `test:redact` and `test:foldersetup` [FR-080]
