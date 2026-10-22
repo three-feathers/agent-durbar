@@ -1,5 +1,11 @@
 # Feature Specification: Release v0.1.0-alpha.11 (pre-release)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Release v0.1.0-alpha.11 (pre-release)
+status: **in progress**: release PR, then tag and publish on a green `main`
+-->
+
 **Feature Branch**: `071-release-alpha11`
 **Created**: 2026-10-22
 **Status**: **Published as a pre-release on 2026-10-22** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.11>; release PR #517; tag on `b76b79a`, whose CI, CodeQL, packaged check, installed-app check and UI checks on all three OSes were green; the Windows UI job passed on a rerun after the known `check-question-options` flake that #516 fixes). The draft had 8 files; every package matched `SHA256SUMS.txt` (against GitHub's own asset digests).

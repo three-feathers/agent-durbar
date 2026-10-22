@@ -27,8 +27,8 @@ import type { McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
-import { CODEX_INITIALIZE_CAPABILITIES, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
-import type { DurbarAnswer } from './codexModes';
+import { CODEX_INITIALIZE_CAPABILITIES, codexFileChanges, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
+import type { CodexFileChange, DurbarAnswer } from './codexModes';
 import { CODEX_BINARY, detectBinary, nodeExec } from './detect';
 import type { DetectEnv } from './detect';
 import { PermissionBroker, startModeOf } from './permissions';
@@ -61,6 +61,9 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   history: true, // FR-141: thread/list and thread/read
   mcpStatus: true, // FR-147: mcpServerStatus/list and startup notifications
   mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
+  mcpStart: 'session', // spec 058 FR-010
+  mcpToggleApplies: 'next-message', // FR-147
+  mcpRestart: false, // spec 058 FR-012 (Q8): no per-server restart; Restart session with these servers instead
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
   renameSession: 'any', // spec 059 FR-007: thread/name/set on the live child or a short-lived app-server (real 2026-10-20: codex resume lists the name once the thread has had a turn)
   deleteSession: true, // spec 006 FR-028: thread/delete (hard delete; read: upstream app-server protocol, Codex 0.163; never run on a real thread)
@@ -251,6 +254,8 @@ interface Live {
   /** The next mapper `Aborted` is the one `interrupt` already reported itself. */
   expectAborted: boolean;
   anon: number;
+  /** Spec 052 FR-172: the changes of `fileChange` items not yet completed, by item id (bounded): an approval names only the id. */
+  fileChanges?: Map<string, CodexFileChange[]>;
 }
 
 interface Child {
@@ -1002,7 +1007,38 @@ export class CodexAdapter implements AgentAdapter {
         live.pendingInterrupt = false;
       }
     }
+    this.noteFileChange(live, method, params);
     live.mapper.map({ method, params });
+  }
+
+  /**
+   * Spec 052 FR-172: keep the changes of each `fileChange` item while it runs (`item/started`, `item/fileChange/patchUpdated`), so an
+   * approval that names only the item id can show the files and the diff; forget them on `item/completed`. At most 32 items.
+   */
+  private noteFileChange(live: Live, method: string, params: unknown): void {
+    if (!isObj(params)) return;
+    const item = isObj(params.item) ? params.item : undefined;
+    const isFc = item?.type === 'fileChange' && typeof item.id === 'string' && item.id;
+    if (method === 'item/completed' && isFc) {
+      live.fileChanges?.delete(item.id as string);
+      return;
+    }
+    let id: string | undefined;
+    let changes: unknown;
+    if (method === 'item/started' && isFc) {
+      id = item.id as string;
+      changes = item.changes;
+    } else if (method === 'item/fileChange/patchUpdated' && typeof params.itemId === 'string' && params.itemId) {
+      id = params.itemId;
+      changes = params.changes;
+    }
+    if (!id) return;
+    const list = codexFileChanges(changes);
+    if (!list.length) return;
+    const map = (live.fileChanges ??= new Map());
+    map.delete(id);
+    map.set(id, list);
+    while (map.size > 32) map.delete(map.keys().next().value as string);
   }
 
   private makeBroker(live: Live): PermissionBroker {
@@ -1046,8 +1082,8 @@ export class CodexAdapter implements AgentAdapter {
       const a = await runElicitation((b) => this.emit(live.sid, b), live.elicitations, `codex-e-${++live.anon}`, { message: p.message, schema: p.requestedSchema, mode: p.mode, url: p.url, source: p.serverName }, (m) => this.debug?.(`codex: ${m}`));
       return { result: { ...a } };
     }
-    const perm = codexPermission(method, params);
     const itemId = isObj(params) && typeof params.itemId === 'string' && params.itemId ? params.itemId : undefined;
+    const perm = codexPermission(method, params, itemId ? live.fileChanges?.get(itemId) : undefined);
     const toolCallId = itemId ?? `${method}#${++live.anon}`;
     const decision = await live.broker.request({
       kind: perm.kind,
@@ -1058,6 +1094,9 @@ export class CodexAdapter implements AgentAdapter {
       url: perm.url,
       toolName: perm.toolName,
       serverName: perm.serverName,
+      // FR-172: the file change's diff with secrets masked (env values and key shapes), and its own card line
+      ...(perm.kind === 'write' ? { cardSummary: perm.summary } : {}),
+      ...(perm.diff ? { diff: redact(perm.diff, { ...process.env, ...this.env }) } : {}),
     });
     const answer: DurbarAnswer = decision.kind === 'approve-once' ? 'approve' : live.stopping || live.interrupting ? 'stop' : 'deny';
     const reply = codexReply(answer, live.broker.getMode());

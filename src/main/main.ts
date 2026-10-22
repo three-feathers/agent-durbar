@@ -91,6 +91,9 @@ if (aumid) app.setAppUserModelId(aumid);
 const dev = devEnv(process.env, app.isPackaged);
 const devNote = devWarning(process.env, app.isPackaged);
 if (devNote) console.error(devNote);
+// Spec 008 FR-103: a test run's window is never treated as hidden when another window covers it (the Windows CI desktop and a shared
+// X display run several drivers at once). Chromium then stops animation frames and throttles timers, so the page stopped drawing mid-check.
+if (dev.DURBAR_DRIVER || dev.DURBAR_SHOT) app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 
 // Cheapest routing on the logged-in account's only model ("auto"); see docs/milestone-1.md.
 // Profile folder chosen in code (spec 008 FR-034): packaged `<appData>/agent-durbar`, dev `<appData>/agent-durbar-dev`.
@@ -123,7 +126,7 @@ const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const registry = createRegistry([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)]); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
 const agents = new Map<string, AgentInfo>();
-const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, router, dev });
+const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, router, dev, log: (a, action) => logActivity(a, 'mcp-restart', action) });
 /** Files the user picked through the native dialog; only these can be attached. */
 const pickedFiles = new Set<string>();
 /** Private folder for pasted / dropped files (removed on quit). */
@@ -309,7 +312,8 @@ const starting = new Map<string, Promise<void>>();
 /** Spec 006 FR-021: agents restored as their folder's last session, how that went, until their chat asks for it (agents:wake). */
 const continued = new Map<string, { resumed: boolean; title?: string }>();
 
-async function ensureLive(a: AgentInfo): Promise<void> {
+/** `quiet: false` (spec 058 FR-022, Restart session): the adapter says "Ready" so the window leaves "Ended"; every other caller starts quietly. */
+async function ensureLive(a: AgentInfo, opts: { quiet?: boolean } = {}): Promise<void> {
   const ad = router.forAgent(a.id);
   if (!ad) throw new Error('unknown agent');
   if (ad.isLive(a.id)) return;
@@ -324,7 +328,7 @@ async function ensureLive(a: AgentInfo): Promise<void> {
         resume = !!prev;
         continued.set(a.id, { resumed: resume, title: prev?.title });
       }
-      await ad.start({ ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: true });
+      await ad.start({ ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true });
       a.lazy = false;
       a.resumeLast = undefined;
     })();
@@ -605,7 +609,7 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
 const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
 registerAppIpc({ getSinceAway: () => sinceAway, clearSinceAway: () => { sinceAway = null; }, getWin: () => win });
-registerAgentsIpc({ agents, router, agentState, opsDeps, remoteOps, getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory });
+registerAgentsIpc({ agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory });
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
 registerPreviousIpc({ renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
@@ -711,6 +715,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      ...(dev.DURBAR_DRIVER || dev.DURBAR_SHOT ? { backgroundThrottling: false } : {}), // FR-103: test runs only; the app keeps saving power when hidden
     },
   });
   // Links never navigate this window or open new windows; chat links go through app:openExternal (http/https only).

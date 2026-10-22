@@ -11,7 +11,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { NAME_RE } from '../shared/mcp';
-import { secretFlag } from '../shared/redact';
+import { maskTokenShapes, secretFlag, shQuote } from '../shared/redact';
 import type { McpServerSpec } from '../shared/mcp';
 import { isBroadRule } from '../shared/foldersetup';
 import type { FolderSetupApp, FolderSetupItem, RuleKind } from '../shared/foldersetup';
@@ -48,20 +48,12 @@ export const MAX_SHOWN = 8000;
 /**
  * FR-014 / FR-016 (review #424): what a hook command or a rule shows. Only real token shapes are hidden (GitHub and OpenAI/Anthropic
  * keys, bearer tokens, JWTs, AWS keys): their classes cannot contain shell syntax, so `--auth=$(curl …|sh)` or a backtick payload is
- * always shown. The flag- and name-based masking used for MCP arguments is NOT used here: it let a repository choose what is hidden.
+ * always shown. The shapes are `redact`'s own (`maskTokenShapes`, spec 012 FR-080), not a copy, so a token after `_` is hidden too.
+ * The flag- and name-based masking used for MCP arguments is NOT used here: it let a repository choose what is hidden.
  * `hidden` marks that something was replaced, so the window shows it and leaves the item unticked.
  */
-const TOKEN_SHAPES: RegExp[] = [
-  /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
-  /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
-  /\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/g,
-  /\bBearer\s{1,8}[A-Za-z0-9._~+/=-]{8,}/g,
-  /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}/g,
-  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
-];
 export function shownCommand(cmd: string): { text: string; hidden: boolean } {
-  let text = cmd;
-  for (const re of TOKEN_SHAPES) text = text.replace(re, '[secret hidden]');
+  const text = maskTokenShapes(cmd, '[secret hidden]');
   return { text, hidden: text !== cmd };
 }
 
@@ -158,21 +150,16 @@ export function secretEnvName(name: string): boolean {
   return secretFlag(name) || /private|cert/i.test(name);
 }
 
-/** Re-review #424 nit: one word as a POSIX shell would read it, so an argument with spaces or shell characters is not mistaken for several. */
-export function shownWord(w: string): string {
-  return /^[A-Za-z0-9_@%+=:,./~^-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`;
-}
-
 function mcpItem(app: FolderSetupApp, file: string, name: string, spec: McpServerSpec, note?: string): { item: FolderSetupItem; raw: RawItem } {
   const env = spec.type === 'stdio' ? Object.entries(spec.env ?? {}) : [];
   const envNames = env.map(([k]) => k);
   const headerNames = Object.keys(spec.headers ?? {}).slice(0, 30);
   const secretEnv = envNames.filter(secretEnvName);
   // FR-014 (re-review #424): the same token-shape masking as hooks and rules; anything hidden is marked (and starts unticked).
-  // Re-review at 7537f86: env values are shown too (`NAME=value` before the command), and every word is quoted where needed.
+  // Re-review at 7537f86: env values are shown too (`NAME=value` before the command), and every word is quoted where needed (`shQuote`, shared with spec 041; T057).
   // a secret-looking NAME shows `NAME=[hidden]` (never the value, never in the digest) and is listed as "value hidden"
-  const envParts = env.map(([k, v]) => (secretEnvName(k) ? { text: `${k}=[hidden]`, hidden: false } : shownCommand(`${k}=${shownWord(v)}`)));
-  const parts = [...envParts, ...(spec.type === 'stdio' ? [spec.command ?? '', ...(spec.args ?? [])].map((w) => shownCommand(shownWord(w))) : [shownCommand(spec.url ?? '')])];
+  const envParts = env.map(([k, v]) => (secretEnvName(k) ? { text: `${k}=[hidden]`, hidden: false } : shownCommand(`${k}=${shQuote(v)}`)));
+  const parts = [...envParts, ...(spec.type === 'stdio' ? [spec.command ?? '', ...(spec.args ?? [])].map((w) => shownCommand(shQuote(w))) : [shownCommand(spec.url ?? '')])];
   const detail = parts.map((p) => p.text).join(' ');
   const tokenHidden = parts.some((p) => p.hidden);
   const shell = spec.type === 'stdio' && envNames.length ? runsGivenCode(spec.command ?? '', spec.args ?? []) : undefined;

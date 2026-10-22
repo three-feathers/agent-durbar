@@ -1,5 +1,11 @@
 # Feature Specification: Permission modes, approvals and session grants
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: index
+title: Permission modes, approvals, session grants
+status: implemented; delta 2026-10-19: Windows grant keys, request ids (FR-088, FR-089); delta 2026-10-21: each session comes back in its own last mode, visibly (FR-090..FR-093)
+-->
+
 **Feature Branch**: `003-permissions-and-approvals` (reverse-engineered; milestones 1, 3, 5)
 **Created**: 2026-10-16
 **Status**: Implemented (reverse-engineered from `src/adapters/permissions.ts`, `copilot.ts`, `main.ts`, `app.js`, README)

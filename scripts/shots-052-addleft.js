@@ -16,7 +16,8 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const ROOT = path.join(__dirname, '..');
 const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
-const THEMES = ['clean', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
+// spec 008 FR-111: Clean Office and Retro on pull requests; every built-in theme with CHECK_ALL_THEMES=1 (nightly CI)
+const THEMES = process.env.CHECK_ALL_THEMES === '1' ? ['clean', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'] : ['clean', 'retro'];
 
 /* runs in the page */
 function topCheck(simple) {

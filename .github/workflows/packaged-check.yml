@@ -4,7 +4,8 @@ name: Packaged check
 # inside each packaged main process: ESM import from app.asar, a missing Claude Agent SDK, both harnesses registered,
 # the CLI fallback. No SDK, no claude or codex run, no credits, no publishing.
 # Not a pull-request check (it would slow every PR): it runs on main when the adapters, the main process or packaging
-# change, on demand, and on a pull request that changes the check itself.
+# change, on demand, nightly, and on a pull request that changes the check itself. Spec 008 FR-106 (owner decision 2026-10-22):
+# macOS nightly and by hand only; a nightly failure opens or updates an issue (nightly-watch.yml).
 on:
   push:
     branches: [main]
@@ -17,27 +18,32 @@ on:
       - 'scripts/pack-esm-*.js'
       - '.github/workflows/packaged-check.yml'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'scripts/pack-esm-*.js'
       - '.github/workflows/packaged-check.yml'
+  schedule:
+    - cron: '27 3 * * *' # nightly, every OS
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: packaged-check-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
     name: Packaged check (${{ matrix.os }})
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # FR-106: macOS only nightly and by hand
+        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest","windows-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
