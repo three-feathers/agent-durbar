@@ -107,6 +107,8 @@ Order: after Phases 2 and 3.
   - (d) every existing row of 12e, 12f, 12f2, 12f3 and 12k is unchanged and passes;
   - (e) docs: the spec entry gets the chosen S and B and the measurements and its status set to built; the cost `[KNOWN GAP]` in the masking follow-ups entry is marked closed; one CHANGELOG line under *Unreleased*; the `specs/README.md` row for 041; `npm run typecheck && npm run build && npm test` green.
 
+- [x] T069 (unit + driver) Agent text on the office floor is masked first (issue #541; spec `## Changes` 2026-10-22; FR-065). Files: `src/renderer/safetext.js` (new: `create({redact, cut})` gives `plain`, `mask`, `excerpt`; redact, then plain, then cut; fails closed), `src/renderer/app.js` (every `SHORT(plainMd(...))` of agent output goes through `excerpt`; intents and the stored task go through `mask`), `src/renderer/index.html`, `scripts/copy-assets.js`, `src/renderer/sim.ts` (`simreply=secrets`: the done reply holds three planted secrets built at run time). Tests: `scripts/test-safetext.ts` (order, `_` and `*` inside tokens, cut inside a token, fail closed, linear time on 200k characters), `scripts/check-done-desk-mask.js` in `check:ui` (a done reply with `ghp_`, `github_pat_` and `sk-` on a non-grown desk: none in the DOM text, any `title` or `aria-label`). Mutation (`plainMd` before `redact`) makes the driver fail. [FR-065]
+
 ## Backlog
 
 - [ ] T060 (needs-owner-approval) `[KNOWN GAP]` FR-056 peer-process refusal: refuse a connection whose peer process descends from one of Durbar's own runtime processes (Linux `SO_PEERCRED`, macOS `LOCAL_PEERPID`, Windows `GetNamedPipeClientProcessId`). Node `net` exposes none of these, so it needs a native module or a small per-OS helper: a new dependency, so owner approval first. Stronger than the FR-034 marker, which an agent can unset [FR-056, FR-034]
@@ -132,6 +134,7 @@ Order: after Phases 2 and 3.
 | FR-062 | T010 |
 | FR-063 | T020 |
 | FR-064 | T013, T038 |
+| FR-065 | T069 |
 | SC-001 | T015, T016 |
 | SC-002 | T031, T038 |
 | SC-003 | T040 |
