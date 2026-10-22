@@ -28,9 +28,11 @@ module.exports = async (ctx) => {
   const js = (c) => H.js(c);
   const emit = (e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${q(e)}))`);
   const page = async (label) => { const r = await js(`(${pageCheck.toString()})(false, 5)`); assert.deepStrictEqual(r.problems, [], `${label}: office page rules`); return r.info; };
+  /* a page load that the start-up page interrupts (ERR_FAILED -2, seen under heavy machine load) is tried once more */
+  const hload = async (o) => { try { await H.load(o); } catch (e) { if (!/ERR_FAILED|ERR_ABORTED/.test(String(e && e.message))) throw e; await ctx.sleep(500); await H.load(o); } };
   const settleWalk = () => H.until(`!document.querySelector('.walker.walking')`, 6000);
   const load = async (n, w, h, extra = {}) => {
-    await H.load({ w, h, query: { sim: String(n), simsched: '1', ...extra }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}&&!!document.querySelector('#stage .place.boss')` });
+    await hload({ w, h, query: { sim: String(n), simsched: '1', ...extra }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}&&!!document.querySelector('#stage .place.boss')` });
     await H.until(`document.querySelector('#stage .place.boss.busy')`, 6000); await ctx.sleep(1500); await settleWalk(); await ctx.sleep(300);
   };
   const tiles = () => js(`[...document.querySelectorAll('#stage .lobby .place')].map(p=>p.dataset.place)`);
@@ -156,7 +158,7 @@ module.exports = async (ctx) => {
 
   /* ---- a schedule fires: one letter flies from the Postbox to that desk (none under reduced motion) ---- */
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    await H.load({ w, h, query: { sim: '15', simsched: '1', simschedfire: '6' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=15&&!!document.querySelector('#stage .place.postbox')` });
+    await hload({ w, h, query: { sim: '15', simsched: '1', simschedfire: '6' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=15&&!!document.querySelector('#stage .place.postbox')` });
     await js(`window.__letters=0;new MutationObserver(m=>m.forEach(r=>r.addedNodes.forEach(n=>{if(n.classList&&n.classList.contains('letter'))window.__letters++;}))).observe(document.getElementById('walkers'),{childList:true})`);
     assert.ok(await H.until(`(document.querySelector('#stage .place.postbox').getAttribute('aria-label')||'').includes('Scheduled check-in')`, 4000), `${w}: the one-off run is listed`);
     if (!REDUCED) {
