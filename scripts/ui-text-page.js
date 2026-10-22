@@ -190,7 +190,22 @@
     }
   }
   /* FR-170: the Copy button never covers text; the streaming caret is not after it */
+  /* FR-174 (#453): the composer placeholder is one line at the textarea's own width; a shortened one ends in an ellipsis and the full text is in the title */
+  function placeholderRule(root, add) {
+    const t = root.querySelector('#msgInput'); if (!t || !vis(t) || !t.placeholder) return;
+    const cs = getComputedStyle(t), pcs = getComputedStyle(t, '::placeholder');
+    const w = t.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const m = document.createElement('div');
+    m.style.cssText = `position:fixed;left:0;top:0;visibility:hidden;white-space:pre-wrap;overflow-wrap:normal;width:${w}px;font:${cs.font};letter-spacing:${pcs.letterSpacing};line-height:${cs.lineHeight}`;
+    m.textContent = t.placeholder; document.body.appendChild(m);
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2, lines = Math.round(m.getBoundingClientRect().height / lh);
+    m.remove();
+    if (lines > 1) add('placeholder-line', root, t, `the placeholder "${snip(t.placeholder, 50)}" takes ${lines} lines in ${Math.round(w)}px`);
+    const full = (t.getAttribute('aria-label') || '') + '\u2026';
+    if (t.placeholder !== full && !(t.placeholder.endsWith('\u2026') && t.title === t.getAttribute('aria-label'))) add('placeholder-line', root, t, `the shortened placeholder "${snip(t.placeholder, 50)}" has no ellipsis or no title with the full text`);
+  }
   function chatRules(root, add) {
+    placeholderRule(root, add);
     for (const b of root.querySelectorAll('.cp-btn,.md .copy')) {
       if (!vis(b)) continue;
       const ch = document.getElementById('chat'); // the text around it has to be on screen to be measured: only the chat scrolls, never the page
@@ -354,7 +369,7 @@
 
   /* FR-168: a static tooltip explains a control in at most 120 characters; a data tooltip (the full text of a cut name, a card or the totals) may be
      longer, at most 300 characters and 8 lines. Whole page: chrome titles are not in a surface's root. */
-  const DATA_TIP = '.gchip,.gchip *,.gp-row,.ptask,.ab-q,.ab-q *,.q-opt,.place,.intent,.room-aiu,.chip,.chip *,.desk,.helper,.lrow,.lrow *,.sitem,.sitem *,#stats,#stats *,.stat-aiu,.room-head *,.room-path,.prev-row *,.pal-o *,.ib-n,.ib-f,.by-chip,.mdl-sub,.dpick-t,.hs-name b,.sc-t b,.grant,.chip.att-chip,.att,.cmdbox,.pill,.ph-t,.folder,.sub-title,.lmood,.tile,.ttab td,.ttab th';
+  const DATA_TIP = '#panelTitle,#msgInput,.gchip,.gchip *,.gp-row,.ptask,.ab-q,.ab-q *,.q-opt,.place,.intent,.room-aiu,.chip,.chip *,.desk,.helper,.lrow,.lrow *,.sitem,.sitem *,#stats,#stats *,.stat-aiu,.room-head *,.room-path,.prev-row *,.pal-o *,.ib-n,.ib-f,.by-chip,.mdl-sub,.dpick-t,.hs-name b,.sc-t b,.grant,.chip.att-chip,.att,.cmdbox,.pill,.ph-t,.folder,.sub-title,.lmood,.tile,.ttab td,.ttab th';
   function tooltips() {
     const out = [];
     document.querySelectorAll('[title]').forEach((el) => {

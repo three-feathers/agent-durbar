@@ -1232,6 +1232,13 @@ function renderAttached(){
   const pa=byId(ui.selected); /* spec 066 FR-006: the one-shot "Plan first" flag shows as a chip above the composer */
   box.innerHTML=(pa&&pa.planNext?`<span class="att plan-chip" title="The next message asks the agent for a plan first; nothing changes until you approve it."><span>Plan first</span><button type="button" data-planoff="1" aria-label="Don't plan first">${ICON('x')}</button></span>`:'')+attached.map((x,i)=>`<span class="att ${x.img?'img':''}" title="${esc(x.path||x.name)}${x.size?' ('+fmtSize(x.size)+')':''}">${x.img?ICON('img'):ICON('file')}<span>${esc(x.name)}</span><button type="button" data-rm="${i}" aria-label="Remove ${esc(x.name)}">${ICON('x')}</button></span>`).join('')+(attached.length?`<span class="att-count" aria-live="polite">${attached.length}/${MAX_ATT_FILES}</span>`:'');
 }
+/* spec 052 FR-174 (#453): the placeholder is one line. A textarea placeholder wraps and takes no text-overflow, so the name is cut here, from the measured width of the textarea, and ends in an ellipsis; the full text stays in the aria-label and the title. */
+let phCtx=null,phRO=null;
+function fitPlaceholder(){const t=$('msgInput');if(!t||!t.dataset.ph)return;const full=t.dataset.ph,cs=getComputedStyle(t),w=t.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);if(!(w>0))return;
+  if(!phCtx)phCtx=document.createElement('canvas').getContext('2d');phCtx.font=cs.font;const fits=x=>phCtx.measureText(x).width<=w-1;
+  let text=full+'\u2026';
+  if(!fits(text)){let lo=0,hi=full.length;while(lo<hi){const m=(lo+hi+1)>>1;if(fits(full.slice(0,m).trimEnd()+'\u2026'))lo=m;else hi=m-1;}text=full.slice(0,lo).trimEnd()+'\u2026';}
+  if(t.placeholder!==text)t.placeholder=text;if(text===full+'\u2026')t.removeAttribute('title');else t.title=full;}
 function autoGrow(){const t=$('msgInput');if(!t)return;t.style.height='auto';t.style.height=Math.min(110,t.scrollHeight)+'px';setSend();}
 function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a=byId(ui.selected);const busy=a&&chats[a.id]&&chats[a.id].busy;b.setAttribute('aria-disabled',String(!!busy||(!t.value.trim()&&!attached.length)));}
 
@@ -1402,7 +1409,7 @@ function openPanel(id,focus){
    <div class="answer-bar" id="answerBar" role="region" aria-label="Waiting for your answer" hidden></div>
    <div class="composer"><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
     <div class="inbox"><button class="ib" id="attFile" type="button" aria-label="Attach file" title="Attach file">${ICON('file')}</button><button class="ib" id="attImg" type="button" aria-label="Attach image" title="Attach image">${ICON('img')}</button>
-     <textarea id="msgInput" rows="1" placeholder="Message ${esc(a.name)}…" aria-label="Message ${esc(a.name)}"></textarea>
+     <textarea id="msgInput" rows="1" placeholder="Message ${esc(a.name)}…" aria-label="Message ${esc(a.name)}" data-ph="Message ${esc(a.name)}"></textarea>
      <button class="ib send" id="sendBtn" type="button" aria-label="Send message" aria-disabled="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h11M9.5 4.5L14 9l-4.5 4.5"/></svg></button></div>
     <p class="hint">${esc(composerHint(a))}</p></div>
    <div class="drop-ov" id="dropOv" aria-hidden="true"><div>Drop to attach<small>Up to 5 files, 10 MB each. Images: PNG, JPEG, GIF, WebP, BMP.</small></div></div></div>`;
@@ -1460,6 +1467,7 @@ function openPanel(id,focus){
   if(!window.__grantsOutside){window.__grantsOutside=true;document.addEventListener('click',e=>{const path=e.composedPath();if(grantsOpen&&!path.some(n=>n.id==='grants')&&!path.some(n=>n.classList&&n.classList.contains('dlg-ov')))closeGrants(false);}); /* a click in the Revoke all dialog (Cancel) is not outside: it behaves like Esc and keeps the list open */ /* composedPath: a revoke redraws the list, so the clicked button may already be detached here */}
   $('attached').onclick=e=>{const po=e.target.closest('[data-planoff]');if(po){const pa=byId(ui.selected);if(pa)pa.planNext=false;renderAttached();const m=$('msgInput');if(m)m.focus();return;}const b=e.target.closest('[data-rm]');if(b){attached.splice(+b.dataset.rm,1);renderAttached();setSend();attNotice([]);}};
   const input=$('msgInput');
+  fitPlaceholder();if(window.ResizeObserver){if(phRO)phRO.disconnect();else phRO=new ResizeObserver(fitPlaceholder);phRO.observe(input);}
   input.addEventListener('input',autoGrow);
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
@@ -2020,7 +2028,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;

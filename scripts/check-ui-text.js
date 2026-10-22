@@ -271,6 +271,7 @@ module.exports = async (ctx) => {
     { name: 'list-view-long', base: 'list-view', query: { simnames: 'long' } },
     { name: 'palette-long', base: 'palette', query: { simnames: 'long' } },
     { name: 'chat-first-long', base: 'chat-first', query: { simnames: 'long' } },
+    { name: 'chat-title-long', base: 'chat-first', query: { simtitles: 'long' } }, // T175: a 120-character session title: the composer placeholder stays on one line (FR-174)
     { name: 'chat-reply-long', base: 'chat-reply', query: { simreply: 'long' } }, // T155: replies and sub-agent prompts that run to the right edge (the Copy button covers no text)
   ];
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];

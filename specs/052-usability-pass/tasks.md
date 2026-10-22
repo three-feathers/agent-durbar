@@ -291,9 +291,9 @@
   - Check: mutation `#efe9dd` back on `.fl-floor` fails `literal-light`; restored byte for byte.
 
 ## FR-174: the composer placeholder stays on one line (2026-10-22, #453)
-- [ ] T173 Spec delta FR-174
-- [ ] T174 `fitPlaceholder()` in `app.js`: placeholder cut from a measured width, `title` with the full text, refit on resize [FR-174]
+- [x] T173 Spec delta FR-174
+- [x] T174 `fitPlaceholder()` in `app.js`: placeholder cut from a measured width, `title` with the full text, refit on resize [FR-174]
   - Accept: with a 60-character name the placeholder is one line ending in `…` at 1440x900 and 1280x800; a short name is untouched.
-- [ ] T175 Rule `placeholder-line` in `check-ui-text` / `ui-text-page.js` for the chat surfaces (also `simnames=long`) [FR-174, FR-171]
+- [x] T175 Rule `placeholder-line` in `check-ui-text` / `ui-text-page.js` for the chat surfaces (also `simnames=long`) [FR-174, FR-171]
   - Check: mutation (`fitPlaceholder` made a no-op) fails `placeholder-line`; code restored byte for byte.
-- [ ] T176 Screenshots before and after (both sizes, light) in `docs/screenshots/052-placeholder-*`; CHANGELOG line; spec tags
+- [x] T176 Screenshots before and after (both sizes, light) in `docs/screenshots/052-placeholder-*`; CHANGELOG line; spec tags
