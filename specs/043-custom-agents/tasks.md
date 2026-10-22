@@ -24,3 +24,4 @@
   - [x] T012e docs: README, CHANGELOG, specs index
 - [x] T013 (2026-10-21, owner decisions on #488) Agent Success Profile and Standard agent templates, the default preselected; editor words "Agent Success Profiles" [FR-018, FR-019]
 - [x] T014 (2026-10-22, review on #488) New profile sends a folder id, main accepts it only if it is an office folder now [FR-020]; `test:profilefiles`; Copilot `*.md` vs `*.agent.md` recorded as a known gap
+- [x] T015 (2026-10-22, review round 2 on #488) Claude files use the adapter's 64 KB cap [FR-021]; the cap on the encoded bytes [FR-022]; Windows device names refused in main and the form [FR-023]; the hint shows the real user folders [FR-024]; editor and form sizes per spec 052 FR-167 and three `check:ui-text` surfaces [FR-025]; tests for the check before `mkdir` and the atomic rename

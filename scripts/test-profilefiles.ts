@@ -8,9 +8,9 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { parseClaudeAgent } from '../src/adapters/claudeAgents';
+import { listClaudeAgents, MAX_AGENT_BYTES, parseClaudeAgent } from '../src/adapters/claudeAgents';
 import { DEFAULT_TEMPLATE, PROFILE_TEMPLATES, profileTemplate, SUCCESS_SECTIONS } from '../src/shared/profiletemplates';
-import { createProfileFile, encodeLike, fileIdOf, folderIdOf, headOf, listProfileFiles, MAX_PROFILE_BYTES, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile } from '../src/main/profilefiles';
+import { atomicOps, createProfileFile, defaultProfileEnv, encodeLike, fileIdOf, folderIdOf, headOf, isProfileName, listProfileFiles, maxBytesFor, MAX_PROFILE_BYTES, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../src/main/profilefiles';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-profilefiles-'));
 const WS = path.join(tmp, 'ws');
@@ -35,6 +35,17 @@ const canLink = (() => {
   const d = dirs();
   assert.deepStrictEqual(d.map((x) => `${x.app}:${x.scope}:${path.relative(tmp, x.dir).replace(/\\/g, '/')}`), ['copilot:folder:ws/.github/agents', 'copilot:user:home/.copilot/agents', 'claude:folder:ws/.claude/agents', 'claude:user:home/.claude/agents']);
   assert.deepStrictEqual(profileDirs(['relative/path'], env).filter((x) => x.scope === 'folder'), [], 'relative folders are ignored');
+}
+
+// review on #488 (change 7): CLAUDE_CONFIG_DIR moves the Claude user folder, and profiles:listFiles hands the real user folders to the New profile hint
+{
+  const CFG = path.join(tmp, 'cfg');
+  assert.strictEqual(defaultProfileEnv({ CLAUDE_CONFIG_DIR: CFG }, HOME).claudeConfigDir, CFG, 'CLAUDE_CONFIG_DIR is used');
+  assert.strictEqual(defaultProfileEnv({}, HOME).claudeConfigDir, path.join(HOME, '.claude'), 'without it: ~/.claude');
+  const d = profileDirs([WS], { home: HOME, claudeConfigDir: CFG });
+  assert.strictEqual(d.find((x) => x.app === 'claude' && x.scope === 'user')!.dir, path.join(CFG, 'agents'), 'the Claude user folder follows the config dir');
+  assert.deepStrictEqual(userAgentDirs(d), { copilot: path.join(HOME, '.copilot', 'agents'), claude: path.join(CFG, 'agents') }, 'the user folders for the hint');
+  assert.deepStrictEqual(userAgentDirs(profileDirs([], env)), { copilot: path.join(HOME, '.copilot', 'agents'), claude: path.join(CLAUDE, 'agents') });
 }
 
 // list: front matter name and description, file name, writable; non-md and dot files skipped
@@ -79,8 +90,11 @@ const revId = fileIdOf(REV);
 {
   const r = readProfileFile(dirs(), revId);
   if (!r.ok) throw new Error('read');
+  const ino0 = fs.statSync(REV).ino;
   const s = saveProfileFile(dirs(), revId, r.text.replace('You review.', 'You review carefully.'), r.sha256, false);
   assert.ok(s.ok, JSON.stringify(s));
+  // review on #488 (change 3): a new file was renamed over the old one, not written in place (POSIX inode; Windows has no stable one here)
+  if (process.platform !== 'win32') assert.notStrictEqual(fs.statSync(REV).ino, ino0, 'the save renamed a new file over the original (atomic)');
   const disk = fs.readFileSync(REV, 'utf8');
   assert.ok(disk.includes('You review carefully.\r\n'), 'CRLF kept');
   assert.ok(!/[^\r]\n/.test(disk), 'no bare LF');
@@ -92,6 +106,28 @@ const revId = fileIdOf(REV);
   const bom = encodeLike('a\nb\n', Buffer.from('﻿x\r\ny\r\n', 'utf8')).toString('utf8');
   assert.strictEqual(bom, '﻿a\r\nb\r\n', 'BOM and CRLF kept');
   assert.strictEqual(encodeLike('a\r\nb', Buffer.from('x\ny', 'utf8')).toString('utf8'), 'a\nb', 'LF file stays LF');
+}
+
+// review on #488 (change 3): a rename that fails leaves the original bytes and no temporary file
+{
+  const r = readProfileFile(dirs(), revId);
+  if (!r.ok) throw new Error('read');
+  const before = fs.readFileSync(REV);
+  const rename = atomicOps.rename;
+  let called = 0;
+  atomicOps.rename = () => {
+    called++;
+    throw new Error('EBUSY: simulated');
+  };
+  try {
+    const s = saveProfileFile(dirs(), revId, 'replaced text\n', r.sha256, false);
+    assert.ok(!s.ok && !s.conflict, 'a failed rename is a failed save');
+  } finally {
+    atomicOps.rename = rename;
+  }
+  assert.strictEqual(called, 1, 'the save goes through the rename');
+  assert.ok(fs.readFileSync(REV).equals(before), 'the original bytes are untouched');
+  assert.deepStrictEqual(fs.readdirSync(path.dirname(REV)).filter((n) => n.endsWith('.tmp')), [], 'and the temporary file is removed');
 }
 
 // conflict: changed elsewhere since it was read -> nothing written; overwrite writes; a removed file is a conflict
@@ -129,13 +165,79 @@ const revId = fileIdOf(REV);
   fs.unlinkSync(big);
 }
 
+// review on #488 (change 4): the cap is checked on the bytes written (CRLF and BOM restored), so a save never makes a file too big to reopen
+{
+  const crlf = path.join(WS, '.github', 'agents', 'crlf.agent.md');
+  const orig = Buffer.from('\ufeff---\r\nname: c\r\n---\r\n\r\nshort\r\n', 'utf8');
+  fs.writeFileSync(crlf, orig);
+  const id = fileIdOf(crlf);
+  const r = readProfileFile(dirs(), id);
+  if (!r.ok) throw new Error('read');
+  const lines = Math.floor(MAX_PROFILE_BYTES / 2) - 8; // as LF text a little under the cap; with CRLF and the BOM over it
+  const over = 'x\n'.repeat(lines);
+  assert.ok(Buffer.byteLength(over) <= MAX_PROFILE_BYTES && encodeLike(over, orig).length > MAX_PROFILE_BYTES, 'fixture: under the cap as LF text, over it as the file');
+  const s = saveProfileFile(dirs(), id, over, r.sha256, false);
+  assert.ok(!s.ok && !s.conflict && /larger than 256 KB/.test(s.error), 'refused: the file would pass the cap');
+  assert.ok(fs.readFileSync(crlf).equals(orig), 'nothing written');
+  assert.deepStrictEqual(fs.readdirSync(path.dirname(crlf)).filter((n) => n.endsWith('.tmp')), [], 'no temp file');
+  const fits = 'x\n'.repeat(Math.floor((MAX_PROFILE_BYTES - 3) / 3)); // CRLF + BOM: exactly within the cap
+  assert.ok(encodeLike(fits, orig).length <= MAX_PROFILE_BYTES);
+  const ok = saveProfileFile(dirs(), id, fits, r.sha256, false);
+  assert.ok(ok.ok, 'a file that fits once encoded saves');
+  assert.strictEqual(readProfileFile(dirs(), id).ok, true, 'and opens again');
+  fs.unlinkSync(crlf);
+}
+
+// review on #488 (change 5): Claude Code files use the Claude adapter's cap (64 KB), so the editor never keeps a file the Profile menu then drops
+{
+  assert.strictEqual(maxBytesFor('claude'), MAX_AGENT_BYTES, 'one constant: the adapter\'s');
+  assert.strictEqual(maxBytesFor('copilot'), MAX_PROFILE_BYTES);
+  const head = '---\nname: big65\ndescription: d\n---\n\n';
+  const c65 = path.join(WS, '.claude', 'agents', 'big65.md');
+  fs.writeFileSync(c65, head + 'x'.repeat(65 * 1024 - head.length));
+  const info = listProfileFiles(dirs()).find((f) => f.fileName === 'big65.md')!;
+  assert.ok(info.tooBig && !info.writable && /Claude Code does not load it/.test(info.note || ''), 'a 65 KB Claude file is listed with a warning, not editable');
+  assert.strictEqual(readProfileFile(dirs(), info.id).ok, false, 'and does not open here');
+  assert.ok(!listClaudeAgents([WS], CLAUDE).some((a) => a.profile.id === 'big65'), 'the adapter skips it too (same cap)');
+  fs.unlinkSync(c65);
+  const cop65 = path.join(WS, '.github', 'agents', 'big65.agent.md');
+  fs.writeFileSync(cop65, head + 'x'.repeat(65 * 1024 - head.length));
+  const ci = listProfileFiles(dirs()).find((f) => f.fileName === 'big65.agent.md')!;
+  assert.ok(!ci.tooBig && ci.writable, 'a 65 KB Copilot file is fine (256 KB cap)');
+  fs.unlinkSync(cop65);
+  // saving a small Claude file up to 65 KB is refused; exactly 64 KB saves and stays in the adapter's list
+  const small = path.join(WS, '.claude', 'agents', 'grow.md');
+  fs.writeFileSync(small, '---\nname: grow\ndescription: d\n---\n\nx\n');
+  const gid = fileIdOf(small);
+  const g = readProfileFile(dirs(), gid);
+  if (!g.ok) throw new Error('read');
+  const before = fs.readFileSync(small);
+  const s = saveProfileFile(dirs(), gid, head.replace('big65', 'grow') + 'x'.repeat(65 * 1024), g.sha256, false);
+  assert.ok(!s.ok && /Claude Code does not load/.test(s.error), 'a Claude file over 64 KB is not saved');
+  assert.ok(fs.readFileSync(small).equals(before), 'nothing written');
+  const h2 = head.replace('big65', 'grow');
+  const s64 = saveProfileFile(dirs(), gid, h2 + 'x'.repeat(MAX_AGENT_BYTES - Buffer.byteLength(h2)), g.sha256, false);
+  assert.ok(s64.ok, 'exactly 64 KB saves');
+  assert.ok(listClaudeAgents([WS], CLAUDE).some((a) => a.profile.id === 'grow'), 'and Claude Code still loads it');
+  fs.unlinkSync(small);
+}
+
 const W0 = folderIdOf(WS);
 // create: name rules, place = folder id or user, exclusive, template, Copilot .agent.md / Claude .md, folder made inside the office folder
 {
-  for (const bad of ['../x', 'a/b', 'a\\b', '..', '.hidden', '', 'x'.repeat(65), 'a b', 'ok\0', 42]) {
+  // Windows device names (review on #488, change 6): any case, with or without an extension
+  const RESERVED = ['CON', 'con', 'Prn', 'AUX', 'nul', 'NUL.txt', 'con.backup', 'COM1', 'com9', 'LPT1', 'lpt9.x'];
+  for (const bad of ['../x', 'a/b', 'a\\b', '..', 'a..b', '.hidden', '', 'x'.repeat(65), 'a b', 'ok\0', 42, ...RESERVED]) {
     const r = createProfileFile(dirs(), 'claude', W0, bad);
     assert.ok(!r.ok, `name refused: ${JSON.stringify(bad)}`);
   }
+  for (const n of RESERVED) assert.ok(/reserved on Windows/.test((createProfileFile(dirs(), 'copilot', W0, n) as { error: string }).error), `${n}: says why`);
+  assert.deepStrictEqual(fs.readdirSync(path.join(WS, '.claude', 'agents')).filter((n) => /^(con|prn|aux|nul|com|lpt)/i.test(n)), [], 'no device-named file written');
+  for (const good of ['console', 'com10', 'com0', 'lpt', 'nullable', 'auxiliary', 'conx', 'my-con']) assert.ok(isProfileName(good), `allowed: ${good}`);
+  // the form's copy of the rule (profileeditor.js validName) answers the same as main for every name
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const PEN = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'profileeditor.js')) as { validName(n: unknown): boolean };
+  for (const n of ['reviewer', 'Docs_writer-2.1', 'console', 'com10', 'a..b', '../x', '.x', '', 'x'.repeat(64), 'x'.repeat(65), ...RESERVED]) assert.strictEqual(PEN.validName(n), isProfileName(n), `form and main agree on ${JSON.stringify(n)}`);
   assert.ok(!createProfileFile(dirs(), 'codex', W0, 'x').ok, 'unknown app');
   assert.ok(!createProfileFile(dirs(), 'claude', 0, 'x').ok, 'an index is not a place any more (review on #488)');
   assert.ok(!createProfileFile(dirs(), 'claude', 'f'.repeat(32), 'x').ok, 'an unknown folder id is refused');
@@ -263,6 +365,15 @@ if (canLink) {
   assert.ok(!listProfileFiles(d2).some((f) => f.folder === WS2), 'files behind a linked .claude are not listed');
   assert.ok(!createProfileFile(d2, 'claude', folderIdOf(WS2), 'y').ok, 'and nothing is created through it');
   assert.ok(!fs.existsSync(path.join(OUTSIDE, 'agents', 'y.md')));
+  // review on #488 (change 2): .claude links to an existing outside folder that has no agents yet: refused BEFORE mkdir, so agents/ is never made out there
+  const OUT2 = path.join(tmp, 'outside2');
+  fs.mkdirSync(OUT2);
+  const WS4 = path.join(tmp, 'ws4');
+  fs.mkdirSync(WS4);
+  fs.symlinkSync(OUT2, path.join(WS4, '.claude'), 'dir');
+  const r4 = createProfileFile(profileDirs([WS4], env), 'claude', folderIdOf(WS4), 'w');
+  assert.ok(!r4.ok && /outside this folder/.test(r4.error), 'a .claude linked to an outside folder is refused');
+  assert.ok(!fs.existsSync(path.join(OUT2, 'agents')), 'and no agents folder was created outside');
   // a linked home folder for the user scope is fine (dotfiles setups): the agent folder itself is the root
   console.log('symlink cases checked');
 } else console.log('symlink cases skipped: this account cannot create symbolic links');

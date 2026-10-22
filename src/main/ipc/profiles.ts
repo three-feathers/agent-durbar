@@ -6,7 +6,7 @@ import { errText } from '../agentops';
 import type { AgentTrustStore } from '../agenttrust';
 import { hashAgentFile } from '../agenttrust';
 import { PROFILE_ID } from '../folders';
-import { createProfileFile, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile } from '../profilefiles';
+import { createProfileFile, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../profilefiles';
 import { openInVSCode } from '../vscode';
 import type { EnsureLive } from './types';
 
@@ -67,7 +67,7 @@ export function register(deps: ProfilesIpcDeps): void {
   const dirs = () => profileDirs(officeFolders());
   ipcHandle('profiles:listFiles', () => {
     const d = dirs();
-    return { ok: true, folders: profileFolders(d), files: listProfileFiles(d) };
+    return { ok: true, folders: profileFolders(d), files: listProfileFiles(d), userDirs: userAgentDirs(d) }; // FR-013: the New profile hint shows the real user folders (CLAUDE_CONFIG_DIR)
   });
   ipcHandle('profiles:read', (_e, id: unknown) => readProfileFile(dirs(), id));
   ipcHandle('profiles:save', (e, id: unknown, text: unknown, baseSha: unknown, overwrite: unknown) => {

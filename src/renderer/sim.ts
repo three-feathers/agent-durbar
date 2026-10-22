@@ -1241,7 +1241,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, profile: p };
       },
       // spec 043 FR-017: profile files in memory
-      listProfileFiles: async () => ({ ok: true, folders: pfFolders(), files: simPF.map(pfInfo) }),
+      listProfileFiles: async () => ({ ok: true, folders: pfFolders(), files: simPF.map(pfInfo), userDirs: { copilot: '~/.copilot/agents', claude: '~/.claude/agents' } }),
       readProfileFile: async (fileId) => {
         const f = simPF.find((x) => x.id === fileId);
         return f ? { ok: true as const, info: pfInfo(f), text: f.text, sha256: pfHash(f.text), eol: 'lf' as const } : { ok: false as const, error: 'That profile file is not in the list any more.' };
@@ -1255,7 +1255,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true as const, sha256: pfHash(f.text), info: pfInfo(f) };
       },
       createProfileFile: async (app, place, name, template) => {
-        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) return { ok: false as const, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) || name.includes('..') || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(name)) return { ok: false as const, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
         const folder = place === 'user' ? undefined : pfFolders().find((x) => x.id === place)?.path;
         if (place !== 'user' && !folder) return { ok: false as const, error: 'That folder is not in the office any more: choose where to save it again.' };
         const dir = place === 'user' ? (app === 'copilot' ? '~/.copilot/agents' : '~/.claude/agents') : folder + (app === 'copilot' ? '/.github/agents' : '/.claude/agents');

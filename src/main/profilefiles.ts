@@ -9,6 +9,7 @@ import { createHash, randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { MAX_AGENT_BYTES } from '../adapters/claudeAgents';
 import { agentDirsFor } from '../adapters/copilot';
 import type { ProfileFileInfo, ProfileFolderInfo } from '../shared/api';
 import { DEFAULT_TEMPLATE, profileTemplate } from '../shared/profiletemplates';
@@ -20,6 +21,10 @@ export type ProfileApp = 'copilot' | 'claude';
 export const PROFILE_APPS: readonly ProfileApp[] = ['copilot', 'claude'];
 export const APP_LABEL: Record<ProfileApp, string> = { copilot: 'GitHub Copilot', claude: 'Claude Code' };
 export const MAX_PROFILE_BYTES = 256 * 1024;
+/** The most a profile file may hold for its app (FR-012): Claude Code files use the Claude adapter's own cap (a bigger file is skipped
+ * by `listClaudeAgents`, so it would vanish from the Profile menu); Copilot files the editor's 256 KB. */
+export const maxBytesFor = (app: ProfileApp): number => (app === 'claude' ? MAX_AGENT_BYTES : MAX_PROFILE_BYTES);
+const kb = (n: number): string => `${n / 1024} KB`;
 export const MAX_PROFILE_FOLDERS = 50;
 export const MAX_FILES_PER_DIR = 50;
 /** All files listed at most (50 folders x 2 apps x 50 files would be 5,000); the list reads only the first 8 KB of each. */
@@ -27,6 +32,11 @@ export const MAX_FILES = 500;
 const HEAD_BYTES = 8 * 1024;
 /** A new profile's name (FR-011): a letter or digit first, no separators, no `..` possible as a whole name. */
 export const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/** Windows device names (constitution VI): `CON.md` or `con.backup.md` is a device there, so a repository profile with such a name
+ * would break Windows checkouts. Refused on every platform, any case, with or without an extension (FR-011). */
+export const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+/** A new profile's name is acceptable (FR-011): the pattern, no `..`, not a Windows device name. profileeditor.js keeps a copy (test:profilefiles keeps them equal). */
+export const isProfileName = (name: unknown): name is string => typeof name === 'string' && PROFILE_NAME.test(name) && !name.includes('..') && !WINDOWS_RESERVED_NAME.test(name);
 export const PROFILE_FILE_ID = /^[0-9a-f]{32}$/;
 
 /** One folder a profile file may live in. `folder` is the office folder it belongs to (scope `folder`). */
@@ -44,7 +54,7 @@ export interface ProfileEnv {
   home: string;
   claudeConfigDir: string;
 }
-export const defaultProfileEnv = (): ProfileEnv => ({ home: os.homedir(), claudeConfigDir: process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude') });
+export const defaultProfileEnv = (env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): ProfileEnv => ({ home, claudeConfigDir: env.CLAUDE_CONFIG_DIR || path.join(home, '.claude') });
 
 /** The agent folders for the office's folders and the user (FR-010): the same folders the adapters load profiles from. */
 export function profileDirs(folders: readonly string[], env: ProfileEnv = defaultProfileEnv()): ProfileDir[] {
@@ -55,6 +65,13 @@ export function profileDirs(folders: readonly string[], env: ProfileEnv = defaul
   out.push({ app: 'copilot', scope: 'user', dir: cop[cop.length - 1] });
   for (const f of fs0) out.push({ app: 'claude', scope: 'folder', dir: path.join(f, '.claude', 'agents'), folder: f, root: f });
   out.push({ app: 'claude', scope: 'user', dir: path.join(env.claudeConfigDir, 'agents') });
+  return out;
+}
+
+/** The user agent folders (FR-013 hint): where a new profile in "your user folder" goes, per app, as `profileDirs` has them. */
+export function userAgentDirs(dirs: readonly ProfileDir[]): Partial<Record<ProfileApp, string>> {
+  const out: Partial<Record<ProfileApp, string>> = {};
+  for (const d of dirs) if (d.scope === 'user' && !out[d.app]) out[d.app] = d.dir;
   return out;
 }
 
@@ -178,7 +195,8 @@ function scan(dirs: readonly ProfileDir[], wantId?: string): Found[] {
         }
       }
       const size = link ? fs.statSync(file).size : st.size;
-      const tooBig = size > MAX_PROFILE_BYTES;
+      const max = maxBytesFor(d.app);
+      const tooBig = size > max;
       let head: { name?: string; description?: string } = {};
       if (!tooBig) {
         try {
@@ -188,7 +206,7 @@ function scan(dirs: readonly ProfileDir[], wantId?: string): Found[] {
         }
       }
       const writable = !link && !tooBig && writableNow(file) && writableNow(d.dir);
-      const note = link ? 'A link: edit the file it points to.' : tooBig ? `Larger than ${MAX_PROFILE_BYTES / 1024} KB: open it in an editor.` : !writable ? 'You cannot write this file.' : undefined;
+      const note = link ? 'A link: edit the file it points to.' : tooBig ? (d.app === 'claude' ? `Larger than ${kb(max)}: Claude Code does not load it. Open it in an editor.` : `Larger than ${kb(max)}: open it in an editor.`) : !writable ? 'You cannot write this file.' : undefined;
       out.push({
         info: {
           id: fileIdOf(file),
@@ -255,11 +273,14 @@ export function readProfileFile(dirs: readonly ProfileDir[], id: unknown): Profi
   } catch {
     return { ok: false, error: 'The file could not be read.' };
   }
-  if (buf.length > MAX_PROFILE_BYTES) return { ok: false, error: 'The file is too large.' };
+  if (buf.length > maxBytesFor(f.info.app)) return { ok: false, error: 'The file is too large.' };
   const raw = buf.toString('utf8');
   const text = raw.replace(/^﻿/, '').replace(/\r\n/g, '\n');
   return { ok: true, info: f.info, text, sha256: sha256(buf), eol: eolOf(raw) };
 }
+
+/** The rename step of an atomic save; tests swap it to prove a failed rename leaves the original file and no temporary file (FR-012). */
+export const atomicOps = { rename: (from: string, to: string): void => fs.renameSync(from, to) };
 
 /** Writes `data` to `file` through a temporary file in the same folder and a rename. */
 function writeAtomic(file: string, data: Buffer, exclusive = false): void {
@@ -277,7 +298,7 @@ function writeAtomic(file: string, data: Buffer, exclusive = false): void {
   }
   fs.writeFileSync(tmp, data, { flag: 'wx', ...(mode !== undefined ? { mode } : {}) });
   try {
-    fs.renameSync(tmp, file);
+    atomicOps.rename(tmp, file);
   } catch (err) {
     try {
       fs.unlinkSync(tmp);
@@ -299,7 +320,7 @@ export function encodeLike(text: string, original: Buffer | undefined): Buffer {
 
 export function saveProfileFile(dirs: readonly ProfileDir[], id: unknown, text: unknown, baseSha: unknown, overwrite: unknown): { ok: true; sha256: string; info: ProfileFileInfo } | Fail {
   if (typeof text !== 'string') return { ok: false, error: 'Nothing to save.' };
-  if (Buffer.byteLength(text, 'utf8') > MAX_PROFILE_BYTES) return { ok: false, error: `The text is larger than ${MAX_PROFILE_BYTES / 1024} KB.` };
+  if (Buffer.byteLength(text, 'utf8') > MAX_PROFILE_BYTES) return { ok: false, error: `The text is larger than ${kb(MAX_PROFILE_BYTES)}.` }; // cheap first check before any disk access
   const f = resolveId(dirs, id);
   if (!f) return { ok: false, error: 'The file was removed or moved since you opened it.', conflict: true };
   if (!f.info.writable) return { ok: false, error: f.info.note ?? 'You cannot write this file.' };
@@ -311,6 +332,10 @@ export function saveProfileFile(dirs: readonly ProfileDir[], id: unknown, text: 
   }
   if (overwrite !== true && (!cur || typeof baseSha !== 'string' || sha256(cur) !== baseSha)) return { ok: false, conflict: true, error: 'The file changed on disk since you opened it.' };
   const data = encodeLike(text, cur);
+  // the cap is checked on the bytes that will be written (CRLF and a BOM make them longer than the text), so a save never makes a file that cannot be opened again
+  const max = maxBytesFor(f.info.app);
+  if (data.length > max)
+    return { ok: false, error: f.info.app === 'claude' ? `The file would be larger than ${kb(max)}: Claude Code does not load a bigger agent file.` : `The file would be larger than ${kb(max)}.` };
   try {
     writeAtomic(f.file, data);
   } catch {
@@ -329,7 +354,8 @@ export function templateFor(app: ProfileApp, name: string, kind: TemplateKind = 
 export function createProfileFile(dirs: readonly ProfileDir[], app: unknown, place: unknown, name: unknown, template: unknown = DEFAULT_TEMPLATE): { ok: true; id: string; info: ProfileFileInfo } | Fail {
   if (app !== 'copilot' && app !== 'claude') return { ok: false, error: 'Choose an agent app.' };
   if (template !== 'success' && template !== 'standard') return { ok: false, error: 'Choose a template.' };
-  if (typeof name !== 'string' || !PROFILE_NAME.test(name) || name.includes('..')) return { ok: false, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
+  if (typeof name === 'string' && PROFILE_NAME.test(name) && WINDOWS_RESERVED_NAME.test(name)) return { ok: false, error: 'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9): choose another.' };
+  if (!isProfileName(name)) return { ok: false, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
   const own = dirs.filter((d) => d.app === app);
   const folderDirs = own.filter((d) => d.scope === 'folder');
   const d = place === 'user' ? own.find((x) => x.scope === 'user') : typeof place === 'string' && PROFILE_FILE_ID.test(place) ? folderDirs.find((x) => !!x.folder && folderIdOf(x.folder) === place) : undefined;
