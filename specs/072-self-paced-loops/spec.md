@@ -2,7 +2,7 @@
 
 **Feature Branch**: `072-self-paced-loops` (touches 044 scheduled prompts, 001 lobby Postbox, 011 caps, 041 Durbar MCP, 052 activity log, 068 coffee break)
 **Created**: 2026-10-22
-**Status**: Draft, discussion first. Spec, plan and tasks only; no code. Owner answers Q1-Q9 recorded at the end (Paco, fjcabello, 2026-10-22). Every requirement is `[PLANNED]`; what exists today is cited as `read:`.
+**Status**: Phase 1 foundation built (T001-T005: pace parser, `Schedule.loop`, scheduler core, holds, restart rule; unit tests only, not wired to `main.ts`, no UI yet). Before that: spec, plan and tasks only. Owner answers Q1-Q9 recorded at the end (Paco, fjcabello, 2026-10-22). A requirement not tagged otherwise is `[PLANNED]`; what exists today is cited as `read:`.
 **Input**: Issue #526 (owner idea, Paco, 2026-10-22), inspired by Claude Code's `/loop` dynamic mode: on a loop, the agent itself says when its next turn runs ("wake me in 25 min, I'm waiting for CI") or that it is done. Input from Vikram's agent on Telegram (2026-10-22; Vikram decides for his side), folded in as requirements R1-R5 below.
 
 ## Summary
@@ -148,8 +148,8 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 **Loop as a schedule (R1)**
 
 - **FR-001** `[PLANNED]` A loop is a `Schedule` (spec 044) with a `loop` field. It needs a session `target` (FR-014) and a `prompt` (at most 2,000 characters). It is stored in `durbar-schedules.json`, counts toward `MAX_SCHEDULES`, and uses the same `Scheduler`, its single timer and its `send` path. No second scheduler, timer list or store.
-- **FR-002** `[PLANNED]` `loop` holds the user's limits: `minDelay`, `maxDelay`, `defaultDelay` (minutes), `maxPasses`, `endAt` (epoch ms), and the optional `cap` that 044 FR-015 already defines. It also holds main's own state, which is never taken from the renderer: `passes`, `inPass`, `lastAsk` {`minutes`, `reason`, `source`: `agent` | `default` | `clamped`}, `noPaceStreak`, `hold` (not saved), and `ended` {`at`, `reason`}.
-- **FR-003** `[PLANNED]` Limits, checked in main:
+- **FR-002** `[IMPLEMENTED]` (test: `scripts/test-schedules.ts`) `loop` holds the user's limits: `minDelay`, `maxDelay`, `defaultDelay` (minutes), `maxPasses`, `endAt` (epoch ms), and the optional `cap` that 044 FR-015 already defines. It also holds main's own state, which is never taken from the renderer: `passes`, `inPass`, `lastAsk` {`minutes`, `reason`, `source`: `agent` | `default` | `clamped`}, `noPaceStreak`, `hold` (not saved), and `ended` {`at`, `reason`}.
+- **FR-003** `[IMPLEMENTED]` (test: `scripts/test-schedules.ts`) Limits, checked in main:
   - `minDelay` is at least 5 (the 044 floor);
   - `maxDelay` is at most 1440;
   - `minDelay` ≤ `defaultDelay` ≤ `maxDelay`;
@@ -158,7 +158,7 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
   - the cap uses 044 FR-017's ranges.
 
   Defaults (Q1, Q2): 30 / 5 / 60 min, 12 passes, end 8 h after the start, cap 50 AI credits or $0.50.
-- **FR-004** `[PLANNED]` A loop has no `every`, `at` or `rule`. Its `next` is set only by FR-010/FR-011 from the end of a pass, or by a hold being released (FR-015). `dueAt` returns `undefined` while a pass is in progress or the loop is on hold or ended.
+- **FR-004** `[IMPLEMENTED]` (test: `scripts/test-schedules.ts`, `scripts/test-loops.ts`) A loop has no `every`, `at` or `rule`. Its `next` is set only by FR-010/FR-011 from the end of a pass, or by a hold being released (FR-015). `dueAt` returns `undefined` while a pass is in progress or the loop is on hold or ended.
 
 **Start and stop (R2, R4)**
 
@@ -169,8 +169,8 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
   Both open the same form: the prompt (taken from the composer if there is text), the limits with their defaults, and a one-line summary of the worst case ("at most 12 passes, at most 50 AI credits, ends by 18:30"). **Start loop** saves the loop and sends pass 1 at once if the session is idle. Otherwise the first wake is in `minDelay`.
 - **FR-006** `[PLANNED]` Passes keep the session's permission mode. A loop never sets or raises the mode, approves pending requests, keeps grants or lifts a cap. The pass goes through `scheduleDeps.send` (`main.ts:444-477`), the same as a scheduled prompt.
 - **FR-007** `[PLANNED]` **Stop loop** is on the desk chip, in the Schedules row (dialog and Settings) and in the chat. It ends the loop at once (`ended.reason: 'user'`). The session's own **Stop** during a pass also ends the loop. **Stop** on a turn the user sent between passes stops only that turn; the loop goes on. **End session**, removing the session or removing the folder ends it ("the session has ended").
-- **FR-008** `[PLANNED]` When the app starts (`Scheduler.start`), every loop that had not ended is marked ended "when Durbar closed". Nothing is sent. The row offers **Start again**, which opens the form with the old limits and starts a new run (passes and spend from zero) only when the user confirms. A loop is never resumed by itself after a restart.
-- **FR-009** `[PLANNED]` Each pass's prompt is the user's prompt plus a fixed, short **loop footer** written by Durbar (not user-editable, at most 400 characters). It tells the agent:
+- **FR-008** `[IMPLEMENTED]` (test: `scripts/test-loops.ts` (core: `start()` and `restartLoop`; the Start again form is T011)) When the app starts (`Scheduler.start`), every loop that had not ended is marked ended "when Durbar closed". Nothing is sent. The row offers **Start again**, which opens the form with the old limits and starts a new run (passes and spend from zero) only when the user confirms. A loop is never resumed by itself after a restart.
+- **FR-009** `[IMPLEMENTED]` (test: `scripts/test-loops.ts` (`loopFooter`; appended in `send` by T006)) Each pass's prompt is the user's prompt plus a fixed, short **loop footer** written by Durbar (not user-editable, at most 400 characters). It tells the agent:
   - the pass number;
   - the limits;
   - how to ask for the next wake: Phase 1 the `LOOP:` line, Phase 2 the tools;
@@ -180,24 +180,24 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 
 **Pacing (R5)**
 
-- **FR-010** `[PLANNED]` **Phase 1: the reply line.** When a pass's turn ends (`idle`, `error` or `stopped` for that session, the same events as `turnEnded`), main reads the last non-empty line of the last `output` event with `final: true` and no `agentId`, seen during that pass. Accepted forms (case-insensitive, at most 200 characters):
+- **FR-010** `[IMPLEMENTED]` (test: `scripts/test-loops.ts` (parser; main feeding the final text is T006)) **Phase 1: the reply line.** When a pass's turn ends (`idle`, `error` or `stopped` for that session, the same events as `turnEnded`), main reads the last non-empty line of the last `output` event with `final: true` and no `agentId`, seen during that pass. Accepted forms (case-insensitive, at most 200 characters):
   - `LOOP: next <N> min[utes] [- <reason>]`;
   - `LOOP: next <H> h[ours] [- <reason>]`;
   - `LOOP: stop [- <reason>]`.
 
   Anything else is "no line". The parser is pure and has no shell and no regular expression with catastrophic backtracking. The reason is cleaned to one line of at most 120 characters (control, bidi and zero-width characters removed) and passed through `redact()` before it is shown or logged.
-- **FR-011** `[PLANNED]` The next wake = the end of the pass + the asked delay, clamped to [`minDelay`, `maxDelay`]. A clamped ask is recorded with `source: 'clamped'` and shown ("asked 2 min, waited 5"). `stop` ends the loop with `ended.reason: 'agent'` and the agent's reason.
-- **FR-012** `[PLANNED]` A pass with no line (or, in Phase 2, no tool call) uses `defaultDelay` with the reason "the agent did not say". Two such passes in a row end the loop: "Stopped: the agent did not pace the loop" (Q3). A pass that ends in `error` (FR-013) counts only toward the error streak: it neither adds to nor resets this no-line streak.
-- **FR-013** `[PLANNED]` A pass that ends in `error` counts as a pass. The loop waits `defaultDelay`. Two errors in a row end the loop: "Stopped after two failed passes".
+- **FR-011** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) The next wake = the end of the pass + the asked delay, clamped to [`minDelay`, `maxDelay`]. A clamped ask is recorded with `source: 'clamped'` and shown ("asked 2 min, waited 5"). `stop` ends the loop with `ended.reason: 'agent'` and the agent's reason.
+- **FR-012** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) A pass with no line (or, in Phase 2, no tool call) uses `defaultDelay` with the reason "the agent did not say". Two such passes in a row end the loop: "Stopped: the agent did not pace the loop" (Q3). A pass that ends in `error` (FR-013) counts only toward the error streak: it neither adds to nor resets this no-line streak.
+- **FR-013** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) A pass that ends in `error` counts as a pass. The loop waits `defaultDelay`. Two errors in a row end the loop: "Stopped after two failed passes".
 
 **Holds and skips (R3, the 044 busy rule)**
 
-- **FR-014** `[PLANNED]` A wake that finds the session **working** skips the pass (never queued). It is recorded as `skipped-busy`, and the next wake is now + the last asked delay (clamped). A skip does not count as a pass.
-- **FR-015** `[PLANNED]` A wake that finds the session **waiting for a person**, or a person-wait that starts between passes, puts the loop **on hold**. A person-wait means: a pending permission (`needs-permission`), an open question (agentstate `question`), or a credit-limit request (agentstate `limit`). On hold, `dueAt` is undefined and the desk shows "Loop waits for you". When the wait clears, the next wake is that moment + the last asked delay. Nothing fires at once.
+- **FR-014** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) A wake that finds the session **working** skips the pass (never queued). It is recorded as `skipped-busy`, and the next wake is now + the last asked delay (clamped). A skip does not count as a pass.
+- **FR-015** `[IMPLEMENTED]` (test: `scripts/test-loops.ts` (core and the `waitOf` dep; reading `agentState` is T006)) A wake that finds the session **waiting for a person**, or a person-wait that starts between passes, puts the loop **on hold**. A person-wait means: a pending permission (`needs-permission`), an open question (agentstate `question`), or a credit-limit request (agentstate `limit`). On hold, `dueAt` is undefined and the desk shows "Loop waits for you". When the wait clears, the next wake is that moment + the last asked delay. Nothing fires at once.
 - **FR-016** `[PLANNED]` **Coffee break** (spec 068, a `usageLimit` event): the loop is on hold until the break ends. A pass is never sent into a break. If 068's own resume message goes out, the loop's next wake is counted from the end of that turn. Main reads the normalized `usageLimit` event itself and holds the loop there, so main stays the one place that enforces limits (R5); it does not wait for the renderer's `coffeebreak.js`. Depends on PR #462 being merged.
-- **FR-017** `[PLANNED]` **Durbar's spending cap** (spec 011 `limit` exhausted, the Bank in PR #511): the loop pauses (`pausedReason: 'cap'`, the 044 wording) and continues only on the user's **Resume** (Q5).
-- **FR-018** `[PLANNED]` **The loop's own cap** (044 FR-015 attribution): when `spent` ≥ `cap.amount` at the end of a pass or at a wake, the loop ends: "Stopped: reached its limit". **Max passes** and **end time** end it the same way, each with its reason. These are ends, not pauses: a new run needs **Start again**.
-- **FR-019** `[PLANNED]` **Pause all schedules** also holds every loop. When it is turned off, each loop's next wake is now + its last asked delay (no burst, like `setPausedAll`, `schedules.ts:386-394`).
+- **FR-017** `[IMPLEMENTED]` (test: `scripts/test-loops.ts` (the `waitOf` dep returns `cap`; main computing it is T006)) **Durbar's spending cap** (spec 011 `limit` exhausted, the Bank in PR #511): the loop pauses (`pausedReason: 'cap'`, the 044 wording) and continues only on the user's **Resume** (Q5).
+- **FR-018** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) **The loop's own cap** (044 FR-015 attribution): when `spent` ≥ `cap.amount` at the end of a pass or at a wake, the loop ends: "Stopped: reached its limit". **Max passes** and **end time** end it the same way, each with its reason. These are ends, not pauses: a new run needs **Start again**.
+- **FR-019** `[IMPLEMENTED]` (test: `scripts/test-loops.ts`) **Pause all schedules** also holds every loop. When it is turned off, each loop's next wake is now + its last asked delay (no burst, like `setPausedAll`, `schedules.ts:386-394`).
 
 **Visible (R4)**
 
