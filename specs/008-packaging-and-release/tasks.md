@@ -75,6 +75,7 @@
   7. The spec records `[KNOWN GAP]` for: taskbar and toasts on a real PC (#9), the Mac menu-bar title by eye, and the Linux launcher name on a desktop.
   8. `npm run typecheck && npm run build && npm test` pass.
 - [x] T094 (2026-10-21, #414) Simulator drivers share `scripts/driver-helpers.js` (FR-097): `js`, `shot`, `key`, `clickText`, load-and-wait move there; every driver uses them; no assertion changes. Done: `ui-suite` all green after each batch, `check:office`, `check:geometry`, Mac title bar check, `npm run typecheck && npm run build && npm test`; screenshot-only drivers run once by hand.
+- [x] T096 (2026-10-22) Test runs are never backgrounded when another window covers them (FR-103): `backgroundThrottling: false` and `--disable-backgrounding-occluded-windows` under `DURBAR_DRIVER`/`DURBAR_SHOT` in `src/main/main.ts`. Done when `UI_SUITE_JOBS=4 xvfb-run -a node scripts/ui-suite.js` (all drivers on one display) passes, the PR's Windows UI run is green, and `npm run typecheck && npm run build && npm test` pass.
 
 ## 2026-10-22: steady geometry captures (flake on PR #535)
 
