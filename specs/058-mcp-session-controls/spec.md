@@ -166,7 +166,7 @@ and nothing is opened; simulator shows the button and a toast.
 
 ### Words and status (P1)
 
-- **FR-001** Every server row shows one **word and icon** for its state, from one pure table (no colour alone, constitution V):
+- **FR-001** `[IMPLEMENTED]` (`test:` test-mcpwords; `sim:` shots-058-mcp-words; the "Off from/On from your next message" line waits for T010's `mcpToggleApplies` use in the row, T026) Every server row shows one **word and icon** for its state, from one pure table (no colour alone, constitution V): 
   `connected` "Running"; `pending` "Starting"; `failed` "Failed"; `needs-auth` "Needs sign-in"; `disabled` "Off for this session";
   `stopped` "Stopped"; `not_configured` "Not set up for this session"; no state yet "Not started yet"; anything else "Unknown state"
   followed by the escaped token. A switch the adapter applies with the next message shows "Off from your next message" / "On from your
@@ -179,7 +179,7 @@ and nothing is opened; simulator shows the button and a toast.
 - **FR-003** The dialog explains the two scopes in one sentence each: **This session** (the switch and Restart; kept until the app is
   closed, as today) and **New sessions** (Settings and the folder's extras; spec 019 FR-008). Wording reviewed against the README's MCP
   section (one word per concept, spec 052).
-- **FR-004** The dialog **updates while open** when an `mcp` event for that agent arrives (state, error), without losing focus or
+- **FR-004** `[IMPLEMENTED]` (`sim:` shots-058-mcp-words; not against a real event stream) The dialog **updates while open** when an `mcp` event for that agent arrives (state, error), without losing focus or
   scroll position.
 
 ### Errors (P1)
@@ -188,11 +188,11 @@ and nothing is opened; simulator shows the button and a toast.
   values of the session's own MCP servers (the folder's extras, known to main only) plus the process environment, then
   `maskSecretUrl` for URLs, cut to 300 characters. This also closes today's gap where the error reached the renderer unmasked
   (research section 1). Never logged; the `DURBAR_LOG` sink stays as it is.
-- **FR-006** A **hint** is chosen from the masked text, the state and a normalized error class (FR-011): needs sign-in; command not found
+- **FR-006** `[IMPLEMENTED]` (`test:` test-mcpwords) A **hint** is chosen from the masked text, the state and a normalized error class (FR-011): needs sign-in; command not found
   (`ENOENT`, "command not found", "is not recognized"); permission denied (`EACCES`); timed out; connection refused or host not found;
   the server exited or crashed; configuration error; otherwise none. One short sentence with what to check (Settings, the folder's
   extras, the Copilot CLI list). Pure, unit-tested.
-- **FR-007** A failed row has a *Details* toggle with the masked text and *Copy* (copies the masked text only).
+- **FR-007** `[IMPLEMENTED]` (`sim:` shots-058-mcp-words; a needs-sign-in row has it too) A failed row has a *Details* toggle with the masked text and *Copy* (copies the masked text only).
 
 ### Adapter surface (adapter-neutral, constitution II)
 
