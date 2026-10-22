@@ -23,7 +23,7 @@ const run = (notes: unknown[]): any[] => {
 
 // 1. Every fixture gives its expected event list, and says it is synthetic.
 const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
-assert.deepStrictEqual(files, ['command.json', 'deltas.json', 'failure.json', 'file-change.json', 'mcp-tool.json', 'subagent.json', 'thread-turn.json', 'unknown.json', 'usage.json']);
+assert.deepStrictEqual(files, ['command.json', 'deltas.json', 'failure.json', 'file-change-approval.json', 'file-change-stream.json', 'file-change.json', 'mcp-tool.json', 'subagent.json', 'thread-turn.json', 'unknown.json', 'usage.json']);
 for (const f of files) {
   const j = fx(f);
   assert.strictEqual(j.provenance, 'synthetic', `${f} is marked synthetic`);
@@ -84,12 +84,12 @@ for (const f of files) {
   assert.ok(!out.some((e) => e.delta === 'ignored'), 'a thread nobody announced is ignored');
 }
 
-// 5. Failure maps to an error status; usage-limit has its own wording; interrupted is not an error.
+// 5. Failure maps to an error status; a usage limit is a coffee break (spec 068: usageLimit, then idle); interrupted is not an error.
 {
   const st = run(fx('failure.json').notifications).filter((e) => e.type === 'status');
   assert.deepStrictEqual(st.map((e) => `${e.status}|${e.intent}`).slice(2), [
     'error|SandboxError: Sandbox denied the write',
-    'error|Codex usage limit reached',
+    'idle|Usage limit reached',
     'error|HttpConnectionFailed: connection reset',
     'error|Turn failed',
     'idle|Aborted',

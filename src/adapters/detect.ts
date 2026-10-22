@@ -161,6 +161,8 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
       // OpenAI's official install.ps1 (spec 060, real 2026-10-20): %LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe
       if (spec.name === 'codex') addDir(p.join(local, 'Programs', 'OpenAI', 'Codex', 'bin'));
       addDir(p.join(local, 'Microsoft', 'WinGet', 'Links')); // winget's command shims (spec 052 FR-072): found even before PATH is re-read
+      // spec 060 FR-010: winget (and a Microsoft Store PowerShell 7) is an App Execution Alias here, also when PATH lacks the folder
+      if (spec.name === 'winget' || spec.name === 'pwsh') addDir(p.join(local, 'Microsoft', 'WindowsApps'));
     }
   } else {
     for (const d of [p.join(home, '.local/bin'), p.join(home, '.claude/local'), '/usr/local/bin', '/usr/bin', p.join(home, '.npm-global/bin')]) addDir(d);
@@ -311,19 +313,46 @@ export function setLoginPath(dirs: readonly string[]): void {
   loginPathDirs = Object.freeze([...dirs]);
 }
 
+/** Spec 060 FR-010: `%LOCALAPPDATA%\Microsoft\WindowsApps`, where Windows keeps App Execution Aliases (winget.exe); undefined elsewhere. */
+export function windowsAppsDir(env: Pick<DetectEnv, 'platform' | 'env'>): string | undefined {
+  if (env.platform !== 'win32') return undefined;
+  const local = env.env.LOCALAPPDATA;
+  return local && path.win32.isAbsolute(local) ? path.win32.join(local, 'Microsoft', 'WindowsApps') : undefined;
+}
+
+/** Spec 060 FR-010: true for a file directly in `windowsAppsDir` (an App Execution Alias: run it by this path, never resolve it). */
+export function isAppAlias(file: string, env: Pick<DetectEnv, 'platform' | 'env'>): boolean {
+  const dir = windowsAppsDir(env);
+  return !!dir && path.win32.dirname(file).toLowerCase() === dir.toLowerCase();
+}
+
+/**
+ * Spec 060 FR-010: "is this a file?" for detection. Node's `fs.statSync` throws EACCES on an App Execution Alias (a reparse point
+ * that only CreateProcess follows; read: npm/node-which#157), so winget.exe was never found and Windows got no winget route.
+ * Only for `winget.exe` or `pwsh.exe` directly in `windowsAppsDir`, `lstat` (which does not follow it) is asked instead. Elsewhere a failing `stat` stays "no".
+ */
+export function statIsFile(
+  file: string,
+  platform: NodeJS.Platform,
+  env: Readonly<Record<string, string | undefined>>,
+  fsx: { statSync(p: string): { isFile(): boolean }; lstatSync(p: string): { isDirectory(): boolean } },
+): boolean {
+  try {
+    return fsx.statSync(file).isFile();
+  } catch {
+    // review on #469: only the two aliases FR-010 names (winget, a Store pwsh); any other file there stays "no"
+    if (!isAppAlias(file, { platform, env }) || !/^(winget|pwsh)\.exe$/i.test(path.win32.basename(file))) return false;
+    try { return !fsx.lstatSync(file).isDirectory(); } catch { return false; }
+  }
+}
+
 /** The real environment for `detectBinary` (process env, home folder, file check, folder listing, the login shell's PATH when read). */
 export function nodeDetectEnv(): DetectEnv {
   return {
     platform: process.platform,
     env: process.env,
     homedir: os.homedir(),
-    isFile: (p) => {
-      try {
-        return fs.statSync(p).isFile();
-      } catch {
-        return false;
-      }
-    },
+    isFile: (p) => statIsFile(p, process.platform, process.env, fs),
     listDir: (dir) => {
       try {
         return fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => d.name).slice(0, 200);

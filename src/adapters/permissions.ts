@@ -26,12 +26,18 @@ export interface PermissionLike {
   diff?: string;
   /** Spec 065: every file a write changes (Codex file changes name several); `fileName`/`path` otherwise. */
   paths?: string[];
+  /**
+   * Spec 052 FR-172: the adapter's own card line, used instead of the one built here (Codex: the change's kind, "+N more", or
+   * "Codex did not say which file"). Only the card text: the grant scope is still built from the fields above.
+   */
+  cardSummary?: string;
 }
 
 export type Decision = { kind: 'approve-once' } | { kind: 'reject'; feedback: string };
 
 /** Short human summary of a permission request (for the needs-permission card). */
 export function summarize(req: PermissionLike): string {
+  if (typeof req.cardSummary === 'string' && req.cardSummary.trim()) return req.cardSummary.replace(/[\r\n]+/g, ' ').trim().slice(0, 2000);
   switch (req.kind) {
     case 'write':
       return `write ${req.fileName ?? ''}`.trim();
@@ -63,6 +69,11 @@ const NO_BROAD_GRANT = new Set(['sh', 'bash', 'zsh', 'fish', 'dash', 'ksh', 'csh
 export interface GrantScope {
   key: string;
   label: string;
+  /**
+   * Write only, when the request writes in more than one folder (review on #470): the `write:<folder>` key of each. A session grant
+   * matches only when every one of them is granted, and approving "for this session" grants each folder (the label names them all).
+   */
+  folders?: { key: string; label: string }[];
   /** Shell only: the wider "any arguments of <command>" scope. Offered for simple commands of ordinary programs; never the default. */
   broad?: { key: string; label: string };
 }
@@ -85,9 +96,20 @@ export function grantScope(req: PermissionLike, flavor: Pick<typeof path, 'dirna
   const keyDir = (dir: string): string => (flavor.sep === '\\' ? dir.replace(/\//g, '\\').toLowerCase() : dir);
   switch (req.kind) {
     case 'write': {
-      const f = req.fileName ?? '';
-      const dir = f ? flavor.dirname(f) : '';
-      return { key: `write:${keyDir(dir)}`, label: dir ? `write in ${baseName(dir)}/` : 'write' };
+      // every file the write changes, not only the first (review on #470: a grant on the first file's folder approved them all)
+      const files = [...new Set([req.fileName, ...(req.paths ?? [])].filter((p): p is string => typeof p === 'string' && !!p))];
+      const byKey = new Map<string, { key: string; label: string }>();
+      for (const f of files) {
+        const dir = flavor.dirname(f);
+        const key = `write:${keyDir(dir)}`;
+        if (!byKey.has(key)) byKey.set(key, { key, label: `write in ${baseName(dir)}/` });
+      }
+      const folders = [...byKey.values()];
+      if (folders.length === 0) return { key: 'write:', label: 'write' };
+      if (folders.length === 1) return folders[0];
+      const names = folders.map((x) => x.label.replace(/^write in /, ''));
+      const label = `write in ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` and ${names.length - 3} more folders` : ''}`;
+      return { key: `write-folders:${folders.map((x) => x.key).sort().join('\n')}`, label, folders };
     }
     case 'read': {
       const f = req.path ?? '';
@@ -206,9 +228,41 @@ export interface BrokerOptions {
   pathCheck?: PathCheckOptions;
   /** Spec 065 FR-001: awaited (at most 2 s, errors ignored) just before an approved `write` goes ahead, with the paths it writes. */
   beforeWrite?: (paths: string[]) => Promise<void>;
+  /** Spec 069 FR-063: MCP tools turned off in Durbar (from `mcpToolBlockList`); a request for one is refused in every mode. */
+  blockedTools?: () => ReadonlySet<string>;
+}
+
+/** Claude Code's wire name for a server: characters outside [A-Za-z0-9_-] become `_` (`mcp__<server>__<tool>`). */
+export const claudeServerPart = (server: string): string => server.replace(/[^A-Za-z0-9_-]/g, '_');
+
+/**
+ * Spec 069 FR-063: the keys a request for a turned-off tool can match: `<server>/<tool>` (split names), Claude Code's
+ * `mcp__<server>__<tool>` and Copilot's wire name `<server>-<tool>` (when a request carries only the tool's full name).
+ */
+export function mcpToolBlockList(off: Readonly<Record<string, readonly string[]>> | undefined): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const [server, tools] of Object.entries(off ?? {}))
+    for (const t of tools ?? []) {
+      if (typeof t !== 'string' || !t) continue;
+      out.add(`${server}/${t}`);
+      out.add(`mcp__${claudeServerPart(server)}__${t}`);
+      out.add(`${server}-${t}`);
+    }
+  return out;
+}
+
+function blockedMcp(req: PermissionLike, set: ReadonlySet<string> | undefined): { server?: string; tool: string } | undefined {
+  if (!set || !set.size || String(req.kind) !== 'mcp') return undefined;
+  const tool = typeof req.toolName === 'string' ? req.toolName : '';
+  const server = typeof req.serverName === 'string' ? req.serverName : undefined;
+  if (server && tool && set.has(`${server}/${tool}`)) return { server, tool };
+  if (tool && set.has(tool)) return { server, tool };
+  return undefined;
 }
 
 const WRITE_GUARD_MS = 2000;
+/** Spec 065: most files of one write the undo guard copies (a Codex change can name more; its card says so, spec 052 FR-172). */
+export const WRITE_GUARD_MAX_PATHS = 200;
 
 type Answer = { approve: boolean; remember: boolean; broad: boolean; via: 'user' | 'stopped' };
 
@@ -282,7 +336,7 @@ export class PermissionBroker {
   private async approveWrite(req: PermissionLike): Promise<Decision> {
     const guard = this.opts.beforeWrite;
     if (guard && String(req.kind) === 'write') {
-      const paths = (req.paths?.length ? req.paths : [req.fileName ?? req.path]).filter((p): p is string => typeof p === 'string' && !!p).slice(0, 200);
+      const paths = (req.paths?.length ? req.paths : [req.fileName ?? req.path]).filter((p): p is string => typeof p === 'string' && !!p).slice(0, WRITE_GUARD_MAX_PATHS);
       if (paths.length) {
         let timer: ReturnType<typeof setTimeout> | undefined;
         await Promise.race([guard(paths).catch(() => undefined), new Promise<void>((r) => { timer = setTimeout(r, WRITE_GUARD_MS); })]);
@@ -296,6 +350,12 @@ export class PermissionBroker {
     const kind = String(req.kind);
     const summary = summarize(req);
     const requestId = String(req.toolCallId ?? `${kind}-${now()}-${++this.seq}`); // T026: two requests in the same millisecond get different ids
+    const off = blockedMcp(req, this.opts.blockedTools?.());
+    if (off) {
+      const what = off.server ? `${off.server} › ${off.tool}` : off.tool;
+      this.opts.emit({ type: 'denied-policy', permission: { requestId, kind, summary, state: 'denied' } });
+      return { kind: 'reject', feedback: `This tool is turned off in Agent Durbar (${what}). Do not retry it.` };
+    }
     const outsideRead = kind === 'read' && this.mode !== 'allow' && this.readIsOutside(req);
     if (kind === 'read' && !outsideRead) return { kind: 'approve-once' };
     if (this.mode === 'allow') {
@@ -322,7 +382,8 @@ export class PermissionBroker {
           : 'Agent Durbar is in read-only mode: this action was denied. Do not retry it.',
       };
     }
-    if (this.grants.has(scope.key) || (scope.broad && this.grants.has(scope.broad.key))) {
+    const granted = scope.folders ? scope.folders.every((x) => this.grants.has(x.key)) : this.grants.has(scope.key) || (!!scope.broad && this.grants.has(scope.broad.key));
+    if (granted) {
       this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session' } });
       return this.approveWrite(req);
     }
@@ -331,8 +392,8 @@ export class PermissionBroker {
     const r = await new Promise<Answer>((resolve) => this.pending.set(requestId, { info, resolve }));
     this.pending.delete(requestId);
     if (r.approve && r.remember && !this.stopped) {
-      const g = r.broad && scope.broad ? scope.broad : scope;
-      this.grants.set(g.key, { key: g.key, kind, label: g.label });
+      const gs = r.broad && scope.broad ? [scope.broad] : scope.folders ?? [scope];
+      for (const g of gs) this.grants.set(g.key, { key: g.key, kind, label: g.label });
       this.opts.emit({ type: 'grants', grants: this.listGrants() });
     }
     this.opts.emit({ type: 'resolved', permission: { ...base, state: r.approve ? 'approved' : 'denied', via: r.via, remembered: r.approve && r.remember ? true : undefined } });

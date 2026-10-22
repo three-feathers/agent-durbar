@@ -18,6 +18,8 @@ type FolderSetupItem = import('../shared/foldersetup').FolderSetupItem;
 type PickedFile = import('../shared/api').PickedFile;
 type ModelChoice = import('../shared/api').ModelChoice;
 type AdapterInfo = import('../shared/api').AdapterInfo;
+type McpServerInput = import('../shared/mcp').McpServerInput;
+type McpSourceTag = import('../shared/api').McpSourceTag;
 type FloorsState = import('../shared/api').FloorsState;
 type FloorsResult = import('../shared/api').FloorsResult;
 type ScheduleInfo = import('../shared/api').ScheduleInfo;
@@ -26,6 +28,16 @@ type ModelSwitchRequest = import('../shared/modelswitch').ModelSwitchRequest;
 type ModelSwitchResult = import('../shared/modelswitch').ModelSwitchResult;
 type ContextTier = import('../shared/modelswitch').ContextTier;
 type ActivityRow = import('../shared/activity').ActivityRow;
+type EditInfo = import('../shared/edits').EditInfo;
+
+/** Spec 005 FR-026: a simulated diff (removed lines, then added lines) with its counts. */
+function simDiffOf(oldL: string[], newL: string[], at: number): { diff: string; added: number; removed: number } {
+  const head = `@@ -${oldL.length ? at : 0},${oldL.length} +${newL.length ? at : 0},${newL.length} @@`;
+  return { diff: [head, ...oldL.map((l) => '-' + l), ...newL.map((l) => '+' + l)].join('\n'), added: newL.length, removed: oldL.length };
+}
+function simEdit(path: string, kind: 'edit' | 'create', oldL: string[], newL: string[]): EditInfo {
+  return { files: [{ path, kind, ...simDiffOf(oldL, newL, kind === 'create' ? 1 : 8) }] };
+}
 
 interface SimOptions {
   n: number;
@@ -34,9 +46,9 @@ interface SimOptions {
   seed?: number;
   /** Spec 033: three floors (Ground floor, Client A, Personal) with the rooms spread over them. */
   floors?: boolean;
-  /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`). */
-  titles?: boolean;
-  /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits. */
+  /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`; `simtitles=long`: the first one is 120 characters, the longest a session title can be, spec 052 FR-174). */
+  titles?: boolean | 'long';
+  /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits; agent 3 has no alias and a long first-prompt title with one unbroken URL-like token (FR-019). */
   names?: 'long';
   /** Spec 052 FR-170 (T155): long replies and long sub-agent prompts that run to the right edge of the chat, to check that the Copy button covers no text (page address `simreply=long`). */
   reply?: 'long';
@@ -56,8 +68,12 @@ interface SimOptions {
   places?: number;
   /** Pending permission requests carry a time 2 minutes in the past, so "impatient" (spec 034) can be seen at once. */
   waitOld?: boolean;
+  /** Spec 005 FR-026 (`simedits=1`): the first agent edits files: a two-file patch, a new file, a refused delete, then an edit whose arguments stream in and stay open. */
+  edits?: boolean;
 }
 
+/** A grant scope as the broker builds it: key and chip label. */
+type SimScope = { key: string; label: string };
 interface SimAgent {
   info: AgentInfo;
   room: string;
@@ -71,7 +87,7 @@ interface SimAgent {
   open?: string;
   files: string[];
   /** Pending permission request (the agent is waiting for the user). */
-  perm?: { requestId: string; kind: string; summary: string; scopeKey: string; scopeLabel: string; file: string; cont: 'tool' | 'edit' };
+  perm?: { requestId: string; kind: string; summary: string; scopeKey: string; scopeLabel: string; file: string; cont: 'tool' | 'edit'; folders?: SimScope[] };
   /** "Allow for this session" grants: key -> chip label. */
   grants: Map<string, string>;
   /** Context window of the fake session (tokens now / size). */
@@ -102,6 +118,8 @@ interface SimAgent {
   compacting?: boolean;
   /** Stay near the limit (no automatic compaction) so the start-fresh note can be shown. */
   noAuto?: boolean;
+  /** Spec 068: the simulated usage limit holds until this time (ms); a message before it hits the limit again. */
+  breakUntil?: number;
 }
 
 /** Fake models with prices in credits per million tokens (sim: made-up numbers, not Copilot's). Sim Preview reports no price on purpose. */
@@ -142,6 +160,8 @@ function simNameError(v: unknown): string {
   return '';
 }
 const LONG_TEXT = 'Every paragraph here is long on purpose so that its lines run to the right edge of the chat, where a Copy button must never cover a word. '.repeat(6).trim() + '\n\n```\nconst aLineThatRunsPastTheRightEdgeOfTheChat = "' + 'x'.repeat(300) + '";\n```'; // ends in a code block whose last line runs to the right edge (clipped by its own scroll), so the reply's Copy button always sits over text when it is misplaced
+/* spec 059 FR-019 (issue #536): the first prompt of a session with no name of its own is its title and has no 60-character cap; this one holds one unbroken token, like a URL (not a real address) */
+const SIM_LONG_URL_TITLE = 'as we have https://example.invalid/teams/consumer-sites/SitePages/Consumer-Onboarding-Checklist-Overview.aspx';
 const SIM_LONG_NAMES = ['Billing refactor: split invoice and credit-note flows', 'Canton lookup duplicates: reproduce and fix the join', 'Release notes for the next minor version and changelog', 'Tidy the registry modules and update every import path'];
 const SIM_USD_CAPS: Record<string, number> = { Ada: 0.01 };
 const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
@@ -202,13 +222,42 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
   ];
   // Spec 052 FR-046: each waiting agent asks for its own thing, tied to its role and task (was one rename request for all of them)
   // Spec 052 FR-063: Jonas's edit carries a diff, like a Claude Code Edit request (the card's "Show the change")
-  const WAIT_REQ: Record<string, { kind: 'write' | 'shell'; summary: string; target: string; diff?: string }> = {
+  const WAIT_REQ: Record<string, { kind: 'write' | 'shell'; summary: string; target: string; diff?: string; scope?: SimScope & { folders?: SimScope[] } }> = {
     Jonas: {
       kind: 'write', summary: 'Edit src/tools/companies.ts (rename find_company to search_companies)', target: 'src/tools/companies.ts',
       diff: ['--- a/src/tools/companies.ts', '+++ b/src/tools/companies.ts', '@@ -12,7 +12,7 @@', ' import { z } from \'zod\';', ' ', ' export const companyTools = {', "-  find_company: {", "+  search_companies: {", "     description: 'Look up Swiss companies by name or UID',", '     input: z.object({ query: z.string().min(2) }),', '     handler: findCompany,'].join('\n'),
     },
     Kenji: { kind: 'shell', summary: 'Run python evals/baseline.py --compare', target: 'python evals/baseline.py' },
     Lena: { kind: 'write', summary: 'Edit src/styles/focus.css (focus ring colour)', target: 'src/styles/focus.css' },
+  };
+  /**
+   * Spec 052 FR-172: `simcodexfile=1` makes a waiting Codex agent's write request look like the Codex adapter's card (the files,
+   * kind and diff from the `fileChange` item); `simcodexfile=none` like one for which Codex named no file; `simcodexfile=many` like a
+   * change in five folders (review on #470: the session button keeps "and N more folders"). Only with `simkinds=mixed`.
+   */
+  /** Spec 052 FR-172: the broker's grant scope for a write in these folders (`grantScope` in src/adapters/permissions.ts, POSIX). */
+  const multiScope = (dirs: string[]): SimScope & { folders?: SimScope[] } => {
+    const folders = dirs.map((d) => ({ key: 'write:' + d, label: 'write in ' + d.split('/').slice(-2).join('/') + '/' }));
+    if (folders.length === 1) return folders[0];
+    const names = folders.map((x) => x.label.replace(/^write in /, ''));
+    return { key: 'write-folders:' + folders.map((x) => x.key).sort().join('\n'), label: `write in ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` and ${names.length - 3} more folders` : ''}`, folders };
+  };
+  const codexFileReq = (s: { info: { adapterId?: string }; files: string[] }): (typeof WAIT_REQ)[string] | undefined => {
+    const v = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simcodexfile') : null;
+    if (!v || s.info.adapterId !== 'codex') return undefined;
+    if (v === 'none') return { kind: 'write', summary: 'write (Codex did not say which file)', target: '' };
+    const f = s.files[0];
+    const dir = f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : '.';
+    if (v === 'many') {
+      const dirs = ['components', 'documentation', 'scripts', 'src/lib', 'tests'];
+      return { kind: 'write', summary: `write ${dirs[0]}/Button.tsx (+${dirs.length - 1} more)`, target: dirs[0] + '/Button.tsx', scope: multiScope(dirs) };
+    }
+    return {
+      kind: 'write', summary: `write ${f} (+1 more)`, target: f,
+      // the adapter's grant scope names the folder of every file (review on #470): here the file's own folder and docs/
+      scope: multiScope([dir, 'docs']),
+      diff: [`--- a/${f}`, `+++ b/${f}`, '@@ -3,3 +3,3 @@', ' :focus-visible {', '-  outline: 2px solid var(--sage);', '+  outline: 2px solid var(--blue);', '   outline-offset: 2px;', '--- a/docs/a11y.md', '+++ b/docs/a11y.md', '@@ -0,0 +1,2 @@', '+# Focus ring', '+Blue, 2px, offset 2px.'].join('\n'),
+    };
   };
   const HELPER_NAMES: [string, string, string][] = [
     ['Tests', 'Running vitest on the changed modules', 'working'],
@@ -298,7 +347,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       (info as AgentInfo & { roomName?: string; role?: string }).roomName = roomName;
       (info as AgentInfo & { roomName?: string; role?: string }).role = role;
       info.renameCap = caps(info.adapterId ?? 'copilot').renameSession; // spec 059: what a rename does in the agent app
-      if (opts.names === 'long') info.alias = (SIM_LONG_NAMES[i % SIM_LONG_NAMES.length] + ' ' + (i + 1)).padEnd(60, '.').slice(0, 60);
+      if (opts.names === 'long' && i !== 2) info.alias = (SIM_LONG_NAMES[i % SIM_LONG_NAMES.length] + ' ' + (i + 1)).padEnd(60, '.').slice(0, 60);
       return {
         info, room, state, intent, helpers, files,
         prompt: i === 0
@@ -368,10 +417,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /* simtitles=1 (spec 001/002 deltas 2026-10-18): titles for a few main agents, two of them in one folder and one long enough to be ellipsized */
     if (opts.titles) {
       const SIM_TITLES = ['Fix login bug', 'Release notes for v0.3', 'Review PR 121: contract clause parser', 'Rename public tool find_company and update every call site and the docs index', 'Canton lookup edge cases'];
+      if (opts.titles === 'long') SIM_TITLES[0] = 'Morning stand-up: summarise every open pull request, flag the ones that touch the billing flows and draft the release notes for the whole week'.slice(0, 120);
       window.setTimeout(() => {
         sims.filter((s, i) => i % 3 === 0).slice(0, SIM_TITLES.length).forEach((s, i) => emit({ type: 'title', sessionId: sid(s), timestamp: now(), title: SIM_TITLES[i] }));
       }, 200);
     }
+    /* simnames=long, FR-019 (issue #536): the third agent (it waits for you, so it is also in the inbox) has no alias; its title holds a URL-like token */
+    if (opts.names === 'long') window.setTimeout(() => { const s = sims[2]; if (s) emit({ type: 'title', sessionId: sid(s), timestamp: now(), title: SIM_LONG_URL_TITLE }); }, 200);
     /* simgrants=many (spec 052 FR-141): the first agent has eight grants, some with a tool name that repeats the server name */
     if (opts.grants) {
       window.setTimeout(() => {
@@ -439,6 +491,33 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }, 400);
     }
     const simTrusted = new Set<string>(); // spec 043: repository agents confirmed in this run
+    // spec 043 FR-017: profile files in memory (no disk): the FR-005 profiles, a Claude one, a read-only one and one with a front matter error
+    type SimPF = { id: string; app: 'copilot' | 'claude'; scope: 'folder' | 'user'; folder?: string; fileName: string; path: string; writable: boolean; note?: string; text: string };
+    const pfHash = (s: string): string => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16).padStart(8, '0').repeat(8); };
+    const pfHead = (t: string): { name?: string; description?: string } => {
+      const m = /^---\n([\s\S]*?)\n---/.exec(t); const o: { name?: string; description?: string } = {};
+      for (const l of (m ? m[1] : '').split('\n')) { const kv = /^(name|description)\s*:\s*(.*)$/.exec(l); if (kv && !(kv[1] in o)) o[kv[1] as 'name' | 'description'] = kv[2].trim().replace(/^(["'])(.*)\1$/, '$2'); }
+      return o;
+    };
+    const SWISS = ROOM_DEFS['mcp-swiss'], BLOG = ROOM_DEFS.blog;
+    let pfN = 0;
+    const pf = (app: SimPF['app'], scope: SimPF['scope'], folder: string | undefined, path: string, text: string, writable = true, note?: string): SimPF =>
+      ({ id: (++pfN).toString(16).padStart(32, 'a'), app, scope, folder, fileName: path.slice(path.lastIndexOf('/') + 1), path, writable, note, text });
+    // spec 043 FR-039: the simulator's Create with AI holds one request at a time, like main's `generateProfile`; `__simGenCalls`
+    // counts the (canned, free) requests that would have been paid, so a driver can check at most one per user action;
+    // `__simGenDelay` (ms) lengthens the 700 ms wait so a driver's cancel-then-reopen steps cannot race it
+    let simGenRunning = false;
+    const simPF: SimPF[] = [
+      pf('copilot', 'folder', SWISS, SIM_PROFILES[0].path, '---\nname: Reviewer\ndescription: Reviews changes and points at risks; never edits files\ntools: [view, grep, glob]\nmodel: sim-deep\n---\n\n# Reviewer\n\nYou review the changes in this repository. **Never edit files.**\n\n## What to check\n\n- Tests cover the new behaviour\n- No secrets in code or logs\n- Paths work on Windows, macOS and Linux\n\nAnswer with a short list of risks, most important first, and link the docs when useful: [Contributing](https://github.com/three-feathers/agent-durbar/blob/main/CONTRIBUTING.md).\n\n```sh\nnpm run typecheck && npm test\n```\n'),
+      pf('copilot', 'folder', SWISS, SIM_PROFILES[2].path, '---\nname: Release helper\ndescription: Prepares release notes from merged pull requests\nmcp-servers:\n  github:\n    type: http\n---\n\nCollect the merged pull requests since the last tag and write release notes grouped by area.\n'),
+      pf('copilot', 'user', undefined, SIM_PROFILES[1].path, '---\nname: Docs writer\ndescription: Writes and tidies documentation in plain English\n---\n\nWrite short sentences. Explain why before how. Keep headings in sentence case.\n'),
+      pf('claude', 'folder', SWISS, SWISS + '/.claude/agents/test-writer.md', '---\nname: test-writer\ndescription: Writes focused unit tests for the change at hand\ntools: Read, Grep, Glob, Edit\nmodel: sonnet\n---\n\nYou write unit tests. One behaviour per test; name it after the behaviour.\n'),
+      pf('claude', 'user', undefined, '~/.claude/agents/house-style.md', '---\nname: house-style\ndescription: Checks wording against the house style\n---\n\nRead the text and list wording that breaks the house style.\n', false, 'You cannot write this file.'),
+      pf('copilot', 'folder', BLOG, BLOG + '/.github/agents/blogger.agent.md', '---\nname: Blogger\ndescription: Use when: drafting a post\n---\n\nDraft blog posts in a friendly tone.\n'),
+    ];
+    const pfInfo = (f: SimPF) => { const h = pfHead(f.text); return { id: f.id, app: f.app, scope: f.scope, ...(f.folder ? { folder: f.folder } : {}), fileName: f.fileName, path: f.path, name: h.name || f.fileName.replace(/(\.agent)?\.md$/, ''), ...(h.description ? { description: h.description } : {}), size: f.text.length, writable: f.writable, ...(f.note ? { note: f.note } : {}) }; };
+    /** As main (FR-020): each folder with an id (a hash of its path); New profile sends the id back. */
+    const pfFolders = (): { id: string; path: string }[] => [...new Set(sims.map((s) => s.info.cwd))].map((p) => ({ id: pfHash('folder\0' + p).slice(0, 32), path: p }));
     const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
       attrib: new Map<string, string>() };
@@ -477,7 +556,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (due === undefined || due > now) continue;
         any = true;
         const s = simAgentOf(sc);
-        const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm);
+        const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm || (!!s.breakUntil && Date.now() < s.breakUntil)); // spec 068 FR-008: a coffee break counts as busy
         const outcome = simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
@@ -559,11 +638,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
          the first agent to leave one open keeps the long bash command the chat layout checks rely on */
       const OPEN_KINDS = [2, 4, 5, 6, 2, 4, 6, 5];
       const kind = keepOpen ? OPEN_KINDS[openSeq++ % OPEN_KINDS.length] : k % 7;
-      const defs: { tool: string; args: Record<string, string>; out: string; mcp?: [string, string] }[] = [
+      const defs: { tool: string; args: Record<string, string>; out: string; mcp?: [string, string]; edit?: EditInfo }[] = [
         { tool: 'read_file', args: { path: file }, out: String(80 + Math.floor(rnd() * 800)) + ' lines' },
         { tool: 'grep', args: { pattern: 'registerTool\\(|export (async )?function (find|search|lookup)[A-Z][A-Za-z]+' }, out: '14 matches in 6 files' },
         { tool: 'bash', args: { command: LONG_CMD }, out: LONG_OUT },
-        { tool: 'edit_file', args: { path: file }, out: '+' + (20 + Math.floor(rnd() * 160)) + ' -' + Math.floor(rnd() * 40) },
+        { tool: 'edit_file', args: { path: file }, out: '+' + (20 + Math.floor(rnd() * 160)) + ' -' + Math.floor(rnd() * 40), edit: simEdit(file, 'edit', ['  return handlers[name];'], ['  const h = handlers[name];', '  if (!h) throw new Error(`unknown tool ${name}`);', '  return h;']) },
         { tool: 'github-search_issues', args: { query: 'is:open label:bug registry' }, out: '7 issues', mcp: ['github', 'search_issues'] },
         { tool: 'playwright-browser_snapshot', args: {}, out: 'page snapshot (212 lines)', mcp: ['playwright', 'browser_snapshot'] },
         { tool: 'my-notes-search_notes', args: { query: 'registerTool options' }, out: '3 results', mcp: ['my-notes', 'search_notes'] },
@@ -571,7 +650,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const d = defs[kind];
       const mcpFields = d.mcp ? { mcpServer: d.mcp[0], mcpTool: d.mcp[1] } : {};
       if (d.mcp && (s.mcpOff?.has(d.mcp[0]) || (d.mcp[0] === 'playwright' && !serversOf(s).some((m) => m.name === 'playwright')))) return toolStep(s, keepOpen);
-      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'start', args: d.args, ...mcpFields });
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'start', args: d.args, ...mcpFields, ...(d.edit ? { edit: d.edit } : {}) });
       if (keepOpen) { s.open = id; return; }
       const complete = (): void => emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'complete', output: d.out, ...mcpFields });
       /* spec 024 T010: calls that go to a place (bash, github, playwright, my-notes) take 1.5-4 s (seeded) unless the simulator is frozen,
@@ -616,7 +695,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
 
     const dirOf = (f: string): string => (f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : '.');
-    const scopeOf = (f: string): { key: string; label: string } => ({ key: 'write:' + dirOf(f), label: 'write in ' + dirOf(f).split('/').slice(-2).join('/') + '/' });
+    const scopeOf = (f: string): { key: string; label: string } => !f ? { key: 'write:', label: 'write' } : ({ key: 'write:' + dirOf(f), label: 'write in ' + dirOf(f).split('/').slice(-2).join('/') + '/' });
     const grantsEvent = (s: SimAgent): void =>
       emit({ type: 'grants', sessionId: sid(s), timestamp: now(), grants: [...s.grants].map(([key, label]) => ({ key, kind: 'write', label })) });
     /** Activity log (spec 052 FR-071): a few canned rows, plus a row for each answer, automatic approval, mode or limit change in the simulator. */
@@ -638,8 +717,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (simActivity.length > 5000) simActivity.splice(0, simActivity.length - 5000);
     };
     /** Like the real broker: auto-approve under a session grant, otherwise leave the request pending. */
-    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false, kind: 'write' | 'shell' = 'write', diff?: string): boolean | 'denied' {
-      const sc = kind === 'shell' ? { key: 'shell:' + file, label: 'run ' + file } : scopeOf(file);
+    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false, kind: 'write' | 'shell' = 'write', diff?: string, scope?: SimScope & { folders?: SimScope[] }): boolean | 'denied' {
+      const sc: SimScope & { folders?: SimScope[] } = scope ?? (kind === 'shell' ? { key: 'shell:' + file, label: 'run ' + file } : scopeOf(file));
       if (!force && s.info.permMode === 'allow') { simLog(s, 'auto-allow-all', summary); return true; } // Allow all: no question asked
       if (!force && s.info.permMode === 'read-only') {
         emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: 'perm-' + sid(s) + '-' + now(), kind, summary, state: 'denied' } });
@@ -647,12 +726,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }
       const requestId = 'perm-' + sid(s) + '-' + now();
       const base = { requestId, kind, summary, scopeKey: sc.key, scopeLabel: sc.label };
-      if (s.grants.has(sc.key)) {
+      if (sc.folders ? sc.folders.every((x) => s.grants.has(x.key)) : s.grants.has(sc.key)) { // like the broker: every folder granted
         emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { ...base, state: 'approved', via: 'session' } });
         simLog(s, 'auto-session-grant', summary);
         return true;
       }
-      s.perm = { ...base, file, cont };
+      s.perm = { ...base, file, cont, ...(sc.folders ? { folders: sc.folders } : {}) };
       s.state = 'waiting';
       emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}) } });
       return false;
@@ -662,6 +741,43 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'edit_file', phase: 'start', args: { path: file } });
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'edit_file', phase: ok ? 'complete' : 'failed', output: ok ? '+4 -1' : 'Denied by user in Agent Durbar.' });
     }
+    /* spec 005 FR-026 (simedits=1): what the adapters send for file edits, with the arguments of the last one streaming in. A
+       simulation, not a recording. The new file holds a token-shaped value on purpose: the page must mask it (FR-024). */
+    function simEdits(s: SimAgent): void {
+      const base = (s.info.cwd || '~/work').replace(/[\\/]+$/, '');
+      const p1 = sid(s) + '-patch';
+      const patch: EditInfo = { files: [
+        { path: base + '/src/routes/users.ts', kind: 'edit', ...simDiffOf(['router.get("/users", list);'], ['router.get("/users", auth, list);', 'router.post("/users", auth, create);'], 12) },
+        { path: base + '/src/routes/index.ts', kind: 'create', ...simDiffOf([], ['export { default as users } from "./users";', 'export { default as health } from "./health";'], 1) },
+      ] };
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p1, tool: 'apply_patch', phase: 'start', args: { path: patch.files[0].path }, edit: patch });
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p1, tool: 'apply_patch', phase: 'complete', output: 'Applied the patch to 2 files', edit: patch });
+      const p2 = sid(s) + '-write';
+      const env = simEdit(base + '/config/.env.example', 'create', [], ['PORT=3000', 'API_TOKEN=ghp_simulatedTokenValue0123456789abcdef', 'LOG_LEVEL=info']);
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p2, tool: 'Write', phase: 'start', args: { path: env.files[0].path }, edit: env });
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p2, tool: 'Write', phase: 'complete', output: 'File created successfully', edit: env });
+      // a refused edit (this agent is in Read-only): the row must say it was not done (review on #463)
+      const p4 = sid(s) + '-refused';
+      const gone: EditInfo = { files: [{ path: base + '/src/legacy/old-routes.js', kind: 'delete', ...simDiffOf(['module.exports = require("./v0");'], [], 1) }] };
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p4, tool: 'apply_patch', phase: 'start', args: { path: gone.files[0].path }, edit: gone });
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p4, tool: 'apply_patch', phase: 'failed', output: 'declined', edit: gone });
+      // the streamed Edit: start as soon as the path is known, then partial diffs; it stays open (the model is still writing)
+      const p3 = sid(s) + '-stream';
+      const path = base + '/src/server/app.js';
+      const oldL = ['const port = 3000;', 'app.listen(port);'];
+      const newL = ['const port = Number(process.env.PORT) || 3000;', 'const host = process.env.HOST || "127.0.0.1";', '', 'app.use(express.json({ limit: "1mb" }));', 'app.use(requestLog());', ''];
+      for (let i = 0; i < 24; i++) newL.push(`app.get("/api/v1/item${i}", (req, res) => res.json(store.get(${i})));`);
+      newL.push('', 'app.listen(port, host, () => log.info(`listening on ${host}:${port}`));');
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p3, tool: 'Edit', phase: 'start', args: { path } });
+      const steps = [3, 10, 20, newL.length - 1];
+      const step = (k: number): void => {
+        const ed = simEdit(path, 'edit', oldL, newL.slice(0, steps[k]));
+        ed.partial = true;
+        emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p3, tool: 'Edit', phase: 'update', edit: ed });
+        if (k + 1 < steps.length) window.setTimeout(() => step(k + 1), opts.freeze ? 0 : 350);
+      };
+      step(0);
+    }
     function finishReply(s: SimAgent, ok: boolean, file: string): void {
       const out = ok ? 'Simulated reply: edited ' + file + '.' : 'Simulated reply: the edit to ' + file + ' was denied, so I left it unchanged.';
       emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: out, final: true, text: out });
@@ -669,6 +785,22 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       s.state = 'done';
     }
 
+    /* spec 068 FR-017 (simbreak=N, seconds 5-3600): Tomas hits a 5-hour window that resets in N s (instead of the 429), Rosa the monthly
+       premium-request quota with no reset time (it really lifts after 2N s, which the app is not told); Omar keeps his 30 AIU cap. */
+    const simBreakSecs = ((): number => {
+      const q = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simbreak') : null;
+      if (q === null) return 0;
+      const n = Number(q);
+      return Number.isFinite(n) && n >= 5 && n <= 3600 ? Math.round(n) : 120;
+    })();
+    const simLimit = (s: SimAgent, kind: 'plan' | 'quota'): void => {
+      const id = sid(s);
+      s.state = 'idle';
+      closeOpen(s);
+      if (kind === 'plan') emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'plan', resetsAt: s.breakUntil, source: 'Simulated 5-hour window' });
+      else emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'quota', paid: true, source: 'Simulated premium requests' });
+      emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Usage limit reached', reason: 'usage-limit' }); // spec 068: the marker, as the adapters' usageLimitClosing()
+    };
     function play(s: SimAgent): void {
       if (s.info.resumeLast) return; // spec 006 FR-021 (simresume=1): restored, nothing runs until its chat is opened
       emit({ type: 'user', sessionId: sid(s), timestamp: now(), text: s.prompt, attachments: (s.attachments ?? []).map((p) => ({ path: p, kind: /\.(png|jpe?g|gif)$/i.test(p) ? 'image' as const : 'file' as const })) });
@@ -697,16 +829,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: s.intent });
           toolStep(s, true);
           emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: 'Moved the company handlers first and kept a thin re-export in `registry.ts` so the public API is unchanged. Next I am running the **tests** for the three new modules.' + (opts.reply === 'long' ? ' ' + LONG_TEXT : '') });
+          if (simBreakSecs && s.info.name === 'Rosa') window.setTimeout(() => { s.breakUntil = Date.now() + 2 * simBreakSecs * 1000; simLimit(s, 'quota'); }, 1500); // spec 068
           break;
         case 'thinking':
           think(s, 2);
           break;
         case 'waiting': {
-          const w = WAIT_REQ[s.info.name] ?? { kind: 'write' as const, summary: 'Edit ' + s.files[0], target: s.files[0] };
-          askWrite(s, w.target, w.summary, 'tool', s.intent, true, w.kind, w.diff);
+          const w = codexFileReq(s) ?? WAIT_REQ[s.info.name] ?? { kind: 'write' as const, summary: 'Edit ' + s.files[0], target: s.files[0] };
+          askWrite(s, w.target, w.summary, 'tool', s.intent, true, w.kind, w.diff, w.scope);
           break;
         }
         case 'error':
+          if (simBreakSecs && s.info.name === 'Tomas') { s.breakUntil = Date.now() + simBreakSecs * 1000; simLimit(s, 'plan'); break; }
           emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: sid(s) + '-fail', tool: 'bash', phase: 'start', args: { command: 'python evals/run.py --prompt v7 --concurrency 8' } });
           emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: sid(s) + '-fail', tool: 'bash', phase: 'failed', output: 'RateLimitError: 429 Too Many Requests (retry after 38s)\nStopped at case 38 of 120. Partial results saved to evals/out/v7-partial.json' });
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'error', intent: s.intent });
@@ -806,6 +940,140 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       { name: 'my-notes', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'node', args: ['/home/vikram/tools/notes-mcp.js'], enabled: true },
       { name: 'github-mcp-server', origin: 'builtin' as const, enabled: true },
     ];
+    // ---- Fake agent-app lists (spec 069 FR-040): in memory; previews masked like main's; nothing is written anywhere ----
+    type GApp = 'copilot' | 'claude' | 'codex';
+    type GView = { name: string; transport: 'stdio' | 'http' | 'sse' | 'other'; command?: string; args?: string[]; url?: string; envKeys: string[]; headerKeys: string[]; refs?: boolean };
+    const G_LABEL: Record<GApp, string> = { copilot: 'Copilot CLI', claude: 'Claude Code', codex: 'Codex' };
+    const G_FILE: Record<GApp, string> = { copilot: '~/.copilot/mcp-config.json', claude: '~/.claude.json', codex: '~/.codex/config.toml' };
+    const gLists: Record<GApp, GView[]> = {
+      copilot: [
+        { name: 'github', transport: 'stdio', command: 'npx', args: ['-y', '@example/github-mcp'], envKeys: [], headerKeys: [] },
+        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['/home/vikram/tools/notes-mcp.js'], envKeys: [], headerKeys: [] },
+      ],
+      claude: [
+        { name: 'github', transport: 'stdio', command: 'npx', args: ['-y', '@example/github-mcp'], envKeys: [], headerKeys: [] },
+        { name: 'sentry', transport: 'http', url: 'https://mcp.sentry.example/mcp', envKeys: [], headerKeys: ['Authorization'], refs: true },
+        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['/home/vikram/tools/notes-mcp-v1.js'], envKeys: [], headerKeys: [] },
+      ],
+      codex: [{ name: 'context7', transport: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp'], envKeys: [], headerKeys: [] }],
+    };
+    const gOff = new Set<string>();
+    const simToolsOff: Record<string, Record<string, string[]>> = {};
+    let gSeq = 0;
+    const gPending = new Map<string, { kind: 'add' | 'remove'; apps: GApp[]; view?: GView; name: string }>();
+    const G_APPS: GApp[] = ['copilot', 'claude', 'codex'];
+    const gApps = (l: unknown): GApp[] => (Array.isArray(l) ? G_APPS.filter((a) => l.includes(a)) : []);
+    const gEntry = (app: GApp, i: McpServerInput, mode: string): string => {
+      const v = (k: string, hk?: boolean) => (mode === 'ref' ? '${' + (hk ? k.toUpperCase().replace(/[^A-Z0-9_]/g, '_') : k) + '}' : '••••••');
+      if (app === 'codex') {
+        const lines = [`[mcp_servers.${i.name}]`];
+        if (i.transport === 'stdio') { lines.push(`command = "${i.command ?? ''}"`); if (i.args?.length) lines.push(`args = [${i.args.map((a) => JSON.stringify(a)).join(', ')}]`); if (i.env?.length) lines.push(mode === 'ref' ? `env_vars = [${i.env.map((e) => JSON.stringify(e.key)).join(', ')}]` : `env = { ${i.env.map((e) => `"${e.key}" = "••••••"`).join(', ')} }`); }
+        else { lines.push(`url = "${i.url ?? ''}"`); if (i.headers?.length) lines.push(mode === 'ref' ? `env_http_headers = { ${i.headers.map((h) => `"${h.key}" = "${h.key.toUpperCase().replace(/[^A-Z0-9_]/g, '_')}"`).join(', ')} }` : `http_headers = { ${i.headers.map((h) => `"${h.key}" = "••••••"`).join(', ')} }`); }
+        return lines.join('\n');
+      }
+      const e = i.transport === 'stdio'
+        ? { type: app === 'copilot' ? 'local' : 'stdio', command: i.command, args: i.args ?? [], ...(i.env?.length ? { env: Object.fromEntries(i.env.map((x) => [x.key, v(x.key)])) } : {}), ...(app === 'copilot' ? { tools: ['*'] } : {}) }
+        : { type: i.transport, url: i.url, ...(i.headers?.length ? { headers: Object.fromEntries(i.headers.map((x) => [x.key, v(x.key, true)])) } : {}), ...(app === 'copilot' ? { tools: ['*'] } : {}) };
+      const one = (v: unknown): string => (Array.isArray(v) ? '[' + v.map((x) => JSON.stringify(x)).join(', ') + ']' : '{ ' + Object.entries(v as Record<string, unknown>).map(([k, x]) => `${JSON.stringify(k)}: ${JSON.stringify(x)}`).join(', ') + ' }');
+      return `${JSON.stringify(i.name)}: {\n${Object.entries(e).map(([k, v]) => `  ${JSON.stringify(k)}: ${v && typeof v === 'object' ? one(v) : JSON.stringify(v)}`).join(',\n')}\n}`;
+    };
+    const globalApi: Partial<DurbarApi> = {
+      mcpGlobalState: async () => ({ ok: true, apps: G_APPS.map((app) => ({ app, label: G_LABEL[app], file: G_FILE[app], found: true, servers: gLists[app].map((x) => ({ ...x })), off: app === 'claude' ? [...gOff] : [] })) }),
+      mcpGlobalPreview: async (input, apps, mode) => {
+        const i = input as McpServerInput;
+        const list = gApps(apps);
+        if (!list.length) return { ok: false, error: 'Pick at least one agent app.', items: [] };
+        if (!i || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,47}$/.test(i.name ?? '')) return { ok: false, error: 'Name: 1-48 characters, letters, digits, "_", "." or "-", starting with a letter or digit.', items: [] };
+        const token = 'sim-' + ++gSeq;
+        const view: GView = { name: i.name, transport: i.transport, command: i.command, args: i.args, url: i.url, envKeys: (i.env ?? []).map((e) => e.key), headerKeys: (i.headers ?? []).map((h) => h.key), ...(mode === 'ref' && (i.env?.length || i.headers?.length) ? { refs: true } : {}) };
+        gPending.set(token, { kind: 'add', apps: list, view, name: i.name });
+        const vars = mode === 'ref' ? [...(i.env ?? []).map((e) => e.key), ...(i.headers ?? []).map((h) => h.key.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))] : [];
+        return { ok: true, token, ...(vars.length ? { vars } : {}), items: list.map((app) => {
+          const cur = gLists[app].find((x) => x.name === i.name);
+          const err = app === 'codex' && i.name.includes('.') ? 'Codex needs a name of letters, digits, "_" or "-" (no dots).' : app === 'codex' && i.transport === 'sse' ? 'Codex takes http servers only, not sse.' : undefined;
+          return { app, label: G_LABEL[app], file: G_FILE[app], exists: true, entry: gEntry(app, i, mode === 'plain' ? 'plain' : 'ref'), ...(cur ? { conflict: true, current: { ...cur } } : {}), ...(err ? { error: err } : {}), ...(app === 'copilot' && vars.length ? { note: 'Not verified for Copilot: whether the Copilot CLI replaces ${NAME} with the variable\'s value. Check the server starts in a Copilot session.' } : {}) };
+        }) };
+      },
+      mcpGlobalApply: async (token, replace) => {
+        const p = gPending.get(token);
+        gPending.delete(token);
+        if (!p || !p.view) return { ok: false, error: 'This review has expired. Review again.', items: [] };
+        const items = p.apps.map((app) => {
+          const has = gLists[app].findIndex((x) => x.name === p.name);
+          if (app === 'codex' && (p.name.includes('.') || p.view?.transport === 'sse')) return { app, file: G_FILE[app], ok: false, error: 'Not written.' };
+          if (has >= 0 && !(replace ?? []).includes(app)) return { app, file: G_FILE[app], ok: false, error: 'Already there; not replaced.' };
+          if (has >= 0) gLists[app][has] = { ...(p.view as GView) }; else gLists[app].push({ ...(p.view as GView) });
+          return { app, file: G_FILE[app], ok: true, backup: G_FILE[app].split('/').pop() + '.durbar-20261021T210600Z.bak' };
+        });
+        return { ok: items.some((x) => x.ok), items };
+      },
+      mcpGlobalRemovePreview: async (name, apps) => {
+        const list = gApps(apps);
+        const token = 'sim-' + ++gSeq;
+        gPending.set(token, { kind: 'remove', apps: list, name });
+        return { ok: true, token, items: list.map((app) => {
+          const cur = gLists[app].find((x) => x.name === name);
+          return { app, label: G_LABEL[app], file: G_FILE[app], exists: true, entry: cur ? (cur.command ? [cur.command, ...(cur.args ?? [])].join(' ') : cur.url ?? '') : '', ...(cur ? {} : { error: `"${name}" is not in this file.` }) };
+        }) };
+      },
+      mcpGlobalRemoveApply: async (token) => {
+        const p = gPending.get(token);
+        gPending.delete(token);
+        if (!p) return { ok: false, error: 'This review has expired. Review again.', items: [] };
+        const items = p.apps.map((app) => {
+          const i = gLists[app].findIndex((x) => x.name === p.name);
+          if (i < 0) return { app, file: G_FILE[app], ok: false, error: 'Not in this file.' };
+          gLists[app].splice(i, 1);
+          return { app, file: G_FILE[app], ok: true, backup: G_FILE[app].split('/').pop() + '.durbar-20261021T210600Z.bak' };
+        });
+        return { ok: items.some((x) => x.ok), items };
+      },
+      mcpGlobalDiff: async () => {
+        const names: string[] = [];
+        for (const a of G_APPS) for (const v of gLists[a]) if (!names.includes(v.name)) names.push(v.name);
+        const key = (v: GView) => JSON.stringify([v.transport, v.command ?? '', v.args ?? [], v.url ?? '', [...v.envKeys].sort(), [...v.headerKeys].sort()]);
+        const items = names.map((name) => {
+          const inApps = G_APPS.filter((a) => gLists[a].some((x) => x.name === name));
+          const vs = inApps.map((a) => gLists[a].find((x) => x.name === name) as GView);
+          const differs: string[] = [];
+          if (vs.some((v) => key(v) !== key(vs[0]))) {
+            if (vs.some((v) => (v.command ?? '') !== (vs[0].command ?? ''))) differs.push('command');
+            if (vs.some((v) => JSON.stringify(v.args ?? []) !== JSON.stringify(vs[0].args ?? []))) differs.push('arguments');
+            if (vs.some((v) => (v.url ?? '') !== (vs[0].url ?? ''))) differs.push('URL');
+            if (!differs.length) differs.push('environment variables');
+          }
+          return { name, in: inApps, missing: G_APPS.filter((a) => !inApps.includes(a)), differs, from: inApps };
+        }).filter((i) => i.missing.length || i.differs.length);
+        return { ok: true, apps: [...G_APPS], items };
+      },
+      mcpGlobalCopyPreview: async (name, from, to) => {
+        const v = gLists[from]?.find((x) => x.name === name);
+        if (!v) return { ok: false, error: `"${name}" is not in ${G_LABEL[from]}'s list any more.`, items: [] };
+        const list = gApps(to).filter((a) => a !== from);
+        if (!list.length) return { ok: false, error: 'Pick at least one agent app to copy to.', items: [] };
+        const i: McpServerInput = { name, transport: v.transport === 'other' ? 'stdio' : v.transport, command: v.command, args: v.args, url: v.url, env: v.envKeys.map((key) => ({ key })), headers: v.headerKeys.map((key) => ({ key })) };
+        const token = 'sim-' + ++gSeq;
+        gPending.set(token, { kind: 'add', apps: list, view: { ...v }, name });
+        const mode = v.refs ? 'ref' : 'plain';
+        const vars = v.refs ? [...v.envKeys, ...v.headerKeys.map((h) => h.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))] : [];
+        return { ok: true, token, ...(vars.length ? { vars } : {}), items: list.map((app) => {
+          const cur = gLists[app].find((x) => x.name === name);
+          return { app, label: G_LABEL[app], file: G_FILE[app], exists: true, entry: gEntry(app, i, mode), ...(cur ? { conflict: true, current: { ...cur } } : {}) };
+        }) };
+      },
+      mcpGlobalSetOff: async (app, name, off) => {
+        if (app !== 'claude') return { ok: false };
+        if (off) gOff.add(name); else gOff.delete(name);
+        return { ok: true };
+      },
+    };
+    const gSources = (name: string, folder: boolean): McpSourceTag[] => {
+      const out: McpSourceTag[] = G_APPS.filter((a) => gLists[a].some((x) => x.name === name));
+      if (folder) out.push('folder');
+      if (name === 'github-mcp-server') out.push('builtin');
+      if (!out.length) out.push('runtime');
+      return out;
+    };
     const fakeView = (v: FakeSrv) => ({ ...v, env: v.env.map((e) => ({ ...e })), headers: v.headers.map((e) => ({ ...e })) });
     const extrasOf = (key: string): FakeSrv[] => (fakeExtras[key] ??= []);
     const knownFolder = (key: string): boolean => sims.some((x) => x.info.cwd === key);
@@ -929,14 +1197,44 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         /* what the last `mcp` event said wins over the canned rule, as main's live list does for a real session */
         const reported = (n: string): ReturnType<typeof simServer> => { const m = live ? s.mcpLive?.find((x) => x.name === n) : undefined; return m ? { status: s.mcpOff?.has(n) ? 'disabled' : m.status, error: m.error, errorClass: m.errorClass } : simServer(s, idx, n, live); };
         const known = new Set([...fakeCli.map((c) => c.name), ...extrasOf(s.info.cwd).map((v) => v.name)]);
+        const toolsOffOf = (n: string) => (simToolsOff[s.info.cwd]?.[n] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[n] ?? [])] } : {});
         const servers = [
-          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, ...reported(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
-          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
-          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name) })) : []),
+          /* spec 069 FR-061: this folder's turned-off tools */
+          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, ...reported(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), sources: gSources(a.name, false), ...toolsOffOf(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
+          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), sources: gSources(v.name, true), ...toolsOffOf(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
+          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name) })) : []),
         ];
-        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume };
+        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
+      /* spec 069 FR-031/FR-032: canned tools per server; a session that is not running, a failed server and an empty one show their states */
+      /* spec 069 FR-061: tools turned off per folder, in memory */
+      setAgentMcpToolsOff: async (id, name, off) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'Unknown agent.' };
+        const m = (simToolsOff[s.info.cwd] ??= {});
+        if (off.length) m[name] = [...new Set(off)];
+        else delete m[name];
+        return { ok: true };
+      },
+      agentMcpTools: async (id, name) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'Unknown agent or server.' };
+        if (s.state === 'idle' && !s.ctx) return { ok: false, notRunning: true, error: 'Start the session to see its tools.' };
+        await new Promise((r) => setTimeout(r, 250));
+        const canned: Record<string, [string, string?][]> = {
+          github: [['search_issues', 'Search issues and pull requests in a repository'], ['get_pull_request', 'Get one pull request with its files and checks'], ['create_issue', 'Open a new issue'], ['list_commits', 'List the commits of a branch'], ['get_file_contents', 'Read a file at a ref']],
+          // `search` is also a tool of my-notes (two servers, one tool name: spec 069 review on PR 503); `run query` cannot be turned off (FR-063)
+          'github-mcp-server': [['get_me', 'Your GitHub account'], ['search_code', 'Search code on GitHub'], ['search', 'Search GitHub'], ['run query', 'A tool name with a space']],
+          playwright: [['browser_navigate', 'Open a URL in the browser'], ['browser_click', 'Click an element'], ['browser_snapshot', 'Accessibility snapshot of the page'], ['browser_take_screenshot']],
+          'docs-search': [],
+        };
+        /* the same state the row shows (spec 058's canned failures; a Restart fixes them): only a running server lists tools */
+        const st = simServer(s, sims.indexOf(s), name, true);
+        if (st.status && st.status !== 'connected') return { ok: false, error: name + ' is not connected' + (st.error ? ': ' + st.error : ' (' + st.status + ')') };
+        const list = canned[name] ?? [['search', 'Search the notes'], ['read_note', 'Read one note by its title']];
+        return { ok: true, total: list.length, tools: list.map(([n, d]) => ({ name: n, ...(d ? { description: d } : {}) })) };
+      },
       agentMcpRestart: async (id, name) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || !caps(s.info.adapterId ?? 'copilot').mcpRestart) return { ok: false, error: 'This agent app cannot restart one MCP server. Use Restart session with these servers.' };
@@ -965,13 +1263,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const placeMap: Record<string, string> = {};
     let seriousMode = false; /* spec 034 */
     let notifyNeedsMe = false; /* spec 052 FR-059: off in the demo until you turn it on */
+    let breakResume: 'auto' | 'ask' = 'auto'; /* spec 068 FR-006 */
     const PLACE_CHOICES = ['library', 'software', 'terminal', 'web', 'other', 'desk'];
     /* spec 024 FR-018..FR-020: custom places in memory, with the rules of src/shared/places.ts repeated here (the renderer bundle cannot import
        it; scripts/test-places.ts runs both on the same cases and compares them). */
     type SimPlace = { id: string; name: string; icon: string };
     const MAX_CUSTOM = 3;
     const CUSTOM_ICONS = ['star', 'flask', 'database', 'cloud', 'chart', 'chat', 'mail', 'calendar', 'shield', 'box', 'bolt', 'pin'];
-    const RESERVED_NAMES = ['library', 'software library', 'terminal', 'web', 'other tools', 'stay at desk', 'default'];
+    const RESERVED_NAMES = ['library', 'software library', 'terminal', 'web', 'other tools', 'stay at desk', 'default', 'coffee corner'];
     const customPlaces: SimPlace[] = [];
     let placeSeq = 0;
     const simPlaceResult = (ok: boolean, error?: string, place?: SimPlace) => ({
@@ -1066,10 +1365,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.11 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.11 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
+      setBreakResume: async (v) => { if (v === 'auto' || v === 'ask') breakResume = v; return { ok: true, breakResume }; },
       setBadge: async () => ({ ok: true }), /* spec 052 FR-059: no app icon in the demo */
       focusWindow: async () => { window.focus(); return { ok: true }; },
       setTheme: async (id) => { if (typeof id === 'string' && /^[a-z0-9_-]{1,64}$/.test(id)) simTheme = id; return { ok: true, theme: simTheme }; },
@@ -1148,6 +1448,72 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         emit({ type: 'agentProfile', sessionId: id, timestamp: now(), profile: p } as AgentEvent);
         return { ok: true, profile: p };
+      },
+      // spec 043 FR-017: profile files in memory
+      listProfileFiles: async () => ({ ok: true, folders: pfFolders(), files: simPF.map(pfInfo), userDirs: { copilot: '~/.copilot/agents', claude: '~/.claude/agents' } }),
+      readProfileFile: async (fileId) => {
+        const f = simPF.find((x) => x.id === fileId);
+        return f ? { ok: true as const, info: pfInfo(f), text: f.text, sha256: pfHash(f.text), eol: 'lf' as const } : { ok: false as const, error: 'That profile file is not in the list any more.' };
+      },
+      saveProfileFile: async (fileId, text, baseSha, overwrite) => {
+        const f = simPF.find((x) => x.id === fileId);
+        if (!f) return { ok: false as const, error: 'The file was removed or moved since you opened it.', conflict: true };
+        if (!f.writable) return { ok: false as const, error: f.note || 'You cannot write this file.' };
+        if (overwrite !== true && pfHash(f.text) !== baseSha) return { ok: false as const, conflict: true, error: 'The file changed on disk since you opened it.' };
+        f.text = String(text);
+        return { ok: true as const, sha256: pfHash(f.text), info: pfInfo(f) };
+      },
+      createProfileFile: async (app, place, name, template, text) => {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) || name.includes('..') || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(name)) return { ok: false as const, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
+        const folder = place === 'user' ? undefined : pfFolders().find((x) => x.id === place)?.path;
+        if (place !== 'user' && !folder) return { ok: false as const, error: 'That folder is not in the office any more: choose where to save it again.' };
+        const dir = place === 'user' ? (app === 'copilot' ? '~/.copilot/agents' : '~/.claude/agents') : folder + (app === 'copilot' ? '/.github/agents' : '/.claude/agents');
+        const file = dir + '/' + (app === 'copilot' ? name + '.agent.md' : name + '.md');
+        if (simPF.some((x) => x.path === file)) return { ok: false as const, error: file.slice(file.lastIndexOf('/') + 1) + ' exists already.' };
+        // the shared templates (src/shared/profiletemplates.ts), loaded after exports-shim.js; read at call time
+        const tpl = (self as unknown as { exports?: { profileTemplate?: (a: string, n: string, k?: string) => string } }).exports?.profileTemplate;
+        if (!tpl) return { ok: false as const, error: 'The templates are not loaded.' };
+        const f = pf(app, place === 'user' ? 'user' : 'folder', folder, file, typeof text === 'string' ? text : tpl(app, name, template === 'standard' ? 'standard' : 'success')); // text: a reviewed AI draft (FR-029)
+        simPF.push(f);
+        return { ok: true as const, id: f.id, info: pfInfo(f) };
+      },
+      // spec 043 FR-030: a canned Agent Success Profile from the answers (no credits), checked like a real reply
+      generateProfile: async (req) => {
+        type PT = { profileTemplate(a: string, n: string, k?: string): string; PROFILE_QUESTIONS: { id: string; section: string }[]; validateGeneratedProfile(t: string, i: unknown, p: (t: string) => unknown): { ok: true; text: string; warnings: string[]; extraTools: string[] } | { ok: false; error: string }; parseToolList(l: unknown): { ok: true; tools: string[] } | { ok: false; error: string }; DEFAULT_READ_TOOLS: Record<string, string[]> };
+        const T = (self as unknown as { exports?: PT }).exports;
+        const PE = (window as unknown as { DurbarProfileEditor?: { parseFrontmatter(t: string): unknown } }).DurbarProfileEditor;
+        if (!T || !T.validateGeneratedProfile || !PE) return { ok: false as const, error: 'The templates are not loaded.' };
+        const tl = T.parseToolList(req.tools);
+        if (!tl.ok) return { ok: false as const, error: tl.error };
+        if (simGenRunning) return { ok: false as const, busy: true as const, error: 'The first request is still running on the agent app and may be charged. Create is available again when it ends.' };
+        if (!caps(String(req.by)).oneShot) return { ok: false as const, error: 'That agent app cannot write a profile here. Pick an installed, signed-in one.' };
+        simGenRunning = true;
+        const w = window as unknown as { __simGenCalls?: number; __simGenDelay?: number };
+        w.__simGenCalls = (w.__simGenCalls ?? 0) + 1;
+        try {
+          await new Promise((r) => window.setTimeout(r, Math.min(Math.max(Number(w.__simGenDelay) || 700, 0), 10_000))); // a driver may lengthen the wait
+        } finally {
+          simGenRunning = false;
+        }
+        const said = req.mode === 'describe' ? String(req.description ?? '') : Object.values(req.answers ?? {}).join(' ');
+        const summary = req.mode === 'describe' ? said : String((req.answers ?? {}).title || said);
+        const spend = req.by === 'claude' ? { costUsd: 0.003 } : req.by === 'copilot' ? { nanoAiu: 15_000_000 } : {};
+        if (/\bfail\b/i.test(said)) return { ok: false as const, error: 'The agent app gave no answer.', ...spend };
+        let text = T.profileTemplate(req.app, req.name, 'success').replace(/^description: .*$/m, 'description: ' + (summary.slice(0, 120).replace(/[:#\n]/g, ' ').trim() || 'A focused agent'));
+        // a canned reply that uses every tool it may (FR-032), so the granted-tools note shows in the simulator too
+        if (tl.tools.length) { const all = [...(T.DEFAULT_READ_TOOLS[req.app] ?? []), ...tl.tools].join(', '); text = text.replace(/^tools: .*$/m, 'tools: ' + (req.app === 'copilot' ? '[' + all + ']' : all)); }
+        const a = req.answers ?? {};
+        for (const q of T.PROFILE_QUESTIONS) {
+          const v = req.mode === 'describe' ? (q.id === 'title' ? said.slice(0, 200) : '') : a[q.id];
+          if (v) text = text.replace(new RegExp('(## ' + q.section + '\\n\\n)[^\\n]*'), (_m, h: string) => h + v);
+        }
+        const v = T.validateGeneratedProfile(text, { app: req.app, name: req.name, mode: req.mode, description: req.description, answers: req.answers, tools: tl.tools }, (t) => PE.parseFrontmatter(t));
+        return v.ok ? { ok: true as const, text: v.text, warnings: v.warnings, extraTools: v.extraTools, by: req.by === 'claude' ? 'Claude Code' : req.by === 'codex' ? 'Codex' : 'GitHub Copilot', ...spend } : { ok: false as const, error: v.error, ...spend };
+      },
+      openProfileInVSCode: async (fileId) => {
+        const f = simPF.find((x) => x.id === fileId);
+        if (f) console.info('[sim] would open the profile file in VS Code:', f.fileName);
+        return f ? { ok: true } : { ok: false, error: 'That profile file is not in the list any more.' };
       },
       // spec 044: scheduled prompts in memory; a 1 s check sends through the simulated agents (no credits)
       listSchedules: async () => ({ pausedAll: simSched.pausedAll, schedules: simSched.list.map((x) => ({ ...x })) }),
@@ -1465,6 +1831,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simKinds = simKindsParam === '1' || simKindsParam === 'solo'; // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
     // Spec 006 FR-028: `simprev=inoffice|inoffice-solo|error` make the next delete answer a refusal or an error. Delete… disabled (no per-session delete) is seen with `simkinds=mixed`, where Ada is Claude Code.
     const simPrev = simQuery.get('simprev') ?? '';
+    // Spec 006 FR-034/FR-036: `simprevdelay=<ms>` (at most 10 s) makes both lists answer late, so a driver can press Ctrl+Shift+H while they load.
+    const simPrevDelay = Math.min(10_000, Math.max(0, Number(simQuery.get('simprevdelay')) || 0));
+    const prevWait = (): Promise<void> => (simPrevDelay ? new Promise((r) => setTimeout(r, simPrevDelay)) : Promise.resolve());
     const prevMarks = new Map<string, { pinned: string[]; hidden: string[] }>(); // key = 'vscode' or the agent app's id; ids only
     const prevDeleted = new Set<string>();
     const simSessionModes = new Map<string, AgentInfo['permMode']>([['prev-1', 'allow']]); // spec 003 (2026-10-21): the mode last chosen per earlier session
@@ -1507,6 +1876,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const api: DurbarApi = {
       ...floorApi,
       ...mcpApi,
+      ...globalApi,
       ...capApi,
       ...modelApi,
       version: async () => 'sim',
@@ -1520,10 +1890,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       harnessPlans: async (kind, op) => {
         const real = typeof window !== 'undefined' ? (window as unknown as { agentDurbar?: DurbarApi }).agentDurbar : undefined;
         if (real?.harnessPlans) return real.harnessPlans(kind, op);
-        return { name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Deprecated by Anthropic: use it only if nothing else works.' }] };
+        return { name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Needs Node.js 22 or later. Anthropic recommends its native installer.' }] };
       },
-      harnessRun: async (kind, op) => {
+      harnessRun: async (kind, op, planIndex) => {
         const t0 = Date.now();
+        // spec 060 FR-012: the driver checks which route a Run button asked for (only an index is sent; nothing runs here)
+        if (typeof window !== 'undefined') (window as unknown as { __simHarnessLast?: unknown }).__simHarnessLast = { kind, op, planIndex };
         const prog = (p: Record<string, unknown>) => simHarness.progress.forEach((cb) => cb({ kind, op, elapsedMs: Date.now() - t0, lines: [], ...p } as never));
         const done = (ok: boolean) => { simHarness.running = null; if (ok && op === 'signin') { simSignedOut.delete(kind); simExpired.delete(kind); } simHarness.done.forEach((cb) => cb({ kind, op, ok, exitCode: ok ? 0 : 1, lines: ['(simulated)'] } as never)); };
         if (op === 'signin') {
@@ -1565,6 +1937,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           // After the renderer has registered the infos, replay each agent's script.
           setTimeout(() => {
             sims.forEach(play);
+            if (opts.edits && sims[0]) simEdits(sims[0]); // spec 005 FR-026
             /* spec 008 FR-113: every script has run (a frozen simulator emits nothing more); the page's settleNow() test hook reads it */
             (window as unknown as { __durbarSimReplayed?: boolean }).__durbarSimReplayed = true;
             // simspeed=N (perf checks, spec 052): background activity N times faster
@@ -1625,6 +1998,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           }, 300);
           return { ok: true };
         }
+        if (s.breakUntil && Date.now() < s.breakUntil) { // spec 068: the limit has not reset yet: the turn hits it again
+          const kind = s.info.name === 'Rosa' ? 'quota' : 'plan';
+          window.setTimeout(() => { emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: 'Thinking' }); simLimit(s, kind); }, 400);
+          return { ok: true };
+        }
+        s.breakUntil = undefined;
         window.setTimeout(() => void reply(s, text), 400);
         return { ok: true };
       },
@@ -1676,10 +2055,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       resolvePermission: async (id, req, approve, remember) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || !s.perm || s.perm.requestId !== req) return;
-        const { cont, file, ...p } = s.perm;
+        const { cont, file, folders, ...p } = s.perm;
         s.perm = undefined;
         const keep = approve && remember === true;
-        if (keep) { s.grants.set(p.scopeKey, p.scopeLabel); grantsEvent(s); }
+        // like the broker (review on #470): a write in several folders grants each folder, one chip each
+        if (keep) { for (const g of folders ?? [{ key: p.scopeKey, label: p.scopeLabel }]) s.grants.set(g.key, g.label); grantsEvent(s); }
         emit({ type: 'permission', sessionId: id, timestamp: now(), permission: { ...p, state: approve ? 'approved' : 'denied', via: 'user', remembered: keep || undefined } });
         simLog(s, !approve ? 'denied' : keep ? 'allowed-session' : 'allowed-once', p.summary);
         s.state = 'working';
@@ -1779,6 +2159,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       onAgentRenamed: (cb) => { renamedListeners.add(cb); return () => renamedListeners.delete(cb); },
       listPrevious: async (id) => {
+        await prevWait();
         const src = sims.find((x) => x.info.id === id);
         if (!src || !hasPrev(src)) return { ok: true, sessions: [], pinned: [], hidden: [] };
         const t = Date.now();
@@ -1837,6 +2218,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           ] } };
       },
       listVsChats: async (id) => {
+        await prevWait();
         const src = sims.find((x) => x.info.id === id);
         if (!src || !hasPrev(src)) return { ok: true, sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0, formatNote: '' };
         return { ok: true, storesFound: 1, unreadable: 0, tooLarge: 0, formatNote: 'VS Code does not document this format; unknown parts are skipped.',

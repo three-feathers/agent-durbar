@@ -49,6 +49,9 @@
   /* spec 052 FR-165/FR-167: one measure for help text; three dialog widths (S a confirmation, M a form or list, L two columns or a table) */
   --measure:560px; --menu-w:320px; --pop-w-s:420px; --pop-w-m:660px; --pop-pad:12px 14px; --dlg-w-s:420px; --dlg-w-m:560px; --dlg-w-l:760px;
   --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  /* spec 070 FR-001: typed theme tokens (theme.js TYPED_TOKENS); a pack may set them, these are Clean Office's */
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --shadow-card:none; --shadow-pop:0 14px 40px rgba(40,35,25,.22);
   }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -162,7 +165,7 @@ body.has-bridge #liveBar{display:flex}
 .gchip.gchip-btn{padding:0 9px;gap:5px;cursor:pointer;font-family:inherit;height:22px;width:auto;border-radius:999px}
 .gchip.gchip-btn:hover{filter:brightness(.97)}
 .gchip.gchip-btn svg{width:10px;height:10px;opacity:.8}
-.grants-pop{position:absolute;left:0;top:calc(100% + 4px);z-index:70;width:min(var(--pop-w-s),calc(100vw - 32px));max-height:min(320px,50vh);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--pop-pad);box-shadow:0 14px 40px rgba(40,35,25,.22);display:flex;flex-direction:column;gap:2px}
+.grants-pop{position:absolute;left:0;top:calc(100% + 4px);z-index:70;width:min(var(--pop-w-s),calc(100vw - 32px));max-height:min(320px,50vh);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--pop-pad);box-shadow:var(--shadow-pop);display:flex;flex-direction:column;gap:2px}
 .grants-pop[hidden]{display:none}
 .gp-list{list-style:none;margin:0;padding:0}
 .gp-row{display:flex;align-items:center;gap:8px;min-height:28px;padding:2px 4px 2px 8px;border-radius:var(--r-md);font-size:var(--t4-size);color:var(--ink)}
@@ -191,7 +194,7 @@ body.has-bridge #liveBar{display:flex}
 .room[data-tint="clay"]{--tint:var(--tint-clay,#f3eae4);--wall:var(--wall-clay,#e4d3c9)}
 .room-head{display:flex;align-items:center;gap:8px;min-height:24px;min-width:0}
 .room-name{font-size:13.5px;font-weight:650;letter-spacing:-.005em;white-space:nowrap}
-.room-path{font-size:11.5px;color:var(--room-path,#5c635e);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}
+.room-path{font-size:11.5px;color:var(--room-path,#5c635e);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}
 .room-dots{margin-left:auto;display:flex;gap:8px;align-items:center;flex:none}
 /* folder usage total (spec 011 FR-020): sits next to the status dots and never shrinks; the path gives way first */
 .room-aiu{margin-left:auto;flex:none;white-space:nowrap;font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
@@ -229,6 +232,8 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .desk .info{padding:2px 8px 0}
 .who{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
 .name{font-weight:650;font-size:14px}
+/* spec 059 FR-019 (#536): a name is data; it stays in its box. Full cards: 2 lines, a token without spaces may break anywhere, then "…" (the full name is in the tooltip) */
+.who .name{line-height:18px;min-width:0;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .role{font-size:11.5px;color:var(--muted)}
 .task{margin:3px 0 7px;font-size:12px;color:var(--ink-2);line-height:1.35;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:48px}
 .pill{display:inline-flex;align-items:center;gap:6px;height:var(--h-pill);padding:0 9px 0 8px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap;background:var(--pb);color:var(--pc)}
@@ -320,7 +325,7 @@ button.lrow[aria-pressed="true"]{background:var(--tone-info-soft);box-shadow:ins
 .lname .sub::before{content:"";display:inline-block;width:10px;height:10px;border-left:1.5px solid var(--line-2);border-bottom:1.5px solid var(--line-2);margin-right:6px;transform:translateY(-3px);border-radius:0 0 0 4px}
 .lcell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2)}
 .lmood{color:var(--amber-ink);font-weight:600;font-size:12px}
-.lcell.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+.lcell.mono{font-family:var(--font-mono);font-size:12px}
 .lcell.num{font-variant-numeric:tabular-nums;font-size:12px;text-align:right}
 .lhead>.num{text-align:right}
 .lhead>.num .lsort{flex-direction:row-reverse} /* spec 052 FR-104: number columns right-aligned; the arrow goes first so the label lines up with the numbers */
@@ -344,7 +349,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 :is(h1,h2,h3,h4)[tabindex="-1"]:focus,:is(h1,h2,h3,h4)[tabindex="-1"]:focus-visible{outline:none}
 .ph .sub{font-size:var(--t5-size);line-height:var(--t5-lh);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ph-meta{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;min-width:0}
-.folder{display:inline-flex;align-items:center;gap:4px;height:var(--h-chip);font-size:var(--t4-size);color:var(--ink-2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:0 8px} /* spec 052 FR-076: a path chip, not a pill */
+.folder{display:inline-flex;align-items:center;gap:4px;height:var(--h-chip);font-size:var(--t4-size);color:var(--ink-2);font-family:var(--font-mono);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:0 8px} /* spec 052 FR-076: a path chip, not a pill */
 .folder{max-width:100%;min-width:0}
 .folder .fst{color:var(--muted);white-space:nowrap;flex:none} /* spec 063: branch and changed files */
 .folder[role=button]{cursor:pointer}.folder[role=button]:hover{border-color:var(--line-2)}.folder[role=button]:focus-visible{outline:2px solid var(--focus,#2f6fde);outline-offset:1px}
@@ -397,7 +402,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .chip:hover{background:var(--raised)}
 .chip svg{width:13px;height:13px;flex:none}
 .chip b{font-weight:600;color:var(--ink);flex:none}
-.chip code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0}
+.chip code{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0}
 .chip .res{font-size:11px;padding-left:6px;border-left:1px solid var(--line);color:var(--sage-ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;max-width:40%}
 .chip.fail{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}.chip.fail .res{color:var(--red-ink);border-color:var(--tone-bad-line)}
 .chip.run .res{color:var(--blue-ink)}
@@ -407,12 +412,12 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .chip.open code{white-space:pre-wrap;overflow-wrap:anywhere;flex:1 1 60%}
 .chip.open .res{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .chip.open.has-detail .res{display:none}
-.chip.open .detail{display:block;flex:1 1 100%;margin:2px 0 0;padding:6px 8px;background:color-mix(in srgb,var(--raised) 70%,transparent);border-radius:7px;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow-y:auto;color:var(--ink-2)}
+.chip.open .detail{display:block;flex:1 1 100%;margin:2px 0 0;padding:6px 8px;background:color-mix(in srgb,var(--raised) 70%,transparent);border-radius:7px;font:11px/1.45 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow-y:auto;color:var(--ink-2)}
 /* spec 052 FR-063: the open chip shows the whole command (monospace, wrapped) with Copy, how long it took, and up to 20000 characters of output */
 .chip.open .xbody{display:flex;flex-direction:column;gap:4px;flex:1 1 100%;min-width:0;cursor:auto}
 .chip.open.has-cmd>code{display:none}
 .chip .cmdbox{position:relative;display:block}
-.chip pre.cmd{margin:0;padding:6px 64px 6px 8px;background:color-mix(in srgb,var(--raised) 70%,transparent);border-radius:7px;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:200px;overflow-y:auto;color:var(--ink);user-select:text}
+.chip pre.cmd{margin:0;padding:6px 64px 6px 8px;background:color-mix(in srgb,var(--raised) 70%,transparent);border-radius:7px;font:11px/1.45 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:200px;overflow-y:auto;color:var(--ink);user-select:text}
 .chip .cmdbox .cp-btn{opacity:1}
 .chip .xmeta{font-size:11px;color:var(--muted)}
 .chip .detail{user-select:text}
@@ -420,13 +425,29 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* spec 052 FR-063: "Show the change" on a permission card and its inbox row, collapsed by default; + green, - red, monospace */
 .pdiff{margin:6px 0 2px;font-size:12px}
 .pdiff>summary{cursor:pointer;color:var(--ink-2);font-weight:600;width:max-content;max-width:100%}
-.pdiff>pre{margin:4px 0 0;padding:6px 0;max-height:320px;overflow:auto;background:var(--raised);border:1px solid var(--line);border-radius:7px;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink-2)}
+.pdiff>pre{margin:4px 0 0;padding:6px 0;max-height:320px;overflow:auto;background:var(--raised);border:1px solid var(--line);border-radius:7px;font:11px/1.45 var(--font-mono);color:var(--ink-2)}
 .pdiff .dl{display:block;padding:0 8px;white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.45em}
 .pdiff .dl.add{background:var(--pb-done);color:var(--pc-done)}
 .pdiff .dl.del{background:var(--pb-error);color:var(--red-ink)}
 .pdiff .dl.hunk{color:var(--blue-ink)}
 .pdiff .dl.file{color:var(--muted);font-weight:600}
 .pdiff .dmore{display:block;padding:2px 8px 0;color:var(--muted);font-family:inherit}
+/* spec 005 FR-020/FR-021: a file edit in the chat, an edit row and its diff (the permission card's .pdiff colours) */
+.chip.editchip .ed-head{display:inline-flex;align-items:baseline;gap:6px;min-width:0;overflow:hidden;flex:0 1 auto}
+.chip.editchip .ed-verb{color:var(--ink-2);flex:none}
+.chip.editchip .ed-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0}
+.chip.editchip .ed-dir{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 2 auto;min-width:0}
+.ed-count{display:inline-flex;gap:5px;flex:none;font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.ed-count i{font-style:normal}
+.ed-count .add{color:var(--pc-done)}
+.ed-count .del{color:var(--red-ink)}
+.chips>.ediff{flex:1 1 100%;min-width:0;margin:0 0 2px}
+.chips>.ediff[hidden]{display:none}
+.ediff>summary{font-size:11px;color:var(--muted)}
+.ediff>pre{max-height:min(320px,40vh)}
+.ediff .dl.file{display:flex;align-items:baseline;gap:8px;padding-top:2px;color:var(--ink-2)}
+.ediff .xall{display:block;margin:4px 8px 0;height:28px;padding:0 10px;font:600 11px/1 system-ui,sans-serif;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer}
+.ediff.partial>pre{border-style:dashed}
 /* spec 052 FR-062: "active 2m ago" next to the chat header's status */
 .ph-ago{font-size:var(--t5-size);color:var(--muted);white-space:nowrap}
 .ph-ago:empty{display:none}
@@ -470,8 +491,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* spec 052 (2026-10-21, round 1): while a theme is being tried, toasts sit above its bar instead of on top of it (1280x800 overlap) */
 body:has(#aiTryBar) #toasts{bottom:100px}
 .toast{overflow-wrap:break-word;pointer-events:auto;background:#2f3a36;color:#f7f4ee;padding:10px 16px;border-radius:12px;font-size:13px;line-height:1.45;box-shadow:0 8px 24px rgba(40,35,25,.18);animation:pop .25s ease-out;max-width:420px}
-.toast.warn{border-left:4px solid #e5be78}
-.toast code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:color-mix(in srgb,var(--raised) 14%,transparent);padding:1px 6px;border-radius:6px}
+.toast.warn{border-left:4px solid var(--tone-warn-line)}
+.toast code{font-family:var(--font-mono);background:color-mix(in srgb,var(--raised) 14%,transparent);padding:1px 6px;border-radius:6px}
 
 @media (max-width:1320px){
   .topbar{padding:4px 14px;gap:6px 8px}
@@ -569,7 +590,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 
 /* the desk: tiny scene + text */
 .desk.card{width:100%;height:var(--ch);padding:5px 10px 5px 5px;border-radius:12px;display:grid;grid-template-columns:var(--sw) minmax(0,1fr);column-gap:8px;align-items:center;
-  background:var(--surface);border:1px solid var(--line-hair);box-shadow:none} /* spec 052 FR-100: flat, one hairline, no shadow */
+  background:var(--surface);border:1px solid var(--line-hair);box-shadow:var(--shadow-card)} /* spec 052 FR-100: flat, one hairline, no shadow */
 .desk.card:hover{background:var(--raised);border-color:var(--line-2)}
 /* waiting, error and failing: a light tint, and a 3px edge inside the card as the main signal (no coloured border on top) */
 .desk.card.is-waiting{background:var(--card-waiting);border-color:var(--line-hair);box-shadow:inset 3px 0 0 var(--c-waiting)}
@@ -628,7 +649,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .helpers.hstrip>.fewer{grid-column:1/-1;height:22px}
 .helpers.hstrip>.fewer::before{display:none}
 .helper.hc{width:100%;height:var(--hh);padding:3px 6px 3px 4px;border-radius:10px;display:grid;grid-template-columns:var(--hsw) minmax(0,1fr);column-gap:5px;align-items:center;
-  background:var(--surface);border:1px solid var(--line-hair);box-shadow:none} /* spec 052 FR-100 */
+  background:var(--surface);border:1px solid var(--line-hair);box-shadow:var(--shadow-card)} /* spec 052 FR-100 */
 .helper.hc:hover{background:var(--raised);border-color:var(--line-2)}
 .helper.hc.is-waiting{background:var(--card-waiting);border-color:var(--line-hair);box-shadow:inset 3px 0 0 var(--c-waiting)}
 .helper.hc.is-error{background:var(--card-error);border-color:var(--line-hair);box-shadow:inset 3px 0 0 var(--c-error)}
@@ -717,8 +738,8 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .ph{--h-chip:28px} /* one control height in the header: chips and .btn.sm buttons are both 28px */
 .ph-top{flex-wrap:wrap;gap:8px 12px;align-items:flex-start}
 .ph-id{min-width:0;flex:0 0 auto;max-width:40%;min-height:28px;display:flex;align-items:center;gap:8px} /* name, then the role in T5 on the same line */
-.ph-id h2{flex:0 0 auto;min-width:3.5em;max-width:100%} /* round 10 check: the name never shrinks before the chips do */
-.ph-id .sub{flex:0 1 auto;min-width:0}
+.ph-id h2{flex:0 4 auto;min-width:3.5em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} /* round 10 check: the name never shrinks before the chips do (.ph-id has its own max-width); the name is cut, the role is not (spec 052 FR-174 review: the h2 has its title) */
+.ph-id .sub{flex:0 1 auto;min-width:0} /* the name shrinks four times as fast as the role (a shrink factor under 1 would only take part of the overflow back); both are cut with an ellipsis and carry a title (spec 052 FR-174) */
 .ph-meta{margin-top:0;flex:1 1 760px;row-gap:4px;min-height:28px}
 /* spec 052 FR-141: the chips stay beside the name when 760px are left for them; otherwise they take a full row under the name and the
    actions (before, they were squeezed into the leftover width, one chip per row: 5 to 8 rows). The actions never move down. */
@@ -732,7 +753,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 /* spec 052 FR-003: the chat header's More menu (two actions in view, the rest here; End and Remove last) */
 .ph .actions{position:relative}
 #moreBtn svg{width:12px;height:12px;margin-left:2px}
-.more-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:70;width:min(var(--menu-w),calc(100vw - 16px));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:6px;box-shadow:0 14px 40px rgba(40,35,25,.22);display:flex;flex-direction:column;gap:2px}
+.more-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:70;width:min(var(--menu-w),calc(100vw - 16px));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:6px;box-shadow:var(--shadow-pop);display:flex;flex-direction:column;gap:2px}
 .more-menu[hidden]{display:none}
 .more-it{display:flex;align-items:center;gap:8px;width:100%;min-height:32px;text-align:left;padding:4px 12px;border:0;border-radius:var(--r-md);background:transparent;color:var(--ink);font:inherit;font-size:var(--t3-size);cursor:pointer}
 .more-it svg{width:14px;height:14px;flex:none}
@@ -749,20 +770,31 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 #chat{padding:16px max(16px,calc((100% - 880px)/2))}
 .composer{padding:8px max(16px,calc((100% - 880px)/2))}
 .ph{padding-left:max(16px,calc((100% - 1240px)/2));padding-right:max(16px,calc((100% - 1240px)/2))}
-.panel-in.viewing .composer,.panel-in.viewing .prev,.panel-in.viewing #prevBtn{display:none}
+.panel-in.viewing .composer,.panel-in.viewing .prev{display:none}
 .nothink{font-size:11px;color:var(--muted)}
 .think.streaming .think-body:empty::before{content:"The model reasons privately first. A summary of its reasoning appears here when it finishes thinking.";color:var(--muted)}
 
 /* previous sessions */
-/* spec 052 FR-095: the bar is gone; "Previous (N)" in the header's actions opens this panel under the header (same lists, same behaviour) */
-.prev{flex:none;border-bottom:1px solid var(--line);background:var(--soft);padding:4px max(16px,calc((100% - 1240px)/2)) 0}
+/* spec 006 FR-033 (2026-10-21): a section of its own above the chat. Collapsed it is one slim row (a 28px toggle, 32px with its border):
+   the shared chevron, the label, a count pill and a muted breakdown that is cut first; the whole row is the toggle. Open, the lists show under it. */
+.prev{flex:none;border-bottom:1px solid var(--line);background:var(--soft);padding:2px max(16px,calc((100% - 1240px)/2)) 1px}
 .prev[hidden]{display:none}
-#prevBtn[aria-expanded="true"]{background:var(--surface-2);border-color:var(--line-ctl)}
+.prev-bar{display:flex;min-width:0}
+.prev-toggle{display:flex;align-items:center;gap:var(--s-2);flex:1;min-width:0;height:28px;margin:0 -8px;padding:0 8px;border:0;border-radius:var(--r-sm);background:transparent;color:var(--ink);font:inherit;font-size:var(--t4-size);text-align:left;cursor:pointer;white-space:nowrap}
+.prev-toggle:hover{background:var(--surface-2)}
+.prev-toggle .chev{width:12px;height:12px;flex:none;color:var(--ink-2);transition:transform .2s}
+.prev-toggle[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.prev-l{flex:none;font-weight:650}
+.prev-c{flex:none;min-width:20px;height:18px;padding:0 var(--s-1);box-sizing:border-box;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-2);font-size:var(--t5-size);font-weight:650;line-height:16px;text-align:center}
+.prev-c[hidden]{display:none}
+.prev-sub{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:var(--t5-size);font-weight:500}
+@media (prefers-reduced-motion:reduce){.prev-toggle .chev{transition:none}}
+.prev-panel[hidden]{display:none}
 .prev-body{max-height:min(30vh,250px);overflow-y:auto;padding:0 18px 8px 0;scrollbar-gutter:stable} /* spec 006 FR-027: an overlay scrollbar (macOS) must never sit over the ⋯ buttons or take their clicks: 14px clear on the right */
 /* spec 052 (2026-10-21, round 1): the panel ends with a clear edge, and the list fades out while more rows are below */
-.prev{box-shadow:0 6px 10px -8px rgba(40,30,10,.28)}
+.prev.open{box-shadow:0 6px 10px -8px rgba(40,30,10,.28)} /* only while the lists are open: collapsed it is a plain row */
 .prev-body.more-below{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent)}
-.prev-q{display:block;box-sizing:border-box;width:100%;height:28px;margin:4px 0;padding:0 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--raised);color:var(--ink);font:inherit;font-size:var(--t4-size)}
+.prev-q{display:block;box-sizing:border-box;width:100%;height:28px;margin:4px 0;padding:0 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--raised);color:var(--ink);font:inherit;font-size:var(--t4-size)} /* FR-037: a token, so a dark theme has a dark field */
 .prev-n{font-weight:500;color:var(--muted);font-size:var(--t4-size);margin-left:4px}
 .prev-h{font-size:var(--t4-size);font-weight:650;color:var(--ink);margin:8px 0 4px}
 .prev-h small{font-size:var(--t5-size);font-weight:500;color:var(--muted);margin-left:4px} /* FR-166: the browser's own "smaller" gave 10px */
@@ -807,7 +839,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .dlg input[type=number]{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink)}
 /* spec 052 FR-076: text fields in dialogs look alike (proportional type; monospace only for code, e.g. the summary editor and MCP commands) */
 .dlg textarea{border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:8px 10px;font:inherit;font-size:13px;font-weight:400;color:var(--ink);resize:vertical}
-.ho-dlg textarea{width:100%;box-sizing:border-box;min-height:260px;max-height:55vh;resize:vertical;border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:10px 12px;font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;color:var(--ink)}
+.ho-dlg textarea{width:100%;box-sizing:border-box;min-height:260px;max-height:55vh;resize:vertical;border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:10px 12px;font:inherit;font-family:var(--font-mono);font-size:12px;line-height:1.5;color:var(--ink)}
 .dlg .dbtn{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 #foldersPop{position:fixed;top:58px;right:14px;z-index:40;width:min(var(--pop-w-m),calc(100vw - 32px));max-height:min(70vh,520px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:var(--pop-pad)}
 #foldersPop[hidden]{display:none}
@@ -929,7 +961,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .md a{color:var(--blue-ink);text-decoration:underline;text-decoration-color:#a9bfd3;text-underline-offset:2px}
 .md a:hover{text-decoration-color:currentColor}
 .md a:not([href]){color:inherit;text-decoration:none}
-.md code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em;background:var(--tone-neutral-bg);border-radius:5px;padding:.08em .35em}
+.md code{font-family:var(--font-mono);font-size:.88em;background:var(--tone-neutral-bg);border-radius:5px;padding:.08em .35em}
 .md blockquote{margin:0 0 .6em;padding:.1em 0 .1em .9em;border-left:3px solid #d3cabb;color:var(--ink-2)}
 .md hr{border:0;border-top:1px solid var(--line);margin:.8em 0}
 .md table{border-collapse:collapse;margin:0 0 .6em;font-size:.95em;display:block;overflow-x:auto;max-width:100%}
@@ -1008,6 +1040,8 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .walker[data-body="monster"]::before{content:"";position:absolute;left:3px;right:3px;top:-5px;height:7px;background:#6f8a6a;clip-path:polygon(0 100%,14% 0,30% 100%,70% 100%,86% 0,100% 100%)}
 .walker[data-trouble]:not([data-trouble=""])::after{content:"";position:absolute;right:-3px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--amber-ink);border:1.5px solid var(--surface)}
 .walker[data-trouble="ambulance"]::after,.walker[data-trouble="faint"]::after{background:var(--red-ink)}
+/* spec 068: an agent on a coffee break holds a cup (calm: no trouble dot) */
+.walker[data-coffee="1"]::after{content:"";position:absolute;right:-4px;bottom:-2px;width:8px;height:8px;border-radius:1px 1px 3px 3px;background:var(--cup);border:1.5px solid var(--cup-line);box-shadow:2px 0 0 -0.5px var(--cup-line)}
 @media (prefers-reduced-motion:reduce){.walker.walking .wk{animation:none}.walker,.place{transition:none!important}}
 .doors{flex:0 0 100%;display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
 .plate{--tone:#c9c2b2;--tonebg:#f6f2e9;display:flex;align-items:center;gap:9px;min-width:210px;max-width:320px;flex:0 1 auto;min-height:44px;padding:5px 12px 5px 8px;border-radius:14px;border:1.5px solid var(--tone);background:var(--tonebg);cursor:pointer;text-align:left;transition:background .15s,border-color .15s,transform .15s}
@@ -1039,9 +1073,9 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .mode-chip .mi{display:grid;width:14px;height:14px}.mode-chip .mi svg{width:14px;height:14px}
 .mode-chip .chev{width:10px;height:10px;transform:rotate(90deg);opacity:.6}
 .mode-chip.mode-ask{color:var(--tone-info-ink);background:var(--tone-info-faint);border-color:var(--tone-info-line)}
-.mode-chip .mode-restored{font-size:10.5px;font-weight:600;letter-spacing:.02em;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid #e5be78;color:var(--amber-ink)}
+.mode-chip .mode-restored{font-size:10.5px;font-weight:600;letter-spacing:.02em;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid var(--tone-warn-line);color:var(--amber-ink)}
 .mode-chip.mode-allow{color:var(--red-ink);background:var(--pb-error);border-color:var(--tone-bad-line)} /* spec 052 FR-065: the chat header says Allow all in the same red as the cards */
-.mode-menu{position:fixed;z-index:70;width:min(var(--menu-w),calc(100vw - 16px));background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 14px 40px rgba(40,35,25,.22);display:flex;flex-direction:column;gap:2px}
+.mode-menu{position:fixed;z-index:70;width:min(var(--menu-w),calc(100vw - 16px));background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:var(--shadow-pop);display:flex;flex-direction:column;gap:2px}
 .mode-menu button{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:8px 10px;border:0;border-radius:10px;background:transparent;cursor:pointer}
 .mode-menu button:hover,.mode-menu button:focus-visible{background:var(--surface-2)}
 .mode-menu .mi{width:16px;height:16px;margin-top:2px;flex:none;color:var(--muted)}.mode-menu .mi svg{width:16px;height:16px}
@@ -1061,7 +1095,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .dlg .dpick small{color:var(--muted);font-size:11px;flex:none;white-space:nowrap}
 .dlg .dpick.is-off{cursor:default;color:var(--muted)}
 .dlg .btn:disabled{opacity:.55;cursor:default}
-.btn.primary.warn{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
+.btn.primary.warn{background:var(--warn-bg);border-color:var(--tone-warn-line);color:var(--amber-ink)}
 .btn.primary.warn:hover{background:var(--tone-warn-hover)}
 /* spec 052 FR-076: red means it deletes or ends (End session, Remove, Delete floor, Clear); amber .primary.warn only grants more power (Allow all, Turn on remote) */
 .btn.primary.danger{background:var(--red-ink);border-color:transparent;color:var(--surface)}
@@ -1079,7 +1113,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .ctxgrp{display:inline-flex;align-items:center;gap:6px;min-width:0}
 .model-menu{max-height:min(540px,calc(100vh - 24px));overflow:auto}
 .mode-menu .mm-h{margin:6px 10px 2px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
-.mode-menu .mm-why{margin:4px 6px 2px;padding:8px 10px;font-size:12px;line-height:1.4;color:var(--amber-ink);background:var(--warn-bg);border:1px solid #e5be78;border-radius:10px}
+.mode-menu .mm-why{margin:4px 6px 2px;padding:8px 10px;font-size:12px;line-height:1.4;color:var(--amber-ink);background:var(--warn-bg);border:1px solid var(--tone-warn-line);border-radius:10px}
 .mode-menu button[aria-disabled=true]{opacity:1;color:var(--muted);cursor:not-allowed}
 .mode-menu .mm-seg{display:flex;flex-wrap:wrap;gap:4px;padding:2px 10px 6px}
 .mode-menu .mm-seg button{align-items:center;padding:3px 10px;border:1px solid var(--line-2);border-radius:999px;font-size:11px;background:var(--raised)}
@@ -1143,7 +1177,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .ai-trybar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:calc(100vw - 32px);padding:10px 12px 10px 16px;border-radius:14px;background:var(--surface);color:var(--ink);border:1px solid var(--line-2);box-shadow:0 12px 36px rgba(0,0,0,.28);font-size:13px}.ai-trybar span{margin-right:6px}
 
 /* spec 052 FR-001: the answer bar above the composer, while a waiting request is out of view */
-.answer-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 auto 8px;width:min(860px,calc(100% - 32px));padding:8px 10px 8px 14px;background:var(--warn-bg);border:1px solid #e5be78;border-radius:12px;box-shadow:0 4px 14px rgba(40,35,25,.08)}
+.answer-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 auto 8px;width:min(860px,calc(100% - 32px));padding:8px 10px 8px 14px;background:var(--warn-bg);border:1px solid var(--tone-warn-line);border-radius:12px;box-shadow:0 4px 14px rgba(40,35,25,.08)}
 .answer-bar[hidden]{display:none}
 .answer-bar .ab-q{flex:1 1 280px;min-width:0;font-size:13px;line-height:1.4;color:var(--ink);max-height:8.6em;overflow:auto;overflow-wrap:break-word}
 .answer-bar .ab-q b{color:var(--amber-ink)}
@@ -1156,7 +1190,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .answer-bar .ab-other{box-sizing:border-box;height:var(--h-ctl);width:170px;min-width:120px;flex:1 1 150px;border:1px solid var(--line-ctl);border-radius:9px;padding:0 9px;font:inherit;font-size:12px;background:var(--surface);color:var(--ink)}
 
 /* spec 052 FR-015: a notice strip under the top bar (it takes its own room; the office lays out below it) */
-.notice-strip{flex:none;display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:1px 20px;background:var(--warn-bg);border-bottom:1px solid #e5be78;color:var(--ink);font-size:12px;line-height:1.35}
+.notice-strip{flex:none;display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:1px 20px;background:var(--warn-bg);border-bottom:1px solid var(--tone-warn-line);color:var(--ink);font-size:12px;line-height:1.35}
 .notice-strip[hidden]{display:none}
 .notice-strip .ns-ic{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:999px;background:var(--amber-ink);color:var(--surface);font-weight:800;font-size:12px;flex:none}
 .notice-strip .ns-t{flex:1 1 360px;min-width:0}
@@ -1184,7 +1218,7 @@ html:not([data-ui]) .seg button{border-radius:6px}
 #defaultsBtn .dv{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #defaultsBtn.is-allow{color:var(--red-ink);border-color:color-mix(in srgb,var(--red) 45%,var(--line));background:color-mix(in srgb,var(--red) 9%,var(--surface))} /* spec 052 (2026-10-21, round 5): new sessions start in Allow all */
 #defaultsBtn::after{content:"";flex:none;width:5px;height:5px;margin:-3px 1px 0 2px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);opacity:.7}
-#defaultsPop{position:fixed;top:52px;left:14px;z-index:55;width:min(var(--pop-w-s),calc(100vw - 32px));background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--pop-pad);box-shadow:0 14px 40px rgba(40,35,25,.22);font-size:13px}
+#defaultsPop{position:fixed;top:52px;left:14px;z-index:55;width:min(var(--pop-w-s),calc(100vw - 32px));background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--pop-pad);box-shadow:var(--shadow-pop);font-size:13px}
 #defaultsPop[hidden]{display:none}
 #defaultsPop .dp-h{margin:0 0 8px;font-size:var(--t3-size);font-weight:600;display:flex;flex-direction:column;gap:1px}
 #defaultsPop .dp-h small{font-size:var(--t5-size);font-weight:400;color:var(--muted)}
@@ -1214,7 +1248,7 @@ body.has-bridge:not(.simple) .folder-ctl #foldersBtn{border-top-left-radius:0;bo
 /* FR-105: the counters and Needs you sit at the right end of the one row */
 .inbox-btn:not([hidden]),.inbox-btn[hidden]+.stats{margin-left:auto}
 .inbox-btn b{font-variant-numeric:tabular-nums}
-.inbox-btn.attn{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
+.inbox-btn.attn{background:var(--warn-bg);border-color:var(--tone-warn-line);color:var(--amber-ink)}
 /* FR-167: the inbox is an L dialog (class `l`) on the dialog padding tokens; the compact rows of round 10 stay */
 .inbox-dlg .dbody{max-height:min(64vh,620px);overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px}
 .inbox-row{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;padding:var(--row-pad);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--raised)}
@@ -1449,7 +1483,7 @@ body.simple .note.perm .pfold:not([hidden]){display:inline} /* FR-092: only next
 details.pcmd{display:none;margin:6px 0 0}
 body.simple details.pcmd{display:block}
 details.pcmd>summary{cursor:pointer;font-size:12px;color:var(--ink-2)}
-details.pcmd>pre{margin:4px 0 0;padding:6px 8px;border-radius:6px;background:var(--surface-2,#f4f4f2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto}
+details.pcmd>pre{margin:4px 0 0;padding:6px 8px;border-radius:6px;background:var(--surface-2,#f4f4f2);font-family:var(--font-mono);font-size:11.5px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto}
 .wl-level{margin:14px 0 0;font-size:13px;color:var(--ink-2)}
 .wl-level p{margin:0 0 8px}
 .wl-lv-btns{display:flex;flex-wrap:wrap;gap:8px}
@@ -1514,6 +1548,39 @@ h2,h3,h4{text-wrap:balance}
 .liveside[data-lk="think"] .ls-t,:is(.task,.intent)[data-lk="think"]{font-style:italic}
 .stage[data-d="full"] .liveside+.helpers{margin-left:0} /* the helper column's -2px tuck is for its desk's connector, not the panel */
 
+/* ---- spec 005 FR-037..FR-042: the composer toolbar under the message box, and one Send / Stop slot inside its right edge.
+   Tokens only (docs/design-rules.md 1-3, 9); controls 28px like the header's; the office is untouched. ---- */
+.inbox{align-items:flex-end}
+.inbox textarea{padding-left:8px}
+.run-slot{display:flex;align-items:center;gap:var(--s-1);flex:none}
+.run-slot .send{margin-left:0}
+.run-slot [hidden]{display:none!important}
+.ib.stop{background:var(--surface-2);color:var(--red-ink);border:1px solid var(--line-ctl)}
+.ib.stop:hover{background:var(--pb-error)}
+.ib.stop[aria-busy="true"]{cursor:progress;color:var(--muted)}
+.run-spin{display:inline-grid;place-items:center;width:20px;height:20px;flex:none;color:var(--blue-ink)}
+.run-spin i{display:block;width:16px;height:16px;border-radius:50%;border:2px solid var(--line-2);border-top-color:currentColor;animation:run-spin .9s linear infinite}
+@keyframes run-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.run-spin i{width:8px;height:8px;border:0;background:currentColor;animation:none}} /* FR-038: a static dot, no motion */
+.ctoolbar{--h-chip:28px;display:flex;align-items:center;gap:var(--s-1);margin-top:var(--s-1);min-width:0}
+.ct-items{display:flex;align-items:center;gap:var(--s-1);flex:1 1 auto;min-width:0;overflow:hidden;padding:2px 0} /* one row; what does not fit goes into ⋯ (FR-040) */
+.ct{display:inline-flex;align-items:center;flex:none;min-width:0}
+.ct:empty{display:none}
+.ctoolbar .ib.ct-ib{width:28px;height:28px;border-radius:var(--r-md)}
+.ctoolbar .ib.ct-ib svg{width:16px;height:16px}
+.ctoolbar #ctMoreBtn{font-size:var(--t3-size);font-weight:700;color:var(--ink-2)}
+.ctoolbar #ctMoreBtn[hidden]{display:none}
+.ctoolbar .mchip,.ctoolbar .mode-chip,.ctoolbar .ctxchip{height:28px;font-size:var(--t4-size)}
+.ctoolbar .mchip-btn span{max-width:220px}
+.ctoolbar .cti{width:14px;height:14px;flex:none}
+.ctoolbar .mchip{gap:var(--s-1)}
+.ctoolbar .ct-n{min-width:16px;padding:0 4px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:var(--t5-size);font-weight:600;line-height:16px;text-align:center}
+.ct-more{position:relative;flex:none}
+.ct-more-pop{position:absolute;right:0;bottom:calc(100% + 6px);z-index:70;display:flex;flex-direction:column;align-items:flex-start;gap:var(--s-1);min-width:180px;max-width:min(360px,calc(100vw - 32px));padding:var(--s-2);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:0 14px 40px color-mix(in srgb,var(--ink) 22%,transparent)}
+.ct-more-pop[hidden]{display:none}
+.ct-more-pop .ct{max-width:100%}
+.mode-menu .mm-info{margin:2px 10px 6px;font-size:var(--t4-size);line-height:var(--t4-lh);color:var(--ink-2);max-width:var(--measure,560px)}
+body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tidy up memory lives in the memory chip's menu */
 /* spec 052 FR-167 (T149): what is typed or chosen in a dialog field is regular weight; a bold label does not pass its weight on. The last rule of the file, so it wins over the fields' own `font:inherit`. */
 .dlg :is(input,select,textarea):not([type=checkbox]):not([type=radio]){font-weight:400}
 .dlg :is(input,textarea)::placeholder{font-weight:400}

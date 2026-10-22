@@ -14,6 +14,7 @@ import { NAME_RE } from '../shared/mcp';
 import { maskTokenShapes, secretFlag, shQuote } from '../shared/redact';
 import type { McpServerSpec } from '../shared/mcp';
 import { isBroadRule } from '../shared/foldersetup';
+import { stripTomlComment, tomlStringArray, tomlUnquote as unq } from './codextoml';
 import type { FolderSetupApp, FolderSetupItem, RuleKind } from '../shared/foldersetup';
 
 export const MAX_FILE_BYTES = 256 * 1024;
@@ -209,27 +210,11 @@ function readMcpJson(json: unknown): { name: string; spec: McpServerSpec }[] {
 }
 
 const MAX_TOML_LINE = 4096;
-/** Cuts a `#` comment that is outside quotes, in one pass (no regex backtracking). */
-function stripTomlComment(line: string): string {
-  let q = '';
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (q) { if (c === '\\' && q === '"') i++; else if (c === q) q = ''; }
-    else if (c === '"' || c === "'") q = c;
-    else if (c === '#') return line.slice(0, i);
-  }
-  return line;
-}
-
 /** The `[mcp_servers.<name>]` tables of a Codex `config.toml`: `command`, `args`, `url`, `env` (names), nothing else. */
 export function readCodexMcpToml(text: string): { name: string; spec: McpServerSpec }[] {
   const out = new Map<string, { command?: string; args?: string[]; url?: string; env?: Record<string, string> }>();
   let cur: { command?: string; args?: string[]; url?: string; env?: Record<string, string> } | undefined;
   let inEnv = false;
-  const unq = (v: string): string | undefined => {
-    const m = /^"((?:[^"\\]|\\.)*)"$|^'([^']*)'$/.exec(v.trim());
-    return m ? (m[1] !== undefined ? m[1].replace(/\\(["\\])/g, '$1') : m[2]) : undefined;
-  };
   for (const lineRaw of text.split(/\r?\n/).slice(0, 5000)) {
     // review #424: linear only (a hostile 256 KiB value must not block main): long lines are skipped, comments cut by a scan
     if (lineRaw.length > MAX_TOML_LINE) continue;
@@ -255,8 +240,8 @@ export function readCodexMcpToml(text: string): { name: string; spec: McpServerS
     if (k === 'command') cur.command = unq(v);
     else if (k === 'url') cur.url = unq(v);
     else if (k === 'args') {
-      const m = /^\[(.*)\]$/.exec(v.trim());
-      if (m) cur.args = (m[1].match(/"(?:[^"\\]|\\.)*"|'[^']*'/g) ?? []).map((x) => unq(x) ?? '').slice(0, 64);
+      const a = tomlStringArray(v);
+      if (a) cur.args = a;
     } else if (k === 'env') {
       const m = /^\{(.*)\}$/.exec(v.trim());
       if (m) for (const pair of m[1].split(',')) { const p = /^([A-Za-z0-9_-]+)\s*=\s*(.*)$/.exec(pair.trim()); const s = p ? unq(p[2]) : undefined; if (p && s !== undefined) (cur.env ??= {})[p[1]] = s; }
