@@ -86,6 +86,7 @@ A pack with a script in an SVG, a remote font URL, a 2px font size, a 40px radiu
   - D4 and FR-021 changed: the old fallback set both sides of a failing pair to Clean Office, so a shared surface (`--surface`, `--bg`) turned light and cascaded; a dark theme with one dim colour became a light one with dark ink on its own dark `--surface-2`. FR-023 replaces it (minimal fix on the non-surface side).
   - FR-024 (the AI preview shows the adjusted count) and FR-025 (the dialog's colour count) added; FR-001, FR-002, FR-003 and D1 now say what was built (`--t1-weight`, two pinned copies, up to 8 names and 160 characters, `ui-sans-serif`).
   - `test:theme-tokens` also proves the built-in themes are applied exactly as designed (`setTheme(id)`, then `token(k)` for every pair key).
+  - Evidence: `test:` `test:theme-tokens` (a light pack's dim ink is darkened to 4.5-4.7:1 on its darkest surface and the surfaces stay; the dark fixture reads as designed; the dark fixture plus a dim `--muted` and a dim `--sage-ink` changes only those two, keeps every surface and its ink, stays dark, and every pair passes; `contrastCheck` agrees; every built-in applies its pair tokens unchanged). Mutation-checked: the old both-sides fallback fails it, and running the fix on built-ins fails it (Retro's `--ink`). Literal ratchet after main (#515): styles.css 211 -> 156 colours, screens.css 48 -> 16, themes.css 59 -> 52, the rest unchanged. `sim:` `check:theme-art` and `check:geometry` (Retro) pass on the merged tree.
 
 ## Evidence (2026-10-21)
 

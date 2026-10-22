@@ -19,7 +19,7 @@
 - [ ] T021 (owner decision) Bundled font files in a pack (D1)
 - [x] T011 Real check of the extended AI prompt on one model (owner's go-ahead 2026-10-22; Claude haiku, 1 prompt; `scripts/themegen-real.ts`; see spec Evidence)
 - [x] T012 Parser takes `transparent` and the space form `rgb(r g b / a)` the prompt's defaults show (found by T011) [FR-031]
-- [ ] T013 Review on #500: `theme.js` `CONTRAST_PAIRS` mirrors #515's three button-text pairs; merge main and lower the literal ratchet [FR-021]
-- [ ] T014 Review on #500: minimal contrast fix that never changes a base surface; unit test with the dark fixture plus a dim `--muted` and a dim `--sage-ink` (stays dark, every pair passes) [FR-023, D4]
-- [ ] T015 Review on #500: test that every built-in theme is applied as designed (`setTheme`, `token`) [FR-021]
-- [ ] T016 Review on #500: AI dialog counts colours apart from fonts and shapes, and its preview shows the adjusted count; Settings note wording [FR-022, FR-024, FR-025]
+- [x] T013 Review on #500: `theme.js` `CONTRAST_PAIRS` mirrors #515's three button-text pairs; merge main and lower the literal ratchet [FR-021]
+- [x] T014 Review on #500: minimal contrast fix that never changes a base surface; unit test with the dark fixture plus a dim `--muted` and a dim `--sage-ink` (stays dark, every pair passes) [FR-023, D4]
+- [x] T015 Review on #500: test that every built-in theme is applied as designed (`setTheme`, `token`) [FR-021]
+- [x] T016 Review on #500: AI dialog counts colours apart from fonts and shapes, and its preview shows the adjusted count; Settings note wording [FR-022, FR-024, FR-025]
