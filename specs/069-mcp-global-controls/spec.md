@@ -378,6 +378,20 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
      target has the field, and otherwise the copy to that file is refused naming the field; the diff names `tools`, `hidden tools`
      and `on/off`. The add form is unchanged. (T063)
 
+- **2026-10-22 (review on #499 by Paco's agent, CHANGES_REQUESTED at 1776c6c3):** all findings fixed (T067).
+  1. **Remove removes every copy** (FR-030): a server that is both in an agent app's list and a folder extra kept its row after
+     *Remove…*, which removed only the list copies. The Remove picker (the Settings `removeGlobal` dialog, reused) now lists every place
+     the server comes from, all ticked: each agent app's list and "This folder's extras in Agent Durbar"; the folder copy is deleted with
+     the folder's existing remove (`mcpRemove`), the app lists through the usual per-file review.
+  2. **Switch words** (FR-030, spec 058 FR-066): with a running session the switch keeps FR-066's words, "Switch off <server> for
+     <agent> in this session"; with no running session it says "Switch off <server> for <agent> when its session starts". The footer
+     says the true scope (`agents:setMcp` keeps it per agent for this app run): "A switch stays for this agent, also in its next
+     sessions, until the app is closed."
+  3. **Codex tools past the first page** (FR-031): `listMcpTools` asked `mcpServerStatus/list` with `limit: 10` and read one page, so if
+     Codex ignored `serverName`, a server past the tenth read as not running. It now asks 100 per page and follows `nextCursor` (at
+     most 20 pages) until the server is found; only then "not running in this session". `test:` the fake app-server ignores
+     `serverName` and pages 10 at a time; the 23rd server's tools are found on page 3.
+
 - **2026-10-22 (merge with spec 058's MCP words, #538; author's call, owner's scope kept):** part 3 now sits on spec 058's row instead
   of beside it. One row, one repaint path (058's: in-place repaint that keeps focus and scroll, live refresh from `mcp` events with the
   polite announcement). Changed against FR-030 and FR-033 as first built:
