@@ -12,7 +12,6 @@
  *   - the chat's agent strip: every chip's avatar wears the robe;
  *   - and back to Clean Office: no desk, walker or chip keeps the pack's art (the stale-drawing bug in reverse).
  *
- *   npm run check:theme-art            (builds first; in check:ui too)
  * In the office kit it also checks the drawing order: the headwear comes after the head circle and the hair (over them, not under).
  * Then, at 1440x900, the same pack with `scene: "court-indian"`: the other scene kits get the art too (desks and walkers).
  *
@@ -71,6 +70,15 @@ module.exports = async (ctx) => {
     for (let i = 0; i < width * height * 4; i += 4) if (test(buf[i + 2], buf[i + 1], buf[i])) n++;
     return n;
   };
+  /* under load a capture can still show an unpainted frame: read again (up to 4 times, a frame apart) before failing, never a lower bar */
+  const countAtLeast = async (rect, test, min) => {
+    let n = 0;
+    for (let i = 0; i < 4 && n < min; i++) {
+      if (i) await H.js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
+      n = await count(rect, test);
+    }
+    return n;
+  };
   const pick = async (id) => {
     await H.js(`document.getElementById('settingsBtn').click()`);
     assert.ok(await H.until(`!!document.querySelector(${jsLiteral(`#thList [data-theme="${id}"]`)})`, 6000), `${id} is listed in Settings`);
@@ -102,14 +110,14 @@ module.exports = async (ctx) => {
       for (const k of ['robe', 'collar', 'hat', 'deskArt', 'monitor']) assert.ok(d[k], `${tag}: desk scene ${i} draws the pack's ${k} (was the Clean Office drawing kept?)`);
       assert.ok(d.hatOver, `${tag}: desk scene ${i} draws the headwear over the head and the hair`);
     });
-    for (const [i, b] of s.mainBoxes.entries()) assert.ok(await count(b.box, PINK) >= 40, `${tag}: desk ${i} (${b.st}) shows the pack's pinks on screen`);
+    for (const [i, b] of s.mainBoxes.entries()) assert.ok(await countAtLeast(b.box, PINK, 40) >= 40, `${tag}: desk ${i} (${b.st}) shows the pack's pinks on screen`);
     const awake = s.mainBoxes.filter((b) => b.st !== 'idle');
-    for (const [i, b] of awake.entries()) assert.ok(await count(b.box, CHAIR) >= 20, `${tag}: desk ${i} shows the pack's chair colour on screen`);
+    for (const [i, b] of awake.entries()) assert.ok(await countAtLeast(b.box, CHAIR, 20) >= 20, `${tag}: desk ${i} shows the pack's chair colour on screen`);
     assert.ok(s.walkers.length >= 1, `${tag}: somebody is at a place`);
     for (const [i, wk] of s.walkers.entries()) {
       assert.ok(wk.robe && wk.hat, `${tag}: walker ${i} wears the pack's robe and headwear`);
       assert.ok(wk.hatOver, `${tag}: walker ${i} wears the headwear over the head and the hair`);
-      assert.ok(await count(wk.box, PINK) >= 2, `${tag}: walker ${i} shows the pack's pink on screen`);
+      assert.ok(await countAtLeast(wk.box, PINK, 2) >= 2, `${tag}: walker ${i} shows the pack's pink on screen`);
     }
     for (const p of ['place-library', 'place-terminal', 'place-web']) assert.ok(s.places.includes(p), `${tag}: the lobby draws the pack's ${p} icon`);
     assert.strictEqual(s.lobbyArt, 1, `${tag}: the lobby draws the pack's lobby art`);
