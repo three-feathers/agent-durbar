@@ -179,6 +179,51 @@ module.exports = async (ctx) => {
   add('chat-edits-base', 'chat', ['#panel'], async () => { if (!(await openChat('Ada'))) return false; if (!(await until(`document.querySelectorAll('#chat .chip.editchip').length>=4`, 8000))) return false; return js(`(document.querySelector('#chat .chip.editchip').scrollIntoView({block:'start'}),true)`); });
   S[S.length - 1].onlyPass = true; // runs under the `chat-edits` pass only
   add('chat-first', 'chat', ['#panel'], async () => !!(await openChatWhere('true'))); // the first desk, whoever it is (the 60-character names pass)
+  // T177 (FR-174): one page, one chat, four cases in a row: the title arrives after the chat is open (the real applyTitle), a rename (the real repaintName), emoji
+  // all along the line, flags, a title with no spaces; then the window shrinks to its minimum width and back (the ResizeObserver fits the placeholder again).
+  // Each case sets its own title and alias; the page is a pass of its own (a fresh page), so the new names do not leak into the dialogs of other surfaces.
+  const LATE_CASES = [
+    { name: 'title', title: 'Morning stand-up: summarise every open pull request, flag the ones that touch the billing flows and draft the release notes for the week' },
+    { name: 'rename', title: 'Morning stand-up: summarise every open pull request, flag the ones that touch the billing flows and draft the release notes for the week', alias: 'Renamed by the user: a session name that goes on and on' },
+    { name: 'emoji', title: 'Party \u{1F600}\u{1F389} '.repeat(12).trim() }, // surrogate pairs all along the line: the cut never lands inside one
+    { name: 'emoji2', title: 'Fun \u{1F600}\u{1F389}\u{1F680} '.repeat(12).trim() }, // another alignment, so a cut by UTF-16 units splits one at one of the two
+    ...[0, 1, 2, 3].map((k) => ({ name: 'flags' + k, title: 'a'.repeat(k) + ' Flags ' + '\u{1F1E8}\u{1F1ED}'.repeat(40) })), // a run of flags, four alignments: no half flag before the ellipsis
+    { name: 'path', title: '/home/someone/work/customer-reconciliation-batch-jobs/src/tools/registry/companies/find_company_by_identifier_number.test.ts' }, // no spaces: the cut falls inside one long word
+  ];
+  // T179 (FR-174, review on #545): a helper's chat whose parent has the 120-character title (simtitles=long): the heading's role line ("Helper · helper of <title>") is cut with its title and stays inside the heading
+  add('chat-helper-long', 'chat', ['#panel'], async () => {
+    await closeChat();
+    const ids = await js(`[...document.querySelectorAll('#stage .helper[data-id]')].map(d=>d.dataset.id)`);
+    for (const id of ids) {
+      await js(`document.querySelector(${jsLiteral(`#stage .helper[data-id="${id}"]`)}).click()`);
+      await until(`document.body.classList.contains('panel-open')`, 3000); await settle(1500);
+      if (await js(`/helper of Morning stand-up/.test((document.querySelector('#panelHead .sub')||{}).textContent||'')`)) return true;
+    }
+    return false;
+  });
+  add('chat-late', 'chat', ['#panel'], async () => {
+    if (!(await openChatWhere('true'))) return false;
+    const tag = (n) => ({ surface: 'chat-late-' + n, theme: themeId || theme, size: `${W}x${Hh}` });
+    const ph = () => js(`(document.getElementById('msgInput')||{}).placeholder||''`);
+    const only = async () => (await js(`window.__uitext.check('chat',['#panel'],{})`)).filter((x) => x.rule === 'placeholder-line');
+    for (const c of LATE_CASES) {
+      await js(`window.__durbarSimRetitle(${jsLiteral(c.title)},${jsLiteral(c.alias || '')})`);
+      await ctx.sleep(250);
+      for (const x of await only()) found.push({ ...tag(c.name), ...x });
+    }
+    // resize: at the window's minimum width (640, src/main/main.ts) the placeholder is cut again, one line; back at the old width it grows back
+    const before = await ph();
+    ctx.win.setContentSize(640, Hh);
+    const shrunk = await until(`(document.getElementById('msgInput')||{}).placeholder!==${jsLiteral(before)}`, 3000);
+    if (!shrunk) found.push({ ...tag('resize'), rule: 'placeholder-line', el: '#msgInput', detail: 'the placeholder did not change when the window shrank to 640px' });
+    await ctx.sleep(250);
+    for (const x of await only()) found.push({ ...tag('resize'), ...x });
+    ctx.win.setContentSize(W, Hh);
+    const grown = await until(`(document.getElementById('msgInput')||{}).placeholder===${jsLiteral(before)}`, 3000);
+    if (!grown) found.push({ ...tag('resize-back'), rule: 'placeholder-line', el: '#msgInput', detail: 'the placeholder did not grow back when the window grew back' });
+    await ctx.sleep(250);
+    return true;
+  });
   // T155: a toast ends above the composer while a chat is open (the real toast(): More > Copy resume command toasts either way)
   // T155: a toast ends above the composer, and above the answer bar when it shows (the real toast(): More > Copy resume command toasts either way)
   const toastSurface = (name, opener) => add(name, 'chat', ['#panel'], async () => {
@@ -271,7 +316,9 @@ module.exports = async (ctx) => {
   // spec 061: the folder-setup dialog opens by itself for the first folder when the page address has simfoldersetup=1
   add('folder-setup', 'dialog', ['#scrDlg .dlg.fs'], async () => until(`!!document.querySelector('#scrDlg .dlg.fs')`, 8000));
   S.find((x) => x.name === 'folder-setup').onlyPass = true;
+  const LATE = S.filter((x) => x.name === 'chat-late'); LATE.forEach((x) => { x.onlyPass = true; }); S.find((x) => x.name === 'chat-helper-long').onlyPass = true;
   const PASSES = [
+    ...LATE.map((x) => ({ name: x.name, base: x.name, query: {} })), // T177: the late title, rename, emoji and no-space cases of the composer placeholder
     { name: 'folder-setup', base: 'folder-setup', query: { simfoldersetup: '1' } }, // surfaces that need their own page address
     { name: 'chat-question-long', base: 'chat-question', query: { simquestion: 'long' } }, // T145: a 2,000-character question
     { name: 'folders-pop-long', base: 'folders-pop', query: { simnames: 'long' } }, // T172: long folder names in the Folders popover
@@ -283,6 +330,8 @@ module.exports = async (ctx) => {
     { name: 'list-view-long', base: 'list-view', query: { simnames: 'long' } },
     { name: 'palette-long', base: 'palette', query: { simnames: 'long' } },
     { name: 'chat-first-long', base: 'chat-first', query: { simnames: 'long' } },
+    { name: 'chat-title-long', base: 'chat-first', query: { simtitles: 'long' } },
+    { name: 'chat-helper-long', base: 'chat-helper-long', query: { simtitles: 'long' } }, // T179
     { name: 'chat-reply-long', base: 'chat-reply', query: { simreply: 'long' } }, // T155: replies and sub-agent prompts that run to the right edge (the Copy button covers no text)
   ];
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];
