@@ -12,7 +12,7 @@ const qs = new URLSearchParams(location.search);
 const KEYS=window.DurbarKeys;
 const IS_MAC=KEYS.isMac(navigator.platform);
 const keyText=parts=>KEYS.keyText(parts,IS_MAC), keyLabels=parts=>KEYS.keyLabels(parts,IS_MAC), ariaKeys=parts=>KEYS.ariaKeys(parts,IS_MAC);
-/* spec 074 (issue #548): the keyboard navigator. Its shortcut is a display preference of this window (localStorage, like the detail
+/* spec 074 (issue 548): the keyboard navigator. Its shortcut is a display preference of this window (localStorage, like the detail
    level); default Ctrl+J, ⌘J on a Mac. The pure parts (levels, matching, chat numbers, clash check) are in navigator.js. */
 const NAV=window.DurbarNav, NAVKEY_KEY='durbar.navKey';
 let NAV_KEY=(()=>{try{return NAV.loadCombo(localStorage.getItem(NAVKEY_KEY),IS_MAC);}catch(e){return Object.assign({},NAV.DEFAULT_COMBO);}})();
@@ -2027,7 +2027,7 @@ function palFilter(q){
 }
 const kbdHTML=keys=>(keys||[]).map(k=>'<kbd>'+esc(k)+'</kbd>').join('');
 function closePalette(back){const d=$('palDlg');if(!d)return;d.remove();palNav=null;const b=palBack;palBack=null;if(back!==false&&b&&b.isConnected&&b.getClientRects().length)b.focus();}
-/* spec 074 (issue #548): the same box in a "Go to" mode with levels (start, folders, agents, chats). null = Ctrl+K's search. */
+/* spec 074 (issue 548): the same box in a "Go to" mode with levels (start, folders, agents, chats). null = Ctrl+K's search. */
 let palNav=null;
 const NAV_START=()=>[{kind:'start',q:'',active:0}];
 const PAL_FOOT='<kbd>↑</kbd><kbd>↓</kbd> move <kbd>Enter</kbd> open <kbd>Esc</kbd> close';

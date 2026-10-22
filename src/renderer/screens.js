@@ -206,7 +206,7 @@
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
         <p class="scr-note">Expert adds tokens, models, context and paths. Permissions work the same in both.</p>
         <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}</section>`:'';
-    /* spec 074 FR-013 (issue #548): the navigator shortcut, recorded here, checked for clashes, kept for this window */
+    /* spec 074 FR-013 (issue 548): the navigator shortcut, recorded here, checked for clashes, kept for this window */
     const keySec=X.navKey?`<section class="scr-sec" aria-labelledby="keyH"><h3 id="keyH">Keyboard</h3>
         <p class="scr-note">Go to (the navigator) opens from anywhere: a floor, a folder, an agent, or a chat by its number (C and the number).</p>
         <div class="scr-row"><span class="scr-row-l" id="navKeyL">Go to shortcut</span><kbd class="navkey-now" id="navKeyNow">${esc(X.navKey.text())}</kbd><button class="btn" type="button" id="navKeyRec" aria-describedby="navKeyL">Change…</button><button class="btn" type="button" id="navKeyReset"${X.navKey.isDefault()?' disabled':''}>Reset to ${esc(X.navKey.defText())}</button></div>

@@ -1348,7 +1348,7 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .pal-empty{margin:0;padding:14px 10px;font-size:13px;color:var(--muted)}
 .pal-foot{margin:0;border-top:1px solid var(--line);padding:8px 16px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
 .pal-foot kbd+kbd{margin-left:-2px}
-/* spec 074 (issue #548): Go to (the navigator): the breadcrumb above the input and the number of each item */
+/* spec 074 (issue 548): Go to (the navigator): the breadcrumb above the input and the number of each item */
 .pal-crumb{margin:8px 0 0;font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pal-n{flex:none;min-width:30px;padding:1px 5px;border:1px solid var(--line-2);border-radius:5px;background:var(--surface-2);font-size:11px;font-weight:700;line-height:1.5;color:var(--ink-2);text-align:center;font-variant-numeric:tabular-nums}
 /* FR-012: the chat number on desk cards, list rows and the chat header: text, at least 10.5px, never colour alone */

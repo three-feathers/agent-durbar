@@ -1,4 +1,4 @@
-/* Keyboard navigator (spec 074, issue #548): the pure part. The levels of the "Go to" mode of the command palette (start, folders,
+/* Keyboard navigator (spec 074, issue 548): the pure part. The levels of the "Go to" mode of the command palette (start, folders,
    agents, chats), the start-level letters (`f `, `c 3`), number picks, the palette's matching (shared with Ctrl+K), stable chat
    numbers and the configurable shortcut with its clash check. No DOM; the platform is passed in. In the page: window.DurbarNav;
    in Node: module.exports (scripts/test-navigator.ts). */
