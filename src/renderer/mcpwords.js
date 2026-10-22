@@ -16,7 +16,9 @@
   };
   const NONE={word:'Not started yet',icon:'dash',cls:'none'};
   /* the token of an unknown state is shown, but only a short plain one: no control characters, cut at 40 */
-  const tokenText=t=>{const s=String(t).slice(0,200).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g,' ').trim();return s.length>40?s.slice(0,39)+'…':s;};
+  /* plain text for a title or a word: input cut first (a long runtime string costs nothing), control characters flattened, cut at n with an ellipsis */
+  const plain=(t,n)=>{const s=String(t==null?'':t).slice(0,n+160).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g,' ').trim();return s.length>n?s.slice(0,n-1)+'\u2026':s;};
+  const tokenText=t=>plain(t,40);
   /* `status` is the runtime's token (missing/empty = no state yet). Returns {word, icon, cls}; an unknown token reads "Unknown state: <token>"
      (plain text, the caller escapes) and gets the neutral class. */
   function stateOf(status){
@@ -60,5 +62,5 @@
     if(/invalid (config|configuration)|configuration error|misconfigured/i.test(t))return CLASS_HINT.config;
     return '';
   }
-  return {stateOf,iconSvg,hintFor,signInHint,ICON_NAMES:Object.keys(ICONS)};
+  return {stateOf,iconSvg,hintFor,signInHint,plain,ICON_NAMES:Object.keys(ICONS)};
 })());

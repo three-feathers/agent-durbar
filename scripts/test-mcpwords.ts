@@ -6,6 +6,7 @@ interface Words {
   stateOf: (s: unknown) => { word: string; icon: string; cls: string };
   iconSvg: (n: string) => string;
   hintFor: (o: { status?: string; errorClass?: string; error?: string; app?: string }) => string;
+  plain: (t: unknown, n: number) => string;
   ICON_NAMES: string[];
 }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -34,6 +35,12 @@ assert.ok(W.stateOf('x'.repeat(500)).word.length <= 'Unknown state: '.length + 4
 // the token is returned as plain text: escaping is the caller's job, and the icon markup never contains it
 assert.ok(!W.iconSvg('<img onerror=1>').includes('<img'), 'an unknown icon name falls back to a fixed shape');
 for (const n of W.ICON_NAMES) assert.ok(/^<svg [^>]*aria-hidden="true"/.test(W.iconSvg(n)), n);
+
+// the tooltip text (FR-168: at most 120): cut, flattened, never longer than n
+assert.strictEqual(W.plain('x'.repeat(500), 120).length, 120);
+assert.strictEqual(W.plain('a\nb', 120), 'a b');
+assert.strictEqual(W.plain(undefined, 120), '');
+assert.strictEqual(W.plain('short', 120), 'short');
 
 // FR-006 / FR-069: the hints
 const h = W.hintFor;
