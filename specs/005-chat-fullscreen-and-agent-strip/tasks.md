@@ -36,3 +36,25 @@ One PR per line where possible; each with `npm run typecheck && npm run build &&
 - [ ] T046 Docs: README feature line, the masking sentence and known limit (real wording unverified), CHANGELOG *Unreleased*, `specs/README.md` row 005, FR tags to `[IMPLEMENTED]` [FR-036]
 - [ ] T047 Real check, **only with the owner's approval and a stated cost**: one Copilot and one Claude Code tool call with a large output, to confirm the event text or telemetry and the permission flow; record `real:` [FR-033, FR-035]
 - [ ] T048 Escaped forms of secret values (before T039): export `secretForms(value)` from `src/shared/redact.ts` (the value, JSON-escaped 1 to 4 times, URL-encoded, no duplicates) and use it in `envSecrets` instead of its `j1`/`j2` lines; cases in `scripts/test-redact.ts`: an env secret with `"` and `\` escaped 3 and 4 times is removed, a value with neither has one form, the env snapshot is still built once [FR-030]
+
+## Delta 2026-10-21: settings under the message box, one Send / Stop button (owner request)
+
+IDs start after the readable-JSON delta's T048.
+
+- [x] T049 Toolbar under the message box: move the profile, mode, model, context chips, MCP (from More) and the attach buttons from the header / box into `.ctoolbar`; header keeps identity, limit, remote, folder and its actions [FR-037, FR-039]
+- [x] T050 Model chip shows the context window size; context chip opens a context menu with Compact (`#compactBtn`) and Models and context of all agents [FR-037]
+- [x] T051 MCP chip with an MCP icon and the count of servers switched on; opens the existing MCP dialog [FR-037]
+- [x] T052 One Send / Stop slot inside the box's right edge, spinner left of Stop, Send beside Stop when a live agent has text, reduced-motion static dot [FR-038]
+- [x] T053 Menus open above a toolbar control; overflow "⋯" with the collapse order; mode never collapses [FR-037, FR-040]
+- [x] T054 Simple shows mode, memory (from 70%), attachments and Send/Stop [FR-041]
+- [x] T055 Driver `scripts/check-composer-toolbar.js` in `ui-suite` (positions, order, Send↔Stop with spinner in a simulated turn, window size, MCP count and dialog, context menu, overflow at a 480px panel, no overlap, 10.5px) and the toolbar in `check-office-overlap.js`'s chat check [FR-043]
+- [x] T056 Update drivers that looked for these controls in the header (`shots-017`, `shots-018`, `shots-model`, `shots-052-ux`, `check-grant-chips`) [FR-043]
+- [x] T057 Screenshots Expert and Simple, light and dark, 1440x900 and 1280x800 (`docs/screenshots/005-composer-*.png`); README chat screenshots and text, CHANGELOG, `specs/README.md` row [FR-043]
+- [x] T058 Coordination: comment on #453 (composer placeholder) for Ruben; reviewers rubenlupi and fjcabello [FR-043]
+- [x] T059 Review fixes on PR #498: Simple memory chip without Compact opens an info-only popup (matching `aria-haspopup` and title), demo Stop cancels the canned turn; driver cases in `check-composer-toolbar` [FR-037, FR-038]
+- [x] T070 Review on #498 (Ruben): the context chip's tooltip has one full stop, never ".."; driver assertion for an unknown context and for the breakdown [FR-037]
+- [x] T071 Review on #498: the model chip's accessible name built from parts ("…, 128k tokens context window; next: …"); `shots-model` step 8 asserts it [FR-037]
+- [x] T072 Review on #498: driver step: switching an MCP server off drops the chip's count by one when the dialog closes (and back) [FR-037]
+- [x] T073 Review on #498: driver step: two clicks on Stop call `bridge.stop` once (`aria-busy` guard); `__durbarSimUi.bridge` under `DURBAR_SIM` only [FR-038]
+- [x] T074 Review on #498: the spinner is decorative; the turn's start and end are announced through `#srAnnounce`; driver asserts it [FR-038]
+- [x] T075 Review on #498: the macOS demo Stop failure: Send, read and Stop in one page task (the canned turn is a transient); the stopped reply never arrives; CHANGELOG's doubled merge-queue line removed; after merging main (#515): spec 070's literal ratchet lowered (styles 156, screens 16, themes 52) and `theme.js` takes main's three button-text pairs (`test:theme-tokens`) [FR-043]
