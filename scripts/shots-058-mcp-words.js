@@ -7,7 +7,7 @@
  *     DURBAR_DRIVER=$PWD/scripts/shots-058-mcp-words.js xvfb-run -a npx electron . --no-sandbox
  *
  * Checks, at 1440x900 and 1280x800:
- * - sim-5 (Copilot, "my-notes" asks for a sign-in): "Needs sign-in" with an icon, the hint naming Copilot, Details shows the text, Copy.
+ * - sim-5 (Copilot, "my-notes" asks for a sign-in): "Needs sign-in" with an icon, the hint naming GitHub Copilot, Details shows the text, Copy.
  * - sim-6 (Copilot, "my-notes" failed, ENOENT): "Failed", the not-found hint; a switched-off server reads "Off for this session".
  * - Live refresh: an `mcp` event for the open agent changes the row with no click; the focus stays on the same button.
  * - Every string is escaped (a server name and error with markup stay text); text >= 10.5px; the dialog fits the window.
@@ -49,7 +49,7 @@ module.exports = async (ctx) => {
     assert.ok(n, 'my-notes is listed');
     assert.strictEqual(n.word, 'Needs sign-in', JSON.stringify(n));
     assert.ok(n.icon && /needs-auth/.test(n.cls), 'it has an icon and its class');
-    assert.match(n.hint, /^This server needs you to sign in\. Copilot keeps the sign-in; Agent Durbar never sees it\.$/);
+    assert.match(n.hint, /^This server needs you to sign in\. GitHub Copilot keeps the sign-in; Agent Durbar never sees it\.$/);
     assert.strictEqual(n.det, 'false', 'Details starts closed');
     assert.strictEqual(n.err, null);
     const running = await row('github');
