@@ -135,8 +135,9 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 
 - **Real-account CI** (2026-10-20, spec 062):
   - Secrets: `COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN` (given to Copilot as `COPILOT_GITHUB_TOKEN`), `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (to Codex through `codex login --with-api-key` on stdin).
-  - Only `e2e-real.yml` uses them: never on `pull_request`, `main` only, in one step.
-  - To try the workflow before it is on `main`, add a temporary `push` branch trigger and remove it before the PR (`test:platforms` checks that the trigger is `main` only).
+  - Only `e2e-real.yml` uses them: never on `pull_request`, never on `push`, in one step.
+  - To try the workflow before it is on `main`, add a temporary `push` branch trigger and remove it before the PR (`test:platforms` fails while any `push` trigger is there).
+  - **Cost** (2026-10-22, owner; spec 062 FR-006..FR-008): a push trigger on `main` ran it about 8 times a day × 3 OSes and cost about $2.06 OpenAI + $0.10 Anthropic in one day, mostly Codex on its default model and effort. Now: daily schedule, the turn on Linux only (macOS and Windows on Mondays or `full_turn: true`), Codex on a listed `mini`/`nano` model at effort `low` (`E2E_CODEX_MODEL` / `E2E_CODEX_EFFORT` override). *How to apply:* never add a push trigger to a workflow that spends credits; pin every app to its smallest model; prove install and sign-in without a prompt (`--no-turn`).
   - Never print a CLI's own sign-in line: Codex's shows a masked key tail.
   - Copilot Free lists no models but runs `auto`.
 
