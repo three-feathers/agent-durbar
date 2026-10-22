@@ -351,6 +351,82 @@ async function phase2(): Promise<void> {
     assert.deepStrictEqual(await h.sch.runNow('tgt-1'), { ok: false, error: 'That session has ended.' });
     assert.strictEqual(h.sent.length, 2, 'refusals send nothing');
   }
+
+  // spec 044 FR-023: edit a schedule through save({ edit: true })
+  {
+    const t0 = 1_000_000_000_000;
+    const base = (id: string, extra: Partial<Schedule> = {}): Schedule => ({ id, folder: '/w', prompt: 'old', every: 60, next: t0 + 60 * MIN, ...extra });
+    const h = harness({ pausedAll: false, schedules: [
+      base('edit-iv-001', { last: { at: t0 - MIN, outcome: 'sent' }, cap: { amount: 5, unit: 'aiu' }, spent: 1.5 }),
+      base('edit-pa-001', { paused: true, pausedReason: 'session-ended', target: { session: 's1', agent: 'copilot' } }),
+      { id: 'edit-once-1', folder: '/w', prompt: 'once', at: t0 + 10 * MIN },
+      { id: 'edit-pone-1', folder: '/w', prompt: 'pone', at: t0 - 10 * MIN, paused: true },
+      { id: 'edit-done-1', folder: '/w', prompt: 'done', at: t0 - 10 * MIN, done: true, last: { at: t0 - 10 * MIN, outcome: 'sent' } },
+    ] });
+    const iv = (id: string) => h.sch.doc.schedules.find((s) => s.id === id)!;
+    // interval: keeps id/last/spend, the renderer cannot set paused/done/last/spent/folder/next/pausedReason
+    let r = h.sch.save({ id: 'edit-iv-001', edit: true, folder: '/other', prompt: 'new', every: 30, paused: true, done: true, last: { at: 1, outcome: 'failed' }, spent: 99, spentUnknown: true, next: 5, pausedReason: 'cap', cap: { amount: 7, unit: 'aiu' } }, () => true);
+    assert.ok(r.ok);
+    let s = iv('edit-iv-001');
+    assert.deepStrictEqual([s.id, s.folder, s.prompt, s.every, s.paused, s.done, s.pausedReason], ['edit-iv-001', '/w', 'new', 30, undefined, undefined, undefined]);
+    assert.deepStrictEqual(s.last, { at: t0 - MIN, outcome: 'sent' }, 'last is main\'s');
+    assert.strictEqual(s.spent, 1.5, 'spend is kept in the same unit');
+    assert.strictEqual(s.spentUnknown, undefined);
+    assert.deepStrictEqual(s.cap, { amount: 7, unit: 'aiu' });
+    assert.strictEqual(s.next, t0 + 30 * MIN, 'next follows the new interval');
+    assert.strictEqual(h.sch.doc.schedules.length, 5, 'same list, same order');
+    assert.strictEqual(h.sch.doc.schedules[0].id, 'edit-iv-001');
+    // another unit: the spend starts again
+    h.unit.v = 'usd';
+    assert.ok(h.sch.save({ id: 'edit-iv-001', edit: true, folder: '/w', prompt: 'new', every: 30, cap: { amount: 2, unit: 'usd' } }, () => true).ok);
+    assert.strictEqual(iv('edit-iv-001').spent, undefined, 'a different unit drops the spend');
+    h.unit.v = 'aiu';
+    // rule: next from the rule
+    assert.ok(h.sch.save({ id: 'edit-iv-001', edit: true, folder: '/w', prompt: 'new', rule: { kind: 'weekdays', time: '09:00' } }, () => true).ok);
+    s = iv('edit-iv-001');
+    assert.deepStrictEqual([s.rule?.kind, s.every], ['weekdays', undefined]);
+    assert.ok(s.next !== undefined && s.next > t0 && s.next !== t0 + 30 * MIN, 'next moved to the rule');
+    // paused: stays paused with its reason, next computed again
+    r = h.sch.save({ id: 'edit-pa-001', edit: true, folder: '/w', prompt: 'p2', every: 15, target: { session: 's1', agent: 'copilot' } }, () => true);
+    assert.ok(r.ok);
+    s = iv('edit-pa-001');
+    assert.deepStrictEqual([s.paused, s.pausedReason, s.next, s.prompt], [true, 'session-ended', t0 + 15 * MIN, 'p2']);
+    // once: a changed past time is refused and nothing changes; a future one moves
+    const before = JSON.stringify(h.sch.doc);
+    assert.deepStrictEqual(h.sch.save({ id: 'edit-once-1', edit: true, folder: '/w', prompt: 'once', at: t0 - MIN }, () => true), { ok: false, error: 'That time has already passed.' });
+    assert.deepStrictEqual(h.sch.save({ id: 'edit-pone-1', edit: true, folder: '/w', prompt: 'pone', at: t0 - 5 * MIN }, () => true), { ok: false, error: 'That time has already passed.' });
+    assert.strictEqual(JSON.stringify(h.sch.doc), before, 'a refused edit changes nothing');
+    assert.ok(h.sch.save({ id: 'edit-once-1', edit: true, folder: '/w', prompt: 'once2', at: t0 + 20 * MIN }, () => true).ok);
+    assert.strictEqual(iv('edit-once-1').at, t0 + 20 * MIN);
+    // a paused one-time schedule whose time is unchanged (past) can be edited
+    assert.ok(h.sch.save({ id: 'edit-pone-1', edit: true, folder: '/w', prompt: 'pone2', at: t0 - 10 * MIN }, () => true).ok);
+    assert.deepStrictEqual([iv('edit-pone-1').prompt, iv('edit-pone-1').paused, iv('edit-pone-1').at], ['pone2', true, t0 - 10 * MIN]);
+    // done (owner Q2): needs a future time, then it runs again and keeps last
+    assert.deepStrictEqual(h.sch.save({ id: 'edit-done-1', edit: true, folder: '/w', prompt: 'done', at: t0 - 10 * MIN }, () => true), { ok: false, error: 'Pick a time in the future to run it again.' });
+    assert.strictEqual(iv('edit-done-1').done, true);
+    assert.ok(h.sch.save({ id: 'edit-done-1', edit: true, folder: '/w', prompt: 'again', at: t0 + 5 * MIN }, () => true).ok);
+    s = iv('edit-done-1');
+    assert.deepStrictEqual([s.done, s.last?.outcome], [undefined, 'sent']);
+    assert.strictEqual(dueAt(s), t0 + 5 * MIN);
+    assert.ok(h.sch.save({ id: 'edit-done-1', edit: true, folder: '/w', prompt: 'again', every: 20 }, () => true).ok, 'a done schedule may become an interval');
+    // unknown id: refused with and without edit, nothing added
+    const n = h.sch.doc.schedules.length;
+    assert.deepStrictEqual(h.sch.save({ id: 'nope-nope-1', edit: true, folder: '/w', prompt: 'x', every: 10 }, () => true), { ok: false, error: 'That schedule is gone.' });
+    assert.deepStrictEqual(h.sch.save({ id: 'nope-nope-1', folder: '/w', prompt: 'x', every: 10 }, () => true), { ok: false, error: 'That schedule is gone.' });
+    assert.deepStrictEqual(h.sch.save({ edit: true, folder: '/w', prompt: 'x', every: 10 }, () => true), { ok: false, error: 'That schedule is gone.' });
+    assert.strictEqual(h.sch.doc.schedules.length, n);
+    // the same checks as a new schedule (prompt, interval)
+    assert.ok(!h.sch.save({ id: 'edit-iv-001', edit: true, folder: '/w', prompt: '  ', every: 30 }, () => true).ok);
+    assert.ok(!h.sch.save({ id: 'edit-iv-001', edit: true, folder: '/w', prompt: 'x', every: 2 }, () => true).ok);
+    assert.strictEqual(iv('edit-iv-001').rule?.kind, 'weekdays');
+  }
+  // an edit at 50 schedules passes; a new one does not
+  {
+    const h = harness({ pausedAll: false, schedules: Array.from({ length: 50 }, (_, i) => ({ id: `full-sched-${i}`, folder: '/w', prompt: 'p', every: 60, next: 1_000_000_000_000 + 60 * MIN }) as Schedule) });
+    assert.ok(h.sch.save({ id: 'full-sched-3', edit: true, folder: '/w', prompt: 'edited', every: 45 }, () => true).ok);
+    assert.strictEqual(h.sch.doc.schedules.length, 50);
+    assert.ok(!h.sch.save({ folder: '/w', prompt: 'new', every: 45 }, () => true).ok);
+  }
 }
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });
