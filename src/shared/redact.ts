@@ -32,15 +32,18 @@ const TOKEN_SHAPES: RegExp[] = [
   shape(String.raw`github_pat_[A-Za-z0-9_]{20,}`),
   shape(String.raw`sk-(?:ant-)?[A-Za-z0-9_-]{20,}`),
   shape(String.raw`Bearer\s{1,8}[A-Za-z0-9._~+/=-]{8,}`),
-  new RegExp(String.raw`(?:(?<![A-Za-z0-9_-])|${PCT})(_{0,8}(?:[A-Za-z0-9]{1,40}_{1,3}){0,4})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}`, 'g'),
+  // The JWT starts at its literal `eyJ`, and its start and prefix are checked behind it (a bounded lookbehind), so the engine only
+  // stops at an `eyJ`. Matching the prefix forward instead tried up to 40 word characters at every position of a run that passes
+  // the `%XX` start (`2525…`): linear, but about 40x the cost of the other shapes (T130, review of PR #549). The prefix stays.
+  new RegExp(String.raw`(?<=(?:(?<![A-Za-z0-9_-])|${PCT})_{0,8}(?:[A-Za-z0-9]{1,40}_{1,3}){0,4})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}`, 'g'),
   shape(String.raw`(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])`),
 ];
 
 /** Replaces every bare token shape with `mask` (a JWT's leading underscores and words stay). Linear; no env rules, no header or URL rules. */
 export function maskTokenShapes(text: string, mask: string): string {
   let out = text;
-  // The only capture group is a JWT's prefix (underscores and snake_case words); without a group the second argument is the offset (a number).
-  for (const re of TOKEN_SHAPES) out = out.replace(re, (_m: string, lead: unknown) => (typeof lead === 'string' ? lead : '') + mask);
+  // A function, so `$&` or `$1` in the mask stays literal; the JWT's prefix is outside its match (lookbehind), so it stays too.
+  for (const re of TOKEN_SHAPES) out = out.replace(re, () => mask);
   return out;
 }
 
