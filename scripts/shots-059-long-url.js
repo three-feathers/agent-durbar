@@ -28,15 +28,15 @@ module.exports = async (ctx) => {
     if (!process.env.OUT_SUFFIX || process.env.OUT_SUFFIX !== 'before') assert.ok(!r.out && r.tip, `${w}x${h}: the name stays in its card and keeps its tooltip: ${JSON.stringify(r)}`);
   }
   // The other surfaces with the same name (15 agents, roomy/compact layouts): the Needs you inbox, and the Schedules dialog and Settings rows
-  const U = jsLiteral('https://example.invalid/');
+  const URL_PREFIX = 'https://example.invalid/';
   /** names of the elements (text holds the URL) that stick out of their box: right, left or bottom edge */
-  const outside = (sel, box) => H.js(`(()=>{try{const out=[];for(const e of document.querySelectorAll(${jsLiteral(sel)})){if(!e.textContent.includes(${U})&&!(e.title||'').includes(${U}))continue;const c=e.closest(${jsLiteral(box)});if(!c)continue;const a=e.getBoundingClientRect(),b=c.getBoundingClientRect();if(a.right>b.right+0.5||a.left<b.left-0.5||a.bottom>b.bottom+0.5)out.push(${jsLiteral(sel)}+' '+Math.round(a.right)+'>'+Math.round(b.right))}return out}catch(err){return ['ERR '+String(err)]}})()`);
+  const outside = (sel, box) => H.js(`(()=>{try{const out=[];for(const e of document.querySelectorAll(${jsLiteral(sel)})){if(!e.textContent.includes(${jsLiteral(URL_PREFIX)})&&!(e.title||'').includes(${jsLiteral(URL_PREFIX)}))continue;const c=e.closest(${jsLiteral(box)});if(!c)continue;const a=e.getBoundingClientRect(),b=c.getBoundingClientRect();if(a.right>b.right+0.5||a.left<b.left-0.5||a.bottom>b.bottom+0.5)out.push(${jsLiteral(sel)}+' '+Math.round(a.right)+'>'+Math.round(b.right))}return out}catch(err){return ['ERR '+String(err)]}})()`);
   const W = async (expr, what) => assert.ok(await ctx.waitFor(expr, 8000), 'timed out waiting for ' + what);
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, query: { simnames: 'long' }, ready: 'fit', settle: false });
     await ctx.sleep(800);
     const tag = `${w}x${h}`;
-    const made = await H.js(`(()=>{const a=__durbarSimUi.agents().find(x=>!x.parent&&x.name.startsWith(${U}));return a?a.id:null})()`);
+    const made = await H.js(`(()=>{const a=__durbarSimUi.agents().find(x=>!x.parent&&x.name.startsWith(${jsLiteral(URL_PREFIX)}));return a?a.id:null})()`);
     assert.ok(made, `${tag}: the URL-named agent exists`);
     // Needs you inbox
     await H.js(`document.activeElement&&document.activeElement.blur()`); await H.key('I'); await W(`!!document.getElementById('inboxDlg')`, 'the inbox');
