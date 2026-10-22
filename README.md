@@ -257,6 +257,8 @@ npm run check:ui          # every simulator driver that asserts, one after anoth
 npm run check:themes      # on demand: the full layout check in every theme, a few at a time, low priority, memory limits
 npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned); then checks the Electron fuses and the display names
 npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app opens its window and offers no debugger (xvfb on Linux)
+npm run specs:index       # the full specs index from each spec's specs-index block, into specs/INDEX.md (git-ignored); --add specs/NNN-x for a new spec; specs:check in npm test
+npm run changelog:check   # check the changelog.d/ fragments (in npm test); changelog:preview lists them; changelog:build folds them at a release
 ```
 
 `npm run smoke` and `npm run verify:cap` use a real Copilot login and may spend credits: run them only on purpose. The **E2E real accounts** workflow (spec 062) installs the three agent apps on Linux, macOS and Windows, signs in with the CI account's secrets and runs one tiny turn each; it runs by hand, weekly and on `main`, never on pull requests. The supported CI platforms are listed once, in `.github/platforms.json`. GitHub Actions also runs the UI checks (geometry, office layout, the Mac title bar, `check:ui`) on macOS, Windows and Linux runners and keeps the screenshots of each run (workflow *UI on three OSes*; simulator only). Releases are built by GitHub Actions from `v*` tags into a draft release that the maintainer publishes by hand.
