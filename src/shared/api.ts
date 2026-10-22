@@ -1,6 +1,6 @@
 import type { FolderSetupDecision, FolderSetupView, HookExplanation } from './foldersetup';
 import type { BroadKind } from './broadfolder';
-import type { AgentEvent } from '../adapters/types';
+import type { AgentEvent, McpServerStatus } from '../adapters/types';
 import type { HistoryItem, PreviousSession } from '../adapters/history';
 import type { VsChatSummary, VsChatTranscript } from '../adapters/vscodeChat';
 import type { UsageDoc } from './toolusage';
@@ -421,6 +421,8 @@ export interface AgentMcpEntry {
   /** Runtime state when the session is running (connected, failed, needs-auth, disabled, ...). */
   status?: string;
   error?: string;
+  /** Spec 058 FR-011/FR-020: what kind of failure the adapter said it was (only when the vendor said so). */
+  errorClass?: McpServerStatus['errorClass'];
   /** The default from Settings: on for new sessions. */
   defaultOn: boolean;
   /** This agent switched it off. */
@@ -434,6 +436,8 @@ export interface AgentMcpReply {
   ok: boolean;
   servers: AgentMcpEntry[];
   live: boolean;
+  /** Spec 058 FR-020: the agent app's display name (for hints); missing when no adapter answers. */
+  app?: string;
   /** Spec 058 FR-010: when this agent app starts its servers; missing = not said. */
   start?: 'session' | 'next-message';
   /** Spec 058 FR-010: when a switch takes effect in a running session; missing = not said. */
@@ -576,7 +580,7 @@ export interface DurbarApi {
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
   /** Scheduled prompts (spec 044). */
   listSchedules?(): Promise<SchedulesInfo>;
-  saveSchedule?(input: Partial<ScheduleInfo> & { folder: string; prompt: string }): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
+  saveSchedule?(input: Partial<ScheduleInfo> & { folder: string; prompt: string; edit?: boolean }): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
   removeSchedule?(id: string): Promise<{ ok: boolean }>;
   setSchedulesPaused?(on: boolean): Promise<{ ok: boolean; pausedAll: boolean }>;
   /** Spec 052 FR-089: one run of a schedule now ("Run missed now"), through the same path as a scheduled run. */

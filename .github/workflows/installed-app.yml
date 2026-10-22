@@ -3,8 +3,12 @@ name: Installed app
 # spec 008 T021: build the release package on macOS, Windows and Linux, install it the way a user does (NSIS /S per user, the
 # .dmg copied to ~/Applications, the AppImage), start the INSTALLED app on the simulator (no account, no credits) and record
 # the names a user sees (Start menu, Info.plist, .desktop). Unsigned builds, nothing published. Screenshots as artifacts.
+# Spec 008 FR-106 (owner decision 2026-10-22): macOS nightly and by hand only (not on pull requests or pushes); a nightly failure
+# opens or updates an issue (nightly-watch.yml).
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '47 3 * * *' # nightly, every OS
   push:
     branches: [main]
     paths:
@@ -16,6 +20,7 @@ on:
       - 'scripts/installed-app-*.js'
       - '.github/workflows/installed-app.yml'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'scripts/installed-app-*.js'
       - '.github/workflows/installed-app.yml'
@@ -24,24 +29,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: installed-app-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   installed:
     name: Installed app (${{ matrix.os }})
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            dist: dist:linux
-          - os: macos-latest
-            dist: dist:mac:arm64
-          - os: windows-latest
-            dist: dist:win
+        # FR-106: macOS only nightly and by hand
+        include: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '[{"os":"ubuntu-latest","dist":"dist:linux"},{"os":"macos-latest","dist":"dist:mac:arm64"},{"os":"windows-latest","dist":"dist:win"}]' || '[{"os":"ubuntu-latest","dist":"dist:linux"},{"os":"windows-latest","dist":"dist:win"}]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

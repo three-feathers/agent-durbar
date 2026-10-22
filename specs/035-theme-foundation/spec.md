@@ -1,5 +1,11 @@
 # Feature Specification: Theme foundation — data-only theme packs
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 035-040
+title: Theme foundation: data-only theme packs, manifest, token map, art slot registry, UI styles (2026-10-18), Clean Office fallback
+status: **built** on branch `035-theme-foundation` (PR #137): loader, sanitizer, fallback, `test:theme`
+-->
+
 **Feature Branch**: `035-theme-foundation` (touches `src/renderer/app.js`, `src/renderer/styles.css`, `src/renderer/index.html`; reads `003` settings, `011` settings store, `017` room doors, `024` places, `033` floors)
 **Created**: 2026-10-18
 **Status**: Implemented on branch `035-theme-foundation` (PR #137): simulator and unit tests, 0 AIU; not released
@@ -91,7 +97,12 @@
 
 **Corrected wording.**
 - **FR-009** `[IMPLEMENTED]` A manifest may name a **UI style**, `ui`, from a fixed list owned by the app: `clean`, `corporate`, `retro`, `court-indian`, `court-european`, `court-japanese`. Unknown or missing = `clean`. The style is set as `data-ui` on `<html>`; its CSS lives in the app (`src/renderer/themes.css`), never in the manifest, so this stays data-only (like the motion presets, 036 FR-006). A user theme may pick any listed style and give its own colour tokens; the style reads them through the same `var(--...)` names.
-- **FR-010** `[IMPLEMENTED]` A UI style may change colours, borders, corner radii, shadows, textures (CSS gradients) and the font family of **display text** (brand, room names, place names, door plates, dialog titles). It must not change sizes, padding, gaps or the font size of anything the layout measures, so the 15-agent fit is the same in every style (enforced by `check:geometry` on every PR that touches the renderer, spec 008 FR-031; the full `check:themes` on demand). Display text that could get wider under another font is ellipsized, never wrapped.
+- **FR-010** `[IMPLEMENTED]` A UI style may change colours, borders, corner radii, shadows, textures (CSS gradients) and the font family of **display text** (brand, room names, place names, door plates, dialog titles). It must not change sizes, padding, gaps or the font size of anything the layout measures, so the 15-agent fit is the same in every style (enforced by `check:geometry` on every PR that touches the renderer, spec 008 FR-031, which since 2026-10-22 lays out Retro against Clean Office on pull requests and every style on `main` and nightly (spec 008 FR-111, owner decision); `test:theme` refuses any size property or size-carrying shorthand in `themes.css` on every PR; the full `check:themes` on demand). Display text that could get wider under another font is ellipsized, never wrapped.
 - **FR-011** `[IMPLEMENTED]` Fonts are generic system stacks (serif, monospace); no font files are shipped. What a user sees depends on the fonts installed on their OS (documented as a limit).
 - **FR-013** `[IMPLEMENTED]` (2026-10-18, owner: "let characters change with my theme, also desks") A manifest may name a **scene kit**, `scene`, from a fixed list owned by the app: `office`, `corporate`, `pixel`, `court-indian`, `court-european`, `court-japanese`. Unknown or missing = `office`. A kit draws the people (body, head, hair, clothes), the chair, the desk, the monitor frame and the desk props in its own style (`src/renderer/scenekits.js`); the theme's colour tokens still colour it. Every kit keeps the status cues in the same place and the same animation hooks: the screen content for each status, the waving hand, the thinking bubble, the idle cup, the mood signs (heavy, monster, faint, dizzy, ambulance, impatient) and the `.pp` group hidden while an agent is at a place. The `office` kit is the scene in `app.js` itself, so Clean Office does not change. The stage D overlay slots (`char-*`, `desk-*`, `monitor-art`, `hair-acc`) are drawn only by the `office` kit, so built-in packs no longer carry them; they remain for user themes on the `office` kit.
 - **FR-012** `[IMPLEMENTED]` Theme art never covers text: everything with text in a room or the lobby (the `+N more` / `Show fewer` chips, lobby tiles and their slots) has an opaque background and sits above the art layers.
+
+### 2026-10-22: theme layout checks on pull requests: Clean Office and Retro (owner decision, spec 008 FR-111)
+
+Owner (Vikram, team chat 2026-10-22 06:17 UTC): run theme layout, geometry and screenshot checks on pull requests only for Clean Office and Retro (dark, its own display font and art); the other styles change only what FR-010 allows, which `test:theme` checks statically on every PR. Nothing in FR-009..FR-013 changes; only where the FR-010 layout proof runs (spec 008 FR-111).
+

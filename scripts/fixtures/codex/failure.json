@@ -14,7 +14,7 @@
     {"type":"status","status":"working","intent":"Thinking"},
     {"type":"status","status":"error","intent":"SandboxError: Sandbox denied the write"},
     {"type":"usageLimit","scope":"plan","source":"Codex usage limit"},
-    {"type":"status","status":"idle","intent":"Usage limit reached"},
+    {"type":"status","status":"idle","intent":"Usage limit reached","reason":"usage-limit"},
     {"type":"status","status":"error","intent":"HttpConnectionFailed: connection reset"},
     {"type":"status","status":"error","intent":"Turn failed"},
     {"type":"status","status":"idle","intent":"Aborted"}
