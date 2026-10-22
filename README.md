@@ -48,7 +48,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 
 **Chat**
 - Click an agent to open a full-screen chat. All the other agents stay in a slim strip.
-- You see its thinking, tool calls and replies as they stream in, with Markdown and copy buttons. An open tool call shows the whole command (with Copy), how long it took and its output; a Claude Code edit request has a **Show the change** diff.
+- You see its thinking, tool calls and replies as they stream in, with Markdown and copy buttons. An open tool call shows the whole command (with Copy), how long it took and its output; a Claude Code or Codex edit request has a **Show the change** diff (a Codex request with no known file says "Codex did not say which file").
 - Attach files and images by picking, dropping or pasting.
 - Questions an agent asks you appear as a card with its choices, an "Other" answer and Skip. The whole question, every choice and its description are shown in full; Enter in the "Other" box sends your answer (Shift+Enter adds a line). While a question waits and its card is scrolled out of view, the bar above the message box shows it; a short one can be answered right there (its choices, an "Other" box and Skip), a longer one has **Show question**. Several context compactions in a row are one line that counts them ("Context compacted 4 times · last 10:21").
 - **Needs you:** one inbox of every agent waiting for you, oldest first with how long each has waited. While Durbar is in the background the window title ("(3) Agent Durbar"), the app icon and one notification tell you (Settings > Notifications turns it off; it shows only the agent's name and a short summary). In a waiting chat, **Alt+A** allows once, **Alt+S** allows for the session, **Alt+D** denies and **Alt+N** goes to the next agent; **?** lists every shortcut.
@@ -251,8 +251,9 @@ DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
 npm run check:question-options  # question card text, options and descriptions in full; Enter sends a custom answer (simulator, xvfb on Linux)
 npm run check:question-visible  # a waiting question stays visible in the answer bar; compactions in a row fold into one line (simulator, xvfb on Linux)
+npm run check:activity-table    # Tools > Activity shows the activity log table with the simulator's rows (simulator, xvfb on Linux)
 npm run check:sched-sendto      # Schedules dialog: Send to / Limit labels on one line, every option fits, session name on a hint line (simulator, xvfb on Linux)
-npm run check:geometry    # every theme lays out exactly like Clean Office (about a minute)
+npm run check:geometry    # Retro lays out exactly like Clean Office (CHECK_ALL_THEMES=1: every theme, about a minute)
 npm run check:ui          # every simulator driver that asserts, one after another, on any OS (UI_SUITE_XVFB=1 keeps windows off a Linux desktop)
 npm run check:themes      # on demand: the full layout check in every theme, a few at a time, low priority, memory limits
 npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned); then checks the Electron fuses and the display names
@@ -261,7 +262,7 @@ npm run specs:index       # the full specs index from each spec's specs-index bl
 npm run changelog:check   # check the changelog.d/ fragments (in npm test); changelog:preview lists them; changelog:build folds them at a release
 ```
 
-`npm run smoke` and `npm run verify:cap` use a real Copilot login and may spend credits: run them only on purpose. The **E2E real accounts** workflow (spec 062) installs the three agent apps on Linux, macOS and Windows, signs in with the CI account's secrets and runs one tiny turn each; it runs by hand, weekly and on `main`, never on pull requests. The supported CI platforms are listed once, in `.github/platforms.json`. GitHub Actions also runs the UI checks (geometry, office layout, the Mac title bar, `check:ui`) on macOS, Windows and Linux runners and keeps the screenshots of each run (workflow *UI on three OSes*; simulator only). Releases are built by GitHub Actions from `v*` tags into a draft release that the maintainer publishes by hand.
+`npm run smoke` and `npm run verify:cap` use a real Copilot login and may spend credits: run them only on purpose. The **E2E real accounts** workflow (spec 062) installs the three agent apps on Linux, macOS and Windows, signs in with the CI account's secrets and runs one tiny turn each; it runs by hand, weekly and on `main`, never on pull requests. The supported CI platforms are listed once, in `.github/platforms.json`. GitHub Actions also runs the UI checks (geometry, office layout, the Mac title bar, `check:ui`) on Windows and Linux for each pull request and on macOS nightly, and keeps the screenshots of each run (workflow *UI on three OSes*; simulator only). macOS does not run on pull requests: build and test runs on every push to `main`, the other macOS checks nightly, and a failed nightly run opens an issue (spec 008 FR-106). Releases are built by GitHub Actions from `v*` tags into a draft release that the maintainer publishes by hand.
 
 **Layout of the repository:**
 - `src/main` (Electron main), `src/preload`, `src/renderer` (plain HTML/CSS/JS, the simulator);

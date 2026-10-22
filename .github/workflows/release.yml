@@ -18,6 +18,7 @@ jobs:
   build:
     name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60 # spec 008 FR-110; the slowest build (macOS, both architectures) took 5 min on alpha.10
     strategy:
       fail-fast: false
       matrix:
@@ -72,6 +73,7 @@ jobs:
   draft-release:
     name: Draft release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build
     permissions:
       contents: write
