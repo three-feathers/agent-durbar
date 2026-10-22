@@ -900,6 +900,7 @@
     let dlg=null;
     /* spec 069 FR-032/FR-033: expanded rows and their tools, loaded once per open dialog (again after a Restart) */
     const expanded=new Set(), toolsOf=new Map();
+    let uid=0; /* ids for aria-describedby of the tool boxes, unique per paint */
     function toolsHTML(n){
       const r=toolsOf.get(n), id='mt-'+esc(n);
       if(!r)return `<div class="mcp-tools" id="${id}" role="status">Loading tools…</div>`;
@@ -909,13 +910,18 @@
       /* spec 069 FR-060/FR-064: a checkbox per tool and a tri-state for the server; disabled with the reason when the app cannot filter */
       const x=(st.servers||[]).find(y=>y.name===n)||{}, off=new Set(x.toolsOff||[]), can=!!(st.toolFilter&&X.bridge.setAgentMcpToolsOff);
       const okName=t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t.name), nOff=r.tools.filter(t=>off.has(t.name)&&okName(t)).length, all=nOff===0?'true':nOff===r.tools.filter(okName).length?'false':'mixed';
-      const dis=can?'':' disabled title="This app can\'t turn off single tools"';
+      /* FR-063/FR-064 (change 2026-10-22, review on PR 503): a box that cannot change is aria-disabled, not disabled: it stays in the Tab
+         order, a click or Space does nothing (the click handler), and aria-describedby points to the reason, which is visible */
+      const noteId='mtn-'+(++uid);
+      const dis=can?'':` aria-disabled="true" aria-describedby="${noteId}"`;
       /* FR-063 (change 2026-10-22): a tool name the agent apps' filters cannot carry (copy of MCP_TOOL_OFF_RE in src/shared/mcp.ts) cannot be turned off */
-      const odd=t=>!okName(t), oddDis=' disabled title="Agent Durbar can only turn off tools named with letters, digits, _ . or -"';
+      const odd=t=>!okName(t);
       const nOdd=r.tools.filter(odd).length;
       const head=`<div class="mcp-thead"><button class="mcp-all" type="button" role="checkbox" aria-checked="${all}" data-tall="${esc(n)}"${dis} aria-label="${esc('All tools of '+n)}"><span class="mcp-box" aria-hidden="true">${all==='true'?'✓':all==='mixed'?'–':''}</span>${r.total} tool${r.total===1?'':'s'}${more}${nOff?`, ${nOff} off`:''}</button>
-        <span class="mcp-tnote">${can?'Turning tools on or off applies to new sessions and after Restart session with these servers.':'This app can\'t turn off single tools.'}${can&&nOdd?` ${nOdd} tool${nOdd===1?'':'s'} with other characters in the name cannot be turned off.`:''}</span></div>`;
-      return `<div class="mcp-tools" id="${id}">${head}<ul class="mcp-tlist">${r.tools.map(t=>`<li><label><input type="checkbox" data-tool="${esc(t.name)}" data-tsrv="${esc(n)}"${off.has(t.name)&&!odd(t)?'':' checked'}${dis||(odd(t)?oddDis:'')} aria-label="${esc(t.name+' of '+n)}"><code>${esc(t.name)}</code></label>${t.description?`<span>${esc(t.description)}</span>`:''}</li>`).join('')}</ul></div>`;
+        <span class="mcp-tnote" id="${noteId}">${can?'Turning tools on or off applies to new sessions and after Restart session with these servers.':'This app can\'t turn off single tools.'}${can&&nOdd?` ${nOdd} tool${nOdd===1?'':'s'} with other characters in the name cannot be turned off.`:''}</span></div>`;
+      const row=t=>{const why=can&&odd(t)?'mtw-'+(++uid):'';
+        return `<li><label><input type="checkbox" data-tool="${esc(t.name)}" data-tsrv="${esc(n)}"${off.has(t.name)&&!odd(t)?'':' checked'}${dis||(why?` aria-disabled="true" aria-describedby="${why}"`:'')} aria-label="${esc(t.name+' of '+n)}"><code>${esc(t.name)}</code></label>${why?`<span class="mcp-tnote" id="${why}">can't be turned off: the name has other characters</span>`:''}${t.description?`<span>${esc(t.description)}</span>`:''}</li>`;};
+      return `<div class="mcp-tools" id="${id}">${head}<ul class="mcp-tlist">${r.tools.map(row).join('')}</ul></div>`;
     }
     const toggleTools=async n=>{
       if(expanded.has(n)){expanded.delete(n);await repaint();return;}
@@ -951,7 +957,7 @@
     let seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
     const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return [];
       const f=document.activeElement,inside=f&&dlg.contains(f);
-      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
       const errTop=key&&key[0]==='err'?f.scrollTop:0;
       const bodyEl=dlg.querySelector('.dbody'),top=bodyEl.scrollTop;
       bodyEl.innerHTML=body(st);bodyEl.scrollTop=top; /* FR-004: the scroll position stays */
@@ -960,7 +966,12 @@
         if(pre){pre.focus();pre.scrollTop=errTop;}
         else{
           const btns=[...dlg.querySelectorAll('.dbody button:not([disabled]),.dbody input:not([disabled])')]; /* spec 069 FR-060: the tool checkboxes keep the focus too */
-          const back=btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1])||((key[0]==='copy'||key[0]==='err')&&btns.find(x=>x.dataset.det===key[1]))||(key[0]!=='n'&&key[0]!=='id'&&key[0]!=='tool'?btns.find(x=>x.dataset.n===key[1]):null);
+          /* review on PR 503: a tool box is keyed on its server AND its name (two servers may share a tool name); when the list closed,
+             the focus goes to that server's tools toggle, then to its switch, never to body */
+          const srv=key[0]==='tool'?key[2]:key[0]==='tall'?key[1]:null;
+          const back=(key[0]==='tool'?btns.find(x=>x.dataset.tool===key[1]&&x.dataset.tsrv===key[2]):btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1]))
+            ||(srv!==null&&(btns.find(x=>x.dataset.tools===srv)||btns.find(x=>x.dataset.n===srv)))
+            ||((key[0]==='copy'||key[0]==='err')&&btns.find(x=>x.dataset.det===key[1]))||(key[0]!=='n'&&key[0]!=='id'&&key[0]!=='tool'&&key[0]!=='tall'?btns.find(x=>x.dataset.n===key[1]):null);
           if(back)back.focus();
         }
       }
@@ -1012,6 +1023,7 @@
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;d.addEventListener('click',async e=>{
         const tg=e.target.closest('button[data-tools]');if(tg){void toggleTools(tg.dataset.tools);return;}
+        const ad=e.target.closest('[data-tall][aria-disabled="true"],input[data-tool][aria-disabled="true"]');if(ad){e.preventDefault();return;} /* FR-064: focusable, never changed */
         const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.map(t=>t.name).filter(t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t)):[]);}return;}
         const tc=e.target.closest('input[data-tool]');if(tc&&!tc.disabled){const n=tc.dataset.tsrv,x=(st.servers||[]).find(y=>y.name===n)||{},off=new Set(x.toolsOff||[]);if(tc.checked)off.delete(tc.dataset.tool);else off.add(tc.dataset.tool);void saveOff(n,[...off]);return;}
         const mr=e.target.closest('button[data-mrm]');if(mr){const n=mr.dataset.mrm;d._close();void removeOne(n);return;}

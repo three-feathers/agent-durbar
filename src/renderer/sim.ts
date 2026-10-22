@@ -1223,7 +1223,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         await new Promise((r) => setTimeout(r, 250));
         const canned: Record<string, [string, string?][]> = {
           github: [['search_issues', 'Search issues and pull requests in a repository'], ['get_pull_request', 'Get one pull request with its files and checks'], ['create_issue', 'Open a new issue'], ['list_commits', 'List the commits of a branch'], ['get_file_contents', 'Read a file at a ref']],
-          'github-mcp-server': [['get_me', 'Your GitHub account'], ['search_code', 'Search code on GitHub']],
+          // `search` is also a tool of my-notes (two servers, one tool name: spec 069 review on PR 503); `run query` cannot be turned off (FR-063)
+          'github-mcp-server': [['get_me', 'Your GitHub account'], ['search_code', 'Search code on GitHub'], ['search', 'Search GitHub'], ['run query', 'A tool name with a space']],
           playwright: [['browser_navigate', 'Open a URL in the browser'], ['browser_click', 'Click an element'], ['browser_snapshot', 'Accessibility snapshot of the page'], ['browser_take_screenshot']],
           'docs-search': [],
         };

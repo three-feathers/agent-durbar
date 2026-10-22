@@ -114,6 +114,35 @@ module.exports = async (ctx) => {
       await closeDlg();
     }
   }
+  // review on #503: focus keyed on server + tool. Two open servers share the tool name `search`; a real Space on the second server's box
+  // toggles that box and the focus stays on it (not on the first server's `search`); a box that cannot change is focusable, says why, and
+  // Space leaves it as it is.
+  await openMcp('sim-1');
+  await press('my-notes');
+  assert.ok(await until(`!!document.querySelector('#agMcp input[data-tool="search"][data-tsrv="my-notes"]')`), 'my-notes tools');
+  await press('github-mcp-server');
+  assert.ok(await until(`!!document.querySelector('#agMcp input[data-tool="search"][data-tsrv="github-mcp-server"]')`), 'github-mcp-server tools');
+  const sel = '#agMcp input[data-tool="search"][data-tsrv="github-mcp-server"]';
+  await js(`document.querySelector(${jsLiteral(sel)}).focus()`);
+  await H.key('Space');
+  assert.ok(await until(`document.querySelector(${jsLiteral(sel)}).checked===false`), 'Space turned the second server\'s search off');
+  assert.ok(await until(`(()=>{const f=document.activeElement;return !!f&&f.dataset.tool==='search'&&f.dataset.tsrv==='github-mcp-server'})()`), 'focus stays on github-mcp-server / search after the repaint, not my-notes / search: ' + (await js(`JSON.stringify(document.activeElement&&document.activeElement.dataset)`)));
+  assert.strictEqual(await js(`document.querySelector('#agMcp input[data-tool="search"][data-tsrv="my-notes"]').checked`), true, 'the other server\'s search is untouched');
+  await H.key('Space');
+  assert.ok(await until(`document.querySelector(${jsLiteral(sel)}).checked===true`), 'and back on');
+  const odd = '#agMcp input[data-tool="run query"][data-tsrv="github-mcp-server"]';
+  assert.deepStrictEqual(await js(`(()=>{const x=document.querySelector(${jsLiteral(odd)});const why=document.getElementById(x.getAttribute('aria-describedby')||'');return [x.disabled,x.getAttribute('aria-disabled'),x.tabIndex>=0,!!why&&why.getClientRects().length>0&&/can't be turned off/.test(why.textContent)]})()`), [false, 'true', true, true], 'focusable, aria-disabled, with a visible reason');
+  await js(`document.querySelector(${jsLiteral(odd)}).focus()`);
+  await H.key('Space');
+  await settle();
+  assert.strictEqual(await js(`document.querySelector(${jsLiteral(odd)}).checked`), true, 'Space does not change it');
+  // the list closes while a box has the focus: the focus goes to that server's tools toggle, not to body
+  await js(`document.querySelector(${jsLiteral(sel)}).focus()`);
+  await js(`document.querySelector('#agMcp button[data-tools="github-mcp-server"]').click()`);
+  await js(`document.querySelector(${jsLiteral(sel)})&&document.querySelector(${jsLiteral(sel)}).focus()`);
+  assert.ok(await until(`!document.querySelector(${jsLiteral(sel)})&&document.activeElement&&document.activeElement.dataset.tools==='github-mcp-server'`), 'focus on the server\'s tools toggle after the list closed');
+  await closeDlg();
+
   // review on #499: a server that is in an agent app's list AND this folder's extras: Remove offers both places, ticked, and removes both
   const ada = await js(`(()=>{const a=__durbarSimUi.agents().find(x=>!x.parent&&/mcp-swiss$/.test(x.room||''));return a?a.id:null})()`);
   assert.ok(ada, 'an agent in mcp-swiss');
