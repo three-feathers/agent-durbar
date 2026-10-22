@@ -1,5 +1,11 @@
 # Feature Specification: Self-paced loops (the agent decides when its next turn runs)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Self-paced loops (issue #526): a prompt looped on one session; the agent says when its next pass runs or stops it, within Durbar's limits (min/max delay, passes, end time, credit cap); a kind of scheduled prompt (044), shown in Schedules, on the desk and in the Postbox
+status: **Phase 1 foundation built** (T001-T005: pace parser, `Schedule.loop`, scheduler core, holds, restart; unit tests only, loops refused by `save` until T006 wires them; no UI yet); owner answered Q1-Q9 2026-10-22 (Q6 (b): no broker exception); Phase 1 needs no spec 041
+-->
+
 **Feature Branch**: `072-self-paced-loops` (touches 044 scheduled prompts, 001 lobby Postbox, 011 caps, 041 Durbar MCP, 052 activity log, 068 coffee break)
 **Created**: 2026-10-22
 **Status**: Phase 1 foundation built (T001-T005: pace parser, `Schedule.loop`, scheduler core, holds, restart rule; unit tests only, not wired to `main.ts`, no UI yet; until T006 wires it, `Scheduler.save` refuses a `loop` with "Loops are not available yet." through the `loopSupport.enabled` switch in `schedules.ts`, so no loop can run unwired). Before that: spec, plan and tasks only. Owner answers Q1-Q9 recorded at the end (Paco, fjcabello, 2026-10-22). A requirement not tagged otherwise is `[PLANNED]`; what exists today is cited as `read:`.

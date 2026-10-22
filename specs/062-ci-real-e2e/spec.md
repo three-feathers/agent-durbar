@@ -1,5 +1,11 @@
 # Feature Specification: End-to-end checks with real accounts in CI
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: End-to-end checks with real CI accounts on every supported OS: install, sign in, models, one turn through Durbar's adapters; one platform list for OS workflows
+status: **built**; real run 2026-10-20: 9/9 (Copilot Free, Claude, Codex on Linux, macOS, Windows); found and fixed the Codex API-key sign-in and the Windows Codex install folder
+-->
+
 **Feature Branch**: `062-ci-real-e2e`
 **Created**: 2026-10-20
 **Status**: Built; run 4 on 2026-10-20 passed 9 of 9 (3 apps × 3 OSes), see `## Changes`.
