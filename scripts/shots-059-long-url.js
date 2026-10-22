@@ -17,18 +17,18 @@ const SUF = process.env.OUT_SUFFIX ? '-' + process.env.OUT_SUFFIX : '';
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
+  const URL_PREFIX = 'https://example.invalid/'; // the fake address of the simulator's URL-like first prompt (never a real one)
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    await H.load({ w, h, query: { sim: '3', simfreeze: '1', simnames: 'long' }, ready: 'fit', settle: false });
+    await H.load({ w, h, query: { sim: '3', simfreeze: '1', simnames: 'long', density: 'full' }, ready: 'fit', settle: false }); // density=full: a forced density never grows (spec 001, #532)
     await ctx.sleep(800);
-    const r = await H.js(`(()=>{const e=[...document.querySelectorAll('#stage .desk .name')].find(n=>/^https:\\/\\/example\\.invalid\\//.test(n.textContent));if(!e)return null;const c=e.closest('.desk').getBoundingClientRect(),b=e.getBoundingClientRect();return {d:document.getElementById('stage').dataset.d,out:b.right>c.right+0.5||b.left<c.left-0.5||(e.matches('.who .name')&&e.scrollWidth>e.clientWidth+1),lines:Math.round(b.height/parseFloat(getComputedStyle(e).lineHeight||'18')),tip:e.title.length>60}})()`);
+    const r = await H.js(`(()=>{const e=[...document.querySelectorAll('#stage .desk .name')].find(n=>n.textContent.includes(${jsLiteral(URL_PREFIX)}));if(!e)return null;const c=e.closest('.desk').getBoundingClientRect(),b=e.getBoundingClientRect(),lh=parseFloat(getComputedStyle(e).lineHeight);return {d:document.getElementById('stage').dataset.d,out:b.right>c.right+0.5||b.left<c.left-0.5||b.bottom>c.bottom+0.5||(e.matches('.who .name')&&e.scrollWidth>e.clientWidth+1),lh:lh,lines:Math.round(b.height/lh),tip:e.title.length>60}})()`);
     assert.ok(r, `${w}x${h}: the URL-like name is on a card`);
     if (process.env.OUT_SUFFIX !== 'before') assert.strictEqual(r.d, 'full', `${w}x${h}: three agents use the full layout`);
     await H.shot(path.join(OUT, `059-long-url-name${SUF}-${w}x${h}.png`), { prep: 'mouse', delay: 300, tag: '059-url', what: `059-long-url-name${SUF}-${w}x${h}.png` });
     console.log(`[059-url] ${w}x${h} ${JSON.stringify(r)}`);
-    if (!process.env.OUT_SUFFIX || process.env.OUT_SUFFIX !== 'before') assert.ok(!r.out && r.tip, `${w}x${h}: the name stays in its card and keeps its tooltip: ${JSON.stringify(r)}`);
+    if (!process.env.OUT_SUFFIX || process.env.OUT_SUFFIX !== 'before') { assert.ok(!r.out && r.tip, `${w}x${h}: the name stays in its card and keeps its tooltip: ${JSON.stringify(r)}`); assert.ok(r.lh > 0 && r.lines <= 2, `${w}x${h}: the full card name takes at most 2 lines: ${JSON.stringify(r)}`); }
   }
   // The other surfaces with the same name (15 agents, roomy/compact layouts): the Needs you inbox, and the Schedules dialog and Settings rows
-  const URL_PREFIX = 'https://example.invalid/';
   /** names of the elements (text holds the URL) that stick out of their box: right, left or bottom edge */
   const outside = (sel, box) => H.js(`(()=>{try{const out=[];for(const e of document.querySelectorAll(${jsLiteral(sel)})){if(!e.textContent.includes(${jsLiteral(URL_PREFIX)})&&!(e.title||'').includes(${jsLiteral(URL_PREFIX)}))continue;const c=e.closest(${jsLiteral(box)});if(!c)continue;const a=e.getBoundingClientRect(),b=c.getBoundingClientRect();if(a.right>b.right+0.5||a.left<b.left-0.5||a.bottom>b.bottom+0.5)out.push(${jsLiteral(sel)}+' '+Math.round(a.right)+'>'+Math.round(b.right))}return out}catch(err){return ['ERR '+String(err)]}})()`);
   const W = async (expr, what) => assert.ok(await ctx.waitFor(expr, 8000), 'timed out waiting for ' + what);
@@ -36,20 +36,21 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: { simnames: 'long' }, ready: 'fit', settle: false });
     await ctx.sleep(800);
     const tag = `${w}x${h}`;
-    const made = await H.js(`(()=>{const a=__durbarSimUi.agents().find(x=>!x.parent&&x.name.startsWith(${jsLiteral(URL_PREFIX)}));return a?a.id:null})()`);
+    const made = await H.js(`(()=>{const a=__durbarSimUi.agents().find(x=>!x.parent&&x.name.includes(${jsLiteral(URL_PREFIX)}));return a?{id:a.id,name:a.name}:null})()`);
     assert.ok(made, `${tag}: the URL-named agent exists`);
+    assert.ok(!made.name.includes('…') && made.name.length > 60, `${tag}: it shows its long first prompt (no alias): ${made.name}`);
     // Needs you inbox
     await H.js(`document.activeElement&&document.activeElement.blur()`); await H.key('I'); await W(`!!document.getElementById('inboxDlg')`, 'the inbox');
-    await W(`!!document.querySelector('#inboxBody .inbox-row[data-id=${jsLiteral(made)}]')`, 'the URL-named agent in the inbox');
-    const ib = await outside('#inboxBody .inbox-row[data-id=' + JSON.stringify(made) + '] .ib-n', '.inbox-row');
+    await W(`!!document.querySelector('#inboxBody .inbox-row[data-id=${jsLiteral(made.id)}]')`, 'the URL-named agent in the inbox');
+    const ib = await outside('#inboxBody .inbox-row[data-id=' + JSON.stringify(made.id) + '] .ib-n', '.inbox-row');
     assert.deepStrictEqual(ib, [], `${tag}: the inbox name stays in its row`);
-    const ibd = await outside('#inboxBody .inbox-row[data-id=' + JSON.stringify(made) + '] .ib-n', '.inbox-dlg');
+    const ibd = await outside('#inboxBody .inbox-row[data-id=' + JSON.stringify(made.id) + '] .ib-n', '.inbox-dlg');
     assert.deepStrictEqual(ibd, [], `${tag}: the inbox name stays in its dialog`);
     await H.shot(path.join(OUT, `059-long-url-name-inbox-${w}x${h}.png`), { prep: 'mouse', delay: 300, tag: '059-url', what: `inbox ${tag}` });
     await H.key('Escape');
     await W(`!document.getElementById('inboxBody')`, 'the inbox to close');
     // Schedules dialog of that session
-    await H.click('#stage .desk[data-id=' + JSON.stringify(made) + ']');
+    await H.click('#stage .desk[data-id=' + JSON.stringify(made.id) + ']');
     await W(`document.body.classList.contains('panel-open')&&!!document.getElementById('schedHdrBtn')`, 'the panel');
     await H.click('#schedHdrBtn');
     await W(`!!document.getElementById('scTarget')`, 'the Schedules dialog');
@@ -59,7 +60,7 @@ module.exports = async (ctx) => {
     const sd = [...await outside('#schedDlg .sc-row .sc-p', '.sc-row'), ...await outside('#scToHint', '.dlg'), ...await outside('#schedDlg .sc-row .sc-p', '.dlg')];
     assert.deepStrictEqual(sd, [], `${tag}: the Schedules dialog row and hint stay in their boxes`);
     const hint = await H.js(`(()=>{const h=document.getElementById('scToHint');return {hidden:h.hidden,tip:h.title}})()`);
-    assert.ok(!hint.hidden && hint.tip.includes('https://example.invalid/'), `${tag}: the hint shows the session and keeps its tooltip: ${JSON.stringify(hint)}`);
+    assert.ok(!hint.hidden && hint.tip.includes(made.name), `${tag}: the hint shows the session and keeps its tooltip: ${JSON.stringify(hint)}`);
     await H.click('#scClose');
     // Settings > Schedules
     await H.click('#backBtn');

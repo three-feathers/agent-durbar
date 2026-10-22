@@ -253,15 +253,6 @@ FR-023) use the new name; Resume opens an agent with that name.
 - **FR-016** `[IMPLEMENTED]` **Fit and legibility.** Names are escaped wherever shown; 60-character names ellipsize on cards, strip, inbox,
   header and rows with the full name in the tooltip; `check:office` passes with 15 agents carrying 60-character names at 1440x900 and
   1280x800; 10.5px floor; design rules 1, 4, 5, 6, 8, 9 hold.
-- **FR-019** `[IMPLEMENTED]` **A name that is one long unbroken token stays inside its box** (issue #536; owner report 2026-10-22: a session with no name of its own
-  shows its first prompt, and a URL in it ran out of the desk card). On every surface that shows a session or agent name (desk card in full, roomy and compact,
-  list view, chat header, strip, Needs you inbox, Schedules rows, Previous sessions rows) the name never leaves its box. On full desk cards it wraps to
-  at most 2 lines and then ends in "…" (line clamp), and a token with no space may break anywhere (`overflow-wrap:anywhere`); this is the one exception to the
-  "words move whole to the next line" rule of spec 052 FR-165, which is for help text, because a name is data the user does not control. The other surfaces (roomy and compact cards included) keep one line
-  with an ellipsis. The full name stays in the existing tooltip (`nameTipAttr`, spec 052 FR-168). Card widths do not change; a full card's name stops at 2 lines, so a card with a long name can only get shorter. `simnames=long`
-  (FR-016) adds one agent (the third, which waits for you, so it is also in the inbox) whose name is a single URL-like token (no real address, `example.invalid`), and `check:office` fails when any `.name` on a card overflows
-  its box at 1440x900 and 1280x800.
-
 - **FR-017** `[IMPLEMENTED]` **The dialog says where the name goes and that it may sync** (Vikram's requirement on #372 and PR #376). For
   Copilot, Codex and Claude Code the dialog's second line (FR-004) says the name is also saved in the app and may sync (for example with
   Copilot remote control on, spec 054); a name saved in an app cannot be removed again from Durbar (an empty name resets only Durbar's copy).
@@ -275,6 +266,14 @@ FR-023) use the new name; Resume opens an agent with that name.
 - **Constraints:** agent specifics stay behind `AgentAdapter` (the renderer gets a capability value and a computed "where it goes"
   line); no shell; no paths over IPC; Durbar never edits another tool's files (Claude's `.jsonl`, Copilot's session state, Codex's
   store); simulator, fakes and unit tests only; no real session in tests; Windows, macOS and Linux behave the same (no paths involved).
+- **FR-019** `[IMPLEMENTED]` **A name that is one long unbroken token stays inside its box** (issue #536; owner report 2026-10-22: a session with no name of its own
+  shows its first prompt, and a URL in it ran out of the desk card). On every surface that shows a session or agent name (desk card in full, roomy and compact,
+  list view, chat header, strip, Needs you inbox, Schedules rows, Previous sessions rows) the name never leaves its box. On full desk cards it wraps to
+  at most 2 lines and then ends in "…" (line clamp), and a token with no space may break anywhere (`overflow-wrap:anywhere`); this is the one exception to the
+  "words move whole to the next line" rule of spec 052 FR-165, which is for help text, because a name is data the user does not control. The other surfaces (roomy and compact cards included) keep one line
+  with an ellipsis. The full name stays in the existing tooltip (`nameTipAttr`, spec 052 FR-168). Card widths do not change; a full card's name stops at 2 lines, so a card with a long name can only get shorter. `simnames=long`
+  (FR-016) gives the third agent (it waits for you, so it is also in the inbox) no alias and a long first-prompt **title** (over 60 characters, which a title may be) that holds one URL-like token (no real address, `example.invalid`); the full-layout cases force `density=full` so they do not depend on grown desks (spec 001, #532), and `check:office` fails when any `.name` on a card overflows
+  its box or takes more than 2 lines on a full card (explicit `line-height:18px`) at 1440x900 and 1280x800.
 
 ### Key Entities
 
@@ -368,5 +367,5 @@ gets a pointer. Fix: line clamp on full cards, ellipsis elsewhere, simulator nam
   the full card (`.who .name`) was the only one that did not, so only it got the 2-line clamp (a roomy card keeps its one line so card sizes do not change). `check:office` (new `sim=3` full-layout case
   and the 12 and 15 agent offices) and `check:rename` (step 7, a 60-character token on the header, strip, card, list row and a Previous sessions row) fail when a name leaves its box; `scripts/shots-059-long-url.js`
   took `docs/screenshots/059-long-url-name-{before,after}-{1440x900,1280x800}.png` (and `-inbox-` after). Before the fix the name ran 4 lines and out of its card.
-- `test:` the Needs you inbox row (`.ib-n`), the Schedules dialog (row and the "Send to" hint) and the Settings schedule row were checked with the URL-like name (agent 3, which waits for you) and a schedule whose prompt is one long token, at both sizes, by `scripts/shots-059-long-url.js` (in `check:ui`). It guards the Schedules list rows against a prompt that is one long token: that overflow was already fixed on main by spec 044 T047 (`.sched-dlg .sc-list{grid-template-columns:minmax(0,1fr)}`, #531); removing that rule makes this driver fail.
+- `test:` the Needs you inbox row (`.ib-n`), the Schedules dialog (row and the "Send to" hint) and the Settings schedule row were checked with the URL-like first prompt (agent 3, which waits for you) and a schedule whose prompt is one long token, at both sizes, by `scripts/shots-059-long-url.js` (in `check:ui`). It guards the Schedules list rows against a prompt that is one long token: that overflow was already fixed on main by spec 044 T047 (`.sched-dlg .sc-list{grid-template-columns:minmax(0,1fr)}`, #531); removing that rule makes this driver fail.
 - `[KNOWN GAP]` The OS notification text and the activity log were read, not rendered (plain text, no layout).
