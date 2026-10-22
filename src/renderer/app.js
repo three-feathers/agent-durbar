@@ -324,7 +324,7 @@ const clipName=s=>DurbarCutText.cutText(s,40); /* shared helper (cuttext.js): a 
 function plainAsk(kind,summary){
   const s=String(summary||'').trim(), k=String(kind||'');
   if(k==='write'||k==='read'){
-    let rest=s.replace(/^(write|edit|create|read)(\s+|$)/i,''), more='';
+    let rest=s.replace(/^(write|edit|create|read)(\s+|$)/i,'').replace(/^\([^()]*\)$/,''), more=''; /* spec 052 FR-172: "write (Codex did not say which file)" names no file */
     const m=/\s+\(\+(\d+) more\)$/.exec(rest);if(m){more=' and '+m[1]+' more file'+(m[1]==='1'?'':'s');rest=rest.slice(0,m.index);}
     const {base,dir}=baseOf(rest.replace(/\s+\([^()]*\)$/,'').trim());
     return {what:(k==='write'?'change ':'read ')+(base?clipName(base):'a file')+more,folder:dir?'in '+dir:'',cmd:''};
@@ -2817,8 +2817,15 @@ function settleLimit(a,action){
 }
 /* spec 052 FR-057: in Simple, a folder grant says what it lets the agent do: "Let Ada change files in “tools” until the session ends".
    Only for a "write in <folder>/" scope (the last path segment); any other scope keeps its label. The inbox and the answer bar copy the card's button. */
-const simpleScopeLabel=(a,label)=>{const m=/^write in (.+?)\/*$/.exec(String(label||''));if(!m)return '';const seg=m[1].split(/[\\/]/).filter(Boolean).pop();if(!seg)return '';
-  return 'Let '+a.name+' change files in “'+DurbarCutText.cutText(seg,28)+'” until the session ends';};
+/* spec 052 FR-172 (review on #470): a write in several folders ("write in src/, docs/", "… and N more folders") names each folder's last segment. */
+const simpleScopeLabel=(a,label)=>{const m=/^write in (.+)$/.exec(String(label||''));if(!m)return '';let rest=m[1],more=0;const mm=/ and (\d+) more folders$/.exec(rest);if(mm){more=+mm[1];rest=rest.slice(0,mm.index);}
+  const segs=rest.split(/\/, /).map(x=>x.replace(/\/+$/,'').split(/[\\/]/).filter(Boolean).pop()).filter(Boolean);if(!segs.length)return '';
+  const q=segs.map(x=>'“'+DurbarCutText.cutText(x,28)+'”'),list=more?q.join(', ')+' and '+more+' more folders':q.length>1?q.slice(0,-1).join(', ')+' and '+q[q.length-1]:q[0];
+  return 'Let '+a.name+' change files in '+list+' until the session ends';};
+/* spec 052 FR-172 (review on #470): a write in several folders cuts each folder name, never the list, and keeps "and N more folders" whole,
+   so the Expert button names every folder it grants (or says how many more). Any other scope label is cut at 32 characters as before. */
+const expertScopeLabel=l=>{const m=/^write in (.+\/, .+)$/.exec(String(l||''));if(!m)return DurbarCutText.cutText(String(l||''),32);let rest=m[1],tail='';const mm=/ and \d+ more folders$/.exec(rest);if(mm){tail=mm[0];rest=rest.slice(0,mm.index);}
+  return 'write in '+rest.split(/\/, /).map(x=>DurbarCutText.cutText(x.replace(/\/+$/,''),16)+'/').join(', ')+tail;};
 const relabelScopes=()=>{document.querySelectorAll('[data-lbl-simple]').forEach(b=>{b.textContent=SIMPLE?b.dataset.lblSimple:b.dataset.lblExpert;});document.querySelectorAll('.note.perm .pfold').forEach(f=>{f.hidden=!SIMPLE;});};
 /* spec 052 FR-063: "Show the change", collapsed: the request's diff as + / - lines in monospace (text only, escaped by textContent) */
 function diffBlock(diff){
@@ -2853,7 +2860,7 @@ function showPerm(a,p){
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
     const answer=(approve,remember,broad)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember,!!broad);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:broad?p.broadScopeLabel:p.scopeLabel,summary:p.summary});};
     mk('Allow once','primary','Allow this one request',()=>answer(true,false)); /* spec 052 FR-037/FR-051: the same plain words in Simple and Expert */
-    if(p.scopeKey){const ex='Allow “'+DurbarCutText.cutText(p.scopeLabel||p.kind||'this',32)+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
+    if(p.scopeKey){const ex='Allow “'+expertScopeLabel(p.scopeLabel||p.kind||'this')+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
       mk(SIMPLE&&sl?sl:ex,'session','Allow "'+DurbarCutText.cutText(p.scopeLabel||p.kind,30)+'" until you end this session'+(p.kind==='shell'?' (this exact command)':'')+'. Revoke from its chip.',()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';if(sl){sb.dataset.lblSimple=sl;sb.dataset.lblExpert=ex;}}
     if(p.broadScopeKey){mk('Allow for this session: any arguments','session','Allow every simple "'+DurbarCutText.cutText(p.broadScopeLabel||p.kind,18)+'" command (no pipes, redirects or substitutions) until you end this session.',()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
     mk('Deny','danger','Deny this request',()=>answer(false,false));

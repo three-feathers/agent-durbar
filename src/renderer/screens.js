@@ -837,7 +837,7 @@
   }
   /* ---------------- Tools > Activity (spec 052 FR-071): rows come from main only; the window reads, exports and clears ---------------- */
   async function activityView(){
-    const A=window.DurbarActivity;
+    const A=window.DurbarActivityTable; /* activitytable.js; window.DurbarActivity is activity.js (issue #474) */
     let rows=[];
     try{const r=await X.bridge.activityList({limit:500});rows=r&&Array.isArray(r.rows)?r.rows:[];}catch(e){rows=[];}
     return {n:rows.length,html:`<p class="scr-note">${esc(A.NOTE)}</p>${A.tableHtml(rows,esc)}${rows.length>=500?'<p class="scr-note small">The newest 500 rows are shown; an export holds the whole log (at most 5000 rows).</p>':''}`};

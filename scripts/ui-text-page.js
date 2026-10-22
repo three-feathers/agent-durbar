@@ -373,7 +373,7 @@
 
   /* FR-168: a static tooltip explains a control in at most 120 characters; a data tooltip (the full text of a cut name, a card or the totals) may be
      longer, at most 300 characters and 8 lines. Whole page: chrome titles are not in a surface's root. */
-  const DATA_TIP = '#panelTitle,.ph-id .sub,.gchip,.gchip *,.gp-row,.ptask,.ab-q,.ab-q *,.q-opt,.place,.intent,.room-aiu,.chip,.chip *,.desk,.helper,.lrow,.lrow *,.sitem,.sitem *,#stats,#stats *,.stat-aiu,.room-head *,.room-path,.prev-row *,.pal-o *,.ib-n,.ib-f,.by-chip,.mdl-sub,.dpick-t,.hs-name b,.sc-t b,.grant,.chip.att-chip,.att,.cmdbox,.pill,.ph-t,.folder,.sub-title,.lmood,.tile,.ttab td,.ttab th';
+  const DATA_TIP = '#panelTitle,.ph-id .sub,.name,.gchip,.gchip *,.gp-row,.ptask,.ab-q,.ab-q *,.q-opt,.place,.intent,.room-aiu,.chip,.chip *,.desk,.helper,.lrow,.lrow *,.sitem,.sitem *,#stats,#stats *,.stat-aiu,.room-head *,.room-path,.prev-row *,.pal-o *,.ib-n,.ib-f,.by-chip,.mdl-sub,.dpick-t,.hs-name b,.sc-t b,.grant,.chip.att-chip,.att,.cmdbox,.pill,.ph-t,.folder,.sub-title,.lmood,.tile,.ttab td,.ttab th';
   function tooltips() {
     const out = [];
     document.querySelectorAll('[title]').forEach((el) => {
