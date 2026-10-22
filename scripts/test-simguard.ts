@@ -49,7 +49,7 @@ const indexUrl = pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'in
 const mainFrame = { url: indexUrl };
 const event = { senderFrame: mainFrame, sender: { mainFrame } };
 
-interface Guard { initSimGuard: (on: boolean) => void; ipcHandle: (c: string, f: (...a: unknown[]) => unknown) => void; ipcOn: (c: string, f: (...a: unknown[]) => void) => void }
+interface Guard { initSimGuard: (on: boolean) => void; ipcHandle: (c: string, f: (...a: unknown[]) => unknown) => void; ipcOn: (c: string, f: (...a: unknown[]) => void) => void; simRefusedChannels: () => string[] }
 /** A fresh ipcguard module with main's decision handed in, as main.ts does (FR-031): `simulatorOn` of the given DURBAR_SIM. */
 function loadGuard(sim: string | undefined): Guard {
   delete require.cache[require.resolve(guardFile)];
@@ -68,7 +68,7 @@ function loadGuard(sim: string | undefined): Guard {
   return g;
 }
 
-async function run(sim: string | undefined): Promise<{ ran: Set<string>; refused: Map<string, string> }> {
+async function run(sim: string | undefined): Promise<{ ran: Set<string>; refused: Map<string, string>; recorded: string[] }> {
   const g = loadGuard(sim);
   const ran = new Set<string>();
   const refused = new Map<string, string>();
@@ -88,7 +88,7 @@ async function run(sim: string | undefined): Promise<{ ran: Set<string>; refused
   } finally {
     console.warn = warn;
   }
-  return { ran, refused };
+  return { ran, refused, recorded: g.simRefusedChannels() };
 }
 
 (async () => {
@@ -102,6 +102,9 @@ async function run(sim: string | undefined): Promise<{ ran: Set<string>; refused
     }
   }
   for (const c of sent) assert.ok(simChannelOpen(c) || !sim.ran.has(c), `DURBAR_SIM: the message "${c}" is dropped`);
+  // FR-032 (review on #514): the guard records every refused channel once (the driver's simRefused()); the open ones never
+  assert.deepStrictEqual([...sim.recorded].sort(), [...invoked, ...sent].filter((c) => !simChannelOpen(c)).sort(), 'DURBAR_SIM: simRefusedChannels() lists exactly the refused channels');
+  assert.ok(simChannelOpen('app:version'), 'FR-032: app:version (renderer.ts, every page load) is open under the simulator');
   // the sender check still comes first: a foreign frame gets the old refusal, not the simulator's
   {
     const foreign = { senderFrame: { url: 'https://example.com/' }, sender: { mainFrame: {} } };
@@ -109,6 +112,7 @@ async function run(sim: string | undefined): Promise<{ ran: Set<string>; refused
   }
   for (const v of [undefined, '0', 'abc']) {
     const real = await run(v);
+    assert.deepStrictEqual(real.recorded, [], `DURBAR_SIM=${String(v)}: nothing is recorded as refused`);
     assert.strictEqual(real.refused.size, 0, `DURBAR_SIM=${String(v)}: nothing is refused (${[...real.refused.keys()].join(', ')})`);
     for (const c of [...invoked, ...sent]) assert.ok(real.ran.has(c), `DURBAR_SIM=${String(v)}: "${c}" reaches its handler`);
   }

@@ -10,6 +10,7 @@
  * (the one open channel) still answers; main has created no real adapter (`ctx.createdAdapters()`); the simulator itself still works.
  * FR-030 (review on #514): a driver's `ctx.addMany(..., { adapterId: 'claude' })`, which reaches detection without IPC, starts no
  * child process (no `claude --version` / `auth status`), and main tried none since startup (`ctx.childProcessAttempts()`).
+ * FR-032 (review on #514): a plain simulator start refuses no channel (`ctx.simRefused()`) and logs no unhandled rejection in the page.
  */
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers'); /* shared plumbing; jsLiteral: values spliced into page code */
@@ -31,7 +32,20 @@ const CALLS = {
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
+  /* FR-032 (review on #514): a plain simulator start refuses no channel and leaves no unhandled rejection in the page (renderer.ts asked for
+     app:version, refused and uncaught, on every load). Listen to the page's console from before the load, then check both. */
+  const logged = [];
+  const onConsole = (e, _level, message) => { logged.push(String((e && e.message) || message || '')); };
+  ctx.win.webContents.on('console-message', onConsole);
   await H.load({ w: 1280, h: 800 });
+  await ctx.sleep(1500); /* the version call and the first renders settle */
+  ctx.win.webContents.removeListener('console-message', onConsole);
+  const atStart = ctx.simRefused();
+  assert.ok(Array.isArray(atStart), 'the driver context reports the refused channels under the simulator');
+  assert.deepStrictEqual(atStart, [], `a plain simulator start refuses no channel (refused: ${JSON.stringify(atStart)})`);
+  const unhandled = logged.filter((m) => /Uncaught \(in promise\)|Unhandled( promise)? rejection|Error invoking remote method/i.test(m));
+  assert.deepStrictEqual(unhandled, [], `a plain simulator start logs no unhandled rejection: ${JSON.stringify(unhandled)}`);
+  console.log(`[sim-guard] plain start: 0 channels refused, no unhandled rejection (${logged.length} console lines read)`);
   assert.ok(await H.js('!!window.agentDurbar'), 'the real preload API is in the page');
   assert.ok(await H.js("document.querySelectorAll('#stage .desk').length >= 15"), 'the simulator still runs (15 desks)');
   for (const [channel, call] of Object.entries(CALLS)) {

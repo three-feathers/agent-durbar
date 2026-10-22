@@ -26,6 +26,10 @@ function ready(channel: string): void {
   if (simulator === undefined) throw new Error(`ipcguard: initSimGuard(SIMULATOR) must run before "${channel}" is registered`);
 }
 const warned = new Set<string>();
+/** FR-032 (review on #514): the channels refused under the simulator since startup, in order (a driver asserts a plain start refuses none). */
+export function simRefusedChannels(): string[] {
+  return [...warned];
+}
 /** FR-023: true when the channel may run; a refused one is logged once per channel (stderr, no arguments). */
 function simAllows(channel: string): boolean {
   if (simulator === false || simChannelOpen(channel)) return true; // undefined (never decided) refuses: fail closed

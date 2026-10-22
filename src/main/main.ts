@@ -72,7 +72,7 @@ import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
 import { isSimBlocked, sealChildProcess, simDetectorFor, simGuardDescriptors, simulatorCount, simulatorOn } from './simguard';
 import childProcess = require('child_process');
-import { initSimGuard } from './ipcguard';
+import { initSimGuard, simRefusedChannels } from './ipcguard';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
 import { SettingsStore } from './settings';
@@ -900,6 +900,8 @@ app.whenReady().then(() => {
       createdAdapters: () => router.created().map((a) => ({ id: a.id, simBlocked: isSimBlocked(a) })),
       /** Spec 010 FR-030: child processes main tried to start under the simulator (each refused); undefined without it. */
       childProcessAttempts: () => childSeal?.tried(),
+      /** Spec 010 FR-032: the IPC channels main refused under the simulator since startup (none on a plain start). */
+      simRefused: () => simRefusedChannels(),
       js: <T>(code: string): Promise<T> => (win as BrowserWindow).webContents.executeJavaScript(code, true) as Promise<T>,
       sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
       shot: async (file: string) => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()),

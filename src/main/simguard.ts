@@ -27,6 +27,7 @@ export function simulatorCount(dev: Readonly<Record<string, string | undefined>>
  */
 export const SIM_OPEN_CHANNELS: Readonly<Record<string, string>> = Object.freeze({
   'harness:plans': 'the simulator asks main for this OS\'s install routes (spec 060 FR-002); main answers from the simulated managers and runs nothing',
+  'app:version': 'renderer.ts asks for the app version on every page load (FR-032, review on #514); main only returns app.getVersion(): no adapter, no process, no profile file',
 });
 
 export function simChannelOpen(channel: string): boolean {
