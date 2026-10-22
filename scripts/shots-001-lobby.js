@@ -20,7 +20,10 @@ const path = require('path');
 const { pageCheck } = require('./check-office-overlap.js');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const REDUCED = process.env.LOBBY_REDUCED === '1';
+const FORCED_REDUCED = process.env.LOBBY_REDUCED === '1';
+/* Whether the page animates comes from the page itself (prefers-reduced-motion), not only from LOBBY_REDUCED: a CI desktop can report reduced
+   motion on its own (review on PR 511: the Windows runner reached the end state with no walk). Set after the first load and printed. */
+let REDUCED = FORCED_REDUCED;
 const q = jsLiteral; /* every value spliced into page code goes through jsLiteral (CodeQL js/bad-code-sanitization) */
 
 module.exports = async (ctx) => {
@@ -56,7 +59,10 @@ module.exports = async (ctx) => {
     /* ---- 15 agents: Boss, Bank, coffee corner, Postbox ---- */
     await load(15, w, h, { simbreak: '8', simquestion: '1', ...tq });
     const order = await tiles();
-    if (REDUCED) assert.ok(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), 'LOBBY_REDUCED=1 needs --force-prefers-reduced-motion');
+    const pageReduced = await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`);
+    if (FORCED_REDUCED) assert.ok(pageReduced, 'LOBBY_REDUCED=1 needs --force-prefers-reduced-motion');
+    if (pageReduced !== REDUCED || (theme === 'clean-office' && w === 1440)) console.log(`[001-lobby] prefers-reduced-motion: ${pageReduced ? 'reduce' : 'no-preference'}${pageReduced && !FORCED_REDUCED ? ' (set by this desktop, not by LOBBY_REDUCED)' : ''}`);
+    REDUCED = pageReduced;
     assert.deepStrictEqual(order, ['library', 'software', 'terminal', 'web', 'boss', 'other', 'coffee', 'bank', 'postbox'], `${w} ${theme}: lobby order, the Boss in the middle`);
     const boss = await tile('boss'), want = await askers(), inbox = await inboxNames();
     const queue = boss.label.replace(/^[^:]+: /, '').replace(/\. Longest wait.*$/, '').split('; ').map((x) => x.replace(/ \(.*$/, ''));
@@ -136,13 +142,13 @@ module.exports = async (ctx) => {
       /* a new permission: an agent at its desk gets up and walks to the Boss (FR-034) */
       const idle = await js(`(window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&!document.querySelector('#stage .desk.is-away[data-id="'+CSS.escape(a.id)+'"]'))||{}).id`);
       assert.ok(idle, `${w}: an agent at its desk`);
-      /* record a walk when it starts (the walk takes about 1 s; a slow runner may poll only after it ended: review on #511, Windows CI), then
+      /* record a walk when it starts (the walk takes about 1 s; a slow runner may poll only after it ended: review on PR 511, Windows CI), then
          wait for the end state: the desk is empty at the Boss and the agent is in the Boss queue */
       await js(`window.__walkSeen=false;window.__walkObs&&window.__walkObs.disconnect();window.__walkObs=new MutationObserver(()=>{if(document.querySelector('#walkers .walker.walking'))window.__walkSeen=true;});window.__walkObs.observe(document.getElementById('walkers'),{childList:true,subtree:true,attributes:true,attributeFilter:['class']})`);
       await emit({ type: 'status', sessionId: idle, status: 'needs-permission', intent: 'Wants to run npm publish', permission: { requestId: 'drv-lobby-' + w, kind: 'shell', summary: 'run npm publish --dry-run', scopeKey: 'shell:npm', scopeLabel: 'run npm', state: 'pending' } });
       const there = await H.until(`!!document.querySelector('#stage .desk.is-away[data-place="boss"][data-id="'+CSS.escape(${q(idle)})+'"]')&&!!document.querySelector('#stage .place.boss [data-visitor="'+CSS.escape(${q(idle)})+'"]')`, 6000);
       const seen = await js(`(window.__walkObs.disconnect(),window.__walkSeen)`);
-      const vis = await js(`document.visibilityState`);
+      const vis = await js(`document.visibilityState+', reduced motion '+matchMedia('(prefers-reduced-motion: reduce)').matches+', figures '+document.querySelectorAll('#walkers .walker').length`);
       assert.ok(there, `${w}: ${await nameOf(idle)} reaches the Boss queue and its desk is empty (visibility ${vis})`);
       assert.strictEqual(seen, !REDUCED, `${w}: ${await nameOf(idle)} ${REDUCED ? 'appears at the Boss with no walk (reduced motion)' : 'walks to the Boss'} (visibility ${vis})`);
       await settleWalk(); await ctx.sleep(300);
