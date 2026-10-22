@@ -209,29 +209,51 @@ assert.ok(N.comboMatches({ code: 'KeyJ', key: 'h', ctrlKey: true }, D, false), '
 assert.ok(N.comboMatches({ code: 'KeyJ', key: 'J', ctrlKey: true }, D, false), 'an upper-case key is the same letter');
 
 // every Ctrl/⌘ shortcut of the global keydown handler in app.js is refused (so Go to cannot take one over)
-{
-  const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
-  const start = src.indexOf("document.addEventListener('keydown',e=>{\n  /* spec 052 FR-035");
+const HANDLER_START = "document.addEventListener('keydown',e=>{\n  /* spec 052 FR-035";
+/* Scans the handler's source (CRLF turned into LF first: Windows checks the file out with CRLF) and returns the number
+   of combinations checked against TAKEN; throws when one is free or when a Ctrl/mod line yields no key at all. */
+function scanHandler(raw: string): number {
+  const src = raw.replace(/\r\n/g, '\n');
+  const start = src.indexOf(HANDLER_START);
   assert.ok(start > 0, 'found the global keydown handler');
-  const body = src.slice(start, src.indexOf('\n});\n', start));
+  const end = src.indexOf('\n});\n', start);
+  const body = src.slice(start, end > 0 ? end : undefined);
   let n = 0;
   for (const line of body.split('\n')) {
     if (!/^\s*if\(/.test(line) || /KEYS\.chatKeyDown|NAV\.comboMatches/.test(line)) continue;
-    const viaMod = /\bmod&&/.test(line), viaCtrl = /\be\.ctrlKey&&/.test(line);
+    const viaMod = /\bmod&&/.test(line), viaCtrl = /(^|[^!])\be\.ctrlKey&&/.test(line);
     if (!viaMod && !viaCtrl) continue;
     /* a modifier the line requires (e.shiftKey&&), refuses (!e.shiftKey) or leaves open (both are checked) */
     const states = (k: string) => (new RegExp('(^|[^!])e\\.' + k + '&&').test(line) ? [true] : new RegExp('!e\\.' + k).test(line) ? [false] : [false, true]);
+    /* positions (e.code==='KeyG') and typed letters (e.key==='g', e.key.toLowerCase()==='g'); the letter's position on QWERTY is checked too */
     const codes = [...line.matchAll(/e\.code==='((?:Key|Digit)[A-Z0-9]|Backquote)'/g)].map((x) => x[1]);
+    const keys = [...line.matchAll(/e\.key(?:\.to(?:Lower|Upper)Case\(\))?==='([A-Za-z0-9`])'/g)].map((x) => x[1]);
+    for (const k of keys) codes.push(/[A-Za-z]/.test(k) ? 'Key' + k.toUpperCase() : /\d/.test(k) ? 'Digit' + k : 'Backquote');
+    assert.ok(codes.length > 0, `a Ctrl/mod shortcut line yields a code or a key letter: ${line.trim().slice(0, 100)}`);
     for (const mac of [false, true]) {
       if (mac && /!IS_MAC&&/.test(line)) continue;
-      for (const code of codes) for (const shift of states('shiftKey')) for (const alt of states('altKey')) {
+      for (const code of new Set(codes)) for (const shift of states('shiftKey')) for (const alt of states('altKey')) {
         const c: Combo = viaMod || !mac ? { mod: true, shift, alt, code } : { ctrl: true, shift, alt, code };
         assert.ok(N.clashOf(c, mac) !== '', `the handler's ${JSON.stringify(c)} on ${mac ? 'a Mac' : 'Windows/Linux'} is in TAKEN`);
         n++;
       }
     }
   }
+  return n;
+}
+{
+  const appSrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+  const n = scanHandler(appSrc);
   assert.ok(n >= 12, `checked the handler's shortcuts (${n})`);
+  assert.strictEqual(scanHandler(appSrc.replace(/\n/g, '\r\n')), n, 'CRLF checkout (Windows) scans the same');
+  /* mutation: a shortcut planted into the handler is found, whether it matches by code or only by key */
+  const plant = (cond: string) => appSrc.replace(HANDLER_START, HANDLER_START + `\n  if(${cond}){e.preventDefault();return;}`);
+  const planted = (cond: string) => { try { scanHandler(plant(cond)); return false; } catch { return true; } };
+  assert.ok(planted("mod&&e.shiftKey&&!e.altKey&&e.code==='KeyG'"), 'planted e.code Ctrl+Shift+G is found');
+  assert.ok(planted("mod&&e.shiftKey&&!e.altKey&&(e.key==='G'||e.key==='g')"), 'planted e.key-only Ctrl+Shift+G is found');
+  assert.ok(planted("mod&&e.shiftKey&&!e.altKey&&e.key.toLowerCase()==='g'"), 'planted e.key.toLowerCase() Ctrl+Shift+G is found');
+  assert.ok(planted("e.ctrlKey&&!e.altKey&&someOther(e)"), 'a Ctrl line with no key at all is flagged');
+  assert.ok(!planted("mod&&!e.shiftKey&&!e.altKey&&e.key==='k'"), 'a shortcut that is already taken (Ctrl+K) passes');
 }
 
 // ---- saved shortcut ----

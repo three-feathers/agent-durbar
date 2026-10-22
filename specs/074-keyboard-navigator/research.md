@@ -30,4 +30,4 @@ See the decision table in [plan.md](plan.md). Chosen: the palette in a Go-to mod
 ## R5 Shortcut matching
 
 - **Decision**: match `e.code` (key position) plus modifiers with `keys.js`'s `modDown` (⌘ on a Mac, Ctrl elsewhere, never both). Stored as `{mod, alt, shift, code}`; Ctrl on a Mac is a separate flag (`ctrl`), allowed but labelled ⌃.
-- **Rationale**: the other app shortcuts match by `code` too (Ctrl+`, the answer keys), so layouts such as AZERTY or Dvorak do not move them.
+- **Rationale**: the other app shortcuts match by `code` too (Ctrl+`, the answer keys), so layouts such as AZERTY or Dvorak do not move them. Limit (review round 2): the typed letter counts too (FR-017), and on a Mac with Dvorak ⌘J types H, which macOS takes as Hide before the page sees it, so ⌘J cannot be Go to there; the user picks another key (documented in Settings and the README).

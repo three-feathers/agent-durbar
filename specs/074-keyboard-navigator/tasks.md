@@ -56,6 +56,8 @@
 - [x] T023 FR-017: `comboFromEvent` keeps the typed letter; `clashOf` refuses a taken position or letter; `comboMatches` leaves a press whose letter is another shortcut's; unit tests with a Dvorak press
 - [x] T024 FR-016: the empty reason in the announcement, no `role` on the empty text (`src/renderer/app.js`)
 - [x] T025 Driver: a hostile agent name in Go to stays literal text (`scripts/shots-074-navigator.js`)
+- [x] T027 Review round 2: handler scan normalises CRLF, finds `e.key` matches, planted-shortcut mutation test (`scripts/test-navigator.ts`)
+- [x] T028 Review round 2: Mac Dvorak gap in FR-017, README, Settings note, research R4/R5; FR-012 wording (card densities only)
 - [ ] T026 Mutation-check T020-T023, then `nice -n 19 npm run typecheck && npm run build && npm test`, `shots-074-navigator` and `check:office` once on the final head
 
 ## Dependencies
