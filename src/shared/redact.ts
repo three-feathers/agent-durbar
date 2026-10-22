@@ -13,23 +13,23 @@ const LONG_OK_NAME = /^(PATH|PATHEXT|PSMODULEPATH|HOME|HOMEPATH|HOMEDRIVE|USERPR
 
 /* Token and key shapes start where no letter or digit precedes them, not at `\b`: there is no word boundary between `_` and a
    letter, so `\b` let a token wrapped in Markdown emphasis (`_ghp_…_`, `__sk-…__`) or glued to a snake_case word (`my_ghp_…`)
-   through (spec 012 FR-080 delta 2026-10-22). JWTs keep their stricter start (a long base64url run is never rescanned from
-   inside, so the pattern stays linear): a JWT may follow up to 3 underscores, kept in the output; one glued to a word
-   (`my_eyJ…`) is a known gap. */
+   through (spec 012 FR-080 delta 2026-10-22). JWTs keep their stricter start (never after a letter, digit, `_` or `-`, so a long
+   base64url run is never rescanned from inside and the pattern stays linear); the wrapping is a bounded prefix instead: up to 8
+   underscores and up to 4 snake_case words (`my_eyJ…`, `MY__eyJ…`, `____eyJ…`), kept in the output (T128). */
 /** Bare token shapes (GitHub, OpenAI/Anthropic, Bearer, JWT, AWS); also used by the folder-setup display (spec 061 FR-014). */
 const TOKEN_SHAPES: RegExp[] = [
   /(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{20,}/g,
   /(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}/g,
   /(?<![A-Za-z0-9])sk-(?:ant-)?[A-Za-z0-9_-]{20,}/g,
   /(?<![A-Za-z0-9])Bearer\s{1,8}[A-Za-z0-9._~+/=-]{8,}/g,
-  /(?<![A-Za-z0-9_-])(_{0,3})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}/g,
+  /(?<![A-Za-z0-9_-])(_{0,8}(?:[A-Za-z0-9]{1,40}_{1,3}){0,4})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}/g,
   /(?<![A-Za-z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])/g,
 ];
 
-/** Replaces every bare token shape with `mask` (a JWT's leading underscores stay). Linear; no env rules, no header or URL rules. */
+/** Replaces every bare token shape with `mask` (a JWT's leading underscores and words stay). Linear; no env rules, no header or URL rules. */
 export function maskTokenShapes(text: string, mask: string): string {
   let out = text;
-  // The only capture group is a JWT's leading underscores; without a group the second argument is the offset (a number).
+  // The only capture group is a JWT's prefix (underscores and snake_case words); without a group the second argument is the offset (a number).
   for (const re of TOKEN_SHAPES) out = out.replace(re, (_m: string, lead: unknown) => (typeof lead === 'string' ? lead : '') + mask);
   return out;
 }

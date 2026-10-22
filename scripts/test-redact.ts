@@ -64,13 +64,11 @@ const secretPartOf = (k: string, v: string): string =>
 const WRAPS: Array<(v: string) => string> = [
   (v) => `_${v}_`, (v) => `__${v}__`, (v) => `___${v}___`, (v) => `*_${v}_*`, (v) => `**${v}**`, (v) => `~~${v}~~`,
   (v) => '`' + v + '`', (v) => `_\`${v}\`_`, (v) => `(${v})`, (v) => `[${v}](x)`, (v) => `"${v}"`, (v) => `${v}_`,
-  (v) => `my_${v}`, (v) => `MY__${v}`,
+  (v) => `my_${v}`, (v) => `MY__${v}`, (v) => `____${v}____`, (v) => `a_b_c_d_${v}`, (v) => `my_long_snake_case_${v}`,
 ];
 for (const [k, v] of Object.entries(planted)) {
   for (const wrap of WRAPS) {
     const w = wrap(v);
-    // [KNOWN GAP] a JWT glued to a word (`my_eyJ…`) keeps its stricter start (linear on long base64url runs)
-    if (k === 'jwt' && /[A-Za-z]_+eyJ/.test(w)) continue;
     const out = redact(`see ${w} now`, {});
     assert.ok(!out.includes(secretPartOf(k, v)), `pattern ${k} in ${w.slice(0, 9)}…: secret part gone (${out})`);
     assert.ok(out.startsWith('see ') && out.endsWith(' now'), `pattern ${k} in ${w.slice(0, 9)}…: surroundings kept`);
@@ -80,13 +78,17 @@ assert.strictEqual(redact('_' + planted.ghp + '_', {}), '_[redacted]_', 'emphasi
 assert.strictEqual(redact('__' + planted.aws + '__', {}), '__[redacted]__', 'aws key between underscores');
 assert.strictEqual(redact('**' + planted.sk + '**', {}), '**[redacted]**', 'sk- key in bold');
 assert.strictEqual(redact('_' + planted.jwt + '_', {}), '_[redacted]', 'a JWT keeps its leading underscore (its class takes the closing one)');
-assert.strictEqual(redact('x_' + planted.jwt, {}), 'x_' + planted.jwt, '[KNOWN GAP] a JWT glued to a word is not masked');
+// T128: a JWT glued to a word or after 4+ underscores is masked too, and its prefix stays
+assert.strictEqual(redact('x_' + planted.jwt, {}), 'x_[redacted]', 'a JWT glued to a word');
+assert.strictEqual(redact('MY__' + planted.jwt, {}), 'MY__[redacted]', 'a JWT after a word and two underscores');
+assert.strictEqual(redact('____' + planted.jwt, {}), '____[redacted]', 'a JWT after four underscores');
+assert.strictEqual(redact('a_b_c_d_' + planted.jwt, {}), 'a_b_c_d_[redacted]', 'a JWT after four snake_case words');
+assert.strictEqual(redact('my_eyJ.a.b plain_snake_case risk_eyJ', {}), 'my_eyJ.a.b plain_snake_case risk_eyJ', 'snake_case words without a JWT stay');
 // the shared shapes (spec 061 FR-014's folder-setup display reuses them) with their own mask word
 for (const [k, v] of Object.entries(planted)) {
   if (k === 'authHeader' || k === 'urlCreds') continue; // header and URL rules belong to redact() only
   for (const wrap of WRAPS) {
     const w = wrap(v);
-    if (k === 'jwt' && /[A-Za-z]_+eyJ/.test(w)) continue;
     const out = maskTokenShapes(`see ${w} now`, '[secret hidden]');
     assert.ok(out.includes('[secret hidden]') && !out.includes(secretPartOf(k, v)), `maskTokenShapes ${k} in ${w.slice(0, 9)}…: hidden (${out})`);
   }
@@ -176,6 +178,12 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
     jwtUnder: '___eyJ'.repeat(MB / 6),
     jwtUnderDot: '_eyJaaaaa.'.repeat(MB / 10),
     jwtUnderLong: '_eyJ' + 'a_'.repeat(MB / 2),
+    // T128: the JWT's bounded prefix (underscores and up to 4 snake_case words)
+    jwtGlued: ('a_eyJ'.repeat(4) + 'a'.repeat(4000)).repeat(MB / 4020),
+    jwtWords40: (' ' + 'a'.repeat(40) + '_').repeat(MB / 42),
+    jwtWords5: (' ' + ('a'.repeat(40) + '_').repeat(5) + 'eyJ' + 'b'.repeat(4096)).repeat(MB / 4400),
+    jwtWordsDot: (' a_b_c_d_eyJaaaaa.aaaaa').repeat(MB / 23),
+    jwtUnderRun: '_'.repeat(MB),
     awsUnder: '_AKIA'.repeat(MB / 5),
   };
   // Each case runs in a worker thread that times redact() itself, so a busy runner cannot fail the test; the 1 s assertion is the
