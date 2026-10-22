@@ -1,5 +1,11 @@
 # Feature Specification: Release v0.1.0-alpha.11 (pre-release)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Release v0.1.0-alpha.11 (pre-release)
+status: **in progress**: release PR, then tag and publish on a green `main`
+-->
+
 **Feature Branch**: `071-release-alpha11`
 **Created**: 2026-10-22
 **Status**: **In progress**: release PR, then tag and publish on a green `main`.

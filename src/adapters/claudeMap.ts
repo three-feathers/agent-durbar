@@ -8,7 +8,7 @@
  */
 import { isAuthError } from './autherrors';
 import { isMcpAuthChallenge } from './mcpauth';
-import { resetMs } from './usagelimit';
+import { resetMs, usageLimitClosing } from './usagelimit';
 import type { EventBody } from './map';
 import type { McpServerStatus } from './types';
 import { nonEmptyStr as str } from '../shared/guards';
@@ -431,7 +431,7 @@ export class ClaudeMapper {
     const limited = this.limited;
     this.limited = false;
     if (!auth && subtype === 'success' && m.is_error !== true) return this.emit({ type: 'status', status: 'idle' });
-    if (!auth && limited) return this.emit({ type: 'status', status: 'idle', intent: 'Usage limit reached' });
+    if (!auth && limited) return this.emit(usageLimitClosing());
     if (!auth && aborted && subtype === 'error_during_execution') return; // the adapter already reported "Aborted"
     if (auth) return this.emit({ type: 'status', status: 'error', intent: (str(m.result) ?? 'Claude Code could not authenticate.').replace(/\s+/g, ' ').slice(0, 300), errorKind: 'auth' });
     const denials = Array.isArray(m.permission_denials) ? m.permission_denials.length : 0;

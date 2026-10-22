@@ -113,6 +113,17 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   const cx = codexEdit([{ path: 'a.ts', kind: { type: 'update', move_path: null }, diff: '@@ -1 +1 @@\n-a\n+b\n' }, { path: 'n.ts', kind: { type: 'add' }, diff: 'one\ntwo\n' }, { path: 'o.ts', kind: { type: 'update', move_path: 'p.ts' }, diff: '' }, { path: 'd.ts', kind: 'delete', diff: 'gone\n' }])!;
   assert.deepStrictEqual(cx.files.map((f) => [f.path, f.kind, f.added ?? 0, f.removed ?? 0, f.movedTo]), [['a.ts', 'edit', 1, 1, undefined], ['n.ts', 'create', 2, 0, undefined], ['o.ts', 'move', 0, 0, 'p.ts'], ['d.ts', 'delete', 0, 1, undefined]]);
   assert.strictEqual(codexEdit('nope'), undefined);
+  // review on #463: the kind says what the text is (spec 052 FR-172's rule, the same reader as the permission card), never a guess
+  const md = codexEdit([{ path: 'notes.md', kind: { type: 'add' }, diff: '- first item\n- second item\n' }])!.files[0];
+  assert.deepStrictEqual([md.kind, md.added, md.removed], ['create', 2, 0], 'a new file whose lines start with "- " is two added lines');
+  assert.strictEqual(md.diff, '@@ -0,0 +1,2 @@\n+- first item\n+- second item');
+  const ind = codexEdit([{ path: 'a.py', kind: { type: 'add' }, diff: '    x = 1\n    y = 2\n' }])!.files[0];
+  assert.deepStrictEqual([ind.added, ind.removed], [2, 0], 'a new file whose lines are all indented is two added lines, not context');
+  const gone = codexEdit([{ path: 'b.txt', kind: { type: 'delete' }, diff: '+plus\n@@ at\n' }])!.files[0];
+  assert.deepStrictEqual([gone.added, gone.removed], [0, 2], 'a deleted file is all removed lines, whatever they start with');
+  const upd = codexEdit([{ path: 'c.ts', kind: { type: 'update', move_path: null }, diff: '--- a/c.ts\n+++ b/c.ts\n@@ -1 +1 @@\n-a\n+b\n' }])!.files[0];
+  assert.deepStrictEqual([upd.added, upd.removed, upd.diff], [1, 1, '@@ -1 +1 @@\n-a\n+b'], 'an update is a hunk; a header is dropped');
+  assert.deepStrictEqual(codexEdit([{ path: 'e.ts', kind: { type: 'update', move_path: 'f.ts' }, diff: '' }])!.files[0], { path: 'e.ts', kind: 'move', movedTo: 'f.ts' });
 }
 
 // 6. ArgStream and EditStreams: path only when complete, parse on growth, caps
@@ -127,6 +138,17 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   assert.strictEqual(raw.path(), undefined);
   raw.append('y\n@@');
   assert.strictEqual(raw.path(), 'src/x.py');
+  // review on #463: Copilot apply_patch as JSON starts once the File: line inside the string is complete
+  const js = new ArgStream('apply_patch');
+  js.append('{"input":"*** Begin Patch\\n*** Update File: src/');
+  assert.strictEqual(js.path(), undefined, 'JSON patch: a half-written path line gives no start');
+  js.append('a.js\\n@@');
+  assert.strictEqual(js.path(), 'src/a.js', 'JSON patch: an escaped newline ends the path line');
+  const jp = new ArgStream('apply_patch');
+  jp.append('{"patch":"*** Begin Patch\\n*** Add File: b.js\\');
+  assert.strictEqual(jp.path(), undefined, 'a cut escape is no newline yet');
+  jp.append('n+x');
+  assert.strictEqual(jp.path(), 'b.js', 'the `patch` key works too');
   const capped = new ArgStream('Write');
   capped.append('x'.repeat(ARG_STREAM_MAX + 10));
   assert.strictEqual(capped.length, ARG_STREAM_MAX, 'the stream is capped');
@@ -185,6 +207,22 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   assert.strictEqual(c2[0].phase, 'start');
   assert.deepStrictEqual(c2[0].args, { path: 'src/server.ts' });
   assert.deepStrictEqual(c2[c2.length - 1].edit!.files.map((f) => f.path), ['src/server.ts', 'src/new.ts']);
+  // review on #463: apply_patch whose arguments are JSON ({input: patch}) streamed in small pieces starts early too
+  const out6: EventBody[] = [];
+  const m6 = new EventMapper((b) => out6.push(b));
+  const jpatch = JSON.stringify({ input: '*** Begin Patch\n*** Update File: src/a.js\n@@\n-old\n+new\n*** End Patch' });
+  let startedAt = -1;
+  for (let i = 0; i < jpatch.length; i += 4) {
+    m6.map({ type: 'assistant.tool_call_delta', data: { toolCallId: 'j1', inputDelta: jpatch.slice(i, i + 4), ...(i === 0 ? { toolName: 'apply_patch' } : {}) } });
+    if (startedAt < 0 && out6.some((e) => e.type === 'toolCall')) startedAt = i + 4;
+  }
+  const c6 = out6.filter((e) => e.type === 'toolCall') as Extract<EventBody, { type: 'toolCall' }>[];
+  assert.ok(startedAt > 0 && startedAt < jpatch.length, `JSON apply_patch starts before its arguments end (${startedAt}/${jpatch.length})`);
+  assert.deepStrictEqual([c6[0].phase, c6[0].args], ['start', { path: 'src/a.js' }]);
+  assert.ok(c6.some((e) => e.phase === 'update' && e.edit?.partial && e.edit.files[0].path === 'src/a.js'), 'partial updates stream for the JSON patch');
+  m6.map({ type: 'tool.execution_start', data: { toolCallId: 'j1', toolName: 'apply_patch', arguments: JSON.parse(jpatch) } });
+  const last6 = out6[out6.length - 1] as Extract<EventBody, { type: 'toolCall' }>;
+  assert.deepStrictEqual([last6.phase, last6.edit!.files[0].added, last6.edit!.files[0].removed], ['update', 1, 1], 'execution_start of a started JSON patch is an update');
   // a call with no stream keeps the old shape and gets its edit at the start
   const out3: EventBody[] = [];
   const m3 = new EventMapper((b) => out3.push(b));

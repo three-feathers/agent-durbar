@@ -71,13 +71,15 @@ function contentAs(text: string, sign: '+' | '-'): string {
   const ls = toLines(text);
   return ls.length ? `@@ ${sign === '+' ? '-0,0 +1,' : '-1,'}${ls.length}${sign === '+' ? '' : ' +0,0'} @@\n` + ls.map((l) => sign + l).join('\n') : '';
 }
-const looksLikeDiff = (t: string): boolean => /^@@/m.test(t) || toLines(t).every((l) => /^[+\- ]/.test(l) || l === '');
-
-/** A change of a known kind whose `diff` may be the file's content (Codex `add`/`delete`) or a unified diff. */
+/**
+ * A change of a known kind (spec 005 FR-019, review on #463): the kind says what the text is, never the text itself. `create`/`write`:
+ * the new file's text (every line added, also a line that starts with `- `); `delete`: the old text (every line removed); `edit`/`move`:
+ * a hunk (a leading `---`/`+++` header is dropped). Codex sends its changes this way (`read:` generated types; spec 052 FR-172's rule).
+ */
 export function diffFile(path: string, kind: EditKind, text: string | undefined, movedTo?: string): EditFile {
   const f: EditFile = { path, kind, ...(movedTo ? { movedTo } : {}) };
   if (typeof text !== 'string' || !text) return f;
-  const diff = looksLikeDiff(text) ? bodyOf(text) : contentAs(text, kind === 'delete' ? '-' : '+');
+  const diff = kind === 'create' || kind === 'write' ? contentAs(text, '+') : kind === 'delete' ? contentAs(text, '-') : bodyOf(text);
   if (diff) Object.assign(f, { diff }, countDiff(diff));
   return f;
 }

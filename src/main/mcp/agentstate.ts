@@ -13,7 +13,7 @@
  *   idle            app.js:1662-1663   Done when the turn did work, else Idle
  *   error / stopped app.js:1667, 1673   Error / Idle, Ended
  *   limit           app.js:1679 (exhausted: Waiting, Coffee break, spec 068), 1550-1551 (resolved: cancel = Idle; else Working)
- *   usageLimit      spec 068 startCoffee: Waiting, Coffee break; only the turn's closing idle ('Usage limit reached', then one plain idle) keeps it;
+ *   usageLimit      spec 068 startCoffee: Waiting, Coffee break; only the turn's closing idle (`reason: 'usage-limit'`, then one plain idle) keeps it;
  *                   any other idle or error, working, thinking, stopped, Aborted or a send end it; a late `update` after the break ended is ignored
  *   question        app.js:1683 (asked: Waiting), 1542 (answered or cancelled: Working, only if waiting)
  *   thinking        app.js:1688  Thinking
@@ -41,7 +41,7 @@ export interface AgentStateView {
   paused: boolean;
 }
 
-interface Entry { state: OfficeState; label: string | null; paused: boolean; worked: boolean; limit: boolean; limitId?: string; question: boolean; questionId?: string; /** spec 068: on a coffee break (a usage limit of the agent app) */ coffee?: boolean; /** spec 068: the break's turn has closed ('Usage limit reached') */ coffeeShut?: boolean }
+interface Entry { state: OfficeState; label: string | null; paused: boolean; worked: boolean; limit: boolean; limitId?: string; question: boolean; questionId?: string; /** spec 068: on a coffee break (a usage limit of the agent app) */ coffee?: boolean; /** spec 068: the break's turn has closed (reason 'usage-limit') */ coffeeShut?: boolean }
 
 export class AgentStateTracker {
   private readonly agents = new Map<string, Entry>();
@@ -118,10 +118,10 @@ export class AgentStateTracker {
     const set = (state: OfficeState, label: string | null): void => { a.state = state; a.label = label; };
     switch (e.type) {
       case 'status':
-        // spec 068 (app.js onLiveEvent, 2026-10-22): only the turn's closing status keeps the break ('Usage limit reached', then at most
+        // spec 068 (app.js onLiveEvent, 2026-10-22): only the turn's closing status keeps the break (`reason: 'usage-limit'`, then at most
         // one plain idle of the same turn); any other idle or error means the turn went on after the limit: the break ends, shown as usual
         if (a.coffee) {
-          if (e.status === 'idle' && e.intent === 'Usage limit reached') { a.worked = false; a.coffeeShut = true; return; }
+          if (e.status === 'idle' && e.reason === 'usage-limit') { a.worked = false; a.coffeeShut = true; return; }
           if (e.status === 'idle' && !e.intent && a.coffeeShut) { a.coffeeShut = false; a.worked = false; return; }
           if (e.status === 'idle' && !e.intent) a.worked = true; // the turn went on and finished: Done
           a.coffeeShut = false;

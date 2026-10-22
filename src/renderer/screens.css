@@ -45,6 +45,14 @@ body.screen-open .workspace{display:none}
 .swt:disabled{opacity:1;border-style:dashed;background:var(--surface-2);cursor:not-allowed} /* spec 052 FR-052: readable, not faded */
 .swt:disabled i{box-shadow:0 0 0 1px var(--line-ctl)}
 .mst{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-2)}
+.mst-ic{flex:none}
+.mst.connected .mst-ic{color:var(--c-done)} .mst.failed .mst-ic,.mst.needs-auth .mst-ic{color:var(--c-error)} .mst.pending .mst-ic{color:var(--c-thinking)} .mst.disabled .mst-ic,.mst.stopped .mst-ic{color:var(--muted)} .mst.unknown{color:var(--muted)}
+.mst-w{font-weight:500}
+.srv-hint{display:block;font-size:11px;color:var(--ink-2);overflow-wrap:anywhere}
+.srv-detbtn{align-self:flex-start;margin-top:2px}
+.srv-det{display:flex;align-items:flex-start;gap:8px;margin-top:4px}
+.srv-err{flex:1;min-width:0;margin:0;max-height:96px;overflow:auto;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+.srv-name{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .mst i{width:8px;height:8px;border-radius:50%;background:var(--gray)}
 .mst.connected i{background:var(--c-done)} .mst.failed i,.mst.needs-auth i{background:var(--c-error)} .mst.pending i{background:var(--c-thinking)} .mst.disabled i{background:transparent;border:2px solid var(--c-idle)}
 .mst.none{color:var(--muted)}
@@ -224,7 +232,7 @@ body.has-bridge #topBtns{display:flex}
 .hs-where code{font-family:var(--font-mono);font-size:11px;overflow-wrap:anywhere} /* spec 060 FR-003: where the app was found; a long path wraps after a folder separator (<wbr>), inside the card */
 .hs-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .hs-st{font-size:var(--t5-size);font-weight:650;padding:2px 9px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
-.hs-ok{color:var(--tone-ok-ink);background:var(--tone-ok-bg);border-color:var(--tone-ok-line)}.hs-warn{color:var(--amber-ink);background:var(--warn-bg);border-color:#e5be78}.hs-off{color:var(--ink-2);background:var(--surface-2)}
+.hs-ok{color:var(--tone-ok-ink);background:var(--tone-ok-bg);border-color:var(--tone-ok-line)}.hs-warn{color:var(--amber-ink);background:var(--warn-bg);border-color:var(--tone-warn-line)}.hs-off{color:var(--ink-2);background:var(--surface-2)}
 .hs-act{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
 .hs-log:empty{display:none} /* spec 052 FR-055: no empty box before output arrives */
 .hs-log{max-height:9em;overflow:auto;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -279,7 +287,7 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-more{display:block;font-size:11px;color:var(--ink-2);font-style:italic}
 .dlg.fs .mtag.fs-allow{background:color-mix(in srgb,var(--sage) 14%,var(--surface));border-color:var(--line-2);color:var(--sage-ink)}
 .dlg.fs .mtag.fs-deny{background:color-mix(in srgb,var(--red) 14%,var(--surface));border-color:var(--line-2);color:var(--red-ink)}
-.dlg.fs .mtag.warn,.dlg.fs .mtag.new{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
+.dlg.fs .mtag.warn,.dlg.fs .mtag.new{background:var(--warn-bg);border-color:var(--tone-warn-line);color:var(--amber-ink)}
 .dlg.fs .fs-ai{margin:0 0 8px 34px;font-size:12px;line-height:1.45}
 .dlg.fs .fs-ai:empty{display:none}
 .dlg.fs .fs-ai b{margin-right:6px}

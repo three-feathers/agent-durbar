@@ -169,6 +169,17 @@ module.exports = async (ctx) => {
     await js(`document.activeElement&&document.activeElement.blur()`);
     await shot(`052-list-${w}x${h}.png`);
     await js(`document.getElementById('vOffice').click()`); await office(15);
+    // FR-173, office half: the same re-render in the office view keeps the focus on the same desk in #stage (the lookup is scoped to the
+    // view the focus was in; the list rows keep the same data-id)
+    await js(`document.querySelectorAll('#stage .desk[data-id]')[1].focus()`);
+    const did = await js(`document.activeElement&&document.activeElement.closest('#stage')?document.activeElement.dataset.id||'':''`);
+    assert.ok(did, 'a desk in the office takes the focus');
+    // a status change alone morphs the desks in place (the node and its focus survive); a change of density draws the stage afresh. Clear
+    // the stage's density mark so the re-render rebuilds every desk, as a resize or a new agent does, and the restore has to find it again
+    await js(`document.activeElement.__before=1;document.getElementById('stage').dataset.d='';window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(did)},timestamp:Date.now(),status:'working',intent:'Back at it'})`);
+    const redrawnDesk = await until(`(()=>{const d=document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(did)})+'"]');return !!d&&!d.__before})()`); // the office was drawn again
+    const keptDesk = await js(`(()=>{const a=document.activeElement;return {tag:a.tagName,cls:String(a.className),id:a.dataset&&a.dataset.id||'',inStage:!!a.closest('#stage')}})()`);
+    assert.ok(redrawnDesk && keptDesk.inStage && keptDesk.id === did, `a re-render keeps the focus on the office desk ${did}: ${JSON.stringify({ redrawnDesk, ...keptDesk })}`);
 
     // FR-014: N opens the next agent that needs you, and the next
     await js(`document.activeElement&&document.activeElement.blur()`);
