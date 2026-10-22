@@ -47,11 +47,11 @@ Owner answered Q1-Q9 on 2026-10-22 (see spec.md); Q6 is (b), no Read-only except
 - [ ] T031 `src/shared/loopserver.ts`: reserved name, flag, env names, two frozen tool definitions; tests [FR-030]
 - [ ] T032 `src/main/loop/host.ts`: socket or pipe from `paths.ts`, token-to-session map in memory, `McpSession` + `McpConnection` limits, handlers that call the scheduler; tests with two sessions and swapped or unknown tokens [FR-031, FR-032, SC-004]
 - [ ] T033 Relay core (stdio to socket) and the `--durbar-loop-tool` branch, shared with 041 T018 if that lands first; test of the pure core [FR-031]
-- [ ] T034 Main: the server in a looping session's `mcpServers`, the token dropped at the end; a live session restarted with it per Q7, refused while busy; adapter option tests for all three apps (present only while looping) [FR-031, US4]
+- [ ] T034 Main: the server in a looping session's `mcpServers`, the token dropped at the end; a live session restarted with it per Q7, refused while busy; adapter option tests for all three apps (present only while looping); a test for all three apps that the token is not in the built `mcpServers`, the Claude CLI argv (`--mcp-config`) or Codex's `thread/start` config; the token file is 0600 in a 0700 folder and deleted at loop end [FR-031, US4]
 - [ ] T035 Broker: no exception (owner Q6 (b)); a test that `durbar-loop` tool calls are denied in Read-only and asked in Ask first like any `mcp` call, and that a Read-only loop is still paced by the reply line [FR-033]
 - [ ] T036 Guards: `McpStore` refuses the reserved name and the helper command; the ambient Copilot CLI entry is disabled; tests [FR-033]
 - [ ] T037 Tool wins over the reply line in the same pass; the footer switches to the tool wording; tests [FR-035]
-- [ ] T038 (only if Q8 = yes) Offer card for `schedule_next` without a loop, No focused, one refusal per session; driver check [FR-034]
+- [ ] ~~T038~~ Out of scope (owner Q8 (b)): offer card for `schedule_next` without a loop, No focused, one refusal per session; driver check [FR-034]
 - [ ] T041 Real check of the tools, one per app, the same budget as T040 (owner's OK first)
 
 ## Order

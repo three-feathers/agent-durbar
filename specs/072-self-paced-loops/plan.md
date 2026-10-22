@@ -84,8 +84,8 @@ Loops extend spec 044's `Scheduler` with a `loop` kind on a session target. The 
 
 ### Phase 2
 
-1. **`src/shared/loopserver.ts`**: the reserved name `durbar-loop`, the helper flag `--durbar-loop-tool`, the env names, and the two frozen `ToolDef`s (the `tools.ts` pattern).
-2. **`src/main/loop/host.ts`**: a per-run local socket or named pipe (from `paths.ts`, its own name). Each connection must present a session token (sent by the helper from its env), and main maps token to session (FR-031). It uses `McpSession` (`protocol.ts`), `McpConnection` limits (`connection.ts`) and a registry with exactly the two tools. Handlers call `scheduler.paceFromTool(session, req)`.
+1. **`src/shared/loopserver.ts`**: the reserved name `durbar-loop`, the helper flag `--durbar-loop-tool`, the token-file path argument, and the two frozen `ToolDef`s (the `tools.ts` pattern).
+2. **`src/main/loop/host.ts`**: a per-run local socket or named pipe (from `paths.ts`, its own name). Each connection must present a session token (read by the helper from the 0600 token file whose path is in its server spec; FR-031), and main maps token to session (FR-031). It uses `McpSession` (`protocol.ts`), `McpConnection` limits (`connection.ts`) and a registry with exactly the two tools. Handlers call `scheduler.paceFromTool(session, req)`.
 3. **The relay** (`src/main/loop/relay.ts`, pure core): stdio to socket, launched by the agent runtime as Durbar's executable with `--durbar-loop-tool`. **Share it with 041 T018** (one relay core, two flags). Coordinate with Ruben before building.
 4. **Adapters**: no new code beyond receiving one more `mcpServers` entry. Main adds it in the start options of a looping session (Q7 (a): a looping live session is restarted or resumed with it, refused while busy).
 5. **Broker** (owner Q6 (b)): no change. `durbar-loop` calls go through the normal `mcp` rule; Copilot's tools carry no `readOnlyHint` override. A Read-only loop is paced by the reply line.
@@ -94,7 +94,7 @@ Loops extend spec 044's `Scheduler` with a `loop` kind on a session target. The 
 ## Risks
 
 - **The agent never writes the line** (models ignore footers): FR-012 stops the loop after two passes, so it is safe but less useful. The real check measures this.
-- **The broker exception (Phase 2)** is the most security-sensitive part. Exact server and tool names; a test that any other `mcp` call is still denied in Read-only.
+- **The per-session token (Phase 2)** is the most security-sensitive part: how it reaches the loop helper on each app without being on a command line or in an environment variable (a 0600 file whose path is in the server spec, FR-031), and that a token from one session never moves another session's loop (SC-004).
 - **Restarting a live session to add the server (Q7)** costs the session's warm state on some apps; it is unverified per app.
 - **Dependencies on open PRs** #462 (coffee break) and #511 (Postbox): their tasks are separate and wait. If #462's design changes, FR-016 follows it.
 - **The 044 busy check** (`main.ts:443`) may miss questions and limits; loops use the agentstate flags, and 044 may need its own delta (outside this spec).

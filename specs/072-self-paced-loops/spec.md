@@ -168,7 +168,7 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 
   Both open the same form: the prompt (taken from the composer if there is text), the limits with their defaults, and a one-line summary of the worst case ("at most 12 passes, at most 50 AI credits, ends by 18:30"). **Start loop** saves the loop and sends pass 1 at once if the session is idle. Otherwise the first wake is in `minDelay`.
 - **FR-006** `[PLANNED]` Passes keep the session's permission mode. A loop never sets or raises the mode, approves pending requests, keeps grants or lifts a cap. The pass goes through `scheduleDeps.send` (`main.ts:444-477`), the same as a scheduled prompt.
-- **FR-007** `[PLANNED]` **Stop loop** is on the desk chip, in the Schedules row (dialog and Settings) and in the chat. It ends the loop at once (`ended.reason: 'user'`). The session's own **Stop** during a pass also ends the loop. **End session**, removing the session or removing the folder ends it ("the session has ended").
+- **FR-007** `[PLANNED]` **Stop loop** is on the desk chip, in the Schedules row (dialog and Settings) and in the chat. It ends the loop at once (`ended.reason: 'user'`). The session's own **Stop** during a pass also ends the loop. **Stop** on a turn the user sent between passes stops only that turn; the loop goes on. **End session**, removing the session or removing the folder ends it ("the session has ended").
 - **FR-008** `[PLANNED]` When the app starts (`Scheduler.start`), every loop that had not ended is marked ended "when Durbar closed". Nothing is sent. The row offers **Start again**, which opens the form with the old limits and starts a new run (passes and spend from zero) only when the user confirms. A loop is never resumed by itself after a restart.
 - **FR-009** `[PLANNED]` Each pass's prompt is the user's prompt plus a fixed, short **loop footer** written by Durbar (not user-editable, at most 400 characters). It tells the agent:
   - the pass number;
@@ -187,14 +187,14 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 
   Anything else is "no line". The parser is pure and has no shell and no regular expression with catastrophic backtracking. The reason is cleaned to one line of at most 120 characters (control, bidi and zero-width characters removed) and passed through `redact()` before it is shown or logged.
 - **FR-011** `[PLANNED]` The next wake = the end of the pass + the asked delay, clamped to [`minDelay`, `maxDelay`]. A clamped ask is recorded with `source: 'clamped'` and shown ("asked 2 min, waited 5"). `stop` ends the loop with `ended.reason: 'agent'` and the agent's reason.
-- **FR-012** `[PLANNED]` A pass with no line (or, in Phase 2, no tool call) uses `defaultDelay` with the reason "the agent did not say". Two such passes in a row end the loop: "Stopped: the agent did not pace the loop" (Q3).
+- **FR-012** `[PLANNED]` A pass with no line (or, in Phase 2, no tool call) uses `defaultDelay` with the reason "the agent did not say". Two such passes in a row end the loop: "Stopped: the agent did not pace the loop" (Q3). A pass that ends in `error` (FR-013) counts only toward the error streak: it neither adds to nor resets this no-line streak.
 - **FR-013** `[PLANNED]` A pass that ends in `error` counts as a pass. The loop waits `defaultDelay`. Two errors in a row end the loop: "Stopped after two failed passes".
 
 **Holds and skips (R3, the 044 busy rule)**
 
 - **FR-014** `[PLANNED]` A wake that finds the session **working** skips the pass (never queued). It is recorded as `skipped-busy`, and the next wake is now + the last asked delay (clamped). A skip does not count as a pass.
 - **FR-015** `[PLANNED]` A wake that finds the session **waiting for a person**, or a person-wait that starts between passes, puts the loop **on hold**. A person-wait means: a pending permission (`needs-permission`), an open question (agentstate `question`), or a credit-limit request (agentstate `limit`). On hold, `dueAt` is undefined and the desk shows "Loop waits for you". When the wait clears, the next wake is that moment + the last asked delay. Nothing fires at once.
-- **FR-016** `[PLANNED]` **Coffee break** (spec 068, a `usageLimit` event): the loop is on hold until the break ends. A pass is never sent into a break. If 068's own resume message goes out, the loop's next wake is counted from the end of that turn. Depends on PR #462 being merged.
+- **FR-016** `[PLANNED]` **Coffee break** (spec 068, a `usageLimit` event): the loop is on hold until the break ends. A pass is never sent into a break. If 068's own resume message goes out, the loop's next wake is counted from the end of that turn. Main reads the normalized `usageLimit` event itself and holds the loop there, so main stays the one place that enforces limits (R5); it does not wait for the renderer's `coffeebreak.js`. Depends on PR #462 being merged.
 - **FR-017** `[PLANNED]` **Durbar's spending cap** (spec 011 `limit` exhausted, the Bank in PR #511): the loop pauses (`pausedReason: 'cap'`, the 044 wording) and continues only on the user's **Resume** (Q5).
 - **FR-018** `[PLANNED]` **The loop's own cap** (044 FR-015 attribution): when `spent` ≥ `cap.amount` at the end of a pass or at a wake, the loop ends: "Stopped: reached its limit". **Max passes** and **end time** end it the same way, each with its reason. These are ends, not pauses: a new run needs **Start again**.
 - **FR-019** `[PLANNED]` **Pause all schedules** also holds every loop. When it is turned off, each loop's next wake is now + its last asked delay (no burst, like `setPausedAll`, `schedules.ts:386-394`).
@@ -220,13 +220,15 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
   It has no other tool, and no tool that reads the office, changes settings, starts sessions or sends prompts. It is **not** spec 041's server: it has its own flag, its own socket name and no 041 switch. 041 FR-030 still holds for 041's server. A spec delta in 041 records the difference.
 - **FR-031** `[PLANNED]` **One session only.**
   - Durbar adds the loop server to a session's `mcpServers` only while that session has a running loop (Q7 decides how a live session gets it).
-  - Each session gets its own random 256-bit token, kept in main's memory only. It goes into the server's `env` for that session only, and is never written to disk, logged or shown.
+  - Each session gets its own random 256-bit token, kept in main's memory. The token is **never** put in `McpServerSpec.env` or `args`: on Claude Code's CLI transport those become the `--mcp-config <json>` command-line argument (`claude.ts:163`, `:241`), which any local user can read with `ps` or `/proc/<pid>/cmdline`.
+  - Instead main writes the token to a per-loop file with mode 0600 inside a per-run folder with mode 0700 under Durbar's user-data folder (on Windows, an ACL for the current user only). Only that file's **path** goes into the server spec. The helper reads the token from the file at start. The file is deleted when the loop ends, and the folder is emptied at launch.
+  - The token is never logged or shown. A test checks, for all three apps, that the token is not in the built `mcpServers` config, the CLI argv (`--mcp-config`) or Codex's `thread/start` config.
   - Main maps token to session. A tool call can only affect the loop of the session its token belongs to.
   - Tool arguments never name a session.
   - The token is dropped when the loop ends.
 - **FR-032** `[PLANNED]` All input is validated in main (types, integer, ranges, length, one line). An out-of-range `minutes` is clamped as in FR-011, and the result says so. A call with no running loop answers "No loop is running in this session" and starts nothing (but see FR-034). There is no shell; the server process is Durbar's own executable with a fixed flag and fixed arguments.
 - **FR-033** `[PLANNED]` (owner, Q6 (b)) The loop tools are ordinary MCP calls for the permission broker: denied in Read-only, asked in Ask first, allowed in Allow all. No broker exception. A loop in Read-only is paced only by the reply line (FR-010..FR-012), which needs no permission. A user's own MCP extra or Copilot CLI entry with the name `durbar-loop`, or one that points to the loop helper, is refused or disabled, as 041 FR-031/FR-032 do for `agent-durbar`.
-- **FR-034** `[PLANNED]` (US5, optional, Q8) A `schedule_next` call in a session without a loop shows an offer card with the proposed delay and the default limits. **No** has the focus. Only **Start loop** starts it. A refusal is remembered for that session until it ends, so the agent cannot re-ask on every turn.
+- **FR-034** `[OUT OF SCOPE]` (US5; owner Q8 (b): loops start only from the user's menu; kept here for a later decision) A `schedule_next` call in a session without a loop shows an offer card with the proposed delay and the default limits. **No** has the focus. Only **Start loop** starts it. A refusal is remembered for that session until it ends, so the agent cannot re-ask on every turn.
 - **FR-035** `[PLANNED]` In Phase 2 the reply line of FR-010 stays as a fallback. A tool call during a pass wins over a reply line in the same pass.
 
 **Simulator and tests (constitution IV)**
@@ -272,7 +274,7 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 ## Honest limits and gaps (to keep in the README when built)
 
 - `[KNOWN GAP]` The spend of a pass is known only from the app's `usage` events. A pass that starts under the cap can end over it, and Claude's dollar figure is an estimate (044 FR-015, spec 012 FR-150).
-- `[KNOWN GAP]` Phase 2 token secrecy is best effort. The token sits in the environment of the session's loop-server process. Another process of the same OS user (for example an agent in Allow all with a shell) could read it. The damage is bounded: it can only re-pace or stop that one loop, within its limits. This is the same same-user limit 041 states in FR-035.
+- `[KNOWN GAP]` Phase 2 token secrecy is best effort against the **same** OS user. Other local users cannot read it: it is never on a command line or in an environment variable, and its file is mode 0600 in a 0700 folder (FR-031). Another process of the same OS user (for example an agent in Allow all with a shell) could read it. The damage is bounded: it can only re-pace or stop that one loop, within its limits. This is the same same-user limit 041 states in FR-035.
 - `read:` `busyStatus` (`main.ts:443`) may not count a pending question or a credit-limit request as busy. This spec uses the agentstate flags instead. Whether spec 044 has a real gap there is **unverified**; worth a separate check.
 - Not verified on any real session: how each app's model follows the footer; whether Codex and Claude Code accept a new MCP server on a live session without a restart (Q7).
 
@@ -286,8 +288,12 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 
 ## Owner answers (Paco, 2026-10-22)
 
-- **Q1** (a): 30 / 5 / 60 min; the user may raise the max up to 1440 per loop.
-- **Q2** (a): 12 passes, end 8 h after the start, cap 50 AI credits or $0.50, all required and editable within FR-003.
-- **Q3** (a): no pace request means the default delay once; two passes in a row with no request end the loop.
-- **Q6** (b): the loop tools are ordinary MCP calls (denied in Read-only, asked in Ask first); no broker exception (FR-033).
-- Q4 (a), Q5 (a), Q7 (a), Q8 (b) and Q9 (a, quiet hours later) take the recommended defaults.
+- **Q1 Delays (default / min / max):** (a) 30 / 5 / 60 min; the user may raise the max up to 1440 per loop.
+- **Q2 Passes, end time, cap:** (a) 12 passes, end 8 h after the start, cap 50 AI credits or $0.50, all required and editable within FR-003.
+- **Q3 A pass with no pace request:** (a) wait the default delay once; two passes in a row with no request end the loop (FR-012).
+- **Q4 Apps that report no spend in the cap's unit:** (a) allow the loop, bounded by passes and end time, with a clear note in the form and the row.
+- **Q5 After Durbar's spending cap:** (a) the loop pauses and needs **Resume**; raising the cap does not restart it (FR-017).
+- **Q6 Phase 2 tool calls in Read-only:** (b) the loop tools are ordinary MCP calls (denied in Read-only, asked in Ask first); no broker exception (FR-033). A Read-only loop is paced by the reply line.
+- **Q7 How a live session gets the loop server (Phase 2):** (a) only looping sessions get it; starting a loop on a live session restarts it with the server (as spec 058's *Restart session with these servers*), refused while busy.
+- **Q8 May the agent propose a loop:** (b) no, loops start only from the user's menu. US5, FR-034 and T038 are out of scope.
+- **Q9 Where "Loop this…" lives, and quiet hours:** (a) the session's card/mode menu (beside *Plan first*) and the chat's Schedules dialog, one shared form; quiet hours later.
