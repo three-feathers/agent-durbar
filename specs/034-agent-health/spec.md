@@ -1,6 +1,6 @@
 # Feature Specification: Agents show how they are doing (context size, trouble signals, serious mode)
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 034
 title: The figure follows the context window (heavy 70-90%, grumpy monster above 90%), trouble signals (ambulance, faint, dizzy, impatient), Serious mode
 status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/shots-034.js`; not checked on a real session; T009 built 2026-10-19: List view mood words and the walking figure's mood (FR-014/FR-015, `scripts/shots-034-list.js`); delta 2026-10-17 *rooms darken with their worst agent, sirens* (issue #135) **built** (simulator, `scripts/shots-034.js`; T015 room path contrast done too)

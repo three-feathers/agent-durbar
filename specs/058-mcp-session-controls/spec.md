@@ -1,6 +1,6 @@
 # Feature Specification: MCP servers in a session: clear status, Restart, last error and log folder
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: MCP servers in a session (issue #349): plain state words and how servers start per agent app, the masked failure reason with a hint, per-server Restart where the agent app has one (Copilot, Claude Code), Restart session with these servers, Open log folder (reveal only)
 status: **Specified and clarified** (spec, research, plan, tasks); the owner answered Q1-Q11 on 2026-10-20 (all option A). Built so far: MCP error and event masking (`maskMcpError`, `maskMcpEvent`; #362, #382); the session controls (Restart, logs, state words) are not built yet; delta 2026-10-20 (issue #364): MCP OAuth sign-in (needs-auth from a 401, start the agent app's own sign-in or show terminal steps, switch off for this session), specified and clarified (owner answered Q12-Q19 on 2026-10-20); built so far (PR 1): the classifier `isMcpAuthChallenge`, `isAuthError` ignoring it, and masking of failed MCP tool cards (T091, T092, T097); PR 2: the types, event guard and fake for sign-in (`errorClass`, `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `mcpAuth`; T112, T093); no adapter sets them yet, no sign-in yet

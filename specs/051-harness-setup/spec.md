@@ -1,6 +1,6 @@
 # Feature Specification: Harness setup inside the app
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Harness setup inside the app: Settings > Harnesses with install, update and sign-in (issue #299)
 status: **built** (unit, simulator; real sign-in flows started and cancelled); D1 superseded by spec 060 FR-001 (the official installer comes first, downloaded and checked, never piped)

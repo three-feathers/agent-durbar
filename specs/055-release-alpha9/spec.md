@@ -1,6 +1,6 @@
 # Feature Specification: Release v0.1.0-alpha.9 (pre-release)
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Release v0.1.0-alpha.9 (pre-release): remote control, scheduled prompts Phase 2, MCP forms, Copilot AI themes, usability rounds 6-9, new website
 status: **published as a pre-release 2026-10-20** (tag on `df06619`)

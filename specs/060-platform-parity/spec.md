@@ -1,6 +1,6 @@
 # Spec 060: Platform parity: install, find and run agent apps on macOS, Windows and Linux
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Platform parity: install, find and run the agent apps on macOS, Windows and Linux (official installers without Homebrew or Node, version-manager paths, Windows prerequisites, Linux AppImage needs, folder identity)
 status: **in progress**: owner answered Q1-Q6 (2026-10-20); T010 simulator truth (#392), T020 official installers least-privilege first with a checked download, real install check as standard and admin user on 3 OSes (#393), T030 detection folders (#398); open: T040 Windows prerequisites, T050 folder identity, T061 `.deb`/arm64

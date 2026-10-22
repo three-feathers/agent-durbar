@@ -1,6 +1,6 @@
 # Feature Specification: Release v0.1.0-alpha.5 (pre-release)
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 042
 title: Release v0.1.0-alpha.5 as a pre-release (version bump, changelog, download notes)
 status: built; **published as a pre-release** (2026-10-18)

@@ -1,6 +1,6 @@
 # Feature Specification: Code signing and notarization (macOS, Windows)
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 011-014
 title: Code signing and notarization
 status: draft, **needs approval (purchase)**

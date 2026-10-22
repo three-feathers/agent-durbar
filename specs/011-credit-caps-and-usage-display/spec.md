@@ -1,6 +1,6 @@
 # Feature Specification: AI-credit caps and usage display
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 011-014
 title: AI-credit caps and usage display
 status: per-session cap slice and office/folder usage totals built, totals kept across restarts with a reset (2026-10-17, issue #21); exhausted flow unverified on a real account; multiplier estimate covered by spec 030; 2026-10-20: Copilot cap enforced by Durbar (the runtime does not stop at it; real check)

@@ -1,6 +1,6 @@
 # Feature Specification: Attachments (pick, drop, paste) and caps
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Attachments (pick, drop, paste) and caps
 status: implemented; delta 2026-10-19: FR-009/010/012/013/015 closed

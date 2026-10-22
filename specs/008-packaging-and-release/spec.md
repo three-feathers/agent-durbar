@@ -1,6 +1,6 @@
 # Feature Specification: Packaging, CI and draft releases
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Packaging, CI, draft releases
 status: implemented (unsigned); 2026-10-20 delta: app name and profile folder (#353, T037) built (unit tests, Linux simulator, a dev run on a real Mac by Paco; a packaged Mac build and Windows not run); 2026-10-21 delta: packaged display names (#384, T039) built on Linux (unit tests, `dist:linux`); Windows and macOS asserted only in CI; T094 (2026-10-21, #414): the simulator drivers share `scripts/driver-helpers.js` (FR-097)

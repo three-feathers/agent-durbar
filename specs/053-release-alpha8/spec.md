@@ -1,6 +1,6 @@
 # Feature Specification: Release v0.1.0-alpha.8 (pre-release)
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Release v0.1.0-alpha.8 (pre-release): agent app setup inside the app, five usability rounds, AI themes
 status: **published as a pre-release 2026-10-20** (tag on `dd9de65`, CI fully green)

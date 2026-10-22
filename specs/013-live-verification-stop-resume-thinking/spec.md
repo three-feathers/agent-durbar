@@ -1,6 +1,6 @@
 # Feature Specification: Live verification of Stop, End/resume, lazy start, thinking, models and VS Code visibility
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 011-014
 title: Live verification of Stop, resume and thinking
 status: run 2026-10-19: C1-C7 pass on a real Copilot session (9 prompts, 0.31 AIU); several models, real cap, VS Code and macOS/Windows still open (2026-10-20: C8 still blocked, the login lists no models; C9 estimated and skipped); C8 and C9 run on Copilot Pro 2026-10-20 (C9: the runtime did not stop at the cap, see spec 011)

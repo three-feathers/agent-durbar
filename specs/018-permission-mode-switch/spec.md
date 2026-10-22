@@ -1,6 +1,6 @@
 # Feature Specification: Change the permission mode at any time
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 015-018
 title: Change permission mode any time
 status: milestone 7

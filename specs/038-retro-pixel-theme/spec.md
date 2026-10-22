@@ -1,6 +1,6 @@
 # Feature Specification: Retro pixel theme (spec 038)
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 035-040
 title: Retro pixel theme: 8-bit palette, palette pixel maps in art slots, arcade motion
 status: **built**; dark arcade page allowed (FR-001 amended 2026-10-18)

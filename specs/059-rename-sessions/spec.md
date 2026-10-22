@@ -1,6 +1,6 @@
 # Feature Specification: Rename sessions
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Rename sessions (issue #372): a short name of the user's own for any main session, shown on every surface (card, list, chat header, strip, inbox, notifications, Schedules, Previous sessions, activity log) instead of the runtime title; also saved in the agent app (Copilot `name.set`, also for a session that is not open through a prompt-free resume; Codex `thread/name/set`; Claude Code `--name` at the next message); **Rename…** in the chat header More menu and the card menu, and the Previous sessions row menu (spec 006, #379)
 status: **Built, simulator and fakes** (name rule, store, IPC, three adapters, dialog, surfaces, `check:rename`); `real:` app calls by Vikram's agent (Copilot, Codex, Claude CLI lists); open: VS Code visibility, macOS/Windows, T050
