@@ -143,7 +143,7 @@ function simNameError(v: unknown): string {
 }
 const LONG_TEXT = 'Every paragraph here is long on purpose so that its lines run to the right edge of the chat, where a Copy button must never cover a word. '.repeat(6).trim() + '\n\n```\nconst aLineThatRunsPastTheRightEdgeOfTheChat = "' + 'x'.repeat(300) + '";\n```'; // ends in a code block whose last line runs to the right edge (clipped by its own scroll), so the reply's Copy button always sits over text when it is misplaced
 /* spec 059 FR-019 (issue #536): a name that is one unbroken token, like a first prompt that holds a URL; not a real address */
-const SIM_LONG_URL_NAME = 'https://example.invalid/teams/consumer-sites/SitePages/Consumer-Onboarding-Checklist-Overview/Details-2026-Q4-Planning.aspx';
+const SIM_LONG_URL_NAME = 'https://example.invalid/teams/consumer-sites/SitePages/Consumer';
 const SIM_LONG_NAMES = ['Billing refactor: split invoice and credit-note flows', 'Canton lookup duplicates: reproduce and fix the join', 'Release notes for the next minor version and changelog', 'Tidy the registry modules and update every import path'];
 const SIM_USD_CAPS: Record<string, number> = { Ada: 0.01 };
 const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
