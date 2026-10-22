@@ -232,7 +232,7 @@ body.has-bridge #topBtns{display:flex}
 .hs-where code{font-family:var(--font-mono);font-size:11px;overflow-wrap:anywhere} /* spec 060 FR-003: where the app was found; a long path wraps after a folder separator (<wbr>), inside the card */
 .hs-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .hs-st{font-size:var(--t5-size);font-weight:650;padding:2px 9px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
-.hs-ok{color:var(--tone-ok-ink);background:var(--tone-ok-bg);border-color:var(--tone-ok-line)}.hs-warn{color:var(--amber-ink);background:var(--warn-bg);border-color:#e5be78}.hs-off{color:var(--ink-2);background:var(--surface-2)}
+.hs-ok{color:var(--tone-ok-ink);background:var(--tone-ok-bg);border-color:var(--tone-ok-line)}.hs-warn{color:var(--amber-ink);background:var(--warn-bg);border-color:var(--tone-warn-line)}.hs-off{color:var(--ink-2);background:var(--surface-2)}
 .hs-act{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
 .hs-log:empty{display:none} /* spec 052 FR-055: no empty box before output arrives */
 .hs-log{max-height:9em;overflow:auto;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -287,7 +287,7 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-more{display:block;font-size:11px;color:var(--ink-2);font-style:italic}
 .dlg.fs .mtag.fs-allow{background:color-mix(in srgb,var(--sage) 14%,var(--surface));border-color:var(--line-2);color:var(--sage-ink)}
 .dlg.fs .mtag.fs-deny{background:color-mix(in srgb,var(--red) 14%,var(--surface));border-color:var(--line-2);color:var(--red-ink)}
-.dlg.fs .mtag.warn,.dlg.fs .mtag.new{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
+.dlg.fs .mtag.warn,.dlg.fs .mtag.new{background:var(--warn-bg);border-color:var(--tone-warn-line);color:var(--amber-ink)}
 .dlg.fs .fs-ai{margin:0 0 8px 34px;font-size:12px;line-height:1.45}
 .dlg.fs .fs-ai:empty{display:none}
 .dlg.fs .fs-ai b{margin-right:6px}
@@ -347,7 +347,7 @@ body.has-bridge #topBtns{display:flex}
 #hsDlg .dlg .dbody{overflow:auto;padding-right:2px}
 
 /* spec 043 FR-014: the profile file editor (profileeditor.js); theme tokens only, text 10.5px or larger */
-.dlg.pe{width:min(1240px,calc(100vw - 32px));height:calc(100vh - 48px);max-height:none;overflow:hidden;gap:10px;padding:16px 18px}
+.dlg.pe{width:calc(100vw - 32px);height:calc(100vh - 48px);max-height:none;overflow:hidden;gap:var(--dlg-gap);padding:var(--dlg-pad)} /* spec 052 FR-167: the window minus 32px (a full-size editor), the dialog padding and gap tokens */
 .pe-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex:none}
 .pe-tt{flex:1 1 260px;min-width:0;display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:10px;row-gap:2px}
 .pe-tt h3{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
@@ -377,7 +377,6 @@ body.has-bridge #topBtns{display:flex}
 .pe-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;min-height:18px}
 .pe-status,.pe-hint{margin:0;font-size:var(--t4-size);color:var(--muted)}
 .pe-status{color:var(--ink-2)}
-.dlg.pe-new{width:min(460px,calc(100vw - 32px))}
 /* the Profile menu: an Edit button beside a profile row (spec 043 FR-014) */
 .mode-menu .mm-prow{display:flex;align-items:stretch;gap:2px}
 .mode-menu .mm-prow>button[data-prof]{flex:1;min-width:0}
@@ -402,16 +401,6 @@ body.has-bridge #topBtns{display:flex}
 .dlg label.pe-tpl-opt:has(:checked){border-color:var(--focus);background:var(--surface-2)}
 .dlg .pe-tpl-t{font-size:13px;font-weight:600;color:var(--ink)}
 .dlg label.pe-tpl-opt small{grid-column:2;font-size:var(--t4-size);color:var(--muted);font-weight:400}
-/* Create with AI (spec 043 FR-021) */
-.dlg.pe-ai{width:min(860px,calc(100vw - 32px))}
-.dlg .pe-ai-how{width:max-content}
-.dlg .pe-ai-qs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:8px 14px}
-.dlg .pe-ai-qs[hidden]{display:none}
-.dlg .pe-ai-qs textarea{min-height:34px}
-.dlg #peADesc[hidden]{display:none}
-.dlg .pe-ai-wait{margin:0;font-size:var(--t3-size);color:var(--ink-2)}
-.dlg .pe-ai-wait[hidden]{display:none}
-.dlg .dbtn .btn[hidden]{display:none}
 /* spec 052 FR-170 (T154): Tools > Models and context never grows past its box: a fixed layout, the agent and folder names cut with an ellipsis (their title has the whole name) */
 .agt{table-layout:fixed}
 .agt thead th:nth-child(1){width:26%}.agt thead th:nth-child(2){width:24%}.agt thead th.num{width:88px}
@@ -419,3 +408,18 @@ body.has-bridge #topBtns{display:flex}
 .agt .by-chip{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;text-align:left}
 .agt .mdl-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agt td{min-width:0;overflow-wrap:anywhere}
+/* Create with AI (spec 043 FR-026) */
+.dlg.pe-ai{width:min(var(--dlg-w-l),calc(100vw - 32px))}
+.dlg .pe-ai-how{width:max-content}
+.dlg .pe-ai-qs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 14px}
+.dlg .pe-ai-qs[hidden]{display:none}
+.dlg .pe-ai-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 14px;align-items:start}
+.dlg .pe-ai-row>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.dlg .pe-ai-row p{margin:0}
+.dlg .pe-ai-qs textarea{min-height:48px;resize:vertical}
+.dlg .dbtn #peALate[hidden]{display:none}
+.dlg .dbtn #peALate{align-self:center;margin:0}
+.dlg #peADesc[hidden]{display:none}
+.dlg .pe-ai-wait{margin:0;font-size:var(--t3-size);color:var(--ink-2)}
+.dlg .pe-ai-wait[hidden]{display:none}
+.dlg .dbtn .btn[hidden]{display:none}

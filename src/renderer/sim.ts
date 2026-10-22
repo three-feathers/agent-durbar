@@ -46,9 +46,9 @@ interface SimOptions {
   seed?: number;
   /** Spec 033: three floors (Ground floor, Client A, Personal) with the rooms spread over them. */
   floors?: boolean;
-  /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`). */
-  titles?: boolean;
-  /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits. */
+  /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`; `simtitles=long`: the first one is 120 characters, the longest a session title can be, spec 052 FR-174). */
+  titles?: boolean | 'long';
+  /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits; agent 3 has no alias and a long first-prompt title with one unbroken URL-like token (FR-019). */
   names?: 'long';
   /** Spec 052 FR-170 (T155): long replies and long sub-agent prompts that run to the right edge of the chat, to check that the Copy button covers no text (page address `simreply=long`). */
   reply?: 'long';
@@ -76,6 +76,8 @@ interface SimOptions {
   edits?: boolean;
 }
 
+/** A grant scope as the broker builds it: key and chip label. */
+type SimScope = { key: string; label: string };
 interface SimAgent {
   info: AgentInfo;
   room: string;
@@ -89,7 +91,7 @@ interface SimAgent {
   open?: string;
   files: string[];
   /** Pending permission request (the agent is waiting for the user). */
-  perm?: { requestId: string; kind: string; summary: string; scopeKey: string; scopeLabel: string; file: string; cont: 'tool' | 'edit' };
+  perm?: { requestId: string; kind: string; summary: string; scopeKey: string; scopeLabel: string; file: string; cont: 'tool' | 'edit'; folders?: SimScope[] };
   /** "Allow for this session" grants: key -> chip label. */
   grants: Map<string, string>;
   /** Context window of the fake session (tokens now / size). */
@@ -162,6 +164,8 @@ function simNameError(v: unknown): string {
   return '';
 }
 const LONG_TEXT = 'Every paragraph here is long on purpose so that its lines run to the right edge of the chat, where a Copy button must never cover a word. '.repeat(6).trim() + '\n\n```\nconst aLineThatRunsPastTheRightEdgeOfTheChat = "' + 'x'.repeat(300) + '";\n```'; // ends in a code block whose last line runs to the right edge (clipped by its own scroll), so the reply's Copy button always sits over text when it is misplaced
+/* spec 059 FR-019 (issue #536): the first prompt of a session with no name of its own is its title and has no 60-character cap; this one holds one unbroken token, like a URL (not a real address) */
+const SIM_LONG_URL_TITLE = 'as we have https://example.invalid/teams/consumer-sites/SitePages/Consumer-Onboarding-Checklist-Overview.aspx';
 const SIM_LONG_NAMES = ['Billing refactor: split invoice and credit-note flows', 'Canton lookup duplicates: reproduce and fix the join', 'Release notes for the next minor version and changelog', 'Tidy the registry modules and update every import path'];
 const SIM_USD_CAPS: Record<string, number> = { Ada: 0.01 };
 const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
@@ -222,7 +226,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
   ];
   // Spec 052 FR-046: each waiting agent asks for its own thing, tied to its role and task (was one rename request for all of them)
   // Spec 052 FR-063: Jonas's edit carries a diff, like a Claude Code Edit request (the card's "Show the change")
-  const WAIT_REQ: Record<string, { kind: 'write' | 'shell'; summary: string; target: string; diff?: string }> = {
+  const WAIT_REQ: Record<string, { kind: 'write' | 'shell'; summary: string; target: string; diff?: string; scope?: SimScope & { folders?: SimScope[] } }> = {
     Jonas: {
       kind: 'write', summary: 'Edit src/tools/companies.ts (rename find_company to search_companies)', target: 'src/tools/companies.ts',
       diff: ['--- a/src/tools/companies.ts', '+++ b/src/tools/companies.ts', '@@ -12,7 +12,7 @@', ' import { z } from \'zod\';', ' ', ' export const companyTools = {', "-  find_company: {", "+  search_companies: {", "     description: 'Look up Swiss companies by name or UID',", '     input: z.object({ query: z.string().min(2) }),', '     handler: findCompany,'].join('\n'),
@@ -232,15 +236,30 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
   };
   /**
    * Spec 052 FR-172: `simcodexfile=1` makes a waiting Codex agent's write request look like the Codex adapter's card (the files,
-   * kind and diff from the `fileChange` item); `simcodexfile=none` like one for which Codex named no file. Only with `simkinds=mixed`.
+   * kind and diff from the `fileChange` item); `simcodexfile=none` like one for which Codex named no file; `simcodexfile=many` like a
+   * change in five folders (review on #470: the session button keeps "and N more folders"). Only with `simkinds=mixed`.
    */
+  /** Spec 052 FR-172: the broker's grant scope for a write in these folders (`grantScope` in src/adapters/permissions.ts, POSIX). */
+  const multiScope = (dirs: string[]): SimScope & { folders?: SimScope[] } => {
+    const folders = dirs.map((d) => ({ key: 'write:' + d, label: 'write in ' + d.split('/').slice(-2).join('/') + '/' }));
+    if (folders.length === 1) return folders[0];
+    const names = folders.map((x) => x.label.replace(/^write in /, ''));
+    return { key: 'write-folders:' + folders.map((x) => x.key).sort().join('\n'), label: `write in ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` and ${names.length - 3} more folders` : ''}`, folders };
+  };
   const codexFileReq = (s: { info: { adapterId?: string }; files: string[] }): (typeof WAIT_REQ)[string] | undefined => {
     const v = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simcodexfile') : null;
     if (!v || s.info.adapterId !== 'codex') return undefined;
     if (v === 'none') return { kind: 'write', summary: 'write (Codex did not say which file)', target: '' };
     const f = s.files[0];
+    const dir = f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : '.';
+    if (v === 'many') {
+      const dirs = ['components', 'documentation', 'scripts', 'src/lib', 'tests'];
+      return { kind: 'write', summary: `write ${dirs[0]}/Button.tsx (+${dirs.length - 1} more)`, target: dirs[0] + '/Button.tsx', scope: multiScope(dirs) };
+    }
     return {
       kind: 'write', summary: `write ${f} (+1 more)`, target: f,
+      // the adapter's grant scope names the folder of every file (review on #470): here the file's own folder and docs/
+      scope: multiScope([dir, 'docs']),
       diff: [`--- a/${f}`, `+++ b/${f}`, '@@ -3,3 +3,3 @@', ' :focus-visible {', '-  outline: 2px solid var(--sage);', '+  outline: 2px solid var(--blue);', '   outline-offset: 2px;', '--- a/docs/a11y.md', '+++ b/docs/a11y.md', '@@ -0,0 +1,2 @@', '+# Focus ring', '+Blue, 2px, offset 2px.'].join('\n'),
     };
   };
@@ -332,7 +351,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       (info as AgentInfo & { roomName?: string; role?: string }).roomName = roomName;
       (info as AgentInfo & { roomName?: string; role?: string }).role = role;
       info.renameCap = caps(info.adapterId ?? 'copilot').renameSession; // spec 059: what a rename does in the agent app
-      if (opts.names === 'long') info.alias = (SIM_LONG_NAMES[i % SIM_LONG_NAMES.length] + ' ' + (i + 1)).padEnd(60, '.').slice(0, 60);
+      if (opts.names === 'long' && i !== 2) info.alias = (SIM_LONG_NAMES[i % SIM_LONG_NAMES.length] + ' ' + (i + 1)).padEnd(60, '.').slice(0, 60);
       return {
         info, room, state, intent, helpers, files,
         prompt: i === 0
@@ -402,10 +421,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /* simtitles=1 (spec 001/002 deltas 2026-10-18): titles for a few main agents, two of them in one folder and one long enough to be ellipsized */
     if (opts.titles) {
       const SIM_TITLES = ['Fix login bug', 'Release notes for v0.3', 'Review PR 121: contract clause parser', 'Rename public tool find_company and update every call site and the docs index', 'Canton lookup edge cases'];
+      if (opts.titles === 'long') SIM_TITLES[0] = 'Morning stand-up: summarise every open pull request, flag the ones that touch the billing flows and draft the release notes for the whole week'.slice(0, 120);
       window.setTimeout(() => {
         sims.filter((s, i) => i % 3 === 0).slice(0, SIM_TITLES.length).forEach((s, i) => emit({ type: 'title', sessionId: sid(s), timestamp: now(), title: SIM_TITLES[i] }));
       }, 200);
     }
+    /* simnames=long, FR-019 (issue #536): the third agent (it waits for you, so it is also in the inbox) has no alias; its title holds a URL-like token */
+    if (opts.names === 'long') window.setTimeout(() => { const s = sims[2]; if (s) emit({ type: 'title', sessionId: sid(s), timestamp: now(), title: SIM_LONG_URL_TITLE }); }, 200);
     /* simgrants=many (spec 052 FR-141): the first agent has eight grants, some with a tool name that repeats the server name */
     if (opts.grants) {
       window.setTimeout(() => {
@@ -485,6 +507,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     let pfN = 0;
     const pf = (app: SimPF['app'], scope: SimPF['scope'], folder: string | undefined, path: string, text: string, writable = true, note?: string): SimPF =>
       ({ id: (++pfN).toString(16).padStart(32, 'a'), app, scope, folder, fileName: path.slice(path.lastIndexOf('/') + 1), path, writable, note, text });
+    // spec 043 FR-039: the simulator's Create with AI holds one request at a time, like main's `generateProfile`; `__simGenCalls`
+    // counts the (canned, free) requests that would have been paid, so a driver can check at most one per user action;
+    // `__simGenDelay` (ms) lengthens the 700 ms wait so a driver's cancel-then-reopen steps cannot race it
+    let simGenRunning = false;
     const simPF: SimPF[] = [
       pf('copilot', 'folder', SWISS, SIM_PROFILES[0].path, '---\nname: Reviewer\ndescription: Reviews changes and points at risks; never edits files\ntools: [view, grep, glob]\nmodel: sim-deep\n---\n\n# Reviewer\n\nYou review the changes in this repository. **Never edit files.**\n\n## What to check\n\n- Tests cover the new behaviour\n- No secrets in code or logs\n- Paths work on Windows, macOS and Linux\n\nAnswer with a short list of risks, most important first, and link the docs when useful: [Contributing](https://github.com/three-feathers/agent-durbar/blob/main/CONTRIBUTING.md).\n\n```sh\nnpm run typecheck && npm test\n```\n'),
       pf('copilot', 'folder', SWISS, SIM_PROFILES[2].path, '---\nname: Release helper\ndescription: Prepares release notes from merged pull requests\nmcp-servers:\n  github:\n    type: http\n---\n\nCollect the merged pull requests since the last tag and write release notes grouped by area.\n'),
@@ -711,8 +737,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (simActivity.length > 5000) simActivity.splice(0, simActivity.length - 5000);
     };
     /** Like the real broker: auto-approve under a session grant, otherwise leave the request pending. */
-    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false, kind: 'write' | 'shell' = 'write', diff?: string): boolean | 'denied' {
-      const sc = kind === 'shell' ? { key: 'shell:' + file, label: 'run ' + file } : scopeOf(file);
+    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false, kind: 'write' | 'shell' = 'write', diff?: string, scope?: SimScope & { folders?: SimScope[] }): boolean | 'denied' {
+      const sc: SimScope & { folders?: SimScope[] } = scope ?? (kind === 'shell' ? { key: 'shell:' + file, label: 'run ' + file } : scopeOf(file));
       if (!force && s.info.permMode === 'allow') { simLog(s, 'auto-allow-all', summary); return true; } // Allow all: no question asked
       if (!force && s.info.permMode === 'read-only') {
         emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: 'perm-' + sid(s) + '-' + now(), kind, summary, state: 'denied' } });
@@ -720,12 +746,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }
       const requestId = 'perm-' + sid(s) + '-' + now();
       const base = { requestId, kind, summary, scopeKey: sc.key, scopeLabel: sc.label };
-      if (s.grants.has(sc.key)) {
+      if (sc.folders ? sc.folders.every((x) => s.grants.has(x.key)) : s.grants.has(sc.key)) { // like the broker: every folder granted
         emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { ...base, state: 'approved', via: 'session' } });
         simLog(s, 'auto-session-grant', summary);
         return true;
       }
-      s.perm = { ...base, file, cont };
+      s.perm = { ...base, file, cont, ...(sc.folders ? { folders: sc.folders } : {}) };
       s.state = 'waiting';
       emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}) } });
       return false;
@@ -830,7 +856,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           break;
         case 'waiting': {
           const w = codexFileReq(s) ?? WAIT_REQ[s.info.name] ?? { kind: 'write' as const, summary: 'Edit ' + s.files[0], target: s.files[0] };
-          askWrite(s, w.target, w.summary, 'tool', s.intent, true, w.kind, w.diff);
+          askWrite(s, w.target, w.summary, 'tool', s.intent, true, w.kind, w.diff, w.scope);
           break;
         }
         case 'error':
@@ -985,7 +1011,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, token, ...(vars.length ? { vars } : {}), items: list.map((app) => {
           const cur = gLists[app].find((x) => x.name === i.name);
           const err = app === 'codex' && i.name.includes('.') ? 'Codex needs a name of letters, digits, "_" or "-" (no dots).' : app === 'codex' && i.transport === 'sse' ? 'Codex takes http servers only, not sse.' : undefined;
-          return { app, label: G_LABEL[app], file: G_FILE[app], exists: true, entry: gEntry(app, i, mode === 'plain' ? 'plain' : 'ref'), ...(cur ? { conflict: true, current: { ...cur } } : {}), ...(err ? { error: err } : {}) };
+          return { app, label: G_LABEL[app], file: G_FILE[app], exists: true, entry: gEntry(app, i, mode === 'plain' ? 'plain' : 'ref'), ...(cur ? { conflict: true, current: { ...cur } } : {}), ...(err ? { error: err } : {}), ...(app === 'copilot' && vars.length ? { note: 'Not verified for Copilot: whether the Copilot CLI replaces ${NAME} with the variable\'s value. Check the server starts in a Copilot session.' } : {}) };
         }) };
       },
       mcpGlobalApply: async (token, replace) => {
@@ -1191,10 +1217,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         /* what the last `mcp` event said wins over the canned rule, as main's live list does for a real session */
         const reported = (n: string): ReturnType<typeof simServer> => { const m = live ? s.mcpLive?.find((x) => x.name === n) : undefined; return m ? { status: s.mcpOff?.has(n) ? 'disabled' : m.status, error: m.error, errorClass: m.errorClass } : simServer(s, idx, n, live); };
         const known = new Set([...fakeCli.map((c) => c.name), ...extrasOf(s.info.cwd).map((v) => v.name)]);
+        const toolsOffOf = (n: string) => (simToolsOff[s.info.cwd]?.[n] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[n] ?? [])] } : {});
         const servers = [
-          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, ...reported(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}), sources: gSources(a.name, false), ...(simToolsOff[s.info.cwd]?.[a.name] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[a.name] ?? [])] } : {}) })),
-          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}), sources: gSources(v.name, true), ...(simToolsOff[s.info.cwd]?.[v.name] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[v.name] ?? [])] } : {}) })),
-          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name) })) : []),
+          /* spec 069 FR-061: this folder's turned-off tools */
+          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, ...reported(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), sources: gSources(a.name, false), ...toolsOffOf(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
+          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), sources: gSources(v.name, true), ...toolsOffOf(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
+          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name) })) : []),
         ];
         return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true };
       },
@@ -1216,11 +1244,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         await new Promise((r) => setTimeout(r, 250));
         const canned: Record<string, [string, string?][]> = {
           github: [['search_issues', 'Search issues and pull requests in a repository'], ['get_pull_request', 'Get one pull request with its files and checks'], ['create_issue', 'Open a new issue'], ['list_commits', 'List the commits of a branch'], ['get_file_contents', 'Read a file at a ref']],
-          'github-mcp-server': [['get_me', 'Your GitHub account'], ['search_code', 'Search code on GitHub']],
+          // `search` is also a tool of my-notes (two servers, one tool name: spec 069 review on PR 503); `run query` cannot be turned off (FR-063)
+          'github-mcp-server': [['get_me', 'Your GitHub account'], ['search_code', 'Search code on GitHub'], ['search', 'Search GitHub'], ['run query', 'A tool name with a space']],
           playwright: [['browser_navigate', 'Open a URL in the browser'], ['browser_click', 'Click an element'], ['browser_snapshot', 'Accessibility snapshot of the page'], ['browser_take_screenshot']],
           'docs-search': [],
         };
-        if (name === 'my-notes' && s.info.id === 'sim-6') return { ok: false, error: 'my-notes is not connected: spawn notes-mcp ENOENT' };
+        /* the same state the row shows (spec 058's canned failures; a Restart fixes them): only a running server lists tools */
+        const st = simServer(s, sims.indexOf(s), name, true);
+        if (st.status && st.status !== 'connected') return { ok: false, error: name + ' is not connected' + (st.error ? ': ' + st.error : ' (' + st.status + ')') };
         const list = canned[name] ?? [['search', 'Search the notes'], ['read_note', 'Read one note by its title']];
         return { ok: true, total: list.length, tools: list.map(([n, d]) => ({ name: n, ...(d ? { description: d } : {}) })) };
       },
@@ -1439,7 +1470,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, profile: p };
       },
       // spec 043 FR-017: profile files in memory
-      listProfileFiles: async () => ({ ok: true, folders: pfFolders(), files: simPF.map(pfInfo) }),
+      listProfileFiles: async () => ({ ok: true, folders: pfFolders(), files: simPF.map(pfInfo), userDirs: { copilot: '~/.copilot/agents', claude: '~/.claude/agents' } }),
       readProfileFile: async (fileId) => {
         const f = simPF.find((x) => x.id === fileId);
         return f ? { ok: true as const, info: pfInfo(f), text: f.text, sha256: pfHash(f.text), eol: 'lf' as const } : { ok: false as const, error: 'That profile file is not in the list any more.' };
@@ -1453,7 +1484,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true as const, sha256: pfHash(f.text), info: pfInfo(f) };
       },
       createProfileFile: async (app, place, name, template, text) => {
-        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) return { ok: false as const, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) || name.includes('..') || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(name)) return { ok: false as const, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
         const folder = place === 'user' ? undefined : pfFolders().find((x) => x.id === place)?.path;
         if (place !== 'user' && !folder) return { ok: false as const, error: 'That folder is not in the office any more: choose where to save it again.' };
         const dir = place === 'user' ? (app === 'copilot' ? '~/.copilot/agents' : '~/.claude/agents') : folder + (app === 'copilot' ? '/.github/agents' : '/.claude/agents');
@@ -1462,30 +1493,42 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         // the shared templates (src/shared/profiletemplates.ts), loaded after exports-shim.js; read at call time
         const tpl = (self as unknown as { exports?: { profileTemplate?: (a: string, n: string, k?: string) => string } }).exports?.profileTemplate;
         if (!tpl) return { ok: false as const, error: 'The templates are not loaded.' };
-        const f = pf(app, place === 'user' ? 'user' : 'folder', folder, file, typeof text === 'string' ? text : tpl(app, name, template === 'standard' ? 'standard' : 'success')); // text: a reviewed AI draft (FR-024)
+        const f = pf(app, place === 'user' ? 'user' : 'folder', folder, file, typeof text === 'string' ? text : tpl(app, name, template === 'standard' ? 'standard' : 'success')); // text: a reviewed AI draft (FR-029)
         simPF.push(f);
         return { ok: true as const, id: f.id, info: pfInfo(f) };
       },
-      // spec 043 FR-025: a canned Agent Success Profile from the answers (no credits), checked like a real reply
+      // spec 043 FR-030: a canned Agent Success Profile from the answers (no credits), checked like a real reply
       generateProfile: async (req) => {
-        type PT = { profileTemplate(a: string, n: string, k?: string): string; PROFILE_QUESTIONS: { id: string; section: string }[]; validateGeneratedProfile(t: string, i: unknown, p: (t: string) => unknown): { ok: true; text: string; warnings: string[] } | { ok: false; error: string } };
+        type PT = { profileTemplate(a: string, n: string, k?: string): string; PROFILE_QUESTIONS: { id: string; section: string }[]; validateGeneratedProfile(t: string, i: unknown, p: (t: string) => unknown): { ok: true; text: string; warnings: string[]; extraTools: string[] } | { ok: false; error: string }; parseToolList(l: unknown): { ok: true; tools: string[] } | { ok: false; error: string }; DEFAULT_READ_TOOLS: Record<string, string[]> };
         const T = (self as unknown as { exports?: PT }).exports;
         const PE = (window as unknown as { DurbarProfileEditor?: { parseFrontmatter(t: string): unknown } }).DurbarProfileEditor;
         if (!T || !T.validateGeneratedProfile || !PE) return { ok: false as const, error: 'The templates are not loaded.' };
+        const tl = T.parseToolList(req.tools);
+        if (!tl.ok) return { ok: false as const, error: tl.error };
+        if (simGenRunning) return { ok: false as const, busy: true as const, error: 'The first request is still running on the agent app and may be charged. Create is available again when it ends.' };
         if (!caps(String(req.by)).oneShot) return { ok: false as const, error: 'That agent app cannot write a profile here. Pick an installed, signed-in one.' };
-        await new Promise((r) => window.setTimeout(r, 700));
+        simGenRunning = true;
+        const w = window as unknown as { __simGenCalls?: number; __simGenDelay?: number };
+        w.__simGenCalls = (w.__simGenCalls ?? 0) + 1;
+        try {
+          await new Promise((r) => window.setTimeout(r, Math.min(Math.max(Number(w.__simGenDelay) || 700, 0), 10_000))); // a driver may lengthen the wait
+        } finally {
+          simGenRunning = false;
+        }
         const said = req.mode === 'describe' ? String(req.description ?? '') : Object.values(req.answers ?? {}).join(' ');
         const summary = req.mode === 'describe' ? said : String((req.answers ?? {}).title || said);
         const spend = req.by === 'claude' ? { costUsd: 0.003 } : req.by === 'copilot' ? { nanoAiu: 15_000_000 } : {};
         if (/\bfail\b/i.test(said)) return { ok: false as const, error: 'The agent app gave no answer.', ...spend };
         let text = T.profileTemplate(req.app, req.name, 'success').replace(/^description: .*$/m, 'description: ' + (summary.slice(0, 120).replace(/[:#\n]/g, ' ').trim() || 'A focused agent'));
+        // a canned reply that uses every tool it may (FR-032), so the granted-tools note shows in the simulator too
+        if (tl.tools.length) { const all = [...(T.DEFAULT_READ_TOOLS[req.app] ?? []), ...tl.tools].join(', '); text = text.replace(/^tools: .*$/m, 'tools: ' + (req.app === 'copilot' ? '[' + all + ']' : all)); }
         const a = req.answers ?? {};
         for (const q of T.PROFILE_QUESTIONS) {
           const v = req.mode === 'describe' ? (q.id === 'title' ? said.slice(0, 200) : '') : a[q.id];
           if (v) text = text.replace(new RegExp('(## ' + q.section + '\\n\\n)[^\\n]*'), (_m, h: string) => h + v);
         }
-        const v = T.validateGeneratedProfile(text, { app: req.app, name: req.name, mode: req.mode, description: req.description, answers: req.answers }, (t) => PE.parseFrontmatter(t));
-        return v.ok ? { ok: true as const, text: v.text, warnings: v.warnings, by: req.by === 'claude' ? 'Claude Code' : req.by === 'codex' ? 'Codex' : 'GitHub Copilot', ...spend } : { ok: false as const, error: v.error, ...spend };
+        const v = T.validateGeneratedProfile(text, { app: req.app, name: req.name, mode: req.mode, description: req.description, answers: req.answers, tools: tl.tools }, (t) => PE.parseFrontmatter(t));
+        return v.ok ? { ok: true as const, text: v.text, warnings: v.warnings, extraTools: v.extraTools, by: req.by === 'claude' ? 'Claude Code' : req.by === 'codex' ? 'Codex' : 'GitHub Copilot', ...spend } : { ok: false as const, error: v.error, ...spend };
       },
       openProfileInVSCode: async (fileId) => {
         const f = simPF.find((x) => x.id === fileId);
@@ -2032,10 +2075,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       resolvePermission: async (id, req, approve, remember) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || !s.perm || s.perm.requestId !== req) return;
-        const { cont, file, ...p } = s.perm;
+        const { cont, file, folders, ...p } = s.perm;
         s.perm = undefined;
         const keep = approve && remember === true;
-        if (keep) { s.grants.set(p.scopeKey, p.scopeLabel); grantsEvent(s); }
+        // like the broker (review on #470): a write in several folders grants each folder, one chip each
+        if (keep) { for (const g of folders ?? [{ key: p.scopeKey, label: p.scopeLabel }]) s.grants.set(g.key, g.label); grantsEvent(s); }
         emit({ type: 'permission', sessionId: id, timestamp: now(), permission: { ...p, state: approve ? 'approved' : 'denied', via: 'user', remembered: keep || undefined } });
         simLog(s, !approve ? 'denied' : keep ? 'allowed-session' : 'allowed-once', p.summary);
         s.state = 'working';

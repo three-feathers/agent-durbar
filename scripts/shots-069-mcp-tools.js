@@ -1,7 +1,7 @@
 /*
  * Spec 069 part 3 (T033): an agent's MCP dialog: expand a server row to see its tools (lazy, loading/empty/failed/not-running states),
- * Start/Stop names on the switch, Remove… on servers of an agent app's list or this folder, source chips. Simulator only (canned tools; no
- * AI credits).
+ * Remove… on servers of an agent app's list or this folder, source chips, on top of spec 058's row (state word, hint, Details / Copy).
+ * Simulator only (canned tools; no AI credits).
  *
  *   npm run build
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
@@ -11,7 +11,11 @@
  * - sim-1 (running): every row's name is a button with aria-expanded; github opens "5 tools" with names and one-line descriptions; the
  *   focus stays on the toggle; a second press closes it; docs-search style empty server says "This server lists no tools" (when present).
  * - sim-6: my-notes failed: its tools say "Could not list the tools: ..." (masked text from the sim).
- * - The switch is named "Stop <server> for <agent> in this session" / "Start ...".
+ * - The switch keeps spec 058's verb with this session's scope: "Switch off <server> for <agent> in this session" / "Switch on ..."; with no
+ *   running session "... when its session starts" (review on #499).
+ * - Remove on a server that is in an agent app's list and the folder's extras lists both places, ticked (the folder row says its stored
+ *   secret values are deleted); cancelling the review keeps both copies; confirming it removes both (re-review on #499).
+ * - sim-6's failed my-notes keeps spec 058's state word and Details next to the tools toggle (one row, no second repaint path).
  * - Remove… is on github (in the Copilot and Claude Code lists) and opens the remove choice; built-in github-mcp-server has none.
  * - An idle agent with no running session: "Start the session to see its tools."
  * - Text >= 10.5px, the dialog fits. Shots: 069-mcp-tools-<w>x<h>.png. Prints "[069t] PASS".
@@ -47,7 +51,7 @@ module.exports = async (ctx) => {
     const toggles = await js(`[...document.querySelectorAll('#agMcp li.srv')].map(li=>{const b=li.querySelector('button[data-tools]');return b?b.getAttribute('aria-expanded'):'none'})`);
     assert.ok(toggles.every((x) => x === 'false'), 'every row has a closed tools toggle: ' + JSON.stringify(toggles));
     const sw = await js(`document.querySelector('#agMcp li[data-n="github"] button.swt').getAttribute('aria-label')`);
-    assert.match(sw, /^(Stop|Start) github for .+ in this session$/);
+    assert.match(sw, /^Switch (off|on) github for .+ in this session$/);
     assert.ok(await js(`!!document.querySelector('#agMcp li[data-n="github"] [data-mrm]')`), 'Remove… on a server of an agent app list');
     assert.ok(!(await js(`!!document.querySelector('#agMcp li[data-n="github-mcp-server"] [data-mrm]')`)), 'no Remove on the built-in server');
     await press('github');
@@ -90,6 +94,8 @@ module.exports = async (ctx) => {
 
     // ---- a failed server ----
     await openMcp('sim-6');
+    assert.match(await js(`document.querySelector('#agMcp li[data-n="my-notes"] .mst-w').textContent`), /Failed/, 'spec 058 state word on the row');
+    assert.ok(await js(`!!document.querySelector('#agMcp li[data-n="my-notes"] button[data-det]')`), 'spec 058 Details beside the tools toggle');
     await press('my-notes');
     assert.ok(await until(`/Could not list the tools/.test((document.querySelector('#agMcp li[data-n="my-notes"] .mcp-tools')||{}).textContent||'')`), 'a failed server says why');
     await closeDlg();
@@ -99,6 +105,9 @@ module.exports = async (ctx) => {
     if (idle) {
       await openMcp(idle);
       if (/no running session/.test(await js(`document.querySelector('#scrDlg .dbody').textContent`))) {
+        // review on #499: no session, so the switch does not say "in this session"
+        const isw = await js(`(document.querySelector('#agMcp button.swt:not([disabled])')||{getAttribute:()=>''}).getAttribute('aria-label')`);
+        if (isw) assert.match(isw, /when its session starts$/, isw);
         const first = await js(`document.querySelector('#agMcp button[data-tools]').dataset.tools`);
         await press(first);
         assert.ok(await until(`/Start the session to see its tools/.test((document.querySelector('#agMcp .mcp-tools')||{}).textContent||'')`), 'not running: nothing asked');
@@ -106,5 +115,59 @@ module.exports = async (ctx) => {
       await closeDlg();
     }
   }
+  // review on #503: focus keyed on server + tool. Two open servers share the tool name `search`; a real Space on the second server's box
+  // toggles that box and the focus stays on it (not on the first server's `search`); a box that cannot change is focusable, says why, and
+  // Space leaves it as it is.
+  await openMcp('sim-1');
+  await press('my-notes');
+  assert.ok(await until(`!!document.querySelector('#agMcp input[data-tool="search"][data-tsrv="my-notes"]')`), 'my-notes tools');
+  await press('github-mcp-server');
+  assert.ok(await until(`!!document.querySelector('#agMcp input[data-tool="search"][data-tsrv="github-mcp-server"]')`), 'github-mcp-server tools');
+  const sel = '#agMcp input[data-tool="search"][data-tsrv="github-mcp-server"]';
+  await js(`document.querySelector(${jsLiteral(sel)}).focus()`);
+  await H.key('Space');
+  assert.ok(await until(`document.querySelector(${jsLiteral(sel)}).checked===false`), 'Space turned the second server\'s search off');
+  assert.ok(await until(`(()=>{const f=document.activeElement;return !!f&&f.dataset.tool==='search'&&f.dataset.tsrv==='github-mcp-server'})()`), 'focus stays on github-mcp-server / search after the repaint, not my-notes / search: ' + (await js(`JSON.stringify(document.activeElement&&document.activeElement.dataset)`)));
+  assert.strictEqual(await js(`document.querySelector('#agMcp input[data-tool="search"][data-tsrv="my-notes"]').checked`), true, 'the other server\'s search is untouched');
+  await H.key('Space');
+  assert.ok(await until(`document.querySelector(${jsLiteral(sel)}).checked===true`), 'and back on');
+  const odd = '#agMcp input[data-tool="run query"][data-tsrv="github-mcp-server"]';
+  assert.deepStrictEqual(await js(`(()=>{const x=document.querySelector(${jsLiteral(odd)});const why=document.getElementById(x.getAttribute('aria-describedby')||'');return [x.disabled,x.getAttribute('aria-disabled'),x.tabIndex>=0,!!why&&why.getClientRects().length>0&&/can't be turned off/.test(why.textContent)]})()`), [false, 'true', true, true], 'focusable, aria-disabled, with a visible reason');
+  await js(`document.querySelector(${jsLiteral(odd)}).focus()`);
+  await H.key('Space');
+  await settle();
+  assert.strictEqual(await js(`document.querySelector(${jsLiteral(odd)}).checked`), true, 'Space does not change it');
+  // the list closes while a box has the focus: the focus goes to that server's tools toggle, not to body
+  await js(`document.querySelector(${jsLiteral(sel)}).focus()`);
+  await js(`document.querySelector('#agMcp button[data-tools="github-mcp-server"]').click()`);
+  await js(`document.querySelector(${jsLiteral(sel)})&&document.querySelector(${jsLiteral(sel)}).focus()`);
+  assert.ok(await until(`!document.querySelector(${jsLiteral(sel)})&&document.activeElement&&document.activeElement.dataset.tools==='github-mcp-server'`), 'focus on the server\'s tools toggle after the list closed');
+  await closeDlg();
+
+  // review on #499: a server that is in an agent app's list AND this folder's extras: Remove offers both places, ticked, and removes both
+  const ada = await js(`(()=>{const a=__durbarSimUi.agents().find(x=>!x.parent&&/mcp-swiss$/.test(x.room||''));return a?a.id:null})()`);
+  assert.ok(ada, 'an agent in mcp-swiss');
+  assert.ok(await js(`(async()=>{const b=__durbarSimUi.bridge();const p=await b.mcpGlobalPreview({name:'playwright',transport:'stdio',command:'npx',args:['@playwright/mcp@latest'],env:[],headers:[]},['codex'],'ref');const r=await b.mcpGlobalApply(p.token,[]);return !!(r&&r.ok)})()`), 'playwright added to the Codex list too');
+  await openMcp(ada);
+  assert.match(await js(`document.querySelector('#agMcp li[data-n="playwright"] .srv-top').textContent`), /Codex.*Durbar folder|Durbar folder.*Codex/s);
+  await js(`document.querySelector('#agMcp li[data-n="playwright"] [data-mrm]').click()`);
+  assert.ok(await until(`!!document.querySelector('#scrDlg [name=gFolder]')`), 'the picker lists the folder copy');
+  assert.deepStrictEqual(await js(`[...document.querySelectorAll('#scrDlg .gapps input')].map(x=>(x.value==='on'?'folder':x.value)+':'+x.checked)`), ['codex:true', 'folder:true'], 'every place, all ticked');
+  assert.match(await js(`document.querySelector('#scrDlg [name=gFolder]').closest('label').textContent`), /stored secret values are deleted/, 'the folder row says its stored values go');
+  // re-review on #499: cancelling the file review removes nothing, the folder copy included
+  await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(x=>x.textContent==='Review…').click()`);
+  assert.ok(await until(`!!document.querySelector('#scrDlg .gpvl li[data-extra]')`), 'the folder copy is an entry of the review');
+  await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(x=>x.textContent==='Cancel').click()`);
+  assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li[data-n="playwright"]');return !!li&&/Durbar folder/.test(li.querySelector('.srv-top').textContent)&&/Codex/.test(li.querySelector('.srv-top').textContent)})()`, 4000),
+    'a cancelled review keeps both copies: ' + (await js(`(document.querySelector('#agMcp li[data-n="playwright"] .srv-top')||{}).textContent||'(no row)'`)));
+  await js(`document.querySelector('#agMcp li[data-n="playwright"] [data-mrm]').click()`);
+  assert.ok(await until(`!!document.querySelector('#scrDlg [name=gFolder]')`), 'the picker again');
+  await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(x=>x.textContent==='Review…').click()`);
+  assert.ok(await until(`!!document.querySelector('#scrDlg .gpvl li[data-extra]')`), 'the Codex file and the folder copy are reviewed');
+  await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(x=>/^Remove from 2 places$/.test(x.textContent)).click()`);
+  // both copies gone: the row is gone, or (the running session still has it until it ends) shows neither source
+  assert.ok(await until(`(()=>{if(!document.querySelector('#agMcp'))return false;const li=document.querySelector('#agMcp li[data-n="playwright"]');return !li||!/Codex|Durbar folder/.test(li.querySelector('.srv-top').textContent)})()`, 4000),
+    'both copies gone: ' + (await js(`(document.querySelector('#agMcp li[data-n="playwright"] .srv-top')||{}).textContent||'(no row)'`)));
+  await closeDlg();
   console.log('[069t] PASS');
 };

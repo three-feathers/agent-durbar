@@ -15,25 +15,92 @@ for (const n of names) {
 const src = fs.readFileSync(SUITE, 'utf8');
 assert.ok(/shell: false/.test(src) && !/shell: true/.test(src) && !/execSync\(|exec\(/.test(src), 'the runner spawns without a shell');
 assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary directly');
+// spec 008 FR-112: a syntax error fails at once (node --check, no shell) before any Electron starts
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { syntaxErrors } = require(SUITE) as { syntaxErrors: (f: string[]) => { file: string; error: string }[] };
+  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-syntax-'));
+  const good = path.join(tmp, 'good.js'), bad = path.join(tmp, 'bad.js');
+  fs.writeFileSync(good, 'module.exports = async (ctx) => { await ctx.sleep(1); };\n');
+  fs.writeFileSync(bad, 'module.exports = async (ctx) => { await ctx.sleep(1) ;\n');
+  assert.deepStrictEqual(syntaxErrors([good]), [], 'a driver that parses passes');
+  const errs = syntaxErrors([good, bad]);
+  assert.ok(errs.length === 1 && errs[0].file.endsWith('bad.js') && /SyntaxError/.test(errs[0].error), 'a driver with a syntax error is reported with node\'s message');
+  fs.rmSync(tmp, { recursive: true, force: true });
+  assert.deepStrictEqual(syntaxErrors(names.map((n) => path.join(ROOT, 'scripts', n.split(' ')[0] + '.js')).concat(path.join(ROOT, 'scripts', 'driver-helpers.js'))), [], 'every listed driver and the helpers parse');
+  assert.ok(src.indexOf('syntaxErrors([...new Set(') > 0 && src.indexOf('syntaxErrors([...new Set(') < src.indexOf('await Promise.all(Array.from({ length: jobs }, worker))'), 'the syntax pass runs before the first driver starts');
+  // the real runner: a broken driver named with --only stops before Electron, at once, with the file and exit 1
+}
 const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
 assert.ok(/app\.exit\(failed \? 1 : 0\)/.test(main), 'a failing driver exits 1 (FR-090)');
 assert.ok(/dev\.DURBAR_DRIVER \|\| dev\.DURBAR_SHOT \? \{ enableLargerThanScreen: true \}/.test(main), 'test windows may be larger than the screen (FR-093, macOS runners)');
-const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ui-platforms.yml'), 'utf8');
+// ---- CI layout (spec 008 FR-104..FR-110, owner decision 2026-10-22): few runner tickets per PR, every check still somewhere ----
+const WF = path.join(ROOT, '.github', 'workflows');
+const ci = fs.readFileSync(path.join(WF, 'ci.yml'), 'utf8');
+/** The `jobs:` blocks of a workflow, by job id (2-space keys under `jobs:`). */
+const jobsOf = (y: string): Record<string, string> => {
+  const body = y.slice(y.search(/^jobs:/m));
+  const out: Record<string, string> = {};
+  const re = /^ {2}([\w-]+):\r?\n([\s\S]*?)(?=^ {2}[\w-]+:\r?\n|(?![\s\S]))/gm;
+  for (let m = re.exec(body); m; m = re.exec(body)) out[m[1]] = m[2];
+  return out;
+};
+const ciJobs = jobsOf(ci);
+// FR-104: no separate "What changed" job, and no job waits for another one in a pull request
+assert.ok(!ciJobs.changes && !/needs:/.test(ci), 'ci.yml: no changes job and no needs (each job decides what to run itself)');
+for (const j of ['build-test', 'package-smoke', 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
+const changes = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
+assert.ok(changes.includes('git diff --name-only HEAD^1 HEAD') && /"\$\{EVENT_NAME:-\}" != "pull_request"/.test(changes), 'ci-changes.sh: diff of the test merge commit on PRs, everything on other events');
+// the required check names of the main ruleset still report on every pull request
+for (const name of ['name: Build and test (${{ matrix.os }})', 'name: Package smoke (unpacked Linux app)', 'name: Office layout check (xvfb)']) assert.ok(ci.includes(name), `ci.yml keeps the required check ${name}`);
+const bt = ciJobs['build-test'];
+for (const os of ['ubuntu-latest', 'windows-latest', 'macos-latest']) assert.ok(bt.includes(`- os: ${os}`), `Build and test reports for ${os}`);
+// FR-106: macOS is a report-only Linux job on pull requests and merge queue entries, the real build and test on every other event
+assert.ok(bt.includes(`runner: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'ubuntu-latest' || 'macos-latest' }}`) && bt.includes(`real: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'no' || 'yes' }}`), 'macOS build and test: Linux report on PR and queue, real macOS otherwise');
+assert.ok(/^ {2}schedule:/m.test(ci) && /^ {2}push:\r?\n {4}branches: \[main\]/m.test(ci), 'ci.yml runs nightly and on pushes to main (where macOS really runs)');
+// FR-105: one office job runs theme geometry and the whole office layout in parallel parts
+const office = ciJobs['office-check'];
+assert.ok(office.includes('node scripts/check-theme-geometry.js') && office.includes('node scripts/check-parallel.js') && /CHECK_SHARDS: '\d+'/.test(office) && office.includes(`CHECK_MOTION: '1'`), 'ci.yml: one office job, geometry and all parts, motion on');
+// FR-108: ui-platforms is one job per OS with every check; macOS nightly and by hand
+const wf = fs.readFileSync(path.join(WF, 'ui-platforms.yml'), 'utf8');
 for (const os of ['ubuntu-latest', 'macos-latest', 'windows-latest']) assert.ok(wf.includes(os), `the workflow runs on ${os}`);
 for (const step of ['check-theme-geometry.js', 'check-office-overlap.js', 'check-mac-titlebar.js', 'ui-suite.js']) assert.ok(wf.includes(step), `the workflow runs ${step}`);
-// spec 008 FR-100: three parts per OS cover the whole office layout (2 halves) and every driver; the only part left out is Linux's
-// second half on pull requests and pushes, where ci.yml's office shards run the same check in the same event
-assert.ok(/part: \[layout-1, layout-2, drivers\]/.test(wf), 'three parts per OS');
-assert.ok(/OFFICE_SHARDS: '2'/.test(wf) && /OFFICE_SHARD: \$\{\{ matrix\.part == 'layout-2' && '1' \|\| '0' \}\}/.test(wf), 'the two layout parts are the two office halves');
-const excl = (/exclude: (.*)/.exec(wf) || [])[1] || '';
-assert.ok(excl.includes(`github.event_name == 'pull_request' || github.event_name == 'push'`) && excl.includes('"os":"ubuntu-latest","part":"layout-1"') && excl.includes('"os":"ubuntu-latest","part":"layout-2"') && (excl.match(/"os":"ubuntu-latest"/g) || []).length === 2 && (excl.match(/"os"/g) || []).length === 2, 'only the Linux layout parts, only on PR and push, are left out');
-assert.ok(wf.includes(`(runner.os != 'Linux' && matrix.part == 'layout-1') || (runner.os == 'Linux' && matrix.part == 'drivers')`), 'theme geometry runs on every OS (in the drivers job on Linux)');
-const ci = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
-const shardJobs = (ci.match(/- \{ shard: \d+, index: \d+ \}/g) || []).length;
-assert.ok(shardJobs >= 2 && new RegExp(`OFFICE_SHARDS: ${shardJobs}\\r?\\n`).test(ci) && ci.includes(`shard }}/${shardJobs}`), 'ci.yml: one office shard job per shard (FR-099)');
-assert.ok(wf.includes("OFFICE_HERE: ${{ (matrix.os != 'ubuntu-latest' || (github.event_name != 'pull_request' && github.event_name != 'push'))") && ci.includes('needs.changes.outputs.code') && /^ {2}push:\r?\n {4}branches: \[main\]/m.test(ci), 'Linux skips the office layout here only for the events where ci.yml runs it');
+assert.ok(!/part:/.test(wf) && !/OFFICE_SHARD/.test(wf), 'one job per OS: the office layout runs whole, no parts');
+assert.ok(wf.includes(`os: \${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest","windows-latest"]') }}`), 'macOS UI checks only nightly and by hand');
+assert.ok(/^ {2}schedule:/m.test(wf), 'ui-platforms.yml runs nightly');
+assert.ok(wf.includes("OFFICE_HERE: ${{ (matrix.os != 'ubuntu-latest' || (github.event_name != 'pull_request' && github.event_name != 'push'))"), 'Linux skips the office layout here only for the events where ci.yml runs it');
 // FR-098: every workflow with a required check also runs on merge queue entries
-for (const f of ['ci.yml', 'spec-kit.yml']) assert.ok(/^ {2}merge_group:/m.test(fs.readFileSync(path.join(ROOT, '.github', 'workflows', f), 'utf8')), `${f} runs on merge_group`);
+const sk = fs.readFileSync(path.join(WF, 'spec-kit.yml'), 'utf8');
+for (const [f, y] of [['ci.yml', ci], ['spec-kit.yml', sk]]) assert.ok(/^ {2}merge_group:/m.test(y), `${f} runs on merge_group`);
+// FR-109: the Spec Kit gate re-runs on description edits (Spec-Exempt line), not on label changes
+assert.ok(/types: \[opened, synchronize, reopened, edited, ready_for_review\]/.test(sk) && !/types: \[[^\]]*labeled/.test(sk), 'spec-kit.yml: edited yes, labeled/unlabeled no');
+// FR-107: pull request workflows skip drafts, run again when marked ready, and cancel superseded runs, never runs on main
+for (const f of ['ci.yml', 'ui-platforms.yml', 'spec-kit.yml', 'install-check.yml', 'installed-app.yml', 'packaged-check.yml', 'pages.yml']) {
+  const y = fs.readFileSync(path.join(WF, f), 'utf8');
+  assert.ok(/^ {2}pull_request:\r?\n {4}types: \[[^\]]*ready_for_review\]/m.test(y), `${f}: runs again when a draft is marked ready`);
+  const jobs = jobsOf(y);
+  for (const [id, body] of Object.entries(jobs)) if (!/^ {4}needs:/m.test(body)) assert.ok(/^ {4}if: (.*!github\.event\.pull_request\.draft|github\.event_name == 'workflow_dispatch' && )/m.test(body), `${f} ${id}: skipped on a draft (or never on a PR)`);
+  assert.ok(/group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.(run_id|ref) \}\}/.test(y) && /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/.test(y), `${f}: one concurrency group per PR, cancelling only PR runs`);
+}
+// FR-106: macOS runs on pull requests nowhere (installed app, packaged check and install check too) and nightly failures are reported
+for (const f of ['installed-app.yml', 'packaged-check.yml']) {
+  const y = fs.readFileSync(path.join(WF, f), 'utf8');
+  assert.ok(/^ {2}schedule:/m.test(y) && y.includes(`(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&`) && !/os: \[/.test(y), `${f}: macOS only nightly and by hand`);
+}
+const ic = fs.readFileSync(path.join(WF, 'install-check.yml'), 'utf8');
+assert.ok(/^ {2}schedule:/m.test(ic) && ic.includes(`map(select(startswith("macos") | not))`), 'install-check.yml: no macOS on pull requests, weekly on every OS');
+const watch = fs.readFileSync(path.join(WF, 'nightly-watch.yml'), 'utf8');
+assert.ok(!/pull_request/.test(watch) && !/actions\/checkout/.test(watch) && watch.includes(`github.event.workflow_run.event == 'schedule'`), 'nightly-watch.yml: only scheduled runs, never PR code');
+const watched = ((/workflows: \[(.*)\]/.exec(watch) || [])[1] || '').split(',').map((x) => x.trim());
+const wfNames = new Set(fs.readdirSync(WF).filter((f) => f.endsWith('.yml')).map((f) => (/^name: (.*)$/m.exec(fs.readFileSync(path.join(WF, f), 'utf8')) || [])[1]));
+for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'Install check']) assert.ok(watched.includes(w) && wfNames.has(w), `nightly-watch.yml watches "${w}" (a real workflow name)`);
+// FR-111 (owner decision 2026-10-22): theme layout checks run Clean Office and Retro on pull requests, every theme elsewhere
+assert.ok(office.includes(`CHECK_ALL_THEMES: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}`) && wf.includes(`CHECK_ALL_THEMES: \${{ github.event_name == 'pull_request' && '0' || '1' }}`), 'every theme on main, nightly and by hand');
+const geo = fs.readFileSync(path.join(ROOT, 'scripts', 'check-theme-geometry.js'), 'utf8');
+assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'retro'/.test(geo) && /const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user,pink-studio'/.test(geo), 'check-theme-geometry: Retro by default, all with CHECK_ALL_THEMES=1');
+assert.ok(/CHECK_ALL_THEMES === '1' \? \[[^\]]*durbar-japanese[^\]]*\] : \['clean', 'retro'\]/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean and Retro by default');
+// FR-110: every job of every workflow has a time limit
+for (const f of fs.readdirSync(WF).filter((x) => x.endsWith('.yml'))) for (const [id, body] of Object.entries(jobsOf(fs.readFileSync(path.join(WF, f), 'utf8')))) assert.ok(/^ {4}timeout-minutes: /m.test(body), `${f} ${id} has timeout-minutes`);
 // ---- scripts/driver-helpers.js (spec 008 FR-097): the shared plumbing behaves as the drivers' own copies did ----
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));
@@ -142,3 +209,55 @@ for (const [what, add] of [
   ['jsLiteral from the overlap check', "const { jsLiteral } = require('./check-office-overlap.js');"],
 ]) assert.ok(checkDriverSource('x.js', clean + add + '\n').length > 0, `the guard catches ${what}`);
 console.log(`ui-suite: ${names.length} drivers listed and present; no shell; driver failures exit 1; workflow covers 3 OSes`);
+// ---- spec 008 FR-114: Electron is installed once, before any parallel job starts (PR #546: parts racing on the binary exited 126) ----
+// a promise that never settles would let node exit 0 without the rest of the checks (docs/agent-notes.md, PR #473): fail then
+let fr114Done = false;
+process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did not finish'); process.exitCode = 1; } });
+(async () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  type Step = string;
+  const { ensureElectron } = require(path.join(ROOT, 'scripts', 'ensure-electron.js')) as { ensureElectron: (o?: { spawn?: (...a: unknown[]) => { status: number | null } }) => boolean };
+  // the helper itself: one child `node -e "require('electron')"`, no shell; true only on exit 0
+  const calls: unknown[][] = [];
+  assert.strictEqual(ensureElectron({ spawn: (...a: unknown[]) => { calls.push(a); return { status: 0 }; } }), true, 'ensureElectron: exit 0 is installed');
+  assert.ok(calls.length === 1 && calls[0][0] === process.execPath && JSON.stringify(calls[0][1]) === JSON.stringify(['-e', "require('electron')"]) && (calls[0][2] as { shell?: boolean }).shell === false, 'ensureElectron: one child node, require(electron), no shell');
+  assert.strictEqual(ensureElectron({ spawn: () => ({ status: 1 }) }), false, 'ensureElectron: a failed fetch is reported');
+  for (const f of ['run-tests.js', 'check-parallel.js', 'ui-suite.js']) {
+    const s = fs.readFileSync(path.join(ROOT, 'scripts', f), 'utf8');
+    assert.ok(s.includes("require('./ensure-electron')") && !s.includes(`['-e', "require('electron')"]`), `${f} uses the shared install step, not its own copy`);
+  }
+  // check-parallel.js: the install runs once, before the first part; a failed install starts no part
+  const par = require(path.join(ROOT, 'scripts', 'check-parallel.js')) as { main: (o: object) => Promise<number>; jobs: { label: string }[] };
+  const fakeJobs = [{ label: 'a' }, { label: 'b' }, { label: 'c' }];
+  let order: Step[] = [];
+  const quiet = () => undefined;
+  let failed = await par.main({ ensure: () => { order.push('ensure'); return true; }, runJob: async (j: { label: string }) => { order.push('run ' + j.label); return 'ok'; }, available: () => Infinity, jobs: fakeJobs, workers: 3, log: quiet });
+  assert.strictEqual(failed, 0);
+  assert.deepStrictEqual(order.filter((x) => x === 'ensure'), ['ensure'], 'check-parallel: Electron installed exactly once');
+  assert.ok(order[0] === 'ensure' && order.length === 4, `check-parallel: the install comes before every part (${order.join(', ')})`);
+  order = [];
+  failed = await par.main({ ensure: () => { order.push('ensure'); return false; }, runJob: async (j: { label: string }) => { order.push('run ' + j.label); return 'ok'; }, available: () => Infinity, jobs: fakeJobs, workers: 3, log: quiet });
+  assert.ok(failed === 3 && order.join() === 'ensure', 'check-parallel: no Electron, no part started, every part counts as failed');
+  assert.ok(par.jobs.length >= 2, 'check-parallel still splits the office check into parts');
+  // ui-suite.js: the same, after the syntax pass and before the first driver
+  const suite = require(SUITE) as { main: (o: object) => Promise<void> };
+  const outDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-ensure-'));
+  const prevOut = process.env.UI_SUITE_OUT;
+  process.env.UI_SUITE_OUT = outDir;
+  const realLog = console.log;
+  console.log = quiet;
+  try {
+    order = [];
+    await suite.main({ argv: ['--only', `${names[1].split(' ')[0]},${names[2].split(' ')[0]}`], ensure: () => { order.push('ensure'); return true; }, run: async (d: { name: string }) => { order.push('run ' + d.name); return { ok: true, secs: 0, why: '', log: '' }; } });
+    assert.ok(order[0] === 'ensure' && order.length === 3 && order.filter((x) => x === 'ensure').length === 1, `ui-suite: Electron installed once, before the drivers (${order.join(', ')})`);
+    order = [];
+    await assert.rejects(suite.main({ argv: ['--only', names[1].split(' ')[0]], ensure: () => { order.push('ensure'); return false; }, run: async () => { order.push('run'); return { ok: true, secs: 0, why: '', log: '' }; } }), /no driver was started/);
+    assert.strictEqual(order.join(), 'ensure', 'ui-suite: no Electron, no driver started');
+  } finally {
+    console.log = realLog;
+    if (prevOut === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = prevOut;
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+  fr114Done = true;
+  console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
+})().catch((e) => { console.error(e); process.exitCode = 1; });

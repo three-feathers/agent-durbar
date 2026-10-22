@@ -26,6 +26,7 @@ jobs:
   cleanup:
     name: Delete merged branches older than a day
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Delete merged branches
         shell: bash

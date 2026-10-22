@@ -9,6 +9,7 @@
  * - Codex: `fileChange` items carry `changes[{path, kind, diff}]` (read: `codex app-server generate-ts`, codex-cli 0.163.0); the
  *   Codex mapper calls `codexEdit` directly.
  */
+import { codexFileChanges } from './codexModes';
 import { cleanPath, diffFile, editFile, finishEdit, partialJson, patchFiles, type EditFile, type EditInfo, type EditKind } from '../shared/edits';
 
 /** Tool names (lower case) whose calls change files. */
@@ -91,27 +92,27 @@ export function editOf(tool: string, args: unknown, partial?: boolean): EditInfo
   }
 }
 
-/** Codex `PatchChangeKind`: `{type: 'add'|'delete'|'update', move_path}` in the generated types; a plain string in older notes. */
-function codexKind(k: unknown): { kind: EditKind; movedTo?: string } {
-  const type = typeof k === 'string' ? k : isObj(k) ? s(k.type) : undefined;
-  const move = isObj(k) ? s(k.move_path) : undefined;
-  if (type === 'add') return { kind: 'create' };
-  if (type === 'delete') return { kind: 'delete' };
-  return move ? { kind: 'move', movedTo: move } : { kind: 'edit' };
-}
-
-/** Codex `fileChange.changes` (`[{path, kind, diff}]`) as an edit. */
+/**
+ * Codex `fileChange.changes` as an edit. Read once, by spec 052's `codexFileChanges` (the permission card's reader, #470), so the chat
+ * row and the card agree; the text follows the kind (`diffFile`): an add is the new file, a delete the old one, an update a hunk.
+ */
 export function codexEdit(changes: unknown, partial?: boolean): EditInfo | undefined {
   if (!Array.isArray(changes)) return undefined;
   try {
-    const files = changes.filter(isObj).map((c) => {
-      const { kind, movedTo } = codexKind(c.kind);
-      return diffFile(s(c.path) ?? '', kind, s(c.diff), movedTo);
+    const files = codexFileChanges(changes).map((c) => {
+      const kind: EditKind = c.kind === 'add' ? 'create' : c.kind === 'delete' ? 'delete' : c.movePath ? 'move' : 'edit';
+      return diffFile(c.path, kind, c.diff, kind === 'move' ? c.movePath : undefined);
     });
     return finishEdit(files, partial);
   } catch {
     return undefined;
   }
+}
+
+/** The first `*** Add|Update|Delete File:` path of a patch text, only once its line is complete (a newline follows it). */
+function patchLinePath(t: string): string | undefined {
+  const m = /^\*\*\* (?:Add|Update|Delete) File: ([^\r\n]+)\r?\n/m.exec(t);
+  return m ? m[1].trim() || undefined : undefined;
 }
 
 /** Longest argument stream kept per call (characters, FR-024). */
@@ -139,15 +140,19 @@ export class ArgStream {
     const t = this.text;
     if (/^\s*[{[]/.test(t)) {
       const m = /"(?:file_path|path|notebook_path)"\s*:\s*("(?:[^"\\]|\\.)*")/.exec(t);
-      if (!m) return undefined;
-      try {
-        return (JSON.parse(m[1]) as string) || undefined;
-      } catch {
-        return undefined;
+      if (m) {
+        try {
+          return (JSON.parse(m[1]) as string) || undefined;
+        } catch {
+          return undefined;
+        }
       }
+      // Copilot `apply_patch` as JSON (`{"input": "*** Begin Patch\n…"}`, review on #463): the patch string so far, read like raw text
+      if (!/"(?:input|patch)"\s*:/.test(t)) return undefined;
+      const p = patchText(partialJson(t.trimStart()));
+      return p === undefined ? undefined : patchLinePath(p);
     }
-    const m = /^\*\*\* (?:Add|Update|Delete) File: ([^\r\n]+)\r?\n/m.exec(t);
-    return m ? m[1].trim() || undefined : undefined;
+    return patchLinePath(t);
   }
 
   /** Add a fragment; true when the arguments should be parsed again now. */

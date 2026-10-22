@@ -10,8 +10,13 @@
  *   2. real fonts: the office check's own rules (overlap, clipping, room headers, text at least 10.5px) on the same layouts in
  *      the theme's own fonts, where a wider display font could push header parts. Motion is reduced; a few seconds per theme.
  *
- *   npm run check:geometry                     the 5 other built-in themes, scripts/fixtures/themes/check-user.json and pink-studio.json
+ *   npm run check:geometry                     Retro (dark, its own display font and art) against Clean Office
+ *   CHECK_ALL_THEMES=1 npm run check:geometry  the 5 other built-in themes, scripts/fixtures/themes/check-user.json and pink-studio.json (nightly CI)
  *   GEOMETRY_THEMES=retro,corporate npm run check:geometry
+ *
+ * Spec 008 FR-111 (owner decision 2026-10-22): pull requests check Retro only. The other styles change only colours, borders,
+ * art and the display font through themes.css, and test:theme fails the build if themes.css sets any size (spec 035 FR-010) or a
+ * manifest carries anything but known tokens and a known UI style; nightly CI runs every theme here.
  *
  * The full layout matrix in every theme stays available on demand: npm run check:themes.
  */
@@ -27,7 +32,9 @@ const SIZES = [[1440, 900], [1280, 800]];
 const SIMS = [15, 12];
 /* user packs by name: `user` (check-user.json) and the sample AI-style pack with fonts, corners, shadows and clothes (spec 070) */
 const FIXTURES = { user: 'check-user.json', 'pink-studio': 'pink-studio.json' };
-const THEMES = (process.env.GEOMETRY_THEMES || 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user,pink-studio').split(',').map((s) => s.trim()).filter(Boolean);
+const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user,pink-studio';
+/* spec 070: the Pink Studio pack (fonts, radii, shadows, clothes) runs with every theme (nightly, or GEOMETRY_THEMES=pink-studio) */
+const THEMES = (process.env.GEOMETRY_THEMES || (process.env.CHECK_ALL_THEMES === '1' ? ALL_THEMES : 'retro')).split(',').map((s) => s.trim()).filter(Boolean);
 
 /* runs in the page: the box of EVERY element of the office, the lobby and the top bar (SVG art inside excluded: scene kits draw
    their own), keyed by order and class, plus the font size of each text element; the DOM must be the same in every theme */

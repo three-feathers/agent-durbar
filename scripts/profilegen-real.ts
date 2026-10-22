@@ -1,5 +1,5 @@
 /**
- * Dev tool, USES AI CREDITS (spec 043 T015; owner-approved 2026-10-22): ONE "Create with AI" questionnaire generation through the app's
+ * Dev tool, USES AI CREDITS (spec 043 T016; owner-approved 2026-10-22): ONE "Create with AI" questionnaire generation through the app's
  * own one-shot path (`ClaudeAdapter.generateText`: haiku, no tools, no session kept), exactly as `profiles:generate` builds the prompt
  * and checks the reply. Prints the verdict, the front matter keys, the tools, the headings and the cost; the generated file goes to
  * REPLY_OUT if set (for a local look; never committed). Not part of `npm test`.

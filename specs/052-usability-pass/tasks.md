@@ -231,6 +231,7 @@
 - [x] T161 Tests: `test-codex-modes`, `test-codex-adapter` with the fixture `codex/file-change-approval.json` (generated types), `test-truth`; mutation runs (no item store, no masking) [FR-172]
 - [x] T162 `simcodexfile` + `scripts/check-codex-file-card.js` (`check:codex-file-card`, in `check:ui`) at 1440x900 and 1280x800, Expert and Simple; screenshots; README, CHANGELOG, `specs/README.md`, agent notes [FR-172]
 - [x] T163 Real check on a Codex session (one small edit in Ask first): the card names the file and shows the diff [FR-172; real: 2026-10-21, codex-cli 0.163.0, Linux, 1 prompt]
+- [x] T167 Review on #470: the write grant scope covers every path (several folders: every folder must be granted; a session grant grants each); paths kept uncut for decisions (one line only in the card and diff headers); every path of more than 100 changes reaches the guard, real "+N more", the 200-file guard cap flagged on the card; the "No newline" test asserts the marker; tests + mutation runs; re-review: the Expert button keeps every folder or "and N more folders", the simulator grants one chip per folder (`check-codex-file-card`) [FR-172]
 
 ## UI help and text pass (2026-10-21, issue #464)
 - [x] T143 Spec delta FR-165..FR-171, plan note, `docs/design-rules.md` rules (widths, measure, tooltip length; also fix its stale "+ New" line) [FR-165..FR-171]
@@ -308,3 +309,15 @@
 - [x] T172 Review fixes on #508: `popover-squeezed` covers every ellipsis in a popover (mutation `.fl-t{max-width:80px}` fails); long-name passes `folders-pop-long`, `floors-pop-long`; `popover-width` accepts the window minus 32px; popover borders and `.fl-err` to tokens, `literal-light` also reads borders and outlines (16 rules fixed), a Floors error shown in `floors-pop-error` so `dark-text` measures it; dark screenshots for all four popovers [FR-167]
   - Accept: no literal light border or outline in `src/renderer/*.css`; `.fl-err` reads at 4.5:1 in the dark fixture.
   - Check: mutation `#efe9dd` back on `.fl-floor` fails `literal-light`; restored byte for byte.
+
+## FR-174: the composer placeholder stays on one line (2026-10-22, #453)
+- [x] T173 Spec delta FR-174
+- [x] T174 `fitPlaceholder()` in `app.js`: placeholder cut from a measured width with `DurbarCutText`, full text in the `aria-label`, refit on resize and from `repaintName` [FR-174]
+  - Accept: with a 120-character title the placeholder is one line ending in `…` at 1440x900 and 1280x800; a short name is untouched.
+- [x] T175 Rule `placeholder-line` in `check-ui-text` / `ui-text-page.js` for the chat surfaces (`simtitles=long`; one `chat-late` pass: late title, rename, emoji, flags, no spaces, window resize) [FR-174, FR-171]
+  - Check: mutation (`fitPlaceholder` made a no-op) fails `placeholder-line`; code restored byte for byte.
+- [x] T176 Screenshots before and after (both sizes, light) in `docs/screenshots/052-placeholder-*`; CHANGELOG line; spec tags
+- [x] T177 Review fixes on #453: late title and rename, `cutText`, no `title`/`data-ph`, mirror copies `overflow-wrap`/`word-break`, prefix and emoji checks, sim hook `__durbarSimRetitle`
+
+- [x] T178 Review on #545: `.ph-id h2` is cut and `.sub` kept whole; `fitCut` (pure, unit-tested incl. the band where the text fits but not with `…`); `cutText` keeps flags whole; resize case (ResizeObserver mutation fails); the four late cases folded into one `chat-late` pass [FR-174]
+- [x] T179 Review on #545: a helper's role line stays inside the heading (`.sub` flex-shrink 1, `h2` 4, titles on both); surface `chat-helper-long` and rule `heading-spill` in `check:ui-text` (mutation `.sub{flex:0 0 auto}` fails) [FR-174]
