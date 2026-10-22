@@ -124,6 +124,9 @@
   let X=null; /* {bridge, askDialog, toast, esc} from app.js */
   let st=null; /* the open file: {id, info, sha, saved, writable, mode, opener} */
   const listeners=[];
+  /* FR-039: Create with AI requests not ended yet, for the whole window, not one dialog: Stop waiting, Cancel, Escape and closing
+     the dialog do not take a request back, so a reopened dialog keeps Create disabled until it ends (main refuses one too) */
+  const aiRun={n:0,ends:new Set()};
   const store=()=>{try{return win.localStorage;}catch(e){return null;}};
   const changed=info=>listeners.forEach(fn=>{try{fn(info);}catch(e){/* a listener's own error */}});
   const $=id=>doc.getElementById(id);
@@ -382,34 +385,40 @@
     const by=ov.querySelector('#peABy');
     if(by){kinds.forEach(k=>{const o=doc.createElement('option');o.value=k.id;setText(o,k.displayName||k.id);by.appendChild(o);});by.value=kinds.some(k=>k.id===t.app)?t.app:kinds[0].id;}
     doc.body.appendChild(ov);
-    let mode='describe',waiting=null,inFlight=0; /* inFlight: requests not ended yet, also after Stop waiting (FR-036) */
+    let mode='describe',waiting=null; /* aiRun.n: requests not ended yet, also after Stop waiting or a closed dialog (FR-036, FR-039) */
     const paintCost=()=>{if(!by)return;const k=kinds.find(x=>x.id===by.value)||kinds[0];setText(ov.querySelector('#peACost'),'1 prompt. '+costLine(k)+' No tools, nothing kept.');setText(ov.querySelector('#peAGo'),'Create with AI (1 prompt, '+(k.displayName||k.id)+')');};
     paintCost();if(by)by.addEventListener('change',paintCost);
     const setHow=m=>{mode=m;ov.querySelectorAll('[data-am]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.am===m)));ov.querySelector('#peADesc').hidden=m!=='describe';ov.querySelector('#peAQ').hidden=m!=='questions';const f=ov.querySelector(m==='describe'?'#peADescT':'#peAQ textarea');if(f)f.focus();};
     ov.addEventListener('click',e=>{const b=e.target.closest('[data-am]');if(b&&!waiting)setHow(b.dataset.am);});
-    const busy=on=>{ov.querySelectorAll('textarea,select,input,[data-am]').forEach(x=>{x.disabled=on;});const g=ov.querySelector('#peAGo');if(g){g.hidden=on;g.disabled=inFlight>0;}ov.querySelector('#peALate').hidden=on||!inFlight;ov.querySelector('#peAStop').hidden=!on;ov.querySelector('#peAWait').hidden=!on;};
+    const busy=on=>{ov.querySelectorAll('textarea,select,input,[data-am]').forEach(x=>{x.disabled=on;});const g=ov.querySelector('#peAGo');if(g){g.hidden=on;g.disabled=aiRun.n>0;}ov.querySelector('#peALate').hidden=on||!aiRun.n;ov.querySelector('#peAStop').hidden=!on;ov.querySelector('#peAWait').hidden=!on;};
     const err=m=>{const e=ov.querySelector('#peAErr');e.hidden=!m;setText(e,m||'');};
     return new Promise(resolve=>{
-      const done=v=>{ov.remove();resolve(v);};
-      ov.querySelector('#peACancel').onclick=()=>{waiting=null;done(null);};
-      ov.querySelector('#peAStop').onclick=()=>{waiting=null;busy(false);err('Stopped waiting. The request may still finish on the agent app and be charged.');};
+      const onEnd=()=>{if(ov.isConnected&&!waiting)busy(false);};aiRun.ends.add(onEnd);
+      const done=v=>{aiRun.ends.delete(onEnd);ov.remove();resolve(v);};
+      const stop=()=>{waiting=null;busy(false);err('Stopped waiting. The request may still finish on the agent app and be charged.');};
+      /* FR-039: Cancel or Escape while waiting first stops waiting (the note says it may be charged); pressed again, it closes */
+      const cancel=()=>{if(waiting){stop();return;}done(null);};
+      ov.querySelector('#peACancel').onclick=cancel;
+      ov.querySelector('#peAStop').onclick=stop;
+      if(aiRun.n){busy(false);err('A request you started earlier is still running on the agent app and may be charged.');}
       const go=ov.querySelector('#peAGo');
       if(go)go.onclick=async()=>{
-        if(inFlight)return;
+        if(aiRun.n)return;
         const req={app:t.app,name:t.name,by:by.value,mode,tools:toolsIn?toolsIn.value.trim():''};
         if(mode==='describe'){req.description=ov.querySelector('#peADescT').value.trim();if(req.description.length<10){err('Describe what the agent does in a sentence or two.');return;}}
         else{req.answers={};ov.querySelectorAll('#peAQ textarea').forEach(x=>{if(x.value.trim())req.answers[x.dataset.q]=x.value.trim();});if(!Object.keys(req.answers).length){err('Answer at least one question.');return;}}
-        err('');inFlight++;busy(true);const token={};waiting=token;
+        err('');aiRun.n++;busy(true);const token={};waiting=token;
         const r=await X.bridge.generateProfile(req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-        inFlight--;
-        if(waiting!==token){if(!waiting&&ov.isConnected)busy(false);return;} /* Stop waiting or Cancel: the answer is dropped; Create comes back */
+        aiRun.n--;
+        aiRun.ends.forEach(fn=>{try{fn();}catch(e){/* a closed dialog */}}); /* Create comes back in whichever dialog is open now */
+        if(waiting!==token)return; /* Stop waiting, Cancel or Escape: the answer is dropped */
         waiting=null;busy(false);
         const spent=r&&r.costUsd?' Cost: about $'+r.costUsd.toFixed(4)+' (estimate).':r&&r.nanoAiu?' Used '+(r.nanoAiu/1e9).toFixed(2)+' AI credits (as reported by Copilot).':'';
         if(!r||!r.ok){err(((r&&r.error)||'Unknown error.')+spent+' Your answers are kept: change them and try again.');return;}
         done('done');
         openDraft({app:t.app,place:t.place,name:t.name,folder:t.folder,text:r.text},{mode:'split',note:'Written by '+r.by+'.'+spent+(r.warnings&&r.warnings.length?' Note: '+r.warnings.join('; ')+'.':'')+' Read it, change what you like, then Save.'});
       };
-      ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();waiting=null;done(null);}
+      ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cancel();}
         else if(e.key==='Tab'){const it=[...ov.querySelectorAll('button:not([hidden]):not([disabled]),textarea:not([disabled]),select:not([disabled])')].filter(x=>x.offsetParent!==null);const i=it.indexOf(doc.activeElement);if(!it.length)return;if(e.shiftKey&&i<=0){e.preventDefault();it[it.length-1].focus();}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();it[0].focus();}}});
       const f=ov.querySelector('#peADescT')||ov.querySelector('#peACancel');f.focus();
     });

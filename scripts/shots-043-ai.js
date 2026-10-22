@@ -1,5 +1,5 @@
 /*
- * Spec 043 FR-026..FR-030 (T016c): Create an Agent Success Profile with AI, in the simulator (canned generation, no AI credits).
+ * Spec 043 FR-026..FR-030 (T016c), FR-036 and FR-039 (T018c, T019): Create an Agent Success Profile with AI, in the simulator (canned generation, no AI credits).
  * New Agent Success Profile -> Create with AI: the cost line and the button name the app and the one prompt; Questionnaire answers
  * -> a draft opens in Split view, Unsaved, "not saved yet", with all eight sections and the answers in the preview; Ctrl/Cmd+S
  * creates the file (listed in Settings). An error keeps the answers. Screenshots of the questionnaire and the result at 1440x900
@@ -49,6 +49,22 @@ module.exports = async (ctx) => {
       assert.ok(stop.waitShown && stop.kept && stop.goDisabled && stop.late && stop.waitGone && /may still finish/.test(stop.err), 'Stop waiting: ' + JSON.stringify(stop));
       assert.ok(await until(`!document.getElementById('peAGo').disabled&&document.getElementById('peALate').hidden`, 5000), 'Create comes back when the first request ends');
       assert.ok(await js(`!!document.getElementById('peAiOv')&&!document.getElementById('peOv')`), 'the late reply is dropped (no draft opened)');
+      // FR-039: Escape (then Cancel) while waiting, reopen: Create stays disabled until the first request ends; one paid request per action
+      await js(`window.__simGenDelay=4000`);
+      const c0 = await js(`window.__simGenCalls||0`);
+      const esc = await js(`(()=>{document.getElementById('peAGo').click();const ov=document.getElementById('peAiOv');
+        ov.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+        const r={open:!!document.getElementById('peAiOv'),err:document.getElementById('peAErr').textContent,go:document.getElementById('peAGo').disabled,late:!document.getElementById('peALate').hidden};
+        document.getElementById('peACancel').click();r.closed=!document.getElementById('peAiOv');return r;})()`);
+      assert.ok(esc.open && /may still finish/.test(esc.err) && esc.go && esc.late && esc.closed, 'Escape while waiting stops waiting first (with the charge note); Cancel then closes: ' + JSON.stringify(esc));
+      await H.click('#peNAi');
+      assert.ok(await until(`!!document.getElementById('peAiOv')&&!!document.getElementById('peAGo')`), 'the AI dialog again');
+      const re = await js(`(()=>{const g=document.getElementById('peAGo');const t=document.getElementById('peADescT');t.value='A careful reviewer that reads the code';t.dispatchEvent(new Event('input',{bubbles:true}));
+        const r={go:g.disabled&&!g.hidden,late:!document.getElementById('peALate').hidden,err:document.getElementById('peAErr').textContent};g.click();r.calls=window.__simGenCalls;return r;})()`);
+      assert.ok(re.go && re.late && /started earlier is still running/.test(re.err) && re.calls === c0 + 1, 'reopened: Create disabled while the first request runs, no second request: ' + JSON.stringify(re));
+      assert.ok(await until(`!document.getElementById('peAGo').disabled&&document.getElementById('peALate').hidden`, 8000), 'Create comes back in the reopened dialog when the first request ends');
+      assert.strictEqual(await js(`window.__simGenCalls`), c0 + 1, 'one paid request for one action');
+      await js(`window.__simGenDelay=0`);
     }
     // FR-031: tools only from the Extra tools line; the dialog says so
     const tn = await js(`({note:document.getElementById('peAToolsNote').textContent,ph:document.getElementById('peATools').placeholder,rows:[...document.querySelectorAll('#peAQ textarea')].every(x=>x.rows===2),w:document.querySelector('.dlg.pe-ai').getBoundingClientRect().width})`);

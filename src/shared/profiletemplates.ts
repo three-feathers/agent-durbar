@@ -142,14 +142,29 @@ export function allowedTools(input: GenInput): string[] {
   return out;
 }
 
-/** FR-034: `name: <name>` inside the front matter only (rewritten, or inserted first when missing); body lines are never touched. */
-function setFrontmatterName(t: string, name: string): string {
+/**
+ * FR-034, FR-038: `name: <name>` inside the front matter only (rewritten, or inserted first when missing); body lines are never
+ * touched. The `name` key is found with the editor's own parser, so a quoted (`"name":`, `'name':`) or spaced (`name :`) key is the
+ * same key, and an indented continuation of its old value (`name: >` and the lines under it) goes with it.
+ */
+function setFrontmatterName(t: string, name: string, parse: (t: string) => FrontmatterParse): string {
+  const fm = parse(t);
+  if (!fm.has || !fm.closed) return t;
   const lines = t.split('\n');
   const end = lines.findIndex((l, i) => i > 0 && (l.trimEnd() === '---' || l.trimEnd() === '...'));
-  if (lines[0].trimEnd() !== '---' || end < 0) return t;
-  const at = lines.slice(1, end).findIndex((l) => /^name\s*:/.test(l));
-  if (at >= 0) lines[at + 1] = `name: ${name}`;
-  else lines.splice(1, 0, `name: ${name}`);
+  const hits = fm.entries.filter((e) => e.key === 'name');
+  if (!hits.length) {
+    lines.splice(1, 0, `name: ${name}`);
+    return lines.join('\n');
+  }
+  // from the last one up, so earlier line numbers stay right (the parser already refuses a key given twice)
+  for (const h of [...hits].reverse()) {
+    const i = h.line - 1;
+    let j = i + 1;
+    while (j < end && (/^[ \t]/.test(lines[j]) || /^\s*(#.*)?$/.test(lines[j]))) j++;
+    while (j > i + 1 && /^\s*(#.*)?$/.test(lines[j - 1])) j--; // keep blank and comment lines after the value
+    lines.splice(i, j - i, ...(h === hits[0] ? [`name: ${name}`] : []));
+  }
   return lines.join('\n');
 }
 
@@ -196,7 +211,11 @@ export function validateGeneratedProfile(reply: string, input: GenInput, parse: 
   const missing = SUCCESS_SECTIONS.filter((s) => !heads.includes(s.heading.toLowerCase())).map((s) => s.heading);
   if (missing.length) return { ok: false, error: `The reply misses sections: ${missing.join(', ')}.` };
   // the chosen name, whatever the reply said, only inside the front matter (FR-034)
-  t = setFrontmatterName(t, input.name);
+  t = setFrontmatterName(t, input.name, parse);
+  // FR-038: parsed again, so the saved file has exactly one name and it is the chosen one
+  const after = parse(t);
+  const names = after.entries.filter((e) => e.key === 'name');
+  if (after.errors.length || names.length !== 1 || names[0].value !== input.name) return { ok: false, error: 'The reply\'s name line could not be set; try again.' };
   if (!t.endsWith('\n')) t += '\n';
   if (utf8Bytes(t) > maxProfileBytes(input.app)) return { ok: false, error: `The reply is too long (over ${maxProfileBytes(input.app) / 1024} KB, the most ${input.app === 'claude' ? 'Claude Code' : 'Copilot'} takes in an agent file).` };
   // FR-033: what the draft grants beyond read-only, and tools the text mentions that are not granted

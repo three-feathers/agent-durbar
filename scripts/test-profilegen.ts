@@ -121,6 +121,35 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
   assert.ok(both.ok && both.text.includes('name: keep-this-line') && (both.text.match(/^name: pay-reviewer$/gm) ?? []).length === 1, 'front matter name rewritten, body untouched');
 }
 
+// ---- FR-038: a quoted, single-quoted or spaced `name` key is the same key, never a second name (re-review on #505, change 2) ----
+{
+  const names = (t: string): string[] => parse(t).entries.filter((e) => e.key === 'name').map((e) => e.value);
+  const nameLine = (line: string, app: 'claude' | 'copilot' = 'claude'): string => filled(app, 'x').replace(/^name: .*$/m, line);
+  for (const [line, app] of [
+    ['"name": other', 'claude'], ["'name': other", 'claude'], ['name: other', 'claude'], ['name : other', 'claude'], ['"name" : other', 'claude'],
+    ['" name ": other', 'claude'], ['"name": "other"', 'claude'], ["'name': 'it''s'", 'claude'], ['"name": other  # a comment', 'claude'],
+    ['"name": other', 'copilot'], ["'name': other", 'copilot'],
+  ] as const) {
+    const input: GenInput = { ...Q, app };
+    const r = validateGeneratedProfile(nameLine(line, app), input, parse);
+    assert.ok(r.ok, `${line} (${app}): ${r.ok ? '' : r.error}`);
+    assert.deepStrictEqual(names(r.text), ['pay-reviewer'], `${line} (${app}): exactly one name, the chosen one`);
+    assert.strictEqual(parse(r.text).errors.length, 0, `${line} (${app}): the draft opens with no front matter error`);
+    assert.ok(!r.text.includes('other') && !r.text.includes("it''s"), `${line} (${app}): the old name is gone`);
+  }
+  // a block value with indented lines goes with its key
+  const block = validateGeneratedProfile(nameLine('"name": >\n  other\n  more'), Q, parse);
+  assert.ok(block.ok && names(block.text).join() === 'pay-reviewer' && !/other|more/.test(block.text), 'a folded name value is replaced whole: ' + (block.ok ? '' : block.error));
+  // the line stays where it was (the key order of the reply is kept), and the other keys are untouched
+  const mid = validateGeneratedProfile(filled('claude', 'x').replace(/^name: .*\n/m, '').replace(/^tools: .*$/m, (m) => '"name": other\n' + m), Q, parse);
+  assert.ok(mid.ok && /\nname: pay-reviewer\ntools: /.test(mid.text) && /^---\ndescription: /.test(mid.text), 'rewritten in place');
+  // a reply that names it twice is refused by the parser before any rewrite (never a silent pick)
+  assert.ok(!validateGeneratedProfile(nameLine('"name": a\nname: b'), Q, parse).ok, 'two name keys refused');
+  // a body line with a quoted key is body text and stays
+  const qb = validateGeneratedProfile(filled('claude', 'x').replace('## Skills\n', '## Skills\n"name": keep-this-line\n'), Q, parse);
+  assert.ok(qb.ok && qb.text.includes('\n"name": keep-this-line\n') && names(qb.text).join() === 'pay-reviewer', 'quoted name in the body untouched');
+}
+
 // ---- FR-035: size in bytes, after neutralising, the save path's limit (review on #505, change 3) ----
 {
   for (const app of ['claude', 'copilot'] as const) assert.strictEqual(maxProfileBytes(app), maxBytesFor(app), `one limit for the reply and the save path (${app})`);
@@ -143,6 +172,9 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
 }
 
 // ---- profiles:generate with a fake one-shot (review on #505, change 4) ----
+// a request that never ends (a broken guard) would leave the event loop empty and exit 0 silently: fail instead
+let finished = false;
+process.on('exit', () => { if (!finished) { console.error('profile generation tests did not finish (a request never ended)'); process.exitCode = 1; } });
 void (async () => {
   const calls: string[] = [];
   const good: OneShot = { name: 'Fake', generate: async (p) => { calls.push(p); return { text: filled('claude', 'pay-reviewer'), costUsd: 0.001 }; } };
@@ -176,5 +208,46 @@ void (async () => {
   assert.ok(!refused.ok && refused.nanoAiu === 5 && /front matter/.test(refused.error), 'a refused reply reports why and what it cost');
   const thrown = await generateProfile(base, { ...deps, oneShot: () => ({ name: 'F', generate: async () => { throw new Error('boom'); } }) });
   assert.ok(!thrown.ok && /boom/.test(thrown.error), 'a failing app');
+
+  // FR-039: at most one paid request at a time, held in main, through cancel-then-create races (re-review on #505, change 3).
+  // The window "cancels" by dropping the promise; main cannot take the request back, so it refuses new ones until it ends.
+  {
+    let paid: number = 0;
+    const paidNow = (): number => paid;
+    const pending: { resolve(): void; reject(e: Error): void }[] = [];
+    const slow: OneShot = { name: 'Slow', generate: () => { paid++; return new Promise((res, rej) => pending.push({ resolve: () => res({ text: filled('claude', 'pay-reviewer'), costUsd: 0.002 }), reject: rej })); } };
+    const d3 = { ...deps, oneShot: () => slow };
+    // one user action, then Cancel (the promise is dropped), then Create again, several times, in the same tick and later
+    const first = generateProfile(base, d3);
+    const dupes = [generateProfile(base, d3), generateProfile({ ...base, by: 'other' }, d3), generateProfile({ ...base, mode: 'questions', answers: { title: 'x' } }, d3)];
+    await new Promise((r) => setTimeout(r, 5));
+    assert.strictEqual(paid, 1, 'one paid request while the first runs');
+    const again = await Promise.all(dupes);
+    for (const r of again) assert.ok(!r.ok && r.busy === true && /still running/.test(r.error) && !('costUsd' in r), 'refused, busy, costs nothing: ' + JSON.stringify(r));
+    for (let i = 0; i < 5; i++) { await new Promise((r) => setTimeout(r, 1)); assert.ok(!(await generateProfile(base, d3)).ok); }
+    assert.strictEqual(paidNow(), 1, 'still one after five cancel-then-create rounds');
+    // a request refused for its own reason while one runs: its own reason, no request
+    const own = await generateProfile({ ...base, name: '../x' }, d3);
+    assert.ok(!own.ok && /valid name/.test(own.error) && paidNow() === 1, 'own reason first');
+    // the first ends (its answer may be ignored by the window): the next action may send exactly one request
+    pending[0].resolve();
+    assert.ok((await first).ok, 'the first request ends normally');
+    const next = generateProfile(base, d3);
+    const nextDup = await generateProfile(base, d3);
+    assert.ok(paidNow() === 2 && !nextDup.ok && nextDup.busy, 'after it ended: one more, and again only one');
+    // a failing request also ends the hold (no stuck "busy")
+    pending[1].reject(new Error('gone'));
+    const failed = await next;
+    assert.ok(!failed.ok && /gone/.test(failed.error) && !failed.busy, 'a failed request ends');
+    const after = generateProfile(base, d3);
+    assert.strictEqual(paidNow(), 3, 'free again after a failure');
+    pending[2].resolve();
+    await after;
+    // a refused reply (bad check) ends the hold too
+    const badReply: OneShot = { name: 'Bad', generate: async () => { paid++; return { text: '# none' }; } };
+    assert.ok(!(await generateProfile(base, { ...deps, oneShot: () => badReply })).ok);
+    assert.ok((await generateProfile(base, deps)).ok, 'free again after a refused reply');
+  }
+  finished = true;
   console.log('profile generation tests passed');
 })().catch((e) => { console.error(e); process.exit(1); });

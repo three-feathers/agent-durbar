@@ -606,7 +606,7 @@ export interface DurbarApi {
   createProfileFile?(app: 'copilot' | 'claude', place: string, name: string, template?: 'success' | 'standard', text?: string): Promise<{ ok: true; id: string; info: ProfileFileInfo } | { ok: false; error: string }>;
   openProfileInVSCode?(fileId: string): Promise<{ ok: boolean; error?: string }>;
   /** Spec 043 FR-026..FR-028: one prompt to an agent app's one-shot path (`by`); a checked draft, nothing written. */
-  generateProfile?(req: { app: 'copilot' | 'claude'; name: string; by: string; mode: 'describe' | 'questions'; description?: string; answers?: Record<string, string>; tools?: string }): Promise<{ ok: true; text: string; warnings: string[]; extraTools?: string[]; by: string; costUsd?: number; nanoAiu?: number } | { ok: false; error: string; costUsd?: number; nanoAiu?: number }>;
+  generateProfile?(req: { app: 'copilot' | 'claude'; name: string; by: string; mode: 'describe' | 'questions'; description?: string; answers?: Record<string, string>; tools?: string }): Promise<{ ok: true; text: string; warnings: string[]; extraTools?: string[]; by: string; costUsd?: number; nanoAiu?: number } | { ok: false; error: string; busy?: true; costUsd?: number; nanoAiu?: number }>; // busy: a request is still running (spec 043 FR-039)
 
   /** Tool usage over all runs (spec 020). */
   usageAllTime?(): Promise<UsageView>;
