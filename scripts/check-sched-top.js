@@ -303,6 +303,9 @@ module.exports = async (ctx) => {
     await js(`localStorage.removeItem('durbar.schedSeen');true`);
     await H.load({ w: 1440, h: 900, query: { simsched: '1', theme }, ready: 'fit', settle: false });
     await until(`document.getElementById('schedTopBtn').classList.contains('trouble')`);
+    /* .btn fades its background for 120ms (styles.css): a read taken mid-fade sees the previous theme's white (CI: ratio 1 on Corporate), so wait for the transitions to end and two frames to paint */
+    await until(`document.getAnimations().every(a=>a.playState!=='running')`);
+    await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))`);
     const c = await js(`(${discContrast.toString()})()`);
     check(c && c.ratio >= 3, `${theme}: badge disc contrast ${JSON.stringify(c)} (needs 3:1)`);
     check(c && c.glyphRatio >= 3, `${theme}: the "!" against the disc ${JSON.stringify(c)} (needs 3:1)`);
