@@ -289,3 +289,11 @@
 - [x] T172 Review fixes on #508: `popover-squeezed` covers every ellipsis in a popover (mutation `.fl-t{max-width:80px}` fails); long-name passes `folders-pop-long`, `floors-pop-long`; `popover-width` accepts the window minus 32px; popover borders and `.fl-err` to tokens, `literal-light` also reads borders and outlines (16 rules fixed), a Floors error shown in `floors-pop-error` so `dark-text` measures it; dark screenshots for all four popovers [FR-167]
   - Accept: no literal light border or outline in `src/renderer/*.css`; `.fl-err` reads at 4.5:1 in the dark fixture.
   - Check: mutation `#efe9dd` back on `.fl-floor` fails `literal-light`; restored byte for byte.
+
+## FR-174: the composer placeholder stays on one line (2026-10-22, #453)
+- [ ] T173 Spec delta FR-174
+- [ ] T174 `fitPlaceholder()` in `app.js`: placeholder cut from a measured width, `title` with the full text, refit on resize [FR-174]
+  - Accept: with a 60-character name the placeholder is one line ending in `…` at 1440x900 and 1280x800; a short name is untouched.
+- [ ] T175 Rule `placeholder-line` in `check-ui-text` / `ui-text-page.js` for the chat surfaces (also `simnames=long`) [FR-174, FR-171]
+  - Check: mutation (`fitPlaceholder` made a no-op) fails `placeholder-line`; code restored byte for byte.
+- [ ] T176 Screenshots before and after (both sizes, light) in `docs/screenshots/052-placeholder-*`; CHANGELOG line; spec tags
