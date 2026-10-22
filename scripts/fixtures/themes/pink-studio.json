@@ -3,19 +3,55 @@
   "name": "Pink Studio",
   "author": "AI theme maker",
   "version": "1.0",
-  "description": "a bright pink fashion studio with pearls and hearts (a sample of what the AI theme maker writes, for checks)",
+  "description": "a bright pink fashion studio with pearls and hearts (a sample of what the AI theme maker writes, for checks): colours, fonts, corners, shadows, clothes and gadgets",
   "extends": "clean-office",
   "ui": "clean",
   "scene": "office",
   "tokens": {
-    "--bg": "#fff4f9", "--surface": "#fffafd", "--raised": "#ffffff", "--card": "#fffafd", "--soft": "#fff0f7", "--surface-2": "#fdeef6",
-    "--line": "#f2d3e3", "--line-2": "#e8b7cf",
-    "--tint-sage": "#fde6f1", "--wall-sage": "#f6c2dc", "--tint-blue": "#f9e4f4", "--wall-blue": "#efc0e3", "--tint-sand": "#fdeaf0", "--wall-sand": "#f4c9d6",
-    "--chair": "#c2185b", "--desk": "#f7c6dc", "--desk-front": "#f3b0cf", "--desk-drawer": "#ea9fc2",
-    "--monitor-frame": "#5a1f3d", "--monitor-stand": "#b05a85", "--laptop": "#f9d7e8", "--cup": "#ffffff", "--cup-line": "#d81b7a",
-    "--plant-mid": "#e0218a", "--plant-dark": "#ad1457", "--plant-light": "#ff8cc6", "--pot": "#ffffff"
+    "--bg": "#fff4f9",
+    "--surface": "#fffafd",
+    "--raised": "#ffffff",
+    "--card": "#fffafd",
+    "--soft": "#fff0f7",
+    "--surface-2": "#fdeef6",
+    "--line": "#f2d3e3",
+    "--line-2": "#e8b7cf",
+    "--tint-sage": "#fde6f1",
+    "--wall-sage": "#f6c2dc",
+    "--tint-blue": "#f9e4f4",
+    "--wall-blue": "#efc0e3",
+    "--tint-sand": "#fdeaf0",
+    "--wall-sand": "#f4c9d6",
+    "--chair": "#c2185b",
+    "--desk": "#f7c6dc",
+    "--desk-front": "#f3b0cf",
+    "--desk-drawer": "#ea9fc2",
+    "--monitor-frame": "#5a1f3d",
+    "--monitor-stand": "#b05a85",
+    "--laptop": "#f9d7e8",
+    "--cup": "#ffffff",
+    "--cup-line": "#d81b7a",
+    "--plant-mid": "#e0218a",
+    "--plant-dark": "#ad1457",
+    "--plant-light": "#ff8cc6",
+    "--pot": "#ffffff",
+    "--font": "\"Avenir Next\",\"Helvetica Neue\",Arial,sans-serif",
+    "--ui-display": "Didot,Georgia,serif",
+    "--t1-weight": "700",
+    "--r-sm": "8px",
+    "--r-md": "14px",
+    "--r-lg": "18px",
+    "--r-xl": "22px",
+    "--radius": "20px",
+    "--shadow-card": "0 2px 10px rgba(224,33,138,.16)",
+    "--shadow-pop": "0 14px 40px rgba(173,20,87,.25)"
   },
-  "words": { "place-library": "Lookbook shelf", "place-terminal": "Runway console", "place-web": "Trend board", "lobby-label": "Studio floor: where the team works" },
+  "words": {
+    "place-library": "Lookbook shelf",
+    "place-terminal": "Runway console",
+    "place-web": "Trend board",
+    "lobby-label": "Studio floor: where the team works"
+  },
   "art": {
     "char-robe": "<path d=\"M55 99V77q0-14 14-14h10q14 0 14 14v22z\" fill=\"#e0218a\"/><path d=\"M74 64v35\" stroke=\"#ffd1e8\" stroke-width=\"1.6\"/>",
     "char-collar": "<circle cx=\"68\" cy=\"62\" r=\"1.6\" fill=\"#ffffff\"/><circle cx=\"71\" cy=\"64.2\" r=\"1.6\" fill=\"#ffffff\"/><circle cx=\"74\" cy=\"65\" r=\"1.6\" fill=\"#ffffff\"/><circle cx=\"77\" cy=\"64.2\" r=\"1.6\" fill=\"#ffffff\"/><circle cx=\"80\" cy=\"62\" r=\"1.6\" fill=\"#ffffff\"/>",
@@ -28,6 +64,27 @@
     "place-terminal": "<path d=\"M10 16.5c-5-3.5-7-6-7-8.5a3.5 3.5 0 0 1 7-1 3.5 3.5 0 0 1 7 1c0 2.5-2 5-7 8.5z\"/>",
     "place-web": "<circle cx=\"10\" cy=\"10\" r=\"6.5\"/><path d=\"M10 5.5v9M5.5 10h9\"/>",
     "door-art": "<path d=\"M10 12.6c-1.6-1.2-2.6-2.1-2.6-3.1a1.3 1.3 0 0 1 2.6-.4 1.3 1.3 0 0 1 2.6.4c0 1-1 1.9-2.6 3.1z\" fill=\"#e0218a\"/>",
-    "lobby-art": "<rect x=\"0\" y=\"30\" width=\"320\" height=\"6\" fill=\"#f6c2dc\"/><rect x=\"0\" y=\"33\" width=\"320\" height=\"1.5\" fill=\"#e0218a\"/>"
+    "lobby-art": "<rect x=\"0\" y=\"30\" width=\"320\" height=\"6\" fill=\"#f6c2dc\"/><rect x=\"0\" y=\"33\" width=\"320\" height=\"1.5\" fill=\"#e0218a\"/>",
+    "gadget-cup": "<path d=\"M98 76h10v7q0 3-3 3h-4q-3 0-3-3z\" fill=\"#ff5fb0\"/><path d=\"M108 78q4 0 4 3t-4 3\" fill=\"none\" stroke=\"#e0218a\" stroke-width=\"1.4\"/><path d=\"M103 82c-1-1.4-3-.4-2 1l2 1.6 2-1.6c1-1.4-1-2.4-2-1z\" fill=\"#ffffff\"/>",
+    "gadget-laptop": "<rect x=\"59\" y=\"82\" width=\"36\" height=\"4\" rx=\"2\" fill=\"#f48fb1\"/><rect x=\"74\" y=\"82.6\" width=\"6\" height=\"1.6\" rx=\".8\" fill=\"#ffffff\"/>"
+  },
+  "figures": {
+    "shirts": [
+      "#e0218a",
+      "#ff8cc6",
+      "#c2185b",
+      "#f48fb1",
+      "#ad1457",
+      "#ff5fb0",
+      "#d81b60"
+    ],
+    "hairs": [
+      "#f2d16b",
+      "#e8c15a",
+      "#3b2a20",
+      "#c98b4a",
+      "#2a2a2e",
+      "#f5e1a4"
+    ]
   }
 }
