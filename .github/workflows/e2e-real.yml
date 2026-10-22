@@ -2,21 +2,19 @@ name: E2E real accounts
 
 # spec 062: on every supported OS (.github/platforms.json), install each agent app the way Durbar does, sign in with the CI
 # account's secrets, list models and run one tiny read-only turn, through Durbar's own adapters (scripts/e2e-real.ts).
-# USES A FEW CREDITS (one one-line prompt per app per OS). NEVER on pull_request: PR code never runs with these secrets.
+# USES A FEW CREDITS. Cost cut 2026-10-22 (owner; spec 062 FR-006..FR-008): no push trigger, at most one scheduled run a day; the
+# turn (one one-line prompt per app, Codex on a small model) runs daily on Linux only, and on macOS and Windows on Mondays or a
+# manual run with full_turn. The other days they install, sign in and list models (no prompt, no tokens).
+# NEVER on pull_request: PR code never runs with these secrets.
 on:
   workflow_dispatch:
+    inputs:
+      full_turn:
+        description: 'Run the one-line turn on macOS and Windows too (Linux always runs it)'
+        type: boolean
+        default: false
   schedule:
-    - cron: '17 5 * * 1' # weekly, Monday 05:17 UTC
-  push:
-    branches: [main]
-    paths:
-      - 'src/adapters/**'
-      - 'src/main/harnesssetup.ts'
-      - 'src/main/officialinstall.ts'
-      - 'src/shared/harnesssetup.ts'
-      - 'scripts/e2e-real.ts'
-      - '.github/workflows/e2e-real.yml'
-      - '.github/platforms.json'
+    - cron: '17 5 * * *' # daily, 05:17 UTC; Monday's run is the full one on every OS
 
 permissions:
   contents: read
@@ -58,14 +56,28 @@ jobs:
       - name: Allow unprivileged user namespaces (Linux)
         if: runner.os == 'Linux'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      # FR-007: the turn on Linux every run; on macOS and Windows only on Monday's scheduled run or a manual run with full_turn
+      - name: Turn or no turn
+        id: mode
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          FULL_TURN: ${{ inputs.full_turn }}
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ] || { [ "$EVENT" = "workflow_dispatch" ] && [ "$FULL_TURN" = "true" ]; } || { [ "$EVENT" = "schedule" ] && [ "$(date -u +%u)" = "1" ]; }; then
+            echo "flag=" >> "$GITHUB_OUTPUT"
+          else
+            echo "flag=--no-turn" >> "$GITHUB_OUTPUT"
+          fi
       # the only step that sees the secrets; the script prints nothing of them (redact, stdin for the Codex key)
       - name: Install, sign in, list models, one turn
         shell: bash
         env:
+          E2E_FLAG: ${{ steps.mode.outputs.flag }}
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: node dist-scripts/scripts/e2e-real.js "$RUNNER_TEMP/e2e.json" | tee "$RUNNER_TEMP/e2e.md"
+        run: node dist-scripts/scripts/e2e-real.js "$RUNNER_TEMP/e2e.json" ${E2E_FLAG:+"$E2E_FLAG"} | tee "$RUNNER_TEMP/e2e.md"
       - name: Summary
         if: always()
         shell: bash

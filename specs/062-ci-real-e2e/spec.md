@@ -30,8 +30,8 @@ The list of supported CI platforms lives in one file, `.github/platforms.json`. 
 
 - **FR-001** Workflow `.github/workflows/e2e-real.yml`. It runs:
   - on `workflow_dispatch`;
-  - weekly (`schedule`);
-  - on pushes to `main` that change adapters, install code or the workflow;
+  - daily (`schedule`; was weekly, FR-006);
+  - ~~on pushes to `main` that change adapters, install code or the workflow~~ (removed 2026-10-22, FR-006);
   - **never on `pull_request`**, so PR code never runs with the secrets.
 
   `permissions: contents: read`. The secrets go only to the one step that runs the check.
@@ -41,7 +41,7 @@ The list of supported CI platforms lives in one file, `.github/platforms.json`. 
   - `OPENAI_API_KEY` → `codex login --with-api-key` over stdin.
 
   **No secret is ever printed, logged, written to a file or put on a command line.** Every line the script prints goes through `redact()`; secret values are also masked by Actions.
-- **FR-003** `scripts/e2e-real.ts` runs install → detect → sign-in → models → one turn per app, with fixed limits: 12 min per install, 3 min per turn. Models: `auto` for Copilot, `haiku` for Claude, the app's default for Codex. It never writes outside a temp folder and the app's own install locations.
+- **FR-003** `scripts/e2e-real.ts` runs install → detect → sign-in → models → one turn per app, with fixed limits: 12 min per install, 3 min per turn. Models: `auto` for Copilot, `haiku` for Claude, a small Codex model (FR-008; was the app's default). It never writes outside a temp folder and the app's own install locations.
 - **FR-004** The matrix comes from `.github/platforms.json` (`fromJSON` in a small setup job). `scripts/test-platforms.ts` checks that the file is valid and that `e2e-real.yml` and `install-check.yml` use it.
 - **FR-005** Honest limits: the CI account's plans decide which models are listed. A `[KNOWN GAP]` is recorded per app and OS until a run passes there.
 
@@ -50,6 +50,21 @@ The list of supported CI platforms lives in one file, `.github/platforms.json`. 
 - IV (credits): about 9 one-line prompts per run (3 apps × 3 OSes), well under a cent each on API keys. Owner-approved on 2026-10-20 (the account and secrets were made for this).
 
 ## Changes
+
+### 2026-10-22: cheaper runs (owner, Vikram, 21:42 UTC)
+
+**Why:** on 2026-10-22 the workflow cost about $2.06 on OpenAI and $0.10 on Anthropic, from about 8 runs × 3 OSes started by pushes to `main` (FR-001's push trigger). Codex ran on its default model with its default reasoning effort. The owner approved cutting it.
+
+Replaces parts of FR-001 and FR-003:
+- **FR-006** Triggers: `workflow_dispatch` and a **daily** `schedule` (`17 5 * * *`) only. **No `push` trigger** (and still never `pull_request`). So at most one scheduled run a day.
+- **FR-007** The one tiny turn runs **daily on Linux only**. macOS and Windows run install → detect → sign-in → list models every day (no prompt, no tokens) and the turn too on **Mondays** (the weekly full run) or on a manual run with the input `full_turn: true`. The workflow chooses, from the OS, the event and the UTC weekday, whether to pass `--no-turn` to `scripts/e2e-real.ts`; the script then stops after the model list and records the turn as skipped. Redaction and the stdin-only Codex key are unchanged.
+- **FR-008** Codex runs a small model with the lowest tested effort, like Claude on `haiku`:
+  - model: `E2E_CODEX_MODEL` when set (a Codex id, `codexModelFlag`); otherwise the first model in Codex's own `model/list` whose id has `mini` (then `nano`); otherwise Codex's default (recorded in the table so a run shows which model ran);
+  - effort: `E2E_CODEX_EFFORT` when set; otherwise `low` when the model offers it (the effort the spec 012 FR-142 real run used: "a Read-only turn on `gpt-5.6-luna` / `low` answered"), else the first effort the model lists;
+  - the prompt stays one line ("Reply with only the word ok."). Codex's app-server has no max-output setting that Durbar's adapter sends (`turn/start` takes `model` and `effort` only, `read:` `src/adapters/codex.ts` FR-142), so the reply is capped by the prompt only.
+  - Why not a fixed name: the repo has no recorded Codex model list for the CI account's API key (the only real list, spec 012 FR-142, is a ChatGPT Plus login and names only `gpt-6.1-sol` and `gpt-5.6-luna`), so a hard-coded `-mini` name could not be verified (`read:` spec 012 FR-142, spec 030 research, `scripts/fixtures/models/` which are Copilot's lists).
+- Expected spend (estimate, not measured): before, about 9 turns per run and several runs a day from pushes; after, 3 turns a day on Linux plus 6 on Monday's macOS and Windows runs, about 27 turns a week, Codex on a small model.
+- `[KNOWN GAP]` not run: no real run was made for this change (to save credits). Whether the CI account's `model/list` offers a `mini` model, and what the first daily run costs, show in its summary table (`Model` column, `Usage`).
 
 ### 2026-10-20: first runs (verification pushes from the branch; that trigger is removed)
 

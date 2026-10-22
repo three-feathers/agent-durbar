@@ -6,6 +6,7 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 
 ## Shell and process pitfalls
 
+- **Iterate with `npm test -- --bail`** (2026-10-22, spec 008 FR-115, issue #563). It stops at the first failing suite and stops the running ones (process group on POSIX, `taskkill /T /F` on Windows), so you see the failure in seconds. It is ignored when `CI` is set. It is for the loop only: the final run before a PR, PR CI and the merge queue run everything (`npm test` without the flag), so every failure shows at once and a flake can be told from a real break.
 - **`pkill -f` / `pgrep -f` match their own shell** (2026-10-20). The pattern is in the command line of the shell that runs it, so a kill can end your own command (exit 144) and leave half-done state. The `[c]har` trick is not enough when the same command line also contains the plain name (a heredoc, a comment, a later `nohup <script>`). Do the kill in its own command, select targets by a field (`ps -eo pid,args | awk '$3 ~ /name/'`), or better, keep the PIDs of what you start.
 - **Hand-run `claude` loads your plugins** (2026-10-19, `real:`). A plain `claude -p ...` probe loads the user's plugins and MCP servers; a chat-channel plugin then takes over the running session's bot and dies with the probe. Always pass `--strict-mcp-config --setting-sources ""` on a hand-run `claude`. Durbar's own adapter already passes its own `--setting-sources`.
 - **Electron checks are heavy.** Run at most two Electron drivers at once, under `nice -n 10`, and keep the limits in `scripts/run-tests.js` and `scripts/check-parallel.js` so the computer stays usable. Run long checks in the background.
@@ -146,8 +147,9 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 
 - **Real-account CI** (2026-10-20, spec 062):
   - Secrets: `COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN` (given to Copilot as `COPILOT_GITHUB_TOKEN`), `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (to Codex through `codex login --with-api-key` on stdin).
-  - Only `e2e-real.yml` uses them: never on `pull_request`, `main` only, in one step.
-  - To try the workflow before it is on `main`, add a temporary `push` branch trigger and remove it before the PR (`test:platforms` checks that the trigger is `main` only).
+  - Only `e2e-real.yml` uses them: never on `pull_request`, never on `push`, in one step.
+  - To try the workflow before it is on `main`, add a temporary `push` branch trigger and remove it before the PR (`test:platforms` fails while any `push` trigger is there).
+  - **Cost** (2026-10-22, owner; spec 062 FR-006..FR-008): a push trigger on `main` ran it about 8 times a day × 3 OSes and cost about $2.06 OpenAI + $0.10 Anthropic in one day, mostly Codex on its default model and effort. Now: daily schedule, the turn on Linux only (macOS and Windows on Mondays or `full_turn: true`), Codex on a listed `mini`/`nano` model at effort `low` (`E2E_CODEX_MODEL` / `E2E_CODEX_EFFORT` override). *How to apply:* never add a push trigger to a workflow that spends credits; pin every app to its smallest model; prove install and sign-in without a prompt (`--no-turn`).
   - Never print a CLI's own sign-in line: Codex's shows a masked key tail.
   - Copilot Free lists no models but runs `auto`.
 
