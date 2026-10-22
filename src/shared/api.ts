@@ -1,6 +1,6 @@
 import type { FolderSetupDecision, FolderSetupView, HookExplanation } from './foldersetup';
 import type { BroadKind } from './broadfolder';
-import type { AgentEvent } from '../adapters/types';
+import type { AgentEvent, McpServerStatus } from '../adapters/types';
 import type { HistoryItem, PreviousSession } from '../adapters/history';
 import type { VsChatSummary, VsChatTranscript } from '../adapters/vscodeChat';
 import type { UsageDoc } from './toolusage';
@@ -398,7 +398,7 @@ export interface AgentMcpEntry {
   status?: string;
   error?: string;
   /** Spec 058 FR-011/FR-020: what kind of failure the adapter said it was (only when the vendor said so). */
-  errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config';
+  errorClass?: McpServerStatus['errorClass'];
   /** The default from Settings: on for new sessions. */
   defaultOn: boolean;
   /** This agent switched it off. */

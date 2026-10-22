@@ -86,6 +86,21 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!document.querySelector('#agMcp #x')&&!document.querySelector('#agMcp img')`), 'markup in a name or error is shown as text, never built');
     const odd = await row('<b id="x">evil</b>');
     assert.ok(odd && /^Unknown state: brand-new<i>$/.test(odd.word), 'an unknown token is named and escaped: ' + JSON.stringify(odd));
+    // the hostile row: its Details shows the text literally, nothing is built from it
+    await js(`(()=>{const b=document.querySelector('#agMcp button[data-det='+JSON.stringify(${jsLiteral('<b id="x">evil</b>')})+']');b.focus();b.click();})()`);
+    assert.ok(await until(`!!document.querySelector('#agMcp .srv-err')`), 'Details of the hostile row opened');
+    assert.ok((await js(`(document.querySelector('#agMcp li:last-child .srv-err')||{}).textContent`)).includes('<img'), 'the error shows the literal <img');
+    assert.ok(await js(`!document.querySelector('#agMcp img')&&!document.querySelector('#agMcp #x')`), 'no element was built from the error text');
+    // focus on the open error box survives a live repaint
+    await js(`(()=>{const p=document.querySelector('#agMcp li:last-child pre[data-err]');p.focus();})()`);
+    assert.ok(await js(`document.activeElement.matches('pre[data-err]')`), 'the error box has focus');
+    await emit('sim-5', [
+      { name: 'github', status: 'connected', transport: 'stdio', source: 'user' },
+      { name: 'my-notes', status: 'connected', transport: 'stdio', source: 'user' },
+      { name: '<b id="x">evil</b>', status: 'failed', transport: 'stdio', source: 'user', error: '<img src=x onerror=alert(1)> spawn ENOENT again' },
+    ]);
+    assert.ok(await until(`/again/.test((document.querySelector('#agMcp pre[data-err]')||{}).textContent||'')`), 'the error box followed the event');
+    assert.ok(await js(`document.activeElement.matches('pre[data-err]')`), 'focus stays on the error box after a live repaint');
     await closeDlg();
 
     // ---- sim-6: failed (command not found), and a server switched off ----

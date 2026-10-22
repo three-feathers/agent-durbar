@@ -676,7 +676,7 @@
         const detOpen=x.error&&openDet.has(x.name);
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
-        const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" aria-label="${esc('Error text of '+x.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-copy="${esc(x.name)}" aria-label="${esc('Copy the error text of '+x.name)}">Copy</button></div>`:'';
+        const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-err="${esc(x.name)}" aria-label="${esc('Error text of '+x.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-copy="${esc(x.name)}" aria-label="${esc('Copy the error text of '+x.name)}">Copy</button></div>`:'';
         const rs=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
         return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name" title="${esc(x.name)}">${esc(x.name)}</b><span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
           <div class="srv-act">${rs}${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
@@ -686,27 +686,35 @@
     };
     let dlg=null;
     /* FR-004 / FR-033: repaint in place and keep the focus on the same control (by server name), so a keyboard user is not thrown out */
-    const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return;
+    /* what the dialog last showed per server: a repaint compares with it and updates it, so a user's own change (switch, Details, Restart) is never announced later */
+    let seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
+    const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return [];
       const f=document.activeElement,inside=f&&dlg.contains(f);
-      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      const errTop=key&&key[0]==='err'?f.scrollTop:0;
       const bodyEl=dlg.querySelector('.dbody'),top=bodyEl.scrollTop;
       bodyEl.innerHTML=body(st);bodyEl.scrollTop=top; /* FR-004: the scroll position stays */
-      if(!key)return;
-      const btns=[...dlg.querySelectorAll('.dbody button:not([disabled])')];
-      const back=btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1])||(key[0]==='copy'&&btns.find(x=>x.dataset.det===key[1]))||(key[0]!=='n'&&key[0]!=='id'?btns.find(x=>x.dataset.n===key[1]):null);
-      if(back)back.focus();};
-    /* FR-004 / FR-033: an `mcp` event for this agent repaints the open dialog (no re-open), and says what changed through the polite live region.
-       Several events in a row become one repaint. The hook is dropped when the dialog closes. */
-    let evT=0,seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
+      if(key){
+        const pre=key[0]==='err'?[...dlg.querySelectorAll('.dbody pre[data-err]')].find(x=>x.dataset.err===key[1]):null;
+        if(pre){pre.focus();pre.scrollTop=errTop;}
+        else{
+          const btns=[...dlg.querySelectorAll('.dbody button:not([disabled])')];
+          const back=btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1])||((key[0]==='copy'||key[0]==='err')&&btns.find(x=>x.dataset.det===key[1]))||(key[0]!=='n'&&key[0]!=='id'?btns.find(x=>x.dataset.n===key[1]):null);
+          if(back)back.focus();
+        }
+      }
+      const W=window.DurbarMcpWords,ch=[];
+      for(const x of st.servers){const was=seen.get(x.name);if(was!==undefined&&was!==(x.status||''))ch.push(x.name+': '+W.stateOf(x.status).word);}
+      seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
+      return ch;};
+    /* FR-004 / FR-033: an `mcp` event for this agent repaints the open dialog (no re-open) and says what changed through the polite live region.
+       A throttle: the first event starts a 150 ms timer and the events that arrive meanwhile share its one repaint. The hook is dropped when the dialog closes. */
+    let evT=0;
     const say=text=>{const el=document.getElementById('srAnnounce');if(el&&text){el.textContent='';setTimeout(()=>{el.textContent=String(text).slice(0,300);},60);}};
     const onEvent=id=>{
       if(id!==a.id||!dlg||!dlg.isConnected||evT)return;
       evT=setTimeout(async()=>{evT=0;
-        try{await repaint();}catch(e){return;}
-        if(!dlg||!dlg.isConnected)return;
-        const W=window.DurbarMcpWords,ch=[];
-        for(const x of st.servers){const was=seen.get(x.name);if(was!==undefined&&was!==(x.status||''))ch.push(x.name+': '+W.stateOf(x.status).word);}
-        seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
+        let ch;try{ch=await repaint();}catch(e){return;}
         if(ch.length)say(ch.slice(0,3).join('. ')+(ch.length>3?' and '+(ch.length-3)+' more':''));
       },150);
     };

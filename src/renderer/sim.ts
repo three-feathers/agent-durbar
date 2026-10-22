@@ -11,6 +11,7 @@
  * Plain script (no imports/exports) so it runs unchanged in the sandboxed renderer.
  */
 type AgentEvent = import('../adapters/types').AgentEvent;
+type McpServerStatus = import('../adapters/types').McpServerStatus;
 type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
 type FolderSetupItem = import('../shared/foldersetup').FolderSetupItem;
@@ -83,7 +84,7 @@ interface SimAgent {
   mcpRestarting?: Set<string>;
   mcpFixed?: Set<string>;
   /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
-  mcpLive?: { name: string; status: string; error?: string; errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config' }[];
+  mcpLive?: { name: string; status: string; error?: string; errorClass?: McpServerStatus['errorClass'] }[];
   /** Simulated credit use in nano-AIU, and the open "limit reached" question (spec 011). */
   used?: number;
   /** Dollar estimate used (kinds with `capUnit: 'usd'`). */
@@ -535,7 +536,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     ];
     /* spec 058: the state of one simulated server, for the dialog's reply and the `mcp` events alike (FR-001, FR-006, FR-040).
        The sixth agent's "my-notes" failed to start (until a Restart); every fifth agent from the fifth one (5, 10, 15) has it asking for a sign-in. */
-    const simServer = (s: SimAgent, i: number, name: string, live: boolean): { status?: string; error?: string; errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config' } => {
+    const simServer = (s: SimAgent, i: number, name: string, live: boolean): { status?: string; error?: string; errorClass?: McpServerStatus['errorClass'] } => {
       if (s.mcpOff?.has(name)) return { status: 'disabled' };
       if (!live) return {};
       if (s.mcpRestarting?.has(name)) return { status: 'pending' };
