@@ -876,7 +876,7 @@
     const allTime=costPer==='since'&&!!day, label=allTime?'All time (since '+day+')':'This session';
     const seg=`<div class="seg" role="tablist" aria-label="Period"><button role="tab" id="costRun" aria-selected="${!allTime}" type="button" title="Since Agent Durbar opened (or the last reset)">This session</button>${day?`<button role="tab" id="costSince" aria-selected="${allTime}" type="button" title="The saved totals since the last reset in Settings (${esc(day)}), plus this session">All time</button>`:''}</div>${allTime?`<small class="per-since">since ${esc(day)}</small>`:''}`;
     if(!built.rows.length)return {seg,built,label,html:'<p class="scr-empty">No folders yet.<br><small>Add a folder and start a session; the cost of each folder shows here.</small></p>'};
-    /* spec 052 FR-054: no usage at all yet: a plain sentence instead of a table of dashes */
+    /* spec 052 FR-050: no usage at all yet: a plain sentence instead of a table of dashes */
     /* spec 052 FR-075: a Copilot agent in the office: say the plan has a fixed price (the same words as the spending-limit dialog) */
     const plan=X.agents().some(a=>(a.adapterId||'copilot')==='copilot')?`<p class="scr-note small cost-plan">${esc(C.COPILOT_PLAN_NOTE)}</p>`:'';
     if(built.rows.every(r=>r.empty))return {seg,built,label,none:true,html:'<p class="scr-empty">No costs yet. Numbers appear after an agent\'s first reply.</p>'+plan};
@@ -892,7 +892,7 @@
   }
   async function copyCostCsv(cost){
     const k=cost.built.rows.length;
-    await copyText(window.DurbarCost.toCsv(cost.built,cost.label),'Copied '+k+' folder'+(k===1?'':'s')+' as CSV',2600); /* FR-054 */
+    await copyText(window.DurbarCost.toCsv(cost.built,cost.label),'Copied '+k+' folder'+(k===1?'':'s')+' as CSV',2600); /* FR-050 */
   }
   const fmtDate=iso=>{const d=new Date(iso);return isNaN(d)?'':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});};
   async function toolsTab(scope,tot,groups,all){

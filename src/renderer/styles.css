@@ -18,9 +18,9 @@
   --m-bar:3.4s ease-in-out infinite alternate; --m-glow:3.6s ease-in-out infinite alternate;
   --m-halo:3.6s ease-in-out infinite alternate; --m-wave:2.8s ease-in-out infinite; --m-cursor:1.6s ease-in-out infinite;
   --radius:16px;
-  /* spec 052 FR-057: radius scale for controls and panels (rooms and desks keep their own) */
+  /* spec 052 FR-053: radius scale for controls and panels (rooms and desks keep their own) */
   --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:18px;
-  /* spec 052 FR-056: control borders at 3:1, the second tone of the focus ring (theme.js sets both per theme) */
+  /* spec 052 FR-052: control borders at 3:1, the second tone of the focus ring (theme.js sets both per theme) */
   --line-ctl:#8a8272; --focus-halo:transparent;
   /* spec 052 FR-100, FR-104: hairlines computed here, on the root, so they keep the page's --line inside the office (the stage reuses --line for connectors) */
   --line-hair:var(--line); --line-soft:color-mix(in srgb,var(--line) 60%,transparent);
@@ -54,7 +54,7 @@
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:var(--t3-size);line-height:1.4;display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit}
-:focus-visible{outline:3px solid var(--focus,#4f7fa8);outline-offset:1px;box-shadow:0 0 0 5px var(--focus-halo,transparent)} /* spec 052 FR-056: two tones (retro: dark ring, yellow halo); a component's own box-shadow rule still wins */
+:focus-visible{outline:3px solid var(--focus,#4f7fa8);outline-offset:1px;box-shadow:0 0 0 5px var(--focus-halo,transparent)} /* spec 052 FR-052: two tones (retro: dark ring, yellow halo); a component's own box-shadow rule still wins */
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 /* spec 052 FR-098: the body text is T3 (13px) for the chrome; the office, the list and the top bar keep the 14px they always
    inherited, so desk cards, rooms, room headers, the lobby and the top bar measure exactly as before (check:geometry, check:office) */
@@ -91,7 +91,7 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour */
 .dot.idle{background:transparent;border:2px solid var(--c-idle);box-shadow:0 0 0 1px var(--pc-idle)} .dot.error{background:var(--c-error)} .dot.done{background:var(--c-done)}
 /* spec 052 FR-006: a shape as well as a colour (deuteranopia): waiting is a diamond, error a triangle, idle a ring, working and done circles */
-.dot.waiting{border-radius:1.5px;transform:rotate(45deg) scale(.86);box-shadow:0 0 0 1px var(--amber-ink)} /* spec 052 FR-056: a darker edge so it shows on light surfaces (size unchanged) */
+.dot.waiting{border-radius:1.5px;transform:rotate(45deg) scale(.86);box-shadow:0 0 0 1px var(--amber-ink)} /* spec 052 FR-052: a darker edge so it shows on light surfaces (size unchanged) */
 .dot.error{border-radius:0;clip-path:polygon(50% 4%,100% 96%,0 96%)}
 .controls{display:flex;align-items:center;gap:6px;flex:none;flex-wrap:wrap;row-gap:6px;max-width:100%} /* never let Office / List leave the window (PR #124) */
 .select-wrap{position:relative}
@@ -304,7 +304,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .lrow{display:grid;grid-template-columns:minmax(120px,1fr) minmax(100px,1.05fr) minmax(90px,.7fr) minmax(100px,.75fr) minmax(160px,2.4fr) 78px 88px 120px;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;text-align:left;cursor:pointer;font-size:13px}
 .lrow:last-child{border-bottom:0}
 button.lrow:hover{background:var(--surface-2)}
-button.lrow[aria-pressed="true"]{background:var(--tone-info-soft);box-shadow:inset 3px 0 0 var(--focus)} /* spec 052 FR-056: not colour only */
+button.lrow[aria-pressed="true"]{background:var(--tone-info-soft);box-shadow:inset 3px 0 0 var(--focus)} /* spec 052 FR-052: not colour only */
 /* spec 052 FR-008: "lhead", not "head": the avatars' .head nods (styles: animation nod), and the list header row nodded with them */
 .lrow.lhead{height:34px;cursor:default;font-size:11px;color:var(--muted);background:transparent;font-weight:600;letter-spacing:.02em;border-bottom-color:var(--line)} /* spec 052 FR-104: one 1px rule, no fill */ /* spec 052 FR-077: sentence case */
 .lhead>span{min-width:0}
@@ -357,7 +357,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .actions{display:flex;gap:8px;margin-top:12px}
 .btn{height:var(--h-ctl);padding:0 14px;border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--raised);cursor:pointer;font-size:13px;font-weight:550;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
 .btn:hover{background:var(--surface-2);border-color:#bdb3a2}
-/* spec 052 FR-057: the primary action is solid in every theme (themes.css gives each theme its own accent) */
+/* spec 052 FR-053: the primary action is solid in every theme (themes.css gives each theme its own accent) */
 .btn.primary{background:var(--sage-ink);border-color:transparent;color:var(--surface);font-weight:600} /* spec 052 FR-169: the text colour is the page's own, so it reads on --sage-ink in a dark theme too */
 .btn.primary:hover{background:color-mix(in srgb,var(--sage-ink) 86%,#000)}
 .btn.danger{color:var(--red-ink)}
@@ -908,7 +908,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .room-mcp:hover{background:var(--raised);color:var(--ink)}
 .room-sched{flex:none;display:inline-flex;align-items:center;gap:4px;height:24px;border-radius:7px;border:1px solid var(--line-2);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:11px;font-weight:600;line-height:1;cursor:pointer;padding:0 7px;white-space:nowrap}
 .room-sched:hover{background:var(--raised);color:var(--ink)}
-.room-sched.off{opacity:1;color:var(--muted);border-style:dashed} /* spec 052 FR-056: readable, not faded */
+.room-sched.off{opacity:1;color:var(--muted);border-style:dashed} /* spec 052 FR-052: readable, not faded */
 .sched-set .fp-pause{display:inline-flex;align-items:center;gap:8px;font-size:13px;margin:4px 0 8px}
 .sched-set .ss-group{margin:8px 0 12px}
 .sched-set .ss-head{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
@@ -1269,7 +1269,7 @@ body.simple #chat .think .think-body{display:none}
 body.simple #addWs,body.simple #foldersBtn,body.simple #vList{display:none!important}
 /* spec 052 R3 design polish (Clean Office only unless noted; colour, border colour, background, shadow, radius, weight and
    letter-spacing only, so every size stays and check:geometry holds) */
-/* primary action: solid sage ink, now the base `.btn.primary` rule in every theme (spec 052 FR-057) */
+/* primary action: solid sage ink, now the base `.btn.primary` rule in every theme (spec 052 FR-053) */
 /* top-bar counters: one segmented strip in every style, see FR-103 at the .stats rule (round 10) */
 /* the Needs you button */
 html:not([data-ui]) .inbox-btn{border-radius:8px}
@@ -1339,17 +1339,17 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .kb-h{margin:6px 0 0;font-size:13px}
 .kb-note{margin:0;font-size:11.5px;color:var(--muted)}
 
-/* ---- spec 052 FR-051..FR-054 (round 4, interaction polish) ---- */
-/* FR-051: pressed, disabled and busy states (theme rules in themes.css that set :active still win: they are more specific) */
+/* ---- spec 052 FR-047..FR-050 (round 4, interaction polish) ---- */
+/* FR-047: pressed, disabled and busy states (theme rules in themes.css that set :active still win: they are more specific) */
 .btn,.more-it{transition:background .12s,border-color .12s,transform .06s}
 .stat,.chip{transition:background .12s,border-color .12s,transform .06s}
 .btn:active:not(:disabled),.stat:active,.chip:active,.more-it:active:not(:disabled){transform:translateY(1px);box-shadow:inset 0 1px 2px rgb(0 0 0/.12)}
-.btn:disabled,.btn[aria-disabled=true]{opacity:1;color:var(--muted);border-style:dashed;cursor:not-allowed} /* spec 052 FR-056: readable, not faded (was opacity .5) */
+.btn:disabled,.btn[aria-disabled=true]{opacity:1;color:var(--muted);border-style:dashed;cursor:not-allowed} /* spec 052 FR-052: readable, not faded (was opacity .5) */
 .btn.primary:is(:disabled,[aria-disabled=true]){background:var(--surface-2);border-color:var(--line-ctl);color:var(--muted);font-weight:550}
 .btn[aria-busy=true],.more-it[aria-busy=true]{justify-content:center;cursor:progress;opacity:.8}
 .spin{display:inline-block;flex:none;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite;opacity:.8}
 @keyframes spin{to{transform:rotate(360deg)}}
-/* FR-052: an answered inbox row shows the answer, then folds away; the empty state has a check badge */
+/* FR-048: an answered inbox row shows the answer, then folds away; the empty state has a check badge */
 .inbox-row.settled .ib-done{margin:0;font-size:var(--t3-size);font-weight:650;color:var(--ink-2);min-height:28px;display:flex;align-items:center}
 .inbox-row.settled .ib-done.yes{color:var(--pc-done)}
 .inbox-row.settled .ib-done.no{color:var(--red-ink)}
@@ -1363,20 +1363,20 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .ib-ok::after{animation:ibtick .2s ease-out .16s both}
 @keyframes ibpop{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
 @keyframes ibtick{from{opacity:0;transform:rotate(45deg) scale(.3)}to{opacity:1;transform:rotate(45deg)}}
-/* FR-053: dialogs ease in (the global reduced-motion rule turns this off) */
+/* FR-049: dialogs ease in (the global reduced-motion rule turns this off) */
 .dlg{animation:dlgin .16s cubic-bezier(.2,.8,.2,1)}
 .dlg-ov{animation:dlgov .12s ease-out}
 @keyframes dlgin{from{opacity:0;transform:translateY(6px) scale(.985)}}
 @keyframes dlgov{from{opacity:0}}
-/* FR-053: room for a copy button at the bottom of the Thinking box */
+/* FR-049: room for a copy button at the bottom of the Thinking box */
 .think-body.md{padding-bottom:26px}
 .think-body.md>.cp-msg{bottom:4px} /* FR-092: the box no longer scrolls, so Copy stays at its bottom edge, outside any scroll area */
-/* FR-054: typed toasts */
+/* FR-050: typed toasts */
 .toast.ok{border-left:4px solid var(--c-done)}
 .toast.err{border-left:4px solid var(--c-error)}
 
-/* ---- spec 052 FR-056..FR-055 (round 5, visual and accessibility) ---- */
-/* FR-056: Windows High Contrast (forced colours) keeps edges, selection and the status shapes */
+/* ---- spec 052 FR-052..FR-055 (round 5, visual and accessibility) ---- */
+/* FR-052: Windows High Contrast (forced colours) keeps edges, selection and the status shapes */
 @media (forced-colors:active){
   .pill,.stat,.chip,.btn,.room-new{border:1px solid CanvasText}
   [aria-pressed=true],[aria-current]:not([aria-current=false]){outline:2px solid Highlight;outline-offset:-2px}
@@ -1384,17 +1384,17 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
   .dot,.pill i{forced-color-adjust:none}
   .btn:disabled,.btn[aria-disabled=true]{color:GrayText;border-color:GrayText}
 }
-/* FR-056: more contrast on request: stronger lines, muted text as dark as secondary text. Light themes only (a generated
+/* FR-052: more contrast on request: stronger lines, muted text as dark as secondary text. Light themes only (a generated
    dark theme sets data-dark); !important because theme tokens are inline styles on <html> */
 @media (prefers-contrast:more){
   html:not([data-dark]){--line:var(--line-ctl,#8a8272)!important;--line-2:color-mix(in srgb,var(--line-ctl,#8a8272) 65%,var(--ink,#2c3733))!important;--muted:var(--ink-2)!important}
 }
-/* FR-057: Tools and Settings are ghost buttons in Clean Office (same box: the group keeps its 1px border and padding, only transparent); themed top bars keep their own .seg look, which carries their contrast */
+/* FR-053: Tools and Settings are ghost buttons in Clean Office (same box: the group keeps its 1px border and padding, only transparent); themed top bars keep their own .seg look, which carries their contrast */
 html:not([data-ui]) #topBtns{background:transparent;border-color:transparent}
 html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:color-mix(in srgb,currentColor 10%,transparent)}
-/* FR-057: the restore strip is a calm amber band (height unchanged: 3px padding, 24px buttons) */
+/* FR-053: the restore strip is a calm amber band (height unchanged: 3px padding, 24px buttons) */
 .notice-strip{background:color-mix(in srgb,var(--pb-waiting) 55%,var(--surface));border-bottom:1px solid color-mix(in srgb,var(--c-waiting) 45%,var(--line))}
-/* FR-057: radius tokens on panels and controls whose radius was already close */
+/* FR-053: radius tokens on panels and controls whose radius was already close */
 .dlg select,.dlg input[type=number],.dlg .dinput input{border-radius:var(--r-md)}
 .inbox{border-radius:var(--r-lg)}
 

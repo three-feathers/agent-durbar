@@ -492,7 +492,7 @@ function mountToast(t){const box=$('toasts');placeToasts();box.appendChild(t);
   if(window.ResizeObserver){if(!toastRO)toastRO=new ResizeObserver(placeToasts);toastRO.disconnect();for(const e of [document.querySelector('#panel .composer'),$('answerBar'),$('panel')])if(e)toastRO.observe(e);} /* the composer grows with a long message, the answer bar appears and goes */}
 window.addEventListener('resize',placeToasts);
 function toast(html,ms){const t=document.createElement('div');t.className='toast';t.innerHTML=html;mountToast(t);holdTimer(t,ms||3200,()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320)});return t;}
-/* spec 052 FR-051: a button that awaits a bridge call shows it is busy: disabled + aria-busy, same width, the given label, and a 12px spinner
+/* spec 052 FR-047: a button that awaits a bridge call shows it is busy: disabled + aria-busy, same width, the given label, and a 12px spinner
    after 150ms (none under reduced motion: the label alone). Returns done(), which restores the button. busy(null) is a no-op. */
 const reducedMotion=()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){return false;}};
 function busy(btn,label){
@@ -1763,7 +1763,7 @@ function rollCount(box,n){
   box._roll=setTimeout(()=>{if(box.dataset.n===txt)box.textContent=txt;},260);
 }
 function pendingCardOf(a){const c=getChat(a);const all=[...c.el.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));return all[0]||null;}
-/* spec 052 FR-052: focus goes back to where it was when the inbox opened (still in the page and shown), else to the inbox button */
+/* spec 052 FR-048: focus goes back to where it was when the inbox opened (still in the page and shown), else to the inbox button */
 let inboxBack=null;
 let inboxTick=0;
 function closeInbox(){clearInterval(inboxTick);inboxTick=0;const d=$('inboxDlg');if(!d)return;d.remove();const back=inboxBack;inboxBack=null;
@@ -1814,7 +1814,7 @@ function flipInbox(paint){
 function paintInbox(focusIndex){
   const body=$('inboxBody'); if(!body)return;
   const list=needsMeOrder();
-  body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1"><span class="ib-ok" aria-hidden="true"></span><span><b>All clear. Nobody needs you right now.</b><small>Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</small></span></p>'; /* spec 052 FR-052 */
+  body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1"><span class="ib-ok" aria-hidden="true"></span><span><b>All clear. Nobody needs you right now.</b><small>Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</small></span></p>'; /* spec 052 FR-048 */
   list.forEach((a,i)=>{
     const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
     const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'stopped':'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
@@ -1835,7 +1835,7 @@ function paintInbox(focusIndex){
     if(card&&!q)for(const src of [...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>RANK[kOf(x)]-RANK[kOf(y)])){
       const k=kOf(src);
       add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],k,ev=>{const word=k==='deny'?'Denied':k==='other'?src.textContent:'Allowed';
-        /* spec 052 FR-051/FR-052: the row's buttons go busy, then the row shows the answer for 600ms, folds away in 200ms, then the list repaints */
+        /* spec 052 FR-047/FR-048: the row's buttons go busy, then the row shows the answer for 600ms, folds away in 200ms, then the list repaints */
         if(row.classList.contains('settled')||row.dataset.answering)return; row.dataset.answering='1';
         act.querySelectorAll('button').forEach(x=>{if(x!==ev.currentTarget)x.disabled=true;});const done=busy(ev.currentTarget,'Sending…');
         row.querySelector('.ib-h').focus();src.click();
@@ -2363,7 +2363,7 @@ document.addEventListener('click',async e=>{
   try{await navigator.clipboard.writeText(text);copiedLabel(b);}
   catch{toast('Could not copy to the clipboard.',3000).classList.add('err');}
 });
-/* spec 052 FR-053: after a copy the button says "Copied ✓" for 1200ms, then "Copy" again */
+/* spec 052 FR-049: after a copy the button says "Copied ✓" for 1200ms, then "Copy" again */
 function copiedLabel(b){clearTimeout(b._cpT);b.textContent='Copied ✓';b._cpT=setTimeout(()=>{b.textContent='Copy';},1200);}
 function mdFlush(){const l=[...MDQ];MDQ.clear();l.forEach(mdPaint);}
 let mdRaf=0;
@@ -2937,7 +2937,7 @@ function showPerm(a,p){
     const row=document.createElement('div');row.className='note-actions';
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
     const answer=(approve,remember,broad)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember,!!broad);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:broad?p.broadScopeLabel:p.scopeLabel,summary:p.summary});};
-    mk('Allow once','primary','Allow this one request',()=>answer(true,false)); /* spec 052 FR-037/FR-055: the same plain words in Simple and Expert */
+    mk('Allow once','primary','Allow this one request',()=>answer(true,false)); /* spec 052 FR-037/FR-051: the same plain words in Simple and Expert */
     if(p.scopeKey){const ex='Allow “'+DurbarCutText.cutText(p.scopeLabel||p.kind||'this',32)+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
       mk(SIMPLE&&sl?sl:ex,'session','Allow "'+DurbarCutText.cutText(p.scopeLabel||p.kind,30)+'" until you end this session'+(p.kind==='shell'?' (this exact command)':'')+'. Revoke from its chip.',()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';if(sl){sb.dataset.lblSimple=sl;sb.dataset.lblExpert=ex;}}
     if(p.broadScopeKey){mk('Allow for this session: any arguments','session','Allow every simple "'+DurbarCutText.cutText(p.broadScopeLabel||p.kind,18)+'" command (no pipes, redirects or substitutions) until you end this session.',()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
@@ -3241,7 +3241,7 @@ function showSignInCard(a0,o){
   return n;
 }
 async function pickLive(want){addPicked(await bridge.pickAttachments(want));}
-/* spec 052 FR-051: btn (optional) shows the busy state while the bridge call runs; FR-054: success and failure toasts are typed */
+/* spec 052 FR-047: btn (optional) shows the busy state while the bridge call runs; FR-050: success and failure toasts are typed */
 async function openLive(a,btn){
   const done=busy(btn,'Opening…');
   try{const r=await bridge.openInVSCode(liveRoot(a).id);
@@ -3551,7 +3551,7 @@ async function loadKinds(refresh){
   KINDS=Array.isArray(r)&&r.length?r:null;
   applyKinds();
 }
-/* spec 052 FR-055: the toast names the agent app when it is known */
+/* spec 052 FR-051: the toast names the agent app when it is known */
 function notReadyToast(ch){toast(esc((ch&&ch.shortName)||'That agent app')+' isn\'t ready yet. Set it up in Settings &gt; Agent apps.',6000);}
 async function aboutKinds(){
   for(;;){
@@ -4498,7 +4498,7 @@ function replayHistory(a,h,title,lead){
   addNote(chat,(lead||'Resumed')+': '+esc((title||'earlier session').replace(/[.!?…]+$/,''))+'. New messages continue this session.');
 }
 async function resumePrev(a,sid,btn){
-  const done=busy(btn,'Resuming…'); /* spec 052 FR-051: the shared busy state (it was a hand-made one) */
+  const done=busy(btn,'Resuming…'); /* spec 052 FR-047: the shared busy state (it was a hand-made one) */
   const r=await bridge.resumeSession(a.id,sid,pristine(a)).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!r.ok){toast('Could not resume: '+esc(r.error||'unknown error'),7000).classList.add('err');done();return;}
   if(r.removedId)removeLiveAgent(r.removedId);
