@@ -5,6 +5,17 @@
 
 const DAY = 86_400_000;
 
+/** Spec 068 FR-002: the words of the closing status; display text only (the break keys on `reason`). */
+export const USAGE_LIMIT_INTENT = 'Usage limit reached';
+
+/**
+ * The `idle` status every adapter emits after its `usageLimit` to close the turn quietly (a coffee break, not an error). One builder,
+ * so the marker `reason: 'usage-limit'` and the words are the same in every adapter (test-coffeebreak checks each mapper's output).
+ */
+export function usageLimitClosing(): { type: 'status'; status: 'idle'; intent: string; reason: 'usage-limit' } {
+  return { type: 'status', status: 'idle', intent: USAGE_LIMIT_INTENT, reason: 'usage-limit' };
+}
+
 /**
  * A reset time as epoch ms: a number in seconds (below 1e12) or ms, a digit string, or an ISO date. Anything else, a time that
  * is not in the future or more than 31 days ahead (spec 068 edge cases: "in the past or absurd" means unknown) gives undefined:

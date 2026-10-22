@@ -3,6 +3,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import { PermissionBroker, grantScope, isInsideRoots } from '../src/adapters/permissions';
 import type { BrokerEvent } from '../src/adapters/permissions';
+import { codexPermission } from '../src/adapters/codexModes';
 
 async function main(): Promise<void> {
   // scopes
@@ -243,6 +244,54 @@ async function main(): Promise<void> {
     const cased = b.request({ kind: 'write', fileName: 'c:\\REPO\\SRC\\d.ts', toolCallId: 'win4' });
     await tick();
     assert.strictEqual((await cased).kind, 'approve-once', 'T028: the same Windows folder in another case is covered by the grant');
+  }
+
+  // spec 052 FR-172 (review on #470): a write that names several files is covered by a session grant only when every file's folder is
+  // granted; a grant given on such a write names and grants each folder
+  {
+    const P = path.posix;
+    const pc = { flavor: P, realpath: (x: string) => x };
+    assert.strictEqual(grantScope({ kind: 'write', fileName: '/w/src/a.ts', paths: ['/w/src/a.ts', '/w/src/b.ts'] }, P).key, 'write:/w/src', 'one folder: the usual folder grant');
+    const two = grantScope({ kind: 'write', fileName: '/w/src/a.ts', paths: ['/w/src/a.ts', '/w/docs/x.md'] }, P);
+    assert.deepStrictEqual(two.folders?.map((f) => f.key), ['write:/w/src', 'write:/w/docs'], 'two folders: both are in the scope');
+    assert.strictEqual(two.label, 'write in w/src/, w/docs/', 'the label names every folder');
+    assert.ok(!two.key.startsWith('write:/'), 'the key is not the first folder\'s key');
+    assert.strictEqual(grantScope({ kind: 'write', paths: ['/a/1', '/b/1', '/c/1', '/d/1', '/e/1'] }, P).label, 'write in a/, b/, c/ and 2 more folders', 'many folders: the label stays short');
+    const ev: BrokerEvent[] = [];
+    const b = new PermissionBroker({ mode: 'ask', pathCheck: pc, emit: (e) => ev.push(e) });
+    const g1 = b.request({ kind: 'write', fileName: '/w/src/a.ts', paths: ['/w/src/a.ts'], toolCallId: 'm1' });
+    await tick();
+    b.resolve('m1', true, true);
+    await g1;
+    assert.deepStrictEqual(b.listGrants().map((g) => g.key), ['write:/w/src'], 'a grant on /w/src/');
+    const mixed = b.request({ kind: 'write', fileName: '/w/src/b.ts', paths: ['/w/src/b.ts', '/home/u/.bashrc'], toolCallId: 'm2' });
+    await tick();
+    assert.strictEqual(b.pendingCount(), 1, 'a grant on /w/src/ does not approve [/w/src/b.ts, /home/u/.bashrc] automatically');
+    assert.ok(!ev.some((e) => e.type === 'resolved' && e.permission.requestId === 'm2' && e.permission.via === 'session'), 'not resolved by the session grant');
+    b.resolve('m2', true, true); // "for this session" on the two-folder write
+    await mixed;
+    assert.deepStrictEqual(b.listGrants().map((g) => g.key).sort(), ['write:/home/u', 'write:/w/src'], 'approving it for the session grants each named folder');
+    assert.strictEqual((await b.request({ kind: 'write', fileName: '/home/u/.profile', paths: ['/w/src/c.ts', '/home/u/.profile'], toolCallId: 'm3' })).kind, 'approve-once', 'every folder granted: approved');
+    const third = b.request({ kind: 'write', paths: ['/w/src/c.ts', '/home/u/x', '/etc/passwd'], toolCallId: 'm4' });
+    await tick();
+    assert.strictEqual(b.pendingCount(), 1, 'one folder not granted: it asks');
+    b.resolve('m4', false);
+    await third;
+    // the same through the Codex mapping (the reviewer's probe): an item whose second file is outside the granted folder
+    const b2 = new PermissionBroker({ mode: 'ask', pathCheck: pc, emit: () => undefined });
+    const req = (id: string, files: string[]) => {
+      const p = codexPermission('item/fileChange/requestApproval', { itemId: id }, files.map((f) => ({ path: f, kind: 'update' as const, diff: '' })));
+      return b2.request({ kind: p.kind, fileName: p.fileName, paths: p.paths, toolCallId: id, cardSummary: p.summary });
+    };
+    const c1 = req('c1', ['/w/src/a.ts']);
+    await tick();
+    b2.resolve('c1', true, true);
+    await c1;
+    const c2 = req('c2', ['/w/src/b.ts', '/other/x']);
+    await tick();
+    assert.strictEqual(b2.pendingCount(), 1, 'Codex: a grant on /w/src/ does not approve [/w/src/b.ts, /other/x]');
+    b2.denyPending();
+    await c2;
   }
 
   // T026: requests without a toolCallId in the same millisecond get different ids

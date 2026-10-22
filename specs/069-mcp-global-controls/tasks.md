@@ -23,8 +23,9 @@
 
 - [x] T030 `listMcpTools` + `mcpTools` capability: Copilot `rpc.mcp.listTools`, Claude `mcp_status` tools, Codex `mcpServerStatus/list` tools; fake adapter; contract lines [FR-031]
 - [x] T031 `agents:mcpTools` with limits, timeout and masking [FR-032]
-- [x] T032 Agent dialog: expand row with tools; Start/Stop, Remove, *managed by* words; Sign in placeholder wired to spec 058 when `canSignIn` exists [FR-030, FR-033]
+- [x] T032 Agent dialog: expand row with tools; the switch named for this session, Remove, *managed by* words; Sign in placeholder wired to spec 058 when `canSignIn` exists [FR-030, FR-033]
 - [x] T033 Tests (fake SDK, fake CLI, fake app-server), simulator tools, screenshots, docs
+- [x] T034 Merge with spec 058's MCP words (#538): one row and one repaint path (058's), 058's state words, hints and Details/Copy, the switch named "Switch off/on ... in this session", sim tools follow the row's state; driver and screenshots updated [FR-030, FR-033; delta 2026-10-22]
 
 ## Part 4: single tools on and off (PR 4, owner 2026-10-21 22:10 UTC)
 

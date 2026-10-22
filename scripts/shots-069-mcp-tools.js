@@ -1,7 +1,7 @@
 /*
  * Spec 069 part 3 (T033): an agent's MCP dialog: expand a server row to see its tools (lazy, loading/empty/failed/not-running states),
- * Start/Stop names on the switch, Remove… on servers of an agent app's list or this folder, source chips. Simulator only (canned tools; no
- * AI credits).
+ * Remove… on servers of an agent app's list or this folder, source chips, on top of spec 058's row (state word, hint, Details / Copy).
+ * Simulator only (canned tools; no AI credits).
  *
  *   npm run build
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
@@ -11,7 +11,8 @@
  * - sim-1 (running): every row's name is a button with aria-expanded; github opens "5 tools" with names and one-line descriptions; the
  *   focus stays on the toggle; a second press closes it; docs-search style empty server says "This server lists no tools" (when present).
  * - sim-6: my-notes failed: its tools say "Could not list the tools: ..." (masked text from the sim).
- * - The switch is named "Stop <server> for <agent> in this session" / "Start ...".
+ * - The switch keeps spec 058's verb with this session's scope: "Switch off <server> for <agent> in this session" / "Switch on ...".
+ * - sim-6's failed my-notes keeps spec 058's state word and Details next to the tools toggle (one row, no second repaint path).
  * - Remove… is on github (in the Copilot and Claude Code lists) and opens the remove choice; built-in github-mcp-server has none.
  * - An idle agent with no running session: "Start the session to see its tools."
  * - Text >= 10.5px, the dialog fits. Shots: 069-mcp-tools-<w>x<h>.png. Prints "[069t] PASS".
@@ -47,7 +48,7 @@ module.exports = async (ctx) => {
     const toggles = await js(`[...document.querySelectorAll('#agMcp li.srv')].map(li=>{const b=li.querySelector('button[data-tools]');return b?b.getAttribute('aria-expanded'):'none'})`);
     assert.ok(toggles.every((x) => x === 'false'), 'every row has a closed tools toggle: ' + JSON.stringify(toggles));
     const sw = await js(`document.querySelector('#agMcp li[data-n="github"] button.swt').getAttribute('aria-label')`);
-    assert.match(sw, /^(Stop|Start) github for .+ in this session$/);
+    assert.match(sw, /^Switch (off|on) github for .+ in this session$/);
     assert.ok(await js(`!!document.querySelector('#agMcp li[data-n="github"] [data-mrm]')`), 'Remove… on a server of an agent app list');
     assert.ok(!(await js(`!!document.querySelector('#agMcp li[data-n="github-mcp-server"] [data-mrm]')`)), 'no Remove on the built-in server');
     await press('github');
@@ -90,6 +91,8 @@ module.exports = async (ctx) => {
 
     // ---- a failed server ----
     await openMcp('sim-6');
+    assert.match(await js(`document.querySelector('#agMcp li[data-n="my-notes"] .mst-w').textContent`), /Failed/, 'spec 058 state word on the row');
+    assert.ok(await js(`!!document.querySelector('#agMcp li[data-n="my-notes"] button[data-det]')`), 'spec 058 Details beside the tools toggle');
     await press('my-notes');
     assert.ok(await until(`/Could not list the tools/.test((document.querySelector('#agMcp li[data-n="my-notes"] .mcp-tools')||{}).textContent||'')`), 'a failed server says why');
     await closeDlg();

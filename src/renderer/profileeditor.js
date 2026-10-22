@@ -12,6 +12,9 @@
   const MODE_KEY='durbar.profileEditor.mode';
   const APP_LABEL={copilot:'GitHub Copilot',claude:'Claude Code'};
   const NAME_RE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+  /* Windows device names (FR-011): CON.md is a device there; refused in any case, with or without an extension. A copy of main's rule (src/main/profilefiles.ts isProfileName; test:profilefiles keeps them equal). */
+  const RESERVED_RE=/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+  const validName=n=>typeof n==='string'&&NAME_RE.test(n)&&!n.includes('..')&&!RESERVED_RE.test(n);
 
   /* ---------------- pure parts (unit tested: scripts/test-profileeditor.ts) ---------------- */
   /** Strips a ` # comment` that is outside quotes. */
@@ -108,9 +111,12 @@
   function baseName(p){const s=String(p||'').replace(/[\\/]+$/,'');const i=Math.max(s.lastIndexOf('/'),s.lastIndexOf('\\'));return i>=0?s.slice(i+1):s;}
   /** The file a new profile gets (FR-013), for the form's hint; main decides the real one. */
   const newFileName=(app,name)=>app==='copilot'?name+'.agent.md':name+'.md';
-  const newDirHint=(app,scope)=>scope==='user'?(app==='copilot'?'~/.copilot/agents':'~/.claude/agents'):(app==='copilot'?'.github/agents':'.claude/agents');
+  /** The folder for the hint: for the user folder, main's real one (`userDirs` from profiles:listFiles, so CLAUDE_CONFIG_DIR shows); the ~ form only when main sent none. */
+  const newDirHint=(app,scope,userDirs)=>scope==='user'?((userDirs&&typeof userDirs[app]==='string'&&userDirs[app])||(app==='copilot'?'~/.copilot/agents':'~/.claude/agents')):(app==='copilot'?'.github/agents':'.claude/agents');
+  /** dir + file with the folder's own separator (a Windows user folder uses backslashes). */
+  const joinHint=(dir,file)=>{const d=String(dir);const sep=d.includes('\\')&&!d.includes('/')?'\\':'/';return d.replace(/[\\/]+$/,'')+sep+file;};
 
-  const pure={parseFrontmatter,throttle,loadMode,saveMode,MODES,MODE_KEY,NAME_RE,newFileName,newDirHint,placeText,baseName};
+  const pure={parseFrontmatter,throttle,loadMode,saveMode,MODES,MODE_KEY,NAME_RE,RESERVED_RE,validName,newFileName,newDirHint,joinHint,placeText,baseName};
   if(!win)return pure;
 
   /* ---------------- the editor (page only) ---------------- */
@@ -118,6 +124,9 @@
   let X=null; /* {bridge, askDialog, toast, esc} from app.js */
   let st=null; /* the open file: {id, info, sha, saved, writable, mode, opener} */
   const listeners=[];
+  /* FR-039: Create with AI requests not ended yet, for the whole window, not one dialog: Stop waiting, Cancel, Escape and closing
+     the dialog do not take a request back, so a reopened dialog keeps Create disabled until it ends (main refuses one too) */
+  const aiRun={n:0,ends:new Set()};
   const store=()=>{try{return win.localStorage;}catch(e){return null;}};
   const changed=info=>listeners.forEach(fn=>{try{fn(info);}catch(e){/* a listener's own error */}});
   const $=id=>doc.getElementById(id);
@@ -197,7 +206,7 @@
     status(st.fmErrors?'Saved. The front matter has an error, so the agent app may skip this profile.':'Saved. Changes apply to sessions started after saving.');
     changed(st.info);
   }
-  /* FR-024: the first Save of a draft creates the file (exclusive), then it is an ordinary open file */
+  /* FR-029: the first Save of a draft creates the file (exclusive), then it is an ordinary open file */
   async function saveDraft(text){
     st.saving=true;status('Saving…');
     const d=st.draft;
@@ -241,7 +250,7 @@
     const opener=(opts&&opts.returnFocus)||(doc.activeElement&&doc.activeElement!==doc.body?doc.activeElement:null);
     mount({id,info:r.info,sha:r.sha256,saved:r.text,writable:!!r.info.writable,mode:loadMode(store()),opener,fmErrors:0},r.text);
   }
-  /** FR-024: a draft that has no file yet (an AI result); Save creates the file. Opens in `opts.mode` (Split for a new draft). */
+  /** FR-029: a draft that has no file yet (an AI result); Save creates the file. Opens in `opts.mode` (Split for a new draft). */
   async function openDraft(d,opts){
     if(!X||!X.bridge.createProfileFile)return;
     if(isOpen()&&!(await close()))return;
@@ -297,7 +306,7 @@
     const folders=(l&&l.folders)||[];
     const opener=(opts&&opts.returnFocus)||doc.activeElement;
     const ov=doc.createElement('div');ov.id='peNewOv';ov.className='dlg-ov';
-    ov.innerHTML=`<div class="dlg pe-new" role="dialog" aria-modal="true" aria-labelledby="peNT"><h3 id="peNT">New Agent Success Profile</h3>
+    ov.innerHTML=`<div class="dlg m pe-new" role="dialog" aria-modal="true" aria-labelledby="peNT"><h3 id="peNT">New Agent Success Profile</h3>
       <p class="dsub">A Markdown file with a short front matter that the agent app loads as a custom agent.</p>
       <fieldset class="pe-tpl" id="peNTpl"><legend>Template</legend></fieldset>
       <label>Agent app<select id="peNApp"><option value="copilot">GitHub Copilot</option><option value="claude">Claude Code</option></select></label>
@@ -314,13 +323,13 @@
     const u=doc.createElement('option');u.value='user';u.textContent='Your user folder (all folders)';sel.appendChild(u);
     if(opts&&opts.app&&APP_LABEL[opts.app])ov.querySelector('#peNApp').value=opts.app;
     doc.body.appendChild(ov);
-    const hint=()=>{const app=$('peNApp').value,pl=$('peNPlace').value,n=$('peNName').value.trim()||'<name>';setText($('peNHint'),'File: '+newDirHint(app,pl==='user'?'user':'folder')+'/'+newFileName(app,n)+(pl==='user'?'':' in '+baseName((folders.find(f=>f&&f.id===pl)||{}).path||'')));};
+    const hint=()=>{const app=$('peNApp').value,pl=$('peNPlace').value,n=$('peNName').value.trim()||'<name>';setText($('peNHint'),'File: '+joinHint(newDirHint(app,pl==='user'?'user':'folder',l&&l.userDirs),newFileName(app,n))+(pl==='user'?'':' in '+baseName((folders.find(f=>f&&f.id===pl)||{}).path||'')));};
     hint();ov.addEventListener('input',hint);ov.addEventListener('change',hint);
     return new Promise(resolve=>{
       const done=v=>{ov.remove();if(opener&&opener.focus&&doc.contains(opener)&&!v)opener.focus();resolve(v);};
       const go=async()=>{
         const name=$('peNName').value.trim(),er=$('peNErr');
-        if(!NAME_RE.test(name)){er.hidden=false;setText(er,'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');$('peNName').focus();return;}
+        if(!validName(name)){er.hidden=false;setText(er,NAME_RE.test(name)&&RESERVED_RE.test(name)?'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9): choose another.':'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');$('peNName').focus();return;}
         const pl=$('peNPlace').value;
         const tp=(ov.querySelector('input[name="peNTpl"]:checked')||{}).value||DEF;
         const r=await X.bridge.createProfileFile($('peNApp').value,pl,name,tp).catch(e=>({ok:false,error:String(e&&e.message||e)}));
@@ -328,7 +337,7 @@
         done(r.id);changed(r.info);open(r.id,{returnFocus:opener});
       };
       ov.querySelector('#peNGo').onclick=go;
-      /* spec 043 FR-021: Create with AI, only for the Agent Success Profile template */
+      /* spec 043 FR-026: Create with AI, only for the Agent Success Profile template */
       const aiB=ov.querySelector('#peNAi');
       if(aiB){const tplNow=()=>(ov.querySelector('input[name="peNTpl"]:checked')||{}).value||DEF;const sync=()=>{aiB.hidden=tplNow()!=='success';};sync();ov.addEventListener('change',sync);
         aiB.onclick=async()=>{const name=$('peNName').value.trim(),er=$('peNErr');
@@ -344,57 +353,72 @@
   }
 
   /**
-   * Spec 043 FR-021..FR-025: Create with AI. Describe it, or a questionnaire (each question optional); the cost line and the button
+   * Spec 043 FR-026..FR-030: Create with AI. Describe it, or a questionnaire (each question optional); the cost line and the button
    * name the app and the one request; the reply is checked in main and opens as an unsaved draft in Split view. Answers are kept on
    * an error. Resolves 'done' when a draft opened, else null.
    */
   async function aiCreate(t){
     let kinds=[];
     if(X.bridge.listAdapters){try{kinds=((await X.bridge.listAdapters())||[]).filter(k=>k&&k.state==='ready'&&k.capabilities&&k.capabilities.oneShot);}catch(e){kinds=[];}}
+    kinds.sort((a,b)=>(b.id===t.app)-(a.id===t.app)); /* FR-028: the target app first */
+    const RO=((win.exports&&win.exports.DEFAULT_READ_TOOLS)||{})[t.app]||[];
     const QS=(win.exports&&win.exports.PROFILE_QUESTIONS)||[];
     const costLine=k=>win.DurbarScreens&&win.DurbarScreens.oneShotCostLine?win.DurbarScreens.oneShotCostLine(k):'Uses your own '+(k.displayName||k.id)+' account.';
     const ov=doc.createElement('div');ov.id='peAiOv';ov.className='dlg-ov';
     ov.innerHTML=`<div class="dlg pe-ai" role="dialog" aria-modal="true" aria-labelledby="peAT"><h3 id="peAT"></h3>
-      <p class="dsub">Describe the agent, or answer a few questions. An agent app writes the Agent Success Profile in one request, with no tools and nothing kept; you read it in the editor before anything is saved. It never gets tools you did not name.</p>
+      <p class="dsub">Describe the agent, or answer a few questions. An agent app writes the Agent Success Profile in one request, with no tools and nothing kept; you read it in the editor before anything is saved.</p>
       ${kinds.length?`<div class="seg pe-ai-how" role="group" aria-label="How"><button type="button" data-am="describe" aria-pressed="true">Describe it</button><button type="button" data-am="questions" aria-pressed="false">Questionnaire</button></div>
       <div id="peADesc"><label>What does this agent do?<textarea id="peADescT" rows="5" maxlength="2000" placeholder="A careful reviewer for the payments service. It reports to me, reads code with Read, Grep and Glob, never edits files, and flags security and rounding risks in short notes."></textarea></label></div>
       <div id="peAQ" class="pe-ai-qs" hidden></div>
-      <label>Written by<select id="peABy"></select></label>
-      <p class="scr-note small" id="peACost"></p>`:'<p class="dsub">This needs Claude Code, OpenAI Codex or GitHub Copilot, installed and signed in on this computer.</p>'}
+      <div class="pe-ai-row"><div><label>Extra tools (optional)<input type="text" id="peATools" maxlength="2000" autocomplete="off" spellcheck="false"></label>
+      <p class="scr-note small" id="peAToolsNote"></p></div>
+      <div><label>Written by<select id="peABy"></select></label>
+      <p class="scr-note small" id="peACost"></p></div></div>`:'<p class="dsub">This needs Claude Code, OpenAI Codex or GitHub Copilot, installed and signed in on this computer.</p>'}
       <p class="derr" id="peAErr" role="alert" hidden></p><p class="pe-ai-wait" id="peAWait" role="status" hidden>Writing the profile… this can take up to a minute.</p>
-      <div class="dbtn"><button class="btn" type="button" id="peACancel" data-cancel="1">${kinds.length?'Cancel':'Close'}</button><button class="btn" type="button" id="peAStop" hidden>Stop waiting</button>${kinds.length?'<button class="btn primary" type="button" id="peAGo">Create with AI</button>':''}</div></div>`;
+      <div class="dbtn"><button class="btn" type="button" id="peACancel" data-cancel="1">${kinds.length?'Cancel':'Close'}</button><button class="btn" type="button" id="peAStop" hidden>Stop waiting</button><span class="scr-note small" id="peALate" hidden>Create is available again when the first request ends.</span>${kinds.length?'<button class="btn primary" type="button" id="peAGo">Create with AI</button>':''}</div></div>`;
     setText(ov.querySelector('#peAT'),'Create '+t.name+' with AI');
+    /* FR-031: tools come only from this line, never from the text above */
+    const toolsIn=ov.querySelector('#peATools');
+    if(toolsIn){toolsIn.placeholder=t.app==='copilot'?'edit, shell':'Bash(git:*), Edit';setText(ov.querySelector('#peAToolsNote'),'The agent gets only the read-only tools ('+RO.join(', ')+') and the ones you list here, separated by commas. Tools named in your text are not granted.');}
     const q=ov.querySelector('#peAQ');
-    if(q)QS.forEach(x=>{const l=doc.createElement('label');const sp=doc.createElement('span');setText(sp,x.question);const ta=doc.createElement('textarea');ta.rows=1;ta.maxLength=600;ta.dataset.q=x.id;ta.placeholder=x.hint;l.append(sp,ta);q.appendChild(l);});
+    if(q)QS.forEach(x=>{const l=doc.createElement('label');const sp=doc.createElement('span');setText(sp,x.question);const ta=doc.createElement('textarea');ta.rows=2;ta.maxLength=600;ta.dataset.q=x.id;ta.placeholder=x.hint;l.append(sp,ta);q.appendChild(l);});
     const by=ov.querySelector('#peABy');
     if(by){kinds.forEach(k=>{const o=doc.createElement('option');o.value=k.id;setText(o,k.displayName||k.id);by.appendChild(o);});by.value=kinds.some(k=>k.id===t.app)?t.app:kinds[0].id;}
     doc.body.appendChild(ov);
-    let mode='describe',waiting=null;
+    let mode='describe',waiting=null; /* aiRun.n: requests not ended yet, also after Stop waiting or a closed dialog (FR-036, FR-039) */
     const paintCost=()=>{if(!by)return;const k=kinds.find(x=>x.id===by.value)||kinds[0];setText(ov.querySelector('#peACost'),'1 prompt. '+costLine(k)+' No tools, nothing kept.');setText(ov.querySelector('#peAGo'),'Create with AI (1 prompt, '+(k.displayName||k.id)+')');};
     paintCost();if(by)by.addEventListener('change',paintCost);
     const setHow=m=>{mode=m;ov.querySelectorAll('[data-am]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.am===m)));ov.querySelector('#peADesc').hidden=m!=='describe';ov.querySelector('#peAQ').hidden=m!=='questions';const f=ov.querySelector(m==='describe'?'#peADescT':'#peAQ textarea');if(f)f.focus();};
     ov.addEventListener('click',e=>{const b=e.target.closest('[data-am]');if(b&&!waiting)setHow(b.dataset.am);});
-    const busy=on=>{ov.querySelectorAll('textarea,select,[data-am]').forEach(x=>{x.disabled=on;});const g=ov.querySelector('#peAGo');if(g)g.hidden=on;ov.querySelector('#peAStop').hidden=!on;ov.querySelector('#peAWait').hidden=!on;};
+    const busy=on=>{ov.querySelectorAll('textarea,select,input,[data-am]').forEach(x=>{x.disabled=on;});const g=ov.querySelector('#peAGo');if(g){g.hidden=on;g.disabled=aiRun.n>0;}ov.querySelector('#peALate').hidden=on||!aiRun.n;ov.querySelector('#peAStop').hidden=!on;ov.querySelector('#peAWait').hidden=!on;};
     const err=m=>{const e=ov.querySelector('#peAErr');e.hidden=!m;setText(e,m||'');};
     return new Promise(resolve=>{
-      const done=v=>{ov.remove();resolve(v);};
-      ov.querySelector('#peACancel').onclick=()=>{waiting=null;done(null);};
-      ov.querySelector('#peAStop').onclick=()=>{waiting=null;busy(false);err('Stopped waiting. The request may still finish on the agent app and be charged.');};
+      const onEnd=()=>{if(ov.isConnected&&!waiting)busy(false);};aiRun.ends.add(onEnd);
+      const done=v=>{aiRun.ends.delete(onEnd);ov.remove();resolve(v);};
+      const stop=()=>{waiting=null;busy(false);err('Stopped waiting. The request may still finish on the agent app and be charged.');};
+      /* FR-039: Cancel or Escape while waiting first stops waiting (the note says it may be charged); pressed again, it closes */
+      const cancel=()=>{if(waiting){stop();return;}done(null);};
+      ov.querySelector('#peACancel').onclick=cancel;
+      ov.querySelector('#peAStop').onclick=stop;
+      if(aiRun.n){busy(false);err('A request you started earlier is still running on the agent app and may be charged.');}
       const go=ov.querySelector('#peAGo');
       if(go)go.onclick=async()=>{
-        const req={app:t.app,name:t.name,by:by.value,mode};
+        if(aiRun.n)return;
+        const req={app:t.app,name:t.name,by:by.value,mode,tools:toolsIn?toolsIn.value.trim():''};
         if(mode==='describe'){req.description=ov.querySelector('#peADescT').value.trim();if(req.description.length<10){err('Describe what the agent does in a sentence or two.');return;}}
         else{req.answers={};ov.querySelectorAll('#peAQ textarea').forEach(x=>{if(x.value.trim())req.answers[x.dataset.q]=x.value.trim();});if(!Object.keys(req.answers).length){err('Answer at least one question.');return;}}
-        err('');busy(true);const token={};waiting=token;
+        err('');aiRun.n++;busy(true);const token={};waiting=token;
         const r=await X.bridge.generateProfile(req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-        if(waiting!==token)return; /* Stop waiting or Cancel: the answer is dropped */
+        aiRun.n--;
+        aiRun.ends.forEach(fn=>{try{fn();}catch(e){/* a closed dialog */}}); /* Create comes back in whichever dialog is open now */
+        if(waiting!==token)return; /* Stop waiting, Cancel or Escape: the answer is dropped */
         waiting=null;busy(false);
         const spent=r&&r.costUsd?' Cost: about $'+r.costUsd.toFixed(4)+' (estimate).':r&&r.nanoAiu?' Used '+(r.nanoAiu/1e9).toFixed(2)+' AI credits (as reported by Copilot).':'';
         if(!r||!r.ok){err(((r&&r.error)||'Unknown error.')+spent+' Your answers are kept: change them and try again.');return;}
         done('done');
         openDraft({app:t.app,place:t.place,name:t.name,folder:t.folder,text:r.text},{mode:'split',note:'Written by '+r.by+'.'+spent+(r.warnings&&r.warnings.length?' Note: '+r.warnings.join('; ')+'.':'')+' Read it, change what you like, then Save.'});
       };
-      ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();waiting=null;done(null);}
+      ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cancel();}
         else if(e.key==='Tab'){const it=[...ov.querySelectorAll('button:not([hidden]):not([disabled]),textarea:not([disabled]),select:not([disabled])')].filter(x=>x.offsetParent!==null);const i=it.indexOf(doc.activeElement);if(!it.length)return;if(e.shiftKey&&i<=0){e.preventDefault();it[it.length-1].focus();}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();it[0].focus();}}});
       const f=ov.querySelector('#peADescT')||ov.querySelector('#peACancel');f.focus();
     });

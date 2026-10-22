@@ -104,6 +104,9 @@ T.setTheme('clean-office');
     .replace(/min-width:0\b/g, ''); // min-width:0 only lets display text ellipsize
   const sized = css.match(/(?:^|[;{])\s*(?:(?:min-|max-)?(?:width|height)|padding(?:-[a-z]+)?|margin(?:-[a-z]+)?|gap|row-gap|column-gap|font-size|line-height|border(?:-(?:top|right|bottom|left))?-width|border(?:-(?:top|right|bottom|left))?\s*:\s*[0-9.]+px)\s*:?/g);
   assert.strictEqual(sized, null, 'themes.css sets a size: ' + (sized || []).join(' '));
+  // spec 008 FR-111: pull requests lay out Clean Office and Retro only, so these shorthands, which also carry sizes, are refused too
+  const shorthand = css.match(/(?:^|[;{])\s*(?:font|inset|border(?:-(?:top|right|bottom|left|block|inline))?|outline-offset|flex-basis|grid-template(?:-[a-z]+)?|zoom)\s*:[^;}]*?\b[0-9.]+(?:px|em|rem|%|ch|vw|vh)/g);
+  assert.strictEqual(shorthand, null, 'themes.css sets a size in a shorthand: ' + (shorthand || []).join(' '));
 }
 // UI styles (spec 035 FR-009): a fixed list; anything else is clean
 assert.strictEqual(T._validateManifest({ id: 'u1' }).ui, 'clean', 'no ui = clean');

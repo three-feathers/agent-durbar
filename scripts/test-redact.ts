@@ -3,7 +3,23 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
+
+// CPU time of f in ms (user + system of this process), not wall time: it does not grow when other processes take the CPU, so the
+// timing checks below hold on a loaded machine or runner (spec 041 `## Changes` 2026-10-22, T068). It still counts every step the
+// masking takes, so super-linear (ReDoS-style) growth fails as before. CPU time does not see a blocking wait (Atomics.wait, a sync
+// sleep, execSync, sync I/O), so wall time gets a loose backstop of 10x the check's CPU limit `capMs`: load cannot reach it, a long
+// wait does. A wait shorter than that still passes (the accepted limit; spec 041 `## Changes` 2026-10-22, review of PR #527).
+const cpuMs = (f: () => void, capMs: number): number => {
+  const w = process.hrtime.bigint();
+  const c = process.cpuUsage();
+  f();
+  const d = process.cpuUsage(c);
+  const cpu = (d.user + d.system) / 1000;
+  const wall = Number(process.hrtime.bigint() - w) / 1e6;
+  assert.ok(wall < 10 * capMs, `wall-time backstop: ${wall.toFixed(1)} ms wall for ${cpu.toFixed(1)} ms CPU, limit ${10 * capMs} ms (a blocking wait in the timed code?)`);
+  return cpu;
+};
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -57,6 +73,72 @@ for (const [k, v] of Object.entries(planted)) {
   assert.ok(out.startsWith('before ') && out.endsWith(' after') || k === 'authHeader', `pattern ${k}: surroundings kept`);
 }
 assert.strictEqual(redact('git clone https://alice:hunter2pass@example.com/r.git', {}), 'git clone https://[redacted]@example.com/r.git', 'url creds: host kept');
+// 3b. `\b` does not separate `_` from a letter: a token in Markdown emphasis or glued to a snake_case word is masked too
+//     (spec 012 FR-080 delta 2026-10-22). Every kind x every wrapping; the whole secret part must be gone.
+const secretPartOf = (k: string, v: string): string =>
+  k === 'urlCreds' ? 'hunter2pass' : k === 'authHeader' ? 'dXNlcjpwYXNzd29yZA' : k === 'bearer' ? 'abcdef1234567890' : v.slice(-12);
+const WRAPS: Array<(v: string) => string> = [
+  (v) => `_${v}_`, (v) => `__${v}__`, (v) => `___${v}___`, (v) => `*_${v}_*`, (v) => `**${v}**`, (v) => `~~${v}~~`,
+  (v) => '`' + v + '`', (v) => `_\`${v}\`_`, (v) => `(${v})`, (v) => `[${v}](x)`, (v) => `"${v}"`, (v) => `${v}_`,
+  (v) => `my_${v}`, (v) => `MY__${v}`, (v) => `____${v}____`, (v) => `a_b_c_d_${v}`, (v) => `my_long_snake_case_${v}`,
+  // T129 (review of PR #543): right after a percent-encoded byte in a URL query, double-encoded too, and after the `&` and `+` separators
+  ...['%3D', '%2F', '%22', '%3A', '%3d', '%253D', '%25253A'].map((e) => (v: string) => `https://x.example/?q=token${e}${v}&x=1`),
+  (v) => `https://x.example/?q=%22${v}%22&x=1`, (v) => `https://x.example/?a=1&${v}&x=1`, (v) => `https://x.example/?q=a+${v}+b`,
+  // T130 (review of PR #549): `%` re-encoded 4 and 6 times (any depth), and right after a backslash escape as the debug log writes it
+  // after JSON.stringify (`\n`, `\t`, `\r`, double-escaped `\\n`, `\x3d`, `\u003d`), after `=`, and after a real newline or tab
+  ...['%' + '25'.repeat(4) + '3D', '%' + '25'.repeat(6) + '3A'].map((e) => (v: string) => `https://x.example/?q=token${e}${v}&x=1`),
+  ...['\\n', '\\t', '\\r', '\\\\n', '\\x3d', '\\u003d', '=', '\n', '\t'].map((e) => (v: string) => `"line${e}${v}${e}more"`),
+];
+for (const [k, v] of Object.entries(planted)) {
+  for (const wrap of WRAPS) {
+    const w = wrap(v);
+    const out = redact(`see ${w} now`, {});
+    assert.ok(!out.includes(secretPartOf(k, v)), `pattern ${k} in ${w.slice(0, 9)}…: secret part gone (${out})`);
+    assert.ok(out.startsWith('see ') && out.endsWith(' now'), `pattern ${k} in ${w.slice(0, 9)}…: surroundings kept`);
+  }
+}
+assert.strictEqual(redact('_' + planted.ghp + '_', {}), '_[redacted]_', 'emphasis kept around a GitHub token');
+assert.strictEqual(redact('__' + planted.aws + '__', {}), '__[redacted]__', 'aws key between underscores');
+assert.strictEqual(redact('**' + planted.sk + '**', {}), '**[redacted]**', 'sk- key in bold');
+assert.strictEqual(redact('_' + planted.jwt + '_', {}), '_[redacted]', 'a JWT keeps its leading underscore (its class takes the closing one)');
+// T128: a JWT glued to a word or after 4+ underscores is masked too, and its prefix stays
+assert.strictEqual(redact('x_' + planted.jwt, {}), 'x_[redacted]', 'a JWT glued to a word');
+assert.strictEqual(redact('MY__' + planted.jwt, {}), 'MY__[redacted]', 'a JWT after a word and two underscores');
+assert.strictEqual(redact('____' + planted.jwt, {}), '____[redacted]', 'a JWT after four underscores');
+assert.strictEqual(redact('a_b_c_d_' + planted.jwt, {}), 'a_b_c_d_[redacted]', 'a JWT after four snake_case words');
+assert.strictEqual(redact('my_eyJ.a.b plain_snake_case risk_eyJ', {}), 'my_eyJ.a.b plain_snake_case risk_eyJ', 'snake_case words without a JWT stay');
+// the shared shapes (spec 061 FR-014's folder-setup display reuses them) with their own mask word
+for (const [k, v] of Object.entries(planted)) {
+  if (k === 'authHeader' || k === 'urlCreds') continue; // header and URL rules belong to redact() only
+  for (const wrap of WRAPS) {
+    const w = wrap(v);
+    const out = maskTokenShapes(`see ${w} now`, '[secret hidden]');
+    assert.ok(out.includes('[secret hidden]') && !out.includes(secretPartOf(k, v)), `maskTokenShapes ${k} in ${w.slice(0, 9)}…: hidden (${out})`);
+  }
+}
+assert.strictEqual(maskTokenShapes('$1 $& plain text', '[x]'), '$1 $& plain text', 'maskTokenShapes: no shape, no change');
+// T129: exact output after a percent-encoded byte; the escape and the rest of the query stay
+assert.strictEqual(redact('https://x.example/?q=token%3D' + planted.ghp + '&x=1', {}), 'https://x.example/?q=token%3D[redacted]&x=1', 'ghp after %3D');
+assert.strictEqual(redact('?q=%22' + planted.sk + '%22', {}), '?q=%22[redacted]%22', 'sk- between %22');
+assert.strictEqual(redact('?q=token%253D' + planted.aws + '&x', {}), '?q=token%253D[redacted]&x', 'aws after a double-encoded %253D');
+assert.strictEqual(redact('?q=%3D' + planted.jwt + '&x', {}), '?q=%3D[redacted]&x', 'a JWT after %3D');
+assert.strictEqual(maskTokenShapes('?q=%2F' + planted.github_pat, '[s]'), '?q=%2F[s]', 'maskTokenShapes: github_pat after %2F');
+// T130: any depth of `%25` (4, 5 and 6 levels), and a backslash escape before the token; the escape stays
+for (const d of [4, 5, 6]) {
+  const e = '%' + '25'.repeat(d) + '3D';
+  assert.strictEqual(redact('?q=token' + e + planted.ghp + '&x', {}), '?q=token' + e + '[redacted]&x', `ghp after %25 encoded ${d} times`);
+}
+assert.strictEqual(redact('"a\\n' + planted.ghp + '\\tb"', {}), '"a\\n[redacted]\\tb"', 'ghp after an escaped newline');
+assert.strictEqual(redact('"a\\\\n' + planted.sk + '"', {}), '"a\\\\n[redacted]"', 'sk- after a double-escaped newline');
+assert.strictEqual(redact('k\\x3d' + planted.aws + ' k\\u003d' + planted.gho, {}), 'k\\x3d[redacted] k\\u003d[redacted]', 'after \\x3d and \\u003d');
+// T129: plain words, hex and percent signs in normal text stay (the new start needs `%` and two hex digits right before a shape)
+for (const ok of ['50% off, 100%3Dfine', 'colour %23ff0000 and deadbeef cafe0123456789abcdef', 'a%3Dghp_short x%41BC', '%3Dsk-short %2FAKIA123',
+  'q=%3DeyJ.a.b', '%3DBearer', '%ZZghp_' + 'x'.repeat(36), '3Dghp_' + 'x'.repeat(36), '%3' + planted.ghp.slice(0, 1) + 'hp', 'ab%3Dsk-risk-management',
+  // T130: backslashes in paths and other escapes stay
+  'C:\\new\\temp and \\nfile \\tab', '\\nghp_short \\tsk-short', '\\q' + planted.ghp, '\\x3' + planted.ghp, '\\u003' + planted.ghp]) {
+  assert.strictEqual(redact(ok, {}), ok, `near miss kept: ${ok}`);
+}
+assert.strictEqual(maskTokenShapes('_' + planted.ghp + '_', '$&'), '_$&_', 'maskTokenShapes: the mask is literal, not a replacement pattern');
 
 // 4. near misses stay intact
 for (const ok of ['risk-management and task-list', 'sk-short', 'the sk- prefix', 'ghp', 'ghp_short', 'AKIA123', 'v1.2.3', 'file.name.ext', 'https://example.com/a:b', 'user@example.com', 'Bearer', 'a Bearer of news', 'eyJ.a.b']) {
@@ -70,15 +152,13 @@ assert.strictEqual(redact(`l1\n${planted.ghp}\r\nl3\n`, {}), 'l1\n[redacted]\r\n
 {
   const big = ('word '.repeat(19) + 'sk-' + 'a'.repeat(10) + '\n').repeat(12000); // > 1 MB
   assert.ok(big.length > REDACT_MAX_CHARS);
-  const t = Date.now();
-  const out = redact(big, env);
-  const ms = Date.now() - t;
+  let out = '';
+  const ms = cpuMs(() => { out = redact(big, env); }, 1500);
   assert.ok(ms < 1500, `1 MB redaction took ${ms} ms`);
   assert.ok(out.length <= REDACT_MAX_CHARS + 20, 'input capped at 1 MB');
   const pathological = 'a'.repeat(REDACT_MAX_CHARS);
-  const t2 = Date.now();
-  redact(pathological + ':' + pathological, env);
-  assert.ok(Date.now() - t2 < 1500, 'pathological single token is fast');
+  const ms2 = cpuMs(() => { redact(pathological + ':' + pathological, env); }, 1500);
+  assert.ok(ms2 < 1500, `pathological single token is fast (${ms2} ms)`);
 }
 
 // 7. never throws
@@ -106,6 +186,16 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
   assert.doesNotThrow(() => write(undefined), 'sink: undefined record');
   const circ: Record<string, unknown> = {}; circ.self = circ;
   assert.doesNotThrow(() => write(circ), 'sink: circular record');
+  // T130 (review of PR #549): the sink redacts after JSON.stringify, so a token at the start of a line becomes `\nghp_…`; it is masked,
+  // after a tab and after a backslash-n that was already in the text (`\\n` once encoded) too
+  lines.length = 0;
+  write({ t: 5, stderr: `line one\n${planted.ghp}\n\t${planted.aws}\r\n${planted.skant}`, nested: { out: `C:\\new\\n${planted.sk}`, arr: [`\n${planted.jwt}`] } });
+  assert.strictEqual(lines.length, 1);
+  for (const k of ['ghp', 'aws', 'skant', 'sk', 'jwt']) assert.ok(!lines[0].includes(planted[k].slice(-12)), `sink: ${k} after an escaped newline or tab never written (${lines[0]})`);
+  const rec = JSON.parse(lines[0]);
+  assert.strictEqual(rec.stderr, 'line one\n[redacted]\n\t[redacted]\r\n[redacted]', 'sink: line breaks and tabs kept, tokens masked');
+  assert.strictEqual(rec.nested.out, 'C:\\new\\n[redacted]', 'sink: a backslash-n already in the text');
+  assert.strictEqual(rec.nested.arr[0], '\n[redacted]', 'sink: a JWT after a newline');
 }
 
 // 9. adversarial 1 MB inputs: every pattern stays linear (each under a time limit)
@@ -128,31 +218,83 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
     tidLong: 'tid=0123abcd;' + 'a;'.repeat(MB / 2),
     aws: 'AKIA'.repeat(MB / 4),
     awsLong: 'ASIA' + 'A'.repeat(MB),
+    // starts after `_` (spec 012 FR-080 delta 2026-10-22): runs of underscore-led and snake_case-glued shapes
+    ghUnder: '_ghp_'.repeat(MB / 5),
+    ghGlued: 'a_ghp_'.repeat(MB / 6),
+    patUnder: '_github_pat_'.repeat(MB / 12),
+    skUnder: '_sk-'.repeat(MB / 4),
+    skShort: ('_sk-' + 'a'.repeat(19) + ' ').repeat(MB / 24),
+    bearerUnder: '_Bearer _'.repeat(MB / 9),
+    authUnder: '_authorization '.repeat(MB / 15),
+    urlUnder: '_a://x:'.repeat(MB / 7),
+    jwtUnder: '___eyJ'.repeat(MB / 6),
+    jwtUnderDot: '_eyJaaaaa.'.repeat(MB / 10),
+    jwtUnderLong: '_eyJ' + 'a_'.repeat(MB / 2),
+    // T128: the JWT's bounded prefix (underscores and up to 4 snake_case words)
+    jwtGlued: ('a_eyJ'.repeat(4) + 'a'.repeat(4000)).repeat(MB / 4020),
+    jwtWords40: (' ' + 'a'.repeat(40) + '_').repeat(MB / 42),
+    jwtWords5: (' ' + ('a'.repeat(40) + '_').repeat(5) + 'eyJ' + 'b'.repeat(4096)).repeat(MB / 4400),
+    jwtWordsDot: (' a_b_c_d_eyJaaaaa.aaaaa').repeat(MB / 23),
+    jwtUnderRun: '_'.repeat(MB),
+    awsUnder: '_AKIA'.repeat(MB / 5),
+    // T129: starts right after a percent-encoded byte (`%XX`, `%25XX`)
+    pct: '%3D'.repeat(MB / 3),
+    pctDouble: '%25'.repeat(MB / 3),
+    pctGh: '%3Dghp_'.repeat(MB / 7),
+    pctGhLong: '%3Dghp_' + 'a'.repeat(MB),
+    pctPat: '%3Dgithub_pat_'.repeat(MB / 14),
+    pctSk: '%253Dsk-'.repeat(MB / 8),
+    pctSkShort: ('%3Dsk-' + 'a'.repeat(19) + ' ').repeat(MB / 26),
+    pctBearer: '%22Bearer '.repeat(MB / 10),
+    pctAuth: '%22authorization '.repeat(MB / 17),
+    pctUrl: '%3Da://x:'.repeat(MB / 9),
+    pctUrlLong: '%3Da://x:' + 'y'.repeat(MB),
+    pctAws: '%3DAKIA'.repeat(MB / 7),
+    pctJwt: '%3DeyJ'.repeat(MB / 6),
+    pctJwtLong: ('%3DeyJ' + 'a'.repeat(4090)).repeat(MB / 4096),
+    pctJwtWords: ('%3D' + ('a'.repeat(40) + '_').repeat(4) + 'eyJ' + 'b'.repeat(4096) + '.').repeat(MB / 4268),
+    pctJwtDot: '%3DeyJaaaaa.'.repeat(MB / 12),
+    // T130: any depth of `%25`, and starts after a backslash escape (the debug log's JSON escapes)
+    pct25Run: '25'.repeat(MB / 2),
+    pctDeepGh: '%25%25%253Dghp_'.repeat(MB / 15),
+    pctDeepLong: '%' + '25'.repeat(MB / 2) + '3Dghp_' + 'a'.repeat(1000),
+    escN: '\\n'.repeat(MB / 2),
+    escNN: '\\\\n'.repeat(MB / 3),
+    escNGh: '\\nghp_'.repeat(MB / 6),
+    escNGhLong: '\\nghp_' + 'a'.repeat(MB),
+    escU: '\\u003d'.repeat(MB / 6),
+    escXSk: '\\x3dsk-'.repeat(MB / 7),
+    escTJwt: '\\teyJaaaaa.'.repeat(MB / 11),
+    escNUrl: '\\na://x:'.repeat(MB / 8),
   };
-  // Each case runs in a worker thread that times redact() itself, so a busy runner cannot fail the test; the 1 s assertion is the
-  // real ReDoS check. Workers, not child processes: a child fed 1 MB on stdin hung for 30 s twice on a busy macOS runner (#303).
+  // Each case runs in a worker thread that times redact() itself with the thread's own CPU time (`process.threadCpuUsage()`, Node 22
+  // and later; wall time from `hrtime` only on Node 20.19, which has no per-thread CPU time), so a busy runner cannot fail the test;
+  // the 1 s assertion is the real ReDoS check, and wall time has the 10 s backstop of `cpuMs` (spec 041 `## Changes` 2026-10-22,
+  // review of PR #527). Workers, not child processes: a child fed 1 MB on stdin hung for 30 s twice on a busy macOS runner (#303).
   // The test stays synchronous: the worker writes the time into shared memory and wakes this thread (Atomics), with a 30 s hang
   // guard; a worker that does not answer in time is stopped and the case retried once.
   const mod = require.resolve('../src/shared/redact');
-  const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,1);` +
-    `try{const {redact}=require(w.mod);const t=process.hrtime.bigint();redact(w.input,{});out[0]=Number(process.hrtime.bigint()-t)/1e6;Atomics.store(flag,0,1)}` +
+  const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
+    `try{const {redact}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   for (const [k, v] of Object.entries(adversarial)) {
     let ms = NaN;
+    let wall = NaN;
     let why = '';
     for (let attempt = 0; attempt < 2; attempt++) {
-      const sab = new SharedArrayBuffer(16);
+      const sab = new SharedArrayBuffer(24);
       const flag = new Int32Array(sab, 0, 1);
       const worker = new Worker(code, { eval: true, workerData: { mod, input: v, sab } });
       const waited = Atomics.wait(flag, 0, 0, 30000);
       void worker.terminate();
       if (waited === 'timed-out') { why = 'no answer in 30 s'; continue; }
       assert.strictEqual(Atomics.load(flag, 0), 1, `adversarial ${k}: redact() threw in the worker`);
-      ms = new Float64Array(sab, 8, 1)[0];
+      [ms, wall] = new Float64Array(sab, 8, 2);
       break;
     }
     assert.ok(!Number.isNaN(ms), `adversarial ${k}: worker hung twice (${why})`);
     assert.ok(ms < 1000, `adversarial ${k}: redact() took ${ms.toFixed(1)} ms, limit 1000 ms`);
+    assert.ok(wall < 10000, `adversarial ${k}: wall-time backstop: ${wall.toFixed(1)} ms wall for ${ms.toFixed(1)} ms CPU, limit 10000 ms (a blocking wait?)`);
   }
 }
 
@@ -358,9 +500,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.doesNotThrow(() => { maskSecretArgs([null as any, undefined as any, 5 as any]); maskSecretCommand(null); maskSecretUrl(null); });
   const big = 200_000;
   const shapes = ['--token ' + 'a '.repeat(big / 2), '{"a":"'.repeat(big / 6), 'a=b;'.repeat(big / 4), 'x://' + '@'.repeat(big), 'http://' + 'a:'.repeat(big / 2), '/bot1:'.repeat(big / 6), ';token='.repeat(big / 7), '"k": "'.repeat(big / 6), '['.repeat(big)];
-  const t0 = Date.now();
-  for (const x of shapes) { _uncappedForTest.maskSecretArgs([x]); maskSecretUrl(x); _uncappedForTest.maskSecretCommand(x); }
-  const ms = Date.now() - t0;
+  const ms = cpuMs(() => { for (const x of shapes) { _uncappedForTest.maskSecretArgs([x]); maskSecretUrl(x); _uncappedForTest.maskSecretCommand(x); } }, 20000);
   console.log(`redact: masking 200k-char adversarial inputs in ${ms} ms`);
   assert.ok(ms < 20000, `masking 200k-char adversarial inputs took ${ms} ms`);
 }
@@ -656,7 +796,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const rshapes: Array<[string, string]> = [['Bearer ', 'Bearer '], ['--auth Bearer ', '--auth Bearer '], ['obj', '{\\"name\\":\\"token\\",\\"value\\":\\"x y\\"} '], ['arr', '{\\"name\\":\\"token\\",\\"value\\":[\\"x\\"]} '], ['hdr', 'Authorization: Bearer '], ['qhdr', '-H "Authorization: Bearer" '], ['eq', '--auth=Bearer '], ['sq', "Authorization: 'a "], ['dq', 'Authorization: "a '], ['mixed', `Authorization: "a Authorization: 'a `], ['tok', 'TOKEN=Auth: '], ['unclosed', 'x Authorization: "a '], ['unclosed1', "Cookie: 'a "], ['schemeq', 'Authorization: Basic "a '], ['argsq', 'curl Authorization: "a ']];
     for (const [, unit] of rshapes) {
       const mk = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
-      const time = (x: string): number => { const t = process.hrtime.bigint(); _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+      const time = (x: string): number => cpuMs(() => { _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); }, 8000);
       let tSmall = Infinity;
       let tBig = Infinity;
       for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(mk(50_000))); tBig = Math.min(tBig, time(mk(400_000))); }
@@ -670,17 +810,16 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // (n) timing: each shape linear in practice; doubling check on the shape the analyst suspected.
   const shapes: Array<[string, string]> = [['-c ', '-c '], ['"', '"'], ['"a ', '"a '], ["a 'b", "a 'b"], [', a=', ', a='], ['Cookie: ', 'Cookie: '], ['{"a":"x y ', '{"a":"x y '], ["'\"", "'\""], ['x ', 'x ']];
   const run = (x: string): void => { _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); };
-  const tt = Date.now();
-  for (const [, unit] of shapes) run(unit.repeat(Math.ceil(200_000 / unit.length)).slice(0, 200_000));
-  const total = Date.now() - tt;
+  const total = cpuMs(() => { for (const [, unit] of shapes) run(unit.repeat(Math.ceil(200_000 / unit.length)).slice(0, 200_000)); }, 20000);
   console.log(`redact: 14c masking 200k-char adversarial inputs in ${total} ms`);
   assert.ok(total < 20000, `14c: masking 200k-char adversarial inputs took ${total} ms`);
-  // linearity: 50k vs 400k (8x apart), 5 interleaved pairs, min of each size, so a load burst hits both sizes.
+  // linearity: 50k vs 400k (8x apart), 5 interleaved pairs, min CPU time of each size (cpuMs), so neither a load burst nor other
+  // processes on the CPU move the ratio.
   // Linear is a ratio of about 8; three doublings at up to 3x each allow 24; quadratic would be about 64.
   for (const unit of ['{"a":"x y ', 'x ', '"a ']) {
     const small = unit.repeat(Math.ceil(50_000 / unit.length));
     const big = unit.repeat(Math.ceil(400_000 / unit.length));
-    const time = (x: string): number => { const t = process.hrtime.bigint(); run(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+    const time = (x: string): number => cpuMs(() => run(x), 8000);
     let tSmall = Infinity;
     let tBig = Infinity;
     for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(small)); tBig = Math.min(tBig, time(big)); }
@@ -694,7 +833,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     [';;;x y', (n) => ';'.repeat(n) + 'x y'], ['&&&x y', (n) => '&'.repeat(n) + 'x y'], ['|||x y', (n) => '|'.repeat(n) + 'x y'], ['a```b y', (n) => 'a' + '`'.repeat(n) + 'b y'],
   ];
   for (const [name, gen] of runs) {
-    const time = (x: string): number => { const t = process.hrtime.bigint(); run(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+    const time = (x: string): number => cpuMs(() => run(x), 8000);
     const small = gen(50_000);
     const big = gen(400_000);
     let tSmall = time(small);
@@ -710,7 +849,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // T065 (#374): a string over MASK_INPUT_MAX is hidden whole through the public helpers too, before any rule, in well under 100 ms
   {
     const MB = 1_000_000;
-    const timeIt = <T>(f: () => T): { v: T; ms: number } => { const t = process.hrtime.bigint(); const v = f(); return { v, ms: Number(process.hrtime.bigint() - t) / 1e6 }; };
+    const timeIt = <T>(f: () => T): { v: T; ms: number } => { let v!: T; const ms = cpuMs(() => { v = f(); }, 100); return { v, ms }; };
     const shapes: Array<[string, string]> = [['a=b;', 'token=' + SEC], ['x ', '--token ' + SEC]];
     for (const [unit, tail] of shapes) {
       const big = unit.repeat(Math.ceil(MB / unit.length)) + tail;
@@ -851,11 +990,11 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   for (const same of [['sh', '-c', 'echo "a \\"b\\""'], ['powershell', '-Command', `Write-Host ${BT}"hi${BT}"`], ['cmd', '/c', 'echo', '^"hi^"'], ['srv', '"hello', 'world"'], ['srv', "it's"]]) {
     assert.deepStrictEqual(maskSecretArgs(same), same, 'no over-masking: ' + JSON.stringify(same));
   }
-  // (i) cost: wrapper shapes stay linear (50k vs 400k, 3 interleaved pairs, min of each; linear is about 8, quadratic about 64)
+  // (i) cost: wrapper shapes stay linear (50k vs 400k, 3 interleaved pairs, min CPU time of each (cpuMs, T068); linear is about 8, quadratic about 64)
   const run = (x: string): void => { _uncappedForTest.maskSecretArgs(['sh', '-c', x]); _uncappedForTest.maskSecretArgs(['powershell', '-Command', x]); _uncappedForTest.maskSecretCommand(x); };
   for (const unit of ['sh -c "x \\"y\\"" ', `powershell -Command "a ${BT}" `, 'cmd /c a ^" ', 'bash -c "sh -c \\"a ', "pwsh -c 'a '' ", '"--token ']) {
     const mk = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
-    const time = (x: string): number => { const t = process.hrtime.bigint(); run(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+    const time = (x: string): number => cpuMs(() => run(x), 8000);
     let tSmall = Infinity;
     let tBig = Infinity;
     for (let i = 0; i < 3; i++) { tSmall = Math.min(tSmall, time(mk(50_000))); tBig = Math.min(tBig, time(mk(400_000))); }
@@ -865,7 +1004,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   }
   // review of #455 item 1: one long backslash run after a cmd wrapper (no quote after it) is not retried from each position
   for (const head of ['cmd /c ^x ', 'cmd /c \\"x ']) {
-    const time = (n: number): number => { const x = head + '\\'.repeat(n); const t = process.hrtime.bigint(); _uncappedForTest.maskSecretCommand(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+    const time = (n: number): number => { const x = head + '\\'.repeat(n); return cpuMs(() => { _uncappedForTest.maskSecretCommand(x); }, 8000); };
     let tSmall = Infinity;
     let tBig = Infinity;
     for (let i = 0; i < 3; i++) { tSmall = Math.min(tSmall, time(50_000)); tBig = Math.min(tBig, time(400_000)); }

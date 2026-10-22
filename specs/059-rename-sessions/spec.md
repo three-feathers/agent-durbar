@@ -1,5 +1,11 @@
 # Feature Specification: Rename sessions
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Rename sessions (issue #372): a short name of the user's own for any main session, shown on every surface (card, list, chat header, strip, inbox, notifications, Schedules, Previous sessions, activity log) instead of the runtime title; also saved in the agent app (Copilot `name.set`, also for a session that is not open through a prompt-free resume; Codex `thread/name/set`; Claude Code `--name` at the next message); **Rename…** in the chat header More menu and the card menu, and the Previous sessions row menu (spec 006, #379)
+status: **Built, simulator and fakes** (name rule, store, IPC, three adapters, dialog, surfaces, `check:rename`); `real:` app calls by Vikram's agent (Copilot, Codex, Claude CLI lists); open: VS Code visibility, macOS/Windows, T050
+-->
+
 **Feature Branch**: `059-rename-sessions`
 **Created**: 2026-10-20
 **Status**: Built on the simulator and fakes (T010-T040, T060; evidence tags below; T050 real checks open: VS Code, macOS/Windows). The owner answered Q1-Q9 on 2026-10-20 (all A) and changed Q2 to B plus
@@ -260,6 +266,14 @@ FR-023) use the new name; Resume opens an agent with that name.
 - **Constraints:** agent specifics stay behind `AgentAdapter` (the renderer gets a capability value and a computed "where it goes"
   line); no shell; no paths over IPC; Durbar never edits another tool's files (Claude's `.jsonl`, Copilot's session state, Codex's
   store); simulator, fakes and unit tests only; no real session in tests; Windows, macOS and Linux behave the same (no paths involved).
+- **FR-019** `[IMPLEMENTED]` **A name that is one long unbroken token stays inside its box** (issue #536; owner report 2026-10-22: a session with no name of its own
+  shows its first prompt, and a URL in it ran out of the desk card). On every surface that shows a session or agent name (desk card in full, roomy and compact,
+  list view, chat header, strip, Needs you inbox, Schedules rows, Previous sessions rows) the name never leaves its box. On full desk cards it wraps to
+  at most 2 lines and then ends in "…" (line clamp), and a token with no space may break anywhere (`overflow-wrap:anywhere`); this is the one exception to the
+  "words move whole to the next line" rule of spec 052 FR-165, which is for help text, because a name is data the user does not control. The other surfaces (roomy and compact cards included) keep one line
+  with an ellipsis. The full name stays in the existing tooltip (`nameTipAttr`, spec 052 FR-168). Card widths do not change; a full card's name stops at 2 lines, so a card with a long name can only get shorter. `simnames=long`
+  (FR-016) gives the third agent (it waits for you, so it is also in the inbox) no alias and a long first-prompt **title** (over 60 characters, which a title may be) that holds one URL-like token (no real address, `example.invalid`); the full-layout cases force `density=full` so they do not depend on grown desks (spec 001, #532), and `check:office` fails when any `.name` on a card overflows
+  its box or takes more than 2 lines on a full card (explicit `line-height:18px`) at 1440x900 and 1280x800.
 
 ### Key Entities
 
@@ -344,3 +358,14 @@ Owner (Paco, 2026-10-20, about 14:35 CEST): accept Vikram's requirements on issu
   go through the Notification API as plain text; `test:sessionname` guards that no agent name or title is put into a template without `esc()`.
 - A card that was never started (no session in the agent app yet) is renamed in Durbar only.
 - Review 2026-10-20: Copilot rename-resume folder, flags and per-id lock; strict id rule; auto-title ignore; Claude SDK transport reports no rename (FR-007).
+
+### 2026-10-22: a long unbroken name overflowed the desk card (issue #536, FR-019)
+
+Spec 001 owns the card layout, but this spec owns where names are shown and `simnames=long` (FR-016), so the rule is here (FR-019) and spec 001 only
+gets a pointer. Fix: line clamp on full cards, ellipsis elsewhere, simulator name and `check:office` assertion. Task T061.
+- `test:` built 2026-10-22 (simulator only). The roomy and compact cards (`.l1 .name`), the chat header, strip, list row and Previous sessions row already cut a long name to one line;
+  the full card (`.who .name`) was the only one that did not, so only it got the 2-line clamp (a roomy card keeps its one line so card sizes do not change). `check:office` (new `sim=3` full-layout case
+  and the 12 and 15 agent offices) and `check:rename` (step 7, a 60-character token on the header, strip, card, list row and a Previous sessions row) fail when a name leaves its box; `scripts/shots-059-long-url.js`
+  took `docs/screenshots/059-long-url-name-{before,after}-{1440x900,1280x800}.png` (and `-inbox-` after). Before the fix the name ran 4 lines and out of its card.
+- `test:` the Needs you inbox row (`.ib-n`), the Schedules dialog (row and the "Send to" hint) and the Settings schedule row were checked with the URL-like first prompt (agent 3, which waits for you) and a schedule whose prompt is one long token, at both sizes, by `scripts/shots-059-long-url.js` (in `check:ui`). It guards the Schedules list rows against a prompt that is one long token: that overflow was already fixed on main by spec 044 T047 (`.sched-dlg .sc-list{grid-template-columns:minmax(0,1fr)}`, #531); removing that rule makes this driver fail.
+- `[KNOWN GAP]` The OS notification text and the activity log were read, not rendered (plain text, no layout).

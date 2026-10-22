@@ -69,6 +69,11 @@ const NO_BROAD_GRANT = new Set(['sh', 'bash', 'zsh', 'fish', 'dash', 'ksh', 'csh
 export interface GrantScope {
   key: string;
   label: string;
+  /**
+   * Write only, when the request writes in more than one folder (review on #470): the `write:<folder>` key of each. A session grant
+   * matches only when every one of them is granted, and approving "for this session" grants each folder (the label names them all).
+   */
+  folders?: { key: string; label: string }[];
   /** Shell only: the wider "any arguments of <command>" scope. Offered for simple commands of ordinary programs; never the default. */
   broad?: { key: string; label: string };
 }
@@ -91,9 +96,20 @@ export function grantScope(req: PermissionLike, flavor: Pick<typeof path, 'dirna
   const keyDir = (dir: string): string => (flavor.sep === '\\' ? dir.replace(/\//g, '\\').toLowerCase() : dir);
   switch (req.kind) {
     case 'write': {
-      const f = req.fileName ?? '';
-      const dir = f ? flavor.dirname(f) : '';
-      return { key: `write:${keyDir(dir)}`, label: dir ? `write in ${baseName(dir)}/` : 'write' };
+      // every file the write changes, not only the first (review on #470: a grant on the first file's folder approved them all)
+      const files = [...new Set([req.fileName, ...(req.paths ?? [])].filter((p): p is string => typeof p === 'string' && !!p))];
+      const byKey = new Map<string, { key: string; label: string }>();
+      for (const f of files) {
+        const dir = flavor.dirname(f);
+        const key = `write:${keyDir(dir)}`;
+        if (!byKey.has(key)) byKey.set(key, { key, label: `write in ${baseName(dir)}/` });
+      }
+      const folders = [...byKey.values()];
+      if (folders.length === 0) return { key: 'write:', label: 'write' };
+      if (folders.length === 1) return folders[0];
+      const names = folders.map((x) => x.label.replace(/^write in /, ''));
+      const label = `write in ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` and ${names.length - 3} more folders` : ''}`;
+      return { key: `write-folders:${folders.map((x) => x.key).sort().join('\n')}`, label, folders };
     }
     case 'read': {
       const f = req.path ?? '';
@@ -245,6 +261,8 @@ function blockedMcp(req: PermissionLike, set: ReadonlySet<string> | undefined): 
 }
 
 const WRITE_GUARD_MS = 2000;
+/** Spec 065: most files of one write the undo guard copies (a Codex change can name more; its card says so, spec 052 FR-172). */
+export const WRITE_GUARD_MAX_PATHS = 200;
 
 type Answer = { approve: boolean; remember: boolean; broad: boolean; via: 'user' | 'stopped' };
 
@@ -318,7 +336,7 @@ export class PermissionBroker {
   private async approveWrite(req: PermissionLike): Promise<Decision> {
     const guard = this.opts.beforeWrite;
     if (guard && String(req.kind) === 'write') {
-      const paths = (req.paths?.length ? req.paths : [req.fileName ?? req.path]).filter((p): p is string => typeof p === 'string' && !!p).slice(0, 200);
+      const paths = (req.paths?.length ? req.paths : [req.fileName ?? req.path]).filter((p): p is string => typeof p === 'string' && !!p).slice(0, WRITE_GUARD_MAX_PATHS);
       if (paths.length) {
         let timer: ReturnType<typeof setTimeout> | undefined;
         await Promise.race([guard(paths).catch(() => undefined), new Promise<void>((r) => { timer = setTimeout(r, WRITE_GUARD_MS); })]);
@@ -364,7 +382,8 @@ export class PermissionBroker {
           : 'Agent Durbar is in read-only mode: this action was denied. Do not retry it.',
       };
     }
-    if (this.grants.has(scope.key) || (scope.broad && this.grants.has(scope.broad.key))) {
+    const granted = scope.folders ? scope.folders.every((x) => this.grants.has(x.key)) : this.grants.has(scope.key) || (!!scope.broad && this.grants.has(scope.broad.key));
+    if (granted) {
       this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session' } });
       return this.approveWrite(req);
     }
@@ -373,8 +392,8 @@ export class PermissionBroker {
     const r = await new Promise<Answer>((resolve) => this.pending.set(requestId, { info, resolve }));
     this.pending.delete(requestId);
     if (r.approve && r.remember && !this.stopped) {
-      const g = r.broad && scope.broad ? scope.broad : scope;
-      this.grants.set(g.key, { key: g.key, kind, label: g.label });
+      const gs = r.broad && scope.broad ? [scope.broad] : scope.folders ?? [scope];
+      for (const g of gs) this.grants.set(g.key, { key: g.key, kind, label: g.label });
       this.opts.emit({ type: 'grants', grants: this.listGrants() });
     }
     this.opts.emit({ type: 'resolved', permission: { ...base, state: r.approve ? 'approved' : 'denied', via: r.via, remembered: r.approve && r.remember ? true : undefined } });

@@ -39,9 +39,9 @@ module.exports = async (ctx) => {
       await H.load({ query: Q, ready: 'fit' });
       const tag = `${w} ${level}`;
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${tag}: the detail level is on`);
-      let id = null;
-      for (const end = Date.now() + 8000; !id && Date.now() < end;) { id = await js(`(()=>{for(const d of document.querySelectorAll('#stage .desk[data-id]')){d.click();const g=document.getElementById('grants');if(g&&!g.hidden)return d.dataset.id;const b=document.getElementById('backBtn');if(b)b.click();}return ''})()`); if (!id) await ctx.sleep(100); }
-      assert.ok(id, `${tag}: an agent has grants in its chat`);
+      // wait for the simulator's own grants, then open that one agent (no sweep over every desk: docs/agent-notes.md)
+      const opened = await H.openSimAgent(`a=>!a.parent&&(a.grants||[]).length>0`, '#grants:not([hidden]) #grantsBtn');
+      assert.ok(opened.ok, `${tag}: an agent has grants in its chat: ${JSON.stringify({ id: opened.id, ...opened.seen })}`);
       await until(`!!document.getElementById('grantsBtn')`); await settle();
       // 1. one chip
       const c = await js(`(()=>{const g=document.getElementById('grants');const b=document.getElementById('grantsBtn');return {chips:g.querySelectorAll(':scope > .gchip').length,all:g.querySelectorAll('.gchip').length,text:b&&b.textContent.trim(),exp:b&&b.getAttribute('aria-expanded'),ctl:b&&b.getAttribute('aria-controls'),tag:b&&b.tagName,popHidden:document.getElementById('grantsPop').hidden,single:g.querySelectorAll('.gchip:not(.gchip-btn)').length}})()`);
@@ -129,9 +129,11 @@ module.exports = async (ctx) => {
   // A Revoke all that fails (the revokes never remove anything) leaves the grants and the page working; after switching to an agent
   // without grants the focus is not taken and nothing is announced.
   await H.load({ w: 1440, h: 900, query: { simgrants: 'stuck' }, ready: 'fit' });
-  let ids = null;
-  for (const end = Date.now() + 8000; !(ids && ids[0]) && Date.now() < end;) { ids = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')];let a='';for(const x of d){x.click();const g=document.getElementById('grants');if(g&&!g.hidden){a=x.dataset.id;break;}const b=document.getElementById('backBtn');if(b)b.click();}return [a,d.map(x=>x.dataset.id).find(i=>i!==a)]})()`); if (!(ids && ids[0])) await ctx.sleep(100); }
-  await until(`!!document.getElementById('grantsBtn')`); await settle();
+  const so = await H.openSimAgent(`a=>!a.parent&&(a.grants||[]).length>0`, '#grants:not([hidden]) #grantsBtn');
+  assert.ok(so.ok, `stuck: an agent has grants in its chat: ${JSON.stringify({ id: so.id, ...so.seen })}`);
+  const ids = [so.id, await js(`[...document.querySelectorAll('#stage .desk[data-id]')].map(x=>x.dataset.id).find(i=>i!==${jsLiteral(so.id)})`)];
+  assert.ok(ids[1], 'stuck: there is a second desk');
+  await settle();
   await js(`document.getElementById('grantsBtn').click()`); await until(`!document.getElementById('grantsPop').hidden`);
   await js(`document.getElementById('grantsAll').click()`); await until(`[...document.querySelectorAll('.dlg-ov button')].some(x=>x.textContent.trim()==='Revoke all')`);
   await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Revoke all').click()`); await ctx.sleep(100); // quick: inside the 1s the flag may live
