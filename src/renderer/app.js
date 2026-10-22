@@ -2020,7 +2020,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -2414,7 +2414,7 @@ function subBlock(s,T){
   v.paint=()=>{
     el.classList.toggle('running',s.status==='running');el.classList.toggle('failed',s.status==='failed');el.classList.toggle('done',s.status==='done');
     el.querySelector('.sub-name').textContent=s.name;
-    el.querySelector('.sub-task').textContent=s.status==='running'?SHORT(plainMd(s.task||s.prompt),90):SHORT(plainMd(s.result||s.lastFinal||s.error||s.task),110);
+    el.querySelector('.sub-task').textContent=s.status==='running'?safeExcerpt(s.task||s.prompt,90):safeExcerpt(s.result||s.lastFinal||s.error||s.task,110);
     el.querySelector('.sub-st').textContent=subStatusText(s);
     el.querySelector('.sub-open').hidden=!s.card;
   };
@@ -2452,9 +2452,9 @@ function onSubEvent(a,e){
   subPaint(s);
   /* helper card: what it is doing right now */
   if(e.type==='thinking')setState(card,'thinking',null);
-  else if(e.type==='output')setState(card,'working',null,e.final?SHORT(plainMd(e.text),100):undefined);
-  else if(e.type==='toolCall'&&e.phase==='start'){const l=toolLabel(e.args);setState(card,'working',null,e.tool+(l?' '+SHORT(l,80):''));}
-  else if(e.type==='status'&&e.intent)setState(card,'working',null,SHORT(e.intent,100));
+  else if(e.type==='output')setState(card,'working',null,e.final?safeExcerpt(e.text,100):undefined);
+  else if(e.type==='toolCall'&&e.phase==='start'){const l=toolLabel(e.args);setState(card,'working',null,e.tool+(l?' '+SHORT(safeMask(l),80):''));}
+  else if(e.type==='status'&&e.intent)setState(card,'working',null,safeExcerpt(e.intent,100));
   if(ui.selected===card.id)updatePanelHeader();
 }
 function onSubagent(a,e){
@@ -2466,8 +2466,8 @@ function onSubagent(a,e){
   if(e.phase==='started'){s.status='running';setState(card,'working',null,s.task||'Working');}
   else{
     s.t1=Date.now();
-    if(e.phase==='failed'){s.status='failed';s.error=e.error||e.task||'Failed';setState(card,'error',null,SHORT(s.error,100));}
-    else{s.status='done';setState(card,'done','Done',SHORT(plainMd(s.result||s.task),100));}
+    if(e.phase==='failed'){s.status='failed';s.error=e.error||e.task||'Failed';setState(card,'error',null,safeExcerpt(s.error,100));}
+    else{s.status='done';setState(card,'done','Done',safeExcerpt(s.result||s.task,100));}
     s.views.forEach(v=>{tEnd(v.T,{note:false});});
     subCollapse(s);
   }
@@ -2482,13 +2482,13 @@ function onTaskTool(a,e){
     if(g.prompt&&!s.prompt)s.prompt=String(g.prompt);
     if(g.description&&!s.task)s.task=String(g.description);
     if(g.agent_type&&!s.agentName)s.agentName=String(g.agent_type);
-    if(s.name==='Sub-agent'&&s.task)s.name=SHORT(s.task,40);
+    if(s.name==='Sub-agent'&&s.task)s.name=SHORT(safeMask(s.task),40);
   } else {
     if(e.phase==='complete'&&e.output)s.result=String(e.output);
     if(e.phase==='failed'){s.status='failed';s.error=String(e.output||'Failed');}
     else if(s.status==='running'){s.status='done';}
     s.views.forEach(v=>tEnd(v.T,{note:false}));
-    if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',SHORT(plainMd(s.result||s.error||s.task),100));
+    if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',safeExcerpt(s.result||s.error||s.task,100));
     subCollapse(s);
   }
   subPaint(s);scheduleRender();
@@ -2527,13 +2527,15 @@ function closeTurn(a){
   a.turn=null;
 }
 function setState(a,state,label,task){
+  if(typeof task==='string')task=safeMask(task); /* spec 041 FR-065: backstop, whatever path built the line (the helper masks before cutting; this one cannot repair a cut token) */
   const ch=a.state!==state||(label!==undefined&&a.label!==label)||(task!==undefined&&a.task!==task);
   a.state=state; if(label!==undefined)a.label=label; if(task!==undefined)a.task=task;
   if(ch&&a.live&&a.info&&a.info.modelControl&&a.info.modelControl.compact&&!a.parent)updateCtxChip(a); /* the Compact button is greyed while the agent works */
   if(ch)scheduleRender();
 }
-const plainMd=t=>String(t==null?'':t).replace(/```[\s\S]*?```/g,' code ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
 const SHORT=(v,n)=>DurbarCutText.cutText(v,n);
+const SAFE=window.DurbarSafeText.create({redact:window.DurbarRedact&&typeof window.DurbarRedact.redact==='function'?t=>window.DurbarRedact.redact(t):null,cut:SHORT}); /* spec 041 FR-065: agent text is masked on the raw text, then made plain, then cut; no redact module: neutral words, never the raw text */
+const safeExcerpt=(t,n,fb)=>SAFE.excerpt(t,n,fb),safeMask=t=>SAFE.mask(t);
 const toolArg=args=>!args||typeof args!=='object'?'':String(args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'');
 function toolLabel(args){return toolArg(args).replace(/\s+/g,' ').slice(0,400);}
 /* spec 052 FR-063: the whole argument as written (line breaks kept), for the open chip; at most 20000 characters */
@@ -3021,12 +3023,12 @@ function onLiveEvent(e){
       if(a.pendingModel){const nm=a.pendingModel.name;a.pendingModel=undefined;updateModelChip(a);addNote(chat,'The queued switch to '+esc(nm)+' was dropped when you stopped the reply. Choose it again if you still want it.');}
       setState(a,'idle',null,'Stopped. Ready for your next message.');}
     else if(e.status==='idle'){const was=a.worked;a.worked=false;closeTurn(a);if(a.pendingProfile){const p=a.pendingProfile;a.pendingProfile=undefined;applyProfile(a,p);}
-      if(was)setState(a,'done','Done',a.lastOutput?SHORT(plainMd(a.lastOutput),140):'Finished.'); else setState(a,'idle',null,a.task);
+      if(was)setState(a,'done','Done',a.lastOutput?safeExcerpt(a.lastOutput,140):'Finished.'); else setState(a,'idle',null,a.task);
       updateCtxChip(a);maybeSuggestFresh(a);
       /* a queued switch applies when the turn ends (its model event follows at once); if none came, do not leave "Next: ..." standing */
       if(a.pendingModel){const p=a.pendingModel;setTimeout(()=>{if(a.pendingModel===p){a.pendingModel=undefined;updateModelChip(a);}},2000);}}
     else if(e.status==='error'&&e.errorKind==='auth'){closeTurn(a);a.worked=false;markKindSignedOut(kindOf(a));showSignInCard(a,{detail:e.intent||''});setState(a,'error',null,kindWord(kindOf(a))+' needs you to sign in again.');} /* spec 012 FR-157 */
-    else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,SHORT(e.intent||'Error',140));}
+    else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,safeExcerpt(e.intent||'Error',140,'Error'));}
     else if(e.status==='stopped'){
       if(a.limit)settleLimit(a,'cancel');
       /* a permission still pending when the session stops is denied cleanly: no Approve/Deny left behind, grants gone */
@@ -3062,7 +3064,7 @@ function onLiveEvent(e){
   case 'toolCall':{const t=ensureTurn(a);
     if(isTaskTool(e.tool)||(t.T.chipEls[e.callId]===undefined&&a.subs&&a.subs.has(e.callId)))onTaskTool(a,e);
     else tTool(t.T,e);
-    if(e.phase==='start'&&!isTaskTool(e.tool)){const label=toolLabel(e.args);setState(a,a.state==='thinking'?'working':a.state,null,a.intent||(e.tool+(label?' '+SHORT(label,90):'')));}
+    if(e.phase==='start'&&!isTaskTool(e.tool)){const label=toolLabel(e.args);setState(a,a.state==='thinking'?'working':a.state,null,a.intent||(e.tool+(label?' '+SHORT(safeMask(label),90):'')));}
     stickyScroll(chat);return;}
   case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
     a.usageText=usageLong(a);recordUsage(a,e);scheduleRender();
@@ -4388,7 +4390,7 @@ async function wakeLast(a){
   a.waking=false;
   if(!r||!r.ok){setState(a,'idle','Not started','Your last session here. It continues when you open it.');toast('Could not continue the last session: '+esc((r&&r.error)||'unknown error'),7000);return;}
   if(a.info){a.info.resumeLast=false;a.info.lazy=false;}
-  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,'Continued after restart');setState(a,'idle',null,'Continued: '+SHORT(r.title||'last session',90));}
+  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,'Continued after restart');setState(a,'idle',null,'Continued: '+SHORT(safeMask(r.title)||'last session',90));}
   else{if(r.resumed===false)addNote(liveChat(a),'The last session is no longer available; this is a new session.');setState(a,'idle',null,'Ready. Send a message to start.');}
   modeBackNote(a);
 }
@@ -4414,7 +4416,7 @@ async function resumePrev(a,sid,btn){
   const na=liveById(r.agent.id); if(!na)return;
   na.resumed=true; na.sent=false; replayHistory(na,r.history,r.title);
   modeBackNote(na,r.modeWas);
-  setState(na,'idle',null,'Resumed: '+SHORT(r.title||'',90));
+  setState(na,'idle',null,'Resumed: '+SHORT(safeMask(r.title),90));
   openPanel(na.id,false);
 }
 function leaveVsView(){

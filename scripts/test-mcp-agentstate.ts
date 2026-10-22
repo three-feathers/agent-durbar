@@ -46,7 +46,7 @@ const ROWS: Row[] = [
   { rule: 'idle twice: second one finds no work, Idle', events: [working, status('idle'), status('idle')], word: 'Idle', sub: null, renderer: [] },
   { rule: 'idle with intent Aborted: Idle (not Done)', events: [working, status('idle', { intent: 'Aborted' })], word: 'Idle', sub: null, renderer: ["e.status==='idle'&&e.intent==='Aborted'", "setState(a,'idle',null,'Stopped. Ready for your next message.')"] },
   { rule: 'idle after an Aborted turn is Idle (worked cleared)', events: [working, status('idle', { intent: 'Aborted' }), status('idle')], word: 'Idle', sub: null, renderer: [] },
-  { rule: 'status error: Error', events: [status('error', { intent: 'boom' })], word: 'Error', sub: null, renderer: ["setState(a,'error',null,SHORT(e.intent||'Error',140))"] },
+  { rule: 'status error: Error', events: [status('error', { intent: 'boom' })], word: 'Error', sub: null, renderer: ["setState(a,'error',null,safeExcerpt(e.intent||'Error',140,'Error'))"] },
   { rule: 'status stopped: Idle, Ended', events: [working, status('stopped')], word: 'Idle', sub: 'Ended', renderer: ["setState(a,'idle','Ended',"] },
   { rule: 'limit exhausted: Waiting, Limit reached', events: [working, limitHit], word: 'Waiting', sub: 'Limit reached', renderer: ["setState(a,'waiting','Limit reached',"] },
   { rule: 'limit exhausted again with the same request: unchanged', events: [limitHit, toolStart(), limitHit], word: 'Waiting', sub: null, renderer: ["if(a.limit&&a.limit.requestId===e.requestId)return;showLimit"] },

@@ -38,7 +38,7 @@ interface SimOptions {
   /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits. */
   names?: 'long';
   /** Spec 052 FR-170 (T155): long replies and long sub-agent prompts that run to the right edge of the chat, to check that the Copy button covers no text (page address `simreply=long`). */
-  reply?: 'long';
+  reply?: 'long' | 'secrets';
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
   /** Spec 052 FR-141 (issue #367): the first agent has eight session grants with long names (page address `simgrants=many`). */
   grants?: 'many' | 'stuck'; /* 'stuck': revokes are accepted but never remove anything (a failed revoke) */
@@ -138,6 +138,8 @@ function simNameError(v: unknown): string {
   if (/gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}/.test(n)) return 'That looks like a secret. Use another name.';
   return '';
 }
+/** Spec 041 FR-065 (issue #541): a done reply that holds three token shapes, so a driver can check none reaches the office floor (page address `simreply=secrets`). Built at run time: the file holds no secret-looking literal. */
+const SECRETS_TEXT = 'Token check: gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8 and github' + '_pat_' + '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij and s' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789.';
 const LONG_TEXT = 'Every paragraph here is long on purpose so that its lines run to the right edge of the chat, where a Copy button must never cover a word. '.repeat(6).trim() + '\n\n```\nconst aLineThatRunsPastTheRightEdgeOfTheChat = "' + 'x'.repeat(300) + '";\n```'; // ends in a code block whose last line runs to the right edge (clipped by its own scroll), so the reply's Copy button always sits over text when it is misplaced
 const SIM_LONG_NAMES = ['Billing refactor: split invoice and credit-note flows', 'Canton lookup duplicates: reproduce and fix the join', 'Release notes for the next minor version and changelog', 'Tidy the registry modules and update every import path'];
 const SIM_USD_CAPS: Record<string, number> = { Ada: 0.01 };
@@ -699,7 +701,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'error', intent: s.intent });
           break;
         case 'done': {
-          const text = '**Done.** ' + s.intent + ' Every link in the docs index resolves and the tests pass.' + (opts.reply === 'long' ? ' ' + LONG_TEXT : '');
+          const text = '**Done.** ' + (opts.reply === 'secrets' ? SECRETS_TEXT + ' ' : '') + s.intent + ' Every link in the docs index resolves and the tests pass.' + (opts.reply === 'long' ? ' ' + LONG_TEXT : '');
           emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: text, final: true, text });
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
           break;

@@ -47,6 +47,7 @@ const DRIVERS = [
   { name: 'check-sched-edit' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
+  { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor
   { name: 'check-ui-text' }, // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast
 ];
 
