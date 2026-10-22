@@ -1,7 +1,8 @@
 # Owners are asked for review automatically. With the ruleset on main, "require review from Code Owners"
-# makes their approval mandatory for these paths. Everything else needs one approval from any other human.
-/.specify/    @vikramgorla
-/.claude/     @vikramgorla
-/.github/     @vikramgorla
-/AGENTS.md    @vikramgorla
-/CLAUDE.md    @vikramgorla
+# makes an approval from one of them mandatory for these paths. Everything else needs one approval from any other human.
+# Owner decision 2026-10-22 (Vikram): the three owners share these paths, so any one of them can unblock a PR.
+/.specify/    @vikramgorla @fjcabello @rubenlupi
+/.claude/     @vikramgorla @fjcabello @rubenlupi
+/.github/     @vikramgorla @fjcabello @rubenlupi
+/AGENTS.md    @vikramgorla @fjcabello @rubenlupi
+/CLAUDE.md    @vikramgorla @fjcabello @rubenlupi

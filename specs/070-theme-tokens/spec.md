@@ -1,5 +1,11 @@
 # Feature Specification: Full theme tokens (fonts, shapes, figures and gadgets)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Full theme tokens: typed tokens for fonts (system allow-list, no downloads), title weight, radii and shadows; the people's clothes and hair; cup and laptop slots; per-value fallback with a note, pair-wise contrast fallback, hostile values refuse the pack; AI maker extended; a ratchet on the renderer's colour literals
+status: **Phase 1 built** (`test:theme-tokens`, `check:theme-art`, `check:geometry` with *Pink Studio*); Phase 2 (remaining literals onto tokens) open; the new AI prompt checked on a real model (Claude haiku, 2026-10-22, 1 prompt; FR-031 fix)
+-->
+
 **Feature Branch**: `070-theme-tokens`
 **Created**: 2026-10-21
 **Status**: Phase 1 built (typed tokens, fonts, radii, shadows, figure palettes, gadget slots, validator, guard, AI maker); Phase 2 (moving the remaining literal colours of the CSS onto tokens) in progress, tracked by the guard's ratchet.
@@ -67,7 +73,7 @@ A pack with a script in an SVG, a remote font URL, a 2px font size, a 40px radiu
 
 ### Guard
 - **FR-040** `[IMPLEMENTED]` A static test (`test:theme-tokens`, no Electron) scans the renderer's CSS and JS (`styles.css`, `screens.css`, `themes.css`, `app.js`, `screens.js`, `scenekits.js`, `index.html`) for colour literals (`#hex`, `rgb(`, `hsl(`) and `font-family` declarations that are not `var(--…)`/`inherit`, outside the token defaults (`theme.js` built-in packs and the `:root` block of `styles.css`). The counts per file are compared with a checked-in **ratchet** (`scripts/fixtures/theme-literals.json`): a count above the ratchet fails ("use a token"), a count below it fails until the ratchet is lowered in the same change, so the number only goes down. It also fails when a token is registered without a default, or a `font`-typed token's default is not in the allow-list.
-- **FR-041** `[KNOWN GAP]` Phase 2: the remaining literals move onto tokens, file by file, lowering the ratchet each time, with `check:geometry` and `check:office` green. `[KNOWN GAP]` until the ratchet reaches 0 for every file (scene kits' fixed costume colours may stay as named kit tokens).
+- **FR-041** `[KNOWN GAP]` Phase 2: the remaining literals move onto tokens, file by file, lowering the ratchet each time, with `check:geometry` and `check:office` green. `[KNOWN GAP]` until the ratchet reaches 0 for every file (scene kits' fixed costume colours may stay as named kit tokens). 2026-10-22 (T017): the last `#e5be78` borders moved onto `--tone-warn-line`.
 
 ### What a theme may never change (by design)
 - **FR-050** Sizes, spacing, borders and density (D2); status words and permission, credit and usage wording (spec 036 FR-003); the layout of the office; the status colours' meaning (working blue-ish, waiting amber, error red, done green, as checked by the AI maker); motion beyond the named presets (spec 036 FR-006; reduced motion always wins); sounds (the app has none).
