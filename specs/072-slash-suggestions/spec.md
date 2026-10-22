@@ -2,7 +2,7 @@
 
 **Feature Branch**: `072-slash-suggestions` (stacked on `005-composer-toolbar`, PR #498)
 **Created**: 2026-10-22
-**Status**: Draft
+**Status**: Built 2026-10-22 (unit tests, simulator driver; vendor behaviour checked with 3 real prompts, Codex read only)
 **Input**: Owner request (Vikram, Telegram, 2026-10-22): "When there are skills or prompts in the folder or workspace - show autofill suggestions and options when you type /".
 
 ## Summary
@@ -13,8 +13,9 @@ app's built-in commands where Durbar can know them and they really run. Each ent
 comes from (folder, user, app). Typing filters the list; arrow keys move; Tab or Enter puts the entry into the box; Esc closes the list.
 
 Sending `/name some text` then does what the user expects: Durbar's sessions start the agent apps without their own settings and
-skill discovery (spec 012 Q8, spec 043, spec 061), so the apps do **not** know the folder's skills and commands themselves (checked,
-see *Vendor behaviour*). For a folder or user entry Durbar therefore sends the entry's own text (with the user's words as its
+skill discovery (spec 012 Q8, spec 043, spec 061), so Claude Code and Copilot do **not** know the folder's skills and commands
+themselves, and Codex's app-server does not expand a typed `/name` (see *Vendor behaviour*; whether Codex still finds `.agents/skills`
+on its own is not checked). For a folder or user entry Durbar therefore sends the entry's own text (with the user's words as its
 arguments) instead of the literal `/name`; the chat still shows what the user typed. A built-in is sent as typed, and is only listed
 where the app runs it.
 
@@ -116,7 +117,8 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   does not run built-ins, `real:`) and Codex (TUI only, `read:`) list none. [KNOWN GAP] running Copilot built-ins through
   `session.rpc.commands.invoke` is not built.
 - **FR-010 IPC.** A window-only `agents:slashCommands` takes an agent id, looks the agent up in main, and returns at most 300 entries
-  in the FR-001 shape (strings re-checked and cut). The window fetches the list when a chat opens and again when the list opens and its copy is older than 30 s.
+  in the FR-001 shape (strings re-checked and cut). The window fetches the list the first time the list opens in a chat (so opening a chat never starts a
+  session) and again when it opens with a copy older than 30 s.
 - **FR-011 Simulator.** Every simulated agent kind answers `slashCommands` with canned folder, user and (Claude only) built-in entries,
   and the simulated send shows the FR-005 note for a folder entry. No disk reads, no real app.
 

@@ -29,12 +29,11 @@ Folder entries (in folder order), then user, then app; inside a group by name (c
 
 - `agents:slashCommands(id: string)` → `{ ok: true, entries: SlashCommandInfo[] } | { ok: false, error: string, entries: [] }`.
   Window-only (`fromApp`); unknown id or adapter without the member → `ok: false`.
-- `agents:send(...)` → adds `slash?: string` (the expanded entry's `where`, or its name for a built-in-free expansion) when the text
-  was expanded.
+- `agents:send(...)` → adds `slash?: string` (the expanded entry's `where`, else its name) when the text was expanded.
 
 ## Expansion
 
-- Match: `^/([A-Za-z0-9][A-Za-z0-9._:-]{0,63})(?:[ \t]+([\s\S]*))?$` on the trimmed message; only folder and user entries.
+- Match: `^/([A-Za-z0-9][A-Za-z0-9._:-]{0,63})(?:\s+([\s\S]*))?$` on the trimmed message (a space or a new line starts the arguments); only folder and user entries.
 - command / prompt: body; `$ARGUMENTS` → rest; `$1`..`$9` → whitespace-split words (missing → empty); no placeholder and rest non-empty
   → body + `\n\nARGUMENTS: ` + rest.
 - skill: `Use the "<name>" skill. Its folder is <dir>.\n\n` + body + (rest ? `\n\nARGUMENTS: ` + rest : '').

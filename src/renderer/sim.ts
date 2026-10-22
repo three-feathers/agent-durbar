@@ -109,6 +109,29 @@ const SIM_CLAUDE_MODELS: ModelChoice[] = [
   { id: 'haiku', name: 'Sim Haiku', efforts: [] },
 ];
 /* spec 043: what a session's custom agents look like (made up; no real agent files) */
+/** Spec 072 FR-011: canned "/" entries per agent app (folder, user, and Claude Code's built-ins); nothing is read from disk. */
+type SimSlash = { name: string; description?: string; argumentHint?: string; source: 'folder' | 'user' | 'app'; kind: 'skill' | 'command' | 'prompt' | 'builtin'; where?: string };
+function simSlash(kind: string): SimSlash[] {
+  const common: SimSlash[] = [
+    { name: 'review-pr', description: 'Review a pull request: risks, tests, and what to change', argumentHint: '<number>', source: 'folder', kind: 'command', where: '.claude/commands/review-pr.md' },
+    { name: 'release-notes', description: 'Draft release notes from the merged pull requests', source: 'folder', kind: 'skill', where: '.claude/skills/release-notes/SKILL.md' },
+    { name: 'refactor-plan', description: 'Plan a refactor in small, safe steps', argumentHint: '<module>', source: 'folder', kind: 'skill', where: '.claude/skills/refactor-plan/SKILL.md' },
+    { name: 'triage', description: 'Sort new issues by area and urgency', source: 'folder', kind: 'command', where: '.claude/commands/triage.md' },
+    { name: 'explain', description: 'Explain a file or a function in plain words', argumentHint: '<path>', source: 'user', kind: 'command', where: '~/.claude/commands/explain.md' },
+    { name: 'standup', description: 'Summarise yesterday’s commits for the stand-up', source: 'user', kind: 'skill', where: '~/.claude/skills/standup/SKILL.md' },
+  ];
+  if (kind === 'claude')
+    return common.concat([
+      { name: 'compact', description: 'Free up context by summarizing the conversation so far', argumentHint: '<optional custom summarization instructions>', source: 'app', kind: 'builtin' },
+      { name: 'context', description: 'Show current context usage', source: 'app', kind: 'builtin' },
+      { name: 'init', description: 'Initialize a new CLAUDE.md file with codebase documentation', source: 'app', kind: 'builtin' },
+      { name: 'security-review', description: 'Complete a security review of the pending changes on the current branch', source: 'app', kind: 'builtin' },
+    ]);
+  const swap = (w?: string): string | undefined => (w ? (kind === 'codex' ? w.replace('.claude/commands/', '.agents/skills/').replace('.claude/skills/', '.agents/skills/').replace('~/.claude/', '~/.agents/') : w.replace('.claude/commands/', '.github/skills/').replace('.claude/skills/', '.github/skills/').replace('~/.claude/', '~/.copilot/')) : w);
+  const skills: SimSlash[] = common.map((e) => ({ ...e, kind: 'skill' as const, where: swap(e.where) }));
+  return kind === 'codex' ? skills.concat([{ name: 'prompts:draft-pr', description: 'Draft a pull request description', argumentHint: 'TITLE', source: 'user', kind: 'prompt', where: '~/.codex/prompts/draft-pr.md' }]) : skills;
+}
+
 const SIM_PROFILES = [
   { id: 'reviewer', name: 'Reviewer', description: 'Reviews changes and points at risks; never edits files', source: 'repo' as const, path: '~/work/mcp-swiss/.github/agents/reviewer.agent.md', tools: ['view', 'grep', 'glob'], model: 'sim-deep' },
   { id: 'docs-writer', name: 'Docs writer', description: 'Writes and tidies documentation in plain English', source: 'user' as const, path: '~/.copilot/agents/docs-writer.agent.md' },
@@ -287,7 +310,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const [name, role, room, state, intent, helpers, files] = r;
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room + (opts.names === 'long' ? '-customer-reconciliation-batch-jobs-2026'.slice(0, 55 - room.length) : ''); // simnames=long: a folder name is long too (60 characters at most, spec 059)
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
-      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true } as AgentInfo;
+      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true, slash: true } as AgentInfo;
       // Spec 052 FR-046: a pending permission card only happens in Ask first, so a waiting agent starts in Ask first (Jonas was Allow all
       // and restored, Lena Read-only); the restored Allow-all folder the restore strip names is then Tomas's (swisscontract-ai).
       if (state === 'waiting' && info.permMode !== 'ask') { info.permMode = 'ask'; info.permRestored = undefined; }
@@ -1125,6 +1148,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         console.info('[sim] would open in the system browser:', simE.url);
         return { ok: true };
       },
+      slashCommands: async (id) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent', entries: [] };
+        return { ok: true, entries: simSlash(s.info.adapterId ?? 'copilot') };
+      },
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || (s.info.adapterId && s.info.adapterId !== 'copilot')) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
@@ -1611,7 +1639,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           return { ok: true };
         }
         window.setTimeout(() => void reply(s, text), 400);
-        return { ok: true };
+        // spec 072 FR-011: a folder or user entry is "sent as its text", as the real adapters do (FR-005)
+        const sl = /^\/([A-Za-z0-9][A-Za-z0-9._:-]{0,63})(?:\s|$)/.exec(String(text).trim());
+        const hit = sl ? simSlash(kind).find((e) => e.source !== 'app' && e.name.toLowerCase() === sl[1].toLowerCase()) : undefined;
+        return hit ? { ok: true, slash: hit.where ?? hit.name } : { ok: true };
       },
       stop: async (id) => {
         // Stop = interrupt the turn only (like the real adapter): pending approval denied, grants kept, back to Ready.

@@ -8,20 +8,20 @@ None: no new dependency or project structure (plan).
 
 ## Phase 2: Foundational (blocks every story)
 
-- [ ] T001 New `src/adapters/slashcommands.ts`: `parseFrontMatter` (moved from `parseClaudeAgent`, which now calls it), `discoverSlash` with
+- [x] T001 New `src/adapters/slashcommands.ts`: `parseFrontMatter` (moved from `parseClaudeAgent`, which now calls it), `discoverSlash` with
   caps, `lstat` / real-path containment via `isInsideRoots`, name rule, `user-invocable: false`, de-duplication and order [FR-002, FR-003]
-- [ ] T002 `src/adapters/slashcommands.ts`: `expandSlash` (command/prompt placeholders, skill wrapper, re-read with cap, unreadable → undefined) and
+- [x] T002 `src/adapters/slashcommands.ts`: `expandSlash` (command/prompt placeholders, skill wrapper, re-read with cap, unreadable → undefined) and
   `cleanBuiltins` with the FR-007 deny list [FR-005, FR-006, FR-007]
-- [ ] T003 `src/adapters/slashcommands.ts`: `claudeSlashPlaces`, `copilotSlashPlaces`, `codexSlashPlaces` (homes injected) [FR-004]
-- [ ] T004 `scripts/test-slashcommands.ts` + `test:slashcommands` in `package.json` (and `test:serial`): fixtures for each app's places,
+- [x] T003 `src/adapters/slashcommands.ts`: `claudeSlashPlaces`, `copilotSlashPlaces`, `codexSlashPlaces` (homes injected) [FR-004]
+- [x] T004 `scripts/test-slashcommands.ts` + `test:slashcommands` in `package.json` (and `test:serial`): fixtures for each app's places,
   front matter, caps (count, size), symlink out (skipped when the OS refuses links), `..` names, ordering, de-duplication,
   expansion cases, deny list, win32/posix place paths; `test-agentprofiles` still green [SC-004]
 
 
 
-- [ ] T005 `src/adapters/types.ts`: `SlashCommand`, `listSlashCommands?`, `expandSlashCommand?`; `src/adapters/fake.ts` gains both behind its
-  options; `scripts/test-adapter-contract.ts` knows the new members [FR-001]
-- [ ] T006 Main: new `src/main/ipc/slash.ts` (`agents:slashCommands`, window-only, re-cut, 300 max), `sendOp` in `src/main/main.ts`
+- [x] T005 `src/adapters/types.ts`: `SlashCommand`, `listSlashCommands?`, `expandSlashCommand?`; `scripts/test-adapter-contract.ts` lists
+  both as members the fake does not implement (like `listAgentProfiles`) [FR-001]
+- [x] T006 Main: new `src/main/ipc/slash.ts` (`agents:slashCommands`, window-only, re-cut, 300 max), `sendOp` in `src/main/main.ts`
   expands and returns `slash`, `infoFor` sets the `slash` flag; `src/preload/preload.ts`, `src/shared/api.ts` (`SlashCommandInfo`,
   `slashCommands?`, `send` result); `test:ipcchannels` covers the channel [FR-005, FR-010]
 
@@ -29,38 +29,38 @@ None: no new dependency or project structure (plan).
 
 Independent test: simulator chat, keyboard only (quickstart steps 2-4).
 
-- [ ] T007 [US1] `src/adapters/claude.ts`: `listSlashCommands` / `expandSlashCommand` over the folder and user files [FR-004, FR-005]
-- [ ] T008 [P] [US1] New `src/renderer/slashsuggest.js` (pure: token at caret, filter, order, option HTML) loaded before `app.js` from
+- [x] T007 [US1] `src/adapters/claude.ts`: `listSlashCommands` / `expandSlashCommand` over the folder and user files [FR-004, FR-005]
+- [x] T008 [P] [US1] New `src/renderer/slashsuggest.js` (pure: token at caret, filter, order, option HTML) loaded before `app.js` from
   `src/renderer/index.html`; unit-tested in `scripts/test-slashcommands.ts` through a VM load [FR-008]
-- [ ] T009 [US1] `src/renderer/app.js`: combobox on `#msgInput` (open on `/` at a word start, filter, arrows wrap, Tab/Enter insert, Esc
-  closes first, click inserts, IME guard, live-region count, 30 s refetch), list placed with `placeMenu` above the box; "Sent the text
+- [x] T009 [US1] `src/renderer/app.js`: combobox on `#msgInput` (open on `/` at a word start, filter, arrows wrap, Tab/Enter insert, Esc
+  closes first, click inserts, IME guard, live-region count, fetched on the first "/" and again after 30 s), list placed with `placeMenu` above the box; "Sent the text
   of …" note; `src/renderer/styles.css` with tokens, 10.5px floor, 8 rows then scroll [FR-008, SC-001..SC-003]
-- [ ] T010 [US1] `src/renderer/sim.ts`: `slashCommands` canned per kind and `send` answering `slash` [FR-011]
+- [x] T010 [US1] `src/renderer/sim.ts`: `slashCommands` canned per kind and `send` answering `slash` [FR-011]
 
 ## Phase 4: User Story 2 - the app's built-ins, only where they run (P2)
 
 Independent test: a Claude simulated chat lists `app` entries after folder and user ones; a Copilot one lists none.
 
-- [ ] T011 [US2] `src/adapters/claude.ts`: built-ins from the model probe's cached `initialize` `commands`, filtered by `cleanBuiltins`
+- [x] T011 [US2] `src/adapters/claude.ts`: built-ins from the model probe's cached `initialize` `commands`, filtered by `cleanBuiltins`
   [FR-006, FR-007, FR-009]
 
 ## Phase 5: User Story 3 - each app's own places (P2)
 
 Independent test: unit fixtures per app (T004) and the adapters' listing on temp folders.
 
-- [ ] T012 [P] [US3] `src/adapters/copilot.ts` and `src/adapters/codex.ts`: `listSlashCommands` / `expandSlashCommand` over their places
+- [x] T012 [P] [US3] `src/adapters/copilot.ts` and `src/adapters/codex.ts`: `listSlashCommands` / `expandSlashCommand` over their places
   (Codex prompts too); empty-list wording in `src/renderer/app.js` [FR-004, FR-009]
 
 ## Phase 6: Polish and cross-cutting
 
-- [ ] T013 New `scripts/check-slash-suggest.js` driver + `check:slash-suggest` script + `ui-suite.js` entry: keyboard flow, ARIA attributes,
+- [x] T013 New `scripts/check-slash-suggest.js` driver + `check:slash-suggest` script + `ui-suite.js` entry: keyboard flow, ARIA attributes,
   Esc order, no overlap with the box, inside the panel, at most 8 rows visible, no text under 10.5px, at 1440x900 and 1280x800, a dark
   theme pass; time from `/` to the list showing under 100 ms; the "Sent the text of" note; screenshots
   `docs/screenshots/072-slash-1440x900.png`, `072-slash-1280x800.png` [SC-001..SC-003]
-- [ ] T014 [P] Docs: `README.md` feature list and known limits, CHANGELOG line under Unreleased, `specs/README.md` row, `docs/agent-notes.md`
+- [x] T014 [P] Docs: `README.md` feature list and known limits, CHANGELOG line under Unreleased, `specs/README.md` row, `docs/agent-notes.md`
   entries (Claude `--setting-sources ""` hides folder commands; built-ins run in print mode; Copilot `session.send` does not run
   built-ins; Codex prompts are TUI-only) [VIII]
-- [ ] T015 `npm run typecheck && npm run build && npm test` (nice), then `/speckit-converge`
+- [x] T015 `npm run typecheck && npm run build && npm test` (nice), then `/speckit-converge`
 
 ## Known gaps (open tasks, not this PR)
 

@@ -43,9 +43,11 @@ import { resolveWorkspaceCwd } from './workspace';
 import { listClaudeSessions, readClaudeHistory } from './claudeHistory';
 import type { HistoryResult, PreviousSession } from './history';
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
+import { claudeSlashPlaces, cleanBuiltins, discoverSlash, expandSlash, mergeSlash } from './slashcommands';
+import type { SlashEntry } from './slashcommands';
 import { agentsArg, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
-import type { AgentProfile, AskedQuestion, ElicitAnswer } from './types';
+import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand } from './types';
 import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 
 export const CLAUDE_ID = 'claude';
@@ -540,27 +542,32 @@ export class ClaudeAdapter implements AgentAdapter {
     return { status: 'unknown', detail: CLAUDE_LOCAL_SIGN_IN };
   }
 
-  private modelCache?: { at: number; list: Promise<ModelOption[]> };
+  private initCache?: { at: number; reply: Promise<Record<string, unknown>> };
 
   /**
    * FR-118: the models the user's `claude` offers, from its `initialize` reply. A short-lived CLI in Read-only in the temp
    * folder; no prompt is written, so no tokens are spent. Cached 10 minutes; any failure is an empty list.
    */
   listModelOptions(): Promise<ModelOption[]> {
-    const now = Date.now();
-    if (this.modelCache && now - this.modelCache.at < 10 * 60_000) return this.modelCache.list;
-    const list = this.probeModels().catch((e) => {
-      this.debug?.(`claude: model list failed: ${e instanceof Error ? e.message : String(e)}`);
-      this.modelCache = undefined; // try again next time
-      return [] as ModelOption[];
-    });
-    this.modelCache = { at: now, list };
-    return list;
+    return this.initReply().then((r) => claudeModelOptions(r.models));
   }
 
-  private async probeModels(): Promise<ModelOption[]> {
+  /** The probe's `initialize` reply (models, and spec 072's built-in `commands`), cached 10 minutes; a failure is `{}` and is retried next time. */
+  private initReply(): Promise<Record<string, unknown>> {
+    const now = Date.now();
+    if (this.initCache && now - this.initCache.at < 10 * 60_000) return this.initCache.reply;
+    const reply = this.probeInit().catch((e) => {
+      this.debug?.(`claude: initialize probe failed: ${e instanceof Error ? e.message : String(e)}`);
+      this.initCache = undefined; // try again next time
+      return {} as Record<string, unknown>;
+    });
+    this.initCache = { at: now, reply };
+    return reply;
+  }
+
+  private async probeInit(): Promise<Record<string, unknown>> {
     const file = await this.deps.claudePath();
-    if (!file) return [];
+    if (!file) return {};
     const make = this.deps.makeTransport ?? cliTransportFactory;
     const t = await make({
       file,
@@ -570,11 +577,29 @@ export class ClaudeAdapter implements AgentAdapter {
       handlers: { message: () => undefined, control: async () => ({ error: 'not handled in the model probe' }), exit: () => undefined },
     });
     try {
-      const r = await t.request({ subtype: 'initialize' }, 20_000);
-      return claudeModelOptions(r.models);
+      return await t.request({ subtype: 'initialize' }, 20_000);
     } finally {
       await t.close().catch(() => undefined);
     }
+  }
+
+  /** Spec 072 FR-004: the folder's and the user's skills and commands (Claude does not load them: `--setting-sources ""`). */
+  private slashFiles(s: Session): SlashEntry[] {
+    return discoverSlash(claudeSlashPlaces(s.roots, this.deps.configDir ?? (process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'))));
+  }
+
+  /** Spec 072 FR-001: files first, then the built-ins of the CLI's `initialize` reply that run in Durbar's sessions (FR-006, FR-007). */
+  async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
+    const s = this.sessions.get(sessionId);
+    if (!s) return [];
+    const builtins = cleanBuiltins((await this.initReply()).commands);
+    return mergeSlash(this.slashFiles(s), builtins);
+  }
+
+  /** Spec 072 FR-005: a folder or user entry is sent as its text (real 2026-10-22: Claude sends an unknown `/name` to the model as is). */
+  async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined> {
+    const s = this.sessions.get(sessionId);
+    return s ? expandSlash(text, this.slashFiles(s)) : undefined;
   }
 
   /** spec 043 FR-008: the custom agents of the session's folders and of the user (read by the adapter; Claude does not load them). */

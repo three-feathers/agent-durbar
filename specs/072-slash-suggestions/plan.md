@@ -58,8 +58,8 @@ combobox to the composer's message box, built on the toolbar menus' look and pla
    (pure, tested with `path.posix` / `path.win32` inputs).
 2. **Types**: `SlashCommand` in `src/adapters/types.ts`; `listSlashCommands?` and `expandSlashCommand?` on `AgentAdapter`;
    `SlashCommandInfo` in `src/shared/api.ts` plus `slashCommands?(id)` on the bridge and `AgentInfo.slash?: true`.
-3. **Adapters**: Claude (folder/user files + cached built-ins), Copilot (files), Codex (files + prompts). `FakeAdapter` gains both
-   members behind its option so the contract test sees them.
+3. **Adapters**: Claude (folder/user files + cached built-ins), Copilot (files), Codex (files + prompts). The contract test lists both
+   members among those `FakeAdapter` does not implement (as `listAgentProfiles`).
 4. **Main**: `src/main/ipc/slash.ts` registers `agents:slashCommands` (window-only, id checked, `ensureLive`, strings re-cut, 300 max);
    `sendOp` calls `expandSlashCommand` before `send` and returns `slash: where` on success; `infoFor` sets `slash`.
 5. **Renderer**: `src/renderer/slashsuggest.js` (a small module loaded before `app.js`, pure helpers exposed on `window.DurbarSlash`:

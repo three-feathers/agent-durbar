@@ -1403,7 +1403,7 @@ async function showFolderStatus(a,chip){
   if(r&&r.value==='vscode'&&bridge.openInVSCode)openLive(a,chip);
 }
 function openPanel(id,focus){
-  const a=byId(id); if(!a)return; ui.selected=id; attached=[];
+  const a=byId(id); if(!a)return; closeSlash(); ui.selected=id; attached=[];
   noteRecentChat(a); rememberUi();
   document.body.classList.add('panel-open');
   const room=roomOf(a), parent=a.parent?byId(a.parent):null;
@@ -1483,6 +1483,7 @@ function openPanel(id,focus){
   $('attached').onclick=e=>{const po=e.target.closest('[data-planoff]');if(po){const pa=byId(ui.selected);if(pa)pa.planNext=false;renderAttached();const m=$('msgInput');if(m)m.focus();return;}const b=e.target.closest('[data-rm]');if(b){attached.splice(+b.dataset.rm,1);renderAttached();setSend();attNotice([]);}};
   const input=$('msgInput');
   input.addEventListener('input',autoGrow);
+  initSlash(a,input); /* spec 072: the "/" list; its keydown runs first, so Enter / Tab / Esc pick or close while it is open */
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
@@ -1495,6 +1496,112 @@ function composerHint(a){
   if(!a||!a.live)return base+' · Demo: sample data';
   const r=liveRoot(a)||a, m=MODE_NAME[((r.info||a.info)||{}).permMode];
   return base+' · '+(SIM?'Demo, no credits used':'Live '+kindWord(r.info&&r.info.adapterId))+(m?' · '+m:'');
+}
+/* ---------------- spec 072: the "/" list in the message box (an ARIA combobox with a listbox; focus stays in the box) ----------------
+   Entries come from main (agents:slashCommands: the folder's, the user's, and the app's built-ins that run when typed) or the simulator;
+   a demo chat has a few canned ones. Typing filters; ArrowUp/Down move; Tab or Enter put "/name " in the box; Esc closes the list only. */
+var SLASH=window.DurbarSlash||null; /* var: openPanel can run before this line during start-up (restored chat) */
+var SLASH_CACHE=new Map(); /* agent id -> {at, list, error} (30 s, FR-010) */
+var SLASH_ROWS=8;
+var DEMO_SLASH=[
+  {name:'review',description:'Review the changes on this branch',argumentHint:'<focus>',source:'folder',kind:'command',where:'.claude/commands/review.md'},
+  {name:'release-notes',description:'Draft release notes from the merged pull requests',source:'folder',kind:'skill',where:'.claude/skills/release-notes/SKILL.md'},
+  {name:'explain',description:'Explain a file or function in plain words',argumentHint:'<path>',source:'user',kind:'command',where:'~/.claude/commands/explain.md'},
+  {name:'compact',description:'Free up context by summarising the conversation so far',source:'app',kind:'builtin'},
+];
+var slashUi=null; /* {a, input, items, active, tok, el, loading} while the list is open */
+function slashOf(a){
+  if(!a||!SLASH)return null;
+  if(!a.live)return {list:DEMO_SLASH};
+  const r=liveRoot(a); if(!r||!r.info||!r.info.slash||!bridge.slashCommands)return null;
+  return SLASH_CACHE.get(r.id)||null;
+}
+async function fetchSlash(a){
+  const r=liveRoot(a); if(!r||!bridge.slashCommands)return;
+  const cur=SLASH_CACHE.get(r.id); if(cur&&(cur.pending||Date.now()-cur.at<30000))return;
+  SLASH_CACHE.set(r.id,{at:Date.now(),list:cur?cur.list:null,pending:true});
+  let res=null;try{res=await bridge.slashCommands(r.id);}catch(e){res={ok:false,error:String(e&&e.message||e),entries:[]};}
+  SLASH_CACHE.set(r.id,{at:Date.now(),list:res&&res.ok&&Array.isArray(res.entries)?res.entries:[],error:res&&!res.ok?res.error:null});
+  if(slashUi&&liveRoot(slashUi.a)===r)slashUpdate(true);
+}
+function slashSupported(a){return !!(window.DurbarSlash&&a&&!a.parent&&(!a.live||(liveRoot(a).info&&liveRoot(a).info.slash&&bridge.slashCommands)));}
+function initSlash(a,input){
+  if(!slashSupported(a))return;
+  input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-expanded','false');input.setAttribute('aria-controls','slashList');
+  input.addEventListener('keydown',e=>slashKey(e,a,input));
+  input.addEventListener('input',()=>{if(!input.dataset.composing)slashUpdate();});
+  input.addEventListener('compositionstart',()=>{input.dataset.composing='1';});
+  input.addEventListener('compositionend',()=>{delete input.dataset.composing;slashUpdate();});
+  input.addEventListener('click',()=>slashUpdate());
+  input.addEventListener('keyup',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'||e.key==='Home'||e.key==='End')slashUpdate();});
+  input.addEventListener('blur',()=>{setTimeout(()=>{if(slashUi&&document.activeElement!==slashUi.input)closeSlash();},0);});
+}
+function closeSlash(){
+  const u=slashUi; slashUi=null;
+  const el=document.getElementById('slashList'); if(el)el.remove();
+  if(u&&u.input){u.input.setAttribute('aria-expanded','false');u.input.removeAttribute('aria-activedescendant');}
+}
+/* open, refilter or close the list for the word at the caret (FR-008) */
+function slashUpdate(refetched){
+  const input=$('msgInput'); const a=byId(ui.selected);
+  if(!input||!a||!slashSupported(a)||input.dataset.composing){closeSlash();return;}
+  const tok=SLASH.tokenAt(input.value,input.selectionStart);
+  if(!tok||input.selectionStart!==input.selectionEnd){closeSlash();return;}
+  if(a.live)fetchSlash(a);
+  const src=slashOf(a), loading=!src||!src.list;
+  const items=loading?[]:SLASH.filter(src.list,tok.query);
+  const opening=!slashUi;
+  const keep=slashUi&&slashUi.tok.query===tok.query&&slashUi.items[slashUi.active]?slashUi.items[slashUi.active].name:null; /* a new query starts at the first match */
+  slashUi={a,input,items,tok,loading,active:Math.max(0,keep?items.findIndex(x=>x.name===keep):0)};
+  if(slashUi.active<0)slashUi.active=0;
+  drawSlash(src);
+  if(opening||refetched)announce(loading?'Looking for commands…':items.length?items.length+(items.length===1?' command':' commands')+'. Arrow keys to choose, Tab to insert.':(tok.query?'No matching commands':'No commands for this agent app here'));
+}
+function drawSlash(src){
+  const u=slashUi; if(!u)return;
+  let el=document.getElementById('slashList');
+  if(!el){el=document.createElement('div');el.id='slashList';el.className='mode-menu slash-list';el.setAttribute('role','listbox');
+    el.addEventListener('mousedown',e=>e.preventDefault()); /* the box keeps the focus */
+    el.addEventListener('click',e=>{const o=e.target.closest('[role="option"]');if(!o||!slashUi)return;slashUi.active=+o.dataset.i;slashPick();});
+    document.body.appendChild(el);}
+  const app=kindWord(liveRoot(u.a)&&liveRoot(u.a).info&&liveRoot(u.a).info.adapterId);
+  el.setAttribute('aria-label',(u.a.live?app:'Demo')+' commands');
+  const W=SLASH.SOURCE_WORD, K=SLASH.KIND_WORD;
+  const err=src&&src.error?`<p class="sl-empty" role="presentation">Could not list commands: ${esc(DurbarCutText.cutText(src.error,120))}</p>`:'';
+  el.innerHTML=u.loading?'<p class="sl-empty" role="presentation">Looking for commands…</p>'
+    :u.items.length?u.items.map((x,i)=>`<div class="sl-opt" role="option" id="slashOpt-${i}" data-i="${i}" aria-selected="${i===u.active}"${x.where?` title="${esc((x.source==='app'?'':'Sends the text of ')+x.where)}"`:''}><span class="sl-line"><b class="sl-name">/${esc(x.name)}</b>${x.argumentHint?`<span class="sl-hint">${esc(x.argumentHint)}</span>`:''}<span class="sl-src sl-${esc(x.source)}">${esc(W[x.source]||x.source)} · ${esc(K[x.kind]||x.kind)}</span></span>${x.description?`<span class="sl-desc">${esc(x.description)}</span>`:''}</div>`).join('')
+    :err||`<p class="sl-empty" role="presentation">${u.tok.query?'No matching commands':'No commands for this agent app here'}</p>`;
+  u.input.setAttribute('aria-expanded','true');
+  if(u.items.length)u.input.setAttribute('aria-activedescendant','slashOpt-'+u.active);else u.input.removeAttribute('aria-activedescendant');
+  placeSlash(el,u.input);
+  const act=document.getElementById('slashOpt-'+u.active); if(act)act.scrollIntoView({block:'nearest'});
+}
+/* above the message box, as wide as it, at most 8 rows (the rest scroll inside), never over the box (SC-003) */
+function placeSlash(el,input){
+  const box=input.closest('.inbox')||input, br=box.getBoundingClientRect(), panel=$('panel'), pr=panel?panel.getBoundingClientRect():{top:8};
+  el.style.width=Math.round(br.width)+'px';
+  const row=el.querySelector('.sl-opt'), rh=row?row.getBoundingClientRect().height:40;
+  const room=Math.max(rh+12,br.top-Math.max(8,pr.top)-12);
+  el.style.maxHeight=Math.min(room,Math.ceil(rh*SLASH_ROWS+10))+'px'; /* 8 rows, the padding and the border */
+  placeMenu(el,br.left,br.bottom+6,box);
+}
+function slashKey(e,a,input){
+  if(!slashUi||e.isComposing)return;
+  const u=slashUi, n=u.items.length;
+  if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeSlash();return;}
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){if(!n)return;e.preventDefault();e.stopImmediatePropagation();u.active=(u.active+(e.key==='ArrowDown'?1:n-1))%n;drawSlash(slashOf(a));return;}
+  if((e.key==='Tab'&&!e.shiftKey&&!e.altKey&&!e.ctrlKey&&!e.metaKey)||(e.key==='Enter'&&!e.shiftKey&&!e.altKey&&!e.ctrlKey&&!e.metaKey)){
+    if(!n){if(e.key==='Tab'){closeSlash();}return;} /* nothing to pick: Tab moves on, Enter sends as typed */
+    e.preventDefault();e.stopImmediatePropagation();slashPick();
+  }
+}
+function slashPick(){
+  const u=slashUi; if(!u||!u.items[u.active])return;
+  const end=u.tok.start+1+u.tok.query.length;
+  const r=SLASH.insert(u.input.value,u.tok.start,end,u.items[u.active].name);
+  u.input.value=r.value; u.input.setSelectionRange(r.caret,r.caret);
+  closeSlash(); autoGrow(); u.input.focus({preventScroll:true});
+  announce('Inserted /'+u.items[u.active].name);
 }
 /* ---------------- spec 005 FR-037..FR-042: the composer toolbar and the one Send / Stop slot ----------------
    The chips that set how the next message runs sit in a row under the message box (VS Code style); the header keeps who and what.
@@ -1564,11 +1671,11 @@ function syncRunState(){
   const was=RUN_SAID.id===a.id?RUN_SAID.run:null; RUN_SAID.id=a.id; RUN_SAID.run=run;
   if(was!==null&&was!==run){announce(run?'Working…':RUN_SAID.stopped?'Stopped':'Reply finished');RUN_SAID.stopped=false;} /* a new turn forgets an earlier Stop */
 }
-/* the mode, model, profile and context menus: below their chip, or above it when the chip sits in the composer toolbar (FR-037) */
+/* the mode, model, profile and context menus: below their chip, or above it when the chip sits in the composer toolbar (FR-037); spec 072's "/" list too */
 function placeMenu(m,x,y,anchor){
   const r=m.getBoundingClientRect();
   let py=y;
-  if(anchor&&anchor.closest&&anchor.closest('#cToolbar')&&document.contains(anchor)){const ar=anchor.getBoundingClientRect();py=ar.top-r.height-6;if(py<8)py=y;}
+  if(anchor&&anchor.closest&&anchor.closest('#cToolbar,#panel .composer')&&document.contains(anchor)){const ar=anchor.getBoundingClientRect();py=ar.top-r.height-6;if(py<8)py=y;}
   const px=Math.max(8,Math.min(x,innerWidth-r.width-8));py=Math.max(8,Math.min(py,innerHeight-r.height-8));
   m.style.left=px+'px';m.style.top=py+'px';
   return {px,py};
@@ -1642,7 +1749,7 @@ function wireToolbar(){
   ctObs={res,mut};
   fitToolbar();
 }
-function closePanel(){
+function closePanel(){closeSlash();
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
   renderAll();
@@ -3261,6 +3368,7 @@ async function sendLive(text,forId,opts){
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
   if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
+  else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(r.slash,160))+'</code> (the agent app does not load it in Durbar’s sessions).'); /* spec 072 FR-005 */
 }
 /* spec 012 FR-087 (owner 2026-10-20, option c): a refusal of Read-only / Ask first (Codex's sandbox could not start, or Codex cannot
    limit reads) never suggests a mode in its text; a "Change mode…" button opens the usual mode menu, with every mode and its help */

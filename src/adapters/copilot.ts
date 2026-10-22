@@ -32,7 +32,9 @@ import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel'
 import { PermissionBroker, isInsideRoots, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
-import type { AgentProfile, PlanAnswer } from './types';
+import type { AgentProfile, PlanAnswer, SlashCommand } from './types';
+import { copilotSlashPlaces, discoverSlash, expandSlash } from './slashcommands';
+import type { SlashEntry } from './slashcommands';
 import { cleanPlanText } from './plan';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
 import type { HistoryResult, PreviousSession } from './history';
@@ -736,6 +738,24 @@ export class CopilotAdapter implements AgentAdapter {
     for (const q of [...(live.questions?.values() ?? [])]) q.resolve(null);
     for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop / End reject an open plan
     cancelElicitations(live.elicitations);
+  }
+
+  /**
+   * Spec 072 FR-004/FR-009: the folder's and the user's skills, read by Durbar (the session has no config discovery, so the runtime does
+   * not load them; real 2026-10-22). No built-ins: `session.send` hands a typed built-in to the model as text (real 2026-10-22).
+   */
+  private slashFiles(live: { cwd: string; folders?: string[] }): SlashEntry[] {
+    return discoverSlash(copilotSlashPlaces([live.cwd, ...(live.folders ?? [])]));
+  }
+
+  async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
+    const live = this.sessions.get(sessionId);
+    return live ? this.slashFiles(live) : [];
+  }
+
+  async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined> {
+    const live = this.sessions.get(sessionId);
+    return live ? expandSlash(text, this.slashFiles(live)) : undefined;
   }
 
   /** spec 043 FR-002: the session's selectable custom agents (`rpc.agent.list`, @experimental). */

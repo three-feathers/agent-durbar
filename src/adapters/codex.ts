@@ -11,7 +11,9 @@ import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, SlashCommand, StartOptions, Unsubscribe, WriteGuard } from './types';
+import { codexSlashPlaces, discoverSlash, expandSlash } from './slashcommands';
+import type { SlashEntry } from './slashcommands';
 import { cleanPlanText, reviseText } from './plan';
 import type { AdapterDescriptor } from './capabilities';
 import type { EventBody } from './map';
@@ -671,6 +673,26 @@ export class CodexAdapter implements AgentAdapter {
     if (!options.quiet) this.emit(live.sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
     if (!options.quiet) void this.refreshMcp(live); // FR-147: the session's MCP servers; a quiet start emits nothing (C3), so its first message reads them
     return live.sid;
+  }
+
+  /**
+   * Spec 072 FR-004/FR-009: the folder's and the user's skills and the user's custom prompts (`prompts:<name>`), read by Durbar: the
+   * app-server lists no commands or prompts and expands neither (that is the TUI's work, read: 0.163.0 schema). No built-ins.
+   */
+  private slashFiles(live: { roots: string[] }): SlashEntry[] {
+    const env = this.env ?? process.env;
+    const codexHome = env.CODEX_HOME || path.join(os.homedir(), '.codex');
+    return discoverSlash(codexSlashPlaces(live.roots, codexHome));
+  }
+
+  async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
+    const live = this.sessions.get(sessionId);
+    return live ? this.slashFiles(live) : [];
+  }
+
+  async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined> {
+    const live = this.sessions.get(sessionId);
+    return live ? expandSlash(text, this.slashFiles(live)) : undefined;
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
