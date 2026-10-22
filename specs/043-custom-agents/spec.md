@@ -1,5 +1,11 @@
 # Feature Specification: Custom agent per session
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 042
+title: Custom agent per session (issue #127)
+status: Phase 1 built: Agent chip and menu, repository-agent confirmation, Copilot `rpc.agent.*` (simulator, unit tests, real check 2026-10-19); Phase 2: the agent in the New session dialog built (FR-007); Claude agents built (FR-008); per-folder default built (FR-009); profile file editor built (FR-010..FR-017, simulator and unit tests); Create with AI (FR-021..FR-025) checked once on Claude haiku 2026-10-22 (named programs like `git` are not tools yet: owner decision); Codex not started
+-->
+
 **Feature Branch**: `043-custom-agents`
 **Created**: 2026-10-19
 **Status**: Phase 1 built (simulator, unit tests, real check 2026-10-19); Phase 2 not started

@@ -1,0 +1,1 @@
+- CI only: the required checks also run on merge queue entries (ready for a merge queue on `main`, an owner setting), the office layout runs in 6 shards instead of 4, and the UI checks on each OS run as three parallel jobs (the macOS one took 15 min alone); every check still runs (spec 008 FR-098..FR-102, T095).

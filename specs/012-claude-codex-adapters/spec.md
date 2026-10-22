@@ -1,5 +1,11 @@
 # Feature Specification: Second and third agent adapters (Claude Code, Codex CLI)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 011-014
+title: Claude Code and Codex adapters
+status: **built**: Claude Code (FR-135) and OpenAI Codex (FR-145) are offered next to Copilot when installed and signed in, each checked on a real account and in the full app. Covered: permission modes and switching, models and effort, previous sessions and resume, continue after a restart, questions from the agent, MCP servers and switches, helpers, the context window, Claude's dollar estimate apart from AIU and its dollar cap (FR-150, issue #75). MCP elicitation with form fields or a URL is shown in the question card (FR-151..FR-155, issue #290; sim and fakes, real check open as T118). Packaged check on macOS, Windows and Linux in CI (T044, issue #52). Sign-in checked with the service after detection, and a refused session offers Sign in and Send again in the chat (FR-156, FR-157; fakes and simulator; 2026-10-20 real: Copilot and Codex refused sign-ins detected, one missed Copilot text fixed; T124 still open for Claude and the full app). The decision record Q1-Q9 is complete (T060). T070 (real macOS and Windows machines, issue #72) closed 2026-10-21 by the owner's hand-check (macOS daily, Windows with a colleague; findings #467); the Codex sandbox on Windows and macOS stays a `[KNOWN GAP]`. T083 (a repo's own hooks, rules and `.mcp.json`) is built by spec 061 (issue #289). After a sign-in, Copilot's shared runtime restarts and live sessions reconnect (FR-158; fakes). [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md)
+-->
+
 **Feature Branch**: `012-adapters-plan` (planning), later `012-<slug>` per task
 **Created**: 2026-10-16
 **Updated**: 2026-10-18 (clarify, plan, tasks and research done; Phase 1 T010-T016 built; **no Claude or Codex adapter yet**)

@@ -1,5 +1,11 @@
 # Feature Specification: Full theme tokens (fonts, shapes, figures and gadgets)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Full theme tokens: typed tokens for fonts (system allow-list, no downloads), title weight, radii and shadows; the people's clothes and hair; cup and laptop slots; per-value fallback with a note, pair-wise contrast fallback, hostile values refuse the pack; AI maker extended; a ratchet on the renderer's colour literals
+status: **Phase 1 built** (`test:theme-tokens`, `check:theme-art`, `check:geometry` with *Pink Studio*); Phase 2 (remaining literals onto tokens) open; the new AI prompt checked on a real model (Claude haiku, 2026-10-22, 1 prompt; FR-031 fix)
+-->
+
 **Feature Branch**: `070-theme-tokens`
 **Created**: 2026-10-21
 **Status**: Phase 1 built (typed tokens, fonts, radii, shadows, figure palettes, gadget slots, validator, guard, AI maker); Phase 2 (moving the remaining literal colours of the CSS onto tokens) in progress, tracked by the guard's ratchet.

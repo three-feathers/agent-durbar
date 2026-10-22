@@ -1,5 +1,11 @@
 # Feature Specification: Usability pass from persona reviews
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Usability pass from eleven rounds of AI persona reviews (about 37 personas): answer bar and inbox, Simple/Expert, restore strip, palette and Cost view, one word per concept, interaction polish, accessibility, calmer visuals, notifications, activity log, Windows first run, house rules, plain words, macOS conventions, daily use, pre-release fixes, a one-row top bar, New in the chat header, + Folder / + Workspace first in the top bar and a Mac File menu (FR-164), a Codex write card with its files and diff (FR-172), a help and UI text pass: wrapping, widths, menus, tooltips, long names, chat, dark-theme tokens (FR-165..FR-171, #464)
+status: **built** through round 11, FR-164 and the text pass FR-165..FR-171 (simulator, unit; the text pass: Linux fonts only, the install, update, import and hand-off review dialogs are not opened by `check:ui-text`; OS notifications, badge, High Contrast, macOS menu and window behaviour, window restore not checked on a real OS; FR-138 Mac title bar on every screen is simulator-checked only; FR-160/FR-161 question card in full and Enter sends a custom answer, simulator only; FR-164/FR-163 waiting question in the answer bar and compactions folded into one line, simulator only; FR-071 fix 2026-10-21 (#474): the activity table has its own window global, `test:globals` and `check:activity-table`, simulator only; FR-173 list focus survives a re-render, simulator only; FR-172 a Codex write request names its files and shows the diff, unit, simulator and one real Codex 0.163 edit on Linux (T163))
+-->
+
 **Feature Branch**: `052-usability-pass`
 **Created**: 2026-10-19
 **Status**: Round 1 built (FR-001..FR-014); rounds 2 and 3 of the review follow (owner: "run at least 3 rounds selecting different personas")

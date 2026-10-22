@@ -1,5 +1,11 @@
 # Feature Specification: Coffee break when a usage limit is reached
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Coffee break when a usage limit is reached: the agent waits in a coffee corner with the reset time ("resumes at 14:30", or "until you raise the limit" for Durbar's own cap) and comes back, resuming its turn by itself or after asking, never past a Durbar limit and never probing
+status: **built** 2026-10-21 (owner accepted Q1-Q4): unit tests, simulator driver and screenshots (`scripts/shots-068-coffee.js`, `simbreak=N`), `check:office`; not run against a real usage limit; delta 2026-10-22 (owner): Durbar's own cap waits at spec 001's Bank, not the coffee corner
+-->
+
 **Feature Branch**: `068-coffee-break` (amends 011/012 limit display, 024 places, 034 agent health, 052 wording and notifications)
 **Created**: 2026-10-21
 **Status**: **Built** 2026-10-21 (unit tests, simulator driver and screenshots at 1440x900 and 1280x800, `check:office`); not run against a real usage limit (see *Implementation status*). Clarified the same day (the owner accepted Q1-Q4 with the recommended defaults).

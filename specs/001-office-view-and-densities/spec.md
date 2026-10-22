@@ -1,5 +1,11 @@
 # Feature Specification: Office view, densities, list view and filters
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: index
+title: Office view, densities, list view, filters
+status: implemented; delta 2026-10-18: main agents show their session title (issue #126); delta 2026-10-18: room headers fit with many one-agent folders (FR-023/FR-024); short names not cut by a long status (FR-025); delta 2026-10-19: arrow keys between desks (FR-019); delta 2026-10-19: first-run welcome (FR-026); delta 2026-10-21: live activity on the desks (FR-028..FR-032: thinking, tool or reply on the desk, side panel when there is room); delta 2026-10-21: faster layout search, same layout (FR-033, SC-004); T024 closed 2026-10-21 by the owner's hand-check on macOS (daily) and Windows (with a colleague), not a scripted check, no real-machine screenshots; delta 2026-10-22 (owner): Boss (questions and permissions queue there), Bank (Durbar's spending cap) and Postbox (next scheduled runs, a letter when one fires) in the lobby, replacing the first build's right rail; place tiles name who is there and what they do; room headers count in words (FR-034..FR-040, simulator only)
+-->
+
 **Feature Branch**: `001-office-view-and-densities` (reverse-engineered; shipped on `main`, milestones 2, 4 and 5)
 **Created**: 2026-10-16
 **Status**: Implemented (reverse-engineered from code, README and screenshots)

@@ -1,5 +1,11 @@
 # Feature Specification: Global MCP servers in every agent app, controls on every server, and its tools
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Global MCP servers written to the agent apps' own lists (Copilot CLI, Claude Code, Codex) after a per-file confirmation with backups, harmonize the lists, source chips, Start/Stop/Restart/Sign in/Remove on every server row, a server's tools on expand (owner 2026-10-21)
+status: parts 1-4 **built** 2026-10-21 (add/remove for all folders, harmonize, tools on expand and Remove in the agent dialog, single tools on and off per folder; unit tests on fakes, simulator drivers; real check T060 2026-10-22: Copilot CLI, Claude Code and Codex list the written entries, 0 credits; Codex `disabled_tools` seen hiding a tool; parts 3-4 otherwise not run on a real account); owner questions Q1-Q6 answered 2026-10-22 (defaults kept)
+-->
+
 **Feature Branch**: `069-mcp-global-controls`
 **Created**: 2026-10-21
 **Status**: Part 1 **built** 2026-10-21 (add to and remove from the agent apps' own lists with a per-file review and backups, source

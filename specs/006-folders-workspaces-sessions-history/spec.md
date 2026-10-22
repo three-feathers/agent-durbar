@@ -1,5 +1,11 @@
 # Feature Specification: Folders, workspaces, sessions and history
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: index
+title: Folders, workspaces, sessions, history
+status: implemented; delta 2026-10-18: warning for a home folder or a root (issue #170); delta 2026-10-18: remove one session, rename a folder (FR-017/FR-018); delta 2026-10-19: a workspace's other folders given to the session (FR-019, T020); delta 2026-10-19: a folder continues its last session after a restart (FR-020/FR-021, T021, owner decision); delta 2026-10-19: Remove folder from a room's ⋯ menu and a single-session chat header (FR-022); delta 2026-10-19: search box in Previous sessions (FR-023, T031, issue #252) built; delta 2026-10-20: Pin, Hide and Delete in Previous sessions (FR-024..FR-032, T032..T044, issue #368) built on the simulator, the fake adapter and fake Copilot/Codex backends (T032..T044); no real delete run (`[KNOWN GAP]`); delta 2026-10-21: Previous sessions as a collapsible section above the chat with Ctrl+Shift+H and a remembered choice (FR-033..FR-037, T048..T055, owner request; stacked on #498) built on the simulator; not checked on macOS or Windows (`[KNOWN GAP]`)
+-->
+
 **Feature Branch**: `006-folders-workspaces-sessions-history` (reverse-engineered; milestones 1 and 6)
 **Created**: 2026-10-16
 **Status**: Implemented (reverse-engineered from `src/main/main.ts`, `src/main/folders.ts`, `src/adapters/history.ts`, `workspace.ts`, `app.js`, README)
