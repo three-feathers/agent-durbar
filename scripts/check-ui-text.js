@@ -111,6 +111,9 @@ module.exports = async (ctx) => {
   add('tools-activity-tab', 'screen', ['#screen'], async () => { await closeChat(); await H.click('#toolsBtn'); await until(`!document.getElementById('screen').hidden`, 3000); return js(`(()=>{const b=[...document.querySelectorAll('#screen [role=tab],#screen .ttab-btn,#screen button')].find(x=>/^Activity/.test(x.textContent.trim()));if(!b)return false;b.click();return true})()`); });
   add('tools-cost-tab', 'screen', ['#screen'], async () => { await closeChat(); await H.click('#toolsBtn'); await until(`!document.getElementById('screen').hidden`, 3000); return js(`(()=>{const b=[...document.querySelectorAll('#screen [role=tab],#screen button')].find(x=>/^(Cost|Spend|Usage)/.test(x.textContent.trim()));if(!b)return false;b.click();return true})()`); });
   add('chat-waiting', 'chat', ['#panel'], () => openChat('Jonas'));
+  // spec 005 FR-020..FR-026: the edit rows and their diffs (only with simedits=1, the `chat-edits` pass below; without it the chat has none)
+  add('chat-edits-base', 'chat', ['#panel'], async () => { if (!(await openChat('Ada'))) return false; if (!(await until(`document.querySelectorAll('#chat .chip.editchip').length>=4`, 8000))) return false; return js(`(document.querySelector('#chat .chip.editchip').scrollIntoView({block:'start'}),true)`); });
+  S[S.length - 1].onlyPass = true; // runs under the `chat-edits` pass only
   add('chat-question', 'chat', ['#panel'], async () => !!(await openChatWhere(`document.querySelector('#chat .note.question')`)) && js(`(document.querySelector('#chat .note.question').scrollIntoView({block:'center'}),true)`));
   add('chat-more-menu', 'menu', ['#moreMenu'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); return until(`!document.getElementById('moreMenu').hidden`, 2000); });
   add('chat-mode-menu', 'menu', ['#modeMenu'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#modeChip'); return until(`!!document.getElementById('modeMenu')`, 2000); });
@@ -156,6 +159,7 @@ module.exports = async (ctx) => {
     { name: 'folder-setup', base: 'folder-setup', query: { simfoldersetup: '1' } }, // surfaces that need their own page address
     { name: 'chat-question-long', base: 'chat-question', query: { simquestion: 'long' } }, // T145: a 2,000-character question
     { name: 'send-several-long', base: 'send-several', query: { simnames: 'long' } }, // T148: 60-character names
+    { name: 'chat-edits', base: 'chat-edits-base', query: { simedits: '1' } }, // spec 005: edit rows, a refused edit, the streamed diff
   ];
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];
   const BUILTIN = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
