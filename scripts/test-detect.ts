@@ -354,7 +354,10 @@ async function main(): Promise<void> {
     const fsx = (lstatOk: boolean, isDir = false) => ({ statSync: eacces, lstatSync: () => { lstats++; if (!lstatOk) eacces(); return { isDirectory: () => isDir }; } });
     assert.strictEqual(statIsFile(dir + '\\winget.exe', 'win32', env, fsx(true)), true, 'an alias counts as a file');
     assert.strictEqual(statIsFile(dir + '\\winget.exe', 'win32', env, fsx(false)), false, 'missing: no');
-    assert.strictEqual(statIsFile(dir + '\\Sub', 'win32', env, fsx(true, true)), false, 'a folder: no');
+    assert.strictEqual(statIsFile(dir + '\\winget.exe', 'win32', env, fsx(true, true)), false, 'a folder: no');
+    assert.strictEqual(statIsFile(dir + '\\PWSH.EXE', 'win32', env, fsx(true)), true, 'a Store pwsh too, any case');
+    // review on #469: only the aliases FR-010 names; claude, codex, copilot or anything else in WindowsApps stays "no"
+    for (const n of ['claude.exe', 'codex.exe', 'copilot.exe', 'python.exe', 'winget.cmd', 'winget']) assert.strictEqual(statIsFile(dir + '\\' + n, 'win32', env, fsx(true)), false, `no alias fallback for ${n}`);
     lstats = 0;
     assert.strictEqual(statIsFile('C:\\Program Files\\nodejs\\npm.cmd', 'win32', env, fsx(true)), false, 'elsewhere a failing stat stays no');
     assert.strictEqual(statIsFile('/usr/bin/x', 'linux', env, fsx(true)), false);

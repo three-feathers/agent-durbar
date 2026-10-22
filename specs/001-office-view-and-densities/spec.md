@@ -1,5 +1,11 @@
 # Feature Specification: Office view, densities, list view and filters
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: index
+title: Office view, densities, list view, filters
+status: implemented; delta 2026-10-18: main agents show their session title (issue #126); delta 2026-10-18: room headers fit with many one-agent folders (FR-023/FR-024); short names not cut by a long status (FR-025); delta 2026-10-19: arrow keys between desks (FR-019); delta 2026-10-19: first-run welcome (FR-026); delta 2026-10-21: live activity on the desks (FR-028..FR-032: thinking, tool or reply on the desk, side panel when there is room); delta 2026-10-21: faster layout search, same layout (FR-033, SC-004); T024 closed 2026-10-21 by the owner's hand-check on macOS (daily) and Windows (with a colleague), not a scripted check, no real-machine screenshots
+-->
+
 **Feature Branch**: `001-office-view-and-densities` (reverse-engineered; shipped on `main`, milestones 2, 4 and 5)
 **Created**: 2026-10-16
 **Status**: Implemented (reverse-engineered from code, README and screenshots)
@@ -244,3 +250,7 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 - `real:` 2026-10-21, owner (Vikram) hand-check, closed by the owner's decision: macOS in daily use; Windows looked at with a colleague on 2026-10-21. Findings filed from that Windows session: #467 (Settings > Agent apps offered no install option; Copilot was not detected or installable without Node.js; PowerShell/winget commands in PR #469) and the MCP sign-in sharing (#471, merged; real check in PR #478).
 - Owner decision (Vikram, team chat 2026-10-21): "You can close issue #10 as we hand-checked them already many times, I am using it daily on macOS and I looked at everything today with my colleague on Windows and you already have feedback."
 - **Not covered** (honest limits): the owner reported use, not a scripted check. The T024 items (15 agents at 1440x900 and 1280x800, no overlap, text at least 10.5px, fonts, window chrome) were not measured one by one on a real Mac or Windows PC, and no screenshots from real machines are in `docs/screenshots/` (the simulator screenshots and the CI *UI on three OSes* runs are the measured evidence). Text metrics across OSes stay unmeasured (Assumptions).
+
+### 2026-10-22: a long unbroken name on a full desk card (issue #536)
+
+The full card's name (`.who .name`) wraps to two lines and ends in "…"; a token with no spaces may break anywhere. The rule is spec 059 FR-019 (it owns where names are shown); card widths do not change, and a full card with a long name can only get shorter.

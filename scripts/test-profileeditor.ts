@@ -18,7 +18,10 @@ const PE = require(R('profileeditor.js')) as {
   loadMode(s: unknown): string;
   saveMode(s: unknown, m: string): void;
   NAME_RE: RegExp;
+  validName(n: unknown): boolean;
   newFileName(app: string, n: string): string;
+  newDirHint(app: string, scope: string, userDirs?: unknown): string;
+  joinHint(dir: string, file: string): string;
 };
 
 // ---- front matter (FR-015) ----
@@ -69,6 +72,16 @@ const PE = require(R('profileeditor.js')) as {
   for (const n of ['', '.x', '../x', 'a/b', 'a b', 'x'.repeat(65)]) assert.ok(!PE.NAME_RE.test(n), n);
   assert.strictEqual(PE.newFileName('copilot', 'r'), 'r.agent.md');
   assert.strictEqual(PE.newFileName('claude', 'r'), 'r.md');
+  // review on #488 (change 6): Windows device names are refused in the form too (main's copy: test:profilefiles keeps them equal)
+  for (const n of ['CON', 'con', 'nul.txt', 'Aux', 'PRN', 'COM1', 'lpt9', 'con.backup']) assert.ok(!PE.validName(n), n);
+  for (const n of ['console', 'com10', 'reviewer']) assert.ok(PE.validName(n), n);
+  // review on #488 (change 7): the hint shows main's real user folders (CLAUDE_CONFIG_DIR), with the folder's own separator
+  assert.strictEqual(PE.newDirHint('claude', 'user', { claude: '/cfg/claude/agents', copilot: '/h/.copilot/agents' }), '/cfg/claude/agents');
+  assert.strictEqual(PE.newDirHint('copilot', 'user', { claude: '/cfg/claude/agents', copilot: '/h/.copilot/agents' }), '/h/.copilot/agents');
+  assert.strictEqual(PE.newDirHint('claude', 'user'), '~/.claude/agents', 'an older main without userDirs: the ~ form');
+  assert.strictEqual(PE.newDirHint('claude', 'folder', { claude: '/cfg' }), '.claude/agents');
+  assert.strictEqual(PE.joinHint('C:\\Users\\me\\cfg\\agents', 'r.md'), 'C:\\Users\\me\\cfg\\agents\\r.md');
+  assert.strictEqual(PE.joinHint('/cfg/agents/', 'r.md'), '/cfg/agents/r.md');
   const mem: Record<string, string> = {};
   const store = { getItem: (k: string) => mem[k] ?? null, setItem: (k: string, v: string) => { mem[k] = v; } };
   assert.strictEqual(PE.loadMode(store), 'split', 'default Split');
@@ -109,6 +122,7 @@ const PE = require(R('profileeditor.js')) as {
   const saved: { text: string; base: string; over: boolean }[] = [];
   const opened: string[] = [];
   let conflictOnce = false;
+  const created: unknown[][] = [];
   const bridge = {
     readProfileFile: async () => ({ ok: true, info, text: EVIL, sha256: 'h0', eol: 'lf' }),
     saveProfileFile: async (_id: string, text: string, base: string, over: boolean) => {
@@ -116,7 +130,8 @@ const PE = require(R('profileeditor.js')) as {
       if (conflictOnce && !over) { conflictOnce = false; return { ok: false, conflict: true, error: 'The file changed on disk since you opened it.' }; }
       return { ok: true, sha256: 'h' + saved.length, info };
     },
-    listProfileFiles: async () => ({ ok: true, folders: [{ id: 'a'.repeat(32), path: '/w' }], files: [info] }),
+    listProfileFiles: async () => ({ ok: true, folders: [{ id: 'a'.repeat(32), path: '/w' }], files: [info], userDirs: { copilot: '/home/me/.copilot/agents', claude: '/cfg/claude/agents' } }),
+    createProfileFile: async (...a: unknown[]) => { created.push(a); return { ok: false, error: 'not in this test' }; },
     openExternal: async (u: string) => { opened.push(u); },
   };
   const askDialog = w.DurbarDialog(w.document);
@@ -182,6 +197,24 @@ const PE = require(R('profileeditor.js')) as {
   assert.ok(!$('peOv'), 'closed after Discard');
   assert.strictEqual(saved.length, 3, 'nothing saved on Discard');
   assert.strictEqual(ran, 0);
+  // New profile (review on #488, changes 6 and 7): the hint names the user folder main sent (CLAUDE_CONFIG_DIR), and a Windows device name is refused before main is asked
+  void w.DurbarProfileEditor.newProfile();
+  await new Promise((r) => setTimeout(r, 20));
+  const sel = (id: string) => $(id) as unknown as { value: string; dispatchEvent(e: unknown): boolean };
+  sel('peNApp').value = 'claude';
+  sel('peNPlace').value = 'user';
+  sel('peNName').value = 'helper';
+  sel('peNName').dispatchEvent(new w.Event('input', { bubbles: true }));
+  assert.strictEqual($('peNHint').textContent, 'File: /cfg/claude/agents/helper.md', 'the real Claude user folder');
+  sel('peNApp').value = 'copilot';
+  sel('peNApp').dispatchEvent(new w.Event('change', { bubbles: true }));
+  assert.strictEqual($('peNHint').textContent, 'File: /home/me/.copilot/agents/helper.agent.md', 'the real Copilot user folder');
+  sel('peNName').value = 'CON';
+  $('peNGo').click();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(/reserved on Windows/.test($('peNErr').textContent) && !$('peNErr').hidden, 'CON is refused in the form');
+  assert.strictEqual(created.length, 0, 'and main is not asked');
+  $('peNCancel').click();
   console.log('profile editor tests passed');
 })().catch((e) => {
   console.error(e);

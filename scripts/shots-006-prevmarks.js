@@ -18,7 +18,7 @@ const assert = require('assert');
 const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const fs = require('fs');
-const OUT = process.env.OUT || '/tmp';
+const OUT = process.env.OUT || require('os').tmpdir();
 /* the dark fixture theme of check:ui-text (spec 052 FR-170), passed as an in-memory user theme */
 const DARK = fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'dark-audit.json'), 'utf8');
 
@@ -135,6 +135,32 @@ module.exports = async (ctx) => {
         assert.ok(await js(`![...document.querySelectorAll('#toasts .toast')].some(t=>/No previous sessions/.test(t.textContent))`), T + ': no false "none" while loading');
         assert.ok(await until(`!document.getElementById('prev').hidden&&document.getElementById('prevBtn').getAttribute('aria-expanded')==='true'&&document.activeElement===document.getElementById('prevQ')`, 8000), T + ': opens with focus on the search once loaded');
         assert.ok(await js(`![...document.querySelectorAll('#toasts .toast')].some(t=>/No previous sessions/.test(t.textContent))`), T + ': still no "none" after loading');
+        // FR-036 (review on #497): a key pressed while loading, then leaving the chat, is dropped. Back in the chat the section stays
+        // as saved ("closed"), the saved choice is unchanged and focus stays in the message box, even after both loads come back.
+        await js(`localStorage.setItem('durbar.prevOpen','closed')`);
+        await H.load({ w, h, query: { ...q, simprevdelay: '2500' } }); await openAgent('Ada');
+        await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove());document.getElementById('msgInput').focus()`);
+        await H.key('H', MODS, { char: 'never' });
+        assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some(t=>/Looking for previous sessions/.test(t.textContent))`, 1500), T + ': says it is looking (before leaving)');
+        await js(`document.getElementById('backBtn').click()`); await settle(); await openAgent('Ada');
+        await js(`document.getElementById('msgInput').focus()`);
+        const after = await js(`performance.now()+3200`); /* the first load (before leaving) and the second (after coming back) are both back by then */
+        assert.ok(await until(`!document.getElementById('prev').hidden&&performance.now()>${jsLiteral(after)}`, 8000), T + ': the lists come back');
+        assert.strictEqual(await js(`document.getElementById('prevBtn').getAttribute('aria-expanded')`), 'false', T + ': an old key press does not open the section after leaving the chat');
+        assert.strictEqual(await js(`localStorage.getItem('durbar.prevOpen')`), 'closed', T + ': the saved choice is unchanged');
+        assert.ok(await js(`document.activeElement===document.getElementById('msgInput')`), T + ': focus stays in the message box');
+        // A list that comes back while the search has focus (here the second load, after leaving and coming back) keeps the focus there.
+        await js(`localStorage.setItem('durbar.prevOpen','open')`);
+        await H.load({ w, h, query: { ...q, simprevdelay: '2500' } }); await openAgent('Ada');
+        const t1 = await js(`performance.now()+1200`);
+        await js(`document.getElementById('backBtn').click()`); await settle(); await until(`performance.now()>${jsLiteral(t1)}`, 3000); await openAgent('Ada');
+        const t2 = await js(`performance.now()+2900`); /* the second load is back by then; the first one opened the section ~1.2 s earlier */
+        assert.ok(await until(`!!document.getElementById('prevQ')`, 8000), T + ': the first load opens the saved section');
+        await js(`(()=>{const i=document.getElementById('prevQ');i.focus();i.value='re';i.setSelectionRange(2,2);})()`);
+        assert.ok(await js(`performance.now()<${jsLiteral(t2)}-1000`), T + ': the search got focus before the second load came back');
+        await until(`performance.now()>${jsLiteral(t2)}`, 5000);
+        assert.ok(await js(`document.activeElement===document.getElementById('prevQ')`), T + ': a list coming back keeps focus in the search');
+        await js(`localStorage.setItem('durbar.prevOpen','closed')`);
       }
       await forget();
     }

@@ -7,6 +7,7 @@ import * as path from 'path';
 import type { PermissionMode } from './capabilities';
 import { CODEX_MIN_VERSION, compareVersions } from './detect';
 import { clipDiff, simpleDiff } from '../shared/diff';
+import { WRITE_GUARD_MAX_PATHS } from './permissions';
 
 /** Protocol `AskForApproval`, the values we use. `untrusted` is retired; `granular` is not offered. */
 export type CodexApprovalPolicy = 'never' | 'on-request';
@@ -226,24 +227,29 @@ export interface CodexFileChange {
   diff: string;
 }
 
-/** Most changes kept from one item, and longest diff text kept per change (characters). */
-const MAX_CHANGES = 100;
+/**
+ * Changes of one item whose diff text is kept, and longest diff text kept per change (characters). Every change's path is kept, however
+ * many there are (review on #470): the grant scope and the spec 065 undo guard need all of them; only the card's text is bounded.
+ */
+const MAX_DIFF_CHANGES = 100;
 const MAX_CHANGE_TEXT = 100_000;
+/** Display only (the card line and the diff headers): one line, at most 1024 characters. Never used for a path a decision reads. */
 const oneLine = (s: string): string => s.replace(/[\r\n]+/g, ' ').slice(0, 1024);
 
 /** FR-172: the changes of a `fileChange` item (`item.changes`), checked field by field; anything malformed is left out. */
 export function codexFileChanges(changes: unknown): CodexFileChange[] {
   if (!Array.isArray(changes)) return [];
   const out: CodexFileChange[] = [];
-  for (const c of changes.slice(0, MAX_CHANGES)) {
+  for (const c of changes) {
     const p = str(c, 'path');
     if (!p) continue;
     const k = own(c, 'kind');
     const t = typeof k === 'string' ? k : str(k, 'type'); // the generated type is an object; a plain word is taken too
     const kind = t === 'add' || t === 'delete' ? t : 'update';
     const move = str(k, 'move_path') ?? str(k, 'movePath');
-    const diff = (str(c, 'diff') ?? '').slice(0, MAX_CHANGE_TEXT);
-    out.push({ path: oneLine(p), kind, ...(move && kind === 'update' ? { movePath: oneLine(move) } : {}), diff });
+    // the path as Codex sent it (review on #470): the grant scope and the undo guard read it, so it is never cut or rewritten here
+    const diff = out.length < MAX_DIFF_CHANGES ? (str(c, 'diff') ?? '').slice(0, MAX_CHANGE_TEXT) : '';
+    out.push({ path: p, kind, ...(move && kind === 'update' ? { movePath: move } : {}), diff });
   }
   return out;
 }
@@ -254,12 +260,13 @@ export function codexFileChanges(changes: unknown): CodexFileChange[] {
  * Display text only: never applied.
  */
 export function codexChangeDiff(changes: readonly CodexFileChange[]): string {
-  const parts = changes.map((c) => {
-    if (c.kind === 'add') return simpleDiff(c.path, '', c.diff, Infinity); // cut once, below, so the "more lines" count is right
-    if (c.kind === 'delete') return simpleDiff(c.path, c.diff, '', Infinity) || `--- a/${c.path}\n+++ /dev/null`;
+  const parts = changes.slice(0, MAX_DIFF_CHANGES).map((c) => {
+    const name = oneLine(c.path); // display: a newline in a path cannot add diff lines
+    if (c.kind === 'add') return simpleDiff(name, '', c.diff, Infinity); // cut once, below, so the "more lines" count is right
+    if (c.kind === 'delete') return simpleDiff(name, c.diff, '', Infinity) || `--- a/${name}\n+++ /dev/null`;
     const d = c.diff.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
     if (!d) return '';
-    return /^--- /.test(d) ? d : `--- a/${c.path}\n+++ b/${c.movePath ?? c.path}\n${d}`;
+    return /^--- /.test(d) ? d : `--- a/${name}\n+++ b/${oneLine(c.movePath ?? c.path)}\n${d}`;
   });
   const text = parts.filter(Boolean).join('\n');
   return text ? clipDiff(text) : '';
@@ -270,7 +277,7 @@ function kindNote(c: CodexFileChange | undefined): string {
   if (!c) return '';
   if (c.kind === 'add') return ' (new file)';
   if (c.kind === 'delete') return ' (delete)';
-  return c.movePath && c.movePath !== c.path ? ` (move to ${c.movePath})` : '';
+  return c.movePath && c.movePath !== c.path ? ` (move to ${oneLine(c.movePath)})` : '';
 }
 
 /** FR-172: what the card says when Codex named no file in the request and no `fileChange` item is known for it. */
@@ -308,8 +315,11 @@ export function codexPermission(method: string, params: unknown, known?: readonl
       const paths = changes.map((c) => c.path);
       const fileName = paths[0] ?? str(params, 'grantRoot');
       const more = paths.length > 1 ? ` (+${paths.length - 1} more)` : '';
+      // spec 065's undo guard copies at most WRITE_GUARD_MAX_PATHS files of one write: say so on the card instead of missing files silently
+      const undo = paths.length > WRITE_GUARD_MAX_PATHS ? ` (undo keeps copies of the first ${WRITE_GUARD_MAX_PATHS} files only)` : '';
       const diff = codexChangeDiff(changes);
-      const summary = fileName ? `write ${fileName}${kindNote(changes[0])}${more}` : `write (${CODEX_NO_FILE})`;
+      // the card line is display text (one line, cut); `fileName` and `paths` stay exactly as Codex sent them
+      const summary = fileName ? `write ${oneLine(fileName)}${kindNote(changes[0])}${more}${undo}` : `write (${CODEX_NO_FILE})`;
       return { kind: 'write', fileName, ...(paths.length ? { paths } : {}), ...(diff ? { diff } : {}), summary };
     }
     case 'item/permissions/requestApproval':
