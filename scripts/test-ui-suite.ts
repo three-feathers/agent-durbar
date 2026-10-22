@@ -18,22 +18,68 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
 const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
 assert.ok(/app\.exit\(failed \? 1 : 0\)/.test(main), 'a failing driver exits 1 (FR-090)');
 assert.ok(/dev\.DURBAR_DRIVER \|\| dev\.DURBAR_SHOT \? \{ enableLargerThanScreen: true \}/.test(main), 'test windows may be larger than the screen (FR-093, macOS runners)');
-const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ui-platforms.yml'), 'utf8');
+// ---- CI layout (spec 008 FR-104..FR-110, owner decision 2026-10-22): few runner tickets per PR, every check still somewhere ----
+const WF = path.join(ROOT, '.github', 'workflows');
+const ci = fs.readFileSync(path.join(WF, 'ci.yml'), 'utf8');
+/** The `jobs:` blocks of a workflow, by job id (2-space keys under `jobs:`). */
+const jobsOf = (y: string): Record<string, string> => {
+  const body = y.slice(y.search(/^jobs:/m));
+  const out: Record<string, string> = {};
+  const re = /^ {2}([\w-]+):\r?\n([\s\S]*?)(?=^ {2}[\w-]+:\r?\n|(?![\s\S]))/gm;
+  for (let m = re.exec(body); m; m = re.exec(body)) out[m[1]] = m[2];
+  return out;
+};
+const ciJobs = jobsOf(ci);
+// FR-104: no separate "What changed" job, and no job waits for another one in a pull request
+assert.ok(!ciJobs.changes && !/needs:/.test(ci), 'ci.yml: no changes job and no needs (each job decides what to run itself)');
+for (const j of ['build-test', 'package-smoke', 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
+const changes = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
+assert.ok(changes.includes('git diff --name-only HEAD^1 HEAD') && /"\$\{EVENT_NAME:-\}" != "pull_request"/.test(changes), 'ci-changes.sh: diff of the test merge commit on PRs, everything on other events');
+// the required check names of the main ruleset still report on every pull request
+for (const name of ['name: Build and test (${{ matrix.os }})', 'name: Package smoke (unpacked Linux app)', 'name: Office layout check (xvfb)']) assert.ok(ci.includes(name), `ci.yml keeps the required check ${name}`);
+const bt = ciJobs['build-test'];
+for (const os of ['ubuntu-latest', 'windows-latest', 'macos-latest']) assert.ok(bt.includes(`- os: ${os}`), `Build and test reports for ${os}`);
+// FR-106: macOS is a report-only Linux job on pull requests and merge queue entries, the real build and test on every other event
+assert.ok(bt.includes(`runner: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'ubuntu-latest' || 'macos-latest' }}`) && bt.includes(`real: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'no' || 'yes' }}`), 'macOS build and test: Linux report on PR and queue, real macOS otherwise');
+assert.ok(/^ {2}schedule:/m.test(ci) && /^ {2}push:\r?\n {4}branches: \[main\]/m.test(ci), 'ci.yml runs nightly and on pushes to main (where macOS really runs)');
+// FR-105: one office job runs theme geometry and the whole office layout in parallel parts
+const office = ciJobs['office-check'];
+assert.ok(office.includes('node scripts/check-theme-geometry.js') && office.includes('node scripts/check-parallel.js') && /CHECK_SHARDS: '\d+'/.test(office) && office.includes(`CHECK_MOTION: '1'`), 'ci.yml: one office job, geometry and all parts, motion on');
+// FR-108: ui-platforms is one job per OS with every check; macOS nightly and by hand
+const wf = fs.readFileSync(path.join(WF, 'ui-platforms.yml'), 'utf8');
 for (const os of ['ubuntu-latest', 'macos-latest', 'windows-latest']) assert.ok(wf.includes(os), `the workflow runs on ${os}`);
 for (const step of ['check-theme-geometry.js', 'check-office-overlap.js', 'check-mac-titlebar.js', 'ui-suite.js']) assert.ok(wf.includes(step), `the workflow runs ${step}`);
-// spec 008 FR-100: three parts per OS cover the whole office layout (2 halves) and every driver; the only part left out is Linux's
-// second half on pull requests and pushes, where ci.yml's office shards run the same check in the same event
-assert.ok(/part: \[layout-1, layout-2, drivers\]/.test(wf), 'three parts per OS');
-assert.ok(/OFFICE_SHARDS: '2'/.test(wf) && /OFFICE_SHARD: \$\{\{ matrix\.part == 'layout-2' && '1' \|\| '0' \}\}/.test(wf), 'the two layout parts are the two office halves');
-const excl = (/exclude: (.*)/.exec(wf) || [])[1] || '';
-assert.ok(excl.includes(`github.event_name == 'pull_request' || github.event_name == 'push'`) && excl.includes('"os":"ubuntu-latest","part":"layout-1"') && excl.includes('"os":"ubuntu-latest","part":"layout-2"') && (excl.match(/"os":"ubuntu-latest"/g) || []).length === 2 && (excl.match(/"os"/g) || []).length === 2, 'only the Linux layout parts, only on PR and push, are left out');
-assert.ok(wf.includes(`(runner.os != 'Linux' && matrix.part == 'layout-1') || (runner.os == 'Linux' && matrix.part == 'drivers')`), 'theme geometry runs on every OS (in the drivers job on Linux)');
-const ci = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
-const shardJobs = (ci.match(/- \{ shard: \d+, index: \d+ \}/g) || []).length;
-assert.ok(shardJobs >= 2 && new RegExp(`OFFICE_SHARDS: ${shardJobs}\\r?\\n`).test(ci) && ci.includes(`shard }}/${shardJobs}`), 'ci.yml: one office shard job per shard (FR-099)');
-assert.ok(wf.includes("OFFICE_HERE: ${{ (matrix.os != 'ubuntu-latest' || (github.event_name != 'pull_request' && github.event_name != 'push'))") && ci.includes('needs.changes.outputs.code') && /^ {2}push:\r?\n {4}branches: \[main\]/m.test(ci), 'Linux skips the office layout here only for the events where ci.yml runs it');
+assert.ok(!/part:/.test(wf) && !/OFFICE_SHARD/.test(wf), 'one job per OS: the office layout runs whole, no parts');
+assert.ok(wf.includes(`os: \${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest","windows-latest"]') }}`), 'macOS UI checks only nightly and by hand');
+assert.ok(/^ {2}schedule:/m.test(wf), 'ui-platforms.yml runs nightly');
+assert.ok(wf.includes("OFFICE_HERE: ${{ (matrix.os != 'ubuntu-latest' || (github.event_name != 'pull_request' && github.event_name != 'push'))"), 'Linux skips the office layout here only for the events where ci.yml runs it');
 // FR-098: every workflow with a required check also runs on merge queue entries
-for (const f of ['ci.yml', 'spec-kit.yml']) assert.ok(/^ {2}merge_group:/m.test(fs.readFileSync(path.join(ROOT, '.github', 'workflows', f), 'utf8')), `${f} runs on merge_group`);
+const sk = fs.readFileSync(path.join(WF, 'spec-kit.yml'), 'utf8');
+for (const [f, y] of [['ci.yml', ci], ['spec-kit.yml', sk]]) assert.ok(/^ {2}merge_group:/m.test(y), `${f} runs on merge_group`);
+// FR-109: the Spec Kit gate re-runs on description edits (Spec-Exempt line), not on label changes
+assert.ok(/types: \[opened, synchronize, reopened, edited, ready_for_review\]/.test(sk) && !/types: \[[^\]]*labeled/.test(sk), 'spec-kit.yml: edited yes, labeled/unlabeled no');
+// FR-107: pull request workflows skip drafts, run again when marked ready, and cancel superseded runs, never runs on main
+for (const f of ['ci.yml', 'ui-platforms.yml', 'spec-kit.yml', 'install-check.yml', 'installed-app.yml', 'packaged-check.yml', 'pages.yml']) {
+  const y = fs.readFileSync(path.join(WF, f), 'utf8');
+  assert.ok(/^ {2}pull_request:\r?\n {4}types: \[[^\]]*ready_for_review\]/m.test(y), `${f}: runs again when a draft is marked ready`);
+  const jobs = jobsOf(y);
+  for (const [id, body] of Object.entries(jobs)) if (!/^ {4}needs:/m.test(body)) assert.ok(/^ {4}if: (.*!github\.event\.pull_request\.draft|github\.event_name == 'workflow_dispatch' && )/m.test(body), `${f} ${id}: skipped on a draft (or never on a PR)`);
+  assert.ok(/group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.(run_id|ref) \}\}/.test(y) && /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/.test(y), `${f}: one concurrency group per PR, cancelling only PR runs`);
+}
+// FR-106: macOS runs on pull requests nowhere (installed app, packaged check and install check too) and nightly failures are reported
+for (const f of ['installed-app.yml', 'packaged-check.yml']) {
+  const y = fs.readFileSync(path.join(WF, f), 'utf8');
+  assert.ok(/^ {2}schedule:/m.test(y) && y.includes(`(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&`) && !/os: \[/.test(y), `${f}: macOS only nightly and by hand`);
+}
+const ic = fs.readFileSync(path.join(WF, 'install-check.yml'), 'utf8');
+assert.ok(/^ {2}schedule:/m.test(ic) && ic.includes(`map(select(startswith("macos") | not))`), 'install-check.yml: no macOS on pull requests, weekly on every OS');
+const watch = fs.readFileSync(path.join(WF, 'nightly-watch.yml'), 'utf8');
+assert.ok(!/pull_request/.test(watch) && !/actions\/checkout/.test(watch) && watch.includes(`github.event.workflow_run.event == 'schedule'`), 'nightly-watch.yml: only scheduled runs, never PR code');
+const watched = ((/workflows: \[(.*)\]/.exec(watch) || [])[1] || '').split(',').map((x) => x.trim());
+const wfNames = new Set(fs.readdirSync(WF).filter((f) => f.endsWith('.yml')).map((f) => (/^name: (.*)$/m.exec(fs.readFileSync(path.join(WF, f), 'utf8')) || [])[1]));
+for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'Install check']) assert.ok(watched.includes(w) && wfNames.has(w), `nightly-watch.yml watches "${w}" (a real workflow name)`);
+// FR-110: every job of every workflow has a time limit
+for (const f of fs.readdirSync(WF).filter((x) => x.endsWith('.yml'))) for (const [id, body] of Object.entries(jobsOf(fs.readFileSync(path.join(WF, f), 'utf8')))) assert.ok(/^ {4}timeout-minutes: /m.test(body), `${f} ${id} has timeout-minutes`);
 // ---- scripts/driver-helpers.js (spec 008 FR-097): the shared plumbing behaves as the drivers' own copies did ----
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));

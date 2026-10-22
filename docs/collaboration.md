@@ -66,7 +66,7 @@ The *Spec Kit gate* check explains itself. Common causes: branch is not `NNN-slu
 
 ## When the Docs check warns
 
-*Docs check (warning only)* shows a yellow warning when `src/` changed but `README.md`, `CHANGELOG.md` and `docs/` did not, or when `package.json` scripts changed but `README.md` did not. It never fails the PR and is not a required check. Fix it by updating the docs, or write `Docs: n/a <reason>` in the PR description (or ask a maintainer for the `docs-n/a` label) when there is truly no docs impact. Script: `.github/scripts/docs-check.sh`, tested by `.github/scripts/test-docs-check.sh`.
+*Docs check (warning only)* shows a yellow warning when `src/` changed but `README.md`, `CHANGELOG.md` and `docs/` did not, or when `package.json` scripts changed but `README.md` did not. It never fails the PR and is not a required check. Fix it by updating the docs, or write `Docs: n/a <reason>` in the PR description (or ask a maintainer for the `docs-n/a` label, then save the description once: a label alone does not re-run the check) when there is truly no docs impact. Script: `.github/scripts/docs-check.sh`, tested by `.github/scripts/test-docs-check.sh`.
 
 ## For the maintainer
 

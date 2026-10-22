@@ -80,3 +80,7 @@
   2. the UI run on the PR shows every check that ran before on every OS (theme geometry, office layout, Mac title bar, ui-suite) except the Linux office layout, which the same PR's CI office shards ran;
   3. after the merge, the ruleset has the merge queue rule and every earlier rule and required check (read back with `gh api`);
   4. `npm run typecheck && npm run build && npm test` pass.
+- [x] T097 (2026-10-22, owner decision in the team chat; supersedes T095's 6 shards and 3 UI jobs per OS) Fewer runner tickets per PR, macOS after the merge [FR-104..FR-110]. Files: `.github/workflows/ci.yml` (no changes job, inline `ci-changes.sh`, one office job, macOS report job on PR and queue, nightly), `.github/scripts/ci-changes.sh`, `.github/workflows/ui-platforms.yml` (one job per OS, macOS nightly), `spec-kit.yml` (no label triggers), `install-check.yml`, `installed-app.yml`, `packaged-check.yml`, `pages.yml` (drafts, concurrency, macOS nightly or weekly), `nightly-watch.yml` (issue on a failed nightly run), timeouts in every workflow, `scripts/test-ui-suite.ts` (guards), `.github/scripts/spec-gate.sh` message, PR template, CONTRIBUTING, `docs/collaboration.md`, README, CHANGELOG, `docs/agent-notes.md`, this spec and `specs/README.md`. Done when:
+  1. the PR's own runs are green and report all six required check names; their queue and run times are written in the spec next to the before numbers;
+  2. no macOS runner is used by the PR's runs;
+  3. `npm run typecheck && npm run build && npm test` pass.

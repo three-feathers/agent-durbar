@@ -32,7 +32,7 @@ Closes #<!-- issue number: one issue = one Spec Kit task -->
 
 <!--
 Only for changes with NO behavior change (typo, comment, formatting, dependency bump, CI-only fix, revert), replace this
-comment with a line like the next one (or ask a maintainer for the `spec-exempt` label). "Small" is not a reason.
+comment with a line like the next one (or ask a maintainer for the `spec-exempt` label, then save the description once: a label alone does not re-run the check). "Small" is not a reason.
 
 Spec-Exempt: <reason>
 -->

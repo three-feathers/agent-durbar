@@ -57,7 +57,7 @@ The **Spec Kit** workflow (`.github/workflows/spec-kit.yml`, job *Spec Kit gate*
 Exemption, only when there is no behavior change, either:
 
 - a line `Spec-Exempt: <reason>` in the pull request description (4+ characters, not inside an HTML comment; the PR template ships it commented out), or
-- the label `spec-exempt` (any label starting with that, such as `Spec-Exempt: dependency bump`), which a maintainer applies.
+- the label `spec-exempt` (any label starting with that, such as `Spec-Exempt: dependency bump`), which a maintainer applies; then save the description once (or push), because a label change alone no longer re-runs the gate (spec 008 FR-109).
 
 The gate checks **presence, not quality**: it cannot tell a good spec from a one-line stub, and it does not look at changes outside `src/` (`scripts/`, build config, workflows). Reviewers use the checklist in the pull request template. The gate runs on pull requests only; a direct push to `main` is not checked, so push through pull requests, and the maintainer can make *Spec Kit gate* a required status check in the branch protection settings.
 
