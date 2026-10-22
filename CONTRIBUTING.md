@@ -25,7 +25,7 @@ Node 20.19+ or 22.12+ is required. `npm start` with real sessions needs a GitHub
 - Run `npm run typecheck && npm run build && npm test` before opening a PR; CI runs the same. For UI changes attach screenshots at 1440x900 and 1280x800 with 15 simulated agents (`DURBAR_SIM=15`).
 - **Design and UI:** follow the ten house rules in [docs/design-rules.md](docs/design-rules.md) (control heights, radius and colour tokens, one primary button, the "…" rule, one word per status, dialog layout, states, chevrons) and keep text at 10.5px or more.
 - Use the pull request template and tick the checklist honestly; state what you did *not* verify.
-- **Keep the docs in sync, in the same PR.** If you change something a user can see, a script, a permission, a setting, MCP or tool behavior, the release status or the contributors, update `README.md`, the relevant `docs/` page, the spec's `tasks.md`, `CHANGELOG.md` and the screenshots it shows. The exact list is in [AGENTS.md](AGENTS.md#keep-docs-in-sync). No docs impact? Write `Docs: n/a <reason>` in the PR description. A CI check only *warns* about it; it never blocks.
+- **Keep the docs in sync, in the same PR.** If you change something a user can see, a script, a permission, a setting, MCP or tool behavior, the release status or the contributors, update `README.md`, the relevant `docs/` page, the spec's `tasks.md` and the screenshots it shows, and add your changelog line as a new file `changelog.d/<your-branch>.md` (do not edit `CHANGELOG.md`; see [changelog.d/README.md](changelog.d/README.md)). The specs index is generated from each spec's `specs-index` block and its rows are not committed: change your spec's block (a new spec: `npm run specs:index -- --add specs/NNN-name`), never a row in `specs/README.md`. The exact list is in [AGENTS.md](AGENTS.md#keep-docs-in-sync). No docs impact? Write `Docs: n/a <reason>` in the PR description. A CI check only *warns* about it; it never blocks.
 
 ## Spec Kit workflow is mandatory
 
@@ -57,7 +57,7 @@ The **Spec Kit** workflow (`.github/workflows/spec-kit.yml`, job *Spec Kit gate*
 Exemption, only when there is no behavior change, either:
 
 - a line `Spec-Exempt: <reason>` in the pull request description (4+ characters, not inside an HTML comment; the PR template ships it commented out), or
-- the label `spec-exempt` (any label starting with that, such as `Spec-Exempt: dependency bump`), which a maintainer applies.
+- the label `spec-exempt` (any label starting with that, such as `Spec-Exempt: dependency bump`), which a maintainer applies; then save the description once (or push), because a label change alone no longer re-runs the gate (spec 008 FR-109).
 
 The gate checks **presence, not quality**: it cannot tell a good spec from a one-line stub, and it does not look at changes outside `src/` (`scripts/`, build config, workflows). Reviewers use the checklist in the pull request template. The gate runs on pull requests only; a direct push to `main` is not checked, so push through pull requests, and the maintainer can make *Spec Kit gate* a required status check in the branch protection settings.
 

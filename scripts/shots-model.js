@@ -129,6 +129,9 @@ module.exports = async (ctx) => {
   dlg = await text('#modeDlg'); assert.match(dlg, /A reply is running/); assert.match(dlg, /spending limit of 50 AI credits is not changed/); // wording since round 6 ("spending limit")
   await dlgButton('Switch'); await until(`/→ Sim Mid/.test((document.querySelector('#modelChip')||{}).innerText||'')`);
   assert.match(await chipText(), /→ Sim Mid/, 'the chip shows the queued model');
+  /* spec 005 T071: the accessible name is built from parts, never "· 128k → Sim Mid tokens context window" */
+  const qLabel = await js(`document.getElementById('modelChip').getAttribute('aria-label')`);
+  assert.match(qLabel, /^Model: [^→]+, \d[\d.]*[kM] tokens context window; next: Sim Mid$/, `the queued chip's accessible name: ${qLabel}`);
   await click('#modelChip'); await until(`!!document.getElementById('modelMenu')`);
   assert.match(await text('#modelMenu'), /Next: Sim Mid/);
   await shot('queued', false);

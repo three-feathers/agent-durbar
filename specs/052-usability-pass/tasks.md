@@ -231,6 +231,7 @@
 - [x] T161 Tests: `test-codex-modes`, `test-codex-adapter` with the fixture `codex/file-change-approval.json` (generated types), `test-truth`; mutation runs (no item store, no masking) [FR-172]
 - [x] T162 `simcodexfile` + `scripts/check-codex-file-card.js` (`check:codex-file-card`, in `check:ui`) at 1440x900 and 1280x800, Expert and Simple; screenshots; README, CHANGELOG, `specs/README.md`, agent notes [FR-172]
 - [x] T163 Real check on a Codex session (one small edit in Ask first): the card names the file and shows the diff [FR-172; real: 2026-10-21, codex-cli 0.163.0, Linux, 1 prompt]
+- [x] T167 Review on #470: the write grant scope covers every path (several folders: every folder must be granted; a session grant grants each); paths kept uncut for decisions (one line only in the card and diff headers); every path of more than 100 changes reaches the guard, real "+N more", the 200-file guard cap flagged on the card; the "No newline" test asserts the marker; tests + mutation runs; re-review: the Expert button keeps every folder or "and N more folders", the simulator grants one chip per folder (`check-codex-file-card`) [FR-172]
 
 ## UI help and text pass (2026-10-21, issue #464)
 - [x] T143 Spec delta FR-165..FR-171, plan note, `docs/design-rules.md` rules (widths, measure, tooltip length; also fix its stale "+ New" line) [FR-165..FR-171]
@@ -289,3 +290,22 @@
 ## FR-173: list focus survives a re-render; Windows-flaky drivers (2026-10-22)
 - [x] T164 Spec delta FR-173, plan note [FR-173]
 - [x] T165 `renderAll()` restores the focus inside the view it was in (`#list` / `#stage`); `shots-052-ux` checks that a status re-render keeps the focus on the list row (fails without the fix); `check-question-options` waits for the question and the card instead of an 8 s sweep, and its failure message shows the observed state; each driver 10 times in a row green under `xvfb-run`, plus a parallel run under load [FR-173, FR-140]
+- [x] T166 Review on #516: `check-question-options`, `check-question-visible`, `check-grant-chips` and `shots-012-elicit` open the one agent through the shared `openSimAgent` (page errors in its report) (no desk sweep); `shots-052-ux` checks the office half of FR-173 (focus stays on the desk in `#stage` after a status re-render; fails with the office scope broken) [FR-173]
+
+## Popover widths (2026-10-22, issue #508)
+
+- [x] T168 Inventory the popovers and add the tokens `--pop-w-s` (420px), `--pop-w-m` (660px) and `--pop-pad` (12px 14px) to `styles.css` `:root`; Defaults and Allowed grants use S, Folders and Floors use M, all use `--pop-pad`; the per-popover widths and paddings are deleted [FR-167]
+  - Accept: `#defaultsPop`, `#foldersPop`, `#floorsPop` and `.grants-pop` have no `width` or `padding` of their own except through the tokens; no text is cut or scrolls sideways at 1440x900 and 1280x800, light and dark; text 10.5px or more.
+  - Check: `check:ui-text` (`x-scroll`, `font-size`, clipped text on the four popover surfaces).
+- [x] T169 Check rule `popover-width` in `check-ui-text` / `ui-text-page.js` for every `popover` surface [FR-167, FR-171]
+  - Accept: a popover whose width is not S, M or `100vw - 32px`, or whose padding is not `--pop-pad`, fails.
+  - Check: mutation (one popover given its own `width`) fails `popover-width`; the code is restored byte for byte and the check passes.
+- [x] T170 Screenshots (both sizes, light and dark) in `docs/screenshots/052-popover-*`; docs: FR-167 `[IMPLEMENTED]`, `docs/design-rules.md`, CHANGELOG [FR-167]
+  - Accept: FR-167 has no popover `[KNOWN GAP]`; the design rules describe the two tokens.
+  - Check: `typecheck`, `build`, `npm test`, `check:ui-text`, `check:office`, `check:geometry`.
+- [x] T171 Folders popover: the Pause all schedules checkbox on its own line; rule `popover-squeezed` in `check:ui-text` [FR-167]
+  - Accept: the first folder row shows its full name at both sizes; no popover name or path is cut to under 120px.
+  - Check: mutation (`float:right` back on `.fp-pause`) fails `popover-squeezed`; code restored byte for byte.
+- [x] T172 Review fixes on #508: `popover-squeezed` covers every ellipsis in a popover (mutation `.fl-t{max-width:80px}` fails); long-name passes `folders-pop-long`, `floors-pop-long`; `popover-width` accepts the window minus 32px; popover borders and `.fl-err` to tokens, `literal-light` also reads borders and outlines (16 rules fixed), a Floors error shown in `floors-pop-error` so `dark-text` measures it; dark screenshots for all four popovers [FR-167]
+  - Accept: no literal light border or outline in `src/renderer/*.css`; `.fl-err` reads at 4.5:1 in the dark fixture.
+  - Check: mutation `#efe9dd` back on `.fl-floor` fails `literal-light`; restored byte for byte.

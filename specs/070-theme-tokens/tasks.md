@@ -19,3 +19,8 @@
 - [ ] T021 (owner decision) Bundled font files in a pack (D1)
 - [x] T011 Real check of the extended AI prompt on one model (owner's go-ahead 2026-10-22; Claude haiku, 1 prompt; `scripts/themegen-real.ts`; see spec Evidence)
 - [x] T012 Parser takes `transparent` and the space form `rgb(r g b / a)` the prompt's defaults show (found by T011) [FR-031]
+- [x] T013 Review on #500: `theme.js` `CONTRAST_PAIRS` mirrors #515's three button-text pairs; merge main and lower the literal ratchet [FR-021]
+- [x] T014 Review on #500: minimal contrast fix that never changes a base surface; unit test with the dark fixture plus a dim `--muted` and a dim `--sage-ink` (stays dark, every pair passes) [FR-023, D4]
+- [x] T015 Review on #500: test that every built-in theme is applied as designed (`setTheme`, `token`) [FR-021]
+- [x] T016 Review on #500: AI dialog counts colours apart from fonts and shapes, and its preview shows the adjusted count; Settings note wording [FR-022, FR-024, FR-025]
+- [x] T017 Merge of main (with #530, #508 popovers) on 2026-10-22: the remaining `#e5be78` border literals in `styles.css` and `screens.css` (toast, mode-chip restored tag, warn button, mode-menu why, answer bar, notice strip, inbox button, setup dialog tags) use `var(--tone-warn-line)`, as #530 did for `#e3bdb7` (Ruben on #530); the ratchet is regenerated: styles.css 156 -> 127, screens.css 16 -> 14, themes.css 52 -> 51; app.js 15 -> 17 (main's two literals since the last count, not this PR's); `check:geometry` keeps Pink Studio in its every-theme list (nightly, `CHECK_ALL_THEMES=1`; pull requests run Retro only, spec 008 FR-111, owner decision) [FR-041]
