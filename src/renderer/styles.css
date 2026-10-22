@@ -1643,7 +1643,7 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .lg-sofa .sf-leg,.lg-bed .bd-leg{fill:color-mix(in srgb,var(--ink) 55%,transparent)}
 .stage .desk.shut{position:static;flex:none;width:64px;height:auto;min-width:0;padding:0;border:0;border-radius:8px;background:transparent;box-shadow:none;cursor:pointer}
 .stage .desk.shut:hover{background:color-mix(in srgb,var(--raised) 50%,transparent);border:0;transform:none}
-.stage .desk.shut[aria-pressed="true"]{box-shadow:0 0 0 1.5px var(--sel-border,#7fa0bd)}
+.stage .desk.shut[aria-pressed="true"]{box-shadow:0 0 0 1.5px var(--sel-border)}
 .lg-sp{position:relative;display:block;width:100%;height:100%;z-index:1;transform-origin:50% 100%}
 /* a character on the couch: as large as the corner allows (up to a desk figure), its name on the cushion */
 .desk.shut.is-recent .lg-av{position:absolute;left:50%;bottom:calc(min(46%,64px) * .42);height:min(56px,calc(100% - min(46%,64px) * .42 - 2px));aspect-ratio:1;transform:translateX(-50%);border-radius:50% 50% 30% 30%;overflow:hidden}
