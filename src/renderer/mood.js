@@ -20,6 +20,7 @@
      `ambulance` says this agent is the one that got the single ambulance (pickAmbulance); an agent in error without it keeps today's error look. */
   function troubleOf(o){
     const s=o||{};
+    if(s.coffee)return null; /* spec 068 FR-005: a coffee break is calm (no faint, impatient or dizzy look; Durbar's own cap is a break too) */
     if(s.state==='error'&&s.ambulance)return 'ambulance';
     if(s.limit)return 'faint';
     if(typeof s.waitingMs==='number'&&s.waitingMs>=IMPATIENT_MS)return 'impatient';
@@ -97,6 +98,7 @@
   function phrases(o){
     const s=o||{}, out=[];
     if(s.body==='monster'&&typeof s.pct==='number')out.push('Context almost full ('+s.pct+'%)');
+    if(s.coffee){out.push('On a coffee break');return out;}
     if(s.trouble==='ambulance')out.push('Error: please check it');
     else if(s.trouble==='faint')out.push('Spending limit reached');
     else if(s.trouble==='impatient')out.push('Waiting '+fmtWait(s.waitingMs||0)+' for you');

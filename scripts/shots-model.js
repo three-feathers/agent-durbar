@@ -29,6 +29,9 @@ module.exports = async (ctx) => {
   const dlgButton = (label) => js(`(()=>{const b=[...document.querySelectorAll('#modeDlg .btn')].find(x=>x.textContent===${jsLiteral(label)});if(!b)return false;b.click();return true})()`);
   const pick = (id) => click(`#modelMenu [data-pick="${id}"]`);
   const chipText = () => text('#modelChip');
+  /* spec 005 FR-037: Compact lives in the context chip's menu (same id, #compactBtn) */
+  const ctxMenu = async () => { await click('#ctxChip'); await until(`!!document.getElementById('ctxMenu')`); };
+  const ctxClose = async () => { if (await exists('#ctxMenu')) { await key('Escape'); await until(`!document.getElementById('ctxMenu')`); } };
   const noOverflow = async (what) => { const o = await js(`(()=>{const p=document.getElementById('panelHead')||document.body;return p.scrollWidth>p.clientWidth+1})()`); assert.ok(!o, what + ': header does not overflow sideways'); };
 
   ctx.win.setContentSize(W, H);
@@ -37,7 +40,7 @@ module.exports = async (ctx) => {
   // ---- 1) Noor: idle, near the limit, compacted once: Compact button, tier-less chip, start-fresh note ----
   await open('Noor');
   assert.match(await chipText(), /Sim Fast/, 'the model chip names the model');
-  assert.ok(await exists('#compactBtn'), 'Compact action is offered (the adapter can compact)');
+  await ctxMenu(); assert.ok(await exists('#ctxMenu #compactBtn'), 'Compact action is offered in the context menu (the adapter can compact)'); await ctxClose();
   assert.match(await text('#ctxChip'), /Context \d+%/);
   assert.ok(await exists('#chat .note.fresh'), 'start-fresh note appears at 90%+ after a compaction');
   assert.match(await text('#chat .note.fresh'), /New session/);
@@ -102,7 +105,7 @@ module.exports = async (ctx) => {
 
   // ---- 6) manual compaction: dialog with an optional focus, result line, context drops, the start-fresh note goes away ----
   const before = await text('#ctxChip');
-  await click('#compactBtn'); await until(`!!document.getElementById('modeDlg')&&!!document.getElementById('mdIn')`);
+  await ctxMenu(); await click('#compactBtn'); await until(`!!document.getElementById('modeDlg')&&!!document.getElementById('mdIn')`);
   dlg = await text('#modeDlg');
   assert.match(dlg, /Compact the context of Noor\?/); assert.match(dlg, /one model call/);
   assert.ok(await exists('#mdIn'), 'optional focus text');
@@ -131,7 +134,9 @@ module.exports = async (ctx) => {
   await shot('queued', false);
   await click('#modelMenu [data-cancelq]'); await until(`!/→/.test((document.querySelector('#modelChip')||{}).innerText||'')`); await settle();
   assert.doesNotMatch(await chipText(), /→/, 'cancelled: back to the current model only');
+  await ctxMenu();
   assert.ok(await exists('#compactBtn') && (await js(`document.getElementById('compactBtn').getAttribute('aria-disabled')`)) === 'true', 'Compact is greyed while the agent works');
+  await ctxClose();
 
   // ---- 9) office: "Model and context..." in the card menu ----
   await click('#backBtn'); await until(`!document.body.classList.contains('panel-open')`); await settle();
@@ -150,7 +155,7 @@ module.exports = async (ctx) => {
   // ---- 10) an agent that behaves like today's real adapter: disabled with a reason, New session offered ----
   const priya = await idOf('Priya'); assert.ok(priya);
   await click(`#stage [data-id="${priya}"]`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('modelChip')`); await settle();
-  assert.ok(!(await exists('#compactBtn')), 'no Compact button when the agent cannot compact');
+  await ctxMenu(); assert.ok(!(await exists('#compactBtn')), 'no Compact item when the agent cannot compact'); await ctxClose();
   await click('#modelChip'); await until(`!!document.getElementById('modelMenu')`);
   const dis = await text('#modelMenu');
   assert.match(dis, /cannot change its model in place/); assert.match(dis, /New session/);

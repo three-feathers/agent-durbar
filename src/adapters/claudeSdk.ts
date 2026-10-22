@@ -83,7 +83,8 @@ export function sdkOptionsOf(o: TransportInput, canUseTool: unknown, hook: unkno
   };
   if (m.allowDangerouslySkipPermissions) opts.allowDangerouslySkipPermissions = true;
   if (m.allowedTools?.length) opts.allowedTools = m.allowedTools;
-  if (m.disallowedTools?.length) opts.disallowedTools = m.disallowedTools;
+  const deny = [...(m.disallowedTools ?? []), ...(o.launch.disallowedMcpTools ?? [])]; // spec 069 FR-062
+  if (deny.length) opts.disallowedTools = deny;
   if (o.launch.mcpConfig) opts.mcpServers = (JSON.parse(o.launch.mcpConfig) as { mcpServers: unknown }).mcpServers;
   // spec 061 FR-004: the composed folder settings as the CLI flag (the SDK passes extraArgs through; not checked on a real SDK, KNOWN GAP)
   if (o.launch.settingsJson) opts.extraArgs = { ...(opts.extraArgs as Record<string, string | null> | undefined), settings: o.launch.settingsJson };

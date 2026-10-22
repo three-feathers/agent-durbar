@@ -12,6 +12,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { McpToolInfo } from './types';
+import { normMcpTools } from './mcptools';
 import { cleanPlanText, reviseText } from './plan';
 import type { AdapterDescriptor } from './capabilities';
 import type { EventBody } from './map';
@@ -27,11 +29,11 @@ import type { McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
-import { CODEX_INITIALIZE_CAPABILITIES, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
-import type { DurbarAnswer } from './codexModes';
+import { CODEX_INITIALIZE_CAPABILITIES, codexFileChanges, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
+import type { CodexFileChange, DurbarAnswer } from './codexModes';
 import { CODEX_BINARY, detectBinary, nodeExec } from './detect';
 import type { DetectEnv } from './detect';
-import { PermissionBroker, startModeOf } from './permissions';
+import { PermissionBroker, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import { redact } from '../shared/redact';
@@ -61,6 +63,11 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   history: true, // FR-141: thread/list and thread/read
   mcpStatus: true, // FR-147: mcpServerStatus/list and startup notifications
   mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
+  mcpStart: 'session', // spec 058 FR-010
+  mcpToggleApplies: 'next-message', // FR-147
+  mcpToolFilter: true, // spec 069 FR-062: config.mcp_servers.<name>.disabled_tools (real: codex-cli 0.163.0 hides the tool, T060)
+  mcpTools: true, // spec 069 FR-031: mcpServerStatus/list with serverName, the tools map (read: generated app-server schema, codex-cli 0.163.0; not run on a real account)
+  mcpRestart: false, // spec 058 FR-012 (Q8): no per-server restart; Restart session with these servers instead
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
   renameSession: 'any', // spec 059 FR-007: thread/name/set on the live child or a short-lived app-server (real 2026-10-20: codex resume lists the name once the thread has had a turn)
   deleteSession: true, // spec 006 FR-028: thread/delete (hard delete; read: upstream app-server protocol, Codex 0.163; never run on a real thread)
@@ -251,6 +258,8 @@ interface Live {
   /** The next mapper `Aborted` is the one `interrupt` already reported itself. */
   expectAborted: boolean;
   anon: number;
+  /** Spec 052 FR-172: the changes of `fileChange` items not yet completed, by item id (bounded): an approval names only the id. */
+  fileChanges?: Map<string, CodexFileChange[]>;
 }
 
 interface Child {
@@ -618,7 +627,7 @@ export class CodexAdapter implements AgentAdapter {
       live.exited = child.exited;
       const settings = codexModeSettings(mode);
       let started: unknown;
-      const mcpConfig = codexMcpConfig(options.mcpServers, options.disabledMcpServers); // FR-147
+      const mcpConfig = codexMcpConfig(options.mcpServers, options.disabledMcpServers, options.disabledMcpTools); // FR-147, spec 069 FR-062
       const threadParams = { cwd: limited ? realCwd : cwd, ...settings, ...(limited ? { runtimeWorkspaceRoots: roots } : {}), ...(mcpConfig ? { config: mcpConfig } : {}) };
       if (resumeId !== undefined) {
         // FR-093 (real, Codex 0.163): `thread/resume` with a cwd REWRITES the thread's folder, so the folder check reads the
@@ -1002,13 +1011,45 @@ export class CodexAdapter implements AgentAdapter {
         live.pendingInterrupt = false;
       }
     }
+    this.noteFileChange(live, method, params);
     live.mapper.map({ method, params });
+  }
+
+  /**
+   * Spec 052 FR-172: keep the changes of each `fileChange` item while it runs (`item/started`, `item/fileChange/patchUpdated`), so an
+   * approval that names only the item id can show the files and the diff; forget them on `item/completed`. At most 32 items.
+   */
+  private noteFileChange(live: Live, method: string, params: unknown): void {
+    if (!isObj(params)) return;
+    const item = isObj(params.item) ? params.item : undefined;
+    const isFc = item?.type === 'fileChange' && typeof item.id === 'string' && item.id;
+    if (method === 'item/completed' && isFc) {
+      live.fileChanges?.delete(item.id as string);
+      return;
+    }
+    let id: string | undefined;
+    let changes: unknown;
+    if (method === 'item/started' && isFc) {
+      id = item.id as string;
+      changes = item.changes;
+    } else if (method === 'item/fileChange/patchUpdated' && typeof params.itemId === 'string' && params.itemId) {
+      id = params.itemId;
+      changes = params.changes;
+    }
+    if (!id) return;
+    const list = codexFileChanges(changes);
+    if (!list.length) return;
+    const map = (live.fileChanges ??= new Map());
+    map.delete(id);
+    map.set(id, list);
+    while (map.size > 32) map.delete(map.keys().next().value as string);
   }
 
   private makeBroker(live: Live): PermissionBroker {
     return new PermissionBroker({
       roots: live.roots,
       mode: live.mode,
+      blockedTools: () => mcpToolBlockList(live.options.disabledMcpTools), // spec 069 FR-063
       beforeWrite: (paths) => this.writeGuard?.(live.sid, paths) ?? Promise.resolve(), // spec 065 FR-001
       emit: (e: BrokerEvent) => {
         const sid = live.sid;
@@ -1046,8 +1087,8 @@ export class CodexAdapter implements AgentAdapter {
       const a = await runElicitation((b) => this.emit(live.sid, b), live.elicitations, `codex-e-${++live.anon}`, { message: p.message, schema: p.requestedSchema, mode: p.mode, url: p.url, source: p.serverName }, (m) => this.debug?.(`codex: ${m}`));
       return { result: { ...a } };
     }
-    const perm = codexPermission(method, params);
     const itemId = isObj(params) && typeof params.itemId === 'string' && params.itemId ? params.itemId : undefined;
+    const perm = codexPermission(method, params, itemId ? live.fileChanges?.get(itemId) : undefined);
     const toolCallId = itemId ?? `${method}#${++live.anon}`;
     const decision = await live.broker.request({
       kind: perm.kind,
@@ -1058,6 +1099,9 @@ export class CodexAdapter implements AgentAdapter {
       url: perm.url,
       toolName: perm.toolName,
       serverName: perm.serverName,
+      // FR-172: the file change's diff with secrets masked (env values and key shapes), and its own card line
+      ...(perm.kind === 'write' ? { cardSummary: perm.summary } : {}),
+      ...(perm.diff ? { diff: redact(perm.diff, { ...process.env, ...this.env }) } : {}),
     });
     const answer: DurbarAnswer = decision.kind === 'approve-once' ? 'approve' : live.stopping || live.interrupting ? 'stop' : 'deny';
     const reply = codexReply(answer, live.broker.getMode());
@@ -1137,6 +1181,18 @@ export class CodexAdapter implements AgentAdapter {
     const cur = live.mcp.get(name) ?? { name, status: 'pending' };
     live.mcp.set(name, { ...cur, status: enabled ? 'pending' : 'disabled' });
     this.emitMcp(live);
+  }
+
+  /** Spec 069 FR-031: one server's tools from `mcpServerStatus/list` (the thread's own connection); `toolsError` is the failure. */
+  async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
+    const live = this.sessions.get(sessionId);
+    if (!live || !live.rpc || !live.threadId) throw new Error('This session is not running. Send a message to start it.');
+    const res = await live.rpc.request('mcpServerStatus/list', { threadId: live.threadId, serverName: name, detail: 'toolsAndAuthOnly', limit: 10 });
+    const data: unknown[] = isObj(res) && Array.isArray(res.data) ? res.data : [];
+    const srv = data.find((x) => isObj(x) && x.name === name);
+    if (!isObj(srv)) throw new Error(`${name} is not running in this session.`);
+    if (typeof srv.toolsError === 'string' && srv.toolsError) throw new Error(srv.toolsError);
+    return normMcpTools(srv.tools);
   }
 
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {

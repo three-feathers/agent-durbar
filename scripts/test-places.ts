@@ -287,7 +287,7 @@ const names = (list: readonly { name: string }[]): string[] => list.map((p) => p
 assert.strictEqual(MAX_CUSTOM_PLACES, 3);
 assert.strictEqual(MAX_PLACE_NAME, 24);
 assert.deepStrictEqual([...CUSTOM_ICON_IDS], ['star', 'flask', 'database', 'cloud', 'chart', 'chat', 'mail', 'calendar', 'shield', 'box', 'bolt', 'pin']);
-assert.deepStrictEqual([...RESERVED_PLACE_NAMES], [...P.PLACES.map((p) => p.name), 'Stay at desk', 'Default'], 'reserved = the five built-in names, Stay at desk, Default');
+assert.deepStrictEqual([...RESERVED_PLACE_NAMES], [...P.PLACES.map((p) => p.name), 'Stay at desk', 'Default', 'Coffee corner'], 'reserved = the five built-in names, Stay at desk, Default, the coffee corner (spec 068)');
 assert.ok(CUSTOM_ID_PATTERN.test('c-ab12z9') && !CUSTOM_ID_PATTERN.test('c-AB12z9') && !CUSTOM_ID_PATTERN.test('c-ab12z') && !CUSTOM_ID_PATTERN.test('c-ab12z9x') && !CUSTOM_ID_PATTERN.test('desk') && !CUSTOM_ID_PATTERN.test('library'), 'id pattern');
 
 // cleanPlaceName: trimmed, 1..24 code points, no control characters
@@ -669,6 +669,31 @@ async function simChecks(): Promise<void> {
   const sp = (await seeded.getSettings!()).customPlaces ?? [];
   const rm = await seeded.removePlace!(sp[0].id);
   assert.ok(rm.ok && !Object.values(rm.placeMap).includes(sp[0].id) && !('my-notes' in rm.placeMap), 'removing the first seeded place clears its mapping');
+}
+
+// spec 068 FR-003: the coffee corner is a pinned visit; tools and the turn's end never move it; it is not a mapping choice
+{
+  let n = 0;
+  const v = P.createVisits({ now: () => n, debounceMs: 600, dwellMs: 2000 }) as Visits & { pin: (id: string, p: string, l?: string) => boolean; unpin: (id: string) => boolean; pinned: (id: string) => boolean };
+  const C = (P as unknown as { COFFEE: string }).COFFEE;
+  assert.strictEqual(C, 'coffee');
+  assert.ok(!P.IDS.includes(C) && !P.isChoice(C), 'never a mapping target');
+  assert.strictEqual(v.pin('a', C, 'Coffee break'), true);
+  assert.strictEqual(v.pin('a', C, 'Coffee break'), false, 'pinning twice changes nothing');
+  assert.deepStrictEqual(v.at('a'), { place: C, label: 'Coffee break', since: 0 }, 'at once, no debounce');
+  assert.strictEqual(v.onTool('a', { phase: 'start', tool: 'bash', callId: 'x' }), false);
+  assert.strictEqual(v.onStatus('a', 'idle'), false);
+  assert.strictEqual(v.onStatus('a', 'error'), false);
+  n = 60000; v.tick();
+  assert.deepStrictEqual(v.occupants(C), ['a'], 'no dwell timeout');
+  assert.ok(v.pinned('a'));
+  assert.strictEqual(v.unpin('a'), true);
+  assert.strictEqual(v.at('a'), null);
+  assert.strictEqual(v.unpin('a'), false);
+  // an agent at the Terminal that goes on a break moves to the coffee corner
+  v.onTool('b', { phase: 'start', tool: 'bash', callId: 'y' }); n += 700; v.tick();
+  assert.strictEqual(v.at('b')!.place, 'terminal');
+  v.pin('b', C); assert.strictEqual(v.at('b')!.place, C);
 }
 
 simChecks().then(

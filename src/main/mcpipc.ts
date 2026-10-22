@@ -2,7 +2,7 @@
 import { safeStorage } from 'electron';
 import { ipcHandle } from './ipcguard';
 import * as path from 'path';
-import type { AgentInfo, AgentMcpEntry, McpFolderState, McpState } from '../shared/api';
+import type { AgentInfo, AgentMcpReply, GlobalApp, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
 import { setMcpOp } from './agentops';
 import type { AdapterRouter } from '../adapters/router';
@@ -10,7 +10,10 @@ import type { McpServerSpec } from '../shared/mcp';
 import type { DevEnv } from './devhooks';
 import { BUILTIN_SERVERS, cliServers, copilotDir } from './mcpfiles';
 import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
-import { maskMcpError, mcpSecretValues } from './mcpmask';
+import { mcpSecretValues } from './mcpmask';
+import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
+import { agentMcpReply, mcpRestartOp } from './mcpsession';
+import { mcpToolsOp } from './mcptoolsop';
 import { McpStore } from './mcpstore';
 import type { SecretCodec } from './mcpstore';
 
@@ -45,7 +48,20 @@ export const safeStorageCodec: SecretCodec = {
 const keyOf = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const nameOfKey = (key: string): string => path.basename(key).replace(/\.code-workspace$/i, '') || key;
 
-export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; router: Pick<AdapterRouter, 'onEvent' | 'forAgent'>; dev: DevEnv }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] }; secretValuesFor(agentId: string): string[] } {
+export function registerMcpIpc(deps: {
+  store: () => McpStore;
+  agents: Map<string, AgentInfo>;
+  router: Pick<AdapterRouter, 'onEvent' | 'forAgent'>;
+  dev: DevEnv;
+  /** Spec 069 FR-009: servers of the agent app's own user list that Durbar passes itself (Claude Code), values included (main only). */
+  globalFor?(agentId: string): Record<string, McpServerSpec>;
+  /** Spec 069 FR-011: the names of each agent app's user list, read now. */
+  globalNames?(): Partial<Record<GlobalApp, string[]>>;
+  /** The agent app of an agent (`copilot`, `claude`, `codex`, ...). */
+  appOf?(agentId: string): string | undefined;
+  /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */
+  log?(a: AgentInfo, action: string): void;
+}): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[] } {
   const { agents, router, dev } = deps;
   const store = deps.store;
   /** Per agent id, this run only: servers the user switched off for that agent. */
@@ -57,7 +73,8 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     const a = agents.get(agentId);
     if (!a) return [];
     try {
-      return mcpSecretValues(store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames()).mcpServers);
+      // Spec 069 FR-009: the user list's values too (all of them, also one a folder extra shadows: masking more is safe).
+      return mcpSecretValues(deps.globalFor?.(agentId), store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames()).mcpServers);
     } catch {
       return []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
     }
@@ -136,29 +153,43 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
   });
   ipcHandle('mcp:removeLegacy', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().removeLegacy(name) }));
 
-  ipcHandle('agents:mcp', (_e, id: unknown): { ok: boolean; servers: AgentMcpEntry[]; live: boolean } => {
+  ipcHandle('agents:mcp', (_e, id: unknown): AgentMcpReply => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, servers: [], live: false };
     const s = store();
-    const secrets = secretValuesFor(a.id);
-    const mine = off.get(a.id) ?? new Set<string>();
-    const status = new Map((live.get(a.id) ?? []).map((x) => [x.name, x]));
-    const entries: AgentMcpEntry[] = [];
-    const seen = new Set<string>();
-    const add = (name: string, origin: AgentMcpEntry['origin'], defaultOn: boolean): void => {
-      if (seen.has(name)) return;
-      seen.add(name);
-      const st = status.get(name);
-      entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), defaultOn, off: mine.has(name) });
-    };
     const dis = new Set(s.ambientDisabled());
-    const c = cli().servers;
-    for (const am of c) add(am.name, 'cli', am.enabled);
-    const names = new Set(c.map((x) => x.name.toLowerCase()));
-    for (const v of s.list(keyOf(a))) if (!names.has(v.name.toLowerCase())) add(v.name, 'folder', v.enabled && v.trusted && !v.needsSecrets);
-    for (const x of live.get(a.id) ?? []) add(x.name, 'runtime', !dis.has(x.name));
-    return { ok: true, servers: entries, live: router.forAgent(a.id)?.isLive(a.id) ?? false };
+    // Spec 069 FR-009/FR-011: each agent app's own list. Copilot loads the Copilot CLI list itself; Durbar passes Claude Code's list to
+    // Claude sessions; Codex reports its own list as the session runs (runtime rows).
+    const gn = deps.globalNames?.() ?? {};
+    const all = cli().servers;
+    return agentMcpReply({
+      a,
+      ad: router.forAgent(a.id),
+      live: live.get(a.id) ?? [],
+      off: off.get(a.id) ?? new Set<string>(),
+      secrets: secretValuesFor(a.id),
+      cli: all,
+      extras: s.list(keyOf(a)),
+      ambientDisabled: dis,
+      app: deps.appOf?.(a.id),
+      claudeList: (gn.claude ?? []).map((n) => ({ name: n, enabled: !dis.has(claudeOffKey(n)) })),
+      toolsOff: s.toolsOffFor(keyOf(a)),
+      global: gn,
+      builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
+    });
   });
+  /** Spec 058 FR-021: restart one server of this agent's running session; one at a time per server. */
+  const restarting = new Set<string>();
+  ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
+    mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
+  /** Spec 069 FR-061: the tools turned off for one server in this agent's folder (applies to new sessions and after Restart session). */
+  ipcHandle('agents:setMcpToolsOff', (_e, id: unknown, name: unknown, off: unknown) => {
+    const a = typeof id === 'string' ? agents.get(id) : undefined;
+    if (!a) return { ok: false, error: 'Unknown agent.' };
+    return store().setToolsOff(keyOf(a), name as string, off);
+  });
+  /** Spec 069 FR-032: the tools of one server of this agent's running session, masked and cut. */
+  ipcHandle('agents:mcpTools', (_e, id: unknown, name: unknown) => mcpToolsOp({ agents, router, secrets: secretValuesFor }, id, name));
   ipcHandle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
 
   return {
@@ -168,7 +199,9 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
       if (!a) return { mcpServers: {}, disabledMcpServers: [...(off.get(agentId) ?? [])] };
       // Only this agent's own folder's extras are passed (spec 020 FR-012).
       const r = store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames());
-      return { mcpServers: r.mcpServers, disabledMcpServers: r.disabledMcpServers };
+      // Spec 069 FR-009: the agent app's own user list that Durbar passes itself (Claude Code); a folder extra of the same name wins.
+      const toolsOff = store().toolsOffFor(keyOf(a)); // spec 069 FR-061/FR-062
+      return { mcpServers: mergeSessionServers(deps.globalFor?.(agentId) ?? {}, r.mcpServers, off.get(agentId)), disabledMcpServers: r.disabledMcpServers, ...(Object.keys(toolsOff).length ? { disabledMcpTools: toolsOff } : {}) };
     },
   };
 }

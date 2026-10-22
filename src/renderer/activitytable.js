@@ -1,7 +1,7 @@
 /* Activity log table (spec 052 FR-071): plain words for each decision and the HTML of Tools > Activity. Pure: strings only, every
-   value escaped by the `esc` passed in. In the page: window.DurbarActivity; in Node: module.exports. */
+   value escaped by the `esc` passed in. In the page: window.DurbarActivityTable (not DurbarActivity: that is activity.js, issue #474); in Node: module.exports. */
 (function(root, api){
-  if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarActivity=api;
+  if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarActivityTable=api;
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
   const DECISION_WORDS={
@@ -14,6 +14,7 @@
     'limit-change':'Limit changed',
     'remote-on':'Remote control on','remote-off':'Remote control off',
     'session-deleted':'Session deleted',
+    'mcp-restart':'MCP restart',
   };
   const MODE_WORDS={'read-only':'Read-only',ask:'Ask first',allow:'Allow all'};
   const NOTE='Kept on this computer. Actions and decisions only; never prompts, replies or file contents.';
