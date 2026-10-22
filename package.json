@@ -69,7 +69,6 @@
     "changelog:check": "node scripts/changelog.js check",
     "changelog:preview": "node scripts/changelog.js preview",
     "changelog:build": "node scripts/changelog.js build",
-    "changelog:migrate": "node scripts/changelog.js migrate",
     "specs:index": "node scripts/specs-index.js",
     "specs:check": "node scripts/specs-index.js --check",
     "test:themegen": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-themegen.js",

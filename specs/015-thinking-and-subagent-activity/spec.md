@@ -1,6 +1,6 @@
 # Feature Specification: Thinking that shows up, and sub-agent activity
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 015-018
 title: Thinking that shows up, sub-agent activity
 status: milestone 7

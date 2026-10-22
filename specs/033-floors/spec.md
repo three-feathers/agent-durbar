@@ -1,6 +1,6 @@
 # Feature Specification: Floors (groups of rooms you can switch on and off)
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 033
 title: Floors: group rooms (folders) and switch a whole floor off so it leaves the office, the lobby and the status counts
 status: built 2026-10-17 on branch `033-floors`; follow-ups of issue #133 (empty-state wording, retaken screenshots) 2026-10-19; SC-003 timed in the app (issue #454) 2026-10-21 ([plan](033-floors/plan.md), [research](033-floors/research.md), [tasks](033-floors/tasks.md)); simulator and unit tests, 0 AI credits

@@ -1,6 +1,6 @@
 # Feature Specification: Theme foundation — data-only theme packs
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 035-040
 title: Theme foundation: data-only theme packs, manifest, token map, art slot registry, UI styles (2026-10-18), Clean Office fallback
 status: **built** on branch `035-theme-foundation` (PR #137): loader, sanitizer, fallback, `test:theme`

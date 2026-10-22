@@ -1,6 +1,6 @@
 # Feature Specification: Full-screen chat and agent strip
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Full-screen chat and agent strip
 status: implemented; delta 2026-10-19: copy buttons (FR-015), FR-011 closed by 016; delta 2026-10-19: Stop and End session in the card menu (FR-017, T026); delta 2026-10-21: JSON tool results formatted, every tool output masked in main, and outputs saved to a file explained (issue #361, FR-028..FR-036, T038..T048) **specified, not built**

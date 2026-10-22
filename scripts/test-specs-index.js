@@ -1,15 +1,21 @@
 /*
- * Spec 025 delta 2026-10-22 (`npm run test:specsindex`, part of `npm test`): the generated specs index. Block parsing and
- * writing, generation (groups, number order, hand-written text kept), the errors a broken block or group gives, and the import
- * (table -> blocks) round trip, in throwaway folders. The real repository is checked by `node scripts/specs-index.js --check`,
- * the suite's second step (warning only until the cut-over date, see the script).
+ * Spec 025 delta 2026-10-22 (`npm run test:specsindex`, part of `npm test`): the generated specs index, whose rows are not committed.
+ * Block parsing and writing (pipes, comment ends, "$&"), generation (groups, number order, hand-written text kept, markers left out),
+ * the check (committed rows, missing blocks, groups, marker-based strictness with no clock, the CLI exit codes), --add for a new
+ * spec made from the Spec Kit template, and the import (table -> blocks, rows removed), in throwaway folders. The real repository is
+ * checked by `node scripts/specs-index.js --check`, the suite's second step.
  */
 'use strict';
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const si = require('./specs-index.js');
+
+const ROOT = path.join(__dirname, '..');
+const CLI = path.join(__dirname, 'specs-index.js');
+const cli = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8' });
 
 // --- blocks ---
 const blk = (body) => `# Feature Specification: X\n\n<!-- specs-index (note)\n${body}\n-->\n\n**Status**: Draft\n`;
@@ -25,6 +31,13 @@ assert.ok(si.parseBlock(blk('group: 046\ntitle: T\nstatus: s\nowner: me')).error
 assert.ok(si.parseBlock(blk('group: 046\ntitle: T\nstatus: s\nstatus: t')).errors.some((e) => /given twice/.test(e)));
 assert.ok(si.parseBlock(blk('group: 046\ntitle: T\nstatus: s\nnot a key line')).errors.some((e) => /bad line/.test(e)));
 assert.deepStrictEqual(si.parseBlock(blk('group: 046\r\ntitle: T\r\nstatus: s').replace(/\n/g, '\r\n')).errors, [], 'CRLF read');
+// a comment end inside a value is refused, not silently cut (review on #518)
+for (const v of ['a --> b', 'a --!> b']) {
+  const r = si.parseBlock(blk(`group: 046\ntitle: T\nstatus: ${v}`));
+  assert.strictEqual(r.meta.status, v, `"${v}" is read whole (the block ends only at a line that is "-->")`);
+  assert.ok(r.errors.some((e) => /would end the comment block/.test(e)), `"${v}" is an error`);
+  assert.throws(() => si.setBlock('# T\n', { group: 'g', title: 'T', status: v }), /end the comment block/, `"${v}" is never written`);
+}
 
 const meta = { group: 'g', title: 'T', status: 'S' };
 const spec = '# Feature Specification: X\n\n**Feature Branch**: `x`\n';
@@ -43,8 +56,6 @@ assert.ok(si.setBlock('No title\n', meta).startsWith('<!-- specs-index'), 'no ti
 assert.strictEqual(si.groupId('## Features 001-010: reverse-engineered'), '001-010');
 assert.strictEqual(si.groupId('## Feature 019: milestone 8'), '019');
 assert.strictEqual(si.groupId('## Index'), 'index');
-assert.strictEqual(si.pastCutover(new Date(`${si.CUTOVER}T00:00:00Z`)), true);
-assert.strictEqual(si.pastCutover(new Date('2026-10-22T12:00:00Z')), false);
 
 // --- a throwaway repository ---
 function repo(readme, specs) {
@@ -58,6 +69,7 @@ function repo(readme, specs) {
   fs.mkdirSync(path.join(dir, 'specs', '099-no-spec-file')); // a folder without spec.md is not a spec
   return dir;
 }
+const rd = (d, f) => fs.readFileSync(path.join(d, 'specs', f), 'utf8');
 const HAND = [
   '# Specs',
   '',
@@ -85,52 +97,98 @@ const HAND = [
   '',
 ].join('\n');
 const bare = (t) => `# Feature Specification: ${t}\n\n**Status**: x\n`;
+const SPECS = { '001-one': bare('One'), '002-two': bare('Two'), '010-ten': bare('Ten'), '011-eleven': bare('Eleven') };
 {
-  const d = repo(HAND, { '001-one': bare('One'), '002-two': bare('Two'), '010-ten': bare('Ten'), '011-eleven': bare('Eleven') });
-  // before the import nothing is generated: every spec lacks its block
-  assert.strictEqual(si.generate(d).errors.filter((e) => /no specs-index block/.test(e)).length, 4);
+  const d = repo(HAND, SPECS);
+  // before the import: every spec lacks its block
+  const c = si.check(d);
+  assert.strictEqual(c.problems.filter((e) => /no specs-index block/.test(e)).length, 4);
+  assert.strictEqual(c.strict, false, 'no strict marker: warnings only');
 
   const imp = si.importIndex(d);
   assert.deepStrictEqual(imp.errors, []);
   assert.strictEqual(imp.specs, 4);
-  const readme = fs.readFileSync(path.join(d, 'specs', 'README.md'), 'utf8');
-  assert.ok(readme.includes('## Index\n\n<!-- specs-index group=index -->\n| # | Feature | Status |'), 'marker above the first table');
-  assert.ok(readme.includes('<!-- specs-index group=010 -->'), 'marker from the "Feature 010" heading');
-  assert.strictEqual(readme.split('specs-index group=').length, 3, 'the Tag table is not a spec table');
-  assert.deepStrictEqual(si.parseBlock(fs.readFileSync(path.join(d, 'specs', '001-one', 'spec.md'), 'utf8')).meta, { group: 'index', title: 'One', status: 'built; `code` and **bold**' });
+  const readme = rd(d, 'README.md');
+  assert.strictEqual(
+    readme,
+    '# Specs\n\nIntro kept as written.\n\n## Index\n\n<!-- specs-index group=index -->\n\nText between tables.\n\n## Feature 010: later\n\n<!-- specs-index group=010 -->\n\n| Tag | Meaning |\n| --- | --- |\n| `x` | not a spec table |\n',
+    'the rows leave specs/README.md; markers mark the tables; the Tag table stays'
+  );
+  assert.deepStrictEqual(si.parseBlock(rd(d, '001-one/spec.md')).meta, { group: 'index', title: 'One', status: 'built; `code` and **bold**' });
+  assert.deepStrictEqual(si.check(d, { strict: true }).problems, [], 'clean after the import');
 
   const gen = si.generate(d);
   assert.deepStrictEqual(gen.errors, []);
-  const expected = readme.replace('| [011](011-eleven/spec.md) | Eleven | built |\n| [010](010-ten/spec.md) | Ten | in progress |', '| [010](010-ten/spec.md) | Ten | in progress |\n| [011](011-eleven/spec.md) | Eleven | built |');
-  assert.strictEqual(gen.text, expected, 'generated = the imported table, rows in number order, every other line as written');
-  fs.writeFileSync(path.join(d, 'specs', 'README.md'), gen.text);
-  assert.strictEqual(si.generate(d).text, gen.text, 'idempotent');
+  assert.strictEqual(gen.committedRows, 0);
+  assert.strictEqual(
+    gen.text,
+    HAND.replace('| [011](011-eleven/spec.md) | Eleven | built |\n| [010](010-ten/spec.md) | Ten | in progress |', '| [010](010-ten/spec.md) | Ten | in progress |\n| [011](011-eleven/spec.md) | Eleven | built |'),
+    'generated = the old hand table, rows in number order, every other line as written, no markers'
+  );
+  assert.deepStrictEqual(si.importIndex(d), { readme, specs: 0, errors: [] }, 'a second import finds nothing to move');
+  assert.strictEqual(rd(d, 'README.md'), readme, 'and changes nothing');
 
-  // a second import (after someone edited a row by hand) keeps the markers and moves the edit into the block
-  fs.writeFileSync(path.join(d, 'specs', 'README.md'), gen.text.replace('| Two (issue #2) | draft |', '| Two (issue #2) | **built** 2026-10-22 |'));
-  assert.deepStrictEqual(si.importIndex(d).errors, []);
-  assert.strictEqual(fs.readFileSync(path.join(d, 'specs', 'README.md'), 'utf8').split('specs-index group=').length, 3, 'no second marker');
-  assert.strictEqual(si.parseBlock(fs.readFileSync(path.join(d, 'specs', '002-two', 'spec.md'), 'utf8')).meta.status, '**built** 2026-10-22');
-  assert.strictEqual(si.generate(d).text, fs.readFileSync(path.join(d, 'specs', 'README.md'), 'utf8'));
+  // two PRs that change neighbouring specs touch two different files: nothing shared to conflict in
+  const before = rd(d, 'README.md');
+  for (const [dir, st] of [['010-ten', '**built**'], ['011-eleven', '**built** too']]) {
+    const p = path.join(d, 'specs', dir, 'spec.md');
+    const t = fs.readFileSync(p, 'utf8');
+    fs.writeFileSync(p, si.setBlock(t, { ...si.parseBlock(t).meta, status: st }));
+  }
+  assert.strictEqual(rd(d, 'README.md'), before, 'specs/README.md untouched by a status change');
+  assert.ok(si.generate(d).text.includes('| [010](010-ten/spec.md) | Ten | **built** |\n| [011](011-eleven/spec.md) | Eleven | **built** too |'));
 
-  // a spec edits only its own block; the index follows
-  const p3 = path.join(d, 'specs', '010-ten', 'spec.md');
-  fs.writeFileSync(p3, si.setBlock(fs.readFileSync(p3, 'utf8'), { group: '010', title: 'Ten', status: '**built**' }));
-  assert.ok(si.generate(d).text.includes('| [010](010-ten/spec.md) | Ten | **built** |'));
+  // a row committed by hand (an old-style PR) is reported and ignored
+  fs.writeFileSync(path.join(d, 'specs', 'README.md'), before.replace('<!-- specs-index group=010 -->\n', '<!-- specs-index group=010 -->\n| # | Feature | Status |\n| --- | --- | --- |\n| [010](010-ten/spec.md) | Ten | hand |\n'));
+  assert.ok(si.check(d).problems.some((e) => /3 table line\(s\) under its specs-index markers/.test(e)), 'committed rows reported');
+  assert.ok(!si.generate(d).text.includes('| hand |'), 'the generated index ignores them');
+  // the CLI: warns (exit 0) without the marker, fails (exit 1) with the marker or --strict; no clock involved
+  let r = cli('--check', '--root', d);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /warning: .*table line/);
+  r = cli('--check', '--strict', '--root', d);
+  assert.strictEqual(r.status, 1, 'committed rows + --strict: exit 1');
+  fs.writeFileSync(path.join(d, 'specs', 'README.md'), `${rd(d, 'README.md')}\n<!-- specs-index: strict -->\n`);
+  assert.strictEqual(si.check(d).strict, true, 'the marker line makes it strict');
+  r = cli('--check', '--root', d);
+  assert.strictEqual(r.status, 1, 'committed rows + marker: exit 1');
+  assert.ok(!si.generate(d).text.includes('specs-index: strict'), 'the marker is not part of the index');
+  fs.writeFileSync(path.join(d, 'specs', 'README.md'), `${before}\n<!-- specs-index: strict -->\n`);
+  r = cli('--check', '--root', d);
+  assert.strictEqual(r.status, 0, `current + marker: exit 0 (${r.stdout}${r.stderr})`);
+  assert.match(r.stdout, /specs:check ok/);
 
-  // a new spec in a group, a block error, a group without a marker
+  // a group marked twice, a group without a marker, a bad block
+  fs.writeFileSync(path.join(d, 'specs', 'README.md'), `${before}\n<!-- specs-index group=010 -->\n`);
+  assert.ok(si.check(d).problems.some((e) => /group 010 is marked twice/.test(e)), 'a group marked twice');
+  fs.writeFileSync(path.join(d, 'specs', 'README.md'), before);
   fs.mkdirSync(path.join(d, 'specs', '012-twelve'));
-  fs.writeFileSync(path.join(d, 'specs', '012-twelve', 'spec.md'), si.setBlock(bare('Twelve'), { group: '010', title: 'Twelve', status: 'specified' }));
-  assert.ok(si.generate(d).text.includes('| [011](011-eleven/spec.md) | Eleven | built |\n| [012](012-twelve/spec.md) | Twelve | specified |\n'), 'a new spec lands in its group, last by number');
-  fs.writeFileSync(path.join(d, 'specs', '012-twelve', 'spec.md'), si.setBlock(bare('Twelve'), { group: 'nowhere', title: 'Twelve', status: 's' }));
-  assert.ok(si.generate(d).errors.some((e) => /group "nowhere" .* has no "<!-- specs-index group=nowhere -->" line/.test(e)));
-  fs.writeFileSync(path.join(d, 'specs', '012-twelve', 'spec.md'), si.setBlock(bare('Twelve'), { group: '010', title: 'a | b', status: 's' }));
-  assert.ok(si.generate(d).errors.some((e) => /012-twelve\/spec\.md: "title" contains/.test(e)));
+  const p12 = path.join(d, 'specs', '012-twelve', 'spec.md');
+  fs.writeFileSync(p12, si.setBlock(bare('Twelve'), { group: 'nowhere', title: 'Twelve', status: 's' }));
+  assert.ok(si.check(d).problems.some((e) => /group "nowhere" .* has no "<!-- specs-index group=nowhere -->" line/.test(e)));
+  fs.writeFileSync(p12, blk('group: 010\ntitle: a | b\nstatus: s'));
+  assert.ok(si.check(d).problems.some((e) => /012-twelve\/spec\.md: "title" contains/.test(e)));
+
+  // --add: a spec made from the Spec Kit template gets a Draft block in the newest spec's group and passes --strict
+  const tpl = fs.readFileSync(path.join(ROOT, '.specify', 'templates', 'spec-template.md'), 'utf8').replace('[FEATURE NAME]', 'Twelve things');
+  fs.writeFileSync(p12, tpl);
+  assert.ok(si.check(d).problems.some((e) => /012-twelve\/spec\.md: no specs-index block/.test(e)), 'the template alone has no block');
+  r = cli('--add', 'specs/012-twelve', '--root', d);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual(si.parseBlock(fs.readFileSync(p12, 'utf8')).meta, { group: '010', title: 'Twelve things', status: 'Draft' });
+  assert.strictEqual(cli('--check', '--strict', '--root', d).status, 0, 'a new spec from the template passes --check --strict');
+  assert.ok(si.generate(d).text.includes('| [011](011-eleven/spec.md) | Eleven | **built** too |\n| [012](012-twelve/spec.md) | Twelve things | Draft |'), 'it lands in its group, last by number');
+  assert.strictEqual(cli('--add', 'specs/012-twelve', '--root', d).status, 1, 'never a second block');
 }
 {
-  // import refuses what it cannot represent
-  const d = repo(HAND.replace('| [002](002-two/spec.md) | Two (issue #2) | draft |', '| [002](002-two/spec.md) | Two | draft |\n| [002](002-two/spec.md) | Two again | x |'), { '001-one': bare('One'), '002-two': bare('Two'), '010-ten': bare('Ten'), '011-eleven': bare('Eleven') });
-  assert.ok(si.importIndex(d, { write: false }).errors.some((e) => /002-two has two rows/.test(e)), 'duplicate rows (a union merge leftover) must be merged first');
+  // import refuses what it cannot represent, and writes nothing then
+  const dup = HAND.replace('| [002](002-two/spec.md) | Two (issue #2) | draft |', '| [002](002-two/spec.md) | Two | draft |\n| [002](002-two/spec.md) | Two again | x |');
+  const d = repo(dup, SPECS);
+  assert.ok(si.importIndex(d).errors.some((e) => /002-two has two rows/.test(e)), 'duplicate rows (a union merge leftover) must be merged first');
+  assert.strictEqual(rd(d, 'README.md'), dup, 'nothing written');
+  const d2 = repo(HAND.replace('| Two (issue #2) | draft |', '| Two (issue #2) | a --> b |'), SPECS);
+  assert.ok(si.importIndex(d2).errors.some((e) => /row 002: "status" contains "-->"/.test(e)), 'a comment end in a row is refused by the import');
+  assert.strictEqual(si.parseBlock(rd(d2, '002-two/spec.md')).meta, null, 'no block written');
 }
 
 console.log('test-specs-index: ok');

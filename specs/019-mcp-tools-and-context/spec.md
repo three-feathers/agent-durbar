@@ -1,6 +1,6 @@
 # Feature Specification: Global MCP servers, tool usage view, context window per agent
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 019
 title: Global MCP servers, tool usage per agent, models and context window
 status: milestone 8; delta 2026-10-21: Keychain at most once per run (FR-023, T015; unit tests, no real Mac)

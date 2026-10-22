@@ -1,6 +1,6 @@
 # Feature Specification: Corporate theme + theme picker (spec 037)
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 035-040
 title: Corporate theme (glass/steel) + Settings theme picker with live switch
 status: **built**; delta 2026-10-19: each swatch shows its own theme (FR-014)

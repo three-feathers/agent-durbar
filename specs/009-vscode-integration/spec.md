@@ -1,6 +1,6 @@
 # Feature Specification: VS Code integration (open folder, read-only chat history)
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Open in VS Code, VS Code chat history (read-only)
 status: implemented; delta 2026-10-19: FR-016..017 (opens at latest message, question kinds, Continue in VS Code) built

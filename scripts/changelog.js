@@ -8,7 +8,6 @@
  *   node scripts/changelog.js build --release "<heading>" [--dry-run]
  *                                                        new "## <heading>" section under Unreleased with every fragment and every
  *                                                        bullet still under Unreleased; deletes the fragments; marks the cut-over
- *   node scripts/changelog.js migrate                    move the bullets under Unreleased into changelog.d/before-fragments.md
  *
  * Fragment format: one or more top-level bullets ("- text"), each optionally followed by indented lines ("  more" or "  - sub");
  * blank lines between bullets are fine; nothing else (no headings, no unindented prose). File names are lower case
@@ -115,7 +114,7 @@ function check(root = ROOT, { strict = false } = {}) {
   const hand = bulletBlocks(parts.body).bullets;
   if (hand.length) {
     const cutOver = parts.body.some((l) => MARKER_RE.test(l));
-    const msg = `CHANGELOG.md has ${hand.length} bullet(s) under "Unreleased": put a change in its own changelog.d/<branch>.md instead (npm run changelog:migrate moves them)`;
+    const msg = `CHANGELOG.md has ${hand.length} bullet(s) under "Unreleased": put a change in its own changelog.d/<branch>.md instead (the same line, moved)`;
     if (cutOver || strict) errors.push(msg);
     else warnings.push(`${msg}; allowed until the first changelog:build release (transition)`);
   }
@@ -147,7 +146,12 @@ function build(root = ROOT, { release, dryRun = false } = {}) {
   if (!bullets.length) return { changed: false, removed: [] };
   if (!release || !release.trim() || /\n/.test(release)) throw new Error('give the release heading: --release "v0.1.0-alpha.N ([pre-release](<url>), YYYY-MM-DD)"');
   const heading = `## ${release.trim().replace(/^##\s*/, '')}`;
-  if (parts.rest.some((l) => l.trim() === heading.trim())) throw new Error(`CHANGELOG.md already has "${heading}"`);
+  // the version token, not the whole heading: a different date or link must not make a second section for the same version
+  const ver = (h) => (/^##\s+(v\S+)/.exec(h) || [])[1];
+  const v = ver(heading);
+  if (!v) throw new Error(`the release heading must start with the version, like "v0.1.0-alpha.12 (...)": got "${release}"`);
+  const clash = parts.rest.find((l) => ver(l) === v);
+  if (clash) throw new Error(`CHANGELOG.md already has a section for ${v}: "${clash}"`);
   const keep = squeeze(bulletBlocks(parts.body).other);
   if (!keep.some((l) => l.includes('](changelog.d/)'))) keep.unshift(INTRO, '');
   if (!keep.some((l) => MARKER_RE.test(l))) keep.push(MARKER);
@@ -162,26 +166,7 @@ function build(root = ROOT, { release, dryRun = false } = {}) {
   return { changed: true, text, removed };
 }
 
-/* migrate: move the bullets under Unreleased into changelog.d/<name> (one file, their order kept). */
-function migrate(root = ROOT, { name = 'before-fragments.md' } = {}) {
-  if (!NAME_RE.test(name)) throw new Error(`bad fragment name ${name}`);
-  const file = path.join(root, 'CHANGELOG.md');
-  const parts = splitChangelog(fs.readFileSync(file, 'utf8'));
-  if (!parts) throw new Error('CHANGELOG.md has no "## Unreleased" heading');
-  const { bullets, other } = bulletBlocks(parts.body);
-  if (!bullets.length) return { moved: 0 };
-  const out = path.join(root, 'changelog.d', name);
-  if (fs.existsSync(out)) throw new Error(`changelog.d/${name} exists already (pick another name: --name <file>.md)`);
-  fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, bullets.join('\n') + '\n');
-  const keep = squeeze(other);
-  if (!keep.some((l) => l.includes('](changelog.d/)'))) keep.unshift(INTRO, '');
-  const text = joinParts([...parts.before, parts.heading, '', ...keep], parts.rest);
-  fs.writeFileSync(file, text);
-  return { moved: bullets.length, file: path.join('changelog.d', name) };
-}
-
-module.exports = { MARKER, INTRO, splitChangelog, bulletBlocks, parseFragment, readFragments, check, pending, build, migrate };
+module.exports = { MARKER, INTRO, splitChangelog, bulletBlocks, parseFragment, readFragments, check, pending, build };
 
 if (require.main === module) {
   const [cmd, ...args] = process.argv.slice(2);
@@ -203,11 +188,8 @@ if (require.main === module) {
       if (!r.changed) console.log('nothing to fold: no fragments and no bullets under Unreleased');
       else if (args.includes('--dry-run')) process.stdout.write(r.text);
       else console.log(`folded into CHANGELOG.md; removed ${r.removed.length} fragment(s)${r.removed.length ? `: ${r.removed.join(', ')}` : ''}`);
-    } else if (cmd === 'migrate') {
-      const r = migrate(root, { name: opt('--name') });
-      console.log(r.moved ? `moved ${r.moved} bullet(s) to ${r.file}` : 'nothing under Unreleased to move');
     } else {
-      console.error('usage: node scripts/changelog.js check [--strict] | preview | build --release "<heading>" [--dry-run] | migrate [--name <file>.md]');
+      console.error('usage: node scripts/changelog.js check [--strict] | preview | build --release "<heading>" [--dry-run]');
       process.exit(2);
     }
   } catch (e) {

@@ -1,6 +1,6 @@
 # Feature Specification: Office assistant (ask the whole office)
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Office assistant: ask the whole office (who waits, what finished, usage by folder and harness) through a free local query layer, plus an optional model layer with no tools (issue #130)
 status: **draft for the owner's review** (spec, plan, tasks; no code); research 2026-10-20 (*Changes*): most asks are covered by 052 (inbox, Cost, Activity log), 041 (MCP read tools) and 054 (remote); slim slice proposed: a status timeline, a Today tab and one 041 read tool; the panel with its own model parked (Q6)

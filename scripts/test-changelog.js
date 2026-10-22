@@ -1,7 +1,7 @@
 /*
  * Spec 025 delta 2026-10-22 (`npm run test:changelog`, part of `npm test`): CHANGELOG fragments. Fragment parsing, the checks
  * (format, names, duplicates, the Unreleased transition and cut-over), the release fold (order, deletion, rest of the file
- * untouched, idempotence, refusals) and the one-time migration, all in throwaway folders. The real repository is checked by
+ * untouched, idempotence, refusals, one section per version), all in throwaway folders. The real repository is checked by
  * `node scripts/changelog.js check`, the suite's second step.
  */
 'use strict';
@@ -104,6 +104,9 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   // next cycle: a new fragment folds under the same Unreleased intro, which is not duplicated
   fs.writeFileSync(path.join(d, 'changelog.d', 'next.md'), '- Next change.\n');
   assert.throws(() => cl.build(d, { release: 'v0.1.0-alpha.11 ([pre-release](https://example.invalid/a11), 2026-10-22)' }), /already has/, 'an existing heading is refused');
+  assert.throws(() => cl.build(d, { release: 'v0.1.0-alpha.11 (2026-10-23, a typo in the date)' }), /already has a section for v0\.1\.0-alpha\.11/, 'the same version with another date or link is refused (review on #518)');
+  assert.throws(() => cl.build(d, { release: 'Release twelve' }), /must start with the version/, 'a heading without a version is refused');
+  assert.ok(fs.existsSync(path.join(d, 'changelog.d', 'next.md')), 'a refusal deletes nothing');
   cl.build(d, { release: 'v0.1.0-alpha.12 (2026-10-23)' });
   const t2 = read(d);
   assert.strictEqual(t2.split(cl.INTRO).length, 2, 'one intro');
@@ -113,29 +116,13 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
 }
 {
   const d = repo('', { 'a.md': '# bad\n' });
-  assert.throws(() => cl.build(d, { release: 'v9 (x)' }), /fix these first/, 'build refuses invalid fragments');
+  assert.throws(() => cl.build(d, { release: 'v9.0.0 (x)' }), /fix these first/, 'build refuses invalid fragments');
 }
 {
   const d = repo('');
   const before = read(d);
-  assert.deepStrictEqual(cl.build(d, { release: 'v9 (x)' }), { changed: false, removed: [] }, 'nothing pending: no-op');
+  assert.deepStrictEqual(cl.build(d, { release: 'v9.0.0 (x)' }), { changed: false, removed: [] }, 'nothing pending: no-op');
   assert.strictEqual(read(d), before);
-}
-
-// --- migrate (one time, at the merge of this change) ---
-{
-  const d = repo('- Old way one.\n\n- Old way two\n  more.', { 'x.md': '- New way.\n' });
-  const r = cl.migrate(d);
-  assert.strictEqual(r.moved, 2);
-  assert.strictEqual(read(d, path.join('changelog.d', 'before-fragments.md')), '- Old way one.\n- Old way two\n  more.\n');
-  assert.deepStrictEqual(cl.check(d), { errors: [], warnings: [] }, 'no hand lines left');
-  assert.ok(read(d).includes(`## Unreleased (on \`main\`, after the alpha.10 tag)\n\n${cl.INTRO}\n\n## v0.1.0-alpha.10`), 'intro added, rest kept');
-  assert.ok(read(d).endsWith(RELEASED));
-  assert.deepStrictEqual(cl.migrate(d), { moved: 0 }, 'second run: nothing to move');
-  assert.throws(() => cl.migrate(d, { name: '../escape.md' }), /bad fragment name/, 'the name stays inside changelog.d');
-  const d2 = repo('- Old way.', { 'x.md': '- New way.\n' });
-  assert.throws(() => cl.migrate(d2, { name: 'x.md' }), /exists already/, 'never overwrites a fragment');
-  assert.ok(read(d2).includes('- Old way.'), 'nothing moved on a refusal');
 }
 
 // CRLF CHANGELOG (a Windows checkout) is read

@@ -4,7 +4,7 @@
 #   1. src/ changed, but none of README.md, docs/, CHANGELOG.md, changelog.d/ changed -> warning
 #   2. package.json "scripts" changed, but README.md did not change             -> warning
 #   3. CHANGELOG.md got a new bullet outside a release (no new "## v" heading)  -> warning: add a changelog.d/ fragment
-#   4. specs/README.md changed, but no specs/NNN-*/spec.md did                   -> warning: edit the spec's specs-index block
+#   4. specs/README.md got a spec row ("| [NNN](...")                           -> warning: edit the spec's specs-index block
 #   (3 and 4: spec 025 delta 2026-10-22; the PRs opened before it still edit those files, so they only warn)
 # Either warning is switched off by a line "Docs: n/a <reason>" in the PR description (outside HTML comments; a reason of
 # 4+ characters, not the template's "<reason>" placeholder) or by a label starting with "docs-n/a" or "spec-exempt".
@@ -48,8 +48,11 @@ if printf '%s\n' "$changed" | grep -Fxq 'CHANGELOG.md'; then
   cl_diff="$(git diff -U0 "${BASE_SHA}...${HEAD_SHA}" -- CHANGELOG.md 2>/dev/null || true)"
   if printf '%s\n' "$cl_diff" | grep -Eq '^\+- ' && ! printf '%s\n' "$cl_diff" | grep -Eq '^\+## v'; then changelog_hand=1; fi
 fi
+# a spec row added to specs/README.md: the rows are generated from each spec's specs-index block and not committed
 index_hand=""
-if printf '%s\n' "$changed" | grep -Fxq 'specs/README.md' && ! printf '%s\n' "$changed" | grep -Eq '^specs/[0-9]{3}-[^/]+/spec\.md$'; then index_hand=1; fi
+if printf '%s\n' "$changed" | grep -Fxq 'specs/README.md'; then
+  if git diff -U0 "${BASE_SHA}...${HEAD_SHA}" -- specs/README.md 2>/dev/null | grep -Eq '^\+\| \[[0-9]{3}\]'; then index_hand=1; fi
+fi
 
 warned=0
 if [ -n "$optout" ]; then
@@ -68,7 +71,7 @@ else
     warned=1
   fi
   if [ -n "$index_hand" ]; then
-    warn "specs/README.md changed but no spec.md did. Its rows are generated: edit the specs-index block at the top of your spec's spec.md and run 'npm run specs:index' (or 'npm run specs:index -- --import' to move a hand-edited row into the spec)."
+    warn "specs/README.md got a spec row. The rows are generated and not committed: put the row in the specs-index block at the top of your spec's spec.md (npm run specs:index -- --add specs/NNN-name for a new spec, or npm run specs:index -- --import to move a hand-written row) and drop it from specs/README.md."
     warned=1
   fi
   [ "$warned" = 0 ] && summary "Docs check: nothing to warn about."

@@ -1,6 +1,6 @@
 # Feature Specification: Simulator and developer/test hooks
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Simulator and dev/test hooks
 status: implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-021)

@@ -1,23 +1,27 @@
 #!/usr/bin/env node
 /*
- * Spec 025 delta 2026-10-22: the specs index (specs/README.md) is generated, so a pull request only touches its own spec folder.
- * Each specs/NNN-name/spec.md carries its index row in a comment block right under its title:
+ * Spec 025 delta 2026-10-22: the specs index is generated and its rows are NOT committed, so two pull requests never meet in
+ * specs/README.md (review on #518: committed rows still conflicted when two PRs changed neighbouring specs). Each
+ * specs/NNN-name/spec.md carries its row in a comment block right under its title:
  *
- *   <!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+ *   <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
  *   group: 046
  *   title: Short feature name
  *   status: **built** 2026-10-21: what was checked and how
  *   -->
  *
- * `group` names the table in specs/README.md (a `<!-- specs-index group=ID -->` line right above it); `title` and `status` are the
- * row's two cells, one line each, Markdown allowed, no "|". Everything else in specs/README.md is hand-written and kept.
+ * `group` names a table of specs/README.md (a `<!-- specs-index group=ID -->` line marks where it goes); `title` and `status` are the
+ * row's two cells, one line each, Markdown allowed, no "|", no "-->" or "--!>". specs/README.md holds only the hand-written text and
+ * the markers; the tables are built from the blocks by the website (spec 050) and by this script.
  *
- *   node scripts/specs-index.js             rewrite the tables in specs/README.md (rows sorted by spec number within each group)
- *   node scripts/specs-index.js --check     exit 1 if specs/README.md is not what the blocks generate (before the cut-over: warn only)
- *   node scripts/specs-index.js --import    the other way round, for the migration: read the tables and write each row into its
- *                                           spec's block (adds the group markers on first use); run it after a PR edited the table
+ *   node scripts/specs-index.js             write the full index to specs/INDEX.md (git-ignored) to read it locally
+ *   node scripts/specs-index.js --print     print it
+ *   node scripts/specs-index.js --check     every spec has a valid block, every group a marker, no committed rows in specs/README.md
+ *   node scripts/specs-index.js --add specs/NNN-name   give a new spec a block (group of the newest spec, its title, status Draft)
+ *   node scripts/specs-index.js --import    migration: read the hand tables of specs/README.md into the blocks, then remove the rows
  *
- * Transition: open PRs still edit specs/README.md rows by hand. Until CUTOVER (or with --strict) --check only warns.
+ * Transition: problems only warn until specs/README.md has the line `<!-- specs-index: strict -->` (a small PR adds it after the
+ * open PRs have landed) or --strict is given. No clock: the same commit always gives the same result.
  * Plain Node, no shell, no network; paths with path.join (Windows, macOS, Linux).
  */
 'use strict';
@@ -25,13 +29,14 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const CUTOVER = '2026-10-29'; // from this date (UTC) a stale index fails `npm test`
+const STRICT_RE = /^<!--\s*specs-index: strict\s*-->$/m;
 const HEADER = ['| # | Feature | Status |', '| --- | --- | --- |'];
-const BLOCK_RE = /<!--\s*specs-index\b[^\n]*\n([\s\S]*?)-->\n?/;
+const BLOCK_RE = /<!--\s*specs-index\b[^\n]*\n([\s\S]*?)^-->[ \t]*(?:\n|$)/m; // the block ends at a line that is only "-->"
 const MARK_RE = /^<!--\s*specs-index group=([A-Za-z0-9._-]+)\s*-->$/;
 const ROW_RE = /^\| \[(\d{3})\]\((\d{3}-[a-z0-9-]+)\/spec\.md\) \| (.*?) \| (.*) \|$/;
 const KEYS = ['group', 'title', 'status'];
-const BLOCK_HEAD = '<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)';
+const BLOCK_HEAD = '<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)';
+const COMMENT_END = /--!?>/;
 
 const norm = (s) => String(s).replace(/\r\n?/g, '\n');
 const read = (p) => norm(fs.readFileSync(p, 'utf8'));
@@ -51,12 +56,25 @@ function parseBlock(text) {
     meta[kv[1]] = kv[2].trim();
   }
   for (const k of KEYS) if (!meta[k]) errors.push(`"${k}:" is missing or empty`);
-  for (const k of ['title', 'status']) if (meta[k] && /(^|[^\\])\|/.test(meta[k])) errors.push(`"${k}" contains "|", which would split the table cell`);
+  errors.push(...valueErrors(meta));
   return { meta, errors };
+}
+
+/* What a title or status may not contain: an unescaped "|" (splits the cell), "-->" or "--!>" (ends the comment early). */
+function valueErrors(meta) {
+  const errors = [];
+  for (const k of ['title', 'status']) {
+    if (!meta[k]) continue;
+    if (/(^|[^\\])\|/.test(meta[k])) errors.push(`"${k}" contains "|", which would split the table cell`);
+    if (COMMENT_END.test(meta[k])) errors.push(`"${k}" contains "-->" or "--!>", which would end the comment block`);
+  }
+  return errors;
 }
 
 /* Write (or replace) the block in a spec.md text: right under the first "# " title, else at the top. */
 function setBlock(text, meta) {
+  const bad = valueErrors(meta);
+  if (bad.length) throw new Error(bad.join('; '));
   const t = norm(text);
   const block = `${BLOCK_HEAD}\n${KEYS.map((k) => `${k}: ${meta[k]}`).join('\n')}\n-->\n`;
   if (BLOCK_RE.test(t)) return t.replace(BLOCK_RE, () => block); // a function: a "$&" or "$1" in a status stays literal
@@ -81,9 +99,10 @@ function readSpecs(root = ROOT) {
 
 const row = (s) => `| [${s.num}](${s.dir}/spec.md) | ${s.meta.title} | ${s.meta.status} |`;
 
-/* Generate specs/README.md from its hand-written parts and the blocks: { text, errors }. */
+/* The full index: specs/README.md's hand-written text with each marked table built from the blocks. { text, errors, committedRows }. */
 function generate(root = ROOT) {
   const errors = [];
+  let committedRows = 0;
   const lines = read(path.join(root, 'specs', 'README.md')).split('\n');
   const specs = readSpecs(root);
   const groups = new Map();
@@ -98,17 +117,40 @@ function generate(root = ROOT) {
   const used = new Set();
   for (let i = 0; i < lines.length; i++) {
     const m = MARK_RE.exec(lines[i]);
-    out.push(lines[i]);
-    if (!m) continue;
+    if (!m) { if (!STRICT_RE.test(lines[i])) out.push(lines[i]); continue; } // the markers themselves are not part of the index
     if (used.has(m[1])) errors.push(`specs/README.md: group ${m[1]} is marked twice`);
     used.add(m[1]);
     let j = i + 1;
-    while (j < lines.length && lines[j].startsWith('|')) j++; // the old table
+    while (j < lines.length && lines[j].startsWith('|')) j++; // a table committed under the marker: replaced, and reported
+    committedRows += j - i - 1;
     out.push(...HEADER, ...(groups.get(m[1]) || []).map(row));
     i = j - 1;
   }
   for (const g of groups.keys()) if (!used.has(g)) errors.push(`group "${g}" (used by ${groups.get(g).map((s) => s.num).join(', ')}) has no "<!-- specs-index group=${g} -->" line in specs/README.md`);
-  return { text: out.join('\n'), errors };
+  return { text: out.join('\n'), errors, committedRows };
+}
+
+/* --check: { problems, strict }. */
+function check(root = ROOT, { strict = false } = {}) {
+  const readme = read(path.join(root, 'specs', 'README.md'));
+  const { errors, committedRows } = generate(root);
+  const problems = [...errors];
+  if (committedRows) problems.push(`specs/README.md has ${committedRows} table line(s) under its specs-index markers: the rows are generated, not committed. Move a hand-edited row into its spec with npm run specs:index -- --import`);
+  return { problems, strict: strict || STRICT_RE.test(readme) };
+}
+
+/* --add: a Draft block for a new spec (group of the newest spec that has one, title from the "# " line). */
+function addBlock(root, dir) {
+  const name = path.basename(path.resolve(root, dir));
+  const spec = path.join(root, 'specs', name, 'spec.md');
+  if (!/^\d{3}-/.test(name) || !fs.existsSync(spec)) throw new Error(`${dir}: not a specs/NNN-name folder with a spec.md`);
+  const text = read(spec);
+  if (parseBlock(text).meta) throw new Error(`specs/${name}/spec.md already has a block`);
+  const newest = readSpecs(root).filter((s) => s.meta && s.meta.group && s.dir !== name).pop();
+  const title = ((/^# (.*)$/m.exec(text) || [])[1] || name).replace(/^Feature Specification:\s*/i, '').trim();
+  const meta = { group: newest ? newest.meta.group : 'index', title, status: 'Draft' };
+  fs.writeFileSync(spec, setBlock(text, meta));
+  return meta;
 }
 
 /* An id for an index table from the "## " heading above it: "## Features 001-010: ..." -> "001-010", "## Index" -> "index". */
@@ -134,25 +176,33 @@ function importIndex(root = ROOT, { write = true } = {}) {
     const mk = MARK_RE.exec(l);
     if (mk) { group = mk[1]; ids.add(group); out.push(l); continue; }
     if (l === HEADER[0]) {
-      if (!(out.length && MARK_RE.test(out[out.length - 1]))) {
+      if (!group) {
         let id = groupId(heading);
         for (let n = 2; ids.has(id); n++) id = `${groupId(heading)}-${n}`;
         ids.add(id);
         group = id;
         out.push(`<!-- specs-index group=${id} -->`);
       }
-      out.push(l);
-      continue;
+      continue; // the table lines are not kept: the rows live in the blocks
     }
     const r = ROW_RE.exec(l);
     if (r && group) {
       if (r[2].slice(0, 3) !== r[1]) errors.push(`row ${r[1]} links to ${r[2]}`);
       if (rows.has(r[2])) errors.push(`${r[2]} has two rows (merge them first)`);
-      rows.set(r[2], { group, title: r[3].trim(), status: r[4].trim() });
-    } else if (l.startsWith('| [')) errors.push(`specs/README.md: a row the importer cannot read: "${l.slice(0, 70)}"`);
+      const meta = { group, title: r[3].trim(), status: r[4].trim() };
+      for (const e of valueErrors(meta)) errors.push(`row ${r[1]}: ${e}`);
+      rows.set(r[2], meta);
+      continue;
+    }
+    if (group && l.startsWith('|')) {
+      if (l.startsWith('| [')) errors.push(`specs/README.md: a row the importer cannot read: "${l.slice(0, 70)}"`);
+      if (l !== HEADER[1]) out.push(l);
+      continue;
+    }
     if (!l.startsWith('|')) group = null;
     out.push(l);
   }
+  if (errors.length) return { readme: null, specs: rows.size, errors };
   for (const [dir, meta] of rows) {
     const spec = path.join(root, 'specs', dir, 'spec.md');
     if (!fs.existsSync(spec)) { errors.push(`row for ${dir}, which has no spec.md`); continue; }
@@ -162,33 +212,38 @@ function importIndex(root = ROOT, { write = true } = {}) {
   return { readme: out.join('\n'), specs: rows.size, errors };
 }
 
-const pastCutover = (now = new Date()) => now.toISOString().slice(0, 10) >= CUTOVER;
-
-module.exports = { CUTOVER, parseBlock, setBlock, readSpecs, generate, groupId, importIndex, pastCutover };
+module.exports = { parseBlock, setBlock, valueErrors, readSpecs, generate, check, addBlock, groupId, importIndex };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
-  const i = args.indexOf('--root');
-  const root = i >= 0 ? path.resolve(args[i + 1]) : ROOT;
-  const file = path.join(root, 'specs', 'README.md');
-  if (args.includes('--import')) {
-    const r = importIndex(root);
-    for (const e of r.errors) console.error(`error: ${e}`);
-    console.log(`imported ${r.specs} row(s) into their spec.md; now run npm run specs:index`);
-    process.exit(r.errors.length ? 1 : 0);
+  const arg = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+  const root = arg('--root') ? path.resolve(arg('--root')) : ROOT;
+  try {
+    if (args.includes('--import')) {
+      const r = importIndex(root);
+      for (const e of r.errors) console.error(`error: ${e}`);
+      console.log(r.errors.length ? 'nothing written' : `imported ${r.specs} row(s) into their spec.md and removed them from specs/README.md`);
+      process.exit(r.errors.length ? 1 : 0);
+    }
+    if (arg('--add')) {
+      const m = addBlock(root, arg('--add'));
+      console.log(`block added: group ${m.group}, title "${m.title}", status ${m.status}`);
+      process.exit(0);
+    }
+    if (args.includes('--check')) {
+      const { problems, strict } = check(root, { strict: args.includes('--strict') });
+      for (const p of problems) console[strict ? 'error' : 'log'](`${strict ? 'error' : 'warning'}: ${p}`);
+      if (problems.length && !strict) console.log('(warning only until specs/README.md has the line "<!-- specs-index: strict -->")');
+      console.log(problems.length ? `specs:check: ${problems.length} problem(s)` : 'specs:check ok');
+      process.exit(problems.length && strict ? 1 : 0);
+    }
+    const { text, errors } = generate(root);
+    for (const e of errors) console.error(`error: ${e}`);
+    if (args.includes('--print')) process.stdout.write(text);
+    else { fs.writeFileSync(path.join(root, 'specs', 'INDEX.md'), text); console.log('wrote specs/INDEX.md (git-ignored)'); }
+    process.exit(errors.length ? 1 : 0);
+  } catch (e) {
+    console.error(`error: ${e.message}`);
+    process.exit(1);
   }
-  const { text, errors } = generate(root);
-  const strict = args.includes('--strict') || pastCutover();
-  if (args.includes('--check')) {
-    const stale = text !== read(file);
-    const problems = [...errors, ...(stale ? ['specs/README.md is not what the specs-index blocks generate: run npm run specs:index (if you edited a row in specs/README.md by hand, run npm run specs:index -- --import first to move it into the spec)'] : [])];
-    const tag = strict ? 'error' : 'warning';
-    for (const p of problems) console[strict ? 'error' : 'log'](`${tag}: ${p}`);
-    if (problems.length && !strict) console.log(`(warning only until ${CUTOVER}, while the open PRs still edit the table by hand)`);
-    console.log(problems.length ? `specs:check: ${problems.length} problem(s)` : 'specs:check ok');
-    process.exit(problems.length && strict ? 1 : 0);
-  }
-  for (const e of errors) console.error(`error: ${e}`);
-  if (errors.length) process.exit(1);
-  if (text !== read(file)) { fs.writeFileSync(file, text); console.log('specs/README.md rewritten'); } else console.log('specs/README.md already current');
 }

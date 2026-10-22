@@ -1,9 +1,9 @@
 # Feature Specification: Release v0.1.0-alpha.10 (pre-release)
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Release v0.1.0-alpha.10 (pre-release)
-status: **in progress**: release PR, then tag and publish on a green `main`
+status: **published as a pre-release 2026-10-21** (tag on `176d888`)
 -->
 
 **Feature Branch**: `067-release-alpha10`

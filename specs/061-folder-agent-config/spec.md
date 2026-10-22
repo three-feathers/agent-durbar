@@ -1,6 +1,6 @@
 # Spec 061: A folder's own agent setup is used, and shown
 
-<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: A folder's own agent setup (MCP servers, hooks, permission rules) is used by default and shown when the folder is added, for all three agent apps (issue #289)
 status: **built** 2026-10-21: folder hooks, rules and MCP servers listed in full when a folder is added, applied only when accepted (hooks and broad allow rules, every `Bash` rule included, need an explicit tick), AI explanation per hook, `+ folder rules` chip; real checks on Claude Code and Copilot; Codex hooks not supported
