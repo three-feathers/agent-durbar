@@ -28,7 +28,7 @@
 - [x] T032 Agent dialog: expand row with tools; the switch named for this session, Remove, *managed by* words; Sign in placeholder wired to spec 058 when `canSignIn` exists [FR-030, FR-033]
 - [x] T033 Tests (fake SDK, fake CLI, fake app-server), simulator tools, screenshots, docs
 - [x] T034 Merge with spec 058's MCP words (#538): one row and one repaint path (058's), 058's state words, hints and Details/Copy, the switch named "Switch off/on ... in this session", sim tools follow the row's state; driver and screenshots updated [FR-030, FR-033; delta 2026-10-22]
-- [ ] T067 Review on #499 (Paco's agent, change 2026-10-22): Remove offers every source (app lists + folder extra) in one picker; switch label by session state with FR-066's words and a true footer; Codex `listMcpTools` pages through `mcpServerStatus/list` [FR-030, FR-031]
+- [x] T067 Review on #499 (Paco's agent, change 2026-10-22): Remove offers every source (app lists + folder extra) in one picker; switch label by session state with FR-066's words and a true footer; Codex `listMcpTools` pages through `mcpServerStatus/list` [FR-030, FR-031]
 
 ## Real check (needs the owner's go-ahead)
 

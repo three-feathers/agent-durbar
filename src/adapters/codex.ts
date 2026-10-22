@@ -1185,12 +1185,21 @@ export class CodexAdapter implements AgentAdapter {
   async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
     const live = this.sessions.get(sessionId);
     if (!live || !live.rpc || !live.threadId) throw new Error('This session is not running. Send a message to start it.');
-    const res = await live.rpc.request('mcpServerStatus/list', { threadId: live.threadId, serverName: name, detail: 'toolsAndAuthOnly', limit: 10 });
-    const data: unknown[] = isObj(res) && Array.isArray(res.data) ? res.data : [];
-    const srv = data.find((x) => isObj(x) && x.name === name);
-    if (!isObj(srv)) throw new Error(`${name} is not running in this session.`);
-    if (typeof srv.toolsError === 'string' && srv.toolsError) throw new Error(srv.toolsError);
-    return normMcpTools(srv.tools);
+    // change 2026-10-22 (review on #499): if Codex ignores `serverName`, the server may be on a later page: follow `nextCursor`
+    let cursor: string | undefined;
+    for (let page = 0; page < 20; page++) {
+      const res = await live.rpc.request('mcpServerStatus/list', { threadId: live.threadId, serverName: name, detail: 'toolsAndAuthOnly', limit: 100, ...(cursor ? { cursor } : {}) });
+      const data: unknown[] = isObj(res) && Array.isArray(res.data) ? res.data : [];
+      const srv = data.find((x) => isObj(x) && x.name === name);
+      if (isObj(srv)) {
+        if (typeof srv.toolsError === 'string' && srv.toolsError) throw new Error(srv.toolsError);
+        return normMcpTools(srv.tools);
+      }
+      const next = isObj(res) && typeof res.nextCursor === 'string' && res.nextCursor ? res.nextCursor : undefined;
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
+    throw new Error(`${name} is not running in this session.`);
   }
 
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {

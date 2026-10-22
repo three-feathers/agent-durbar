@@ -11,7 +11,9 @@
  * - sim-1 (running): every row's name is a button with aria-expanded; github opens "5 tools" with names and one-line descriptions; the
  *   focus stays on the toggle; a second press closes it; docs-search style empty server says "This server lists no tools" (when present).
  * - sim-6: my-notes failed: its tools say "Could not list the tools: ..." (masked text from the sim).
- * - The switch keeps spec 058's verb with this session's scope: "Switch off <server> for <agent> in this session" / "Switch on ...".
+ * - The switch keeps spec 058's verb with this session's scope: "Switch off <server> for <agent> in this session" / "Switch on ..."; with no
+ *   running session "... when its session starts" (review on #499).
+ * - Remove on a server that is in an agent app's list and the folder's extras lists both places, ticked, and removes both.
  * - sim-6's failed my-notes keeps spec 058's state word and Details next to the tools toggle (one row, no second repaint path).
  * - Remove… is on github (in the Copilot and Claude Code lists) and opens the remove choice; built-in github-mcp-server has none.
  * - An idle agent with no running session: "Start the session to see its tools."
@@ -81,6 +83,9 @@ module.exports = async (ctx) => {
     if (idle) {
       await openMcp(idle);
       if (/no running session/.test(await js(`document.querySelector('#scrDlg .dbody').textContent`))) {
+        // review on #499: no session, so the switch does not say "in this session"
+        const isw = await js(`(document.querySelector('#agMcp button.swt:not([disabled])')||{getAttribute:()=>''}).getAttribute('aria-label')`);
+        if (isw) assert.match(isw, /when its session starts$/, isw);
         const first = await js(`document.querySelector('#agMcp button[data-tools]').dataset.tools`);
         await press(first);
         assert.ok(await until(`/Start the session to see its tools/.test((document.querySelector('#agMcp .mcp-tools')||{}).textContent||'')`), 'not running: nothing asked');
@@ -88,5 +93,21 @@ module.exports = async (ctx) => {
       await closeDlg();
     }
   }
+  // review on #499: a server that is in an agent app's list AND this folder's extras: Remove offers both places, ticked, and removes both
+  const ada = await js(`(()=>{const a=__durbarSimUi.agents().find(x=>!x.parent&&/mcp-swiss$/.test(x.room||''));return a?a.id:null})()`);
+  assert.ok(ada, 'an agent in mcp-swiss');
+  assert.ok(await js(`(async()=>{const b=__durbarSimUi.bridge();const p=await b.mcpGlobalPreview({name:'playwright',transport:'stdio',command:'npx',args:['@playwright/mcp@latest'],env:[],headers:[]},['codex'],'ref');const r=await b.mcpGlobalApply(p.token,[]);return !!(r&&r.ok)})()`), 'playwright added to the Codex list too');
+  await openMcp(ada);
+  assert.match(await js(`document.querySelector('#agMcp li[data-n="playwright"] .srv-top').textContent`), /Codex.*Durbar folder|Durbar folder.*Codex/s);
+  await js(`document.querySelector('#agMcp li[data-n="playwright"] [data-mrm]').click()`);
+  assert.ok(await until(`!!document.querySelector('#scrDlg [name=gFolder]')`), 'the picker lists the folder copy');
+  assert.deepStrictEqual(await js(`[...document.querySelectorAll('#scrDlg .gapps input')].map(x=>(x.value==='on'?'folder':x.value)+':'+x.checked)`), ['codex:true', 'folder:true'], 'every place, all ticked');
+  await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(x=>x.textContent==='Review…').click()`);
+  assert.ok(await until(`!!document.querySelector('#scrDlg .gpvl')`), 'the Codex file is reviewed');
+  await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(x=>/^Remove from/.test(x.textContent)).click()`);
+  // both copies gone: the row is gone, or (the running session still has it until it ends) shows neither source
+  assert.ok(await until(`(()=>{if(!document.querySelector('#agMcp'))return false;const li=document.querySelector('#agMcp li[data-n="playwright"]');return !li||!/Codex|Durbar folder/.test(li.querySelector('.srv-top').textContent)})()`, 4000),
+    'both copies gone: ' + (await js(`(document.querySelector('#agMcp li[data-n="playwright"] .srv-top')||{}).textContent||'(no row)'`)));
+  await closeDlg();
   console.log('[069t] PASS');
 };
