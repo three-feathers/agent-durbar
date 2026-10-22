@@ -68,7 +68,7 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 - [x] T045 Room header words and their fitting [FR-037]
 - [x] T046 `sim.ts` `simsched=1` (kept); the rail driver and screenshots (removed in T047)
 - [x] T047 Remove the rail: `#rail`, `renderRail`/`railHTML`, rail CSS, the rail/strip search and room-name fold in `renderOffice`, `check:office` rail rules, `scripts/shots-001-rail.js` and `docs/screenshots/001-rail-*` [FR-034..FR-039]
-- [x] T048 `places.js`: `BOSS`, `BANK`, `POSTBOX`, `lobbyFit`, `lobbyOrder`, `postLines`, `lettersToday`; `test:places` [FR-038, FR-039]
+- [x] T048 `places.js`: `BOSS`, `BANK`, `POSTBOX`, `lobbyFit`, `lobbyOrder`, `postNext`, `lettersToday`; `test:places` [FR-038, FR-039]
 - [x] T049 Boss: `syncDesks` pins, queue entries (badge, wait, order), click to the request, desk note, theme words (`theme.js`, `themegen.ts`) [FR-034]
 - [x] T050 Bank: the cap break waits at the Bank with *Limit reached*; spec 068 and 024 cross-references; `shots-068-coffee.js` [FR-035]
 - [x] T051 Postbox: next 3, today, flag, click to Settings > Schedules, the flying letter; `simsched` seeds a missed run [FR-038]
@@ -87,3 +87,12 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
   - Check: `shots-001-lobby.js` clicks the Postbox and asserts Settings is open, `#schH` has the focus and the outer page did not scroll; mutation (the old `scrollIntoView` path) fails it.
 - [x] T058 `places.js` `postMissed` counts done one-time schedules with a `missed` or `failed` last run; `test:places` case [FR-038]
   - Check: `test:places`; mutation (back to `!s.done`) fails it.
+
+## Changes 2026-10-23 (review on #511, Paco's agent, 2026-10-22 23:45 UTC)
+
+- [ ] T059 `shots-001-lobby.js`: hostile session titles for agents at the Boss (one inside "+N"), the Bank and the coffee corner, and a schedule prompt with markup; no element created in `#stage`, `#walkers` or `#modeMenu`, nothing runs, literal text in entries, labels, the menu and the Postbox [FR-036, FR-038]
+  - Check: mutation (drop `esc(a.name)` in the lobby entry) fails it.
+- [ ] T060 `places.js` `postMissed`: one-time = `every === undefined && !rule` (as #560's `missedOrFailed`); `test:places` `every: null` case; the #560 hand-off in spec and plan [FR-038]
+- [ ] T061 Desk card title masked with `DurbarRedact.redact` before the 200-character cut, accessible name masked, name only without the module; driver case with a `ghp_` token across the cut; the #567 hand-off in spec and plan [FR-036, spec 041 FR-065]
+  - Check: mutation (cut, then mask) fails it.
+- [ ] T062 `focusRequest(card)` shared by the answer bar's `show` and `openAtRequest` [FR-034]
