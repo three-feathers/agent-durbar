@@ -335,6 +335,25 @@ export interface GlobalState {
   apps: GlobalAppState[];
 }
 
+/** Spec 069 FR-020: a server missing in some agent apps' lists, or defined differently (field names only, never values). */
+export interface GlobalDiffItem {
+  name: string;
+  in: GlobalApp[];
+  missing: GlobalApp[];
+  /** Fields that differ between the lists that have it: type, command, arguments, URL, environment variables, headers, values, tools, hidden tools, on/off. */
+  differs: string[];
+  /** Lists it can be copied from. */
+  from: GlobalApp[];
+  error?: string;
+}
+
+export interface GlobalDiff {
+  ok: boolean;
+  /** The lists that could be read. */
+  apps: GlobalApp[];
+  items: GlobalDiffItem[];
+}
+
 /** Spec 069 FR-005: what will be written to one file, shown before anything is written. */
 export interface GlobalPreviewItem {
   app: GlobalApp;
@@ -693,6 +712,10 @@ export interface DurbarApi {
   /** Spec 069 FR-005: write a reviewed preview; `replace` = apps where an existing entry of that name may be replaced. */
   mcpGlobalApply?(token: string, replace: GlobalApp[]): Promise<GlobalApplyResult>;
   mcpGlobalRemovePreview?(name: string, apps: GlobalApp[]): Promise<GlobalPreview>;
+  /** Spec 069 FR-020: servers missing or different between the agent apps' lists. */
+  mcpGlobalDiff?(): Promise<GlobalDiff>;
+  /** Spec 069 FR-021: the review of copying one server from `from`'s list to `to`; written with `mcpGlobalApply`. */
+  mcpGlobalCopyPreview?(name: string, from: GlobalApp, to: GlobalApp[]): Promise<GlobalPreview>;
   mcpGlobalRemoveApply?(token: string): Promise<GlobalApplyResult>;
   /** Spec 069 FR-009: switch one server of an app's list off (or on) for new Durbar sessions (Copilot and Claude Code). */
   mcpGlobalSetOff?(app: GlobalApp, name: string, off: boolean): Promise<{ ok: boolean }>;

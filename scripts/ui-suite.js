@@ -50,6 +50,7 @@ const DRIVERS = [
   { name: 'check-sched-edit' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
+  { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
   { name: 'shots-059-long-url' }, // spec 059 FR-019: a long unbroken name stays in its card, the inbox and the Schedules rows
   { name: 'shots-069-mcp-global' }, // spec 069: add to the agent apps' own lists, review, remove, source chips
   { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows

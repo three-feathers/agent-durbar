@@ -7,10 +7,11 @@
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { validateInput } from '../shared/mcp';
-import type { McpServerInput, McpServerSpec } from '../shared/mcp';
-import type { GlobalApp, GlobalApplyItem, GlobalApplyResult, GlobalAppState, GlobalPreview, GlobalPreviewItem, GlobalSecretMode, GlobalState } from '../shared/api';
-import { addToText, APP_LABEL, GLOBAL_APPS, neededVars, offOf, previewText, readGlobal, removeFromText, textHash } from './mcpglobal';
+import { NAME_RE, validateInput } from '../shared/mcp';
+import type { McpServerSpec } from '../shared/mcp';
+import type { GlobalApp, GlobalApplyItem, GlobalDiff, GlobalDiffItem, GlobalApplyResult, GlobalAppState, GlobalPreview, GlobalPreviewItem, GlobalSecretMode, GlobalState } from '../shared/api';
+import { addToText, APP_LABEL, differences, GLOBAL_APPS, neededVars, neutralFrom, offOf, previewText, readGlobal, removeFromText, textHash } from './mcpglobal';
+import type { GlobalInput } from './mcpglobal';
 import type { GlobalFile } from './mcpglobal';
 
 const MAX_BYTES = 8 * 1024 * 1024; // ~/.claude.json also keeps Claude Code's project state and can be a few MiB
@@ -238,7 +239,11 @@ export class GlobalLists {
     const v = validateInput(input);
     if (!v.ok) return { ok: false, error: v.error, items: [] };
     const sm: GlobalSecretMode = mode === 'plain' ? 'plain' : 'ref';
-    const x: McpServerInput = v.value;
+    return this.previewInput(v.value, apps, sm);
+  }
+
+  /** FR-005: the per-file review of writing `x` to `apps` (the add form's input, or a harmonize copy). */
+  private previewInput(x: GlobalInput, apps: GlobalApp[], sm: GlobalSecretMode): GlobalPreview {
     const f = this.files();
     const items: GlobalPreviewItem[] = [];
     const files: PendingFile[] = [];
@@ -268,8 +273,55 @@ export class GlobalLists {
     }
     const token = randomUUID();
     this.pending.set(token, { created: this.now(), files });
-    const vars = sm === 'ref' ? neededVars(x) : [];
+    const vars = neededVars(x, sm);
     return { ok: true, token, items, ...(vars.length ? { vars } : {}) };
+  }
+
+  /**
+   * FR-020: servers that are missing in some readable app list, or defined differently, with the names of the fields that differ
+   * (values are compared here and never returned). Empty when fewer than two lists can be read.
+   */
+  diff(): GlobalDiff {
+    const f = this.files();
+    const lists = new Map<GlobalApp, Map<string, Record<string, unknown>>>();
+    for (const app of GLOBAL_APPS) {
+      const { parsed } = this.parsedOf(app, f[app].file);
+      if (parsed && parsed.ok) lists.set(app, parsed.values);
+    }
+    const apps = [...lists.keys()];
+    if (apps.length < 2) return { ok: true, apps, items: [] };
+    const names: string[] = [];
+    for (const m of lists.values()) for (const n of m.keys()) if (!names.includes(n)) names.push(n);
+    const items: GlobalDiffItem[] = [];
+    for (const name of names.slice(0, 200)) {
+      const inApps = apps.filter((a) => lists.get(a)?.has(name));
+      const missing = apps.filter((a) => !inApps.includes(a));
+      const conv = inApps.map((a) => ({ a, n: neutralFrom(a, name, lists.get(a)?.get(name) ?? {}) }));
+      const ok = conv.filter((c) => c.n.ok) as { a: GlobalApp; n: { ok: true; input: GlobalInput } }[];
+      const diffs = new Set<string>();
+      for (const c of ok.slice(1)) for (const d of differences(ok[0].n.input, c.n.input)) diffs.add(d);
+      if (!missing.length && !diffs.size) continue;
+      const copyable = ok.map((c) => c.a);
+      items.push({ name, in: inApps, missing, differs: [...diffs], from: copyable, ...(copyable.length ? {} : { error: (conv[0]?.n as { error?: string })?.error ?? 'Agent Durbar cannot copy this server.' }) });
+    }
+    return { ok: true, apps, items };
+  }
+
+  /** FR-021: the review of copying `name` from one app's list to others (values stay in main; the preview masks them). */
+  copyPreview(name: unknown, from: unknown, toList: unknown): GlobalPreview {
+    this.sweep();
+    if (typeof name !== 'string' || !name || name.length > 64 || !GLOBAL_APPS.includes(from as GlobalApp)) return { ok: false, error: 'Unknown server.', items: [] };
+    const to = this.apps(toList).filter((a) => a !== from);
+    if (!to.length) return { ok: false, error: 'Pick at least one agent app to copy to.', items: [] };
+    const src = this.files()[from as GlobalApp];
+    const r = readFileSafe(src.file);
+    const g = r.ok ? readGlobal(from as GlobalApp, r.text) : undefined;
+    const raw = g && g.ok ? g.values.get(name) : undefined;
+    if (!raw) return { ok: false, error: `"${name}" is not in ${APP_LABEL[from as GlobalApp]}'s list any more.`, items: [] };
+    const n = neutralFrom(from as GlobalApp, name, raw);
+    if (!n.ok) return { ok: false, error: n.error, items: [] };
+    if (!NAME_RE.test(name)) return { ok: false, error: 'This name cannot be written by Agent Durbar (letters, digits, "_", "." or "-").', items: [] };
+    return this.previewInput(n.input, to, 'plain');
   }
 
   /** FR-005: what removing `name` would change in each chosen app's file. */

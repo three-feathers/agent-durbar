@@ -19,6 +19,8 @@ export function register(deps: McpGlobalIpcDeps): void {
   ipcHandle('mcp:globalPreview', (_e, input: unknown, apps: unknown, mode: unknown) => deps.lists().preview(input, apps, mode));
   ipcHandle('mcp:globalApply', (_e, token: unknown, replace: unknown) => deps.lists().apply(token, replace));
   ipcHandle('mcp:globalRemovePreview', (_e, name: unknown, apps: unknown) => deps.lists().removePreview(name, apps));
+  ipcHandle('mcp:globalDiff', () => deps.lists().diff());
+  ipcHandle('mcp:globalCopyPreview', (_e, name: unknown, from: unknown, to: unknown) => deps.lists().copyPreview(name, from, to));
   ipcHandle('mcp:globalRemoveApply', (_e, token: unknown) => deps.lists().apply(token));
   ipcHandle('mcp:globalSetOff', (_e, app: unknown, name: unknown, off: unknown) => {
     if (!GLOBAL_APPS.includes(app as GlobalApp) || app === 'codex' || typeof name !== 'string' || !name || name.length > 64) return { ok: false };
