@@ -69,7 +69,7 @@ const ROWS: Row[] = [
   { rule: 'user send while Waiting: Thinking (sendLive sets it from any state)', events: [perm, send], word: 'Thinking', sub: null, renderer: [] },
   { rule: 'user send while at the limit: Thinking, sub-label cleared', events: [limitHit, send], word: 'Thinking', sub: null, renderer: [] },
   { rule: 'user send then idle: Done (the send counts as work)', events: [send, status('idle')], word: 'Done', sub: 'Done', renderer: [] },
-  { rule: 'send failed: Error', events: [send, sendFailed], word: 'Error', sub: null, renderer: ["setState(a,'error',null,'Send failed: '+SHORT(r.error,100))"] },
+  { rule: 'send failed: Error', events: [send, sendFailed], word: 'Error', sub: null, renderer: ["setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'Send failed'))"] },
   { rule: 'stopped during a pending limit clears the work flag: a later idle is Idle, not Done', events: [working, limitHit, status('stopped'), status('idle')], word: 'Idle', sub: null, renderer: ["if(a.limit)settleLimit(a,'cancel');"] },
   { rule: 'stopped with no limit pending keeps the work flag: a later idle is Done', events: [working, status('stopped'), status('idle')], word: 'Done', sub: 'Done', renderer: [] },
   { rule: 'limit exhausted without a request id, resolved without one: settles to Working', events: [ev({ type: 'limit', phase: 'exhausted' }), ev({ type: 'limit', phase: 'resolved', action: 'add' })], word: 'Working', sub: null, renderer: [] },

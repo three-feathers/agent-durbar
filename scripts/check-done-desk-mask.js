@@ -27,6 +27,7 @@ const SCAN = `(()=>{const out=[];const skip=e=>!!e.closest('#chat');
     else if(!skip(n))for(const at of n.attributes)out.push(at.value);}
   const ag=(window.__durbarSimUi&&window.__durbarSimUi.agents())||[];
   for(const a of ag)out.push(String(a.task||''));
+  for(const t of (window.__taskLog||[]))out.push(String(t));
   return out.join('\\n').toLowerCase();})()`;
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -35,7 +36,7 @@ module.exports = async (ctx) => {
     const page = await js(SCAN);
     for (const nd of NEEDLES) assert.ok(!page.includes(nd), `${tag}: "${nd.slice(0, 10)}..." is on the page (${what}): ...${page.slice(Math.max(0, page.indexOf(nd) - 60), page.indexOf(nd) + 40).replace(/\n/g, ' ')}...`);
   };
-  const emit = (ev) => js(`window.__durbarSimUi.emit(${JSON.stringify(ev)})`);
+  const emit = (ev) => js(`window.__durbarSimUi.emit(JSON.parse(${jsLiteral(JSON.stringify(ev))}))`);
   const back = async () => { await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click();})()`); await until(`!document.body.classList.contains('panel-open')`); };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const level of ['expert', 'simple']) {
@@ -65,19 +66,30 @@ module.exports = async (ctx) => {
       const st2 = await js(`window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(m2)}).task`);
       assert.ok(/\[redacted\]/.test(st2) && !NEEDLES.some((nd) => st2.toLowerCase().includes(nd)), `${tag}: the stored task is masked even when the path skips the helper: ${JSON.stringify(st2)}`);
       await scan(tag, 'working intent (setState backstop)');
-      await emit({ type: 'status', sessionId: m3, timestamp: ts, status: 'error', intent: 'Failed with ' + GHP + ' and ' + PAT + ' and ' + SK });
+      await emit({ type: 'status', sessionId: m3, timestamp: ts, status: 'error', intent: 'Checking the registry module and its tests. '.repeat(4).slice(0, 132) + ' ' + GHP + ' and ' + PAT + ' and ' + SK });
       await scan(tag, 'error intent');
+      // 2b. a sub-agent's card in its parent's chat (the chat shows a reply in full; the card's one-line summary is masked)
+      const parent = await js(`(()=>{const h=window.__durbarSimUi.agents().find(x=>x.parent);return h?h.parent:''})()`);
+      assert.ok(parent, `${tag}: a helper has a parent`);
+      await js(`(()=>{const d=document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(parent)})+']');d.click();})()`);
+      await until(`document.querySelectorAll('#chat .sub-task').length>0`);
+      const sub = await js(`[...document.querySelectorAll('#chat .sub-task')].map(e=>e.textContent+' '+(e.title||'')).join('\\n').toLowerCase()`);
+      assert.ok(/\[redacted\]|^$/.test(sub) || sub.length > 0, `${tag}: sub-agent cards are there`);
+      for (const nd of NEEDLES) assert.ok(!sub.includes(nd), `${tag}: "${nd.slice(0, 10)}..." is in a sub-agent card line: ${sub.slice(0, 200)}`);
+      await back();
       // 3. a question with the tokens: the Needs you inbox and the answer bar
       await emit({ type: 'question', sessionId: m2, timestamp: ts, phase: 'asked', requestId: 'q-secret', questions: [{ question: 'Shall I keep ' + GHP + ' and ' + PAT + ' and ' + SK + ' in the file?', header: 'Secrets', multiSelect: false, options: [{ label: 'Yes' }, { label: 'No' }] }] });
-      await until(`!!document.querySelector('#stage .desk.is-waiting,#stage .desk[data-id=${JSON.stringify(m2)}]')`);
+      await until(`!!document.querySelector(${jsLiteral('#stage .desk[data-id="' + m2 + '"]')})`);
       await js(`document.getElementById('inboxBtn').click()`);
       await until(`document.querySelectorAll('.ib-t').length>0`);
       assert.ok(await js(`[...document.querySelectorAll('.ib-t')].some(e=>/\\[redacted\\]/.test(e.textContent))`), `${tag}: the inbox shows the question, masked`);
       await scan(tag, 'Needs you inbox');
       await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
-      await js(`(()=>{const d=document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(m3)})+']');if(d)d.click();})()`);
-      await until(`document.body.classList.contains('panel-open')`);
-      await until(`!!document.getElementById('answerBar')&&!document.getElementById('answerBar').hidden&&/\\[redacted\\]/.test(document.getElementById('answerBar').textContent)`);
+      // the asking agent's own chat, with the question scrolled out of view: the answer bar repeats it
+      await emit({ type: 'output', sessionId: m2, timestamp: ts, delta: 'Long note.\n\n'.repeat(80), final: true, text: 'Long note.\n\n'.repeat(80) });
+      await js(`(()=>{const d=document.querySelector(${jsLiteral('#stage .desk[data-id="' + m2 + '"]')});if(d)d.click();})()`);
+      await until(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .note.perm')`);
+      assert.ok(await until(`(()=>{const c=document.getElementById('chat');c.scrollTop=0;c.dispatchEvent(new Event('scroll'));return true})()&&!!document.getElementById('answerBar')&&!document.getElementById('answerBar').hidden&&/\\[redacted\\]/.test(document.getElementById('answerBar').textContent)`, 20000), `${tag}: the answer bar shows the question, masked`);
       await scan(tag, 'answer bar and panel header');
       await back();
       // 4. the list view
@@ -89,10 +101,13 @@ module.exports = async (ctx) => {
       await until(`!!document.getElementById('prevBtn')&&!document.getElementById('prevBtn').hidden`);
       if (!(await js(`!!document.querySelector('#prev .prev-row')`))) await js(`document.getElementById('prevBtn').click()`);
       await until(`document.querySelectorAll('#prevLists .prev-row').length>=2`);
-      assert.ok(await js(`[...document.querySelectorAll('#prevLists .prev-t')].some(e=>/\\[redacted\\]/.test(e.textContent))`), `${tag}: a previous session title shows masked`);
+      await until(`[...document.querySelectorAll('#prevLists .prev-t')].some(e=>/\\[redacted\\]/.test(e.textContent))`).catch(() => {});
+      const titles = await js(`[...document.querySelectorAll('#prevLists .prev-t')].map(e=>e.textContent).join(' | ')`);
+      assert.ok(/\[redacted\]/.test(titles), `${tag}: a previous session title shows masked: ${titles}`);
       await scan(tag, 'previous-sessions list');
       await js(`document.querySelector('#prevLists [data-pv="resume"]').click()`);
       await until(`window.__durbarSimUi.agents().some(a=>/^Resumed: /.test(a.task||''))`);
+      assert.ok(await js(`(window.__taskLog||[]).some(t=>/^Resumed: /.test(t))`), `${tag}: a resumed line was stored`);
       await back();
       await scan(tag, 'resumed session');
     }
@@ -103,6 +118,7 @@ module.exports = async (ctx) => {
   assert.ok(r, 'an agent with a session to continue');
   await js(`document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(r)})+']').click()`);
   await until(`window.__durbarSimUi.agents().some(a=>/^Continued: /.test(a.task||''))`);
+  assert.ok(await js(`(window.__taskLog||[]).some(t=>/^Continued: /.test(t))`), 'a continued line was stored');
   await back();
   await scan('continued', 'continued session');
   // 7. no redact module: fail closed, Durbar's own words stay

@@ -32,6 +32,12 @@ const wrong = cutText(T.plain(raw), 300); // plain first (the old order)
 ok(redact(wrong, {}).includes('ghp') && hasSecret(redact(wrong, {})), 'the old order (plain, then redact) really leaks: the test can tell the orders apart');
 for (const s of secrets) ok(!T.mask(`x ${s} y`).includes(s), 'mask hides ' + s.slice(0, 6));
 
+// tokens glued to an underscore or a word (the shapes of spec 012 T127/T128, #543): masked before the text is made plain
+for (const t of [`_${ghp}_`, `my_${sk}`, `my_${pat}_x`]) {
+  const out = T.excerpt(`value ${t} end`, 300);
+  ok(!hasSecret(out) && !out.includes('A1b2C3'), `glued token masked: ${out}`);
+}
+
 // a cut that lands inside a token: the token is masked before the cut, so no half token stays
 for (let cutAt = 10; cutAt < 90; cutAt += 7) {
   const t = 'a'.repeat(cutAt) + ' ' + ghp + ' tail';

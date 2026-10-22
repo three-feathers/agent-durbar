@@ -145,6 +145,8 @@ function simNameError(v: unknown): string {
 const SECRETS_TEXT = 'Token check: gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8 and github' + '_pat_' + '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij and s' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789.';
 /** The same check for commands and URLs: a value that only the command and URL masks know (`--api-key X`, `?key=X`). */
 const SECRET_KEY = 'Kd93' + 'LmP27xQvB' + 'w5Zt';
+/** Filler so that the first planted token (after SECRETS_TEXT's 13-character label) starts at character n: a cut at n + a few characters then leaves a short piece of it that no pattern knows, which only masking BEFORE the cut prevents. */
+const FILL = (n: number): string => 'Checking the registry module and its tests. '.repeat(6).slice(0, n - 14) + ' ';
 const LONG_TEXT = 'Every paragraph here is long on purpose so that its lines run to the right edge of the chat, where a Copy button must never cover a word. '.repeat(6).trim() + '\n\n```\nconst aLineThatRunsPastTheRightEdgeOfTheChat = "' + 'x'.repeat(300) + '";\n```'; // ends in a code block whose last line runs to the right edge (clipped by its own scroll), so the reply's Copy button always sits over text when it is misplaced
 const SIM_LONG_NAMES = ['Billing refactor: split invoice and credit-note flows', 'Canton lookup duplicates: reproduce and fix the join', 'Release notes for the next minor version and changelog', 'Tidy the registry modules and update every import path'];
 const SIM_USD_CAPS: Record<string, number> = { Ada: 0.01 };
@@ -584,7 +586,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       else complete();
     }
     function subRun(s: SimAgent, h: number, name: string, task: string, st: 'working' | 'thinking' | 'done' | 'failed'): void {
-      if (opts.reply === 'secrets') task = SECRETS_TEXT + ' ' + task; // FR-065: a sub-agent's task, its card line, its result and its error hold the planted secrets
+      if (opts.reply === 'secrets') task = FILL(83) + SECRETS_TEXT + ' ' + task; // FR-065: a sub-agent's task, its card line, its result and its error hold the planted secrets
       const call = sid(s) + '-task' + h, base = { sessionId: sid(s), timestamp: now() };
       const prompt = 'You are a helper for the **' + name + '** step.\n\n' + task + '.\n\nOnly read files; report back in two sentences.' + (opts.reply === 'long' ? '\n\n' + LONG_TEXT : '');
       emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'start', args: { description: task, prompt, agent_type: 'explore' } });
@@ -594,22 +596,20 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (h % 2 === 0) emit({ ...base, type: 'thinking', agentId: call, reasoningId: call + '-r', delta: '**Scoping the check**\n\nOnly the touched files matter, so I will start with ' + s.files[0] + '. ' });
       const f = s.files[h % s.files.length];
       emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-v', tool: 'view', phase: 'start', args: { path: f } });
-      if (opts.reply === 'secrets') {
-        emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-sc', tool: 'bash', phase: 'start', args: { command: 'curl --api-key ' + SECRET_KEY + ' https://example.test/a' } });
-        emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-su', tool: 'web_fetch', phase: 'start', args: { url: 'https://example.test/a?key=' + SECRET_KEY } });
-      }
       emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-v', tool: 'view', phase: 'complete', output: '120 lines' });
       emit({ ...base, type: 'usage', agentId: call, model: 'auto', inputTokens: 3900, outputTokens: 60, ...(unreported(s) || !caps(s.info.adapterId ?? 'copilot').usage.nanoAiu ? { creditsStatus: 'unavailable' as const } : { nanoAiu: 8_000_000, creditsStatus: 'complete' as const }), ...(caps(s.info.adapterId ?? 'copilot').usage.costUsd ? { costUsd: 0.0008, costBasis: 'estimate' as const } : {}) });
       if (st === 'working' || st === 'thinking') {
         emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-g', tool: 'grep', phase: 'start', args: { pattern: 'registerTool' } });
+        // the helper card's last line is its newest tool start: a command with a secret flag, or a URL with a secret query (FR-065)
+        if (opts.reply === 'secrets') emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-sc', ...(h % 2 === 0 ? { tool: 'bash', args: { command: 'curl --api-key ' + SECRET_KEY + ' https://example.test/a' } } : { tool: 'web_fetch', args: { url: 'https://example.test/a?key=' + SECRET_KEY } }), phase: 'start' });
         return;
       }
       if (st === 'failed') {
-        emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'failed', task: 'Failed: 4 strict-null errors remain', error: 'Failed: ' + (opts.reply === 'secrets' ? SECRETS_TEXT + ' ' : '') + '4 strict-null errors remain', agentName: 'explore', model: 'gpt-5.6-luna', durationMs: 7400, totalTokens: 9100, totalToolCalls: 3 });
+        emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'failed', task: 'Failed: 4 strict-null errors remain', error: 'Failed: ' + (opts.reply === 'secrets' ? FILL(85) + SECRETS_TEXT + ' ' : '') + '4 strict-null errors remain', agentName: 'explore', model: 'gpt-5.6-luna', durationMs: 7400, totalTokens: 9100, totalToolCalls: 3 });
         emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'failed', output: 'Failed: 4 strict-null errors remain' });
         return;
       }
-      const res = '**' + name + '**: ' + task.toLowerCase() + ' finished. `' + f + '` is fine; nothing else needs changing.';
+      const res = opts.reply === 'secrets' ? FILL(93) + SECRETS_TEXT : '**' + name + '**: ' + task.toLowerCase() + ' finished. `' + f + '` is fine; nothing else needs changing.';
       emit({ ...base, type: 'output', agentId: call, delta: '', final: true, text: res });
       emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'completed', agentName: 'explore', model: 'gpt-5.6-luna', durationMs: 6200, totalTokens: 8100, totalToolCalls: 2 });
       emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'complete', output: res });
@@ -1594,7 +1594,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s.info.resumeLast) return { ok: true };
         s.info.resumeLast = false;
         s.info.lazy = false;
-        return { ok: true, resumed: true, title: (opts.reply === 'secrets' ? SECRETS_TEXT + ' ' : '') + 'Add the clause-type column migration', history: { total: 3, truncated: false, items: [
+        return { ok: true, resumed: true, title: (opts.reply === 'secrets' ? FILL(83) + SECRETS_TEXT + ' ' : '') + 'Add the clause-type column migration', history: { total: 3, truncated: false, items: [
           { type: 'user', text: 'Add a migration for the new clause_type column, nullable for now.' },
           { type: 'tool', callId: 'r1', tool: 'view', label: 'db/migrations/0006_parties.sql', output: '-- 0006: parties table' },
           { type: 'output', text: 'Added `db/migrations/0007_clause_type.sql`. It adds `clause_type TEXT NULL`; nothing is backfilled yet.' },
@@ -1838,7 +1838,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
         const t = Date.now() - 2 * 3600e3;
         if (modeWas) { const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' }; simLog(sims[sims.length - 1], 'mode-change', `Resumed in ${MW[mode]}, the mode last chosen for this session (opened from a session in ${MW[modeWas]})`, mode); }
-        return { ok: true, ...(modeWas ? { modeWas } : {}), agent: info, title: (opts.reply === 'secrets' ? SECRETS_TEXT + ' ' : '') + (sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?'),
+        return { ok: true, ...(modeWas ? { modeWas } : {}), agent: info, title: (opts.reply === 'secrets' ? FILL(83) + SECRETS_TEXT + ' ' : '') + (sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?'),
           history: { total: 4, truncated: false, items: [
             { type: 'user', text: 'Rename the filings handler to filingsSearch and update its tests.', ts: t },
             { type: 'tool', callId: 'c1', tool: 'grep', label: 'grep filingsHandler', output: '6 matches in 3 files' },
