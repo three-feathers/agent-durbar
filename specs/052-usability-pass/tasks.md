@@ -296,5 +296,5 @@
   - Accept: with a 120-character title the placeholder is one line ending in `…` at 1440x900 and 1280x800; a short name is untouched.
 - [x] T175 Rule `placeholder-line` in `check-ui-text` / `ui-text-page.js` for the chat surfaces (`simtitles=long`, late title, rename, emoji, no spaces) [FR-174, FR-171]
   - Check: mutation (`fitPlaceholder` made a no-op) fails `placeholder-line`; code restored byte for byte.
-- [x] T177 Review fixes on #453: late title and rename, `cutText`, no `title`/`data-ph`, mirror copies `overflow-wrap`/`word-break`, prefix and emoji checks, sim hook `__durbarSimRetitle`
 - [x] T176 Screenshots before and after (both sizes, light) in `docs/screenshots/052-placeholder-*`; CHANGELOG line; spec tags
+- [x] T177 Review fixes on #453: late title and rename, `cutText`, no `title`/`data-ph`, mirror copies `overflow-wrap`/`word-break`, prefix and emoji checks, sim hook `__durbarSimRetitle`
