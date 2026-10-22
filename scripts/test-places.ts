@@ -610,6 +610,10 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
     { id: 'r2', rule: { kind: 'daily', time: '08:30' }, done: true, last: { at: now, outcome: 'failed' } }, // done rule: not counted
     { id: 'p1', at: now + 60 * min, paused: true, last: { at: now, outcome: 'failed' } },       // active (paused, not done): counted
   ]), 2, 'done one-time schedules with a missed or failed last run count; done repeating ones do not');
+  // review on #511 (Paco, 23:45 UTC): the same predicate as PR 560's DurbarSchedTop.missedOrFailed. `every: null` counts as repeating there
+  // (`every !== undefined`), so a done one with a missed run is not counted here either; the store never writes null (spec 001 FR-038)
+  assert.strictEqual(P.postMissed([{ id: 'n1', every: null, done: true, last: { at: now, outcome: 'missed' } }]), 0, 'every: null is repeating, as in PR 560');
+  assert.strictEqual(P.postMissed([{ id: 'n2', every: null, last: { at: now, outcome: 'failed' } }]), 1, 'not done: counted whatever its interval');
   assert.strictEqual(P.postMissed(null), 0);
 }
 
