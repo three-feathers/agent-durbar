@@ -473,23 +473,27 @@
   }
   const pickedApps=d=>[...d.querySelectorAll('[name=gApp]:checked')].map(x=>x.value);
   /* FR-005: the per-file review, then the write. `kind` 'add' | 'remove'. Returns true when something was written. */
-  async function reviewGlobal(kind,pv,what){
+  /* `extra` (remove only; review on PR 499): {label, note, run()} = one more place in this review, removed only when the review is confirmed */
+  async function reviewGlobal(kind,pv,what,extra){
     if(!pv||!pv.ok){X.toast('Nothing written: '+esc((pv&&pv.error)||'unknown error'),5600);return false;}
-    const writable=pv.items.filter(i=>!i.error);
+    const writable=pv.items.filter(i=>!i.error), nPlaces=writable.length+(extra?1:0);
     const items=pv.items.map(i=>`<li class="gpv${i.error?' bad':''}"><div class="srv-top"><b>${esc(i.label)}</b><code>${esc(i.file)}</code>${i.exists?'':'<span class="mtag">new file</span>'}${i.conflict?'<span class="mtag warn">already there</span>':''}</div>
         ${i.error?`<p class="scr-note warn" role="note">Not written: ${esc(i.error)}</p>`:''}
         ${i.note&&!i.error?`<p class="scr-note small" role="note">${esc(i.note)}</p>`:''}
         ${i.conflict&&i.current?`<p class="dsub small">Now: <code>${esc(cap(runOf(i.current),160))}</code></p>`:''}
         ${i.entry&&!i.error?`<p class="dsub small">${kind==='add'?(i.conflict?'Would become':'Adds'):'Removes'}:</p><pre class="trustcmd" tabindex="0">${esc(i.entry)}</pre>`:''}
-        ${i.conflict&&!i.error?`<label class="grep"><input type="checkbox" data-rep="${esc(i.app)}"> Replace it in ${esc(i.label)}</label>`:''}</li>`).join('');
+        ${i.conflict&&!i.error?`<label class="grep"><input type="checkbox" data-rep="${esc(i.app)}"> Replace it in ${esc(i.label)}</label>`:''}</li>`).join('')
+      +(extra?`<li class="gpv" data-extra="1"><div class="srv-top"><b>${esc(extra.label)}</b></div><p class="dsub small">${esc(extra.note)}</p></li>`:'');
     const intro=kind==='add'?`<p class="dsub"><b>This changes your agent apps' own settings</b> for every folder: they will run this server with your user rights, also outside Agent Durbar. Each file is backed up next to it first and left readable only by you; nothing else in it changes.</p>`
       :`<p class="dsub">This removes <b>${esc(what)}</b> from these files, for every folder, also outside Agent Durbar. Each file is backed up next to it first.</p>`;
     const vars=pv.vars&&pv.vars.length?`<p class="dsub" role="note">The files name environment variables instead of holding the values. Set <b>${pv.vars.map(esc).join(', ')}</b> in your environment before the agent apps start.</p>`:'';
     const copy=what==='copy'?'<p class="dsub" role="note">Values are copied as they are in the source list: references stay references, and a value written there in plain text is written in plain text here too (masked below), in a file left readable only by you.</p>':'';
     const plain=kind==='add'&&what==='plain'?'<p class="scr-warn" role="note"><b>The values are written in plain text.</b> Agent Durbar makes each file it writes readable only by you; programs running as you can still read them.</p>':'';
     const r=await dialog({title:kind==='add'?'Review: add to your agent apps':'Review: remove from your agent apps',wide:true,cls:'gpvd',html:intro+vars+copy+plain+`<ul class="gpvl">${items}</ul>`,
-      buttons:writable.length?[{label:'Cancel',value:null},{label:kind==='add'?'Write to '+(writable.length===1?'1 file':writable.length+' files'):'Remove from '+(writable.length===1?'1 file':writable.length+' files'),value:'ok',cls:'primary warn'}]:[{label:'Close',value:null,cls:'primary'}]});
+      buttons:nPlaces?[{label:'Cancel',value:null},{label:kind==='add'?'Write to '+(writable.length===1?'1 file':writable.length+' files'):'Remove from '+(extra?nPlaces+' places':writable.length===1?'1 file':writable.length+' files'),value:'ok',cls:'primary warn'}]:[{label:'Close',value:null,cls:'primary'}]});
     if(!r)return false;
+    if(extra)await extra.run(); /* confirmed: only now (a cancelled review removes nothing) */
+    if(!writable.length)return true;
     const rep=[...r.root.querySelectorAll('[data-rep]:checked')].map(x=>x.dataset.rep);
     const res=kind==='add'?await X.bridge.mcpGlobalApply(pv.token,rep):await X.bridge.mcpGlobalRemoveApply(pv.token);
     const done=(res&&res.items||[]).filter(i=>i.ok),bad=(res&&res.items||[]).filter(i=>!i.ok);
@@ -503,14 +507,17 @@
   async function removeGlobal(name,folder){
     const apps=appsWith(name);
     if((!apps.length||!X.bridge.mcpGlobalRemovePreview)&&!folder)return;
-    const fRow=folder?`<label><input type="checkbox" name="gFolder" checked> ${esc(folder.label)}</label>`:'';
+    const fRow=folder?`<label><input type="checkbox" name="gFolder" checked> ${esc(folder.label)}<small>${esc(FOLDER_RM_NOTE)}</small></label>`:'';
     const r=await dialog({title:'Remove "'+name+'" from…',html:`<p class="dsub">It is in ${folder&&apps.length?'these places':folder?'this folder\'s extras':'these agent apps\' lists'}. Pick where to remove it${apps.length?'; you review each agent app\'s file next':''}.</p><div class="gapps" role="group" aria-label="Where to remove it">${apps.map(id=>`<label><input type="checkbox" name="gApp" value="${id}" checked> ${esc(APPN[id])}</label>`).join('')}${fRow}</div>`,
       buttons:[{label:'Cancel',value:null},{label:apps.length?'Review…':'Remove',value:'ok',cls:'primary'}],validate:d=>pickedApps(d).length||(d.querySelector('[name=gFolder]')||{}).checked?'':'Pick at least one place.'});
     if(!r)return;
     const picked=pickedApps(r.root),inFolder=!!(r.root.querySelector('[name=gFolder]')||{}).checked;
-    if(inFolder)await folder.remove();
-    if(picked.length)await reviewGlobal('remove',await X.bridge.mcpGlobalRemovePreview(name,picked),name);
+    /* review on PR 499: with app files picked the folder copy is one more entry of their review and goes only when it is confirmed;
+       alone, this picker's Remove is the confirmation */
+    if(picked.length)await reviewGlobal('remove',await X.bridge.mcpGlobalRemovePreview(name,picked),name,inFolder?{label:folder.label,note:FOLDER_RM_NOTE,run:folder.remove}:null);
+    else if(inFolder)await folder.remove();
   }
+  const FOLDER_RM_NOTE='The server and its stored secret values are deleted from this folder in Agent Durbar.';
   const secretChip=(kind,s)=>`<span class="sec" title="${kind==='env'?'Environment variable':'Header'}: ${s.set?'value stored, hidden':'no value'}">${esc(s.key)}<i>${s.set?'••••••':'not set'}</i></span>`;
   /* spec 052 FR-099 (round 10): Spacing, under Detail level; Compact tightens the chat, screens, dialogs and inbox (never the office) */
   function densityRow(){

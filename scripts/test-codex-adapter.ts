@@ -679,6 +679,12 @@ async function main(): Promise<void> {
       assert.strictEqual(server.requests('mcpServerStatus/list').length - before, 3, 'three pages asked');
       assert.strictEqual((server.requests('mcpServerStatus/list').pop()!.params as Record<string, unknown>).cursor, '20');
       await assert.rejects(ad.listMcpTools!(sid, 'srv-99'), /not running in this session/, 'not on any page');
+      // re-review on #499: a pager that always answers the same nextCursor: the second request repeats it, so the search stops there
+      server.mcpStuckCursor = 'same';
+      const stuck = server.requests('mcpServerStatus/list').length;
+      await assert.rejects(ad.listMcpTools!(sid, 'srv-99'), /not running in this session/, 'a repeated cursor ends the search');
+      assert.strictEqual(server.requests('mcpServerStatus/list').length - stuck, 2, 'two requests, then stop on the repeated cursor');
+      server.mcpStuckCursor = undefined;
       server.mcpList = undefined;
       server.mcpPageSize = undefined;
       server.mcpIgnoreServerName = false;
