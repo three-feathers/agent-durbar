@@ -49,6 +49,52 @@ module.exports = async (ctx) => {
     await emit({ type: 'permission', sessionId: 'sim-1', permission: { requestId: perm.requestId, state: 'approved', via: 'user', summary: perm.summary } });
     await line('^Editing app\\.js · \\d+s$', 'answered: back to the edit');
   };
+  /* review on #463 (FR-021): while an Edit streams, its growing diff keeps a chat pinned at the bottom there, and leaves a chat the user
+     scrolled up where it is. Diffs under the 12-line cap, so each update makes the row taller (events through the simulator's test hook). */
+  const scrollPin = async () => {
+    const diffOf = (n) => { const ls = []; for (let i = 0; i < n; i++) ls.push('+line ' + i); return { diff: '@@ -0,0 +1,' + n + ' @@\n' + ls.join('\n'), added: n, removed: 0 }; };
+    const upd = (id, n) => emit({ type: 'toolCall', sessionId: 'sim-1', callId: id, tool: 'Edit', phase: 'update', edit: { files: [{ path: '~/work/pin/' + id + '.js', kind: 'edit', ...diffOf(n) }], partial: true } });
+    const frames = () => js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(()=>r(true),60))))`);
+    const gap = () => js(`(()=>{const c=document.getElementById('chat');return Math.round(c.scrollHeight-c.scrollTop-c.clientHeight)})()`);
+    for (const id of ['pin-a', 'pin-b']) {
+      await emit({ type: 'toolCall', sessionId: 'sim-1', callId: id, tool: 'Edit', phase: 'start', args: { path: '~/work/pin/' + id + '.js' } });
+      await upd(id, 1);
+      await until(`!![...document.querySelectorAll('#chat .chip.editchip .ed-name')].find(n=>n.textContent===${jsLiteral(id + '.js')})`, 3000);
+      await frames();
+    }
+    // pinned: scrolled to the bottom (the chat's own scroll handler sets the pin), then the diff grows
+    await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight;c.dispatchEvent(new Event('scroll'));})()`);
+    await frames();
+    assert.ok(await js(`document.getElementById('chat').scrollHeight>document.getElementById('chat').clientHeight`), 'the chat scrolls (else the pin is not tested)');
+    assert.strictEqual(await js(`document.getElementById('chat').dataset.pin`), '1');
+    const h0 = await js(`document.getElementById('chat').scrollHeight`);
+    await upd('pin-b', 6);
+    await until(`document.getElementById('chat').scrollHeight>${h0}+40`, 3000);
+    await frames();
+    assert.ok((await gap()) <= 2, `pinned at the bottom, the chat follows the growing diff (gap ${await gap()}px)`);
+    // scrolled up: the same diff grows further down (below the view) and scrollTop stays
+    await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=Math.max(0,c.scrollTop-300);c.dispatchEvent(new Event('scroll'));})()`);
+    await frames();
+    assert.strictEqual(await js(`document.getElementById('chat').dataset.pin`), '0', 'scrolled up: not pinned');
+    const top = await js(`document.getElementById('chat').scrollTop`);
+    const h1 = await js(`document.getElementById('chat').scrollHeight`);
+    await upd('pin-b', 12);
+    await until(`document.getElementById('chat').scrollHeight>${h1}+40`, 3000);
+    await frames();
+    assert.strictEqual(await js(`document.getElementById('chat').scrollTop`), top, 'scrolled up, the chat does not move while a diff grows');
+    // pinned again, Show all on the bottom row: only edDiff repaints (no event), and the chat still follows it to the bottom
+    await upd('pin-b', 30);
+    await until(`(()=>{const n=[...document.querySelectorAll('#chat .chip.editchip')].find(c=>c.querySelector('.ed-name').textContent==='pin-b.js');return !!(n&&n._ed&&n._ed.diffEl&&n._ed.diffEl.querySelector('.xall'))})()`, 3000);
+    await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight;c.dispatchEvent(new Event('scroll'));})()`);
+    await frames();
+    assert.ok((await gap()) <= 2 && (await js(`document.getElementById('chat').dataset.pin`)) === '1', 'pinned again before Show all');
+    const h2 = await js(`document.getElementById('chat').scrollHeight`);
+    await js(`[...document.querySelectorAll('#chat .chip.editchip')].find(c=>c.querySelector('.ed-name').textContent==='pin-b.js')._ed.diffEl.querySelector('.xall').click()`);
+    await until(`document.getElementById('chat').scrollHeight>${h2}+100`, 3000);
+    await frames();
+    assert.ok((await gap()) <= 2, `pinned, Show all on the last diff keeps the chat at the bottom (gap ${await gap()}px)`);
+    for (const id of ['pin-a', 'pin-b']) await emit({ type: 'toolCall', sessionId: 'sim-1', callId: id, tool: 'Edit', phase: 'complete', output: 'ok' });
+  };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, query: Q, settle: false });
     await level('expert');
@@ -107,6 +153,7 @@ module.exports = async (ctx) => {
     await level('expert'); await level('simple');
     assert.strictEqual((await rows()).find((x) => x.name === 'app.js').diff.open, true, `${w}: the user's choice is kept`);
     await level('expert');
+    if (w === 1440) await scrollPin(); // FR-021: a growing diff follows the chat only while it is pinned at the bottom (review on #463)
     if (w === 1440) await waitingLine(); // a second tool and a permission card: once (it does not depend on the size), after the pictures
   }
   console.log('[edits] all checks passed');
