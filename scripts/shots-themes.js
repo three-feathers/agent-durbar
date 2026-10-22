@@ -24,7 +24,7 @@ module.exports = async (ctx) => {
   if (theme !== 'clean-office' && st.artSlots === 0) throw new Error(`${theme}: no art slots rendered`);
   /* let agents settle in the lobby before the shot */
   try {
-    await ctx.waitFor(`!!document.querySelector('.place.busy')`, 6000);
+    await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"])')`, 6000);
     await ctx.waitFor(`!document.querySelector('.walker.walking')`, 6000);
     await ctx.sleep(300);
   } catch (e) { /* fine */ }

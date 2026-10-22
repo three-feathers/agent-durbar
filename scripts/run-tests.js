@@ -66,7 +66,7 @@ function stopChild(child, { platform = process.platform, spawnFn = spawn, kill =
 // Run the suites with `jobs` at a time. Returns { failed: [names], bailed: name | null }. Everything the outside world touches
 // (spawn, kill, platform, output, clock) is injected so scripts/test-run-tests.ts can drive it with fakes.
 async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process.env, platform = process.platform, spawnFn = spawn, kill = process.kill,
-  write = (t) => process.stdout.write(t), now = Date.now, running = new Set(), stopOpts = {} }) {
+  write = (t) => process.stdout.write(t), now = Date.now, running = new Set(), stopOpts = {}, ctl = {} }) {
   const failed = [];
   let bailed = null;
   let next = 0;
@@ -81,6 +81,8 @@ async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process
       p.on('error', (e) => { running.delete(p); resolve({ code: 1, out: out + String(e) }); });
     });
   const stopAll = () => { for (const p of running) stopChild(p, { platform, spawnFn, kill, ...stopOpts }); };
+  // ctl.abort(): stop everything for a signal; nothing is reported as a failure after it
+  ctl.abort = () => { bailed = bailed || '(signal)'; stopAll(); };
   const worker = async () => {
     while (next < suites.length && !bailed) {
       const s = suites[next++];
@@ -106,7 +108,42 @@ async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process
   return { failed, bailed };
 }
 
-module.exports = { parseArgs, loadSuites, stopChild, runSuites };
+// The wiring of a run: handlers, the run, the summary and the exit code. `exit` is injectable. When bailing, Ctrl-C or a kill of this runner
+// stops the suites the same way a bail does (TERM, then KILL after the grace period) and the exit code is 128 + the signal number
+// (SIGINT 130, SIGTERM 143, SIGHUP 129), not 1.
+function runMain({ suites, jobs, bail, t0 = Date.now(), exit = process.exit, running = new Set(), stopOpts = {}, env = process.env }) {
+  let signalled = 0;
+  const ctl = {};
+  if (bail) {
+    for (const [sig, n] of [['SIGINT', 2], ['SIGHUP', 1], ['SIGTERM', 15]]) {
+      process.on(sig, () => {
+        if (signalled) return;
+        signalled = 128 + n;
+        if (ctl.abort) ctl.abort();
+        // safety: leave when the suites are gone, or soon after the grace period
+        const end = Date.now() + GRACE_MS + 1000;
+        setInterval(() => { if (!running.size || Date.now() > end) exit(signalled); }, 100);
+      });
+    }
+  }
+  return runSuites({ suites, jobs, bail, running, stopOpts, ctl, env }).then(({ failed, bailed }) => {
+    const total = ((Date.now() - t0) / 1000).toFixed(1);
+    if (signalled) { console.log(`\nstopped by a signal after ${total} s; the suites were stopped, so the run is not complete`); exit(signalled); return; }
+    if (bailed) {
+      console.log(`\nstopped at the first failure (--bail): ${bailed} failed after ${total} s; the other suites were cut short, so the run is not complete`);
+      exit(1);
+      return;
+    }
+    if (failed.length) {
+      console.log(`\n${failed.length} of ${suites.length} suites failed in ${total} s: ${failed.join(', ')}`);
+      exit(1);
+      return;
+    }
+    console.log(`\nall ${suites.length} suites passed in ${total} s (${jobs} at a time)`);
+  });
+}
+
+module.exports = { parseArgs, loadSuites, stopChild, runSuites, runMain };
 
 if (require.main === module) {
   const { ensureElectron } = require('./ensure-electron');
@@ -130,29 +167,5 @@ if (require.main === module) {
   // leave a core for the desktop and run at low priority, so the machine stays usable while the suites run
   const jobs = Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length - 1, 8));
   try { os.setPriority(10); } catch (_) { /* not allowed: normal priority */ }
-  const running = new Set();
-  // only when bailing are the suites detached (their own process groups), so Ctrl-C or a kill of this runner must take them along:
-  // same stop as a bail (TERM, then KILL after the grace period), then exit 128 + the signal number (SIGINT 130, SIGTERM 143, SIGHUP 129)
-  if (bail) {
-    for (const [sig, n] of [['SIGINT', 2], ['SIGHUP', 1], ['SIGTERM', 15]]) {
-      process.on(sig, () => {
-        for (const p of running) stopChild(p);
-        const end = Date.now() + GRACE_MS + 1000;
-        const t = setInterval(() => { if (!running.size || Date.now() > end) process.exit(128 + n); }, 100);
-        void t;
-      });
-    }
-  }
-  runSuites({ suites, jobs, bail, running }).then(({ failed, bailed }) => {
-    const total = ((Date.now() - t0) / 1000).toFixed(1);
-    if (bailed) {
-      console.log(`\nstopped at the first failure (--bail): ${bailed} failed after ${total} s; the other suites were cut short, so the run is not complete`);
-      process.exit(1);
-    }
-    if (failed.length) {
-      console.log(`\n${failed.length} of ${suites.length} suites failed in ${total} s: ${failed.join(', ')}`);
-      process.exit(1);
-    }
-    console.log(`\nall ${suites.length} suites passed in ${total} s (${jobs} at a time)`);
-  });
+  runMain({ suites, jobs, bail, t0 });
 }

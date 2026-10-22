@@ -29,7 +29,7 @@ export const MAX_PLACE_NAME = 24;
 export const CUSTOM_ICON_IDS = ['star', 'flask', 'database', 'cloud', 'chart', 'chat', 'mail', 'calendar', 'shield', 'box', 'bolt', 'pin'] as const;
 export type CustomIconId = (typeof CUSTOM_ICON_IDS)[number];
 /** Names a custom place cannot take (compared ignoring case): the built-in places, *Stay at desk* and *Default*. */
-export const RESERVED_PLACE_NAMES = ['Library', 'Software library', 'Terminal', 'Web', 'Other tools', 'Stay at desk', 'Default'] as const;
+export const RESERVED_PLACE_NAMES = ['Library', 'Software library', 'Terminal', 'Web', 'Other tools', 'Stay at desk', 'Default', 'Coffee corner'] as const;
 export const CUSTOM_ID_PATTERN = /^c-[a-z0-9]{6}$/;
 export interface CustomPlace {
   id: CustomPlaceId;

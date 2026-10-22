@@ -50,6 +50,10 @@ assert.strictEqual(M.troubleOf({ ...all, ambulance: false }), 'faint');
 assert.strictEqual(M.troubleOf({ ...all, ambulance: false, limit: false }), 'impatient');
 assert.strictEqual(M.troubleOf({ ...all, ambulance: false, limit: false, waitingMs: 0 }), 'dizzy');
 assert.strictEqual(M.troubleOf({ state: 'error', ambulance: true, failStreak: 'x', waitingMs: 'y' }), 'ambulance');
+// spec 068 FR-005: a coffee break (a usage limit, or Durbar's own cap) is calm: no trouble at all, whatever else is true; it says so in words
+assert.strictEqual(M.troubleOf({ state: 'waiting', limit: true, coffee: true }), null);
+assert.strictEqual(M.troubleOf({ ...all, state: 'waiting', ambulance: false, coffee: true }), null);
+assert.deepStrictEqual(M.phrases({ coffee: true, trouble: null }), ['On a coffee break']);
 assert.strictEqual(M.troubleOf({ state: 'working', failStreak: 'x', waitingMs: NaN }), null, 'garbage numbers are nothing');
 assert.strictEqual(M.IMPATIENT_MS, 60000); assert.strictEqual(M.DIZZY_STREAK, 3);
 
