@@ -29,6 +29,11 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 - **End-anchored regexes on untrusted text can be quadratic** (2026-10-21, PR #463 review, `test:` timing cases). `/\s+$/`, `/\n+$/`, `/[ \t]+$/` and a lazy `(.+?)\s*$` retry the whole run at every position when a long run of blanks or newlines is followed by other text: 100,000 spaces in a streamed `Write` took 61 s in the main process. On model output, agent args or diffs use `trimEnd()`, a greedy capture plus `trimEnd()`, or a loop from the end, and add a timing case built so the run is *not* at the end (a run at the very end matches at once and hides the bug). Test the old code in its own process with a timeout: the cases can take minutes.
 - **`until` in `scripts/driver-helpers.js` never throws** (2026-10-21, PR #463). A driver that only `await until(...)`s passes even when the condition never came true; assert on its result (`assert.ok(await until(...), msg)`), and mutation-check the new step.
 
+- **git rerere can replay a stale resolution that drops a rule** (2026-10-22, PR #462 merge of #515).
+  - *What*: merging `main` into a stack branch, rerere auto-resolved `styles.css` from an older night-stack resolution and silently dropped the whole `.mode-menu{position:fixed;...}` base rule (the file had no conflict markers and was not reported as conflicted).
+  - *Why*: rerere keys on the conflict text; a similar hunk from another merge got the old answer.
+  - *How to apply*: after a merge with `rerere.enabled`, run `git rerere status` and, for each file rerere touched, re-create the conflict (`git checkout -m -- <file>`) or diff it against both parents before committing; never trust "0 markers" alone.
+
 ## Simulator and drivers
 
 - **One window global per renderer script** (2026-10-21, issue #474, `sim:`). The renderer's helper files are plain scripts that publish their API as `root.DurbarX=api`; a second file with the same name silently replaces the first (here `activitytable.js` and `activity.js` were both `DurbarActivity`, so Tools > Activity threw). Node tests `require` each file directly and never see the clash. *How to apply:* give a new renderer file its own `Durbar*` name; `npm run test:globals` fails on a duplicate. A screen that no driver opens can break unseen: add a driver that opens it.

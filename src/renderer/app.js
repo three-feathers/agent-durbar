@@ -3230,10 +3230,10 @@ const coffeeWho=a=>{if(!a)return '';const u=coffeeUntilWords(a);return a.name+(u
 /* the card's sentence: what is used up, and what happens next */
 function coffeeSentence(a){
   const b=BREAKS.get(a.id); if(!b)return '';
-  const when=b.resetsAt?COFFEE.whenText(b.resetsAt,Date.now())+(b.estimated?' (an estimate)':''):'';
+  const when=b.resetsAt?COFFEE.atWhen(b.resetsAt,Date.now())+(b.estimated?' (an estimate)':''):''; /* "at 14:30", "Fri 9:00", "1 Nov" (FR-004) */
   const what=SIMPLE||!b.source?'The usage limit is used up.':b.source+' is used up.';
   if(b.phase==='back')return 'The limit has reset. Resume sends one message so the agent continues where it stopped.';
-  const next=BREAKS.autoResumes(a.id)?' The agent comes back at '+when+' and continues by itself.':b.resetsAt?' The limit resets at '+when+'; the agent will ask you before it goes on'+(b.paid?' (going on may be billed).':'.'):' The agent app did not say when it resets.';
+  const next=BREAKS.autoResumes(a.id)?' The agent comes back '+when+' and continues by itself.':b.resetsAt?' The limit resets '+when+'; the agent will ask you before it goes on'+(b.paid?' (going on may be billed).':'.'):' The agent app did not say when it resets.';
   return what+next+' Try now sends one message to continue (after a long break it can cost a little more).';
 }
 /* the chat card (FR-009): Try now / Stay on break, or, once the limit has reset and the agent asks, Resume / Not now. The inbox copies the buttons. */
@@ -3280,6 +3280,7 @@ function endCoffee(a,why){
 function resumeCoffee(a,how){
   if(!a||!a.coffee)return;
   const b=BREAKS.get(a.id); if(!b||b.kind!=='provider')return;
+  if(a.limit)return; /* FR-007: never while Durbar's spending limit is pending (main would hold the message anyway) */
   a.coffee=false;a.coffeeKind='';BREAKS.resumed(a.id);
   if(VISITS.unpin(a.id))scheduleRender();
   if(a.coffeeCard){const r=a.coffeeCard.querySelector('.note-actions');if(r)r.remove();a.coffeeCard.querySelector('.pstate').textContent=' → '+(how==='auto'?'resumed by itself':'resumed');a.coffeeCard.classList.add('settled','approved');a.coffeeCard=null;}
@@ -3289,10 +3290,11 @@ function resumeCoffee(a,how){
 /* the window's timer: what the break core says is due (FR-007, FR-011) */
 function coffeeTick(){
   if(!BREAKS.size())return;
-  for(const x of BREAKS.tick()){
+  /* FR-007: a paused agent, or one whose Durbar spending limit is pending, asks instead of resuming by itself (the rule is holdIds in coffeebreak.js) */
+  for(const x of BREAKS.tick({hold:COFFEE.holdIds(agents)})){
     const a=byId(x.id); if(!a||!a.live){BREAKS.end(x.id);continue;}
-    if(x.type==='resume'&&!a.paused)resumeCoffee(a,'auto');
-    else if(x.type==='ask'||x.type==='resume') /* a paused agent asks instead of resuming by itself */{const bb=BREAKS.get(a.id);if(bb)bb.phase='back';if(VISITS.unpin(a.id))scheduleRender();showCoffee(a,true);setState(a,'waiting',coffeeWord(),coffeeTask(a));}
+    if(x.type==='resume')resumeCoffee(a,'auto');
+    else if(x.type==='ask'){const bb=BREAKS.get(a.id);if(bb)bb.phase='back';if(VISITS.unpin(a.id))scheduleRender();showCoffee(a,true);setState(a,'waiting',coffeeWord(),coffeeTask(a));}
     else if(x.type==='remind')showCoffee(a,false); /* a new card: one reminder in the inbox and as a notification (Q4) */
   }
 }
@@ -3509,8 +3511,8 @@ function onLiveEvent(e){
     if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files */
     /* spec 068: the turn that hit a usage limit ends quietly (the coffee break says why); working again, Stop or the end of the session end the break */
     if(a.coffee&&!a.limit){
-      /* only the turn's closing status keeps the break (2026-10-22): 'Usage limit reached', then at most one plain idle of the same turn */
-      if(e.status==='idle'&&e.intent==='Usage limit reached'){closeTurn(a);a.worked=false;a.coffeeShut=true;return;}
+      /* only the turn's closing status keeps the break (2026-10-22): the adapters' marker reason 'usage-limit' (never the words), then at most one plain idle of the same turn */
+      if(e.status==='idle'&&e.reason==='usage-limit'){closeTurn(a);a.worked=false;a.coffeeShut=true;return;}
       if(e.status==='idle'&&!e.intent&&a.coffeeShut){a.coffeeShut=false;closeTurn(a);a.worked=false;return;}
       /* any other idle or error: the turn went on (and finished or failed) after the limit; the break ends and the status shows as usual */
       const wentOn=e.status==='idle'&&!e.intent&&!a.coffeeShut;a.coffeeShut=false;

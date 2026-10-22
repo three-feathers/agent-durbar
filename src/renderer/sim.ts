@@ -780,7 +780,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       closeOpen(s);
       if (kind === 'plan') emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'plan', resetsAt: s.breakUntil, source: 'Simulated 5-hour window' });
       else emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'quota', paid: true, source: 'Simulated premium requests' });
-      emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Usage limit reached' });
+      emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Usage limit reached', reason: 'usage-limit' }); // spec 068: the marker, as the adapters' usageLimitClosing()
     };
     function play(s: SimAgent): void {
       if (s.info.resumeLast) return; // spec 006 FR-021 (simresume=1): restored, nothing runs until its chat is opened
