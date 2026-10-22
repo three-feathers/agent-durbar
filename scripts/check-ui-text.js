@@ -187,6 +187,17 @@ module.exports = async (ctx) => {
     ...[0, 1, 2, 3].map((k) => ({ name: 'flags' + k, title: 'a'.repeat(k) + ' Flags ' + '\u{1F1E8}\u{1F1ED}'.repeat(40) })), // a run of flags, four alignments: no half flag before the ellipsis
     { name: 'path', title: '/home/someone/work/customer-reconciliation-batch-jobs/src/tools/registry/companies/find_company_by_identifier_number.test.ts' }, // no spaces: the cut falls inside one long word
   ];
+  // T179 (FR-174, review on #545): a helper's chat whose parent has the 120-character title (simtitles=long): the heading's role line ("Helper · helper of <title>") is cut with its title and stays inside the heading
+  add('chat-helper-long', 'chat', ['#panel'], async () => {
+    await closeChat();
+    const ids = await js(`[...document.querySelectorAll('#stage .helper[data-id]')].map(d=>d.dataset.id)`);
+    for (const id of ids) {
+      await js(`document.querySelector(${jsLiteral(`#stage .helper[data-id="${id}"]`)}).click()`);
+      await until(`document.body.classList.contains('panel-open')`, 3000); await settle(1500);
+      if (await js(`/helper of Morning stand-up/.test((document.querySelector('#panelHead .sub')||{}).textContent||'')`)) return true;
+    }
+    return false;
+  });
   add('chat-late', 'chat', ['#panel'], async () => {
     if (!(await openChatWhere('true'))) return false;
     const tag = (n) => ({ surface: 'chat-late-' + n, theme: themeId || theme, size: `${W}x${Hh}` });
@@ -298,7 +309,7 @@ module.exports = async (ctx) => {
   // spec 061: the folder-setup dialog opens by itself for the first folder when the page address has simfoldersetup=1
   add('folder-setup', 'dialog', ['#scrDlg .dlg.fs'], async () => until(`!!document.querySelector('#scrDlg .dlg.fs')`, 8000));
   S.find((x) => x.name === 'folder-setup').onlyPass = true;
-  const LATE = S.filter((x) => x.name === 'chat-late'); LATE.forEach((x) => { x.onlyPass = true; });
+  const LATE = S.filter((x) => x.name === 'chat-late'); LATE.forEach((x) => { x.onlyPass = true; }); S.find((x) => x.name === 'chat-helper-long').onlyPass = true;
   const PASSES = [
     ...LATE.map((x) => ({ name: x.name, base: x.name, query: {} })), // T177: the late title, rename, emoji and no-space cases of the composer placeholder
     { name: 'folder-setup', base: 'folder-setup', query: { simfoldersetup: '1' } }, // surfaces that need their own page address
@@ -312,6 +323,7 @@ module.exports = async (ctx) => {
     { name: 'palette-long', base: 'palette', query: { simnames: 'long' } },
     { name: 'chat-first-long', base: 'chat-first', query: { simnames: 'long' } },
     { name: 'chat-title-long', base: 'chat-first', query: { simtitles: 'long' } },
+    { name: 'chat-helper-long', base: 'chat-helper-long', query: { simtitles: 'long' } }, // T179
     { name: 'chat-reply-long', base: 'chat-reply', query: { simreply: 'long' } }, // T155: replies and sub-agent prompts that run to the right edge (the Copy button covers no text)
   ];
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];

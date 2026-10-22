@@ -300,3 +300,4 @@
 - [x] T177 Review fixes on #453: late title and rename, `cutText`, no `title`/`data-ph`, mirror copies `overflow-wrap`/`word-break`, prefix and emoji checks, sim hook `__durbarSimRetitle`
 
 - [x] T178 Review on #545: `.ph-id h2` is cut and `.sub` kept whole; `fitCut` (pure, unit-tested incl. the band where the text fits but not with `…`); `cutText` keeps flags whole; resize case (ResizeObserver mutation fails); the four late cases folded into one `chat-late` pass [FR-174]
+- [x] T179 Review on #545: a helper's role line stays inside the heading (`.sub` flex-shrink 1, `h2` 4, titles on both); surface `chat-helper-long` and rule `heading-spill` in `check:ui-text` (mutation `.sub{flex:0 0 auto}` fails) [FR-174]
