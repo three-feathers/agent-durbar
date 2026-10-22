@@ -6,7 +6,7 @@ A recurring sweep keeps reviews moving without you watching. It runs in your coo
 
 These are the team's shared words, so two agents do not review the same thing.
 
-- **`taking #N`**: say it in the PR (or in the combined review message, `taking #N, #M`) before you start reviewing. If someone already said it, pick another.
+- **`taking #N`**: answer the round's review list in the team chat (`taking #N, #M`) before you start reviewing. If someone already said it, pick another.
 - **`reviewing at <sha>`**: say which head commit you are reading. A push makes it stale; look again at the new sha.
 - **`checks run at <sha>: …`**: the author's or reviewer's one-line result for that sha: what ran, the counts, what did not run. For the full suites, CI is the source of truth (AGENTS.md, *Test once*); do not rerun them locally.
 - **Quick check first, an agent only when something is new.** The sweep reads PR lists and states with `gh`. It starts a sub-agent only when a PR is new, has a new head sha, or has a new review or comment. Otherwise it stops with one line.
@@ -24,7 +24,7 @@ Review sweep for <owner>/<repo>. Use GH_TOKEN=$(gh auth token -u <your-github-us
    - Compare with what I handled last time (the PR number and head sha I last wrote "reviewing at" or "checks run at" for).
    - If nothing is new (no new PR, sha, review or comment), reply with one line and stop.
 2. For each new or changed PR that is not a draft and not mine, teammates' first:
-   - Say "taking #N" (skip if someone already did).
+   - Say "taking #N" in the team chat (skip if someone already did; a claim older than 1 hour with no review has expired).
    - Run scripts/pr-gate.sh N (checks, CodeQL, open alerts, unanswered comments).
    - Review the whole diff at the head sha, as AGENTS.md "Reviews and merge" says. Start a reviewer sub-agent only for medium, large or sensitive changes, with the named risks.
    - Check the linked issue against what the PR does.
