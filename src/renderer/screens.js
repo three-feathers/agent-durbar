@@ -306,7 +306,8 @@
     const ideaHtml=()=>ideas.length?`<div class="ai-ideas" id="aiIdeas"><span class="scr-note small">Ideas:</span>${pick().map((i)=>`<button class="btn ai-idea" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn ai-more" type="button" id="aiMore" title="Show other ideas">More ideas</button></div>`:'';
     for(;;){
       const r=await dialog({title:'Make a theme with AI',size:'m',html:`<p class="dsub">Describe a look in a few words, for example “a night-shift newsroom” or “a ship's bridge at dawn”.</p>
-        <ul class="dlist ai-pts" title="The agent app you pick designs a light or dark theme in one request, with no tools and nothing kept, at a small cost on your own plan. Durbar keeps only safe values and checks that text stays readable, and you can try the theme before you save it."><li>One request, small cost</li><li>No tools, nothing kept</li><li>Preview before saving</li></ul>
+        <ul class="dlist ai-pts"><li>One request, small cost</li><li>No tools, nothing kept</li><li>Preview before saving</li></ul>
+        <p class="scr-note small">The agent app you pick designs a light or dark theme. Durbar keeps only safe values and checks that text stays readable.</p>
         <label>Look<textarea id="aiDesc" rows="3" maxlength="300" placeholder="A calm library at night">${esc(desc)}</textarea></label>
         ${ideaHtml()}
         <label>Made by<select id="aiKind">${kinds.map((k)=>`<option value="${esc(k.id)}"${k.id===kind?' selected':''}>${esc(k.displayName||k.id)}</option>`).join('')}</select></label>
@@ -947,10 +948,10 @@
   function agentsTab(scope,agents){
     const list=agents.filter(a=>!scope||a.id===scope);
     if(!list.length)return '<p class="scr-empty">No agents.</p>';
-    const maxTools=Math.max(1,...list.map(a=>X.stats.agent(a.id).total));
+    const maxTools=Math.max(1,...list.map(a=>X.stats.agent(a.id).total)),rn=id=>X.roomName?X.roomName(id):String(id||''); /* the folder's name, not its id (spec 052 FR-170) */
     return `<p class="scr-sum">Model(s) each agent used and how full its context window is. Under <b>Auto</b> the runtime picks the model per request; the window is that model's. Unknown means the runtime did not report it (yet).</p>
     <table class="ttab agt"><thead><tr><th scope="col">Agent</th><th scope="col">Model(s)</th><th scope="col">Context window (used / size)</th><th scope="col" class="num">Tool calls</th></tr></thead><tbody>${list.map(a=>{const st=X.stats.agent(a.id);
-      return `<tr><th scope="row"><button class="by-chip" type="button" data-open="${esc(a.id)}">${esc(a.name)}</button><div class="mdl-sub">${esc(a.room||'')}</div></th><td>${modelText(a,st)}</td><td>${ctxCell(st.ctx,X.staticLimit(a))}</td>
+      return `<tr><th scope="row"><button class="by-chip" type="button" data-open="${esc(a.id)}" title="${esc(a.name)}">${esc(a.name)}</button><div class="mdl-sub" title="${esc(rn(a.room))}">${esc(rn(a.room))}</div></th><td>${modelText(a,st)}</td><td>${ctxCell(st.ctx,X.staticLimit(a))}</td>
         <td class="num">${st.total}<span class="bar mini ${st.total?'builtin':''}" aria-hidden="true"><i style="width:${st.total?Math.max(4,Math.round(st.total/maxTools*100)):0}%"></i></span></td></tr>`;}).join('')}</tbody></table>`;
   }
   /* small chip for the chat header: "Context 5%" + bar. Returns {html,title}. */
@@ -961,7 +962,7 @@
     if(a.ctxWaiting)return {cls:'unk',text:'Window: waiting for next message',title:'The model changed. The new context window is reported with your next message; the earlier figure belonged to the old window.'+long,pct:0};
     if(lv.level==='unknown')return {cls:'unk',text:'Context: unknown',title:'Context window usage appears after the first message.',pct:0};
     const l=st.ctx&&st.ctx.limit>0?st.ctx.limit:lim;
-    return {cls:lv.level,text:'Context '+lv.pct+'%'+(long?' · long':''),title:fmt(st.ctx.tokens)+' of '+fmt(l)+' tokens used ('+lv.pct+'%)'+long+(st.ctx.system!==undefined?'. System '+fmt(st.ctx.system)+', conversation '+fmt(st.ctx.conversation||0)+', tool definitions '+fmt(st.ctx.toolDefinitions||0)+'.':''),pct:lv.pct};
+    return {cls:lv.level,text:'Context '+lv.pct+'%'+(long?' · long':''),title:fmt(st.ctx.tokens)+' of '+fmt(l)+' tokens used ('+lv.pct+'%)'+long+(st.ctx.system!==undefined?'. System '+fmt(st.ctx.system)+', chat '+fmt(st.ctx.conversation||0)+', tools '+fmt(st.ctx.toolDefinitions||0)+'.':''),pct:lv.pct};
   }
 
   window.DurbarScreens={

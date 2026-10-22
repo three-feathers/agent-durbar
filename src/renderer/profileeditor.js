@@ -266,7 +266,7 @@
     const folders=(l&&l.folders)||[];
     const opener=(opts&&opts.returnFocus)||doc.activeElement;
     const ov=doc.createElement('div');ov.id='peNewOv';ov.className='dlg-ov';
-    ov.innerHTML=`<div class="dlg pe-new" role="dialog" aria-modal="true" aria-labelledby="peNT"><h3 id="peNT">New Agent Success Profile</h3>
+    ov.innerHTML=`<div class="dlg m pe-new" role="dialog" aria-modal="true" aria-labelledby="peNT"><h3 id="peNT">New Agent Success Profile</h3>
       <p class="dsub">A Markdown file with a short front matter that the agent app loads as a custom agent.</p>
       <fieldset class="pe-tpl" id="peNTpl"><legend>Template</legend></fieldset>
       <label>Agent app<select id="peNApp"><option value="copilot">GitHub Copilot</option><option value="claude">Claude Code</option></select></label>
