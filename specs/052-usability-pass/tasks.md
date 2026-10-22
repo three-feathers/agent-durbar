@@ -258,3 +258,7 @@
   - Check: `check-ui-text` overlap rule on the chat (text leaves only, inline wraps excluded).
 - [ ] T156 Screenshots before and after (both sizes, light and dark) for each surface changed, under `docs/screenshots/052-uitext-*`; `check:office`, `check:geometry`, `check:ui` green [FR-165..FR-171]
 - [ ] T157 Docs: CHANGELOG (Unreleased), `specs/README.md` row, spec status tags, README only if a visible label changed [FR-165..FR-171]
+
+## FR-173: list focus survives a re-render; Windows-flaky drivers (2026-10-22)
+- [x] T164 Spec delta FR-173, plan note [FR-173]
+- [x] T165 `renderAll()` restores the focus inside the view it was in (`#list` / `#stage`); `shots-052-ux` checks that a status re-render keeps the focus on the list row (fails without the fix); `check-question-options` waits for the question and the card instead of an 8 s sweep, and its failure message shows the observed state; each driver 10 times in a row green under `xvfb-run`, plus a parallel run under load [FR-173, FR-140]

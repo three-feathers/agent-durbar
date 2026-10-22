@@ -91,6 +91,9 @@ if (aumid) app.setAppUserModelId(aumid);
 const dev = devEnv(process.env, app.isPackaged);
 const devNote = devWarning(process.env, app.isPackaged);
 if (devNote) console.error(devNote);
+// Spec 008 FR-103: a test run's window is never treated as hidden when another window covers it (the Windows CI desktop and a shared
+// X display run several drivers at once). Chromium then stops animation frames and throttles timers, so the page stopped drawing mid-check.
+if (dev.DURBAR_DRIVER || dev.DURBAR_SHOT) app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 
 // Cheapest routing on the logged-in account's only model ("auto"); see docs/milestone-1.md.
 // Profile folder chosen in code (spec 008 FR-034): packaged `<appData>/agent-durbar`, dev `<appData>/agent-durbar-dev`.
@@ -711,6 +714,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      ...(dev.DURBAR_DRIVER || dev.DURBAR_SHOT ? { backgroundThrottling: false } : {}), // FR-103: test runs only; the app keeps saving power when hidden
     },
   });
   // Links never navigate this window or open new windows; chat links go through app:openExternal (http/https only).
