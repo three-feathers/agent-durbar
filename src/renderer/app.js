@@ -232,7 +232,15 @@ function visitDoing(a,v){
 /* the inbox's own wording (ATT.waitLabel, "waiting 12 min") without its verb, so the Boss and the inbox say the same (review on #511) */
 const bossWait=id=>{const t=NEED_SINCE.get(id);if(t==null)return '';const w=ATT.waitLabel(Math.max(0,Date.now()-t)).replace(/^waiting /,'');return w==='less than a minute'?'<1 min':w;};
 const BADGE_KEY='<svg viewBox="0 0 12 12" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" focusable="false"><circle cx="4" cy="6" r="2.4"/><path d="M6.4 6H11M9.4 6v2M11 6v1.6"/></svg>';
-const visitorWords=(a,v)=>{if(v&&(v.place===window.DurbarPlaces.COFFEE||v.place===window.DurbarPlaces.BANK))return coffeeWho(a);const r=roomOf(a);return a.name+(r?' ('+r.name+')':'')+(v?': '+visitDoing(a,v):'');};
+/* Who is at a place: "name (folder): activity". The accessible names keep the whole words; with `cut` (tooltips, spec 052 FR-168, review on
+   PR 511) the name (30), folder (22) and activity (40) are cut with an ellipsis, so an entry's title stays within 120 characters with
+   " Open the chat." */
+const visitorWords=(a,v,cut)=>{const C=cut?DurbarCutText.cutText:(t=>String(t)),n=C(a.name,30);
+  if(v&&(v.place===window.DurbarPlaces.COFFEE||v.place===window.DurbarPlaces.BANK)){const u=coffeeUntilWords(a);return n+(u?' ('+C(u,40)+')':'');}
+  const r=roomOf(a);return n+(r?' ('+C(r.name,22)+')':'')+(v?': '+C(visitDoing(a,v),40):'');};
+/* A place tile's title: at most 4 names (each cut), then "and N more", then the longest wait at the Boss; one line, well under 300 characters */
+const placeTip=(pid,ids,wait)=>{const C=DurbarCutText.cutText,nm=ids.slice(0,4).map(id=>C(byId(id).name,30)),more=ids.length-nm.length;
+  return `${placeLabelFull(pid)}: ${nm.length?nm.join(', ')+(more?` and ${more} more`:''):'nobody'}${wait?'. Longest wait '+wait:''}`;};
 function lobbyHTML(aw){
   if(!lobbyOn())return '';
   const D=window.DurbarPlaces, all=lobbyPlaces(), add=canAddPlace(), fit=D.lobbyFit(aw,D.allPlaces(CUSTOM).length,add,postShown());
@@ -246,14 +254,14 @@ function lobbyHTML(aw){
     const {mode,slots:cap}=boss&&ids.length>caps.named?{mode:'initials',slots:caps.initials}:D.chipsFor(caps,ids.length);
     const sp=mode==='initials'?D.initialSpots(box?box.width:fit.tile,ids.length):D.layoutSpots(ids.length,cap), who=ids.map(id=>{const a=byId(id);return visitorWords(a,VISITS.at(id));});
     const go=boss||bank; /* FR-034/FR-035: an entry at the Boss or the Bank opens that chat at its request */
-    const chips=ids.slice(0,sp.shown).map((id,i)=>{const a=byId(id),v=VISITS.at(id),w=visitorWords(a,v),k=boss&&v?v.label:'';
+    const chips=ids.slice(0,sp.shown).map((id,i)=>{const a=byId(id),v=VISITS.at(id),w=visitorWords(a,v),t=visitorWords(a,v,true),k=boss&&v?v.label:'';
       const inner=`<span class="slot on" data-slot="${i}"></span><span class="pv-t">${mode==='named'?`<b class="pv-n">${esc(a.name)}</b><small class="pv-a">${esc(v?visitDoing(a,v):'')}</small>`:`<b class="pv-n pv-i">${esc(D.initialsOf(a.name))}</b>`}</span>`;
-      return go?`<button type="button" class="pv pv-go" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" data-pvopen="${esc(id)}"${k?` data-ask="${k}"`:''} title="${esc(w)}. Open the chat." aria-label="${esc(w)}. Open the chat.">${inner}</button>`
-        :`<span class="pv" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" title="${esc(w)}">${inner}</span>`;}).join('');
-    const more=sp.more?`<button class="pv pv-more" type="button" data-key="pv-more:${esc(p.id)}" data-placemore="${esc(p.id)}" aria-haspopup="menu" title="${esc(who.slice(sp.shown).join('\n'))}" aria-label="${sp.more} more at ${esc(placeLabelFull(p.id))}: ${esc(ids.slice(sp.shown).map(id=>byId(id).name).join(', '))}"><span class="slot more" data-slot="${sp.shown}">+${sp.more}</span>${mode==='named'?'<span class="pv-t"><b class="pv-n">more</b></span>':''}</button>`:'';
+      return go?`<button type="button" class="pv pv-go" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" data-pvopen="${esc(id)}"${k?` data-ask="${k}"`:''} title="${esc(t)}. Open the chat." aria-label="${esc(w)}. Open the chat.">${inner}</button>`
+        :`<span class="pv" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" title="${esc(t)}">${inner}</span>`;}).join('');
+    const more=sp.more?`<button class="pv pv-more" type="button" data-key="pv-more:${esc(p.id)}" data-placemore="${esc(p.id)}" aria-haspopup="menu" title="${sp.more} more here. Open the list." aria-label="${sp.more} more at ${esc(placeLabelFull(p.id))}: ${esc(ids.slice(sp.shown).map(id=>byId(id).name).join(', '))}"><span class="slot more" data-slot="${sp.shown}">+${sp.more}</span>${mode==='named'?'<span class="pv-t"><b class="pv-n">more</b></span>':''}</button>`:'';
     const wait=boss&&ids.length?bossWait(ids[0]):''; /* FR-034: the longest wait, in the header */
-    const label=`${placeLabelFull(p.id)}: ${who.length?who.join(cf||bank?', ':'; '):'nobody'}${wait?'. Longest wait '+wait:''}`;
-    return `<div class="place${ids.length?' busy':''}${cf?' coffee':''}${boss?' boss':''}${bank?' bank':''}${named?'':' unnamed'}"${sty} data-key="place:${p.id}" data-place="${p.id}" data-chips="${mode}" tabindex="-1" role="group" title="${esc(label)}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}${wait?`<span class="bw" aria-hidden="true">${esc(wait)}</span>`:''}${ids.length?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
+    const label=`${placeLabelFull(p.id)}: ${who.length?who.join(cf||bank?', ':'; '):'nobody'}${wait?'. Longest wait '+wait:''}`; /* the accessible name: everyone there, in full (the title is placeTip) */
+    return `<div class="place${ids.length?' busy':''}${cf?' coffee':''}${boss?' boss':''}${bank?' bank':''}${named?'':' unnamed'}"${sty} data-key="place:${p.id}" data-place="${p.id}" data-chips="${mode}" tabindex="-1" role="group" title="${esc(placeTip(p.id,ids,wait))}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}${wait?`<span class="bw" aria-hidden="true">${esc(wait)}</span>`:''}${ids.length?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
   }).join('')}${add?'<button class="place-add" type="button" data-key="place-add" title="Add a place" aria-label="Add a place">+</button>':''}${lobbyArt()}</section>`;
 }
 /* spec 001 FR-038: the Postbox: the next three scheduled runs, the letters still due today, a flag for a missed or failed last run. A button:
@@ -754,7 +762,7 @@ function helperTileHTML(h){
 const visitPlace=a=>{const v=a.parent?null:VISITS.at(a.id);return v?v.place:(RETURNING.has(a.id)?null:null);};
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}${isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${esc((a.profile?a.profile.name+' · '+a.role:a.role)+kindTag(a)+remoteTag(a))} · ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+  return `<button class="desk card is-${st}${isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(DurbarCutText.cutText(a.name+' · '+(a.profile?a.profile.name+' · '+a.role:a.role)+kindTag(a)+remoteTag(a)+' · '+stWord(a)+': '+taskOf(a),200))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1"><span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</span>
     <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span></button>`;
@@ -3224,9 +3232,8 @@ const coffeeUntil=a=>{const b=BREAKS.get(a.id);return b?COFFEE.untilText(b,BREAK
 const LIMIT_WORD='Limit reached'; /* spec 001 FR-035: the cap's label at the Bank (spec 011's words, a status word: not themed) */
 const breakWord=a=>{const b=BREAKS.get(a.id);return b&&b.kind==='cap'?LIMIT_WORD:coffeeWord();};
 const coffeeTask=a=>breakWord(a)+' — '+coffeeUntil(a);
-/* "Ada (until 14:30)" for the coffee corner's label (FR-014) */
+/* "until 14:30" for the coffee corner and Bank entries and labels (FR-014; visitorWords cuts it for tooltips) */
 const coffeeUntilWords=a=>{const b=a&&BREAKS.get(a.id);return b?(b.kind==='cap'?'until you raise the limit':b.resetsAt?'until '+COFFEE.whenText(b.resetsAt,Date.now()):'until the limit resets'):'';};
-const coffeeWho=a=>{if(!a)return '';const u=coffeeUntilWords(a);return a.name+(u?' ('+u+')':'');};
 /* the card's sentence: what is used up, and what happens next */
 function coffeeSentence(a){
   const b=BREAKS.get(a.id); if(!b)return '';

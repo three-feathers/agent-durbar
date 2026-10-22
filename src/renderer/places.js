@@ -193,31 +193,18 @@
     return {shown:cap-1,more:count-(cap-1)};
   }
 
-  /* Slots that fit in one lobby tile (spec 024 FR-022). `aw` = width of the lobby row, `tiles` = how many place tiles, `addButton` = whether the
-     26px Add button shares the row. Tiles are equal (flex:1 1 0) with an 8px gap; a tile needs about 150px for padding, icon and name before its
-     first slot, and a slot takes 25px. Clamped to 1..8. With 5 tiles and no button this is the old `floor((aw/5-150)/25)` less the gaps. */
-  function tileSlots(aw,tiles,addButton,reserve){
-    const n=Math.max(1,Math.floor(Number(tiles)||0)), width=Number(aw)>0?Number(aw):800, r=Number(reserve)>0?Number(reserve)+8:0; /* spec 068: a fixed-width tile (the coffee corner) takes `reserve` px and one gap */
-    const tileW=(width-8*(n-1)-(addButton?26+8:0)-r)/n;
-    return Math.max(1,Math.min(8,Math.floor((tileW-150)/25)));
-  }
-
-  /* Visitor entries on one lobby tile (spec 001 FR-036): who is there, by name. Same tile width as tileSlots. A named entry (figure, name and
+  /* Visitor entries on one lobby tile (spec 001 FR-036): who is there, by name. The tile width comes from lobbyFit (FR-039). A named entry (figure, name and
      activity) takes about 92px, an initials entry 46px, 6px apart, inside 20px of padding. Returns how many of each fit (1..6 each; 0 named
      when not even one fits). chipsFor() picks per tile: names when every visitor fits by name, or when two or more named entries fit (the last
      becomes "+N"); else initials. */
   const NAMED_W=92, INIT_W=46, CHIP_GAP=6, TILE_PAD=20;
-  /* `reserve` as in tileSlots: a fixed-width tile (the coffee corner, spec 068) takes that many px and one gap. chipsIn(w) = the same capacities
-     for one tile `w` px wide (the coffee corner's own width). */
+  /* chipsIn(w) = the capacities of one tile `w` px wide (lobbyFit's widths; tileSlots/tileChips were removed in the review on #511) */
   function chipsIn(tileW){
     const inner=(Number(tileW)||0)-TILE_PAD;
     const fit=w=>Math.max(0,Math.min(6,Math.floor((inner+CHIP_GAP)/(w+CHIP_GAP))));
     return {named:fit(NAMED_W),initials:Math.max(1,fit(INIT_W))};
   }
-  function tileChips(aw,tiles,addButton,reserve){
-    const n=Math.max(1,Math.floor(Number(tiles)||0)), width=Number(aw)>0?Number(aw):800, r=Number(reserve)>0?Number(reserve)+8:0;
-    return chipsIn((width-8*(n-1)-(addButton?26+8:0)-r)/n);
-  }
+
   /* Spec 001 FR-039: widths in the lobby row. The Boss, coffee corner, Bank and Postbox (`post`: false when it is not shown, the demo) have
      their own widths; the `places` other tiles share the rest. Start from the preferred widths and shrink the special tiles together,
      proportionally, toward their minimums until every other tile is at least TILE_MIN (two initials entries) wide. Returns
@@ -272,7 +259,7 @@
     const shown=Math.max(0,Math.min(n-1,Math.floor((inner-22)/(INIT_W+CHIP_GAP))));
     return {shown,more:n-shown};
   }
-  /* {mode:'named'|'initials', slots} for a tile with `visitors` people, from tileChips()'s capacities */
+  /* {mode:'named'|'initials', slots} for a tile with `visitors` people, from chipsIn()'s capacities */
   function chipsFor(cap,visitors){
     const v=Math.max(0,Math.floor(Number(visitors)||0)), c=cap||{named:0,initials:1};
     if(c.named>=1&&(v<=c.named||c.named>=2))return {mode:'named',slots:c.named};
@@ -286,5 +273,5 @@
     return w.length>1?(c(w[0])[0]+c(w[w.length-1])[0]).toUpperCase():c(w[0]).slice(0,2).join('');
   }
 
-  return {PLACES,IDS,COFFEE,BOSS,BANK,POSTBOX,SPECIAL,lobbyFit,lobbyOrder,initialSpots,postNext,lettersToday,postMissed,allPlaces,placeName,isChoice,tileSlots,tileChips,chipsIn,chipsFor,initialsOf,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
+  return {PLACES,IDS,COFFEE,BOSS,BANK,POSTBOX,SPECIAL,lobbyFit,lobbyOrder,initialSpots,postNext,lettersToday,postMissed,allPlaces,placeName,isChoice,chipsIn,chipsFor,initialsOf,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
 })());

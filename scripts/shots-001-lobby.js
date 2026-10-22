@@ -136,9 +136,15 @@ module.exports = async (ctx) => {
       /* a new permission: an agent at its desk gets up and walks to the Boss (FR-034) */
       const idle = await js(`(window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&!document.querySelector('#stage .desk.is-away[data-id="'+CSS.escape(a.id)+'"]'))||{}).id`);
       assert.ok(idle, `${w}: an agent at its desk`);
+      /* record a walk when it starts (the walk takes about 1 s; a slow runner may poll only after it ended: review on #511, Windows CI), then
+         wait for the end state: the desk is empty at the Boss and the agent is in the Boss queue */
+      await js(`window.__walkSeen=false;window.__walkObs&&window.__walkObs.disconnect();window.__walkObs=new MutationObserver(()=>{if(document.querySelector('#walkers .walker.walking'))window.__walkSeen=true;});window.__walkObs.observe(document.getElementById('walkers'),{childList:true,subtree:true,attributes:true,attributeFilter:['class']})`);
       await emit({ type: 'status', sessionId: idle, status: 'needs-permission', intent: 'Wants to run npm publish', permission: { requestId: 'drv-lobby-' + w, kind: 'shell', summary: 'run npm publish --dry-run', scopeKey: 'shell:npm', scopeLabel: 'run npm', state: 'pending' } });
-      const walked = await H.until(`document.querySelector('#stage .desk.is-away[data-place="boss"][data-id="'+CSS.escape(${q(idle)})+'"]')&&!!document.querySelector('.walker.walking')===${q(!REDUCED)}`, 3000);
-      assert.ok(walked, `${w}: ${await nameOf(idle)} ${REDUCED ? 'appears at the Boss with no walk (reduced motion)' : 'walks to the Boss'}`);
+      const there = await H.until(`!!document.querySelector('#stage .desk.is-away[data-place="boss"][data-id="'+CSS.escape(${q(idle)})+'"]')&&!!document.querySelector('#stage .place.boss [data-visitor="'+CSS.escape(${q(idle)})+'"]')`, 6000);
+      const seen = await js(`(window.__walkObs.disconnect(),window.__walkSeen)`);
+      const vis = await js(`document.visibilityState`);
+      assert.ok(there, `${w}: ${await nameOf(idle)} reaches the Boss queue and its desk is empty (visibility ${vis})`);
+      assert.strictEqual(seen, !REDUCED, `${w}: ${await nameOf(idle)} ${REDUCED ? 'appears at the Boss with no walk (reduced motion)' : 'walks to the Boss'} (visibility ${vis})`);
       await settleWalk(); await ctx.sleep(300);
       const b2 = await tile('boss'), nm = await nameOf(idle);
       assert.ok(b2.label.includes(nm + ' (') && b2.label.indexOf(nm + ' (') > b2.label.indexOf(sb.label.replace(/^[^:]+: /, '').split(' (')[0] + ' (') && b2.pv.some((v) => v.id === idle), `${w}: ${nm} joins the end of the queue (and is drawn): ${b2.label}`);

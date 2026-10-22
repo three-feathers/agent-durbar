@@ -9,6 +9,7 @@ import {
 } from '../src/shared/places';
 import type { CustomPlace, PlaceMap } from '../src/shared/places';
 import type { DurbarApi } from '../src/shared/api';
+import { parseSettings } from '../src/shared/credits';
 type Ev = { tool?: string; mcpServer?: string; mcpTool?: string; phase?: string; callId?: string };
 type Visits = {
   onTool: (id: string, e: Ev, map?: Record<string, string>, customIds?: string[]) => boolean;
@@ -27,8 +28,6 @@ const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js
   placeName: (id: string, custom?: unknown) => string;
   allPlaces: (custom?: unknown) => { id: string; name: string; icon?: string }[];
   isChoice: (v: unknown, customIds?: unknown) => boolean;
-  tileSlots: (aw: unknown, tiles: unknown, addButton: unknown) => number;
-  tileChips: (aw: unknown, tiles: unknown, addButton: unknown, reserve?: unknown) => { named: number; initials: number };
   chipsIn: (tileW: unknown) => { named: number; initials: number };
   lobbyFit: (aw: unknown, places: unknown, addButton: unknown, post?: unknown) => Record<'boss' | 'coffee' | 'bank' | 'post', { width: number; named: boolean; chips: { named: number; initials: number } } | null> & { tile: number; caps: { named: number; initials: number } };
   lobbyOrder: (ids: unknown, post?: unknown) => string[];
@@ -420,8 +419,27 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   assert.strictEqual(parseCustomPlaces([ok(cid(1), 'A'), ok(cid(2), 'B'), ok(cid(3), 'C'), ok(cid(4), 'D'), ok(cid(5), 'E')]).length, 3, 'the first 3 are kept');
   assert.deepStrictEqual(names(parseCustomPlaces([ok(cid(1), 'A'), ok('bad', 'X'), ok(cid(2), 'B'), ok(cid(3), 'C'), ok(cid(4), 'D')])), ['A', 'B', 'C'], 'invalid entries do not use up the 3');
   assert.deepStrictEqual(names(parseCustomPlaces([ok(cid(1), 'A'), ok(cid(1), 'B')])), ['A'], 'repeated id: first kept');
-  assert.deepStrictEqual(names(parseCustomPlaces([ok(cid(1), 'A'), ok(cid(2), 'a'), ok(cid(3), 'B')])), ['A', 'B'], 'repeated name (ignoring case): first kept');
-  assert.deepStrictEqual(names(parseCustomPlaces([ok(cid(1), 'Terminal'), ok(cid(2), 'default'), ok(cid(3), 'B')])), ['B'], 'reserved names dropped');
+  assert.deepStrictEqual(names(parseCustomPlaces([ok(cid(1), 'A'), ok(cid(2), 'a'), ok(cid(3), 'B')])), ['A', 'a (2)', 'B'], 'repeated name (ignoring case): kept, renamed (never dropped)');
+  assert.deepStrictEqual(names(parseCustomPlaces([ok(cid(1), 'Terminal'), ok(cid(2), 'default'), ok(cid(3), 'B')])), ['Terminal (2)', 'default (2)', 'B'], 'reserved names: kept, renamed');
+  // review on #511 (C): places saved before "Boss", "Bank", "Postbox" and "Coffee corner" became built-in tiles keep their id, icon and mappings
+  {
+    const saved = [ok(cid(1), 'Bank', 'chart'), ok(cid(2), 'postbox', 'mail'), ok(cid(3), 'Billing', 'box')];
+    assert.deepStrictEqual(parseCustomPlaces(saved), [{ id: cid(1), name: 'Bank (2)', icon: 'chart' }, { id: cid(2), name: 'postbox (2)', icon: 'mail' }, { id: cid(3), name: 'Billing', icon: 'box' }], 'Bank and Postbox are renamed, not dropped');
+    assert.deepStrictEqual(names(parseCustomPlaces([ok(cid(1), 'Boss'), ok(cid(2), 'COFFEE CORNER')])), ['Boss (2)', 'COFFEE CORNER (2)']);
+    // the settings file as it was saved: the mappings still point to the renamed places
+    const st = parseSettings(JSON.stringify({ customPlaces: saved, placeMap: { 'stripe-mcp': cid(1), 'mailgun': cid(2), 'erp': cid(3), github: 'web' } }));
+    assert.deepStrictEqual(names(st.customPlaces ?? []), ['Bank (2)', 'postbox (2)', 'Billing'], 'migration: every saved place survives startup');
+    assert.deepStrictEqual({ ...st.placeMap }, { 'stripe-mcp': cid(1), mailgun: cid(2), erp: cid(3), github: 'web' }, 'migration: no mapping is lost');
+    // the free name: next number when (2) is taken, the base cut to stay within 24 code points, a renamed place can be renamed again
+    assert.deepStrictEqual(names(parseCustomPlaces([ok(cid(1), 'Bank (2)'), ok(cid(2), 'bank')])), ['Bank (2)', 'bank (3)']);
+    const long = 'x'.repeat(24);
+    assert.deepStrictEqual(names(parseCustomPlaces([ok(cid(1), long), ok(cid(2), long.toUpperCase())])), [long, 'X'.repeat(20) + ' (2)']);
+    assert.ok(names(parseCustomPlaces([ok(cid(1), long), ok(cid(2), long)])).every((n) => cleanPlaceName(n).ok), 'a renamed name is itself valid');
+    const r2 = parseCustomPlaces(saved);
+    assert.ok(updateCustomPlace(r2, cid(1), { name: 'Payments' }).ok, 'the renamed place can be renamed');
+    assert.strictEqual(updateCustomPlace(r2, cid(1), { name: 'Bank' }).error, 'name-taken', 'but not back to the reserved name');
+    assert.strictEqual(addCustomPlace([], 'Postbox', 'mail', nextId).error, 'name-taken', 'adding a reserved name is still refused');
+  }
   assert.strictEqual(parseCustomPlaces([ok(cid(1), 'A', 'nope')])[0].icon, 'pin', 'unknown icon becomes pin, the place stays');
   assert.strictEqual(parseCustomPlaces([ok(cid(1), 'A', 5)])[0].icon, 'pin');
   assert.strictEqual(parseCustomPlaces([{ id: cid(1), name: 'A' }])[0].icon, 'pin', 'missing icon');
@@ -518,36 +536,17 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   assert.strictEqual(v.dropPlace(cid(1)), false); assert.strictEqual(v.dropPlace('library'), false);
 }
 
-// tileSlots: slots per lobby tile from the real tile width (8px gaps, 26px + gap for the Add button)
-{
-  const t = (aw: number, tiles: number, btn: boolean) => P.tileSlots(aw, tiles, btn);
-  assert.deepStrictEqual([5, 6, 7, 8].map((n) => t(1248, n, n < 8)), [3, 1, 1, 1], '1248 px (1280x800), with the Add button below 8 tiles');
-  assert.deepStrictEqual([5, 6, 7, 8].map((n) => t(1408, n, n < 8)), [4, 2, 1, 1], '1408 px (1440x900), with the Add button below 8 tiles');
-  assert.deepStrictEqual([t(1248, 5, false), t(1408, 5, false)], [3, 5], 'five tiles, no button: what the lobby had before (3 and 5 slots)');
-  assert.ok(t(9999, 5, false) <= 8 && t(9999, 5, false) === 8, 'at most 8');
-  for (const [aw, n, b] of [[0, 5, false], [-5, 6, true], [NaN, 5, false], [undefined, 5, false], [1248, 0, false], [1248, -2, true], [1248, NaN, false], [1248, 'x', false], [100, 8, true]] as [unknown, unknown, unknown][]) {
-    const r = P.tileSlots(aw, n, b);
-    assert.ok(Number.isInteger(r) && r >= 1 && r <= 8, 'always an integer from 1 to 8: ' + String([aw, n, b]));
-  }
-  for (const aw of [1000, 1248, 1408, 1900]) for (let n = 5; n < 8; n++) assert.ok(t(aw, n + 1, false) <= t(aw, n, false), `more tiles never give more slots (${aw}, ${n})`);
-  for (const aw of [1248, 1408]) for (let n = 5; n < 8; n++) assert.ok(t(aw, n, true) <= t(aw, n, false), 'the Add button never gives more slots');
-}
-
 // spec 001 FR-036: visitor entries per tile: names when everyone fits by name or two named entries fit, else initials; 0..6 / 1..6
 {
-  const c = (aw: number, tiles: number, btn: boolean) => P.tileChips(aw, tiles, btn);
-  assert.deepStrictEqual(c(1160, 5, true), { named: 2, initials: 3 }, '1440x900 with the rail');
-  assert.deepStrictEqual(c(970, 5, true), { named: 1, initials: 3 }, 'a sparse office at 1280x800 with the rail');
-  assert.deepStrictEqual(c(1160, 8, false), { named: 1, initials: 2 }, 'eight places');
-  assert.deepStrictEqual(c(99999, 5, false), { named: 6, initials: 6 }, 'at most 6');
-  for (const [aw, n, b] of [[0, 5, false], [-5, 6, true], [NaN, 5, false], [undefined, 5, false], [1248, 0, false], [100, 8, true], [1248, 'x', false]] as [unknown, unknown, unknown][]) {
-    const r = P.tileChips(aw, n, b);
-    assert.ok(Number.isInteger(r.named) && r.named >= 0 && r.named <= 6 && Number.isInteger(r.initials) && r.initials >= 1 && r.initials <= 6, 'always in range: ' + String([aw, n, b]));
+  // chipsIn(w): one tile w px wide (lobbyFit gives the widths); exact capacity boundaries: 20 px padding, 92/46 px entries, 6 px apart
+  assert.deepStrictEqual([111, 112, 209, 210].map((w) => P.chipsIn(w).named), [0, 1, 1, 2], 'named entries: boundaries at 112 and 210 px');
+  assert.deepStrictEqual([117, 118, 169, 170].map((w) => P.chipsIn(w).initials), [1, 2, 2, 3], 'initials: boundaries at 118 (TILE_MIN) and 170 px');
+  assert.deepStrictEqual(P.chipsIn(99999), { named: 6, initials: 6 }, 'at most 6');
+  for (const w of [0, -5, NaN, undefined, 'x', null]) {
+    const r = P.chipsIn(w);
+    assert.ok(Number.isInteger(r.named) && r.named >= 0 && r.named <= 6 && Number.isInteger(r.initials) && r.initials >= 1 && r.initials <= 6, 'always in range: ' + String(w));
   }
-  for (const aw of [900, 1160, 1408, 1900]) for (let n = 5; n < 8; n++) {
-    const a = c(aw, n, false), z = c(aw, n + 1, false);
-    assert.ok(z.named <= a.named && z.initials <= a.initials, `more tiles never give more entries (${aw}, ${n})`);
-  }
+  for (let w = 60; w < 800; w++) { const x = P.chipsIn(w), y = P.chipsIn(w + 1); assert.ok(y.named >= x.named && y.initials >= x.initials, 'a wider tile never holds fewer: ' + w); }
   const f = (named: number, initials: number, v: number) => P.chipsFor({ named, initials }, v);
   assert.deepStrictEqual(f(1, 3, 1), { mode: 'named', slots: 1 }, 'one visitor, one named entry fits: the name');
   assert.deepStrictEqual(f(1, 3, 2), { mode: 'initials', slots: 3 }, 'two visitors, one named entry fits: initials');
@@ -555,9 +554,6 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   assert.deepStrictEqual(f(0, 1, 1), { mode: 'initials', slots: 1 }, 'no named entry fits');
   assert.deepStrictEqual(f(2, 4, 0), { mode: 'named', slots: 2 }, 'nobody there');
   assert.deepStrictEqual(P.chipsIn(200), { named: 1, initials: 3 }, 'a 200 px tile: one named entry or three initials');
-  assert.deepStrictEqual(P.tileChips(1160, 5, true, 0), P.tileChips(1160, 5, true), 'no reserve: as before');
-  assert.deepStrictEqual(P.tileChips(1000, 1, false, 100), P.chipsIn(892), 'a reserve takes its width and one 8 px gap (review on #511, M5)');
-  assert.deepStrictEqual(P.tileChips(1000, 2, true, 100), P.chipsIn((1000 - 8 - 34 - 108) / 2), 'gaps, the Add button and the reserve');
   assert.deepStrictEqual(['Omar', 'Ada Lovelace', '  ', '', null, 'émile zola', 'X'].map((n) => P.initialsOf(n)), ['Om', 'AL', '', '', '', 'ÉZ', 'X']);
 }
 
@@ -631,6 +627,9 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
 // FR-020 / T022: the simulator repeats the shared rules; run the same operations through both and compare
 async function simChecks(): Promise<void> {
   const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'sim.ts'), 'utf8');
+  const simReserved = /const RESERVED_NAMES = \[([^\]]*)\]/.exec(src);
+  assert.ok(simReserved, 'sim.ts has RESERVED_NAMES');
+  assert.deepStrictEqual(simReserved[1].split(',').map((x) => x.trim().replace(/^'|'$/g, '')), RESERVED_PLACE_NAMES.map((n) => n.toLowerCase()), 'the simulator reserves the same names (review on #511: Boss, Bank, Postbox were missing)');
   const js = ts.transpileModule(src, { compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.None } }).outputText;
   const makeSim = (opts: Record<string, unknown>, search = ''): DurbarApi => {
     const win: Record<string, unknown> = { setTimeout: () => 0, setInterval: () => 0, location: { search } };
@@ -641,6 +640,7 @@ async function simChecks(): Promise<void> {
   const scenarios: Op[][] = [
     [['add', 'Database', 'database'], ['add', 'database', 'star'], ['add', 'DATABASE ', 'star'], ['add', 'Terminal', 'star'], ['add', '  ', 'star'], ['add', '', 'star'], ['add', 'x'.repeat(25), 'star'],
       ['add', 'x'.repeat(24), 'star'], ['add', 'Fourth', 'star']],
+    [['add', 'Boss', 'star'], ['add', 'BANK', 'star'], ['add', ' postbox ', 'star'], ['add', 'Coffee Corner', 'star'], ['add', 'Bank (2)', 'star'], ['add', 'A', 'star'], ['update', 1, { name: 'bank' }], ['update', 1, { name: 'Postbox' }]],
     [['add', 'web', 'star'], ['add', 'Web', 'star'], ['add', 'Other TOOLS', 'star'], ['add', 'stay at desk', 'star'], ['add', 'DEFAULT', 'star'], ['add', 'Library', 'star'], ['add', 'software LIBRARY', 'star'], ['add', 'Terminals', 'star']],
     [['add', '\u{1F600}'.repeat(24), 'bolt'], ['add', '\u{1F600}'.repeat(25), 'bolt'], ['add', 'a\nb', 'bolt'], ['add', 'a\u0085b', 'bolt'], ['add', 'a\u007fb', 'bolt'], ['add', 'Web\u202e', 'bolt'], ['add', 'a\u200bb', 'bolt'], ['add', 'a\u2060b', 'bolt'], ['add', 'a\ufeffb', 'bolt'], ['add', 'Caf\u00e9', 'bolt'], ['add', 'Dev \u{1F468}\u200d\u{1F4BB}', 'bolt'], ['add', 'a\u200cb', 'bolt'], ['add', 'a\u200eb', 'bolt'], ['add', 5, 'bolt'], ['add', null, 'bolt'], ['add', '<b>x</b>', 'bolt'], ['add', '__proto__', 'bolt']],
     [['add', 'Äpfel', 'star'], ['add', 'äPFEL', 'star'], ['add', 'Ok', 'nope'], ['add', 'Ok', undefined], ['add', 'Ok', null], ['add', 'Ok', 'STAR'], ['add', 'Ok', '__proto__'], ['add', 'Ok', 'constructor'], ['add', 'Ok', 'pin']],
@@ -753,6 +753,12 @@ async function simChecks(): Promise<void> {
   v.onTool('b', { phase: 'start', tool: 'bash', callId: 'y' }); n += 700; v.tick();
   assert.strictEqual(v.at('b')!.place, 'terminal');
   v.pin('b', C); assert.strictEqual(v.at('b')!.place, C);
+  // spec 001 FR-034 (review on #511, M19): at the Boss, a question that becomes a permission keeps its place in the queue and changes its label
+  const B = (P as unknown as { BOSS: string }).BOSS;
+  n = 100000; assert.strictEqual(v.pin('q', B, 'q'), true);
+  n = 160000; assert.strictEqual(v.pin('q', B, 'p'), true, 'same place, new label: on-screen change');
+  assert.deepStrictEqual(v.at('q'), { place: B, label: 'p', since: 100000 }, 'the label is the new one, the visit (and its queue position) the same');
+  assert.strictEqual(v.pin('q', B, 'p'), false, 'same label again: nothing changes');
 }
 
 simChecks().then(

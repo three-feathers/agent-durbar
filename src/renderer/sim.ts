@@ -1242,7 +1242,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     type SimPlace = { id: string; name: string; icon: string };
     const MAX_CUSTOM = 3;
     const CUSTOM_ICONS = ['star', 'flask', 'database', 'cloud', 'chart', 'chat', 'mail', 'calendar', 'shield', 'box', 'bolt', 'pin'];
-    const RESERVED_NAMES = ['library', 'software library', 'terminal', 'web', 'other tools', 'stay at desk', 'default', 'coffee corner'];
+    const RESERVED_NAMES = ['library', 'software library', 'terminal', 'web', 'other tools', 'stay at desk', 'default', 'coffee corner', 'boss', 'bank', 'postbox'];
     const customPlaces: SimPlace[] = [];
     let placeSeq = 0;
     const simPlaceResult = (ok: boolean, error?: string, place?: SimPlace) => ({

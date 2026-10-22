@@ -76,7 +76,7 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 
 ## Changes 2026-10-22 (review on #511, Ruben's agent, 08:35 UTC)
 
-- [ ] T053 Short lobby tooltips: visitor entries, "+N", place tiles, desk card title cut to 300; `check:ui-text` passes with `simnames=long` [FR-036, spec 052 FR-168]
-- [ ] T054 `shots-001-lobby.js`: record the walk start with a `MutationObserver`, wait for the end state [FR-040]
-- [ ] T055 `parseCustomPlaces` renames a saved reserved or repeated name instead of dropping it; `sim.ts` reserves Boss, Bank, Postbox; `test:places` migration case through `parseSettings` (ids and mappings kept) [spec 024 FR-018]
-- [ ] T056 `test:places`: `VISITS.pin` same place, new label (M19); remove `tileSlots`/`tileChips` and their tests [FR-034, FR-039]
+- [x] T053 Short lobby tooltips: visitor entries, "+N", place tiles, desk card title head cut to 200; `check:ui-text` passes with `simnames=long` [FR-036, spec 052 FR-168]
+- [x] T054 `shots-001-lobby.js`: record the walk start with a `MutationObserver`, wait for the end state [FR-040]
+- [x] T055 `parseCustomPlaces` renames a saved reserved or repeated name instead of dropping it; `sim.ts` reserves Boss, Bank, Postbox; `test:places` migration case through `parseSettings` (ids and mappings kept) [spec 024 FR-018]
+- [x] T056 `test:places`: `VISITS.pin` same place, new label (M19); remove `tileSlots`/`tileChips` and their tests [FR-034, FR-039]
