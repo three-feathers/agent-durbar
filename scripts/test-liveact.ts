@@ -177,6 +177,48 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   eq(f.of('a')!.long, 'Moved the handlers. Tests pass.', 'long follows the reply');
 }
 
+// spec 001 FR-043 (review of #532): a done desk's reply excerpt is masked on the RAW text, then made plain. `plain` strips `_`, `*` and
+// backticks, so masking after it let `ghp_…` through as `ghp…`. Every token shape, in every Markdown wrapping, must be gone.
+{
+  const X = L as unknown as { excerpt(raw: string, redact: ((s: string) => string) | null): string };
+  const toks: Record<string, string> = {
+    ghp: 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2',
+    github_pat: 'github_pat_' + '11ABCDEFG0123456789_abcdefghijklmnopqrstuv',
+    sk: 'sk-' + 'proj-Abc123_def456-GHI789jkl',
+    bearer: 'Bearer ' + 'abcDEF123_ghiJKL456.mno',
+  };
+  /* the part of each token that must never show, in any form plain() can leave (with or without its underscores) */
+  const tails: Record<string, string[]> = {
+    ghp: ['A1b2C3d4E5f6G7h8I9j0K1l2'], github_pat: ['0123456789_abcdefghij', '0123456789abcdefghij'],
+    sk: ['Abc123_def456', 'Abc123def456'], bearer: ['abcDEF123_ghi', 'abcDEF123ghi', 'ghiJKL456'],
+  };
+  const wraps: Array<[string, (t: string) => string]> = [
+    ['plain', (t) => t], ['backticks', (t) => '`' + t + '`'], ['bold', (t) => '**' + t + '**'], ['italic _', (t) => '_' + t + '_'],
+    ['bold __', (t) => '__' + t + '__'], ['bold italic', (t) => '***' + t + '***'], ['snake_case', (t) => 'my_' + t],
+    ['code block', (t) => '```\n' + t + '\n```'], ['list', (t) => '- ' + t], ['heading', (t) => '## ' + t], ['quote', (t) => '> ' + t],
+    ['link text', (t) => '[' + t + '](https://example.com)'],
+  ];
+  for (const [k, t] of Object.entries(toks)) for (const [w, f] of wraps) {
+    const out = X.excerpt('**Done.** The key ' + f(t) + ' was in the old config.', mask.redact);
+    ok(out.startsWith('Done. The key '), `${k} ${w}: Markdown removed: ${out}`);
+    for (const tail of tails[k]) ok(!out.includes(tail), `${k} ${w}: no part of the token shows: ${out}`);
+  }
+  eq(X.excerpt('**Done.** All `tests` pass.', mask.redact), 'Done. All tests pass.', 'excerpt: plain text');
+  eq(X.excerpt('ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2', null), '', 'excerpt: no mask, nothing (fail closed)');
+  eq(X.excerpt('text', () => { throw new Error('x'); }), '', 'excerpt: a mask that throws, nothing');
+  const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
+  ok(/DurbarLiveAct\.excerpt\(a\.lastOutput,/.test(app) && !/redact\([^)]*plain\(a\.lastOutput/.test(app), 'grownLine masks through excerpt');
+  ok(/return t\?DurbarCutText\.cutText\(t,600\):st==='done'\?'Finished\.':'Ready\.';/.test(app), 'grownLine: nothing from the reply without a mask');
+}
+// review of #532: `long` is made only when a grown desk reads it; a desk that never does costs what it did before
+{
+  const f = mk();
+  eq(f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: 'First one done. Sec' })), true, 'first sentence: a change');
+  eq(f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: 'ond is still' })), false, 'mid-sentence, nobody reads long: no change');
+  eq(f.of('a')!.long, 'First one done.', 'long on demand');
+  f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: ' going. Third.' }));
+  eq(f.of('a')!.long, 'First one done. Second is still going. Third.', 'long follows the newest text');
+}
 // page wiring: the shim, the compiled redact module and liveact.js load in order before app.js; redact.ts stays import-free
 {
   const html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');

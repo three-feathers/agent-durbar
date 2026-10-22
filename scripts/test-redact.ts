@@ -57,6 +57,16 @@ for (const [k, v] of Object.entries(planted)) {
   assert.ok(out.startsWith('before ') && out.endsWith(' after') || k === 'authHeader', `pattern ${k}: surroundings kept`);
 }
 assert.strictEqual(redact('git clone https://alice:hunter2pass@example.com/r.git', {}), 'git clone https://[redacted]@example.com/r.git', 'url creds: host kept');
+// a leading `_` (Markdown emphasis, snake_case) is not a word boundary: the patterns must not rely on `\b` (spec 001, review of #532)
+for (const [k, v] of Object.entries(planted)) {
+  const secretPart = k === 'urlCreds' ? 'hunter2pass' : k === 'authHeader' ? 'dXNlcjpwYXNzd29yZA' : k === 'bearer' ? 'abcdef1234567890' : v.slice(-12);
+  /* a JWT keeps its stricter start (linear on long base64url runs): after up to 3 underscores, not glued to a word */
+  for (const w of [`_${v}_`, `__${v}__`, `*_${v}_*`, ...(k === 'jwt' ? [] : [`my_${v}`])]) {
+    const out = redact(`see ${w} now`, {});
+    assert.ok(!out.includes(secretPart), `pattern ${k} in ${w.slice(0, 8)}…: secret part gone (${out})`);
+  }
+}
+assert.strictEqual(redact('_' + planted.aws + '_', {}), '_[redacted]_', 'aws key between underscores');
 
 // 4. near misses stay intact
 for (const ok of ['risk-management and task-list', 'sk-short', 'the sk- prefix', 'ghp', 'ghp_short', 'AKIA123', 'v1.2.3', 'file.name.ext', 'https://example.com/a:b', 'user@example.com', 'Bearer', 'a Bearer of news', 'eyJ.a.b']) {
@@ -128,6 +138,14 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
     tidLong: 'tid=0123abcd;' + 'a;'.repeat(MB / 2),
     aws: 'AKIA'.repeat(MB / 4),
     awsLong: 'ASIA' + 'A'.repeat(MB),
+    // starts after `_` (review of #532): runs of underscore-led shapes
+    ghUnder: '_ghp_'.repeat(MB / 5),
+    patUnder: '_github_pat_'.repeat(MB / 12),
+    skUnder: '_sk-'.repeat(MB / 4),
+    bearerUnder: '_Bearer _'.repeat(MB / 9),
+    jwtUnder: '___eyJ'.repeat(MB / 6),
+    jwtUnderLong: '_eyJ' + 'a_'.repeat(MB / 2),
+    awsUnder: '_AKIA'.repeat(MB / 5),
   };
   // Each case runs in a worker thread that times redact() itself, so a busy runner cannot fail the test; the 1 s assertion is the
   // real ReDoS check. Workers, not child processes: a child fed 1 MB on stdin hung for 30 s twice on a busy macOS runner (#303).

@@ -12,16 +12,20 @@ const SECRET_PREFIX = /^(GH_|GITHUB_|OPENAI_|ANTHROPIC_|COPILOT_)/i;
 const LONG_OK_NAME = /^(PATH|PATHEXT|PSMODULEPATH|HOME|HOMEPATH|HOMEDRIVE|USERPROFILE|PWD|OLDPWD|SHELL|TMPDIR|TEMP|TMP|APPDATA|LOCALAPPDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|PROGRAMDATA|SYSTEMROOT|WINDIR|COMSPEC|NODE_PATH|MANPATH|INFOPATH|LS_COLORS|LSCOLORS|TERM_PROGRAM_VERSION|DISPLAY|DBUS_SESSION_BUS_ADDRESS|SSH_AUTH_SOCK|INIT_CWD|_|__CF.*|SSL_CERT_FILE|NODE_EXTRA_CA_CERTS|.*_HOME|ONEDRIVE.*|COMMONPROGRAMFILES.*|PROGRAMW6432|ALLUSERSPROFILE|PUBLIC|TERM_SESSION_ID|XPC_SERVICE_NAME|VSCODE_.*|TERM_PROGRAM.*|ITERM_.*|COLORTERM|DURBAR_.*|XDG_.*|LC_.*|npm_.*)$/i;
 
 /** Key-like shapes. Each is linear: bounded classes, no nested quantifiers, starts anchored where a token cannot already be running. Order matters: header and URL first. */
+/* They start where no letter or digit precedes them, not at `\b`: there is no word boundary between `_` and a letter, so `\b` let a
+   token wrapped in Markdown emphasis (`_ghp_…_`) or glued to a snake_case word through (spec 001, review of #532). `tid=` and JWTs
+   keep their stricter start (a long run of token characters is never rescanned from inside): a JWT may follow up to 3 underscores,
+   but one glued to a word (`my_eyJ…`) stays visible. */
 const PATTERNS: Array<[RegExp, string]> = [
-  [/\b(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?[^\s",;]+/gi, '$1[redacted]'],
-  [/\b([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{1,200}:[^\s/@"]{1,200}@/gi, '$1[redacted]@'],
+  [/(?<![A-Za-z0-9])(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?[^\s",;]+/gi, '$1[redacted]'],
+  [/(?<![A-Za-z0-9])([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{1,200}:[^\s/@"]{1,200}@/gi, '$1[redacted]@'],
   [/(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"]{0,2000}/g, '[redacted]'],
-  [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, '[redacted]'],
-  [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, '[redacted]'],
-  [/\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/g, '[redacted]'],
-  [/\bBearer\s{1,8}[A-Za-z0-9._~+/=-]{8,}/g, '[redacted]'],
-  [/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}/g, '[redacted]'],
-  [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, '[redacted]'],
+  [/(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{20,}/g, '[redacted]'],
+  [/(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}/g, '[redacted]'],
+  [/(?<![A-Za-z0-9])sk-(?:ant-)?[A-Za-z0-9_-]{20,}/g, '[redacted]'],
+  [/(?<![A-Za-z0-9])Bearer\s{1,8}[A-Za-z0-9._~+/=-]{8,}/g, '[redacted]'],
+  [/(?<![A-Za-z0-9_-])(_{0,3})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}/g, '$1[redacted]'],
+  [/(?<![A-Za-z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])/g, '[redacted]'],
 ];
 
 type Env = Record<string, string | undefined>;

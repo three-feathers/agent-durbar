@@ -148,6 +148,10 @@ for (const [w, h] of [[1280, 800], [1440, 900], [1920, 1080]]) {
   const gs = app.slice(app.indexOf('function growSearch('), app.indexOf('let layoutKey='));
   assert.ok(/window\.DurbarProbe\.pick\(cols,lo,/.test(gs) && /probeSet\(probe,stageHTML\(sizing,'roomy',aw,c\)\)/.test(gs), 'growSearch uses pick and probeSet');
   assert.ok(/GROW=0; setGrow\(probe,0\);\s*return best;/.test(gs), 'growSearch resets the probe');
+  // review of #532: a grown render leaves GROW on; each search starts with it off, before any candidate is probed
+  const cl = app.slice(app.indexOf('function chooseLayout('), app.indexOf('function growSearch('));
+  const reset = cl.indexOf('GROW=0; setGrow(probe,0);');
+  assert.ok(reset > 0 && reset < cl.indexOf('for(const [d,hcap,side] of cands)') && reset < cl.indexOf('probe.innerHTML=svgHollow'), 'chooseLayout starts with GROW off');
   // styles: the grown rules exist and keep text sizes (no font-size in them)
   const grown = css.filter((l) => l.includes('[data-grow'));
   assert.ok(grown.length >= 5, 'grown desk rules');

@@ -59,10 +59,10 @@
 - [x] T059 Grown card text: `liveact.js` `long` readout (+ `test:liveact` cases); `deskLine` grown text (readout, last reply excerpt masked, task); `fitSide` on grown text lines after render and paint; `styles.css` grown rules (height, widths, two-line title, max 8 lines, fade) [FR-043, FR-045]
 - [x] T060 `sim.ts` `simrooms=1..5`, `simhelpers=0`; `scripts/check-office-fill.js` driver + `npm run check:office-fill` + `scripts/ui-suite.js`; `shots-001-live-activity.js` forces `full` for the side-panel part [FR-046]
 - [x] T061 `check:office`, `check:geometry`, `npm test`; screenshots `docs/screenshots/001-fill-{4,6,15}-{1440x900,1280x800}.png` (simulator); README office section, CHANGELOG, `specs/README.md` [FR-045, FR-046]
-- [ ] T062 (review of #532) `liveact.js` `excerpt(raw, redact)`: mask the raw reply, then `plain`, then cut; `grownLine` uses it and fails closed (`Finished.`) without `redact`; `test:liveact` token cases (ghp_, github_pat_, sk-, Bearer; plain, backticks, bold, underscores, code block, link) [FR-043]
-- [ ] T063 (review of #532) `src/shared/redact.ts`: key-shape patterns anchored on "no letter or digit before" instead of `\b`; `test:redact` underscore-wrapped cases [FR-043; spec 012 FR-080]
-- [ ] T064 (review of #532) `liveact.js`: `long` computed lazily in `of()`; `chooseLayout` starts with `GROW=0`; `test:probe` source check [FR-042, FR-043]
-- [ ] T065 (review of #532) `check:office-fill`: `ghp_` and `github_pat_` tokens in the done reply; FR-042, README and CHANGELOG say *f* may drop several steps at once [FR-042, FR-046]
+- [x] T062 (review of #532) `liveact.js` `excerpt(raw, redact)`: mask the raw reply, then `plain`, then cut; `grownLine` uses it and fails closed (`Finished.`) without `redact`; `test:liveact` token cases (ghp_, github_pat_, sk-, Bearer; plain, backticks, bold, underscores, code block, link) [FR-043]
+- [x] T063 (review of #532) `src/shared/redact.ts`: key-shape patterns anchored on "no letter or digit before" instead of `\b`; `test:redact` underscore-wrapped cases [FR-043; spec 012 FR-080]
+- [x] T064 (review of #532) `liveact.js`: `long` computed lazily in `of()`; `chooseLayout` starts with `GROW=0`; `test:probe` source check [FR-042, FR-043]
+- [x] T065 (review of #532) `check:office-fill`: `ghp_` and `github_pat_` tokens in the done reply; FR-042, README and CHANGELOG say *f* may drop several steps at once [FR-042, FR-046]
 
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 

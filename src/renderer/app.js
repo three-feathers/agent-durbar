@@ -556,14 +556,15 @@ const deskLine=a=>{if(GROW)return grownLine(a);const r=LIVE_SIDE?null:liveShown(
 let GROW=0;
 const GR=window.DurbarProbe.GROW;
 function setGrow(el,f){if(f){el.style.setProperty('--gf',String(f));el.dataset.grow=f>=GR.TWO_LINES?'2':'1';}else{el.style.removeProperty('--gf');delete el.dataset.grow;}}
-/* the text of a grown desk: the readout with its newest sentences, else the start of the last reply (Done, Idle; masked), else the desk text */
+/* the text of a grown desk: the readout with its newest sentences, else the start of the last reply (Done, Idle), else the desk text.
+   The reply is masked on the raw text before Markdown is removed (excerpt); with no working mask nothing from it shows (fail closed). */
 function grownLine(a){
   const r=liveShown(a);
   if(r)return r.kind==='tool'?r.long:(window.DurbarLiveAct.KIND_WORD[r.kind]||'')+': '+r.long;
   const st=vis(a), R=window.DurbarRedact;
-  if(!a.parent&&(st==='done'||st==='idle')&&a.lastOutput&&R&&typeof R.redact==='function'){
-    const t=R.redact(window.DurbarLiveAct.plain(a.lastOutput));
-    if(t)return DurbarCutText.cutText(t,600);
+  if(!a.parent&&(st==='done'||st==='idle')&&a.lastOutput){
+    const t=window.DurbarLiveAct.excerpt(a.lastOutput,R&&typeof R.redact==='function'?x=>R.redact(x):null);
+    return t?DurbarCutText.cutText(t,600):st==='done'?'Finished.':'Ready.';
   }
   return taskOf(a);
 }
@@ -862,6 +863,7 @@ function probeSet(probe,html){
 }
 function chooseLayout(sizing,aw,ah){
   const probe=$('probe'); probe.style.width=aw+'px';
+  GROW=0; setGrow(probe,0); /* a grown render leaves GROW on: the plain candidates are probed with plain text */
   const openOnly=sizing.filter(m=>!m.r.closed);
   if(!openOnly.length){probe.innerHTML=svgHollow(stageHTML(sizing,'card',aw,1));probe.dataset.d='card';const ok=probe.scrollHeight<=ah+1;probe.innerHTML='';probePrev=null;return {d:'card',hcap:1,cap:1,fit:ok,boost:[]};}
   const fits=()=>probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1;

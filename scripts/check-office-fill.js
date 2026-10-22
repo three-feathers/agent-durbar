@@ -23,6 +23,8 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const q = jsLiteral; /* every value put into page code goes through jsLiteral (CodeQL js/bad-code-sanitization) */
 const OUT = process.env.OUT || '';
 const SECRET = 'sk-Fill0Secret0Value0123456789';
+/* review of #532: `plain` strips `_`, so these must be masked before it (raw text first); each in a Markdown form */
+const GHP = 'ghp_' + 'Fill0Token0Value0123456789ab', PAT = 'github_pat_' + '11FILL0TOKEN_value0123456789abcdef';
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -110,12 +112,13 @@ module.exports = async (ctx) => {
     const p1 = await page(); check(!p1.length, `${w} streaming: ${p1.join('; ')}`);
     /* a finished turn: the start of the last reply, masked */
     await emit({ type: 'status', sessionId: 'sim-1', status: 'working', intent: 'Working' });
-    await emit({ type: 'output', sessionId: 'sim-1', final: true, text: `**Done.** I moved the handlers and kept the public API. The key ${SECRET} was in the old config, so I removed it.\n\n## Next\n\n- run the filings module` });
+    await emit({ type: 'output', sessionId: 'sim-1', final: true, text: `**Done.** I moved the handlers and kept the public API. The key ${SECRET} was in the old config, so I removed it, with \`${GHP}\` and _${PAT}_.\n\n## Next\n\n- run the filings module` });
     await emit({ type: 'status', sessionId: 'sim-1', status: 'idle' });
     await ctx.sleep(500);
     const d = await js(`(()=>{const e=document.querySelector('#stage .desk[data-id="sim-1"] .intent');return e?e.textContent:''})()`);
     check(/^Done\. I moved the handlers and kept the public API\./.test(d), `${w}: a done desk shows the start of its reply: ${d}`);
     check(!d.includes(SECRET) && /\[redacted\]/.test(d), `${w}: the secret in the reply is masked: ${d}`);
+    check(!/Fill0Token0Value|0123456789ab|FILL0TOKEN|value0123456789/.test(d) && (d.match(/\[redacted\]/g) || []).length === 3, `${w}: the ghp_ and github_pat_ tokens are masked too: ${d}`);
   }
 
   rows.forEach((r) => console.log('[office-fill]', r));

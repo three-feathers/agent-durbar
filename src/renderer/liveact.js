@@ -14,6 +14,9 @@
   const cutOf=(s,n)=>{s=String(s==null?'':s).replace(/\s+/g,' ').trim();const c=Array.from(s);return c.length<=n?s:c.slice(0,n-1).join('').trimEnd()+'…';};
   /* Markdown to plain words: code blocks, links, emphasis, headings and list marks go; whitespace collapses */
   const plain=t=>String(t==null?'':t).replace(/```[\s\S]*?(```|$)/g,' ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*+\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
+  /* spec 001 FR-043: a reply shown on a desk. Masked on the RAW text first (`plain` strips `_`, `*` and backticks, so `ghp_…` would
+     become `ghp…` and no longer match), then made plain. No working mask: '' (fail closed). */
+  const excerpt=(raw,redact)=>{if(typeof redact!=='function')return '';let m;try{m=redact(String(raw==null?'':raw));}catch(e){return '';}return typeof m==='string'?plain(m):'';};
   /* a heading line ("**Planning the change**", "## Plan") is a title, not a sentence: it is left out */
   const HEAD=/^[ \t]*(?:#{1,6}[ \t].*|\*\*[^*\n]+\*\*[ \t]*)$/gm;
   /* The newest whole sentences that fit in `max` characters (only the newest one with `one`). A sentence ends at . ! ? or … followed by a
@@ -52,8 +55,11 @@
   function create(opts){
     const o=opts||{}, mask=o.mask||{}, red=s=>mask.redact?mask.redact(s):s;
     const st=new Map();
-    const get=id=>{let s=st.get(id);if(!s){s={kind:'',text:'',lines:'',long:'',buf:'',rid:null,lastPaint:-Infinity};st.set(id,s);}return s;};
-    const set=(s,kind,text,lines,long)=>{long=long==null?lines:long;const ch=s.kind!==kind||s.text!==text||s.lines!==lines||s.long!==long;s.kind=kind;s.text=text;s.lines=lines;s.long=long;return ch;};
+    const get=id=>{let s=st.get(id);if(!s){s={kind:'',text:'',lines:'',long:null,body:'',buf:'',rid:null,lastPaint:-Infinity};st.set(id,s);}return s;};
+    /* body: the masked text a grown desk's `long` is made from, only when one asks (of()); a tool phrase or '' has none (long = lines) */
+    const set=(s,kind,text,lines,body)=>{body=body||'';const ch=s.kind!==kind||s.text!==text||s.lines!==lines||(s.body!==body&&s.long!==null);
+      if(s.body!==body)s.long=null;s.kind=kind;s.text=text;s.lines=lines;s.body=body;return ch;};
+    const longOf=s=>{if(!s.body)return s.lines||s.text;if(s.long===null)s.long=lastSentences(s.body,STREAM_MAX);return s.long;};
     function onEvent(id,e,extra){
       if(!e||e.agentId)return false; /* helpers' events never change the main desk */
       const s=get(id), x=extra||{};
@@ -62,13 +68,13 @@
         if(s.kind!=='think'||(e.reasoningId&&e.reasoningId!==s.rid)){s.buf='';s.rid=e.reasoningId||null;}
         s.buf=(s.buf+String(e.delta||'')).slice(-KEEP);
         const body=red(s.buf);
-        return set(s,'think','Thinking: '+lastSentences(body,LINE_MAX-10,true),lastSentences(body,PANEL_MAX),lastSentences(body,STREAM_MAX));}
+        return set(s,'think','Thinking: '+lastSentences(body,LINE_MAX-10,true),lastSentences(body,PANEL_MAX),body);}
       case 'output':{
         if(s.kind!=='reply')s.buf='';
         s.buf=e.final&&typeof e.text==='string'?e.text.slice(-KEEP):(s.buf+String(e.delta||'')).slice(-KEEP);
         const body=red(s.buf), l=lastSentences(body,LINE_MAX-10,true);
         if(!l)return false;
-        return set(s,'reply','Replying: '+l,lastSentences(body,PANEL_MAX),lastSentences(body,STREAM_MAX));}
+        return set(s,'reply','Replying: '+l,lastSentences(body,PANEL_MAX),body);}
       case 'toolCall':{
         if(e.phase!=='start'||x.skip)return false;
         s.buf='';
@@ -84,7 +90,8 @@
     return {
       onEvent,
       /* {kind, text, lines, long} or null when there is nothing to show (long: a grown desk's newest sentences, spec 001 FR-043) */
-      of:id=>{const s=st.get(id);return s&&s.text?{kind:s.kind,text:s.text,lines:s.lines||s.text,long:s.long||s.lines||s.text}:null;},
+      of:id=>{const s=st.get(id);if(!s||!s.text)return null;const o={kind:s.kind,text:s.text,lines:s.lines||s.text};
+        Object.defineProperty(o,'long',{enumerable:true,get:()=>longOf(s)||o.lines});return o;},
       clear:id=>{const s=st.get(id);if(s){s.buf='';set(s,'','','');}},
       drop:id=>{st.delete(id);},
       /* FR-030: may this desk be painted now? Records the paint when it may. */
@@ -95,5 +102,5 @@
     };
   }
   const KIND_WORD={think:'Thinking',tool:'Working',reply:'Replying'};
-  return {create,phrase,lastSentences,plain,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX};
+  return {create,phrase,lastSentences,plain,excerpt,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX};
 })());
