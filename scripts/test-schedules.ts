@@ -438,6 +438,37 @@ async function phase2(): Promise<void> {
       assert.strictEqual(c().prompt, 'same cap');
       assert.ok(g.sch.save({ id: 'edit-unit-01', edit: true, folder: '/w', prompt: 'removed', every: 60, cap: null }, () => true).ok, 'removing it needs no unit');
     }
+    // a limit moved to another target is checked like a new one (it could never be enforced on an agent with another or no unit)
+    {
+      const mk = () => harness({ pausedAll: false, schedules: [base('edit-tgt-001', { cap: { amount: 5, unit: 'usd' }, spent: 1, target: { session: 's1', agent: 'claude' } })] });
+      const cap = { amount: 5, unit: 'usd' as const };
+      let g = mk();
+      g.unit.v = undefined;
+      assert.ok(g.sch.save({ id: 'edit-tgt-001', edit: true, folder: '/w', prompt: 'same target', every: 60, target: { session: 's1', agent: 'claude' }, cap }, () => true).ok, 'same target, unit unknown: carried');
+      assert.ok(!g.sch.save({ id: 'edit-tgt-001', edit: true, folder: '/w', prompt: 'moved', every: 60, target: { session: 's2', agent: 'copilot' }, cap }, () => true).ok, 'new target without a unit: refused');
+      assert.ok(!g.sch.save({ id: 'edit-tgt-001', edit: true, folder: '/w', prompt: 'moved', every: 60, cap }, () => true).ok, 'folder agent without a unit: refused (no cap key)');
+      g = mk();
+      g.unit.v = 'aiu';
+      const bad = g.sch.save({ id: 'edit-tgt-001', edit: true, folder: '/w', prompt: 'moved', every: 60, target: { session: 's2', agent: 'copilot' }, cap }, () => true);
+      assert.ok(!bad.ok && /AI credits, not dollars/.test(bad.error), 'another unit: refused with a clear message');
+      assert.strictEqual(g.sch.doc.schedules[0].target?.session, 's1', 'a refused edit changes nothing');
+      const ok2 = g.sch.save({ id: 'edit-tgt-001', edit: true, folder: '/w', prompt: 'moved', every: 60, target: { session: 's2', agent: 'copilot' }, cap: { amount: 3, unit: 'aiu' } }, () => true);
+      assert.ok(ok2.ok && ok2.schedule.cap?.unit === 'aiu' && ok2.schedule.spent === undefined, 'a new limit in the new unit is accepted, the spend starts again');
+    }
+    // an edit that removes the limit or raises it above the spend clears "reached its limit"; it stays paused
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-capp-001', { paused: true, pausedReason: 'cap', cap: { amount: 5, unit: 'aiu' }, spent: 5 })] });
+      const c = () => g.sch.doc.schedules[0];
+      assert.ok(g.sch.save({ id: 'edit-capp-001', edit: true, folder: '/w', prompt: 'same', every: 60 }, () => true).ok);
+      assert.deepStrictEqual([c().paused, c().pausedReason], [true, 'cap'], 'a prompt-only edit keeps the reason');
+      assert.ok(g.sch.save({ id: 'edit-capp-001', edit: true, folder: '/w', prompt: 'same', every: 60, cap: { amount: 4, unit: 'aiu' } }, () => true).ok);
+      assert.strictEqual(c().pausedReason, 'cap', 'a limit below the spend keeps it');
+      assert.ok(g.sch.save({ id: 'edit-capp-001', edit: true, folder: '/w', prompt: 'same', every: 60, cap: { amount: 9, unit: 'aiu' } }, () => true).ok);
+      assert.deepStrictEqual([c().paused, c().pausedReason, c().spent], [true, undefined, 5], 'a raised limit clears the reason, stays paused, keeps the spend');
+      const h2 = harness({ pausedAll: false, schedules: [base('edit-capp-002', { paused: true, pausedReason: 'cap', cap: { amount: 5, unit: 'aiu' }, spent: 5 })] });
+      assert.ok(h2.sch.save({ id: 'edit-capp-002', edit: true, folder: '/w', prompt: 'same', every: 60, cap: null }, () => true).ok);
+      assert.deepStrictEqual([h2.sch.doc.schedules[0].paused, h2.sch.doc.schedules[0].pausedReason], [true, undefined], 'removing the limit clears the reason');
+    }
     // a prompt-only edit of an interval without an anchor recomputes next as now + every
     {
       const g = harness({ pausedAll: false, schedules: [base('edit-nxt-001', { next: t0 + 3 * MIN })] });

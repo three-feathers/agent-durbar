@@ -375,10 +375,14 @@ export class Scheduler {
     if (!old && this.doc.schedules.length >= MAX_SCHEDULES) return { ok: false, error: `At most ${MAX_SCHEDULES} schedules.` };
     if (s.target && !s.paused && !this.deps.hasSession(s.target.session)) return { ok: false, error: "That session has ended. Send it to the folder's agent instead." };
     // an edit that carries its limit over unchanged needs no unit now (the agent may be gone or report no cost); a new or changed one does
-    const capCarried = edit && !!prev?.cap && !!s.cap && s.cap.amount === prev.cap.amount && s.cap.unit === prev.cap.unit;
-    if (s.cap && !capCarried) {
+    // ... but only while the target is unchanged: a limit moved to another agent is checked like a new one
+    const tkey = (t?: ScheduleTarget): string => (t?.session ?? '') + '|' + (t?.agent ?? '');
+    const targetChanged = edit && !!prev && tkey(prev.target) !== tkey(s.target);
+    const capSame = edit && !!prev?.cap && !!s.cap && s.cap.amount === prev.cap.amount && s.cap.unit === prev.cap.unit;
+    if (s.cap && !(capSame && !targetChanged)) {
       const unit = this.deps.capUnitOf(s);
       if (!unit) return { ok: false, error: 'This agent app does not report what a run costs, so a limit cannot be kept.' };
+      if (unit !== s.cap.unit && capSame) return { ok: false, error: `This agent app counts in ${unit === 'usd' ? 'dollars' : 'AI credits'}, not ${s.cap.unit === 'usd' ? 'dollars' : 'AI credits'}: set the limit again.` };
       if (unit !== s.cap.unit) {
         const amount = parseCapAmount(unit, s.cap.amount);
         if (amount === undefined) return { ok: false, error: 'That limit is out of range.' };
@@ -392,9 +396,11 @@ export class Scheduler {
         if (old.spentUnknown) s.spentUnknown = true;
       }
       // an edit that moves a schedule whose session ended to another target clears the reason; it stays paused, so the row offers Resume
-      const retargeted = edit && old.pausedReason === 'session-ended' && (old.target?.session ?? '') + '|' + (old.target?.agent ?? '') !== (s.target?.session ?? '') + '|' + (s.target?.agent ?? '');
-      if (s.paused && old.paused && old.pausedReason && !retargeted) s.pausedReason = old.pausedReason;
-      else if (retargeted) delete s.pausedReason;
+      const retargeted = edit && old.pausedReason === 'session-ended' && targetChanged;
+      // an edit that removes the limit, or raises it above what was spent, clears the reason "reached its limit"; it stays paused, so the row offers Resume
+      const capFreed = edit && old.pausedReason === 'cap' && (!s.cap || s.cap.amount > (old.cap && old.cap.unit === s.cap.unit ? old.spent ?? 0 : 0));
+      if (s.paused && old.paused && old.pausedReason && !retargeted && !capFreed) s.pausedReason = old.pausedReason;
+      else if (retargeted || capFreed) delete s.pausedReason;
       if (!s.paused && old.pausedReason === 'cap') {
         delete s.spent; // FR-015: Resume after the limit starts counting again from zero
         delete s.spentUnknown;

@@ -4049,7 +4049,8 @@ function openSchedules(r,from,opts){
     $('scToHint').textContent=tgt?tgt.name:'';$('scToHint').title=tgt?tgt.name:'';
     $('scToHint').hidden=!sel.value;
   };
-  const syncCap=()=>{const sel=$('scTarget'),u=schedCapUnit(sel.value&&tgt?tgt.live||folderAg:folderAg);$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);$('scCapKeep').hidden=!(editing&&editing.cap&&!u);};
+  let capUnitNow=schedCapUnit(folderAg); /* a number typed for one unit is never carried to another (5 dollars must not become 5 AI credits) */
+  const syncCap=()=>{const sel=$('scTarget'),u=schedCapUnit(sel.value&&tgt?tgt.live||folderAg:folderAg);if(u!==capUnitNow&&$('scCap'))$('scCap').value='';capUnitNow=u;$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);$('scCapKeep').hidden=!(editing&&editing.cap&&!u);};
   const setKind=k=>{d.querySelector(`input[name="scKind"][value="${k}"]`).checked=true;};
   const showDays=()=>{$('scDays').hidden=$('scCal').value!=='weekly';};
   /* the form back to a blank new schedule */
