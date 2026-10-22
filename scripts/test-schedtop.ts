@@ -9,6 +9,7 @@ const T = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'schedtop.
   activeCount(d: Doc): number;
   troubleSince(d: Doc, seenAt: number | null | undefined, now: number): number;
   missedOrFailed(s: unknown): boolean;
+  windowSees(visibility: string, focused: boolean): boolean;
   topText(d: Doc, seenAt: number | null | undefined, now: number, o?: { keys?: string; clockOf?: (ms: number) => string }): Text;
 };
 
@@ -113,4 +114,10 @@ assert.strictEqual(T.missedOrFailed(s('a')), false);
 // a failure that happens while the Schedules section is on screen: the app stamps "now" first, so it raises nothing
 assert.strictEqual(T.troubleSince(doc([{ ...s('a'), last: { at: NOW - 5, outcome: 'failed' } }]), NOW, NOW), 0);
 assert.strictEqual(T.troubleSince(doc([{ ...s('a'), last: { at: NOW + 5, outcome: 'failed' } }]), NOW, NOW + 10), 1, 'a later failure, not seen, raises it');
+// a background window does not count as "on screen": it must be visible and focused
+assert.strictEqual(T.windowSees('visible', true), true);
+assert.strictEqual(T.windowSees('visible', false), false, 'unfocused');
+assert.strictEqual(T.windowSees('hidden', true), false, 'hidden');
+assert.strictEqual(T.windowSees('hidden', false), false);
+assert.strictEqual(T.windowSees('visible', undefined as unknown as boolean), false);
 console.log('test-schedtop: ok');

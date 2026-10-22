@@ -225,6 +225,24 @@ module.exports = async (ctx) => {
     check(await until(`document.getElementById('schedTopBtn').classList.contains('trouble')&&window.__ann.length===1`), 'a failure out of sight did not raise the badge and announce once');
   }
 
+  /* FR-029: a window that is hidden or in the background does not count as looking: the failure raises the badge and announces; coming back with the heading in view clears it */
+  {
+    await load(1440, 900, 'expert', '');
+    await settle();
+    await js(`document.getElementById('settingsBtn').click()`);
+    await until(`!document.getElementById('screen').hidden&&!!document.getElementById('schH')`);
+    await settle();
+    await js(`(()=>{const h=document.getElementById('schH'),b=h.closest('.scr-body');b.scrollTop+=h.getBoundingClientRect().top-b.getBoundingClientRect().top-12;return true})()`);
+    check(await until(`!document.getElementById('schedTopBtn').classList.contains('trouble')`), 'background test: scrolling Schedules into view did not clear the badge');
+    await js(`window.__durbarFocus=()=>false;window.__ann=[];new MutationObserver(()=>{const t=document.getElementById('srAnnounce').textContent;if(/did not run/.test(t))window.__ann.push(t)}).observe(document.getElementById('srAnnounce'),{childList:true,characterData:true,subtree:true});true`);
+    check(await js(`window.__durbarSimSched.fail('sched-s2')`), 'the simulator could not fail a run');
+    check(await until(`document.getElementById('schedTopBtn').classList.contains('trouble')&&window.__ann.length===1`), 'a failure in an unfocused window did not raise the badge and announce');
+    await js(`window.__durbarFocus=()=>true;window.dispatchEvent(new Event('focus'));true`);
+    check(await until(`!document.getElementById('schedTopBtn').classList.contains('trouble')`), 'coming back with the heading in view did not clear the badge');
+    await js(`delete window.__durbarFocus;true`);
+    await closeScreen();
+  }
+
   /* FR-034: widths between 1440 and 1920 stay one row in Expert and Simple with floors and mixed agent apps, also with the Mac room forced */
   for (const level of ['expert', 'simple']) for (const mac of [false, true]) for (const w of [1441, 1512, 1600, 1728]) {
     await H.load({ w, h: 900, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });

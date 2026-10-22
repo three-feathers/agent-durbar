@@ -14,7 +14,7 @@
   /* FR-029: schedules whose last run was missed or failed and is newer than the stamp (no stamp: the last 24 hours). Done one-time
      schedules count (a missed one is marked done at start); skipped-* never do. A later run replaces `last`, so it clears itself. */
   /* The one rule for "its last run did not happen": missed or failed, a done one-time schedule included, a done recurring one not (the store never
-     sets that); skipped-* never. Shared with the lobby Postbox (#511's postMissed), so the two cannot drift. */
+     sets that); skipped-* never. Shared with the lobby Postbox (PR 511's postMissed), so the two cannot drift. */
   function missedOrFailed(s){
     return !!(s&&typeof s==='object'&&s.last&&(s.last.outcome==='missed'||s.last.outcome==='failed')&&(!s.done||!recurring(s)));
   }
@@ -22,6 +22,8 @@
     const since=typeof seenAt==='number'&&isFinite(seenAt)&&seenAt>0?Math.min(seenAt,now):now-DAY; /* a stamp from the future (clock change) never hides a newer run */
     return list(doc).filter(s=>missedOrFailed(s)&&s.last.at>since).length;
   }
+  /* The window can show the Schedules heading to the user only while it is visible and has the focus: a background window does not count as "on screen". */
+  function windowSees(visibilityState,hasFocus){return visibilityState==='visible'&&hasFocus===true;}
   function nextAt(doc){
     const t=list(doc).filter(s=>!s.done&&!s.paused).map(s=>recurring(s)?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];
     return t||0;
@@ -45,5 +47,5 @@
       label:cap('Schedules: '+said+'.'+(tr?' '+tr+'.':'')),
       title:cap('Schedules: '+state+(tr?'. '+tr:'')+k)};
   }
-  return {activeCount,troubleSince,topText,nextAt,missedOrFailed};
+  return {activeCount,troubleSince,topText,nextAt,missedOrFailed,windowSees};
 })());
