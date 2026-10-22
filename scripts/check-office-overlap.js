@@ -384,14 +384,20 @@ async function driver(ctx) {
       }
     }
   }
-  /* spec 059 FR-016 (SC-005): every main agent carries a 60-character user name, both sizes; the run fails when no card shows one */
+  /* spec 059 FR-016 (SC-005): every main agent carries a 60-character user name, both sizes; the run fails when no card shows one. sim 3 is the full layout (FR-019: the URL-like name must stay in its 164px card) */
   for (const [w, h] of SIZES) {
-    for (const sim of [12, 15]) {
+    for (const sim of [3, 12, 15]) {
       if (!mine()) continue;
-      await run(`long names sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simnames=long`, w, h, sim === 15 ? `names-sim15-${w}x${h}` : '');
+      await run(`long names sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simnames=long${sim === 3 ? '&density=full' : ''}`, w, h, sim === 15 ? `names-sim15-${w}x${h}` : '');
       const shown = await ctx.js(`[...document.querySelectorAll('#stage .desk .name')].some((n)=>n.textContent.length>=50)`);
       total++;
       if (!shown) { failed++; console.log(`FAIL long names sim${sim}-${w}x${h}: no long name on any card`); }
+      /* spec 059 FR-019 (issue #536): one name is a single URL-like token; no card name may leave its card (checked on the card, on its own box, and by scrollWidth) */
+      const stray = await ctx.js(`[...document.querySelectorAll('#stage .desk .name')].filter((n)=>{const c=n.closest('.desk').getBoundingClientRect(),b=n.getBoundingClientRect();return b.right>c.right+0.5||b.left<c.left-0.5||(n.matches('.who .name')&&(n.scrollWidth>n.clientWidth+1||b.height>2*parseFloat(getComputedStyle(n).lineHeight)+1));}).map((n)=>n.textContent.slice(0,30))`);
+      const url = await ctx.js(`[...document.querySelectorAll('#stage .desk .name')].some((n)=>n.textContent.includes('https://example.invalid/'))`);
+      total++;
+      if (!url) { failed++; console.log(`FAIL long names sim${sim}-${w}x${h}: no URL-like name on any card`); }
+      else if (stray.length) { failed++; console.log(`FAIL long names sim${sim}-${w}x${h}: name leaves its card: ${JSON.stringify(stray)}`); }
     }
   }
   /* spec 001/002 deltas 2026-10-18 (issue #126): main agents with session titles (one long enough to be ellipsized), both sizes;
