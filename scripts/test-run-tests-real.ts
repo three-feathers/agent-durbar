@@ -69,32 +69,34 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     if (gpid > 0 && alive(gpid)) { try { process.kill(gpid, 'SIGKILL'); } catch (_) { /* gone */ } }
     fs.rmSync(tmp, { recursive: true, force: true });
   }
-  // Ctrl-C / kill of a bailing runner: exit 128 + the signal number (not 1), and the suite is stopped (POSIX only)
+  // Ctrl-C / hangup / kill of a bailing runner: exit 128 + the signal number (not 1), and the suite is stopped (POSIX only)
   if (process.platform === 'win32') console.log('run-tests signal exit code: skipped on Windows (no POSIX signals; taskkill is covered above)');
   else {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-tests-sig-'));
-    const slowPid = path.join(dir, 'slow.pid');
-    fs.writeFileSync(path.join(dir, 'driver.js'), DRIVER_SRC);
-    fs.writeFileSync(path.join(dir, 'slow.js'), SLOW_SRC);
-    const runner = spawn(process.execPath, [path.join(dir, 'driver.js')], {
-      env: { ...process.env, RUNNER: path.join(__dirname, '..', '..', 'scripts', 'run-tests.js'), SLOW: path.join(dir, 'slow.js'), PIDFILE: slowPid }, stdio: 'ignore',
-    });
-    let spid = 0;
-    try {
-      for (let i = 0; i < 100 && !(fs.existsSync(slowPid) && fs.readFileSync(slowPid, 'utf8')); i++) await sleep(100);
-      spid = Number(fs.readFileSync(slowPid, 'utf8'));
-      assert.ok(spid > 0, 'the slow suite started');
-      const exited = new Promise<number | string>((resolve) => runner.on('exit', (code, sig) => resolve(code === null ? String(sig) : code)));
-      runner.kill('SIGTERM'); // the runner this test started
-      const code = await Promise.race([exited, sleep(15000).then(() => 'timeout')]);
-      assert.strictEqual(code, 143, 'SIGTERM to a bailing runner exits 143 (128 + 15)');
-      for (let i = 0; i < 30 && alive(spid); i++) await sleep(100);
-      assert.ok(!alive(spid), `the slow suite (pid ${spid}) is gone: no orphan`);
-      console.log('run-tests signal exit code: ok');
-    } finally {
-      if (runner.exitCode === null && runner.signalCode === null) runner.kill('SIGKILL');
-      if (spid > 0 && alive(spid)) { try { process.kill(spid, 'SIGKILL'); } catch (_) { /* gone */ } }
-      fs.rmSync(dir, { recursive: true, force: true });
+    for (const [sig, want] of [['SIGTERM', 143], ['SIGINT', 130], ['SIGHUP', 129]] as const) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-tests-sig-'));
+      const slowPid = path.join(dir, 'slow.pid');
+      fs.writeFileSync(path.join(dir, 'driver.js'), DRIVER_SRC);
+      fs.writeFileSync(path.join(dir, 'slow.js'), SLOW_SRC);
+      const runner = spawn(process.execPath, [path.join(dir, 'driver.js')], {
+        env: { ...process.env, RUNNER: path.join(__dirname, '..', '..', 'scripts', 'run-tests.js'), SLOW: path.join(dir, 'slow.js'), PIDFILE: slowPid }, stdio: 'ignore',
+      });
+      let spid = 0;
+      try {
+        for (let i = 0; i < 100 && !(fs.existsSync(slowPid) && fs.readFileSync(slowPid, 'utf8')); i++) await sleep(100);
+        spid = Number(fs.readFileSync(slowPid, 'utf8'));
+        assert.ok(spid > 0, `${sig}: the slow suite started`);
+        const exited = new Promise<number | string>((resolve) => runner.on('exit', (code, sg) => resolve(code === null ? String(sg) : code)));
+        runner.kill(sig); // the runner this test started
+        const code = await Promise.race([exited, sleep(15000).then(() => 'timeout')]);
+        assert.strictEqual(code, want, `${sig} to a bailing runner exits ${want}`);
+        for (let i = 0; i < 30 && alive(spid); i++) await sleep(100);
+        assert.ok(!alive(spid), `${sig}: the slow suite (pid ${spid}) is gone: no orphan`);
+        console.log(`run-tests signal exit code: ${sig} -> ${want} ok`);
+      } finally {
+        if (runner.exitCode === null && runner.signalCode === null) runner.kill('SIGKILL');
+        if (spid > 0 && alive(spid)) { try { process.kill(spid, 'SIGKILL'); } catch (_) { /* gone */ } }
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
     }
   }
   process.exit(0);
