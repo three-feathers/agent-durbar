@@ -2063,7 +2063,7 @@ function modeBackNote(a,was){
 }
 const MODE_TEXT={'read-only':'read-only','allow':'no prompts','ask':'asks first'};
 /* spec 052 FR-077: one short line per mode in the menu; the full explanation stays in its title */
-const MODE_SHORT={'read-only':"Reads only: can't change files or run commands",'ask':'Asks before each change or command','allow':'Never asks: edits, commands, web'}; /* spec 052 FR-093: one line each, but accurate (full help in the title) */
+const MODE_SHORT={'read-only':"Reads only: can't change files or run commands",'ask':'Asks before each change or command','allow':'Never asks: edits, commands, web'}; /* spec 052 FR-093, FR-165: short but accurate; a hint wraps into at most two balanced lines at --menu-w (the full help is in the title) */
 const MODE_HELP={'read-only':'Reads only. Edits, commands and other changes are denied. An MCP tool runs only if its server marks it read-only.','ask':'Asks before every edit or command. You can approve for the rest of the session.','allow':'Everything runs without asking: edits, shell commands, web requests and tools.'};
 /* spec 012 FR-123: the agent kind's own name in agent-facing text; Copilot's wording is unchanged */
 const KIND_WORD={copilot:'Copilot',claude:'Claude Code',codex:'Codex'};

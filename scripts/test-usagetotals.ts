@@ -166,6 +166,14 @@ console.log('usagetotals tests passed');
   // `full` (the aria-label) keeps every line
   const full = U.tooltip(big(9999, 999.999, 5), { scope: 'office', since: '2026-10-01T09:00:00.000Z', run: big(9999, 999.999, 0), removed: true, offFloors: big(9999, 999.999, 0), estimate: 'E', full: true });
   assert.ok(/no longer shown/.test(full) && /This run/.test(full) && /without credits/.test(full) && full.length > 300, full);
+  // small numbers: nine lines are possible and together they fit 300 characters (the estimate is a one-character stand-in: with a real
+  // one the character cap acts first), so only the 8-line cap can drop one, and it drops the lowest priority ("Includes folders no longer shown")
+  const tiny = (calls: number, nano: number, unreported: number): Total => ({ calls, inTokens: 10, outTokens: 5, nano, unreported });
+  const nine = U.tooltip(tiny(2, 0.001 * AIU, 1), { scope: 'office', since: '2026-10-01', run: tiny(1, 0.001 * AIU, 0), removed: true, offFloors: tiny(1, 0.001 * AIU, 0), estimate: 'E' });
+  assert.ok(nine.length <= 300 && nine.split('\n').length <= 8, `${nine.split('\n').length} lines, ${nine.length} characters:\n${nine}`);
+  assert.ok(/^E$/m.test(nine) && /floors that are off/.test(nine) && /This run/.test(nine), 'the estimate, the off-floor spend and the run stay');
+  assert.ok(!/no longer shown/.test(nine), 'the lowest priority line went');
+  assert.ok(U.tooltip(tiny(2, 0.001 * AIU, 1), { scope: 'office', since: '2026-10-01', run: tiny(1, 0.001 * AIU, 0), removed: true, offFloors: tiny(1, 0.001 * AIU, 0), estimate: 'E', full: true }).split('\n').length === 9, 'the case has nine lines before the cap');
   // a short tooltip keeps all of it
   const small = U.tooltip(big(3, 1.5, 0), { scope: 'office', removed: true, estimate: '≈ $0.02 = 1.50 AIU. Codex: no cost.' });
   assert.ok(/no longer shown/.test(small) && /Codex: no cost/.test(small), small);

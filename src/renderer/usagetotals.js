@@ -5,6 +5,7 @@
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
   const MAX_NANO=1e15;
+  const MAX_LINES=8;
   const MAX_TIP=300; /* spec 052 FR-168: a data tooltip is at most 300 characters and 8 lines */
   /* A usable credit figure: a finite, non-negative number up to 1e15 nano-AIU (a typo or a bad field is "not reported"). */
   const validNano=x=>typeof x==='number'&&Number.isFinite(x)&&x>=0&&x<=MAX_NANO;
@@ -82,7 +83,8 @@
     if(office&&typeof o.estimate==='string'&&o.estimate)L.push([0,o.estimate]); /* the only explanation of the "≈ $X" chip and the Copilot / Claude split (spec 052 FR-028): never dropped */
     L.push([0,'Copilot\'s figure: 1 AIU = 1 credit, not a bill.']);
     const keep=L.map(()=>true), len=()=>L.reduce((n,x,i)=>n+(keep[i]?x[1].length+1:0),-1);
-    while(!o.full&&len()>MAX_TIP){let w=-1;L.forEach((x,i)=>{if(keep[i]&&x[0]>0&&(w<0||x[0]>L[w][0]))w=i;});if(w<0)break;keep[w]=false;}
+    const count=()=>keep.filter(Boolean).length;
+    while(!o.full&&(len()>MAX_TIP||count()>MAX_LINES)){let w=-1;L.forEach((x,i)=>{if(keep[i]&&x[0]>0&&(w<0||x[0]>L[w][0]))w=i;});if(w<0)break;keep[w]=false;}
     return L.filter((x,i)=>keep[i]).map(x=>x[1]).join('\n');
   }
 
