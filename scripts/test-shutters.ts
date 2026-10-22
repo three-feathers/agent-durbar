@@ -1,7 +1,8 @@
 /**
- * Finished agents roll in (spec 001 FR-051..FR-053, FR-057): which agents roll in (recent, old, never), the room rule and the "+N" split of
- * `src/renderer/shutters.js`, plus the source checks that keep the page wired to it (rolled agents leave the layout search, the shutter
- * row is in both densities, the key follows the roll, the reply line is masked). `npm run test:shutters`. No credits spent.
+ * Finished agents rest in the lounge (spec 001 FR-051..FR-057): which agents rest (couch, bed, never), the room rule, the couches, bunks,
+ * corner width and "+N asleep" split of `src/renderer/shutters.js`, plus the source checks that keep the page wired to it (resting agents
+ * leave the layout search, the lounge is in both densities, the key follows who rests where, the reply line is masked, the room rule's
+ * input reads away and busy helpers, the state is data-state and the first is-* class). `npm run test:shutters`. No credits spent.
  */
 import assert from 'assert';
 import fs from 'fs';
@@ -23,7 +24,7 @@ const S = require(path.join(R, 'shutters.js')) as {
   couches: (n: number) => number[];
   turn: (t: number, n: number) => number;
   GAP: number;
-  width: (nRecent: number, nSlats: number, more: boolean) => number;
+  width: (nRecent: number, nBeds: number, more: boolean) => number;
   finished: (x: X) => boolean;
   kindOf: (x: X) => 'recent' | 'old' | null;
   roomPlan: (list: X[]) => Map<string, 'recent' | 'old'>;
@@ -65,7 +66,7 @@ eq(S.finished(null as unknown as X), false, 'no agent: not finished');
 const plan = (xs: X[]): Record<string, string> => Object.fromEntries(S.roomPlan(xs));
 const w = (id: string, state = 'working'): X => ({ id, state, since: 0 });
 const f = (id: string, since: number | null): X => ({ id, state: 'done', replied: true, since });
-eq(plan([w('a'), w('b'), f('c', MIN), f('d', 20 * MIN), f('e', 40 * MIN)]), { c: 'recent', d: 'old', e: 'old' }, '2 working + 3 finished: 1 strip, 2 chips');
+eq(plan([w('a'), w('b'), f('c', MIN), f('d', 20 * MIN), f('e', 40 * MIN)]), { c: 'recent', d: 'old', e: 'old' }, '2 working + 3 finished: 1 on the couch, 2 asleep');
 eq(plan([f('c', MIN), f('d', 20 * MIN)]), {}, 'a room of only finished agents stays as it is');
 eq(plan([f('c', MIN)]), {}, 'a lone finished agent stays as it is');
 eq(plan([w('a', 'waiting'), f('c', MIN)]), { c: 'recent' }, 'a waiting agent keeps the room open');
@@ -130,7 +131,14 @@ ok(/const on=SHUT\.turn\(LOUNGE_TURN,list\.length\)/.test(app) && /k=SHUT\.turn\
 ok(/\.lg-t\{[^}]*font-size:10\.5px/.test(css) && /\.lg-t\{[^}]*transition:opacity \.6s/.test(css), 'bubble text 10.5px, a gentle fade (off with reduced motion, the global rule)');
 ok(/\(m\.rolled\|\|\[\]\)\.map\(x=>\[x\.a\.id,x\.k\]\)/.test(app), 'the layout key follows who rests and where');
 ok(/L\.excerpt\(a\.lastOutput,R&&typeof R\.redact==='function'\?x=>R\.redact\(x\):null\)/.test(app), 'the reply line is masked on the raw text (FR-043 excerpt), fail closed');
-ok(/class="desk shut is-\$\{k\}/.test(app) && /data-id="\$\{esc\(a\.id\)\}" aria-pressed/.test(app), 'resting agents are desk buttons with data-id (click, Enter, arrow keys)');
+ok(/<button class="desk shut is-\$\{st\} rest-\$\{k\}\$\{roll\}" type="button" data-id="\$\{esc\(a\.id\)\}" data-state="\$\{st\}" data-rest="\$\{k\}" aria-pressed/.test(app), 'resting agents are desk buttons with data-id (click, Enter, arrow keys); the state is data-state and the first is-* class, the resting kind is not an is-* class (review of #554: shots-033 reads the first is-*)');
+ok(/<button class="desk card is-\$\{st\}[^"]*" data-id="\$\{esc\(a\.id\)\}" data-state="\$\{st\}"/.test(app) && /desk=`<button class="desk is-\$\{st\}[^"]*" data-id="\$\{esc\(a\.id\)\}" data-state="\$\{st\}"/.test(app), 'every desk button (card and full desk) carries its state as data-state');
+ok(!/is-recent|is-old/.test(app + css), 'no is-recent / is-old class left (it read as a state)');
+/* FR-051 in the page (review of #554): the room rule's input. `away` and `helpersBusy` must come from the agent, not a constant */
+const si = (/const shutInput=a=>\(\{([^\n]*)\}\);/.exec(app) || [])[1] || '';
+ok(/(^|,)away:isAway\(a\)(,|$)/.test(si), `shutInput: away comes from isAway (at a place or walking back): ${si}`);
+ok(/(^|,)helpersBusy:helpersOf\(a\)\.some\(h=>\{const s=vis\(h\);return s!=='done'&&s!=='idle';\}\)(,|$)/.test(si), `shutInput: helpersBusy is true while any helper is not Done or Idle: ${si}`);
+ok(/(^|,)state:vis\(a\)(,|$)/.test(si) && /(^|,)paused:!!a\.paused(,|$)/.test(si) && /(^|,)limit:!!a\.limit(,|$)/.test(si) && /(^|,)replied:!!a\.lastOutput(,|$)/.test(si) && /(^|,)since:sinceLast\(a\)(,|$)/.test(si), `shutInput: state, paused, limit, replied and since come from the agent: ${si}`);
 const sizes = [...css.slice(css.indexOf('spec 001 FR-051..FR-055')).matchAll(/font-size:([\d.]+)px/g)].map((m) => parseFloat(m[1]));
 ok(sizes.length > 5 && sizes.every((s) => s >= 10.5), `no lounge text under 10.5px (${sizes.join(', ')})`);
 ok(/\.desk\.shut:hover \.peek,\.desk\.shut:focus-visible \.peek\{display:flex/.test(css), 'hover and keyboard focus open the peek card');

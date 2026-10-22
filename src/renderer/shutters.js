@@ -1,4 +1,4 @@
-/* Finished agents roll in (spec 001 FR-051..FR-053): which main agents of a room roll in, and how far. Pure: no DOM, no clock of its own
+/* Finished agents rest in the lounge (spec 001 FR-051..FR-053): which main agents of a room rest, on the couch or in a bed. Pure: no DOM, no clock of its own
    (the time since the agent finished is passed in). In the page: window.DurbarShutters; in Node: module.exports.
    An agent is a plain object: {id, state, paused, limit, away, replied, helpersBusy, since} where `state` is the shown state (vis),
    `replied` says it has a last reply in this session, `helpersBusy` that a helper is not Done or Idle, and `since` the milliseconds since
@@ -15,7 +15,7 @@
     if(!x||x.paused||x.limit||x.away||x.helpersBusy)return false;
     return x.state==='done'||(x.state==='idle'&&!!x.replied);
   }
-  /* 'recent' (half rolled), 'old' (fully rolled) or null (keeps its desk), for one finished agent; unknown time counts as old */
+  /* 'recent' (on the couch), 'old' (asleep in a bunk bed) or null (keeps its desk), for one finished agent; unknown time counts as old */
   function kindOf(x){
     if(!finished(x))return null;
     const t=x.since;

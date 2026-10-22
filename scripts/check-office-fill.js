@@ -23,7 +23,9 @@
  * arrow-key order, the dreams take turns (a deterministic tick), the peek card opens beside the lounge without moving anything, Enter
  * opens the chat, the working desks are wider than with the setting off and the row no taller, the couch agents go to bed after 10
  * minutes and past 4 sleepers there is "+N asleep", an agent that starts again gets its desk back; and the simulator's 15 agents (Noor
- * and Maya on the couch) still fit with no scroll and are not grown, the lounge as tall as the desks in its room.
+ * and Maya on the couch) still fit with no scroll and are not grown, the lounge as tall as the desks in its room. FR-051's input in the
+ * page (review of #554): a Done agent with a working helper keeps its desk and the helper, and goes back to the couch when the helper
+ * finishes; an agent away at a lobby place is not in the lounge.
  * Screenshots: 001-shutters-{1440x900,1280x800}.png and 001-shutters-peek-1440x900.png.
  *
  *   npm run check:office-fill            (builds first; Linux runs it under xvfb)
@@ -213,7 +215,7 @@ module.exports = async (ctx) => {
     return {d:s.dataset.d,gf:parseFloat(s.style.getPropertyValue('--gf'))||0,fit:s.dataset.fit,floorScroll:f.scrollHeight>f.clientHeight+1,
       open:cards.length,deskW:cards.length?Math.round(Math.min(...cards.map(r=>r.width))):0,deskH:cards.length?Math.round(Math.min(...cards.map(r=>r.height))):0,
       deskTop:cards.length?Math.round(Math.min(...cards.map(r=>r.top))):0,
-      recent:rs.filter(e=>e.classList.contains('is-recent')).map(e=>e.dataset.id),old:rs.filter(e=>e.classList.contains('is-old')).map(e=>e.dataset.id).sort(),
+      recent:rs.filter(e=>e.classList.contains('rest-recent')).map(e=>e.dataset.id),old:rs.filter(e=>e.classList.contains('rest-old')).map(e=>e.dataset.id).sort(),
       labels:rs.map(e=>({id:e.dataset.id,tag:e.tagName,tab:e.tabIndex,l:e.getAttribute('aria-label')||'',inL:!!L&&R(e).l>=L.l-0.5&&R(e).r<=L.r+0.5&&R(e).t>=L.t-0.5&&R(e).b<=L.b+0.5,av:!!e.querySelector('.lg-av svg'),nm:(()=>{const n=e.querySelector('.lg-name'),r=n.getBoundingClientRect(),b=e.getBoundingClientRect();return {t:n.textContent,font:parseFloat(getComputedStyle(n).fontSize),shown:r.width>8&&r.height>=10&&getComputedStyle(n).visibility!=='hidden',in:r.left>=b.left-0.5&&r.right<=b.right+0.5&&r.top>=b.top-0.5&&r.bottom<=b.bottom+0.5};})(),avH:Math.round((e.querySelector('.lg-av')||{getBoundingClientRect:()=>({height:0})}).getBoundingClientRect().height)})),
       small,bubs,roomH:Math.round(rm.h),lg:L?{t:Math.round(L.t),h:Math.round(L.h),w:Math.round(L.w),inRoom:L.l>=rm.l-0.5&&L.r<=rm.r+0.5}:null,
       more:(room.querySelector('.lounge .shut-more')||{}).textContent||'',
@@ -302,7 +304,7 @@ module.exports = async (ctx) => {
     check((await lounge()).old.length === 3, `${tag}: the setting does not turn back on`);
     /* after 10 minutes the couch agents go to bed; past 4 sleepers, 3 beds and "+N asleep" */
     await ago('sim-2', 11); await ago('sim-3', 12);
-    check(await H.until(`!!document.querySelector('#stage .desk.shut.is-old[data-id="sim-2"]')&&!document.querySelector('#stage .desk.shut.is-recent')`, 3000), `${tag}: the couch agents did not go to bed after 10 minutes`);
+    check(await H.until(`!!document.querySelector('#stage .desk.shut.rest-old[data-id="sim-2"]')&&!document.querySelector('#stage .desk.shut.rest-recent')`, 3000), `${tag}: the couch agents did not go to bed after 10 minutes`);
     const m = await lounge();
     check(m.old.length === 3 && /^\+2 asleep$/.test(m.more.trim()), `${tag}: 5 sleepers show ${m.old.length} beds and "${m.more}"`);
     const p3 = await page(); check(!p3.length, `${tag} with "+N asleep": ${p3.slice(0, 4).join('; ')}`);
@@ -310,6 +312,32 @@ module.exports = async (ctx) => {
     await emit({ type: 'status', sessionId: 'sim-6', status: 'working', intent: 'Running the eval again' });
     check(await H.until(`!document.querySelector('#stage .desk.shut[data-id="sim-6"]')&&!!document.querySelector('#stage .desk.card[data-id="sim-6"]')`, 3000), `${tag}: Tomas did not get his desk back when he started again`);
     const p2 = await page(); check(!p2.length, `${tag} after changes: ${p2.slice(0, 4).join('; ')}`);
+  }
+
+  /* FR-051 in the page (review of #554): the room rule's input (shutInput). A Done agent whose helper still works keeps its desk and the
+     helper stays drawn (the lounge draws no helpers); an agent away at a lobby place is never in the lounge, even when its turn has a reply */
+  {
+    const tag = 'lounge rules 1440x900';
+    await load(14, 1440, 900, { simrooms: '2', simhelpers: '0' });
+    await finish('sim-2', 'The edge cases for the canton lookup are listed and tested.');
+    await finish('sim-3', 'Renamed the tool and kept the old name as an alias for one release.');
+    await finish('sim-4', 'The README tool table is updated and linked from the docs index.');
+    await ago('sim-3', 4); await ago('sim-4', 25);
+    check(await H.until(`['sim-2','sim-3','sim-4'].every(id=>!!document.querySelector('#stage .desk.shut[data-id="'+id+'"]'))`, 4000), `${tag}: Mira, Jonas and Noor are not resting before the checks`);
+    /* a helper starts under Jonas (on the couch): Jonas stays Done, gets his desk back, and his working helper is drawn next to it */
+    await emit({ type: 'subagent', sessionId: 'sim-3', subagentId: 'fill-h1', name: 'Scout', phase: 'started', task: 'Reading every caller of the old name', agentName: 'explore' });
+    const hb = await H.until(`(()=>{const d=document.querySelector('#stage .desk[data-id="sim-3"]');const u=d&&d.closest('.unit');return !!d&&!d.classList.contains('shut')&&!!u&&[...u.querySelectorAll('.helper')].some(h=>h.dataset.state==='working'||h.classList.contains('is-working'))})()`, 3000);
+    const hs = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="sim-3"]');const u=d&&d.closest('.unit');return {state:d&&d.dataset.state,shut:!!d&&d.classList.contains('shut'),helpers:u?[...u.querySelectorAll('.helper')].map(h=>h.className):[]}})()`);
+    check(hb && hs.state === 'done', `${tag}: a Done agent with a working helper went to the lounge or lost its helper (${JSON.stringify(hs)})`);
+    await emit({ type: 'subagent', sessionId: 'sim-3', subagentId: 'fill-h1', name: 'Scout', phase: 'completed', agentName: 'explore', durationMs: 4000, totalTokens: 900, totalToolCalls: 1 });
+    check(await H.until(`!!document.querySelector('#stage .desk.shut[data-id="sim-3"]')`, 3000), `${tag}: Jonas did not go back to the couch when his helper finished`);
+    /* Noor (asleep, Idle after a reply) calls a tool at a lobby place without a new turn: she is away, so she leaves the lounge */
+    await emit({ type: 'toolCall', sessionId: 'sim-4', callId: 'fill-away', tool: 'playwright-browser_snapshot', phase: 'start', mcpServer: 'playwright', mcpTool: 'browser_snapshot' });
+    const aw = await H.until(`!!document.querySelector('#stage .desk.is-away[data-id="sim-4"]')&&!document.querySelector('#stage .desk.shut[data-id="sim-4"]')`, 4000);
+    const as = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="sim-4"]');return d?{cls:d.className,state:d.dataset.state}:null})()`);
+    check(aw && as && /^(done|idle)$/.test(as.state), `${tag}: an agent away at a place is in the lounge, or the case did not keep it finished (${JSON.stringify(as)})`);
+    await H.until(`!document.querySelector('.walker.walking')`, 6000); await ctx.sleep(250);
+    const pr = await page(); check(!pr.length, `${tag}: ${pr.slice(0, 4).join('; ')}`);
   }
 
   rows.forEach((r) => console.log('[office-fill]', r));

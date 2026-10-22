@@ -74,7 +74,7 @@ function helpers(ctx) {
   /** The text of an element ('' when missing): innerText by default, or pass 'textContent'. */
   const text = (sel, prop = 'innerText') => js(`(document.querySelector(${jsLiteral(sel)})||{})[${jsLiteral(prop)}]||''`);
   /** The data-id of the desk whose name starts with `name` (null when none). */
-  const idOf = (name) => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.querySelector('.name,.nm,h3,b,.sh-name')&&x.innerText.trim().startsWith(${jsLiteral(name)}));return d?d.dataset.id:null})()`);
+  const idOf = (name) => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.querySelector('.name,.nm,h3,b')&&x.innerText.trim().startsWith(${jsLiteral(name)}));return d?d.dataset.id:null})()`);
   /**
    * A key press. Return and Enter also send the char event that activates a button; `char: 'always'` sends it for every key, `char: 'never'` for none (a shortcut such as Ctrl+K).
    * `pause` lets the key's own handler run; what it changes is waited for by the caller.
