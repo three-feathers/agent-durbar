@@ -167,6 +167,7 @@ Numbers follow FR-036 (*test once*, PR #561), which lands first.
 - **FR-041** **Using the merge queue** (on since 2026-10-22, #507).
   - Approve, then `gh pr merge <N> --auto --match-head-commit <sha>`; the queue runs the required checks and merges. `--delete-branch` does not work with the queue, so delete the branch and worktree by hand after the merge.
   - `gh pr view` shows a queued PR as `autoMergeRequest: null`; check `isInMergeQueue` and `mergeQueueEntry` with the GraphQL API instead.
+  - **`gh stack merge <N>` also merges every lower member of that stack** (Vikram's agent, 2026-10-22: landing #503 also merged #462, #463, #497 and #498, whose latest heads had only dismissed approvals). Before you use it, check that each lower member has a valid approval at its current head; otherwise merge the PRs one by one through the queue.
   - When an approval was dismissed only by a base move or a merge of main, and the PR's own patch-id is unchanged, re-approving (or an admin merge with a PR comment) is a formality (FR-032).
 - **FR-042** **One combined review list per round.** Each review round gets one message in the team chat, in landing order, instead of many separate nudges. Agents answer `taking #N, #M` before they review (FR-036).
 - **FR-043** **Review teammates' PRs first.** Their approvals are what unblock ours, so a teammate's PR waiting for review comes before starting new work.
