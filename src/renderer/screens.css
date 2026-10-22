@@ -295,6 +295,24 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-confirm{align-items:flex-start;margin:14px 0 2px;font-weight:600}
 .dlg.fs .fs-confirm input{flex:none;width:16px;height:16px;margin:2px 0 0}
 .dlg.fs .fs-confirm>span{flex:1;min-width:0}
+/* spec 069: the add form's scope choice, the agent app ticks and the per-file review */
+.mscope{border:1px solid var(--line);border-radius:8px;padding:8px 12px 10px;margin:0 0 10px;display:flex;flex-direction:column;gap:6px}
+.mscope legend{font-weight:650;padding:0 4px}
+.mscope label,.gapps label,.gsec label{display:flex;flex-direction:row;align-items:baseline;gap:6px;font-weight:500;font-size:12.5px;color:var(--ink-2)}
+.mscope label>small,.gapps label>small,.gsec label>small{display:inline}
+.mscope input[type=radio],.mscope input[type=checkbox],.dlg .gapps input{flex:none;margin:0;width:auto}
+.mscope small,.gapps small,.gsec small{color:var(--muted)}
+.gapps{display:flex;flex-wrap:wrap;gap:4px 16px;margin:4px 0 2px 22px}
+.dlg .gapps{margin-left:0}
+.gsec{display:flex;flex-direction:column;gap:4px;margin:6px 0 0 22px}
+.gpvl{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:10px;max-height:52vh;overflow:auto}
+.gpv{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.gpv.bad{border-color:var(--card-waiting-line)}
+.gpv .srv-top{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+.gpv pre.trustcmd{max-height:180px;overflow:auto;margin:4px 0 0;white-space:pre-wrap;word-break:break-word}
+.grep{display:flex;gap:6px;align-items:baseline;margin-top:6px}
+.gfiles{margin:4px 0;padding-left:18px}
+.gfiles .warn{color:var(--amber-ink)}
 /* spec 052 FR-170 (T154): Tools > Models and context never grows past its box: a fixed layout, the agent and folder names cut with an ellipsis (their title has the whole name) */
 .agt{table-layout:fixed}
 .agt thead th:nth-child(1){width:26%}.agt thead th:nth-child(2){width:24%}.agt thead th.num{width:88px}

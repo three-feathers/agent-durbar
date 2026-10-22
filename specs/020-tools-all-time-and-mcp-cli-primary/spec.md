@@ -97,3 +97,9 @@ status: milestone 10 (implemented, simulator + unit tests); import delta impleme
 - **FR-031** `[IMPLEMENTED]` (test, sim) Unit tests (no credits, in `npm test` via `test:mcp`): comments, trailing commas, BOM, strings with `//`; stdio, http, sse and untyped entries; `inputs` and `${...}` rules; masked previews; bad files; name clashes; import through the store (off, untrusted, folder-scoped, trust prompt on first enable, nothing in another folder, secrets encrypted on disk). Simulator driver `scripts/shots-i7.js` and screenshots `docs/screenshots/i7-import-preview-1440x900.png` and `-1280x800.png`. `npm run check:office` still passes.
 
 Verification: `test:` unit tests and `sim:` simulator only. **Not run against a real account, a real VS Code file from a user's machine, macOS or Windows** (paths are handled with `path`; Windows and macOS are covered by unit tests and CI only). The real runtime's handling of an imported server after trust is the same code path as a hand-added extra and is not re-verified here (`read:`).
+
+### 2026-10-21: the extras form can also add for all folders (spec 069)
+
+The folder's *+ Add server* form gains *Add to: This folder only (default) / All my folders (global)*. *This folder only* is
+unchanged. *All my folders* writes the server into the agent apps' own lists after a per-file review (owner, 2026-10-21), so the Copilot
+CLI list is no longer only read by Durbar. See [069](../069-mcp-global-controls/spec.md) FR-001..FR-011.

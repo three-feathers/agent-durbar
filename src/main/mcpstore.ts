@@ -209,7 +209,7 @@ export class McpStore {
     }
     const o = (doc && typeof doc === 'object' ? doc : {}) as Record<string, unknown>;
     if (typeof o.vault === 'string') this.vaultBlob = o.vault;
-    if (Array.isArray(o.disabledAmbient)) for (const n of o.disabledAmbient) if (typeof n === 'string' && n.length <= 64) this.disabledAmbient.add(n);
+    if (Array.isArray(o.disabledAmbient)) for (const n of o.disabledAmbient) if (typeof n === 'string' && n.length <= 80) this.disabledAmbient.add(n);
     // Version 1 (milestone 8) had one global `servers` list: it becomes `legacy`. Version 2 has `legacy` too.
     this.legacyRecs = this.parseList([...(Array.isArray(o.servers) ? o.servers : []), ...(Array.isArray(o.legacy) ? o.legacy : [])]);
     const f = o.folders && typeof o.folders === 'object' && !Array.isArray(o.folders) ? (o.folders as Record<string, unknown>) : {};
@@ -447,8 +447,9 @@ export class McpStore {
     return [...this.disabledAmbient];
   }
 
+  /** A Copilot CLI name, or `claude:<name>` for a Claude Code list entry (spec 069 FR-009). */
   setAmbientDisabled(name: string, disabled: boolean): void {
-    if (typeof name !== 'string' || !name || name.length > 64) return;
+    if (typeof name !== 'string' || !name || name.length > 80) return;
     if (disabled) this.disabledAmbient.add(name);
     else this.disabledAmbient.delete(name);
     this.save();
@@ -486,7 +487,7 @@ export class McpStore {
           : { type: r.transport, url: r.url, headers: kv(r.headers), tools: r.tools ?? ['*'] };
     }
     // A name that is passed inline is not also listed as disabled (disabling a name would switch the inline server off too).
-    const disabledMcpServers = [...new Set([...this.disabledAmbient, ...off])].filter((n) => !(n in mcpServers));
+    const disabledMcpServers = [...new Set([...this.disabledAmbient, ...off])].filter((n) => !(n in mcpServers) && !n.startsWith('claude:'));
     return { mcpServers, disabledMcpServers, skipped };
   }
 }
