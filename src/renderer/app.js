@@ -1967,7 +1967,7 @@ function renderInboxBtn(){
   b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or '+INBOX_KEY+').':'Nobody needs you. Open the inbox (I or '+INBOX_KEY+').');
 }
 /* Settings > Schedules (spec 044 FR-011): the Settings screen, scrolled to its Schedules section */
-function openSchedSettings(){window.DurbarScreens.openSettings();setTimeout(()=>{const s=$('schedSet');if(s&&s.scrollIntoView)s.scrollIntoView({block:'start'});},0);}
+function openSchedSettings(){window.DurbarScreens.openSettings('schedules');} /* spec 001 FR-038, spec 052 FR-055: scrollInBody inside screens.js */
 /* spec 052 FR-068: the count rolls (old number out, new one in, 220ms) inside a box that keeps its width; up when it grows */
 function rollCount(box,n){
   if(!box)return; const txt=String(n), prev=box.dataset.n;

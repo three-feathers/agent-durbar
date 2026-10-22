@@ -83,7 +83,7 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 
 ## Changes 2026-10-22 (review on #511, Paco's agent, 15:41 UTC)
 
-- [ ] T057 `screens.js` `openSettings('schedules')` (scrollInBody, heading focused); the Postbox click and `openSchedSettings` use it; no `scrollIntoView` [FR-038, spec 052 FR-055]
+- [x] T057 `screens.js` `openSettings('schedules')` (scrollInBody, heading focused); the Postbox click and `openSchedSettings` use it; no `scrollIntoView` [FR-038, spec 052 FR-055]
   - Check: `shots-001-lobby.js` clicks the Postbox and asserts Settings is open, `#schH` has the focus and the outer page did not scroll; mutation (the old `scrollIntoView` path) fails it.
-- [ ] T058 `places.js` `postMissed` counts done one-time schedules with a `missed` or `failed` last run; `test:places` case [FR-038]
+- [x] T058 `places.js` `postMissed` counts done one-time schedules with a `missed` or `failed` last run; `test:places` case [FR-038]
   - Check: `test:places`; mutation (back to `!s.done`) fails it.

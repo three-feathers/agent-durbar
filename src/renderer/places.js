@@ -248,8 +248,9 @@
     }
     return n;
   }
-  /* last run missed or failed (the flag), the count */
-  const postMissed=schedules=>(Array.isArray(schedules)?schedules:[]).filter(s=>s&&!s.done&&s.last&&(s.last.outcome==='missed'||s.last.outcome==='failed')).length;
+  /* last run missed or failed (the flag), the count: active schedules, and done one-time ones (a one-time run missed while the app was
+     closed is marked done with outcome missed). A done repeating schedule is not counted. Same rule as #523's badge (review on #511). */
+  const postMissed=schedules=>(Array.isArray(schedules)?schedules:[]).filter(s=>s&&s.last&&(s.last.outcome==='missed'||s.last.outcome==='failed')&&(!s.done||(s.every==null&&!s.rule))).length;
 
   /* Spec 001 FR-036/FR-039: how many initials entries a tile `tileW` px wide shows for `count` visitors. Everyone when they all fit; else
      as many as fit beside the "+N" (a bare 22 px circle in this mode), so a 96 px tile shows one figure and "+1" rather than only "+2". */

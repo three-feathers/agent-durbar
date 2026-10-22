@@ -601,7 +601,15 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   assert.strictEqual(P.lettersToday(list, false, now), 14 + 1 + 0 + 167, 'runs still due before midnight');
   assert.strictEqual(P.lettersToday(list, true, now), 0);
   assert.strictEqual(P.lettersToday([{ id: 'r', rule: { kind: 'daily', time: '12:00' }, next: now + 2 * 60 * min }], false, now, (_r: unknown, after: number) => after + 24 * 60 * min), 1, 'a rule: its next run, then the rule says tomorrow');
-  assert.strictEqual(P.postMissed(list), 2, 'missed or failed last run, not done');
+  assert.strictEqual(P.postMissed(list), 3, 'missed or failed last run: active ones and the done one-time e');
+  // review on #511 (Paco): a one-time run missed while the app was closed is marked done by main's start(); the flag still counts it
+  assert.strictEqual(P.postMissed([
+    { id: 'o1', at: now - 60 * min, done: true, last: { at: now, outcome: 'missed' } },        // one-time, missed while closed: counted
+    { id: 'o2', at: now - 60 * min, done: true, last: { at: now - 60 * min, outcome: 'ok' } }, // one-time, ran: not counted
+    { id: 'r1', every: 30, done: true, last: { at: now, outcome: 'missed' } },                 // done repeating: not counted
+    { id: 'r2', rule: { kind: 'daily', time: '08:30' }, done: true, last: { at: now, outcome: 'failed' } }, // done rule: not counted
+    { id: 'p1', at: now + 60 * min, paused: true, last: { at: now, outcome: 'failed' } },       // active (paused, not done): counted
+  ]), 2, 'done one-time schedules with a missed or failed last run count; done repeating ones do not');
   assert.strictEqual(P.postMissed(null), 0);
 }
 

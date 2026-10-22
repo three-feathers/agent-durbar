@@ -128,6 +128,9 @@ module.exports = async (ctx) => {
       /* the Postbox opens Settings > Schedules */
       await js(`document.querySelector('#stage .place.postbox').click()`);
       assert.ok(await H.until(`!document.getElementById('screen').hidden&&document.getElementById('schedSet')`, 3000), `${w}: the Postbox opens Settings > Schedules`);
+      /* review on #511 (Paco): openSettings('schedules'): the heading is focused and at the top of the screen's own scroller (scrollInBody, spec 052 FR-055); the outer page never scrolls */
+      const at = await js(`(()=>{const h=document.getElementById('schH'),sc=h&&h.closest('.scr-body');return {focus:(document.activeElement||{}).id||'',off:h&&sc?Math.round(h.getBoundingClientRect().top-sc.getBoundingClientRect().top):null,scrolled:sc?sc.scrollTop:0,page:[document.documentElement.scrollTop,document.body.scrollTop,window.scrollY]};})()`);
+      assert.ok(at.focus === 'schH' && at.off !== null && Math.abs(at.off - 12) <= 2 && at.scrolled > 0 && at.page.every((v) => v === 0), `${w}: Settings opens at Schedules (heading focused, at the top of its scroller, page not scrolled): ${JSON.stringify(at)}`);
       await H.click('#scrClose'); await H.until(`document.getElementById('screen').hidden`);
     }
 
