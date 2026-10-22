@@ -34,6 +34,7 @@ import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import type { AgentProfile, PlanAnswer } from './types';
 import { cleanPlanText } from './plan';
+import { copilotQuotaReset } from './usagelimit';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import { unpackedRuntimePath } from './runtime';
@@ -153,6 +154,9 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   history: true,
   mcpStatus: true,
   mcpToggle: true,
+  mcpStart: 'next-message', // spec 058 FR-010 (real 2026-10-21, runtime 1.0.22: the servers start with the first message, not at create or resume)
+  mcpToggleApplies: 'live', // spec 019 (real: mcp.enable/disable)
+  mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
   planMode: true, // spec 066 FR-003: mode.set plan + onExitPlanModeRequest (@experimental)
@@ -1160,6 +1164,30 @@ export class CopilotAdapter implements AgentAdapter {
     (live.mcpToggles ??= new Map()).set(name, enabled);
   }
 
+  /**
+   * Spec 058 FR-012: restart one MCP server of this session. `rpc.mcp.restartServer` ("stops then starts", session-scoped, read: SDK
+   * 1.0.22, @experimental) when the runtime has it; otherwise that one server off, then on (Q3). Never `stopServer` (it acts on the
+   * session's host, Q2) and never `reload` (every server). The new state follows as `session.mcp_server_status_changed`.
+   */
+  async restartMcpServer(sessionId: string, name: string): Promise<void> {
+    const live = this.sessions.get(sessionId);
+    if (!live) throw new Error('This session is not running. Send a message to start it.');
+    const mcp = live.session.rpc.mcp as unknown as { restartServer?: (p: { serverName: string }) => Promise<void>; enable(p: { serverName: string }): Promise<void>; disable(p: { serverName: string }): Promise<void> };
+    if (typeof mcp.restartServer === 'function') {
+      try {
+        await mcp.restartServer({ serverName: name });
+        return;
+      } catch (err) {
+        // SDK 1.0.22 always has the generated method (`dist/generated/rpc.js`): an older runtime answers that it does not know it
+        // (JSON-RPC -32601, as the SDK's own `connect` check reads it). Only then fall back; any other error is the restart's own.
+        // real 2026-10-21: a failed restart reads "Request session.mcp.restartServer failed with message: <the server's reason>"
+        if (!isMethodNotFound(err)) throw new Error(sdkErrorText(err));
+      }
+    }
+    await mcp.disable({ serverName: name });
+    await mcp.enable({ serverName: name });
+  }
+
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
     this.sessions.get(sessionId)?.broker.resolve(requestId, approve, remember, broad);
   }
@@ -1193,11 +1221,31 @@ export class CopilotAdapter implements AgentAdapter {
     for (const l of this.listeners) l(event);
   }
 
+  /**
+   * Spec 068 FR-002: the premium-request quota is used up but the error said nothing about when it resets: ask `account.getQuota` once
+   * (a read that spends nothing, spec 012 FR-156) and send the same break again with the reset date. Best effort: any failure keeps the
+   * break without a time ("resets later").
+   */
+  private async quotaReset(sid: string, body: EventBody & { type: 'usageLimit' }): Promise<void> {
+    try {
+      const client = await this.getClient();
+      const rpc = (client as unknown as { rpc?: { account?: { getQuota?: (p: object) => Promise<unknown> } } }).rpc;
+      if (typeof rpc?.account?.getQuota !== 'function') return;
+      const r = copilotQuotaReset(await rpc.account.getQuota({}));
+      if (r && this.sessions.has(sid)) this.emit(sid, { ...body, resetsAt: r.resetsAt, ...(r.estimated ? { estimated: true } : {}), update: true }); // update: ignored when the break already ended (Try now, a message)
+    } catch (e) {
+      this.debug?.(`quota reset not read: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   /** SDK SessionEvent -> normalized event(s): see map.ts (pure, unit-tested with recorded fixtures). */
   private mapperFor(sid: string): EventMapper {
     let m = this.mappers.get(sid);
     if (!m) {
-      m = new EventMapper((body) => this.emit(sid, body));
+      m = new EventMapper((body) => {
+        this.emit(sid, body);
+        if (body.type === 'usageLimit' && body.scope === 'quota' && !body.resetsAt) void this.quotaReset(sid, body);
+      });
       this.mappers.set(sid, m);
     }
     return m;
@@ -1214,3 +1262,17 @@ export const COPILOT_DESCRIPTOR: AdapterDescriptor = {
   capabilities: COPILOT_CAPABILITIES,
   create: () => new CopilotAdapter(),
 };
+
+/** Spec 058 FR-012: an SDK request error without its "Request <method> failed with message: " prefix (the runtime's own reason). */
+export function sdkErrorText(err: unknown): string {
+  const m = err instanceof Error ? err.message : String(err);
+  return m.replace(/^Request \S+ failed with message: /, '') || m;
+}
+
+/** Spec 058 FR-012: the runtime does not know an RPC method (JSON-RPC MethodNotFound, -32601, or its "Unhandled method" text). */
+export function isMethodNotFound(err: unknown): boolean {
+  const e = err as { code?: unknown; message?: unknown } | null;
+  if (e && e.code === -32601) return true;
+  const m = e && typeof e.message === 'string' ? e.message : '';
+  return /^Unhandled method\b|\bmethod not found\b/i.test(m);
+}

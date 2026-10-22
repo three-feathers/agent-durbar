@@ -145,7 +145,7 @@ try {
     const html = T.tableHtml([{ t: '2026-10-20T10:00:00Z', agent: '<img src=x onerror=alert(1)>', folder: 'f', app: 'a', mode: 'allow', action: '"><script>', decision: 'auto-allow-all' }], esc);
     assert.ok(!html.includes('<img') && !html.includes('<script>'), 'escaped');
     assert.ok(html.includes('Automatic (Allow all)') && html.includes('Allow all'));
-    assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off', 'Session deleted']);
+    assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off', 'Session deleted', 'MCP restart']);
     fs.rmSync(dir, { recursive: true, force: true });
     console.log('activity tests passed');
   })().catch((e) => { console.error(e); process.exit(1); });

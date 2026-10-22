@@ -158,6 +158,30 @@ export interface AppSettingsView {
   theme?: string;
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
+  /** Spec 068 FR-006: after a coffee break, `auto` resumes by itself when it costs nothing extra; `ask` always asks. */
+  breakResume?: 'auto' | 'ask';
+}
+
+/** A profile file (spec 043 FR-010); `path` is for display only, the window sends `id` back. */
+export interface ProfileFileInfo {
+  id: string;
+  app: 'copilot' | 'claude';
+  scope: 'folder' | 'user';
+  folder?: string;
+  fileName: string;
+  path: string;
+  name: string;
+  description?: string;
+  size: number;
+  writable: boolean;
+  note?: string;
+  tooBig?: boolean;
+}
+
+/** An office folder a new profile can go into (spec 043 FR-013); the window sends `id` back, never the path. */
+export interface ProfileFolderInfo {
+  id: string;
+  path: string;
 }
 
 /** A custom agent profile as the renderer sees it (spec 043; same shape as the adapter's `AgentProfile`). */
@@ -500,6 +524,39 @@ export interface AgentMcpEntry {
   off: boolean;
   /** Spec 069 FR-011: every list that has this name. */
   sources?: McpSourceTag[];
+  /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
+  canRestart?: boolean;
+}
+
+/** `agents:mcp` (spec 019 FR-009, spec 058 FR-020). */
+export interface AgentMcpReply {
+  ok: boolean;
+  servers: AgentMcpEntry[];
+  live: boolean;
+  /** Spec 058 FR-010: when this agent app starts its servers; missing = not said. */
+  start?: 'session' | 'next-message';
+  /** Spec 058 FR-010: when a switch takes effect in a running session; missing = not said. */
+  toggleApplies?: 'live' | 'next-message';
+  /** Spec 058 FR-022: *Restart session with these servers* is offered (the app can resume and the session runs). */
+  canRestartSession?: boolean;
+}
+
+/** `agents:mcpRestart` (spec 058 FR-021): the error is short and masked. */
+export interface McpRestartResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** `agents:mcpRestartSession` (spec 058 FR-022, FR-027). */
+export interface McpRestartSessionResult {
+  ok: boolean;
+  error?: string;
+  /** The agent is working, thinking or waiting: ask, then call again with `confirmed`. Nothing changed. */
+  needsConfirm?: boolean;
+  /** The session ended but could not be resumed (as after *End session*; a message tries again). */
+  ended?: boolean;
+  /** The resume failed because the agent app's sign-in expired (FR-027). */
+  errorKind?: 'auth';
 }
 
 /** Bridge exposed by the preload script as `window.agentDurbar`. */
@@ -578,6 +635,8 @@ export interface DurbarApi {
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
   /** Turn the "needs you" OS notifications on or off (spec 052 FR-059). */
   setNotifyNeedsMe?(on: boolean): Promise<{ ok: boolean; notifyNeedsMe?: boolean }>;
+  /** Spec 068 FR-006: what happens when a coffee break ends. */
+  setBreakResume?(v: 'auto' | 'ask'): Promise<{ ok: boolean; breakResume?: 'auto' | 'ask' }>;
   /** The "needs you" count on the app icon (spec 052 FR-059): an integer from 0 to 999. Badge on macOS and Linux where supported; on Windows the taskbar button flashes when it grows in the background. */
   setBadge?(count: number): Promise<{ ok: boolean }>;
   /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
@@ -636,6 +695,17 @@ export interface DurbarApi {
   listProfiles?(id: string): Promise<{ ok: boolean; error?: string; profiles: (ProfileInfo & { trusted: boolean })[] }>;
   /** Select a custom agent (null = default). A repository agent not yet confirmed answers `needsConfirm`; call again with `confirm` after the user agreed. */
   selectProfile?(id: string, profileId: string | null, confirm?: boolean): Promise<{ ok: boolean; error?: string; needsConfirm?: boolean; profile?: ProfileInfo | null }>;
+  /** Spec 043 FR-010: the profile files of the office's folders and the user (main lists them; `folders` = the places a new file can go, by index). */
+  listProfileFiles?(): Promise<{ ok: boolean; error?: string; folders: ProfileFolderInfo[]; files: ProfileFileInfo[] }>;
+  /** Spec 043 FR-011/FR-012: read by id only (never a path); text with LF line endings, `sha256` of the bytes on disk. */
+  readProfileFile?(fileId: string): Promise<{ ok: true; info: ProfileFileInfo; text: string; sha256: string; eol: 'lf' | 'crlf' } | { ok: false; error: string }>;
+  /** Writes atomically; `conflict` when the file changed since `baseSha` (unless `overwrite`). */
+  saveProfileFile?(fileId: string, text: string, baseSha: string, overwrite?: boolean): Promise<{ ok: true; sha256: string; info: ProfileFileInfo } | { ok: false; error: string; conflict?: boolean }>;
+  /** Spec 043 FR-013/FR-018: `place` = the `id` of one of `listProfileFiles().folders`, or 'user'; `template` defaults to the Agent Success Profile; `text`: a reviewed AI draft (FR-024). */
+  createProfileFile?(app: 'copilot' | 'claude', place: string, name: string, template?: 'success' | 'standard', text?: string): Promise<{ ok: true; id: string; info: ProfileFileInfo } | { ok: false; error: string }>;
+  openProfileInVSCode?(fileId: string): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 043 FR-021..FR-023: one prompt to an agent app's one-shot path (`by`); a checked draft, nothing written. */
+  generateProfile?(req: { app: 'copilot' | 'claude'; name: string; by: string; mode: 'describe' | 'questions'; description?: string; answers?: Record<string, string> }): Promise<{ ok: true; text: string; warnings: string[]; by: string; costUsd?: number; nanoAiu?: number } | { ok: false; error: string; costUsd?: number; nanoAiu?: number }>;
 
   /** Tool usage over all runs (spec 020). */
   usageAllTime?(): Promise<UsageView>;
@@ -682,7 +752,11 @@ export interface DurbarApi {
   mcpGlobalRemoveApply?(token: string): Promise<GlobalApplyResult>;
   /** Spec 069 FR-009: switch one server of an app's list off (or on) for new Durbar sessions (Copilot and Claude Code). */
   mcpGlobalSetOff?(app: GlobalApp, name: string, off: boolean): Promise<{ ok: boolean }>;
-  agentMcp?(id: string): Promise<{ ok: boolean; servers: AgentMcpEntry[]; live: boolean }>;
+  agentMcp?(id: string): Promise<AgentMcpReply>;
+  /** Spec 058 FR-021: restart one MCP server of this agent's running session. */
+  agentMcpRestart?(id: string, name: string): Promise<McpRestartResult>;
+  /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked. */
+  agentMcpRestartSession?(id: string, confirmed: boolean): Promise<McpRestartSessionResult>;
   /** Per-agent override: `enabled=false` turns the server off for this agent (now when the session runs, else at its next start). */
   setAgentMcp?(id: string, name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;
 

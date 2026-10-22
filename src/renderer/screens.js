@@ -38,11 +38,11 @@
     if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else paintSettings(focus);
   }
   /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open and shows it), `true` (keeps it open; the caller already showed the error) or a promise of either. */
-  function dialog({title,html,buttons,wide,cls,validate,onOpen}){
+  function dialog({title,html,buttons,wide,size,cls,validate,onOpen}){
     return new Promise(resolve=>{
       const old=document.getElementById('scrDlg');if(old)old.remove();
       const d=document.createElement('div');d.id='scrDlg';d.className='dlg-ov';
-      d.innerHTML=`<div class="dlg${wide?' wide':''}${cls?' '+cls:''}" role="dialog" aria-modal="true" aria-labelledby="scrDlgT"><h3 id="scrDlgT"></h3><div class="dbody">${html||''}</div><p class="derr" id="scrDlgErr" role="alert" hidden></p><div class="dbtn"></div></div>`;
+      d.innerHTML=`<div class="dlg${wide?' wide':''}${size==='m'||size==='l'?' '+size:''}${cls?' '+cls:''}" role="dialog" aria-modal="true" aria-labelledby="scrDlgT"><h3 id="scrDlgT"></h3><div class="dbody">${html||''}</div><p class="derr" id="scrDlgErr" role="alert" hidden></p><div class="dbtn"></div></div>`;
       d.querySelector('#scrDlgT').textContent=title;
       const row=d.querySelector('.dbtn');
       const done=v=>{d.remove();resolve(v);};
@@ -60,6 +60,35 @@
     });
   }
   const sw=(on,label,attrs)=>`<button class="swt${on?' on':''}" type="button" role="switch" aria-checked="${on?'true':'false'}" aria-label="${esc(label)}" ${attrs||''}><i></i></button>`;
+
+  /* ---------------- Settings: Profiles (custom agents), spec 043 FR-010/FR-014 ---------------- */
+  const PE=()=>window.DurbarProfileEditor;
+  const profilesOn=()=>!!(PE()&&X.bridge.listProfileFiles&&X.bridge.readProfileFile);
+  const PF_APPS=[['copilot','GitHub Copilot'],['claude','Claude Code']];
+  async function profilesInner(){
+    let l=null;try{l=await X.bridge.listProfileFiles();}catch(e){l=null;}
+    const files=(l&&l.files)||[];
+    const row=f=>`<li class="pf-row" data-pf="${esc(f.id)}"><div class="pf-main"><div class="pf-top"><b>${esc(f.name)}</b><span class="mtag">${esc(PE().placeText(f))}</span>${f.writable?'':`<span class="mtag warn" title="${esc(f.note||'')}">read-only</span>`}</div>${f.description?`<small>${esc(f.description)}</small>`:''}<small><code title="${esc(f.path)}">${esc(f.fileName)}</code></small></div>${f.tooBig?`<span class="scr-note small">${esc(f.note||'Too large to open here.')}</span>`:`<button class="btn sm" type="button" data-pf-open="${esc(f.id)}" aria-label="${esc('Open '+f.name)}">Open</button>`}</li>`;
+    const groups=PF_APPS.map(([app,label])=>{const fs=files.filter(f=>f.app===app);return `<h4 class="scr-sub">${esc(label)} <small>${fs.length}</small></h4>${fs.length?`<ul class="pf-list">${fs.map(row).join('')}</ul>`:`<p class="scr-note small">None yet. ${app==='copilot'?'Copilot loads <code>.github/agents/*.agent.md</code> in a folder and <code>~/.copilot/agents</code>.':'Claude Code profiles are <code>.claude/agents/*.md</code> in a folder and <code>~/.claude/agents</code>.'}</p>`}`;}).join('');
+    return `<h3 id="pfH">Agent Success Profiles (custom agents)</h3>
+      <p class="scr-note">Markdown files that give an agent its role, instructions, tools and model. Open one to read it, change it and save it; changes apply to sessions started after saving. Codex has no profiles in Durbar yet.</p>
+      ${l&&l.ok?groups:'<p class="scr-note">Could not list the profile files.</p>'}
+      ${X.bridge.createProfileFile?'<div class="scr-tools"><button class="btn" type="button" id="pfNew">New Agent Success Profile…</button></div>':''}`;
+  }
+  function wireProfiles(){
+    const sec=$('pfSec');if(!sec||sec.dataset.wired)return;sec.dataset.wired='1';
+    sec.addEventListener('click',e=>{
+      const o=e.target.closest('[data-pf-open]');if(o){PE().open(o.dataset.pfOpen,{returnFocus:o});return;}
+      if(e.target.closest('#pfNew'))PE().newProfile({returnFocus:$('pfNew')});
+    });
+  }
+  /* after a save or a new file: the list shows the new name and description (FR-016), keeping the scroll position */
+  async function repaintProfiles(){
+    const sec=$('pfSec');if(!sec||!cur||cur.kind!=='settings')return;
+    const html=await profilesInner();
+    const s2=$('pfSec');if(s2)s2.innerHTML=html;
+  }
+  if(window.DurbarProfileEditor)window.DurbarProfileEditor.onChange(()=>{repaintProfiles();});
 
   /* ---------------- Settings: MCP servers ---------------- */
   let mcp=null; /* last McpState */
@@ -105,8 +134,12 @@
        extras, every server seen in tool events this run and any already mapped. */
     /* Agent mood (spec 034 FR-004): Serious mode turns the monster, ambulance and the other drawings off */
     const moodSec=X.bridge.setSeriousMode&&X.isSerious?`<section class="scr-sec" aria-labelledby="moodH"><h3 id="moodH">Agent mood</h3>
-        <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a faint at the spending limit, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off.</p>
+        <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a coffee break when a usage or spending limit is used up, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off.</p>
         <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Serious mode</b> <small>(no mood drawings)</small>${sw(!!X.isSerious(),'Serious mode: no mood drawings on the agent figures','id="seriousSw"')}</span><span class="scr-note small" id="seriousMsg" role="status"></span></div></section>`:'';
+    /* spec 068 FR-006: what happens when a coffee break ends (a usage limit of the agent app has reset) */
+    const breakSec=X.bridge.setBreakResume&&X.breakResume?`<section class="scr-sec" aria-labelledby="brkH"><h3 id="brkH">Coffee break</h3>
+        <p class="scr-note">When an agent's usage limit is used up, it waits in the coffee corner instead of showing an error. When the agent app says when the limit resets, the agent comes back then and sends one message to continue where it stopped, but only when that costs nothing extra (a plan or rate window). It never goes past the spending limit you set, never resumes after a restart, and never checks on its own whether a limit has reset. A limit that may lead to paid usage always asks first.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Resume by itself when the limit resets</b> <small>(off: always ask me)</small>${sw(X.breakResume()==='auto','Resume by itself when the limit resets (off: always ask me)','id="breakSw"')}</span><span class="scr-note small" id="breakMsg" role="status"></span></div></section>`:'';
     /* spec 052 FR-059: an OS notification when an agent needs you while Durbar is in the background (on for real sessions, off in the demo) */
     const notifySec=X.bridge.setNotifyNeedsMe&&X.isNotify?`<section class="scr-sec" aria-labelledby="ntfH"><h3 id="ntfH">Notifications</h3>
         <p class="scr-note">While Agent Durbar is in the background, one notification tells you when an agent asks for permission, asks a question, reaches its spending limit or hits an error. It shows only the agent's name and a short summary of the request, never file contents. The window title and the app icon show how many need you.</p>
@@ -149,8 +182,9 @@
     const badThemes=userThemes.filter((u)=>u.ok===false);
     const themeSec=`<section class="scr-sec" aria-labelledby="themeH"><h3 id="themeH">Theme</h3>
         <p class="scr-note">The look of the office; the choice applies at once and is kept on this computer.</p>
-        <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, small art and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, fonts (system fonts only), corner radii, shadows, the people's clothes and hair, small art (desk gadgets too) and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
         <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';const dm=/^Durbar · (.+)$/.exec(t.name||'');return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx">${dm?'<span class="thover">Durbar</span>':''}<b title="${esc(t.name)}">${esc(dm?dm[1]:t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
+        ${themeFallbackNote(themes)}
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
         <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button></div></section>`;
     const ab=app.about;
@@ -165,6 +199,8 @@
       if(X.bridge.copilotAuth&&kinds.some(k=>k.id==='copilot'&&k.state==='ready')){try{cp=await X.bridge.copilotAuth();}catch(e){cp=null;}}
       hsSec=window.DurbarHarnesses.sectionHTML(kinds,cp);
     }
+    /* spec 043 FR-010, FR-019: Settings > Agent Success Profiles (custom agents): the profile files of the office's folders and yours */
+    const pfSec=profilesOn()?`<section class="scr-sec" id="pfSec" aria-labelledby="pfH">${await profilesInner()}</section>`:'';
     /* spec 052 FR-031 (#306): Simple or Expert */
     const dl=X.detail?X.detail.get():'expert';
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
@@ -177,7 +213,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
@@ -197,6 +233,7 @@
     /* spec 051 FR-008: entry points open Settings at Agent apps */
     if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}
     if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}}
+    if($('pfSec'))wireProfiles();
     if(X.floors&&$('floorsSet'))X.floors.render();
     if(X.sched&&$('schedSet'))X.sched.render();
     if($('capSave'))$('capSave').onclick=async()=>{
@@ -252,8 +289,17 @@
   }
   /* spec 040 FR-014..FR-018: AI theme maker. Describe -> one prompt to a harness with `oneShot` -> a checked manifest ->
      preview (Try it, live, not saved) -> Save as my theme, Try again or Discard (back to the theme that was active). User text is never logged. */
+  /* spec 040 FR-015 / spec 052 FR-093: what one one-shot request costs, in the words of the app's plan (also used by spec 043 FR-023) */
+  function oneShotCostLine(k){const n=k.displayName||k.id;
+    return 'Uses your own '+n+' account: '+(k.id==='claude'?'a small cost (at most $0.25, usually about a cent).':k.id==='copilot'?'a few AI credits from your plan.':k.id==='codex'?'a small part of your ChatGPT plan\'s usage.':'a small cost on your own plan.');}
   /* spec 040 FR-015: AI credits a Copilot generation reported (1e9 nano = 1 credit) */
   const aiCredits=(nano)=>(Number(nano)/1e9).toFixed(2);
+  /* spec 070 FR-022: one line per own theme that could not use some of its values (dropped, or a text pair set back for contrast) */
+  function themeFallbackNote(themes){
+    if(!window.THEME||!window.THEME.fallbacks)return '';
+    const lines=themes.filter((t)=>t.own).map((t)=>{const f=window.THEME.fallbacks(t.id);const n=f.dropped.length+f.contrast.length;return n?esc(t.name)+': '+n+' value'+(n>1?'s use':' uses')+' the defaults (not usable or hard to read)':'';}).filter(Boolean);
+    return lines.length?`<p class="scr-note small" role="status" id="thFallbacks">${lines.join('; ')}.</p>`:'';
+  }
   async function aiTheme(){
     const before=(window.THEME&&window.THEME.current&&window.THEME.current().id)||'clean-office';
     let kinds=[];
@@ -261,15 +307,14 @@
     if(!kinds.length){await dialog({title:'Make a theme with AI',html:'<p class="dsub">This needs Claude Code, OpenAI Codex or GitHub Copilot, installed and signed in on this computer.</p>',buttons:[{label:'Close',value:'ok',cls:'primary'}]});return;}
     let desc='',kind=kinds[0].id;
     /* spec 052 FR-093: the cost line names only the app picked in "Made by", and follows the selection */
-    const aiCostLine=(id)=>{const k=kinds.find((x)=>x.id===id)||kinds[0], n=k.displayName||k.id;
-      return 'Uses your own '+n+' account: '+(k.id==='claude'?'a small cost (at most $0.25, usually about a cent).':k.id==='copilot'?'a few AI credits from your plan.':k.id==='codex'?'a small part of your ChatGPT plan\'s usage.':'a small cost on your own plan.');};
+    const aiCostLine=(id)=>oneShotCostLine(kinds.find((x)=>x.id===id)||kinds[0]);
     /* spec 040 FR-021: a few example looks at random, so people see how to describe one */
     let ideas=[];
     if(X.bridge.themeIdeas){try{ideas=(await X.bridge.themeIdeas())||[];}catch(e){ideas=[];}}
     const pick=()=>{const p=ideas.slice(),o=[];while(o.length<4&&p.length)o.push(p.splice(Math.floor(Math.random()*p.length),1)[0]);return o;};
     const ideaHtml=()=>ideas.length?`<div class="ai-ideas" id="aiIdeas"><span class="scr-note small">Ideas:</span>${pick().map((i)=>`<button class="btn ai-idea" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn ai-more" type="button" id="aiMore" title="Show other ideas">More ideas</button></div>`:'';
     for(;;){
-      const r=await dialog({title:'Make a theme with AI',html:`<p class="dsub">Describe a look in a few words, for example “a night-shift newsroom” or “a ship's bridge at dawn”.</p>
+      const r=await dialog({title:'Make a theme with AI',size:'m',html:`<p class="dsub">Describe a look in a few words, for example “a night-shift newsroom” or “a ship's bridge at dawn”.</p>
         <ul class="dlist ai-pts" title="The agent app you pick designs a light or dark theme in one request, with no tools and nothing kept, at a small cost on your own plan. Durbar keeps only safe values and checks that text stays readable, and you can try the theme before you save it."><li>One request, small cost</li><li>No tools, nothing kept</li><li>Preview before saving</li></ul>
         <label>Look<textarea id="aiDesc" rows="3" maxlength="300" placeholder="A calm library at night">${esc(desc)}</textarea></label>
         ${ideaHtml()}
@@ -489,7 +534,7 @@
     const html=`<label>Name<input id="plName" type="text" autocomplete="off" spellcheck="false" value="${esc(existing?existing.name:'')}" aria-describedby="plNameHelp plNameErr"></label>
       <p class="dsub small" id="plNameHelp">Up to 24 characters.</p><p class="pl-err" id="plNameErr" role="alert" hidden></p>
       <div class="pico-grid" role="radiogroup" aria-label="Icon">${radios}</div>`;
-    const r=await dialog({title:existing?'Edit place':'Add a place',html,buttons:[{label:'Cancel',value:null},{label:'Save',value:'ok',cls:'primary'}],
+    const r=await dialog({title:existing?'Edit place':'Add a place',size:'m',html,buttons:[{label:'Cancel',value:null},{label:'Save',value:'ok',cls:'primary'}],
       onOpen:d=>{const inp=d.querySelector('#plName');inp.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();d.querySelector('.dbtn .primary').click();}});inp.addEventListener('input',()=>{d.querySelector('#plNameErr').hidden=true;});},
       validate:async d=>{
         const name=d.querySelector('#plName').value, ic=(d.querySelector('input[name="plIcon"]:checked')||{}).value;
@@ -543,6 +588,13 @@
       const on=ss.getAttribute('aria-checked')!=='true';
       let res=null; try{res=await X.bridge.setSeriousMode(on);}catch(err){res=null;}
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
+      return;
+    }
+    const bs=e.target.closest('#breakSw');
+    if(bs&&X.bridge.setBreakResume){
+      const want=bs.getAttribute('aria-checked')==='true'?'ask':'auto';
+      let res=null; try{res=await X.bridge.setBreakResume(want);}catch(err){res=null;}
+      if(res&&res.ok){const v=res.breakResume==='ask'?'ask':'auto';if(X.setBreakResume)X.setBreakResume(v);bs.classList.toggle('on',v==='auto');bs.setAttribute('aria-checked',v==='auto'?'true':'false');const m=$('breakMsg');if(m)m.textContent=v==='auto'?'Agents come back by themselves when it costs nothing extra.':'Agents ask you before going on after a coffee break.';}
       return;
     }
     const la=e.target.closest('#liveActSw');
@@ -781,24 +833,78 @@
   /* spec 069 FR-011: one chip per list that has the server (sources), or the single origin of older replies */
   const srcChips=x=>Array.isArray(x.sources)&&x.sources.length?x.sources.map(t=>`<span class="mtag${t==='folder'?' extra':' src'}">${esc(SRCN[t]||t)}</span>`).join('')
     :`<span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>`;
+  /* spec 058 FR-023: what Restart session costs, said before it runs; null when there is nothing to ask (idle, no grants, no remote control) */
+  function restartSessionAsk(a){
+    const busy=a.state==='working'||a.state==='thinking'||a.state==='waiting', grants=Array.isArray(a.grants)&&a.grants.length>0, remote=!!a.remote;
+    if(!busy&&!grants&&!remote)return null;
+    return ['The conversation is kept and resuming spends no AI credits.',busy?'The running turn stops.':'','"Approve for this session" grants are cleared.',remote?'Remote control turns off.':''].filter(Boolean);
+  }
   async function agentMcp(a,o){
     if(!X.bridge.agentMcp)return;
     const fixed=!!o&&o.toggle===false; /* this agent kind cannot switch servers while it runs (spec 012 FR-067): shown, with the reason */
+    const noServerRestart=!!o&&o.restart===false; /* spec 058 FR-032: e.g. Codex: no per-server Restart, only Restart session */
     const load=async()=>X.bridge.agentMcp(a.id);
     let st=await load();
+    const restarting=new Set(); /* server names whose Restart is under way (FR-031: the button stays disabled) */
+    let sessBusy=false;
     const body=s=>{
       const rows=s.servers.map(x=>{
         const eff=x.defaultOn&&!x.off;
         const stat=x.status?`<span class="mst ${esc(x.status)}"><i></i>${esc(x.status)}</span>`:'<span class="mst none">not started</span>';
+        const rs=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
         return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(x.name)}</b>${srcChips(x)}${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${x.error?`<span class="imp-note">${esc(cap(x.error,160))}</span>`:''}</div>
-          <div class="srv-act">${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul><p class="dsub small">Applies to this agent until the app is closed.</p>`;
+          <div class="srv-act">${rs}${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
+      /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
+      const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">Applies to this agent until the app is closed.</p>`;
+    };
+    let dlg=null;
+    /* FR-004 / FR-033: repaint in place and keep the focus on the same control (by server name), so a keyboard user is not thrown out */
+    const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return;
+      const f=document.activeElement,inside=f&&dlg.contains(f);
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      dlg.querySelector('.dbody').innerHTML=body(st);
+      if(!key)return;
+      const btns=[...dlg.querySelectorAll('.dbody button:not([disabled])')];
+      const back=btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1])||(key[0]==='restart'?btns.find(x=>x.dataset.n===key[1]):null);
+      if(back)back.focus();};
+    const restartOne=async name=>{
+      if(restarting.has(name))return;
+      restarting.add(name);
+      let call;try{call=Promise.resolve(X.bridge.agentMcpRestart(a.id,name));}catch(e){call=Promise.reject(e);}
+      call=call.catch(e=>({ok:false,error:String(e&&e.message||e)}));
+      await repaint(); /* after the call went out: the row can already show the runtime's "pending" */
+      const r=await call;
+      restarting.delete(name);
+      X.toast(r&&r.ok?'Restarted '+esc(name)+'.':'Could not restart '+esc(name)+': '+esc((r&&r.error)||'unknown error'),r&&r.ok?3200:6000);
+      await repaint();
+      if(r&&r.ok)setTimeout(()=>{if(dlg&&dlg.isConnected)void repaint();},1500); /* the runtime reports the new state shortly after */
+    };
+    const restartSession=async()=>{
+      if(sessBusy)return;
+      const ask=window.DurbarDialog&&window.DurbarDialog(document);
+      const confirm=async()=>{const lines=restartSessionAsk(a)||['The conversation is kept and resuming spends no AI credits.','The running turn stops.','"Approve for this session" grants are cleared.'];
+        if(!ask)return window.confirm('Restart '+a.name+"'s session with the current MCP servers?");
+        const v=await ask({title:'Restart '+a.name+"'s session?",body:'Restart '+a.name+"'s session with the current MCP servers?",lines,returnFocus:()=>dlg&&dlg.querySelector('#mcpRestartSess'),buttons:[{label:'Cancel',value:null},{label:'Restart session',value:'ok',cls:'primary warn'}]});
+        return !!v;};
+      let confirmed=false;
+      if(restartSessionAsk(a)){if(!await confirm())return;confirmed=true;}
+      sessBusy=true;await repaint();
+      let r;try{r=await X.bridge.agentMcpRestartSession(a.id,confirmed);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
+      if(r&&!r.ok&&r.needsConfirm&&!confirmed){sessBusy=false;await repaint();if(!await confirm())return;sessBusy=true;await repaint();try{r=await X.bridge.agentMcpRestartSession(a.id,true);}catch(e){r={ok:false,error:String(e&&e.message||e)};}}
+      sessBusy=false;
+      if(r&&r.errorKind==='auth'&&X.signInAgain){if(dlg&&dlg._ov)dlg._ov._close();X.signInAgain(a,r.error||'');return;} /* FR-027: the chat's sign-in card, not a toast */
+      X.toast(r&&r.ok?esc(a.name)+': session restarted with the current MCP servers.'+(st.start==='next-message'?' Its servers start with your next message.':''):'Could not restart the session: '+esc((r&&r.error)||'unknown error')+(r&&r.ended?' The session has ended; send a message to resume it.':''),r&&r.ok?4200:7000);
+      await repaint();
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
-      onOpen:d=>{d.addEventListener('click',async e=>{const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
+      onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;d.addEventListener('click',async e=>{
+        const rb=e.target.closest('button[data-restart]');if(rb&&!rb.disabled){void restartOne(rb.dataset.restart);return;}
+        if(e.target.closest('#mcpRestartSess')){void restartSession();return;}
+        const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
         const r=await X.bridge.setAgentMcp(a.id,b.dataset.n,on);
         if(r&&r.error)X.toast(esc(r.error),5200);
-        st=await load();d.querySelector('.dbody').innerHTML=body(st);});}});
+        await repaint();});}});
     const r=await d0;
     if(r&&r.value==='settings')open('settings');
     else if(r&&r.value==='folder'&&X.folderOf){const f=X.folderOf(a);if(f)openFolder(f.key,f.name);}
@@ -877,7 +983,7 @@
   }
   /* ---------------- Tools > Activity (spec 052 FR-071): rows come from main only; the window reads, exports and clears ---------------- */
   async function activityView(){
-    const A=window.DurbarActivity;
+    const A=window.DurbarActivityTable; /* activitytable.js; window.DurbarActivity is activity.js (GitHub issue 474) */
     let rows=[];
     try{const r=await X.bridge.activityList({limit:500});rows=r&&Array.isArray(r.rows)?r.rows:[];}catch(e){rows=[];}
     return {n:rows.length,html:`<p class="scr-note">${esc(A.NOTE)}</p>${A.tableHtml(rows,esc)}${rows.length>=500?'<p class="scr-note small">The newest 500 rows are shown; an export holds the whole log (at most 5000 rows).</p>':''}`};
@@ -998,7 +1104,7 @@
     return {cls:lv.level,text:'Context '+lv.pct+'%'+(long?' · long':''),title:fmt(st.ctx.tokens)+' of '+fmt(l)+' tokens used ('+lv.pct+'%)'+long+(st.ctx.system!==undefined?'. System '+fmt(st.ctx.system)+', conversation '+fmt(st.ctx.conversation||0)+', tool definitions '+fmt(st.ctx.toolDefinitions||0)+'.':''),pct:lv.pct};
   }
 
-  window.DurbarScreens={
+  window.DurbarScreens={oneShotCostLine,aiCredits,
     init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onChange:(again)=>{X._hsRefresh=true;if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
     openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'?{section}:null);},

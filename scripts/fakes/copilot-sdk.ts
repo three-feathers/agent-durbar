@@ -54,7 +54,11 @@ export class FakeSession {
     mcp: {
       enable: async (a: unknown) => this.rec('mcp.enable', undefined, a),
       disable: async (a: unknown) => this.rec('mcp.disable', undefined, a),
-    },
+      // spec 058 FR-012: per-server restart (@experimental); a test deletes it to act as an older runtime. stopServer and reload are recorded so a test can say they were never used.
+      restartServer: async (a: unknown) => this.rec('mcp.restartServer', undefined, a),
+      stopServer: async (a: unknown) => this.rec('mcp.stopServer', undefined, a),
+      reload: async () => this.rec('mcp.reload', undefined),
+    } as Record<string, unknown>,
     // spec 054: remote control (@experimental). `remoteFail` / `visibilityFail` make the call reject with that message.
     remote: {
       enable: async (a: unknown) => { this.calls.push({ name: 'remote.enable', args: [a] }); if (this.remoteFail) throw new Error(this.remoteFail); return this.remoteAnswer; },

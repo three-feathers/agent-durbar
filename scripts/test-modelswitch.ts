@@ -258,6 +258,10 @@ assert.strictEqual(modelControlFor({ compact() {} }).switch, 'none');
   assert.strictEqual(D.shows(base, 'mcpToggle'), true);
   assert.strictEqual(D.shows({ ...base, mcpToggle: false }, 'mcpToggle'), false, 'd: toggle needs the flag');
   assert.strictEqual(D.shows({ ...base, mcpStatus: false }, 'mcpToggle'), false, 'd: toggle needs mcpStatus');
+  // spec 058 FR-012: per-server Restart only when the adapter says so, never assumed
+  assert.strictEqual(D.shows(base, 'mcpRestart'), false, 'd: no mcpRestart flag, no Restart');
+  assert.strictEqual(D.shows({ ...base, mcpRestart: true }, 'mcpRestart'), true);
+  assert.strictEqual(D.shows({ ...base, mcpRestart: true, mcpStatus: false }, 'mcpRestart'), false, 'd: Restart needs mcpStatus');
   assert.strictEqual(D.shows(undefined, 'cap'), true, 'd: no caps, as today');
 
   // (e) spec 012 T018: the narrowest kind ("basic") and the mode helpers

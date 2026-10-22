@@ -29,7 +29,7 @@ export interface SetupPlan {
   args: string[];
   /** Shown before it runs (FR-004): exactly what will run. */
   display: string;
-  /** A short note shown with the plan (admin rights, deprecation). */
+  /** A short note shown with the plan (admin rights, what it needs). */
   note?: string;
 }
 
@@ -58,23 +58,25 @@ const SCRIPTS = {
 /** The interpreter arguments before the downloaded file (the file is appended by main once it exists). */
 const PS_ARGS = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'];
 const official = (script: OfficialScript, ps: boolean): Route => ({ manager: 'official', script, install: ps ? [...PS_ARGS] : [], update: ps ? [...PS_ARGS] : [], note: NO_ADMIN });
-const DEPRECATED = 'Deprecated by Anthropic: use it only if nothing else works.';
+/** Spec 060 (read 2026-10-21, code.claude.com/docs/en/setup): npm is an advanced option, not deprecated; the native installer is "Recommended". */
+const CLAUDE_NPM = 'Needs Node.js 22 or later. Anthropic recommends its native installer.';
 
-/** FR-002 and spec 060 FR-001: routes per harness and OS, least privilege first (owner 2026-10-20); a deprecated route is last. */
+/** FR-002 and spec 060 FR-001: routes per harness and OS, least privilege first (owner 2026-10-20); Claude's npm route is last (Anthropic lists it under advanced options). */
 const ROUTES: Record<SetupKind, Partial<Record<'win32' | 'darwin' | 'linux', Route[]>>> = {
   claude: {
     win32: [
       official(SCRIPTS.claudePs1, true),
       { manager: 'winget', install: ['install', '--id', 'Anthropic.ClaudeCode', '-e', ...WINGET_AGREE], update: ['upgrade', '--id', 'Anthropic.ClaudeCode', '-e', ...WINGET_AGREE], note: MAY_ADMIN },
-      npm('@anthropic-ai/claude-code', DEPRECATED),
+      npm('@anthropic-ai/claude-code', CLAUDE_NPM),
     ],
-    darwin: [official(SCRIPTS.claudeSh, false), { manager: 'brew', install: ['install', '--cask', 'claude-code'], update: ['upgrade', '--cask', 'claude-code'], note: MAY_ADMIN }, npm('@anthropic-ai/claude-code', DEPRECATED)],
-    linux: [official(SCRIPTS.claudeSh, false), { manager: 'brew', install: ['install', '--cask', 'claude-code'], update: ['upgrade', '--cask', 'claude-code'], note: MAY_ADMIN }, npm('@anthropic-ai/claude-code', DEPRECATED)],
+    darwin: [official(SCRIPTS.claudeSh, false), { manager: 'brew', install: ['install', '--cask', 'claude-code'], update: ['upgrade', '--cask', 'claude-code'], note: MAY_ADMIN }, npm('@anthropic-ai/claude-code', CLAUDE_NPM)],
+    linux: [official(SCRIPTS.claudeSh, false), { manager: 'brew', install: ['install', '--cask', 'claude-code'], update: ['upgrade', '--cask', 'claude-code'], note: MAY_ADMIN }, npm('@anthropic-ai/claude-code', CLAUDE_NPM)],
   },
   copilot: {
     win32: [
       npm('@github/copilot', 'Needs Node.js 22 or later. Installs into your user folder; no administrator rights needed.'),
-      { manager: 'winget', install: ['install', '--id', 'GitHub.Copilot', '-e', ...WINGET_AGREE], update: ['upgrade', '--id', 'GitHub.Copilot', '-e', ...WINGET_AGREE], note: MAY_ADMIN },
+      // spec 060 FR-012: the route for a PC without Node.js (owner's report 2026-10-21), and the dialog says so
+      { manager: 'winget', install: ['install', '--id', 'GitHub.Copilot', '-e', ...WINGET_AGREE], update: ['upgrade', '--id', 'GitHub.Copilot', '-e', ...WINGET_AGREE], note: 'No Node.js needed. ' + MAY_ADMIN },
     ],
     darwin: [official(SCRIPTS.copilotSh, false), npm('@github/copilot', 'Needs Node.js 22 or later.'), { manager: 'brew', install: ['install', '--cask', 'copilot-cli'], update: ['upgrade', '--cask', 'copilot-cli'], note: MAY_ADMIN }],
     linux: [official(SCRIPTS.copilotSh, false), npm('@github/copilot', 'Needs Node.js 22 or later.'), { manager: 'brew', install: ['install', '--cask', 'copilot-cli'], update: ['upgrade', '--cask', 'copilot-cli'], note: MAY_ADMIN }],
@@ -97,6 +99,56 @@ export const OFFICIAL_PAGES: Record<SetupKind, string> = {
 export const SETUP_NAMES: Record<SetupKind, string> = { claude: 'Claude Code', codex: 'the Codex CLI', copilot: 'the GitHub Copilot CLI' };
 
 const osOf = (platform: string): 'win32' | 'darwin' | 'linux' | undefined => (platform === 'win32' || platform === 'darwin' || platform === 'linux' ? platform : undefined);
+
+/**
+ * Spec 060 FR-009: the vendors' own install commands, to copy and run yourself in a terminal. Durbar never runs these lines: some
+ * pipe a download into a shell, which spec 051 D1 forbids Durbar to do. Word for word from each vendor's install page (read
+ * 2026-10-21, spec 060 research.md). Windows labels name the terminal: "PowerShell" or "PowerShell (winget)".
+ */
+export interface ManualCommand {
+  label: string;
+  command: string;
+  note?: string;
+  /**
+   * Spec 060 FR-012: the install route that does the same thing, so the dialog can offer **Run** for it when that route is found.
+   * Run never runs `command`: it starts that route from main's fixed table (for `official`, the same vendor script, downloaded
+   * from its fixed hosts and run as a file: `powershell -File` / `bash`, never `irm … | iex` or `curl … | sh`).
+   */
+  route: RouteManager;
+}
+const NPM_CMD: Record<SetupKind, string> = { claude: 'npm install -g @anthropic-ai/claude-code', copilot: 'npm install -g @github/copilot', codex: 'npm install -g @openai/codex' };
+const NODE22 = 'Needs Node.js 22 or later.';
+/** Spec 060 FR-012: which route each manual command's label stands for (one table, so a new row cannot miss its route). */
+const LABEL_ROUTE: Readonly<Record<string, RouteManager>> = Object.freeze({ PowerShell: 'official', Terminal: 'official', 'PowerShell (winget)': 'winget', Homebrew: 'brew', npm: 'npm' });
+const MANUAL: Record<SetupKind, Record<'win32' | 'darwin' | 'linux', Omit<ManualCommand, 'route'>[]>> = {
+  claude: {
+    win32: [
+      { label: 'PowerShell', command: 'irm https://claude.ai/install.ps1 | iex', note: "Anthropic's recommended installer; no administrator rights." },
+      { label: 'PowerShell (winget)', command: 'winget install Anthropic.ClaudeCode' },
+      { label: 'npm', command: NPM_CMD.claude, note: NODE22 },
+    ],
+    darwin: [{ label: 'Terminal', command: 'curl -fsSL https://claude.ai/install.sh | bash' }, { label: 'Homebrew', command: 'brew install --cask claude-code' }, { label: 'npm', command: NPM_CMD.claude, note: NODE22 }],
+    linux: [{ label: 'Terminal', command: 'curl -fsSL https://claude.ai/install.sh | bash' }, { label: 'Homebrew', command: 'brew install --cask claude-code' }, { label: 'npm', command: NPM_CMD.claude, note: NODE22 }],
+  },
+  copilot: {
+    win32: [{ label: 'PowerShell (winget)', command: 'winget install GitHub.Copilot' }, { label: 'npm', command: NPM_CMD.copilot, note: NODE22 }],
+    darwin: [{ label: 'Terminal', command: 'curl -fsSL https://gh.io/copilot-install | bash' }, { label: 'Homebrew', command: 'brew install --cask copilot-cli' }, { label: 'npm', command: NPM_CMD.copilot, note: NODE22 }],
+    linux: [{ label: 'Terminal', command: 'curl -fsSL https://gh.io/copilot-install | bash' }, { label: 'Homebrew', command: 'brew install --cask copilot-cli' }, { label: 'npm', command: NPM_CMD.copilot, note: NODE22 }],
+  },
+  codex: {
+    win32: [
+      { label: 'PowerShell', command: 'powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"', note: "OpenAI's installer for Windows." },
+      { label: 'npm', command: NPM_CMD.codex },
+    ],
+    darwin: [{ label: 'Terminal', command: 'curl -fsSL https://chatgpt.com/codex/install.sh | sh' }, { label: 'Homebrew', command: 'brew install --cask codex' }, { label: 'npm', command: NPM_CMD.codex }],
+    linux: [{ label: 'Terminal', command: 'curl -fsSL https://chatgpt.com/codex/install.sh | sh' }, { label: 'npm', command: NPM_CMD.codex }],
+  },
+};
+/** Spec 060 FR-009: the commands to run yourself on this OS, in the vendor's order (copies, so a caller cannot change the table). */
+export const manualCommands = (kind: SetupKind, platform: string): ManualCommand[] => {
+  const os = osOf(platform);
+  return os ? (MANUAL[kind]?.[os] ?? []).map((c) => ({ ...c, route: LABEL_ROUTE[c.label] })) : [];
+};
 
 function plansFor(kind: SetupKind, platform: string, found: ReadonlySet<PackageManager>, op: 'install' | 'update'): SetupPlan[] {
   const os = osOf(platform);
@@ -203,6 +255,12 @@ export function validPaste(s: unknown): string | undefined {
 export function lastLines(raw: string, n = 6): string[] {
   return stripAnsi(raw).split('\n').map((l) => l.trimEnd()).filter((l) => l.trim()).slice(-n).map((l) => (l.length > 200 ? l.slice(0, 199) + '…' : l));
 }
+
+/**
+ * Spec 060 FR-012: the plan index the window may send to `harness:run`: an integer 0-7, else undefined (refused; it used to fall
+ * back to the first plan). The index only picks a row of main's fixed table; main still checks that the row exists.
+ */
+export const validPlanIndex = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 8 ? v : undefined);
 
 export const isSetupKind = (k: unknown): k is SetupKind => k === 'claude' || k === 'codex' || k === 'copilot';
 

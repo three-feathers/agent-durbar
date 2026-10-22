@@ -9,6 +9,9 @@ const yes = [
   'MCP server "notion" requires authentication. Run `/mcp auth notion` to authenticate.',
   'MCP server "notion" requires authentication. Run /mcp auth notion to authenticate.',
   'Re-authentication required for MCP server "notion". Run /mcp auth notion',
+  'MCP server "notion" needs authentication', // Claude Code 2.1.304 (read:)
+  'Error: MCP server "my server" needs authentication.',
+  'notes requires authentication. Open this session and run /mcp to authenticate.', // Claude Code 2.1.304 (read:)
   'x '.repeat(500) + ISSUE, // inside the bounded window
 ];
 for (const t of yes) assert.ok(isMcpAuthChallenge(t), `challenge: ${t.slice(-80)}`);
@@ -22,6 +25,13 @@ const no = [
   'HTTP 401 Unauthorized',
   'MCP server "notion" failed to start: ECONNREFUSED',
   'Please sign in to continue',
+  'notes requires authentication. Please log in again',
+  'The API requires authentication. Open a terminal',
+  ' requires authentication. Open this session and run /mcp',
+  'The app needs authentication',
+  'Your server needs authentication',
+  'MCP server needs authentication',
+  'MCP server "" needs authentication',
   'Re-authentication required for MCP server access. Please run copilot login',
 ];
 for (const t of no) assert.ok(!isMcpAuthChallenge(t), `not a challenge: ${t.slice(0, 80)}`);
@@ -31,11 +41,17 @@ for (const v of [undefined, null, 5, {}, ['MCP OAuth challenge required']]) asse
 assert.ok(!/MCP OAuth|401/.test(stripMcpChallenge(ISSUE)), 'issue clause and its HTTP code removed');
 assert.ok(stripMcpChallenge('API Error: 401 Please run /login. MCP OAuth challenge required (HTTP 401)').includes('Please run /login'));
 
+assert.ok(!/needs authentication/.test(stripMcpChallenge('MCP server "n" needs authentication')), 'Claude clause removed');
+assert.ok(stripMcpChallenge('API Error: 401 Please run /login. MCP server "n" needs authentication').includes('Please run /login'), 'app sign-in text kept');
+
+assert.ok(!/requires authentication/.test(stripMcpChallenge('notes requires authentication. Open this session and run /mcp to authenticate.')), 'second Claude clause removed');
+
 // bounded input: a phrase past the window is not read; a 1 MB text is cheap
 assert.ok(!isMcpAuthChallenge('x'.repeat(5000) + ISSUE), 'beyond the bound is ignored');
 {
   const t0 = Date.now();
   isMcpAuthChallenge('MCP server "' + 'a'.repeat(1_000_000));
+  isMcpAuthChallenge(' requires authentication. Open this session'.repeat(50_000));
   isMcpAuthChallenge('Re-authentication required for MCP serve'.repeat(100_000));
   assert.ok(Date.now() - t0 < 500, 'linear time');
 }
