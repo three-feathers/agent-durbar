@@ -50,3 +50,5 @@ specs/008-packaging-and-release/
 | CI green on main (3 OS + smoke), tag run produced a draft release | `gh run list`, `gh release list` 2026-10-16 | pass; release is **Draft** |
 | Packaged app launch on macOS/Windows, Gatekeeper/SmartScreen steps in README | none | **not verified** |
 | Signing/notarization | none | not done (feature 014) |
+
+- **FR-103 (2026-10-22):** two lines in `src/main/main.ts`, next to the other test-run window options (`enableLargerThanScreen`, FR-093): `app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')` before ready, and `backgroundThrottling: false` in `webPreferences`, both only when `dev.DURBAR_DRIVER || dev.DURBAR_SHOT`.
