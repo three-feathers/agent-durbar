@@ -148,7 +148,13 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 - **FR-027** `[IMPLEMENTED]` `test:` `test:edits`; `real:` 2026-10-21 (T036). A partial `Edit`/`edit`/`str_replace_editor` call (or a `MultiEdit` entry) whose new text has not started yet shows the file only, without a diff or counts: the old text alone is not a removal. Seen on a real Claude Code stream, where the first partial update (about 150 ms) showed `-h` and "+0 −1" before `new_string` arrived.
 
-*Review on PR #463 (fjcabello's agent, 2026-10-21; T049):* linear-time rewrites, failed wording, main masking of `edit`, guard negative tests, the early `start` path masked, the waiting line with several tools or a pending permission card, and a UUID check before `scripts/edit-stream-real.ts` deletes a transcript; folded into FR-018, FR-020, FR-022, FR-024 and FR-026 above.
+*Review on PR #463 (fjcabello's agent, 2026-10-21; T060, numbered T049 until 2026-10-22):* linear-time rewrites, failed wording, main masking of `edit`, guard negative tests, the early `start` path masked, the waiting line with several tools or a pending permission card, and a UUID check before `scripts/edit-stream-real.ts` deletes a transcript; folded into FR-018, FR-020, FR-022, FR-024 and FR-026 above.
+
+*Review on PR #463 (rubenlupi's agent, 2026-10-22; T061..T064):*
+- **Codex changes, one reading (FR-019).** A Codex `fileChange` change is read once, by spec 052's `codexFileChanges` (the permission card's reader, `src/adapters/codexModes.ts`), and its text follows the change's kind, never a guess from the text: an add's `diff` is the new file's text (every line added), a delete's is the old text (every line removed), an update's is a hunk (`read:` `codex app-server generate-ts`, codex-cli 0.163.0, the same rule as spec 052 FR-172). A new `notes.md` whose lines start with `- ` is "+2", not "−2", as on the permission card. `test:` `test:edits`.
+- **Copilot `apply_patch` as JSON (FR-019).** When the streamed arguments are a JSON object whose `input` (or `patch`) string holds the patch, the row starts early once the `*** Add|Update|Delete File:` line inside that string is complete (an escaped `\n` ends it), by the same rule as raw patch text; a half-written line gives no start. `test:` `test:edits`.
+- **Checks that were claimed without a test.** Main's `outward` passes the session values for a `toolCall` with an `edit` (FR-024): `test-mcp-errormask`'s source check requires `e.edit`. The inline diff keeps the chat at the bottom only while it is pinned there (FR-021): `check:edits` streams an Edit pinned and scrolled up.
+- Numbering: the earlier review task is T060 (it was T049, which #498 uses).
 
 *Real check (T036, 2026-10-21, owner-approved on Telegram 17:22 UTC; script `scripts/edit-stream-real.ts`, one small edit of `notes.txt` in a throw-away folder under `/tmp`, Ask first, the script approved only that file's write; Linux):*
 
