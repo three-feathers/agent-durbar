@@ -8,7 +8,7 @@
  *   theme only, dark-contrast (4.5:1 for the controls of FR-169).
  * Part 2 (T150-T155): orphan + menu-width + menu-hints (menus), tooltip-length (static 120, data 300 characters / 8 lines), ellipsis-title,
  *   label-wrap, kbd-align (the shortcut sheet), x-scroll on screens (also with simnames=long), heading-lines (Needs you), copy-overlap,
- *   caret-after-copy and toast-over-composer (the chat), and tone-contrast (every rule that moved from a literal light colour to the
+ *   caret-after-copy and toast-over-composer (the chat), popover-width (T169: the S/M token and --pop-pad), and tone-contrast (every rule that moved from a literal light colour to the
  *   --tone-* tokens reads at 4.5:1 in the 6 built-in themes and the dark fixture; the CSS is parsed here, the colours are resolved in the page).
  *
  *   npm run check:ui-text
@@ -156,6 +156,9 @@ module.exports = async (ctx) => {
   add('top-more-menu', 'menu', ['#topMoreMenu'], async () => { await closeChat(); await H.click('#topMoreBtn'); return until(`!document.getElementById('topMoreMenu').hidden`, 3000); });
   add('folders-pop', 'popover', ['#foldersPop'], async () => { await closeChat(); await H.click('#foldersBtn'); return until(`!document.getElementById('foldersPop').hidden`, 3000); });
   add('floors-pop', 'popover', ['#floorsPop'], async () => { await closeChat(); if (await js(`document.getElementById('floorsBtn').hidden`)) return false; await H.click('#floorsBtn'); return until(`!document.getElementById('floorsPop').hidden`, 3000); });
+  // T172: a Floors error shown (a duplicate name), so the dark-text rule measures .fl-err
+  add('floors-pop-error', 'popover', ['#floorsPop'], async () => { await closeChat(); if (await js(`document.getElementById('floorsBtn').hidden`)) return false; await H.click('#floorsBtn'); if (!(await until(`!document.getElementById('floorsPop').hidden`, 3000))) return false;
+    await js(`(()=>{const i=document.getElementById('fpNew');i.value='Personal';document.querySelector('#floorsPop [data-fl=create]').click();})()`); return until(`!document.querySelector('#floorsPop .fl-err').hidden`, 3000); });
   add('palette', 'dialog', ['#palDlg .dlg', '#palDlg'], async () => { await closeChat(); await js(`document.activeElement&&document.activeElement.blur()`); await key('K', [process.platform === 'darwin' ? 'meta' : 'control'], 'never'); return until(`!!document.getElementById('palDlg')`, 3000); });
   add('inbox', 'dialog', ['#inboxDlg .dlg', '#inboxDlg'], async () => { await closeChat(); await js(`document.activeElement&&document.activeElement.blur()`); await key('I'); return until(`!!document.getElementById('inboxDlg')`, 3000); });
   add('folder-menu', 'menu', ['#modeMenu'], async () => { await closeChat(); await js(`(()=>{const h=document.querySelector('#stage .room-head');const r=h.getBoundingClientRect();h.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+40,clientY:r.top+10}));})()`); return until(`!!document.getElementById('modeMenu')`, 2000); });
@@ -260,6 +263,8 @@ module.exports = async (ctx) => {
   const PASSES = [
     { name: 'folder-setup', base: 'folder-setup', query: { simfoldersetup: '1' } }, // surfaces that need their own page address
     { name: 'chat-question-long', base: 'chat-question', query: { simquestion: 'long' } }, // T145: a 2,000-character question
+    { name: 'folders-pop-long', base: 'folders-pop', query: { simnames: 'long' } }, // T172: long folder names in the Folders popover
+    { name: 'floors-pop-long', base: 'floors-pop', query: { simnames: 'long' } },
     { name: 'send-several-long', base: 'send-several', query: { simnames: 'long' } }, // T148: 60-character names
     { name: 'tools-agents-long', base: 'tools-agents-tab', query: { simnames: 'long' } }, // T154: Tools > Models and context with 60-character names
     { name: 'inbox-long', base: 'inbox', query: { simnames: 'long' } }, // T154: the Needs you headings
@@ -347,7 +352,7 @@ module.exports = async (ctx) => {
 
   // FR-169, source side: the simulator cannot reach every control, so every stylesheet of the renderer is read too. A light colour
   // (relative luminance over 0.6, from src/shared/themegen.ts) in a background fails: use a theme token (the --tone-* set in styles.css :root); there is no allow-list
-  // (older debt, listed); the switch knob is the one intended white. Hex, named colours, rgb()/hsl() with numbers and gradients are read;
+  // (older debt, listed); T172: a literal light border or outline colour fails the same way; the switch knob is the one intended white. Hex, named colours, rgb()/hsl() with numbers and gradients are read;
   // translucent colours (alpha under 0.6) and var() are not light by themselves.
   {
     const { luminance } = require('../dist/shared/themegen.js'); // one luminance helper; the check runs after the build
@@ -383,7 +388,7 @@ module.exports = async (ctx) => {
       while ((m = re.exec(css))) {
         const sel = m[1].trim().replace(/\s+/g, ' ');
         for (const d of m[2].split(/;(?![^(]*\))/)) {
-          const x = /^\s*(background(?:-color|-image)?)\s*:\s*([\s\S]*)$/.exec(d);
+          const x = /^\s*(background(?:-color|-image)?|border(?:-(?:top|right|bottom|left))?(?:-color)?|outline(?:-color)?)\s*:\s*([\s\S]*)$/.exec(d);
           if (!x) continue;
           for (const l of lights(x[2])) {
             if (file === 'screens.css' && sel === '.swt i') continue; // the knob carries no text
