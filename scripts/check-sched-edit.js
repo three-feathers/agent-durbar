@@ -169,18 +169,31 @@ module.exports = async (ctx) => {
     await js(`document.querySelector(${jsLiteral(`#schedSet [data-ss="edit"][data-id="${T.id}"]`)}).click()`); await until(`!!document.getElementById('scFormT')&&!document.getElementById('scFormT').hidden`); await settle();
     const sd = await js(`({v:document.getElementById('scTarget').value,hint:document.getElementById('scToHint').textContent,hidden:document.getElementById('scToHint').hidden})`);
     assert.deepStrictEqual([sd.v, sd.hint, sd.hidden], [sess.id, sess.name, false], `${tag}: Send to shows the session's name when edited from Settings`);
-    // a Limit typed for one unit is cleared when Send to moves to an agent that counts in another (simkinds=mixed: Mira's room has Claude Code in dollars, Mira's own app reports no unit)
+    // a Limit typed for one unit is cleared when Send to moves to an agent that counts in another (simkinds=mixed: Lena's room agent counts in dollars, Lena's own app (Codex) reports no unit)
     await js(`document.getElementById('scClose').click()`); await until(`!document.getElementById('schedDlg')`);
     await js(`(()=>{const b=document.getElementById('backBtn');if(b&&document.body.classList.contains('panel-open'))b.click();return true})()`);
     await H.load({ w, h, query: { simkinds: 'mixed' } });
     await H.calm();
-    const ada = await H.idOf('Mira');
-    assert.ok(ada, `${tag}: Mira is in the mixed roster`);
+    const ada = await H.idOf('Lena');
+    assert.ok(ada, `${tag}: Lena is in the mixed roster`);
     await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${ada}"]`)}).click()`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('schedHdrBtn')`); await settle();
     await js(`document.getElementById('schedHdrBtn').click()`); await until(`!!document.getElementById('scTarget')&&document.getElementById('scTarget').options.length===2`);
     const un = await js(`(()=>{const t=document.getElementById('scTarget'),c=document.getElementById('scCap'),u=document.getElementById('scCapU');const out={};c.value='3';const a=u.textContent;t.value=t.options[1].value;t.dispatchEvent(new Event('change'));out.sess=[u.textContent,c.value];t.value='';t.dispatchEvent(new Event('change'));out.folder=[u.textContent,c.value];out.first=a;return out})()`);
     assert.notStrictEqual(un.sess[0], un.folder[0], `${tag}: the session and the folder's agent count in different units (${JSON.stringify(un)})`);
     assert.strictEqual(un.sess[1], '', `${tag}: Limit is cleared when the unit changes`);
+    // a capped schedule moved to an agent app that reports no cost: the note says the limit will be removed, and Save succeeds without it
+    await js(`(()=>{const t=document.getElementById('scTarget'),c=document.getElementById('scCap');t.value='';t.dispatchEvent(new Event('change'));c.value='3';return true})()`);
+    await add('capped for the folder');
+    const CF = (await rows()).find((r) => r.p === 'capped for the folder');
+    assert.match(CF.line, /of \$3\.00/, `${tag}: the schedule has a limit`);
+    await edit(CF.id);
+    assert.strictEqual(await js(`document.getElementById('scCapKeep').hidden`), true, `${tag}: no note while the limit field shows`);
+    await js(`(()=>{const t=document.getElementById('scTarget');t.value=t.options[1].value;t.dispatchEvent(new Event('change'));return true})()`);
+    const note = await js(`({hidden:document.getElementById('scCapKeep').hidden,text:document.getElementById('scCapKeep').textContent,field:document.getElementById('scCapL').hidden})`);
+    assert.deepStrictEqual(note, { hidden: false, text: 'This agent app does not report what a run costs, so the limit will be removed.', field: true }, `${tag}: the note says the limit will be removed`);
+    await js(`document.getElementById('scAdd').click()`); await until(`document.getElementById('scFormT').hidden`);
+    const moved = (await rows()).find((r) => r.id === CF.id);
+    assert.ok(moved && !/ of /.test(moved.line) && /→/.test(moved.line), `${tag}: saved, sent to the session, no limit (${moved && moved.line})`);
     console.log('[sched-edit]', tag, 'ok');
   }
   console.log('[sched-edit] all checks passed');

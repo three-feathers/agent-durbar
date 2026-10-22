@@ -4035,7 +4035,7 @@ function openSchedules(r,from,opts){
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
     <div class="sc-days" id="scDays" role="group" aria-label="Days of the week" hidden>${[1,2,3,4,5,6,0].map(n=>`<label class="chk"><input type="checkbox" value="${n}"${n===today?' checked':''}> ${DAY3[n]}</label>`).join('')}</div>
     <div class="sc-opts"><label class="sc-to" id="scToL"${ag?'':' hidden'}><span class="sc-lbl">Send to</span> <select id="scTarget" aria-describedby="scToHint"><option value="">This folder's agent</option><option value="${ag?esc(ag.id):''}">This session</option></select></label>
-     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div><p class="sc-hint" id="scToHint" title="${ag?esc(ag.name):''}" hidden>${ag?esc(ag.name):''}</p></div><p class="sc-tpl-note" id="scCapKeep" hidden>The limit this schedule has is kept: this agent app does not report what a run costs, so it cannot be changed here.</p>
+     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div><p class="sc-hint" id="scToHint" title="${ag?esc(ag.name):''}" hidden>${ag?esc(ag.name):''}</p></div><p class="sc-tpl-note" id="scCapKeep" hidden></p>
    <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn" id="scCancel" type="button" hidden>Cancel</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
   renderSchedDlg();
@@ -4050,7 +4050,8 @@ function openSchedules(r,from,opts){
     $('scToHint').hidden=!sel.value;
   };
   let capUnitNow=schedCapUnit(folderAg); /* a number typed for one unit is never carried to another (5 dollars must not become 5 AI credits) */
-  const syncCap=()=>{const sel=$('scTarget'),u=schedCapUnit(sel.value&&tgt?tgt.live||folderAg:folderAg);if(u!==capUnitNow&&$('scCap'))$('scCap').value='';capUnitNow=u;$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);$('scCapKeep').hidden=!(editing&&editing.cap&&!u);};
+  const syncCap=()=>{const sel=$('scTarget'),u=schedCapUnit(sel.value&&tgt?tgt.live||folderAg:folderAg);if(u!==capUnitNow&&$('scCap'))$('scCap').value='';capUnitNow=u;$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);const keep=$('scCapKeep'),gone=!!editing&&!!editing.cap&&!u,same=!editing||(editing.target?editing.target.session:'')===(sel.value||'');keep.hidden=!gone;
+    keep.textContent=same?'The limit this schedule has is kept: this agent app does not report what a run costs, so it cannot be changed here.':'This agent app does not report what a run costs, so the limit will be removed.';};
   const setKind=k=>{d.querySelector(`input[name="scKind"][value="${k}"]`).checked=true;};
   const showDays=()=>{$('scDays').hidden=$('scCal').value!=='weekly';};
   /* the form back to a blank new schedule */
@@ -4101,7 +4102,7 @@ function openSchedules(r,from,opts){
     else if(editing)input.target=null;
     const capV=$('scCap')&&!$('scCapL').hidden?String($('scCap').value).trim():''; /* FR-015 */
     if(capV){const n=Number(capV),u=schedCapUnit(tag?tag.live||folderAg:folderAg);if(!(n>0)||!u){toast('A limit must be a positive amount.',3500);return null;}input.cap={amount:n,unit:u};}
-    else if(editing&&!$('scCapL').hidden)input.cap=null; /* no key = main keeps the limit (the unit is not reported, so the field is hidden) */
+    else if(editing&&(!$('scCapL').hidden||(editing.cap&&!$('scCapKeep').hidden&&(editing.target?editing.target.session:'')!==($('scTarget').value||''))))input.cap=null; /* an empty field removes the limit; a hidden one keeps it, unless Send to moved to an app with no unit (then main would refuse it) */
     return input;
   };
   d.addEventListener('click',async e=>{
