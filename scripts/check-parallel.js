@@ -14,7 +14,7 @@
  *   - a job that takes longer than CHECK_TIMEOUT seconds (default 900) is stopped and counts as failed.
  * CHECK_SHARDS=n splits each theme into n shards (default 2). A failing job prints its full output; the rest print one line.
  * Motion is reduced (OFFICE_REDUCED_MOTION=1: walks are instant, nothing animates; about 30% faster): these runs check the layout
- * per theme, and the plain `npm run check:office` (CI's office shards) keeps motion on. CHECK_MOTION=1 keeps it on here too.
+ * per theme, and the plain `npm run check:office` keeps motion on. CHECK_MOTION=1 keeps it on here too (CI's office job, spec 008 FR-105).
  */
 const { spawn } = require('child_process');
 const fs = require('fs');

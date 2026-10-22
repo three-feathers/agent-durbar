@@ -11,13 +11,15 @@
  *                                         (listed in the summary and the GitHub job summary), never as a clean pass
  *
  * Each driver gets a fresh DURBAR_USER_DATA, its own settings and the same output folder for all screenshot variables. A driver fails on
- * a non-zero exit (a failing driver exits 1, FR-090), a "DRIVER FAILED" line or its time limit. Linux without a display runs under xvfb-run.
+ * a non-zero exit (a failing driver exits 1, FR-090), a "DRIVER FAILED" line or its time limit. Before any Electron starts, every
+ * selected driver and the shared helpers get a `node --check` syntax pass (spec 008 FR-112): a syntax error used to hang Electron with no
+ * DRIVER FAILED line until the time limit. Linux without a display runs under xvfb-run.
  * Simulator only: no real agent session, no account, no AI credits (constitution IV). Prints one line per driver; exits 1 if any failed.
  */
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const SIM = { DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
@@ -48,6 +50,7 @@ const DRIVERS = [
   { name: 'check-sched-edit' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
+  { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows
   { name: 'check-ui-text' }, // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast
   { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
 ];
@@ -60,6 +63,16 @@ function args() {
   const a = process.argv.slice(2);
   const i = a.indexOf('--only');
   return { list: a.includes('--list'), only: i >= 0 ? new Set(String(a[i + 1] || '').split(',').filter(Boolean)) : undefined };
+}
+
+/** Spec 008 FR-112: syntax errors in the given files, from `node --check` (no shell, nothing run). [] when all parse. */
+function syntaxErrors(files) {
+  const out = [];
+  for (const f of files) {
+    const r = spawnSync(process.execPath, ['--check', f], { encoding: 'utf8', shell: false, windowsHide: true });
+    if (r.status !== 0) out.push({ file: path.relative(ROOT, f), error: String(r.stderr || r.error || `exit ${r.status}`).trim() });
+  }
+  return out;
 }
 
 function runOne(d, outDir) {
@@ -93,6 +106,12 @@ async function main() {
   const todo = DRIVERS.filter((d) => !a.only || a.only.has(d.name) || a.only.has(d.label || ''));
   if (a.list) { for (const d of DRIVERS) console.log(d.label || d.name); return; }
   for (const d of todo) if (!fs.existsSync(path.join(__dirname, d.name + '.js'))) throw new Error(`no such driver: ${d.name}`);
+  // FR-112: fail at once on a syntax error instead of a silent Electron hang until the time limit
+  const bad = syntaxErrors([...new Set(todo.map((d) => path.join(__dirname, d.name + '.js')).concat(path.join(__dirname, 'driver-helpers.js')))]);
+  if (bad.length) {
+    for (const b of bad) console.error(`ui-suite: syntax error in ${b.file}\n${b.error.split(/\r?\n/).map((l) => '      | ' + l).join('\n')}`);
+    throw new Error(`${bad.length} file(s) do not parse: ${bad.map((b) => b.file).join(', ')}; no driver was started`);
+  }
   const outDir = process.env.UI_SUITE_OUT ? path.resolve(process.env.UI_SUITE_OUT) : fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-shots-'));
   fs.mkdirSync(outDir, { recursive: true });
   console.log(`ui-suite: ${todo.length} drivers on ${process.platform}, screenshots in ${outDir}`);
@@ -129,4 +148,5 @@ async function main() {
   if (failed.length) process.exitCode = 1;
 }
 
-main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });
+module.exports = { syntaxErrors };
+if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });
