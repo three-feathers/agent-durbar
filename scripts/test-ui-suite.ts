@@ -15,6 +15,22 @@ for (const n of names) {
 const src = fs.readFileSync(SUITE, 'utf8');
 assert.ok(/shell: false/.test(src) && !/shell: true/.test(src) && !/execSync\(|exec\(/.test(src), 'the runner spawns without a shell');
 assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary directly');
+// spec 008 FR-112: a syntax error fails at once (node --check, no shell) before any Electron starts
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { syntaxErrors } = require(SUITE) as { syntaxErrors: (f: string[]) => { file: string; error: string }[] };
+  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-syntax-'));
+  const good = path.join(tmp, 'good.js'), bad = path.join(tmp, 'bad.js');
+  fs.writeFileSync(good, 'module.exports = async (ctx) => { await ctx.sleep(1); };\n');
+  fs.writeFileSync(bad, 'module.exports = async (ctx) => { await ctx.sleep(1) ;\n');
+  assert.deepStrictEqual(syntaxErrors([good]), [], 'a driver that parses passes');
+  const errs = syntaxErrors([good, bad]);
+  assert.ok(errs.length === 1 && errs[0].file.endsWith('bad.js') && /SyntaxError/.test(errs[0].error), 'a driver with a syntax error is reported with node\'s message');
+  fs.rmSync(tmp, { recursive: true, force: true });
+  assert.deepStrictEqual(syntaxErrors(names.map((n) => path.join(ROOT, 'scripts', n.split(' ')[0] + '.js')).concat(path.join(ROOT, 'scripts', 'driver-helpers.js'))), [], 'every listed driver and the helpers parse');
+  assert.ok(src.indexOf('syntaxErrors([...new Set(') > 0 && src.indexOf('syntaxErrors([...new Set(') < src.indexOf('await Promise.all(Array.from({ length: jobs }, worker))'), 'the syntax pass runs before the first driver starts');
+  // the real runner: a broken driver named with --only stops before Electron, at once, with the file and exit 1
+}
 const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
 assert.ok(/app\.exit\(failed \? 1 : 0\)/.test(main), 'a failing driver exits 1 (FR-090)');
 assert.ok(/dev\.DURBAR_DRIVER \|\| dev\.DURBAR_SHOT \? \{ enableLargerThanScreen: true \}/.test(main), 'test windows may be larger than the screen (FR-093, macOS runners)');
