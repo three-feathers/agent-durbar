@@ -137,5 +137,57 @@ module.exports = async (ctx) => {
     await closeDlg();
     await closePanel();
   }
+
+  // ---- spec 058 FR-077 / FR-078 (issue #544): 14 servers, six turned off by the agent app, three window sizes ----
+  const many = [];
+  for (let i = 1; i <= 8; i++) many.push({ name: `cli-server-${i}`, status: i === 3 ? 'failed' : 'connected', transport: 'stdio', source: 'user', ...(i === 3 ? { error: 'spawn ENOENT' } : {}) });
+  for (const n of ['azure', 'com.microsoft/azure', 'powerbi-modeling-mcp', 'workiq', 'Microsoft MCP Server for Enterprise', 'microsoft/markitdown']) many.push({ name: n, status: 'disabled', transport: 'stdio', source: 'user' });
+  for (const [w, h] of [[1440, 900], [1280, 800], [1280, 600]]) {
+    await H.load({ w, h, ready: 'fit', focus: true });
+    await closePanel();
+    await emit('sim-5', many);
+    await openMcp('sim-5');
+    const lay = await js(`(()=>{const q=s=>document.querySelector(s),r=e=>e.getBoundingClientRect();
+      const dlg=r(q('#scrDlg .dlg')),btn=r(q('#scrDlg .dbtn')),body=q('#scrDlg .dbody'),rows=[...document.querySelectorAll('#agMcp li.srv')].map(li=>r(li));
+      const done=[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Done'),dr=r(done),cx=dr.left+dr.width/2,cy=dr.top+dr.height/2;
+      const hit=document.elementFromPoint(cx,cy);
+      return {n:rows.length,dlgTop:dlg.top,dlgBottom:dlg.bottom,btnTop:btn.top,btnBottom:btn.bottom,
+        rowsOutOfBody:rows.filter(x=>x.top>=body.getBoundingClientRect().bottom||x.bottom<=body.getBoundingClientRect().top).length,
+        bodyScrolls:body.scrollHeight>body.clientHeight,bodyBottom:body.getBoundingClientRect().bottom,
+        doneVisible:dr.top>=0&&dr.bottom<=innerHeight&&dr.width>0,doneHit:hit===done||done.contains(hit)};})()`);
+    assert.ok(lay.n >= 14, `${w}x${h}: 14 or more rows ${JSON.stringify(lay)}`);
+    assert.ok(lay.dlgTop >= 0 && lay.dlgBottom <= h + 1, `${w}x${h}: the dialog fits ${JSON.stringify(lay)}`);
+    assert.ok(lay.bodyBottom <= lay.btnTop + 0.5, `${w}x${h}: the body ends above the buttons ${JSON.stringify(lay)}`);
+    assert.ok(lay.doneVisible && lay.doneHit, `${w}x${h}: Done is visible and nothing covers it ${JSON.stringify(lay)}`);
+    if (h <= 800) assert.ok(lay.bodyScrolls, `${w}x${h}: the rows scroll inside the body`);
+    // a visible row never meets the footer: every row part inside the body is above the button row
+    const meet = await js(`(()=>{const btn=document.querySelector('#scrDlg .dbtn').getBoundingClientRect(),body=document.querySelector('#scrDlg .dbody');const bb=body.getBoundingClientRect();
+      return [...document.querySelectorAll('#agMcp li.srv')].filter(li=>{const x=li.getBoundingClientRect();const t=Math.max(x.top,bb.top),b=Math.min(x.bottom,bb.bottom);return b>t&&b>btn.top&&t<btn.bottom;}).length;})()`);
+    assert.strictEqual(meet, 0, `${w}x${h}: no row meets the footer`);
+    // the last row scrolls into view above the footer and its switch is clickable without the footer in the way
+    await js(`document.querySelector('#agMcp li:last-child').scrollIntoView({block:'end'})`);
+    const lastHit = await js(`(()=>{const sw=document.querySelector('#agMcp li:last-child .srv-act')||document.querySelector('#agMcp li:last-child'),r=sw.getBoundingClientRect(),el=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return !!el&&!el.closest('.dbtn')&&!!el.closest('#agMcp');})()`);
+    assert.ok(lastHit, `${w}x${h}: the last row is reachable and not under the footer`);
+    // FR-078: a server the agent app turned off reads who did it, and its switch agrees
+    const ro = await js(`[...document.querySelectorAll('#agMcp li.srv')].map(li=>({n:li.dataset.n,word:li.querySelector('.mst-w').textContent,on:li.querySelector('button.swt').getAttribute('aria-checked'),dis:li.querySelector('button.swt').disabled,hint:(li.querySelector('.srv-hint')||{}).textContent||''}))`);
+    for (const x of ro.filter((r) => many.some((m) => m.name === r.n && m.status === 'disabled'))) {
+      assert.strictEqual(x.word, 'Off in GitHub Copilot', JSON.stringify(x));
+      assert.ok(x.on === 'false' && x.dis, `the word and the switch agree (off): ${JSON.stringify(x)}`);
+      assert.match(x.hint, /^Turn it on in GitHub Copilot\u2019s own MCP settings/, JSON.stringify(x));
+    }
+    assert.strictEqual(ro.filter((r) => /^Off in /.test(r.word)).length, 6, 'six runtime-disabled rows');
+    for (const x of ro.filter((r) => r.word === 'Running')) assert.strictEqual(x.on, 'true', 'a running server has its switch on');
+    // a server the user switched off here still reads "Off for this session"
+    await js(`document.querySelector('#agMcp li[data-n="cli-server-1"] button.swt').click()`);
+    assert.ok(await until(`(document.querySelector('#agMcp li[data-n="cli-server-1"] .mst-w')||{}).textContent==='Off for this session'`), 'switched off here: "Off for this session"');
+    assert.ok(await fits(), `${w}x${h}: the dialog fits`);
+    await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove());document.querySelector('#agMcp li[data-n="cli-server-1"] button.swt').click()`);
+    await js(`document.querySelector('#scrDlg .dbody').scrollTop=0`);
+    await shot(`058-mcp-dialog-fit-${w}x${h}.png`);
+    await js(`document.querySelector('#scrDlg .dbody').scrollTop=1e6`);
+    await shot(`058-mcp-dialog-fit-end-${w}x${h}.png`);
+    await closeDlg();
+    await closePanel();
+  }
   console.log('[058] words PASS');
 };

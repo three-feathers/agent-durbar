@@ -21,11 +21,26 @@
   const tokenText=t=>plain(t,40);
   /* `status` is the runtime's token (missing/empty = no state yet). Returns {word, icon, cls}; an unknown token reads "Unknown state: <token>"
      (plain text, the caller escapes) and gets the neutral class. */
-  function stateOf(status){
+  function stateOf(status,ctx){
+    if(status==='disabled'&&ctx){const w=offWord(ctx);if(w)return {word:w.word,icon:'off',cls:'disabled'};}
     if(status===undefined||status===null||status==='')return Object.assign({},NONE);
     if(typeof status==='string'&&Object.prototype.hasOwnProperty.call(STATES,status))return Object.assign({},STATES[status]);
     const t=tokenText(typeof status==='string'?status:'?');
     return {word:t?'Unknown state: '+t:'Unknown state',icon:'dash',cls:'unknown'};
+  }
+  /* Spec 058 FR-078: who turned a `disabled` server off. ctx = {off (this session's switch), defaultOn (false: off in Settings or the folder's extras),
+     origin, app}. The word and the row's switch must agree: the switch is on only when none of these is true. by: 'here' | 'settings' | 'app'. */
+  function offBy(ctx){
+    if(!ctx)return 'app';
+    if(ctx.off)return 'here';
+    if(ctx.defaultOn===false)return 'settings';
+    return 'app';
+  }
+  function offWord(ctx){
+    const by=offBy(ctx),app=ctx&&ctx.app?plain(ctx.app,40):'';
+    if(by==='here')return {by,word:'Off for this session'};
+    if(by==='settings')return {by,word:ctx&&ctx.origin==='folder'?'Off in folder extras':'Off in Settings'};
+    return {by,word:app?'Off in '+app:'Turned off by the agent app'};
   }
   /* 16x16 icon bodies (stroke, no fill), one per shape name; static markup, safe to place in a row */
   const ICONS={
@@ -50,6 +65,7 @@
   function signInHint(app){return 'This server needs you to sign in. '+(app?app:'Your agent app')+' keeps the sign-in; Agent Durbar never sees it.';}
   function hintFor(o){
     const status=o&&o.status, cls=o&&o.errorClass, app=o&&o.app?String(o.app):'';
+    if(status==='disabled'&&o.by==='app')return 'Turn it on in '+(app?plain(app,40)+'\u2019s own':'the agent app\u2019s own')+' MCP settings, then restart the session. Agent Durbar cannot switch it on here.';
     if(status==='needs-auth'||(status==='failed'&&cls==='auth'))return signInHint(app);
     if(status!=='failed')return '';
     if(typeof cls==='string'&&Object.prototype.hasOwnProperty.call(CLASS_HINT,cls))return CLASS_HINT[cls];
@@ -62,5 +78,5 @@
     if(/invalid (config|configuration)|configuration error|misconfigured/i.test(t))return CLASS_HINT.config;
     return '';
   }
-  return {stateOf,iconSvg,hintFor,signInHint,plain,ICON_NAMES:Object.keys(ICONS)};
+  return {stateOf,offBy,iconSvg,hintFor,signInHint,plain,ICON_NAMES:Object.keys(ICONS)};
 })());

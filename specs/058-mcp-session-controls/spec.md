@@ -389,11 +389,11 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 ### 2026-10-22: the MCP dialog fits a long list, and a word never contradicts its switch (issue #544)
 
-**Status**: specified; code in the same PR (T117).
+**Status**: built (T117), simulator and unit tests only; `[KNOWN GAP]` not seen on a real agent app (the owner's macOS build had the bug).
 
 **Problem** (owner, real Mac, a build with #538, 14 servers, `real:` issue #544): (1) with a list taller than the window the footer
 buttons (*Settings*, *Folder extras…*, *Done*) sat on the last rows and the last switch drew over *Done*. Cause: `.dlg.wide` is a
-flex column with `overflow:auto`, and `.dialog .dbody` has `min-height:0` but visible overflow, so the body shrank to the dialog's
+flex column with `overflow:auto`, and `.dlg .dbody` has `min-height:0` but visible overflow, so the body shrank to the dialog's
 height and its rows spilled over the footer instead of scrolling. (2) Six servers the agent app had turned off itself (runtime status
 `disabled`, switch on) read "Off for this session", as if the user had switched them off here.
 
@@ -402,12 +402,12 @@ height and its rows spilled over the footer instead of scrolling. (2) Six server
 - **FR-077** **The footer never overlaps the rows.** In a wide dialog (`.dlg.wide`, so the agent's MCP dialog) the title and the
   buttons stay in view and only the body scrolls, with the same scrollbar room for the switches' focus ring as `.dlg.imp`. At 1440x900,
   1280x800 and 1280x600 with 14 or more servers, no row's box meets the button row and *Done* is visible and clickable. Other
-  `dialog()` users with a wide body behave the same.
+  `dialog()` users with a wide body behave the same. [IMPLEMENTED] `sim:` `shots-058-mcp-words.js`.
 - **FR-078** **A word says who turned the server off, and never contradicts the switch.** A server the runtime reports `disabled`:
   reads "Off for this session" only when the user switched it off here (`off`); "Off in Settings" / "Off in folder extras" when the
   tag says so; otherwise the agent app or its config turned it off and the word is "Off in <app name>" (`app` of the reply; without it
   "Turned off by the agent app"). That row's switch shows off and is disabled, and its hint says where to change it ("Turn it on in
-  <app>'s own MCP settings, then restart the session."). Agent Durbar does not claim it can switch it on.
+  <app>'s own MCP settings, then restart the session."). Agent Durbar does not claim it can switch it on. [IMPLEMENTED] `test:` `test-mcpwords.ts`; `sim:` the same driver.
 
 ### 2026-10-20: MCP OAuth sign-in (issue #364)
 

@@ -58,7 +58,10 @@ body.screen-open .workspace{display:none}
 .mst.none{color:var(--muted)}
 
 /* dialogs */
-.dlg.wide{width:min(var(--dlg-w-m),calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto}
+.dlg.wide{width:min(var(--dlg-w-m),calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:hidden}
+/* spec 058 FR-077: a long body scrolls inside the dialog; the title and the buttons stay in view and never sit on the rows (the body has min-height:0, so without its own overflow its rows spilled over the footer) */
+.dlg.wide .dbody{overflow:auto;padding:2px 4px 2px 2px}
+.dlg.wide>:not(.dbody){flex:none}
 .dlg .dbody{display:flex;flex-direction:column;gap:var(--dlg-gap);min-height:0}
 .dlg .derr{margin:0;font-size:var(--t3-size);color:var(--tone-bad-ink);background:var(--tone-bad-bg);border:1px solid var(--tone-bad-line);border-radius:10px;padding:6px 10px}
 .dlg .derr[hidden]{display:none}
