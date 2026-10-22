@@ -162,17 +162,20 @@ references: `src/main/main.ts:123` is now `main.ts:142` (`outward`); `src/adapte
 - [x] T112 [P] Subset of T010: only `McpServerStatus.errorClass?` (FR-011's values); no `needsRestart`, no new capability fields, no
   `restartMcpServer` / `mcpLogFolder`. Same PR as T093 (types and contract C2 together) [FR-011, FR-060]
   [IMPLEMENTED] `McpServerStatus.errorClass?` in `src/adapters/types.ts` (PR #473 does not define it). test: `scripts/test-adapter-contract.ts` (type-checked; no adapter sets it yet, mappers are T094-T096)
-- [ ] T113 [P] Subset of T011: `src/renderer/mcpwords.js` (UMD) with the word and icon for every state and unknown tokens, and the hints
+- [x] T113 [P] Subset of T011: `src/renderer/mcpwords.js` (UMD) with the word and icon for every state and unknown tokens, and the hints
   for `failed` and `needs-auth` (the sign-in hint names the agent app, FR-052/FR-069); `scripts/test-mcpwords.ts` (`test:mcpwords` in
   `test:serial`). Start line and toggle timing wait for T010's capability fields (#349) [FR-001, FR-006, FR-052]
-- [ ] T114 Subset of T020: `agents:mcp` adds per agent the agent app's display name (`app`) and per server `errorClass`; `AgentMcpEntry`
+  [IMPLEMENTED] `src/renderer/mcpwords.js` (`stateOf`, `iconSvg`, `hintFor`; icon shapes, an unknown token named as plain text and cut at 40), `test:` `scripts/test-mcpwords.ts` (`test:mcpwords`, in `test:serial`). The hint says "This server needs you to sign in. <App> keeps the sign-in; Agent Durbar never sees it." for needs-auth (or failed with class auth), picks from `errorClass` first and then from the masked text for failed rows, and says nothing when it cannot tell.
+- [x] T114 Subset of T020: `agents:mcp` adds per agent the agent app's display name (`app`) and per server `errorClass`; `AgentMcpEntry`
   in `src/shared/api.ts`. Extend `agentMcpReply` (`src/main/mcpsession.ts`, built by #473) and its existing test in
   `scripts/test-mcp-session.ts` (`test:mcpsession`; T021's reply test, masking included, is already there) [FR-020, FR-005]
-- [ ] T115 Subset of T026, plus T027 whole: rows show word + icon (T113) and the hint, *Details* with *Copy* for the masked error;
+  [IMPLEMENTED] `agentMcpReply` adds `app` (the adapter's `displayName`) and per server `errorClass` only when the adapter set it; `AgentMcpReply.app`, `AgentMcpEntry.errorClass` in `src/shared/api.ts`. `test:` `scripts/test-mcp-session.ts` (a needs-auth server with a secret in its text, no `errorClass` unless set, no adapter = no name).
+- [x] T115 Subset of T026, plus T027 whole: rows show word + icon (T113) and the hint, *Details* with *Copy* for the masked error;
   `index.html` loads `mcpwords.js`; live refresh of the open dialog on an `mcp` event for that agent, focus kept by server name (T027;
   it replaces `repaint`'s 1.5 s re-read after a Restart in `screens.js`, #473, and reuses `repaint` for the focus);
   simulator: the existing needs-auth and failed rows (`src/renderer/sim.ts:514`) get a canned error; screenshots at 1440x900 and
   1280x800. Start line, toggle timing and the two scopes sentence stay in T026 (#349) [FR-001, FR-002, FR-004, FR-030]
+  [IMPLEMENTED] `sim:` `scripts/shots-058-mcp-words.js` (in `check:ui`), shots `docs/screenshots/058-mcp-words-*`. Rows show the word and icon, the hint, *Details* (open state kept over repaints) with *Copy* (the masked text only); an `mcp` event for the agent repaints the open dialog after 150 ms (several events = one repaint), keeps the focus by server name (a closed *Details* falls back to the switch) and the scroll position, and says what changed through `#srAnnounce`; the 1.5 s re-read after Restart is gone. The simulator now keeps the last `mcp` event per session (as main's `live`), gives sim agents 5, 10 and 15 a `my-notes` that needs a sign-in (`errorClass: 'auth'`), and emits `mcp` events at the start and end of a canned Restart. `[KNOWN GAP]` the dialog is not checked against a real runtime event stream, and the Copy button's clipboard write was seen in the simulator's Electron only.
 
 #### PR sequence for #364 (each PR ticks its tasks and updates docs; `npm run typecheck && npm run build && npm test`)
 
