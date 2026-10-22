@@ -1,0 +1,157 @@
+# Feature Specification: Keyboard navigator (Spotlight-style "Go to")
+
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Keyboard navigator (issue #548): one configurable shortcut (default Ctrl+J, ⌘J on a Mac) opens the command palette in "Go to" mode; floor, F folder, agent, or C and a number for a numbered chat; the chat opens with the cursor in the message box
+status: **specified** 2026-10-22 (spec, plan, tasks); defaults chosen by Vikram's agent, changeable by the owners
+-->
+
+**Feature Branch**: `074-keyboard-navigator`
+**Created**: 2026-10-22
+**Status**: Specified
+**Input**: Issue #548, owner request by Ruben (2026-10-22, priority high): "A keyboard-first navigator, like macOS Spotlight: one configurable shortcut opens a small box from anywhere in the app, and you jump anywhere and type into a chat without touching the mouse." Levels: floor (spec 033), **F** folder, agent, **C** chat with numbered chats (`C 1`). Choosing an agent opens its chat with the cursor in the message box; Enter sends; Escape steps back a level or closes; type-to-filter, arrows and numbers at every level. Reuse the command palette (spec 052 FR-042) and the shortcut sheet (FR-043) rather than a second unrelated box.
+
+## User Scenarios & Testing *(mandatory)*
+
+### User Story 1 - Jump to a numbered chat and type (Priority: P1)
+
+Mia has 12 sessions open. Each one shows a small chat number ("C3") on its desk card, its list row and its chat header. She presses the navigator shortcut, types `c` and `3`, and chat 3 opens with the cursor in its message box. She types a message and presses Enter; it is sent exactly as if she had clicked into the box.
+
+**Why this priority**: it is the shortest path from anywhere to "talking to that agent", and it is what makes the numbers worth showing.
+
+**Independent Test**: on the simulator with 15 agents, from the office with nothing focused, press the shortcut, `c`, `3`, type "hello", Enter: chat 3 has the message and the composer is empty again.
+
+**Acceptance Scenarios**:
+
+1. **Given** the office is shown, **When** the user presses the shortcut, then `c`, then `3`, **Then** the chat numbered 3 opens and the message box has focus.
+2. **Given** chats 3 and 31 both exist, **When** the user types `c` `3`, **Then** chat 3 is highlighted but nothing opens until Enter (or until `1` is typed, which opens 31).
+3. **Given** the navigator opened a chat, **When** the user types and presses Enter, **Then** the message goes out with that session's own agent app, permission mode, model and spending limit; no new approval path exists.
+4. **Given** no chat has number 7, **When** the user types `c` `7`, **Then** the list says "No chat 7" and nothing opens.
+
+---
+
+### User Story 2 - Step down: floor, folder, agent (Priority: P1)
+
+Raj keeps work and personal folders on two floors. He presses the shortcut: the box lists his floors that are on (numbered 1, 2, ...), plus a "Folders" and a "Chats" row. He presses `2` (or arrows and Enter) for the second floor, sees its folders, types "api" to filter, presses Enter, sees the two agents in that folder, presses `1`, and that chat opens with the cursor in the message box.
+
+**Why this priority**: the step-by-step path is the other half of the request, and works without remembering numbers.
+
+**Independent Test**: simulator with floors (`DURBAR_SIM_FLOORS=1`): shortcut, pick a floor, filter a folder, pick an agent: the right chat is open and its message box focused.
+
+**Acceptance Scenarios**:
+
+1. **Given** two or more floors are on, **When** the navigator opens, **Then** it starts at the floor level; **Given** only one floor is on (or floors are not used), **Then** it starts at the folder level of the whole office.
+2. **Given** any level, **When** the user types letters, **Then** only matching items stay (same matching as the palette); arrows move; Enter picks; a number picks the item with that number.
+3. **Given** a folder with one agent, **When** the folder is picked, **Then** its chat opens directly (the agent level is skipped).
+4. **Given** the start level, **When** the user types `f` and a space (or picks the "Folders" row), **Then** the folder level of every folder on a floor that is on is shown; `c` and a space (or the "Chats" row) shows the chat level.
+
+---
+
+### User Story 3 - Escape steps back (Priority: P1)
+
+At any level, Escape goes back one level (with that level's filter as it was); at the start level it closes the box and focus goes back where it was. Backspace in an empty filter also goes back one level.
+
+**Independent Test**: shortcut, floor, folder, then Esc, Esc, Esc: agent level, folder level, floor level, closed; focus is back on the element that had it.
+
+**Acceptance Scenarios**:
+
+1. **Given** the agent level reached through floor and folder, **When** Escape is pressed three times, **Then** the box shows the folder level, then the floor level, then closes.
+2. **Given** a level was skipped (one floor on; one agent in a folder), **When** Escape is pressed, **Then** it goes back to the last level that was shown.
+
+---
+
+### User Story 4 - Choose my own shortcut (Priority: P2)
+
+Lena already uses Ctrl+J in another tool. In **Settings > Keyboard** she presses **Change…**, presses Ctrl+Shift+G, and it is saved. A combination the app or the operating system already uses (Ctrl+K, Ctrl+C, ⌘Space, Alt+Tab, ...) is refused with a sentence naming what uses it. **Reset** brings back the default.
+
+**Independent Test**: on the simulator, change the shortcut, check the old one no longer opens the navigator and the new one does; try Ctrl+K and see it refused.
+
+**Acceptance Scenarios**:
+
+1. **Given** Settings > Keyboard, **When** the user records a combination that is free, **Then** it is saved for this window, and the shortcut sheet, the palette and Settings all show the new one.
+2. **Given** recording, **When** the user presses a combination used by the app, by text editing or by a known OS shortcut, **Then** it is not saved and the reason is shown.
+3. **Given** recording, **When** the user presses Escape (or a key without Ctrl/⌘ or Alt), **Then** recording stops (Escape) or asks for a modifier, and nothing is saved.
+
+---
+
+### User Story 5 - Discover it (Priority: P3)
+
+The `?` shortcut sheet lists the navigator shortcut and the in-box keys; the Ctrl+K palette has a "Go to… (navigator)" action showing the shortcut; the box itself has a short key line at its foot.
+
+### Edge Cases
+
+- No agents in the office: the box opens and says there is nothing to go to yet (and names + Folder), instead of an empty list.
+- A chat number belongs to a session in a hidden folder or on a floor that is off: it is not listed and `c` + its number says "No chat N here" (it may be in a hidden folder or a floor that is off). Its number stays reserved.
+- A session ends and is removed from the office: its number is freed for the next new session; numbers of the other sessions never change.
+- The navigator shortcut is pressed while the navigator is open: the box closes (toggle, like Spotlight). Pressed while the Ctrl+K palette is open: the palette switches to the navigator's start level.
+- Another modal dialog is open (a confirmation, a question, Settings while recording): the shortcut does nothing there; that dialog keeps its focus.
+- The chosen agent is a helper (sub-agent) or not a live session: helpers are never listed; a non-live demo agent opens its chat with focus on the chat title.
+- The open chat's unsent draft is kept when the navigator opens another chat (the existing per-chat draft behaviour applies; nothing is sent by the navigator itself).
+- Simple and Expert detail levels behave the same.
+- Text in the box and the chat-number badges is never smaller than 10.5px; with 15 agents the office still fits at 1440x900 and 1280x800.
+
+## Requirements *(mandatory)*
+
+### Functional Requirements
+
+- **FR-001** One box: the navigator MUST be the existing command palette (spec 052 FR-042) opened in a "Go to" mode with levels, not a second, separate dialog. It keeps the palette's look, focus trap, ARIA combobox/listbox roles, live result count and focus return.
+- **FR-002** Shortcut: a configurable keyboard shortcut MUST open the navigator from anywhere in the app (office, list, an open chat, text fields included), except while another modal dialog is open. Default: **Ctrl+J** on Windows and Linux, **⌘J** on a Mac (FR-084 of spec 052). Pressing it again closes the box.
+- **FR-003** Levels: the box MUST show one level at a time, named in a breadcrumb line above the input (for example "Go to › Upstairs › api"):
+  - **Start**: the floors that are on (when two or more are on), or else every folder on a floor that is on; plus two rows, **Folders** (`F`) and **Chats** (`C`).
+  - **Folders**: folders on floors that are on and not hidden, in office order (on a picked floor: that floor's folders only).
+  - **Agents**: the main sessions of the picked folder, each with its chat number.
+  - **Chats**: every visible main session in chat-number order, labelled "C3 · name · folder".
+- **FR-004** Letters: at the start level, typing `f` or `c` followed by a space jumps to the Folders or Chats level; `c` followed directly by digits (`c3`, or `c 3`) picks that chat number. Typing `f` or `c` followed by any other letter is ordinary filter text, so folders whose names start with those letters can still be filtered. The **Folders** and **Chats** rows also match `f` and `c` first, so `f` then Enter works too.
+- **FR-005** Filter: at every level, typed text filters the items with the palette's matching (start of name, start of a word, anywhere, then hint words), case-insensitive.
+- **FR-006** Numbers: at the floor, folder and agent levels every item shows its position number; typing a filter made only of digits picks by number. At the chat level the number is the chat number. A number opens its item straight away when no other number starts with the typed digits; otherwise it is highlighted and Enter opens it.
+- **FR-007** Keys inside the box: ↑/↓ move, Enter picks the highlighted item, Escape goes back one level (closes at the start level), Backspace in an empty filter goes back one level, Tab stays in the box. Going back restores that level's filter text and highlight.
+- **FR-008** Single choice: picking a folder that has exactly one main session MUST open that chat directly; Escape from there returns to the level that was last shown.
+- **FR-009** Open a chat: picking an agent or a chat MUST open its chat (the same path as clicking its desk) and put the cursor at the end of its message box. If the session has no message box (not live), focus goes to the chat title.
+- **FR-010** Sending: the navigator MUST NOT send anything itself. Enter in the message box sends through the existing composer, so the folder's permission mode, the spending limit, the plan-first and attachment rules and every approval stay exactly as they are. The navigator adds no way to approve tools.
+- **FR-011** Chat numbers: every main session in the office MUST have a chat number, a positive integer:
+  - a new session gets the lowest number not held by another session in the office;
+  - a session keeps its number while it is in the office, whatever else is added, removed, hidden, filtered or sorted;
+  - numbers are kept on this computer by session id (ids only, no names or content), so a restored session keeps its number after a restart; a session that is no longer in the office frees its number once the office has loaded;
+  - helpers (sub-agents) and previous sessions have no number;
+  - in the simulator nothing is saved; numbers follow the order agents appear.
+- **FR-012** Numbers visible: the chat number MUST be shown as a small text badge "C3" (accessible name "chat 3") on each main desk card in every office density, on each list-view row, in the chat header next to the title, in the full-screen chat strip's tooltips and in the palette's agent hints. Text at least 10.5px; not colour only.
+- **FR-013** Settings: **Settings > Keyboard** MUST show the navigator shortcut, a **Change…** button that records the next key combination, and **Reset to default**. The choice is a display preference of this window, saved like the detail level.
+- **FR-014** Clash check: a recorded combination MUST be refused, with a sentence naming its owner, when it:
+  - has no Ctrl/⌘ or Alt/Option modifier, or uses the Windows/Super key on Windows and Linux;
+  - is one of the app's own shortcuts (Ctrl/⌘+K, Ctrl/⌘+O, Ctrl/⌘+Shift+O, Ctrl/⌘+Shift+A, Ctrl/⌘+Shift+N, Ctrl+`, ⌘, on a Mac, the chat answer keys Alt/⌥⌘+A/S/D/N);
+  - is a text-editing or window key (Ctrl/⌘ + A, C, V, X, Z, Y, Shift+Z, W, Q, R; ⌘H, ⌘M on a Mac; Alt+F4);
+  - is a known OS shortcut (Ctrl+Space, Ctrl+Shift+Space, Super/⌘+Space, ⌥⌘Space, ⌃⌘Space, Alt+Tab, ⌘Tab, Ctrl+Alt+Delete, Ctrl+Alt+T, Ctrl+Alt+L, Ctrl+Alt+arrow keys).
+- **FR-015** Discovery: the `?` shortcut sheet MUST list the navigator shortcut (the current one) and the in-box keys (`F`, `C` + number, numbers, Esc back); the Ctrl+K palette MUST have a "Go to… (navigator)" action showing it; the box's foot line names ↑↓, Enter, Esc back, and F / C.
+- **FR-016** Accessibility: the box is a modal dialog with a combobox input (`aria-activedescendant`), a listbox with options, the breadcrumb as the dialog's description, and a polite announcement of the level and result count on every change. Everything reachable without a mouse; options also respond to a click.
+- **FR-017** Platforms: the same on Windows, macOS and Linux; ⌘ replaces Ctrl on a Mac in matching and in every label; keys are matched by their position (`code`), so keyboard layouts do not move the shortcut.
+- **FR-018** Simulator: everything works with `DURBAR_SIM=15` (and with floors), with zero AI credits.
+
+### Key Entities
+
+- **Navigator level**: kind (start, folders, agents, chats), the floor or folder it belongs to, its filter text and highlighted item.
+- **Chat number**: session id → positive integer, unique among the sessions in the office.
+- **Navigator shortcut**: modifiers (Ctrl/⌘, Alt, Shift) and one key position; default Ctrl/⌘+J.
+
+## Success Criteria *(mandatory)*
+
+### Measurable Outcomes
+
+- **SC-001**: From any screen, a message reaches chat N in at most 4 key presses plus the message itself (shortcut, `c`, the number, Enter after typing) for N ≤ 9 with no number starting with N's digits beyond it.
+- **SC-002**: From any screen, any agent is reachable by floor → folder → agent without the mouse, in at most 4 key presses with 9 or fewer items per level.
+- **SC-003**: Chat numbers never change for a session while it stays in the office (checked by adding, removing and hiding other sessions), and are the same after a restart.
+- **SC-004**: With 15 agents, the office (with the new badges) has no overlap or page overflow at 1440x900 and 1280x800, and every new text is ≥ 10.5px.
+- **SC-005**: Zero AI credits spent in every check of this feature.
+
+## Assumptions
+
+Defaults chosen by Vikram's agent, each changeable by the owners (listed for review in the PR):
+
+- **D1 Shortcut**: Ctrl+J / ⌘J ("J for jump"). Not used by the app, by text fields, or by Windows, GNOME/KDE or macOS globally. Rejected: Ctrl+Space (input-method switching on Linux and Windows, previous input source on a Mac), Ctrl/⌘+Shift+Space (input-method and IME toggles on some setups), ⌘Space (Spotlight), Ctrl/⌘+K (the palette itself), Ctrl+P (print expectations).
+- **D2 One box**: the navigator is the palette in a "Go to" mode (FR-001), so there is one focus trap, one look and one set of keys to learn; Ctrl+K keeps its current mixed search.
+- **D3 One floor**: with fewer than two floors on, the floor level is skipped and the start level lists the folders.
+- **D4 Letters**: `f`/`c` need a following space or digit (FR-004), so filtering folders named "core" or "frontend" still works.
+- **D5 Chat numbers**: lowest free number, kept per session id on this computer, shown as "C3".
+- **D6 Single agent**: a folder with one session opens its chat directly.
+- **D7 Off floors and hidden folders**: not listed in the navigator (as everywhere else, spec 033 FR-008); their numbers stay reserved.
+
+Out of scope: VS Code chats (spec 009) and previous sessions (spec 006) are not numbered or listed; global (system-wide) shortcuts when the app is not focused; searching message text (issue #430).
