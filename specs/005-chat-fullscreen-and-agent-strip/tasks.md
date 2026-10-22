@@ -38,7 +38,7 @@
 - [x] T061 Review on PR #463 (rubenlupi's agent, 2026-10-22), Codex: `codexEdit` builds on spec 052's `codexFileChanges` (`src/adapters/codexModes.ts`, #470) and `diffFile` follows the kind, never the text (add = the new file's text, delete = the old text, update = a hunk); the guess `looksLikeDiff` is dropped; `test:edits` cases: a new file whose lines start with `- `, a new file whose lines are all indented, a delete whose lines start with `+` [FR-019]
 - [x] T062 Review on PR #463: a Copilot `apply_patch` call whose arguments are JSON (`{"input": "*** Begin Patch…"}`) starts early once the `*** … File:` line inside the string is complete (`ArgStream.path()`); `test:edits` streams it in small pieces (also a half-written path line gives no start, and an escaped newline `\n` ends the line) [FR-019]
 - [x] T063 Review on PR #463: `test-mcp-errormask` requires `e.edit` in main's `outward` condition (removing it fails) [FR-024]; `check:edits` scroll steps while the simulated Edit streams: pinned at the bottom the chat stays at the bottom, scrolled up its `scrollTop` does not move; pinned, Show all on the last diff keeps the bottom (removing `stickyScroll` from `edDiff` fails the Show all step, removing the `dataset.pin` check fails the scrolled-up step; a streamed update is also followed by `tTool`'s own `tScroll`) [FR-021]
-- [ ] T064 Review on PR #463: merge main (#515: no light allow-list), `check:ui-text` on the merged tree including `chat-edits` [FR-024]
+- [x] T064 Review on PR #463: merge main (#515: no light allow-list), `check:ui-text` on the merged tree including `chat-edits` [FR-024]
 
 ## Delta 2026-10-21: readable JSON tool results and saved outputs (issue #361)
 
