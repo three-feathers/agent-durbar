@@ -25,15 +25,18 @@ import { createCliTransport } from './claudeTransport';
 import type { ClaudeTransport, ControlAnswer, IncomingControl, TransportHandlers, UserContent } from './claudeTransport';
 import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './capabilities';
 import type { EventBody } from './map';
-import { PermissionBroker, startModeOf } from './permissions';
+import { PermissionBroker, claudeServerPart, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { McpToolInfo } from './types';
+import { normMcpTools } from './mcptools';
 import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
 
 /** FR-156: what Settings says of a Claude Code that `auth status` calls signed in: only the first message can confirm it. */
 export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
 import { parseUsdCap } from '../shared/credits';
 import { clipDiff } from '../shared/diff';
+import { MCP_TOOL_OFF_RE } from '../shared/mcp';
 import { editOf } from './edits';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
@@ -71,6 +74,8 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true, // FR-133: mcp_toggle + mcp_status
   mcpStart: 'next-message', // spec 058 FR-010: the CLI (and its servers) is launched with the next message
   mcpToggleApplies: 'live', // FR-133 (a server that was off at launch: next message)
+  mcpToolFilter: true, // spec 069 FR-062: --disallowedTools mcp__<server>__<tool> (read: CLI docs; not run on a real account)
+  mcpTools: true, // spec 069 FR-031: the tools of a server in the mcp_status reply (read: docs McpServerStatus.tools; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: control request mcp_reconnect (read: CLI 2.1.304 strings; not checked on a real account)
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
   oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
@@ -83,9 +88,10 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
 /** Spec 059 FR-007: the SDK transport (dev opt-in, `DURBAR_CLAUDE_TRANSPORT=sdk`) does not apply `--name`, so it does not offer a rename. */
 export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() => {
   // the SDK transport sends only a few control requests (claudeSdk.ts): no rename, no mcp_reconnect
-  const { renameSession: _r, mcpRestart: _m, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown };
+  const { renameSession: _r, mcpRestart: _m, mcpTools: _t, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown; mcpTools?: unknown };
   void _r;
   void _m;
+  void _t;
   return rest;
 })()) as AdapterCapabilities;
 /** Spec 066: one sentence added to a plan-first message, so the plan reaches the card (Claude's plan file cannot be written in Read-only). */
@@ -176,7 +182,7 @@ export interface ClaudeLaunch {
   effort?: string;
   /** spec 043 FR-008: the custom agent for this launch (`--agents` JSON and `--agent` name). */
   agent?: { name: string; json: string };
-  /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged. */
+  /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged, never on the command line (`cliLaunchArgs` passes a private file). */
   mcpConfig?: string;
   appendSystemPrompt?: string;
   /** spec 006 FR-019: the workspace's other folders (`--add-dir`, once each). */
@@ -189,6 +195,8 @@ export interface ClaudeLaunch {
   folderAllow?: string[];
   /** Spec 059 FR-007: the user's name for the session; the CLI stores it as the session title (`--name`, also with `--resume`). */
   name?: string;
+  /** Spec 069 FR-062: single MCP tools turned off in Durbar, as `mcp__<server>__<tool>`, added to the mode's `--disallowedTools`. */
+  disallowedMcpTools?: string[];
 }
 
 export const CLAUDE_EFFORTS: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -230,13 +238,21 @@ export function claudeNameOk(name: unknown): boolean {
 }
 
 /** The CLI argv (FR-111). Mode flags come from `claudeOptionsFor`, so an unknown mode gets Read-only. */
+/** Spec 069 FR-062: Claude Code's names of the tools turned off in Durbar (other names cannot be turned off at all: FR-063, `MCP_TOOL_OFF_RE`). */
+export function claudeDisallowedMcp(off: Readonly<Record<string, readonly string[]>> | undefined): string[] {
+  const out: string[] = [];
+  for (const [server, tools] of Object.entries(off ?? {})) for (const t of tools ?? []) if (typeof t === 'string' && MCP_TOOL_OFF_RE.test(t)) out.push(`mcp__${claudeServerPart(server)}__${t}`);
+  return out.slice(0, 5000);
+}
+
 export function claudeArgs(i: ClaudeLaunch): string[] {
   const o = claudeOptionsFor(i.mode, i.folderAllow);
   const a = ['-p', '--output-format', 'stream-json', '--verbose', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio', '--include-partial-messages'];
   a.push('--permission-mode', o.permissionMode);
   if (o.allowDangerouslySkipPermissions) a.push('--allow-dangerously-skip-permissions');
   if (o.allowedTools?.length) a.push('--allowedTools', o.allowedTools.join(','));
-  if (o.disallowedTools?.length) a.push('--disallowedTools', o.disallowedTools.join(','));
+  const deny = [...(o.disallowedTools ?? []), ...(i.disallowedMcpTools ?? [])];
+  if (deny.length) a.push('--disallowedTools', deny.join(','));
   a.push('--setting-sources', o.settingSources.join(','));
   if (o.strictMcpConfig) a.push('--strict-mcp-config');
   if (i.mcpConfig) a.push('--mcp-config', i.mcpConfig);
@@ -371,7 +387,59 @@ export type TransportFactory = (o: TransportInput) => ClaudeTransport | Promise<
 /** Spec 012 FR-159: the entrypoint Claude records for the chat sessions Durbar starts (not an SDK value, so `claude --resume` lists them). */
 export const CLAUDE_ENTRYPOINT = 'agent-durbar';
 
-export const cliTransportFactory: TransportFactory = (o) => createCliTransport({ file: o.file, args: claudeArgs(o.launch), cwd: o.cwd, env: o.env, handlers: o.handlers });
+/**
+ * Spec 069 FR-009 (change 2026-10-22, review 6 on #489): the `--mcp-config` JSON holds env and header values (Claude Code's user list
+ * and the folder's extras), and a command line is visible to every local user (`ps`). It goes into `mcp-config.json`, mode 0600, in a
+ * new private temp folder (`mkdtemp`, 0700); `--mcp-config` gets the path; `cleanup` deletes the folder (on the CLI's exit).
+ */
+export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): { file: string; cleanup: () => void } {
+  const dir = fs.mkdtempSync(path.join(tmpRoot, 'durbar-mcp-'));
+  const cleanup = (): void => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* the OS cleans its temp folder */
+    }
+  };
+  try {
+    if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
+    const file = path.join(dir, 'mcp-config.json');
+    fs.writeFileSync(file, json, { mode: 0o600, flag: 'wx' });
+    return { file, cleanup };
+  } catch (e) {
+    cleanup();
+    throw e;
+  }
+}
+
+/** The CLI argv for a launch, with the MCP JSON moved to a private file (`privateMcpConfig`). */
+export function cliLaunchArgs(launch: ClaudeLaunch, tmpRoot?: string): { args: string[]; cleanup: () => void } {
+  if (!launch.mcpConfig) return { args: claudeArgs(launch), cleanup: () => undefined };
+  const p = privateMcpConfig(launch.mcpConfig, tmpRoot);
+  return { args: claudeArgs({ ...launch, mcpConfig: p.file }), cleanup: p.cleanup };
+}
+
+export const cliTransportFactory: TransportFactory = (o) => {
+  const { args, cleanup } = cliLaunchArgs(o.launch);
+  try {
+    return createCliTransport({
+      file: o.file,
+      args,
+      cwd: o.cwd,
+      env: o.env,
+      handlers: {
+        ...o.handlers,
+        exit: (info) => {
+          cleanup();
+          o.handlers.exit(info);
+        },
+      },
+    });
+  } catch (e) {
+    cleanup();
+    throw e;
+  }
+};
 
 export interface ClaudeAdapterDeps {
   /** Absolute path of `claude` (from detect); resolved lazily at the first start of a CLI. */
@@ -512,6 +580,7 @@ export class ClaudeAdapter implements AgentAdapter {
     this.capabilities = deps.sdkTransport ? CLAUDE_SDK_CAPABILITIES : CLAUDE_CAPABILITIES;
     if (deps.sdkTransport) (this as { renameSession?: unknown }).renameSession = undefined;
     if (deps.sdkTransport) (this as { restartMcpServer?: unknown }).restartMcpServer = undefined;
+    if (deps.sdkTransport) (this as { listMcpTools?: unknown }).listMcpTools = undefined;
   }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
@@ -638,7 +707,8 @@ export class ClaudeAdapter implements AgentAdapter {
     const exists = this.deps.sessionExists ?? claudeSessionExists;
     const resumable = options.resumeSessionId !== undefined || (given !== undefined && exists(id));
     const roots = [...new Set([ws.cwd, ...ws.folders])];
-    const broker = new PermissionBroker({ roots, mode, emit: (e) => this.onBroker(id, e), beforeWrite: (paths) => this.writeGuard?.(id, paths) ?? Promise.resolve() }); // spec 065 FR-001
+    const blocked = mcpToolBlockList(options.disabledMcpTools); // spec 069 FR-063
+    const broker = new PermissionBroker({ roots, mode, blockedTools: () => blocked, emit: (e) => this.onBroker(id, e), beforeWrite: (paths) => this.writeGuard?.(id, paths) ?? Promise.resolve() }); // spec 065 FR-001
     const mapper = new ClaudeMapper((b) => this.onMapped(id, b), { quiet: true, onDropped: (why) => this.debug?.(`claude: dropped ${why}`) });
     this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable, capUsd: usdCap(options.maxAiCredits), spentUsd: 0, ...(this.pendingNames.has(id) ? { pendingName: this.pendingNames.get(id), needsRelaunch: false } : {}) });
     this.pendingNames.delete(id);
@@ -788,6 +858,18 @@ export class ClaudeAdapter implements AgentAdapter {
     }
   }
 
+  /** Spec 069 FR-031: the tools of one server, from the CLI's `mcp_status` reply (no extra start: only a running CLI is asked). */
+  async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
+    const s = this.sessions.get(sessionId);
+    if (!s) throw new Error('This session is not running. Send a message to start it.');
+    if (!s.transport?.alive) throw new Error('Claude Code starts its MCP servers with your next message; send one to see the tools.');
+    const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
+    const list: unknown[] = Array.isArray(r?.mcpServers) ? r.mcpServers : [];
+    const srv = list.find((x) => !!x && typeof x === 'object' && (x as { name?: unknown }).name === name) as { tools?: unknown; status?: unknown } | undefined;
+    if (!srv) throw new Error(`${name} is not running in this session.`);
+    return normMcpTools(srv.tools);
+  }
+
   /** FR-128: the user's answers (question text -> label(s)), or null when they skipped. */
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
     const q = this.sessions.get(sessionId)?.questions?.get(requestId);
@@ -857,6 +939,7 @@ export class ClaudeAdapter implements AgentAdapter {
       effort: o.reasoningEffort,
       ...(s.agent ? { agent: { name: s.agent.profile.id, json: agentsArg(s.agent) } } : {}),
       mcpConfig: mcpConfigOf(o.mcpServers, o.disabledMcpServers),
+      ...(claudeDisallowedMcp(o.disabledMcpTools).length ? { disallowedMcpTools: claudeDisallowedMcp(o.disabledMcpTools) } : {}),
       settingsJson: claudeSettingsJson(o.folderSetup),
       ...(o.folderSetup?.rules?.allow.length ? { folderAllow: o.folderSetup.rules.allow } : {}),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),

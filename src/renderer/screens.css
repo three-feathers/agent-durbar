@@ -301,6 +301,48 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-confirm{align-items:flex-start;margin:14px 0 2px;font-weight:600}
 .dlg.fs .fs-confirm input{flex:none;width:16px;height:16px;margin:2px 0 0}
 .dlg.fs .fs-confirm>span{flex:1;min-width:0}
+/* spec 069: the add form's scope choice, the agent app ticks and the per-file review */
+.mscope{border:1px solid var(--line);border-radius:8px;padding:8px 12px 10px;margin:0 0 10px;display:flex;flex-direction:column;gap:6px}
+.mscope legend{font-weight:650;padding:0 4px}
+.mscope label,.gapps label,.gsec label{display:flex;flex-direction:row;align-items:baseline;gap:6px;font-weight:500;font-size:12.5px;color:var(--ink-2)}
+.mscope label>small,.gapps label>small,.gsec label>small{display:inline}
+.mscope input[type=radio],.mscope input[type=checkbox],.dlg .gapps input{flex:none;margin:0;width:auto}
+.mscope small,.gapps small,.gsec small{color:var(--muted)}
+.gapps{display:flex;flex-wrap:wrap;gap:4px 16px;margin:4px 0 2px 22px}
+.dlg .gapps{margin-left:0}
+.gsec{display:flex;flex-direction:column;gap:4px;margin:6px 0 0 22px}
+.gpvl{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:10px;max-height:52vh;overflow:auto}
+.gpv{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.gpv.bad{border-color:var(--card-waiting-line)}
+.gpv .srv-top{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+.gpv pre.trustcmd{max-height:180px;overflow:auto;margin:4px 0 0;white-space:pre-wrap;word-break:break-word}
+.grep{display:flex;gap:6px;align-items:baseline;margin-top:6px}
+.gfiles{margin:4px 0;padding-left:18px}
+.gfiles .warn{color:var(--amber-ink)}
+/* spec 069 part 2: Harmonize */
+.hm .hmlbl{font-size:11px;color:var(--muted)}
+.hmfrom{display:flex;gap:8px;align-items:center;font-weight:600;font-size:12.5px}
+.hmfrom select{font:inherit;padding:4px 6px}
+.dlg .gapps label{display:flex;gap:6px;align-items:baseline}
+/* spec 069 part 3: a server row opens its tools list */
+.mcp-tg{display:inline-flex;align-items:baseline;gap:4px;background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer}
+.mcp-tg:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
+.mcp-car{font-size:11px;color:var(--muted);width:10px}
+.srv.sm.open{flex-wrap:wrap}
+.mcp-tools{flex:1 0 100%;margin:6px 0 0 14px;font-size:12px;color:var(--ink-2)}
+.mcp-tcount{margin:0 0 4px;font-size:11px;font-weight:650;color:var(--muted)}
+.mcp-tlist{list-style:none;margin:0;padding:0;max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:3px}
+.mcp-tlist li{display:flex;gap:8px;align-items:baseline;min-width:0}
+.mcp-tlist code{flex:none;font-size:11.5px}
+.mcp-tlist span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:11.5px}
+/* spec 069 part 4: single tools on and off */
+.mcp-thead{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;margin:0 0 4px}
+.mcp-all{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:0;font:inherit;font-size:11.5px;font-weight:650;color:var(--ink-2);cursor:pointer}
+.mcp-all[disabled]{cursor:not-allowed;opacity:.7}
+.mcp-box{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border:1px solid var(--line-ctl);border-radius:3px;font-size:10.5px;line-height:1}
+.mcp-tnote{font-size:11px;color:var(--muted)}
+.mcp-tlist label{display:inline-flex;flex-direction:row;align-items:center;gap:6px;flex:none;font-weight:500;margin:0}
+.mcp-tlist input{margin:0}
 /* spec 060 FR-012: a tall setup dialog (three routes and the vendor's commands) scrolls inside its body, so the rows never slide under Cancel/Install */
 #hsDlg .dlg .dbody{overflow:auto;padding-right:2px}
 
