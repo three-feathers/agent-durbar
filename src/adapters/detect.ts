@@ -329,7 +329,7 @@ export function isAppAlias(file: string, env: Pick<DetectEnv, 'platform' | 'env'
 /**
  * Spec 060 FR-010: "is this a file?" for detection. Node's `fs.statSync` throws EACCES on an App Execution Alias (a reparse point
  * that only CreateProcess follows; read: npm/node-which#157), so winget.exe was never found and Windows got no winget route.
- * Only for a file in `windowsAppsDir`, `lstat` (which does not follow it) is asked instead. Elsewhere a failing `stat` stays "no".
+ * Only for `winget.exe` or `pwsh.exe` directly in `windowsAppsDir`, `lstat` (which does not follow it) is asked instead. Elsewhere a failing `stat` stays "no".
  */
 export function statIsFile(
   file: string,
@@ -340,7 +340,8 @@ export function statIsFile(
   try {
     return fsx.statSync(file).isFile();
   } catch {
-    if (!isAppAlias(file, { platform, env })) return false;
+    // review on #469: only the two aliases FR-010 names (winget, a Store pwsh); any other file there stays "no"
+    if (!isAppAlias(file, { platform, env }) || !/^(winget|pwsh)\.exe$/i.test(path.win32.basename(file))) return false;
     try { return !fsx.lstatSync(file).isDirectory(); } catch { return false; }
   }
 }

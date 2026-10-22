@@ -46,7 +46,7 @@ module.exports = async (ctx) => {
       : [/^brew install --cask claude-code/, /^npm install -g @anthropic-ai\/claude-code/];
     assert.ok(plans.length === want3.length && want3.every((re, i) => re.test(plans[i])), 'the commands are shown before they run: ' + plans.join(' | '));
     // spec 060 FR-012: on Windows the official route says it is the vendor's PowerShell script
-    if (OS === 'win32') assert.strictEqual(await js(`document.querySelector('#hsDlg .hs-plan b').textContent`), 'Official installer (PowerShell) (recommended)');
+    if (OS === 'win32') assert.strictEqual(await js(`document.querySelector('#hsDlg .hs-plan b').textContent`), 'Official PowerShell installer (recommended)');
     assert.ok(OS === 'win32' ? !plans.some((p) => /^brew /.test(p)) : !plans.some((p) => /^winget /.test(p)), 'no other OS\'s package manager is offered');
     await shot(`051-install-plan${SFX}-${w}x${h}.png`);
     // spec 060 FR-009: the vendor's own commands, to copy and run yourself, labelled for this OS, each with a Copy button
