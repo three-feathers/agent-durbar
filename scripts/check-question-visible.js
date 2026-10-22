@@ -23,10 +23,10 @@ module.exports = async (ctx) => {
   const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', tag: 'question-visible' });
   const open = async (w, h) => {
     await H.load({ w, h, query: { simquestion: 'compact' }, ready: 'fit' });
-    let id = '';
-    for (const end = Date.now() + 8000; !id && Date.now() < end;) { id = await js(`(()=>{for(const d of document.querySelectorAll('#stage .desk[data-id]')){d.click();const c=document.querySelector('#chat .note.question');if(c)return d.dataset.id;const b=document.getElementById('backBtn');if(b)b.click();}return ''})()`); if (!id) await ctx.sleep(100); }
-    assert.ok(id, `${w}: an agent has the question in its chat`);
-    await until(`!!document.querySelector('#chat .note.question .q-opt')`); await settle();
+    // wait for the simulator's own question, then open that one agent (no sweep over every desk: docs/agent-notes.md)
+    const o = await H.openSimAgent(`a=>!a.parent&&a.question`, '#chat .note.question .q-opt');
+    assert.ok(o.ok, `${w}: an agent has the question in its chat: ${JSON.stringify({ id: o.id, ...o.seen })}`);
+    await settle();
   };
   /* the question can be seen without scrolling: its card is in the chat's view, or the answer bar shows its words inside the window */
   const seen = () => js(`(()=>{const ch=document.getElementById('chat').getBoundingClientRect(),c=document.querySelector('#chat .note.question:not(.settled)');if(!c)return {open:false};
