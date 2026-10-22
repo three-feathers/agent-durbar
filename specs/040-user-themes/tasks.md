@@ -29,3 +29,4 @@
 
 - [x] T029 A theme switch redraws desks, helper tiles and walkers (theme key in the scene signature, the scene cache and the walkers); the same id with other content is applied; headwear over the hair; character, desk and monitor art on every scene kit; the AI prompt updated; unit tests [FR-023]
 - [x] T030 Sample AI-style pack `scripts/fixtures/themes/pink-studio.json` and `scripts/check-theme-art.js` (`npm run check:theme-art`, in `check:ui`): desks, walkers, lobby places and chips at 1440x900 and 1280x800, pixels and attributes, and back to Clean Office [FR-023]
+- [x] T031 Review of PR #496: tests that catch the headwear drawing order (office and kits) and the art on another kit (`check:theme-art` court-indian pass); driver screenshots in `os.tmpdir()`; `[KNOWN GAP]` for art shaped for the office figure [FR-023]
