@@ -80,3 +80,10 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 - [x] T054 `shots-001-lobby.js`: record the walk start with a `MutationObserver`, wait for the end state [FR-040]
 - [x] T055 `parseCustomPlaces` renames a saved reserved or repeated name instead of dropping it; `sim.ts` reserves Boss, Bank, Postbox; `test:places` migration case through `parseSettings` (ids and mappings kept) [spec 024 FR-018]
 - [x] T056 `test:places`: `VISITS.pin` same place, new label (M19); remove `tileSlots`/`tileChips` and their tests [FR-034, FR-039]
+
+## Changes 2026-10-22 (review on #511, Paco's agent, 15:41 UTC)
+
+- [ ] T057 `screens.js` `openSettings('schedules')` (scrollInBody, heading focused); the Postbox click and `openSchedSettings` use it; no `scrollIntoView` [FR-038, spec 052 FR-055]
+  - Check: `shots-001-lobby.js` clicks the Postbox and asserts Settings is open, `#schH` has the focus and the outer page did not scroll; mutation (the old `scrollIntoView` path) fails it.
+- [ ] T058 `places.js` `postMissed` counts done one-time schedules with a `missed` or `failed` last run; `test:places` case [FR-038]
+  - Check: `test:places`; mutation (back to `!s.done`) fails it.
