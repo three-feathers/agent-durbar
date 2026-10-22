@@ -5,12 +5,12 @@
  */
 import * as path from 'path';
 import { StringDecoder } from 'string_decoder';
-import { candidates } from '../adapters/detect';
+import { candidates, isAppAlias } from '../adapters/detect';
 import type { DetectEnv } from '../adapters/detect';
 import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
 import { redact } from '../shared/redact';
-import { SIGN_IN, installPlans, lastLines, managersFor, parseSignIn, routeOwning, updatePlans, validPaste, OFFICIAL_PAGES, SETUP_NAMES } from '../shared/harnesssetup';
-import type { OfficialScript, PackageManager, SetupKind, SetupPlan, SignInView } from '../shared/harnesssetup';
+import { SIGN_IN, installPlans, lastLines, managersFor, manualCommands, parseSignIn, routeOwning, updatePlans, validPaste, OFFICIAL_PAGES, SETUP_NAMES } from '../shared/harnesssetup';
+import type { ManualCommand, OfficialScript, PackageManager, SetupKind, SetupPlan, SignInView } from '../shared/harnesssetup';
 import * as fs from 'fs';
 import { downloadScript } from './officialinstall';
 import type { HttpGet } from './officialinstall';
@@ -127,10 +127,12 @@ export class HarnessSetup {
 
   /** FR-002/FR-003: what the dialog offers for install or update, plus the official page. */
   /** `assumeFound`: the simulator's per-OS set (spec 060 FR-002) instead of what is installed on this machine. */
-  plans(kind: SetupKind, op: 'install' | 'update', assumeFound?: readonly PackageManager[]): { plans: SetupPlan[]; page: string; name: string } {
+  /** Spec 060 FR-009: also the vendor's commands to run yourself (`manual`) for this OS. `simPlatform` (only with `assumeFound`): the OS the simulator shows. */
+  plans(kind: SetupKind, op: 'install' | 'update', assumeFound?: readonly PackageManager[], simPlatform?: NodeJS.Platform): { plans: SetupPlan[]; page: string; name: string; manual: ManualCommand[] } {
     const found = new Set<PackageManager>(assumeFound ?? managersFor(this.deps.detectEnv.platform).filter((m) => this.find(m)));
     const env = this.deps.detectEnv;
-    const plans = (op === 'install' ? installPlans : updatePlans)(kind, env.platform, found).map((p) => {
+    const os = assumeFound && simPlatform ? simPlatform : env.platform;
+    const plans = (op === 'install' ? installPlans : updatePlans)(kind, os, found).map((p) => {
       if (p.manager === 'brew' && !assumeFound && env.platform !== 'win32') {
         // spec 060 FR-001 (real, install check 2026-10-20): Homebrew installed by another account fails from this one (exit 1)
         const at = this.find('brew');
@@ -154,7 +156,7 @@ export class HarnessSetup {
       const i = owner ? plans.findIndex((p) => p.manager === owner) : -1;
       if (i > 0) plans.unshift(...plans.splice(i, 1));
     }
-    return { plans, page: OFFICIAL_PAGES[kind], name: SETUP_NAMES[kind] };
+    return { plans, page: OFFICIAL_PAGES[kind], name: SETUP_NAMES[kind], manual: manualCommands(kind, os) };
   }
 
   get busy(): boolean { return !!this.running && !this.running.ended; }
@@ -188,7 +190,10 @@ export class HarnessSetup {
       args = [...plan.args];
       script = plan.script;
     }
-    try { file = this.deps.realpath ? this.deps.realpath(file) : file; } catch { return { ok: false, error: 'That program could not be found any more.' }; }
+    // spec 060 FR-010: an App Execution Alias (winget.exe) runs only by its own path; resolving it leads into a folder users cannot run from
+    if (!isAppAlias(file, this.deps.detectEnv)) {
+      try { file = this.deps.realpath ? this.deps.realpath(file) : file; } catch { return { ok: false, error: 'That program could not be found any more.' }; }
+    }
     if (this.deps.trustedPath && !this.deps.trustedPath(file)) return { ok: false, error: `Not run: ${file} is in a folder anyone on this computer can change.` };
     const env = this.deps.detectEnv;
     let spawnFile = file;
