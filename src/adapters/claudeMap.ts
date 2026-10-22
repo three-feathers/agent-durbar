@@ -7,6 +7,7 @@
  * Needs the SDK options `includePartialMessages: true` and `forwardSubagentText: true`.
  */
 import { isAuthError } from './autherrors';
+import { isMcpAuthChallenge } from './mcpauth';
 import type { EventBody } from './map';
 import type { McpServerStatus } from './types';
 import { nonEmptyStr as str } from '../shared/guards';
@@ -91,7 +92,9 @@ export function claudeMcpServers(list: unknown): McpServerStatus[] {
     if (!name) continue;
     const source = str((s as { source?: unknown }).source);
     const error = str((s as { error?: unknown }).error);
-    servers.push({ name, status: str((s as { status?: unknown }).status) ?? 'pending', ...(source ? { source } : {}), ...(error ? { error: error.slice(0, 300) } : {}) });
+    const status = str((s as { status?: unknown }).status) ?? 'pending';
+    // Spec 058 FR-060: the CLI reports a remote server that answered 401/403 as `needs-auth` (read: SDK docs; research)
+    servers.push({ name, status, ...(source ? { source } : {}), ...(error ? { error: error.slice(0, 300) } : {}), ...(status === 'needs-auth' ? { errorClass: 'auth' as const } : {}) });
   }
   return servers;
 }
@@ -334,7 +337,10 @@ export class ClaudeMapper {
       if (!b || typeof b !== 'object' || b.type !== 'tool_result' || typeof b.tool_use_id !== 'string' || !b.tool_use_id) continue;
       const meta = this.tools.get(b.tool_use_id) ?? { tool: '' };
       this.tools.delete(b.tool_use_id);
-      this.emit({ type: 'toolCall', callId: b.tool_use_id, ...meta, phase: b.is_error === true ? 'failed' : 'complete', output: cap(textOf(b.content)), agentId });
+      const text = textOf(b.content);
+      // Spec 058 FR-060/FR-063: judge the whole text before the output cut, only for a failed MCP tool call
+      const mcpAuth = b.is_error === true && !!meta.mcpServer && isMcpAuthChallenge(text);
+      this.emit({ type: 'toolCall', callId: b.tool_use_id, ...meta, phase: b.is_error === true ? 'failed' : 'complete', output: cap(text), ...(mcpAuth ? { mcpAuth: true as const } : {}), agentId });
       // The sub-agent tool's own result closes its helper if no task_notification did.
       if (isSubagentTool(meta.tool) && this.closeSubagent(b.tool_use_id)) this.emit({ type: 'subagent', subagentId: b.tool_use_id, phase: b.is_error === true ? 'failed' : 'completed', ...(b.is_error === true ? { error: cap(textOf(b.content)) ?? 'failed' } : {}), agentId });
     }

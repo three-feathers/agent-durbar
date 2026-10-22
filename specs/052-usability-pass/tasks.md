@@ -212,3 +212,49 @@
 - [x] T140 macOS File menu (Add Folder… ⌘O, Add VS Code Workspace… ⇧⌘O, Close Window) through `menu:add` → `onMenuAdd` → the same buttons; `test-macos` [FR-164]
 - [x] T141 `scripts/shots-052-addleft.js` in `check:ui`; `check-mac-titlebar.js` without the + New state; `check:office`, `check:geometry`, `check:mac-titlebar`; screenshots at 1440x900 and 1280x800 [FR-164]
 - [x] T142 Docs: README, CHANGELOG, `specs/README.md` row [FR-164]
+
+## UI help and text pass (2026-10-21, issue #464)
+- [x] T143 Spec delta FR-165..FR-171, plan note, `docs/design-rules.md` rules (widths, measure, tooltip length; also fix its stale "+ New" line) [FR-165..FR-171]
+  - Accept: the entry is under `## Changes`, every FR says planned until its task is done; design-rules lists the three dialog widths, `--menu-w`, `--measure`, the 120/300 tooltip limits.
+- [x] T144 `scripts/check-ui-text.js` + page helper + `scripts/fixtures/themes/dark-audit.json`; `npm run check:ui-text`; added to `ui-suite.js` [FR-171]
+  - Accept: run on `main` before any fix, it fails and lists at least: Send to several x-scroll and cut rows, `.prev-h small` 10px, bold dialog values, the long static tooltips, the white surfaces in the dark fixture. Each later task turns its part green.
+  - Check: the driver itself; mutation runs listed in FR-171.
+  - Done (PR 1): `check-ui-text.js` asserts font-size, word-split, clipped, x-scroll, offscreen, dialog-width, dialog-padding, field-weight, measure and dark-contrast (plus a source check that `screens.css` keeps no `background:#fff` but the switch knob); the PR 2 rules are counted, not asserted (`todo-*`). Not opened by it (the simulator cannot reach them): the install and update plan dialogs, the VS Code import list, the hand-off review and the limit-reached note; `.note.limit .limit-amt` is covered by the source check only. The old head fails it (1,819 violations in 10 rules on main at 86a83ba2 (rules widened, each root once)).
+  - Review fixes (PR #479): the folder-setup dialog is a surface (`simfoldersetup=1`) and `.dlg.fs .mtag` is a dark control; the dark run checks every text element (older debt in the allow file); every renderer stylesheet is scanned for light backgrounds, including named colours, rgb()/hsl() and gradients; each root is measured once; the luminance comes from `src/shared/themegen.ts`; `.dlg.imp` no longer loses its dialog padding to the generic `.imp` box rule.
+  - Review fixes (PR 1): contrast on all six built-in themes; dead `.ho-dlg`/`.sched-dlg`/`.inbox-dlg`/`.kbd-dlg` width rules removed (a dialog's width comes from its class `m`/`l` only; the shortcut sheet is M below 900px, L from 900px); `dialog({size:'l'})` is `.dlg.l`, not `.imp`; `.toast` and `.dlg .dlist li` wrap long text; check cases `send-several-long` (`simnames=long`), a toast and a dialog list with a long unbroken word; the widths are read with `offsetWidth` after the open animation.
+- [x] T145 Wrapping: `overflow-wrap:break-word` on prose (`styles.css` `.dlg .dsub`, `.note`, `.ptask`, `.bubble`, `.md`, `.att-note`, `.inbox-row .ib-t`, `.answer-bar .ab-q`, `.answer-bar .ab-opt`, `.note.question .q-opt`, `.think-body`, `.liveside .ls-t`, `.sched-dlg .sc-hint`; `screens.css` `.scr-note`, `.ttab.act .act-a`); `anywhere` kept on machine text; quoted examples with a hyphen do not break [FR-165]
+  - Accept: no prose word split at 1440x900 and 1280x800 in any of the three themes, also with a 2,000-character question (`simquestion=long`) and long names (`simnames=long`).
+  - Check: `check-ui-text` word rule; mutation: `anywhere` back on `.dlg .dsub` inside a narrow flex box fails it.
+- [x] T146 Help text size and measure: `--measure`; `.scr-note.small` paragraphs 12px with the same measure as `.scr-note`; explicit size for `.prev-h small` (11px) and every chrome `small`; dialog field notes 12px [FR-165, FR-166]
+  - Accept: nothing under 10.5px on any surface; the "More" text in Settings ends at the same x as the paragraph above it (±8px).
+  - Check: `check-ui-text` size rule, plus a measure assertion on the Settings sections; mutation: remove the `small` size.
+- [x] T147 Dialog widths and padding tokens: `--dlg-w-s/m/l`; assign each dialog (S: confirmations, rename, folder status, remote, compact, end all; M: new session, hand-off, spending limit, theme maker, place, Send to several, About agent apps, schedules, agent MCP; L: shortcuts, Needs you, import, hand-off review); inbox padding from `--dlg-pad`; field label/control and group spacing (schedules "Prompt") [FR-167]
+  - Accept: every dialog's width is one token (or the window minus 32px); no dialog body over 8 lines of 13px text at its width.
+  - Check: `check-ui-text` width and padding rule; mutation: one dialog at 500px fails.
+- [x] T148 Send to several: pick rows never wider than the dialog (label ellipsis with `title`, note under the label or shrinking), no horizontal scroll, M width [FR-167, FR-168]
+  - Accept: at 1280x800 and 1440x900 every row's note ("waits for you", "busy", "at its spending limit") is fully visible; no x-scrollbar.
+  - Check: `check-ui-text` x-scroll rule; mutation: `.dlg .dpick small{flex:none}` back fails.
+  - Done (PR 1): the cause was the fieldset's default `min-width: min-content` (`.dlg .dpicks{min-width:0}`) at 420px; `.dlg .dpick small{flex:none}` was already there, so restoring it alone fails nothing. The mutation that fails is `min-width:0` removed with the dialog back at S width. The row label has a `title` (`dialog.js`).
+- [x] T149 Field values regular weight in dialogs: `.dlg :is(input,select,textarea)` and their placeholders `font-weight:400` (askDialog textarea, schedules prompt, new session and hand-off selects and inputs, compact focus, spending-limit number) [FR-167]
+  - Accept: computed weight ≤ 500 on every field in every dialog.
+  - Check: `check-ui-text` weight rule.
+- [ ] T150 Menus: `--menu-w`; one padding; hints on one line or two balanced lines; shorten "One message, the sessions you pick", "The chats stay; a message resumes one", "Sample agents to look around; nothing runs", the Plan first hint; chat More: all items with a hint or none [FR-165, FR-167]
+  - Accept: no hint ends in a one-word line at either size.
+  - Check: `check-ui-text` orphan rule.
+- [ ] T151 Tooltips: static titles over 120 characters shortened (the spending-limit chip 274, mode chip 158-192, mode icon 145-150, context chip 130, session-approval button 130, hand-off 122, Remove folder, the "no reasoning summary" note); the theme maker list's `title` replaced by on-screen text; `title` on the cut agent-app name and Send to several rows; data tooltips (cards, totals) capped at 300 characters / 8 lines [FR-168]
+  - Accept: tooltip length rule green on every surface; no ellipsis without its full text.
+  - Check: `check-ui-text` tooltip and ellipsis rules; `test:` a unit test for the totals tooltip line count where it is built (`usagetotals.js`).
+- [x] T152 Dark themes: the `background:#fff` rules in `screens.css` (79, 126, 136, 138, 173, 181, 212; the switch knob at 41 stays) and the light literals of `.ctxchip` / `.ctxchip.warn` / `.ctxchip.unk` (`screens.css:115-119`) and `.sitem.attn.st-error` (`styles.css:694`) to tokens [FR-169]
+  - Accept: in the dark fixture the pressed Tools/Settings segment, the selected Tools tab, the selected theme card, the limit field, the Places selects and icon options, the context and limit chips read at 4.5:1.
+  - Check: `check-ui-text` contrast rule (dark fixture only); `check:geometry` stays green.
+- [ ] T153 Wording that fits: label + hint for the spending-limit fields (new session, hand-off) and compact's focus; split the per-agent spending-limit body; floors popover help on its own line; shortcut sheet description column aligned [FR-170]
+  - Accept: no field label wraps at either size; the description columns of the shortcut sheet start at the same x.
+  - Check: `check-ui-text` (label height = one line; kbd column x within 2px).
+- [ ] T154 Long names: Tools > Models and context (Agent column capped, ellipsis + `title`, fixed layout, no horizontal scroll in `.scr-body`); Needs you heading (name on its own line with ellipsis + `title`, status, folder and wait below); `title` on cut cells in the list view, the palette and the Agent apps cards [FR-167, FR-168]
+  - Accept: with `simnames=long` at 1280x800 the Tools screen has no horizontal scroll and every column is visible; no inbox heading has a lone "· folder" line.
+  - Check: `check-ui-text` runs these surfaces a second time with `simnames=long`.
+- [ ] T155 Chat: the streaming caret sits at the end of the text, not after the Copy button; the Copy button never covers text (sub-agent prompt blocks); a toast never covers the composer [FR-170]
+  - Accept: at both sizes, the Copy button's box does not intersect any text box of its message; the caret's x is at the end of the last text line; toasts end above the composer while a chat is open.
+  - Check: `check-ui-text` overlap rule on the chat (text leaves only, inline wraps excluded).
+- [ ] T156 Screenshots before and after (both sizes, light and dark) for each surface changed, under `docs/screenshots/052-uitext-*`; `check:office`, `check:geometry`, `check:ui` green [FR-165..FR-171]
+- [ ] T157 Docs: CHANGELOG (Unreleased), `specs/README.md` row, spec status tags, README only if a visible label changed [FR-165..FR-171]
