@@ -154,6 +154,13 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(asc.names, asc.names.slice().sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })), 'sorted by name: ' + asc.names.join(','));
     await js(`document.querySelector('#list [data-lsort="name"]').click()`); await until(`document.querySelector('#list [data-lsort="name"]').parentNode.getAttribute('aria-sort')==='descending'`);
     assert.strictEqual(await js(`document.querySelector('#list [data-lsort="name"]').parentNode.getAttribute('aria-sort')`), 'descending');
+    // FR-173: a background re-render (an agent's status changes) keeps the focus on the same row; it used to fall to the page, which made J/K flaky on a busy runner
+    await js(`document.querySelectorAll('#list button.lrow')[1].focus()`);
+    const fid = await js(`document.activeElement.dataset.id`);
+    await js(`document.activeElement.__before=1;window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(fid)},timestamp:Date.now(),status:'idle',intent:'Ready'})`);
+    const redrawn = await until(`(()=>{const r=document.querySelector('#list button.lrow[data-id="'+CSS.escape(${jsLiteral(fid)})+'"]');return !!r&&!r.__before})()`); // the list was drawn again
+    const kept = await js(`(()=>{const a=document.activeElement;return {tag:a.tagName,cls:a.className,id:a.dataset&&a.dataset.id||'',inList:!!a.closest('#list')}})()`);
+    assert.ok(redrawn && kept.inList && kept.id === fid, `a re-render keeps the focus on the list row ${fid}: ${JSON.stringify({ redrawn, ...kept })}`);
     await js(`document.querySelector('#list button.lrow').focus()`); key('J'); await until(`document.activeElement===document.querySelectorAll('#list button.lrow')[1]`);
     assert.ok(await js(`document.activeElement===document.querySelectorAll('#list button.lrow')[1]`), 'J moves to the next row');
     key('K'); await until(`document.activeElement===document.querySelectorAll('#list button.lrow')[0]`);
