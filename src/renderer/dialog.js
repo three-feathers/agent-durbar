@@ -1,7 +1,7 @@
 /* Small confirmation dialog (spec 003 FR-033, spec 018). Plain script: in the page it defines window.DurbarDialog;
    in Node (tests) `require` gives the same factory. DurbarDialog(document) returns askDialog(opts).
    askDialog({title,body,lines:[text],input:{label,placeholder,max,value,focus,select,error,submitOnEnter,check,multiline},buttons:[{label,value,cls}],check:{label,checked},returnFocus}) resolves {value,checked,text[,picked]} for a
-   button (`text` = the optional input's value, `lines` = a short list under the body; all set with textContent, never HTML), or null when dismissed (Cancel button with value null, Escape, click on the backdrop).
+   button (`text` = the optional input's value, `lines` = a short list under the body; `size` 'm' or 'l' picks the wider dialog widths, default S (spec 052 FR-167); all set with textContent, never HTML), or null when dismissed (Cancel button with value null, Escape, click on the backdrop).
    Spec 064: `input.multiline` (a textarea), `picks:[{label,note,value,checked,disabled}]` (a checkbox list, result `picked`: the chosen values),
    `need:{text,picks,label(n)}` (the primary button stays disabled until met; `label` names it from the count).
    `input.submitOnEnter`: Enter in the field presses the primary button unless `need` keeps it disabled; never from a textarea (Escape still cancels). `input.check(text)` returns an error line or '': when
@@ -16,18 +16,18 @@
 })(typeof self!=='undefined'?self:this, function create(doc){
   'use strict';
   const FOCUSABLE='button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])';
-  return function askDialog({title,body,lines,input,buttons,check,picks,need,returnFocus}){
+  return function askDialog({title,body,lines,input,buttons,check,picks,need,returnFocus,size}){
     return new Promise(resolve=>{
       const old=doc.getElementById('modeDlg');if(old)old.remove();
       const opener=returnFocus||(doc.activeElement&&doc.activeElement!==doc.body?doc.activeElement:null);
       const d=doc.createElement('div');d.id='modeDlg';d.className='dlg-ov';
-      d.innerHTML=`<div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="mdT" aria-describedby="mdB mdL"><h3 id="mdT"></h3><p class="dsub" id="mdB"></p>${lines&&lines.length?'<ul class="dlist" id="mdL"></ul>':''}${input?'<label class="dinput"><span></span>'+(input.multiline?'<textarea id="mdIn" rows="4" spellcheck="true"></textarea>':'<input type="text" id="mdIn" autocomplete="off" spellcheck="false">')+'</label><p class="derr" id="mdErr" hidden></p>':''}${picks&&picks.length?'<fieldset class="dpicks" id="mdP"><legend class="sr-only">Choose</legend></fieldset>':''}${check?'<label class="chk"><input type="checkbox" id="mdChk"><span></span></label>':''}<div class="dbtn"></div></div>`;
+      d.innerHTML=`<div class="dlg${size==='m'||size==='l'?' '+size:''}" role="alertdialog" aria-modal="true" aria-labelledby="mdT" aria-describedby="mdB mdL"><h3 id="mdT"></h3><p class="dsub" id="mdB"></p>${lines&&lines.length?'<ul class="dlist" id="mdL"></ul>':''}${input?'<label class="dinput"><span></span>'+(input.multiline?'<textarea id="mdIn" rows="4" spellcheck="true"></textarea>':'<input type="text" id="mdIn" autocomplete="off" spellcheck="false">')+'</label><p class="derr" id="mdErr" hidden></p>':''}${picks&&picks.length?'<fieldset class="dpicks" id="mdP"><legend class="sr-only">Choose</legend></fieldset>':''}${check?'<label class="chk"><input type="checkbox" id="mdChk"><span></span></label>':''}<div class="dbtn"></div></div>`;
       d.querySelector('#mdT').textContent=title;d.querySelector('#mdB').textContent=body;
       if(lines&&lines.length)lines.forEach(t=>{const li=doc.createElement('li');li.textContent=t;d.querySelector('#mdL').appendChild(li);});
       if(input){d.querySelector('.dinput span').textContent=input.label||'';const inp=d.querySelector('#mdIn');inp.placeholder=input.placeholder||'';inp.maxLength=input.max||200;inp.value=input.value||'';}
       if(check){d.querySelector('.chk span').textContent=check.label;d.querySelector('#mdChk').checked=!!check.checked;}
       /* spec 064 FR-002: a checkbox list (label, a muted note, disabled with its reason); text only, never HTML */
-      if(picks&&picks.length)picks.forEach((p,i)=>{const l=doc.createElement('label');l.className='dpick'+(p.disabled?' is-off':'');const cb=doc.createElement('input');cb.type='checkbox';cb.value=String(i);cb.checked=!!p.checked&&!p.disabled;cb.disabled=!!p.disabled;const t=doc.createElement('span');t.className='dpick-t';t.textContent=p.label;l.append(cb,t);if(p.note){const n=doc.createElement('small');n.textContent=p.note;l.appendChild(n);}d.querySelector('#mdP').appendChild(l);});
+      if(picks&&picks.length)picks.forEach((p,i)=>{const l=doc.createElement('label');l.className='dpick'+(p.disabled?' is-off':'');const cb=doc.createElement('input');cb.type='checkbox';cb.value=String(i);cb.checked=!!p.checked&&!p.disabled;cb.disabled=!!p.disabled;const t=doc.createElement('span');t.className='dpick-t';t.textContent=p.label;t.title=p.label;l.append(cb,t);if(p.note){const n=doc.createElement('small');n.textContent=p.note;l.appendChild(n);}d.querySelector('#mdP').appendChild(l);});
       const pickedOf=()=>picks?[...d.querySelectorAll('#mdP input:checked')].map(cb=>picks[Number(cb.value)].value):undefined;
       const row=d.querySelector('.dbtn');
       const items=()=>[...d.querySelectorAll(FOCUSABLE)];
