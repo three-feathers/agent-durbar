@@ -51,6 +51,8 @@ specs/008-packaging-and-release/
 | Packaged app launch on macOS/Windows, Gatekeeper/SmartScreen steps in README | none | **not verified** |
 | Signing/notarization | none | not done (feature 014) |
 
+- **FR-103 (2026-10-22):** two lines in `src/main/main.ts`, next to the other test-run window options (`enableLargerThanScreen`, FR-093): `app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')` before ready, and `backgroundThrottling: false` in `webPreferences`, both only when `dev.DURBAR_DRIVER || dev.DURBAR_SHOT`.
+
 ## 2026-10-22: merge queue and shorter UI runs (T095, FR-098..FR-102)
 
 - Workflows only; no app code. `merge_group` triggers on the two workflows whose checks are required (`ci.yml`, `spec-kit.yml`); `ui-platforms.yml` is not required and keeps running on PRs, `main` and nightly.
