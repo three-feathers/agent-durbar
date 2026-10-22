@@ -110,8 +110,8 @@ function moodFor(a){
   const c=STATS.agent(a.id).ctx, pct=c&&c.limit>0?window.DurbarStats.ctxLevel(c.tokens,c.limit).pct:null;
   const st=vis(a), body=MOODS.bodyOf(pct), failStreak=MOOD.failStreak(a.id);
   const waitingMs=st==='waiting'?MOOD.waitingMs(a.id):0; /* only while the figure is waiting: a request answered elsewhere must not leave it tapping */
-  const coffee=!!a.coffee; /* spec 068 FR-005: calm on a coffee break */
-  const trouble=MOODS.troubleOf({state:st,ambulance:AMB_ID===a.id,limit:!!a.limit,waitingMs,failStreak,coffee});
+  const coffee=!!a.coffee&&a.coffeeKind!=='cap'; /* spec 068 FR-005: calm on a coffee break, with a cup; spec 001 FR-035: calm at the Bank, no cup */
+  const trouble=MOODS.troubleOf({state:st,ambulance:AMB_ID===a.id,limit:!!a.limit,waitingMs,failStreak,coffee:!!a.coffee});
   return {body,trouble,pct,coffee,words:MOODS.phrases({body,pct,trouble,waitingMs,failStreak,coffee}).join(', ')};
 }
 /* spec 052 FR-021: a problem that is not a status (stuck on failing tools, memory nearly full) also shows on the card's pill, in any mood
@@ -167,9 +167,10 @@ const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (
 let CUSTOM=[]; /* the user's own places [{id,name,icon}] (spec 024 FR-018), from the settings; changed only through setCustomPlaces */
 const customIds=()=>CUSTOM.map(p=>p.id);
 /* One name for a place everywhere it is shown (tile, card text, Settings options, toasts). A custom place shows the user's own text; callers escape it. */
-const placeLabel=id=>window.DurbarPlaces.IDS.includes(id)||id===window.DurbarPlaces.COFFEE?wordOf('place-'+id):window.DurbarPlaces.placeName(id,CUSTOM);
+const fixedPlace=id=>window.DurbarPlaces.IDS.includes(id)||window.DurbarPlaces.SPECIAL.includes(id); /* built-ins, coffee corner, Boss, Bank, Postbox: theme words */
+const placeLabel=id=>fixedPlace(id)?wordOf('place-'+id):window.DurbarPlaces.placeName(id,CUSTOM);
 /* spec 052 FR-013: a themed place name with its plain name, for tooltips and screen readers ("Cartridge Bay (Software library)") */
-const placeLabelFull=id=>{const t=placeLabel(id);if(!(window.DurbarPlaces.IDS.includes(id)||id===window.DurbarPlaces.COFFEE)||!THEME.plainWord)return t;const p=THEME.plainWord('place-'+id);return p&&p!==t?t+' ('+p+')':t;};
+const placeLabelFull=id=>{const t=placeLabel(id);if(!fixedPlace(id)||!THEME.plainWord)return t;const p=THEME.plainWord('place-'+id);return p&&p!==t?t+' ('+p+')':t;};
 let PLACE_MAP={}; /* MCP server name -> place id | 'desk' (global setting); unmapped servers use the built-in rules */
 const RETURNING=new Set(); /* agents whose figure is still walking back to the desk: the desk keeps its empty chair until it arrives */
 const PLACE_ICON={
@@ -178,6 +179,10 @@ const PLACE_ICON={
   terminal:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M6 8l3 2.5L6 13M11 13h3.5"/></svg>',
   web:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M3 10h14M10 3c2.5 2.2 2.5 11.8 0 14M10 3c-2.5 2.2-2.5 11.8 0 14"/></svg>',
   coffee:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5h10v4.2a4 4 0 0 1-4 4h-2a4 4 0 0 1-4-4z"/><path d="M13.5 9.5h1.2a2.2 2.2 0 0 1 0 4.4h-1.6M6.5 2.8c-.8 1 .8 1.8 0 3M10 2.8c-.8 1 .8 1.8 0 3"/></svg>', /* spec 068: the coffee corner */
+  /* spec 001 FR-034/FR-035/FR-038: the Boss's door with its name plate, the Bank's columns, the Postbox */
+  boss:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 17.5V3.5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v14M2.5 17.5h15"/><path d="M7.5 6h5"/><circle cx="12.6" cy="11" r=".9" fill="currentColor" stroke="none"/></svg>',
+  bank:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 7.5L10 3l7.5 4.5zM4.5 8.5v6M8 8.5v6M12 8.5v6M15.5 8.5v6M2.5 17h15"/></svg>',
+  postbox:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.5a4 4 0 0 1 8 0v7.5H3z"/><path d="M11 9.5h6v7.5h-6M7 17v1.5M5 9.5h4"/><path d="M14 9.5V4.5h3v2h-3"/></svg>',
   other:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.4M10 15.1v2.4M2.5 10h2.4M15.1 10h2.4M4.7 4.7l1.7 1.7M13.6 13.6l1.7 1.7M15.3 4.7l-1.7 1.7M6.4 13.6l-1.7 1.7"/></svg>',
 };
 const placeIcon=p=>{
@@ -190,14 +195,20 @@ const lobbyArt=()=>{
   const v=THEME.slot('lobby-art');
   return v===null?'':`<svg class="lobby-art" data-slot="lobby-art" viewBox="0 0 320 36" preserveAspectRatio="none" aria-hidden="true" focusable="false">${v}</svg>`;
 };
-/* the lobby's tiles: the places, then the coffee corner (spec 068 FR-003; always shown, never a mapping choice) */
-const lobbyPlaces=()=>[...window.DurbarPlaces.allPlaces(CUSTOM),{id:window.DurbarPlaces.COFFEE,name:''}];
+/* the lobby's tiles (spec 001 FR-039): the places with the Boss in the middle of the row, then the coffee corner (spec 068), the Bank and the
+   Postbox (only where the app has schedules, not in the demo); the fixed tiles are never mapping choices */
+const postShown=()=>!!(bridge&&bridge.listSchedules)&&!demoOn;
+const lobbyPlaces=()=>{const D=window.DurbarPlaces,ps=D.allPlaces(CUSTOM),m=new Map(ps.map(p=>[p.id,p]));return D.lobbyOrder(ps.map(p=>p.id),postShown()).map(id=>m.get(id)||{id,name:''});};
 const lobbyOn=()=>!demoOn&&agents.some(a=>a.live&&!a.parent);
 const MAX_TILES=8, canAddPlace=()=>!!(bridge&&bridge.addPlace)&&window.DurbarPlaces.allPlaces(CUSTOM).length<MAX_TILES;
 /* who is at a place and visible under the current filters (a hidden room or a filtered-out agent has no figure) */
-const placeVisitors=pid=>VISITS.occupants(pid).filter(id=>{const a=byId(id),r=a&&!a.parent&&roomOf(a);return roomShown(r)&&(ui.ws==='all'||wsOf(a)===ui.ws)&&matchStatus(a);});
+const placeVisitors=pid=>{const ids=VISITS.occupants(pid).filter(id=>{const a=byId(id),r=a&&!a.parent&&roomOf(a);return roomShown(r)&&(ui.ws==='all'||wsOf(a)===ui.ws)&&matchStatus(a);});
+  /* spec 001 FR-034: the Boss's queue is in the order the agents started waiting (the inbox's NEED_SINCE, oldest first) */
+  if(pid===window.DurbarPlaces.BOSS){const t=id=>{const v=NEED_SINCE.get(id);return v==null?Infinity:v;};ids.sort((x,y)=>t(x)-t(y));}
+  return ids;};
 const isAway=a=>!a.parent&&(!!VISITS.at(a.id)||RETURNING.has(a.id));
-const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);if(v&&v.place===window.DurbarPlaces.COFFEE)return taskText(a);return v?(SIMPLE?(PLACE_VERB[v.place]||'Using a tool')+' · '+taskText(a):'At '+placeLabel(v.place)+': '+visitDoing(a,v)+' · '+taskText(a)):taskText(a);};
+const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id),D=window.DurbarPlaces;if(v&&(v.place===D.COFFEE||v.place===D.BANK))return taskText(a);
+  if(v&&v.place===D.BOSS)return wordOf('boss-note')+' · '+taskText(a); /* spec 001 FR-034: the empty desk's small note */return v?(SIMPLE?(PLACE_VERB[v.place]||'Using a tool')+' · '+taskText(a):'At '+placeLabel(v.place)+': '+visitDoing(a,v)+' · '+taskText(a)):taskText(a);};
 /* A result of addPlace/updatePlace/removePlace (or a settings read): the places and the map as they are now. Agents standing at a place that is gone
    go back to their desk at once (spec 024 FR-025); a rename or an icon change only redraws. */
 function setCustomPlaces(list,map){
@@ -211,24 +222,98 @@ function setCustomPlaces(list,map){
 const VERB_RE=/^(Running|Reading|Editing|Searching|Opening|Using)\s+/;
 const PLACE_DOING=new Map(); /* agent id -> its newest tool call in a few masked words ("npm test", "github list_pull_requests") */
 function visitDoing(a,v){
-  if(v.place===window.DurbarPlaces.COFFEE)return coffeeUntilWords(a)||coffeeWord(); /* spec 068: on a break, not a tool call */
+  const D=window.DurbarPlaces;
+  if(v.place===D.COFFEE||v.place===D.BANK)return coffeeUntilWords(a)||coffeeWord(); /* spec 068: on a break, not a tool call; FR-035: the cap at the Bank */
+  if(v.place===D.BOSS){const w=bossWait(a.id);return (v.label==='q'?'question':'asks for your OK')+(w?' · '+w:'');} /* FR-034 */
   if(SIMPLE)return PLACE_VERB[v.place]||'Using a tool';
-  return PLACE_DOING.get(a.id)||v.label||PLACE_VERB[v.place]||'Using a tool';
+  return (liveOn()&&PLACE_DOING.get(a.id))||v.label||PLACE_VERB[v.place]||'Using a tool'; /* the command only with Live activity on desks (FR-028), else the tool's name (review on #511) */
 }
-const visitorWords=(a,v)=>{if(v&&v.place===window.DurbarPlaces.COFFEE)return coffeeWho(a);const r=roomOf(a);return a.name+(r?' ('+r.name+')':'')+(v?': '+visitDoing(a,v):'');};
+/* spec 001 FR-034: how long an agent has waited, short ("12 min") */
+/* the inbox's own wording (ATT.waitLabel, "waiting 12 min") without its verb, so the Boss and the inbox say the same (review on #511) */
+const bossWait=id=>{const t=NEED_SINCE.get(id);if(t==null)return '';const w=ATT.waitLabel(Math.max(0,Date.now()-t)).replace(/^waiting /,'');return w==='less than a minute'?'<1 min':w;};
+const BADGE_KEY='<svg viewBox="0 0 12 12" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" focusable="false"><circle cx="4" cy="6" r="2.4"/><path d="M6.4 6H11M9.4 6v2M11 6v1.6"/></svg>';
+const visitorWords=(a,v)=>{if(v&&(v.place===window.DurbarPlaces.COFFEE||v.place===window.DurbarPlaces.BANK))return coffeeWho(a);const r=roomOf(a);return a.name+(r?' ('+r.name+')':'')+(v?': '+visitDoing(a,v):'');};
 function lobbyHTML(aw){
   if(!lobbyOn())return '';
-  const all=lobbyPlaces(), add=canAddPlace(), CT=window.DurbarPlaces.coffeeTile(aw,all.length-1,add), CF=window.DurbarPlaces.COFFEE;
-  const caps=window.DurbarPlaces.tileChips(aw,all.length-1,add,CT.width), capsCF=CT.chips; /* spec 068: the coffee corner is narrower, with its own capacity */
+  const D=window.DurbarPlaces, all=lobbyPlaces(), add=canAddPlace(), fit=D.lobbyFit(aw,D.allPlaces(CUSTOM).length,add,postShown());
+  const own={[D.BOSS]:fit.boss,[D.COFFEE]:fit.coffee,[D.BANK]:fit.bank,[D.POSTBOX]:fit.post}; /* FR-039: the fixed tiles' own widths */
   return `<section class="lobby" data-key="lobby" aria-label="${esc(wordOf('lobby-label'))}">${all.map(p=>{
-    const cf=p.id===CF;
-    const ids=placeVisitors(p.id), {mode,slots:cap}=window.DurbarPlaces.chipsFor(cf?capsCF:caps,ids.length), sp=window.DurbarPlaces.layoutSpots(ids.length,cap), who=ids.map(id=>{const a=byId(id);return visitorWords(a,VISITS.at(id));});
-    const chips=ids.slice(0,sp.shown).map((id,i)=>{const a=byId(id),v=VISITS.at(id),w=visitorWords(a,v);
-      return `<span class="pv" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" title="${esc(w)}"><span class="slot on" data-slot="${i}"></span><span class="pv-t">${mode==='named'?`<b class="pv-n">${esc(a.name)}</b><small class="pv-a">${esc(v?visitDoing(a,v):'')}</small>`:`<b class="pv-n pv-i">${esc(window.DurbarPlaces.initialsOf(a.name))}</b>`}</span></span>`;}).join('');
+    const box=own[p.id]||null, cf=p.id===D.COFFEE, boss=p.id===D.BOSS, bank=p.id===D.BANK;
+    if(p.id===D.POSTBOX)return postboxHTML(p,box);
+    const named=!box||box.named, sty=box?` style="flex:0 0 ${box.width}px"`:'';
+    const caps=box?box.chips:fit.caps, ids=placeVisitors(p.id);
+    /* the Boss shows as many of its queue as it can: names only when everyone there fits by name, else initials (FR-034) */
+    const {mode,slots:cap}=boss&&ids.length>caps.named?{mode:'initials',slots:caps.initials}:D.chipsFor(caps,ids.length);
+    const sp=mode==='initials'?D.initialSpots(box?box.width:fit.tile,ids.length):D.layoutSpots(ids.length,cap), who=ids.map(id=>{const a=byId(id);return visitorWords(a,VISITS.at(id));});
+    const go=boss||bank; /* FR-034/FR-035: an entry at the Boss or the Bank opens that chat at its request */
+    const chips=ids.slice(0,sp.shown).map((id,i)=>{const a=byId(id),v=VISITS.at(id),w=visitorWords(a,v),k=boss&&v?v.label:'';
+      const inner=`<span class="slot on" data-slot="${i}"></span><span class="pv-t">${mode==='named'?`<b class="pv-n">${esc(a.name)}</b><small class="pv-a">${esc(v?visitDoing(a,v):'')}</small>`:`<b class="pv-n pv-i">${esc(D.initialsOf(a.name))}</b>`}</span>`;
+      return go?`<button type="button" class="pv pv-go" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" data-pvopen="${esc(id)}"${k?` data-ask="${k}"`:''} title="${esc(w)}. Open the chat." aria-label="${esc(w)}. Open the chat.">${inner}</button>`
+        :`<span class="pv" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" title="${esc(w)}">${inner}</span>`;}).join('');
     const more=sp.more?`<button class="pv pv-more" type="button" data-key="pv-more:${esc(p.id)}" data-placemore="${esc(p.id)}" aria-haspopup="menu" title="${esc(who.slice(sp.shown).join('\n'))}" aria-label="${sp.more} more at ${esc(placeLabelFull(p.id))}: ${esc(ids.slice(sp.shown).map(id=>byId(id).name).join(', '))}"><span class="slot more" data-slot="${sp.shown}">+${sp.more}</span>${mode==='named'?'<span class="pv-t"><b class="pv-n">more</b></span>':''}</button>`:'';
-    const label=`${placeLabelFull(p.id)}: ${who.length?who.join(cf?', ':'; '):'nobody'}`;
-    return `<div class="place${ids.length?' busy':''}${cf?' coffee'+(CT.named?'':' unnamed'):''}"${cf?` style="flex:0 0 ${CT.width}px"`:''} data-key="place:${p.id}" data-place="${p.id}" data-chips="${mode}" tabindex="-1" role="group" title="${esc(label)}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}${cf&&!CT.named?'':`<span class="pn">${esc(placeLabel(p.id))}</span>`}${ids.length?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
+    const wait=boss&&ids.length?bossWait(ids[0]):''; /* FR-034: the longest wait, in the header */
+    const label=`${placeLabelFull(p.id)}: ${who.length?who.join(cf||bank?', ':'; '):'nobody'}${wait?'. Longest wait '+wait:''}`;
+    return `<div class="place${ids.length?' busy':''}${cf?' coffee':''}${boss?' boss':''}${bank?' bank':''}${named?'':' unnamed'}"${sty} data-key="place:${p.id}" data-place="${p.id}" data-chips="${mode}" tabindex="-1" role="group" title="${esc(label)}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}${wait?`<span class="bw" aria-hidden="true">${esc(wait)}</span>`:''}${ids.length?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
   }).join('')}${add?'<button class="place-add" type="button" data-key="place-add" title="Add a place" aria-label="Add a place">+</button>':''}${lobbyArt()}</section>`;
+}
+/* spec 001 FR-038: the Postbox: the next three scheduled runs, the letters still due today, a flag for a missed or failed last run. A button:
+   it opens Settings > Schedules. */
+function postboxHTML(p,box){
+  let S;try{S=SCHED;}catch(e){S={pausedAll:false,schedules:[]};} /* SCHED is declared further down */
+  const D=window.DurbarPlaces, paused=!!S.pausedAll, list=S.schedules||[], next=D.postNext(list,paused).slice(0,3);
+  const today=D.lettersToday(list,paused,Date.now(),(window.DurbarSchedTemplates||{}).nextRuleRun), miss=D.postMissed(list), named=!box||box.named;
+  const line=x=>{const room=ROOMS.find(r=>folderKeyOf(r)===x.s.folder), fold=room?room.name:(String(x.s.folder||'').split(/[\\/]/).filter(Boolean).pop()||'');
+    return {short:clock(x.t)+' · '+DurbarCutText.cutText(x.s.prompt,60), full:clock(x.t)+' · '+fold+' · '+DurbarCutText.cutText(x.s.prompt,200), long:clock(x.t)+' · '+fold+' · '+DurbarCutText.cutText(x.s.prompt,60)};};
+  const ls=next.map(line), empty=paused?'All paused':'No letters';
+  const sum=(today?today+' today':'none today')+(miss?', '+miss+' missed':'');
+  const label=`${placeLabelFull(p.id)}: ${sum}. ${ls.length?'Next: '+ls.map(l=>l.full).join('; '):empty}. Open Settings > Schedules.`;
+  return `<button type="button" class="place postbox${miss?' flagged':''}${named?'':' unnamed'}" style="flex:0 0 ${box?box.width:200}px" data-key="place:${p.id}" data-place="${p.id}" data-post="1" title="${esc(label)}" aria-label="${esc(label)}">`
+    +`<span class="pb-l"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}</span><span class="pb-n">${esc(today?today+' today':'none today')}</span>${miss?`<span class="pb-flag" aria-hidden="true">${miss} missed</span>`:''}</span>`
+    +`<span class="pb-r" aria-hidden="true">${ls.length?ls.map(l=>`<span class="pb-line">${esc(named?l.long:l.short)}</span>`).join(''):`<span class="pb-line pb-none">${esc(empty)}</span>`}</span></button>`;
+}
+/* spec 001 FR-034/FR-035: open an agent's chat with its pending request (question, permission or spending limit) in view and focused,
+   like the answer bar's "show" */
+function openAtRequest(id){
+  openPanel(id,true);
+  setTimeout(()=>{const a=byId(id),c=a&&(a.live||chats[a.id])?pendingCardOf(a):null;if(!c||!c.isConnected)return;c.scrollIntoView({block:'center'});
+    const f=c.classList.contains('question')?c.querySelector('.q-opt,.q-other,.q-form input,.q-form select,.q-open'):null;if(f){f.focus();return;}
+    if(!c.hasAttribute('tabindex'))c.setAttribute('tabindex','-1');c.focus();},60);
+}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#stage [data-pvopen]');if(b){openAtRequest(b.dataset.pvopen);return;}
+  const pb=e.target.closest&&e.target.closest('#stage [data-post]');if(pb)openSchedSettings();});
+/* spec 001 FR-034: who goes to the Boss. A live main agent whose oldest pending request in its chat is a question ('q') or a permission ('p'):
+   not the spending limit (the Bank, FR-035) or a coffee break (spec 068), not an error (that stays at the desk). Run before every render. */
+function bossKind(a){
+  if(!a||a.parent||!a.live||a.coffee||a.limit||vis(a)!=='waiting')return '';
+  const c=pendingCardOf(a); if(!c||c.classList.contains('limit')||c.classList.contains('coffee'))return '';
+  return c.classList.contains('question')?'q':'p';
+}
+function syncDesks(){
+  if(demoOn)return;
+  const D=window.DurbarPlaces; let any=false;
+  for(const a of agents){
+    if(a.parent||!a.live)continue;
+    const k=bossKind(a), v=VISITS.at(a.id);
+    if(k){if(!(VISITS.pinned(a.id)&&v&&v.place!==D.BOSS)){VISITS.pin(a.id,D.BOSS,k);any=true;}} /* a break (coffee, Bank) keeps its own place */
+    else if(v&&v.place===D.BOSS)VISITS.unpin(a.id);
+  }
+  if(any)needsMeOrder(); /* fills NEED_SINCE for the queue's order and waits */
+}
+/* spec 001 FR-038: when a schedule fires, a letter flies once from the Postbox to that agent's desk (none under reduced motion or when either
+   end is not on screen). One element in the walkers layer, removed when it lands. */
+function flyLetter(agentId){
+  if(REDUCED||reducedMotion()||ui.view!=='office')return;
+  const layer=$('walkers'), floor=$('floor'), pb=document.querySelector('#stage .place.postbox'), d=document.querySelector(`#stage .desk[data-id="${CSS.escape(String(agentId))}"]`);
+  if(!layer||!floor||!pb||!d)return;
+  const fr=floor.getBoundingClientRect(); if(!fr.width)return;
+  const c=el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)};};
+  const from=c(pb.querySelector('.pic')||pb), to=c(d.querySelector('.scene')||d);
+  const el=document.createElement('span');el.className='letter';el.setAttribute('aria-hidden','true');
+  el.innerHTML='<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true" focusable="false"><rect x=".75" y=".75" width="14.5" height="10.5" rx="1.5" fill="var(--surface)" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 1.8L8 6.6l6.5-4.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+  el.style.transform=`translate(${from.x}px,${from.y}px)`;layer.appendChild(el);void el.offsetWidth;
+  let done=false;const end=()=>{if(done)return;done=true;el.remove();};
+  el.addEventListener('transitionend',e=>{if(e.target===el&&e.propertyName==='transform')end();});setTimeout(end,1600);
+  el.classList.add('flying');el.style.transform=`translate(${to.x}px,${to.y}px)`;
 }
 /* spec 001 FR-036: "+N" at a place lists every visitor (the shared menu element, as the folder menu); choosing one opens its chat */
 function openPlaceMenu(pid,anchor){
@@ -240,7 +325,7 @@ function openPlaceMenu(pid,anchor){
   const ab=anchor.getBoundingClientRect(),b=m.getBoundingClientRect();
   m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';
   m.style.top=(ab.bottom+6+b.height<=innerHeight-8?ab.bottom+6:Math.max(8,ab.top-6-b.height))+'px';
-  m.addEventListener('click',e=>{const t=e.target.closest('[data-pvopen]');if(!t)return;closeModeMenu();openPanel(t.dataset.pvopen,true);});
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-pvopen]');if(!t)return;closeModeMenu();openAtRequest(t.dataset.pvopen);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-pvopen]')],i=its.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&document.contains(anchor))anchor.focus();}});
@@ -268,8 +353,8 @@ function syncWalkers(){
   const want=new Map(); /* agent id -> slot centre of the place it is visiting (only those that fit; the rest are the "+N") */
   lobbyPlaces().forEach(p=>{
     const tile=document.querySelector(`#stage .place[data-place="${p.id}"]`); if(!tile)return;
-    const ids=placeVisitors(p.id), sp=window.DurbarPlaces.layoutSpots(ids.length,tile.querySelectorAll('.slot').length);
-    ids.slice(0,sp.shown).forEach((id,i)=>{const sl=tile.querySelector(`.slot[data-slot="${i}"]`);if(sl)want.set(id,center(sl));});
+    const ids=placeVisitors(p.id), shown=tile.querySelectorAll('.slot.on').length; /* the entries drawn (the "+N" circle is not one) */
+    ids.slice(0,shown).forEach((id,i)=>{const sl=tile.querySelector(`.slot[data-slot="${i}"]`);if(sl)want.set(id,center(sl));});
   });
   const deskPos=id=>{const d=document.querySelector(`#stage [data-id="${CSS.escape(id)}"]`);const sc=d&&(d.querySelector('.scene')||d);return sc?center(sc):null;};
   const move=(w,pos,after,instant)=>{ /* instant: a layout change moved the slot under a resting figure: put it back, no walk */
@@ -293,8 +378,10 @@ function syncWalkers(){
       const a=byId(id); if(!a)return;
       const el=document.createElement('span'); el.className='walker'; el.setAttribute('aria-hidden','true'); el.innerHTML='<span class="wk">'+avatar(a)+'</span>'; layer.appendChild(el);
       w={el,back:false,walking:false,shown:false,timer:0,to:'',tk:THEME.themeIdForCache()}; walkers.set(id,w);
-      const from=deskPos(id)||pos; el.style.transition='none'; el.style.transform=`translate(${from.x}px,${from.y}px)`; void el.offsetWidth; w.shown=true;
-      move(w,pos); return;
+      /* a visit that began a while ago and is only now drawn (its tile got wider, the queue shorter) is already there: no walk from the desk */
+      const v=VISITS.at(id), long=!!v&&Date.now()-v.since>WALK_MS+500;
+      const from=long?pos:(deskPos(id)||pos); el.style.transition='none'; el.style.transform=`translate(${from.x}px,${from.y}px)`; void el.offsetWidth; w.shown=true;
+      move(w,pos,null,long); return;
     }
     if(w.back){w.back=false;RETURNING.delete(id);move(w,pos);return;}
     if(w.walking){if(w.to!==pos.x+','+pos.y)move(w,pos);return;}
@@ -304,6 +391,7 @@ function syncWalkers(){
     if(want.has(id))return;
     const w=walkers.get(id), dp=deskPos(id);
     if(!dp||REDUCED){dropWalker(id);return;} /* no desk on screen (room closed, filtered out) or no animation wanted: just disappear */
+    if(VISITS.at(id)){dropWalker(id);return;} /* still at the place, now inside its "+N" (a narrower tile, a longer queue): it did not leave, so no walk back */
     if(w.back)return;
     w.back=true; RETURNING.add(id);
     move(w,dp,()=>{dropWalker(id);scheduleRender();});
@@ -312,7 +400,10 @@ function syncWalkers(){
   const tk=THEME.themeIdForCache();
   walkers.forEach((w,id)=>{const a=byId(id);if(a&&w.tk!==tk){const wk=w.el.querySelector('.wk');if(wk)wk.innerHTML=avatar(a);w.tk=tk;}});
   /* spec 034 FR-015: the figure away at a place keeps its mood (ring, horns, trouble dot); none in Serious mode (moodFor) */
-  walkers.forEach((w,id)=>{const a=byId(id),m=moodFor(a);w.el.dataset.body=m.body;w.el.dataset.trouble=m.trouble||'';w.el.dataset.coffee=a&&a.coffee?'1':'';}); /* spec 068: a cup in the hand */
+  walkers.forEach((w,id)=>{const a=byId(id),m=moodFor(a);w.el.dataset.body=m.body;w.el.dataset.trouble=m.trouble||'';w.el.dataset.coffee=m.coffee?'1':''; /* spec 068: a cup in the hand */
+    /* spec 001 FR-034: at the Boss, a tiny badge on the figure: ? for a question, a key for a permission */
+    const v=VISITS.at(id),k=v&&v.place===window.DurbarPlaces.BOSS?v.label:'';
+    if((w.el.dataset.ask||'')!==k){w.el.dataset.ask=k;let b=w.el.querySelector('.wb');if(!k){if(b)b.remove();}else{if(!b){b=document.createElement('span');b.className='wb';w.el.appendChild(b);}b.innerHTML=k==='q'?'?':BADGE_KEY;}}});
 }
 function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key),usd=usdEstimates(r.id),m=t.calls&&!(t.unreported>=t.calls&&!usd)?approx(t.nano/1e9*AIU_USD+usd):'';return t.calls&&!demoOn?{long:m||window.DurbarUsage.fmtTotal(t),short:m||window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
 
@@ -961,17 +1052,14 @@ const EMPTY_DESK='<svg class="empty-desk" viewBox="0 0 120 72" aria-hidden="true
    It waits 600ms and checks the card is still there, so a start that loads agents a moment later does not ring. */
 function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFolder'),st=$('stage');if(!b||!st||!st.querySelector('.welcome')||!b.getClientRects().length)return;
   b.classList.remove('ring-once');void b.offsetWidth;b.classList.add('ring-once');setTimeout(()=>b.classList.remove('ring-once'),1600);},600);}
-const ROOM_NAME_MIN=64; /* px: about six letters of a room name (spec 001 FR-035) */
 function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage'), cs=getComputedStyle(floor);
-  let aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
+  const aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
   const ah=floor.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
   if(aw<=0||ah<=0)return;
   const model=officeModel();
-  const rail=$('rail');
   if(!model.length){
-    if(rail&&!rail.hidden){rail.hidden=true;rail.innerHTML='';layoutKey='';}
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
     stagePrev=null;
     if(!agents.length&&!demoOn){if(!stage.querySelector('.welcome'))ringFolder();stage.innerHTML=welcomeHTML();floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
@@ -980,29 +1068,8 @@ function renderOffice(){
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=ui.status?officeModel(true):model;
-  /* spec 001 FR-035: the rail is part of the layout budget. The key holds the width of floor and rail together; the search runs with the full
-     rail first and keeps it when the office fits at `mini` or richer, else with the strip. */
-  if(rail&&rail.hidden){rail.hidden=false;rail.dataset.mode=rail.dataset.mode||'rail';}
-  const wsBox=rail?floor.parentElement.closest('.workspace'):null, both=wsBox?wsBox.clientWidth:aw;
-  const key=JSON.stringify([both,ah,FORCE_DENSITY,liveOn(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
-  const inner=()=>floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
-  if(key!==layoutKey||!layout){
-    if(!rail){layout=chooseLayout(sizing,aw,ah);}
-    else for(const mode of ['rail','strip']){
-      rail.dataset.mode=mode;
-      const res=chooseLayout(sizing,inner(),ah);
-      if(mode==='rail'&&(!res||!res.fit||res.d==='micro'))continue;
-      layout=Object.assign({},res,{rail:mode});break;
-    }
-    /* a layout that does not fit scrolls the floor: with a classic scroll bar (Windows, Linux) it takes width, so the search runs again
-       without it, or the floor would also scroll sideways (overlay scroll bars measure 0 and change nothing) */
-    if(rail&&layout&&!layout.fit){
-      floor.style.overflowY='scroll'; const sb=floor.offsetWidth-floor.clientWidth; floor.style.overflowY='';
-      if(sb>0)layout=Object.assign({},chooseLayout(sizing,inner()-sb,ah),{rail:layout.rail,sb});
-    }
-    layoutKey=key;
-  }
-  if(rail){rail.dataset.mode=layout.rail;aw=inner()-(layout.sb||0);renderRail();}
+  const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
+  if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side;
   const parts=stageParts(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
@@ -1011,13 +1078,6 @@ function renderOffice(){
   stagePrev=parts;
   stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap); stage.dataset.side=layout.side?'1':'0';
   fitUsage(stage);
-  /* spec 001 FR-035: the full rail must also leave every room its name: a header that cuts a name to a few letters (narrow rooms side by
-     side) folds the rail to the strip and lays out again, once per layout */
-  if(rail&&layout.rail==='rail'&&!layout.named){
-    layout.named=true;
-    const cut=[...stage.querySelectorAll('.room-head .room-name')].some(n=>n.scrollWidth>n.clientWidth+0.5&&n.clientWidth<ROOM_NAME_MIN);
-    if(cut){rail.dataset.mode='strip';const res=chooseLayout(sizing,inner(),ah);layout=Object.assign({},res,{rail:'strip',named:true});layoutKey=key;stage.dataset.d='';return renderOffice();}
-  }
   if(layout.side)stage.querySelectorAll('.liveside .ls-t').forEach(fitSide);
   floor.classList.toggle('scrolls',!layout.fit);
   if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
@@ -1092,6 +1152,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('#list [data-lsor
 
 function renderAll(){
   AMB_ID=pickAmbulanceId();
+  syncDesks(); /* spec 001 FR-034: who walks to the Boss and who comes back */
   prepareWalkers();
   const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door||ae.dataset.lsort), inPanel=ae&&ae.closest&&ae.closest('#panel'), scope=ae&&ae.closest?(ae.closest('#list')?'#list ':ae.closest('#stage')?'#stage ':''):''; /* FR-173: read before the render detaches it */
   const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':ae.dataset.lsort?'data-lsort':''); /* spec 052 FR-064: a sort header keeps focus too */
@@ -1888,78 +1949,7 @@ function renderInboxBtn(){
   b.hidden=!agents.length; b.classList.toggle('attn',n>0);
   rollCount(b.querySelector('b'),n);
   b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or '+INBOX_KEY+').':'Nobody needs you. Open the inbox (I or '+INBOX_KEY+').');
-  if(ui.view==='office')renderRail();
 }
-/* spec 001 FR-034: the office rail. Who needs you (the inbox's list and order), what is scheduled next (spec 044's store) and a short legend.
-   Painted from renderOffice (and when the inbox changes); morphed by key so a focused row keeps focus. Text by esc(); no layout search here:
-   only the rail's mode (FR-035) changes the floor's width, and that is decided in renderOffice. */
-const RAIL_NEED_MAX=6, RAIL_SCHED_MAX=4;
-const INBOX_SVG='<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 9.5l1.6-5.2A1.4 1.4 0 0 1 5 3.3h6a1.4 1.4 0 0 1 1.4 1l1.6 5.2v2.8a1.4 1.4 0 0 1-1.4 1.4H3.4A1.4 1.4 0 0 1 2 12.3z"/><path d="M2 9.5h3.2l.9 1.6h3.8l.9-1.6H14"/></svg>';
-/* the legend is open the first time the rail is shown, closed from the next start on (a per-computer convenience; works without storage) */
-let railLegend=(()=>{try{const v=localStorage.getItem('durbar.railLegend');if(!v)localStorage.setItem('durbar.railLegend','seen');return !v;}catch(e){return true;}})();
-/* active schedules, soonest next run first: [{s, t, room}] (none in the demo, or when the app has no schedules) */
-function railSchedules(){
-  if(!bridge||!bridge.listSchedules||demoOn)return null;
-  let all;try{all=SCHED.schedules;}catch(e){return [];} /* SCHED is declared further down */
-  return all.filter(s=>!s.done&&!s.paused).map(s=>({s,t:recurringS(s)?s.next:s.at,room:ROOMS.find(r=>folderKeyOf(r)===s.folder)||null}))
-    .sort((x,y)=>(x.t||Infinity)-(y.t||Infinity));
-}
-const schedFolderName=x=>x.room?x.room.name:(String(x.s.folder||'').split(/[\\/]/).filter(Boolean).pop()||'a folder');
-function railHTML(mode,needMax=RAIL_NEED_MAX,schedMax=RAIL_SCHED_MAX,legendOk=true){
-  const need=needsMeOrder(), sch=railSchedules(), paused=(()=>{try{return SCHED.pausedAll;}catch(e){return false;}})();
-  if(mode==='strip'){
-    const nTip=need.length?need.length+(need.length===1?' agent needs':' agents need')+' you: '+need.map(a=>a.name).join(', ')+'. Open the inbox.':'Nobody needs you. Open the inbox.';
-    const sTip=sch?(sch.length?sch.length+' scheduled prompt'+(sch.length===1?'':'s')+(paused?' (all paused)':sch[0].t?', next '+clock(sch[0].t):'')+'. Open Settings > Schedules.':'Nothing scheduled. Open Settings > Schedules.'):'';
-    return `<button class="rs-btn${need.length?' attn':''}" type="button" data-key="rs-need" data-rail="inbox" title="${esc(nTip)}" aria-label="${esc(nTip)}">${INBOX_SVG}<b>${need.length}</b></button>`
-      +(sch?`<button class="rs-btn" type="button" data-key="rs-sched" data-rail="schedset" title="${esc(sTip)}" aria-label="${esc(sTip)}">${CLOCK_SVG}<b>${sch.length}</b></button>`:'');
-  }
-  const now=Date.now();
-  const needRows=need.slice(0,need.length>needMax?needMax-1:needMax).map(a=>{
-    const t=NEED_SINCE.get(a.id), wait=t!=null?ACT.agoShort(now-t):'', what=taskText(a)||stWord(a), room=roomOf(a);
-    const lbl=a.name+(room?' ('+room.name+')':'')+': '+what+(wait?'. Waiting '+wait:'')+'. Open the chat.';
-    return `<button class="rl-row" type="button" data-key="rn:${esc(a.id)}" data-railneed="${esc(a.id)}" title="${esc(lbl)}" aria-label="${esc(lbl)}"><span class="rl-av" aria-hidden="true">${avatar(a)}</span><span class="rl-t"><b class="rl-n">${esc(a.name)}<span class="dot ${pillSt(a)}"></span>${wait?`<small class="rl-w">${esc(wait)}</small>`:''}</b><span class="rl-d">${esc(what)}</span></span></button>`;
-  }).join('');
-  const needMore=need.length>needMax?`<button class="rl-more" type="button" data-key="rn-more" data-rail="inbox">+${need.length-needMax+1} more</button>`:'';
-  const needSec=`<section class="rl-sec rl-need${need.length?' attn':''}" data-key="rl-need" aria-labelledby="rlNeedH"><h2 class="rl-h" id="rlNeedH">${INBOX_SVG}<span>Needs you</span><b class="rl-c">${need.length}</b></h2>`
-    +(need.length?`<div class="rl-list">${needRows}${needMore}</div>`:'<p class="rl-empty">Nobody needs you right now.</p>')
-    +`<button class="rl-foot" type="button" data-key="rn-open" data-rail="inbox" title="The Needs you inbox (I or ${esc(INBOX_KEY)})">Open inbox</button></section>`;
-  let schSec='';
-  if(sch){
-    const rows=sch.slice(0,sch.length>schedMax?schedMax-1:schedMax).map(x=>{
-      const fold=schedFolderName(x), when=whenOf(x.s), next=x.t&&!paused?clock(x.t):'';
-      const lbl=x.s.prompt+'. '+fold+', '+when+(next?', next '+next:'')+'. Open this folder\'s schedules.';
-      return `<button class="rl-row rl-srow" type="button" data-key="rs:${esc(x.s.id)}" data-railsched="${esc(x.room?x.room.id:'')}" title="${esc(lbl)}" aria-label="${esc(lbl)}"><span class="rl-ic" aria-hidden="true">${CLOCK_SVG}</span><span class="rl-t"><b class="rl-n rl-p">${esc(DurbarCutText.cutText(x.s.prompt,80))}</b><span class="rl-d">${esc(fold+' · '+(next?'next '+next:when))}</span></span></button>`;
-    }).join('');
-    const more=sch.length>schedMax?`<button class="rl-more" type="button" data-key="rs-more" data-rail="schedset">+${sch.length-schedMax+1} more</button>`:'';
-    schSec=`<section class="rl-sec rl-sched" data-key="rl-sched" aria-labelledby="rlSchedH"><h2 class="rl-h" id="rlSchedH">${CLOCK_SVG}<span>Scheduled</span><b class="rl-c">${sch.length}</b></h2>`
-      +(paused?'<p class="rl-empty">All schedules are paused.</p>':'')
-      +(sch.length?`<div class="rl-list">${rows}${more}</div>`:(paused?'':'<p class="rl-empty">Nothing scheduled.</p>'))+'</section>';
-  }
-  const dot=(k,w,d)=>`<li><span class="dot ${k}"></span><b>${esc(w)}</b> <span>${esc(d)}</span></li>`;
-  const legend=`<details class="rl-sec rl-legend" data-key="rl-legend"${railLegend&&legendOk?' open':''}><summary class="rl-h">How to read this</summary><ul class="rl-keys">`
-    +dot('working','Working','busy on its task')+dot('waiting','Waiting','needs you')+dot('error','Error','stopped by a problem')+dot('done','Done','finished; its answer is in the chat')+dot('idle','Idle','ready for a message')
-    +`</ul><p class="rl-note">Each room is a folder. The lobby shows who is using which tool right now.</p></details>`;
-  return needSec+schSec+legend;
-}
-function renderRail(){
-  const rail=$('rail'); if(!rail||rail.hidden)return;
-  const mode=rail.dataset.mode==='strip'?'strip':'rail';
-  rail.setAttribute('aria-label',mode==='strip'?'Needs you and scheduled prompts (folded)':'Needs you, scheduled prompts and how to read the office');
-  morphHTML(rail,railHTML(mode));
-  /* the rail never scrolls when it can help it: fewer rows (the rest under "+N more"), then the legend folded for this paint */
-  if(mode==='rail'&&rail.scrollHeight>rail.clientHeight+1){
-    const steps=[[5,4,true],[4,4,true],[4,4,false],[3,3,false],[2,2,false]];
-    for(const [n,m,leg] of steps){morphHTML(rail,railHTML(mode,n,m,leg));if(rail.scrollHeight<=rail.clientHeight+1)break;}
-  }
-}
-/* the person's own open or close of the legend (a click or Enter on its summary); a repaint that folds it for room is not one */
-document.addEventListener('click',e=>{const sm=e.target.closest&&e.target.closest('#rail .rl-legend > summary');if(sm)railLegend=!sm.parentElement.open;},true);
-document.addEventListener('click',e=>{
-  const t=e.target.closest&&e.target.closest('#rail [data-railneed], #rail [data-railsched], #rail [data-rail]'); if(!t)return;
-  if(t.dataset.railneed){openPanel(t.dataset.railneed,true);return;}
-  if(t.dataset.railsched!=null){const r=ROOMS.find(x=>x.id===t.dataset.railsched);if(r)openSchedules(r);else openSchedSettings();return;}
-  if(t.dataset.rail==='inbox')openInbox(); else if(t.dataset.rail==='schedset')openSchedSettings();
-});
 /* Settings > Schedules (spec 044 FR-011): the Settings screen, scrolled to its Schedules section */
 function openSchedSettings(){window.DurbarScreens.openSettings();setTimeout(()=>{const s=$('schedSet');if(s&&s.scrollIntoView)s.scrollIntoView({block:'start'});},0);}
 /* spec 052 FR-068: the count rolls (old number out, new one in, 220ms) inside a box that keeps its width; up when it grows */
@@ -2027,7 +2017,7 @@ function paintInbox(focusIndex){
   body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1"><span class="ib-ok" aria-hidden="true"></span><span><b>All clear. Nobody needs you right now.</b><small>Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</small></span></p>'; /* spec 052 FR-048 */
   list.forEach((a,i)=>{
     const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
-    const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?(a.coffee?'is on a '+coffeeWord().toLowerCase():'stopped'):card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
+    const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'reached its spending limit':card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
     row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;
     row.innerHTML='<div class="ib-av" aria-hidden="true">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b></b> <span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
     row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;
@@ -2325,7 +2315,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -3218,7 +3208,9 @@ const SIM_BREAK=(()=>{try{const q=new URLSearchParams(location.search);return q.
 const BREAKS=COFFEE.createBreaks(SIM_BREAK?{marginMs:2000,gapMs:3000,lateMs:600000,remindMs:20000}:{});
 const coffeeWord=()=>'Coffee break'; /* a status word: plain in every theme (spec 035: status pills keep their size); only the corner's name is themed */
 const coffeeUntil=a=>{const b=BREAKS.get(a.id);return b?COFFEE.untilText(b,BREAKS.autoResumes(a.id),Date.now()):'';};
-const coffeeTask=a=>coffeeWord()+' — '+coffeeUntil(a);
+const LIMIT_WORD='Limit reached'; /* spec 001 FR-035: the cap's label at the Bank (spec 011's words, a status word: not themed) */
+const breakWord=a=>{const b=BREAKS.get(a.id);return b&&b.kind==='cap'?LIMIT_WORD:coffeeWord();};
+const coffeeTask=a=>breakWord(a)+' — '+coffeeUntil(a);
 /* "Ada (until 14:30)" for the coffee corner's label (FR-014) */
 const coffeeUntilWords=a=>{const b=a&&BREAKS.get(a.id);return b?(b.kind==='cap'?'until you raise the limit':b.resetsAt?'until '+COFFEE.whenText(b.resetsAt,Date.now()):'until the limit resets'):'';};
 const coffeeWho=a=>{if(!a)return '';const u=coffeeUntilWords(a);return a.name+(u?' ('+u+')':'');};
@@ -3257,16 +3249,17 @@ function showCoffee(a,back){
 function startCoffee(a,info){
   const b=BREAKS.start(a.id,Object.assign({app:kindOf(a)},info),BREAK_RESUME); if(!b)return;
   const isNew=!a.coffee;
-  a.coffee=true;if(isNew)a.coffeeShut=false;
+  a.coffee=true;a.coffeeKind=b.kind;if(isNew)a.coffeeShut=false;
   if(b.kind==='provider'){closeTurn(a);a.worked=false;if(isNew||a.coffeeCard)showCoffee(a,false);}
-  if(VISITS.pin(a.id,window.DurbarPlaces.COFFEE,coffeeWord()))scheduleRender();
-  setState(a,'waiting',coffeeWord(),coffeeTask(a));
+  /* spec 001 FR-035 (owner 2026-10-22): Durbar's own cap waits at the Bank, a provider limit in the coffee corner */
+  if(VISITS.pin(a.id,b.kind==='cap'?window.DurbarPlaces.BANK:window.DurbarPlaces.COFFEE,breakWord(a)))scheduleRender();
+  setState(a,'waiting',breakWord(a),coffeeTask(a));
   if(isNew)announce(a.name+': '+coffeeTask(a));
 }
 /* the break ends without a resume of ours (a message, Stop, the agent went on by itself, Not now) */
 function endCoffee(a,why){
   if(!a||!a.coffee)return;
-  a.coffee=false;BREAKS.end(a.id);
+  a.coffee=false;a.coffeeKind='';BREAKS.end(a.id);
   if(VISITS.unpin(a.id))scheduleRender();
   if(a.coffeeCard){const r=a.coffeeCard.querySelector('.note-actions');if(r)r.remove();a.coffeeCard.querySelector('.pstate').textContent=' → '+(why||'ended');a.coffeeCard.classList.add('settled');a.coffeeCard=null;}
 }
@@ -3274,7 +3267,7 @@ function endCoffee(a,why){
 function resumeCoffee(a,how){
   if(!a||!a.coffee)return;
   const b=BREAKS.get(a.id); if(!b||b.kind!=='provider')return;
-  a.coffee=false;BREAKS.resumed(a.id);
+  a.coffee=false;a.coffeeKind='';BREAKS.resumed(a.id);
   if(VISITS.unpin(a.id))scheduleRender();
   if(a.coffeeCard){const r=a.coffeeCard.querySelector('.note-actions');if(r)r.remove();a.coffeeCard.querySelector('.pstate').textContent=' → '+(how==='auto'?'resumed by itself':'resumed');a.coffeeCard.classList.add('settled','approved');a.coffeeCard=null;}
   addNote(liveChat(a),'Back from the '+esc(coffeeWord().toLowerCase())+' ('+(how==='auto'?'resumed by itself after the limit reset':'resumed by you')+').');
@@ -4657,7 +4650,7 @@ if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(p=>{const id=typeof p==='strin
   /* spec 054 FR-062: the adapter's own reason when it has one; otherwise the sign-in reconnect (spec 012 FR-158) */
   const why=p&&typeof p==='object'&&typeof p.reason==='string'&&p.reason?esc(p.reason.slice(0,300)):esc(a.name)+' reconnected after the new sign-in';
   addNote(liveChat(a),'Remote control ended: '+why+'. Turn it on again from More if you still need it.');});}
-if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;addNote(liveChat(a),'Scheduled prompt ('+esc(r.rule?ruleText(r.rule):r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
+if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;flyLetter(a.id); /* spec 001 FR-038 */addNote(liveChat(a),'Scheduled prompt ('+esc(r.rule?ruleText(r.rule):r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
 function renderFolders(){
   const pop=$('foldersPop'); if(pop.hidden)return;
   if(!ROOMS.length){pop.innerHTML='<p class="fp-empty">No folders yet. Use + Folder (top left) to add a folder, or + Workspace for a VS Code .code-workspace file. Folders you add are remembered next time.</p>';return;}

@@ -66,7 +66,7 @@ async function driver(ctx) {
     await ctx.js(`document.fonts.ready.then(()=>true)`);
     // agents go to the lobby after about 600 ms (instant with reduced motion): wait until somebody is there
     // (spec 068: not the coffee corner, where an agent on a break stands at once)
-    await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"])')`, 3000);
+    await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 3000);
     // the pointer of the virtual display rests mid-window: a hover style (retro nudges a card by 1px) is not layout
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
     await ctx.sleep(300);

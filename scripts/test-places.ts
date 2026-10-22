@@ -30,7 +30,12 @@ const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js
   tileSlots: (aw: unknown, tiles: unknown, addButton: unknown) => number;
   tileChips: (aw: unknown, tiles: unknown, addButton: unknown, reserve?: unknown) => { named: number; initials: number };
   chipsIn: (tileW: unknown) => { named: number; initials: number };
-  coffeeTile: (aw: unknown, tiles?: unknown, addButton?: unknown) => { named: boolean; width: number; chips: { named: number; initials: number } };
+  lobbyFit: (aw: unknown, places: unknown, addButton: unknown, post?: unknown) => Record<'boss' | 'coffee' | 'bank' | 'post', { width: number; named: boolean; chips: { named: number; initials: number } } | null> & { tile: number; caps: { named: number; initials: number } };
+  lobbyOrder: (ids: unknown, post?: unknown) => string[];
+  initialSpots: (tileW: unknown, count: unknown) => { shown: number; more: number };
+  postNext: (s: unknown, pausedAll: unknown) => { s: { id: string }; t: number }[];
+  lettersToday: (s: unknown, pausedAll: unknown, now: unknown, ruleNext?: unknown) => number;
+  postMissed: (s: unknown) => number;
   chipsFor: (cap: { named: number; initials: number }, visitors: unknown) => { mode: 'named' | 'initials'; slots: number };
   initialsOf: (name: unknown) => string;
   classify: (e: unknown, map?: unknown, customIds?: unknown) => string;
@@ -289,7 +294,7 @@ const names = (list: readonly { name: string }[]): string[] => list.map((p) => p
 assert.strictEqual(MAX_CUSTOM_PLACES, 3);
 assert.strictEqual(MAX_PLACE_NAME, 24);
 assert.deepStrictEqual([...CUSTOM_ICON_IDS], ['star', 'flask', 'database', 'cloud', 'chart', 'chat', 'mail', 'calendar', 'shield', 'box', 'bolt', 'pin']);
-assert.deepStrictEqual([...RESERVED_PLACE_NAMES], [...P.PLACES.map((p) => p.name), 'Stay at desk', 'Default', 'Coffee corner'], 'reserved = the five built-in names, Stay at desk, Default, the coffee corner (spec 068)');
+assert.deepStrictEqual([...RESERVED_PLACE_NAMES], [...P.PLACES.map((p) => p.name), 'Stay at desk', 'Default', 'Coffee corner', 'Boss', 'Bank', 'Postbox'], 'reserved = the five built-in names, Stay at desk, Default, the coffee corner (spec 068), the Boss, Bank and Postbox (spec 001)');
 assert.ok(CUSTOM_ID_PATTERN.test('c-ab12z9') && !CUSTOM_ID_PATTERN.test('c-AB12z9') && !CUSTOM_ID_PATTERN.test('c-ab12z') && !CUSTOM_ID_PATTERN.test('c-ab12z9x') && !CUSTOM_ID_PATTERN.test('desk') && !CUSTOM_ID_PATTERN.test('library'), 'id pattern');
 
 // cleanPlaceName: trimmed, 1..24 code points, no control characters
@@ -549,17 +554,59 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   assert.deepStrictEqual(f(2, 4, 5), { mode: 'named', slots: 2 }, 'two named entries fit: names and +N');
   assert.deepStrictEqual(f(0, 1, 1), { mode: 'initials', slots: 1 }, 'no named entry fits');
   assert.deepStrictEqual(f(2, 4, 0), { mode: 'named', slots: 2 }, 'nobody there');
-  // spec 068 + 001 FR-036 (2026-10-22): the coffee corner's own width and capacity, and the width it takes from the other tiles
-  assert.deepStrictEqual(P.chipsIn(200), { named: 1, initials: 3 }, 'the named corner: one named entry or three initials');
-  assert.deepStrictEqual(P.chipsIn(118), { named: 1, initials: 2 }, 'the icon-only corner: one named entry, or two initials (a figure and +N)');
+  assert.deepStrictEqual(P.chipsIn(200), { named: 1, initials: 3 }, 'a 200 px tile: one named entry or three initials');
   assert.deepStrictEqual(P.tileChips(1160, 5, true, 0), P.tileChips(1160, 5, true), 'no reserve: as before');
-  assert.deepStrictEqual(P.tileChips(1160, 5, true, 200), { named: 1, initials: 3 }, '1440x900 with the rail and the named corner');
-  for (const aw of [900, 1160, 1408]) assert.ok(P.tileChips(aw, 5, true, 200).initials <= P.tileChips(aw, 5, true, 118).initials, 'a wider corner never gives the others more room');
-  assert.deepStrictEqual([1160, 1196, 1000, 1099].map((aw) => P.coffeeTile(aw, 5, true).named), [true, true, false, false], 'named from 1100 px of lobby');
-  assert.strictEqual(P.coffeeTile(1160, 8, false).named, false, 'eight places at 1440x900: icon only, so the others keep two entries');
-  assert.ok(P.tileChips(1160, 8, false, P.coffeeTile(1160, 8, false).width).initials >= 2, 'eight places keep room for two visitors');
-  assert.deepStrictEqual(P.coffeeTile(1300), { named: true, width: 200, chips: { named: 1, initials: 3 } }, 'without the other tiles: by width only');
+  assert.deepStrictEqual(P.tileChips(1000, 1, false, 100), P.chipsIn(892), 'a reserve takes its width and one 8 px gap (review on #511, M5)');
+  assert.deepStrictEqual(P.tileChips(1000, 2, true, 100), P.chipsIn((1000 - 8 - 34 - 108) / 2), 'gaps, the Add button and the reserve');
   assert.deepStrictEqual(['Omar', 'Ada Lovelace', '  ', '', null, 'émile zola', 'X'].map((n) => P.initialsOf(n)), ['Om', 'AL', '', '', '', 'ÉZ', 'X']);
+}
+
+// spec 001 FR-039 (2026-10-22): the Boss, coffee corner, Bank and Postbox widths and the lobby order
+{
+  const sum = (f: ReturnType<typeof P.lobbyFit>, n: number, add: boolean) => (['boss', 'coffee', 'bank', 'post'] as const).reduce((t, k) => t + (f[k] ? f[k]!.width + 8 : 0), 0) + n * f.tile + 8 * (n - 1) + (add ? 34 : 0);
+  for (const aw of [1100, 1248, 1408, 1900]) for (const n of [5, 6, 7, 8]) for (const post of [true, false]) {
+    const f = P.lobbyFit(aw, n, n < 8, post);
+    assert.ok(Math.abs(sum(f, n, n < 8) - aw) < 1, `the row fills the lobby exactly (${aw}, ${n}, ${post}): ${sum(f, n, n < 8)}`);
+    assert.ok(f.boss!.width >= 190 && f.boss!.width <= 230 && f.coffee!.width >= 96 && f.bank!.width >= 96, `within the bounds (${aw}, ${n})`);
+    assert.strictEqual(f.post === null, !post, 'no Postbox when it is not shown');
+    if (f.boss!.width > 190) assert.ok(f.tile >= 117.5, `the special tiles shrink before a place gets under two entries (${aw}, ${n}): ${f.tile}`);
+  }
+  const wide = P.lobbyFit(1408, 5, true), narrow = P.lobbyFit(1248, 5, true);
+  assert.ok(!wide.coffee!.named && wide.post!.named && wide.caps.initials >= 2, '1440x900: the Postbox named, the corner icon only (its name would be cut), two entries per place');
+  assert.ok(P.lobbyFit(1600, 5, true).coffee!.named, 'a wider window names the corner');
+  assert.ok(!narrow.coffee!.named && !narrow.post!.named && narrow.boss!.chips.initials >= 3, '1280x800: icon-only corner, the Boss keeps three entries');
+  assert.ok(P.lobbyFit(2400, 5, true).boss!.width === 230 && P.lobbyFit(2400, 5, true).tile > 118, 'a wide window: preferred widths');
+  for (const [aw, n] of [[0, 5], [NaN, 'x'], [-1, -1]] as [unknown, unknown][]) { const f = P.lobbyFit(aw, n, false); assert.ok(f.tile >= 0 && f.boss!.width > 0, 'never throws or goes negative'); }
+  const five = ['library', 'software', 'terminal', 'web', 'other'];
+  assert.deepStrictEqual(P.lobbyOrder(five), ['library', 'software', 'terminal', 'web', 'boss', 'other', 'coffee', 'bank', 'postbox'], 'the Boss is the middle of nine');
+  assert.deepStrictEqual(P.lobbyOrder(five, false), ['library', 'software', 'terminal', 'web', 'boss', 'other', 'coffee', 'bank'], 'without the Postbox');
+  assert.strictEqual(P.lobbyOrder([...five, 'c-1', 'c-2', 'c-3']).indexOf('boss'), 6, 'eight places: the Boss is the 7th of 12');
+  assert.deepStrictEqual(P.lobbyOrder(null), ['boss', 'coffee', 'bank', 'postbox']);
+  assert.deepStrictEqual(P.initialSpots(96, 1), { shown: 1, more: 0 });
+  assert.deepStrictEqual(P.initialSpots(96, 2), { shown: 1, more: 1 }, 'one figure and +1, not only +2');
+  assert.deepStrictEqual(P.initialSpots(190, 3), { shown: 3, more: 0 }, 'the Boss at 1280x800 shows a queue of three');
+  assert.deepStrictEqual(P.initialSpots(190, 6), { shown: 2, more: 4 });
+  assert.deepStrictEqual(P.initialSpots(30, 3), { shown: 0, more: 3 }, 'nothing fits: only +N');
+  assert.deepStrictEqual(P.initialSpots(200, 0), { shown: 0, more: 0 });
+}
+// spec 001 FR-038: the Postbox's next runs, letters today and the missed flag
+{
+  const now = new Date(2026, 9, 22, 10, 0, 0).getTime(), min = 60000;
+  const list = [
+    { id: 'a', every: 60, next: now + 30 * min },                      // 10:30 .. 23:30: 14 runs
+    { id: 'b', at: now + 3 * 60 * min },                               // 13:00: 1
+    { id: 'c', rule: { kind: 'daily', time: '08:30' }, next: now + 22.5 * 60 * min, last: { at: now - 60 * min, outcome: 'missed' } }, // tomorrow: 0
+    { id: 'd', at: now + 10 * min, paused: true },
+    { id: 'e', at: now - 10 * min, done: true, last: { at: now - 10 * min, outcome: 'failed' } },
+    { id: 'f', every: 5, next: now + 5 * min, last: { at: now, outcome: 'failed' } },
+  ];
+  assert.deepStrictEqual(P.postNext(list, false).map((x) => x.s.id), ['f', 'a', 'b', 'c'], 'active only, soonest first');
+  assert.deepStrictEqual(P.postNext(list, true), [], 'Pause all: nothing');
+  assert.strictEqual(P.lettersToday(list, false, now), 14 + 1 + 0 + 167, 'runs still due before midnight');
+  assert.strictEqual(P.lettersToday(list, true, now), 0);
+  assert.strictEqual(P.lettersToday([{ id: 'r', rule: { kind: 'daily', time: '12:00' }, next: now + 2 * 60 * min }], false, now, (_r: unknown, after: number) => after + 24 * 60 * min), 1, 'a rule: its next run, then the rule says tomorrow');
+  assert.strictEqual(P.postMissed(list), 2, 'missed or failed last run, not done');
+  assert.strictEqual(P.postMissed(null), 0);
 }
 
 // icons: the 12 drawings match the shared icon ids
