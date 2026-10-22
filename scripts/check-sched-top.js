@@ -59,7 +59,9 @@ module.exports = async (ctx) => {
   /* load with the seeds; `stamp` is what durbar.schedSeen holds before the page starts ('' = none) */
   const load = async (w, h, level, stamp, query = {}) => {
     await H.load({ w, h, query: { simsched: '1', ...query }, ready: 'fit', settle: false });
-    await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)});${stamp === '' ? `localStorage.removeItem('durbar.schedSeen')` : `localStorage.setItem('durbar.schedSeen',${jsLiteral(String(stamp))})`};true`);
+    await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)});true`);
+    if (stamp === '') await js(`localStorage.removeItem('durbar.schedSeen');true`);
+    else await js(`localStorage.setItem('durbar.schedSeen',${jsLiteral(String(stamp))});true`);
     await H.load({ w, h, query: { simsched: '1', ...query }, ready: 'fit', settle: false });
     await until(`!document.getElementById('schedTopBtn').hidden`);
     await H.calm();
