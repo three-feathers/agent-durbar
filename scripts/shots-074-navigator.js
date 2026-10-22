@@ -35,7 +35,7 @@ module.exports = async (ctx) => {
       font:Math.min(...[...d.querySelectorAll('.pal-crumb,.pal-n,.pal-l,.pal-h,.pal-foot,kbd,input')].map(e=>parseFloat(getComputedStyle(e).fontSize))),
       fits:D.top>=0&&D.left>=0&&D.bottom<=innerHeight&&D.right<=innerWidth}})()`);
   const panel = () => js(`({open:document.body.classList.contains('panel-open'),title:(document.getElementById('panelTitle')||{}).textContent||'',
-    no:(document.querySelector('#panelHead .sub .chatno')||{}).textContent||'',focus:document.activeElement&&document.activeElement.id,
+    no:((document.querySelector('#panelHead .sub .chatno')||{}).dataset||{}).n||'',focus:document.activeElement&&document.activeElement.id,
     caret:(()=>{const m=document.getElementById('msgInput');return m?m.selectionStart===m.value.length:false})()})`);
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
@@ -48,13 +48,15 @@ module.exports = async (ctx) => {
       font:Math.min(...[...document.querySelectorAll('#stage .chatno')].map(e=>parseFloat(getComputedStyle(e).fontSize))),
       inside:ds.every(d=>{const b=d.querySelector('.chatno');if(!b)return true;const r=b.getBoundingClientRect(),q=d.getBoundingClientRect();return r.width>0&&r.left>=q.left-0.5&&r.right<=q.right+0.5&&r.top>=q.top-0.5&&r.bottom<=q.bottom+0.5;}),
       names:Math.min(...ds.map(d=>{const n=d.querySelector('.name');return n?n.getBoundingClientRect().width:99;})),
+      first:ds.filter(d=>{const n=d.querySelector('.name');return n&&!d.innerText.trim().startsWith(n.innerText.trim());}).map(d=>d.innerText.trim().slice(0,20)),
       aria:ds.filter(d=>/, chat \\d+,/.test(d.getAttribute('aria-label')||'')).length,
-      uniq:new Set([...document.querySelectorAll('#stage .chatno')].map(b=>b.textContent)).size,
+      uniq:new Set([...document.querySelectorAll('#stage .chatno')].map(b=>b.dataset.n)).size,
       overflow:document.documentElement.scrollWidth>innerWidth||document.documentElement.scrollHeight>innerHeight}})()`);
     assert.ok(badges.n >= 15 && badges.with === badges.n, `${w}: every main desk has a chat number (${badges.with}/${badges.n})`);
     assert.ok(badges.font >= 10.5, `${w}: badge text ${badges.font}px`);
     assert.ok(badges.inside, `${w}: every badge stays inside its desk`);
     assert.ok(badges.names >= 20, `${w}: names keep room next to the badge (${badges.names}px)`);
+    assert.deepStrictEqual(badges.first, [], `${w}: a desk's text still starts with its name (drivers and the office check find desks that way)`);
     assert.strictEqual(badges.aria, badges.n, `${w}: screen readers hear "chat N"`);
     assert.strictEqual(badges.uniq, badges.with, `${w}: chat numbers are unique`);
     assert.ok(!badges.overflow, `${w}: no page overflow`);
@@ -125,7 +127,7 @@ module.exports = async (ctx) => {
     p = await panel();
     assert.ok(p.no === 'C3' && p.focus === 'msgInput', `${w}: c 3 opened chat 3 with the cursor in the message box: ${JSON.stringify(p)}`);
     const selId = await js(`document.querySelector('#stage .desk[aria-pressed="true"], #stage .desk.sel')?.dataset.id||''`);
-    const c3 = await js(`(()=>{const b=[...document.querySelectorAll('#stage .desk[data-id] .chatno')].find(x=>x.textContent==='C3');return b?b.closest('.desk').dataset.id:''})()`);
+    const c3 = await js(`(()=>{const b=[...document.querySelectorAll('#stage .desk[data-id] .chatno')].find(x=>x.dataset.n==='C3');return b?b.closest('.desk').dataset.id:''})()`);
     assert.ok(c3 && (!selId || selId === c3), `${w}: the desk labelled C3 is the open chat`);
     assert.ok(await js(`parseFloat(getComputedStyle(document.querySelector('#panelHead .sub .chatno')).fontSize)>=10.5`), `${w}: header badge legible`);
     await shot('chat', w, h);

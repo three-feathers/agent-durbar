@@ -3,12 +3,12 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Keyboard navigator (issue #548): one configurable shortcut (default Ctrl+J, ⌘J on a Mac) opens the command palette in "Go to" mode; floor, F folder, agent, or C and a number for a numbered chat; the chat opens with the cursor in the message box
-status: **specified** 2026-10-22 (spec, plan, tasks); defaults chosen by Vikram's agent, changeable by the owners
+status: **built** 2026-10-22: unit tests, simulator driver and screenshots at both sizes; defaults D1-D7 chosen by Vikram's agent, for the owners to confirm; not tried on a real Mac or Windows machine
 -->
 
 **Feature Branch**: `074-keyboard-navigator`
 **Created**: 2026-10-22
-**Status**: Specified
+**Status**: Built (simulator, unit tests); defaults D1-D7 open for the owners
 **Input**: Issue #548, owner request by Ruben (2026-10-22, priority high): "A keyboard-first navigator, like macOS Spotlight: one configurable shortcut opens a small box from anywhere in the app, and you jump anywhere and type into a chat without touching the mouse." Levels: floor (spec 033), **F** folder, agent, **C** chat with numbered chats (`C 1`). Choosing an agent opens its chat with the cursor in the message box; Enter sends; Escape steps back a level or closes; type-to-filter, arrows and numbers at every level. Reuse the command palette (spec 052 FR-042) and the shortcut sheet (FR-043) rather than a second unrelated box.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -157,3 +157,12 @@ Defaults chosen by Vikram's agent, each changeable by the owners (listed for rev
 - **D7 Off floors and hidden folders**: not listed in the navigator (as everywhere else, spec 033 FR-008); their numbers stay reserved.
 
 Out of scope: VS Code chats (spec 009) and previous sessions (spec 006) are not numbered or listed; global (system-wide) shortcuts when the app is not focused; searching message text (issue #430).
+
+## Changes
+
+### 2026-10-22: built
+
+- `test:` `scripts/test-navigator.ts` (`npm run test:navigator`): the shared matching; chat numbers (lowest free, never changed, restart with a saved map, prune frees, damaged or hostile saved data, 500 cap); every level, the start letters (`f `, `c3`, `c 3`, and `core`/`fro` staying filter text), number picks (unique opens, `3` with `31` waits, `7` none), picks (one session opens), the stack and breadcrumb; the shortcut on Mac and elsewhere (by `code`, ⌘ vs Ctrl, Super ignored, IME composing ignored); 35 refused combinations with their reasons and the allowed ones; saved-shortcut fallback; the page loads the module and Ctrl+K uses the shared matching.
+- `sim:` `scripts/shots-074-navigator.js` (in `npm run check:ui`), real key presses at 1440x900 and 1280x800 with floors: every desk has a unique `C` badge ≥ 10.5px inside its desk with "chat N" for screen readers; floor → folder (filter, arrows, Enter) → agent by number → the cursor in the message box → typed text and Enter sent it; `c`, `c `, Esc back to the start, `c` `3` opens chat 3 (header, desk); `f `, Esc and Backspace chain with focus back on the desk; the shortcut toggles; inside Ctrl+K it switches mode; list rows show the numbers; Settings > Keyboard refuses Ctrl+K, saves Ctrl+Shift+G (Ctrl+J then does nothing), Reset restores it. Screenshots: `docs/screenshots/074-navigator-*`.
+- `sim:` office check (`check-office-overlap.js`, quick matrix, DejaVu fonts as in CI): 303/303. It found two problems, both fixed: in mini and micro density the badge took the room a name needs for three characters, so there it sits on the corner of the desk's scene ([screenshot](../../docs/screenshots/074-navigator-micro-1280x800.png)); and badge text before the name broke the drivers that find a desk by the start of its text, so the number is CSS content (`data-n`) that stays out of the desk's text (the driver asserts this).
+- `[KNOWN GAP]` FR-017: ⌘ matching is unit-tested and the driver uses ⌘ on macOS CI runners, but no one has used it on a real Mac or Windows machine; the operating-system shortcut list (FR-014) is a known list, not exhaustive.
