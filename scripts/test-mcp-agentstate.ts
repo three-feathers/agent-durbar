@@ -40,7 +40,7 @@ const ROWS: Row[] = [
   { rule: 'toolCall start while Done: stays Done (label cleared)', events: [working, status('idle'), toolStart()], word: 'Done', sub: null, renderer: [] },
   { rule: 'toolCall update/complete change nothing', events: [think, toolDone], word: 'Thinking', sub: null, renderer: ["e.phase==='start'&&!isTaskTool(e.tool)"] },
   { rule: 'task tool start is the sub-agent card, not the main state', events: [think, toolStart('task'), toolStart('agent')], word: 'Thinking', sub: null, renderer: ["const isTaskTool=t=>t==='task'||t==='agent';"] },
-  { rule: 'needs-permission: Waiting', events: [perm], word: 'Waiting', sub: null, renderer: ["setState(a,'waiting',null,e.intent||'Waiting for permission')"] },
+  { rule: 'needs-permission: Waiting', events: [perm], word: 'Waiting', sub: null, renderer: ["setState(a,'waiting',null,intentText(e.intent)||'Waiting for permission')"] },
   { rule: 'idle after work: Done, Done', events: [working, status('idle')], word: 'Done', sub: 'Done', renderer: ["setState(a,'done','Done',"] },
   { rule: 'idle with no work: Idle', events: [status('idle')], word: 'Idle', sub: null, renderer: ["else setState(a,'idle',null,a.task)"] },
   { rule: 'idle twice: second one finds no work, Idle', events: [working, status('idle'), status('idle')], word: 'Idle', sub: null, renderer: [] },

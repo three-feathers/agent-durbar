@@ -19,7 +19,7 @@ const GHP = 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const PAT = 'github' + '_pat_' + '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij';
 const SK = 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
 const KEY = 'Kd93' + 'LmP27xQvB' + 'w5Zt';
-const NEEDLES = [GHP, PAT, SK, KEY, GHP.replace(/_/g, ''), PAT.replace(/_/g, ''), 'A1b2C3d4', '11ABCDEFG0', 'proj-AbCdEf', 'projAbCdEf', 'Kd93LmP', 'ghp', 'github_pat', 'githubpat'].map((x) => x.toLowerCase());
+const NEEDLES = [GHP, PAT, SK, KEY, GHP.replace(/_/g, ''), PAT.replace(/_/g, ''), 'A1b2C3d4', '11ABCDEFG0', 'proj-AbCdEf', 'projAbCdEf', 'Kd93LmP', 'abcdefghijklmn', 'ghp', 'github_pat', 'githubpat'].map((x) => x.toLowerCase());
 const SCAN = `(()=>{const out=[];const skip=e=>!!e.closest('#chat');
   const w=document.createTreeWalker(document.documentElement,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT);
   for(let n=w.currentNode;n;n=w.nextNode()){
@@ -37,6 +37,19 @@ module.exports = async (ctx) => {
     for (const nd of NEEDLES) assert.ok(!page.includes(nd), `${tag}: "${nd.slice(0, 10)}..." is on the page (${what}): ...${page.slice(Math.max(0, page.indexOf(nd) - 60), page.indexOf(nd) + 40).replace(/\n/g, ' ')}...`);
   };
   const emit = (ev) => js(`window.__durbarSimUi.emit(JSON.parse(${jsLiteral(JSON.stringify(ev))}))`);
+  // the feeds of review #567: permission lines, a runtime title, a sub-agent's name and type, tokens broken up by Markdown
+  const TAIL = GHP.slice(4), SKTAIL = SK.slice(8);
+  const feeds = async (ids, ts) => {
+    await emit({ type: 'status', sessionId: ids[0], timestamp: ts, status: 'needs-permission', intent: 'Waiting for permission: run curl --api-key ' + KEY + ' https://example.test/a' });
+    await emit({ type: 'status', sessionId: ids[1], timestamp: ts, status: 'working', intent: 'Allowed: fetch https://example.test/a?key=' + KEY });
+    await emit({ type: 'title', sessionId: ids[2], timestamp: ts, title: 'Rotate ' + GHP + ' and ' + PAT });
+    await emit({ type: 'subagent', sessionId: ids[3], timestamp: ts, subagentId: 'sx1', name: 'helper ' + GHP, phase: 'started', task: 'look around', agentName: 'type ' + SK, model: 'm' });
+    await emit({ type: 'status', sessionId: ids[4], timestamp: ts, status: 'working', intent: 'Using gh`p_' + TAIL + '` and sk-proj_*' + SKTAIL + '*' });
+    await emit({ type: 'status', sessionId: ids[5], timestamp: ts, status: 'working', intent: 'x' });
+    await emit({ type: 'output', sessionId: ids[5], timestamp: ts, delta: 'Replying: saved ghp\\_' + TAIL + ' and gh`p_' + TAIL + '` to the vault. ' });
+    await emit({ type: 'output', sessionId: ids[5], timestamp: ts, delta: '', final: true, text: 'Saved ghp\\_' + TAIL + ' and gh`p_' + TAIL + '` to the vault.' });
+    await emit({ type: 'status', sessionId: ids[5], timestamp: ts, status: 'idle' });
+  };
   const back = async () => { await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click();})()`); await until(`!document.body.classList.contains('panel-open')`); };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const level of ['expert', 'simple']) {
@@ -68,6 +81,11 @@ module.exports = async (ctx) => {
       await scan(tag, 'working intent (setState backstop)');
       await emit({ type: 'status', sessionId: m3, timestamp: ts, status: 'error', intent: 'Checking the registry module and its tests. '.repeat(4).slice(0, 132) + ' ' + GHP + ' and ' + PAT + ' and ' + SK });
       await scan(tag, 'error intent');
+      assert.ok(main.length >= 9, `${tag}: enough live main agents for the feeds (${main.length})`);
+      await feeds(main.slice(3, 9), ts);
+      const perm = await js(`window.__durbarSimUi.agents().filter(x=>/^(Waiting for permission|Allowed): (run|fetch)/.test(x.task||'')).map(x=>x.task)`);
+      assert.ok(perm.length >= 2 && perm.every((t) => /\[redacted\]/.test(t) && !t.toLowerCase().includes(KEY.toLowerCase())), `${tag}: the permission lines are stored masked: ${JSON.stringify(perm)}`);
+      await scan(tag, 'permission lines, runtime title, sub-agent name, Markdown-split tokens');
       // 2b. a sub-agent's card in its parent's chat (the chat shows a reply in full; the card's one-line summary is masked)
       const parent = await js(`(()=>{const h=window.__durbarSimUi.agents().find(x=>x.parent);return h?h.parent:''})()`);
       assert.ok(parent, `${tag}: a helper has a parent`);
@@ -131,6 +149,19 @@ module.exports = async (ctx) => {
   for (const [i, pre] of ['Stopped at ', 'Continued: ', 'Resumed: ', 'Send failed: ', 'Continuing after '].entries()) {
     await emit({ type: 'status', sessionId: nm[i], timestamp: Date.now(), status: 'working', intent: pre + GHP + ' ' + PAT + ' ' + SK });
   }
+  assert.ok(nm.length >= 9, 'noredact: enough agents');
+  await feeds(nm.slice(3, 9), Date.now());
+  assert.ok(await js(`window.__durbarSimUi.agents().some(x=>x.task==='Waiting for permission')`), 'noredact: a permission line reads "Waiting for permission" and nothing more');
   await scan('noredact', 'no redact module');
+  // 8. safetext.js does not load: the page still draws, shows no agent text, and keeps its own words
+  await js(`0`);
+  ctx.win.webContents.session.webRequest.onBeforeRequest({ urls: ['*://*/*safetext.js', 'file:///*safetext.js'] }, (d, cb) => cb({ cancel: true }));
+  await H.load({ w: 1440, h: 900, query: { simreply: 'secrets' }, ready: 'fit' });
+  const ns = await js(`(()=>({st:typeof window.DurbarSafeText,desks:document.querySelectorAll('#stage .desk[data-id]').length,done:[...document.querySelectorAll('#stage .desk.is-done')].map(d=>d.title)}))()`);
+  ctx.win.webContents.session.webRequest.onBeforeRequest(null);
+  assert.strictEqual(ns.st, 'undefined', 'safetext.js was blocked');
+  assert.ok(ns.desks >= 15 && ns.done.length > 0 && ns.done.every((t) => /Done: Finished\./.test(t)), `no safetext.js: the office draws and done desks read "Finished.": ${JSON.stringify({ d: ns.desks, done: ns.done.slice(0, 2) })}`);
+  await scan('nosafetext', 'safetext.js missing');
+
   console.log('[done-desk-mask] all checks passed');
 };

@@ -6,7 +6,7 @@
   else{root.DurbarLiveAct=api; if(root.exports&&typeof root.exports.redact==='function')root.DurbarRedact=root.exports;} /* the global `exports` stays: the compiled module reads its own constants from it */
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
-  const ST=typeof module==='object'&&module.exports?require('./safetext.js'):self.DurbarSafeText; /* spec 041 FR-065: the one owner of plain() and the label mask (safetext.js loads first) */
+  const ST=(typeof module==='object'&&module.exports?require('./safetext.js'):self.DurbarSafeText)||{plain:()=>'',maskLabel:()=>'',maskRaw:()=>''}; /* no safetext.js: the readout is empty, nothing leaks (fail closed) */ /* spec 041 FR-065: the one owner of plain() and the label mask (safetext.js loads first) */
   const KEEP=1200;          /* characters of the current thinking block or reply kept (the newest) */
   const PAINT_MS=250;       /* FR-030: at most 4 paints a second per desk */
   const LINE_MAX=160;       /* one-line readout (desk text line) */
@@ -50,7 +50,7 @@
   }
   /* Per-agent readouts. onEvent returns true when what a desk should show changed. */
   function create(opts){
-    const o=opts||{}, mask=o.mask||{}, red=s=>mask.redact?mask.redact(s):s;
+    const o=opts||{}, mask=o.mask||{}, red=s=>mask.redact?ST.maskRaw(s,mask.redact):s; /* FR-065: also masks a token that Markdown broke up (ghp\_..., gh`p_...) */
     const st=new Map();
     const get=id=>{let s=st.get(id);if(!s){s={kind:'',text:'',lines:'',buf:'',rid:null,lastPaint:-Infinity};st.set(id,s);}return s;};
     const set=(s,kind,text,lines)=>{const ch=s.kind!==kind||s.text!==text||s.lines!==lines;s.kind=kind;s.text=text;s.lines=lines;return ch;};

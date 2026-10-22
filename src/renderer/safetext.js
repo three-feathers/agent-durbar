@@ -9,14 +9,29 @@
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarSafeText=api;
 })(typeof self!=='undefined'?self:this, function(CT){
   'use strict';
-  /* Markdown to plain words: code blocks (also one never closed), links, emphasis, headings and list marks (- * + >) go; whitespace
-     collapses. `codeWord`: a code block leaves the word "code" (the desk line), otherwise a space (the live readout). */
-  const plain=(t,codeWord)=>String(t==null?'':t).replace(/```[\s\S]*?(```|$)/g,codeWord?' code ':' ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*+\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
+  /* Markdown escapes undone before the first mask: `ghp\_...` must read as a token (the backslash would break the pattern) */
+  const unesc=t=>String(t==null?'':t).replace(/\\([\\`*_{}\[\]()#+\-.!~|<>])/g,'$1');
+  /* Markdown to plain words but KEEPING `_`: code blocks (also one never closed), links, emphasis, headings and list marks (- * + >) go;
+     whitespace collapses. `codeWord`: a code block leaves the word "code" (the desk line), otherwise a space (the live readout). */
+  const plainKeep=(t,codeWord)=>String(t==null?'':t).replace(/```[\s\S]*?(```|$)/g,codeWord?' code ':' ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*+\s]+/gm,'').replace(/[*`~]/g,'').replace(/\s+/g,' ').trim();
+  /* ... and the plain words (also without `_`) */
+  const plain=(t,codeWord)=>plainKeep(t,codeWord).replace(/_/g,'');
+  const SPLIT=/[*`~\[\]]/; /* Markdown marks that can sit inside a token (emphasis, code, strike, link brackets) */
   const cutter=(s,n)=>CT&&typeof CT.cutText==='function'?CT.cutText(s,n):s;
+  /* Mask, make plain, mask AGAIN, then drop `_`: a token split by Markdown (`gh`+backtick+`p_...`, `sk-proj_*Ab...*`) only shows its shape
+     once the Markdown is gone, and `_` must still be there for the pattern. null when masking is not possible. */
+  const maskPlain=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;try{
+    const m1=redact(unesc(raw));if(typeof m1!=='string')return null;
+    const m2=SPLIT.test(m1)?redact(plainKeep(m1,codeWord)):plainKeep(m1,codeWord);if(typeof m2!=='string')return null;
+    return m2.replace(/_/g,'');}catch(e){return null;}};
+  /* the masked text, not made plain or cut: unescaped, masked, and masked again when a token only shows once the Markdown is stripped
+     (the text is shown as it is otherwise). '' when masking is not possible. */
+  const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';try{const m1=redact(unesc(raw));if(typeof m1!=='string')return '';
+    if(!SPLIT.test(m1))return m1; /* no Markdown that can split a token: one pass is enough (and keeps the live readout cheap) */
+    const k=plainKeep(m1),m2=redact(k);if(typeof m2!=='string')return '';return m2===k?m1:m2;}catch(e){return '';}};
   /* raw agent text -> masked, plain, at most n characters (no n: not cut). '' when masking is not possible. */
-  const excerpt=(raw,redact,n,codeWord)=>{if(typeof redact!=='function')return '';let m;try{m=redact(String(raw==null?'':raw));}catch(e){return '';}
-    if(typeof m!=='string')return '';const p=plain(m,codeWord);return n==null?p:cutter(p,n);};
-  /* a tool label masked like the chat chip: a command by maskSecretCommand, a URL by maskSecretUrl, anything else by redact.
+  const excerpt=(raw,redact,n,codeWord)=>{const p=maskPlain(String(raw==null?'':raw),redact,codeWord);if(p===null)return '';return n==null?p:cutter(p,n);};
+  /* a tool label masked the way the live readout (LIVEACT) masks it: a command by maskSecretCommand, a URL by maskSecretUrl, anything else by redact.
      mask = {redact, cmd, url}. A missing function for the kind that is needed gives '' (fail closed). */
   const isUrl=s=>/^[a-z][a-z0-9+.-]{1,20}:\/\//i.test(s);
   const maskLabel=(raw,kind,mask)=>{const s=String(raw==null?'':raw).trim();if(!s)return '';const m=mask||{};
@@ -25,12 +40,13 @@
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */
   function create(o){
     const red=o&&typeof o.redact==='function'?o.redact:null, cut=o&&typeof o.cut==='function'?o.cut:cutter;
-    /* the masked raw text, not made plain or cut ('' for null, and when masking is not possible) */
-    const mask=t=>{if(t==null||!red)return '';try{const r=red(String(t));return typeof r==='string'?r:'';}catch(e){return '';}};
-    /* masked, plain, at most n characters; `fallback` (default 'Finished.') when there is text but masking is not possible */
+    /* the masked text, not made plain or cut ('' for null, and when masking is not possible). Markdown is not stripped (the text is shown as
+       it is), but a token that only shows once it is stripped is masked too. */
+    const mask=t=>t==null?'':maskRaw(String(t),red);
+    /* masked, plain, at most n characters (no n: not cut); `fallback` (default 'Finished.') when there is text but masking is not possible */
     const ex=(t,n,fallback)=>{if(t==null||t==='')return '';const fb=fallback==null?'Finished.':fallback;if(!red)return fb;
-      let m;try{m=red(String(t));}catch(e){return fb;}if(typeof m!=='string')return fb;return cut(plain(m,true),n);};
+      const p=maskPlain(String(t),red,true);if(p===null)return fb;return n==null?p:cut(p,n);};
     return {mask,excerpt:ex,plain,ready:!!red};
   }
-  return {create,plain,excerpt,maskLabel};
+  return {create,plain,plainKeep,unesc,maskRaw,excerpt,maskLabel};
 });

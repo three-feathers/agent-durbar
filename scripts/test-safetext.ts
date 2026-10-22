@@ -10,6 +10,8 @@ const { cutText } = require(path.join(R, 'cuttext.js')) as { cutText: (t: unknow
 const S = require(path.join(R, 'safetext.js')) as {
   create(o: { redact?: ((s: string) => string) | null; cut?: ((s: string, n: number) => string) | null }): { mask(t: unknown): string; excerpt(t: unknown, n: number, fb?: string): string; plain(t: unknown): string; ready: boolean };
   plain(t: unknown, codeWord?: boolean): string;
+  plainKeep(t: unknown, codeWord?: boolean): string;
+  unesc(t: unknown): string;
   excerpt(raw: unknown, redact: unknown, n?: number, codeWord?: boolean): string;
   maskLabel(raw: unknown, kind: string, mask: Record<string, unknown>): string;
 };
@@ -71,6 +73,29 @@ eq(boom.mask(raw), '', 'a throwing redact: mask gives nothing');
   ok(!hasSecret(out), 'big input masked');
 }
 
+// tokens that Markdown breaks up: an escaped underscore, a backtick or emphasis inside the token (FR-065, review of #567)
+{
+  const tail = ghp.slice(4);
+  const skTail = sk.slice(8);
+  const cases: Array<[string, string]> = [
+    [`token: gh${'p'}\\_${tail}`, 'escaped underscore'],
+    [`gh\`p_${tail}\` done`, 'backtick inside'],
+    [`use sk-proj_*${skTail}* now`, 'emphasis after the underscore'],
+    [`**Done.** ${ghp} and \`snake_case\``, 'plain control'],
+  ];
+  for (const [txt, what] of cases) {
+    const out = T.excerpt(txt, 300);
+    ok(!/A1b2C3d4|AbCdEfGh/.test(out) && !/ghp|sk-proj/i.test(out.replace('[redacted]', '')), `${what}: ${out}`);
+  }
+  eq(T.excerpt(`**Done.** ${ghp} and \`snake_case\``, 300), 'Done. [redacted] and snakecase', 'the control keeps its words');
+  eq(S.unesc('a\\_b \\* \\`'), 'a_b * `', 'unesc');
+  eq(S.plainKeep('a_b *c* `d`'), 'a_b c d', 'plainKeep keeps the underscore');
+  eq(S.plain('a_b *c* `d`'), 'ab c d', 'plain drops it');
+  eq(T.mask(`x gh\`p_${tail}\` y`).includes('A1b2C3d4'), false, 'mask also catches the split token');
+  eq(T.mask('a_b *c* `d`'), 'a_b *c* `d`', 'mask leaves an ordinary text as it is');
+}
+// excerpt without n is not cut (the wrapper too)
+eq(T.excerpt('word '.repeat(100), undefined as unknown as number), 'word '.repeat(100).trim(), 'create().excerpt without n does not cut');
 // the stateless parts (liveact.js and the page share them)
 eq(S.plain('a\n```js\nx\n```\nb'), 'a b', 'plain: a code block leaves a space');
 eq(S.plain('a\n```js\nx\n```\nb', true), 'a code b', 'plain: the desk variant leaves the word "code"');
