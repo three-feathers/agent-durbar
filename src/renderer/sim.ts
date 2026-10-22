@@ -474,6 +474,29 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }, 400);
     }
     const simTrusted = new Set<string>(); // spec 043: repository agents confirmed in this run
+    // spec 043 FR-017: profile files in memory (no disk): the FR-005 profiles, a Claude one, a read-only one and one with a front matter error
+    type SimPF = { id: string; app: 'copilot' | 'claude'; scope: 'folder' | 'user'; folder?: string; fileName: string; path: string; writable: boolean; note?: string; text: string };
+    const pfHash = (s: string): string => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16).padStart(8, '0').repeat(8); };
+    const pfHead = (t: string): { name?: string; description?: string } => {
+      const m = /^---\n([\s\S]*?)\n---/.exec(t); const o: { name?: string; description?: string } = {};
+      for (const l of (m ? m[1] : '').split('\n')) { const kv = /^(name|description)\s*:\s*(.*)$/.exec(l); if (kv && !(kv[1] in o)) o[kv[1] as 'name' | 'description'] = kv[2].trim().replace(/^(["'])(.*)\1$/, '$2'); }
+      return o;
+    };
+    const SWISS = ROOM_DEFS['mcp-swiss'], BLOG = ROOM_DEFS.blog;
+    let pfN = 0;
+    const pf = (app: SimPF['app'], scope: SimPF['scope'], folder: string | undefined, path: string, text: string, writable = true, note?: string): SimPF =>
+      ({ id: (++pfN).toString(16).padStart(32, 'a'), app, scope, folder, fileName: path.slice(path.lastIndexOf('/') + 1), path, writable, note, text });
+    const simPF: SimPF[] = [
+      pf('copilot', 'folder', SWISS, SIM_PROFILES[0].path, '---\nname: Reviewer\ndescription: Reviews changes and points at risks; never edits files\ntools: [view, grep, glob]\nmodel: sim-deep\n---\n\n# Reviewer\n\nYou review the changes in this repository. **Never edit files.**\n\n## What to check\n\n- Tests cover the new behaviour\n- No secrets in code or logs\n- Paths work on Windows, macOS and Linux\n\nAnswer with a short list of risks, most important first, and link the docs when useful: [Contributing](https://github.com/three-feathers/agent-durbar/blob/main/CONTRIBUTING.md).\n\n```sh\nnpm run typecheck && npm test\n```\n'),
+      pf('copilot', 'folder', SWISS, SIM_PROFILES[2].path, '---\nname: Release helper\ndescription: Prepares release notes from merged pull requests\nmcp-servers:\n  github:\n    type: http\n---\n\nCollect the merged pull requests since the last tag and write release notes grouped by area.\n'),
+      pf('copilot', 'user', undefined, SIM_PROFILES[1].path, '---\nname: Docs writer\ndescription: Writes and tidies documentation in plain English\n---\n\nWrite short sentences. Explain why before how. Keep headings in sentence case.\n'),
+      pf('claude', 'folder', SWISS, SWISS + '/.claude/agents/test-writer.md', '---\nname: test-writer\ndescription: Writes focused unit tests for the change at hand\ntools: Read, Grep, Glob, Edit\nmodel: sonnet\n---\n\nYou write unit tests. One behaviour per test; name it after the behaviour.\n'),
+      pf('claude', 'user', undefined, '~/.claude/agents/house-style.md', '---\nname: house-style\ndescription: Checks wording against the house style\n---\n\nRead the text and list wording that breaks the house style.\n', false, 'You cannot write this file.'),
+      pf('copilot', 'folder', BLOG, BLOG + '/.github/agents/blogger.agent.md', '---\nname: Blogger\ndescription: Use when: drafting a post\n---\n\nDraft blog posts in a friendly tone.\n'),
+    ];
+    const pfInfo = (f: SimPF) => { const h = pfHead(f.text); return { id: f.id, app: f.app, scope: f.scope, ...(f.folder ? { folder: f.folder } : {}), fileName: f.fileName, path: f.path, name: h.name || f.fileName.replace(/(\.agent)?\.md$/, ''), ...(h.description ? { description: h.description } : {}), size: f.text.length, writable: f.writable, ...(f.note ? { note: f.note } : {}) }; };
+    /** As main (FR-020): each folder with an id (a hash of its path); New profile sends the id back. */
+    const pfFolders = (): { id: string; path: string }[] => [...new Set(sims.map((s) => s.info.cwd))].map((p) => ({ id: pfHash('folder\0' + p).slice(0, 32), path: p }));
     const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
       attrib: new Map<string, string>() };
@@ -1183,6 +1206,39 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         emit({ type: 'agentProfile', sessionId: id, timestamp: now(), profile: p } as AgentEvent);
         return { ok: true, profile: p };
+      },
+      // spec 043 FR-017: profile files in memory
+      listProfileFiles: async () => ({ ok: true, folders: pfFolders(), files: simPF.map(pfInfo), userDirs: { copilot: '~/.copilot/agents', claude: '~/.claude/agents' } }),
+      readProfileFile: async (fileId) => {
+        const f = simPF.find((x) => x.id === fileId);
+        return f ? { ok: true as const, info: pfInfo(f), text: f.text, sha256: pfHash(f.text), eol: 'lf' as const } : { ok: false as const, error: 'That profile file is not in the list any more.' };
+      },
+      saveProfileFile: async (fileId, text, baseSha, overwrite) => {
+        const f = simPF.find((x) => x.id === fileId);
+        if (!f) return { ok: false as const, error: 'The file was removed or moved since you opened it.', conflict: true };
+        if (!f.writable) return { ok: false as const, error: f.note || 'You cannot write this file.' };
+        if (overwrite !== true && pfHash(f.text) !== baseSha) return { ok: false as const, conflict: true, error: 'The file changed on disk since you opened it.' };
+        f.text = String(text);
+        return { ok: true as const, sha256: pfHash(f.text), info: pfInfo(f) };
+      },
+      createProfileFile: async (app, place, name, template) => {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) || name.includes('..') || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(name)) return { ok: false as const, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
+        const folder = place === 'user' ? undefined : pfFolders().find((x) => x.id === place)?.path;
+        if (place !== 'user' && !folder) return { ok: false as const, error: 'That folder is not in the office any more: choose where to save it again.' };
+        const dir = place === 'user' ? (app === 'copilot' ? '~/.copilot/agents' : '~/.claude/agents') : folder + (app === 'copilot' ? '/.github/agents' : '/.claude/agents');
+        const file = dir + '/' + (app === 'copilot' ? name + '.agent.md' : name + '.md');
+        if (simPF.some((x) => x.path === file)) return { ok: false as const, error: file.slice(file.lastIndexOf('/') + 1) + ' exists already.' };
+        // the shared templates (src/shared/profiletemplates.ts), loaded after exports-shim.js; read at call time
+        const tpl = (self as unknown as { exports?: { profileTemplate?: (a: string, n: string, k?: string) => string } }).exports?.profileTemplate;
+        if (!tpl) return { ok: false as const, error: 'The templates are not loaded.' };
+        const f = pf(app, place === 'user' ? 'user' : 'folder', folder, file, tpl(app, name, template === 'standard' ? 'standard' : 'success'));
+        simPF.push(f);
+        return { ok: true as const, id: f.id, info: pfInfo(f) };
+      },
+      openProfileInVSCode: async (fileId) => {
+        const f = simPF.find((x) => x.id === fileId);
+        if (f) console.info('[sim] would open the profile file in VS Code:', f.fileName);
+        return f ? { ok: true } : { ok: false, error: 'That profile file is not in the list any more.' };
       },
       // spec 044: scheduled prompts in memory; a 1 s check sends through the simulated agents (no credits)
       listSchedules: async () => ({ pausedAll: simSched.pausedAll, schedules: simSched.list.map((x) => ({ ...x })) }),

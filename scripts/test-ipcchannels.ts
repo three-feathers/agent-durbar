@@ -95,6 +95,7 @@ const FROM_APP = [
   'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:setMode', 'agents:setRemote',
   'app:dismissSinceAway', 'app:sinceAway',
   'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run',
+  'profiles:create', 'profiles:save', // spec 043 FR-011: writes to profile files
   'schedules:remove', 'schedules:runNow', 'schedules:save',
 ];
 assert.strictEqual(new Set(FROM_APP).size, FROM_APP.length, 'no channel twice in the list');
