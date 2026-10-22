@@ -15,7 +15,7 @@ const assert = require('assert');
 const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const LONG = ('Check the build, then list what changed since yesterday and what is still open. ').repeat(30).slice(0, 2000);
+const LONG = ('Check the build, then list what changed since yesterday and what is still open. ').repeat(30).slice(0, 1999) + 'x'; // exactly 2,000 characters, none of them trailing space
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -46,7 +46,7 @@ module.exports = async (ctx) => {
     await add('alpha interval', { every: '45' });
     await add('bravo daily', { kind: 'daily', daily: '09:15' });
     await add('charlie once', { kind: 'once' });
-    await add(LONG, { every: '120', cap: '3' });
+    await add(LONG, { kind: 'every', every: '120', cap: '3' });
     let before = await rows();
     assert.strictEqual(before.length, 4);
     const [A, B, C, D] = before.map((r) => r.id);
@@ -138,7 +138,7 @@ module.exports = async (ctx) => {
     await H.load({ w, h });
     await H.calm();
     await openDlg();
-    await add('once and done');
+    await add('once and done', { kind: 'once' });
     const O = (await rows())[0].id;
     await js(`(()=>{if(!window.__realNow)window.__realNow=Date.now;const o=window.__realNow;window.__skew=3*3600e3;Date.now=()=>o.call(Date)+window.__skew;return true})()`);
     await until(`document.querySelector('#sdList .sc-row small').textContent.includes('done')`, 15000);
