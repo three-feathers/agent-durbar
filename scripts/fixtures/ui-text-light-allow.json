@@ -64,6 +64,7 @@
   "p.scr-warn > b",
   "section.scr-sec > p.scr-note.ok",
   "section.scr-sec > p.scr-warn",
+  "span.ab-act > button.btn.primary",
   "span.ib-ans > button.btn.sm.primary",
   "span.ns-act > button.btn.primary",
   "th > span.mtag.warn"
