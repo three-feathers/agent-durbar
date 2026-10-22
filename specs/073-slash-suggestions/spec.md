@@ -83,19 +83,25 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
 - **FR-002 Discovery rules (shared, pure where possible).** One module reads entries for every adapter: only inside the session's
   folders (workspace roots) and the documented user directories; real paths checked so no symbolic link leads out of its directory; at
   most 100 files per directory and 300 in total; files over 64 KB skipped; listing reads at most the first 8 KB of a file; no shell, no
-  execution; file contents are never logged.
+  execution; file contents are never logged. A discovery is cached per set of places (one folder or workspace and its user
+  directories) and reused while it is under 30 s old **and** none of the places' directories changed (mtime); opening the list
+  (`listSlashCommands`) always reads afresh and refreshes the cache (review on #535).
 - **FR-003 Front matter.** `name` (else the file or folder name), `description` (one line, cut to 200 characters),
   `argument-hint` (cut to 80). Entries a file marks `user-invocable: false` are left out.
 - **FR-004 Places per app.**
   - Claude Code: each folder's `.claude/skills/<name>/SKILL.md` and `.claude/commands/*.md`; the user's `skills` and `commands` under
     `CLAUDE_CONFIG_DIR` (default `~/.claude`). Built-ins: the `commands` of the CLI's `initialize` answer (no prompt), minus FR-007.
   - GitHub Copilot: each folder's `.github/skills`, `.claude/skills` and `.agents/skills` (`<name>/SKILL.md`); the user's
-    `~/.copilot/skills` and `~/.agents/skills`. No built-ins (FR-009). `.github/prompts/*.prompt.md` is a VS Code feature that the
+    `$COPILOT_HOME/skills` (default `~/.copilot`; GitHub docs: `COPILOT_HOME` replaces the whole `~/.copilot` path, `read:`) and
+    `~/.agents/skills`. No built-ins (FR-009). `.github/prompts/*.prompt.md` is a VS Code feature that the
     Copilot CLI does not read, so it is not listed.
   - Codex: each folder's `.agents/skills/<name>/SKILL.md`; the user's `~/.agents/skills` and `$CODEX_HOME/skills`; custom prompts in
     `$CODEX_HOME/prompts/*.md` (default `~/.codex`), named `prompts:<name>` as in the Codex CLI. No built-ins (FR-009).
 - **FR-005 Sending a folder or user entry.** When a message starts with `/<name>` and `<name>` is one of the session's folder or user
-  entries (read again at send time), the adapter sends the entry's text instead of the typed line:
+  entries, the adapter sends the entry's text instead of the typed line. A message that does not start with `/<name>` (a plain "hi",
+  a scheduled prompt) is checked with the line pattern first and causes **no** file or directory read; a `/<name>` message uses the
+  FR-002 cache (a fresh discovery only when it is stale) and reads only the one entry's file. The step lives in one helper
+  (`sendWithSlash` in `src/main/agentops.ts`) that main's send path calls; a failing expansion sends the typed text:
   - command or prompt: the file's body (front matter removed) with `$ARGUMENTS` replaced by the rest of the line and `$1`..`$9` by its
     words; when the body has no placeholder and there are arguments, they follow as `ARGUMENTS: …`;
   - skill: a short line naming the skill and its folder, the body of `SKILL.md`, then `ARGUMENTS: …` when there are any;
@@ -103,16 +109,18 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   - Durbar never runs the `!command` lines or reads the `@file` references a Claude command may hold: they are sent as text.
   The chat shows what the user typed, with a small note "Sent the text of <where>".
 - **FR-006 Built-ins are sent as typed.** A built-in is never expanded; the app runs it (Claude Code, `real:` `/context`).
-- **FR-007 Built-ins never offered.** Claude Code built-ins that change settings, permissions, model, effort, MCP, the session's
-  identity or output, or that reach paid cloud or account features (`config`, `permissions`, `model`, `effort`, `fast`, `advisor`,
-  `mcp`, `clear`, `rename`, `color`, `focus`, `output-style`, `autocompact`, `auto-mode-setup`, `reload-plugins`, `reload-skills`,
-  `heapdump`, `doctor`, `debug`, `ultrareview`, `schedule`, `remote-control`, `design*`, `usage-credits`, `extra-usage`,
-  `team-onboarding`, `import`, `agents`, names starting with `_`, and entries described as removed or renamed). Typing them by hand
-  still sends them as today (no new blocking).
+- **FR-007 Built-ins: an allow list (constitution III).** Only Claude Code built-ins on a fixed list of checked, harmless names are
+  offered, and only when the CLI's `initialize` answer lists them: `compact`, `context`, `cost`, `init`, `review`, `security-review`.
+  Any other name (one a later Claude Code adds, such as `sandbox`, `add-dir`, `hooks` or `privacy-settings`; and every name that
+  changes settings, permissions, model, MCP, the session's identity or reaches account features) is not offered, nor is an entry
+  described as removed or renamed. Evidence: `context` is `real:` (run by the CLI, no model call); `compact`, `cost`, `init`, `review`
+  and `security-review` are `read:` from the `initialize` list and Claude Code's docs, not run through Durbar ([KNOWN GAP] T026).
+  Typing any built-in by hand still sends it as today (no new blocking).
 - **FR-008 UI.** An ARIA combobox on the message box (`aria-expanded`, `aria-controls`, `aria-activedescendant`, `aria-autocomplete="list"`)
-  with a `listbox` of `option`s; focus stays in the box. The list sits above the message box inside the composer's width, uses the
-  shared menu look and placement of the toolbar menus (spec 005 FR-037), theme tokens only, text at least 10.5px, and never covers the
-  box. A live region says how many entries match when the list opens. Escape closes the list before anything else listens.
+  with a `listbox` of `option`s; focus stays in the box. The list is a **menu** (`docs/design-rules.md`, #530): the shared menu look,
+  width (`--menu-w`, 320px) and padding (6px), placed above the message box at its left edge with `placeMenu` (spec 005 FR-037), theme
+  tokens only, text at least 10.5px, never over the box. A long name and a long description end in an ellipsis; the row's `title`
+  holds the full name, description and place, so nothing is unreadable (checked with a 64-character name in a 480px panel). A live region says how many entries match when the list opens. Escape closes the list before anything else listens.
 - **FR-009 No false offers.** An app's built-ins are listed only where typing them through Durbar runs them. Copilot (`session.send`
   does not run built-ins, `real:`) and Codex (TUI only, `read:`) list none. [KNOWN GAP] running Copilot built-ins through
   `session.rpc.commands.invoke` is not built.
@@ -148,4 +156,19 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
 
 ## Changes
 
-(none yet)
+### 2026-10-22: review on #535 (rubenlupi)
+
+- **Performance (FR-002, FR-005).** Every send used to run the whole discovery (up to 300 files, synchronously in main) before checking
+  for a leading `/`. Now the line pattern is tested first (no IO for "hi"), discoveries are cached per set of places (30 s and
+  unchanged directory mtimes; opening the list refreshes), and a `/name` send reads only the entry's file. Test: a counting fake fs.
+- **Send path tested (FR-005).** The expansion step moved out of `sendOp` into `sendWithSlash` (`src/main/agentops.ts`), tested with a
+  fake adapter: the expanded text reaches `send`, `where` comes back, a rejected expansion sends the typed text.
+- **Menu rule (FR-008).** The list uses `--menu-w` and the menu padding instead of the box's width and 4px; `check:ui-text` has a
+  `chat-slash-list` surface and a long-name pass in a 480px panel.
+- **Long text (FR-008).** The name ends in an ellipsis; the row's `title` has the full name, description and place.
+- **Allow list (FR-007, FR-009).** Claude built-ins are offered from an allow list, not filtered by a deny list; an unknown built-in is
+  not offered (test). FR-007 now names exactly what the code allows.
+- **Copilot home (FR-004).** The user's Copilot skills are under `$COPILOT_HOME` (default `~/.copilot`); Claude's config folder comes
+  from the shared `claudeConfigDir()`.
+- **Question answered.** Enter on an exact, complete match still inserts `/name ` (a second Enter sends): most entries take arguments,
+  and the key does the same thing for every row.

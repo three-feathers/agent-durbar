@@ -62,7 +62,25 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
   built-ins; Codex prompts are TUI-only) [VIII]
 - [x] T015 `npm run typecheck && npm run build && npm test` (nice), then `/speckit-converge`
 
+## Phase 7: Review on #535 (rubenlupi, 2026-10-22; spec *Changes*)
+
+- [ ] T019 `src/adapters/slashcommands.ts`: `SlashCache` (per set of places; 30 s and unchanged dir mtimes; `refresh` on list) and
+  `expand` that tests the line pattern before any IO and reads only the named entry's file; Claude, Copilot and Codex adapters use it
+  [FR-002, FR-005]
+- [ ] T020 `src/main/agentops.ts`: `sendWithSlash(ad, id, msg)` used by `sendOp` in `src/main/main.ts` [FR-005]
+- [ ] T021 `src/adapters/slashcommands.ts`: `BUILTIN_ALLOW` replaces `BUILTIN_DENY` in `cleanBuiltins` [FR-007, FR-009]
+- [ ] T022 `copilotSlashPlaces` takes the Copilot home (`COPILOT_HOME`, default `~/.copilot`); Claude uses `claudeConfigDir()` [FR-004]
+- [ ] T023 Tests: `scripts/test-slashcommands.ts` (counting fake fs: 0 reads for "hi", one file for a warm `/name`, cache invalidation by
+  mtime and age, refresh; unknown built-in such as `sandbox` not offered; Copilot home), `scripts/test-agentops.ts` (`sendWithSlash`)
+- [ ] T024 `src/renderer/app.js` / `styles.css`: the list at `--menu-w` with the menu padding, name with an ellipsis, the row's `title`
+  with name, description and place; `scripts/check-ui-text.js` surfaces `chat-slash-list` and `chat-slash-long` (64-character name,
+  200-character description, 480px panel); `docs/design-rules.md` names the list among the menus [FR-008]
+- [ ] T025 `npm run typecheck && npm run build && npm test`, `check:slash-suggest`, `check:ui-text` for the new surfaces; mutation checks
+
 ## Known gaps (open tasks, not this PR)
+
+- [ ] T026 [KNOWN GAP] Run the allow-listed Claude built-ins other than `/context` (`compact`, `cost`, `init`, `review`,
+  `security-review`) through Durbar once (real prompts, owner's budget) and record the result in *Vendor behaviour*
 
 - [ ] T016 [KNOWN GAP] Codex: send a chosen skill as the native `{type:'skill'}` input item instead of its text (needs a real check)
 - [ ] T017 [KNOWN GAP] Copilot built-ins through `session.rpc.commands.invoke` (experimental API; needs a real check and a safe list)

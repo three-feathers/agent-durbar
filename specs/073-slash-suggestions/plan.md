@@ -42,7 +42,7 @@ combobox to the composer's message box, built on the toolbar menus' look and pla
 | --- | --- |
 | I Spec Kit | spec, plan, tasks committed before `src/`; analyze run. |
 | II Adapters are plug-ins | Two optional members with normalized types; place rules live in each adapter; renderer and `src/shared` get only `SlashCommandInfo`. |
-| III Safe by default | Reads only inside the folders and user dirs, real paths checked, caps, no shell, no execution of `!` lines, contents never logged. The expanded text goes through the same send and permission broker as any message; nothing widens a mode; built-ins that change Durbar-controlled settings are never offered (FR-007). |
+| III Safe by default | Reads only inside the folders and user dirs, real paths checked, caps, no shell, no execution of `!` lines, contents never logged. The expanded text goes through the same send and permission broker as any message; nothing widens a mode; only allow-listed built-ins are offered, so a new one never appears by default (FR-007). |
 | IV No credits | Simulator and unit tests only; 3 real prompts spent once for the vendor table (owner approved, recorded). |
 | V Calm UI | 10.5px floor, tokens, at most 8 rows, no overlap with the box; keyboard and screen-reader (combobox). |
 | VI Parity | `path`, case-insensitive containment, env-injected homes for tests. |
@@ -53,7 +53,9 @@ combobox to the composer's message box, built on the toolbar menus' look and pla
 
 1. **`src/adapters/slashcommands.ts`** (no Electron): `parseFrontMatter`, `SlashPlace` (`dir`, `root`, `scope`, `kind`,
    `layout: 'skill-dirs' | 'md-files'`, `prefix?`), `discoverSlash(places, opts)` → internal entries (normalized + `file`, `dir`),
-   `expandSlash(text, entries, read)` → `{ text, where } | undefined`, `BUILTIN_DENY` and `cleanBuiltins(list)` for Claude, the caps.
+   `expandSlash(text, entries, read)` → `{ text, where } | undefined`, `BUILTIN_ALLOW` and `cleanBuiltins(list)` for Claude, the caps.
+   `SlashCache` (review on #535): one per adapter; `list(places, {refresh})` and `expand(text, places)`, which tests the `/name` line
+   pattern before any IO, reuses a discovery under 30 s old whose directories' mtimes are unchanged, and reads only the entry's file.
    Places per app: `claudeSlashPlaces(roots, configDir)`, `copilotSlashPlaces(roots, home)`, `codexSlashPlaces(roots, home, codexHome)`
    (pure, tested with `path.posix` / `path.win32` inputs).
 2. **Types**: `SlashCommand` in `src/adapters/types.ts`; `listSlashCommands?` and `expandSlashCommand?` on `AgentAdapter`;
@@ -61,7 +63,8 @@ combobox to the composer's message box, built on the toolbar menus' look and pla
 3. **Adapters**: Claude (folder/user files + cached built-ins), Copilot (files), Codex (files + prompts). The contract test lists both
    members among those `FakeAdapter` does not implement (as `listAgentProfiles`).
 4. **Main**: `src/main/ipc/slash.ts` registers `agents:slashCommands` (window-only, id checked, `ensureLive`, strings re-cut, 300 max);
-   `sendOp` calls `expandSlashCommand` before `send` and returns `slash: where` on success; `infoFor` sets `slash`.
+   `sendOp` calls `sendWithSlash` (`src/main/agentops.ts`: `expandSlashCommand`, then `send`; `slash: where` on success; a rejected
+   expansion sends the typed text); `infoFor` sets `slash`.
 5. **Renderer**: `src/renderer/slashsuggest.js` (a small module loaded before `app.js`, pure helpers exposed on `window.DurbarSlash`:
    `tokenAt(value, caret)`, `filter(entries, q)`, `order`) and the combobox wiring in `app.js` next to the message box handlers; CSS in
    `styles.css` with tokens. The note "Sent the text of …" is added under the user message when `bridge.send` answers `slash`.
