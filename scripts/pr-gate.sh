@@ -37,6 +37,8 @@ NOTE_RE=$(sed 's/\\/\\\\/g' "$(dirname "$0")/pr-status-note.re")
 NOTE="(.body|test(\"$NOTE_RE\"))"
 mine=$( { gh api repos/$R/issues/$p/comments --jq ".[]|select(.user.login==\"$ME\" and ($NOTE|not))|.created_at"; gh api repos/$R/pulls/$p/reviews --jq ".[]|select(.user.login==\"$ME\")|.submitted_at"; gh api repos/$R/pulls/$p/comments --jq ".[]|select(.user.login==\"$ME\")|.created_at"; } | sort | tail -1)
 newer=$( { gh api repos/$R/issues/$p/comments --jq ".[]|select(.user.login!=\"$ME\" and (.user.login|test(\"\\\\[bot\\\\]\$\")|not) and ($NOTE|not))|\"\(.created_at) comment \(.user.login): \(.body[0:160]|gsub(\"\\n\";\" \"))\""; gh api repos/$R/pulls/$p/reviews --jq ".[]|select(.user.login!=\"$ME\" and .body!=\"\")|\"\(.submitted_at) review(\(.state)) \(.user.login): \(.body[0:160]|gsub(\"\\n\";\" \"))\""; gh api repos/$R/pulls/$p/comments --jq ".[]|select(.user.login!=\"$ME\" and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.created_at) line \(.user.login) \(.path): \(.body[0:160]|gsub(\"\\n\";\" \"))\""; } | sort | awk -v m="$mine" '$1>m')
+notes=$( { gh api repos/$R/issues/$p/comments --jq ".[]|select($NOTE)|\"\(.created_at) \(.user.login): \(.body|gsub(\"^\\\\s+\";\"\")|split(\"\\n\")[0])\""; } | sort)
+[ -n "$notes" ] && { echo "status notes, not counted as asks:"; echo "$notes"; }
 if [ -n "$bad" ] || [ "$codeql" != "pass" ] || [ "$alerts" != "0" ] || [ -n "$changes" ] || [ "$threads" != "0" ] || [ -n "$newer" ]; then
   echo "#$p not ready: checks=[$bad] codeql=$codeql alerts=$alerts changes_requested=[$changes] open_threads=$threads"
   [ -n "$newer" ] && { echo "unanswered human comments (read, answer or fix, then rerun):"; echo "$newer"; }

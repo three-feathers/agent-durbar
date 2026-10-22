@@ -49,7 +49,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
 
 ## Team norms
 
-- **Test once, then trust the record.** CI runs the full suites; reviewers read CI for the exact sha and run only mutations, probes and what CI can't cover. Post `reviewing at <sha>` before a review and `checks run at <sha>: …` after your own checks, and answer a round's review list with `taking #N` (AGENTS.md, *Working as a team*).
+- **Test once, then trust the record.** CI runs the full suites; reviewers read CI for the exact sha and run only their own mutations, probes and what CI can't cover (a macOS-only path that cannot run is written "not verified on macOS"). A `reviewing at` note expires after 1 hour without a review. Post `reviewing at <sha>` before a review and `checks run at <sha>: …` after your own checks, and answer a round's review list with `taking #N` (AGENTS.md, *Working as a team*).
 - **Share what you learn.** Your agent's private memory helps only you. Durable lessons (tool pitfalls, checked vendor behaviour, review techniques) go into [docs/agent-notes.md](agent-notes.md), dated, with evidence. Team rules go into [AGENTS.md](../AGENTS.md).
 - **OKs in the team chat count** for pre-releases and repository actions when they come from one of the owners (Vikram, Paco, Ruben), directly or relayed by their bots in the group. They do not cover money, invitations, repo settings or chat access.
 - **Real agent-app checks.** Vikram's agent has Copilot, Claude Code and Codex signed in to real accounts and may spend AI credits on validations (owner, 2026-10-20). A PR that needs a real-account check can ask for one in the group; the result is recorded as `real:` with its cost.
