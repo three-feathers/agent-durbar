@@ -1,5 +1,11 @@
 # Feature Specification: Slash suggestions in the chat composer
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Slash suggestions: `/` in the message box lists the folder's, the user's and the app's skills, commands and prompt files; a folder or user entry is sent as its file's text
+status: **built** 2026-10-22 (`test:slashcommands`, `check:slash-suggest`); real: Claude Code (folder command not loaded, built-in `/context` runs), Copilot (`session.send` does not run built-ins); Codex read only
+-->
+
 **Feature Branch**: `073-slash-suggestions` (stacked on `005-composer-toolbar`, PR #498)
 **Created**: 2026-10-22
 **Status**: Built 2026-10-22 (unit tests, simulator driver; vendor behaviour checked with 3 real prompts, Codex read only)
@@ -90,7 +96,7 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   `argument-hint` (cut to 80). Entries a file marks `user-invocable: false` are left out.
 - **FR-004 Places per app.**
   - Claude Code: each folder's `.claude/skills/<name>/SKILL.md` and `.claude/commands/*.md`; the user's `skills` and `commands` under
-    `CLAUDE_CONFIG_DIR` (default `~/.claude`). Built-ins: the `commands` of the CLI's `initialize` answer (no prompt), minus FR-007.
+    `CLAUDE_CONFIG_DIR` (default `~/.claude`). Built-ins: the `commands` of the CLI's `initialize` answer (no prompt), only those on the FR-007 allow list.
   - GitHub Copilot: each folder's `.github/skills`, `.claude/skills` and `.agents/skills` (`<name>/SKILL.md`); the user's
     `$COPILOT_HOME/skills` (default `~/.copilot`; GitHub docs: `COPILOT_HOME` replaces the whole `~/.copilot` path, `read:`) and
     `~/.agents/skills`. No built-ins (FR-009). `.github/prompts/*.prompt.md` is a VS Code feature that the
