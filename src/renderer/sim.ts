@@ -35,7 +35,7 @@ interface SimOptions {
   floors?: boolean;
   /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`). */
   titles?: boolean;
-  /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits. */
+  /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits; agent 2 has one long unbroken URL-like name (FR-019). */
   names?: 'long';
   /** Spec 052 FR-170 (T155): long replies and long sub-agent prompts that run to the right edge of the chat, to check that the Copy button covers no text (page address `simreply=long`). */
   reply?: 'long';
@@ -139,6 +139,8 @@ function simNameError(v: unknown): string {
   return '';
 }
 const LONG_TEXT = 'Every paragraph here is long on purpose so that its lines run to the right edge of the chat, where a Copy button must never cover a word. '.repeat(6).trim() + '\n\n```\nconst aLineThatRunsPastTheRightEdgeOfTheChat = "' + 'x'.repeat(300) + '";\n```'; // ends in a code block whose last line runs to the right edge (clipped by its own scroll), so the reply's Copy button always sits over text when it is misplaced
+/* spec 059 FR-019 (issue #536): a name that is one unbroken token, like a first prompt that holds a URL; not a real address */
+const SIM_LONG_URL_NAME = 'https://example.invalid/teams/consumer-sites/SitePages/Consumer-Onboarding-Checklist-Overview/Details-2026-Q4-Planning.aspx';
 const SIM_LONG_NAMES = ['Billing refactor: split invoice and credit-note flows', 'Canton lookup duplicates: reproduce and fix the join', 'Release notes for the next minor version and changelog', 'Tidy the registry modules and update every import path'];
 const SIM_USD_CAPS: Record<string, number> = { Ada: 0.01 };
 const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
@@ -294,6 +296,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       (info as AgentInfo & { roomName?: string; role?: string }).role = role;
       info.renameCap = caps(info.adapterId ?? 'copilot').renameSession; // spec 059: what a rename does in the agent app
       if (opts.names === 'long') info.alias = (SIM_LONG_NAMES[i % SIM_LONG_NAMES.length] + ' ' + (i + 1)).padEnd(60, '.').slice(0, 60);
+      if (opts.names === 'long' && i === 1) info.alias = SIM_LONG_URL_NAME; // FR-019: one agent whose name has no space
       return {
         info, room, state, intent, helpers, files,
         prompt: i === 0
