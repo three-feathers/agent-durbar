@@ -81,6 +81,9 @@ const WRAPS: Array<(v: string) => string> = [
   (v) => `_${v}_`, (v) => `__${v}__`, (v) => `___${v}___`, (v) => `*_${v}_*`, (v) => `**${v}**`, (v) => `~~${v}~~`,
   (v) => '`' + v + '`', (v) => `_\`${v}\`_`, (v) => `(${v})`, (v) => `[${v}](x)`, (v) => `"${v}"`, (v) => `${v}_`,
   (v) => `my_${v}`, (v) => `MY__${v}`, (v) => `____${v}____`, (v) => `a_b_c_d_${v}`, (v) => `my_long_snake_case_${v}`,
+  // T129 (review of PR #543): right after a percent-encoded byte in a URL query, double-encoded too, and after the `&` and `+` separators
+  ...['%3D', '%2F', '%22', '%3A', '%3d', '%253D', '%25253A'].map((e) => (v: string) => `https://x.example/?q=token${e}${v}&x=1`),
+  (v) => `https://x.example/?q=%22${v}%22&x=1`, (v) => `https://x.example/?a=1&${v}&x=1`, (v) => `https://x.example/?q=a+${v}+b`,
 ];
 for (const [k, v] of Object.entries(planted)) {
   for (const wrap of WRAPS) {
@@ -110,6 +113,17 @@ for (const [k, v] of Object.entries(planted)) {
   }
 }
 assert.strictEqual(maskTokenShapes('$1 $& plain text', '[x]'), '$1 $& plain text', 'maskTokenShapes: no shape, no change');
+// T129: exact output after a percent-encoded byte; the escape and the rest of the query stay
+assert.strictEqual(redact('https://x.example/?q=token%3D' + planted.ghp + '&x=1', {}), 'https://x.example/?q=token%3D[redacted]&x=1', 'ghp after %3D');
+assert.strictEqual(redact('?q=%22' + planted.sk + '%22', {}), '?q=%22[redacted]%22', 'sk- between %22');
+assert.strictEqual(redact('?q=token%253D' + planted.aws + '&x', {}), '?q=token%253D[redacted]&x', 'aws after a double-encoded %253D');
+assert.strictEqual(redact('?q=%3D' + planted.jwt + '&x', {}), '?q=%3D[redacted]&x', 'a JWT after %3D');
+assert.strictEqual(maskTokenShapes('?q=%2F' + planted.github_pat, '[s]'), '?q=%2F[s]', 'maskTokenShapes: github_pat after %2F');
+// T129: plain words, hex and percent signs in normal text stay (the new start needs `%` and two hex digits right before a shape)
+for (const ok of ['50% off, 100%3Dfine', 'colour %23ff0000 and deadbeef cafe0123456789abcdef', 'a%3Dghp_short x%41BC', '%3Dsk-short %2FAKIA123',
+  'q=%3DeyJ.a.b', '%3DBearer', '%ZZghp_' + 'x'.repeat(36), '3Dghp_' + 'x'.repeat(36), '%3' + planted.ghp.slice(0, 1) + 'hp', 'ab%3Dsk-risk-management']) {
+  assert.strictEqual(redact(ok, {}), ok, `near miss kept: ${ok}`);
+}
 assert.strictEqual(maskTokenShapes('_' + planted.ghp + '_', '$&'), '_$&_', 'maskTokenShapes: the mask is literal, not a replacement pattern');
 
 // 4. near misses stay intact
@@ -199,6 +213,23 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
     jwtWordsDot: (' a_b_c_d_eyJaaaaa.aaaaa').repeat(MB / 23),
     jwtUnderRun: '_'.repeat(MB),
     awsUnder: '_AKIA'.repeat(MB / 5),
+    // T129: starts right after a percent-encoded byte (`%XX`, `%25XX`)
+    pct: '%3D'.repeat(MB / 3),
+    pctDouble: '%25'.repeat(MB / 3),
+    pctGh: '%3Dghp_'.repeat(MB / 7),
+    pctGhLong: '%3Dghp_' + 'a'.repeat(MB),
+    pctPat: '%3Dgithub_pat_'.repeat(MB / 14),
+    pctSk: '%253Dsk-'.repeat(MB / 8),
+    pctSkShort: ('%3Dsk-' + 'a'.repeat(19) + ' ').repeat(MB / 26),
+    pctBearer: '%22Bearer '.repeat(MB / 10),
+    pctAuth: '%22authorization '.repeat(MB / 17),
+    pctUrl: '%3Da://x:'.repeat(MB / 9),
+    pctUrlLong: '%3Da://x:' + 'y'.repeat(MB),
+    pctAws: '%3DAKIA'.repeat(MB / 7),
+    pctJwt: '%3DeyJ'.repeat(MB / 6),
+    pctJwtLong: ('%3DeyJ' + 'a'.repeat(4090)).repeat(MB / 4096),
+    pctJwtWords: ('%3D' + ('a'.repeat(40) + '_').repeat(4) + 'eyJ' + 'b'.repeat(4096) + '.').repeat(MB / 4268),
+    pctJwtDot: '%3DeyJaaaaa.'.repeat(MB / 12),
   };
   // Each case runs in a worker thread that times redact() itself with the thread's own CPU time (`process.threadCpuUsage()`, Node 22
   // and later; wall time from `hrtime` only on Node 20.19, which has no per-thread CPU time), so a busy runner cannot fail the test;

@@ -16,14 +16,21 @@ const LONG_OK_NAME = /^(PATH|PATHEXT|PSMODULEPATH|HOME|HOMEPATH|HOMEDRIVE|USERPR
    through (spec 012 FR-080 delta 2026-10-22). JWTs keep their stricter start (never after a letter, digit, `_` or `-`, so a long
    base64url run is never rescanned from inside and the pattern stays linear); the wrapping is a bounded prefix instead: up to 8
    underscores and up to 4 snake_case words (`my_eyJ…`, `MY__eyJ…`, `____eyJ…`), kept in the output (T128). */
+/* A token may also start right after a percent-encoded byte (`?q=token%3Dghp_…`, `%22ghp_…%22`, `%2F`, `%3A`), where the char before
+   it is a hex digit, and after a `%` that is itself encoded up to 4 times (`%253D`) (spec 012 FR-080 delta 2026-10-22, T129, review
+   of PR #543). The lookbehind is bounded and `%` is in no shape's own class, so a run gains at most one extra start: still linear. */
+const PCT = String.raw`(?<=%(?:25){0,4}[0-9A-Fa-f]{2})`;
+/** Where a token shape may start: no letter or digit before it, or right after a `%XX` escape. */
+const START = String.raw`(?:(?<![A-Za-z0-9])|${PCT})`;
+const shape = (body: string, flags = 'g'): RegExp => new RegExp(START + body, flags);
 /** Bare token shapes (GitHub, OpenAI/Anthropic, Bearer, JWT, AWS); also used by the folder-setup display (spec 061 FR-014). */
 const TOKEN_SHAPES: RegExp[] = [
-  /(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{20,}/g,
-  /(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}/g,
-  /(?<![A-Za-z0-9])sk-(?:ant-)?[A-Za-z0-9_-]{20,}/g,
-  /(?<![A-Za-z0-9])Bearer\s{1,8}[A-Za-z0-9._~+/=-]{8,}/g,
-  /(?<![A-Za-z0-9_-])(_{0,8}(?:[A-Za-z0-9]{1,40}_{1,3}){0,4})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}/g,
-  /(?<![A-Za-z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])/g,
+  shape(String.raw`gh[pousr]_[A-Za-z0-9]{20,}`),
+  shape(String.raw`github_pat_[A-Za-z0-9_]{20,}`),
+  shape(String.raw`sk-(?:ant-)?[A-Za-z0-9_-]{20,}`),
+  shape(String.raw`Bearer\s{1,8}[A-Za-z0-9._~+/=-]{8,}`),
+  new RegExp(String.raw`(?:(?<![A-Za-z0-9_-])|${PCT})(_{0,8}(?:[A-Za-z0-9]{1,40}_{1,3}){0,4})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}`, 'g'),
+  shape(String.raw`(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])`),
 ];
 
 /** Replaces every bare token shape with `mask` (a JWT's leading underscores and words stay). Linear; no env rules, no header or URL rules. */
@@ -36,8 +43,8 @@ export function maskTokenShapes(text: string, mask: string): string {
 
 /** Key-like shapes. Each is linear: bounded classes, no nested quantifiers, starts anchored where a token cannot already be running. Order matters: header and URL first. */
 const PATTERNS: Array<[RegExp, string]> = [
-  [/(?<![A-Za-z0-9])(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?[^\s",;]+/gi, '$1[redacted]'],
-  [/(?<![A-Za-z0-9])([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{1,200}:[^\s/@"]{1,200}@/gi, '$1[redacted]@'],
+  [shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?[^\s",;]+`, 'gi'), '$1[redacted]'],
+  [shape(String.raw`([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{1,200}:[^\s/@"]{1,200}@`, 'gi'), '$1[redacted]@'],
   [/(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"]{0,2000}/g, '[redacted]'],
 ];
 
