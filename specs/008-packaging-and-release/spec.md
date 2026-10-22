@@ -1,5 +1,11 @@
 # Feature Specification: Packaging, CI and draft releases
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: index
+title: Packaging, CI, draft releases
+status: implemented (unsigned); 2026-10-20 delta: app name and profile folder (#353, T037) built (unit tests, Linux simulator, a dev run on a real Mac by Paco; a packaged Mac build and Windows not run); 2026-10-21 delta: packaged display names (#384, T039) built on Linux (unit tests, `dist:linux`); Windows and macOS asserted only in CI; T094 (2026-10-21, #414): the simulator drivers share `scripts/driver-helpers.js` (FR-097); T096 (2026-10-22): a test run keeps drawing when another window covers it (FR-103; Linux shared-display run, Windows runner pending)
+-->
+
 **Feature Branch**: `008-packaging-and-release` (reverse-engineered; packaging milestone)
 **Created**: 2026-10-16
 **Status**: Implemented, **unsigned** alpha (reverse-engineered from `package.json` build config, `scripts/prepare-runtime.js`, `after-pack.js`, `.github/workflows/*.yml`, README, CONTRIBUTING)

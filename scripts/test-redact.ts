@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -57,16 +57,44 @@ for (const [k, v] of Object.entries(planted)) {
   assert.ok(out.startsWith('before ') && out.endsWith(' after') || k === 'authHeader', `pattern ${k}: surroundings kept`);
 }
 assert.strictEqual(redact('git clone https://alice:hunter2pass@example.com/r.git', {}), 'git clone https://[redacted]@example.com/r.git', 'url creds: host kept');
-// a leading `_` (Markdown emphasis, snake_case) is not a word boundary: the patterns must not rely on `\b` (spec 001, review of #532)
+// 3b. `\b` does not separate `_` from a letter: a token in Markdown emphasis or glued to a snake_case word is masked too
+//     (spec 012 FR-080 delta 2026-10-22). Every kind x every wrapping; the whole secret part must be gone.
+const secretPartOf = (k: string, v: string): string =>
+  k === 'urlCreds' ? 'hunter2pass' : k === 'authHeader' ? 'dXNlcjpwYXNzd29yZA' : k === 'bearer' ? 'abcdef1234567890' : v.slice(-12);
+const WRAPS: Array<(v: string) => string> = [
+  (v) => `_${v}_`, (v) => `__${v}__`, (v) => `___${v}___`, (v) => `*_${v}_*`, (v) => `**${v}**`, (v) => `~~${v}~~`,
+  (v) => '`' + v + '`', (v) => `_\`${v}\`_`, (v) => `(${v})`, (v) => `[${v}](x)`, (v) => `"${v}"`, (v) => `${v}_`,
+  (v) => `my_${v}`, (v) => `MY__${v}`, (v) => `____${v}____`, (v) => `a_b_c_d_${v}`, (v) => `my_long_snake_case_${v}`,
+];
 for (const [k, v] of Object.entries(planted)) {
-  const secretPart = k === 'urlCreds' ? 'hunter2pass' : k === 'authHeader' ? 'dXNlcjpwYXNzd29yZA' : k === 'bearer' ? 'abcdef1234567890' : v.slice(-12);
-  /* a JWT keeps its stricter start (linear on long base64url runs): after up to 3 underscores, not glued to a word */
-  for (const w of [`_${v}_`, `__${v}__`, `*_${v}_*`, ...(k === 'jwt' ? [] : [`my_${v}`])]) {
+  for (const wrap of WRAPS) {
+    const w = wrap(v);
     const out = redact(`see ${w} now`, {});
-    assert.ok(!out.includes(secretPart), `pattern ${k} in ${w.slice(0, 8)}…: secret part gone (${out})`);
+    assert.ok(!out.includes(secretPartOf(k, v)), `pattern ${k} in ${w.slice(0, 9)}…: secret part gone (${out})`);
+    assert.ok(out.startsWith('see ') && out.endsWith(' now'), `pattern ${k} in ${w.slice(0, 9)}…: surroundings kept`);
   }
 }
-assert.strictEqual(redact('_' + planted.aws + '_', {}), '_[redacted]_', 'aws key between underscores');
+assert.strictEqual(redact('_' + planted.ghp + '_', {}), '_[redacted]_', 'emphasis kept around a GitHub token');
+assert.strictEqual(redact('__' + planted.aws + '__', {}), '__[redacted]__', 'aws key between underscores');
+assert.strictEqual(redact('**' + planted.sk + '**', {}), '**[redacted]**', 'sk- key in bold');
+assert.strictEqual(redact('_' + planted.jwt + '_', {}), '_[redacted]', 'a JWT keeps its leading underscore (its class takes the closing one)');
+// T128: a JWT glued to a word or after 4+ underscores is masked too, and its prefix stays
+assert.strictEqual(redact('x_' + planted.jwt, {}), 'x_[redacted]', 'a JWT glued to a word');
+assert.strictEqual(redact('MY__' + planted.jwt, {}), 'MY__[redacted]', 'a JWT after a word and two underscores');
+assert.strictEqual(redact('____' + planted.jwt, {}), '____[redacted]', 'a JWT after four underscores');
+assert.strictEqual(redact('a_b_c_d_' + planted.jwt, {}), 'a_b_c_d_[redacted]', 'a JWT after four snake_case words');
+assert.strictEqual(redact('my_eyJ.a.b plain_snake_case risk_eyJ', {}), 'my_eyJ.a.b plain_snake_case risk_eyJ', 'snake_case words without a JWT stay');
+// the shared shapes (spec 061 FR-014's folder-setup display reuses them) with their own mask word
+for (const [k, v] of Object.entries(planted)) {
+  if (k === 'authHeader' || k === 'urlCreds') continue; // header and URL rules belong to redact() only
+  for (const wrap of WRAPS) {
+    const w = wrap(v);
+    const out = maskTokenShapes(`see ${w} now`, '[secret hidden]');
+    assert.ok(out.includes('[secret hidden]') && !out.includes(secretPartOf(k, v)), `maskTokenShapes ${k} in ${w.slice(0, 9)}…: hidden (${out})`);
+  }
+}
+assert.strictEqual(maskTokenShapes('$1 $& plain text', '[x]'), '$1 $& plain text', 'maskTokenShapes: no shape, no change');
+assert.strictEqual(maskTokenShapes('_' + planted.ghp + '_', '$&'), '_$&_', 'maskTokenShapes: the mask is literal, not a replacement pattern');
 
 // 4. near misses stay intact
 for (const ok of ['risk-management and task-list', 'sk-short', 'the sk- prefix', 'ghp', 'ghp_short', 'AKIA123', 'v1.2.3', 'file.name.ext', 'https://example.com/a:b', 'user@example.com', 'Bearer', 'a Bearer of news', 'eyJ.a.b']) {
@@ -138,13 +166,24 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
     tidLong: 'tid=0123abcd;' + 'a;'.repeat(MB / 2),
     aws: 'AKIA'.repeat(MB / 4),
     awsLong: 'ASIA' + 'A'.repeat(MB),
-    // starts after `_` (review of #532): runs of underscore-led shapes
+    // starts after `_` (spec 012 FR-080 delta 2026-10-22): runs of underscore-led and snake_case-glued shapes
     ghUnder: '_ghp_'.repeat(MB / 5),
+    ghGlued: 'a_ghp_'.repeat(MB / 6),
     patUnder: '_github_pat_'.repeat(MB / 12),
     skUnder: '_sk-'.repeat(MB / 4),
+    skShort: ('_sk-' + 'a'.repeat(19) + ' ').repeat(MB / 24),
     bearerUnder: '_Bearer _'.repeat(MB / 9),
+    authUnder: '_authorization '.repeat(MB / 15),
+    urlUnder: '_a://x:'.repeat(MB / 7),
     jwtUnder: '___eyJ'.repeat(MB / 6),
+    jwtUnderDot: '_eyJaaaaa.'.repeat(MB / 10),
     jwtUnderLong: '_eyJ' + 'a_'.repeat(MB / 2),
+    // T128: the JWT's bounded prefix (underscores and up to 4 snake_case words)
+    jwtGlued: ('a_eyJ'.repeat(4) + 'a'.repeat(4000)).repeat(MB / 4020),
+    jwtWords40: (' ' + 'a'.repeat(40) + '_').repeat(MB / 42),
+    jwtWords5: (' ' + ('a'.repeat(40) + '_').repeat(5) + 'eyJ' + 'b'.repeat(4096)).repeat(MB / 4400),
+    jwtWordsDot: (' a_b_c_d_eyJaaaaa.aaaaa').repeat(MB / 23),
+    jwtUnderRun: '_'.repeat(MB),
     awsUnder: '_AKIA'.repeat(MB / 5),
   };
   // Each case runs in a worker thread that times redact() itself, so a busy runner cannot fail the test; the 1 s assertion is the

@@ -1,5 +1,11 @@
 # Feature Specification: Clean Office pack — today's office as a theme (spec 036)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 035-040
+title: Clean Office pack: every scene colour a semantic token, scene words, `data-*` ids, per-theme motion presets
+status: **built** (scene output byte-identical to main; `shots-024` reads data ids)
+-->
+
 **Feature Branch**: `035-theme-foundation` (builds on spec 035; one PR for 035-040, issue #129)
 **Created**: 2026-10-18
 **Status**: Implemented on branch `035-theme-foundation` (PR #137): simulator and unit tests, 0 AIU; not released
