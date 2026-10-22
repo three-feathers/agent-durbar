@@ -3,10 +3,15 @@ name: Install check
 # spec 060 T060 (owner, 2026-10-20): on clean macOS, Windows and Linux runners, install each agent app through every route Durbar
 # offers there, first as a new STANDARD (non-admin) user, then as the runner's admin user, and record what works. It uses the app's
 # own code (`scripts/install-check.ts` → HarnessSetup). No account, no sign-in, no AI credits, no secrets. Results: the job summary
-# and an artifact. Manual, or on a pull request that changes the install code or this check.
+# and an artifact. Manual, weekly, or on a pull request that changes the install code or this check. Spec 008 FR-106/FR-108 (owner
+# decision 2026-10-22): macOS only weekly and by hand, not on pull requests; a scheduled failure opens or updates an issue
+# (nightly-watch.yml).
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '7 4 * * 1' # weekly, Monday 04:07 UTC, every OS
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'scripts/install-check.ts'
       - 'src/shared/harnesssetup.ts'
@@ -19,18 +24,25 @@ permissions:
   contents: read
 
 concurrency:
-  group: install-check-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   platforms:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       list: ${{ steps.p.outputs.list }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: p
-        run: echo "list=$(jq -c . .github/platforms.json)" >> "$GITHUB_OUTPUT"
+        # FR-106: a pull request runs every OS in the list except macOS
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = pull_request ]; then f='map(select(startswith("macos") | not))'; else f='.'; fi
+          echo "list=$(jq -c "$f" .github/platforms.json)" >> "$GITHUB_OUTPUT"
 
   install:
     name: Install check (${{ matrix.os }})

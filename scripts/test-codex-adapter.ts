@@ -613,7 +613,7 @@ async function main(): Promise<void> {
       assert.strictEqual(pend.summary, 'write /work/app/src/config.ts (+1 more)', 'the files from the item: ' + pend.summary);
       assert.ok(pend.diff && pend.diff.includes('--- a//work/app/src/config.ts') && pend.diff.includes('+  retries: 3,') && pend.diff.includes('+# Notes'), 'the diff of both changes (patchUpdated is the latest)');
       assert.ok(!pend.diff!.includes(SECRET) && !pend.diff!.includes(ghp) && pend.diff!.includes('[redacted'), 'secrets in the diff are masked');
-      assert.strictEqual(pend.scopeLabel, 'write in app/src/', 'the grant scope is the first file\'s folder');
+      assert.strictEqual(pend.scopeLabel, 'write in app/src/, work/app/', 'the grant scope names the folder of every file (review on #470: not only the first)');
       ad.resolvePermission(sid, pend.requestId, false);
       assert.strictEqual(((await settles('p1', p1)).result as { decision: string }).decision, 'decline');
       // the item completes: it is forgotten, and a request for an unknown item says so instead of a bare "write"

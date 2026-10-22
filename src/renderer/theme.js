@@ -433,7 +433,7 @@
   /* spec 070 FR-021: the text pairs of the AI maker's checks (themegen.ts CONTRAST_PAIRS; test:theme-tokens keeps them equal) */
   const CONTRAST_PAIRS=[['--ink','--bg',4.5],['--ink','--surface',4.5],['--ink','--raised',4.5],['--ink','--card',4.5],['--ink','--card-waiting',4.5],['--ink','--card-error',4.5],['--ink-2','--soft',4.5],['--ink-2','--note',4.5],['--ink-2','--surface',4.5],['--muted','--surface',4.5],['--room-path','--bg',3]]
     .concat(['working','thinking','waiting','idle','error','done'].map(s=>['--pc-'+s,'--pb-'+s,4.5]))
-    .concat([['--surface','--sage-ink',4.5],['--surface','--red-ink',4.5],['--surface','--amber-ink',4.5]]) /* spec 052 FR-169 (#515): primary, danger and warn button text */
+    .concat([['--surface','--sage-ink',4.5],['--surface','--red-ink',4.5],['--surface','--amber-ink',4.5]]) /* spec 052 FR-169: primary, danger and warn button text */
     .concat([['--drop-ink','--drop-bg',4.5],['--brand-mark','--brand-bg',3],['--idle-stub-ink','--idle-stub',3]]);
   const HEX_ANY=/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
   function lum(hex){
@@ -442,7 +442,23 @@
     return 0.2126*ch[0]+0.7152*ch[1]+0.0722*ch[2];
   }
   function ratio(a,b){const [x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+0.05)/(y+0.05);}
-  /* sets failing pairs back to Clean Office in place; returns the keys it set back */
+  /* spec 070 FR-023: the surfaces a theme is built on. A failing pair never changes them, so a dark theme stays dark and a light one light */
+  const BASE_SURFACE=/^--(bg|surface|surface-2|raised|card(-[a-z]+)?|soft|note|pb-[a-z]+|drop-bg|brand-bg|idle-stub)$/;
+  function hex6(v){let h=HEX_ANY.exec(v)[1];if(h.length===3)h=h.split('').map(c=>c+c).join('');return h;}
+  function mixHex(v,to,w){
+    const h=hex6(v),t=hex6(to);
+    const ch=[0,2,4].map(i=>Math.round(parseInt(h.slice(i,i+2),16)*(1-w)+parseInt(t.slice(i,i+2),16)*w));
+    return '#'+ch.map(c=>c.toString(16).padStart(2,'0')).join('')+h.slice(6);
+  }
+  /* the least mix of `v` toward white or black (whichever reads better on `on`) that reaches `min`: the hue stays */
+  function readableOn(v,on,min){
+    const to=ratio('#ffffff',on)>=ratio('#000000',on)?'#ffffff':'#000000';
+    if(ratio(mixHex(v,to,1),on)<min)return mixHex(v,to,1);
+    let lo=0,hi=1;
+    for(let i=0;i<12;i++){const mid=(lo+hi)/2;if(ratio(mixHex(v,to,mid),on)>=min)hi=mid;else lo=mid;}
+    return mixHex(v,to,hi);
+  }
+  /* fixes failing pairs in place, minimally, on the side that is not a base surface (FR-023); returns the keys it changed */
   function contrastFix(t){
     const back=[];
     for(let pass=0;pass<4;pass++){
@@ -451,9 +467,11 @@
         const a=t[fg],b=t[bg];
         if(!HEX_ANY.test(String(a||''))||!HEX_ANY.test(String(b||'')))continue;
         if(ratio(a,b)>=min)continue;
-        if(t[fg]===CLEAN_TOKENS[fg]&&t[bg]===CLEAN_TOKENS[bg])continue;
-        t[fg]=CLEAN_TOKENS[fg];t[bg]=CLEAN_TOKENS[bg];changed=true;
-        for(const k of [fg,bg])if(!back.includes(k))back.push(k);
+        const k=BASE_SURFACE.test(fg)&&!BASE_SURFACE.test(bg)?bg:fg;
+        const v=readableOn(t[k],t[k===fg?bg:fg],min);
+        if(v===t[k])continue;
+        t[k]=v;changed=true;
+        if(!back.includes(k))back.push(k);
       }
       if(!changed)break;
     }
@@ -578,7 +596,7 @@
     currentId=id;
     currentManifest=manifest;
     themeRev++;
-    /* spec 070 FR-021: a text pair that is hard to read falls back as a pair to Clean Office's two values */
+    /* spec 070 FR-021/FR-023: a text pair that is hard to read is fixed minimally on its text or accent side */
     const resolved=resolveTokens(manifest);
     if(!BUILT_IN[id])contrastFix(resolved); /* built-in packs are designed and tested by hand (test:theme); retro's ink is a fill, not text on --bg */
     currentResolved=resolved;
@@ -621,6 +639,11 @@
     const m=loadManifest(id);
     if(!m)return {dropped:[],contrast:[]};
     return {dropped:(m.dropped||[]).slice(),contrast:BUILT_IN[m.id]?[]:contrastFix(resolveTokens(m))};
+  }
+  /* spec 070 FR-024: the colours the fix would adjust in a manifest not saved yet (the AI dialog's preview) */
+  function contrastCheck(manifest){
+    const m=loadManifest(manifest);
+    return m?contrastFix(resolveTokens(m)):[];
   }
   function slot(name){
     const art=currentManifest&&currentManifest.art;
@@ -974,6 +997,7 @@
     themeIdForCache,
     figures,
     fallbacks,
+    contrastCheck,
     TYPED_TOKENS:JSON.parse(JSON.stringify(TYPED_TOKENS)),
     FONT_ALLOW:FONT_ALLOW.slice(),
     CONTRAST_PAIRS:CONTRAST_PAIRS.map(p=>p.slice()),

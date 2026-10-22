@@ -255,7 +255,10 @@
   /* spec 070 FR-022: one line per own theme that could not use some of its values (dropped, or a text pair set back for contrast) */
   function themeFallbackNote(themes){
     if(!window.THEME||!window.THEME.fallbacks)return '';
-    const lines=themes.filter((t)=>t.own).map((t)=>{const f=window.THEME.fallbacks(t.id);const n=f.dropped.length+f.contrast.length;return n?esc(t.name)+': '+n+' value'+(n>1?'s use':' uses')+' the defaults (not usable or hard to read)':'';}).filter(Boolean);
+    const lines=themes.filter((t)=>t.own).map((t)=>{const f=window.THEME.fallbacks(t.id);const d=f.dropped.length,c=f.contrast.length;
+      /* spec 070 FR-022: dropped values use the defaults; hard-to-read colours are adjusted, not set back (FR-023) */
+      const parts=[d?d+' value'+(d>1?'s use':' uses')+' the defaults (not usable)':'',c?c+' colour'+(c>1?'s':'')+' adjusted so text stays readable':''].filter(Boolean);
+      return parts.length?esc(t.name)+': '+parts.join('; '):'';}).filter(Boolean);
     return lines.length?`<p class="scr-note small" role="status" id="thFallbacks">${lines.join('; ')}.</p>`:'';
   }
   async function aiTheme(){
@@ -295,6 +298,10 @@
         if(again&&again.value==='again')continue;return;
       }
       const m=g.manifest, toks=m.tokens||{}, hex=/^#[0-9a-f]{3,6}$/i;
+      /* spec 070 FR-025: colours apart from fonts and shapes; FR-024: what the contrast fix adjusts when the theme is applied */
+      const typed=(window.THEME&&window.THEME.TYPED_TOKENS)||{}, nShape=Object.keys(toks).filter((k)=>Object.prototype.hasOwnProperty.call(typed,k)).length, nCol=Object.keys(toks).length-nShape;
+      const tokenLine=nCol+' colour'+(nCol===1?'':'s')+(nShape?', '+nShape+(nShape===1?' font or shape':' fonts and shapes'):'');
+      const adjusted=(window.THEME&&window.THEME.contrastCheck?window.THEME.contrastCheck(m):[]).length;
       const swatches=['--bg','--surface','--ink','--sage','--blue','--amber','--brand-bg','--desk'].filter((k)=>hex.test(toks[k]||'')).map((k)=>`<span class="ai-sw" title="${esc(k)}" data-col="${esc(toks[k])}"></span>`).join('');
       /* spec 052 (2026-10-21, round 1): say what each word renames (the Clean Office word), never the internal key such as place-library */
       const plain=(k)=>String(window.THEME&&window.THEME.plainWord?window.THEME.plainWord(k):k).split(':')[0];
@@ -303,9 +310,10 @@
       const lookName=(id)=>{const t=window.THEME&&window.THEME.list?window.THEME.list().find((x)=>x.id===lookId(id)):null;return t?t.name:String(id||'');};
       for(;;){
         const pick=await dialog({title:'Theme: '+m.name,wide:true,html:`<div class="ai-sws" aria-hidden="true">${swatches}</div>
-          <p class="dsub">Built on the <b>${esc(lookName(m.ui))}</b> look, with <b>${esc(lookName(m.scene))}</b> people and furniture; ${Object.keys(toks).length} colours.${g.costUsd?` Made for about $${esc(g.costUsd.toFixed(4))} (estimate).`:''}${g.nanoAiu?` Used ${esc(aiCredits(g.nanoAiu))} AI credits (as reported by Copilot).`:''}</p>
+          <p class="dsub">Built on the <b>${esc(lookName(m.ui))}</b> look, with <b>${esc(lookName(m.scene))}</b> people and furniture; ${esc(tokenLine)}.${g.costUsd?` Made for about $${esc(g.costUsd.toFixed(4))} (estimate).`:''}${g.nanoAiu?` Used ${esc(aiCredits(g.nanoAiu))} AI credits (as reported by Copilot).`:''}</p>
           ${words?`<ul class="ai-words">${words}</ul>`:''}
           ${g.warnings&&g.warnings.length?`<p class="scr-note small">${esc(g.warnings.join('; '))}.</p>`:''}
+          ${adjusted?`<p class="scr-note small">${adjusted} colour${adjusted>1?'s':''} adjusted so text stays readable.</p>`:''}
           <p class="scr-note small">Try it shows it now without saving. Discard goes back to the theme you had.</p>`,
           buttons:[{label:'Discard',value:null},{label:'Try again',value:'again'},{label:'Try it',value:'try'},{label:'Save as my theme',value:'save',cls:'primary'}],
           onOpen:(d)=>d.querySelectorAll('[data-col]').forEach((el)=>{if(hex.test(el.dataset.col))el.style.background=el.dataset.col;})}); /* CSSOM, validated hex only */
@@ -668,6 +676,14 @@
     if(!busy&&!grants&&!remote)return null;
     return ['The conversation is kept and resuming spends no AI credits.',busy?'The running turn stops.':'','"Approve for this session" grants are cleared.',remote?'Remote control turns off.':''].filter(Boolean);
   }
+  let mcpDlgHook=null; /* set while a per-agent MCP dialog is open: called with an agent id on each `mcp` event */
+  async function copyText(text,okMsg,ms){
+    try{
+      if(!navigator.clipboard||!navigator.clipboard.writeText)throw new Error('no clipboard');
+      await navigator.clipboard.writeText(text);
+      X.toast(okMsg,ms||2400).classList.add('ok');
+    }catch(e){X.toast('Could not copy to the clipboard.',3200).classList.add('err');}
+  }
   async function agentMcp(a,o){
     if(!X.bridge.agentMcp)return;
     const fixed=!!o&&o.toggle===false; /* this agent kind cannot switch servers while it runs (spec 012 FR-067): shown, with the reason */
@@ -675,13 +691,20 @@
     const load=async()=>X.bridge.agentMcp(a.id);
     let st=await load();
     const restarting=new Set(); /* server names whose Restart is under way (FR-031: the button stays disabled) */
+    const openDet=new Set(); /* server names whose Details are open (kept over a repaint) */
     let sessBusy=false;
     const body=s=>{
       const rows=s.servers.map(x=>{
         const eff=x.defaultOn&&!x.off;
-        const stat=x.status?`<span class="mst ${esc(x.status)}"><i></i>${esc(x.status)}</span>`:'<span class="mst none">not started</span>';
+        const W=window.DurbarMcpWords, sv=W.stateOf(x.status);
+        const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span></span>`;
+        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app:s.app||o&&o.appName});
+        const detOpen=x.error&&openDet.has(x.name);
+        /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
+        const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
+        const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-err="${esc(x.name)}" aria-label="${esc('Error text of '+x.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-copy="${esc(x.name)}" aria-label="${esc('Copy the error text of '+x.name)}">Copy</button></div>`:'';
         const rs=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
-        return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(x.name)}</b><span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${x.error?`<span class="imp-note">${esc(cap(x.error,160))}</span>`:''}</div>
+        return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name" title="${esc(W.plain(x.name,120))}">${esc(x.name)}</b><span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
           <div class="srv-act">${rs}${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
@@ -689,14 +712,38 @@
     };
     let dlg=null;
     /* FR-004 / FR-033: repaint in place and keep the focus on the same control (by server name), so a keyboard user is not thrown out */
-    const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return;
+    /* what the dialog last showed per server: a repaint compares with it and updates it, so a user's own change (switch, Details, Restart) is never announced later */
+    let seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
+    const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return [];
       const f=document.activeElement,inside=f&&dlg.contains(f);
-      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
-      dlg.querySelector('.dbody').innerHTML=body(st);
-      if(!key)return;
-      const btns=[...dlg.querySelectorAll('.dbody button:not([disabled])')];
-      const back=btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1])||(key[0]==='restart'?btns.find(x=>x.dataset.n===key[1]):null);
-      if(back)back.focus();};
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      const errTop=key&&key[0]==='err'?f.scrollTop:0;
+      const bodyEl=dlg.querySelector('.dbody'),top=bodyEl.scrollTop;
+      bodyEl.innerHTML=body(st);bodyEl.scrollTop=top; /* FR-004: the scroll position stays */
+      if(key){
+        const pre=key[0]==='err'?[...dlg.querySelectorAll('.dbody pre[data-err]')].find(x=>x.dataset.err===key[1]):null;
+        if(pre){pre.focus();pre.scrollTop=errTop;}
+        else{
+          const btns=[...dlg.querySelectorAll('.dbody button:not([disabled])')];
+          const back=btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1])||((key[0]==='copy'||key[0]==='err')&&btns.find(x=>x.dataset.det===key[1]))||(key[0]!=='n'&&key[0]!=='id'?btns.find(x=>x.dataset.n===key[1]):null);
+          if(back)back.focus();
+        }
+      }
+      const W=window.DurbarMcpWords,ch=[];
+      for(const x of st.servers){const was=seen.get(x.name);if(was!==undefined&&was!==(x.status||''))ch.push(x.name+': '+W.stateOf(x.status).word);}
+      seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
+      return ch;};
+    /* FR-004 / FR-033: an `mcp` event for this agent repaints the open dialog (no re-open) and says what changed through the polite live region.
+       A throttle: the first event starts a 150 ms timer and the events that arrive meanwhile share its one repaint. The hook is dropped when the dialog closes. */
+    let evT=0;
+    const onEvent=id=>{
+      if(id!==a.id||!dlg||!dlg.isConnected||evT)return;
+      evT=setTimeout(async()=>{evT=0;
+        let ch;try{ch=await repaint();}catch(e){return;}
+        if(ch.length)X.announce(ch.slice(0,3).join('. ')+(ch.length>3?' and '+(ch.length-3)+' more':''));
+      },150);
+    };
+    mcpDlgHook=onEvent;
     const restartOne=async name=>{
       if(restarting.has(name))return;
       restarting.add(name);
@@ -707,7 +754,6 @@
       restarting.delete(name);
       X.toast(r&&r.ok?'Restarted '+esc(name)+'.':'Could not restart '+esc(name)+': '+esc((r&&r.error)||'unknown error'),r&&r.ok?3200:6000);
       await repaint();
-      if(r&&r.ok)setTimeout(()=>{if(dlg&&dlg.isConnected)void repaint();},1500); /* the runtime reports the new state shortly after */
     };
     const restartSession=async()=>{
       if(sessBusy)return;
@@ -729,12 +775,17 @@
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;d.addEventListener('click',async e=>{
         const rb=e.target.closest('button[data-restart]');if(rb&&!rb.disabled){void restartOne(rb.dataset.restart);return;}
+        const db=e.target.closest('button[data-det]');
+        if(db){const n=db.dataset.det;if(openDet.has(n))openDet.delete(n);else openDet.add(n);void repaint();return;}
+        const cb=e.target.closest('button[data-copy]');
+        if(cb){const sv=st.servers.find(x=>x.name===cb.dataset.copy);void copyText(sv&&sv.error||'','Copied the error text.');return;}
         if(e.target.closest('#mcpRestartSess')){void restartSession();return;}
         const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
         const r=await X.bridge.setAgentMcp(a.id,b.dataset.n,on);
         if(r&&r.error)X.toast(esc(r.error),5200);
         await repaint();});}});
     const r=await d0;
+    clearTimeout(evT);evT=0;if(mcpDlgHook===onEvent)mcpDlgHook=null;
     if(r&&r.value==='settings')open('settings');
     else if(r&&r.value==='folder'&&X.folderOf){const f=X.folderOf(a);if(f)openFolder(f.key,f.name);}
   }
@@ -859,12 +910,8 @@
     return {seg,built,label,html:sum+`<table class="ttab cost">${head}<tbody>${built.rows.map(row).join('')}</tbody><tfoot>${row(Object.assign({empty:false,other:false,path:''},built.total,{tokensOnly:false}))}</tfoot></table>`+notes+plan};
   }
   async function copyCostCsv(cost){
-    const text=window.DurbarCost.toCsv(cost.built,cost.label), k=cost.built.rows.length;
-    try{
-      if(!navigator.clipboard||!navigator.clipboard.writeText)throw new Error('no clipboard');
-      await navigator.clipboard.writeText(text);
-      X.toast('Copied '+k+' folder'+(k===1?'':'s')+' as CSV',2600).classList.add('ok'); /* FR-050 */
-    }catch(e){X.toast('Could not copy to the clipboard.',3200).classList.add('err');}
+    const k=cost.built.rows.length;
+    await copyText(window.DurbarCost.toCsv(cost.built,cost.label),'Copied '+k+' folder'+(k===1?'':'s')+' as CSV',2600); /* FR-050 */
   }
   const fmtDate=iso=>{const d=new Date(iso);return isNaN(d)?'':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});};
   async function toolsTab(scope,tot,groups,all){
@@ -939,6 +986,7 @@
     openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
+    mcpEvent:id=>{if(mcpDlgHook)mcpDlgHook(id);},
     placeDialog,
     dialog, /* spec 061: the folder-setup list uses the same modal */
     close,isOpen,

@@ -60,13 +60,17 @@ assert.strictEqual(THEME._validateManifest({ id: 'k', scene: 'x"/>' }).scene, 'o
     assert.ok(!plainSvg.includes('art-slot'), kit + ': no art without a theme that has some');
     const svg: string = K.draw(kit, { id: 'p' }, { ...base, art, themeKey: 'ai-pink.3' });
     for (const s of ['char-robe', 'char-headwear', 'desk-art', 'monitor-art']) assert.ok(svg.includes(`data-slot="${s}"`), kit + ': draws ' + s);
-    assert.ok(svg.indexOf('char-headwear') > svg.indexOf('class="head"'), kit + ': the headwear is inside the head, over the hair');
+    assert.ok(svg.indexOf('char-headwear') > svg.indexOf('class="head"'), kit + ': the headwear is inside the head');
+    // over the hair: the headwear is the last thing in the head group, after the head, the hair, the face and any head top
+    const hw = svg.indexOf(art.head);
+    assert.ok(hw > svg.indexOf('class="head"') && svg.startsWith('</g></g>', hw + art.head.length), kit + ': the headwear closes the head group, over the hair');
     assert.ok(svg.indexOf('monitor-art') > svg.indexOf('x="116" y="36"'), kit + ': the monitor art is over the screen');
     assert.strictEqual(parser.parseFromString(svg, 'image/svg+xml').getElementsByTagName('parsererror').length, 0, kit + ': valid SVG with art');
     assert.ok(/data-sig="[^"]*\|ai-pink\.3\|/.test(svg), kit + ': the theme key is in the signature');
     const av: string = K.avatar(kit, { id: 'w' }, { k: base.k, T, shade, art });
     assert.ok(av.includes('char-robe') && av.includes('char-headwear'), kit + ': the walking figure wears the art too');
     assert.ok(av.indexOf('char-headwear') > av.indexOf('char-robe'), kit + ': headwear after the body');
+    assert.ok(av.endsWith(art.head + '</svg>'), kit + ': the walking figure wears the headwear over the hair (drawn last)');
   }
 }
 // spec 070 FR-011: a pack's cup and laptop replace the kit's; the steam (a status cue) stays
