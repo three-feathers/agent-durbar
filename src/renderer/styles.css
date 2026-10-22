@@ -1105,6 +1105,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .mode-chip.mode-ask{color:var(--tone-info-ink);background:var(--tone-info-faint);border-color:var(--tone-info-line)}
 .mode-chip .mode-restored{font-size:10.5px;font-weight:600;letter-spacing:.02em;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid #e5be78;color:var(--amber-ink)}
 .mode-chip.mode-allow{color:var(--red-ink);background:var(--pb-error);border-color:#e3bdb7} /* spec 052 FR-065: the chat header says Allow all in the same red as the cards */
+.mode-menu{position:fixed;z-index:70;width:min(var(--menu-w),calc(100vw - 16px));background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:var(--shadow-pop);display:flex;flex-direction:column;gap:2px}
 .mode-menu button{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:8px 10px;border:0;border-radius:10px;background:transparent;cursor:pointer}
 .mode-menu button:hover,.mode-menu button:focus-visible{background:var(--surface-2)}
 .mode-menu .mi{width:16px;height:16px;margin-top:2px;flex:none;color:var(--muted)}.mode-menu .mi svg{width:16px;height:16px}

@@ -1,18 +1,18 @@
 {
   "styles.css": {
-    "colors": 208,
+    "colors": 154,
     "fonts": 0
   },
   "screens.css": {
-    "colors": 48,
+    "colors": 16,
     "fonts": 0
   },
   "themes.css": {
-    "colors": 59,
+    "colors": 52,
     "fonts": 0
   },
   "app.js": {
-    "colors": 15,
+    "colors": 17,
     "fonts": 0
   },
   "screens.js": {
