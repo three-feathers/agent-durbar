@@ -1314,6 +1314,13 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .pal-empty{margin:0;padding:14px 10px;font-size:13px;color:var(--muted)}
 .pal-foot{margin:0;border-top:1px solid var(--line);padding:8px 16px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
 .pal-foot kbd+kbd{margin-left:-2px}
+/* spec 074 (issue #548): Go to (the navigator): the breadcrumb above the input and the number of each item */
+.pal-crumb{margin:8px 0 0;font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pal-n{flex:none;min-width:30px;padding:1px 5px;border:1px solid var(--line-2);border-radius:5px;background:var(--surface-2);font-size:11px;font-weight:700;line-height:1.5;color:var(--ink-2);text-align:center;font-variant-numeric:tabular-nums}
+/* FR-012: the chat number on desk cards, list rows and the chat header: text, at least 10.5px, never colour alone */
+.chatno{flex:none;display:inline-block;margin-right:5px;padding:0 4px;border:1px solid var(--line-2);border-radius:4px;background:var(--surface-2);font-size:10.5px;font-weight:700;line-height:14px;color:var(--ink-2);font-variant-numeric:tabular-nums;vertical-align:1px}
+.lname .chatno{margin-right:-4px}
+.ph-id .sub .chatno{margin-right:6px}
 .pal-dlg kbd,.kbd-dlg kbd{display:inline-block;min-width:20px;padding:1px 6px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:11px;font-weight:600;line-height:1.5;color:var(--ink-2);text-align:center}
 .dlg.kbd-dlg{width:min(var(--dlg-w-m),calc(100vw - 32px))}
 /* spec 052 (2026-10-21, round 1): two columns where there is room, so the whole sheet fits a 1280x800 window without scrolling */

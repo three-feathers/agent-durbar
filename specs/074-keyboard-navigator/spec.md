@@ -56,7 +56,7 @@ At any level, Escape goes back one level (with that level's filter as it was); a
 **Acceptance Scenarios**:
 
 1. **Given** the agent level reached through floor and folder, **When** Escape is pressed three times, **Then** the box shows the folder level, then the floor level, then closes.
-2. **Given** a level was skipped (one floor on; one agent in a folder), **When** Escape is pressed, **Then** it goes back to the last level that was shown.
+2. **Given** fewer than two floors are on (the start level lists folders), **When** Escape is pressed at the agent level, **Then** it goes back to the start level, and Escape again closes.
 
 ---
 
@@ -100,12 +100,13 @@ The `?` shortcut sheet lists the navigator shortcut and the in-box keys; the Ctr
   - **Start**: the floors that are on (when two or more are on), or else every folder on a floor that is on; plus two rows, **Folders** (`F`) and **Chats** (`C`).
   - **Folders**: folders on floors that are on and not hidden, in office order (on a picked floor: that floor's folders only).
   - **Agents**: the main sessions of the picked folder, each with its chat number.
+  - A folder or chat level that has no items says so ("No chat 7", "No sessions in this folder"); an office with no agents says there is nothing to go to yet.
   - **Chats**: every visible main session in chat-number order, labelled "C3 · name · folder".
 - **FR-004** Letters: at the start level, typing `f` or `c` followed by a space jumps to the Folders or Chats level; `c` followed directly by digits (`c3`, or `c 3`) picks that chat number. Typing `f` or `c` followed by any other letter is ordinary filter text, so folders whose names start with those letters can still be filtered. The **Folders** and **Chats** rows also match `f` and `c` first, so `f` then Enter works too.
 - **FR-005** Filter: at every level, typed text filters the items with the palette's matching (start of name, start of a word, anywhere, then hint words), case-insensitive.
-- **FR-006** Numbers: at the floor, folder and agent levels every item shows its position number; typing a filter made only of digits picks by number. At the chat level the number is the chat number. A number opens its item straight away when no other number starts with the typed digits; otherwise it is highlighted and Enter opens it.
+- **FR-006** Numbers: at the floor and folder levels every item shows its position number; typing a filter made only of digits picks by number. At the agent and chat levels the number is the chat number ("C3" is picked with `3`). A number opens its item straight away when no other number starts with the typed digits; otherwise it is highlighted and Enter opens it.
 - **FR-007** Keys inside the box: ↑/↓ move, Enter picks the highlighted item, Escape goes back one level (closes at the start level), Backspace in an empty filter goes back one level, Tab stays in the box. Going back restores that level's filter text and highlight.
-- **FR-008** Single choice: picking a folder that has exactly one main session MUST open that chat directly; Escape from there returns to the level that was last shown.
+- **FR-008** Single choice: picking a folder that has exactly one main session MUST open that chat directly (the box closes, as for any opened chat).
 - **FR-009** Open a chat: picking an agent or a chat MUST open its chat (the same path as clicking its desk) and put the cursor at the end of its message box. If the session has no message box (not live), focus goes to the chat title.
 - **FR-010** Sending: the navigator MUST NOT send anything itself. Enter in the message box sends through the existing composer, so the folder's permission mode, the spending limit, the plan-first and attachment rules and every approval stay exactly as they are. The navigator adds no way to approve tools.
 - **FR-011** Chat numbers: every main session in the office MUST have a chat number, a positive integer:
@@ -118,6 +119,7 @@ The `?` shortcut sheet lists the navigator shortcut and the in-box keys; the Ctr
 - **FR-013** Settings: **Settings > Keyboard** MUST show the navigator shortcut, a **Change…** button that records the next key combination, and **Reset to default**. The choice is a display preference of this window, saved like the detail level.
 - **FR-014** Clash check: a recorded combination MUST be refused, with a sentence naming its owner, when it:
   - has no Ctrl/⌘ or Alt/Option modifier, or uses the Windows/Super key on Windows and Linux;
+  - would type a character: Option with a letter, digit or punctuation key alone on a Mac (accents), and Ctrl+Alt with one of those without Shift on Windows and Linux (AltGr on many layouts); Ctrl+Alt with a function key on Windows and Linux (Linux console switching);
   - is one of the app's own shortcuts (Ctrl/⌘+K, Ctrl/⌘+O, Ctrl/⌘+Shift+O, Ctrl/⌘+Shift+A, Ctrl/⌘+Shift+N, Ctrl+`, ⌘, on a Mac, the chat answer keys Alt/⌥⌘+A/S/D/N);
   - is a text-editing or window key (Ctrl/⌘ + A, C, V, X, Z, Y, Shift+Z, W, Q, R; ⌘H, ⌘M on a Mac; Alt+F4);
   - is a known OS shortcut (Ctrl+Space, Ctrl+Shift+Space, Super/⌘+Space, ⌥⌘Space, ⌃⌘Space, Alt+Tab, ⌘Tab, Ctrl+Alt+Delete, Ctrl+Alt+T, Ctrl+Alt+L, Ctrl+Alt+arrow keys).

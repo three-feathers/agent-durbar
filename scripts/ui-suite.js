@@ -49,6 +49,7 @@ const DRIVERS = [
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
   { name: 'check-ui-text' }, // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast
+  { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
 ];
 
 /** The screenshot variables the drivers read; all point at one folder. */
