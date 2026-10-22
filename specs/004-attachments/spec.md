@@ -1,5 +1,11 @@
 # Feature Specification: Attachments (pick, drop, paste) and caps
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: index
+title: Attachments (pick, drop, paste) and caps
+status: implemented; delta 2026-10-19: FR-009/010/012/013/015 closed
+-->
+
 **Feature Branch**: `004-attachments` (reverse-engineered; milestones 3 and 5)
 **Created**: 2026-10-16
 **Status**: Implemented (reverse-engineered from `src/shared/attachments.ts`, `main.ts`, `copilot.ts`, `app.js`, README)

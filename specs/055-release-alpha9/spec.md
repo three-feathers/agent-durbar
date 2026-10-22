@@ -1,5 +1,11 @@
 # Feature Specification: Release v0.1.0-alpha.9 (pre-release)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 046
+title: Release v0.1.0-alpha.9 (pre-release): remote control, scheduled prompts Phase 2, MCP forms, Copilot AI themes, usability rounds 6-9, new website
+status: **published as a pre-release 2026-10-20** (tag on `df06619`)
+-->
+
 **Feature Branch**: `055-release-alpha9`
 **Created**: 2026-10-20
 **Status**: Built and **published as a pre-release on 2026-10-20** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9>; release PR #343; tag on `df06619`). The owner gave the go-ahead in his session: "merge ruben and paco's pr's and then cut pre release".

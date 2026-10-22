@@ -1,5 +1,11 @@
 # Feature Specification: Custom agent per session
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 042
+title: Custom agent per session (issue #127)
+status: Phase 1 built: Agent chip and menu, repository-agent confirmation, Copilot `rpc.agent.*` (simulator, unit tests, real check 2026-10-19); Phase 2: the agent in the New session dialog built (FR-007); Claude agents built (FR-008); per-folder default built (FR-009); Codex not started
+-->
+
 **Feature Branch**: `043-custom-agents`
 **Created**: 2026-10-19
 **Status**: Phase 1 built (simulator, unit tests, real check 2026-10-19); Phase 2 not started

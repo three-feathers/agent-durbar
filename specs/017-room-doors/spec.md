@@ -1,5 +1,11 @@
 # Feature Specification: Room doors (collapse / expand a room)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 015-018
+title: Room doors (collapse/expand)
+status: milestone 7
+-->
+
 **Feature Branch**: `017-room-doors` (milestone 7; amends 001, 006)
 **Created**: 2026-10-16
 **Status**: Implemented (milestone 7)

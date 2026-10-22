@@ -1,5 +1,11 @@
 # Feature Specification: Models and reasoning effort
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: index
+title: Model and reasoning-effort pickers
+status: implemented
+-->
+
 **Feature Branch**: `007-models-and-effort` (reverse-engineered; milestone 6)
 **Created**: 2026-10-16
 **Status**: Implemented (reverse-engineered from `src/main/main.ts`, `src/adapters/copilot.ts`, `app.js`, README)

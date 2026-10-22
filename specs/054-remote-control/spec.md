@@ -1,5 +1,11 @@
 # Feature Specification: Remote control and chat channels for sessions
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 046
+title: Remote control and chat channels: Copilot remote steering from github.com and GitHub Mobile (Phase 1); Claude Code Remote Control from claude.ai and the Claude app (Phase 2); Claude Code channels wizard out of scope, moved to idea #485 (owner 2026-10-21)
+status: **Phases 1-2 built** (unit, simulator driver); Copilot real check 2026-10-20: not started on a free plan, also in a private GitHub repository, started on Pro; owner used a real Copilot remote session 2026-10-21 ("works perfectly"); Claude `remote_control` real over `claude -p`, Durbar window sim only; Codex explain-only; Phase 3 planned
+-->
+
 **Feature Branch**: `054-remote-control`
 **Created**: 2026-10-20
 **Status**: Phase 1 built (Copilot remote steering per session: simulator and unit tests; real checks 2026-10-20: never started on Copilot Free, started in any folder on Copilot Pro). **Phase 2 built** (FR-060..FR-064, Claude Code Remote Control per session: unit tests and simulator driver; the `remote_control` request was checked on a real account over `claude -p`; through Durbar's window `[KNOWN GAP]`). Copilot remote session used for real by the owner 2026-10-21 (Changes). Codex: explain only (FR-064). Claude channels wizard: **out of scope** (owner 2026-10-21), moved to idea issue #485.

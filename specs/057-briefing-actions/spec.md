@@ -1,5 +1,11 @@
 # Feature Specification: Briefing follow-through (safe mail reads and an action list)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 046
+title: Briefing follow-through (issue #128): safe mail and calendar reads for *Start my day* (the template says Read-only, but Read-only denies MCP), proposed actions in the Needs you inbox (Approve, Edit, Reject, Later, Hand to…) and their progress
+status: **Draft: awaiting the owner's pick** (outline spec only; no plan, tasks or code)
+-->
+
 **Feature Branch**: `057-briefing-actions`
 
 **Created**: 2026-10-20

@@ -1,5 +1,11 @@
 # Feature Specification: Thinking that shows up, and sub-agent activity
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 015-018
+title: Thinking that shows up, sub-agent activity
+status: milestone 7
+-->
+
 **Feature Branch**: `015-thinking-and-subagent-activity` (milestone 7; amends 002 FR-007, FR-010, FR-013)
 **Created**: 2026-10-16
 **Status**: Implemented (milestone 7)

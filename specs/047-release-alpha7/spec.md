@@ -1,5 +1,11 @@
 # Feature Specification: Release v0.1.0-alpha.7 (pre-release)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 046
+title: Release v0.1.0-alpha.7 (pre-release): Codex offered, the Claude dollar cap, new session with a summary, the Schedules starter kit
+status: **published as a pre-release 2026-10-19** (tag on `05b2783`, CI fully green)
+-->
+
 **Feature Branch**: `047-release-alpha7`
 **Created**: 2026-10-19
 **Status**: Built and **published as a pre-release on 2026-10-19** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.7>; release PR #283; tag on `05b2783`, CI fully green on that commit).

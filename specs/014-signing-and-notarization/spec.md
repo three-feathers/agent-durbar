@@ -1,5 +1,11 @@
 # Feature Specification: Code signing and notarization (macOS, Windows)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 011-014
+title: Code signing and notarization
+status: draft, **needs approval (purchase)**
+-->
+
 **Feature Branch**: `014-signing-and-notarization`
 **Created**: 2026-10-16
 **Status**: Draft (backlog). **NEEDS-APPROVAL: this feature requires purchases and account sign-ups. Nothing has been bought, enrolled or configured, and nobody (human or agent) may do so before the maintainer approves in writing.**

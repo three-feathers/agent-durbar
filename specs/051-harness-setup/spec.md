@@ -1,5 +1,11 @@
 # Feature Specification: Harness setup inside the app
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 046
+title: Harness setup inside the app: Settings > Harnesses with install, update and sign-in (issue #299)
+status: **built** (unit, simulator; real sign-in flows started and cancelled); D1 superseded by spec 060 FR-001 (the official installer comes first, downloaded and checked, never piped)
+-->
+
 **Feature Branch**: `051-harness-setup`
 **Created**: 2026-10-19
 **Status**: Built (Phase 1): Settings > Harnesses with install, update and sign-in for Copilot, Claude Code and Codex; simulator and unit tests, plus real sign-in flows started and cancelled on this machine

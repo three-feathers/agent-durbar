@@ -20,7 +20,7 @@ CI (`.github/workflows/spec-kit.yml`) fails a pull request that changes `src/` w
 ## Where things are
 
 - `.specify/memory/constitution.md`: the rules (I-VIII). Read it first. Principles I and III are non-negotiable.
-- `specs/README.md`: the index of every spec and its status. It is the single place for status: do not repeat statuses here (a copy goes stale). Next free spec number: check that index, the remote branches (`git ls-remote --heads origin | grep NNN-`) and the open PRs. Evidence tags: `[IMPLEMENTED]`, `[KNOWN GAP]`, `test:`, `sim:`, `real:`, `read:`.
+- `specs/README.md`: the index of every spec and its status, generated from the `specs-index` block in each `spec.md` (`npm run specs:index`). It is the single place for status: do not repeat statuses here (a copy goes stale). Next free spec number: check that index, the remote branches (`git ls-remote --heads origin | grep NNN-`) and the open PRs. Evidence tags: `[IMPLEMENTED]`, `[KNOWN GAP]`, `test:`, `sim:`, `real:`, `read:`.
 - `docs/agent-notes.md`: what agents learned the hard way (tool pitfalls, checked vendor behaviour, review techniques). Read it before you start; add to it (see *Share what you learn*).
 - `src/main`, `src/preload`, `src/renderer` (plain HTML/CSS/JS), `src/adapters`, `src/shared`; tests in `scripts/test-*.ts`.
 
@@ -90,11 +90,12 @@ Several people, each with their own agent (Claude Code, Copilot, others), work h
 
 Docs are part of the change, not a follow-up. **When a PR changes user-visible behaviour, scripts, permissions, settings, MCP or tool behaviour, release status or contributors, it updates the docs in the same PR.** Check each of these and change what is affected:
 
-- `README.md`: status block and feature list, the *Safety model* (permission mode names: **Read-only / Ask first / Allow all**), MCP and Tools text (Copilot CLI list `~/.copilot/mcp-config.json`, per-folder extras with trust prompt, *This session / All time*), credit caps and usage totals, *Install from releases* (release status, unsigned), *Development* (the `npm run ...` names in `package.json`), roadmap, known limits, credits and links (repo, [board](https://github.com/orgs/three-feathers/projects/1)).
-- `CHANGELOG.md`: one line under *Unreleased*; the release entry when a release is cut.
+- `README.md`: feature list, the *Safety model* (permission mode names: **Read-only / Ask first / Allow all**), MCP and Tools text (Copilot CLI list `~/.copilot/mcp-config.json`, per-folder extras with trust prompt, *This session / All time*), credit caps and usage totals, *Install from releases* (release status, unsigned), *Development* (the `npm run ...` names in `package.json`), roadmap, known limits, credits and links (repo, [board](https://github.com/orgs/three-feathers/projects/1)).
+- The changelog: **do not edit `CHANGELOG.md`**. Add one file `changelog.d/<your-branch>.md` with your `- ...` line(s) (format in `changelog.d/README.md`; `npm run changelog:check`). The release PR folds the fragments into the release entry with `npm run changelog:build -- --release "<heading>"`.
 - The website (spec 050) is generated from these files, so it follows them by itself. Edit `docs/site/gallery.json` only to show a new key screenshot or to drop a replaced one; `npm test` (`test:site`) fails on a broken link.
 - `docs/` (`collaboration.md`, `research.md`), `CONTRIBUTING.md`, `SECURITY.md`: only the pages the change touches (workflow, setup, mode names, reporting).
-- The spec in `specs/NNN-*/`: tick the task in `tasks.md`, update `spec.md` status and `[IMPLEMENTED]`/`[KNOWN GAP]` tags, and the row in `specs/README.md`.
+- The spec in `specs/NNN-*/`: tick the task in `tasks.md`, update `spec.md` status and `[IMPLEMENTED]`/`[KNOWN GAP]` tags, and the spec's index row: the `specs-index` block under the title of its `spec.md`, then `npm run specs:index`. Never edit a row in `specs/README.md` by hand; it is generated (`npm run specs:check`).
+- The README *status block* (the quote at the top: newest release, where it has been run, what CI checks) is updated by the release PR, not by feature PRs; what a PR changed goes in its changelog fragment.
 - `docs/screenshots/` and the images the README links: replace a picture that shows old wording or a changed screen (simulator, 1440x900 and 1280x800). If you cannot capture it, say so in the PR under "Screenshots" and open an issue.
 - Contributors or owner: `src/shared/about.ts`, `package.json` (`contributors`), `LICENSE`, README *Credits*; `npm run test:about` keeps them in step.
 - Agent rules or templates (`AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.github/pull_request_template.md`, `docs/collaboration.md`): when the process changes, change all of them together. `AGENTS.md` is the canonical file; `CLAUDE.md` only imports it.

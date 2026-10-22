@@ -1,5 +1,11 @@
 # Feature Specification: Durbar court themes (Indian, European, Japanese) (spec 039)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 035-040
+title: Durbar court styles: Indian, European, Japanese (head accessory slots, court words)
+status: **built**; word lists await owner review in PR #137
+-->
+
 **Feature Branch**: `035-theme-foundation` (issue #129)
 **Created**: 2026-10-18
 **Status**: Implemented on branch `035-theme-foundation` (PR #137): simulator and unit tests, 0 AIU; not released

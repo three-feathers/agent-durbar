@@ -1,5 +1,11 @@
 # Feature Specification: Folder status in the chat (git branch and changed files)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 046
+title: Folder status in the chat: git branch and uncommitted changes on the folder chip, a click lists the changed files (read-only)
+status: **built** 2026-10-21: unit tests, simulator driver and screenshots, one real check on Linux
+-->
+
 **Feature Branch**: `063-folder-status`
 **Created**: 2026-10-21
 **Status**: Built (simulator, unit tests, one real check on this repository).

@@ -1,5 +1,11 @@
 # Feature Specification: Release v0.1.0-alpha.8 (pre-release)
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 046
+title: Release v0.1.0-alpha.8 (pre-release): agent app setup inside the app, five usability rounds, AI themes
+status: **published as a pre-release 2026-10-20** (tag on `dd9de65`, CI fully green)
+-->
+
 **Feature Branch**: `053-release-alpha8`
 **Created**: 2026-10-20
 **Status**: Built and **published as a pre-release on 2026-10-20** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.8>; release PR #323; tag on `dd9de65`, CI fully green on that commit).

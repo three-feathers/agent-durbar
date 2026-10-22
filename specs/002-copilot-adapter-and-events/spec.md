@@ -1,5 +1,11 @@
 # Feature Specification: Copilot adapter and normalized events
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: index
+title: Copilot adapter and normalized events
+status: implemented; delta 2026-10-18: normalized `title` event from `session.title_changed`, `name.get` fallback (issue #126); delta 2026-10-19: questions from Copilot (`ask_user`, FR-058)
+-->
+
 **Feature Branch**: `002-copilot-adapter-and-events` (reverse-engineered; milestones 1, 3, 5, 6)
 **Created**: 2026-10-16
 **Status**: Implemented (reverse-engineered from `src/adapters/types.ts`, `src/adapters/copilot.ts`, `src/main/main.ts`, README)

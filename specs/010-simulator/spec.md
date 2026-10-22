@@ -1,5 +1,11 @@
 # Feature Specification: Simulator and developer/test hooks
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: index
+title: Simulator and dev/test hooks
+status: implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-021)
+-->
+
 **Feature Branch**: `010-simulator` (reverse-engineered; milestones 2-6)
 **Created**: 2026-10-16
 **Status**: Implemented (reverse-engineered from `src/renderer/sim.ts`, `main.ts`, `scripts/e2e-driver.js`, README, CONTRIBUTING)

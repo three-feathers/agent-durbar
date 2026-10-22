@@ -1,5 +1,11 @@
 # Feature Specification: Live verification of Stop, End/resume, lazy start, thinking, models and VS Code visibility
 
+<!-- specs-index (the row in specs/README.md; after an edit run `npm run specs:index`)
+group: 011-014
+title: Live verification of Stop, resume and thinking
+status: run 2026-10-19: C1-C7 pass on a real Copilot session (9 prompts, 0.31 AIU); several models, real cap, VS Code and macOS/Windows still open (2026-10-20: C8 still blocked, the login lists no models; C9 estimated and skipped); C8 and C9 run on Copilot Pro 2026-10-20 (C9: the runtime did not stop at the cap, see spec 011)
+-->
+
 **Feature Branch**: `013-live-verification-stop-resume-thinking`
 **Created**: 2026-10-16
 **Status**: Run 2026-10-19 (Linux, free plan, `auto` only): C1-C7 of [checklist.md](checklist.md) passed; C8-C10 recorded as not possible on this account and box. A verification plan, not a feature: its output is evidence (recordings, fixtures, spec updates), plus bug-fix spec deltas where reality differs.
