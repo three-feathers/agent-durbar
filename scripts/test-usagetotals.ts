@@ -8,7 +8,7 @@ const U = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'usagetota
   validNano: (x: unknown) => boolean;
   fmtTotal: (t: Total, digits?: number) => string;
   fmtShort: (t: Total) => string;
-  tooltip: (t: Total, o?: { scope?: string; removed?: boolean; since?: string; run?: Total; offFloors?: Total; estimate?: string }) => string;
+  tooltip: (t: Total, o?: { scope?: string; removed?: boolean; since?: string; run?: Total; offFloors?: Total; estimate?: string; full?: boolean }) => string;
   sum: (list: Total[]) => Total;
 };
 
@@ -157,9 +157,15 @@ console.log('usagetotals tests passed');
     assert.ok(w.split('\n').length <= 8, `a totals tooltip has ${w.split('\n').length} lines (limit 8)`);
   }
   assert.ok(worst[0].split('\n').length >= 6, 'the worst case still has most of its lines');
-  // when the lines do not all fit, the lowest priority go first: the head, the calls, the since line and the footer always stay; off-floor spend outlives the estimate and "removed"
-  assert.ok(/^Office total: /.test(worst[0]) && /Saved since 2026-10-01/.test(worst[0]) && /not a bill\.$/.test(worst[0]) && /floors that are off/.test(worst[0]), worst[0]);
+  // when the lines do not all fit, the lowest priority go first: the head, the calls, the since line, the off-floor spend, the estimate (the only
+  // explanation of the "≈ $X" chip, FR-028) and the footer always stay
+  assert.ok(/^Office total: /.test(worst[0]) && /Saved since 2026-10-01 \(reset in Settings\)/.test(worst[0]) && /not a bill\.$/.test(worst[0]), worst[0]);
+  assert.ok(/floors that are off/.test(worst[0]), 'the off-floor spend stays: ' + worst[0]);
+  assert.ok(/≈ \$9999\.99 = 999\.99 AIU \+ \$9999\.99 Claude \(est\.\)\. Codex: no cost\./.test(worst[0]), 'the estimate line stays: ' + worst[0]);
   assert.ok(!/Includes folders no longer shown/.test(worst[0]), 'removed folders is dropped first');
+  // `full` (the aria-label) keeps every line
+  const full = U.tooltip(big(9999, 999.999, 5), { scope: 'office', since: '2026-10-01T09:00:00.000Z', run: big(9999, 999.999, 0), removed: true, offFloors: big(9999, 999.999, 0), estimate: 'E', full: true });
+  assert.ok(/no longer shown/.test(full) && /This run/.test(full) && /without credits/.test(full) && full.length > 300, full);
   // a short tooltip keeps all of it
   const small = U.tooltip(big(3, 1.5, 0), { scope: 'office', removed: true, estimate: '≈ $0.02 = 1.50 AIU. Codex: no cost.' });
   assert.ok(/no longer shown/.test(small) && /Codex: no cost/.test(small), small);

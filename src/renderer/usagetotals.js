@@ -70,18 +70,19 @@
     if(none(t))return '';
     const o=opts||{}, office=o.scope!=='folder';
     const since=typeof o.since==='string'&&/^\d{4}-\d{2}-\d{2}/.test(o.since)?o.since.slice(0,10):'';
-    /* [priority, line]: shown in this order; when the text would pass MAX characters the lines of the lowest priority (the highest number) go first */
+    /* opts.full: every line, for the aria-label (a screen reader has no length limit).
+       [priority, line]: shown in this order; when the text would pass MAX characters the lines of the lowest priority (the highest number) go first */
     const L=[[0,(office?'Office total: ':'Folder total: ')+(allUnreported(t)?'cost not reported':aiu(t,3))],
       [0,plural(t.calls,'call')+' · '+fmtTokens(t.inTokens)+' in / '+fmtTokens(t.outTokens)+' out']];
     if(t.unreported&&!allUnreported(t))L.push([1,plural(t.unreported,'call')+' without credits']);
     L.push([0,since?'Saved since '+since+' (reset in Settings); ended sessions included.':'Since Agent Durbar opened; ended sessions included.']);
     if(since&&o.run&&!none(o.run))L.push([4,'This run: '+(allUnreported(o.run)?'cost not reported':aiu(o.run,3))+' in '+plural(o.run.calls,'call')+'.']);
     if(office&&o.removed)L.push([5,'Includes folders no longer shown.']);
-    if(office&&o.offFloors&&!none(o.offFloors))L.push([2,'Includes '+(allUnreported(o.offFloors)?plural(o.offFloors.calls,'call')+' with cost not reported':aiu(o.offFloors,3))+' from floors that are off.']);
-    if(office&&typeof o.estimate==='string'&&o.estimate)L.push([3,o.estimate]);
+    if(office&&o.offFloors&&!none(o.offFloors))L.push([0,'Includes '+(allUnreported(o.offFloors)?plural(o.offFloors.calls,'call')+' with cost not reported':aiu(o.offFloors,3))+' from floors that are off.']);
+    if(office&&typeof o.estimate==='string'&&o.estimate)L.push([0,o.estimate]); /* the only explanation of the "≈ $X" chip and the Copilot / Claude split (spec 052 FR-028): never dropped */
     L.push([0,'Copilot\'s figure: 1 AIU = 1 credit, not a bill.']);
     const keep=L.map(()=>true), len=()=>L.reduce((n,x,i)=>n+(keep[i]?x[1].length+1:0),-1);
-    while(len()>MAX_TIP){let w=-1;L.forEach((x,i)=>{if(keep[i]&&x[0]>0&&(w<0||x[0]>L[w][0]))w=i;});if(w<0)break;keep[w]=false;}
+    while(!o.full&&len()>MAX_TIP){let w=-1;L.forEach((x,i)=>{if(keep[i]&&x[0]>0&&(w<0||x[0]>L[w][0]))w=i;});if(w<0)break;keep[w]=false;}
     return L.filter((x,i)=>keep[i]).map(x=>x[1]).join('\n');
   }
 

@@ -177,6 +177,11 @@
   }
   /* FR-170: the description columns of the shortcut sheet start at one x per column of the sheet */
   function kbdAlign(root, add) {
+    for (const k of root.querySelectorAll('.kb-t .kb-k')) { // the key column is wide enough for its keys (a fixed layout with a too narrow column would align the tables and cut the keys)
+      const w = [...k.children].reduce((n, c) => Math.max(n, c.getBoundingClientRect().right), 0) - k.getBoundingClientRect().left;
+      const room = k.clientWidth - parseFloat(getComputedStyle(k).paddingRight);
+      if (vis(k) && w > room + 1) add('kbd-align', root, k, `the keys need ${Math.round(w)}px but the key column has ${Math.round(room)}px`);
+    }
     const byX = new Map();
     for (const t of root.querySelectorAll('.kb-t')) { const k = Math.round(t.getBoundingClientRect().left); byX.set(k, (byX.get(k) || []).concat(t)); }
     for (const [, tables] of byX) {
@@ -188,7 +193,8 @@
   function chatRules(root, add) {
     for (const b of root.querySelectorAll('.cp-btn,.md .copy')) {
       if (!vis(b)) continue;
-      b.scrollIntoView({ block: 'center' }); // the text around it has to be on screen to be measured (this moves the chat's scroll, nothing else)
+      const ch = document.getElementById('chat'); // the text around it has to be on screen to be measured: only the chat scrolls, never the page
+      if (ch && ch.contains(b)) ch.scrollTop += b.getBoundingClientRect().top - ch.getBoundingClientRect().top - ch.clientHeight / 2;
       const msg = b.closest('#chat,.chat-inner') || b.closest('.msg,.sub-prompt,.sub-res,.think,.codebox') || b.parentElement; // the whole chat: the button also sticks out of its bubble
       const br = b.getBoundingClientRect();
       const tw = document.createTreeWalker(msg, NodeFilter.SHOW_TEXT);
@@ -234,7 +240,7 @@
         if ((t || (isCtl && (el.value || el.placeholder))) && parseFloat(cs.fontSize) < MIN_PX && shown(el)) add('font-size', root, el, `${cs.fontSize} "${snip(t || el.value || '', 40)}"`);
         // clipping
         const textish = (el.innerText || '').trim().length > 0;
-        const clipX = textish && /(hidden|clip)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1 && !isCtl;
+        const clipX = textish && /(hidden|clip)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1 && (!isCtl || cs.textOverflow === 'ellipsis'); // a control cut with an ellipsis needs its title too
         if (clipX) {
           const titled = cs.textOverflow === 'ellipsis' && (el.getAttribute('title') || (el.closest('[title]') || {}).title);
           if (!titled) {
@@ -326,7 +332,7 @@
 
   /* FR-168: a static tooltip explains a control in at most 120 characters; a data tooltip (the full text of a cut name, a card or the totals) may be
      longer, at most 300 characters and 8 lines. Whole page: chrome titles are not in a surface's root. */
-  const DATA_TIP = '.ptask,.ab-q,.ab-q *,.q-opt,.place,.intent,.room-aiu,.chip,.chip *,.desk,.helper,.lrow,.lrow *,.sitem,.sitem *,#stats,#stats *,.stat-aiu,.room-head *,.room-path,.prev-row *,.pal-o *,.ib-n,.ib-f,.by-chip,.mdl-sub,.dpick-t,.hs-name b,.sc-t b,.grant,.chip.att-chip,.att,.cmdbox,.pill,.ph-t,.folder,.sub-title,.lmood,.tile,.ttab td,.ttab th';
+  const DATA_TIP = '.gchip,.gchip *,.gp-row,.ptask,.ab-q,.ab-q *,.q-opt,.place,.intent,.room-aiu,.chip,.chip *,.desk,.helper,.lrow,.lrow *,.sitem,.sitem *,#stats,#stats *,.stat-aiu,.room-head *,.room-path,.prev-row *,.pal-o *,.ib-n,.ib-f,.by-chip,.mdl-sub,.dpick-t,.hs-name b,.sc-t b,.grant,.chip.att-chip,.att,.cmdbox,.pill,.ph-t,.folder,.sub-title,.lmood,.tile,.ttab td,.ttab th';
   function tooltips() {
     const out = [];
     document.querySelectorAll('[title]').forEach((el) => {

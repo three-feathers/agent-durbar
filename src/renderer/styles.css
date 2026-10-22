@@ -800,7 +800,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .dlg .dsub{margin:0;font-size:var(--t3-size);color:var(--ink-2);overflow-wrap:break-word;word-break:normal;line-height:1.5} /* FR-165: a word moves whole to the next line */
 .dlg label{display:flex;flex-direction:column;gap:4px;font-size:var(--t4-size);font-weight:600;color:var(--ink-2)}
 .dlg label[hidden]{display:none}
-.dlg label .dhint{font-size:12px;font-weight:400;color:var(--muted);line-height:1.4;overflow-wrap:break-word} /* spec 052 FR-170: label is one short line, what more there is goes here */
+.dlg .dhint{margin-top:-8px;font-size:12px;font-weight:400;color:var(--muted);line-height:1.4;overflow-wrap:break-word} /* spec 052 FR-170: label is one short line, what more there is goes here */
 .dlg .sd-agent{display:flex;flex-direction:column;gap:6px}
 .dlg .sd-agent[hidden]{display:none}
 .dlg select{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
@@ -931,6 +931,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .md .codebox{position:relative;margin:0 0 .6em}
 .md pre{margin:0;background:var(--tone-neutral-bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;overflow-x:auto;white-space:pre;font-size:12px;line-height:1.5}
 .md pre code{background:none;padding:0;font-size:inherit}
+.md .codebox pre,.md pre:has(>.cp-code){padding-top:32px} /* spec 052 FR-170: the Copy button (top right, 24px) has a strip of its own above the first line of code */
 .md .copy{position:absolute;top:4px;right:4px;height:22px;padding:0 8px;font:inherit;font-size:11px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer;opacity:.7;transition:opacity .12s} /* spec 052 FR-076: the same size as .cp-btn (one Copy size) */
 .md .codebox:hover .copy,.md .copy:focus-visible{opacity:1}
 .md .copy:hover{background:var(--surface-2)}

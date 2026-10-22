@@ -85,6 +85,7 @@ const toneList = () => {
   const by = new Map();
   for (const file of ['styles.css', 'screens.css']) for (const r of cssRules(file)) { const k = file + ' | ' + r.sel; by.set(k, Object.assign(by.get(k) || {}, ...r.decls.map((d) => { const m = /^\s*(background(?:-color)?|color)\s*:\s*(.+?)\s*$/.exec(d); return m ? { [m[1] === 'color' ? 'color' : 'bg']: m[2] } : {}; }))); }
   const list = [];
+  for (const ink of ['--sage-ink', '--red-ink', '--amber-ink']) list.push({ sel: `button text: --surface on ${ink}`, bg: `var(${ink})`, color: 'var(--surface)' }); // primary, danger and warn buttons (themegen CONTRAST_PAIRS)
   for (const k of TONE_RULES) {
     const r = by.get(k); if (!r || !r.bg) { list.push({ sel: k, bg: 'transparent', color: 'var(--ink)', missing: true }); continue; }
     let color = r.color; if (!color && /:hover$/.test(k)) { const b = by.get(k.replace(/:hover$/, '')); color = b && b.color; } // a hover state keeps its base text colour
@@ -173,19 +174,36 @@ module.exports = async (ctx) => {
   add('chat-waiting', 'chat', ['#panel'], () => openChat('Jonas'));
   add('chat-first', 'chat', ['#panel'], async () => !!(await openChatWhere('true'))); // the first desk, whoever it is (the 60-character names pass)
   // T155: a toast ends above the composer while a chat is open (the real toast(): More > Copy resume command toasts either way)
-  add('chat-toast', 'chat', ['#panel'], async () => {
-    if (!(await openChat('Ada'))) return false;
+  // T155: a toast ends above the composer, and above the answer bar when it shows (the real toast(): More > Copy resume command toasts either way)
+  const toastSurface = (name, opener) => add(name, 'chat', ['#panel'], async () => {
+    if (!(await opener())) return false;
     await js(`document.getElementById('shotCalm')&&document.getElementById('shotCalm').remove()`); // H.calm() freezes the toast's pop animation at scale 0
     await H.clearToasts();
     await H.click('#moreBtn'); if (!(await H.exists('#copyResBtn'))) return false; await H.click('#copyResBtn');
     if (!(await until(`document.querySelectorAll('#toasts .toast').length>0`, 3000))) return false;
     await ctx.sleep(500); // the toast's pop animation scales it from 0
-    const over = await js(`(()=>{const t=[...document.querySelectorAll('#toasts .toast')].pop().getBoundingClientRect(),c=document.querySelector('#panel .composer').getBoundingClientRect();return t.bottom>c.top+1?'toast bottom '+Math.round(t.bottom)+' is below the composer top '+Math.round(c.top):''})()`);
-
-    if (over) found.push({ surface: 'chat-toast', theme: themeId || theme, size: `${W}x${Hh}`, rule: 'toast-over-composer', el: '#toasts', detail: over });
+    const over = await js(`(()=>{const t=[...document.querySelectorAll('#toasts .toast')].pop().getBoundingClientRect();let top=innerHeight,what='';for(const [n,e] of [['composer',document.querySelector('#panel .composer')],['answer bar',document.getElementById('answerBar')]])if(e&&!e.hidden&&e.getClientRects().length&&e.getBoundingClientRect().top<top){top=e.getBoundingClientRect().top;what=n;}return t.bottom>top+1?'toast bottom '+Math.round(t.bottom)+' is below the '+what+' top '+Math.round(top):''})()`);
+    if (over) found.push({ surface: name, theme: themeId || theme, size: `${W}x${Hh}`, rule: 'toast-over-composer', el: '#toasts', detail: over });
     return true;
   });
-  add('chat-reply', 'chat', ['#panel'], async () => !!(await openChatWhere(`document.querySelector('#chat .bubble.md>.cp-msg')`))); // T155: a chat with an agent reply (its Copy button)
+  toastSurface('chat-toast', () => openChat('Ada'));
+  toastSurface('chat-toast-answer', async () => { // a waiting question scrolled out of view: the answer bar shows above the composer (spec 052 FR-162)
+    if (!(await openChat('Ada'))) return false;
+    await js(`document.getElementById('chat').scrollTop=0`);
+    return until(`!document.getElementById('answerBar').hidden`, 3000);
+  });
+  // T155: a chat with an agent reply (its Copy button). With simreply=long the reply gets a last paragraph whose last line is filled up to the right edge of
+  // the bubble (a run of letters is lengthened until one more would wrap), so a misplaced Copy button always sits over text; the fill is asserted.
+  add('chat-reply', 'chat', ['#panel'], async () => {
+    if (!(await openChatWhere(`document.querySelector('#chat .bubble.md>.cp-msg')`))) return false;
+    if (extraQuery.simreply !== 'long') return true;
+    const gap = await js(`(()=>{const cp=document.querySelector('#chat .bubble.md>.cp-msg'),b=cp.parentElement;b.scrollIntoView({block:'end'});const p=document.createElement('p');b.insertBefore(p,cp);
+      const lines=()=>{const r=document.createRange();r.selectNodeContents(p);return new Set([...r.getClientRects()].filter(x=>x.width>0).map(x=>Math.round(x.top))).size;};
+      p.textContent='x'.repeat(120);const n=lines();for(let i=0;i<400&&lines()===n;i++)p.textContent+='x';p.textContent=p.textContent.slice(0,-1);
+      const r=document.createRange();r.selectNodeContents(p);const rs=[...r.getClientRects()].filter(x=>x.width>0),last=rs[rs.length-1],bb=b.getBoundingClientRect();return Math.round(bb.right-parseFloat(getComputedStyle(b).paddingRight)-last.right);})()`);
+    if (!(gap >= 0 && gap <= 12)) found.push({ surface: 'chat-reply-long', theme: themeId || theme, size: `${W}x${Hh}`, rule: 'fixture', el: '#chat .bubble.md', detail: `the last line of the reply stops ${gap}px short of the right edge (fixture must fill it to within 12px)` });
+    return true;
+  });
   add('chat-question', 'chat', ['#panel'], async () => !!(await openChatWhere(`document.querySelector('#chat .note.question')`)) && js(`(document.querySelector('#chat .note.question').scrollIntoView({block:'center'}),true)`));
   add('chat-more-menu', 'menu', ['#moreMenu'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); return until(`!document.getElementById('moreMenu').hidden`, 2000); });
   add('chat-mode-menu', 'menu', ['#modeMenu'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#modeChip'); return until(`!!document.getElementById('modeMenu')`, 2000); });
@@ -202,7 +220,11 @@ module.exports = async (ctx) => {
   add('folder-status', 'dialog', ['#modeDlg .dlg', '.dlg-ov .dlg'], async () => { if (!(await openChatWhere(`document.querySelector('#panelHead .folder[role=button]')`))) return false; await js(`document.querySelector('#panelHead .folder[role=button]').click()`); return until(`!!document.querySelector('.dlg-ov .dlg')`, 3000); });
   add('compact', 'dialog', ['#modeDlg .dlg'], async () => { if (!(await openChatWhere(`document.querySelector('#compactBtn:not([aria-disabled])')`))) return false; await H.click('#compactBtn'); return until(`!!document.querySelector('#modeDlg .dlg')`, 3000); });
   add('grants', 'chat', ['#grants', '#grantsPop'], async () => { if (!(await openChatWhere(`document.querySelector('#grants .grant,#grants button')`))) return false; return true; });
-  add('grants-pop', 'popover', ['#grantsPop'], async () => { if (!(await openChatWhere(`document.querySelector('#grants button')`))) return false; await js(`(()=>{const b=[...document.querySelectorAll('#grants button')].find(x=>x.getAttribute('aria-haspopup')||/more|\\+\\d/i.test(x.textContent))||document.querySelector('#grants button');b.click();})()`); return until(`!!document.getElementById('grantsPop')`, 2000); });
+  add('grants-pop', 'popover', ['#grantsPop'], async () => { if (!(await openChatWhere(`document.querySelector('#grants button')`))) return false; await js(`(()=>{const b=[...document.querySelectorAll('#grants button')].find(x=>x.getAttribute('aria-haspopup')||/more|\\+\\d/i.test(x.textContent))||document.querySelector('#grants button');b.click();})()`); if (!(await until(`!!document.getElementById('grantsPop')`, 2000))) return false;
+    // FR-141.2: the full label of a grant stays in its title (simgrants=many has a 70-character one), not cut to a short form
+    const miss = await js(`(()=>{const L='server-x-ListItemsInTheWholeCatalogueIncludingArchivedOnes';const r=[...document.querySelectorAll('#grantsPop .gp-row')].find(x=>x.textContent.includes('ListItemsInTheWhole')||x.title.includes('ListItemsInTheWhole'));return r&&r.title.includes(L)?'':'the grant row title does not hold the full label: '+(r?r.title:'no row')})()`);
+    if (miss) found.push({ surface: 'grants-pop', theme: themeId || theme, size: `${W}x${Hh}`, rule: 'grant-title', el: '.gp-row', detail: miss });
+    return true; });
   add('prev-sessions', 'chat', ['#prev'], async () => { if (!(await openChat('Ada'))) return false; await js(`(()=>{const t=document.querySelector('.prev-toggle[aria-expanded="false"]')||document.getElementById('prevBtn');if(t&&t.getAttribute('aria-expanded')!=='true')t.click();})()`); return until(`document.querySelectorAll('#prev .prev-row').length>0`, 3000); });
   add('prev-row-menu', 'menu', ['#modeMenu'], async () => { if (!(await openChat('Ada'))) return false; await js(`(()=>{const t=document.querySelector('.prev-toggle[aria-expanded="false"]')||document.getElementById('prevBtn');if(t&&t.getAttribute('aria-expanded')!=='true')t.click();})()`); await until(`!!document.querySelector('#prev .prev-more')`, 3000); await H.click('#prev .prev-more'); return until(`!!document.getElementById('modeMenu')`, 2000); });
   add('harness-cards', 'screen', ['#screen'], async () => { await closeChat(); await js(`window.DurbarScreens.openSettings('harnesses')`); await until(`document.querySelectorAll('.hs-card').length>=3&&[...document.querySelectorAll('.hs-card .hs-st')].every(s=>s.textContent&&!/Checking/i.test(s.textContent))`, 5000); return true; });

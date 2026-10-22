@@ -844,10 +844,10 @@
   function agentsTab(scope,agents){
     const list=agents.filter(a=>!scope||a.id===scope);
     if(!list.length)return '<p class="scr-empty">No agents.</p>';
-    const maxTools=Math.max(1,...list.map(a=>X.stats.agent(a.id).total));
+    const maxTools=Math.max(1,...list.map(a=>X.stats.agent(a.id).total)),rn=id=>X.roomName?X.roomName(id):String(id||''); /* the folder's name, not its id (spec 052 FR-170) */
     return `<p class="scr-sum">Model(s) each agent used and how full its context window is. Under <b>Auto</b> the runtime picks the model per request; the window is that model's. Unknown means the runtime did not report it (yet).</p>
     <table class="ttab agt"><thead><tr><th scope="col">Agent</th><th scope="col">Model(s)</th><th scope="col">Context window (used / size)</th><th scope="col" class="num">Tool calls</th></tr></thead><tbody>${list.map(a=>{const st=X.stats.agent(a.id);
-      return `<tr><th scope="row"><button class="by-chip" type="button" data-open="${esc(a.id)}" title="${esc(a.name)}">${esc(a.name)}</button><div class="mdl-sub" title="${esc(a.room||'')}">${esc(a.room||'')}</div></th><td>${modelText(a,st)}</td><td>${ctxCell(st.ctx,X.staticLimit(a))}</td>
+      return `<tr><th scope="row"><button class="by-chip" type="button" data-open="${esc(a.id)}" title="${esc(a.name)}">${esc(a.name)}</button><div class="mdl-sub" title="${esc(rn(a.room))}">${esc(rn(a.room))}</div></th><td>${modelText(a,st)}</td><td>${ctxCell(st.ctx,X.staticLimit(a))}</td>
         <td class="num">${st.total}<span class="bar mini ${st.total?'builtin':''}" aria-hidden="true"><i style="width:${st.total?Math.max(4,Math.round(st.total/maxTools*100)):0}%"></i></span></td></tr>`;}).join('')}</tbody></table>`;
   }
   /* small chip for the chat header: "Context 5%" + bar. Returns {html,title}. */
