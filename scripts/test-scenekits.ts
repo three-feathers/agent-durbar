@@ -73,4 +73,14 @@ assert.strictEqual(THEME._validateManifest({ id: 'k', scene: 'x"/>' }).scene, 'o
     assert.ok(av.endsWith(art.head + '</svg>'), kit + ': the walking figure wears the headwear over the hair (drawn last)');
   }
 }
+// spec 070 FR-011: a pack's cup and laptop replace the kit's; the steam (a status cue) stays
+{
+  for (const kit of K.KITS.slice(1)) {
+    const base = { st: 'idle', mood: { body: 'normal' }, k: { shirt: '#336699', skin: '#e0b090', hair: '#222222', style: 'short' }, mini: false, c: false, T, shade, reduced: true };
+    const svg: string = K.draw(kit, { id: 'g' }, { ...base, art: { cup: '<g data-slot="gadget-cup"><rect/></g>', laptop: '<g data-slot="gadget-laptop"><rect/></g>' } });
+    assert.ok(svg.includes('gadget-cup') && svg.includes('gadget-laptop') && svg.includes('class="steam"'), kit + ': gadgets drawn, steam kept');
+    const plainSvg: string = K.draw(kit, { id: 'g' }, base);
+    assert.ok(!plainSvg.includes('gadget-'), kit + ': the kit\'s own cup and laptop otherwise');
+  }
+}
 console.log('scene kit tests passed (' + n + ' scenes)');

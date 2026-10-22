@@ -16,7 +16,7 @@ assert.strictEqual(checkUserManifest('[]').ok, false);
 assert.strictEqual(checkUserManifest('{"id":"Bad Id"}').ok, false, 'id must be lowercase kebab');
 assert.strictEqual(checkUserManifest('{"id":""}').ok, false);
 assert.strictEqual(checkUserManifest('{}').ok, false);
-assert.strictEqual(checkUserManifest('{"id":"x","tokens":' + JSON.stringify(Object.fromEntries(Array.from({ length: 161 }, (_, i) => ['--t' + i, '#fff']))) + '}').ok, false, 'over 160 tokens rejected');
+assert.strictEqual(checkUserManifest('{"id":"x","tokens":' + JSON.stringify(Object.fromEntries(Array.from({ length: 201 }, (_, i) => ['--t' + i, '#fff']))) + '}').ok, false, 'over 200 tokens rejected (spec 070 FR-004)');
 assert.strictEqual(checkUserManifest('{"id":"x","words":' + JSON.stringify(Object.fromEntries(Array.from({ length: 25 }, (_, i) => ['w' + i, 'v']))) + '}').ok, false, 'over 24 words rejected');
 assert.strictEqual(checkUserManifest('{"id":"x","tokens":{"--bg":"#eef"}}').ok, true);
 assert.ok(checkUserManifest('x'.repeat(USER_THEME_LIMITS.manifestBytes + 1)).error!.includes('64 KB'));
