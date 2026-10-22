@@ -491,6 +491,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       ];
       simSched.list.push(...seed.filter((x) => x.folder)); simSched.n = 4;
     }
+    /* spec 044 FR-033 (check-sched-top): a driver makes a schedule's run fail now, as if the app had sent it and the send had failed */
+    (window as unknown as { __durbarSimSched?: unknown }).__durbarSimSched = {
+      fail: (id: string): boolean => {
+        const sc = simSched.list.find((x) => x.id === id);
+        if (!sc) return false;
+        sc.last = { at: Date.now(), outcome: 'failed' };
+        simSched.changed();
+        return true;
+      },
+    };
     /* spec 044 FR-012: the rule copy in schedtemplates.js (main uses src/shared/schedrules.ts; test:schedules keeps them equal) */
     type SimRules = { parseRule(v: unknown): ScheduleInfo['rule']; nextRuleRun(r: NonNullable<ScheduleInfo['rule']>, after: number): number | undefined };
     const simRules = (): SimRules | undefined => (window as unknown as { DurbarSchedTemplates?: SimRules }).DurbarSchedTemplates;

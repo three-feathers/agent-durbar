@@ -7,14 +7,14 @@
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
   const DAY=24*3600000, MAX=120;
-  const list=doc=>doc&&Array.isArray(doc.schedules)?doc.schedules:[];
+  const list=doc=>doc&&Array.isArray(doc.schedules)?doc.schedules.filter(s=>s&&typeof s==='object'):[];
   const recurring=s=>s.every!==undefined||!!s.rule;
   /* FR-028: Durbar's schedules that are not done and not paused; "Pause all" is not part of it (the number says what would run) */
   function activeCount(doc){return list(doc).filter(s=>!s.done&&!s.paused).length;}
   /* FR-029: schedules whose last run was missed or failed and is newer than the stamp (no stamp: the last 24 hours). Done one-time
      schedules count (a missed one is marked done at start); skipped-* never do. A later run replaces `last`, so it clears itself. */
   function troubleSince(doc,seenAt,now){
-    const since=typeof seenAt==='number'&&isFinite(seenAt)&&seenAt>0?seenAt:now-DAY;
+    const since=typeof seenAt==='number'&&isFinite(seenAt)&&seenAt>0?Math.min(seenAt,now):now-DAY; /* a stamp from the future (clock change) never hides a newer run */
     return list(doc).filter(s=>s.last&&(s.last.outcome==='missed'||s.last.outcome==='failed')&&s.last.at>since).length;
   }
   function nextAt(doc){
@@ -27,7 +27,7 @@
     const opt=o||{}, keys=opt.keys||'', clockOf=opt.clockOf||(ms=>String(ms));
     const total=list(doc).length, count=activeCount(doc), trouble=troubleSince(doc,seenAt,now);
     const paused=!!(doc&&doc.pausedAll)&&count>0;
-    const next=!paused&&count?String(clockOf(nextAt(doc))).slice(0,24):'';
+    const at=nextAt(doc), next=!paused&&count&&at>0?String(clockOf(at)).slice(0,24):'';
     const tr=trouble?trouble+(trouble===1?' run':' runs')+' missed or failed':'';
     let state,said;
     if(paused){state='all paused ('+count+' set)';said='all paused, '+count+' set';}

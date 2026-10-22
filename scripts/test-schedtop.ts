@@ -85,4 +85,19 @@ assert.ok(t.count <= 99 && t.trouble === 50);
 t = T.topText(doc(many.map((x) => ({ ...x, last: undefined }))), null, NOW, { keys: keysWin, clockOf: () => 'x'.repeat(200) });
 assert.ok(t.title.length <= 120 && t.label.length <= 120, `${t.title.length}/${t.label.length}`);
 
+// no next time when nothing has one (an active schedule without `next`/`at`)
+t = T.topText(doc([s('a', { next: undefined })]), null, NOW, o);
+assert.strictEqual(t.title, 'Schedules: 1 active (Ctrl+Shift+S)');
+assert.strictEqual(t.label, 'Schedules: 1 active.');
+// nextAt must skip a paused or done schedule that is due sooner than the active one
+t = T.topText(doc([s('p', { paused: true, next: NOW + H }), s('d', { done: true, every: undefined, at: NOW + H }), s('a', { next: NOW + 5 * H })]), null, NOW, o);
+assert.strictEqual(t.title, 'Schedules: 1 active, next T5 (Ctrl+Shift+S)');
+// a stamp from the future is clamped to now: a run since "now" is not hidden by it
+assert.strictEqual(T.troubleSince(doc([miss('a', 'missed', H)]), NOW + 10 * H, NOW), 0, 'older than now');
+assert.strictEqual(T.troubleSince(doc([{ ...s('a'), last: { at: NOW + 1, outcome: 'failed' } }]), NOW + 10 * H, NOW), 1, 'newer than now');
+// null, non-object and missing entries cannot throw
+const junk = { pausedAll: false, schedules: [null, undefined, 5, 'x', s('a')] } as unknown as Doc;
+assert.strictEqual(T.activeCount(junk), 1);
+assert.strictEqual(T.troubleSince(junk, null, NOW), 0);
+assert.strictEqual(T.topText(junk, null, NOW, o).count, 1);
 console.log('test-schedtop: ok');

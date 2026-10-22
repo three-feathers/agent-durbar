@@ -1671,7 +1671,7 @@ function renderInboxBtn(){
 const SCHED_SEEN='durbar.schedSeen'; /* epoch ms of the last time Schedules was opened here; no prompt text, per computer (FR-029) */
 let schedSeenMem;
 function schedSeenAt(){
-  if(schedSeenMem===undefined){let v=null;try{const n=Number(localStorage.getItem(SCHED_SEEN));if(n>0&&isFinite(n))v=n;}catch(e){}schedSeenMem=v;}
+  if(schedSeenMem===undefined){let v=null;try{const n=Number(localStorage.getItem(SCHED_SEEN));if(n>0&&isFinite(n))v=Math.min(n,Date.now()); /* a stamp from the future (clock change) is clamped */}catch(e){}schedSeenMem=v;}
   return schedSeenMem;
 }
 function schedTopShown(){

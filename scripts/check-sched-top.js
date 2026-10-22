@@ -5,7 +5,7 @@
  *
  * At 1440x900 and 1280x800, Expert and Simple, with `simsched=1` (four schedules over two folders; one missed its last run and one
  * failed, hours ago): the button is shown, between the ⋯ button and Needs you, in one row (at most 52px) with nothing overlapping or
- * outside the window and its text at least 10.5px; the count is the active schedules; the word shows in Simple and from 1600px only,
+ * outside the window and its text at least 10.5px; the count is the active schedules; the word shows in Simple and from 1920px only (Expert),
  * and the accessible name always says "Schedules"; the badge counts the missed or failed runs since the stamp (`durbar.schedSeen`),
  * its words are at most 120 characters; a click opens Settings at the Schedules heading (focused, near the top of Settings' own
  * scroller, the page not scrolled), clears the badge and keeps it cleared after a reload; Pause all dims it, keeps the number and
@@ -39,7 +39,7 @@ function barCheck(simple, width) {
     if (Math.min(p.right, q.right) - Math.max(p.left, q.left) > 0.5 && Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top) > 0.5) P.push(`overlap ${ctl[i].id} x ${ctl[j].id}`);
   }
   const word = sc.querySelector('.st-word'), wordShown = !!word.getClientRects().length;
-  const wantWord = simple || width >= 1600;
+  const wantWord = simple || width >= 1920; /* the counters' rule: the word shows from 1920px in Expert (2040px on a Mac) */
   if (wordShown !== wantWord) P.push(`the word is ${wordShown ? 'shown' : 'hidden'}, expected ${wantWord ? 'shown' : 'hidden'}`);
   if (!/^Schedules/.test(sc.getAttribute('aria-label') || '')) P.push('aria-label: ' + sc.getAttribute('aria-label'));
   if (sc.getAttribute('aria-keyshortcuts') !== 'Control+Shift+S') P.push('aria-keyshortcuts: ' + sc.getAttribute('aria-keyshortcuts'));
@@ -184,6 +184,34 @@ module.exports = async (ctx) => {
       console.log(`[sched-top] ${tag} ${level} done in ${Math.round((Date.now() - t0) / 1000)} s`);
     }
   }
+
+  /* FR-033: a new failed run announces once; nothing is announced at start */
+  {
+    await load(1440, 900, 'expert', '');
+    await settle();
+    const first = await js(`document.getElementById('srAnnounce').textContent`);
+    check(!/did not run/.test(first), 'a scheduled-prompt announcement was made at start: ' + first);
+    await js(`window.__ann=[];new MutationObserver(()=>{const t=document.getElementById('srAnnounce').textContent;if(/did not run/.test(t))window.__ann.push(t)}).observe(document.getElementById('srAnnounce'),{childList:true,characterData:true,subtree:true});true`);
+    check(await js(`window.__durbarSimSched.fail('sched-s1')`), 'the simulator could not fail a run');
+    const heard = await until(`window.__ann.length===1&&/did not run.*Ctrl\\+Shift\\+S/.test(window.__ann[0])`);
+    check(heard, 'announcement: ' + JSON.stringify(await js('window.__ann')));
+    check((await state()).label.includes('3 runs missed or failed'), 'the name does not say 3 runs');
+    await js(`window.__durbarSimSched.fail('sched-s1')`); /* the same run again: the count does not grow */
+    await settle();
+    check((await js('window.__ann.length')) === 1, 'the same failed run was announced twice');
+  }
+
+  /* FR-034: widths between 1440 and 1920 stay one row in Expert and Simple with floors and mixed agent apps, also with the Mac room forced */
+  for (const level of ['expert', 'simple']) for (const mac of [false, true]) for (const w of [1441, 1512, 1600, 1728]) {
+    await H.load({ w, h: 900, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
+    await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)});true`);
+    await H.load({ w, h: 900, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
+    await until(`!document.getElementById('schedTopBtn').hidden`);
+    if (mac) { await js(`document.documentElement.dataset.platform='darwin';window.DurbarFit&&window.DurbarFit();true`); await js(`new Promise(r=>setTimeout(r,0))`); }
+    const P = await js(`(${barCheck.toString()})(${level === 'simple'},${w})`);
+    check(!P.length, `${w}px ${level}${mac ? ' with the Mac room' : ''}: ${P.join('; ')}`);
+  }
+  await js(`localStorage.setItem('durbar.detail','expert');true`);
 
   /* reduced motion (as the OS asks): the count changes at once, no roll boxes */
   {

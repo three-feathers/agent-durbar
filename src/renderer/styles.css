@@ -487,12 +487,13 @@ body:has(#aiTryBar) #toasts{bottom:100px}
   .stats>.stat:not(.stat-aiu) span.l{display:none}
   .stats>.stat:not(.stat-aiu){padding:0 4px 0 3px}
   .topbar #defaultsBtn{max-width:200px}
+  body:not(.simple) .sched-top .st-word{display:none} /* spec 044 FR-027: like the counters' words, the word shows from 1920px (2040px on a Mac, below); it moves to the name and the title. Simple has room for it */
+  .topbar .sched-top{padding:0 10px}
 }
+@media (max-width:2039px){html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .sched-top .st-word{display:none}}
 @media (max-width:1599px){
   .inbox-btn .ib-word{display:none}
   .inbox-btn{padding:0 10px}
-  body:not(.simple) .sched-top .st-word{display:none} /* spec 044 FR-027: the word moves to the name and the title; Simple has room for it */
-  .topbar .sched-top{padding:0 10px}
 }
 /* spec 052 FR-164: room for + Folder and + Workspace (measured in DejaVu Sans, CI's font): a narrower defaults chip (its full text is in its
    title and label). Where the row still does not fit, app.js (fitTopbar) sets .tb-tight: the brand keeps its mark and its Live/Demo pill
