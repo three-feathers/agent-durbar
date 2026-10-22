@@ -143,6 +143,7 @@
     "check:question-options": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-question-options.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'question-options] all checks passed' \\$L\"",
     "check:question-visible": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-question-visible.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'question-visible] all checks passed' \\$L\"",
     "check:codex-file-card": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-codex-file-card.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'codex-file-card] all checks passed' \\$L\"",
+    "check:theme-art": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-theme-art.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'theme-art] all checks passed' \\$L\"",
     "check:themes": "npm run build && node scripts/check-parallel.js --themes",
     "check:mac-titlebar": "npm run build && node scripts/check-mac-titlebar.js",
     "check:ui": "npm run build && node scripts/ui-suite.js",

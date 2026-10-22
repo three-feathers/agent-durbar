@@ -255,6 +255,7 @@ npm run check:question-visible  # a waiting question stays visible in the answer
 npm run check:activity-table    # Tools > Activity shows the activity log table with the simulator's rows (simulator, xvfb on Linux)
 npm run check:sched-sendto      # Schedules dialog: Send to / Limit labels on one line, every option fits, session name on a hint line (simulator, xvfb on Linux)
 npm run check:geometry    # Retro lays out exactly like Clean Office (CHECK_ALL_THEMES=1: every theme, about a minute)
+npm run check:theme-art   # a picked theme's people, gadgets and place icons on desks, walkers, the lobby and the chat strip (sample pack Pink Studio; simulator, xvfb on Linux)
 npm run check:ui          # every simulator driver that asserts, one after another, on any OS (UI_SUITE_XVFB=1 keeps windows off a Linux desktop)
 npm run check:themes      # on demand: the full layout check in every theme, a few at a time, low priority, memory limits
 npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned); then checks the Electron fuses and the display names
