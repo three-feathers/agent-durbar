@@ -1690,7 +1690,9 @@ function renderSchedTop(fromList){
   const b=$('schedTopBtn'); if(!b)return;
   let doc; try{doc=SCHED;}catch(e){return;}
   const show=schedTopShown(); b.hidden=!show; if(!show)return;
-  const t=window.DurbarSchedTop.topText(doc,schedSeenAt(),Date.now(),{keys:SCHED_KEY,clockOf:clock});
+  let t=window.DurbarSchedTop.topText(doc,schedSeenAt(),Date.now(),{keys:SCHED_KEY,clockOf:clock});
+  /* FR-029 (decision 2026-10-22): a miss or failure while the Schedules section is on screen is seen at once: no badge, no announcement */
+  if(t.trouble>0&&schedSectionShown()){markSchedSeen();t=window.DurbarSchedTop.topText(doc,schedSeenAt(),Date.now(),{keys:SCHED_KEY,clockOf:clock});}
   rollCount(b.querySelector('b'),t.count);
   b.classList.toggle('none',!t.count); b.classList.toggle('paused',t.paused); b.classList.toggle('trouble',t.trouble>0);
   if(b.getAttribute('aria-label')!==t.label)b.setAttribute('aria-label',t.label);
@@ -1698,10 +1700,20 @@ function renderSchedTop(fromList){
   if(schedTrouble===null){if(fromList)schedTrouble=t.trouble;}
   else{if(t.trouble>schedTrouble)announce('A scheduled prompt did not run. See Schedules ('+SCHED_KEY+').');schedTrouble=t.trouble;}
 }
+function markSchedSeen(){schedSeenMem=Date.now();try{localStorage.setItem(SCHED_SEEN,String(schedSeenMem));}catch(e){}}
+/* the Schedules heading of Settings is inside Settings' own scroller, so the user can see it (not merely: Settings is open) */
+function schedSectionShown(){
+  const h=$('schH'),scr=$('screen'); if(!h||!scr||scr.hidden)return false;
+  const body=h.closest('.scr-body'); if(!body)return false;
+  const r=h.getBoundingClientRect(),c=body.getBoundingClientRect();
+  return r.height>0&&r.top>=c.top-1&&r.bottom<=c.bottom+1;
+}
+/* scrolling Settings (or Tab into the section) brings the heading into view: the badge clears then */
+document.addEventListener('scroll',e=>{const t=e.target;if(t&&t.classList&&t.classList.contains('scr-body')&&schedSectionShown())renderSchedTop();},true);
 /* FR-030: the one way in to "go to Schedules": Settings at its Schedules section, and the stamp that clears the badge */
 function openSchedulesView(){
   window.DurbarScreens.openSettings('schedules');
-  schedSeenMem=Date.now(); try{localStorage.setItem(SCHED_SEEN,String(schedSeenMem));}catch(e){}
+  markSchedSeen();
   renderSchedTop();
 }
 /* spec 052 FR-068: the count rolls (old number out, new one in, 220ms) inside a box that keeps its width; up when it grows */
@@ -4214,6 +4226,7 @@ function renderSchedSettings(){
       +ss.map(s=>schedRow(s,'ss')).join('')+'</div>').join('')
       :'<p class="scr-note small">No schedules yet.</p>')
     +(without.length?`<div class="scr-tools"><label class="ss-add">Add a schedule to<select id="ssRoom">${without.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><button class="btn" type="button" data-ss="add">Add…</button></div>`:'');
+  renderSchedTop(); /* spec 044 FR-029: the section may be on screen as soon as it is painted */
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('#schedSet [data-ss]');if(!b)return;

@@ -1226,7 +1226,7 @@ body.has-bridge:not(.simple) .folder-ctl #foldersBtn{border-top-left-radius:0;bo
 .inbox-btn:not([hidden]),.inbox-btn[hidden]+.stats,.sched-top:not([hidden]){margin-left:auto}
 .sched-top:not([hidden])+.inbox-btn,.sched-top:not([hidden])+.inbox-btn[hidden]+.stats{margin-left:0}
 .inbox-btn b{font-variant-numeric:tabular-nums}
-/* spec 044 FR-027..FR-029: a calm ghost button; the clock, the word (from 1600px and in Simple) and the count of active schedules.
+/* spec 044 FR-027..FR-029: a calm ghost button; the clock, the word (from 1920px, 2040px on a Mac, and in Simple) and the count of active schedules.
    Pause all: dimmed with a pause glyph; a run that did not happen: a warning mark with a "!" (drawn, so it is never colour alone) */
 .sched-top{font-variant-numeric:tabular-nums}
 .sched-top .st-ico{position:relative;display:inline-flex;flex:none}

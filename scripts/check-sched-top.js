@@ -6,7 +6,7 @@
  * At 1440x900 and 1280x800, Expert and Simple, with `simsched=1` (four schedules over two folders; one missed its last run and one
  * failed, hours ago): the button is shown, between the ⋯ button and Needs you, in one row (at most 52px) with nothing overlapping or
  * outside the window and its text at least 10.5px; the count is the active schedules; the word shows in Simple and from 1920px only (Expert),
- * and the accessible name always says "Schedules"; the badge counts the missed or failed runs since the stamp (`durbar.schedSeen`),
+ * and the accessible name always says "Schedules"; the badge counts the schedules whose last run was missed or failed since the stamp (`durbar.schedSeen`),
  * its words are at most 120 characters; a click opens Settings at the Schedules heading (focused, near the top of Settings' own
  * scroller, the page not scrolled), clears the badge and keeps it cleared after a reload; Pause all dims it, keeps the number and
  * says "all paused"; Ctrl+Shift+S opens the same place from the office, the list and a chat's message box, and does nothing under
@@ -80,15 +80,15 @@ module.exports = async (ctx) => {
       check(!s.hidden, `${tag} ${level}: the button is hidden with schedules`);
       check(s.count === '4' && !s.none, `${tag} ${level}: count ${s.count}, expected 4`);
       check(s.trouble && s.mark, `${tag} ${level}: no badge without a stamp (two runs in the last 24 hours)`);
-      check(/4 active, next at .+\. 2 runs missed or failed\.$/.test(s.label), `${tag} ${level}: name "${s.label}"`);
-      check(/^Schedules: 4 active, next .+\. 2 runs missed or failed \(Ctrl\+Shift\+S\)$/.test(s.title), `${tag} ${level}: title "${s.title}"`);
+      check(/4 active, next at .+\. 2 schedules missed or failed a run\.$/.test(s.label), `${tag} ${level}: name "${s.label}"`);
+      check(/^Schedules: 4 active, next .+\. 2 schedules missed or failed a run \(Ctrl\+Shift\+S\)$/.test(s.title), `${tag} ${level}: title "${s.title}"`);
       const P = await js(`(${barCheck.toString()})(${simple},${w})`);
       check(!P.length, `${tag} ${level}: ${P.join('; ')}`);
 
       /* a stamp between the two runs: only the newer one counts (the missed run 4 hours ago; the failed one was 6 hours ago) */
       await load(w, h, level, Date.now() - 5 * 3600000);
       s = await state();
-      check(s.trouble && s.mark && /1 run missed or failed\.$/.test(s.label) && /1 run missed or failed \(/.test(s.title), `${tag} ${level}: stamp 5 h ago: ${s.label}`);
+      check(s.trouble && s.mark && /1 schedule missed or failed a run\.$/.test(s.label) && /1 schedule missed or failed a run \(/.test(s.title), `${tag} ${level}: stamp 5 h ago: ${s.label}`);
       if (level === 'expert') await H.shot(path.join(shotsDir, `044-topbar-badge-${tag}.png`), { prep: 'mouse', settle: true });
 
       /* a click: Settings at the Schedules heading, the badge gone, and gone after a reload */
@@ -195,10 +195,34 @@ module.exports = async (ctx) => {
     check(await js(`window.__durbarSimSched.fail('sched-s1')`), 'the simulator could not fail a run');
     const heard = await until(`window.__ann.length===1&&/did not run.*Ctrl\\+Shift\\+S/.test(window.__ann[0])`);
     check(heard, 'announcement: ' + JSON.stringify(await js('window.__ann')));
-    check((await state()).label.includes('3 runs missed or failed'), 'the name does not say 3 runs');
+    check((await state()).label.includes('3 schedules missed or failed a run'), 'the name does not say 3 schedules');
     await js(`window.__durbarSimSched.fail('sched-s1')`); /* the same run again: the count does not grow */
     await settle();
     check((await js('window.__ann.length')) === 1, 'the same failed run was announced twice');
+  }
+
+  /* FR-029 decisions: Settings opened by its own button leaves the badge up until the Schedules heading is on screen; a failure while it is on screen is seen at once */
+  {
+    await load(1440, 900, 'expert', '');
+    await settle();
+    await js(`document.getElementById('settingsBtn').click()`);
+    await until(`!document.getElementById('screen').hidden&&!!document.getElementById('schH')`);
+    await settle();
+    const inView = () => js(`(()=>{const h=document.getElementById('schH'),b=h.closest('.scr-body'),r=h.getBoundingClientRect(),c=b.getBoundingClientRect();return r.top>=c.top&&r.bottom<=c.bottom})()`);
+    check(!(await inView()), 'the Schedules heading is already in view in Settings (nothing to test)');
+    check((await state()).trouble, 'opening Settings by its own button cleared the badge');
+    await js(`(()=>{const h=document.getElementById('schH'),b=h.closest('.scr-body');b.scrollTop+=h.getBoundingClientRect().top-b.getBoundingClientRect().top-12;return true})()`);
+    check(await until(`!document.getElementById('schedTopBtn').classList.contains('trouble')`), 'scrolling Schedules into view did not clear the badge');
+    check(!!(await state()).stamp, 'no stamp after Schedules came into view');
+    await js(`window.__ann=[];new MutationObserver(()=>{const t=document.getElementById('srAnnounce').textContent;if(/did not run/.test(t))window.__ann.push(t)}).observe(document.getElementById('srAnnounce'),{childList:true,characterData:true,subtree:true});true`);
+    check(await js(`window.__durbarSimSched.fail('sched-s2')`), 'the simulator could not fail a run');
+    await settle();
+    const seen = await state();
+    const annN = await js('window.__ann.length');
+    check(!seen.trouble && !seen.mark && annN === 0, 'a failure in front of the user raised the badge or announced: badge ' + seen.trouble + ', announcements ' + annN);
+    await closeScreen();
+    check(await js(`window.__durbarSimSched.fail('sched-s1')`), 'the simulator could not fail a run');
+    check(await until(`document.getElementById('schedTopBtn').classList.contains('trouble')&&window.__ann.length===1`), 'a failure out of sight did not raise the badge and announce once');
   }
 
   /* FR-034: widths between 1440 and 1920 stay one row in Expert and Simple with floors and mixed agent apps, also with the Mac room forced */

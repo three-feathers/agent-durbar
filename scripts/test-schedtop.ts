@@ -8,6 +8,7 @@ type Text = { count: number; paused: boolean; trouble: number; label: string; ti
 const T = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'schedtop.js')) as {
   activeCount(d: Doc): number;
   troubleSince(d: Doc, seenAt: number | null | undefined, now: number): number;
+  missedOrFailed(s: unknown): boolean;
   topText(d: Doc, seenAt: number | null | undefined, now: number, o?: { keys?: string; clockOf?: (ms: number) => string }): Text;
 };
 
@@ -52,10 +53,10 @@ assert.strictEqual(t.title, 'Schedules: 2 active, next T1 (Ctrl+Shift+S)');
 assert.strictEqual(t.label, 'Schedules: 2 active, next at T1.');
 t = T.topText(doc([s('a'), miss('b', 'missed', H / 2)]), NOW - H, NOW, o);
 assert.strictEqual(t.trouble, 1);
-assert.strictEqual(t.label, 'Schedules: 2 active, next at T1. 1 run missed or failed.');
-assert.strictEqual(t.title, 'Schedules: 2 active, next T1. 1 run missed or failed (Ctrl+Shift+S)');
+assert.strictEqual(t.label, 'Schedules: 2 active, next at T1. 1 schedule missed or failed a run.');
+assert.strictEqual(t.title, 'Schedules: 2 active, next T1. 1 schedule missed or failed a run (Ctrl+Shift+S)');
 t = T.topText(doc([miss('a', 'missed', H / 2), miss('b', 'failed', H / 2)]), NOW - H, NOW, o);
-assert.ok(t.label.includes('2 runs missed or failed'));
+assert.ok(t.label.includes('2 schedules missed or failed a run'));
 // Pause all: the number stays, the words say it, no "next"
 t = T.topText(doc([s('a'), s('b')], true), null, NOW, o);
 assert.deepStrictEqual([t.count, t.paused], [2, true]);
@@ -100,4 +101,16 @@ const junk = { pausedAll: false, schedules: [null, undefined, 5, 'x', s('a')] } 
 assert.strictEqual(T.activeCount(junk), 1);
 assert.strictEqual(T.troubleSince(junk, null, NOW), 0);
 assert.strictEqual(T.topText(junk, null, NOW, o).count, 1);
+// the words count schedules: one schedule that failed three times is still 1 schedule, not "3 runs"
+t = T.topText(doc([miss('a', 'failed', H / 2)]), NOW - H, NOW, o);
+assert.ok(t.label.endsWith('1 schedule missed or failed a run.') && !/runs/.test(t.label), t.label);
+// the shared rule (also used by the lobby Postbox): done one-time schedules count, a done recurring one does not, skipped-* never
+assert.strictEqual(T.missedOrFailed(miss('a', 'missed', H, { done: true, every: undefined, at: NOW - H })), true);
+assert.strictEqual(T.missedOrFailed(miss('a', 'failed', H, { done: true })), false, 'done and recurring');
+assert.strictEqual(T.missedOrFailed(miss('a', 'skipped-busy', H)), false);
+assert.strictEqual(T.missedOrFailed(null), false);
+assert.strictEqual(T.missedOrFailed(s('a')), false);
+// a failure that happens while the Schedules section is on screen: the app stamps "now" first, so it raises nothing
+assert.strictEqual(T.troubleSince(doc([{ ...s('a'), last: { at: NOW - 5, outcome: 'failed' } }]), NOW, NOW), 0);
+assert.strictEqual(T.troubleSince(doc([{ ...s('a'), last: { at: NOW + 5, outcome: 'failed' } }]), NOW, NOW + 10), 1, 'a later failure, not seen, raises it');
 console.log('test-schedtop: ok');

@@ -13,9 +13,14 @@
   function activeCount(doc){return list(doc).filter(s=>!s.done&&!s.paused).length;}
   /* FR-029: schedules whose last run was missed or failed and is newer than the stamp (no stamp: the last 24 hours). Done one-time
      schedules count (a missed one is marked done at start); skipped-* never do. A later run replaces `last`, so it clears itself. */
+  /* The one rule for "its last run did not happen": missed or failed, a done one-time schedule included, a done recurring one not (the store never
+     sets that); skipped-* never. Shared with the lobby Postbox (#511's postMissed), so the two cannot drift. */
+  function missedOrFailed(s){
+    return !!(s&&typeof s==='object'&&s.last&&(s.last.outcome==='missed'||s.last.outcome==='failed')&&(!s.done||!recurring(s)));
+  }
   function troubleSince(doc,seenAt,now){
     const since=typeof seenAt==='number'&&isFinite(seenAt)&&seenAt>0?Math.min(seenAt,now):now-DAY; /* a stamp from the future (clock change) never hides a newer run */
-    return list(doc).filter(s=>s.last&&(s.last.outcome==='missed'||s.last.outcome==='failed')&&s.last.at>since).length;
+    return list(doc).filter(s=>missedOrFailed(s)&&s.last.at>since).length;
   }
   function nextAt(doc){
     const t=list(doc).filter(s=>!s.done&&!s.paused).map(s=>recurring(s)?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];
@@ -28,7 +33,8 @@
     const total=list(doc).length, count=activeCount(doc), trouble=troubleSince(doc,seenAt,now);
     const paused=!!(doc&&doc.pausedAll)&&count>0;
     const at=nextAt(doc), next=!paused&&count&&at>0?String(clockOf(at)).slice(0,24):'';
-    const tr=trouble?trouble+(trouble===1?' run':' runs')+' missed or failed':'';
+    /* each schedule keeps only its last run, so this counts schedules, and the words say so */
+    const tr=trouble?(trouble===1?'1 schedule':trouble+' schedules')+' missed or failed a run':'';
     let state,said;
     if(paused){state='all paused ('+count+' set)';said='all paused, '+count+' set';}
     else if(count){state=count+' active'+(next?', next '+next:'');said=count+' active'+(next?', next at '+next:'');}
@@ -39,5 +45,5 @@
       label:cap('Schedules: '+said+'.'+(tr?' '+tr+'.':'')),
       title:cap('Schedules: '+state+(tr?'. '+tr:'')+k)};
   }
-  return {activeCount,troubleSince,topText,nextAt};
+  return {activeCount,troubleSince,topText,nextAt,missedOrFailed};
 })());
