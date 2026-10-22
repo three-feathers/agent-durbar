@@ -426,6 +426,46 @@ async function phase2(): Promise<void> {
       assert.ok(g.sch.save({ id: 'edit-anc-001', edit: true, folder: '/w', prompt: 'other every', every: 30 }, () => true).ok);
       assert.strictEqual(g.sch.doc.schedules[0].at, undefined, 'another every without at drops the anchor');
     }
+    // a limit carried over by an edit needs no unit now; a new or changed one still does
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-unit-01', { cap: { amount: 5, unit: 'aiu' }, spent: 1.5 })] });
+      g.unit.v = undefined;
+      const c = () => g.sch.doc.schedules[0];
+      assert.ok(g.sch.save({ id: 'edit-unit-01', edit: true, folder: '/w', prompt: 'no cap key', every: 60 }, () => true).ok, 'no cap key, unit unknown');
+      assert.ok(g.sch.save({ id: 'edit-unit-01', edit: true, folder: '/w', prompt: 'same cap', every: 60, cap: { amount: 5, unit: 'aiu' } }, () => true).ok, 'same cap, unit unknown');
+      assert.deepStrictEqual([c().cap, c().spent, c().prompt], [{ amount: 5, unit: 'aiu' }, 1.5, 'same cap']);
+      assert.ok(!g.sch.save({ id: 'edit-unit-01', edit: true, folder: '/w', prompt: 'changed cap', every: 60, cap: { amount: 6, unit: 'aiu' } }, () => true).ok, 'a changed cap needs a unit');
+      assert.strictEqual(c().prompt, 'same cap');
+      assert.ok(g.sch.save({ id: 'edit-unit-01', edit: true, folder: '/w', prompt: 'removed', every: 60, cap: null }, () => true).ok, 'removing it needs no unit');
+    }
+    // a prompt-only edit of an interval without an anchor recomputes next as now + every
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-nxt-001', { next: t0 + 3 * MIN })] });
+      assert.ok(g.sch.save({ id: 'edit-nxt-001', edit: true, folder: '/w', prompt: 'same', every: 60 }, () => true).ok);
+      assert.strictEqual(g.sch.doc.schedules[0].next, g.now + 60 * MIN);
+    }
+    // an anchored interval whose anchor is past cannot become a one-time schedule at that past time
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-anp-001', { at: t0 - 30 * MIN, next: t0 + 30 * MIN })] });
+      assert.deepStrictEqual(g.sch.save({ id: 'edit-anp-001', edit: true, folder: '/w', prompt: 'once now', at: t0 - 30 * MIN }, () => true), { ok: false, error: 'That time has already passed.' });
+      assert.strictEqual(g.sch.doc.schedules[0].every, 60);
+    }
+    // a save that is not an edit never moves an existing schedule to another folder or revives a done one
+    {
+      const g = harness({ pausedAll: false, schedules: [base('sav-ex-0001', {}), { id: 'sav-done-001', folder: '/w', prompt: 'done', at: t0 - 10 * MIN, done: true }] });
+      const r2 = g.sch.save({ id: 'sav-ex-0001', folder: '/elsewhere', prompt: 'old', every: 60, paused: true }, () => true);
+      assert.ok(r2.ok && r2.schedule.folder === '/w' && r2.schedule.paused, 'Pause keeps the folder');
+      assert.ok(g.sch.save({ id: 'sav-done-001', folder: '/w', prompt: 'done', at: t0 - 10 * MIN, done: false, paused: true }, () => true).ok);
+      assert.strictEqual(g.sch.doc.schedules[1].done, true, 'a done schedule stays done');
+      const r3 = g.sch.save({ ...g.sch.doc.schedules[0], paused: false }, () => true);
+      assert.ok(r3.ok && !r3.schedule.paused, 'Resume still works');
+    }
+    // an edit that moves a schedule whose session ended to another target clears the reason; it stays paused
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-rt-0001', { paused: true, pausedReason: 'session-ended', target: { session: 'gone', agent: 'copilot' } })] });
+      const r4 = g.sch.save({ id: 'edit-rt-0001', edit: true, folder: '/w', prompt: 'moved', every: 60, target: null }, () => true);
+      assert.ok(r4.ok && r4.schedule.paused === true && r4.schedule.pausedReason === undefined && r4.schedule.target === undefined, 'folder agent: paused, no reason');
+    }
     // unknown id: refused with and without edit, nothing added
     const n = h.sch.doc.schedules.length;
     assert.deepStrictEqual(h.sch.save({ id: 'nope-nope-1', edit: true, folder: '/w', prompt: 'x', every: 10 }, () => true), { ok: false, error: 'That schedule is gone.' });

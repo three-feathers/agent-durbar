@@ -154,6 +154,21 @@ module.exports = async (ctx) => {
     await until(`document.getElementById('scFormT').hidden&&!document.querySelector('#sdList .sc-row small').textContent.includes('done')`);
     const again = (await rows())[0];
     assert.deepStrictEqual([again.id, again.off, /done/.test(again.line), again.btns], [O, false, false, ['Edit…', 'Pause', 'Delete']], `${tag}: a future time runs it again`);
+    // FR-022: a schedule sent to one session, edited from Settings, shows that session's name in Send to
+    await js(`document.getElementById('scClose').click()`); await until(`!document.getElementById('schedDlg')`);
+    await js(`document.querySelector('#stage .desk[data-id]').click()`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('schedHdrBtn')`); await settle();
+    await js(`document.getElementById('schedHdrBtn').click()`); await until(`!!document.getElementById('scTarget')&&document.getElementById('scTarget').options.length===2`);
+    const sess = await js(`(()=>{const t=document.getElementById('scTarget');t.value=t.options[1].value;t.dispatchEvent(new Event('change'));return {id:t.value,name:document.getElementById('scToHint').textContent}})()`);
+    assert.ok(sess.id && sess.name, `${tag}: This session has a name`);
+    await add('for one session');
+    const T = (await rows()).find((r) => r.p === 'for one session');
+    assert.match(T.line, /→/, `${tag}: the row says it goes to a session`);
+    await js(`document.getElementById('scClose').click()`); await until(`!document.getElementById('schedDlg')`);
+    await js(`document.getElementById('backBtn').click()`); await until(`!document.body.classList.contains('panel-open')`); await settle();
+    await js(`document.getElementById('settingsBtn').click()`); await until(`!!document.querySelector(${jsLiteral(`#schedSet [data-ss="edit"][data-id="${T.id}"]`)})`);
+    await js(`document.querySelector(${jsLiteral(`#schedSet [data-ss="edit"][data-id="${T.id}"]`)}).click()`); await until(`!!document.getElementById('scFormT')&&!document.getElementById('scFormT').hidden`); await settle();
+    const sd = await js(`({v:document.getElementById('scTarget').value,hint:document.getElementById('scToHint').textContent,hidden:document.getElementById('scToHint').hidden})`);
+    assert.deepStrictEqual([sd.v, sd.hint, sd.hidden], [sess.id, sess.name, false], `${tag}: Send to shows the session's name when edited from Settings`);
     console.log('[sched-edit]', tag, 'ok');
   }
   console.log('[sched-edit] all checks passed');
