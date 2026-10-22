@@ -66,6 +66,7 @@
 ## Command palette (2026-10-20)
 
 - [x] T045 Command palette (Ctrl+K) and keyboard shortcut sheet (?), ⋯ menu entry, driver section in `scripts/shots-052-ux.js` (#316) [FR-042, FR-043]
+
 ## Cost per folder (2026-10-20)
 
 - [x] T046 Tools > Cost: one row per folder, This run / Since <date>, Copy as CSV, room cost opens it (#315) [FR-044]
@@ -116,12 +117,14 @@
 - [x] T067 List: 34px rows, Agent app / Last activity / Cost columns, sort by header with `aria-sort` (memory only), J/K and Enter, Simple keeps the columns aligned; drivers `shots-052-ux.js`, `shots-034-list.js` [FR-064]
 - [x] T068 Red "Allow all" badge in the mode icon's slot on cards and list rows, the chat header's chip in the same red [FR-065]
 - [x] T069 "What Durbar does not do" in Settings and the README, each claim checked against the README [FR-066]
+
 ## Round 6: motion with meaning (2026-10-20)
 
 - [x] T070 Desk scene cross-fade on a signature change, done tick draws in, done pill pulses once, waiting badge pings 3 times [FR-067]
 - [x] T071 Inbox answer fades in place and the rows below slide up (FLIP), Needs you count rolls in a fixed box, All clear pops in [FR-068]
 - [x] T072 Ambulance light and siren breathe slowly for about 10 s instead of strobing; Serious mode stops every looping animation [FR-069]
 - [x] T073 Theme change cross-fades through a view transition; empty office shows an empty desk; "+ Folder" rings once on first run [FR-070]
+
 ## Round 6: activity log and Windows first run (2026-10-20)
 
 - [x] T074 Activity log: `activitystore.ts` (5000 rows, redacted 160-character action, base folder names), recorded in main from permission events (broker `auto` event for Allow all) and `setModeOp`/`setCapOp`; `activity:list/export/clear`; Tools > Activity tab; simulator rows; `test-activity` [FR-071]
@@ -153,17 +156,21 @@
 - [x] T092 Quit time saved; "Since you were away" strip with missed schedule runs and **Run missed now** (`schedules:runNow`); tests for the summary and `runNow` [FR-089]
 - [x] T093 Quit prompt while agents work (one chained `before-quit`, the window's close shares it); **End all sessions** in ⋯ and the palette [FR-090]
 - [x] T094 Palette "Recent" group (5 chats) and Ctrl+` back to the previous chat; shortcut sheet; driver `shots-052-ux.js` [FR-091]
+
 ## Round 8: macOS conventions (2026-10-20)
 - [x] T086 Mac app menu from roles (Settings… ⌘, sends `menu:settings`; View with zoom and full screen only; Help links the repo); no menu on Windows and Linux; preload `onMenuSettings`, simulator no-op; `appmenu.ts` + `test-macos` [FR-083]
 - [x] T087 ⌘ on a Mac: `keys.js` (`modDown`, `chatKeyDown`, labels, aria); shortcut sheet, palette, titles and `aria-keyshortcuts` per platform; footnote removed; ⌥⌘A/S/D/N in a chat, dead keys ignored [FR-084]
 - [x] T088 Mac window: close hides (agents keep running), `quitting` in `before-quit`, agents ended on ⌘Q after the remote release, `activate` shows; `hiddenInset` title bar with darwin-only drag CSS and full-screen events; `color-scheme` per theme; Dock bounce [FR-085]
 - [x] T089 README "On a Mac" note (not verified on a real Mac), CHANGELOG line [FR-086]
+
 ## Round 9: pre-release fixes (2026-10-20)
 - [x] T095 Inbox session button shrinks with an ellipsis (Deny always visible); Thinking full width with no inner scroll; Failing in the palette, strip and list dot; folder note only next to plain words; Cost "This session / All time" before the tabs with a "since" subtitle; Agent apps "for …" line; wider Agent app column [FR-092]
 - [x] T096 Mode menu lines, "What Durbar does not do" (Settings and README), AI theme cost line per selected app, Simple limit and memory chips; Remove from office confirmation checked [FR-093]
 - [x] T097 Drivers grepped for every changed string; `shots-052-ux.js` memory chip check; README Tools line; CHANGELOG [FR-094]
+
 ## FR-085 fix: Mac window from an open chat (2026-10-20)
 - [x] T120 Mac: the chat's agent strip is the drag area with the traffic-light room when the top bar is hidden, and so is a screen's header (Settings, Tools, folder) opened over a chat; `test-macos` checks both [FR-085 fix, 2026-10-20]
+
 ## Round 10: chrome density and type (2026-10-20)
 - [x] T098 Chat header on one row (32px avatar, T1 name, chips and `.btn.sm` at 28px, actions pinned right), task and usage on one line, **Previous (N)** in the actions instead of the bar, 48px strip, shorter composer hint, 13px bubbles [FR-095]
 - [x] T099 Compact inbox rows (32px avatar, 8px gaps, `.btn.sm`, **Open** on the heading line) [FR-096]
@@ -190,6 +197,7 @@
 
 ## New session in the chat header (2026-10-20, issue #363)
 - [x] T127 `+ New` button next to Previous in the chat header (title and aria-label "New session in <folder>", same flow and conditions as the More item plus `!demoOn`, main agents only); icon-only if it does not fit; More item kept; `check-office-overlap.js` asserts it and the one-row header at both sizes; mutation; screenshots; README, CHANGELOG [FR-139]
+
 ## FR-138: macOS title bar on every screen (2026-10-20, #345)
 - [x] T121 Spec delta FR-138 (this entry), tasks and plan note [FR-138]
 - [x] T122 Darwin-only CSS: notice strip is the drag row with a chat open and the strip below drops the 78px; overlays, popovers and menus `no-drag`; chat strip grab area and no-drag `.strip-list`; `.scr-head` `max(78px, ...)` [FR-138]
@@ -215,6 +223,15 @@
 - [x] T140 macOS File menu (Add Folder… ⌘O, Add VS Code Workspace… ⇧⌘O, Close Window) through `menu:add` → `onMenuAdd` → the same buttons; `test-macos` [FR-164]
 - [x] T141 `scripts/shots-052-addleft.js` in `check:ui`; `check-mac-titlebar.js` without the + New state; `check:office`, `check:geometry`, `check:mac-titlebar`; screenshots at 1440x900 and 1280x800 [FR-164]
 - [x] T142 Docs: README, CHANGELOG, `specs/README.md` row [FR-164]
+
+## FR-172: a Codex write request names the file and shows the change (2026-10-21, real Codex finding)
+- [x] T158 Spec delta FR-172, plan note [FR-172]
+- [x] T159 Codex adapter: keep `fileChange` items by id (started, patchUpdated; forget on completed; at most 32), fill the write card from the item (files, kind, diff with secrets masked), "Codex did not say which file" when none is known; `PermissionLike.cardSummary` [FR-172]
+- [x] T160 Renderer: multi-file diff counts (`diffLines` ends a hunk by its counts), Simple words for a request with no file [FR-172]
+- [x] T161 Tests: `test-codex-modes`, `test-codex-adapter` with the fixture `codex/file-change-approval.json` (generated types), `test-truth`; mutation runs (no item store, no masking) [FR-172]
+- [x] T162 `simcodexfile` + `scripts/check-codex-file-card.js` (`check:codex-file-card`, in `check:ui`) at 1440x900 and 1280x800, Expert and Simple; screenshots; README, CHANGELOG, `specs/README.md`, agent notes [FR-172]
+- [x] T163 Real check on a Codex session (one small edit in Ask first): the card names the file and shows the diff [FR-172; real: 2026-10-21, codex-cli 0.163.0, Linux, 1 prompt]
+- [x] T167 Review on #470: the write grant scope covers every path (several folders: every folder must be granted; a session grant grants each); paths kept uncut for decisions (one line only in the card and diff headers); every path of more than 100 changes reaches the guard, real "+N more", the 200-file guard cap flagged on the card; the "No newline" test asserts the marker; tests + mutation runs; re-review: the Expert button keeps every folder or "and N more folders", the simulator grants one chip per folder (`check-codex-file-card`) [FR-172]
 
 ## UI help and text pass (2026-10-21, issue #464)
 - [x] T143 Spec delta FR-165..FR-171, plan note, `docs/design-rules.md` rules (widths, measure, tooltip length; also fix its stale "+ New" line) [FR-165..FR-171]
