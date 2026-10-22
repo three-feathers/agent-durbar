@@ -8,6 +8,7 @@
  * The result then goes through `checkUserManifest` like any imported pack. The description is user text: never logged.
  */
 import { checkUserManifest, SCENE_KITS, UI_STYLES } from './themes';
+import { FONT_ALLOW, TYPED_TOKENS, typedValue } from './themetokens';
 
 /** The scene words a generated theme may rename (spec 036 FR-003). */
 export const GEN_WORDS: Record<string, string> = {
@@ -16,6 +17,7 @@ export const GEN_WORDS: Record<string, string> = {
   'place-terminal': 'where agents run commands ("Terminal")',
   'place-web': 'where agents browse ("Web")',
   'place-other': 'other tools ("Other tools")',
+  'place-coffee': 'where agents wait while their usage limit resets ("Coffee corner")',
   'lobby-label': 'the lobby caption ("Lobby: the places where agents work")',
   'door-close': 'button to close a room ("Close room")',
   'door-open': 'button to open a room ("Open room")',
@@ -36,6 +38,8 @@ export const GEN_ART: Record<string, string> = {
   'place-terminal': 'icon for the Terminal place: same as above',
   'place-web': 'icon for the Web place: same as above',
   'place-other': 'icon for the Other tools place: same as above',
+  'gadget-cup': 'the cup on an idle agent\'s desk, REPLACES the app\'s cup: about x 96-114, y 66-87 (steam is added above it by the app)',
+  'gadget-laptop': 'the laptop or keyboard on the desk in front of the person, REPLACES the app\'s: about x 55-99, y 79-88',
   'door-art': 'a small emblem on the room door: viewBox 0 0 20 20, the door is x 4-16, y 2.5-17.5',
   'lobby-art': 'a decorative band above the lobby: viewBox 0 0 320 36 (stretched to the lobby width)',
 };
@@ -74,6 +78,13 @@ export function buildThemePrompt(description: string, clean: Record<string, stri
     `- "scene": one of ${SCENE_KITS.map((u) => JSON.stringify(u)).join(', ')} (how people and furniture are drawn; your character, desk and monitor art is drawn over any of them, and "office" is the plainest base for it).`,
     '- "tokens": colours as hex like "#1a2b3c", for ALL of these keys. The value after each key is the default light theme, so you can see what the token is for:',
     Object.entries(clean).map(([k, v]) => `${k}=${v}`).join(' '),
+    '- "fonts and shapes", also in "tokens" (spec 070; leave one out to keep the default):',
+    `  --font (body text), --ui-display (titles, brand, room plates), --font-mono (paths and code): a font stack of 1-4 names, ONLY from: ${FONT_ALLOW.join(', ')}. Installed system fonts only; never a URL.`,
+    '  --t1-weight: the title weight, one of 500, 550, 600, 650, 700, 750, 800.',
+    '  --r-sm, --r-md, --r-lg, --r-xl (buttons, chips, panels, dialogs) and --radius (desk cards): corner radius "0" to "24px".',
+    '  --shadow-card (desk cards; default "none") and --shadow-pop (menus and popovers): "none" or one or two layers like "0 2px 8px rgba(0,0,0,.12)" (offsets up to 40px, blur up to 64px).',
+    'Sizes, spacing and borders are fixed by the app and cannot be set.',
+    '- "figures": {"shirts": [up to 8 hex colours], "hairs": [up to 8 hex colours]}: the clothes and hair colours of the people (their skin tones stay as they are).',
     '- "words": short plain-text names (at most 40 characters) that fit the look, for:',
     ...Object.entries(GEN_WORDS).map(([k, v]) => `  ${k}: ${v}`),
     '- "art": SVG fragments for these slots (give the character a costume that fits the look):',
@@ -99,7 +110,7 @@ export function buildFixPrompt(previous: Record<string, unknown>, issues: string
     JSON.stringify(rest),
     'It failed these checks:',
     ...issues.map((i) => '- ' + i),
-    'Reply with the WHOLE corrected theme as ONE JSON object with name, ui, scene, tokens and words, nothing else; leave out art. Change only what is needed to pass; keep the look.',
+    'Reply with the WHOLE corrected theme as ONE JSON object with name, ui, scene, tokens, figures and words, nothing else; leave out art. Change only what is needed to pass; keep the look.',
   ].join('\n');
 }
 
@@ -115,7 +126,10 @@ const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 /** A colour as lower-case hex: hex as is, rgb()/rgba() converted (alpha kept); anything else undefined. */
 export function toHex(v: string): string | undefined {
   if (HEX.test(v)) return v.toLowerCase();
-  const m = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*(0|1|0?\.\d+)\s*)?\)$/i.exec(v);
+  // spec 070 FR-031 (real, 2026-10-22): the prompt shows two defaults as `transparent` and `rgb(233 241 248 / .93)`, and haiku copied that form
+  if (/^transparent$/i.test(v)) return '#00000000';
+  const m = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*(0|1|0?\.\d+)\s*)?\)$/i.exec(v)
+    ?? /^rgba?\(\s*(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})\s*(?:\/\s*(0|1|0?\.\d+)\s*)?\)$/i.exec(v);
   if (!m) return undefined;
   const ch = [m[1], m[2], m[3]].map(Number);
   if (ch.some((x) => x > 255)) return undefined;
@@ -235,18 +249,39 @@ export function parseGeneratedTheme(reply: string, description: string, ctx: Gen
   if (r.ui !== undefined && ui !== r.ui) warnings.push('unknown UI style, using clean');
   if (r.scene !== undefined && scene !== r.scene) warnings.push('unknown scene kit, using office');
   const tokens: Record<string, string> = {};
+  const typed: Record<string, string> = {};
   const rt = r.tokens && typeof r.tokens === 'object' && !Array.isArray(r.tokens) ? (r.tokens as Record<string, unknown>) : {};
   let dropped = 0;
+  let typedDropped = 0;
   for (const [k0, v] of Object.entries(rt)) {
     // spec 040 FR-015 (real, 2026-10-20): Copilot's `auto` wrote every token name without the leading `--` (`bg`, not `--bg`)
-    const k = !k0.startsWith('--') && Object.prototype.hasOwnProperty.call(ctx.clean, '--' + k0) ? '--' + k0 : k0;
+    const known = (n: string): boolean => Object.prototype.hasOwnProperty.call(ctx.clean, n) || Object.prototype.hasOwnProperty.call(TYPED_TOKENS, n);
+    const k = !k0.startsWith('--') && known('--' + k0) ? '--' + k0 : k0;
+    if (Object.prototype.hasOwnProperty.call(TYPED_TOKENS, k)) { // spec 070 FR-030: fonts, weight, radii, shadows by their own grammar
+      const t = typedValue(k, v);
+      if (t !== null) typed[k] = t;
+      else typedDropped++;
+      continue;
+    }
     if (!Object.prototype.hasOwnProperty.call(ctx.clean, k)) { dropped++; continue; }
     const hx = typeof v === 'string' ? toHex(v.trim()) : undefined;
     if (hx) tokens[k] = hx;
     else dropped++;
   }
   if (dropped) warnings.push(`${dropped} colour${dropped > 1 ? 's were' : ' was'} not usable and left out`);
+  if (typedDropped) warnings.push(`${typedDropped} font or shape value${typedDropped > 1 ? 's were' : ' was'} not usable; the defaults are used`);
   if (Object.keys(tokens).length < 4) return { ok: false, error: 'The reply had too few usable colours.' };
+  // spec 070 FR-010: the people's clothes and hair colours (skins stay the app's)
+  const figures: Record<string, string[]> = {};
+  const rf = r.figures && typeof r.figures === 'object' && !Array.isArray(r.figures) ? (r.figures as Record<string, unknown>) : {};
+  let figDropped = 0;
+  for (const part of ['shirts', 'hairs']) {
+    const list = Array.isArray(rf[part]) ? (rf[part] as unknown[]) : [];
+    const ok = list.slice(0, 8).map((c) => (typeof c === 'string' ? toHex(c.trim()) : undefined)).filter((c): c is string => !!c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/.test(c));
+    figDropped += Math.min(list.length, 8) - ok.length;
+    if (ok.length) figures[part] = ok;
+  }
+  if (figDropped) warnings.push(`${figDropped} clothes or hair colour${figDropped > 1 ? 's were' : ' was'} not usable`);
   const words: Record<string, string> = {};
   const rw = r.words && typeof r.words === 'object' && !Array.isArray(r.words) ? (r.words as Record<string, unknown>) : {};
   for (const k of Object.keys(GEN_WORDS)) {
@@ -267,12 +302,13 @@ export function parseGeneratedTheme(reply: string, description: string, ctx: Gen
   const manifest: Record<string, unknown> = {
     id, name, author: 'AI theme maker', version: '1.0',
     description: String(description ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_DESCRIPTION),
-    extends: 'clean-office', ui, scene, tokens, words,
+    extends: 'clean-office', ui, scene, tokens: { ...tokens, ...typed }, words,
+    ...(Object.keys(figures).length ? { figures } : {}),
     ...(Object.keys(art).length ? { art } : {}),
   };
   const v = checkUserManifest(JSON.stringify(manifest));
   if (!v.ok) return { ok: false, error: 'The theme did not pass the checks: ' + (v.error || 'invalid') };
-  const raw = { name, ui, scene, tokens, words, ...(Object.keys(art).length ? { art: ra } : {}) };
+  const raw = { name, ui, scene, tokens: { ...tokens, ...typed }, words, ...(Object.keys(figures).length ? { figures } : {}), ...(Object.keys(art).length ? { art: ra } : {}) };
   return { ok: true, manifest, warnings, issues: themeIssues(tokens, ctx.clean, ui), raw };
 }
 

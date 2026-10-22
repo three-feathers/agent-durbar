@@ -11,7 +11,7 @@
  *      the theme's own fonts, where a wider display font could push header parts. Motion is reduced; a few seconds per theme.
  *
  *   npm run check:geometry                     Retro (dark, its own display font and art) against Clean Office
- *   CHECK_ALL_THEMES=1 npm run check:geometry  the 5 other built-in themes and scripts/fixtures/themes/check-user.json (nightly CI)
+ *   CHECK_ALL_THEMES=1 npm run check:geometry  the 5 other built-in themes, scripts/fixtures/themes/check-user.json and pink-studio.json (nightly CI)
  *   GEOMETRY_THEMES=retro,corporate npm run check:geometry
  *
  * Spec 008 FR-111 (owner decision 2026-10-22): pull requests check Retro only. The other styles change only colours, borders,
@@ -30,8 +30,10 @@ const ROOT = path.join(__dirname, '..');
 const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 const SIMS = [15, 12];
-const USER = path.join(ROOT, 'scripts', 'fixtures', 'themes', 'check-user.json');
-const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user';
+/* user packs by name: `user` (check-user.json) and the sample AI-style pack with fonts, corners, shadows and clothes (spec 070) */
+const FIXTURES = { user: 'check-user.json', 'pink-studio': 'pink-studio.json' };
+const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user,pink-studio';
+/* spec 070: the Pink Studio pack (fonts, radii, shadows, clothes) runs with every theme (nightly, or GEOMETRY_THEMES=pink-studio) */
 const THEMES = (process.env.GEOMETRY_THEMES || (process.env.CHECK_ALL_THEMES === '1' ? ALL_THEMES : 'retro')).split(',').map((s) => s.trim()).filter(Boolean);
 
 /* runs in the page: the box of EVERY element of the office, the lobby and the top bar (SVG art inside excluded: scene kits draw
@@ -57,15 +59,15 @@ function measure() {
 
 async function driver(ctx) {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
-  const userTheme = JSON.parse(fs.readFileSync(USER, 'utf8'));
+  const packs = Object.fromEntries(Object.entries(FIXTURES).map(([k, f]) => [k, JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'themes', f), 'utf8'))]));
   const query = (theme, sim) => {
     const q = { sim: String(sim), simfreeze: '1' };
-    if (theme === 'user') { q.theme = userTheme.id; q.usertheme = JSON.stringify(userTheme); } else q.theme = theme;
+    if (packs[theme]) { q.theme = packs[theme].id; q.usertheme = JSON.stringify(packs[theme]); } else q.theme = theme;
     return q;
   };
   const snap = async (theme, sim, w, h) => {
     await H.load({ w, h, query: query(theme, sim), ready: 'fit', settle: false });
-    const want = theme === 'user' ? userTheme.id : theme;
+    const want = packs[theme] ? packs[theme].id : theme;
     await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(want)}`, 5000);
     const on = await ctx.js(`window.THEME.current().id`);
     if (on !== want) throw new Error(`theme ${want} was not applied (on screen: ${on})`);
@@ -77,7 +79,8 @@ async function driver(ctx) {
        expanded from an earlier one. A wait that times out fails the run instead of measuring a page that is not ready. */
     if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()`, 8000))) throw new Error(`${theme} sim${sim}-${w}x${h}: the simulator never became steady (agents listed, scripts replayed, totals read)`);
     // agents go to the lobby after about 600 ms (instant with reduced motion): wait until somebody is there
-    if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()&&!!document.querySelector('.place.busy')`, 8000))) throw new Error(`${theme} sim${sim}-${w}x${h}: nobody reached a place in the lobby`);
+    // (spec 068: not the coffee corner, where an agent on a break stands at once)
+    if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()&&!!document.querySelector('.place.busy:not([data-place="coffee"])')`, 8000))) throw new Error(`${theme} sim${sim}-${w}x${h}: nobody reached a place in the lobby`);
     // the pointer of the virtual display rests mid-window: a hover style (retro nudges a card by 1px) is not layout
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
     await ctx.sleep(300);

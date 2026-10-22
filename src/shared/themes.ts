@@ -4,10 +4,11 @@
  * data-only manifest, id kebab-case ≤64 chars, manifest ≤64 KB, ≤160 tokens, ≤24 art slots, ≤24 words.
  */
 import { parseThemeId } from './credits';
+import { HOSTILE_RE, TYPED_TOKENS, typedValue } from './themetokens';
 
 export const USER_THEME_LIMITS = {
   manifestBytes: 64 * 1024,
-  maxTokens: 160, // every Clean Office token (135) fits: a full dark look needs them (spec 040 FR-020; was 40)
+  maxTokens: 200, // every registered token fits: 147 colours and the typed tokens (spec 070 FR-004; was 160, and 40 before spec 040 FR-020)
   maxArt: 24,
   maxWords: 24,
   maxFiles: 8,
@@ -20,11 +21,17 @@ export interface UserThemeCheck {
   id?: string;
   name?: string;
   manifest?: Record<string, unknown>;
+  /** spec 070 FR-020: tokens that are only unusable (wrong type, out of range, a font not on the list): the defaults are used for them */
+  dropped?: string[];
 }
 
 /**
  * Token grammar (spec 040 FR-006), the same as `isTokenValue` in theme.js: a colour, a number with an optional unit or one
- * keyword, at most 64 characters. Keys must be `--name`. Returns the first offending key, or null.
+ * keyword, at most 64 characters. Typed tokens (fonts, weight, radii, shadows) have their own grammar (spec 070, `themetokens.ts`).
+ * Keys must be `--name`.
+ *
+ * Two levels (spec 070 FR-020): `badToken` returns the first key that is hostile (not a `--name`, not a string, over 160 characters, or
+ * markup / CSS syntax): the pack is refused. `unusableTokens` lists the keys that are only unusable: they are dropped and the defaults used.
  */
 const TOKEN_KEY_RE = /^--[a-z0-9-]{1,48}$/;
 const TOKEN_VALUE_RE = /^(#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla)\([0-9a-z., %/+-]*\)|-?[0-9]*\.?[0-9]+(px|em|rem|%|s|ms|deg)?|[a-z][a-z-]*)$/i;
@@ -32,16 +39,25 @@ export function badToken(tokens: unknown): string | null {
   if (!tokens || typeof tokens !== 'object' || Array.isArray(tokens)) return null;
   for (const [k, v] of Object.entries(tokens as Record<string, unknown>)) {
     if (!TOKEN_KEY_RE.test(k)) return JSON.stringify(k.slice(0, 40));
-    if (typeof v !== 'string' || v.trim().length > 64 || !TOKEN_VALUE_RE.test(v.trim())) return k;
+    if (typeof v !== 'string' || v.trim().length > 160 || HOSTILE_RE.test(v)) return k;
   }
   return null;
+}
+export function unusableTokens(tokens: unknown): string[] {
+  if (!tokens || typeof tokens !== 'object' || Array.isArray(tokens)) return [];
+  const out: string[] = [];
+  for (const [k, v] of Object.entries(tokens as Record<string, unknown>)) {
+    if (Object.prototype.hasOwnProperty.call(TYPED_TOKENS, k)) { if (typedValue(k, v) === null) out.push(k); }
+    else if (typeof v !== 'string' || v.trim().length > 64 || !TOKEN_VALUE_RE.test(v.trim())) out.push(k);
+  }
+  return out;
 }
 
 /** UI styles a manifest may name (spec 035 FR-009); the same list as `UI_STYLES` in theme.js. */
 /** Art slots the renderer draws (spec 040 FR-010); the same list as `ART_SLOTS` in theme.js. */
 export const ART_SLOTS = ['plant', 'room-back-wall', 'room-back-window', 'room-floor', 'lobby-art', 'door-art',
   'place-library', 'place-software', 'place-terminal', 'place-web', 'place-other',
-  'char-body', 'char-robe', 'char-headwear', 'char-collar', 'desk-back', 'desk-art', 'monitor-art', 'hair-acc'];
+  'char-body', 'char-robe', 'char-headwear', 'char-collar', 'desk-back', 'desk-art', 'monitor-art', 'hair-acc', 'gadget-cup', 'gadget-laptop'];
 /** Scene kits a manifest may name (spec 035 FR-013); the same list as `SCENE_KITS` in theme.js. */
 export const SCENE_KITS = ['office', 'corporate', 'pixel', 'court-indian', 'court-european', 'court-japanese'];
 export const UI_STYLES = ['clean', 'corporate', 'retro', 'court-indian', 'court-european', 'court-japanese'];
@@ -70,6 +86,6 @@ export function checkUserManifest(text: string): UserThemeCheck {
   const unknownSlot = art.find((k) => !ART_SLOTS.includes(k));
   if (unknownSlot !== undefined) return { ok: false, error: 'art slot ' + JSON.stringify(unknownSlot.slice(0, 40)) + ' is not one the app draws' };
   const bad = badToken(m.tokens);
-  if (bad) return { ok: false, error: 'token ' + bad + ' is not allowed (keys are --names; values are a colour, a number or one word)' };
-  return { ok: true, id, name, manifest: m };
+  if (bad) return { ok: false, error: 'token ' + bad + ' is not allowed (keys are --names; values may not hold markup, url() or CSS syntax)' };
+  return { ok: true, id, name, manifest: m, dropped: unusableTokens(m.tokens) };
 }

@@ -186,6 +186,13 @@ assert.strictEqual(toHex('rgba(0,0,0,1)'), '#000000');
 assert.strictEqual(toHex('rgb(300,0,0)'), undefined);
 assert.strictEqual(toHex('red'), undefined);
 assert.strictEqual(toHex('#ABC'), '#abc');
+// spec 070 FR-031: the CSS forms the prompt's defaults use (real haiku reply, 2026-10-22)
+assert.strictEqual(toHex('transparent'), '#00000000');
+assert.strictEqual(toHex('rgb(251 236 240 / .93)'), '#fbecf0ed');
+assert.strictEqual(toHex('rgb(251 236 240)'), '#fbecf0');
+assert.strictEqual(toHex('rgb(251 236 240 / 1)'), '#fbecf0');
+assert.strictEqual(toHex('rgb(251, 236 240)'), undefined);
+assert.strictEqual(toHex('rgb(300 0 0 / .5)'), undefined);
 {
   const r = parseGeneratedTheme(JSON.stringify({ ...light, tokens: { ...light.tokens, '--sage': 'rgb(63, 125, 108)' } }), 'x', ctx);
   assert.ok(r.ok && (r.manifest.tokens as Record<string, string>)['--sage'] === '#3f7d6c', 'rgb() converted, not dropped');
@@ -198,4 +205,39 @@ assert.strictEqual(new Set(four).size, 4);
 assert.ok(four.every((i) => THEME_IDEAS.includes(i)));
 assert.strictEqual(pickIdeas(99).length, THEME_IDEAS.length);
 assert.match(buildRetryPrompt('a fox den', clean, 'no JSON'), /a fox den[\s\S]*Your previous reply could not be used \(no JSON\)/);
+// spec 070 FR-030: fonts, weight, radii, shadows by their own grammar; figures; gadget slots; per-value warnings
+{
+  const p = buildThemePrompt('a pink fashion studio', clean);
+  for (const k of ['--font', '--ui-display', '--font-mono', '--t1-weight', '--r-md', '--radius', '--shadow-card', '--shadow-pop', '"figures"', 'gadget-cup', 'gadget-laptop', 'Georgia']) assert.ok(p.includes(k), 'the prompt asks for ' + k);
+  assert.ok(/never a URL/.test(p) && /Sizes, spacing and borders are fixed/.test(p));
+  const reply = { ...light, tokens: { ...light.tokens, font: 'Avenir Next, Arial', '--ui-display': 'Didot, Comic Sans MS', '--r-md': '14px', '--radius': '99px', '--shadow-card': '0 2px 8px rgba(224,33,138,.18)', '--t1-weight': '700' },
+    figures: { shirts: ['#e0218a', '#ff8cc6', 'hotpink', 'rgb(255, 95, 176)'], hairs: ['#f2d16b'] }, art: { ...light.art, 'gadget-cup': '<rect x="98" y="76" width="10" height="10" fill="#ff5fb0"/>' } };
+  const g = parseGeneratedTheme(JSON.stringify(reply), 'pink', ctx);
+  assert.ok(g.ok);
+  if (g.ok) {
+    const t = g.manifest.tokens as Record<string, string>;
+    assert.strictEqual(t['--font'], '"Avenir Next",Arial,sans-serif', 'a bare token name, normalized font stack');
+    assert.strictEqual(t['--ui-display'], undefined, 'a stack with a font not on the list is dropped');
+    assert.strictEqual(t['--radius'], undefined, 'a radius over 24px is dropped');
+    assert.strictEqual(t['--r-md'], '14px');
+    assert.strictEqual(t['--t1-weight'], '700');
+    assert.strictEqual(t['--shadow-card'], '0 2px 8px rgba(224,33,138,.18)');
+    assert.deepStrictEqual(g.manifest.figures, { shirts: ['#e0218a', '#ff8cc6', '#ff5fb0'], hairs: ['#f2d16b'] }, 'rgb() converted, a name dropped');
+    assert.ok(g.warnings.some((w) => /2 font or shape values were not usable/.test(w)), g.warnings.join('|'));
+    assert.ok(g.warnings.some((w) => /1 clothes or hair colour was not usable/.test(w)), g.warnings.join('|'));
+    assert.ok((g.manifest.art as Record<string, string>)['gadget-cup'], 'the gadget art is kept');
+    const c = checkUserManifest(JSON.stringify(g.manifest));
+    assert.ok(c.ok && c.dropped!.length === 0, 'the saved pack imports with nothing dropped');
+  }
+  // review on #500: a font name that lives on Object.prototype is only an unusable font, not a reason to refuse the whole theme
+  for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+    const r = parseGeneratedTheme(JSON.stringify({ ...light, tokens: { ...light.tokens, '--font': name } }), 'proto', ctx);
+    assert.ok(r.ok, `--font ${name}: the theme is kept`);
+    if (r.ok) {
+      assert.strictEqual((r.manifest.tokens as Record<string, string>)['--font'], undefined, `--font ${name} is dropped`);
+      assert.ok(r.warnings.some((w) => /font or shape value was not usable/.test(w)), r.warnings.join('|'));
+      assert.ok(checkUserManifest(JSON.stringify(r.manifest)).ok, 'and the saved pack imports');
+    }
+  }
+}
 console.log('themegen: ok');

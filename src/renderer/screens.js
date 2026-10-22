@@ -61,12 +61,46 @@
   }
   const sw=(on,label,attrs)=>`<button class="swt${on?' on':''}" type="button" role="switch" aria-checked="${on?'true':'false'}" aria-label="${esc(label)}" ${attrs||''}><i></i></button>`;
 
+  /* ---------------- Settings: Profiles (custom agents), spec 043 FR-010/FR-014 ---------------- */
+  const PE=()=>window.DurbarProfileEditor;
+  const profilesOn=()=>!!(PE()&&X.bridge.listProfileFiles&&X.bridge.readProfileFile);
+  const PF_APPS=[['copilot','GitHub Copilot'],['claude','Claude Code']];
+  async function profilesInner(){
+    let l=null;try{l=await X.bridge.listProfileFiles();}catch(e){l=null;}
+    const files=(l&&l.files)||[];
+    const row=f=>`<li class="pf-row" data-pf="${esc(f.id)}"><div class="pf-main"><div class="pf-top"><b>${esc(f.name)}</b><span class="mtag">${esc(PE().placeText(f))}</span>${f.writable?'':`<span class="mtag warn" title="${esc(f.note||'')}">read-only</span>`}</div>${f.description?`<small>${esc(f.description)}</small>`:''}<small><code title="${esc(f.path)}">${esc(f.fileName)}</code></small></div>${f.tooBig?`<span class="scr-note small">${esc(f.note||'Too large to open here.')}</span>`:`<button class="btn sm" type="button" data-pf-open="${esc(f.id)}" aria-label="${esc('Open '+f.name)}">Open</button>`}</li>`;
+    const groups=PF_APPS.map(([app,label])=>{const fs=files.filter(f=>f.app===app);return `<h4 class="scr-sub">${esc(label)} <small>${fs.length}</small></h4>${fs.length?`<ul class="pf-list">${fs.map(row).join('')}</ul>`:`<p class="scr-note small">None yet. ${app==='copilot'?'Copilot loads <code>.github/agents/*.agent.md</code> in a folder and <code>~/.copilot/agents</code>.':'Claude Code profiles are <code>.claude/agents/*.md</code> in a folder and <code>~/.claude/agents</code>.'}</p>`}`;}).join('');
+    return `<h3 id="pfH">Agent Success Profiles (custom agents)</h3>
+      <p class="scr-note">Markdown files that give an agent its role, instructions, tools and model. Open one to read it, change it and save it; changes apply to sessions started after saving. Codex has no profiles in Durbar yet.</p>
+      ${l&&l.ok?groups:'<p class="scr-note">Could not list the profile files.</p>'}
+      ${X.bridge.createProfileFile?'<div class="scr-tools"><button class="btn" type="button" id="pfNew">New Agent Success Profile…</button></div>':''}`;
+  }
+  function wireProfiles(){
+    const sec=$('pfSec');if(!sec||sec.dataset.wired)return;sec.dataset.wired='1';
+    sec.addEventListener('click',e=>{
+      const o=e.target.closest('[data-pf-open]');if(o){PE().open(o.dataset.pfOpen,{returnFocus:o});return;}
+      if(e.target.closest('#pfNew'))PE().newProfile({returnFocus:$('pfNew')});
+    });
+  }
+  /* after a save or a new file: the list shows the new name and description (FR-016), keeping the scroll position */
+  async function repaintProfiles(){
+    const sec=$('pfSec');if(!sec||!cur||cur.kind!=='settings')return;
+    const html=await profilesInner();
+    const s2=$('pfSec');if(s2)s2.innerHTML=html;
+  }
+  if(window.DurbarProfileEditor)window.DurbarProfileEditor.onChange(()=>{repaintProfiles();});
+
   /* ---------------- Settings: MCP servers ---------------- */
   let mcp=null; /* last McpState */
   let advOpen=false; /* Settings > Advanced (MCP) open; kept across repaints, reset when Settings opens (FR-030) */
+  let glob=null; /* spec 069: the agent apps' own lists (names only), read with Settings */
+  let hm=null; /* spec 069 FR-020: servers missing or different between those lists */
   async function loadMcp(){
     if(!X.bridge.mcpState){mcp=null;return;}
     try{mcp=await X.bridge.mcpState();}catch(e){mcp=null;}
+    glob=null;hm=null;
+    if(X.bridge.mcpGlobalState){try{glob=await X.bridge.mcpGlobalState();}catch(e){glob=null;}}
+    if(X.bridge.mcpGlobalDiff){try{hm=await X.bridge.mcpGlobalDiff();}catch(e){hm=null;}}
   }
   async function paintSettings(focus){
     const first=!mcp;
@@ -76,6 +110,7 @@
     const r=root();
     if(!mcp){r.innerHTML=head('Settings')+'<div class="scr-body"><p class="scr-note">MCP settings are not available in this build.</p></div>';wireHead();return;}
     const amb=mcp.cli.map(cliRow).join('');
+    const globSec=globalSection();
     let app={};
     if(X.bridge.getSettings){try{app=(await X.bridge.getSettings())||{};}catch(e){app={};}}
     /* Usage totals (spec 011 FR-028, issue #21): what the header shows, kept across restarts, and the reset */
@@ -99,8 +134,12 @@
        extras, every server seen in tool events this run and any already mapped. */
     /* Agent mood (spec 034 FR-004): Serious mode turns the monster, ambulance and the other drawings off */
     const moodSec=X.bridge.setSeriousMode&&X.isSerious?`<section class="scr-sec" aria-labelledby="moodH"><h3 id="moodH">Agent mood</h3>
-        <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a faint at the spending limit, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off.</p>
+        <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a coffee break when a usage or spending limit is used up, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off.</p>
         <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Serious mode</b> <small>(no mood drawings)</small>${sw(!!X.isSerious(),'Serious mode: no mood drawings on the agent figures','id="seriousSw"')}</span><span class="scr-note small" id="seriousMsg" role="status"></span></div></section>`:'';
+    /* spec 068 FR-006: what happens when a coffee break ends (a usage limit of the agent app has reset) */
+    const breakSec=X.bridge.setBreakResume&&X.breakResume?`<section class="scr-sec" aria-labelledby="brkH"><h3 id="brkH">Coffee break</h3>
+        <p class="scr-note">When an agent's usage limit is used up, it waits in the coffee corner instead of showing an error. When the agent app says when the limit resets, the agent comes back then and sends one message to continue where it stopped, but only when that costs nothing extra (a plan or rate window). It never goes past the spending limit you set, never resumes after a restart, and never checks on its own whether a limit has reset. A limit that may lead to paid usage always asks first.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Resume by itself when the limit resets</b> <small>(off: always ask me)</small>${sw(X.breakResume()==='auto','Resume by itself when the limit resets (off: always ask me)','id="breakSw"')}</span><span class="scr-note small" id="breakMsg" role="status"></span></div></section>`:'';
     /* spec 052 FR-059: an OS notification when an agent needs you while Durbar is in the background (on for real sessions, off in the demo) */
     const notifySec=X.bridge.setNotifyNeedsMe&&X.isNotify?`<section class="scr-sec" aria-labelledby="ntfH"><h3 id="ntfH">Notifications</h3>
         <p class="scr-note">While Agent Durbar is in the background, one notification tells you when an agent asks for permission, asks a question, reaches its spending limit or hits an error. It shows only the agent's name and a short summary of the request, never file contents. The window title and the app icon show how many need you.</p>
@@ -143,8 +182,9 @@
     const badThemes=userThemes.filter((u)=>u.ok===false);
     const themeSec=`<section class="scr-sec" aria-labelledby="themeH"><h3 id="themeH">Theme</h3>
         <p class="scr-note">The look of the office; the choice applies at once and is kept on this computer.</p>
-        <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, small art and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, fonts (system fonts only), corner radii, shadows, the people's clothes and hair, small art (desk gadgets too) and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
         <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';const dm=/^Durbar · (.+)$/.exec(t.name||'');return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx">${dm?'<span class="thover">Durbar</span>':''}<b title="${esc(t.name)}">${esc(dm?dm[1]:t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
+        ${themeFallbackNote(themes)}
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
         <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button></div></section>`;
     const ab=app.about;
@@ -159,6 +199,8 @@
       if(X.bridge.copilotAuth&&kinds.some(k=>k.id==='copilot'&&k.state==='ready')){try{cp=await X.bridge.copilotAuth();}catch(e){cp=null;}}
       hsSec=window.DurbarHarnesses.sectionHTML(kinds,cp);
     }
+    /* spec 043 FR-010, FR-019: Settings > Agent Success Profiles (custom agents): the profile files of the office's folders and yours */
+    const pfSec=profilesOn()?`<section class="scr-sec" id="pfSec" aria-labelledby="pfH">${await profilesInner()}</section>`:'';
     /* spec 052 FR-031 (#306): Simple or Expert */
     const dl=X.detail?X.detail.get():'expert';
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
@@ -171,7 +213,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
@@ -180,7 +222,8 @@
         ${fileNote}
         <h4 class="scr-sub">From the Copilot CLI list <small>all agents</small></h4>
         <ul class="srvs" id="ambList">${amb}</ul>
-        <p class="scr-note small">You cannot edit these here: change <code>${esc(f.label)}</code> with the Copilot CLI or an editor. The switch only controls whether <b>new</b> sessions started by this app start a server; a running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
+        <p class="scr-note small">${glob&&glob.ok?'<b>Remove…</b> edits':'You cannot edit these here: change'} <code>${esc(f.label)}</code>${glob&&glob.ok?' after you confirm, with a backup next to it.':' with the Copilot CLI or an editor.'} The switch only controls whether <b>new</b> sessions started by this app start a server; a running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
+        ${globSec}
       </section>
       <section class="scr-sec" aria-labelledby="extH"><h3 id="extH">Extras for one folder <small>optional</small></h3>
         <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header.</p>
@@ -190,6 +233,7 @@
     /* spec 051 FR-008: entry points open Settings at Agent apps */
     if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}
     if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}}
+    if($('pfSec'))wireProfiles();
     if(X.floors&&$('floorsSet'))X.floors.render();
     if(X.sched&&$('schedSet'))X.sched.render();
     if($('capSave'))$('capSave').onclick=async()=>{
@@ -245,8 +289,20 @@
   }
   /* spec 040 FR-014..FR-018: AI theme maker. Describe -> one prompt to a harness with `oneShot` -> a checked manifest ->
      preview (Try it, live, not saved) -> Save as my theme, Try again or Discard (back to the theme that was active). User text is never logged. */
+  /* spec 040 FR-015 / spec 052 FR-093: what one one-shot request costs, in the words of the app's plan (also used by spec 043 FR-028) */
+  function oneShotCostLine(k){const n=k.displayName||k.id;
+    return 'Uses your own '+n+' account: '+(k.id==='claude'?'a small cost (at most $0.25, usually about a cent).':k.id==='copilot'?'a few AI credits from your plan.':k.id==='codex'?'a small part of your ChatGPT plan\'s usage.':'a small cost on your own plan.');}
   /* spec 040 FR-015: AI credits a Copilot generation reported (1e9 nano = 1 credit) */
   const aiCredits=(nano)=>(Number(nano)/1e9).toFixed(2);
+  /* spec 070 FR-022: one line per own theme that could not use some of its values (dropped, or a text pair set back for contrast) */
+  function themeFallbackNote(themes){
+    if(!window.THEME||!window.THEME.fallbacks)return '';
+    const lines=themes.filter((t)=>t.own).map((t)=>{const f=window.THEME.fallbacks(t.id);const d=f.dropped.length,c=f.contrast.length;
+      /* spec 070 FR-022: dropped values use the defaults; hard-to-read colours are adjusted, not set back (FR-023) */
+      const parts=[d?d+' value'+(d>1?'s use':' uses')+' the defaults (not usable)':'',c?c+' colour'+(c>1?'s':'')+' adjusted so text stays readable':''].filter(Boolean);
+      return parts.length?esc(t.name)+': '+parts.join('; '):'';}).filter(Boolean);
+    return lines.length?`<p class="scr-note small" role="status" id="thFallbacks">${lines.join('; ')}.</p>`:'';
+  }
   async function aiTheme(){
     const before=(window.THEME&&window.THEME.current&&window.THEME.current().id)||'clean-office';
     let kinds=[];
@@ -254,8 +310,7 @@
     if(!kinds.length){await dialog({title:'Make a theme with AI',html:'<p class="dsub">This needs Claude Code, OpenAI Codex or GitHub Copilot, installed and signed in on this computer.</p>',buttons:[{label:'Close',value:'ok',cls:'primary'}]});return;}
     let desc='',kind=kinds[0].id;
     /* spec 052 FR-093: the cost line names only the app picked in "Made by", and follows the selection */
-    const aiCostLine=(id)=>{const k=kinds.find((x)=>x.id===id)||kinds[0], n=k.displayName||k.id;
-      return 'Uses your own '+n+' account: '+(k.id==='claude'?'a small cost (at most $0.25, usually about a cent).':k.id==='copilot'?'a few AI credits from your plan.':k.id==='codex'?'a small part of your ChatGPT plan\'s usage.':'a small cost on your own plan.');};
+    const aiCostLine=(id)=>oneShotCostLine(kinds.find((x)=>x.id===id)||kinds[0]);
     /* spec 040 FR-021: a few example looks at random, so people see how to describe one */
     let ideas=[];
     if(X.bridge.themeIdeas){try{ideas=(await X.bridge.themeIdeas())||[];}catch(e){ideas=[];}}
@@ -284,6 +339,10 @@
         if(again&&again.value==='again')continue;return;
       }
       const m=g.manifest, toks=m.tokens||{}, hex=/^#[0-9a-f]{3,6}$/i;
+      /* spec 070 FR-025: colours apart from fonts and shapes; FR-024: what the contrast fix adjusts when the theme is applied */
+      const typed=(window.THEME&&window.THEME.TYPED_TOKENS)||{}, nShape=Object.keys(toks).filter((k)=>Object.prototype.hasOwnProperty.call(typed,k)).length, nCol=Object.keys(toks).length-nShape;
+      const tokenLine=nCol+' colour'+(nCol===1?'':'s')+(nShape?', '+nShape+(nShape===1?' font or shape':' fonts and shapes'):'');
+      const adjusted=(window.THEME&&window.THEME.contrastCheck?window.THEME.contrastCheck(m):[]).length;
       const swatches=['--bg','--surface','--ink','--sage','--blue','--amber','--brand-bg','--desk'].filter((k)=>hex.test(toks[k]||'')).map((k)=>`<span class="ai-sw" title="${esc(k)}" data-col="${esc(toks[k])}"></span>`).join('');
       /* spec 052 (2026-10-21, round 1): say what each word renames (the Clean Office word), never the internal key such as place-library */
       const plain=(k)=>String(window.THEME&&window.THEME.plainWord?window.THEME.plainWord(k):k).split(':')[0];
@@ -292,9 +351,10 @@
       const lookName=(id)=>{const t=window.THEME&&window.THEME.list?window.THEME.list().find((x)=>x.id===lookId(id)):null;return t?t.name:String(id||'');};
       for(;;){
         const pick=await dialog({title:'Theme: '+m.name,wide:true,html:`<div class="ai-sws" aria-hidden="true">${swatches}</div>
-          <p class="dsub">Built on the <b>${esc(lookName(m.ui))}</b> look, with <b>${esc(lookName(m.scene))}</b> people and furniture; ${Object.keys(toks).length} colours.${g.costUsd?` Made for about $${esc(g.costUsd.toFixed(4))} (estimate).`:''}${g.nanoAiu?` Used ${esc(aiCredits(g.nanoAiu))} AI credits (as reported by Copilot).`:''}</p>
+          <p class="dsub">Built on the <b>${esc(lookName(m.ui))}</b> look, with <b>${esc(lookName(m.scene))}</b> people and furniture; ${esc(tokenLine)}.${g.costUsd?` Made for about $${esc(g.costUsd.toFixed(4))} (estimate).`:''}${g.nanoAiu?` Used ${esc(aiCredits(g.nanoAiu))} AI credits (as reported by Copilot).`:''}</p>
           ${words?`<ul class="ai-words">${words}</ul>`:''}
           ${g.warnings&&g.warnings.length?`<p class="scr-note small">${esc(g.warnings.join('; '))}.</p>`:''}
+          ${adjusted?`<p class="scr-note small">${adjusted} colour${adjusted>1?'s':''} adjusted so text stays readable.</p>`:''}
           <p class="scr-note small">Try it shows it now without saving. Discard goes back to the theme you had.</p>`,
           buttons:[{label:'Discard',value:null},{label:'Try again',value:'again'},{label:'Try it',value:'try'},{label:'Save as my theme',value:'save',cls:'primary'}],
           onOpen:(d)=>d.querySelectorAll('[data-col]').forEach((el)=>{if(hex.test(el.dataset.col))el.style.background=el.dataset.col;})}); /* CSSOM, validated hex only */
@@ -348,10 +408,116 @@
   /* one server of the Copilot CLI list (or the built-in one): read-only, with its exact command/URL and a switch for new sessions */
   function cliRow(a){
     const run=a.command||a.url?(a.transport==='stdio'||a.command?[a.command].concat(a.args||[]).join(' '):a.url):'';
-    return `<li class="srv amb" data-amb="${esc(a.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(a.name)}</b><span class="mtag src">${a.origin==='builtin'?'built-in':'Copilot CLI list'}</span>${a.transport?`<span class="mtag">${esc(a.transport)}</span>`:''}</div>
+    const also=a.origin==='builtin'?[]:appsWith(a.name).filter(x=>x!=='copilot');
+    const rm=a.origin!=='builtin'&&appsWith(a.name).length?`<button class="btn sm" type="button" data-act="grm" data-g="${esc(a.name)}" aria-label="Remove ${esc(a.name)} from your agent apps' lists">Remove…</button>`:'';
+    return `<li class="srv amb" data-amb="${esc(a.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(a.name)}</b><span class="mtag src">${a.origin==='builtin'?'built-in':'Copilot CLI list'}</span>${also.map(x=>`<span class="mtag src">${esc(APPN[x])}</span>`).join('')}${a.transport?`<span class="mtag">${esc(a.transport)}</span>`:''}</div>
       ${run?`<code class="srv-cmd" title="${esc(run)}">${esc(cap(run,180))}</code>`:''}</div>
-      <div class="srv-act">${sw(a.enabled,(a.enabled?'Switch off ':'Switch on ')+a.name+' for new sessions','data-act="amb"')}</div></li>`;
+      <div class="srv-act">${rm}${sw(a.enabled,(a.enabled?'Switch off ':'Switch on ')+a.name+' for new sessions','data-act="amb"')}</div></li>`;
   }
+  /* ---------------- spec 069: the agent apps' own lists (global) ---------------- */
+  const APPN={copilot:'Copilot CLI',claude:'Claude Code',codex:'Codex'};
+  const SRCN={copilot:'Copilot',claude:'Claude Code',codex:'Codex',folder:'Durbar folder',builtin:'built-in',runtime:'runtime'};
+  const appsWith=name=>glob&&glob.ok?glob.apps.filter(x=>x.servers.some(v=>v.name===name)).map(x=>x.app):[];
+  const entryOf=name=>{if(!glob||!glob.ok)return null;for(const x of glob.apps){const v=x.servers.find(y=>y.name===name);if(v)return v;}return null;};
+  const runOf=v=>v.command?[v.command].concat(v.args||[]).join(' '):(v.url||'');
+  /* Servers of Claude Code's and Codex's lists that the Copilot CLI list above does not have */
+  function globalSection(){
+    if(!glob||!glob.ok)return '';
+    const cop=new Set(mcp.cli.map(a=>a.name));
+    const names=[];for(const x of glob.apps)if(x.app!=='copilot')for(const v of x.servers)if(!cop.has(v.name)&&!names.includes(v.name))names.push(v.name);
+    const cl=glob.apps.find(x=>x.app==='claude'),clOff=new Set(cl?cl.off:[]);
+    const rows=names.map(n=>{const v=entryOf(n),apps=appsWith(n),run=runOf(v);
+      const clSw=apps.includes('claude')?sw(!clOff.has(n),(clOff.has(n)?'Switch on ':'Switch off ')+n+' for new Claude Code sessions in Agent Durbar','data-act="gcl" data-g="'+esc(n)+'"'):'';
+      return `<li class="srv glob" data-g="${esc(n)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(n)}</b>${apps.map(x=>`<span class="mtag src">${esc(APPN[x])}</span>`).join('')}${v.transport!=='other'?`<span class="mtag">${esc(v.transport)}</span>`:'<span class="mtag">managed by the app</span>'}</div>
+        ${run?`<code class="srv-cmd" title="${esc(run)}">${esc(cap(run,180))}</code>`:''}</div>
+        <div class="srv-act">${v.transport!=='other'?`<button class="btn sm" type="button" data-act="grm" data-g="${esc(n)}" aria-label="Remove ${esc(n)} from your agent apps' lists">Remove…</button>`:''}${clSw}</div></li>`;}).join('');
+    const files=glob.apps.map(x=>`<li><b>${esc(x.label)}</b>: <code>${esc(x.file)}</code> ${x.error?`<span class="warn">${esc(x.error)}</span>`:x.found?`(${x.servers.length} server${x.servers.length===1?'':'s'})`:'(no file yet)'}</li>`).join('');
+    return `<h4 class="scr-sub">From Claude Code and Codex <small>their own lists</small></h4>
+        <div class="scr-tools"><button class="btn" type="button" id="globAdd" title="Write a server into the lists of the agent apps you choose, after you review each file">+ Add server for all folders…</button></div>
+        ${rows?`<ul class="srvs" id="globList">${rows}</ul>`:'<p class="scr-note small">No other servers in Claude Code\'s or Codex\'s lists.</p>'}
+        ${harmonizeSection()}
+        <details class="scr-more"><summary>Files read</summary><ul class="scr-note small gfiles">${files}</ul><p class="scr-note small">Read again every time this screen opens. Agent Durbar writes these files only after you confirm, with a backup next to each (to undo a change, copy the <code>.bak</code> file back by hand), and leaves them readable only by you. The Claude Code switch decides whether Agent Durbar passes that server to its own Claude Code sessions; Codex starts the servers of its list itself.</p></details>`;
+  }
+  /* spec 069 FR-021/FR-022: servers to bring in step, shown when two or more lists can be read and something differs */
+  function harmonizeSection(){
+    if(!hm||!hm.ok||hm.apps.length<2||!hm.items.length)return '';
+    const chip=(a,cls)=>`<span class="mtag${cls?' '+cls:''}">${esc(APPN[a])}</span>`;
+    const rows=hm.items.map(i=>`<li class="srv hm" data-h="${esc(i.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(i.name)}</b><span class="hmlbl">in</span>${i.in.map(a=>chip(a,'src')).join('')}${i.missing.length?`<span class="hmlbl">missing in</span>${i.missing.map(a=>chip(a,'warn')).join('')}`:''}</div>
+        ${i.differs.length?`<span class="imp-note">Different between the lists: ${esc(i.differs.join(', '))}</span>`:''}${i.error?`<span class="imp-note">${esc(i.error)}</span>`:''}</div>
+        <div class="srv-act">${i.from.length?`<button class="btn sm" type="button" data-act="hcopy" data-g="${esc(i.name)}" aria-label="Copy ${esc(i.name)} to other agent apps">Copy…</button>`:''}</div></li>`).join('');
+    return `<h4 class="scr-sub" id="hmH">Harmonize <small>${hm.items.length} server${hm.items.length===1?'':'s'} not the same in all your agent apps</small></h4>
+        <p class="scr-note small">Copy a server to the agent apps that miss it, or replace a different one. You review each file first; values are copied as they are, and references stay references.</p>
+        <ul class="srvs" id="hmList">${rows}</ul>`;
+  }
+  async function copyGlobal(name){
+    const it=hm&&hm.items.find(x=>x.name===name);if(!it||!it.from.length||!X.bridge.mcpGlobalCopyPreview)return;
+    const pick=d=>{const f=d.querySelector('#hmFrom').value;d.querySelectorAll('[name=gApp]').forEach(x=>{const own=x.value===f;x.disabled=own;if(own)x.checked=false;});};
+    const r=await dialog({title:'Copy "'+name+'"',html:`<label class="hmfrom">From the list of <select id="hmFrom">${it.from.map(a=>`<option value="${a}">${esc(APPN[a])}</option>`).join('')}</select></label>
+      <p class="dsub">To:</p><div class="gapps" role="group" aria-label="Copy to">${hm.apps.map(a=>`<label><input type="checkbox" name="gApp" value="${a}"${it.missing.includes(a)?' checked':''}> ${esc(APPN[a])}${it.in.includes(a)?' <small>(has a different one: replace it in the review)</small>':''}</label>`).join('')}</div>`,
+      buttons:[{label:'Cancel',value:null},{label:'Review…',value:'ok',cls:'primary'}],
+      onOpen:d=>{pick(d);d.querySelector('#hmFrom').onchange=()=>pick(d);},
+      validate:d=>pickedApps(d).length?'':'Pick at least one agent app to copy to.'});
+    if(!r)return;
+    await reviewGlobal('add',await X.bridge.mcpGlobalCopyPreview(name,r.root.querySelector('#hmFrom').value,pickedApps(r.root)),'copy');
+  }
+  /* which agent apps to offer (spec 069 FR-007): installed ones ticked; one installed: a single choice */
+  async function appChoices(){
+    let kinds=[];if(X.bridge.listAdapters){try{kinds=(await X.bridge.listAdapters())||[];}catch(e){kinds=[];}}
+    const inst=['copilot','claude','codex'].filter(id=>kinds.some(k=>k&&k.id===id&&k.state!=='not-installed'));
+    return {inst,multi:inst.length>1};
+  }
+  function appsHTML(c,pre){
+    const ids=['copilot','claude','codex'];
+    if(c.multi)return `<div class="gapps" role="group" aria-label="Agent apps">${ids.map(id=>`<label><input type="checkbox" name="gApp" value="${id}"${(pre?pre.includes(id):c.inst.includes(id))?' checked':''}> ${esc(APPN[id])}${c.inst.includes(id)?'':' <small>(not installed)</small>'}</label>`).join('')}</div>`;
+    return `<div class="gapps" role="radiogroup" aria-label="Agent app">${ids.map(id=>`<label><input type="radio" name="gApp" value="${id}"${c.inst[0]===id?' checked':''}> ${esc(APPN[id])}${c.inst.includes(id)?'':' <small>(not installed)</small>'}</label>`).join('')}</div>`;
+  }
+  const pickedApps=d=>[...d.querySelectorAll('[name=gApp]:checked')].map(x=>x.value);
+  /* FR-005: the per-file review, then the write. `kind` 'add' | 'remove'. Returns true when something was written. */
+  /* `extra` (remove only; review on PR 499): {label, note, run()} = one more place in this review, removed only when the review is confirmed */
+  async function reviewGlobal(kind,pv,what,extra){
+    if(!pv||!pv.ok){X.toast('Nothing written: '+esc((pv&&pv.error)||'unknown error'),5600);return false;}
+    const writable=pv.items.filter(i=>!i.error), nPlaces=writable.length+(extra?1:0);
+    const items=pv.items.map(i=>`<li class="gpv${i.error?' bad':''}"><div class="srv-top"><b>${esc(i.label)}</b><code>${esc(i.file)}</code>${i.exists?'':'<span class="mtag">new file</span>'}${i.conflict?'<span class="mtag warn">already there</span>':''}</div>
+        ${i.error?`<p class="scr-note warn" role="note">Not written: ${esc(i.error)}</p>`:''}
+        ${i.note&&!i.error?`<p class="scr-note small" role="note">${esc(i.note)}</p>`:''}
+        ${i.conflict&&i.current?`<p class="dsub small">Now: <code>${esc(cap(runOf(i.current),160))}</code></p>`:''}
+        ${i.entry&&!i.error?`<p class="dsub small">${kind==='add'?(i.conflict?'Would become':'Adds'):'Removes'}:</p><pre class="trustcmd" tabindex="0">${esc(i.entry)}</pre>`:''}
+        ${i.conflict&&!i.error?`<label class="grep"><input type="checkbox" data-rep="${esc(i.app)}"> Replace it in ${esc(i.label)}</label>`:''}</li>`).join('')
+      +(extra?`<li class="gpv" data-extra="1"><div class="srv-top"><b>${esc(extra.label)}</b></div><p class="dsub small">${esc(extra.note)}</p></li>`:'');
+    const intro=kind==='add'?`<p class="dsub"><b>This changes your agent apps' own settings</b> for every folder: they will run this server with your user rights, also outside Agent Durbar. Each file is backed up next to it first and left readable only by you; nothing else in it changes.</p>`
+      :`<p class="dsub">This removes <b>${esc(what)}</b> from these files, for every folder, also outside Agent Durbar. Each file is backed up next to it first.</p>`;
+    const vars=pv.vars&&pv.vars.length?`<p class="dsub" role="note">The files name environment variables instead of holding the values. Set <b>${pv.vars.map(esc).join(', ')}</b> in your environment before the agent apps start.</p>`:'';
+    const copy=what==='copy'?'<p class="dsub" role="note">Values are copied as they are in the source list: references stay references, and a value written there in plain text is written in plain text here too (masked below), in a file left readable only by you.</p>':'';
+    const plain=kind==='add'&&what==='plain'?'<p class="scr-warn" role="note"><b>The values are written in plain text.</b> Agent Durbar makes each file it writes readable only by you; programs running as you can still read them.</p>':'';
+    const r=await dialog({title:kind==='add'?'Review: add to your agent apps':'Review: remove from your agent apps',wide:true,cls:'gpvd',html:intro+vars+copy+plain+`<ul class="gpvl">${items}</ul>`,
+      buttons:nPlaces?[{label:'Cancel',value:null},{label:kind==='add'?'Write to '+(writable.length===1?'1 file':writable.length+' files'):'Remove from '+(extra?nPlaces+' places':writable.length===1?'1 file':writable.length+' files'),value:'ok',cls:'primary warn'}]:[{label:'Close',value:null,cls:'primary'}]});
+    if(!r)return false;
+    if(extra)await extra.run(); /* confirmed: only now (a cancelled review removes nothing) */
+    if(!writable.length)return true;
+    const rep=[...r.root.querySelectorAll('[data-rep]:checked')].map(x=>x.dataset.rep);
+    const res=kind==='add'?await X.bridge.mcpGlobalApply(pv.token,rep):await X.bridge.mcpGlobalRemoveApply(pv.token);
+    const done=(res&&res.items||[]).filter(i=>i.ok),bad=(res&&res.items||[]).filter(i=>!i.ok);
+    if(!res||(!done.length&&!bad.length))X.toast('Nothing written: '+esc((res&&res.error)||'unknown error'),6000);
+    else X.toast((done.length?(kind==='add'?'Written: ':'Removed from: ')+done.map(i=>esc(APPN[i.app])+(i.backup?' (backup '+esc(i.backup)+')':'')).join(', ')+'.':'')+(bad.length?' Not written: '+bad.map(i=>esc(APPN[i.app])+' ('+esc(i.error||'error')+')').join(', ')+'.':''),done.length&&!bad.length?5200:8000);
+    if(cur&&cur.kind==='settings')paintSettings();
+    return done.length>0;
+  }
+  /* spec 069 FR-005; FR-030 (change 2026-10-22, review on PR 499): `folder` = {label, remove()} when the server is also this folder's
+     extra: one picker lists every place it comes from, all ticked, so Remove never leaves a copy behind without saying so */
+  async function removeGlobal(name,folder){
+    const apps=appsWith(name);
+    if((!apps.length||!X.bridge.mcpGlobalRemovePreview)&&!folder)return;
+    const fRow=folder?`<label><input type="checkbox" name="gFolder" checked> ${esc(folder.label)}<small>${esc(FOLDER_RM_NOTE)}</small></label>`:'';
+    const r=await dialog({title:'Remove "'+name+'" from…',html:`<p class="dsub">It is in ${folder&&apps.length?'these places':folder?'this folder\'s extras':'these agent apps\' lists'}. Pick where to remove it${apps.length?'; you review each agent app\'s file next':''}.</p><div class="gapps" role="group" aria-label="Where to remove it">${apps.map(id=>`<label><input type="checkbox" name="gApp" value="${id}" checked> ${esc(APPN[id])}</label>`).join('')}${fRow}</div>`,
+      buttons:[{label:'Cancel',value:null},{label:apps.length?'Review…':'Remove',value:'ok',cls:'primary'}],validate:d=>pickedApps(d).length||(d.querySelector('[name=gFolder]')||{}).checked?'':'Pick at least one place.'});
+    if(!r)return;
+    const picked=pickedApps(r.root),inFolder=!!(r.root.querySelector('[name=gFolder]')||{}).checked;
+    /* review on PR 499: with app files picked the folder copy is one more entry of their review and goes only when it is confirmed;
+       alone, this picker's Remove is the confirmation */
+    if(picked.length)await reviewGlobal('remove',await X.bridge.mcpGlobalRemovePreview(name,picked),name,inFolder?{label:folder.label,note:FOLDER_RM_NOTE,run:folder.remove}:null);
+    else if(inFolder)await folder.remove();
+  }
+  const FOLDER_RM_NOTE='The server and its stored secret values are deleted from this folder in Agent Durbar.';
   const secretChip=(kind,s)=>`<span class="sec" title="${kind==='env'?'Environment variable':'Header'}: ${s.set?'value stored, hidden':'no value'}">${esc(s.key)}<i>${s.set?'••••••':'not set'}</i></span>`;
   /* spec 052 FR-099 (round 10): Spacing, under Detail level; Compact tightens the chat, screens, dialogs and inbox (never the office) */
   function densityRow(){
@@ -447,6 +613,13 @@
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
       return;
     }
+    const bs=e.target.closest('#breakSw');
+    if(bs&&X.bridge.setBreakResume){
+      const want=bs.getAttribute('aria-checked')==='true'?'ask':'auto';
+      let res=null; try{res=await X.bridge.setBreakResume(want);}catch(err){res=null;}
+      if(res&&res.ok){const v=res.breakResume==='ask'?'ask':'auto';if(X.setBreakResume)X.setBreakResume(v);bs.classList.toggle('on',v==='auto');bs.setAttribute('aria-checked',v==='auto'?'true':'false');const m=$('breakMsg');if(m)m.textContent=v==='auto'?'Agents come back by themselves when it costs nothing extra.':'Agents ask you before going on after a coffee break.';}
+      return;
+    }
     const la=e.target.closest('#liveActSw');
     if(la&&X.liveAct){const on=!X.liveAct.get();X.liveAct.set(on);la.classList.toggle('on',on);la.setAttribute('aria-checked',on?'true':'false');return;}
     const ns=e.target.closest('#notifySw');
@@ -456,6 +629,11 @@
       if(res&&res.ok){const v=!!res.notifyNeedsMe;if(X.setNotify)X.setNotify(v);ns.classList.toggle('on',v);ns.setAttribute('aria-checked',v?'true':'false');const m=$('notifyMsg');if(m)m.textContent=v?'Notifications are on.':'Notifications are off.';}
       return;
     }
+    if(e.target.closest('#globAdd')){editServer(null,null,{global:true});return;}
+    const ga=e.target.closest('[data-act=grm],[data-act=gcl]');
+    if(ga&&ga.dataset.act==='grm'){removeGlobal(ga.dataset.g);return;}
+    const hc=e.target.closest('[data-act=hcopy]');if(hc){copyGlobal(hc.dataset.g);return;}
+    if(ga&&ga.dataset.act==='gcl'&&X.bridge.mcpGlobalSetOff){const on=ga.getAttribute('aria-checked')!=='true';await X.bridge.mcpGlobalSetOff('claude',ga.dataset.g,!on);X.toast(esc(ga.dataset.g)+(on?' will start in new Claude Code sessions.':' will not start in new Claude Code sessions.'),3200);paintSettings();return;}
     const li=e.target.closest('li.srv');if(!li||!li.dataset.amb)return;
     const act=(e.target.closest('[data-act]')||{}).dataset;
     if(act&&act.act==='amb'){const sw0=e.target.closest('[data-act]');const on=sw0.getAttribute('aria-checked')!=='true';await X.bridge.mcpSetCli(li.dataset.amb,on);X.toast(esc(li.dataset.amb)+(on?' will start in new sessions.':' will not start in new sessions.'),3200);paintSettings();}
@@ -492,7 +670,7 @@
         <p class="scr-note">These servers are optional and belong to <b>this folder only</b>: agents in other folders do not get them. Servers from your Copilot CLI list are available to every agent and are not edited here.</p>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> You see the exact command before a server is switched on for the first time, and again whenever its command or URL changes. Removing the folder from the office keeps these extras; they come back if you add the folder again.</p>
         <p class="scr-note ${st.secretsPersist?'ok':'warn'}" role="status">${st.secretsPersist?'Secret values (environment variables, headers) are stored encrypted by your operating system and are never shown again, logged or exported.':'<b>No OS-protected secret store is available here.</b> Secret values are kept in memory for this run only and are not saved: you will need to enter them again after a restart.'}</p>
-        <div class="scr-tools"><button class="btn primary" type="button" id="mcpAdd">+ Add extra server</button><button class="btn" type="button" id="mcpImportVs" title="Read this folder's .vscode/mcp.json and pick servers to add (nothing is switched on)">Import from VS Code…</button><button class="btn" type="button" id="fxSettings">Copilot CLI list…</button></div>
+        <div class="scr-tools"><button class="btn primary" type="button" id="mcpAdd">+ Add server</button><button class="btn" type="button" id="mcpImportVs" title="Read this folder's .vscode/mcp.json and pick servers to add (nothing is switched on)">Import from VS Code…</button><button class="btn" type="button" id="fxSettings">Copilot CLI list…</button></div>
         ${st.skipped.length?`<p class="scr-note warn" role="status">Not passed to new sessions: ${st.skipped.map(x=>'<b>'+esc(x.name)+'</b> ('+esc(x.reason)+')').join('; ')}.</p>`:''}
         ${srv?`<ul class="srvs" id="srvList">${srv}</ul>`:'<p class="scr-empty">No extras for this folder. Your Copilot CLI servers are already available to its agents.</p>'}
         <p class="scr-note small">Changes apply to <b>new</b> sessions in this folder and to agents that start or resume afterwards. A running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
@@ -597,21 +775,40 @@
       <input class="v" type="password" spellcheck="false" autocomplete="new-password" aria-label="${kind==='env'?'Variable value (secret)':'Header value (secret)'}" placeholder="${existing&&set?'•••••• stored. Leave empty to keep':'value (secret)'}">
       <button class="btn sm" type="button" data-rm aria-label="Remove this row">×</button></div>`;
   }
-  async function editServer(v,st){
+  async function editServer(v,st,o){
     const isNew=!v;
     const t=v?v.transport:'stdio';
-    const html=`<form class="mform" id="mForm" autocomplete="off" onsubmit="return false">
+    /* spec 069 FR-007: a new server can go to this folder (default) or to the agent apps' own lists; from Settings (no folder) only the latter */
+    const canGlobal=isNew&&!!X.bridge.mcpGlobalPreview, onlyGlobal=canGlobal&&!st;
+    const ch=canGlobal?await appChoices():null;
+    const pre=o&&o.input;
+    const scope=canGlobal?`<fieldset class="mscope"><legend>Add to</legend>
+        ${st?`<label><input type="radio" name="mScope" value="folder"${o&&o.global?'':' checked'}> This folder only <small>(${esc(st.name)}; Agent Durbar keeps it)</small></label>`:''}
+        <label><input type="radio" name="mScope" value="global"${onlyGlobal||(o&&o.global)?' checked':''}> All my folders (global) <small>written into your agent apps' own lists</small></label>
+        <div data-for="global">${appsHTML(ch,o&&o.apps)}
+          <div class="gsec" role="radiogroup" aria-label="Secret values"><label><input type="radio" name="gSec" value="ref"${o&&o.mode==='plain'?'':' checked'}> Reference environment variables <small>(recommended: the files name the variable, you set its value in your environment)</small></label>
+          <label><input type="radio" name="gSec" value="plain"${o&&o.mode==='plain'?' checked':''}> Write the values into the files <small>(plain text in each app's config)</small></label></div></div></fieldset>`:'';
+    if(pre)v=null;
+    const html=`<form class="mform" id="mForm" autocomplete="off" onsubmit="return false">${scope}
       <label>Name<input id="mName" type="text" spellcheck="false" value="${esc(v?v.name:'')}" maxlength="48" placeholder="e.g. playwright"></label>
       <label>Type<select id="mType"><option value="stdio"${t==='stdio'?' selected':''}>Local command (stdio)</option><option value="http"${t==='http'?' selected':''}>Remote (http)</option><option value="sse"${t==='sse'?' selected':''}>Remote (sse, older)</option></select></label>
       <div data-for="stdio"><label>Command<input id="mCmd" type="text" spellcheck="false" value="${esc(v&&v.command||'')}" placeholder="npx"></label>
         <label>Arguments <small>one per line (not secret: they are shown and saved in clear)</small><textarea id="mArgs" rows="3" spellcheck="false" placeholder="@playwright/mcp@latest">${esc((v&&v.args||[]).join('\n'))}</textarea></label>
         <label>Working directory <small>optional, absolute path</small><input id="mCwd" type="text" spellcheck="false" value="${esc(v&&v.workingDirectory||'')}"></label>
-        <div class="kv"><div class="kvh">Environment variables <small>values are secrets: masked, stored encrypted</small></div><div id="envRows">${(v?v.env:[]).map(s=>rowHTML('env',s.key,true,s.set)).join('')}</div><button class="btn sm" type="button" data-add="env">+ Variable</button></div></div>
+        <div class="kv"><div class="kvh">Environment variables <small data-sech="env">values are secrets: masked, stored encrypted</small></div><div id="envRows">${(v?v.env:[]).map(s=>rowHTML('env',s.key,true,s.set)).join('')}</div><button class="btn sm" type="button" data-add="env">+ Variable</button></div></div>
       <div data-for="remote"><label>URL<input id="mUrl" type="text" spellcheck="false" value="${esc(v&&v.url||'')}" placeholder="https://example.com/mcp"></label>
-        <div class="kv"><div class="kvh">Headers <small>values are secrets: masked, stored encrypted. No secrets in the URL.</small></div><div id="hdrRows">${(v?v.headers:[]).map(s=>rowHTML('header',s.key,true,s.set)).join('')}</div><button class="btn sm" type="button" data-add="header">+ Header</button></div></div>
+        <div class="kv"><div class="kvh">Headers <small data-sech="hdr">values are secrets: masked, stored encrypted. No secrets in the URL.</small></div><div id="hdrRows">${(v?v.headers:[]).map(s=>rowHTML('header',s.key,true,s.set)).join('')}</div><button class="btn sm" type="button" data-add="header">+ Header</button></div></div>
       <label>Tool filter <small>optional: tool names separated by commas; empty = all tools</small><input id="mTools" type="text" spellcheck="false" value="${esc((v&&v.tools||[]).filter(x=>x!=='*').join(', '))}"></label>
       ${isNew?'':'<p class="dsub">Changing the command, arguments, working directory, URL or type switches the server off until you trust it again.</p>'}</form>`;
-    const sync=d=>{const ty=d.querySelector('#mType').value;d.querySelector('[data-for=stdio]').hidden=ty!=='stdio';d.querySelector('[data-for=remote]').hidden=ty==='stdio';};
+    const isGlobal=d=>{const x=d.querySelector('[name=mScope]:checked');return !!x&&x.value==='global';};
+    const sync=d=>{const ty=d.querySelector('#mType').value;d.querySelector('[data-for=stdio]').hidden=ty!=='stdio';d.querySelector('[data-for=remote]').hidden=ty==='stdio';
+      const g=isGlobal(d),gb=d.querySelector('[data-for=global]');if(gb)gb.hidden=!g;
+      const cwd=d.querySelector('#mCwd');if(cwd)cwd.closest('label').hidden=g; /* a working directory belongs to one folder */
+      const pb=d.parentElement&&d.parentElement.querySelector('.dbtn .primary');if(pb&&isNew)pb.textContent=g?'Review…':'Add server';
+      /* FR-004: what happens to a typed value depends on where the server goes */
+      const sm=d.querySelector('[name=gSec]:checked'),ref=!sm||sm.value==='ref';
+      d.querySelectorAll('[data-sech]').forEach(x=>{x.textContent=!g?(x.dataset.sech==='env'?'values are secrets: masked, stored encrypted':'values are secrets: masked, stored encrypted. No secrets in the URL.')
+        :ref?'the files name a variable ('+(x.dataset.sech==='env'?'the same name':'X-Api-Key becomes X_API_KEY')+'); a value typed here is not saved anywhere':'values are written in plain text into each app\'s file';});};
     const collect=d=>{
       const ty=d.querySelector('#mType').value;
       const rows=(id,kind)=>[...d.querySelectorAll('#'+id+' .krow')].map(r=>{const k=r.querySelector('.k').value.trim(),val=r.querySelector('.v').value,orig=r.querySelector('.k').dataset.orig;
@@ -623,8 +820,10 @@
       return o;
     };
     let saved=null;
-    const r=await dialog({title:isNew?'Add extra server to '+st.name:'Edit "'+v.name+'"',wide:true,html,buttons:[{label:'Cancel',value:null},{label:isNew?'Add server':'Save',value:'ok',cls:'primary'}],
-      onOpen:d=>{sync(d);d.querySelector('#mType').onchange=()=>sync(d);
+    let wasGlobal=false,apps=[],mode='ref';
+    const r=await dialog({title:isNew?(st?'Add server':'Add server for all folders'):'Edit "'+v.name+'"',wide:true,html,buttons:[{label:'Cancel',value:null},{label:isNew?'Add server':'Save',value:'ok',cls:'primary'}],
+      onOpen:d=>{if(pre){const q=k=>d.querySelector(k);q('#mName').value=pre.name||'';q('#mType').value=pre.transport||'stdio';q('#mCmd').value=pre.command||'';q('#mArgs').value=(pre.args||[]).join('\n');q('#mUrl').value=pre.url||'';q('#mTools').value=(pre.tools||[]).join(', ');}
+        sync(d);d.querySelector('#mType').onchange=()=>sync(d);d.querySelectorAll('[name=mScope],[name=gSec]').forEach(x=>{x.onchange=()=>sync(d);});
         d.addEventListener('click',e=>{const add=e.target.closest('[data-add]');if(add){const box=d.querySelector(add.dataset.add==='env'?'#envRows':'#hdrRows');box.insertAdjacentHTML('beforeend',rowHTML(add.dataset.add,'',false,false));box.lastElementChild.querySelector('.k').focus();}
           const rm=e.target.closest('[data-rm]');if(rm)rm.closest('.krow').remove();});},
       validate:d=>{
@@ -632,9 +831,19 @@
         if(!o.name)return 'Give the server a name.';
         if(o.transport==='stdio'&&!o.command)return 'Enter the command to run.';
         if(o.transport!=='stdio'&&!o.url)return 'Enter the URL.';
+        if(isGlobal(d)){if(!pickedApps(d).length)return 'Pick at least one agent app.';wasGlobal=true;apps=pickedApps(d);const m=d.querySelector('[name=gSec]:checked');mode=m?m.value:'ref';}
+        else wasGlobal=false;
         return '';}});
     if(!r)return;
     const input=collect(r.root);
+    if(wasGlobal){
+      delete input.workingDirectory;
+      const pv=await X.bridge.mcpGlobalPreview(input,apps,mode);
+      if(!pv||!pv.ok){X.toast('Not saved: '+esc((pv&&pv.error)||'unknown error'),5600);return editServer(null,st,{global:true,apps,mode,input});}
+      await reviewGlobal('add',pv,mode);
+      if(cur&&cur.kind==='folder')paintFolder();
+      return;
+    }
     const res=await X.bridge.mcpUpsert(st.key,input,v?v.name:undefined);
     if(!res||!res.ok){X.toast('Not saved: '+esc((res&&res.error)||'unknown error'),5600);return editServer2(input,v,st);}
     X.toast(esc(input.name)+(isNew?' added to '+esc(st.name)+' (off). Switch it on to use it.':' saved.'),3600);
@@ -644,6 +853,9 @@
   function editServer2(input,v,st){const view=Object.assign({},v||{},{name:input.name,transport:input.transport,command:input.command,args:input.args,workingDirectory:input.workingDirectory,url:input.url,tools:input.tools,env:(v&&v.env)||[],headers:(v&&v.headers)||[]});return editServer(v?view:Object.assign(view,{name:input.name}),st);}
 
   /* ---------------- per-agent MCP menu ---------------- */
+  /* spec 069 FR-011: one chip per list that has the server (sources), or the single origin of older replies */
+  const srcChips=x=>Array.isArray(x.sources)&&x.sources.length?x.sources.map(t=>`<span class="mtag${t==='folder'?' extra':' src'}">${esc(SRCN[t]||t)}</span>`).join('')
+    :`<span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>`;
   /* spec 058 FR-023: what Restart session costs, said before it runs; null when there is nothing to ask (idle, no grants, no remote control) */
   function restartSessionAsk(a){
     const busy=a.state==='working'||a.state==='thinking'||a.state==='waiting', grants=Array.isArray(a.grants)&&a.grants.length>0, remote=!!a.remote;
@@ -678,19 +890,81 @@
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
         const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-err="${esc(x.name)}" aria-label="${esc('Error text of '+x.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-copy="${esc(x.name)}" aria-label="${esc('Copy the error text of '+x.name)}">Copy</button></div>`:'';
         const rs=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
-        return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name" title="${esc(W.plain(x.name,120))}">${esc(x.name)}</b><span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
-          <div class="srv-act">${rs}${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
+        /* spec 069 FR-030/FR-033 on spec 058's row: the name opens the tools list; Remove for entries of an agent app's list or this folder */
+        const open=expanded.has(x.name), canTools=!!(s.canListTools&&X.bridge.agentMcpTools);
+        const nameB=`<b class="srv-name" title="${esc(W.plain(x.name,120))}">${esc(x.name)}</b>`;
+        const nameEl=canTools?`<button class="mcp-tg" type="button" data-tools="${esc(x.name)}" aria-expanded="${open}" aria-controls="mt-${esc(x.name)}" aria-label="${esc((open?'Hide':'Show')+' the tools of '+x.name)}"><span class="mcp-car" aria-hidden="true">${open?'▾':'▸'}</span>${nameB}</button>`:nameB;
+        const srcs=Array.isArray(x.sources)?x.sources:[];
+        const removable=srcs.some(t=>t==='copilot'||t==='claude'||t==='codex'||t==='folder');
+        const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
+        const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
+        return `<li class="srv sm${open?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
+          <div class="srv-act">${rs}${rmb}${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts'),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div>${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Your Copilot CLI servers are global (see <b>Settings</b>); extras belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">Applies to this agent until the app is closed.</p>`;
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
     };
     let dlg=null;
+    /* spec 069 FR-032/FR-033: expanded rows and their tools, loaded once per open dialog (again after a Restart) */
+    const expanded=new Set(), toolsOf=new Map();
+    let uid=0; /* ids for aria-describedby of the tool boxes, unique per paint */
+    function toolsHTML(n){
+      const r=toolsOf.get(n), id='mt-'+esc(n);
+      if(!r)return `<div class="mcp-tools" id="${id}" role="status">Loading tools…</div>`;
+      if(!r.ok)return `<div class="mcp-tools" id="${id}" role="status">${esc(r.notRunning?'Start the session to see its tools.':'Could not list the tools: '+(r.error||'unknown error'))}</div>`;
+      if(!r.tools.length)return `<div class="mcp-tools" id="${id}" role="status">This server lists no tools.</div>`;
+      const more=r.total>r.tools.length?` (first ${r.tools.length} shown)`:'';
+      /* spec 069 FR-060/FR-064: a checkbox per tool and a tri-state for the server; disabled with the reason when the app cannot filter */
+      const x=(st.servers||[]).find(y=>y.name===n)||{}, off=new Set(x.toolsOff||[]), can=!!(st.toolFilter&&X.bridge.setAgentMcpToolsOff);
+      const okName=t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t.name), nOff=r.tools.filter(t=>off.has(t.name)&&okName(t)).length, all=nOff===0?'true':nOff===r.tools.filter(okName).length?'false':'mixed';
+      /* FR-063/FR-064 (change 2026-10-22, review on PR 503): a box that cannot change is aria-disabled, not disabled: it stays in the Tab
+         order, a click or Space does nothing (the click handler), and aria-describedby points to the reason, which is visible */
+      const noteId='mtn-'+(++uid);
+      const dis=can?'':` aria-disabled="true" aria-describedby="${noteId}"`;
+      /* FR-063 (change 2026-10-22): a tool name the agent apps' filters cannot carry (copy of MCP_TOOL_OFF_RE in src/shared/mcp.ts) cannot be turned off */
+      const odd=t=>!okName(t);
+      const nOdd=r.tools.filter(odd).length;
+      const head=`<div class="mcp-thead"><button class="mcp-all" type="button" role="checkbox" aria-checked="${all}" data-tall="${esc(n)}"${dis} aria-label="${esc('All tools of '+n)}"><span class="mcp-box" aria-hidden="true">${all==='true'?'✓':all==='mixed'?'–':''}</span>${r.total} tool${r.total===1?'':'s'}${more}${nOff?`, ${nOff} off`:''}</button>
+        <span class="mcp-tnote" id="${noteId}">${can?'Turning tools on or off applies to new sessions and after Restart session with these servers.':'This app can\'t turn off single tools.'}${can&&nOdd?` ${nOdd} tool${nOdd===1?'':'s'} with other characters in the name cannot be turned off.`:''}</span></div>`;
+      const row=t=>{const why=can&&odd(t)?'mtw-'+(++uid):'';
+        return `<li><label><input type="checkbox" data-tool="${esc(t.name)}" data-tsrv="${esc(n)}"${off.has(t.name)&&!odd(t)?'':' checked'}${dis||(why?` aria-disabled="true" aria-describedby="${why}"`:'')} aria-label="${esc(t.name+' of '+n)}"><code>${esc(t.name)}</code></label>${why?`<span class="mcp-tnote" id="${why}">can't be turned off: the name has other characters</span>`:''}${t.description?`<span>${esc(t.description)}</span>`:''}</li>`;};
+      return `<div class="mcp-tools" id="${id}">${head}<ul class="mcp-tlist">${r.tools.map(row).join('')}</ul></div>`;
+    }
+    const toggleTools=async n=>{
+      if(expanded.has(n)){expanded.delete(n);await repaint();return;}
+      expanded.add(n);await repaint();
+      if(toolsOf.has(n))return;
+      let r;try{r=await X.bridge.agentMcpTools(a.id,n);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
+      toolsOf.set(n,r||{ok:false,error:'no answer'});
+      if(expanded.has(n))await repaint();
+    };
+    /* spec 069 FR-061: save the server's turned-off tools for this folder, then show the new state */
+    const saveOff=async(n,offList)=>{
+      let r;try{r=await X.bridge.setAgentMcpToolsOff(a.id,n,offList);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
+      if(!r||!r.ok)X.toast('Not saved: '+esc((r&&r.error)||'unknown error'),5000);
+      await repaint();
+    };
+    const removeOne=async n=>{
+      const x=(st.servers||[]).find(y=>y.name===n);if(!x)return;
+      const srcs=x.sources||[];
+      const f=srcs.includes('folder')&&X.folderOf&&X.bridge.mcpRemove?X.folderOf(a):null;
+      const folder=f?{label:"This folder's extras in Agent Durbar ("+(f.name||'this folder')+')',remove:async()=>{await X.bridge.mcpRemove(f.key,n);X.toast('Removed '+esc(n)+' from this folder\'s extras.',2600);}}:null;
+      if(srcs.some(t=>t==='copilot'||t==='claude'||t==='codex')&&X.bridge.mcpGlobalState){
+        try{glob=await X.bridge.mcpGlobalState();}catch(e){glob=null;}
+        await removeGlobal(n,folder); /* every copy in one picker (review on PR 499) */
+      }else if(folder){
+        const r=await dialog({title:'Remove "'+n+'"?',html:'<p class="dsub">The server and its stored secret values are deleted from this folder in Agent Durbar. Running sessions keep it until they end.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary danger'}]});
+        if(r)await folder.remove();
+      }
+      /* the review replaced this dialog: open it again with the new lists */
+      if(!dlg||!dlg.isConnected)void agentMcp(a,o);else await repaint();
+    };
     /* FR-004 / FR-033: repaint in place and keep the focus on the same control (by server name), so a keyboard user is not thrown out */
     /* what the dialog last showed per server: a repaint compares with it and updates it, so a user's own change (switch, Details, Restart) is never announced later */
     let seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
     const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return [];
       const f=document.activeElement,inside=f&&dlg.contains(f);
-      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
       const errTop=key&&key[0]==='err'?f.scrollTop:0;
       const bodyEl=dlg.querySelector('.dbody'),top=bodyEl.scrollTop;
       bodyEl.innerHTML=body(st);bodyEl.scrollTop=top; /* FR-004: the scroll position stays */
@@ -698,8 +972,13 @@
         const pre=key[0]==='err'?[...dlg.querySelectorAll('.dbody pre[data-err]')].find(x=>x.dataset.err===key[1]):null;
         if(pre){pre.focus();pre.scrollTop=errTop;}
         else{
-          const btns=[...dlg.querySelectorAll('.dbody button:not([disabled])')];
-          const back=btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1])||((key[0]==='copy'||key[0]==='err')&&btns.find(x=>x.dataset.det===key[1]))||(key[0]!=='n'&&key[0]!=='id'?btns.find(x=>x.dataset.n===key[1]):null);
+          const btns=[...dlg.querySelectorAll('.dbody button:not([disabled]),.dbody input:not([disabled])')]; /* spec 069 FR-060: the tool checkboxes keep the focus too */
+          /* review on PR 503: a tool box is keyed on its server AND its name (two servers may share a tool name); when the list closed,
+             the focus goes to that server's tools toggle, then to its switch, never to body */
+          const srv=key[0]==='tool'?key[2]:key[0]==='tall'?key[1]:null;
+          const back=(key[0]==='tool'?btns.find(x=>x.dataset.tool===key[1]&&x.dataset.tsrv===key[2]):btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1]))
+            ||(srv!==null&&(btns.find(x=>x.dataset.tools===srv)||btns.find(x=>x.dataset.n===srv)))
+            ||((key[0]==='copy'||key[0]==='err')&&btns.find(x=>x.dataset.det===key[1]))||(key[0]!=='n'&&key[0]!=='id'&&key[0]!=='tool'&&key[0]!=='tall'?btns.find(x=>x.dataset.n===key[1]):null);
           if(back)back.focus();
         }
       }
@@ -726,6 +1005,8 @@
       await repaint(); /* after the call went out: the row can already show the runtime's "pending" */
       const r=await call;
       restarting.delete(name);
+      toolsOf.delete(name); /* a restarted server may list other tools */
+      if(r&&r.ok&&expanded.has(name))void (async()=>{let t;try{t=await X.bridge.agentMcpTools(a.id,name);}catch(e){t={ok:false,error:String(e&&e.message||e)};}toolsOf.set(name,t);if(dlg&&dlg.isConnected)void repaint();})();
       X.toast(r&&r.ok?'Restarted '+esc(name)+'.':'Could not restart '+esc(name)+': '+esc((r&&r.error)||'unknown error'),r&&r.ok?3200:6000);
       await repaint();
     };
@@ -748,6 +1029,11 @@
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;d.addEventListener('click',async e=>{
+        const tg=e.target.closest('button[data-tools]');if(tg){void toggleTools(tg.dataset.tools);return;}
+        const ad=e.target.closest('[data-tall][aria-disabled="true"],input[data-tool][aria-disabled="true"]');if(ad){e.preventDefault();return;} /* FR-064: focusable, never changed */
+        const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.map(t=>t.name).filter(t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t)):[]);}return;}
+        const tc=e.target.closest('input[data-tool]');if(tc&&!tc.disabled){const n=tc.dataset.tsrv,x=(st.servers||[]).find(y=>y.name===n)||{},off=new Set(x.toolsOff||[]);if(tc.checked)off.delete(tc.dataset.tool);else off.add(tc.dataset.tool);void saveOff(n,[...off]);return;}
+        const mr=e.target.closest('button[data-mrm]');if(mr){const n=mr.dataset.mrm;d._close();void removeOne(n);return;}
         const rb=e.target.closest('button[data-restart]');if(rb&&!rb.disabled){void restartOne(rb.dataset.restart);return;}
         const db=e.target.closest('button[data-det]');
         if(db){const n=db.dataset.det;if(openDet.has(n))openDet.delete(n);else openDet.add(n);void repaint();return;}
@@ -837,7 +1123,7 @@
   }
   /* ---------------- Tools > Activity (spec 052 FR-071): rows come from main only; the window reads, exports and clears ---------------- */
   async function activityView(){
-    const A=window.DurbarActivityTable; /* activitytable.js; window.DurbarActivity is activity.js (issue #474) */
+    const A=window.DurbarActivityTable; /* activitytable.js; window.DurbarActivity is activity.js (GitHub issue 474) */
     let rows=[];
     try{const r=await X.bridge.activityList({limit:500});rows=r&&Array.isArray(r.rows)?r.rows:[];}catch(e){rows=[];}
     return {n:rows.length,html:`<p class="scr-note">${esc(A.NOTE)}</p>${A.tableHtml(rows,esc)}${rows.length>=500?'<p class="scr-note small">The newest 500 rows are shown; an export holds the whole log (at most 5000 rows).</p>':''}`};
@@ -954,7 +1240,7 @@
     return {cls:lv.level,text:'Context '+lv.pct+'%'+(long?' · long':''),title:fmt(st.ctx.tokens)+' of '+fmt(l)+' tokens used ('+lv.pct+'%)'+long+(st.ctx.system!==undefined?'. System '+fmt(st.ctx.system)+', chat '+fmt(st.ctx.conversation||0)+', tools '+fmt(st.ctx.toolDefinitions||0)+'.':''),pct:lv.pct};
   }
 
-  window.DurbarScreens={
+  window.DurbarScreens={oneShotCostLine,aiCredits,
     init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onChange:(again)=>{X._hsRefresh=true;if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
     openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'?{section}:null);},
