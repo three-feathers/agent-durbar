@@ -7,7 +7,7 @@
  *
  * Asserts: the one-shot prompts (theme maker, folder-setup explainer), new folders and sessions, send, resume, deleting a previous session,
  * listing the agent apps and their models, installs and the CLI sign-in are all refused with the simulator message; `harnessPlans`
- * (the one open channel) still answers; main has created no real adapter (`ctx.createdAdapters()`); the simulator itself still works.
+ * (an open channel, like `app:version`) still answers; main has created no real adapter (`ctx.createdAdapters()`); the simulator itself still works.
  * FR-030 (review on #514): a driver's `ctx.addMany(..., { adapterId: 'claude' })`, which reaches detection without IPC, starts no
  * child process (no `claude --version` / `auth status`), and main tried none since startup (`ctx.childProcessAttempts()`).
  * FR-032 (review on #514): a plain simulator start refuses no channel (`ctx.simRefused()`) and logs no unhandled rejection in the page.
