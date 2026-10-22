@@ -68,6 +68,11 @@ export interface StartOptions {
   mcpServers?: Record<string, McpServerSpec>;
   /** Exact MCP server names that must not start in this session (also switches off servers the runtime loads by itself). */
   disabledMcpServers?: string[];
+  /**
+   * Spec 069 FR-062: single MCP tools the user turned off for this folder, by server name (tool names as the server lists them). Each adapter
+   * passes them to its agent app's own filter and refuses them in its permission broker (FR-063).
+   */
+  disabledMcpTools?: Record<string, string[]>;
 }
 
 export interface Attachment {
@@ -282,6 +287,12 @@ export interface McpServerStatus {
   error?: string;
   /** Spec 058 FR-011: normalized kind of failure, set by the adapter only when the vendor says so; missing = not said. */
   errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config';
+}
+
+/** Spec 069 FR-031: one tool of an MCP server (main masks and cuts the description before the window gets it). */
+export interface McpToolInfo {
+  name: string;
+  description?: string;
 }
 
 /** The MCP servers of a session and their state (full list; a new event replaces the previous one). */
@@ -520,6 +531,11 @@ export interface AgentAdapter {
    * restarted now; never starts a session and never restarts the others. The new state follows as an `mcp` event.
    */
   restartMcpServer?(sessionId: string, name: string): Promise<void>;
+  /**
+   * Spec 069 FR-031: the tools one MCP server of a running session offers, as the agent app reports them now. Optional
+   * (`capabilities.mcpTools`). Rejects with a short, user-facing sentence when the session or the server is not running.
+   */
+  listMcpTools?(sessionId: string, name: string): Promise<McpToolInfo[]>;
   /**
    * Spec 058 FR-064: start the agent app's own sign-in for one MCP server of a running session. Optional (`capabilities.mcpSignIn`).
    * `browser`: the user finishes in the browser at `url` (main keeps it, the window only gets the host); `connected`: already signed in.

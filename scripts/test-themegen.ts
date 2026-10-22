@@ -229,5 +229,15 @@ assert.match(buildRetryPrompt('a fox den', clean, 'no JSON'), /a fox den[\s\S]*Y
     const c = checkUserManifest(JSON.stringify(g.manifest));
     assert.ok(c.ok && c.dropped!.length === 0, 'the saved pack imports with nothing dropped');
   }
+  // review on #500: a font name that lives on Object.prototype is only an unusable font, not a reason to refuse the whole theme
+  for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+    const r = parseGeneratedTheme(JSON.stringify({ ...light, tokens: { ...light.tokens, '--font': name } }), 'proto', ctx);
+    assert.ok(r.ok, `--font ${name}: the theme is kept`);
+    if (r.ok) {
+      assert.strictEqual((r.manifest.tokens as Record<string, string>)['--font'], undefined, `--font ${name} is dropped`);
+      assert.ok(r.warnings.some((w) => /font or shape value was not usable/.test(w)), r.warnings.join('|'));
+      assert.ok(checkUserManifest(JSON.stringify(r.manifest)).ok, 'and the saved pack imports');
+    }
+  }
 }
 console.log('themegen: ok');

@@ -56,6 +56,9 @@ import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
 import { maskMcpEvent, maskMcpHistory } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
+import { globalFiles } from './mcpglobal';
+import { GlobalLists, sessionGlobalFor } from './mcpglobalio';
+import { register as registerMcpGlobalIpc } from './ipc/mcpglobal';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
 import { Scheduler, loadSchedules, saveSchedules, scheduleBusy } from './schedules';
@@ -126,7 +129,20 @@ const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const registry = createRegistry([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)]); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
 const agents = new Map<string, AgentInfo>();
-const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, router, dev, log: (a, action) => logActivity(a, 'mcp-restart', action) });
+/** Spec 069: the agent apps' own user-level MCP lists (read live; written only after the window's per-file confirmation). */
+const globalLists = new GlobalLists(() => globalFiles({ CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CODEX_HOME: process.env.CODEX_HOME, ...dev }, os.homedir()));
+const appIdOf = (id: string): string | undefined => router.adapterIdOf(id) ?? agents.get(id)?.adapterId;
+const mcp = registerMcpIpc({
+  store: () => mcpStore as McpStore,
+  agents,
+  router,
+  dev,
+  appOf: appIdOf,
+  globalFor: (id) => (mcpStore ? sessionGlobalFor(appIdOf(id), globalLists, mcpStore.ambientDisabled()) : {}),
+  log: (a, action) => logActivity(a, 'mcp-restart', action),
+  globalNames: () => Object.fromEntries(globalLists.state(() => []).apps.map((x) => [x.app, x.servers.map((v) => v.name)])),
+});
+registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
 /** Files the user picked through the native dialog; only these can be attached. */
 const pickedFiles = new Set<string>();
 /** Private folder for pasted / dropped files (removed on quit). */
@@ -621,7 +637,18 @@ registerThemesIpc({ dev, registry, router });
 registerHarnessIpc({ dev, registry, router, remoteOps, toRenderer, getWin: () => win, adaptersList });
 registerActivityIpc({ getActivityStore: () => activityStore, getWin: () => win });
 registerQuestionsIpc({ agents, router, elicitTracker });
-registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive });
+/**
+ * Spec 040 FR-015 (reused by spec 061 FR-015 and spec 043 FR-028): an agent app's one-shot text call: one prompt, no tools, no
+ * session kept, an empty temp folder; Copilot's own MCP servers switched off by name. Undefined when the app has none.
+ */
+function oneShotFor(id: string): { name: string; generate: (prompt: string) => ReturnType<NonNullable<AgentAdapter['generateText']>> } | undefined {
+  if (!registry.has(id)) return undefined;
+  const ad = router.instance(id);
+  if (typeof ad.generateText !== 'function') return undefined;
+  const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
+  return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
+}
+registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id) });
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey });
 registerAdaptersIpc({ adaptersList });
 registerFoldersIpc({ agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
@@ -636,11 +663,8 @@ registerFolderSetupIpc({
   explainer: () => {
     // FR-015: the first installed app that answers one prompt with no tools; Copilot first (its `auto` is the cheapest)
     for (const id of ['copilot', 'claude', 'codex']) {
-      if (!registry.has(id)) continue;
-      const ad = router.instance(id);
-      if (typeof ad.generateText !== 'function') continue;
-      const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
-      return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
+      const g = oneShotFor(id);
+      if (g) return g;
     }
     return undefined;
   },

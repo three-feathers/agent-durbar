@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
+import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, cliLaunchArgs, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn } from './fakes/claude-cli';
@@ -132,6 +132,22 @@ async function main(): Promise<void> {
     const cfg = JSON.parse(mcpConfigOf({ fs: { type: 'stdio', command: 'npx', args: ['-y', 'mcp-fs'], env: { K: 'v' } }, web: { type: 'http', url: 'https://x/mcp', headers: { A: 'b' } }, off: { type: 'stdio', command: 'x' }, bad: { type: 'http' } as never }, ['off'])!);
     assert.deepStrictEqual(Object.keys(cfg.mcpServers), ['fs', 'web'], 'disabled and incomplete servers left out');
     assert.deepStrictEqual(cfg.mcpServers.fs, { type: 'stdio', command: 'npx', args: ['-y', 'mcp-fs'], env: { K: 'v' } });
+    // spec 069 FR-009 (review 6 on #489): the JSON, values included, never goes on the command line (`ps` shows argv)
+    const json = mcpConfigOf({ fs: { type: 'stdio', command: 'npx', args: [], env: { TOKEN: 'sk-planted-ARGV-secret' } } })!;
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-069-argv-'));
+    const l = cliLaunchArgs({ mode: 'read-only', sessionId: 's', resume: false, mcpConfig: json }, root);
+    assert.ok(!l.args.join(' ').includes('sk-planted-ARGV-secret') && !l.args.includes(json), 'no MCP JSON on argv');
+    const file = l.args[l.args.indexOf('--mcp-config') + 1];
+    assert.ok(path.isAbsolute(file) && file.startsWith(root), file);
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), json);
+    if (process.platform !== 'win32') {
+      assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600, 'file 0600');
+      assert.strictEqual(fs.statSync(path.dirname(file)).mode & 0o777, 0o700, 'folder 0700');
+    }
+    l.cleanup();
+    assert.ok(!fs.existsSync(path.dirname(file)), 'removed on exit');
+    assert.deepStrictEqual(cliLaunchArgs({ mode: 'read-only', sessionId: 's', resume: false }, root).args, claudeArgs({ mode: 'read-only', sessionId: 's', resume: false }), 'no MCP: argv unchanged');
+    fs.rmSync(root, { recursive: true, force: true });
   }
   {
     const files: Record<string, string> = {
@@ -625,10 +641,28 @@ async function main(): Promise<void> {
     const last = [...ev].reverse().find((e) => e.type === 'mcp') as { servers: { name: string; status: string }[] };
     assert.strictEqual(last.servers.find((x) => x.name === 'notes')?.status, 'connected', 'the new state from mcp_status');
     await assert.rejects(ad.restartMcpServer('no-such', 'notes'), /not running/);
+    // spec 069 FR-031: a server's tools come from the same mcp_status reply (documented McpServerStatus.tools)
+    servers = servers.map((x) => (x.name === 'web' ? { ...x, tools: [{ name: 'fetch', description: 'Fetch a URL' }, { name: 'search' }] } : x)) as typeof servers;
+    reqs.length = 0;
+    assert.strictEqual(ad.capabilities.mcpTools, true);
+    assert.deepStrictEqual(await ad.listMcpTools(sid, 'web'), [{ name: 'fetch', description: 'Fetch a URL' }, { name: 'search' }]);
+    assert.deepStrictEqual(reqs, [{ subtype: 'mcp_status' }], 'only mcp_status is asked');
+    assert.deepStrictEqual(await ad.listMcpTools(sid, 'notes'), [], 'a server without tools in the reply: none');
+    await assert.rejects(ad.listMcpTools(sid, 'gone'), /not running in this session/);
     await ad.stop(sid);
     // the SDK transport (dev opt-in) sends no mcp_reconnect: no Restart there (C2)
     const sdk = new ClaudeAdapter({ sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
     assert.deepStrictEqual([sdk.capabilities.mcpRestart, typeof sdk.restartMcpServer], [undefined, 'undefined'], 'SDK transport: no restartMcpServer');
+    assert.deepStrictEqual([sdk.capabilities.mcpTools, typeof sdk.listMcpTools], [undefined, 'undefined'], 'SDK transport: no listMcpTools (spec 069)');
+    // spec 069 FR-062: the launch carries the turned-off tools into --disallowedTools
+    const sp2 = fakeSpawn();
+    const ad2 = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const sid2 = await ad2.start({ workspace: WS, quiet: true, disabledMcpTools: { notes: ['archive'] } });
+    void ad2.send(sid2, { text: 'hi' });
+    await until('launch', () => (sp2.calls.length ? true : undefined));
+    const a2 = sp2.calls[0].args;
+    assert.ok(a2[a2.indexOf('--disallowedTools') + 1].split(',').includes('mcp__notes__archive'), 'the CLI gets the turned-off tool');
+    await ad2.stop(sid2);
   }
 
   // ---- MCP sign-in challenge (spec 058 T096): a failed MCP tool result with the challenge -> mcpAuth and one mcp_status at a time ----

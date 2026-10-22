@@ -274,7 +274,9 @@
     'Cascadia Code','Roboto','Noto Sans','Noto Serif','DejaVu Sans','DejaVu Serif','DejaVu Sans Mono','Liberation Sans','Liberation Serif',
     'Liberation Mono','Ubuntu','Ubuntu Mono','Cantarell','Comic Neue','Hiragino Mincho ProN','Yu Mincho','YuMincho','Noto Serif CJK JP',
     'Noto Serif JP','Source Han Serif']);
-  const FONT_INDEX={};FONT_ALLOW.forEach(f=>{FONT_INDEX[f.toLowerCase()]=f;});
+  /* own-property lookups only: a name such as constructor or __proto__ must not reach Object.prototype (review on #500) */
+  const own=(o,k)=>o!=null&&Object.prototype.hasOwnProperty.call(o,k);
+  const FONT_INDEX=Object.create(null);FONT_ALLOW.forEach(f=>{FONT_INDEX[f.toLowerCase()]=f;});
   const TYPED_TOKENS={
     '--font':{type:'font',def:'system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif',generic:'sans-serif'},
     '--ui-display':{type:'font',def:'system-ui',generic:'system-ui'},
@@ -294,7 +296,7 @@
     for(let n of names){
       const q=/^(["'])(.*)\1$/.exec(n); if(q)n=q[2].trim();
       if(!/^[A-Za-z0-9 -]{1,40}$/.test(n))return null;
-      const canon=FONT_INDEX[n.toLowerCase()]; if(!canon)return null;
+      const canon=own(FONT_INDEX,n.toLowerCase())?FONT_INDEX[n.toLowerCase()]:null; if(!canon)return null;
       out.push(/\s/.test(canon)?'"'+canon+'"':canon);
     }
     if(!out.some(n=>FONT_GENERIC.includes(n)))out.push(generic);
@@ -314,12 +316,14 @@
     }
     return layers.join(',');
   }
+  /* markup or CSS syntax in a value (spec 070 D6, FR-020); equal to themetokens.ts HOSTILE_RE (test:theme-tokens) */
+  const HOSTILE_RE=/[<>{};\\@]|url\s*\(|expression\s*\(|var\s*\(/i;
   /* a typed token's value as it is applied, or null (wrong type, out of range, a font not on the list) */
   function typedValue(key,v){
-    const spec=TYPED_TOKENS[key];
+    const spec=own(TYPED_TOKENS,key)?TYPED_TOKENS[key]:null;
     if(!spec||typeof v!=='string')return null;
     const t=v.trim();
-    if(!t||t.length>160||/[<>{};\\@]|url\s*\(|expression\s*\(|var\s*\(/i.test(t))return null;
+    if(!t||t.length>160||HOSTILE_RE.test(t))return null;
     if(spec.type==='font')return fontStack(t,spec.generic);
     if(spec.type==='weight')return /^(500|550|600|650|700|750|800)$/.test(t)?t:null;
     if(spec.type==='radius')return LEN_RE.test(t)&&lenPx(t)>=0&&lenPx(t)<=24?t:null;
@@ -561,7 +565,7 @@
   }
 
   function loadManifest(idOrManifest){
-    if(typeof idOrManifest==='string'){if(BUILT_IN[idOrManifest])return validateManifest(BUILT_IN[idOrManifest]);if(USER_MANIFESTS[idOrManifest])return validateManifest(USER_MANIFESTS[idOrManifest]);return null;}
+    if(typeof idOrManifest==='string'){if(own(BUILT_IN,idOrManifest))return validateManifest(BUILT_IN[idOrManifest]);if(own(USER_MANIFESTS,idOrManifest))return validateManifest(USER_MANIFESTS[idOrManifest]);return null;}
     if(typeof idOrManifest==='object')return validateManifest(idOrManifest);
     return null;
   }
@@ -598,7 +602,7 @@
     themeRev++;
     /* spec 070 FR-021/FR-023: a text pair that is hard to read is fixed minimally on its text or accent side */
     const resolved=resolveTokens(manifest);
-    if(!BUILT_IN[id])contrastFix(resolved); /* built-in packs are designed and tested by hand (test:theme); retro's ink is a fill, not text on --bg */
+    if(!own(BUILT_IN,id))contrastFix(resolved); /* built-in packs are designed and tested by hand (test:theme); retro's ink is a fill, not text on --bg */
     currentResolved=resolved;
     applyTokens(resolved);
     /* spec 070 FR-001: a typed token the pack does not give is removed, so the CSS default (and the UI style's display font) applies */
@@ -630,7 +634,7 @@
     const key=name.startsWith('--')?name:'--'+name;
     /* the resolved map: the pack's values after the contrast fallback (spec 070 FR-021), so the scenes draw what the CSS shows */
     if(currentResolved&&Object.prototype.hasOwnProperty.call(currentResolved,key))return currentResolved[key];
-    return CLEAN_TOKENS[key]||(TYPED_TOKENS[key]?TYPED_TOKENS[key].def:null);
+    return own(CLEAN_TOKENS,key)?CLEAN_TOKENS[key]:(own(TYPED_TOKENS,key)?TYPED_TOKENS[key].def:null);
   }
   /* spec 070 FR-010: the pack's shirt and hair palettes, or null */
   function figures(){const f=currentManifest&&currentManifest.figures;return f&&(f.shirts||f.hairs)?f:null;}
@@ -638,7 +642,7 @@
   function fallbacks(id){
     const m=loadManifest(id);
     if(!m)return {dropped:[],contrast:[]};
-    return {dropped:(m.dropped||[]).slice(),contrast:BUILT_IN[m.id]?[]:contrastFix(resolveTokens(m))};
+    return {dropped:(m.dropped||[]).slice(),contrast:own(BUILT_IN,m.id)?[]:contrastFix(resolveTokens(m))};
   }
   /* spec 070 FR-024: the colours the fix would adjust in a manifest not saved yet (the AI dialog's preview) */
   function contrastCheck(manifest){
@@ -669,7 +673,7 @@
     if(listOrMap&&typeof listOrMap==='object'){
       for(const [id,m] of Object.entries(listOrMap)){
         const v=validateManifest(m);
-        if(v&&v.id===id&&!BUILT_IN[id])USER_MANIFESTS[id]=v;
+        if(v&&v.id===id&&!own(BUILT_IN,id))USER_MANIFESTS[id]=v;
         else console.warn('[theme] user theme dropped on registration:',id);
       }
     }
@@ -1002,6 +1006,7 @@
     FONT_ALLOW:FONT_ALLOW.slice(),
     CONTRAST_PAIRS:CONTRAST_PAIRS.map(p=>p.slice()),
     _typedValue:typedValue,
+    _HOSTILE_RE:HOSTILE_RE,
     registerBuiltIn,
     registerUserThemes,
     MOTION_PRESETS,

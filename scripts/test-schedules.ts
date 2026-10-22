@@ -1,6 +1,6 @@
 /** Scheduled prompts (spec 044): the store and the scheduler with a fake clock and sender. `npm run test:schedules`. No session, no credits. */
 import * as assert from 'assert';
-import { Scheduler, alignedNext, cleanSchedule, dueAt, parseSchedules } from '../src/main/schedules';
+import { Scheduler, alignedNext, loopSupport, cleanSchedule, dueAt, parseSchedules } from '../src/main/schedules';
 import type { Schedule, SchedulesDoc } from '../src/main/schedules';
 
 const MIN = 60_000;
@@ -515,6 +515,70 @@ async function phase2(): Promise<void> {
     assert.strictEqual(h.sch.doc.schedules.length, 50);
     assert.ok(!h.sch.save({ folder: '/w', prompt: 'new', every: 45 }, () => true).ok);
   }
+  // spec 072: until main wires loops (T006) `save` refuses them
+  {
+    const h = harness({ pausedAll: false, schedules: [] });
+    const input = { folder: '/w', prompt: 'p', target: { session: 's1', agent: 'copilot' }, cap: { amount: 5, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 3, endAt: now + 60 * MIN } };
+    assert.deepStrictEqual(h.sch.save(input, () => true), { ok: false, error: 'Loops are not available yet.' });
+    assert.strictEqual(h.sch.doc.schedules.length, 0);
+    loopSupport.enabled = true;
+    assert.ok(h.sch.save(input, () => true).ok, 'with the switch on');
+    loopSupport.enabled = false;
+  }
+  loopSupport.enabled = true;
+  // spec 072 (T002): a loop is a schedule with a `loop` field: session target, no every/at/rule, validated limits, main-owned state stripped
+  {
+    const LIM = { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 12, endAt: now + 8 * 60 * MIN };
+    const mk = (over: Record<string, unknown> = {}) => ({ folder: '/w', prompt: 'check CI', target: { session: 's1', agent: 'copilot' }, loop: { ...LIM }, cap: { amount: 50, unit: 'aiu' }, ...over });
+    assert.ok(cleanSchedule(mk(), now)?.loop, 'a valid loop');
+    assert.strictEqual(cleanSchedule(mk({ target: undefined }), now), undefined, 'a loop needs a session target');
+    assert.strictEqual(cleanSchedule(mk({ every: 30 }), now), undefined, 'no every');
+    assert.strictEqual(cleanSchedule(mk({ at: now + MIN }), now), undefined, 'no at');
+    assert.strictEqual(cleanSchedule(mk({ rule: { kind: 'daily', time: '08:30' } }), now), undefined, 'no rule');
+    for (const bad of [{ minDelay: 4 }, { maxDelay: 1441 }, { defaultDelay: 4 }, { defaultDelay: 61 }, { maxPasses: 0 }, { maxPasses: 101 }, { minDelay: 61 }, { minDelay: 7.5 }, { endAt: 'x' }, { endAt: 0 }, { maxPasses: undefined }]) {
+      assert.strictEqual(cleanSchedule(mk({ loop: { ...LIM, ...bad } }), now), undefined, JSON.stringify(bad));
+    }
+    assert.ok(cleanSchedule(mk({ loop: { ...LIM, maxDelay: 1440, defaultDelay: 90 } }), now), 'the max may be raised to 1440');
+    const h = harness({ pausedAll: false, schedules: [] });
+    h.sch.start();
+    const r = h.sch.save(mk({ loop: { ...LIM, passes: 9, inPass: true, noPaceStreak: 1, errorStreak: 1, hold: 'person', startedAt: 1, lastAsk: { minutes: 5, reason: 'x', source: 'agent' }, ended: { at: 1, reason: 'user', text: 'x' } }, next: 5, spent: 40 }), () => true);
+    assert.ok(r.ok && r.schedule.loop);
+    if (r.ok && r.schedule.loop) {
+      const l = r.schedule.loop;
+      assert.deepStrictEqual([l.passes, l.inPass, l.noPaceStreak, l.errorStreak, l.hold, l.lastAsk, l.ended, l.startedAt, r.schedule.spent], [0, undefined, undefined, undefined, undefined, undefined, undefined, now, undefined], 'main-owned fields are not taken from the renderer');
+      assert.strictEqual(r.schedule.next, now, 'the first pass is due at once');
+      assert.ok(r.schedule.loop && !r.schedule.every && !r.schedule.at && !r.schedule.rule);
+    }
+    assert.deepStrictEqual(h.sch.save(mk(), () => true), { ok: false, error: 'That session already has a loop.' }, 'one loop per session');
+    assert.ok(h.sch.save(mk({ target: { session: 's2', agent: 'copilot' } }), () => true).ok, 'another session may loop');
+    assert.ok(!h.sch.save(mk({ target: { session: 'gone', agent: 'copilot' } }), () => true).ok, 'the session must exist');
+    assert.ok(!h.sch.save(mk({ target: { session: 's3', agent: 'copilot' }, loop: { ...LIM, endAt: now } }), () => true).ok, 'the end time must be in the future');
+    h.sessions.add('s3');
+    assert.ok(!h.sch.save(mk({ target: { session: 's3', agent: 'copilot' }, loop: { ...LIM, endAt: now + 25 * 60 * MIN } }), () => true).ok, 'at most 24 h');
+    assert.ok(!h.sch.save(mk({ target: { session: 's3', agent: 'copilot' }, cap: undefined }), () => true).ok, 'a limit is required when the app reports one');
+    h.unit.v = undefined;
+    const nc = h.sch.save(mk({ target: { session: 's3', agent: 'copilot' } }), () => true);
+    assert.ok(nc.ok && nc.schedule.cap === undefined, 'Q4: an app that reports no spend gets a loop bounded by passes and time');
+    h.unit.v = 'aiu';
+    // counts toward the 50 limit
+    const full = harness({ pausedAll: false, schedules: Array.from({ length: 50 }, (_, i) => ({ id: `full-sched-${i}`, folder: '/w', prompt: 'p', every: 60, next: now + 60 * MIN }) as Schedule) });
+    assert.ok(!full.sch.save(mk(), () => true).ok, 'a loop counts toward the 50 schedules');
+    // a loop cannot become a plain schedule or the reverse, nor move to another session
+    const id = r.ok ? r.schedule.id : '';
+    assert.ok(!h.sch.save({ id, edit: true, folder: '/w', prompt: 'x', every: 30 }, () => true).ok);
+    assert.ok(!h.sch.save({ ...mk({ target: { session: 's3', agent: 'copilot' } }), id, edit: true }, () => true).ok, 'a loop stays on its session');
+    const plain = h.sch.save({ folder: '/w', prompt: 'p', every: 30 }, () => true);
+    assert.ok(plain.ok && !h.sch.save({ ...mk(), id: plain.ok ? plain.schedule.id : '', edit: true }, () => true).ok, 'a schedule cannot become a loop');
+    // an edit changes the limits and keeps main's state
+    h.sch.doc.schedules.find((x) => x.id === id)!.loop!.passes = 4;
+    const ed = h.sch.save({ ...mk({ loop: { ...LIM, maxPasses: 20, passes: 0 } }), id, edit: true }, () => true);
+    assert.ok(ed.ok && ed.schedule.loop?.maxPasses === 20 && ed.schedule.loop.passes === 4, 'edit keeps passes');
+    assert.deepStrictEqual(await h.sch.runNow(id), { ok: false, error: 'A loop sends its own passes.' });
+    // the file keeps the state but never hold or inPass
+    const round = parseSchedules(JSON.stringify(h.sch.doc), now);
+    assert.strictEqual(round.schedules.find((x) => x.id === id)?.loop?.passes, 4);
+  }
+  loopSupport.enabled = false;
 }
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });

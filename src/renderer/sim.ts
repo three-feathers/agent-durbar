@@ -18,6 +18,8 @@ type FolderSetupItem = import('../shared/foldersetup').FolderSetupItem;
 type PickedFile = import('../shared/api').PickedFile;
 type ModelChoice = import('../shared/api').ModelChoice;
 type AdapterInfo = import('../shared/api').AdapterInfo;
+type McpServerInput = import('../shared/mcp').McpServerInput;
+type McpSourceTag = import('../shared/api').McpSourceTag;
 type FloorsState = import('../shared/api').FloorsState;
 type FloorsResult = import('../shared/api').FloorsResult;
 type ScheduleInfo = import('../shared/api').ScheduleInfo;
@@ -44,8 +46,8 @@ interface SimOptions {
   seed?: number;
   /** Spec 033: three floors (Ground floor, Client A, Personal) with the rooms spread over them. */
   floors?: boolean;
-  /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`). */
-  titles?: boolean;
+  /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`; `simtitles=long`: the first one is 120 characters, the longest a session title can be, spec 052 FR-174). */
+  titles?: boolean | 'long';
   /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits; agent 3 has no alias and a long first-prompt title with one unbroken URL-like token (FR-019). */
   names?: 'long';
   /** Spec 052 FR-170 (T155): long replies and long sub-agent prompts that run to the right edge of the chat, to check that the Copy button covers no text (page address `simreply=long`). */
@@ -415,6 +417,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /* simtitles=1 (spec 001/002 deltas 2026-10-18): titles for a few main agents, two of them in one folder and one long enough to be ellipsized */
     if (opts.titles) {
       const SIM_TITLES = ['Fix login bug', 'Release notes for v0.3', 'Review PR 121: contract clause parser', 'Rename public tool find_company and update every call site and the docs index', 'Canton lookup edge cases'];
+      if (opts.titles === 'long') SIM_TITLES[0] = 'Morning stand-up: summarise every open pull request, flag the ones that touch the billing flows and draft the release notes for the whole week'.slice(0, 120);
       window.setTimeout(() => {
         sims.filter((s, i) => i % 3 === 0).slice(0, SIM_TITLES.length).forEach((s, i) => emit({ type: 'title', sessionId: sid(s), timestamp: now(), title: SIM_TITLES[i] }));
       }, 200);
@@ -500,6 +503,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     let pfN = 0;
     const pf = (app: SimPF['app'], scope: SimPF['scope'], folder: string | undefined, path: string, text: string, writable = true, note?: string): SimPF =>
       ({ id: (++pfN).toString(16).padStart(32, 'a'), app, scope, folder, fileName: path.slice(path.lastIndexOf('/') + 1), path, writable, note, text });
+    // spec 043 FR-039: the simulator's Create with AI holds one request at a time, like main's `generateProfile`; `__simGenCalls`
+    // counts the (canned, free) requests that would have been paid, so a driver can check at most one per user action;
+    // `__simGenDelay` (ms) lengthens the 700 ms wait so a driver's cancel-then-reopen steps cannot race it
+    let simGenRunning = false;
     const simPF: SimPF[] = [
       pf('copilot', 'folder', SWISS, SIM_PROFILES[0].path, '---\nname: Reviewer\ndescription: Reviews changes and points at risks; never edits files\ntools: [view, grep, glob]\nmodel: sim-deep\n---\n\n# Reviewer\n\nYou review the changes in this repository. **Never edit files.**\n\n## What to check\n\n- Tests cover the new behaviour\n- No secrets in code or logs\n- Paths work on Windows, macOS and Linux\n\nAnswer with a short list of risks, most important first, and link the docs when useful: [Contributing](https://github.com/three-feathers/agent-durbar/blob/main/CONTRIBUTING.md).\n\n```sh\nnpm run typecheck && npm test\n```\n'),
       pf('copilot', 'folder', SWISS, SIM_PROFILES[2].path, '---\nname: Release helper\ndescription: Prepares release notes from merged pull requests\nmcp-servers:\n  github:\n    type: http\n---\n\nCollect the merged pull requests since the last tag and write release notes grouped by area.\n'),
@@ -933,6 +940,140 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       { name: 'my-notes', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'node', args: ['/home/vikram/tools/notes-mcp.js'], enabled: true },
       { name: 'github-mcp-server', origin: 'builtin' as const, enabled: true },
     ];
+    // ---- Fake agent-app lists (spec 069 FR-040): in memory; previews masked like main's; nothing is written anywhere ----
+    type GApp = 'copilot' | 'claude' | 'codex';
+    type GView = { name: string; transport: 'stdio' | 'http' | 'sse' | 'other'; command?: string; args?: string[]; url?: string; envKeys: string[]; headerKeys: string[]; refs?: boolean };
+    const G_LABEL: Record<GApp, string> = { copilot: 'Copilot CLI', claude: 'Claude Code', codex: 'Codex' };
+    const G_FILE: Record<GApp, string> = { copilot: '~/.copilot/mcp-config.json', claude: '~/.claude.json', codex: '~/.codex/config.toml' };
+    const gLists: Record<GApp, GView[]> = {
+      copilot: [
+        { name: 'github', transport: 'stdio', command: 'npx', args: ['-y', '@example/github-mcp'], envKeys: [], headerKeys: [] },
+        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['/home/vikram/tools/notes-mcp.js'], envKeys: [], headerKeys: [] },
+      ],
+      claude: [
+        { name: 'github', transport: 'stdio', command: 'npx', args: ['-y', '@example/github-mcp'], envKeys: [], headerKeys: [] },
+        { name: 'sentry', transport: 'http', url: 'https://mcp.sentry.example/mcp', envKeys: [], headerKeys: ['Authorization'], refs: true },
+        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['/home/vikram/tools/notes-mcp-v1.js'], envKeys: [], headerKeys: [] },
+      ],
+      codex: [{ name: 'context7', transport: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp'], envKeys: [], headerKeys: [] }],
+    };
+    const gOff = new Set<string>();
+    const simToolsOff: Record<string, Record<string, string[]>> = {};
+    let gSeq = 0;
+    const gPending = new Map<string, { kind: 'add' | 'remove'; apps: GApp[]; view?: GView; name: string }>();
+    const G_APPS: GApp[] = ['copilot', 'claude', 'codex'];
+    const gApps = (l: unknown): GApp[] => (Array.isArray(l) ? G_APPS.filter((a) => l.includes(a)) : []);
+    const gEntry = (app: GApp, i: McpServerInput, mode: string): string => {
+      const v = (k: string, hk?: boolean) => (mode === 'ref' ? '${' + (hk ? k.toUpperCase().replace(/[^A-Z0-9_]/g, '_') : k) + '}' : '••••••');
+      if (app === 'codex') {
+        const lines = [`[mcp_servers.${i.name}]`];
+        if (i.transport === 'stdio') { lines.push(`command = "${i.command ?? ''}"`); if (i.args?.length) lines.push(`args = [${i.args.map((a) => JSON.stringify(a)).join(', ')}]`); if (i.env?.length) lines.push(mode === 'ref' ? `env_vars = [${i.env.map((e) => JSON.stringify(e.key)).join(', ')}]` : `env = { ${i.env.map((e) => `"${e.key}" = "••••••"`).join(', ')} }`); }
+        else { lines.push(`url = "${i.url ?? ''}"`); if (i.headers?.length) lines.push(mode === 'ref' ? `env_http_headers = { ${i.headers.map((h) => `"${h.key}" = "${h.key.toUpperCase().replace(/[^A-Z0-9_]/g, '_')}"`).join(', ')} }` : `http_headers = { ${i.headers.map((h) => `"${h.key}" = "••••••"`).join(', ')} }`); }
+        return lines.join('\n');
+      }
+      const e = i.transport === 'stdio'
+        ? { type: app === 'copilot' ? 'local' : 'stdio', command: i.command, args: i.args ?? [], ...(i.env?.length ? { env: Object.fromEntries(i.env.map((x) => [x.key, v(x.key)])) } : {}), ...(app === 'copilot' ? { tools: ['*'] } : {}) }
+        : { type: i.transport, url: i.url, ...(i.headers?.length ? { headers: Object.fromEntries(i.headers.map((x) => [x.key, v(x.key, true)])) } : {}), ...(app === 'copilot' ? { tools: ['*'] } : {}) };
+      const one = (v: unknown): string => (Array.isArray(v) ? '[' + v.map((x) => JSON.stringify(x)).join(', ') + ']' : '{ ' + Object.entries(v as Record<string, unknown>).map(([k, x]) => `${JSON.stringify(k)}: ${JSON.stringify(x)}`).join(', ') + ' }');
+      return `${JSON.stringify(i.name)}: {\n${Object.entries(e).map(([k, v]) => `  ${JSON.stringify(k)}: ${v && typeof v === 'object' ? one(v) : JSON.stringify(v)}`).join(',\n')}\n}`;
+    };
+    const globalApi: Partial<DurbarApi> = {
+      mcpGlobalState: async () => ({ ok: true, apps: G_APPS.map((app) => ({ app, label: G_LABEL[app], file: G_FILE[app], found: true, servers: gLists[app].map((x) => ({ ...x })), off: app === 'claude' ? [...gOff] : [] })) }),
+      mcpGlobalPreview: async (input, apps, mode) => {
+        const i = input as McpServerInput;
+        const list = gApps(apps);
+        if (!list.length) return { ok: false, error: 'Pick at least one agent app.', items: [] };
+        if (!i || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,47}$/.test(i.name ?? '')) return { ok: false, error: 'Name: 1-48 characters, letters, digits, "_", "." or "-", starting with a letter or digit.', items: [] };
+        const token = 'sim-' + ++gSeq;
+        const view: GView = { name: i.name, transport: i.transport, command: i.command, args: i.args, url: i.url, envKeys: (i.env ?? []).map((e) => e.key), headerKeys: (i.headers ?? []).map((h) => h.key), ...(mode === 'ref' && (i.env?.length || i.headers?.length) ? { refs: true } : {}) };
+        gPending.set(token, { kind: 'add', apps: list, view, name: i.name });
+        const vars = mode === 'ref' ? [...(i.env ?? []).map((e) => e.key), ...(i.headers ?? []).map((h) => h.key.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))] : [];
+        return { ok: true, token, ...(vars.length ? { vars } : {}), items: list.map((app) => {
+          const cur = gLists[app].find((x) => x.name === i.name);
+          const err = app === 'codex' && i.name.includes('.') ? 'Codex needs a name of letters, digits, "_" or "-" (no dots).' : app === 'codex' && i.transport === 'sse' ? 'Codex takes http servers only, not sse.' : undefined;
+          return { app, label: G_LABEL[app], file: G_FILE[app], exists: true, entry: gEntry(app, i, mode === 'plain' ? 'plain' : 'ref'), ...(cur ? { conflict: true, current: { ...cur } } : {}), ...(err ? { error: err } : {}), ...(app === 'copilot' && vars.length ? { note: 'Not verified for Copilot: whether the Copilot CLI replaces ${NAME} with the variable\'s value. Check the server starts in a Copilot session.' } : {}) };
+        }) };
+      },
+      mcpGlobalApply: async (token, replace) => {
+        const p = gPending.get(token);
+        gPending.delete(token);
+        if (!p || !p.view) return { ok: false, error: 'This review has expired. Review again.', items: [] };
+        const items = p.apps.map((app) => {
+          const has = gLists[app].findIndex((x) => x.name === p.name);
+          if (app === 'codex' && (p.name.includes('.') || p.view?.transport === 'sse')) return { app, file: G_FILE[app], ok: false, error: 'Not written.' };
+          if (has >= 0 && !(replace ?? []).includes(app)) return { app, file: G_FILE[app], ok: false, error: 'Already there; not replaced.' };
+          if (has >= 0) gLists[app][has] = { ...(p.view as GView) }; else gLists[app].push({ ...(p.view as GView) });
+          return { app, file: G_FILE[app], ok: true, backup: G_FILE[app].split('/').pop() + '.durbar-20261021T210600Z.bak' };
+        });
+        return { ok: items.some((x) => x.ok), items };
+      },
+      mcpGlobalRemovePreview: async (name, apps) => {
+        const list = gApps(apps);
+        const token = 'sim-' + ++gSeq;
+        gPending.set(token, { kind: 'remove', apps: list, name });
+        return { ok: true, token, items: list.map((app) => {
+          const cur = gLists[app].find((x) => x.name === name);
+          return { app, label: G_LABEL[app], file: G_FILE[app], exists: true, entry: cur ? (cur.command ? [cur.command, ...(cur.args ?? [])].join(' ') : cur.url ?? '') : '', ...(cur ? {} : { error: `"${name}" is not in this file.` }) };
+        }) };
+      },
+      mcpGlobalRemoveApply: async (token) => {
+        const p = gPending.get(token);
+        gPending.delete(token);
+        if (!p) return { ok: false, error: 'This review has expired. Review again.', items: [] };
+        const items = p.apps.map((app) => {
+          const i = gLists[app].findIndex((x) => x.name === p.name);
+          if (i < 0) return { app, file: G_FILE[app], ok: false, error: 'Not in this file.' };
+          gLists[app].splice(i, 1);
+          return { app, file: G_FILE[app], ok: true, backup: G_FILE[app].split('/').pop() + '.durbar-20261021T210600Z.bak' };
+        });
+        return { ok: items.some((x) => x.ok), items };
+      },
+      mcpGlobalDiff: async () => {
+        const names: string[] = [];
+        for (const a of G_APPS) for (const v of gLists[a]) if (!names.includes(v.name)) names.push(v.name);
+        const key = (v: GView) => JSON.stringify([v.transport, v.command ?? '', v.args ?? [], v.url ?? '', [...v.envKeys].sort(), [...v.headerKeys].sort()]);
+        const items = names.map((name) => {
+          const inApps = G_APPS.filter((a) => gLists[a].some((x) => x.name === name));
+          const vs = inApps.map((a) => gLists[a].find((x) => x.name === name) as GView);
+          const differs: string[] = [];
+          if (vs.some((v) => key(v) !== key(vs[0]))) {
+            if (vs.some((v) => (v.command ?? '') !== (vs[0].command ?? ''))) differs.push('command');
+            if (vs.some((v) => JSON.stringify(v.args ?? []) !== JSON.stringify(vs[0].args ?? []))) differs.push('arguments');
+            if (vs.some((v) => (v.url ?? '') !== (vs[0].url ?? ''))) differs.push('URL');
+            if (!differs.length) differs.push('environment variables');
+          }
+          return { name, in: inApps, missing: G_APPS.filter((a) => !inApps.includes(a)), differs, from: inApps };
+        }).filter((i) => i.missing.length || i.differs.length);
+        return { ok: true, apps: [...G_APPS], items };
+      },
+      mcpGlobalCopyPreview: async (name, from, to) => {
+        const v = gLists[from]?.find((x) => x.name === name);
+        if (!v) return { ok: false, error: `"${name}" is not in ${G_LABEL[from]}'s list any more.`, items: [] };
+        const list = gApps(to).filter((a) => a !== from);
+        if (!list.length) return { ok: false, error: 'Pick at least one agent app to copy to.', items: [] };
+        const i: McpServerInput = { name, transport: v.transport === 'other' ? 'stdio' : v.transport, command: v.command, args: v.args, url: v.url, env: v.envKeys.map((key) => ({ key })), headers: v.headerKeys.map((key) => ({ key })) };
+        const token = 'sim-' + ++gSeq;
+        gPending.set(token, { kind: 'add', apps: list, view: { ...v }, name });
+        const mode = v.refs ? 'ref' : 'plain';
+        const vars = v.refs ? [...v.envKeys, ...v.headerKeys.map((h) => h.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))] : [];
+        return { ok: true, token, ...(vars.length ? { vars } : {}), items: list.map((app) => {
+          const cur = gLists[app].find((x) => x.name === name);
+          return { app, label: G_LABEL[app], file: G_FILE[app], exists: true, entry: gEntry(app, i, mode), ...(cur ? { conflict: true, current: { ...cur } } : {}) };
+        }) };
+      },
+      mcpGlobalSetOff: async (app, name, off) => {
+        if (app !== 'claude') return { ok: false };
+        if (off) gOff.add(name); else gOff.delete(name);
+        return { ok: true };
+      },
+    };
+    const gSources = (name: string, folder: boolean): McpSourceTag[] => {
+      const out: McpSourceTag[] = G_APPS.filter((a) => gLists[a].some((x) => x.name === name));
+      if (folder) out.push('folder');
+      if (name === 'github-mcp-server') out.push('builtin');
+      if (!out.length) out.push('runtime');
+      return out;
+    };
     const fakeView = (v: FakeSrv) => ({ ...v, env: v.env.map((e) => ({ ...e })), headers: v.headers.map((e) => ({ ...e })) });
     const extrasOf = (key: string): FakeSrv[] => (fakeExtras[key] ??= []);
     const knownFolder = (key: string): boolean => sims.some((x) => x.info.cwd === key);
@@ -1056,14 +1197,44 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         /* what the last `mcp` event said wins over the canned rule, as main's live list does for a real session */
         const reported = (n: string): ReturnType<typeof simServer> => { const m = live ? s.mcpLive?.find((x) => x.name === n) : undefined; return m ? { status: s.mcpOff?.has(n) ? 'disabled' : m.status, error: m.error, errorClass: m.errorClass } : simServer(s, idx, n, live); };
         const known = new Set([...fakeCli.map((c) => c.name), ...extrasOf(s.info.cwd).map((v) => v.name)]);
+        const toolsOffOf = (n: string) => (simToolsOff[s.info.cwd]?.[n] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[n] ?? [])] } : {});
         const servers = [
-          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, ...reported(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
-          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
-          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name) })) : []),
+          /* spec 069 FR-061: this folder's turned-off tools */
+          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, ...reported(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), sources: gSources(a.name, false), ...toolsOffOf(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
+          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), sources: gSources(v.name, true), ...toolsOffOf(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
+          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name) })) : []),
         ];
-        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume };
+        return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
+      /* spec 069 FR-031/FR-032: canned tools per server; a session that is not running, a failed server and an empty one show their states */
+      /* spec 069 FR-061: tools turned off per folder, in memory */
+      setAgentMcpToolsOff: async (id, name, off) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'Unknown agent.' };
+        const m = (simToolsOff[s.info.cwd] ??= {});
+        if (off.length) m[name] = [...new Set(off)];
+        else delete m[name];
+        return { ok: true };
+      },
+      agentMcpTools: async (id, name) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'Unknown agent or server.' };
+        if (s.state === 'idle' && !s.ctx) return { ok: false, notRunning: true, error: 'Start the session to see its tools.' };
+        await new Promise((r) => setTimeout(r, 250));
+        const canned: Record<string, [string, string?][]> = {
+          github: [['search_issues', 'Search issues and pull requests in a repository'], ['get_pull_request', 'Get one pull request with its files and checks'], ['create_issue', 'Open a new issue'], ['list_commits', 'List the commits of a branch'], ['get_file_contents', 'Read a file at a ref']],
+          // `search` is also a tool of my-notes (two servers, one tool name: spec 069 review on PR 503); `run query` cannot be turned off (FR-063)
+          'github-mcp-server': [['get_me', 'Your GitHub account'], ['search_code', 'Search code on GitHub'], ['search', 'Search GitHub'], ['run query', 'A tool name with a space']],
+          playwright: [['browser_navigate', 'Open a URL in the browser'], ['browser_click', 'Click an element'], ['browser_snapshot', 'Accessibility snapshot of the page'], ['browser_take_screenshot']],
+          'docs-search': [],
+        };
+        /* the same state the row shows (spec 058's canned failures; a Restart fixes them): only a running server lists tools */
+        const st = simServer(s, sims.indexOf(s), name, true);
+        if (st.status && st.status !== 'connected') return { ok: false, error: name + ' is not connected' + (st.error ? ': ' + st.error : ' (' + st.status + ')') };
+        const list = canned[name] ?? [['search', 'Search the notes'], ['read_note', 'Read one note by its title']];
+        return { ok: true, total: list.length, tools: list.map(([n, d]) => ({ name: n, ...(d ? { description: d } : {}) })) };
+      },
       agentMcpRestart: async (id, name) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || !caps(s.info.adapterId ?? 'copilot').mcpRestart) return { ok: false, error: 'This agent app cannot restart one MCP server. Use Restart session with these servers.' };
@@ -1292,7 +1463,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         f.text = String(text);
         return { ok: true as const, sha256: pfHash(f.text), info: pfInfo(f) };
       },
-      createProfileFile: async (app, place, name, template) => {
+      createProfileFile: async (app, place, name, template, text) => {
         if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) || name.includes('..') || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(name)) return { ok: false as const, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
         const folder = place === 'user' ? undefined : pfFolders().find((x) => x.id === place)?.path;
         if (place !== 'user' && !folder) return { ok: false as const, error: 'That folder is not in the office any more: choose where to save it again.' };
@@ -1302,9 +1473,42 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         // the shared templates (src/shared/profiletemplates.ts), loaded after exports-shim.js; read at call time
         const tpl = (self as unknown as { exports?: { profileTemplate?: (a: string, n: string, k?: string) => string } }).exports?.profileTemplate;
         if (!tpl) return { ok: false as const, error: 'The templates are not loaded.' };
-        const f = pf(app, place === 'user' ? 'user' : 'folder', folder, file, tpl(app, name, template === 'standard' ? 'standard' : 'success'));
+        const f = pf(app, place === 'user' ? 'user' : 'folder', folder, file, typeof text === 'string' ? text : tpl(app, name, template === 'standard' ? 'standard' : 'success')); // text: a reviewed AI draft (FR-029)
         simPF.push(f);
         return { ok: true as const, id: f.id, info: pfInfo(f) };
+      },
+      // spec 043 FR-030: a canned Agent Success Profile from the answers (no credits), checked like a real reply
+      generateProfile: async (req) => {
+        type PT = { profileTemplate(a: string, n: string, k?: string): string; PROFILE_QUESTIONS: { id: string; section: string }[]; validateGeneratedProfile(t: string, i: unknown, p: (t: string) => unknown): { ok: true; text: string; warnings: string[]; extraTools: string[] } | { ok: false; error: string }; parseToolList(l: unknown): { ok: true; tools: string[] } | { ok: false; error: string }; DEFAULT_READ_TOOLS: Record<string, string[]> };
+        const T = (self as unknown as { exports?: PT }).exports;
+        const PE = (window as unknown as { DurbarProfileEditor?: { parseFrontmatter(t: string): unknown } }).DurbarProfileEditor;
+        if (!T || !T.validateGeneratedProfile || !PE) return { ok: false as const, error: 'The templates are not loaded.' };
+        const tl = T.parseToolList(req.tools);
+        if (!tl.ok) return { ok: false as const, error: tl.error };
+        if (simGenRunning) return { ok: false as const, busy: true as const, error: 'The first request is still running on the agent app and may be charged. Create is available again when it ends.' };
+        if (!caps(String(req.by)).oneShot) return { ok: false as const, error: 'That agent app cannot write a profile here. Pick an installed, signed-in one.' };
+        simGenRunning = true;
+        const w = window as unknown as { __simGenCalls?: number; __simGenDelay?: number };
+        w.__simGenCalls = (w.__simGenCalls ?? 0) + 1;
+        try {
+          await new Promise((r) => window.setTimeout(r, Math.min(Math.max(Number(w.__simGenDelay) || 700, 0), 10_000))); // a driver may lengthen the wait
+        } finally {
+          simGenRunning = false;
+        }
+        const said = req.mode === 'describe' ? String(req.description ?? '') : Object.values(req.answers ?? {}).join(' ');
+        const summary = req.mode === 'describe' ? said : String((req.answers ?? {}).title || said);
+        const spend = req.by === 'claude' ? { costUsd: 0.003 } : req.by === 'copilot' ? { nanoAiu: 15_000_000 } : {};
+        if (/\bfail\b/i.test(said)) return { ok: false as const, error: 'The agent app gave no answer.', ...spend };
+        let text = T.profileTemplate(req.app, req.name, 'success').replace(/^description: .*$/m, 'description: ' + (summary.slice(0, 120).replace(/[:#\n]/g, ' ').trim() || 'A focused agent'));
+        // a canned reply that uses every tool it may (FR-032), so the granted-tools note shows in the simulator too
+        if (tl.tools.length) { const all = [...(T.DEFAULT_READ_TOOLS[req.app] ?? []), ...tl.tools].join(', '); text = text.replace(/^tools: .*$/m, 'tools: ' + (req.app === 'copilot' ? '[' + all + ']' : all)); }
+        const a = req.answers ?? {};
+        for (const q of T.PROFILE_QUESTIONS) {
+          const v = req.mode === 'describe' ? (q.id === 'title' ? said.slice(0, 200) : '') : a[q.id];
+          if (v) text = text.replace(new RegExp('(## ' + q.section + '\\n\\n)[^\\n]*'), (_m, h: string) => h + v);
+        }
+        const v = T.validateGeneratedProfile(text, { app: req.app, name: req.name, mode: req.mode, description: req.description, answers: req.answers, tools: tl.tools }, (t) => PE.parseFrontmatter(t));
+        return v.ok ? { ok: true as const, text: v.text, warnings: v.warnings, extraTools: v.extraTools, by: req.by === 'claude' ? 'Claude Code' : req.by === 'codex' ? 'Codex' : 'GitHub Copilot', ...spend } : { ok: false as const, error: v.error, ...spend };
       },
       openProfileInVSCode: async (fileId) => {
         const f = simPF.find((x) => x.id === fileId);
@@ -1672,6 +1876,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const api: DurbarApi = {
       ...floorApi,
       ...mcpApi,
+      ...globalApi,
       ...capApi,
       ...modelApi,
       version: async () => 'sim',
