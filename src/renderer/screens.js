@@ -143,8 +143,9 @@
     const badThemes=userThemes.filter((u)=>u.ok===false);
     const themeSec=`<section class="scr-sec" aria-labelledby="themeH"><h3 id="themeH">Theme</h3>
         <p class="scr-note">The look of the office; the choice applies at once and is kept on this computer.</p>
-        <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, small art and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, fonts (system fonts only), corner radii, shadows, the people's clothes and hair, small art (desk gadgets too) and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
         <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';const dm=/^Durbar · (.+)$/.exec(t.name||'');return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx">${dm?'<span class="thover">Durbar</span>':''}<b title="${esc(t.name)}">${esc(dm?dm[1]:t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
+        ${themeFallbackNote(themes)}
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
         <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button></div></section>`;
     const ab=app.about;
@@ -247,6 +248,12 @@
      preview (Try it, live, not saved) -> Save as my theme, Try again or Discard (back to the theme that was active). User text is never logged. */
   /* spec 040 FR-015: AI credits a Copilot generation reported (1e9 nano = 1 credit) */
   const aiCredits=(nano)=>(Number(nano)/1e9).toFixed(2);
+  /* spec 070 FR-022: one line per own theme that could not use some of its values (dropped, or a text pair set back for contrast) */
+  function themeFallbackNote(themes){
+    if(!window.THEME||!window.THEME.fallbacks)return '';
+    const lines=themes.filter((t)=>t.own).map((t)=>{const f=window.THEME.fallbacks(t.id);const n=f.dropped.length+f.contrast.length;return n?esc(t.name)+': '+n+' value'+(n>1?'s use':' uses')+' the defaults (not usable or hard to read)':'';}).filter(Boolean);
+    return lines.length?`<p class="scr-note small" role="status" id="thFallbacks">${lines.join('; ')}.</p>`:'';
+  }
   async function aiTheme(){
     const before=(window.THEME&&window.THEME.current&&window.THEME.current().id)||'clean-office';
     let kinds=[];
@@ -643,24 +650,78 @@
   function editServer2(input,v,st){const view=Object.assign({},v||{},{name:input.name,transport:input.transport,command:input.command,args:input.args,workingDirectory:input.workingDirectory,url:input.url,tools:input.tools,env:(v&&v.env)||[],headers:(v&&v.headers)||[]});return editServer(v?view:Object.assign(view,{name:input.name}),st);}
 
   /* ---------------- per-agent MCP menu ---------------- */
+  /* spec 058 FR-023: what Restart session costs, said before it runs; null when there is nothing to ask (idle, no grants, no remote control) */
+  function restartSessionAsk(a){
+    const busy=a.state==='working'||a.state==='thinking'||a.state==='waiting', grants=Array.isArray(a.grants)&&a.grants.length>0, remote=!!a.remote;
+    if(!busy&&!grants&&!remote)return null;
+    return ['The conversation is kept and resuming spends no AI credits.',busy?'The running turn stops.':'','"Approve for this session" grants are cleared.',remote?'Remote control turns off.':''].filter(Boolean);
+  }
   async function agentMcp(a,o){
     if(!X.bridge.agentMcp)return;
     const fixed=!!o&&o.toggle===false; /* this agent kind cannot switch servers while it runs (spec 012 FR-067): shown, with the reason */
+    const noServerRestart=!!o&&o.restart===false; /* spec 058 FR-032: e.g. Codex: no per-server Restart, only Restart session */
     const load=async()=>X.bridge.agentMcp(a.id);
     let st=await load();
+    const restarting=new Set(); /* server names whose Restart is under way (FR-031: the button stays disabled) */
+    let sessBusy=false;
     const body=s=>{
       const rows=s.servers.map(x=>{
         const eff=x.defaultOn&&!x.off;
         const stat=x.status?`<span class="mst ${esc(x.status)}"><i></i>${esc(x.status)}</span>`:'<span class="mst none">not started</span>';
+        const rs=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
         return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(x.name)}</b><span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${x.error?`<span class="imp-note">${esc(cap(x.error,160))}</span>`:''}</div>
-          <div class="srv-act">${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Your Copilot CLI servers are global (see <b>Settings</b>); extras belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul><p class="dsub small">Applies to this agent until the app is closed.</p>`;
+          <div class="srv-act">${rs}${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
+      /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
+      const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Your Copilot CLI servers are global (see <b>Settings</b>); extras belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">Applies to this agent until the app is closed.</p>`;
+    };
+    let dlg=null;
+    /* FR-004 / FR-033: repaint in place and keep the focus on the same control (by server name), so a keyboard user is not thrown out */
+    const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return;
+      const f=document.activeElement,inside=f&&dlg.contains(f);
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      dlg.querySelector('.dbody').innerHTML=body(st);
+      if(!key)return;
+      const btns=[...dlg.querySelectorAll('.dbody button:not([disabled])')];
+      const back=btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1])||(key[0]==='restart'?btns.find(x=>x.dataset.n===key[1]):null);
+      if(back)back.focus();};
+    const restartOne=async name=>{
+      if(restarting.has(name))return;
+      restarting.add(name);
+      let call;try{call=Promise.resolve(X.bridge.agentMcpRestart(a.id,name));}catch(e){call=Promise.reject(e);}
+      call=call.catch(e=>({ok:false,error:String(e&&e.message||e)}));
+      await repaint(); /* after the call went out: the row can already show the runtime's "pending" */
+      const r=await call;
+      restarting.delete(name);
+      X.toast(r&&r.ok?'Restarted '+esc(name)+'.':'Could not restart '+esc(name)+': '+esc((r&&r.error)||'unknown error'),r&&r.ok?3200:6000);
+      await repaint();
+      if(r&&r.ok)setTimeout(()=>{if(dlg&&dlg.isConnected)void repaint();},1500); /* the runtime reports the new state shortly after */
+    };
+    const restartSession=async()=>{
+      if(sessBusy)return;
+      const ask=window.DurbarDialog&&window.DurbarDialog(document);
+      const confirm=async()=>{const lines=restartSessionAsk(a)||['The conversation is kept and resuming spends no AI credits.','The running turn stops.','"Approve for this session" grants are cleared.'];
+        if(!ask)return window.confirm('Restart '+a.name+"'s session with the current MCP servers?");
+        const v=await ask({title:'Restart '+a.name+"'s session?",body:'Restart '+a.name+"'s session with the current MCP servers?",lines,returnFocus:()=>dlg&&dlg.querySelector('#mcpRestartSess'),buttons:[{label:'Cancel',value:null},{label:'Restart session',value:'ok',cls:'primary warn'}]});
+        return !!v;};
+      let confirmed=false;
+      if(restartSessionAsk(a)){if(!await confirm())return;confirmed=true;}
+      sessBusy=true;await repaint();
+      let r;try{r=await X.bridge.agentMcpRestartSession(a.id,confirmed);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
+      if(r&&!r.ok&&r.needsConfirm&&!confirmed){sessBusy=false;await repaint();if(!await confirm())return;sessBusy=true;await repaint();try{r=await X.bridge.agentMcpRestartSession(a.id,true);}catch(e){r={ok:false,error:String(e&&e.message||e)};}}
+      sessBusy=false;
+      if(r&&r.errorKind==='auth'&&X.signInAgain){if(dlg&&dlg._ov)dlg._ov._close();X.signInAgain(a,r.error||'');return;} /* FR-027: the chat's sign-in card, not a toast */
+      X.toast(r&&r.ok?esc(a.name)+': session restarted with the current MCP servers.'+(st.start==='next-message'?' Its servers start with your next message.':''):'Could not restart the session: '+esc((r&&r.error)||'unknown error')+(r&&r.ended?' The session has ended; send a message to resume it.':''),r&&r.ok?4200:7000);
+      await repaint();
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
-      onOpen:d=>{d.addEventListener('click',async e=>{const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
+      onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;d.addEventListener('click',async e=>{
+        const rb=e.target.closest('button[data-restart]');if(rb&&!rb.disabled){void restartOne(rb.dataset.restart);return;}
+        if(e.target.closest('#mcpRestartSess')){void restartSession();return;}
+        const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
         const r=await X.bridge.setAgentMcp(a.id,b.dataset.n,on);
         if(r&&r.error)X.toast(esc(r.error),5200);
-        st=await load();d.querySelector('.dbody').innerHTML=body(st);});}});
+        await repaint();});}});
     const r=await d0;
     if(r&&r.value==='settings')open('settings');
     else if(r&&r.value==='folder'&&X.folderOf){const f=X.folderOf(a);if(f)openFolder(f.key,f.name);}
@@ -739,7 +800,7 @@
   }
   /* ---------------- Tools > Activity (spec 052 FR-071): rows come from main only; the window reads, exports and clears ---------------- */
   async function activityView(){
-    const A=window.DurbarActivity;
+    const A=window.DurbarActivityTable; /* activitytable.js; window.DurbarActivity is activity.js (GitHub issue 474) */
     let rows=[];
     try{const r=await X.bridge.activityList({limit:500});rows=r&&Array.isArray(r.rows)?r.rows:[];}catch(e){rows=[];}
     return {n:rows.length,html:`<p class="scr-note">${esc(A.NOTE)}</p>${A.tableHtml(rows,esc)}${rows.length>=500?'<p class="scr-note small">The newest 500 rows are shown; an export holds the whole log (at most 5000 rows).</p>':''}`};

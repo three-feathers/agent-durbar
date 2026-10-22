@@ -24,3 +24,8 @@
 - [x] T026 (#301) Copilot `generateText` on a throw-away SDK session (`oneShotConfig`: no tools, no MCP, no skills or agents, nothing kept; permissions denied; timeout; disconnect and delete in a `finally`); AI credits passed through `theme:generate` to the dialog; capability `oneShot`; simulator; `test:copilotoneshot` on the fake SDK [FR-015]
 - [x] T027 (#301) Real check of T026: needs the owner's go-ahead: 1 prompt on a free plan (record as `real:` in FR-015; also confirm on disk that the session is gone and that `availableTools: []` really means no tools) Done 2026-10-20 (2 prompts, 0.50 AI credits, `scripts/themegen-copilot-real.ts`): text returned, no tool event, nothing left in `session-state`; found and fixed the bare token names (FR-022).
 - [x] T028 Retake `docs/screenshots/040-aitheme-*.png` and `040-aitheme-preview-*.png`: the dialog now lists Copilot first in the simulator (`scripts/shots-040-aitheme.js` updated, not run here)
+
+## 2026-10-21: theme art on every surface (owner report)
+
+- [x] T029 A theme switch redraws desks, helper tiles and walkers (theme key in the scene signature, the scene cache and the walkers); the same id with other content is applied; headwear over the hair; character, desk and monitor art on every scene kit; the AI prompt updated; unit tests [FR-023]
+- [x] T030 Sample AI-style pack `scripts/fixtures/themes/pink-studio.json` and `scripts/check-theme-art.js` (`npm run check:theme-art`, in `check:ui`): desks, walkers, lobby places and chips at 1440x900 and 1280x800, pixels and attributes, and back to Clean Office [FR-023]

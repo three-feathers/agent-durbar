@@ -77,6 +77,9 @@ interface SimAgent {
   models?: string[];
   /** Agent ids that switched an MCP server off (spec 019). */
   mcpOff?: Set<string>;
+  /** Spec 058 (simulator): servers under a canned Restart, and failed servers a Restart brought back. */
+  mcpRestarting?: Set<string>;
+  mcpFixed?: Set<string>;
   /** Simulated credit use in nano-AIU, and the open "limit reached" question (spec 011). */
   used?: number;
   /** Dollar estimate used (kinds with `capUnit: 'usd'`). */
@@ -154,10 +157,10 @@ const SIM_FOLDER_SETUP: FolderSetupItem[] = [
 ];
 const simSetupDecisions = new Map<string, { accepted: string[]; declined: string[] }>();
  const SIM_PLAN_CAPS = { planMode: true }; // spec 066: every simulated kind can plan first
-const SIM_COPILOT_CAPS = { ...SIM_PLAN_CAPS, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true, oneShot: true, deleteSession: true, renameSession: 'any' } as AdapterInfo['capabilities'];
+const SIM_COPILOT_CAPS = { ...SIM_PLAN_CAPS, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'next-message', mcpToggleApplies: 'live', mcpRestart: true, handoff: true, remote: true, oneShot: true, deleteSession: true, renameSession: 'any' } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
-  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: true, remoteService: { name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true, deleteSession: false, renameSession: 'next-turn' } }, // spec 006 FR-028: Claude Code has no per-session delete
-  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false, remote: false } },
+  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: true, remoteService: { name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }, mcpToggle: true, mcpStart: 'next-message', permModeSwitch: 'live', helpers: true, history: true, deleteSession: false, renameSession: 'next-turn' } }, // spec 006 FR-028: Claude Code has no per-session delete
+  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpRestart: false, remote: false } }, // spec 058 T028: the real switch values (FR-133, FR-147)
   { id: 'basic', displayName: 'Basic agent (simulated)', state: 'ready', version: 'sim', capabilities: { interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none', usage: { tokens: true, costUsd: false, nanoAiu: false }, context: false, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false } as AdapterInfo['capabilities'] },
 ];
 
@@ -198,6 +201,20 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     },
     Kenji: { kind: 'shell', summary: 'Run python evals/baseline.py --compare', target: 'python evals/baseline.py' },
     Lena: { kind: 'write', summary: 'Edit src/styles/focus.css (focus ring colour)', target: 'src/styles/focus.css' },
+  };
+  /**
+   * Spec 052 FR-172: `simcodexfile=1` makes a waiting Codex agent's write request look like the Codex adapter's card (the files,
+   * kind and diff from the `fileChange` item); `simcodexfile=none` like one for which Codex named no file. Only with `simkinds=mixed`.
+   */
+  const codexFileReq = (s: { info: { adapterId?: string }; files: string[] }): (typeof WAIT_REQ)[string] | undefined => {
+    const v = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simcodexfile') : null;
+    if (!v || s.info.adapterId !== 'codex') return undefined;
+    if (v === 'none') return { kind: 'write', summary: 'write (Codex did not say which file)', target: '' };
+    const f = s.files[0];
+    return {
+      kind: 'write', summary: `write ${f} (+1 more)`, target: f,
+      diff: [`--- a/${f}`, `+++ b/${f}`, '@@ -3,3 +3,3 @@', ' :focus-visible {', '-  outline: 2px solid var(--sage);', '+  outline: 2px solid var(--blue);', '   outline-offset: 2px;', '--- a/docs/a11y.md', '+++ b/docs/a11y.md', '@@ -0,0 +1,2 @@', '+# Focus ring', '+Blue, 2px, offset 2px.'].join('\n'),
+    };
   };
   const HELPER_NAMES: [string, string, string][] = [
     ['Tests', 'Running vitest on the changed modules', 'working'],
@@ -597,7 +614,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
 
     const dirOf = (f: string): string => (f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : '.');
-    const scopeOf = (f: string): { key: string; label: string } => ({ key: 'write:' + dirOf(f), label: 'write in ' + dirOf(f).split('/').slice(-2).join('/') + '/' });
+    const scopeOf = (f: string): { key: string; label: string } => !f ? { key: 'write:', label: 'write' } : ({ key: 'write:' + dirOf(f), label: 'write in ' + dirOf(f).split('/').slice(-2).join('/') + '/' });
     const grantsEvent = (s: SimAgent): void =>
       emit({ type: 'grants', sessionId: sid(s), timestamp: now(), grants: [...s.grants].map(([key, label]) => ({ key, kind: 'write', label })) });
     /** Activity log (spec 052 FR-071): a few canned rows, plus a row for each answer, automatic approval, mode or limit change in the simulator. */
@@ -683,7 +700,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           think(s, 2);
           break;
         case 'waiting': {
-          const w = WAIT_REQ[s.info.name] ?? { kind: 'write' as const, summary: 'Edit ' + s.files[0], target: s.files[0] };
+          const w = codexFileReq(s) ?? WAIT_REQ[s.info.name] ?? { kind: 'write' as const, summary: 'Edit ' + s.files[0], target: s.files[0] };
           askWrite(s, w.target, w.summary, 'tool', s.intent, true, w.kind, w.diff);
           break;
         }
@@ -904,12 +921,27 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, servers: [], live: false };
         const live = s.state !== 'idle' || !!s.ctx;
-        const stat = (n: string) => (s.mcpOff?.has(n) ? 'disabled' : live ? 'connected' : undefined);
+        const kc = caps(s.info.adapterId ?? 'copilot');
+        /* spec 058: the sixth agent's "my-notes" failed to start (until a Restart); a server under Restart reads pending */
+        const failed = (n: string) => live && sims.indexOf(s) === 5 && n === 'my-notes' && !s.mcpFixed?.has(n);
+        const stat = (n: string) => (s.mcpOff?.has(n) ? 'disabled' : !live ? undefined : s.mcpRestarting?.has(n) ? 'pending' : failed(n) ? 'failed' : 'connected');
+        const restartable = (n: string, on: boolean) => live && kc.mcpRestart === true && on && !s.mcpOff?.has(n);
         const servers = [
-          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, status: stat(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name) })),
-          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, status: stat(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name) })),
+          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, status: stat(a.name), error: failed(a.name) ? 'spawn notes-mcp ENOENT' : undefined, defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
+          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, status: stat(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
         ];
-        return { ok: true, servers, live };
+        return { ok: true, servers, live, ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume };
+      },
+      /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
+      agentMcpRestart: async (id, name) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s || !caps(s.info.adapterId ?? 'copilot').mcpRestart) return { ok: false, error: 'This agent app cannot restart one MCP server. Use Restart session with these servers.' };
+        if (s.mcpOff?.has(name)) return { ok: false, error: 'Switch it on first.' };
+        (s.mcpRestarting ??= new Set()).add(name);
+        await new Promise((r) => setTimeout(r, 700));
+        s.mcpRestarting.delete(name);
+        (s.mcpFixed ??= new Set()).add(name);
+        return { ok: true };
       },
       setAgentMcp: async (id, name, enabled) => {
         const s = sims.find((x) => x.info.id === id);
@@ -1473,10 +1505,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       harnessPlans: async (kind, op) => {
         const real = typeof window !== 'undefined' ? (window as unknown as { agentDurbar?: DurbarApi }).agentDurbar : undefined;
         if (real?.harnessPlans) return real.harnessPlans(kind, op);
-        return { name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Deprecated by Anthropic: use it only if nothing else works.' }] };
+        return { name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Needs Node.js 22 or later. Anthropic recommends its native installer.' }] };
       },
-      harnessRun: async (kind, op) => {
+      harnessRun: async (kind, op, planIndex) => {
         const t0 = Date.now();
+        // spec 060 FR-012: the driver checks which route a Run button asked for (only an index is sent; nothing runs here)
+        if (typeof window !== 'undefined') (window as unknown as { __simHarnessLast?: unknown }).__simHarnessLast = { kind, op, planIndex };
         const prog = (p: Record<string, unknown>) => simHarness.progress.forEach((cb) => cb({ kind, op, elapsedMs: Date.now() - t0, lines: [], ...p } as never));
         const done = (ok: boolean) => { simHarness.running = null; if (ok && op === 'signin') { simSignedOut.delete(kind); simExpired.delete(kind); } simHarness.done.forEach((cb) => cb({ kind, op, ok, exitCode: ok ? 0 : 1, lines: ['(simulated)'] } as never)); };
         if (op === 'signin') {
@@ -1606,6 +1640,23 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
         s.state = 'idle'; closeOpen(s); simRemote.delete(id); // spec 054 FR-003
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
+      },
+      /* spec 058 FR-040: a canned Restart session: asks while busy (as main does), ends, then resumes "Ready"; with simauth=expired
+         the resume fails with the sign-in text (FR-027) and the session stays ended */
+      agentMcpRestartSession: async (id, confirmed) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'Unknown agent.' };
+        if (s.state !== 'idle' && confirmed !== true) return { ok: false, needsConfirm: true };
+        const kind = s.info.adapterId ?? 'copilot';
+        if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
+        s.state = 'idle'; closeOpen(s); simRemote.delete(id);
+        s.mcpFixed = undefined; s.mcpRestarting = undefined;
+        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
+        await new Promise((r) => setTimeout(r, 500));
+        if (simExpired.has(kind)) return { ok: false, ended: true, errorKind: 'auth', error: SIM_AUTH_ERROR };
+        s.ctx ??= { tokens: 0, limit: 128000 }; // agentMcp reads "live" from it
+        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Ready in ' + s.info.cwd });
+        return { ok: true };
       },
       resolvePermission: async (id, req, approve, remember) => {
         const s = sims.find((x) => x.info.id === id);

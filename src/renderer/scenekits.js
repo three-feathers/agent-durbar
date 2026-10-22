@@ -94,6 +94,8 @@
 
   /* ---------- the composer: one order for every kit ---------- */
   /* shade() in app.js takes #rrggbb only; a user theme may give any token grammar colour, which is then used as is */
+  /* the overlays app.js hands over (already sanitized theme art); a caller without them draws none */
+  const artOf = (o) => { const a = o.art || {}; const s = (v) => (typeof v === 'string' ? v : ''); return { body: s(a.body), head: s(a.head), desk: s(a.desk), monitor: s(a.monitor), cup: s(a.cup), laptop: s(a.laptop) }; };
   const safeShade = (base) => (c, p) => (/^#[0-9a-f]{6}$/i.test(c) ? base.shade(c, p) : c);
   function draw(kitId, a, base) {
     const K = KIT[kitId];
@@ -104,25 +106,26 @@
     o.skinD = o.shade(o.k.skin, -0.08);
     o.seed = (a && (a.id || a.name)) || o.k.shirt + o.k.hair;
     const { st, mood, mini, c, k, T } = o;
-    let s = `<svg class="scene${c ? ' sc-c' : ''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses ? 1 : 0}|${c ? 'c' : mini ? 'm' : 'f'}|${mood.body}${mood.trouble || ''}|${kitId}" viewBox="${c ? '16 5 176 116' : mini ? '22 4 166 118' : '0 0 200 124'}"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">`;
+    const art = artOf(o); /* a theme's character, desk and monitor art (spec 040 FR-023), drawn over every kit as over the office one */
+    let s = `<svg class="scene${c ? ' sc-c' : ''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses ? 1 : 0}|${c ? 'c' : mini ? 'm' : 'f'}|${o.themeKey || ''}|${mood.body}${mood.trouble || ''}|${kitId}" viewBox="${c ? '16 5 176 116' : mini ? '22 4 166 118' : '0 0 200 124'}"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">`;
     s += `<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T('--scene-shadow')}" opacity=".06"/>`;
     s += K.backdrop ? K.backdrop(o) : '';
     s += halo(o);
     s += K.chair(o);
     s += '<g class="pp">';
     s += K.hairBack ? K.hairBack(o) : '';
-    s += K.body(o);
+    s += K.body(o) + art.body;
     const tilt = mood.trouble === 'faint' ? 'rotate(-24 74 56)' : st === 'idle' ? 'rotate(-7 74 56)' : st === 'error' ? 'rotate(4 74 56)' : '';
     s += `<g ${tilt ? `transform="${tilt}"` : ''}${mood.trouble === 'faint' ? ' style="transform-box:view-box"' : ''}><g class="${st === 'working' ? 'head' : ''}">`;
-    s += K.head(o) + K.hair(o) + horns(o, K.crisp) + face(o, K.crisp) + (K.headTop ? K.headTop(o) : '');
+    s += K.head(o) + K.hair(o) + horns(o, K.crisp) + face(o, K.crisp) + (K.headTop ? K.headTop(o) : '') + art.head;
     s += '</g></g>' + sweat(o) + '</g>';
-    s += K.desk(o);
+    s += K.desk(o) + art.desk;
     s += K.monitor(o);
-    s += `<rect x="116" y="36" width="56" height="37"${K.crisp ? '' : ' rx="3"'} fill="${T(screenBg(o))}"/>`;
+    s += `<rect x="116" y="36" width="56" height="37"${K.crisp ? '' : ' rx="3"'} fill="${T(screenBg(o))}"/>` + art.monitor;
     s += screenContent(o);
     s += K.screenOver ? K.screenOver(o) : '';
-    s += K.keyboard(o);
-    if (st === 'idle') s += K.cup(o);
+    s += art.laptop || K.keyboard(o); /* spec 070 FR-011: a pack's own laptop and cup replace the kit's (the steam stays: it is a status cue) */
+    if (st === 'idle') s += art.cup ? art.cup + steam(o) : K.cup(o);
     s += K.props ? K.props(o) : '';
     s += arms(o, K);
     s += afterPerson(o);
@@ -136,7 +139,8 @@
     o.shade = safeShade(base);
     o.arm = o.shade(o.k.shirt, -0.14); o.skinD = o.shade(o.k.skin, -0.08); o.seed = (a && (a.id || a.name)) || o.k.shirt + o.k.hair;
     o.st = 'avatar';
-    return `<svg viewBox="50 20 48 48" width="100%" height="100%"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">${K.hairBack ? K.hairBack(o) : ''}${K.body(o)}${K.head(o)}${K.hair(o)}${face(Object.assign({}, o, { st: 'working' }), K.crisp)}${K.headTop ? K.headTop(o) : ''}</svg>`;
+    const art = artOf(o);
+    return `<svg viewBox="50 20 48 48" width="100%" height="100%"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">${K.hairBack ? K.hairBack(o) : ''}${K.body(o)}${art.body}${K.head(o)}${K.hair(o)}${face(Object.assign({}, o, { st: 'working' }), K.crisp)}${K.headTop ? K.headTop(o) : ''}${art.head}</svg>`;
   }
 
   const KIT = {};

@@ -256,7 +256,7 @@ function syncWalkers(){
     if(!w){
       const a=byId(id); if(!a)return;
       const el=document.createElement('span'); el.className='walker'; el.setAttribute('aria-hidden','true'); el.innerHTML='<span class="wk">'+avatar(a)+'</span>'; layer.appendChild(el);
-      w={el,back:false,walking:false,shown:false,timer:0,to:''}; walkers.set(id,w);
+      w={el,back:false,walking:false,shown:false,timer:0,to:'',tk:THEME.themeIdForCache()}; walkers.set(id,w);
       const from=deskPos(id)||pos; el.style.transition='none'; el.style.transform=`translate(${from.x}px,${from.y}px)`; void el.offsetWidth; w.shown=true;
       move(w,pos); return;
     }
@@ -272,6 +272,9 @@ function syncWalkers(){
     w.back=true; RETURNING.add(id);
     move(w,dp,()=>{dropWalker(id);scheduleRender();});
   });
+  /* spec 040 FR-023: a figure drawn before a theme switch is drawn again in the new theme (it is not rebuilt while it walks or rests) */
+  const tk=THEME.themeIdForCache();
+  walkers.forEach((w,id)=>{const a=byId(id);if(a&&w.tk!==tk){const wk=w.el.querySelector('.wk');if(wk)wk.innerHTML=avatar(a);w.tk=tk;}});
   /* spec 034 FR-015: the figure away at a place keeps its mood (ring, horns, trouble dot); none in Serious mode (moodFor) */
   walkers.forEach((w,id)=>{const m=moodFor(byId(id));w.el.dataset.body=m.body;w.el.dataset.trouble=m.trouble||'';});
 }
@@ -326,7 +329,7 @@ const clipName=s=>DurbarCutText.cutText(s,40); /* shared helper (cuttext.js): a 
 function plainAsk(kind,summary){
   const s=String(summary||'').trim(), k=String(kind||'');
   if(k==='write'||k==='read'){
-    let rest=s.replace(/^(write|edit|create|read)(\s+|$)/i,''), more='';
+    let rest=s.replace(/^(write|edit|create|read)(\s+|$)/i,'').replace(/^\([^()]*\)$/,''), more=''; /* spec 052 FR-172: "write (Codex did not say which file)" names no file */
     const m=/\s+\(\+(\d+) more\)$/.exec(rest);if(m){more=' and '+m[1]+' more file'+(m[1]==='1'?'':'s');rest=rest.slice(0,m.index);}
     const {base,dir}=baseOf(rest.replace(/\s+\([^()]*\)$/,'').trim());
     return {what:(k==='write'?'change ':'read ')+(base?clipName(base):'a file')+more,folder:dir?'in '+dir:'',cmd:''};
@@ -392,19 +395,29 @@ function hairFront(style,c){
   if(style==='curly')return `<circle cx="64" cy="36" r="6.2" fill="${c}"/><circle cx="74" cy="31.5" r="7" fill="${c}"/><circle cx="84" cy="36" r="6.2" fill="${c}"/>`+fr+(acc||'');
   return fr+(acc||'');
 }
-function charArt(){
-  let s='';
-  for(const name of ['char-body','char-robe','char-headwear','char-collar']){
-    const v=THEME.slot(name);
-    s+=v===null?'':`<g class="art-slot" data-slot="${name}">${v}</g>`;
-  }
-  return s;
+/* a theme's character art (spec 040 FR-010): the body layers go under the head, the headwear over the hair (spec 040 FR-023: drawn
+   before the head, a hat was hidden by the head and the hair) */
+const artSlot=name=>{const v=THEME.slot(name);return v===null?'':`<g class="art-slot" data-slot="${name}">${v}</g>`;};
+function charArt(part){
+  return (part==='head'?['char-headwear']:['char-body','char-robe','char-collar']).map(artSlot).join('');
+}
+/* the same overlays for the other scene kits (spec 040 FR-023): a pack's art is drawn on every kit, not only the office one */
+const kitArt=()=>({body:charArt('body'),head:charArt('head')+artSlot('hair-acc'),desk:artSlot('desk-back')+artSlot('desk-art'),monitor:artSlot('monitor-art'),cup:artSlot('gadget-cup'),laptop:artSlot('gadget-laptop')});
+/* spec 070 FR-010: the pack's clothes and hair colours; skins stay the app's (D3). An agent keeps its index in the app palette, so it
+   keeps its slot in every theme (a colour that is not in the palette picks one by its hash) */
+function themedLook(k){
+  const f=THEME.figures&&THEME.figures();
+  if(!f||!k)return k;
+  const pick=(list,pal,c)=>{if(!list)return c;let i=pal.indexOf(c);if(i<0)i=hashN(String(c));return list[i%list.length];};
+  return Object.assign({},k,{shirt:pick(f.shirts,S.sh,k.shirt),hair:pick(f.hairs,S.hr,k.hair)});
 }
 function scene(a,mini,c){
-  const st=vis(a), mood=moodFor(a), k=mood.body==='monster'?Object.assign({},a.look,{skin:T_('--monster-skin')}):a.look, shirt=k.shirt, arm=shade(shirt,-.14), skinD=shade(k.skin,-.08);
+  const st=vis(a), mood=moodFor(a), k=mood.body==='monster'?Object.assign({},themedLook(a.look),{skin:T_('--monster-skin')}):themedLook(a.look), shirt=k.shirt, arm=shade(shirt,-.14), skinD=shade(k.skin,-.08);
   const kit=THEME.sceneKit(); /* another theme's people and desks (spec 035 FR-013); the office kit is the code below */
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS});if(v)return c?v:stillSig(v);}
-  let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${mood.body}${mood.trouble||''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
+  /* spec 040 FR-023: the signature names the theme too, so a theme switch redraws the desk (same signature = the old SVG is kept) */
+  const tk=THEME.themeIdForCache();
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS,themeKey:tk,art:kitArt()});if(v)return c?v:stillSig(v);}
+  let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${tk}|${mood.body}${mood.trouble||''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
   s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T_('--scene-shadow')}" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
   if(c){const hc={working:T_('--halo-working'),thinking:T_('--halo-thinking'),waiting:T_('--halo-waiting'),error:T_('--halo-error')}[st];
@@ -416,11 +429,11 @@ function scene(a,mini,c){
   s+=`<path d="${mood.body==='normal'?'M55 99V77q0-14 14-14h10q14 0 14 14v22z':'M52 99V77q0-14 14-14h16q14 0 14 14v22z'}" fill="${shirt}"/>`; /* heavy and monster: a wider body, still inside the chair */
   s+=`<path d="M69.5 63.5q4.5 5 9 0" fill="none" stroke="${shade(shirt,.35)}" stroke-width="2" stroke-linecap="round"/>`;
   s+=`<rect x="70" y="53" width="8" height="10" rx="3" fill="${skinD}"/>`;
-  s+=charArt();
+  s+=charArt('body');
   const eyesClosed = st==='idle'||mood.trouble==='faint';
   const tilt = mood.trouble==='faint'?'rotate(-24 74 56)': st==='idle'?'rotate(-7 74 56)': st==='error'?'rotate(4 74 56)':'';
   s+=`<g ${tilt?`transform="${tilt}"`:''}${mood.trouble==='faint'?' style="transform-box:view-box"':''}><g class="${st==='working'?'head':''}"><circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>`;
-  s+=hairFront(k.style,k.hair);
+  s+=hairFront(k.style,k.hair)+charArt('head');
   if(mood.body==='monster') s+=`<path d="M64.5 35.5l-4.2-9.5 9 5.2zM83.5 35.5l4.2-9.5-9 5.2z" fill="${T_('--monster-horn')}"/><path d="M65 33l2.4-4.6 2.6 3.6 2.8-5 2.8 4.6 2.6-3.6 2.4 4.6" fill="none" stroke="${k.hair}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
   const ex = eyesClosed?0:1.4;
   if(eyesClosed) s+=`<path d="M67.5 45.6q2 1.7 4 0M76.5 45.6q2 1.7 4 0" fill="none" stroke="${T_('--face-dark')}" stroke-width="1.3" stroke-linecap="round"/>`;
@@ -446,8 +459,9 @@ function scene(a,mini,c){
   if(st==='idle') s+=`<circle cx="144" cy="54.5" r="7" fill="none" stroke="${T_('--idle-clock')}" stroke-width="1.6"/><path d="M144 50.5v4l2.6 1.6" fill="none" stroke="${T_('--idle-clock')}" stroke-width="1.6" stroke-linecap="round"/>`;
   if(st==='error') s+=`<circle cx="144" cy="52" r="9" fill="none" stroke="${T_('--halo-error')}" stroke-width="2"/><path d="M144 47.5v5.5M144 56.6v.1" stroke="${T_('--halo-error')}" stroke-width="2.2" stroke-linecap="round"/><rect x="127" y="65" width="34" height="3" rx="1.5" fill="${T_('--err-mark')}"/>`;
   if(st==='done') s+=`<circle cx="144" cy="54.5" r="10" fill="${T_('--done-bg')}"/><path class="done-tick" d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="${T_('--done-mark')}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
-  s+=`<rect x="59" y="82.2" width="36" height="3.8" rx="1.9" fill="${T_('--laptop')}"/>`;
-  if(st==='idle') s+=`<rect x="98" y="76" width="10" height="10" rx="2.5" fill="${T_('--cup')}" stroke="${T_('--cup-line')}" stroke-width="1"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="${T_('--cup-line')}" stroke-width="1.4"/><path class="steam" d="M101 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/><path class="steam" d="M105 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/>`;
+  const lap=artSlot('gadget-laptop'), cup=artSlot('gadget-cup'); /* spec 070 FR-011: a pack's own laptop and cup replace the app's */
+  s+=lap||`<rect x="59" y="82.2" width="36" height="3.8" rx="1.9" fill="${T_('--laptop')}"/>`;
+  if(st==='idle') s+=(cup||`<rect x="98" y="76" width="10" height="10" rx="2.5" fill="${T_('--cup')}" stroke="${T_('--cup-line')}" stroke-width="1"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="${T_('--cup-line')}" stroke-width="1.4"/>`)+`<path class="steam" d="M101 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/><path class="steam" d="M105 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/>`;
   const hand=(x,y)=>`<circle cx="${x}" cy="${y}" r="3.6" fill="${k.skin}"/>`;
   const armL=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${arm}" stroke-width="8" stroke-linecap="round"/>`;
   const typing = st==='working';
@@ -471,10 +485,10 @@ function scene(a,mini,c){
 /* spec 052 FR-069: Serious mode draws full scenes without the SMIL wave; a mark in the signature redraws them when it is switched */
 function stillSig(svg){return SERIOUS?svg.replace(' data-sig="',' data-sig="still|'):svg;}
 function avatar(a){
-  const k=a.look;
+  const k=themedLook(a.look);
   const kit=THEME.sceneKit();
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED});if(v)return v;}
-  return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/>${charArt()}<circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}<circle cx="71.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><circle cx="79.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="${T_('--mouth')}" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt()});if(v)return v;}
+  return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/>${charArt('body')}<circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}${charArt('head')}<circle cx="71.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><circle cx="79.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="${T_('--mouth')}" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 }
 const PLANT=()=>'<svg class="room-plant" width="26" height="30" viewBox="0 0 26 30" aria-hidden="true" focusable="false">'+THEME.slot('plant')+'</svg>';
 /* ---------------- toast ---------------- */
@@ -3177,6 +3191,7 @@ function onLiveEvent(e){
       [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
       setGrants(a,[]);
       if(a.remote){a.remote=null;updateRemoteUi(a);} /* spec 054 FR-003: remote control ends with the session */
+      a.worked=false; /* spec 058 FR-022: the turn ended with the session; a resume's "idle" (Restart session) is not a finished turn ("Done") */
       closeTurn(a);setState(a,'idle','Ended','Session ended. Send a message to resume it.');}
     return;
   case 'permission':if(main)settlePerm(a,e.permission);return;
@@ -3431,7 +3446,7 @@ document.addEventListener('click',e=>{
   if(cc){e.stopPropagation();if(document.getElementById('ctxMenu')){closeCtxMenu();return;}const a=byId(ui.selected);if(a)openCtxMenu(a,cc);return;} /* spec 005 FR-037 */
   if(!e.target.closest('#ctxMenu'))closeCtxMenu();
   const mb=e.target.closest('#mcpBtn'); /* spec 005 FR-037: the MCP chip opens the existing dialog; the count follows it */
-  if(mb){e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r)Promise.resolve(window.DurbarScreens.agentMcp(r,{toggle:feat(r,'mcpToggle')})).finally(()=>refreshMcpCount(r));return;}
+  if(mb){e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r)Promise.resolve(window.DurbarScreens.agentMcp(r,{toggle:feat(r,'mcpToggle'),restart:feat(r,'mcpRestart'),appName:kindWord(kindOf(r))})).finally(()=>refreshMcpCount(r));return;}
   const ac=e.target.closest('#agentChip');
   if(ac){e.stopPropagation();if(document.getElementById('agentMenu')){closeAgentMenu();return;}const r=ac.getBoundingClientRect(),a=byId(ui.selected);if(a)openAgentMenu(a,r.left,r.bottom+6,ac);return;}
   if(!e.target.closest('#agentMenu'))closeAgentMenu();
@@ -4747,7 +4762,9 @@ if(bridge){
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,adapterId:x.info&&x.info.adapterId,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=modelsFor(a.info&&a.info.adapterId).find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
     folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
-    openAgent:id=>openPanel(id,false)});
+    openAgent:id=>openPanel(id,false),
+    /* spec 058 FR-027: Restart session failed because the sign-in expired: the chat's sign-in card (spec 012 FR-157), as for a failed message */
+    signInAgain:(a,detail)=>{const r=liveRoot(a);closeTurn(r);r.worked=false;markKindSignedOut(kindOf(r));showSignInCard(r,{detail:detail||''});setState(r,'error',null,kindWord(kindOf(r))+' needs you to sign in again.');}});
   document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.place-add'))window.DurbarScreens.placeDialog(null);});
   $('toolsBtn').onclick=()=>window.DurbarScreens.isOpen()?window.DurbarScreens.close():window.DurbarScreens.openTools(null);
   $('settingsBtn').onclick=()=>window.DurbarScreens.openSettings();

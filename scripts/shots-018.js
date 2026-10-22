@@ -146,17 +146,15 @@ module.exports = async (ctx) => {
     const deadRooms = await deadButtons('#stage .room-head');
     assert.deepStrictEqual(deadRooms, [], `${w}: no dead button in a room head (${deadRooms.join(', ')})`);
 
-    // ---- the agent MCP dialog: Copilot switches, claude/codex switches disabled with the reason ----
-    for (const [id, toggle] of [['sim-2', true], ['sim-1', false], ['sim-5', false]]) {
+    // ---- the agent MCP dialog: every kind's switch works (spec 058 T028: the simulator has the real values); codex says when it applies ----
+    for (const [id, when] of [['sim-2', 'right away'], ['sim-1', 'right away'], ['sim-5', 'from your next message']]) {
       await openPanel(id);
       await js(`document.getElementById('mcpBtn').click()`);
       assert.ok(await ctx.waitFor(`document.querySelectorAll('#agMcp .swt').length>0`, 4000), `${id}: the MCP dialog lists servers`);
       const m = await js(`(()=>{const sw=[...document.querySelectorAll('#agMcp .swt')];const d=document.querySelector('.dlg, [role="dialog"]');return {n:sw.length,enabled:sw.filter(b=>!b.disabled).length,text:document.body.innerText.replace(/\\s+/g,' ')}})()`);
-      if (toggle) assert.ok(m.enabled > 0, `${w} ${id}: Copilot has switches that work (${m.enabled}/${m.n})`);
-      else {
-        assert.strictEqual(m.enabled, 0, `${w} ${id}: no enabled switch for a kind without mcpToggle (${m.enabled}/${m.n})`);
-        assert.ok(m.text.includes('The switches are off for this agent app'), `${w} ${id}: the reason is written in the dialog`);
-      }
+      assert.ok(m.enabled > 0, `${w} ${id}: the switches work (${m.enabled}/${m.n})`);
+      assert.ok(!m.text.includes('The switches are off for this agent app'), `${w} ${id}: no "switches are off" line`);
+      assert.ok(m.text.includes('a switch applies ' + when), `${w} ${id}: the dialog says when a switch applies (${when})`);
       await js(`[...document.querySelectorAll('.dlg .btn, #modeDlg .btn, [role="dialog"] .btn')].find(b=>b.textContent==='Done').click()`);
       await until(`!document.querySelector('.dlg-ov, #modeDlg')`);
     }

@@ -484,6 +484,12 @@ export interface AgentAdapter {
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */
   setMcpEnabled?(sessionId: string, name: string, enabled: boolean): Promise<void>;
   /**
+   * Spec 058 FR-012: restart one MCP server of a running session, only that one, with the configuration it already has. Optional
+   * (`capabilities.mcpRestart`). Rejects with a short, user-facing sentence when the session is not running or the server cannot be
+   * restarted now; never starts a session and never restarts the others. The new state follows as an `mcp` event.
+   */
+  restartMcpServer?(sessionId: string, name: string): Promise<void>;
+  /**
    * Spec 058 FR-064: start the agent app's own sign-in for one MCP server of a running session. Optional (`capabilities.mcpSignIn`).
    * `browser`: the user finishes in the browser at `url` (main keeps it, the window only gets the host); `connected`: already signed in.
    * Rejects when the runtime has no such call or refuses it (the UI then shows `capabilities.mcpSignInSteps`).
