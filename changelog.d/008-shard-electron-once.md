@@ -1,0 +1,1 @@
+- CI only (spec 008 FR-114, reported by fjcabello on PR #546): the office layout parts (`check:parallel`) and `ui-suite.js` install Electron once before they start, with the same step `npm test` uses (`scripts/ensure-electron.js`), so parallel parts no longer race to unpack it and exit 126 "Text file busy". Checked with a unit test and a local repro of the race.
