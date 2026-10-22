@@ -253,7 +253,7 @@ Status, permission and credit wording, and the layout, are the same in every the
 
 ```bash
 npm ci
-npm run typecheck && npm run build && npm test   # unit suites in parallel (~20 s); `npm test -- folders` filters
+npm run typecheck && npm run build && npm test   # unit suites in parallel (~20 s); `npm test -- folders` filters; `npm test -- --bail` (or `TEST_BAIL=1`) stops at the first failing suite, for iterating, and the final run still runs everything
 npm start                 # the app, with the harnesses you have installed and signed in
 DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
