@@ -372,6 +372,8 @@ export interface GlobalPreviewItem {
   conflict?: boolean;
   /** With `conflict`: the entry that is there now (names only). */
   current?: GlobalEntryView;
+  /** Spec 069 FR-051: a limit to say on this item (Copilot `${NAME}` expansion not verified). */
+  note?: string;
 }
 
 export interface GlobalPreview {

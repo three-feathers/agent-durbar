@@ -433,7 +433,7 @@
     return `<h4 class="scr-sub">From Claude Code and Codex <small>their own lists</small></h4>
         <div class="scr-tools"><button class="btn" type="button" id="globAdd" title="Write a server into the lists of the agent apps you choose, after you review each file">+ Add server for all folders…</button></div>
         ${rows?`<ul class="srvs" id="globList">${rows}</ul>`:'<p class="scr-note small">No other servers in Claude Code\'s or Codex\'s lists.</p>'}
-        <details class="scr-more"><summary>Files read</summary><ul class="scr-note small gfiles">${files}</ul><p class="scr-note small">Read again every time this screen opens. Agent Durbar writes these files only after you confirm, with a backup next to each. The Claude Code switch decides whether Agent Durbar passes that server to its own Claude Code sessions; Codex starts the servers of its list itself.</p></details>`;
+        <details class="scr-more"><summary>Files read</summary><ul class="scr-note small gfiles">${files}</ul><p class="scr-note small">Read again every time this screen opens. Agent Durbar writes these files only after you confirm, with a backup next to each (to undo a change, copy the <code>.bak</code> file back by hand), and leaves them readable only by you. The Claude Code switch decides whether Agent Durbar passes that server to its own Claude Code sessions; Codex starts the servers of its list itself.</p></details>`;
   }
   /* which agent apps to offer (spec 069 FR-007): installed ones ticked; one installed: a single choice */
   async function appChoices(){
@@ -453,13 +453,14 @@
     const writable=pv.items.filter(i=>!i.error);
     const items=pv.items.map(i=>`<li class="gpv${i.error?' bad':''}"><div class="srv-top"><b>${esc(i.label)}</b><code>${esc(i.file)}</code>${i.exists?'':'<span class="mtag">new file</span>'}${i.conflict?'<span class="mtag warn">already there</span>':''}</div>
         ${i.error?`<p class="scr-note warn" role="note">Not written: ${esc(i.error)}</p>`:''}
+        ${i.note&&!i.error?`<p class="scr-note small" role="note">${esc(i.note)}</p>`:''}
         ${i.conflict&&i.current?`<p class="dsub small">Now: <code>${esc(cap(runOf(i.current),160))}</code></p>`:''}
         ${i.entry&&!i.error?`<p class="dsub small">${kind==='add'?(i.conflict?'Would become':'Adds'):'Removes'}:</p><pre class="trustcmd" tabindex="0">${esc(i.entry)}</pre>`:''}
         ${i.conflict&&!i.error?`<label class="grep"><input type="checkbox" data-rep="${esc(i.app)}"> Replace it in ${esc(i.label)}</label>`:''}</li>`).join('');
-    const intro=kind==='add'?`<p class="dsub"><b>This changes your agent apps' own settings</b> for every folder: they will run this server with your user rights, also outside Agent Durbar. Each file is backed up next to it first; nothing else in it changes.</p>`
+    const intro=kind==='add'?`<p class="dsub"><b>This changes your agent apps' own settings</b> for every folder: they will run this server with your user rights, also outside Agent Durbar. Each file is backed up next to it first and left readable only by you; nothing else in it changes.</p>`
       :`<p class="dsub">This removes <b>${esc(what)}</b> from these files, for every folder, also outside Agent Durbar. Each file is backed up next to it first.</p>`;
     const vars=pv.vars&&pv.vars.length?`<p class="dsub" role="note">The files name environment variables instead of holding the values. Set <b>${pv.vars.map(esc).join(', ')}</b> in your environment before the agent apps start.</p>`:'';
-    const plain=kind==='add'&&what==='plain'?'<p class="scr-warn" role="note"><b>The values are written in plain text.</b> Each agent app keeps them in its own config file; any program running as you can read them.</p>':'';
+    const plain=kind==='add'&&what==='plain'?'<p class="scr-warn" role="note"><b>The values are written in plain text.</b> Agent Durbar makes each file it writes readable only by you; programs running as you can still read them.</p>':'';
     const r=await dialog({title:kind==='add'?'Review: add to your agent apps':'Review: remove from your agent apps',wide:true,cls:'gpvd',html:intro+vars+plain+`<ul class="gpvl">${items}</ul>`,
       buttons:writable.length?[{label:'Cancel',value:null},{label:kind==='add'?'Write to '+(writable.length===1?'1 file':writable.length+' files'):'Remove from '+(writable.length===1?'1 file':writable.length+' files'),value:'ok',cls:'primary warn'}]:[{label:'Close',value:null,cls:'primary'}]});
     if(!r)return false;

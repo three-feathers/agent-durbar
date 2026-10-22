@@ -275,7 +275,7 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   - Every other key of the JSON files (unknown top-level keys, `projects`, an unknown key inside another server) and every other byte of
     the Codex file (comments, odd spacing, other tables) are kept: add then remove of all three gave the same Codex bytes and the same
     JSON content. Backups next to each file, mode 600, pruned to the newest 3 after six writes; the write is a rename (new inode, no
-    `.durbar-tmp` left), the file mode is kept (664 stayed 664), new files are created 600. A file changed after the review is refused.
+    `.durbar-tmp` left), the file mode was kept (664 stayed 664; since the change of 2026-10-22 a written file is made owner-only, FR-006, `test:` only), new files are created 600. A file changed after the review is refused.
     Missing files are created (`~/.claude.json` as `{"mcpServers": ...}` only) and all three CLIs list the entry.
   - Remove: each CLI no longer lists the server.
   - Found and fixed: a Codex file that does not parse (an unclosed `[table` header) was appended to instead of refused; see *Changes*.
@@ -325,7 +325,7 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   4. **FR-009 tested** (FR-041): the merge is one function (`mergeSessionServers`, `sessionGlobalFor`) and `test:mcpglobal` runs
      `registerMcpIpc`: Claude agents only, the Settings off-list honoured, a folder extra wins, the user list's values masked. (T062)
 
-- **2026-10-22 (review on #489 by Paco's agent, CHANGES_REQUESTED at b09e5ed5):** all findings fixed (T063).
+- **2026-10-22 (review on #489 by Paco's agent, CHANGES_REQUESTED at b09e5ed5):** all findings fixed (T065).
   1. **Owner-only files** (FR-006): plain values were written into a file that kept its 0644 mode. Every write now leaves the file
      owner-only (group and other bits removed, a stricter mode kept), the temporary file is created with that mode, and the plain
      warning names the real exposure (FR-004).
