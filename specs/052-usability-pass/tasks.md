@@ -267,6 +267,11 @@
 
   - Done (PR 2): CHANGELOG (Unreleased) one line for the whole pass, `specs/README.md` row, the spec status and `[IMPLEMENTED]` tags (FR-167 popover rule `[KNOWN GAP]`), `docs/design-rules.md`; no README label changed.
 
+## FR-173: list focus survives a re-render; Windows-flaky drivers (2026-10-22)
+- [x] T164 Spec delta FR-173, plan note [FR-173]
+- [x] T165 `renderAll()` restores the focus inside the view it was in (`#list` / `#stage`); `shots-052-ux` checks that a status re-render keeps the focus on the list row (fails without the fix); `check-question-options` waits for the question and the card instead of an 8 s sweep, and its failure message shows the observed state; each driver 10 times in a row green under `xvfb-run`, plus a parallel run under load [FR-173, FR-140]
+- [x] T166 Review on #516: `check-question-options`, `check-question-visible`, `check-grant-chips` and `shots-012-elicit` open the one agent through the shared `openSimAgent` (page errors in its report) (no desk sweep); `shots-052-ux` checks the office half of FR-173 (focus stays on the desk in `#stage` after a status re-render; fails with the office scope broken) [FR-173]
+
 ## Popover widths (2026-10-22, issue #508)
 
 - [x] T168 Inventory the popovers and add the tokens `--pop-w-s` (420px), `--pop-w-m` (660px) and `--pop-pad` (12px 14px) to `styles.css` `:root`; Defaults and Allowed grants use S, Folders and Floors use M, all use `--pop-pad`; the per-popover widths and paddings are deleted [FR-167]
