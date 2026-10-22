@@ -1,5 +1,11 @@
 # Feature Specification: Release v0.1.0-alpha.3 (published pre-release)
 
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 026
+title: Release v0.1.0-alpha.3 (version bump, changelog, download notes)
+status: built; **published as a pre-release** by the maintainer (2026-10-17); alpha.2 draft removed
+-->
+
 **Feature Branch**: `026-release-alpha3`
 **Created**: 2026-10-17
 **Status**: Built and **published as a pre-release by the maintainer on 2026-10-17** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3>). Release engineering only: a version bump, a changelog section and README download notes. No behavior change (the only `src/` edit is the simulator's displayed version string).
