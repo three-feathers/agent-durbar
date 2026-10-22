@@ -864,6 +864,7 @@ Follow-up of the FR-165..FR-171 pass: the popovers (Defaults, Folders, Floors, t
   - **M** `--pop-w-m: 660px` for a list of rows with several buttons (Folders, Floors). One width cannot fit all: a Folders row holds four buttons, so a 320px token would wrap them.
   - Each is `min(W, 100vw - 32px)`; the padding is `--pop-pad: 12px 14px` (the value FR-167 already named). No popover sets its own width or padding.
   - Long content wraps (a name, a path, a grant label ends in an ellipsis with a `title`); a popover never scrolls sideways (`scrollWidth <= clientWidth`) and never cuts text; text is 10.5px or more.
+- **Folders first row (2026-10-22):** the "Pause all schedules" checkbox sits on its own line under the help (it was floated right and squeezed the first folder's name to "mc..."). A name or path in a popover is never cut to under 120px: rule `popover-squeezed` (an ellipsis with a `title` was not enough to catch it).
 - **Check:** `check:ui-text` rule `popover-width`: on each `popover` surface the width is the S or M token (or `100vw - 32px` in a small window) and the padding is `--pop-pad`.
 
 ### 2026-10-21: help and UI text pass: wrapping, box widths, tooltips (FR-165..FR-171)

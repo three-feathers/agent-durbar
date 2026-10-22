@@ -278,3 +278,6 @@
 - [x] T170 Screenshots (both sizes, light and dark where it matters) in `docs/screenshots/052-popover-*`; docs: FR-167 `[IMPLEMENTED]`, `docs/design-rules.md`, CHANGELOG [FR-167]
   - Accept: FR-167 has no popover `[KNOWN GAP]`; the design rules describe the two tokens.
   - Check: `typecheck`, `build`, `npm test`, `check:ui-text`, `check:office`, `check:geometry`.
+- [x] T171 Folders popover: the Pause all schedules checkbox on its own line; rule `popover-squeezed` in `check:ui-text` [FR-167]
+  - Accept: the first folder row shows its full name at both sizes; no popover name or path is cut to under 120px.
+  - Check: mutation (`float:right` back on `.fp-pause`) fails `popover-squeezed`; code restored byte for byte.

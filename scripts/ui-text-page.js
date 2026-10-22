@@ -292,6 +292,11 @@
         }
       }
       if (kind === 'popover') {
+        // T171: a name cut to a sliver is the bug even with a title (the Folders popover's first row sat beside a floated checkbox: "mc...")
+        for (const el of root.querySelectorAll('.fp-t b, .fp-t small, .gp-t')) {
+          if (!vis(el)) continue;
+          if (el.scrollWidth > el.clientWidth + 1 && el.clientWidth < 120) add('popover-squeezed', root, el, `"${snip(el.textContent, 30)}" is cut to ${el.clientWidth}px (scrollWidth ${el.scrollWidth})`);
+        }
         // FR-167 (T169, issue #508): width is the S or M token (or the window minus 32px), padding is --pop-pad
         const rs = getComputedStyle(document.documentElement);
         const toks = [['--pop-w-s', 420], ['--pop-w-m', 660]].map(([n, want]) => ({ n, want, v: rs.getPropertyValue(n).trim() }));
