@@ -21,6 +21,25 @@
 - [x] T025 Automated overflow test for the chat view (same harness as feature 001 T020). [SC-001] (2026-10-19: the chat checks in `check:office`, #221)
 - [x] T026 Card menu Stop and End session for live main agents (interrupt / end, confirm End when busy, disabled Stop when the kind cannot interrupt), simulator and `check:office` at both sizes, docs (issue #251) [FR-017]
 
+## 2026-10-21 delta: file edits stream into the chat (FR-018..FR-027)
+
+- [x] T027 Shared edit helpers `src/shared/edits.ts` (types, `editFile`, `patchFiles`, `finishEdit` with redact and caps, `partialJson`) and adapter normalizer `src/adapters/edits.ts` (`editOf`, `ArgStream`); unit tests `test:edits` [FR-018, FR-024]
+- [x] T028 Claude Code mapper: `content_block_start`/`input_json_delta` for file-changing tools, early start, partial updates, complete block as update; fixture tests [FR-019]
+- [x] T029 Copilot mapper: `assistant.tool_call_delta` (JSON and raw patch), `tool.execution_start` of a started call as update; tests [FR-019]
+- [x] T030 Codex mapper: `item/fileChange/patchUpdated`, diffs into `edit`, object or string `kind`; fixture tests [FR-019]
+- [x] T031 Event guard checks the optional `edit` [FR-018]
+- [x] T032 Renderer `editview.js` (verbs, plain words, display path, counts, visible lines) and `test:editview` [FR-020, FR-023, FR-025]
+- [x] T033 Chat edit row, inline diff with Show all, Simple toggle, frame-throttled repaint, waiting line names the action [FR-020..FR-023]
+- [x] T034 Simulator edit calls with streamed arguments [FR-026]
+- [x] T035 Driver `check:edits` and screenshots at 1440x900 and 1280x800, Expert and Simple; README, CHANGELOG, specs index [FR-020..FR-026]
+- [x] T036 Real check of the three argument streams (Claude Code `input_json_delta`, Copilot `assistant.tool_call_delta`, Codex `item/fileChange/patchUpdated`) on one small edit each, within the owner's budget (about 3 prompts) [FR-019] (2026-10-21, `scripts/edit-stream-real.ts`: Claude Code and Copilot stream and pass; Codex 0.163.0 sends the patch at once with `item/started` and passes on the no-stream path, `[KNOWN GAP]` its `patchUpdated` branch; 6 prompts in all, results in spec.md)
+- [x] T037 A partial edit whose new text has not started shows the file only, no diff or counts (seen in T036); `test:edits` [FR-027]
+- [x] T060 Review on PR #463 (was T049 until 2026-10-22: #498 uses T049..T059): linear `partialJson`/`patchFiles`/`bodyOf`/`cut()` with timing cases (old code fails each); failed or refused edit worded as not done, in `test:editview`, the simulator and `check:edits`; `edit` masked in main's `outward` with the session values (`maskEditInfo`); event guard negative cases; early `start` path through `cleanPath`; waiting line names the tool still running and says "Waiting for your OK" while a permission card waits (`check:edits`); UUID check in `scripts/edit-stream-real.ts`; spec text [FR-018, FR-020, FR-022, FR-024, FR-026]
+- [x] T061 Review on PR #463 (rubenlupi's agent, 2026-10-22), Codex: `codexEdit` builds on spec 052's `codexFileChanges` (`src/adapters/codexModes.ts`, #470) and `diffFile` follows the kind, never the text (add = the new file's text, delete = the old text, update = a hunk); the guess `looksLikeDiff` is dropped; `test:edits` cases: a new file whose lines start with `- `, a new file whose lines are all indented, a delete whose lines start with `+` [FR-019]
+- [x] T062 Review on PR #463: a Copilot `apply_patch` call whose arguments are JSON (`{"input": "*** Begin Patch…"}`) starts early once the `*** … File:` line inside the string is complete (`ArgStream.path()`); `test:edits` streams it in small pieces (also a half-written path line gives no start, and an escaped newline `\n` ends the line) [FR-019]
+- [x] T063 Review on PR #463: `test-mcp-errormask` requires `e.edit` in main's `outward` condition (removing it fails) [FR-024]; `check:edits` scroll steps while the simulated Edit streams: pinned at the bottom the chat stays at the bottom, scrolled up its `scrollTop` does not move; pinned, Show all on the last diff keeps the bottom (removing `stickyScroll` from `edDiff` fails the Show all step, removing the `dataset.pin` check fails the scrolled-up step; a streamed update is also followed by `tTool`'s own `tScroll`) [FR-021]
+- [x] T064 Review on PR #463: merge main (#515: no light allow-list), `check:ui-text` on the merged tree including `chat-edits` [FR-024]
+
 ## Delta 2026-10-21: readable JSON tool results and saved outputs (issue #361)
 
 One PR per line where possible; each with `npm run typecheck && npm run build && npm test`. IDs start after PR #463's T037.

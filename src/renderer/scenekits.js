@@ -107,7 +107,7 @@
     o.seed = (a && (a.id || a.name)) || o.k.shirt + o.k.hair;
     const { st, mood, mini, c, k, T } = o;
     const art = artOf(o); /* a theme's character, desk and monitor art (spec 040 FR-023), drawn over every kit as over the office one */
-    let s = `<svg class="scene${c ? ' sc-c' : ''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses ? 1 : 0}|${c ? 'c' : mini ? 'm' : 'f'}|${o.themeKey || ''}|${mood.body}${mood.trouble || ''}|${kitId}" viewBox="${c ? '16 5 176 116' : mini ? '22 4 166 118' : '0 0 200 124'}"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">`;
+    let s = `<svg class="scene${c ? ' sc-c' : ''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses ? 1 : 0}|${c ? 'c' : mini ? 'm' : 'f'}|${o.themeKey || ''}|${mood.body}${mood.trouble || ''}${mood.coffee ? 'C' : ''}|${kitId}" viewBox="${c ? '16 5 176 116' : mini ? '22 4 166 118' : '0 0 200 124'}"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">`;
     s += `<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T('--scene-shadow')}" opacity=".06"/>`;
     s += K.backdrop ? K.backdrop(o) : '';
     s += halo(o);
@@ -125,7 +125,7 @@
     s += screenContent(o);
     s += K.screenOver ? K.screenOver(o) : '';
     s += art.laptop || K.keyboard(o); /* spec 070 FR-011: a pack's own laptop and cup replace the kit's (the steam stays: it is a status cue) */
-    if (st === 'idle') s += art.cup ? art.cup + steam(o) : K.cup(o);
+    if (st === 'idle' || (o.mood && o.mood.coffee)) s += art.cup ? art.cup + steam(o) : K.cup(o); // spec 068: a cup on the desk during a coffee break
     s += K.props ? K.props(o) : '';
     s += arms(o, K);
     s += afterPerson(o);

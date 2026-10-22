@@ -17,6 +17,7 @@ const { helpers, jsLiteral } = require('./driver-helpers'); /* shared plumbing; 
 const OUT = process.env.OUT || require('os').tmpdir();
 const Q = { sim: '15', simfreeze: '1', simkinds: 'mixed', simtitles: '1' };
 const EVIL = '<img src=x onerror=window.__xss=1> & "q"';
+const URLNAME = 'https://example.invalid/teams/consumer-sites/SitePages/Consu'; // 60 characters, one token (spec 059 FR-019, issue #536)
 const LONG = 'Sixty characters long name for the layout check, ends here..';
 
 module.exports = async (ctx) => {
@@ -160,6 +161,32 @@ module.exports = async (ctx) => {
       await js(`(()=>{const q=document.getElementById('prevQ');if(q){q.value='onerror';q.dispatchEvent(new Event('input',{bubbles:true}));}})()`); await ctx.sleep(300);
       assert.ok(await js(`[...document.querySelectorAll('.prev-row .prev-t')].some(b=>b.textContent===${jsLiteral(EVIL)})`), `${tag}: the search finds the row by its name`);
       await js(`(()=>{const q=document.getElementById('prevQ');if(q){q.value='';q.dispatchEvent(new Event('input',{bubbles:true}));}})()`);
+      await closePanel();
+
+      // 7. FR-019 (issue #536): a name that is one 60-character token stays inside its box on every surface
+      await openFromMore('sim-1');
+      await type(URLNAME); await key('Enter'); await ctx.sleep(400);
+      assert.strictEqual([...URLNAME].length, 60);
+      const outside = (sel, box) => js(`(()=>{const out=[];for(const e of document.querySelectorAll(${jsLiteral(sel)})){if(e.textContent.indexOf('https://example.invalid')<0)continue;const c=e.closest(${jsLiteral(box)});if(!c)continue;const a=e.getBoundingClientRect(),b=c.getBoundingClientRect();if(a.right>b.right+0.5||a.left<b.left-0.5||a.bottom>b.bottom+0.5)out.push(e.className||e.id||e.tagName)}return out})()`);
+      const hdrOut = await outside('#panelTitle', '#panelHead');
+      assert.deepStrictEqual(hdrOut, [], `${tag}: the header title stays in the header: ${jsLiteral(hdrOut)}`);
+      const stripOut = await outside('[data-sw="sim-1"] b', '[data-sw="sim-1"]');
+      assert.deepStrictEqual(stripOut, [], `${tag}: the strip name stays in its button: ${jsLiteral(stripOut)}`);
+      assert.strictEqual(await js(`document.documentElement.scrollWidth<=window.innerWidth+1`), true, `${tag}: the page does not scroll sideways with the panel open`);
+      await closePanel(); await ctx.sleep(300);
+      const cardOut = await js(`(()=>{const e=document.querySelector('#stage .desk[data-id="sim-1"] .name');const c=e.closest('.desk').getBoundingClientRect(),b=e.getBoundingClientRect();return {tip:e.title.startsWith(${jsLiteral(URLNAME)}),out:b.right>c.right+0.5||b.left<c.left-0.5||(e.matches('.who .name')&&e.scrollWidth>e.clientWidth+1),h:b.height}})()`);
+      assert.deepStrictEqual({ tip: cardOut.tip, out: cardOut.out }, { tip: true, out: false }, `${tag}: the card name stays in the card and keeps its tooltip: ${jsLiteral(cardOut)}`);
+      await js(`document.getElementById('vList').click()`); await ctx.sleep(500);
+      const listOut = await js(`(()=>{const r=document.querySelector('.lrow[data-id="sim-1"]');if(!r)return ['no row'];const b=r.getBoundingClientRect(),out=[];for(const e of r.querySelectorAll('*')){if(!e.children.length&&e.textContent.indexOf('https://example.invalid')>=0){const a=e.getBoundingClientRect();if(a.right>b.right+0.5)out.push(e.className)}}return out})()`);
+      assert.deepStrictEqual(listOut, [], `${tag}: the list row name stays in its row: ${jsLiteral(listOut)}`);
+      await js(`document.getElementById('vOffice')&&document.getElementById('vOffice').click()`); await ctx.sleep(400);
+      // Previous sessions row
+      await js(`document.querySelector(${jsLiteral(`#stage [data-id="${pa}"]`)}).click()`); await ctx.sleep(700);
+      await js(`(()=>{const b=document.getElementById('prevBtn');if(b&&b.getAttribute('aria-expanded')!=='true')b.click();})()`); await ctx.sleep(400);
+      await js(`setTimeout(()=>__durbarSimUi.renamePrevRow(__durbarSimUi.agents().find(x=>x.id===${jsLiteral(pa)}),'prev-2',document.getElementById('prevBtn')),0)`); await ctx.sleep(400);
+      await type(URLNAME); await key('Enter'); await ctx.sleep(500);
+      const prevOut = await outside('.prev-row .prev-t', '.prev-row');
+      assert.deepStrictEqual(prevOut, [], `${tag}: the Previous sessions row name stays in its row: ${jsLiteral(prevOut)}`);
       await closePanel();
       console.log(`[rename] ${tag} ok`);
     }

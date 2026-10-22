@@ -32,11 +32,11 @@ module.exports = async (ctx) => {
     await H.shot(path.join(OUT, `mood-list-${w}x${h}.png`), { prep: 'calm', blur: true, settle: true, delay: 0 });
     await ctx.js(`document.getElementById('vOffice').click()`); await until(`document.querySelectorAll('#stage .desk[data-id]').length>=15&&!document.querySelector('#list button.lrow')`); await settle();
     // FR-015: a figure away at a place keeps its mood (in the simulator Sven is dizzy and away)
-    const wk = await ctx.js(`[...document.querySelectorAll('#walkers .walker')].map(x=>({body:x.dataset.body,trouble:x.dataset.trouble,dot:getComputedStyle(x,'::after').content!=='none'}))`);
+    const wk = await ctx.js(`[...document.querySelectorAll('#walkers .walker')].map(x=>({body:x.dataset.body,trouble:x.dataset.trouble,coffee:x.dataset.coffee==='1',dot:getComputedStyle(x,'::after').content!=='none'}))`);
     console.log('[034-list] walkers', w, JSON.stringify(wk));
     assert.ok(wk.length > 0, 'some agent is away at a place');
     assert.ok(wk.some((x) => x.trouble === 'dizzy' && x.dot), 'the dizzy walker shows its dot');
-    assert.ok(wk.filter((x) => !x.trouble).every((x) => !x.dot), 'no dot without a trouble');
+    assert.ok(wk.filter((x) => !x.trouble && !x.coffee).every((x) => !x.dot), 'no dot without a trouble'); // spec 068: the cup of a coffee break is drawn with ::after too, and is not a trouble dot
     const lobby = await ctx.js(`(()=>{const r=document.querySelector('#stage .lobby');if(!r)return null;const b=r.getBoundingClientRect();return {x:Math.max(0,Math.round(b.left)),y:Math.max(0,Math.round(b.top)),width:Math.round(Math.min(b.width,${w})),height:Math.round(Math.min(b.height,${h}))};})()`);
     if (lobby && lobby.width > 0) require('fs').writeFileSync(path.join(OUT, `mood-walker-${w}x${h}.png`), (await ctx.win.webContents.capturePage({ x: lobby.x, y: lobby.y, width: lobby.width, height: Math.min(lobby.height + 24, h - lobby.y) })).toPNG());
   }

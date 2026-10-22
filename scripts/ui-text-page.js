@@ -190,7 +190,26 @@
     }
   }
   /* FR-170: the Copy button never covers text; the streaming caret is not after it */
+  /* FR-174 (#453): the composer placeholder is one line at the textarea's own width and its own wrapping rules; it names the agent the heading names; a shortened one ends in an ellipsis and is a prefix of the full text */
+  function placeholderRule(root, add) {
+    const t = root.querySelector('#msgInput'); if (!t || !vis(t) || !t.placeholder) return;
+    const cs = getComputedStyle(t), pcs = getComputedStyle(t, '::placeholder');
+    const w = t.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const m = document.createElement('div');
+    m.style.cssText = `position:fixed;left:0;top:0;visibility:hidden;white-space:pre-wrap;overflow-wrap:${cs.overflowWrap};word-break:${cs.wordBreak};width:${w}px;font:${cs.font};letter-spacing:${pcs.letterSpacing};line-height:${cs.lineHeight}`;
+    m.textContent = t.placeholder; document.body.appendChild(m);
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2, lines = Math.round(m.getBoundingClientRect().height / lh);
+    m.remove();
+    if (lines > 1) add('placeholder-line', root, t, `the placeholder "${snip(t.placeholder, 50)}" takes ${lines} lines in ${Math.round(w)}px`);
+    const label = (t.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim(), head = document.getElementById('panelTitle');
+    if (head && label !== 'Message ' + head.textContent.replace(/\s+/g, ' ').trim()) add('placeholder-line', root, t, `the composer is named "${snip(label, 50)}" but the heading says "${snip(head.textContent, 50)}"`);
+    if (/[\ud800-\udbff](?![\udc00-\udfff])|(?:^|[^\ud800-\udbff])[\udc00-\udfff]/.test(t.placeholder)) add('placeholder-line', root, t, `the placeholder cuts a character in two: "${snip(t.placeholder, 50)}"`);
+    { const a = Array.from(t.placeholder.replace(/\u2026$/, '')); let k = 0; while (k < a.length && /[\u{1F1E6}-\u{1F1FF}]/u.test(a[a.length - 1 - k])) k++; if (k % 2 === 1) add('placeholder-line', root, t, `the placeholder cuts a flag in two: "${snip(t.placeholder, 50)}"`); }
+    if (t.placeholder !== label + '\u2026' && !(t.placeholder.endsWith('\u2026') && label.startsWith(t.placeholder.slice(0, -1).trimEnd()))) add('placeholder-line', root, t, `the shortened placeholder "${snip(t.placeholder, 50)}" has no ellipsis or is not the start of "${snip(label, 50)}"`);
+  }
   function chatRules(root, add) {
+    placeholderRule(root, add);
+    { const id = root.querySelector('.ph-id'), sub = id && id.querySelector('.sub'); if (sub && vis(sub) && sub.getBoundingClientRect().right > id.getBoundingClientRect().right + 1) add('heading-spill', root, sub, `the role line "${snip(sub.textContent, 50)}" ends at ${Math.round(sub.getBoundingClientRect().right)}px, past the heading box at ${Math.round(id.getBoundingClientRect().right)}px`); }
     for (const b of root.querySelectorAll('.cp-btn,.md .copy')) {
       if (!vis(b)) continue;
       const ch = document.getElementById('chat'); // the text around it has to be on screen to be measured: only the chat scrolls, never the page
@@ -354,7 +373,7 @@
 
   /* FR-168: a static tooltip explains a control in at most 120 characters; a data tooltip (the full text of a cut name, a card or the totals) may be
      longer, at most 300 characters and 8 lines. Whole page: chrome titles are not in a surface's root. */
-  const DATA_TIP = '.gchip,.gchip *,.gp-row,.ptask,.ab-q,.ab-q *,.q-opt,.place,.intent,.room-aiu,.chip,.chip *,.desk,.helper,.lrow,.lrow *,.sitem,.sitem *,#stats,#stats *,.stat-aiu,.room-head *,.room-path,.prev-row *,.pal-o *,.ib-n,.ib-f,.by-chip,.mdl-sub,.dpick-t,.hs-name b,.sc-t b,.grant,.chip.att-chip,.att,.cmdbox,.pill,.ph-t,.folder,.sub-title,.lmood,.tile,.ttab td,.ttab th,.sl-opt';
+  const DATA_TIP = '#panelTitle,.ph-id .sub,.name,.gchip,.gchip *,.gp-row,.ptask,.ab-q,.ab-q *,.q-opt,.place,.intent,.room-aiu,.chip,.chip *,.desk,.helper,.lrow,.lrow *,.sitem,.sitem *,#stats,#stats *,.stat-aiu,.room-head *,.room-path,.prev-row *,.pal-o *,.ib-n,.ib-f,.by-chip,.mdl-sub,.dpick-t,.hs-name b,.sc-t b,.grant,.chip.att-chip,.att,.cmdbox,.pill,.ph-t,.folder,.sub-title,.lmood,.tile,.ttab td,.ttab th,.sl-opt';
   function tooltips() {
     const out = [];
     document.querySelectorAll('[title]').forEach((el) => {

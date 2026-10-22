@@ -12,6 +12,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, SlashCommand, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { McpToolInfo } from './types';
+import { normMcpTools } from './mcptools';
 import { codexSlashPlaces, SlashCache } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
 import { cleanPlanText, reviseText } from './plan';
@@ -33,7 +35,7 @@ import { CODEX_INITIALIZE_CAPABILITIES, codexFileChanges, codexInstallRoot, code
 import type { CodexFileChange, DurbarAnswer } from './codexModes';
 import { CODEX_BINARY, detectBinary, nodeExec } from './detect';
 import type { DetectEnv } from './detect';
-import { PermissionBroker, startModeOf } from './permissions';
+import { PermissionBroker, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import { redact } from '../shared/redact';
@@ -65,6 +67,8 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
   mcpStart: 'session', // spec 058 FR-010
   mcpToggleApplies: 'next-message', // FR-147
+  mcpToolFilter: true, // spec 069 FR-062: config.mcp_servers.<name>.disabled_tools (real: codex-cli 0.163.0 hides the tool, T060)
+  mcpTools: true, // spec 069 FR-031: mcpServerStatus/list with serverName, the tools map (read: generated app-server schema, codex-cli 0.163.0; not run on a real account)
   mcpRestart: false, // spec 058 FR-012 (Q8): no per-server restart; Restart session with these servers instead
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
   renameSession: 'any', // spec 059 FR-007: thread/name/set on the live child or a short-lived app-server (real 2026-10-20: codex resume lists the name once the thread has had a turn)
@@ -625,7 +629,7 @@ export class CodexAdapter implements AgentAdapter {
       live.exited = child.exited;
       const settings = codexModeSettings(mode);
       let started: unknown;
-      const mcpConfig = codexMcpConfig(options.mcpServers, options.disabledMcpServers); // FR-147
+      const mcpConfig = codexMcpConfig(options.mcpServers, options.disabledMcpServers, options.disabledMcpTools); // FR-147, spec 069 FR-062
       const threadParams = { cwd: limited ? realCwd : cwd, ...settings, ...(limited ? { runtimeWorkspaceRoots: roots } : {}), ...(mcpConfig ? { config: mcpConfig } : {}) };
       if (resumeId !== undefined) {
         // FR-093 (real, Codex 0.163): `thread/resume` with a cwd REWRITES the thread's folder, so the folder check reads the
@@ -1067,6 +1071,7 @@ export class CodexAdapter implements AgentAdapter {
     return new PermissionBroker({
       roots: live.roots,
       mode: live.mode,
+      blockedTools: () => mcpToolBlockList(live.options.disabledMcpTools), // spec 069 FR-063
       beforeWrite: (paths) => this.writeGuard?.(live.sid, paths) ?? Promise.resolve(), // spec 065 FR-001
       emit: (e: BrokerEvent) => {
         const sid = live.sid;
@@ -1198,6 +1203,27 @@ export class CodexAdapter implements AgentAdapter {
     const cur = live.mcp.get(name) ?? { name, status: 'pending' };
     live.mcp.set(name, { ...cur, status: enabled ? 'pending' : 'disabled' });
     this.emitMcp(live);
+  }
+
+  /** Spec 069 FR-031: one server's tools from `mcpServerStatus/list` (the thread's own connection); `toolsError` is the failure. */
+  async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
+    const live = this.sessions.get(sessionId);
+    if (!live || !live.rpc || !live.threadId) throw new Error('This session is not running. Send a message to start it.');
+    // change 2026-10-22 (review on #499): if Codex ignores `serverName`, the server may be on a later page: follow `nextCursor`
+    let cursor: string | undefined;
+    for (let page = 0; page < 20; page++) {
+      const res = await live.rpc.request('mcpServerStatus/list', { threadId: live.threadId, serverName: name, detail: 'toolsAndAuthOnly', limit: 100, ...(cursor ? { cursor } : {}) });
+      const data: unknown[] = isObj(res) && Array.isArray(res.data) ? res.data : [];
+      const srv = data.find((x) => isObj(x) && x.name === name);
+      if (isObj(srv)) {
+        if (typeof srv.toolsError === 'string' && srv.toolsError) throw new Error(srv.toolsError);
+        return normMcpTools(srv.tools);
+      }
+      const next = isObj(res) && typeof res.nextCursor === 'string' && res.nextCursor ? res.nextCursor : undefined;
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
+    throw new Error(`${name} is not running in this session.`);
   }
 
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
