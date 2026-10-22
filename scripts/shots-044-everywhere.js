@@ -45,7 +45,7 @@ module.exports = async (ctx) => {
     // 3) the chat header button
     await js(`(()=>{const ag=[...document.querySelectorAll('#stage .room')].find(x=>x.querySelector(${jsLiteral(`[data-foldermenu="${room}"]`)})).querySelector('.desk[data-id]');ag.click();return true})()`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('schedHdrBtn')`); await settle();
     const btn = await js(`(document.getElementById('schedHdrBtn')||{}).textContent||''`);
-    assert.strictEqual(btn, 'Schedules (1)');
+    assert.ok(btn.startsWith('Schedules (1)'), btn); // the item also has its hint line (spec 052 FR-170)
     await js(`document.getElementById('schedHdrBtn').click()`); await until(`!!document.getElementById('schedDlg')&&!!document.getElementById('scTarget')`);
     assert.ok(await js(`!!document.getElementById('schedDlg')`), 'the chat button opens the dialog');
     // Phase 2 FR-014: opened from a chat, "Send to" offers the folder's agent (the default) or this session
