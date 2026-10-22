@@ -80,7 +80,7 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 
 ## Phase 7: Long unbroken names (issue #536)
 
-- [x] T061 FR-019: a name that is one long token (a URL in a first prompt) stays inside its box on every surface (2-line clamp on full/roomy desk cards, ellipsis
+- [x] T061 FR-019: a name that is one long token (a URL in a first prompt) stays inside its box on every surface (2-line clamp on full desk cards; roomy and compact keep one line with …, ellipsis
   elsewhere); `simnames=long` gets a URL-like name; `check:office` asserts no card `.name` overflows at 1440x900 and 1280x800; before/after screenshots
   `docs/screenshots/059-long-url-name-*.png`; CHANGELOG [all]
 

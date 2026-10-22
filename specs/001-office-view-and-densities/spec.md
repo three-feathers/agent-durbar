@@ -253,4 +253,4 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 
 ### 2026-10-22: a long unbroken name on a full desk card (issue #536)
 
-The full card's name (`.who .name`) wraps to two lines and ends in "…"; a token with no spaces may break anywhere. The rule is spec 059 FR-019 (it owns where names are shown); card sizes and the office geometry do not change.
+The full card's name (`.who .name`) wraps to two lines and ends in "…"; a token with no spaces may break anywhere. The rule is spec 059 FR-019 (it owns where names are shown); card widths do not change, and a full card with a long name can only get shorter.
