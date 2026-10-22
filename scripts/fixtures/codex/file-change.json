@@ -2,15 +2,15 @@
   "provenance": "synthetic",
   "notifications": [
     {"method":"thread/started","params":{"thread":{"id":"thr_main","cwd":"/work/app"}}},
-    {"method":"item/started","params":{"threadId":"thr_main","item":{"id":"fc_1","type":"fileChange","status":"inProgress","changes":[{"path":"src/a.ts","kind":"update","diff":"@@ -1 +1 @@"},{"path":"src/b.ts","kind":"add","diff":"+x"}]}}},
-    {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"fc_1","type":"fileChange","status":"completed","changes":[{"path":"src/a.ts","kind":"update","diff":"@@ -1 +1 @@"},{"path":"src/b.ts","kind":"add","diff":"+x"}]}}},
+    {"method":"item/started","params":{"threadId":"thr_main","item":{"id":"fc_1","type":"fileChange","status":"inProgress","changes":[{"path":"src/a.ts","kind":"update","diff":"@@ -1 +1 @@"},{"path":"src/b.ts","kind":"add","diff":"x\n"}]}}},
+    {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"fc_1","type":"fileChange","status":"completed","changes":[{"path":"src/a.ts","kind":"update","diff":"@@ -1 +1 @@"},{"path":"src/b.ts","kind":"add","diff":"x\n"}]}}},
     {"method":"item/started","params":{"threadId":"thr_main","item":{"id":"fc_2","type":"fileChange","status":"inProgress","changes":[{"path":"src/c.ts","kind":"delete","diff":""}]}}},
     {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"fc_2","type":"fileChange","status":"declined","changes":[{"path":"src/c.ts","kind":"delete","diff":""}]}}}
   ],
   "expected": [
     {"type":"status","status":"idle","intent":"Ready in /work/app"},
-    {"type":"toolCall","callId":"fc_1","tool":"apply_patch","phase":"start","args":{"files":["src/a.ts","src/b.ts"]},"edit":{"files":[{"path":"src/a.ts","kind":"edit","diff":"@@ -1 +1 @@","added":0,"removed":0},{"path":"src/b.ts","kind":"create","diff":"+x","added":1,"removed":0}]}},
-    {"type":"toolCall","callId":"fc_1","tool":"apply_patch","phase":"complete","output":"2 files changed","edit":{"files":[{"path":"src/a.ts","kind":"edit","diff":"@@ -1 +1 @@","added":0,"removed":0},{"path":"src/b.ts","kind":"create","diff":"+x","added":1,"removed":0}]}},
+    {"type":"toolCall","callId":"fc_1","tool":"apply_patch","phase":"start","args":{"files":["src/a.ts","src/b.ts"]},"edit":{"files":[{"path":"src/a.ts","kind":"edit","diff":"@@ -1 +1 @@","added":0,"removed":0},{"path":"src/b.ts","kind":"create","diff":"@@ -0,0 +1,1 @@\n+x","added":1,"removed":0}]}},
+    {"type":"toolCall","callId":"fc_1","tool":"apply_patch","phase":"complete","output":"2 files changed","edit":{"files":[{"path":"src/a.ts","kind":"edit","diff":"@@ -1 +1 @@","added":0,"removed":0},{"path":"src/b.ts","kind":"create","diff":"@@ -0,0 +1,1 @@\n+x","added":1,"removed":0}]}},
     {"type":"toolCall","callId":"fc_2","tool":"apply_patch","phase":"start","args":{"files":["src/c.ts"]},"edit":{"files":[{"path":"src/c.ts","kind":"delete"}]}},
     {"type":"toolCall","callId":"fc_2","tool":"apply_patch","phase":"failed","output":"declined","edit":{"files":[{"path":"src/c.ts","kind":"delete"}]}}
   ]

@@ -69,7 +69,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.getElementById('chat').dataset.pin`), '1');
     const h0 = await js(`document.getElementById('chat').scrollHeight`);
     await upd('pin-b', 6);
-    await until(`document.getElementById('chat').scrollHeight>${h0}+40`, 3000);
+    await until(`document.getElementById('chat').scrollHeight>${jsLiteral(h0 + 40)}`, 3000);
     await frames();
     assert.ok((await gap()) <= 2, `pinned at the bottom, the chat follows the growing diff (gap ${await gap()}px)`);
     // scrolled up: the same diff grows further down (below the view) and scrollTop stays
@@ -79,7 +79,7 @@ module.exports = async (ctx) => {
     const top = await js(`document.getElementById('chat').scrollTop`);
     const h1 = await js(`document.getElementById('chat').scrollHeight`);
     await upd('pin-b', 12);
-    await until(`document.getElementById('chat').scrollHeight>${h1}+40`, 3000);
+    await until(`document.getElementById('chat').scrollHeight>${jsLiteral(h1 + 40)}`, 3000);
     await frames();
     assert.strictEqual(await js(`document.getElementById('chat').scrollTop`), top, 'scrolled up, the chat does not move while a diff grows');
     // pinned again, Show all on the bottom row: only edDiff repaints (no event), and the chat still follows it to the bottom
@@ -90,7 +90,7 @@ module.exports = async (ctx) => {
     assert.ok((await gap()) <= 2 && (await js(`document.getElementById('chat').dataset.pin`)) === '1', 'pinned again before Show all');
     const h2 = await js(`document.getElementById('chat').scrollHeight`);
     await js(`[...document.querySelectorAll('#chat .chip.editchip')].find(c=>c.querySelector('.ed-name').textContent==='pin-b.js')._ed.diffEl.querySelector('.xall').click()`);
-    await until(`document.getElementById('chat').scrollHeight>${h2}+100`, 3000);
+    await until(`document.getElementById('chat').scrollHeight>${jsLiteral(h2 + 100)}`, 3000);
     await frames();
     assert.ok((await gap()) <= 2, `pinned, Show all on the last diff keeps the chat at the bottom (gap ${await gap()}px)`);
     for (const id of ['pin-a', 'pin-b']) await emit({ type: 'toolCall', sessionId: 'sim-1', callId: id, tool: 'Edit', phase: 'complete', output: 'ok' });
