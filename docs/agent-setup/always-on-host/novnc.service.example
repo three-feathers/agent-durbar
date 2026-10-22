@@ -1,0 +1,11 @@
+[Unit]
+Description=noVNC on the private-network address only
+After=x11vnc.service
+Requires=x11vnc.service
+[Service]
+# <private-address> is the machine's address on your private network (for example a Tailscale address).
+# Never 0.0.0.0 and never a public address.
+ExecStart=/usr/bin/websockify --web /usr/share/novnc <private-address>:6080 127.0.0.1:5900
+Restart=on-failure
+[Install]
+WantedBy=default.target

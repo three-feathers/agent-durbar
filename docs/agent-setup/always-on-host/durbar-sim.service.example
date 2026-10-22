@@ -1,0 +1,8 @@
+[Unit]
+Description=Agent Durbar simulator on :99 (no AI credits)
+After=xvfb.service
+Requires=xvfb.service
+[Service]
+WorkingDirectory=%h/<workspace>/agent-durbar
+Environment=DISPLAY=:99 DURBAR_SIM=15
+ExecStart=/usr/bin/npx electron . --no-sandbox

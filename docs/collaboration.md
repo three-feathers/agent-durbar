@@ -23,6 +23,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
    ```
 4. **Spec Kit check**: `uv tool install specify-cli`, then `specify integration status`. Expected: `Installed integrations: copilot, claude`, no modified or missing files, and one finding `unsafe-multi-install` (exit code 1). That one finding is accepted: Claude and Copilot share the repo on purpose. Anything else means a broken setup: tell the maintainer, do not "fix" `.specify/` or `.claude/` yourself.
 5. **Start Claude Code in the repo**: `claude`. It reads `CLAUDE.md`, which imports `AGENTS.md`. Type `/` and you should see `speckit-specify`, `speckit-plan`, `speckit-tasks` and the rest. Read `AGENTS.md` yourself too, once.
+6. **Optional: the team's reference agent setup** (sub-agents, `CLAUDE.local.md` template, review loop, always-on host): [docs/agent-setup/](agent-setup/README.md). Fill the placeholders in your own copy; never commit personal files.
 
 ## For each piece of work
 

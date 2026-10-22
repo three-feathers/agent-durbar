@@ -1,0 +1,6 @@
+[Unit]
+Description=Back up my Claude Code setup to my private config repo
+
+[Service]
+Type=oneshot
+ExecStart=%h/<config-repo>/sync.sh

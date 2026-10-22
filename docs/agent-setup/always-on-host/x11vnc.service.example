@@ -1,0 +1,10 @@
+[Unit]
+Description=VNC of :99, localhost only
+After=xvfb.service
+Requires=xvfb.service
+[Service]
+# -localhost: only this machine can connect. noVNC (next unit) is the one door in, over the private network.
+ExecStart=/usr/bin/x11vnc -display :99 -localhost -forever -shared -nopw -quiet
+Restart=on-failure
+[Install]
+WantedBy=default.target
