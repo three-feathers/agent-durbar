@@ -176,6 +176,17 @@ module.exports = async (ctx) => {
   add('tools-cost-tab', 'screen', ['#screen'], async () => { await closeChat(); await H.click('#toolsBtn'); await until(`!document.getElementById('screen').hidden`, 3000); return js(`(()=>{const b=[...document.querySelectorAll('#screen [role=tab],#screen button')].find(x=>/^(Cost|Spend|Usage)/.test(x.textContent.trim()));if(!b)return false;b.click();return true})()`); });
   add('chat-waiting', 'chat', ['#panel'], () => openChat('Jonas'));
   add('chat-first', 'chat', ['#panel'], async () => !!(await openChatWhere('true'))); // the first desk, whoever it is (the 60-character names pass)
+  // T177 (FR-174): the title arrives after the chat is open (the real applyTitle) or the session is renamed (the real repaintName): the placeholder follows the heading
+  const lateName = (name, title, alias) => add(name, 'chat', ['#panel'], async () => { // a pass of its own (a fresh page): the new name must not leak into the dialogs of other surfaces
+    if (!(await openChatWhere('true'))) return false;
+    await js(`window.__durbarSimRetitle(${jsLiteral(title)},'')`);
+    if (alias) await js(`window.__durbarSimRetitle(${jsLiteral(title)},${jsLiteral(alias)})`);
+    return until(`!!document.getElementById('msgInput')`, 2000);
+  });
+  lateName('chat-late-title', 'Morning stand-up: summarise every open pull request, flag the ones that touch the billing flows and draft the release notes for the week', 'Renamed by the user: a session name that goes on and on');
+  lateName('chat-late-emoji', 'Party \u{1F600}\u{1F389} '.repeat(12).trim()); // emoji (surrogate pairs) all along the line: the cut never lands inside one
+  lateName('chat-late-emoji2', 'Fun \u{1F600}\u{1F389}\u{1F680} '.repeat(12).trim()); // the same with another alignment, so a cut by UTF-16 units splits one at one of the two
+  lateName('chat-late-path', '/home/someone/work/customer-reconciliation-batch-jobs/src/tools/registry/companies/find_company_by_identifier_number.test.ts'); // no spaces: the cut falls inside one long word
   // T155: a toast ends above the composer while a chat is open (the real toast(): More > Copy resume command toasts either way)
   // T155: a toast ends above the composer, and above the answer bar when it shows (the real toast(): More > Copy resume command toasts either way)
   const toastSurface = (name, opener) => add(name, 'chat', ['#panel'], async () => {
@@ -260,7 +271,9 @@ module.exports = async (ctx) => {
   // spec 061: the folder-setup dialog opens by itself for the first folder when the page address has simfoldersetup=1
   add('folder-setup', 'dialog', ['#scrDlg .dlg.fs'], async () => until(`!!document.querySelector('#scrDlg .dlg.fs')`, 8000));
   S.find((x) => x.name === 'folder-setup').onlyPass = true;
+  const LATE = S.filter((x) => x.name.startsWith('chat-late-')); LATE.forEach((x) => { x.onlyPass = true; });
   const PASSES = [
+    ...LATE.map((x) => ({ name: x.name, base: x.name, query: {} })), // T177: the late title, rename, emoji and no-space cases of the composer placeholder
     { name: 'folder-setup', base: 'folder-setup', query: { simfoldersetup: '1' } }, // surfaces that need their own page address
     { name: 'chat-question-long', base: 'chat-question', query: { simquestion: 'long' } }, // T145: a 2,000-character question
     { name: 'folders-pop-long', base: 'folders-pop', query: { simnames: 'long' } }, // T172: long folder names in the Folders popover
@@ -271,7 +284,7 @@ module.exports = async (ctx) => {
     { name: 'list-view-long', base: 'list-view', query: { simnames: 'long' } },
     { name: 'palette-long', base: 'palette', query: { simnames: 'long' } },
     { name: 'chat-first-long', base: 'chat-first', query: { simnames: 'long' } },
-    { name: 'chat-title-long', base: 'chat-first', query: { simtitles: 'long' } }, // T175: a 120-character session title: the composer placeholder stays on one line (FR-174)
+    { name: 'chat-title-long', base: 'chat-first', query: { simtitles: 'long' } },
     { name: 'chat-reply-long', base: 'chat-reply', query: { simreply: 'long' } }, // T155: replies and sub-agent prompts that run to the right edge (the Copy button covers no text)
   ];
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];
