@@ -247,6 +247,15 @@ FR-023) use the new name; Resume opens an agent with that name.
 - **FR-016** `[IMPLEMENTED]` **Fit and legibility.** Names are escaped wherever shown; 60-character names ellipsize on cards, strip, inbox,
   header and rows with the full name in the tooltip; `check:office` passes with 15 agents carrying 60-character names at 1440x900 and
   1280x800; 10.5px floor; design rules 1, 4, 5, 6, 8, 9 hold.
+- **FR-019** `[IMPLEMENTED]` **A name that is one long unbroken token stays inside its box** (issue #536; owner report 2026-10-22: a session with no name of its own
+  shows its first prompt, and a URL in it ran out of the desk card). On every surface that shows a session or agent name (desk card in full, roomy and compact,
+  list view, chat header, strip, Needs you inbox, Schedules rows, Previous sessions rows) the name never leaves its box. On full and roomy desk cards it wraps to
+  at most 2 lines and then ends in "…" (line clamp), and a token with no space may break anywhere (`overflow-wrap:anywhere`); this is the one exception to the
+  "words move whole to the next line" rule of spec 052 FR-165, which is for help text, because a name is data the user does not control. The other surfaces keep one line
+  with an ellipsis. The full name stays in the existing tooltip (`nameTipAttr`, spec 052 FR-168). Card sizes and office geometry do not change. `simnames=long`
+  (FR-016) adds one agent whose name is a single URL-like token (no real address, `example.invalid`), and `check:office` fails when any `.name` on a card overflows
+  its box at 1440x900 and 1280x800.
+
 - **FR-017** `[IMPLEMENTED]` **The dialog says where the name goes and that it may sync** (Vikram's requirement on #372 and PR #376). For
   Copilot, Codex and Claude Code the dialog's second line (FR-004) says the name is also saved in the app and may sync (for example with
   Copilot remote control on, spec 054); a name saved in an app cannot be removed again from Durbar (an empty name resets only Durbar's copy).
@@ -344,3 +353,8 @@ Owner (Paco, 2026-10-20, about 14:35 CEST): accept Vikram's requirements on issu
   go through the Notification API as plain text; `test:sessionname` guards that no agent name or title is put into a template without `esc()`.
 - A card that was never started (no session in the agent app yet) is renamed in Durbar only.
 - Review 2026-10-20: Copilot rename-resume folder, flags and per-id lock; strict id rule; auto-title ignore; Claude SDK transport reports no rename (FR-007).
+
+### 2026-10-22: a long unbroken name overflowed the desk card (issue #536, FR-019)
+
+Spec 001 owns the card layout, but this spec owns where names are shown and `simnames=long` (FR-016), so the rule is here (FR-019) and spec 001 only
+gets a pointer. Fix: line clamp on full/roomy cards, ellipsis elsewhere, simulator name and `check:office` assertion. Task T061.

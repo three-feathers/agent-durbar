@@ -78,6 +78,12 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
   Copilot keeps named sessions from cleanup), CHANGELOG *Unreleased*, `specs/README.md` row, `[IMPLEMENTED]` tags; spec 006 FR-031 and
   #388 (spec 044 FR-021) cross-link: one cutter, `cuttext.js` [all]
 
+## Phase 7: Long unbroken names (issue #536)
+
+- [ ] T061 FR-019: a name that is one long token (a URL in a first prompt) stays inside its box on every surface (2-line clamp on full/roomy desk cards, ellipsis
+  elsewhere); `simnames=long` gets a URL-like name; `check:office` asserts no card `.name` overflows at 1440x900 and 1280x800; before/after screenshots
+  `docs/screenshots/059-long-url-name-*.png`; CHANGELOG [all]
+
 ## Dependencies
 
 - T010, T011 → T012 → T020 → T021 → T022, T024..T029. T023 any time before T024.
