@@ -409,6 +409,23 @@ async function phase2(): Promise<void> {
     assert.deepStrictEqual([s.done, s.last?.outcome], [undefined, 'sent']);
     assert.strictEqual(dueAt(s), t0 + 5 * MIN);
     assert.ok(h.sch.save({ id: 'edit-done-1', edit: true, folder: '/w', prompt: 'again', every: 20 }, () => true).ok, 'a done schedule may become an interval');
+    // an edit never drops a limit by accident: no `cap` key keeps it and its spend, only `cap: null` removes it
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-cap-001', { cap: { amount: 5, unit: 'aiu' }, spent: 1.5, at: t0 + 10 * MIN, next: t0 + 10 * MIN })] });
+      const c = () => g.sch.doc.schedules[0];
+      assert.ok(g.sch.save({ id: 'edit-cap-001', edit: true, folder: '/w', prompt: 'no cap key', every: 60, at: t0 + 10 * MIN }, () => true).ok);
+      assert.deepStrictEqual([c().cap, c().spent], [{ amount: 5, unit: 'aiu' }, 1.5], 'no cap key keeps the limit and the spend');
+      assert.ok(g.sch.save({ id: 'edit-cap-001', edit: true, folder: '/w', prompt: 'null cap', every: 60, at: t0 + 10 * MIN, cap: null }, () => true).ok);
+      assert.deepStrictEqual([c().cap, c().spent], [undefined, undefined], 'an explicit null removes it');
+    }
+    // an anchored interval keeps its first time when the edit keeps `every` and sends no `at`
+    {
+      const g = harness({ pausedAll: false, schedules: [base('edit-anc-001', { at: t0 + 7 * MIN, next: t0 + 7 * MIN })] });
+      assert.ok(g.sch.save({ id: 'edit-anc-001', edit: true, folder: '/w', prompt: 'same every', every: 60 }, () => true).ok);
+      assert.strictEqual(g.sch.doc.schedules[0].at, t0 + 7 * MIN, 'same every, no at: the anchor stays');
+      assert.ok(g.sch.save({ id: 'edit-anc-001', edit: true, folder: '/w', prompt: 'other every', every: 30 }, () => true).ok);
+      assert.strictEqual(g.sch.doc.schedules[0].at, undefined, 'another every without at drops the anchor');
+    }
     // unknown id: refused with and without edit, nothing added
     const n = h.sch.doc.schedules.length;
     assert.deepStrictEqual(h.sch.save({ id: 'nope-nope-1', edit: true, folder: '/w', prompt: 'x', every: 10 }, () => true), { ok: false, error: 'That schedule is gone.' });

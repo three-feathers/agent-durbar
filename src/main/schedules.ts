@@ -163,10 +163,12 @@ function editCandidate(input: Record<string, unknown>, prev: Schedule): Record<s
     pausedReason: prev.pausedReason,
     prompt: input.prompt,
     every: input.every,
-    at: input.at,
+    // an interval edit that keeps `every` and sends no time keeps its anchor (FR-007)
+    at: input.at === undefined && input.rule === undefined && prev.every !== undefined && num(input.every) === prev.every ? prev.at : input.at,
     rule: input.rule,
     target: input.target,
-    cap: input.cap,
+    // a limit is dropped only by an explicit `cap: null`; no key keeps it (and its spend, below)
+    cap: input.cap === undefined ? prev.cap : input.cap,
   };
 }
 

@@ -1122,7 +1122,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const edit = inputIn.edit === true;
         const prev = inputIn.id === undefined ? undefined : simSched.list.find((x) => x.id === inputIn.id);
         if ((inputIn.id !== undefined && !prev) || (edit && !prev)) return { ok: false as const, error: 'That schedule is gone.' };
-        const input = edit && prev ? { ...inputIn, folder: prev.folder, paused: prev.paused, pausedReason: prev.pausedReason, done: undefined } : inputIn;
+        const input = edit && prev ? { ...inputIn, folder: prev.folder, paused: prev.paused, pausedReason: prev.pausedReason, done: undefined, cap: inputIn.cap === undefined ? prev.cap : inputIn.cap, at: inputIn.at === undefined && inputIn.rule === undefined && prev.every !== undefined && Number(inputIn.every) === prev.every ? prev.at : inputIn.at } : inputIn;
         const every = input.every !== undefined ? Math.round(Number(input.every)) : undefined;
         const rule = input.rule !== undefined ? simRules()?.parseRule(input.rule) : undefined;
         if (input.rule !== undefined && !rule) return { ok: false as const, error: 'That calendar rule is not valid.' };
