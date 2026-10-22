@@ -119,7 +119,7 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 
 ---
 
-### User Story 5 - The agent proposes a loop and I say yes (Priority: P3, Phase 2, optional)
+### User Story 5 - The agent proposes a loop and I say yes (out of scope: owner Q8 (b))
 
 **Acceptance Scenarios**:
 
@@ -211,7 +211,7 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 - **FR-023** `[PLANNED]` The chat shows one calm note per pass: "Loop pass 3 of 12", and after the pass "Next pass at 10:45: waiting for CI" or "Loop stopped: <reason>".
 - **FR-024** `[PLANNED]` Activity log (spec 052): new decisions `loop-start`, `loop-pass`, `loop-skip`, `loop-hold`, `loop-end`. One row each, recorded in main. The action holds the pass number, the next delay and the cleaned reason, never the prompt or the reply.
 
-**Phase 2: tools on a per-session loop server (US4, US5)**
+**Phase 2: tools on a per-session loop server (US4)**
 
 - **FR-030** `[PLANNED]` A **loop server** (reserved name `durbar-loop`) exposes exactly two tools:
   - `schedule_next` {`minutes`: integer 1-1440, `reason`: string ≤ 120};
@@ -221,12 +221,12 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 - **FR-031** `[PLANNED]` **One session only.**
   - Durbar adds the loop server to a session's `mcpServers` only while that session has a running loop (Q7 decides how a live session gets it).
   - Each session gets its own random 256-bit token, kept in main's memory. The token is **never** put in `McpServerSpec.env` or `args`: on Claude Code's CLI transport those become the `--mcp-config <json>` command-line argument (`claude.ts:163`, `:241`), which any local user can read with `ps` or `/proc/<pid>/cmdline`.
-  - Instead main writes the token to a per-loop file with mode 0600 inside a per-run folder with mode 0700 under Durbar's user-data folder (on Windows, an ACL for the current user only). Only that file's **path** goes into the server spec. The helper reads the token from the file at start. The file is deleted when the loop ends, and the folder is emptied at launch.
+  - Instead main writes the token to a per-loop file with mode 0600 inside a per-run folder with mode 0700 under Durbar's user-data folder (on Windows, Node cannot set an ACL, so the file relies on the per-user ACL that `%APPDATA%`, where Durbar's user-data folder lives, already inherits: the user, SYSTEM and Administrators; `[KNOWN GAP]` not checked on a real Windows profile, and a profile moved outside `%APPDATA%` with `DURBAR_USER_DATA` gets whatever that folder inherits). Only that file's **path** goes into the server spec. The helper reads the token from the file at start. The file is deleted when the loop ends, and the folder is emptied at launch.
   - The token is never logged or shown. A test checks, for all three apps, that the token is not in the built `mcpServers` config, the CLI argv (`--mcp-config`) or Codex's `thread/start` config.
   - Main maps token to session. A tool call can only affect the loop of the session its token belongs to.
   - Tool arguments never name a session.
   - The token is dropped when the loop ends.
-- **FR-032** `[PLANNED]` All input is validated in main (types, integer, ranges, length, one line). An out-of-range `minutes` is clamped as in FR-011, and the result says so. A call with no running loop answers "No loop is running in this session" and starts nothing (but see FR-034). There is no shell; the server process is Durbar's own executable with a fixed flag and fixed arguments.
+- **FR-032** `[PLANNED]` All input is validated in main (types, integer, ranges, length, one line). An out-of-range `minutes` is clamped as in FR-011, and the result says so. A call with no running loop answers "No loop is running in this session" and starts nothing. There is no shell; the server process is Durbar's own executable with a fixed flag and fixed arguments.
 - **FR-033** `[PLANNED]` (owner, Q6 (b)) The loop tools are ordinary MCP calls for the permission broker: denied in Read-only, asked in Ask first, allowed in Allow all. No broker exception. A loop in Read-only is paced only by the reply line (FR-010..FR-012), which needs no permission. A user's own MCP extra or Copilot CLI entry with the name `durbar-loop`, or one that points to the loop helper, is refused or disabled, as 041 FR-031/FR-032 do for `agent-durbar`.
 - **FR-034** `[OUT OF SCOPE]` (US5; owner Q8 (b): loops start only from the user's menu; kept here for a later decision) A `schedule_next` call in a session without a loop shows an offer card with the proposed delay and the default limits. **No** has the focus. Only **Start loop** starts it. A refusal is remembered for that session until it ends, so the agent cannot re-ask on every turn.
 - **FR-035** `[PLANNED]` In Phase 2 the reply line of FR-010 stays as a fallback. A tool call during a pass wins over a reply line in the same pass.
