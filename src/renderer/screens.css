@@ -10,9 +10,10 @@ body.screen-open .workspace{display:none}
 .scr-sec{margin:0 0 var(--sec-gap);padding:var(--sec-pad);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl)}
 .scr-sec .seg{width:max-content}
 .scr-sec h3{margin:0 0 4px;font-size:var(--t2-size);font-weight:var(--t2-weight);line-height:var(--t2-lh);letter-spacing:-.01em} /* spec 052 FR-053, FR-098 (T2) */
-.scr-note{margin:4px 0;max-width:72ch;font-size:var(--t3-size);color:var(--ink-2);overflow-wrap:anywhere}
-.scr-sec p,.scr-note{max-width:68ch;line-height:1.5} /* spec 052 FR-053: a readable measure */
+.scr-note{margin:4px 0;font-size:var(--t3-size);color:var(--ink-2);overflow-wrap:break-word;word-break:normal}
+.scr-sec p,.scr-note{max-width:var(--measure);line-height:1.5} /* spec 052 FR-053, FR-165: one readable measure, whatever the font size */
 .scr-note.small{font-size:var(--t5-size);color:var(--muted)}
+.scr-sec p.scr-note.small,.dlg .dsub.small{font-size:var(--t4-size)} /* FR-166: a paragraph is 12px; 11px stays for a one-line hint */
 .scr-not{margin:4px 0 0;padding-left:24px;max-width:68ch;font-size:var(--t3-size);line-height:1.5;color:var(--ink-2)} /* spec 052 FR-066 */
 .scr-not li+li{margin-top:2px}
 .scr-note.ok{color:#2f6a47}
@@ -49,7 +50,7 @@ body.screen-open .workspace{display:none}
 .mst.none{color:var(--muted)}
 
 /* dialogs */
-.dlg.wide{width:min(620px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto}
+.dlg.wide{width:min(var(--dlg-w-m),calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto}
 .dlg .dbody{display:flex;flex-direction:column;gap:var(--dlg-gap);min-height:0}
 .dlg .derr{margin:0;font-size:var(--t3-size);color:var(--red-ink);background:#f6e2df;border:1px solid #ebc7c2;border-radius:10px;padding:6px 10px}
 .dlg .derr[hidden]{display:none}
@@ -76,7 +77,7 @@ body.screen-open .workspace{display:none}
 
 /* Tools view */
 .scr-head .seg{margin-left:4px}
-.scr-head .seg button[aria-selected="true"]{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(60,50,30,.12)}
+.scr-head .seg button[aria-selected="true"]{background:var(--raised);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(60,50,30,.12)}
 /* spec 052 FR-104: operator tables. A group is a heading over a table, with no card frame */
 .tgrp{margin:0 0 20px;padding:0}
 .tgrp h3{margin:0 0 6px;font-size:13.5px;font-weight:650}
@@ -112,18 +113,18 @@ td.by{font-size:12px;line-height:1.5}
 .unk{font-size:12px;color:var(--muted);font-style:italic}
 
 /* header chips */
-.ctxchip{display:inline-flex;align-items:center;gap:6px;height:var(--h-chip,26px);padding:0 9px 0 8px;border-radius:999px;background:#eef3ee;border:1px solid #cfdccf;font-size:11.5px;font-weight:600;color:#33563f;cursor:pointer;white-space:nowrap}
+.ctxchip{display:inline-flex;align-items:center;gap:6px;height:var(--h-chip,26px);padding:0 9px 0 8px;border-radius:999px;background:color-mix(in srgb,var(--sage) 14%,var(--surface));border:1px solid var(--line-2);font-size:11.5px;font-weight:600;color:var(--ink);cursor:pointer;white-space:nowrap}
 .ctxchip .bar{width:34px;height:5px}
-.ctxchip.warn{background:#fdf3df;border-color:#e5be78;color:var(--amber-ink)} .ctxchip.warn .bar i{background:var(--amber)}
-.ctxchip.high{background:#f6e2df;border-color:#ebc7c2;color:var(--red-ink)} .ctxchip.high .bar i{background:var(--red)}
-.ctxchip.unk{background:#f1efe9;border-color:var(--line);color:var(--muted);font-weight:500;font-style:normal} /* spec 052 FR-077: no italics in chips */
+.ctxchip.warn{background:var(--warn-bg);border-color:var(--card-waiting-line);color:var(--amber-ink)} .ctxchip.warn .bar i{background:var(--amber)}
+.ctxchip.high{background:var(--bad-bg);border-color:var(--card-error-line);color:var(--red-ink)} .ctxchip.high .bar i{background:var(--red)}
+.ctxchip.unk{background:var(--surface-2);border-color:var(--line);color:var(--muted);font-weight:500;font-style:normal} /* spec 052 FR-077: no italics in chips */
 .ctxchip.ok .bar i{background:var(--green)}
 .topbtns{display:flex;gap:2px}
 .topbtns button{display:inline-flex;align-items:center;gap:5px}
 .topbtns svg{width:14px;height:14px;flex:none}
 #topBtns{display:none}
 body.has-bridge #topBtns{display:flex}
-#topBtns button[aria-pressed="true"]{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(60,50,30,.12)}
+#topBtns button[aria-pressed="true"]{background:var(--raised);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(60,50,30,.12)}
 .ttab:not(.agt){table-layout:fixed}
 .ttab:not(.agt) thead th:first-child{width:30%}
 .ttab:not(.agt) .barc{width:34%}
@@ -133,9 +134,9 @@ body.has-bridge #topBtns{display:flex}
 .capchip{margin-left:0}
 .note.limit{background:#f6e2df;border-color:#ebc7c2;color:var(--red-ink)}
 .note.limit.settled{background:#f4f0e6;border-color:#e4dcc6;color:var(--ink-2)}
-.note.limit .limit-amt{width:84px;height:28px;border:1px solid var(--line-ctl);border-radius:8px;padding:0 8px;font:inherit;font-size:12px;background:#fff}
+.note.limit .limit-amt{width:84px;height:28px;border:1px solid var(--line-ctl);border-radius:8px;padding:0 8px;font:inherit;font-size:12px;background:var(--raised);color:var(--ink)}
 .capf{display:inline-flex;align-items:center;gap:8px;font-size:12px}
-.capf input{width:110px;height:30px;border:1px solid var(--line-ctl);border-radius:8px;padding:0 8px;font:inherit;background:#fff}
+.capf input{width:110px;height:30px;border:1px solid var(--line-ctl);border-radius:8px;padding:0 8px;font:inherit;background:var(--raised);color:var(--ink)}
 
 /* spec 020: source labels, per-folder extras, all-time view */
 .mtag.extra{background:#e4f1e8;border-color:#b9d9c3;color:#245b3a}
@@ -152,7 +153,7 @@ body.has-bridge #topBtns{display:flex}
 .warnc{color:var(--amber-ink)}
 
 /* import from VS Code (spec 020 FR-023): the list scrolls inside the dialog, the buttons stay in view */
-.dlg.imp{width:min(780px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:hidden}
+.dlg.imp{width:min(var(--dlg-w-l),calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:hidden;padding:var(--dlg-pad);border-radius:var(--r-xl);background:var(--surface)} /* the generic `.imp` box rule (padding 8px 10px, a 10px radius, --surface-2) must not shrink a dialog that happens to carry the class: the import list and the folder-setup dialog */
 .dlg.imp .dbody{overflow:auto;padding-right:2px}
 .imp-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .imp-count{font-size:11px;color:var(--muted);margin-left:4px}
@@ -170,7 +171,7 @@ body.has-bridge #topBtns{display:flex}
 .plrow{display:flex;align-items:center;gap:12px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}
 .plrow .plname{flex:1 1 auto;min-width:0;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .plrow .plname small{font-weight:500;color:var(--muted);font-size:11px;margin-left:6px}
-.plrow select{flex:none;height:32px;border:1px solid var(--line-ctl);background:#fff;border-radius:10px;padding:0 8px;font:inherit;font-size:12px;color:var(--ink);max-width:220px}
+.plrow select{flex:none;height:32px;border:1px solid var(--line-ctl);background:var(--raised);border-radius:10px;padding:0 8px;font:inherit;font-size:12px;color:var(--ink);max-width:220px}
 
 /* ---- theme picker (specs 037-040): built-ins + imported packs, applies live ---- */
 .thlist{list-style:none;margin:10px 0 8px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
@@ -178,7 +179,7 @@ body.has-bridge #topBtns{display:flex}
 /* FR-030 (#309): a preview card (about 160x100) with a mini room in the theme's own colours (--sw-* set from validated tokens) */
 .thpick{position:relative;display:flex;flex-direction:column;align-items:stretch;gap:6px;width:100%;min-height:100px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);cursor:pointer;text-align:left;font:inherit;color:var(--ink)}
 .thpick:hover{border-color:var(--line-2);background:var(--raised)}
-.thpick[aria-pressed=true]{border-color:var(--focus,#2f5f8a);box-shadow:0 0 0 2px var(--stat-sel-ring);background:#fff}
+.thpick[aria-pressed=true]{border-color:var(--focus,#2f5f8a);box-shadow:0 0 0 2px var(--stat-sel-ring);background:var(--raised)}
 .thpick[aria-pressed=true]:not(:focus-visible){outline:2px solid var(--focus,#2f5f8a);outline-offset:-1px} /* spec 052 FR-052: selected is not colour only (the check mark too) */
 /* spec 052 R3: the chosen theme also carries a small check badge (top right, over the preview; no size change) */
 .thpick[aria-pressed=true]::after{content:"\2713";position:absolute;top:4px;right:4px;z-index:1;width:16px;height:16px;border-radius:50%;background:var(--focus,#2f5f8a);color:#fff;font-size:10.5px;font-weight:700;line-height:16px;text-align:center;pointer-events:none}
@@ -209,7 +210,7 @@ body.has-bridge #topBtns{display:flex}
 .dlg .pl-err[hidden]{display:none}
 .dlg input[type=text]{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink)}
 .pico-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
-.dlg label.pico-opt{position:relative;flex-direction:row;align-items:center;justify-content:center;height:40px;border:1.5px solid var(--line-2);border-radius:10px;background:#fff;cursor:pointer;color:var(--ink-2)}
+.dlg label.pico-opt{position:relative;flex-direction:row;align-items:center;justify-content:center;height:40px;border:1.5px solid var(--line-2);border-radius:10px;background:var(--raised);cursor:pointer;color:var(--ink-2)}
 .pico-opt input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
 .pico-opt .pico .pic{width:20px;height:20px;display:block}
 .pico-opt:hover{background:var(--surface-2)}
@@ -249,7 +250,7 @@ body.has-bridge #topBtns{display:flex}
 .scr-body .ttab.act thead th:first-child{width:auto}
 .ttab.act td{font-size:12px;vertical-align:top}
 .ttab.act .act-t{white-space:nowrap;color:var(--ink-2)}
-.ttab.act .act-a{overflow-wrap:anywhere;max-width:48ch}
+.ttab.act .act-a{overflow-wrap:break-word;max-width:48ch}
 .ttab.act tr.act-denied td:last-child{color:var(--red-ink,var(--ink))}
 /* spec 052 FR-049: install plan cards: radio beside its command (".dlg label" stacks them), the chosen card is outlined */
 .dlg .hs-plan{flex-direction:row;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
@@ -270,8 +271,8 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-hidden{display:block;font-size:11px;color:var(--amber-ink);font-weight:600}
 .dlg.fs .fs-cmd{max-height:12em}
 .dlg.fs .fs-more{display:block;font-size:11px;color:var(--ink-2);font-style:italic}
-.dlg.fs .mtag.fs-allow{background:#eaf4ee;border-color:#c5dccd;color:var(--green-ink,#2f6b47)}
-.dlg.fs .mtag.fs-deny{background:#fbe7e4;border-color:#efc2bb;color:#9a2f22}
+.dlg.fs .mtag.fs-allow{background:color-mix(in srgb,var(--sage) 14%,var(--surface));border-color:var(--line-2);color:var(--sage-ink)}
+.dlg.fs .mtag.fs-deny{background:color-mix(in srgb,var(--red) 14%,var(--surface));border-color:var(--line-2);color:var(--red-ink)}
 .dlg.fs .mtag.warn,.dlg.fs .mtag.new{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
 .dlg.fs .fs-ai{margin:0 0 8px 34px;font-size:12px;line-height:1.45}
 .dlg.fs .fs-ai:empty{display:none}
