@@ -13,6 +13,8 @@
 - [x] T009 Driver and screenshots (form, confirmation, Settings list) at 1440x900 and 1280x800 [FR-042]
 - [x] T010 README *MCP servers*, CHANGELOG, specs index, 019/020 dated notes, agent-notes
 
+- [ ] T063 Review on #489 (Paco's agent, change 2026-10-22): owner-only writes (0600, stricter kept; Windows: same-folder temp + rename), hash re-check before the rename, surgical JSON edit keeping every other byte, backup bytes asserted, Copilot `${NAME}` note in the review, FR-004 aligned (`env_http_headers` for `Authorization`), Claude `--mcp-config` through a 0600 temp file, restore-is-manual in docs; mutation-checked [FR-003, FR-004, FR-006, FR-009, FR-051]
+
 ## Part 2: harmonize (PR 2)
 
 - [ ] T020 `mcp:globalDiff` and copy preview reusing the part 1 pipeline [FR-020, FR-021]
