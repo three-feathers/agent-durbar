@@ -392,6 +392,15 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
      most 20 pages) until the server is found; only then "not running in this session". `test:` the fake app-server ignores
      `serverName` and pages 10 at a time; the 23rd server's tools are found on page 3.
 
+- **2026-10-22 (re-review on #499 by Paco's agent, CHANGES_REQUESTED at c6bdc3d4):** two findings fixed (T068).
+  1. **Repeated cursor** (FR-031): the stop on a `nextCursor` already asked for was not tested (the 20-page bound hid its loss). `test:`
+     a fake app-server that always answers the same `nextCursor`: two requests, then "not running in this session".
+  2. **Cancel keeps the folder copy** (FR-030): in the combined Remove picker the folder copy was deleted before the agent apps' file
+     review, so cancelling the review left it deleted. The folder copy is now one more entry of that review ("This folder's extras in
+     Agent Durbar": the server and its stored secret values are deleted) and is deleted only when the review is confirmed; with only
+     the folder ticked, the picker's *Remove* is the confirmation. The picker's folder row says that its stored secret values are
+     deleted. `sim:` `shots-069-mcp-tools` cancels the review and finds the folder copy still there, then confirms and finds both gone.
+
 - **2026-10-22 (merge with spec 058's MCP words, #538; author's call, owner's scope kept):** part 3 now sits on spec 058's row instead
   of beside it. One row, one repaint path (058's: in-place repaint that keeps focus and scroll, live refresh from `mcp` events with the
   polite announcement). Changed against FR-030 and FR-033 as first built:
