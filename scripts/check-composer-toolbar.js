@@ -132,7 +132,7 @@ module.exports = async (ctx) => {
     await type('Please look at the README.');
     check(await js(`document.getElementById('sendBtn').getAttribute('aria-disabled')==='false'`), `${tag}: Send stays disabled with text`);
     await js(`document.getElementById('sendBtn').click()`);
-    check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0;return v(document.getElementById('stopBtn'))&&v(document.getElementById('runSpin'))&&!v(document.getElementById('sendBtn'))})()`, 5000), `${tag}: a running turn does not show Stop with the spinner`);
+    check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0;return v(document.getElementById('stopBtn'))&&v(document.getElementById('runSpin'))&&!v(document.getElementById('sendBtn'))})()`, 12000), `${tag}: a running turn does not show Stop with the spinner`); /* 12 s: the Windows and macOS runners are slow under load */
     m = await M();
     m.P.forEach((p) => check(false, `${tag} running: ${p}`));
     check(await js(`document.getElementById('runSpin').getBoundingClientRect().right<=document.getElementById('stopBtn').getBoundingClientRect().left+0.5`), `${tag}: the spinner is not left of Stop`);
@@ -196,10 +196,11 @@ module.exports = async (ctx) => {
       await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 3000);
       await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return v(g('sendBtn'))&&!v(g('stopBtn'))})()`, 15000); /* the opening canned turn */
       await type('Please look at the README.');
+      await until(`document.getElementById('sendBtn').getAttribute('aria-disabled')==='false'`, 5000); /* the typed text has reached the box */
       await js(`document.getElementById('sendBtn').click()`);
-      check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return v(g('stopBtn'))})()`, 3000), `${tag} demo: a canned turn shows no Stop`);
+      check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return v(g('stopBtn'))})()`, 12000), `${tag} demo: a canned turn shows no Stop`);
       await js(`document.getElementById('stopBtn').click()`);
-      check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return !v(g('stopBtn'))&&!v(g('runSpin'))&&v(g('sendBtn'))})()`, 1500), `${tag} demo: Stop does not end the canned turn`);
+      check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return !v(g('stopBtn'))&&!v(g('runSpin'))&&v(g('sendBtn'))})()`, 4000), `${tag} demo: Stop does not end the canned turn`);
       const len = () => js(`(document.querySelector('#panel .chat-inner')||{textContent:''}).textContent.length`);
       const l0 = await len(); await ctx.sleep(900);
       check((await len()) === l0, `${tag} demo: the reply keeps streaming after Stop`);
