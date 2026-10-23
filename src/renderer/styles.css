@@ -1149,6 +1149,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .cb-sign{position:absolute;left:50%;bottom:9%;transform:translateX(-50%);display:inline-flex;align-items:center;gap:3px;max-width:96%;height:17px;padding:0 6px 0 4px;border-radius:4px;background:var(--pb);color:var(--pc);border:1px solid color-mix(in srgb,var(--pc) 30%,var(--pb));font-size:10.5px;font-weight:650;line-height:1;white-space:nowrap;box-shadow:0 1px 2px color-mix(in srgb,var(--ink) 18%,transparent)}
 .cb-sign .ds-ic{width:10px;height:10px;flex:none;display:block}
 .cb-sign .cb-w{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.cb-sign .cb-w::before{content:attr(data-w)}
 .cb-open{position:absolute;inset:0;pointer-events:none}
 .cb-leaf-open{position:absolute;left:0;top:4%;bottom:0;width:11%;background:var(--door-leaf);border:1px solid var(--door-leaf-line);clip-path:polygon(0 0,100% 9%,100% 91%,0 100%)}
 .cb-open .cb-sign{left:auto;right:3px;top:3px;bottom:auto;transform:none}

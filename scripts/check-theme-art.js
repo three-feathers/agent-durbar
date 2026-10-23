@@ -105,7 +105,10 @@ module.exports = async (ctx) => {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const tag = `${w}x${h}`;
     // Clean Office first (the theme in use when an AI theme is made or picked), the pack only registered as a user theme
+    /* spec 017 FR-014: this checks the theme's characters in the desk scenes, so the cabins (a closed door in place of a busy desk's scene)
+       are off here; their photo is the same avatar and they have their own driver (shots-017-signs) */
     await H.load({ w, h, query: { usertheme: JSON.stringify(PACK) }, ready: 'fit', settle: false });
+    if (await H.js(`localStorage.getItem('durbar.doorsigns')!=='off'`)) { await H.js(`localStorage.setItem('durbar.doorsigns','off')`); await H.load({ w, h, query: { usertheme: JSON.stringify(PACK) }, ready: 'fit', settle: false }); }
     await H.office(15);
     assert.ok(await H.until(`!!document.querySelector('.walker')`, 6000), `${tag}: agents walk to the lobby`);
     await H.until(`!document.querySelector('.walker.walking')`, 6000);

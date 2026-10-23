@@ -101,6 +101,9 @@ module.exports = async (ctx) => {
   const rows = [];
 
   /* the lounge setting, as a person turns it (Settings) */
+  /* spec 017 FR-014: the cabins (on by default) draw a closed door in place of a busy desk's scene; the scene checks below switch them off
+     for the measurement and on again for the screenshot (the cabins have their own driver, shots-017-signs) */
+  const cabins = async (on) => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('signSw')`, 4000); const cur = await js(`document.getElementById('signSw').getAttribute('aria-checked')==='true'`); if (cur !== on) await js(`document.getElementById('signSw').click()`); await H.key('Escape'); await ctx.sleep(500); };
   const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('shutSw')`, 4000); await js(`document.getElementById('shutSw').click()`); await H.key('Escape'); await ctx.sleep(500); };
   /* how sharp a scene is drawn: the share (%) of its pixels that are exactly one of its flat colours (+-2 per channel); a blurred drawing
      loses most of them. Under load a capture can show an older frame: read again (up to 3 times) and keep the best */
@@ -163,6 +166,7 @@ module.exports = async (ctx) => {
         /* review of #554 (Paco): the lounge changes no working desk's scene. Every desk open with the setting on and off has the same scene box
            inside its card (size and position), and is drawn as sharp (its flat colours, within 3 points); Jonas's scene was drawn blurred
            beside the lounge at 1280x800 (21% against 33%) while its box was the same */
+        await cabins(false);
         await H.settle(); await ctx.sleep(300);
         const lon = await looks();
         await toggle(); await H.settle(); await ctx.sleep(300);
@@ -184,6 +188,7 @@ module.exports = async (ctx) => {
           check(a.sharp >= b.sharp - 3, `15 agents at ${w}x${h}: desk ${id}'s scene is drawn less sharp with the lounge (${a.sharp}% of its pixels in its flat colours, ${b.sharp}% without)`);
         }
         check(same >= 10, `15 agents at ${w}x${h}: only ${same} desks open with the lounge on and off`);
+        await cabins(true);
         rows.push(`15 agents at ${w}x${h}: ${same} scenes the same with the lounge on and off (sharpness ${[...lon].map(([id, a]) => id + ' ' + a.sharp + '/' + (loff.get(id) || {}).sharp).join(', ')})`);
       }
       if (OUT && w !== 1920) await ctx.shot(path.join(OUT, `001-fill-${n}-${w}x${h}.png`));
