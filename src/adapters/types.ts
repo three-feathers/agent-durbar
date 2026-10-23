@@ -543,8 +543,9 @@ export interface AgentAdapter {
   selectAgentProfile?(sessionId: string, id: string | null): Promise<AgentProfile | null>;
   /** Spec 073 FR-001: the "/" entries this session's agent app offers (folder, then user, then app built-ins that run when typed). */
   listSlashCommands?(sessionId: string): Promise<SlashCommand[]>;
-  /** Spec 073 FR-005: the text to send for a message that starts with a folder or user entry's `/name`, and where it came from; undefined = send as typed. */
-  expandSlashCommand?(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined>;
+  /** Spec 073 FR-005: the text to send for a message that starts with a folder or user entry's `/name`, and where it came from; `note`
+   * (a VS Code prompt file) names settings not applied and variables left as written; undefined = send as typed. */
+  expandSlashCommand?(sessionId: string, text: string): Promise<{ text: string; where: string; note?: string } | undefined>;
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */
   setMcpEnabled?(sessionId: string, name: string, enabled: boolean): Promise<void>;
   /**

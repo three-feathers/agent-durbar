@@ -141,7 +141,7 @@ const SIM_CLAUDE_MODELS: ModelChoice[] = [
 ];
 /* spec 043: what a session's custom agents look like (made up; no real agent files) */
 /** Spec 073 FR-011: canned "/" entries per agent app (folder, user, and Claude Code's built-ins); nothing is read from disk. */
-type SimSlash = { name: string; description?: string; argumentHint?: string; source: 'folder' | 'user' | 'app'; kind: 'skill' | 'command' | 'prompt' | 'builtin'; where?: string };
+type SimSlash = { name: string; description?: string; argumentHint?: string; source: 'folder' | 'user' | 'app'; kind: 'skill' | 'command' | 'prompt' | 'builtin'; where?: string; note?: string };
 function simSlash(kind: string): SimSlash[] {
   const common: SimSlash[] = [
     { name: 'review-pr', description: 'Review a pull request: risks, tests, and what to change', argumentHint: '<number>', source: 'folder', kind: 'command', where: '.claude/commands/review-pr.md' },
@@ -150,6 +150,8 @@ function simSlash(kind: string): SimSlash[] {
     { name: 'triage', description: 'Sort new issues by area and urgency', source: 'folder', kind: 'command', where: '.claude/commands/triage.md' },
     { name: 'explain', description: 'Explain a file or a function in plain words', argumentHint: '<path>', source: 'user', kind: 'command', where: '~/.claude/commands/explain.md' },
     { name: 'standup', description: 'Summarise yesterday’s commits for the stand-up', source: 'user', kind: 'skill', where: '~/.claude/skills/standup/SKILL.md' },
+    // spec 073 delta 2026-10-23: a VS Code prompt file, listed for every app; its settings are shown, not applied
+    { name: 'write-tests', description: 'Write unit tests for a file (VS Code settings not applied: mode, tools)', argumentHint: '<file>', source: 'folder', kind: 'prompt', where: '.github/prompts/write-tests.prompt.md', note: 'VS Code settings not applied: mode, tools.' },
   ];
   if (kind === 'claude')
     return common.concat([
@@ -159,7 +161,7 @@ function simSlash(kind: string): SimSlash[] {
       { name: 'security-review', description: 'Complete a security review of the pending changes on the current branch', source: 'app', kind: 'builtin' },
     ]);
   const swap = (w?: string): string | undefined => (w ? (kind === 'codex' ? w.replace('.claude/commands/', '.agents/skills/').replace('.claude/skills/', '.agents/skills/').replace('~/.claude/', '~/.agents/') : w.replace('.claude/commands/', '.github/skills/').replace('.claude/skills/', '.github/skills/').replace('~/.claude/', '~/.copilot/')) : w);
-  const skills: SimSlash[] = common.map((e) => ({ ...e, kind: 'skill' as const, where: swap(e.where) }));
+  const skills: SimSlash[] = common.map((e) => (e.kind === 'prompt' ? e : { ...e, kind: 'skill' as const, where: swap(e.where) }));
   return kind === 'codex' ? skills.concat([{ name: 'prompts:draft-pr', description: 'Draft a pull request description', argumentHint: 'TITLE', source: 'user', kind: 'prompt', where: '~/.codex/prompts/draft-pr.md' }]) : skills;
 }
 
@@ -1515,7 +1517,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         // page address simslash=long (spec 073 FR-008, review on #535): a 64-character name, a long hint and a 200-character description
         // come first, for check:ui-text's long-text pass
         const long = simQuery.get('simslash') === 'long' ? SIM_SLASH_LONG : [];
-        return { ok: true, entries: [...long, ...simSlash(s.info.adapterId ?? 'copilot')] };
+        return { ok: true, entries: [...long, ...simSlash(s.info.adapterId ?? 'copilot')].map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
       },
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
@@ -2108,7 +2110,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         // spec 073 FR-011: a folder or user entry is "sent as its text", as the real adapters do (FR-005)
         const sl = /^\/([A-Za-z0-9][A-Za-z0-9._:-]{0,63})(?:\s|$)/.exec(String(text).trim());
         const hit = sl ? simSlash(kind).find((e) => e.source !== 'app' && e.name.toLowerCase() === sl[1].toLowerCase()) : undefined;
-        return hit ? { ok: true, slash: hit.where ?? hit.name } : { ok: true };
+        return hit ? { ok: true, slash: hit.where ?? hit.name, ...(hit.note ? { slashNote: hit.note } : {}) } : { ok: true };
       },
       stop: async (id) => {
         // Stop = interrupt the turn only (like the real adapter): pending approval denied, grants kept, back to Ready.
