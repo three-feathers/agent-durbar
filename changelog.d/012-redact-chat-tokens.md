@@ -1,0 +1,1 @@
+- **Chat-tool secrets are masked** (spec 012 FR-080, issue #551): Slack tokens and incoming webhooks, Discord webhooks and Telegram bot tokens are hidden wherever Durbar masks secrets (debug log, desks, chat, folder setup), also after a quoted-printable `=3D` or `%u003D` escape. Unit tests with fake values, false-positive and 1 MB adversarial cases.
