@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { cleanSessionTitle } from './history';
+import { parseFrontMatter } from './slashcommands';
 import type { AgentProfile } from './types';
 
 export const MAX_AGENT_FILES = 50;
@@ -21,20 +22,8 @@ export interface ClaudeAgentDef {
 
 /** Parses an agent file: `---` front matter (`name`, `description`, `tools`, `model`) then the prompt. Undefined when unusable. */
 export function parseClaudeAgent(text: string, fileName: string, source: AgentProfile['source'], file?: string): ClaudeAgentDef | undefined {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text);
-  const head = m ? m[1] : '';
-  const body = (m ? m[2] : text).trim();
-  const fm: Record<string, string> = {};
-  let listKey = '';
-  const lists: Record<string, string[]> = {};
-  for (const line of head.split(/\r?\n/)) {
-    const item = /^\s*-\s+(.+)$/.exec(line);
-    if (item && listKey) { (lists[listKey] ??= []).push(item[1].trim().replace(/^["']|["']$/g, '')); continue; }
-    const kv = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(line);
-    if (!kv) continue;
-    listKey = kv[2].trim() === '' ? kv[1] : '';
-    fm[kv[1]] = kv[2].trim().replace(/^["']|["']$/g, '');
-  }
+  const { fm, lists, body: rawBody } = parseFrontMatter(text); // spec 073: one front-matter reader for agents and slash entries
+  const body = rawBody.trim();
   const name = (fm.name || fileName.replace(/\.md$/i, '')).trim();
   if (!NAME.test(name) || !body) return undefined;
   const tools = lists.tools ?? (fm.tools ? fm.tools.replace(/^\[|\]$/g, '').split(',').map((t) => t.trim().replace(/^["']|["']$/g, '')).filter(Boolean) : undefined);
