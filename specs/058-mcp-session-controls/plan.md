@@ -235,8 +235,8 @@ T120 (spec) first; T121 (unit tests) and T122 (driver) before T123-T124 (code); 
 
 ## Delta: Sign in for Claude Code and Codex (T099, T100; issue #364 step 5, 2026-10-23)
 
-**Spec**: [spec.md](spec.md) *Changes* > 2026-10-23 "MCP Sign in for Claude Code and Codex" (FR-163..FR-173, SC-090, SC-091).
-**Research**: [research.md](research.md) section 7.8. **Answers**: Q20, Q21, Q23, Q24 answered A by the owner 2026-10-23; Q22 A provisional (default, not asked yet);
+**Spec**: [spec.md](spec.md) *Changes* > 2026-10-23 "MCP Sign in for Claude Code and Codex" (FR-175..FR-186, SC-175, SC-176).
+**Research**: [research.md](research.md) section 7.8. **Answers**: Q20, Q21, Q23, Q24: A; Q22: B (owner, 2026-10-23);
 see spec *Owner answers*.
 
 ### Summary
@@ -248,7 +248,7 @@ that show without the in-app call, and an honest note per app. Never spawn a log
 
 ### Constitution Check (delta)
 
-- **I**: spec delta, research and these tasks first; Q20, Q21, Q23, Q24 asked and answered; Q22 provisional until Paco answers on #629.
+- **I**: spec delta, research and these tasks first; Q20-Q24 asked and answered by the owner (Q22: B, 2026-10-23).
 - **II**: `mcp_authenticate`, `mcpServer/oauth/login` and `mcpServer/oauthLogin/completed` stay in `src/adapters/claude.ts` and
   `src/adapters/codex.ts`; the window sees `canSignIn`, a host, `signInEnd: 'next-message' | 'failed'`, steps and a note (plain text).
 - **III**: the address stays in main memory (FR-065, unchanged); no callback, code, client secret or redirect address passes through
@@ -256,7 +256,7 @@ that show without the in-app call, and an honest note per app. Never spawn a log
 - **IV**: fakes (Claude transport, Codex app-server), simulator, unit tests; real checks T106/T107 wait for the owner (0 prompts).
 - **V**: the existing row, words plus icons, live region, two-step open; screenshots at 1440x900 and 1280x800.
 - **VI**: no OS-specific code: each app opens its own `127.0.0.1` listener; Durbar opens the page with `shell.openExternal`.
-- **VIII**: the row says "Not checked on a real account yet." for both apps (FR-168 note) until T106/T107; README the same.
+- **VIII**: the row says "Not checked on a real account yet." for both apps (FR-180 note) until T106/T107; README the same.
 
 ### Design
 
@@ -267,19 +267,19 @@ that show without the in-app call, and an honest note per app. Never spawn a log
    limit (`min(ttlMs, SIGN_IN_TTL_MS)`; `live`, `sweep`, `view` read the entry's limit); `onServers` drops on `connected` **or** `signInEnd`;
    `agentMcpReply` adds `signInEnd` (the existing `signIn` stays the open sign-in's view) and `signInNote` per row, and computes
    `signInSteps` from `mcpSignInSteps` alone (`mcpsession.ts:82`).
-3. **Claude Code** (`src/adapters/claude.ts`): `startMcpSignIn` (FR-163), `refreshMcpStatus` (FR-164, the existing `refreshMcp` body
+3. **Claude Code** (`src/adapters/claude.ts`): `startMcpSignIn` (FR-175), `refreshMcpStatus` (FR-176, the existing `refreshMcp` body
    with a name), `restartMcpServer` also deletes the name from `mcpAuthSeen`, keeps `lastMcp` and emits through `withAuthSeen`;
    capabilities `mcpSignIn: true`, `mcpSignInSteps`, `mcpSignInNote`; `CLAUDE_SDK_CAPABILITIES` drops them and the constructor removes the
    members on the SDK transport (as for `restartMcpServer`). Fake: the test transport in `scripts/test-claude-adapter.ts` answers
    `mcp_authenticate` and records request bodies.
-4. **Codex** (`src/adapters/codex.ts`): `startMcpSignIn` (FR-165) keeps `{name, loginId}` per live session; the notification handler
-   gets an `mcpServer/oauthLogin/completed` branch next to `mcpServer/startupStatus/updated` (FR-166); `refreshMcpStatus` reads one
+4. **Codex** (`src/adapters/codex.ts`): `startMcpSignIn` (FR-177) keeps `{name, loginId}` per live session; the notification handler
+   gets an `mcpServer/oauthLogin/completed` branch next to `mcpServer/startupStatus/updated` (FR-178); `refreshMcpStatus` reads one
    server and merges it; capabilities as for Claude. Fake: `scripts/fakes/codex-app-server.ts` answers the method, sends the notification
    on a test call, and records `account/login/cancel` (must stay empty).
 5. **Renderer** (`src/renderer/screens.js`, `mcpwords.js`): the note from `signInNote` instead of the hard-coded sentence
    (`screens.js:1113`); `signInEnd: 'next-message'` and `'failed'` states and toasts; Claude's "press Restart on this row" line after an
-   expired mark-only entry (FR-164). No new IPC.
-6. **Simulator** (`src/renderer/sim.ts`, `scripts/shots-058-mcp-signin.js`): FR-171 modes for the Claude and Codex sim kinds; the
+   expired mark-only entry (FR-176). No new IPC.
+6. **Simulator** (`src/renderer/sim.ts`, `scripts/shots-058-mcp-signin.js`): FR-183 modes for the Claude and Codex sim kinds; the
    driver's "Claude and Codex keep today's behaviour" block becomes their sign-in checks.
 7. **Docs**: README *MCP servers* (Sign in now for all three apps; terminal steps; "not checked on a real account yet" for Claude Code
    and Codex), `changelog.d/<branch>.md`, `docs/agent-notes.md` (Claude's `mcp_authenticate` exists though the docs say no;
@@ -287,8 +287,9 @@ that show without the in-app call, and an honest note per app. Never spawn a log
 
 ### Order (Q23 A: one PR per adapter)
 
-- **PR A (Claude Code + shared)**: T136, T137, T099, T138 (Claude part), T139 (Claude part), T140 (Claude part).
-- **PR B (Codex)**: T100, T138 (Codex part), T139 (Codex part), T140 (Codex part), then T141.
+- **PR A (Claude Code + shared)**: T151, T152, T099, T153 (Claude part), T154 (Claude part), T155 (Claude part).
+- **PR B (Codex)**: T100, T153 (Codex part), T154 (Codex part), T155 (Codex part), then T156.
 - Phase 8c: T106 after PR A, T107 after PR B (Q24).
-- PR A also carries the FR-173 fix (T142).
-- If Paco answers Q22 B on #629: a spec 069 task to carry Claude's `oauth` object, before T106; nothing else changes.
+- PR A also carries the FR-185 fix (T157).
+- PR A also carries FR-186 (Q22 B: the allow-listed Claude `oauth` fields in Durbar's `--mcp-config`; T158), with a dated pointer in
+  spec 069 *Changes*.
