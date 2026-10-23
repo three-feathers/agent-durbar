@@ -3,12 +3,12 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Cheeky crew (issue #558): a built-in theme and scene kit with 12 hand-drawn characters, one SVG source file each, picked at random per session and kept across restarts; status cues and spec 034 moods unchanged
-status: Draft 2026-10-23: spec, plan and tasks only; owner questions Q1-Q8 open; experimental, no priority
+status: Draft 2026-10-23: spec, plan and tasks only; Q2-Q8 answered by the owner; Q1 (art format: drawn SVG or AI-generated or openly licensed raster) reopened, waiting for the owners; experimental, no priority
 -->
 
 **Feature Branch**: `077-cheeky-crew`
 **Created**: 2026-10-23
-**Status**: Draft (spec, plan and tasks only; nothing built). Owner questions Q1-Q8 open; experimental, no priority.
+**Status**: Draft (spec, plan and tasks only; nothing built). Q2-Q8 answered (Paco, 2026-10-23). **Q1 (art format) reopened 2026-10-23**, waiting for the owners' decision on shipping AI-generated art. Experimental, no priority.
 **Input**: Issue #558 (owner idea, Paco, 2026-10-22, "nice to have, low priority"): "A funnier, cheekier office: each agent gets a character with personality (skater with cap and shades, mohawk punk with a skull mug, mad scientist with goggles and flasks, gamer with cat-ear headphones, surfer, hooded hacker, ...), instead of today's one calm office figure in different colours." Read against `origin/main` 7a756cb8 (PRs #496 and #500, which the issue waited for, are merged).
 
 ## Summary
@@ -24,7 +24,7 @@ This feature adds a built-in theme **Cheeky Crew** with its own scene kit **`cre
 - **OD3** Style: young, fun and a bit cheeky, but office-safe (for example sunglasses, nerd glasses, a punk). **No words, gestures or brands** in the art.
 - **OD4** The characters do not need to express every mood: **today's spec 034 moods and Serious mode are kept** as they are.
 - **OD5** Proportions: left to whoever draws them, within today's desk card layout.
-- **OD6** Art: **we draw it ourselves** (no paid illustrator). Preference: **one separate image per character, if technically feasible**. The owner's AI-generated reference sheet is inspiration only; it is not copied or committed.
+- **OD6** Art: **we draw it ourselves** (no paid illustrator). Preference: **one separate image per character, if technically feasible**. Whether AI-generated art may ship is part of Q1 (reopened 2026-10-23); until the owners decide, the owner's AI-generated reference sheets are inspiration only and are not committed.
 - **OD7** Assignment: **random**, with no special logic choosing the character for a session; kept for the session (proposal in the issue: random when first shown, then kept across redraws and restarts).
 - **OD8** Experimental, no priority. Vikram (owner of specs 035-040 and 070) has been told.
 
@@ -57,18 +57,38 @@ Constraints every option is weighed against (all `read:` from the code at 7a756c
 
 **Recommendation: (b')**, one hand-drawn SVG source file per character (`src/renderer/crew/<id>.svg`), split into named parts with `data-part` attributes, compiled by `npm run build` into a plain-JS module that the `crew` kit draws through the existing composer. It is the only option that gives the owner one image per character without a CSP change and without losing a single status cue. (a) is the fallback if the compile step is refused (Q1). (c) is not recommended: it fixes skin tones (against spec 070 D3), cannot follow themes, and blurs across densities. (b) at run time depends on two unverified Chromium paths and a CSP change.
 
+### Q1 reopened (2026-10-23): drawn SVG or raster portraits
+
+After a hand-drawn SVG sketch, the owner shared a much richer reference: a detailed chibi illustration of 12 characters made with ChatGPT (raster). The team is asked whether AI-generated art may ship. Q1 therefore has three live options; (a), (b) and (c) of the table above stay as the analysis behind them ((d) and (e) are (c) with a source for the pictures).
+
+- **(b′) Drawn SVG, compiled at build** (FR-011..FR-017). Our own drawing, so no provenance or licence risk. Keeps every cue and mood as shared code, per-agent skin (spec 070 D3), theme colours (`--crew-*` tokens) and 0 colour literals. Cost: simpler, flatter art than the chibi reference; someone has to draw 12.
+- **(d) AI-generated raster portraits** (PNG or WebP, one per character or 2-3 poses each), placed in the scene by code, with the status cues as SVG overlays (FR-050..FR-058).
+- **(e) An openly licensed raster set** (CC0 or CC-BY), same placement and overlays as (d). Cost of (d) plus finding a set with 12 matching characters in one style that is office-safe: none was searched for (unverified that one exists); CC-BY needs an attribution line in `ASSETS.md`, the README credits and the About box.
+
+**What raster (d or e) costs, whatever the source:**
+
+1. **Skin tones are no longer per agent** (spec 070 D3). The skin is painted into the picture, so an agent's skin comes from its character, not from the app's varied set. D3's aim ("no theme can make every person one skin tone") can only be kept by a varied cast across the 12; a skin-neutral or layered portrait (skin as a separate SVG shape under a transparent picture) would keep D3 but is hard to get from a generator and breaks easily at small sizes. Needs a spec 070 delta, and Vikram's agreement as owner of 070.
+2. **The 0-colour-literals rule does not apply to bitmaps** (spec 070 FR-040): every pixel is a fixed colour, so a user theme on the `crew` kit cannot recolour the costumes, and the `--crew-*` tokens only colour the furniture. The ratchet still holds for the code; the pictures are governed by the review and caps of FR-050..FR-058 instead.
+3. **Spec 034 mood bodies are lost.** The wider heavy and monster torso, monster skin and frown, open or closed eyes, the faint head tilt and the impatient tapping hand are drawn on the figure today; a picture cannot change them. Moods show only through overlays drawn by code around or over the picture: the thought bubble, the halo, the monitor glow and content, the error mark, the sweat drop, horns, dizzy stars, the ambulance, the cup and steam. **No facial expression changes.** OD4 says the characters need not express every mood, so this is allowed, but it is a visible step down from today and from (b′).
+4. **Hands and the wave.** With one pose per character, the typing hands and the waving arm are either drawn by code over the picture (they may not match the drawing style) or lost (Waiting then shows only through the monitor's note, the halo and the badge). **Optionally 2-3 poses per character** (working: typing; waiting: waving; resting: idle and done), chosen by status, keep these cues in the picture's own style, at 2-3 times the files, the size budget and the review work (24 or 36 pictures).
+5. **Size and sharpness**: about 10-40 KB per picture at 2x (estimate, unverified); 15 decoded pictures per office; must stay sharp across full, card, mini and micro and when grown (spec 001 FR-041), and the flat-fill sharpness check changes (FR-058).
+6. **Provenance and IP**: the picture's origin, the generator's terms and its content must be checked by a person; `sanitizeSlot` cannot see inside a bitmap. The owner's current sheet contains a creeper-like block head (a game franchise), an anarchy symbol and hand gestures, which OD3 already excludes; they must go before anything ships.
+7. **CSP and loading**: nothing new: `img-src 'self'` already allows bundled files; the pictures ship in the package like the other renderer assets.
+
+**Analyst recommendation (unchanged): (b′)**, because it keeps D3, theme colours, every mood and cue, and carries no provenance risk. If the owners prefer the chibi look, (d) is feasible under FR-050..FR-058 with costs 1-6 accepted in writing, preferably with 3 poses per character. Whether AI-generated art may ship in an MIT repository is a policy decision for the owners, not for this spec.
+
 ## Clarifications (proposals; each is also a question below)
 
-- **C1 Art format**: (b') as above (Q1).
+- **C1 Art format**: open again (Q1, see *Q1 reopened* above).
 - **C2 Assignment**: random **among the characters least used by the sessions currently in the office**, so twins only appear once 12 are taken (Q2). Plain random would give twins often: with 4 agents and 12 characters the chance of at least one pair is about 43% (birthday arithmetic: 1 - 12·11·10·9/12^4).
 - **C3 Where it is kept**: in the window's `localStorage` under `durbar.crew`, a map from session id to character id, exactly like the chat numbers of spec 074 FR-011 (`CHATNO_KEY`, `app.js:27-35`). It is not a secret (a session id and a word), stays on this computer, has at most 500 entries, and loses the entries of sessions that are gone once the office has loaded (as `pruneNumbers`). A restart restores a folder's open sessions under their own ids (`sessionsToRestore`, `src/main/folders.ts:165`; `infoFor(... ls?.id ...)`, `src/main/main.ts:407`), so each one finds its character again (Q3).
 - **C4 Simulator and demo**: nothing is stored (`rememberOn()`, `app.js:2529`); the pick is seeded by the agent's id so screenshots are stable, and with 15 simulated agents all 12 characters appear.
 
 ## Questions for the owner
 
-Each has a recommended option; nothing is built until the owner answers or accepts the recommendations.
+Each has a recommended option. Q2-Q8 are answered (see *Owner answers*); **Q1 is open again** since 2026-10-23, and no art task starts before it is answered.
 
-1. **Q1 Art format.** (a) inline SVG parts in code, like the kits; (b) bundled SVG files whose layers the code toggles at run time; (c) PNG body plus SVG overlays; **(b') recommended**: one SVG source file per character, compiled into the kit at build.
+1. **Q1 Art format (OPEN, reopened 2026-10-23).** **(b′) recommended**: drawn SVG, one source file per character, compiled at build; (d) AI-generated raster portraits (PNG/WebP) with the status cues as SVG overlays, under FR-050..FR-058, accepting the costs 1-6 of *Q1 reopened*; (e) an openly licensed (CC0/CC-BY) raster set, same rules plus attribution. Sub-questions if (d) or (e): **Q1.1** one picture per character, or **3 poses (working, waiting, resting) recommended**; **Q1.2** spec 070 D3: accept a varied cast instead of per-agent skin (recommended if raster), or require skin-neutral layered portraits; **Q1.3** may AI-generated pictures ship at all in this MIT repository, and under which provenance record (an owners' policy decision).
 2. **Q2 How random.** (a) plain random (twins likely, see C2); **(b) recommended**: random among the characters the sessions in the office use least (still random, no character "belongs" to a kind of session); (c) a fixed order.
 3. **Q3 Where the choice is kept.** **(a) recommended**: this window's `localStorage`, by session id, like the chat numbers (no main-process change, no new IPC); (b) the folder store in main (`openSessions` entries), so it also follows a copied profile, at the cost of a new field and IPC; (c) not kept at all: a hash of the session id (stable across restarts with no storage, but twins as in Q2a).
 4. **Q4 Helpers (sub-agents).** **(a) recommended**: each helper tile gets its own random character by the same rule, not stored (helpers do not come back after a restart); (b) the helper wears its parent's character; (c) helpers keep today's plain figure.
@@ -108,6 +128,7 @@ The walking figure in the lobby, the resting figure in the lounge, the chat head
 - Storage full, refused or corrupt: the pick falls back to the seeded pick for that id (stable for the window's life); a corrupt map is ignored, as the chat numbers do (`loadNumbers`).
 - A user theme on the `crew` kit with `char-headwear`: the character's own headwear part is not drawn (Q5).
 - Monster mood: skin is `--monster-skin` (as today) and the horns are drawn over the character's hair and hood.
+- The compiled art (or, with raster, a picture) is missing, fails to load or names an unknown character: the desk draws today's office figure on the crew furniture, never an empty chair (FR-017, FR-055).
 - Heavy and monster bodies are wider (`torso()`, `scenekits.js:93`): a character's clothes fit both widths.
 
 ## Requirements
@@ -119,6 +140,9 @@ The walking figure in the lobby, the resting figure in the lounge, the chat head
 - **FR-003** The `crew` kit draws through the existing composer (`draw()` and `avatar()` in `scenekits.js`), so the halo, screen content, face (eyes and mouth), arms and hands, cup steam, thought bubble and mood signs are the shared code, in the same places and with the same animation hooks (`.pp`, `.head`, `.hand-l`, `.hand-r`, `.wave`, `.tap`, `.bar`, `.cursor`, `.steam`, `.bubble-g`, `.dizzy`, `.sweat`, `.amb`, `.halo`, `.glow`). Its furniture (chair, desk, monitor frame, keyboard) is its own, in a playful style, coloured by tokens.
 
 ### Characters
+
+FR-011..FR-016 describe the drawn SVG option (b′). If Q1 picks raster, FR-050..FR-058 replace FR-011, FR-012, FR-013 and FR-016, and FR-014's zones are checked as described in FR-057. FR-010, FR-015 and FR-017 apply to every option.
+
 
 - **FR-010** 12 characters (Q8), each young, fun and a bit cheeky but office-safe; **no words, letters, numbers, hand gestures, logos or brand shapes** in the art. No character is tied to a gender, age band or ethnicity; skin tones always come from the app's varied set (spec 070 D3), never from the character.
 - **FR-011** Each character is **one SVG source file** `src/renderer/crew/<id>.svg` on the 200x124 stage (head centre 74,44, radius 12.5, as every kit), split into parts by `data-part`: `back` (behind the body: hood back, long hair), `body` (clothes details over the kit's torso), `body-wide` (optional, for heavy and monster), `hair` (hair, hood front, cap; under the horns and the face), `top` (eyewear and headphones; over the face), `cup` (the character's mug, shown only when the kit would show the cup: Idle or a coffee break, spec 068), `desk` (one desk prop) and `guide` (the reference furniture for drawing; never drawn). Optional per-character settings sit on the root: whether the shirt and hair use the agent's colours or the character's own.
@@ -134,6 +158,7 @@ The walking figure in the lobby, the resting figure in the lounge, the chat head
   The `desk` prop sits on the desktop left of the chair (x 24-50, y 60-86), clear of the ambulance (x 18-54, y 89-114). The waving arm and the hands are drawn after the character, so nothing covers them.
 - **FR-015** Character art is static: no new animation in this feature. The existing animated hooks keep working, so reduced motion and Serious mode behave as today.
 - **FR-016** Eyes and glasses: in the `crew` kit the agent's own `glasses` flag and hair style are not used (the character decides); open and closed eyes and the mouth are the shared face.
+- **FR-017** Run-time fallback (every option): if the compiled character module is missing or did not load, a character id is unknown, or drawing a part throws, the `crew` kit draws today's office figure (the shared body, head, hair and face of the office kit, with the agent's own look) on the crew furniture, so a desk never shows an empty chair or a broken scene; the failure is logged once per character to the console (no user data). Tests: a unit test in `test:scenekits` with no module, with an unknown id and with a part that throws; the driver of FR-040 runs once with the module removed from a copy of `dist/renderer`.
 
 ### Assignment and storage
 
@@ -152,6 +177,18 @@ The walking figure in the lobby, the resting figure in the lounge, the chat head
 
 - **FR-035** Characters are decoration: every scene and figure stays `aria-hidden="true" focusable="false"` (as today); the art has no `<title>`, `<desc>` or text. The desk's accessible name, tooltip and the List view words do not change: the agent's name, status and mood phrases (spec 034 FR-003, FR-014) carry the meaning, never the character. State is never shown by the character alone.
 
+### Raster portraits (only if Q1 picks (d) or (e))
+
+- **FR-050** Format and size: PNG or WebP with an alpha channel; no metadata chunks (EXIF, XMP, text chunks that may hold a prompt; AI tools may also embed provenance metadata such as C2PA, unverified for the owner's sheet), stripped before commit and recorded in `ASSETS.md` instead. **Caps: at most 40 KB per picture and 500 KB for the whole set with one pose per character, 1.5 MB with 3 poses** (to be confirmed by the first 4; a lower cap if they allow it). Files live in `src/renderer/crew/` and are copied by `scripts/copy-assets.js`, so they are inside the package (check that electron-builder's file list includes them: unverified).
+- **FR-051** Sharpness: each picture is supplied at **2x the largest size it is shown at** (measured by the driver at 1920x1080 with grown desks, spec 001 FR-041) and is checked in full, card, mini and micro densities and in the walking figure, lounge and chat header (no visible blur; no `opacity`/`transform` animation on the picture, agent note 2026-10-23 on compositor blur).
+- **FR-052** Placement: the picture is an SVG `<image>` in the scene (and in `avatar()`), in a fixed box per pose on the 200x124 stage; overlays (FR-053) are drawn by code at fixed positions over or beside it. The picture box itself must stay clear of FR-014's protected zones (monitor and halo, bubble and badge corner, cup and laptop zones).
+- **FR-053** Status cues and moods as overlays: monitor colour and content, halo and glow, thought bubble, error mark, cup and steam, sweat drop (heavy), horns (monster), dizzy stars, ambulance, and, with one pose only, the typing hands and the waving arm drawn by code. Lost by design (OD4): wider bodies, monster skin and frown, closed eyes, the faint tilt and the impatient tap, unless poses cover them. The accessible label and tooltip phrases (spec 034 FR-003) carry every mood as today.
+- **FR-054** Provenance: a committed `src/renderer/crew/ASSETS.md` (no such file exists in the repository today) with one row per shipped picture: file, character, tool and version, date, the prompt kept verbatim, who made it and who edited it (and how), the licence it ships under (MIT, or CC0/CC-BY with attribution for (e)) and that the generator's terms were read by an owner. A test in `npm test` (`test:crew-assets`, plain Node) fails when a picture under `src/renderer/crew/` has no row, a row names no file, a file is over its cap or has a metadata chunk.
+- **FR-055** Fallback: every picture is loaded and decoded when the theme is applied (`HTMLImageElement.decode()`); one that is missing or fails to decode marks its character unavailable and those desks draw the office figure (FR-017). Tests: a unit test of the decision, and a driver step that removes one picture from a copy of `dist/renderer` and checks that its desks show the office figure and no broken image.
+- **FR-056** Content: no third-party IP, franchise characters or look-alikes, logos, brands, real people, words or letters, numbers, hand gestures or political symbols; office-safe. **A person reviews each picture** and records the review in the PR (one line per file). Examples the reviewer must check: a creeper-like block head, an anarchy symbol, a finger or horns gesture, lettering on shirts, mugs or screens, logos on headphones, consoles or laptops, a recognisable person or character. The owner's 2026-10-23 sheet has the first three; they are removed or redrawn before any file is committed.
+- **FR-057** CSP unchanged (`img-src 'self' data:`): only bundled files, never a remote URL or a user-supplied picture; theme art slots still may not contain `<image>` (spec 040 FR-005 unchanged).
+- **FR-058** Checks under raster: FR-014's zones are checked as the picture's box (`getBBox()` of the `<image>`) plus the fixed overlay positions, not per drawn part. `check:office-fill`'s sharpness measure (the share of a scene's pixels in its own flat colours, `scripts/check-office-fill.js:99-112`) cannot judge a picture, whose pixels are not flat colours: the picture's box is **excluded** from that share (so the check keeps judging the SVG furniture and overlays), and the picture's own sharpness is checked separately by FR-051 (natural size at least 2x the shown size, and a capture compared with the picture drawn at the same size in a canvas, within a small mean difference; threshold set from the first 4).
+
 ### Checks
 
 - **FR-040** Tests with no credits: `test:scenekits` gains the `crew` kit in its every-kit loops (overlays drawn, headwear in the head group, key in the signature, walker wears the art); a new unit test covers `crew.js` (least-used pick, seeded repeatability, load caps, prune) and the compiler (reserved and token colours, unknown colour fails, every part passes `sanitizeSlot`, sizes, `guide` dropped); `test:theme-tokens` scans the compiled module at 0 literals. A simulator driver draws every character in every status, mood and density and asserts FR-014 with `getBBox()` on each `data-part`, plus the 10.5px and overlap rules (`check:office`) with Cheeky Crew active at 1440x900 and 1280x800.
@@ -162,7 +199,7 @@ The walking figure in the lobby, the resting figure in the lounge, the chat head
 - **SC-001** With Cheeky Crew and 15 simulated agents, `check:office` passes at 1440x900 and 1280x800 in every density, chat closed and open.
 - **SC-002** For every character, status and mood, the protected zones of FR-014 are free (driver, `getBBox()`).
 - **SC-003** A session shows the same character after a reload of the window with the same stored map (driver) and after `pruneCrew` keeps its id (unit test).
-- **SC-004** No new colour literal in the renderer's scanned files; the compiled module scans at 0.
+- **SC-004** No new colour literal in the renderer's scanned files; with (b′) the compiled module scans at 0. With raster the rule covers the code only (bitmaps are outside it, FR-058); instead every picture passes FR-050 caps, FR-054 provenance rows and FR-056 review.
 - **SC-005** Clean Office and every other built-in theme draw byte-identically to before (`test:scenekits`, `check:geometry`).
 
 ## Known limits
@@ -174,12 +211,12 @@ The walking figure in the lobby, the resting figure in the lounge, the chat head
 
 ## Changes
 
-(none yet)
+- 2026-10-23 (review of PR #577 by Vikram): Q1 reopened (it was recorded as answered); options (b′), (d) AI raster and (e) openly licensed raster with their costs; raster-only requirements FR-050..FR-058; run-time fallback FR-017 for every option; tasks marked by Q1 option; SC-004 and `check:office-fill` under raster.
 
 ## Owner answers (Paco, 2026-10-23)
 
-All eight questions were answered with the recommended option:
-- **Q1** Art format: **(b′) one SVG source file per character, compiled at build** into scene-kit parts.
+Q2-Q8 were answered with the recommended option. Q1 was first answered (b′) the same day, then **reopened** (2026-10-23) after the owner shared a richer AI-generated chibi reference; see *Q1 reopened*.
+- **Q1** Art format: **OPEN**, waiting for the owners' decision on shipping AI-generated art ((b′), (d) or (e), with Q1.1-Q1.3).
 - **Q2** Assignment: **random among the characters least used in the office**.
 - **Q3** Storage: **this window's `localStorage`, like the chat numbers** (`durbar.crew`, at most 500 entries).
 - **Q4** Helpers: **their own random character, not stored**.
