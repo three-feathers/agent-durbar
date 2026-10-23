@@ -603,7 +603,7 @@
     "network": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Machine layer only.",
+      "description": "Machine layer only (FR-003): every key here, trustedHosts included, is refused from the user layer. The schema is shared by both layers, so this is enforced by Durbar's validator (see samples/hostile/policy-user-trustedhosts.json).",
       "properties": {
         "trustedHosts": {
           "type": "array",

@@ -207,7 +207,10 @@ wrong number.
     towards `off`: `open` < `allowlist` < `off`), `mcp.deny` (added), `mcp.allowFolderServers: false`, `permissions` (only lower),
     `caps` (only lower), `folders.blocked` (added), `features.*: false`, and `appearance` (cosmetic);
   - keys it may **not** set (machine only): `organization`, `branding`, `llm`, `telemetry`, `registries`, `secrets`, `network`,
-    `signing`, `updates`, `legal`, `audit`, `dataRetention`, `signIn`, `allowUserConfig`, `allowDevHooks`, `mcp.lists`, `mcp.allow`;
+    `signing`, `updates`, `legal`, `audit`, `dataRetention`, `signIn`, `allowUserConfig`, `allowDevHooks`, `mcp.lists`, `mcp.allow`.
+    This includes every key under `network`, in particular **`network.trustedHosts`**: a user layer that sets it is refused with an
+    error naming the key (it would let any process running as the user open private, proxied or unresolvable hosts to fetches and to
+    MCP server URLs, FR-040, FR-120); the machine value stays (fixture `policy-user-trustedhosts`);
   - a key it may not set, or a value that would widen the machine value, is an error for that key: the key is ignored (the machine or
     default value stays) and the error is listed.
   Its controls are labelled **Set in your user config (not managed)**, never "your organization", and Settings > Organization says it is
@@ -726,11 +729,14 @@ fail closed per FR-012, locked UI per FR-014.
 - **FR-172** `folders.allowedRoots` (absolute paths, `~/` or `%USERPROFILE%\`) and `folders.blocked` (globs; blocked wins) are checked in
   main when a folder or workspace is added and at every session start, after `realpath`, case-insensitively on Windows and macOS. A
   refused folder says which rule refused it. `~/` and `%USERPROFILE%\` are expanded from the **OS account record, never from the
-  environment** (a user could start the app with `USERPROFILE=C:\` or `HOME=/`): `os.userInfo().homedir` (libuv `getpwuid_r` on POSIX,
-  the user profile directory on Windows), not `os.homedir()`, which reads `HOME`/`USERPROFILE` first. `real:` on Linux (Node 24,
-  2026-10-23) `HOME=/tmp` changed `os.homedir()` but not `os.userInfo().homedir`; Windows and macOS `[KNOWN GAP]` until T137 runs on
-  CI with the variables overridden (fallback if Windows proves otherwise: `SHGetKnownFolderPath(FOLDERID_Profile)` through `koffi`). A
-  root that would cover a drive or filesystem root after expansion is an error.
+  environment** (a user could start the app with `USERPROFILE=C:\` or `HOME=/`): `os.userInfo().homedir`, not `os.homedir()`.
+  `read:` https://nodejs.org/api/os.md (2026-10-23): "The value of `homedir` returned by `os.userInfo()` is provided by the operating
+  system. This differs from the result of `os.homedir()`, which queries environment variables for the home directory before falling
+  back to the operating system response"; and `os.homedir()` "On Windows ... uses the `USERPROFILE` environment variable if defined".
+  `real:` on Linux (Node 24, 2026-10-23) `HOME=/tmp` changed `os.homedir()` but not `os.userInfo().homedir`. **`[KNOWN GAP]`
+  unverified on Windows and macOS:** that `os.userInfo().homedir` ignores `USERPROFILE` (and `HOME`) there is taken from the Node docs
+  only, not run; T137 checks it on the Windows and macOS CI runners with the variables overridden. If Windows does not hold, the
+  fallback is `SHGetKnownFolderPath(FOLDERID_Profile)` through `koffi`. A root that would cover a drive or filesystem root after expansion is an error.
 - **FR-173** `[KNOWN GAP]` an agent app's own tools can still reach outside its folder unless its sandbox enforces it; Durbar passes the
   blocked paths to apps that accept deny rules (Claude Code permission deny rules, Codex sandbox writable roots) where documented, and
   says so per app on the Organization page.

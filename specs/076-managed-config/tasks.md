@@ -8,6 +8,7 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 - [x] T001 Research (vendor docs, `read:` table), spec, plan, tasks, samples (`samples/managed/`, `samples/endpoint/`) and JSON schemas validated against the samples; specs-index block; Q1-Q12 for Vikram
 - [x] T002 Owner answers Q1-Q12 recorded (2026-10-23); Q10 changed to admin token pricing: FR-104 rewritten, FR-106..FR-109, schema and sample updated
 - [x] T003 Security review by Paco's agent (17 items) folded in: threat model, FR-002..FR-005, FR-010..FR-017, FR-040..FR-046, FR-060..FR-066, FR-080..FR-086, FR-100a, FR-120..FR-121a; schemas tightened; `samples/hostile/` fixtures with `probes.json`; R1-R8 for the owners
+- [x] T007 Paco's last ask: `network.trustedHosts` machine-only with fixture; FR-172 Windows/macOS mechanism tagged `[KNOWN GAP]` with the Node docs cited
 - [x] T006 Re-review by Paco's agent (10 items) fixed: OS-account home folder (FR-172), host rules for MCP URLs from URL lists (FR-040), "policy present" (FR-004), proxy address rule and ambient-auth wording (FR-120, FR-155, FR-191), `koffi` direct dependency (plan), structured Codex overrides and model pattern (FR-082, FR-101), audit redaction and chip (FR-180), stale references, helpers named (FR-121), new fixtures
 - [x] T005 R1-R8 answered by Vikram (2026-10-23, recommended defaults) and recorded under Clarifications
 - [x] T004 A1-A19 accepted by Vikram (2026-10-23): section N (FR-150..FR-197), phases P2-P26, schema keys and sample values
@@ -20,7 +21,7 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 - [ ] T012 `src/main/devhooks.ts`: ignore `DURBAR_DEV` and every `DURBAR_*` in a packaged build when a machine policy is present, unless `allowDevHooks`; machine folder resolved before `devEnv`; DevTools refused under a policy [FR-004, FR-197]
 - [ ] T013 Test: dev variables under a policy ("present" = folder exists even if broken or untrusted, HKLM value, forced MDM value; packaged + policy: `DURBAR_DEV=1 DURBAR_DRIVER=x` gives `{}`; with `allowDevHooks: true` they apply and the warning shows; no policy: unchanged; `DURBAR_MANAGED_DIR` never in packaged) [FR-004]
 - [ ] T014 `src/shared/policy.ts`: closed validator with JSON-path messages that never echo values, limits, path containment, `redact.ts` secret scan, env allow-list binding; vendor parts delegated to `src/adapters/<app>Policy.ts` [FR-006, FR-009, FR-013, FR-121, FR-121a, FR-123]
-- [ ] T015 `src/main/policystore.ts`: layers, precedence, narrow-only user layer (allowed keys, widening refused), reload, watcher [FR-003, FR-007, FR-008]
+- [ ] T015 `src/main/policystore.ts`: layers, precedence, narrow-only user layer (allowed keys, widening refused); `network.*` (incl. `trustedHosts`) refused from the user layer with an error, fixture `policy-user-trustedhosts`, reload, watcher [FR-003, FR-007, FR-008]
 - [ ] T016 Closed mode (`canAct()` guard in every starter and sender, specs 041/054/048/044 included) and key-level strict states [FR-010..FR-012]
 - [ ] T017 Lock plumbing: `settings:get` policy view, `refuseIfLocked` in every writer; no key can widen a mode [FR-014, FR-016, FR-017, FR-125]
 - [ ] T018 Hostile-fixture test: run `ajv` and `validatePolicy` on every row of `samples/hostile/probes.json` and assert the expected verdict; assert `httpsUrl`/`text` are identical across the three schemas [FR-013, FR-140]
@@ -121,7 +122,7 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 
 - [ ] T135 Checks on add and at start after `realpath`, case rules per OS; deny rules passed to apps that accept them [FR-172, FR-173]
 - [ ] T136 Tests (Windows/macOS case, symlink escape), docs
-- [ ] T137 Home folder from the OS account record: with `HOME`/`USERPROFILE` set to `/` or `C:\` the expansion of `~/` and `%USERPROFILE%\` is unchanged; runs on the three CI OSes; fallback to `FOLDERID_Profile` if Windows fails [FR-172]
+- [ ] T137 (closes the FR-172 `[KNOWN GAP]` for Windows and macOS) Home folder from the OS account record: with `HOME`/`USERPROFILE` set to `/` or `C:\` the expansion of `~/` and `%USERPROFILE%\` is unchanged; runs on the three CI OSes; fallback to `FOLDERID_Profile` if Windows fails [FR-172]
 
 ## P16: A8 updates key
 

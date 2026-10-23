@@ -230,6 +230,13 @@
       "schema": "policy",
       "refusedBy": "schema",
       "why": "a model id carrying a quote, '=' and a new line to inject Codex config (FR-082, FR-101)"
+    },
+    {
+      "file": "policy-user-trustedhosts.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "user layer setting network.trustedHosts, a machine-only key (FR-003); valid by the shared schema, refused by the validator for the user layer",
+      "layer": "user"
     }
   ]
 }
