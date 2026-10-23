@@ -78,6 +78,9 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
   long hint, 200-character description, 480px panel); `docs/design-rules.md` names the list among the menus [FR-008, FR-011]
 - [x] T025 `npm run typecheck && npm run build && npm test`, `check:slash-suggest`, `check:ui-text` for the new surfaces; mutation checks
 
+- [x] T027 Merge of `main` (2026-10-23): spec 010's sim guard (`src/main/simguard.ts`, #514) lists `listSlashCommands` and
+  `expandSlashCommand` as optional members with no capability, so the simulator's stand-in adapter has neither (`test:simguard`)
+
 ## Known gaps (open tasks, not this PR)
 
 - [ ] T026 [KNOWN GAP] Run the allow-listed Claude built-ins other than `/context` (`compact`, `cost`, `init`, `review`,
