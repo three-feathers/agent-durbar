@@ -23,6 +23,7 @@ const MAC = process.env.SCHED_TOP_FORCE_MAC === '1' /* mutation check only */ ||
 const MOD = MAC ? 'meta' : 'control';
 const KEYTXT = MAC ? '⇧⌘S' : 'Ctrl+Shift+S';
 const ARIA = MAC ? 'Meta+Shift+S' : 'Control+Shift+S';
+const KBDS = MAC ? ['⇧', '⌘', 'S'] : ['Ctrl', 'Shift', 'S']; /* keyLabels: one <kbd> box per key, Shift before the mod key on a Mac */
 const re = (t) => t.replace(/[+⇧⌘]/g, '\\$&');
 
 /* runs in the page: the geometry of the top bar with the button shown */
@@ -186,7 +187,8 @@ module.exports = async (ctx) => {
         await js(`document.getElementById('kbdHelpBtn').click()`);
         check(await until(`!!document.getElementById('kbdDlg')`), `${tag}: the shortcut sheet did not open`);
         const sheet = await js(`document.getElementById('kbdDlg').innerText`);
-        check(/Schedules/.test(sheet) && (MAC ? /⌘/ : /Ctrl/).test(sheet), `${tag}: the shortcut sheet has no Schedules row: ${sheet.slice(0, 120)}`);
+        const sheetKeys = await js(`[...document.querySelectorAll('#kbdDlg tr')].filter(r=>/Schedules:/.test(r.textContent)).map(r=>[...r.querySelectorAll('kbd')].map(k=>k.textContent))`);
+        check(JSON.stringify(sheetKeys) === JSON.stringify([KBDS]), `${tag}: the shortcut sheet's Schedules row keys ${JSON.stringify(sheetKeys)}, expected ${JSON.stringify([KBDS])}; sheet: ${sheet.slice(0, 120)}`);
         await H.key('S', [MOD, 'shift'], { char: 'never', pause: 300 });
         check(await js(`document.getElementById('screen').hidden&&!!document.getElementById('kbdDlg')`), `${tag}: Ctrl+Shift+S acted under the shortcut sheet`);
         await H.key('Escape'); await until(`!document.getElementById('kbdDlg')`);
@@ -196,6 +198,8 @@ module.exports = async (ctx) => {
         check(await until(`!!document.getElementById('palIn')`), `${tag}: the palette did not open`);
         await js(`(()=>{const i=document.getElementById('palIn');i.value='sched';i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
         check(await until(`[...document.querySelectorAll('#palList [role="option"]')].some(o=>/Schedules/.test(o.textContent))`), `${tag}: the palette has no Schedules item`);
+        const palKeys = await js(`[...document.querySelectorAll('#palList [role="option"]')].filter(o=>/Schedules/.test(o.textContent)).map(o=>[...o.querySelectorAll('kbd')].map(k=>k.textContent))`);
+        check(palKeys.length === 1 && JSON.stringify(palKeys[0]) === JSON.stringify(KBDS), `${tag}: the palette item's keys ${JSON.stringify(palKeys)}, expected ${JSON.stringify(KBDS)}`);
         await H.key('Return', [], { pause: 100 });
         check(await until(`!document.getElementById('screen').hidden&&document.activeElement===document.getElementById('schH')`), `${tag}: Ctrl+K sched Enter did not open Schedules`);
         await closeScreen();
