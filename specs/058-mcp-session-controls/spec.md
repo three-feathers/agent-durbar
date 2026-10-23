@@ -11,7 +11,7 @@ status: **Specified and clarified** (spec, research, plan, tasks); the owner ans
 **Status**: Specified and clarified (spec, research, plan and tasks). Built 2026-10-21 (#349): per-server Restart and Restart session
 with these servers (US3, US4; tasks T030-T034, T040-T044), simulator and fakes only. The owner answered Q1-Q11 on 2026-10-20 (all option A,
 see *Clarifications*). Delta 2026-10-20 (issue #364, MCP OAuth sign-in, FR-060..FR-076): specified and clarified (the owner answered
-Q12-Q19 on 2026-10-20, all the recommended option), no code (see *Changes*).
+Q12-Q19 on 2026-10-20, all the recommended option); Copilot's **Sign in** is built (2026-10-23: T098, T101, T102, T104 in the simulator and on fakes, not run on a real account, see *Changes*); Claude Code and Codex are not (T099, T100).
 **Input**: Issue #349. Owner (Paco, 2026-10-20): "in a session, when I open MCP I can enable and disable servers, but I miss VS Code's
 start/stop/show logs; it is not clear how to start them."
 
@@ -460,6 +460,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
     message runs on a fresh child that resumes the thread (the FR-147 switch path), because Codex says to start a fresh session to use the
     saved grant (Q18). Failure: the masked `error`.
   - A session that is not live: "This session is not running. Send a message to start it, then sign in." Nothing is started.
+  `[IMPLEMENTED]` Copilot (T098, 2026-10-23, see *Changes* 2026-10-23): `startMcpSignIn` in `src/adapters/copilot.ts`; capability `mcpSignIn: true` and the FR-068 text `mcpSignInSteps`; no `cancelMcpSignIn`. `read:` SDK 1.0.22 `McpOauthLoginRequest`/`McpOauthLoginResult` (`@experimental`). `test:` `scripts/test-mcp-session.ts` on the fake SDK (`scripts/fakes/copilot-sdk.ts`: the call and its three fields, never `handlePendingRequest`/`complete`/`prepareLogin`/`cancelLogin`, no `onMcpAuthRequest`, no URL = connected, MethodNotFound and a missing `oauth` object = a plain message, the runtime's reason without the SDK prefix, a session that is not live). `[KNOWN GAP]` Claude Code (T099) and Codex (T100). `[KNOWN GAP]` not run on a real account (T105).
 - **FR-065** **Main holds the address; the window gets the host.** `agents:mcpSignIn(id, name)`:
   - checks a known main agent, a server name of 1-64 characters in that agent's list whose state is `needs-auth` or `errorClass: 'auth'`,
     the adapter's `startMcpSignIn`, a live session, and one sign-in per server at a time;
@@ -471,6 +472,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   `agents:mcpOpenSignIn(id, name)` opens the held address with `shell.openExternal` only after that click (as spec 012 FR-154 does for an
   elicitation URL). `agents:mcpCancelSignIn(id, name)` forgets it (Codex: also `account/login/cancel` when the method exists; Copilot's
   `cancelLogin` is for owned logins only, so a manual login is just forgotten and the runtime's listener ends on its own, `[KNOWN GAP]`).
+  `[IMPLEMENTED]` (T101, 2026-10-23, Copilot's path; the code is adapter-neutral): `src/main/mcpsignin.ts` (`McpSignInStore` with an injected clock and opener, `mcpSignInOp`, `mcpOpenSignInOp`, `mcpCancelSignInOp`), the three channels in `src/main/mcpipc.ts` (`ipcHandle` and `fromApp(e)`, listed in `test:ipcchannels` and refused under `DURBAR_SIM`), preload and `DurbarApi`. The address is checked with `elicitHttpsUrl` when it arrives and again when it is opened; the window gets `{host, opened, expiresInMs}`; the entry is dropped by the `mcp` event that reports the server connected, by Cancel, by the 10-minute limit (checked on every access, no timer), and by the `stopped` status (End session, and Restart session, which ends the session first, #473); app exit clears memory. An adapter error is shown with every address hidden and the MCP masks applied. `agents:mcp` entries carry `canSignIn`, `signIn` and `signInSteps` (`signInStepsFor` in `src/main/mcpsession.ts`: a name with characters other than letters, digits and `_.@:+-` is shown as `<server name>` and never put in a command). No activity-log row is written for a sign-in. `test:` `scripts/test-mcp-signin.ts` (store, operations, reply, and the registered channels on a stand-in electron with the `DURBAR_LOG` sink, the activity hook and the console searched for the address). `[KNOWN GAP]` the origin tag and "different site" line (FR-075, T110).
 - **FR-066** **Switch off for this session.** The needs-auth row and the FR-063 card offer **Switch off for this session**: the existing
   `agents:setMcp(id, name, false)` (spec 019 FR-009; Codex from the next message, FR-001's words). No confirmation (it is undone with the
   same switch); toast "Switched <name> off for this session. Turn it back on in MCP servers." Not offered where spec 019 does not allow the
@@ -492,6 +494,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
     also in Claude Code's own MCP settings; whether Durbar's `--mcp-config` copy reuses that sign-in is unverified (`[KNOWN GAP]`).
   - Codex: "In a terminal, run `codex mcp login <name>`, then use *Restart session with these servers*." Only for a server in Codex's
     `config.toml`; reuse for Durbar's thread overrides is unverified (`[KNOWN GAP]`).
+  `[IMPLEMENTED]` Copilot (T098, T102, 2026-10-23): the adapter's text with the name filled in (`signInStepsFor`), shown in the row's *How to sign in from a terminal* with **Copy** (it copies the commands, one per line); open by default where the app cannot start a sign-in. Claude Code and Codex: not yet (their adapters have no `mcpSignInSteps` until T099/T100).
 - **FR-069** **Dialog flow** (renderer, FR-030 layout):
   - Needs-sign-in row: hint "This server needs you to sign in. <App> keeps the sign-in; Agent Durbar never sees it.", **Sign in** (when
     `canSignIn`), **Switch off for this session**, and *How to sign in from a terminal* in *Details* (FR-068).
@@ -500,6 +503,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   - `connected`: "Running" and a toast "Signed in to <name>". Codex: "Signed in: applies with your next message". The time limit: back to
     "Needs sign-in" with "Sign-in was not finished".
   - The tool card's **Sign in…** opens this dialog at that row (Q14). Text at least 10.5px; fits 1280x800 (FR-030).
+  `[IMPLEMENTED]` Copilot (T102, 2026-10-23): `src/renderer/screens.js` (`signHTML`, `signIn`, `openSign`, `cancelSign`, `switchOff`) and `screens.css` (`.srv-sign`). Focus moves to **Open sign-in page**, then **Cancel**, and back to **Sign in** after Cancel; each change goes through the polite live region (`#srAnnounce`) and a toast; the dialog repaints when the time limit is due ("Sign-in was not finished. Press Sign in to try again."). The waiting text says "<app> keeps this sign-in in your system keychain; Agent Durbar never sees it" (FR-076; the app name is the reply's `app`). **Switch off for this session** uses the existing `setAgentMcp` (and forgets an open sign-in first). `sim:` `scripts/shots-058-mcp-signin.js` (in `ui-suite`), screenshots `docs/screenshots/058-mcp-signin-{row,steps,confirm,waiting,manual}-{1440x900,1280x800}.png`. `[KNOWN GAP]` the tool card's **Sign in…** (T103) and the origin tag (T110).
 - **FR-070** **Copilot token storage** (Q12 B): the Copilot session config (create and resume) sets `mcpOAuthTokenStorage: 'persistent'`,
   so the runtime keeps an MCP sign-in in the OS keychain, shared across sessions (`read:` `types.d.ts:2386-2393`). This is the vendor
   runtime's own store, not Durbar storage: Durbar never reads, lists, copies or clears it, and never logs the setting's effect. The
@@ -519,6 +523,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
 - **FR-071** **Simulator** (constitution IV): page address `simmcpauth=1` gives each sim kind one server in needs-auth and a Copilot tool
   card with the issue's exact text; **Sign in** -> host `auth.example.com` -> **Open sign-in page** shows a toast and opens nothing ->
   "Running" after 2 s (Codex: "applies with your next message"). `simmcpauth=manual` shows the FR-068 steps instead.
+  `[IMPLEMENTED]` Copilot (T104, 2026-10-23, `src/renderer/sim.ts`): `simmcpauth=1` (the Copilot agents' "my-notes" needs a sign-in; Sign in -> `auth.example.com` -> Open sign-in page logs "would open" to the console and opens nothing -> Running after 2 s), `simmcpauth=manual` (no Sign in, the steps open), and `simmcpttl=N` (the time limit in seconds, for the driver). Claude and Codex sim agents keep the old canned rows. `[KNOWN GAP]` the Copilot tool card with the issue's text (T103).
 - **FR-072** **Tests** (0 credits): the classifier (the issue's text, the runtime phrases, negatives: model text, a usage limit, a 401
   for the agent app's own sign-in); `isAuthError` false for the issue's text; the Copilot mapper (tool failure -> needs-auth +
   `mcpAuth`, cleared by the next status); Codex `failureReason`; the adapters on the fakes (Copilot `oauth.login` with only the allowed
@@ -542,7 +547,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   `[IMPLEMENTED]` 2026-10-21 for the trust confirmation, remote extras only (a stdio server has no OAuth sign-in), with the app left
   generic because the confirmation belongs to the folder, not to one agent app: "If this server asks you to sign in, the agent app may
   keep that sign-in in your system keychain after the session ends (Copilot does)." (`src/renderer/screens.js`, `sim:`
-  `scripts/shots-m10.js`, screenshots `m10-folder-trust-*`). The waiting text waits for T102.
+  `scripts/shots-m10.js`, screenshots `m10-folder-trust-*`). The waiting text is `[IMPLEMENTED]` with T102 (2026-10-23, see FR-069).
 - **FR-074** `[KNOWN GAP]` Until the real checks (tasks T105-T107, needs-owner-approval, 0 AI credits, no prompt) run, everything above is
   `read:`: the three login calls, the Claude stream-json handler (the docs say `-p` and SDK runs cannot sign in; the 2.1.304 program
   strings handle `mcp_authenticate` there), whether Codex 0.163 has `mcpServer/oauth/login`, how long each runtime's callback listener

@@ -128,6 +128,19 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!${row('my-notes')}.querySelector('button[data-signin]')`));
     await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
 
+    // ---- the time limit (simmcpttl=3): back to Needs sign-in with "Sign-in was not finished", no reload ----
+    await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpauth: '1', simmcpttl: '3' } });
+    await openMcp('sim-6');
+    await click('my-notes', 'Sign in');
+    assert.ok(await until(`!!${row('my-notes')}.querySelector('button[data-signopen]')`), 'confirm before the limit');
+    assert.ok(await until(`!${row('my-notes')}.querySelector('button[data-signopen]')&&/Sign-in was not finished/.test(${row('my-notes')}.textContent)`, 8000), 'the limit: "Sign-in was not finished"');
+    n = await info('my-notes');
+    assert.strictEqual(n.status, 'Needs sign-in');
+    assert.ok(n.buttons.includes('Sign in'), 'Sign in is offered again: ' + JSON.stringify(n.buttons));
+    await closeDlg();
+    await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpauth: '1' } });
+    await openMcp('sim-6');
+
     // ---- Switch off for this session: the existing switch ----
     await click('my-notes', 'Switch off for this session');
     assert.ok(await until(`(${row('my-notes')}.querySelector('.mst')||{}).textContent==='Off for this session'`), 'the row reads off for this session');

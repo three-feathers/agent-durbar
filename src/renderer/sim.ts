@@ -108,7 +108,7 @@ interface SimAgent {
   mcpRestarting?: Set<string>;
   mcpFixed?: Set<string>;
   /** Spec 058 FR-071 (simmcpauth): servers with a sign-in open (Sign in pressed); `opened` after Open sign-in page. Dropped by End session and Restart session. */
-  mcpSign?: Map<string, { opened: boolean }>;
+  mcpSign?: Map<string, { opened: boolean; at: number }>;
   /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
   mcpLive?: { name: string; status: string; error?: string; errorClass?: McpServerStatus['errorClass'] }[];
   /** Simulated credit use in nano-AIU, and the open "limit reached" question (spec 011). */
@@ -686,6 +686,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /* spec 058 FR-071: `simmcpauth=1` = the Copilot agents' "my-notes" asks for a sign-in until one finishes (Sign in, Open sign-in page, Running after 2 s);
        `simmcpauth=manual` = the same row, but the app cannot start a sign-in, so the terminal steps show instead. Claude and Codex rows keep today's behaviour. */
     const simMcpAuth = simQs?.get('simmcpauth') ?? '';
+    /* `simmcpttl=N` (seconds, 1-600): the time limit of an open sign-in, so a driver can see "Sign-in was not finished" (real: 10 minutes) */
+    const simMcpTtl = Math.max(1, Math.min(600, Math.floor(Number(simQs?.get('simmcpttl'))) || 600)) * 1000;
+    const simSignOpen = (s: SimAgent, n: string): { opened: boolean; at: number } | undefined => {
+      const e = s.mcpSign?.get(n);
+      if (e && Date.now() - e.at >= simMcpTtl) { s.mcpSign?.delete(n); return undefined; }
+      return e;
+    };
     const simServer = (s: SimAgent, i: number, name: string, live: boolean): { status?: string; error?: string; errorClass?: McpServerStatus['errorClass'] } => {
       if (s.mcpOff?.has(name)) return { status: 'disabled' };
       if (!live) return {};
@@ -1274,9 +1281,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           if (!simMcpAuth || (s.info.adapterId ?? 'copilot') !== 'copilot') return {};
           const st = reported(n);
           if (!live || s.mcpOff?.has(n) || (st.status !== 'needs-auth' && st.errorClass !== 'auth')) return {};
-          const open = s.mcpSign?.get(n);
+          const open = simSignOpen(s, n);
           const steps = origin === 'folder' ? 'This server is only known to Agent Durbar; use Sign in here.' : 'In a terminal, run `copilot`, type `/mcp auth ' + n + '` and finish in your browser. Then use Restart session with these servers.';
-          return { signInSteps: steps, ...(simMcpAuth === 'manual' ? {} : { canSignIn: true, ...(open ? { signIn: { host: 'auth.example.com', opened: open.opened, expiresInMs: 600000 } } : {}) }) };
+          return { signInSteps: steps, ...(simMcpAuth === 'manual' ? {} : { canSignIn: true, ...(open ? { signIn: { host: 'auth.example.com', opened: open.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - open.at)) } } : {}) }) };
         };
         const toolsOffOf = (n: string) => (simToolsOff[s.info.cwd]?.[n] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[n] ?? [])] } : {});
         const servers = [
@@ -1335,13 +1342,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (simMcpAuth === 'manual') return { ok: false, manual: true, error: 'This Copilot version cannot start a sign-in from Agent Durbar.' };
         const st = simServer(s, sims.indexOf(s), name, true);
         if (st.status !== 'needs-auth') return { ok: false, error: name + ' does not need a sign-in.' };
-        if (s.mcpSign?.has(name)) return { ok: false, error: 'A sign-in for ' + name + ' is already open.' };
-        (s.mcpSign ??= new Map()).set(name, { opened: false });
+        if (simSignOpen(s, name)) return { ok: false, error: 'A sign-in for ' + name + ' is already open.' };
+        (s.mcpSign ??= new Map()).set(name, { opened: false, at: Date.now() });
         return { ok: true, kind: 'browser', host: 'auth.example.com' };
       },
       agentMcpOpenSignIn: async (id, name) => {
         const s = sims.find((x) => x.info.id === id);
-        const e = s?.mcpSign?.get(name);
+        const e = s ? simSignOpen(s, name) : undefined;
         if (!s || !e) return { ok: false, gone: true, error: 'That sign-in is no longer open. Press Sign in again.' };
         e.opened = true;
         console.info('[sim] would open the sign-in page on auth.example.com');
