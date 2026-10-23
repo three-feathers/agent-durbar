@@ -11,7 +11,7 @@ import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, SlashCommand, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, SlashCommand, SlashExpansion, StartOptions, Unsubscribe, WriteGuard } from './types';
 import type { McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
 import { codexSlashPlaces, SlashCache, vscodeUserPromptDirs } from './slashcommands';
@@ -694,7 +694,7 @@ export class CodexAdapter implements AgentAdapter {
     return live ? this.slash.list(this.slashPlaces(live), { refresh: true }) : []; // the window opening its list: read afresh
   }
 
-  async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string; note?: string } | undefined> {
+  async expandSlashCommand(sessionId: string, text: string): Promise<SlashExpansion | undefined> {
     const live = this.sessions.get(sessionId);
     return live ? this.slash.expand(text, () => this.slashPlaces(live)) : undefined; // no IO unless the text is a `/name` line
   }

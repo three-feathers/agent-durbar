@@ -32,7 +32,7 @@ import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel'
 import { PermissionBroker, isInsideRoots, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
-import type { AgentProfile, PlanAnswer, SlashCommand } from './types';
+import type { AgentProfile, PlanAnswer, SlashCommand, SlashExpansion } from './types';
 import type { McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
 import { copilotHomeDir, copilotSlashPlaces, SlashCache, vscodeUserPromptDirs } from './slashcommands';
@@ -784,7 +784,7 @@ export class CopilotAdapter implements AgentAdapter {
     return live ? this.slash.list(this.slashPlaces(live), { refresh: true }) : []; // the window opening its list: read afresh
   }
 
-  async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string; note?: string } | undefined> {
+  async expandSlashCommand(sessionId: string, text: string): Promise<SlashExpansion | undefined> {
     const live = this.sessions.get(sessionId);
     return live ? this.slash.expand(text, () => this.slashPlaces(live)) : undefined; // no IO unless the text is a `/name` line
   }

@@ -114,6 +114,15 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
 - [x] T038 Docs: `README.md`, `changelog.d/073-prompt-files.md`, `docs/agent-notes.md` (the probe), research R5; `npm run typecheck &&
   npm run build && npm test`
 
+## Phase 10: Review on #615 (fjcabello, 2026-10-23; spec *Changes*)
+
+- [x] T040 `src/adapters/slashcommands.ts`: `MAX_SLASH_EXPANDED` (256 KB) for every kind, counted during the replace pass
+  (`sizeGuard`, stops early) and measured for skills; over it `expandSlash` answers `asTyped` with a note; `SlashExpansion` in
+  `src/adapters/types.ts`; `sendWithSlash` sends the typed line and returns only `slashNote`; `src/renderer/app.js` shows it [FR-005, FR-012]
+- [x] T041 `vscodeUserPromptDirs` and `copilotHomeDir` use `APPDATA`, `XDG_CONFIG_HOME`, the home folder and `COPILOT_HOME` only when
+  absolute [FR-012]
+- [x] T042 Tests (`test:slashcommands`, `test:agentops`) and a mutation check of T040-T041
+
 ## Known gaps (open tasks, not this PR)
 
 - [ ] T026 [KNOWN GAP] Run the allow-listed Claude built-ins other than `/context` (`compact`, `cost`, `init`, `review`,

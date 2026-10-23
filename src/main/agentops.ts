@@ -152,6 +152,8 @@ export async function sendWithSlash(
 ): Promise<{ slash?: string; slashNote?: string }> {
   const text = String(msg.text ?? '');
   const slash = ad.expandSlashCommand ? await ad.expandSlashCommand(id, text).catch(() => undefined) : undefined;
-  await ad.send(id, { ...msg, text: slash ? slash.text : text });
-  return slash ? { slash: slash.where, ...(slash.note ? { slashNote: slash.note } : {}) } : {};
+  const expanded = slash && !slash.asTyped ? slash : undefined; // asTyped: over the size cap, the line goes as typed (review on #615)
+  await ad.send(id, { ...msg, text: expanded ? expanded.text : text });
+  if (slash?.asTyped) return slash.note ? { slashNote: slash.note } : {};
+  return expanded ? { slash: expanded.where, ...(expanded.note ? { slashNote: expanded.note } : {}) } : {};
 }

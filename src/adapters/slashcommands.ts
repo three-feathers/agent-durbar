@@ -18,11 +18,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { cleanSessionTitle } from './history';
 import { isInsideRoots } from './permissions';
-import type { SlashCommand } from './types';
+import type { SlashCommand, SlashExpansion } from './types';
 
 export const MAX_SLASH_PER_DIR = 100;
 export const MAX_SLASH_FILES = 300;
 export const MAX_SLASH_BYTES = 64 * 1024;
+/** The most an expanded entry may grow to (review on #615): over it, nothing is expanded and the line is sent as typed, with a note. */
+export const MAX_SLASH_EXPANDED = 256 * 1024;
 export const SLASH_HEAD_BYTES = 8 * 1024;
 /** A command name (FR-001 / data model): a letter or digit first; `:` for Codex's `prompts:` names. */
 export const SLASH_NAME = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
@@ -177,7 +179,7 @@ export function promptSettings(fm: Record<string, string>): string[] {
  * `$1`..`$9` as for any command; when nothing took the arguments they follow as `ARGUMENTS: …`. Any other `${…}` (`${selection}`,
  * `${file}`, an input with no value) stays as written and is named in `left`.
  */
-export function fillPromptFile(body: string, rest: string): { text: string; left: string[] } {
+export function fillPromptFile(body: string, rest: string, cap = MAX_SLASH_EXPANDED): { text: string; left: string[] } | undefined {
   const args = rest.trim();
   const tokens: string[] = [];
   for (const m of args.matchAll(/(?:[^\s"]+|"[^"]*")+/g)) tokens.push(m[0].replace(/"([^"]*)"/g, '$1')); // words; "a b" is one word
@@ -203,14 +205,38 @@ export function fillPromptFile(body: string, rest: string): { text: string; left
     if (!left.includes(shown) && left.length < 6) left.push(shown);
     return m;
   };
-  // one pass over the file's own text, so the user's words are never read as placeholders themselves
-  const out = body.replace(new RegExp(`${INPUT_VAR.source}|\\$\\{([^}\\r\\n]{1,80})\\}|\\$(ARGUMENTS|[1-9])\\b`, 'g'), (m, n?: string, _ph?: string, other?: string, k?: string) => {
-    if (n !== undefined) return value.has(n) ? (value.get(n) as string) : keep(m, m.slice(2, -1));
-    if (other !== undefined) return keep(m, other);
-    used = true;
-    return k === 'ARGUMENTS' ? args : (words[Number(k) - 1] ?? '');
-  });
-  return { text: used || !args ? out : `${out}\n\nARGUMENTS: ${args}`, left };
+  // one pass over the file's own text, so the user's words are never read as placeholders themselves; the size is counted on the
+  // way and the pass stops as soon as it would pass the cap (review on #615: 6,500 placeholders x a 10 KB argument = 66 M characters)
+  let out: string;
+  try {
+    const grow = sizeGuard(cap);
+    out = body.replace(new RegExp(`${INPUT_VAR.source}|\\$\\{([^}\\r\\n]{1,80})\\}|\\$(ARGUMENTS|[1-9])\\b`, 'g'), (m: string, n: string | undefined, _ph: string | undefined, other: string | undefined, k: string | undefined, at: number) => {
+      if (n !== undefined) return grow(m, value.has(n) ? (value.get(n) as string) : keep(m, m.slice(2, -1)), at);
+      if (other !== undefined) return keep(m, other);
+      used = true;
+      return grow(m, k === 'ARGUMENTS' ? args : (words[Number(k) - 1] ?? ''), at);
+    });
+  } catch (err) {
+    if (err instanceof TooLarge) return undefined;
+    throw err;
+  }
+  const text = used || !args ? out : `${out}\n\nARGUMENTS: ${args}`;
+  return text.length > cap ? undefined : { text, left };
+}
+
+class TooLarge extends Error {}
+/**
+ * Counts the output of a `replace` as it goes and throws `TooLarge` the moment the part already built (everything up to the end of
+ * this replacement) passes `cap`, so nothing huge is built. That part only grows, so passing the cap there means the whole output
+ * would pass it too; a body that shrinks (long placeholders, short words) is never refused early. The caller checks the total at the end.
+ */
+function sizeGuard(cap: number): (match: string, replacement: string, offset: number) => string {
+  let delta = 0;
+  return (match, replacement, offset) => {
+    delta += replacement.length - match.length;
+    if (offset + match.length + delta > cap) throw new TooLarge();
+    return replacement;
+  };
 }
 
 const whereOf = (place: SlashPlace, file: string): string => {
@@ -333,11 +359,15 @@ const SLASH_LINE = /^\/([A-Za-z0-9][A-Za-z0-9._:-]{0,63})(?:\s+([\s\S]*))?$/;
 
 /** The text an entry's file expands to (FR-005), or undefined when the file cannot be read again. */
 export function expansionOf(e: SlashEntry, rest: string, opts: DiscoverOptions = {}): string | undefined {
-  return expansionWithNote(e, rest, opts)?.text;
+  const r = expansionWithNote(e, rest, opts);
+  return r && 'text' in r ? r.text : undefined;
 }
 
-/** `expansionOf` plus a note for the chat (a VS Code prompt file: settings not applied, variables left as written). */
-export function expansionWithNote(e: SlashEntry, rest: string, opts: DiscoverOptions = {}): { text: string; note?: string } | undefined {
+/**
+ * `expansionOf` plus a note for the chat (a VS Code prompt file: settings not applied, variables left as written). `tooLarge`: the
+ * expansion would pass `MAX_SLASH_EXPANDED` (review on #615), for every kind (skill, command, prompt, VS Code prompt file).
+ */
+export function expansionWithNote(e: SlashEntry, rest: string, opts: DiscoverOptions = {}, cap = MAX_SLASH_EXPANDED): { text: string; note?: string } | { tooLarge: true } | undefined {
   if (!e.file || !e.root || e.source === 'app') return undefined;
   const o: Required<DiscoverOptions> = { fs: opts.fs ?? realFs, caseInsensitive: opts.caseInsensitive ?? (process.platform === 'win32' || process.platform === 'darwin') };
   const file = entryFile(e.file, e.root, e.kind, o, !!e.vscode); // every FR-002 rule again: the file may have been swapped since the list was made
@@ -351,11 +381,16 @@ export function expansionWithNote(e: SlashEntry, rest: string, opts: DiscoverOpt
   const { fm, body: raw } = parseFrontMatter(text);
   const body = raw.trim();
   const args = rest.trim();
+  const tooLarge = { tooLarge: true as const };
   if (e.kind === 'skill') {
-    return { text: `Use the "${e.name}" skill below. Its folder is ${e.dir ?? path.dirname(file)}.\n\n${body}${args ? `\n\nARGUMENTS: ${args}` : ''}` };
+    const head = `Use the "${e.name}" skill below. Its folder is ${e.dir ?? path.dirname(file)}.\n\n`;
+    if (head.length + body.length + (args ? args.length + 13 : 0) > cap) return tooLarge; // measured before it is built
+    return { text: `${head}${body}${args ? `\n\nARGUMENTS: ${args}` : ''}` };
   }
   if (e.vscode) {
-    const { text: filled, left } = fillPromptFile(body, args);
+    const f = fillPromptFile(body, args, cap);
+    if (!f) return tooLarge;
+    const { text: filled, left } = f;
     const settings = promptSettings(fm);
     const notes = [
       ...(settings.length ? [`VS Code settings not applied: ${settings.join(', ')}`] : []),
@@ -365,24 +400,36 @@ export function expansionWithNote(e: SlashEntry, rest: string, opts: DiscoverOpt
   }
   const words = args ? args.split(/\s+/) : [];
   let used = false;
-  const out = body.replace(/\$(ARGUMENTS|[1-9])\b/g, (_m, k: string) => {
-    used = true;
-    return k === 'ARGUMENTS' ? args : (words[Number(k) - 1] ?? '');
-  });
-  return { text: used || !args ? out : `${out}\n\nARGUMENTS: ${args}` };
+  let out: string;
+  try {
+    const grow = sizeGuard(cap); // stops the pass as soon as it would pass the cap (review on #615)
+    out = body.replace(/\$(ARGUMENTS|[1-9])\b/g, (m: string, k: string, at: number) => {
+      used = true;
+      return grow(m, k === 'ARGUMENTS' ? args : (words[Number(k) - 1] ?? ''), at);
+    });
+  } catch (err) {
+    if (err instanceof TooLarge) return tooLarge;
+    throw err;
+  }
+  const done = used || !args ? out : `${out}\n\nARGUMENTS: ${args}`;
+  return done.length > cap ? tooLarge : { text: done };
 }
 
 /**
  * FR-005: a message that starts with `/<name>` of a folder or user entry becomes that entry's text; `where` is shown in the chat.
  * Built-ins, unknown names and unreadable files give undefined (the typed text is sent unchanged).
  */
-export function expandSlash(text: string, entries: readonly SlashEntry[], opts: DiscoverOptions = {}): { text: string; where: string; note?: string } | undefined {
+export function expandSlash(text: string, entries: readonly SlashEntry[], opts: DiscoverOptions = {}): SlashExpansion | undefined {
   const m = SLASH_LINE.exec(String(text ?? '').trim());
   if (!m) return undefined;
   const e = entries.find((x) => x.source !== 'app' && x.name.toLowerCase() === m[1].toLowerCase());
   if (!e) return undefined;
   const out = expansionWithNote(e, m[2] ?? '', opts);
-  return out === undefined ? undefined : { text: out.text, where: e.where ?? e.name, ...(out.note ? { note: out.note } : {}) };
+  if (out === undefined) return undefined;
+  const where = e.where ?? e.name;
+  // over the cap: the line goes as typed, and the chat says why (review on #615)
+  if ('tooLarge' in out) return { text: String(text ?? ''), where, asTyped: true, note: `Not expanded: the text of ${where} with these words would be over ${MAX_SLASH_EXPANDED / 1024} KB, so the line was sent as typed.` };
+  return { text: out.text, where, ...(out.note ? { note: out.note } : {}) };
 }
 
 const placesKey = (places: readonly SlashPlace[]): string => JSON.stringify(places.map((p) => [p.dir, p.root, p.scope, p.kind, p.layout, p.prefix ?? '', p.whereBase]));
@@ -426,7 +473,7 @@ export class SlashCache {
     return entries;
   }
   /** FR-005: `expandSlash` over the cached entries; no IO unless the text is a `/name` line. */
-  expand(text: string, places: () => readonly SlashPlace[]): { text: string; where: string; note?: string } | undefined {
+  expand(text: string, places: () => readonly SlashPlace[]): SlashExpansion | undefined {
     if (!slashLineName(text)) return undefined;
     return expandSlash(text, this.list(places()), this.opts);
   }
@@ -455,9 +502,13 @@ const uniq = (roots: readonly string[]): string[] => [...new Set(roots.filter((r
  */
 export function vscodeUserPromptDirs(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, home = os.homedir()): string[] {
   const p = platform === 'win32' ? path.win32 : path.posix;
-  const base = platform === 'win32' ? env.APPDATA || p.join(home, 'AppData', 'Roaming')
-    : platform === 'darwin' ? p.join(home, 'Library', 'Application Support')
-    : env.XDG_CONFIG_HOME && p.isAbsolute(env.XDG_CONFIG_HOME) ? env.XDG_CONFIG_HOME : p.join(home, '.config');
+  // every base from the environment must be absolute, or it would resolve against main's working folder (review on #615)
+  const abs = (v: string | undefined): string | undefined => (v && p.isAbsolute(v) ? v : undefined);
+  const h = abs(home);
+  const base = platform === 'win32' ? abs(env.APPDATA) ?? (h && p.join(h, 'AppData', 'Roaming'))
+    : platform === 'darwin' ? h && p.join(h, 'Library', 'Application Support')
+    : abs(env.XDG_CONFIG_HOME) ?? (h && p.join(h, '.config'));
+  if (!base) return [];
   return ['Code', 'Code - Insiders'].map((app) => p.join(base, app, 'User', 'prompts'));
 }
 
@@ -487,7 +538,7 @@ export function claudeSlashPlaces(roots: readonly string[], configDir: string, h
 
 /** The Copilot CLI's home: `COPILOT_HOME` replaces the whole `~/.copilot` path (GitHub's config-dir reference, read:). */
 export function copilotHomeDir(env: NodeJS.ProcessEnv = process.env, home = os.homedir()): string {
-  return env.COPILOT_HOME || path.join(home, '.copilot');
+  return (env.COPILOT_HOME && path.isAbsolute(env.COPILOT_HOME) ? env.COPILOT_HOME : '') || path.join(home, '.copilot'); // a relative one is ignored (review on #615)
 }
 
 /**

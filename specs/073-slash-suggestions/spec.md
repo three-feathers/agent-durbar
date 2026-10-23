@@ -154,6 +154,11 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   follow as `ARGUMENTS: …`. Any other `${…}` (`${selection}`, `${file}`, an input with no value) and `#file:` / `#tool:` references are
   sent as written, and the chat note says so ("left as written: …", plain variable names only) together with the settings not applied.
   Every FR-002 rule applies, and the real file must itself end in `.prompt.md` (a link from `x.prompt.md` to a `README.md` is refused).
+  **Size cap (review on #615, every kind):** an expansion may be at most 256 KB (`MAX_SLASH_EXPANDED`); the size is counted while the
+  text is built and the build stops the moment the part already built passes the cap. Over it, nothing is expanded: the line is sent
+  as typed and the chat shows "Not expanded: the text of <where> with these words would be over 256 KB, so the line was sent as typed."
+  Every base folder taken from the environment (`APPDATA`, `XDG_CONFIG_HOME`, the home folder, `COPILOT_HOME`) must be absolute, else
+  it is ignored (never resolved against main's working folder).
 - **FR-011 Simulator.** Every simulated agent kind answers `slashCommands` with canned folder, user and (Claude only) built-in entries,
   and the simulated send shows the FR-005 note for a folder entry. No disk reads, no real app. The page address `simslash=long` puts two entries with long names,
   hint and description first (for `check:ui-text`).
@@ -183,6 +188,18 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   in this version.
 
 ## Changes
+
+### 2026-10-23: review on #615 (fjcabello)
+
+- **Size cap on the expanded text (FR-005, FR-012).** A 64 KB prompt file of 6,500 `${input:a}` sent with a 10 KB argument built a
+  66-million-character message in main (and `$ARGUMENTS` in a command 60 M). Every kind (skill, command, Codex prompt, VS Code prompt
+  file) is now capped at 256 KB: the size is counted during the one replace pass, which stops as soon as the part already built passes
+  the cap (a body that shrinks is never refused early); a skill is measured before it is built. Over the cap the line goes as typed
+  with a note (`asTyped` in the adapters' `SlashExpansion`; `sendWithSlash` returns only `slashNote`; the window shows the note).
+  Tests: the 6,500-placeholder case, `$ARGUMENTS`, `$1`, a skill, a 200 KB argument that only an early stop survives, and the boundary
+  (exactly the cap expands, one over is refused) for each kind.
+- **Absolute bases only (FR-012).** A relative `APPDATA` resolved against main's working folder; now `APPDATA`, `XDG_CONFIG_HOME`, the
+  home folder and `COPILOT_HOME` are used only when absolute (tests).
 
 ### 2026-10-23: VS Code prompt files in the list (owner request, Vikram; issue #613)
 

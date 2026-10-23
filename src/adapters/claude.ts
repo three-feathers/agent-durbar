@@ -51,7 +51,7 @@ import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache, vscodeUserPro
 import type { SlashPlace } from './slashcommands';
 import { agentsArg, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
-import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand } from './types';
+import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
 import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 
 export const CLAUDE_ID = 'claude';
@@ -665,7 +665,7 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   /** Spec 073 FR-005: a folder or user entry is sent as its text (real 2026-10-22: Claude sends an unknown `/name` to the model as is). */
-  async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string; note?: string } | undefined> {
+  async expandSlashCommand(sessionId: string, text: string): Promise<SlashExpansion | undefined> {
     const s = this.sessions.get(sessionId);
     return s ? this.slash.expand(text, () => this.slashPlaces(s)) : undefined; // no IO unless the text is a `/name` line
   }

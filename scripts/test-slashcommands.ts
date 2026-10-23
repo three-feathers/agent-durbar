@@ -22,7 +22,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vm from 'vm';
 import {
-  BUILTIN_ALLOW, MAX_SLASH_BYTES, fillPromptFile, promptInputs, vscodeUserPromptDirs, MAX_SLASH_FILES, MAX_SLASH_PER_DIR, SlashCache, claudeSlashPlaces, cleanBuiltins, codexSlashPlaces,
+  BUILTIN_ALLOW, MAX_SLASH_BYTES, fillPromptFile, promptInputs, vscodeUserPromptDirs, MAX_SLASH_EXPANDED, expansionWithNote, MAX_SLASH_FILES, MAX_SLASH_PER_DIR, SlashCache, claudeSlashPlaces, cleanBuiltins, codexSlashPlaces,
   copilotHomeDir, copilotSlashPlaces, discoverSlash, displayBase, expandSlash, mergeSlash, parseFrontMatter, publicSlash, slashLineName,
 } from '../src/adapters/slashcommands';
 import type { SlashFs, SlashPlace } from '../src/adapters/slashcommands';
@@ -477,7 +477,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(fillPromptFile('A=${input:a} B=${input:b}', 'a=$1 b=${input:a}'), { text: 'A=$1 B=${input:a}', left: [] }, 'the user\'s words are not placeholders');
     assert.deepStrictEqual(fillPromptFile('No placeholder.', 'extra words'), { text: 'No placeholder.\n\nARGUMENTS: extra words', left: [] });
     assert.deepStrictEqual(fillPromptFile('No placeholder.', ''), { text: 'No placeholder.', left: [] });
-    assert.deepStrictEqual(fillPromptFile('${weird stuff here}', '').left, ['${…}'], 'only plain variable names are echoed in the note');
+    assert.deepStrictEqual(fillPromptFile('${weird stuff here}', '')!.left, ['${…}'], 'only plain variable names are echoed in the note');
     // through expandSlash: front matter removed, the note names the settings and the variables left
     const l = pList(copilotSlashPlaces([pRepo], path.join(pHome, '.copilot'), pHome, [pUser]));
     assert.deepStrictEqual(expandSlash('/hello Bob French', l), {
@@ -558,6 +558,55 @@ async function main(): Promise<void> {
     const xl = await cx.listSlashCommands('x1');
     assert.ok(xl.some((e) => e.name === 'mine' && e.source === 'user'), 'Codex lists the VS Code user prompt file');
     assert.strictEqual((await cx.expandSlashCommand('x1', '/mine tests'))!.text, 'Mine: tests');
+  });
+
+  await test('size cap (review on #615): a huge expansion is not built; the line goes as typed with a note; boundary for every kind', () => {
+    const r = path.join(tmp, 'caprepo');
+    write(path.join(r, '.github', 'prompts', 'many.prompt.md'), '${input:a}'.repeat(6500)); // 65,000 bytes, under the 64 KB file cap
+    write(path.join(r, '.claude', 'commands', 'args.md'), '$ARGUMENTS '.repeat(5000));
+    write(path.join(r, '.claude', 'commands', 'pos.md'), '$1 '.repeat(20000));
+    write(path.join(r, '.claude', 'commands', 'plain.md'), 'No placeholder.');
+    write(path.join(r, '.claude', 'skills', 'sk', 'SKILL.md'), '---\nname: sk\n---\n' + 'k'.repeat(60000));
+    write(path.join(r, '.github', 'prompts', 'small.prompt.md'), 'Hi ${input:who} and $ARGUMENTS');
+    write(path.join(r, '.claude', 'commands', 'small.md'), 'Do $1 with $ARGUMENTS');
+    const places = [...claudeSlashPlaces([r], path.join(tmp, 'caphome', '.claude'), path.join(tmp, 'caphome')), ...copilotSlashPlaces([r], path.join(tmp, 'caphome', '.copilot'), path.join(tmp, 'caphome'))];
+    const l = discoverSlash(places);
+    const big = 'x'.repeat(10 * 1024);
+    // a 200 KB argument in 6,500 placeholders would be 1.3 G characters, past V8's string limit: only an early stop gets through this
+    for (const line of [`/many ${'w'.repeat(200 * 1024)}`, `/many ${big}`, `/args ${big}`, '/pos ' + 'y'.repeat(20), `/sk ${'z'.repeat(MAX_SLASH_EXPANDED)}`]) {
+      const t0 = Date.now();
+      const ex = expandSlash(line, l);
+      assert.ok(ex && ex.asTyped === true && ex.text === line, `${line.slice(0, 6)}: sent as typed`);
+      assert.match(ex!.note!, /^Not expanded: the text of .+ would be over 256 KB, so the line was sent as typed\.$/);
+      assert.ok(Date.now() - t0 < 1000, `${line.slice(0, 6)}: stopped early (${Date.now() - t0} ms)`);
+    }
+    // the boundary, for each kind: exactly the cap is expanded, one character less is refused
+    const entry = (n: string) => l.find((e) => e.name === n)!;
+    for (const [name, rest] of [['small', 'Ann extra words'], ['plain', 'some words'], ['sk', 'go'], ['many', 'ab']] as const) {
+      for (const e of l.filter((x) => x.name === name)) {
+        const full = expansionWithNote(e, rest, {}, 1e9);
+        assert.ok(full && 'text' in full, `${name}: expands without a cap`);
+        const len = (full as { text: string }).text.length;
+        const at = expansionWithNote(e, rest, {}, len);
+        assert.ok(at && 'text' in at && at.text === (full as { text: string }).text, `${name} (${e.kind}): exactly the cap is expanded`);
+        assert.deepStrictEqual(expansionWithNote(e, rest, {}, len - 1), { tooLarge: true }, `${name} (${e.kind}): one over the cap is refused`);
+      }
+    }
+    assert.ok(entry('small'));
+    // fillPromptFile on its own: each placeholder kind stops at the cap
+    assert.strictEqual(fillPromptFile('${input:a}${input:a}', 'xxxxx', 9), undefined, '${input:…}');
+    assert.deepStrictEqual(fillPromptFile('${input:a}${input:a}', 'xxxxx', 10), { text: 'xxxxxxxxxx', left: [] });
+    assert.strictEqual(fillPromptFile('$ARGUMENTS$ARGUMENTS', 'xxxxx', 9), undefined, '$ARGUMENTS');
+    assert.strictEqual(fillPromptFile('$1$1', 'xxxxx', 9), undefined, '$1');
+    assert.strictEqual(fillPromptFile('Body.', 'xxxxx', 10), undefined, 'the ARGUMENTS line counts too');
+  });
+
+  await test('env bases must be absolute (review on #615): APPDATA, XDG_CONFIG_HOME, the home folder, COPILOT_HOME', () => {
+    assert.deepStrictEqual(vscodeUserPromptDirs({ APPDATA: 'rel\\appdata' }, 'win32', 'C:\\Users\\v')[0], 'C:\\Users\\v\\AppData\\Roaming\\Code\\User\\prompts', 'a relative APPDATA is ignored');
+    assert.deepStrictEqual(vscodeUserPromptDirs({ APPDATA: 'rel' }, 'win32', 'rel-home'), [], 'no absolute base at all: no user folder');
+    assert.deepStrictEqual(vscodeUserPromptDirs({}, 'darwin', 'Users/v'), [], 'a relative home on macOS');
+    assert.deepStrictEqual(vscodeUserPromptDirs({ XDG_CONFIG_HOME: 'rel' }, 'linux', 'home/v'), [], 'a relative home on Linux');
+    assert.strictEqual(copilotHomeDir({ COPILOT_HOME: 'rel/cop' }, '/h').split(path.sep).join('/').replace(/^[A-Za-z]:/, ''), '/h/.copilot', 'a relative COPILOT_HOME is ignored');
   });
 
   await test('renderer helpers (slashsuggest.js): word at the caret, filter, insert', () => {
