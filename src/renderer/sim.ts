@@ -1557,6 +1557,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return f ? { ok: true } : { ok: false, error: 'That profile file is not in the list any more.' };
       },
       // spec 044: scheduled prompts in memory; a 1 s check sends through the simulated agents (no credits)
+      // spec 041 FR-065: the welcome-back card with a missed schedule whose prompt holds the planted secrets across character 80
+      ...(opts.reply === 'secrets' ? { sinceAway: async () => ({ awayMs: 3 * 3600e3, missed: [{ id: 'aw1', folderName: 'mcp-swiss', prompt: FILL(76) + SECRETS_TEXT, repeats: true }] }), dismissSinceAway: async () => ({ ok: true }) } : {}),
       listSchedules: async () => ({ pausedAll: simSched.pausedAll, schedules: simSched.list.map((x) => ({ ...x })) }),
       saveSchedule: async (inputIn) => {
         const now = Date.now();

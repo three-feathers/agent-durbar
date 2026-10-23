@@ -65,6 +65,9 @@ module.exports = async (ctx) => {
         return {n:done.length,masked:done.filter(d=>/Done: Done\\. Token check: \\[redacted\\]/.test(d.title)||/Done\\. Token check: \\[redacted\\]/.test(d.getAttribute('aria-label')||'')).length,helpers:document.querySelectorAll('#stage .helper').length,open:document.body.classList.contains('panel-open')};})()`);
       assert.ok(seen.n > 0 && seen.masked > 0 && !seen.open, `${tag}: done desks show the masked reply: ${JSON.stringify(seen)}`);
       assert.ok(seen.helpers > 0, `${tag}: helper cards are on the floor`);
+      assert.ok(await until(`(()=>{const e=document.getElementById('awayStrip');return !!e&&!e.hidden&&/scheduled prompt/.test(e.textContent)})()`, 8000), `${tag}: the welcome-back card lists the missed schedule`);
+      const away = await js(`document.getElementById('awayStrip').textContent`);
+      assert.ok(/mcp-swiss/.test(away), `${tag}: the card names the folder: ${away.slice(0, 200)}`);
       await scan(tag, 'desks and helper cards');
       // 2. a main agent: tool starts with no intent (command and URL), a working intent, an error intent. These skip the helper on purpose
       const main = await js(`(()=>{const a=window.__durbarSimUi.agents().filter(x=>!x.parent&&x.live);return a.map(x=>x.id)})()`);
@@ -90,6 +93,7 @@ module.exports = async (ctx) => {
       await scan(tag, 'permission lines, runtime title, sub-agent name, Markdown-split tokens');
       // 2a. the lobby (spec 001 FR-034..FR-040): the tiles' chips and titles, the Boss queue, and the navigator (Ctrl+J)
       assert.ok(await until(`document.querySelectorAll('.lobby .pv').length>0`, 15000), `${tag}: agents stand in the lobby`);
+      if (level === 'expert') await until(`[...document.querySelectorAll('.lobby .pv')].some(e=>/curl|fetch|example\\.test/i.test(e.textContent+' '+e.title+' '+(e.getAttribute('aria-label')||'')))`, 8000);
       const lob = await js(`(()=>{const pv=[...document.querySelectorAll('.lobby .pv')];return {n:pv.length,boss:document.querySelectorAll('.lobby .place.boss .pv').length,
         words:pv.map(e=>e.textContent+' '+e.title+' '+(e.getAttribute('aria-label')||'')).join(' ').toLowerCase(),places:[...document.querySelectorAll('.lobby .place')].map(e=>e.title+' '+(e.getAttribute('aria-label')||'')).join(' ').toLowerCase()}})()`);
       assert.ok(lob.boss > 0, `${tag}: the Boss queue holds the waiting agents`);
@@ -129,8 +133,9 @@ module.exports = async (ctx) => {
       }
       assert.ok(atAgents, `${tag}: Go to reached an agents level`);
       await scan(tag, 'Go to, agents level');
-      await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
-      await until(`!document.getElementById('palDlg')`, 3000);
+      await js(`(document.getElementById('palIn')||{focus(){}}).focus()`);
+      for (let k = 0; k < 6 && (await js(`!!document.getElementById('palDlg')`)); k++) await H.key('Escape', [], { char: 'never' }); // Escape steps back one level, then closes
+      assert.ok(await until(`!document.getElementById('palDlg')`, 3000), `${tag}: Escape closes the navigator`);
       // 2b. a sub-agent's card in its parent's chat (the chat shows a reply in full; the card's one-line summary is masked)
       const parent = await js(`(()=>{const h=window.__durbarSimUi.agents().find(x=>x.parent);return h?h.parent:''})()`);
       assert.ok(parent, `${tag}: a helper has a parent`);
@@ -175,6 +180,23 @@ module.exports = async (ctx) => {
       await scan(tag, 'resumed session');
     }
   }
+  // 5b. a grown desk (spec 001 FR-041..FR-047): with few agents a card grows and shows the start of its last reply
+  await H.load({ w: 1440, h: 900, query: { sim: '3', simreply: 'secrets', simsched: '1' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=3&&document.getElementById('stage').dataset.fit` });
+  const gm = await js(`window.__durbarSimUi.agents().filter(x=>!x.parent&&x.live).map(x=>x.id)`);
+  assert.ok(gm.length >= 2, 'grown: live agents');
+  const longReply = 'Report: ' + 'every link resolves and the tests pass. '.repeat(14).slice(0, 560) + ' ' + GHP + ' ' + PAT + ' and then ' + SK;
+  for (const id of gm.slice(0, 2)) {
+    await emit({ type: 'status', sessionId: id, timestamp: Date.now(), status: 'working', intent: 'x' });
+    await emit({ type: 'output', sessionId: id, timestamp: Date.now(), delta: '', final: true, text: longReply });
+    await emit({ type: 'status', sessionId: id, timestamp: Date.now(), status: 'idle' });
+  }
+  if (gm[2]) { // a working desk streams its reply: the grown desk's text is made from the masked body
+    await emit({ type: 'status', sessionId: gm[2], timestamp: Date.now(), status: 'working', intent: 'x' });
+    await emit({ type: 'output', sessionId: gm[2], timestamp: Date.now(), delta: 'Replying with a long streamed answer. ' + 'Every link resolves. '.repeat(8) + 'The key is ' + GHP + ' and ' + SK + '. ' });
+  }
+  assert.ok(await until(`!!document.getElementById('stage').dataset.grow`, 8000), 'grown: the stage grew its desks');
+  assert.ok(await until(`[...document.querySelectorAll('#stage .desk.card .intent, #stage .desk.card .gx-t')].some(e=>/every link resolves/.test(e.textContent))`, 8000), 'grown: a desk shows the start of its reply');
+  await scan('grown', 'grown desks: reply line and reply column');
   // 6. a restored session continued (simresume=1)
   await H.load({ w: 1440, h: 900, query: { simreply: 'secrets', simresume: '1' }, ready: 'fit' });
   const r = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.info&&x.info.resumeLast);return a?a.id:''})()`);

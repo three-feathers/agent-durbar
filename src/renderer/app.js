@@ -747,11 +747,7 @@ function setGrow(el,f){if(f){el.style.setProperty('--gf',String(f));el.dataset.g
 /* the text of a grown desk: the readout with its newest sentences, else the start of the last reply (Done, Idle), else the desk text.
    The reply is masked on the raw text before Markdown is removed (excerpt); with no working mask nothing from it shows (fail closed). */
 /* the start of the last reply, masked on the raw text, plain, cut to 600; '' without a reply or a working mask (fail closed) */
-function replyExcerpt(a){
-  const R=window.DurbarRedact;
-  const t=a.lastOutput?window.DurbarLiveAct.excerpt(a.lastOutput,R&&typeof R.redact==='function'?x=>R.redact(x):null):'';
-  return t?DurbarCutText.cutText(t,600):'';
-}
+function replyExcerpt(a){return safeExcerpt(a.lastOutput,600,'');} /* spec 041 FR-065: the one mask (safetext), then the cut; '' with no working mask */
 /* does the main text of a grown desk show the last reply (a Done or Idle desk with one)? Then no reply column repeats it (FR-047) */
 const grownShowsReply=a=>!a.parent&&!liveShown(a)&&(vis(a)==='done'||vis(a)==='idle')&&!!a.lastOutput;
 function grownLine(a){
@@ -2510,7 +2506,7 @@ async function renderAwayStrip(){
   const missed=Array.isArray(s.missed)?s.missed:[];
   el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>Since you were away</b> ('+esc(awayWords(s.awayMs))+'): '+
     (missed.length?(missed.length===1?'1 scheduled prompt':missed.length+' scheduled prompts')+' did not run while the app was closed.':'nothing was scheduled while the app was closed.')+
-    '</span>'+(missed.length?'<span class="aw-list">'+missed.map(m=>'<span class="aw-it" data-sched="'+esc(m.id)+'"><span class="aw-w"><b>'+esc(m.folderName)+'</b>: “'+esc(m.prompt)+'”'+(m.repeats?' <small>(runs again as planned)</small>':'')+'</span>'+(bridge.runScheduleNow?'<button class="btn" type="button" data-awrun="'+esc(m.id)+'">Run missed now</button>':'')+'</span>').join('')+'</span>':'')+
+    '</span>'+(missed.length?'<span class="aw-list">'+missed.map(m=>'<span class="aw-it" data-sched="'+esc(m.id)+'"><span class="aw-w"><b>'+esc(m.folderName)+'</b>: “'+esc(safeExcerpt(m.prompt,80,''))+'”'+(m.repeats?' <small>(runs again as planned)</small>':'')+'</span>'+(bridge.runScheduleNow?'<button class="btn" type="button" data-awrun="'+esc(m.id)+'">Run missed now</button>':'')+'</span>').join('')+'</span>':'')+
     '<span class="ns-act"><button class="btn" type="button" data-aw="close">Dismiss</button></span>';
   el.hidden=false;
   el.querySelector('[data-aw="close"]').onclick=()=>{el.hidden=true;el.innerHTML='';if(bridge.dismissSinceAway)bridge.dismissSinceAway().catch(()=>{});scheduleRender();};

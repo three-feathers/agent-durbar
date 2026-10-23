@@ -17,6 +17,7 @@ const S = require(path.join(R, 'safetext.js')) as {
 };
 let n = 0;
 const ok = (c: unknown, m: string) => { assert.ok(c, m); n++; };
+const DurbarCutText_ = (t: string, n: number): string => cutText(t, n);
 const eq = (a: unknown, b: unknown, m: string) => { assert.strictEqual(a, b, m); n++; };
 
 // token shapes built at run time (push protection)
@@ -115,6 +116,15 @@ eq(boom.mask(raw), '', 'a throwing redact: mask gives nothing');
     }
   }
   ok(cases > 300, `split-token cases: ${cases}`);
+}
+// the "Since you were away" prompt: sent whole by main, so the token that starts at character 76 is masked before the cut at 80
+{
+  const prompt = ('Morning summary of failing checks and so on '.repeat(3)).slice(0, 75) + ' ' + ghp + ' tail';
+  const out = T.excerpt(prompt, 80);
+  ok(!/ghp|A1b2/i.test(out.replace('[redacted]', '')), `away prompt cut after the mask: ${out}`);
+  ok(out.includes('[redacted]') || out.endsWith('…'), 'the away prompt is still cut');
+  const wrong = DurbarCutText_(prompt, 80); // the old order (main cut it first) leaves a piece the pattern does not know
+  ok(/ghp/.test(wrong) && !/\[redacted\]/.test(redact(wrong, {})), 'cutting first leaves "ghp_..." unmasked: the test can tell the orders apart');
 }
 // excerpt without n is not cut (the wrapper too)
 eq(T.excerpt('word '.repeat(100), undefined as unknown as number), 'word '.repeat(100).trim(), 'create().excerpt without n does not cut');

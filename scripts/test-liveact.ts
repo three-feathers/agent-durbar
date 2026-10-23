@@ -238,8 +238,8 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   eq(X.excerpt('ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2', null), '', 'excerpt: no mask, nothing (fail closed)');
   eq(X.excerpt('text', () => { throw new Error('x'); }), '', 'excerpt: a mask that throws, nothing');
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
-  ok(/DurbarLiveAct\.excerpt\(a\.lastOutput,/.test(app) && !/redact\([^)]*plain\(a\.lastOutput/.test(app), 'grownLine masks through excerpt');
-  ok(/return t\?DurbarCutText\.cutText\(t,600\):'';/.test(app) && /if\(grownShowsReply\(a\)\)return replyExcerpt\(a\)\|\|\(vis\(a\)==='done'\?'Finished\.':'Ready\.'\);/.test(app), 'grownLine: nothing from the reply without a mask');
+  ok(/function replyExcerpt\(a\)\{return safeExcerpt\(a\.lastOutput,600,''\);\}/.test(app) && !/redact\([^)]*plain\(a\.lastOutput/.test(app), 'grownLine masks through the one helper (spec 041 FR-065)');
+  ok(/if\(grownShowsReply\(a\)\)return replyExcerpt\(a\)\|\|\(vis\(a\)==='done'\?'Finished\.':'Ready\.'\);/.test(app), 'grownLine: nothing from the reply without a mask');
   ok(/const rep=grownShowsReply\(a\)\?'':replyExcerpt\(a\)/.test(app) && !/gx-t">\$\{esc\((a\.lastOutput|taskOf)/.test(app), 'the reply column (FR-047) uses the same masked excerpt');
 }
 // review of #532: `long` is made only when a grown desk reads it; a desk that never does costs what it did before
