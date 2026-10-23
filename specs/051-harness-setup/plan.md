@@ -50,3 +50,10 @@
 ## Complexity tracking
 
 None beyond the issue's scope. Remote control and channels (#298) are a separate spec; they may reuse the dialog frame.
+
+## Delta 2026-10-23: the signed-in account (FR-011..FR-015, issue #617)
+
+- Reuses the sign-in path: the same calls the sign-in checks already make (Copilot `getAuthStatus()`, Claude `auth status --json` through `detect.ts`'s `execFound`, Codex's short-lived app-server `probe`), the `harness:*` IPC module and its `fromApp` guard, and the Settings cards in `harnesses.js`. No new dependency.
+- `src/shared/account.ts` (pure, no imports): the type, `cleanName`, `accountLine`. Main formats the line; the window only shows `{ status, text }`.
+- `src/main/accounts.ts`: a per-run cache (`createAccountCache`) with injected `check(id)` and a timeout; unit-tested. Wired in `src/main/ipc/harness.ts` (`harness:accounts`) and cleared from `afterSignIn`.
+- Constitution III: account data is personal; it never leaves the window path (FR-015). II: vendor fields are mapped inside each adapter.

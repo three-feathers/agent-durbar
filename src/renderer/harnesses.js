@@ -32,6 +32,65 @@
   const RESTART_HINT = 'Installed? If Durbar still says Not installed, close and reopen Durbar, then choose Check again.';
   let B = null; /* the bridge */
   let onChange = () => {};
+  /* spec 051 FR-013..FR-015: the last account answer per app ({ [id]: { status, text } }), in memory only; never logged or sent on */
+  let ACC = null;
+  let onAccounts = () => {};
+  const ACC_WAIT = 'Checking the account…';
+  /* spec 051 FR-016 (owner, 2026-10-23): the name is masked and blurred until the user reveals it with the eye button next to it. The
+     reveal lives only in this painted view (no state is kept): any repaint or a new visit to Settings shows it hidden again. */
+  const EYE = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>';
+  const SHOW_LABEL = 'Show the account name', HIDE_LABEL = 'Hide the account name';
+  /* the masked name and its eye button: one unit that never wraps apart (FR-019) */
+  const whoHTML = (v) => `<span class="hs-acct-who"><span class="hs-acct-name is-hidden">${esc(v.masked)}</span><button type="button" class="hs-reveal" data-hs="reveal" aria-pressed="false" aria-label="${SHOW_LABEL}" title="${SHOW_LABEL}">${EYE}</button></span>`;
+  /* spec 051 FR-021 (owner, 2026-10-23 14:12 UTC): a signed-in card lists what the app reports, one fact per line with a bold label:
+     Plan, Account (masked, with the eye), Provider, Signed in via. A fact the app does not report has no line (never a guess). */
+  function factsHTML(v) {
+    const rows = [];
+    const row = (label, html) => rows.push(`<div class="hs-fact"><dt>${esc(label)}:</dt><dd>${html}</dd></div>`);
+    if (typeof v.plan === 'string' && v.plan) row('Plan', esc(v.plan));
+    if (typeof v.masked === 'string' && v.masked && typeof v.name === 'string') row('Account', whoHTML(v));
+    if (typeof v.provider === 'string' && v.provider) row('Provider', esc(v.provider));
+    if (typeof v.via === 'string' && v.via) row('Signed in via', esc(v.via));
+    return rows.length ? `<dl class="hs-facts">${rows.join('')}</dl>` : `<p class="scr-note small hs-acct">${esc(v.text)}</p>`;
+  }
+  /* the card's account block (`[data-acct]`): the generic "Uses your … plan" blurb (FR-018) while the app is not known to be signed in,
+     with the account line under it on a ready card ("Checking the account…", "Account unknown"); the facts once it is signed in */
+  function boxInner(id, st) {
+    const blurb = PLAN[id] ? `<p class="scr-note small hs-plan-uses">${esc(PLAN[id])}</p>` : '';
+    if (st !== 'ready' || !B || !B.harnessAccounts) return blurb;
+    const v = ACC && ACC[id];
+    if (!v) return blurb + `<p class="scr-note small hs-acct" aria-busy="true">${esc(ACC_WAIT)}</p>`;
+    if (v.status === 'signed-in' && typeof v.text === 'string') return factsHTML(v);
+    return blurb + `<p class="scr-note small hs-acct">${esc(typeof v.text === 'string' ? v.text : 'Account unknown')}</p>`;
+  }
+  function acctHTML(id, st) {
+    return `<div class="hs-acct-box" data-acct="${esc(id)}" data-st="${esc(st)}">${boxInner(id, st)}</div>`;
+  }
+  function paintAccounts() {
+    document.querySelectorAll('.hs-acct-box[data-acct]').forEach((p) => { p.innerHTML = boxInner(p.dataset.acct, p.dataset.st); });
+  }
+  /* the eye button: swaps the masked name for the clear one (from memory) and back; nothing is saved */
+  function reveal(btn) {
+    const p = btn.closest('[data-acct]'), span = btn.closest('.hs-acct-who') && btn.closest('.hs-acct-who').querySelector('.hs-acct-name'), v = p && ACC && ACC[p.dataset.acct];
+    if (!span || !v || typeof v.name !== 'string') return;
+    const show = btn.getAttribute('aria-pressed') !== 'true';
+    span.textContent = show ? v.name : v.masked;
+    span.classList.toggle('is-hidden', !show);
+    btn.setAttribute('aria-pressed', String(show));
+    btn.setAttribute('aria-label', show ? HIDE_LABEL : SHOW_LABEL);
+    btn.title = show ? HIDE_LABEL : SHOW_LABEL;
+  }
+  /* FR-014: asks main (refresh = ask the apps again: Settings opened, Check again, a sign-in ended), then fills the lines */
+  async function loadAccounts(refresh) {
+    if (!B || !B.harnessAccounts) return ACC;
+    let r = null;
+    /* spec 051 FR-022: true = Settings opened (once-per-run facts kept); 'check' = Check again or a finished sign-in (asked anew) */
+    try { r = await B.harnessAccounts(refresh === 'check' ? 'check' : !!refresh); } catch (e) { r = null; }
+    ACC = r && typeof r === 'object' ? r : ACC || {};
+    paintAccounts();
+    onAccounts(ACC);
+    return ACC;
+  }
 
   /* the cards; `kinds` from listAdapters, `copilot` from copilotAuth (Copilot's detection itself is free of I/O, FR-007) */
   function sectionHTML(kinds, copilot) {
@@ -48,7 +107,7 @@
       /* spec 012 FR-156: a ready card also says how far the sign-in was checked (the hint withSignIn set) */
       const hint = st === 'ready' ? [simV ? '' : k.version ? 'Version ' + k.version + '.' : 'Ready to use.', k.hint && /^Signed in/.test(k.hint) ? k.hint : ''].filter(Boolean).join(' ') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
       return `<li class="hs-card" data-kind="${esc(k.id)}"><div class="hs-top"><span class="hs-name"><b title="${esc(k.displayName || k.id)}">${esc(k.displayName || k.id)}</b>${FOR[k.id] ? `<span class="hs-for">${esc(FOR[k.id])}</span>` : ''}</span><span class="hs-st hs-${cls}"${simV ? ' title="Simulated version."' : ''}>${esc(word)}</span></div>
-        ${PLAN[k.id] ? `<p class="scr-note small hs-plan-uses">${esc(PLAN[k.id])}</p>` : ''}${hint ? `<p class="scr-note small">${esc(hint)}</p>` : ''}${k.where && st !== 'not-installed' ? `<p class="scr-note small hs-where">Found at <code>${esc(String(k.where).slice(0, 200)).replace(/[\\/]/g, '$&<wbr>')}</code></p>` : ''}${k.id === 'copilot' && copilot && copilot.pwshMissing ? `<p class="scr-note small hs-pwsh">${esc(PWSH_HINT)}</p>` : ''}
+        ${acctHTML(k.id, st)}${hint ? `<p class="scr-note small">${esc(hint)}</p>` : ''}${k.where && st !== 'not-installed' ? `<p class="scr-note small hs-where">Found at <code>${esc(String(k.where).slice(0, 200)).replace(/[\\/]/g, '$&<wbr>')}</code></p>` : ''}${k.id === 'copilot' && copilot && copilot.pwshMissing ? `<p class="scr-note small hs-pwsh">${esc(PWSH_HINT)}</p>` : ''}
         <div class="hs-act">${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(k.id)}">${esc(label)}</button>` : ''}<button class="btn sm" type="button" data-hs="check" data-kind="${esc(k.id)}">Check again</button></div></li>`;
     }).join('');
     return `<section class="scr-sec" aria-labelledby="hsH"><h3 id="hsH" tabindex="-1">Agent apps</h3>
@@ -198,16 +257,18 @@
   function onClick(e) {
     const b = e.target.closest && e.target.closest('[data-hs]'); if (!b) return false;
     const kind = b.dataset.kind, card = b.closest('.hs-card'), name = card ? card.querySelector('b').textContent : kind;
-    if (b.dataset.hs === 'check') onChange(true);
+    if (b.dataset.hs === 'reveal') reveal(b);
+    else if (b.dataset.hs === 'check') onChange(true);
     else if (b.dataset.hs === 'install' || b.dataset.hs === 'update') install(kind, b.dataset.hs, name);
     else if (b.dataset.hs === 'signin') signin(kind, name);
     return true;
   }
 
   window.DurbarHarnesses = {
-    init(o) { B = o.bridge; onChange = o.onChange || onChange; toastLike = o.toast || toastLike; },
+    init(o) { B = o.bridge; onChange = o.onChange || onChange; toastLike = o.toast || toastLike; onAccounts = o.onAccounts || onAccounts; },
     available: () => !!(B && B.harnessRun),
     sectionHTML,
+    loadAccounts,
     onClick,
     /* spec 012 FR-157: the same sign-in flow from the chat's sign-in card; resolves with {ok} when it ends (cancelled = not ok) */
     signIn(kind, name) {

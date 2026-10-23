@@ -112,7 +112,9 @@ interface SimAgent {
   /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
   mcpReported?: SimAgent['mcpLive']; /* the last list a driver reported through `__durbarSimEmit` (not the simulator's own): its names stay in the dialog */
   mcpAppOff?: Set<string>; /* servers a reported `mcp` list had as `disabled` that this agent's switch did not turn off (the agent app's own config) */
-  mcpLive?: { name: string; status: string; error?: string; errorClass?: McpServerStatus['errorClass'] }[];
+  mcpLive?: { name: string; status: string; error?: string; errorClass?: McpServerStatus['errorClass']; transport?: string }[];
+  /** Spec 058 FR-092: when each server's state started, as main keeps it (the same `mcpHealthUpdate` from src/shared/mcphealth.ts). */
+  mcpHealth?: Map<string, SimHealthMark>;
   /** Simulated credit use in nano-AIU, and the open "limit reached" question (spec 011). */
   used?: number;
   /** Dollar estimate used (kinds with `capUnit: 'usd'`). */
@@ -233,6 +235,12 @@ const SIM_FOLDER_SETUP: FolderSetupItem[] = [
 const simSetupDecisions = new Map<string, { accepted: string[]; declined: string[] }>();
  const SIM_PLAN_CAPS = { planMode: true }; // spec 066: every simulated kind can plan first
 /** Spec 058 FR-020: the agent app's name the simulator gives the MCP dialog (the real one is the adapter's `displayName`). */
+interface SimHealthMark { status: string; since: number; ran: boolean; afterRunning: boolean }
+/* spec 058 FR-092: the shared rule (src/shared/mcphealth.ts, loaded in the page after exports-shim.js), read at call time; missing = no marks */
+const simHealth = (prev: Map<string, SimHealthMark> | undefined, servers: { name: string; status?: string }[]): Map<string, SimHealthMark> | undefined => {
+  const f = (window as unknown as { exports?: { mcpHealthUpdate?: (p: unknown, l: unknown, now: number) => Map<string, SimHealthMark> } }).exports?.mcpHealthUpdate;
+  return typeof f === 'function' ? f(prev, servers, Date.now()) : undefined;
+};
 const SIM_APP_NAME: Record<string, string> = { copilot: 'GitHub Copilot', claude: 'Claude Code', codex: 'OpenAI Codex' };
 const SIM_COPILOT_CAPS = { ...SIM_PLAN_CAPS, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'next-message', mcpToggleApplies: 'live', mcpRestart: true, handoff: true, remote: true, oneShot: true, deleteSession: true, renameSession: 'any' } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
@@ -463,13 +471,15 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     let simSchedHook: ((e: AgentEvent) => void) | undefined; // spec 044 FR-018: usage of a scheduled run counts toward its limit
     let selfMcp = false; /* the simulator's own `mcp` event, as opposed to one a driver reports */
     const emit = (e: AgentEvent): void => {
+      /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
+      if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpHealth = undefined; }
+      if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { q.mcpLive = e.servers; q.mcpHealth = simHealth(q.mcpHealth, e.servers); if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
       listeners.forEach((l) => l(e));
       simSchedHook?.(e);
       if (e.type === 'status' && e.status === 'idle') {
         const q = sims.find((x) => x.info.id === e.sessionId);
         if (q?.pendingModel) window.setTimeout(() => void applyPending(q), 0); // the turn ended: the queued switch applies
       }
-      if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { q.mcpLive = e.servers; if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
       const src = e.type === 'toolCall' ? sims.find((x) => x.info.id === e.sessionId) : undefined;
       if (src) simCount(e, src.info.name + ' · ' + src.info.cwd.replace(/\/+$/, '').split('/').pop());
     };
@@ -1296,7 +1306,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const idx = sims.indexOf(s);
         const restartable = (n: string, on: boolean) => live && kc.mcpRestart === true && on && !s.mcpOff?.has(n);
         /* what the last `mcp` event said wins over the canned rule, as main's live list does for a real session */
-        const reported = (n: string): ReturnType<typeof simServer> => { const m = live ? s.mcpLive?.find((x) => x.name === n) : undefined; return m ? { status: s.mcpOff?.has(n) ? 'disabled' : m.status, error: m.error, errorClass: m.errorClass } : simServer(s, idx, n, live); };
+        /* spec 058 FR-092: like main's reply, the time of the reported state, whether a failure came after Running, and the transport */
+        const healthOf = (n: string, status?: string, transport?: string) => { const h = live ? s.mcpHealth?.get(n) : undefined; const ok = h && h.status === (status ?? ''); return { ...(ok ? { since: h.since } : {}), ...(ok && h.afterRunning ? { afterRunning: true } : {}), ...(live && transport ? { transport } : {}) }; };
+        const reported = (n: string): ReturnType<typeof simServer> & { since?: number; afterRunning?: boolean; transport?: string } => { const m = live ? s.mcpLive?.find((x) => x.name === n) : undefined; const st = m ? { status: s.mcpOff?.has(n) ? 'disabled' : m.status, error: m.error, errorClass: m.errorClass } : simServer(s, idx, n, live); return { ...st, ...healthOf(n, st.status, m?.transport) }; };
         const known = new Set([...fakeCli.map((c) => c.name), ...extrasOf(s.info.cwd).map((v) => v.name)]);
         /* spec 058 FR-065/FR-068: Sign in (Copilot only for now), the host of an open sign-in, the terminal steps; main's rules, canned */
         const signOf = (n: string, origin: 'cli' | 'folder' | 'runtime') => {
@@ -2042,6 +2054,29 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       listAdapters: async () => simAdapters(),
       onAdaptersChanged: () => () => undefined, // FR-157: the window marks the app itself from the auth error; nothing else pushes here
       // Spec 051 FR-009: harness setup in the simulator: canned plans and output (a fake link and code), nothing runs
+      // spec 051 FR-014: a fake identity per ready app (never a real account, so screenshots show no personal data); `simacct=unknown`
+      // and `simacct=apikey` change Claude Code's line. The lines are what main's accountLine makes of these answers (checked by test:account).
+      harnessAccounts: async () => {
+        const simAcct = simQuery.get('simacct');
+        // spec 051 FR-016, FR-018, FR-021: the line is masked; `name` is the clear (fake) name for the Settings reveal only; `plan`,
+        // `provider` and `via` are the card's facts. These are accountView's answers for fake identities, mapped like the real ones
+        // (test:account). `simacct=noplan`: Copilot reports no plan.
+        type V = { status: 'signed-in' | 'signed-out' | 'unknown'; text: string; masked?: string; name?: string; plan?: string; provider?: string; via?: string };
+        const out: Record<string, V> = {};
+        const SIM_COPILOT: V = { status: 'signed-in', text: 'Signed in as o••• · Copilot Individual', masked: 'o•••', name: 'octo-sim', plan: 'Copilot Individual', provider: 'GitHub', via: 'GitHub CLI' };
+        const SIM_COPILOT_NOPLAN: V = { status: 'signed-in', text: 'Signed in as o••• (GitHub, through the GitHub CLI)', masked: 'o•••', name: 'octo-sim', provider: 'GitHub', via: 'GitHub CLI' };
+        const SIM_CLAUDE: V = { status: 'signed-in', text: 'Signed in as s•••@example.com · Claude Pro', masked: 's•••@example.com', name: 'sim@example.com', plan: 'Claude Pro', provider: 'Claude', via: 'Claude login' };
+        const SIM_CLAUDE_KEY: V = { status: 'signed-in', text: 'Signed in with an Anthropic API key', provider: 'Anthropic', via: 'API key' };
+        const SIM_CODEX: V = { status: 'signed-in', text: 'Signed in as s•••@example.com · ChatGPT Plus', masked: 's•••@example.com', name: 'sim@example.com', plan: 'ChatGPT Plus', provider: 'OpenAI (ChatGPT)', via: 'ChatGPT login' };
+        for (const a of simAdapters()) {
+          if (a.state === 'not-signed-in') out[a.id] = { status: 'signed-out', text: 'Not signed in' };
+          else if (a.state !== 'ready') continue;
+          else if (a.id === 'copilot') out[a.id] = simAcct === 'noplan' ? SIM_COPILOT_NOPLAN : SIM_COPILOT;
+          else if (a.id === 'claude') out[a.id] = simAcct === 'unknown' ? { status: 'unknown', text: 'Account unknown' } : simAcct === 'apikey' ? SIM_CLAUDE_KEY : SIM_CLAUDE;
+          else if (a.id === 'codex') out[a.id] = SIM_CODEX;
+        }
+        return out;
+      },
       copilotAuth: async () => ({ known: true, signedIn: true, ...(simQuery.get('simnopwsh') === '1' ? { pwshMissing: true } : {}) }), // spec 052 FR-073: page address simnopwsh=1 shows the Windows PowerShell 7 hint
       // spec 060 FR-002: in the app, ask main for the real routes of this OS (main assumes a typical new machine under the simulator);
       // the made-up list below is only for the page opened in a plain browser, where there is no main process

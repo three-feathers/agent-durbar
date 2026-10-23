@@ -50,6 +50,12 @@ body.screen-open .workspace{display:none}
 .mst-w{font-weight:500}
 .srv-hint{display:block;font-size:11px;color:var(--ink-2);overflow-wrap:anywhere}
 .srv-detbtn{align-self:flex-start;margin-top:2px}
+/* spec 058 FR-090/FR-093 (issue 603): the reason line and the Details / Copy diagnostics buttons side by side */
+.srv-why{display:block;font-size:11px;color:var(--ink);overflow-wrap:anywhere}
+.srv-why b{font-weight:600}
+.srv-when{color:var(--ink-2)}
+.srv-btns{display:flex;flex-wrap:wrap;gap:6px;align-self:flex-start;margin-top:2px}
+.srv-btns .srv-detbtn{margin-top:0}
 .srv-det{display:flex;align-items:flex-start;gap:8px;margin-top:4px}
 /* spec 058 FR-069: the needs-sign-in block under a row's hint */
 .srv-sign{flex:1 0 100%;display:flex;flex-direction:column;gap:6px;margin-top:2px}
@@ -243,6 +249,21 @@ body.has-bridge #topBtns{display:flex}
 .hs-list{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px} /* spec 052 FR-097: a fluid grid */
 .hs-card{border:1px solid var(--line);border-radius:var(--r-lg);padding:12px;background:var(--raised);display:flex;flex-direction:column;gap:4px}
 .hs-where code{font-family:var(--font-mono);font-size:11px;overflow-wrap:anywhere} /* spec 060 FR-003: where the app was found; a long path wraps after a folder separator (<wbr>), inside the card */
+.hs-acct{overflow-wrap:anywhere} /* spec 051 FR-013: the signed-in account; a long email wraps inside the card */
+/* spec 051 FR-016: the name is masked and blurred until the eye button reveals it (in this view only) */
+.hs-acct-name.is-hidden{filter:blur(3px);user-select:none}
+.hs-acct-who{white-space:nowrap} /* spec 051 FR-018 (owner): the name and its eye button stay on one line; the rest of the line wraps after them */
+.hs-acct-who .hs-reveal{margin-left:4px}
+.hs-plan-uses[hidden]{display:none}
+/* spec 051 FR-021 (owner): a signed-in card's facts, one per line, bold label and colon; in a narrow card the value wraps under its label */
+.hs-facts{margin:4px 0;font-size:var(--t5-size);line-height:1.5;color:var(--ink-2)}
+.hs-fact{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px}
+.hs-fact dt{font-weight:700;color:var(--ink)}
+.hs-fact dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.hs-reveal{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-left:6px;min-width:24px;min-height:24px;padding:2px;border:1px solid var(--line-ctl);border-radius:6px;background:transparent;color:inherit;cursor:pointer}
+.hs-reveal:hover{background:var(--surface-2)}
+.hs-reveal:focus-visible{outline:3px solid var(--focus);outline-offset:1px;box-shadow:0 0 0 5px var(--focus-halo,transparent)}
+.hs-reveal[aria-pressed="true"]{background:var(--surface-2)}
 .hs-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .hs-st{font-size:var(--t5-size);font-weight:650;padding:2px 9px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
 .hs-ok{color:var(--tone-ok-ink);background:var(--tone-ok-bg);border-color:var(--tone-ok-line)}.hs-warn{color:var(--amber-ink);background:var(--warn-bg);border-color:var(--tone-warn-line)}.hs-off{color:var(--ink-2);background:var(--surface-2)}
