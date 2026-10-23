@@ -140,3 +140,5 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 - [x] T061 Desk card title masked with `DurbarRedact.redact` before the 200-character cut, accessible name masked, name only without the module; driver case with a `ghp_` token across the cut; the #567 hand-off in spec and plan [FR-036, spec 041 FR-065]
   - Check: mutation (cut, then mask) fails it.
 - [x] T062 `focusRequest(card)` shared by the answer bar's `show` and `openAtRequest` [FR-034]
+- [x] T063 The chat badge of a sleeper in the lounge goes to the bed's foot corner so it does not cover the name; `check:office-fill` asserts badge and name rects do not meet (1440x900, 1280x800) [FR-054, issue 576]
+  - Check: mutation (remove the `.rest-old .chatno` rule) fails it.
