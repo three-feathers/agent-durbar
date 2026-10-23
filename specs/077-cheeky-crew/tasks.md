@@ -67,4 +67,4 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [x] T065 [raster] The desk portrait box is doubled to 88x88 at x 24, y 22 (ends at the monitor frame; the sub-agent cards use the same box in the same slot); `PX_PER_UNIT` 4; the placement and its reason written in the FR-060 delta [FR-060]
 - [x] T066 [raster] `check:crew` face-visibility assertions for desk, helper, walker and seat at both sizes; mutation: the face crop set back to the whole picture fails it [FR-060]
 - [x] T067 [raster] `check:office` and `check:geometry` in the crew theme at 1440x900 and 1280x800; screenshots `docs/screenshots/077-crew-office-*.png` re-taken [SC-001]
-
+- [x] T068 [raster] Merge `main` (the spec 001 late re-layout) so `check:office` in the crew theme passes at both sizes; no crew style was at fault (see the spec's 2026-10-23 delta)
