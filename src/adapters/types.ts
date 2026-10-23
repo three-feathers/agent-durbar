@@ -521,6 +521,11 @@ export interface AgentAdapter {
   answerElicitation?(sessionId: string, requestId: string, answer: ElicitAnswer): void;
   /** Agent profiles the session can use (spec 043 FR-001). */
   listAgentProfiles?(sessionId: string): Promise<AgentProfile[]>;
+  /**
+   * Spec 043 FR-041: read the session's agent files again, so a profile created, changed or deleted through Durbar is listed (or
+   * gone) without a restart. Optional: an adapter that reads the files on every list needs none. Resolves false when it could not.
+   */
+  reloadAgentProfiles?(sessionId: string): Promise<boolean>;
   /** Select a profile for the next turns, or null for the default agent (spec 043 FR-001). Emits `agentProfile`. */
   selectAgentProfile?(sessionId: string, id: string | null): Promise<AgentProfile | null>;
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */

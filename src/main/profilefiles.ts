@@ -12,6 +12,7 @@ import * as path from 'path';
 import { MAX_AGENT_BYTES } from '../adapters/claudeAgents';
 import { agentDirsFor } from '../adapters/copilot';
 import type { ProfileFileInfo, ProfileFolderInfo } from '../shared/api';
+import type { AgentProfile } from '../adapters/types';
 import { DEFAULT_TEMPLATE, MAX_PROFILE_BYTES, profileTemplate } from '../shared/profiletemplates';
 import type { TemplateKind } from '../shared/profiletemplates';
 
@@ -401,4 +402,62 @@ export function createProfileFile(dirs: readonly ProfileDir[], app: unknown, pla
 /** The path of a listed file, for main's own use (Open in VS Code); never from the window. */
 export function pathOfProfile(dirs: readonly ProfileDir[], id: unknown): string | undefined {
   return resolveId(dirs, id)?.file;
+}
+
+/**
+ * Spec 043 FR-040: deletes a listed profile file by id. The id is resolved again from the current folders (directly inside its real
+ * agent folder, not a link); only a writable file is deleted, with `unlinkSync` (one file, never a folder, no shell).
+ */
+export function deleteProfileFile(dirs: readonly ProfileDir[], id: unknown): { ok: true; id: string } | Fail {
+  const f = resolveId(dirs, id);
+  if (!f) return { ok: false, error: 'That profile file is not in the list any more.' };
+  if (!f.info.writable) return { ok: false, error: f.info.note ?? 'You cannot delete this file.' };
+  try {
+    if (!fs.lstatSync(f.file).isFile()) return { ok: false, error: 'Only a plain file can be deleted here.' }; // a link or anything else, checked once more
+    fs.unlinkSync(f.file);
+  } catch {
+    return { ok: false, error: 'The file could not be deleted.' };
+  }
+  return { ok: true, id: f.info.id };
+}
+
+/**
+ * Spec 043 FR-041: profile file changes made through Durbar (create, save, delete), counted, and which change each session has
+ * seen, so the next profile list of a session that missed one asks its adapter to read the agent files again, once.
+ */
+export interface ProfileFreshness {
+  changed(): void;
+  needsReload(sessionId: string): boolean;
+  seen(sessionId: string): void;
+  forget(sessionId: string): void;
+}
+export function createProfileFreshness(): ProfileFreshness {
+  let version = 0;
+  const seenAt = new Map<string, number>();
+  return {
+    changed: () => void version++,
+    needsReload: (id) => (seenAt.get(id) ?? 0) !== version,
+    seen: (id) => void seenAt.set(id, version),
+    forget: (id) => void seenAt.delete(id),
+  };
+}
+
+/** FR-041: a session's profiles, after a reload when it missed a change (a failed reload lists the old list and tries again next time). */
+export async function listAgentProfilesFresh(
+  ad: { listAgentProfiles?(id: string): Promise<AgentProfile[]>; reloadAgentProfiles?(id: string): Promise<boolean | void> },
+  id: string,
+  fr: ProfileFreshness,
+): Promise<AgentProfile[]> {
+  if (fr.needsReload(id)) {
+    let ok = true;
+    if (ad.reloadAgentProfiles) {
+      try {
+        ok = (await ad.reloadAgentProfiles(id)) !== false;
+      } catch {
+        ok = false;
+      }
+    }
+    if (ok) fr.seen(id);
+  }
+  return ad.listAgentProfiles ? ad.listAgentProfiles(id) : [];
 }

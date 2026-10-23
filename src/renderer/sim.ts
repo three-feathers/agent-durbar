@@ -508,7 +508,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     }
     const simTrusted = new Set<string>(); // spec 043: repository agents confirmed in this run
     // spec 043 FR-017: profile files in memory (no disk): the FR-005 profiles, a Claude one, a read-only one and one with a front matter error
-    type SimPF = { id: string; app: 'copilot' | 'claude'; scope: 'folder' | 'user'; folder?: string; fileName: string; path: string; writable: boolean; note?: string; text: string };
+    type SimPF = { id: string; app: 'copilot' | 'claude'; scope: 'folder' | 'user'; folder?: string; fileName: string; path: string; writable: boolean; note?: string; text: string; made?: boolean };
     const pfHash = (s: string): string => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16).padStart(8, '0').repeat(8); };
     const pfHead = (t: string): { name?: string; description?: string } => {
       const m = /^---\n([\s\S]*?)\n---/.exec(t); const o: { name?: string; description?: string } = {};
@@ -533,6 +533,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     ];
     const pfInfo = (f: SimPF) => { const h = pfHead(f.text); return { id: f.id, app: f.app, scope: f.scope, ...(f.folder ? { folder: f.folder } : {}), fileName: f.fileName, path: f.path, name: h.name || f.fileName.replace(/(\.agent)?\.md$/, ''), ...(h.description ? { description: h.description } : {}), size: f.text.length, writable: f.writable, ...(f.note ? { note: f.note } : {}) }; };
     /** As main (FR-020): each folder with an id (a hash of its path); New profile sends the id back. */
+    /** spec 043 FR-041: a session's Copilot profiles follow the in-memory files: the FR-005 ones while their file is there, plus Copilot files made in this run. */
+    const simProfiles = () => [
+      ...SIM_PROFILES.filter((p) => simPF.some((f) => f.path === p.path)),
+      ...simPF.filter((f) => f.made && f.app === 'copilot').map((f) => { const h = pfHead(f.text); return { id: f.fileName.replace(/\.agent\.md$/, ''), name: h.name || f.fileName, description: h.description ?? '', source: (f.scope === 'user' ? 'user' : 'repo') as 'user' | 'repo', path: f.path }; }),
+    ];
     const pfFolders = (): { id: string; path: string }[] => [...new Set(sims.map((s) => s.info.cwd))].map((p) => ({ id: pfHash('folder\0' + p).slice(0, 32), path: p }));
     const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
@@ -1463,7 +1468,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || (s.info.adapterId && s.info.adapterId !== 'copilot')) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
-        return { ok: true, profiles: SIM_PROFILES.map((p) => ({ ...p, trusted: p.source !== 'repo' || simTrusted.has(p.id) })) };
+        return { ok: true, profiles: simProfiles().map((p) => ({ ...p, trusted: p.source !== 'repo' || simTrusted.has(p.id) })) };
       },
       selectProfile: async (id, profileId, confirm) => {
         const s = sims.find((x) => x.info.id === id);
@@ -1472,7 +1477,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           emit({ type: 'agentProfile', sessionId: id, timestamp: now(), profile: null } as AgentEvent);
           return { ok: true, profile: null };
         }
-        const p = SIM_PROFILES.find((x) => x.id === profileId);
+        const p = simProfiles().find((x) => x.id === profileId);
         if (!p) return { ok: false, error: 'That agent is not available in this session.' };
         if (p.source === 'repo' && !simTrusted.has(p.id)) {
           if (confirm !== true) return { ok: false, needsConfirm: true, profile: p };
@@ -1506,8 +1511,17 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const tpl = (self as unknown as { exports?: { profileTemplate?: (a: string, n: string, k?: string) => string } }).exports?.profileTemplate;
         if (!tpl) return { ok: false as const, error: 'The templates are not loaded.' };
         const f = pf(app, place === 'user' ? 'user' : 'folder', folder, file, typeof text === 'string' ? text : tpl(app, name, template === 'standard' ? 'standard' : 'success')); // text: a reviewed AI draft (FR-029)
+        f.made = true;
         simPF.push(f);
         return { ok: true as const, id: f.id, info: pfInfo(f) };
+      },
+      // spec 043 FR-040: delete in memory, with main's rules (a listed id, a writable file)
+      deleteProfileFile: async (fileId) => {
+        const i = simPF.findIndex((x) => x.id === fileId);
+        if (i < 0) return { ok: false as const, error: 'That profile file is not in the list any more.' };
+        if (!simPF[i].writable) return { ok: false as const, error: simPF[i].note || 'You cannot delete this file.' };
+        simPF.splice(i, 1);
+        return { ok: true as const, id: String(fileId) };
       },
       // spec 043 FR-030: a canned Agent Success Profile from the answers (no credits), checked like a real reply
       generateProfile: async (req) => {
@@ -1528,7 +1542,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           simGenRunning = false;
         }
         const said = req.mode === 'describe' ? String(req.description ?? '') : Object.values(req.answers ?? {}).join(' ');
-        const summary = req.mode === 'describe' ? said : String((req.answers ?? {}).title || said);
+        const summary = req.mode === 'describe' ? said : String((req.answers ?? {}).role || said);
         const spend = req.by === 'claude' ? { costUsd: 0.003 } : req.by === 'copilot' ? { nanoAiu: 15_000_000 } : {};
         if (/\bfail\b/i.test(said)) return { ok: false as const, error: 'The agent app gave no answer.', ...spend };
         let text = T.profileTemplate(req.app, req.name, 'success').replace(/^description: .*$/m, 'description: ' + (summary.slice(0, 120).replace(/[:#\n]/g, ' ').trim() || 'A focused agent'));
@@ -1536,7 +1550,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (tl.tools.length) { const all = [...(T.DEFAULT_READ_TOOLS[req.app] ?? []), ...tl.tools].join(', '); text = text.replace(/^tools: .*$/m, 'tools: ' + (req.app === 'copilot' ? '[' + all + ']' : all)); }
         const a = req.answers ?? {};
         for (const q of T.PROFILE_QUESTIONS) {
-          const v = req.mode === 'describe' ? (q.id === 'title' ? said.slice(0, 200) : '') : a[q.id];
+          const v = req.mode === 'describe' ? (q.id === 'role' ? said.slice(0, 200) : '') : a[q.id];
           if (v) text = text.replace(new RegExp('(## ' + q.section + '\\n\\n)[^\\n]*'), (_m, h: string) => h + v);
         }
         const v = T.validateGeneratedProfile(text, { app: req.app, name: req.name, mode: req.mode, description: req.description, answers: req.answers, tools: tl.tools }, (t) => PE.parseFrontmatter(t));

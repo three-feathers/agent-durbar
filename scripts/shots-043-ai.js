@@ -71,7 +71,7 @@ module.exports = async (ctx) => {
     assert.ok(/read-only tools \(view, grep, glob\)/.test(tn.note) && /Tools named in your text are not granted/.test(tn.note) && /shell/.test(tn.ph), 'the tools note: ' + JSON.stringify(tn));
     assert.ok(tn.rows && tn.w <= 760, 'two-row answers and the shared dialog width (--dlg-w-l): ' + JSON.stringify(tn));
     await H.click('[data-am="questions"]');
-    await js(`(()=>{const set=(id,v)=>{const t=document.querySelector('#peAQ textarea[data-q="'+id+'"]');t.value=v;t.dispatchEvent(new Event('input',{bubbles:true}));};set('title','Reviewer for the payments service');set('reportsTo','Me, before any change is merged');set('success','No missed security or rounding issue; notes under ten lines');set('tools','Reads code only; never uses powershell');const x=document.getElementById('peATools');x.value='shell';x.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await js(`(()=>{const set=(id,v)=>{const t=document.querySelector('#peAQ textarea[data-q="'+id+'"]');t.value=v;t.dispatchEvent(new Event('input',{bubbles:true}));};set('role','Reviewer for the payments service');set('ask','Me, before any change is merged');set('quality','No missed security or rounding issue; notes under ten lines');set('safety','Reads code only; never uses powershell');const x=document.getElementById('peATools');x.value='shell';x.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     await H.shot(path.join(OUT, `043-ai-questionnaire-${w}x${h}.png`), { prep: 'calm', delay: 250 });
     const fit = await js(`(()=>{const d=document.querySelector('.dlg.pe-ai').getBoundingClientRect();return d.top>=0&&d.bottom<=innerHeight&&d.right<=innerWidth})()`);
     assert.ok(fit, 'the questionnaire fits the window');
@@ -81,7 +81,7 @@ module.exports = async (ctx) => {
     const d = await js(`({mode:document.getElementById('peMain').dataset.mode,dirty:!document.getElementById('peDirty').hidden,sub:document.getElementById('peSub').textContent,h2:[...document.querySelectorAll('#peMd h2')].map(x=>x.textContent),txt:document.getElementById('peMd').textContent,st:document.getElementById('peStatus').textContent,vs:document.getElementById('peVs')&&document.getElementById('peVs').hidden})`);
     assert.strictEqual(d.mode, 'split', 'Split view');
     assert.ok(d.dirty && /not saved yet/.test(d.sub) && d.vs, 'an unsaved draft');
-    assert.deepStrictEqual(d.h2, ['Title', 'People responsibility', 'Reporting to', 'Behaviors', 'Key Success Criteria', 'Skills', 'Tools and accountability', 'Key responsibilities']);
+    assert.deepStrictEqual(d.h2, ['Role and goal', 'Scope and non-goals', 'Inputs and context to gather first', 'Working method', 'Quality bar and definition of done', 'Safety limits', 'Output format', 'When to ask the user']);
     assert.ok(/payments service/.test(d.txt) && /rounding/.test(d.txt) && /Written by .*AI credits/.test(d.st), 'answers in the draft');
     // FR-033: the granted extra tool and the tool only mentioned in the text
     assert.ok(/Tools beyond read-only: shell\. Check them before saving/.test(d.st) && /You mentioned powershell; it is not granted unless listed under Extra tools/.test(d.st), 'the tools note in the draft: ' + d.st);
@@ -90,7 +90,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('peSrc').focus()`);
     await H.key('S', [MOD], { char: 'never' });
     assert.ok(await until(`document.getElementById('peDirty').hidden&&!/not saved yet/.test(document.getElementById('peSub').textContent)`), 'Save created the file');
-    assert.ok(await js(`/payments service/.test(document.getElementById('peSrc').value)&&!/The role in a few words/.test(document.getElementById('peSrc').value)`), 'the saved file is the draft, not the empty template');
+    assert.ok(await js(`/payments service/.test(document.getElementById('peSrc').value)&&!/Your title in a few words/.test(document.getElementById('peSrc').value)`), 'the saved file is the draft, not the empty template');
     await H.click('#peClose');
     assert.ok(await until(`!document.getElementById('peOv')`));
     assert.ok(await until(`[...document.querySelectorAll('#pfSec .pf-row b')].some(b=>b.textContent===${jsLiteral('pay-reviewer-' + w)})`), 'listed in Settings');

@@ -61,7 +61,7 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
     // better thinking: the goal and done first, then steps; concrete and checkable; assumptions marked; numbered steps
     assert.ok(/before (you )?writ/i.test(p) && /goal/i.test(p) && /done/i.test(p), `${app}: think the role through first`);
     assert.ok(/concrete/i.test(p) && /checkable/i.test(p), `${app}: concrete, checkable lines`);
-    assert.ok(/assum/i.test(p), `${app}: mark assumptions where the user said nothing`);
+    assert.ok(/said nothing about a section.*"Assumed:"/.test(p), `${app}: mark assumptions where the user said nothing`);
     assert.ok(/numbered/i.test(p), `${app}: numbered steps in the working method`);
     // harness-agnostic: the section guidance and the rules for the body name no agent app or vendor tool (only the front matter line does)
     const guidance = SUCCESS_SECTIONS.map((s) => s.guide).join(' ') + ' ' + SAFETY_LINES.join(' ');
@@ -99,14 +99,14 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
   assert.ok(!mcp.ok && /mcp-servers/.test(mcp.error), 'extra front matter keys refused');
   assert.ok(!validateGeneratedProfile('# no front matter', Q, parse).ok);
   assert.ok(!validateGeneratedProfile(filled('claude', 'pay-reviewer').replace(/^description: .*\n/m, ''), Q, parse).ok, 'no description refused');
-  const html = validateGeneratedProfile('```markdown\n' + filled('claude', 'pay-reviewer').replace('## Skills\n', '## Skills\n<script>alert(1)</script><img src=x onerror=alert(1)>\n') + '\n```', Q, parse);
+  const html = validateGeneratedProfile('```markdown\n' + filled('claude', 'pay-reviewer').replace('## Output format\n', '## Output format\n<script>alert(1)</script><img src=x onerror=alert(1)>\n') + '\n```', Q, parse);
   assert.ok(html.ok && !/<[A-Za-z!/?]/.test(html.text) && html.text.includes('&lt;script>') && html.warnings.filter((w) => /HTML/.test(w)).length === 1, 'fence removed, HTML kept only as text, with a note');
   // nested and overlapping tags, comments, closing tags: no "<" that opens a tag survives (one pass, nothing re-forms)
   for (const evil of ['<scr<script>ipt>alert(1)</scr</script>ipt>', '<<script>script>x', '<!--<script>-->', '</style><svg/onload=x>', '<<img src=x onerror=y>>', '<?xml x?>', '<ScRiPt>a</sCrIpT>']) {
-    const r = validateGeneratedProfile(filled('claude', 'pay-reviewer').replace('## Skills\n', '## Skills\n' + evil + '\n'), Q, parse);
+    const r = validateGeneratedProfile(filled('claude', 'pay-reviewer').replace('## Output format\n', '## Output format\n' + evil + '\n'), Q, parse);
     assert.ok(r.ok && !/<[A-Za-z!/?]/.test(r.text), `neutralised: ${evil}`);
   }
-  assert.ok(validateGeneratedProfile(filled('claude', 'pay-reviewer').replace('## Skills\n', '## Skills\nUse a < b and 3<4 as text\n'), Q, parse).ok, 'a plain "<" stays');
+  assert.ok(validateGeneratedProfile(filled('claude', 'pay-reviewer').replace('## Output format\n', '## Output format\nUse a < b and 3<4 as text\n'), Q, parse).ok, 'a plain "<" stays');
   const renamed = validateGeneratedProfile(filled('claude', 'other-name'), Q, parse);
   assert.ok(renamed.ok && /^---\nname: pay-reviewer\n/.test(renamed.text), 'the chosen name wins');
   const cop = validateGeneratedProfile(filled('copilot', 'pay-reviewer'), { app: 'copilot', name: 'pay-reviewer', mode: 'describe', description: 'reviews code' }, parse);
@@ -154,10 +154,10 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
 {
   const noName = validateGeneratedProfile(filled('claude', 'x').replace(/^name: .*\n/m, ''), Q, parse);
   assert.ok(noName.ok && /^---\nname: pay-reviewer\n/.test(noName.text), 'no name key: inserted');
-  const body = filled('claude', 'x').replace(/^name: .*\n/m, '').replace('## Skills\n', '## Skills\nname: keep-this-line\n');
+  const body = filled('claude', 'x').replace(/^name: .*\n/m, '').replace('## Output format\n', '## Output format\nname: keep-this-line\n');
   const b = validateGeneratedProfile(body, Q, parse);
   assert.ok(b.ok && b.text.includes('\nname: keep-this-line\n') && /^---\nname: pay-reviewer\n/.test(b.text), 'a body line "name:" is never rewritten: ' + (b.ok ? b.text.slice(0, 80) : b.error));
-  const both = validateGeneratedProfile(filled('claude', 'other').replace('## Skills\n', '## Skills\nname: keep-this-line\n'), Q, parse);
+  const both = validateGeneratedProfile(filled('claude', 'other').replace('## Output format\n', '## Output format\nname: keep-this-line\n'), Q, parse);
   assert.ok(both.ok && both.text.includes('name: keep-this-line') && (both.text.match(/^name: pay-reviewer$/gm) ?? []).length === 1, 'front matter name rewritten, body untouched');
 }
 
@@ -186,7 +186,7 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
   // a reply that names it twice is refused by the parser before any rewrite (never a silent pick)
   assert.ok(!validateGeneratedProfile(nameLine('"name": a\nname: b'), Q, parse).ok, 'two name keys refused');
   // a body line with a quoted key is body text and stays
-  const qb = validateGeneratedProfile(filled('claude', 'x').replace('## Skills\n', '## Skills\n"name": keep-this-line\n'), Q, parse);
+  const qb = validateGeneratedProfile(filled('claude', 'x').replace('## Output format\n', '## Output format\n"name": keep-this-line\n'), Q, parse);
   assert.ok(qb.ok && qb.text.includes('\n"name": keep-this-line\n') && names(qb.text).join() === 'pay-reviewer', 'quoted name in the body untouched');
 }
 
@@ -194,7 +194,7 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
 {
   for (const app of ['claude', 'copilot'] as const) assert.strictEqual(maxProfileBytes(app), maxBytesFor(app), `one limit for the reply and the save path (${app})`);
   const cap = maxProfileBytes('claude'); // 64 KB: Claude Code's own cap (FR-021)
-  const withSkills = (x: string, app: 'claude' | 'copilot' = 'claude'): string => filled(app, 'pay-reviewer').replace('## Skills\n', '## Skills\n' + x + '\n');
+  const withSkills = (x: string, app: 'claude' | 'copilot' = 'claude'): string => filled(app, 'pay-reviewer').replace('## Output format\n', '## Output format\n' + x + '\n');
   const grow = withSkills('<b'.repeat(Math.floor(cap / 3)));
   assert.ok(Buffer.byteLength(grow) < cap, 'under the cap before neutralising');
   const g = validateGeneratedProfile(grow, Q, parse);

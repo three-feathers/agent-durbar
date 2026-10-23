@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { listClaudeAgents, MAX_AGENT_BYTES, parseClaudeAgent } from '../src/adapters/claudeAgents';
-import { DEFAULT_TEMPLATE, PROFILE_TEMPLATES, profileTemplate, SUCCESS_SECTIONS } from '../src/shared/profiletemplates';
+import { DEFAULT_TEMPLATE, PROFILE_TEMPLATES, profileTemplate, SAFETY_LINES, SUCCESS_SECTIONS } from '../src/shared/profiletemplates';
 import { atomicOps, createProfileFile, createProfileFreshness, defaultProfileEnv, listAgentProfilesFresh, deleteProfileFile, encodeLike, fileIdOf, folderIdOf, headOf, isProfileName, listProfileFiles, maxBytesFor, MAX_PROFILE_BYTES, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../src/main/profilefiles';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-profilefiles-'));
@@ -439,7 +439,8 @@ if (process.platform !== 'win32') {
       assert.strictEqual(v.name, 'helper-1');
       assert.ok(v.description && v.tools, `${app}/${kind}: description and tools`);
       assert.match(v.tools, app === 'claude' ? /^Read, Grep, Glob$/ : /^view, grep, glob$/, 'read-only tools only');
-      assert.ok(!/[~\\]|\/[a-z]|https?:|token|secret|password|api[_-]?key/i.test(t), `${app}/${kind}: no paths, URLs or secrets`);
+      // the fixed safety lines (FR-043) forbid secrets by name; apart from them, no paths, URLs or secrets
+      assert.ok(!/[~\\]|\/[a-z]|https?:|token|secret|password|api[_-]?key/i.test(SAFETY_LINES.reduce((x, l) => x.replace(l, ''), t)), `${app}/${kind}: no paths, URLs or secrets`);
       if (app === 'claude') {
         const def = parseClaudeAgent(t, 'helper-1.md', 'repo');
         assert.ok(def && def.profile.id === 'helper-1' && def.prompt.length > 20, `${kind}: Claude Code discovery accepts it`);
@@ -453,9 +454,9 @@ if (process.platform !== 'win32') {
     }
   }
   const std = createProfileFile(dirs(), 'claude', W0, 'plain', 'standard');
-  assert.ok(std.ok && !fs.readFileSync(path.join(WS, '.claude', 'agents', 'plain.md'), 'utf8').includes('## Behaviors'), 'Standard agent template written');
+  assert.ok(std.ok && !fs.readFileSync(path.join(WS, '.claude', 'agents', 'plain.md'), 'utf8').includes('## Working method'), 'Standard agent template written');
   const def = createProfileFile(dirs(), 'claude', W0, 'asp');
-  assert.ok(def.ok && fs.readFileSync(path.join(WS, '.claude', 'agents', 'asp.md'), 'utf8').includes('## Key Success Criteria'), 'no template given: the Agent Success Profile');
+  assert.ok(def.ok && fs.readFileSync(path.join(WS, '.claude', 'agents', 'asp.md'), 'utf8').includes('## Quality bar and definition of done'), 'no template given: the Agent Success Profile');
   assert.ok(!createProfileFile(dirs(), 'claude', W0, 'odd', 'evil').ok, 'unknown template refused');
 }
 

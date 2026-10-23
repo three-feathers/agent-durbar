@@ -98,6 +98,7 @@ const api: DurbarApi = {
   createProfileFile: (app, place, name, template, text) => ipcRenderer.invoke('profiles:create', app, place, name, template, text),
   generateProfile: (req) => ipcRenderer.invoke('profiles:generate', req),
   openProfileInVSCode: (fileId) => ipcRenderer.invoke('profiles:openInVSCode', fileId),
+  deleteProfileFile: (fileId) => ipcRenderer.invoke('profiles:delete', fileId),
   usageAllTime: () => ipcRenderer.invoke('usage:allTime'),
   usageReset: () => ipcRenderer.invoke('usage:reset'),
   usageTotals: () => ipcRenderer.invoke('usage:totals'),

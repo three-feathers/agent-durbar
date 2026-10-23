@@ -69,7 +69,7 @@ module.exports = async (ctx) => {
         assert.ok(await until(`!!document.getElementById('peOv')&&/# Agent Success Profile: release-lead/.test(document.getElementById('peSrc').value)`), 'the new Agent Success Profile opens');
         await mode('split');
         const heads = await js(`[...document.querySelectorAll('#peMd h2')].map(h=>h.textContent)`);
-        assert.deepStrictEqual(heads, ['Title', 'People responsibility', 'Reporting to', 'Behaviors', 'Key Success Criteria', 'Skills', 'Tools and accountability', 'Key responsibilities'], 'the sections render in the preview');
+        assert.deepStrictEqual(heads, ['Role and goal', 'Scope and non-goals', 'Inputs and context to gather first', 'Working method', 'Quality bar and definition of done', 'Safety limits', 'Output format', 'When to ask the user'], 'the sections render in the preview');
         assert.ok(await js(`/^Agent Success Profile · GitHub Copilot/.test(document.getElementById('peSub').textContent)`), 'editor words');
         await H.shot(path.join(OUT, `043-editor-new-asp-split-${w}x${h}.png`), { prep: 'calm', blur: true, delay: 250 });
         await closeEditor();
@@ -131,7 +131,7 @@ module.exports = async (ctx) => {
         await openFile('house-style');
         assert.ok(await js(`document.getElementById('peSave').hidden&&document.getElementById('peSrc').readOnly&&!document.getElementById('peRo').hidden`), 'read-only file');
         await closeEditor();
-        // New profile: creates the file and opens it; a bad name is refused in the form
+        // New profile: opens a draft, Save creates the file (FR-042); a bad name is refused in the form
         await H.click('#pfNew');
         assert.ok(await until(`!!document.getElementById('peNewOv')`), 'New profile form');
         assert.strictEqual(await js(`(document.querySelector('input[name="peNTpl"]:checked')||{}).value`), 'success', 'the Agent Success Profile template is preselected');
@@ -140,8 +140,12 @@ module.exports = async (ctx) => {
         assert.ok(await until(`!document.getElementById('peNErr').hidden`), 'bad name refused');
         await js(`(()=>{document.getElementById('peNApp').value='claude';const n=document.getElementById('peNName');n.value='planner';n.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('peNGo').click();})()`);
         assert.ok(await until(`!!document.getElementById('peOv')&&/name: planner/.test(document.getElementById('peSrc').value)`), 'the new file opens');
-        assert.ok(await js(`!/## Behaviors/.test(document.getElementById('peSrc').value)&&/model: inherit/.test(document.getElementById('peSrc').value)`), 'the Standard agent template');
+        assert.ok(await js(`!/## Working method/.test(document.getElementById('peSrc').value)&&/model: inherit/.test(document.getElementById('peSrc').value)`), 'the Standard agent template');
         assert.ok(await js(`/Claude Code/.test(document.getElementById('peSub').textContent)&&/planner\\.md/.test(document.getElementById('peSub').textContent)`), 'Claude Code file planner.md');
+        // spec 043 FR-042: Create opened a draft; the file exists only after Save
+        assert.ok(await js(`/not saved yet/.test(document.getElementById('peSub').textContent)&&![...document.querySelectorAll('#pfSec .pf-row b')].some(b=>b.textContent==='planner')`), 'a draft, not a file yet');
+        await H.click('#peSave');
+        assert.ok(await until(`!/not saved yet/.test(document.getElementById('peSub').textContent)`), 'Save created the file');
         await closeEditor();
         assert.ok(await until(`[...document.querySelectorAll('#pfSec .pf-row b')].some(b=>b.textContent==='planner')`), 'listed in Settings');
         // the Profile menu: Edit opens the editor on that profile's file

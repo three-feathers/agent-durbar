@@ -6,7 +6,7 @@ import { errText } from '../agentops';
 import type { AgentTrustStore } from '../agenttrust';
 import { hashAgentFile } from '../agenttrust';
 import { PROFILE_ID } from '../folders';
-import { createProfileFile, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../profilefiles';
+import { createProfileFile, createProfileFreshness, deleteProfileFile, listAgentProfilesFresh, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../profilefiles';
 import { openInVSCode } from '../vscode';
 import * as path from 'path';
 import type { FrontmatterParse } from '../../shared/profiletemplates';
@@ -28,6 +28,8 @@ export interface ProfilesIpcDeps {
 export function register(deps: ProfilesIpcDeps): void {
   const { agents, router, wsKey, ensureLive } = deps;
   const agentTrust = deps.getAgentTrust;
+  /* spec 043 FR-041: files changed through Durbar; a session that missed a change re-reads its agent files on its next list */
+  const fresh = createProfileFreshness();
   // ---- custom agent per session (spec 043 FR-003): list, select; a repository agent needs a confirmation for its exact file ----
   ipcHandle('agents:listProfiles', async (_e, id: unknown) => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -35,7 +37,7 @@ export function register(deps: ProfilesIpcDeps): void {
     if (!a || !ad?.listAgentProfiles) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
     try {
       await ensureLive(a); // a restored or ended agent starts its session (no prompt, no credits)
-      const profiles = (await ad.listAgentProfiles(a.id)).map((p) => ({ ...p, trusted: p.source !== 'repo' || (!!p.path && agentTrust()?.isTrusted(wsKey(a), p.id, hashAgentFile(p.path))) }));
+      const profiles = (await listAgentProfilesFresh(ad, a.id, fresh)).map((p) => ({ ...p, trusted: p.source !== 'repo' || (!!p.path && agentTrust()?.isTrusted(wsKey(a), p.id, hashAgentFile(p.path))) }));
       return { ok: true, profiles };
     } catch (err) {
       return { ok: false, error: errText(err), profiles: [] };
@@ -78,11 +80,22 @@ export function register(deps: ProfilesIpcDeps): void {
   ipcHandle('profiles:read', (_e, id: unknown) => readProfileFile(dirs(), id));
   ipcHandle('profiles:save', (e, id: unknown, text: unknown, baseSha: unknown, overwrite: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
-    return saveProfileFile(dirs(), id, text, baseSha, overwrite === true);
+    const r = saveProfileFile(dirs(), id, text, baseSha, overwrite === true);
+    if (r.ok) fresh.changed();
+    return r;
   });
   ipcHandle('profiles:create', (e, app: unknown, place: unknown, name: unknown, template: unknown, text: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
-    return createProfileFile(dirs(), app, place, name, template === undefined ? 'success' : template, text); // text: a reviewed AI draft (FR-029)
+    const r = createProfileFile(dirs(), app, place, name, template === undefined ? 'success' : template, text); // text: a reviewed AI draft (FR-029)
+    if (r.ok) fresh.changed();
+    return r;
+  });
+  /* spec 043 FR-040: delete one listed, writable file by id (resolved again in main; no shell, never a folder) */
+  ipcHandle('profiles:delete', (e, id: unknown) => {
+    if (!fromApp(e)) return { ok: false, error: 'invalid request' };
+    const r = deleteProfileFile(dirs(), id);
+    if (r.ok) fresh.changed();
+    return r;
   });
   /* spec 043 FR-026..FR-028: one prompt to an agent app's one-shot path; the reply is checked and handed back as a draft (nothing written) */
   ipcHandle('profiles:generate', async (e, req: unknown) => {

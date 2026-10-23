@@ -151,6 +151,8 @@
     st.fmErrors=fm.errors.length;
   }
   function dirty(){return !!st&&$('peSrc')&&$('peSrc').value!==st.saved;}
+  /* FR-042: a template draft nobody has changed holds nothing to lose: it closes without asking and writes nothing */
+  function askOnClose(){return !!st&&(st.draft&&typeof st.pristine==='string'?$('peSrc').value!==st.pristine:dirty());}
   function paintDirty(){
     if(!st)return;const d=dirty();
     $('peDirty').hidden=!d;
@@ -167,7 +169,7 @@
 
   async function close(force){
     if(!st)return true;
-    if(!force&&dirty()){
+    if(!force&&askOnClose()){
       const v=await X.askDialog({title:'Discard changes to '+st.info.name+'?',body:'Your changes to '+st.info.fileName+' are not saved.',returnFocus:()=>$('peSrc'),
         buttons:[{label:'Keep editing',value:null},{label:'Discard',value:'discard',cls:'primary danger'}]});
       if(!v)return false;
@@ -210,13 +212,13 @@
   async function saveDraft(text){
     st.saving=true;status('Saving…');
     const d=st.draft;
-    const r=await X.bridge.createProfileFile(d.app,d.place,d.name,'success',text).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+    const r=await X.bridge.createProfileFile(d.app,d.place,d.name,d.template||'success',text).catch(e=>({ok:false,error:String(e&&e.message||e)}));
     if(!st)return;
     st.saving=false;
     if(!r.ok){status('Not saved: '+(r.error||'unknown error'));return;}
     const f=await X.bridge.readProfileFile(r.id).catch(()=>null);
     if(!st)return;
-    st.id=r.id;st.draft=null;st.info=(f&&f.ok&&f.info)||r.info;st.sha=f&&f.ok?f.sha256:'';st.saved=f&&f.ok?f.text:text;
+    st.id=r.id;st.draft=null;st.pristine=undefined;st.info=(f&&f.ok&&f.info)||r.info;st.sha=f&&f.ok?f.sha256:'';st.saved=f&&f.ok?f.text:text;
     if(f&&f.ok&&f.text!==$('peSrc').value)$('peSrc').value=f.text;
     if($('peVs'))$('peVs').hidden=false;
     paintHead();paintDirty();
@@ -256,7 +258,7 @@
     if(isOpen()&&!(await close()))return;
     const opener=(opts&&opts.returnFocus)||null;
     const fileName=newFileName(d.app,d.name);
-    mount({id:null,draft:{app:d.app,place:d.place,name:d.name},info:{app:d.app,scope:d.place==='user'?'user':'folder',folder:d.folder,fileName,path:'',name:d.name,writable:true},sha:'',saved:'',writable:true,mode:(opts&&opts.mode)||loadMode(store()),opener,fmErrors:0},d.text);
+    mount({id:null,draft:{app:d.app,place:d.place,name:d.name,template:d.template},pristine:opts&&opts.pristine?d.text:undefined,info:{app:d.app,scope:d.place==='user'?'user':'folder',folder:d.folder,fileName,path:'',name:d.name,writable:true},sha:'',saved:'',writable:true,mode:(opts&&opts.mode)||loadMode(store()),opener,fmErrors:0},d.text);
     if(opts&&opts.note)status(opts.note);
   }
   function mount(state,text){
@@ -332,9 +334,13 @@
         if(!validName(name)){er.hidden=false;setText(er,NAME_RE.test(name)&&RESERVED_RE.test(name)?'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9): choose another.':'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');$('peNName').focus();return;}
         const pl=$('peNPlace').value;
         const tp=(ov.querySelector('input[name="peNTpl"]:checked')||{}).value||DEF;
-        const r=await X.bridge.createProfileFile($('peNApp').value,pl,name,tp).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-        if(!r.ok){er.hidden=false;setText(er,r.error||'Could not create the file.');return;}
-        done(r.id);changed(r.info);open(r.id,{returnFocus:opener});
+        /* FR-042: Create writes nothing; the template opens as a draft and the first Save creates the file (main checks again) */
+        const app=$('peNApp').value,fn=newFileName(app,name),folder=pl==='user'?undefined:(folders.find(f=>f&&f.id===pl)||{}).path;
+        const taken=((l&&l.files)||[]).some(f=>f&&f.app===app&&f.fileName===fn&&(pl==='user'?f.scope==='user':f.scope==='folder'&&f.folder===folder));
+        if(taken){er.hidden=false;setText(er,fn+' exists already. Choose another name, or open it from the list.');$('peNName').focus();return;}
+        const tpl=win.exports&&win.exports.profileTemplate;
+        if(typeof tpl!=='function'){er.hidden=false;setText(er,'The templates are not loaded.');return;}
+        done('draft');openDraft({app,place:pl,name,folder,template:tp,text:tpl(app,name,tp)},{pristine:true,returnFocus:opener,note:'Not saved yet: Save creates '+fn+'.'});
       };
       ov.querySelector('#peNGo').onclick=go;
       /* spec 043 FR-026: Create with AI, only for the Agent Success Profile template */
@@ -424,16 +430,49 @@
     });
   }
 
+  /**
+   * Spec 043 FR-040: delete a profile file after an askDialog confirmation (Cancel focused, Delete in red). Main resolves the id again
+   * and deletes only a writable plain file. The editor open on it closes; the change listeners repaint the lists (FR-041).
+   * Resolves true when the file was deleted.
+   */
+  async function remove(id,opts){
+    if(!X||!X.bridge.deleteProfileFile||!X.bridge.listProfileFiles)return false;
+    const l=await X.bridge.listProfileFiles().catch(()=>null);
+    const f=l&&(l.files||[]).find(x=>x.id===id);
+    if(!f){X.toast('That profile file is not in the list any more.',5000);return false;}
+    if(!f.writable){X.toast(X.esc(f.note||'You cannot delete this file.'),5000);return false;}
+    const back=(opts&&opts.returnFocus)||null;
+    const v=await X.askDialog({title:'Delete the profile '+f.name+'?',body:'The file is deleted from disk. Sessions that use this profile keep it until they end.',lines:['File: '+f.path],returnFocus:back?()=>back:undefined,
+      buttons:[{label:'Cancel',value:null},{label:'Delete',value:'delete',cls:'primary danger'}]});
+    if(!v)return false;
+    const r=await X.bridge.deleteProfileFile(id).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+    if(!r||!r.ok){X.toast('Not deleted: '+X.esc((r&&r.error)||'unknown error'),5000);return false;}
+    if(st&&st.id===id)await close(true);
+    X.toast('Deleted '+X.esc(f.fileName)+'.',4000);
+    changed({deleted:id,app:f.app});
+    return true;
+  }
+  /** FR-040: Delete from the Profile menu, which knows a profile by its file path; main's list gives the id. */
+  async function removeByPath(p,opts){
+    const f=await fileByPath(p);
+    if(!f){X.toast('This profile\'s file is not in the list of profile files (Settings > Profiles).',5000);return false;}
+    return remove(f.id,opts);
+  }
+  const normPath=s=>String(s||'').replace(/\\/g,'/').toLowerCase(); /* the agent app may spell the path differently (separators, drive letter case) */
+  async function fileByPath(p){
+    if(!X||!X.bridge.listProfileFiles)return null;
+    const l=await X.bridge.listProfileFiles().catch(()=>null);
+    return (l&&(l.files.find(x=>x.path===p)||l.files.find(x=>normPath(x.path)===normPath(p))))||null;
+  }
+
   /** The Profile menu's Edit button: the session's profile carries its file path; main's list gives the id for it. */
   async function openByPath(p,opts){
     if(!X||!X.bridge.listProfileFiles)return;
-    const l=await X.bridge.listProfileFiles().catch(()=>null);
-    const norm=s=>String(s||'').replace(/\\/g,'/').toLowerCase(); /* the agent app may spell the path differently (separators, drive letter case) */
-    const f=l&&(l.files.find(x=>x.path===p)||l.files.find(x=>norm(x.path)===norm(p)));
+    const f=await fileByPath(p);
     if(!f){X.toast('This profile\'s file is not in the list of profile files (Settings > Profiles).',5000);return;}
     if(f.tooBig){X.toast(X.esc(f.note||'The file is too large to open here.'),5000);return;}
     return open(f.id,opts);
   }
 
-  return Object.assign({},pure,{init,open,openDraft,openByPath,newProfile,close,isOpen,onChange,dirty:()=>dirty(),mode:()=>st&&st.mode});
+  return Object.assign({},pure,{init,open,openDraft,openByPath,newProfile,remove,removeByPath,close,isOpen,onChange,dirty:()=>dirty(),mode:()=>st&&st.mode});
 });
