@@ -134,3 +134,23 @@ specs/005-chat-fullscreen-and-agent-strip/
 | Driver | `scripts/check-composer-toolbar.js` | Long prompt grows to the cap then scrolls; drag changes and clamps; reload remembers; double-click resets; keys; both sizes. |
 
 **Constitution check.** I: no adapter code. III: no new data stored beyond a pixel number. IV: simulator and unit test only. V: no text added, toolbar unchanged, the transcript keeps 140px. VI: pointer events and CSS only. VIII: no real screen reader or touch screen tried (`[KNOWN GAP]` in the tasks).
+
+## Delta 2026-10-23: compact composer toolbar (issue #627, FR-050..FR-056)
+
+**Shape.** Renderer only, plus the simulator's context event. No IPC, main, adapter or shared change: the breakdown is read from the `ContextEvent` fields the adapters already send (`system`, `conversation`, `toolDefinitions`).
+
+| Piece | Where | Notes |
+| --- | --- | --- |
+| Breakdown helper | `src/renderer/ctxbreakdown.js` (new, UMD like `composersize.js`) | `summary(ctx, {limit, app})` → `{known, tokens, limit, pct, level, bars:[{key,label,tokens,share}], note}`; `level` uses the same steps as `toolstats.js` `ctxLevel`; parts only when finite and ≥ 0; *Other* = used − parts when > 0; never estimates. |
+| Model chip | `modelChipHTML`, `modelLabel` (adds `name`) | Visible text `name` (+ `→ next`); tooltip and name keep effort, tier, window. |
+| Model menu | `openModelMenu` | A *Context window* heading; the Long context item as today, else one info line with the single window. |
+| Context ring | `ctxChipBtn` (Expert) | Inline SVG `circle` with `pathLength="100"` and `stroke-dasharray`; class `ok`/`warn`/`high`/`unk`; same id `#ctxChip`. Simple unchanged. |
+| Token summary | `openCtxMenu` (Expert) | Same `#ctxMenu`, `role="dialog"`, rows from `summary()`, Compact and Tools items unchanged. |
+| MCP | `MCP_N`, `mcpChipHTML`, `refreshMcpCount` | `{on,total}`. |
+| Overflow | `composerToolbarHTML` ranks | Profile 1, Attach image 2, Attach file 3, Model 4, MCP 5, Context 6; mode 0. |
+| Simulator | `src/renderer/sim.ts` | Breakdown fields only for Copilot-kind agents. |
+| Tests | `scripts/test-ctx-breakdown.ts`, `check-composer-toolbar.js`, `shots-model.js` | |
+
+**Constitution check.** I: the renderer reads normalized fields only; the agent app's name comes from the kinds list (`kindWord`). III: nothing new stored or sent. IV: fakes and the simulator. V: smaller row, 28px controls, 10.5px floor. VI: SVG and CSS. VIII: the per-adapter table and the gaps in the spec.
+
+**Risks.** Open PRs touching `app.js` (#626, #622, #620, #614, #597, #560) are in other functions; merge `main` before the merge.
