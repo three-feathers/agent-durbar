@@ -285,8 +285,8 @@ export interface McpServerStatus {
   source?: string;
   transport?: string;
   error?: string;
-  /** Spec 058 FR-011: normalized kind of failure, set by the adapter only when the vendor says so; missing = not said. */
-  errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config';
+  /** Spec 058 FR-011 / FR-091: normalized kind of failure, set by the adapter only when the vendor says so; missing = not said. */
+  errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config' | 'refused' | 'disconnected' | 'permission';
 }
 
 /** Spec 069 FR-031: one tool of an MCP server (main masks and cuts the description before the window gets it). */

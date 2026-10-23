@@ -534,6 +534,12 @@ export interface AgentMcpEntry {
   error?: string;
   /** Spec 058 FR-011/FR-020: what kind of failure the adapter said it was (only when the vendor said so). */
   errorClass?: McpServerStatus['errorClass'];
+  /** Spec 058 FR-092: when Agent Durbar first saw this state (epoch ms); only for a reported state. */
+  since?: number;
+  /** Spec 058 FR-092: a failed or needs-sign-in state that came after the server was Running in this session. */
+  afterRunning?: boolean;
+  /** Spec 058 FR-092: the transport the adapter reported (`stdio`, `http`, ...); missing = not reported. */
+  transport?: string;
   /** The default from Settings: on for new sessions. */
   defaultOn: boolean;
   /** This agent switched it off. */

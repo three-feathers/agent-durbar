@@ -482,6 +482,12 @@ VS Code UI supports, as some people may want to give access to read email but no
 - **2026-10-22 (part 4 on the merged row):** the tool checkboxes and the server's tri-state box stay inside the tools list of spec 058's
   row; 058's repaint keeps the focus on them too (`data-tool`, `data-tall`) along with its scroll position, and turning a tool off is
   never announced as a state change. `sim:` `shots-069-mcp-tools` (part 4 steps) after the merge.
+- **2026-10-23 (spec 058 FR-186, owner Q22 B on #629; no code yet):** FR-009's pass-through changes for Claude Code. An `http` or `sse`
+  entry of Claude Code's user list now also brings an allow-listed part of its `oauth` object into Durbar's `--mcp-config` copy
+  (`clientId`, `callbackPort`, `authServerMetadataUrl`, `scopes`, each type-checked; all or nothing), never `clientSecret` or any
+  other key, and nothing from it is logged. The copy between apps (FR-021, FR-023) is unchanged: `oauth` is still a field the other
+  apps' writers do not carry, and Durbar never writes `oauth` into an app's file. Requirement, tests and evidence:
+  [spec 058 FR-186](../058-mcp-session-controls/spec.md) (task T158 there).
 
 ## Relationship to other specs
 
