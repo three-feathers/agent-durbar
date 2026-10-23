@@ -13,7 +13,7 @@ status: release PR open
 
 ## Context
 
-alpha.13 (spec 078) was the first release built from `changelog.d/` fragments. alpha.14 is the second, cut from `main`: the branch was cut at `f4379840` (the #625 merge), then took `main` up to `5dbe518e` on reviewer request (Paco), so the later merges (#626 spare height, #614 `/` list masking, #597 Go to keys, #633 and #564 process docs) are in it and their fragments are folded too. A test pre-release, `v0.1.0-alpha.14-mcptest.1`, was built earlier from the integration branch `099-mcp-test-build` so the owner could try #598 and #625 on a Mac before they merged; this release replaces it.
+alpha.13 (spec 078) was the first release built from `changelog.d/` fragments. alpha.14 is the second, cut from `main`: the branch was cut at `f4379840` (the #625 merge), then took `main` up to `dd055f91` on reviewer request (Paco), so the later merges (#626 spare height, #614 `/` list masking, #597 Go to keys, #633 and #564 process docs, #639 review checklist, #635 Claude Code MCP Sign in) are in it and their fragments are folded too. A test pre-release, `v0.1.0-alpha.14-mcptest.1`, was built earlier from the integration branch `099-mcp-test-build` so the owner could try #598 and #625 on a Mac before they merged; this release replaces it.
 
 ## Requirements
 
@@ -25,4 +25,4 @@ alpha.13 (spec 078) was the first release built from `changelog.d/` fragments. a
 
 ## Not in this release
 
-Pull requests still open on 2026-10-23, among them Claude Code MCP sign-in (#635), the compact composer (#632), session door signs (#631), the Schedules button (#560) and the AGENTS.md PR (#561).
+Pull requests still open on 2026-10-23, among them the compact composer (#632), session door signs (#631), the Schedules button (#560) and the AGENTS.md PR (#561).
