@@ -322,6 +322,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const names = folders.map((x) => x.label.replace(/^write in /, ''));
     return { key: 'write-folders:' + folders.map((x) => x.key).sort().join('\n'), label: `write in ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` and ${names.length - 3} more folders` : ''}`, folders };
   };
+  // spec 005 FR-056 (issue 627): like the real adapters, only Copilot reports the parts of its context window; Claude Code and Codex a total
+  const ctxParts = (s: { info: { adapterId?: string } }, tokens: number, messages: number) =>
+    (s.info.adapterId ?? 'copilot') === 'copilot' ? { system: 5840, conversation: Math.max(0, tokens - 13500), toolDefinitions: 7668, messages } : {};
   const codexFileReq = (s: { info: { adapterId?: string }; files: string[] }): (typeof WAIT_REQ)[string] | undefined => {
     const v = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simcodexfile') : null;
     if (!v || s.info.adapterId !== 'codex') return undefined;
@@ -709,7 +712,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (c && s.pendingLimit) { c.limit = s.pendingLimit; s.pendingLimit = undefined; } // the new window is reported with the first call after a switch
       if (c && c.limit > 0) {
         c.tokens = Math.min(Math.floor(c.limit * 0.97), c.tokens + 700 + Math.floor(rnd() * 1800));
-        emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: c.tokens, limit: c.limit, system: 5840, conversation: Math.max(0, c.tokens - 13500), toolDefinitions: 7668, messages: 3 + s.tool, model: s.info.model, tier: s.tier });
+        emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: c.tokens, limit: c.limit, ...ctxParts(s, c.tokens, 3 + s.tool), model: s.info.model, tier: s.tier });
         // Like the runtime's infinite sessions: compact in the background when the window is about 80% full.
         if (c.tokens / c.limit >= 0.8 && !s.compacting && !s.noAuto) void compactNow(s, 'auto');
       }
@@ -1887,7 +1890,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model: s.info.model ?? 'auto', inputTokens: before, outputTokens: 900, ...(caps(s.info.adapterId ?? 'copilot').usage.nanoAiu ? { nanoAiu: Math.floor(0.02 * 1e9), creditsStatus: 'complete' as const } : { creditsStatus: 'unavailable' as const }) });
       s.used = (s.used ?? 0) + Math.floor(0.02 * 1e9);
       emit({ type: 'compaction', sessionId: sid(s), timestamp: now(), phase: 'complete', trigger, tokensBefore: before, tokensAfter: after, tokensRemoved: before - after, limit: c.limit });
-      emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: after, limit: c.limit, system: 5840, conversation: Math.max(0, after - 13500), toolDefinitions: 7668, messages: 3, model: s.info.model, tier: s.tier });
+      emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: after, limit: c.limit, ...ctxParts(s, after, 3), model: s.info.model, tier: s.tier });
       return { success: true, tokensAfter: after, tokensRemoved: before - after };
     }
 

@@ -18,6 +18,10 @@
  *     (2026-10-22) opens an info-only popup (aria-haspopup="dialog", no "tidy up" promise), Escape back to the chip;
  *   - demo (2026-10-22, once): Stop in a demo chat ends the canned turn: Stop and the spinner go and the reply stops growing;
  *   - a dark user theme (scripts/fixtures/themes/dark-audit.json): the same layout; screenshots.
+ *   - compact toolbar (2026-10-23, issue 627): the model chip shows the name only; the context is a ring with a name and the tooltip
+ *     "Context N% of …" that opens the token summary (one bar per reported type; "Breakdown not reported by Claude Code." for a
+ *     Claude Code agent); the MCP chip shows on/total; at full width and with a 760px panel everything incl. MCP is in the row; the six
+ *     built-in themes lay out the same (1440x900).
  * A miss throws (DRIVER FAILED); the npm script exits non-zero unless "all checks passed" is printed.
  */
 const path = require('path');
@@ -69,9 +73,33 @@ function measure() {
   return {
     P, more: vis($('ctMoreBtn')), popIds: [...$('ctMorePop').querySelectorAll('button,[id]')].map((e) => e.id).filter(Boolean),
     rowIds: seen, model: ($('modelChip') || {}).innerText || '', mcp: ($('mcpBtn') || {}).innerText || '',
+    /* spec 005 FR-050..FR-053 (issue 627): the model chip's name, the MCP chip's n/m and the context ring */
+    modelLabel: ($('modelChip') || { getAttribute: () => '' }).getAttribute('aria-label') || '',
+    mcpN: ((($('mcpBtn') || document).querySelector('.ct-n') || {}).textContent || '').trim(), mcpLabel: ($('mcpBtn') || { getAttribute: () => '' }).getAttribute('aria-label') || '',
+    ring: $('ctxChip') ? { text: $('ctxChip').innerText.trim(), name: $('ctxChip').getAttribute('aria-label') || '', title: $('ctxChip').title, svg: !!$('ctxChip').querySelector('svg.ring'), cls: $('ctxChip').className, pop: $('ctxChip').getAttribute('aria-haspopup') } : null,
     send: vis(send), stop: vis($('stopBtn')), spin: vis($('runSpin')),
   };
 }
+
+/* runs in the page: the open token summary (spec 005 FR-052) */
+function SUMMARY() {
+  const m = document.getElementById('ctxMenu'), c = document.getElementById('ctxChip');
+  if (!m || !c) return null;
+  const vis = (e) => !!e && e.getClientRects().length > 0;
+  const r = m.getBoundingClientRect();
+  return {
+    role: m.getAttribute('role'), above: r.bottom <= c.getBoundingClientRect().top + 0.5, exp: c.getAttribute('aria-expanded'),
+    inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+    compact: !!m.querySelector('#compactBtn'), tools: /Models and context/.test(m.innerText),
+    total: ((m.querySelector('.cb-total') || {}).textContent || '').trim(), totalBar: vis(m.querySelector('.cb-total-bar i')),
+    labels: [...m.querySelectorAll('.cb-row .cb-l')].map((e) => e.textContent.trim()), bars: [...m.querySelectorAll('.cb-row .cb-bar i')].filter(vis).length,
+    note: ((m.querySelector('.cb-note') || {}).textContent || '').trim(),
+    itemRoles: [...m.querySelectorAll('button')].map((b) => b.getAttribute('role')).filter(Boolean),
+    small: [...m.querySelectorAll('*')].filter((e) => vis(e) && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 10.5).map((e) => e.className),
+  };
+}
+
+const THEMES = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -222,8 +250,17 @@ module.exports = async (ctx) => {
     m.P.forEach((p) => check(false, `${tag}: ${p}`));
     check(!m.more, `${tag}: "⋯" shows at full width`);
     check(['modeChip', 'modelChip', 'ctxChip', 'mcpBtn', 'attFile', 'attImg'].every((x) => m.rowIds.includes(x)), `${tag}: toolbar items ${m.rowIds}`);
-    check(/·\s*\d+(\.\d+)?\s*[KM]/i.test(m.model), `${tag}: the model chip shows no window size (${m.model})`);
-    check(/MCP\s*\d+/.test(m.mcp.replace(/\s+/g, ' ')), `${tag}: the MCP chip shows no count (${m.mcp})`);
+    /* spec 005 FR-050: the model chip's text is the model's name only; effort, tier and window are in its name and tooltip */
+    check(/^Sim Fast$/.test(m.model.trim()), `${tag}: the model chip text is not the name only (${m.model})`);
+    check(/^Model: Sim Fast.*, \d[\d.]*[kM] tokens context window$/.test(m.modelLabel), `${tag}: the model chip's name lost the window (${m.modelLabel})`);
+    /* FR-053: MCP on/total, named in words */
+    const nm = /^(\d+)\/(\d+)$/.exec(m.mcpN);
+    check(!!nm && +nm[1] <= +nm[2] && /^MCP\s*\d+\/\d+$/.test(m.mcp.replace(/\s+/g, ' ').trim()), `${tag}: the MCP chip does not show on/total (${m.mcp})`);
+    check(!!nm && m.mcpLabel === `${nm[1]} of ${nm[2]} MCP servers on. Open the list`, `${tag}: the MCP chip's name (${m.mcpLabel})`);
+    /* FR-051: the context ring: no text, a name, the short tooltip, an SVG ring in the level's class */
+    check(m.ring && m.ring.text === '' && m.ring.svg && /\b(ok|warn|high)\b/.test(m.ring.cls) && m.ring.pop === 'dialog', `${tag}: the context ring ${JSON.stringify(m.ring)}`);
+    check(m.ring && /^Context \d+% of \d[\d.]*[kM]$/.test(m.ring.title), `${tag}: the ring's tooltip "${m.ring && m.ring.title}"`);
+    check(m.ring && /^Context window \d+% used: \d[\d.]*[kM]? of \d[\d.]*[kM] tokens\. Open the token summary$/.test(m.ring.name), `${tag}: the ring's name "${m.ring && m.ring.name}"`);
     check(m.send && !m.stop && !m.spin, `${tag}: idle shows Send only ${JSON.stringify(m)}`);
     check(await js(`document.getElementById('sendBtn').getAttribute('aria-disabled')==='true'`), `${tag}: Send is not disabled while the box is empty`);
     await shot(`005-composer-expert-light-${tag}.png`);
@@ -231,9 +268,10 @@ module.exports = async (ctx) => {
     /* spec 005 T070 (review on #498): the context chip's tooltip ends one sentence with one full stop, also when the size line ends with one */
     const ctxTitle = () => js(`(document.getElementById('ctxChip')||{}).title||''`);
     let ct = await ctxTitle();
-    check(/\. Click to /.test(ct) && !/\.\./.test(ct), `${tag}: context chip tooltip (with the breakdown) "${ct}"`);
+    check(/^Context \d+% of /.test(ct) && !/\.\./.test(ct), `${tag}: context ring tooltip "${ct}"`);
     if (w === SIZES[0][0]) {
       const unk = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.live&&!x.parent&&/unknown|after the first message/i.test((window.DurbarScreens.ctxChip(x)||{}).title||''));return a?a.name:null})()`);
+      /* an unknown figure: an empty dashed ring, "Context: not known yet" */
       check(!!unk, `${tag}: no agent with an unknown context to check the tooltip`);
       if (unk) {
         const uid = await H.idOf(unk);
@@ -242,15 +280,26 @@ module.exports = async (ctx) => {
         await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${uid}"]`)}).click()`);
         await until(`!!document.getElementById('ctxChip')&&document.body.classList.contains('panel-open')`, 4000);
         ct = await ctxTitle();
-        check(/after the first message\. Click to /.test(ct) && !/\.\./.test(ct), `${tag}: context chip tooltip (unknown) "${ct}"`);
+        check(ct === 'Context: not known yet' && (await js(`document.getElementById('ctxChip').classList.contains('unk')`)), `${tag}: context ring tooltip (unknown) "${ct}"`);
         await openIdle();
       }
     }
     /* the context menu: above the chip, Compact in it, Escape back to the chip */
     await js(`document.getElementById('ctxChip').click()`);
     check(await until(`!!document.getElementById('ctxMenu')`, 3000), `${tag}: the context chip opens no menu`);
-    const cm = await js(`(()=>{const m=document.getElementById('ctxMenu'),c=document.getElementById('ctxChip');if(!m)return null;return {above:m.getBoundingClientRect().bottom<=c.getBoundingClientRect().top+0.5,compact:!!m.querySelector('#compactBtn'),tools:/Models and context/.test(m.innerText),exp:c.getAttribute('aria-expanded')}})()`);
-    check(cm && cm.above && cm.compact && cm.tools && cm.exp === 'true', `${tag}: context menu ${JSON.stringify(cm)}`);
+    const cm = await js(`(${SUMMARY.toString()})()`);
+    check(cm && cm.above && cm.compact && cm.tools && cm.exp === 'true' && cm.role === 'dialog', `${tag}: context summary ${JSON.stringify(cm)}`);
+    /* review on PR 632: a dialog holds plain buttons, not menu items */
+    check(cm && cm.itemRoles.length === 0, `${tag}: the summary (a dialog) has buttons with roles ${JSON.stringify(cm && cm.itemRoles)}`);
+    /* review on PR 632: the ring's window is the model chip's (modelWindow, with the tier), not a second lookup */
+    { const rw = (/ of (\d[\d.]*[kM]) tokens\./.exec(m.ring && m.ring.name || '') || [])[1], mw = (/, (\d[\d.]*[kM]) tokens context window/.exec(m.modelLabel) || [])[1];
+      check(!!rw && rw === mw, `${tag}: the ring's window ${rw} is not the model chip's ${mw}`); }
+    /* FR-052: VS Code style: the total line with its bar, one bar per type Copilot reports (system, tool definitions, chat), no note */
+    check(cm && /^\d[\d.]*[kM]? of \d[\d.]*[kM] tokens · \d+%$/.test(cm.total) && cm.totalBar, `${tag}: the summary's total line "${cm && cm.total}"`);
+    check(cm && ['System instructions', 'Tool definitions', 'Chat messages'].every((l) => cm.labels.includes(l)) && cm.bars === cm.labels.length && !cm.note, `${tag}: the summary's bars ${JSON.stringify(cm)}`);
+    check(cm && !cm.small.length && cm.inside, `${tag}: the summary has text under 10.5px or leaves the window ${JSON.stringify(cm)}`);
+    await shot(`005-composer-ctxsummary-${tag}.png`);
+    await js(`(()=>{const b=document.querySelector('#ctxMenu button');if(b)b.focus();})()`); /* the screenshot blurs the page */
     await key('Escape');
     check(await until(`!document.getElementById('ctxMenu')&&(document.activeElement||{}).id==='ctxChip'`, 3000), `${tag}: Escape does not close the context menu back to its chip`);
 
@@ -264,21 +313,23 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('mcpBtn').click()`);
     check(await until(`/MCP servers for /.test((document.querySelector('#scrDlg h3, .dlg-ov h3, .dlg h3')||{}).textContent||'')`, 4000), `${tag}: the MCP chip does not open the MCP dialog`);
     /* spec 005 T072 (review on #498): switching a server off in the dialog drops the chip's count by one when it closes (FR-037 item 5: on and not switched off) */
-    const mcpN = () => js(`Number(((document.querySelector('#mcpBtn .ct-n')||{}).textContent)||NaN)`);
+    const MCP_ON = `parseInt(((document.querySelector('#mcpBtn .ct-n')||{}).textContent||'').split('/')[0],10)`, MCP_ALL = `parseInt(((document.querySelector('#mcpBtn .ct-n')||{}).textContent||'').split('/')[1],10)`;
+    const mcpN = () => js(MCP_ON);
+    const all0 = await js(MCP_ALL);
     const n0 = await mcpN();
     const swOff = await until(`!!document.querySelector('.dlg .srv-act button.swt[aria-checked="true"]:not([disabled])')`, 4000)
       && await js(`(()=>{const b=document.querySelector('.dlg .srv-act button.swt[aria-checked="true"]:not([disabled])');const n=b.dataset.n;b.click();return n})()`);
     check(!!swOff, `${tag}: the MCP dialog has no server to switch off`);
     if (swOff) await until(`!!document.querySelector(${jsLiteral(`.dlg .srv-act button.swt[aria-checked="false"][data-n="${swOff}"]`)})`, 4000);
     await key('Escape'); await until(`!/MCP servers for /.test((document.querySelector('.dlg h3')||{}).textContent||'')`, 3000);
-    check(await until(`Number(((document.querySelector('#mcpBtn .ct-n')||{}).textContent)||NaN)===${jsLiteral(n0 - 1)}`, 4000), `${tag}: switching ${swOff} off does not drop the MCP count from ${n0} to ${n0 - 1} (now ${await mcpN()})`);
+    check(await until(`${MCP_ON}===${jsLiteral(n0 - 1)}&&${MCP_ALL}===${jsLiteral(all0)}`, 4000), `${tag}: switching ${swOff} off does not drop the MCP count from ${n0} to ${n0 - 1} of ${all0} (now ${await mcpN()})`);
     if (swOff) { /* switch it back on, so the rest of the run sees the same servers */
       await js(`document.getElementById('mcpBtn').click()`);
       await until(`!!document.querySelector(${jsLiteral(`.dlg .srv-act button.swt[data-n="${swOff}"]`)})`, 4000);
       await js(`document.querySelector(${jsLiteral(`.dlg .srv-act button.swt[data-n="${swOff}"]`)}).click()`);
       await until(`!!document.querySelector(${jsLiteral(`.dlg .srv-act button.swt[aria-checked="true"][data-n="${swOff}"]`)})`, 4000);
       await key('Escape'); await until(`!/MCP servers for /.test((document.querySelector('.dlg h3')||{}).textContent||'')`, 3000);
-      check(await until(`Number(((document.querySelector('#mcpBtn .ct-n')||{}).textContent)||NaN)===${jsLiteral(n0)}`, 4000), `${tag}: switching ${swOff} back on does not restore the MCP count ${n0}`);
+      check(await until(`${MCP_ON}===${jsLiteral(n0)}`, 4000), `${tag}: switching ${swOff} back on does not restore the MCP count ${n0}`);
     }
 
     /* Send -> Stop with the spinner -> Send */
@@ -310,6 +361,13 @@ module.exports = async (ctx) => {
     /* spec 005 FR-044..FR-048 (issue 592): the message box grows to its cap and scrolls, the handle drags, clamps, is remembered and resets */
     await resizeSteps(tag, w, h);
 
+    /* spec 005 FR-054 (issue 627): the owner's medium width (a 760px panel): everything, MCP and the ring included, in the row; no "⋯" */
+    await js(`(()=>{const s=document.createElement('style');s.id='midPanel';s.textContent='#panel{flex:0 0 760px!important;max-width:760px!important}';document.head.append(s);})()`);
+    await ctx.sleep(150); await settle();
+    m = await M();
+    m.P.forEach((p) => check(false, `${tag} 760px: ${p}`));
+    check(!m.more && ['agentChip', 'modeChip', 'modelChip', 'ctxChip', 'mcpBtn', 'attFile', 'attImg'].every((x) => m.rowIds.includes(x)), `${tag} 760px: not everything fits ${JSON.stringify({ more: m.more, row: m.rowIds, pop: m.popIds })}`);
+    await js(`document.getElementById('midPanel').remove()`);
     /* narrow panel (spec #452's docking may give it 480px): one row, "⋯", the mode stays */
     await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`);
     await until(`(()=>{const b=document.getElementById('ctMoreBtn');return !!b&&!b.hidden})()`, 3000);
@@ -317,6 +375,9 @@ module.exports = async (ctx) => {
     m = await M();
     m.P.forEach((p) => check(false, `${tag} narrow: ${p}`));
     check(m.more && m.rowIds.includes('modeChip') && m.popIds.length > 0, `${tag} narrow: overflow ${JSON.stringify({ more: m.more, row: m.rowIds, pop: m.popIds })}`);
+    /* FR-054: the order: Profile, Attach image, Attach file, Model, MCP, Context; what stays is a tail of that order */
+    { const ORDER = ['agentChip', 'attImg', 'attFile', 'modelChip', 'mcpBtn', 'ctxChip']; const out = ORDER.filter((x) => m.popIds.includes(x)), kept = ORDER.filter((x) => m.rowIds.includes(x));
+      check(out.length > 0 && out.every((x) => ORDER.indexOf(x) < Math.min(...kept.map((k) => ORDER.indexOf(k)), 99)) && m.popIds.includes('agentChip'), `${tag} narrow: overflow order ${JSON.stringify({ out, kept })}`); }
     await js(`document.getElementById('ctMoreBtn').click()`);
     check(await until(`!document.getElementById('ctMorePop').hidden`, 2000), `${tag} narrow: "⋯" does not open`);
     const pop = await js(`(()=>{const p=document.getElementById('ctMorePop'),r=p.getBoundingClientRect(),pr=document.getElementById('panel').getBoundingClientRect();return {inside:r.left>=pr.left-1&&r.right<=pr.right+1&&r.top>=0,focus:p.contains(document.activeElement)}})()`);
@@ -378,6 +439,38 @@ module.exports = async (ctx) => {
       check((await len()) === l0, `${tag} demo: the reply keeps streaming after Stop`);
       check(!(await js(`/Got it\\. I looked at/.test((document.querySelector('#panel .chat-inner')||{textContent:''}).textContent)`)), `${tag} demo: the stopped turn's reply arrived anyway`);
       await js(`(()=>{const t=document.getElementById('demoToggle');t.checked=false;t.dispatchEvent(new Event('change'));})()`);
+    }
+
+    /* spec 005 FR-052, FR-056 (once): a Claude Code agent reports a total only: no type bars, the summary says so (mixed kinds) */
+    if (w === SIZES[0][0]) {
+      await load(w, h, { simkinds: 'mixed' });
+      const cl = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.live&&!x.parent&&x.info&&x.info.adapterId==='claude'&&window.DurbarScreens.ctxChip(x).cls!=='unk');return a?a.name:null})()`);
+      check(!!cl, `${tag}: no Claude Code agent with a context figure (simkinds=mixed)`);
+      if (cl) {
+        const cid = await H.idOf(cl);
+        await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${cid}"]`)}).click()`);
+        await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('ctxChip')`, 4000);
+        await settle();
+        await js(`document.getElementById('ctxChip').click()`);
+        await until(`!!document.getElementById('ctxMenu')`, 3000);
+        const cs = await js(`(${SUMMARY.toString()})()`);
+        check(cs && cs.note === 'Breakdown not reported by Claude Code.' && cs.labels.length === 0 && /tokens · \d+%$/.test(cs.total), `${tag}: Claude Code's summary ${JSON.stringify(cs)}`);
+        await shot(`005-composer-ctxsummary-total-${tag}.png`);
+        await js(`(()=>{const b=document.querySelector('#ctxMenu button');if(b)b.focus();})()`);
+        await key('Escape');
+        check(await until(`!document.getElementById('ctxMenu')&&(document.activeElement||{}).id==='ctxChip'`, 3000), `${tag}: Escape does not close the summary back to the ring`);
+      }
+      /* FR-055: the six built-in themes lay the row out the same: no overlap, 28px, 10.5px, everything incl. MCP in the row */
+      for (const th of THEMES) {
+        await load(w, h, { theme: th });
+        await until(`window.THEME&&THEME.current().id===${jsLiteral(th)}`, 6000);
+        await openIdle();
+        const tm = await M();
+        tm.P.forEach((p) => check(false, `${tag} ${th}: ${p}`));
+        check(!tm.more && tm.rowIds.includes('mcpBtn') && tm.rowIds.includes('ctxChip'), `${tag} ${th}: not everything is in the row ${JSON.stringify({ more: tm.more, row: tm.rowIds })}`);
+        const ringColour = await js(`(()=>{const a=document.querySelector('#ctxChip svg.ring .rv');return a?getComputedStyle(a).stroke:''})()`);
+        check(!!ringColour && ringColour !== 'none' && !/rgba\(0, 0, 0, 0\)/.test(ringColour), `${tag} ${th}: the ring has no colour (${ringColour})`);
+      }
     }
 
     /* a dark user theme: the same checks */
