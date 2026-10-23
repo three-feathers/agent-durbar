@@ -19,6 +19,87 @@ export interface McpServerSpec {
   headers?: Record<string, string>;
   /** Tool filter of this server; `['*']` = all. */
   tools?: string[];
+  /** Spec 058 FR-186: Claude Code's own `oauth` settings of a user-list `http`/`sse` server, the allow-listed fields only (`claudeOAuthOf`). */
+  oauth?: McpOAuthSpec;
+}
+
+/** Spec 058 FR-186: the part of Claude Code's `oauth` object Agent Durbar copies into its `--mcp-config`. Never a client secret. */
+export interface McpOAuthSpec {
+  clientId?: string;
+  callbackPort?: number;
+  authServerMetadataUrl?: string;
+  scopes?: string;
+}
+
+/**
+ * Spec 058 FR-186 (Q22 B): the allow-listed copy of a Claude Code `oauth` object, or undefined. Only `clientId` (1-256 characters),
+ * `callbackPort` (an integer 1-65535), `authServerMetadataUrl` (at most 2048 characters, a URL with `https:`) and `scopes` (one string,
+ * 1-1024 characters), each with the type Claude Code's own schema has (`read:` 2.1.304). Every other key (`clientSecret`, `xaa`, unknown
+ * ones, an own `__proto__`) is dropped on its own; a wrong type, shape or length in an allow-listed key means no copy at all. Keys are
+ * read only as own properties of a plain object. Nothing here logs.
+ */
+export function claudeOAuthOf(v: unknown): McpOAuthSpec | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const proto = Object.getPrototypeOf(v);
+  if (proto !== Object.prototype && proto !== null) return undefined;
+  const o = v as Record<string, unknown>;
+  const own = (k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
+  const text = (x: unknown, max: number): x is string => typeof x === 'string' && x.length > 0 && x.length <= max;
+  const out: McpOAuthSpec = {};
+  if (own('clientId')) {
+    if (!text(o.clientId, 256)) return undefined;
+    out.clientId = o.clientId;
+  }
+  if (own('callbackPort')) {
+    const p = o.callbackPort;
+    if (typeof p !== 'number' || !Number.isInteger(p) || p < 1 || p > 65535) return undefined;
+    out.callbackPort = p;
+  }
+  if (own('authServerMetadataUrl')) {
+    const u = o.authServerMetadataUrl;
+    if (!text(u, 2048) || !httpsMetadataUrl(u)) return undefined;
+    out.authServerMetadataUrl = u;
+  }
+  if (own('scopes')) {
+    if (!text(o.scopes, 1024)) return undefined;
+    out.scopes = o.scopes;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+// eslint-disable-next-line no-control-regex
+const URL_BLANKS = /[\s\u0000-\u001f\u007f-\u009f]/;
+/**
+ * Spec 058 FR-186 (security review on #635): Claude Code's schema wants a literal `https://` prefix, so the text must start with exactly
+ * `https://` (case-sensitive; not `HTTPS://`, `https:/x` or `https:evil`), hold no whitespace or control character anywhere (the URL
+ * parser would drop or trim them), carry no user name or password, and parse as a URL with a host. Anything else: no `oauth` copy.
+ */
+function httpsMetadataUrl(u: string): boolean {
+  if (!u.startsWith('https://') || URL_BLANKS.test(u)) return false;
+  try {
+    const p = new URL(u);
+    return p.protocol === 'https:' && !!p.hostname && !p.username && !p.password && !u.slice(8).split(/[/?#]/, 1)[0].includes('@');
+  } catch {
+    return false;
+  }
+}
+
+/** Spec 058 FR-175/FR-177: how long an agent app's sign-in listener waits (it starts before the app answers), and the margin Durbar keeps. */
+export const APP_SIGN_IN_LISTENER_MS = 300_000;
+/** Spec 058 FR-175: how long Durbar waits for an app's answer to a sign-in request (the most a wait can be). */
+export const SIGN_IN_REQUEST_TIMEOUT_MS = 30_000;
+const SIGN_IN_MARGIN_MS = 10_000;
+/** Spec 058 FR-180: the shortest time main keeps a sign-in address (also what an invalid `ttlMs` gets in `McpSignInStore.begin`). */
+export const SIGN_IN_MIN_TTL_MS = 30_000;
+/**
+ * Spec 058 FR-175 (FR-180): the time main may keep a sign-in address, so **Open sign-in page** never points at a closed listener: the
+ * listener's 5 minutes minus the time from sending the request to its answer, minus 10 seconds, at least 30 seconds. A wait that is
+ * negative or not a finite number (a clock that went wrong) counts as the whole 30-second request limit (`SIGN_IN_REQUEST_TIMEOUT_MS`),
+ * which leaves a TTL of 260 seconds; it never counts as no wait (review on #635).
+ */
+export function signInTtlMs(waitedMs: number): number {
+  const w = Number.isFinite(waitedMs) && waitedMs >= 0 ? waitedMs : SIGN_IN_REQUEST_TIMEOUT_MS;
+  return Math.max(SIGN_IN_MIN_TTL_MS, APP_SIGN_IN_LISTENER_MS - w - SIGN_IN_MARGIN_MS);
 }
 
 export interface McpSecretKey {

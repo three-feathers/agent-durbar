@@ -565,6 +565,12 @@ export interface AgentMcpEntry {
   signIn?: { host: string; opened: boolean; expiresInMs: number; otherSite?: string };
   /** Spec 058 FR-068: the terminal steps for this needs-sign-in server, the agent app's plain text with the name filled in (commands in backticks). */
   signInSteps?: string;
+  /** Spec 058 FR-180: how the agent app said a sign-in Agent Durbar started ended (`next-message`: signed in, applies next message; `failed`). */
+  signInEnd?: 'next-message' | 'failed';
+  /** Spec 058 FR-180: the agent app's own sentence on how far its sign-in was checked, shown under a row that offers Sign in. */
+  signInNote?: string;
+  /** Spec 058 FR-176/FR-181: this needs-sign-in row keeps **Restart**: the agent app picks up a sign-in finished outside Agent Durbar with it. */
+  signInRestart?: boolean;
   /** Spec 058 FR-078: Agent Durbar passed this server as switched off when the session started (Settings or the folder's extras), so a runtime `disabled` is not the app's own doing. */
   launchedOff?: boolean;
   /** Spec 058 FR-078: the user switched this server here since the session started (a runtime `disabled` may be the old state until its event arrives). */

@@ -27,7 +27,7 @@ import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './c
 import type { EventBody } from './map';
 import { PermissionBroker, claudeServerPart, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
-import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, McpSignInResult, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
 import type { McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
 import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
@@ -38,7 +38,7 @@ import type { AccountIdentity } from '../shared/account';
 export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
 import { parseUsdCap } from '../shared/credits';
 import { clipDiff } from '../shared/diff';
-import { MCP_TOOL_OFF_RE } from '../shared/mcp';
+import { MCP_TOOL_OFF_RE, SIGN_IN_REQUEST_TIMEOUT_MS, claudeOAuthOf, signInTtlMs } from '../shared/mcp';
 import { editOf } from './edits';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
@@ -81,6 +81,10 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToolFilter: true, // spec 069 FR-062: --disallowedTools mcp__<server>__<tool> (read: CLI docs; not run on a real account)
   mcpTools: true, // spec 069 FR-031: the tools of a server in the mcp_status reply (read: docs McpServerStatus.tools; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: control request mcp_reconnect (read: CLI 2.1.304 strings; not checked on a real account)
+  mcpSignIn: true, // spec 058 FR-175: control request mcp_authenticate (undocumented; read: CLI 2.1.304 program only; not checked on a real account, T106)
+  mcpSignInSteps: "If Sign in is not available, run `claude mcp login {name}` in a terminal and finish in your browser. This works only for a server in Claude Code's own settings. Then press Restart on this row.", // FR-181 (Q21 A)
+  mcpSignInNote: 'Not checked on a real account yet.', // FR-180 until T106
+  mcpSignInRestart: true, // FR-176/FR-181: Restart (mcp_reconnect) picks up a sign-in finished outside Durbar
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
   oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
   renameSession: 'next-turn', // spec 059 FR-007: `--name` on the session's next CLI start (real: Vikram's agent, 2026-10-20, CLI 2.1.304)
@@ -91,13 +95,26 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
 
 /** Spec 059 FR-007: the SDK transport (dev opt-in, `DURBAR_CLAUDE_TRANSPORT=sdk`) does not apply `--name`, so it does not offer a rename. */
 export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() => {
-  // the SDK transport sends only a few control requests (claudeSdk.ts): no rename, no mcp_reconnect
-  const { renameSession: _r, mcpRestart: _m, mcpTools: _t, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown; mcpTools?: unknown };
+  // the SDK transport sends only a few control requests (claudeSdk.ts): no rename, no mcp_reconnect, no mcp_authenticate (spec 058
+  // FR-175); the terminal steps and the note stay (FR-180: the steps show without the in-app call)
+  const { renameSession: _r, mcpRestart: _m, mcpTools: _t, mcpSignIn: _s, mcpSignInRestart: _sr, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown; mcpTools?: unknown; mcpSignIn?: unknown; mcpSignInRestart?: unknown };
   void _r;
   void _m;
   void _t;
+  void _s;
+  void _sr;
   return rest;
 })()) as AdapterCapabilities;
+/** Spec 058 FR-175: how long Durbar waits for the CLI's answer to `mcp_authenticate` (discovery and registration run first). */
+export const CLAUDE_SIGN_IN_TIMEOUT_MS = SIGN_IN_REQUEST_TIMEOUT_MS; // one definition, in src/shared/mcp.ts (signInTtlMs uses the same limit)
+/** Spec 058 FR-175/FR-181: the message for a CLI that does not answer the call (timeout, unknown subtype): main shows the terminal steps. */
+export const CLAUDE_NO_SIGN_IN = 'This Claude Code version cannot start a sign-in from Agent Durbar.';
+/**
+ * A control error that says the CLI does not know the request at all (an older or newer CLI), not a refusal of this server: "unknown /
+ * unsupported / unrecognized / unhandled ... subtype" or "... control request". Not "invalid": an "invalid request" can be a refusal of this
+ * server, and its own reason is shown then (review on #635).
+ */
+const UNKNOWN_SUBTYPE = /\b(unknown|unsupported|unrecognized|unrecognised|unhandled)\b[^\n]{0,40}\b(subtype|control request)\b/i;
 /** Spec 066: one sentence added to a plan-first message, so the plan reaches the card (Claude's plan file cannot be written in Read-only). */
 export const CLAUDE_PLAN_NOTE = '(Plan first: write the full plan in your reply, not in a file, then call ExitPlanMode. Do not change anything yet.)';
 /** The text blocks of one assistant message (top level). */
@@ -172,7 +189,11 @@ export function mcpConfigOf(servers: Record<string, McpServerSpec> | undefined, 
   for (const [name, spec] of Object.entries(servers)) {
     if (!spec || disabled.includes(name)) continue;
     if (spec.type === 'stdio' && spec.command) out[name] = { type: 'stdio', command: spec.command, args: spec.args ?? [], ...(spec.env ? { env: spec.env } : {}) };
-    else if ((spec.type === 'http' || spec.type === 'sse') && spec.url) out[name] = { type: spec.type, url: spec.url, ...(spec.headers ? { headers: spec.headers } : {}) };
+    else if ((spec.type === 'http' || spec.type === 'sse') && spec.url) {
+      // spec 058 FR-186: only the allow-listed oauth fields, picked again here (never a client secret, whatever the spec object holds)
+      const oauth = spec.oauth ? claudeOAuthOf(spec.oauth) : undefined;
+      out[name] = { type: spec.type, url: spec.url, ...(spec.headers ? { headers: spec.headers } : {}), ...(oauth ? { oauth } : {}) };
+    }
   }
   return Object.keys(out).length ? JSON.stringify({ mcpServers: out }) : undefined;
 }
@@ -466,6 +487,10 @@ export interface ClaudeAdapterDeps {
   loggedIn?: () => Promise<boolean | undefined>;
   /** Spec 051 FR-011: the parsed `claude auth status --json` (local); tests inject a fake. Default: runs it on the found `claude`. */
   authJson?: () => Promise<Record<string, unknown> | undefined>;
+  /** Spec 058 FR-175: the clock of a sign-in's `ttlMs` (tests inject one). Default `performance.now()` (monotonic). */
+  now?: () => number;
+  /** Spec 058 FR-175: how long to wait for the `mcp_authenticate` answer (tests pass a short one). Default 30 s. */
+  signInTimeoutMs?: number;
 }
 
 export type RunOnce = (file: string, args: string[], o: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }) => Promise<{ code: number | null; stdout: string }>;
@@ -589,6 +614,8 @@ export class ClaudeAdapter implements AgentAdapter {
     if (deps.sdkTransport) (this as { renameSession?: unknown }).renameSession = undefined;
     if (deps.sdkTransport) (this as { restartMcpServer?: unknown }).restartMcpServer = undefined;
     if (deps.sdkTransport) (this as { listMcpTools?: unknown }).listMcpTools = undefined;
+    if (deps.sdkTransport) (this as { startMcpSignIn?: unknown }).startMcpSignIn = undefined;
+    if (deps.sdkTransport) (this as { refreshMcpStatus?: unknown }).refreshMcpStatus = undefined;
   }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
@@ -896,12 +923,68 @@ export class ClaudeAdapter implements AgentAdapter {
     if (!s.transport?.alive) throw new Error('Claude Code starts its MCP servers with your next message; there is nothing to restart yet.');
     if (s.launchedOff?.has(name) || (s.options.disabledMcpServers ?? []).includes(name)) throw new Error('Switch it on first; it starts with your next message.');
     await s.transport.request({ subtype: 'mcp_reconnect', serverName: name }, 30_000);
+    // spec 058 FR-176: a restart is a real change for this server: its FR-060 sign-in mark ends (a sign-in finished outside Durbar shows)
+    s.mcpAuthSeen?.delete(name);
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      this.emit(s.id, { type: 'mcp', servers: withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped) });
+      s.lastMcp = withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped);
+      this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
     } catch {
       /* the reconnect worked; the list comes with the next init */
     }
+  }
+
+  /**
+   * Spec 058 FR-175 (T099): Claude Code's own sign-in for one MCP server of the running CLI: the control request `mcp_authenticate
+   * {serverName}` (undocumented; `read:` 2.1.304: the CLI runs discovery, registration and PKCE, opens its own listener on 127.0.0.1 for
+   * 5 minutes and answers the page to open). Nothing else is sent: no `redirectUri` (the CLI keeps its own callback), never
+   * `mcp_oauth_callback_url` (that would pass the code through Durbar), never `mcp_clear_auth`. The answer's `state`, `callbackPort` and
+   * `redirectScheme` are read by nothing; the answer is never logged. A timeout or an unknown subtype means this CLI cannot do it here:
+   * the terminal steps show. A late answer after the timeout is dropped unread by the transport (unknown `request_id`).
+   */
+  async startMcpSignIn(sessionId: string, name: string): Promise<McpSignInResult> {
+    const s = this.sessions.get(sessionId);
+    if (!s) throw new Error('This session is not running. Send a message to start it, then sign in.');
+    const t = s.transport;
+    if (!t?.alive) throw new Error('Send a message first, then sign in.'); // Q15: no early CLI launch for a sign-in
+    if (s.launchedOff?.has(name) || (s.options.disabledMcpServers ?? []).includes(name)) throw new Error('Switch it on first; it starts with your next message.');
+    const now = this.deps.now ?? (() => performance.now()); // monotonic: a wall-clock jump never stretches or empties ttlMs (review on #635)
+    const sent = now();
+    let r: Record<string, unknown>;
+    try {
+      r = await t.request({ subtype: 'mcp_authenticate', serverName: name }, this.deps.signInTimeoutMs ?? CLAUDE_SIGN_IN_TIMEOUT_MS);
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      if (/timed out/i.test(m) || UNKNOWN_SUBTYPE.test(m)) throw new Error(CLAUDE_NO_SIGN_IN);
+      throw new Error(m); // a refusal ("Server not found", "does not support OAuth authentication", ...): main masks it (FR-067)
+    }
+    // the CLI was relaunched or ended meanwhile: its listener is gone with it
+    if (this.sessions.get(sessionId) !== s || s.transport !== t || !t.alive) throw new Error('Claude Code restarted during the sign-in. Press Sign in again.');
+    const url = r?.authUrl;
+    if (typeof url === 'string' && url && r.requiresUserAction === true && r.callbackExpected !== false) return { kind: 'browser', url, ttlMs: signInTtlMs(now() - sent) };
+    if (r?.requiresUserAction === false && url === undefined) {
+      // FR-175 (review on #635): the CLI says this server needs no browser step: a real change, so its FR-060 mark ends (as Restart
+      // does) and the row reads what the CLI reports, in step with the "Signed in" toast
+      if (s.mcpAuthSeen?.delete(name) && s.lastMcp) this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
+      return { kind: 'connected' };
+    }
+    // a claude.ai connector (`callbackExpected: false`) or any other shape: not a sign-in Durbar can finish here
+    throw new Error('Claude Code cannot finish this sign-in inside Agent Durbar.');
+  }
+
+  /**
+   * Spec 058 FR-176: read the running CLI's server list again (`mcp_status`) for main's poll while a sign-in page is open, and once on a
+   * dialog open or window focus soon after an attempt. **A re-read is not a new status**: a server the CLI still calls `connected` keeps
+   * its FR-060 sign-in mark; a server whose reported status changed loses it. Never launches the CLI.
+   */
+  async refreshMcpStatus(sessionId: string, _name?: string): Promise<void> {
+    void _name; // one mcp_status covers every server of the session
+    const s = this.sessions.get(sessionId);
+    const t = s?.transport;
+    if (!s || !t?.alive) return;
+    const r = await t.request({ subtype: 'mcp_status' }, 15_000);
+    if (this.sessions.get(sessionId) !== s || s.transport !== t) return;
+    this.reread(s, withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped));
   }
 
   /** Spec 069 FR-031: the tools of one server, from the CLI's `mcp_status` reply (no extra start: only a running CLI is asked). */
@@ -1074,14 +1157,26 @@ export class ClaudeAdapter implements AgentAdapter {
     return list.map((x) => (s.mcpAuthSeen!.has(x.name) && x.status === 'connected' ? { ...x, status: 'needs-auth' as const, errorClass: 'auth' as const } : x));
   }
 
+  /**
+   * Spec 058 FR-176: a list the adapter asked for (`mcp_status`), not the CLI's own report: a server whose status differs from the last
+   * list loses its sign-in mark (a real change), one that still reads the same keeps it; then the usual `mcp` event.
+   */
+  private reread(s: Session, list: ReturnType<typeof claudeMcpServers>): void {
+    if (s.mcpAuthSeen?.size) {
+      const before = new Map((s.lastMcp ?? []).map((x) => [x.name, x.status]));
+      for (const x of list) if (s.mcpAuthSeen.has(x.name) && before.has(x.name) && before.get(x.name) !== x.status) s.mcpAuthSeen.delete(x.name);
+    }
+    s.lastMcp = list;
+    this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, list) });
+  }
+
   /** Spec 058 FR-060: a tool call showed an MCP sign-in challenge: ask the CLI for the server list once (not per failure while one is in flight). */
   private async refreshMcp(s: Session): Promise<void> {
     if (s.mcpRefreshing || !s.transport?.alive) return;
     s.mcpRefreshing = true;
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      s.lastMcp = withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped);
-      this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
+      this.reread(s, withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped));
     } catch {
       /* the list comes with the next init */
     } finally {
