@@ -15,6 +15,10 @@
   const IDS=PLACES.map(p=>p.id);
   /* Spec 068 FR-003: the coffee corner. A lobby tile of its own, after the other places; never a mapping choice (not in PLACES or IDS). */
   const COFFEE='coffee';
+  /* Spec 001 FR-034/FR-035/FR-038 (2026-10-22): the Boss (questions and permissions queue there), the Bank (Durbar's spending cap) and the
+     Postbox (the next scheduled runs; nobody visits it). Fixed lobby tiles like the coffee corner, never mapping choices. */
+  const BOSS='boss', BANK='bank', POSTBOX='postbox';
+  const SPECIAL=[COFFEE,BOSS,BANK,POSTBOX];
   /* Custom places (spec 024 FR-021) come from the settings: [{id,name,icon}]. Entries that are not objects with string id and name are skipped. */
   const customList=c=>(Array.isArray(c)?c:[]).filter(p=>p&&typeof p==='object'&&typeof p.id==='string'&&p.id&&typeof p.name==='string');
   /* The five built-ins in their order, then the custom places in creation order. */
@@ -155,7 +159,7 @@
       pin(agentId,placeId,label){
         if(!agentId)return false;
         const cur=v.get(agentId);
-        if(cur&&cur.pinned&&cur.place===placeId)return false;
+        if(cur&&cur.pinned&&cur.place===placeId){const l=String(label||'');if(cur.label===l)return false;cur.label=l;return true;} /* same place, new label (a question became a permission) */
         v.set(agentId,{place:placeId,label:String(label||''),callId:'',startedAt:now(),atSince:now(),ended:false,pinned:true});
         return true;
       },
@@ -189,18 +193,88 @@
     return {shown:cap-1,more:count-(cap-1)};
   }
 
-  /* Spec 068 FR-003/FR-013: the coffee corner is a narrow tile of its own width (two slots): with its name where the lobby is wide, icon only
-     (the name in its tooltip and label) where it is not, so the other places keep their room. */
-  const COFFEE_SLOTS=2, COFFEE_NAMED_MIN=1300;
-  const coffeeTile=aw=>{const named=Number(aw)>=COFFEE_NAMED_MIN;return {named,width:named?200:96,slots:COFFEE_SLOTS};};
-  /* Slots that fit in one lobby tile (spec 024 FR-022). `aw` = width of the lobby row, `tiles` = how many place tiles, `addButton` = whether the
-     26px Add button shares the row. Tiles are equal (flex:1 1 0) with an 8px gap; a tile needs about 150px for padding, icon and name before its
-     first slot, and a slot takes 25px. Clamped to 1..8. With 5 tiles and no button this is the old `floor((aw/5-150)/25)` less the gaps. */
-  function tileSlots(aw,tiles,addButton,reserve){
-    const n=Math.max(1,Math.floor(Number(tiles)||0)), width=Number(aw)>0?Number(aw):800, r=Number(reserve)>0?Number(reserve)+8:0; /* spec 068: a fixed-width tile (the coffee corner) takes `reserve` px and one gap */
-    const tileW=(width-8*(n-1)-(addButton?26+8:0)-r)/n;
-    return Math.max(1,Math.min(8,Math.floor((tileW-150)/25)));
+  /* Visitor entries on one lobby tile (spec 001 FR-036): who is there, by name. The tile width comes from lobbyFit (FR-039). A named entry (figure, name and
+     activity) takes about 92px, an initials entry 46px, 6px apart, inside 20px of padding. Returns how many of each fit (1..6 each; 0 named
+     when not even one fits). chipsFor() picks per tile: names when every visitor fits by name, or when two or more named entries fit (the last
+     becomes "+N"); else initials. */
+  const NAMED_W=92, INIT_W=46, CHIP_GAP=6, TILE_PAD=20;
+  /* chipsIn(w) = the capacities of one tile `w` px wide (lobbyFit's widths; tileSlots/tileChips were removed in the review on #511) */
+  function chipsIn(tileW){
+    const inner=(Number(tileW)||0)-TILE_PAD;
+    const fit=w=>Math.max(0,Math.min(6,Math.floor((inner+CHIP_GAP)/(w+CHIP_GAP))));
+    return {named:fit(NAMED_W),initials:Math.max(1,fit(INIT_W))};
   }
 
-  return {PLACES,IDS,COFFEE,coffeeTile,allPlaces,placeName,isChoice,tileSlots,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
+  /* Spec 001 FR-039: widths in the lobby row. The Boss, coffee corner, Bank and Postbox (`post`: false when it is not shown, the demo) have
+     their own widths; the `places` other tiles share the rest. Start from the preferred widths and shrink the special tiles together,
+     proportionally, toward their minimums until every other tile is at least TILE_MIN (two initials entries) wide. Returns
+     {boss, coffee, bank, post: {width, named, chips} | null, tile, caps} (caps = the other tiles' entry capacity). */
+  const SPECIAL_W={boss:[230,190],coffee:[160,96],bank:[130,96],post:[280,180]}, TILE_MIN=118, COFFEE_NAMED=148, POST_NAMED=240;
+  function lobbyFit(aw,places,addButton,post){
+    const n=Math.max(1,Math.floor(Number(places)||0)), width=Number(aw)>0?Number(aw):800, withPost=post!==false;
+    const keys=Object.keys(SPECIAL_W).filter(k=>withPost||k!=='post');
+    const gaps=8*(n+keys.length-1)+(addButton?26+8:0), avail=width-gaps;
+    const pref=keys.reduce((t,k)=>t+SPECIAL_W[k][0],0), slack=keys.reduce((t,k)=>t+SPECIAL_W[k][0]-SPECIAL_W[k][1],0);
+    const need=Math.max(0,TILE_MIN*n-(avail-pref)), f=slack>0?Math.min(1,need/slack):0;
+    const w={}; keys.forEach(k=>{w[k]=Math.floor(SPECIAL_W[k][0]-f*(SPECIAL_W[k][0]-SPECIAL_W[k][1]));});
+    const tile=Math.max(0,(avail-keys.reduce((t,k)=>t+w[k],0))/n);
+    const box=(k,named)=>w[k]===undefined?null:{width:w[k],named,chips:chipsIn(w[k])};
+    return {boss:box('boss',true),coffee:box('coffee',w.coffee>=COFFEE_NAMED),bank:box('bank',true),post:box('post',w.post>=POST_NAMED),tile,caps:chipsIn(tile)};
+  }
+  /* Spec 001 FR-039: the lobby's tile order: the places, the Boss inserted at the middle of the whole row, then the coffee corner, the Bank
+     and the Postbox (when shown). `ids` = the places' ids in their order. */
+  function lobbyOrder(ids,post){
+    const list=(Array.isArray(ids)?ids:[]).slice(), tail=post===false?[COFFEE,BANK]:[COFFEE,BANK,POSTBOX];
+    const at=Math.floor((list.length+tail.length+1)/2), i=Math.min(at,list.length);
+    return [...list.slice(0,i),BOSS,...list.slice(i),...tail];
+  }
+  /* Spec 001 FR-038: the Postbox. Active schedules (not done, not paused, none with Pause all) with their next run, soonest first:
+     [{s, t}]. `ruleNext(rule, after)` gives a rule's next run (schedtemplates.js nextRuleRun). */
+  function postNext(schedules,pausedAll){
+    if(pausedAll)return [];
+    return (Array.isArray(schedules)?schedules:[]).filter(s=>s&&!s.done&&!s.paused).map(s=>({s,t:Number((s.every!==undefined||s.rule)?s.next:s.at)||0}))
+      .filter(x=>x.t>0).sort((a,b)=>a.t-b.t);
+  }
+  /* The letters still due today (local time): every run of every active schedule from its next run until midnight. Capped at 999. */
+  function lettersToday(schedules,pausedAll,now,ruleNext){
+    const t0=Number(now)||Date.now(), end=new Date(t0); end.setHours(24,0,0,0); const mid=end.getTime();
+    let n=0;
+    for(const {s,t} of postNext(schedules,pausedAll)){
+      if(t>=mid)continue;
+      if(s.every!==undefined){const ms=Number(s.every)*60000;n+=ms>0?1+Math.floor((mid-1-t)/ms):1;}
+      else if(s.rule&&typeof ruleNext==='function'){let k=t,g=0;while(k&&k<mid&&g<50){n++;g++;const x=ruleNext(s.rule,k);k=x>k?x:0;}}
+      else n++;
+      if(n>=999)return 999;
+    }
+    return n;
+  }
+  /* last run missed or failed (the flag), the count: active schedules, and done one-time ones (a one-time run missed while the app was
+     closed is marked done with outcome missed). A done repeating schedule is not counted. The one predicate is DurbarSchedTop.missedOrFailed
+     (schedtop.js, loaded first; the top-bar Schedules button uses the same), so the Postbox and the button cannot drift (spec 001 FR-038, spec 044 FR-029). */
+  const schedTop=()=>typeof module==='object'&&module.exports?require('./schedtop.js'):window.DurbarSchedTop;
+  const postMissed=schedules=>(Array.isArray(schedules)?schedules:[]).filter(s=>schedTop().missedOrFailed(s)).length;
+
+  /* Spec 001 FR-036/FR-039: how many initials entries a tile `tileW` px wide shows for `count` visitors. Everyone when they all fit; else
+     as many as fit beside the "+N" (a bare 22 px circle in this mode), so a 96 px tile shows one figure and "+1" rather than only "+2". */
+  function initialSpots(tileW,count){
+    const n=Math.max(0,Math.floor(Number(count)||0)), inner=(Number(tileW)||0)-TILE_PAD;
+    if(n*(INIT_W+CHIP_GAP)-CHIP_GAP<=inner)return {shown:n,more:0};
+    const shown=Math.max(0,Math.min(n-1,Math.floor((inner-22)/(INIT_W+CHIP_GAP))));
+    return {shown,more:n-shown};
+  }
+  /* {mode:'named'|'initials', slots} for a tile with `visitors` people, from chipsIn()'s capacities */
+  function chipsFor(cap,visitors){
+    const v=Math.max(0,Math.floor(Number(visitors)||0)), c=cap||{named:0,initials:1};
+    if(c.named>=1&&(v<=c.named||c.named>=2))return {mode:'named',slots:c.named};
+    return {mode:'initials',slots:Math.max(1,c.initials)};
+  }
+  /* Two letters for a name ("Omar" -> "Om", "Ada Lovelace" -> "AL"); '' for nothing. Callers escape it. */
+  function initialsOf(name){
+    const w=String(name||'').trim().split(/\s+/).filter(Boolean);
+    if(!w.length)return '';
+    const c=s=>Array.from(s);
+    return w.length>1?(c(w[0])[0]+c(w[w.length-1])[0]).toUpperCase():c(w[0]).slice(0,2).join('');
+  }
+
+  return {PLACES,IDS,COFFEE,BOSS,BANK,POSTBOX,SPECIAL,lobbyFit,lobbyOrder,initialSpots,postNext,lettersToday,postMissed,allPlaces,placeName,isChoice,chipsIn,chipsFor,initialsOf,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
 })());

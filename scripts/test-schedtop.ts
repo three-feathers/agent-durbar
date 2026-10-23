@@ -1,5 +1,6 @@
 /** The top-bar Schedules button's facts (spec 044 FR-027..FR-029, FR-033): the count, the "did not run" mark, the texts. `npm run test:schedtop`. No credits spent. */
 import assert from 'assert';
+import fs from 'fs';
 import path from 'path';
 
 type Sched = { id: string; folder: string; prompt: string; every?: number; at?: number; rule?: { kind: string; time: string }; next?: number; paused?: boolean; done?: boolean; last?: { at: number; outcome: string } };
@@ -120,4 +121,20 @@ assert.strictEqual(T.windowSees('visible', false), false, 'unfocused');
 assert.strictEqual(T.windowSees('hidden', true), false, 'hidden');
 assert.strictEqual(T.windowSees('hidden', false), false);
 assert.strictEqual(T.windowSees('visible', undefined as unknown as boolean), false);
+// one predicate with the lobby Postbox (spec 001 FR-038, review on PR 560): places.js postMissed answers exactly as missedOrFailed
+const root = path.join(__dirname, '..', '..', 'src', 'renderer');
+const P = require(path.join(root, 'places.js')) as { postMissed(s: unknown): number };
+for (const outcome of ['missed', 'failed', 'ok', 'skipped-busy', 'skipped-paused', 'skipped-cap', 'skipped-ended']) {
+  for (const shape of [{}, { done: true }, { every: undefined }, { every: null }, { done: true, every: null }, { rule: { kind: 'daily', time: '08:30' } }, { done: true, rule: { kind: 'daily', time: '08:30' } }, { done: true, every: 30 }, { at: NOW, every: undefined, done: true }]) {
+    const sc = { id: 'x', folder: '/f', prompt: 'p', ...shape, last: { at: NOW, outcome } };
+    assert.strictEqual(P.postMissed([sc]), T.missedOrFailed(sc) ? 1 : 0, 'Postbox and button disagree on ' + JSON.stringify(sc));
+  }
+}
+const placesSrc = fs.readFileSync(path.join(root, 'places.js'), 'utf8');
+assert.ok(/missedOrFailed/.test(placesSrc) && !/outcome==='missed'/.test(placesSrc), 'places.js postMissed calls DurbarSchedTop.missedOrFailed, no copy of the test');
+// the Postbox click and the button open Schedules through the one opener, so durbar.schedSeen is set
+const appSrc = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+assert.ok(/closest\('#stage \[data-post\]'\)[^\n]*openSchedulesView\(\)/.test(appSrc), 'the Postbox click calls openSchedulesView()');
+assert.ok(!/openSchedSettings/.test(appSrc), 'no second opener for Settings > Schedules');
+assert.ok(/function openSchedulesView\(\)\{[^}]*markSchedSeen\(\)/.test(appSrc), 'openSchedulesView sets the seen stamp');
 console.log('test-schedtop: ok');
