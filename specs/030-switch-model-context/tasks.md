@@ -65,7 +65,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 
 ## Later / optional (not scheduled)
 
-- [ ] T060 (sim) Auto routing tier choice (`auto` + efficiency/balance/intelligence) in the same menu (007 FR-009) [007 FR-009]
+- [ ] T060 (sim) Auto routing tier choice (`auto` + efficiency/balance/intelligence) in the same menu (007 FR-009) [007 FR-009] (2026-10-23: spec 007 T026..T032)
 - [x] T061 (scheduled by Q6, built 2026-10-19) New session with a reviewed summary (`summarizeForHandoff`; cost unverified) [Story 5 scenario 3, Q6]
 - [x] T061a Capability `handoff` and `handoffSummary` for Copilot, Claude (forked one-shot), Codex (ephemeral fork) and the simulator; IPC `agents:handoff` [FR-034, FR-035, FR-037]
 - [x] T061b Renderer: start-fresh note button, New session checkbox, the editable summary box, first message; unit tests, screenshots, real checks on Claude and Codex [FR-036]
