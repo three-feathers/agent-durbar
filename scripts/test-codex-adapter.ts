@@ -716,7 +716,7 @@ async function main(): Promise<void> {
     assert.ok(other.includes('could not start its macOS sandbox') && !/runs restricted|real file/.test(other), other);
     assert.strictEqual(macSandboxHint('bwrap: loopback: Failed RTM_NEWADDR'), '');
     // FR-087 (owner 2026-10-20): no refusal text suggests Allow all; the window offers "Change mode…" instead
-    for (const h of [linuxSandboxHint('bwrap: loopback: Failed RTM_NEWADDR'), macSandboxHint('sandbox-exec: execvp() failed'), macSandboxHint("sandbox-exec: execvp() of '/a/codex' failed: Operation not permitted"), macSandboxHint('sandbox_apply: Operation not permitted')]) assert.ok(h && !/allow all/i.test(h), 'no Allow all hint: ' + h);
+    for (const h of [linuxSandboxHint('bwrap: loopback: Failed RTM_NEWADDR'), macSandboxHint('sandbox-exec: execvp() failed'), macSandboxHint("sandbox-exec: execvp() of '/a/codex' failed: Operation not permitted"), macSandboxHint('sandbox_apply: Operation not permitted')]) assert.ok(h && !/allow all/i.test(h) && /Read-only and Ask first need/.test(h), 'no Allow all hint, and the renderer\'s MODE_REFUSAL (Change mode…) still matches: ' + h);
     assert.ok(linuxSandboxHint('error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 1: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted').includes('blocks unprivileged user namespaces'));
     assert.strictEqual(linuxSandboxHint('permissions profile not supported'), '');
     // FR-147: Durbar's MCP servers go to Codex as config.mcp_servers; the list and startup states become `mcp` events; a switch applies next message
