@@ -99,7 +99,7 @@ function readDesks() {
     return Object.assign(base, {
       sign: sg.dataset.sign, cls: sg.className, narrow: sg.classList.contains('stl'), word: w.textContent, icon: ic && ic.dataset.icon, hasDoor: !!door, open: !!(door && door.querySelector('.leaf')),
       title: sg.getAttribute('title') || '', font: parseFloat(getComputedStyle(w).fontSize), icColor: ic && getComputedStyle(ic).color, txColor: getComputedStyle(w).color,
-      contrast: tc ? Math.round(ratio(tc, bg) * 100) / 100 : 0, inDesk, shown, cut: w.clientWidth < full - 0.5,
+      contrast: tc ? Math.round(ratio(tc, bg) * 100) / 100 : 0, inDesk, shown, cut: w.clientWidth < full - 0.5, dims: [w.clientWidth, full, sg.getBoundingClientRect().width, sg.parentElement.getBoundingClientRect().width, sg.parentElement.className].join(' '),
     });
   });
 }
@@ -110,7 +110,10 @@ module.exports = async (ctx) => {
   const desks = () => js(`(${readDesks.toString()})()`);
   /* redraw, then let the figures that walk (a coffee break walks to the coffee corner) arrive before anything is measured */
   const walksDone = `![...document.querySelectorAll('#walkers .walker')].some((w)=>w.classList.contains('walking')||w.getAnimations().some((a)=>a.playState==='running'))`;
-  const rerender = async () => { await js(`window.__durbarSimUi.render()`); await ctx.sleep(400); await until(walksDone, 8000); await ctx.sleep(200); };
+  /* the usage line is fitted after a render (fitUsage); a sign is measured once that has run, i.e. once no sign word is cut (at most 3 s; the
+     assertions below then report any that stays cut) */
+  const settled = `![...document.querySelectorAll('#stage .dsign .dsw')].some((e)=>e.getClientRects().length&&e.scrollWidth>e.clientWidth+0.5)`;
+  const rerender = async () => { await js(`window.__durbarSimUi.render()`); await ctx.sleep(400); await until(walksDone, 8000); await until(settled, 3000); await ctx.sleep(200); };
   /* mixed states the simulator does not make by itself: one paused, one ended, one on a coffee break (Durbar's paths set these flags) */
   const mix = () => js(`(()=>{const L=window.__durbarSimUi.agents().filter(a=>!a.parent);const pick=(n,f)=>{const a=L.find(x=>x.name===n)||L.find(f);return a;};
     const p=pick('Hugo',a=>a.state==='idle'&&!a.paused);if(p)p.paused=true;
@@ -153,7 +156,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(c.word, t.short, `${tag}: the door's sign word`);
       assert.strictEqual(c.icon, t.icon, `${tag}: the door's sign icon`);
       assert.ok(c.font >= 10.5 && c.contrast >= 3 && !c.cut && c.inDesk, `${tag}: the door's sign is legible and whole: ${JSON.stringify(c)}`);
-      assert.ok(d.shown >= 3, `${tag}: at least three characters of "${d.word}" show (${d.shown})`);
+      assert.ok(d.shown >= 3, `${tag}: at least three characters of "${d.word}" show (${d.shown}; ${d.dims})`);
       assert.ok(d.title.startsWith(t.word + ': '), `${tag}: the tooltip names the sign and the plain word: ${d.title}`);
       assert.ok(/(Working|Thinking|Failing|Waiting|Idle|Error|Done|Paused|Ended|Limit reached|Stopped)/.test(d.label), `${tag}: the accessible name keeps the plain word: ${d.label.slice(0, 120)}`);
       seen.add(key);

@@ -1133,6 +1133,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .dsign .door-svg{width:14px;height:14px;flex:none}
 .dsign .ds-ic{width:11px;height:11px;flex:none;display:block}
 .dsign .dsw{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.desk .pill.dsign .dsw{min-width:max-content} /* a pill sign keeps its whole word (a sub-pixel rounding showed "Do…"); check:office keeps the pill inside its card */
 .dsign .pwarn{flex:none}
 .dsign.ds-away{border-style:dashed;border-color:color-mix(in srgb,var(--pc) 45%,var(--pb))}
 .dsign.ds-waiting,.dsign.ds-attention{font-weight:650}
