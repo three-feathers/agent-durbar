@@ -2218,37 +2218,39 @@ function runSlotHTML(a){
   const canStop=!(a.live&&!feat(liveRoot(a),'stop'));
   return `<div class="run-slot" id="runSlot"><button class="ib send" id="sendBtn" type="button" aria-label="Send message" title="Send (Enter)" aria-disabled="true">${CT_IC.send}</button><span class="run-spin" id="runSpin" aria-hidden="true" title="Working on a reply" hidden><i aria-hidden="true"></i></span>${canStop?`<button class="ib stop" id="stopBtn" type="button" aria-label="Stop" title="${esc(a.live?STOP_TIP:'Stop')}" hidden>${CT_IC.stop}</button>`:''}</div>`;
 }
-/* FR-037: left to right Profile, Mode, Model (with its window), Context, MCP, then the attachments; data-ct = overflow rank (FR-040, 1 goes first) */
+/* FR-037: left to right Profile, Mode, Model, Context, MCP, then the attachments; data-ct = overflow rank (FR-040, 1 goes first).
+   Spec 005 FR-054 (issue 627): Profile, Attach image, Attach file, Model, MCP, Context; the mode never goes */
 function composerToolbarHTML(a,mdlName){
   const main=a.live&&a.info&&!a.parent, r=liveRoot(a);
   const it=(rank,html)=>html?`<span class="ct"${rank?` data-ct="${rank}"`:' data-keep="1"'}>${html}</span>`:'';
   return `<div class="ctoolbar" id="cToolbar" role="group" aria-label="Chat settings"><div class="ct-items" id="ctItems">`
-    +it(3,main&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):'')
+    +it(1,main&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):'')
     +it(0,main&&bridge.setPermMode?modeChipHTML(a):'')
-    +it(6,mdlName?(main&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${CT_IC.model}<span>${esc(mdlName.text)}</span></span>`):'')
-    +it(2,a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(r):'')
-    +it(1,a.live&&!a.parent&&bridge.agentMcp&&feat(r,'mcp')?mcpChipHTML(r):'')
-    +it(5,`<button class="ib ct-ib" id="attFile" type="button" aria-label="Attach file" title="Attach file">${ICON('file')}</button>`)
-    +it(4,`<button class="ib ct-ib" id="attImg" type="button" aria-label="Attach image" title="Attach image">${ICON('img')}</button>`)
+    +it(4,mdlName?(main&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${CT_IC.model}<span>${esc(mdlName.text)}</span></span>`):'')
+    +it(6,a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(r):'')
+    +it(5,a.live&&!a.parent&&bridge.agentMcp&&feat(r,'mcp')?mcpChipHTML(r):'')
+    +it(3,`<button class="ib ct-ib" id="attFile" type="button" aria-label="Attach file" title="Attach file">${ICON('file')}</button>`)
+    +it(2,`<button class="ib ct-ib" id="attImg" type="button" aria-label="Attach image" title="Attach image">${ICON('img')}</button>`)
     +`</div><div class="ct-more"><button class="ib ct-ib" id="ctMoreBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="ctMorePop" aria-label="More chat settings" title="More chat settings" hidden>⋯</button><div class="ct-more-pop" id="ctMorePop" role="group" aria-label="More chat settings" hidden></div></div></div>`;
 }
-/* FR-037 item 5: the MCP chip: the icon and how many servers are switched on for this agent (the dialog is spec 019/058's) */
-const MCP_N=new Map(), MCP_F=new Map(); /* per agent: servers switched on; servers failed or needing a sign-in (spec 058 FR-094) */
+/* FR-037 item 5: the MCP chip: the icon and how many servers are switched on for this agent (the dialog is spec 019/058's).
+   Spec 005 FR-053 (issue 627): "MCP 12/16": on (on by default and not switched off here) over all the servers listed for this chat */
+const MCP_N=new Map(), MCP_F=new Map(); /* per agent: {on,total}; servers failed or needing a sign-in (spec 058 FR-094) */
 function mcpChipHTML(a){
-  const n=MCP_N.get(a.id), known=typeof n==='number', f=MCP_F.get(a.id)||0;
+  const v=MCP_N.get(a.id), known=!!v, f=MCP_F.get(a.id)||0;
   /* spec 058 FR-094 (issue 603): a dot in the error colour when a server failed, said in the name and tooltip too (never colour alone) */
   const failed=f?', '+f+' failed':'';
-  const lab=known?'MCP servers: '+n+' on'+failed+'. Open the list':'MCP servers'+(f?': '+f+' failed':'')+'. Open the list';
-  return `<button class="mchip mchip-btn${f?' mcp-failed':''}" id="mcpBtn" type="button" aria-label="${esc(lab)}" title="${f?esc('MCP servers for this agent: '+(known?n+' on, ':'')+f+' failed. Click to see why.'):`MCP servers for this agent${known?': '+n+' switched on':''}. Click to see or switch them (set globally in Settings).`}">${CT_IC.mcp}<span>MCP</span>${known?`<b class="ct-n">${n}</b>`:''}${f?'<i class="ct-dot" aria-hidden="true"></i>':''}</button>`;
+  const lab=known?v.on+' of '+v.total+' MCP servers on'+failed+'. Open the list':'MCP servers'+(f?': '+f+' failed':'')+'. Open the list';
+  return `<button class="mchip mchip-btn${f?' mcp-failed':''}" id="mcpBtn" type="button" aria-label="${esc(lab)}" title="${f?esc('MCP servers for this agent: '+(known?v.on+' of '+v.total+' on, ':'')+f+' failed. Click to see why.'):`MCP servers for this agent${known?': '+v.on+' of '+v.total+' switched on':''}. Click to see or switch them (set globally in Settings).`}">${CT_IC.mcp}<span>MCP</span>${known?`<b class="ct-n">${v.on}/${v.total}</b>`:''}${f?'<i class="ct-dot" aria-hidden="true"></i>':''}</button>`;
 }
 async function refreshMcpCount(a){
   if(!a||!bridge.agentMcp||!ui.selected)return;
   {const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a||!$('mcpBtn'))return;} /* only for the open chat; opening a chat asks again */
   let st=null;try{st=await bridge.agentMcp(a.id);}catch(e){st=null;}
   if(!st||!st.ok)return;
-  const n=(st.servers||[]).filter(x=>x.defaultOn&&!x.off).length;
-  const f=(st.servers||[]).filter(x=>x.status==='failed'||x.status==='needs-auth').length;
-  if(MCP_N.get(a.id)===n&&(MCP_F.get(a.id)||0)===f)return; MCP_N.set(a.id,n);MCP_F.set(a.id,f);
+  const all=st.servers||[], n=all.filter(x=>x.defaultOn&&!x.off).length, was=MCP_N.get(a.id);
+  const f=all.filter(x=>x.status==='failed'||x.status==='needs-auth').length;
+  if(was&&was.on===n&&was.total===all.length&&(MCP_F.get(a.id)||0)===f)return; MCP_N.set(a.id,{on:n,total:all.length});MCP_F.set(a.id,f);
   const el=$('mcpBtn'),cur=ui.selected&&byId(ui.selected);if(!el||!cur||liveRoot(cur)!==a)return;
   const had=document.activeElement===el;el.outerHTML=mcpChipHTML(a);if(had){const f=$('mcpBtn');if(f)f.focus({preventScroll:true});}
 }
@@ -2287,14 +2289,25 @@ function placeMenu(m,x,y,anchor){
 function ctxCanCompact(a){const r=(a&&liveRoot(a))||a;return !!(r&&ctrlOf(r).compact&&bridge&&bridge.compact);}
 function ctxHasActs(a){return !SIMPLE||ctxCanCompact(a);}
 function closeCtxMenu(){const m=document.getElementById('ctxMenu');if(m){m.remove();const c=$('ctxChip');if(c)c.setAttribute('aria-expanded','false');}}
+/* spec 005 FR-052: VS Code style token summary: used / size with a bar, then one bar per type the adapter reported, or the note that it
+   reports only a total. Text only (esc); widths are numbers from summary() */
+function ctxSummaryHTML(a){
+  const s=ctxSummary(a), f=DM.fmtTokens, lv=s.known&&s.pct!==null?s.level:'unk';
+  let h=`<p class="mm-h">Context window</p>`;
+  if(!s.known)return h+`<p class="mm-info cb-note">${esc(s.note)}</p>`;
+  h+=`<div class="cb-head ${lv}"><p class="cb-total">${esc(s.pct===null?f(s.tokens)+' tokens used · window not reported':f(s.tokens)+' of '+f(s.limit)+' tokens · '+s.pct+'%')}</p>${s.pct===null?'':`<span class="cb-total-bar" aria-hidden="true"><i style="width:${Math.max(1,s.pct)}%"></i></span>`}</div>`;
+  if(s.bars.length)h+=`<ul class="cb-rows" aria-label="Tokens by type">`+s.bars.map(b=>`<li class="cb-row cb-${esc(b.key)}"><span class="cb-l">${esc(b.label)}</span><span class="cb-n">${esc(f(b.tokens))} · ${b.share}%</span><span class="cb-bar" aria-hidden="true"><i style="width:${Math.max(1,b.share)}%"></i></span></li>`).join('')+`</ul>`;
+  else h+=`<p class="mm-info cb-note">${esc(s.note)}</p>`;
+  return h;
+}
 function openCtxMenu(a0,anchor){
   const a=liveRoot(a0); if(!a)return;
   closeCtxMenu();closeModeMenu();closeModelMenu();closeAgentMenu();
   const c=window.DurbarScreens.ctxChip(a), canC=ctxCanCompact(a), busy=busyNow(a), acts=ctxHasActs(a);
-  const m=document.createElement('div');m.id='ctxMenu';m.className='mode-menu';m.setAttribute('role',acts?'menu':'dialog');m.setAttribute('aria-label',(SIMPLE?'Memory of ':'Context window of ')+a.name);
-  m.innerHTML=`<p class="mm-h">${SIMPLE?'Memory':'Context window'}</p><p class="mm-info">${esc(SIMPLE?(c.cls==='unk'?'Not known yet. It shows after the first message.':'The agent’s memory of this conversation is '+c.pct+'% full.'):c.title)}</p>`
-    +(canC?`<button type="button" role="menuitem" id="compactBtn" class="mm-compact"${busy?' aria-disabled="true"':''}><span class="mt"><b>${SIMPLE?'Tidy up memory':'Compact'}</b><small>${esc(busy?(SIMPLE?'The agent is busy. Tidy up when it is idle.':'The agent is busy. Compact when it is idle.'):(SIMPLE?'Summarise so the agent has room. One model call.':'Summarise to free space. Costs one model call.'))}</small></span></button>`:'')
-    +(SIMPLE?'':`<button type="button" role="menuitem" data-act="ctxTools"><span class="mt"><b>Models and context of all agents</b><small>The Tools view</small></span></button>`);
+  const m=document.createElement('div');m.id='ctxMenu';m.className='mode-menu'+(SIMPLE?'':' ctx-sum');m.setAttribute('role',acts&&SIMPLE?'menu':'dialog');m.setAttribute('aria-label',(SIMPLE?'Memory of ':'Context window of ')+a.name);
+  m.innerHTML=(SIMPLE?`<p class="mm-h">Memory</p><p class="mm-info">${esc(c.cls==='unk'?'Not known yet. It shows after the first message.':'The agent’s memory of this conversation is '+c.pct+'% full.')}</p>`:ctxSummaryHTML(a))
+    +(canC?`<button type="button"${SIMPLE?' role="menuitem"':''} id="compactBtn" class="mm-compact"${busy?' aria-disabled="true"':''}><span class="mt"><b>${SIMPLE?'Tidy up memory':'Compact'}</b><small>${esc(busy?(SIMPLE?'The agent is busy. Tidy up when it is idle.':'The agent is busy. Compact when it is idle.'):(SIMPLE?'Summarise so the agent has room. One model call.':'Summarise to free space. Costs one model call.'))}</small></span></button>`:'')
+    +(SIMPLE?'':`<button type="button" data-act="ctxTools"><span class="mt"><b>Models and context of all agents</b><small>The Tools view</small></span></button>`);
   if(!acts)m.tabIndex=-1; /* info only (Simple, cannot compact): the line itself, Escape closes back to the chip */
   document.body.appendChild(m);
   const r=anchor.getBoundingClientRect();placeMenu(m,r.left,r.bottom+6,anchor);
@@ -4176,7 +4189,18 @@ function feedStats(a,e){
 function ctxChipHTML(a){const c=window.DurbarScreens.ctxChip(a);
   return `<span class="ctxgrp" id="ctxGrp">${ctxChipBtn(a,c)}</span>`;} /* spec 005 FR-037: Compact is in the chip's menu */
 /* spec 052 FR-081: Simple says "Memory 74% full" (same id, same click). FR-093: Simple shows it only from 70% full (class mem-low hides it) */
+/* spec 005 FR-051, FR-052 (issue 627): the figure for the ring and its token summary (src/renderer/ctxbreakdown.js); never estimated */
+function ctxSummary(a){ /* the window as the model chip has it (modelWindow: reported, else the model list's for this tier); the event's own limit wins in summary() */
+  return window.DurbarCtxBreakdown.summary(STATS.agent(a.id).ctx,{limit:modelWindow(a),app:kindWord(a.info&&a.info.adapterId),waiting:!!a.ctxWaiting});
+}
+/* the ring: a track and an arc filled clockwise by the share in use (pathLength 100); level colour from theme tokens (styles.css);
+   above 90% a centre dot too, so the colour is never the only cue (the tooltip and the name carry the number) */
+function ctxRingHTML(a){
+  const s=ctxSummary(a), lv=s.known&&s.pct!==null?s.level:'unk', p=lv==='unk'?0:Math.max(2,s.pct);
+  return `<button class="ctxchip ctxring ${lv}" id="ctxChip" type="button" aria-haspopup="dialog" aria-expanded="${!!document.getElementById('ctxMenu')}" aria-label="${esc(s.name)}" title="${esc(s.tip)}"><svg class="ring" viewBox="0 0 16 16" aria-hidden="true"><circle class="rt" cx="8" cy="8" r="6" pathLength="100"/>${lv==='unk'?'':`<circle class="rv" cx="8" cy="8" r="6" pathLength="100" stroke-dasharray="${p} 100" transform="rotate(-90 8 8)"/>`}${lv==='high'?'<circle class="rd" cx="8" cy="8" r="1.8"/>':''}</svg></button>`;
+}
 function ctxChipBtn(a,c){
+  if(!SIMPLE)return ctxRingHTML(a); /* Simple keeps its words (Memory N% full) and its menu */
   const canC=ctxCanCompact(a), acts=ctxHasActs(a);
   const text=SIMPLE?(c.cls==='unk'?'Memory: not known yet':'Memory '+c.pct+'% full'):c.text, title=SIMPLE?'How full the agent\'s memory of this conversation is. '+(canC?'Click to tidy up memory.':'Click for details.'):String(c.title||'').replace(/[.\s]+$/,'')+'. '+(canC?'Click to compact or see all agents.':'Click to see all agents.'); /* spec 005 T070: one full stop, whether the title ends with one or not */
   return `<button class="ctxchip ${c.cls}${c.cls==='unk'||!(c.pct>=70)?' mem-low':''}" id="ctxChip" type="button" aria-haspopup="${acts?'menu':'dialog'}" aria-expanded="${!!document.getElementById('ctxMenu')}" title="${esc(title)}"><span class="bar" aria-hidden="true"><i style="width:${c.pct}%"></i></span><span>${esc(text)}</span></button>`;}
@@ -4641,7 +4665,7 @@ function modelLabel(info){
   const m=modelsFor(info.adapterId).find(x=>x.id===(info.model||'auto')), nm=m?m.name:(info.model||'auto')==='auto'?'Auto':info.model;
   const eff=(info.effort?' · '+info.effort+' effort':'')+(info.tier==='long'?' · long context':'');
   const mult=m&&m.multiplier!=null?' · ×'+m.multiplier+' credit multiplier':'';
-  return {text:nm+eff,title:'Model: '+nm+eff+mult+(m&&m.multiplier!=null?' (as reported by your Copilot account)':'')};
+  return {name:nm,text:nm+eff,title:'Model: '+nm+eff+mult+(m&&m.multiplier!=null?' (as reported by your Copilot account)':'')};
 }
 function fillModelSelect(sel,cur,kind,prefix){
   const list=modelsFor(kind);
@@ -4814,7 +4838,7 @@ function addInfoNote(chat,text,cls){
 
 function modelChipHTML(a){
   const m=modelLabel(a.info),pend=a.pendingModel;
-  const win=modelWindow(a), txt=m.text+(win?' · '+DM.fmtTokens(win):'')+(pend?' → '+pend.name:''); /* spec 005 FR-037: name, effort and the window; the icon and the label say it is the model (FR-077) */
+  const win=modelWindow(a), txt=m.name+(pend?' → '+pend.name:''); /* spec 005 FR-050 (issue 627): the name only (and a queued switch); effort, tier and window are in the name and the tooltip */
   const title=m.title+(pend?'. Next: '+pend.name+(pend.tier==='long'?' (long context)':'')+', when the current reply ends.':'')+(ctrlOf(a).switch==='none'?' This agent cannot switch in place; click for why.':' Click to change the model or the context.');
   return `<button class="mchip mchip-btn" id="modelChip" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="${esc('Model: '+m.text+(win?', '+DM.fmtTokens(win)+' tokens context window':'')+(pend?'; next: '+pend.name:''))}" title="${esc(title+(win?' Context window: '+DM.fmtTokens(win)+' tokens.':''))}">${CT_IC.model}<span>${esc(txt)}</span><svg class="chev" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg></button>`;
 }
@@ -4910,6 +4934,9 @@ function openModelMenu(a0,x,y,anchor){
   h+='<p class="mm-h">Model</p>'+list.map(m=>{const chk=m.id===curId,w=DM.windowOf(m);
     return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${esc(DM.priceLine(m))}${w?' · '+esc(DM.fmtTokens(w))+' window':''}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
   if((cur.efforts||[]).length)h+='<p class="mm-h">Reasoning effort</p><div class="mm-seg" role="group" aria-label="Reasoning effort">'+['',...cur.efforts].map(x=>{const on2=(a.info.effort||'')===x;return `<button type="button" data-effort="${esc(x)}" aria-pressed="${on2}"${dis}>${x?esc(x):'Default'}</button>`;}).join('')+'</div>';
+  /* spec 005 FR-050: the window choice of this model only: Long context where it has one, else the one window it has */
+  const w0=DM.windowOf(cur);
+  if(DM.hasLong(cur)||w0>0)h+=`<p class="mm-h">Context window</p>`+(DM.hasLong(cur)?'':`<p class="mm-info">${esc(DM.fmtTokens(w0))} (the only window of this model)</p>`);
   if(DM.hasLong(cur))h+=`<button type="button" role="menuitemcheckbox" aria-checked="${tier==='long'}" data-tier="1"${dis} class="mm-tier"><span class="mt"><b>Long context</b><small>${esc(DM.fmtTokens(DM.windowOf(cur,'long')))} window · ${esc(DM.priceLine(cur,'long'))}</small></span><span class="ck">${tier==='long'?'✓':''}</span></button>`;
   if(pend)h+=`<div class="mm-pend" role="status"><span>Next: <b>${esc(pend.name)}</b>${pend.tier==='long'?' (long context)':''}, when this reply ends.</span><button type="button" data-cancelq="1">Cancel</button></div>`;
   h+=on?'<p class="mm-note">Applies from the next message; the conversation is kept. Costlier switches ask first, and your spending limit never changes.'+(ctrlOf(a).unverified?' '+esc(UNVERIFIED_WHY):'')+'</p>':'<div class="mm-foot"><button type="button" class="btn" data-newsess="1">New session…</button></div>';

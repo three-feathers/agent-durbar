@@ -29,6 +29,8 @@ module.exports = async (ctx) => {
   const dlgButton = (label) => js(`(()=>{const b=[...document.querySelectorAll('#modeDlg .btn')].find(x=>x.textContent===${jsLiteral(label)});if(!b)return false;b.click();return true})()`);
   const pick = (id) => click(`#modelMenu [data-pick="${id}"]`);
   const chipText = () => text('#modelChip');
+  /* spec 005 FR-050, FR-051 (issue 627): the model chip shows the name only and the context chip is a ring; their names carry the rest */
+  const nameOf = (sel) => js(`(document.querySelector(${jsLiteral(sel)})||{getAttribute:()=>''}).getAttribute('aria-label')||''`);
   /* spec 005 FR-037: Compact lives in the context chip's menu (same id, #compactBtn) */
   const ctxMenu = async () => { await click('#ctxChip'); await until(`!!document.getElementById('ctxMenu')`); };
   const ctxClose = async () => { if (await exists('#ctxMenu')) { await key('Escape'); await until(`!document.getElementById('ctxMenu')`); } };
@@ -41,7 +43,7 @@ module.exports = async (ctx) => {
   await open('Noor');
   assert.match(await chipText(), /Sim Fast/, 'the model chip names the model');
   await ctxMenu(); assert.ok(await exists('#ctxMenu #compactBtn'), 'Compact action is offered in the context menu (the adapter can compact)'); await ctxClose();
-  assert.match(await text('#ctxChip'), /Context \d+%/);
+  assert.match(await nameOf('#ctxChip'), /^Context window \d+% used/);
   assert.ok(await exists('#chat .note.fresh'), 'start-fresh note appears at 90%+ after a compaction');
   assert.match(await text('#chat .note.fresh'), /New session/);
   assert.match(await text('#chat'), /Context compacted \(automatic\)/, 'the earlier compaction is a line in the chat');
@@ -82,7 +84,7 @@ module.exports = async (ctx) => {
   assert.match(dlg, /price of Sim Preview is not reported/);
   await dlgButton('Switch'); await until(`/Sim Preview/.test((document.querySelector('#modelChip')||{}).innerText||'')&&!!document.querySelector('#toasts .toast-act')`); await settle();
   assert.match(await chipText(), /Sim Preview/);
-  assert.match(await text('#ctxChip'), /waiting for next message/, 'the old window figure is not shown as if it still applied');
+  assert.match(await nameOf('#ctxChip'), /waiting for the next message/, 'the old window figure is not shown as if it still applied');
   assert.match(await text('#toasts'), /Sim Preview/); assert.ok(await exists('#toasts .toast-act'), 'an Undo button is offered');
   assert.match(await text('#chat'), /Model set to Sim Preview\. The next message uses it\./);
   await shot('undo-waiting');
@@ -96,15 +98,16 @@ module.exports = async (ctx) => {
   assert.match(await chipText(), /Sim Mid/);
   await click('#modelChip'); await until(`!!document.querySelector('#modelMenu [data-effort="high"]')`);
   assert.ok(await exists('#modelMenu [data-effort="high"]'), 'Sim Mid offers reasoning efforts');
-  await click('#modelMenu [data-effort="high"]'); await until(`/high effort/.test((document.querySelector('#modelChip')||{}).innerText||'')`); await settle();
+  await click('#modelMenu [data-effort="high"]'); await until(`/high effort/.test((document.querySelector('#modelChip')||{getAttribute:()=>''}).getAttribute('aria-label')||'')`); await settle();
   assert.ok(!(await exists('#modeDlg')), 'an effort change needs no confirmation');
-  assert.match(await chipText(), /high effort/);
+  assert.match(await nameOf('#modelChip'), /high effort/, 'the effort is in the chip\'s name');
+  assert.doesNotMatch(await chipText(), /effort/, 'the chip\'s text is the model name only (spec 005 FR-050)');
   await click('#modelChip'); await until(`!!document.getElementById('modelMenu')`); await pick('sim-fast'); await until(`/Sim Fast/.test((document.querySelector('#modelChip')||{}).innerText||'')`); await settle();
   assert.ok(!(await exists('#modeDlg')), 'a cheaper model applies directly (Undo toast instead of a dialog)');
   assert.match(await chipText(), /Sim Fast/);
 
   // ---- 6) manual compaction: dialog with an optional focus, result line, context drops, the start-fresh note goes away ----
-  const before = await text('#ctxChip');
+  const before = await nameOf('#ctxChip');
   await ctxMenu(); await click('#compactBtn'); await until(`!!document.getElementById('modeDlg')&&!!document.getElementById('mdIn')`);
   dlg = await text('#modeDlg');
   assert.match(dlg, /Compact the context of Noor\?/); assert.match(dlg, /one model call/);
@@ -112,7 +115,7 @@ module.exports = async (ctx) => {
   await shot('compact-dialog', false);
   await dlgButton('Compact'); await until(`/Context compacted \\(manual\\)/.test(document.getElementById('chat').innerText)`); await settle();
   assert.match(await text('#chat'), /Context compacted \(manual\): \d+(\.\d+)?k → \d+(\.\d+)?k tokens\./);
-  assert.notStrictEqual(await text('#ctxChip'), before, 'the context figure changed');
+  assert.notStrictEqual(await nameOf('#ctxChip'), before, 'the context figure changed');
   assert.ok(!(await exists('#chat .note.fresh')), 'after compaction the start-fresh note is gone');
   await shot('compaction-line');
 
