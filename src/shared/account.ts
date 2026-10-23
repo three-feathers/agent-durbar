@@ -23,6 +23,16 @@ export interface AccountIdentity {
 }
 
 /**
+ * Spec 051 FR-022 (review on #620): what main tells an adapter's `accountInfo`. `disabledMcpServers`: the MCP servers the app would start
+ * by itself (Copilot: ~/.copilot/mcp-config.json and its built-in one), switched off by name in any helper session, as the one-shots
+ * do. `recheck`: the user asked again (Check again, or a sign-in ended), so a once-per-run answer such as Copilot's plan is asked anew.
+ */
+export interface AccountInfoOptions {
+  disabledMcpServers?: readonly string[];
+  recheck?: boolean;
+}
+
+/**
  * What the window gets per app (`harness:accounts`). `text` is the line with the name masked (FR-016: "Signed in as v•••@example.com ·
  * Claude Pro"); `masked` is that masked name as it appears in `text`, and `name` the clear name, kept only in the window's memory for
  * the Settings reveal. Tooltips and "About agent apps" use `text` only.
@@ -38,6 +48,9 @@ export interface AccountView {
   provider?: string;
   via?: string;
 }
+
+/** Spec 051 FR-022: temp folders of the Copilot account probe and of the one-shots, swept when older than an hour. */
+export const ACCOUNT_TEMP_PREFIXES: readonly string[] = ['durbar-acct-', 'durbar-gen-'];
 
 export const NAME_MAX = 80;
 const WORD_MAX = 40;

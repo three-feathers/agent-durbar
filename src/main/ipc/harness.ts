@@ -12,8 +12,8 @@ import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind, runRequest, simManagers 
 import type { DevEnv } from '../devhooks';
 import { HarnessSetup, confirmText, posixTrusted } from '../harnesssetup';
 import { simulatorOn } from '../simguard';
-import { createAccountCache } from '../accounts';
-import type { AccountIdentity } from '../../shared/account';
+import { accountCheck, createAccountCache } from '../accounts';
+import { copilotDir, copilotServerNames } from '../mcpfiles';
 import type { createRemoteOps } from '../remoteops';
 
 export interface HarnessIpcDeps {
@@ -36,15 +36,7 @@ export function register(deps: HarnessIpcDeps): void {
      the simulator (spec 010 FR-030): its page answers a fake identity itself. */
   const accounts = createAccountCache({
     list: () => adaptersList(false),
-    check: (id) => {
-      if (simulatorOn(dev) || !registry.has(id)) return undefined;
-      try {
-        const ad = router.instance(id);
-        return typeof ad.accountInfo === 'function' ? () => (ad.accountInfo as () => Promise<AccountIdentity>)() : undefined;
-      } catch {
-        return undefined;
-      }
-    },
+    check: accountCheck({ simulator: simulatorOn(dev), has: (id) => registry.has(id), instance: (id) => router.instance(id), copilotServers: () => copilotServerNames(copilotDir(dev)) }),
   });
   const harnessSetup = new HarnessSetup({
     detectEnv: nodeDetectEnv(),
@@ -113,7 +105,8 @@ export function register(deps: HarnessIpcDeps): void {
     await shell.openExternal(new URL(url).href);
     return { ok: true };
   });
-  ipcHandle('harness:accounts', async (e, refresh: unknown) => (fromApp(e) ? accounts.get(refresh === true) : {}));
+  // FR-022: `true` = Settings opened (cached once-per-run facts kept); 'check' = Check again or a finished sign-in (asked anew)
+  ipcHandle('harness:accounts', async (e, refresh: unknown) => (fromApp(e) ? accounts.get(refresh === true || refresh === 'check', refresh === 'check') : {}));
   ipcHandle('harness:copilotAuth', async (e) => {
     if (!fromApp(e)) return { known: false };
     const pw = harnessSetup.pwshMissing() ? { pwshMissing: true } : {}; // spec 052 FR-073: Windows only, a file check, no process

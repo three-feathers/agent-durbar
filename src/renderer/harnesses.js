@@ -84,7 +84,8 @@
   async function loadAccounts(refresh) {
     if (!B || !B.harnessAccounts) return ACC;
     let r = null;
-    try { r = await B.harnessAccounts(!!refresh); } catch (e) { r = null; }
+    /* spec 051 FR-022: true = Settings opened (once-per-run facts kept); 'check' = Check again or a finished sign-in (asked anew) */
+    try { r = await B.harnessAccounts(refresh === 'check' ? 'check' : !!refresh); } catch (e) { r = null; }
     ACC = r && typeof r === 'object' ? r : ACC || {};
     paintAccounts();
     onAccounts(ACC);

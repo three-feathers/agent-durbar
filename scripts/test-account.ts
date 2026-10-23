@@ -12,13 +12,16 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { accountLine, accountView, cleanName, maskName, planWord, NAME_MAX } from '../src/shared/account';
-import type { AccountIdentity } from '../src/shared/account';
+import type { AccountIdentity, AccountInfoOptions } from '../src/shared/account';
 import { claudeAccount, codexAccount, copilotAccount, copilotPlanLabel } from '../src/adapters/accounts';
 import { ClaudeAdapter } from '../src/adapters/claude';
 import { CodexAdapter } from '../src/adapters/codex';
 import { claudeAuthStatus, claudeLoggedIn, nodeExec } from '../src/adapters/detect';
 import type { DetectEnv, Exec } from '../src/adapters/detect';
-import { createAccountCache } from '../src/main/accounts';
+import { accountCheck, createAccountCache } from '../src/main/accounts';
+import { copilotServerNames } from '../src/main/mcpfiles';
+import { sweepStaleTempDirs } from '../src/shared/attachments';
+import * as os from 'os';
 import { withSignIn } from '../src/main/authcheck';
 import type { AdapterInfo } from '../src/shared/adapters';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
@@ -220,6 +223,7 @@ void (async () => {
       const ad2 = new FakeCopilot(c2);
       (ad2 as unknown as { planTimeoutMs: number }).planTimeoutMs = 30;
       assert.deepStrictEqual(await ad2.accountInfo(), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli', provider: 'GitHub', via: 'GitHub CLI' }, `no plan when ${label}`);
+      await new Promise((r) => setTimeout(r, 100)); // the answer comes at the overall cap; the cleanup finishes right after it
       assert.ok((c2 as unknown as { deleted: string[] }).deleted.length === 1, `the session is deleted when ${label}`);
     }
     {
@@ -437,8 +441,10 @@ void (async () => {
       assert.strictEqual(bodyOf(s.replace(/\n/g, '\r\n'), 'async accountInfo('), body, `${f}: the body is found with CRLF endings too`);
       assert.ok(!NO_LOG.test(body), `${f} accountInfo does not log`);
       if (f.endsWith('copilot.ts')) {
-        const plan = bodyOf(s, 'private async copilotPlan(');
-        assert.ok(plan.length > 20 && !NO_LOG.test(plan) && !/\.send\(\{|\bsend\(/.test(plan), 'the plan session logs nothing and sends no message');
+        for (const head of ['private async planOf(', 'private startPlanRead(']) {
+          const plan = bodyOf(s, head);
+          assert.ok(plan.length > 20 && !NO_LOG.test(plan) && !/\.send\(\{|\bsend\(/.test(plan), `${head}: the plan read logs nothing and sends no message`);
+        }
       }
     }
     // the window's account code sends nothing on: no bridge call but harnessAccounts in its lines
@@ -467,6 +473,161 @@ void (async () => {
     assert.ok(/ACCTS\[id\]\.text/.test(appJs) && !/ACCTS\[[^\]]+\]\.name|\.name\b[^;\n]*ACCTS|ACCTS[^;\n]*\.name\b/.test(appJs.replace(/k\.name/g, '')), 'app.js uses the masked text only');
     // the reveal is not saved: no storage or settings call in the window's account code
     assert.ok(!/localStorage|sessionStorage|setSettings|saveSettings|indexedDB/.test(acc), 'the reveal is never saved');
+  }
+
+  // ---- 7. FR-022 (Paco's re-review on #620): the Copilot plan session
+  {
+    const tune = (ad: FakeCopilot, o: Partial<Record<'planTimeoutMs' | 'planCleanupMs' | 'planStaleMs', number>> = {}): FakeCopilot => {
+      Object.assign(ad as unknown as Record<string, number>, { planTimeoutMs: 40, planCleanupMs: 20, planStaleMs: 30_000, ...o });
+      return ad;
+    };
+    const created = (c: FakeClient): Array<Record<string, unknown>> => (c as unknown as { created: Array<Record<string, unknown>> }).created;
+    const deleted = (c: FakeClient): string[] => (c as unknown as { deleted: string[] }).deleted;
+    const base = { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli', provider: 'GitHub', via: 'GitHub CLI' };
+
+    // item 1: every MCP server the runtime would start by itself is switched off by name, and none is passed in
+    {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'acct-test-'));
+      fs.writeFileSync(path.join(home, 'mcp-config.json'), JSON.stringify({ mcpServers: { notes: { command: 'node', args: ['x.js'] }, web: { type: 'http', url: 'https://example.invalid/mcp' } } }));
+      const names = copilotServerNames(home);
+      assert.ok(names.includes('notes') && names.includes('web') && names.length >= 3, `the config's servers and the built-in ones: ${names.join(',')}`);
+      const c = new AuthFakeClient();
+      const ad = tune(new FakeCopilot(c));
+      const calls: AccountInfoOptions[] = [];
+      const orig = ad.accountInfo.bind(ad);
+      ad.accountInfo = (o?: AccountInfoOptions) => { calls.push(o ?? {}); return orig(o); };
+      const check = accountCheck({ simulator: false, has: () => true, instance: () => ad, copilotServers: () => copilotServerNames(home) });
+      assert.deepStrictEqual(await check('copilot')!({ recheck: false }), { ...base, plan: 'Copilot Individual' });
+      assert.deepStrictEqual([...calls], [{ disabledMcpServers: names, recheck: false }], 'main passes the names and the recheck flag');
+      const cfg = created(c)[0];
+      assert.deepStrictEqual(cfg.disabledMcpServers, names, 'the plan session switches every one of them off');
+      assert.deepStrictEqual(cfg.mcpServers, {}, 'and adds none');
+      assert.ok((cfg.excludedTools as string[]).includes('mcp:*') && Array.isArray(cfg.availableTools) && (cfg.availableTools as unknown[]).length === 0);
+      // another app gets no server list; the simulator and an app without the method get no check
+      const other = { accountInfo: async (o?: AccountInfoOptions) => { calls.push(o ?? {}); return { status: 'unknown' } as AccountIdentity; } };
+      await accountCheck({ simulator: false, has: () => true, instance: () => other, copilotServers: () => names })('claude')!({ recheck: true });
+      assert.deepStrictEqual(calls[1], { disabledMcpServers: [], recheck: true });
+      assert.strictEqual(accountCheck({ simulator: true, has: () => true, instance: () => other, copilotServers: () => names })('claude'), undefined, 'none under the simulator');
+      assert.strictEqual(accountCheck({ simulator: false, has: () => true, instance: () => ({}), copilotServers: () => names })('codex'), undefined);
+      assert.strictEqual(accountCheck({ simulator: false, has: () => false, instance: () => other, copilotServers: () => names })('codex'), undefined);
+      // a broken server list still switches off what it can (here: nothing) rather than failing the line
+      const bad = accountCheck({ simulator: false, has: () => true, instance: () => other, copilotServers: () => { throw new Error('x'); } });
+      await bad('copilot')!({ recheck: false });
+      assert.deepStrictEqual(calls[2], { disabledMcpServers: [], recheck: false });
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+
+    // item 4: at most one throw-away session per run; a recheck or a new sign-in asks again; a live session answers first
+    {
+      const c = new AuthFakeClient();
+      const ad = tune(new FakeCopilot(c));
+      await ad.accountInfo();
+      await ad.accountInfo();
+      await ad.accountInfo({ recheck: false });
+      assert.strictEqual(created(c).length, 1, 'three asks, one throw-away session');
+      assert.strictEqual((await ad.accountInfo({ recheck: true })).plan, 'Copilot Individual');
+      assert.strictEqual(created(c).length, 2, 'Check again asks anew');
+      await ad.refreshAuth();
+      await ad.accountInfo();
+      assert.strictEqual(created(c).length, 3, 'after a sign-in, asked anew');
+      // concurrent asks share one session
+      const c2 = new AuthFakeClient();
+      const ad2 = tune(new FakeCopilot(c2));
+      await Promise.all([ad2.accountInfo(), ad2.accountInfo(), ad2.accountInfo({ recheck: true })]);
+      assert.ok(created(c2).length <= 2, `concurrent asks: ${created(c2).length} sessions`);
+      // a running session answers: no throw-away at all
+      const c3 = new AuthFakeClient();
+      const ad3 = tune(new FakeCopilot(c3));
+      const live = await c3.createSession({ sessionId: 'live-1' });
+      (live as unknown as { statusAnswer: unknown }).statusAnswer = { copilotPlan: 'business' };
+      (ad3 as unknown as { sessions: Map<string, unknown> }).sessions.set('live-1', { session: live });
+      const n0 = created(c3).length;
+      assert.strictEqual((await ad3.accountInfo()).plan, 'Copilot Business', 'the live session tells the plan');
+      assert.strictEqual(created(c3).length, n0, 'no throw-away session while one is live');
+      assert.strictEqual(deleted(c3).length, 0, 'the live session is left alone');
+    }
+
+    // item 2: one cap around the whole read; a hung or slow createSession never costs the line or blocks Check again
+    {
+      // createSession never answers
+      const c = new AuthFakeClient();
+      let makes = 0;
+      c.createSession = () => { makes++; return new Promise<never>(() => undefined); };
+      const ad = tune(new FakeCopilot(c));
+      const t0 = Date.now();
+      assert.deepStrictEqual(await ad.accountInfo(), base, 'a hung createSession: the account without a plan');
+      assert.ok(Date.now() - t0 < 1000, 'within the cap');
+      assert.deepStrictEqual(await ad.accountInfo({ recheck: true }), base, 'Check again answers too');
+      assert.strictEqual(makes, 1, 'while it is still in flight, no second session is started beside it');
+      tune(ad, { planStaleMs: 0 });
+      await ad.accountInfo({ recheck: true });
+      assert.strictEqual(makes, 2, 'a hung one past its ceiling no longer blocks Check again');
+      // createSession answers late: the session is still disconnected and deleted, and its folder removed
+      const c2 = new AuthFakeClient();
+      const orig2 = c2.createSession.bind(c2);
+      let lateId = '';
+      c2.createSession = async (cfg: Record<string, unknown>) => { await new Promise((r) => setTimeout(r, 120)); const sx = await orig2(cfg); lateId = sx.sessionId; return sx; };
+      const ad2 = tune(new FakeCopilot(c2));
+      assert.deepStrictEqual(await ad2.accountInfo(), base, 'a slow createSession: the account without a plan');
+      await new Promise((r) => setTimeout(r, 300));
+      assert.ok(lateId && deleted(c2).includes(lateId), 'the late session is deleted');
+      assert.ok(!fs.existsSync(created(c2)[0].workingDirectory as string), 'and its folder removed');
+      // cleanup calls that hang are capped too
+      const c3 = new AuthFakeClient();
+      const orig3 = c3.createSession.bind(c3);
+      c3.createSession = async (cfg: Record<string, unknown>) => { const sx = await orig3(cfg); (sx as unknown as { disconnect: () => Promise<void> }).disconnect = () => new Promise<void>(() => undefined); return sx; };
+      c3.deleteSession = () => new Promise<void>(() => undefined);
+      const ad3 = tune(new FakeCopilot(c3), { planTimeoutMs: 500 });
+      const t3 = Date.now();
+      assert.deepStrictEqual(await ad3.accountInfo(), { ...base, plan: 'Copilot Individual' });
+      assert.ok(Date.now() - t3 < 1000, 'hung cleanup calls do not hold the answer');
+      await new Promise((r) => setTimeout(r, 100));
+      assert.ok(!fs.existsSync(created(c3)[0].workingDirectory as string), 'the folder is still removed');
+    }
+
+    // the cache: the recheck flag reaches the adapter; a sign-in makes the next ask a recheck; a hung ask has a ceiling
+    {
+      const seen: boolean[] = [];
+      const cache = createAccountCache({ list: async () => [info('copilot', 'ready')], check: () => async (o) => { seen.push(o.recheck); return { status: 'signed-in', name: 'x' }; } });
+      await cache.get();
+      await cache.get(true);
+      await cache.get(true, true);
+      cache.forget('copilot');
+      await cache.get();
+      await cache.get(true);
+      assert.deepStrictEqual(seen, [false, false, true, true, false], 'open = keep, Check again = recheck, after a sign-in = recheck once');
+      let asks = 0;
+      const hung = createAccountCache({ list: async () => [info('copilot', 'ready')], timeoutMs: 10, maxRunMs: 30, check: () => () => { asks++; return new Promise<AccountIdentity>(() => undefined); } });
+      await hung.get(true);
+      await hung.get(true);
+      assert.strictEqual(asks, 1, 'joined while young');
+      await new Promise((r) => setTimeout(r, 40));
+      await hung.get(true);
+      assert.strictEqual(asks, 2, 'past the ceiling a refresh asks again');
+    }
+
+    // item 5: the sweep removes only our own old folders, directly in the temp folder, and never follows a link
+    {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'acct-sweep-'));
+      const mk = (n: string, old: boolean): string => { const p = path.join(tmp, n); fs.mkdirSync(p); fs.writeFileSync(path.join(p, 'f'), 'x'); if (old) { const t = new Date(Date.now() - 2 * 3600_000); fs.utimesSync(p, t, t); } return p; };
+      mk('durbar-acct-old', true);
+      mk('durbar-gen-old', true);
+      const fresh = mk('durbar-acct-new', false);
+      const other = mk('somebody-else-old', true);
+      const target = mk('target', true);
+      let linked = false;
+      const oldT = new Date(Date.now() - 2 * 3600_000);
+      try { fs.symlinkSync(target, path.join(tmp, 'durbar-acct-link'), 'dir'); fs.lutimesSync(path.join(tmp, 'durbar-acct-link'), oldT, oldT); linked = true; } catch { /* no symlinks here (Windows without the right): skipped */ }
+      fs.writeFileSync(path.join(tmp, 'durbar-acct-file'), 'x');
+      fs.utimesSync(path.join(tmp, 'durbar-acct-file'), oldT, oldT); // old too: only the type check keeps a file and a link
+      const n = sweepStaleTempDirs(tmp, ['durbar-acct-', 'durbar-gen-'], Date.now(), 3600_000);
+      assert.strictEqual(n, 2, 'the two old folders of ours');
+      assert.ok(!fs.existsSync(path.join(tmp, 'durbar-acct-old')) && !fs.existsSync(path.join(tmp, 'durbar-gen-old')));
+      assert.ok(fs.existsSync(fresh) && fs.existsSync(other) && fs.existsSync(path.join(tmp, 'durbar-acct-file')), 'a fresh one, someone else\'s and a file stay');
+      if (linked) assert.ok(fs.existsSync(path.join(target, 'f')) && fs.lstatSync(path.join(tmp, 'durbar-acct-link')).isSymbolicLink(), 'an old link is neither followed nor removed');
+      assert.strictEqual(sweepStaleTempDirs(tmp, ['', '../', 'x'], Date.now(), 0), 0, 'an empty or odd prefix sweeps nothing');
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   }
 
   // ---- 6. review on #620 (item 4): `auth status` output over 64 KiB is refused (the exec's cap), not parsed
