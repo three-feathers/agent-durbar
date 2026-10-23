@@ -1,0 +1,1 @@
+- **PowerShell hashtables are masked** (spec 041 FR-053 R12, issue #502): a secret member of `@{"X-Api-Key"="..."}` (also in `powershell -Command`) is shown as `[redacted]` in MCP server lists and read tools. Unit tests with false-positive and 1 MB adversarial cases.
