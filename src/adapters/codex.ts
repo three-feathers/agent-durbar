@@ -33,7 +33,7 @@ import type { McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
-import { CODEX_INITIALIZE_CAPABILITIES, codexFileChanges, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
+import { CODEX_INITIALIZE_CAPABILITIES, codexFileChanges, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexSpawnPath, codexWorkspaceRoots } from './codexModes';
 import type { CodexFileChange, DurbarAnswer } from './codexModes';
 import { CODEX_BINARY, detectBinary, nodeExec } from './detect';
 import type { DetectEnv } from './detect';
@@ -193,13 +193,22 @@ export function linuxSandboxHint(reason: string): string {
 }
 
 /**
- * FR-140 delta (real, GitHub's macOS runners 2026-10-20): Codex's macOS sandbox (`sandbox-exec`) was refused, so Read-only and Ask
- * first fail at start (closed, as they must). The cause on an ordinary Mac is not known yet; say what happened and what to do.
+ * FR-140 delta (real, GitHub's macOS runners 2026-10-20; owner report 2026-10-23): Codex's macOS sandbox (`sandbox-exec`) failed,
+ * so Read-only and Ask first fail at start (closed, as they must). Two causes are told apart (FR-162):
+ * - `execvp() of … failed: Operation not permitted`: Codex could not run its own binary again inside the sandbox, because it was
+ *   started through a link that the sandbox cannot read (openai/codex#41493). Durbar now spawns the resolved path, so this should
+ *   not happen any more; if it does, it is worth a report.
+ * - `sandbox_apply: Operation not permitted`: a sandbox inside a sandbox, so Durbar itself runs restricted.
  */
 export function macSandboxHint(reason: string): string {
-  return /sandbox-exec/i.test(reason)
-    ? ' Codex could not start its macOS sandbox (macOS refused sandbox-exec). Read-only and Ask first need that sandbox, so nothing ran. This can happen when Agent Durbar itself runs restricted (a managed Mac or a CI machine); start Durbar normally and try again.'
-    : '';
+  const lead = ' Codex could not start its macOS sandbox. Read-only and Ask first need that sandbox, so nothing ran.';
+  if (/execvp\(\)[^\n]*Operation not permitted/i.test(reason)) {
+    return `${lead} Codex could not run its own program again inside the sandbox; this happens when Codex is reached through a link (for example Homebrew's), and Durbar now starts the real file instead. If you still see this, please report it with your Codex version and how you installed Codex.`;
+  }
+  if (/sandbox_apply[^\n]*Operation not permitted/i.test(reason)) {
+    return `${lead} macOS refused a sandbox inside another one: Agent Durbar itself runs restricted (a managed Mac or a CI machine). Start Durbar normally and try again.`;
+  }
+  return /sandbox-exec/i.test(reason) ? `${lead} macOS refused sandbox-exec.` : '';
 }
 
 /** FR-142: only a Codex model id is sent; `auto`/`default` and Copilot or Claude ids saved for the folder are left to Codex. */
@@ -323,12 +332,17 @@ export class CodexAdapter implements AgentAdapter {
     return r ? [r] : [];
   }
 
+  /** FR-162: spawn the resolved `codex`, so its own re-run inside the macOS sandbox finds a readable file (openai/codex#41493). */
+  private spawnPath(file: string): string {
+    return codexSpawnPath(file, this.realpath, this.platform);
+  }
+
   private spawnChild(file: string, cwd: string, handlers: { onNotification: (m: string, p: unknown) => void; onRequest: (m: string, p: unknown) => Promise<RequestOutcome>; onExit: (code: number | null, signal: NodeJS.Signals | null) => void }): Child {
     let done!: () => void;
     const exited = new Promise<void>((r) => (done = r));
     const rpc = createCodexRpc({
       spawn: this.spawnFn,
-      file,
+      file: this.spawnPath(file),
       args: ['app-server', ...codexProfileArgs(this.installRoots(file))],
       cwd,
       env: this.env,
@@ -355,7 +369,7 @@ export class CodexAdapter implements AgentAdapter {
    */
   private async probe<T>(fn: (rpc: CodexRpc) => Promise<T>, onNotification: (method: string, params: unknown) => void = () => undefined): Promise<T> {
     const loc = await this.locate();
-    if (!loc?.path || isShim(loc.path)) throw new Error('Codex was not found on this computer.');
+    if (!loc?.path || isShim(loc.path) || isShim(this.spawnPath(loc.path))) throw new Error('Codex was not found on this computer.');
     const child = this.spawnChild(loc.path, os.tmpdir(), { onNotification, onRequest: async () => ({ error: { code: -32601, message: 'not handled in a probe' } }), onExit: () => undefined });
     try {
       await child.rpc.request('initialize', { clientInfo: { name: 'agent_durbar', title: 'Agent Durbar', version: this.appVersion }, capabilities: CODEX_INITIALIZE_CAPABILITIES });
@@ -562,7 +576,8 @@ export class CodexAdapter implements AgentAdapter {
     cancelled();
     if (!loc?.path) throw new Error('Codex was not found on this computer. Install the Codex CLI, then restart Durbar.');
     // A .cmd/.bat shim cannot carry the profile argument and cannot be spawned without a shell: refused in every mode (D4).
-    if (isShim(loc.path)) throw new Error('Codex is launched through a .cmd launcher, which Durbar cannot run safely. Use the native codex.exe instead of the .cmd shim.');
+    // FR-162: the resolved path is checked too, since that is the file spawned.
+    if (isShim(loc.path) || isShim(this.spawnPath(loc.path))) throw new Error('Codex is launched through a .cmd launcher, which Durbar cannot run safely. Use the native codex.exe instead of the .cmd shim.');
     if (limited && !roots.length) throw new Error(`Durbar has no folder it can limit Codex's reads to. Add the project folder itself, not a drive or filesystem root, or a folder Durbar can resolve.`);
 
     if (limited && !realCwd) throw new Error(`Durbar cannot resolve the session folder (${path.basename(cwd)}), so it cannot confirm Codex reads only inside it. Check that the folder exists and Durbar can read it.`);
