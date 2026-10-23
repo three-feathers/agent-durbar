@@ -1070,7 +1070,9 @@ function cabinHTML(a,kind,sceneHTML){
 function doorBtnHTML(a){
   if(!signsOn()||!bridge||!bridge.setDoor||demoOn||a.parent)return '';
   const d=doorOf(a), lab=d.closed?'Open the door: '+a.name+(d.held?' ('+d.held+' held)':''):'Close the door (do not disturb): '+a.name;
-  return `<button class="cb-toggle" type="button" data-doorset="${esc(a.id)}" aria-pressed="${d.closed}" aria-label="${esc(lab)}" title="${esc(lab)}">${doorSvg(!d.closed,true)}</button>`;
+  /* the tooltip names the agent cut short (a long session title, spec 052 FR-171's 120 characters); the accessible name is whole */
+  const tip=(d.closed?'Open the door: ':'Close the door (do not disturb): ')+DurbarCutText.cutText(a.name,60)+(d.closed&&d.held?' ('+d.held+' held)':'');
+  return `<button class="cb-toggle" type="button" data-doorset="${esc(a.id)}" aria-pressed="${d.closed}" aria-label="${esc(lab)}" title="${esc(tip)}">${doorSvg(!d.closed,true)}</button>`;
 }
 function roomArt(){
   let s='';

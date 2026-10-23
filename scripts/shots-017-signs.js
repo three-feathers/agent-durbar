@@ -211,10 +211,10 @@ module.exports = async (ctx) => {
     const peeks = await js(`[...document.querySelectorAll('#stage .desk.shut .peek .dsign-tx')].map(x=>({k:x.dataset.sign,t:x.textContent.trim(),i:(x.querySelector('.ds-ic')||{dataset:{}}).dataset.icon}))`);
     assert.ok(peeks.length >= 1 && peeks.every((p) => p.k === 'away' && p.t === 'Away' && p.i === 'clock'), `${w}: lounge peeks say Away: ${JSON.stringify(peeks)}`);
     /* FR-019, FR-020: in the lobby the spending limit holds the empty wallet (at the Bank) and a wait at the Boss waves; nobody else carries a prop */
-    const figs = await js(`[...document.querySelectorAll('#walkers .walker[data-agent]')].map((el)=>{const a=window.__durbarSimUi.agents().find((x)=>x.id===el.dataset.agent)||{};const p=el.querySelector('.wprop svg');return {name:a.name,limit:!!a.limit,ask:el.dataset.ask||'',prop:p?(p.classList.contains('w-wallet')?'wallet':p.classList.contains('w-arm')?'wave':'?'):'',moving:!!p&&p.getAnimations().length>0}})`);
+    const figs = await js(`[...document.querySelectorAll('#walkers .walker[data-agent]')].map((el)=>{const a=window.__durbarSimUi.agents().find((x)=>x.id===el.dataset.agent)||{};const p=el.querySelector('.wprop svg');return {name:a.name,limit:!!a.limit,ask:el.dataset.ask||'',prop:p?(p.classList.contains('w-wallet')?'wallet':p.classList.contains('w-arm')?'wave':'?'):'',moving:!!p&&p.getAnimations().length>0,still:!!p&&(p.classList.contains('still')||matchMedia('(prefers-reduced-motion: reduce)').matches)}})`);
     console.log('[017-signs]', w, 'lobby figures', JSON.stringify(figs));
     assert.ok(figs.some((f) => f.limit && f.prop === 'wallet'), `${w}: the agent at its spending limit holds the wallet in the lobby: ${JSON.stringify(figs)}`);
-    assert.ok(figs.some((f) => !f.limit && f.ask && f.prop === 'wave' && f.moving), `${w}: an agent waiting at the Boss waves: ${JSON.stringify(figs)}`);
+    assert.ok(figs.some((f) => !f.limit && f.ask && f.prop === 'wave' && (f.moving || f.still)), `${w}: an agent waiting at the Boss waves (a still raised hand with reduced motion, as on the Windows runner): ${JSON.stringify(figs)}`);
     assert.deepStrictEqual(figs.filter((f) => f.prop !== (f.limit ? 'wallet' : f.ask ? 'wave' : '')).map((f) => f.name), [], `${w}: props only where they belong`);
     await H.shot(path.join(OUT, `017-signs-${w}x${h}.png`), { prep: 'calm', blur: true, tag: '017-signs', what: `${w}x${h}` });
     /* FR-014: a click on a closed door opens that agent's chat */
