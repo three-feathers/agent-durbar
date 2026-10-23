@@ -51,6 +51,7 @@ const DRIVERS = [
   { name: 'shots-058-mcp-signin' }, // spec 058 T102/T104: Sign in for a Copilot server that needs it (simmcpauth), the two-step open, the steps
   { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog
   { name: 'shots-058-mcp-settings' }, // spec 058 FR-080..FR-086 (#596): live MCP state over the running chats in Settings
+  { name: 'shots-058-mcp-health' }, // spec 058 FR-090..FR-096 (#603): failure reason, when, Copy diagnostics (masked), the MCP chip dot
   { name: 'shots-model', label: 'shots-model 1440', env: { MODEL_W: '1440', MODEL_H: '900' } },
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },
   { name: 'shots-043-editor' }, // spec 043 FR-014: the profile file editor (modes, split widths, save round trip, unsaved guard)

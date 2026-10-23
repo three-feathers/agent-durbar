@@ -34,11 +34,13 @@ small PR-sized step with its own test. No task spends AI credits except Phase 6,
   (`McpStore.forSession`); test that no secret reaches the reply [FR-005, SC-002] (done 2026-10-21, #349: the reply is built by
   `agentMcpReply` in `src/main/mcpsession.ts`; the test is in `scripts/test-mcp-session.ts`)
 - [ ] T022 [P] [US2] Copilot mapper: `errorClassification` (known values only) -> `errorClass`, `session.mcp_server_needs_reconnect` ->
-  `needsRestart`; mapper test [FR-011]
+  `needsRestart`; mapper test [FR-011] (note 2026-10-23: the `errorClassification` part is built with T144 for issue #603,
+  `copilotErrorClass`; `needs_reconnect` -> `needsRestart` is still open)
 - [x] T023 [P] [US2] Codex: `failureReason: reauthenticationRequired` and `authStatus: notLoggedIn` -> `errorClass: 'auth'`; test in
   `test-codex-adapter` [FR-011] (note 2026-10-21: done as part of T095 for #364; tick both there)
   [IMPLEMENTED] with T095 below
-- [ ] T024 [P] [US2] Claude mapper: `init.mcp_server_errors` -> `failed` rows with their text; mapper test [FR-011]
+- [x] T024 [P] [US2] Claude mapper: `init.mcp_server_errors` -> `failed` rows with their text; mapper test [FR-011]
+  (note 2026-10-23: built with T144 for issue #603, `claudeMcpServerErrors` with `errorClass: 'config'`, kept in later `mcp_status` lists)
 - [x] T025 [P] [US1] Capability values in the three adapters: Copilot `session`/`live`, Claude `next-message`/`live`, Codex
   `session`/`next-message` (restart and logs stay false here); contract test [FR-010] (done 2026-10-21, #349, with T030/T031: `mcpRestart`
   is true for Copilot and Claude (not on Claude's dev-only SDK transport), false for Codex; `mcpLogs` waits for T050)
@@ -344,6 +346,33 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
 
 - [x] T127 Review on #609 (fjcabello): needs-sign-in rows lead with Open in chat, Restart behind More; load sequence numbers and no
   reload while the list is hidden; a needs-sign-in-only case in `test-mcpwords`; the driver pins each (mutation-checked) [FR-082, FR-083]
+
+## Phase 10: MCP health, failure reason, when, Copy diagnostics, chip dot (delta 2026-10-23, issue #603)
+
+- [x] T140 Spec delta FR-090..FR-097, plan delta and these tasks, committed before code
+- [x] T141 [P] Unit tests: `scripts/test-mcphealth.ts` (since, ran, afterRunning, restart resets, unchanged state keeps its time) and
+  `test-mcpwords` (every reason, text rules shared with the hint, "Failed (reason unknown)", whenText, diagnostics content and masking
+  with a planted fake token through `maskMcpError` and `redact`) [FR-090, FR-092, FR-093]
+- [x] T142 [P] Adapter tests with fakes: Copilot `errorClassification` values in `test-events` (known values, unknown values set
+  nothing, a later `connected` drops the class); Claude `mcp_server_errors` and `config.type` in `test-claude-map`; `agents:mcp`
+  reply fields in `test-mcp-session` [FR-091, FR-092]
+- [x] T143 [P] Simulator driver `scripts/shots-058-mcp-health.js` (mixed failures injected as `mcp` reports): reason words, time,
+  Copy diagnostics content (masked; a planted fake token is not in it), Settings rows, the chip dot and its name at 1440x900 and
+  1280x800; in `scripts/ui-suite.js` [FR-093..FR-096]
+- [x] T144 Adapters: `errorClass` values, Copilot `copilotErrorClass`, Claude errors and transport (also T022's Copilot class part
+  and T024) [FR-091]
+- [x] T145 `src/shared/mcphealth.ts`, main's per-session marks and the reply fields [FR-092]
+- [x] T146 `mcpwords.js` (`reasonOf`, `whenText`, `diagnostics`, shared classifier); the shared row helper in `screens.js` for the
+  chat dialog and Settings; `screens.css` [FR-090, FR-093, FR-095, FR-096]
+- [x] T147 The chip dot and `mcpOpts` in `app.js`; `styles.css`; the simulator's fields in `sim.ts` [FR-094]
+- [x] T148 Docs (README MCP line, `changelog.d/058-mcp-health.md`, screenshots at 1440x900 and 1280x800 and the linked MCP shots
+  retaken), `/speckit-converge`, tick tasks, mutation checks (unit: 12 mutants killed; driver: no page redact() and no chip dot both
+  fail it). Also found and fixed: the simulator told the window of an `mcp` event before it kept the new list, so a reply asked for at
+  once (the chip's count) read the old one; it now keeps the list first, as main does
+- [x] T149 Review on #630 (fjcabello): chip tooltip under 120; home folders to `~` (`maskHomePaths`, shared); OAuth `code`/`state`/token
+  query values and any-case `Bearer` (shared `maskSecretUrl`/`redact`); the 5 s re-read keeps Copilot's class; mask each value before
+  the cut; bidi marks flattened; UTC time only; 401/403 is "Refused: needs sign-in" before any crash rule; an unmasked-token unit test;
+  FR-095 updated. Tests in `test-redact`, `test-mcpwords`, `test-events`; the privacy fixes mutation-checked [FR-090, FR-091, FR-093, FR-094, FR-095]
 
 ## Phase 11: Sign in for Claude Code and Codex (delta 2026-10-23, issue #364 step 5; owner priority)
 
