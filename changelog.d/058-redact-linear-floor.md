@@ -1,0 +1,1 @@
+- Tests: the OAuth-masking speed check no longer fails on a fast Windows run (a 0 ms baseline met a 40 ms floor); the floor is now 250 ms, still far below what a backtracking pattern would take.
