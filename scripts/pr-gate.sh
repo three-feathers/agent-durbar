@@ -28,6 +28,18 @@ if gh pr view $p --json files -q '.files[].path' | grep -q '^src/'; then
     gh pr checks $p | awk -F'\t' -v n="$need" '$1==n && $2=="pass"{f=1} END{exit !f}' || bad="$bad missing:$need"
   done
 fi
+# spec 008 FR-117: a release PR merged into CURRENT origin/<base> must leave no changelog.d fragment unfolded (PR checks do not
+# re-run when main moves; an admin merge skips the queue). merge-tree builds the merge as a tree; nothing is checked out.
+if [ "$mergeable" = MERGEABLE ]; then
+  base=$(gh pr view "$p" --json baseRefName -q .baseRefName)
+  if git fetch -q origin "$base" && git fetch -q origin "pull/$p/head" && head=$(git rev-parse FETCH_HEAD) \
+     && tree=$(git merge-tree --write-tree "origin/$base" "$head"); then
+    node "$(dirname "$0")/changelog.js" check --release --root "$(git rev-parse --show-toplevel)" --base "origin/$base" --head "$tree" >/dev/null 2>&1 \
+      || bad="$bad release-notes=stale(merge $base, rerun changelog:build: node scripts/changelog.js check --release --base origin/$base --head $tree)"
+  else
+    bad="$bad release-notes=unchecked(git fetch or merge-tree failed)"
+  fi
+fi
 codeql=$(gh pr checks $p | awk -F'\t' '$1=="CodeQL"{print $2}')
 alerts=$(( $(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=open" --jq length) + $(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head&state=open" --jq length) ))
 changes=$(gh api repos/$R/pulls/$p/reviews --jq "[group_by(.user.login)[]|max_by(.submitted_at)|select(.state==\"CHANGES_REQUESTED\" and .user.login!=\"$ME\")|.user.login]|join(\",\")")

@@ -132,4 +132,125 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   assert.strictEqual(cl.check(d).warnings.length, 1);
 }
 
+// --- spec 008 FR-117: build --amend adds fragments that landed after the release PR folded to that release's section ---
+{
+  const d = repo('', { 'a.md': '- A.\n' });
+  const H = 'v9.0.0 ([pre-release](https://example.invalid/v9), 2026-10-23)';
+  cl.build(d, { release: H });
+  // the release manager writes the intro paragraph; then a fragment lands on main and the release branch merges it
+  fs.writeFileSync(path.join(d, 'CHANGELOG.md'), read(d).replace(`## ${H}\n\n`, `## ${H}\n\nIntro for v9.\n\n`));
+  fs.writeFileSync(path.join(d, 'changelog.d', 'b.md'), '- B.\n  more B.\n');
+  assert.throws(() => cl.build(d, { release: H }), /--amend/, 'a second fold of the same version points to --amend');
+  const r = cl.build(d, { release: H, amend: true });
+  assert.deepStrictEqual(r.removed, [path.join('changelog.d', 'b.md')]);
+  const txt = read(d);
+  assert.ok(txt.includes(`## ${H}\n\nIntro for v9.\n\n- A.\n- B.\n  more B.\n\n## v0.1.0-alpha.10`), `appended to the v9 section, intro kept:\n${txt}`);
+  assert.strictEqual(txt.split(`## ${H}`).length, 2, 'still one v9 section');
+  assert.ok(txt.endsWith(RELEASED), 'released sections untouched');
+  assert.strictEqual(fs.existsSync(path.join(d, 'changelog.d', 'b.md')), false);
+  assert.deepStrictEqual(cl.check(d).errors, [], 'the amended file passes check');
+  // never into a released section further down, never without a section
+  fs.writeFileSync(path.join(d, 'changelog.d', 'c.md'), '- C.\n');
+  assert.throws(() => cl.build(d, { release: 'v0.1.0-alpha.10 (x)', amend: true }), /only adds to the newest section/, 'a released section is never amended');
+  assert.throws(() => cl.build(d, { release: 'v9.9.9 (x)', amend: true }), /no section for v9\.9\.9/, '--amend without a section refuses');
+  assert.ok(fs.existsSync(path.join(d, 'changelog.d', 'c.md')), 'refusals change nothing');
+}
+{
+  // a section that ends with prose gets a blank line before the added list
+  const d = repo('', { 'a.md': '- A.\n' });
+  cl.build(d, { release: 'v9.0.0 (x)' });
+  fs.writeFileSync(path.join(d, 'CHANGELOG.md'), read(d).replace('- A.\n', '- A.\n\nA closing note.\n'));
+  fs.writeFileSync(path.join(d, 'changelog.d', 'b.md'), '- B.\n');
+  cl.build(d, { release: 'v9.0.0 (x)', amend: true });
+  assert.ok(read(d).includes('A closing note.\n\n- B.\n\n## v0.1.0-alpha.10'), read(d));
+}
+{
+  // the CLI passes --amend through
+  const { execFileSync } = require('child_process');
+  const d = repo('', { 'a.md': '- A.\n' });
+  const cli = (...a) => execFileSync(process.execPath, [path.join(__dirname, 'changelog.js'), 'build', '--root', d, '--release', 'v9.0.0 (x)', ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  cli();
+  fs.writeFileSync(path.join(d, 'changelog.d', 'b.md'), '- B.\n');
+  assert.throws(() => cli(), /--amend/, 'CLI without --amend refuses a second fold');
+  assert.match(cli('--amend'), /removed 1 fragment/);
+  assert.ok(read(d).includes('- A.\n- B.\n'), 'CLI --amend appended');
+}
+
+// --- spec 008 FR-117: a release that lands leaves no fragment unfolded (check --release) ---
+{
+  const v = (baseVersion, headVersion, fragments) => cl.releaseVerdict({ baseVersion, headVersion, fragments });
+  assert.deepStrictEqual(v('1.0.0', '1.0.0', ['a.md']), { release: false, baseVersion: '1.0.0', headVersion: '1.0.0', unfolded: [], ok: true }, 'same version: not a release, fragments are fine');
+  assert.deepStrictEqual(v('1.0.0', '1.0.1', ['README.md', '.gitkeep']), { release: true, baseVersion: '1.0.0', headVersion: '1.0.1', unfolded: [], ok: true }, 'release with only README/.gitkeep left passes');
+  const r = v('1.0.0', '1.0.1', ['z.md', 'README.md', 'a.md']);
+  assert.strictEqual(r.ok, false, 'release with a leftover fragment fails');
+  assert.deepStrictEqual(r.unfolded, ['a.md', 'z.md'], 'every leftover named, sorted, README excluded');
+}
+{
+  const { execFileSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-relcheck-'));
+  const git = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', ...a], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const put = (f, s) => { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), s); };
+  const pkg = (version) => put('package.json', JSON.stringify({ name: 'x', version }) + '\n');
+  const commit = (m) => { git('add', '-A'); git('commit', '-q', '-m', m); return git('rev-parse', 'HEAD'); };
+  const run = (base, head) => cl.releaseCheck(dir, { base, head });
+  git('init', '-q');
+  git('symbolic-ref', 'HEAD', 'refs/heads/main'); // not "init -b": git before 2.28
+  pkg('1.0.0'); put('changelog.d/README.md', '# readme\n'); put('CHANGELOG.md', '# c\n');
+  const c0 = commit('base');
+  // a feature lands a fragment on main
+  put('changelog.d/feat-a.md', '- A.\n');
+  const mainA = commit('feat a');
+  // the release branch was cut from c0: bumps the version and folds what it saw (nothing then)
+  git('checkout', '-q', '-b', 'rel', c0);
+  pkg('1.0.1');
+  const rel = commit('release');
+  assert.strictEqual(run(c0, rel).ok, true, 'release on its own base: nothing to fold');
+  assert.strictEqual(run(c0, rel).release, true);
+  // the merge with current main (what CI's merge ref and the queue entry are): feat-a would stay unfolded
+  git('checkout', '-q', 'main');
+  git('merge', '-q', '--no-ff', '--no-edit', 'rel');
+  const merged = git('rev-parse', 'HEAD');
+  let m = cl.releaseCheck(dir, {}); // defaults HEAD^1 / HEAD, as in ci.yml
+  assert.deepStrictEqual([m.release, m.ok, m.unfolded], [true, false, ['feat-a.md']], 'merge ref with a fragment that landed after the release notes fails');
+  assert.deepStrictEqual(run(mainA, merged).unfolded, ['feat-a.md']);
+  // the same through a tree from merge-tree (what pr-gate.sh builds, nothing checked out)
+  // (merge-tree --write-tree needs git 2.38+: CI has it; an older local git skips only this case)
+  let tree = null;
+  try { tree = git('merge-tree', '--write-tree', mainA, rel); } catch { console.log('test-changelog: git < 2.38, merge-tree case skipped'); }
+  if (tree) assert.deepStrictEqual(run(mainA, tree).unfolded, ['feat-a.md'], 'a merge-tree tree id works as --head');
+  // the release author merges main and folds again: the fragment is gone, the check passes
+  fs.unlinkSync(path.join(dir, 'changelog.d/feat-a.md'));
+  const fixed = commit('fold again');
+  assert.strictEqual(run(mainA, fixed).ok, true, 'refolded release passes');
+  // a feature PR (no version change) with a fragment is not a release
+  put('changelog.d/feat-b.md', '- B.\n');
+  const feat = commit('feat b');
+  assert.deepStrictEqual([run(fixed, feat).release, run(fixed, feat).ok], [false, true], 'a feature merge is not a release');
+  // no changelog.d at all in the head: a release passes (nothing left)
+  git('rm', '-q', '-r', 'changelog.d'); pkg('1.0.2');
+  assert.strictEqual(run(feat, commit('no folder')).ok, true, 'missing changelog.d means no fragment');
+  // fail closed: bad or unreadable revisions throw, never pass
+  for (const bad of ['--output=/tmp/x', '-h', 'HEAD:package.json', 'a b', '', 'HEAD;rm']) assert.throws(() => run(bad, 'HEAD'), /not a git revision/, `refuses ${JSON.stringify(bad)} as base`);
+  assert.throws(() => run('HEAD', '--exec=x'), /not a git revision/, 'refuses an option as head');
+  assert.throws(() => run('HEAD', 'deadbeefdeadbeef'), /cannot read package\.json at deadbeef/, 'unknown head revision fails');
+  assert.throws(() => run('deadbeefdeadbeef', 'HEAD'), /cannot read package\.json/, 'unknown base revision fails');
+  put('package.json', '{"name":"x"}\n');
+  const nov = commit('no version');
+  assert.throws(() => run(feat, nov), /no "version"/, 'a package.json without version fails');
+  // CLI: exit codes and messages
+  const cli = (...a) => { try { return { code: 0, out: execFileSync(process.execPath, [path.join(__dirname, 'changelog.js'), ...a, '--root', dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }; } catch (e) { return { code: e.status, out: `${e.stdout}${e.stderr}` }; } };
+  let c = cli('check', '--release', '--base', mainA, '--head', merged);
+  assert.strictEqual(c.code, 1, 'CLI fails a stale release');
+  assert.match(c.out, /feat-a\.md/);
+  assert.match(c.out, /changelog:build/);
+  c = cli('check', '--release', '--base', mainA, '--head', fixed);
+  assert.strictEqual(c.code, 0, `CLI passes a refolded release: ${c.out}`);
+  c = cli('check', '--release', '--base', fixed, '--head', feat);
+  assert.strictEqual(c.code, 0);
+  assert.match(c.out, /not a release/);
+  c = cli('check', '--release', '--base', '-x', '--head', feat);
+  assert.strictEqual(c.code, 1, 'CLI refuses an option-like revision');
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 console.log('test-changelog: ok');

@@ -73,6 +73,14 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: bash .github/scripts/ci-changes.sh
+      # spec 008 FR-117 (stopgap until the fragments are folded at tag time): a release (package.json "version" changed against
+      # HEAD^1) may not land with a changelog.d fragment left unfolded. HEAD is what would land: the merge ref on a pull request,
+      # the queue entry (current main + the entries ahead) in the merge queue, the merge commit on main. Runs for every change,
+      # not only "code" (a release PR touches only package.json, CHANGELOG.md and README), with the runner's Node: plain Node + git,
+      # no npm ci, no token, no expressions in the command.
+      - name: Release notes fold every changelog.d fragment (FR-117)
+        if: matrix.os == 'ubuntu-latest'
+        run: node scripts/changelog.js check --release --base HEAD^1 --head HEAD
       - if: steps.changes.outputs.code == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:

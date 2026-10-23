@@ -24,3 +24,22 @@ npm run changelog:build -- --release "v0.1.0-alpha.N ([pre-release](https://gith
 
 which writes a new section under *Unreleased* with every fragment (by file name), then any bullet still under *Unreleased*, and
 deletes the fragments. The release manager then adds the release's intro paragraph as before.
+
+**Fragments that land after the release PR was written** (spec 008 FR-117, a stopgap until the release workflow folds at tag
+time): a release PR (one that changes `"version"` in `package.json`) fails the required check *Build and test (ubuntu-latest)*,
+and `scripts/pr-gate.sh`, when its merge with current `main` still holds a fragment. Merge `main` into the release branch, add
+the new fragments to the release section you already wrote, and push:
+
+```bash
+npm run changelog:build -- --release "<the same heading>" --amend   # appends them to the newest section; your intro paragraph stays
+```
+
+`--amend` only adds to the section right under *Unreleased* (the one this release PR wrote), never to a released one. Check it
+yourself before you push:
+
+```bash
+# HEAD^1 against HEAD (on a merge commit, as CI does)
+npm run changelog:check -- --release
+# your branch merged into current main, as a tree: nothing is checked out (git 2.38+)
+git fetch origin main && npm run changelog:check -- --release --base origin/main --head "$(git merge-tree --write-tree origin/main HEAD)"
+```
