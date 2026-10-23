@@ -53,6 +53,10 @@ const PATTERNS: Array<[RegExp, string]> = [
   [shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?[^\s",;]+`, 'gi'), '$1[redacted]'],
   [shape(String.raw`([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{1,200}:[^\s/@"]{1,200}@`, 'gi'), '$1[redacted]@'],
   [/(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"]{0,2000}/g, '[redacted]'],
+  // OAuth values in a URL's query or fragment (an authorization address, a loopback callback), also percent-encoded inside another
+  // URL; the names are not secret-looking, so the token shapes miss them (review on #635: a CLI's stderr reaches the debug sink).
+  // A fixed separator and name, then a bounded value that stops at the next separator: linear.
+  [/((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))(?:code|state|code_verifier|code_challenge|id_token|access_token|refresh_token|client_secret)(?:=|%3[Dd]))[^&;#\s"'\\<>]{1,4096}/gi, '$1[redacted]'],
 ];
 
 type Env = Record<string, string | undefined>;
