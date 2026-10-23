@@ -265,6 +265,8 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(/if\(!L\|\|!R\|\|typeof R\.redact!=='function'\)return null;/.test(app), 'no masking module: the feature stays off (fail closed)');
   ok(/\[\['full',3,'side'\],\['full',2,'side'\],\['full',3\],\['full',2\]/.test(app), 'side panel candidates first');
   ok(/if\(side&&!liveOn\(\)\)continue;/.test(app), 'setting off: never the side panel');
+  ok(/if\(e\.phase==='start'&&LIVE_MASK&&window\.DurbarPlaces\.classify\(/.test(app), 'place activity words only with the masking loaded (spec 001 FR-036, fail closed; review on #511, M7)');
+  ok(/return \(liveOn\(\)&&PLACE_DOING\.get\(a\.id\)\)\|\|v\.label/.test(app), 'place entries show the command only with Live activity on desks (FR-028)');
   ok(/const key=JSON\.stringify\(\[aw,ah,FORCE_DENSITY,liveOn\(\),/.test(app), 'layout key follows the setting');
   const scr = fs.readFileSync(path.join(R, 'screens.js'), 'utf8');
   ok(scr.includes('id="liveActSw"') && scr.includes('Live activity on desks'), 'Settings switch');
