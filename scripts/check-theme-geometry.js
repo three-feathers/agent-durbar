@@ -79,8 +79,8 @@ async function driver(ctx) {
        expanded from an earlier one. A wait that times out fails the run instead of measuring a page that is not ready. */
     if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()`, 8000))) throw new Error(`${theme} sim${sim}-${w}x${h}: the simulator never became steady (agents listed, scripts replayed, totals read)`);
     // agents go to the lobby after about 600 ms (instant with reduced motion): wait until somebody is there
-    // (spec 068: not the coffee corner, where an agent on a break stands at once)
-    if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()&&!!document.querySelector('.place.busy:not([data-place="coffee"])')`, 8000))) throw new Error(`${theme} sim${sim}-${w}x${h}: nobody reached a place in the lobby`);
+    // (spec 068: not the coffee corner, where an agent on a break stands at once; spec 008 FR-113: on a steady simulator)
+    if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()&&!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 8000))) throw new Error(`${theme} sim${sim}-${w}x${h}: nobody reached a place in the lobby`);
     // the pointer of the virtual display rests mid-window: a hover style (retro nudges a card by 1px) is not layout
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
     await ctx.sleep(300);

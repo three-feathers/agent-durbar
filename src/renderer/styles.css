@@ -705,6 +705,33 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .stage[data-d="roomy"] .helper.hc .hname{font-size:12.5px;line-height:16px}
 .stage[data-d="roomy"] .helper.hc .hs{font-size:11px;line-height:14px}
 .stage[data-d="roomy"] .helpers.hstrip>.more{font-size:12px}
+/* spec 001 FR-041..FR-045: grown desks. With few agents a roomy card grows by --gf (1 to 2.5, set with data-grow on the stage by the layout
+   search): taller, a wider column and drawing, the same text sizes. Its text line fills the card (at most 8 lines) and keeps the newest
+   lines in view like the side panel (.over, set by measuring); from --gf 1.4 (data-grow="2") the name may take two lines. */
+.stage[data-d="roomy"][data-grow]{--cmax:1600px;--sw:calc(104px * min(var(--gf,1),1.6))}
+.stage[data-d="roomy"][data-grow] .desk.card{height:calc(var(--ch) * var(--gf,1));align-items:stretch;padding-top:8px;padding-bottom:8px;grid-template-columns:min(var(--sw),max(104px,36%)) minmax(0,1fr)} /* a narrow grown card keeps the text its room */
+.stage[data-d="roomy"][data-grow] .desk.card>.sc{align-self:center}
+.stage[data-d="roomy"][data-grow] .desk.card .ci{min-height:0;gap:4px}
+.stage[data-d="roomy"][data-grow] .desk.card .intent{flex:1 1 0;min-height:0;max-height:128px;display:flex;flex-direction:column;justify-content:flex-start;-webkit-line-clamp:unset;overflow:hidden;overflow-wrap:break-word}
+.stage[data-d="roomy"][data-grow="2"] .desk.card .l1{flex-wrap:wrap;row-gap:0}
+.stage[data-d="roomy"][data-grow="2"] .desk.card .l1 .name{flex:1 1 100%;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+/* spec 001 FR-047..FR-049 (owner 2026-10-22): a wide grown desk shows more, in columns, never longer lines. The render pass (setGrownCols,
+   app.js) sets data-gc (2 or 3) and the column widths --gm/--gr/--gs from DurbarProbe.grownCols, and caps the card at their sum. Without
+   data-gc (a narrow desk, the probe) the side is not shown. 16px between columns: the card's 10px column gap, 5px of padding and the 1px rule. */
+.desk.card .gx{display:none}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc]{grid-template-columns:min(var(--sw),max(104px,36%)) var(--gm) minmax(0,1fr)}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc] .gx{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0;overflow:hidden;padding-left:5px;border-left:1px solid var(--line-hair);text-align:left}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc="3"] .gx{flex-direction:row;gap:16px}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc="3"] .gx-r{flex:none;width:var(--gr)}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc="3"] .gx-f{flex:none;width:var(--gs)}
+.desk.card .gx-r{display:flex;flex-direction:column;flex:1 1 0;min-height:0;min-width:0;gap:2px}
+.desk.card .gx-r.is-empty{display:none}
+.desk.card .gx-h,.desk.card .gx-k{font-size:10.5px;line-height:15px;color:var(--muted);font-weight:600}
+.desk.card .gx-t{flex:1 1 0;min-height:0;font-size:11.5px;line-height:15px;color:var(--ink-2);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;overflow-wrap:break-word}
+.desk.card .gx-f{display:flex;flex-direction:column;flex:none;min-width:0;justify-content:flex-end}
+.desk.card[data-gc="3"] .gx-f{justify-content:flex-start}
+.desk.card .gx-l{font-size:11px;line-height:15px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.desk.card .gx-l .gx-k{margin-right:4px}
 
 /* =====================================================================
    Full-screen chat (replaces the docked panel)
@@ -1016,15 +1043,53 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .door:hover .door-svg .leaf{transform:scaleX(.82)}
 /* ---- lobby and walking figures (spec 024): one shared band with the places agents go to ---- */
 .lobby{flex:0 0 100%;display:flex;gap:8px;align-items:stretch;min-width:0}
-.place{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:7px;height:36px;box-sizing:border-box;padding:0 10px;border-radius:12px;border:1px solid var(--wall);background:color-mix(in srgb,var(--raised) 55%,transparent);color:var(--ink-2);transition:background .2s,border-color .2s}
+.place{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:4px;height:58px;box-sizing:border-box;padding:5px 10px;border-radius:12px;border:1px solid var(--wall);background:color-mix(in srgb,var(--raised) 55%,var(--bg));color:var(--ink-2);transition:background .2s,border-color .2s}
 .place.busy{background:var(--raised);border-color:var(--place-busy)}
 .place .pic{flex:none;width:18px;height:18px}
 .place .pn{flex:0 1 auto;min-width:0;font-size:12.5px;font-weight:650;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.place .prow{flex:1 1 auto;display:flex;align-items:center;gap:6px;min-width:0;justify-content:flex-end}
+/* spec 001 FR-036: a header row (icon, name, count) and the visitors under it: figure, name and what it does there (or initials) */
+.place .plh{display:flex;align-items:center;gap:7px;min-width:0;height:18px}
+.place .pc{margin-left:auto;flex:none;font-size:11.5px;font-weight:650;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.place .prow{flex:none;display:flex;align-items:center;gap:6px;min-width:0;height:28px;overflow:hidden}
+.place .pv{flex:1 1 0;max-width:170px;min-width:0;display:flex;align-items:center;gap:5px;height:28px}
+.place[data-chips="initials"] .pv{flex:0 0 46px;gap:2px} /* 22px for two letters ("Om" at 11px bold is about 20px) */
+.place[data-chips="initials"] .pv-more{flex:0 0 auto} /* spec 001 FR-039: "+N" is a bare circle in this mode (initialSpots counts it as 22 px) */
+.place .pv .slot{flex:none}
+.place .pv-t{display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:13px}
+.place .pv-n{font-size:11px;font-weight:650;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place .pv-a{font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place .pv-none{font-size:11px;color:var(--muted)}
+.place .pv-more{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left;border-radius:8px}
+.place .pv-more:hover .slot{background:var(--raised)}
+.place .pv-more:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .place .pslots{display:flex;gap:3px;flex:none}
+/* ---- spec 001 FR-034/FR-035/FR-038: the Boss (a queue), the Bank and the Postbox; tokens only ---- */
+.place .pv-go{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left;border-radius:8px}
+.place .pv-go:hover .pv-n{text-decoration:underline}
+.place .pv-go:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.place .bw{margin-left:auto;flex:none;font-size:10.5px;font-weight:600;color:var(--amber-ink);white-space:nowrap}
+.place .bw+.pc{margin-left:0}
+.place.boss.busy{border-color:color-mix(in srgb,var(--c-waiting) 55%,var(--line));background:color-mix(in srgb,var(--c-waiting) 10%,var(--raised))}
+.walker .wb{position:absolute;left:-6px;top:-6px;min-width:13px;height:13px;box-sizing:border-box;padding:0 2px;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;background:var(--amber-ink);color:var(--surface);border:1.5px solid var(--surface);font-size:10.5px;font-weight:800;line-height:1}
+.walker[data-ask]:not([data-ask=""])::after{display:none} /* at the Boss the badge says what is wanted; the trouble dot would crowd it */
+.place.postbox{flex-direction:row;align-items:stretch;gap:8px;font:inherit;text-align:left;cursor:pointer}
+.place.postbox:hover{background:var(--raised)}
+.place.postbox:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.place.postbox .pb-l{flex:0 0 84px;width:84px;display:flex;flex-direction:column;justify-content:center;gap:1px;min-width:0} /* fixed: every theme lays out like Clean Office (check:geometry); a long theme word is cut, its full name is in the label */
+.place.postbox.unnamed .pb-l{flex-basis:64px;width:64px}
+.place.postbox .pb-n{flex:none;font-size:10.5px;line-height:13px;font-weight:600;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place.postbox .pb-flag{align-self:flex-start;font-size:10.5px;font-weight:650;line-height:13px;padding:0 4px;border-radius:var(--r-sm);color:var(--red-ink);background:color-mix(in srgb,var(--red-ink) 12%,transparent);white-space:nowrap}
+.place.postbox.unnamed .pb-flag{max-width:64px;overflow:hidden;text-overflow:ellipsis}
+.place.postbox .pb-r{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;border-left:1px solid var(--line);padding-left:8px}
+.place.postbox .pb-line{font-size:10.5px;line-height:13px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place.postbox .pb-none{color:var(--muted)}
+.letter{position:absolute;left:0;top:0;width:16px;height:12px;margin:-6px 0 0 -8px;color:var(--ink-2);pointer-events:none;z-index:3}
+.letter svg{display:block}
+.letter.flying{transition:transform .9s cubic-bezier(.3,.1,.3,1)}
+@media (prefers-reduced-motion:reduce){.letter{display:none}}
 .place-add{flex:none;align-self:center;width:26px;height:26px;box-sizing:border-box;padding:0;border-radius:50%;border:1.5px dashed var(--line-2);background:color-mix(in srgb,var(--raised) 55%,transparent);color:var(--ink-2);font:inherit;font-size:16px;line-height:1;cursor:pointer}
 .place-add:hover{background:var(--raised);border-style:solid}
-.place-add:focus-visible{outline:2px solid var(--focus,#4a7fa8);outline-offset:2px}
+.place-add:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .slot{width:22px;height:22px;box-sizing:border-box;border-radius:50%;border:1.5px dashed var(--line-2);display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:650;color:var(--muted)}
 .slot.on{border-color:transparent}
 .slot.more{border-style:solid;border-color:var(--line-2);background:color-mix(in srgb,var(--raised) 80%,transparent);color:var(--ink-2)}
@@ -1359,6 +1424,17 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .pal-empty{margin:0;padding:14px 10px;font-size:13px;color:var(--muted)}
 .pal-foot{margin:0;border-top:1px solid var(--line);padding:8px 16px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
 .pal-foot kbd+kbd{margin-left:-2px}
+/* spec 074 (issue 548): Go to (the navigator): the breadcrumb above the input and the number of each item */
+.pal-crumb{margin:8px 0 0;font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pal-n{flex:none;min-width:30px;padding:1px 5px;border:1px solid var(--line-2);border-radius:5px;background:var(--surface-2);font-size:11px;font-weight:700;line-height:1.5;color:var(--ink-2);text-align:center;font-variant-numeric:tabular-nums}
+/* FR-012: the chat number on desk cards, list rows and the chat header: text, at least 10.5px, never colour alone */
+.chatno{flex:none;display:inline-block;margin-right:5px;padding:0 4px;border:1px solid var(--line-2);border-radius:4px;background:var(--surface-2);font-size:10.5px;font-weight:700;line-height:14px;color:var(--ink-2);font-variant-numeric:tabular-nums;vertical-align:1px}
+.chatno::before{content:attr(data-n)}
+.lname .chatno{margin-right:-4px}
+.ph-id .sub .chatno{margin-right:6px}
+/* on a desk card (every density) it sits on the scene's corner, never in the name row, so it cannot squeeze the name (2026-10-23:
+   in card density at 1280x800 with Windows fonts an inline badge left a name 19px wide) */
+.stage .desk.card .chatno{position:absolute;left:2px;top:2px;margin:0;z-index:1;box-shadow:0 0 0 1px var(--card)}
 .pal-dlg kbd,.kbd-dlg kbd{display:inline-block;min-width:20px;padding:1px 6px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:11px;font-weight:600;line-height:1.5;color:var(--ink-2);text-align:center}
 .dlg.kbd-dlg{width:min(var(--dlg-w-m),calc(100vw - 32px))}
 /* spec 052 (2026-10-21, round 1): two columns where there is room, so the whole sheet fits a 1280x800 window without scrolling */
@@ -1545,10 +1621,13 @@ h2,h3,h4{text-wrap:balance}
 .liveside .ls-k{font-size:11px;line-height:14px;font-weight:600;color:var(--muted);letter-spacing:.01em}
 /* the newest words stay in view: text that does not fit sits at the bottom of its box and older lines leave at the top, fading (.over is set by measuring) */
 .liveside .ls-t{flex:1 1 0;min-height:0;font-size:12px;line-height:17px;color:var(--ink-2);display:flex;flex-direction:column;justify-content:flex-start;overflow:hidden;overflow-wrap:break-word}
-.liveside .ls-t.over{justify-content:flex-end;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 20px);mask-image:linear-gradient(to bottom,transparent 0,#000 20px)}
+.liveside .ls-t.over,.stage[data-d="roomy"][data-grow] .desk.card .intent.over{justify-content:flex-end;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 20px);mask-image:linear-gradient(to bottom,transparent 0,#000 20px)}
 .liveside[data-lk="think"] .ls-t,:is(.task,.intent)[data-lk="think"]{font-style:italic}
 .stage[data-d="full"] .liveside+.helpers{margin-left:0} /* the helper column's -2px tuck is for its desk's connector, not the panel */
 
+/* spec 001 FR-037: the room header counts in words when the header has room (fitUsage drops the words first, then the path) */
+.rd .rdw{font-weight:500}
+.room-head.no-words .rdw,#probe .rdw{display:none} /* the words never decide the layout: the search measures without them */
 /* ---- spec 005 FR-037..FR-042: the composer toolbar under the message box, and one Send / Stop slot inside its right edge.
    Tokens only (docs/design-rules.md 1-3, 9); controls 28px like the header's; the office is untouched. ---- */
 .inbox{align-items:flex-end}

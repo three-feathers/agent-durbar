@@ -6,7 +6,7 @@
  * Enable with `DURBAR_SIM=15 npm start` (Electron main passes ?sim=15) or open
  * dist/renderer/index.html?sim=15 in a browser. Extra query params: simwaitold=1 (waiting requests look 2 minutes old), simtotals=1 (totals saved by a previous run), simunreported=<room>
  * (that room reports usage without credits), simfreeze=1 (no ticking),
- * simrooms=solo (one folder per agent), simplaces=1..3 (that many custom places, spec 024), seed=N, density=full|card|mini, open=<agent id>.
+ * simrooms=solo (one folder per agent), simrooms=1..5 (the agents spread over that many folders, in blocks; spec 001 FR-046), simhelpers=0 (no helpers), simplaces=1..3 (that many custom places, spec 024), seed=N, density=full|card|mini, open=<agent id>.
  *
  * Plain script (no imports/exports) so it runs unchanged in the sandboxed renderer.
  */
@@ -43,6 +43,10 @@ interface SimOptions {
   n: number;
   freeze?: boolean;
   solo?: boolean;
+  /** Spec 001 FR-046: spread the agents over this many folders (1 to 5, in blocks of neighbours), page address `simrooms=<n>`. */
+  rooms?: number;
+  /** Spec 001 FR-046: no helpers at all (page address `simhelpers=0`). */
+  noHelpers?: boolean;
   seed?: number;
   /** Spec 033: three floors (Ground floor, Client A, Personal) with the rooms spread over them. */
   floors?: boolean;
@@ -68,6 +72,10 @@ interface SimOptions {
   places?: number;
   /** Pending permission requests carry a time 2 minutes in the past, so "impatient" (spec 034) can be seen at once. */
   waitOld?: boolean;
+  /** Spec 001 FR-038: start with three schedules (two folders; the last one's previous run was missed), so the Postbox has something to show. */
+  sched?: boolean;
+  /** Spec 001 FR-038 (`simschedfire=N`): a one-off schedule for the first idle agent, due N seconds after start (the flying letter). */
+  schedFire?: number;
   /** Spec 005 FR-026 (`simedits=1`): the first agent edits files: a two-file patch, a new file, a refused delete, then an edit whose arguments stream in and stay open. */
   edits?: boolean;
 }
@@ -222,6 +230,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
 ];
 
 (function () {
+  const SIM_ROOM_ORDER = ['mcp-swiss', 'swisscontract-ai', 'command-center', 'blog', 'infra-notes'];
   const ROOM_DEFS: Record<string, string> = {
     'mcp-swiss': '~/work/mcp-swiss',
     'swisscontract-ai': '~/work/swisscontract-ai',
@@ -347,13 +356,20 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const renamedListeners = new Set<(e: { id: string; alias?: string }) => void>();
     const simPrevNames = new Map<string, string>(); // spec 059: names of the simulated Previous sessions rows
     const n = Math.max(1, opts.n);
+    // spec 001 FR-046: read here from the page address (like simkinds), so app.js's option list stays as it is
+    const simQs = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+    const simRooms = opts.rooms ?? (simQs && /^[1-5]$/.test(simQs.get('simrooms') || '') ? parseInt(simQs.get('simrooms') || '0', 10) : 0);
+    const noHelpers = opts.noHelpers ?? (simQs ? simQs.get('simhelpers') === '0' : false);
     // Fewer than 12: drop the quieter agents first so the status mix stays varied.
     let rows = ROSTER.slice(0, Math.min(n, ROSTER.length));
     if (n < 12) rows = ROSTER.filter((r) => r[0] !== 'Hugo' && r[0] !== 'Priya' && r[0] !== 'Noor' && r[0] !== 'Omar').slice(0, n);
     while (rows.length < n) rows.push(['Agent' + (rows.length + 1), 'Worker', 'blog', 'working', 'Working through a queued task', 0, ['src/index.ts']]);
 
     const sims: SimAgent[] = rows.map((r, i) => {
-      const [name, role, room, state, intent, helpers, files] = r;
+      const [name, role, room0, state, intent, helpers0, files] = r;
+      const k = simRooms ? Math.max(1, Math.min(SIM_ROOM_ORDER.length, Math.floor(simRooms))) : 0;
+      const room = k ? SIM_ROOM_ORDER[Math.min(k - 1, Math.floor((i * k) / rows.length))] : room0; // simrooms=<n>: in blocks, the first folders first
+      const helpers = noHelpers ? 0 : helpers0;
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room + (opts.names === 'long' ? '-customer-reconciliation-batch-jobs-2026'.slice(0, 55 - room.length) : ''); // simnames=long: a folder name is long too (60 characters at most, spec 059)
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
       const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true, slash: true } as AgentInfo;
@@ -550,6 +566,22 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
       attrib: new Map<string, string>() };
+    if (opts.sched) {
+      /* spec 001 FR-038: three future schedules for the Postbox (nothing is due during a driver run); the third one missed its last run */
+      const t0 = Date.now(), key = (x: SimAgent | undefined): string => (x ? x.info.workspaceFile ?? x.info.cwd ?? '' : '');
+      const a = sims[0], b = sims.find((x) => x.room !== a?.room) ?? sims[1];
+      const seed: ScheduleInfo[] = [
+        { id: 'sched-s1', folder: key(a), prompt: 'PR and issue sweep: list what changed since the last run', every: 30, next: t0 + 12 * 60000 },
+        { id: 'sched-s2', folder: key(b), prompt: 'Cut the pre-release notes from the merged pull requests', at: t0 + 3 * 3600000 },
+        { id: 'sched-s3', folder: key(a), prompt: 'Morning summary of failing checks', rule: { kind: 'weekdays', time: '08:30' }, next: t0 + 20 * 3600000, last: { at: t0 - 4 * 3600000, outcome: 'missed' } },
+      ];
+      simSched.list.push(...seed.filter((x) => x.folder)); simSched.n = 3;
+    }
+    if (opts.schedFire && opts.schedFire > 0) {
+      /* spec 001 FR-038: a one-off run for the first idle agent (its own session, so a busy folder-mate does not skip it) */
+      const s = sims.find((x) => x.state === 'idle') ?? sims[sims.length - 1];
+      if (s) { simSched.list.push({ id: 'sched-fire', folder: s.info.workspaceFile ?? s.info.cwd ?? '', prompt: 'Scheduled check-in: summarise what changed', at: Date.now() + opts.schedFire * 1000, target: { session: s.info.id, agent: s.info.id, name: s.info.title ?? '' } }); simSched.n += 1; }
+    }
     /* spec 044 FR-012: the rule copy in schedtemplates.js (main uses src/shared/schedrules.ts; test:schedules keeps them equal) */
     type SimRules = { parseRule(v: unknown): ScheduleInfo['rule']; nextRuleRun(r: NonNullable<ScheduleInfo['rule']>, after: number): number | undefined };
     const simRules = (): SimRules | undefined => (window as unknown as { DurbarSchedTemplates?: SimRules }).DurbarSchedTemplates;
@@ -1299,7 +1331,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     type SimPlace = { id: string; name: string; icon: string };
     const MAX_CUSTOM = 3;
     const CUSTOM_ICONS = ['star', 'flask', 'database', 'cloud', 'chart', 'chat', 'mail', 'calendar', 'shield', 'box', 'bolt', 'pin'];
-    const RESERVED_NAMES = ['library', 'software library', 'terminal', 'web', 'other tools', 'stay at desk', 'default', 'coffee corner'];
+    const RESERVED_NAMES = ['library', 'software library', 'terminal', 'web', 'other tools', 'stay at desk', 'default', 'coffee corner', 'boss', 'bank', 'postbox'];
     const customPlaces: SimPlace[] = [];
     let placeSeq = 0;
     const simPlaceResult = (ok: boolean, error?: string, place?: SimPlace) => ({

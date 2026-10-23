@@ -29,11 +29,12 @@ module.exports = async (ctx) => {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const { js } = H;
   const shot = (name, w, h) => H.shot(path.join(OUT, `024-${name}-${w}x${h}.png`), { delay: 300, tag: '024', what: `${name} ${w} ${h}` });
-  const settle = async () => { await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"])')`, 6000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 6000); await ctx.sleep(200); };
+  const settle = async () => { await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 6000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 6000); await ctx.sleep(200); };
   /* every figure must stand on a lit slot of the lobby */
   const onSlots = () => js(`(()=>{const sl=[...document.querySelectorAll('.lobby .slot.on')].map(e=>e.getBoundingClientRect());const bad=[];document.querySelectorAll('#walkers .walker').forEach(w=>{const b=w.getBoundingClientRect(),cx=b.left+b.width/2,cy=b.top+b.height/2;if(!sl.some(s=>Math.abs(s.left+s.width/2-cx)<4&&Math.abs(s.top+s.height/2-cy)<4))bad.push([Math.round(cx),Math.round(cy)]);});return {walkers:document.querySelectorAll('#walkers .walker').length,bad}})()`);
   /* which place an away desk is visiting: the data-place id, never the rendered words (spec 036 FR-004) */
-  const visits = () => js(`[...document.querySelectorAll('#stage .desk.is-away')].map(d=>({id:d.dataset.id,place:d.dataset.place||null}))`);
+  /* tool walks only: the Boss, the Bank and the coffee corner (spec 001 FR-034/FR-035, spec 068) are not tool places */
+  const visits = () => js(`[...document.querySelectorAll('#stage .desk.is-away')].map(d=>({id:d.dataset.id,place:d.dataset.place||null})).filter(v=>!['boss','bank','coffee'].includes(v.place))`);
   const placeOf = async (id) => (await visits()).find((v) => v.id === id)?.place || null;
   const expect = { bash: 'terminal', github: 'software', playwright: 'web', 'my-notes': 'library' };
 
@@ -59,7 +60,7 @@ module.exports = async (ctx) => {
     for (const v of vs) assert.ok(Object.values(expect).includes(v.place), `${v.id}: known place id (${v.place})`);
     assert.ok(new Set(vs.map((v) => v.place)).size >= 3, 'at least three different places are in use');
     let s = await onSlots(); assert.deepStrictEqual(s.bad, [], 'figures stand on slots'); assert.ok(s.walkers >= 3);
-    const label = await js(`document.querySelector('.place.busy').getAttribute('aria-label')`);
+    const label = await js(`document.querySelector('.place.busy:not(.boss):not(.bank):not(.coffee)').getAttribute('aria-label')`);
     assert.ok(/: (nobody|[A-Z])/.test(label), 'a busy place names who is there: ' + label);
     await shot('lobby', w, h);
 
@@ -70,14 +71,15 @@ module.exports = async (ctx) => {
     s = await onSlots(); assert.deepStrictEqual(s.bad, [], 'figures on slots after resizing back');
 
     // Edge: open the full-screen chat of a visiting agent and close it again
-    await js(`document.querySelector('#stage .desk.is-away').click()`); await ctx.sleep(600);
+    await js(`[...document.querySelectorAll('#stage .desk.is-away')].find(d=>!['boss','bank','coffee'].includes(d.dataset.place)).click()`); await ctx.sleep(600);
     await js(`document.getElementById('backBtn').click()`); await ctx.sleep(700);
     s = await onSlots(); assert.deepStrictEqual(s.bad, [], 'figures on slots after the chat was closed'); assert.ok(s.walkers >= 3);
 
     // Edge: a status filter hides filtered-out agents in the lobby too
     await js(`document.querySelector('.stat[data-k="waiting"]').click()`); await ctx.sleep(500);
-    const filtered = await js(`({walkers:document.querySelectorAll('#walkers .walker').length,busy:document.querySelectorAll('.place.busy').length})`);
-    assert.deepStrictEqual(filtered, { walkers: 0, busy: 0 }, 'only Waiting agents shown: none of them is at a place');
+    const filtered = await js(`({walkers:document.querySelectorAll('#walkers .walker').length,atWait:[...document.querySelectorAll('.place.busy')].filter(p=>['boss','bank','coffee'].includes(p.dataset.place)).reduce((t,p)=>t+p.querySelectorAll('.pv:not(.pv-more)').length,0),busy:[...document.querySelectorAll('.place.busy')].filter(p=>!['boss','bank','coffee'].includes(p.dataset.place)).length})`);
+    assert.strictEqual(filtered.busy, 0, 'only Waiting agents shown: none of them is at a tool place');
+    assert.strictEqual(filtered.walkers, filtered.atWait, 'the only figures are the waiting agents at the Boss, the Bank or the coffee corner (spec 001 FR-034)');
     await js(`document.querySelector('.stat[data-k="waiting"]').click()`); await ctx.sleep(600);
     s = await onSlots(); assert.ok(s.walkers >= 3, 'filter cleared: the figures are back');
   }
@@ -88,14 +90,16 @@ module.exports = async (ctx) => {
   const who = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk:not(.is-away)')].find(d=>/is-(idle|done)/.test(d.className));return d&&d.dataset.id})()`);
   assert.ok(who, 'an idle agent at its desk to send for a walk');
   const call = (n, phase) => js(`window.__durbarSimEmit({type:'toolCall',sessionId:${jsLiteral(who)},timestamp:Date.now(),callId:${jsLiteral(`shots-024-${n}`)},tool:'github-search_issues',phase:${jsLiteral(phase)},mcpServer:'github',mcpTool:'search_issues'})`);
-  await call(1, 'start');
+  /* the walk goes to the Web place: it is empty, so the figure is drawn (the Software library may already be full and show "+N" since spec 001 FR-039's narrower tiles) */
+  const web = (phase) => js(`window.__durbarSimEmit({type:'toolCall',sessionId:${jsLiteral(who)},timestamp:Date.now(),callId:'shots-024-web',tool:'playwright-browser_navigate',phase:${jsLiteral(phase)},mcpServer:'playwright',mcpTool:'browser_navigate'})`);
+  await web('start');
   await ctx.waitFor(`!!document.querySelector('.walker.walking')`, 3000); await ctx.sleep(380);
   const walking = await js(`document.querySelectorAll('.walker.walking').length`);
-  assert.ok(walking >= 1 && walking <= 3, 'at most 3 figures walk at once');
+  assert.ok(walking >= 1 && walking <= 3, 'at most 3 figures walk at once: ' + walking);
   await ctx.shot(path.join(OUT, `024-walking-${w}x${h}.png`)); console.log('[024] saved walking', w, h);
   await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000);
-  assert.strictEqual(await placeOf(who), expect.github, 'github goes to its place');
-  await call(1, 'complete');
+  assert.strictEqual(await placeOf(who), expect.playwright, 'playwright goes to its place');
+  await web('complete');
   await ctx.waitFor(`!document.querySelector('#stage [data-id=${jsLiteral(who)}].is-away')`, 6000);
   assert.strictEqual(await placeOf(who), null, 'back at the desk after the call, the 2 s stay and the walk back');
 
