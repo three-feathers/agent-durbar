@@ -205,7 +205,7 @@ async function main(): Promise<void> {
   {
     const sent: AgentMessage[] = [];
     const asked: string[] = [];
-    const ad = (expand?: (id: string, t: string) => Promise<{ text: string; where: string } | undefined>) => ({
+    const ad = (expand?: (id: string, t: string) => Promise<{ text: string; where: string; note?: string; asTyped?: true } | undefined>) => ({
       send: async (_id: string, m: AgentMessage) => { sent.push(m); },
       ...(expand ? { expandSlashCommand: expand } : {}),
     });
@@ -221,6 +221,14 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(sent.pop(), { text: '/review 1' }, 'f: a rejected expansion sends the typed text');
     assert.deepStrictEqual(await sendWithSlash(ad(), 's1', { text: '/review 1' }), {}, 'f: an adapter without expansion sends as typed');
     assert.deepStrictEqual(sent.pop(), { text: '/review 1' });
+    // spec 073 delta 2026-10-23: a VS Code prompt file's note comes back as slashNote
+    const noted = ad(async () => ({ text: 'P', where: '.github/prompts/p.prompt.md', note: 'VS Code settings not applied: mode.' }));
+    assert.deepStrictEqual(await sendWithSlash(noted, 's1', { text: '/p' }), { slash: '.github/prompts/p.prompt.md', slashNote: 'VS Code settings not applied: mode.' }, 'f: the note comes back');
+    assert.deepStrictEqual(sent.pop(), { text: 'P' });
+    // review on #615: over the size cap the adapter answers asTyped; the typed line is sent and only the note comes back
+    const capped = ad(async () => ({ text: 'NOT SENT', where: 'p.md', asTyped: true as const, note: 'Not expanded: too big.' }));
+    assert.deepStrictEqual(await sendWithSlash(capped, 's1', { text: '/p huge' }), { slashNote: 'Not expanded: too big.' }, 'f: asTyped gives only the note');
+    assert.deepStrictEqual(sent.pop(), { text: '/p huge' }, 'f: asTyped sends the typed line');
     const failing = { send: async () => { throw new Error('send failed'); }, expandSlashCommand: async () => ({ text: 'X', where: 'w' }) };
     await assert.rejects(sendWithSlash(failing, 's1', { text: '/review' }), /send failed/, 'f: a failed send still rejects (sendOp reports it)');
   }

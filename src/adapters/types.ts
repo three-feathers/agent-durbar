@@ -399,6 +399,17 @@ export interface AgentProfile {
  * Spec 073 FR-001: one entry of the "/" list in the composer: a skill, command or prompt file of the session's folder or of the user,
  * or a built-in of the agent app. Generic across adapters; `where` is a display path (folder-relative or `~/…`), never absolute.
  */
+/**
+ * Spec 073 FR-005: what to send for a `/name` line. `where` is the entry's place; `note` is shown in the chat; `asTyped` (review on
+ * #615): the expansion would be over the size cap, so `text` is the line as typed and only the note is shown.
+ */
+export interface SlashExpansion {
+  text: string;
+  where: string;
+  note?: string;
+  asTyped?: true;
+}
+
 export interface SlashCommand {
   name: string;
   description?: string;
@@ -543,8 +554,9 @@ export interface AgentAdapter {
   selectAgentProfile?(sessionId: string, id: string | null): Promise<AgentProfile | null>;
   /** Spec 073 FR-001: the "/" entries this session's agent app offers (folder, then user, then app built-ins that run when typed). */
   listSlashCommands?(sessionId: string): Promise<SlashCommand[]>;
-  /** Spec 073 FR-005: the text to send for a message that starts with a folder or user entry's `/name`, and where it came from; undefined = send as typed. */
-  expandSlashCommand?(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined>;
+  /** Spec 073 FR-005: the text to send for a message that starts with a folder or user entry's `/name`, and where it came from; `note`
+   * (a VS Code prompt file) names settings not applied and variables left as written; undefined = send as typed. */
+  expandSlashCommand?(sessionId: string, text: string): Promise<SlashExpansion | undefined>;
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */
   setMcpEnabled?(sessionId: string, name: string, enabled: boolean): Promise<void>;
   /**
@@ -564,6 +576,12 @@ export interface AgentAdapter {
    * Rejects when the runtime has no such call or refuses it (the UI then shows `capabilities.mcpSignInSteps`).
    */
   startMcpSignIn?(sessionId: string, name: string): Promise<McpSignInResult>;
+  /**
+   * Spec 058 FR-064 (real 2026-10-23: the runtime sent no event for a finished sign-in for a long while): read the session's MCP
+   * servers from the agent app again and emit the usual `mcp` event. Optional, only with `startMcpSignIn`. Main calls it every 5 s while a
+   * sign-in page is open and when the window regains focus; it must be safe to call often and never start a server by itself.
+   */
+  refreshMcpStatus?(sessionId: string, name?: string): Promise<void>;
   /** Spec 058 FR-064: stop a sign-in started by `startMcpSignIn` where the runtime can. Optional, only with `startMcpSignIn`. */
   cancelMcpSignIn?(sessionId: string, name: string): Promise<void>;
   /** Change the model, effort or context tier of a live session; applies from the next message (spec 030). Optional: adapters that cannot omit it and the UI offers a new session instead. */

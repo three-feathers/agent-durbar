@@ -1081,6 +1081,38 @@
     const restarting=new Set(); /* server names whose Restart is under way (FR-031: the button stays disabled) */
     const openDet=new Set(); /* server names whose Details are open (kept over a repaint) */
     let sessBusy=false;
+    /* spec 058 FR-065/FR-069 (T102): Sign in. `signBusy` = the call to the app is under way; `waited` = a sign-in this dialog saw open (so a vanished one reads "not finished");
+       `signNote` = one line under the row; `openSteps` = servers whose terminal steps are open; `wantFocus` = the control to focus after the next repaint. */
+    const signBusy=new Set(), waited=new Set(), signNote=new Map(), openSteps=new Set();
+    let wantFocus=null, expT=0;
+    /* the steps text has its commands in backticks: they show as code, and Copy puts only the commands on the clipboard, one per line */
+    const stepParts=t=>String(t||'').split('`');
+    const stepsHTML=t=>stepParts(t).map((p,i)=>i%2?`<code>${esc(p)}</code>`:esc(p)).join('');
+    const stepsCmds=t=>stepParts(t).filter((p,i)=>i%2).join('\n');
+    const signHTML=(x,s)=>{
+      const n=x.name,app=s.app||(o&&o.appName)||'Your agent app',si=x.signIn,en=esc(n);
+      let line='',acts='';
+      if(si&&!si.opened){
+        /* FR-075: where the server came from (the row's own tag words), and a plain line when the page is on another site than the server */
+        line=`<span class="srv-sgl">Sign-in page on <b>${esc(si.host)}</b> · from ${srcChips(x)}</span>`+(si.otherSite?`<span class="srv-sgl srv-warn">This sign-in page is on a different site than the server (${esc(si.otherSite)}).</span>`:'');
+        acts=`<button class="btn sm primary" type="button" data-signopen="${en}" data-signhost="${esc(si.host)}" aria-label="${esc('Open the sign-in page for '+n)}">Open sign-in page</button><button class="btn sm" type="button" data-signcancel="${en}" aria-label="${esc('Cancel the sign-in for '+n)}">Cancel</button>`;
+      }else if(si){
+        line=`<span class="srv-sgl">Finish signing in in your browser. This row updates when ${esc(app)} reports the server. ${esc(app)} keeps the sign-in in your system's credential store when one is available; Agent Durbar never sees it.</span>`;
+        acts=`<button class="btn sm" type="button" data-signcancel="${en}" aria-label="${esc('Cancel the sign-in for '+n)}">Cancel</button>`;
+      }else{
+        if(signNote.has(n))line=`<span class="srv-sgl" role="status">${esc(signNote.get(n))}</span>`;
+        if(x.defaultOn&&!x.off)acts+=`<button class="btn sm" type="button" data-swoff="${en}" aria-label="${esc('Switch off '+n+' for this session')}" title="Stop using this server in this session; switch it back on any time">Switch off for this session</button>`;
+      }
+      let steps='';
+      if(x.signInSteps){
+        const open=!x.canSignIn||openSteps.has(n);
+        acts+=x.canSignIn?`<button class="btn sm" type="button" data-steps="${en}" aria-expanded="${open?'true':'false'}" aria-label="${esc((open?'Hide':'Show')+' how to sign in to '+n+' from a terminal')}">How to sign in from a terminal</button>`:'';
+        if(open)steps=`<div class="srv-det"><p class="srv-steps" tabindex="0" aria-label="${esc('How to sign in to '+n+' from a terminal')}">${stepsHTML(x.signInSteps)}</p>${stepsCmds(x.signInSteps)?`<button class="btn sm" type="button" data-copysteps="${en}" aria-label="${esc('Copy the commands to sign in to '+n)}">Copy</button>`:''}</div>`;
+      }
+      /* FR-074: said in the row until the real check (T105) has run */
+      const honest=x.canSignIn||x.signIn?`<span class="srv-sgl mut">Checked once on a real account; other servers and systems not yet.</span>`:'';
+      return `<div class="srv-sign">${line}${honest}${acts?`<div class="srv-sgact">${acts}</div>`:''}${steps}</div>`;
+    };
     const body=s=>{
       const rows=s.servers.map(x=>{
         const W=window.DurbarMcpWords, app=s.app||o&&o.appName;
@@ -1096,7 +1128,10 @@
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
         const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-err="${esc(x.name)}" aria-label="${esc('Error text of '+x.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-copy="${esc(x.name)}" aria-label="${esc('Copy the error text of '+x.name)}">Copy</button></div>`:'';
-        const rs=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
+        /* spec 058 (2026-10-23, Vikram's report): on a row that needs a sign-in, Restart is a dead end ("needs auth" again), so Sign in takes its place and Restart is hidden */
+        const needsSign=(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth'))&&!!(x.canSignIn||x.signInSteps);
+        const signB=needsSign&&x.canSignIn&&!x.signIn?(signBusy.has(x.name)?`<button class="btn sm primary" type="button" disabled aria-label="${esc('Signing in to '+x.name)}">Signing in…</button>`:`<button class="btn sm primary" type="button" data-signin="${esc(x.name)}" aria-label="${esc('Sign in to '+x.name)}" title="Start ${esc(s.app||'your agent app')}'s own sign-in for this server">Sign in</button>`):'';
+        const rs=needsSign?signB:x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
         /* spec 069 FR-030/FR-033 on spec 058's row: the name opens the tools list; Remove for entries of an agent app's list or this folder */
         const open=expanded.has(x.name), canTools=!!(s.canListTools&&X.bridge.agentMcpTools);
         const nameB=`<b class="srv-name" title="${esc(W.plain(x.name,120))}">${esc(x.name)}</b>`;
@@ -1105,8 +1140,9 @@
         const removable=srcs.some(t=>t==='copilot'||t==='claude'||t==='codex'||t==='folder');
         const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
-        return `<li class="srv sm${open?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
-          <div class="srv-act">${rs}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff?' disabled':''))}</div>${open?toolsHTML(x.name):''}</li>`;}).join('');
+        const sg=x.canSignIn||x.signInSteps||x.signIn?signHTML(x,s):'';
+        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
+          <div class="srv-act">${rs}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff?' disabled':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
       return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
@@ -1170,8 +1206,15 @@
     /* what the dialog last showed per server: a repaint compares with it and updates it, so a user's own change (switch, Details, Restart) is never announced later */
     let seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
     const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return [];
+      /* FR-069: a sign-in this dialog saw open that is gone now: connected = signed in; still needs a sign-in = the time limit (or End session) ended it */
+      for(const n of [...waited]){const x=st.servers.find(y=>y.name===n);
+        if(x&&x.signIn)continue;
+        waited.delete(n);
+        if(x&&x.status==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');}
+        else if(x&&(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth')))signNote.set(n,'Sign-in was not finished. Press Sign in to try again.');}
+      for(const x of st.servers)if(x.status==='connected')signNote.delete(x.name);
       const f=document.activeElement,inside=f&&dlg.contains(f);
-      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.signin!==undefined?['signin',f.dataset.signin]:f.dataset.signopen!==undefined?['signopen',f.dataset.signopen]:f.dataset.signcancel!==undefined?['signcancel',f.dataset.signcancel]:f.dataset.swoff!==undefined?['swoff',f.dataset.swoff]:f.dataset.steps!==undefined?['steps',f.dataset.steps]:f.dataset.copysteps!==undefined?['copysteps',f.dataset.copysteps]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
       const errTop=key&&key[0]==='err'?f.scrollTop:0;
       const bodyEl=dlg.querySelector('.dbody'),top=bodyEl.scrollTop;
       bodyEl.innerHTML=body(st);bodyEl.scrollTop=top; /* FR-004: the scroll position stays */
@@ -1192,6 +1235,11 @@
       const W=window.DurbarMcpWords,ch=[];
       for(const x of st.servers){const was=seen.get(x.name);if(was!==undefined&&was!==(x.status||''))ch.push(x.name+': '+W.stateOf(x.status,{off:x.off,defaultOn:x.defaultOn,origin:x.origin,app:st.app||o&&o.appName,launchedOff:x.launchedOff,switchedHere:x.switchedHere}).word);}
       seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
+      if(wantFocus){const w=wantFocus;wantFocus=null;const el=[...dlg.querySelectorAll('.dbody button:not([disabled])')].find(b=>b.dataset[w[0]]===w[1]);if(el)el.focus();}
+      /* the time limit: main drops the address by itself, so look again when it is due */
+      clearTimeout(expT);expT=0;
+      const left=st.servers.filter(x=>x.signIn).map(x=>x.signIn.expiresInMs);
+      if(left.length)expT=setTimeout(()=>{expT=0;void repaint().then(c=>{if(c.length)X.announce(c.join('. '));}).catch(()=>{});},Math.min(...left)+300);
       return ch;};
     /* FR-004 / FR-033: an `mcp` event for this agent repaints the open dialog (no re-open) and says what changed through the polite live region.
        A throttle: the first event starts a 150 ms timer and the events that arrive meanwhile share its one repaint. The hook is dropped when the dialog closes. */
@@ -1204,6 +1252,49 @@
       },150);
     };
     mcpDlgHook=onEvent;
+    /* spec 058 FR-064 (real 2026-10-23): coming back from the browser, read again at once (main also reads every 5 s while a sign-in page is open) */
+    const onFocus=()=>{if(dlg&&dlg.isConnected&&(waited.size||(st.servers||[]).some(x=>x.signIn))){void Promise.resolve(X.bridge.agentMcp(a.id,true)).catch(()=>0);void repaint();}};
+    window.addEventListener('focus',onFocus);
+    /* FR-065/FR-069 (T102): the two-step Sign in. Main holds the address; this code only ever has the host. */
+    const call=async(fn,...args)=>{try{return await fn(...args);}catch(e){return {ok:false,error:String(e&&e.message||e)};}};
+    const signIn=async n=>{
+      if(signBusy.has(n)||!X.bridge.agentMcpSignIn)return;
+      signBusy.add(n);signNote.delete(n);await repaint();
+      const r=await call(X.bridge.agentMcpSignIn,a.id,n);
+      signBusy.delete(n);
+      if(r&&r.ok&&r.kind==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');X.announce('Signed in to '+n+'.');}
+      else if(r&&r.ok){waited.add(n);wantFocus=['signopen',n];X.announce('Sign-in page on '+r.host+'. Press Open sign-in page to continue.');}
+      else{
+        if(r&&r.manual)openSteps.add(n);
+        signNote.set(n,'Could not start the sign-in: '+((r&&r.error)||'unknown error')+(r&&r.manual?' Use the steps below.':''));
+        X.toast('Could not start the sign-in for '+esc(n)+'.',5200).classList.add('err');X.announce('Could not start the sign-in for '+n+'.');
+      }
+      await repaint();
+    };
+    const openSign=async(n,host)=>{
+      const r=await call(X.bridge.agentMcpOpenSignIn,a.id,n,host);
+      if(r&&r.ok){wantFocus=['signcancel',n];X.toast('Opened the sign-in page in your browser.',3600);X.announce('Opened the sign-in page. Finish signing in in your browser.');}
+      else{
+        if(r&&r.gone){waited.delete(n);signNote.set(n,'Sign-in was not finished. Press Sign in to try again.');}
+        else if(r&&r.manual){waited.delete(n);openSteps.add(n);signNote.set(n,(r.error||'The sign-in page was refused.')+' Use the steps below.');}
+        X.toast(esc((r&&r.error)||'Could not open the sign-in page.'),5200).classList.add('err');
+      }
+      await repaint();
+    };
+    const cancelSign=async n=>{
+      await call(X.bridge.agentMcpCancelSignIn,a.id,n);
+      waited.delete(n);wantFocus=['signin',n];
+      X.toast('Cancelled the sign-in for '+esc(n)+'.',2600);X.announce('Cancelled the sign-in for '+n+'.');
+      await repaint();
+    };
+    const switchOff=async n=>{
+      if(X.bridge.agentMcpCancelSignIn)await call(X.bridge.agentMcpCancelSignIn,a.id,n);
+      waited.delete(n);signNote.delete(n);
+      const r=await call(X.bridge.setAgentMcp,a.id,n,false);
+      X.toast(r&&r.ok===false?esc((r&&r.error)||'Could not switch it off.'):'Switched '+esc(n)+' off for this session. Turn it back on in MCP servers.',r&&r.ok===false?5200:4200);
+      X.announce('Switched '+n+' off for this session.');
+      await repaint();
+    };
     const restartOne=async name=>{
       if(restarting.has(name))return;
       restarting.add(name);
@@ -1225,6 +1316,12 @@
         const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.map(t=>t.name).filter(t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t)):[]);}return;}
         const tc=e.target.closest('input[data-tool]');if(tc&&!tc.disabled){const n=tc.dataset.tsrv,x=(st.servers||[]).find(y=>y.name===n)||{},off=new Set(x.toolsOff||[]);if(tc.checked)off.delete(tc.dataset.tool);else off.add(tc.dataset.tool);void saveOff(n,[...off]);return;}
         const mr=e.target.closest('button[data-mrm]');if(mr){const n=mr.dataset.mrm;d._close();void removeOne(n);return;}
+        const sb=e.target.closest('button[data-signin]');if(sb&&!sb.disabled){void signIn(sb.dataset.signin);return;}
+        const so=e.target.closest('button[data-signopen]');if(so&&!so.disabled){void openSign(so.dataset.signopen,so.dataset.signhost);return;}
+        const sc=e.target.closest('button[data-signcancel]');if(sc&&!sc.disabled){void cancelSign(sc.dataset.signcancel);return;}
+        const sw=e.target.closest('button[data-swoff]');if(sw&&!sw.disabled){void switchOff(sw.dataset.swoff);return;}
+        const stp=e.target.closest('button[data-steps]');if(stp){const n=stp.dataset.steps;if(openSteps.has(n))openSteps.delete(n);else openSteps.add(n);void repaint();return;}
+        const cs=e.target.closest('button[data-copysteps]');if(cs){const sv=st.servers.find(x=>x.name===cs.dataset.copysteps);void copyText(stepsCmds(sv&&sv.signInSteps),'Copied the commands.');return;}
         const rb=e.target.closest('button[data-restart]');if(rb&&!rb.disabled){void restartOne(rb.dataset.restart);return;}
         const db=e.target.closest('button[data-det]');
         if(db){const n=db.dataset.det;if(openDet.has(n))openDet.delete(n);else openDet.add(n);void repaint();return;}
@@ -1236,7 +1333,7 @@
         if(r&&r.error)X.toast(esc(r.error),5200);
         await repaint();});}});
     const r=await d0;
-    clearTimeout(evT);evT=0;if(mcpDlgHook===onEvent)mcpDlgHook=null;
+    window.removeEventListener('focus',onFocus);clearTimeout(evT);evT=0;clearTimeout(expT);expT=0;if(mcpDlgHook===onEvent)mcpDlgHook=null;
     if(r&&r.value==='settings')open('settings',{section:'mcp'}); /* spec 058 FR-084: straight to MCP servers, where the live list is */
     else if(r&&r.value==='folder'&&X.folderOf){const f=X.folderOf(a);if(f)openFolder(f.key,f.name);}
   }

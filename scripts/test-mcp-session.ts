@@ -311,6 +311,91 @@ async function main(): Promise<void> {
       assert.strictEqual(client.created.length, 1, 'no session was started by a restart');
       await ad.stop(sid);
     }
+    // ---- Copilot startMcpSignIn on the fake SDK (FR-064, SC-012, T098) ----
+    {
+      const client = new FakeClient();
+      const ad = new FakeCopilot(client);
+      assert.deepStrictEqual([ad.capabilities.mcpSignIn, typeof ad.startMcpSignIn, typeof (ad as { cancelMcpSignIn?: unknown }).cancelMcpSignIn], [true, 'function', 'undefined'], 'Copilot: Sign in yes, a cancel call no (its cancelLogin is for owned logins only)');
+      assert.match(ad.capabilities.mcpSignInSteps ?? '', /`copilot`.*`\/mcp auth \{name\}`.*Restart session with these servers/, 'the manual route: copilot, then /mcp auth <name>');
+      const sid = await ad.start({ workspace: ws, quiet: true });
+      const s = client.last;
+      const oauth = () => s.calls.filter((c) => c.name.startsWith('mcp.oauth.')).map((c) => [c.name, ...c.args]);
+      // the browser path: exactly one runtime call, with exactly the allowed fields (SC-012)
+      assert.deepStrictEqual(await ad.startMcpSignIn(sid, 'agent365-teams'), { kind: 'browser', url: 'https://auth.example.test/authorize?state=abc' });
+      assert.deepStrictEqual(oauth(), [['mcp.oauth.login', { serverName: 'agent365-teams', clientName: 'Agent Durbar', callbackSuccessMessage: 'You can close this tab and go back to Agent Durbar.' }]], 'one login call: serverName, clientName, callbackSuccessMessage and nothing else');
+      for (const f of ['clientId', 'clientSecret', 'redirectUri', 'grantType', 'forceReauth', 'loginId', 'publicClient', 'expectedInstallationId']) assert.ok(!(f in (s.calls.find((c) => c.name === 'mcp.oauth.login')!.args[0] as object)), `${f} is never sent`);
+      // no token path: nothing but `login` is ever called; the session config has no auth-request handler
+      assert.ok(oauth().every((c) => c[0] === 'mcp.oauth.login'), 'never handlePendingRequest, complete, prepareLogin, cancelLogin');
+      assert.ok(!('onMcpAuthRequest' in client.created[0]), 'no onMcpAuthRequest in the session config (Durbar never sees a token)');
+      // Sign in -> Cancel (no runtime call) -> Sign in again: the runtime is asked again, with the same three fields and no forceReauth
+      s.calls.length = 0;
+      await ad.startMcpSignIn(sid, 'agent365-teams');
+      await ad.startMcpSignIn(sid, 'agent365-teams');
+      assert.deepStrictEqual(oauth().map((c) => c[0]), ['mcp.oauth.login', 'mcp.oauth.login'], 'each Sign in calls login again');
+      assert.ok(oauth().every((c) => !('forceReauth' in (c[1] as object))), 'no forceReauth (what the runtime does with the first listener is T105)');
+      // no URL = cached tokens were valid, the server is already connected
+      s.loginAnswer = {};
+      assert.deepStrictEqual(await ad.startMcpSignIn(sid, 'agent365-teams'), { kind: 'connected' }, 'no authorizationUrl: connected');
+      s.loginAnswer = { authorizationUrl: '' };
+      assert.deepStrictEqual(await ad.startMcpSignIn(sid, 'x'), { kind: 'connected' }, 'an empty address is the same');
+      s.loginAnswer = { authorizationUrl: 42 };
+      await assert.rejects(ad.startMcpSignIn(sid, 'x'), /cannot read/, 'a non-string address is refused');
+      // the runtime refuses: its reason, without the SDK prefix
+      s.loginFail = new Error('Request session.mcp.oauth.login failed with message: server x does not use OAuth');
+      await assert.rejects(ad.startMcpSignIn(sid, 'x'), (e: Error) => e.message === 'server x does not use OAuth');
+      // an older runtime: MethodNotFound, or no `oauth` object at all (no-method mode): a plain message, so main shows the terminal steps
+      s.loginFail = Object.assign(new Error('Unhandled method session.mcp.oauth.login'), { code: -32601 });
+      await assert.rejects(ad.startMcpSignIn(sid, 'x'), /cannot start a sign-in/);
+      s.loginFail = undefined;
+      delete (s.rpc.mcp as Record<string, unknown>).oauth;
+      s.calls.length = 0;
+      await assert.rejects(ad.startMcpSignIn(sid, 'x'), /cannot start a sign-in/);
+      assert.strictEqual(s.calls.length, 0, 'no method: nothing was called');
+      await assert.rejects(ad.startMcpSignIn('no-such-session', 'x'), /not running/, 'not live: rejects, nothing started');
+      // refreshMcpStatus (the poll while a sign-in page is open): `rpc.mcp.list`, fed to the mapper as the runtime's own server list
+      const seen: unknown[] = [];
+      ad.onEvent((e) => { if (e.type === 'mcp') seen.push(e.servers); });
+      s.calls.length = 0;
+      s.listAnswer = [{ name: 'agent365-teams', status: 'connected' }, { name: 'figma', status: 'needs-auth' }];
+      assert.strictEqual(typeof ad.refreshMcpStatus, 'function');
+      s.running = false;
+      await ad.refreshMcpStatus(sid, 'agent365-teams');
+      assert.deepStrictEqual(s.calls.map((c) => c.name), ['mcp.isServerRunning'], 'a server with no client yet: one cheap check, no list (it could start servers)');
+      assert.strictEqual(seen.length, 0);
+      s.running = true;
+      s.calls.length = 0;
+      await ad.refreshMcpStatus(sid, 'agent365-teams');
+      assert.deepStrictEqual(s.calls.map((c) => c.name), ['mcp.isServerRunning', 'mcp.list'], 'running: then one list call, and nothing that starts or signs in');
+      assert.deepStrictEqual((seen[0] as Array<{ name: string; status: string }>).map((x) => [x.name, x.status]), [['agent365-teams', 'connected'], ['figma', 'needs-auth']], 'the usual mcp event follows');
+      // review on #598 (issue #364's case): the runtime says `connected` while the tool calls fail with the OAuth challenge. A re-read that
+      // still says connected is not "signed in": the row stays needs-auth, the sign-in entry is kept, and only a status event clears it.
+      {
+        const challenge = 'MCP tool catalog changed before tool "x" could be invoked: Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)';
+        s.handler!({ type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'teams', status: 'connected' }] } });
+        s.handler!({ type: 'tool.execution_start', data: { toolCallId: 't1', toolName: 'teams-x', mcpServerName: 'teams', mcpToolName: 'x', arguments: {} } });
+        s.handler!({ type: 'tool.execution_complete', data: { toolCallId: 't1', success: false, error: { message: challenge } } });
+        const lastList = (): Array<{ name: string; status: string }> => seen[seen.length - 1] as Array<{ name: string; status: string }>;
+        assert.strictEqual(lastList()[0].status, 'needs-auth');
+        const { McpSignInStore } = await import('../src/main/mcpsignin');
+        const store = new McpSignInStore(() => 0, async () => undefined);
+        store.begin(sid, 'teams', 'https://auth.example.com/a', 'auth.example.com');
+        s.listAnswer = [{ name: 'teams', status: 'connected' }];
+        for (let i = 0; i < 3; i++) {
+          await ad.refreshMcpStatus(sid, 'teams');
+          store.onServers(sid, lastList() as never);
+        }
+        assert.strictEqual(lastList()[0].status, 'needs-auth', 'three polls that say connected leave needs-auth');
+        assert.ok(store.has(sid, 'teams'), 'the sign-in entry is kept (no "Signed in")');
+        s.handler!({ type: 'session.mcp_server_status_changed', data: { serverName: 'teams', status: 'connected' } });
+        store.onServers(sid, lastList() as never);
+        assert.ok(lastList()[0].status === 'connected' && !store.has(sid, 'teams'), 'the runtime\'s own status clears it and the entry');
+      }
+      delete (s.rpc.mcp as Record<string, unknown>).list;
+      await ad.refreshMcpStatus(sid); // a runtime without the call: nothing happens
+      await ad.refreshMcpStatus('no-such-session');
+
+      await ad.stop(sid);
+    }
     done = true;
     console.log('[058] mcp session: PASS');
   } finally {

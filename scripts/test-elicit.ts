@@ -160,3 +160,15 @@ void (async () => {
   console.error(e);
   process.exit(1);
 });
+
+// ---- review on #598: the stored form is what is capped, and the function is idempotent ----
+{
+  const long = 'https://a.example.com/' + '\u00e9'.repeat(1010); // 1,032 characters in, about 6,000 after percent-encoding
+  assert.ok(long.length < 2048);
+  assert.strictEqual(elicitHttpsUrl(long), undefined, 'refused when the normalised address is over 2048 characters');
+  for (const x of ['https://a.example.com/x y', 'https://\u0430uth.example.com/p?q=\u00e9', 'https://A.Example.com:443/%7Efoo/../bar', 'https://a.example.com/' + 'a'.repeat(2000), 'https://a.example.com/' + '\u00e9'.repeat(300)]) {
+    const r = elicitHttpsUrl(x);
+    if (r) assert.ok(elicitHttpsUrl(r.url) && elicitHttpsUrl(r.url)!.url === r.url && r.url.length <= 2048, `idempotent: ${x.slice(0, 40)}`);
+  }
+}
+console.log('elicit: normalised length cap and idempotence ok');

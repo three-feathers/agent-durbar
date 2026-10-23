@@ -227,29 +227,34 @@ say "End this session (More > End session), then send a message to resume it"; t
 
 ### Phase 8b: Sign in, steps and shortcut (after T090)
 
-- [ ] T098 [P] Copilot `startMcpSignIn`: `rpc.mcp.oauth.login({serverName, clientName, callbackSuccessMessage})` when it is a function,
+- [x] T098 [P] Copilot `startMcpSignIn`: `rpc.mcp.oauth.login({serverName, clientName, callbackSuccessMessage})` when it is a function,
   else manual; no URL -> connected; `mcpOAuthTokenStorage: 'persistent'` on create and resume (Q12 B: in the shared `config` of `src/adapters/copilot.ts:576-577`, so
   the FR-158 reconnect at `copilot.ts:337` keeps it; not in `oneShotConfig` or `renameResumeConfig`); fake SDK: recorder, no-method mode, no-URL mode, asserts no
   `handlePendingRequest` and no `onMcpAuthRequest` [FR-064, FR-070, SC-012]
+  [IMPLEMENTED] 2026-10-23 (Copilot; FR-070 by #471): `startMcpSignIn` + `mcpSignIn`/`mcpSignInSteps` in `src/adapters/copilot.ts`; fake SDK recorder in `scripts/fakes/copilot-sdk.ts`; test: `scripts/test-mcp-session.ts`. Not run on a real account (T105)
 - [ ] T099 [P] Claude `startMcpSignIn`: `mcp_authenticate {serverName}` without `redirectUri`; `requiresUserAction: false` -> connected;
   "not supported in this context" -> manual; `mcp_status` every 3 s while open; not launched -> "Send a message first" (Q15); fake CLI
   test [FR-064, SC-012]
 - [ ] T100 [P] Codex `startMcpSignIn`: `mcpServer/oauth/login {name, threadId}`; completion by `loginId` (else name + thread); success ->
   next message on a fresh child (Q18); unknown method -> manual; `cancelMcpSignIn` -> `account/login/cancel`; fake app-server test
   [FR-064, SC-012]
-- [ ] T101 Main: `src/main/mcpsignin.ts` (pure store, injected clock and opener) and `agents:mcpSignIn` / `agents:mcpOpenSignIn` /
+- [x] T101 Main: `src/main/mcpsignin.ts` (pure store, injected clock and opener) and `agents:mcpSignIn` / `agents:mcpOpenSignIn` /
   `agents:mcpCancelSignIn`; `elicitHttpsUrl` check (Q16); host-only replies; drops on connected, Cancel, 10 minutes, End, Restart
   session (the Restart session hook waits for T040/T041, #349, not built on 2026-10-21); `canSignIn`, `signIn`, `signInSteps` in `agents:mcp`; preload and `DurbarApi`; tests: host only, `http:` and user:password
   refused, expiry, Cancel, End, no address in the `DURBAR_LOG` sink or activity log [FR-065, SC-011]
-- [ ] T102 Dialog: needs-auth row (hint, Sign in, Switch off for this session, terminal steps with Copy; the steps end with "End this session (More > End session), then send a message to resume it" until T040-T042 exist, then the Restart button), two-step open (Q13), waiting and
+  [IMPLEMENTED] 2026-10-23: `src/main/mcpsignin.ts`, `src/main/mcpipc.ts`, `src/main/mcpsession.ts`, preload, `src/shared/api.ts`; test: `scripts/test-mcp-signin.ts` (`test:mcpsignin`), `test:ipcchannels`, `test:simguard`. Restart session drops the entry through the `stopped` status (#473 exists)
+- [x] T102 Dialog: needs-auth row (hint, Sign in, Switch off for this session, terminal steps with Copy; the steps end with "End this session (More > End session), then send a message to resume it" until T040-T042 exist, then the Restart button), two-step open (Q13), waiting and
   time-limit states, toasts, live region; Switch off calls the existing `setMcp` [FR-066, FR-068, FR-069]
+  [IMPLEMENTED] 2026-10-23 for Copilot rows (a row shows the block only where `canSignIn` or `signInSteps` came from main; Claude and Codex rows unchanged until T099/T100): `src/renderer/screens.js`, `screens.css`; sim: `scripts/shots-058-mcp-signin.js`
 - [ ] T103 Tool card line for `mcpAuth`: "<server> needs you to sign in", **Sign in…** opens the dialog at that row (Q14), **Switch off
   for this session** [FR-063, FR-066]
-- [ ] T104 Simulator `simmcpauth=1` / `simmcpauth=manual`; screenshots at 1440x900 and 1280x800 (`docs/screenshots/058-mcp-signin-*.png`)
+- [x] T104 Simulator `simmcpauth=1` / `simmcpauth=manual`; screenshots at 1440x900 and 1280x800 (`docs/screenshots/058-mcp-signin-*.png`)
   [FR-071, FR-073]
+  [IMPLEMENTED] 2026-10-23, dialog part, Copilot: `simmcpauth=1|manual` (+ `simmcpttl=N`) in `src/renderer/sim.ts`; `docs/screenshots/058-mcp-signin-*-{1440x900,1280x800}.png`. The tool card part waits for T103
 
-- [ ] T110 (its manual-steps wording follows T102's: End session, then a message, until T040-T042) Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
+- [x] T110 (its manual-steps wording follows T102's: End session, then a message, until T040-T042) Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
   domains differ (pure helper `signInSiteNote(serverUrl, pageHost)` with unit tests: same domain, other domain, `co.uk`, stdio) [FR-075]
+  [IMPLEMENTED] 2026-10-23 (review on #598): `src/main/mcpsignin.ts`, `screens.js`; `test:mcpsignin`
 - [ ] T111 Trust confirmation of per-folder extras and the Copilot waiting text say a sign-in may be kept in the system keychain
   after the session [FR-076]
 
