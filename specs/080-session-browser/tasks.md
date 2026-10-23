@@ -267,7 +267,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC8: switching on in Allow all, or switching such a session to Allow all, shows FR-065's one-line warning.
 - [ ] T038 [US4] Driver state, indicator, takeover, hand back, Watch-only, show-on-use (`src/main/browser/driverstate.ts`). [FR-060, FR-061, FR-063, FR-066]
   - AC1: a pure `none`/`agent`/`user` state machine with unit tests:
-    - `none` at switch-on, at each turn start and after *Hand back*;
+    - `none` at switch-on, at each turn start only if it was `agent` (never from `user`), and after *Hand back*;
     - `agent` from the first url or drive call until takeover or the end of the turn or session;
     - `user` after input (Co-browsing) or *Take over*;
     - no timer changes it;
