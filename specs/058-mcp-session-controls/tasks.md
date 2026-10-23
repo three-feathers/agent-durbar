@@ -314,7 +314,7 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
   no early Claude CLI launch after Restart session (Q11), no use of Copilot `stopServer` (Q2).
 - Delta 2026-10-20 (issue #364, constitution III, not a question): no call that hands a token, code or callback URL through Durbar (Copilot
   `onMcpAuthRequest`, `oauth.handlePendingRequest`, `oauth.respond`, `oauth.complete`; Claude `mcp_oauth_callback_url`), no client id or
-  secret asked from the user, no `redirectUri` of Durbar's own. No "Sign in with another account" (Q19 A): no `forceReauth`, no `mcp_clear_auth`.
+  secret asked from the user, no `redirectUri` of Durbar's own. No "Sign in with another account" (Q19 A): no `forceReauth`, no `mcp_clear_auth`. (Changed 2026-10-23 by the owner for one use only: Copilot's **Sign in again**, FR-164, which re-creates keychain sign-ins saved by older builds.)
 - No automatic switch-off after repeated failures (Q17 A); no early Claude CLI launch for a sign-in (Q15 A); no `http:` authorization
   pages (Q16 A); no automatic Restart session after a Codex sign-in (Q18 A).
 
@@ -346,6 +346,20 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
 
 - [x] T127 Review on #609 (fjcabello): needs-sign-in rows lead with Open in chat, Restart behind More; load sequence numbers and no
   reload while the list is hidden; a needs-sign-in-only case in `test-mcpwords`; the driver pins each (mutation-checked) [FR-082, FR-083]
+
+## Phase 10: fewer macOS keychain prompts (delta 2026-10-23, issue #623, owner report; related #525)
+
+- [x] T130 Spec delta: who reads the keychain, why Always Allow does not stick, the options, FR-160..FR-162 (spec *Changes* 2026-10-23)
+- [x] T131 `mac.signIgnore` for the Copilot runtime prebuilds and `scripts/check-runtime-signature.js` in `dist:mac:*`; `test:runtimesign` [FR-160]
+- [x] T132 `CopilotAdapter.getClient`: a failed runtime start is not cached; `test:copilotshared` (one runtime for N sessions, session end, retry, per-session modes and folders) [FR-161]
+- [x] T133 Docs: README *Keychain prompts on a Mac*, `changelog.d/058-keychain-prompts.md`, `docs/agent-notes.md` entry
+- [ ] T134 Mac check list (FR-162) run on a Mac by Paco's team; counts before and after on #623; README and FR-160 `[KNOWN GAP]` updated [FR-162]
+- [x] T135 Record the owner's Mac result (FR-162) and the root-cause analysis; FR-163: `listMcpTools` asks nothing of a server that is not connected; `test:copilotshared` counts runtime calls [FR-162, FR-163]
+- [ ] T136 (third launch: 0 prompts, real 2026-10-23; the cause of the two rounds is still open) Confirm the cause on the owner's Mac: the program name in the dialog, Durbar running from /Applications, and whether deleting the old `copilot-mcp-oauth*` items in Keychain Access and signing in again gives 0 prompts on the next launch [FR-162]
+- [x] T137 Sign in again (owner-approved): per row and for all, the runtime's `forceReauth` sign-in, guards in main, simulator; fakes only [FR-164]
+- [ ] T138 On the owner's Mac: Sign in again to all, then quit and reopen: count the prompts (expected 0 if `forceReauth` re-creates the items) [FR-164]
+- [x] T139 Review on #625 (fjcabello): FR-160 credits the real CI build and strict verify; FR-162 points to the test pre-release; every mac packaging script runs the check (`--arch` per build, per app); `dispose` stops a runtime that is still starting [FR-160, FR-161]
+- [x] T159 Re-review on #625 (fjcabello): a Sign in again entry is not finished by the old "connected"; offered only for a remote server Durbar knows by its https address with a source the runtime named (fail closed); a re-read keeps source and transport; no partition command in README or tasks; the confirmation says the server stays signed out until finished; a second press does nothing; pending servers get their own wording; plan refreshed [FR-163, FR-164]
 
 ## Phase 10: MCP health, failure reason, when, Copy diagnostics, chip dot (delta 2026-10-23, issue #603)
 
