@@ -599,42 +599,6 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   waits, Copilot's `errorClassification` value for auth, and whether a sign-in made in the agent app's own CLI is seen by Durbar's
   session. The README and the row's *Details* say "not checked on a real account yet" until then.
 
-#### PR A notes (2026-10-23, what was built where the text above left a choice)
-
-- **Who remembers an attempt (FR-176)**: main's `McpSignInStore` keeps when each server's sign-in last held a page (5 minutes, at most
-  64, dropped on connected, a `signInEnd`, End session and Restart session), adapter-neutral; `agents:mcp(id, true)` (the dialog opening, which
-  now asks with `true`, and the window regaining focus) reads once for that session through the adapter's `refreshMcpStatus(id, name)`,
-  one read in flight per agent. The adapter keeps no attempt times. Copilot rows get the same one read after Cancel (its
-  `refreshMcpStatus` asks `isServerRunning` first, unchanged).
-- **Restart on a needs-sign-in row (FR-176, FR-181, Q21 A)**: the #598 rule hides Restart on such a row, but Claude Code's steps and the
-  time-limit line say "press Restart on this row". A capability `mcpSignInRestart` (Claude Code CLI transport only; C2: only with
-  `mcpRestart`) makes main send `signInRestart` on that row, and the row keeps **Restart** next to **Sign in** (not while a page is
-  open). Copilot rows are unchanged (Restart stays hidden).
-- **The time-limit line (FR-176)** "If you finished in your browser, press Restart on this row." is added on every expired entry of a
-  row with `signInRestart`, not only a mark-only one: the window cannot tell the two apart, and on a CLI-own needs-auth a Restart is a
-  harmless retry.
-- **A re-read keeps a mark only while the status is unchanged**: `refreshMcpStatus` (and the FR-060 challenge read) drops a server's mark
-  when the CLI's reported status differs from the last list (for example `needs-auth` -> `connected`), so the usual case ends the sign-in
-  while a mark-only `connected` stays Needs sign-in.
-- **Steps without the in-app call (FR-180)**: a folder extra's line "use Sign in here" shows only where Sign in is offered.
-- **The SDK transport** keeps `mcpSignInSteps` and `mcpSignInNote` and drops `mcpSignIn`, `mcpSignInRestart`, `startMcpSignIn` and
-  `refreshMcpStatus`.
-- **Review round on #635 (security review and Vikram's review)**:
-  - FR-186's `authServerMetadataUrl` must start with exactly `https://` (case-sensitive), hold no whitespace or control character, carry
-    no user name or password and parse with a host (the URL parser alone accepted `https:evil`, `HTTPS://`, `https:/x`, a leading space,
-    an embedded newline and userinfo; the CLI would then reject the whole `--mcp-config`).
-  - `redact()` itself (so the `DURBAR_LOG` sink, which gets the CLI's stderr at exit) masks the value after `?`, `&`, `#`, `;` (or their
-    percent-encoded forms) and `code`, `state`, `code_verifier`, `code_challenge`, `id_token`, `access_token`, `refresh_token`,
-    `client_secret` (any case), one bounded, linear pattern.
-  - **Time limits**: the adapter's clock defaults to `performance.now()` (monotonic). In `signInTtlMs` a negative or non-finite wait
-    counts as the full 30 s request timeout (260 s), never as no wait. In `McpSignInStore.begin` a **missing** `ttlMs` keeps 10 minutes,
-    but a **present and invalid** one (0, negative, NaN, Infinity, not a number) gets the 30-second minimum.
-  - Codex's addresses for FR-185 come from the values-free Settings view (`GlobalLists.state`, `appServerUrls`), not from session specs
-    with env and header values.
-  - A real `ClaudeAdapter` on the fake transport goes through `mcpSignInOp`: `http:`, loopback, private and one-label hosts are refused
-    there (`test-mcp-signin`).
-- **Not in PR A**: the renderer words for `signInEnd` (FR-182, Codex only; main already passes the field), and the Codex sim kind.
-
 #### Success criteria (delta)
 
 - **SC-010** On a fake Copilot session, the issue's exact text on a failed MCP tool turns that server's row into "Needs sign-in" with
@@ -1362,6 +1326,42 @@ adapter sets it). The owners asked to treat MCP as a priority.
     Durbar never writes `oauth` into any app's file. Copilot and Codex sessions are not affected.
   `[KNOWN GAP]` not run: that the CLI accepts these fields from `--mcp-config` as it does from its settings (the same schema `Ht` is used
   for `http` and `sse` entries in 2.1.304, `read:`), and a real server with a pre-registered client (T106).
+
+#### PR A notes (2026-10-23, what was built where the text above left a choice)
+
+- **Who remembers an attempt (FR-176)**: main's `McpSignInStore` keeps when each server's sign-in last held a page (5 minutes, at most
+  64, dropped on connected, a `signInEnd`, End session and Restart session), adapter-neutral; `agents:mcp(id, true)` (the dialog opening, which
+  now asks with `true`, and the window regaining focus) reads once for that session through the adapter's `refreshMcpStatus(id, name)`,
+  one read in flight per agent. The adapter keeps no attempt times. Copilot rows get the same one read after Cancel (its
+  `refreshMcpStatus` asks `isServerRunning` first, unchanged).
+- **Restart on a needs-sign-in row (FR-176, FR-181, Q21 A)**: the #598 rule hides Restart on such a row, but Claude Code's steps and the
+  time-limit line say "press Restart on this row". A capability `mcpSignInRestart` (Claude Code CLI transport only; C2: only with
+  `mcpRestart`) makes main send `signInRestart` on that row, and the row keeps **Restart** next to **Sign in** (not while a page is
+  open). Copilot rows are unchanged (Restart stays hidden).
+- **The time-limit line (FR-176)** "If you finished in your browser, press Restart on this row." is added on every expired entry of a
+  row with `signInRestart`, not only a mark-only one: the window cannot tell the two apart, and on a CLI-own needs-auth a Restart is a
+  harmless retry.
+- **A re-read keeps a mark only while the status is unchanged**: `refreshMcpStatus` (and the FR-060 challenge read) drops a server's mark
+  when the CLI's reported status differs from the last list (for example `needs-auth` -> `connected`), so the usual case ends the sign-in
+  while a mark-only `connected` stays Needs sign-in.
+- **Steps without the in-app call (FR-180)**: a folder extra's line "use Sign in here" shows only where Sign in is offered.
+- **The SDK transport** keeps `mcpSignInSteps` and `mcpSignInNote` and drops `mcpSignIn`, `mcpSignInRestart`, `startMcpSignIn` and
+  `refreshMcpStatus`.
+- **Review round on #635 (security review and Vikram's review)**:
+  - FR-186's `authServerMetadataUrl` must start with exactly `https://` (case-sensitive), hold no whitespace or control character, carry
+    no user name or password and parse with a host (the URL parser alone accepted `https:evil`, `HTTPS://`, `https:/x`, a leading space,
+    an embedded newline and userinfo; the CLI would then reject the whole `--mcp-config`).
+  - `redact()` itself (so the `DURBAR_LOG` sink, which gets the CLI's stderr at exit) masks the value after `?`, `&`, `#`, `;` (or their
+    percent-encoded forms) and `code`, `state`, `code_verifier`, `code_challenge`, `id_token`, `access_token`, `refresh_token`,
+    `client_secret` (any case), one bounded, linear pattern.
+  - **Time limits**: the adapter's clock defaults to `performance.now()` (monotonic). In `signInTtlMs` a negative or non-finite wait
+    counts as the full 30 s request timeout (260 s), never as no wait. In `McpSignInStore.begin` a **missing** `ttlMs` keeps 10 minutes,
+    but a **present and invalid** one (0, negative, NaN, Infinity, not a number) gets the 30-second minimum.
+  - Codex's addresses for FR-185 come from the values-free Settings view (`GlobalLists.state`, `appServerUrls`), not from session specs
+    with env and header values.
+  - A real `ClaudeAdapter` on the fake transport goes through `mcpSignInOp`: `http:`, loopback, private and one-label hosts are refused
+    there (`test-mcp-signin`).
+- **Not in PR A**: the renderer words for `signInEnd` (FR-182, Codex only; main already passes the field), and the Codex sim kind.
 
 #### Success criteria (delta)
 
