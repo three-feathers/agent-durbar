@@ -461,14 +461,15 @@ void (async () => {
   // ---- 6. review on #620 (item 4): `auth status` output over 64 KiB is refused (the exec's cap), not parsed
   {
     const env = { platform: process.platform, env: process.env, homedir: '/h', isFile: () => true, listDir: () => [] } as unknown as DetectEnv;
-    const big = JSON.stringify({ loggedIn: true, email: 'x'.repeat(70 * 1024) + '@example.com' });
-    const script = `process.stdout.write(${JSON.stringify(big)})`;
-    const run: Exec = (file, args, o) => nodeExec(process.execPath, ['-e', script], o);
-    const r = await nodeExec(process.execPath, ['-e', script], { timeoutMs: 10000 });
+    // the child builds its output itself: a 70 KiB argument is over Windows' 32K command line (ENAMETOOLONG, CI windows-latest at b7bdc488)
+    const script = (kib: number): string => `process.stdout.write(JSON.stringify({loggedIn:true,email:'x'.repeat(${kib}*1024)+'@example.com'}))`;
+    assert.ok(script(70).length < 200, 'a short command line on every OS');
+    const run: Exec = (file, args, o) => nodeExec(process.execPath, ['-e', script(70)], o);
+    const r = await nodeExec(process.execPath, ['-e', script(70)], { timeoutMs: 10000 });
     assert.ok(r.errorCode && /MAXBUFFER/i.test(r.errorCode), `a child that prints more than 64 KiB is cut off: ${r.errorCode}`);
     assert.strictEqual(await claudeAuthStatus('/x/claude', env, run), undefined, 'too much output is unclear, not an identity');
+    const ok = await nodeExec(process.execPath, ['-e', script(60)], { timeoutMs: 10000 });
     const small = JSON.stringify({ loggedIn: true, email: 'x'.repeat(60 * 1024) + '@example.com' });
-    const ok = await nodeExec(process.execPath, ['-e', `process.stdout.write(${JSON.stringify(small)})`], { timeoutMs: 10000 });
     assert.ok(!ok.errorCode && ok.stdout.length === small.length, 'under the cap the output is whole');
   }
 
