@@ -1,1 +1,0 @@
-- **Codex write requests, after alpha.12** (spec 052 FR-172): *Allow for this session* on a change that writes in several folders names and covers every one of them, and a grant on one folder no longer approves a later change that also writes elsewhere; file paths are never shortened before that check. Unit tests.

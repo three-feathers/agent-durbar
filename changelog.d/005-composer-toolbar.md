@@ -1,1 +1,0 @@
-- **Composer toolbar, after alpha.12** (spec 005): a screen reader hears "Working…" and "Stopped" / "Reply finished" as a reply starts and ends.

@@ -1,1 +1,0 @@
-- **Theme tokens, after alpha.12** (spec 070): a text or button colour that would be hard to read is adjusted just enough instead of falling back to the default (the theme's surfaces never change, so a dark theme stays dark); Settings and the AI dialog say how many values were adjusted or replaced.
