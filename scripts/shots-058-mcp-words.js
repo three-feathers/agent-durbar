@@ -236,6 +236,17 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#scrDlg .dbody').scrollTop=1e6`);
     const fc = await footerClear();
     assert.ok(fc.inBody && fc.clear && fc.vis && fc.noteAfterRs && fc.noteBottom <= fc.btnTop + 0.5, `${w}x${h}: the Restart session row and the note are inside the body, above the buttons ${JSON.stringify(fc)}`);
+    // Vikram (macOS, ~10 servers): the footer floated over rows in the middle of the list. Top, middle and bottom of the scroll: Done hit-testable, no row meets the footer
+    assert.ok(lay.n >= 10 && await js(`!!document.querySelector('#scrDlg .dbody .mcp-rsess')`), `${w}x${h}: a long list with the Restart session row in the body`);
+    for (const [where, frac] of [['top', 0], ['middle', 0.5], ['bottom', 1]]) {
+      await js(`(()=>{const b=document.querySelector('#scrDlg .dbody');b.scrollTop=(b.scrollHeight-b.clientHeight)*${jsLiteral(frac)};})()`);
+      await settle();
+      const sf = await footerIntegrity();
+      assert.ok(sf.visible && sf.hits.every(Boolean), `${w}x${h}, scrolled to the ${where}: Done is fully visible and clickable ${JSON.stringify(sf)}`);
+      assert.strictEqual(sf.over, 0, `${w}x${h}, scrolled to the ${where}: no row meets the footer ${JSON.stringify(sf)}`);
+      await assertFooterStyle(`${w}x${h} ${where}`);
+    }
+    await js(`document.querySelector('#scrDlg .dbody').scrollTop=1e6`);
     await shot(`058-mcp-dialog-fit-end-${w}x${h}.png`);
     await closeDlg();
     await closePanel();
