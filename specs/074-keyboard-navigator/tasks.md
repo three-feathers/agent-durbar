@@ -80,6 +80,13 @@ Tests first: T031-T032 are written and fail before T033-T037.
 - [x] T039 `src/renderer/app.js`: `DRAFTS` keeps text and attachments; `draftHTML` / `draftWords` on desks (card, full, lounge), list rows and strip items; drafts dropped when a session is removed; the `attached` case of `textSafeKey` removed (`src/renderer/navigator.js`, `scripts/test-navigator.ts`); `.draft-mark` in `src/renderer/styles.css` (tokens only)
 - [x] T040 Mutation-check T038, README and changelog, `npm test`, the driver once on the final head
 
+## Phase 12: Review on #597 (fjcabello)
+
+- [x] T041 Dialog guard covers `aria-modal="true"` (askDialog's alertdialog) for Ctrl+A, Ctrl+Backspace and the Go-to shortcut; driver step with *End all sessions?* open; mutation-checked
+- [x] T042 Ending a session drops its draft (`dropDraft` in `endLive` and `endAllSessions`); driver step; mutation-checked; Clarification updated
+- [x] T043 `check-done-desk-mask` (Ctrl+F) and `check-grant-chips` (cursor in the message box, no late focus move); `until` instead of fixed pauses in `shots-074-navigator`
+- [x] T044 Merge main (#592: the restored draft keeps the chosen height); `npm test`, `shots-074-navigator`, `check-done-desk-mask`, `check-grant-chips` twice
+
 ## Dependencies
 
 T001 → T003-T007 → T008-T010 (US1) → T011 (US2) → T012 (US3); T013-T014 (US4) need T007; T015 needs T008 and T014; T016-T019 last. US2 and US3 extend the same palette code as US1, so they follow it.

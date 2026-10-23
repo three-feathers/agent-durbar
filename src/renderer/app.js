@@ -1822,11 +1822,13 @@ async function showFolderStatus(a,chip){
 }
 /* spec 074 FR-022 (issues 587, 612): unsent text and attachments per chat, in memory only (this window; never written to disk: a draft
    can hold a pasted token), so closing a chat or opening another never loses a half-written prompt. Sending empties the box, which
-   drops the entry; removing the session drops it too. */
+   drops the entry; ending or removing the session drops it too. */
 const DRAFTS=new Map();
 function keepDraft(){const m=$('msgInput');if(!m||!ui.selected)return;
   if(m.value||attached.length)DRAFTS.set(ui.selected,{t:m.value,att:attached.slice()});else DRAFTS.delete(ui.selected);}
 /* FR-024 (issue 612): a pencil on the desk, list row and strip of a chat that has an unsent draft and is not the open one */
+/* FR-022 (issue 612, after review): ending a session drops its draft, also from its open box (it cannot resume into the same box) */
+function dropDraft(id){DRAFTS.delete(id);if(ui.selected===id){const m=$('msgInput');if(m){m.value='';autoGrow();}attached=[];renderAttached();}scheduleRender();}
 const hasDraft=a=>!!a&&a.id!==ui.selected&&DRAFTS.has(a.id);
 const draftHTML=a=>hasDraft(a)?`<span class="draft-mark" title="Unsent draft" aria-hidden="true">${ICON('edit')}</span>`:'';
 const draftWords=a=>hasDraft(a)?', unsent draft':'';
@@ -2247,7 +2249,7 @@ document.addEventListener('keydown',e=>{
   /* spec 074 FR-002: the navigator shortcut (Settings > Keyboard; default Ctrl+F, ⌘F on a Mac) opens the palette in Go-to mode from
      anywhere, text fields included, but not over another dialog that asks something (the ? sheet is closed like for Ctrl+K) */
   if(!navRecording&&NAV.comboMatches(e,NAV_KEY,IS_MAC)){
-    if(![...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].some(d=>!d.closest('#palDlg,#kbdDlg'))){e.preventDefault();closeKbdHelp();openPalette({nav:true});}
+    if(![...document.querySelectorAll('[aria-modal="true"]')].some(d=>!d.closest('#palDlg,#kbdDlg'))){e.preventDefault();closeKbdHelp();openPalette({nav:true});} /* any modal, askDialog's alertdialog too (review on PR 597) */
     return;
   }
   if(mod&&!e.shiftKey&&!e.altKey&&(e.key==='k'||e.key==='K'||e.code==='KeyK')){e.preventDefault();closeKbdHelp();openPalette();return;}
@@ -2264,7 +2266,7 @@ document.addEventListener('keydown',e=>{
   if(mod){
     const ed=el=>!!el&&el.nodeType===1&&(el.matches('input,textarea,select,[contenteditable]:not([contenteditable="false"])')||!!el.isContentEditable);
     const tsk=NAV.textSafeKey(e,IS_MAC,{editable:ed(e.target)||ed(document.activeElement),log:!!(e.target&&e.target.closest&&e.target.closest('#chat')),
-      selected:String((window.getSelection&&window.getSelection())||'').length>0,dialog:!!document.querySelector('[role="dialog"][aria-modal="true"]')});
+      selected:String((window.getSelection&&window.getSelection())||'').length>0,dialog:!!document.querySelector('[aria-modal="true"]')}); /* any modal, askDialog's alertdialog too (review on PR 597) */
     if(tsk==='inbox'){e.preventDefault();openInbox();return;}
     if(tsk==='office'&&(ui.selected||vsViewing)){e.preventDefault();if(vsViewing)leaveVsView();if(ui.selected)closePanel();return;}
   }
@@ -2793,7 +2795,7 @@ async function endAllSessions(anchor){
     buttons:[{label:'Cancel',value:null},{label:'End all sessions',value:'ok',cls:'primary danger'}]});
   if(!ok)return;
   const bad=[];
-  for(const a of list){try{await (bridge.end||bridge.stop)(a.id);}catch(err){bad.push(a.name);}}
+  for(const a of list){try{await (bridge.end||bridge.stop)(a.id);dropDraft(a.id);}catch(err){bad.push(a.name);}}
   const n=list.length-bad.length;
   toast(bad.length?'Could not end '+esc(bad.join(', '))+'.':(n===1?'1 session ended.':n+' sessions ended.')+' Sending a message resumes one.',4200).classList.add(bad.length?'err':'ok');
 }
@@ -4244,7 +4246,7 @@ async function openLive(a,btn){
   finally{done();}
 }
 async function stopLive(a,btn){const r=liveRoot(a),done=busy(btn,'Stopping…');try{await bridge.stop(r.id);}finally{done();}toast(esc(r.name)+': stopped the current turn. It is ready for your next message.').classList.add('ok');}
-async function endLive(a,btn){const r=liveRoot(a),done=busy(btn,'Ending…');try{await (bridge.end||bridge.stop)(r.id);}finally{done();}toast(esc(r.name)+': session ended. Sending a message resumes it.',4200).classList.add('ok');}
+async function endLive(a,btn){const r=liveRoot(a),done=busy(btn,'Ending…');try{await (bridge.end||bridge.stop)(r.id);}finally{done();}dropDraft(r.id);toast(esc(r.name)+': session ended. Sending a message resumes it.',4200).classList.add('ok');}
 const failToast=what=>err=>toast('Could not '+what+': '+esc(String(err&&err.message||err)),5000).classList.add('err');
 async function copyResume(a){const r=liveRoot(a),cmd=resumeCmdOf(r); if(!cmd)return;
   try{await navigator.clipboard.writeText(cmd);toast('Copied <code>'+esc(cmd)+'</code>. End the session here first, then run it in a terminal in '+esc(roomOf(r).path)+'. In VS Code, turn on the sessions list filter External to see sessions started here.',9000).classList.add('ok');}

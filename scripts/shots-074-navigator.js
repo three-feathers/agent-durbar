@@ -165,7 +165,7 @@ module.exports = async (ctx) => {
     // FR-019: the cursor lands in the message box, whatever opened the chat
     const opened = async (how) => {
       await until(`document.body.classList.contains('panel-open')`, 3000);
-      await ctx.sleep(150);
+      await until(`document.activeElement&&document.activeElement.id==='msgInput'`, 3000); /* the condition, not a fixed sleep (review #597) */
       const q = await box();
       assert.ok(q.focus === 'msgInput' && q.v === '' && q.s === 0, `${w}: ${how}: the cursor is in the message box: ${JSON.stringify(q)}`);
       return q;
@@ -230,7 +230,7 @@ module.exports = async (ctx) => {
     await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.querySelector('.name')&&x.querySelector('.name').textContent.trim()===${jsLiteral(titleW)});d.focus();})()`);
     await key('Return', []);
     await until(`document.body.classList.contains('panel-open')`, 3000);
-    await ctx.sleep(150);
+    await until(`document.activeElement&&document.activeElement.id==='msgInput'`, 3000); /* the condition, not a fixed sleep (review #597) */
     c = await box();
     assert.ok(c.title === titleW && c.v === 'half-written prompt' && c.focus === 'msgInput' && c.s === c.v.length, `${w}: the unsent text is back, cursor at its end: ${JSON.stringify(c)}`);
     // outside text: Ctrl+A opens Needs you, but not in the chat log or with a selection; Ctrl+Backspace goes back to the office
@@ -281,7 +281,7 @@ module.exports = async (ctx) => {
       await js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(id)})+'"]').focus()`);
       await key('Return', []);
       await until(`document.body.classList.contains('panel-open')`, 3000);
-      await ctx.sleep(150);
+      await until(`document.activeElement&&document.activeElement.id==='msgInput'`, 3000); /* the condition, not a fixed sleep (review #597) */
       return box();
     };
     let ma = await marks(dA);
@@ -290,7 +290,7 @@ module.exports = async (ctx) => {
     await type('draft for A');
     await js(`document.querySelector('#stripList .sitem[data-sw="'+CSS.escape(${jsLiteral(dB)})+'"]').click()`);
     await until(`(document.querySelector('#stripList .sitem.sel')||{}).dataset.sw===${jsLiteral(dB)}`, 3000);
-    await ctx.sleep(150);
+    await until(`!!document.querySelector('#stripList .sitem[data-sw="'+CSS.escape(${jsLiteral(dA)})+'"] .draft-mark')`, 3000);
     ma = await marks(dA);
     let mb = await marks(dB);
     assert.ok(ma.strip && ma.stripAria && ma.title === 'Unsent draft', `${w}: after switching chats, A's strip item has the pencil, "Unsent draft" for screen readers and as tooltip: ${JSON.stringify(ma)}`);
@@ -328,6 +328,33 @@ module.exports = async (ctx) => {
     await H.office();
     mb = await marks(dB);
     assert.ok(!mb.desk && !mb.deskAria, `${w}: emptied: B's pencil is gone: ${JSON.stringify(mb)}`);
+
+    // ---- review on #597 (fjcabello): Ctrl+A and Ctrl+Backspace do nothing of ours while a dialog (askDialog) is open ----
+    await openDesk(dA);
+    await key('K', [MOD], { char: 'never' });
+    await until(`!!document.getElementById('palDlg')`, 3000);
+    await type('End all sessions');
+    await key('Return', [], { char: 'never' });
+    assert.ok(await until(`[...document.querySelectorAll('.dlg-ov [aria-modal="true"]')].some(d=>/End all sessions\?/.test(d.textContent))`, 3000), `${w}: the End all sessions dialog is open`);
+    assert.ok(await until(`!!document.activeElement&&!!document.activeElement.closest('[aria-modal="true"]')&&document.activeElement.tagName==='BUTTON'`, 3000), `${w}: focus is on a dialog button (not a text field, so only the dialog guard applies)`);
+    await key('A', [MOD], { char: 'never' });
+    await key('Backspace', [MOD], { char: 'never' });
+    await key('F', [MOD], { char: 'never' });
+    await ctx.sleep(150); // nothing may happen: give a wrong handler its chance
+    c = await box();
+    assert.ok(c.open && !c.inbox && !c.pal && (await js(`!!document.querySelector('.dlg-ov [aria-modal="true"]')`)), `${w}: with a dialog open, Ctrl/⌘+A opens no Needs you and Ctrl/⌘+Backspace closes no chat and Ctrl/⌘+F opens no Go to: ${JSON.stringify(c)}`);
+    await key('Escape', [], { char: 'never' });
+    assert.ok(await until(`!document.querySelector('.dlg-ov [aria-modal="true"]')`, 3000), `${w}: Esc cancels the dialog (nothing ended)`);
+
+    // ---- #612 after review: ending a session drops its draft, also from its open box ----
+    await js(`document.getElementById('msgInput').focus()`);
+    await type('to be dropped');
+    await js(`document.getElementById('endBtn').click()`);
+    assert.ok(await until(`document.getElementById('msgInput')&&document.getElementById('msgInput').value===''`, 5000), `${w}: End session empties the open box (the draft is dropped)`);
+    await key('Escape', [], { char: 'never' });
+    await H.office();
+    ma = await marks(dA);
+    assert.ok(!ma.desk && !ma.deskAria, `${w}: the ended session has no pencil: ${JSON.stringify(ma)}`);
 
     // ---- review 2026-10-23: the empty reason is announced; a hostile agent name stays plain text ----
     await open();
@@ -370,6 +397,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(s.crumb, 'Go to', `${w}: Backspace in an empty box: back to the start`);
     await key('Escape', [], { char: 'never' });
     assert.ok(!(await H.exists('#palDlg')), `${w}: Esc at the start closes`);
+    await until(`(document.activeElement&&document.activeElement.dataset.id)===${jsLiteral(deskId)}`, 3000); /* review #597: it flaked when read once */
     assert.strictEqual(await js(`document.activeElement&&document.activeElement.dataset.id`), deskId, `${w}: focus is back on the desk`);
     // the shortcut again closes an open navigator (toggle); Ctrl+K and the shortcut share one box
     await open();
