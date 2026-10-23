@@ -335,3 +335,6 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
 - [x] T132 `CopilotAdapter.getClient`: a failed runtime start is not cached; `test:copilotshared` (one runtime for N sessions, session end, retry, per-session modes and folders) [FR-161]
 - [x] T133 Docs: README *Keychain prompts on a Mac*, `changelog.d/058-keychain-prompts.md`, `docs/agent-notes.md` entry
 - [ ] T134 Mac check list (FR-162) run on a Mac by Paco's team; counts before and after on #623; README and FR-160 `[KNOWN GAP]` updated [FR-162]
+- [x] T135 Record the owner's Mac result (FR-162) and the root-cause analysis; FR-163: `listMcpTools` asks nothing of a server that is not connected; `test:copilotshared` counts runtime calls [FR-162, FR-163]
+- [ ] T136 Confirm the cause on the owner's Mac: the program name in the dialog, Durbar running from /Applications, and whether deleting the old `copilot-mcp-oauth*` items in Keychain Access and signing in again gives 0 prompts on the next launch [FR-162]
+- [ ] T137 Re-sign in old servers (owner-approved): `forceReauth` sign-in per server through the runtime, after T136 and a check that `forceReauth` re-creates the items [FR-164]

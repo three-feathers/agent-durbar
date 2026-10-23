@@ -87,6 +87,15 @@ export class EventMapper {
     this.emitMcp();
   }
 
+  /**
+   * Spec 058 FR-163: the last status of one MCP server of this session as Durbar knows it (`needs-auth` while tool failures marked it),
+   * undefined when the runtime has not reported the server. Read by the adapter to avoid asking the runtime about a failed server.
+   */
+  mcpStatusOf(name: string): string | undefined {
+    if (this.derivedAuth.has(name)) return 'needs-auth';
+    return this.mcp.get(name)?.status;
+  }
+
   private emitMcp(): void {
     this.emit({ type: 'mcp', servers: [...this.mcp.values()].map((x) => ({ ...x })) });
   }

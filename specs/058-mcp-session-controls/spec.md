@@ -955,3 +955,34 @@ server.
      reopening. Plus at most 1 for `agent-durbar Safe Storage` only if a server with saved secret values starts (unchanged).
   4. A Copilot session still opens and answers (the GitHub-signed runtime starts from inside the ad-hoc app; Gatekeeper accepts it).
   Report the counts before and after on #623. Until then the README says "not counted on a real Mac".
+  **Results, `real:` (owner, macOS, test build `v0.1.0-alpha.14-mcptest.1` with this PR, Copilot, 10 MCP servers, 2026-10-23):**
+  - CI (run 39954528774): the mac release job logged `check-runtime-signature: the Copilot runtime keeps GitHub's signature (team VEKTX9H2N7)` for arm64 and x64, so FR-160 held in a real package build.
+  - First open: about **25** keychain prompts. The owner pressed **Always Allow**. After quitting and reopening, **the same ~26 prompts came back**, alternating between two kinds of dialog: one about "confidential information" and one about an "access token". That is consistent with two items per server (about 13 items).
+  - Starting one Microsoft MCP server that fails: **4** prompts.
+  - A server with no stored sign-in: Sign in, browser, authenticated, with **no** keychain prompt. The GitHub-signed runtime creates its own items without asking.
+  - So the expected "at most 1 per old item, then 0" did **not** happen. "Always Allow" does not stick for items written by older (ad-hoc) Durbar builds.
+
+- **Root-cause analysis after the Mac result** (`read:`; not confirmed on a Mac):
+  - **The requester is the same binary every time.** The packaged app spawns `Contents/Resources/app.asar.unpacked/node_modules/@github/copilot-sdk-darwin-<arch>/prebuilds/darwin-<arch>/copilot-runtime` directly (`unpackedRuntimePath`, `RuntimeConnection.forStdio({ path })`). The SDK's `startCLIServer` spawns that path with no copy and no extraction. Its argv[0] is that path, and it is not run through node or Electron. The SDK's copy-to-cache path (`materializeRuntimeBundle`) only applies when `COPILOT_CLI_USE_NPM_PACKAGE` is true, and it is `false` in 1.0.22. The wrapper loads `runtime.node` in-process (`dlopen`, `copilot_runtime_host_start_with_options`). So the identity is GitHub's `copilot` (Developer ID, stable) at a stable path, unless the app itself runs translocated. App Translocation (a random read-only path) happens when an unsigned app is opened from Downloads or a disk image without being moved to Applications. It changes the path on every launch, but not the Developer ID requirement.
+  - **The runtime uses the legacy keychain**, where items carry an access list *and* a partition list. Its darwin `runtime.node` links `apple-native-keyring-store` 1.0.2 (`keychain.rs`) on `security-framework` 3.7.0, with `SecKeychainFindGenericPassword`, `SecKeychainAddGenericPassword` and `SecKeychainItemModifyAttributesAndData`. An item is bound to the program that created it. The items were created by the old ad-hoc runtime, so their partition entry is that build's ad-hoc identity, not `teamid:VEKTX9H2N7`.
+  - **Most likely cause:** a non-matching program trips both checks, which gives two dialogs per item (the alternating kinds). "Always Allow" on the access-list dialog does not add the new program to the partition list, so the next process start asks again. A refresh that rewrites an item does not repair it either: modifying an existing item keeps its old lists. Items the signed runtime creates itself do match, which is why fresh sign-ins are silent. This also fits Paco's #525 ("copilot wants to access key 'copilot-mcp-oauth'" with a password, repeating).
+  - **The fix this points to:** the items have to be **re-created by the signed runtime** (delete, then a new sign-in). Clicking alone cannot fix them. A manual workaround the owner can try now: in Keychain Access, delete the `copilot-mcp-oauth*` items, then sign in again from Durbar. Durbar itself never touches the keychain (constitution III).
+  - Still needed from the owner: the program name in the dialog, and whether Durbar runs from /Applications. A different name, or Durbar running from a disk image, would change this analysis.
+- **FR-163** **No Durbar-caused connect attempts on a server that is not connected.**
+  - Each connect attempt by the runtime can read the server's items again, which means more prompts.
+  - `CopilotAdapter.listMcpTools` refuses a server whose last known status is not `connected` (failed, needs sign-in, pending, or marked needs-sign-in by tool failures), with "This server is not connected. Restart it or sign in first". Nothing reaches the runtime. A server the runtime has not reported yet is asked as before.
+  - The other paths were checked and already ask nothing of a failed server:
+    - the sign-in poll (`refreshMcpStatus`) only calls `isServerRunning`, which starts nothing, and does not `list`;
+    - `agents:mcp` and the Settings live view read Durbar's own state only;
+    - Restart, Sign in and switching a server on are only the user's own presses, one call each;
+    - one-shot sessions turn the user's servers off by name;
+    - at launch, restored agents stay lazy: only the chat that is opened resumes its session, on the one runtime (FR-161).
+  - The 4 prompts for one failing server therefore come from the runtime's own connect and refresh for that server, and its items' old lists. `[IMPLEMENTED]` 2026-10-23, `test:` `test:copilotshared` (0 runtime calls for 15 opens of failed, needs-sign-in and pending rows; 3 polls of a failed server only check `isServerRunning`; one restart per press).
+- **FR-164** (**approved by the owner 2026-10-23, in the chat**; this changes the earlier Out-of-scope Q19 A for this one use; build after the root cause is confirmed) **Re-sign in old servers**:
+  - A one-click action in MCP servers (Copilot sessions only) that, for each server with a stored sign-in, calls the runtime's own `rpc.mcp.oauth.login({ serverName, forceReauth: true })`. Per the SDK, this "clears any cached OAuth token for the server and runs a full new authorization" (`read:` SDK 1.0.22 `rpc.d.ts`). The new items are then written by the GitHub-signed runtime.
+  - Durbar never reads, writes or deletes keychain items itself.
+  - Open questions before building:
+    - whether `forceReauth` deletes the keychain item or only overwrites its data, which would keep the old lists;
+    - whether it also clears the stored client registration (the second item per server);
+    - whether deleting an old item asks once more.
+  - Until those are checked, the manual Keychain Access workaround above is the tested path to suggest.

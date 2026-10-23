@@ -248,6 +248,9 @@ export const REMOTE_NOT_STARTED = 'Copilot did not start remote control and gave
 /** Spec 040 FR-015: how long one `generateText` may take before it is aborted (the same 3 minutes as Claude and Codex). */
 export const ONE_SHOT_TIMEOUT_MS = 180_000;
 
+/** Spec 058 FR-163: what `listMcpTools` says for a server that is not connected (nothing is asked of the runtime). */
+export const MCP_NOT_CONNECTED = 'This server is not connected. Restart it or sign in first, then its tools can be listed.';
+
 /**
  * Spec 040 FR-015: the config of the throw-away session behind `generateText`. Nothing can act and nothing is kept:
  * no tool from any source (`availableTools: []`, and `excludedTools` as a second lock), the MCP servers the runtime would load on its own
@@ -1311,6 +1314,11 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) throw new Error('This session is not running. Send a message to start it.');
     const mcp = live.session.rpc.mcp as unknown as { listTools?: (p: { serverName: string }) => Promise<{ tools?: unknown }> };
     if (typeof mcp.listTools !== 'function') throw new Error('This Copilot version cannot list a server\'s tools.');
+    // Spec 058 FR-163 (issue #623, real macOS 2026-10-23): a tools/list for a server that is not connected makes the runtime try to
+    // connect it again, and each attempt can read its sign-in from the keychain (one more macOS prompt). Only a connected server, or one
+    // the runtime has not reported yet, is asked; a failed, needs-sign-in or pending one waits for the user's Restart or Sign in.
+    const st = this.mappers.get(sessionId)?.mcpStatusOf(name);
+    if (st !== undefined && st !== 'connected') throw new Error(MCP_NOT_CONNECTED);
     try {
       const r = await mcp.listTools({ serverName: name });
       return normMcpTools(r?.tools);

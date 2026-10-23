@@ -119,6 +119,41 @@ async function main(): Promise<void> {
       assert.strictEqual(ad.clients.length, 2, 'later sessions share the new runtime');
       assert.ok(ad.isLive(a));
     }
+
+    // ---- FR-163: nothing Durbar does asks the runtime to connect a server that is not connected (each attempt can read the keychain)
+    {
+      const ad = new RestartingFakeCopilot();
+      const sid = await ad.start({ workspace: dirs[0], quiet: true });
+      const s = ad.clients[0].sessions.get(sid)!;
+      const connects = (): number => s.calls.filter((c) => ['mcp.listTools', 'mcp.list', 'mcp.restartServer', 'mcp.enable', 'mcp.disable'].includes(c.name)).length;
+      s.handler!({ type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'ok', status: 'connected' }, { name: 'broken', status: 'failed', error: 'HTTP 500' }, { name: 'later', status: 'needs-auth' }, { name: 'slow', status: 'pending' }] } });
+      // tools of a connected server: one live list
+      assert.ok((await ad.listMcpTools(sid, 'ok')).length > 0);
+      assert.strictEqual(connects(), 1);
+      // failed, needs-sign-in and pending servers: refused in Durbar, nothing reaches the runtime, however often the row is opened
+      for (let i = 0; i < 5; i++) for (const n of ['broken', 'later', 'slow']) await assert.rejects(ad.listMcpTools(sid, n), /not connected/);
+      assert.strictEqual(connects(), 1, 'no tools/list for a server that is not connected (0 runtime calls for 15 opens)');
+      // the poll while a sign-in page is open: one cheap check that starts nothing, no list, for a server without a client
+      s.running = false;
+      s.calls.length = 0;
+      for (let i = 0; i < 3; i++) await ad.refreshMcpStatus(sid, 'later');
+      assert.deepStrictEqual(s.calls.map((c) => c.name), ['mcp.isServerRunning', 'mcp.isServerRunning', 'mcp.isServerRunning'], 'refresh on a failed server: no list, no connect');
+      // tool failures that mark a "connected" server needs-auth also stop the tools list
+      s.handler!({ type: 'tool.execution_start', data: { toolCallId: 't1', toolName: 'ok-x', mcpServerName: 'ok', mcpToolName: 'x', arguments: {} } });
+      s.handler!({ type: 'tool.execution_complete', data: { toolCallId: 't1', success: false, error: { message: 'MCP tool catalog changed before tool "x" could be invoked: Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)' } } });
+      s.calls.length = 0;
+      await assert.rejects(ad.listMcpTools(sid, 'ok'), /not connected/);
+      assert.strictEqual(connects(), 0);
+      // the user's Restart is still passed on (once per press), and after the runtime says connected the list works again
+      await ad.restartMcpServer(sid, 'broken');
+      assert.strictEqual(connects(), 1, 'one restart per press, nothing added by Durbar');
+      s.handler!({ type: 'session.mcp_server_status_changed', data: { serverName: 'broken', status: 'connected' } });
+      await ad.listMcpTools(sid, 'broken');
+      assert.strictEqual(connects(), 2);
+      // a server the runtime has not reported yet: asked as before (the runtime's own answer decides)
+      await ad.listMcpTools(sid, 'unknown-yet');
+      assert.strictEqual(connects(), 3);
+    }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
