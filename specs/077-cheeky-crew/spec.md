@@ -190,3 +190,11 @@ All eight questions were answered with the recommended option:
 
 A hand-drawn sketch of six characters in this style (punk, mad scientist, gamer, hooded hacker, sunglasses, nerd glasses) was shown to the owner on 2026-10-23; it is a sketch, not the final art.
 
+### 2026-10-23: Q1 decided (owners)
+
+- **Q1.3** AI-generated art may ship (Vikram's answer, relayed in the team chat, 2026-10-23), with rules: `ASSETS.md` records each image's tool, date and prompt; no real people, brands, game characters, symbols or gestures; a human-edited final version; a line in the README credits; 2x WebP within the FR-050 caps; the office-figure fallback kept.
+- **Q1** (Paco, 2026-10-23): **(d) AI-generated raster portraits** (FR-050..FR-058 apply; the SVG-only tasks are dropped).
+- **Q1.1** (Paco): **3 poses** per character: working, waiting, resting.
+- **Q1.2**: a varied cast across the 12 characters (skin tone is part of each character, not per agent).
+- **Source** (Paco): Paco generates each picture in ChatGPT from a prompt Paco's agent writes (bust only, no desk or monitor, transparent background, no text, logos, symbols or gestures); the agent crops, compresses to WebP, reviews and records it in `ASSETS.md`.
+
