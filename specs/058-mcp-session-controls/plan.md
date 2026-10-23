@@ -232,3 +232,15 @@ expander per server with each chat's state, hint, Details, Restart, Restart sess
 ### Order
 
 T120 (spec) first; T121 (unit tests) and T122 (driver) before T123-T124 (code); T125 docs and screenshots; T126 converge.
+
+## Delta: fewer macOS keychain prompts (issue #623, 2026-10-23)
+
+- **Packaging** (FR-160): `package.json` `build.mac.signIgnore` keeps the GitHub signature of `@github/copilot-sdk-darwin-*/prebuilds/*`;
+  `scripts/check-runtime-signature.js` (plain Node, Mach-O parser, no `codesign`) runs after `electron-builder` in `dist:mac:arm64` and
+  `dist:mac:x64`, like `check-fuses.js`. No change to the Windows or Linux packages.
+- **Adapter** (FR-161): `CopilotAdapter.getClient` clears a rejected start; the one-client design is unchanged and stays behind
+  `AgentAdapter` (constitution I). Tests: `scripts/test-copilot-shared.ts` (fakes from `scripts/fakes/copilot-sdk.ts`) and
+  `scripts/test-runtime-sign.ts`.
+- **Constitution**: II (no secrets: Durbar still never reads Copilot's items), VI (parity: mac-only packaging option, other OSes unchanged),
+  VII (honest limits: FR-160's `[KNOWN GAP]` until the Mac check list, FR-162, is run). No purchase (spec 014 stays separate).
+- **Order**: T130 first; T131 and T132 independent; T133 docs; T134 on a Mac.
