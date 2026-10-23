@@ -49,6 +49,7 @@ Each session (a main agent's desk) shows a **door sign**, like the sign beside a
   | `dnd` | Do not disturb | paused (the chat's Pause), or on a coffee break (spec 068) that is not the spending limit | closed | circle with a bar | `st-idle` |
   | `away` | Away | the session ended, or the agent rests in the lounge (spec 001 FR-051) | closed | clock | `st-idle`, dashed edge |
   | `meeting` | In a meeting | `working`/`thinking` while one of its helpers works (the room plate's "Meeting in progress") | closed | two people | the state's own (`st-working`/`st-thinking`) |
+  | `retrying` | Retrying | working/thinking while the agent app retries a model call (spec 034 FR-018, merged 2026-10-23) | closed | circular arrow | `st-retrying` |
   | `failing` | Failing | working/thinking while tool calls fail in a row (spec 052 FR-062) | closed | lightning | `st-failing` |
   | `thinking` | Thinking | `thinking` | closed | speech bubble | `st-thinking` |
   | `busy` | Busy | `working` | closed | filled dot | `st-working` |
