@@ -37,3 +37,10 @@ Electron app; main and adapters in TypeScript, renderer in plain JS (UMD helper 
 
 - The sixth tile narrows each tile (3 → 2 slots at 1280 px). Accepted if `check:office` passes; otherwise fall back to the cup at the desk (Q3).
 - Vendor shapes are read from typings and docs only; tolerant readers, unknown values ignored.
+
+## Delta 2026-10-23: clickable coffee break (owner, #634)
+
+- Reuse: the Boss/Bank entry button (`pv-go`, `data-pvopen`, `openAtRequest`), the shared menu element (`#modeMenu`, as `openPlaceMenu`), the card's resume path (`resumeCoffee`, the timer's own), the answer bar's region style.
+- `coffeebreak.js`: `backInText(b, auto, nowMs, marginMs)`: pure, unit-tested.
+- `app.js`: `lobbyHTML` makes coffee entries `pv-go` buttons (title/label with `backInText`); a `contextmenu` and Shift+F10/ContextMenu handler on `#stage .place.coffee [data-pvopen]` opens `openCoffeeMenu`; `retryCoffee(a)` = `resumeCoffee(a,'user')` (already idempotent: it clears `a.coffee` first); `paintCoffeeBar()` paints `#coffeeBar` (in the panel, above the answer bar) from `startCoffee`, `endCoffee`, `resumeCoffee`, `coffeeTick` and panel open; `wireAnswerBar` ignores `.coffee` cards. `coffeeTick` redraws the lobby once a minute while a break with a reset time is on, so "back in" stays true.
+- No main, preload, adapter or setting change; no new IPC.
