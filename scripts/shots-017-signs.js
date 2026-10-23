@@ -13,7 +13,8 @@
  *     for (the expected sign is computed here from the state, independently of roomsummary.js); not every one of the 8 signs is seen;
  *   - (owner 2026-10-23, cabins) a busy, waiting, DND or away session does not show its closed cabin door with its photo and sign in place of
  *     the desk scene, or a done, free or failing-to-error session does not show the open scene with an open leaf and its tag; a door sign
- *     is cut, below 10.5px or below 3:1; a click on a closed door does not open that agent's chat;
+ *     is cut, below 10.5px or below 3:1; a session waiting for you does not stand in front of its closed door, waving (owner 13:59 UTC), with
+ *     its sign on top and readable; a click on a closed door does not open that agent's chat;
  *   - a helper tile shows a sign (a helper is not a session);
  *   - the desk's accessible name lost its plain status word, or the sign's tooltip does not name both;
  *   - sign text is below 10.5px, an icon is not in the text colour, or text contrast against the plate is below 3:1 in any of the
@@ -38,7 +39,7 @@ const THEMES = ['clean-office', 'corporate', 'durbar-european', 'durbar-indian',
 /* the oracle: spec 017 FR-003's table, written out again here (not imported) so a wrong mapping in the app fails */
 const TABLE = {
   attention: { word: 'Needs attention', short: 'Alert', icon: 'alert', open: true },
-  waiting: { word: 'Waiting for you', short: 'Waiting', icon: 'hourglass', open: false },
+  waiting: { word: 'Waiting for you', short: 'Waiting', icon: 'hourglass', open: false, wave: true },
   dnd: { word: 'Do not disturb', short: 'DND', icon: 'bar', open: false },
   away: { word: 'Away', short: 'Away', icon: 'clock', open: false },
   meeting: { word: 'In a meeting', short: 'Meeting', icon: 'people', open: false },
@@ -84,7 +85,10 @@ function readDesks() {
     const cab = d.querySelector('[data-cabin]'), csg = cab && cab.querySelector('.cb-sign'), cw = csg && csg.querySelector('.cb-w'), cic = csg && csg.querySelector('.ds-ic');
     const scn = [...d.querySelectorAll('svg.scene')].some((x) => x.getClientRects().length && x.getBoundingClientRect().height > 4);
     const ctc = cw && rgb(getComputedStyle(cw).color), cbg = csg && bgOf(csg), D0 = d.getBoundingClientRect(), CR = csg && csg.getBoundingClientRect();
-    const cabin = cab ? { kind: cab.dataset.cabin, photo: !!cab.querySelector('.cb-photo svg'), door: !!cab.querySelector('.cb-door'), leaf: !!cab.querySelector('.cb-leaf-open'), sign: csg && csg.dataset.sign, word: cw && cw.dataset.w, icon: cic && cic.dataset.icon,
+    /* the waving figure: its avatar and arm, the arm moving (unless reduced motion), and the sign on top of it (the point in the sign's middle is the sign) */
+    const arm = cab && cab.querySelector('.cb-arm'), fig = cab && cab.querySelector('.cb-figure');
+    const onTop = !!CR && (() => { const e = document.elementFromPoint(CR.left + CR.width / 2, CR.top + CR.height / 2); return !!e && !!e.closest('.cb-sign'); })();
+    const cabin = cab ? { kind: cab.dataset.cabin, figure: !!(fig && fig.querySelector('svg:not(.cb-arm)')), arm: !!arm, waving: !!arm && arm.getAnimations().length > 0, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches, onTop, photo: !!cab.querySelector('.cb-photo svg'), door: !!cab.querySelector('.cb-door'), leaf: !!cab.querySelector('.cb-leaf-open'), sign: csg && csg.dataset.sign, word: cw && cw.dataset.w, icon: cic && cic.dataset.icon,
       font: cw ? parseFloat(getComputedStyle(cw).fontSize) : 0, contrast: ctc ? Math.round(ratio(ctc, cbg) * 100) / 100 : 0, cut: !!cw && cw.scrollWidth > cw.clientWidth + 0.5,
       inDesk: !!CR && CR.width > 1 && CR.left >= D0.left - 0.5 && CR.right <= D0.right + 0.5 && CR.top >= D0.top - 0.5 && CR.bottom <= D0.bottom + 0.5 } : null;
     const base = { cabin, scene: scn, id: d.dataset.id, name: a.name, parent: !!a.parent, state: d.dataset.state, paused: !!a.paused, coffee: !!a.coffee, ended: d.dataset.state === 'idle' && a.label === 'Ended', helpers: kids, failing: d.classList.contains('is-failing'), label: d.getAttribute('aria-label') || '', helper: d.classList.contains('helper') };
@@ -149,9 +153,10 @@ module.exports = async (ctx) => {
       /* owner 2026-10-23: a real office cabin */
       const c = d.cabin;
       assert.ok(c, `${tag}: has a cabin`);
-      assert.strictEqual(c.kind, t.open ? 'open' : 'closed', `${tag}: the cabin door is ${t.open ? 'open' : 'closed'}`);
+      assert.strictEqual(c.kind, t.open ? 'open' : t.wave ? 'waiting' : 'closed', `${tag}: the cabin is ${t.open ? 'open' : t.wave ? 'a closed door with the agent waving in front' : 'closed'}`);
       if (t.open) assert.ok(d.scene && c.leaf && !c.door, `${tag}: open: the desk scene shows, with an open leaf`);
-      else assert.ok(!d.scene && c.door && c.photo, `${tag}: closed: the door with the agent's photo in place of the desk scene`);
+      else if (t.wave) assert.ok(c.kind === 'waiting' && !d.scene && c.door && !c.photo && c.figure && c.arm && (c.waving || c.reduced) && c.onTop, `${tag}: waiting: the agent stands in front of its closed door, waving, under a readable sign: ${JSON.stringify(c)}`);
+      else assert.ok(!d.scene && c.door && c.photo && !c.figure, `${tag}: closed: the door with the agent's photo in place of the desk scene`);
       assert.strictEqual(c.sign, key, `${tag}: the door's sign`);
       assert.strictEqual(c.word, t.short, `${tag}: the door's sign word`);
       assert.strictEqual(c.icon, t.icon, `${tag}: the door's sign icon`);

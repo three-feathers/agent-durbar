@@ -1035,6 +1035,14 @@ function cabinHTML(a,kind,sceneHTML){
   if(!signsOn())return sceneHTML;
   const g=signOf(a), tag=`<span class="cb-sign st-${g.tone}" data-sign="${g.key}">${signIcon(g.icon)}<span class="cb-w" data-w="${esc(g.short)}"></span></span>`; /* the word as CSS content: a desk's text still starts with its name (drivers and the office check find desks that way) */
   if(g.door==='open')return `<span class="cb-scene cb-${kind}">${sceneHTML}<span class="cb-open" data-cabin="open" aria-hidden="true"><span class="cb-leaf-open"></span>${tag}</span></span>`;
+  /* owner 2026-10-23 13:59 UTC: someone waiting for you is not shut in: it stands in front of its closed door and waves, the sign above it.
+     The figure is the scene kit's avatar; the waving arm is drawn in its own shirt and skin colours; no animation with reduced motion or
+     in Serious mode (a static raised hand) */
+  if(g.figure==='wave'){
+    const k=themedLook(a.look), still=REDUCED||SERIOUS?' still':'';
+    const arm=`<svg class="cb-arm${still}" viewBox="24 0 24 48" aria-hidden="true" focusable="false"><path d="M37.5 47 41 30.5" stroke="${k.shirt}" stroke-width="5.5" stroke-linecap="round" fill="none"/><circle cx="41.8" cy="26.6" r="3.6" fill="${k.skin}"/></svg>`;
+    return `<span class="cabin cb-${kind} cb-waiting st-${g.tone}" data-cabin="waiting" aria-hidden="true"><span class="cb-door"><span class="cb-knob"></span></span><span class="cb-figure">${avatar(a)}${arm}</span>${tag}</span>`;
+  }
   return `<span class="cabin cb-${kind} st-${g.tone}" data-cabin="closed" aria-hidden="true"><span class="cb-door"><span class="cb-photo">${avatar(a)}</span><span class="cb-knob"></span></span>${tag}</span>`;
 }
 function roomArt(){

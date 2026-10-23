@@ -23,11 +23,12 @@
      error > waiting (a question, a permission or Durbar's spending limit) > paused or a coffee break > ended or resting > a helper at
      work while it works > working/thinking > done > idle. `door` (owner 2026-10-23, a real office cabin): closed while the agent is
      busy, waits, must not be disturbed or is away; open when its work is done, when it is free, and on an error (so the trouble on the
-     desk stays in sight, Clarifications Q6). `tone` is an existing status colour (.st-*), never a new one; `short` is the
+     desk stays in sight, Clarifications Q6). `figure` (owner 2026-10-23 13:59 UTC): 'wave' when the agent waits for you: it stands in
+     front of its closed door, waving, instead of the door with its photo. `tone` is an existing status colour (.st-*), never a new one; `short` is the
      word where a desk has least room (the mini and micro status word), the full word is then in its tooltip. */
   const SIGNS={
     attention:{word:'Needs attention',short:'Alert',door:'open',icon:'alert'},
-    waiting:{word:'Waiting for you',short:'Waiting',door:'closed',icon:'hourglass'},
+    waiting:{word:'Waiting for you',short:'Waiting',door:'closed',icon:'hourglass',figure:'wave'},
     dnd:{word:'Do not disturb',short:'DND',door:'closed',icon:'bar'},
     away:{word:'Away',short:'Away',door:'closed',icon:'clock'},
     meeting:{word:'In a meeting',short:'Meeting',door:'closed',icon:'people'},
@@ -38,7 +39,7 @@
   const SIGN_KEYS=Object.freeze(Object.keys(SIGNS));
   function doorSign(x){
     const o=x&&typeof x==='object'?x:{}, st=o.state;
-    const sign=(key,tone)=>Object.assign({key,tone},SIGNS[key]);
+    const sign=(key,tone)=>Object.assign({key,tone,figure:''},SIGNS[key]);
     if(st==='error')return sign('attention','error');
     if(st==='waiting')return sign('waiting','waiting');
     if(o.paused||o.coffee)return sign('dnd','idle');

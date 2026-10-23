@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 type SignIn = { state?: string; paused?: boolean; coffee?: boolean; limit?: boolean; ended?: boolean; resting?: boolean; failing?: boolean; helpers?: string[] };
-type Sign = { key: string; word: string; short: string; tone: string; door: string; icon: string };
+type Sign = { key: string; word: string; short: string; tone: string; door: string; icon: string; figure: string };
 const { summarizeRoom, doorSign, SIGN_KEYS } = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'roomsummary.js')) as {
   summarizeRoom: (m: { state: string; helpers?: string[] }[]) => { text: string; tone: string; attention: boolean };
   doorSign: (x: SignIn) => Sign; SIGN_KEYS: string[];
@@ -64,4 +64,9 @@ assert.deepStrictEqual(all.map((r) => r.short), ['Alert', 'Waiting', 'DND', 'Awa
 assert.ok(all.every((r) => r.short.length <= 9), 'short words fit the narrowest desks');
 assert.deepStrictEqual(all.filter((r) => r.door === 'open').map((r) => r.key), ['attention', 'done', 'available'], 'the cabin is open when done, free or in trouble; closed while busy, waiting, DND or away');
 assert.ok(Object.isFrozen(SIGN_KEYS), 'SIGN_KEYS cannot be changed by a caller');
+/* owner 2026-10-23 13:59 UTC: someone waiting for you stands in front of its closed door, waving; nobody else does */
+assert.deepStrictEqual(all.filter((r) => r.figure === 'wave').map((r) => r.key), ['waiting'], 'only Waiting for you waves at the door');
+assert.ok(all.every((r) => r.figure === 'wave' || r.figure === ''), 'figure is wave or empty');
+assert.strictEqual(sg({ state: 'waiting', limit: true }).figure, 'wave', 'the spending limit waits at the door too');
+assert.strictEqual(sg({ state: 'waiting' }).door, 'closed', 'the door behind the waving agent stays closed');
 console.log('door sign tests passed');
