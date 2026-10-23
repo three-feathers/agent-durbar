@@ -92,6 +92,7 @@
     "test:probe": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-probe.js",
     "test:safetext": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-safetext.js",
     "test:shutters": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-shutters.js",
+    "test:doors": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-doors.js",
     "test:simclock": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-simclock.js",
     "test:liveact": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-liveact.js",
     "test:grantlabel": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-grant-label.js",
