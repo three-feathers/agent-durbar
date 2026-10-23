@@ -4,6 +4,7 @@ import type { AdapterRegistry } from '../../adapters/registry';
 import type { AdapterRouter } from '../../adapters/router';
 import { modelOptionsOf } from '../../adapters/router';
 import type { AgentInfo, ModelChoice } from '../../shared/api';
+import type { AgentEvent } from '../../adapters/types';
 import { parseFocus, parseSwitchRequest } from '../../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../../shared/modelswitch';
 import { errText } from '../agentops';
@@ -32,7 +33,7 @@ export interface SetModelDeps {
   /** Spec 076 FR-203: the agent app's own organization policy on this model. */
   orgModel?(adapterId: string, model: string): Promise<OrgVerdict | undefined>;
   /** Saves the choice in this app's own folder file. */
-  save(a: AgentInfo, choice: { model: string; effort?: string | null; contextTier?: 'long' }): void;
+  save(a: AgentInfo, choice: Parameters<FolderStore['setModelChoice']>[1]): void;
 }
 
 /** `agents:setModel` (spec 030; spec 076 FR-203: a model the organization policy blocks is refused before anything is switched or saved). */
@@ -45,6 +46,8 @@ export async function setModelOp(d: SetModelDeps, id: unknown, raw: unknown): Pr
     const parsed = parseSwitchRequest(raw, await d.models());
     if (!parsed.ok) return { ok: false, error: parsed.error };
     const req: ModelSwitchRequest = parsed.request;
+    // Spec 007 FR-015: the tiers come from the default kind's list (Copilot's `auto`); another agent app never gets one.
+    if (req.autoTier && a.adapterId !== d.defaultId) return { ok: false, error: 'This agent app has no Auto routing tier.' };
     const org = await d.orgModel?.(a.adapterId ?? d.defaultId, req.model);
     if (org?.refuse) return { ok: false, error: `${org.why}: pick another model.` };
     // Not started (or ended) yet: nothing is running to switch. The choice is saved and the first start (create or resume) uses it (FR-013).
@@ -55,7 +58,9 @@ export async function setModelOp(d: SetModelDeps, id: unknown, raw: unknown): Pr
       if (req.effort === null) a.effort = undefined;
       else if (req.effort !== undefined) a.effort = req.effort;
       a.tier = req.contextTier === 'long' ? 'long' : undefined;
-      d.save(a, { model: req.model, effort: req.effort, contextTier: a.tier });
+      if (req.autoTier) a.autoTier = req.autoTier; // spec 007 FR-016: remembered per agent, kept while it uses another model
+      else if (req.autoTier === null) a.autoTier = undefined; // an Undo back to "no tier of its own"
+      d.save(a, { model: req.model, effort: req.effort, contextTier: a.tier, autoTier: req.autoTier });
     }
     return { ok: true, result };
   } catch (err) {
@@ -68,6 +73,18 @@ export async function withOrgModels<T extends { id: string }>(models: T[], verdi
   if (!verdict) return models;
   const vs = await Promise.all(models.map((m) => verdict(m.id)));
   return models.map((m, i) => (vs[i]?.refuse ? { ...m, orgBlocked: vs[i]!.why } : vs[i] ? { ...m, orgDoubt: vs[i]!.why } : m));
+}
+
+/**
+ * Spec 007 FR-019: a tier switch the runtime could not apply. The tier still in effect is shown and saved again (none of its own when the runtime
+ * names none), so a resume does not ask for the failed one. Only for a top-level agent that is on Auto.
+ */
+export function onAutoTierFailed(e: AgentEvent, agents: Map<string, AgentInfo>, store: Pick<FolderStore, 'setAutoTier'> | undefined, wsKey: (a: AgentInfo) => string): void {
+  if (e.type !== 'autoTierFailed' || e.agentId) return;
+  const a = agents.get(e.sessionId);
+  if (!a || (a.model ?? 'auto') !== 'auto') return;
+  a.autoTier = e.effective;
+  store?.setAutoTier(wsKey(a), e.effective ?? null);
 }
 
 export function register(deps: ModelIpcDeps): void {

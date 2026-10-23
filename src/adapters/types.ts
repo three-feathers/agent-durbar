@@ -7,7 +7,7 @@
 import type { FolderSetupStart } from '../shared/foldersetup';
 import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit';
 import type { McpServerSpec } from '../shared/mcp';
-import type { CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
+import type { AutoTier, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import type { HandoffResult } from './handoff';
@@ -39,8 +39,11 @@ export interface StartOptions {
   /** Folder or .code-workspace file; one session per workspace. */
   workspace: string;
   model?: string;
-  /** For model 'auto': routing preference ('efficiency' is the cheapest). */
-  autoTier?: 'efficiency' | 'balance' | 'intelligence';
+  /**
+   * For model 'auto': the routing preference the user chose and Durbar saved (spec 007 FR-016); it goes on create AND resume.
+   * Absent: a new `auto` session gets the adapter's default (Copilot: `efficiency`, or nothing under a managed tier), a resume nothing.
+   */
+  autoTier?: AutoTier;
   /** Cap for this session in the adapter's `capUnit`: AI credits (treated as AIU, spec 011 FR-015) or dollars (spec 012 FR-150). Soft. */
   maxAiCredits?: number;
   /** Resume an existing session by the vendor's own session id (disk-backed). */
@@ -260,7 +263,20 @@ export interface ModelEvent extends BaseEvent {
   effort?: string;
   previousEffort?: string;
   tier?: ContextTier;
+  /** Spec 007 FR-016: the Auto routing tier the runtime reports with the change (one of the three names only). */
+  autoTier?: AutoTier;
   cause: 'user' | 'runtime' | 'rate-limit' | 'fallback' | 'resume';
+}
+
+/**
+ * Spec 007 FR-019: the runtime could not switch the Auto routing tier (Copilot `session.auto_tier_switch_failed`: "the previously effective
+ * preference remains active"). `effective` = the tier still in use (absent: the provider's default); `requested` absent = a return to the default failed.
+ */
+export interface AutoTierFailedEvent extends BaseEvent {
+  type: 'autoTierFailed';
+  requested?: AutoTier;
+  effective?: AutoTier;
+  reason: 'policy-rejected' | 'request-failed' | 'setup-failed' | 'unsupported' | 'unknown';
 }
 
 /** Compaction of the context (spec 030): `auto` = the runtime did it at its threshold, `manual` = the user asked, `model-switch` = before a switch to a smaller window, `overflow` = after the window was exceeded. */
@@ -504,6 +520,7 @@ export type AgentEvent =
   | UsageEvent
   | ContextEvent
   | ModelEvent
+  | AutoTierFailedEvent
   | CompactionEvent
   | McpStatusEvent
   | LimitEvent
