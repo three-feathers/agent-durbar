@@ -1768,7 +1768,10 @@ function wireAnswerBar(a){
     else if(q)add('Answer in chat','primary',show);
     /* FR-016: a long request is answered in the chat only; the wide grant (any arguments) stays in the card */
     /* FR-060: Alt+A / Alt+S / Alt+D (⌥⌘A/S/D on a Mac, FR-084) press the same buttons (permission requests only) */
-    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
+    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){
+      /* spec 003 FR-095: a Read-only denial's "Switch to Ask first…" opens the mode menu here, anchored to the bar's own button */
+      if(src.dataset.act==='ro-ask'){const b=add(src.textContent,'',()=>roAskOpen(a,b),src.title);b.dataset.act='ro-ask';b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');continue;}
+      const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
     add(q?'Show question':'Show in chat','ghost',show,q?'Scroll to the question in the chat':'Scroll to the request in the chat');
     bar.hidden=false;
     if(hadFocus){const f=act.querySelector('button,input');if(f)f.focus();}
@@ -2450,6 +2453,8 @@ function paintInbox(focusIndex){
     const kOf=src=>src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
     if(card&&!q)for(const src of [...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>RANK[kOf(x)]-RANK[kOf(y)])){
       const k=kOf(src);
+      /* spec 003 FR-097: the Read-only denial's "Switch to Ask first…" opens the same mode menu, from the chat (the inbox is modal) */
+      if(src.dataset.act==='ro-ask'){add(src.textContent,'',k,()=>{closeInbox();openPanel(a.id,true);requestAnimationFrame(()=>{if(!src.isConnected)return;src.focus({preventScroll:true});src.click();});},src.title);ans.lastElementChild.setAttribute('aria-haspopup','menu');continue;}
       add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],k,ev=>{const word=k==='deny'?'Denied':k==='other'?src.textContent:'Allowed';
         /* spec 052 FR-047/FR-048: the row's buttons go busy, then the row shows the answer for 600ms, folds away in 200ms, then the list repaints */
         if(row.classList.contains('settled')||row.dataset.answering)return; row.dataset.answering='1';
@@ -3831,8 +3836,8 @@ function showPerm(a,p){
   if(pl&&pl.cmd){const d=document.createElement('details');d.className='pcmd';const sm=document.createElement('summary');sm.textContent='Show the command';
     const pre=document.createElement('pre');pre.textContent=pl.cmd;d.append(sm,pre);n.appendChild(d);}
   const st=n.querySelector('.pstate');
-  if(p.state==='denied'){st.innerHTML=' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
-    roAskHint(a,n);
+  if(p.state==='denied'){ /* spec 003 FR-094: with the button the text no longer repeats the suggestion */
+    st.innerHTML=roAskHint(a,n)?' <i>(denied: this agent is in Read-only)</i>':' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
   }
   else if(p.state==='pending'){
     const row=document.createElement('div');row.className='note-actions';
@@ -3852,16 +3857,42 @@ function showPerm(a,p){
   if(p.state==='pending')announce(SIMPLE&&pl?plain:a.name+' needs your OK: '+p.summary);
   renderInboxBtn();
 }
-/* spec 052 FR-074: under a request denied by Read-only, one inline "Switch this agent to Ask first", once per agent until its mode
-   changes. It goes through the usual mode-change path (changeMode), with its dialogs. */
+/* spec 003 FR-094..FR-096 (owner 2026-10-23, supersedes spec 052 FR-074's button): under a request denied by Read-only, one button
+   "Switch to Ask first…" per agent, on its newest denial (a newer one moves it). It opens the usual mode menu (openModeMenu, modes only),
+   anchored to it; a choice goes through changeMode with its dialogs. Returns true when the button is shown. */
 function roAskHint(a,n){
-  if(!a.info||a.info.permMode!=='read-only'||a.roHintShown||!bridge.setPermMode||!feat(a,'modes'))return;
-  a.roHintShown=true;
-  const row=document.createElement('div');row.className='note-actions';
-  const b=document.createElement('button');b.type='button';b.className='btn';b.dataset.act='ro-ask';b.textContent='Switch this agent to Ask first';
-  b.title='Ask first: each edit, command or web request waits for your OK.';
-  b.onclick=async()=>{b.disabled=true;await changeMode(a,'ask',b);if(a.info.permMode==='ask')row.remove();else b.disabled=false;};
-  row.appendChild(b);n.appendChild(row);
+  if(!a.info||a.info.permMode!=='read-only'||!bridge.setPermMode||!feat(a,'modes'))return false;
+  /* spec 003 FR-098 hook: when a managed policy (spec 076, not built) locks the mode, return false here so the plain text stays. */
+  let h=a.roHint;
+  if(!h||!h.b){
+    const row=document.createElement('div');row.className='note-actions';
+    const b=document.createElement('button');b.type='button';b.className='btn';b.dataset.act='ro-ask';b.textContent='Switch to Ask first…';
+    b.title='Choose a permission mode. Ask first: each edit, command or web request waits for your OK.';
+    b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');
+    b.onclick=()=>roAskOpen(a,b);
+    row.appendChild(b);h=a.roHint={row,b};
+  }
+  n.appendChild(h.row);
+  return true;
+}
+/* the button (or its copy in the answer bar) opens the mode menu anchored to itself; a second press closes it */
+function roAskOpen(a,b){
+  if(document.getElementById('modeMenu')&&b.getAttribute('aria-expanded')==='true'){closeModeMenu();b.focus();return;}
+  const r=b.getBoundingClientRect();if(openModeMenu(a,r.left,r.bottom+4,b,{modesOnly:true}))b.setAttribute('aria-expanded','true');
+}
+/* spec 003 FR-096: after a switch out of Read-only the button goes; when the switch came from it, one line says to ask the agent again
+   (no Retry: a denied tool call has no safe retry, and nothing is resent) and focus moves to the message box */
+function roAskAfterSwitch(a,mode,anchor){
+  const h=a.roHint; if(!h||mode==='read-only')return;
+  a.roHint=null;
+  const note=h.row.parentNode, mine=!!(anchor&&anchor.dataset&&anchor.dataset.act==='ro-ask'); /* the chat's button or its answer-bar copy */
+  h.row.remove();
+  if(!mine||!note)return;
+  const l=document.createElement('p');l.className='ro-done';
+  l.textContent='Now in '+MODE_NAME[mode]+'. Ask '+a.name+' to try again: '+(mode==='allow'?'it will run without asking.':'it will wait for your OK.');
+  note.appendChild(l);
+  announce(l.textContent); /* focus moves to the message box, so a screen reader hears the line here (review on PR 622) */
+  const mi=$('msgInput');if(mi&&ui.selected&&liveRoot(byId(ui.selected)||a)===a)mi.focus({preventScroll:true});
 }
 function settlePerm(a,p){
   let e=a.pend.get(p.requestId);
@@ -4201,17 +4232,18 @@ function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRes
   const fr=a.info.folderRules?' + folder rules':'';
   if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m]+fr)}</span>`; /* spec 052 FR-065 */
   return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
-function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
-function openModeMenu(a0,x,y,anchor){
+function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');document.querySelectorAll('[data-act="ro-ask"][aria-expanded="true"]').forEach(b=>b.setAttribute('aria-expanded','false'));}}
+function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the three modes and the note, without Model, Plan first, folder setup or card actions */
   const a=liveRoot(a0); if(!a||!a.live)return false;
   /* spec 005 FR-017: Stop and End session for a main agent opened from its card (not from the chat header chip) */
-  const ops=anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&bridge.stop?DMK().cardMenuActions(a,capsFor(a)):{stop:null,end:null};
-  const canRen=!!(anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&canRenameSession(a)); /* spec 059 FR-006: Rename… in the card menu */
+  const only=!!(o&&o.modesOnly);
+  const ops=!only&&anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&bridge.stop?DMK().cardMenuActions(a,capsFor(a)):{stop:null,end:null};
+  const canRen=!only&&!!(anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&canRenameSession(a)); /* spec 059 FR-006: Rename… in the card menu */
   const hasMode=!!bridge.setPermMode&&feat(a,'modes'), hasOps=!!(ops.stop||(ops.end&&bridge.end)||canRen);
   if(!hasMode&&!hasOps)return false;
   closeModeMenu();
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
-  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}" title="${esc(MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
+  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}" title="${esc(MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
   m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)mi.focus();return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
@@ -4299,7 +4331,7 @@ async function changeModeInner(a,mode,anchor){
   }
   const res=await bridge.setPermMode(a.id,mode,opts).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
-  a.info.permMode=mode; a.info.permRestored=undefined; a.info.permFrom=undefined; a.role=roleFor(a.info); a.roHintShown=false;
+  a.info.permMode=mode; a.info.permRestored=undefined; a.info.permFrom=undefined; a.role=roleFor(a.info); roAskAfterSwitch(a,mode,anchor);
   if(opts.clearGrants)setGrants(a,[]);
   renderRestoreStrip();
   toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+(capsFor(a).permModeSwitch==='next-message'?'</b>. Applies from the next message.':'</b> from the next request.')+(mode==='allow'?' Everything runs without asking.':''),4200);
@@ -4322,7 +4354,7 @@ document.addEventListener('click',e=>{
   if(cb&&!cb.closest('#ctxMenu')){e.stopPropagation();const a=byId(ui.selected);if(a)compactDialog(liveRoot(a),cb);return;}
   const chip=e.target.closest('#modeChip');
   if(chip){e.stopPropagation();if(document.getElementById('modeMenu')){closeModeMenu();return;}const r=chip.getBoundingClientRect(),a=byId(ui.selected);if(a)openModeMenu(a,r.left,r.bottom+6,chip);return;}
-  if(!e.target.closest('#modeMenu'))closeModeMenu();
+  if(!e.target.closest('#modeMenu,[data-act="ro-ask"]'))closeModeMenu(); /* spec 003 FR-095: the Read-only denial's button toggles the menu itself */
 },true);
 /* spec 006 FR-022: folder actions on a room's header (right-click, or the context-menu key on its door), same menu element as the mode menu.
    spec 033 FR-024 (issue 590): with two or more floors, "Move to floor ▸" opens a second level in the same element (‹ Back, one radio
