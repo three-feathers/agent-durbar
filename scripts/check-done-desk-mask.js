@@ -53,7 +53,8 @@ module.exports = async (ctx) => {
     await emit({ type: 'status', sessionId: ids[5], timestamp: ts, status: 'idle' });
   };
   const back = async () => { await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click();})()`); await until(`!document.body.classList.contains('panel-open')`); };
-  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+  const ONLY = process.env.DM_ONLY || ''; // DM_ONLY=lounge runs the lounge step alone (to prove it catches a raw reply by itself)
+  for (const [w, h] of ONLY === 'lounge' ? [] : [[1440, 900], [1280, 800]]) {
     for (const level of ['expert', 'simple']) {
       const Q = { simreply: 'secrets', simsched: '1' };
       await H.load({ w, h, query: Q, ready: 'fit', settle: false });
@@ -180,6 +181,7 @@ module.exports = async (ctx) => {
       await scan(tag, 'resumed session');
     }
   }
+  if (ONLY !== 'lounge') {
   // 5b. a grown desk (spec 001 FR-041..FR-047): with few agents a card grows and shows the start of its last reply
   await H.load({ w: 1440, h: 900, query: { sim: '3', simreply: 'secrets', simsched: '1' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=3&&document.getElementById('stage').dataset.fit` });
   const gm = await js(`window.__durbarSimUi.agents().filter(x=>!x.parent&&x.live).map(x=>x.id)`);
@@ -197,6 +199,27 @@ module.exports = async (ctx) => {
   assert.ok(await until(`!!document.getElementById('stage').dataset.grow`, 8000), 'grown: the stage grew its desks');
   assert.ok(await until(`[...document.querySelectorAll('#stage .desk.card .intent, #stage .desk.card .gx-t')].some(e=>/every link resolves/.test(e.textContent))`, 8000), 'grown: a desk shows the start of its reply');
   await scan('grown', 'grown desks: reply line and reply column');
+  }
+  // 5c. the lounge (spec 001 FR-051..FR-057): the couch bubble, the dream cloud and its tooltip, the peek card and the tooltips and labels cut a reply at 160, 90, 300 and 140
+  await H.load({ w: 1440, h: 900, query: { sim: '7', simrooms: '1', simhelpers: '0', simreply: 'secrets', simsched: '1' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=7&&document.getElementById('stage').dataset.fit` });
+  const pad = (n) => 'Checking the registry module and its tests. '.repeat(8).slice(0, n - 1) + ' ';
+  const TL = GHP.slice(4);
+  const replies = [pad(155) + GHP + ' end', pad(135) + GHP + ' end', pad(295) + GHP + ' end', pad(85) + GHP + ' end',
+    pad(100) + GHP.slice(0, 24) + '**' + GHP.slice(24) + '** end', pad(130) + 'gh`p_' + TL + '` end'];
+  const mins = [2, 4, 6, 25, 50, 70];
+  for (let i = 0; i < 6; i++) {
+    const id = 'sim-' + (i + 1);
+    await emit({ type: 'status', sessionId: id, timestamp: Date.now(), status: 'working', intent: 'Working' });
+    await emit({ type: 'output', sessionId: id, timestamp: Date.now(), delta: '', final: true, text: replies[i] });
+    await emit({ type: 'status', sessionId: id, timestamp: Date.now(), status: 'idle' });
+  }
+  for (let i = 0; i < 6; i++) await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral('sim-' + (i + 1))});a.lastEventAt=Date.now()-${jsLiteral(mins[i])}*60000;})()`);
+  await js(`window.__durbarSimUi.render()`);
+  assert.ok(await until(`document.querySelectorAll('#stage .desk.shut').length>=6`, 8000), 'lounge: six agents rest (3 on the couch, 3 on the beds)');
+  assert.ok(await js(`document.querySelectorAll('#stage .desk.shut.rest-recent').length===3&&document.querySelectorAll('#stage .desk.shut.rest-old').length===3`), 'lounge: 3 recent and 3 old');
+  await scan('lounge', 'lounge: couch, beds, peek cards, tooltips');
+  for (let k = 0; k < 4; k++) { await js(`window.__durbarSimUi.loungeTurn()`); await ctx.sleep(120); await scan('lounge', 'lounge after turn ' + (k + 1)); }
+  if (ONLY === 'lounge') { console.log('[done-desk-mask] all checks passed'); return; }
   // 6. a restored session continued (simresume=1)
   await H.load({ w: 1440, h: 900, query: { simreply: 'secrets', simresume: '1' }, ready: 'fit' });
   const r = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.info&&x.info.resumeLast);return a?a.id:''})()`);
