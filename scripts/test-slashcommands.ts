@@ -474,6 +474,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(fillPromptFile('${input:a} and ${input:b}', 'only'), { text: 'only and ${input:b}', left: ['${input:b}'] }, 'a variable with no value stays');
     assert.deepStrictEqual(fillPromptFile('Fix ${selection} in ${file}', ''), { text: 'Fix ${selection} in ${file}', left: ['${selection}', '${file}'] });
     assert.deepStrictEqual(fillPromptFile('Do $1 then $ARGUMENTS', 'a b'), { text: 'Do a then a b', left: [] });
+    assert.deepStrictEqual(fillPromptFile('A=${input:a} B=${input:b}', 'a=$1 b=${input:a}'), { text: 'A=$1 B=${input:a}', left: [] }, 'the user\'s words are not placeholders');
     assert.deepStrictEqual(fillPromptFile('No placeholder.', 'extra words'), { text: 'No placeholder.\n\nARGUMENTS: extra words', left: [] });
     assert.deepStrictEqual(fillPromptFile('No placeholder.', ''), { text: 'No placeholder.', left: [] });
     assert.deepStrictEqual(fillPromptFile('${weird stuff here}', '').left, ['${…}'], 'only plain variable names are echoed in the note');

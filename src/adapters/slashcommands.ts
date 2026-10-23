@@ -197,16 +197,19 @@ export function fillPromptFile(body: string, rest: string): { text: string; left
   });
   let used = value.size > 0;
   const words = args ? args.split(/\s+/) : [];
-  let out = body.replace(INPUT_VAR, (m, n: string) => (value.has(n) ? (value.get(n) as string) : m));
-  out = out.replace(/\$(ARGUMENTS|[1-9])\b/g, (_m, k: string) => {
+  const left: string[] = [];
+  const keep = (m: string, inner: string): string => {
+    const shown = /^[A-Za-z_][\w.:-]{0,40}$/.test(inner) ? '${' + inner + '}' : '${…}'; // only plain names are echoed back in the note
+    if (!left.includes(shown) && left.length < 6) left.push(shown);
+    return m;
+  };
+  // one pass over the file's own text, so the user's words are never read as placeholders themselves
+  const out = body.replace(new RegExp(`${INPUT_VAR.source}|\\$\\{([^}\\r\\n]{1,80})\\}|\\$(ARGUMENTS|[1-9])\\b`, 'g'), (m, n?: string, _ph?: string, other?: string, k?: string) => {
+    if (n !== undefined) return value.has(n) ? (value.get(n) as string) : keep(m, m.slice(2, -1));
+    if (other !== undefined) return keep(m, other);
     used = true;
     return k === 'ARGUMENTS' ? args : (words[Number(k) - 1] ?? '');
   });
-  const left: string[] = [];
-  for (const m of out.matchAll(/\$\{([^}\r\n]{1,80})\}/g)) {
-    const shown = /^[A-Za-z_][\w.:-]{0,40}$/.test(m[1]) ? '${' + m[1] + '}' : '${…}'; // only plain names are echoed back in the note
-    if (!left.includes(shown) && left.length < 6) left.push(shown);
-  }
   return { text: used || !args ? out : `${out}\n\nARGUMENTS: ${args}`, left };
 }
 
