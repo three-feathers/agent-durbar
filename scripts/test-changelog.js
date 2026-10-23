@@ -187,7 +187,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     commit(d, 'alpha.11 version');
     return d;
   };
-  const opts = { tag: 'v0.1.0-alpha.11', repo: 'three-feathers/agent-durbar', mainRef: 'main' };
+  const opts = { tag: 'v0.1.0-alpha.11', repo: 'three-feathers/agent-durbar', mainRef: 'refs/heads/main' };
   {
     const d = gitRepo();
     g(d, 'tag', '-a', '-m', 'alpha.11', 'v0.1.0-alpha.11');
@@ -208,7 +208,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     const out = path.join(d, '..', `${path.basename(d)}-notes.md`);
     const sumFile = path.join(d, '..', `${path.basename(d)}-summary.md`);
     fs.writeFileSync(sumFile, 'before\n');
-    execFileSync(process.execPath, [path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', opts.tag, '--repo', opts.repo, '--main-ref', 'main', '--out', out, '--summary', sumFile], { env: gitEnv, stdio: 'ignore' });
+    execFileSync(process.execPath, [path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', opts.tag, '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', out, '--summary', sumFile], { env: gitEnv, stdio: 'ignore' });
     assert.strictEqual(fs.readFileSync(out, 'utf8'), r.notes);
     assert.ok(fs.readFileSync(sumFile, 'utf8').startsWith('before\n### Release notes for v0.1.0-alpha.11'), 'the summary is appended');
     // the checked-out commit must be the tag's
@@ -222,8 +222,16 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     fs.writeFileSync(path.join(d, 'side.txt'), 'x\n');
     commit(d, 'side');
     g(d, 'tag', '-a', '-m', 'side', 'v0.1.0-alpha.11');
-    assert.throws(() => rn.releaseNotes(d, opts), /is not on main: only commits on main are released/);
-    assert.throws(() => rn.releaseNotes(d, { ...opts, mainRef: 'origin/main' }), /no origin\/main in this checkout/, 'a missing main ref fails, it is not skipped');
+    assert.throws(() => rn.releaseNotes(d, opts), /is not on refs\/heads\/main: only commits on main are released/);
+    assert.throws(() => rn.releaseNotes(d, { ...opts, mainRef: 'refs/remotes/origin/main' }), /no refs\/remotes\/origin\/main in this checkout/, 'a missing main ref fails, it is not skipped');
+    assert.strictEqual(rn.MAIN_REF, 'refs/remotes/origin/main', 'the default is the remote branch by its full name');
+    // a tag named after the main ref must not stand in for the branch (short names resolve to refs/tags/ first)
+    g(d, 'tag', 'main', 'side');
+    g(d, 'tag', 'refs/heads/main', 'side');
+    assert.throws(() => rn.releaseNotes(d, { ...opts, mainRef: 'main' }), /must be a full ref name/, 'a short main ref is refused');
+    for (const bad of ['origin/main', 'refs/../x', '-q', '']) assert.throws(() => rn.releaseNotes(d, { ...opts, mainRef: bad }), /must be a full ref name/, `main ref "${bad}" refused`);
+    assert.throws(() => rn.releaseNotes(d, opts), /is not on refs\/heads\/main/, 'the tags called main and refs/heads/main do not count');
+    g(d, 'tag', '-d', 'main');
     // the same commit is fine once main has it
     g(d, 'checkout', '-q', 'main');
     g(d, 'merge', '-q', '--ff-only', 'side');
@@ -248,8 +256,10 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     fs.writeFileSync(path.join(d, 'changelog.d', 'c.md'), '- Change C.\n');
     commit(d, 'alpha.12 version, no fold of alpha.11');
     g(d, 'tag', '-a', '-m', 'alpha.12', 'v0.1.0-alpha.12');
-    // a test build tag (no section by design) in between is not taken for the previous release
+    // test build tags (no section by design) in between are not taken for the previous release, also one with a valid tag name
     g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-alpha.12-mcptest.1', 'v0.1.0-alpha.11');
+    g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-test.1', 'v0.1.0-alpha.11');
+    assert.ok(rn.TAG_RE.test('v0.1.0-test.1') && !rn.RELEASE_TAG_RE.test('v0.1.0-test.1'), 'a valid tag name that is not a release');
     assert.strictEqual(rn.previousRelease(d, g(d, 'rev-parse', 'v0.1.0-alpha.12^{commit}'), 'v0.1.0-alpha.12'), 'v0.1.0-alpha.11');
     g(d, 'checkout', '-q', 'v0.1.0-alpha.12');
     assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.0-alpha.12' }), /no section for the previous release v0\.1\.0-alpha\.11: merge its fold PR/);
@@ -265,6 +275,25 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     g(d, 'checkout', '-q', 'v0.1.0-alpha.12');
     const r = rn.releaseNotes(d, { ...opts, tag: 'v0.1.0-alpha.12' });
     assert.ok(r.notes.endsWith('- Change C.\n') && !r.notes.includes('Change A'), 'the next release lists only its own changes');
+  }
+  {
+    // a final release sorts above its pre-releases (versionsort.suffix=-), so an unfolded v0.1.0 is not missed
+    const d = repo('', {});
+    g(d, 'init', '-q', '-b', 'main');
+    pkg(d, '0.1.0-alpha.10');
+    commit(d, 'alpha.10');
+    g(d, 'tag', '-a', '-m', 'a10', 'v0.1.0-alpha.10');
+    fs.writeFileSync(path.join(d, 'changelog.d', 'a.md'), '- Change A.\n');
+    pkg(d, '0.1.0');
+    commit(d, 'final');
+    g(d, 'tag', '-a', '-m', 'final', 'v0.1.0');
+    fs.writeFileSync(path.join(d, 'changelog.d', 'b.md'), '- Change B.\n');
+    pkg(d, '0.1.1-alpha.1');
+    commit(d, 'next');
+    g(d, 'tag', '-a', '-m', 'next', 'v0.1.1-alpha.1');
+    assert.strictEqual(rn.previousRelease(d, g(d, 'rev-parse', 'v0.1.1-alpha.1^{commit}'), 'v0.1.1-alpha.1'), 'v0.1.0', 'v0.1.0 is newer than v0.1.0-alpha.10');
+    g(d, 'checkout', '-q', 'v0.1.1-alpha.1');
+    assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.1-alpha.1' }), /no section for the previous release v0\.1\.0: merge its fold PR/, 'the unfolded final release is caught');
   }
 }
 
@@ -282,7 +311,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   assert.match(jobs.verify, /persist-credentials: false/, 'verify keeps no token in the checkout');
   assert.match(jobs.verify, /fetch-depth: 0/, 'verify sees main and every tag');
   assert.ok(!/npm ci|secrets\.|GH_TOKEN|github\.token/.test(jobs.verify), 'verify: no dependency install, no secret, no token');
-  assert.match(jobs.verify, /node scripts\/release-notes\.js --tag "\$TAG" --repo "\$REPO" --main-ref origin\/main --out release-notes\.md/, 'verify runs the checks on the tagged commit');
+  assert.match(jobs.verify, /node scripts\/release-notes\.js --tag "\$TAG" --repo "\$REPO" --main-ref refs\/remotes\/origin\/main --out release-notes\.md/, 'verify runs the checks on the tagged commit');
   for (const j of ['verify', 'draft-release']) for (const l of jobs[j].split('\n').filter((x) => x.includes('${{'))) assert.match(l, /^ {10}(TAG|REPO|GH_TOKEN|GH_REPO): \$\{\{ github\.[a-z_]+ \}\}$/, `${j}: an expression only as an env value, never inside a run script: ${l.trim()}`);
   assert.ok(!/^ {4}permissions:/m.test(jobs.build) && /^ {4}needs: verify$/m.test(jobs.build), 'build: read-only default, only after verify');
   assert.match(jobs['draft-release'], /^ {4}needs: \[verify, build\]\n {4}permissions:\n {6}contents: write\n {4}steps:/m, 'draft-release alone may write, after both');
@@ -291,6 +320,16 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   assert.match(jobs['draft-release'], /--notes-file notes\/release-notes\.md/, 'the notes from verify');
   assert.match(wf, /CSC_IDENTITY_AUTO_DISCOVERY: 'false'/, 'signing unchanged: never looks for identities');
   assert.ok(!/git push|gh pr create|pull-requests:|gh release edit|--publish always/.test(wf), 'nothing pushes, opens a PR or publishes');
+  // every checkout keeps no token; inside run scripts only matrix values are interpolated (never the tag or any github.* text)
+  const checkouts = [...wf.matchAll(/- uses: actions\/checkout@\S+[^\n]*\n((?: {8}[^\n]*\n)*)/g)];
+  assert.strictEqual(checkouts.length, 2, 'verify and build check out');
+  for (const [, w] of checkouts) assert.match(w, /^ {10}persist-credentials: false$/m, 'every checkout: persist-credentials false');
+  for (const [id, b] of Object.entries(jobs)) {
+    for (const m of b.matchAll(/^( +)(?:- )?run: ?([^\n]*)\n((?:\1 {2,}[^\n]*\n|\s*\n)*)/gm)) {
+      for (const [, expr] of `${m[2]}\n${m[3]}`.matchAll(/\$\{\{\s*([^}]*?)\s*\}\}/g)) assert.match(expr, /^matrix\.\w+$/, `${id}: only matrix values inside a run script, got \${{ ${expr} }}`);
+    }
+  }
+  assert.match(jobs['draft-release'], /if \[ "\$\(gh release view "\$TAG" --json isDraft -q \.isDraft\)" != "true" \]; then\n[^\n]*\n {14}exit 1\n {12}fi\n {12}gh release upload "\$TAG" dist-artifacts\/\* --clobber/, 'files are replaced only on a draft, a published release is refused');
   for (const [, u] of wf.matchAll(/uses: (\S+)/g)) assert.match(u, /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/, `${u} pinned by commit sha`);
 }
 

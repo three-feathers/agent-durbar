@@ -3,14 +3,17 @@
  * Spec 008 FR-117..FR-120 (2026-10-23): fold at tag time. The release workflow (`.github/workflows/release.yml`, job `verify`)
  * runs this on exactly the tagged commit, before anything is built:
  *
- *   node scripts/release-notes.js --tag v0.1.0-alpha.N --repo owner/name --out release-notes.md [--main-ref origin/main] [--summary <file>]
+ *   node scripts/release-notes.js --tag v0.1.0-alpha.N --repo owner/name --out release-notes.md [--main-ref refs/remotes/origin/main] [--summary <file>]
  *
  * It refuses the tag unless: the name is a version (`v1.2.3` or `v1.2.3-pre.N`), it equals `v` + package.json's version, the
- * checked-out commit is the tag's commit, that commit is an ancestor of the main ref (only tags on main are released), and the
+ * checked-out commit is the tag's commit, that commit is an ancestor of the main ref (only tags on main are released; a full
+ * `refs/...` name, so a tag called `origin/main` cannot stand in for the branch), and the
  * newest earlier release tag already has its section in CHANGELOG.md (its fold PR merged). Then it writes the release notes
  * (the fixed unsigned-build paragraph and the section `changelog:build` would fold, from the tag's own changelog.d/) to --out,
  * prints the heading, and appends the fold PR's commands to --summary (the job summary). It changes no tracked file, needs no
  * token and no network: git is called without a shell (execFileSync with an argument list), so it runs the same on Windows.
+ * These checks catch mistakes, not a hostile writer: the tag push runs the tagged commit's own copy of this file (spec 008
+ * FR-118 `[KNOWN GAP]`; a `v*` tag ruleset is the real control).
  */
 'use strict';
 const { execFileSync } = require('child_process');
@@ -39,15 +42,22 @@ function gitOk(root, args) {
   }
 }
 
-/* The newest release tag reachable from the parent of `commit` (the release before this one), or '' when there is none. */
+/*
+ * The newest release tag reachable from the parent of `commit` (the release before this one), or '' when there is none.
+ * versionsort.suffix=- sorts v0.1.0 above v0.1.0-alpha.N (without it git puts the final release below its pre-releases).
+ */
 function previousRelease(root, commit, tag) {
   if (!gitOk(root, ['rev-parse', '--verify', '--quiet', `${commit}^`])) return '';
-  const list = git(root, ['tag', '--merged', `${commit}^`, '--list', 'v*', '--sort=-v:refname']).split('\n');
+  const list = git(root, ['-c', 'versionsort.suffix=-', 'tag', '--merged', `${commit}^`, '--list', 'v*', '--sort=-v:refname']).split('\n');
   return list.map((t) => t.trim()).find((t) => t && t !== tag && RELEASE_TAG_RE.test(t)) || '';
 }
 
 /* Every check, then the notes. Returns { heading, previous, notes, source }; throws with the reason on a refusal. */
-function releaseNotes(root, { tag, repo, mainRef = 'origin/main' }) {
+const MAIN_REF = 'refs/remotes/origin/main';
+
+function releaseNotes(root, { tag, repo, mainRef = MAIN_REF }) {
+  // a short name such as origin/main resolves to refs/tags/origin/main first when such a tag exists (fetch-depth 0 fetches tags)
+  if (!/^refs\/[A-Za-z0-9_./-]+$/.test(mainRef) || /\.\./.test(mainRef)) throw new Error(`the main ref must be a full ref name (refs/...): got "${mainRef}"`);
   if (!tag || !TAG_RE.test(tag)) throw new Error(`"${tag}" is not a release tag (v1.2.3 or v1.2.3-alpha.N)`);
   if (!repo || !REPO_RE.test(repo)) throw new Error(`"${repo}" is not an owner/name repository`);
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
@@ -55,7 +65,7 @@ function releaseNotes(root, { tag, repo, mainRef = 'origin/main' }) {
   if (!gitOk(root, ['rev-parse', '--verify', '--quiet', `refs/tags/${tag}^{commit}`])) throw new Error(`no tag ${tag} in this checkout`);
   const commit = git(root, ['rev-parse', `refs/tags/${tag}^{commit}`]);
   if (git(root, ['rev-parse', 'HEAD^{commit}']) !== commit) throw new Error(`the checked-out commit is not ${tag}'s commit ${commit}`);
-  if (!gitOk(root, ['rev-parse', '--verify', '--quiet', `${mainRef}^{commit}`])) throw new Error(`no ${mainRef} in this checkout (fetch every branch: fetch-depth 0)`);
+  if (!gitOk(root, ['show-ref', '--verify', '--quiet', mainRef])) throw new Error(`no ${mainRef} in this checkout (fetch every branch: fetch-depth 0)`);
   if (!gitOk(root, ['merge-base', '--is-ancestor', commit, mainRef])) throw new Error(`${tag} (${commit}) is not on ${mainRef}: only commits on main are released`);
   const previous = previousRelease(root, commit, tag);
   const date = git(root, ['for-each-ref', '--format=%(creatordate:short)', `refs/tags/${tag}`]);
@@ -75,6 +85,7 @@ function summary({ heading, previous, source }, tag) {
         `git fetch origin --tags && git switch -c <NNN>-fold-${tag.slice(1)} ${tag}`,
         `npm run changelog:build -- --release "${heading}"`,
         'git merge origin/main   # the fragments merged after the tag come back for the next release',
+        '# a modify/delete conflict on a fragment edited after the tag: keep the deletion (git rm it), new text goes in a new fragment',
         '```',
       ]
     : ['The section was already in `CHANGELOG.md` (folded by a release PR): no fold PR needed.'];
@@ -90,7 +101,7 @@ function summary({ heading, previous, source }, tag) {
   ].join('\n');
 }
 
-module.exports = { TAG_RE, RELEASE_TAG_RE, PREAMBLE, previousRelease, releaseNotes, summary };
+module.exports = { MAIN_REF, TAG_RE, RELEASE_TAG_RE, PREAMBLE, previousRelease, releaseNotes, summary };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
@@ -100,7 +111,7 @@ if (require.main === module) {
     const out = opt('--out');
     if (!out) throw new Error('give --out <file> for the notes');
     const root = opt('--root') ? path.resolve(opt('--root')) : ROOT;
-    const r = releaseNotes(root, { tag, repo: opt('--repo'), mainRef: opt('--main-ref') || 'origin/main' });
+    const r = releaseNotes(root, { tag, repo: opt('--repo'), mainRef: opt('--main-ref') || MAIN_REF });
     fs.writeFileSync(out, r.notes);
     if (opt('--summary')) fs.appendFileSync(opt('--summary'), summary(r, tag));
     console.log(r.heading);

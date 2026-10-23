@@ -49,6 +49,9 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 - **A workflow cannot usefully open the fold PR with `GITHUB_TOKEN`** (2026-10-23, `read:` GitHub Actions docs on triggering a workflow from a workflow, spec 008 FR-120).
   - *What*: pushes and PRs made with the job's `GITHUB_TOKEN` start no `pull_request` or `merge_group` workflow, so the required checks never report and the PR cannot enter the merge queue. Opening PRs from Actions also needs the repository setting *Allow GitHub Actions to create and approve pull requests* (a settings change: *Needs approval*).
   - *How to apply*: release notes come from the tag (`release.yml` `verify`); the fold into `CHANGELOG.md` is a doc-only PR that an agent opens by hand from the tag (`changelog.d/README.md`). Do not add `pull-requests: write` or a push to a tag workflow to "automate" it.
+- **Git ref names in release checks: full refs, and `versionsort.suffix`** (2026-10-23, review on #648, `test:` `test:changelog`).
+  - *What*: a short name such as `origin/main` resolves to `refs/tags/origin/main` before `refs/remotes/origin/main`, and a checkout with `fetch-depth: 0` fetches every tag, so a tag with that name can stand in for the branch. `git tag --sort=-v:refname` puts `v0.1.0` below `v0.1.0-alpha.N` unless run with `-c versionsort.suffix=-`.
+  - *How to apply*: pass and require full `refs/...` names and check them with `git show-ref --verify`; sort release tags with `git -c versionsort.suffix=- tag --sort=-v:refname` (`scripts/release-notes.js`).
 
 ## Simulator and drivers
 

@@ -37,7 +37,7 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
-        run: node scripts/release-notes.js --tag "$TAG" --repo "$REPO" --main-ref origin/main --out release-notes.md --summary "$GITHUB_STEP_SUMMARY"
+        run: node scripts/release-notes.js --tag "$TAG" --repo "$REPO" --main-ref refs/remotes/origin/main --out release-notes.md --summary "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-notes
@@ -73,6 +73,8 @@ jobs:
               release/*.AppImage
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -116,7 +118,7 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           ls -la
       # Always a draft pre-release, never "latest" (owner decision). An existing release only gets its files replaced, so notes
-      # the release manager edited on the draft are kept.
+      # the release manager edited on the draft are kept, and only while it is still a draft: a published release is never touched.
       - name: Create or update DRAFT pre-release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -124,6 +126,10 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" != "true" ]; then
+              echo "Release $TAG is already published: its files are not replaced (spec 008 FR-120)" >&2
+              exit 1
+            fi
             gh release upload "$TAG" dist-artifacts/* --clobber
           else
             gh release create "$TAG" dist-artifacts/* --draft --prerelease --latest=false --verify-tag \

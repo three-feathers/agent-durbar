@@ -37,3 +37,7 @@ no merge freeze is needed:
    `changelog:build` writes a new section under *Unreleased* with every fragment (by file name), then any bullet still under
    *Unreleased*, and deletes the fragments. The PR goes through the queue like any other; the workflow never pushes to `main`
    or opens it. Merge it before the next tag: `verify` refuses a tag while the previous release has no section.
+
+   A fragment edited on `main` after the tag gives a **modify/delete conflict** in `git merge origin/main`. Keep the deletion
+   (`git rm changelog.d/<file>`): the tag's text is what was released. If the edit added something genuinely new, put that in
+   a new fragment for the next release.
