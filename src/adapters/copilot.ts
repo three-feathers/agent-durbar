@@ -180,6 +180,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToolFilter: true, // spec 069 FR-062: session excludedTools (read: SDK types; not run on a real account)
   mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
+  mcpSignInAgain: true, // spec 058 FR-164: oauth.login forceReauth ("clears any cached OAuth token for the server and runs a full new authorization", read: SDK 1.0.22 rpc.d.ts; not run on a real account)
   mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
   mcpSignInSteps: 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', // FR-068
   mcpSignInNote: 'Checked once on a real account; other servers and systems not yet.', // FR-074/FR-180: the row's honest note
@@ -253,6 +254,11 @@ export const REMOTE_NOT_STARTED = 'Copilot did not start remote control and gave
 /** Spec 040 FR-015: how long one `generateText` may take before it is aborted (the same 3 minutes as Claude and Codex). */
 export const ONE_SHOT_TIMEOUT_MS = 180_000;
 
+/** Spec 058 FR-163: what `listMcpTools` says for a server that is not connected (nothing is asked of the runtime). */
+export const MCP_NOT_CONNECTED = 'This server is not connected. Restart it or sign in first, then its tools can be listed.';
+/** Spec 058 FR-163 (review on #625): the same for a server that is still starting. */
+export const MCP_STARTING = 'This server is still starting. Its tools can be listed once it is connected.';
+
 /**
  * Spec 040 FR-015: the config of the throw-away session behind `generateText`. Nothing can act and nothing is kept:
  * no tool from any source (`availableTools: []`, and `excludedTools` as a second lock), the MCP servers the runtime would load on its own
@@ -316,13 +322,25 @@ export class CopilotAdapter implements AgentAdapter {
   /** One mapper per session (it remembers tool names, reasoning ids and sub-agent ids of that session). */
   private mappers = new Map<string, EventMapper>();
 
-  /** Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). Protected so a test can hand in a fake client (no runtime process, no credits). */
+  /**
+   * Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). Protected so a test can hand in a fake client (no runtime process, no credits).
+   * Spec 058 FR-161: ONE runtime per app run for every session, one-shot and check (each runtime process reads Copilot's keychain items
+   * again, so a runtime per session would ask again per session on a Mac). A start that failed is not kept: the next call starts again
+   * instead of failing for the rest of the run. A runtime that exits later is restarted by the SDK itself on the next create or resume
+   * (`read:` SDK 1.0.22 `client.js` `createSession`/`resumeSessionInternal`: `if (!this.connection) await this.start()`).
+   */
   protected async getClient(): Promise<CopilotClient> {
     if (this.client) return this.client;
-    const starting = (this.starting ??= this.createClient().then((c) => {
-      if (this.starting === starting) this.client = c;
-      return c;
-    }));
+    const starting = (this.starting ??= this.createClient().then(
+      (c) => {
+        if (this.starting === starting) this.client = c;
+        return c;
+      },
+      (e: unknown) => {
+        if (this.starting === starting) this.starting = undefined;
+        throw e;
+      },
+    ));
     return starting;
   }
 
@@ -1346,18 +1364,19 @@ export class CopilotAdapter implements AgentAdapter {
    * (`@experimental`, read: SDK 1.0.22 `McpOauthLoginRequest`) with only the server name and two display texts: the runtime keeps its
    * default loopback flow (discovery, PKCE, its own callback listener, token exchange, storage and reconnect), so no token and no
    * callback ever pass through Durbar. Never `handlePendingRequest`, `complete`, `prepareLogin`, `cancelLogin` or `onMcpAuthRequest`,
-   * and never `clientId`, `clientSecret`, `redirectUri`, `grantType` or `forceReauth`. No `authorizationUrl` in the answer = cached
+   * and never `clientId`, `clientSecret`, `redirectUri` or `grantType`. `forceReauth` only for the user's **Sign in again** (FR-164, owner
+   * 2026-10-23): the runtime forgets the stored sign-in and writes a new one itself (no keychain access by Durbar). No `authorizationUrl` in the answer = cached
    * tokens were still valid and the server is already connected. The result arrives later as `session.mcp_server_status_changed`.
    * A missing method, or a runtime that does not know it, rejects with a plain message (main then shows the terminal steps).
    */
-  async startMcpSignIn(sessionId: string, name: string): Promise<McpSignInResult> {
+  async startMcpSignIn(sessionId: string, name: string, opts: { again?: boolean } = {}): Promise<McpSignInResult> {
     const live = this.sessions.get(sessionId);
     if (!live) throw new Error('This session is not running. Send a message to start it, then sign in.');
-    const oauth = (live.session.rpc.mcp as unknown as { oauth?: { login?: (p: { serverName: string; clientName: string; callbackSuccessMessage: string }) => Promise<{ authorizationUrl?: unknown }> } }).oauth;
+    const oauth = (live.session.rpc.mcp as unknown as { oauth?: { login?: (p: { serverName: string; clientName: string; callbackSuccessMessage: string; forceReauth?: boolean }) => Promise<{ authorizationUrl?: unknown }> } }).oauth;
     if (!oauth || typeof oauth.login !== 'function') throw new Error('This Copilot version cannot start a sign-in from Agent Durbar.');
     let r: { authorizationUrl?: unknown } | undefined;
     try {
-      r = await oauth.login({ serverName: name, clientName: 'Agent Durbar', callbackSuccessMessage: 'You can close this tab and go back to Agent Durbar.' });
+      r = await oauth.login({ serverName: name, clientName: 'Agent Durbar', callbackSuccessMessage: 'You can close this tab and go back to Agent Durbar.', ...(opts.again === true ? { forceReauth: true } : {}) });
     } catch (err) {
       if (isMethodNotFound(err)) throw new Error('This Copilot version cannot start a sign-in from Agent Durbar.');
       throw new Error(sdkErrorText(err));
@@ -1394,6 +1413,11 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) throw new Error('This session is not running. Send a message to start it.');
     const mcp = live.session.rpc.mcp as unknown as { listTools?: (p: { serverName: string }) => Promise<{ tools?: unknown }> };
     if (typeof mcp.listTools !== 'function') throw new Error('This Copilot version cannot list a server\'s tools.');
+    // Spec 058 FR-163 (issue #623, real macOS 2026-10-23): a tools/list for a server that is not connected makes the runtime try to
+    // connect it again, and each attempt can read its sign-in from the keychain (one more macOS prompt). Only a connected server, or one
+    // the runtime has not reported yet, is asked; a failed, needs-sign-in or pending one waits for the user's Restart or Sign in.
+    const st = this.mappers.get(sessionId)?.mcpStatusOf(name);
+    if (st !== undefined && st !== 'connected') throw new Error(st === 'pending' ? MCP_STARTING : MCP_NOT_CONNECTED);
     try {
       const r = await mcp.listTools({ serverName: name });
       return normMcpTools(r?.tools);
@@ -1414,9 +1438,12 @@ export class CopilotAdapter implements AgentAdapter {
   async dispose(): Promise<void> {
     await this.refreshing?.catch(() => undefined);
     for (const id of [...this.sessions.keys()]) await this.stop(id);
-    await this.client?.stop();
-    this.client = undefined;
+    // review on #625: a quit during the first start must still stop the runtime that start brings up (else it outlives the app)
+    const pending = this.client ? undefined : this.starting;
     this.starting = undefined;
+    const client = this.client ?? (await pending?.catch(() => undefined));
+    this.client = undefined;
+    await client?.stop();
   }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {

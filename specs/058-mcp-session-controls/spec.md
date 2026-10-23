@@ -922,6 +922,150 @@ spec 069's lists, and changes nothing in them.
 - **SC-080** From Settings alone, a user can see which servers failed or need a sign-in in which chat, restart one server in one chat,
   restart a chat's session, and reach that chat's own MCP dialog, without opening a chat first.
 
+### 2026-10-23: fewer macOS keychain prompts (issue #623, owner report; related #525)
+
+**Report.** The owner (Vikram, macOS, real use) gets several keychain dialogs per session ("… wants to use your confidential
+information stored in … in your keychain") for MCP sign-ins, and each new session asks again. Paco (#525) saw "copilot wants to access
+key 'copilot-mcp-oauth'" repeat at launch and on scheduled runs even after **Always Allow**. Wanted: the bare minimum, ideally zero.
+
+**Who reads the keychain** (`read:` code and packages, 2026-10-23; nothing counted on a Mac):
+
+| Process | Binary and signature | Items | How often |
+|---|---|---|---|
+| Durbar main (Electron) | Durbar's app, ad-hoc signed (`identity: "-"`) | `agent-durbar Safe Storage` (spec 019 FR-023) | at most once per run, only when a server with saved secrets starts or a secret changes (`McpStore.unlock`, a counting fake in `test-mcp`) |
+| Copilot runtime (one child process per app run) | `copilot-runtime` from `@github/copilot-sdk-darwin-*`, spawned directly (not `ELECTRON_RUN_AS_NODE`; `src/adapters/runtime.ts`, SDK `client.js` `startCLIServer`). As published on npm it is signed by **GitHub's Developer ID** (team `VEKTX9H2N7`, identifier `copilot`, hardened runtime), with a designated requirement **byte-identical to the `copilot` CLI's** (`@github/copilot-darwin-arm64` 1.0.103); `read:` the Mach-O signatures of the 1.0.22 darwin-arm64 and darwin-x64 packages, parsed on Linux. **But electron-builder re-signs it ad-hoc**: `@electron/osx-sign` walks every Mach-O in the app and runs `codesign --sign - --force` on it unless `mac.signIgnore` skips it (`read:` `@electron/osx-sign` 1.3.3 `sign.js` `signApplication`, `app-builder-lib` 26.15.3 `MacTargetHelper.buildSignOptions`) | Copilot's GitHub sign-in (written by `copilot login`, i.e. the GitHub-signed CLI) and, with `mcpOAuthTokenStorage: 'persistent'` (FR-070), the MCP OAuth item(s) (`copilot-mcp-oauth`, `copilot-mcp-oauth-store-key-v1` in the runtime's strings; the Rust `keyring-core` crate, `read:` linux-x64 `runtime.node` strings; the macOS store backend is not visible from Linux) | sign-in: once per runtime start; MCP: when a session connects a signed-in server (per session; runtime-internal caching unknown) |
+| Claude Code, Codex | the user's own installed `claude` / `codex` binaries, started directly; Durbar does not re-sign them | their own items (Claude Code's credentials, Codex's keyring when used) | per their own process (Claude: one per session), as in a terminal; out of Durbar's hands |
+
+**Why "Always Allow" does not stick** (reasoned from the above, `read:` Apple keychain ACL / partition behaviour; not seen on a Mac):
+the keychain trusts a program by its code signature. The ad-hoc re-signed runtime has no Team ID, so it is a different program from
+the GitHub-signed `copilot` that created the sign-in items: each item asks. Its trust is a hash of that exact binary, so it changes with
+every SDK update; and where the GitHub-signed CLI (or VS Code) also writes the same item, each rewrite can reset the access list to the
+writer, so the two programs take turns asking. Clicking **Allow** (not *Always Allow*) asks again on every read, i.e. per session per
+server.
+
+**Options** (ranked by prompts saved, safety and effort):
+
+1. **Keep GitHub's signature on the bundled runtime** (FR-160): `mac.signIgnore` for the runtime's prebuilds. The runtime then is, to
+   the keychain, the same program as the `copilot` CLI: items made by `copilot login` or the CLI should need **no prompt**, and an item
+   made by an older Durbar asks once, after which *Always Allow* holds across Durbar and SDK updates (the trust is GitHub's team, not a
+   hash). Safe (the files run exactly as GitHub ships them, as in `npm start` on a Mac), small, no purchase. **Built.**
+2. **One runtime per app run** (FR-161): already true before this delta (`CopilotAdapter` keeps one `CopilotClient` for every session,
+   check and one-shot; the router keeps one adapter instance per app). Hardened here: a failed start is no longer cached for the whole
+   run. **Built (tests + the retry).**
+3. **Run the user's installed `copilot` CLI as the runtime** instead of the bundled one: same signature as option 1, but its version
+   must match the SDK's protocol (SDK 1.0.22 expects runtime 1.0.98) and it may be missing; option 1 gives the same identity without
+   that risk. Not built.
+4. **Durbar code signing** (spec 014, issue #4): ends the per-update prompt for `agent-durbar Safe Storage`; a purchase that needs the
+   owner. Not built.
+5. **FR-070 back to `in-memory`**: no MCP keychain item at all (zero MCP prompts) but every sign-in is lost at session end, against the
+   owner's Q12 B. A trade-off for the owner only (also #525's plan A); no change.
+6. **Durbar's own `safeStorage`** (spec 019 FR-023): confirmed once per run, not per session; nothing to change.
+
+- **FR-160** **The packed mac app keeps GitHub's signature on the Copilot runtime.** `package.json` `build.mac.signIgnore` skips
+  `Contents/Resources/app.asar.unpacked/node_modules/@github/copilot-sdk-darwin-*/prebuilds/` (the wrapper, `runtime.node` and the
+  MSAL libraries, all GitHub-signed with the same team so the hardened wrapper's library validation still loads them). Every other
+  Mach-O is still signed ad-hoc. `scripts/check-runtime-signature.js` reads the signature from the files (thin and universal Mach-O,
+  no `codesign`) and fails the mac package build (`dist:mac:arm64`, `dist:mac:x64`, after `electron-builder`) when a runtime file is
+  unsigned, ad-hoc, of another team, or the wrapper's identifier is not `copilot`. `[IMPLEMENTED]` 2026-10-23, `test:` `test:runtimesign`
+  (synthetic Mach-O files, the regex against the real app paths, the scripts), `read:` passes on the real 1.0.22 darwin-arm64 and
+  darwin-x64 files and fails on a copy with the ad-hoc flag set. `real:` CI, release run 39954528774 (test build `v0.1.0-alpha.14-mcptest.1`, macOS job 120416934009):
+  - both arches were packed with this `signIgnore`;
+  - the check logged `check-runtime-signature: the Copilot runtime keeps GitHub's signature (team VEKTX9H2N7)` for arm64 and x64;
+  - `@electron/osx-sign`'s `codesign --verify --deep --strict` of the ad-hoc app, which holds the GitHub-signed nested files, passed (it runs after every signing and throws on failure, `read:` `sign.js`; review by Paco's agent on #625).
+
+  `real:` the owner's Mac (FR-162 results): a session opened and worked on the GitHub-signed runtime.
+
+  The check runs in every script that can pack a mac app, and it does nothing off macOS:
+  - `dist:mac:arm64` and `dist:mac:x64` run it with `--arch`, so each step checks only its own build;
+  - `dist` and `pack:dir` run it too.
+
+  It requires the runtime in each packed app on its own, and names the app in each problem (review on #625).
+
+  `[KNOWN GAP]` Gatekeeper/`spctl` on a quarantined download.
+- **FR-161** **One Copilot runtime per app run.** Every session, sign-in check and one-shot uses the adapter's one client; a session end
+  never stops it; only app exit (`dispose`) and a sign-in change (spec 012 FR-158) start or stop it. A start that failed is not cached:
+  the next use starts again (before, the rejected start was kept and every later Copilot call failed until restart). A runtime that exits
+  later is restarted by the SDK on the next create or resume (`read:` SDK 1.0.22 `client.js`). Permission mode, grants, folder and model
+  stay per session. `[IMPLEMENTED]` 2026-10-23, `test:` `test:copilotshared` (fake SDK: 4 sessions in 4 folders with 3 modes = 1 runtime
+  start; parallel first use = 1; a session end leaves the runtime and other sessions; a failed start is retried once, shared by
+  concurrent callers; refreshAuth = exactly one more). `[KNOWN GAP]` live sessions of a runtime that crashed are not resumed on the new
+  one (they fail until restarted); unchanged by this delta.
+- **FR-162** **Mac check list** (needs a Mac; asked of Paco's team; 0 AI credits, no prompt sent):
+  1. Before: the current release (alpha.13). Keychain Access: note the `copilot-mcp-oauth*` items and the Copilot sign-in item, their
+     *Access Control* lists. Quit Durbar. Open Durbar, open **two** Copilot sessions in folders with one OAuth MCP server you are signed
+     in to. Count every keychain dialog, write down the program name and item name of each, and which button you pressed.
+  2. After: the test pre-release `v0.1.0-alpha.14-mcptest.1` (it includes this PR), or a local `npm run dist:mac:arm64` of this branch (pull requests build no mac package). A local build's log must show
+     `check-runtime-signature: the Copilot runtime keeps GitHub's signature`. `codesign -dv --verbose=2 "<app>/Contents/Resources/app.asar.unpacked/node_modules/@github/copilot-sdk-darwin-arm64/prebuilds/darwin-arm64/copilot-runtime"`
+     must say `Identifier=copilot` and `TeamIdentifier=VEKTX9H2N7`; `codesign --verify --deep --strict "<app>"` must pass.
+  3. Repeat step 1's two sessions. Expected: **0** dialogs for items written by `copilot login` / the `copilot` CLI; at most **1 per
+     item** written by an older Durbar build (press *Always Allow*), then **0** in a second pair of sessions and after quitting and
+     reopening. Plus at most 1 for `agent-durbar Safe Storage` only if a server with saved secret values starts (unchanged).
+  4. A Copilot session still opens and answers (the GitHub-signed runtime starts from inside the ad-hoc app; Gatekeeper accepts it).
+  Report the counts before and after on #623. Until then the README says "not counted on a real Mac".
+  **Results, `real:` (owner, macOS, test build `v0.1.0-alpha.14-mcptest.1` with this PR, Copilot, 10 MCP servers, 2026-10-23):**
+  - CI (run 39954528774): the mac release job logged `check-runtime-signature: the Copilot runtime keeps GitHub's signature (team VEKTX9H2N7)` for arm64 and x64, so FR-160 held in a real package build.
+  - First open: about **25** keychain prompts. The owner pressed **Always Allow**. After quitting and reopening, **the same ~26 prompts came back**, alternating between two kinds of dialog: one about "confidential information" and one about an "access token". That is consistent with two items per server (about 13 items).
+  - Starting one Microsoft MCP server that fails: **4** prompts.
+  - A server with no stored sign-in: Sign in, browser, authenticated, with **no** keychain prompt. The GitHub-signed runtime creates its own items without asking.
+  - So the expected "at most 1 per old item, then 0" did **not** happen. "Always Allow" does not stick for items written by older (ad-hoc) Durbar builds.
+  - **Third launch (`real:`, owner, 13:57 UTC): no keychain prompt at all.** The sequence was launch 1 ≈25 prompts (Always Allow), launch 2 ≈26 prompts (Always Allow), launch 3 **0**. So trust did settle, but only after two rounds of Always Allow, not one.
+  - Hypothesis (not verified) for why two rounds were needed:
+    - the first round's "Always Allow" covered one of the two kinds of item (or one of the two programs that had written them), and the second round covered the other;
+    - or a refresh after the first grant rewrote the items once.
+  - Remaining risk: a user who also uses the `copilot` CLI on the same MCP sign-ins may see prompts return if the two programs keep taking turns writing them (see the second analysis below). Using the installed CLI as the runtime (option 1 there) is only for if prompts come back.
+
+- **Root-cause analysis after the Mac result** (`read:`; not confirmed on a Mac):
+  - **The requester is the same binary every time.** The packaged app spawns `Contents/Resources/app.asar.unpacked/node_modules/@github/copilot-sdk-darwin-<arch>/prebuilds/darwin-<arch>/copilot-runtime` directly (`unpackedRuntimePath`, `RuntimeConnection.forStdio({ path })`). The SDK's `startCLIServer` spawns that path with no copy and no extraction. Its argv[0] is that path, and it is not run through node or Electron. The SDK's copy-to-cache path (`materializeRuntimeBundle`) only applies when `COPILOT_CLI_USE_NPM_PACKAGE` is true, and it is `false` in 1.0.22. The wrapper loads `runtime.node` in-process (`dlopen`, `copilot_runtime_host_start_with_options`). So the identity is GitHub's `copilot` (Developer ID, stable) at a stable path, unless the app itself runs translocated. App Translocation (a random read-only path) happens when an unsigned app is opened from Downloads or a disk image without being moved to Applications. It changes the path on every launch, but not the Developer ID requirement.
+  - **The runtime uses the legacy keychain**, where items carry an access list *and* a partition list. Its darwin `runtime.node` links `apple-native-keyring-store` 1.0.2 (`keychain.rs`) on `security-framework` 3.7.0, with `SecKeychainFindGenericPassword`, `SecKeychainAddGenericPassword` and `SecKeychainItemModifyAttributesAndData`. An item is bound to the program that created it. The items were created by the old ad-hoc runtime, so their partition entry is that build's ad-hoc identity, not `teamid:VEKTX9H2N7`.
+  - **Most likely cause:** a non-matching program trips both checks, which gives two dialogs per item (the alternating kinds). "Always Allow" on the access-list dialog does not add the new program to the partition list, so the next process start asks again. A refresh that rewrites an item does not repair it either: modifying an existing item keeps its old lists. Items the signed runtime creates itself do match, which is why fresh sign-ins are silent. This also fits Paco's #525 ("copilot wants to access key 'copilot-mcp-oauth'" with a password, repeating).
+  - **The fix this points to:** the items have to be **re-created by the signed runtime** (delete, then a new sign-in). Clicking alone cannot fix them. A manual workaround the owner can try now: in Keychain Access, delete the `copilot-mcp-oauth*` items, then sign in again from Durbar. Durbar itself never touches the keychain (constitution III).
+  - Still needed from the owner: the program name in the dialog, and whether Durbar runs from /Applications. A different name, or Durbar running from a disk image, would change this analysis.
+- **FR-163** **No Durbar-caused connect attempts on a server that is not connected.**
+  - Each connect attempt by the runtime can read the server's items again, which means more prompts.
+  - `CopilotAdapter.listMcpTools` refuses a server whose last known status is not `connected` (failed, needs sign-in, pending, or marked needs-sign-in by tool failures), with "This server is not connected. Restart it or sign in first" (a pending server: "This server is still starting"). Nothing reaches the runtime. A server the runtime has not reported yet is asked as before.
+  - The other paths were checked and already ask nothing of a failed server:
+    - the sign-in poll (`refreshMcpStatus`) only calls `isServerRunning`, which starts nothing, and does not `list`;
+    - `agents:mcp` and the Settings live view read Durbar's own state only;
+    - Restart, Sign in and switching a server on are only the user's own presses, one call each;
+    - one-shot sessions turn the user's servers off by name;
+    - at launch, restored agents stay lazy: only the chat that is opened resumes its session, on the one runtime (FR-161).
+  - The 4 prompts for one failing server therefore come from the runtime's own connect and refresh for that server, and its items' old lists. `[IMPLEMENTED]` 2026-10-23, `test:` `test:copilotshared` (0 runtime calls for 15 opens of failed, needs-sign-in and pending rows; 3 polls of a failed server only check `isServerRunning`; one restart per press).
+- **FR-164** **Sign in again** (owner approved it in the chat on 2026-10-23, which changes the earlier Out-of-scope Q19 A for this one use):
+  - **What the user sees:** each Copilot MCP row that is connected or failed and is not a local (stdio) server has **Sign in again…**. Two or more such rows also show **Sign in again to all (N)…**.
+  - **What happens:** one confirmation (it says the server stays signed out until the user finishes in the browser; Cancel or the time limit leaves it signed out), then for each server the runtime's own `rpc.mcp.oauth.login({ serverName, forceReauth: true })`. Per the SDK, this "clears any cached OAuth token for the server and runs a full new authorization" (`read:` SDK 1.0.22 `rpc.d.ts`). Each row then offers the usual **Open sign-in page** (FR-065: the address stays in main, the window gets the host only).
+  - **Guards** (tightened after the re-review on #625):
+    - offered only for a server that Durbar knows by an http(s) address (a folder extra, a list Durbar passes, or the Copilot CLI list), whose source the runtime named (`user`, `workspace`, ...; never missing, `unknown` or `builtin`), that is not a built-in name and whose transport is not `stdio` or `memory`. Fail closed. The mapper keeps a source or transport when a re-read leaves it out or says `unknown` (`rpc.mcp.list` has no transport);
+    - the held sign-in of a server that was connected finishes only on a "connected" that follows another state reported since it began. The old "connected" from a re-read, the 5 s poll or another server's event does not finish it, and the window says "Signed in" only then;
+    - a second press while the confirmation or the sign-ins run does nothing;
+    - `agents:mcpSignIn(id, name, again)`: only a literal `true` counts;
+    - the agent app must have `capabilities.mcpSignInAgain` (Copilot only);
+    - the server must be connected or failed and not waiting for a first sign-in (`canSignInAgainStatus`);
+    - one sign-in per server at a time.
+  - **Never:** Durbar reads, writes or deletes no keychain item itself, and makes no other OAuth call.
+  - `[IMPLEMENTED]` 2026-10-23, `test:` `test:mcpsignin` (op guards, the reply's `canSignInAgain`), `test:copilotshared` (only `forceReauth` is added to the login call), `test:runtime` (contract: `mcpSignInAgain` only with `mcpSignIn`), and the simulator's canned flow.
+  - `[KNOWN GAP]` Not run on a real account. Still unknown:
+    - whether the server disconnects at once when `forceReauth` clears its token, or only at its next request;
+    - whether `forceReauth` deletes and re-creates the keychain item, or only rewrites its data (which would keep the old access and partition lists);
+    - whether it also replaces the stored client registration (the second item per server);
+    - whether removing an old item asks once more.
+    That needs the owner's Mac (T136).
+- **Hypothesis from Paco's agent** (review on #625). **Checked, likely not the cause** (`real:` the owner's Mac, 2026-10-23: the `copilot-mcp-oauth` items list `authorizations (1): partition_id` with `description: teamid:VEKTX9H2N7`, and no `cdhash` entry). The original hypothesis: the old items' access list *and* partition list name the old ad-hoc build. That gives two prompts per item, the first for the access list ("confidential information") and the second for the partition list. "Always Allow" fixes only the access list, so the partition prompt returns on every launch (26 = 2 × 13). The fixes this points to:
+  - re-creating each item from the signed runtime (FR-164);
+  - a user-run `security set-generic-password-partition-list` command. It was **ruled out** by the owner's check above (the items already name `teamid:VEKTX9H2N7`), so it is not suggested anywhere.
+- **Second analysis after the partition check** (2026-10-23; `read:` the darwin `runtime.node` 1.0.22 strings, SDK 1.0.22 `client.js`; nothing seen on a Mac):
+  - **The partition entry is GitHub's team.** So the items were written by GitHub-signed code: the `copilot` CLI the owner also uses, or the new runtime. They were not written by the old ad-hoc build. This also weakens the "old items" explanation behind FR-164.
+  - **The runtime's store looks like it keeps access lists when it rewrites.** It is the `keyring-core` macOS store (`apple-native-keyring-store` 1.0.2, `security-framework` 3.7.0). It finds the item and then modifies its data (`SecKeychainFindGenericPassword`, `SecKeychainItemModifyAttributesAndData`), adding one only when none exists (`SecKeychainAddGenericPassword`). Modifying keeps the item's access lists, so a token refresh by itself should not reset them. Its strings also have `copilot.encryptionKeys`, `copilot-mcp-oauth-store-key-v1`, `mcp-oauth-config` and `tryRefreshTokens`, which suggests a key in the keychain plus a token store, but how many items each server uses cannot be read from strings. One strings-only point is still open: the store says "This store does not allow attribute updates", and whether a refresh deletes and re-adds the item cannot be ruled out from strings.
+  - **The requester's identity looks stable.** It is `copilot-runtime` at a fixed path, spawned directly with no copy and no extraction. It is GitHub-signed with a designated requirement identical to the CLI's (FR-160 analysis). The CLI is a different path, though. If the access list's trusted-application entries are bound to a path and not only to the requirement, then whichever of the two programs read last is trusted, the other asks, and a refresh by either can leave only the writer trusted. This is suspect (b)/(c) from the chat, and it fits the owner using both the CLI and Durbar on the same items. Unproven.
+  - **Something other than the runtime may be asking.** Still possible until the owner reports the program name in the dialog. The "access token" kind of dialog could be the runtime's Microsoft sign-in (`libmsalruntime`, `msal-node-runtime.node` ship with the runtime; "Microsoft sign-in returned no access token") with its own items.
+  - **What decides it** (owner's Mac, 0 credits):
+    1. the program name and item name in each kind of dialog;
+    2. `security dump-keychain -a ~/Library/Keychains/login.keychain-db`, the part for one `copilot-mcp-oauth` item (its `applications` list and the item's modification date), before launching Durbar, after launching Durbar, and after one CLI run.
+  - **Fix options, ranked** (none built until that check):
+    1. **Use the user's installed `copilot` CLI as the runtime when it is compatible.** The SDK checks the protocol version at start (`verifyProtocolVersion`, SDK 1.0.22 supports a range; a mismatch fails cleanly, so Durbar can fall back to the bundled runtime). The same program would then read and write the items as in the terminal, which removes a path-bound access list between the two programs. Effort: medium. It is a new setting, probably on by default on macOS only, and it needs owner approval.
+    2. **Keep sign-ins only in the session** (FR-070 alternative, `in-memory`). No keychain at all, but a new sign-in per session. A trade-off for the owner.
+    3. **FR-164 Sign in again.** Helps only if the cause is items written by another program and never rewritten later. Built, harmless, unproven.
+    4. **Document** that using the Copilot CLI and Durbar on the same MCP sign-ins can make macOS ask again whenever the other one has saved them.
+
 ### 2026-10-23: MCP health: a clear failure reason per server, when, Copy diagnostics, and a dot on the MCP chip (owner go, issue #603)
 
 **Status**: specified 2026-10-23, built in the same PR (tasks T140-T148; simulator and unit tests only, not on a real account).

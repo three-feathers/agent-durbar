@@ -16,8 +16,9 @@
  * - spec 058 FR-175..FR-183 (simkinds=mixed): a Claude Code row signs in the same way (its own steps, note and Restart kept; the limit
  *   line says to press Restart; Restart picks the sign-in up); Codex rows keep today's behaviour until PR B;
  * - the dialog fits the window and its text is at least 10.5px.
- * Shots: 058-mcp-signin-row-, -steps-, -confirm-, -waiting-, -manual-, and -claude-row-, -claude-steps-, -claude-confirm-,
- * -claude-manual-<w>x<h>.png. Prints "[058 signin] PASS".
+ * - FR-164: Sign in again on a running server (not the built-in one): a confirmation, then Open sign-in page with the host only; Cancel.
+ * Shots: 058-mcp-signin-row-, -again-ask-, -again-, -steps-, -confirm-, -waiting-, -manual-, and -claude-row-, -claude-steps-,
+ * -claude-confirm-, -claude-manual-<w>x<h>.png. Prints "[058 signin] PASS".
  */
 const assert = require('assert');
 const path = require('path');
@@ -73,6 +74,9 @@ module.exports = async (ctx) => {
     await check(w, 'row');
     await shot(`058-mcp-signin-row-${w}x${h}.png`);
 
+    // ---- FR-164: Sign in again is only for remote servers Durbar knows by address: none of these rows (stdio, built-in, needs sign-in) ----
+    for (const r of ['github', 'github-mcp-server', 'my-notes']) assert.ok(!(await info(r)).buttons.includes('Sign in again…'), `no Sign in again on ${r}`);
+
     // ---- the terminal steps ----
     await click('my-notes', 'How to sign in from a terminal');
     assert.ok(await until(`!!window.__row('my-notes').querySelector('.srv-steps')`), 'steps opened');
@@ -119,6 +123,48 @@ module.exports = async (ctx) => {
     await until(`/my-notes: Running/.test(window.__live.join(' | '))`, 3000);
     const said = (await js(`window.__live.join(' | ')`));
     assert.ok(/Sign-in page on auth\.example\.com/.test(said) && /my-notes: Running/.test(said), 'the polite live region says what changed: ' + said);
+
+    // ---- FR-164 Sign in again (simmcpauth=again: two remote servers in the Copilot list), review on #625 ----
+    await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpauth: 'again' } });
+    await openMcp('sim-6');
+    for (const r of ['team-wiki', 'crm']) assert.ok((await info(r)).buttons.includes('Sign in again…'), `a remote server offers Sign in again: ${r}`);
+    for (const r of ['github', 'github-mcp-server', 'my-notes']) assert.ok(!(await info(r)).buttons.includes('Sign in again…'), `stdio, built-in and needs-sign-in rows do not: ${r}`);
+    assert.ok(await js(`/Sign in again to all \\(2\\)/.test(document.getElementById('mcpSignAgainAll').textContent)`), 'Sign in again to all (2)');
+    await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
+    await click('team-wiki', 'Sign in again…');
+    assert.ok(await until(`!!document.getElementById('modeDlg')`), 'a confirmation opens');
+    const ask = await js(`document.getElementById('modeDlg').textContent`);
+    assert.ok(/Sign in again to team-wiki\?/.test(ask) && /stays signed out until you finish in your browser/.test(ask) && /never reads or changes your keychain/.test(ask), 'the confirmation says what happens and what is lost: ' + ask);
+    await shot(`058-mcp-signin-again-ask-${w}x${h}.png`);
+    await js(`[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Sign in again').click()`);
+    assert.ok(await until(`!!window.__row('team-wiki').querySelector('button[data-signopen]')`), 'Open sign-in page shows for team-wiki');
+    assert.ok(/Sign-in page on auth\.example\.com/.test((await info('team-wiki')).text), 'the host only');
+    assert.ok(!/https?:\/\/|authorize|state=/i.test(await dlgText()), 'no address anywhere in the dialog');
+    // the OLD "connected" (another server's event, the focus re-read) is not "Signed in" (review on #625)
+    await js(`window.dispatchEvent(new Event('focus'))`);
+    await H.settle();
+    await new Promise((r) => setTimeout(r, 600));
+    assert.ok(!/Signed in to team-wiki/.test(await toasts()), 'no false "Signed in": ' + await toasts());
+    assert.ok(!!(await js(`window.__row('team-wiki').querySelector('button[data-signopen]')`)), 'the page is still held');
+    await check(w, 'again');
+    await shot(`058-mcp-signin-again-${w}x${h}.png`);
+    // finishing it: Open, the server leaves "connected" (Starting), then Running and "Signed in"
+    await click('team-wiki', 'Open sign-in page');
+    assert.ok(await until(`(window.__row('team-wiki').querySelector('.mst')||{}).textContent==='Starting'`, 3000), 'the server leaves connected first');
+    assert.ok(await until(`/Signed in to team-wiki\./.test([...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' '))`, 8000), 'Signed in once it is really back: ' + await toasts());
+    // ---- to all, and a second press while it runs: one confirmation, one pass (review on #625) ----
+    await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
+    // count every confirmation that opens; press "to all" twice in one go (a double click), confirm, then press a row while it runs
+    await js(`(()=>{window.__asks=0;new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes)if(n.id==='modeDlg')window.__asks++;}).observe(document.body,{childList:true});const a=document.getElementById('mcpSignAgainAll');a.click();a.click();})()`);
+    assert.ok(await until(`!!document.getElementById('modeDlg')`), 'one confirmation for all');
+    assert.ok(/Sign in again to 2 servers\?/.test(await js(`document.getElementById('modeDlg').textContent`)), 'it names how many');
+    await js(`new Promise(res=>{[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Sign in again').click();setTimeout(()=>{const b=document.querySelector('#agMcp button[data-signagain="crm"]');if(b)b.click();setTimeout(res,300);},0);})`);
+    assert.strictEqual(await js(`window.__asks`), 1, 'a double press and a row press while it runs open no second confirmation');
+    assert.ok(!(await js(`!!document.getElementById('modeDlg')`)), 'no confirmation left open');
+    assert.ok(await until(`!!window.__row('team-wiki').querySelector('button[data-signopen]')&&!!window.__row('crm').querySelector('button[data-signopen]')`), 'both rows wait for their sign-in page');
+    for (const r of ['team-wiki', 'crm']) await click(r, 'Cancel');
+    assert.ok(await until(`!document.querySelector('#agMcp button[data-signopen]')`), 'both cancelled');
+    await closeDlg();
 
     // ---- Cancel: back to Sign in, focus on it ----
     await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpauth: '1' } });

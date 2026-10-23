@@ -12,6 +12,7 @@ import type { AgentAdapter, McpServerStatus } from '../adapters/types';
 import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRestartResult, McpRestartSessionResult } from '../shared/api';
 import { maskMcpError } from './mcpmask';
 import { sourcesFor } from './mcpglobal';
+import { BUILTIN_SERVERS } from './mcpfiles';
 import type { McpHealthMark } from '../shared/mcphealth';
 
 const NOT_RUNNING = 'This session is not running. Send a message to start it.';
@@ -51,10 +52,22 @@ export interface McpReplyInput {
   health?: ReadonlyMap<string, McpHealthMark>;
   /** Spec 058 FR-065: the open sign-in of one server (host only), from `McpSignInStore.view`. */
   signIn?(name: string): { host: string; opened: boolean; expiresInMs: number; otherSite?: string } | undefined;
+  /** FR-164: the server's own address when Durbar knows one (a folder extra, a list Durbar passes, the Copilot CLI list); stdio has none. */
+  serverUrl?(name: string): string | undefined;
 }
 
 /** Spec 058 FR-065: the one rule for "this row needs a sign-in" (the window uses the same): the runtime's `needs-auth`, or a failed server whose failure is an auth one. */
 export const needsSignIn = (s: { status?: string; errorClass?: string } | undefined): boolean => !!s && (s.status === 'needs-auth' || (s.status === 'failed' && s.errorClass === 'auth'));
+/**
+ * Spec 058 FR-164: a server that can be signed in again: reported by the session as connected or failed (not one that waits for its
+ * first sign-in, which gets Sign in), and not a local (stdio) server, which has no OAuth sign-in.
+ */
+export const canSignInAgainStatus = (s: { name?: string; status?: string; errorClass?: string; transport?: string; source?: string } | undefined, url: string | undefined): boolean =>
+  // fail closed (review on #625): only a remote server Durbar knows by its http(s) address (a folder extra, a list Durbar passes or the
+  // Copilot CLI list), never a built-in one (it uses the Copilot sign-in itself), and never a source or transport that says otherwise or
+  // is unknown to the runtime; a stdio server has no address, so it is never a candidate whatever a re-read says
+  !!s && !needsSignIn(s) && (s.status === 'connected' || s.status === 'failed') && typeof url === 'string' && /^https?:\/\//i.test(url) &&
+  !BUILTIN_SERVERS.includes(s.name ?? '') && s.source !== undefined && s.source !== 'builtin' && s.source !== 'unknown' && s.transport !== 'stdio' && s.transport !== 'memory';
 
 /** A server name that is safe to put in a command the user may copy: no spaces, quotes, newlines or shell characters (a folder extra's name comes from a file). */
 const PLAIN_NAME = /^[A-Za-z0-9_.@:+-]{1,64}$/;
@@ -86,16 +99,19 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     // FR-065/FR-068: a row that reads Needs sign-in, on, in a running session; the steps are the agent app's own text (missing = none)
     const needs = isLive && on && needsSignIn(st);
     const canSignIn = needs && typeof ad?.startMcpSignIn === 'function';
+    // FR-164: Sign in again, where the agent app can redo the sign-in itself (Copilot), for an on server the running session reports
+    const canSignInAgain = isLive && on && !!ad?.capabilities.mcpSignInAgain && typeof ad?.startMcpSignIn === 'function' && !i.builtin?.has(name) && canSignInAgainStatus(st, i.serverUrl?.(name));
     // FR-180: the steps come from the adapter's own text alone (also without an in-app call: Claude's SDK transport, an older app)
     // (a folder extra is known only to Durbar: its line points at Sign in, so it shows only where Sign in is offered)
     const steps = needs && ad?.capabilities.mcpSignInSteps && (origin !== 'folder' || canSignIn) ? signInStepsFor(ad.capabilities.mcpSignInSteps, name, origin) : undefined;
-    const open = canSignIn ? i.signIn?.(name) : undefined;
+    // an open sign-in stays visible whatever the row reads meanwhile (a server signed in again passes through Starting or Needs sign-in)
+    const open = isLive && on && typeof ad?.startMcpSignIn === 'function' ? i.signIn?.(name) : undefined;
     // FR-180: how the adapter says a sign-in it started ended (only the two normalized values); the app's note where the row offers Sign in
     const end = st && validSignInEnd(st.signInEnd) ? st.signInEnd : undefined;
     const note = (canSignIn || open) && ad?.capabilities.mcpSignInNote ? ad.capabilities.mcpSignInNote : undefined;
     // FR-176/FR-181: Restart ends a sign-in made outside Durbar (Claude Code), so a needs-sign-in row keeps it where the app says so
     const signRestart = needs && canRestart && !!ad?.capabilities.mcpSignInRestart && !!steps;
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(mark ? { since: mark.since } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(mark ? { since: mark.since } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];

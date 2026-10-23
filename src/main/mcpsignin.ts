@@ -13,7 +13,7 @@ import type { McpServerStatus } from '../adapters/types';
 import type { AgentInfo, McpOpenSignInResult, McpSignInStartResult } from '../shared/api';
 import { validSignInEnd } from '../adapters/eventguard';
 import { maskMcpError } from './mcpmask';
-import { needsSignIn, validServerName } from './mcpsession';
+import { canSignInAgainStatus, needsSignIn, validServerName } from './mcpsession';
 
 /** FR-065: how long main keeps an address at most; the runtime's own listener ends on its own. FR-180: an entry with a `ttlMs` keeps its own, shorter limit. */
 export const SIGN_IN_TTL_MS = 10 * 60 * 1000;
@@ -33,6 +33,13 @@ interface Entry {
   opened: boolean;
   /** FR-075: the server's own host, set only when the sign-in page is on a different site than the server. */
   otherSite?: string;
+  /**
+   * FR-164 (review on #625): a Sign in again of a server that was connected. Its "connected" before the runtime reports any other state
+   * is the OLD sign-in (a re-read or another server's event says so too), so it does not finish the entry; `sawOther` is set once the
+   * runtime reports another state for this server, and only a "connected" after that finishes it.
+   */
+  again?: boolean;
+  sawOther?: boolean;
 }
 
 /** Two-part public suffixes the registrable-domain rule knows (FR-075: the last two labels, or three for these). */
@@ -186,16 +193,17 @@ export class McpSignInStore {
     this.pending.delete(McpSignInStore.key(agentId, name));
   }
   /**
-   * Hold an address that already passed `elicitHttpsUrl`. False when one is open for this server (one at a time). FR-180: `ttlMs` (the
-   * agent app's own listener time, from the adapter) shortens the limit: missing = 10 minutes; present but not a positive finite number
-   * (0, negative, NaN, Infinity, a string) = the 30-second minimum (review on #635: a broken value never gets the longest limit).
+   * Hold an address that already passed `elicitHttpsUrl`. False when one is open for this server (one at a time). FR-164: `again` marks a
+   * Sign in again. FR-180: `ttlMs` (the agent app's own listener time, from the adapter) shortens the limit: missing = 10 minutes; present
+   * but not a positive finite number (0, negative, NaN, Infinity, a string) = the 30-second minimum (review on #635).
    */
-  begin(agentId: string, name: string, url: string, host: string, otherSite?: string, ttlMs?: number): boolean {
+  begin(agentId: string, name: string, url: string, host: string, otherSite?: string, opts: { again?: boolean; ttlMs?: number } = {}): boolean {
     this.sweep();
     if (this.live(agentId, name) || this.entries.size >= MAX_SIGN_INS) return false;
-    const ttl = ttlMs === undefined ? this.ttlMs : typeof ttlMs === 'number' && Number.isFinite(ttlMs) && ttlMs > 0 ? Math.min(ttlMs, this.ttlMs) : Math.min(SIGN_IN_MIN_TTL_MS, this.ttlMs);
+    const t = opts.ttlMs;
+    const ttl = t === undefined ? this.ttlMs : typeof t === 'number' && Number.isFinite(t) && t > 0 ? Math.min(t, this.ttlMs) : Math.min(SIGN_IN_MIN_TTL_MS, this.ttlMs);
     const k = McpSignInStore.key(agentId, name);
-    this.entries.set(k, { url, host, at: this.now(), ttl, opened: false, ...(otherSite ? { otherSite } : {}) });
+    this.entries.set(k, { url, host, at: this.now(), ttl, opened: false, ...(otherSite ? { otherSite } : {}), ...(opts.again === true ? { again: true } : {}) });
     this.attempts.delete(k); // newest last: the cap below drops the oldest
     this.attempts.set(k, this.now());
     if (this.attempts.size > MAX_SIGN_INS) this.attempts.delete(this.attempts.keys().next().value as string);
@@ -248,13 +256,24 @@ export class McpSignInStore {
     for (const k of [...this.entries.keys()]) this.del(k);
     this.attempts.clear();
   }
-  /** `mcp` event: a server the runtime now reports connected has finished its sign-in; FR-180: so has one the adapter marks with a `signInEnd`. */
+  /**
+   * `mcp` event: a server the runtime now reports connected has finished its sign-in. A Sign in again entry (FR-164) finishes only on a
+   * "connected" that follows another state reported for that server since it began (review on #625). FR-180: a `signInEnd` from the
+   * adapter about a sign-in it started ends the entry in every case.
+   */
   onServers(agentId: string, servers: readonly McpServerStatus[]): void {
     for (const s of servers) {
-      if (s.status === 'connected' || validSignInEnd(s.signInEnd)) {
-        this.drop(agentId, s.name);
-        this.attempts.delete(McpSignInStore.key(agentId, s.name));
+      const k = McpSignInStore.key(agentId, s.name);
+      const e = this.entries.get(k);
+      if (!validSignInEnd(s.signInEnd)) {
+        if (s.status !== 'connected') {
+          if (e?.again) e.sawOther = true;
+          continue;
+        }
+        if (e?.again && !e.sawOther) continue; // still the old sign-in
       }
+      this.drop(agentId, s.name);
+      this.attempts.delete(k);
     }
   }
 }
@@ -284,7 +303,7 @@ export function signInErrorText(err: unknown, secrets: readonly string[], fallba
  * session and one sign-in at a time; asks the runtime; checks the address; keeps it. The reply carries the host only. `manual: true`
  * tells the dialog to show the terminal steps (FR-068).
  */
-export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unknown, name: unknown): Promise<McpSignInStartResult> {
+export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unknown, name: unknown, again?: unknown): Promise<McpSignInStartResult> {
   const a = typeof id === 'string' ? d.agents.get(id) : undefined;
   const ad = a ? d.router.forAgent(a.id) : undefined;
   if (!a || !ad || !validServerName(name)) return { ok: false, error: UNKNOWN };
@@ -292,12 +311,15 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
   if (!ad.isLive(a.id)) return { ok: false, manual: true, error: NOT_RUNNING };
   const st = d.live(a.id).find((x) => x.name === name);
   if (!st) return { ok: false, error: `${name} is not running in this session.` };
-  if (!needsSignIn(st)) return { ok: false, error: `${name} does not need a sign-in.` };
+  // FR-164: Sign in again (only `true` counts) is for a server the agent app can sign in again itself, and not one that waits for its first sign-in
+  const redo = again === true;
+  if (redo && !ad.capabilities.mcpSignInAgain) return { ok: false, error: `${ad.displayName} cannot sign in again from Agent Durbar.` };
+  if (redo ? !canSignInAgainStatus(st, d.serverUrl?.(a.id, name)) : !needsSignIn(st)) return { ok: false, error: redo ? `${name} cannot be signed in again now.` : `${name} does not need a sign-in.` };
   if (!store.reserve(a.id, name)) return { ok: false, error: store.has(a.id, name) ? `A sign-in for ${name} is already open.` : 'A sign-in for this server is already starting, or too many are open.' };
   try {
     let r;
     try {
-      r = await ad.startMcpSignIn(a.id, name);
+      r = redo ? await ad.startMcpSignIn(a.id, name, { again: true }) : await ad.startMcpSignIn(a.id, name);
     } catch (err) {
       return { ok: false, manual: true, error: signInErrorText(err, d.secrets(a.id), 'Could not start the sign-in.') };
     }
@@ -322,8 +344,8 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
       return { ok: false, manual: true, error: 'Agent Durbar opens only https sign-in pages, and this one is not.' };
     }
     const otherSite = signInSiteNote(d.serverUrl?.(a.id, name), u.host);
-    // FR-180: the app's listener time, when the adapter knows it (the store caps it at 10 minutes and ignores a bad value)
-    if (!store.begin(a.id, name, u.url, u.host, otherSite, r.ttlMs)) return { ok: false, error: 'Too many sign-ins are open. Cancel one first.' };
+    // FR-164 Sign in again; FR-180: the app's listener time, when the adapter knows it (the store caps it and gives a bad value the minimum)
+    if (!store.begin(a.id, name, u.url, u.host, otherSite, { ...(redo ? { again: true } : {}), ttlMs: r.ttlMs })) return { ok: false, error: 'Too many sign-ins are open. Cancel one first.' };
     return { ok: true, kind: 'browser', host: u.host, ...(otherSite ? { otherSite } : {}) };
   } finally {
     store.release(a.id, name);
