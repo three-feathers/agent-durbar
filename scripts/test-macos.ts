@@ -5,6 +5,7 @@ import * as path from 'path';
 import type { MenuItemConstructorOptions } from 'electron';
 import { ADD_FOLDER_ACCELERATOR, ADD_FOLDER_LABEL, ADD_WORKSPACE_ACCELERATOR, ADD_WORKSPACE_LABEL, HELP_LINK_LABEL, MENU_APP_NAME, SETTINGS_ACCELERATOR, appMenuTemplate, disposeOnQuit, hideOnClose, windowChrome } from '../src/main/appmenu';
 import { shouldBounce, shouldFlash } from '../src/main/badge';
+import { titleDoubleClickAction } from '../src/main/titledblclick';
 
 const ROOT = path.join(__dirname, '..', '..');
 type Ev = Partial<{ key: string; code: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }>;
@@ -167,5 +168,13 @@ for (const id of ['restoreStrip', 'awayStrip', 'foldersPop', 'floorsPop', 'defau
 assert.ok(html.indexOf('id="restoreStrip"') < html.indexOf('class="workspace"') && html.indexOf('id="awayStrip"') < html.indexOf('id="screen"') && html.indexOf('class="workspace"') < html.indexOf('id="screen"'), 'notice strips come before .workspace and #screen (the ~ rules need it)');
 assert.ok(css.includes('@keyframes sl-fade') && css.includes('animation-timeline:scroll(self inline)') && /\.strip-list\{animation:sl-fade[^}]*mask-image/.test(css), 'the agent strip fades where it is cut off');
 assert.ok(css.includes(':root{color-scheme:light}') && css.includes(':root[data-dark]{color-scheme:dark}'), 'color-scheme follows the theme');
+
+// ---- FR-085 (issue #591): double-click on the top bar follows AppleActionOnDoubleClick ----
+for (const v of ['Maximize', 'Fill', 'maximize', 'FILL', ' Maximize ', '', undefined, null, 42, 'Zoom', 'something else']) assert.strictEqual(titleDoubleClickAction(v), 'zoom', `double-click "${String(v)}" zooms`);
+for (const v of ['Minimize', 'minimize', 'MINIMIZE', ' Minimize\n']) assert.strictEqual(titleDoubleClickAction(v), 'minimize', `double-click "${v}" minimizes`);
+for (const v of ['None', 'none', 'NONE']) assert.strictEqual(titleDoubleClickAction(v), 'none', `double-click "${v}" does nothing`);
+assert.ok(preload.includes("ipcRenderer.send('window:titleDoubleClick')"), 'preload sends the title double-click');
+assert.ok(/platform==='darwin'&&window\.agentDurbar\.titleDoubleClick\)document\.addEventListener\('dblclick'/.test(app) && app.includes("closest('.topbar,.strip,.notice-strip,.scr-head')"), 'the page sends it only on a Mac, from a drag area');
+assert.ok(/ipcOn\('window:titleDoubleClick'[\s\S]*?process\.platform !== 'darwin'[\s\S]*?e\.sender !== w\.webContents[\s\S]*?AppleActionOnDoubleClick/.test(appIpc) && appIpc.includes('liveWin()'), 'main answers only on darwin, for its own window, from the system setting, not a destroyed window');
 
 console.log('macos tests passed');
