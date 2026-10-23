@@ -161,6 +161,16 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     s2.upsert({ workspace: abs('a'), permMode: 'ask', model: 'auto' });
     assert.strictEqual(new FolderStore(f5).load()[0].autoTier, 'balance', 'a plain upsert keeps the agent\'s tier');
     assert.ok(!('autoTier' in new FolderStore(f5).load()[1]), 'never written for a folder without one');
+    // review on #642: null clears the agent's own tier (Undo to none); setAutoTier (FR-019) changes only the tier
+    const keep = new FolderStore(f5).load()[0];
+    assert.ok(s2.setModelChoice(abs('a'), { model: 'auto', autoTier: null }));
+    assert.ok(!('autoTier' in new FolderStore(f5).load()[0]), 'null clears');
+    assert.ok(s2.setAutoTier(abs('a'), 'intelligence'));
+    const after = new FolderStore(f5).load()[0];
+    assert.deepStrictEqual([after.autoTier, after.model, after.contextTier, after.permMode], ['intelligence', keep.model, keep.contextTier, keep.permMode], 'only the tier changes');
+    assert.ok(s2.setAutoTier(abs('a'), 'fast' as never));
+    assert.ok(!('autoTier' in new FolderStore(f5).load()[0]), 'an unknown name clears (none of its own)');
+    assert.ok(!s2.setAutoTier(abs('nope'), 'balance'));
     fs.writeFileSync(f5, JSON.stringify({ folders: [{ workspace: abs('a'), autoTier: 'intelligence' }, { workspace: abs('b'), autoTier: 'fast' }, { workspace: abs('c'), autoTier: { toString: 'balance' } }, { workspace: abs('d'), autoTier: '__proto__' }] }));
     assert.deepStrictEqual(new FolderStore(f5).load().map((f) => f.autoTier), ['intelligence', undefined, undefined, undefined]);
     // Copilot's own settings are never part of the file

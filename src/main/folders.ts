@@ -386,7 +386,7 @@ export class FolderStore {
   }
 
   /** Remember the model choice of an applied switch (spec 030): the model, the effort (`null` clears it, `undefined` keeps it) and the tier (`undefined` = default). Saved in this app's own file only. */
-  setModelChoice(workspace: string, choice: { model: string; effort?: string | null; contextTier?: ContextTier; autoTier?: AutoTier }): boolean {
+  setModelChoice(workspace: string, choice: { model: string; effort?: string | null; contextTier?: ContextTier; autoTier?: AutoTier | null }): boolean {
     const cur = this.get(workspace);
     if (!cur || !choice.model || choice.model.length > 100) return false;
     cur.model = choice.model;
@@ -394,8 +394,20 @@ export class FolderStore {
     else if (choice.effort !== undefined) cur.effort = parseEffort(choice.effort) ?? cur.effort;
     const t = parseTier(choice.contextTier);
     cur.contextTier = t === 'long' ? 'long' : undefined;
-    const at = parseAutoTier(choice.autoTier); // spec 007 FR-016: undefined keeps the saved tier (a switch to another model keeps it)
+    const at = parseAutoTier(choice.autoTier); // spec 007 FR-016: undefined keeps the saved tier (a switch to another model keeps it), null clears it
     if (at) cur.autoTier = at;
+    else if (choice.autoTier === null) delete cur.autoTier;
+    this.save();
+    return true;
+  }
+
+  /** Spec 007 FR-019: the tier the runtime kept after a failed tier switch (`null` = none of its own). Only the tier changes. */
+  setAutoTier(workspace: string, tier: AutoTier | null): boolean {
+    const cur = this.get(workspace);
+    if (!cur) return false;
+    const t = parseAutoTier(tier);
+    if (t) cur.autoTier = t;
+    else delete cur.autoTier;
     this.save();
     return true;
   }

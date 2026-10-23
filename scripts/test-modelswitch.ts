@@ -385,7 +385,10 @@ console.log('effort: the models\' own names (none included) OK');
   assert.strictEqual(T.autoTierOf({ id: 'auto', autoTierManaged: { tier: 'efficiency', locked: true } }, 'balance'), 'efficiency', 'a lock wins');
   assert.ok(T.autoTierLocked({ id: 'auto', autoTierManaged: { tier: 'efficiency', locked: true } }));
   assert.ok(!T.autoTierLocked({ id: 'auto', autoTierManaged: { tier: 'efficiency', locked: false } }));
-  assert.ok(!T.autoTierLocked({ id: 'auto', autoTierManaged: { tier: 'fast', locked: true } }), 'a lock on an unknown name is no lock');
+  // review on #642 (item 2): a lock fails closed, also when its tier has no name we know
+  assert.ok(T.autoTierLocked({ id: 'auto', autoTierManaged: { locked: true } }), 'a lock with no known name still locks');
+  assert.strictEqual(T.autoTierOf({ id: 'auto', autoTierManaged: { locked: true } }, 'balance'), '', 'and no tier is shown as pressed');
+  assert.ok(!T.autoTierLocked({ id: 'auto', autoTierManaged: { locked: 'yes' } }), 'only a real true locks');
   // FR-014: up asks, down or same does not
   for (const [f, t] of [['efficiency', 'balance'], ['efficiency', 'intelligence'], ['balance', 'intelligence'], [undefined, 'balance']] as const) {
     const c = T.autoTierConfirm(f, t);
@@ -399,5 +402,18 @@ console.log('effort: the models\' own names (none included) OK');
   assert.strictEqual(T.autoTierName('__proto__'), '', 'only the three names');
   assert.strictEqual(D.modelChangeText({ cause: 'user', model: 'auto', autoTier: 'intelligence' }, (x) => (x === 'auto' ? 'Auto' : x)), 'Model set to Auto (Intelligence routing). The next message uses it.');
   assert.strictEqual(D.modelChangeText({ cause: 'user', model: 'auto', autoTier: 'fast' }, (x) => (x === 'auto' ? 'Auto' : x)), 'Model set to Auto. The next message uses it.');
+  // item 2: a lock with no known name refuses every tier and the reset
+  const anon = [{ id: 'auto', autoTiers: [...tiers], autoTierManaged: { locked: true } }];
+  for (const t of [...tiers, null]) { const r = parseSwitchRequest({ model: 'auto', autoTier: t }, anon); assert.ok(!r.ok && /policy sets the Auto routing\.$/.test(r.error), 'unnamed lock refuses ' + t); }
+  // item 4: null = back to "no tier of its own" (Undo), only for an auto with tiers, never under a lock
+  assert.deepStrictEqual(parseSwitchRequest({ model: 'auto', autoTier: null }, known), { ok: true, request: { model: 'auto', autoTier: null } });
+  { const r = parseSwitchRequest({ model: 'gpt-x', autoTier: null }, known); assert.ok(!r.ok, 'null only with auto'); }
+  { const r = parseSwitchRequest({ model: 'auto', autoTier: null }, [{ id: 'auto' }]); assert.ok(!r.ok, 'null only when tiers are listed'); }
+  { const r = parseSwitchRequest({ model: 'auto', autoTier: null }, locked); assert.ok(!r.ok && /balance/.test(r.error), 'null never under a lock'); }
+  // FR-019: the failure note names the tier still in effect
+  const F = (D as unknown as { autoTierFailText: (e: unknown) => string }).autoTierFailText;
+  assert.strictEqual(F({ requested: 'efficiency', effective: 'intelligence', reason: 'request-failed' }), 'Copilot could not switch Auto to Efficiency routing (the routing request failed). It still uses Intelligence routing.');
+  assert.strictEqual(F({ reason: 'weird' }), 'Copilot could not switch Auto to the default routing. It still uses its default routing.');
+  assert.strictEqual(F({ requested: '__proto__', effective: 'constructor', reason: 'toString' }), 'Copilot could not switch Auto to the default routing. It still uses its default routing.', 'only the three names and known reasons');
   console.log('spec 007: Auto routing tier validation and helpers OK');
 }

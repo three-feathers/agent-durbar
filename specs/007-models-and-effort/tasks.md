@@ -21,10 +21,21 @@
 ## 2026-10-23: Auto routing tier (issue #607)
 
 - [x] T026 Shared types and IPC validation: `AutoTier`, `parseAutoTier`, `ModelOption.autoTiers`/`autoTierManaged`, `ModelSwitchRequest.autoTier`, `parseSwitchRequest` (allow-list, `auto` only, the lock); unit tests with a mutation check [FR-015] (`src/shared/modelswitch.ts`, `scripts/test-modelswitch.ts`)
-- [x] T027 Copilot adapter: tiers on the `auto` option behind the runtime version gate; managed tier read and parsed (pure `managedAutoTierFrom`, `autoTiersFor`); `modelConfig` and `setModel` send the saved tier, never under a lock, the managed default otherwise; tests with a fake client [FR-012, FR-016, FR-017] (`src/adapters/copilotmodel.ts`, `src/adapters/copilot.ts`, `scripts/test-copilot-model.ts`)
+- [x] T027 Copilot adapter: tiers on the `auto` option behind the runtime version gate; managed tier read and parsed (pure `managedAutoTierFrom`, `withAutoTiers`); `modelConfig` and `setModel` send the saved tier, never under a lock, the managed default otherwise; tests with a fake client [FR-012, FR-016, FR-017] (`src/adapters/copilotmodel.ts`, `src/adapters/copilot.ts`, `scripts/test-copilot-model.ts`)
 - [x] T028 Normalized `model` event carries `autoTier` (`session.model_change`); main keeps `AgentInfo.autoTier`, saves it with the folder (`setModelChoice`), restores it and passes it to the next start [FR-016] (`src/adapters/map.ts`, `src/adapters/types.ts`, `src/main/main.ts`, `src/main/ipc/model.ts`, `src/main/folders.ts`, `src/main/startopts.ts`, `scripts/test-folders.ts`)
 - [x] T029 Renderer: the Auto routing group in the model menu, the confirm rule (`autoTierConfirm`, pure, tested), Undo, the chip label, the locked state [FR-013, FR-014, FR-017] (`src/renderer/app.js`, `src/renderer/modelswitch.js`)
 - [x] T030 Simulator: tiers on Auto, switch and queue, `?simtierlock=` [FR-018] (`src/renderer/sim.ts`, `scripts/test-sim-model.ts`)
 - [x] T031 Driver `scripts/shots-007-autotier.js` in `ui-suite.js`, screenshots at both sizes, mutation check of the driver [FR-018]
 - [x] T032 Docs: README (model picker), changelog fragment, spec 030 T060, agent notes [FR-012..FR-018]
 - [ ] T033 (needs-owner-approval, costs credits) One real check on Copilot: switch an Auto session to Balance and back, record the answers and whether `session.model_change` arrives [KNOWN GAP]
+
+## 2026-10-23: review round 1 on #642 (Paco's agent)
+
+- [x] T034 Back to Auto with a saved higher tier: the dialog names it and lists the reasons; driver step [FR-014 delta]
+- [x] T035 An unnamed lock fails closed (adapter parse, IPC, renderer, sim `?simtierlock=other`); resolve error/timeout documented; status and policy read in parallel [FR-017 delta]
+- [x] T036 `session.auto_tier_switch_failed` → `autoTierFailed`; main restores and saves the tier in effect; note and toast; sim `?simtierfail=1`; tests and driver step [FR-019]
+- [x] T037 Undo restores the agent's own tier or none (`autoTier: null`); folder `setAutoTier`; tests and driver step [FR-016 delta]
+- [x] T038 Handler-level test of the other-app guard; queued tier switch test [FR-015, FR-018]
+- [x] T039 `aria-describedby` on the locked group and buttons [FR-013]
+- [x] T040 `autoTierManaged: true` drops the tier from the `model` event [FR-020]
+- [x] T041 Stale name `autoTiersFor` → `withAutoTiers` in plan and tasks

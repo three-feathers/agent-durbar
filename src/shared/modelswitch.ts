@@ -15,9 +15,12 @@ export type ContextTier = 'default' | 'long';
 export type AutoTier = 'efficiency' | 'balance' | 'intelligence';
 export const AUTO_TIERS: readonly AutoTier[] = ['efficiency', 'balance', 'intelligence'];
 export const parseAutoTier = (v: unknown): AutoTier | undefined => (typeof v === 'string' && (AUTO_TIERS as readonly string[]).includes(v) ? (v as AutoTier) : undefined);
-/** The organization's tier from the agent app's managed settings; `locked` = users may not choose another (FR-017). */
+/**
+ * The organization's tier from the agent app's managed settings; `locked` = users may not choose another (FR-017). `tier` is absent only for a
+ * lock whose tier is not one of the three names (a future name): the lock still holds (fail closed), the UI just cannot name it.
+ */
 export interface ManagedAutoTier {
-  tier: AutoTier;
+  tier?: AutoTier;
   locked: boolean;
 }
 
@@ -43,8 +46,11 @@ export interface ModelSwitchRequest {
   effort?: string | null;
   /** The tier wanted after the switch; omitted = the model's default tier (a request describes the whole state, so an effort-only change repeats the current tier). */
   contextTier?: ContextTier;
-  /** Spec 007 FR-014: the Auto routing tier; only with `model: 'auto'` and only a tier that model lists. */
-  autoTier?: AutoTier;
+  /**
+   * Spec 007 FR-014: the Auto routing tier; only with `model: 'auto'` and only a tier that model lists. `null` (FR-016, an Undo back to "none"):
+   * the agent's own tier is cleared and the default applies again (Efficiency, or the organization's default).
+   */
+  autoTier?: AutoTier | null;
   /** Answer to a "needs-confirmation" result (the target window is smaller than the context in use). */
   confirm?: { compaction?: 'accept' | 'decline' };
 }
@@ -131,6 +137,8 @@ export function parseFocus(v: unknown): string | undefined {
   return t || undefined;
 }
 
+const lockText = (l: ManagedAutoTier): string => (l.tier ? `Your organization's Copilot policy sets the Auto routing to ${l.tier}.` : "Your organization's Copilot policy sets the Auto routing.");
+
 export interface KnownModel {
   id: string;
   efforts?: string[];
@@ -164,13 +172,18 @@ export function parseSwitchRequest(raw: unknown, models: readonly KnownModel[]):
     if (t === 'long' && !(m.contextTiers ?? []).includes('long')) return { ok: false, error: 'That model has no long-context tier.' };
     request.contextTier = t;
   }
-  if (o.autoTier !== undefined) {
+  if (o.autoTier === null) {
+    // Spec 007 FR-016: back to "no tier of its own" (Undo); only for an `auto` that lists tiers, never under a lock
+    if (m.id !== 'auto' || !(m.autoTiers ?? []).length) return { ok: false, error: 'This model has no Auto routing tier to choose.' };
+    if (m.autoTierManaged?.locked) return { ok: false, error: lockText(m.autoTierManaged) };
+    request.autoTier = null;
+  } else if (o.autoTier !== undefined) {
     // Spec 007 FR-015: one of the three names, only for `auto`, only when the account's `auto` lists it, never against a locked policy
     const t = parseAutoTier(o.autoTier);
     if (!t) return { ok: false, error: 'Invalid Auto routing tier.' };
     if (m.id !== 'auto' || !(m.autoTiers ?? []).includes(t)) return { ok: false, error: 'This model has no Auto routing tier to choose.' };
     const lock = m.autoTierManaged;
-    if (lock?.locked && lock.tier !== t) return { ok: false, error: `Your organization's Copilot policy sets the Auto routing to ${lock.tier}.` };
+    if (lock?.locked && lock.tier !== t) return { ok: false, error: lockText(lock) };
     request.autoTier = t;
   }
   if (o.confirm !== undefined) {

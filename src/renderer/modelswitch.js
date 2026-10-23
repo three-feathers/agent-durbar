@@ -172,15 +172,16 @@
     if(!m||m.id!=='auto'||!Array.isArray(m.autoTiers))return [];
     return AUTO_TIERS.filter(t=>m.autoTiers.includes(t));
   }
-  /* The tier in effect: a locked organization tier, else the agent's own, else the organization's default, else Efficiency (what a new Auto session gets). */
+  /* The tier in effect: a locked organization tier, else the agent's own, else the organization's default, else Efficiency (what a new Auto session gets).
+     A lock on a tier outside the three names (FR-017, fails closed) is in effect too, but cannot be named: ''. */
   function autoTierOf(m,own){
     const g=m&&m.autoTierManaged&&typeof m.autoTierManaged==='object'?m.autoTierManaged:null;
-    if(g&&g.locked===true&&isTier(g.tier))return g.tier;
+    if(g&&g.locked===true)return isTier(g.tier)?g.tier:'';
     if(isTier(own))return own;
     if(g&&isTier(g.tier))return g.tier;
     return 'efficiency';
   }
-  const autoTierLocked=m=>!!(m&&m.autoTierManaged&&m.autoTierManaged.locked===true&&isTier(m.autoTierManaged.tier));
+  const autoTierLocked=m=>!!(m&&m.autoTierManaged&&typeof m.autoTierManaged==='object'&&m.autoTierManaged.locked===true); /* fails closed: also with no name */
   /* FR-014: a higher tier asks first (Auto may route to models that cost more per token, and a tier's price is not reported); a lower or equal one does not. */
   function autoTierConfirm(from,to){
     if(!isTier(to))return {needed:false,valid:false,reasons:[]};
@@ -191,6 +192,15 @@
       'The price of a routing tier is not reported, so the cost cannot be compared before the next message.']};
   }
   const autoTierName=t=>isTier(t)?AUTO_TIER_NAME[t]:'';
+  const FAIL_WHY={'policy-rejected':'the model it picked is not allowed by policy','request-failed':'the routing request failed','setup-failed':'the routing could not be prepared','unsupported':'your Copilot provider does not support Auto routing'};
+  /* FR-019: the note after a tier switch the runtime could not apply; it names the tier still in effect. Plain text. */
+  function autoTierFailText(e){
+    if(!e)return '';
+    const want=isTier(e.requested)?AUTO_TIER_NAME[e.requested]+' routing':'the default routing';
+    const now=isTier(e.effective)?AUTO_TIER_NAME[e.effective]+' routing':'its default routing';
+    const why=typeof e.reason==='string'&&Object.prototype.hasOwnProperty.call(FAIL_WHY,e.reason)?FAIL_WHY[e.reason]:''; /* own keys only */
+    return 'Copilot could not switch Auto to '+want+(why?' ('+why+')':'')+'. It still uses '+now+'.';
+  }
 
   const CAUSE={'rate-limit':'because of a rate limit','fallback':'because the request was refused','runtime':'by the runtime','resume':'when the session resumed'};
   /* The line for a model change: ours says what happened; one the runtime made says so plainly (spec 030 FR-015). */
@@ -285,5 +295,5 @@
     return m.includes(cur)?cur:'read-only';
   }
 
-  return {AUTO_TIERS,AUTO_TIER_HINT,autoTiersOf,autoTierOf,autoTierLocked,autoTierConfirm,autoTierName,handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,compactionFoldText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
+  return {AUTO_TIERS,AUTO_TIER_HINT,autoTiersOf,autoTierOf,autoTierLocked,autoTierConfirm,autoTierName,autoTierFailText,handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,compactionFoldText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
 })());

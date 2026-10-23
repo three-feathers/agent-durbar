@@ -87,11 +87,44 @@ module.exports = async (ctx) => {
     await openMenu();
     assert.ok(!(await exists('#modelMenu [data-autotier]')), 'no tier group for another model');
     await click('#modelMenu [data-pick="auto"]');
-    await ok(`!!document.getElementById('modeDlg')||/routing/.test((document.getElementById('modelChip')||{getAttribute:()=>''}).getAttribute('aria-label')||'')`, 'switching back to Auto');
-    if (await exists('#modeDlg')) await dlgButton('Switch');
+    // review on #642 (item 1): the dialog names the tier that will apply, with the higher-tier reasons
+    await ok(`!!document.getElementById('modeDlg')`, 'back to Auto with Intelligence asks first');
+    const back = await text('#modeDlg');
+    assert.match(back, /Switch Hugo to Auto \(Intelligence routing\)\?/, 'the title names the tier');
+    assert.match(back, /cost more per token/, 'with the higher-tier reason');
+    await shot('back-to-auto');
+    await dlgButton('Switch');
     await ok(`/Auto/.test((document.getElementById('modelChip')||{getAttribute:()=>''}).getAttribute('aria-label')||'')&&/intelligence routing/.test(document.getElementById('modelChip').getAttribute('aria-label'))`, 'back on Auto with its own tier');
     await openMenu();
     assert.strictEqual(await pressed(), 'intelligence', 'the remembered tier is pressed');
+    await closeMenu();
+
+    // ---- 5b) review on #642 (item 4): Undo restores the agent's own choice, "none" included (never the tier in effect) ----
+    await HP.load({ w: W, h: H });
+    await open('Hugo');
+    await openMenu();
+    await click('#modelMenu [data-autotier="balance"]');
+    await ok(`!!document.getElementById('modeDlg')`, 'Efficiency to Balance asks');
+    await dlgButton('Switch');
+    await ok(`/balance routing/.test((document.getElementById('modelChip')||{getAttribute:()=>''}).getAttribute('aria-label')||'')&&!!document.querySelector('#toasts .toast-act')`, 'on Balance, Undo offered');
+    await click('#toasts .toast-act');
+    await ok(`!/routing/.test((document.getElementById('modelChip')||{getAttribute:()=>''}).getAttribute('aria-label')||'')&&/back to/.test(document.getElementById('toasts').innerText)`, 'Undo goes back to no tier of its own');
+    await openMenu();
+    assert.strictEqual(await pressed(), 'efficiency', 'the default is pressed again');
+    await closeMenu();
+
+    // ---- 5c) review on #642 (item 3): a tier switch the runtime could not apply: the chip shows the tier still in use, the chat says so ----
+    await HP.load({ w: W, h: H, query: { simtierfail: '1' } });
+    await open('Hugo');
+    await openMenu();
+    await click('#modelMenu [data-autotier="intelligence"]');
+    await ok(`!!document.getElementById('modeDlg')`, 'asks');
+    await dlgButton('Switch');
+    await ok(`/could not switch Auto to Intelligence routing/.test(document.getElementById('chat').innerText)`, 'the failure is a note in the chat');
+    assert.match(await text('#chat'), /It still uses Efficiency routing\./);
+    await ok(`!/intelligence/.test((document.getElementById('modelChip')||{getAttribute:()=>''}).getAttribute('aria-label')||'')`, 'the chip does not claim the failed tier');
+    await openMenu();
+    assert.strictEqual(await pressed(), 'efficiency', 'the tier in use is pressed');
     await closeMenu();
 
     // ---- 6) a locked organization tier: buttons disabled, the note says why, a click does nothing ----
@@ -101,10 +134,23 @@ module.exports = async (ctx) => {
     await ok(`document.querySelectorAll('#modelMenu [data-autotier][aria-disabled="true"]').length===3`, 'locked: all three disabled');
     assert.strictEqual(await pressed(), 'balance', 'the locked tier is pressed');
     assert.match(await text('#modelMenu .mm-lock'), /Set by your organization's Copilot policy: Balance\./);
+    // review on #642 (item 7): the reason is the buttons' description
+    assert.strictEqual(await js(`[...document.querySelectorAll('#modelMenu [data-autotier]')].every(b=>b.getAttribute('aria-describedby')==='mmAutoLock')&&document.querySelector('#modelMenu [role="group"][aria-label="Auto routing"]').getAttribute('aria-describedby')==='mmAutoLock'&&!!document.getElementById('mmAutoLock')`), true, 'aria-describedby points at the note');
     await shot('locked');
     await click('#modelMenu [data-autotier="intelligence"]');
     assert.ok(!(await exists('#modeDlg')), 'a locked tier asks nothing');
     assert.doesNotMatch(await label(), /intelligence/, 'and changes nothing');
+    await closeMenu();
+
+    // ---- 7) review on #642 (item 2): a lock on a tier with no known name still locks (fails closed), none pressed, no name ----
+    await HP.load({ w: W, h: H, query: { simtierlock: 'other' } });
+    await open('Hugo');
+    await openMenu();
+    await ok(`document.querySelectorAll('#modelMenu [data-autotier][aria-disabled="true"]').length===3`, 'an unnamed lock disables all three');
+    assert.strictEqual(await pressed(), '', 'none pressed');
+    assert.match(await text('#modelMenu .mm-lock'), /^Set by your organization's Copilot policy\.$/);
+    await click('#modelMenu [data-autotier="balance"]');
+    assert.ok(!(await exists('#modeDlg')), 'and a click asks nothing');
     await closeMenu();
     console.log(`[autotier] ${W}x${H} checks passed`);
   }

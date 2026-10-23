@@ -7,6 +7,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { pathToFileURL } from 'url';
 import { CopilotAdapter, COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
 import { FakeClient, FakeSession, TestAdapter } from './fakes/copilot-sdk';
 import { createRegistry, detectAll } from '../src/adapters/registry';
@@ -17,6 +18,7 @@ import { autoTierToSend, compactResultFrom, managedAutoTierFrom, modelConfig, ru
 import type { AdapterCapabilities, AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { modelControlFor, NO_MODEL_CONTROL } from '../src/shared/modelswitch';
 import { startOptionsOf } from '../src/main/startopts';
+import type { ModelIpcDeps } from '../src/main/ipc/model'; // compiled for the handler test below (loaded under a stand-in electron)
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cm-'));
@@ -193,6 +195,21 @@ async function main(): Promise<void> {
     assert.strictEqual((events.filter((e) => e.type === 'model').slice(-1)[0] as { autoTier?: string }).autoTier, 'balance');
     s.fire('session.model_change', { newModel: 'auto', previousModel: 'auto', autoTier: 'fast' });
     assert.ok(!('autoTier' in (events.filter((e) => e.type === 'model').slice(-1)[0] as object)), 'a tier outside the allow-list is dropped');
+    // review on #642 (item 8): an organization default is never reported as the user's own tier
+    s.fire('session.model_change', { newModel: 'auto', previousModel: 'auto', autoTier: 'intelligence', autoTierManaged: true });
+    assert.ok(!('autoTier' in (events.filter((e) => e.type === 'model').slice(-1)[0] as object)), 'autoTierManaged: true drops the tier');
+    s.fire('session.model_change', { newModel: 'auto', previousModel: 'auto', autoTier: 'intelligence', autoTierManaged: false });
+    assert.strictEqual((events.filter((e) => e.type === 'model').slice(-1)[0] as { autoTier?: string }).autoTier, 'intelligence');
+    // item 3 / FR-019: a failed tier switch is a normalized event with the tier still in effect
+    s.fire('session.auto_tier_switch_failed', { requestedAutoTier: 'efficiency', effectiveAutoTier: 'intelligence', reason: 'request_failed' });
+    const lastFail = (): Record<string, unknown> => { const { timestamp: _t, ...rest } = events.filter((e) => e.type === 'autoTierFailed').slice(-1)[0] as unknown as Record<string, unknown>; return rest; };
+    assert.deepStrictEqual(lastFail(), { type: 'autoTierFailed', sessionId: sid, reason: 'request-failed', requested: 'efficiency', effective: 'intelligence' });
+    s.fire('session.auto_tier_switch_failed', { requestedAutoTier: null, effectiveAutoTier: 'fast', reason: 'something_new' });
+    assert.deepStrictEqual(lastFail(), { type: 'autoTierFailed', sessionId: sid, reason: 'unknown' }, 'unknown names dropped, reason unknown');
+    for (const [raw, norm] of [['policy_rejected', 'policy-rejected'], ['setup_failed', 'setup-failed'], ['unsupported', 'unsupported']]) {
+      s.fire('session.auto_tier_switch_failed', { requestedAutoTier: 'balance', reason: raw });
+      assert.strictEqual((events.filter((e) => e.type === 'autoTierFailed').slice(-1)[0] as { reason: string }).reason, norm);
+    }
 
     // queued while a turn runs, then cancelled
     s.switchAnswer = { deferred: true, queueId: 'q-7' };
@@ -322,6 +339,17 @@ async function main(): Promise<void> {
   assert.deepStrictEqual(managedAutoTierFrom({ values: { autoTier: 'balance' }, meta: { autoTier: { overridable: false, source: 'server' } } }), { tier: 'balance', locked: true });
   assert.deepStrictEqual(managedAutoTierFrom({ values: { autoTier: 'intelligence' }, meta: { autoTier: { overridable: true, source: 'device' } } }), { tier: 'intelligence', locked: false });
   assert.deepStrictEqual(managedAutoTierFrom({ values: { autoTier: 'efficiency' } }), { tier: 'efficiency', locked: false }, 'no meta: a default, not a lock');
+  // review on #642 (item 2): a well-formed lock on a name outside the three fails CLOSED (locked, no name); a malformed one is ignored
+  assert.deepStrictEqual(managedAutoTierFrom({ values: { autoTier: 'fast' }, meta: { autoTier: { overridable: false } } }), { locked: true });
+  assert.deepStrictEqual(managedAutoTierFrom({ values: { autoTier: 'future-tier.v2' }, meta: { autoTier: { overridable: false } } }), { locked: true });
+  for (const v of ['', 'x'.repeat(65), 'a b', '<b>', 5, null, ['fast']]) assert.strictEqual(managedAutoTierFrom({ values: { autoTier: v }, meta: { autoTier: { overridable: false } } }), undefined, 'not a policy word: ' + JSON.stringify(v));
+  assert.strictEqual(managedAutoTierFrom({ values: { autoTier: 'fast' }, meta: { autoTier: { overridable: true } } }), undefined, 'an unknown overridable default: ignored');
+  assert.strictEqual(autoTierToSend('auto', 'balance', { locked: true }, true), undefined, 'an unnamed lock sends nothing');
+  assert.deepStrictEqual(modelConfig({ model: 'auto' }, false, { locked: true }), { model: 'auto' }, 'not even the cheap default');
+  // item 4: null (Undo to "none") = the default again: Efficiency, or the provider default (null) under an organization default; nothing under a lock
+  assert.strictEqual(autoTierToSend('auto', null, undefined, true), 'efficiency');
+  assert.strictEqual(autoTierToSend('auto', null, { tier: 'balance', locked: false }, true), null);
+  assert.strictEqual(autoTierToSend('auto', null, { tier: 'balance', locked: true }, true), undefined);
   const inherited = Object.create({ autoTier: 'balance' }) as Record<string, unknown>;
   const protoMeta = Object.create({ overridable: false }) as Record<string, unknown>;
   for (const bad of [undefined, null, 'x', [], { values: inherited }, { values: { autoTier: 'fast' } }, { values: { autoTier: 'Balance' } }, { values: { autoTier: ['balance'] } }, { values: [{ autoTier: 'balance' }] },
@@ -357,6 +385,17 @@ async function main(): Promise<void> {
     const calls = fake.managedCalls;
     await ad.listModelOptions();
     assert.strictEqual(fake.managedCalls, calls + 1, 'read again on every listing (a changed policy shows)');
+    // the reset (Undo to none) under an overridable organization default sends null: the provider's default
+    fake.managed = { values: { autoTier: 'balance' }, meta: { autoTier: { overridable: true, source: 'server' } } };
+    await ad.listModelOptions();
+    const sidD = await ad.start({ workspace: dir, model: 'auto', quiet: true });
+    assert.ok(!('capi' in fake.created.slice(-1)[0]), 'an organization default: Durbar sends no tier of its own');
+    fake.last.switchAnswer = { modelId: 'auto' };
+    await ad.setModel(sidD, { model: 'auto', autoTier: null });
+    assert.strictEqual(arg(fake.last, 'switchTo').autoTier, null, 'null reaches switchTo (provider default)');
+    await ad.stop(sidD);
+    fake.managed = { values: { autoTier: 'balance' }, meta: { autoTier: { overridable: false, source: 'server' } } };
+    await ad.listModelOptions();
     // under the lock a new auto session and a switch to auto send no tier at all (the runtime applies the policy)
     const sid = await ad.start({ workspace: dir, model: 'auto', quiet: true });
     assert.ok(!('capi' in fake.created.slice(-1)[0]), 'locked: no capi.autoTier on create');
@@ -612,6 +651,66 @@ async function main(): Promise<void> {
     await ad.start({ workspace: dir, model: 'auto', sessionId: 'fresh-1', quiet: true });
     await sleep(0);
     assert.ok(!titles(ev).includes('never'), 'a new session waits for its first turn');
+  }
+
+  // ---- review on #642 (item 5): the IPC handler refuses an Auto tier for an agent of another app (Claude Code, Codex), through the real handler
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Module = require('module') as { _load: (req: string, parent: unknown, isMain: boolean) => unknown };
+    const handles = new Map<string, (e: unknown, ...a: unknown[]) => Promise<unknown>>();
+    const fakeElectron = { app: { isPackaged: false }, ipcMain: { handle: (c: string, f: (e: unknown, ...a: unknown[]) => Promise<unknown>) => handles.set(c, f), on: () => undefined } };
+    const realLoad = Module._load;
+    Module._load = function (req: string, parent: unknown, isMain: boolean) { return req === 'electron' ? fakeElectron : realLoad.call(this, req, parent, isMain); };
+    try {
+      const mainDir = path.join(__dirname, '..', 'src', 'main');
+      for (const f of ['ipcguard.js', path.join('ipc', 'model.js')]) delete require.cache[require.resolve(path.join(mainDir, f))];
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      (require(path.join(mainDir, 'ipcguard.js')) as { initSimGuard: (on: boolean) => void }).initSimGuard(false);
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { register } = require(path.join(mainDir, 'ipc', 'model.js')) as { register: (d: ModelIpcDeps) => void };
+      const sent: unknown[] = [];
+      const saved: unknown[] = [];
+      const copilot = { listModelOptions: async () => [{ id: 'auto', name: 'Auto', efforts: [], disabled: false, autoTiers: ['efficiency', 'balance', 'intelligence'] }], isLive: () => true,
+        setModel: async (_id: string, req: unknown) => { sent.push(req); return { status: 'applied', model: 'auto' }; } };
+      const claude = { ...copilot, listModelOptions: async () => [{ id: 'auto', name: 'Auto', efforts: [], disabled: false }] };
+      const agents = new Map<string, Record<string, unknown>>([['c1', { id: 'c1', adapterId: 'copilot', model: 'auto' }], ['k1', { id: 'k1', adapterId: 'claude', model: 'auto' }]]);
+      register(({
+        agents, wsKey: (a: { id: string }) => '/w/' + a.id,
+        router: { forAgent: (id: string) => (id === 'k1' ? claude : copilot), instance: (k: string) => (k === 'claude' ? claude : copilot) },
+        registry: { defaultId: 'copilot', has: (k: string) => k === 'copilot' || k === 'claude' },
+        getFolderStore: () => ({ setModelChoice: (w: string, c: unknown) => { saved.push([w, c]); return true; } }),
+      }) as unknown as ModelIpcDeps);
+      const indexUrl = pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href;
+      const mainFrame = { url: indexUrl };
+      const ev = { senderFrame: mainFrame, sender: { mainFrame } };
+      const setModel = handles.get('agents:setModel') as (e: unknown, ...a: unknown[]) => Promise<{ ok: boolean; error?: string }>;
+      const other = await setModel(ev, 'k1', { model: 'auto', autoTier: 'balance' });
+      assert.ok(!other.ok && /no Auto routing tier/.test(other.error ?? ''), 'another agent app: refused');
+      assert.deepStrictEqual([sent.length, saved.length], [0, 0], 'nothing sent, nothing saved');
+      const mine = await setModel(ev, 'c1', { model: 'auto', autoTier: 'balance' });
+      assert.ok(mine.ok, 'the default kind (Copilot) takes it');
+      assert.deepStrictEqual(sent, [{ model: 'auto', autoTier: 'balance' }]);
+      assert.strictEqual(agents.get('c1')?.autoTier, 'balance', 'remembered on the agent');
+      assert.deepStrictEqual(saved, [['/w/c1', { model: 'auto', effort: undefined, contextTier: undefined, autoTier: 'balance' }]]);
+      await setModel(ev, 'c1', { model: 'auto', autoTier: null });
+      assert.strictEqual(agents.get('c1')?.autoTier, undefined, 'null (Undo to none) clears it');
+      // FR-019: a failed tier switch puts back (and saves) the tier still in effect; another model or a sub-agent is left alone
+      const { onAutoTierFailed } = require(path.join(mainDir, 'ipc', 'model.js')) as { onAutoTierFailed: (e: unknown, ag: unknown, st: unknown, k: unknown) => void };
+      const tiers: unknown[] = [];
+      const store = { setAutoTier: (w: string, t: unknown) => { tiers.push([w, t]); return true; } };
+      agents.get('c1')!.autoTier = 'efficiency';
+      onAutoTierFailed({ type: 'autoTierFailed', sessionId: 'c1', reason: 'request-failed', requested: 'efficiency', effective: 'intelligence' }, agents, store, (a: { id: string }) => '/w/' + a.id);
+      assert.strictEqual(agents.get('c1')?.autoTier, 'intelligence');
+      onAutoTierFailed({ type: 'autoTierFailed', sessionId: 'c1', reason: 'unknown' }, agents, store, (a: { id: string }) => '/w/' + a.id);
+      assert.strictEqual(agents.get('c1')?.autoTier, undefined, 'no tier named: none of its own');
+      onAutoTierFailed({ type: 'autoTierFailed', sessionId: 'c1', agentId: 'sub', reason: 'unknown', effective: 'balance' }, agents, store, (a: { id: string }) => '/w/' + a.id);
+      agents.get('k1')!.model = 'sonnet';
+      onAutoTierFailed({ type: 'autoTierFailed', sessionId: 'k1', reason: 'unknown', effective: 'balance' }, agents, store, (a: { id: string }) => '/w/' + a.id);
+      assert.deepStrictEqual(tiers, [['/w/c1', 'intelligence'], ['/w/c1', null]], 'saved twice; sub-agent and another model ignored');
+    } finally {
+      Module._load = realLoad;
+    }
+    console.log('review on #642: the IPC handler refuses a tier for another agent app OK');
   }
 
   await sleep(0);

@@ -588,10 +588,10 @@ export class CopilotAdapter implements AgentAdapter {
     const options = (await this.listModels()).map((m) => modelOptionFrom(m as unknown as RawModelInfo));
     if (!options.some((o) => o.id === 'auto')) return options;
     const client = await this.getClient();
-    const status = typeof client.getStatus === 'function' ? await this.capped(client.getStatus(), this.policyTimeoutMs) : undefined;
-    const supported = runtimeHasAutoTiers(status?.version);
     this.managedTier = undefined;
-    return withAutoTiers(options, supported, supported ? await this.autoTierPolicy() : undefined);
+    // both reads at once (review on #642): the worst case is one time limit, not two
+    const [status, managed] = await Promise.all([typeof client.getStatus === 'function' ? this.capped(client.getStatus(), this.policyTimeoutMs) : undefined, this.autoTierPolicy()]);
+    return withAutoTiers(options, runtimeHasAutoTiers(status?.version), managed);
   }
 
   /** Spec 007 FR-017: how long a managed-settings or status read may take before it counts as "none". */
@@ -1058,7 +1058,7 @@ export class CopilotAdapter implements AgentAdapter {
       modelId: model,
       ...(request.effort !== undefined ? { reasoningEffort: request.effort } : {}),
       ...(tier ? { contextTier: tier } : {}),
-      ...(autoTier ? { autoTier } : {}),
+      ...(autoTier !== undefined ? { autoTier } : {}),
       requireAvailable: true,
       deferIfModelChangeQueued: true,
       runCompactionPreflight: true,

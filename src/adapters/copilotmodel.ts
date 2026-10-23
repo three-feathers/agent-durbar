@@ -121,17 +121,20 @@ const own = (o: unknown, k: string): unknown => (o && typeof o === 'object' && !
 
 /**
  * Spec 007 FR-017: the organization's Auto tier from the runtime's `managedSettings.resolve` answer (`values.autoTier`, `meta.autoTier.overridable`).
- * The answer reflects files and server policy Durbar does not control, so it is read like hostile input: own properties only, the tier must be one
- * of the three names and `overridable` a boolean; anything else and the whole thing is ignored (no managed tier). `overridable: false` = locked.
+ * The answer reflects files and server policy Durbar does not control, so it is read like hostile input: own properties only, `overridable` a
+ * boolean (when `meta` is there at all), anything malformed and the whole thing is ignored. `overridable: false` = locked, and a lock FAILS CLOSED:
+ * a well-formed lock on a tier outside the three names (`fast`, a future name; a short plain word) is still a lock, only without a name we can show.
+ * Without a lock, the tier must be one of the three names (an organization default), else it is ignored.
  */
+const POLICY_WORD = /^[A-Za-z0-9._-]{1,64}$/;
 export function managedAutoTierFrom(r: unknown): ManagedAutoTier | undefined {
-  const tier = parseAutoTier(own(own(r, 'values'), 'autoTier'));
-  if (!tier) return undefined;
+  const raw = own(own(r, 'values'), 'autoTier');
   const meta = own(own(r, 'meta'), 'autoTier');
-  if (meta === undefined) return { tier, locked: false };
-  const overridable = own(meta, 'overridable');
-  if (typeof overridable !== 'boolean') return undefined;
-  return { tier, locked: !overridable };
+  const overridable = meta === undefined ? undefined : own(meta, 'overridable');
+  if (meta !== undefined && typeof overridable !== 'boolean') return undefined;
+  const tier = parseAutoTier(raw);
+  if (overridable === false && typeof raw === 'string' && POLICY_WORD.test(raw)) return tier ? { tier, locked: true } : { locked: true };
+  return tier ? { tier, locked: false } : undefined;
 }
 
 /** Spec 007 FR-012/FR-017: the `auto` option gains the tiers (when the runtime has them) and the organization's tier; every other option is unchanged. */
@@ -144,8 +147,10 @@ export function withAutoTiers(options: ModelOption[], supported: boolean, manage
  * The Auto tier to send for `model` (spec 007 FR-016/FR-017), or none. Under a locked policy: none (the runtime applies the policy). The user's
  * own tier: that one. Otherwise the app's cheapest default (`efficiency`) only when `useDefault` and the organization sets no default of its own.
  */
-export function autoTierToSend(model: string | undefined, chosen: AutoTier | undefined, managed: ManagedAutoTier | undefined, useDefault: boolean): AutoTier | undefined {
+export function autoTierToSend(model: string | undefined, chosen: AutoTier | null | undefined, managed: ManagedAutoTier | undefined, useDefault: boolean): AutoTier | null | undefined {
   if (model !== 'auto' || managed?.locked) return undefined;
+  // `null` (an Undo back to "no tier of its own"): the default again, i.e. Efficiency, or the provider's default (null) under an organization default
+  if (chosen === null) return managed ? null : 'efficiency';
   if (chosen) return chosen;
   return useDefault && !managed ? 'efficiency' : undefined;
 }
@@ -158,7 +163,7 @@ export function autoTierToSend(model: string | undefined, chosen: AutoTier | und
  */
 export function modelConfig(o: SessionConfigInput, resume: boolean, managed?: ManagedAutoTier): Record<string, unknown> {
   const tier = o.contextTier === 'long' ? 'long_context' : undefined; // the default tier is the runtime's own default: not sent
-  const autoTier = autoTierToSend(o.model, parseAutoTier(o.autoTier), managed, !resume);
+  const autoTier = autoTierToSend(o.model, parseAutoTier(o.autoTier), managed, !resume) ?? undefined;
   return {
     model: o.model,
     ...(o.reasoningEffort ? { reasoningEffort: o.reasoningEffort } : {}),

@@ -267,6 +267,17 @@ export interface ModelEvent extends BaseEvent {
   cause: 'user' | 'runtime' | 'rate-limit' | 'fallback' | 'resume';
 }
 
+/**
+ * Spec 007 FR-019: the runtime could not switch the Auto routing tier (Copilot `session.auto_tier_switch_failed`: "the previously effective
+ * preference remains active"). `effective` = the tier still in use (absent: the provider's default); `requested` absent = a return to the default failed.
+ */
+export interface AutoTierFailedEvent extends BaseEvent {
+  type: 'autoTierFailed';
+  requested?: AutoTier;
+  effective?: AutoTier;
+  reason: 'policy-rejected' | 'request-failed' | 'setup-failed' | 'unsupported' | 'unknown';
+}
+
 /** Compaction of the context (spec 030): `auto` = the runtime did it at its threshold, `manual` = the user asked, `model-switch` = before a switch to a smaller window, `overflow` = after the window was exceeded. */
 export interface CompactionEvent extends BaseEvent {
   type: 'compaction';
@@ -508,6 +519,7 @@ export type AgentEvent =
   | UsageEvent
   | ContextEvent
   | ModelEvent
+  | AutoTierFailedEvent
   | CompactionEvent
   | McpStatusEvent
   | LimitEvent
