@@ -2,13 +2,13 @@
 
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
-title: Cheeky crew (issue #558): a built-in theme and scene kit with 12 hand-drawn characters, one SVG source file each, picked at random per session and kept across restarts; status cues and spec 034 moods unchanged
-status: Draft 2026-10-23: spec, plan and tasks only; Q2-Q8 answered by the owner; Q1 (art format: drawn SVG or AI-generated or openly licensed raster) reopened, waiting for the owners; experimental, no priority
+title: Cheeky crew (issue #558): a built-in theme and scene kit with 13 AI-generated, person-reviewed portrait characters (3 poses each), picked at random per session and kept across restarts; status cues and spec 034 moods unchanged
+status: built 2026-10-23 (experimental, no priority): raster path (Q1 = (d)), 13 characters x 3 poses (FR-059), face crops and the doubled desk portrait (FR-060); open: check:crew over every mood and density and a reload (T023), a rendered every-status sheet (T025); known gaps: 1280x800 couch seat 20 px under its chat badge, no capture-against-canvas sharpness check, Windows not run by a person
 -->
 
 **Feature Branch**: `077-cheeky-crew`
 **Created**: 2026-10-23
-**Status**: Draft (spec, plan and tasks only; nothing built). Q2-Q8 answered (Paco, 2026-10-23). **Q1 (art format) reopened 2026-10-23**, waiting for the owners' decision on shipping AI-generated art. Experimental, no priority.
+**Status**: Built (converge 2026-10-23), experimental, no priority. Q1 decided: (d) AI-generated raster portraits (see *Q1 decided*); Q2-Q8 answered (Paco, 2026-10-23). What is built and what is open: *Implementation status* below.
 **Input**: Issue #558 (owner idea, Paco, 2026-10-22, "nice to have, low priority"): "A funnier, cheekier office: each agent gets a character with personality (skater with cap and shades, mohawk punk with a skull mug, mad scientist with goggles and flasks, gamer with cat-ear headphones, surfer, hooded hacker, ...), instead of today's one calm office figure in different colours." Read against `origin/main` 7a756cb8 (PRs #496 and #500, which the issue waited for, are merged).
 
 ## Summary
@@ -202,9 +202,20 @@ FR-011..FR-016 describe the drawn SVG option (b′). If Q1 picks raster, FR-050.
 - **SC-004** No new colour literal in the renderer's scanned files; with (b′) the compiled module scans at 0. With raster the rule covers the code only (bitmaps are outside it, FR-058); instead every picture passes FR-050 caps, FR-054 provenance rows and FR-056 review.
 - **SC-005** Clean Office and every other built-in theme draw byte-identically to before (`test:scenekits`, `check:geometry`).
 
+## Implementation status (converge 2026-10-23)
+
+- `[IMPLEMENTED]` FR-001, FR-002, FR-003 (kit, theme, every list; `test:scenekits`, `test:theme`), FR-017 and FR-055 (fallback to the plain figure; `test:scenekits`, `check:crew` with one picture removed), FR-020..FR-024 (`crew.js`, `durbar.crew`, signature and cache keys; `test:crew`), FR-031 (badge corner; `check:crew`), FR-035, FR-014 as the portrait box under FR-058, FR-015, FR-052, FR-053 (as changed by FR-059: no code hands; `test:scenekits`, `check:crew`), FR-050, FR-051, FR-054, FR-056, FR-057 (`test:crew-assets`, `ASSETS.md`, Paco's sign-off on all 39 pictures), FR-059, FR-060 (`check:crew` face visibility at 1440x900 and 1280x800), SC-001 (`check:office` with Cheeky Crew at both sizes, `sim:` macOS 2026-10-23), SC-005 (`test:scenekits`, `check:geometry`).
+- `read:` FR-030: theme art over the portrait goes through the shared composer like every kit; no crew-specific test.
+- Dropped with Q1 = (d): FR-011, FR-012, FR-013, FR-016 (the SVG source and compiler path); FR-010's count is 13 (FR-059).
+- `[KNOWN GAP]` FR-040 and SC-002 in part: `test:scenekits` draws every character in every status; `check:crew` checks the 15 simulated desks (all 13 characters) at both sizes, but not every mood or density (T023).
+- `[KNOWN GAP]` SC-003 in part: the stored map is covered by `test:crew`; no driver reloads the window with a stored map (T023).
+- `[KNOWN GAP]` FR-041 in part: office screenshots and the art sheet (13 characters x 3 poses) are in `docs/screenshots/`; no rendered sheet of every status and density (T025).
+- `[KNOWN GAP]` FR-058 in part: no capture-against-canvas sharpness comparison; `check:crew` checks natural size against shown size instead.
+- `[KNOWN GAP]` At 1280x800 a couch seat is about 20 px, smaller than its own chat-number badge, so the badge covers the seat's portrait (FR-060 delta).
+
 ## Known limits
 
-- `[KNOWN GAP]` Not tried on macOS or Windows by a person; CI covers the unit tests and drivers there (constitution VI).
+- `[KNOWN GAP]` Not tried on Windows by a person; on macOS only Paco's look at the office on his Mac (2026-10-23, the FR-060 feedback) and the simulator checks. CI covers the unit tests and drivers (constitution VI).
 - `[KNOWN GAP]` `localStorage` belongs to one window profile: the character does not follow a profile copied to another computer (Q3b would).
 - `read:` only, not verified: that `fetch()` and an external `<use>` of a bundled file are refused or unreliable in this page (the reason (b) at run time is not recommended).
 - Persona slots for user and AI themes (one costume per agent from a theme) are out of scope (OD1, later).
@@ -219,7 +230,7 @@ FR-011..FR-016 describe the drawn SVG option (b′). If Q1 picks raster, FR-050.
 ## Owner answers (Paco, 2026-10-23)
 
 Q2-Q8 were answered with the recommended option. Q1 was first answered (b′) the same day, then **reopened** (2026-10-23) after the owner shared a richer AI-generated chibi reference; see *Q1 reopened*.
-- **Q1** Art format: **OPEN**, waiting for the owners' decision on shipping AI-generated art ((b′), (d) or (e), with Q1.1-Q1.3).
+- **Q1** Art format: decided 2026-10-23, (d) AI-generated raster portraits (see *Q1 decided* below).
 - **Q2** Assignment: **random among the characters least used in the office**.
 - **Q3** Storage: **this window's `localStorage`, like the chat numbers** (`durbar.crew`, at most 500 entries).
 - **Q4** Helpers: **their own random character, not stored**.

@@ -24,24 +24,24 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [-] T020 [SVG] DROPPED (Q1 = (d) raster, 2026-10-23): Character 2, the **mad scientist** (goggles over see-through lenses, lab coat, flask) [FR-010, FR-014, Q7]
 - [-] T021 [SVG] DROPPED (Q1 = (d) raster, 2026-10-23): Character 3, the **gamer** (cat-ear headphones, gamepad) [FR-010, FR-014]
 - [-] T022 [SVG] DROPPED (Q1 = (d) raster, 2026-10-23): Character 4, the **hooded hacker** (hood as `back` and `hair`, rubber duck) [FR-010, FR-014]
-- [~] T023 [both] Driver `scripts/check-crew.js` in `check:ui`: Cheeky Crew picked in Settings, every character x status x mood x density, `getBBox()` of every `[data-part]` (raster: the `<image>` box and the overlay positions, FR-058) against FR-014, element count per character, reload with a stored map keeps the character [FR-014, FR-040, SC-002, SC-003]
-- [~] T024 [both] `check:office` with Cheeky Crew at 1440x900 and 1280x800, every density, chat closed and open; `check:geometry` every-theme list (main and nightly) [SC-001, SC-005]
-- [~] T025 [both] Screenshots: office at 1440x900 and 1280x800 (15 agents) and one sheet of the 4 characters in every status and density, in `docs/screenshots/` [FR-041]
-- [ ] T026 [both] Docs: README theme list and known limits, `changelog.d/077-cheeky-crew.md`, spec status and `[IMPLEMENTED]` tags, specs-index block, `docs/agent-notes.md` entry for anything learned (for example the compiler and the reserved colours) [docs]
-- [ ] T027 [both] Owner review of the Phase 1 sheet; their notes become tasks in this list before Phase 2 starts [OD6]
+- [~] T023 [both] PARTLY (converge 2026-10-23): built for every character at 1440x900 and 1280x800 (one portrait per desk in its fixed box, pose by status, box against the monitor, bubble, badge and cup zones, face visibility, sharpness, the 13 on screen, the missing-picture fallback); open: every mood, every density and a reload with a stored map (SC-003 is covered by `test:crew` only). Original: Driver `scripts/check-crew.js` in `check:ui`: Cheeky Crew picked in Settings, every character x status x mood x density, `getBBox()` of every `[data-part]` (raster: the `<image>` box and the overlay positions, FR-058) against FR-014, element count per character, reload with a stored map keeps the character [FR-014, FR-040, SC-002, SC-003]
+- [x] T024 [both] (converge 2026-10-23: `check:office` with `OFFICE_THEME=cheeky-crew` passes at both sizes, macOS; `cheeky-crew` is in `check:geometry`'s every-theme list and `check-parallel.js`) `check:office` with Cheeky Crew at 1440x900 and 1280x800, every density, chat closed and open; `check:geometry` every-theme list (main and nightly) [SC-001, SC-005]
+- [~] T025 [both] PARTLY (converge 2026-10-23): `docs/screenshots/077-crew-office-1440x900.png`, `077-crew-office-1280x800.png` and `077-crew-art-sheet.png` (13 characters x 3 poses) exist; open: a rendered sheet of every status and density. Original: Screenshots: office at 1440x900 and 1280x800 (15 agents) and one sheet of the 4 characters in every status and density, in `docs/screenshots/` [FR-041]
+- [x] T026 [both] (converge 2026-10-23; the fragment is `changelog.d/077-cheeky-crew-p1.md`, the branch name) Docs: README theme list and known limits, `changelog.d/077-cheeky-crew.md`, spec status and `[IMPLEMENTED]` tags, specs-index block, `docs/agent-notes.md` entry for anything learned (for example the compiler and the reserved colours) [docs]
+- [x] T027 [both] (2026-10-23: Paco reviewed the art and the office on his Mac and signed off all 39 pictures in `ASSETS.md`; his notes became FR-060 and T064-T066) Owner review of the Phase 1 sheet; their notes become tasks in this list before Phase 2 starts [OD6]
 - [x] T028 [both] Run-time fallback: the `crew` kit draws the office figure when the character module is missing, an id is unknown or a part throws; unit tests in `test:scenekits`; one driver run with the module removed [FR-017]
 
 ## Phase 2: the other 8 characters (one per task, each with its sheet row and FR-014 checked by T023's driver; [SVG]: a drawn file; [raster]: a reviewed picture with its `ASSETS.md` row, as T050)
 
 - [x] T030 [both] Character 5, the **skater** (backwards cap, shades, mini skateboard) [FR-010, FR-014]
 - [x] T031 [both] Character 6, the **surfer** (sun-bleached long hair as `back`, shell necklace, tiny surfboard) [FR-010, FR-014]
-- [ ] T032 [both] Character 7, the **cool kid** (sunglasses, quiff, jacket) [FR-010, FR-014, Q7]
-- [ ] T033 [both] Character 8, the **nerd** (big round glasses, bow tie, book stack) [FR-010, FR-014]
-- [ ] T034 [both] Character 9, the **artist** (beret, paint-splashed smock, brush jar) [FR-010, FR-014]
+- [-] T032 [both] SUPERSEDED (FR-059, 2026-10-23: the cast is the 13 characters of the real art, T060, not this list): Character 7, the **cool kid** (sunglasses, quiff, jacket) [FR-010, FR-014, Q7]
+- [-] T033 [both] SUPERSEDED (FR-059, 2026-10-23: the cast is the 13 characters of the real art, T060, not this list): Character 8, the **nerd** (big round glasses, bow tie, book stack) [FR-010, FR-014]
+- [-] T034 [both] SUPERSEDED (FR-059, 2026-10-23: the cast is the 13 characters of the real art, T060, not this list): Character 9, the **artist** (beret, paint-splashed smock, brush jar) [FR-010, FR-014]
 - [x] T035 [both] Character 10, the **rocker** (bandana, studded jacket, small amp) [FR-010, FR-014]
-- [ ] T036 [both] Character 11, the **space fan** (headband with two star boppers, toy rocket) [FR-010, FR-014]
-- [ ] T037 [both] Character 12, the **cozy knitter** (pom-pom beanie, chunky scarf, yarn ball) [FR-010, FR-014]
-- [ ] T038 [both] With 12 characters: the simulator's 15 agents show all 12 (seeded least-used pick); screenshots and the full sheet refreshed; docs and spec status updated; `/speckit-converge` [FR-020, FR-041, docs]
+- [-] T036 [both] SUPERSEDED (FR-059, 2026-10-23: the cast is the 13 characters of the real art, T060, not this list): Character 11, the **space fan** (headband with two star boppers, toy rocket) [FR-010, FR-014]
+- [-] T037 [both] SUPERSEDED (FR-059, 2026-10-23: the cast is the 13 characters of the real art, T060, not this list): Character 12, the **cozy knitter** (pom-pom beanie, chunky scarf, yarn ball) [FR-010, FR-014]
+- [~] T038 [both] PARTLY (converge 2026-10-23): with 13 characters, `check:crew` asserts the 15 simulated agents show all 13 at both sizes; the office screenshots and the art sheet are current; docs and spec status updated. Open: the rendered every-status-and-density sheet (T025). Original: With 12 characters: the simulator's 15 agents show all 12 (seeded least-used pick); screenshots and the full sheet refreshed; docs and spec status updated; `/speckit-converge` [FR-020, FR-041, docs]
 
 ## Raster path (only if T002 picks (d) or (e); replaces T011, T012, T016, T017 and T019-T022)
 
