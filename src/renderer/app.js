@@ -1293,7 +1293,7 @@ function renderOffice(){
   if(aw<=0||ah<=0)return;
   const model=officeModel();
   if(!model.length){
-    stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey=''; GROW=0; setGrow(stage,0);
+    stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey=''; GROW=0; setGrow(stage,0); spreadOffice(stage,false);
     stagePrev=null;
     if(!agents.length&&!demoOn){if(!stage.querySelector('.welcome'))ringFolder();stage.innerHTML=welcomeHTML();floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" at the top left to add a folder'+(SIMPLE?'.':' (or "+ Workspace" for a VS Code .code-workspace file).'):(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?(SIMPLE?'"Floors" above, or ':'"Floors" or "Folders" above, or '):(SIMPLE?'':'"Folders" above, or '))+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
@@ -1322,9 +1322,33 @@ function renderOffice(){
   if(layout.side)stage.querySelectorAll('.liveside .ls-t').forEach(fitSide);
   if(layout.grow){stage.querySelectorAll('.desk.card').forEach(setGrownCols);stage.querySelectorAll('.desk.card .intent').forEach(fitLines);stage.querySelectorAll('.desk.card[data-gc] .gx-t').forEach(fitClamp);} /* FR-043, FR-047: columns, then whole lines, the newest in view */
   floor.classList.toggle('scrolls',!layout.fit);
+  spreadOffice(stage,!!layout.fit); /* FR-086, FR-087: the spare height, after everything else is drawn */
   if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
 }
 
+/* spec 001 FR-086, FR-087 (owner report, issue 619): a drawn office that fits and is shorter than the floor used to leave all the spare
+   height below its last row. The rows of rooms grow first (every room row by the same whole px, at most SPREAD_CAP of the shortest; the
+   CSS puts half of it under the header and half under the desks), then the rest becomes even gaps above, between and below the rows
+   (DurbarProbe.spreadRows, pure). Measured from the layout (offsetTop and the computed border-box height), not the screen box, so a room's
+   door animation (a transform) does not change it. The layout search never sees it: #probe has no data-spread. */
+const SPREAD_CAP=0.2;
+function spreadOffice(stage,on){
+  stage.style.removeProperty('--rx'); stage.style.removeProperty('padding-top'); stage.style.removeProperty('row-gap'); delete stage.dataset.spread;
+  if(!on)return;
+  const floor=$('floor'), fcs=getComputedStyle(floor);
+  const avail=floor.clientHeight-parseFloat(fcs.paddingTop)-parseFloat(fcs.paddingBottom), gap=parseFloat(getComputedStyle(stage).rowGap)||0;
+  const rows=[];
+  for(const k of stage.children){
+    if(!k.getClientRects().length)continue;
+    const t=k.offsetTop, h=parseFloat(getComputedStyle(k).height)||k.offsetHeight;
+    let row=rows.find(x=>Math.abs(x.t-t)<2); if(!row){row={t,b:t+h,room:false};rows.push(row);}
+    row.b=Math.max(row.b,t+h); if(k.classList.contains('room'))row.room=true;
+  }
+  rows.sort((x,y)=>x.t-y.t);
+  const sp=window.DurbarProbe.spreadRows(rows.map(r=>({h:r.b-r.t,room:r.room})),avail,gap,SPREAD_CAP);
+  if(!sp.rx&&!sp.top&&sp.rowGap===gap)return;
+  stage.dataset.spread='1'; stage.style.setProperty('--rx',sp.rx+'px'); stage.style.paddingTop=sp.top+'px'; stage.style.rowGap=sp.rowGap+'px';
+}
 /* spec 052 (2026-10-21; real 15-session office, and CI's fonts): a card's usage line is fitted by measuring, not by a width
    threshold, so it holds with any font. Step by step until the cost fits: drop the token count, then " est." / " AIU", then the
    short form of a capped figure ("33/30"), then the cost itself (its tooltip and the status pill still say it). */
