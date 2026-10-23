@@ -1016,15 +1016,53 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .door:hover .door-svg .leaf{transform:scaleX(.82)}
 /* ---- lobby and walking figures (spec 024): one shared band with the places agents go to ---- */
 .lobby{flex:0 0 100%;display:flex;gap:8px;align-items:stretch;min-width:0}
-.place{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:7px;height:36px;box-sizing:border-box;padding:0 10px;border-radius:12px;border:1px solid var(--wall);background:color-mix(in srgb,var(--raised) 55%,transparent);color:var(--ink-2);transition:background .2s,border-color .2s}
+.place{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:4px;height:58px;box-sizing:border-box;padding:5px 10px;border-radius:12px;border:1px solid var(--wall);background:color-mix(in srgb,var(--raised) 55%,var(--bg));color:var(--ink-2);transition:background .2s,border-color .2s}
 .place.busy{background:var(--raised);border-color:var(--place-busy)}
 .place .pic{flex:none;width:18px;height:18px}
 .place .pn{flex:0 1 auto;min-width:0;font-size:12.5px;font-weight:650;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.place .prow{flex:1 1 auto;display:flex;align-items:center;gap:6px;min-width:0;justify-content:flex-end}
+/* spec 001 FR-036: a header row (icon, name, count) and the visitors under it: figure, name and what it does there (or initials) */
+.place .plh{display:flex;align-items:center;gap:7px;min-width:0;height:18px}
+.place .pc{margin-left:auto;flex:none;font-size:11.5px;font-weight:650;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.place .prow{flex:none;display:flex;align-items:center;gap:6px;min-width:0;height:28px;overflow:hidden}
+.place .pv{flex:1 1 0;max-width:170px;min-width:0;display:flex;align-items:center;gap:5px;height:28px}
+.place[data-chips="initials"] .pv{flex:0 0 46px;gap:2px} /* 22px for two letters ("Om" at 11px bold is about 20px) */
+.place[data-chips="initials"] .pv-more{flex:0 0 auto} /* spec 001 FR-039: "+N" is a bare circle in this mode (initialSpots counts it as 22 px) */
+.place .pv .slot{flex:none}
+.place .pv-t{display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:13px}
+.place .pv-n{font-size:11px;font-weight:650;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place .pv-a{font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place .pv-none{font-size:11px;color:var(--muted)}
+.place .pv-more{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left;border-radius:8px}
+.place .pv-more:hover .slot{background:var(--raised)}
+.place .pv-more:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .place .pslots{display:flex;gap:3px;flex:none}
+/* ---- spec 001 FR-034/FR-035/FR-038: the Boss (a queue), the Bank and the Postbox; tokens only ---- */
+.place .pv-go{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left;border-radius:8px}
+.place .pv-go:hover .pv-n{text-decoration:underline}
+.place .pv-go:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.place .bw{margin-left:auto;flex:none;font-size:10.5px;font-weight:600;color:var(--amber-ink);white-space:nowrap}
+.place .bw+.pc{margin-left:0}
+.place.boss.busy{border-color:color-mix(in srgb,var(--c-waiting) 55%,var(--line));background:color-mix(in srgb,var(--c-waiting) 10%,var(--raised))}
+.walker .wb{position:absolute;left:-6px;top:-6px;min-width:13px;height:13px;box-sizing:border-box;padding:0 2px;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;background:var(--amber-ink);color:var(--surface);border:1.5px solid var(--surface);font-size:10.5px;font-weight:800;line-height:1}
+.walker[data-ask]:not([data-ask=""])::after{display:none} /* at the Boss the badge says what is wanted; the trouble dot would crowd it */
+.place.postbox{flex-direction:row;align-items:stretch;gap:8px;font:inherit;text-align:left;cursor:pointer}
+.place.postbox:hover{background:var(--raised)}
+.place.postbox:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.place.postbox .pb-l{flex:0 0 84px;width:84px;display:flex;flex-direction:column;justify-content:center;gap:1px;min-width:0} /* fixed: every theme lays out like Clean Office (check:geometry); a long theme word is cut, its full name is in the label */
+.place.postbox.unnamed .pb-l{flex-basis:64px;width:64px}
+.place.postbox .pb-n{flex:none;font-size:10.5px;line-height:13px;font-weight:600;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place.postbox .pb-flag{align-self:flex-start;font-size:10.5px;font-weight:650;line-height:13px;padding:0 4px;border-radius:var(--r-sm);color:var(--red-ink);background:color-mix(in srgb,var(--red-ink) 12%,transparent);white-space:nowrap}
+.place.postbox.unnamed .pb-flag{max-width:64px;overflow:hidden;text-overflow:ellipsis}
+.place.postbox .pb-r{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;border-left:1px solid var(--line);padding-left:8px}
+.place.postbox .pb-line{font-size:10.5px;line-height:13px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place.postbox .pb-none{color:var(--muted)}
+.letter{position:absolute;left:0;top:0;width:16px;height:12px;margin:-6px 0 0 -8px;color:var(--ink-2);pointer-events:none;z-index:3}
+.letter svg{display:block}
+.letter.flying{transition:transform .9s cubic-bezier(.3,.1,.3,1)}
+@media (prefers-reduced-motion:reduce){.letter{display:none}}
 .place-add{flex:none;align-self:center;width:26px;height:26px;box-sizing:border-box;padding:0;border-radius:50%;border:1.5px dashed var(--line-2);background:color-mix(in srgb,var(--raised) 55%,transparent);color:var(--ink-2);font:inherit;font-size:16px;line-height:1;cursor:pointer}
 .place-add:hover{background:var(--raised);border-style:solid}
-.place-add:focus-visible{outline:2px solid var(--focus,#4a7fa8);outline-offset:2px}
+.place-add:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .slot{width:22px;height:22px;box-sizing:border-box;border-radius:50%;border:1.5px dashed var(--line-2);display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:650;color:var(--muted)}
 .slot.on{border-color:transparent}
 .slot.more{border-style:solid;border-color:var(--line-2);background:color-mix(in srgb,var(--raised) 80%,transparent);color:var(--ink-2)}
@@ -1549,6 +1587,9 @@ h2,h3,h4{text-wrap:balance}
 .liveside[data-lk="think"] .ls-t,:is(.task,.intent)[data-lk="think"]{font-style:italic}
 .stage[data-d="full"] .liveside+.helpers{margin-left:0} /* the helper column's -2px tuck is for its desk's connector, not the panel */
 
+/* spec 001 FR-037: the room header counts in words when the header has room (fitUsage drops the words first, then the path) */
+.rd .rdw{font-weight:500}
+.room-head.no-words .rdw,#probe .rdw{display:none} /* the words never decide the layout: the search measures without them */
 /* ---- spec 005 FR-037..FR-042: the composer toolbar under the message box, and one Send / Stop slot inside its right edge.
    Tokens only (docs/design-rules.md 1-3, 9); controls 28px like the header's; the office is untouched. ---- */
 .inbox{align-items:flex-end}
