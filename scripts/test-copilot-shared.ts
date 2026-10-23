@@ -149,6 +149,26 @@ async function main(): Promise<void> {
       await new GatedStartCopilot().dispose();
     }
 
+    // ---- review on #625: a re-read or an `unknown` source never turns a built-in or stdio server into a remote one
+    {
+      const ad = new RestartingFakeCopilot();
+      const seen: Array<Array<{ name: string; source?: string; transport?: string; status: string }>> = [];
+      ad.onEvent((e) => { if (e.type === 'mcp') seen.push(e.servers as never); });
+      const sid = await ad.start({ workspace: dirs[0], quiet: true });
+      const s = ad.clients[0].sessions.get(sid)!;
+      s.handler!({ type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'gh', status: 'connected', source: 'builtin', transport: 'http' }, { name: 'loc', status: 'connected', source: 'user', transport: 'stdio' }, { name: 'web', status: 'connected', source: 'user', transport: 'http' }] } });
+      const last = (n: string) => seen[seen.length - 1].find((x) => x.name === n)!;
+      s.handler!({ type: 'session.mcp_server_status_changed', data: { serverName: 'gh', status: 'connected', configSource: 'unknown' } });
+      assert.strictEqual(last('gh').source, 'builtin', 'an `unknown` source keeps the one the runtime named');
+      // the poll's re-read: `rpc.mcp.list` items without transport or source
+      s.running = true;
+      s.listAnswer = [{ name: 'gh', status: 'connected' }, { name: 'loc', status: 'connected' }, { name: 'web', status: 'connected', source: 'workspace' }];
+      await ad.refreshMcpStatus(sid, 'web');
+      assert.deepStrictEqual([last('gh').source, last('gh').transport], ['builtin', 'http'], 'a re-read keeps source and transport');
+      assert.deepStrictEqual([last('loc').source, last('loc').transport], ['user', 'stdio'], 'a stdio server stays stdio after a re-read');
+      assert.strictEqual(last('web').source, 'workspace', 'a source the re-read names wins');
+    }
+
     // ---- FR-163: nothing Durbar does asks the runtime to connect a server that is not connected (each attempt can read the keychain)
     {
       const ad = new RestartingFakeCopilot();
@@ -160,7 +180,8 @@ async function main(): Promise<void> {
       assert.ok((await ad.listMcpTools(sid, 'ok')).length > 0);
       assert.strictEqual(connects(), 1);
       // failed, needs-sign-in and pending servers: refused in Durbar, nothing reaches the runtime, however often the row is opened
-      for (let i = 0; i < 5; i++) for (const n of ['broken', 'later', 'slow']) await assert.rejects(ad.listMcpTools(sid, n), /not connected/);
+      for (let i = 0; i < 5; i++) for (const n of ['broken', 'later']) await assert.rejects(ad.listMcpTools(sid, n), /not connected/);
+      for (let i = 0; i < 5; i++) await assert.rejects(ad.listMcpTools(sid, 'slow'), /still starting/, 'a pending server has its own wording (review on #625)');
       assert.strictEqual(connects(), 1, 'no tools/list for a server that is not connected (0 runtime calls for 15 opens)');
       // the poll while a sign-in page is open: one cheap check that starts nothing, no list, for a server without a client
       s.running = false;

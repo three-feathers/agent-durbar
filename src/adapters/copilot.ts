@@ -251,6 +251,8 @@ export const ONE_SHOT_TIMEOUT_MS = 180_000;
 
 /** Spec 058 FR-163: what `listMcpTools` says for a server that is not connected (nothing is asked of the runtime). */
 export const MCP_NOT_CONNECTED = 'This server is not connected. Restart it or sign in first, then its tools can be listed.';
+/** Spec 058 FR-163 (review on #625): the same for a server that is still starting. */
+export const MCP_STARTING = 'This server is still starting. Its tools can be listed once it is connected.';
 
 /**
  * Spec 040 FR-015: the config of the throw-away session behind `generateText`. Nothing can act and nothing is kept:
@@ -1320,7 +1322,7 @@ export class CopilotAdapter implements AgentAdapter {
     // connect it again, and each attempt can read its sign-in from the keychain (one more macOS prompt). Only a connected server, or one
     // the runtime has not reported yet, is asked; a failed, needs-sign-in or pending one waits for the user's Restart or Sign in.
     const st = this.mappers.get(sessionId)?.mcpStatusOf(name);
-    if (st !== undefined && st !== 'connected') throw new Error(MCP_NOT_CONNECTED);
+    if (st !== undefined && st !== 'connected') throw new Error(st === 'pending' ? MCP_STARTING : MCP_NOT_CONNECTED);
     try {
       const r = await mcp.listTools({ serverName: name });
       return normMcpTools(r?.tools);

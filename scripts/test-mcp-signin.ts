@@ -331,16 +331,20 @@ async function main(): Promise<void> {
       const ad = mk({ mcpSignInAgain: true });
       const sid = await ad.start({ workspace: ws, quiet: true });
       const live: McpServerStatus[] = [
-        { name: 'teams', status: 'needs-auth', errorClass: 'auth' }, { name: 'web', status: 'connected', transport: 'http' }, { name: 'down', status: 'failed', error: '500' },
-        { name: 'local', status: 'connected', transport: 'stdio' }, { name: 'slow', status: 'pending' }, { name: 'off', status: 'disabled' }, { name: 'gh', status: 'connected', source: 'builtin' },
+        { name: 'teams', status: 'needs-auth', errorClass: 'auth', source: 'user' }, { name: 'web', status: 'connected', transport: 'http', source: 'user' }, { name: 'down', status: 'failed', error: '500', source: 'workspace' },
+        { name: 'local', status: 'connected', transport: 'stdio', source: 'user' }, { name: 'slow', status: 'pending', source: 'user' }, { name: 'off', status: 'disabled', source: 'user' }, { name: 'gh', status: 'connected', source: 'builtin' },
+        // review on #625, fail closed: a source the runtime did not name, or `unknown`, a built-in name, a `memory` transport, no address
+        { name: 'nosrc', status: 'connected' }, { name: 'unk', status: 'connected', source: 'unknown' }, { name: 'github-mcp-server', status: 'connected', source: 'user' },
+        { name: 'mem', status: 'connected', source: 'user', transport: 'memory' }, { name: 'noaddr', status: 'connected', source: 'user' }, { name: 'plain', status: 'connected', source: 'user' },
       ];
-      const d = { agents: new Map([[sid, info(sid)]]), router: routerOf(ad), live: () => live, secrets: () => [] };
+      const URLS: Record<string, string> = { web: 'https://web.example.test/mcp', down: 'http://down.example.test/mcp', teams: 'https://t.example.test', slow: 'https://s.example.test', off: 'https://o.example.test', gh: 'https://api.githubcopilot.com/mcp/', nosrc: 'https://n.example.test', unk: 'https://u.example.test', 'github-mcp-server': 'https://api.githubcopilot.com/mcp/', mem: 'https://m.example.test', plain: 'ftp://p.example.test' };
+      const d = { agents: new Map([[sid, info(sid)]]), router: routerOf(ad), live: () => live, secrets: () => [], serverUrl: (_id: string, n: string) => URLS[n] };
       // a connected and a failed remote server can be signed in again; the runtime gets `again` (Copilot: forceReauth)
-      assert.deepStrictEqual(await mcpSignInOp(d, store, sid, 'web', true), { ok: true, kind: 'browser', host: 'auth.example.com' });
+      assert.deepStrictEqual(await mcpSignInOp(d, store, sid, 'web', true), { ok: true, kind: 'browser', host: 'auth.example.com', otherSite: 'web.example.test' });
       assert.deepStrictEqual(ad.signInCalls.at(-1), { sessionId: sid, name: 'web', again: true });
       assert.strictEqual((await mcpSignInOp(d, store, sid, 'down', true)).ok, true);
       // not for: a server waiting for its first sign-in (that is Sign in), a local one, pending, disabled; only `true` counts as again
-      for (const n of ['teams', 'local', 'slow', 'off', 'gh']) assert.match((await mcpSignInOp(d, store, sid, n, true) as { error: string }).error, /cannot be signed in again now/, n);
+      for (const n of ['teams', 'local', 'slow', 'off', 'gh', 'nosrc', 'unk', 'github-mcp-server', 'mem', 'noaddr', 'plain']) assert.match((await mcpSignInOp(d, store, sid, n, true) as { error: string }).error, /cannot be signed in again now/, n);
       assert.match((await mcpSignInOp(d, store, sid, 'down', 'true') as { error: string }).error, /does not need a sign-in/, 'a string "true" is not again');
       assert.strictEqual(ad.signInCalls.length, 2, 'nothing else reached the runtime');
       // an agent app without the capability: refused before the runtime
@@ -350,13 +354,37 @@ async function main(): Promise<void> {
       assert.match((await mcpSignInOp(d2, store, sid2, 'web', true) as { error: string }).error, /cannot sign in again/);
       assert.strictEqual(no.signInCalls.length, 0);
       // the reply: canSignInAgain only with the capability, a running session, the server on, and a connected or failed remote server
-      const rep = (x: AgentAdapter, id: string, off = new Set<string>()) => agentMcpReply({ a: info(id), ad: x, live, off, secrets: [], cli: live.map((l) => ({ name: l.name, enabled: true })), extras: [], ambientDisabled: new Set(), signIn: () => undefined });
+      const rep = (x: AgentAdapter, id: string, off = new Set<string>()) => agentMcpReply({ a: info(id), ad: x, live, off, secrets: [], cli: live.map((l) => ({ name: l.name, enabled: true })), extras: [], ambientDisabled: new Set(), signIn: () => undefined, serverUrl: (n) => URLS[n] });
       const again = (r: ReturnType<typeof rep>) => r.servers.filter((x) => x.canSignInAgain).map((x) => x.name);
       assert.deepStrictEqual(again(rep(ad, sid)), ['web', 'down']);
       assert.deepStrictEqual(again(rep(ad, sid, new Set(['web']))), ['down'], 'a server switched off here: no');
       assert.deepStrictEqual(again(rep(no, sid2)), [], 'no capability: no');
+      assert.deepStrictEqual(again(agentMcpReply({ a: info(sid), ad, live, off: new Set(), secrets: [], cli: live.map((l) => ({ name: l.name, enabled: true })), extras: [], ambientDisabled: new Set(), signIn: () => undefined })), [], 'no known address at all: nothing offered');
+      // an open sign-in stays visible while the row reads Starting (a server signed in again passes through it)
+      const held = agentMcpReply({ a: info(sid), ad, live, off: new Set(), secrets: [], cli: live.map((l) => ({ name: l.name, enabled: true })), extras: [], ambientDisabled: new Set(), signIn: (n) => (n === 'slow' ? { host: 'auth.example.com', opened: true, expiresInMs: 1000 } : undefined), serverUrl: (n) => URLS[n] });
+      assert.deepStrictEqual(held.servers.find((x) => x.name === 'slow')!.signIn, { host: 'auth.example.com', opened: true, expiresInMs: 1000 }, 'pending row keeps its open sign-in');
       await ad.stop(sid);
       assert.deepStrictEqual(again(rep(ad, sid)), [], 'no running session: no');
+
+      // review on #625: a Sign in again entry is not finished by the OLD "connected" (a re-read, the 5 s poll, another server's event)
+      const st2 = new McpSignInStore(() => 0, async () => undefined);
+      assert.ok(st2.begin('A', 'web', PAGE, 'auth.example.com', undefined, { again: true }));
+      assert.ok(st2.begin('A', 'first', PAGE, 'auth.example.com'));
+      for (let i = 0; i < 3; i++) st2.onServers('A', [{ name: 'web', status: 'connected' }, { name: 'other', status: 'failed' }]);
+      assert.ok(st2.has('A', 'web'), 'still held: connected before any other state is the old sign-in');
+      st2.onServers('A', [{ name: 'first', status: 'connected' }]);
+      assert.ok(!st2.has('A', 'first'), 'a first sign-in still finishes on connected');
+      st2.onServers('A', [{ name: 'web', status: 'pending' }]);
+      assert.ok(st2.has('A', 'web'), 'another state: still waiting');
+      st2.onServers('A', [{ name: 'web', status: 'connected' }]);
+      assert.ok(!st2.has('A', 'web'), 'connected after another state: finished');
+      // the op marks the entry: through mcpSignInOp, the next connected event does not drop it
+      const ad3 = mk({ mcpSignInAgain: true });
+      const sid3 = await ad3.start({ workspace: ws, quiet: true });
+      const st3 = new McpSignInStore(() => 0, async () => undefined);
+      assert.strictEqual((await mcpSignInOp({ ...d, agents: new Map([[sid3, info(sid3)]]), router: routerOf(ad3) }, st3, sid3, 'web', true)).ok, true);
+      st3.onServers(sid3, [{ name: 'web', status: 'connected' }]);
+      assert.ok(st3.has(sid3, 'web'), 'Sign in again from the op is held past the old connected');
     }
 
     // ---- the reply (FR-020, FR-068) ----

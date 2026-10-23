@@ -26,6 +26,13 @@ interface Entry {
   opened: boolean;
   /** FR-075: the server's own host, set only when the sign-in page is on a different site than the server. */
   otherSite?: string;
+  /**
+   * FR-164 (review on #625): a Sign in again of a server that was connected. Its "connected" before the runtime reports any other state
+   * is the OLD sign-in (a re-read or another server's event says so too), so it does not finish the entry; `sawOther` is set once the
+   * runtime reports another state for this server, and only a "connected" after that finishes it.
+   */
+  again?: boolean;
+  sawOther?: boolean;
 }
 
 /** Two-part public suffixes the registrable-domain rule knows (FR-075: the last two labels, or three for these). */
@@ -143,10 +150,10 @@ export class McpSignInStore {
     this.pending.delete(McpSignInStore.key(agentId, name));
   }
   /** Hold an address that already passed `elicitHttpsUrl`. False when one is open for this server (one at a time). */
-  begin(agentId: string, name: string, url: string, host: string, otherSite?: string): boolean {
+  begin(agentId: string, name: string, url: string, host: string, otherSite?: string, opts: { again?: boolean } = {}): boolean {
     this.sweep();
     if (this.live(agentId, name) || this.entries.size >= MAX_SIGN_INS) return false;
-    this.entries.set(McpSignInStore.key(agentId, name), { url, host, at: this.now(), opened: false, ...(otherSite ? { otherSite } : {}) });
+    this.entries.set(McpSignInStore.key(agentId, name), { url, host, at: this.now(), opened: false, ...(otherSite ? { otherSite } : {}), ...(opts.again === true ? { again: true } : {}) });
     return true;
   }
   view(agentId: string, name: string): SignInView | undefined {
@@ -184,9 +191,21 @@ export class McpSignInStore {
   clear(): void {
     for (const k of [...this.entries.keys()]) this.del(k);
   }
-  /** `mcp` event: a server the runtime now reports connected has finished its sign-in. */
+  /**
+   * `mcp` event: a server the runtime now reports connected has finished its sign-in. A Sign in again entry (FR-164) finishes only on a
+   * "connected" that follows another state reported for that server since it began (review on #625).
+   */
   onServers(agentId: string, servers: readonly McpServerStatus[]): void {
-    for (const s of servers) if (s.status === 'connected') this.drop(agentId, s.name);
+    for (const s of servers) {
+      const e = this.entries.get(McpSignInStore.key(agentId, s.name));
+      if (!e) continue;
+      if (s.status !== 'connected') {
+        if (e.again) e.sawOther = true;
+        continue;
+      }
+      if (e.again && !e.sawOther) continue; // still the old sign-in
+      this.drop(agentId, s.name);
+    }
   }
 }
 
@@ -226,7 +245,7 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
   // FR-164: Sign in again (only `true` counts) is for a server the agent app can sign in again itself, and not one that waits for its first sign-in
   const redo = again === true;
   if (redo && !ad.capabilities.mcpSignInAgain) return { ok: false, error: `${ad.displayName} cannot sign in again from Agent Durbar.` };
-  if (redo ? !canSignInAgainStatus(st) : !needsSignIn(st)) return { ok: false, error: redo ? `${name} cannot be signed in again now.` : `${name} does not need a sign-in.` };
+  if (redo ? !canSignInAgainStatus(st, d.serverUrl?.(a.id, name)) : !needsSignIn(st)) return { ok: false, error: redo ? `${name} cannot be signed in again now.` : `${name} does not need a sign-in.` };
   if (!store.reserve(a.id, name)) return { ok: false, error: store.has(a.id, name) ? `A sign-in for ${name} is already open.` : 'A sign-in for this server is already starting, or too many are open.' };
   try {
     let r;
@@ -256,7 +275,7 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
       return { ok: false, manual: true, error: 'Agent Durbar opens only https sign-in pages, and this one is not.' };
     }
     const otherSite = signInSiteNote(d.serverUrl?.(a.id, name), u.host);
-    if (!store.begin(a.id, name, u.url, u.host, otherSite)) return { ok: false, error: 'Too many sign-ins are open. Cancel one first.' };
+    if (!store.begin(a.id, name, u.url, u.host, otherSite, redo ? { again: true } : {})) return { ok: false, error: 'Too many sign-ins are open. Cancel one first.' };
     return { ok: true, kind: 'browser', host: u.host, ...(otherSite ? { otherSite } : {}) };
   } finally {
     store.release(a.id, name);

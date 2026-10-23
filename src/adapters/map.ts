@@ -78,7 +78,11 @@ export class EventMapper {
     for (const s of servers) {
       if (!s || typeof s.name !== 'string') continue;
       listed.add(s.name);
-      const next = mcpStatus(s.name, s);
+      // review on #625: `rpc.mcp.list` items carry no transport (SDK 1.0.22 `McpServer`) and may leave out the source: keep what the
+      // runtime reported before, so a stdio or built-in server never looks like a remote one after a re-read
+      const prev = this.mcp.get(s.name);
+      const got = mcpStatus(s.name, s);
+      const next = { ...got, source: knownSource(got.source) ?? prev?.source ?? got.source, transport: got.transport ?? prev?.transport };
       if (this.derivedAuth.has(s.name) && next.status === 'connected') continue; // the same "connected" the runtime always says: not new
       this.derivedAuth.delete(s.name);
       this.mcp.set(s.name, next);
@@ -253,7 +257,7 @@ export class EventMapper {
       case 'session.mcp_server_status_changed':
         if (typeof d.serverName !== 'string') return;
         this.derivedAuth.delete(d.serverName);
-        this.mcp.set(d.serverName, mcpStatus(d.serverName, { status: d.status, error: d.error, source: d.configSource ?? this.mcp.get(d.serverName)?.source, transport: this.mcp.get(d.serverName)?.transport }));
+        this.mcp.set(d.serverName, mcpStatus(d.serverName, { status: d.status, error: d.error, source: knownSource(d.configSource) ?? this.mcp.get(d.serverName)?.source ?? d.configSource, transport: this.mcp.get(d.serverName)?.transport }));
         return this.emitMcp();
       case 'session.mcp_server_removed':
         if (typeof d.serverName === 'string' && this.mcp.delete(d.serverName)) this.emitMcp();
@@ -382,6 +386,11 @@ export function copilotUsageLimit(errorType: unknown, errorCode: unknown): (Even
 }
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' && v >= 0 ? v : undefined);
+
+/** A source the runtime actually named: `unknown` or a missing one never replaces what it said before (review on #625). */
+function knownSource(v: unknown): string | undefined {
+  return typeof v === 'string' && v && v !== 'unknown' ? v : undefined;
+}
 
 function mcpStatus(name: string, s: Record<string, any>): McpServerStatus { // eslint-disable-line @typescript-eslint/no-explicit-any
   return { name, status: str(s.status) ?? 'pending', source: str(s.source), transport: str(s.transport), error: str(s.error)?.slice(0, 300) };

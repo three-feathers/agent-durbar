@@ -200,6 +200,7 @@ export function registerMcpIpc(deps: {
       claudeList: (gn.claude ?? []).map((n) => ({ name: n, enabled: !dis.has(claudeOffKey(n)) })),
       toolsOff: s.toolsOffFor(keyOf(a)),
       signIn: (n) => signIns.view(a.id, n),
+      serverUrl: (n) => serverUrlOf(a.id, n),
       global: gn,
       builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
     });

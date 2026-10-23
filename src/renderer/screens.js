@@ -1084,6 +1084,8 @@
     /* spec 058 FR-065/FR-069 (T102): Sign in. `signBusy` = the call to the app is under way; `waited` = a sign-in this dialog saw open (so a vanished one reads "not finished");
        `signNote` = one line under the row; `openSteps` = servers whose terminal steps are open; `wantFocus` = the control to focus after the next repaint. */
     const signBusy=new Set(), waited=new Set(), signNote=new Map(), openSteps=new Set();
+    /* FR-164 (review on PR 625): a Sign in again of a connected server: its "connected" is the old sign-in until another state was seen */
+    const againWait=new Set(), againSaw=new Set();
     let wantFocus=null, expT=0;
     /* the steps text has its commands in backticks: they show as code, and Copy puts only the commands on the clipboard, one per line */
     const stepParts=t=>String(t||'').split('`');
@@ -1213,9 +1215,12 @@
     let seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
     const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return [];
       /* FR-069: a sign-in this dialog saw open that is gone now: connected = signed in; still needs a sign-in = the time limit (or End session) ended it */
+      for(const n of againWait){const x=st.servers.find(y=>y.name===n);if(x&&x.status!=='connected')againSaw.add(n);}
       for(const n of [...waited]){const x=st.servers.find(y=>y.name===n);
         if(x&&x.signIn)continue;
         waited.delete(n);
+        const redo=againWait.delete(n), saw=againSaw.delete(n);
+        if(redo&&!(x&&x.status==='connected'&&saw)){signNote.set(n,'Sign-in was not finished. '+n+' may stay signed out until you sign in again.');continue;}
         if(x&&x.status==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');}
         else if(x&&(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth')))signNote.set(n,'Sign-in was not finished. Press Sign in to try again.');}
       for(const x of st.servers)if(x.status==='connected')signNote.delete(x.name);
@@ -1269,7 +1274,7 @@
       const r=again===true?await call(X.bridge.agentMcpSignIn,a.id,n,true):await call(X.bridge.agentMcpSignIn,a.id,n);
       signBusy.delete(n);
       if(r&&r.ok&&r.kind==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');X.announce('Signed in to '+n+'.');}
-      else if(r&&r.ok){waited.add(n);wantFocus=['signopen',n];X.announce('Sign-in page on '+r.host+'. Press Open sign-in page to continue.');}
+      else if(r&&r.ok){waited.add(n);if(again===true)againWait.add(n);wantFocus=['signopen',n];X.announce('Sign-in page on '+r.host+'. Press Open sign-in page to continue.');}
       else{
         if(r&&r.manual)openSteps.add(n);
         signNote.set(n,'Could not start the sign-in: '+((r&&r.error)||'unknown error')+(r&&r.manual?' Use the steps below.':''));
@@ -1280,13 +1285,16 @@
     /* FR-164: one confirmation, then the runtime's own forced sign-in per server, one after the other; each row then offers Open sign-in page */
     const signAgain=async(names,btn)=>{
       if(!names.length||againBusy)return;
-      const ask=window.DurbarDialog&&window.DurbarDialog(document);
-      const one=names.length===1, what=one?names[0]:names.length+' servers';
-      const lines=['Copilot forgets the saved sign-in'+(one?'':'s')+' and you sign in again in your browser'+(one?'.':', one page per server.'),'Use this when macOS keeps asking for keychain access on every launch: the new sign-in is saved by the current Copilot runtime.','Agent Durbar never reads or changes your keychain.'];
-      const ok=ask?!!(await ask({title:'Sign in again to '+what+'?',body:'Sign in again to '+what+'?',lines,returnFocus:()=>btn,buttons:[{label:'Cancel',value:null},{label:'Sign in again',value:'ok',cls:'primary'}]})):window.confirm('Sign in again to '+what+'?');
-      if(!ok)return;
-      againBusy=true;await repaint();
-      try{for(const n of names)await signIn(n,true);}finally{againBusy=false;await repaint();}
+      againBusy=true; /* from the first press: a second press (a row, or to all) while the confirmation or the sign-ins run does nothing */
+      try{
+        const ask=window.DurbarDialog&&window.DurbarDialog(document);
+        const one=names.length===1, what=one?names[0]:names.length+' servers';
+        const lines=['Copilot forgets the saved sign-in'+(one?'':'s')+' and you sign in again in your browser'+(one?'.':', one page per server.'),(one?'The server stays':'Each server stays')+' signed out until you finish in your browser; Cancel or the time limit leaves it signed out.','Use this when macOS keeps asking for keychain access on every launch: the new sign-in is saved by the current Copilot runtime.','Agent Durbar never reads or changes your keychain.'];
+        const ok=ask?!!(await ask({title:'Sign in again to '+what+'?',body:'Sign in again to '+what+'?',lines,returnFocus:()=>btn,buttons:[{label:'Cancel',value:null},{label:'Sign in again',value:'ok',cls:'primary'}]})):window.confirm('Sign in again to '+what+'?');
+        if(!ok)return;
+        await repaint();
+        for(const n of names)await signIn(n,true);
+      }finally{againBusy=false;await repaint();}
     };
     const openSign=async(n,host)=>{
       const r=await call(X.bridge.agentMcpOpenSignIn,a.id,n,host);

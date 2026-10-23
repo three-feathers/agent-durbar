@@ -986,7 +986,7 @@ server.
   - Still needed from the owner: the program name in the dialog, and whether Durbar runs from /Applications. A different name, or Durbar running from a disk image, would change this analysis.
 - **FR-163** **No Durbar-caused connect attempts on a server that is not connected.**
   - Each connect attempt by the runtime can read the server's items again, which means more prompts.
-  - `CopilotAdapter.listMcpTools` refuses a server whose last known status is not `connected` (failed, needs sign-in, pending, or marked needs-sign-in by tool failures), with "This server is not connected. Restart it or sign in first". Nothing reaches the runtime. A server the runtime has not reported yet is asked as before.
+  - `CopilotAdapter.listMcpTools` refuses a server whose last known status is not `connected` (failed, needs sign-in, pending, or marked needs-sign-in by tool failures), with "This server is not connected. Restart it or sign in first" (a pending server: "This server is still starting"). Nothing reaches the runtime. A server the runtime has not reported yet is asked as before.
   - The other paths were checked and already ask nothing of a failed server:
     - the sign-in poll (`refreshMcpStatus`) only calls `isServerRunning`, which starts nothing, and does not `list`;
     - `agents:mcp` and the Settings live view read Durbar's own state only;
@@ -996,8 +996,11 @@ server.
   - The 4 prompts for one failing server therefore come from the runtime's own connect and refresh for that server, and its items' old lists. `[IMPLEMENTED]` 2026-10-23, `test:` `test:copilotshared` (0 runtime calls for 15 opens of failed, needs-sign-in and pending rows; 3 polls of a failed server only check `isServerRunning`; one restart per press).
 - **FR-164** **Sign in again** (owner approved it in the chat on 2026-10-23, which changes the earlier Out-of-scope Q19 A for this one use):
   - **What the user sees:** each Copilot MCP row that is connected or failed and is not a local (stdio) server has **Sign in again…**. Two or more such rows also show **Sign in again to all (N)…**.
-  - **What happens:** one confirmation, then for each server the runtime's own `rpc.mcp.oauth.login({ serverName, forceReauth: true })`. Per the SDK, this "clears any cached OAuth token for the server and runs a full new authorization" (`read:` SDK 1.0.22 `rpc.d.ts`). Each row then offers the usual **Open sign-in page** (FR-065: the address stays in main, the window gets the host only).
-  - **Guards:**
+  - **What happens:** one confirmation (it says the server stays signed out until the user finishes in the browser; Cancel or the time limit leaves it signed out), then for each server the runtime's own `rpc.mcp.oauth.login({ serverName, forceReauth: true })`. Per the SDK, this "clears any cached OAuth token for the server and runs a full new authorization" (`read:` SDK 1.0.22 `rpc.d.ts`). Each row then offers the usual **Open sign-in page** (FR-065: the address stays in main, the window gets the host only).
+  - **Guards** (tightened after the re-review on #625):
+    - offered only for a server that Durbar knows by an http(s) address (a folder extra, a list Durbar passes, or the Copilot CLI list), whose source the runtime named (`user`, `workspace`, ...; never missing, `unknown` or `builtin`), that is not a built-in name and whose transport is not `stdio` or `memory`. Fail closed. The mapper keeps a source or transport when a re-read leaves it out or says `unknown` (`rpc.mcp.list` has no transport);
+    - the held sign-in of a server that was connected finishes only on a "connected" that follows another state reported since it began. The old "connected" from a re-read, the 5 s poll or another server's event does not finish it, and the window says "Signed in" only then;
+    - a second press while the confirmation or the sign-ins run does nothing;
     - `agents:mcpSignIn(id, name, again)`: only a literal `true` counts;
     - the agent app must have `capabilities.mcpSignInAgain` (Copilot only);
     - the server must be connected or failed and not waiting for a first sign-in (`canSignInAgainStatus`);
@@ -1005,13 +1008,14 @@ server.
   - **Never:** Durbar reads, writes or deletes no keychain item itself, and makes no other OAuth call.
   - `[IMPLEMENTED]` 2026-10-23, `test:` `test:mcpsignin` (op guards, the reply's `canSignInAgain`), `test:copilotshared` (only `forceReauth` is added to the login call), `test:runtime` (contract: `mcpSignInAgain` only with `mcpSignIn`), and the simulator's canned flow.
   - `[KNOWN GAP]` Not run on a real account. Still unknown:
+    - whether the server disconnects at once when `forceReauth` clears its token, or only at its next request;
     - whether `forceReauth` deletes and re-creates the keychain item, or only rewrites its data (which would keep the old access and partition lists);
     - whether it also replaces the stored client registration (the second item per server);
     - whether removing an old item asks once more.
     That needs the owner's Mac (T136).
 - **Hypothesis from Paco's agent** (review on #625). **Checked, likely not the cause** (`real:` the owner's Mac, 2026-10-23: the `copilot-mcp-oauth` items list `authorizations (1): partition_id` with `description: teamid:VEKTX9H2N7`, and no `cdhash` entry). The original hypothesis: the old items' access list *and* partition list name the old ad-hoc build. That gives two prompts per item, the first for the access list ("confidential information") and the second for the partition list. "Always Allow" fixes only the access list, so the partition prompt returns on every launch (26 = 2 × 13). The fixes this points to:
   - re-creating each item from the signed runtime (FR-164);
-  - **user-run only**, never by Durbar (it needs the login keychain password): `security set-generic-password-partition-list -S teamid:VEKTX9H2N7,apple-tool:,apple: -s <service> -a <account>` for each item.
+  - a user-run `security set-generic-password-partition-list` command. It was **ruled out** by the owner's check above (the items already name `teamid:VEKTX9H2N7`), so it is not suggested anywhere.
 - **Second analysis after the partition check** (2026-10-23; `read:` the darwin `runtime.node` 1.0.22 strings, SDK 1.0.22 `client.js`; nothing seen on a Mac):
   - **The partition entry is GitHub's team.** So the items were written by GitHub-signed code: the `copilot` CLI the owner also uses, or the new runtime. They were not written by the old ad-hoc build. This also weakens the "old items" explanation behind FR-164.
   - **The runtime's store looks like it keeps access lists when it rewrites.** It is the `keyring-core` macOS store (`apple-native-keyring-store` 1.0.2, `security-framework` 3.7.0). It finds the item and then modifies its data (`SecKeychainFindGenericPassword`, `SecKeychainItemModifyAttributesAndData`), adding one only when none exists (`SecKeychainAddGenericPassword`). Modifying keeps the item's access lists, so a token refresh by itself should not reset them. Its strings also have `copilot.encryptionKeys`, `copilot-mcp-oauth-store-key-v1`, `mcp-oauth-config` and `tryRefreshTokens`, which suggests a key in the keychain plus a token store, but how many items each server uses cannot be read from strings. One strings-only point is still open: the store says "This store does not allow attribute updates", and whether a refresh deletes and re-adds the item cannot be ruled out from strings.
