@@ -22,6 +22,7 @@ CI (`.github/workflows/spec-kit.yml`) fails a pull request that changes `src/` w
 - `.specify/memory/constitution.md`: the rules (I-VIII). Read it first. Principles I and III are non-negotiable.
 - The specs index: every spec and its status, built from the `specs-index` block in each `spec.md`. The rows are not committed: read it on the [website](https://three-feathers.github.io/agent-durbar/docs.html#specs-index) or with `npm run specs:index` (writes `specs/INDEX.md`, git-ignored). `specs/README.md` keeps only the intro and the table markers. The blocks are the single place for status: do not repeat statuses here (a copy goes stale). Next free spec number: check `specs/` on `main`, the remote branches (`git ls-remote --heads origin | grep NNN-`) and the open PRs. Evidence tags: `[IMPLEMENTED]`, `[KNOWN GAP]`, `test:`, `sim:`, `real:`, `read:`.
 - `docs/agent-notes.md`: what agents learned the hard way (tool pitfalls, checked vendor behaviour, review techniques). Read it before you start; add to it (see *Share what you learn*).
+- `docs/agent-setup/`: the team's reference Claude Code setup (sub-agents, `CLAUDE.local.md` template, review loop, always-on host). Templates only; keep your filled copies local.
 - `src/main`, `src/preload`, `src/renderer` (plain HTML/CSS/JS), `src/adapters`, `src/shared`; tests in `scripts/test-*.ts`.
 
 ## Non-negotiables (details in the constitution)
