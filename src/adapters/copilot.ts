@@ -50,6 +50,10 @@ import type { HandoffResult } from './handoff';
 import { sessionIdOk } from '../shared/sessionid';
 import { allowedRemoteUrl, cleanRemoteError, isRemoteVisibility } from '../shared/remote';
 import type { RemoteState } from '../shared/remote';
+import { copilotAccount, copilotPlanLabel } from './accounts';
+import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
+import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
+import { sweepStaleTempDirs } from '../shared/attachments';
 
 const IMAGE_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -343,6 +347,7 @@ export class CopilotAdapter implements AgentAdapter {
    * is cut (its history stays). Nothing started yet: nothing to do, the first client reads the new sign-in.
    */
   async refreshAuth(): Promise<void> {
+    this.planCache = undefined; // spec 051 FR-022: a new sign-in may have a new plan
     if (this.refreshing) return this.refreshing;
     if (!this.client && !this.starting) return;
     const run = this.reconnect().finally(() => {
@@ -416,6 +421,95 @@ export class CopilotAdapter implements AgentAdapter {
   async authStatus(): Promise<{ signedIn: boolean }> {
     const s = await (await this.getClient()).getAuthStatus();
     return { signedIn: !!s.isAuthenticated };
+  }
+
+  /**
+   * Spec 051 FR-011, FR-018, FR-022: the account the runtime reports (`getAuthStatus()`: login, host, how it signed in) and its plan.
+   * No prompt; no credits (FR-022 evidence). `statusMessage` is not read. Personal data: never passed to `debug` (FR-015).
+   */
+  async accountInfo(opts: AccountInfoOptions = {}): Promise<AccountIdentity> {
+    try {
+      const client = await this.getClient();
+      const id = copilotAccount(await client.getAuthStatus());
+      if (id.status !== 'signed-in') return id;
+      const plan = await this.planOf(client, opts).catch(() => undefined);
+      return plan ? { ...id, plan } : id;
+    } catch {
+      return { status: 'unknown' };
+    }
+  }
+
+  /** The whole plan read (a live session, or the throw-away's create, status and cleanup) may take this long; then no plan (FR-022). */
+  protected planTimeoutMs = 3000;
+  /** Each cleanup call of the throw-away session (disconnect, delete) may take this long. */
+  protected planCleanupMs = 2000;
+  /** A throw-away read still running after this long is not waited for again (a hung `createSession` never blocks Check again). */
+  protected planStaleMs = 30_000;
+  /** The plan, once per run (FR-022): asked again only on `recheck` (Check again, a finished sign-in) or after `refreshAuth`. */
+  private planCache?: Promise<string | undefined>;
+  /** The throw-away read in flight, also after its cap, so a second one never starts beside it. */
+  private planInflight?: { p: Promise<string | undefined>; at: number };
+
+  private capped<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
+    let timer: NodeJS.Timeout | undefined;
+    const limit = new Promise<undefined>((res) => { timer = setTimeout(() => res(undefined), ms); });
+    return Promise.race([p.catch(() => undefined), limit]).finally(() => clearTimeout(timer));
+  }
+
+  /**
+   * FR-022: the plan from a live session first (`gitHubAuth.getStatus` on a running session costs nothing more); otherwise one
+   * throw-away session per run (kept until a recheck or a sign-in). The whole read is capped at `planTimeoutMs`.
+   */
+  private async planOf(client: CopilotClient, opts: AccountInfoOptions): Promise<string | undefined> {
+    for (const live of this.sessions.values()) {
+      const auth = (live.session.rpc as unknown as { gitHubAuth?: { getStatus?: () => Promise<unknown> } }).gitHubAuth;
+      if (typeof auth?.getStatus !== 'function') continue;
+      const st = await this.capped(auth.getStatus(), this.planTimeoutMs);
+      const plan = copilotPlanLabel(st && typeof st === 'object' ? (st as { copilotPlan?: unknown }).copilotPlan : undefined);
+      if (plan) return plan;
+      break; // one live session answers for all of them
+    }
+    if (opts.recheck) this.planCache = undefined;
+    if (!this.planCache) {
+      const fresh = this.planInflight && Date.now() - this.planInflight.at < this.planStaleMs ? this.planInflight.p : this.startPlanRead(client, opts.disabledMcpServers ?? []);
+      this.planCache = this.capped(fresh, this.planTimeoutMs);
+    }
+    return this.planCache;
+  }
+
+  /**
+   * Spec 051 FR-018, FR-022: the Copilot plan, which only a session's `gitHubAuth.getStatus()` reports (`copilotPlan`; the client-level
+   * `getAuthStatus()` has none). A throw-away session like the one-shot's (`oneShotConfig`: no tools, no custom agents, a temp folder,
+   * and every MCP server the runtime would start by itself switched off by name, `disabledMcpServers`), with no message sent. It is
+   * disconnected and deleted (each call capped), and its folder removed, in a `finally`, also when it resolves after the cap. Only
+   * `copilotPlan` is read (the login and message in the same answer are dropped).
+   */
+  private startPlanRead(client: CopilotClient, disabledMcpServers: readonly string[]): Promise<string | undefined> {
+    const run = (async (): Promise<string | undefined> => {
+      sweepStaleTempDirs(os.tmpdir(), ACCOUNT_TEMP_PREFIXES, Date.now(), 3600_000); // leftovers of a quit mid-call (FR-022)
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-acct-'));
+      let session: CopilotSession | undefined;
+      try {
+        const config = { ...oneShotConfig(dir, disabledMcpServers), onPermissionRequest: async (): Promise<PermissionRequestResult> => ({ kind: 'reject', feedback: 'Agent Durbar allows no tools here.' }) as PermissionRequestResult };
+        session = await client.createSession(config as unknown as SessionConfig);
+        const auth = (session.rpc as unknown as { gitHubAuth?: { getStatus?: () => Promise<unknown> } }).gitHubAuth;
+        if (typeof auth?.getStatus !== 'function') return undefined;
+        const st = await this.capped(auth.getStatus(), this.planTimeoutMs);
+        return copilotPlanLabel(st && typeof st === 'object' ? (st as { copilotPlan?: unknown }).copilotPlan : undefined);
+      } finally {
+        if (session) {
+          const id = session.sessionId;
+          await this.capped(session.disconnect(), this.planCleanupMs);
+          await this.capped(client.deleteSession(id), this.planCleanupMs);
+        }
+        fs.rmSync(dir, { recursive: true, force: true });
+        sweepStaleTempDirs(os.tmpdir(), ACCOUNT_TEMP_PREFIXES, Date.now(), 3600_000);
+      }
+    })();
+    const entry = { p: run, at: Date.now() };
+    this.planInflight = entry;
+    void run.catch(() => undefined).finally(() => { if (this.planInflight === entry) this.planInflight = undefined; });
+    return run;
   }
 
   /**

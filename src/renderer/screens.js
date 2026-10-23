@@ -327,11 +327,13 @@
         <p class="scr-note small" id="aboutCredits">Contributors: ${ab.contributors.map(c=>esc(c.label)).join(', ')}</p>
         <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
     /* spec 051: Settings > Agent apps (install, update, sign in) */
-    let hsSec='';
+    let hsSec='',acctAgain=false;
     if(window.DurbarHarnesses&&window.DurbarHarnesses.available()&&X.bridge.listAdapters){
       let kinds=[],cp=null;try{kinds=(await X.bridge.listAdapters(!!X._hsRefresh))||[];}catch(e){kinds=[];}X._hsRefresh=false;
       if(X.bridge.copilotAuth&&kinds.some(k=>k.id==='copilot'&&k.state==='ready')){try{cp=await X.bridge.copilotAuth();}catch(e){cp=null;}}
       hsSec=window.DurbarHarnesses.sectionHTML(kinds,cp);
+      /* spec 051 FR-014: the account lines are filled in after the paint (Codex needs about 2 s); asked again on open, Check again and after a sign-in */
+      acctAgain=X._acctRefresh==='check'?'check':!!X._acctRefresh;X._acctRefresh=false;
     }
     /* spec 043 FR-010, FR-019: Settings > Agent Success Profiles (custom agents): the profile files of the office's folders and yours */
     const pfSec=profilesOn()?`<section class="scr-sec" id="pfSec" aria-labelledby="pfH">${await profilesInner()}</section>`:'';
@@ -370,6 +372,7 @@
         <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Folder extras…</b> in an agent's MCP menu opens the same list. Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p></details>
       </section></details>${aboutSec}</div>`;
+    if(hsSec)window.DurbarHarnesses.loadAccounts(acctAgain); /* spec 051 FR-014: the account lines fill in after the paint (Codex takes about 2 s) */
     wireHead();
     /* spec 051 FR-008: entry points open Settings at Agent apps */
     let atSec=false; /* a section was asked for (harnesses, mcp, schedules): its heading keeps the focus instead of the h2 */
@@ -1560,9 +1563,9 @@
   }
 
   window.DurbarScreens={oneShotCostLine,aiCredits,
-    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onChange:(again)=>{X._hsRefresh=true;if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
+    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
-    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
+    openSettings:(section)=>{mcp=null;X._acctRefresh=X._acctRefresh==='check'?'check':true;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
     mcpEvent:id=>{if(mcpDlgHook)mcpDlgHook(id);liveEvent(id);},

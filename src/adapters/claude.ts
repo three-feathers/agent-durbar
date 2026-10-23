@@ -31,6 +31,8 @@ import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec
 import type { McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
 import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
+import { claudeAccount } from './accounts';
+import type { AccountIdentity } from '../shared/account';
 
 /** FR-156: what Settings says of a Claude Code that `auth status` calls signed in: only the first message can confirm it. */
 export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
@@ -479,6 +481,8 @@ export interface ClaudeAdapterDeps {
   runOnce?: RunOnce;
   /** Spec 012 FR-156: `loggedIn` of `claude auth status --json` (local); tests inject a fake. Default: runs it on the found `claude`. */
   loggedIn?: () => Promise<boolean | undefined>;
+  /** Spec 051 FR-011: the parsed `claude auth status --json` (local); tests inject a fake. Default: runs it on the found `claude`. */
+  authJson?: () => Promise<Record<string, unknown> | undefined>;
   /** Spec 058 FR-175: the clock of a sign-in's `ttlMs` (tests inject one). Default `Date.now`. */
   now?: () => number;
   /** Spec 058 FR-175: how long to wait for the `mcp_authenticate` answer (tests pass a short one). Default 30 s. */
@@ -630,6 +634,20 @@ export class ClaudeAdapter implements AgentAdapter {
     const loggedIn = await probe().catch(() => undefined);
     if (loggedIn === false) return { status: 'signed-out', detail: 'No Claude Code sign-in on this computer.' };
     return { status: 'unknown', detail: CLAUDE_LOCAL_SIGN_IN };
+  }
+
+  /**
+   * Spec 051 FR-011: the account `claude auth status --json` reports (email and plan for a Claude sign-in, an API key, a provider).
+   * Local, no prompt, nothing billed. Personal data: never passed to `debug` (FR-015).
+   */
+  async accountInfo(): Promise<AccountIdentity> {
+    const probe = this.deps.authJson ?? (async () => {
+      const p = await this.deps.claudePath();
+      if (!p) return undefined;
+      const { claudeAuthStatus, nodeDetectEnv, nodeExec } = await import('./detect');
+      return claudeAuthStatus(p, nodeDetectEnv(), nodeExec);
+    });
+    return claudeAccount(await probe().catch(() => undefined));
   }
 
   private initCache?: { at: number; reply: Promise<Record<string, unknown>> };

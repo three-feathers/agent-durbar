@@ -13,6 +13,7 @@ import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
 import type { EditInfo } from '../shared/edits';
+import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
 export type { EditInfo };
 export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
@@ -621,6 +622,11 @@ export interface AgentAdapter {
    * credits); `unknown` when it cannot tell. `detail` is a short, safe sentence: never a token, email or account name.
    */
   verifySignIn?(): Promise<SignInCheck>;
+  /**
+   * Spec 051 FR-011: the account the app reports as signed in (a login or email, the plan), asked without a prompt (no credits).
+   * Personal data: the adapter never passes it to `debug`, and main sends it only to the window (FR-015). Never a token.
+   */
+  accountInfo?(opts?: AccountInfoOptions): Promise<AccountIdentity>;
   /**
    * Spec 012 FR-158: pick up a new sign-in made outside the adapter (Settings or the chat's sign-in card) in anything the adapter
    * keeps across sessions (Copilot's shared runtime client). Live sessions survive it. Optional: an adapter that starts a

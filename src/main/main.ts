@@ -2,7 +2,7 @@ import { FolderSetupStore } from './foldersetupstore';
 import { acceptedFor, hasFolderRules, scanFolderSetupCached } from './foldersetup';
 import type { FolderSetupStart } from '../shared/foldersetup';
 import type { McpServerSpec } from '../shared/mcp';
-import { cliServers, copilotDir } from './mcpfiles'; // spec 061 FR-015: the explainer switches Copilot's own servers off
+import { copilotDir, copilotServerNames } from './mcpfiles'; // spec 061 FR-015: the explainer switches Copilot's own servers off
 import { parseEffort } from '../shared/effort';
 import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron';
 import { register as registerActivityIpc } from './ipc/activity';
@@ -45,7 +45,8 @@ import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { startOptionsOf } from './startopts';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
-import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs } from '../shared/attachments';
+import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs, sweepStaleTempDirs } from '../shared/attachments';
+import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import type { AddResult, AgentInfo, PermMode, PickedFile, SessionOptions } from '../shared/api';
 import { GROUND } from '../shared/floors';
 import { createElicitTracker } from '../shared/elicit';
@@ -670,7 +671,7 @@ function oneShotFor(id: string): { name: string; generate: (prompt: string) => R
   if (!registry.has(id)) return undefined;
   const ad = router.instance(id);
   if (typeof ad.generateText !== 'function') return undefined;
-  const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
+  const opts = id === 'copilot' ? { disabledMcpServers: copilotServerNames(copilotDir(dev)) } : {};
   return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
 }
 registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id), profileFreshness });
@@ -890,6 +891,7 @@ app.whenReady().then(() => {
   activityStore = new ActivityStore(path.join(app.getPath('userData'), 'activity.json'));
   activityStore.load();
   sweepStaleStageDirs(os.tmpdir()); // spec 004 FR-010: staging folders a crash left behind
+  sweepStaleTempDirs(os.tmpdir(), ACCOUNT_TEMP_PREFIXES, Date.now(), 3600_000); // spec 051 FR-022: account-probe and one-shot folders a quit left behind
   agentTrust = new AgentTrustStore(path.join(app.getPath('userData'), 'durbar-agent-trust.json'));
   agentTrust.load();
   usageTotalsStore.load();

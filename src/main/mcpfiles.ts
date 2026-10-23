@@ -42,6 +42,14 @@ export const CLI_FILE_LABEL = '~/.copilot/mcp-config.json';
  * Servers of ~/.copilot/mcp-config.json plus the built-in ones, without any env/header value, and what happened when reading the file.
  * `disabled` = names switched off in Settings (for new sessions started here).
  */
+/**
+ * Spec 040 FR-015, spec 051 FR-022: the names of every MCP server the Copilot runtime starts by itself (the ~/.copilot/mcp-config.json
+ * list and its built-in ones), which a helper session (a one-shot, the account probe) switches off by name.
+ */
+export function copilotServerNames(dir: string): string[] {
+  return cliServers(dir, new Set()).servers.map((s) => s.name);
+}
+
 export function cliServers(dir: string, disabled: ReadonlySet<string>): { servers: McpAmbientView[]; file: McpCliFile } {
   const out: McpAmbientView[] = [];
   const r = readCandidates(path.join(dir, 'mcp-config.json'));
