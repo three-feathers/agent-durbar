@@ -301,6 +301,43 @@ async function main(): Promise<void> {
       assert.strictEqual(client.created.length, 1, 'no session was started by a restart');
       await ad.stop(sid);
     }
+    // ---- Copilot startMcpSignIn on the fake SDK (FR-064, SC-012, T098) ----
+    {
+      const client = new FakeClient();
+      const ad = new FakeCopilot(client);
+      assert.deepStrictEqual([ad.capabilities.mcpSignIn, typeof ad.startMcpSignIn, typeof (ad as { cancelMcpSignIn?: unknown }).cancelMcpSignIn], [true, 'function', 'undefined'], 'Copilot: Sign in yes, a cancel call no (its cancelLogin is for owned logins only)');
+      assert.match(ad.capabilities.mcpSignInSteps ?? '', /`copilot`.*`\/mcp auth \{name\}`.*Restart session with these servers/, 'the manual route: copilot, then /mcp auth <name>');
+      const sid = await ad.start({ workspace: ws, quiet: true });
+      const s = client.last;
+      const oauth = () => s.calls.filter((c) => c.name.startsWith('mcp.oauth.')).map((c) => [c.name, ...c.args]);
+      // the browser path: exactly one runtime call, with exactly the allowed fields (SC-012)
+      assert.deepStrictEqual(await ad.startMcpSignIn(sid, 'agent365-teams'), { kind: 'browser', url: 'https://auth.example.test/authorize?state=abc' });
+      assert.deepStrictEqual(oauth(), [['mcp.oauth.login', { serverName: 'agent365-teams', clientName: 'Agent Durbar', callbackSuccessMessage: 'You can close this tab and go back to Agent Durbar.' }]], 'one login call: serverName, clientName, callbackSuccessMessage and nothing else');
+      for (const f of ['clientId', 'clientSecret', 'redirectUri', 'grantType', 'forceReauth', 'loginId', 'publicClient', 'expectedInstallationId']) assert.ok(!(f in (s.calls.find((c) => c.name === 'mcp.oauth.login')!.args[0] as object)), `${f} is never sent`);
+      // no token path: nothing but `login` is ever called; the session config has no auth-request handler
+      assert.ok(oauth().every((c) => c[0] === 'mcp.oauth.login'), 'never handlePendingRequest, complete, prepareLogin, cancelLogin');
+      assert.ok(!('onMcpAuthRequest' in client.created[0]), 'no onMcpAuthRequest in the session config (Durbar never sees a token)');
+      // no URL = cached tokens were valid, the server is already connected
+      s.loginAnswer = {};
+      assert.deepStrictEqual(await ad.startMcpSignIn(sid, 'agent365-teams'), { kind: 'connected' }, 'no authorizationUrl: connected');
+      s.loginAnswer = { authorizationUrl: '' };
+      assert.deepStrictEqual(await ad.startMcpSignIn(sid, 'x'), { kind: 'connected' }, 'an empty address is the same');
+      s.loginAnswer = { authorizationUrl: 42 };
+      await assert.rejects(ad.startMcpSignIn(sid, 'x'), /cannot read/, 'a non-string address is refused');
+      // the runtime refuses: its reason, without the SDK prefix
+      s.loginFail = new Error('Request session.mcp.oauth.login failed with message: server x does not use OAuth');
+      await assert.rejects(ad.startMcpSignIn(sid, 'x'), (e: Error) => e.message === 'server x does not use OAuth');
+      // an older runtime: MethodNotFound, or no `oauth` object at all (no-method mode): a plain message, so main shows the terminal steps
+      s.loginFail = Object.assign(new Error('Unhandled method session.mcp.oauth.login'), { code: -32601 });
+      await assert.rejects(ad.startMcpSignIn(sid, 'x'), /cannot start a sign-in/);
+      s.loginFail = undefined;
+      delete (s.rpc.mcp as Record<string, unknown>).oauth;
+      s.calls.length = 0;
+      await assert.rejects(ad.startMcpSignIn(sid, 'x'), /cannot start a sign-in/);
+      assert.strictEqual(s.calls.length, 0, 'no method: nothing was called');
+      await assert.rejects(ad.startMcpSignIn('no-such-session', 'x'), /not running/, 'not live: rejects, nothing started');
+      await ad.stop(sid);
+    }
     done = true;
     console.log('[058] mcp session: PASS');
   } finally {

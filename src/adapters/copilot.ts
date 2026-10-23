@@ -33,7 +33,7 @@ import { PermissionBroker, isInsideRoots, mcpToolBlockList, startModeOf } from '
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import type { AgentProfile, PlanAnswer, SlashCommand } from './types';
-import type { McpToolInfo } from './types';
+import type { McpSignInResult, McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
 import { copilotHomeDir, copilotSlashPlaces, SlashCache } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
@@ -176,6 +176,8 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToolFilter: true, // spec 069 FR-062: session excludedTools (read: SDK types; not run on a real account)
   mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
+  mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account, T105)
+  mcpSignInSteps: 'In a terminal, run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers.', // FR-068
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
   planMode: true, // spec 066 FR-003: mode.set plan + onExitPlanModeRequest (@experimental)
@@ -1242,6 +1244,33 @@ export class CopilotAdapter implements AgentAdapter {
     }
     await mcp.disable({ serverName: name });
     await mcp.enable({ serverName: name });
+  }
+
+  /**
+   * Spec 058 FR-064 (T098): the runtime's own OAuth sign-in for one remote MCP server of this session. `rpc.mcp.oauth.login`
+   * (`@experimental`, read: SDK 1.0.22 `McpOauthLoginRequest`) with only the server name and two display texts: the runtime keeps its
+   * default loopback flow (discovery, PKCE, its own callback listener, token exchange, storage and reconnect), so no token and no
+   * callback ever pass through Durbar. Never `handlePendingRequest`, `complete`, `prepareLogin`, `cancelLogin` or `onMcpAuthRequest`,
+   * and never `clientId`, `clientSecret`, `redirectUri`, `grantType` or `forceReauth`. No `authorizationUrl` in the answer = cached
+   * tokens were still valid and the server is already connected. The result arrives later as `session.mcp_server_status_changed`.
+   * A missing method, or a runtime that does not know it, rejects with a plain message (main then shows the terminal steps).
+   */
+  async startMcpSignIn(sessionId: string, name: string): Promise<McpSignInResult> {
+    const live = this.sessions.get(sessionId);
+    if (!live) throw new Error('This session is not running. Send a message to start it, then sign in.');
+    const oauth = (live.session.rpc.mcp as unknown as { oauth?: { login?: (p: { serverName: string; clientName: string; callbackSuccessMessage: string }) => Promise<{ authorizationUrl?: unknown }> } }).oauth;
+    if (!oauth || typeof oauth.login !== 'function') throw new Error('This Copilot version cannot start a sign-in from Agent Durbar.');
+    let r: { authorizationUrl?: unknown } | undefined;
+    try {
+      r = await oauth.login({ serverName: name, clientName: 'Agent Durbar', callbackSuccessMessage: 'You can close this tab and go back to Agent Durbar.' });
+    } catch (err) {
+      if (isMethodNotFound(err)) throw new Error('This Copilot version cannot start a sign-in from Agent Durbar.');
+      throw new Error(sdkErrorText(err));
+    }
+    const url = r?.authorizationUrl;
+    if (url === undefined || url === null || url === '') return { kind: 'connected' };
+    if (typeof url !== 'string') throw new Error('Copilot sent a sign-in page that Agent Durbar cannot read.');
+    return { kind: 'browser', url };
   }
 
   /** Spec 069 FR-031: a live `tools/list` through the runtime; it throws when the server is not connected. */
