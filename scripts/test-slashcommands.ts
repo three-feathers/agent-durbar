@@ -467,8 +467,28 @@ async function main(): Promise<void> {
     ]);
     for (const e of pub) for (const k of ['description', 'argumentHint', 'where'] as const) assert.strictEqual(leak(e[k]), undefined, `${e.name}.${k} leaks: ${e[k]}`);
     assert.ok(pub[0].where!.length <= 160 && pub[0].where!.includes('[redacted]'), pub[0].where);
+    // review of PR #614: a token that removing `**` glues to a word, while a second token is found by the other pass
+    for (const t of [`see x**${TOK.ghp}** and gh\`${TOK.ghp.slice(2)}\``, `a**${TOK.ghp}`, `x**${TOK.ghp.slice(0, 24)}**${TOK.ghp.slice(24)}**`, `1*${TOK.sk}*`]) {
+      assert.strictEqual(leak(maskSlashText(t)), undefined, `glued: ${maskSlashText(t)}`);
+      write(path.join(r, '.claude', 'commands', 'glue.md'), `---\ndescription: ${t}\n---\nbody`);
+      const d = discoverSlash(claudeSlashPlaces([r], path.join(tmp, 'nohome', '.claude'), path.join(tmp, 'nohome'))).find((e) => e.name === 'glue')!.description;
+      assert.strictEqual(leak(d), undefined, `glued, listed: ${d}`);
+    }
+    // the full redact() runs before the cut: credentials in a URL whose `@` falls after the 200 cut, and an `authorization:` value
+    const pw = 'hunter2secretpassword';
+    const cred = publicSlash([{ name: 'u', source: 'folder', kind: 'command', description: 'a'.repeat(170) + ' https://bob:' + pw + '@host.example/x', argumentHint: 'a'.repeat(60) + ' authorization: ' + pw }]);
+    assert.ok(!cred[0].description!.includes('hunter2') && !cred[0].argumentHint!.includes('hunter2'), JSON.stringify(cred[0]));
     // no token: the text is kept as written (Markdown and `_` stay)
     assert.strictEqual(maskSlashText('Run `npm test` on my_branch **now**'), 'Run `npm test` on my_branch **now**');
+  });
+
+  await test('FR-014: the send note of a prompt file masks a token-shaped ${input:NAME} (review of PR #614)', () => {
+    const r = path.join(tmp, 'tokprompts');
+    write(path.join(r, '.github', 'prompts', 'tok.prompt.md'), '---\ndescription: tok\n---\nUse ${input:' + TOK.ghp + '} and ${input:' + TOK.ghp.slice(0, 24) + '}');
+    const l = discoverSlash(copilotSlashPlaces([r], path.join(tmp, 'nohome2', '.copilot'), path.join(tmp, 'nohome2')));
+    const x = expandSlash('/tok', l) as { note?: string } | undefined;
+    assert.ok(x && x.note && /left as written/.test(x.note), JSON.stringify(x));
+    assert.strictEqual(leak(x!.note), undefined, x!.note);
   });
 
   await test('FR-013: the list shows masked text (slashsuggest.js view/tip with the real safetext.js and redact); fails closed', () => {

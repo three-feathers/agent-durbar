@@ -202,15 +202,22 @@ full in the "/" list row and its tooltip, while every other surface masks token 
   change a name such as `release_notes`. The name inserted into the box and sent stays the real one (it must match the file).
   No mask function (redact module missing): the fields are empty, never the raw text (fail closed).
 - **FR-014 Main masks before it cuts.** Main cuts descriptions to 200, argument hints to 80 and places to 160 (FR-003, FR-010). A cut
-  inside a token leaves a half token that no pattern knows, so the window could not mask it any more. Main now masks token shapes
-  first (`maskTokenShapes` from `src/shared/redact.ts`; also on the text with Markdown escapes and the marks `*`, backtick, `~`,
-  `[`, `]` removed, used when that finds a token the raw pass missed), then cuts. This covers the front matter, the built-ins from the
-  CLI's startup list and `publicSlash`.
+  inside a secret leaves a half secret that no pattern knows, so the window could not mask it any more. Main now runs the full
+  `redact()` from `src/shared/redact.ts` first (token shapes, credentials in a URL, an `authorization:` value, the environment's secret
+  values), then cuts. This covers the front matter, the built-ins from the CLI's startup list and `publicSlash`.
+- **Markdown: both passes, combined (review of PR #614, fjcabello).** Markdown can split a token (`gh`+backtick+`p_...`,
+  `ghp_<20>**K1l2...**`) or glue it to the word before it (`x**ghp_...**` gives `xghp_...`, and no token shape starts after a letter).
+  Taking either the raw pass's output or the Markdown-free pass's output lost what the other found (`see x**ghp_A...** and gh`+backtick+
+  `p_Z...` showed the first token). Now the Markdown-free text is masked AND every token-like run of the raw text that `redact`
+  changes on its own is masked in that output, with the token characters glued after it: `redactMarkdown` in main, `both` in the
+  window's `safetext.js` (which fixes every `DurbarSafeText` surface: `mask` and `excerpt`; spec 041 FR-065 delta 2026-10-23).
+- **The send's note (review of PR #614).** A VS Code prompt file's note echoes `${input:NAME}` names (FR-012), so a token-shaped
+  name reached the chat. `expandSlash` masks the note with `redact()`, and the window shows `r.slashNote` masked, then cut (200 / 240).
 - Tests: `test:slashcommands` (tokens at the 200, 80 and 160 cut positions, split by Markdown, through `discoverSlash`,
   `cleanBuiltins` and `publicSlash`; the window helpers with the real `safetext.js` and `redact`); `check:slash-suggest` (page
   address `simslash=secret`: a folder skill and a command with fake tokens in the name, hint, description and place, at the tooltip's
   300 cut and split by Markdown; no raw token in the list's text, `title`, `aria-*`, the announcement or the "Sent the text of" note).
-  Mutation-checked: raw text in the row, cut before mask in main and in the tooltip.
+  Mutation-checked: raw text in the row, cut before mask in main and in the tooltip; one pass instead of both (window and main); token shapes only instead of `redact()` in main; the note raw in main and in the window.
 
 ### 2026-10-23: review on #615 (fjcabello)
 

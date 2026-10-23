@@ -230,6 +230,13 @@ module.exports = async (ctx) => {
     check(await until(`[...document.querySelectorAll('#panel .note')].some(n=>/Sent the text of/.test(n.textContent))`, 5000), 'secret: no "Sent the text of" note');
     const note = await js(`[...document.querySelectorAll('#panel .note')].filter(n=>/Sent the text of/.test(n.textContent)).map(n=>n.textContent+' '+(n.getAttribute('title')||'')).join(' | ')`);
     check(!leak(note) && /\[redacted\]/.test(note), `secret: the note ${note.slice(0, 120)}`);
+    /* a prompt file whose ${input:NAME} is token-shaped: the send's note (r.slashNote) echoes it (review of PR #614) */
+    await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0;return v(document.getElementById('sendBtn'))})()`, 15000);
+    await js(`(()=>{const m=document.getElementById('msgInput');m.focus();m.value='/token-input go';m.setSelectionRange(15,15);m.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await key('Return');
+    check(await until(`[...document.querySelectorAll('#panel .note')].some(n=>/token-input\.prompt\.md/.test(n.textContent)&&/left as written/.test(n.textContent))`, 5000), 'secret: no note for the prompt file');
+    const pnote = await js(`[...document.querySelectorAll('#panel .note')].filter(n=>/token-input/.test(n.textContent)).map(n=>n.textContent).join(' | ')`);
+    check(!leak(pnote) && /\[redacted\]/.test(pnote), `secret: the prompt file's note ${pnote.slice(0, 200)}`);
   }
   console.log('[slash-suggest] screenshots in ' + OUT);
   assert.deepStrictEqual(fails, [], fails.join('\n'));
