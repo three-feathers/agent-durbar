@@ -87,6 +87,8 @@ Tests first: T031-T032 are written and fail before T033-T037.
 - [x] T043 `check-done-desk-mask` (Ctrl+F) and `check-grant-chips` (cursor in the message box, no late focus move); `until` instead of fixed pauses in `shots-074-navigator`
 - [x] T044 Merge main (#592: the restored draft keeps the chosen height); `npm test`, `shots-074-navigator`, `check-done-desk-mask`, `check-grant-chips` twice
 
+- [x] T045 Spec 052 FR-175: one `modalOpen()` helper (any `aria-modal`) for every global shortcut that waits for no dialog (Ctrl+O, Ctrl+`, Ctrl+Shift+H, the chat answer keys, I, ?, N); driver step under *End all sessions?*; mutation-checked
+
 ## Dependencies
 
 T001 → T003-T007 → T008-T010 (US1) → T011 (US2) → T012 (US3); T013-T014 (US4) need T007; T015 needs T008 and T014; T016-T019 last. US2 and US3 extend the same palette code as US1, so they follow it.
