@@ -90,3 +90,18 @@ IDs start after T075.
 - [x] T081 Screenshots at 1440x900 and 1280x800 (`DURBAR_SIM=15`): `005-composer-resized-*.png`; retake the linked pictures that show the composer with `npm run shots:docs -- --only shots-hero,shots-003-011,check-composer-toolbar,check-edits,shots-006-prevmarks,shots-009-vschat,shots-063-folder-status,check-slash-suggest`; README feature line; `changelog.d/005-composer-resize.md` [FR-049]
 - [ ] T082 `[KNOWN GAP]` not tried with a real screen reader (NVDA, VoiceOver) or a touch screen; Windows and macOS through CI's drivers only [FR-045, FR-048]
 - [x] T083 Review on PR 599 (Paco's agent): driver step for a stored size: `durbar.composerHeight='3900'` and a reload show the box clamped (height and `aria-valuenow` equal `aria-valuemax`, transcript ≥ 140px, the stored value kept); `'abc'` and `'99999'` give automatic growth. Mutations: showing the stored size without the clamp fails the 3900 step; `parse()` without its range fails the 99999 step, at both sizes [FR-046, FR-047]
+
+## Delta 2026-10-23: compact composer toolbar (owner request, issue #627)
+
+IDs start after T083.
+
+- [ ] T084 Tests first: `scripts/test-ctx-breakdown.ts` (`test:ctxbreakdown`, in `test:serial`): each adapter's real mapper (Copilot `EventMapper` `session.usage_info`, `ClaudeMapper` assistant + result, `CodexMapper` `thread/tokenUsage/updated`) fed fake raw events, then `toolstats`' kept shape, then `DurbarCtxBreakdown.summary`: Copilot gives System / Tool definitions / Chat bars (+ Other only for a positive rest), Claude Code and Codex give no bars and "Breakdown not reported by <app>.", no event gives "not known yet"; levels at 69/70/90/91%; unknown window shares of the used total; junk values (negative, NaN, strings) ignored [FR-052, FR-056]
+- [ ] T085 Tests first: `scripts/check-composer-toolbar.js`: model chip text is the name only (no window, effort or "long"); the ring has a name and the "Context N% of …" tooltip, no visible text, opens the summary (dialog, bars for the Copilot agent, Compact, Escape back); a Claude Code agent (`simkinds=mixed`) shows "Breakdown not reported by Claude Code."; MCP chip `n/m` with the accessible name; MCP in the row at both sizes and at a 760px panel, `⋯` hidden there; 480px panel keeps the mode; the six built-in themes and the dark user theme lay out without overlap; `shots-model` reads the chips' names instead of their text [FR-050..FR-055]
+- [ ] T086 `src/renderer/ctxbreakdown.js` (UMD `window.DurbarCtxBreakdown`), `index.html`, `scripts/copy-assets.js` [FR-052]
+- [ ] T087 `app.js`: `modelChipHTML` name only; `openModelMenu` Context window heading and the single-window line [FR-050]
+- [ ] T088 `app.js`: `ctxChipBtn` ring in Expert (SVG, level class, name, tooltip), `openCtxMenu` token summary in Expert; `styles.css` ring and bars with tokens [FR-051, FR-052, FR-055]
+- [ ] T089 `app.js`: `MCP_N` keeps on and total, `mcpChipHTML` `MCP n/m`; new overflow ranks [FR-053, FR-054]
+- [ ] T090 Simulator: the breakdown fields only for Copilot-kind agents (Claude Code and Codex report a total, like the real adapters) [FR-056]
+- [ ] T091 Mutation checks: break the Other row, the "not reported" note, the name-only chip, the MCP total and the overflow order by hand and see the unit test or the driver fail; record in the PR [FR-050..FR-054]
+- [ ] T092 Screenshots at 1440x900 and 1280x800 (`DURBAR_SIM=15`): retake the linked composer pictures (`npm run shots:docs -- --only check-composer-toolbar,shots-hero,...`), plus `005-composer-ctxsummary-*.png`; README line; `changelog.d/005-composer-compact.md` [FR-055]
+- [ ] T093 `[KNOWN GAP]` no real session: Copilot's parts adding up and the real Claude Code / Codex totals are `read:` / earlier `real:` only; no real screen reader [FR-056]
