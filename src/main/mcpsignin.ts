@@ -165,7 +165,7 @@ export class McpSignInStore {
       return 'refused';
     }
     try {
-      await this.openUrl(u.url);
+      await this.openUrl(typeof shownHost === 'string' && shownHost.startsWith('https://') ? shownHost : u.url);
     } catch {
       return 'failed'; // the entry stays: the user may press Open again
     }

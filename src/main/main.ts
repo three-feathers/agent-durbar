@@ -9,6 +9,7 @@ import { register as registerActivityIpc } from './ipc/activity';
 import { register as registerAdaptersIpc } from './ipc/adapters';
 import { register as registerAgentsIpc } from './ipc/agents';
 import { register as registerAppIpc } from './ipc/app';
+import { noteWindowZoom } from './titledblclick';
 import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
 import { register as registerFloorsIpc } from './ipc/floors';
@@ -822,6 +823,9 @@ function createWindow(): void {
     // the top bar drops the room it keeps for the traffic lights while the window is full screen (macOS only, see styles.css)
     w.on('enter-full-screen', () => toRenderer('window:fullScreen', true));
     w.on('leave-full-screen', () => toRenderer('window:fullScreen', false));
+    // spec 052 FR-085 (#591): remember a zoom the system did itself, so the page's double-click message does not undo it
+    w.on('maximize', () => noteWindowZoom(Date.now()));
+    w.on('unmaximize', () => noteWindowZoom(Date.now()));
   }
   win.webContents.on('did-finish-load', () => agentState.clearPaused()); // a fresh page starts with nobody paused (Paused is window-only, spec 041 T014)
   void win.loadFile(INDEX_HTML, { query });
