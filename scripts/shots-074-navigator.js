@@ -6,12 +6,17 @@
  *     DURBAR_DRIVER=$PWD/scripts/shots-074-navigator.js xvfb-run -a npx electron . --no-sandbox
  *
  * Real key presses (sendInputEvent) and typed text (insertText), at 1440x900 and 1280x800; exits non-zero on a miss:
- *   US2  Ctrl+J (⌘J on a Mac) opens the palette in Go-to mode at the floor level; a number picks a floor; typing filters folders;
+ *   US2  Ctrl+F (⌘F on a Mac; Ctrl+J until 2026-10-23, issue #587) opens the palette in Go-to mode at the floor level; a number picks a floor; typing filters folders;
  *        Enter picks one; a number picks the agent; the chat opens with the cursor in the message box; Enter sends the typed text.
- *   US1  Ctrl+J, c, 3: chat 3 opens with the cursor in its message box; its header, desk card and list row say C3.
+ *   US1  Ctrl+F, c, 3: chat 3 opens with the cursor in its message box; its header, desk card and list row say C3.
  *   US3  Esc steps back agent -> folders -> start -> closed, and focus returns to the desk that had it; Backspace in an empty box too.
- *   US4  Settings > Keyboard: Ctrl+K is refused with a reason, Ctrl+Shift+G is saved, Ctrl+J then does nothing and Ctrl+Shift+G
- *        opens Go to; Reset brings Ctrl+J back.
+ *   US4  Settings > Keyboard: Ctrl+K is refused with a reason, Ctrl+Shift+G is saved, Ctrl+F then does nothing and Ctrl+Shift+G
+ *        opens Go to; Reset brings Ctrl+F back.
+ *   #587 Ctrl+J no longer opens Go to; the cursor lands in the message box after a mouse click or Enter on a desk, a list row, a
+ *        Ctrl+K pick and the inbox (a waiting chat: the message box, never the answer bar, and nothing is answered); in the message
+ *        box Ctrl+Backspace and Ctrl+A edit text as always (the chat stays, Needs you stays closed, an empty box too); outside
+ *        text Ctrl+A opens Needs you and Ctrl+Backspace goes back to the office, but not in the chat log (Ctrl+A) or with a
+ *        selection; unsent text is back when the chat opens again.
  *   FR-012 / V  every badge and navigator text is at least 10.5px; badges stay inside their desk; the box fits the window.
  * Screenshots: 074-navigator-{start,floor,chats,chat,settings,office,list}-<w>x<h>.png
  */
@@ -27,7 +32,7 @@ module.exports = async (ctx) => {
   const wc = H.wc();
   const shot = (name, w, h) => H.shot(path.join(OUT, `074-navigator-${name}-${w}x${h}.png`), { tag: '074', what: `${name} ${w}x${h}` });
   const type = async (t) => { wc.insertText(t); await ctx.sleep(80); };
-  const open = async () => { await key('J', [MOD], { char: 'never' }); await until(`!!document.getElementById('palDlg')`, 3000); };
+  const open = async () => { await key('F', [MOD], { char: 'never' }); await until(`!!document.getElementById('palDlg')`, 3000); };
   const nav = () => js(`(()=>{const d=document.getElementById('palDlg');if(!d)return null;const D=d.querySelector('.pal-dlg').getBoundingClientRect();
     return {crumb:(document.getElementById('palCrumb')||{}).textContent||'',label:d.querySelector('.pal-dlg').getAttribute('aria-label'),focus:document.activeElement&&document.activeElement.id,
       opts:[...d.querySelectorAll('[role="option"]')].map(o=>({n:(o.querySelector('.pal-n')||{}).textContent||'',l:o.querySelector('.pal-l').lastChild.textContent,h:(o.querySelector('.pal-h')||{}).textContent||'',sel:o.getAttribute('aria-selected')==='true'})),
@@ -142,6 +147,122 @@ module.exports = async (ctx) => {
     await key('Escape', [], { char: 'never' });
     await H.office();
 
+    // ---- issue #587 (spec Changes 2026-10-23, FR-019..FR-023) ----
+    await key('J', [MOD], { char: 'never' });
+    await ctx.sleep(150);
+    assert.ok(!(await H.exists('#palDlg')), `${w}: Ctrl/⌘+J no longer opens Go to (no alias)`);
+    const mclick = async (sel) => {
+      const r = await js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return null;e.scrollIntoView({block:'nearest'});const b=e.getBoundingClientRect();return {x:Math.round(b.left+b.width/2),y:Math.round(b.top+b.height/2)}})()`);
+      assert.ok(r, `${w}: ${sel} is there to click`);
+      for (const type of ['mouseDown', 'mouseUp']) wc.sendInputEvent({ type, x: r.x, y: r.y, button: 'left', clickCount: 1 });
+      await ctx.sleep(150);
+    };
+    const box = () => js(`(()=>{const m=document.getElementById('msgInput'),a=document.activeElement;return {open:document.body.classList.contains('panel-open'),title:(document.getElementById('panelTitle')||{}).textContent||'',
+      focus:a&&(a.id||a.tagName),v:m?m.value:null,s:m?m.selectionStart:-1,e:m?m.selectionEnd:-1,inbox:!!document.getElementById('inboxDlg'),pal:!!document.getElementById('palDlg'),
+      pend:document.querySelectorAll('#chat .note.perm:not(.settled)').length,inReq:!!(a&&a.closest&&a.closest('#answerBar,#chat .note'))}})()`);
+    // FR-019: the cursor lands in the message box, whatever opened the chat
+    const opened = async (how) => {
+      await until(`document.body.classList.contains('panel-open')`, 3000);
+      await ctx.sleep(150);
+      const q = await box();
+      assert.ok(q.focus === 'msgInput' && q.v === '' && q.s === 0, `${w}: ${how}: the cursor is in the message box: ${JSON.stringify(q)}`);
+      return q;
+    };
+    const deskSel = '#stage .desk[data-id="' + (await js(`[...document.querySelectorAll('#stage .desk[data-id]')][1].dataset.id`)) + '"]';
+    await mclick(deskSel + ' .name');
+    const q1 = await opened('a mouse click on a desk');
+    await key('Escape', [], { char: 'never' });
+    await H.office();
+    await js(`document.querySelector(${jsLiteral(deskSel)}).focus()`);
+    await key('Return', []);
+    await opened('Enter on a desk');
+    await key('Escape', [], { char: 'never' });
+    await H.office();
+    await key('K', [MOD], { char: 'never' });
+    await until(`!!document.getElementById('palDlg')`, 3000);
+    await type(q1.title);
+    await key('Return', [], { char: 'never' });
+    assert.strictEqual((await opened('a Ctrl+K pick')).title, q1.title, `${w}: Ctrl+K opened ${q1.title}`);
+    await key('Escape', [], { char: 'never' });
+    await H.office();
+    await js(`document.getElementById('vList').click()`);
+    await until(`document.querySelectorAll('#list button.lrow').length>=15`, 5000);
+    await mclick('#list button.lrow');
+    await opened('a mouse click on a list row');
+    await js(`document.getElementById('msgInput').blur()`);
+    await mclick('#stripList .sitem[aria-current="false"]');
+    await opened('a mouse click on another agent in the chat strip');
+    await key('Escape', [], { char: 'never' });
+    await js(`document.getElementById('vOffice').click()`);
+    await H.office();
+    // a chat that waits for an answer: the message box, never the answer bar, and nothing is answered (I opens Needs you)
+    await js(`document.querySelector(${jsLiteral(deskSel)}).focus()`);
+    await key('I', [], { char: 'always' });
+    await until(`!!document.querySelector('#inboxDlg [data-act="open"], #inboxDlg button')`, 3000);
+    const answerIn = await js(`(()=>{const b=[...document.querySelectorAll('#inboxDlg button')].find(x=>/^(Answer in chat|Open)$/.test(x.textContent.trim()));if(!b)return '';b.click();return b.textContent.trim()})()`);
+    assert.ok(answerIn, `${w}: the simulator's Needs you lists a waiting chat`);
+    const qw = await opened(`Needs you, ${answerIn}`);
+    assert.ok(qw.pend > 0 && !qw.inReq, `${w}: the chat waits for an answer and focus is not on the request or the answer bar: ${JSON.stringify(qw)}`);
+    await ctx.sleep(400);
+    assert.strictEqual((await box()).pend, qw.pend, `${w}: nothing was answered by opening the chat`);
+    // FR-020 / FR-021: in the message box, Ctrl+Backspace and Ctrl+A keep their text meaning
+    const TXT = 'keep this text';
+    await type(TXT);
+    await key('Backspace', [MOD], { char: 'never' });
+    let c = await box();
+    assert.ok(c.open && c.focus === 'msgInput' && !c.inbox && !c.pal, `${w}: Ctrl/⌘+Backspace in the message box keeps the chat open: ${JSON.stringify(c)}`);
+    assert.ok(c.v.length < TXT.length && TXT.startsWith(c.v), `${w}: Ctrl/⌘+Backspace deleted text the normal way, nothing else: ${JSON.stringify(c.v)}`);
+    await type(TXT.slice(c.v.length));
+    await key('A', [MOD], { char: 'never' });
+    c = await box();
+    assert.ok(c.open && !c.inbox && c.v === TXT && c.s === 0 && c.e === TXT.length, `${w}: Ctrl/⌘+A in the message box selects all and Needs you stays closed: ${JSON.stringify(c)}`);
+    await key('Backspace', [], { char: 'never' });
+    await key('Backspace', [MOD], { char: 'never' });
+    c = await box();
+    assert.ok(c.open && c.focus === 'msgInput' && c.v === '', `${w}: an empty message box: Ctrl/⌘+Backspace still keeps the chat (Esc is back from here): ${JSON.stringify(c)}`);
+    // FR-022: unsent text comes back when the chat opens again
+    const titleW = c.title;
+    await type('half-written prompt');
+    await key('Escape', [], { char: 'never' });
+    await H.office();
+    await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.querySelector('.name')&&x.querySelector('.name').textContent.trim()===${jsLiteral(titleW)});d.focus();})()`);
+    await key('Return', []);
+    await until(`document.body.classList.contains('panel-open')`, 3000);
+    await ctx.sleep(150);
+    c = await box();
+    assert.ok(c.title === titleW && c.v === 'half-written prompt' && c.focus === 'msgInput' && c.s === c.v.length, `${w}: the unsent text is back, cursor at its end: ${JSON.stringify(c)}`);
+    // outside text: Ctrl+A opens Needs you, but not in the chat log or with a selection; Ctrl+Backspace goes back to the office
+    await js(`document.getElementById('panelTitle').focus()`);
+    await key('A', [MOD], { char: 'never' });
+    await until(`!!document.getElementById('inboxDlg')`, 3000);
+    assert.ok((await box()).inbox, `${w}: Ctrl/⌘+A outside text opens Needs you`);
+    await key('Escape', [], { char: 'never' });
+    await until(`!document.getElementById('inboxDlg')`, 3000);
+    await js(`document.getElementById('chat').focus()`);
+    await key('A', [MOD], { char: 'never' });
+    await ctx.sleep(150);
+    assert.ok(!(await box()).inbox, `${w}: Ctrl/⌘+A in the chat log selects the conversation, not Needs you`);
+    await js(`(()=>{const t=document.getElementById('panelTitle');getSelection().removeAllRanges();t.focus();const r=document.createRange();r.selectNodeContents(t);getSelection().addRange(r);})()`);
+    await key('A', [MOD], { char: 'never' });
+    await key('Backspace', [MOD], { char: 'never' });
+    await ctx.sleep(150);
+    c = await box();
+    assert.ok(c.open && !c.inbox, `${w}: with text selected, Ctrl/⌘+A and Ctrl/⌘+Backspace are left alone: ${JSON.stringify(c)}`);
+    await js(`getSelection().removeAllRanges();document.getElementById('panelTitle').focus()`);
+    await key('Backspace', [MOD], { char: 'never' });
+    await until(`!document.body.classList.contains('panel-open')`, 3000);
+    assert.ok(!(await box()).open, `${w}: Ctrl/⌘+Backspace outside text goes back to the office`);
+    await H.office();
+    // clean up the kept text so later checks start from an empty box
+    await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.querySelector('.name')&&x.querySelector('.name').textContent.trim()===${jsLiteral(titleW)});d.focus();})()`);
+    await key('Return', []);
+    await until(`document.body.classList.contains('panel-open')`, 3000);
+    assert.strictEqual((await box()).v, 'half-written prompt', `${w}: still kept after going back with Ctrl/⌘+Backspace`);
+    await key('A', [MOD], { char: 'never' });
+    await key('Backspace', [], { char: 'never' });
+    await key('Escape', [], { char: 'never' });
+    await H.office();
+
     // ---- review 2026-10-23: the empty reason is announced; a hostile agent name stays plain text ----
     await open();
     await type('c 99');
@@ -186,12 +307,12 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.activeElement&&document.activeElement.dataset.id`), deskId, `${w}: focus is back on the desk`);
     // the shortcut again closes an open navigator (toggle); Ctrl+K and the shortcut share one box
     await open();
-    await key('J', [MOD], { char: 'never' });
+    await key('F', [MOD], { char: 'never' });
     assert.ok(!(await H.exists('#palDlg')), `${w}: the shortcut again closes it`);
     await key('K', [MOD], { char: 'never' });
     await until(`!!document.getElementById('palDlg')`, 3000);
     assert.strictEqual((await nav()).label, 'Command palette');
-    await key('J', [MOD], { char: 'never' });
+    await key('F', [MOD], { char: 'never' });
     assert.strictEqual((await nav()).label, 'Go to', `${w}: the shortcut inside Ctrl+K switches to Go to`);
     await key('Escape', [], { char: 'never' });
 
@@ -207,7 +328,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('settingsBtn').click()`);
     await until(`!!document.getElementById('navKeyRec')`, 8000);
     const defText = await H.text('#navKeyNow');
-    assert.ok(/J$/.test(defText), `${w}: the default is shown (${defText})`);
+    assert.ok(/F$/.test(defText), `${w}: the default is shown (${defText})`);
     await js(`document.getElementById('navKeyRec').focus();document.getElementById('navKeyRec').click()`);
     await key('K', [MOD], { char: 'never' });
     assert.ok(/command palette/.test(await H.text('#navKeyMsg')), `${w}: Ctrl+K is refused with a reason`);
@@ -218,7 +339,7 @@ module.exports = async (ctx) => {
     await shot('settings', w, h);
     await key('Escape', [], { char: 'never' });
     await until(`!document.getElementById('navKeyRec')`, 3000);
-    await key('J', [MOD], { char: 'never' });
+    await key('F', [MOD], { char: 'never' });
     await ctx.sleep(150);
     assert.ok(!(await H.exists('#palDlg')), `${w}: the old shortcut no longer opens Go to`);
     await key('G', [MOD, 'shift'], { char: 'never' });

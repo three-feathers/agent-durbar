@@ -125,8 +125,9 @@
   }
 
   /* ---------------- the shortcut (FR-002, FR-013, FR-014, FR-017) ---------------- */
-  /* {mod, ctrl, alt, shift, code}: mod = ⌘ on a Mac and Ctrl elsewhere; ctrl = the Control key on a Mac only */
-  const DEFAULT_COMBO=Object.freeze({mod:true,ctrl:false,alt:false,shift:false,code:'KeyJ'});
+  /* {mod, ctrl, alt, shift, code}: mod = ⌘ on a Mac and Ctrl elsewhere; ctrl = the Control key on a Mac only.
+     Default Ctrl+F / ⌘F, "F for floor" (issue 587, 2026-10-23; it was Ctrl+J / ⌘J): the page has no find, the Mac menu no Find item. */
+  const DEFAULT_COMBO=Object.freeze({mod:true,ctrl:false,alt:false,shift:false,code:'KeyF'});
   const PUNCT={Backquote:'`',Minus:'-',Equal:'=',BracketLeft:'[',BracketRight:']',Backslash:'\\',Semicolon:';',Quote:"'",Comma:',',Period:'.',Slash:'/'};
   const validCode=c=>/^Key[A-Z]$/.test(c)||/^Digit[0-9]$/.test(c)||/^F([1-9]|1[0-2])$/.test(c)||c==='Space'||Object.prototype.hasOwnProperty.call(PUNCT,c);
   const keyName=c=>/^Key[A-Z]$/.test(c)?c.slice(3):/^Digit[0-9]$/.test(c)?c.slice(5):c==='Space'?'Space':PUNCT[c]||c;
@@ -166,7 +167,7 @@
     ['mod+alt+KeyA','Allow once in a waiting chat','mac'],['mod+alt+KeyS','Allow for this session in a waiting chat','mac'],['mod+alt+KeyD','Deny in a waiting chat (and the Dock)','mac'],['mod+alt+KeyN','the next agent that needs you','mac'],
     ['mod+shift+KeyI','the developer tools'],
     /* text editing and the window */
-    ['mod+KeyA','Select all'],['mod+KeyC','Copy'],['mod+KeyV','Paste'],['mod+KeyX','Cut'],['mod+KeyZ','Undo'],['mod+KeyY','Redo'],['mod+shift+KeyZ','Redo'],['mod+shift+KeyV','Paste as plain text'],
+    ['mod+KeyA','Select all (and the Needs you inbox outside text)'],['mod+Backspace','Back to the office (and deleting text)'],['mod+KeyC','Copy'],['mod+KeyV','Paste'],['mod+KeyX','Cut'],['mod+KeyZ','Undo'],['mod+KeyY','Redo'],['mod+shift+KeyZ','Redo'],['mod+shift+KeyV','Paste as plain text'],
     ['mod+KeyW','Close window'],['mod+KeyQ','Quit'],['mod+KeyR','Reload'],['mod+Equal','Zoom in'],['mod+Minus','Zoom out'],['mod+Digit0','Actual size'],
     ['mod+KeyH','Hide (macOS)','mac'],['mod+alt+KeyH','Hide others (macOS)','mac'],['mod+KeyM','Minimize (macOS)','mac'],['mod+Backquote','switching windows (macOS)','mac'],['mod+ctrl+KeyF','full screen (macOS)','mac'],
     ['alt+F4','closing the window (Windows, Linux)','other'],
@@ -210,6 +211,23 @@
   }
   const sameCombo=(a,b)=>!!a&&!!b&&sig(a)===sig(b);
 
+  /* ---------------- Ctrl+A and Ctrl+Backspace outside text (issue 587, spec 074 FR-020, FR-021) ---------------- */
+  /* 'inbox' for Ctrl+A (⌘A), 'office' for Ctrl+Backspace (⌘⌫), 'attached' when going back would drop attachments, or '' to leave
+     the key to text editing. Never in an editable field (even an empty one: holding the key to delete words would close the chat
+     the moment the box empties), with text selected or under a dialog; Ctrl+A also not in the chat log, where it selects the
+     conversation. ctx: {editable, log, selected, dialog, attached}, read from the page by the caller. */
+  function textSafeKey(e,mac,ctx){
+    if(!e||e.isComposing||e.altKey||e.shiftKey)return '';
+    if(!(mac?!!e.metaKey&&!e.ctrlKey:!!e.ctrlKey&&!e.metaKey))return '';
+    const c=ctx||{}; if(c.editable||c.selected||c.dialog)return '';
+    if(e.code==='Backspace'||e.key==='Backspace')return c.attached?'attached':'office';
+    /* the typed letter first, like the app's other shortcuts; the position only when the key types no Latin letter (Cyrillic…),
+       so AZERTY's Ctrl+Q (position A) stays Ctrl+Q */
+    const k=String(e.key||'');
+    if(/^[a-z]$/i.test(k)?k.toLowerCase()==='a':e.code==='KeyA')return c.log?'':'inbox';
+    return '';
+  }
+
   return {rank,assignNumbers,pruneNumbers,loadNumbers,levelItems,parseStart,pickNumber,view,pick,push,back,crumbs,
-    DEFAULT_COMBO,comboFromEvent,comboMatches,comboParts,clashOf,loadCombo,sameCombo,validCode};
+    DEFAULT_COMBO,comboFromEvent,comboMatches,comboParts,clashOf,loadCombo,sameCombo,validCode,takenBy,textSafeKey};
 })());

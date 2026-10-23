@@ -2,7 +2,7 @@
 
 | Where | Key | Effect |
 | --- | --- | --- |
-| anywhere (no other modal dialog) | navigator shortcut (default Ctrl+J, ⌘J) | open the navigator at the start level; again: close |
+| anywhere (no other modal dialog) | navigator shortcut (default Ctrl+F, ⌘F; Ctrl+J, ⌘J until 2026-10-23) | open the navigator at the start level; again: close |
 | Ctrl+K palette | navigator shortcut, or the "Go to… (navigator)" action | switch to the navigator's start level |
 | navigator | letters | filter the current level |
 | navigator, start level | `f` Space / `c` Space | Folders / Chats level |
@@ -13,6 +13,10 @@
 | navigator | Esc, or Backspace on an empty filter | back one level; closes at the start level |
 | navigator | Tab | stays in the input |
 | chat opened by the navigator | Enter in the message box | send (existing composer) |
+| any chat the user opens (desk, list row, strip, Ctrl+K, navigator, Needs you, Ctrl+`; not N / next agent, which focuses the title) | | the cursor at the end of the message box (its unsent text restored); never the answer bar; no box: the chat title |
+| outside text (no editable field focused, nothing selected, no dialog) | Ctrl+A / ⌘A | open Needs you (not in the chat log) |
+| outside text, a chat or the VS Code view open | Ctrl+Backspace / ⌘⌫ | back to the office (attachments waiting: stays, with a note) |
+| in an editable field, with a selection, in a dialog | Ctrl+A, Ctrl+Backspace | the field's own select all / delete; nothing else |
 
 The module `src/renderer/navigator.js` exposes (Node and `window.DurbarNav`):
-`rank(items, q)`, `parseStart(q)`, `pickNumber(items, digits)`, `levelItems(snapshot, level)`, `assignNumbers(map, ids)`, `pruneNumbers(map, ids)`, `loadNumbers(json)`, `DEFAULT_COMBO`, `comboFromEvent(e, mac)`, `comboMatches(e, combo, mac)`, `comboParts(combo)`, `clashOf(combo, mac)`, `loadCombo(json)`.
+`rank(items, q)`, `parseStart(q)`, `pickNumber(items, digits)`, `levelItems(snapshot, level)`, `assignNumbers(map, ids)`, `pruneNumbers(map, ids)`, `loadNumbers(json)`, `DEFAULT_COMBO`, `comboFromEvent(e, mac)`, `comboMatches(e, combo, mac)`, `comboParts(combo)`, `clashOf(combo, mac)`, `loadCombo(json)`, `takenBy(combo, mac)`, `textSafeKey(e, mac, ctx)` (2026-10-23).

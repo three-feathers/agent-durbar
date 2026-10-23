@@ -2,7 +2,7 @@
 
 ## R1 Default shortcut (D1)
 
-- **Decision**: Ctrl+J on Windows and Linux, ⌘J on a Mac.
+- **Decision**: Ctrl+J on Windows and Linux, ⌘J on a Mac. **Superseded 2026-10-23** (issue #587, spec Changes): Ctrl+F / ⌘F, "F for floor"; the checks below still hold for Ctrl+J, and the spec entry of that date has the checks for Ctrl+F.
 - **Rationale** (`read:` vendor shortcut docs and the app's own key handler, not tried on a Mac or Windows machine):
   - In the app: Ctrl/⌘+K (palette), Ctrl/⌘+O, Ctrl/⌘+Shift+O, Ctrl/⌘+Shift+A, Ctrl/⌘+Shift+N, Ctrl+`, ⌘, and the chat answer keys are taken (`src/renderer/app.js`, `src/main/appmenu.ts`); J is free with a modifier (plain J/K move list rows only, without a modifier).
   - macOS: ⌘Space (Spotlight), ⌥⌘Space (Finder search), ⌃Space / ⌃⌥Space (input sources), ⌃⌘Space (Emoji & Symbols) are system-wide. ⌘J has no system-wide meaning; Electron's `editMenu`/`windowMenu` roles do not bind it.
