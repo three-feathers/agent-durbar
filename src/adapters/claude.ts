@@ -49,11 +49,11 @@ import { resolveWorkspaceCwd } from './workspace';
 import { claudeConfigDir, listClaudeSessions, readClaudeHistory } from './claudeHistory';
 import type { HistoryResult, PreviousSession } from './history';
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
-import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache } from './slashcommands';
+import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache, vscodeUserPromptDirs } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
 import { agentsArg, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
-import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand } from './types';
+import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
 import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 
 export const CLAUDE_ID = 'claude';
@@ -458,6 +458,8 @@ export interface ClaudeAdapterDeps {
   env?: () => NodeJS.ProcessEnv;
   /** Claude's config folder (tests); default `CLAUDE_CONFIG_DIR` or `~/.claude`. */
   configDir?: string;
+  /** VS Code's user prompt folders (spec 073 delta 2026-10-23); default `vscodeUserPromptDirs()`. Tests pass their own. */
+  vscodePromptDirs?: string[];
   /** Runs `claude` once with fixed arguments (spec 030 FR-034: the hand-off summary); tests inject a fake. */
   runOnce?: RunOnce;
   /** Spec 012 FR-156: `loggedIn` of `claude auth status --json` (local); tests inject a fake. Default: runs it on the found `claude`. */
@@ -669,7 +671,7 @@ export class ClaudeAdapter implements AgentAdapter {
   /** Spec 073 FR-004: the folder's and the user's skills and commands (Claude does not load them: `--setting-sources ""`). */
   private readonly slash = new SlashCache();
   private slashPlaces(s: Session): SlashPlace[] {
-    return claudeSlashPlaces(s.roots, this.deps.configDir ?? claudeConfigDir());
+    return claudeSlashPlaces(s.roots, this.deps.configDir ?? claudeConfigDir(), undefined, this.deps.vscodePromptDirs ?? vscodeUserPromptDirs());
   }
 
   /** Spec 073 FR-001: files first, then the built-ins of the CLI's `initialize` reply that run in Durbar's sessions (FR-006, FR-007). */
@@ -681,7 +683,7 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   /** Spec 073 FR-005: a folder or user entry is sent as its text (real 2026-10-22: Claude sends an unknown `/name` to the model as is). */
-  async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined> {
+  async expandSlashCommand(sessionId: string, text: string): Promise<SlashExpansion | undefined> {
     const s = this.sessions.get(sessionId);
     return s ? this.slash.expand(text, () => this.slashPlaces(s)) : undefined; // no IO unless the text is a `/name` line
   }

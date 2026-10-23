@@ -129,7 +129,7 @@ const REACHES_AGENT_APP = [
   'agents:addFolder', 'agents:addWorkspaceFile', 'agents:newSession', 'agents:send', 'agents:wake', 'sessions:resume',
   'agents:stop', 'agents:end', 'agents:compact', 'agents:handoff', 'agents:setModel', 'agents:cancelQueuedModel', 'agents:setMode', 'agents:setCap',
   'agents:resolvePermission', 'agents:resolvePlan', 'agents:resolveLimit', 'agents:revokeGrant', 'agents:answerQuestion', 'agents:answerElicitation',
-  'agents:listProfiles', 'agents:selectProfile', 'agents:mcp', 'agents:setMcp', 'agents:setRemote', 'agents:openRemote',
+  'agents:listProfiles', 'agents:selectProfile', 'agents:mcp', 'agents:setMcp', 'agents:mcpSignIn', 'agents:mcpOpenSignIn', 'agents:mcpCancelSignIn', 'agents:setRemote', 'agents:openRemote',
   'sessions:listPrevious', 'sessions:rename', 'sessions:delete',
   'adapters:list', 'models:list',
   'harness:run', 'harness:paste', 'harness:cancel', 'harness:copilotAuth', 'harness:accounts', 'harness:openSignIn',

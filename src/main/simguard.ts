@@ -75,6 +75,7 @@ export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean
   deleteSession: (c: Caps) => !!c.deleteSession,
   startMcpSignIn: (c: Caps) => !!c.mcpSignIn,
   cancelMcpSignIn: (c: Caps) => !!c.mcpSignIn,
+  refreshMcpStatus: (c: Caps) => !!c.mcpSignIn,
   setPermMode: (c: Caps) => c.permModeSwitch !== 'none',
   resolvePermission: null, revokeGrant: null, setModel: null, cancelQueuedModel: null, compact: null, resolvePlan: null,
   answerQuestion: null, answerElicitation: null, listAgentProfiles: null, reloadAgentProfiles: null, selectAgentProfile: null, authStatus: null, verifySignIn: null, accountInfo: null,
