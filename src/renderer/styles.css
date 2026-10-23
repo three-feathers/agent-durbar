@@ -1447,6 +1447,14 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 /* on a desk card (every density) it sits on the scene's corner, never in the name row, so it cannot squeeze the name (2026-10-23:
    in card density at 1280x800 with Windows fonts an inline badge left a name 19px wide) */
 .stage .desk.card .chatno{position:absolute;left:2px;top:2px;margin:0;z-index:1;box-shadow:0 0 0 1px var(--card)}
+/* spec 074 FR-024 (issue 612): a chat with an unsent draft. An icon (no text, so a desk's text still starts with its name), 12px,
+   theme tokens only; on a desk card under the chat number on the scene's corner, inline elsewhere (full desk, list row, strip). */
+.draft-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:5px;border:1px solid var(--line-2);border-radius:4px;background:var(--surface-2);color:var(--ink-2);vertical-align:-3px}
+.draft-mark svg{width:12px;height:12px;display:block}
+.stage .desk.card .draft-mark,.stage .desk.shut .draft-mark{position:absolute;left:2px;top:20px;margin:0;z-index:4;box-shadow:0 0 0 1px var(--card)}
+.stage .desk.shut .draft-mark{left:auto;right:2px;top:2px} /* a lounge resident's box is short: the top corner the number leaves free */
+.stage .desk.shut.rest-old .draft-mark{right:auto;top:auto;left:2px;bottom:2px} /* on a nap bed the name is on top and the number bottom right */
+.sitem .stx b .draft-mark{margin:0 0 0 4px;width:14px;height:14px}
 .pal-dlg kbd,.kbd-dlg kbd{display:inline-block;min-width:20px;padding:1px 6px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:11px;font-weight:600;line-height:1.5;color:var(--ink-2);text-align:center}
 .dlg.kbd-dlg{width:min(var(--dlg-w-m),calc(100vw - 32px))}
 /* spec 052 (2026-10-21, round 1): two columns where there is room, so the whole sheet fits a 1280x800 window without scrolling */
