@@ -115,7 +115,7 @@ function testNotes(root, { tag, repo, commit, mainRef, date, redact = loadRedact
 /* Every check, then the notes. Returns { kind, title, heading, previous, notes, source, commits }; throws with the reason on a refusal. */
 const MAIN_REF = 'refs/remotes/origin/main';
 
-function releaseNotes(root, { tag, repo, mainRef = MAIN_REF, redact }) {
+function releaseNotes(root, { tag, repo, mainRef = MAIN_REF }) {
   // a short name such as origin/main resolves to refs/tags/origin/main first when such a tag exists (fetch-depth 0 fetches tags)
   if (!/^refs\/[A-Za-z0-9_./-]+$/.test(mainRef) || /\.\./.test(mainRef)) throw new Error(`the main ref must be a full ref name (refs/...): got "${mainRef}"`);
   const kind = tagKind(tag);
@@ -137,10 +137,10 @@ function releaseNotes(root, { tag, repo, mainRef = MAIN_REF, redact }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`could not read the date of ${tag}`);
   if (kind === 'test') {
     // spec 008 FR-121: off main on purpose; no previous release, no fragments, no fold
-    const t = testNotes(root, { tag, repo, commit, mainRef, date, ...(redact ? { redact } : {}) });
+    const t = testNotes(root, { tag, repo, commit, mainRef, date });
     return { kind, title: `Agent Durbar ${tag} (test build)`, heading: t.heading, previous: '', source: 'commits', commits: t.commits, notes: t.notes };
   }
-  if (!gitOk(root, ['merge-base', '--is-ancestor', commit, mainRef])) throw new Error(`${tag} (${commit}) is not on ${mainRef}: only commits on main are released (a test build is ${tag}-test.N)`);
+  if (!gitOk(root, ['merge-base', '--is-ancestor', commit, mainRef])) throw new Error(`${tag} (${commit}) is not on ${mainRef}: only commits on main are released${RELEASE_TAG_RE.test(tag) ? ` (a test build from a branch is ${tag}-test.N)` : ''}`);
   const previous = previousRelease(root, commit, tag);
   const heading = `${tag} ([pre-release](https://github.com/${repo}/releases/tag/${tag}), ${date})`;
   const { section, source } = cl.notes(root, { release: heading, previous });

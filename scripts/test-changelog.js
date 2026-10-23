@@ -337,7 +337,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
       g(d, 'checkout', '-q', 'v0.1.0-alpha.11-test.1');
       const status = g(d, 'status', '--porcelain');
       // a regular tag off main is still refused, even on the very commit a test tag may build
-      assert.throws(() => rn.releaseNotes(d, opts), /is not on refs\/heads\/main: only commits on main are released/, 'a regular tag off main is still refused');
+      assert.throws(() => rn.releaseNotes(d, opts), /is not on refs\/heads\/main: only commits on main are released \(a test build from a branch is v0\.1\.0-alpha\.11-test\.N\)$/, 'a regular tag off main is still refused, with the test-build hint');
       const r = rn.releaseNotes(d, topts);
       assert.strictEqual(r.kind, 'test');
       assert.strictEqual(r.title, 'Agent Durbar v0.1.0-alpha.11-test.1 (test build)');
