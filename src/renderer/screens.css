@@ -49,6 +49,8 @@ body.screen-open .workspace{display:none}
 .mst.connected .mst-ic{color:var(--c-done)} .mst.failed .mst-ic,.mst.needs-auth .mst-ic{color:var(--c-error)} .mst.pending .mst-ic{color:var(--c-thinking)} .mst.disabled .mst-ic,.mst.stopped .mst-ic{color:var(--muted)} .mst.unknown{color:var(--muted)}
 .mst-w{font-weight:500}
 .srv-hint{display:block;font-size:11px;color:var(--ink-2);overflow-wrap:anywhere}
+.srv-hint.srv-org,.mcp-tlist .srv-org{color:var(--tone-warn-ink)} /* spec 076 FR-202: blocked by the agent app's organization policy */
+.mcp-org code{color:var(--muted)}
 .srv-detbtn{align-self:flex-start;margin-top:2px}
 /* spec 058 FR-090/FR-093 (issue 603): the reason line and the Details / Copy diagnostics buttons side by side */
 .srv-why{display:block;font-size:11px;color:var(--ink);overflow-wrap:anywhere}

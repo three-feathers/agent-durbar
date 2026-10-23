@@ -10,6 +10,7 @@ import type { McpServerInput, McpServerView, McpTransport, McpTrustInfo } from '
 export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
 
 import type { AdapterInfo } from './adapters';
+import type { OrgPolicyAppView } from './orgpolicy';
 import type { ActivityRow } from './activity';
 import type { RemoteState } from './remote';
 export type { RemoteState };
@@ -257,6 +258,8 @@ export interface ModelChoice {
   contextTiers?: ContextTier[];
   /** Window in tokens of the long-context tier, when reported. */
   longWindow?: number;
+  /** Spec 076 FR-202 (issue #602): the agent app's own organization policy blocks this model; the reason to show. */
+  orgBlocked?: string;
 }
 
 export interface PickedFile {
@@ -548,6 +551,8 @@ export interface AgentMcpEntry {
   /** Spec 069 FR-011: every list that has this name. */
   sources?: McpSourceTag[];
   /** Spec 069 FR-061: tools of this server turned off in this agent's folder. */
+  /** Spec 076 FR-202 (issue #602): the agent app's own organization policy blocks this server; the reason to show. */
+  orgBlocked?: string;
   toolsOff?: string[];
   /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
   canRestart?: boolean;
@@ -587,7 +592,7 @@ export interface AgentMcpReply {
 /** `agents:mcpTools` (spec 069 FR-032): one server's tools, masked and cut in main. */
 export interface McpToolsResult {
   ok: boolean;
-  tools?: { name: string; description?: string }[];
+  tools?: { name: string; description?: string; orgBlocked?: string }[];
   /** How many the server listed (more than `tools` when it listed over 500). */
   total?: number;
   /** The session is not running: nothing was asked. */
@@ -637,6 +642,8 @@ export interface DurbarApi {
   /** Models the account offers (no credits used). */
   /** Models of an agent kind (spec 012 FR-120); no kind = the default kind. */
   listModels?(kind?: string): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }>;
+  /** Spec 076 FR-207 (issue #602): per agent app, what its own organization policy blocks (modes with reasons, counts; no values). */
+  orgPolicyView?(): Promise<Record<string, OrgPolicyAppView>>;
   /** Adapters and whether each can run (spec 012 FR-033). `refresh` probes again instead of using the cached answer. */
   listAdapters?(refresh?: boolean): Promise<AdapterInfo[]>;
   /** Spec 012 FR-157: main changed the cached list by itself (a session was refused because of the sign-in). */

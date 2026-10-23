@@ -77,6 +77,8 @@ import { devEnv, devWarning } from './devhooks';
 import { isSimBlocked, sealChildProcess, simDetectorFor, simGuardDescriptors, simulatorCount, simulatorOn } from './simguard';
 import childProcess = require('child_process');
 import { initSimGuard, simRefusedChannels } from './ipcguard';
+import { OrgPolicyCache } from './orgpolicy';
+import { register as registerOrgPolicyIpc } from './ipc/orgpolicy';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
 import { SettingsStore } from './settings';
@@ -146,6 +148,8 @@ for (const [name, value] of simClock.switches) app.commandLine.appendSwitch(name
 // spec 010 FR-024: under the simulator every descriptor creates an inert stand-in, never the real adapter
 const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)], SIMULATOR)); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
+/** Spec 076 section O (issue #602): each agent app's own organization policy, read by its adapter, cached 60 s. */
+const orgPolicies = new OrgPolicyCache({ ids: () => registry.list().map((d) => d.id), adapter: (id) => (registry.has(id) ? router.instance(id) : undefined) });
 const agents = new Map<string, AgentInfo>();
 /** Spec 069: the agent apps' own user-level MCP lists (read live; written only after the window's per-file confirmation). */
 const globalLists = new GlobalLists(() => globalFiles({ CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CODEX_HOME: process.env.CODEX_HOME, ...dev }, os.homedir()));
@@ -160,6 +164,8 @@ const mcp = registerMcpIpc({
   log: (a, action) => logActivity(a, 'mcp-restart', action),
   openUrl: (url) => shell.openExternal(url), // spec 058 FR-065: the held sign-in page, only after the user's click
   globalNames: () => Object.fromEntries(globalLists.state(() => []).apps.map((x) => [x.app, x.servers.map((v) => v.name)])),
+  orgMcp: (id, s) => orgPolicies.mcp(appIdOf(id), s), // spec 076 FR-202/FR-203
+  orgTool: (id, server, tool) => orgPolicies.tool(appIdOf(id), server, tool),
 });
 registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
 /** Files the user picked through the native dialog; only these can be attached. */
@@ -327,6 +333,8 @@ async function addWorkspace(
   const adapterId = picked.id;
   const ad = router.instance(adapterId);
   const draft = infoFor(workspace, permMode, '', model, effort, {}, ad);
+  const orgNo = orgPolicies.refusal(adapterId, { mode: permMode, model }); // spec 076 FR-203: nothing started, nothing written
+  if (orgNo) throw new Error(orgNo);
   // Cap: explicit choice (null = none) > the folder's saved cap > the global default (spec 011); a dollar cap only when chosen (FR-150).
   const usdCap = ad.capabilities?.capUnit === 'usd';
   draft.maxAiCredits = startCap(ad.capabilities?.capUnit, opts.maxAiCredits, folderStore?.get(wsKey(draft))?.maxAiCredits, settingsStore?.defaultMaxAiCredits);
@@ -364,6 +372,8 @@ async function ensureLive(a: AgentInfo, opts: { quiet?: boolean } = {}): Promise
         resume = !!prev;
         continued.set(a.id, { resumed: resume, title: prev?.title });
       }
+      const orgNo = orgPolicies.refusal(appIdOf(a.id), { mode: a.permMode, model: a.model }); // spec 076 FR-203
+      if (orgNo) throw new Error(orgNo);
       await ad.start({ ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true });
       a.lazy = false;
       a.resumeLast = undefined;
@@ -520,7 +530,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
-const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action) };
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusal(appIdOf(a.id), { mode }) };
 
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;
@@ -675,7 +685,8 @@ function oneShotFor(id: string): { name: string; generate: (prompt: string) => R
 }
 registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id), profileFreshness });
 registerSlashIpc({ agents, router, ensureLive }); // spec 073
-registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey });
+registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey, orgModel: (adapterId, model) => orgPolicies.model(adapterId, model) });
+registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerAdaptersIpc({ adaptersList });
 registerFoldersIpc({ agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
 registerFloorsIpc({ agents, getFolderStore: () => folderStore, wsKey });

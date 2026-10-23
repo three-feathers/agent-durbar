@@ -16,6 +16,8 @@ export interface ModelIpcDeps {
   /** Created when the app is ready: read when a handler runs. */
   getFolderStore(): FolderStore | undefined;
   wsKey(a: AgentInfo): string;
+  /** Spec 076 FR-202/FR-203 (issue #602): why the agent app's own organization policy blocks this model, or undefined. */
+  orgModel?(adapterId: string, model: string): string | undefined;
 }
 
 export function register(deps: ModelIpcDeps): void {
@@ -38,6 +40,8 @@ export function register(deps: ModelIpcDeps): void {
       const parsed = parseSwitchRequest(raw, await modelsForValidation());
       if (!parsed.ok) return { ok: false, error: parsed.error };
       const req: ModelSwitchRequest = parsed.request;
+      const org = deps.orgModel?.(a.adapterId ?? registry.defaultId, req.model); // FR-203: refused before anything changes
+      if (org) return { ok: false, error: `${org}: pick another model.` };
       // Not started (or ended) yet: nothing is running to switch. The choice is saved and the first start (create or resume) uses it (FR-013).
       const result: ModelSwitchResult = ad.isLive(a.id) ? await ad.setModel(a.id, req) : { status: 'applied', model: req.model, message: 'Used from the first message: this agent has not started yet.' };
       if (result.status === 'applied') {
@@ -99,7 +103,10 @@ export function register(deps: ModelIpcDeps): void {
     const id = kind === undefined || kind === null || kind === '' ? registry.defaultId : typeof kind === 'string' && registry.has(kind) ? kind : undefined;
     if (!id) return { ok: false, error: 'unknown agent app', models: [] };
     try {
-      const models = (await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+      const models = (await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => {
+        const org = deps.orgModel?.(id, m.id); // FR-202: kept in the list, greyed out with the reason
+        return org ? { ...m, orgBlocked: org } : m;
+      });
       if (id !== registry.defaultId) return { ok: true, models };
       lastModels = models;
       return { ok: true, models };

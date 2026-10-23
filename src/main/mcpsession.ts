@@ -53,6 +53,8 @@ export interface McpReplyInput {
   signIn?(name: string): { host: string; opened: boolean; expiresInMs: number; otherSite?: string } | undefined;
   /** FR-164: the server's own address when Durbar knows one (a folder extra, a list Durbar passes, the Copilot CLI list); stdio has none. */
   serverUrl?(name: string): string | undefined;
+  /** Spec 076 FR-202 (issue #602): why the agent app's own organization policy blocks this server, or undefined. */
+  orgBlocked?(name: string): string | undefined;
 }
 
 /** Spec 058 FR-065: the one rule for "this row needs a sign-in" (the window uses the same): the runtime's `needs-auth`, or a failed server whose failure is an auth one. */
@@ -115,6 +117,8 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
   for (const e of entries) {
     const t = i.toolsOff?.[e.name];
     if (t?.length) e.toolsOff = [...t];
+    const org = i.orgBlocked?.(e.name);
+    if (org) e.orgBlocked = org;
   }
   if (i.global) {
     const folder = new Set(i.extras.map((v) => v.name));

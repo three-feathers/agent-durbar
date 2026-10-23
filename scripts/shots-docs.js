@@ -60,6 +60,7 @@ const DOC_SHOTS = [
   { name: 'check-slash-suggest', files: ['073-slash-1440x900.png'] },
   { name: 'shots-074-navigator', files: ['074-navigator-start-1440x900.png'] },
   { name: 'shots-058-mcp-settings', files: ['058-mcp-settings-1440x900.png'] },
+  { name: 'shots-076-orgpolicy', files: ['076-orgpolicy-mode-1440x900.png', '076-orgpolicy-server-1440x900.png'] },
   { name: 'shots-058-mcp-health', files: ['058-mcp-health-1440x900.png'] },
   // one office per theme (shots-themes.js, the Settings path); the README (035-*) and the landing page (site-theme-*) show the same
   ...THEMES.map(([id, short]) => ({

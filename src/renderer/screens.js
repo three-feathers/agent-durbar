@@ -148,7 +148,7 @@
     const oc=m?`<button class="btn sm${auth?' primary':''}" type="button" data-lvopen="1" aria-label="${esc('Open the MCP servers of '+c.name+' in its chat')}">Open in chat</button>`:'';
     const acts=auth?(oc+(rs||rsess?`<details class="scr-more lv-more" data-lvk="${esc(k)}"${liveMore.has(k)?' open':''}><summary data-lvmore="1">More</summary><div class="lv-act">${rs}${rsess}</div></details>`:'')):rs+rsess+oc;
     const authNote=auth&&m?`<span class="srv-hint lv-auth">Sign in from the chat's MCP list: Open in chat.</span>`:'';
-    return `<li class="lv-chat${auth?' auth':''}" data-lvs="${esc(r.name)}" data-lvc="${esc(c.id)}"><div class="lv-top"><b class="lv-who" title="${esc(who)}">${esc(c.name)}</b>${c.folder?`<span class="mtag">${esc(c.folder)}</span>`:''}${stat}</div>${hh.why}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${authNote}${noOne}${btnRow(det,hh.diag)}${detBox}${acts?`<div class="lv-act">${acts}</div>`:''}</li>`;
+    return `<li class="lv-chat${auth?' auth':''}" data-lvs="${esc(r.name)}" data-lvc="${esc(c.id)}"><div class="lv-top"><b class="lv-who" title="${esc(who)}">${esc(c.name)}</b>${c.folder?`<span class="mtag">${esc(c.folder)}</span>`:''}${stat}</div>${hh.why}${typeof x.orgBlocked==='string'?`<span class="srv-hint srv-org">${esc(x.orgBlocked)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${authNote}${noOne}${btnRow(det,hh.diag)}${detBox}${acts?`<div class="lv-act">${acts}</div>`:''}</li>`;
   }
   function liveInner(){
     const W=window.DurbarMcpWords, A=live.agg;
@@ -1149,7 +1149,9 @@
         const by=x.status==='disabled'?W.offBy(octx):'';
         /* FR-078: a server the agent app turned off (runtime `disabled`, but not off here or in Settings) shows its switch off, so the word and the switch agree */
         const appOff=by==='app';
-        const eff=x.defaultOn&&!x.off&&!appOff;
+        /* spec 076 FR-202 (issue 602): the agent app's own organization policy blocks this server: the reason, its switch off and disabled */
+        const org=typeof x.orgBlocked==='string'?x.orgBlocked:'', orgId=org?'mob-'+(++uid):'';
+        const eff=x.defaultOn&&!x.off&&!appOff&&!org;
         const sv=W.stateOf(x.status,octx);
         const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span></span>`;
         const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by});
@@ -1171,8 +1173,8 @@
         const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
         const sg=x.canSignIn||x.signInSteps||x.signIn?signHTML(x,s):'';
-        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hh.why}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
-          <div class="srv-act">${rs}${againB(x)}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff?' disabled':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
+        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${org?'<span class="mtag warn org-tag">Blocked by your organization</span>':''}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hh.why}${org?`<span class="srv-hint srv-org" id="${orgId}">${esc(org)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
+          <div class="srv-act">${rs}${againB(x)}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff||org?' disabled':'')+(org?' aria-describedby="'+orgId+'"':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
       /* spec 058 FR-164 (owner 2026-10-23): sign in again to every server Copilot can redo, so the signed runtime writes each sign-in anew */
@@ -1193,7 +1195,7 @@
       const more=r.total>r.tools.length?` (first ${r.tools.length} shown)`:'';
       /* spec 069 FR-060/FR-064: a checkbox per tool and a tri-state for the server; disabled with the reason when the app cannot filter */
       const x=(st.servers||[]).find(y=>y.name===n)||{}, off=new Set(x.toolsOff||[]), can=!!(st.toolFilter&&X.bridge.setAgentMcpToolsOff);
-      const okName=t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t.name), nOff=r.tools.filter(t=>off.has(t.name)&&okName(t)).length, all=nOff===0?'true':nOff===r.tools.filter(okName).length?'false':'mixed';
+      const okName=t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t.name), nOff=r.tools.filter(t=>(off.has(t.name)||t.orgBlocked)&&okName(t)).length, all=nOff===0?'true':nOff===r.tools.filter(okName).length?'false':'mixed';
       /* FR-063/FR-064 (change 2026-10-22, review on PR 503): a box that cannot change is aria-disabled, not disabled: it stays in the Tab
          order, a click or Space does nothing (the click handler), and aria-describedby points to the reason, which is visible */
       const noteId='mtn-'+(++uid);
@@ -1203,8 +1205,9 @@
       const nOdd=r.tools.filter(odd).length;
       const head=`<div class="mcp-thead"><button class="mcp-all" type="button" role="checkbox" aria-checked="${all}" data-tall="${esc(n)}"${dis} aria-label="${esc('All tools of '+n)}"><span class="mcp-box" aria-hidden="true">${all==='true'?'✓':all==='mixed'?'–':''}</span>${r.total} tool${r.total===1?'':'s'}${more}${nOff?`, ${nOff} off`:''}</button>
         <span class="mcp-tnote" id="${noteId}">${can?'Turning tools on or off applies to new sessions and after Restart session with these servers.':'This app can\'t turn off single tools.'}${can&&nOdd?` ${nOdd} tool${nOdd===1?'':'s'} with other characters in the name cannot be turned off.`:''}</span></div>`;
-      const row=t=>{const why=can&&odd(t)?'mtw-'+(++uid):'';
-        return `<li><label><input type="checkbox" data-tool="${esc(t.name)}" data-tsrv="${esc(n)}"${off.has(t.name)&&!odd(t)?'':' checked'}${dis||(why?` aria-disabled="true" aria-describedby="${why}"`:'')} aria-label="${esc(t.name+' of '+n)}"><code>${esc(t.name)}</code></label>${why?`<span class="mcp-tnote" id="${why}">can't be turned off: the name has other characters</span>`:''}${t.description?`<span>${esc(t.description)}</span>`:''}</li>`;};
+      /* spec 076 FR-202: a tool the agent app's organization policy blocks: unticked, aria-disabled, the reason visible next to it */
+      const row=t=>{const ob=typeof t.orgBlocked==='string'?t.orgBlocked:'',why=ob||(can&&odd(t))?'mtw-'+(++uid):'';
+        return `<li${ob?' class="mcp-org"':''}><label><input type="checkbox" data-tool="${esc(t.name)}" data-tsrv="${esc(n)}"${ob||(off.has(t.name)&&!odd(t))?'':' checked'}${ob?` aria-disabled="true" aria-describedby="${why}"`:dis||(why?` aria-disabled="true" aria-describedby="${why}"`:'')} aria-label="${esc(t.name+' of '+n)}"><code>${esc(t.name)}</code></label>${ob?`<span class="mcp-tnote srv-org" id="${why}"${t.description?` title="${esc(t.description)}"`:''}>${esc(ob)}</span>`:why?`<span class="mcp-tnote" id="${why}">can't be turned off: the name has other characters</span>`:''}${t.description&&!ob?`<span>${esc(t.description)}</span>`:''}</li>`;};
       return `<div class="mcp-tools" id="${id}">${head}<ul class="mcp-tlist">${r.tools.map(row).join('')}</ul></div>`;
     }
     const toggleTools=async n=>{

@@ -19,6 +19,8 @@ export interface OpsDeps {
   sessionKey?(a: AgentInfo): string;
   /** Local activity log (spec 052 FR-071): one row per applied mode or limit change. Recorded here, in main, never by the window. */
   log?(a: AgentInfo, decision: 'mode-change' | 'limit-change', action: string): void;
+  /** Spec 076 FR-203 (issue #602): why the agent app's own organization policy refuses this mode, or undefined. */
+  orgRefusal?(a: AgentInfo, mode: PermMode): string | undefined;
 }
 
 const MODE_WORDS: Record<PermMode, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
@@ -37,6 +39,8 @@ export function setModeOp(d: OpsDeps, id: unknown, mode: unknown, opts: unknown)
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
   const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
   const m = validMode(mode);
+  const no = d.orgRefusal?.(a, m); // FR-203: refused before anything changes
+  if (no) return { ok: false, error: no };
   const r = setPermModeOf(ad, a.id, m, { clearGrants: o.clearGrants === true, approvePending: o.approvePending === true });
   // A live session that cannot switch keeps its old mode: say so and save nothing (constitution III, spec 012 FR-050). Not live: it applies at the next start.
   if (refusesLive(ad, a.id, r.applied)) return { ok: false, error: NO_LIVE_SETTING };

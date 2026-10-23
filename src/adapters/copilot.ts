@@ -1,4 +1,6 @@
 import { copilotHooksJson } from '../shared/foldersetup';
+import { readCopilotOrgPolicy } from './copilotOrgPolicy';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
@@ -444,6 +446,11 @@ export class CopilotAdapter implements AgentAdapter {
    * Spec 051 FR-011, FR-018, FR-022: the account the runtime reports (`getAuthStatus()`: login, host, how it signed in) and its plan.
    * No prompt; no credits (FR-022 evidence). `statusMessage` is not read. Personal data: never passed to `debug` (FR-015).
    */
+  /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
+  readOrgPolicy(): OrgPolicy {
+    return readCopilotOrgPolicy();
+  }
+
   async accountInfo(opts: AccountInfoOptions = {}): Promise<AccountIdentity> {
     try {
       const client = await this.getClient();

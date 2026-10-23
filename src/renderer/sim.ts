@@ -208,6 +208,18 @@ const SIM_MODELS: ModelChoice[] = [
     pricing: { inputPerMTok: 250, outputPerMTok: 1250, cachedPerMTok: 25, long: { inputPerMTok: 500, outputPerMTok: 1875 } } },
   { id: 'sim-preview', name: 'Sim Preview', efforts: [], contextWindow: 128000 },
 ];
+/**
+ * Spec 076 FR-205 (issue 602): `?simorgpolicy=1` gives the simulator a canned organization policy per agent app (main's words; no file
+ * is read): Claude Code and Copilot block Allow all, Claude Code blocks the `haiku` model and the `create_issue` tool of `github`,
+ * Copilot blocks the `my-notes` MCP server.
+ */
+const SIM_ORG = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simorgpolicy') === '1';
+const simOrgText = (app: string): string => `Blocked by your organization's ${app} policy`;
+const SIM_ORG_APP: Record<string, string> = { copilot: 'Copilot', claude: 'Claude Code' };
+const simOrgMode = (kind: string | undefined, mode: string): string | undefined => (SIM_ORG && mode === 'allow' && SIM_ORG_APP[kind ?? 'copilot'] ? simOrgText(SIM_ORG_APP[kind ?? 'copilot']) : undefined);
+const simOrgModel = (kind: string | undefined, id: string): string | undefined => (SIM_ORG && kind === 'claude' && id === 'haiku' ? simOrgText('Claude Code') : undefined);
+const simOrgServer = (kind: string | undefined, name: string): string | undefined => (SIM_ORG && (kind ?? 'copilot') === 'copilot' && name === 'my-notes' ? simOrgText('Copilot') : undefined);
+const simOrgTool = (kind: string | undefined, server: string, tool: string): string | undefined => (SIM_ORG && kind === 'claude' && server === 'github' && tool === 'create_issue' ? simOrgText('Claude Code') : undefined);
 const SIM_MODEL_BY_AGENT: Record<number, string> = { 3: 'sim-fast', 4: 'sim-fast', 5: 'sim-deep' };
 
 /** Simulated caps (AI credits, min 30 like the runtime) by agent name; Omar's calls are expensive (11 AIU each), so he reaches 30 in his first turn (spec 011 FR-016). */
@@ -1359,6 +1371,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           /* like main's agentMcpReply: a running server the runtime reported can be restarted (spec 058 FR-030) */
           ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name), ...signOf(m.name, 'runtime'), ...(restartable(m.name, true) && m.status !== 'disabled' ? { canRestart: true } : {}) })) : []),
         ];
+        for (const x of servers) { const ob = simOrgServer(s.info.adapterId, x.name); if (ob) Object.assign(x, { orgBlocked: ob }); } // spec 076 FR-205
         return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
@@ -1388,7 +1401,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const st = simServer(s, sims.indexOf(s), name, true);
         if (st.status && st.status !== 'connected') return { ok: false, error: name + ' is not connected' + (st.error ? ': ' + st.error : ' (' + st.status + ')') };
         const list = canned[name] ?? [['search', 'Search the notes'], ['read_note', 'Read one note by its title']];
-        return { ok: true, total: list.length, tools: list.map(([n, d]) => ({ name: n, ...(d ? { description: d } : {}) })) };
+        return { ok: true, total: list.length, tools: list.map(([n, d]) => { const ob = simOrgTool(s.info.adapterId, name, n); return { name: n, ...(d ? { description: d } : {}), ...(ob ? { orgBlocked: ob } : {}) }; }) };
       },
       agentMcpRestart: async (id, name) => {
         const s = sims.find((x) => x.info.id === id);
@@ -2305,7 +2318,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (opts.grants !== 'stuck' && s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
-      listModels: async (kind) => ({ ok: true, models: (kind === 'claude' ? SIM_CLAUDE_MODELS : !kind || kind === 'copilot' ? SIM_MODELS : []).map((m) => ({ ...m })) }),
+      listModels: async (kind) => ({ ok: true, models: (kind === 'claude' ? SIM_CLAUDE_MODELS : !kind || kind === 'copilot' ? SIM_MODELS : []).map((m) => { const ob = simOrgModel(kind, m.id); return ob ? { ...m, orgBlocked: ob } : { ...m }; }) }),
+      /* spec 076 FR-205/FR-207: main's view of the canned policy (no values) */
+      orgPolicyView: async (): Promise<Record<string, import('../shared/orgpolicy').OrgPolicyAppView>> => {
+        if (!SIM_ORG) return {};
+        const one = (app: string, file: string): import('../shared/orgpolicy').OrgPolicyAppView => ({ app, found: true, unreadable: false, paths: [file], problems: [], modes: { allow: simOrgText(app) }, counts: { modelAllow: null, modelDeny: app === 'Claude Code' ? 1 : 0, mcpAllow: null, mcpDeny: app === 'Copilot' ? 1 : 0, toolDeny: app === 'Claude Code' ? 1 : 0 } });
+        return { copilot: one('Copilot', '/etc/github-copilot/managed-settings.json'), claude: one('Claude Code', '/etc/claude-code/managed-settings.json') };
+      },
       newSession: async (id, o) => {
         const src = sims.find((x) => x.info.id === id);
         if (!src) return { ok: false, error: 'unknown agent' };
@@ -2332,6 +2351,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setPermMode: async (id, mode, o) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        const org = simOrgMode(s.info.adapterId, mode); // spec 076 FR-203, as main refuses it
+        if (org) return { ok: false, error: org + ': pick another permission mode.' };
         const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
         simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
         s.info.permMode = mode;

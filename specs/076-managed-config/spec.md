@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Managed configuration for organizations: one admin-only config folder (policy.json, MCP list, icon, theme pack) sets the display name and icon, allowed agent apps, MCP lists and endpoints, an agent/profile/skill registry, OpenTelemetry, theme and custom LLMs with admin token pricing, plus the accepted additions (mode lock, proxy and CA, feature switches, installers, signing, spend caps, folder rules, updates, registry/MDM sources, signed config, audit log, retention, rebrand build, legal notice, version pins, endpoint auth, sign-in, vendor settings view); everything set there is locked; a narrow-only user layer; bad config fails closed and visibly
-status: **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test fixtures included; Q1-Q12 answered by Vikram (Q10: admin token pricing); A1-A19 accepted by Vikram as requirements FR-150..FR-197 (signing certificate purchase still needs his OK); Paco's security review (17 items) and re-review (10 items) folded in; R1-R8 answered by Vikram with the recommended defaults; R9-R11 answered by Vikram (copilotAllContent, Claude foundry and Codex amazon-bedrock, Claude identity stated in the notice); P27 (issue #602, FR-198..FR-207): vendor policies greyed out before a start, in progress
+status: **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test fixtures included; Q1-Q12 answered by Vikram (Q10: admin token pricing); A1-A19 accepted by Vikram as requirements FR-150..FR-197 (signing certificate purchase still needs his OK); Paco's security review (17 items) and re-review (10 items) folded in; R1-R8 answered by Vikram with the recommended defaults; R9-R11 answered by Vikram (copilotAllContent, Claude foundry and Codex amazon-bedrock, Claude identity stated in the notice); P27 (issue #602, FR-198..FR-207): vendor policies greyed out before a start, built (fixture tests, simulator; no real managed machine)
 -->
 
 **Feature Branch**: `076-managed-config`
@@ -914,9 +914,11 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
   your organization's <app> policy** (or **Your organization's <app> policy could not be read; treated as blocked**) as visible small
   text or the option's label, and as its tooltip: the permission mode menu of a session (`#modeChip` menu) and the defaults' mode
   select (`#permMode`); the model choices of the new-session dialog and the model menu (`models:list` marks them `orgBlocked`); each
-  MCP server row (the chat's MCP panel and Settings' live MCP list of spec 058 FR-082, through `agents:mcp`), whose switch is disabled;
-  and each tool in a server's tools list (`agents:mcpTools`), whose checkbox is disabled. A disabled item is skipped by the keyboard
-  like the menus' other disabled items and keeps `aria-disabled` with the reason as its description.
+  MCP server row (the chat's MCP panel and Settings' live MCP list of spec 058 FR-082, through `agents:mcp`), whose switch shows off
+  and is disabled, described by the reason line; and each tool in a server's tools list (`agents:mcpTools`), unticked and
+  `aria-disabled` with the reason next to it. A blocked menu item stays focusable like the menus' other `aria-disabled` items (spec 069
+  FR-064) and does nothing when chosen; a select never holds a blocked value and falls back to the first allowed one, the most
+  restrictive (Read-only first).
 - **FR-203 Main refuses as well (the window is not the guard).** Starting or resuming a session in a blocked mode or with a blocked
   model, `agents:setMode` to a blocked mode, `agents:setModel` to a blocked model and switching on a blocked MCP server for a session are
   refused in main with FR-202's words; nothing is started, saved or changed. The user picks another mode or model, which applies at the

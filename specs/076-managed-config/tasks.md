@@ -183,10 +183,10 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 
 ## P27: vendor policies greyed out before a start (issue #602; section O)
 
-- [ ] T192 `src/shared/orgpolicy.ts`: `OrgPolicy`, strictest state, mode/model/MCP/tool questions with reasons, own-property helpers, URL matcher [FR-199, FR-200, FR-201]
-- [ ] T193 `src/adapters/claudeOrgPolicy.ts`, `copilotOrgPolicy.ts`, `codexOrgPolicy.ts` and `readOrgPolicy()` on the three adapters; paths per OS, size cap, Copilot ownership rule [FR-198, FR-200, FR-201]
-- [ ] T194 `src/main/orgpolicy.ts` cache and refusals; wiring in the starters, `setModeOp`, `agents:setModel`, `models:list`, `agents:mcp`, `agents:mcpTools`, the session MCP switch; `orgpolicy:view` IPC and preload [FR-203, FR-204, FR-207]
-- [ ] T195 Window: greyed mode menu, `#permMode`, model selects, MCP rows and tools with the reason as text and tooltip [FR-202]
-- [ ] T196 Simulator `?simorgpolicy=1` and `scripts/shots-076-orgpolicy.js` (until() waits asserted), screenshots at 1440x900 and 1280x800 [FR-205]
-- [ ] T197 `scripts/test-orgpolicy.ts`: fixtures per app, hostile matrix, matching, refusals; mutation checks recorded in the PR [FR-198..FR-203]
-- [ ] T198 Docs: README (MCP and the safety model), changelog fragment, specs-index status, agent-notes entry, spec 018 cross-reference [FR-206]
+- [x] T192 `src/shared/orgpolicy.ts`: `OrgPolicy`, strictest state, mode/model/MCP/tool questions with reasons, own-property helpers, URL matcher [FR-199, FR-200, FR-201]
+- [x] T193 `src/adapters/claudeOrgPolicy.ts`, `copilotOrgPolicy.ts`, `codexOrgPolicy.ts` and `readOrgPolicy()` on the three adapters; paths per OS, size cap, Copilot ownership rule [FR-198, FR-200, FR-201]
+- [x] T194 `src/main/orgpolicy.ts` cache and refusals; wiring in the starters, `setModeOp`, `agents:setModel`, `models:list`, `agents:mcp`, `agents:mcpTools`, the session MCP switch; `orgpolicy:view` IPC and preload [FR-203, FR-204, FR-207]
+- [x] T195 Window: greyed mode menu, `#permMode`, model selects, MCP rows and tools with the reason as text and tooltip [FR-202]
+- [x] T196 Simulator `?simorgpolicy=1` and `scripts/shots-076-orgpolicy.js` (until() waits asserted), screenshots at 1440x900 and 1280x800 [FR-205]
+- [x] T197 `scripts/test-orgpolicy.ts`: fixtures per app, hostile matrix, matching, refusals; mutation checks recorded in the PR [FR-198..FR-203]
+- [x] T198 Docs: README (MCP and the safety model), changelog fragment, specs-index status, agent-notes entry, spec 018 cross-reference [FR-206]

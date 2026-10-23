@@ -18,6 +18,8 @@ export interface McpToolsDeps {
   router: Pick<AdapterRouter, 'forAgent'>;
   secrets(agentId: string): readonly string[];
   timeoutMs?: number;
+  /** Spec 076 FR-202 (issue #602): why the agent app's own organization policy blocks this tool, or undefined. */
+  orgTool?(agentId: string, server: string, tool: string): string | undefined;
 }
 
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -42,7 +44,8 @@ export async function mcpToolsOp(d: McpToolsDeps, id: unknown, name: unknown): P
     const tools = all.slice(0, MCP_TOOLS_MAX).map((t) => {
       const first = typeof t.description === 'string' ? t.description.split(/\r?\n/).find((l) => l.trim()) : undefined;
       const desc = first === undefined ? undefined : cut(maskMcpText(first.trim(), secrets) ?? '', MCP_TOOL_DESC_MAX);
-      return { name: cut(maskMcpText(String(t.name), secrets) ?? '', MCP_TOOL_NAME_MAX), ...(desc ? { description: desc } : {}) };
+      const org = d.orgTool?.(a.id, name, String(t.name)); // on the tool's own name, before masking and cutting
+      return { name: cut(maskMcpText(String(t.name), secrets) ?? '', MCP_TOOL_NAME_MAX), ...(desc ? { description: desc } : {}), ...(org ? { orgBlocked: org } : {}) };
     });
     return { ok: true, tools, total: all.length };
   } catch (err) {

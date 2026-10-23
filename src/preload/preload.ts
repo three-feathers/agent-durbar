@@ -16,6 +16,7 @@ const api: DurbarApi = {
   addWorkspaceFile: (permMode, opts) => ipcRenderer.invoke('agents:addWorkspaceFile', permMode, opts),
   newSession: (id, opts) => ipcRenderer.invoke('agents:newSession', id, opts),
   listModels: (kind) => ipcRenderer.invoke('models:list', kind),
+  orgPolicyView: () => ipcRenderer.invoke('orgpolicy:view'),
   listAdapters: (refresh) => ipcRenderer.invoke('adapters:list', refresh === true),
   onAdaptersChanged: (cb) => sub('adapters:changed', cb),
   end: (id) => ipcRenderer.invoke('agents:end', id),

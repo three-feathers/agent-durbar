@@ -6,6 +6,8 @@
  *
  * Not in this file yet (T043b): resume of a known thread (FR-093) and its folder and profile checks.
  */
+import { readCodexOrgPolicy } from './codexOrgPolicy';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import { randomUUID } from 'crypto';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
@@ -469,6 +471,11 @@ export class CodexAdapter implements AgentAdapter {
    * Spec 051 FR-011: the account Codex reports, from `account/read` with `refreshToken: false` on a short-lived app-server (local
    * auth state; no prompt, nothing billed). An older Codex without the method is `unknown`. Personal data: never passed to `debug`.
    */
+  /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
+  readOrgPolicy(): OrgPolicy {
+    return readCodexOrgPolicy();
+  }
+
   async accountInfo(): Promise<AccountIdentity> {
     try {
       return codexAccount(await this.probe((rpc) => rpc.request('account/read', { refreshToken: false })));
