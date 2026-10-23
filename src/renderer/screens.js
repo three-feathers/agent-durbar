@@ -169,7 +169,7 @@
         <details class="scr-more"><summary>More</summary><p class="scr-note small">An off floor is not counted in Working, Waiting, Idle, Errors and Done. The office credit total still counts its agents, and an agent there that waits for you or has an error is shown <b>only here</b>, on its floor's row (for example "Off, 1 waiting"). With two or more floors, the same controls are also in the <b>Floors</b> button of the top bar.</p></details>
         <div class="floors-ui floors-set" id="floorsSet" tabindex="-1"></div></section>`:'';
     /* Schedules (spec 044 FR-011): every folder's schedules, painted by app.js into #schedSet */
-    const schedSec=X.sched&&X.sched.on()?`<section class="scr-sec" aria-labelledby="schH"><h3 id="schH">Schedules</h3>
+    const schedSec=X.sched&&X.sched.on()?`<section class="scr-sec" aria-labelledby="schH"><h3 id="schH" tabindex="-1">Schedules</h3>
         <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small">A run is skipped when the agent is busy or waiting for you; the agent's own permission mode and cap apply. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p></details>
         <div class="sched-set" id="schedSet"></div></section>`:'';
@@ -206,6 +206,12 @@
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
         <p class="scr-note">Expert adds tokens, models, context and paths. Permissions work the same in both.</p>
         <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}</section>`:'';
+    /* spec 074 FR-013 (issue 548): the navigator shortcut, recorded here, checked for clashes, kept for this window */
+    const keySec=X.navKey?`<section class="scr-sec" aria-labelledby="keyH"><h3 id="keyH">Keyboard</h3>
+        <p class="scr-note">Go to (the navigator) opens from anywhere: a floor, a folder, an agent, or a chat by its number (C and the number).</p>
+        <div class="scr-row"><span class="scr-row-l" id="navKeyL">Go to shortcut</span><kbd class="navkey-now" id="navKeyNow">${esc(X.navKey.text())}</kbd><button class="btn" type="button" id="navKeyRec" aria-describedby="navKeyL">Change…</button><button class="btn" type="button" id="navKeyReset"${X.navKey.isDefault()?' disabled':''}>Reset to ${esc(X.navKey.defText())}</button></div>
+        <p class="scr-note small" id="navKeyMsg" role="status"></p>
+        <p class="scr-note small">Shortcuts the app, text editing or your operating system already use are refused. The list of operating system shortcuts is a known list, not every one there is. On a Mac with a Dvorak layout, ⌘J types H and macOS keeps ⌘H for Hide, so pick another key there.</p></section>`:'';
     /* spec 052 FR-066, FR-093: what Durbar does not do, in calm plain words (checked against the README's Safety model and Costs and caps) */
     const notSec=`<section class="scr-sec" aria-labelledby="notH"><h3 id="notH">What Durbar does not do</h3><ul class="scr-not">
         <li>Durbar asks Claude Code and Copilot to stay in their folders but cannot force them; only Codex is held there by the system (in Read-only and Ask first).</li>
@@ -213,7 +219,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
@@ -231,11 +237,15 @@
       </section></details>${aboutSec}</div>`;
     wireHead();
     /* spec 051 FR-008: entry points open Settings at Agent apps */
-    if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}
-    if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}}
+    let atSec=false; /* a section was asked for (harnesses, mcp, schedules): its heading keeps the focus instead of the h2 */
+    if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
+    if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}}
     if($('pfSec'))wireProfiles();
     if(X.floors&&$('floorsSet'))X.floors.render();
+    if($('navKeyRec'))wireNavKey();
     if(X.sched&&$('schedSet'))X.sched.render();
+    /* spec 001 FR-038 (review on PR 511): the Postbox (and issue 523's Schedules button) open Settings at Schedules; scrollInBody, not scrollIntoView (spec 052 FR-055) */
+    if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');
       if($('capDef').value.trim()!==''&&!(v>=30&&v<=1e6)){msg.textContent='Enter a number from 30 (the runtime minimum), or leave it empty for no cap.';return;}
@@ -285,7 +295,7 @@
       if(!res||!res.ok){X.toast(esc(res&&res.error||'Export did not work (cancelled, or only your own themes can be exported).'),4200);return;}
       X.toast('Theme copied to <b>'+esc(res.to)+'</b>.',4200);
     };
-    if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
+    if(focus&&!atSec){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
   }
   /* spec 040 FR-014..FR-018: AI theme maker. Describe -> one prompt to a harness with `oneShot` -> a checked manifest ->
      preview (Try it, live, not saved) -> Save as my theme, Try again or Discard (back to the theme that was active). User text is never logged. */
@@ -591,6 +601,29 @@
     if(res&&res.ok)X.toast(esc(label)+' was deleted.',3200); else X.toast('Could not delete '+esc(label)+'.',4200);
     await paintSettings();
     const nb=document.querySelector('#myPlaces ~ .scr-tools [data-pl-act="add"], .scr-tools [data-pl-act="add"]')||document.getElementById('plH'); if(nb)nb.focus(); /* the Add button, or the Places heading */
+  }
+  /* spec 074 FR-013 / FR-014: Change… records the next key combination; Escape cancels; a refused one says why */
+  function wireNavKey(){
+    const rec=$('navKeyRec'),msg=$('navKeyMsg'),now=$('navKeyNow'),reset=$('navKeyReset');
+    let onKey=null;
+    const stop=()=>{if(onKey)window.removeEventListener('keydown',onKey,true);onKey=null;X.navKey.recording(false);rec.textContent='Change…';rec.setAttribute('aria-pressed','false');};
+    const show=t=>{now.textContent=X.navKey.text();reset.disabled=X.navKey.isDefault();msg.textContent=t;};
+    rec.onclick=()=>{
+      if(onKey){stop();msg.textContent='Not changed.';return;}
+      X.navKey.recording(true);rec.textContent='Press the keys… (Esc to cancel)';rec.setAttribute('aria-pressed','true');msg.textContent='Press the new shortcut now.';
+      onKey=e=>{
+        if(e.key==='Escape'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey){e.preventDefault();e.stopPropagation();stop();msg.textContent='Not changed.';rec.focus();return;}
+        if(e.key==='Tab'&&!e.ctrlKey&&!e.metaKey&&!e.altKey)return; /* Tab still leaves the button */
+        const c=X.navKey.fromEvent(e); if(!c)return; /* a modifier alone: wait for the key */
+        e.preventDefault();e.stopPropagation();
+        const why=X.navKey.clash(c);
+        if(why){msg.textContent=X.navKey.textOf(c)+' cannot be used. '+why+' Try another, or press Esc.';return;}
+        stop();X.navKey.set(c);show('Saved: '+X.navKey.text()+' opens Go to.');rec.focus();
+      };
+      window.addEventListener('keydown',onKey,true);
+    };
+    rec.onblur=()=>{if(onKey){stop();msg.textContent='Not changed.';}};
+    reset.onclick=()=>{X.navKey.set(null);show('Back to '+X.navKey.text()+'.');rec.focus();};
   }
   async function onSettingsClick(e){
     const pa=e.target.closest('[data-pl-act]');
@@ -1243,7 +1276,7 @@
   window.DurbarScreens={oneShotCostLine,aiCredits,
     init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onChange:(again)=>{X._hsRefresh=true;if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
-    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'?{section}:null);},
+    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
     mcpEvent:id=>{if(mcpDlgHook)mcpDlgHook(id);},
