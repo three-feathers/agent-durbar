@@ -130,13 +130,16 @@ only to the child and never logged (FR-121).
 | `.headersFromEnv` | env `OTEL_EXPORTER_OTLP_HEADERS` (percent-encoded `k=v,k=v`) | `otel.<exporter>.<kind>.headers` map | env `OTEL_EXPORTER_OTLP_HEADERS` |
 | `.resourceAttributes` | env `OTEL_RESOURCE_ATTRIBUTES` (percent-encoded) | none documented (not passed; shown) | env `OTEL_RESOURCE_ATTRIBUTES` |
 | `.logPrompts` true | env `OTEL_LOG_USER_PROMPTS=1` and `OTEL_LOG_ASSISTANT_RESPONSES=0` | `otel.log_user_prompt = true` | **not passed** (all-or-nothing; R9); SDK `captureContent: false` |
+| `.copilotAllContent` true (R9) | | | env `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`, SDK `captureContent: true`; chip *with all content* |
 | `.logPrompts` false (default) | no `OTEL_LOG_*` content variable in env | `otel.log_user_prompt = false` | SDK `captureContent: false` |
 | removed from env when `telemetry` is set (FR-085) | every `OTEL_*` not set above, incl. `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`, `OTEL_LOG_RAW_API_BODIES`, `OTEL_LOG_MANAGED_SETTINGS`, per-signal endpoint/headers/protocol, `BETA_TRACING_ENDPOINT`, `ENABLE_BETA_TRACING_DETAILED` | (config only) | every `OTEL_*` and `COPILOT_OTEL_*` not set above, incl. `COPILOT_OTEL_FILE_EXPORTER_PATH` |
 | `llm.claude.provider` `gateway` | env `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` (from `authTokenFromEnv`) | | |
 | `llm.claude.provider` `bedrock` | env `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION` (`region`), `ANTHROPIC_BEDROCK_BASE_URL` (`baseUrl`), `AWS_BEARER_TOKEN_BEDROCK` (`authTokenFromEnv`, optional) | | |
 | `llm.claude.provider` `vertex` | env `CLAUDE_CODE_USE_VERTEX=1`, `CLOUD_ML_REGION` (`region`), `ANTHROPIC_VERTEX_PROJECT_ID` (`projectId`), `ANTHROPIC_VERTEX_BASE_URL` (`baseUrl`) | | |
+| `llm.claude.provider` `foundry` (R10) | env `CLAUDE_CODE_USE_FOUNDRY=1`, `ANTHROPIC_FOUNDRY_RESOURCE` (`resource`) or `ANTHROPIC_FOUNDRY_BASE_URL` (`baseUrl`), `ANTHROPIC_FOUNDRY_API_KEY` (`apiKeyFromEnv`) or `ANTHROPIC_FOUNDRY_AUTH_TOKEN` (`authTokenFromEnv`) | | |
 | `llm.claude.model` / `.smallFastModel` | env `ANTHROPIC_MODEL` / `ANTHROPIC_DEFAULT_HAIKU_MODEL` | | |
 | `llm.codex.provider` | | override `model_provider = <id>`, `model_providers.<id>.{name, base_url, env_key, wire_api = "responses"}` (`[KNOWN GAP]` per-thread acceptance, T100) | |
+| `llm.codex.bedrock` (R10) | | override `model_provider = "amazon-bedrock"`, `aws.region`, `aws.profile` (structured) | |
 | `llm.codex.model` | | override `model` | |
 | `llm.copilot.*` | | | env `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_API_KEY` / `COPILOT_PROVIDER_BEARER_TOKEN` (from the named vars), `COPILOT_PROVIDER_AZURE_API_VERSION`, `COPILOT_MODEL`, `COPILOT_OFFLINE` (`[KNOWN GAP]` headless runtime, T100) |
 | stripped when `llm.<app>` is set (FR-100a) | `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, other `ANTHROPIC_*`, `CLAUDE_CODE_USE_*`, `CLAUDE_CODE_SKIP_*_AUTH`, `AWS_BEARER_TOKEN_BEDROCK`, `CLOUD_ML_REGION`, `VERTEX_REGION_CLAUDE_*` not set above | `OPENAI_API_KEY`, `CODEX_API_KEY` (unless the `env_key`), `CODEX_ACCESS_TOKEN` | other `COPILOT_PROVIDER_*`, `COPILOT_PROVIDER_API_KEY_COMMAND`; `COPILOT_PROVIDERS_CONFIG` -> a Durbar-owned empty registry (`[KNOWN GAP]`, T100) |

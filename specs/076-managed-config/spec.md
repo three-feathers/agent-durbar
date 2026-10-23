@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Managed configuration for organizations: one admin-only config folder (policy.json, MCP list, icon, theme pack) sets the display name and icon, allowed agent apps, MCP lists and endpoints, an agent/profile/skill registry, OpenTelemetry, theme and custom LLMs with admin token pricing, plus the accepted additions (mode lock, proxy and CA, feature switches, installers, signing, spend caps, folder rules, updates, registry/MDM sources, signed config, audit log, retention, rebrand build, legal notice, version pins, endpoint auth, sign-in, vendor settings view); everything set there is locked; a narrow-only user layer; bad config fails closed and visibly
-status: **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test fixtures included; Q1-Q12 answered by Vikram (Q10: admin token pricing); A1-A19 accepted by Vikram as requirements FR-150..FR-197 (signing certificate purchase still needs his OK); Paco's security review (17 items) and re-review (10 items) folded in; R1-R8 answered by Vikram with the recommended defaults
+status: **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test fixtures included; Q1-Q12 answered by Vikram (Q10: admin token pricing); A1-A19 accepted by Vikram as requirements FR-150..FR-197 (signing certificate purchase still needs his OK); Paco's security review (17 items) and re-review (10 items) folded in; R1-R8 answered by Vikram with the recommended defaults; R9-R11 answered by Vikram (copilotAllContent, Claude foundry and Codex amazon-bedrock, Claude identity stated in the notice)
 -->
 
 **Feature Branch**: `076-managed-config`
@@ -457,7 +457,12 @@ wrong number.
   means **prompt text only**. For every app Durbar removes from the child environment every content flag the policy did not ask for,
   including ones the user set (FR-085). When `logPrompts` is true, the top-bar chip reads *Telemetry (with prompt text): <host>* and
   the first-start notice says so in its first line. An app that cannot export prompt text without exporting more (Copilot) does not
-  export content at all; the notice says *Copilot CLI: prompt text not exported (it can only export all content)* (R9, open).
+  export content because of `logPrompts`; the notice says *Copilot CLI: prompt text not exported (it can only export all content)*.
+  **Copilot's full content only through `copilotAllContent`** (R9, owner 2026-10-23): a separate machine-only key
+  `telemetry.otel.copilotAllContent: true`, independent of `logPrompts`, turns on Copilot's content capture
+  (`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`, SDK `captureContent: true`). Then the chip reads *Telemetry (with all
+  content): <host>* and the notice's first line says *Copilot CLI exports the full conversation: your prompts, its responses, the
+  system prompt, and tool arguments and results*. Without the key Copilot exports no content, whatever `logPrompts` says.
 - **FR-081 Claude Code** (all `read:` https://code.claude.com/docs/en/monitoring-usage 2026-10-23): `CLAUDE_CODE_ENABLE_TELEMETRY=1`;
   `OTEL_METRICS_EXPORTER=otlp` or `none` and `OTEL_LOGS_EXPORTER=otlp` or `none` for the signals chosen; for `traces`,
   `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` and `OTEL_TRACES_EXPORTER=otlp` (the notice says *traces: beta*);
@@ -510,12 +515,15 @@ wrong number.
   naming the host and, per app, what that app exports according to its documentation (2026-10-23):
   - Claude Code: usage metrics (sessions, tokens, cost estimate, lines changed, commits, pull requests, active time, edit decisions) and
     events (prompts as length only, API requests and errors, tool results and decisions, MCP connections, hooks, compaction), with the
-    account id, organization id and the account e-mail when known; prompt text only with `logPrompts`;
+    account id, organization id and the account e-mail when known (the vendor default, kept as is and stated in the notice: *Claude
+    Code sends your account id, organization id and e-mail with this data*; R11, owner 2026-10-23; no switch in v1, and
+    `OTEL_METRICS_INCLUDE_ACCOUNT_UUID`, which affects metrics only, is a possible later key); prompt text only with `logPrompts`;
   - Codex: events (conversation start with model and sandbox policy, API requests, stream events with token counts, prompts as length
     only, tool decisions, tool results **with an output snippet**), metrics (request, stream and tool counts and durations); prompt text
     only with `logPrompts`;
   - Copilot CLI: traces (agent invocations, model calls, tool calls with token counts and AI units) and metrics (durations, token use,
-    tool calls, lines changed); a pseudonymous user id; never prompt text from Durbar's policy (FR-080a).
+    tool calls, lines changed); a pseudonymous user id; no content unless `copilotAllContent` is set, and then the full conversation
+    (FR-080a, R9).
   The notice says that Durbar cannot filter or redact what an agent app exports itself.
 ### I. Owner item 6: theme
 
@@ -539,8 +547,11 @@ wrong number.
     `ANTHROPIC_VERTEX_BASE_URL=<baseUrl>` when set; credentials from Google Application Default Credentials;
   - models for every provider: `ANTHROPIC_MODEL` from `model`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` from `smallFastModel`
     (`ANTHROPIC_SMALL_FAST_MODEL` is deprecated and is not set).
-  Microsoft Foundry (`CLAUDE_CODE_USE_FOUNDRY=1`, `ANTHROPIC_FOUNDRY_RESOURCE`/`_BASE_URL`, `ANTHROPIC_FOUNDRY_API_KEY`/`_AUTH_TOKEN`) is
-  documented but not in the v1 schema (R10, open). Durbar does not set `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` (FR-081).
+  - `foundry` (Microsoft Foundry; R10, owner 2026-10-23): `CLAUDE_CODE_USE_FOUNDRY=1`, `ANTHROPIC_FOUNDRY_RESOURCE=<resource>` or
+    `ANTHROPIC_FOUNDRY_BASE_URL=<baseUrl>` (one is required), and `ANTHROPIC_FOUNDRY_API_KEY` from `apiKeyFromEnv` or
+    `ANTHROPIC_FOUNDRY_AUTH_TOKEN` from `authTokenFromEnv` (at most one; each name in `secrets.envAllow`, bound to the Foundry host).
+    With neither, Claude Code's own Azure credential handling applies; `[KNOWN GAP]` which Azure credential chain that is, until
+    checked in T100. Durbar does not set `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` (FR-081).
 - **FR-100a No fallback to the vendor.** When a policy sets a provider for an app, the user's own credentials and provider switches for
   that app are **removed** from the child environment (Claude: `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `AWS_BEARER_TOKEN_BEDROCK`
   and any `ANTHROPIC_*`, `CLAUDE_CODE_USE_*`, `CLAUDE_CODE_SKIP_*_AUTH`, `CLOUD_ML_REGION` and `VERTEX_REGION_CLAUDE_*` the policy did not
@@ -556,8 +567,10 @@ wrong number.
   "responses"`) and `model_provider = <id>` plus `model` as **structured** thread config overrides (same rule as FR-082: no
   concatenated `-c` strings; a TOML-encoded, argument-array fallback only), never written into the user's
   `config.toml`. Model ids match `^[A-Za-z0-9._:/@+-]{1,128}$` in the schema, so a value cannot carry quotes, `=` or new lines.
-  Reserved ids (`openai`, `ollama`, `lmstudio`) are refused. Codex's own Bedrock provider (`model_provider =
-  "amazon-bedrock"` with `aws.profile`/`aws.region`) is documented but not in the v1 schema (R10, open). `[KNOWN GAP]` until T100: the
+  Reserved ids (`openai`, `ollama`, `lmstudio`) are refused. **Codex's built-in Bedrock provider** (R10, owner 2026-10-23):
+  `llm.codex.bedrock` (`region` required, `profile` optional, an AWS profile name, not a secret) sets `model_provider =
+  "amazon-bedrock"` with `aws.region`/`aws.profile`, structured like the rest; credentials come from the AWS SDK chain; `provider` and
+  `bedrock` cannot both be set (schema). Both new providers are custom-provider sessions for pricing and caps (FR-106..FR-109). `[KNOWN GAP]` until T100: the
   app-server accepting `model_providers` as a per-thread override (project config ignores it; the CLI layer may set it).
 - **FR-102 Copilot (BYOK).** `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_API_KEY` or
   `COPILOT_PROVIDER_BEARER_TOKEN` (from the named variables), `COPILOT_PROVIDER_AZURE_API_VERSION`, `COPILOT_MODEL`, and
@@ -943,18 +956,22 @@ All eight are **answered with the recommended default** below; the spec already 
 - **R8** (answered 2026-10-23, owner: recommended default) A required stdio MCP server that a user declines at the trust prompt: start sessions without it, or block that folder's
   sessions? *Recommended:* start without it and show it (FR-044); an organization that needs it enforced uses a remote server.
 
-### Open questions from the OTel and LLM research (2026-10-23, for Vikram)
+### Questions from the OTel and LLM research (2026-10-23), answered by Vikram
 
-Each has a recommended default that the spec already follows; nothing is built until answered.
+All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended one.
 
-- **R9** (open) Copilot CLI can export prompt text only together with all other content (responses, system prompt, tool arguments and
+- **R9** (answered 2026-10-23, owner Vikram 09:03-09:06 UTC: option a) Copilot CLI can export prompt text only together with all other content (responses, system prompt, tool arguments and
   results). With `logPrompts: true`, should Copilot export nothing (recommended, FR-080a), or should a separate admin key
-  (`telemetry.otel.copilotAllContent`, shown as *Telemetry (with all content)*) allow it?
-- **R10** (open) Add the providers the vendors document but v1 leaves out: Claude Code `foundry` (Microsoft Foundry) and Codex
+  (`telemetry.otel.copilotAllContent`, shown as *Telemetry (with all content)*) allow it? → **Copilot exports no content unless
+  `copilotAllContent: true` is set; the notice then says the full conversation is exported** (FR-080a, schema, fixtures
+  `policy-copilot-all-content-string`, `policy-user-copilot-all-content`).
+- **R10** (answered 2026-10-23, owner: option a; applied in FR-100 and FR-101, schema, `samples/variants/`, P11) Add the providers the vendors document but v1 leaves out: Claude Code `foundry` (Microsoft Foundry) and Codex
   `amazon-bedrock`? *Recommended:* yes, as a small follow-up schema change in P11, same rules (no secrets, env names bound to hosts).
-- **R11** (open) Claude Code sends the account UUID, organization id and, when known, the account e-mail with its OTel data by default.
+- **R11** (answered 2026-10-23, owner: option a; FR-086) Claude Code sends the account UUID, organization id and, when known, the account e-mail with its OTel data by default.
   Keep the vendor default and say it in the notice (recommended, FR-086), or add `telemetry.otel.identity: false`, which sets
-  `OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false` (events keep the ids; the docs give no switch for them)?
+  `OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false` (events keep the ids; the docs give no switch for them)? → **Keep the vendor default and
+  say so in the notice; no identity switch in v1.** `OTEL_METRICS_INCLUDE_ACCOUNT_UUID` (metrics only) is recorded as a possible later
+  key.
 
 ## Success Criteria
 
@@ -972,4 +989,4 @@ Each has a recommended default that the spec already follows; nothing is built u
   providers, Copilot CLI OTel, SDK, BYOK and managed settings, Codex providers and OTel; FR-080 per-app capability table, new FR-080a
   (content only on explicit opt-in, visible), FR-081..FR-086, FR-100..FR-102, FR-142, FR-192, FR-194, FR-195 rewritten with the exact
   variables and keys; the former `[KNOWN GAP]`s for Copilot OTel and Claude Bedrock/Vertex names are closed; per-session acceptance
-  checks stay `[KNOWN GAP]` (T100, T111); open questions R9-R11.
+  checks stay `[KNOWN GAP]` (T100, T111); R9-R11 answered by Vikram the same day (option a each).

@@ -237,6 +237,31 @@
       "refusedBy": "validator",
       "why": "user layer setting network.trustedHosts, a machine-only key (FR-003); valid by the shared schema, refused by the validator for the user layer",
       "layer": "user"
+    },
+    {
+      "file": "policy-copilot-all-content-string.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "copilotAllContent must be a real boolean, so a truthy string cannot turn on full-content export (R9)"
+    },
+    {
+      "file": "policy-user-copilot-all-content.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "a user layer turning on Copilot's full-content export (telemetry is machine-only, FR-003, R9)",
+      "layer": "user"
+    },
+    {
+      "file": "policy-foundry-no-resource.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "foundry without resource or baseUrl (R10)"
+    },
+    {
+      "file": "policy-codex-provider-and-bedrock.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "Codex custom provider and amazon-bedrock at once (R10)"
     }
   ]
 }

@@ -291,6 +291,11 @@
               "items": {
                 "$ref": "#/$defs/app"
               }
+            },
+            "copilotAllContent": {
+              "type": "boolean",
+              "default": false,
+              "description": "R9: Copilot CLI can only export all content (prompts, responses, system prompt, tool arguments and results). true lets it; independent of logPrompts. Machine layer only. Shown as 'Telemetry (with all content)'."
             }
           }
         }
@@ -344,7 +349,8 @@
               "enum": [
                 "gateway",
                 "bedrock",
-                "vertex"
+                "vertex",
+                "foundry"
               ]
             },
             "baseUrl": {
@@ -370,8 +376,80 @@
               "type": "string",
               "pattern": "^[A-Za-z0-9._:/@+-]{1,128}$",
               "description": "Model id; no quotes, '=', spaces or new lines (FR-101)."
+            },
+            "resource": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+              "description": "foundry: the Microsoft Foundry resource name (ANTHROPIC_FOUNDRY_RESOURCE); or give baseUrl."
+            },
+            "apiKeyFromEnv": {
+              "$ref": "#/$defs/envName",
+              "description": "foundry: ANTHROPIC_FOUNDRY_API_KEY from this variable (bound in secrets.envAllow)."
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "provider": {
+                    "const": "foundry"
+                  }
+                },
+                "required": [
+                  "provider"
+                ]
+              },
+              "then": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "resource"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "baseUrl"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "provider": {
+                    "not": {
+                      "const": "foundry"
+                    }
+                  }
+                }
+              },
+              "then": {
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "resource"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "apiKeyFromEnv"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "apiKeyFromEnv",
+                  "authTokenFromEnv"
+                ]
+              }
+            }
+          ]
         },
         "codex": {
           "type": "object",
@@ -415,7 +493,32 @@
               "type": "string",
               "pattern": "^[A-Za-z0-9._:/@+-]{1,128}$",
               "description": "Model id; no quotes, '=', spaces or new lines (FR-101)."
+            },
+            "bedrock": {
+              "type": "object",
+              "required": [
+                "region"
+              ],
+              "additionalProperties": false,
+              "description": "Codex's built-in amazon-bedrock provider (R10): model_provider = \"amazon-bedrock\"; credentials from the AWS SDK chain.",
+              "properties": {
+                "region": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9-]{2,32}$"
+                },
+                "profile": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                  "description": "An AWS profile name (not a secret)."
+                }
+              }
             }
+          },
+          "not": {
+            "required": [
+              "provider",
+              "bedrock"
+            ]
           }
         },
         "copilot": {
