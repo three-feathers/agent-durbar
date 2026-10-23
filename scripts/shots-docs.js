@@ -36,7 +36,7 @@ const DOC_SHOTS = [
   { name: 'shots-001-lobby', files: ['001-lobby-15-1280x800.png', '001-lobby-15-1440x900.png', '001-lobby-15-1440x900-retro.png', '001-lobby-3-1440x900.png'] },
   { name: 'shots-005-cardmenu', files: ['005-card-menu-stop-end-1440x900.png'] },
   { name: 'check-ro-ask', files: ['003-ro-ask-menu-1440x900.png'] },
-  { name: 'check-composer-toolbar', files: ['005-composer-expert-light-1440x900.png'] },
+  { name: 'check-composer-toolbar', files: ['005-composer-expert-light-1440x900.png', '005-composer-ctxsummary-1440x900.png', '005-composer-ctxsummary-1280x800.png'] },
   { name: 'check-edits', files: ['005-edit-expert-1440x900.png'] },
   { name: 'shots-006-home', files: ['006-home-warning-1440x900.png'] },
   { name: 'shots-006-prevmarks', files: ['006-prev-menu-1440x900.png', '006-sessions-expanded-1440x900.png'] },
