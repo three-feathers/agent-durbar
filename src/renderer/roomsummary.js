@@ -36,6 +36,8 @@
     dnd:{word:'Do not disturb',short:'DND',door:'closed',icon:'bar'},
     away:{word:'Away',short:'Away',door:'closed',icon:'clock'},
     meeting:{word:'In a meeting',short:'Meeting',door:'closed',icon:'people'},
+    failing:{word:'Failing',short:'Failing',door:'closed',icon:'bolt'},
+    thinking:{word:'Thinking',short:'Thinking',door:'closed',icon:'bubble'},
     busy:{word:'Busy',short:'Busy',door:'closed',icon:'dot'},
     done:{word:'Done',short:'Done',door:'open',icon:'check'},
     available:{word:'Available',short:'Available',door:'open',icon:'ring'}
@@ -46,18 +48,19 @@
     const sign=(key,tone)=>Object.assign({key,tone,figure:'',effect:''},SIGNS[key]);
     if(st==='error')return sign('attention','error');
     if(st==='waiting'&&o.limit)return sign('limit','waiting');
+    /* review on #631 (Paco): a coffee break is entered as `waiting` (startCoffee); one that resumes by itself (not Durbar's cap, which
+       sets `limit`) is Do not disturb, not a wait for you */
+    const shut=()=>{const n=Number.isInteger(o.held)&&o.held>0?o.held:0, g=sign('shut','idle');if(n){g.word='Do not disturb · '+n+' held';g.short='DND · '+n;}return g;};
+    if(o.coffee&&!o.limit)return o.userClosed?shut():sign('dnd','idle');
     if(st==='waiting')return sign('waiting','waiting');
-    if(o.userClosed){
-      /* FR-015: a door the user closed; its held runs counted on the sign */
-      const n=Number.isInteger(o.held)&&o.held>0?o.held:0, g=sign('shut','idle');
-      if(n){g.word='Do not disturb · '+n+' held';g.short='DND · '+n;}
-      return g;
-    }
-    if(o.paused||o.coffee)return sign('dnd','idle');
+    if(o.userClosed)return shut(); /* FR-015: a door the user closed; its held runs counted on the sign */
+    if(o.paused)return sign('dnd','idle');
     if(o.ended||o.resting)return sign('away','idle');
     if(isWork(st)){
-      const tone=o.failing?'failing':st;
-      return sign(Array.isArray(o.helpers)&&o.helpers.some(isWork)?'meeting':'busy',tone);
+      /* review on #631: colour is never the only cue: failing tool calls and thinking keep their own word and icon */
+      if(o.failing)return sign('failing','failing');
+      if(Array.isArray(o.helpers)&&o.helpers.some(isWork))return sign('meeting',st);
+      return st==='thinking'?sign('thinking','thinking'):sign('busy','working');
     }
     return st==='done'?sign('done','done'):sign('available','idle');
   }

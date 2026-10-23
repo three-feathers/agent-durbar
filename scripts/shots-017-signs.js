@@ -45,6 +45,8 @@ const TABLE = {
   dnd: { word: 'Do not disturb', short: 'DND', icon: 'bar', open: false },
   away: { word: 'Away', short: 'Away', icon: 'clock', open: false },
   meeting: { word: 'In a meeting', short: 'Meeting', icon: 'people', open: false },
+  failing: { word: 'Failing', short: 'Failing', icon: 'bolt', open: false },
+  thinking: { word: 'Thinking', short: 'Thinking', icon: 'bubble', open: false },
   busy: { word: 'Busy', short: 'Busy', icon: 'dot', open: false },
   done: { word: 'Done', short: 'Done', icon: 'check', open: true },
   available: { word: 'Available', short: 'Available', icon: 'ring', open: true },
@@ -53,11 +55,12 @@ function expected(d) {
   const work = (s) => s === 'working' || s === 'thinking';
   if (d.state === 'error') return ['attention', 'error'];
   if (d.state === 'waiting' && d.limit) return ['limit', 'waiting'];
+  if (d.coffee && !d.limit) return [d.userClosed ? 'shut' : 'dnd', 'idle']; // review on #631: a break is entered as waiting
   if (d.state === 'waiting') return ['waiting', 'waiting'];
   if (d.userClosed) return ['shut', 'idle'];
-  if (d.paused || d.coffee) return ['dnd', 'idle'];
+  if (d.paused) return ['dnd', 'idle'];
   if (d.ended) return ['away', 'idle'];
-  if (work(d.state)) return [d.helpers.some(work) ? 'meeting' : 'busy', d.failing ? 'failing' : d.state];
+  if (work(d.state)) return d.failing ? ['failing', 'failing'] : d.helpers.some(work) ? ['meeting', d.state] : d.state === 'thinking' ? ['thinking', 'thinking'] : ['busy', 'working'];
   return d.state === 'done' ? ['done', 'done'] : ['available', 'idle'];
 }
 
@@ -97,7 +100,8 @@ function readDesks() {
     const meets = (p, q) => p.left < q.right - 0.5 && q.left < p.right - 0.5 && p.top < q.bottom - 0.5 && q.top < p.bottom - 0.5;
     const tg = d.parentElement && d.parentElement.querySelector(':scope > .cb-toggle'), TG = tg && tg.getBoundingClientRect();
     const tgHits = TG ? [...d.querySelectorAll('.name,.intent,.task,.pill,.stl,.role,.chatno,.cb-sign')].filter((e) => e.getClientRects().length && meets(TG, e.getBoundingClientRect())).map((e) => e.className) : [];
-    const cabin = cab ? { kind: cab.dataset.cabin, wallet: !!cab.querySelector('.cb-wallet'), fire: !!fire, fireIn: !!FR && FR.left >= SB.left - 0.5 && FR.right <= SB.right + 0.5 && FR.top >= SB.top - 0.5 && FR.bottom <= SB.bottom + 0.5 && !(CR && meets(FR, CR)), flicker: !!fire && [...fire.querySelectorAll('.fl')].some((g) => g.getAnimations().length > 0), figure: !!(fig && fig.querySelector('svg:not(.cb-arm)')), arm: !!arm, waving: !!arm && arm.getAnimations().length > 0, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches, onTop, photo: !!cab.querySelector('.cb-photo svg'), door: !!cab.querySelector('.cb-door'), leaf: !!cab.querySelector('.cb-leaf-open'), sign: csg && csg.dataset.sign, word: cw && cw.dataset.w, icon: cic && cic.dataset.icon,
+    const cno = d.querySelector('.chatno'), CN = cno && cno.getClientRects().length ? cno.getBoundingClientRect() : null;
+    const cabin = cab ? { underBadge: !!(CN && CR && meets(CN, CR)), wordShown: !!cw && getComputedStyle(cw).display !== 'none', density: document.getElementById('stage').dataset.d, kind: cab.dataset.cabin, wallet: !!cab.querySelector('.cb-wallet'), fire: !!fire, fireIn: !!FR && FR.left >= SB.left - 0.5 && FR.right <= SB.right + 0.5 && FR.top >= SB.top - 0.5 && FR.bottom <= SB.bottom + 0.5 && !(CR && meets(FR, CR)), flicker: !!fire && [...fire.querySelectorAll('.fl')].some((g) => g.getAnimations().length > 0), figure: !!(fig && fig.querySelector('svg:not(.cb-arm)')), arm: !!arm, waving: !!arm && arm.getAnimations().length > 0, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches, onTop, photo: !!cab.querySelector('.cb-photo svg'), door: !!cab.querySelector('.cb-door'), leaf: !!cab.querySelector('.cb-leaf-open'), sign: csg && csg.dataset.sign, word: cw && cw.dataset.w, icon: cic && cic.dataset.icon,
       font: cw ? parseFloat(getComputedStyle(cw).fontSize) : 0, contrast: ctc ? Math.round(ratio(ctc, cbg) * 100) / 100 : 0, cut: !!cw && cw.scrollWidth > cw.clientWidth + 0.5,
       inDesk: !!CR && CR.width > 1 && CR.left >= D0.left - 0.5 && CR.right <= D0.right + 0.5 && CR.top >= D0.top - 0.5 && CR.bottom <= D0.bottom + 0.5 } : null;
     const base = { toggle: tg ? { pressed: tg.getAttribute('aria-pressed'), label: tg.getAttribute('aria-label') || '', hits: tgHits, w: Math.round(TG.width), h: Math.round(TG.height) } : null, userClosed: !!tg && tg.getAttribute('aria-pressed') === 'true', limit: !!a.limit, cabin, scene: scn, id: d.dataset.id, name: a.name, parent: !!a.parent, state: d.dataset.state, paused: !!a.paused, coffee: !!a.coffee, ended: d.dataset.state === 'idle' && a.label === 'Ended', helpers: kids, failing: d.classList.contains('is-failing'), label: d.getAttribute('aria-label') || '', helper: d.classList.contains('helper') };
@@ -131,27 +135,13 @@ module.exports = async (ctx) => {
   const mix = () => js(`(()=>{const L=window.__durbarSimUi.agents().filter(a=>!a.parent);const pick=(n,f)=>{const a=L.find(x=>x.name===n)||L.find(f);return a;};
     const p=pick('Hugo',a=>a.state==='idle'&&!a.paused);if(p)p.paused=true;
     const all=window.__durbarSimUi.agents(), solo=a=>(a.state==='working'||a.state==='thinking')&&!all.some(h=>h.parent===a.id);
-    const c=L.find(a=>solo(a)&&!a.coffee);if(c)c.coffee=true;
-    const e=L.find(a=>solo(a)&&a!==c);if(e){e.state='idle';e.label='Ended';}
+    const plain=a=>{const d=document.querySelector('#stage .desk[data-id="'+CSS.escape(a.id)+'"]');return a.state==='working'&&!(d&&d.classList.contains('is-failing'));};
+    const e=L.find(a=>solo(a)&&plain(a));if(e){e.state='idle';e.label='Ended';}
     const dn=L.find(a=>a.state==='working'&&all.some(h=>h.parent===a.id&&h.state==='working'));if(dn){dn.state='done';dn.label=null;}
-    return {paused:p&&p.name,ended:e&&e.name,coffee:c&&c.name,done:dn&&dn.name};})()`);
+    return {paused:p&&p.name,ended:e&&e.name,done:dn&&dn.name};})()`);
 
-  for (const [w, h] of SIZES) {
-    await H.load({ w, h, focus: true });
-    const m = await mix();
-    console.log('[017-signs]', w, 'mixed', JSON.stringify(m));
-    assert.ok(m.paused && m.ended && m.coffee && m.done, `${w}: found agents to pause, end, send on a break and finish: ${JSON.stringify(m)}`);
-    await rerender();
-    /* FR-015: close one door with the keyboard (focus its button, Enter): the paused agent's door, so plain DND is still seen elsewhere */
-    await js(`document.querySelector('#stage .unit [data-doorset="'+CSS.escape(window.__durbarSimUi.agents().find((a)=>a.name===${jsLiteral(m.paused)}).id)+'"]').focus()`);
-    await H.key('Return');
-    assert.ok(await until(`document.querySelector('#stage .unit .cb-toggle[aria-pressed="true"]')!==null`, 4000), `${w}: Enter on the door button closes the door`);
-    assert.ok(await until(`[...document.querySelectorAll('#stage .desk[data-id] .dsign')].some((e)=>e.dataset.sign==='shut')`, 4000), `${w}: the closed door shows Do not disturb (you closed it)`);
-    await H.clearToasts();
-    await rerender();
-    const ds = await desks();
-    assert.ok(ds.filter((d) => !d.helper).length >= 13, `${w}: the main desks are shown (${ds.length})`);
-    const seen = new Set();
+  /* every main desk against the oracle; the signs seen go into `seen` (the passes together must show every sign) */
+  const checkDesks = (w, ds, seen) => {
     for (const d of ds) {
       if (d.helper || d.parent) { assert.ok(!d.sign, `${w}: helper ${d.name} shows no sign`); continue; }
       const [key, tone] = expected(d), t = TABLE[key];
@@ -176,6 +166,8 @@ module.exports = async (ctx) => {
       else assert.ok(!d.scene && c.door && c.photo && !c.figure, `${tag}: closed: the door with the agent's photo in place of the desk scene`);
       assert.strictEqual(c.sign, key, `${tag}: the door's sign`);
       assert.strictEqual(c.word, t.short, `${tag}: the door's sign word`);
+      assert.strictEqual(c.wordShown, ['roomy', 'full'].includes(c.density), `${tag}: the door's sign shows its word only where the desk is wide (${c.density})`);
+      assert.ok(!c.underBadge, `${tag}: the chat number does not cover the door's sign`);
       assert.strictEqual(c.icon, t.icon, `${tag}: the door's sign icon`);
       assert.ok(c.font >= 10.5 && c.contrast >= 3 && !c.cut && c.inDesk, `${tag}: the door's sign is legible and whole: ${JSON.stringify(c)}`);
       assert.ok(d.shown >= 3, `${tag}: at least three characters of "${d.word}" show (${d.shown}; ${d.dims})`);
@@ -186,12 +178,29 @@ module.exports = async (ctx) => {
       /* FR-015: every main desk has its door button: 24px, pressed exactly when the user closed the door, on the scene and clear of the words */
       assert.ok(d.toggle && d.toggle.w >= 24 && d.toggle.h >= 24 && d.toggle.hits.length === 0, `${tag}: the door button is there, 24px, clear of the words: ${JSON.stringify(d.toggle)}`);
       assert.ok(key === 'shut' ? /^Open the door: /.test(d.toggle.label) : /^Close the door \(do not disturb\): /.test(d.toggle.label), `${tag}: the door button says what it does: ${d.toggle.label}`);
-      assert.ok(/(Working|Thinking|Failing|Waiting|Idle|Error|Done|Paused|Ended|Limit reached|Stopped)/.test(d.label), `${tag}: the accessible name keeps the plain word: ${d.label.slice(0, 120)}`);
+      assert.ok(/(Working|Thinking|Failing|Waiting|Idle|Error|Done|Paused|Ended|Limit reached|Stopped|Coffee break)/.test(d.label), `${tag}: the accessible name keeps the plain word: ${d.label.slice(0, 120)}`);
       seen.add(key);
     }
+  };
+  const seen = new Set();
+  for (const [w, h] of SIZES) {
+    await H.load({ w, h, focus: true });
+    const m = await mix();
+    console.log('[017-signs]', w, 'mixed', JSON.stringify(m));
+    assert.ok(m.paused && m.ended && m.done, `${w}: found agents to pause, end and finish: ${JSON.stringify(m)}`);
+    await rerender();
+    /* FR-015: close one door with the keyboard (focus its button, Enter): the paused agent's door, so plain DND is still seen elsewhere */
+    await js(`document.querySelector('#stage .unit [data-doorset="'+CSS.escape(window.__durbarSimUi.agents().find((a)=>a.name===${jsLiteral(m.paused)}).id)+'"]').focus()`);
+    await H.key('Return');
+    assert.ok(await until(`document.querySelector('#stage .unit .cb-toggle[aria-pressed="true"]')!==null`, 4000), `${w}: Enter on the door button closes the door`);
+    assert.ok(await until(`[...document.querySelectorAll('#stage .desk[data-id] .dsign')].some((e)=>e.dataset.sign==='shut')`, 4000), `${w}: the closed door shows Do not disturb (you closed it)`);
+    await H.clearToasts();
+    await rerender();
+    const ds = await desks();
+    assert.ok(ds.filter((d) => !d.helper).length >= 13, `${w}: the main desks are shown (${ds.length})`);
+    checkDesks(w, ds, seen);
     console.log('[017-signs]', w, ds.filter((d) => d.sign).map((d) => `${d.name}=${d.sign}${d.cut ? '(cut)' : ''}:${d.contrast}`).join(' '));
     assert.deepStrictEqual(ds.filter((d) => d.cut).map((d) => `${d.name} "${d.word}"`), [], `${w}: no sign word is cut with 15 agents`);
-    assert.deepStrictEqual([...seen].sort(), Object.keys(TABLE).sort(), `${w}: every sign is seen at least once`);
     const page = await js(`(${pageCheck.toString()})(false, 5)`);
     assert.deepStrictEqual(page.problems, [], `${w}: office layout rules`);
     /* FR-007: next to a long sign, a token count is dropped whole, never cut to a misleading "1" */
@@ -246,10 +255,25 @@ module.exports = async (ctx) => {
     assert.ok(await until(`document.querySelectorAll('#stage .dsign').length>=13`, 4000), `${w}: switch on: signs back`);
     console.log('[017-signs]', w, 'ok');
   }
+  /* ---- review on #631 (Paco): a coffee break that resumes by itself, from the app's real sequence (simbreak: Tomas hits a 5-hour
+     window, Rosa the monthly quota; startCoffee enters them as `waiting` with no `limit`): Do not disturb, not Waiting for you ---- */
+  {
+    await H.load({ w: 1440, h: 900, focus: true, query: { simbreak: '30' } });
+    assert.ok(await until(`window.__durbarSimUi.agents().some((a)=>!a.parent&&a.coffee&&!a.limit&&a.state==='waiting')`, 20000), 'break: an agent is on a coffee break that resumes by itself (state waiting, no limit)');
+    await until(walksDone, 8000);
+    await until(settled, 3000);
+    const ds = await desks();
+    checkDesks('break', ds, seen);
+    const br = ds.filter((d) => d.coffee && !d.limit);
+    assert.ok(br.length >= 1 && br.every((d) => d.state === 'waiting' && d.sign === 'dnd' && d.cabin && d.cabin.kind === 'closed'), 'break: shown as Do not disturb behind a closed door: ' + JSON.stringify(br.map((d) => [d.name, d.state, d.sign, d.cabin && d.cabin.kind])));
+    console.log('[017-signs] break:', br.map((d) => `${d.name}=${d.sign}`).join(' '));
+  }
   /* ---- FR-015..FR-017, spec 044 FR-110: a scheduled run for an agent behind a door you closed is held (not sent, not lost), and Send all
      sends it when you open the door. The simulator's one-off schedule (simschedfire) targets the first idle agent. ---- */
   {
     await H.load({ w: 1440, h: 900, focus: true, query: { simschedfire: '6' } });
+    await until(settled, 3000);
+    checkDesks('held', await desks(), seen); // the untouched office (Busy, among others)
     const sb = 'window.__durbarSimUi.bridge()';
     const target = await js(`${sb}.listSchedules().then((d)=>{const s=d.schedules.find((x)=>x.id==='sched-fire');return s&&s.target?s.target.session:null})`);
     assert.ok(target, 'the simulator has a one-off schedule for an agent');
@@ -285,5 +309,6 @@ module.exports = async (ctx) => {
     assert.ok(await until(`['working','thinking'].includes((window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)})||{}).state)`, 8000), 'the held run reached the agent');
     console.log('[017-signs] held run: held at the closed door, kept by Escape, sent by Send all');
   }
+  assert.deepStrictEqual([...seen].sort(), Object.keys(TABLE).sort(), 'every sign is seen at least once across the passes');
   console.log('[017-signs] all checks passed; shots in', OUT);
 };

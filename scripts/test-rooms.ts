@@ -33,8 +33,9 @@ console.log('room summary tests passed');
 const sg = (x: SignIn) => doorSign(x);
 const row = (x: SignIn) => { const r = sg(x); return [r.key, r.word, r.tone, r.door]; };
 assert.deepStrictEqual(row({ state: 'working' }), ['busy', 'Busy', 'working', 'closed']);
-assert.deepStrictEqual(row({ state: 'thinking' }), ['busy', 'Busy', 'thinking', 'closed'], 'thinking keeps its own colour');
-assert.deepStrictEqual(row({ state: 'working', failing: true }), ['busy', 'Busy', 'failing', 'closed'], 'failing tool calls: Busy in the failing colours');
+assert.deepStrictEqual(row({ state: 'thinking' }), ['thinking', 'Thinking', 'thinking', 'closed'], 'review on #631: thinking keeps its own word and colour');
+assert.deepStrictEqual(row({ state: 'working', failing: true }), ['failing', 'Failing', 'failing', 'closed'], 'review on #631: failing tool calls keep their own word (not colour only)');
+assert.deepStrictEqual(row({ state: 'thinking', failing: true, helpers: ['working'] }), ['failing', 'Failing', 'failing', 'closed'], 'failing wins over a meeting');
 assert.deepStrictEqual(row({ state: 'working', helpers: ['working'] }), ['meeting', 'In a meeting', 'working', 'closed']);
 assert.deepStrictEqual(row({ state: 'thinking', helpers: ['done', 'thinking'] }), ['meeting', 'In a meeting', 'thinking', 'closed']);
 assert.deepStrictEqual(row({ state: 'working', helpers: ['done', 'idle'] }), ['busy', 'Busy', 'working', 'closed'], 'finished helpers are no meeting');
@@ -44,7 +45,9 @@ assert.deepStrictEqual(row({ state: 'waiting', limit: true, coffee: true }), ['l
 assert.deepStrictEqual(row({ state: 'error' }), ['attention', 'Needs attention', 'error', 'open'], 'Q6: an error keeps the cabin open, so its trouble stays in sight');
 assert.deepStrictEqual(row({ state: 'error', paused: true }), ['attention', 'Needs attention', 'error', 'open'], 'an error wins over everything');
 assert.deepStrictEqual(row({ state: 'idle', paused: true }), ['dnd', 'Do not disturb', 'idle', 'closed'], 'paused');
-assert.deepStrictEqual(row({ state: 'working', coffee: true }), ['dnd', 'Do not disturb', 'idle', 'closed'], 'a coffee break that resumes by itself');
+/* review on #631: the app's real sequence: startCoffee sets coffee and the state `waiting`; a provider break has no `limit` */
+assert.deepStrictEqual(row({ state: 'waiting', coffee: true }), ['dnd', 'Do not disturb', 'idle', 'closed'], 'a coffee break that resumes by itself (entered as waiting) is Do not disturb');
+assert.deepStrictEqual(row({ state: 'waiting', coffee: true, userClosed: true, held: 1 }), ['shut', 'Do not disturb · 1 held', 'idle', 'closed'], 'a closed door wins over a break');
 assert.deepStrictEqual(row({ state: 'waiting', paused: true }), ['waiting', 'Waiting for you', 'waiting', 'closed'], 'a question still waits while paused');
 assert.deepStrictEqual(row({ state: 'idle', ended: true }), ['away', 'Away', 'idle', 'closed'], 'ended');
 assert.deepStrictEqual(row({ state: 'done', resting: true }), ['away', 'Away', 'idle', 'closed'], 'Q4: resting in the lounge');
@@ -55,12 +58,12 @@ assert.deepStrictEqual(row({}), ['available', 'Available', 'idle', 'open'], 'mis
 assert.deepStrictEqual(row(undefined as never), ['available', 'Available', 'idle', 'open'], 'undefined input never throws');
 assert.deepStrictEqual(row({ state: 'bogus' }), ['available', 'Available', 'idle', 'open'], 'unknown state');
 /* every sign has its own icon and word (colour is never the only cue, FR-005) */
-const all = [{ state: 'error' }, { state: 'waiting', limit: true }, { state: 'waiting' }, { state: 'idle', userClosed: true }, { state: 'idle', paused: true }, { state: 'idle', ended: true }, { state: 'working', helpers: ['working'] }, { state: 'working' }, { state: 'done' }, { state: 'idle' }].map(sg);
+const all = [{ state: 'error' }, { state: 'waiting', limit: true }, { state: 'waiting' }, { state: 'idle', userClosed: true }, { state: 'idle', paused: true }, { state: 'idle', ended: true }, { state: 'working', helpers: ['working'] }, { state: 'working', failing: true }, { state: 'thinking' }, { state: 'working' }, { state: 'done' }, { state: 'idle' }].map(sg);
 assert.deepStrictEqual(all.map((r) => r.key), SIGN_KEYS, 'SIGN_KEYS lists the signs in priority order');
 assert.strictEqual(new Set(all.map((r) => r.icon)).size, all.length, 'one icon per sign');
 assert.strictEqual(new Set(all.map((r) => r.word)).size, all.length, 'one word per sign');
 assert.strictEqual(new Set(all.map((r) => r.short)).size, all.length - 1, 'one short word per sign (both kinds of Do not disturb say DND; their icons differ)');
-assert.deepStrictEqual(all.map((r) => r.short), ['Alert', 'Limit', 'Waiting', 'DND', 'DND', 'Away', 'Meeting', 'Busy', 'Done', 'Available']);
+assert.deepStrictEqual(all.map((r) => r.short), ['Alert', 'Limit', 'Waiting', 'DND', 'DND', 'Away', 'Meeting', 'Failing', 'Thinking', 'Busy', 'Done', 'Available']);
 assert.ok(all.every((r) => r.short.length <= 9), 'short words fit the narrowest desks');
 assert.deepStrictEqual(all.filter((r) => r.door === 'open').map((r) => r.key), ['attention', 'done', 'available'], 'the cabin is open when done, free or in trouble; closed while busy, waiting, DND or away');
 assert.ok(Object.isFrozen(SIGN_KEYS), 'SIGN_KEYS cannot be changed by a caller');

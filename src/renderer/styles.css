@@ -1182,8 +1182,14 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .walker .wprop .w-wallet{position:absolute;left:3px;top:13px;width:16px;height:10px}
 .walker .wprop .still{animation:none;transform:rotate(-6deg)}
 @media (prefers-reduced-motion:reduce){.cb-fire .fl,.walker .wprop .w-arm{animation:none}}
-.cabin:not(.cb-waiting) .cb-sign{top:5%;bottom:auto} /* the sign on top of the door like a name plate, clear of the door button on the lower left */
+.cabin:not(.cb-waiting) .cb-sign{top:5%;bottom:auto;left:auto;right:4%;transform:none} /* the sign on the door's top right like a name plate: clear of the chat number (top left) and the door button (lower left) */
 .cb-waiting .cb-sign{bottom:auto;top:6%;left:auto;right:4%;transform:none}
+.cabin.cb-f:not(.cb-waiting) .cb-sign{top:auto;bottom:9%;left:50%;right:auto;transform:translateX(-50%)} /* a full desk: clear of its status badge (top right) */
+.cabin.cb-f.cb-waiting .cb-sign{top:auto;bottom:6%}
+/* review on #631: where the desk is narrow (card, mini, micro) the door's sign is its icon only, so it never runs under the chat number;
+   the word is on the desk's status pill or word right beside it (colour is still never the only cue) */
+.stage:is([data-d="card"],[data-d="mini"],[data-d="micro"]) .cb-sign .cb-w{display:none}
+.stage:is([data-d="card"],[data-d="mini"],[data-d="micro"]) .cb-sign{padding:0 3px;gap:0}
 .cb-open{position:absolute;inset:0;pointer-events:none}
 .cb-leaf-open{position:absolute;left:0;top:4%;bottom:0;width:11%;background:var(--door-leaf);border:1px solid var(--door-leaf-line);clip-path:polygon(0 0,100% 9%,100% 91%,0 100%)}
 .cb-open .cb-sign{left:auto;right:3px;top:3px;bottom:auto;transform:none}

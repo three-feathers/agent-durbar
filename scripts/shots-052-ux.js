@@ -44,9 +44,8 @@ module.exports = async (ctx) => {
     assert.ok(aa.n > 0 && aa.n === aa.allow, 'one Allow all icon per Allow all card: ' + JSON.stringify(aa));
     assert.ok(aa.inside, 'the icon stays inside its card');
     const sv = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Sven'));const p=d&&[...d.querySelectorAll('.pill,.stl')].find(x=>x.getClientRects().length);return p?{text:p.innerText.trim(),cls:p.className,title:d.getAttribute('title')||'',tip:p.getAttribute('title')||'',label:d.getAttribute('aria-label')||''}:null})()`);
-    /* spec 017 FR-006 (2026-10-23): with the meeting-room signs (on by default) the desk shows "Busy" in the failing colours; the plain
-       word "Failing" is in the sign's tooltip and the desk's accessible name */
-    assert.ok(sv && /st-failing/.test(sv.cls) && (/^Failing/.test(sv.text) || (/\bdsign\b/.test(sv.cls) && /^Busy/.test(sv.text) && /^Busy: Failing \(\d+ tool calls failed in a row\)/.test(sv.tip) && /, Failing:/.test(sv.label))), 'Sven reads Failing: ' + JSON.stringify(sv));
+    /* spec 017 (review on #631): the door sign keeps the word Failing, in the failing colours, with its own icon */
+    assert.ok(sv && /^Failing/.test(sv.text) && /st-failing/.test(sv.cls), 'Sven reads Failing: ' + JSON.stringify(sv));
     assert.ok(/Last activity (just now|\d+ min ago)/.test(sv.title), 'the card says when it last did something: ' + sv.title);
     // FR-006: room counts in words
     const dots = await js(`[...document.querySelectorAll('#stage .room-dots[role="img"]')].map(x=>x.getAttribute('aria-label'))`);
