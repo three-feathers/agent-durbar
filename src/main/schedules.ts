@@ -9,7 +9,7 @@ import { localTime, nextRuleRun, parseRule } from '../shared/schedrules';
 import type { CalendarRule } from '../shared/schedrules';
 import { LOOP_MAX_DELAY, LOOP_MAX_HOURS, LOOP_MAX_PASSES, LOOP_MIN_DELAY, clampPace, cleanReason, oneLine, parsePace } from '../shared/looppace';
 
-export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended';
+export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full';
 export type CapUnit = 'aiu' | 'usd';
 /** FR-014: one session instead of the folder's agent. `name` is display only. */
 export interface ScheduleTarget {
@@ -93,7 +93,7 @@ export const MAX_PROMPT = 2000;
 export const MIN_EVERY = 5;
 export const MAX_EVERY = 1440;
 const MIN = 60_000;
-const OUTCOMES: Outcome[] = ['sent', 'skipped-busy', 'skipped-paused', 'skipped-cap', 'skipped-ended', 'missed', 'failed', 'held', 'ended'];
+const OUTCOMES: Outcome[] = ['sent', 'skipped-busy', 'skipped-paused', 'skipped-cap', 'skipped-ended', 'missed', 'failed', 'held', 'ended', 'skipped-door-full'];
 const END_REASONS: LoopEndReason[] = ['user', 'agent', 'session', 'limit', 'passes', 'time', 'no-pace', 'errors', 'app-closed'];
 const LASTASK_SOURCES = ['agent', 'default', 'clamped'];
 const ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -337,9 +337,10 @@ export interface SchedulerDeps {
   changed?(doc: SchedulesDoc): void;
   /**
    * Spec 044 FR-110 (owner 2026-10-23): the run's agent has its door closed by the user (Do not disturb). Main queues the run there and
-   * answers true: the run is then held (not sent, not dropped). False when the door is open (or there is no such agent).
+   * answers true: the run is then held (not sent, not dropped). 'full' (review on #631): the door is closed but its queue is full, so
+   * the run is not kept and its outcome says so (never sent either). False when the door is open (or there is no such agent).
    */
-  hold?(s: Schedule, now: number): boolean;
+  hold?(s: Schedule, now: number): boolean | 'full';
 }
 
 export class Scheduler {
@@ -661,10 +662,11 @@ export class Scheduler {
           continue;
         }
         let outcome: Outcome;
+        let held: boolean | 'full' = false;
         if (this.doc.pausedAll) outcome = 'skipped-paused';
         else if (s.target && !this.deps.hasSession(s.target.session)) outcome = 'skipped-ended';
         else if (s.cap && (s.spent ?? 0) >= s.cap.amount) outcome = 'skipped-cap';
-        else if (this.deps.hold?.(s, now)) outcome = 'held'; // FR-110: queued at a door closed by the user, before busy (a held run is never lost)
+        else if ((held = this.deps.hold?.(s, now) ?? false)) outcome = held === 'full' ? 'skipped-door-full' : 'held'; // FR-110: queued at a door closed by the user, before busy
         else if (this.deps.isBusy(s.folder, s.target?.session)) outcome = 'skipped-busy';
         else {
           const r = await this.deps.send(s.folder, s.prompt, s).catch(() => false);
@@ -712,6 +714,33 @@ export class Scheduler {
       this.commit();
     }
     return r ? { ok: true } : { ok: false, error: 'Could not send it.' };
+  }
+
+  /**
+   * Spec 044 FR-111 (review on #631): Send all at an opened door releases each held run through the scheduler, never around it: Pause
+   * all, the schedule's pause, its session, its own limit and a busy agent (coffee breaks count, scheduleBusy) are checked as for a
+   * scheduled run; it goes out through the same `send` (credited to the schedule, `schedule:ran`), and `last` records it.
+   * 'gone': the schedule was deleted, so the run is dropped by the caller (the user deleted the schedule).
+   */
+  async releaseHeld(scheduleId: string | undefined, prompt: string): Promise<'sent' | 'busy' | 'paused-all' | 'paused' | 'cap' | 'ended' | 'gone' | 'failed'> {
+    const s = typeof scheduleId === 'string' ? this.doc.schedules.find((x) => x.id === scheduleId) : undefined;
+    if (!s) return 'gone';
+    if (this.doc.pausedAll) return 'paused-all';
+    if (s.paused) return 'paused';
+    if (s.target && !this.deps.hasSession(s.target.session)) return 'ended';
+    if (s.cap && (s.spent ?? 0) >= s.cap.amount) return 'cap';
+    if (this.running || this.deps.isBusy(s.folder, s.target?.session)) return 'busy';
+    this.running = true;
+    let r: boolean | string = false;
+    try {
+      r = await this.deps.send(s.folder, prompt, s).catch(() => false);
+      if (typeof r === 'string' && r) this.attrib.set(r, s.id);
+      s.last = { at: this.deps.now(), outcome: r ? 'sent' : 'failed' };
+    } finally {
+      this.running = false;
+      this.commit();
+    }
+    return r ? 'sent' : 'failed';
   }
 
   /** Adds or replaces a schedule (validated); returns it, or an error. */

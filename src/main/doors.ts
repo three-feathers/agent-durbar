@@ -6,6 +6,9 @@
  * that agent is queued here in order, never sent and never dropped; opening the door offers Send all (one by one, in order) or Discard.
  */
 import * as fs from 'fs';
+import { MAX_PROMPT } from './schedules';
+
+export { MAX_PROMPT };
 
 /** One prompt held at a closed door. */
 export interface HeldRun {
@@ -29,7 +32,9 @@ export interface DoorsDoc {
 /** Limits that keep a damaged or hostile file from growing without end. */
 export const MAX_DOORS = 500;
 export const MAX_HELD = 200;
-export const MAX_PROMPT = 100_000;
+/** Review on #631: all doors together, and the file (read only below this size; a larger file is not parsed, it is kept aside). */
+export const MAX_TOTAL_HELD = 1000;
+export const MAX_FILE = 4 * 1024 * 1024;
 
 const okKey = (k: unknown): k is string => typeof k === 'string' && k.length > 0 && k.length <= 300 && k !== '__proto__' && k !== 'constructor' && k !== 'prototype';
 
@@ -69,18 +74,41 @@ export function parseDoors(text: string): DoorsDoc {
   return { doors };
 }
 
+/**
+ * Review on #631: a file that is too large or not JSON is never parsed blindly, and it is kept aside (`<file>.bad`) before anything
+ * is written over it, so held runs in a damaged file are not lost silently. A missing file is an empty store.
+ */
 export function loadDoors(file: string): DoorsDoc {
+  let text: string;
   try {
-    return parseDoors(fs.readFileSync(file, 'utf8'));
-  } catch {
+    if (fs.statSync(file).size > MAX_FILE) throw new Error('too large');
+    text = fs.readFileSync(file, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') keepAside(file);
     return { doors: Object.create(null) };
+  }
+  try {
+    JSON.parse(text);
+  } catch {
+    keepAside(file);
+  }
+  return parseDoors(text);
+}
+function keepAside(file: string): void {
+  try {
+    fs.renameSync(file, `${file}.bad`);
+  } catch {
+    /* nothing to keep */
   }
 }
 
+/** Atomic (a temp file, then a rename), so a crash mid-write never leaves a broken file; mode 0600 (POSIX) is set when it is created. */
 export function saveDoors(file: string, doc: DoorsDoc): void {
   const out: Record<string, { closed: boolean; held: HeldRun[] }> = {};
   for (const [k, d] of Object.entries(doc.doors)) if (d.closed || d.held.length) out[k] = { closed: d.closed, held: d.held };
-  fs.writeFileSync(file, JSON.stringify({ doors: out }, null, 2), { mode: 0o600 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ doors: out }, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, file);
 }
 
 export interface DoorView {
@@ -121,15 +149,46 @@ export class Doors {
     this.persist(this.doc);
     return this.view(key);
   }
-  /** FR-016: queues a run at a closed door, in order. False (nothing queued) when the door is open or the queue is full. */
-  hold(key: string, run: { at: number; prompt: string; scheduleId?: string }): boolean {
+  /**
+   * FR-016: queues a run at a closed door, in order: 'held'. 'full' when the door's queue (MAX_HELD) or all doors together
+   * (MAX_TOTAL_HELD) are full, or the prompt is not one a schedule can have: nothing is queued and the caller must say so.
+   * False when the door is open.
+   */
+  hold(key: string, run: { at: number; prompt: string; scheduleId?: string }): 'held' | 'full' | false {
     const d = this.entry(key);
-    if (!d || !d.closed || d.held.length >= MAX_HELD) return false;
+    if (!d || !d.closed) return false;
+    const total = Object.values(this.doc.doors).reduce((n, x) => n + x.held.length, 0);
+    if (d.held.length >= MAX_HELD || total >= MAX_TOTAL_HELD) return 'full';
     const r = cleanRun({ ...run, id: this.newId() });
-    if (!r) return false;
+    if (!r) return 'full';
     d.held.push(r);
     this.persist(this.doc);
+    return 'held';
+  }
+  /** The first held run of a door (not taken out). */
+  peek(key: string): HeldRun | undefined {
+    const r = this.entry(key)?.held[0];
+    return r ? { ...r } : undefined;
+  }
+  /** Takes one run out of the queue by id (after it went out, or when its schedule is gone). */
+  drop(key: string, id: string): boolean {
+    const d = this.entry(key);
+    if (!d) return false;
+    const i = d.held.findIndex((r) => r.id === id);
+    if (i < 0) return false;
+    d.held.splice(i, 1);
+    if (!d.held.length) delete d.releasing;
+    this.tidy(key);
+    this.persist(this.doc);
     return true;
+  }
+  /** Stops a Send all (the runs stay held). */
+  stopRelease(key: string): void {
+    const d = this.entry(key);
+    if (d && d.releasing) {
+      delete d.releasing;
+      this.persist(this.doc);
+    }
   }
   held(key: string): HeldRun[] {
     return (this.entry(key)?.held ?? []).map((r) => ({ ...r }));

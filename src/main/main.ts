@@ -506,9 +506,10 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
   hold: (s, now) => {
     const a = scheduleAgent(s);
     if (!a || !doors?.isClosed(doorKey(a))) return false;
-    if (!doors.hold(doorKey(a), { at: now, prompt: s.prompt, scheduleId: s.id })) console.warn('[doors] queue full, a scheduled run was not kept');
+    const r = doors.hold(doorKey(a), { at: now, prompt: s.prompt, scheduleId: s.id });
+    if (r === 'full') doorsIpc.full(a); // review on #631: never dropped silently; the outcome says it too
     doorsIpc.changed();
-    return true;
+    return r === 'held' ? true : 'full';
   },
   send: async (folder, prompt, s) => {
     const a = scheduleAgent(s);
@@ -664,23 +665,8 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
 const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity, doorClosed: (id) => { const a = agents.get(id); return !!a && !!doors?.isClosed(doorKey(a)); } });
 /* spec 017 FR-017: a held run goes out through the same path as a scheduled one (the window shows it as the user's message) */
-const sendHeld = async (a: AgentInfo, run: HeldRun): Promise<boolean> => {
-  const ad = router.forAgent(a.id);
-  if (!ad) return false;
-  agentState.ensure(a.id, a.lazy);
-  agentState.noteSend(a.id);
-  try {
-    await ensureLive(a);
-    toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: run.prompt });
-    await ad.send(a.id, { text: run.prompt });
-    noteLastSession(a);
-    return true;
-  } catch {
-    agentState.noteSendFailed(a.id);
-    return false;
-  }
-};
-const doorsIpc = registerDoorsIpc({ agents, router, doors: () => doors, keyOf: doorKey, remoteOps, toRenderer, busy: busyStatus, sendHeld });
+/* spec 044 FR-111 (review on #631): Send all goes through the scheduler (Pause all, the schedule, its limit, busy incl. coffee breaks, credited) */
+const doorsIpc = registerDoorsIpc({ agents, router, doors: () => doors, keyOf: doorKey, remoteOps, toRenderer, release: (run: HeldRun) => (scheduler ? scheduler.releaseHeld(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)) });
 registerAppIpc({ getSinceAway: () => sinceAway, clearSinceAway: () => { sinceAway = null; }, getWin: () => win });
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();

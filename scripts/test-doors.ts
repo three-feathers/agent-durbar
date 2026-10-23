@@ -3,7 +3,10 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Doors, loadDoors, parseDoors, saveDoors, MAX_HELD } from '../src/main/doors';
+import { Doors, loadDoors, parseDoors, saveDoors, MAX_HELD, MAX_FILE, MAX_PROMPT, MAX_TOTAL_HELD } from '../src/main/doors';
+import { MAX_PROMPT as SCHED_MAX_PROMPT } from '../src/main/schedules';
+import { createDoorOps, REMOTE_OFF_REASON } from '../src/main/doorops';
+import type { ReleaseResult } from '../src/main/doorops';
 import { harness } from './test-schedules';
 import type { Schedule } from '../src/main/schedules';
 
@@ -64,14 +67,37 @@ async function main(): Promise<void> {
   // ---- a full queue refuses more (and says so) ----
   d2.setClosed('full', true);
   for (let i = 0; i < MAX_HELD; i++) assert.ok(d2.hold('full', { at: i, prompt: 'p' + i }));
-  assert.strictEqual(d2.hold('full', { at: 0, prompt: 'over' }), false, 'the queue has a limit');
+  assert.strictEqual(d2.hold('full', { at: 0, prompt: 'over' }), 'full', 'review on #631: a full queue says so (the run is not kept, never silently)');
+  assert.strictEqual(d2.view('full').held, MAX_HELD);
+
+  // ---- review on #631: limits from the schedules, the total across doors, atomic writes, a damaged or huge file kept aside ----
+  assert.strictEqual(MAX_PROMPT, SCHED_MAX_PROMPT, 'a held prompt has the limit of a scheduled prompt');
+  d2.setClosed('long', true);
+  assert.strictEqual(d2.hold('long', { at: 1, prompt: 'x'.repeat(MAX_PROMPT + 1) }), 'full', 'a prompt longer than a schedule can have is not kept');
+  assert.strictEqual(parseDoors(JSON.stringify({ doors: { k: { closed: true, held: [{ id: 'a', at: 1, prompt: 'y'.repeat(MAX_PROMPT + 1) }] } } })).doors.k.held.length, 0, 'or loaded');
+  const many = new Doors({ doors: {} }, () => undefined, () => `m${ids++}`);
+  for (let k = 0; k * MAX_HELD < MAX_TOTAL_HELD; k++) { many.setClosed('k' + k, true); for (let i = 0; i < MAX_HELD; i++) many.hold('k' + k, { at: i, prompt: 'p' }); }
+  many.setClosed('extra', true);
+  assert.strictEqual(many.hold('extra', { at: 0, prompt: 'p' }), 'full', 'all doors together have a limit');
+  const left = fs.readdirSync(dir).filter((f) => f.endsWith('.tmp'));
+  assert.deepStrictEqual(left, [], 'saves leave no temp file (written to a temp file, then renamed)');
+  const bad = path.join(dir, 'bad.json');
+  fs.writeFileSync(bad, '{"doors": {"s1": {"closed": true, "held": [');
+  assert.deepStrictEqual(Object.keys(loadDoors(bad).doors), [], 'a damaged file opens nothing');
+  assert.ok(fs.existsSync(bad + '.bad') && !fs.existsSync(bad), 'and is kept aside, not overwritten');
+  const huge = path.join(dir, 'huge.json');
+  fs.writeFileSync(huge, JSON.stringify({ doors: { s1: { closed: true, held: [] } }, pad: 'z'.repeat(MAX_FILE) }));
+  assert.deepStrictEqual(Object.keys(loadDoors(huge).doors), [], 'a file over the size limit is not parsed');
+  assert.ok(fs.existsSync(huge + '.bad'), 'and is kept aside');
+  assert.deepStrictEqual(Object.keys(loadDoors(path.join(dir, 'missing.json')).doors), [], 'a missing file is an empty store');
+  assert.ok(!fs.existsSync(path.join(dir, 'missing.json.bad')), 'nothing to keep aside');
 
   // ---- the scheduler (spec 044 FR-110): a run for an agent behind a closed door is held, not sent and not lost ----
   const doors = new Doors({ doors: {} }, () => undefined, () => `r${ids++}`);
   const doc = { pausedAll: false, schedules: [] as Schedule[] };
   // the agent of a schedule: its target session, else the folder's agent ("folder-agent" in the harness)
   const keyOf = (s: Schedule) => s.target?.session ?? 'folder-agent';
-  const h = harness(doc, undefined, { hold: (s, now) => doors.isClosed(keyOf(s)) && doors.hold(keyOf(s), { at: now, prompt: s.prompt, scheduleId: s.id }) });
+  const h = harness(doc, undefined, { hold: (s, now) => { if (!doors.isClosed(keyOf(s))) return false; const r = doors.hold(keyOf(s), { at: now, prompt: s.prompt, scheduleId: s.id }); return r === 'held' ? true : 'full'; } });
   doors.setClosed('s1', true);
   doc.schedules.push({ id: 'once-1', folder: '/w', prompt: 'to s1 once', at: h.now + MIN, target: { session: 's1' } } as Schedule);
   doc.schedules.push({ id: 'rec-1', folder: '/w', prompt: 'to s1 every 10', every: 10, next: h.now + MIN, target: { session: 's1' } } as Schedule);
@@ -101,6 +127,85 @@ async function main(): Promise<void> {
   await h.advance(10 * MIN);
   assert.deepStrictEqual(h.sent, ['/w:to s2', '/w:to s1 every 10'], 'an open door gets its run again');
   assert.strictEqual(doors.view('s1').held, 3);
+  // ---- review on #631: a run that cannot be kept at a full door has its own outcome and is not sent ----
+  {
+    const doc3 = { pausedAll: false, schedules: [] as Schedule[] };
+    const h3 = harness(doc3, undefined, { hold: () => 'full' });
+    doc3.schedules.push({ id: 'f1', folder: '/w', prompt: 'to s1', at: h3.now + MIN, target: { session: 's1' } } as Schedule);
+    await h3.advance(MIN);
+    await h3.sch.tick();
+    assert.strictEqual((doc3.schedules[0] as Schedule).last?.outcome, 'skipped-door-full', 'a distinct outcome');
+    assert.deepStrictEqual(h3.sent, [], 'and not sent');
+  }
+  // ---- spec 044 FR-111 (review on #631): Send all goes through the scheduler: Pause all, the schedule, its limit, busy; credited, recorded ----
+  {
+    const doc2 = { pausedAll: false, schedules: [] as Schedule[] };
+    const h2 = harness(doc2);
+    doc2.schedules.push({ id: 'r1', folder: '/w', prompt: 'p', every: 30, next: h2.now + 99 * MIN, target: { session: 's1' } } as Schedule);
+    const by = (id: string) => doc2.schedules.find((x) => x.id === id) as Schedule;
+    h2.busy.add('s1');
+    assert.strictEqual(await h2.sch.releaseHeld('r1', 'held prompt'), 'busy', 'a busy agent: not now');
+    assert.deepStrictEqual(h2.sent, [], 'nothing sent to a busy agent (the busy gate)');
+    h2.busy.delete('s1');
+    doc2.pausedAll = true;
+    assert.strictEqual(await h2.sch.releaseHeld('r1', 'held prompt'), 'paused-all');
+    doc2.pausedAll = false;
+    by('r1').paused = true;
+    assert.strictEqual(await h2.sch.releaseHeld('r1', 'held prompt'), 'paused');
+    by('r1').paused = false;
+    by('r1').cap = { amount: 1, unit: 'aiu' } as never;
+    by('r1').spent = 1;
+    assert.strictEqual(await h2.sch.releaseHeld('r1', 'held prompt'), 'cap', "the schedule's own limit stops it");
+    delete by('r1').cap; delete by('r1').spent;
+    assert.strictEqual(await h2.sch.releaseHeld('gone-id', 'held prompt'), 'gone', 'a deleted schedule');
+    assert.deepStrictEqual(h2.sent, [], 'none of those sent anything');
+    assert.strictEqual(await h2.sch.releaseHeld('r1', 'held prompt'), 'sent');
+    assert.deepStrictEqual(h2.sent, ['/w:held prompt'], 'sent through the schedule send path');
+    assert.strictEqual(by('r1').last?.outcome, 'sent', 'and recorded on the schedule');
+  }
+
+  // ---- doorops (review on #631): remote off on close (and the window told), honest failure, Send all one by one ----
+  {
+    const dd = new Doors({ doors: {} }, () => undefined, () => `o${ids++}`);
+    const events: string[] = [], stops: string[] = [];
+    let remoteOn = true, offOk = true, results: ReleaseResult[] = [];
+    const released: string[] = [];
+    const ops = createDoorOps({
+      doors: () => dd,
+      keyOf: (id) => (id.startsWith('a') ? 'key-' + id : undefined),
+      remote: { has: () => remoteOn, setRemote: async (_id, on) => { if (!on && offOk) remoteOn = false; return offOk ? { ok: true } : { ok: false, error: 'GitHub said no' }; } },
+      remoteOff: (id, reason) => events.push(id + ':' + reason),
+      release: async (run) => { const r = results.shift() ?? 'sent'; if (r === 'sent') released.push(run.prompt); return r; },
+      changed: () => undefined,
+      stopped: (id, why) => stops.push(id + ':' + why),
+    });
+    offOk = false;
+    const f = await ops.setDoor('a1', true);
+    assert.ok(!f.ok && /stays open: GitHub said no/.test(f.ok ? '' : f.error), 'remote control could not be turned off: the door stays open and says why');
+    assert.ok(!dd.isClosed('key-a1') && events.length === 0, 'not closed, no remote-off event');
+    offOk = true;
+    const c = await ops.setDoor('a1', true);
+    assert.deepStrictEqual(c, { ok: true, closed: true, held: 0, remoteOff: true }, 'closed, remote control off');
+    assert.deepStrictEqual(events, ['a1:' + REMOTE_OFF_REASON], 'the window is told remote control went off (agents:remoteOff)');
+    assert.deepStrictEqual(await ops.setDoor('zz', true), { ok: false, error: 'invalid request' }, 'an unknown agent');
+    for (const p of ['one', 'two', 'three', 'four']) dd.hold('key-a1', { at: 1, prompt: p, scheduleId: 's' });
+    assert.deepStrictEqual(ops.held('a1').map((x) => x.prompt), ['one', 'two', 'three', 'four']);
+    assert.deepStrictEqual(await ops.release('a1', 'send'), { ok: false, error: 'Open the door first.' });
+    await ops.setDoor('a1', false);
+    results = ['busy'];
+    await ops.release('a1', 'send');
+    assert.deepStrictEqual([released, dd.view('key-a1').held, dd.releasing('key-a1')], [[], 4, true], 'busy: nothing sent, nothing dropped, still releasing');
+    results = ['sent'];
+    await ops.pump('a1');
+    assert.deepStrictEqual([released, dd.view('key-a1').held], [['one'], 3], 'the agent is free: the first goes out, one at a time');
+    results = ['gone', 'sent'];
+    await ops.pump('a1');
+    assert.deepStrictEqual([released, dd.view('key-a1').held], [['one', 'three'], 1], "a deleted schedule's run is dropped, the next one goes");
+    results = ['paused-all'];
+    await ops.pump('a1');
+    assert.deepStrictEqual([released, dd.view('key-a1').held, dd.releasing('key-a1'), stops], [['one', 'three'], 1, false, ['a1:paused-all']], 'Pause all: Send all stops, the run stays held and the window is told');
+    assert.deepStrictEqual(await ops.release('a1', 'discard'), { ok: true, discarded: 1 });
+  }
   console.log('doors tests passed');
 }
 

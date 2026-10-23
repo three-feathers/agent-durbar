@@ -112,7 +112,7 @@ for (const f of ipcFiles) {
 const FROM_APP = [
   'activity:clear', 'activity:export', 'activity:list',
   'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:mcpCancelSignIn', 'agents:mcpOpenSignIn', 'agents:mcpSignIn', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:setMode', 'agents:setRemote',
-  'app:dismissSinceAway', 'app:sinceAway', 'doors:list', 'doors:release', 'doors:set',
+  'app:dismissSinceAway', 'app:sinceAway', 'doors:held', 'doors:list', 'doors:release', 'doors:set',
   'harness:accounts', 'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run',
   'profiles:create', 'profiles:delete', 'profiles:generate', 'profiles:save', // spec 043 FR-011, FR-040: writes to (or deletes) profile files
   'schedules:remove', 'schedules:runNow', 'schedules:save',
