@@ -175,3 +175,18 @@ The walking figure in the lobby, the resting figure in the lounge, the chat head
 ## Changes
 
 (none yet)
+
+## Owner answers (Paco, 2026-10-23)
+
+All eight questions were answered with the recommended option:
+- **Q1** Art format: **(b′) one SVG source file per character, compiled at build** into scene-kit parts.
+- **Q2** Assignment: **random among the characters least used in the office**.
+- **Q3** Storage: **this window's `localStorage`, like the chat numbers** (`durbar.crew`, at most 500 entries).
+- **Q4** Helpers: **their own random character, not stored**.
+- **Q5** User and AI themes: **may use the `crew` kit; a theme's headwear hides the character's own headwear**.
+- **Q6** Serious mode: **characters stay** (still, as Serious mode already removes motion and mood extras).
+- **Q7** Sunglasses and goggles: **see-through lenses, eyes visible**.
+- **Q8** Phase 1: **punk, mad scientist, gamer, hooded hacker**; the other 8 in Phase 2.
+
+A hand-drawn sketch of six characters in this style (punk, mad scientist, gamer, hooded hacker, sunglasses, nerd glasses) was shown to the owner on 2026-10-23; it is a sketch, not the final art.
+
