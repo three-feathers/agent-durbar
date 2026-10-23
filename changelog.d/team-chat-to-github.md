@@ -1,1 +1,0 @@
-- **Team rule: chat feedback goes on GitHub too** (owner decision 2026-10-23): feedback, review notes, design advice or owner decisions given in the team chat about an issue or PR are also posted as a comment on it. Process docs only (AGENTS.md, docs/collaboration.md); no code.
