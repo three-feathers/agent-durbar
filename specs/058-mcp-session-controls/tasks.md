@@ -412,19 +412,22 @@ shared parts; PR B = Codex (Q23 A).
   `config.mcp_servers` (switched-off servers and tools included) as before, sends no prompt, waits for a running turn, and End session
   drops it; mutation-checked)
   [FR-177, FR-178, FR-181, SC-176]
-- [ ] T153 Renderer: the row's note from `signInNote` (replaces the hard-coded sentence at `src/renderer/screens.js:1113`); the
+- [ ] T153 (split: T153a done in PR A, T153b open for PR B) Renderer: the row's note from `signInNote` (replaces the hard-coded sentence at `src/renderer/screens.js:1113`); the
   `signInEnd` states and toasts; Claude's "If you finished in your browser, press Restart on this row." after a mark-only entry expires;
   live region; no new IPC (PR A: Claude parts and the note; PR B: Codex states) [FR-176, FR-182]
-  PR A part [IMPLEMENTED] 2026-10-23: the note from `signInNote`, Restart kept with `signInRestart`, the time-limit line, the dialog open asks `agents:mcp(id, true)`; the `signInEnd` states wait for PR B
-- [ ] T154 Simulator and screenshots: `simmcpauth=1|manual|codexfail` for the Claude and Codex sim kinds in `src/renderer/sim.ts`;
+  - [x] T153a (PR A, Claude Code) [IMPLEMENTED] 2026-10-23: the note from `signInNote`, Restart kept with `signInRestart`, the time-limit line, the dialog open asks `agents:mcp(id, true)`
+  - [ ] T153b (PR B, Codex): the `signInEnd` states and toasts (FR-182)
+- [ ] T154 (split: T154a done in PR A, T154b open for PR B) Simulator and screenshots: `simmcpauth=1|manual|codexfail` for the Claude and Codex sim kinds in `src/renderer/sim.ts`;
   `scripts/shots-058-mcp-signin.js` replaces its "Claude and Codex keep today's behaviour" block with their sign-in checks;
   `docs/screenshots/058-mcp-signin-{claude,codex}-*-{1440x900,1280x800}.png` [FR-183, SC-175]
-  PR A part [IMPLEMENTED] 2026-10-23: the Claude sim kind (`simmcpauth=1|manual`, `simkinds=mixed`), the driver's Claude checks, `058-mcp-signin-claude-{row,steps,confirm,manual}-*.png`; Codex in PR B
-- [ ] T155 Docs: README *MCP servers* (Sign in for all three apps, the terminal steps, "not checked on a real account yet" for Claude
+  - [x] T154a (PR A, Claude Code) [IMPLEMENTED] 2026-10-23: the Claude sim kind (`simmcpauth=1|manual`, `simkinds=mixed`), the driver's Claude checks, `058-mcp-signin-claude-{row,steps,confirm,manual}-*.png`
+  - [ ] T154b (PR B, Codex): `simmcpauth=codexfail`, the Codex sim kind, the driver's Codex checks and `058-mcp-signin-codex-*` screenshots
+- [ ] T155 (split: T155a done in PR A, T155b open for PR B) Docs: README *MCP servers* (Sign in for all three apps, the terminal steps, "not checked on a real account yet" for Claude
   Code and Codex; a *Known limits* line: "Without a system keyring (common on Linux), Claude Code and Codex keep an MCP sign-in in a
   plain `.credentials.json` file in their own settings folder; Agent Durbar does not read or change it."), `changelog.d/<branch>.md`, `docs/agent-notes.md` entry (Claude's undocumented `mcp_authenticate`; `claude mcp login`
   needs a TTY; the token keys of both apps; Codex's cancel does not reach MCP logins), `[IMPLEMENTED]` tags in FR-175..FR-183
-  PR A part [IMPLEMENTED] 2026-10-23: README (Claude Code Sign in, Known limits incl. the plain `.credentials.json` and "read from 2.1.304 only"), `changelog.d/058-signin-claude.md`, the agent-notes entry, the FR tags
+  - [x] T155a (PR A, Claude Code) [IMPLEMENTED] 2026-10-23: README (Claude Code Sign in, Known limits incl. the plain `.credentials.json` and "read from 2.1.304 only"), `changelog.d/058-signin-claude.md`, the agent-notes entry, the FR tags
+  - [ ] T155b (PR B, Codex): the README and changelog lines for Codex, the Codex FR tags
 - [x] T157 (PR A) FR-185: `serverUrlOf` per app (Copilot: extras, Copilot CLI list; Claude Code: extras, `globalFor`; Codex: extras,
   its `config.toml` entry's `url`; no match: no line); tests in `scripts/test-mcp-signin.ts`: a Claude and a Codex agent with a
   same-named Copilot CLI entry on another site show no line; Copilot unchanged; mutation: the old fallback fails the test [FR-185]

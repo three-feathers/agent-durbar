@@ -467,7 +467,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   - a **failed MCP tool call** (the tool event names its `mcpServer`) whose text FR-061 classifies as an MCP OAuth challenge. Copilot
     can keep reporting such a server as `connected` while its cached tools fail (the issue's case), so the tool failure is the signal.
   The derived state is replaced by the next status the runtime reports for that server (for example `connected` after a sign-in).
-  `[IMPLEMENTED]` Copilot (T094) 2026-10-21: `src/adapters/map.ts` (`tool.execution_complete`). `test:` `scripts/test-events.ts`. `[IMPLEMENTED]` Claude (T096) `src/adapters/claude.ts` (`mcpAuthSeen`, `withAuthSeen`): the mark ends with the CLI's own fresh report, i.e. the `mcp` event mapped from `system/init`, and with `setMcpEnabled` for that server. `read:` the CLI sends `init` at the start of each turn in stream-json input as far as the code shows (spec 012's research says "one per session start", docs; `[KNOWN GAP]` not checked on a real run), so the mark may last only until the next message even if the CLI still says `connected`; that is the intended "next status the runtime reports replaces it". The challenge shows at once from the last list the session emitted (`lastMcp`), before `mcp_status` answers, so a slow or timed-out request still shows Needs sign-in (as Codex, #481). `test:` `scripts/test-claude-adapter.ts` (both clears and the immediate emit with `mcp_status` held, mutation-checked). `[KNOWN GAP]` the reconnect path of #473 (`mcp_reconnect`) is not on this branch: whichever PR merges second must also `delete` the name from `mcpAuthSeen` there and test it.
+  `[IMPLEMENTED]` Copilot (T094) 2026-10-21: `src/adapters/map.ts` (`tool.execution_complete`). `test:` `scripts/test-events.ts`. `[IMPLEMENTED]` Claude (T096) `src/adapters/claude.ts` (`mcpAuthSeen`, `withAuthSeen`): the mark ends with the CLI's own fresh report, i.e. the `mcp` event mapped from `system/init`, and with `setMcpEnabled` for that server. `read:` the CLI sends `init` at the start of each turn in stream-json input as far as the code shows (spec 012's research says "one per session start", docs; `[KNOWN GAP]` not checked on a real run), so the mark may last only until the next message even if the CLI still says `connected`; that is the intended "next status the runtime reports replaces it". The challenge shows at once from the last list the session emitted (`lastMcp`), before `mcp_status` answers, so a slow or timed-out request still shows Needs sign-in (as Codex, #481). `test:` `scripts/test-claude-adapter.ts` (both clears and the immediate emit with `mcp_status` held, mutation-checked). The reconnect path of #473 (`mcp_reconnect`) also ends the mark: `[IMPLEMENTED]` 2026-10-23 (spec 058 PR A, FR-176): `restartMcpServer` deletes the name from `mcpAuthSeen` and emits through `withAuthSeen`; `test:` `scripts/test-claude-adapter.ts` ("Restart picks up a sign-in finished elsewhere", mutation-checked).
   `[IMPLEMENTED]` Codex (T095, T023) 2026-10-21: the list (`authStatus: notLoggedIn` or `runtimeStatus: authenticationRequired`; list items have no `failureReason`), the startup notification (`failureReason`), and a failed `mcpToolCall` with challenge text (`mcpAuth`): the server is marked `needs-auth` + `errorClass: 'auth'` at once, even when the list says connected, kept through the re-read (one at a time) until the runtime's next status for it or until the server is switched off and on (no reconnect path exists in `codex.ts`). `test:` `scripts/test-codex-adapter.ts`, `scripts/test-codex-map.ts`. `read:` codex-cli 0.163.0 `codex app-server generate-ts` (checked by the PR reviewer; not installed on the author's machine): `v2/McpServerStatus.ts` has `runtimeStatus`, `authStatus`, `toolsError`, `httpOrigin`, `pluginId` and no `failureReason`; `v2/McpServerStatusUpdatedNotification.ts` has `failureReason: "reauthenticationRequired" | null`. Copilot (T094) is built (#480); Claude (T096) is built (#482).
 - **FR-061** **One pure classifier**, `isMcpAuthChallenge(text)` in `src/adapters/mcpauth.ts` (vendor phrases stay in adapters,
   constitution II): the issue's text (`MCP OAuth challenge required`), the Copilot runtime's `requires authentication. Run \`/mcp auth`
@@ -619,6 +619,20 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
 - **Steps without the in-app call (FR-180)**: a folder extra's line "use Sign in here" shows only where Sign in is offered.
 - **The SDK transport** keeps `mcpSignInSteps` and `mcpSignInNote` and drops `mcpSignIn`, `mcpSignInRestart`, `startMcpSignIn` and
   `refreshMcpStatus`.
+- **Review round on #635 (security review and Vikram's review)**:
+  - FR-186's `authServerMetadataUrl` must start with exactly `https://` (case-sensitive), hold no whitespace or control character, carry
+    no user name or password and parse with a host (the URL parser alone accepted `https:evil`, `HTTPS://`, `https:/x`, a leading space,
+    an embedded newline and userinfo; the CLI would then reject the whole `--mcp-config`).
+  - `redact()` itself (so the `DURBAR_LOG` sink, which gets the CLI's stderr at exit) masks the value after `?`, `&`, `#`, `;` (or their
+    percent-encoded forms) and `code`, `state`, `code_verifier`, `code_challenge`, `id_token`, `access_token`, `refresh_token`,
+    `client_secret` (any case), one bounded, linear pattern.
+  - **Time limits**: the adapter's clock defaults to `performance.now()` (monotonic). In `signInTtlMs` a negative or non-finite wait
+    counts as the full 30 s request timeout (260 s), never as no wait. In `McpSignInStore.begin` a **missing** `ttlMs` keeps 10 minutes,
+    but a **present and invalid** one (0, negative, NaN, Infinity, not a number) gets the 30-second minimum.
+  - Codex's addresses for FR-185 come from the values-free Settings view (`GlobalLists.state`, `appServerUrls`), not from session specs
+    with env and header values.
+  - A real `ClaudeAdapter` on the fake transport goes through `mcpSignInOp`: `http:`, loopback, private and one-label hosts are refused
+    there (`test-mcp-signin`).
 - **Not in PR A**: the renderer words for `signInEnd` (FR-182, Codex only; main already passes the field), and the Codex sim kind.
 
 #### Success criteria (delta)
@@ -1051,7 +1065,11 @@ adapter sets it). The owners asked to treat MCP as a priority.
     `ttlMs` = 300000 minus the time from sending the request to its answer, minus 10000, and at least 30000 (FR-180). The CLI's 300 s
     timer starts inside `performMCPOAuthFlow`, before it answers (discovery and registration run first), so Durbar's entry must end
     before the listener does: **Open sign-in page** never points at a closed listener. `state`, `callbackPort` and `redirectScheme` are read by nothing and never logged.
-  - `requiresUserAction: false`: `{kind: 'connected'}`.
+  - `requiresUserAction: false`: `{kind: 'connected'}`. That is a real change for this server: an FR-060 mark on it ends at once and the
+    row is emitted through `withAuthSeen`, so the row reads the CLI's status in step with the "Signed in" toast (review on #635, `test:`
+    `test-claude-adapter`).
+  - Only an error that says the CLI does not know the request ("unknown / unsupported / unrecognized / unhandled ... subtype" or
+    "... control request") counts as "this CLI cannot"; an "invalid ... request" is a refusal and keeps the CLI's own reason (review on #635).
   - `callbackExpected: false` (a claude.ai connector: the page signs in on claude.ai, and the CLI does not reconnect until it starts
     again) or any other shape: rejects, so the terminal steps show. Not expected with `--strict-mcp-config` (`[KNOWN GAP]`).
   - A control error (for example "Server not found", "does not support OAuth authentication", "blocked by enterprise managed policy",
@@ -1073,7 +1091,7 @@ adapter sets it). The owners asked to treat MCP as a priority.
   sign-in only because of an FR-060 tool-call challenge while the CLI kept saying `connected`, a poll that still says `connected` keeps
   the mark, so no poll toasts "Signed in" by itself. That case ends with the CLI's next `init` (the next message), a switch toggle, or
   **Restart** on the row; `restartMcpServer` therefore also deletes the name from `mcpAuthSeen` and emits through `withAuthSeen` (the
-  FR-060 `[KNOWN GAP]` "whichever PR merges second", still open in `src/adapters/claude.ts:871-887`). When such an entry ends at its
+  the former FR-060 `[KNOWN GAP]` "whichever PR merges second", closed by PR A). When such an entry ends at its
   limit, the row adds "If you finished in your browser, press Restart on this row." A failed browser step leaves the row on Needs
   sign-in; the entry ends at its 5-minute limit with the existing text "Sign-in was not finished. Press Sign in to try again." No
   `cancelMcpSignIn` (Cancel only forgets; the CLI's listener ends by itself within 5 minutes, `[KNOWN GAP]` as for Copilot).
