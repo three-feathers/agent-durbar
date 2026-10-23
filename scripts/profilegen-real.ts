@@ -16,14 +16,14 @@ async function main(): Promise<void> {
   const input: GenInput = {
     app, name: 'release-manager', mode: 'questions',
     answers: {
-      title: 'Release manager for the desktop app',
-      reportsTo: 'Lead',
-      reports: 'None',
-      duties: 'Check that a release is ready: changelog, version, green CI, open blockers; write the release notes draft',
-      success: 'No release goes out with a red check or a missing changelog line; notes are short and correct',
-      skills: 'Semantic versioning, reading CI results, writing clear release notes',
-      tools: 'git, gh (read-only: never push, tag, merge or publish)',
-      behavior: 'Calm and brief; asks Lead before anything that changes the repository',
+      role: 'Release manager for the desktop app; no release goes out unready. Reports to Lead; no agents report to it',
+      scope: 'Checks release readiness and drafts notes; never pushes, tags, merges or publishes',
+      inputs: 'The changelog, the version, the CI results and the open blockers',
+      method: 'Read the changelog, check the version, check CI, list blockers, draft the notes',
+      quality: 'No release goes out with a red check or a missing changelog line; notes are short and correct',
+      safety: 'git, gh (read-only: never push, tag, merge or publish)',
+      output: 'A readiness list, then the notes draft',
+      ask: 'Asks Lead before anything that changes the repository',
     },
   };
   const PE = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'profileeditor.js')) as { parseFrontmatter(t: string): FrontmatterParse };

@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { AgentTrustStore, hashAgentFile, parseAgentTrust } from '../src/main/agenttrust';
-import { agentDirsFor, profileOf } from '../src/adapters/copilot';
+import { agentDirsFor, profileOf, reloadAgentsRpc } from '../src/adapters/copilot';
 import { EventMapper } from '../src/adapters/map';
 import { agentsArg, listClaudeAgents, parseClaudeAgent } from '../src/adapters/claudeAgents';
 import { claudeArgs } from '../src/adapters/claude';
@@ -16,6 +16,20 @@ import type { EventBody } from '../src/adapters/map';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-agents-test-'));
 const WS = path.join(dir, 'ws');
 fs.mkdirSync(path.join(WS, '.github', 'agents'), { recursive: true });
+
+// spec 043 FR-041 (issue #570): Copilot reads its agent files again through `rpc.agent.reload` (@experimental); missing or failing: false
+void (async () => {
+  let n = 0;
+  assert.strictEqual(await reloadAgentsRpc({ reload: async () => (n++, { agents: [] }) }), true, 'reload called');
+  assert.strictEqual(n, 1);
+  assert.strictEqual(await reloadAgentsRpc({}), false, 'an SDK without reload: false, nothing thrown');
+  assert.strictEqual(await reloadAgentsRpc(undefined), false, 'no rpc object: false');
+  assert.strictEqual(await reloadAgentsRpc({ reload: async () => { throw new Error('x'); } }), false, 'a failing reload: false');
+  assert.strictEqual(await reloadAgentsRpc({ reload: 'nope' as unknown as () => Promise<unknown> }), false, 'not a function: false');
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
 
 // folders: each session folder's .github/agents, then the user's, no duplicates
 assert.deepStrictEqual(agentDirsFor([WS, WS, '/x'], '/home/u'), [path.join(WS, '.github', 'agents'), path.join('/x', '.github', 'agents'), path.join('/home/u', '.copilot', 'agents')]);
