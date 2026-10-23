@@ -45,6 +45,20 @@ export interface McpReplyInput {
   builtin?: ReadonlySet<string>;
   /** Spec 069 FR-061: tools turned off in this agent's folder, by server. */
   toolsOff?: Readonly<Record<string, readonly string[]>>;
+  /** Spec 058 FR-065: the open sign-in of one server (host only), from `McpSignInStore.view`. */
+  signIn?(name: string): { host: string; opened: boolean; expiresInMs: number; otherSite?: string } | undefined;
+}
+
+/** Spec 058 FR-065: the one rule for "this row needs a sign-in" (the window uses the same): the runtime's `needs-auth`, or a failed server whose failure is an auth one. */
+export const needsSignIn = (s: { status?: string; errorClass?: string } | undefined): boolean => !!s && (s.status === 'needs-auth' || (s.status === 'failed' && s.errorClass === 'auth'));
+
+/** A server name that is safe to put in a command the user may copy: no spaces, quotes, newlines or shell characters (a folder extra's name comes from a file). */
+const PLAIN_NAME = /^[A-Za-z0-9_.@:+-]{1,64}$/;
+/** Spec 058 FR-068: the adapter's terminal steps with the name filled in; a name with other characters is shown as `<server name>`, never as part of a command. */
+export function signInStepsFor(template: string | undefined, name: string, origin: AgentMcpEntry['origin']): string | undefined {
+  if (origin === 'folder') return 'This server is only known to Agent Durbar; use Sign in here.';
+  if (!template) return undefined;
+  return template.split('{name}').join(PLAIN_NAME.test(name) ? name : '<server name>');
 }
 
 /** `agents:mcp` (spec 019 FR-009, spec 058 FR-020). No path and no secret value: names, states and masked errors only. */
@@ -62,7 +76,12 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const on = defaultOn && !off.has(name);
     // FR-030: Restart only for a server the running session knows (the runtime reported it) and that is switched on
     const canRestart = canRestartAny && on && !!st && st.status !== 'disabled';
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
+    // FR-065/FR-068: a row that reads Needs sign-in, on, in a running session; the steps are the agent app's own text (missing = none)
+    const needs = isLive && on && needsSignIn(st);
+    const canSignIn = needs && typeof ad?.startMcpSignIn === 'function';
+    const steps = needs && ad?.capabilities.mcpSignIn ? signInStepsFor(ad.capabilities.mcpSignInSteps, name, origin) : undefined;
+    const open = canSignIn ? i.signIn?.(name) : undefined;
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];

@@ -17,7 +17,7 @@ import type { HistoryResult, PreviousSession } from './history';
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
   | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer' | 'listMcpTools'
-  | 'startMcpSignIn' | 'cancelMcpSignIn';
+  | 'startMcpSignIn' | 'cancelMcpSignIn' | 'refreshMcpStatus';
 
 export type Step =
   | { output: string }
@@ -101,6 +101,13 @@ export class FakeAdapter implements AgentAdapter {
   declare renameSession?: (sessionId: string, name: string) => Promise<void>;
   declare startMcpSignIn?: (sessionId: string, name: string) => Promise<McpSignInResult>;
   declare cancelMcpSignIn?: (sessionId: string, name: string) => Promise<void>;
+  declare refreshMcpStatus?: (sessionId: string) => Promise<void>;
+  /** Spec 058: how many `refreshMcpStatus` calls were made, and when (call number N) the named server is reported connected (a test of the poll). */
+  refreshCalls = 0;
+  connectOnRefresh?: { name: string; at: number };
+  /** Test hook: a refresh that takes this long (ms) or never settles (`Infinity`), to see that calls never overlap. */
+  refreshDelay?: number;
+  refreshFail?: string;
   /** Spec 058: every `startMcpSignIn` / `cancelMcpSignIn` call, in order (test log; no browser is opened). */
   readonly signInCalls: Array<{ sessionId: string; name: string; cancel?: true }> = [];
   /** Spec 058: what the next `startMcpSignIn` resolves with. */
@@ -187,6 +194,17 @@ export class FakeAdapter implements AgentAdapter {
           this.mustGet(sid);
           this.signInCalls.push({ sessionId: sid, name });
           return this.signInResult;
+        };
+      }
+      if (has('refreshMcpStatus')) {
+        this.refreshMcpStatus = async (sid) => {
+          this.mustGet(sid);
+          this.refreshCalls++;
+          if (this.refreshDelay === Infinity) return new Promise<void>(() => undefined);
+          if (this.refreshDelay) await new Promise((r) => setTimeout(r, this.refreshDelay));
+          if (this.refreshFail) throw new Error(this.refreshFail);
+          const c = this.connectOnRefresh;
+          if (c && this.refreshCalls >= c.at) this.emit(sid, { type: 'mcp', servers: [{ name: c.name, status: 'connected' }] });
         };
       }
       if (has('cancelMcpSignIn')) {
