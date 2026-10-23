@@ -53,6 +53,10 @@ const PATTERNS: Array<[RegExp, string]> = [
   [shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?[^\s",;]+`, 'gi'), '$1[redacted]'],
   [shape(String.raw`([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{1,200}:[^\s/@"]{1,200}@`, 'gi'), '$1[redacted]@'],
   [/(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"]{0,2000}/g, '[redacted]'],
+  // OAuth values in a URL's query or fragment (an authorization address, a loopback callback), also percent-encoded inside another
+  // URL; the names are not secret-looking, so the token shapes miss them (review on #635: a CLI's stderr reaches the debug sink).
+  // A fixed separator and name, then a bounded value that stops at the next separator: linear.
+  [/((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))(?:code|state|code_verifier|code_challenge|id_token|access_token|refresh_token|client_secret)(?:=|%3[Dd]))[^&;#\s"'\\<>]{1,4096}/gi, '$1[redacted]'],
 ];
 
 type Env = Record<string, string | undefined>;
@@ -111,6 +115,26 @@ export function redact(text: unknown, env?: Env): string {
   } catch {
     return '[redaction failed]';
   }
+}
+
+/**
+ * `k` is `u` with its Markdown marks removed. Masks `k`, and also every token-like run of `u` that `redact` changes on its own, together
+ * with the token characters glued after it (spec 073 FR-014, review of PR #614): removing `**` can glue a token to the word before it
+ * (`x**ghp_...**` -> `xghp_...`, which no shape matches) or join a late-split token's tail (`ghp_<20>**K1l2...`). Anything either pass
+ * finds is masked; neither pass's output simply wins. The window's DurbarSafeText (`src/renderer/safetext.js`, `both`) does the same.
+ */
+export function redactMarkdown(u: string, k: string, env?: Env): string {
+  let m = redact(k, env);
+  const seen = new Set<string>();
+  const found: string[] = [];
+  for (const r of u.match(/[A-Za-z0-9_\-.+/=:@%]{12,}/g) ?? []) {
+    if (seen.has(r)) continue;
+    seen.add(r);
+    if (redact(r, env) !== r) found.push(r);
+  }
+  found.sort((a, b) => b.length - a.length);
+  for (const r of found) m = m.replace(new RegExp(r.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '[A-Za-z0-9_-]*', 'g'), () => MASK);
+  return m;
 }
 
 const MASK = '[redacted]';

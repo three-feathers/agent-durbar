@@ -11,6 +11,8 @@
 #   - a reviewer whose latest review is CHANGES_REQUESTED;
 #   - an unresolved, non-outdated review thread;
 #   - a comment by someone else (PR comment, review body or line comment) newer than my own latest comment on the PR: read and answer it first.
+#     Exact status notes (a whole comment that is only `reviewing at <sha>` or `checks run at <sha>: ...` on one line, pattern in
+#     scripts/pr-status-note.re) are not counted as asks; they are printed apart under "status notes, not counted as asks:".
 p=$1; R=$(gh repo view --json nameWithOwner -q .nameWithOwner); OWNER=${R%%/*}; NAME=${R##*/}; ME=$(gh api user -q .login)
 [ -n "$p" ] || { echo "usage: scripts/pr-gate.sh <PR number> [--wait]"; exit 2; }
 pend() { gh pr checks $p 2>/dev/null | awk -F'\t' '$2=="pending"' | grep -q .; }

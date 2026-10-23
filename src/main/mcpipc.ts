@@ -14,7 +14,7 @@ import { mcpSecretValues } from './mcpmask';
 import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRestartOp } from './mcpsession';
 import { mcpToolsOp } from './mcptoolsop';
-import { McpSignInStore, SignInPoller, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp } from './mcpsignin';
+import { McpSignInStore, SignInPoller, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, serverUrlFor } from './mcpsignin';
 import { McpStore } from './mcpstore';
 import { mcpHealthUpdate } from '../shared/mcphealth';
 import type { McpHealthMark } from '../shared/mcphealth';
@@ -60,6 +60,8 @@ export function registerMcpIpc(deps: {
   globalFor?(agentId: string): Record<string, McpServerSpec>;
   /** Spec 069 FR-011: the names of each agent app's user list, read now. */
   globalNames?(): Partial<Record<GlobalApp, string[]>>;
+  /** Spec 058 FR-185: the addresses of Codex's own `config.toml` servers (the values-free view), for the "different site" line of a Codex agent. */
+  codexServers?(): Record<string, { url?: string }>;
   /** The agent app of an agent (`copilot`, `claude`, `codex`, ...). */
   appOf?(agentId: string): string | undefined;
   /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */
@@ -97,6 +99,22 @@ export function registerMcpIpc(deps: {
     return ad && ad.isLive(id) ? ad.refreshMcpStatus?.(id, name) : undefined;
   }, deps.timers ?? { set: (fn, ms) => setInterval(fn, ms), clear: (h) => clearInterval(h as ReturnType<typeof setInterval>) });
   signIns.hooks = { opened: (a, n) => poller.start(a, n), dropped: (a, n) => poller.stop(a, n) };
+  /**
+   * FR-176: after Cancel or the time limit, a browser step the user still finishes is picked up by the agent app, but no page is held, so
+   * nothing polls. For 5 minutes after an attempt, the dialog opening or the window regaining focus reads the list once for that session
+   * (one read in flight per agent; a failing read changes nothing).
+   */
+  const rechecking = new Set<string>();
+  const recheck = (id: string): void => {
+    const names = signIns.recent(id);
+    const ad = router.forAgent(id);
+    if (!names.length || rechecking.has(id) || !ad?.isLive(id) || typeof ad.refreshMcpStatus !== 'function') return;
+    rechecking.add(id);
+    void Promise.resolve()
+      .then(() => ad.refreshMcpStatus?.(id, names[0]))
+      .catch(() => undefined)
+      .finally(() => rechecking.delete(id));
+  };
   router.onEvent((e) => {
     if (e.type === 'mcp') {
       live.set(e.sessionId, e.servers);
@@ -184,7 +202,10 @@ export function registerMcpIpc(deps: {
   ipcHandle('agents:mcp', (_e, id: unknown, focus?: unknown): AgentMcpReply => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, servers: [], live: false };
-    if (focus === true) poller.kick(a.id); // only the window regaining focus asks for this (a repaint after an `mcp` event must not, or each read would trigger the next)
+    if (focus === true) {
+      poller.kick(a.id); // only the window regaining focus or the dialog opening asks for this (a repaint after an `mcp` event must not, or each read would trigger the next)
+      recheck(a.id);
+    }
     const s = store();
     const dis = new Set(s.ambientDisabled());
     // Spec 069 FR-009/FR-011: each agent app's own list. Copilot loads the Copilot CLI list itself; Durbar passes Claude Code's list to
@@ -216,12 +237,12 @@ export function registerMcpIpc(deps: {
   const restarting = new Set<string>();
   ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
     mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
-  /** Spec 058 FR-075: the server's own address, for the "different site" line: this folder's extra, the user list Durbar passes, then the Copilot CLI list. */
+  /** Spec 058 FR-075/FR-185: the server's own address, for the "different site" line, from the lists this agent's app uses (`serverUrlFor`). */
   const serverUrlOf = (agentId: string, name: string): string | undefined => {
     const a = agents.get(agentId);
     if (!a) return undefined;
     try {
-      return store().list(keyOf(a)).find((v) => v.name === name)?.url ?? deps.globalFor?.(agentId)?.[name]?.url ?? cli().servers.find((v) => v.name === name)?.url;
+      return serverUrlFor(deps.appOf?.(agentId), name, { extras: () => store().list(keyOf(a)), copilot: () => cli().servers, claude: () => deps.globalFor?.(agentId) ?? {}, codex: () => deps.codexServers?.() ?? {} });
     } catch {
       return undefined;
     }

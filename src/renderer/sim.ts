@@ -175,6 +175,26 @@ const SIM_SLASH_LONG: SimSlash[] = [
   { name: 'release-notes-for-the-customer-reconciliation-batch-jobs-2026', description: SIM_SLASH_DESC.slice(0, 120), source: 'user', kind: 'skill', where: '~/.claude/skills/release-notes-long/SKILL.md' },
 ];
 
+/* Spec 073 FR-013/FR-014 (issue #608), page address simslash=secret: a folder skill and a command whose name, argument hint, description
+   and place hold fake token shapes, also split by Markdown, escaped, and one that straddles the tooltip's 300-character cut. Built at
+   run time: the file holds no secret-looking literal. check:slash-suggest asserts none of them reaches the list, its tooltips, ARIA or
+   the "Sent the text of" note. */
+const SIM_TOK = { ghp: 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8', pat: 'github' + '_pat_' + '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij', sk: 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789' };
+const simSlashSecret = (): SimSlash[] => {
+  const g = SIM_TOK.ghp;
+  const desc = ('Deploy check: ' + g.slice(0, 2) + '`' + g.slice(2) + '` then **' + g.slice(0, 24) + '**' + g.slice(24) + ' and ' + g.replace('_', '\\_') + ' ').padEnd(200, '.').slice(0, 200);
+  const line = '/deploy-check'.length + 1 + desc.length + 1 + 'Sends the text of '.length; // where the place starts in the tooltip
+  const where = '.claude/commands/' + 'n'.repeat(285 - line - '.claude/commands/'.length - 1) + '-' + SIM_TOK.sk + '.md'; // the sk token starts at 285 of 300
+  return [
+    { name: g, description: 'Skill named by a token: ' + SIM_TOK.sk, argumentHint: '<' + SIM_TOK.pat + '>', source: 'folder', kind: 'skill', where: '.claude/skills/' + g + '/SKILL.md' },
+    { name: 'deploy-check', description: desc, argumentHint: '<env> ' + SIM_TOK.pat, source: 'folder', kind: 'command', where },
+    // a VS Code prompt file whose `${input:NAME}` is token-shaped: the send's note echoes it (review of PR #614, FR-013)
+    { name: 'token-input', description: 'A prompt file with a token-shaped input name', source: 'folder', kind: 'prompt', where: '.github/prompts/token-input.prompt.md', note: 'VS Code settings not applied: mode; left as written: ${input:' + g + '}.' },
+  ];
+};
+/** The simulated list: the long or secret entries the page address asks for, then the kind's own (FR-011). */
+const simSlashFor = (kind: string, q: URLSearchParams): SimSlash[] => [...(q.get('simslash') === 'long' ? SIM_SLASH_LONG : q.get('simslash') === 'secret' ? simSlashSecret() : []), ...simSlash(kind)];
+
 const SIM_PROFILES = [
   { id: 'reviewer', name: 'Reviewer', description: 'Reviews changes and points at risks; never edits files', source: 'repo' as const, path: '~/work/mcp-swiss/.github/agents/reviewer.agent.md', tools: ['view', 'grep', 'glob'], model: 'sim-deep' },
   { id: 'docs-writer', name: 'Docs writer', description: 'Writes and tidies documentation in plain English', source: 'user' as const, path: '~/.copilot/agents/docs-writer.agent.md' },
@@ -300,6 +320,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const names = folders.map((x) => x.label.replace(/^write in /, ''));
     return { key: 'write-folders:' + folders.map((x) => x.key).sort().join('\n'), label: `write in ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` and ${names.length - 3} more folders` : ''}`, folders };
   };
+  // spec 005 FR-056 (issue 627): like the real adapters, only Copilot reports the parts of its context window; Claude Code and Codex a total
+  const ctxParts = (s: { info: { adapterId?: string } }, tokens: number, messages: number) =>
+    (s.info.adapterId ?? 'copilot') === 'copilot' ? { system: 5840, conversation: Math.max(0, tokens - 13500), toolDefinitions: 7668, messages } : {};
   const codexFileReq = (s: { info: { adapterId?: string }; files: string[] }): (typeof WAIT_REQ)[string] | undefined => {
     const v = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simcodexfile') : null;
     if (!v || s.info.adapterId !== 'codex') return undefined;
@@ -687,7 +710,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (c && s.pendingLimit) { c.limit = s.pendingLimit; s.pendingLimit = undefined; } // the new window is reported with the first call after a switch
       if (c && c.limit > 0) {
         c.tokens = Math.min(Math.floor(c.limit * 0.97), c.tokens + 700 + Math.floor(rnd() * 1800));
-        emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: c.tokens, limit: c.limit, system: 5840, conversation: Math.max(0, c.tokens - 13500), toolDefinitions: 7668, messages: 3 + s.tool, model: s.info.model, tier: s.tier });
+        emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: c.tokens, limit: c.limit, ...ctxParts(s, c.tokens, 3 + s.tool), model: s.info.model, tier: s.tier });
         // Like the runtime's infinite sessions: compact in the background when the window is about 80% full.
         if (c.tokens / c.limit >= 0.8 && !s.compacting && !s.noAuto) void compactNow(s, 'auto');
       }
@@ -707,9 +730,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     ];
     /* spec 058: the state of one simulated server, for the dialog's reply and the `mcp` events alike (FR-001, FR-006, FR-040).
        The sixth agent's "my-notes" failed to start (until a Restart); every fifth agent from the fifth one (5, 10, 15) has it asking for a sign-in. */
-    /* spec 058 FR-071: `simmcpauth=1` = the Copilot agents' "my-notes" asks for a sign-in until one finishes (Sign in, Open sign-in page, Running after 2 s);
-       `simmcpauth=manual` = the same row, but the app cannot start a sign-in, so the terminal steps show instead. Claude and Codex rows keep today's behaviour. */
+    /* spec 058 FR-071/FR-183: `simmcpauth=1` = the Copilot and Claude Code agents' "my-notes" asks for a sign-in until one finishes (Sign in,
+       Open sign-in page, Running after 2 s; a Claude row also keeps Restart, which picks up a sign-in finished elsewhere); `simmcpauth=manual` =
+       the same row, but the app cannot start a sign-in, so its terminal steps show instead. Codex rows keep today's behaviour (PR B). */
     const simMcpAuth = simQs?.get('simmcpauth') ?? '';
+    /* the apps whose rows sign in in the simulator, with the texts their adapters send (src/adapters/copilot.ts, claude.ts) */
+    const SIM_SIGN_IN: Record<string, { steps: (n: string) => string; note: string; restart: boolean; noCall: string }> = {
+      copilot: { steps: (n) => 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth ' + n + '` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', note: 'Checked once on a real account; other servers and systems not yet.', restart: false, noCall: 'This Copilot version cannot start a sign-in from Agent Durbar.' },
+      claude: { steps: (n) => 'If Sign in is not available, run `claude mcp login ' + n + "` in a terminal and finish in your browser. This works only for a server in Claude Code's own settings. Then press Restart on this row.", note: 'Not checked on a real account yet.', restart: true, noCall: 'This Claude Code version cannot start a sign-in from Agent Durbar.' },
+    };
+    const simSignApp = (s: SimAgent) => SIM_SIGN_IN[s.info.adapterId ?? 'copilot'];
     /* `simmcpttl=N` (seconds, 1-600): the time limit of an open sign-in, so a driver can see "Sign-in was not finished" (real: 10 minutes) */
     const simMcpTtl = Math.max(1, Math.min(600, Math.floor(Number(simQs?.get('simmcpttl'))) || 600)) * 1000;
     /* FR-164 like main: only a server of the lists with an http(s) address; never built-in, never stdio */
@@ -723,7 +753,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (s.mcpOff?.has(name)) return { status: 'disabled' };
       if (!live) return {};
       if (s.mcpRestarting?.has(name)) return { status: 'pending' };
-      if (simMcpAuth && name === 'my-notes' && (s.info.adapterId ?? 'copilot') === 'copilot' && !s.mcpFixed?.has(name)) return { status: 'needs-auth', error: 'The server answered 401 Unauthorized: sign in to use its tools.', errorClass: 'auth' };
+      if (simMcpAuth && name === 'my-notes' && simSignApp(s) && !s.mcpFixed?.has(name)) return { status: 'needs-auth', error: 'The server answered 401 Unauthorized: sign in to use its tools.', errorClass: 'auth' };
       if (name === 'my-notes' && !s.mcpFixed?.has(name)) {
         if (i === 5) return { status: 'failed', error: 'spawn notes-mcp ENOENT', errorClass: 'not-found' };
         if (i % 5 === 4) return { status: 'needs-auth', error: 'The server answered 401 Unauthorized: sign in to use its tools.', errorClass: 'auth' };
@@ -1313,9 +1343,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const healthOf = (n: string, status?: string, transport?: string) => { const h = live ? s.mcpHealth?.get(n) : undefined; const ok = h && h.status === (status ?? ''); return { ...(ok ? { since: h.since } : {}), ...(ok && h.afterRunning ? { afterRunning: true } : {}), ...(live && transport ? { transport } : {}) }; };
         const reported = (n: string): ReturnType<typeof simServer> & { since?: number; afterRunning?: boolean; transport?: string } => { const m = live ? s.mcpLive?.find((x) => x.name === n) : undefined; const st = m ? { status: s.mcpOff?.has(n) ? 'disabled' : m.status, error: m.error, errorClass: m.errorClass } : simServer(s, idx, n, live); return { ...st, ...healthOf(n, st.status, m?.transport) }; };
         const known = new Set([...fakeCli.map((c) => c.name), ...extrasOf(s.info.cwd).map((v) => v.name)]);
-        /* spec 058 FR-065/FR-068: Sign in (Copilot only for now), the host of an open sign-in, the terminal steps; main's rules, canned */
+        /* spec 058 FR-065/FR-068/FR-180: Sign in (Copilot and Claude Code; Codex in PR B), the host of an open sign-in, the app's terminal steps,
+           its note and, for Claude Code, Restart kept on the row; main's rules, canned */
         const signOf = (n: string, origin: 'cli' | 'folder' | 'runtime') => {
-          if (!simMcpAuth || (s.info.adapterId ?? 'copilot') !== 'copilot') return {};
+          const app = simSignApp(s);
+          if (!simMcpAuth || !app) return {};
           const st = reported(n);
           const needs = st.status === 'needs-auth' || (st.status === 'failed' && st.errorClass === 'auth');
           // like main: an open Sign in again stays visible while the row reads Starting
@@ -1328,8 +1360,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           }
           if (!live || s.mcpOff?.has(n) || !needs) return {};
           const open = simSignOpen(s, n);
-          const steps = origin === 'folder' ? 'This server is only known to Agent Durbar; use Sign in here.' : 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth ' + n + '` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).';
-          return { signInSteps: steps, ...(simMcpAuth === 'manual' ? {} : { canSignIn: true, ...(open ? { signIn: { host: 'auth.example.com', opened: open.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - open.at)) } } : {}) }) };
+          const can = simMcpAuth !== 'manual';
+          if (origin === 'folder' && !can) return {};
+          const steps = origin === 'folder' ? 'This server is only known to Agent Durbar; use Sign in here.' : app.steps(n);
+          return { signInSteps: steps, ...(app.restart && restartable(n, true) ? { signInRestart: true } : {}), ...(can ? { canSignIn: true, signInNote: app.note, ...(open ? { signIn: { host: 'auth.example.com', opened: open.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - open.at)) } } : {}) } : {}) };
         };
         const toolsOffOf = (n: string) => (simToolsOff[s.info.cwd]?.[n] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[n] ?? [])] } : {});
         const servers = [
@@ -1385,8 +1419,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       /* spec 058 FR-071: Sign in -> the host -> Open sign-in page (opens nothing; "Running" after 2 s). The address is never in the page. */
       agentMcpSignIn: async (id, name, again) => {
         const s = sims.find((x) => x.info.id === id);
-        if (!s || (s.info.adapterId ?? 'copilot') !== 'copilot' || !simMcpAuth) return { ok: false, error: 'Unknown agent or server.' };
-        if (simMcpAuth === 'manual') return { ok: false, manual: true, error: 'This Copilot version cannot start a sign-in from Agent Durbar.' };
+        const app = s ? simSignApp(s) : undefined;
+        if (!s || !app || !simMcpAuth) return { ok: false, error: 'Unknown agent or server.' };
+        if (simMcpAuth === 'manual') return { ok: false, manual: true, error: app.noCall };
         const st = simServer(s, sims.indexOf(s), name, true);
         if (again === true ? !((st.status === 'connected' || st.status === 'failed') && simRemoteMcp(name)) : st.status !== 'needs-auth') return { ok: false, error: name + (again === true ? ' cannot be signed in again now.' : ' does not need a sign-in.') };
         if (simSignOpen(s, name)) return { ok: false, error: 'A sign-in for ' + name + ' is already open.' };
@@ -1531,7 +1566,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.13 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.14 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
@@ -1598,9 +1633,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent', entries: [] };
         // page address simslash=long (spec 073 FR-008, review on #535): a 64-character name, a long hint and a 200-character description
-        // come first, for check:ui-text's long-text pass
-        const long = simQuery.get('simslash') === 'long' ? SIM_SLASH_LONG : [];
-        return { ok: true, entries: [...long, ...simSlash(s.info.adapterId ?? 'copilot')].map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
+        // come first, for check:ui-text's long-text pass; simslash=secret: fake token shapes (FR-014, issue #608)
+        return { ok: true, entries: simSlashFor(s.info.adapterId ?? 'copilot', simQuery).map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
       },
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
@@ -1843,7 +1877,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model: s.info.model ?? 'auto', inputTokens: before, outputTokens: 900, ...(caps(s.info.adapterId ?? 'copilot').usage.nanoAiu ? { nanoAiu: Math.floor(0.02 * 1e9), creditsStatus: 'complete' as const } : { creditsStatus: 'unavailable' as const }) });
       s.used = (s.used ?? 0) + Math.floor(0.02 * 1e9);
       emit({ type: 'compaction', sessionId: sid(s), timestamp: now(), phase: 'complete', trigger, tokensBefore: before, tokensAfter: after, tokensRemoved: before - after, limit: c.limit });
-      emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: after, limit: c.limit, system: 5840, conversation: Math.max(0, after - 13500), toolDefinitions: 7668, messages: 3, model: s.info.model, tier: s.tier });
+      emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: after, limit: c.limit, ...ctxParts(s, after, 3), model: s.info.model, tier: s.tier });
       return { success: true, tokensAfter: after, tokensRemoved: before - after };
     }
 
@@ -2192,6 +2226,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
         if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Raise limit, Remove limit or Stop here first.' };
+        // spec 041 FR-065 delta (issue #608 review): `simsendfail=secret` fakes an app error that holds token shapes, also split by Markdown
+        if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'secret')
+          return { ok: false, error: 'The agent app refused the message: ' + SECRETS_TEXT + ' Also gh`p_' + SIM_TOK.ghp.slice(4) + '` and ' + SIM_TOK.ghp.slice(0, 24) + '**' + SIM_TOK.ghp.slice(24) + '** (split late).' };
         // spec 012 FR-087: `simsendfail=sandbox` fakes Codex refusing Read-only / Ask first (the real Linux message), for the driver
         if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'sandbox' && s.info.permMode !== 'allow')
           return { ok: false, error: "Codex refused the session settings: fs sandbox helper failed: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox, so nothing ran. To allow it for bubblewrap, see the README (Codex)." };
@@ -2215,7 +2252,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         window.setTimeout(() => void reply(s, text), 400);
         // spec 073 FR-011: a folder or user entry is "sent as its text", as the real adapters do (FR-005)
         const sl = /^\/([A-Za-z0-9][A-Za-z0-9._:-]{0,63})(?:\s|$)/.exec(String(text).trim());
-        const hit = sl ? simSlash(kind).find((e) => e.source !== 'app' && e.name.toLowerCase() === sl[1].toLowerCase()) : undefined;
+        const hit = sl ? simSlashFor(kind, simQuery).find((e) => e.source !== 'app' && e.name.toLowerCase() === sl[1].toLowerCase()) : undefined;
         return hit ? { ok: true, slash: hit.where ?? hit.name, ...(hit.note ? { slashNote: hit.note } : {}) } : { ok: true };
       },
       stop: async (id) => {

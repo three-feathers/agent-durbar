@@ -13,6 +13,7 @@ Closes #<!-- issue number: one issue = one Spec Kit task -->
 - **Agent used** (which agent wrote this, and who is its human owner): <!-- e.g. Claude Code (fjcabello), Copilot CLI (vikramgorla), none -->
 - [ ] I claimed the issue (assigned + `status:claimed`) before starting
 - [ ] Every point of the linked issue is done (`Closes #N`), or what is left is written on the issue and it stays open (`Refs #N`)
+- [ ] Before asking for review, the agent ran [docs/review-checklist.md](../docs/review-checklist.md) on its own diff as an adversarial self-review (new FR/task numbers checked against `main` and open PRs, and named here)
 - [ ] The agent did a final review of the whole diff as a reviewer (not only CI) and says below what it checked; another team's agent or a human may review too
 - [ ] I posted my own `checks run at <sha>: …` comment on this PR (AGENTS.md, *Test once, then trust the record*)
 - [ ] Before merging: every review, review thread and PR comment is read and answered, and `scripts/pr-gate.sh <N>` says *ready to merge*

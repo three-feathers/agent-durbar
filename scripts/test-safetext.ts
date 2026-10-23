@@ -174,4 +174,21 @@ eq(T.ready, true, 'redact: ready');
   ok(/function setState\(a,state,label,task\)\{\s*if\(typeof task==='string'\)task=taskMask\(task\);/.test(app), 'setState masks the stored task (backstop)');
   ok(/a\.lastOutput\?safeExcerpt\(a\.lastOutput,140\):'Finished\.'/.test(app), 'the done desk uses the excerpt helper');
 }
+// review of PR #614 (issue #608): removing `**` can GLUE a token to the word before it (`x**ghp_...**` -> `xghp_...`, no shape starts
+// after a letter); the pass that found something else must not hide what the other pass found. Both passes are combined.
+{
+  const z = 'gh' + 'p_' + 'Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2';
+  const bodies = [ghp.slice(4), z.slice(4), pat.slice(11), sk.slice(3)];
+  const piece = (t: string) => { for (const b of bodies) for (let i = 0; i + 6 <= b.length; i++) if (t.includes(b.slice(i, i + 6))) return b.slice(i, i + 6); return ''; };
+  const glued = [
+    `see x**${ghp}** and gh\`${z.slice(2)}\``, `a**${ghp}`, `x**${ghp}**`, `x**${ghp.slice(0, 24)}**${ghp.slice(24)}**`, `1*${sk}*`,
+    `word~~${pat}~~ and \`${z}\`x`, `[${ghp}](u)tail`, `x**${ghp}**y and **${z.slice(0, 24)}**${z.slice(24)}`,
+  ];
+  for (const t of glued) {
+    const a = T.mask(t), b = T.excerpt(t, 300);
+    ok(!piece(a), `mask hides a glued token: ${t.slice(0, 20)} -> ${a}`);
+    ok(!piece(b), `excerpt hides a glued token: ${t.slice(0, 20)} -> ${b}`);
+  }
+  eq(T.mask('Run `npm test` on my_branch **now**'), 'Run `npm test` on my_branch **now**', 'no token: the text stays as written');
+}
 console.log(`safetext: ${n} checks passed`);
