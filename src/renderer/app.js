@@ -302,7 +302,7 @@ function postboxHTML(p,box){
   const D=window.DurbarPlaces, paused=!!S.pausedAll, list=S.schedules||[], next=D.postNext(list,paused).slice(0,3);
   const today=D.lettersToday(list,paused,Date.now(),(window.DurbarSchedTemplates||{}).nextRuleRun), miss=D.postMissed(list), named=!box||box.named;
   const line=x=>{const room=ROOMS.find(r=>folderKeyOf(r)===x.s.folder), fold=room?room.name:(String(x.s.folder||'').split(/[\\/]/).filter(Boolean).pop()||'');
-    return {short:clock(x.t)+' · '+DurbarCutText.cutText(x.s.prompt,60), full:clock(x.t)+' · '+fold+' · '+DurbarCutText.cutText(x.s.prompt,200), long:clock(x.t)+' · '+fold+' · '+DurbarCutText.cutText(x.s.prompt,60)};};
+    return {short:clock(x.t)+' · '+safeExcerpt(x.s.prompt,60,''), full:clock(x.t)+' · '+fold+' · '+safeExcerpt(x.s.prompt,200,''), long:clock(x.t)+' · '+fold+' · '+safeExcerpt(x.s.prompt,60,'')};};
   const ls=next.map(line), empty=paused?'All paused':'No letters';
   const sum=(today?today+' today':'none today')+(miss?', '+miss+' missed':'');
   const label=`${placeLabelFull(p.id)}: ${sum}. ${ls.length?'Next: '+ls.map(l=>l.full).join('; '):empty}. Open Settings > Schedules.`;
@@ -3019,7 +3019,7 @@ function onTaskTool(a,e){
     const g=e.args||{};
     if(g.prompt&&!s.prompt)s.prompt=String(g.prompt);
     if(g.description&&!s.task)s.task=String(g.description);
-    if(g.agent_type&&!s.agentName)s.agentName=String(g.agent_type);
+    if(g.agent_type&&!s.agentName)s.agentName=safeMask(String(g.agent_type))||''; /* spec 041 FR-065 */
     if(s.name==='Sub-agent'&&s.task)s.name=SHORT(safeMask(s.task),40);
   } else {
     if(e.phase==='complete'&&e.output)s.result=String(e.output);

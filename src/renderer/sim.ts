@@ -536,9 +536,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const t0 = Date.now(), key = (x: SimAgent | undefined): string => (x ? x.info.workspaceFile ?? x.info.cwd ?? '' : '');
       const a = sims[0], b = sims.find((x) => x.room !== a?.room) ?? sims[1];
       const seed: ScheduleInfo[] = [
-        { id: 'sched-s1', folder: key(a), prompt: 'PR and issue sweep: list what changed since the last run', every: 30, next: t0 + 12 * 60000 },
-        { id: 'sched-s2', folder: key(b), prompt: 'Cut the pre-release notes from the merged pull requests', at: t0 + 3 * 3600000 },
-        { id: 'sched-s3', folder: key(a), prompt: 'Morning summary of failing checks', rule: { kind: 'weekdays', time: '08:30' }, next: t0 + 20 * 3600000, last: { at: t0 - 4 * 3600000, outcome: 'missed' } },
+        { id: 'sched-s1', folder: key(a), prompt: (opts.reply === 'secrets' ? FILL(53) + SECRETS_TEXT + ' ' : '') + 'PR and issue sweep: list what changed since the last run', every: 30, next: t0 + 12 * 60000 },
+        { id: 'sched-s2', folder: key(b), prompt: (opts.reply === 'secrets' ? FILL(53) + SECRETS_TEXT + ' ' : '') + 'Cut the pre-release notes from the merged pull requests', at: t0 + 3 * 3600000 },
+        { id: 'sched-s3', folder: key(a), prompt: (opts.reply === 'secrets' ? FILL(53) + SECRETS_TEXT + ' ' : '') + 'Morning summary of failing checks', rule: { kind: 'weekdays', time: '08:30' }, next: t0 + 20 * 3600000, last: { at: t0 - 4 * 3600000, outcome: 'missed' } },
       ];
       simSched.list.push(...seed.filter((x) => x.folder)); simSched.n = 3;
     }

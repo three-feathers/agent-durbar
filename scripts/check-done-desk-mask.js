@@ -45,6 +45,8 @@ module.exports = async (ctx) => {
     await emit({ type: 'title', sessionId: ids[2], timestamp: ts, title: 'Rotate ' + GHP + ' and ' + PAT });
     await emit({ type: 'subagent', sessionId: ids[3], timestamp: ts, subagentId: 'sx1', name: 'helper ' + GHP, phase: 'started', task: 'look around', agentName: 'type ' + SK, model: 'm' });
     await emit({ type: 'status', sessionId: ids[4], timestamp: ts, status: 'working', intent: 'Using gh`p_' + TAIL + '` and sk-proj_*' + SKTAIL + '*' });
+    await emit({ type: 'toolCall', sessionId: ids[4], timestamp: ts, callId: 'tt1', tool: 'task', phase: 'start', args: { agent_type: 'agent-' + SK, prompt: 'scan' } });
+    await emit({ type: 'subagent', sessionId: ids[4], timestamp: ts, subagentId: 'tt1', name: 'scan', phase: 'started', task: 'scan', model: 'm' });
     await emit({ type: 'status', sessionId: ids[5], timestamp: ts, status: 'working', intent: 'x' });
     await emit({ type: 'output', sessionId: ids[5], timestamp: ts, delta: 'Replying: saved ghp\\_' + TAIL + ' and gh`p_' + TAIL + '` to the vault. ' });
     await emit({ type: 'output', sessionId: ids[5], timestamp: ts, delta: '', final: true, text: 'Saved ghp\\_' + TAIL + ' and gh`p_' + TAIL + '` to the vault. Also ' + GHP.slice(0, 24) + '**' + GHP.slice(24) + '** (split late).' });
@@ -53,7 +55,7 @@ module.exports = async (ctx) => {
   const back = async () => { await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click();})()`); await until(`!document.body.classList.contains('panel-open')`); };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const level of ['expert', 'simple']) {
-      const Q = { simreply: 'secrets' };
+      const Q = { simreply: 'secrets', simsched: '1' };
       await H.load({ w, h, query: Q, ready: 'fit', settle: false });
       await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`);
       await H.load({ query: Q, ready: 'fit' });
@@ -94,12 +96,39 @@ module.exports = async (ctx) => {
       if (level === 'expert') assert.ok(lob.words.includes('curl') || lob.words.includes('fetch') || lob.words.includes('example.test'), `${tag}: a lobby chip shows what its agent is doing (so a raw label would show): ${lob.words.slice(0, 200)}`);
       for (const nd of NEEDLES) assert.ok(!lob.words.includes(nd) && !lob.places.includes(nd), `${tag}: "${nd.slice(0, 10)}..." is on a lobby tile or its title`);
       await scan(tag, 'lobby tiles');
+      // the Postbox (the schedule prompts hold the planted secrets, cut where a cut-before-mask would leave a piece) and a token-named agent in the lobby
+      const pb = await js(`(()=>{const e=document.querySelector('.lobby .place.postbox');return e?(e.title+' '+(e.getAttribute('aria-label')||'')).toLowerCase():''})()`);
+      assert.ok(/next:/.test(pb), `${tag}: the Postbox lists the next letters: ${pb.slice(0, 160)}`);
+      for (const nd of NEEDLES) assert.ok(!pb.includes(nd), `${tag}: "${nd.slice(0, 10)}..." is on the Postbox`);
+      const named = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>!x.parent&&/redacted/i.test(x.name||''));return a?a.id:''})()`);
+      assert.ok(named, `${tag}: an agent named after the planted runtime title (masked)`);
+      await emit({ type: 'toolCall', sessionId: named, timestamp: ts, callId: 'lb1', tool: 'bash', phase: 'start', args: { command: 'npm test' } });
+      assert.ok(await until(`!!document.querySelector(${jsLiteral('.lobby .pv[data-visitor="' + named + '"]')})||!!document.querySelector('.lobby .pv-more')`, 8000), `${tag}: the token-named agent stands in the lobby (chip or +N)`);
+      if (await js(`!document.querySelector(${jsLiteral('.lobby .pv[data-visitor="' + named + '"]')})`)) {
+        await js(`document.querySelector('.lobby .pv-more').click()`); // the +N list
+        await ctx.sleep(200);
+        await scan(tag, 'the +N menu of a lobby place');
+        await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+      }
+      await scan(tag, 'token-named agent at a lobby place (chip, + menu, place tooltips)');
       await H.key('J', ['control'], { char: 'never' });
       assert.ok(await until(`!!document.getElementById('palDlg')`, 5000), `${tag}: the navigator opens with Ctrl+J`);
       await scan(tag, 'navigator, first level');
       await js(`(()=>{const i=document.getElementById('palIn');i.value='c ';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
       await until(`document.querySelectorAll('#palDlg [role=option],#palDlg .pal-row,#palDlg li').length>0`, 3000);
       await scan(tag, 'navigator, chats');
+      // Go to on the agents level: a folder with several chats
+      await js(`(()=>{const i=document.getElementById('palIn');i.value='f ';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+      let atAgents = false;
+      for (let n = 1; n <= 8 && !atAgents; n++) {
+        if (!(await js(`!!document.getElementById('palDlg')`))) { await H.key('J', ['control'], { char: 'never' }); await until(`!!document.getElementById('palDlg')`, 3000); await js(`(()=>{const i=document.getElementById('palIn');i.value='f ';i.dispatchEvent(new Event('input',{bubbles:true}));})()`); }
+        await js(`(()=>{const i=document.getElementById('palIn');i.value=${jsLiteral(String(n))};i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+        await ctx.sleep(150);
+        if (await js(`(document.getElementById('palCrumb')||{textContent:''}).textContent.split('›').length>=3`)) atAgents = true;
+        else if (!(await js(`!!document.getElementById('palDlg')`))) await back();
+      }
+      assert.ok(atAgents, `${tag}: Go to reached an agents level`);
+      await scan(tag, 'Go to, agents level');
       await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
       await until(`!document.getElementById('palDlg')`, 3000);
       // 2b. a sub-agent's card in its parent's chat (the chat shows a reply in full; the card's one-line summary is masked)
@@ -156,7 +185,7 @@ module.exports = async (ctx) => {
   await back();
   await scan('continued', 'continued session');
   // 7. no redact module: fail closed, Durbar's own words stay
-  await H.load({ w: 1440, h: 900, query: { simreply: 'secrets', noredact: '1' }, ready: 'fit' });
+  await H.load({ w: 1440, h: 900, query: { simreply: 'secrets', simsched: '1', noredact: '1' }, ready: 'fit' });
   const nr = await js(`(()=>({fin:window.__durbarSimUi.agents().filter(a=>a.task==='Finished.').length,done:[...document.querySelectorAll('#stage .desk.is-done')].map(d=>d.title),page:document.body.innerText}))()`);
   assert.ok(nr.done.length > 0 && nr.fin > 0, `noredact: done desks exist and their line is "Finished.": ${JSON.stringify(nr)}`);
   assert.ok(/Thinking/.test(nr.page), 'noredact: Durbar\'s own "Thinking" stays');
