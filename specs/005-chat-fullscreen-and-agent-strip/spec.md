@@ -308,6 +308,11 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 - **FR-055** `[IMPLEMENTED]` (`sim:` `check:composer-toolbar`) **Accessibility and look** (FR-042 kept): 28px controls, 10.5px minimum text (the ring has no text), theme tokens only (no new colour literals; spec 070's ratchet), focus ring `--focus`, every control named, `aria-haspopup`/`aria-expanded` kept, keyboard reachable with Tab.
 - **FR-056** **Honest limits.** `[KNOWN GAP]` Claude Code and Codex report only a total, so their summary has no type bars until an adapter can read a breakdown (Claude's `/context` output is not in its stream; not built). `[KNOWN GAP]` Copilot's three parts are not checked to add up to its total on a real session (the *Other* row covers a positive gap; a negative one shows no Other row). Simulator and fakes only: no real session was run for this change.
 
+*Review fixes (PR 632, Paco's agent, 2026-10-23, task T094):*
+- FR-051, amended: the ring's window is the model chip's (`modelWindow`: the runtime's reported window, else the model list's for the tier in use, so a long-context session is measured against its long window); the event's own window always wins over the list's (`test:ctxbreakdown`). `[IMPLEMENTED]`
+- FR-052, amended: in Expert the summary is a dialog with **plain buttons** (Compact, Models and context of all agents), no menu roles; Simple's memory popup stays a `role="menu"` with menu items. `[IMPLEMENTED]` (`sim:` `check:composer-toolbar`)
+- FR-053, merged with spec 058 FR-094 (#630): a failed or sign-in-needing server adds the error dot, and the name reads "4 of 5 MCP servers on, 1 failed. Open the list". `[IMPLEMENTED]` (`sim:` `shots-058-mcp-health`)
+
 *Decisions made without the owner* (defaults; the owner can change them):
 - Simple keeps the `Memory N% full` words and its menu (FR-051).
 - The queued switch `→ <model>` stays visible on the model chip: it is a pending state the user asked for.

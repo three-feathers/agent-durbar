@@ -94,6 +94,7 @@ function SUMMARY() {
     total: ((m.querySelector('.cb-total') || {}).textContent || '').trim(), totalBar: vis(m.querySelector('.cb-total-bar i')),
     labels: [...m.querySelectorAll('.cb-row .cb-l')].map((e) => e.textContent.trim()), bars: [...m.querySelectorAll('.cb-row .cb-bar i')].filter(vis).length,
     note: ((m.querySelector('.cb-note') || {}).textContent || '').trim(),
+    itemRoles: [...m.querySelectorAll('button')].map((b) => b.getAttribute('role')).filter(Boolean),
     small: [...m.querySelectorAll('*')].filter((e) => vis(e) && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 10.5).map((e) => e.className),
   };
 }
@@ -288,6 +289,11 @@ module.exports = async (ctx) => {
     check(await until(`!!document.getElementById('ctxMenu')`, 3000), `${tag}: the context chip opens no menu`);
     const cm = await js(`(${SUMMARY.toString()})()`);
     check(cm && cm.above && cm.compact && cm.tools && cm.exp === 'true' && cm.role === 'dialog', `${tag}: context summary ${JSON.stringify(cm)}`);
+    /* review on PR 632: a dialog holds plain buttons, not menu items */
+    check(cm && cm.itemRoles.length === 0, `${tag}: the summary (a dialog) has buttons with roles ${JSON.stringify(cm && cm.itemRoles)}`);
+    /* review on PR 632: the ring's window is the model chip's (modelWindow, with the tier), not a second lookup */
+    { const rw = (/ of (\d[\d.]*[kM]) tokens\./.exec(m.ring && m.ring.name || '') || [])[1], mw = (/, (\d[\d.]*[kM]) tokens context window/.exec(m.modelLabel) || [])[1];
+      check(!!rw && rw === mw, `${tag}: the ring's window ${rw} is not the model chip's ${mw}`); }
     /* FR-052: VS Code style: the total line with its bar, one bar per type Copilot reports (system, tool definitions, chat), no note */
     check(cm && /^\d[\d.]*[kM]? of \d[\d.]*[kM] tokens · \d+%$/.test(cm.total) && cm.totalBar, `${tag}: the summary's total line "${cm && cm.total}"`);
     check(cm && ['System instructions', 'Tool definitions', 'Chat messages'].every((l) => cm.labels.includes(l)) && cm.bars === cm.labels.length && !cm.note, `${tag}: the summary's bars ${JSON.stringify(cm)}`);

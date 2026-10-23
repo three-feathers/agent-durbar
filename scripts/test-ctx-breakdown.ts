@@ -112,6 +112,15 @@ t('the static window is used when the event has none; waiting after a switch hid
   assert.strictEqual(w.tip, 'Context: waiting for the next message after the model change');
 });
 
+t('limit precedence: the event\'s own window beats the model list\'s (o.limit); o.limit only fills a missing one', () => {
+  const s = B.summary({ tokens: 500, limit: 1000 }, { limit: 2000 });
+  assert.strictEqual(s.limit, 1000); assert.strictEqual(s.pct, 50); assert.strictEqual(s.tip, 'Context 50% of 1k');
+  const f = B.summary({ tokens: 500, limit: 0 }, { limit: 2000 });
+  assert.strictEqual(f.limit, 2000); assert.strictEqual(f.pct, 25);
+  const none = B.summary({ tokens: 500, limit: 0 }, { limit: 0 });
+  assert.strictEqual(none.limit, 0); assert.strictEqual(none.pct, null);
+});
+
 t('levels follow toolstats ctxLevel: 69 ok, 70 warn, 90 warn, 91 high', () => {
   const lv = (p: number) => B.summary({ tokens: p * 1000, limit: 100000 }).level;
   assert.deepStrictEqual([lv(69), lv(70), lv(90), lv(91)], ['ok', 'warn', 'warn', 'high']);
