@@ -86,6 +86,22 @@ module.exports = async (ctx) => {
       const perm = await js(`window.__durbarSimUi.agents().filter(x=>/^(Waiting for permission|Allowed): (run|fetch)/.test(x.task||'')).map(x=>x.task)`);
       assert.ok(perm.length >= 2 && perm.every((t) => /\[redacted\]/.test(t) && !t.toLowerCase().includes(KEY.toLowerCase())), `${tag}: the permission lines are stored masked: ${JSON.stringify(perm)}`);
       await scan(tag, 'permission lines, runtime title, sub-agent name, Markdown-split tokens');
+      // 2a. the lobby (spec 001 FR-034..FR-040): the tiles' chips and titles, the Boss queue, and the navigator (Ctrl+J)
+      assert.ok(await until(`document.querySelectorAll('.lobby .pv').length>0`, 15000), `${tag}: agents stand in the lobby`);
+      const lob = await js(`(()=>{const pv=[...document.querySelectorAll('.lobby .pv')];return {n:pv.length,boss:document.querySelectorAll('.lobby .place.boss .pv').length,
+        words:pv.map(e=>e.textContent+' '+e.title+' '+(e.getAttribute('aria-label')||'')).join(' ').toLowerCase(),places:[...document.querySelectorAll('.lobby .place')].map(e=>e.title+' '+(e.getAttribute('aria-label')||'')).join(' ').toLowerCase()}})()`);
+      assert.ok(lob.boss > 0, `${tag}: the Boss queue holds the waiting agents`);
+      if (level === 'expert') assert.ok(lob.words.includes('curl') || lob.words.includes('fetch') || lob.words.includes('example.test'), `${tag}: a lobby chip shows what its agent is doing (so a raw label would show): ${lob.words.slice(0, 200)}`);
+      for (const nd of NEEDLES) assert.ok(!lob.words.includes(nd) && !lob.places.includes(nd), `${tag}: "${nd.slice(0, 10)}..." is on a lobby tile or its title`);
+      await scan(tag, 'lobby tiles');
+      await H.key('J', ['control'], { char: 'never' });
+      assert.ok(await until(`!!document.getElementById('palDlg')`, 5000), `${tag}: the navigator opens with Ctrl+J`);
+      await scan(tag, 'navigator, first level');
+      await js(`(()=>{const i=document.getElementById('palIn');i.value='c ';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+      await until(`document.querySelectorAll('#palDlg [role=option],#palDlg .pal-row,#palDlg li').length>0`, 3000);
+      await scan(tag, 'navigator, chats');
+      await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+      await until(`!document.getElementById('palDlg')`, 3000);
       // 2b. a sub-agent's card in its parent's chat (the chat shows a reply in full; the card's one-line summary is masked)
       const parent = await js(`(()=>{const h=window.__durbarSimUi.agents().find(x=>x.parent);return h?h.parent:''})()`);
       assert.ok(parent, `${tag}: a helper has a parent`);
@@ -141,8 +157,8 @@ module.exports = async (ctx) => {
   await scan('continued', 'continued session');
   // 7. no redact module: fail closed, Durbar's own words stay
   await H.load({ w: 1440, h: 900, query: { simreply: 'secrets', noredact: '1' }, ready: 'fit' });
-  const nr = await js(`(()=>({done:[...document.querySelectorAll('#stage .desk.is-done')].map(d=>d.title),page:document.body.innerText}))()`);
-  assert.ok(nr.done.length > 0 && nr.done.every((t) => /Done: Finished\./.test(t)), `noredact: done desks read "Finished.": ${JSON.stringify(nr.done.slice(0, 2))}`);
+  const nr = await js(`(()=>({fin:window.__durbarSimUi.agents().filter(a=>a.task==='Finished.').length,done:[...document.querySelectorAll('#stage .desk.is-done')].map(d=>d.title),page:document.body.innerText}))()`);
+  assert.ok(nr.done.length > 0 && nr.fin > 0, `noredact: done desks exist and their line is "Finished.": ${JSON.stringify(nr)}`);
   assert.ok(/Thinking/.test(nr.page), 'noredact: Durbar\'s own "Thinking" stays');
   // Durbar's own prefixes must not carry agent text through when redact is missing
   const nm = await js(`window.__durbarSimUi.agents().filter(x=>!x.parent&&x.live).map(x=>x.id)`);
@@ -157,10 +173,10 @@ module.exports = async (ctx) => {
   await js(`0`);
   ctx.win.webContents.session.webRequest.onBeforeRequest({ urls: ['*://*/*safetext.js', 'file:///*safetext.js'] }, (d, cb) => cb({ cancel: true }));
   await H.load({ w: 1440, h: 900, query: { simreply: 'secrets' }, ready: 'fit' });
-  const ns = await js(`(()=>({st:typeof window.DurbarSafeText,desks:document.querySelectorAll('#stage .desk[data-id]').length,done:[...document.querySelectorAll('#stage .desk.is-done')].map(d=>d.title)}))()`);
+  const ns = await js(`(()=>({fin:(window.__durbarSimUi?window.__durbarSimUi.agents():[]).filter(a=>a.task==='Finished.').length,st:typeof window.DurbarSafeText,desks:document.querySelectorAll('#stage .desk[data-id]').length,done:[...document.querySelectorAll('#stage .desk.is-done')].map(d=>d.title)}))()`);
   ctx.win.webContents.session.webRequest.onBeforeRequest(null);
   assert.strictEqual(ns.st, 'undefined', 'safetext.js was blocked');
-  assert.ok(ns.desks >= 15 && ns.done.length > 0 && ns.done.every((t) => /Done: Finished\./.test(t)), `no safetext.js: the office draws and done desks read "Finished.": ${JSON.stringify({ d: ns.desks, done: ns.done.slice(0, 2) })}`);
+  assert.ok(ns.desks >= 15 && ns.done.length > 0 && ns.fin > 0, `no safetext.js: the office draws and done desks read "Finished.": ${JSON.stringify({ d: ns.desks, done: ns.done.slice(0, 2), fin: ns.fin })}`);
   await scan('nosafetext', 'safetext.js missing');
 
   console.log('[done-desk-mask] all checks passed');

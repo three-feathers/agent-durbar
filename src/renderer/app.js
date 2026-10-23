@@ -236,9 +236,8 @@ const isAway=a=>!a.parent&&(!!VISITS.at(a.id)||RETURNING.has(a.id));
 const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id),D=window.DurbarPlaces;if(v&&(v.place===D.COFFEE||v.place===D.BANK))return taskText(a);
   if(v&&v.place===D.BOSS)return wordOf('boss-note')+' · '+taskText(a); /* spec 001 FR-034: the empty desk's small note */return v?(SIMPLE?(PLACE_VERB[v.place]||'Using a tool')+' · '+taskText(a):'At '+placeLabel(v.place)+': '+visitDoing(a,v)+' · '+taskText(a)):taskText(a);};
 /* spec 001 FR-036, spec 041 FR-065: the desk card's title and accessible name mask agent text before any cut (a token cut mid-way no longer
-   matches a token shape). The shared src/shared/redact.ts (window.DurbarRedact); without it the title keeps only the name and the label drops the text (fail closed). Whichever of PR 511 and PR 567
-   lands second moves this to DurbarSafeText. */
-const deskMask=t=>{const R=window.DurbarRedact;try{return R&&typeof R.redact==='function'?R.redact(t):'';}catch(_){return '';}};
+   matches a token shape). Through DurbarSafeText (safeMask); without redact the title keeps only the name and the label drops the text (fail closed). */
+const deskMask=t=>safeMask(t); /* the one mask (DurbarSafeText, FR-065): unescaped, Markdown-aware, '' when redact is missing */
 const deskTip=a=>{const full=a.name+' · '+(a.profile?a.profile.name+' · '+a.role:a.role)+kindTag(a)+remoteTag(a)+' · '+stWord(a)+': '+taskOf(a),m=deskMask(full);
   return DurbarCutText.cutText(m||a.name,200);};
 /* A result of addPlace/updatePlace/removePlace (or a settings read): the places and the map as they are now. Agents standing at a place that is gone
