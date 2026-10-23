@@ -23,10 +23,10 @@
 
 ## 2026-10-23 delta: "Retrying" while the agent app retries (issue #600)
 
-- [ ] T016 Spec delta, plan, tasks (FR-016..FR-021 and T016..T022 taken; checked against `main` and the open PRs on 2026-10-23)
-- [ ] T017 `RetryEvent` in `src/adapters/types.ts`, event guard [FR-016]
-- [ ] T018 `src/adapters/retry.ts` (tracker, reason mappers); Claude (`claudeMap.ts`), Codex (`codexMap.ts`), Copilot (`map.ts`) [FR-017]
-- [ ] T019 `src/renderer/retry.js`; `app.js` pill, task line, chat note, status order; CSS reusing *Failing* [FR-018, FR-019]
-- [ ] T020 Simulator `simretry=1` [FR-020]
-- [ ] T021 `scripts/test-retry.ts` in `npm test` with a mutation check; driver `scripts/shots-034-retry.js` in the UI suite and `shots:docs`; screenshots at both sizes; `check:office` [FR-021]
-- [ ] T022 README, changelog fragment, specs-index block, agent notes [FR-021]
+- [x] T016 Spec delta, plan, tasks (FR-016..FR-021 and T016..T022 taken; checked against `main` and the open PRs on 2026-10-23)
+- [x] T017 `RetryEvent` in `src/adapters/types.ts`, event guard [FR-016]
+- [x] T018 `src/adapters/retry.ts` (tracker, reason mappers); Claude (`claudeMap.ts`), Codex (`codexMap.ts`), Copilot (`map.ts`) [FR-017]
+- [x] T019 `src/renderer/retry.js`; `app.js` pill, task line, chat note, status order; CSS reusing *Failing* [FR-018, FR-019]
+- [x] T020 Simulator `simretry=1` [FR-020]
+- [x] T021 `scripts/test-retry.ts` in `npm test` with a mutation check; driver `scripts/shots-034-retry.js` in the UI suite and `shots:docs`; screenshots at both sizes; `check:office` [FR-021]
+- [x] T022 README, changelog fragment, specs-index block, agent notes [FR-021]

@@ -17,6 +17,7 @@ import type { EditInfo } from './types';
 import { resetMs, usageLimitClosing } from './usagelimit';
 import { isObj, nonEmptyStr as str } from '../shared/guards';
 import { isMcpAuthChallenge } from './mcpauth';
+import { RetryTracker, codexRetry } from './retry';
 
 /** The shape of a JSON-RPC notification as read off the wire (`id` absent). Names mirror the protocol; not a vendor type. */
 export interface CodexNotification {
@@ -91,6 +92,8 @@ export class CodexMapper {
   /** Spec 005 FR-019: fileChange items that already started from `item/fileChange/patchUpdated`. */
   private patching = new Set<string>();
   private cwd: string | undefined;
+  /** Spec 034 FR-017: the main agent's model-call retries in this turn (`error` with `willRetry`). */
+  private retries = new RetryTracker();
 
   constructor(private readonly emit: (body: EventBody) => void) {}
 
@@ -117,6 +120,7 @@ export class CodexMapper {
     this.messages.clear();
     this.reasoningSeen.clear();
     this.patching.clear();
+    this.retries.reset();
   }
 
   private addChild(thread: string, item: string): void {
@@ -168,8 +172,16 @@ export class CodexMapper {
     const r = this.route(params);
     if (!r) return;
     const agentId = r.agentId;
+    // spec 034 FR-017: anything the model streams or starts for the main agent means the retried call went through
+    if (!agentId && (method.startsWith('item/') || method === 'thread/tokenUsage/updated')) this.retries.progress();
 
     switch (method) {
+      case 'error': {
+        // spec 034 FR-017: Codex retries the request by itself (`willRetry: true`); a fixed reason and the status only, never the message
+        const info = agentId ? null : codexRetry(params);
+        if (info) this.emit(this.retries.retry(info));
+        return;
+      }
       case 'turn/started':
         return this.emit({ type: 'status', status: 'working', intent: 'Thinking', agentId });
       case 'turn/plan/updated': {
@@ -238,6 +250,9 @@ export class CodexMapper {
     }
     const turn = own(params, 'turn');
     const status = ownStr(turn, 'status');
+    const gaveUp = agentId === undefined && status === 'failed' && errorKind(own(own(turn, 'error'), 'codexErrorInfo'))?.toLowerCase() !== 'usagelimitexceeded' ? this.retries.gaveUp() : undefined;
+    if (agentId === undefined) this.retries.reset();
+    if (gaveUp) this.emit(gaveUp); // a turn that failed after a retry gave up (not at a usage limit)
     if (status === 'completed') return this.emit({ type: 'status', status: 'idle', agentId });
     if (status === 'interrupted') return this.emit({ type: 'status', status: 'idle', intent: 'Aborted', agentId });
     if (status === 'failed') {

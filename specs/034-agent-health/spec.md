@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 034
 title: The figure follows the context window (heavy 70-90%, grumpy monster above 90%), trouble signals (ambulance, faint, dizzy, impatient), Serious mode
-status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/shots-034.js`; not checked on a real session; T009 built 2026-10-19: List view mood words and the walking figure's mood (FR-014/FR-015, `scripts/shots-034-list.js`); delta 2026-10-17 *rooms darken with their worst agent, sirens* (issue #135) **built** (simulator, `scripts/shots-034.js`; T015 room path contrast done too)
+status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/shots-034.js`; not checked on a real session; T009 built 2026-10-19: List view mood words and the walking figure's mood (FR-014/FR-015, `scripts/shots-034-list.js`); delta 2026-10-17 *rooms darken with their worst agent, sirens* (issue #135) **built** (simulator, `scripts/shots-034.js`; T015 room path contrast done too); delta 2026-10-23 *Retrying while the agent app retries the model API* (issue #600) **built** (simulator `simretry=1`, `scripts/shots-034-retry.js`, `test:retry`; vendor shapes read only, no real retry seen)
 -->
 
 **Feature Branch**: `034-agent-health` (amends 001 office view; reads 011 caps, 019 context, 003 permissions)
@@ -216,6 +216,13 @@ status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/sho
 - **FR-019** `[IMPLEMENTED]` Chat: one note per run of retries (`.note.retry`), updated in place, then "went through" or "gave up" as in the clarifications. A gave-up turn's error keeps the line "Gave up after N retries – reason" as the task line (the pill says Error).
 - **FR-020** `[IMPLEMENTED]` Simulator, `simretry=1`: Clara (working) is retrying (attempt 3 of 10, servers busy, HTTP 529) and stays so (the background ticks skip her); Tomas (error) retries twice for a rate limit (HTTP 429) and gives up before his error. A driver sends further events with `window.__durbarSimEmit`.
 - **FR-021** `[IMPLEMENTED]` Tests, no credits: `scripts/test-retry.ts` (each app's mapping from synthetic messages shaped like the sources above, the tracker's numbering and gave-up rules, the renderer's lines and `next`, the event guard), each case mutation-checked; driver `scripts/shots-034-retry.js` at 1440x900 and 1280x800 (the pill, the line, the one note updated in place, went through, gave up, Serious mode, `check:office` unchanged), screenshots `docs/screenshots/retry-*.png`.
+
+#### Verification (2026-10-23)
+
+- `test:` `scripts/test-retry.ts` (`test:retry`): the three readers, the tracker, the three mappers end to end (retrying, gave up before the error, no gave-up after progress, a usage limit, a sign-in failure, a helper or an unknown thread), the event guard, `retry.js` lines, `LINE_RE` and `next`. Mutation check: 22 deliberate breaks of the mapping, the tracker, the guard and `retry.js`, 21 failed a test; the 22nd (the Claude gave-up condition's `!limited`) was redundant, because the usage-limit, abort and sign-in paths return before the gave-up is emitted, so the condition was removed. `scripts/fixtures/claude/init.json` used `api_retry` as an ignored message; it now expects the retry event (`test-claude-map`). `test-mcp-agentstate` pins the error line's new fragment.
+- `sim:` `scripts/shots-034-retry.js` (in the UI suite) at 1440x900 and 1280x800 with `simretry=1`: every step asserted on an `until()` result. Mutation check on the renderer: making a note per retry, dropping the retry line from the desk line, and dropping Retrying from the chat strip's attention each fail it. `check:office` 392/392 (default simulator). Screenshots `docs/screenshots/retry-office-*.png`, `retry-chat-*.png`, `retry-gaveup-*.png`.
+- Found while building: a closed chat's element is not in the page, so the first build added a new note for each retry (the note is now found in the chat's own element); the desk line showed the live readout or the place instead of the retry line (the retry line now wins, FR-018).
+- The README, website and landing pictures (`shots:docs`) are taken without `simretry`, so none of them shows this change; they were not retaken.
 
 #### Known gaps
 
