@@ -29,7 +29,7 @@
      Owner answers 2026-10-23 14:45 UTC: Durbar's spending limit has its own sign and pose ('limit', figure 'wallet'); a door the user
      closed (x.userClosed, x.held = runs held there) is 'shut', after an error and a wait for you; an error carries effect 'fire'. */
   const SIGNS={
-    attention:{word:'Needs attention',short:'Alert',door:'open',icon:'alert',effect:'fire'},
+    attention:{word:'Error',short:'Alert',door:'open',icon:'alert',effect:'fire'},
     limit:{word:'Limit reached',short:'Limit',door:'closed',icon:'wallet',figure:'wallet'},
     waiting:{word:'Waiting for you',short:'Waiting',door:'closed',icon:'hourglass',figure:'wave'},
     shut:{word:'Do not disturb · by you',short:'DND',door:'closed',icon:'lock'},

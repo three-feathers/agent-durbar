@@ -43,8 +43,8 @@ assert.deepStrictEqual(row({ state: 'working', helpers: ['done', 'idle'] }), ['b
 assert.deepStrictEqual(row({ state: 'idle', helpers: ['working'] }), ['available', 'Available', 'idle', 'open'], 'a meeting needs the session itself at work');
 assert.deepStrictEqual(row({ state: 'waiting' }), ['waiting', 'Waiting for you', 'waiting', 'closed']);
 assert.deepStrictEqual(row({ state: 'waiting', limit: true, coffee: true }), ['limit', 'Limit reached', 'waiting', 'closed'], 'owner Q2 (14:45 UTC): the spending limit has its own sign, also on its coffee break');
-assert.deepStrictEqual(row({ state: 'error' }), ['attention', 'Needs attention', 'error', 'open'], 'Q6: an error keeps the cabin open, so its trouble stays in sight');
-assert.deepStrictEqual(row({ state: 'error', paused: true }), ['attention', 'Needs attention', 'error', 'open'], 'an error wins over everything');
+assert.deepStrictEqual(row({ state: 'error' }), ['attention', 'Error', 'error', 'open'], 'Q6: an error keeps the cabin open, so its trouble stays in sight');
+assert.deepStrictEqual(row({ state: 'error', paused: true }), ['attention', 'Error', 'error', 'open'], 'an error wins over everything');
 assert.deepStrictEqual(row({ state: 'idle', paused: true }), ['dnd', 'Do not disturb', 'idle', 'closed'], 'paused');
 /* review on #631: the app's real sequence: startCoffee sets coffee and the state `waiting`; a provider break has no `limit` */
 assert.deepStrictEqual(row({ state: 'waiting', coffee: true }), ['dnd', 'Do not disturb', 'idle', 'closed'], 'a coffee break that resumes by itself (entered as waiting) is Do not disturb');

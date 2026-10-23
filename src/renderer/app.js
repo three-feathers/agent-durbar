@@ -1082,7 +1082,7 @@ const signTitle=(a,g)=>g.key==='shut'?'Do not disturb (you closed it)'+(doorOf(a
    (cls 'stl': icon and short word only, so it gives way like the status word did and a long name keeps three characters, FR-007) */
 function signHTML(a,cls){
   const g=signOf(a);
-  return `<span class="${cls} dsign st-${g.tone} ds-${g.key}" data-sign="${g.key}" title="${esc(signTitle(a,g))}: ${esc(stWord(a))}${isFailing(a)?' ('+MOOD.failStreak(a.id)+' tool calls failed in a row)':''}">${cls==='pill'?doorSvg(g.door==='open',true):''}${signIcon(g.icon)}<span class="dsw">${esc(cls==='stl'?g.short:g.word)}</span>${cls==='pill'?pillWarn(a):''}</span>`;
+  return `<span class="${cls} dsign st-${g.tone} ds-${g.key}" data-sign="${g.key}" title="${esc(isRetrying(a)?RETRY.retryLine(a.retry):signTitle(a,g)+': '+stWord(a)+(isFailing(a)?' ('+MOOD.failStreak(a.id)+' tool calls failed in a row)':''))}">${cls==='pill'?doorSvg(g.door==='open',true):''}${signIcon(g.icon)}<span class="dsw">${esc(cls==='stl'?g.short:g.word)}</span>${cls==='pill'?pillWarn(a):''}</span>`;
 }
 /* spec 017 FR-011..FR-014 (owner 2026-10-23, "real office cabin style"): each session is a cabin. While the agent is busy, waits, must
    not be disturbed or is away, its cabin door is closed and drawn in place of the desk scene (same box, so the layout is unchanged): the

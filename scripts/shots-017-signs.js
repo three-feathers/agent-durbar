@@ -38,14 +38,14 @@ const SIZES = [[1440, 900], [1280, 800]];
 const THEMES = ['clean-office', 'corporate', 'durbar-european', 'durbar-indian', 'durbar-japanese', 'retro'];
 /* the oracle: spec 017 FR-003's table, written out again here (not imported) so a wrong mapping in the app fails */
 const TABLE = {
-  attention: { word: 'Needs attention', short: 'Alert', icon: 'alert', open: true },
+  attention: { word: 'Error', short: 'Alert', icon: 'alert', open: true },
   limit: { word: 'Limit reached', short: 'Limit', icon: 'wallet', open: false, wallet: true },
   waiting: { word: 'Waiting for you', short: 'Waiting', icon: 'hourglass', open: false, wave: true },
   shut: { word: 'Do not disturb · by you', short: 'DND', icon: 'lock', open: false, tip: 'Do not disturb (you closed it)' },
   dnd: { word: 'Do not disturb', short: 'DND', icon: 'bar', open: false },
   away: { word: 'Away', short: 'Away', icon: 'clock', open: false },
   meeting: { word: 'In a meeting', short: 'Meeting', icon: 'people', open: false },
-  retrying: { word: 'Retrying', short: 'Retrying', icon: 'retry', open: false },
+  retrying: { word: 'Retrying', short: 'Retrying', icon: 'retry', open: false, tipRe: /^Retrying \(attempt \d+ of \d+\)/ }, // spec 034 FR-018: the pill's tooltip is the whole retry line
   failing: { word: 'Failing', short: 'Failing', icon: 'bolt', open: false },
   thinking: { word: 'Thinking', short: 'Thinking', icon: 'bubble', open: false },
   busy: { word: 'Busy', short: 'Busy', icon: 'dot', open: false },
@@ -172,7 +172,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(c.icon, t.icon, `${tag}: the door's sign icon`);
       assert.ok(c.font >= 10.5 && c.contrast >= 3 && !c.cut && c.inDesk, `${tag}: the door's sign is legible and whole: ${JSON.stringify(c)}`);
       assert.ok(d.shown >= 3, `${tag}: at least three characters of "${d.word}" show (${d.shown}; ${d.dims})`);
-      assert.ok(d.title.startsWith((t.tip || t.word) + ': '), `${tag}: the tooltip names the sign and the plain word: ${d.title}`);
+      assert.ok(t.tipRe ? t.tipRe.test(d.title) : d.title.startsWith((t.tip || t.word) + ': '), `${tag}: the tooltip names the sign and the plain word (Retrying: spec 034's whole line): ${d.title}`);
       /* owner Q6: an error burns, inside its scene, clear of its tag, flickering unless motion is reduced */
       assert.strictEqual(c.fire, key === 'attention', `${tag}: ${key === 'attention' ? 'flames on the desk' : 'no flames'}`);
       if (c.fire) assert.ok(c.fireIn && (c.flicker || c.reduced), `${tag}: the flames stay in the scene, clear of the tag, and flicker: ${JSON.stringify(c)}`);
