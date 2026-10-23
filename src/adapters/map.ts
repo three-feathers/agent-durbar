@@ -10,6 +10,7 @@ import { isMcpAuthChallenge } from './mcpauth';
 import type { AgentEvent, CompactionEvent, ContextTier, McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import { nonEmptyStr as str } from '../shared/guards';
+import { parseAutoTier } from '../shared/modelswitch';
 import { EditStreams, editOf } from './edits';
 import { usageLimitClosing } from './usagelimit';
 import { markAuthError } from './autherrors';
@@ -224,6 +225,8 @@ export class EventMapper {
       case 'session.model_change': {
         if (agentId || typeof d.newModel !== 'string' || !d.newModel) return;
         const tier = tierOf(d.contextTier);
+        // spec 007 FR-016: the three names only; FR-020: an organization default (`autoTierManaged: true`) is never reported as the user's own tier
+        const autoTier = d.newModel === 'auto' && d.autoTierManaged !== true ? parseAutoTier(d.autoTier) : undefined;
         const cause = d.cause === 'rate_limit_auto_switch' ? 'rate-limit' : d.cause === 'refusal_fallback' ? 'fallback' : this.expected === d.newModel ? 'user' : 'runtime';
         if (this.expected === d.newModel) this.expected = undefined;
         this.model = d.newModel;
@@ -235,8 +238,17 @@ export class EventMapper {
           effort: typeof d.reasoningEffort === 'string' ? d.reasoningEffort : undefined,
           previousEffort: str(d.previousReasoningEffort),
           tier,
+          ...(autoTier ? { autoTier } : {}),
           cause,
         });
+      }
+      case 'session.auto_tier_switch_failed': {
+        // spec 007 FR-019: the tier asked for did not take; the one in effect stays (three names only, else "the default")
+        if (agentId) return;
+        const r = d.reason;
+        const reason = r === 'policy_rejected' ? 'policy-rejected' : r === 'request_failed' ? 'request-failed' : r === 'setup_failed' ? 'setup-failed' : r === 'unsupported' ? 'unsupported' : 'unknown';
+        const requested = parseAutoTier(d.requestedAutoTier), effective = parseAutoTier(d.effectiveAutoTier);
+        return this.emit({ type: 'autoTierFailed', reason, ...(requested ? { requested } : {}), ...(effective ? { effective } : {}) });
       }
       case 'session.compaction_start': {
         if (agentId) return;

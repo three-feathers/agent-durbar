@@ -203,7 +203,7 @@ const SIM_PROFILES = [
   { id: 'release-helper', name: 'Release helper', description: 'Prepares release notes from merged pull requests', source: 'repo' as const, path: '~/work/mcp-swiss/.github/agents/release-helper.agent.md', mcpServers: ['github'] },
 ];
 const SIM_MODELS: ModelChoice[] = [
-  { id: 'auto', name: 'Auto', efforts: [] },
+  { id: 'auto', name: 'Auto', efforts: [], autoTiers: ['efficiency', 'balance', 'intelligence'] }, // spec 007 FR-018
   { id: 'sim-fast', name: 'Sim Fast', multiplier: 0.33, efforts: [], contextWindow: 128000, priceClass: 'low', pricing: { inputPerMTok: 20, outputPerMTok: 100, cachedPerMTok: 2 } },
   { id: 'sim-mid', name: 'Sim Mid', multiplier: 1, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', contextWindow: 272000, priceClass: 'medium', pricing: { inputPerMTok: 80, outputPerMTok: 400, cachedPerMTok: 8 } },
   { id: 'sim-deep', name: 'Sim Deep', multiplier: 3, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', contextWindow: 200000, priceClass: 'high', contextTiers: ['default', 'long'], longWindow: 400000,
@@ -1044,6 +1044,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
 
     async function reply(s: SimAgent, text: string): Promise<void> {
       closeOpen(s);
+      s.state = 'working'; // spec 007 FR-018 (review on PR 642): a reply in progress is busy, so a model or tier switch asked now is queued as on a real runtime
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: 'Answering: ' + text.slice(0, 60) });
       if (/\bfallback\b/i.test(text)) runtimeSwitch(s, 'fallback'); // demo: the runtime switches models by itself (spec 030 FR-015)
       if (!/\bquick\b/i.test(text)) for (let i = 0; i < 4; i++) { think(s, 1); await wait(650); } // "quick": a turn where the model sends no reasoning
@@ -1833,7 +1834,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
 
     // ---- Model, context tier and compaction (spec 030). Fake: no session, no credits. The queue-on-busy rule and the compaction numbers are made up (sim:), the shapes are the normalized ones. ----
     let queueN = 0;
-    const simModel = (id: string | undefined): ModelChoice | undefined => SIM_MODELS.find((m) => m.id === id);
+    // spec 007 FR-018: page address simtierlock=<tier> = the organization's Copilot policy locks the Auto tier
+    // `other` = a lock on a tier outside the three names (FR-017: fails closed, no name shown); simtierfail=1 = every tier switch fails (FR-019)
+    const tierQ = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+    const simTierLock = (() => { const v = tierQ.get('simtierlock'); return v === 'efficiency' || v === 'balance' || v === 'intelligence' || v === 'other' ? v : undefined; })();
+    const simTierFail = tierQ.get('simtierfail') === '1';
+    const simModelList = (): ModelChoice[] => SIM_MODELS.map((m) => ({ ...m, ...(m.id === 'auto' && simTierLock ? { autoTierManaged: simTierLock === 'other' ? { locked: true } : { tier: simTierLock, locked: true } } : {}) }));
+    const simModel = (id: string | undefined): ModelChoice | undefined => simModelList().find((m) => m.id === id);
     const windowFor = (m: ModelChoice | undefined, tier: ContextTier | undefined): number => (tier === 'long' && m?.longWindow ? m.longWindow : m?.contextWindow ?? 0);
     const isBusy = (s: SimAgent): boolean => s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.compacting;
     const needsCompaction = (s: SimAgent, req: ModelSwitchRequest): boolean => {
@@ -1851,10 +1858,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       else if (!m.efforts.includes(s.info.effort ?? '')) s.info.effort = undefined; // kept when the new model offers it
       s.tier = req.contextTier === 'long' ? 'long' : undefined;
       s.info.tier = s.tier;
+      const ownBefore = s.info.autoTier;
+      if (req.autoTier) s.info.autoTier = req.autoTier; // spec 007 FR-016: kept while on another model
+      else if (req.autoTier === null) s.info.autoTier = undefined;
       s.models = m.id === 'auto' ? undefined : [m.id];
       const w = windowFor(m, s.tier);
       if (w > 0 && s.ctx) s.pendingLimit = w; // reported with the next call, not at once
-      emit({ type: 'model', sessionId: sid(s), timestamp: now(), model: m.id, previousModel, effort: s.info.effort, previousEffort, tier: s.tier ?? 'default', cause });
+      emit({ type: 'model', sessionId: sid(s), timestamp: now(), model: m.id, previousModel, effort: s.info.effort, previousEffort, tier: s.tier ?? 'default', ...(m.id === 'auto' && req.autoTier ? { autoTier: req.autoTier } : {}), cause });
+      if (simTierFail && m.id === 'auto' && req.autoTier) {
+        // FR-019: the runtime could not use the tier; the one before stays in effect (Efficiency when the agent had none)
+        s.info.autoTier = ownBefore;
+        window.setTimeout(() => emit({ type: 'autoTierFailed', sessionId: sid(s), timestamp: now(), requested: req.autoTier ?? undefined, effective: ownBefore ?? 'efficiency', reason: 'request-failed' }), 0);
+      }
     }
 
     async function applyPending(s: SimAgent): Promise<void> {
@@ -1904,6 +1919,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!m) return { ok: false, error: 'That model is not in the list your account offers.' };
         if (req.effort && !m.efforts.includes(req.effort)) return { ok: false, error: 'That model does not offer this reasoning effort.' };
         if (req.contextTier === 'long' && !m.contextTiers?.includes('long')) return { ok: false, error: 'That model has no long-context tier.' };
+        // spec 007 FR-015, as main checks it
+        if (req.autoTier !== undefined && (m.id !== 'auto' || !m.autoTiers?.length || (req.autoTier !== null && !m.autoTiers.includes(req.autoTier)))) return { ok: false, error: 'This model has no Auto routing tier to choose.' };
+        if (req.autoTier !== undefined && m.autoTierManaged?.locked && m.autoTierManaged.tier !== req.autoTier) return { ok: false, error: m.autoTierManaged.tier ? `Your organization's Copilot policy sets the Auto routing to ${m.autoTierManaged.tier}.` : "Your organization's Copilot policy sets the Auto routing." };
         const tier: ContextTier | undefined = req.contextTier === 'long' ? 'long' : undefined;
         if (needsCompaction(s, req)) {
           // The target window is smaller than the context in use: the runtime asks first (status confirmation_required).
@@ -2333,7 +2351,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (opts.grants !== 'stuck' && s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
-      listModels: async (kind) => ({ ok: true, models: (kind === 'claude' ? SIM_CLAUDE_MODELS : !kind || kind === 'copilot' ? SIM_MODELS : []).map((m) => ({ ...m })) }),
+      listModels: async (kind) => ({ ok: true, models: (kind === 'claude' ? SIM_CLAUDE_MODELS : !kind || kind === 'copilot' ? simModelList() : []).map((m) => ({ ...m })) }),
       newSession: async (id, o) => {
         const src = sims.find((x) => x.info.id === id);
         if (!src) return { ok: false, error: 'unknown agent' };
