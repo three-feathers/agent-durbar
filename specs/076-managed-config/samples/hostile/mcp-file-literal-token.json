@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "servers": [
+    {
+      "id": "x",
+      "name": "X",
+      "transport": "stdio",
+      "command": "node",
+      "args": [
+        "server.js"
+      ],
+      "env": {
+        "API_TOKEN": "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ4In0.c2ln"
+      }
+    }
+  ]
+}

@@ -77,3 +77,16 @@ IDs start after the readable-JSON delta's T048.
 - [x] T073 Review on #498: driver step: two clicks on Stop call `bridge.stop` once (`aria-busy` guard); `__durbarSimUi.bridge` under `DURBAR_SIM` only [FR-038]
 - [x] T074 Review on #498: the spinner is decorative; the turn's start and end are announced through `#srAnnounce`; driver asserts it [FR-038]
 - [x] T075 Review on #498: the macOS demo Stop failure: Send, read and Stop in one page task (the canned turn is a transient); the stopped reply never arrives; CHANGELOG's doubled merge-queue line removed; after merging main (#515): spec 070's literal ratchet lowered (styles 156, screens 16, themes 52) and `theme.js` takes main's three button-text pairs (`test:theme-tokens`) [FR-043]
+
+## Delta 2026-10-23: the message box grows, resizes and remembers its size (issue #592)
+
+IDs start after T075.
+
+- [x] T076 Tests first: `scripts/test-composer-size.ts` (`test:composersize`, in `test:serial`) for `limits`, `clamp`, `keyStep`, `parse` (cap 40% with the 110px floor, the 140px transcript floor, a stored size too tall clamped, junk stored values ignored) [FR-044, FR-046, FR-048]
+- [x] T077 Tests first: resize steps in `scripts/check-composer-toolbar.js` at both sizes: a long prompt grows past 110px to the cap and then scrolls; dragging the handle changes the height and is clamped (transcript ≥ 140px, box ≥ 36px); a reload keeps the size; double-click resets to automatic; keys (Arrow, Page, Home/End, Enter) and the ARIA name and values [FR-044..FR-048]
+- [x] T078 `src/renderer/composersize.js` (UMD), loaded in `index.html`, copied by `scripts/copy-assets.js` [FR-044, FR-046]
+- [x] T079 `app.js`: `sizeComposer()` replaces `autoGrow`'s fixed 110px; `#composerGrip` markup and `wireComposerGrip()` (pointer capture, double-click, keys, `localStorage` `durbar.composerHeight`); `ResizeObserver` on the chat; `styles.css` `.cgrip` with tokens, no `max-height:110px` [FR-044..FR-049]
+- [x] T080 Mutation checks: undo the cap, the transcript floor, the store and the reset by hand and see the unit test or the driver fail; record in the PR [FR-044..FR-048] (2026-10-23: the cap fixed at 110px, no transcript floor and Enter not resetting each fail `test:composersize`; the cap, the floor and the store fail the driver at both sizes; no double-click handler fails the driver's reset step)
+- [x] T081 Screenshots at 1440x900 and 1280x800 (`DURBAR_SIM=15`): `005-composer-resized-*.png`; retake the linked pictures that show the composer with `npm run shots:docs -- --only shots-hero,shots-003-011,check-composer-toolbar,check-edits,shots-006-prevmarks,shots-009-vschat,shots-063-folder-status,check-slash-suggest`; README feature line; `changelog.d/005-composer-resize.md` [FR-049]
+- [ ] T082 `[KNOWN GAP]` not tried with a real screen reader (NVDA, VoiceOver) or a touch screen; Windows and macOS through CI's drivers only [FR-045, FR-048]
+- [x] T083 Review on PR 599 (Paco's agent): driver step for a stored size: `durbar.composerHeight='3900'` and a reload show the box clamped (height and `aria-valuenow` equal `aria-valuemax`, transcript ≥ 140px, the stored value kept); `'abc'` and `'99999'` give automatic growth. Mutations: showing the stored size without the clamp fails the 3900 step; `parse()` without its range fails the 99999 step, at both sizes [FR-046, FR-047]
