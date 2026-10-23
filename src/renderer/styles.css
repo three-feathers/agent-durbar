@@ -113,6 +113,7 @@ body.has-bridge #liveBar{display:flex}
 .note.err{background:var(--pb-error,#f6e2df);border-color:var(--tone-bad-line);color:var(--red-ink)}
 .note .btn{height:28px;margin:0;padding:0 10px}
 .note-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.note .ro-done{margin:6px 0 0;color:var(--ink-2)} /* spec 003 FR-096: after a switch from a Read-only denial; inherits the note's size (10.5px floor) */
 /* spec 012 FR-157: the chat's sign-in card; the raw error only in a small, closed Details */
 .note.signin .signin-details{margin-top:6px;font-size:11px;color:var(--muted)}
 .note.signin .signin-details pre{white-space:pre-wrap;word-break:break-word;margin:4px 0 0;font-size:11px}
@@ -1662,6 +1663,8 @@ h2,h3,h4{text-wrap:balance}
 .ctoolbar .cti{width:14px;height:14px;flex:none}
 .ctoolbar .mchip{gap:var(--s-1)}
 .ctoolbar .ct-n{min-width:16px;padding:0 4px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:var(--t5-size);font-weight:600;line-height:16px;text-align:center}
+/* spec 058 FR-094 (issue 603): a server of this chat failed: a small dot in the error colour next to the count (the chip's name says it too) */
+.ctoolbar .ct-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--c-error);box-shadow:0 0 0 2px var(--surface)}
 .ct-more{position:relative;flex:none}
 .ct-more-pop{position:absolute;right:0;bottom:calc(100% + 6px);z-index:70;display:flex;flex-direction:column;align-items:flex-start;gap:var(--s-1);min-width:180px;max-width:min(360px,calc(100vw - 32px));padding:var(--s-2);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:0 14px 40px color-mix(in srgb,var(--ink) 22%,transparent)}
 .ct-more-pop[hidden]{display:none}

@@ -50,7 +50,21 @@ body.screen-open .workspace{display:none}
 .mst-w{font-weight:500}
 .srv-hint{display:block;font-size:11px;color:var(--ink-2);overflow-wrap:anywhere}
 .srv-detbtn{align-self:flex-start;margin-top:2px}
+/* spec 058 FR-090/FR-093 (issue 603): the reason line and the Details / Copy diagnostics buttons side by side */
+.srv-why{display:block;font-size:11px;color:var(--ink);overflow-wrap:anywhere}
+.srv-why b{font-weight:600}
+.srv-when{color:var(--ink-2)}
+.srv-btns{display:flex;flex-wrap:wrap;gap:6px;align-self:flex-start;margin-top:2px}
+.srv-btns .srv-detbtn{margin-top:0}
 .srv-det{display:flex;align-items:flex-start;gap:8px;margin-top:4px}
+/* spec 058 FR-069: the needs-sign-in block under a row's hint */
+.srv-sign{flex:1 0 100%;display:flex;flex-direction:column;gap:6px;margin-top:2px}
+.srv-sgl{display:block;font-size:11px;color:var(--ink);overflow-wrap:anywhere}
+.srv-sgl.mut{color:var(--muted)}
+.srv-sgl.srv-warn{color:var(--tone-warn-ink);font-weight:600}
+.srv-sgact{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.srv-steps{flex:1;min-width:0;margin:0;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:11px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.srv-steps code{font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:0 3px;border-radius:4px;background:var(--surface-2)}
 .srv-err{flex:1;min-width:0;margin:0;max-height:96px;overflow:auto;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
 .srv-name{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .mst i{width:8px;height:8px;border-radius:50%;background:var(--gray)}

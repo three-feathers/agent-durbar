@@ -1,0 +1,17 @@
+[Unit]
+Description=Agent Durbar simulator on :99 (no AI credits)
+After=xvfb.service
+Requires=xvfb.service
+[Service]
+WorkingDirectory=%h/<workspace>/agent-durbar
+Environment=DISPLAY=:99 DURBAR_SIM=15
+# --no-sandbox: there is no usable setuid sandbox under Xvfb on a VPS. This is acceptable only because the
+# unit runs the simulator, with no credentials, on trusted `main`. Never point it at untrusted code or a real session.
+ExecStart=/usr/bin/npx electron . --no-sandbox
+Restart=on-failure
+# Hardening. Drop the lines your distro refuses. No PrivateTmp (X socket); ProtectSystem=full keeps your home
+# writable for the app's own data.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
