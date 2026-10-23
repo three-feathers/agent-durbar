@@ -440,3 +440,13 @@ body.has-bridge #topBtns{display:flex}
 
 /* spec 074 FR-013: Settings > Keyboard, the current Go to shortcut */
 .navkey-now{display:inline-block;min-width:20px;padding:2px 8px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:12px;font-weight:600;color:var(--ink-2)}
+/* spec 058 FR-080..FR-085: Settings > MCP servers, live state over the running chats; the chats of a server listed under it */
+.lv-box{margin-bottom:var(--sec-gap)}
+.srv.lv{align-items:flex-start}
+.srv.lv .mst{min-width:0;overflow-wrap:anywhere}
+.lv-chats{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.lv-chat{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);min-width:0}
+.lv-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.lv-who{font-size:12px;min-width:0;overflow-wrap:anywhere}
+.lv-act{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px}
+.scr-adv>summary #advMcpAtt[hidden]{display:none}

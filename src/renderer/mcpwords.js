@@ -83,5 +83,49 @@
     if(/invalid (config|configuration)|configuration error|misconfigured/i.test(t))return CLASS_HINT.config;
     return '';
   }
-  return {stateOf,offBy,iconSvg,hintFor,signInHint,plain,ICON_NAMES:Object.keys(ICONS)};
+  /* Spec 058 FR-081: one server's live state over the running chats, for Settings > MCP servers. `sessions` = [{id, name, folder, reply}],
+     `reply` an `agents:mcp` reply (main masked its errors); `configured` = server names of the configured lists. A chat "uses" a server when
+     the agent app reported a state for it, or it is switched on there. Most urgent state first (RANK); the row takes its icon and class. */
+  const RANK=['failed','needs-auth','pending','unknown','none','connected','not_configured','stopped','disabled'];
+  const keyOf=st=>st===undefined||st===null||st===''?'none':typeof st==='string'&&Object.prototype.hasOwnProperty.call(STATES,st)?st:'unknown';
+  const MAX_CHATS=50, MAX_SERVERS=200;
+  const okName=n=>typeof n==='string'&&n.length>0&&n.length<=200;
+  function aggregate(sessions,configured){
+    const rows=new Map();
+    const row=n=>{let r=rows.get(n);if(!r){r={name:n,chats:[]};rows.set(n,r);}return r;};
+    let chats=0;
+    for(const c of Array.isArray(sessions)?sessions:[]){
+      if(chats>=MAX_CHATS)break;
+      const rp=c&&c.reply;
+      if(!rp||rp.ok!==true||rp.live!==true||!Array.isArray(rp.servers))continue;
+      chats++;
+      const seen=new Set();
+      for(const e of rp.servers){
+        if(!e||!okName(e.name)||seen.has(e.name))continue;
+        seen.add(e.name);
+        const reported=!(e.status===undefined||e.status===null||e.status==='');
+        if(!reported&&(e.defaultOn===false||e.off===true))continue;
+        /* the chat dialog's own words (FR-078: who turned a `disabled` server off), so both places say the same */
+        const sv=stateOf(e.status,{off:e.off,defaultOn:e.defaultOn,origin:e.origin,app:rp.app,launchedOff:e.launchedOff,switchedHere:e.switchedHere});
+        const k=e.status==='disabled'&&sv.cls==='pending'?'pending':keyOf(e.status);
+        row(e.name).chats.push({id:String(c.id),name:plain(c.name,80),folder:plain(c.folder,80),entry:e,state:{key:k==='unknown'||k==='disabled'?k+':'+sv.word:k,rank:RANK.indexOf(k),word:sv.word,icon:sv.icon,cls:sv.cls}});
+      }
+    }
+    for(const n of Array.isArray(configured)?configured:[])if(okName(n))row(n);
+    let attention=0;
+    const out=[...rows.values()].map(r=>{
+      const parts=new Map();
+      for(const ch of r.chats){const p=parts.get(ch.state.key);if(p)p.n++;else parts.set(ch.state.key,{key:ch.state.key,rank:ch.state.rank,word:ch.state.word,icon:ch.state.icon,cls:ch.state.cls,n:1});}
+      const list=[...parts.values()].sort((x,y)=>x.rank-y.rank||(x.word<y.word?-1:x.word>y.word?1:0));
+      const top=list[0]||Object.assign({rank:RANK.indexOf('none')},NONE);
+      const att=list.some(p=>p.key==='failed'||p.key==='needs-auth');
+      return {name:r.name,chats:r.chats,parts:list.map(p=>({key:p.key,word:p.word,icon:p.icon,cls:p.cls,n:p.n})),
+        summary:list.length?list.map(p=>p.word+' in '+p.n+' chat'+(p.n===1?'':'s')).join(' \u00b7 '):NONE.word,icon:top.icon,cls:top.cls,attention:att};
+    });
+    out.sort((x,y)=>(y.attention-x.attention)||((y.chats.length>0)-(x.chats.length>0))||(x.name<y.name?-1:x.name>y.name?1:0));
+    const servers=out.slice(0,MAX_SERVERS);
+    for(const r of servers)if(r.attention)attention++;
+    return {servers,attention,chats};
+  }
+  return {stateOf,offBy,iconSvg,hintFor,signInHint,plain,aggregate,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
 })());

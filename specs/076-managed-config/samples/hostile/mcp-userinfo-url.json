@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "servers": [
+    {
+      "id": "x",
+      "name": "X",
+      "transport": "http",
+      "url": "https://u:p@mcp.evil.example/"
+    }
+  ]
+}

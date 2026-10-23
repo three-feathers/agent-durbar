@@ -1,0 +1,54 @@
+{
+  "$schema": "../managed/schema/policy.schema.json",
+  "version": 1,
+  "secrets": {
+    "envAllow": [
+      {
+        "name": "ACME_FOUNDRY_KEY",
+        "hosts": [
+          "acme-ai.services.ai.azure.com"
+        ]
+      },
+      {
+        "name": "ACME_OTEL_AUTH_HEADER",
+        "hosts": [
+          "otel.acme.example:4318"
+        ]
+      }
+    ]
+  },
+  "telemetry": {
+    "otel": {
+      "endpoint": "https://otel.acme.example:4318",
+      "protocol": "http/protobuf",
+      "signals": [
+        "metrics",
+        "traces"
+      ],
+      "headersFromEnv": {
+        "Authorization": "ACME_OTEL_AUTH_HEADER"
+      },
+      "copilotAllContent": true,
+      "apps": [
+        "copilot",
+        "claude",
+        "codex"
+      ]
+    }
+  },
+  "llm": {
+    "claude": {
+      "provider": "foundry",
+      "resource": "acme-ai",
+      "apiKeyFromEnv": "ACME_FOUNDRY_KEY",
+      "model": "claude-sonnet-4-5"
+    },
+    "codex": {
+      "bedrock": {
+        "region": "eu-central-1",
+        "profile": "acme-dev"
+      },
+      "model": "openai.gpt-oss-120b-1:0"
+    }
+  }
+}

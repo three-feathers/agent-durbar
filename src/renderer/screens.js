@@ -103,6 +103,136 @@
     glob=null;hm=null;
     if(X.bridge.mcpGlobalState){try{glob=await X.bridge.mcpGlobalState();}catch(e){glob=null;}}
     if(X.bridge.mcpGlobalDiff){try{hm=await X.bridge.mcpGlobalDiff();}catch(e){hm=null;}}
+    await loadLive();
+  }
+  /* ---------------- spec 058 FR-080..FR-086: Settings > MCP servers, the live state of each server over the running chats ----------------
+     The data is each running chat's `agents:mcp` reply (main masked its errors, FR-005); no channel of its own. */
+  let live=null; /* {agg (DurbarMcpWords.aggregate), replies: Map chat id -> agents:mcp reply} */
+  const liveOpen=new Set(); /* servers whose chats are listed */
+  const liveDet=new Set(); /* `<server>\0<chat>` whose Details are open */
+  const liveBusy=new Set(); /* `<server>\0<chat>`: a Restart under way; `\0<chat>`: a Restart session under way */
+  let liveSeen=new Map(); /* server -> the summary last shown (state changes are announced, FR-083) */
+  const liveMore=new Set(); /* `<server>\0<chat>` whose More (Restart behind a needs-sign-in row) is open */
+  let liveSeq=0; /* review on PR 609: each load has a number; a reply of an older load that ends later is dropped */
+  let liveStale=false; /* an event came while the list was hidden (Advanced collapsed): reload when it opens */
+  function onLiveToggle(e){const d=e.target;if(!d||!d.matches||!d.matches('details.lv-more'))return;if(d.open)liveMore.add(d.dataset.lvk);else liveMore.delete(d.dataset.lvk);}
+  async function loadLive(){
+    if(!X.bridge.agentMcp||!X.agents||!window.DurbarMcpWords||!window.DurbarMcpWords.aggregate){live=null;return;}
+    const my=++liveSeq;
+    const list=X.agents().filter(g=>{const m=X.mcpSession&&X.mcpSession(g.id);return !m||m.mcp;}).slice(0,50);
+    const replies=await Promise.all(list.map(async g=>{let r=null;try{r=await X.bridge.agentMcp(g.id);}catch(e){r=null;}return {id:g.id,name:g.name,folder:g.room||'',reply:r};}));
+    const configured=(mcp?mcp.cli.map(x=>x.name):[]).concat(glob&&glob.ok?[].concat(...glob.apps.map(x=>x.servers.map(v=>v.name))):[]);
+    if(my!==liveSeq)return false; /* a newer load started meanwhile: its replies win, whenever this one ends */
+    live={agg:window.DurbarMcpWords.aggregate(replies,configured),replies:new Map(replies.map(x=>[x.id,x.reply]))};
+    return true;
+  }
+  const liveKey=(n,id)=>n+'\0'+id;
+  function liveChatHTML(r,c){
+    const W=window.DurbarMcpWords, x=c.entry, rp=live.replies.get(c.id)||{}, m=X.mcpSession?X.mcpSession(c.id):null;
+    const k=liveKey(r.name,c.id), who=c.name+(c.folder?' in '+c.folder:'');
+    const stat=`<span class="mst ${esc(c.state.cls)}"${c.state.key.startsWith('unknown')?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(c.state.icon)}<span class="mst-w">${esc(c.state.word)}</span></span>`;
+    /* FR-082: the chat dialog's own hint (FR-006) with the agent app's name; Details shows the masked text main sent (FR-007, FR-086) */
+    const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app:rp.app||(m&&m.o.appName)});
+    const detOpen=!!x.error&&liveDet.has(k);
+    const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-lvdet="1" aria-expanded="${detOpen}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+r.name+' for '+c.name)}">Details</button>`:'';
+    const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-lverr="1" aria-label="${esc('Error text of '+r.name+' for '+c.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-lvcopy="1" aria-label="${esc('Copy the error text of '+r.name+' for '+c.name)}">Copy</button></div>`:'';
+    const rs=x.canRestart&&X.bridge.agentMcpRestart?(liveBusy.has(k)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+r.name+' for '+c.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-lvrs="1" aria-label="${esc('Restart '+r.name+' for '+c.name)}" title="Restart only this server in this chat">Restart</button>`):'';
+    /* FR-032's line for an agent app with no per-server Restart (Codex) */
+    const noOne=m&&m.o.restart===false&&rp.canRestartSession?`<span class="srv-hint lv-noone">${esc((m.o.appName||'This agent app')+' cannot restart one server; use Restart session with these servers.')}</span>`:'';
+    const sessBusy=liveBusy.has(liveKey('',c.id));
+    const rsess=rp.canRestartSession&&X.bridge.agentMcpRestartSession&&m?`<button class="btn sm" type="button" data-lvsess="1"${sessBusy?' disabled':''} aria-label="${esc((sessBusy?'Restarting the session of ':'Restart the session of ')+c.name+' with these servers')}">${sessBusy?'Restarting session…':'Restart session with these servers'}</button>`:'';
+    /* review on PR 609: a server that needs a sign-in is not fixed by a Restart, so the chat (where the sign-in is) is the main action and
+       Restart waits behind More. Sign in itself joins this row when PR 598 (spec 058 FR-064) lands, reusing its button: no second sign-in. */
+    const auth=x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth');
+    const oc=m?`<button class="btn sm${auth?' primary':''}" type="button" data-lvopen="1" aria-label="${esc('Open the MCP servers of '+c.name+' in its chat')}">Open in chat</button>`:'';
+    const acts=auth?(oc+(rs||rsess?`<details class="scr-more lv-more" data-lvk="${esc(k)}"${liveMore.has(k)?' open':''}><summary data-lvmore="1">More</summary><div class="lv-act">${rs}${rsess}</div></details>`:'')):rs+rsess+oc;
+    const authNote=auth&&m?`<span class="srv-hint lv-auth">Sign in from the chat's MCP list: Open in chat.</span>`:'';
+    return `<li class="lv-chat${auth?' auth':''}" data-lvs="${esc(r.name)}" data-lvc="${esc(c.id)}"><div class="lv-top"><b class="lv-who" title="${esc(who)}">${esc(c.name)}</b>${c.folder?`<span class="mtag">${esc(c.folder)}</span>`:''}${stat}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${authNote}${noOne}${det}${detBox}${acts?`<div class="lv-act">${acts}</div>`:''}</li>`;
+  }
+  function liveInner(){
+    const W=window.DurbarMcpWords, A=live.agg;
+    if(!A.chats)return '<p class="scr-note" id="liveNone" role="status">No chat is running, so no MCP server is running. Live states show here while a chat runs.</p>';
+    const rows=A.servers.map(r=>{
+      const n=r.chats.length, open=n>0&&liveOpen.has(r.name);
+      const nameB=`<b class="srv-name" title="${esc(W.plain(r.name,120))}">${esc(r.name)}</b>`;
+      const nameEl=n?`<button class="mcp-tg" type="button" data-lv="${esc(r.name)}" aria-expanded="${open}" aria-label="${esc((open?'Hide':'Show')+' the chats that use '+r.name)}"><span class="mcp-car" aria-hidden="true">${open?'▾':'▸'}</span>${nameB}</button>`:nameB;
+      const stat=`<span class="mst ${esc(r.cls)}">${W.iconSvg(r.icon)}<span class="mst-w">${esc(r.summary)}</span></span>`;
+      return `<li class="srv lv${open?' open':''}" data-lvn="${esc(r.name)}"><div class="srv-main"><div class="srv-top">${nameEl}${stat}</div>${n?'':'<span class="srv-hint">No running chat uses it.</span>'}${open?`<ul class="lv-chats">${r.chats.map(c=>liveChatHTML(r,c)).join('')}</ul>`:''}</div></li>`;
+    }).join('');
+    return rows?`<ul class="srvs" id="liveList">${rows}</ul>`:'<p class="scr-note small" id="liveNone" role="status">No MCP servers in the running chats.</p>';
+  }
+  function liveSection(){
+    if(!live)return '';
+    const A=live.agg;
+    liveSeen=new Map(A.servers.map(r=>[r.name,r.summary]));
+    return `<h4 class="scr-sub" id="liveH">Live in your chats <small>${A.chats} running chat${A.chats===1?'':'s'}</small></h4>
+        <p class="scr-note small">The state of each server in the chats that run now, the same as each chat's own MCP list (the MCP chip under its message box). Open a server to see its chats, restart it in one chat, or open that chat.</p>
+        <div class="lv-box" id="liveBox">${liveInner()}</div>`;
+  }
+  const attText=n=>n?n+' need'+(n===1?'s':'')+' attention':'';
+  /* FR-083: reload and repaint only the live list, keeping the focus (by action, server and chat) and the scroll position; returns what changed */
+  async function repaintLive(reload){
+    if(!cur||cur.kind!=='settings'||!$('liveBox'))return [];
+    if(reload&&!(await loadLive()))return []; /* an older load: the newer one paints */
+    const box=$('liveBox');if(!box||!live)return [];
+    const f=document.activeElement, inside=f&&box.contains(f);
+    const li=inside&&f.closest('[data-lvc],[data-lvn]');
+    const act=!inside?null:['lv','lvdet','lvcopy','lvrs','lvsess','lvopen','lverr','lvmore'].find(a=>f.dataset[a]!==undefined)||null;
+    const at=li?{s:li.dataset.lvs||li.dataset.lvn,c:li.dataset.lvc||''}:null;
+    const sc=box.closest('.scr-body'), top=sc?sc.scrollTop:0;
+    box.innerHTML=liveInner();
+    if(sc)sc.scrollTop=top;
+    if(at){
+      const row=[...box.querySelectorAll('[data-lvc],[data-lvn]')].find(x=>(x.dataset.lvs||x.dataset.lvn)===at.s&&(x.dataset.lvc||'')===at.c);
+      const sel=act==='lverr'?'pre[data-lverr]':act?'[data-'+act+']:not([disabled])':null;
+      const back=row&&((sel&&row.querySelector(sel))||(act==='lvcopy'||act==='lverr'?row.querySelector('[data-lvdet]'):null)||row.querySelector('button:not([disabled])'))
+        ||[...box.querySelectorAll('button[data-lv]')].find(x=>x.dataset.lv===at.s);
+      if(back)back.focus({preventScroll:true});
+    }
+    const t=$('advMcpAtt');if(t){const n=live.agg.attention;t.textContent=attText(n);t.hidden=!n;}
+    const h=$('liveH');if(h){const sm=h.querySelector('small');if(sm)sm.textContent=live.agg.chats+' running chat'+(live.agg.chats===1?'':'s');}
+    const ch=[];for(const r of live.agg.servers){const was=liveSeen.get(r.name);if(was!==undefined&&was!==r.summary)ch.push(r.name+': '+r.summary);}
+    liveSeen=new Map(live.agg.servers.map(r=>[r.name,r.summary]));
+    return ch;
+  }
+  let liveT=0;
+  function liveEvent(){
+    if(!cur||cur.kind!=='settings'||!$('liveBox')||liveT)return;
+    const adv=$('advMcp');if(!adv||!adv.open){liveStale=true;return;} /* review on PR 609: no reload while the list is hidden */
+    liveT=setTimeout(async()=>{liveT=0;let ch;try{ch=await repaintLive(true);}catch(e){return;}
+      if(ch.length&&X.announce)X.announce(ch.slice(0,3).join('. ')+(ch.length>3?' and '+(ch.length-3)+' more':''));},150);
+  }
+  async function onLiveClick(e){
+    const li=e.target.closest('[data-lvc]');
+    const tg=e.target.closest('button[data-lv]');
+    if(tg){const n=tg.dataset.lv;if(liveOpen.has(n))liveOpen.delete(n);else liveOpen.add(n);await repaintLive(false);return;}
+    if(!li)return;
+    const n=li.dataset.lvs, id=li.dataset.lvc, k=liveKey(n,id);
+    const row=live&&live.agg.servers.find(x=>x.name===n), c=row&&row.chats.find(x=>x.id===id);
+    if(!c)return;
+    if(e.target.closest('button[data-lvdet]')){if(liveDet.has(k))liveDet.delete(k);else liveDet.add(k);await repaintLive(false);return;}
+    if(e.target.closest('button[data-lvcopy]')){void copyText(c.entry.error||'','Copied the error text.');return;}
+    const m=X.mcpSession?X.mcpSession(id):null;
+    if(e.target.closest('button[data-lvrs]')){
+      if(liveBusy.has(k)||!m)return;
+      liveBusy.add(k);
+      await mcpRestartCall(m.a,n,()=>repaintLive(false));
+      liveBusy.delete(k);
+      await repaintLive(true);return;
+    }
+    if(e.target.closest('button[data-lvsess]')){
+      const sk=liveKey('',id);if(liveBusy.has(sk)||!m)return;
+      const rp=live.replies.get(id)||{};
+      const findBtn=()=>{const b=$('liveBox');const x=b&&[...b.querySelectorAll('[data-lvc]')].find(y=>y.dataset.lvc===id&&y.dataset.lvs===n);return x&&x.querySelector('[data-lvsess]');};
+      await mcpRestartSessionFlow(m.a,rp.start,{returnFocus:findBtn,busy:async v=>{if(v)liveBusy.add(sk);else liveBusy.delete(sk);await repaintLive(false);},onAuth:()=>{close();if(X.openAgent)X.openAgent(id);}});
+      await repaintLive(true);return;
+    }
+    if(e.target.closest('button[data-lvopen]')){
+      if(!m)return;
+      close();
+      if(X.openAgent)X.openAgent(id);
+      void agentMcp(m.a,m.o);
+    }
   }
   async function paintSettings(focus){
     const first=!mcp;
@@ -222,8 +352,9 @@
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
     r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
-      <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
+      <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
+        ${liveSection()}
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small">There is nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button). Claude Code and Codex read their own MCP settings; each agent's <b>MCP</b> item (in its chat's More menu) shows what it uses.</p></details>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
@@ -241,7 +372,8 @@
     /* spec 051 FR-008: entry points open Settings at Agent apps */
     let atSec=false; /* a section was asked for (harnesses, mcp, schedules): its heading keeps the focus instead of the h2 */
     if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
-    if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}}
+    {const lb=$('liveBox');if(lb)lb.addEventListener('toggle',onLiveToggle,true);} /* spec 058 FR-082: More stays open over a repaint */
+    if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;if(advOpen&&liveStale){liveStale=false;void repaintLive(true);}};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}}
     if($('pfSec'))wireProfiles();
     if(X.floors&&$('floorsSet'))X.floors.render();
     if($('navKeyRec'))wireNavKey();
@@ -633,6 +765,7 @@
     reset.onclick=()=>{X.navKey.set(null);show('Back to '+X.navKey.text()+'.');rec.focus();};
   }
   async function onSettingsClick(e){
+    if(e.target.closest('#liveBox')){await onLiveClick(e);return;} /* spec 058 FR-082 */
     const pa=e.target.closest('[data-pl-act]');
     if(pa){
       const li=pa.closest('li'), id=li&&li.dataset.place, act=pa.dataset.plAct;
@@ -912,6 +1045,33 @@
       X.toast(okMsg,ms||2400).classList.add('ok');
     }catch(e){X.toast('Could not copy to the clipboard.',3200).classList.add('err');}
   }
+  /* Spec 058 FR-021/FR-031 and FR-022/FR-023/FR-027: one server's Restart and Restart session with these servers, shared by a chat's MCP
+     dialog and Settings > MCP servers (FR-082), so both places ask, call and report the same way. */
+  async function mcpRestartCall(a,name,onSent){
+    let call;try{call=Promise.resolve(X.bridge.agentMcpRestart(a.id,name));}catch(e){call=Promise.reject(e);}
+    call=call.catch(e=>({ok:false,error:String(e&&e.message||e)}));
+    if(onSent)await onSent();
+    const r=await call;
+    X.toast(r&&r.ok?'Restarted '+esc(name)+'.':'Could not restart '+esc(name)+': '+esc((r&&r.error)||'unknown error'),r&&r.ok?3200:6000);
+    return r;
+  }
+  /* h = {returnFocus(), busy(on) (async; shows "Restarting session…"), onAuth() (closes the caller's view before the sign-in card)} */
+  async function mcpRestartSessionFlow(a,start,h){
+    const ask=window.DurbarDialog&&window.DurbarDialog(document);
+    const confirm=async()=>{const lines=restartSessionAsk(a)||['The conversation is kept and resuming spends no AI credits.','The running turn stops.','"Approve for this session" grants are cleared.'];
+      if(!ask)return window.confirm('Restart '+a.name+"'s session with the current MCP servers?");
+      const v=await ask({title:'Restart '+a.name+"'s session?",body:'Restart '+a.name+"'s session with the current MCP servers?",lines,returnFocus:h.returnFocus,buttons:[{label:'Cancel',value:null},{label:'Restart session',value:'ok',cls:'primary warn'}]});
+      return !!v;};
+    let confirmed=false;
+    if(restartSessionAsk(a)){if(!await confirm())return null;confirmed=true;}
+    await h.busy(true);
+    let r;try{r=await X.bridge.agentMcpRestartSession(a.id,confirmed);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
+    if(r&&!r.ok&&r.needsConfirm&&!confirmed){await h.busy(false);if(!await confirm())return null;await h.busy(true);try{r=await X.bridge.agentMcpRestartSession(a.id,true);}catch(e){r={ok:false,error:String(e&&e.message||e)};}}
+    await h.busy(false);
+    if(r&&r.errorKind==='auth'&&X.signInAgain){if(h.onAuth)h.onAuth();X.signInAgain(a,r.error||'');return r;} /* FR-027: the chat's sign-in card, not a toast */
+    X.toast(r&&r.ok?esc(a.name)+': session restarted with the current MCP servers.'+(start==='next-message'?' Its servers start with your next message.':''):'Could not restart the session: '+esc((r&&r.error)||'unknown error')+(r&&r.ended?' The session has ended; send a message to resume it.':''),r&&r.ok?4200:7000);
+    return r;
+  }
   async function agentMcp(a,o){
     if(!X.bridge.agentMcp)return;
     const fixed=!!o&&o.toggle===false; /* this agent kind cannot switch servers while it runs (spec 012 FR-067): shown, with the reason */
@@ -1138,31 +1298,15 @@
     const restartOne=async name=>{
       if(restarting.has(name))return;
       restarting.add(name);
-      let call;try{call=Promise.resolve(X.bridge.agentMcpRestart(a.id,name));}catch(e){call=Promise.reject(e);}
-      call=call.catch(e=>({ok:false,error:String(e&&e.message||e)}));
-      await repaint(); /* after the call went out: the row can already show the runtime's "pending" */
-      const r=await call;
+      const r=await mcpRestartCall(a,name,repaint); /* the repaint after the call went out: the row can already show the runtime's "pending" */
       restarting.delete(name);
       toolsOf.delete(name); /* a restarted server may list other tools */
       if(r&&r.ok&&expanded.has(name))void (async()=>{let t;try{t=await X.bridge.agentMcpTools(a.id,name);}catch(e){t={ok:false,error:String(e&&e.message||e)};}toolsOf.set(name,t);if(dlg&&dlg.isConnected)void repaint();})();
-      X.toast(r&&r.ok?'Restarted '+esc(name)+'.':'Could not restart '+esc(name)+': '+esc((r&&r.error)||'unknown error'),r&&r.ok?3200:6000);
       await repaint();
     };
     const restartSession=async()=>{
       if(sessBusy)return;
-      const ask=window.DurbarDialog&&window.DurbarDialog(document);
-      const confirm=async()=>{const lines=restartSessionAsk(a)||['The conversation is kept and resuming spends no AI credits.','The running turn stops.','"Approve for this session" grants are cleared.'];
-        if(!ask)return window.confirm('Restart '+a.name+"'s session with the current MCP servers?");
-        const v=await ask({title:'Restart '+a.name+"'s session?",body:'Restart '+a.name+"'s session with the current MCP servers?",lines,returnFocus:()=>dlg&&dlg.querySelector('#mcpRestartSess'),buttons:[{label:'Cancel',value:null},{label:'Restart session',value:'ok',cls:'primary warn'}]});
-        return !!v;};
-      let confirmed=false;
-      if(restartSessionAsk(a)){if(!await confirm())return;confirmed=true;}
-      sessBusy=true;await repaint();
-      let r;try{r=await X.bridge.agentMcpRestartSession(a.id,confirmed);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
-      if(r&&!r.ok&&r.needsConfirm&&!confirmed){sessBusy=false;await repaint();if(!await confirm())return;sessBusy=true;await repaint();try{r=await X.bridge.agentMcpRestartSession(a.id,true);}catch(e){r={ok:false,error:String(e&&e.message||e)};}}
-      sessBusy=false;
-      if(r&&r.errorKind==='auth'&&X.signInAgain){if(dlg&&dlg._ov)dlg._ov._close();X.signInAgain(a,r.error||'');return;} /* FR-027: the chat's sign-in card, not a toast */
-      X.toast(r&&r.ok?esc(a.name)+': session restarted with the current MCP servers.'+(st.start==='next-message'?' Its servers start with your next message.':''):'Could not restart the session: '+esc((r&&r.error)||'unknown error')+(r&&r.ended?' The session has ended; send a message to resume it.':''),r&&r.ok?4200:7000);
+      await mcpRestartSessionFlow(a,st.start,{returnFocus:()=>dlg&&dlg.querySelector('#mcpRestartSess'),busy:async v=>{sessBusy=v;await repaint();},onAuth:()=>{if(dlg&&dlg._ov)dlg._ov._close();}});
       await repaint();
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
@@ -1190,7 +1334,7 @@
         await repaint();});}});
     const r=await d0;
     window.removeEventListener('focus',onFocus);clearTimeout(evT);evT=0;clearTimeout(expT);expT=0;if(mcpDlgHook===onEvent)mcpDlgHook=null;
-    if(r&&r.value==='settings')open('settings');
+    if(r&&r.value==='settings')open('settings',{section:'mcp'}); /* spec 058 FR-084: straight to MCP servers, where the live list is */
     else if(r&&r.value==='folder'&&X.folderOf){const f=X.folderOf(a);if(f)openFolder(f.key,f.name);}
   }
 
@@ -1390,7 +1534,8 @@
     openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
-    mcpEvent:id=>{if(mcpDlgHook)mcpDlgHook(id);},
+    mcpEvent:id=>{if(mcpDlgHook)mcpDlgHook(id);liveEvent(id);},
+    liveEvent, /* spec 058 FR-083: a chat stopped or is ready again */
     placeDialog,
     dialog, /* spec 061: the folder-setup list uses the same modal */
     close,isOpen,
