@@ -60,9 +60,9 @@ body.screen-open .workspace{display:none}
 /* dialogs */
 .dlg.wide{width:min(var(--dlg-w-m),calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:hidden}
 /* spec 058 FR-077: a long body scrolls inside the dialog; the title and the buttons stay in view and never sit on the rows (the body has min-height:0, so without its own overflow its rows spilled over the footer) */
-.dlg.wide .dbody{flex:1 1 auto;min-height:0;overflow:auto;position:relative;z-index:0;padding:2px 4px 2px 2px}
+.dlg.wide .dbody{flex:1 1 auto;min-height:0;overflow:auto;position:relative;z-index:0;padding:5px} /* 5px: the focus ring is a 3px outline 1px off the control (4px), so the first and last control in the scroller are not clipped */
 .dlg.wide>:not(.dbody){flex:none}
-/* issue #544 (second report: after a switch toggle the last row's switch drew over Done): the footer is its own opaque layer above the scroller, so no row control can paint over it, whatever the body repaints */
+/* issue #544 (second report: after a switch toggle the last row's switch drew over Done): the footer is its own opaque layer above the scroller, so no row control can paint over it, whatever the body repaints. The import and folder-setup dialogs are `.dlg.wide.imp` and share these rules */
 .dlg.wide>.dbtn,.dlg.wide>.derr:not([hidden]){position:relative;z-index:2}
 .dlg.wide>.dbtn{background:var(--surface);box-shadow:0 -6px 6px -6px color-mix(in srgb,var(--ink) 18%,transparent)}
 .dlg .dbody{display:flex;flex-direction:column;gap:var(--dlg-gap);min-height:0}
@@ -168,7 +168,6 @@ body.has-bridge #topBtns{display:flex}
 
 /* import from VS Code (spec 020 FR-023): the list scrolls inside the dialog, the buttons stay in view */
 .dlg.imp{width:min(var(--dlg-w-l),calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:hidden;padding:var(--dlg-pad);border-radius:var(--r-xl);background:var(--surface)} /* the generic `.imp` box rule (padding 8px 10px, a 10px radius, --surface-2) must not shrink a dialog that happens to carry the class: the import list and the folder-setup dialog */
-.dlg.imp .dbody{overflow:auto;padding-right:2px}
 .imp-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .imp-count{font-size:11px;color:var(--muted);margin-left:4px}
 .imp-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
