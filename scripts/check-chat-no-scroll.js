@@ -66,7 +66,10 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#stage .desk').focus()`);
     const seen = [];
     for (let i = 0; i < 12; i++) {
-      await H.key('Down', [], { char: 'never', pause: 0 }); await ctx.sleep(80);
+      const before = await js(`(()=>{const a=document.activeElement;return a?(a.dataset.id||a.className):''})()`);
+      await H.key('Down', [], { char: 'never', pause: 0 });
+      // wait for the focus to move (the last desk has nowhere to go: then the loop ends)
+      if (!(await until(`(()=>{const a=document.activeElement;return !!a&&(a.dataset.id||a.className)!==${jsLiteral(before)}})()`, 2000))) break;
       const r = await js(`(()=>{const a=document.activeElement,f=document.getElementById('floor');if(!a||!a.closest('#stage'))return null;const b=a.getBoundingClientRect(),v=f.getBoundingClientRect();
         return {id:a.dataset.id||a.className,inside:b.top>=v.top-1&&b.bottom<=v.bottom+1,top:Math.round(b.top),vb:Math.round(v.bottom),floor:f.scrollTop}})()`);
       if (!r) break;
