@@ -17,7 +17,9 @@
   const NONE={word:'Not started yet',icon:'dash',cls:'none'};
   /* the token of an unknown state is shown, but only a short plain one: no control characters, cut at 40 */
   /* plain text for a title or a word: input cut first (a long runtime string costs nothing), control characters flattened, cut at n with an ellipsis */
-  const plain=(t,n)=>{const s=String(t==null?'':t).slice(0,n+160).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g,' ').trim();return s.length>n?s.slice(0,n-1)+'\u2026':s;};
+  /* control characters and the bidi/format marks (U+200E/F, U+202A-202E, U+2066-2069, U+FEFF) are flattened: a name can never reorder
+     the text around it (review on PR #630) */
+  const plain=(t,n)=>{const s=String(t==null?'':t).slice(0,n+160).replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028-\u202e\u2066-\u2069\ufeff]+/g,' ').trim();return s.length>n?s.slice(0,n-1)+'\u2026':s;};
   const tokenText=t=>plain(t,40);
   /* `status` is the runtime's token (missing/empty = no state yet). Returns {word, icon, cls}; an unknown token reads "Unknown state: <token>"
      (plain text, the caller escapes) and gets the neutral class. */
@@ -73,6 +75,8 @@
   /* Spec 058 FR-006 / FR-090: the one text classifier, shared by the hint and the reason (they never disagree). Reads the already-masked
      text, cut first (linear on hostile input); returns a class word or '' (nothing guessed). */
   const TEXT_RULES=[
+    /* first: an auth refusal often also says "terminated" or "closed" (`SSE stream terminated: 401`), and it is not a crash (review on PR #630) */
+    [/\b40[13]\b|unauthori[sz]ed|forbidden/i,'auth'],
     [/\bENOENT\b|command not found|is not recognized|no such file or directory/i,'not-found'],
     [/\bEACCES\b|permission denied/i,'permission'],
     [/\bETIMEDOUT\b|timed out|timeout/i,'timeout'],
@@ -89,6 +93,7 @@
     if(status==='needs-auth'||(status==='failed'&&cls==='auth'))return signInHint(app);
     if(status!=='failed')return '';
     const c=typeof cls==='string'&&own(CLASS_HINT,cls)?cls:textClass(o&&o.error);
+    if(c==='auth')return signInHint(app);
     return c?CLASS_HINT[c]:'';
   }
   /* Spec 058 FR-090 (issue 603): one plain reason for a failed or needs-sign-in server, else null. Order: sign-in; the adapter's class
@@ -103,6 +108,7 @@
     if(st==='needs-auth'||(st==='failed'&&cls==='auth'))return {key:'auth',word:REASONS.auth};
     if(st!=='failed')return null;
     let c=REASON_CLASSES.indexOf(cls)>=0?cls:textClass(x.error);
+    if(c==='auth')return {key:'auth',word:REASONS.auth};
     if(c==='exited')c=x.afterRunning===true?'disconnected':'crashed';
     if(!c)c=x.afterRunning===true?'disconnected':'unknown';
     return {key:c,word:REASONS[c]};
@@ -115,25 +121,29 @@
     const same=d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate();
     return same?'at '+hm:'on '+d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' at '+hm;
   }
-  /* FR-093: the Copy diagnostics text, from the reply only (main masked the error, FR-005), then `redact` (the shared masking, the same
-     code as main) over the whole text. No folder, path, agent name or environment value. Fails closed: no redact, a throw or a non-string
-     result gives ''. o = {server, entry, app, appVersion}. */
+  /* FR-093: the Copy diagnostics text, from the reply only (main masked the error, FR-005). Each value is masked by `redact` (the shared
+     masking, the same code as main) BEFORE it is cut and flattened, so no head of a token survives a cut; then the whole text is masked
+     again. The time is UTC only: with a local time next to it the text would give away the user's time zone. No folder, path, agent name
+     or environment value. Fails closed: no redact, a throw or a non-string result gives ''. o = {server, entry, app, appVersion}. */
   function diagnostics(o,redact){
     if(typeof redact!=='function')return '';
-    const e=o&&o.entry&&typeof o.entry==='object'?o.entry:{};
-    const rs=reasonOf(e), local=whenText(e.since,e.since);
-    const lines=[
-      'Agent Durbar: MCP server diagnostics',
-      'Server: '+plain(o&&o.server,200),
-      'State: '+stateOf(e.status).word,
-      'Reason: '+(rs?rs.word:'none'),
-      'When: '+(local?new Date(e.since).toISOString()+' (local '+local.slice(3)+')':'not known'),
-      'Transport: '+(e.transport?plain(e.transport,60):'not reported'),
-      'Agent app: '+(o&&o.app?plain(o.app,60):'not known')+(o&&o.appVersion?' '+plain(o.appVersion,40):' (version not known)'),
-      'Error (masked): '+(e.error?plain(e.error,400):'none reported')
-    ];
-    let out;try{out=redact(lines.join('\n'));}catch(err){return '';}
-    return typeof out==='string'?out:'';
+    try{
+      const m=(v,n)=>{const r=redact(String(v==null?'':v));if(typeof r!=='string')throw new Error('mask');return plain(r,n);};
+      const e=o&&o.entry&&typeof o.entry==='object'?o.entry:{};
+      const rs=reasonOf(e), ok=whenText(e.since,e.since)!=='';
+      const lines=[
+        'Agent Durbar: MCP server diagnostics',
+        'Server: '+m(o&&o.server,200),
+        'State: '+stateOf(e.status).word,
+        'Reason: '+(rs?rs.word:'none'),
+        'When (UTC): '+(ok?new Date(e.since).toISOString():'not known'),
+        'Transport: '+(e.transport?m(e.transport,60):'not reported'),
+        'Agent app: '+(o&&o.app?m(o.app,60):'not known')+(o&&o.appVersion?' '+m(o.appVersion,40):' (version not known)'),
+        'Error (masked): '+(e.error?m(e.error,400):'none reported')
+      ];
+      const out=redact(lines.join('\n'));
+      return typeof out==='string'?out:'';
+    }catch(err){return '';}
   }
   /* Spec 058 FR-081: one server's live state over the running chats, for Settings > MCP servers. `sessions` = [{id, name, folder, reply}],
      `reply` an `agents:mcp` reply (main masked its errors); `configured` = server names of the configured lists. A chat "uses" a server when

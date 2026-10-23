@@ -168,6 +168,23 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.ok(!('errorClass' in ms[0]) && !('errorClass' in ms[3]), 'no empty key');
   for (const e of out) assert.deepStrictEqual(eventProblems({ ...e, sessionId: 's', timestamp: 1 } as never), [], 'the event guard accepts it');
 }
+// Review on PR #630 (item 4): the 5 s re-read (`rpc.mcp.list`, spec 058 FR-064) has no classification: an unchanged failed state keeps
+// the class and the transport the runtime's own event gave; a changed state drops them.
+{
+  const sink: EventBody[] = [];
+  const mapper = new EventMapper((b) => sink.push(b));
+  const last = () => (sink.filter((e) => e.type === 'mcp').pop() as unknown as { servers: { name: string; status: string; errorClass?: string; transport?: string }[] }).servers;
+  mapper.map({ type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'pw', status: 'pending', transport: 'stdio' }] } });
+  mapper.map({ type: 'session.mcp_server_status_changed', data: { serverName: 'pw', status: 'failed', error: 'spawn pw ENOENT', errorClassification: 'os_not_found' } });
+  mapper.reread([{ name: 'pw', status: 'failed', error: 'spawn pw ENOENT' }]);
+  assert.deepStrictEqual(last().map((x) => [x.status, x.errorClass, x.transport]), [['failed', 'not-found', 'stdio']], 'kept over a re-read');
+  mapper.reread([{ name: 'pw', status: 'failed', transport: 'http' }]);
+  assert.deepStrictEqual(last().map((x) => [x.errorClass, x.transport]), [['not-found', 'http']], 'a transport the list names wins');
+  mapper.reread([{ name: 'pw', status: 'connected' }]);
+  assert.deepStrictEqual(last().map((x) => [x.status, x.errorClass]), [['connected', undefined]], 'another state drops the class');
+  mapper.reread([{ name: 'pw', status: 'failed' }]);
+  assert.strictEqual(last()[0].errorClass, undefined, 'and a new failure from a re-read has none (never guessed)');
+}
 // Spec 058 T094: a failed MCP tool with the server's OAuth challenge -> mcpAuth and needs-auth; the next status replaces it.
 {
   const text = 'MCP tool catalog changed before tool "x" could be invoked: Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)';

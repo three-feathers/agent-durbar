@@ -78,7 +78,12 @@ export class EventMapper {
     for (const s of servers) {
       if (!s || typeof s.name !== 'string') continue;
       listed.add(s.name);
-      const next = mcpStatus(s.name, s);
+      const read = mcpStatus(s.name, s);
+      // spec 058 FR-091 (review on PR #630): the list has no classification and may have no transport; while the state is the same,
+      // what the runtime's own status event said stays (a failed `os_not_found` must not turn into "reason unknown" on each poll)
+      const prev = this.mcp.get(s.name);
+      const same = prev && prev.status === read.status;
+      const next = { ...read, ...(same && !read.transport && prev.transport ? { transport: prev.transport } : {}), ...(same && prev.errorClass ? { errorClass: prev.errorClass } : {}) };
       if (this.derivedAuth.has(s.name) && next.status === 'connected') continue; // the same "connected" the runtime always says: not new
       this.derivedAuth.delete(s.name);
       this.mcp.set(s.name, next);

@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import { maskMcpError } from '../src/main/mcpmask';
-import { redact } from '../src/shared/redact';
+import { maskHomePaths, maskSecretUrl, redact } from '../src/shared/redact';
 
 interface Words {
   stateOf: (s: unknown, ctx?: { off?: boolean; defaultOn?: boolean; origin?: string; app?: string; launchedOff?: boolean; switchedHere?: boolean }) => { word: string; icon: string; cls: string };
@@ -232,7 +232,7 @@ assert.ok(Date.now() - t0 < 500, 'a long text is read in linear time');
   const entry = { name: 'markitdown-mcp', status: 'failed', errorClass: 'not-found', error: maskMcpError(raw, [SESSION]), since, transport: 'stdio' };
   assert.ok(!String(entry.error).includes(TOKEN) && !String(entry.error).includes(SESSION), 'main masked it first');
   const text = W.diagnostics({ server: 'markitdown-mcp', entry, app: 'GitHub Copilot', appVersion: '1.0.101', now: since + 60_000 }, redact);
-  for (const want of ['Server: markitdown-mcp', 'State: Failed', 'Reason: Not installed (command not found)', 'Transport: stdio', 'Agent app: GitHub Copilot 1.0.101', `When: ${new Date(since).toISOString()} (local 14:02)`, 'Error (masked):'])
+  for (const want of ['Server: markitdown-mcp', 'State: Failed', 'Reason: Not installed (command not found)', 'Transport: stdio', 'Agent app: GitHub Copilot 1.0.101', `When (UTC): ${new Date(since).toISOString()}`, 'Error (masked):'])
     assert.ok(text.includes(want), 'has ' + want + '\n' + text);
   assert.ok(!text.includes(TOKEN) && !text.includes(TOKEN.slice(4, 20)) && !text.includes(SESSION) && !text.includes('pw@'), 'no secret, no piece of the token');
   assert.ok(!/folder|\/home\/|C:\\\\/i.test(text), 'no folder or path');
@@ -243,7 +243,8 @@ assert.ok(Date.now() - t0 < 500, 'a long text is read in linear time');
   assert.match(t2, /Transport: not reported/);
   assert.match(t2, /Agent app: Claude Code \(version not known\)/);
   assert.match(t2, /Error \(masked\): none reported/);
-  assert.match(t2, /When: not known/);
+  assert.match(t2, /When \(UTC\): not known/);
+  assert.ok(!/local/i.test(text), 'UTC only: no local time next to it (it would give away the time zone)');
   // fail closed: no redact, a throwing one, or a non-string result copies nothing
   assert.strictEqual(W.diagnostics({ server: 's', entry }, undefined), '');
   assert.strictEqual(W.diagnostics({ server: 's', entry }, () => { throw new Error('x'); }), '');
@@ -253,5 +254,38 @@ assert.ok(Date.now() - t0 < 500, 'a long text is read in linear time');
   assert.match(t3, /Server: a b/);
   assert.match(t3, /Agent app: A B/);
   assert.ok(t3.split('\n').every((l) => l.length <= 420), 'no endless line');
+}
+// ---- Review on PR #630: home paths, OAuth values, any-case bearer, mask before cut, bidi marks, 401 is not a crash ----
+{
+  const TOKEN = 'ghp_' + 'Q7m2Kx9Lp4Rt8Vw1Yz6Bn3Cd5Fg0Hj2Mk4Ns';
+  const pageMask = (t: string) => maskHomePaths(maskSecretUrl(t)); // what screens.js passes (DurbarRedact)
+  // item 9: an error that was NOT masked in main (the simulator's path): diagnostics still mask it, field by field
+  const raw = W.diagnostics({ server: 's', entry: { status: 'failed', error: `boom ${TOKEN} end` } }, redact);
+  assert.ok(raw && !raw.includes(TOKEN) && !raw.includes(TOKEN.slice(4, 16)), 'an unmasked token in the error is masked by the copy itself');
+  assert.match(raw, /Error \(masked\): boom \[redacted\] end/);
+  // item 2: home folders, both path styles, through main's masking and through the page's
+  const home = maskMcpError('spawn /home/vikram/.local/bin/markitdown-mcp ENOENT; C:\\Users\\vikram\\AppData\\npx.cmd is not recognized; /Users/vikram/x');
+  assert.ok(home && !/vikram/.test(home), 'main replaces home folders: ' + home);
+  assert.match(String(home), /spawn ~\/\.local\/bin\/markitdown-mcp ENOENT; ~\\AppData\\npx\.cmd is not recognized; ~\/x/);
+  const d2 = W.diagnostics({ server: 'm', entry: { status: 'failed', error: 'spawn /home/alice/bin/x ENOENT', transport: 'C:\\Users\\Bob Smith\\t' } }, pageMask);
+  assert.ok(!/alice|Bob|Smith/.test(d2), 'the page mask replaces them too: ' + d2);
+  // item 3: OAuth code/state/id_token/refresh_token and a lowercase bearer
+  const oauth = maskMcpError('callback https://x.test/cb?code=AbC123xyz&state=st4te99&ok=1#id_token=abc.def&refresh_token=r3fr3sh timeout; bearer abcdefgh12345678');
+  for (const v of ['AbC123xyz', 'st4te99', 'abc.def', 'r3fr3sh', 'abcdefgh12345678']) assert.ok(oauth && !oauth.includes(v), 'masked: ' + v + ' in ' + oauth);
+  assert.ok(String(oauth).includes('ok=1'), 'other query values stay');
+  // item 5: a value is masked before it is cut: a 185-character name followed by a token leaves no piece of it
+  const longName = 'n'.repeat(184) + '-' + TOKEN;
+  const d3 = W.diagnostics({ server: longName, entry: { status: 'failed' } }, redact);
+  assert.ok(d3 && !/ghp_|Q7m2Kx9L/.test(d3), 'no head of the token after the cut: ' + d3.split('\n')[1]);
+  // item 6: bidi and format marks never reach the copy (or a title)
+  const BIDI = '\u202e\u2066\u2069\u200f\ufeff';
+  const d4 = W.diagnostics({ server: 'a' + BIDI + 'b', entry: { status: 'failed', error: 'x' + BIDI + 'y' } }, redact);
+  assert.ok(d4 && !/[\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/.test(d4), 'no bidi or format mark in the copy');
+  assert.strictEqual(W.plain('a\u202eb', 20), 'a b');
+  // item 8: an auth refusal is "Refused: needs sign-in", never a crash, even when the text also says terminated or closed
+  for (const t of ['SSE stream terminated: 401', 'HTTP 403 Forbidden, process exited', 'Unauthorized: connection closed']) {
+    assert.strictEqual(W.reasonOf({ status: 'failed', error: t })?.word, 'Refused: needs sign-in', t);
+    assert.match(W.hintFor({ status: 'failed', error: t, app: 'X' }), /needs you to sign in/, t);
+  }
 }
 console.log('[058] mcpwords: PASS');

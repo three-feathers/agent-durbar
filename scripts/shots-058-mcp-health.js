@@ -65,7 +65,8 @@ module.exports = async (ctx) => {
     assert.ok(typeof text === 'string' && text.length > 0, `${where}: something was copied`);
     for (const want of [`Server: ${name}`, 'State: Failed', `Reason: ${WANT[name]}`, 'Transport: stdio', 'Error (masked): '])
       assert.ok(text.includes(want), `${where}: the diagnostics have "${want}"\n${text}`);
-    assert.match(text, /^When: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z \(local \d\d:\d\d\)$/m, `${where}: ISO and local time`);
+    assert.match(text, /^When \(UTC\): \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/m, `${where}: the UTC time only`);
+    assert.ok(!/local/i.test(text), `${where}: no local time (it would give away the time zone)`);
     assert.match(text, /^Agent app: \S.*$/m, `${where}: the agent app line`);
     assert.ok(!/version not known/.test(text), `${where}: the agent app's version is known in the simulator\n${text}`);
     assert.ok(!text.includes(TOKEN) && !text.includes(TOKEN.slice(4, 16)) && !text.includes(TOKEN.slice(-12)), `${where}: no piece of the planted token\n${text}`);

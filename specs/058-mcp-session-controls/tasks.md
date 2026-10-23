@@ -352,3 +352,7 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
   retaken), `/speckit-converge`, tick tasks, mutation checks (unit: 12 mutants killed; driver: no page redact() and no chip dot both
   fail it). Also found and fixed: the simulator told the window of an `mcp` event before it kept the new list, so a reply asked for at
   once (the chip's count) read the old one; it now keeps the list first, as main does
+- [x] T149 Review on #630 (fjcabello): chip tooltip under 120; home folders to `~` (`maskHomePaths`, shared); OAuth `code`/`state`/token
+  query values and any-case `Bearer` (shared `maskSecretUrl`/`redact`); the 5 s re-read keeps Copilot's class; mask each value before
+  the cut; bidi marks flattened; UTC time only; 401/403 is "Refused: needs sign-in" before any crash rule; an unmasked-token unit test;
+  FR-095 updated. Tests in `test-redact`, `test-mcpwords`, `test-events`; the privacy fixes mutation-checked [FR-090, FR-091, FR-093, FR-094, FR-095]

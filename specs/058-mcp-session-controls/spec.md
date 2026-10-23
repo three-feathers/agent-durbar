@@ -912,7 +912,9 @@ composer's MCP chip when a server of that chat failed. Wanted in the next pre-re
   2. the adapter's `errorClass`: `not-found` "Not installed (command not found)"; `exited` "Crashed on start", or "Disconnected later"
      when it was Running in this session before it failed (FR-092); `disconnected` "Disconnected later"; `timeout` "Timed out";
      `refused` "Refused the connection"; `permission` "Permission denied"; `config` "Settings look wrong";
-  3. otherwise the masked error text, with FR-006's rules (the same classifier as the hint): `ENOENT` / "command not found" / "is not
+  3. otherwise the masked error text, with FR-006's rules (the same classifier as the hint), first `401` / `403` / "unauthorized" /
+     "forbidden" -> "Refused: needs sign-in" with the sign-in hint (review on #630: `SSE stream terminated: 401` is an auth refusal,
+     not a crash, so this rule comes before every crash rule); then `ENOENT` / "command not found" / "is not
      recognized" -> not installed; `EACCES` -> permission denied; timed out -> timed out; `ECONNREFUSED` / host not found -> refused;
      exited / crashed -> crashed on start or disconnected later (FR-092); configuration error -> settings look wrong;
   4. otherwise, when it was Running before it failed: "Disconnected later" (that is what was seen; no cause is claimed);
@@ -926,7 +928,8 @@ composer's MCP chip when a server of that chat failed. Wanted in the next pre-re
     `timeout_subscription` -> `timeout`. Every other value (`process_spawn_failed`, `*_launch_failed`, `protocol_*`, `http_*`,
     `lifecycle_*`, `unclassified_unknown`, new ones) sets nothing: the text rule or "reason unknown" decides. The values come from the
     runtime's strings (`read:` `@github/copilot-sdk-linux-x64` 1.0.22 `runtime.node`); only `os_not_found` was seen on a real run.
-    A later `connected` or `pending` drops the class.
+    A later `connected` or `pending` drops the class. A re-read of the list (the 5 s poll while a sign-in page is open, FR-064) has no
+    classification: while the state is unchanged the class and transport from the runtime's own event stay (review on #630).
   - Claude Code: `system/init.mcp_server_errors` (`[{name, type, message}]`, "MCP server config entries from --mcp-config that failed
     validation and were skipped"; `read:` CLI 2.1.309 schema text) become `failed` rows with `errorClass: 'config'` and the message
     (T024); `mcp_status` / `init.mcp_servers` `config.type` (`stdio`, `sse`, `http`) becomes `transport` when it is a plain word.
@@ -944,17 +947,28 @@ composer's MCP chip when a server of that chat failed. Wanted in the next pre-re
 - **FR-093** `[IMPLEMENTED]` (`test:` test-mcpwords; `sim:` shots-058-mcp-health) **Copy diagnostics.** Every failed or needs-sign-in
   row (chat dialog and Settings live rows) has a *Copy diagnostics* button (named "Copy diagnostics of <server>"; in Settings "...
   for <chat>"). It copies plain text built by `DurbarMcpWords.diagnostics` from the reply only: the server name, the state word, the
-  reason, the time (ISO 8601 and local), the transport ("not reported" when missing), the agent app and its version (from the agent app
-  list the window already has; "version not known" when missing), and the masked error ("none reported"). No folder, path, agent name
-  or environment value. The text was masked in main (FR-005) and is passed through the shared `redact()` once more in the page
-  (`DurbarRedact`, the same code as main); if that is missing or throws, nothing is copied and a toast says so (fail closed).
+  reason, the time in UTC only (ISO 8601; a local time next to it would give away the user's time zone in a public issue), the transport
+  ("not reported" when missing), the agent app and its version (from the agent app list the window already has; "version not known"
+  when missing), and the masked error ("none reported"). No folder, agent name or environment value; home folders read `~` (below).
+  Masking (review on #630, all in the shared `src/shared/redact.ts`, no local copy):
+  - main masks the error (FR-005, `maskMcpText`), now also `maskHomePaths`: `/home/<user>`, `/Users/<user>`, `<drive>:\Users\<user>`
+    (also with `/` or JSON-doubled `\\`, a Windows name with a space when a separator follows it) and this process's `HOME` /
+    `USERPROFILE` become `~`;
+  - `maskSecretUrl` also masks the OAuth query and fragment values `code`, `state`, `id_token`, `refresh_token`, `access_token`,
+    `code_verifier`, `client_secret` (URL only, never flags; spec 041 FR-053's `?code=` example used to stay unmasked), and the bare
+    `Bearer <token>` shape matches in any case;
+  - in the page, each value is masked (`maskSecretUrl`, then `maskHomePaths`, through `DurbarRedact`) **before** it is cut and
+    flattened, so no head of a token survives a cut, and the whole text is masked once more; control characters and bidi/format marks
+    (U+200E/F, U+202A-202E, U+2066-2069, U+FEFF) are flattened (`plain`);
+  - if a masking function is missing or throws, nothing is copied and a toast says so (fail closed).
 - **FR-094** `[IMPLEMENTED]` (`sim:` shots-058-mcp-health) **The dot on the MCP chip.** When any server of the open chat is failed or
   needs a sign-in, the composer's MCP chip shows a small dot in the error colour (theme token `--c-error`, a shape next to the count, so
-  not colour alone) and its name and tooltip say it: "MCP servers: 3 on, 1 failed. Open the list" ("2 failed"). The dot goes when no
+  not colour alone) and its name and tooltip say it: "MCP servers: 3 on, 1 failed. Open the list" ("2 failed"); the tooltip is "MCP
+  servers for this agent: 3 on, 1 failed. Click to see why." (at most 120 characters, spec 052 FR-171). The dot goes when no
   server is failed. It follows the same `agents:mcp` read as the count (spec 005 FR-037), so an `mcp` event updates it.
 - **FR-095** `[IMPLEMENTED]` (`sim:`) **Sign in stays first.** On a needs-sign-in row the sign-in action stays the primary action (the
-  chat dialog's hint and, once #598 lands, its *Sign in* button; Settings' *Open in chat*, FR-082); *Copy diagnostics* is a small
-  secondary button after *Details*.
+  chat dialog's *Sign in* button from #598, FR-064, which replaces Restart there; Settings' *Open in chat*, FR-082); *Copy diagnostics*
+  is a small secondary button after *Details*.
 - **FR-096** `[IMPLEMENTED]` (`sim:`) **Layout.** Text at least 10.5px; the reason line wraps; 12 servers with reasons fit the chat
   dialog at 1280x800 and 1440x900 (the list scrolls inside the dialog); the chip with its dot fits the composer toolbar at both sizes.
 - **FR-097** `[KNOWN GAP]` Not checked on a real agent app: the Copilot classification values except `os_not_found`, Claude's
