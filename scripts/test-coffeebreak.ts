@@ -29,6 +29,9 @@ const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'coffeebre
   atWhen(ts: number, now: number, o?: Record<string, unknown>): string;
   whenText(ts: number, now: number, o?: Record<string, unknown>): string;
   untilText(b: Break | null, auto: boolean, now: number, o?: Record<string, unknown>): string;
+  backInText(b: Break | null, auto: boolean, now: number, marginMs?: number): string;
+  retryable(b: Break | null, a: { limit?: unknown } | null): boolean;
+  MARGIN_MS: number;
 };
 
 let clock = Date.UTC(2026, 9, 21, 12, 0, 0);
@@ -368,6 +371,64 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   assert.ok(/function resumeCoffee[\s\S]{0,200}if\(a\.limit\)return;/.test(app), 'resumeCoffee sends nothing while a Durbar spending limit is pending');
   const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
   assert.ok(/isBusy: \(folder, session\) => scheduleBusy\(folder, session, \{[^\n]*busy: busyStatus, breaks: agentState \}\)/.test(main), 'scheduleDeps.isBusy is scheduleBusy with busyStatus and the tracker');
+}
+
+// 11. Delta 2026-10-23 (owner, #634): the time left on the coffee-corner entry and the chat bar (FR-023), and Retry now (FR-021).
+{
+  const B = mk();
+  const t0 = clock;
+  // FR-023: "back in" counts to when the automatic resume is due (reset + margin); when it asks, to the reset itself
+  const b = B.start('w', { kind: 'provider', app: 'claude', resetsAt: t0 + 3 * MIN, source: '5-hour window' }, 'auto')!;
+  assert.strictEqual(C.backInText(b, true, t0), '4 min', 'reset in 3 min + the 60 s margin');
+  assert.strictEqual(C.backInText(b, false, t0), '3 min', 'asks: counts to the reset');
+  assert.strictEqual(C.backInText(b, true, t0, 0), '3 min', 'the margin can be given (the simulator\'s short margin)');
+  assert.strictEqual(C.backInText(b, false, t0 + 3 * MIN - 30000), 'less than a minute');
+  assert.strictEqual(C.backInText(b, false, t0 + 3 * MIN + 5000), 'less than a minute', 'past due but not yet ticked: still "less than a minute", never negative');
+  assert.strictEqual(C.backInText(b, false, t0 + 2 * MIN), '1 min');
+  assert.strictEqual(C.backInText(b, false, t0 + 2 * MIN - 59000), '2 min', 'whole minutes, rounded up: 1 min 59 s left is 2 min');
+  const at = (ms: number): string => C.backInText({ ...b, resetsAt: t0 + ms }, false, t0);
+  assert.strictEqual(at(60 * MIN), '1 h');
+  assert.strictEqual(at(65 * MIN), '1 h 5 min');
+  assert.strictEqual(at(9 * 60 * MIN + 59 * MIN), '9 h 59 min');
+  assert.strictEqual(at(10 * 60 * MIN + 20 * MIN), '10 h', 'from 10 h only the hours');
+  assert.strictEqual(at(47 * 60 * MIN), '47 h');
+  assert.strictEqual(at(3 * 24 * 60 * MIN), '3 days', 'from 48 h in days');
+  assert.strictEqual(C.backInText({ ...b, resetsAt: undefined }, true, t0), '', 'no reset time: no time left');
+  assert.strictEqual(C.backInText({ ...b, phase: 'back' }, true, t0), '', 'back from the break: no time left');
+  assert.strictEqual(C.backInText({ ...b, kind: 'cap' }, true, t0), '', 'Durbar\'s cap: until you raise the limit, no time');
+  assert.strictEqual(C.backInText(null, true, t0), '');
+  // FR-021: Retry now goes through the timer's own path (resumeCoffee) and only while the user may retry
+  assert.strictEqual(C.retryable(b, {}), true, 'a provider break that is on');
+  assert.strictEqual(C.retryable(b, { limit: { requestId: 'r' } }), false, 'never while Durbar\'s spending limit is pending');
+  assert.strictEqual(C.retryable({ ...b, kind: 'cap' }, {}), false, 'Durbar\'s cap: the limit card answers it');
+  assert.strictEqual(C.retryable({ ...b, phase: 'back' }, {}), true, 'back and asking: Resume is the same retry');
+  assert.strictEqual(C.retryable(null, {}), false);
+  assert.strictEqual(C.retryable(b, null), false);
+  // a double press: the page's resumeCoffee checks retryable, then marks the break resumed; the second press finds no break and sends nothing
+  let sent = 0;
+  const press = (): void => { const a = {}; if (!C.retryable(B.get('w'), a)) return; B.resumed('w'); sent++; };
+  press(); press();
+  assert.strictEqual(sent, 1, 'a double press retries once');
+  assert.strictEqual(B.has('w'), false, 'the wait is over');
+  assert.deepStrictEqual(B.tick(), [], 'and the timer has nothing left to resume');
+  // a retry that hits the limit again (it had not reset) goes back on the break and does not resume by itself (FR-007 re-hit)
+  clock = t0 + 30000;
+  const again = B.start('w', { kind: 'provider', app: 'claude', resetsAt: t0 + 3 * MIN }, 'auto')!;
+  assert.strictEqual(again.noAuto, true, 're-hit after a retry: no automatic resume');
+  clock = t0 + 10 * MIN;
+  assert.deepStrictEqual(B.tick(), [{ type: 'ask', id: 'w' }], 'at the reset it asks, it does not send by itself');
+  clock = t0;
+}
+
+// 12. Wiring (FR-019..FR-022): the page uses the core's rules, the entry is a button, and Retry now is the timer's own path.
+{
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  assert.ok(/function resumeCoffee\(a,how\)\{[\s\S]{0,160}COFFEE\.retryable\(/.test(app), 'resumeCoffee asks the core whether a retry is allowed');
+  assert.ok(/const retryCoffee=a=>resumeCoffee\(a,'user'\)/.test(app), 'Retry now is resumeCoffee, the path the timer uses');
+  assert.ok(/if\(x\.type==='resume'\)resumeCoffee\(a,'auto'\)/.test(app), 'the timer resumes through the same function');
+  assert.ok(!/'Try now'/.test(app), 'Try now is renamed Retry now (owner, 2026-10-23)');
+  assert.ok(/const go=boss\|\|bank\|\|cf;/.test(app), 'a coffee-corner entry is a button like the Boss and the Bank');
+  assert.ok(/id="coffeeBar"/.test(app), 'the chat has the coffee-break bar');
 }
 
 console.log('coffee break tests passed');

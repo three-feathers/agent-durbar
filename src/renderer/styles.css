@@ -1259,6 +1259,10 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 /* spec 052 FR-001: the answer bar above the composer, while a waiting request is out of view */
 .answer-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 auto 8px;width:min(860px,calc(100% - 32px));padding:8px 10px 8px 14px;background:var(--warn-bg);border:1px solid var(--tone-warn-line);border-radius:12px;box-shadow:0 4px 14px rgba(40,35,25,.08)}
 .answer-bar[hidden]{display:none}
+/* spec 068 FR-022: the chat's coffee-break bar: the answer bar's shape in calm surface tokens (a break is not an alarm, FR-005) */
+.coffee-bar{background:var(--surface-2);border-color:var(--line)}
+.coffee-bar .ab-q b{color:var(--ink)}
+.coffee-bar .cb-left{color:var(--ink-2)}
 .answer-bar .ab-q{flex:1 1 280px;min-width:0;font-size:13px;line-height:1.4;color:var(--ink);max-height:8.6em;overflow:auto;overflow-wrap:break-word}
 .answer-bar .ab-q b{color:var(--amber-ink)}
 .answer-bar .ab-act{display:flex;gap:6px;flex-wrap:wrap}

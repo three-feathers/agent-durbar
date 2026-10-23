@@ -271,7 +271,8 @@ const BADGE_KEY='<svg viewBox="0 0 12 12" width="9" height="9" fill="none" strok
    PR 511) the name (30), folder (22) and activity (40) are cut with an ellipsis, so an entry's title stays within 120 characters with
    " Open the chat." */
 const visitorWords=(a,v,cut)=>{const C=cut?DurbarCutText.cutText:(t=>String(t)),n=C(a.name,30);
-  if(v&&(v.place===window.DurbarPlaces.COFFEE||v.place===window.DurbarPlaces.BANK)){const u=coffeeUntilWords(a);return n+(u?' ('+C(u,40)+')':'');}
+  if(v&&(v.place===window.DurbarPlaces.COFFEE||v.place===window.DurbarPlaces.BANK)){const u=coffeeUntilWords(a),l=coffeeLeftWords(a); /* delta 2026-10-23 FR-019: and the time left */
+    return n+(u||l?' ('+(u?C(u,cut?24:40):'')+(u&&l?' · ':'')+l+')':'');}
   const r=roomOf(a);return n+(r?' ('+C(r.name,22)+')':'')+(v?': '+C(visitDoing(a,v),40):'');};
 /* A place tile's title: at most 4 names (each cut), then "and N more", then the longest wait at the Boss; one line, well under 300 characters */
 const placeTip=(pid,ids,wait)=>{const C=DurbarCutText.cutText,nm=ids.slice(0,4).map(id=>C(byId(id).name,30)),more=ids.length-nm.length;
@@ -288,10 +289,11 @@ function lobbyHTML(aw){
     /* the Boss shows as many of its queue as it can: names only when everyone there fits by name, else initials (FR-034) */
     const {mode,slots:cap}=boss&&ids.length>caps.named?{mode:'initials',slots:caps.initials}:D.chipsFor(caps,ids.length);
     const sp=mode==='initials'?D.initialSpots(box?box.width:fit.tile,ids.length):D.layoutSpots(ids.length,cap), who=ids.map(id=>{const a=byId(id);return visitorWords(a,VISITS.at(id));});
-    const go=boss||bank; /* FR-034/FR-035: an entry at the Boss or the Bank opens that chat at its request */
+    const go=boss||bank||cf; /* FR-034/FR-035: an entry at the Boss or the Bank opens that chat at its request; spec 068 FR-019 (owner 2026-10-23): so does one in the coffee corner */
     const chips=ids.slice(0,sp.shown).map((id,i)=>{const a=byId(id),v=VISITS.at(id),w=visitorWords(a,v),t=visitorWords(a,v,true),k=boss&&v?v.label:'';
       const inner=`<span class="slot on" data-slot="${i}"></span><span class="pv-t">${mode==='named'?`<b class="pv-n">${esc(a.name)}</b><small class="pv-a">${esc(v?visitDoing(a,v):'')}</small>`:`<b class="pv-n pv-i">${esc(D.initialsOf(a.name))}</b>`}</span>`;
-      return go?`<button type="button" class="pv pv-go" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" data-pvopen="${esc(id)}"${k?` data-ask="${k}"`:''} title="${esc(t)}. Open the chat." aria-label="${esc(w)}. Open the chat.">${inner}</button>`
+      const hint=cf?'. Open the chat; right-click for Retry now.':'. Open the chat.', kh=cf?' aria-keyshortcuts="Shift+F10"':''; /* FR-020: the coffee entry's menu */
+      return go?`<button type="button" class="pv pv-go" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" data-pvopen="${esc(id)}"${cf?` data-coffeeid="${esc(id)}"`:''}${k?` data-ask="${k}"`:''}${kh} title="${esc(t+hint)}" aria-label="${esc(w+hint)}">${inner}</button>`
         :`<span class="pv" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" title="${esc(t)}">${inner}</span>`;}).join('');
     const more=sp.more?`<button class="pv pv-more" type="button" data-key="pv-more:${esc(p.id)}" data-placemore="${esc(p.id)}" aria-haspopup="menu" title="${sp.more} more here. Open the list." aria-label="${sp.more} more at ${esc(placeLabelFull(p.id))}: ${esc(ids.slice(sp.shown).map(id=>byId(id).name).join(', '))}"><span class="slot more" data-slot="${sp.shown}">+${sp.more}</span>${mode==='named'?'<span class="pv-t"><b class="pv-n">more</b></span>':''}</button>`:'';
     const wait=boss&&ids.length?bossWait(ids[0]):''; /* FR-034: the longest wait, in the header */
@@ -381,6 +383,29 @@ function openPlaceMenu(pid,anchor){
 }
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#stage [data-placemore]');if(!b)return;e.stopImmediatePropagation();
   if(document.getElementById('modeMenu')){closeModeMenu();return;}openPlaceMenu(b.dataset.placemore,b);},true);
+/* spec 068 FR-020 (owner 2026-10-23): right-click, Shift+F10 or the context-menu key on a coffee-corner entry: Open chat and Retry now (the shared menu element) */
+function openCoffeeMenu(id,anchor){
+  closeModeMenu();
+  const a=byId(id); if(!a||!a.coffee)return;
+  const can=COFFEE.retryable(BREAKS.get(id),a), left=coffeeLeftWords(a);
+  const it=(act,label,sub)=>`<button type="button" role="menuitem" data-cact="${act}" title="${esc(sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',a.name+': '+coffeeWord()+(left?', '+left:''));
+  m.innerHTML=it('open','Open chat','See '+a.name+'’s chat and its coffee-break card')+(can?it('retry','Retry now','Send one message now so the agent continues'):'');
+  document.body.appendChild(m);
+  const ab=anchor.getBoundingClientRect(),b=m.getBoundingClientRect();
+  m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';
+  m.style.top=(ab.bottom+6+b.height<=innerHeight-8?ab.bottom+6:Math.max(8,ab.top-6-b.height))+'px';
+  /* focus back to the entry; after Retry now the agent has left the corner, so to its desk (never lost to the page) */
+  const back=()=>{const f=document.querySelector('#stage [data-coffeeid="'+CSS.escape(id)+'"]')||(document.contains(anchor)?anchor:null)||document.querySelector('#stage .desk[data-id="'+CSS.escape(id)+'"]');if(f)f.focus();};
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-cact]');if(!t)return;closeModeMenu();
+    if(t.dataset.cact==='retry'){retryCoffee(a);announce('Retry now: '+a.name);scheduleRender();requestAnimationFrame(()=>requestAnimationFrame(back));}else openAtRequest(id);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-cact]')],i=its.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
+  m.querySelector('button').focus();
+}
+document.addEventListener('contextmenu',e=>{const b=e.target.closest&&e.target.closest('#stage [data-coffeeid]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();openCoffeeMenu(b.dataset.coffeeid,b);},true);
+document.addEventListener('keydown',e=>{if(!((e.key==='F10'&&e.shiftKey)||e.key==='ContextMenu'))return;const b=e.target.closest&&e.target.closest('#stage [data-coffeeid]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();openCoffeeMenu(b.dataset.coffeeid,b);},true);
 const WALK_MS=1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the others simply appear */
 const walkers=new Map(); /* agent id -> {el, back, walking, shown, timer, to} */
 const walkCount=()=>{let n=0;walkers.forEach(w=>{if(w.walking)n++;});return n;};
@@ -1741,7 +1766,8 @@ function wireAnswerBar(a){
     return {opts,other,ok,skip,tag:tag?tag.textContent:'',q:safeMask(qt.textContent.replace(/\s+/g,' ').trim())};};
   let painted='';
   function paint(){
-    if(!card||cardVisible){if(painted||!bar.hidden){bar.hidden=true;bar.innerHTML='';painted='';}return;}
+    /* spec 068 FR-022: a coffee-break card has its own bar (#coffeeBar), always shown; the answer bar does not repeat it */
+    if(!card||cardVisible||card.classList.contains('coffee')){if(painted||!bar.hidden){bar.hidden=true;bar.innerHTML='';painted='';}return;}
     const n=waiting().length, text=textOf(card);
     /* the same request, count and words: keep the bar as it is (a repaint would drop what you type in its box and its focus) */
     const key=n+'\u0001'+text;if(painted&&bar._card===card&&painted===key&&!bar.hidden)return;
@@ -1839,6 +1865,7 @@ function openPanel(id,focus){
     <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div></div>
    <div class="prev" id="prev" role="region" aria-label="${SIMPLE?'Earlier chats':'Previous sessions'}" hidden>${a.live&&!a.parent?`<div class="prev-bar"><button class="prev-toggle" id="prevBtn" type="button" data-pv="toggle" aria-expanded="false" aria-controls="prevPanel" aria-keyshortcuts="${esc(ariaKeys(PREV_KEYS))}">${ICON('chev')}<span class="prev-l">${SIMPLE?'Earlier chats':'Previous sessions'}</span><span class="prev-c" hidden></span><span class="prev-sub"></span></button></div><div class="prev-panel" id="prevPanel" hidden></div>`:''}</div>
    <div id="chat" role="log" aria-live="off" aria-label="Chat with ${esc(a.name)}" tabindex="0"></div>
+   <div class="answer-bar coffee-bar" id="coffeeBar" role="region" aria-label="Coffee break" hidden></div>
    <div class="answer-bar" id="answerBar" role="region" aria-label="Waiting for your answer" hidden></div>
    <div class="composer"><div class="cgrip" id="composerGrip" role="separator" aria-orientation="horizontal" aria-label="Resize message box" aria-controls="msgInput" tabindex="0" title="Drag to resize the message box. Double-click to let it grow with your text again."></div><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
     <div class="inbox">
@@ -1873,7 +1900,7 @@ function openPanel(id,focus){
   if(a.live&&!a.parent)initPrev(a); else {const pv=$('prev');if(pv)pv.hidden=true;}
   if(a.live&&!a.parent&&a.info&&a.info.resumeLast&&bridge.wake)wakeLast(a);
   wireMoreMenu();
-  wireAnswerBar(a);
+  wireAnswerBar(a);paintCoffeeBar.key='';paintCoffeeBar(); /* spec 068 FR-022 */
   if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c));}
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
   if($('stopBtn'))$('stopBtn').onclick=e=>{RUN_SAID.stopped=true;if(a.live){const b=e.currentTarget;if(b.getAttribute('aria-busy')==='true')return;b.setAttribute('aria-busy','true');return stopLive(a).catch(failToast('stop')).finally(()=>{b.removeAttribute('aria-busy');syncRunState();});}stopDemoTurn(a);a.paused=false;a.state='idle';a.label=null;a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
@@ -3730,6 +3757,9 @@ const LIMIT_WORD='Limit reached'; /* spec 001 FR-035: the cap's label at the Ban
 const breakWord=a=>{const b=BREAKS.get(a.id);return b&&b.kind==='cap'?LIMIT_WORD:coffeeWord();};
 const coffeeTask=a=>breakWord(a)+' — '+coffeeUntil(a);
 /* "until 14:30" for the coffee corner and Bank entries and labels (FR-014; visitorWords cuts it for tooltips) */
+/* delta 2026-10-23 (FR-023): the time left, "back in 4 min" when it resumes by itself, "resets in 4 min" when it will ask, '' without a time */
+const BREAK_MARGIN=SIM_BREAK?2000:COFFEE.MARGIN_MS;
+const coffeeLeftWords=a=>{const b=a&&BREAKS.get(a.id);if(!b)return '';const au=BREAKS.autoResumes(a.id),w=COFFEE.backInText(b,au,Date.now(),BREAK_MARGIN);return w?(au?'back in ':'resets in ')+w:'';};
 const coffeeUntilWords=a=>{const b=a&&BREAKS.get(a.id);return b?(b.kind==='cap'?'until you raise the limit':b.resetsAt?'until '+COFFEE.whenText(b.resetsAt,Date.now()):'until the limit resets'):'';};
 /* the card's sentence: what is used up, and what happens next */
 function coffeeSentence(a){
@@ -3738,9 +3768,9 @@ function coffeeSentence(a){
   const what=SIMPLE||!b.source?'The usage limit is used up.':b.source+' is used up.';
   if(b.phase==='back')return 'The limit has reset. Resume sends one message so the agent continues where it stopped.';
   const next=BREAKS.autoResumes(a.id)?' The agent comes back '+when+' and continues by itself.':b.resetsAt?' The limit resets '+when+'; the agent will ask you before it goes on'+(b.paid?' (going on may be billed).':'.'):' The agent app did not say when it resets.';
-  return what+next+' Try now sends one message to continue (after a long break it can cost a little more).';
+  return what+next+' Retry now sends one message to continue (after a long break it can cost a little more).';
 }
-/* the chat card (FR-009): Try now / Stay on break, or, once the limit has reset and the agent asks, Resume / Not now. The inbox copies the buttons. */
+/* the chat card (FR-009): Retry now / Stay on break, or, once the limit has reset and the agent asks, Resume / Not now. The inbox copies the buttons. */
 function showCoffee(a,back){
   const chat=liveChat(a), b=BREAKS.get(a.id); if(!b)return;
   if(a.coffeeCard){a.coffeeCard.classList.add('settled');const r=a.coffeeCard.querySelector('.note-actions');if(r)r.remove();}
@@ -3754,13 +3784,13 @@ function showCoffee(a,back){
     mk('Resume','primary','Send one message so the agent continues where it stopped',()=>resumeCoffee(a,'user'));
     mk('Not now','','Leave it here; the agent goes on with your next message',()=>{endCoffee(a,'not now');setState(a,'idle',null,'The usage limit has reset. Send a message to go on.');});
   } else {
-    mk('Try now','primary','Send one message now so the agent continues (if the limit has not reset yet, it goes back on its break)',()=>resumeCoffee(a,'user'));
+    mk('Retry now','primary','Send one message now so the agent continues (if the limit has not reset yet, it goes back on its break)',()=>retryCoffee(a));
     if(BREAKS.autoResumes(a.id))mk('Stay on break','','Do not continue by itself; ask me when the limit resets',()=>{BREAKS.stay(a.id);showCoffee(a,false);setState(a,'waiting',coffeeWord(),coffeeTask(a));});
   }
   n.appendChild(row);
   chat.el.appendChild(n);stickyScroll(chat);
   a.coffeeCard=n;
-  scheduleRender();
+  scheduleRender();paintCoffeeBar();
 }
 /* FR-001..FR-004: the agent goes on a break (a usage limit of its agent app, or Durbar's own cap) */
 function startCoffee(a,info){
@@ -3772,6 +3802,7 @@ function startCoffee(a,info){
   if(VISITS.pin(a.id,b.kind==='cap'?window.DurbarPlaces.BANK:window.DurbarPlaces.COFFEE,breakWord(a)))scheduleRender();
   setState(a,'waiting',breakWord(a),coffeeTask(a));
   if(isNew)announce(a.name+': '+coffeeTask(a));
+  paintCoffeeBar();
 }
 /* the break ends without a resume of ours (a message, Stop, the agent went on by itself, Not now) */
 function endCoffee(a,why){
@@ -3779,21 +3810,52 @@ function endCoffee(a,why){
   a.coffee=false;a.coffeeKind='';BREAKS.end(a.id);
   if(VISITS.unpin(a.id))scheduleRender();
   if(a.coffeeCard){const r=a.coffeeCard.querySelector('.note-actions');if(r)r.remove();a.coffeeCard.querySelector('.pstate').textContent=' → '+(why||'ended');a.coffeeCard.classList.add('settled');a.coffeeCard=null;}
+  paintCoffeeBar();
 }
-/* FR-007: one fixed message to the same session (automatic at the reset, or Try now / Resume) */
+/* FR-007: one fixed message to the same session (automatic at the reset, or Retry now / Resume). FR-021: the first call ends the break, so a
+   second press (double click, the menu and the bar) finds none and sends nothing; the core says when the user may retry (retryable). */
 function resumeCoffee(a,how){
   if(!a||!a.coffee)return;
-  const b=BREAKS.get(a.id); if(!b||b.kind!=='provider')return;
+  const b=BREAKS.get(a.id); if(!COFFEE.retryable(b,a))return;
   if(a.limit)return; /* FR-007: never while Durbar's spending limit is pending (main would hold the message anyway) */
   a.coffee=false;a.coffeeKind='';BREAKS.resumed(a.id);
   if(VISITS.unpin(a.id))scheduleRender();
   if(a.coffeeCard){const r=a.coffeeCard.querySelector('.note-actions');if(r)r.remove();a.coffeeCard.querySelector('.pstate').textContent=' → '+(how==='auto'?'resumed by itself':'resumed');a.coffeeCard.classList.add('settled','approved');a.coffeeCard=null;}
   addNote(liveChat(a),'Back from the '+esc(coffeeWord().toLowerCase())+' ('+(how==='auto'?'resumed by itself after the limit reset':'resumed by you')+').');
+  paintCoffeeBar();
   void sendLive(COFFEE.RESUME_TEXT,a.id,{fromComposer:false,coffee:true});
 }
+/* spec 068 FR-021 (owner 2026-10-23): Retry now is the timer's own path: one fixed message, the session's mode and caps */
+const retryCoffee=a=>resumeCoffee(a,'user');
+/* FR-022: the chat's coffee-break bar: always shown while the open chat's agent is on a provider break (not yet back), with Retry now */
+function paintCoffeeBar(){ /* its key lives on the function (no let: the panel can paint before this line ran) */
+  const bar=$('coffeeBar'); if(!bar)return;
+  const a=byId(ui.selected), b=a&&a.coffee?BREAKS.get(a.id):null;
+  if(!b||b.kind!=='provider'||b.phase!=='on'){if(!bar.hidden){bar.hidden=true;bar.innerHTML='';}paintCoffeeBar.key='';return;}
+  const left=coffeeLeftWords(a), words=left||coffeeUntilWords(a), key=a.id;
+  if(paintCoffeeBar.key!==key||bar.hidden||!bar.firstChild){
+    const had=bar.contains(document.activeElement);
+    paintCoffeeBar.key=key;
+    bar.innerHTML='<span class="ab-q"><b></b> <span class="cb-left"></span></span><span class="ab-act"></span>';
+    bar.querySelector('b').textContent='On a '+coffeeWord().toLowerCase();
+    const act=bar.querySelector('.ab-act');
+    const add=(label,cls,fn,title)=>{const x=document.createElement('button');x.type='button';x.className='btn '+cls;x.textContent=label;x.title=title;x.onclick=fn;act.appendChild(x);return x;};
+    const r=add('Retry now','primary',()=>{const who=byId(key);if(!who)return;retryCoffee(who);announce('Retry now: '+who.name);const m=$('msgInput');if(m)m.focus();},'Send one message now so the agent continues (if the limit has not reset yet, it goes back on its break)');
+    r.dataset.coffeeRetry='1';
+    add('Show in chat','ghost',()=>{const who=byId(key);if(who&&who.coffeeCard&&who.coffeeCard.isConnected)focusRequest(who.coffeeCard);},'Scroll to the coffee-break card in the chat');
+    bar.hidden=false;
+    if(had)r.focus();
+  }
+  const t=bar.querySelector('.cb-left'), txt='· '+words;if(t.textContent!==txt)t.textContent=txt;
+  bar.setAttribute('aria-label',coffeeWord()+(words?', '+words:''));
+}
 /* the window's timer: what the break core says is due (FR-007, FR-011) */
+let coffeeLeftSig='';
 function coffeeTick(){
   if(!BREAKS.size())return;
+  /* FR-023: the time left follows the clock: the bar each tick, the lobby when a minute changes */
+  const sig=BREAKS.ids().map(id=>id+':'+coffeeLeftWords(byId(id))).join('|');if(sig!==coffeeLeftSig){coffeeLeftSig=sig;scheduleRender();}
+  paintCoffeeBar();
   /* FR-007: a paused agent, or one whose Durbar spending limit is pending, asks instead of resuming by itself (the rule is holdIds in coffeebreak.js) */
   for(const x of BREAKS.tick({hold:COFFEE.holdIds(agents)})){
     const a=byId(x.id); if(!a||!a.live){BREAKS.end(x.id);continue;}
