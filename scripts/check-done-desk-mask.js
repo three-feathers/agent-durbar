@@ -214,11 +214,13 @@ module.exports = async (ctx) => {
     await emit({ type: 'status', sessionId: id, timestamp: Date.now(), status: 'idle' });
   }
   for (let i = 0; i < 6; i++) await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral('sim-' + (i + 1))});a.lastEventAt=Date.now()-${jsLiteral(mins[i])}*60000;})()`);
-  await js(`window.__durbarSimUi.render()`);
-  assert.ok(await until(`document.querySelectorAll('#stage .desk.shut').length>=6`, 8000), 'lounge: six agents rest (3 on the couch, 3 on the beds)');
-  assert.ok(await js(`document.querySelectorAll('#stage .desk.shut.rest-recent').length===3&&document.querySelectorAll('#stage .desk.shut.rest-old').length===3`), 'lounge: 3 recent and 3 old');
+  // wait for the split (3 on the couch, 3 on the beds), drawing again while we wait: a slow runner has not laid the lounge out yet
+  const split = `(()=>{window.__durbarSimUi.render();return document.querySelectorAll('#stage .desk.shut.rest-recent').length===3&&document.querySelectorAll('#stage .desk.shut.rest-old').length===3})()`;
+  const splitOk = await until(split, 10000);
+  const counts = await js('JSON.stringify({recent:document.querySelectorAll("#stage .desk.shut.rest-recent").length,old:document.querySelectorAll("#stage .desk.shut.rest-old").length})');
+  assert.ok(splitOk, 'lounge: 3 on the couch and 3 on the beds: ' + counts);
   await scan('lounge', 'lounge: couch, beds, peek cards, tooltips');
-  for (let k = 0; k < 4; k++) { await js(`window.__durbarSimUi.loungeTurn()`); await ctx.sleep(120); await scan('lounge', 'lounge after turn ' + (k + 1)); }
+  for (let k = 0; k < 4; k++) { await js(`window.__durbarSimUi.loungeTurn()`); assert.ok(await until(split, 10000), `lounge after turn ${k + 1}: the split holds`); await ctx.sleep(120); await scan('lounge', 'lounge after turn ' + (k + 1)); }
   if (ONLY === 'lounge') { console.log('[done-desk-mask] all checks passed'); return; }
   // 6. a restored session continued (simresume=1)
   await H.load({ w: 1440, h: 900, query: { simreply: 'secrets', simresume: '1' }, ready: 'fit' });
