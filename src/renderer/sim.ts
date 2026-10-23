@@ -107,6 +107,8 @@ interface SimAgent {
   /** Spec 058 (simulator): servers under a canned Restart, and failed servers a Restart brought back. */
   mcpRestarting?: Set<string>;
   mcpFixed?: Set<string>;
+  /** Spec 058 FR-071 (simmcpauth): servers with a sign-in open (Sign in pressed); `opened` after Open sign-in page. Dropped by End session and Restart session. */
+  mcpSign?: Map<string, { opened: boolean }>;
   /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
   mcpLive?: { name: string; status: string; error?: string; errorClass?: McpServerStatus['errorClass'] }[];
   /** Simulated credit use in nano-AIU, and the open "limit reached" question (spec 011). */
@@ -681,10 +683,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     ];
     /* spec 058: the state of one simulated server, for the dialog's reply and the `mcp` events alike (FR-001, FR-006, FR-040).
        The sixth agent's "my-notes" failed to start (until a Restart); every fifth agent from the fifth one (5, 10, 15) has it asking for a sign-in. */
+    /* spec 058 FR-071: `simmcpauth=1` = the Copilot agents' "my-notes" asks for a sign-in until one finishes (Sign in, Open sign-in page, Running after 2 s);
+       `simmcpauth=manual` = the same row, but the app cannot start a sign-in, so the terminal steps show instead. Claude and Codex rows keep today's behaviour. */
+    const simMcpAuth = simQs?.get('simmcpauth') ?? '';
     const simServer = (s: SimAgent, i: number, name: string, live: boolean): { status?: string; error?: string; errorClass?: McpServerStatus['errorClass'] } => {
       if (s.mcpOff?.has(name)) return { status: 'disabled' };
       if (!live) return {};
       if (s.mcpRestarting?.has(name)) return { status: 'pending' };
+      if (simMcpAuth && name === 'my-notes' && (s.info.adapterId ?? 'copilot') === 'copilot' && !s.mcpFixed?.has(name)) return { status: 'needs-auth', error: 'The server answered 401 Unauthorized: sign in to use its tools.', errorClass: 'auth' };
       if (name === 'my-notes' && !s.mcpFixed?.has(name)) {
         if (i === 5) return { status: 'failed', error: 'spawn notes-mcp ENOENT', errorClass: 'not-found' };
         if (i % 5 === 4) return { status: 'needs-auth', error: 'The server answered 401 Unauthorized: sign in to use its tools.', errorClass: 'auth' };
@@ -1263,12 +1269,21 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         /* what the last `mcp` event said wins over the canned rule, as main's live list does for a real session */
         const reported = (n: string): ReturnType<typeof simServer> => { const m = live ? s.mcpLive?.find((x) => x.name === n) : undefined; return m ? { status: s.mcpOff?.has(n) ? 'disabled' : m.status, error: m.error, errorClass: m.errorClass } : simServer(s, idx, n, live); };
         const known = new Set([...fakeCli.map((c) => c.name), ...extrasOf(s.info.cwd).map((v) => v.name)]);
+        /* spec 058 FR-065/FR-068: Sign in (Copilot only for now), the host of an open sign-in, the terminal steps; main's rules, canned */
+        const signOf = (n: string, origin: 'cli' | 'folder' | 'runtime') => {
+          if (!simMcpAuth || (s.info.adapterId ?? 'copilot') !== 'copilot') return {};
+          const st = reported(n);
+          if (!live || s.mcpOff?.has(n) || (st.status !== 'needs-auth' && st.errorClass !== 'auth')) return {};
+          const open = s.mcpSign?.get(n);
+          const steps = origin === 'folder' ? 'This server is only known to Agent Durbar; use Sign in here.' : 'In a terminal, run `copilot`, type `/mcp auth ' + n + '` and finish in your browser. Then use Restart session with these servers.';
+          return { signInSteps: steps, ...(simMcpAuth === 'manual' ? {} : { canSignIn: true, ...(open ? { signIn: { host: 'auth.example.com', opened: open.opened, expiresInMs: 600000 } } : {}) }) };
+        };
         const toolsOffOf = (n: string) => (simToolsOff[s.info.cwd]?.[n] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[n] ?? [])] } : {});
         const servers = [
           /* spec 069 FR-061: this folder's turned-off tools */
-          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, ...reported(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), sources: gSources(a.name, false), ...toolsOffOf(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
-          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), sources: gSources(v.name, true), ...toolsOffOf(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
-          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name) })) : []),
+          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, ...reported(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), sources: gSources(a.name, false), ...toolsOffOf(a.name), ...signOf(a.name, 'cli'), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
+          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), sources: gSources(v.name, true), ...toolsOffOf(v.name), ...signOf(v.name, 'folder'), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
+          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name), ...signOf(m.name, 'runtime') })) : []),
         ];
         return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true };
       },
@@ -1311,6 +1326,34 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         s.mcpRestarting.delete(name);
         (s.mcpFixed ??= new Set()).add(name);
         mcpStatus(s, sims.indexOf(s));
+        return { ok: true };
+      },
+      /* spec 058 FR-071: Sign in -> the host -> Open sign-in page (opens nothing; "Running" after 2 s). The address is never in the page. */
+      agentMcpSignIn: async (id, name) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s || (s.info.adapterId ?? 'copilot') !== 'copilot' || !simMcpAuth) return { ok: false, error: 'Unknown agent or server.' };
+        if (simMcpAuth === 'manual') return { ok: false, manual: true, error: 'This Copilot version cannot start a sign-in from Agent Durbar.' };
+        const st = simServer(s, sims.indexOf(s), name, true);
+        if (st.status !== 'needs-auth') return { ok: false, error: name + ' does not need a sign-in.' };
+        if (s.mcpSign?.has(name)) return { ok: false, error: 'A sign-in for ' + name + ' is already open.' };
+        (s.mcpSign ??= new Map()).set(name, { opened: false });
+        return { ok: true, kind: 'browser', host: 'auth.example.com' };
+      },
+      agentMcpOpenSignIn: async (id, name) => {
+        const s = sims.find((x) => x.info.id === id);
+        const e = s?.mcpSign?.get(name);
+        if (!s || !e) return { ok: false, gone: true, error: 'That sign-in is no longer open. Press Sign in again.' };
+        e.opened = true;
+        console.info('[sim] would open the sign-in page on auth.example.com');
+        window.setTimeout(() => {
+          if (!s.mcpSign?.delete(name)) return; // cancelled or ended meanwhile
+          (s.mcpFixed ??= new Set()).add(name);
+          mcpStatus(s, sims.indexOf(s)); // the runtime reports the server connected: the open dialog follows it
+        }, 2000);
+        return { ok: true };
+      },
+      agentMcpCancelSignIn: async (id, name) => {
+        sims.find((x) => x.info.id === id)?.mcpSign?.delete(name);
         return { ok: true };
       },
       setAgentMcp: async (id, name, enabled) => {
@@ -2119,6 +2162,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s) return;
         if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
         s.state = 'idle'; closeOpen(s); simRemote.delete(id); // spec 054 FR-003
+        s.mcpSign = undefined; // spec 058 FR-065: End session forgets an open sign-in
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
       },
       /* spec 058 FR-040: a canned Restart session: asks while busy (as main does), ends, then resumes "Ready"; with simauth=expired
@@ -2130,7 +2174,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const kind = s.info.adapterId ?? 'copilot';
         if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
         s.state = 'idle'; closeOpen(s); simRemote.delete(id);
-        s.mcpFixed = undefined; s.mcpRestarting = undefined;
+        s.mcpFixed = undefined; s.mcpRestarting = undefined; s.mcpSign = undefined;
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
         await new Promise((r) => setTimeout(r, 500));
         if (simExpired.has(kind)) return { ok: false, ended: true, errorKind: 'auth', error: SIM_AUTH_ERROR };
