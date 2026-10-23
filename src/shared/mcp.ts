@@ -57,12 +57,7 @@ export function claudeOAuthOf(v: unknown): McpOAuthSpec | undefined {
   }
   if (own('authServerMetadataUrl')) {
     const u = o.authServerMetadataUrl;
-    if (!text(u, 2048)) return undefined;
-    try {
-      if (new URL(u).protocol !== 'https:') return undefined;
-    } catch {
-      return undefined;
-    }
+    if (!text(u, 2048) || !httpsMetadataUrl(u)) return undefined;
     out.authServerMetadataUrl = u;
   }
   if (own('scopes')) {
@@ -72,16 +67,36 @@ export function claudeOAuthOf(v: unknown): McpOAuthSpec | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
+// eslint-disable-next-line no-control-regex
+const URL_BLANKS = /[\s\u0000-\u001f\u007f-\u009f]/;
+/**
+ * Spec 058 FR-186 (security review on #635): Claude Code's schema wants a literal `https://` prefix, so the text must start with exactly
+ * `https://` (case-sensitive; not `HTTPS://`, `https:/x` or `https:evil`), hold no whitespace or control character anywhere (the URL
+ * parser would drop or trim them), carry no user name or password, and parse as a URL with a host. Anything else: no `oauth` copy.
+ */
+function httpsMetadataUrl(u: string): boolean {
+  if (!u.startsWith('https://') || URL_BLANKS.test(u)) return false;
+  try {
+    const p = new URL(u);
+    return p.protocol === 'https:' && !!p.hostname && !p.username && !p.password && !u.slice(8).split(/[/?#]/, 1)[0].includes('@');
+  } catch {
+    return false;
+  }
+}
+
 /** Spec 058 FR-175/FR-177: how long an agent app's sign-in listener waits (it starts before the app answers), and the margin Durbar keeps. */
 export const APP_SIGN_IN_LISTENER_MS = 300_000;
+/** Spec 058 FR-175: how long Durbar waits for an app's answer to a sign-in request (the most a wait can be). */
+export const SIGN_IN_REQUEST_TIMEOUT_MS = 30_000;
 const SIGN_IN_MARGIN_MS = 10_000;
 const SIGN_IN_MIN_MS = 30_000;
 /**
  * Spec 058 FR-175 (FR-180): the time main may keep a sign-in address, so **Open sign-in page** never points at a closed listener: the
- * listener's 5 minutes minus the time from sending the request to its answer, minus 10 seconds, at least 30 seconds.
+ * listener's 5 minutes minus the time from sending the request to its answer, minus 10 seconds, at least 30 seconds. A wait that is
+ * negative or not a finite number (a clock that went wrong) counts as the full request timeout (260 s), never as no wait (review on #635).
  */
 export function signInTtlMs(waitedMs: number): number {
-  const w = Number.isFinite(waitedMs) && waitedMs > 0 ? waitedMs : 0;
+  const w = Number.isFinite(waitedMs) && waitedMs >= 0 ? waitedMs : SIGN_IN_REQUEST_TIMEOUT_MS;
   return Math.max(SIGN_IN_MIN_MS, APP_SIGN_IN_LISTENER_MS - w - SIGN_IN_MARGIN_MS);
 }
 

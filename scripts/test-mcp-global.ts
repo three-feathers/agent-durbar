@@ -887,6 +887,24 @@ ok('FR-186: a Claude entry\'s oauth is copied through the allow-list, all or not
     portStr: entry(`{"clientId":"a","callbackPort":"8080"}`),
     metaHttp: entry(`{"clientId":"a","authServerMetadataUrl":"http://login.example.com/x"}`),
     metaJs: entry(`{"clientId":"a","authServerMetadataUrl":"javascript:alert(1)"}`),
+    // review on #635: Claude Code wants a literal `https://` prefix; the URL parser alone accepts all of these
+    metaNoSlashes: entry(`{"clientId":"a","authServerMetadataUrl":"https:evil.example/x"}`),
+    metaOneSlash: entry(`{"clientId":"a","authServerMetadataUrl":"https:/evil.example/x"}`),
+    metaUpper: entry(`{"clientId":"a","authServerMetadataUrl":"HTTPS://login.example.com/x"}`),
+    metaMixed: entry(`{"clientId":"a","authServerMetadataUrl":"Https://login.example.com/x"}`),
+    metaSpace: entry(`{"clientId":"a","authServerMetadataUrl":" https://login.example.com/x"}`),
+    metaTrail: entry(`{"clientId":"a","authServerMetadataUrl":"https://login.example.com/x "}`),
+    metaNewline: entry(`{"clientId":"a","authServerMetadataUrl":"https://login.exa\\nmple.com/x"}`),
+    metaTab: entry(`{"clientId":"a","authServerMetadataUrl":"https://login.example.com/\\tx"}`),
+    metaNul: entry(`{"clientId":"a","authServerMetadataUrl":"https://login.example.com/\\u0000x"}`),
+    metaDel: entry(`{"clientId":"a","authServerMetadataUrl":"https://login.example.com/\\u007fx"}`),
+    metaUser: entry(`{"clientId":"a","authServerMetadataUrl":"https://user@login.example.com/x"}`),
+    metaUserPw: entry(`{"clientId":"a","authServerMetadataUrl":"https://user:pw@login.example.com/x"}`),
+    metaEmptyUser: entry(`{"clientId":"a","authServerMetadataUrl":"https://@login.example.com/x"}`),
+    metaNoHost: entry(`{"clientId":"a","authServerMetadataUrl":"https://"}`),
+    metaBadHost: entry(`{"clientId":"a","authServerMetadataUrl":"https://exa mple.com/"}`),
+    metaUnparsable: entry(`{"clientId":"a","authServerMetadataUrl":"https://[::1/x"}`),
+    metaOkQuery: entry(`{"clientId":"a","authServerMetadataUrl":"https://login.example.com/.well-known/x?tenant=a@b"}`),
     emptyId: entry(`{"clientId":""}`),
     arrayScopes: entry(`{"scopes":["read","write"]}`),
     notObject: entry(`"clientId=a"`),
@@ -901,7 +919,8 @@ ok('FR-186: a Claude entry\'s oauth is copied through the allow-list, all or not
   assert.deepStrictEqual(s.valid.oauth, OK, 'a valid object is copied exactly');
   assert.deepStrictEqual(s.extras.oauth, { clientId: 'durbar-client', callbackPort: 8080 }, 'extra keys are dropped on their own; the valid fields still copy');
   assert.ok(!Object.prototype.hasOwnProperty.call(s.extras.oauth, '__proto__') && ({} as Record<string, unknown>).polluted === undefined, 'no prototype key read or written');
-  for (const k of ['nestedId', 'bigScopes', 'port0', 'port70000', 'port15', 'portStr', 'metaHttp', 'metaJs', 'emptyId', 'arrayScopes', 'notObject', 'arrayOauth', 'nullOauth']) {
+  assert.deepStrictEqual(s.metaOkQuery.oauth, { clientId: 'a', authServerMetadataUrl: 'https://login.example.com/.well-known/x?tenant=a@b' }, 'an @ in the query is not userinfo');
+  for (const k of ['nestedId', 'bigScopes', 'port0', 'port70000', 'port15', 'portStr', 'metaHttp', 'metaJs', 'metaNoSlashes', 'metaOneSlash', 'metaUpper', 'metaMixed', 'metaSpace', 'metaTrail', 'metaNewline', 'metaTab', 'metaNul', 'metaDel', 'metaUser', 'metaUserPw', 'metaEmptyUser', 'metaNoHost', 'metaBadHost', 'metaUnparsable', 'emptyId', 'arrayScopes', 'notObject', 'arrayOauth', 'nullOauth']) {
     assert.ok(s[k], `${k}: the server still starts`);
     assert.strictEqual(s[k].oauth, undefined, `${k}: a bad value means no oauth at all`);
   }
