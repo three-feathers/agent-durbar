@@ -54,7 +54,7 @@
 
 ## Changes 2026-10-22 (grown desks when there are few agents, owner)
 
-Numbered T088..T102 since 2026-10-23 (first written as T057..T071; PR #511 took T057..T062 on main first, and #554 uses T072..T087).
+Numbered T088..T102 since 2026-10-23 (first written as T057..T071; PR #511 took T057..T062 on main first, and #554 uses T072..T087, T103, T104).
 
 - [x] T088 `src/renderer/probe.js` (`GROW`, `largest`, `better`, `pick`) and their cases in `scripts/test-probe.ts` (`npm run test:probe`) (synthetic fit tests; box model with 1, 2, 4, 6, 10, 15 agents in 1-3 folders at 1280x800, 1440x900, 1920x1080) [FR-041, FR-042, FR-046]
 - [x] T089 `chooseLayout`: grow search after the candidates (after `full` or `roomy`, at f >= 1.1; never `card`/`mini`/`micro` or a forced density); `renderOffice` sets `--gf` and `data-grow`; helper boost after [FR-041, FR-042, FR-044]
@@ -74,6 +74,27 @@ Numbered T088..T102 since 2026-10-23 (first written as T057..T071; PR #511 took 
 - [x] T100 `liveact.js` last tool phrase (`tool` in `of()`) + `test:liveact`; `a.busySince` in `setState`, the 30 s tick [FR-047]
 - [x] T101 `cardHTML` grown side column (`.gx`: reply excerpt, facts); `renderOffice` sets `data-gc`, `--gm/--gr/--gs`, `fitLines` on reply; `styles.css` grid columns, measure, collapse [FR-047..FR-049]
 - [x] T102 `check:office-fill`: 1 and 2 agents at 1440x900, 1280x800, 1920x1080 (multi-column, measure <= 90 characters per line, page rules); mutation check; `npm test`, `check:office`; screenshots `001-fill-{1,4,6}-1440x900.png`, `001-fill-1-1920x1080.png`; changelog fragment, README [FR-050]
+
+## Changes 2026-10-22 (finished agents roll in, owner)
+
+- [x] T072 `src/renderer/shutters.js` (`finished`, `kindOf`, `roomPlan`, `split`, `RECENT_MS`, `OLD_CAP`) + `scripts/test-shutters.ts` (`npm run test:shutters`, in `test:serial`); `copy-assets.js`, `index.html` [FR-051, FR-052, FR-057]
+- [x] T073 `app.js`: `officeModel` splits `mains`/`rolled`; layout key; `roomHTML` shutter row (strips, chips, `+N`), `.peek`, labels, `rolling` class; `__durbarSimUi.render` [FR-051..FR-054]
+- [x] T074 (replaced by T081/T082: the strip and chip became the lounge) `styles.css`: `.shutters`, `.desk.shut` strip and chip, `.peek` roll, roll-in; theme tokens; >= 10.5 px [FR-054, FR-055]
+- [x] T075 (replaced by T082: the switch is now *Finished agents rest in the lounge*) Settings > Detail level: *Roll up finished agents* switch (`screens.js`, `durbar.shutters`) [FR-056]
+- [x] T076 `check:office` (unchanged; its 15 agents now include rolled ones) and `check:office-fill` (keyboard reach, labels, hover card; 2 working + 3 finished, 1 recent + 2 old, at 1440x900 and 1280x800; open desks get the space); mutation checks [FR-053, FR-057]
+- [x] T077 Screenshots `docs/screenshots/001-shutters-{1440x900,1280x800}.png` (simulator); README office section, `changelog.d/001-office-shutters.md`, the specs-index block [FR-057]
+- [x] T078 (owner on #554, 18:48) Spec: horizontal squeeze (FR-052..FR-055, FR-057 amended, dated note) [FR-052..FR-057]
+- [x] T079 Squeeze: `shutters.js` widths and slat cap; `roomHTML` desk grid plus a side group of panels and slats (room width counts them); `styles.css` panel, slat (vertical text), side card, squeeze animation; `test:shutters` [FR-052..FR-055]
+- [x] T080 `check:office-fill` (row height kept, widths freed, slat text, side card), mutation checks, `check:office`, `npm test`; screenshots retaken; README, changelog fragment [FR-057]
+- [x] T081 (owner on #554, 19:55) Spec: the lounge (couch, nap beds, speech bubble, rotating dreams; FR-052..FR-057 amended, dated note) [FR-052..FR-057]
+- [x] T082 Lounge: `shutters.js` (couches, bed cap, width, turn); `app.js` lounge corner with the agents' own characters (`avatar`), bubbles and their turn, setting renamed; `styles.css` couch and bed art from theme tokens; `test:shutters` [FR-052..FR-056]
+- [x] T083 `check:office-fill` (corner in the row, bubbles inside and >= 10.5 px, keyboard, deterministic turn), mutation checks, `check:office`, `npm test`; screenshots retaken; README, changelog fragment [FR-057]
+- [x] T084 Lounge polish (coordinator review): 64 px seats and bunk beds so the characters fill the height, bubbles on up to 3 lines in the upper part, names on the characters, corner at least 150 px; `test:shutters`, `check:office-fill` (names, character size, bubble lines), screenshots retaken [FR-052, FR-053, FR-057]
+- [x] T085 (review of #554, fjcabello) Spec: the state is `data-state` and the first `is-*` class, the resting kind `rest-recent`/`rest-old`; FR-051's helper and away rules checked in the page; stale wording [FR-051, FR-054, FR-057]
+- [x] T086 `app.js` desk buttons `data-state` (state class first, `rest-*` kind, `data-rest`); `styles.css`, `shots-033`, `shots-034`, `check:office-fill` selectors; `test:shutters` source checks of `shutInput` (away, busy helper); `check:office-fill` cases (a Done agent with a working helper keeps its desk and helper; an agent away at a place is not in the lounge), mutation checks; stale strip/chip wording (`app.js`, `shutters.js`, `styles.css`, `driver-helpers.js`, `test-shutters.ts`) [FR-051, FR-054, FR-057]
+- [x] T087 (review of #554, fjcabello, 23:09) Cause of the blurred desk scene beside the lounge (a composited halo animation, not the layout); `styles.css` halo pulses `fill-opacity`; `check:office-fill` same scene box and sharpness with the lounge on and off, mutation checks (old halo; a rule that moves scenes beside the lounge); `check-theme-art`; spec note, `docs/agent-notes.md` [FR-057]
+- [x] T103 (CI on #554 after #511/#552) `chooseLayout`: `headsFit` (the header steps of `fitUsage`, now `fitHead`) is part of "fits"; size-only fit kept as fallback; `check:office` with DejaVu fonts [FR-023]
+- [x] T104 (CI on #554 after #552) The lounge resident's `C3` badge on its character (`.stage .desk.shut .chatno`), none in the peek; `shots-074-navigator` [FR-054, spec 074 FR-012]
 
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 
