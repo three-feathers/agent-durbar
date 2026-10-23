@@ -24,7 +24,7 @@ const MOD = MAC ? 'meta' : 'control';
 const KEYTXT = MAC ? '⇧⌘S' : 'Ctrl+Shift+S';
 const ARIA = MAC ? 'Meta+Shift+S' : 'Control+Shift+S';
 const KBDS = MAC ? ['⇧', '⌘', 'S'] : ['Ctrl', 'Shift', 'S']; /* keyLabels: one <kbd> box per key, Shift before the mod key on a Mac */
-const re = (t) => t.replace(/[+⇧⌘]/g, '\\$&');
+const re = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); /* every regex metacharacter, backslash included (CodeQL js/incomplete-sanitization) */
 
 /* runs in the page: the geometry of the top bar with the button shown */
 function barCheck(simple, width, aria) {
