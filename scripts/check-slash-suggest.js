@@ -15,7 +15,10 @@
  *   - sending "/<folder or user entry> words" shows the note "Sent the text of …";
  *   - a Copilot chat lists no app built-ins (spec 073 FR-009);
  *   - with the entries fetched, the list opens in under 100 ms (SC-002);
- *   - a dark user theme: the same geometry; screenshots.
+ *   - a dark user theme: the same geometry; screenshots;
+ *   - simslash=secret (spec 073 FR-013, issue #608): a folder skill and a command with fake token shapes in the name, hint,
+ *     description and place, split by Markdown, escaped, and one at the tooltip's 300-character cut: no raw token (not even 6
+ *     characters of one) in the list's text, any `title` or `aria-*`, the announcement or the "Sent the text of" note.
  * A miss throws (DRIVER FAILED); the npm script exits non-zero unless "all checks passed" is printed.
  */
 const path = require('path');
@@ -192,6 +195,48 @@ module.exports = async (ctx) => {
     m = await M();
     m.P.forEach((p) => check(false, `${tag} dark: ${p}`));
     if (w === SIZES[0][0]) await shot(`073-slash-dark-${tag}.png`);
+  }
+  /* FR-013 (issue #608): token shapes never reach the list, its tooltips, ARIA, the announcement or the note. Checked once (one size):
+     masking does not depend on the layout. The bodies are built at run time like the simulator's (push protection). */
+  {
+    const BODY = ['A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8', '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij', 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'];
+    const ghp = 'gh' + 'p_' + BODY[0];
+    const leak = (t) => { const x = String(t || ''); for (const b of BODY) for (let i = 0; i + 6 <= b.length; i++) if (x.includes(b.slice(i, i + 6))) return b.slice(i, i + 6); return ''; };
+    /* every text node, title and aria-* value under the list, the box's ARIA, and the live region */
+    const texts = () => js(`(()=>{const out=[];const l=document.getElementById('slashList');if(!l)return null;
+      out.push(l.textContent);for(const e of [l,...l.querySelectorAll('*')])for(const a of e.attributes)if(a.name==='title'||a.name.startsWith('aria-'))out.push(a.name+'='+a.value);
+      const i=document.getElementById('msgInput');for(const a of i.attributes)if(a.name.startsWith('aria-'))out.push(a.name+'='+a.value);
+      out.push(document.getElementById('srAnnounce').textContent);return out;})()`);
+    await load(SIZES[0][0], SIZES[0][1], { simslash: 'secret' });
+    await open('Noor');
+    await typeChars('/');
+    check(await until(`document.querySelectorAll('#slashList [role="option"]').length>=2`, 4000), 'secret: "/" opens no list');
+    const all = await texts();
+    check(Array.isArray(all) && all.length > 3, 'secret: nothing read from the list');
+    for (const t of all || []) { const l = leak(t); check(!l, `secret: a token piece "${l}" shows in ${t.slice(0, 160)}`); }
+    const m = await M();
+    check(m.names[0] === '/[redacted]' && m.names.includes('/deploy-check'), `secret: the rows ${m.names.slice(0, 3).join()}`);
+    const tip = await js(`document.getElementById('slashOpt-1').getAttribute('title')`);
+    check(/\[redacted\]/.test(tip) && tip.length <= 300, `secret: the long tooltip ${tip.length}: ${tip.slice(-60)}`);
+    /* Tab inserts the real name (it must match the file), and the read-out is masked */
+    await key('Tab');
+    check(await value() === '/' + ghp + ' ', 'secret: Tab did not insert the real name');
+    await until(`/Inserted/.test(document.getElementById('srAnnounce').textContent)`, 2000);
+    const ann = await js(`document.getElementById('srAnnounce').textContent`);
+    check(/Inserted \/\[redacted\]/.test(ann) && !leak(ann), `secret: the announcement ${ann.slice(0, 80)}`);
+    /* sending it: the "Sent the text of" note names the place masked */
+    await typeChars('go');
+    await key('Return');
+    check(await until(`[...document.querySelectorAll('#panel .note')].some(n=>/Sent the text of/.test(n.textContent))`, 5000), 'secret: no "Sent the text of" note');
+    const note = await js(`[...document.querySelectorAll('#panel .note')].filter(n=>/Sent the text of/.test(n.textContent)).map(n=>n.textContent+' '+(n.getAttribute('title')||'')).join(' | ')`);
+    check(!leak(note) && /\[redacted\]/.test(note), `secret: the note ${note.slice(0, 120)}`);
+    /* a prompt file whose ${input:NAME} is token-shaped: the send's note (r.slashNote) echoes it (review of PR #614) */
+    await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0;return v(document.getElementById('sendBtn'))})()`, 15000);
+    await js(`(()=>{const m=document.getElementById('msgInput');m.focus();m.value='/token-input go';m.setSelectionRange(15,15);m.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await key('Return');
+    check(await until(`[...document.querySelectorAll('#panel .note')].some(n=>/token-input\.prompt\.md/.test(n.textContent)&&/left as written/.test(n.textContent))`, 5000), 'secret: no note for the prompt file');
+    const pnote = await js(`[...document.querySelectorAll('#panel .note')].filter(n=>/token-input/.test(n.textContent)).map(n=>n.textContent).join(' | ')`);
+    check(!leak(pnote) && /\[redacted\]/.test(pnote), `secret: the prompt file's note ${pnote.slice(0, 200)}`);
   }
   console.log('[slash-suggest] screenshots in ' + OUT);
   assert.deepStrictEqual(fails, [], fails.join('\n'));

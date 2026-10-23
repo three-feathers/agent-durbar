@@ -33,6 +33,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
    gh issue edit N --add-assignee @me --add-label status:claimed
    ```
    Check the issue has exactly one assignee (you). If someone else is also there, back off.
+   **Label what you open** (issues and PRs alike): one type (`bug`, `enhancement`, `task`, `documentation`, `question`; `documentation` is for README, `docs/` and guides, a spec-only PR is a `task`), at least one `area:*` and `spec:NNN` for every spec it touches; flags (`status:*`, `needs-owner-approval`, `spec-exempt`, `docs-n/a`, `accessibility`) only when true. The full list is in AGENTS.md, *Labels*.
 3. **Branch** `NNN-slug`, where NNN is the spec number from the issue label `spec:NNN`, in its own worktree:
    ```bash
    git switch main && git pull
@@ -50,6 +51,11 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
 
 ## Team norms
 
+- **Write team decisions down the same day** as a dated FR in spec 021 (FR-037), and in [AGENTS.md](../AGENTS.md) if it changes how agents work.
+- **Review teammates' PRs first, one list per round** (FR-042, FR-043): a teammate's PR waiting for review comes before new work; each review round is one chat message in landing order, and agents say `taking #N` before reviewing.
+- **Land before building** (FR-039): at most 8 open PRs per side, at most 5 of them new features waiting for a first review; over that, only fix and land.
+- **Unstack with a replacement PR, never by force** (FR-040): rebuild an independent stacked PR as a new branch off main that closes the old PR with a link; no force-push, branch rename or stack-tool unstack to get past a refused merge.
+- **The merge queue** (FR-041): approve, then `gh pr merge <N> --auto --match-head-commit <sha>`; `--delete-branch` doesn't work with it, so delete the branch and worktree by hand; check a queued PR with `isInMergeQueue` via GraphQL.
 - **Share what you learn.** Your agent's private memory helps only you. Durable lessons (tool pitfalls, checked vendor behaviour, review techniques) go into [docs/agent-notes.md](agent-notes.md), dated, with evidence. Team rules go into [AGENTS.md](../AGENTS.md).
 - **OKs in the team chat count** for pre-releases and repository actions when they come from one of the owners (Vikram, Paco, Ruben), directly or relayed by their bots in the group. They do not cover money, invitations, repo settings or chat access.
 - **Chat feedback goes on the issue or PR too** (owner, 2026-10-23). Feedback, review notes, design advice or an owner decision given in the team chat about an issue or PR is also posted as a comment there, saying it was also posted in the chat. Chat history is not a record; GitHub is.
@@ -72,7 +78,7 @@ The *Spec Kit gate* check explains itself. Common causes: branch is not `NNN-slu
 
 ## For the maintainer
 
-- Labels: `bash .github/scripts/sync-labels.sh` (creates `spec:NNN` per spec folder, `area:*`, `status:*`).
+- Labels: `bash .github/scripts/sync-labels.sh` (creates `spec:NNN` per spec folder, `area:*`, `status:*`). Backfill the taxonomy on issues and PRs: `npm run labels:backfill` (dry run: proposed additions and totals), then `-- --create-labels --apply` (add-only, throttled, safe to re-run).
 - Issues from a spec: `bash .github/scripts/tasks-to-issues.sh specs/NNN-name [--task T020] [--area x] --create` (dry run without `--create`), or `/speckit-taskstoissues` in Claude / `/speckit.taskstoissues` in Copilot (needs the GitHub MCP server). Open backlog: `.github/scripts/backlog-issues.sh`.
 - After adding Spec Kit extensions or presets, run `specify integration use claude` and `specify integration use copilot` once each and commit the result; they only register for the default integration.
 - Board: <https://github.com/orgs/three-feathers/projects/1> (public, linked to the repo; created and refreshed by `bash .github/scripts/create-board.sh`, safe to re-run, needs `gh` scope `project`). Fields: Status (Todo, Claimed, In progress, In review, Done), Spec ID, Owner, Area.

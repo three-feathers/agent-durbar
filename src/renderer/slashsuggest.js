@@ -1,5 +1,5 @@
 /* The composer's "/" list (spec 073 FR-008), pure helpers: which word the caret is in, which entries match (with the palette's
-   shared matcher, DurbarNav.rank in navigator.js), a row's HTML (every field escaped), and the text after picking one. No DOM.
+   shared matcher, DurbarNav.rank in navigator.js), a row's HTML (every field escaped), what a row shows (masked, `view`, `tip`), and the text after picking one. No DOM.
    In the page: window.DurbarSlash; in Node (test-slashcommands): module.exports. app.js places the list and handles the keys. */
 (function(root, api){
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarSlash=api;
@@ -49,5 +49,20 @@
     const n=Number(i)|0;
     return `<div class="sl-opt" role="option" id="slashOpt-${n}" data-i="${n}" aria-selected="${!!active}" title="${esc(tip||'')}"><span class="sl-line"><b class="sl-name">/${esc(x.name)}</b>${x.argumentHint?`<span class="sl-hint">${esc(x.argumentHint)}</span>`:''}<span class="sl-src sl-${esc(x.source)}">${esc(SOURCE_WORD[x.source]||x.source)} · ${esc(KIND_WORD[x.kind]||x.kind)}</span></span>${x.description?`<span class="sl-desc">${esc(x.description)}</span>`:''}</div>`;
   }
-  return {tokenAt,filter,insert,optionHtml,SOURCE_WORD,KIND_WORD};
+  /* FR-013 (issue #608): what the list SHOWS of an entry, masked. `mask` is the page's DurbarSafeText mask (spec 041 FR-065; app.js
+     passes SAFE.mask): token shapes hidden, also one split by Markdown, the text otherwise as written (not `excerpt`, which drops `_`
+     and would change `release_notes`). No mask function, or one that gives '' (no redact module): the field is empty, never the raw
+     text (fail closed). The real entry keeps its name: picking inserts and sends that one. */
+  function view(x,mask){
+    const m=t=>{if(t==null||t==='')return '';if(typeof mask!=='function')return '';try{const r=mask(String(t));return typeof r==='string'?r:'';}catch(e){return '';}};
+    return {name:m(x.name),description:m(x.description),argumentHint:m(x.argumentHint),where:m(x.where),source:x.source,kind:x.kind};
+  }
+  /* The row's tooltip (FR-008): the full name, the description and the place, each MASKED first (view), then joined and cut to 300 by
+     `cut` (DurbarCutText.cutText): a cut inside a token would leave a half token that no pattern knows. */
+  function tip(x,mask,cut){
+    const v=view(x,mask), place=x.source==='app'?'Built-in command of the agent app':v.where?'Sends the text of '+v.where:'';
+    const t=['/'+v.name,v.description,place].filter(Boolean).join('\n');
+    return typeof cut==='function'?cut(t,300):t.slice(0,300);
+  }
+  return {tokenAt,filter,insert,optionHtml,view,tip,SOURCE_WORD,KIND_WORD};
 })());
