@@ -15,7 +15,7 @@ import { eventProblems as validateEvent } from '../src/adapters/eventguard';
 import { AgentStateTracker } from '../src/main/mcp/agentstate';
 import type { AgentEvent } from '../src/adapters/types';
 
-interface Break { id: string; kind: string; phase: string; resetsAt?: number; estimated: boolean; paid: boolean; source: string; noAuto: boolean }
+interface Break { id: string; kind: string; phase: string; rehit?: boolean; heldByRehit?: boolean; resetsAt?: number; estimated: boolean; paid: boolean; source: string; noAuto: boolean }
 interface Breaks {
   start(id: string, info: Record<string, unknown>, policy: string): Break | null;
   get(id: string): Break | null; has(id: string): boolean; autoResumes(id: string): boolean;
@@ -29,6 +29,9 @@ const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'coffeebre
   atWhen(ts: number, now: number, o?: Record<string, unknown>): string;
   whenText(ts: number, now: number, o?: Record<string, unknown>): string;
   untilText(b: Break | null, auto: boolean, now: number, o?: Record<string, unknown>): string;
+  backInText(b: Break | null, auto: boolean, now: number, marginMs?: number): string;
+  retryable(b: Break | null, a: { limit?: unknown } | null): boolean;
+  MARGIN_MS: number;
 };
 
 let clock = Date.UTC(2026, 9, 21, 12, 0, 0);
@@ -383,9 +386,98 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   // review on #462: the window's timer passes the held agents to the core (FR-007), and main's schedule busy check is scheduleBusy with the tracker (FR-008)
   const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
   assert.ok(app.includes('BREAKS.tick({hold:COFFEE.holdIds(agents)})'), 'coffeeTick passes holdIds(agents)');
-  assert.ok(/function resumeCoffee[\s\S]{0,200}if\(a\.limit\)return;/.test(app), 'resumeCoffee sends nothing while a Durbar spending limit is pending');
+  assert.ok(/function resumeCoffee[\s\S]{0,200}if\(a\.limit\)return false;/.test(app), 'resumeCoffee sends nothing while a Durbar spending limit is pending');
   const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
   assert.ok(/isBusy: \(folder, session\) => scheduleBusy\(folder, session, \{[^\n]*busy: busyStatus, breaks: agentState \}\)/.test(main), 'scheduleDeps.isBusy is scheduleBusy with busyStatus and the tracker');
+}
+
+// 11. Delta 2026-10-23 (owner, #634): the time left on the coffee-corner entry and the chat bar (FR-023), and Retry now (FR-021).
+{
+  const B = mk();
+  const t0 = clock;
+  // FR-023: "back in" counts to when the automatic resume is due (reset + margin); when it asks, to the reset itself
+  const b = B.start('w', { kind: 'provider', app: 'claude', resetsAt: t0 + 3 * MIN, source: '5-hour window' }, 'auto')!;
+  assert.strictEqual(C.backInText(b, true, t0), '4 min', 'reset in 3 min + the 60 s margin');
+  assert.strictEqual(C.backInText(b, false, t0), '3 min', 'asks: counts to the reset');
+  assert.strictEqual(C.backInText(b, true, t0, 0), '3 min', 'the margin can be given (the simulator\'s short margin)');
+  assert.strictEqual(C.backInText(b, false, t0 + 3 * MIN - 30000), 'less than a minute');
+  assert.strictEqual(C.backInText(b, false, t0 + 3 * MIN + 5000), 'less than a minute', 'past due but not yet ticked: still "less than a minute", never negative');
+  assert.strictEqual(C.backInText(b, false, t0 + 2 * MIN), '1 min');
+  assert.strictEqual(C.backInText(b, false, t0 + 2 * MIN - 59000), '2 min', 'whole minutes, rounded up: 1 min 59 s left is 2 min');
+  const at = (ms: number): string => C.backInText({ ...b, resetsAt: t0 + ms }, false, t0);
+  assert.strictEqual(at(60 * MIN), '1 h');
+  assert.strictEqual(at(65 * MIN), '1 h 5 min');
+  assert.strictEqual(at(9 * 60 * MIN + 59 * MIN), '9 h 59 min');
+  assert.strictEqual(at(10 * 60 * MIN + 20 * MIN), '10 h', 'from 10 h only the hours');
+  assert.strictEqual(at(47 * 60 * MIN), '47 h');
+  assert.strictEqual(at(3 * 24 * 60 * MIN), '3 days', 'from 48 h in days');
+  assert.strictEqual(C.backInText({ ...b, resetsAt: undefined }, true, t0), '', 'no reset time: no time left');
+  assert.strictEqual(C.backInText({ ...b, phase: 'back' }, true, t0), '', 'back from the break: no time left');
+  assert.strictEqual(C.backInText({ ...b, kind: 'cap' }, true, t0), '', 'Durbar\'s cap: until you raise the limit, no time');
+  assert.strictEqual(C.backInText(null, true, t0), '');
+  // FR-021: Retry now goes through the timer's own path (resumeCoffee) and only while the user may retry
+  assert.strictEqual(C.retryable(b, {}), true, 'a provider break that is on');
+  assert.strictEqual(C.retryable(b, { limit: { requestId: 'r' } }), false, 'never while Durbar\'s spending limit is pending');
+  assert.strictEqual(C.retryable({ ...b, kind: 'cap' }, {}), false, 'Durbar\'s cap: the limit card answers it');
+  assert.strictEqual(C.retryable({ ...b, phase: 'back' }, {}), true, 'back and asking: Resume is the same retry');
+  assert.strictEqual(C.retryable(null, {}), false);
+  assert.strictEqual(C.retryable(b, null), false);
+  // a double press: the page's resumeCoffee checks retryable, then marks the break resumed; the second press finds no break and sends nothing
+  let sent = 0;
+  const press = (): void => { const a = {}; if (!C.retryable(B.get('w'), a)) return; B.resumed('w'); sent++; };
+  press(); press();
+  assert.strictEqual(sent, 1, 'a double press retries once');
+  assert.strictEqual(B.has('w'), false, 'the wait is over');
+  assert.deepStrictEqual(B.tick(), [], 'and the timer has nothing left to resume');
+  // a retry that hits the limit again (it had not reset) goes back on the break and does not resume by itself (FR-007 re-hit)
+  clock = t0 + 30000;
+  const again = B.start('w', { kind: 'provider', app: 'claude', resetsAt: t0 + 3 * MIN }, 'auto')!;
+  assert.strictEqual(again.noAuto, true, 're-hit after a retry: no automatic resume');
+  clock = t0 + 10 * MIN;
+  assert.deepStrictEqual(B.tick(), [{ type: 'ask', id: 'w' }], 'at the reset it asks, it does not send by itself');
+  clock = t0;
+}
+
+// 12. Wiring (FR-019..FR-022): the page uses the core's rules, the entry is a button, and Retry now is the timer's own path.
+{
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  assert.ok(/function resumeCoffee\(a,how\)\{[\s\S]{0,160}COFFEE\.retryable\(/.test(app), 'resumeCoffee asks the core whether a retry is allowed');
+  assert.ok(/const retryCoffee=a=>resumeCoffee\(a,'user'\)/.test(app), 'Retry now is resumeCoffee, the path the timer uses');
+  assert.ok(/if\(x\.type==='resume'\)resumeCoffee\(a,'auto'\)/.test(app), 'the timer resumes through the same function');
+  assert.ok(!/'Try now'/.test(app), 'Try now is renamed Retry now (owner, 2026-10-23)');
+  assert.ok(/const go=boss\|\|bank\|\|cf;/.test(app), 'a coffee-corner entry is a button like the Boss and the Bank');
+  assert.ok(/id="coffeeBar"/.test(app), 'the chat has the coffee-break bar');
+}
+
+// 13. Review on #640 (FR-024): a re-hit after a resume marks why the agent and the app's other agents now ask.
+{
+  const B = mk();
+  const t0 = clock;
+  B.start('x', { kind: 'provider', app: 'claude', resetsAt: t0 + 5 * MIN }, 'auto');
+  B.start('y', { kind: 'provider', app: 'claude', resetsAt: t0 + 5 * MIN }, 'auto');
+  B.start('z', { kind: 'provider', app: 'codex', resetsAt: t0 + 5 * MIN }, 'auto');
+  assert.ok(!B.get('y')!.heldByRehit && !B.get('x')!.rehit, 'no flags before a re-hit');
+  B.resumed('x');
+  clock = t0 + 30000;
+  const x = B.start('x', { kind: 'provider', app: 'claude', resetsAt: t0 + 5 * MIN }, 'auto')!;
+  assert.strictEqual(x.rehit, true, 'the agent that hit the limit again right after its resume');
+  assert.strictEqual(B.get('y')!.heldByRehit, true, 'the same app\'s other agent on a break is held');
+  assert.ok(!B.get('z')!.heldByRehit, 'another agent app is not touched');
+  assert.strictEqual(B.autoResumes('y'), false, 'and it will ask, not resume by itself');
+  assert.ok(B.autoResumes('z'), 'the other app still resumes by itself');
+  // a fresh break later (not within 2 min of a resume) carries no flag
+  clock = t0 + 10 * MIN; B.end('x');
+  const later = B.start('x', { kind: 'provider', app: 'claude', resetsAt: clock + MIN }, 'auto')!;
+  assert.ok(!later.rehit, 'a later break is not a re-hit');
+  clock = t0;
+}
+
+// 14. Review on #640 (FR-021, FR-022) wiring: honest Retry now and the answer bar.
+{
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  assert.ok(/void sendLive\(COFFEE\.RESUME_TEXT,a\.id,\{fromComposer:false,coffee:true\}\);\s*return true;\s*\}/.test(app), 'resumeCoffee returns true when it sent');
+  assert.ok(/const waiting=\(\)=>\[\.\.\.chat\.querySelectorAll\('\.note\.perm:not\(\.settled\):not\(\.coffee\)'\)\]/.test(app), 'the answer bar leaves coffee cards out of its list, not the whole bar');
+  assert.ok(!/card\.classList\.contains\('coffee'\)\)\{if\(painted/.test(app), 'the answer bar is no longer hidden for a coffee card');
 }
 
 console.log('coffee break tests passed');
