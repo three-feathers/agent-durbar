@@ -3,12 +3,12 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Managed configuration for organizations: one admin-only config folder (policy.json, MCP list, icon, theme pack) sets the display name and icon, allowed agent apps, MCP lists and endpoints, an agent/profile/skill registry, OpenTelemetry, theme and custom LLMs; everything set there is locked (Set by your organization); bad config fails safe and visibly
-status: **draft** 2026-10-23 (spec only): samples and JSON schemas included; Q1-Q12 and proposed additions A1-A19 wait for Vikram
+status: **draft** 2026-10-23 (spec only): samples and JSON schemas included; Q1-Q12 answered by Vikram 2026-10-23 (Q10 changed: admin token pricing keeps caps working on in-house models); proposed additions A1-A19 still wait for decisions
 -->
 
 **Feature Branch**: `076-managed-config`
 **Created**: 2026-10-23
-**Status**: Draft (spec only). Nothing built. Clarifications Q1-Q12 are open for Vikram; the "Proposed additions" need an owner decision.
+**Status**: Draft (spec only). Nothing built. Clarifications Q1-Q12 answered by Vikram on 2026-10-23 (defaults, except Q10: admin token pricing); the "Proposed additions" still need an owner decision.
 **Input**: Owner request by Vikram (2026-10-23): "Durbar must be packageable and usable in corporate environments. All of it is driven by a config folder (config files plus icons), and anything set there is locked, i.e. not editable in the UI (shown as *Set by your organization*):
 1. change the app display name and icon (the original name stays in About and credits);
 2. restrict which agent apps (harnesses) are allowed;
@@ -136,7 +136,8 @@ it exports (*Claude Code: on; Codex: on; Copilot: not supported by this version*
 ### User Story 6 - The company's own models (Priority: P2)
 
 With `llm.claude.provider: "gateway"` and `baseUrl`, Claude Code sessions talk to Acme's gateway with the token from `ACME_LLM_TOKEN`;
-Codex sessions use the `acme` provider. The model picker shows the configured model, locked. Cost shows *price unknown* rather than a
+Codex sessions use the `acme` provider. The model picker shows the configured model, locked. Costs and caps use the prices the admin
+gave in `llm.pricing` (FR-106), so Ana's dollar cap still stops a runaway session. A model with no price shows *price unknown* rather than a
 wrong number.
 
 ### Edge Cases
@@ -362,10 +363,43 @@ wrong number.
   SDK-started runtime reads these like the CLI does is `[KNOWN GAP]` until checked (no prompt needed: the model list and the error on a
   dummy endpoint show it).
 - **FR-103 Locked model.** When a policy sets a model, the model picker (spec 030) shows it locked; switching is refused in main.
-- **FR-104 Costs.** Sessions on a custom provider show *price unknown* in Cost views and usage totals; a credit or dollar cap that
-  cannot be computed is shown as *not available with your organization's model* rather than enforced on wrong numbers. (Q10)
+- **FR-104 Costs.** A session on a custom provider is priced from `llm.pricing` (FR-106). Its cost appears in Cost views, usage totals
+  and caps exactly like a vendor-priced session, in the pricing's currency. A session whose model has no matching price shows *price
+  unknown* in Cost views and usage totals (its tokens are still counted and shown) and follows FR-108. Durbar never guesses a price.
+  (Q10, changed by the owner 2026-10-23)
 - **FR-105 Sign-in checks.** Durbar's sign-in check (spec 012 `authcheck.ts`) treats an app with a policy provider as *Using your
   organization's model* instead of asking the user to sign in to the vendor.
+
+- **FR-106 Token pricing in the policy.** `llm.pricing` gives per-model prices for custom models:
+  `currency` (ISO 4217 code, e.g. `USD`, `EUR`) and `models`, a list of up to 100 entries, each with
+  `match` (a model id, exact or a glob with `*` and `?`, matched case-insensitively against the model id the session reports, else
+  the configured model), `inputPer1M`, `outputPer1M`, `cachedInputPer1M` and an optional `reasoningPer1M` (price per one million
+  tokens; when `reasoningPer1M` is absent, reasoning tokens are priced as output). Matching: the first entry whose `match` equals the id
+  exactly wins; otherwise the first glob that matches, in list order. Cost of a turn = input x inputPer1M + cached input x
+  cachedInputPer1M + output x outputPer1M + reasoning x reasoningPer1M, divided by 1,000,000, using the token counts the adapter
+  reports in its `usage` events (spec 011). Locked in the UI: Cost views show *Price set by your organization* next to the rate, and no
+  control edits it (FR-014, FR-016).
+- **FR-107 Validation of pricing.** Every price is a finite number, at least 0 and at most 10,000 per 1M tokens; `currency` matches
+  `^[A-Z]{3}$`; `match` is 1-128 characters of letters, digits, `.`, `-`, `_`, `:`, `/`, `@`, `*` and `?`; duplicate `match` values are an
+  error; `maxTokensPerSession` (FR-108) is an integer from 1,000 to 1,000,000,000. A failure makes `llm.pricing` invalid as a whole
+  (FR-012): every custom-model session is then *price unknown* and FR-108 applies, and the error is listed; Durbar does not keep part
+  of a broken price list.
+- **FR-108 Caps on custom models.**
+  - *With a price:* the user's, folder's and default caps (spec 011) work as usual. A cap in the same currency as the pricing is
+    enforced on the computed cost. A cap in another unit (AI credits, or dollars when the pricing is in euros) is not converted: it is
+    shown as *not available for this model (priced in EUR)* and the session runs under the token cap if one is set.
+  - *Without a price:* a cap that needs a price cannot be computed. Durbar says so before the session starts (*No price for model
+    acme-coder: your spending limit cannot be applied*) and on the session's cap chip, and the session runs **without** that cap
+    unless the admin set one of the two rules below. Durbar never silently treats an unpriced model as free.
+  - *Forced token cap:* `llm.tokenCap.maxTokensPerSession` caps every custom-model session at that many tokens (input + cached input +
+    output + reasoning, as reported), whether or not it has a price; with `llm.tokenCap.force: true` it is also the only cap a user can
+    see for those sessions (locked), else the lower of the two applies when both exist. It is enforced on the same path as spec 011's
+    caps: checked on each `usage` event; when reached, the turn is stopped where the adapter can interrupt (else at the end of the turn,
+    `[KNOWN GAP]` per adapter as in spec 011) and the next Send is refused with *Token limit set by your organization reached*.
+  - *Require a price:* `llm.requirePricing: true` refuses to start (or resume) a custom-model session whose model has no price, with
+    *Your organization has not set a price for model X; contact IT*.
+- **FR-109** Pricing and token caps apply only to sessions on a custom provider (`llm.claude`, `llm.codex`, `llm.copilot`). Vendor-priced
+  sessions keep the vendor's prices and spec 011's behaviour.
 
 ### K. Security (constitution III)
 
@@ -467,41 +501,37 @@ section of this spec (or a new spec) first.
 | P3 | Allowed agent apps and in-app install (FR-030..FR-033) | P1 |
 | P4 | MCP: matching, modes, enforcement points, required servers, local lists (FR-040..FR-045, FR-047) | P1; catalog UI after #539's spec |
 | P5 | MCP endpoints: fetch, cache, `durbar-mcp-list-v1` and `mcp-registry-v0.1` readers (FR-046, FR-120) | P4 |
-| P6 | Custom LLM per app (FR-100..FR-105), with the no-prompt checks of FR-142 | P1, Q10 |
+| P6 | Custom LLM per app (FR-100..FR-109), pricing and token caps, with the no-prompt checks of FR-142 | P1 |
 | P7 | OpenTelemetry per app (FR-080..FR-085), with the no-prompt checks | P1, Q4 |
 | P8 | Agent, profile and skill registry (FR-060..FR-067) | P1, P5 (fetch), spec 073 for skills, Q1, Q7, Q8 |
 
 ## Clarifications
 
-Open questions for Vikram, each with a recommended default. Until answered, the plan follows the default.
+### Session 2026-10-23 (owner: Vikram, 06:07 UTC, relayed by his coordinator agent: "Defaults ok except for Q10 - let admin provide token pricing so that caps,.. still work")
 
-- **Q1** Item 4 says "agents/profiles": is a *profile* an agent profile file (spec 043, what the Profile menu shows) or a Durbar profile
-  (spec 049, a separate office with its own sign-ins)? *Recommended:* spec 043 agent profile files; Durbar profiles are not
-  distributed by a registry.
-- **Q2** A broken machine policy: safe mode (FR-011: locked down, Read-only, readable) or refuse to start (like Claude Code)?
-  *Recommended:* safe mode with a red banner; refusing to start locks users out of their history and gives IT no diagnostics.
-- **Q3** Support a per-user config folder (FR-003), locked in the UI but not tamper-proof? *Recommended:* yes, below the machine
-  layer, turned off by `allowUserConfig: false`; it lets IT deploy per user without admin rights and lets a user try a company setup.
-- **Q4** Constitution III says "No telemetry". OTel export configured by the organization's admin, sent by the agent apps to the
-  organization's own collector (Durbar itself sends nothing): amend principle III (MINOR, 1.2.0) to say so explicitly? *Recommended:*
-  yes, amendment before P7; Durbar's own OTel (A11) stays out until a separate decision.
-- **Q5** Display name: run time only (window, menus, About, notifications) now, and installer/shortcut names only through a rebrand build
-  (A13)? *Recommended:* yes.
-- **Q6** When `mcp.lists` is set but `mcp.mode` is not: `open` (org servers added, users may still add their own) or `allowlist`?
-  *Recommended:* `open`: "complement" by default, "restrict" only when the admin says so.
-- **Q7** Where registry items are installed: into each agent app's user-level folders (`~/.claude/agents`, `~/.copilot/agents`, ...),
-  which also makes them work in a terminal, or a Durbar-owned folder passed only to Durbar's sessions? *Recommended:* the app's user
-  folders, with Durbar's bookkeeping file, never overwriting a file it did not install.
-- **Q8** Registry updates: `notify` (the user clicks Update) or `auto` by default? *Recommended:* `notify`, with `auto` allowed from the
-  machine layer.
-- **Q9** OS-native sources (Windows registry with ADMX, macOS MDM profile) in the first version, or the folder first?
-  *Recommended:* folder first (P1-P8); registry and MDM as A9 after the folder format is proven, same schema.
-- **Q10** Costs on a custom model: show *price unknown* and disable caps that cannot be computed, or let the policy give per-model
-  prices? *Recommended:* *price unknown* now; prices in the policy later if asked.
-- **Q11** Folder name `AgentDurbar` (no space) in all three locations? *Recommended:* yes (matches the app id style and avoids quoting
-  in deployment scripts).
-- **Q12** Which proposed additions go first? *Recommended order:* A1 (mode lock), A2 (proxy and CA), A5 (feature switches), A4
-  (installers), A3 (signing, needs the purchase), then the rest as asked.
+- **Q1** Is a *profile* in item 4 an agent profile file (spec 043) or a Durbar profile (spec 049)? → **Answered: agent profile files
+  (spec 043).** Durbar profiles are not distributed by a registry. (FR-060)
+- **Q2** A broken machine policy: safe mode or refuse to start? → **Answered: safe mode** with a red banner (FR-010, FR-011).
+- **Q3** A per-user config folder? → **Answered: yes**, below the machine layer, labelled not tamper-proof, turned off by
+  `allowUserConfig: false` (FR-003).
+- **Q4** Amend constitution III ("No telemetry") for OTel export that the admin configures and the agent apps send to the
+  organization's own collector, Durbar sending nothing itself? → **Answered: yes**, a MINOR amendment before P7 (T070); Durbar's own
+  OTel (A11) stays out until a separate decision.
+- **Q5** Display name at run time only, installer and shortcut names through a rebrand build (A13)? → **Answered: yes** (FR-020..FR-022).
+- **Q6** `mcp.lists` set but no `mcp.mode`? → **Answered: `open`** (complement by default; restrict only when the admin says so) (FR-042).
+- **Q7** Where registry items are installed? → **Answered: each agent app's user-level folders**, with Durbar's bookkeeping, never
+  overwriting a file Durbar did not install (FR-061, FR-062).
+- **Q8** Registry updates by default? → **Answered: `notify`**; `auto` allowed from the machine layer (FR-063).
+- **Q9** OS-native sources in the first version? → **Answered: the folder first** (P1-P8); Windows registry/ADMX and macOS MDM later
+  as A9, same schema.
+- **Q10** Costs on a custom model? → **Answered, changed from the default:** the admin gives per-model token pricing in the policy
+  (`llm.pricing`: input, output, cached-input and optional reasoning price per 1M tokens, a currency, a model match by exact id or glob),
+  and Durbar uses it for cost totals and caps, so caps keep working on in-house models. Without a price: *price unknown*, caps that need
+  a price cannot be computed and Durbar says so; the admin can force a token-based cap (`llm.tokenCap`) or require a price
+  (`llm.requirePricing`). Locked in the UI. (FR-104, FR-106..FR-109)
+- **Q11** Folder name `AgentDurbar` (no space) on all three OSes? → **Answered: yes** (FR-002, FR-003).
+- **Q12** Which proposed additions first? → **Answered: A1 (mode lock), A2 (proxy and CA), A5 (feature switches), A4 (installers), A3
+  (signing, needs the purchase)**, then the rest as asked. Each still gets its own spec section (or spec) before any code.
 
 ## Success Criteria
 
@@ -509,6 +539,7 @@ Open questions for Vikram, each with a recommended default. Until answered, the 
 - **SC-002** Every policy key that is set is visibly locked in the UI and refused in main from every writer (tested per key).
 - **SC-003** No broken or partial folder makes Durbar less restrictive than with no folder at all (tested with the broken fixtures).
 - **SC-004** No secret value appears in any config file, cache, log, IPC message or the Organization page (tested).
+- **SC-006** With `llm.pricing` set, a custom-model session's cost appears in totals and a cap in the pricing's currency stops it; with no price, the user is told the cap cannot be applied, and a forced token cap still stops it (tested).
 - **SC-005** All policy tests run with zero AI credits on Windows, macOS and Linux CI.
 
 ## Changes

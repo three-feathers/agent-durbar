@@ -1,6 +1,6 @@
 # Implementation Plan: 076 managed configuration for organizations
 
-**Spec**: [spec.md](spec.md) · **Samples**: [samples/](samples/) · **Status**: plan for P1-P8; nothing built. Defaults of Q1-Q12 assumed.
+**Spec**: [spec.md](spec.md) · **Samples**: [samples/](samples/) · **Status**: plan for P1-P8; nothing built. Q1-Q12 answered by Vikram 2026-10-23 (defaults, Q10 changed to admin token pricing).
 
 ## Constitution check
 
@@ -48,7 +48,7 @@ drops it, add `ajv` as a devDependency in that PR (dev only, never shipped).
 
 The schema files in `samples/managed/schema/` are the published contract. `validatePolicy` implements the same rules by hand (types,
 enums, patterns, closed objects, limits). `scripts/test-policy.ts` runs both on `samples/` and on `scripts/fixtures/policy-bad/*.json`
-(one fixture per rule) and asserts the same verdicts. The website copies the schemas (spec 050 generator) at
+(one fixture per rule) and asserts the same verdicts. The one documented exception: duplicate `llm.pricing.models[].match` values (FR-107) cannot be expressed in JSON Schema, so only `validatePolicy` refuses them; the test lists that fixture as an expected difference. The website copies the schemas (spec 050 generator) at
 `/schema/policy.v1.json`, `/schema/mcp-list.v1.json`, `/schema/registry-index.v1.json` (the `$id`s).
 
 ### D3 Precedence and locks
@@ -77,6 +77,10 @@ Key-level failures set only that area's safe value (FR-012 table) through `safeS
 - **OTel and LLM**: a pure `policyEnvFor(app, policy, env) -> {env: Record<string,string>, config?: object, missing: string[]}` per
   app in the adapter folder; Claude merges into `deps.env`; Codex merges config overrides into `thread/start` beside
   `codexMcpConfig`; Copilot gets a new `env` option in `createClient()`. `missing` feeds Settings > Organization.
+- **Pricing and token caps** (FR-106..FR-109): `priceFor(policy, modelId)` and `costOf(usage, price)` in `src/shared/policy.ts`
+  (pure); the existing cost path (`src/renderer/costtable.js`, `usagetotalsstore.ts`) and the cap path (`startCap` in
+  `src/shared/credits.ts`, `agentops.ts` `setCapOp`, the adapters' cap enforcement from spec 011) take a policy price source next to
+  the vendor prices, and a `tokens` cap unit for the forced token cap. No second cost or cap mechanism.
 - **Theme**: `theme.js` start reads `policy.appearance`; a pack goes through `checkUserManifest` in main and is served like a user
   theme (`theme:getUser`), marked managed.
 

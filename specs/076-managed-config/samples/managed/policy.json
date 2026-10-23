@@ -11,21 +11,39 @@
     "icon": "icons/acme-agents.png"
   },
   "agentApps": {
-    "allowed": ["claude", "copilot"],
+    "allowed": [
+      "claude",
+      "copilot"
+    ],
     "allowInAppInstall": false
   },
   "mcp": {
     "mode": "allowlist",
     "lists": [
-      { "file": "mcp-servers.json" },
-      { "url": "https://mcp-catalog.acme.example/durbar/mcp-servers.json", "refreshHours": 24 }
+      {
+        "file": "mcp-servers.json"
+      },
+      {
+        "url": "https://mcp-catalog.acme.example/durbar/mcp-servers.json",
+        "refreshHours": 24
+      }
     ],
     "allow": [
-      { "name": "github" },
-      { "url": "https://mcp.atlassian.com/*" }
+      {
+        "name": "github"
+      },
+      {
+        "url": "https://mcp.atlassian.com/*"
+      }
     ],
     "deny": [
-      { "command": "npx", "argsPrefix": ["-y", "@modelcontextprotocol/server-filesystem"] }
+      {
+        "command": "npx",
+        "argsPrefix": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem"
+        ]
+      }
     ]
   },
   "registries": {
@@ -42,15 +60,28 @@
     "otel": {
       "endpoint": "https://otel.acme.example:4318",
       "protocol": "http/protobuf",
-      "signals": ["metrics", "logs"],
-      "headersFromEnv": { "Authorization": "ACME_OTEL_AUTH_HEADER" },
-      "resourceAttributes": { "department": "engineering" },
+      "signals": [
+        "metrics",
+        "logs"
+      ],
+      "headersFromEnv": {
+        "Authorization": "ACME_OTEL_AUTH_HEADER"
+      },
+      "resourceAttributes": {
+        "department": "engineering"
+      },
       "logPrompts": false,
-      "apps": ["claude", "copilot", "codex"]
+      "apps": [
+        "claude",
+        "copilot",
+        "codex"
+      ]
     }
   },
   "appearance": {
-    "theme": { "pack": "themes/acme-steel" },
+    "theme": {
+      "pack": "themes/acme-steel"
+    },
     "allowUserThemes": false,
     "allowThemeMaker": false
   },
@@ -71,6 +102,35 @@
         "wireApi": "responses"
       },
       "model": "acme-coder"
-    }
+    },
+    "pricing": {
+      "currency": "USD",
+      "models": [
+        {
+          "match": "acme-sonnet",
+          "inputPer1M": 2.5,
+          "outputPer1M": 12,
+          "cachedInputPer1M": 0.25
+        },
+        {
+          "match": "acme-haiku",
+          "inputPer1M": 0.6,
+          "outputPer1M": 3,
+          "cachedInputPer1M": 0.06
+        },
+        {
+          "match": "acme-coder*",
+          "inputPer1M": 1.2,
+          "outputPer1M": 6,
+          "cachedInputPer1M": 0.12,
+          "reasoningPer1M": 6
+        }
+      ]
+    },
+    "tokenCap": {
+      "maxTokensPerSession": 5000000,
+      "force": false
+    },
+    "requirePricing": false
   }
 }

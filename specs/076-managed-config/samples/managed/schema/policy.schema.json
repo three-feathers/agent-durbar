@@ -4,46 +4,111 @@
   "title": "Agent Durbar organization policy (v1)",
   "description": "policy.json in the managed config folder. Every key that is set is locked in the app and shown as 'Set by your organization'. The file holds no secrets: credentials are named by environment variable (or come from the agent app's own sign-in).",
   "type": "object",
-  "required": ["version"],
+  "required": [
+    "version"
+  ],
   "additionalProperties": false,
   "properties": {
-    "$schema": { "type": "string" },
-    "version": { "const": 1 },
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "const": 1
+    },
     "organization": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
-        "supportUrl": { "$ref": "#/$defs/httpsUrl" },
-        "supportEmail": { "type": "string", "format": "email", "maxLength": 254 }
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "supportUrl": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "supportEmail": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        }
       }
     },
-    "allowUserConfig": { "type": "boolean", "description": "Machine folder only. false: the per-user config folder is ignored." },
+    "allowUserConfig": {
+      "type": "boolean",
+      "description": "Machine folder only. false: the per-user config folder is ignored."
+    },
     "branding": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "displayName": { "type": "string", "minLength": 1, "maxLength": 40, "pattern": "^[^\\u0000-\\u001f<>]+$" },
-        "icon": { "$ref": "#/$defs/relPath", "description": "PNG, square, 256 to 1024 px, at most 1 MiB." }
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "pattern": "^[^\\u0000-\\u001f<>]+$"
+        },
+        "icon": {
+          "$ref": "#/$defs/relPath",
+          "description": "PNG, square, 256 to 1024 px, at most 1 MiB."
+        }
       }
     },
     "agentApps": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "allowed": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/app" }, "description": "Agent apps that may be used. An empty list is refused as an error (it would leave nothing to use)." },
-        "allowInAppInstall": { "type": "boolean", "description": "false: Settings > Agent apps cannot install or update an app; the IT department deploys them." }
+        "allowed": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/app"
+          },
+          "description": "Agent apps that may be used. An empty list is refused as an error (it would leave nothing to use)."
+        },
+        "allowInAppInstall": {
+          "type": "boolean",
+          "description": "false: Settings > Agent apps cannot install or update an app; the IT department deploys them."
+        }
       }
     },
     "mcp": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "mode": { "enum": ["open", "allowlist", "off"], "description": "open: users add any server (allow/deny still apply); allowlist: only servers from the org lists or matching allow; off: no MCP servers except required ones." },
-        "lists": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/listSource" } },
-        "allow": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/mcpMatch" } },
-        "deny": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/mcpMatch" } },
-        "allowFolderServers": { "type": "boolean", "description": "false: MCP servers from a folder's own config (spec 061) are not used." }
+        "mode": {
+          "enum": [
+            "open",
+            "allowlist",
+            "off"
+          ],
+          "description": "open: users add any server (allow/deny still apply); allowlist: only servers from the org lists or matching allow; off: no MCP servers except required ones."
+        },
+        "lists": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/listSource"
+          }
+        },
+        "allow": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/mcpMatch"
+          }
+        },
+        "deny": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/mcpMatch"
+          }
+        },
+        "allowFolderServers": {
+          "type": "boolean",
+          "description": "false: MCP servers from a folder's own config (spec 061) are not used."
+        }
       }
     },
     "registries": {
@@ -55,19 +120,54 @@
           "maxItems": 8,
           "items": {
             "type": "object",
-            "required": ["name"],
+            "required": [
+              "name"
+            ],
             "additionalProperties": false,
             "properties": {
-              "name": { "type": "string", "minLength": 1, "maxLength": 80 },
-              "url": { "$ref": "#/$defs/httpsUrl" },
-              "file": { "$ref": "#/$defs/relPath" },
-              "checkHours": { "type": "integer", "minimum": 1, "maximum": 168, "default": 24 },
-              "updates": { "enum": ["notify", "auto"], "default": "notify" }
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "url": {
+                "$ref": "#/$defs/httpsUrl"
+              },
+              "file": {
+                "$ref": "#/$defs/relPath"
+              },
+              "checkHours": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 168,
+                "default": 24
+              },
+              "updates": {
+                "enum": [
+                  "notify",
+                  "auto"
+                ],
+                "default": "notify"
+              }
             },
-            "oneOf": [{ "required": ["url"] }, { "required": ["file"] }]
+            "oneOf": [
+              {
+                "required": [
+                  "url"
+                ]
+              },
+              {
+                "required": [
+                  "file"
+                ]
+              }
+            ]
           }
         },
-        "allowUserRegistries": { "type": "boolean", "default": true }
+        "allowUserRegistries": {
+          "type": "boolean",
+          "default": true
+        }
       }
     },
     "telemetry": {
@@ -76,16 +176,66 @@
       "properties": {
         "otel": {
           "type": "object",
-          "required": ["endpoint"],
+          "required": [
+            "endpoint"
+          ],
           "additionalProperties": false,
           "properties": {
-            "endpoint": { "$ref": "#/$defs/httpsUrl" },
-            "protocol": { "enum": ["http/protobuf", "http/json", "grpc"], "default": "http/protobuf" },
-            "signals": { "type": "array", "uniqueItems": true, "items": { "enum": ["metrics", "logs", "traces"] } },
-            "headersFromEnv": { "type": "object", "maxProperties": 8, "propertyNames": { "pattern": "^[A-Za-z0-9-]{1,64}$" }, "additionalProperties": { "$ref": "#/$defs/envName" } },
-            "resourceAttributes": { "type": "object", "maxProperties": 16, "propertyNames": { "pattern": "^[A-Za-z0-9_.-]{1,64}$" }, "additionalProperties": { "type": "string", "maxLength": 128, "pattern": "^[^,=]*$" } },
-            "logPrompts": { "type": "boolean", "default": false },
-            "apps": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/app" } }
+            "endpoint": {
+              "$ref": "#/$defs/httpsUrl"
+            },
+            "protocol": {
+              "enum": [
+                "http/protobuf",
+                "http/json",
+                "grpc"
+              ],
+              "default": "http/protobuf"
+            },
+            "signals": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "metrics",
+                  "logs",
+                  "traces"
+                ]
+              }
+            },
+            "headersFromEnv": {
+              "type": "object",
+              "maxProperties": 8,
+              "propertyNames": {
+                "pattern": "^[A-Za-z0-9-]{1,64}$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/envName"
+              }
+            },
+            "resourceAttributes": {
+              "type": "object",
+              "maxProperties": 16,
+              "propertyNames": {
+                "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^,=]*$"
+              }
+            },
+            "logPrompts": {
+              "type": "boolean",
+              "default": false
+            },
+            "apps": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/app"
+              }
+            }
           }
         }
       }
@@ -96,12 +246,31 @@
       "properties": {
         "theme": {
           "oneOf": [
-            { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$", "description": "A bundled theme id, e.g. clean-office, corporate, retro." },
-            { "type": "object", "required": ["pack"], "additionalProperties": false, "properties": { "pack": { "$ref": "#/$defs/relPath" } } }
+            {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$",
+              "description": "A bundled theme id, e.g. clean-office, corporate, retro."
+            },
+            {
+              "type": "object",
+              "required": [
+                "pack"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "pack": {
+                  "$ref": "#/$defs/relPath"
+                }
+              }
+            }
           ]
         },
-        "allowUserThemes": { "type": "boolean" },
-        "allowThemeMaker": { "type": "boolean" }
+        "allowUserThemes": {
+          "type": "boolean"
+        },
+        "allowThemeMaker": {
+          "type": "boolean"
+        }
       }
     },
     "llm": {
@@ -110,16 +279,40 @@
       "properties": {
         "claude": {
           "type": "object",
-          "required": ["provider"],
+          "required": [
+            "provider"
+          ],
           "additionalProperties": false,
           "properties": {
-            "provider": { "enum": ["gateway", "bedrock", "vertex"] },
-            "baseUrl": { "$ref": "#/$defs/httpsUrl" },
-            "authTokenFromEnv": { "$ref": "#/$defs/envName" },
-            "region": { "type": "string", "pattern": "^[a-z0-9-]{2,32}$" },
-            "projectId": { "type": "string", "pattern": "^[a-z0-9-]{2,64}$" },
-            "model": { "type": "string", "maxLength": 128 },
-            "smallFastModel": { "type": "string", "maxLength": 128 }
+            "provider": {
+              "enum": [
+                "gateway",
+                "bedrock",
+                "vertex"
+              ]
+            },
+            "baseUrl": {
+              "$ref": "#/$defs/httpsUrl"
+            },
+            "authTokenFromEnv": {
+              "$ref": "#/$defs/envName"
+            },
+            "region": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{2,32}$"
+            },
+            "projectId": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{2,64}$"
+            },
+            "model": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "smallFastModel": {
+              "type": "string",
+              "maxLength": 128
+            }
           }
         },
         "codex": {
@@ -128,61 +321,261 @@
           "properties": {
             "provider": {
               "type": "object",
-              "required": ["id", "baseUrl"],
+              "required": [
+                "id",
+                "baseUrl"
+              ],
               "additionalProperties": false,
               "properties": {
-                "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$", "not": { "enum": ["openai", "ollama", "lmstudio"] } },
-                "name": { "type": "string", "maxLength": 80 },
-                "baseUrl": { "$ref": "#/$defs/httpsUrl" },
-                "apiKeyFromEnv": { "$ref": "#/$defs/envName" },
-                "wireApi": { "const": "responses" }
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$",
+                  "not": {
+                    "enum": [
+                      "openai",
+                      "ollama",
+                      "lmstudio"
+                    ]
+                  }
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "baseUrl": {
+                  "$ref": "#/$defs/httpsUrl"
+                },
+                "apiKeyFromEnv": {
+                  "$ref": "#/$defs/envName"
+                },
+                "wireApi": {
+                  "const": "responses"
+                }
               }
             },
-            "model": { "type": "string", "maxLength": 128 }
+            "model": {
+              "type": "string",
+              "maxLength": 128
+            }
           }
         },
         "copilot": {
           "type": "object",
-          "required": ["baseUrl", "model"],
+          "required": [
+            "baseUrl",
+            "model"
+          ],
           "additionalProperties": false,
           "properties": {
-            "providerType": { "enum": ["openai", "azure", "anthropic"], "default": "openai" },
-            "baseUrl": { "$ref": "#/$defs/httpsUrl" },
-            "apiKeyFromEnv": { "$ref": "#/$defs/envName" },
-            "bearerTokenFromEnv": { "$ref": "#/$defs/envName" },
-            "azureApiVersion": { "type": "string", "maxLength": 32 },
-            "model": { "type": "string", "maxLength": 128 },
-            "offline": { "type": "boolean", "default": false }
+            "providerType": {
+              "enum": [
+                "openai",
+                "azure",
+                "anthropic"
+              ],
+              "default": "openai"
+            },
+            "baseUrl": {
+              "$ref": "#/$defs/httpsUrl"
+            },
+            "apiKeyFromEnv": {
+              "$ref": "#/$defs/envName"
+            },
+            "bearerTokenFromEnv": {
+              "$ref": "#/$defs/envName"
+            },
+            "azureApiVersion": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "model": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "offline": {
+              "type": "boolean",
+              "default": false
+            }
           }
+        },
+        "pricing": {
+          "type": "object",
+          "required": [
+            "currency",
+            "models"
+          ],
+          "additionalProperties": false,
+          "description": "Per-model token prices for custom models (FR-106). Used for cost totals and caps. Locked in the UI.",
+          "properties": {
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$",
+              "description": "ISO 4217 code, e.g. USD or EUR."
+            },
+            "models": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "required": [
+                  "match",
+                  "inputPer1M",
+                  "outputPer1M",
+                  "cachedInputPer1M"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "match": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:/@*?-]+$",
+                    "description": "Model id, exact or a glob with * and ?; case-insensitive; exact matches win over globs, then list order."
+                  },
+                  "inputPer1M": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 10000,
+                    "description": "Price per 1M input tokens."
+                  },
+                  "outputPer1M": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 10000,
+                    "description": "Price per 1M output tokens."
+                  },
+                  "cachedInputPer1M": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 10000,
+                    "description": "Price per 1M cached input tokens."
+                  },
+                  "reasoningPer1M": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 10000,
+                    "description": "Price per 1M reasoning tokens; absent: priced as output."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tokenCap": {
+          "type": "object",
+          "required": [
+            "maxTokensPerSession"
+          ],
+          "additionalProperties": false,
+          "description": "A token cap for every custom-model session, priced or not (FR-108).",
+          "properties": {
+            "maxTokensPerSession": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 1000000000
+            },
+            "force": {
+              "type": "boolean",
+              "default": false,
+              "description": "true: the only cap users see for custom-model sessions (locked)."
+            }
+          }
+        },
+        "requirePricing": {
+          "type": "boolean",
+          "default": false,
+          "description": "true: a custom-model session whose model has no price does not start."
         }
       }
     }
   },
   "$defs": {
-    "app": { "enum": ["copilot", "claude", "codex"] },
-    "httpsUrl": { "type": "string", "pattern": "^https://[^\\s@]+$", "maxLength": 2048, "description": "https only; no user:password@ part." },
-    "relPath": { "type": "string", "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\.\\.)[A-Za-z0-9._/-]{1,200}$", "description": "Relative to the config folder; may not leave it." },
-    "envName": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$" },
+    "app": {
+      "enum": [
+        "copilot",
+        "claude",
+        "codex"
+      ]
+    },
+    "httpsUrl": {
+      "type": "string",
+      "pattern": "^https://[^\\s@]+$",
+      "maxLength": 2048,
+      "description": "https only; no user:password@ part."
+    },
+    "relPath": {
+      "type": "string",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\.\\.)[A-Za-z0-9._/-]{1,200}$",
+      "description": "Relative to the config folder; may not leave it."
+    },
+    "envName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+    },
     "listSource": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "file": { "$ref": "#/$defs/relPath" },
-        "url": { "$ref": "#/$defs/httpsUrl" },
-        "format": { "enum": ["durbar-mcp-list-v1", "mcp-registry-v0.1"], "default": "durbar-mcp-list-v1" },
-        "refreshHours": { "type": "integer", "minimum": 1, "maximum": 168, "default": 24 }
+        "file": {
+          "$ref": "#/$defs/relPath"
+        },
+        "url": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "format": {
+          "enum": [
+            "durbar-mcp-list-v1",
+            "mcp-registry-v0.1"
+          ],
+          "default": "durbar-mcp-list-v1"
+        },
+        "refreshHours": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 168,
+          "default": 24
+        }
       },
-      "oneOf": [{ "required": ["file"] }, { "required": ["url"] }]
+      "oneOf": [
+        {
+          "required": [
+            "file"
+          ]
+        },
+        {
+          "required": [
+            "url"
+          ]
+        }
+      ]
     },
     "mcpMatch": {
       "type": "object",
       "minProperties": 1,
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string", "maxLength": 64 },
-        "url": { "type": "string", "maxLength": 2048, "description": "Exact URL, or a prefix ending in *." },
-        "command": { "type": "string", "maxLength": 260 },
-        "argsPrefix": { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 256 } }
+        "name": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Exact URL, or a prefix ending in *."
+        },
+        "command": {
+          "type": "string",
+          "maxLength": 260
+        },
+        "argsPrefix": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          }
+        }
       }
     }
   }

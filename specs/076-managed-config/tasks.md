@@ -4,6 +4,7 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 
 ## P0: spec (this PR)
 
+- [x] T002 Owner answers Q1-Q12 recorded (2026-10-23); Q10 changed to admin token pricing: FR-104 rewritten, FR-106..FR-109, schema and sample updated
 - [x] T001 Research (vendor docs, `read:` table), spec, plan, tasks, samples (`samples/managed/`, `samples/endpoint/`) and JSON schemas validated against the samples; specs-index block; Q1-Q12 for Vikram
 
 ## P1: loader, safe mode, locks, Organization page
@@ -51,7 +52,10 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 
 - [ ] T060 No-prompt checks: Codex `model_providers` override (offline schema), Copilot BYOK variables via the SDK runtime (dummy endpoint), Claude Code gateway and Bedrock/Vertex variable names (docs + local fake gateway); record in agent-notes [FR-100..FR-102, FR-142]
 - [ ] T061 `policyEnvFor` per adapter; Copilot `createClient` `env` option [FR-100..FR-102, FR-124]
-- [ ] T062 Locked model picker; *price unknown*; sign-in check wording [FR-103..FR-105]
+- [ ] T062 Locked model picker; sign-in check wording [FR-103, FR-105]
+- [ ] T064 `llm.pricing` and `llm.tokenCap`/`requirePricing` in `src/shared/policy.ts`: validator (non-negative finite prices <= 10,000 per 1M, ISO currency, match pattern, no duplicate match, token cap 1,000..1e9), exact-then-glob matcher, cost formula [FR-106, FR-107]
+- [ ] T065 Costs and caps: custom-model sessions priced in Cost views and usage totals, *price unknown* path, cap in another unit shown as not available, forced token cap and require-price on spec 011's cap path, locked rate display [FR-104, FR-108, FR-109]
+- [ ] T066 Validation tests in `test-policy` (fixtures: negative, NaN-like strings, too large, bad currency, duplicate match, bad glob, token cap out of range; validator vs `ajv` on `samples/managed/schema/policy.schema.json`) and `test-policy-env` cost and cap cases (exact vs glob precedence, reasoning priced as output when absent, unpriced model with and without token cap, `requirePricing`) [FR-106..FR-108, FR-140]
 - [ ] T063 Tests `test-policy-env`, simulator, docs
 
 ## P7: OpenTelemetry per agent app
