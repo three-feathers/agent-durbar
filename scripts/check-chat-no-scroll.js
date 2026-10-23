@@ -10,7 +10,10 @@
  *   5. open the chat at the request from its desk's pending line (openAtRequest), when the office shows one.
  * After each step: html (the page), body, .workspace, #floor, #panel and .panel-in have scrollTop and scrollLeft 0, NO scroll event
  * reached any of them during the step (so the safety net did not have to hide a regression), and the chat header is inside the window.
+ * (#floor counts only while it is not #floor.scrolls: when the office does not fit, spec 001 makes it the office's own scroller.)
  * 6. a tall block makes the page scrollable and the page is scrolled on purpose: the safety net (DurbarScroll.pin) puts it back to 0.
+ * 7. at 1000x560 the office does not fit: the floor scrolls by scrollTop and by the mouse wheel, and the arrow keys bring each focused
+ *    desk into view inside it (review on PR 641).
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const { helpers, jsLiteral } = require('./driver-helpers');
@@ -18,7 +21,7 @@ const assert = require('assert');
 module.exports = async (ctx) => {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const { until, settle, js } = H;
-  const FRAME = `[document.scrollingElement,document.documentElement,document.body,document.querySelector('.workspace'),document.getElementById('floor'),document.getElementById('panel'),document.querySelector('.panel-in')].filter(Boolean)`;
+  const FRAME = `[document.scrollingElement,document.documentElement,document.body,document.querySelector('.workspace'),document.getElementById('floor'),document.getElementById('panel'),document.querySelector('.panel-in')].filter(e=>e&&e.matches(window.DurbarScroll.PINNED))`; /* #floor only while it is not .scrolls */
   /* our own log of scroll events on the pinned frame: the safety net resets them, so the values alone would hide a regression */
   const watch = () => js(`(()=>{window.__pinLog=[];if(window.__pinWatch)return;window.__pinWatch=1;document.addEventListener('scroll',e=>{const t=e.target===document?document.scrollingElement:e.target;
     if(t&&t.matches&&t.matches(window.DurbarScroll.PINNED))window.__pinLog.push((t.id||t.className||t.tagName)+'');},{capture:true,passive:true});})()`);
@@ -44,6 +47,38 @@ module.exports = async (ctx) => {
     assert.ok(await until(`[...document.querySelectorAll('#answerBar button')].some(b=>b.textContent===${jsLiteral(label)})`), `the answer bar has ${label}`);
     await js(`[...document.querySelectorAll('#answerBar button')].find(b=>b.textContent===${jsLiteral(label)}).click()`);
   };
+  /* 7. (review on PR 641) when the office does not fit, #floor.scrolls is the office's own scroller (spec 001): it must scroll by
+     scrollTop and by the mouse wheel, and the arrow keys must bring the focused desk into view inside it. The safety net leaves it alone. */
+  {
+    const [w, h] = [1000, 560];
+    await H.load({ w, h, ready: 'fit', focus: true });
+    await watch();
+    assert.ok(await until(`document.getElementById('floor').classList.contains('scrolls')`, 5000), `${w}x${h}: the office does not fit, the floor scrolls`);
+    const held = await js(`(async()=>{const f=document.getElementById('floor');f.scrollTop=150;await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,200)));return f.scrollTop})()`);
+    assert.ok(held > 0, `${w}x${h}: floor.scrollTop=150 holds: ${held}`);
+    await js(`document.getElementById('floor').scrollTop=0`); await ctx.sleep(150);
+    const fr = await js(`(()=>{const r=document.getElementById('floor').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+    H.wc().sendInputEvent({ type: 'mouseMove', x: fr.x, y: fr.y });
+    for (let i = 0; i < 5; i++) { H.wc().sendInputEvent({ type: 'mouseWheel', x: fr.x, y: fr.y, deltaX: 0, deltaY: -120 }); await ctx.sleep(60); }
+    assert.ok(await until(`document.getElementById('floor').scrollTop>0`, 3000), `${w}x${h}: the mouse wheel scrolls the floor`);
+    await js(`document.getElementById('floor').scrollTop=0`); await ctx.sleep(150);
+    // the arrow keys walk down the desks; every focused desk is inside the floor's view
+    await js(`document.querySelector('#stage .desk').focus()`);
+    const seen = [];
+    for (let i = 0; i < 12; i++) {
+      await H.key('Down', [], { char: 'never', pause: 0 }); await ctx.sleep(80);
+      const r = await js(`(()=>{const a=document.activeElement,f=document.getElementById('floor');if(!a||!a.closest('#stage'))return null;const b=a.getBoundingClientRect(),v=f.getBoundingClientRect();
+        return {id:a.dataset.id||a.className,inside:b.top>=v.top-1&&b.bottom<=v.bottom+1,top:Math.round(b.top),vb:Math.round(v.bottom),floor:f.scrollTop}})()`);
+      if (!r) break;
+      seen.push(r);
+      assert.ok(r.inside, `${w}x${h}: the arrow key brings the focused desk into view inside the floor: ${JSON.stringify(r)}`);
+    }
+    assert.ok(seen.some((r) => r.floor > 0), `${w}x${h}: the arrow keys reached a desk below the fold (the floor scrolled): ${JSON.stringify(seen.slice(-3))}`);
+    const f = await frame();
+    assert.deepStrictEqual(f.moved, [], `${w}x${h}: the page frame is not scrolled: ${JSON.stringify(f)}`);
+    assert.deepStrictEqual(f.events, [], `${w}x${h}: no scroll event on the page frame: ${JSON.stringify(f)}`);
+    console.log('[chat-no-scroll]', `${w}x${h}`, 'floor scrolls ok');
+  }
   for (const [w, h] of [[1440, 900], [1280, 800], [1280, 520]]) {
     const at = `${w}x${h}`;
     // 1. open from the desk

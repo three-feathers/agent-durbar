@@ -330,3 +330,4 @@
   - Check: `test:innerscroll` (pure parts and the static rule; mutation: a bare `focus()` or `scrollIntoView` put back fails it)
 - [x] T182 Driver `check-chat-no-scroll` at 1440x900, 1280x800 and 1280x520: open with a waiting question, Show question, Skip, answer in the card, open at the request; the page and the chat frame stay at 0 and the header in view; the safety net puts a forced page scroll back [FR-176]
   - Check: mutation (old `focusRequest` without the safety net; the safety net alone off) fails it; changelog fragment; agent note
+- [x] T183 Review on #641 (fjcabello): `#floor.scrolls` is not pinned (the office scrolls when it does not fit; driver step at 1000x560, mutation); the static rule catches any receiver (`$('x').focus()`, `el?.focus()`, `a.b().focus()`) and covers every renderer file; `screens.js`, `profileeditor.js`, `dialog.js` and `harnesses.js` use `focusIn` [FR-176]

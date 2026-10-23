@@ -13,8 +13,10 @@
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarScroll=api;
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
-  /* The containers that must never scroll: the page, the app's frame around the office, the chat and the screens (all overflow:hidden or visible) */
-  const PINNED='html,body,.workspace,#floor,#panel,.panel-in,#screen';
+  /* The containers that must never scroll: the page, the app's frame around the chat and the screens (all overflow:hidden or visible).
+     The office floor is one too, except when the layout does not fit: then it is #floor.scrolls (overflow-y:auto, spec 001) and is the
+     office's own scroller (review on PR 641). The selector is matched at each call, so the class can come and go. */
+  const PINNED='html,body,.workspace,#floor:not(.scrolls),#panel,.panel-in,#screen';
 
   /* How far to scroll a scroller so the box r (top/bottom, or left/right with axis 'x') shows inside the view s.
      block: 'start' (r at the top, `margin` below it), 'center', or 'nearest' (0 when r is already inside; a box taller than the

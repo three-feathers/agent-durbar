@@ -113,30 +113,67 @@ t('pin: a scroll on a pinned container (or the page) is put back; an inner scrol
 
 /* the static rule: strip comments, then look for calls that scroll every ancestor */
 const code = (f: string) => fs.readFileSync(path.join(DIR, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+/** The receiver expression right before `.focus(` / `?.focus(`: an identifier chain, calls and indexes (`$('x')`, `a.b()`, `it[0]`,
+ *  `(f||g)`), walked back with balanced brackets. */
+function receiver(src: string, dot: number): string {
+  let k = dot, depth = 0;
+  while (k > 0) {
+    const c = src[k - 1];
+    if (c === ')' || c === ']') { if (depth === 0 && k !== dot && src[k] !== '.' && src[k] !== '[' && src[k] !== '?') break; depth++; k--; continue; }
+    if (c === '(' || c === '[') { if (depth === 0) break; depth--; k--; continue; }
+    if (depth > 0 || /[\w$.?]/.test(c)) { k--; continue; }
+    break;
+  }
+  return src.slice(k, dot).replace(/^[.?]+/, '');
+}
+/** The text between the call's parentheses (balanced; quotes are skipped). */
+function callArgs(src: string, open: number): string {
+  let depth = 0, q = '';
+  for (let i = open; i < src.length; i++) {
+    const c = src[i];
+    if (q) { if (c === '\\') i++; else if (c === q) q = ''; continue; }
+    if (c === "'" || c === '"' || c === '`') { q = c; continue; }
+    if (c === '(') depth++;
+    else if (c === ')' && --depth === 0) return src.slice(open + 1, i);
+  }
+  return src.slice(open + 1);
+}
+/** Calls that scroll every ancestor: any `scrollIntoView(`, and any `.focus(` / `?.focus(` whose argument is not exactly
+ *  `{preventScroll:true}`, whatever the receiver. Only `window.focus()` (the window, not an element) and the helper's own
+ *  `DurbarScroll.focus` / `SCROLL.focus` are exempt. */
 export function scrollingCalls(src: string): string[] {
   const out: string[] = [];
-  for (const m of src.matchAll(/[\w$\])]*\.scrollIntoView\s*\(/g)) out.push(m[0]);
-  for (const m of src.matchAll(/([\w$]*)\.focus\s*\(([^)]*)\)/g)) {
-    if (m[1] === 'window' || m[1] === 'SCROLL' || m[1] === 'DurbarScroll') continue; // the window, and the helper itself
-    if (/^\s*\{\s*preventScroll\s*:\s*true\s*\}\s*$/.test(m[2])) continue;
-    out.push(m[0]);
+  for (const m of src.matchAll(/\bscrollIntoView\s*\(/g)) out.push(receiver(src, Math.max(0, (m.index as number) - 1)) + '.' + m[0]);
+  for (const m of src.matchAll(/(\?\.|\.)\s*focus\s*\(/g)) {
+    const at = m.index as number, recv = receiver(src, at), args = callArgs(src, at + m[0].length - 1);
+    if (/^(window|SCROLL|(window\.)?DurbarScroll)$/.test(recv)) continue;
+    if (/^\s*\{\s*preventScroll\s*:\s*true\s*\}\s*$/.test(args)) continue;
+    out.push(`${recv}${m[1]}focus(${args})`);
   }
   return out;
 }
 
-t('the static rule catches a bare focus(), a focus with other options and scrollIntoView', () => {
+/* A file may keep a call only when it is listed here with its reason. Empty: every renderer file follows the rule. */
+const ALLOW: Record<string, { call: string; why: string }[]> = {};
+
+t('the static rule catches every focus() that can scroll, whatever the receiver, and scrollIntoView', () => {
   assert.deepStrictEqual(scrollingCalls(`a.focus();b.focus({preventScroll:true});window.focus();c.scrollIntoView({block:'center'});d.focus({ preventScroll : false })`),
     ['c.scrollIntoView(', 'a.focus()', 'd.focus({ preventScroll : false })']);
+  // the shapes listed in issue #638 and in the review on PR 641: a call, an optional chain, a chained call, a parenthesised receiver
+  assert.deepStrictEqual(scrollingCalls(`if(m)$('msgInput').focus();el?.focus();a.b().focus();(f||g).focus( );it[i+1].focus();x.focus({preventScroll:true,focusVisible:true})`),
+    [`$('msgInput').focus()`, 'el?.focus()', 'a.b().focus()', '(f||g).focus( )', 'it[i+1].focus()', 'x.focus({preventScroll:true,focusVisible:true})']);
+  // allowed: the window, the helper, a call with exactly {preventScroll:true}; not calls: a property test, a function named focus
+  assert.deepStrictEqual(scrollingCalls(`window.focus();SCROLL.focus(el,o);window.DurbarScroll.focus(el,o);$('x').focus({ preventScroll: true });if(t&&t.focus)x();function focus(el){};focusIn(el)`), []);
 });
 
-t('app.js: no focus() that scrolls and no scrollIntoView (FR-176)', () => {
-  assert.deepStrictEqual(scrollingCalls(code('app.js')), [], 'use focusIn(el) or SCROLL.reveal(el) (innerscroll.js)');
-});
-
-t('no renderer file calls scrollIntoView (FR-055, FR-176)', () => {
-  const files = fs.readdirSync(DIR).filter((f) => f.endsWith('.js') && f !== 'innerscroll.js');
-  assert.ok(files.length > 10);
-  for (const f of files) assert.deepStrictEqual(scrollingCalls(code(f)).filter((c) => c.includes('scrollIntoView')), [], f);
+t('no renderer file calls focus() that scrolls or scrollIntoView (FR-055, FR-176)', () => {
+  const files = fs.readdirSync(DIR).filter((f) => f.endsWith('.js'));
+  assert.ok(files.length > 10 && files.includes('app.js') && files.includes('screens.js') && files.includes('dialog.js'));
+  for (const f of files) {
+    const allowed = (ALLOW[f] || []).map((a) => a.call);
+    assert.deepStrictEqual(scrollingCalls(code(f)).filter((c) => !allowed.includes(c)), [], `${f}: use focusIn(el) / DurbarScroll.focus(el) or DurbarScroll.reveal(el) (innerscroll.js)`);
+  }
+  for (const [f, list] of Object.entries(ALLOW)) for (const a of list) assert.ok(a.why.length > 20, `${f}: ${a.call} needs a written reason`);
 });
 
 t('innerscroll.js is loaded before the scripts that use it', () => {
