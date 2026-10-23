@@ -54,11 +54,19 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC1: a dated entry in `specs/008-packaging-and-release/spec.md` adds the fuse to FR-037's list, with the reason (US5), the one-way note and the Linux `basic_text` refusal.
   - AC2: `scripts/check-fuses.js`'s expected values include it (a task in 008's `tasks.md`, done in the PR that flips it).
   - AC3: the delta records what turning it on does to the app window's own cookie store (it is believed empty; to confirm by reading the code).
-- [ ] T006 Constitution amendment: the Read-only exception for `durbar-browser` read tools. [FR-051, Q1 (b)]
-  - Text for principle III: in Read-only, the read tools of Durbar's own per-session browser server (snapshot, screenshot, wait) may read the page already open in that session's browser, shown by a note in the bar. Every other MCP call is still denied.
+- [ ] T006 Constitution amendment: the **Read-only** exception for `durbar-browser` read tools. Ask first needs no exception, because reads ask per host there (FR-052). [FR-051, Q1 (b)]
+  - **Opened by an owner;** Ruben's coordinator drafts it for an owner to open.
+  - Outline for principle III, with Paco's limits: in Read-only, Durbar's own per-session browser server may run
+    - only its three read tools (snapshot, screenshot, wait), never navigate, click, type or press keys;
+    - only on the page already open in that session's browser;
+    - only while the session's *Let the agent use this browser* switch is on (default off);
+    - never on link-local, metadata or private-network pages, or pages with such frames (FR-058);
+    - enforced in Durbar's main process whatever the agent app decides (FR-055);
+    - with page text labelled as untrusted (FR-065) and a visible note in the bar.
+
+    Every other MCP call is still denied in Read-only.
   - AC1: an owner PR on `.specify/memory/constitution.md` (an owned path, CODEOWNERS) through `/speckit.constitution`, with a MINOR version bump and the Sync Impact Report. It cites Vikram's approval (PR #647 comment) and Ruben's delegation (#556).
-  - AC2: the analyst drafts the text only; an owner opens or approves the PR.
-  - AC3: T030 does not merge before it.
+  - AC2: T030 does not merge before it. Until then `BROWSER_READONLY_READS` stays `false`.
 - [ ] T010 Simulator probe of the Electron assumptions (throwaway branch code, not merged). Results go into research.md R1 as `sim:`, with the Electron version. [Assumptions, FR-008, FR-025, FR-046, FR-061, FR-070, FR-073]
   - AC0: the probe uses **FR-010's exact `webPreferences`, `devTools: false` included**. A dev build with DevTools on proves nothing for packaged builds.
   - AC1: records whether a `WebContentsView` covers an HTML menu drawn by the app's page.
@@ -79,8 +87,10 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC10: if it can be done offline with zero credits (codex-cli `app-server`, a temp `CODEX_HOME`, no model call), records whether a Codex-started stdio MCP helper reaches a per-user socket or named pipe from inside Codex's sandbox. Otherwise this check moves to T060 (`[KNOWN GAP]`).
   - AC11: on a **hidden** view (attached, not visible; another chat open): `Page.captureScreenshot`, `Input.dispatchMouseEvent` and `Accessibility.getFullAXTree` work, with and without `backgroundThrottling: false`. If it is needed, FR-010 gets it (a spec delta).
   - AC12: on a **detached** view (never added to the window, FR-110): the same three, plus page loads. If any fails, `webPreferences.offscreen` is tried as the fallback and the result is recorded.
-  - AC13: zero credits; no process is left (checked by PID).
-  - AC14: if any check fails, a spec delta changes the FR that relies on it before Phase 2.
+  - AC13: dialogs in a **shown vs a hidden** view, before and with `Page` enabled: does Electron's default dialog block the whole window, and does a hidden session's dialog pop over another chat? The answer is recorded; FR-025d's "held while hidden" rule is checked to work with `Page.handleJavaScriptDialog`.
+  - AC14: Chromium's Local Network Access (private network requests from a public page) under FR-025's deny-all permission handlers: is the request blocked, prompted or allowed? Recorded for FR-058.
+  - AC15: zero credits; no process is left (checked by PID).
+  - AC16: if any check fails, a spec delta changes the FR that relies on it before Phase 2.
 
 **Checkpoint**: T001-T004 merged, T010 recorded. T005 is needed only before Phase 3.
 
@@ -161,7 +171,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     - the profile editor preview (`src/renderer/profileeditor.js:302`).
   - AC5: only a `mailto:` link gets *Open*, which calls `shell.openExternal` after the click; every other non-web scheme gets the refusal text and no button (a test with the T011 hostile list counts zero `shell.openExternal` calls).
   - AC6: a sim driver checks that session A's link never loads in B.
-  - AC7: while agent control is on, a chat-link click to a link-local, metadata or private host asks first (FR-058), using T043's classifier.
+  - AC7: while agent control is on, a chat-link click (FR-058): link-local or metadata is refused with only *Open in system browser*; private asks with the mode's text; loopback opens. Uses T043's classifier.
 - [ ] T018 [US1] [US2] Simulator: test pages and links. [FR-091]
   - AC1: a simulator-only scheme is registered on each view partition only when `DURBAR_SIM` is set, and refused otherwise (test).
   - AC2: bundled pages for a form (POST), a GET form and a script redirect to another test host, links, a download, a file input, password, `one-time-code` and `cc-number` fields, an element that slides over a button, a `beforeunload` page, an `alert`, a basic-auth challenge and a slow load.
@@ -182,7 +192,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 
 - [ ] T030 [US3] Classification and modes in `src/adapters/permissions.ts` (shared with main's host). **Needs T006.** [FR-050..FR-054]
   - AC1: `durbar-browser` tools map to read / url / drive by name; an unknown tool of that server is denied.
-  - AC2: Read-only runs `read` tools on the open page and shows *Agent can read this page (Read-only)*; url and drive are denied with FR-051's text. Read calls on metadata or link-local pages are refused, and on private LAN pages denied (FR-058). Until T006 merges, one switch keeps reads denied too, and a test covers both settings.
+  - AC2: Read-only runs `read` tools on the open page and shows *Agent can read this page (Read-only)*; url and drive are denied with FR-051's text. Read calls on metadata, link-local or private LAN pages, or on pages with private or loopback frames, are refused; a loopback page the user opened can be read (FR-051, FR-058). The constant `BROWSER_READONLY_READS` in `src/shared/browserserver.ts` (default `false` until T006 merges) keeps every Read-only read denied and removes `readOnlyHint`; a test covers both settings, including FR-041's two Read-only texts.
   - AC3: Ask first:
     - every call asks, read included, naming the current host (read, drive) or the masked target URL (url), with the label shown as page text;
     - *Allow for this session* writes `browser:<kind>:<host>`, which covers later calls of that kind to that host only; there is no session-wide read grant;
@@ -191,7 +201,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC5: tests run for the broker paths of all three adapters (SC-005).
 - [ ] T031 [P] [US3] `src/shared/browserserver.ts`: reserved name, flag, token-file argument, frozen `ToolDef`s and input schemas. [FR-040, FR-045, FR-050]
   - AC1: the schemas enforce FR-045's limits.
-  - AC2: a test freezes names and schemas; exactly the three read tools carry `readOnlyHint: true`.
+  - AC2: a test freezes names and schemas; exactly the three read tools carry `readOnlyHint: true` when `BROWSER_READONLY_READS` is on, and none when it is off.
   - AC3: no tool for scripts, cookies, storage, uploads, tabs or other sessions.
 - [ ] T032 [US3] Shared token store `src/main/toolserver/tokens.ts`, **one copy for 072 and 080** (if 072 T032 landed first, reuse it and add only what is missing). [FR-040, FR-043, FR-044]
   - AC1: a 256-bit token from `crypto.randomBytes`; tokens compared with `crypto.timingSafeEqual` on equal-length buffers (a test checks there is no `===` on tokens).
@@ -240,10 +250,10 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC9: every action has a timeout and a clear error.
   - AC10: only the domains of FR-046. A test fails if the module sends any `Runtime.*` method, or uses `Page.createIsolatedWorld` without a spec-named case.
 - [ ] T036 [US3] Form posts, downloads, uploads. [FR-070..FR-073]
-  - AC1: `Fetch` pauses Document non-GET/HEAD requests whenever the switch is on and the driver is not `user`, whatever the timing (a test posts 6 s after a click, and one between turns). Ask first asks with the host (`askDialog`); Allow all goes ahead with a chat note. If T010 showed `Fetch` does not work, the plan's fallback is used and a spec delta is written first.
-  - AC2: `will-download` is gated by mode and driver state (`none` and `agent` are gated, `user` is not).
+  - AC1: `Fetch` pauses Document non-GET/HEAD requests whenever the switch is on and the driver is not `user`, whatever the timing (a test posts 6 s after a click, and one between turns). Ask first asks with the host through the existing permission request card (`permission` event, `PermissionInfo`, 003 FR-008 IPC), not `askDialog`; Allow all goes ahead with a chat note. If T010 showed `Fetch` does not work, the plan's fallback is used and a spec delta is written first.
+  - AC2: `will-download` is gated by mode and driver state (`none` and `agent` are gated, `user` is not); the Ask-first ask uses the same permission card.
   - AC3: allowed agent downloads go to `<Downloads>/Agent Durbar/<session>-<id>/` under `.durbar-partial-<id>`, renamed when complete. Session and file names are sanitised as FR-023a says (`:`, `<>"/\|?*`, control characters, trailing dots and spaces, `CON`/`PRN`/`AUX`/`NUL`/`COM1-9`/`LPT1-9` with any extension and case, at most 120 characters), and a path-containment test runs on win32 and posix paths. Downloaded files are never opened.
-  - AC6: launch cleanup deletes `.durbar-partial-*` files under `<Downloads>/Agent Durbar/` (test with a temp folder).
+  - AC6: launch cleanup deletes `.durbar-partial-*` files under `<Downloads>/Agent Durbar/` using `lstat`, following no symlink or junction and deleting only regular files with that prefix. Tests with a temp folder: a symlinked session folder pointing elsewhere and a symlink named `.durbar-partial-x` are left alone, and the target files survive (a junction on Windows CI).
   - AC4: the file chooser is intercepted and cancelled whenever the switch is on and the driver is not `user`.
   - AC5: unit tests of `policy.ts` cover every mode × driver × event.
 - [ ] T037 [US3] Main wiring of the server and the switch. [FR-041, FR-047, FR-048, FR-065]
@@ -261,6 +271,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     - `agent` from the first url or drive call until takeover or the end of the turn or session;
     - `user` after input (Co-browsing) or *Take over*;
     - no timer changes it;
+    - a turn start resets `agent` to `none` but never `user` (a test: the user takes over, a new turn starts, the driver is still `user` and the page is not gated);
     - the gates are open for `none` and `agent`.
   - AC2: the indicator text and icon from that state, `aria-live` polite; the 5 s "working" animation only.
   - AC3: in Co-browsing, user input (mouse, touch, keys, from `input-event`) takes over; a sim driver checks a mouse click. Per T010 AC4, input that arrives while a Durbar `drive` action is in flight is ignored.
@@ -282,17 +293,19 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC1: when a session with `durbar-browser` also has an ambient or extra server whose command or args match `@playwright/mcp` or `chrome-devtools-mcp`, the Browser tab shows the hint with *Turn off for this session* (058's per-session switch).
   - AC2: there is no automatic switch-off.
 - [ ] T043 [P] [US3] `src/shared/netclass.ts` plus `scripts/test-netclass.ts`: the literal host classifier and its use. [FR-058, SC-008]
-  - AC1: `169.254.169.254`, `169.254.170.2`, `[fd00:ec2::254]`, `100.100.100.200`, `metadata.google.internal`, `metadata.goog`, `metadata`, `instance-data`, `[fe80::1]` → metadata or link-local. `10.0.0.1`, `172.16.5.4`, `192.168.1.1`, `100.64.0.1`, `[fd12::1]`, `nas.local` → private. `localhost`, `app.localhost`, `127.0.0.2`, `[::1]` → loopback. Others → public. Mixed case, trailing dots, decimal and hex IPv4 forms (`2852039166`, `0xA9FEA9FE`) and IPv4-mapped IPv6 are normalised first.
+  - AC1: `169.254.169.254`, `169.254.170.2`, `[fd00:ec2::254]`, `100.100.100.200`, `metadata.google.internal`, `metadata.goog`, `metadata`, `instance-data`, `[fe80::1]` → metadata or link-local. `10.0.0.1`, `172.16.5.4`, `192.168.1.1`, `100.64.0.1`, `[fd12::1]`, `nas.local` → private. `localhost`, `app.localhost`, `127.0.0.2`, `[::1]`, `0.0.0.0`, `0`, `[::]` → loopback. Others → public. Mixed case, trailing dots, decimal and hex IPv4 forms (`2852039166`, `0xA9FEA9FE`) and IPv4-mapped IPv6 are normalised first.
   - AC2: no DNS lookup (the module imports no `dns` or `net` resolver).
   - AC3: while agent control is on, `session.webRequest.onBeforeRequest` on the view's partition cancels every request, of any resource type, to a metadata or link-local host (unit test on the filter builder).
   - AC4: private hosts ask once per host per session in every mode (Read-only denies); loopback does not ask in Allow all.
+  - AC5: iframes: with agent control on and a public top-level test page that frames a private and a loopback test host (simulated hosts in the filter test), the subframe and subresource requests are cancelled, and a read call on a page with such a frame is refused, unless the top-level page is that host and the user opened it.
+  - AC6: the metadata list matches FR-058's sourced entries plus the three marked own additions.
 - [ ] T044 [US3] Agent-caused navigations count as `url`. [FR-057]
   - AC1: while the switch is on and the driver is not `user`, every main-frame Document request (any method, redirects included per T010 AC6) is paused and checked against host grants and FR-058.
   - AC2: Ask first asks with the full masked URL (userinfo removed, token shapes masked, cut to 300 characters).
   - AC3: a sim driver: a grant for test host A, then a click on a link, a GET form and a script redirect to test host B; each asks and none leaves before the answer.
 - [ ] T042 [US3] [US4] Docs for Phase 2. [Phase 2 FRs]
   - AC1: README:
-    - *Safety model*: Read-only gives the agent no browser; Ask first is the browse mode; form posts, downloads and uploads; the untrusted-page warning;
+    - *Safety model*: Read-only lets the agent read only the open page (once T006 is in; before that, no browser), never private-network pages; Ask first is the browse mode and asks per site; form posts, downloads and uploads; the untrusted-page warning;
     - MCP and Tools text: the built-in `durbar-browser`;
     - known limits, prompt injection included.
   - AC2: a changelog fragment.

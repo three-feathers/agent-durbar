@@ -84,7 +84,7 @@ renderer (app.js, new browserpane.js)            main                           
 
 **Pure (unit-tested, no Electron):**
 
-- `src/shared/browserserver.ts`: the reserved name `durbar-browser`, the helper flag `--durbar-browser-tool`, the frozen `ToolDef`s (no `readOnlyHint`, FR-050), and limits.
+- `src/shared/browserserver.ts`: the reserved name `durbar-browser`, the helper flag `--durbar-browser-tool`, the frozen `ToolDef`s (the three read tools carry `readOnlyHint` only when `BROWSER_READONLY_READS` is on, FR-050), the constant `BROWSER_READONLY_READS` (default `false` until T006 merges), and limits.
 - `src/shared/browserurl.ts`: address-field parsing (FR-005) and host extraction (`new URL().hostname`, userinfo stripped) only.
 - `src/main/hardening.ts` (spec 045's module, extended): `viewNavigationAllowed(url, isMainFrame)` (FR-024 frame rules; only `mailto:` may leave), a deny-all view permission check, and a pure handler-list builder for FR-025..FR-025e, so 045's tests cover the window and the view.
 - `src/main/browser/policy.ts`: mode × kind × network class → allow / ask / deny (FR-050..FR-053, FR-058); the navigation, POST and download gates by driver state (FR-057, FR-060, FR-070, FR-071); downloads folder and file name sanitising, Windows reserved names included (FR-023a).
@@ -136,7 +136,7 @@ renderer (app.js, new browserpane.js)            main                           
 - **A CDP method missing on a view's debugger.** T010 checks it before Phase 2 is built. If `Fetch` does not work through the debugger, FR-070 falls back to `session.webRequest.onBeforeRequest` filtered on `resourceType: mainFrame/subFrame` and `method`. That hook can cancel a request but cannot ask and resume it, so in that case Ask first would cancel and re-ask: a spec delta.
 - **Memory with many views.** FR-011 caps it; T013 measures it on the simulator.
 - **Shared tool-server core with 041/072.** Order (decided by the coordinator under Ruben's delegation): 041 T018 builds `bridgecore.ts` first. The host and token store are built once in `src/main/toolserver/`, by whichever of 072 T032 and 080 T032/T033 comes first, and the other reuses them. If 041 T018 stalls, 080 Phase 2 waits; it does not build a second core.
-- **Constitution amendment (T006)** is an owned path (`.specify/memory/constitution.md`) and needs an owner PR. Until it merges, T030 builds Read-only as "deny url/drive and deny reads" behind one switch, and flips that switch when T006 lands.
+- **Constitution amendment (T006)** is an owned path (`.specify/memory/constitution.md`) and needs an owner PR. Until it merges, the constant `BROWSER_READONLY_READS` (`src/shared/browserserver.ts`, default `false`) keeps Read-only as "deny url/drive and deny reads", removes `readOnlyHint` and picks FR-041's Read-only text; the PR after T006 sets it to `true`. Ask first needs no amendment: reads ask per host there.
 - **Fuse change (Phase 3).** `enableCookieEncryption` is one-way, and it also encrypts the app window's own cookie store. The spec 008 delta (T005) checks that turning it on loses nothing the app needs (the app keeps no cookies of its own today; to confirm in T005).
 - **Conflicts:** `package.json` `test:runtime` and `test:serial` lines; `app.js` `openPanel` (PRs touching the chat header). Merge `main` often.
 
