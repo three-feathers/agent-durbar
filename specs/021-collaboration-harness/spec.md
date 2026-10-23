@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 021
 title: Collaboration harness: Claude + Copilot Spec Kit, labels/issues/board, CODEOWNERS, stricter spec gate, ruleset
-status: built (tooling only): harness, board, ruleset in place; open: T010 (board workflows, web UI), T013 (gate review), T022 (apply the label backfill)
+status: built (tooling only): harness, board, ruleset in place; open: T010 (board workflows, web UI), T013 (gate review)
 -->
 
 **Feature Branch**: `021-collab-harness`
@@ -198,6 +198,7 @@ Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564).
   - a **flagged item** (two type labels, or no area found) gets no type or area from the script, only its `spec:NNN`. The dry run lists the flagged numbers, and a human or the item's owner agent picks the labels;
   - `--dry-run` (default) prints the proposed additions per item and the totals per label; `--apply` adds them, throttled (about one write per 1.2 s, backing off on a rate limit) and idempotent; `--create-labels` creates the missing labels from `.github/labels.tsv` and the spec folders. gh runs without a shell.
   - `test:` `scripts/test-labels-backfill.ts` (`npm run test:labelsbackfill`, in `npm test`) checks the inference on fixtures.
+  - `real:` applied on 2026-10-23 (T022): 49 labels created; 501 issues and PRs labelled. Two writes returned 502/504 but GitHub had saved them, and a re-run had nothing left to add. The 16 flagged items are listed on #633.
   - `[KNOWN GAP]` the inference is a heuristic. Paco's review of #633 (2026-10-23) decided: apply in bulk **once, after this PR merges**, by one agent, add-only and rate-aware; the flagged items are left to a human, not fixed by the script or the applying agent.
 
 ### 2026-10-23: a shared "first time right" review checklist (owner decision)
