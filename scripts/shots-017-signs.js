@@ -140,6 +140,9 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual([...seen].sort(), Object.keys(TABLE).sort(), `${w}: every sign is seen at least once`);
     const page = await js(`(${pageCheck.toString()})(false, 5)`);
     assert.deepStrictEqual(page.problems, [], `${w}: office layout rules`);
+    /* FR-007: next to a long sign, a token count is dropped whole, never cut to a misleading "1" */
+    const cutTok = await js(`[...document.querySelectorAll('#stage .desk .use .tok')].filter(t=>t.getClientRects().length&&t.scrollWidth>t.clientWidth+0.5).map(t=>t.closest('.desk').querySelector('.name').textContent+': '+t.textContent)`);
+    assert.deepStrictEqual(cutTok, [], `${w}: no token count is cut`);
     assert.ok(await js(`document.querySelectorAll('#stage .desk[data-id]').length>=15`), `${w}: 15 agents shown`);
     /* FR-009: a resting agent in the lounge says Away */
     const peeks = await js(`[...document.querySelectorAll('#stage .desk.shut .peek .dsign-tx')].map(x=>({k:x.dataset.sign,t:x.textContent.trim(),i:(x.querySelector('.ds-ic')||{dataset:{}}).dataset.icon}))`);

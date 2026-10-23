@@ -1126,6 +1126,20 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .plate.tone-done{--tone:#bcd5c4;--tonebg:#eef5f0}
 .room.enter,.plate.enter{animation:doorin .32s ease-out}
 @keyframes doorin{from{opacity:.0;transform:scale(.96)}to{opacity:1;transform:none}}
+/* spec 017 FR-004..FR-007 (2026-10-23): a session's meeting-room door sign, in the desk pill's place (same size class, so the layout is
+   unchanged); a filled plate in its status colours (.st-*), the room door drawn in the ink, an icon and a word that gives way first */
+.desk .pill.dsign,.desk .pill.dsign.dsign{display:inline-flex;align-items:center;gap:3px;min-width:0;max-width:100%;padding:0 8px 0 5px;background:var(--pb);color:var(--pc);border:1px solid color-mix(in srgb,var(--pc) 28%,var(--pb));flex:0 0 auto}
+.dsign .door-svg{width:14px;height:14px;flex:none}
+.dsign .ds-ic{width:11px;height:11px;flex:none;display:block}
+.dsign .dsw{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsign .pwarn{flex:none}
+.dsign.ds-away{border-style:dashed;border-color:color-mix(in srgb,var(--pc) 45%,var(--pb))}
+.dsign.ds-waiting,.dsign.ds-attention{font-weight:650}
+.stage[data-d="mini"] .stl.dsign,.stage[data-d="micro"] .stl.dsign{display:inline-flex;align-items:center;gap:2px;height:16px;padding:0 5px 0 3px;border-radius:999px;background:var(--pb);color:var(--pc);border:1px solid color-mix(in srgb,var(--pc) 28%,var(--pb));min-width:calc(14px + 11px + 2px + 10px);overflow:hidden}
+.stage[data-d="mini"] .stl.dsign .door-svg,.stage[data-d="micro"] .stl.dsign .door-svg{width:12px;height:12px}
+.stage[data-d="mini"] .stl.dsign .ds-ic,.stage[data-d="micro"] .stl.dsign .ds-ic{width:10px;height:10px}
+.peek .dsign-tx{display:inline-flex;align-items:center;gap:4px}
+.peek .dsign-tx .ds-ic{width:11px;height:11px;flex:none}
 @media (prefers-reduced-motion:reduce){.room.enter,.plate.enter{animation:none}.door-svg .leaf{transition:none}.plate{transition:none}}
 
 /* ---------- permission mode (spec 018) ---------- */
