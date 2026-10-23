@@ -179,7 +179,7 @@ module.exports = async (ctx) => {
       /* FR-015: every main desk has its door button: 24px, pressed exactly when the user closed the door, on the scene and clear of the words */
       assert.ok(d.toggle && d.toggle.w >= 24 && d.toggle.h >= 24 && d.toggle.hits.length === 0, `${tag}: the door button is there, 24px, clear of the words: ${JSON.stringify(d.toggle)}`);
       assert.ok(key === 'shut' ? /^Open the door: /.test(d.toggle.label) : /^Close the door \(do not disturb\): /.test(d.toggle.label), `${tag}: the door button says what it does: ${d.toggle.label}`);
-      assert.ok(/(Working|Thinking|Failing|Waiting|Idle|Error|Done|Paused|Ended|Limit reached|Stopped|Coffee break)/.test(d.label), `${tag}: the accessible name keeps the plain word: ${d.label.slice(0, 120)}`);
+      assert.ok(/(Working|Thinking|Retrying|Failing|Waiting|Idle|Error|Done|Paused|Ended|Limit reached|Stopped|Coffee break)/.test(d.label), `${tag}: the accessible name keeps the plain word: ${d.label.slice(0, 120)}`);
       seen.add(key);
     }
   };
