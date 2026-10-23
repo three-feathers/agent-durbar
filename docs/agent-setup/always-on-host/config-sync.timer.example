@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily backup of my Claude Code setup
+
+[Timer]
+OnCalendar=*-*-* 03:30
+Persistent=true
+
+[Install]
+WantedBy=timers.target
