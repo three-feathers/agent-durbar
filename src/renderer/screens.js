@@ -136,6 +136,7 @@
     const detOpen=!!x.error&&liveDet.has(k);
     const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-lvdet="1" aria-expanded="${detOpen}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+r.name+' for '+c.name)}">Details</button>`:'';
     const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-lverr="1" aria-label="${esc('Error text of '+r.name+' for '+c.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-lvcopy="1" aria-label="${esc('Copy the error text of '+r.name+' for '+c.name)}">Copy</button></div>`:'';
+    const hh=healthHTML(x,'data-lvdiag="1"','Copy diagnostics of '+r.name+' for '+c.name);
     const rs=x.canRestart&&X.bridge.agentMcpRestart?(liveBusy.has(k)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+r.name+' for '+c.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-lvrs="1" aria-label="${esc('Restart '+r.name+' for '+c.name)}" title="Restart only this server in this chat">Restart</button>`):'';
     /* FR-032's line for an agent app with no per-server Restart (Codex) */
     const noOne=m&&m.o.restart===false&&rp.canRestartSession?`<span class="srv-hint lv-noone">${esc((m.o.appName||'This agent app')+' cannot restart one server; use Restart session with these servers.')}</span>`:'';
@@ -147,7 +148,7 @@
     const oc=m?`<button class="btn sm${auth?' primary':''}" type="button" data-lvopen="1" aria-label="${esc('Open the MCP servers of '+c.name+' in its chat')}">Open in chat</button>`:'';
     const acts=auth?(oc+(rs||rsess?`<details class="scr-more lv-more" data-lvk="${esc(k)}"${liveMore.has(k)?' open':''}><summary data-lvmore="1">More</summary><div class="lv-act">${rs}${rsess}</div></details>`:'')):rs+rsess+oc;
     const authNote=auth&&m?`<span class="srv-hint lv-auth">Sign in from the chat's MCP list: Open in chat.</span>`:'';
-    return `<li class="lv-chat${auth?' auth':''}" data-lvs="${esc(r.name)}" data-lvc="${esc(c.id)}"><div class="lv-top"><b class="lv-who" title="${esc(who)}">${esc(c.name)}</b>${c.folder?`<span class="mtag">${esc(c.folder)}</span>`:''}${stat}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${authNote}${noOne}${det}${detBox}${acts?`<div class="lv-act">${acts}</div>`:''}</li>`;
+    return `<li class="lv-chat${auth?' auth':''}" data-lvs="${esc(r.name)}" data-lvc="${esc(c.id)}"><div class="lv-top"><b class="lv-who" title="${esc(who)}">${esc(c.name)}</b>${c.folder?`<span class="mtag">${esc(c.folder)}</span>`:''}${stat}</div>${hh.why}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${authNote}${noOne}${btnRow(det,hh.diag)}${detBox}${acts?`<div class="lv-act">${acts}</div>`:''}</li>`;
   }
   function liveInner(){
     const W=window.DurbarMcpWords, A=live.agg;
@@ -177,7 +178,7 @@
     const box=$('liveBox');if(!box||!live)return [];
     const f=document.activeElement, inside=f&&box.contains(f);
     const li=inside&&f.closest('[data-lvc],[data-lvn]');
-    const act=!inside?null:['lv','lvdet','lvcopy','lvrs','lvsess','lvopen','lverr','lvmore'].find(a=>f.dataset[a]!==undefined)||null;
+    const act=!inside?null:['lv','lvdet','lvcopy','lvdiag','lvrs','lvsess','lvopen','lverr','lvmore'].find(a=>f.dataset[a]!==undefined)||null;
     const at=li?{s:li.dataset.lvs||li.dataset.lvn,c:li.dataset.lvc||''}:null;
     const sc=box.closest('.scr-body'), top=sc?sc.scrollTop:0;
     box.innerHTML=liveInner();
@@ -213,6 +214,7 @@
     if(e.target.closest('button[data-lvdet]')){if(liveDet.has(k))liveDet.delete(k);else liveDet.add(k);await repaintLive(false);return;}
     if(e.target.closest('button[data-lvcopy]')){void copyText(c.entry.error||'','Copied the error text.');return;}
     const m=X.mcpSession?X.mcpSession(id):null;
+    if(e.target.closest('button[data-lvdiag]')){const rp=live.replies.get(id)||{};void copyDiagnostics(n,c.entry,rp.app||(m&&m.o.appName),m&&m.o.appVersion);return;}
     if(e.target.closest('button[data-lvrs]')){
       if(liveBusy.has(k)||!m)return;
       liveBusy.add(k);
@@ -1045,6 +1047,26 @@
       X.toast(okMsg,ms||2400).classList.add('ok');
     }catch(e){X.toast('Could not copy to the clipboard.',3200).classList.add('err');}
   }
+  /* Spec 058 FR-090..FR-095 (issue 603): the reason line ("Reason: Not installed (command not found) · seen at 14:02") and the Copy
+     diagnostics button of a failed or needs-sign-in row, shared by a chat's MCP dialog and the Settings live rows. `x` = the agents:mcp
+     entry (main masked its error); `attr` = the button's data attribute. Nothing for other states. */
+  function healthHTML(x,attr,label){
+    const W=window.DurbarMcpWords, rs=W&&W.reasonOf?W.reasonOf(x):null;
+    if(!rs)return {why:'',diag:''};
+    const when=W.whenText(x.since);
+    return {why:`<span class="srv-why" data-reason="${esc(rs.key)}"><b>Reason:</b> ${esc(rs.word)}${when?`<span class="srv-when"> · seen ${esc(when)}</span>`:''}</span>`,
+      diag:`<button class="btn sm srv-diag" type="button" ${attr} aria-label="${esc(label)}" title="Copy a masked summary (server, reason, time, transport, agent app, error) for an issue report">Copy diagnostics</button>`};
+  }
+  /* FR-093: built from the reply only and passed through the shared redact() again (DurbarRedact); nothing is copied if that fails */
+  async function copyDiagnostics(server,x,app,appVersion){
+    const W=window.DurbarMcpWords, R=window.DurbarRedact;
+    /* the shared masking main uses (redact.ts): URL parts and OAuth values, token shapes, env values, then home folders to `~` */
+    const mask=R&&typeof R.redact==='function'&&typeof R.maskSecretUrl==='function'&&typeof R.maskHomePaths==='function'?(t=>R.maskHomePaths(R.maskSecretUrl(t))):null;
+    const text=W&&W.diagnostics?W.diagnostics({server,entry:x,app,appVersion},mask):'';
+    if(!text){X.toast('Could not mask the diagnostics, so nothing was copied.',4200).classList.add('err');return;}
+    await copyText(text,'Copied the diagnostics of '+esc(server)+' (masked).');
+  }
+  const btnRow=(a,b)=>a||b?`<div class="srv-btns">${a}${b}</div>`:'';
   /* Spec 058 FR-021/FR-031 and FR-022/FR-023/FR-027: one server's Restart and Restart session with these servers, shared by a chat's MCP
      dialog and Settings > MCP servers (FR-082), so both places ask, call and report the same way. */
   async function mcpRestartCall(a,name,onSent){
@@ -1128,6 +1150,7 @@
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
         const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-err="${esc(x.name)}" aria-label="${esc('Error text of '+x.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-copy="${esc(x.name)}" aria-label="${esc('Copy the error text of '+x.name)}">Copy</button></div>`:'';
+        const hh=healthHTML(x,`data-diag="${esc(x.name)}"`,'Copy diagnostics of '+x.name);
         /* spec 058 (2026-10-23, Vikram's report): on a row that needs a sign-in, Restart is a dead end ("needs auth" again), so Sign in takes its place and Restart is hidden */
         const needsSign=(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth'))&&!!(x.canSignIn||x.signInSteps);
         const signB=needsSign&&x.canSignIn&&!x.signIn?(signBusy.has(x.name)?`<button class="btn sm primary" type="button" disabled aria-label="${esc('Signing in to '+x.name)}">Signing in…</button>`:`<button class="btn sm primary" type="button" data-signin="${esc(x.name)}" aria-label="${esc('Sign in to '+x.name)}" title="Start ${esc(s.app||'your agent app')}'s own sign-in for this server">Sign in</button>`):'';
@@ -1141,7 +1164,7 @@
         const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
         const sg=x.canSignIn||x.signInSteps||x.signIn?signHTML(x,s):'';
-        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
+        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hh.why}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
           <div class="srv-act">${rs}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff?' disabled':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
@@ -1214,7 +1237,7 @@
         else if(x&&(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth')))signNote.set(n,'Sign-in was not finished. Press Sign in to try again.');}
       for(const x of st.servers)if(x.status==='connected')signNote.delete(x.name);
       const f=document.activeElement,inside=f&&dlg.contains(f);
-      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.signin!==undefined?['signin',f.dataset.signin]:f.dataset.signopen!==undefined?['signopen',f.dataset.signopen]:f.dataset.signcancel!==undefined?['signcancel',f.dataset.signcancel]:f.dataset.swoff!==undefined?['swoff',f.dataset.swoff]:f.dataset.steps!==undefined?['steps',f.dataset.steps]:f.dataset.copysteps!==undefined?['copysteps',f.dataset.copysteps]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.diag!==undefined?['diag',f.dataset.diag]:f.dataset.signin!==undefined?['signin',f.dataset.signin]:f.dataset.signopen!==undefined?['signopen',f.dataset.signopen]:f.dataset.signcancel!==undefined?['signcancel',f.dataset.signcancel]:f.dataset.swoff!==undefined?['swoff',f.dataset.swoff]:f.dataset.steps!==undefined?['steps',f.dataset.steps]:f.dataset.copysteps!==undefined?['copysteps',f.dataset.copysteps]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
       const errTop=key&&key[0]==='err'?f.scrollTop:0;
       const bodyEl=dlg.querySelector('.dbody'),top=bodyEl.scrollTop;
       bodyEl.innerHTML=body(st);bodyEl.scrollTop=top; /* FR-004: the scroll position stays */
@@ -1327,6 +1350,8 @@
         if(db){const n=db.dataset.det;if(openDet.has(n))openDet.delete(n);else openDet.add(n);void repaint();return;}
         const cb=e.target.closest('button[data-copy]');
         if(cb){const sv=st.servers.find(x=>x.name===cb.dataset.copy);void copyText(sv&&sv.error||'','Copied the error text.');return;}
+        const dg=e.target.closest('button[data-diag]');
+        if(dg){const sv=st.servers.find(x=>x.name===dg.dataset.diag);if(sv)void copyDiagnostics(sv.name,sv,st.app||o&&o.appName,o&&o.appVersion);return;}
         if(e.target.closest('#mcpRestartSess')){void restartSession();return;}
         const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
         const r=await X.bridge.setAgentMcp(a.id,b.dataset.n,on);

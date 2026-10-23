@@ -16,6 +16,8 @@ import { agentMcpReply, mcpRestartOp } from './mcpsession';
 import { mcpToolsOp } from './mcptoolsop';
 import { McpSignInStore, SignInPoller, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp } from './mcpsignin';
 import { McpStore } from './mcpstore';
+import { mcpHealthUpdate } from '../shared/mcphealth';
+import type { McpHealthMark } from '../shared/mcphealth';
 import type { SecretCodec } from './mcpstore';
 
 /**
@@ -85,6 +87,8 @@ export function registerMcpIpc(deps: {
       return []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
     }
   };
+  /** Spec 058 FR-092: per session, when each server's state started and whether a failure came after Running (dropped when it stops). */
+  const health = new Map<string, Map<string, McpHealthMark>>();
   /** Spec 058 FR-065: the sign-in pages the agent apps handed back, in memory only (never logged, never written), for at most 10 minutes. */
   const signIns = new McpSignInStore(deps.now ?? Date.now, deps.openUrl ?? (async () => { throw new Error('no browser'); }));
   /** FR-064 (real 2026-10-23): while a sign-in page is open, read the agent app's server list again every 5 s (at most 10 minutes) and when the window regains focus. */
@@ -96,9 +100,11 @@ export function registerMcpIpc(deps: {
   router.onEvent((e) => {
     if (e.type === 'mcp') {
       live.set(e.sessionId, e.servers);
+      health.set(e.sessionId, mcpHealthUpdate(health.get(e.sessionId), e.servers, Date.now()));
       signIns.onServers(e.sessionId, e.servers); // connected: the sign-in is finished
     } else if (e.type === 'status' && e.status === 'stopped') {
       live.delete(e.sessionId);
+      health.delete(e.sessionId);
       signIns.dropAgent(e.sessionId); // End session, Restart session (it ends the session first), a failed reconnect
     }
   });
@@ -199,6 +205,7 @@ export function registerMcpIpc(deps: {
       app: deps.appOf?.(a.id),
       claudeList: (gn.claude ?? []).map((n) => ({ name: n, enabled: !dis.has(claudeOffKey(n)) })),
       toolsOff: s.toolsOffFor(keyOf(a)),
+      health: health.get(a.id),
       signIn: (n) => signIns.view(a.id, n),
       global: gn,
       builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),

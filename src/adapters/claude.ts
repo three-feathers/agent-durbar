@@ -18,7 +18,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ClaudeMapper, claudeMcpServers } from './claudeMap';
+import { ClaudeMapper, claudeMcpServers, withSkipped } from './claudeMap';
 import type { ClaudeMessage } from './claudeMap';
 import { claudeOptionsFor, parseMcpTool, preToolUseDecision, toolKind } from './claudeModes';
 import { createCliTransport } from './claudeTransport';
@@ -860,7 +860,7 @@ export class ClaudeAdapter implements AgentAdapter {
     s.mcpAuthSeen?.delete(name); // a real change for this server
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      s.lastMcp = claudeMcpServers(r.mcpServers);
+      s.lastMcp = withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped);
       this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
     } catch {
       /* the toggle worked; the list comes with the next init */
@@ -880,7 +880,7 @@ export class ClaudeAdapter implements AgentAdapter {
     await s.transport.request({ subtype: 'mcp_reconnect', serverName: name }, 30_000);
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      this.emit(s.id, { type: 'mcp', servers: claudeMcpServers(r.mcpServers) });
+      this.emit(s.id, { type: 'mcp', servers: withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped) });
     } catch {
       /* the reconnect worked; the list comes with the next init */
     }
@@ -1062,7 +1062,7 @@ export class ClaudeAdapter implements AgentAdapter {
     s.mcpRefreshing = true;
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      s.lastMcp = claudeMcpServers(r.mcpServers);
+      s.lastMcp = withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped);
       this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
     } catch {
       /* the list comes with the next init */
