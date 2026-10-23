@@ -68,7 +68,7 @@
   async function profilesInner(){
     let l=null;try{l=await X.bridge.listProfileFiles();}catch(e){l=null;}
     const files=(l&&l.files)||[];
-    const row=f=>`<li class="pf-row" data-pf="${esc(f.id)}"><div class="pf-main"><div class="pf-top"><b>${esc(f.name)}</b><span class="mtag">${esc(PE().placeText(f))}</span>${f.writable?'':`<span class="mtag warn" title="${esc(f.note||'')}">read-only</span>`}</div>${f.description?`<small>${esc(f.description)}</small>`:''}<small><code title="${esc(f.path)}">${esc(f.fileName)}</code></small></div>${f.tooBig?`<span class="scr-note small">${esc(f.note||'Too large to open here.')}</span>`:`<button class="btn sm" type="button" data-pf-open="${esc(f.id)}" aria-label="${esc('Open '+f.name)}">Open</button>`}</li>`;
+    const row=f=>`<li class="pf-row" data-pf="${esc(f.id)}"><div class="pf-main"><div class="pf-top"><b>${esc(f.name)}</b><span class="mtag">${esc(PE().placeText(f))}</span>${f.writable?'':`<span class="mtag warn" title="${esc(f.note||'')}">read-only</span>`}</div>${f.description?`<small>${esc(f.description)}</small>`:''}<small><code title="${esc(f.path)}">${esc(f.fileName)}</code></small></div>${f.tooBig?`<span class="scr-note small">${esc(f.note||'Too large to open here.')}</span>`:`<button class="btn sm" type="button" data-pf-open="${esc(f.id)}" aria-label="${esc('Open '+f.name)}">Open</button>`}${f.writable&&X.bridge.deleteProfileFile?`<button class="btn sm" type="button" data-pf-del="${esc(f.id)}" aria-label="${esc('Delete '+f.name)}" title="${esc('Delete '+f.fileName+' from disk')}">Delete…</button>`:''}</li>`; /* spec 043 FR-040 */
     const groups=PF_APPS.map(([app,label])=>{const fs=files.filter(f=>f.app===app);return `<h4 class="scr-sub">${esc(label)} <small>${fs.length}</small></h4>${fs.length?`<ul class="pf-list">${fs.map(row).join('')}</ul>`:`<p class="scr-note small">None yet. ${app==='copilot'?'Copilot loads <code>.github/agents/*.agent.md</code> in a folder and <code>~/.copilot/agents</code>.':'Claude Code profiles are <code>.claude/agents/*.md</code> in a folder and <code>~/.claude/agents</code>.'}</p>`}`;}).join('');
     return `<h3 id="pfH">Agent Success Profiles (custom agents)</h3>
       <p class="scr-note">Markdown files that give an agent its role, instructions, tools and model. Open one to read it, change it and save it; changes apply to sessions started after saving. Codex has no profiles in Durbar yet.</p>
@@ -79,6 +79,8 @@
     const sec=$('pfSec');if(!sec||sec.dataset.wired)return;sec.dataset.wired='1';
     sec.addEventListener('click',e=>{
       const o=e.target.closest('[data-pf-open]');if(o){PE().open(o.dataset.pfOpen,{returnFocus:o});return;}
+      /* spec 043 FR-040: Delete through askDialog; afterwards focus goes to New (the row is gone) */
+      const dl=e.target.closest('[data-pf-del]');if(dl){PE().remove(dl.dataset.pfDel,{returnFocus:dl}).then(async ok=>{if(!ok)return;await repaintProfiles();const n=$('pfNew');if(n)n.focus();});return;}
       if(e.target.closest('#pfNew'))PE().newProfile({returnFocus:$('pfNew')});
     });
   }

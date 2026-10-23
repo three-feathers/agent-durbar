@@ -114,6 +114,19 @@ export function agentDirsFor(folders: readonly string[], home = os.homedir()): s
   return [...new Set(folders)].map((f) => path.join(f, '.github', 'agents')).concat(path.join(home, '.copilot', 'agents'));
 }
 
+/** The part of the SDK's `session.rpc.agent` that FR-041 uses; `reload` is @experimental and may be missing in another SDK. */
+export type AgentRpc = { reload?: () => Promise<unknown> } | undefined;
+/** spec 043 FR-041: true when the runtime read its agent files again; false (never a throw) when it cannot. */
+export async function reloadAgentsRpc(rpc: AgentRpc): Promise<boolean> {
+  if (!rpc || typeof rpc.reload !== 'function') return false;
+  try {
+    await rpc.reload();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** spec 043 FR-001: an SDK agent as a generic profile; undefined for sub-agent-only agents. */
 export function profileOf(a: { id?: unknown; name?: unknown; displayName?: unknown; description?: unknown; path?: unknown; source?: unknown; userInvocable?: unknown; tools?: unknown; model?: unknown; mcpServers?: unknown }, folders: readonly string[] = []): AgentProfile | undefined {
   const id = typeof a.id === 'string' && a.id ? a.id : typeof a.name === 'string' ? a.name : '';
@@ -782,6 +795,12 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) return [];
     const r = (await live.session.rpc.agent.list()) as { agents?: unknown[] } | undefined;
     return (r?.agents ?? []).map((a) => profileOf(a as Parameters<typeof profileOf>[0], live.folders ?? [live.cwd])).filter((p): p is AgentProfile => !!p);
+  }
+
+  /** spec 043 FR-041: read the agent files again (`rpc.agent.reload`, @experimental), so a new or deleted file shows in the list. */
+  async reloadAgentProfiles(sessionId: string): Promise<boolean> {
+    const live = this.sessions.get(sessionId);
+    return live ? reloadAgentsRpc(live.session.rpc.agent as unknown as AgentRpc) : false;
   }
 
   /** spec 043 FR-002: select a custom agent for the next turns, or the default agent (null). The runtime confirms with an event. */

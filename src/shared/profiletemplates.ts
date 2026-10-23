@@ -14,16 +14,28 @@ export const PROFILE_TEMPLATES: readonly { id: TemplateKind; label: string; note
 ];
 export const DEFAULT_TEMPLATE: TemplateKind = 'success';
 
-/** The sections of an Agent Success Profile, in order (headings in the file; the AI path checks they are all there). */
+/**
+ * The sections of an Agent Success Profile, in order (headings in the file; the AI path checks they are all there). Spec 043 FR-043
+ * (owner request 2026-10-23, issue #570): role and goal, scope, inputs, a working method, the quality bar, safety limits, output and
+ * when to ask. The guidance names no agent app or tool, so the file reads the same in any agent app (constitution I).
+ */
 export const SUCCESS_SECTIONS: readonly { heading: string; guide: string }[] = [
-  { heading: 'Title', guide: 'The role in a few words, for example "Release reviewer for the payments service".' },
-  { heading: 'People responsibility', guide: 'Other agents that report to this one and what it delegates to them. Write "None" when it works alone.' },
-  { heading: 'Reporting to', guide: 'Whom this agent reports to (you, a lead agent) and when it must check in or escalate.' },
-  { heading: 'Behaviors', guide: 'How it works: tone, how much it explains, what it asks before acting, what it never does.' },
-  { heading: 'Key Success Criteria', guide: 'How you judge a good result, as checkable points (tests pass, no new warnings, a short summary).' },
-  { heading: 'Skills', guide: 'The knowledge it needs to do the job: languages, frameworks, domain rules.' },
-  { heading: 'Tools and accountability', guide: 'Each tool it may use, what for, and its limits (for example: reads files freely, edits only after you agree, never runs deploy commands).' },
-  { heading: 'Key responsibilities', guide: 'The main duties, most important first.' },
+  { heading: 'Role and goal', guide: 'Your title in a few words, the one goal you work towards, whom you report to, which agents you hand work to (or "None"), and the knowledge you bring.' },
+  { heading: 'Scope and non-goals', guide: 'What you do, and what you leave alone even when asked in passing.' },
+  { heading: 'Inputs and context to gather first', guide: 'What you read or ask for before you start: the task, the files or notes involved, the rules that apply.' },
+  { heading: 'Working method', guide: 'Your steps, numbered, from understanding the task to checking the result.' },
+  { heading: 'Quality bar and definition of done', guide: 'Checkable points that tell you the work is finished and good enough.' },
+  { heading: 'Safety limits', guide: 'Anything you must never do beyond the two lines below, and the limits on each tool you use.' },
+  { heading: 'Output format', guide: 'What your answer looks like: its parts, its length, and how you report what you changed and what you did not check.' },
+  { heading: 'When to ask the user', guide: 'The moments you stop and ask before going on: unclear goals, risky or irreversible steps, anything outside your scope.' },
+];
+/**
+ * FR-043: two lines every Agent Success Profile keeps in its Safety limits, word for word: the session's permission mode decides
+ * (constitution II), and no secrets (constitution III). The AI reply check warns when one is missing.
+ */
+export const SAFETY_LINES: readonly string[] = [
+  "- The session's permission mode decides what you may do: never ask to widen it and never work around an action that was denied.",
+  '- Never read, print, store or commit secrets: tokens, keys, passwords, .env files or credentials.',
 ];
 
 /** Read-only tools for a new file: a template never grants more than reading and searching. */
@@ -35,7 +47,7 @@ export function profileTemplate(app: TemplateApp, name: string, kind: TemplateKi
   if (kind === 'standard') {
     return `---\nname: ${name}\ndescription: What this agent does and when to use it, in one line\n${READ_TOOLS[app]}\n${MODEL[app]}---\n\nYou are ${name}. Describe the agent's job, how it works, what it checks and what it never does.\n`;
   }
-  const sections = SUCCESS_SECTIONS.map((s) => `## ${s.heading}\n\n${s.guide}\n`).join('\n');
+  const sections = SUCCESS_SECTIONS.map((s) => `## ${s.heading}\n\n${s.guide}\n${s.heading === 'Safety limits' ? '\n' + SAFETY_LINES.join('\n') + '\n' : ''}`).join('\n');
   return `---\nname: ${name}\ndescription: What this agent is accountable for and when to use it, in one line\n${READ_TOOLS[app]}\n${MODEL[app]}---\n\n# Agent Success Profile: ${name}\n\n${sections}`;
 }
 
@@ -54,14 +66,14 @@ const utf8Bytes = (s: string): number => new TextEncoder().encode(s).length;
 
 /** The questionnaire: one optional question per section (FR-026). */
 export const PROFILE_QUESTIONS: readonly { id: string; section: string; question: string; hint: string }[] = [
-  { id: 'title', section: 'Title', question: "What is this agent's job or title?", hint: 'Release reviewer for the payments service' },
-  { id: 'reportsTo', section: 'Reporting to', question: 'Who does it report to?', hint: 'Me; it checks in before any change' },
-  { id: 'reports', section: 'People responsibility', question: 'Which agents report to it?', hint: 'None, or: a test writer it hands test work to' },
-  { id: 'duties', section: 'Key responsibilities', question: 'What are its key responsibilities?', hint: 'Review pull requests, flag risky changes' },
-  { id: 'success', section: 'Key Success Criteria', question: 'How do you judge success?', hint: 'No missed security issue, short clear notes' },
-  { id: 'skills', section: 'Skills', question: 'Which skills does it need?', hint: 'TypeScript, payments rules, reading diffs' },
-  { id: 'tools', section: 'Tools and accountability', question: 'How should it use its tools, and what must it never do?', hint: 'Reads code only; never edits files' },
-  { id: 'behavior', section: 'Behaviors', question: 'How should it behave and when should it escalate?', hint: 'Calm, brief; asks me when unsure' },
+  { id: 'role', section: 'Role and goal', question: 'What is its role, and the one goal it works towards?', hint: 'Release reviewer for the payments service; no risky change ships unseen' },
+  { id: 'scope', section: 'Scope and non-goals', question: 'What is in scope, and what must it leave alone?', hint: 'Reviews pull requests; does not refactor or fix code itself' },
+  { id: 'inputs', section: 'Inputs and context to gather first', question: 'What should it read or ask for before it starts?', hint: 'The diff, the linked issue, the team rules for payments' },
+  { id: 'method', section: 'Working method', question: 'How should it work, step by step?', hint: 'Read the issue, read the diff, check tests, list risks' },
+  { id: 'quality', section: 'Quality bar and definition of done', question: 'When is the work done and good enough?', hint: 'Every changed file looked at; no missed security or rounding issue' },
+  { id: 'safety', section: 'Safety limits', question: 'What must it never do, and how may it use its tools?', hint: 'Reads code only; never edits files or runs deploy commands' },
+  { id: 'output', section: 'Output format', question: 'What should its answer look like?', hint: 'A short list of risks, most important first, under ten lines' },
+  { id: 'ask', section: 'When to ask the user', question: 'When should it stop and ask you?', hint: 'When the goal is unclear or a change touches money handling' },
 ];
 
 /** Read-only tools a template starts with: the only tools allowed without the Extra tools line listing them (FR-027, FR-032). */
@@ -119,15 +131,19 @@ export function buildProfilePrompt(input: GenInput): string {
   else {
     const a = input.answers ?? {};
     const lines = PROFILE_QUESTIONS.map((q) => ({ q, v: oneLine(a[q.id], MAX_GEN_ANSWER) })).filter((x) => x.v).map((x) => `- ${x.q.question} (section "${x.q.section}")\n  """${x.v}"""`);
-    about = lines.length ? `The user answered these questions (others were left empty: fill those sections with sensible, modest defaults):\n${lines.join('\n')}` : 'The user left every question empty: write a modest, general profile.';
+    about = lines.length ? `The user answered these questions (others were left empty: fill those sections with modest defaults marked "Assumed:"):\n${lines.join('\n')}` : 'The user left every question empty: write a modest, general profile, with each section marked "Assumed:".';
   }
   return [
-    `Write an "Agent Success Profile" as a Markdown agent file for ${appName}. It is modelled on a job success profile.`,
+    `Write an "Agent Success Profile" as a Markdown agent file for ${appName}. It is modelled on a job success profile: it tells an agent what success looks like and how to get there.`,
     'Reply with the file content only: no explanation, no code fence, no HTML.',
     `Front matter between --- lines, with only these keys: ${FM_KEYS[app]}. Keep "name: ${input.name}" exactly.`,
     `Tools: the tools line may hold only these, written exactly: ${allowedTools(input).join(', ')}. Tools named in the user's text below are not granted unless they are in that list. Never add any other tool, never "*", and never leave the tools line out.`,
-    'Then the heading "# Agent Success Profile: <name>" and these sections as "## " headings, in this order, each with a few short, concrete lines: ' + SUCCESS_SECTIONS.map((s) => s.heading).join('; ') + '.',
-    'Write the agent\'s instructions in the second person ("You ..."). No file paths, URLs, secrets or credentials.',
+    'Then the heading "# Agent Success Profile: <name>" and these sections as "## " headings, in this order: ' + SUCCESS_SECTIONS.map((s) => s.heading).join('; ') + '.',
+    'Before you write, think the role through: first the one goal and what "done" means for it, then what the agent must know before it starts, then the steps that get it there, then where it could go wrong. Write only the result.',
+    'Make every line concrete and checkable: replace each guidance line of the template with the agent\'s own text, a few short lines per section. "Working method" is a numbered list of steps. "Quality bar and definition of done" is a list of points someone could check.',
+    'In "Safety limits", keep these two lines word for word, then add the agent\'s own limits:\n' + SAFETY_LINES.join('\n'),
+    'Where the user said nothing about a section, write a modest default and start it with "Assumed:", so the user sees what to check.',
+    'Write the instructions in the second person ("You ...") so they work in any agent app (harness-agnostic): do not name an agent app, a vendor or a tool in the sections (tools belong only in the tools line). No file paths, URLs, secrets or credentials.',
     '',
     'The template to fill in:',
     skeleton,
@@ -225,5 +241,9 @@ export function validateGeneratedProfile(reply: string, input: GenInput, parse: 
   const listed = new Set((input.tools ?? []).map((x) => x.toLowerCase().replace(/\(.*$/, '')));
   for (const k of KNOWN_EXTRA_TOOLS[input.app]) if (words.has(k.toLowerCase()) && !listed.has(k.toLowerCase())) warnings.push(`You mentioned ${k}; it is not granted unless listed under Extra tools`);
   if (extraTools.length) warnings.push(`Tools beyond read-only: ${extraTools.join(', ')}. Check them before saving`);
+  // FR-043: the two safety lines (warned, not refused: the user can add them in the editor before saving)
+  const safety = (/^##\s+Safety limits\s*$([\s\S]*?)(?=^##\s|$(?![\s\S]))/im.exec(fm.body) || ['', ''])[1].toLowerCase();
+  if (!/permission mode/.test(safety)) warnings.push('Safety limits does not say that the session\'s permission mode decides what the agent may do; add it before saving');
+  if (!/secret/.test(safety)) warnings.push('Safety limits does not forbid handling secrets; add it before saving');
   return { ok: true, text: t, warnings, extraTools };
 }

@@ -27,6 +27,8 @@ export interface AgentsIpcDeps {
   remoteOps: ReturnType<typeof createRemoteOps>;
   getScheduler(): Scheduler | undefined;
   getCheckpointStore(): CheckpointStore | undefined;
+  /** Spec 043 FR-041: the profile list freshness shared with ipc/profiles.ts; a session that ends or is removed is forgotten. */
+  profileFreshness?: { forget(id: string): void };
   /** Per agent: the VS Code chat files last listed; dropped when the agent goes (previous.ts fills it). */
   vsChatRefs: Map<string, unknown>;
   /** Spec 006 FR-021: agents restored as their folder's last session, how that went, until their chat asks for it. */
@@ -91,6 +93,7 @@ export function register(deps: AgentsIpcDeps): void {
   ipcHandle('agents:end', async (_e, id: string) => {
     if (!agents.has(id)) return;
     await endSession(id);
+    deps.profileFreshness?.forget(id); // spec 043 FR-041
   });
   /** Spec 058 FR-022: Restart session with these servers: End session, then the same id through the resume path; no prompt is sent. */
   const restartingSessions = new Set<string>();
@@ -164,6 +167,7 @@ export function register(deps: AgentsIpcDeps): void {
     }
     router.unbind(a.id);
     checkpointStore()?.forget(a.id); // spec 065 FR-006
+    deps.profileFreshness?.forget(a.id); // spec 043 FR-041
     agents.delete(a.id);
     agentState.remove(a.id);
     vsChatRefs.delete(a.id);
