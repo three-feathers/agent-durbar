@@ -10,7 +10,7 @@
  *   5. open the chat at the request from its desk's pending line (openAtRequest), when the office shows one.
  * After each step: html (the page), body, .workspace, #floor, #panel and .panel-in have scrollTop and scrollLeft 0, NO scroll event
  * reached any of them during the step (so the safety net did not have to hide a regression), and the chat header is inside the window.
- * 6. the page is scrolled on purpose: the safety net (DurbarScroll.pin) puts it back to 0.
+ * 6. a tall block makes the page scrollable and the page is scrolled on purpose: the safety net (DurbarScroll.pin) puts it back to 0.
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const { helpers, jsLiteral } = require('./driver-helpers');
@@ -76,8 +76,14 @@ module.exports = async (ctx) => {
     } else console.log('[chat-no-scroll]', at, 'no pending line in the office: step 5 skipped');
     // 6. the safety net: a forced scroll of the page and of the chat frame is put back
     if (!(await js(`document.body.classList.contains('panel-open')`))) await open(w, h);
-    await js(`document.scrollingElement.scrollTop=60;document.querySelector('.panel-in').scrollTop=40`);
-    assert.ok(await until(`${FRAME}.every(e=>!e.scrollTop&&!e.scrollLeft)`, 3000), `${at}: the safety net puts the page back: ${JSON.stringify(await frame())}`);
+    // a tall block makes the page itself scrollable (as the overflowing panel was in issue #638), then the page is scrolled on purpose
+    const forced = await js(`(()=>{const d=document.createElement('div');d.id='tallProbe';d.style.cssText='flex:none;height:3000px';document.body.appendChild(d);
+      document.scrollingElement.scrollTop=60;return document.scrollingElement.scrollTop})()`);
+    assert.ok(forced > 0, `${at}: the forced scroll moved the page first (else this step proves nothing): ${forced}`);
+    const back = await until(`${FRAME}.every(e=>!e.scrollTop&&!e.scrollLeft)`, 3000);
+    const after = await frame();
+    await js(`document.getElementById('tallProbe').remove()`);
+    assert.ok(back, `${at}: the safety net puts the page back: ${JSON.stringify(after)}`);
     console.log('[chat-no-scroll]', at, 'ok');
   }
   console.log('[chat-no-scroll] all checks passed');
