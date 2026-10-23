@@ -81,3 +81,14 @@ export function codexAccount(r: unknown): AccountIdentity {
   if (a.type === 'amazonBedrock') return { status: 'signed-in', service: 'Amazon Bedrock', method: 'provider' };
   return { status: 'signed-in' };
 }
+
+/**
+ * Spec 051 FR-018: Copilot's plan as the runtime reports it (`copilotPlan` of `session.gitHubAuth.getStatus`, for example "individual",
+ * "business", "enterprise"), as a label: "Copilot Individual". The word "copilot" inside the value is dropped; nothing is guessed from
+ * quotas. Undefined when the runtime does not say.
+ */
+export function copilotPlanLabel(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const w = planWord(v.replace(/copilot/gi, ' '));
+  return w ? `Copilot ${w}` : undefined;
+}

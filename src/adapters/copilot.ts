@@ -50,7 +50,7 @@ import type { HandoffResult } from './handoff';
 import { sessionIdOk } from '../shared/sessionid';
 import { allowedRemoteUrl, cleanRemoteError, isRemoteVisibility } from '../shared/remote';
 import type { RemoteState } from '../shared/remote';
-import { copilotAccount } from './accounts';
+import { copilotAccount, copilotPlanLabel } from './accounts';
 import type { AccountIdentity } from '../shared/account';
 
 const IMAGE_MIME: Record<string, string> = {
@@ -423,9 +423,45 @@ export class CopilotAdapter implements AgentAdapter {
    */
   async accountInfo(): Promise<AccountIdentity> {
     try {
-      return copilotAccount(await (await this.getClient()).getAuthStatus());
+      const client = await this.getClient();
+      const id = copilotAccount(await client.getAuthStatus());
+      if (id.status !== 'signed-in') return id;
+      const plan = await this.copilotPlan(client).catch(() => undefined);
+      return plan ? { ...id, plan } : id;
     } catch {
       return { status: 'unknown' };
+    }
+  }
+
+  /** How long the plan may take; the account line comes without a plan after that (spec 051 FR-018). Protected for tests. */
+  protected planTimeoutMs = 3000;
+
+  /**
+   * Spec 051 FR-018 (owner, 2026-10-23): the Copilot plan, which only a session's `gitHubAuth.getStatus()` reports (`copilotPlan`; the
+   * client-level `getAuthStatus()` has none). A throw-away session like the one-shot's (`oneShotConfig`: no tools, no MCP, a temp
+   * folder), with no message sent, so nothing is billed; it is disconnected and deleted, and its folder removed, in a `finally`. Only
+   * `copilotPlan` is read (the login and message in the same answer are dropped). Undefined when the runtime does not say.
+   */
+  private async copilotPlan(client: CopilotClient): Promise<string | undefined> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-acct-'));
+    let session: CopilotSession | undefined;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const config = { ...oneShotConfig(dir), onPermissionRequest: async (): Promise<PermissionRequestResult> => ({ kind: 'reject', feedback: 'Agent Durbar allows no tools here.' }) as PermissionRequestResult };
+      session = await client.createSession(config as unknown as SessionConfig);
+      const auth = (session.rpc as unknown as { gitHubAuth?: { getStatus?: () => Promise<unknown> } }).gitHubAuth;
+      if (typeof auth?.getStatus !== 'function') return undefined;
+      const limit = new Promise<undefined>((res) => { timer = setTimeout(() => res(undefined), this.planTimeoutMs); });
+      const st = await Promise.race([auth.getStatus(), limit]);
+      return copilotPlanLabel(st && typeof st === 'object' ? (st as { copilotPlan?: unknown }).copilotPlan : undefined);
+    } finally {
+      clearTimeout(timer);
+      if (session) {
+        const id = session.sessionId;
+        await session.disconnect().catch(() => undefined);
+        await client.deleteSession(id).catch(() => undefined);
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   }
 

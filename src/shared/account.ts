@@ -28,6 +28,10 @@ export interface AccountView {
   text: string;
   masked?: string;
   name?: string;
+  /** FR-018: the plan the app reports ("Claude Max", "ChatGPT Plus", "Copilot Individual"); not personal data, never logged either. */
+  plan?: string;
+  /** FR-018: `text` without the plan, for Settings, which shows the plan on its own line in place of the generic plan blurb. */
+  bare?: string;
 }
 
 export const NAME_MAX = 80;
@@ -77,14 +81,14 @@ const METHOD_TEXT: Record<AccountMethod, string> = {
  * - signed in, nothing else: "Signed in; the app does not say which account";
  * - "Not signed in" / "Account unknown".
  */
-export function accountLine(a: AccountIdentity | undefined | null, o: { mask?: boolean } = {}): string {
+export function accountLine(a: AccountIdentity | undefined | null, o: { mask?: boolean; noPlan?: boolean } = {}): string {
   if (!a || typeof a !== 'object') return 'Account unknown';
   if (a.status === 'signed-out') return 'Not signed in';
   if (a.status !== 'signed-in') return 'Account unknown';
   const clear = cleanName(a.name);
   const name = clear && o.mask ? maskName(clear) : clear;
   const service = cleanName(a.service, WORD_MAX);
-  const plan = cleanName(a.plan, WORD_MAX);
+  const plan = o.noPlan ? undefined : cleanName(a.plan, WORD_MAX);
   const how = a.method && Object.prototype.hasOwnProperty.call(METHOD_TEXT, a.method) ? METHOD_TEXT[a.method] : '';
   if (name) {
     if (plan) return `Signed in as ${name} · ${plan}`;
@@ -106,6 +110,11 @@ export function accountView(a: AccountIdentity | undefined | null): AccountView 
   if (name) {
     view.masked = maskName(name);
     view.name = name;
+  }
+  const plan = status === 'signed-in' && a ? cleanName(a.plan, WORD_MAX) : undefined;
+  if (plan) {
+    view.plan = plan;
+    view.bare = accountLine(a, { mask: true, noPlan: true });
   }
   return view;
 }

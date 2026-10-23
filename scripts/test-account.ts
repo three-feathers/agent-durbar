@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { accountLine, accountView, cleanName, maskName, planWord, NAME_MAX } from '../src/shared/account';
 import type { AccountIdentity } from '../src/shared/account';
-import { claudeAccount, codexAccount, copilotAccount } from '../src/adapters/accounts';
+import { claudeAccount, codexAccount, copilotAccount, copilotPlanLabel } from '../src/adapters/accounts';
 import { ClaudeAdapter } from '../src/adapters/claude';
 import { CodexAdapter } from '../src/adapters/codex';
 import { claudeAuthStatus, claudeLoggedIn, nodeExec } from '../src/adapters/detect';
@@ -38,6 +38,15 @@ class AuthFakeClient extends FakeClient {
   }
 }
 
+// a promise that never settles empties the event loop and Node exits 0 without the last line: count that as a failure
+let finished = false;
+process.on('exit', (code) => {
+  if (!finished && code === 0) {
+    console.error('test:account did not finish (a call never settled)');
+    process.exitCode = 1;
+  }
+});
+
 void (async () => {
   // ---- 1. the line (FR-012)
   {
@@ -60,7 +69,21 @@ void (async () => {
     assert.strictEqual(accountLine({ status: 'signed-in', name: 'x', method: 'nope' } as unknown as AccountIdentity), 'Signed in as x');
     // FR-016: the view's line is masked; the clear name travels only for the Settings reveal
     assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'a' }), { status: 'signed-in', text: 'Signed in as •••', masked: '•••', name: 'a' });
-    assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'vikram@example.com', plan: 'Claude Pro' }), { status: 'signed-in', text: 'Signed in as v•••@example.com · Claude Pro', masked: 'v•••@example.com', name: 'vikram@example.com' });
+    assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'vikram@example.com', plan: 'Claude Pro' }), { status: 'signed-in', text: 'Signed in as v•••@example.com · Claude Pro', masked: 'v•••@example.com', name: 'vikram@example.com', plan: 'Claude Pro', bare: 'Signed in as v•••@example.com' });
+    // FR-018: the plan on its own, and the Settings line without it
+    assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'sim@example.com', service: 'Claude', plan: 'Claude Max', method: 'account' }), { status: 'signed-in', text: 'Signed in as s•••@example.com · Claude Max', masked: 's•••@example.com', name: 'sim@example.com', plan: 'Claude Max', bare: 'Signed in as s•••@example.com (Claude)' });
+    assert.deepStrictEqual(accountView({ status: 'signed-in', plan: 'ChatGPT Plus' }), { status: 'signed-in', text: 'Signed in · ChatGPT Plus', plan: 'ChatGPT Plus', bare: 'Signed in; the app does not say which account' });
+    assert.deepStrictEqual(accountView({ status: 'signed-out', plan: 'Claude Pro' }), { status: 'signed-out', text: 'Not signed in' }, 'no plan without a sign-in');
+    assert.deepStrictEqual(accountView({ status: 'unknown', plan: 'Claude Pro' }), { status: 'unknown', text: 'Account unknown' });
+    assert.strictEqual(accountView({ status: 'signed-in', name: 'o', plan: 'x\ny' }).plan, 'x y', 'the plan is one clean line');
+    assert.strictEqual(copilotPlanLabel('individual'), 'Copilot Individual');
+    assert.strictEqual(copilotPlanLabel('business'), 'Copilot Business');
+    assert.strictEqual(copilotPlanLabel('free_limited_copilot'), 'Copilot Free limited');
+    assert.strictEqual(copilotPlanLabel('copilot'), undefined, 'nothing left: no plan');
+    assert.strictEqual(copilotPlanLabel('unknown'), undefined);
+    assert.strictEqual(copilotPlanLabel(''), undefined);
+    assert.strictEqual(copilotPlanLabel(3), undefined);
+    assert.strictEqual(copilotPlanLabel(null), undefined);
     assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli' }), { status: 'signed-in', text: 'Signed in as o••• (GitHub, through the GitHub CLI)', masked: 'o•••', name: 'octocat' });
     assert.deepStrictEqual(accountView({ status: 'signed-in', service: 'OpenAI', method: 'api-key' }), { status: 'signed-in', text: 'Signed in with an OpenAI API key' }, 'no name: nothing to mask or reveal');
     assert.deepStrictEqual(accountView({ status: 'signed-out', name: 'stale@example.com' }), { status: 'signed-out', text: 'Not signed in' }, 'a signed-out answer carries no name');
@@ -150,10 +173,46 @@ void (async () => {
   {
     const c = new AuthFakeClient();
     const ad = new FakeCopilot(c);
+    (ad as unknown as { planTimeoutMs: number }).planTimeoutMs = 30;
     const debug: string[] = [];
     ad.debug = (m) => debug.push(m);
-    assert.deepStrictEqual(await ad.accountInfo(), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli' });
+    assert.deepStrictEqual(await ad.accountInfo(), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli', plan: 'Copilot Individual' });
     assert.deepStrictEqual(c.authCalls, ['getAuthStatus'], 'only the local status: no quota, no model call');
+    // FR-018: the plan comes from a throw-away session: no tools, no MCP, a temp folder, no message, then disconnected, deleted and removed
+    {
+      const sess = c.last as unknown as { calls: Array<{ name: string }>; config: Record<string, unknown>; sessionId: string };
+      assert.deepStrictEqual(sess.calls.map((x) => x.name), ['gitHubAuth.getStatus', 'disconnect'], 'only the status call: nothing is sent');
+      assert.deepStrictEqual(sess.config.availableTools, []);
+      assert.deepStrictEqual(sess.config.mcpServers, {});
+      assert.ok(Array.isArray(sess.config.excludedTools) && (sess.config.excludedTools as string[]).includes('mcp:*'));
+      assert.ok(typeof sess.config.workingDirectory === 'string' && /durbar-acct-/.test(sess.config.workingDirectory as string) && !fs.existsSync(sess.config.workingDirectory as string), 'its temp folder is removed');
+      assert.ok((c as unknown as { deleted: string[] }).deleted.includes(sess.sessionId), 'the session is deleted');
+    }
+    // the plan is optional: an error, no method, no plan, a hang (time limit) give the account without a plan
+    for (const [label, prep] of [
+      ['error', (x: Record<string, unknown>) => { x.statusFail = 'boom ' + MARK; }],
+      ['no plan', (x: Record<string, unknown>) => { x.statusAnswer = { isAuthenticated: true, login: MARK }; }],
+      ['plan unknown', (x: Record<string, unknown>) => { x.statusAnswer = { copilotPlan: 'unknown' }; }],
+      ['no method', (x: Record<string, unknown>) => { (x.rpc as Record<string, unknown>).gitHubAuth = undefined; }],
+      ['hangs', (x: Record<string, unknown>) => { x.statusHangs = true; }],
+    ] as Array<[string, (x: Record<string, unknown>) => void]>) {
+      const c2 = new AuthFakeClient();
+      const orig = c2.createSession.bind(c2);
+      c2.createSession = async (cfg: Record<string, unknown>) => { const sx = await orig(cfg); prep(sx as unknown as Record<string, unknown>); return sx; };
+      const ad2 = new FakeCopilot(c2);
+      (ad2 as unknown as { planTimeoutMs: number }).planTimeoutMs = 30;
+      assert.deepStrictEqual(await ad2.accountInfo(), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli' }, `no plan when ${label}`);
+      assert.ok((c2 as unknown as { deleted: string[] }).deleted.length === 1, `the session is deleted when ${label}`);
+    }
+    {
+      const c3 = new AuthFakeClient();
+      c3.createSession = async () => { throw new Error('no sessions'); };
+      assert.deepStrictEqual(await new FakeCopilot(c3).accountInfo(), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli' }, 'no session possible: no plan');
+      const c4 = new AuthFakeClient();
+      c4.answer = { isAuthenticated: false };
+      await new FakeCopilot(c4).accountInfo();
+      assert.strictEqual((c4 as unknown as { created: unknown[] }).created.length, 0, 'signed out: no session is made');
+    }
     c.answer = { isAuthenticated: false };
     assert.deepStrictEqual(await ad.accountInfo(), { status: 'signed-out' });
     c.answer = {};
@@ -366,16 +425,17 @@ void (async () => {
     // the simulator's fake identities are what accountView makes of fake answers (so the screenshots match the real wording, masked)
     const sim = fs.readFileSync(path.join(ROOT, 'src/renderer/sim.ts'), 'utf8');
     for (const a of [
+      { status: 'signed-in', name: 'octo-sim', service: 'GitHub', method: 'gh-cli', plan: 'Copilot Individual' },
       { status: 'signed-in', name: 'octo-sim', service: 'GitHub', method: 'gh-cli' },
-      { status: 'signed-in', name: 'sim@example.com', plan: 'Claude Pro' },
+      { status: 'signed-in', name: 'sim@example.com', service: 'Claude', plan: 'Claude Pro', method: 'account' },
       { status: 'signed-in', service: 'Anthropic', method: 'api-key' },
-      { status: 'signed-in', name: 'sim@example.com', plan: 'ChatGPT Plus' },
+      { status: 'signed-in', name: 'sim@example.com', service: 'ChatGPT', plan: 'ChatGPT Plus', method: 'account' },
       { status: 'unknown' },
       { status: 'signed-out' },
     ] as AccountIdentity[]) {
       const v = accountView(a);
-      assert.ok(sim.includes(`text: '${v.text}'`), `the simulator shows "${v.text}"`);
-      if (v.masked) assert.ok(sim.includes(`masked: '${v.masked}', name: '${v.name}'`), `the simulator's reveal for ${v.text}`);
+      const lit = '{ ' + Object.entries(v).map(([k, x]) => `${k}: '${x}'`).join(', ') + ' }';
+      assert.ok(sim.includes(lit), `the simulator has ${lit}`);
     }
     // FR-016: the picker tooltips and About agent apps read the masked line only, never the clear name
     const appJs = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
@@ -398,6 +458,7 @@ void (async () => {
     assert.ok(!ok.errorCode && ok.stdout.length === small.length, 'under the cap the output is whole');
   }
 
+  finished = true;
   console.log('test:account ok');
 })().catch((e) => {
   console.error(e);
