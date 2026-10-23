@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { EventMapper } from '../src/adapters/map';
+import { EventMapper, copilotErrorClass } from '../src/adapters/map';
 import { eventProblems } from '../src/adapters/eventguard';
 import type { EventBody, RawEvent } from '../src/adapters/map';
 
@@ -141,6 +141,32 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.deepStrictEqual(m2[2].servers, []);
   const t2 = out2.find((e) => e.type === 'toolCall') as { mcpServer?: string };
   assert.strictEqual(t2.mcpServer, undefined, 'built-in tools carry no MCP fields');
+}
+// Spec 058 FR-091 (issue #603, T142): Copilot's `errorClassification` -> errorClass, known values only; a later state drops it.
+{
+  const cases: [string, string | undefined][] = [
+    ['os_not_found', 'not-found'], ['config_invalid', 'config'], ['os_permission_denied', 'permission'], ['os_connection_refused', 'refused'],
+    ['os_network_unreachable', 'refused'], ['os_connection_closed', 'disconnected'], ['process_linux_exited', 'exited'], ['process_windows_crashed', 'exited'],
+    ['process_macos_terminated', 'exited'], ['timeout_initialize', 'timeout'], ['timeout_connection', 'timeout'], ['timeout_subscription', 'timeout'],
+    // not mapped: never guessed
+    ['process_spawn_failed', undefined], ['process_linux_launch_failed', undefined], ['protocol_other', undefined], ['http_4xx_other', undefined],
+    ['lifecycle_cancelled', undefined], ['unclassified_unknown', undefined], ['config_integration_unavailable', undefined], ['os_resource_exhausted', undefined],
+    ['process_beos_exited', undefined], ['toString', undefined], ['', undefined],
+  ];
+  for (const [v, want] of cases) assert.strictEqual(copilotErrorClass(v), want, v);
+  for (const bad of [undefined, null, 5, {}, ['os_not_found']]) assert.strictEqual(copilotErrorClass(bad), undefined);
+  const out = run([
+    { type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'pw', status: 'pending', source: 'user', transport: 'stdio' }] } },
+    { type: 'session.mcp_server_status_changed', data: { serverName: 'pw', status: 'failed', error: 'spawn playwright ENOENT', errorClassification: 'os_not_found', configSource: 'user' } },
+    { type: 'session.mcp_server_status_changed', data: { serverName: 'pw', status: 'pending' } },
+    { type: 'session.mcp_server_status_changed', data: { serverName: 'pw', status: 'failed', errorClassification: 'something_new' } },
+    { type: 'session.mcp_server_status_changed', data: { serverName: 'pw', status: 'connected', errorClassification: 'os_not_found' } },
+  ]);
+  const ms = (out.filter((e) => e.type === 'mcp') as { servers: { name: string; status: string; errorClass?: string; transport?: string }[] }[]).map((m) => m.servers[0]);
+  assert.deepStrictEqual(ms.map((x) => [x.status, x.errorClass]), [['pending', undefined], ['failed', 'not-found'], ['pending', undefined], ['failed', undefined], ['connected', undefined]], 'only a failed state carries the class; an unknown value sets none');
+  assert.strictEqual(ms[1].transport, 'stdio', 'the transport from the loaded list is kept');
+  assert.ok(!('errorClass' in ms[0]) && !('errorClass' in ms[3]), 'no empty key');
+  for (const e of out) assert.deepStrictEqual(eventProblems({ ...e, sessionId: 's', timestamp: 1 } as never), [], 'the event guard accepts it');
 }
 // Spec 058 T094: a failed MCP tool with the server's OAuth challenge -> mcpAuth and needs-auth; the next status replaces it.
 {

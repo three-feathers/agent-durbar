@@ -19,6 +19,7 @@ import type { AgentAdapter, McpServerStatus } from '../src/adapters/types';
 import type { AgentInfo } from '../src/shared/api';
 import { endSessionOp } from '../src/main/agentops';
 import { agentMcpReply, mcpRestartOp, mcpRestartSessionOp, validServerName } from '../src/main/mcpsession';
+import { mcpHealthUpdate } from '../src/shared/mcphealth';
 import type { McpReplyInput, RestartDeps, RestartSessionDeps } from '../src/main/mcpsession';
 import { isMethodNotFound, sdkErrorText } from '../src/adapters/copilot';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
@@ -88,6 +89,22 @@ async function main(): Promise<void> {
       assert.strictEqual(r.app, ad.displayName, 'the reply names the agent app');
       assert.strictEqual(agentMcpReply({ ...base, ad: undefined }).app, undefined, 'no adapter: no name');
       assert.deepStrictEqual([r.live, r.start, r.toggleApplies, r.canRestartSession], [true, 'session', 'live', true]);
+      // Spec 058 FR-092 (issue #603, T142): when each reported state started, whether a failure came after Running, and the transport
+      assert.ok(!('since' in by('notes')) && !('afterRunning' in by('notes')) && !('transport' in by('notes')), 'no health given: no fields');
+      let health = mcpHealthUpdate(undefined, [{ name: 'notes', status: 'connected' }, { name: 'web', status: 'connected' }], 1000);
+      health = mcpHealthUpdate(health, [{ name: 'notes', status: 'failed' }, { name: 'web', status: 'connected' }, { name: 'signed-out', status: 'needs-auth' }], 2000);
+      const r3 = agentMcpReply({ ...base, live: live.map((x) => (x.name === 'web' ? { ...x, transport: 'http' } : x)), health });
+      const by3 = (n: string) => r3.servers.find((x) => x.name === n)!;
+      assert.deepStrictEqual([by3('notes').since, by3('notes').afterRunning], [2000, true], 'failed after Running, at 2000');
+      assert.deepStrictEqual([by3('web').since, by3('web').afterRunning], [1000, undefined], 'only a failure after Running carries the flag');
+      assert.deepStrictEqual([by3('signed-out').since, by3('signed-out').afterRunning], [2000, undefined], 'first seen as needs-auth: not after running');
+      assert.strictEqual(by3('web').transport, 'http');
+      assert.ok(!('since' in by3('later')), 'a server with no reported state has no time');
+      assert.ok(!('since' in by3('rt-only')), 'no mark for it: no time (never invented)');
+      assert.ok(!('transport' in by3('notes')), 'no transport unless the adapter reported one');
+      // a mark for another state than the runtime's current one is not shown (a stale mark never dates a new state)
+      const stale = agentMcpReply({ ...base, health: mcpHealthUpdate(undefined, [{ name: 'notes', status: 'connected' }], 5) });
+      assert.ok(!('since' in stale.servers.find((x) => x.name === 'notes')!), 'mark of another state ignored');
 
       const noMember = agentMcpReply({ ...base, ad: new FakeAdapter({ omit: ['restartMcpServer'] }) });
       assert.ok(noMember.servers.every((x) => !x.canRestart), 'an agent app without restartMcpServer never offers Restart (Codex, FR-032)');

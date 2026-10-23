@@ -11,6 +11,7 @@ import type { AgentAdapter, McpServerStatus } from '../adapters/types';
 import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRestartResult, McpRestartSessionResult } from '../shared/api';
 import { maskMcpError } from './mcpmask';
 import { sourcesFor } from './mcpglobal';
+import type { McpHealthMark } from '../shared/mcphealth';
 
 const NOT_RUNNING = 'This session is not running. Send a message to start it.';
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -45,6 +46,8 @@ export interface McpReplyInput {
   builtin?: ReadonlySet<string>;
   /** Spec 069 FR-061: tools turned off in this agent's folder, by server. */
   toolsOff?: Readonly<Record<string, readonly string[]>>;
+  /** Spec 058 FR-092: when each server's state started and whether a failure came after Running (`mcpHealthUpdate`). */
+  health?: ReadonlyMap<string, McpHealthMark>;
 }
 
 /** `agents:mcp` (spec 019 FR-009, spec 058 FR-020). No path and no secret value: names, states and masked errors only. */
@@ -62,7 +65,10 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const on = defaultOn && !off.has(name);
     // FR-030: Restart only for a server the running session knows (the runtime reported it) and that is switched on
     const canRestart = canRestartAny && on && !!st && st.status !== 'disabled';
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
+    // FR-092: the mark only dates the state it was made for (a stale mark never dates a new state)
+    const hm = st ? i.health?.get(name) : undefined;
+    const mark = hm && hm.status === (st?.status ?? '') ? hm : undefined;
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(mark ? { since: mark.since } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];

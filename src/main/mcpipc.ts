@@ -15,6 +15,8 @@ import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRestartOp } from './mcpsession';
 import { mcpToolsOp } from './mcptoolsop';
 import { McpStore } from './mcpstore';
+import { mcpHealthUpdate } from '../shared/mcphealth';
+import type { McpHealthMark } from '../shared/mcphealth';
 import type { SecretCodec } from './mcpstore';
 
 /**
@@ -79,9 +81,16 @@ export function registerMcpIpc(deps: {
       return []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
     }
   };
+  /** Spec 058 FR-092: per session, when each server's state started and whether a failure came after Running (dropped when it stops). */
+  const health = new Map<string, Map<string, McpHealthMark>>();
   router.onEvent((e) => {
-    if (e.type === 'mcp') live.set(e.sessionId, e.servers);
-    else if (e.type === 'status' && e.status === 'stopped') live.delete(e.sessionId);
+    if (e.type === 'mcp') {
+      live.set(e.sessionId, e.servers);
+      health.set(e.sessionId, mcpHealthUpdate(health.get(e.sessionId), e.servers, Date.now()));
+    } else if (e.type === 'status' && e.status === 'stopped') {
+      live.delete(e.sessionId);
+      health.delete(e.sessionId);
+    }
   });
 
   /** The Copilot CLI list is read again on every call, so edits of the file show up the next time a screen opens. */
@@ -179,6 +188,7 @@ export function registerMcpIpc(deps: {
       app: deps.appOf?.(a.id),
       claudeList: (gn.claude ?? []).map((n) => ({ name: n, enabled: !dis.has(claudeOffKey(n)) })),
       toolsOff: s.toolsOffFor(keyOf(a)),
+      health: health.get(a.id),
       global: gn,
       builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
     });

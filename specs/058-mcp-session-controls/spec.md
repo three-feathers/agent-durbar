@@ -867,8 +867,8 @@ composer's MCP chip when a server of that chat failed. Wanted in the next pre-re
   last changed (when an `mcp` event first showed it), whether it was Running since its last start (`pending` starts again, `connected`
   marks it), and for a failed or needs-sign-in state whether it was Running before. The list is dropped when the session stops (End
   session, Restart session). `agents:mcp` adds to each entry with a reported state `since` (epoch milliseconds) and `afterRunning`
-  (true only when it failed after Running), and `transport` when the adapter reported one. The row shows "at 14:02" (local time; with
-  the date when it is not today); the time is when Agent Durbar saw the state, which the row's *More* text says.
+  (true only when it failed after Running), and `transport` when the adapter reported one. The row shows "seen at 14:02" (local time; with
+  the date when it is not today); the time is when Agent Durbar saw the state, which the word "seen" says.
 - **FR-093** `[IMPLEMENTED]` (`test:` test-mcpwords; `sim:` shots-058-mcp-health) **Copy diagnostics.** Every failed or needs-sign-in
   row (chat dialog and Settings live rows) has a *Copy diagnostics* button (named "Copy diagnostics of <server>"; in Settings "...
   for <chat>"). It copies plain text built by `DurbarMcpWords.diagnostics` from the reply only: the server name, the state word, the
