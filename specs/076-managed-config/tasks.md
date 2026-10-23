@@ -8,6 +8,7 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 - [x] T001 Research (vendor docs, `read:` table), spec, plan, tasks, samples (`samples/managed/`, `samples/endpoint/`) and JSON schemas validated against the samples; specs-index block; Q1-Q12 for Vikram
 - [x] T002 Owner answers Q1-Q12 recorded (2026-10-23); Q10 changed to admin token pricing: FR-104 rewritten, FR-106..FR-109, schema and sample updated
 - [x] T003 Security review by Paco's agent (17 items) folded in: threat model, FR-002..FR-005, FR-010..FR-017, FR-040..FR-046, FR-060..FR-066, FR-080..FR-086, FR-100a, FR-120..FR-121a; schemas tightened; `samples/hostile/` fixtures with `probes.json`; R1-R8 for the owners
+- [x] T005 R1-R8 answered by Vikram (2026-10-23, recommended defaults) and recorded under Clarifications
 - [x] T004 A1-A19 accepted by Vikram (2026-10-23): section N (FR-150..FR-197), phases P2-P26, schema keys and sample values
 
 ## P1: loader, closed mode, locks, Organization page, dev variables

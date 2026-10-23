@@ -1,6 +1,6 @@
 # Implementation Plan: 076 managed configuration for organizations
 
-**Spec**: [spec.md](spec.md) · **Samples**: [samples/](samples/) · **Status**: plan for P1-P26; nothing built. Q1-Q12 answered by Vikram 2026-10-23 (Q10: admin token pricing); A1-A19 accepted (section N); security review by Paco's agent folded in; R1-R8 follow their recommended defaults until answered.
+**Spec**: [spec.md](spec.md) · **Samples**: [samples/](samples/) · **Status**: plan for P1-P26; nothing built. Q1-Q12 answered by Vikram 2026-10-23 (Q10: admin token pricing); A1-A19 accepted (section N); security review by Paco's agent folded in; R1-R8 answered by Vikram 2026-10-23 with the recommended defaults.
 
 ## Constitution check
 

@@ -3,12 +3,12 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Managed configuration for organizations: one admin-only config folder (policy.json, MCP list, icon, theme pack) sets the display name and icon, allowed agent apps, MCP lists and endpoints, an agent/profile/skill registry, OpenTelemetry, theme and custom LLMs with admin token pricing, plus the accepted additions (mode lock, proxy and CA, feature switches, installers, signing, spend caps, folder rules, updates, registry/MDM sources, signed config, audit log, retention, rebrand build, legal notice, version pins, endpoint auth, sign-in, vendor settings view); everything set there is locked; a narrow-only user layer; bad config fails closed and visibly
-status: **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test fixtures included; Q1-Q12 answered by Vikram (Q10: admin token pricing); A1-A19 accepted by Vikram as requirements FR-150..FR-197 (signing certificate purchase still needs his OK); Paco's security review (17 items) folded in; open questions R1-R8 wait for the owners
+status: **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test fixtures included; Q1-Q12 answered by Vikram (Q10: admin token pricing); A1-A19 accepted by Vikram as requirements FR-150..FR-197 (signing certificate purchase still needs his OK); Paco's security review (17 items) folded in; R1-R8 answered by Vikram with the recommended defaults
 -->
 
 **Feature Branch**: `076-managed-config`
 **Created**: 2026-10-23
-**Status**: Draft (spec only). Nothing built. Q1-Q12 answered by Vikram on 2026-10-23 (defaults, except Q10: admin token pricing). A1-A19 accepted by Vikram on 2026-10-23 as requirements (section N); the code-signing certificate purchase still needs his explicit OK at purchase time. Security review by Paco's agent (2026-10-23, 17 items) folded in; questions R1-R8 open.
+**Status**: Draft (spec only). Nothing built. Q1-Q12 answered by Vikram on 2026-10-23 (defaults, except Q10: admin token pricing). A1-A19 accepted by Vikram on 2026-10-23 as requirements (section N); the code-signing certificate purchase still needs his explicit OK at purchase time. Security review by Paco's agent (2026-10-23, 17 items) folded in; R1-R8 answered by Vikram on 2026-10-23 (recommended defaults).
 **Input**: Owner request by Vikram (2026-10-23): "Durbar must be packageable and usable in corporate environments. All of it is driven by a config folder (config files plus icons), and anything set there is locked, i.e. not editable in the UI (shown as *Set by your organization*):
 1. change the app display name and icon (the original name stays in About and credits);
 2. restrict which agent apps (harnesses) are allowed;
@@ -805,25 +805,27 @@ All 17 items are folded into this spec: 1 FR-040/FR-043/FR-044; 2 FR-041/FR-121a
 13 schemas and `samples/hostile/`; 14 FR-013/FR-121; 15 FR-081/FR-084/FR-100a/FR-121; 16 FR-080/FR-086/FR-100a; 17 *Threat model*.
 The schema cases from the review's ajv probe are fixtures in `samples/hostile/probes.json` (tasks T018, T019).
 
-### Open questions for the owners (from the review; the spec follows the recommended default until answered)
+### Owner answers to R1-R8 (Vikram, 2026-10-23 06:22 UTC, relayed by his coordinator agent: "Ok")
 
-- **R1** The user layer: off by default when a machine policy exists, and only able to narrow? *Recommended:* yes (applied, FR-003).
-- **R2** Signatures (A10) required in the first version for URL lists in `allowlist` mode and for `updates: auto`? *Recommended:* `auto`
+All eight are **answered with the recommended default** below; the spec already follows them.
+
+- **R1** (answered 2026-10-23, owner: recommended default) The user layer: off by default when a machine policy exists, and only able to narrow? *Recommended:* yes (applied, FR-003).
+- **R2** (answered 2026-10-23, owner: recommended default) Signatures (A10) required in the first version for URL lists in `allowlist` mode and for `updates: auto`? *Recommended:* `auto`
   from a URL registry is refused unless signed (applied, FR-063); URL MCP lists may be unsigned, marked *Unsigned list*, with
   `signing.requireFor` available to require it (FR-046, `[KNOWN GAP]`).
-- **R3** A broken policy: block new turns (history readable) or fall back to the last-known-good policy? *Recommended:* block new turns
+- **R3** (answered 2026-10-23, owner: recommended default) A broken policy: block new turns (history readable) or fall back to the last-known-good policy? *Recommended:* block new turns
   (applied, FR-010/FR-011); a last-known-good copy would sit in the user's profile, where it can be edited.
-- **R4** Move A1 (mode lock) and A19 (dev hooks) into P1? *Recommended:* A19 in P1 (applied, FR-004); A1 as P2 right after, per the
+- **R4** (answered 2026-10-23, owner: recommended default) Move A1 (mode lock) and A19 (dev hooks) into P1? *Recommended:* A19 in P1 (applied, FR-004); A1 as P2 right after, per the
   owner's order.
-- **R5** Registry items installed into `~/.claude/agents` and the like also affect terminal sessions: acceptable? *Recommended:* yes,
+- **R5** (answered 2026-10-23, owner: recommended default) Registry items installed into `~/.claude/agents` and the like also affect terminal sessions: acceptable? *Recommended:* yes,
   said in the install dialog (FR-061).
-- **R6** On a custom model without a price, money caps are shown as not applicable: acceptable, or require a price? *Recommended:*
+- **R6** (answered 2026-10-23, owner: recommended default) On a custom model without a price, money caps are shown as not applicable: acceptable, or require a price? *Recommended:*
   shown plainly by default, with `llm.requirePricing`, `llm.tokenCap` and `caps.requireCap` for admins who need enforcement (FR-108,
   FR-170).
-- **R7** Should the vendor-specific `llm` and `telemetry` validation and mapping live in the adapter modules rather than
+- **R7** (answered 2026-10-23, owner: recommended default) Should the vendor-specific `llm` and `telemetry` validation and mapping live in the adapter modules rather than
   `src/shared/policy.ts` (constitution II)? *Recommended:* yes: one published schema, but `src/shared/policy.ts` validates only the
   vendor-neutral parts and delegates `llm.<app>` and the telemetry mapping to `src/adapters/<app>Policy.ts` (plan D1).
-- **R8** A required stdio MCP server that a user declines at the trust prompt: start sessions without it, or block that folder's
+- **R8** (answered 2026-10-23, owner: recommended default) A required stdio MCP server that a user declines at the trust prompt: start sessions without it, or block that folder's
   sessions? *Recommended:* start without it and show it (FR-044); an organization that needs it enforced uses a remote server.
 
 ## Success Criteria
