@@ -1021,7 +1021,15 @@ adapter sets it). The owners asked to treat MCP as a priority.
 - **SC-091** On the fakes, neither adapter ever sends a callback, a client secret, a redirect address or a cancel the app does not have,
   and no authorization address reaches a log, a debug line or the window (only its host).
 
-#### Open questions for the owner (delta, not answered yet)
+#### Owner answers (Paco, 2026-10-23)
+
+- **Q20: A.** "Signed in: applies with your next message"; the next message runs on a fresh child.
+- **Q21: A.** "Then press Restart on this row" (`mcp_reconnect`).
+- **Q22: A.** The masked error plus the terminal steps; no new code. Paco wasn't asked this one; the recommended default is taken, and he can still change it on the PR.
+- **Q23: A.** One PR per adapter: Claude Code first, with the shared parts, then Codex.
+- **Q24: A.** The T116 CI check is extended to both apps (each dispatch needs the owner's OK), then one run on the owner's Mac.
+
+#### The questions as asked
 
 - **Q20 Codex after a sign-in that is not yet connected.** A) "Signed in: applies with your next message", the next message runs on a
   fresh child (as Q18; recommended: no new behaviour, 0 credits). B) Durbar resumes the thread on a fresh child at once when no turn
