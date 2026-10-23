@@ -136,6 +136,7 @@
     const detOpen=!!x.error&&liveDet.has(k);
     const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-lvdet="1" aria-expanded="${detOpen}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+r.name+' for '+c.name)}">Details</button>`:'';
     const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-lverr="1" aria-label="${esc('Error text of '+r.name+' for '+c.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-lvcopy="1" aria-label="${esc('Copy the error text of '+r.name+' for '+c.name)}">Copy</button></div>`:'';
+    const hh=healthHTML(x,'data-lvdiag="1"','Copy diagnostics of '+r.name+' for '+c.name);
     const rs=x.canRestart&&X.bridge.agentMcpRestart?(liveBusy.has(k)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+r.name+' for '+c.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-lvrs="1" aria-label="${esc('Restart '+r.name+' for '+c.name)}" title="Restart only this server in this chat">Restart</button>`):'';
     /* FR-032's line for an agent app with no per-server Restart (Codex) */
     const noOne=m&&m.o.restart===false&&rp.canRestartSession?`<span class="srv-hint lv-noone">${esc((m.o.appName||'This agent app')+' cannot restart one server; use Restart session with these servers.')}</span>`:'';
@@ -147,7 +148,7 @@
     const oc=m?`<button class="btn sm${auth?' primary':''}" type="button" data-lvopen="1" aria-label="${esc('Open the MCP servers of '+c.name+' in its chat')}">Open in chat</button>`:'';
     const acts=auth?(oc+(rs||rsess?`<details class="scr-more lv-more" data-lvk="${esc(k)}"${liveMore.has(k)?' open':''}><summary data-lvmore="1">More</summary><div class="lv-act">${rs}${rsess}</div></details>`:'')):rs+rsess+oc;
     const authNote=auth&&m?`<span class="srv-hint lv-auth">Sign in from the chat's MCP list: Open in chat.</span>`:'';
-    return `<li class="lv-chat${auth?' auth':''}" data-lvs="${esc(r.name)}" data-lvc="${esc(c.id)}"><div class="lv-top"><b class="lv-who" title="${esc(who)}">${esc(c.name)}</b>${c.folder?`<span class="mtag">${esc(c.folder)}</span>`:''}${stat}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${authNote}${noOne}${det}${detBox}${acts?`<div class="lv-act">${acts}</div>`:''}</li>`;
+    return `<li class="lv-chat${auth?' auth':''}" data-lvs="${esc(r.name)}" data-lvc="${esc(c.id)}"><div class="lv-top"><b class="lv-who" title="${esc(who)}">${esc(c.name)}</b>${c.folder?`<span class="mtag">${esc(c.folder)}</span>`:''}${stat}</div>${hh.why}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${authNote}${noOne}${btnRow(det,hh.diag)}${detBox}${acts?`<div class="lv-act">${acts}</div>`:''}</li>`;
   }
   function liveInner(){
     const W=window.DurbarMcpWords, A=live.agg;
@@ -177,7 +178,7 @@
     const box=$('liveBox');if(!box||!live)return [];
     const f=document.activeElement, inside=f&&box.contains(f);
     const li=inside&&f.closest('[data-lvc],[data-lvn]');
-    const act=!inside?null:['lv','lvdet','lvcopy','lvrs','lvsess','lvopen','lverr','lvmore'].find(a=>f.dataset[a]!==undefined)||null;
+    const act=!inside?null:['lv','lvdet','lvcopy','lvdiag','lvrs','lvsess','lvopen','lverr','lvmore'].find(a=>f.dataset[a]!==undefined)||null;
     const at=li?{s:li.dataset.lvs||li.dataset.lvn,c:li.dataset.lvc||''}:null;
     const sc=box.closest('.scr-body'), top=sc?sc.scrollTop:0;
     box.innerHTML=liveInner();
@@ -213,6 +214,7 @@
     if(e.target.closest('button[data-lvdet]')){if(liveDet.has(k))liveDet.delete(k);else liveDet.add(k);await repaintLive(false);return;}
     if(e.target.closest('button[data-lvcopy]')){void copyText(c.entry.error||'','Copied the error text.');return;}
     const m=X.mcpSession?X.mcpSession(id):null;
+    if(e.target.closest('button[data-lvdiag]')){const rp=live.replies.get(id)||{};void copyDiagnostics(n,c.entry,rp.app||(m&&m.o.appName),m&&m.o.appVersion);return;}
     if(e.target.closest('button[data-lvrs]')){
       if(liveBusy.has(k)||!m)return;
       liveBusy.add(k);
@@ -325,11 +327,13 @@
         <p class="scr-note small" id="aboutCredits">Contributors: ${ab.contributors.map(c=>esc(c.label)).join(', ')}</p>
         <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
     /* spec 051: Settings > Agent apps (install, update, sign in) */
-    let hsSec='';
+    let hsSec='',acctAgain=false;
     if(window.DurbarHarnesses&&window.DurbarHarnesses.available()&&X.bridge.listAdapters){
       let kinds=[],cp=null;try{kinds=(await X.bridge.listAdapters(!!X._hsRefresh))||[];}catch(e){kinds=[];}X._hsRefresh=false;
       if(X.bridge.copilotAuth&&kinds.some(k=>k.id==='copilot'&&k.state==='ready')){try{cp=await X.bridge.copilotAuth();}catch(e){cp=null;}}
       hsSec=window.DurbarHarnesses.sectionHTML(kinds,cp);
+      /* spec 051 FR-014: the account lines are filled in after the paint (Codex needs about 2 s); asked again on open, Check again and after a sign-in */
+      acctAgain=X._acctRefresh==='check'?'check':!!X._acctRefresh;X._acctRefresh=false;
     }
     /* spec 043 FR-010, FR-019: Settings > Agent Success Profiles (custom agents): the profile files of the office's folders and yours */
     const pfSec=profilesOn()?`<section class="scr-sec" id="pfSec" aria-labelledby="pfH">${await profilesInner()}</section>`:'';
@@ -368,6 +372,7 @@
         <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Folder extras…</b> in an agent's MCP menu opens the same list. Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p></details>
       </section></details>${aboutSec}</div>`;
+    if(hsSec)window.DurbarHarnesses.loadAccounts(acctAgain); /* spec 051 FR-014: the account lines fill in after the paint (Codex takes about 2 s) */
     wireHead();
     /* spec 051 FR-008: entry points open Settings at Agent apps */
     let atSec=false; /* a section was asked for (harnesses, mcp, schedules): its heading keeps the focus instead of the h2 */
@@ -1045,6 +1050,26 @@
       X.toast(okMsg,ms||2400).classList.add('ok');
     }catch(e){X.toast('Could not copy to the clipboard.',3200).classList.add('err');}
   }
+  /* Spec 058 FR-090..FR-095 (issue 603): the reason line ("Reason: Not installed (command not found) · seen at 14:02") and the Copy
+     diagnostics button of a failed or needs-sign-in row, shared by a chat's MCP dialog and the Settings live rows. `x` = the agents:mcp
+     entry (main masked its error); `attr` = the button's data attribute. Nothing for other states. */
+  function healthHTML(x,attr,label){
+    const W=window.DurbarMcpWords, rs=W&&W.reasonOf?W.reasonOf(x):null;
+    if(!rs)return {why:'',diag:''};
+    const when=W.whenText(x.since);
+    return {why:`<span class="srv-why" data-reason="${esc(rs.key)}"><b>Reason:</b> ${esc(rs.word)}${when?`<span class="srv-when"> · seen ${esc(when)}</span>`:''}</span>`,
+      diag:`<button class="btn sm srv-diag" type="button" ${attr} aria-label="${esc(label)}" title="Copy a masked summary (server, reason, time, transport, agent app, error) for an issue report">Copy diagnostics</button>`};
+  }
+  /* FR-093: built from the reply only and passed through the shared redact() again (DurbarRedact); nothing is copied if that fails */
+  async function copyDiagnostics(server,x,app,appVersion){
+    const W=window.DurbarMcpWords, R=window.DurbarRedact;
+    /* the shared masking main uses (redact.ts): URL parts and OAuth values, token shapes, env values, then home folders to `~` */
+    const mask=R&&typeof R.redact==='function'&&typeof R.maskSecretUrl==='function'&&typeof R.maskHomePaths==='function'?(t=>R.maskHomePaths(R.maskSecretUrl(t))):null;
+    const text=W&&W.diagnostics?W.diagnostics({server,entry:x,app,appVersion},mask):'';
+    if(!text){X.toast('Could not mask the diagnostics, so nothing was copied.',4200).classList.add('err');return;}
+    await copyText(text,'Copied the diagnostics of '+esc(server)+' (masked).');
+  }
+  const btnRow=(a,b)=>a||b?`<div class="srv-btns">${a}${b}</div>`:'';
   /* Spec 058 FR-021/FR-031 and FR-022/FR-023/FR-027: one server's Restart and Restart session with these servers, shared by a chat's MCP
      dialog and Settings > MCP servers (FR-082), so both places ask, call and report the same way. */
   async function mcpRestartCall(a,name,onSent){
@@ -1084,11 +1109,15 @@
     /* spec 058 FR-065/FR-069 (T102): Sign in. `signBusy` = the call to the app is under way; `waited` = a sign-in this dialog saw open (so a vanished one reads "not finished");
        `signNote` = one line under the row; `openSteps` = servers whose terminal steps are open; `wantFocus` = the control to focus after the next repaint. */
     const signBusy=new Set(), waited=new Set(), signNote=new Map(), openSteps=new Set();
+    /* FR-164 (review on PR 625): a Sign in again of a connected server: its "connected" is the old sign-in until another state was seen */
+    const againWait=new Set(), againSaw=new Set();
     let wantFocus=null, expT=0;
     /* the steps text has its commands in backticks: they show as code, and Copy puts only the commands on the clipboard, one per line */
     const stepParts=t=>String(t||'').split('`');
     const stepsHTML=t=>stepParts(t).map((p,i)=>i%2?`<code>${esc(p)}</code>`:esc(p)).join('');
     const stepsCmds=t=>stepParts(t).filter((p,i)=>i%2).join('\n');
+    /* spec 058 FR-164: Sign in again on a row Copilot can redo (connected or failed, not waiting for a first sign-in) */
+    const againB=x=>!x.canSignInAgain||x.signIn||!X.bridge.agentMcpSignIn?'':signBusy.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Signing in again to '+x.name)}">Signing in…</button>`:`<button class="btn sm" type="button" data-signagain="${esc(x.name)}" aria-label="${esc('Sign in again to '+x.name+'…')}" title="Forget the saved sign-in and sign in again (for keychain prompts that keep coming back)">Sign in again…</button>`;
     const signHTML=(x,s)=>{
       const n=x.name,app=s.app||(o&&o.appName)||'Your agent app',si=x.signIn,en=esc(n);
       let line='',acts='';
@@ -1128,6 +1157,7 @@
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
         const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-err="${esc(x.name)}" aria-label="${esc('Error text of '+x.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-copy="${esc(x.name)}" aria-label="${esc('Copy the error text of '+x.name)}">Copy</button></div>`:'';
+        const hh=healthHTML(x,`data-diag="${esc(x.name)}"`,'Copy diagnostics of '+x.name);
         /* spec 058 (2026-10-23, Vikram's report): on a row that needs a sign-in, Restart is a dead end ("needs auth" again), so Sign in takes its place and Restart is hidden */
         const needsSign=(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth'))&&!!(x.canSignIn||x.signInSteps);
         const signB=needsSign&&x.canSignIn&&!x.signIn?(signBusy.has(x.name)?`<button class="btn sm primary" type="button" disabled aria-label="${esc('Signing in to '+x.name)}">Signing in…</button>`:`<button class="btn sm primary" type="button" data-signin="${esc(x.name)}" aria-label="${esc('Sign in to '+x.name)}" title="Start ${esc(s.app||'your agent app')}'s own sign-in for this server">Sign in</button>`):'';
@@ -1141,15 +1171,19 @@
         const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
         const sg=x.canSignIn||x.signInSteps||x.signIn?signHTML(x,s):'';
-        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
-          <div class="srv-act">${rs}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff?' disabled':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
+        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hh.why}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
+          <div class="srv-act">${rs}${againB(x)}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff?' disabled':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
+      /* spec 058 FR-164 (owner 2026-10-23): sign in again to every server Copilot can redo, so the signed runtime writes each sign-in anew */
+      const againN=(s.servers||[]).filter(x=>x.canSignInAgain&&!x.signIn).length;
+      const againAll=againN>1&&X.bridge.agentMcpSignIn?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpSignAgainAll"${againBusy?' disabled':''}>${againBusy?'Starting sign-ins…':'Sign in again to all ('+againN+')…'}</button><span class="dsub small">For keychain prompts that come back on every launch (sign-ins saved by an older Agent Durbar): ${esc(s.app||'the agent app')} forgets each saved sign-in and you sign in again in your browser, one page per server.</span></div>`:'';
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}${againAll}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
     };
     let dlg=null;
     /* spec 069 FR-032/FR-033: expanded rows and their tools, loaded once per open dialog (again after a Restart) */
     const expanded=new Set(), toolsOf=new Map();
+    let againBusy=false; /* spec 058 FR-164: Sign in again to all is running */
     let uid=0; /* ids for aria-describedby of the tool boxes, unique per paint */
     function toolsHTML(n){
       const r=toolsOf.get(n), id='mt-'+esc(n);
@@ -1207,14 +1241,17 @@
     let seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
     const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return [];
       /* FR-069: a sign-in this dialog saw open that is gone now: connected = signed in; still needs a sign-in = the time limit (or End session) ended it */
+      for(const n of againWait){const x=st.servers.find(y=>y.name===n);if(x&&x.status!=='connected')againSaw.add(n);}
       for(const n of [...waited]){const x=st.servers.find(y=>y.name===n);
         if(x&&x.signIn)continue;
         waited.delete(n);
+        const redo=againWait.delete(n), saw=againSaw.delete(n);
+        if(redo&&!(x&&x.status==='connected'&&saw)){signNote.set(n,'Sign-in was not finished. '+n+' may stay signed out until you sign in again.');continue;}
         if(x&&x.status==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');}
         else if(x&&(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth')))signNote.set(n,'Sign-in was not finished. Press Sign in to try again.');}
       for(const x of st.servers)if(x.status==='connected')signNote.delete(x.name);
       const f=document.activeElement,inside=f&&dlg.contains(f);
-      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.signin!==undefined?['signin',f.dataset.signin]:f.dataset.signopen!==undefined?['signopen',f.dataset.signopen]:f.dataset.signcancel!==undefined?['signcancel',f.dataset.signcancel]:f.dataset.swoff!==undefined?['swoff',f.dataset.swoff]:f.dataset.steps!==undefined?['steps',f.dataset.steps]:f.dataset.copysteps!==undefined?['copysteps',f.dataset.copysteps]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.diag!==undefined?['diag',f.dataset.diag]:f.dataset.signagain!==undefined?['signagain',f.dataset.signagain]:f.dataset.signin!==undefined?['signin',f.dataset.signin]:f.dataset.signopen!==undefined?['signopen',f.dataset.signopen]:f.dataset.signcancel!==undefined?['signcancel',f.dataset.signcancel]:f.dataset.swoff!==undefined?['swoff',f.dataset.swoff]:f.dataset.steps!==undefined?['steps',f.dataset.steps]:f.dataset.copysteps!==undefined?['copysteps',f.dataset.copysteps]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
       const errTop=key&&key[0]==='err'?f.scrollTop:0;
       const bodyEl=dlg.querySelector('.dbody'),top=bodyEl.scrollTop;
       bodyEl.innerHTML=body(st);bodyEl.scrollTop=top; /* FR-004: the scroll position stays */
@@ -1257,19 +1294,33 @@
     window.addEventListener('focus',onFocus);
     /* FR-065/FR-069 (T102): the two-step Sign in. Main holds the address; this code only ever has the host. */
     const call=async(fn,...args)=>{try{return await fn(...args);}catch(e){return {ok:false,error:String(e&&e.message||e)};}};
-    const signIn=async n=>{
+    const signIn=async(n,again)=>{
       if(signBusy.has(n)||!X.bridge.agentMcpSignIn)return;
       signBusy.add(n);signNote.delete(n);await repaint();
-      const r=await call(X.bridge.agentMcpSignIn,a.id,n);
+      const r=again===true?await call(X.bridge.agentMcpSignIn,a.id,n,true):await call(X.bridge.agentMcpSignIn,a.id,n);
       signBusy.delete(n);
       if(r&&r.ok&&r.kind==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');X.announce('Signed in to '+n+'.');}
-      else if(r&&r.ok){waited.add(n);wantFocus=['signopen',n];X.announce('Sign-in page on '+r.host+'. Press Open sign-in page to continue.');}
+      else if(r&&r.ok){waited.add(n);if(again===true)againWait.add(n);wantFocus=['signopen',n];X.announce('Sign-in page on '+r.host+'. Press Open sign-in page to continue.');}
       else{
         if(r&&r.manual)openSteps.add(n);
         signNote.set(n,'Could not start the sign-in: '+((r&&r.error)||'unknown error')+(r&&r.manual?' Use the steps below.':''));
         X.toast('Could not start the sign-in for '+esc(n)+'.',5200).classList.add('err');X.announce('Could not start the sign-in for '+n+'.');
       }
       await repaint();
+    };
+    /* FR-164: one confirmation, then the runtime's own forced sign-in per server, one after the other; each row then offers Open sign-in page */
+    const signAgain=async(names,btn)=>{
+      if(!names.length||againBusy)return;
+      againBusy=true; /* from the first press: a second press (a row, or to all) while the confirmation or the sign-ins run does nothing */
+      try{
+        const ask=window.DurbarDialog&&window.DurbarDialog(document);
+        const one=names.length===1, what=one?names[0]:names.length+' servers';
+        const lines=['Copilot forgets the saved sign-in'+(one?'':'s')+' and you sign in again in your browser'+(one?'.':', one page per server.'),(one?'The server stays':'Each server stays')+' signed out until you finish in your browser; Cancel or the time limit leaves it signed out.','Use this when macOS keeps asking for keychain access on every launch: the new sign-in is saved by the current Copilot runtime.','Agent Durbar never reads or changes your keychain.'];
+        const ok=ask?!!(await ask({title:'Sign in again to '+what+'?',body:'Sign in again to '+what+'?',lines,returnFocus:()=>btn,buttons:[{label:'Cancel',value:null},{label:'Sign in again',value:'ok',cls:'primary'}]})):window.confirm('Sign in again to '+what+'?');
+        if(!ok)return;
+        await repaint();
+        for(const n of names)await signIn(n,true);
+      }finally{againBusy=false;await repaint();}
     };
     const openSign=async(n,host)=>{
       const r=await call(X.bridge.agentMcpOpenSignIn,a.id,n,host);
@@ -1327,7 +1378,11 @@
         if(db){const n=db.dataset.det;if(openDet.has(n))openDet.delete(n);else openDet.add(n);void repaint();return;}
         const cb=e.target.closest('button[data-copy]');
         if(cb){const sv=st.servers.find(x=>x.name===cb.dataset.copy);void copyText(sv&&sv.error||'','Copied the error text.');return;}
+        const dg=e.target.closest('button[data-diag]');
+        if(dg){const sv=st.servers.find(x=>x.name===dg.dataset.diag);if(sv)void copyDiagnostics(sv.name,sv,st.app||o&&o.appName,o&&o.appVersion);return;}
         if(e.target.closest('#mcpRestartSess')){void restartSession();return;}
+        const ag=e.target.closest('button[data-signagain]');if(ag&&!ag.disabled){void signAgain([ag.dataset.signagain],ag);return;}
+        const aa=e.target.closest('#mcpSignAgainAll');if(aa&&!aa.disabled){void signAgain((st.servers||[]).filter(x=>x.canSignInAgain&&!x.signIn).map(x=>x.name),aa);return;}
         const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
         const r=await X.bridge.setAgentMcp(a.id,b.dataset.n,on);
         if(r&&r.error)X.toast(esc(r.error),5200);
@@ -1529,9 +1584,9 @@
   }
 
   window.DurbarScreens={oneShotCostLine,aiCredits,
-    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onChange:(again)=>{X._hsRefresh=true;if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
+    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
-    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
+    openSettings:(section)=>{mcp=null;X._acctRefresh=X._acctRefresh==='check'?'check':true;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
     mcpEvent:id=>{if(mcpDlgHook)mcpDlgHook(id);liveEvent(id);},

@@ -13,6 +13,7 @@ import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
 import type { EditInfo } from '../shared/edits';
+import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
 export type { EditInfo };
 export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
@@ -285,8 +286,8 @@ export interface McpServerStatus {
   source?: string;
   transport?: string;
   error?: string;
-  /** Spec 058 FR-011: normalized kind of failure, set by the adapter only when the vendor says so; missing = not said. */
-  errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config';
+  /** Spec 058 FR-011 / FR-091: normalized kind of failure, set by the adapter only when the vendor says so; missing = not said. */
+  errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config' | 'refused' | 'disconnected' | 'permission';
 }
 
 /** Spec 069 FR-031: one tool of an MCP server (main masks and cuts the description before the window gets it). */
@@ -575,7 +576,7 @@ export interface AgentAdapter {
    * `browser`: the user finishes in the browser at `url` (main keeps it, the window only gets the host); `connected`: already signed in.
    * Rejects when the runtime has no such call or refuses it (the UI then shows `capabilities.mcpSignInSteps`).
    */
-  startMcpSignIn?(sessionId: string, name: string): Promise<McpSignInResult>;
+  startMcpSignIn?(sessionId: string, name: string, opts?: { again?: boolean }): Promise<McpSignInResult>;
   /**
    * Spec 058 FR-064 (real 2026-10-23: the runtime sent no event for a finished sign-in for a long while): read the session's MCP
    * servers from the agent app again and emit the usual `mcp` event. Optional, only with `startMcpSignIn`. Main calls it every 5 s while a
@@ -613,6 +614,11 @@ export interface AgentAdapter {
    * credits); `unknown` when it cannot tell. `detail` is a short, safe sentence: never a token, email or account name.
    */
   verifySignIn?(): Promise<SignInCheck>;
+  /**
+   * Spec 051 FR-011: the account the app reports as signed in (a login or email, the plan), asked without a prompt (no credits).
+   * Personal data: the adapter never passes it to `debug`, and main sends it only to the window (FR-015). Never a token.
+   */
+  accountInfo?(opts?: AccountInfoOptions): Promise<AccountIdentity>;
   /**
    * Spec 012 FR-158: pick up a new sign-in made outside the adapter (Settings or the chat's sign-in card) in anything the adapter
    * keeps across sessions (Copilot's shared runtime client). Live sessions survive it. Optional: an adapter that starts a

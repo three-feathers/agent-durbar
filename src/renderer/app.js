@@ -2060,11 +2060,13 @@ function composerToolbarHTML(a,mdlName){
     +`</div><div class="ct-more"><button class="ib ct-ib" id="ctMoreBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="ctMorePop" aria-label="More chat settings" title="More chat settings" hidden>⋯</button><div class="ct-more-pop" id="ctMorePop" role="group" aria-label="More chat settings" hidden></div></div></div>`;
 }
 /* FR-037 item 5: the MCP chip: the icon and how many servers are switched on for this agent (the dialog is spec 019/058's) */
-const MCP_N=new Map();
+const MCP_N=new Map(), MCP_F=new Map(); /* per agent: servers switched on; servers failed or needing a sign-in (spec 058 FR-094) */
 function mcpChipHTML(a){
-  const n=MCP_N.get(a.id), known=typeof n==='number';
-  const lab=known?'MCP servers: '+n+' on. Open the list':'MCP servers. Open the list';
-  return `<button class="mchip mchip-btn" id="mcpBtn" type="button" aria-label="${esc(lab)}" title="MCP servers for this agent${known?': '+n+' switched on':''}. Click to see or switch them (set globally in Settings).">${CT_IC.mcp}<span>MCP</span>${known?`<b class="ct-n">${n}</b>`:''}</button>`;
+  const n=MCP_N.get(a.id), known=typeof n==='number', f=MCP_F.get(a.id)||0;
+  /* spec 058 FR-094 (issue 603): a dot in the error colour when a server failed, said in the name and tooltip too (never colour alone) */
+  const failed=f?', '+f+' failed':'';
+  const lab=known?'MCP servers: '+n+' on'+failed+'. Open the list':'MCP servers'+(f?': '+f+' failed':'')+'. Open the list';
+  return `<button class="mchip mchip-btn${f?' mcp-failed':''}" id="mcpBtn" type="button" aria-label="${esc(lab)}" title="${f?esc('MCP servers for this agent: '+(known?n+' on, ':'')+f+' failed. Click to see why.'):`MCP servers for this agent${known?': '+n+' switched on':''}. Click to see or switch them (set globally in Settings).`}">${CT_IC.mcp}<span>MCP</span>${known?`<b class="ct-n">${n}</b>`:''}${f?'<i class="ct-dot" aria-hidden="true"></i>':''}</button>`;
 }
 async function refreshMcpCount(a){
   if(!a||!bridge.agentMcp||!ui.selected)return;
@@ -2072,7 +2074,8 @@ async function refreshMcpCount(a){
   let st=null;try{st=await bridge.agentMcp(a.id);}catch(e){st=null;}
   if(!st||!st.ok)return;
   const n=(st.servers||[]).filter(x=>x.defaultOn&&!x.off).length;
-  if(MCP_N.get(a.id)===n)return; MCP_N.set(a.id,n);
+  const f=(st.servers||[]).filter(x=>x.status==='failed'||x.status==='needs-auth').length;
+  if(MCP_N.get(a.id)===n&&(MCP_F.get(a.id)||0)===f)return; MCP_N.set(a.id,n);MCP_F.set(a.id,f);
   const el=$('mcpBtn'),cur=ui.selected&&byId(ui.selected);if(!el||!cur||liveRoot(cur)!==a)return;
   const had=document.activeElement===el;el.outerHTML=mcpChipHTML(a);if(had){const f=$('mcpBtn');if(f)f.focus({preventScroll:true});}
 }
@@ -4157,6 +4160,8 @@ function modeRefusalAction(a,note,error){
 const SIGNIN=window.DurbarSignIn||null;
 const PROMPTS=SIGNIN?SIGNIN.createPromptMemory():null;
 const kindOf=a=>(liveRoot(a).info&&liveRoot(a).info.adapterId)||'copilot';
+/* spec 058: the options the MCP dialog gets (the chip and Settings' Open in chat alike); FR-093: the agent app's version for Copy diagnostics, from the agent app list */
+const mcpOpts=r=>{const k=kindOf(r),d=(KINDS||[]).find(x=>x.id===k);return {toggle:feat(r,'mcpToggle'),restart:feat(r,'mcpRestart'),appName:kindWord(k),...(d&&typeof d.version==='string'&&d.version?{appVersion:d.version}:{})};};
 /* the window's own copy of the adapter list follows at once (main also sends the changed list; the simulator has no main) */
 function markKindSignedOut(kind){
   if(!KINDS)return;
@@ -4343,7 +4348,7 @@ document.addEventListener('click',e=>{
   if(cc){e.stopPropagation();if(document.getElementById('ctxMenu')){closeCtxMenu();return;}const a=byId(ui.selected);if(a)openCtxMenu(a,cc);return;} /* spec 005 FR-037 */
   if(!e.target.closest('#ctxMenu'))closeCtxMenu();
   const mb=e.target.closest('#mcpBtn'); /* spec 005 FR-037: the MCP chip opens the existing dialog; the count follows it */
-  if(mb){e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r)Promise.resolve(window.DurbarScreens.agentMcp(r,{toggle:feat(r,'mcpToggle'),restart:feat(r,'mcpRestart'),appName:kindWord(kindOf(r))})).finally(()=>refreshMcpCount(r));return;}
+  if(mb){e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r)Promise.resolve(window.DurbarScreens.agentMcp(r,mcpOpts(r))).finally(()=>refreshMcpCount(r));return;}
   const ac=e.target.closest('#agentChip');
   if(ac){e.stopPropagation();if(document.getElementById('agentMenu')){closeAgentMenu();return;}const r=ac.getBoundingClientRect(),a=byId(ui.selected);if(a)openAgentMenu(a,r.left,r.bottom+6,ac);return;}
   if(!e.target.closest('#agentMenu'))closeAgentMenu();
@@ -4490,7 +4495,14 @@ function fillPermSelect(sel,caps){
 }
 /* the first kind that is ready, preferring `want` */
 const pickKind=want=>{const ch=DMK().kindChoices(KINDS);const w=ch.find(k=>k.id===want&&!k.disabled);return w?w.id:(ch.find(k=>!k.disabled)||{id:''}).id;};
-const kindOptions=()=>DMK().kindChoices(KINDS).map(k=>`<option value="${esc(k.id)}"${k.disabled?' disabled':''}>${esc(k.shortName||k.name)}${k.stateText?' ('+esc(k.stateText)+')':''}</option>`).join('');
+/* spec 051 FR-013, FR-015: the account line per app ({ [id]: { status, text } } from harness:accounts), in memory only; a tooltip, never logged */
+let ACCTS=null;
+const acctText=(id,state)=>state==='ready'&&ACCTS&&ACCTS[id]&&typeof ACCTS[id].text==='string'?ACCTS[id].text:'';
+/* spec 051 FR-020: in About agent apps the line already says "ready", so the account is only the masked name and plan ("o••• · Copilot
+   Individual"): the dialog body stays within its 8 lines (spec 052 FR-170, check-ui-text in CI's DejaVu font) */
+const aboutAcct=t=>t.replace(/^Signed in as /,'');
+const kindTitle=k=>{const t=acctText(k.id,k.state);return t?k.name+': '+t:'';};
+const kindOptions=()=>DMK().kindChoices(KINDS).map(k=>`<option value="${esc(k.id)}"${k.disabled?' disabled':''}${kindTitle(k)?` title="${esc(kindTitle(k))}"`:''}>${esc(k.shortName||k.name)}${k.stateText?' ('+esc(k.stateText)+')':''}</option>`).join('');
 /* Toolbar: model and effort follow the chosen kind. A kind other than the default has no model list yet (FR-062, T049), so both are hidden and it starts with its own default. */
 function syncKindModel(){
   const ms=$('modelSel'),ef=$('effortSel');
@@ -4502,6 +4514,7 @@ function syncKindModel(){
   ms.hidden=!ok;
   fillEffortSelect(ef,ms.value,undefined,!ok||(c&&!DMK().shows(c,'effort')),k);
   fillPermSelect($('permMode'),kindCaps(id));
+  if(KINDS)kindSelTitle($('kindSel'),KIND_SEL_TITLE); /* spec 051 FR-013: the chosen app's account in the tooltip */
   renderDefaultsChip();
 }
 /* spec 052 FR-105 (round 11): the defaults for new sessions are one chip in the top bar ("Copilot · Read-only · Auto"); the selects
@@ -4557,6 +4570,20 @@ async function loadKinds(refresh){
   const r=await bridge.listAdapters(refresh===true).catch(()=>null);
   KINDS=Array.isArray(r)&&r.length?r:null;
   applyKinds();
+  if(KINDS&&bridge.harnessAccounts&&!ACCTS)bridge.harnessAccounts(false).then(setAccounts,()=>undefined); /* spec 051 FR-014: once per run here; Settings refreshes it */
+}
+/* spec 051 FR-013: the picker's tooltips (each option, and the select for the chosen app) and the open New session dialog's select */
+const KIND_SEL_TITLE='Agent app for new folders and sessions';
+function kindSelTitle(sel,base){
+  if(!sel)return;
+  const k=DMK().kindChoices(KINDS).find(x=>x.id===sel.value),t=k?acctText(k.id,k.state):'';
+  sel.title=base+(t?'. '+k.shortName+': '+t:'');
+}
+function setAccounts(a){
+  ACCTS=a&&typeof a==='object'?a:null;
+  if(!KINDS)return;
+  for(const sel of [$('kindSel'),$('sdKind')]){if(!sel)continue;const v=sel.value;sel.innerHTML=kindOptions();sel.value=v;}
+  kindSelTitle($('kindSel'),KIND_SEL_TITLE);kindSelTitle($('sdKind'),'Agent app for this session');
 }
 /* spec 052 FR-051: the toast names the agent app when it is known */
 function notReadyToast(ch){toast(esc((ch&&ch.shortName)||'That agent app')+' isn\'t ready yet. Set it up in Settings &gt; Agent apps.',6000);}
@@ -4564,7 +4591,7 @@ async function aboutKinds(){
   for(;;){
     const ch=DMK().kindChoices(KINDS);
     const r=await askDialog({title:'About agent apps',size:'m',body:'Each agent app (Copilot, Claude Code, Codex) runs agents its own way. Only an app that is ready can be chosen. Settings > Agent apps can install, update or sign in to one for you.',
-      lines:ch.map(k=>k.name+': '+(k.state==='ready'?'ready':k.stateText)+(k.version?' · version '+k.version:'')+(k.hint?' · '+k.hint:'')),
+      lines:ch.map(k=>k.name+': '+(k.state==='ready'?'ready':k.stateText)+(acctText(k.id,k.state)?' · '+aboutAcct(acctText(k.id,k.state)):'')+(k.version?' · version '+k.version:'')+(k.hint?' · '+k.hint:'')),
       buttons:[{label:'Close',value:null},{label:'Check again',value:'again'},{label:'Set up agent apps…',value:'setup',cls:'primary'}],returnFocus:()=>$('kindHelp')});
     if(r&&r.value==='setup'){window.DurbarScreens.openSettings('harnesses');return;} /* spec 051 FR-008 */
     if(!r||r.value!=='again')return;
@@ -4973,7 +5000,8 @@ function newSession(a0,o){
     if(c)fillPermSelect($('sdPerm'),c);
   };
   if($('sdKind'))$('sdKind').value=pickKind(ho?handoverTargets(a)[0].id:(a.info.adapterId||defaultKind()));
-  eff(); $('sdModel').onchange=eff; if($('sdKind'))$('sdKind').onchange=()=>{eff();agentRow();};
+  kindSelTitle($('sdKind'),'Agent app for this session'); /* spec 051 FR-013 */
+  eff(); $('sdModel').onchange=eff; if($('sdKind'))$('sdKind').onchange=()=>{eff();agentRow();kindSelTitle($('sdKind'),'Agent app for this session');};
   /* spec 043 T010: the new session can start with a custom agent of this folder (the same list as the Agent chip; same kind only) */
   const agentRow=()=>{const l=$('sdAgentL');if(!l)return;l.hidden=!(l.dataset.ready==='1'&&(kindNow()||a.info.adapterId||'')===(a.info.adapterId||kindNow()||''));};
   if($('sdAgentL'))bridge.listProfiles(a.id).then(r=>{
@@ -5775,7 +5803,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */
@@ -5783,7 +5811,7 @@ if(bridge){
     staticLimit:a=>{const m=modelsFor(a.info&&a.info.adapterId).find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
     /* spec 058 FR-082: a running chat for Settings' live MCP list: the live agent (state, grants, remote: the Restart session questions)
        and the same options the MCP chip passes to the chat's MCP dialog */
-    mcpSession:id=>{const r=LIVE.agents.find(y=>y.id===id&&y.live&&!y.parent);return r?{a:r,mcp:!!feat(r,'mcp'),o:{toggle:feat(r,'mcpToggle'),restart:feat(r,'mcpRestart'),appName:kindWord(kindOf(r))}}:null;},
+    mcpSession:id=>{const r=LIVE.agents.find(y=>y.id===id&&y.live&&!y.parent);return r?{a:r,mcp:!!feat(r,'mcp'),o:mcpOpts(r)}:null;},
     folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
     openAgent:id=>openPanel(id,false),
     /* spec 058 FR-027: Restart session failed because the sign-in expired: the chat's sign-in card (spec 012 FR-157), as for a failed message */
