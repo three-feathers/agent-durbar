@@ -38,7 +38,7 @@ module.exports = async (ctx) => {
   const load = (w, h, extra) => H.load({ w, h, query: extra }); // was a fixed 1500 ms; now waits for the page to stop changing (FR-096)
   /* every main desk: name, away, mood (from data-sig), labels, visible text, scene box size */
   const desks = () => js(`[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>{const sv=d.querySelector('svg.scene'),sig=(sv&&sv.dataset.sig)||'',m=/\\|(normal|heavy|monster)(\\w*)$/.exec(sig),b=sv?sv.getBoundingClientRect():{width:0,height:0};
-    return {id:d.dataset.id,name:d.querySelector('.name').textContent.trim(),room:((d.closest('.room')||document).querySelector('.room-name')||{textContent:''}).textContent.trim(),away:d.classList.contains('is-away'),st:(/is-(\\w+)/.exec(d.className)||[])[1],
+    return {id:d.dataset.id,name:d.querySelector('.name').textContent.trim(),room:((d.closest('.room')||document).querySelector('.room-name')||{textContent:''}).textContent.trim(),away:d.classList.contains('is-away'),st:d.dataset.state||(/is-(\\w+)/.exec(d.className)||[])[1],
       body:m?m[1]:null,trouble:m&&m[2]?m[2]:null,label:d.getAttribute('aria-label')||'',title:d.getAttribute('title')||'',
       text:(d.querySelector('.ci, .info')||d).innerText.replace(/\\s+/g,' ').trim(),box:[Math.round(b.width),Math.round(b.height)],
       amb:d.querySelectorAll('.amb').length,dizzy:d.querySelectorAll('.dizzy').length,sweat:d.querySelectorAll('.sweat').length,tap:d.querySelectorAll('.tap').length}})`);
