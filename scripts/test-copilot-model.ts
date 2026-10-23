@@ -13,7 +13,7 @@ import { createRegistry, detectAll } from '../src/adapters/registry';
 import type { AdapterDescriptor } from '../src/adapters/capabilities';
 import { EventMapper } from '../src/adapters/map';
 import type { RawEvent } from '../src/adapters/map';
-import { compactResultFrom, modelConfig, runtimeMessage, modelOptionFrom, priceClassOf, pricingFromTokenPrices, switchResultFrom } from '../src/adapters/copilotmodel';
+import { autoTierToSend, compactResultFrom, managedAutoTierFrom, modelConfig, runtimeHasAutoTiers, runtimeMessage, modelOptionFrom, priceClassOf, pricingFromTokenPrices, switchResultFrom, withAutoTiers } from '../src/adapters/copilotmodel';
 import type { AdapterCapabilities, AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { modelControlFor, NO_MODEL_CONTROL } from '../src/shared/modelswitch';
 import { startOptionsOf } from '../src/main/startopts';
@@ -118,9 +118,20 @@ async function main(): Promise<void> {
     assert.strictEqual(runtimeMessage('weird', 'fallback'), 'fallback');
   }
 
-  // ---- T032: the pure config keeps the saved choice on create and resume; autoTier only for a NEW auto session
+  // ---- T032: the pure config keeps the saved choice on create and resume; with no tier of its own, the cheap default only for a NEW auto session
   assert.deepStrictEqual(modelConfig({ model: 'auto', autoTier: 'efficiency' }, false), { model: 'auto', capi: { autoTier: 'efficiency' } });
-  assert.deepStrictEqual(modelConfig({ model: 'auto', autoTier: 'efficiency' }, true), { model: 'auto' }, 'no autoTier on resume');
+  assert.deepStrictEqual(modelConfig({ model: 'auto' }, false), { model: 'auto', capi: { autoTier: 'efficiency' } }, 'a new auto session with no tier of its own: the cheapest');
+  assert.deepStrictEqual(modelConfig({ model: 'auto' }, true), { model: 'auto' }, 'no autoTier override on resume when none was chosen');
+  // spec 007 FR-016: the user's own saved tier goes on create AND resume
+  assert.deepStrictEqual(modelConfig({ model: 'auto', autoTier: 'balance' }, true), { model: 'auto', capi: { autoTier: 'balance' } }, 'a saved tier goes on resume too');
+  assert.deepStrictEqual(modelConfig({ model: 'auto', autoTier: 'intelligence' }, false), { model: 'auto', capi: { autoTier: 'intelligence' } });
+  assert.deepStrictEqual(modelConfig({ model: 'auto', autoTier: 'fast' as never }, false), { model: 'auto', capi: { autoTier: 'efficiency' } }, 'a name outside the allow-list is never sent');
+  // FR-017: a locked organization tier: nothing is sent; an overridable one: the user's own tier, else nothing (the runtime's default applies)
+  assert.deepStrictEqual(modelConfig({ model: 'auto', autoTier: 'intelligence' }, false, { tier: 'balance', locked: true }), { model: 'auto' }, 'locked: never a tier');
+  assert.deepStrictEqual(modelConfig({ model: 'auto' }, false, { tier: 'balance', locked: false }), { model: 'auto' }, 'org default: not overridden by ours');
+  assert.deepStrictEqual(modelConfig({ model: 'auto', autoTier: 'intelligence' }, true, { tier: 'balance', locked: false }), { model: 'auto', capi: { autoTier: 'intelligence' } }, 'overridable: the user\'s own tier');
+  assert.strictEqual(autoTierToSend('sim-deep', 'balance', undefined, true), undefined, 'never for another model');
+  assert.strictEqual(autoTierToSend('auto', undefined, undefined, false), undefined);
   assert.deepStrictEqual(modelConfig({ model: 'sim-deep', reasoningEffort: 'high', contextTier: 'long', autoTier: 'efficiency' }, true), { model: 'sim-deep', reasoningEffort: 'high', contextTier: 'long_context' });
   assert.deepStrictEqual(modelConfig({ model: 'sim-deep', contextTier: 'default' }, false), { model: 'sim-deep' }, 'the default tier is the runtime default: not sent');
 
@@ -169,6 +180,19 @@ async function main(): Promise<void> {
     s.switchAnswer = { modelId: 'auto' };
     await ad.setModel(sid, { model: 'auto' });
     assert.deepStrictEqual(arg(s, 'switchTo').autoTier, 'efficiency');
+    // spec 007 FR-014: a chosen tier is sent as asked; a tier with another model never is
+    const at = await ad.setModel(sid, { model: 'auto', autoTier: 'intelligence' });
+    assert.strictEqual(at.status, 'applied');
+    assert.strictEqual(arg(s, 'switchTo').autoTier, 'intelligence');
+    assert.strictEqual(arg(s, 'switchTo').modelId, 'auto');
+    s.switchAnswer = { modelId: 'sim-fast' };
+    await ad.setModel(sid, { model: 'sim-fast', autoTier: 'balance' });
+    assert.ok(!('autoTier' in arg(s, 'switchTo')), 'the runtime rejects an autoTier for any model but auto: never sent');
+    // the runtime's confirming event carries the tier (three names only)
+    s.fire('session.model_change', { newModel: 'auto', previousModel: 'sim-fast', autoTier: 'balance', previousAutoTier: 'efficiency' });
+    assert.strictEqual((events.filter((e) => e.type === 'model').slice(-1)[0] as { autoTier?: string }).autoTier, 'balance');
+    s.fire('session.model_change', { newModel: 'auto', previousModel: 'auto', autoTier: 'fast' });
+    assert.ok(!('autoTier' in (events.filter((e) => e.type === 'model').slice(-1)[0] as object)), 'a tier outside the allow-list is dropped');
 
     // queued while a turn runs, then cancelled
     s.switchAnswer = { deferred: true, queueId: 'q-7' };
@@ -273,19 +297,95 @@ async function main(): Promise<void> {
     assert.ok(!('capi' in rc));
     assert.strictEqual(rc.mcpOAuthTokenStorage, 'persistent', 'spec 058 FR-070: also on resume by session id');
     await ad.stop(sid);
-    // an auto session that is resumed keeps the runtime's own routing
-    const a2 = await ad.start({ workspace: dir, resumeSessionId: sid, model: 'auto', autoTier: 'efficiency', quiet: true });
+    // an auto session that is resumed keeps the runtime's own routing when the user chose no tier (main passes none)
+    const a2 = await ad.start({ workspace: dir, resumeSessionId: sid, model: 'auto', quiet: true });
     assert.ok(!('capi' in fake.resumed[1].config), 'no autoTier override on resume');
     assert.strictEqual(fake.resumed[1].config.model, 'auto');
     assert.strictEqual(fake.resumed[1].config.enableFileHooks, false, 'spec 061 FR-017: also on resume');
     assert.strictEqual(fake.resumed[1].config.mcpOAuthTokenStorage, 'persistent', 'spec 058 FR-070: also on resume (resumeSessionId)');
     await ad.stop(a2);
+    // spec 007 FR-016: a tier the user chose and Durbar saved goes on resume
+    const a2b = await ad.start({ workspace: dir, resumeSessionId: sid, model: 'auto', autoTier: 'balance', quiet: true });
+    assert.deepStrictEqual(fake.resumed[2].config.capi, { autoTier: 'balance' }, 'the saved tier on resume');
+    await ad.stop(a2b);
     // a session id not on disk is created with exactly that id and the saved choice
     const a3 = await ad.start({ workspace: dir, sessionId: 'brand-new', model: 'sim-fast', contextTier: 'long', quiet: true });
     const cc = fake.created.slice(-1)[0];
     assert.deepStrictEqual([a3, cc.sessionId, cc.model, cc.contextTier], ['brand-new', 'brand-new', 'sim-fast', 'long_context']);
     await ad.stop(a3);
   }
+
+  // ---- spec 007 FR-012: the runtime version gate (1.0.87+), read tolerantly
+  for (const v of ['1.0.87', '1.0.98', '1.1.0', '2.0.0', 'v1.0.90', '1.0.103-beta.2', '1.0.87+build']) assert.ok(runtimeHasAutoTiers(v), v);
+  for (const v of ['1.0.86', '0.9.99', '1.0', '', 'latest', '1.0.x', ' 1.0.98 junk', 98, null, undefined, '1'.repeat(80)]) assert.ok(!runtimeHasAutoTiers(v), String(v));
+  // FR-017: the organization's tier is hostile input: own properties, the allow-list, a boolean flag; anything else and it is ignored as a whole
+  assert.deepStrictEqual(managedAutoTierFrom({ values: { autoTier: 'balance' }, meta: { autoTier: { overridable: false, source: 'server' } } }), { tier: 'balance', locked: true });
+  assert.deepStrictEqual(managedAutoTierFrom({ values: { autoTier: 'intelligence' }, meta: { autoTier: { overridable: true, source: 'device' } } }), { tier: 'intelligence', locked: false });
+  assert.deepStrictEqual(managedAutoTierFrom({ values: { autoTier: 'efficiency' } }), { tier: 'efficiency', locked: false }, 'no meta: a default, not a lock');
+  const inherited = Object.create({ autoTier: 'balance' }) as Record<string, unknown>;
+  const protoMeta = Object.create({ overridable: false }) as Record<string, unknown>;
+  for (const bad of [undefined, null, 'x', [], { values: inherited }, { values: { autoTier: 'fast' } }, { values: { autoTier: 'Balance' } }, { values: { autoTier: ['balance'] } }, { values: [{ autoTier: 'balance' }] },
+    { values: { autoTier: 'balance' }, meta: { autoTier: { overridable: 'false' } } }, { values: { autoTier: 'balance' }, meta: { autoTier: protoMeta } }, { values: { autoTier: 'balance' }, meta: { autoTier: null } }])
+    assert.strictEqual(managedAutoTierFrom(bad), undefined, JSON.stringify(bad));
+  {
+    const opts = [{ id: 'auto', name: 'Auto', efforts: [], disabled: false }, { id: 'm1', name: 'M1', efforts: [], disabled: false }];
+    assert.deepStrictEqual(withAutoTiers(opts, false, { tier: 'balance', locked: true }), opts, 'an old runtime: no tiers, no lock');
+    const w = withAutoTiers(opts, true, { tier: 'balance', locked: true });
+    assert.deepStrictEqual(w[0].autoTiers, ['efficiency', 'balance', 'intelligence']);
+    assert.deepStrictEqual(w[0].autoTierManaged, { tier: 'balance', locked: true });
+    assert.ok(!('autoTiers' in w[1]) && !('autoTierManaged' in w[1]), 'only on auto');
+    assert.ok(!('autoTiers' in opts[0]), 'the input is not changed');
+  }
+  // the adapter: version and policy read through the (fake) runtime, no session, no credits
+  {
+    const fake = new FakeClient();
+    const ad = new TestAdapter(fake);
+    fake.modelInfos = [{ id: 'auto', name: 'Auto', capabilities: { limits: { max_context_window_tokens: 0 } } }, { id: 'gpt-x', name: 'GPT X', capabilities: { limits: { max_context_window_tokens: 128000 } } }];
+    let list = await ad.listModelOptions();
+    assert.ok(!('autoTiers' in list[0]), 'no getStatus (version unknown): no tiers');
+    fake.runtimeVersion = '1.0.80';
+    list = await ad.listModelOptions();
+    assert.ok(!('autoTiers' in list[0]), 'runtime older than 1.0.87: no tiers');
+    fake.runtimeVersion = '1.0.98';
+    list = await ad.listModelOptions();
+    assert.deepStrictEqual(list[0].autoTiers, ['efficiency', 'balance', 'intelligence']);
+    assert.ok(!('autoTierManaged' in list[0]), 'no managed settings call: no organization tier');
+    assert.ok(!('autoTiers' in list[1]));
+    fake.managed = { values: { autoTier: 'balance' }, meta: { autoTier: { overridable: false, source: 'server' } } };
+    list = await ad.listModelOptions();
+    assert.deepStrictEqual(list[0].autoTierManaged, { tier: 'balance', locked: true });
+    const calls = fake.managedCalls;
+    await ad.listModelOptions();
+    assert.strictEqual(fake.managedCalls, calls + 1, 'read again on every listing (a changed policy shows)');
+    // under the lock a new auto session and a switch to auto send no tier at all (the runtime applies the policy)
+    const sid = await ad.start({ workspace: dir, model: 'auto', quiet: true });
+    assert.ok(!('capi' in fake.created.slice(-1)[0]), 'locked: no capi.autoTier on create');
+    const sess = fake.last;
+    sess.switchAnswer = { modelId: 'auto' };
+    await ad.setModel(sid, { model: 'auto' });
+    assert.ok(!('autoTier' in arg(sess, 'switchTo')), 'locked: no autoTier in the switch');
+    await ad.stop(sid);
+    fake.managedFail = 'boom'; fake.managed = undefined;
+    list = await ad.listModelOptions();
+    assert.deepStrictEqual(list[0].autoTiers, ['efficiency', 'balance', 'intelligence'], 'a failed policy read leaves the tiers');
+    assert.ok(!('autoTierManaged' in list[0]), 'and no lock');
+    const sid2 = await ad.start({ workspace: dir, model: 'auto', quiet: true });
+    assert.deepStrictEqual(fake.created.slice(-1)[0].capi, { autoTier: 'efficiency' }, 'no policy: the cheap default again');
+    await ad.stop(sid2);
+  }
+  {
+    // a policy read that never answers is capped (the listing still comes back)
+    const fake = new FakeClient();
+    const ad = new TestAdapter(fake);
+    (ad as unknown as { policyTimeoutMs: number }).policyTimeoutMs = 30;
+    fake.modelInfos = [{ id: 'auto', name: 'Auto' }];
+    fake.runtimeVersion = '1.0.98';
+    fake.managedHangs = true;
+    const list = await ad.listModelOptions();
+    assert.deepStrictEqual(list[0].autoTiers, ['efficiency', 'balance', 'intelligence']);
+    assert.ok(!('autoTierManaged' in list[0]), 'a hanging read counts as none');
+  }
+  console.log('spec 007 FR-012/FR-016/FR-017: Auto tiers, version gate, organization tier, create/resume/switch OK');
 
   // ---- T034: the capability contract. Controls follow what the adapter implements; the renderer knows no runtime specifics.
   const minimal: Partial<AgentAdapter> = {};
@@ -379,10 +479,12 @@ async function main(): Promise<void> {
       assert.ok(!('allow' in o) && !('ask' in o));
       assert.strictEqual(o.workspace, '/w');
       assert.strictEqual(o.model, 'auto');
-      assert.strictEqual(o.autoTier, 'efficiency');
+      assert.strictEqual(o.autoTier, undefined, 'spec 007 FR-016: no tier chosen = none passed (the adapter picks its default for a new session)');
       assert.strictEqual(o.maxAiCredits, 40);
     }
     assert.strictEqual(startOptionsOf({ permMode: 'ask', model: 'm1' }, '/w', 'auto', 'high').autoTier, undefined);
+    assert.strictEqual(startOptionsOf({ permMode: 'ask', autoTier: 'balance' }, '/w', 'auto', undefined).autoTier, 'balance', 'the saved tier');
+    assert.strictEqual(startOptionsOf({ permMode: 'ask', model: 'm1', autoTier: 'balance' }, '/w', 'auto', undefined).autoTier, undefined, 'kept in the folder, but only Auto gets it');
   }
 
   // ---- spec 012 T011: registry, detectAll, Copilot descriptor (FR-030..FR-034)

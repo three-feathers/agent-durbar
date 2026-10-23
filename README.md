@@ -89,6 +89,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 
 **Models, context and tools**
 - Pick the model and reasoning effort per session, and switch them in a running session: Claude Code and Codex from the next message, the conversation kept (checked on real accounts 2026-10-20); Copilot too, but not yet seen on a paid plan.
+- Copilot's **Auto** model has a routing choice in the same model menu: *Efficiency* (the default), *Balance* or *Intelligence*, remembered per agent; a higher tier asks first, since Auto may then pick models that cost more. Shown only when the bundled Copilot runtime supports it (1.0.87+); a tier set by your organization's Copilot policy is shown locked. Not yet run on a real account with Balance or Intelligence (simulator and unit tests only).
 - A context chip under the message box shows how full the window is; its menu has **Compact**. The model chip shows the window size.
 - **MCP servers:**
   - your Copilot CLI list (`~/.copilot/mcp-config.json`) is used first;

@@ -10,6 +10,7 @@ import { isMcpAuthChallenge } from './mcpauth';
 import type { AgentEvent, CompactionEvent, ContextTier, McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import { nonEmptyStr as str } from '../shared/guards';
+import { parseAutoTier } from '../shared/modelswitch';
 import { EditStreams, editOf } from './edits';
 import { usageLimitClosing } from './usagelimit';
 
@@ -209,6 +210,7 @@ export class EventMapper {
       case 'session.model_change': {
         if (agentId || typeof d.newModel !== 'string' || !d.newModel) return;
         const tier = tierOf(d.contextTier);
+        const autoTier = d.newModel === 'auto' ? parseAutoTier(d.autoTier) : undefined; // spec 007 FR-016: the three names only
         const cause = d.cause === 'rate_limit_auto_switch' ? 'rate-limit' : d.cause === 'refusal_fallback' ? 'fallback' : this.expected === d.newModel ? 'user' : 'runtime';
         if (this.expected === d.newModel) this.expected = undefined;
         this.model = d.newModel;
@@ -220,6 +222,7 @@ export class EventMapper {
           effort: typeof d.reasoningEffort === 'string' ? d.reasoningEffort : undefined,
           previousEffort: str(d.previousReasoningEffort),
           tier,
+          ...(autoTier ? { autoTier } : {}),
           cause,
         });
       }

@@ -151,6 +151,18 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     s2.load();
     s2.upsert({ workspace: abs('a'), permMode: 'ask', model: 'auto' });
     assert.strictEqual(new FolderStore(f5).load()[0].contextTier, undefined, 'a plain upsert (new session choice) resets the tier');
+    // spec 007 FR-016: the Auto tier is remembered per folder agent, kept while it uses another model, junk dropped on load
+    assert.ok(s2.setModelChoice(abs('a'), { model: 'auto', autoTier: 'balance' }));
+    assert.strictEqual(new FolderStore(f5).load()[0].autoTier, 'balance');
+    assert.ok(s2.setModelChoice(abs('a'), { model: 'sim-fast' }));
+    assert.deepStrictEqual([new FolderStore(f5).load()[0].model, new FolderStore(f5).load()[0].autoTier], ['sim-fast', 'balance'], 'kept on another model');
+    assert.ok(s2.setModelChoice(abs('a'), { model: 'auto', autoTier: 'fast' as never }));
+    assert.strictEqual(new FolderStore(f5).load()[0].autoTier, 'balance', 'a name outside the allow-list is not saved');
+    s2.upsert({ workspace: abs('a'), permMode: 'ask', model: 'auto' });
+    assert.strictEqual(new FolderStore(f5).load()[0].autoTier, 'balance', 'a plain upsert keeps the agent\'s tier');
+    assert.ok(!('autoTier' in new FolderStore(f5).load()[1]), 'never written for a folder without one');
+    fs.writeFileSync(f5, JSON.stringify({ folders: [{ workspace: abs('a'), autoTier: 'intelligence' }, { workspace: abs('b'), autoTier: 'fast' }, { workspace: abs('c'), autoTier: { toString: 'balance' } }, { workspace: abs('d'), autoTier: '__proto__' }] }));
+    assert.deepStrictEqual(new FolderStore(f5).load().map((f) => f.autoTier), ['intelligence', undefined, undefined, undefined]);
     // Copilot's own settings are never part of the file
     assert.ok(!fs.readFileSync(f5, 'utf8').match(/repoScope|modelChangeScope|pickerPersistence/));
   } finally {

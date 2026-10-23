@@ -1,7 +1,7 @@
 /** Switching model and context tier (spec 030): the pure UI logic and the IPC validation. `npm run test:modelswitch`. No credits spent. */
 import * as assert from 'assert';
 import * as path from 'path';
-import { modelControlFor, parseFocus, parseSwitchRequest, parseTier, MAX_FOCUS, NO_MODEL_CONTROL } from '../src/shared/modelswitch';
+import { modelControlFor, parseAutoTier, parseFocus, parseSwitchRequest, parseTier, MAX_FOCUS, NO_MODEL_CONTROL } from '../src/shared/modelswitch';
 import { parseEffort } from '../src/shared/effort';
 
 type M = { id: string; name?: string; multiplier?: number; contextWindow?: number; longWindow?: number; contextTiers?: string[]; priceClass?: string; efforts?: string[]; pricing?: { inputPerMTok?: number; outputPerMTok?: number; cachedPerMTok?: number; unverified?: boolean; long?: { inputPerMTok?: number; outputPerMTok?: number } } };
@@ -346,3 +346,58 @@ for (const bad of ['', 'NONE', 'x'.repeat(21), 'low;rm', 7, null, undefined]) as
   assert.ok(!no.ok && /does not offer/.test(no.error), 'and refused when it does not');
 }
 console.log('effort: the models\' own names (none included) OK');
+
+// ---- spec 007 FR-013..FR-015: the Auto routing tier
+{
+  const T = D as unknown as {
+    autoTiersOf: (m: unknown) => string[]; autoTierOf: (m: unknown, own?: unknown) => string; autoTierLocked: (m: unknown) => boolean;
+    autoTierConfirm: (from: unknown, to: unknown) => { needed: boolean; valid: boolean; reasons: string[] }; autoTierName: (t: unknown) => string;
+  };
+  for (const t of ['efficiency', 'balance', 'intelligence']) assert.strictEqual(parseAutoTier(t), t);
+  for (const bad of ['fast', 'Balance', '', 'auto', 1, null, undefined, ['balance'], { toString: () => 'balance' }]) assert.strictEqual(parseAutoTier(bad), undefined, String(bad));
+  const tiers = ['efficiency', 'balance', 'intelligence'] as const;
+  const known = [{ id: 'auto', autoTiers: [...tiers] }, { id: 'gpt-x', efforts: ['low'] }, { id: 'auto-old' }];
+  assert.deepStrictEqual(parseSwitchRequest({ model: 'auto', autoTier: 'balance' }, known), { ok: true, request: { model: 'auto', autoTier: 'balance' } });
+  const bad = (raw: unknown, re: RegExp, why: string): void => { const r = parseSwitchRequest(raw, known as never); assert.ok(!r.ok && re.test(r.error), why + ': ' + JSON.stringify(r)); };
+  bad({ model: 'auto', autoTier: 'fast' }, /Invalid Auto routing tier/, 'outside the allow-list');
+  bad({ model: 'auto', autoTier: 7 }, /Invalid Auto routing tier/, 'not a string');
+  bad({ model: 'gpt-x', autoTier: 'balance' }, /no Auto routing tier/, 'only with auto');
+  { const r = parseSwitchRequest({ model: 'auto', autoTier: 'balance' }, [{ id: 'auto' }]); assert.ok(!r.ok && /no Auto routing tier/.test(r.error), 'an auto that lists no tiers (old runtime, other app)'); }
+  { const r = parseSwitchRequest({ model: 'auto', autoTier: 'balance' }, [{ id: 'auto', autoTiers: ['efficiency'] }]); assert.ok(!r.ok, 'a tier the list does not carry'); }
+  // FR-015/FR-017: a locked organization tier refuses every other tier; the locked one itself passes
+  const locked = [{ id: 'auto', autoTiers: [...tiers], autoTierManaged: { tier: 'balance' as const, locked: true } }];
+  { const r = parseSwitchRequest({ model: 'auto', autoTier: 'intelligence' }, locked); assert.ok(!r.ok && /organization's Copilot policy sets the Auto routing to balance/.test(r.error), 'locked'); }
+  assert.ok(parseSwitchRequest({ model: 'auto', autoTier: 'balance' }, locked).ok, 'the locked tier itself');
+  assert.ok(parseSwitchRequest({ model: 'auto', autoTier: 'intelligence' }, [{ id: 'auto', autoTiers: [...tiers], autoTierManaged: { tier: 'balance', locked: false } }]).ok, 'an overridable default does not lock');
+  assert.deepStrictEqual(parseSwitchRequest({ model: 'auto' }, known), { ok: true, request: { model: 'auto' } }, 'no tier: none in the request');
+
+  // the renderer's pure helpers
+  assert.deepStrictEqual(T.autoTiersOf({ id: 'auto', autoTiers: ['intelligence', 'fast', 'efficiency', 'balance'] }), ['efficiency', 'balance', 'intelligence'], 'the three names, cheapest first; fast dropped');
+  assert.deepStrictEqual(T.autoTiersOf({ id: 'gpt-x', autoTiers: ['balance'] }), [], 'only on auto');
+  assert.deepStrictEqual(T.autoTiersOf({ id: 'auto' }), []);
+  assert.deepStrictEqual(T.autoTiersOf({ id: 'auto', autoTiers: 'balance' }), []);
+  assert.deepStrictEqual(T.autoTiersOf(null), []);
+  assert.strictEqual(T.autoTierOf({ id: 'auto' }, undefined), 'efficiency', 'nothing chosen: what a new Auto session gets');
+  assert.strictEqual(T.autoTierOf({ id: 'auto' }, 'balance'), 'balance');
+  assert.strictEqual(T.autoTierOf({ id: 'auto' }, 'fast'), 'efficiency');
+  assert.strictEqual(T.autoTierOf({ id: 'auto', autoTierManaged: { tier: 'intelligence', locked: false } }, undefined), 'intelligence', 'the organization default');
+  assert.strictEqual(T.autoTierOf({ id: 'auto', autoTierManaged: { tier: 'intelligence', locked: false } }, 'balance'), 'balance', 'own wins over an overridable default');
+  assert.strictEqual(T.autoTierOf({ id: 'auto', autoTierManaged: { tier: 'efficiency', locked: true } }, 'balance'), 'efficiency', 'a lock wins');
+  assert.ok(T.autoTierLocked({ id: 'auto', autoTierManaged: { tier: 'efficiency', locked: true } }));
+  assert.ok(!T.autoTierLocked({ id: 'auto', autoTierManaged: { tier: 'efficiency', locked: false } }));
+  assert.ok(!T.autoTierLocked({ id: 'auto', autoTierManaged: { tier: 'fast', locked: true } }), 'a lock on an unknown name is no lock');
+  // FR-014: up asks, down or same does not
+  for (const [f, t] of [['efficiency', 'balance'], ['efficiency', 'intelligence'], ['balance', 'intelligence'], [undefined, 'balance']] as const) {
+    const c = T.autoTierConfirm(f, t);
+    assert.ok(c.needed && c.valid, f + ' -> ' + t + ' asks');
+    assert.match(c.reasons.join(' '), /cost more per token/);
+    assert.match(c.reasons.join(' '), /not reported/);
+  }
+  for (const [f, t] of [['intelligence', 'balance'], ['balance', 'efficiency'], ['balance', 'balance'], ['intelligence', 'efficiency']] as const) assert.ok(!T.autoTierConfirm(f, t).needed, f + ' -> ' + t + ' applies at once');
+  assert.deepStrictEqual(T.autoTierConfirm('efficiency', 'fast'), { needed: false, valid: false, reasons: [] }, 'an unknown target is not valid');
+  assert.strictEqual(T.autoTierName('balance'), 'Balance');
+  assert.strictEqual(T.autoTierName('__proto__'), '', 'only the three names');
+  assert.strictEqual(D.modelChangeText({ cause: 'user', model: 'auto', autoTier: 'intelligence' }, (x) => (x === 'auto' ? 'Auto' : x)), 'Model set to Auto (Intelligence routing). The next message uses it.');
+  assert.strictEqual(D.modelChangeText({ cause: 'user', model: 'auto', autoTier: 'fast' }, (x) => (x === 'auto' ? 'Auto' : x)), 'Model set to Auto. The next message uses it.');
+  console.log('spec 007: Auto routing tier validation and helpers OK');
+}

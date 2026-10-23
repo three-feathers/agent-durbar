@@ -7,7 +7,8 @@
  * the unit of the token prices, the long-tier window, the `status` strings of a switch and the compaction decision values are unverified,
  * and the code degrades (price absent, `rejected` with the runtime's message) instead of guessing.
  */
-import type { ModelOption, ModelPricing, PriceClass, ContextTier, ModelSwitchResult, CompactResult, TierPricing } from '../shared/modelswitch';
+import type { ModelOption, ModelPricing, PriceClass, ContextTier, ModelSwitchResult, CompactResult, TierPricing, AutoTier, ManagedAutoTier } from '../shared/modelswitch';
+import { AUTO_TIERS, parseAutoTier } from '../shared/modelswitch';
 export type { ModelOption };
 
 const pos = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && x > 0;
@@ -99,21 +100,70 @@ export interface SessionConfigInput {
   model?: string;
   reasoningEffort?: string;
   contextTier?: ContextTier;
-  autoTier?: 'efficiency' | 'balance' | 'intelligence';
+  /** The Auto tier the user chose and Durbar saved (spec 007 FR-016); absent = none chosen. */
+  autoTier?: AutoTier;
+}
+
+/** Spec 007 FR-012: the oldest runtime that takes an Auto routing preference (issue #607, from the vendor's docs; not checked on an older runtime). */
+export const AUTO_TIER_MIN_RUNTIME = [1, 0, 87] as const;
+
+/** `true` only for a plain `x.y.z` version (a `-pre` or `+build` suffix allowed) at or above {@link AUTO_TIER_MIN_RUNTIME}; anything unreadable is `false`. */
+export function runtimeHasAutoTiers(version: unknown): boolean {
+  if (typeof version !== 'string' || version.length > 64) return false;
+  const m = /^v?(\d{1,6})\.(\d{1,6})\.(\d{1,6})(?:[-+][0-9A-Za-z.+-]*)?$/.exec(version.trim());
+  if (!m) return false;
+  const v = [Number(m[1]), Number(m[2]), Number(m[3])];
+  for (let i = 0; i < 3; i++) if (v[i] !== AUTO_TIER_MIN_RUNTIME[i]) return v[i] > AUTO_TIER_MIN_RUNTIME[i];
+  return true;
+}
+
+const own = (o: unknown, k: string): unknown => (o && typeof o === 'object' && !Array.isArray(o) && Object.prototype.hasOwnProperty.call(o, k) ? (o as Record<string, unknown>)[k] : undefined);
+
+/**
+ * Spec 007 FR-017: the organization's Auto tier from the runtime's `managedSettings.resolve` answer (`values.autoTier`, `meta.autoTier.overridable`).
+ * The answer reflects files and server policy Durbar does not control, so it is read like hostile input: own properties only, the tier must be one
+ * of the three names and `overridable` a boolean; anything else and the whole thing is ignored (no managed tier). `overridable: false` = locked.
+ */
+export function managedAutoTierFrom(r: unknown): ManagedAutoTier | undefined {
+  const tier = parseAutoTier(own(own(r, 'values'), 'autoTier'));
+  if (!tier) return undefined;
+  const meta = own(own(r, 'meta'), 'autoTier');
+  if (meta === undefined) return { tier, locked: false };
+  const overridable = own(meta, 'overridable');
+  if (typeof overridable !== 'boolean') return undefined;
+  return { tier, locked: !overridable };
+}
+
+/** Spec 007 FR-012/FR-017: the `auto` option gains the tiers (when the runtime has them) and the organization's tier; every other option is unchanged. */
+export function withAutoTiers(options: ModelOption[], supported: boolean, managed: ManagedAutoTier | undefined): ModelOption[] {
+  if (!supported) return options;
+  return options.map((o) => (o.id === 'auto' ? { ...o, autoTiers: [...AUTO_TIERS], ...(managed ? { autoTierManaged: { ...managed } } : {}) } : o));
+}
+
+/**
+ * The Auto tier to send for `model` (spec 007 FR-016/FR-017), or none. Under a locked policy: none (the runtime applies the policy). The user's
+ * own tier: that one. Otherwise the app's cheapest default (`efficiency`) only when `useDefault` and the organization sets no default of its own.
+ */
+export function autoTierToSend(model: string | undefined, chosen: AutoTier | undefined, managed: ManagedAutoTier | undefined, useDefault: boolean): AutoTier | undefined {
+  if (model !== 'auto' || managed?.locked) return undefined;
+  if (chosen) return chosen;
+  return useDefault && !managed ? 'efficiency' : undefined;
 }
 
 /**
  * The model part of the create/resume config (spec 030 FR-013). The saved model, effort and tier are passed on create AND on resume, so a model
- * the user switched to survives a restart or an ended session. `capi.autoTier` (the routing preference of `auto`) only on a NEW `auto`
- * session: on resume it would override whatever routing the session had.
+ * the user switched to survives a restart or an ended session. `capi.autoTier` (the routing preference of `auto`): the user's own saved tier on
+ * create and resume (spec 007 FR-016); with none, the cheapest default only on a NEW `auto` session (on resume it would override whatever routing
+ * the session had), and never under the organization's tier (FR-017).
  */
-export function modelConfig(o: SessionConfigInput, resume: boolean): Record<string, unknown> {
+export function modelConfig(o: SessionConfigInput, resume: boolean, managed?: ManagedAutoTier): Record<string, unknown> {
   const tier = o.contextTier === 'long' ? 'long_context' : undefined; // the default tier is the runtime's own default: not sent
+  const autoTier = autoTierToSend(o.model, parseAutoTier(o.autoTier), managed, !resume);
   return {
     model: o.model,
     ...(o.reasoningEffort ? { reasoningEffort: o.reasoningEffort } : {}),
     ...(tier ? { contextTier: tier } : {}),
-    ...(!resume && o.model === 'auto' && o.autoTier ? { capi: { autoTier: o.autoTier } } : {}),
+    ...(autoTier ? { capi: { autoTier } } : {}),
   };
 }
 

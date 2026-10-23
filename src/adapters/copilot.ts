@@ -27,7 +27,8 @@ import type {
 import type { AdapterDescriptor } from './capabilities';
 import { EventMapper } from './map';
 import type { EventBody, RawEvent } from './map';
-import { compactResultFrom, modelConfig, modelOptionFrom, runtimeMessage, sdkTier, switchResultFrom } from './copilotmodel';
+import { autoTierToSend, compactResultFrom, managedAutoTierFrom, modelConfig, modelOptionFrom, runtimeHasAutoTiers, runtimeMessage, sdkTier, switchResultFrom, withAutoTiers } from './copilotmodel';
+import type { ManagedAutoTier } from '../shared/modelswitch';
 import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel';
 import { PermissionBroker, isInsideRoots, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
@@ -577,9 +578,33 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   /** Cheapest model by billing multiplier, falling back to input token price. Undefined if none reports billing. */
-  /** What the logged-in account offers, in the shape the UI needs (no inference, no credits). */
+  /**
+   * What the logged-in account offers, in the shape the UI needs (no inference, no credits). Spec 007 FR-012/FR-017: the `auto` option gains the
+   * routing tiers when the runtime is new enough (`getStatus().version`), and the organization's tier from `managedSettings.resolve` (read again
+   * on every listing, so a changed policy shows; both calls cost nothing and are capped, and a failure only leaves the extra fields out).
+   */
   async listModelOptions(): Promise<ModelOption[]> {
-    return (await this.listModels()).map((m) => modelOptionFrom(m as unknown as RawModelInfo));
+    const options = (await this.listModels()).map((m) => modelOptionFrom(m as unknown as RawModelInfo));
+    if (!options.some((o) => o.id === 'auto')) return options;
+    const client = await this.getClient();
+    const status = typeof client.getStatus === 'function' ? await this.capped(client.getStatus(), this.policyTimeoutMs) : undefined;
+    const supported = runtimeHasAutoTiers(status?.version);
+    this.managedTier = undefined;
+    return withAutoTiers(options, supported, supported ? await this.autoTierPolicy() : undefined);
+  }
+
+  /** Spec 007 FR-017: how long a managed-settings or status read may take before it counts as "none". */
+  protected policyTimeoutMs = 5000;
+  private managedTier: Promise<ManagedAutoTier | undefined> | undefined;
+  /** The organization's Auto tier (cached until the next listing). Read through the runtime only; Durbar never opens the policy files. */
+  private autoTierPolicy(): Promise<ManagedAutoTier | undefined> {
+    this.managedTier ??= (async () => {
+      const client = await this.getClient();
+      const ms = (client as unknown as { rpc?: { managedSettings?: { resolve?: (p: Record<string, never>) => Promise<unknown> } } }).rpc?.managedSettings;
+      if (typeof ms?.resolve !== 'function') return undefined;
+      return managedAutoTierFrom(await this.capped(ms.resolve({}), this.policyTimeoutMs));
+    })().catch(() => undefined);
+    return this.managedTier;
   }
 
   isLive(sessionId: string): boolean {
@@ -756,8 +781,10 @@ export class CopilotAdapter implements AgentAdapter {
     let session: CopilotSession;
     // The saved model, effort and tier go on create AND resume, so a model the user switched to survives an ended session or a restart.
     // `modelConfig` adds the `auto` routing preference only to a NEW session (on resume it would override the session's own).
-    const resumed = (): Record<string, unknown> => ({ ...config, ...modelConfig(options, true) });
-    const created = (): Record<string, unknown> => ({ ...config, ...modelConfig(options, false) });
+    // Spec 007 FR-017: under the organization's Auto tier no tier (or only the user's own, when the policy allows it) is sent.
+    const managed = options.model === 'auto' ? await this.autoTierPolicy() : undefined;
+    const resumed = (): Record<string, unknown> => ({ ...config, ...modelConfig(options, true, managed) });
+    const created = (): Record<string, unknown> => ({ ...config, ...modelConfig(options, false, managed) });
     let resumedExisting = false; // its title is asked once (issue #126): the runtime may not send it again
     try {
       if (options.resumeSessionId) {
@@ -1023,12 +1050,14 @@ export class CopilotAdapter implements AgentAdapter {
     if (request.confirm?.compaction === 'decline') return { status: 'rejected', model, message: 'The model was not changed.' };
     const mapper = this.mapperFor(sessionId);
     const tier = sdkTier(request.contextTier);
+    // Spec 007 FR-014/FR-017: `auto` gets the chosen tier, else the app's cheapest routing (as a new `auto` session), and none under the
+    // organization's tier; the runtime rejects an autoTier for any other model.
+    const autoTier = autoTierToSend(model, request.autoTier, model === 'auto' ? await this.autoTierPolicy() : undefined, true);
     const params = {
       modelId: model,
       ...(request.effort !== undefined ? { reasoningEffort: request.effort } : {}),
       ...(tier ? { contextTier: tier } : {}),
-      // `auto` keeps the app's cheapest routing (same as a new `auto` session); the runtime rejects an autoTier for any other model.
-      ...(model === 'auto' ? { autoTier: 'efficiency' as const } : {}),
+      ...(autoTier ? { autoTier } : {}),
       requireAvailable: true,
       deferIfModelChangeQueued: true,
       runCompactionPreflight: true,

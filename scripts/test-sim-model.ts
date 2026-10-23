@@ -70,6 +70,20 @@ async function main(): Promise<void> {
   assert.strictEqual(info('sim-4').effort, undefined);
   assert.strictEqual(info('sim-4').tier, undefined);
 
+  // spec 007 FR-018: Auto lists the three tiers; a tier only with Auto; the change carries it; kept on another model
+  assert.deepStrictEqual(by('auto').autoTiers, ['efficiency', 'balance', 'intelligence']);
+  assert.ok(models.filter((x) => x.id !== 'auto').every((x) => !x.autoTiers), 'only Auto');
+  assert.ok(!by('auto').autoTierManaged, 'no organization tier without ?simtierlock');
+  assert.match((await setModel('sim-4', { model: 'sim-mid', autoTier: 'balance' })).error ?? '', /no Auto routing tier/);
+  assert.match((await setModel('sim-4', { model: 'auto', autoTier: 'fast' as never })).error ?? '', /no Auto routing tier/);
+  r = await setModel('sim-4', { model: 'auto', autoTier: 'intelligence' });
+  assert.deepStrictEqual([r.ok, r.result?.status, info('sim-4').model, info('sim-4').autoTier], [true, 'applied', 'auto', 'intelligence']);
+  m = of('sim-4', 'model').pop() as Record<string, unknown>;
+  assert.deepStrictEqual([m.model, m.autoTier, m.cause], ['auto', 'intelligence', 'user']);
+  await setModel('sim-4', { model: 'sim-fast' });
+  assert.deepStrictEqual([info('sim-4').model, info('sim-4').autoTier], ['sim-fast', 'intelligence'], 'kept while on another model');
+  assert.ok(!('autoTier' in (of('sim-4', 'model').pop() as object)), 'no tier on a change to another model');
+
   // a smaller window than the context in use: the runtime asks first (Ada, sim-1: about 200k tokens)
   const before = (of('sim-1', 'context').pop() as { tokens: number }).tokens;
   assert.ok(before > 128000, 'Ada has more context than Sim Fast can hold');

@@ -8,6 +8,19 @@ import { parseEffort } from './effort';
 /** `long` is the long-context tier of a model that has one (the Copilot SDK calls it `long_context`). */
 export type ContextTier = 'default' | 'long';
 
+/**
+ * Spec 007 FR-012..FR-018: the routing preference of Copilot's virtual `auto` model, cheapest first. An allow-list: the SDK's `fast`
+ * ("integrator-only") and any name a provider adds later are not offered.
+ */
+export type AutoTier = 'efficiency' | 'balance' | 'intelligence';
+export const AUTO_TIERS: readonly AutoTier[] = ['efficiency', 'balance', 'intelligence'];
+export const parseAutoTier = (v: unknown): AutoTier | undefined => (typeof v === 'string' && (AUTO_TIERS as readonly string[]).includes(v) ? (v as AutoTier) : undefined);
+/** The organization's tier from the agent app's managed settings; `locked` = users may not choose another (FR-017). */
+export interface ManagedAutoTier {
+  tier: AutoTier;
+  locked: boolean;
+}
+
 /** Relative price class a runtime may report instead of (or next to) token prices. */
 export type PriceClass = 'low' | 'medium' | 'high' | 'very-high';
 
@@ -30,6 +43,8 @@ export interface ModelSwitchRequest {
   effort?: string | null;
   /** The tier wanted after the switch; omitted = the model's default tier (a request describes the whole state, so an effort-only change repeats the current tier). */
   contextTier?: ContextTier;
+  /** Spec 007 FR-014: the Auto routing tier; only with `model: 'auto'` and only a tier that model lists. */
+  autoTier?: AutoTier;
   /** Answer to a "needs-confirmation" result (the target window is smaller than the context in use). */
   confirm?: { compaction?: 'accept' | 'decline' };
 }
@@ -69,6 +84,10 @@ export interface ModelOption {
   contextTiers?: ContextTier[];
   /** Window of the long tier = its prompt budget + the model's max output tokens (UNVERIFIED semantics). */
   longWindow?: number;
+  /** Spec 007 FR-012: only on Copilot's `auto`, only when the runtime supports a routing preference. */
+  autoTiers?: AutoTier[];
+  /** Spec 007 FR-017: the organization's tier, when its managed settings set one. */
+  autoTierManaged?: ManagedAutoTier;
 }
 
 /** What an agent's adapter can do about model and context. Derived from the adapter's optional members (spec 030 FR-017). */
@@ -116,6 +135,8 @@ export interface KnownModel {
   id: string;
   efforts?: string[];
   contextTiers?: ContextTier[];
+  autoTiers?: AutoTier[];
+  autoTierManaged?: ManagedAutoTier;
 }
 
 /**
@@ -142,6 +163,15 @@ export function parseSwitchRequest(raw: unknown, models: readonly KnownModel[]):
     if (!t) return { ok: false, error: 'Invalid context tier.' };
     if (t === 'long' && !(m.contextTiers ?? []).includes('long')) return { ok: false, error: 'That model has no long-context tier.' };
     request.contextTier = t;
+  }
+  if (o.autoTier !== undefined) {
+    // Spec 007 FR-015: one of the three names, only for `auto`, only when the account's `auto` lists it, never against a locked policy
+    const t = parseAutoTier(o.autoTier);
+    if (!t) return { ok: false, error: 'Invalid Auto routing tier.' };
+    if (m.id !== 'auto' || !(m.autoTiers ?? []).includes(t)) return { ok: false, error: 'This model has no Auto routing tier to choose.' };
+    const lock = m.autoTierManaged;
+    if (lock?.locked && lock.tier !== t) return { ok: false, error: `Your organization's Copilot policy sets the Auto routing to ${lock.tier}.` };
+    request.autoTier = t;
   }
   if (o.confirm !== undefined) {
     const c = o.confirm && typeof o.confirm === 'object' ? (o.confirm as Record<string, unknown>).compaction : undefined;

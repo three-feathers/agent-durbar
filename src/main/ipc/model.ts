@@ -38,6 +38,8 @@ export function register(deps: ModelIpcDeps): void {
       const parsed = parseSwitchRequest(raw, await modelsForValidation());
       if (!parsed.ok) return { ok: false, error: parsed.error };
       const req: ModelSwitchRequest = parsed.request;
+      // Spec 007 FR-015: the tiers come from the default kind's list (Copilot's `auto`); another agent app never gets one.
+      if (req.autoTier && a.adapterId !== registry.defaultId) return { ok: false, error: 'This agent app has no Auto routing tier.' };
       // Not started (or ended) yet: nothing is running to switch. The choice is saved and the first start (create or resume) uses it (FR-013).
       const result: ModelSwitchResult = ad.isLive(a.id) ? await ad.setModel(a.id, req) : { status: 'applied', model: req.model, message: 'Used from the first message: this agent has not started yet.' };
       if (result.status === 'applied') {
@@ -46,7 +48,8 @@ export function register(deps: ModelIpcDeps): void {
         if (req.effort === null) a.effort = undefined;
         else if (req.effort !== undefined) a.effort = req.effort;
         a.tier = req.contextTier === 'long' ? 'long' : undefined;
-        folderStore()?.setModelChoice(wsKey(a), { model: req.model, effort: req.effort, contextTier: a.tier });
+        if (req.autoTier) a.autoTier = req.autoTier; // spec 007 FR-016: remembered per agent, kept while it uses another model
+        folderStore()?.setModelChoice(wsKey(a), { model: req.model, effort: req.effort, contextTier: a.tier, autoTier: req.autoTier });
       }
       return { ok: true, result };
     } catch (err) {

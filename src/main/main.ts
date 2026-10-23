@@ -261,7 +261,8 @@ router.onEvent((e) => {
   a.model = e.model;
   if (e.cause === 'user' || e.effort !== undefined) a.effort = e.effort;
   a.tier = e.tier === 'long' ? 'long' : undefined;
-  if (e.cause === 'user') folderStore?.setModelChoice(wsKey(a), { model: e.model, effort: e.effort, contextTier: a.tier });
+  if (e.cause === 'user' && e.autoTier) a.autoTier = e.autoTier; // spec 007 FR-016: a tier the user chose (a runtime change is shown, never saved)
+  if (e.cause === 'user') folderStore?.setModelChoice(wsKey(a), { model: e.model, effort: e.effort, contextTier: a.tier, autoTier: e.autoTier });
 });
 
 // Dev/test: DURBAR_LOG=/path/events.jsonl records every normalized event and what is sent to the SDK.
@@ -419,6 +420,7 @@ function restoreFolders(): void {
         if (ls) info.resumeLast = true;
         if (f.label) info.label = f.label;
         if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
+        if (f.autoTier) info.autoTier = f.autoTier; // spec 007 FR-016
         router.bind(info.id, kind);
         agents.set(info.id, info);
         applyStoredAlias(info); // spec 059 FR-014

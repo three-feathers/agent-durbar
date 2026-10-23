@@ -4470,7 +4470,7 @@ async function ensureModels(k){
 }
 function modelLabel(info){
   const m=modelsFor(info.adapterId).find(x=>x.id===(info.model||'auto')), nm=m?m.name:(info.model||'auto')==='auto'?'Auto':info.model;
-  const eff=(info.effort?' · '+info.effort+' effort':'')+(info.tier==='long'?' · long context':'');
+  const eff=(info.effort?' · '+info.effort+' effort':'')+(info.tier==='long'?' · long context':'')+((info.model||'auto')==='auto'&&DM.autoTierName(info.autoTier)?' · '+info.autoTier+' routing':''); /* spec 007 FR-013: only once the agent chose a tier */
   const mult=m&&m.multiplier!=null?' · ×'+m.multiplier+' credit multiplier':'';
   return {text:nm+eff,title:'Model: '+nm+eff+mult+(m&&m.multiplier!=null?' (as reported by your Copilot account)':'')};
 }
@@ -4740,6 +4740,10 @@ function openModelMenu(a0,x,y,anchor){
   let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
   h+='<p class="mm-h">Model</p>'+list.map(m=>{const chk=m.id===curId,w=DM.windowOf(m);
     return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${esc(DM.priceLine(m))}${w?' · '+esc(DM.fmtTokens(w))+' window':''}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
+  /* spec 007 FR-013/FR-017: the Auto routing tier, a group like the effort (Copilot's Auto only); a locked organization tier shows disabled */
+  const ats=curId==='auto'?DM.autoTiersOf(cur):[];
+  if(ats.length){const atNow=DM.autoTierOf(cur,a.info.autoTier),lock=DM.autoTierLocked(cur);
+    h+='<p class="mm-h">Auto routing</p><div class="mm-seg" role="group" aria-label="Auto routing">'+ats.map(t=>`<button type="button" data-autotier="${esc(t)}" aria-pressed="${t===atNow}"${lock?' aria-disabled="true"':dis} title="${esc(DM.AUTO_TIER_HINT[t]+(lock?'. Set by your organization\'s Copilot policy.':'.'))}">${esc(DM.autoTierName(t))}</button>`).join('')+'</div>'+(lock?`<p class="mm-why mm-lock" role="note">Set by your organization's Copilot policy: ${esc(DM.autoTierName(atNow))}.</p>`:'');}
   if((cur.efforts||[]).length)h+='<p class="mm-h">Reasoning effort</p><div class="mm-seg" role="group" aria-label="Reasoning effort">'+['',...cur.efforts].map(x=>{const on2=(a.info.effort||'')===x;return `<button type="button" data-effort="${esc(x)}" aria-pressed="${on2}"${dis}>${x?esc(x):'Default'}</button>`;}).join('')+'</div>';
   if(DM.hasLong(cur))h+=`<button type="button" role="menuitemcheckbox" aria-checked="${tier==='long'}" data-tier="1"${dis} class="mm-tier"><span class="mt"><b>Long context</b><small>${esc(DM.fmtTokens(DM.windowOf(cur,'long')))} window · ${esc(DM.priceLine(cur,'long'))}</small></span><span class="ck">${tier==='long'?'✓':''}</span></button>`;
   if(pend)h+=`<div class="mm-pend" role="status"><span>Next: <b>${esc(pend.name)}</b>${pend.tier==='long'?' (long context)':''}, when this reply ends.</span><button type="button" data-cancelq="1">Cancel</button></div>`;
@@ -4753,9 +4757,10 @@ function openModelMenu(a0,x,y,anchor){
     if(b.dataset.cancelq){closeModelMenu();cancelPendingModel(a,anchor);return;}
     if(b.getAttribute('aria-disabled')==='true')return;
     closeModelMenu();
-    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick,a.info.adapterId);chooseModel(a,{model:t.id,contextTier:t.id===cur.id?tier:'default'},anchor);}
+    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick,a.info.adapterId),own=a.info.autoTier;chooseModel(a,Object.assign({model:t.id,contextTier:t.id===cur.id?tier:'default'},t.id!==cur.id&&own&&DM.autoTiersOf(t).includes(own)&&!DM.autoTierLocked(t)?{autoTier:own}:{}),anchor);} /* spec 007 FR-016: back on Auto with the agent's own tier */
     else if(b.dataset.effort!==undefined)chooseModel(a,{model:cur.id,effort:b.dataset.effort||null,contextTier:tier},anchor);
     else if(b.dataset.tier)chooseModel(a,{model:cur.id,contextTier:tier==='long'?'default':'long'},anchor);
+    else if(b.dataset.autotier!==undefined)chooseAutoTier(a,b.dataset.autotier,anchor);
   });
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('button')],i=it.indexOf(document.activeElement);
     if(e.key==='ArrowDown'||e.key==='ArrowRight'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'||e.key==='ArrowLeft'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
@@ -4790,18 +4795,39 @@ async function chooseModelInner(a,req,anchor){
   }
   /* an effort the new model does not support is cleared (its default), never sent: the runtime would refuse the switch */
   const effort=req.effort!==undefined?req.effort:(a.info.effort&&tgt.id!==cur.id&&!(tgt.efforts||[]).includes(a.info.effort)?null:undefined);
-  await sendModelChange(a,Object.assign({model:tgt.id,contextTier:tierTo},effort!==undefined?{effort}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom},tgt,anchor});
+  await sendModelChange(a,Object.assign({model:tgt.id,contextTier:tierTo},effort!==undefined?{effort}:{},req.autoTier?{autoTier:req.autoTier}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom,autoTier:a.info.autoTier},tgt,anchor});
+}
+/* spec 007 FR-014: a tier of Auto, switched like a model (same call, Undo, queue); a higher tier asks first with the app's dialog */
+async function chooseAutoTier(a,to,anchor){
+  try{
+    const cur=modelOf('auto',a.info.adapterId);
+    if((a.info.model||'auto')!=='auto'||!DM.autoTiersOf(cur).includes(to)||DM.autoTierLocked(cur))return;
+    const from=DM.autoTierOf(cur,a.info.autoTier);
+    if(from===to&&!a.pendingModel)return;
+    const cf=DM.autoTierConfirm(from,to);
+    if(cf.needed){
+      const lines=cf.reasons.slice(), cap=isUsdCap(a)?undefined:a.info.maxAiCredits;
+      if(cap>0)lines.push('Your spending limit of '+fmtCap(cap)+' AI credits is not changed.');
+      if(busyNow(a))lines.push('A reply is running: the change applies when it ends.');
+      if(ctrlOf(a).unverified)lines.push(UNVERIFIED_WHY);
+      const r=await askDialog({title:'Switch '+a.name+' to '+DM.autoTierName(to)+' routing?',body:'The conversation is kept. From the next message Auto routes with the new preference.',lines,returnFocus:anchor,
+        buttons:[{label:'Cancel',value:null},{label:'Switch',value:'ok',cls:'primary'}]});
+      if(!r)return;
+    }
+    await sendModelChange(a,{model:'auto',autoTier:to,contextTier:tierOf(a)},{prev:{model:'auto',effort:a.info.effort,tier:tierOf(a),autoTier:from},tgt:cur,anchor});
+  }finally{refocusAnchor(anchor);}
 }
 async function sendModelChange(a,req,ctx){
   const res=await bridge.setModel(a.id,req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok){toast('Could not change the model: '+esc((res&&res.error)||'unknown error'),6000);return;}
-  const r=res.result||{},nm=ctx.tgt.name+(req.contextTier==='long'?' (long context)':'');
+  const r=res.result||{},nm=ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+' routing)':'')+(req.contextTier==='long'?' (long context)':'');
   if(r.status==='applied'){
+    if(req.autoTier){a.info.autoTier=req.autoTier;updateModelChip(a);} /* spec 007 FR-016: also when the runtime sends no model change for a tier */
     /* spec 052 (2026-10-21): one Undo toast per agent; a newer switch replaces the older toast (only the last switch can be undone) */
     if(!ctx.undo){document.querySelectorAll('#toasts .toast[data-undo-model="'+CSS.escape(a.id)+'"]').forEach(t=>t.remove());const t=toastAction(esc(a.name)+': <b>'+esc(nm)+'</b> from the next message.','Undo',()=>undoModel(a,ctx.prev,ctx.anchor),8000);if(t&&t.dataset)t.dataset.undoModel=a.id;}
     else toast(esc(a.name)+': back to <b>'+esc(nm)+'</b>.',3800);
   }else if(r.status==='queued'){
-    a.pendingModel={queueId:r.queueId,name:ctx.tgt.name,tier:req.contextTier,prev:ctx.prev};updateModelChip(a);
+    a.pendingModel={queueId:r.queueId,name:ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+')':''),tier:req.contextTier,prev:ctx.prev};updateModelChip(a);
     toast(esc(a.name)+' is replying: <b>'+esc(nm)+'</b> applies when the reply ends.',5000);
   }else if(r.status==='needs-confirmation'){
     const cf=r.confirmation||{};
@@ -4812,7 +4838,7 @@ async function sendModelChange(a,req,ctx){
 }
 async function undoModel(a,prev,anchor){
   if(!bridge.setModel)return;
-  const req={model:prev.model,contextTier:prev.tier,effort:prev.effort||null};
+  const req=Object.assign({model:prev.model,contextTier:prev.tier,effort:prev.effort||null},prev.model==='auto'&&prev.autoTier&&DM.autoTiersOf(modelOf('auto',a.info.adapterId)).includes(prev.autoTier)?{autoTier:prev.autoTier}:{}); /* spec 007 FR-014 */
   await sendModelChange(a,req,{prev,tgt:modelOf(prev.model),anchor,undo:true});
   refocusAnchor(anchor);
 }
@@ -4831,6 +4857,7 @@ function onModelEvent(a,e){
     a.info.model=e.model;
     if(e.cause==='user'||e.effort!==undefined)a.info.effort=e.effort;
     a.info.tier=e.tier==='long'?'long':undefined;
+    if(e.cause==='user'&&e.autoTier)a.info.autoTier=e.autoTier; /* spec 007 FR-016 */
     a.role=roleFor(a.info);
   }
   a.ctxWaiting=true; /* the runtime reports the new window with the next message */
