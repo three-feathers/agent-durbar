@@ -190,6 +190,24 @@ module.exports = async (ctx) => {
     await key('PageUp'); await key('Return'); b = await box();
     check(Math.abs(b.h - capH) <= 2 && b.stored === null, `${tag} resize: Enter on the handle does not reset (${b.h}px, stored ${b.stored})`);
     await type('');
+    /* FR-046, FR-047 (review on PR 599): a stored size too tall for the window is shown clamped (and kept); junk is ignored (automatic) */
+    await type('');
+    await js(`localStorage.setItem('durbar.composerHeight','3900')`);
+    await load(w, h); await openIdle();
+    b = await box();
+    check(b.h <= b.max && b.now <= b.max && Math.abs(b.now - b.h) <= 1 && Math.abs(b.h - b.max) <= 1 && b.chat >= 139, `${tag} resize: a stored 3900px is not clamped ${JSON.stringify({ h: b.h, now: b.now, max: b.max, chat: b.chat })}`);
+    check(b.stored === '3900', `${tag} resize: the clamp rewrote the stored size (${b.stored})`);
+    for (const junk of ['abc', '99999']) { /* not a number, and out of parse()'s range (36..4000) */
+      await js(`localStorage.setItem('durbar.composerHeight',${jsLiteral(junk)})`);
+      await load(w, h); await openIdle();
+      b = await box();
+      check(b.h <= 40, `${tag} resize: a stored "${junk}" does not give an automatic one-line box (${b.h}px)`);
+      await type(LONG); b = await box();
+      check(Math.abs(b.h - capH) <= 2 && b.sh > b.ch + 20, `${tag} resize: with a stored "${junk}" a long prompt grows to ${b.h}px (want the cap ${capH})`);
+      await type('');
+    }
+    await js(`localStorage.removeItem('durbar.composerHeight')`);
+    await type('');
     const mm = await M();
     mm.P.forEach((p) => check(false, `${tag} after resize: ${p}`));
   };
