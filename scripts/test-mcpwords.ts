@@ -3,9 +3,10 @@ import * as assert from 'assert';
 import * as path from 'path';
 
 interface Words {
-  stateOf: (s: unknown) => { word: string; icon: string; cls: string };
+  stateOf: (s: unknown, ctx?: { off?: boolean; defaultOn?: boolean; origin?: string; app?: string; launchedOff?: boolean; switchedHere?: boolean }) => { word: string; icon: string; cls: string };
+  offBy: (ctx?: { off?: boolean; defaultOn?: boolean; launchedOff?: boolean; switchedHere?: boolean }) => string;
   iconSvg: (n: string) => string;
-  hintFor: (o: { status?: string; errorClass?: string; error?: string; app?: string }) => string;
+  hintFor: (o: { by?: string; status?: string; errorClass?: string; error?: string; app?: string }) => string;
   plain: (t: unknown, n: number) => string;
   ICON_NAMES: string[];
 }
@@ -35,6 +36,30 @@ assert.ok(W.stateOf('x'.repeat(500)).word.length <= 'Unknown state: '.length + 4
 // the token is returned as plain text: escaping is the caller's job, and the icon markup never contains it
 assert.ok(!W.iconSvg('<img onerror=1>').includes('<img'), 'an unknown icon name falls back to a fixed shape');
 for (const n of W.ICON_NAMES) assert.ok(/^<svg [^>]*aria-hidden="true"/.test(W.iconSvg(n)), n);
+
+// FR-078: a `disabled` server says who turned it off, and the word agrees with the switch
+assert.strictEqual(W.stateOf('disabled', { off: true, defaultOn: true, app: 'GitHub Copilot' }).word, 'Off for this session', 'switched off here');
+assert.strictEqual(W.stateOf('disabled', { off: false, defaultOn: false, origin: 'cli', app: 'GitHub Copilot' }).word, 'Off in Settings');
+assert.strictEqual(W.stateOf('disabled', { off: false, defaultOn: false, origin: 'folder' }).word, 'Off in folder extras');
+assert.strictEqual(W.stateOf('disabled', { off: false, defaultOn: true, app: 'GitHub Copilot' }).word, 'Off in GitHub Copilot', 'turned off by the agent app');
+assert.strictEqual(W.stateOf('disabled', { off: false, defaultOn: true }).word, 'Turned off by the agent app', 'no app name: the fallback');
+assert.ok(W.stateOf('disabled', { off: false, defaultOn: true, app: 'x'.repeat(500) }).word.length <= 'Off in '.length + 40, 'a long app name is cut');
+assert.strictEqual(W.stateOf('disabled', { off: false, defaultOn: true, app: 'A\nB' }).word, 'Off in A B', 'control characters flattened');
+assert.strictEqual(W.stateOf('disabled', { off: false, defaultOn: true, app: 'X' }).icon, 'off');
+assert.strictEqual(W.stateOf('connected', { off: true, defaultOn: true }).word, 'Running', 'only `disabled` is reworded');
+assert.deepStrictEqual([{ off: true, defaultOn: true }, { off: false, defaultOn: false }, { off: false, defaultOn: true }].map((c) => W.offBy(c)), ['here', 'settings', 'app']);
+// FR-078: a server Durbar itself passed as off at the session start is never blamed on the agent app
+assert.strictEqual(W.offBy({ off: false, defaultOn: true, launchedOff: true }), 'start');
+assert.strictEqual(W.stateOf('disabled', { off: false, defaultOn: true, launchedOff: true, app: 'GitHub Copilot' }).word, 'Off until the session restarts');
+assert.strictEqual(W.offBy({ off: false, defaultOn: true, switchedHere: true }), 'pending');
+assert.strictEqual(W.stateOf('disabled', { off: false, defaultOn: true, switchedHere: true }).word, 'Starting', 'no flicker: switched on here, the old `disabled` reads Starting');
+assert.strictEqual(W.offBy({ off: true, defaultOn: true, launchedOff: true }), 'here', 'the switch wins');
+assert.strictEqual(W.offBy({ off: false, defaultOn: false, launchedOff: true }), 'settings');
+assert.match(W.hintFor({ status: 'disabled', by: 'start' }), /Restart session with these servers/);
+assert.match(W.hintFor({ status: 'disabled', by: 'app', app: 'GitHub Copilot' }), /^Turn it on in GitHub Copilot\u2019s own MCP settings, then restart the session\./);
+assert.match(W.hintFor({ status: 'disabled', by: 'app' }), /^Turn it on in the agent app\u2019s own MCP settings/, 'no app name: the fallback');
+assert.strictEqual(W.hintFor({ status: 'disabled', by: 'here', app: 'X' }), '', 'a server switched off here needs no hint');
+assert.strictEqual(W.hintFor({ status: 'disabled' }), '', 'no hint without the origin');
 
 // the tooltip text (FR-168: at most 120): cut, flattened, never longer than n
 assert.strictEqual(W.plain('x'.repeat(500), 120).length, 120);
