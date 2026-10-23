@@ -164,6 +164,36 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.deepStrictEqual([ms[1].servers[0].status, ms[1].servers[0].errorClass, ms[1].servers[0].source], ['needs-auth', 'auth', 'user']);
   assert.deepStrictEqual([ms[2].servers[0].status, ms[2].servers[0].errorClass], ['connected', undefined], 'next runtime status replaces it');
 }
+// Spec 058 FR-060 (review on #598): a re-read of the server list (the poll while a sign-in page is open) is not a new status from the runtime.
+{
+  const text = 'Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)';
+  const sink: EventBody[] = [];
+  const mapper = new EventMapper((b) => sink.push(b));
+  const feed = (ev: RawEvent): void => mapper.map(ev);
+  const last = (): { name: string; status: string; errorClass?: string }[] => (sink.filter((e) => e.type === 'mcp').pop() as unknown as { servers: { name: string; status: string; errorClass?: string }[] }).servers;
+  feed({ type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'srv', status: 'connected' }, { name: 'other', status: 'connected' }] } });
+  feed({ type: 'tool.execution_start', data: { toolCallId: 'a', toolName: 'srv-x', mcpServerName: 'srv', mcpToolName: 'x', arguments: {} } });
+  feed({ type: 'tool.execution_complete', data: { toolCallId: 'a', success: false, error: { message: text } } });
+  assert.deepStrictEqual(last().filter((x) => x.name === 'srv').map((x) => [x.status, x.errorClass]), [['needs-auth', 'auth']]);
+  mapper.reread([{ name: 'srv', status: 'connected' }, { name: 'other', status: 'failed', error: 'boom' }]);
+  assert.deepStrictEqual(last().map((x) => [x.name, x.status]), [['srv', 'needs-auth'], ['other', 'failed']], 'a re-read keeps the mark, and still applies a real change of another server');
+  mapper.reread([{ name: 'srv', status: 'connected' }, { name: 'other', status: 'failed' }]);
+  assert.strictEqual(last().find((x) => x.name === 'srv')!.status, 'needs-auth', 'and again');
+  mapper.reread([{ name: 'srv', status: 'failed', error: 'x' }, { name: 'other', status: 'failed' }]);
+  assert.strictEqual(last().find((x) => x.name === 'srv')!.status, 'failed', 'a re-read that lists another status replaces the mark');
+  mapper.reread([{ name: 'srv', status: 'connected' }]);
+  assert.deepStrictEqual(last().map((x) => [x.name, x.status]), [['srv', 'connected']], 'then connected counts, and a server no longer listed is gone');
+  // only the runtime's own status clears the mark
+  feed({ type: 'tool.execution_start', data: { toolCallId: 'b', toolName: 'srv-x', mcpServerName: 'srv', mcpToolName: 'x', arguments: {} } });
+  feed({ type: 'tool.execution_complete', data: { toolCallId: 'b', success: false, error: { message: text } } });
+  assert.strictEqual(last()[0].status, 'needs-auth');
+  feed({ type: 'session.mcp_server_status_changed', data: { serverName: 'srv', status: 'connected' } });
+  assert.strictEqual(last()[0].status, 'connected', 'status_changed replaces it');
+  feed({ type: 'tool.execution_start', data: { toolCallId: 'c', toolName: 'srv-x', mcpServerName: 'srv', mcpToolName: 'x', arguments: {} } });
+  feed({ type: 'tool.execution_complete', data: { toolCallId: 'c', success: false, error: { message: text } } });
+  feed({ type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'srv', status: 'connected' }] } });
+  assert.strictEqual(last()[0].status, 'connected', 'servers_loaded replaces it');
+}
 // Credit cap events (spec 011). Shapes are taken from the SDK 1.0.22 type definitions (session-events.d.ts), NOT recorded from a real session.
 {
   const out = run([

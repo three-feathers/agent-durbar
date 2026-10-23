@@ -10,6 +10,8 @@
  *  - the per-folder cache (review on #535): a message that is not `/name` reads nothing, a warm `/name` reads only its file, and the
  *    cache is renewed by a changed directory, by age and by the list opening;
  *  - the Claude adapter merges files with the probe's built-ins; the Copilot and Codex adapters list their places;
+ *  - VS Code prompt files (delta 2026-10-23): `.github/prompts/*.prompt.md` and VS Code's user folder per OS, front matter (name,
+ *    description, settings shown not applied), `${input:…}` filling, and the same hostile cases (link to `.env`, a FIFO, oversized);
  *  - the renderer's pure helpers (`slashsuggest.js`): the word at the caret, filtering with the shared `DurbarNav.rank`, insertion,
  *    and the option row's escaping (a hostile entry).
  */
@@ -20,13 +22,14 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vm from 'vm';
 import {
-  BUILTIN_ALLOW, MAX_SLASH_BYTES, MAX_SLASH_FILES, MAX_SLASH_PER_DIR, SlashCache, claudeSlashPlaces, cleanBuiltins, codexSlashPlaces,
+  BUILTIN_ALLOW, MAX_SLASH_BYTES, fillPromptFile, promptInputs, vscodeUserPromptDirs, MAX_SLASH_EXPANDED, expansionWithNote, MAX_SLASH_FILES, MAX_SLASH_PER_DIR, SlashCache, claudeSlashPlaces, cleanBuiltins, codexSlashPlaces,
   copilotHomeDir, copilotSlashPlaces, discoverSlash, displayBase, expandSlash, mergeSlash, parseFrontMatter, publicSlash, slashLineName,
 } from '../src/adapters/slashcommands';
 import type { SlashFs, SlashPlace } from '../src/adapters/slashcommands';
 import { parseClaudeAgent } from '../src/adapters/claudeAgents';
 import { ClaudeAdapter } from '../src/adapters/claude';
 import { CodexAdapter } from '../src/adapters/codex';
+import { CopilotAdapter } from '../src/adapters/copilot';
 
 let passed = 0;
 const test = async (name: string, fn: () => void | Promise<void>): Promise<void> => {
@@ -98,19 +101,19 @@ async function main(): Promise<void> {
     const posix = (d: string): string => d.split(path.sep).join('/').replace(/^[A-Za-z]:/, '');
     const c = claudeSlashPlaces(['/w/a', '/w/b'], '/h/.claude', '/h');
     assert.deepStrictEqual(c.map((p) => [posix(p.dir), p.scope, p.kind, p.whereBase]), [
-      ['/w/a/.claude/skills', 'folder', 'skill', 'a'], ['/w/a/.claude/commands', 'folder', 'command', 'a'],
-      ['/w/b/.claude/skills', 'folder', 'skill', 'b'], ['/w/b/.claude/commands', 'folder', 'command', 'b'],
+      ['/w/a/.claude/skills', 'folder', 'skill', 'a'], ['/w/a/.claude/commands', 'folder', 'command', 'a'], ['/w/a/.github/prompts', 'folder', 'prompt', 'a'],
+      ['/w/b/.claude/skills', 'folder', 'skill', 'b'], ['/w/b/.claude/commands', 'folder', 'command', 'b'], ['/w/b/.github/prompts', 'folder', 'prompt', 'b'],
       ['/h/.claude/skills', 'user', 'skill', '~/.claude'], ['/h/.claude/commands', 'user', 'command', '~/.claude'],
     ]);
     assert.strictEqual(claudeSlashPlaces(['/w/a'], '/h/.claude', '/h')[0].whereBase, '', 'one folder: paths relative to it');
     const cp = copilotSlashPlaces(['/w/a'], copilotHomeDir({}, '/h'), '/h').map((p) => p.dir.split(path.sep).join('/'));
-    assert.deepStrictEqual(cp.map((d) => d.replace(/^[A-Za-z]:/, '')), ['/w/a/.github/skills', '/w/a/.claude/skills', '/w/a/.agents/skills', '/h/.copilot/skills', '/h/.agents/skills']);
+    assert.deepStrictEqual(cp.map((d) => d.replace(/^[A-Za-z]:/, '')), ['/w/a/.github/skills', '/w/a/.claude/skills', '/w/a/.agents/skills', '/w/a/.github/prompts', '/h/.copilot/skills', '/h/.agents/skills']);
     // COPILOT_HOME replaces the whole ~/.copilot path (GitHub's config-dir reference, read:)
     const ch = copilotSlashPlaces(['/w/a'], copilotHomeDir({ COPILOT_HOME: '/c/cop' }, '/h'), '/h').filter((p) => p.scope === 'user');
     assert.deepStrictEqual(ch.map((p) => [p.dir.split(path.sep).join('/').replace(/^[A-Za-z]:/, ''), p.whereBase]), [['/c/cop/skills', 'c/cop'], ['/h/.agents/skills', '~/.agents']]);
     const cx = codexSlashPlaces(['/w/a'], '/h/.codex', '/h');
     assert.deepStrictEqual(cx.map((p) => [p.dir.split(path.sep).join('/').replace(/^[A-Za-z]:/, ''), p.kind, p.prefix ?? '']), [
-      ['/w/a/.agents/skills', 'skill', ''], ['/h/.agents/skills', 'skill', ''], ['/h/.codex/skills', 'skill', ''], ['/h/.codex/prompts', 'prompt', 'prompts:'],
+      ['/w/a/.agents/skills', 'skill', ''], ['/w/a/.github/prompts', 'prompt', ''], ['/h/.agents/skills', 'skill', ''], ['/h/.codex/skills', 'skill', ''], ['/h/.codex/prompts', 'prompt', 'prompts:'],
     ]);
     assert.strictEqual(path.win32.join('C:\\w\\a', '.claude', 'skills'), 'C:\\w\\a\\.claude\\skills'); // the places are built with path.join only
     assert.strictEqual(displayBase('/opt/claude-cfg', '/h'), 'opt/claude-cfg', 'outside home: no absolute path');
@@ -305,6 +308,7 @@ async function main(): Promise<void> {
     const ad = new ClaudeAdapter({
       claudePath: async () => '/usr/bin/claude',
       configDir: cfg,
+      vscodePromptDirs: [], // never this machine's own VS Code prompts
       sessionExists: () => false,
       claudeMd: () => undefined,
       env: () => ({}),
@@ -413,6 +417,196 @@ async function main(): Promise<void> {
     const l = await ad.listSlashCommands('s1');
     assert.deepStrictEqual(l.map((e) => `${e.source}:${e.name}`).filter((x) => /cx-skill|p1/.test(x)), ['folder:cx-skill', 'user:prompts:p1']);
     assert.strictEqual((await ad.expandSlashCommand('s1', '/prompts:p1 go'))!.text, 'P1 go');
+  });
+
+  // ---- VS Code prompt files (spec 073 delta 2026-10-23) ----
+  await test('prompt files: VS Code user prompt folders per OS (Code and Code - Insiders)', () => {
+    assert.deepStrictEqual(vscodeUserPromptDirs({ APPDATA: 'C:\\Users\\v\\AppData\\Roaming' }, 'win32', 'C:\\Users\\v'), ['C:\\Users\\v\\AppData\\Roaming\\Code\\User\\prompts', 'C:\\Users\\v\\AppData\\Roaming\\Code - Insiders\\User\\prompts']);
+    assert.deepStrictEqual(vscodeUserPromptDirs({}, 'win32', 'C:\\Users\\v')[0], 'C:\\Users\\v\\AppData\\Roaming\\Code\\User\\prompts', 'no APPDATA: the default roaming folder');
+    assert.deepStrictEqual(vscodeUserPromptDirs({}, 'darwin', '/Users/v'), ['/Users/v/Library/Application Support/Code/User/prompts', '/Users/v/Library/Application Support/Code - Insiders/User/prompts']);
+    assert.deepStrictEqual(vscodeUserPromptDirs({}, 'linux', '/home/v')[0], '/home/v/.config/Code/User/prompts');
+    assert.deepStrictEqual(vscodeUserPromptDirs({ XDG_CONFIG_HOME: '/x/cfg' }, 'linux', '/home/v')[0], '/x/cfg/Code/User/prompts');
+    assert.deepStrictEqual(vscodeUserPromptDirs({ XDG_CONFIG_HOME: 'rel/cfg' }, 'linux', '/home/v')[0], '/home/v/.config/Code/User/prompts', 'a relative XDG_CONFIG_HOME is ignored');
+  });
+
+  const pRepo = path.join(tmp, 'prepo');
+  const pHome = path.join(tmp, 'phome');
+  const pUser = path.join(pHome, '.config', 'Code', 'User', 'prompts');
+  write(path.join(pRepo, '.github', 'prompts', 'hello.prompt.md'), '---\ndescription: Say hello to someone\nmode: agent\ntools: [\'codebase\']\n---\nSay hello to ${input:name:Your name} in ${input:lang}. Selection: ${selection}');
+  write(path.join(pRepo, '.github', 'prompts', 'plain.prompt.md'), 'Just do it.');
+  write(path.join(pRepo, '.github', 'prompts', 'renamed.prompt.md'), '---\nname: greet-all\ndescription: Greets\nargument-hint: <who>\n---\nGreet $ARGUMENTS');
+  write(path.join(pRepo, '.github', 'prompts', 'badname.prompt.md'), '---\nname: "bad name"\n---\nBad name keeps the file name');
+  write(path.join(pRepo, '.github', 'prompts', 'notes.md'), 'not a prompt file');
+  write(path.join(pRepo, '.github', 'prompts', 'many.prompt.md'), '---\ndescription: ' + 'd'.repeat(300) + '\nmodel: gpt-5\nagent: plan\n---\nx');
+  write(path.join(pUser, 'mine.prompt.md'), '---\ndescription: My own prompt\n---\nMine: ${input:topic}');
+  const pList = (places: SlashPlace[]): ReturnType<typeof discoverSlash> => discoverSlash(places);
+
+  await test('prompt files: listed for Claude Code, Copilot and Codex from the folder and the VS Code user folder', () => {
+    for (const places of [
+      claudeSlashPlaces([pRepo], path.join(pHome, '.claude'), pHome, [pUser]),
+      copilotSlashPlaces([pRepo], path.join(pHome, '.copilot'), pHome, [pUser]),
+      codexSlashPlaces([pRepo], path.join(pHome, '.codex'), pHome, [pUser]),
+    ]) {
+      const l = pList(places);
+      assert.deepStrictEqual(l.map((e) => `${e.source}:${e.kind}:${e.name}`), ['folder:prompt:badname', 'folder:prompt:greet-all', 'folder:prompt:hello', 'folder:prompt:many', 'folder:prompt:plain', 'user:prompt:mine']);
+      const h = l.find((e) => e.name === 'hello')!;
+      assert.strictEqual(h.description, 'Say hello to someone (VS Code settings not applied: mode, tools)');
+      assert.strictEqual(h.argumentHint, '<Your name> <lang>', 'the input variables give the hint when there is no argument-hint');
+      assert.strictEqual(h.where, '.github/prompts/hello.prompt.md');
+      assert.strictEqual(l.find((e) => e.name === 'greet-all')!.argumentHint, '<who>');
+      assert.strictEqual(l.find((e) => e.name === 'plain')!.description, undefined);
+      assert.strictEqual(l.find((e) => e.name === 'mine')!.where, '~/.config/Code/User/prompts/mine.prompt.md');
+      const many = l.find((e) => e.name === 'many')!.description!;
+      assert.ok(many.length <= 200 && many.endsWith('(VS Code settings not applied: agent, model)'), 'a long description makes room for the settings hint');
+      assert.ok(!l.some((e) => e.name === 'notes'), 'a .md that is not a .prompt.md is not a prompt file');
+    }
+    // the public shape carries no file path and no internal flag
+    const pub = publicSlash(pList(copilotSlashPlaces([pRepo], path.join(pHome, '.copilot'), pHome, [pUser])));
+    assert.ok(pub.every((e) => !('file' in e) && !('vscode' in e) && !('root' in e)));
+  });
+
+  await test('prompt files: ${input:…} filled by position and name=value; $ARGUMENTS; unknown variables left with a note', () => {
+    assert.deepStrictEqual(promptInputs('${input:a} ${input:b:Pick b} ${input:a}'), [{ name: 'a' }, { name: 'b', placeholder: 'Pick b' }]);
+    assert.deepStrictEqual(fillPromptFile('Hi ${input:name}.', 'Ada Lovelace'), { text: 'Hi Ada Lovelace.', left: [] }, 'one variable takes the whole line');
+    assert.deepStrictEqual(fillPromptFile('${input:a}|${input:b:B}', 'x y z'), { text: 'x|y z', left: [] }, 'the last variable takes the rest');
+    assert.deepStrictEqual(fillPromptFile('${input:a}|${input:b}', 'b=two one'), { text: 'one|two', left: [] }, 'name=value first, then by position');
+    assert.deepStrictEqual(fillPromptFile('${input:formName}', 'formname="My Form"'), { text: 'My Form', left: [] }, 'quoted value, name matched without case');
+    assert.deepStrictEqual(fillPromptFile('${input:a} and ${input:b}', 'only'), { text: 'only and ${input:b}', left: ['${input:b}'] }, 'a variable with no value stays');
+    assert.deepStrictEqual(fillPromptFile('Fix ${selection} in ${file}', ''), { text: 'Fix ${selection} in ${file}', left: ['${selection}', '${file}'] });
+    assert.deepStrictEqual(fillPromptFile('Do $1 then $ARGUMENTS', 'a b'), { text: 'Do a then a b', left: [] });
+    assert.deepStrictEqual(fillPromptFile('A=${input:a} B=${input:b}', 'a=$1 b=${input:a}'), { text: 'A=$1 B=${input:a}', left: [] }, 'the user\'s words are not placeholders');
+    assert.deepStrictEqual(fillPromptFile('No placeholder.', 'extra words'), { text: 'No placeholder.\n\nARGUMENTS: extra words', left: [] });
+    assert.deepStrictEqual(fillPromptFile('No placeholder.', ''), { text: 'No placeholder.', left: [] });
+    assert.deepStrictEqual(fillPromptFile('${weird stuff here}', '')!.left, ['${…}'], 'only plain variable names are echoed in the note');
+    // through expandSlash: front matter removed, the note names the settings and the variables left
+    const l = pList(copilotSlashPlaces([pRepo], path.join(pHome, '.copilot'), pHome, [pUser]));
+    assert.deepStrictEqual(expandSlash('/hello Bob French', l), {
+      text: 'Say hello to Bob in French. Selection: ${selection}',
+      where: '.github/prompts/hello.prompt.md',
+      note: 'VS Code settings not applied: mode, tools; left as written: ${selection}.',
+    });
+    assert.deepStrictEqual(expandSlash('/greet-all team', l), { text: 'Greet team', where: '.github/prompts/renamed.prompt.md' });
+    assert.deepStrictEqual(expandSlash('/mine caching', l), { text: 'Mine: caching', where: '~/.config/Code/User/prompts/mine.prompt.md' });
+    assert.strictEqual(expandSlash('/renamed x', l), undefined, 'a renamed prompt file answers only to its new name');
+  });
+
+  await test('prompt files (hostile): links to .env or out of the folder, a plain .md behind a .prompt.md name, under .git, oversized', () => {
+    const r = path.join(tmp, 'phostile');
+    write(path.join(r, '.env'), 'API_KEY=SECRET-PENV');
+    write(path.join(r, 'docs', 'readme.md'), 'SECRET-README');
+    write(path.join(r, '.git', 'x.prompt.md'), 'SECRET-GITPROMPT');
+    write(path.join(r, '.github', 'prompts', 'ok.prompt.md'), 'fine');
+    write(path.join(r, '.github', 'prompts', 'big.prompt.md'), 'x'.repeat(MAX_SLASH_BYTES + 1));
+    const dir = path.join(r, '.github', 'prompts');
+    const outside = write(path.join(tmp, 'poutside', 'leak.prompt.md'), 'SECRET-OUT');
+    if (canLink) {
+      fs.symlinkSync(path.join(r, '.env'), path.join(dir, 'env.prompt.md'), 'file');
+      fs.symlinkSync(path.join(r, 'docs', 'readme.md'), path.join(dir, 'readme.prompt.md'), 'file');
+      fs.symlinkSync(path.join(r, '.git', 'x.prompt.md'), path.join(dir, 'git.prompt.md'), 'file');
+      fs.symlinkSync(outside, path.join(dir, 'leak.prompt.md'), 'file');
+    }
+    const userDir = path.join(tmp, 'phostilehome', 'prompts');
+    write(path.join(tmp, 'phostilehome', 'settings.json'), '{"SECRET-SETTINGS":1}');
+    fs.mkdirSync(userDir, { recursive: true });
+    if (canLink) fs.symlinkSync(path.join('..', 'settings.json'), path.join(userDir, 's.prompt.md'), 'file');
+    const l = discoverSlash(copilotSlashPlaces([r], path.join(tmp, 'phostilehome', '.copilot'), path.join(tmp, 'phostilehome'), [userDir]));
+    assert.deepStrictEqual(l.map((e) => e.name), ['ok'], 'only the real prompt file is listed');
+    assert.ok(!JSON.stringify(l).includes('SECRET'));
+    if (!canLink) return console.log('  (links skipped: this OS refuses symbolic links here)');
+    // forged entries (an older list, or a file swapped since) are checked again at send
+    const forged = (file: string, root: string) => expandSlash('/x go', [{ name: 'x', source: 'folder', kind: 'prompt', file, root, vscode: true }]);
+    for (const [f, root] of [
+      [path.join(dir, 'env.prompt.md'), r], [path.join(dir, 'readme.prompt.md'), r], [path.join(dir, 'git.prompt.md'), r],
+      [path.join(dir, 'leak.prompt.md'), r], [path.join(dir, 'big.prompt.md'), r], [path.join(userDir, 's.prompt.md'), userDir],
+    ] as const) assert.strictEqual(forged(f, root), undefined, `${path.relative(tmp, f)} is not expanded`);
+    assert.ok(forged(path.join(dir, 'ok.prompt.md'), r), 'the real prompt file still expands');
+    // a listed prompt file swapped for a link to .env after discovery
+    const ok = path.join(dir, 'ok.prompt.md');
+    fs.unlinkSync(ok);
+    fs.symlinkSync(path.join(r, '.env'), ok, 'file');
+    assert.strictEqual(expandSlash('/ok', l), undefined, 'swapped after the list was made: the typed text is sent');
+  });
+
+  await test('prompt files (hostile): a FIFO swapped in after discovery gives no expansion at once (no hang)', () => {
+    if (process.platform === 'win32') return console.log('  (skipped on Windows: no mkfifo; the regular-file check still applies)');
+    const r = path.join(tmp, 'pfifo');
+    write(path.join(r, '.github', 'prompts', 'f.prompt.md'), 'body ${input:x}');
+    const mod = path.join(__dirname, '..', 'src', 'adapters', 'slashcommands.js');
+    const code = `
+      const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
+      const S = require(${JSON.stringify(mod)});
+      const r = ${JSON.stringify(r)};
+      const list = S.discoverSlash(S.copilotSlashPlaces([r], path.join(r, 'nohome'), r, []));
+      if (list.length !== 1 || !list[0].vscode) throw new Error('setup: ' + list.length);
+      const f = path.join(r, '.github', 'prompts', 'f.prompt.md');
+      fs.unlinkSync(f); execFileSync('mkfifo', [f]);
+      process.stdout.write(JSON.stringify(S.expandSlash('/f hi', list) === undefined));`;
+    assert.strictEqual(execFileSync(process.execPath, ['-e', code], { timeout: 8000, encoding: 'utf8' }), 'true', 'the FIFO is refused');
+  });
+
+  await test('prompt files: the Copilot and Codex adapters list and expand them (VS Code user folder from the environment)', async () => {
+    const cop = new CopilotAdapter() as unknown as { sessions: Map<string, { cwd: string; folders?: string[] }>; listSlashCommands(id: string): Promise<{ name: string; source: string; kind: string }[]>; expandSlashCommand(id: string, t: string): Promise<{ text: string; where: string; note?: string } | undefined> };
+    cop.sessions.set('c1', { cwd: pRepo });
+    const cl = await cop.listSlashCommands('c1');
+    assert.ok(cl.some((e) => e.name === 'hello' && e.source === 'folder' && e.kind === 'prompt'), 'Copilot lists the folder prompt file');
+    const ex = await cop.expandSlashCommand('c1', '/hello name=Ann lang=Dutch');
+    assert.strictEqual(ex?.text, 'Say hello to Ann in Dutch. Selection: ${selection}');
+    assert.match(ex?.note ?? '', /VS Code settings not applied: mode, tools/);
+    if (process.platform === 'darwin') return console.log('  (Codex user folder part skipped on macOS: it lives under the real home)');
+    const cx = new CodexAdapter({ env: { CODEX_HOME: path.join(pHome, '.codex'), XDG_CONFIG_HOME: path.join(pHome, '.config'), APPDATA: path.join(pHome, '.config') } }) as unknown as { sessions: Map<string, { roots: string[] }>; listSlashCommands(id: string): Promise<{ name: string; source: string }[]>; expandSlashCommand(id: string, t: string): Promise<{ text: string } | undefined> };
+    cx.sessions.set('x1', { roots: [pRepo] });
+    const xl = await cx.listSlashCommands('x1');
+    assert.ok(xl.some((e) => e.name === 'mine' && e.source === 'user'), 'Codex lists the VS Code user prompt file');
+    assert.strictEqual((await cx.expandSlashCommand('x1', '/mine tests'))!.text, 'Mine: tests');
+  });
+
+  await test('size cap (review on #615): a huge expansion is not built; the line goes as typed with a note; boundary for every kind', () => {
+    const r = path.join(tmp, 'caprepo');
+    write(path.join(r, '.github', 'prompts', 'many.prompt.md'), '${input:a}'.repeat(6500)); // 65,000 bytes, under the 64 KB file cap
+    write(path.join(r, '.claude', 'commands', 'args.md'), '$ARGUMENTS '.repeat(5000));
+    write(path.join(r, '.claude', 'commands', 'pos.md'), '$1 '.repeat(20000));
+    write(path.join(r, '.claude', 'commands', 'plain.md'), 'No placeholder.');
+    write(path.join(r, '.claude', 'skills', 'sk', 'SKILL.md'), '---\nname: sk\n---\n' + 'k'.repeat(60000));
+    write(path.join(r, '.github', 'prompts', 'small.prompt.md'), 'Hi ${input:who} and $ARGUMENTS');
+    write(path.join(r, '.claude', 'commands', 'small.md'), 'Do $1 with $ARGUMENTS');
+    const places = [...claudeSlashPlaces([r], path.join(tmp, 'caphome', '.claude'), path.join(tmp, 'caphome')), ...copilotSlashPlaces([r], path.join(tmp, 'caphome', '.copilot'), path.join(tmp, 'caphome'))];
+    const l = discoverSlash(places);
+    const big = 'x'.repeat(10 * 1024);
+    // a 200 KB argument in 6,500 placeholders would be 1.3 G characters, past V8's string limit: only an early stop gets through this
+    for (const line of [`/many ${'w'.repeat(200 * 1024)}`, `/many ${big}`, `/args ${big}`, '/pos ' + 'y'.repeat(20), `/sk ${'z'.repeat(MAX_SLASH_EXPANDED)}`]) {
+      const t0 = Date.now();
+      const ex = expandSlash(line, l);
+      assert.ok(ex && ex.asTyped === true && ex.text === line, `${line.slice(0, 6)}: sent as typed`);
+      assert.match(ex!.note!, /^Not expanded: the text of .+ would be over 256 KB, so the line was sent as typed\.$/);
+      assert.ok(Date.now() - t0 < 1000, `${line.slice(0, 6)}: stopped early (${Date.now() - t0} ms)`);
+    }
+    // the boundary, for each kind: exactly the cap is expanded, one character less is refused
+    const entry = (n: string) => l.find((e) => e.name === n)!;
+    for (const [name, rest] of [['small', 'Ann extra words'], ['plain', 'some words'], ['sk', 'go'], ['many', 'ab']] as const) {
+      for (const e of l.filter((x) => x.name === name)) {
+        const full = expansionWithNote(e, rest, {}, 1e9);
+        assert.ok(full && 'text' in full, `${name}: expands without a cap`);
+        const len = (full as { text: string }).text.length;
+        const at = expansionWithNote(e, rest, {}, len);
+        assert.ok(at && 'text' in at && at.text === (full as { text: string }).text, `${name} (${e.kind}): exactly the cap is expanded`);
+        assert.deepStrictEqual(expansionWithNote(e, rest, {}, len - 1), { tooLarge: true }, `${name} (${e.kind}): one over the cap is refused`);
+      }
+    }
+    assert.ok(entry('small'));
+    // fillPromptFile on its own: each placeholder kind stops at the cap
+    assert.strictEqual(fillPromptFile('${input:a}${input:a}', 'xxxxx', 9), undefined, '${input:…}');
+    assert.deepStrictEqual(fillPromptFile('${input:a}${input:a}', 'xxxxx', 10), { text: 'xxxxxxxxxx', left: [] });
+    assert.strictEqual(fillPromptFile('$ARGUMENTS$ARGUMENTS', 'xxxxx', 9), undefined, '$ARGUMENTS');
+    assert.strictEqual(fillPromptFile('$1$1', 'xxxxx', 9), undefined, '$1');
+    assert.strictEqual(fillPromptFile('Body.', 'xxxxx', 10), undefined, 'the ARGUMENTS line counts too');
+  });
+
+  await test('env bases must be absolute (review on #615): APPDATA, XDG_CONFIG_HOME, the home folder, COPILOT_HOME', () => {
+    assert.deepStrictEqual(vscodeUserPromptDirs({ APPDATA: 'rel\\appdata' }, 'win32', 'C:\\Users\\v')[0], 'C:\\Users\\v\\AppData\\Roaming\\Code\\User\\prompts', 'a relative APPDATA is ignored');
+    assert.deepStrictEqual(vscodeUserPromptDirs({ APPDATA: 'rel' }, 'win32', 'rel-home'), [], 'no absolute base at all: no user folder');
+    assert.deepStrictEqual(vscodeUserPromptDirs({}, 'darwin', 'Users/v'), [], 'a relative home on macOS');
+    assert.deepStrictEqual(vscodeUserPromptDirs({ XDG_CONFIG_HOME: 'rel' }, 'linux', 'home/v'), [], 'a relative home on Linux');
+    assert.strictEqual(copilotHomeDir({ COPILOT_HOME: 'rel/cop' }, '/h').split(path.sep).join('/').replace(/^[A-Za-z]:/, ''), '/h/.copilot', 'a relative COPILOT_HOME is ignored');
   });
 
   await test('renderer helpers (slashsuggest.js): word at the caret, filter, insert', () => {

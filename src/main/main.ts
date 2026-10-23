@@ -157,6 +157,7 @@ const mcp = registerMcpIpc({
   appOf: appIdOf,
   globalFor: (id) => (mcpStore ? sessionGlobalFor(appIdOf(id), globalLists, mcpStore.ambientDisabled()) : {}),
   log: (a, action) => logActivity(a, 'mcp-restart', action),
+  openUrl: (url) => shell.openExternal(url), // spec 058 FR-065: the held sign-in page, only after the user's click
   globalNames: () => Object.fromEntries(globalLists.state(() => []).apps.map((x) => [x.app, x.servers.map((v) => v.name)])),
 });
 registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
@@ -444,7 +445,7 @@ router.onEvent((e) => {
   if (s) toRenderer('agents:checkpoint', { id: e.sessionId, ...s });
 });
 
-async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string; slash?: string }> {
+async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }> {
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
   if (safe.length > MAX_ATTACH_FILES) return { ok: false, error: `Up to ${MAX_ATTACH_FILES} attachments per message (got ${safe.length}).` };
@@ -458,14 +459,14 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
     checkpoints().beginTurn(id, rootsOf(agents.get(id) as AgentInfo)); // spec 065 FR-002: a send starts a turn (scheduled prompts too)
     // spec 073 FR-005: a leading `/name` of a folder or user entry is sent as that entry's text (the apps do not load them in Durbar's
     // sessions); built-ins and anything else go as typed. Scheduled prompts come through here too.
-    const { slash } = await sendWithSlash(ad, id, {
+    const { slash, slashNote } = await sendWithSlash(ad, id, {
       text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
       ...(plan ? { plan: true } : {}),
     });
     for (const a of safe) pickedFiles.delete(a.path); // spec 004 FR-015: a sent file must be picked again to be sent again
     noteLastSession(agents.get(id));
-    return slash ? { ok: true, slash } : { ok: true };
+    return slash ? { ok: true, slash, ...(slashNote ? { slashNote } : {}) } : { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
