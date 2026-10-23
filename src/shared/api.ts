@@ -48,6 +48,8 @@ export interface AgentInfo {
   modelControl?: ModelControl;
   /** The agent's kind can select custom agents (spec 043). */
   profiles?: boolean;
+  /** Spec 073: the agent app offers a "/" list in the composer (`slashCommands`). */
+  slash?: true;
   /** Spec 061 FR-012: the folder's own hooks or allow rules (accepted by the person) apply to this agent's sessions. */
   folderRules?: boolean;
   /** Restored from the saved folder list: no runtime session yet, it starts with the first message. */
@@ -182,6 +184,16 @@ export interface ProfileFileInfo {
 export interface ProfileFolderInfo {
   id: string;
   path: string;
+}
+
+/** Spec 073 FR-001: one entry of the composer's "/" list as the window sees it (same shape as the adapter's `SlashCommand`; no absolute path). */
+export interface SlashCommandInfo {
+  name: string;
+  description?: string;
+  argumentHint?: string;
+  source: 'folder' | 'user' | 'app';
+  kind: 'skill' | 'command' | 'prompt' | 'builtin';
+  where?: string;
 }
 
 /** A custom agent profile as the renderer sees it (spec 043; same shape as the adapter's `AgentProfile`). */
@@ -793,7 +805,10 @@ export interface DurbarApi {
   pickAttachments(want?: 'image' | 'file'): Promise<PickedFile[]>;
   /** Pasted / dropped file bytes (renderer has no path): checked (10 MB, real image format), sanitized, written to a private temp folder. */
   stageAttachment(name: string, mime: string, data: ArrayBuffer): Promise<StageResult>;
-  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string }>;
+  /** `slash` (spec 073 FR-005): the message started with a folder or user entry and its text was sent; the value says where it came from. */
+  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string }>;
+  /** Spec 073 FR-010: the "/" entries of the agent's app in its folder (folder, user, app). */
+  slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
   /** Spec 066: answer a proposed plan (window only). */
   resolvePlan?(id: string, requestId: string, answer: { kind: 'approve' | 'reject' | 'revise'; feedback?: string }): Promise<{ ok: boolean; error?: string }>;
   /** Interrupt the current turn only; the agent returns to Ready. */
