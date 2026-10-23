@@ -127,7 +127,7 @@ module.exports = async (ctx) => {
       await H.load({ w: 1440, h: 900, index, query: { theme: ID }, ready: 'fit', settle: false });
       await H.office(15);
       assert.ok(await H.until(`window.THEME.current().id===${jsLiteral(ID)}`, 4000), 'the theme is on');
-      assert.ok(await H.until(`[...document.querySelectorAll('#stage svg.scene')].some(s=>/\\|crew\\|${lost}\\|fb/.test(s.dataset.sig))`, 8000), `the desks of ${lost} are redrawn once its picture fails`);
+      assert.ok(await H.until(`[...document.querySelectorAll('#stage svg.scene')].some(s=>(s.dataset.sig||'').includes(${jsLiteral('|crew|' + lost + '|fb')}))`, 8000), `the desks of ${lost} are redrawn once its picture fails`);
       await H.settle();
       const s = await H.js(`(${survey.toString()})()`);
       const mains = s.scenes.filter((x) => /\|crew\|/.test(x.sig));
