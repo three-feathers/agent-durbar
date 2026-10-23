@@ -4269,30 +4269,73 @@ document.addEventListener('click',e=>{
   if(chip){e.stopPropagation();if(document.getElementById('modeMenu')){closeModeMenu();return;}const r=chip.getBoundingClientRect(),a=byId(ui.selected);if(a)openModeMenu(a,r.left,r.bottom+6,chip);return;}
   if(!e.target.closest('#modeMenu'))closeModeMenu();
 },true);
-/* spec 006 FR-022: folder actions on a room's header (right-click, or the context-menu key on its door), same menu element as the mode menu */
+/* spec 006 FR-022: folder actions on a room's header (right-click, or the context-menu key on its door), same menu element as the mode menu.
+   spec 033 FR-024 (issue 590): with two or more floors, "Move to floor ▸" opens a second level in the same element (‹ Back, one radio
+   item per floor, the current one ticked and disabled); the move is the Floors panel's moveRoomToFloor, then an Undo toast. */
 function openFolderMenu(r,x,y,anchor){
   if(!r||demoOn||!bridge||!bridge.removeFolder)return;
   closeModeMenu();
-  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Folder '+r.name);
-  const it=(act,label,sub,cls)=>`<button type="button" role="menuitem" data-fact="${act}"${cls?` class="${cls}"`:''}><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
-  m.innerHTML=(bridge.newSession&&anyKindReady()?it('new','New session','Another agent with its own chat here'):'')
-    +(bridge.listSchedules?it('sched','Schedules',(()=>{const n=schedulesOf(r).filter(s=>!s.done).length;return n?n+' scheduled, '+(nextRunOf(schedulesOf(r))?'next '+nextRunOf(schedulesOf(r)):'paused'):'Prompts sent here at a time, every day or at an interval';})()):'')
-    +(bridge.renameFolder?it('rename','Rename…','A display name for this room'):'')
-    +(bridge.setFolderHidden?it('hide','Hide','Out of the office; its sessions keep running'):'')
-    +it('rm','Remove folder','Ends its sessions; nothing on disk is deleted','mm-danger');
-  document.body.appendChild(m);
-  const b=m.getBoundingClientRect(); m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px'; m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
-  m.addEventListener('click',e=>{const t=e.target.closest('[data-fact]');if(!t)return;closeModeMenu();const ag=agents.find(q=>!q.parent&&q.room===r.id);
-    if(t.dataset.fact==='new'){if(ag)newSession(ag);}else if(t.dataset.fact==='sched')openSchedules(r);else if(t.dataset.fact==='rename')renameFolder(r,anchor);else if(t.dataset.fact==='hide')hideFolder(r,true);else removeFolder(r);});
-  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-fact]')],i=its.indexOf(document.activeElement);
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');
+  const it=(act,label,sub,cls,extra)=>`<button type="button" role="menuitem" data-fact="${act}"${cls?` class="${cls}"`:''}${extra||''}><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
+  const canMove=floorsLive()&&FLOORS.floors.length>1&&!!bridge.moveFolderToFloor;
+  const place=()=>{m.style.left='0px';m.style.top='0px';const b=m.getBoundingClientRect();m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';};
+  const paintTop=focusMove=>{
+    m.setAttribute('aria-label','Folder '+r.name);
+    const here=canMove&&floorById(r.floor);
+    m.innerHTML=(bridge.newSession&&anyKindReady()?it('new','New session','Another agent with its own chat here'):'')
+      +(bridge.listSchedules?it('sched','Schedules',(()=>{const n=schedulesOf(r).filter(s=>!s.done).length;return n?n+' scheduled, '+(nextRunOf(schedulesOf(r))?'next '+nextRunOf(schedulesOf(r)):'paused'):'Prompts sent here at a time, every day or at an interval';})()):'')
+      +(bridge.renameFolder?it('rename','Rename…','A display name for this room'):'')
+      +(canMove?`<button type="button" role="menuitem" data-fact="floor" aria-haspopup="menu" aria-expanded="false"><span class="mt"><b>Move to floor</b><small>${esc(here?'Now on '+here.name+'. Its agents go with it':'Its agents go with it')}</small></span><span class="ck" aria-hidden="true">▸</span></button>`:'')
+      +(bridge.setFolderHidden?it('hide','Hide','Out of the office; its sessions keep running'):'')
+      +it('rm','Remove folder','Ends its sessions; nothing on disk is deleted','mm-danger');
+    place();
+    (focusMove&&m.querySelector('[data-fact="floor"]')||m.querySelector('button')).focus();
+  };
+  const paintFloors=()=>{
+    const cur=(floorById(r.floor)||{}).id;
+    m.setAttribute('aria-label','Move '+r.name+' to floor');
+    m.innerHTML=`<button type="button" role="menuitem" data-fact="back"><span class="mt"><b>‹ Back</b></span></button>`+FLOORS.floors.map(f=>{const here=f.id===cur,n=roomsOnFloor(f.id).length;
+      return `<button type="button" role="menuitemradio" data-fact="to" data-floor="${esc(f.id)}" aria-checked="${here}"${here?' aria-disabled="true"':''}><span class="mt"><b>${esc(f.name)}</b><small>${esc(here?'Here now':(f.on?n+' folder'+(n===1?'':'s'):'Off: the folder leaves the office'))}</small></span><span class="ck">${here?'✓':''}</span></button>`;}).join('');
+    place();
+    (m.querySelector('[data-fact="to"]:not([aria-disabled="true"])')||m.querySelector('button')).focus();
+  };
+  document.body.appendChild(m);paintTop(false);
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-fact]');if(!t)return;const f=t.dataset.fact;
+    if(f==='floor'){paintFloors();return;}
+    if(f==='back'){paintTop(true);return;}
+    if(t.getAttribute('aria-disabled')==='true')return;
+    closeModeMenu();
+    if(f==='to'){moveFolderByMenu(r,t.dataset.floor,anchor);return;}
+    const ag=agents.find(q=>!q.parent&&q.room===r.id);
+    if(f==='new'){if(ag)newSession(ag);}else if(f==='sched')openSchedules(r);else if(f==='rename')renameFolder(r,anchor);else if(f==='hide')hideFolder(r,true);else removeFolder(r);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-fact]')],i=its.indexOf(document.activeElement),sub=!!m.querySelector('[data-fact="back"]');
     if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
+    else if(e.key==='ArrowRight'&&document.activeElement&&document.activeElement.dataset.fact==='floor'){e.preventDefault();paintFloors();}
+    else if(sub&&(e.key==='ArrowLeft'||e.key==='Escape')){e.preventDefault();e.stopPropagation();paintTop(true);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
-  m.querySelector('button').focus();
+}
+/* spec 033 FR-024: the menu's move is the Floors panel's (moveRoomToFloor, FR-005), then the action toast with Undo (spec 030/052) */
+async function moveFolderByMenu(r,floorId,anchor){
+  const from=(floorById(r.floor)||{}).id,to=floorById(floorId);
+  if(!to||to.id===from)return;
+  const fail=res=>{toast(esc((res&&res.error)||'Could not move the folder.'),5000).classList.add('err');};
+  const res=await moveRoomToFloor(r.id,to.id);
+  if(!res||!res.ok){fail(res);return;}
+  refocusAnchor(anchor);
+  const fromName=(floorById(from)||{}).name||'';
+  toastAction(esc(r.name)+' moved to <b>'+esc(to.name)+'</b>.'+(to.on?'':' That floor is off, so it left the office.'),'Undo',async()=>{
+    const u=await moveRoomToFloor(r.id,from);
+    if(!u||!u.ok){fail(u);return;}
+    announce(r.name+' is back on '+fromName+'.');
+  },8000); /* the toast area is a polite live region, so the move is announced once */
 }
 document.addEventListener('contextmenu',e=>{
   const h=e.target.closest('#stage .room-head');
   if(h&&!e.target.closest('.desk')){const door=h.querySelector('[data-door]'),r=door&&ROOMS.find(x=>x.id===door.dataset.door);
     if(r&&bridge&&bridge.removeFolder&&!demoOn){e.preventDefault();const b=h.getBoundingClientRect();openFolderMenu(r,e.clientX||b.left+16,e.clientY||b.bottom,door);return;}}
+  /* spec 033 FR-024: in the List view the Folder cell opens the folder menu of that row's folder; the rest of the row keeps the agent's menu */
+  const lf=e.target.closest('#list .lrow[data-id] .lfold');
+  if(lf&&bridge&&bridge.removeFolder&&!demoOn){const a=byId(lf.closest('.lrow').dataset.id),rr=a&&roomOf(a);if(rr&&ROOMS.includes(rr)){e.preventDefault();const b=lf.getBoundingClientRect();openFolderMenu(rr,e.clientX||b.left+8,e.clientY||b.bottom,lf.closest('.lrow'));return;}}
   const d=e.target.closest('.desk[data-id], .helper[data-id], .lrow[data-id]');if(!d||d.closest('#panel'))return;
   const a=byId(d.dataset.id),ra=a&&liveRoot(a);if(!ra||!ra.live)return;
   const r=d.getBoundingClientRect();

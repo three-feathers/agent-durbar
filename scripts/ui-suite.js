@@ -33,6 +33,7 @@ const DRIVERS = [
   { name: 'shots-017' },
   { name: 'shots-018' },
   { name: 'shots-033', env: { DURBAR_SIM_FLOORS: '1' } },
+  { name: 'shots-033-move', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-024 (#590): Move to floor in the folder menu, with Undo
   { name: 'shots-034-list' },
   { name: 'shots-044-everywhere' },
   { name: 'shots-044-templates' },
