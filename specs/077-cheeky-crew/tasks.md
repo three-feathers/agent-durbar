@@ -9,7 +9,7 @@ Nothing here starts until the owner answers Q1-Q8 in `spec.md` (or accepts the r
 
 ## Phase 1: the kit, the machinery and 4 characters (shown to the owner first)
 
-- [ ] T010 Pure `src/renderer/crew.js`: `pickCharacter` (least used, injected random), `seeded`, `assignCrew`, `pruneCrew`, `loadCrew` (500 entries, 200-char ids, unknown ids dropped); `scripts/test-crew.ts` as `test:crew` in `npm test` [FR-020, FR-021]
+- [x] T010 Pure `src/renderer/crew.js`: `pickCharacter` (least used, injected random), `seeded`, `assignCrew`, `pruneCrew`, `loadCrew` (500 entries, 200-char ids, unknown ids dropped); `scripts/test-crew.ts` as `test:crew` in `npm test` [FR-020, FR-021]
 - [ ] T011 Compiler `scripts/crew-compile.js`: `data-part` split, `guide` dropped, reserved and `--crew-*` colour mapping, unknown colour fails, every part through `sanitizeSlot` unchanged, size caps; fixture SVGs and cases in `test:crew` [FR-011, FR-012, FR-013]
 - [ ] T012 Drawing guide `src/renderer/crew/_guide.svg` (crew furniture, FR-014 zones as outlines, reserved colour swatches) and a short `src/renderer/crew/README.md` (parts, zones, colours, provenance rule) [FR-011, FR-014]
 - [ ] T013 `--crew-*` tokens in `CLEAN_TOKENS` and the built-in **Cheeky Crew** pack in `theme.js`; check the AI prompt's token list and any token cap first; `test:theme` applies it as designed [FR-002, FR-012]
