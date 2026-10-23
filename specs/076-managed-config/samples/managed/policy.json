@@ -31,7 +31,7 @@
     ]
   },
   "network": {
-    "allowPrivateHosts": [
+    "trustedHosts": [
       "mcp-catalog.acme.example",
       "agents.acme.example"
     ],

@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Managed configuration for organizations: one admin-only config folder (policy.json, MCP list, icon, theme pack) sets the display name and icon, allowed agent apps, MCP lists and endpoints, an agent/profile/skill registry, OpenTelemetry, theme and custom LLMs with admin token pricing, plus the accepted additions (mode lock, proxy and CA, feature switches, installers, signing, spend caps, folder rules, updates, registry/MDM sources, signed config, audit log, retention, rebrand build, legal notice, version pins, endpoint auth, sign-in, vendor settings view); everything set there is locked; a narrow-only user layer; bad config fails closed and visibly
-status: **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test fixtures included; Q1-Q12 answered by Vikram (Q10: admin token pricing); A1-A19 accepted by Vikram as requirements FR-150..FR-197 (signing certificate purchase still needs his OK); Paco's security review (17 items) folded in; R1-R8 answered by Vikram with the recommended defaults
+status: **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test fixtures included; Q1-Q12 answered by Vikram (Q10: admin token pricing); A1-A19 accepted by Vikram as requirements FR-150..FR-197 (signing certificate purchase still needs his OK); Paco's security review (17 items) and re-review (10 items) folded in; R1-R8 answered by Vikram with the recommended defaults
 -->
 
 **Feature Branch**: `076-managed-config`
@@ -195,7 +195,7 @@ wrong number.
   index. Paths in `policy.json` are relative, may not be absolute, contain `..` or leave the folder (checked after resolving links).
 - **FR-002 Machine folder per OS** (resolved in one pure function with an injected environment, constitution VI):
   - Windows: `<Program Files>\AgentDurbar\managed\`, where `<Program Files>` comes from `SHGetKnownFolderPath(FOLDERID_ProgramFiles)`
-    (through `koffi`, already a dependency) and **never** from the `%ProgramFiles%` environment variable, which a user can set when
+    (through `koffi`, which becomes a direct, pinned dependency: today it is only a transitive dependency of `@github/copilot-sdk`, 3.2.1; plan *Technical context*) and **never** from the `%ProgramFiles%` environment variable, which a user can set when
     starting the app. Not `%ProgramData%` (standard users can create folders there);
   - macOS: `/Library/Application Support/AgentDurbar/managed/`;
   - Linux: `/etc/agent-durbar/managed/`.
@@ -218,6 +218,10 @@ wrong number.
   `DURBAR_DEV` and every `DURBAR_*` variable (`DURBAR_DRIVER`, `DURBAR_MANAGED_DIR`, `DURBAR_USER_DATA`, `DURBAR_PERM`, `DURBAR_SIM`, ...),
   unless the machine policy sets `allowDevHooks: true`; then the existing stderr warning stays and Settings > Organization shows
   *Developer hooks allowed by your organization*. `DURBAR_MANAGED_DIR` is never honoured by a packaged build, even with `allowDevHooks`.
+  **"A machine policy is present"** means any of: the machine folder exists (whether or not `policy.json` parses or passes its trust
+  check), a Windows `HKLM\SOFTWARE\Policies\ThreeFeathers\AgentDurbar` `PolicyJson` value exists, or a forced macOS managed preference
+  `PolicyJson` exists (FR-176). A broken or untrusted machine policy (closed mode) counts as present, and `allowDevHooks` is honoured
+  only from a machine policy that is valid and trusted.
   The machine folder is therefore resolved before `devEnv` is computed (plan D1). Without a machine policy, today's behaviour is unchanged.
   This is former A19, moved into P1.
 - **FR-005 Folder trust check.**
@@ -336,6 +340,12 @@ wrong number.
     folder**. A list fetched from a URL may carry only `http`/`sse` servers with `auth` `none` or `oauth`; a stdio entry, an env
     reference or `required` in a URL list refuses that entry with a listed error (a compromised endpoint must not be able to start a
     command anywhere).
+  - **Server URLs from URL lists pass the fetch host rules.** Every `http`/`sse` URL from a URL list (both formats, v0.1 `remotes`
+    included) must pass FR-120's host rules (https; no loopback, unspecified, link-local, multicast or metadata address; private ranges
+    and names that do not resolve locally only for `network.trustedHosts`) when the list is loaded and again right before Durbar passes
+    it to an agent app at session start; a refused entry is listed and never reaches an app. A tampered list therefore cannot point
+    sessions at `127.0.0.1` or `169.254.169.254`. Entries from list files in the machine folder are the admin's own and are not
+    address-checked.
   - **`mcp-registry-v0.1` mapping.** From each server, only `remotes[]` entries of type `streamable-http` or `sse` with an https URL
     are used (→ `http` / `sse`); `packages[]` (commands) are ignored; a remote that declares required headers or variables is listed as
     *Needs setup; not offered*. The id is the server `name` lower-cased with every character outside `[a-z0-9_-]` replaced by `-`, cut
@@ -465,7 +475,9 @@ wrong number.
   `http/protobuf` (`protocol = "binary"`) or `http/json` (`"json"`), or `{ otlp-grpc = { endpoint, headers } }` for `grpc`; signals not
   chosen are `"none"`. For http the endpoint gets `/v1/logs`, `/v1/traces` or `/v1/metrics` appended (the docs' example gives the full
   path). `headers` carries the values read at launch (sent over the app-server pipe, never on a command line or in a file);
-  `otel.log_user_prompt` from `logPrompts`. Codex has no content switch for `codex.tool_result`'s output snippet, so the notice says
+  `otel.log_user_prompt` from `logPrompts`. All of it is sent as a **structured** config object over the app-server protocol (like
+  `codexMcpConfig`), never as concatenated `-c key=value` strings; if a command-line fallback is ever needed, each value is serialised
+  by a TOML encoder (quoted and escaped) and passed as its own argument array element, never through a shell. Codex has no content switch for `codex.tool_result`'s output snippet, so the notice says
   *Codex: tool output snippets are exported*. `[KNOWN GAP]` until checked offline (T111): whether `codex app-server` accepts `otel.*` as a
   per-thread override (project config ignores `otel`; the CLI layer may set it), and the sub-keys of `metrics_exporter` (the reference
   lists `endpoint`/`protocol`/`headers` only for `exporter` and `trace_exporter`). If the override is refused, Durbar writes nothing to
@@ -538,8 +550,10 @@ wrong number.
   the public endpoint. The session header shows *Model: <provider name> (<host>)*, and the first start after the policy appears shows a
   notice naming the host.
 - **FR-101 Codex.** `llm.codex.provider` becomes `model_providers.<id>` (`name`, `base_url`, `env_key` = `apiKeyFromEnv`, `wire_api =
-  "responses"`) and `model_provider = <id>` plus `model` as thread config overrides (or `-c` flags), never written into the user's
-  `config.toml`. Reserved ids (`openai`, `ollama`, `lmstudio`) are refused. Codex's own Bedrock provider (`model_provider =
+  "responses"`) and `model_provider = <id>` plus `model` as **structured** thread config overrides (same rule as FR-082: no
+  concatenated `-c` strings; a TOML-encoded, argument-array fallback only), never written into the user's
+  `config.toml`. Model ids match `^[A-Za-z0-9._:/@+-]{1,128}$` in the schema, so a value cannot carry quotes, `=` or new lines.
+  Reserved ids (`openai`, `ollama`, `lmstudio`) are refused. Codex's own Bedrock provider (`model_provider =
   "amazon-bedrock"` with `aws.profile`/`aws.region`) is documented but not in the v1 schema (R10, open). `[KNOWN GAP]` until T100: the
   app-server accepting `model_providers` as a per-thread override (project config ignores it; the CLI layer may set it).
 - **FR-102 Copilot (BYOK).** `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_API_KEY` or
@@ -590,13 +604,20 @@ wrong number.
 
 - **FR-120 Fetching.** Every fetch (MCP lists, registry indexes and files, the update feed) runs in main with Electron `net.fetch` on a
   dedicated, **non-persistent, cookie-less session partition** (`credentials: 'omit'`, no cache shared with the window, no ambient
-  NTLM/Kerberos: `allowNTLMCredentialsForDomains('')` on that session; FR-190 turns authentication on explicitly). Rules:
+  NTLM/Kerberos to endpoints: `allowNTLMCredentialsForDomains('')` on that session; the only endpoint credential is FR-190's bearer
+  token; authentication **to the proxy** is FR-155's). Rules:
   - `https:` only, at most 3 redirects, each hop `https:` and re-checked;
   - before each hop the host is resolved and refused if any address is loopback (`127.0.0.0/8`, `::1`), unspecified, link-local
     (`169.254.0.0/16`, `fe80::/10`), multicast, or a cloud metadata address (`169.254.169.254`, `fd00:ec2::254`, `100.100.100.200`);
-    private ranges (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`) only for hosts listed in `network.allowPrivateHosts`
+    private ranges (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`) only for hosts listed in `network.trustedHosts`
     (machine layer). `[KNOWN GAP]` DNS rebinding between this check and Chromium's own resolution; the partition has no resolver
     pinning;
+  - **behind a proxy** (`session.resolveProxy(url)` is not `DIRECT`, which includes most PAC setups), the proxy connects, so Durbar
+    cannot see the final address: an IP-literal host and the names `localhost`, `*.localhost`, `*.local` and known metadata names
+    (`metadata.google.internal`, `metadata`) are always refused; a name that resolves locally is checked as above; a name that does
+    **not** resolve locally is allowed only when it is in `network.trustedHosts` (the admin vouches for it), else refused with
+    *Cannot check this address behind your proxy; your IT department can add it to network.trustedHosts*. The same rule applies to
+    MCP server URLs from URL lists (FR-040);
   - 10 s connect and 30 s total timeout; size caps enforced while streaming (lists and indexes 2 MiB, registry files 256 KiB,
     `mcp-registry-v0.1` 2 MiB per page, 10 pages, 5 MiB in total);
   - `Accept: application/json`, no credentials in the URL, no `Authorization` header unless FR-190 applies;
@@ -608,7 +629,10 @@ wrong number.
   already covers GitHub `ghp_`/`gho_`/`ghs_`/`ghr_`/`github_pat_`, JWTs, GitLab `glpat-`, PEM blocks and more) rather than a second list,
   and runs on every managed file and every remote response; a hit is an error naming the JSON path. Values read from env vars at launch
   are passed only to the child process, never stored, logged, sent to the window or shown; Settings > Organization shows the variable
-  name and *set* / *not set*, and MCP `env` values are masked with `mcpmask`. `[KNOWN GAP]` a secret passed in a child's environment can
+  name and *set* / *not set*, and MCP `env` values are masked with `mcpmask`. **Helpers, named once:** in main, `src/shared/redact.ts`
+  (detection and redaction) and `src/main/mcpmask.ts` (MCP env and headers); for organization or remote text shown in the window (names,
+  descriptions, notices, errors), `DurbarSafeText` (PR #567) if it has merged when the phase is built, otherwise today's renderer path
+  (text inserted as text, never as HTML; Markdown only through the sanitised renderer of spec 016). `[KNOWN GAP]` a secret passed in a child's environment can
   be read by that agent's own shell tool (for example `env`); this is how the agent apps take credentials, and the docs say so.
 - **FR-121a Env names are allow-listed and bound.** Only names in the machine layer's `secrets.envAllow` may be referenced by any
   `*FromEnv` field, anywhere. Each entry binds the name to the exact hosts (`hosts`, `host[:port]`) its value may be sent to (an MCP
@@ -654,8 +678,10 @@ fail closed per FR-012, locked UI per FR-014.
 - **FR-155** `network.proxy` sets Durbar's own session proxy (`system` default, `pac` with an https `pacUrl`, `fixed` with `server`
   and `bypass`, `direct`) through `session.setProxy` for the window's session and the fetch partition (FR-120), and passes
   `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` to the agent apps (for `pac`, the apps get the proxy Chromium resolves for their endpoint at
-  launch; `[KNOWN GAP]` a PAC that picks different proxies per URL is approximated). No proxy credentials in config: the OS or
-  Kerberos/NTLM negotiates them (Durbar's own fetches only when FR-190 allows ambient auth).
+  launch; `[KNOWN GAP]` a PAC that picks different proxies per URL is approximated). No proxy credentials in config. **Proxy**
+  authentication (an HTTP 407) is negotiated by Chromium with the OS (Kerberos/NTLM/Negotiate) for the proxy only; endpoints never get
+  ambient credentials (FR-120, FR-191). `[KNOWN GAP]` that `allowNTLMCredentialsForDomains('')` leaves proxy authentication working is
+  to be checked in T090 against a local authenticating test proxy.
 - **FR-156** `network.caCertFile` (a PEM bundle in the machine folder, certificates only: a private key block is an error) is passed as
   `NODE_EXTRA_CA_CERTS` to every agent app; `network.useSystemCertStore` (default true) sets `CLAUDE_CODE_CERT_STORE=bundled,system` for
   Claude Code and the equivalent where an app documents one. Durbar's own fetches use the OS store through Chromium; a CA in the bundle
@@ -699,7 +725,12 @@ fail closed per FR-012, locked UI per FR-014.
 **A7 Allowed and blocked folders**
 - **FR-172** `folders.allowedRoots` (absolute paths, `~/` or `%USERPROFILE%\`) and `folders.blocked` (globs; blocked wins) are checked in
   main when a folder or workspace is added and at every session start, after `realpath`, case-insensitively on Windows and macOS. A
-  refused folder says which rule refused it.
+  refused folder says which rule refused it. `~/` and `%USERPROFILE%\` are expanded from the **OS account record, never from the
+  environment** (a user could start the app with `USERPROFILE=C:\` or `HOME=/`): `os.userInfo().homedir` (libuv `getpwuid_r` on POSIX,
+  the user profile directory on Windows), not `os.homedir()`, which reads `HOME`/`USERPROFILE` first. `real:` on Linux (Node 24,
+  2026-10-23) `HOME=/tmp` changed `os.homedir()` but not `os.userInfo().homedir`; Windows and macOS `[KNOWN GAP]` until T137 runs on
+  CI with the variables overridden (fallback if Windows proves otherwise: `SHGetKnownFolderPath(FOLDERID_Profile)` through `koffi`). A
+  root that would cover a drive or filesystem root after expansion is an error.
 - **FR-173** `[KNOWN GAP]` an agent app's own tools can still reach outside its folder unless its sandbox enforces it; Durbar passes the
   blocked paths to apps that accept deny rules (Claude Code permission deny rules, Codex sandbox writable roots) where documented, and
   says so per app on the Organization page.
@@ -730,8 +761,12 @@ fail closed per FR-012, locked UI per FR-014.
 **A11 Audit log**
 - **FR-180** `audit.enabled` writes a local append-only JSONL under `<userData>/audit/` (one file per day): approvals, denials, mode
   changes, grants, MCP servers added, accepted, blocked or started, registry installs, policy reloads and errors, session starts with
-  their app and provider host; prompt text only with `includePromptText`. Each line holds a hash of the previous one so truncation and
-  edits are detectable (not prevented: a user-writable file, threat model). Kept `retentionDays`.
+  their app and provider host; prompt text only with `includePromptText`. **Every field is passed through `src/shared/redact.ts`
+  before it is written** (commands, paths, URLs and prompt text can hold tokens), and MCP env values through `mcpmask`. Each line holds
+  a hash of the previous one so truncation and edits are detectable (not prevented: a user-writable file, threat model). Kept
+  `retentionDays`. **Visible like telemetry (FR-086):** while it is on, the top bar shows *Audit log on* (*Audit log on (with prompt
+  text)* when `includePromptText`), and the first start after it is turned on (or after `includePromptText` changes) shows a notice
+  saying what is recorded, where, and for how long.
 - **FR-181** Export: Settings > Organization **Export audit log** (a date range, JSON Lines). `audit.exportOtel` also sends the same
   events as OTel logs to `telemetry.otel` from Durbar itself, which needs its own constitution amendment (beyond Q4) before it is built.
 
@@ -761,9 +796,8 @@ fail closed per FR-012, locked UI per FR-014.
 **A16 Authenticated endpoints**
 - **FR-190** A list or registry may name `tokenFromEnv` (in `secrets.envAllow`, bound to that endpoint's host, FR-121a); Durbar sends it
   as `Authorization: Bearer <value>` to that host only, never across a redirect to another host.
-- **FR-191** `[KNOWN GAP]` integrated Windows/Kerberos authentication for endpoints: off by default on the fetch partition (FR-120); a
-  later key may allow it for listed hosts.
-
+- **FR-191** Integrated Windows/Kerberos authentication **to endpoints** stays off on the fetch partition (FR-120); `[KNOWN GAP]` a later
+  key may allow it for listed hosts. Proxy authentication is separate and works (FR-155).
 **A17 Sign-in passthrough**
 - **FR-192** `signIn.claude.forceLoginMethod`, `signIn.codex.forcedLoginMethod`/`workspaceId` and `signIn.copilot.host` (GitHub
   Enterprise or a data-residency host) are passed to the apps through their documented settings so users sign in with the company
@@ -850,14 +884,14 @@ then the rest. Phases after P1 that do not depend on each other may run in paral
 - **Q3** A per-user config folder? → **Answered: yes**, below the machine layer, labelled not tamper-proof, turned off by
   `allowUserConfig: false` (FR-003). Refined by the security review: off by default when a machine policy exists, narrow only, labelled *your user config (not managed)* (R1).
 - **Q4** Amend constitution III ("No telemetry") for OTel export that the admin configures and the agent apps send to the
-  organization's own collector, Durbar sending nothing itself? → **Answered: yes**, a MINOR amendment before P7 (T070); Durbar's own
+  organization's own collector, Durbar sending nothing itself? → **Answered: yes**, a MINOR amendment before P12 (T110); Durbar's own
   OTel (FR-181, former A11) needs its own amendment.
 - **Q5** Display name at run time only, installer and shortcut names through a rebrand build (A13)? → **Answered: yes** (FR-020..FR-022).
 - **Q6** `mcp.lists` set but no `mcp.mode`? → **Answered: `open`** (complement by default; restrict only when the admin says so) (FR-042).
 - **Q7** Where registry items are installed? → **Answered: each agent app's user-level folders**, with Durbar's bookkeeping, never
   overwriting a file Durbar did not install (FR-061, FR-062).
 - **Q8** Registry updates by default? → **Answered: `notify`**; `auto` allowed from the machine layer (FR-063).
-- **Q9** OS-native sources in the first version? → **Answered: the folder first** (P1-P8); Windows registry/ADMX and macOS MDM later
+- **Q9** OS-native sources in the first version? → **Answered: the folder first** (P1-P16; registry and MDM are P17); Windows registry/ADMX and macOS MDM later
   as FR-176 (P17), same schema.
 - **Q10** Costs on a custom model? → **Answered, changed from the default:** the admin gives per-model token pricing in the policy
   (`llm.pricing`: input, output, cached-input and optional reasoning price per 1M tokens, a currency, a model match by exact id or glob),

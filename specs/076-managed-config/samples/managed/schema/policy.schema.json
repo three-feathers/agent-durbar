@@ -363,11 +363,13 @@
             },
             "model": {
               "type": "string",
-              "maxLength": 128
+              "pattern": "^[A-Za-z0-9._:/@+-]{1,128}$",
+              "description": "Model id; no quotes, '=', spaces or new lines (FR-101)."
             },
             "smallFastModel": {
               "type": "string",
-              "maxLength": 128
+              "pattern": "^[A-Za-z0-9._:/@+-]{1,128}$",
+              "description": "Model id; no quotes, '=', spaces or new lines (FR-101)."
             }
           }
         },
@@ -411,7 +413,8 @@
             },
             "model": {
               "type": "string",
-              "maxLength": 128
+              "pattern": "^[A-Za-z0-9._:/@+-]{1,128}$",
+              "description": "Model id; no quotes, '=', spaces or new lines (FR-101)."
             }
           }
         },
@@ -446,7 +449,8 @@
             },
             "model": {
               "type": "string",
-              "maxLength": 128
+              "pattern": "^[A-Za-z0-9._:/@+-]{1,128}$",
+              "description": "Model id; no quotes, '=', spaces or new lines (FR-101)."
             },
             "offline": {
               "type": "boolean",
@@ -601,7 +605,7 @@
       "additionalProperties": false,
       "description": "Machine layer only.",
       "properties": {
-        "allowPrivateHosts": {
+        "trustedHosts": {
           "type": "array",
           "maxItems": 32,
           "uniqueItems": true,
@@ -609,7 +613,7 @@
             "type": "string",
             "pattern": "^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])$"
           },
-          "description": "Hosts (exact) that may resolve to private (RFC 1918, ULA) addresses for list and registry fetches. Loopback, link-local and cloud metadata addresses are always refused."
+          "description": "Machine layer only. Hosts (exact) the admin vouches for: they may resolve to private (RFC 1918, ULA, CGNAT) addresses, and behind a proxy they may be fetched even when they do not resolve locally (FR-120). Loopback, link-local, unspecified, multicast and cloud metadata addresses are always refused."
         },
         "proxy": {
           "type": "object",

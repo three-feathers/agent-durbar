@@ -26,8 +26,12 @@
 
 ## Technical context
 
-TypeScript, Electron main + plain JS renderer. **No new runtime dependency**: JSON parsing is built in, the validator is a small
-hand-written module, fetches use Electron `net.fetch`, hashing uses `crypto`. Tests use `ajv` (2020 draft), already installed as a
+TypeScript, Electron main + plain JS renderer. **One dependency becomes direct: `koffi`** (today only a transitive dependency of
+`@github/copilot-sdk`, 3.2.1, already unpacked from the asar). Main code will call it for `SHGetKnownFolderPath` (FR-002, FR-172
+fallback), `RegGetValueW` and `CFPreferences*` (FR-176), so it is added to `dependencies`, pinned to the version the SDK uses, in P1's
+PR, with this line as the reason; no other code path is possible without native code or a shell (a `reg.exe` or `powershell` call
+would read the same values through a process and environment the user controls). Everything else adds nothing: JSON parsing is built
+in, the validator is a small hand-written module, fetches use Electron `net.fetch`, hashing and Ed25519 use `crypto`. Tests use `ajv` (2020 draft), already installed as a
 dependency of electron-builder, only to prove the hand-written validator agrees with the published schemas; if electron-builder ever
 drops it, add `ajv` as a devDependency in that PR (dev only, never shipped).
 
@@ -37,14 +41,14 @@ drops it, add `ajv` as a devDependency in that PR (dev only, never shipped).
 
 | Module | Role |
 |---|---|
-| `src/shared/policy.ts` (pure, no imports from Electron) | `Policy` types, `validatePolicy(doc) -> {policy, errors[], warnings[]}` (closed schema, readable messages with JSON paths), `mergeLayers(machine, user)`, `safeState(area)`, `isLocked(policy, key)`, secret-literal detector, MCP matcher (`mcpAllowed(policy, entry)`), path containment helper |
+| `src/shared/policy.ts` (pure, no imports from Electron) | `Policy` types, `validatePolicy(doc) -> {policy, errors[], warnings[]}` (closed schema, readable messages with JSON paths), `mergeLayers(machine, user)`, `safeState(area)`, `isLocked(policy, key)`, the secret scan through `src/shared/redact.ts` (no second detector), MCP matcher (`mcpAllowed(policy, entry)`), path containment helper |
 | `src/shared/policymcp.ts` | `durbar-mcp-list-v1` and `mcp-registry-v0.1` readers -> one `OrgMcpEntry[]` |
 | `src/shared/policyregistry.ts` | registry index reader, update decision (`installed`, `updateAvailable`, `changedLocally`, `noLongerOffered`) |
 | `src/main/policydir.ts` (pure, injected env) | `managedDirs({platform, knownProgramFiles, appData, packaged, devHooks})` (Windows: `SHGetKnownFolderPath(FOLDERID_ProgramFiles)` via `koffi`, never `%ProgramFiles%`), `posixTrust(chainOfStats)` (every file and every parent to `/` after `realpath`), `windowsWriteProbe(dir)` (`r+` open of `policy.json`, `wx` temp file per folder) |
 | `src/main/devhooks.ts` (existing) | `devEnv(env, packaged, policyPresent, allowDevHooks)`: with a machine policy and no `allowDevHooks`, a packaged build returns `{}` and ignores `DURBAR_DEV`; `main.ts` resolves the machine folder (a cheap existence check plus the validator) **before** computing `dev` (FR-004) |
 | `src/adapters/<app>Policy.ts` | per-app validation of `llm.<app>`/`signIn.<app>`, env and config mapping (OTel, proxy, CA, LLM), credential stripping (FR-100a), OTLP header percent-encoding (R7) |
 | `src/main/policystore.ts` | reads layers (size caps, BOM/CRLF), runs the trust check and validator, keeps the effective policy, watcher (2 s debounce), `reload()`, emits `policy:changed` |
-| `src/main/policyfetch.ts` | `fetchJson(url, {maxBytes, timeouts, redirects, token?})` over an injected `fetch` (Electron `net.fetch` on a non-persistent partition `durbar-policy-fetch` with `credentials: 'omit'` and `allowNTLMCredentialsForDomains('')`) and an injected address check (`dns.lookup` all addresses, refuse loopback/link-local/metadata/unspecified/multicast, private only for `network.allowPrivateHosts`), per hop with `redirect: 'manual'`; ETag cache in `<userData>/managed-cache/`, re-validated on use; Ed25519 `.sig` check when `signing` applies |
+| `src/main/policyfetch.ts` | `fetchJson(url, {maxBytes, timeouts, redirects, token?})` over an injected `fetch` (Electron `net.fetch` on a non-persistent partition `durbar-policy-fetch` with `credentials: 'omit'` and `allowNTLMCredentialsForDomains('')`) and an injected address check (`dns.lookup` all addresses, refuse loopback/link-local/metadata/unspecified/multicast, private only for `network.trustedHosts`; behind a proxy from `session.resolveProxy`, literal and local-name hosts refused and unresolvable names only for `network.trustedHosts`, FR-120), per hop with `redirect: 'manual'`; the same `hostAllowed(url)` check is used for MCP server URLs from URL lists before a session start (FR-040); ETag cache in `<userData>/managed-cache/`, re-validated on use; Ed25519 `.sig` check when `signing` applies |
 | `src/main/registryinstall.ts` | download, hash check, safe write (reuse spec 043's writer), bookkeeping `registry-installs.json`, uninstall |
 | `src/main/ipc/policy.ts` | `policy:get` (view without secret values), `policy:reload`, `policy:copyText`; registry `registry:list/install/update/uninstall` |
 | Renderer `organization.js` | Settings > Organization page, banners (red safe mode, yellow key errors), a shared `lockLine(key)` helper used by every locked control |

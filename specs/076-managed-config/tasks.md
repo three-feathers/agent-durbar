@@ -8,15 +8,17 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 - [x] T001 Research (vendor docs, `read:` table), spec, plan, tasks, samples (`samples/managed/`, `samples/endpoint/`) and JSON schemas validated against the samples; specs-index block; Q1-Q12 for Vikram
 - [x] T002 Owner answers Q1-Q12 recorded (2026-10-23); Q10 changed to admin token pricing: FR-104 rewritten, FR-106..FR-109, schema and sample updated
 - [x] T003 Security review by Paco's agent (17 items) folded in: threat model, FR-002..FR-005, FR-010..FR-017, FR-040..FR-046, FR-060..FR-066, FR-080..FR-086, FR-100a, FR-120..FR-121a; schemas tightened; `samples/hostile/` fixtures with `probes.json`; R1-R8 for the owners
+- [x] T006 Re-review by Paco's agent (10 items) fixed: OS-account home folder (FR-172), host rules for MCP URLs from URL lists (FR-040), "policy present" (FR-004), proxy address rule and ambient-auth wording (FR-120, FR-155, FR-191), `koffi` direct dependency (plan), structured Codex overrides and model pattern (FR-082, FR-101), audit redaction and chip (FR-180), stale references, helpers named (FR-121), new fixtures
 - [x] T005 R1-R8 answered by Vikram (2026-10-23, recommended defaults) and recorded under Clarifications
 - [x] T004 A1-A19 accepted by Vikram (2026-10-23): section N (FR-150..FR-197), phases P2-P26, schema keys and sample values
 
 ## P1: loader, closed mode, locks, Organization page, dev variables
 
+- [ ] T009 Add `koffi` to `dependencies`, pinned to the version `@github/copilot-sdk` uses, with the plan's reason in the PR (plan *Technical context*)
 - [ ] T010 `src/main/policydir.ts`: machine folder per OS (Windows Known Folder via `koffi`, never `%ProgramFiles%`), user folder, `DURBAR_MANAGED_DIR` only unpackaged [FR-002..FR-004]
 - [ ] T011 Trust check: POSIX owner/mode on every file and parent after `realpath`; Windows write probe; elevated-run note [FR-005]
 - [ ] T012 `src/main/devhooks.ts`: ignore `DURBAR_DEV` and every `DURBAR_*` in a packaged build when a machine policy is present, unless `allowDevHooks`; machine folder resolved before `devEnv`; DevTools refused under a policy [FR-004, FR-197]
-- [ ] T013 Test: dev variables under a policy (packaged + policy: `DURBAR_DEV=1 DURBAR_DRIVER=x` gives `{}`; with `allowDevHooks: true` they apply and the warning shows; no policy: unchanged; `DURBAR_MANAGED_DIR` never in packaged) [FR-004]
+- [ ] T013 Test: dev variables under a policy ("present" = folder exists even if broken or untrusted, HKLM value, forced MDM value; packaged + policy: `DURBAR_DEV=1 DURBAR_DRIVER=x` gives `{}`; with `allowDevHooks: true` they apply and the warning shows; no policy: unchanged; `DURBAR_MANAGED_DIR` never in packaged) [FR-004]
 - [ ] T014 `src/shared/policy.ts`: closed validator with JSON-path messages that never echo values, limits, path containment, `redact.ts` secret scan, env allow-list binding; vendor parts delegated to `src/adapters/<app>Policy.ts` [FR-006, FR-009, FR-013, FR-121, FR-121a, FR-123]
 - [ ] T015 `src/main/policystore.ts`: layers, precedence, narrow-only user layer (allowed keys, widening refused), reload, watcher [FR-003, FR-007, FR-008]
 - [ ] T016 Closed mode (`canAct()` guard in every starter and sender, specs 041/054/048/044 included) and key-level strict states [FR-010..FR-012]
@@ -73,19 +75,21 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 - [ ] T081 `durbar-mcp-list-v1` reader: stdio, env references and `required` only from machine-folder files; secret rules [FR-040, FR-041, FR-044]
 - [ ] T082 Enforcement in `mcpstore`, spec 069, spec 061, `startopts`, session switches; trust prompt for every stdio server from any source [FR-043, FR-045]
 - [ ] T083 Org entries as a catalog source (with issue #539's spec) [FR-040]
-- [ ] T084 Tests `test-policy-mcp` (including the `mcp-remote-*` hostile fixtures as URL-sourced), simulator, docs [FR-047]
+- [ ] T084 Tests `test-policy-mcp` (including the `mcp-remote-*` hostile fixtures as URL-sourced and the `mcp-file-*` fixtures as machine-folder files with the sample policy's `secrets.envAllow`), simulator, docs [FR-047]
 
 ## P10: MCP endpoints
 
 - [ ] T090 `policyfetch.ts`: partition without cookies or ambient auth, address refusals per hop, limits, timeouts, ETag cache re-validated on use [FR-046, FR-120]
 - [ ] T091 `mcp-registry-v0.1` reader: `remotes` only, id mapping, page and byte caps [FR-040]
 - [ ] T092 Refresh schedule, *last updated* and *Unsigned list* in the catalog, fail closed in `allowlist` with no copy [FR-046]
-- [ ] T093 Tests `test-policy-fetch` (local fake server and fake resolver through injection: loopback, link-local, metadata, private without and with `allowPrivateHosts`, redirect to http, oversize, slow), docs
+- [ ] T094 Behind a proxy: literal and local-name hosts refused, unresolvable names only for `trustedHosts`; check that `allowNTLMCredentialsForDomains('')` leaves proxy authentication working, against a local authenticating test proxy [FR-120, FR-155, FR-191]
+- [ ] T095 Host rules on MCP server URLs from URL lists at load and before session start (fixtures `mcp-remote-loopback-url`, `mcp-remote-metadata-url`) [FR-040]
+- [ ] T093 Tests `test-policy-fetch` (local fake server and fake resolver through injection: loopback, link-local, metadata, private without and with `trustedHosts`, redirect to http, oversize, slow), docs
 
 ## P11: custom LLM per agent app, pricing and token caps
 
 - [ ] T100 No-prompt checks: Codex `model_providers` per-thread override (offline `codex app-server generate-json-schema`), Copilot BYOK variables via the SDK's headless runtime (dummy endpoint) and an empty `COPILOT_PROVIDERS_CONFIG` falling back to the env provider, Claude Code gateway/Bedrock/Vertex variables (names confirmed in the docs 2026-10-23; check against a local fake gateway); record in agent-notes [FR-100..FR-102, FR-142]
-- [ ] T101 `src/adapters/<app>Policy.ts` mapping; Copilot `createClient` `env` option; vendor credential stripping; missing token blocks the start; model chip with host and first-run notice [FR-100..FR-102, FR-100a, FR-124]
+- [ ] T101 `src/adapters/<app>Policy.ts` mapping; Copilot `createClient` `env` option; Codex `model_providers` and `model` sent structured, never `-c` strings (fixture `policy-codex-model-inject`); vendor credential stripping; missing token blocks the start; model chip with host and first-run notice [FR-100..FR-102, FR-100a, FR-124]
 - [ ] T102 Locked model picker; sign-in check wording [FR-103, FR-105]
 - [ ] T103 `llm.pricing` and `llm.tokenCap`/`requirePricing`: validator (non-negative finite prices <= 10,000 per 1M, ISO currency, match pattern, no duplicate match, token cap 1,000..1e9), exact-then-glob matcher, cost formula [FR-106, FR-107]
 - [ ] T104 Costs and caps: custom-model sessions priced in Cost views and totals, *price unknown* path, other-unit caps shown as not available, forced token cap and require-price on spec 011's cap path; broken pricing blocks custom-model starts [FR-104, FR-107..FR-109]
@@ -95,7 +99,7 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 
 - [ ] T110 Constitution amendment for Q4 via `/speckit-constitution` (hard prerequisite: no other P12 task merges before it)
 - [ ] T111 No-prompt checks: Codex per-thread `otel.*` and the `metrics_exporter` sub-keys (offline schema); Copilot SDK `telemetry` option plus env headers reaching a local fake OTLP collector (`copilot help monitoring`; ask the owner first if spans need a turn); Claude Code env against a local fake collector [FR-082, FR-083, FR-142]
-- [ ] T112 Mapping per app with percent-encoded headers; missing header variable blocks the start; user OTel variables replaced [FR-080..FR-085]
+- [ ] T112 Mapping per app with percent-encoded headers; Codex config sent structured (no `-c` strings); test with the `policy-codex-model-inject` fixture; missing header variable blocks the start; user OTel variables replaced [FR-080..FR-085]
 - [ ] T113 Top-bar and session chip naming the host (*with prompt text* when `logPrompts`); first-run notice with the exported fields per app (FR-086 list, Codex output snippets, Claude identity attributes) and the "cannot redact" line [FR-080a, FR-086]
 - [ ] T114 Tests (header encoding, env binding to the endpoint host, missing variable, the D7 mapping table per app including unsupported protocol/signal cases and the content-flag stripping), Organization page per-app status, docs
 
@@ -117,6 +121,7 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 
 - [ ] T135 Checks on add and at start after `realpath`, case rules per OS; deny rules passed to apps that accept them [FR-172, FR-173]
 - [ ] T136 Tests (Windows/macOS case, symlink escape), docs
+- [ ] T137 Home folder from the OS account record: with `HOME`/`USERPROFILE` set to `/` or `C:\` the expansion of `~/` and `%USERPROFILE%\` is unchanged; runs on the three CI OSes; fallback to `FOLDERID_Profile` if Windows fails [FR-172]
 
 ## P16: A8 updates key
 
@@ -135,7 +140,7 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 
 ## P19: A11 audit log
 
-- [ ] T155 JSONL writer with hash chain, events, retention, export [FR-180, FR-181]
+- [ ] T155 JSONL writer with hash chain, every field through `redact.ts` (MCP env through `mcpmask`), events, retention, export; *Audit log on* chip and first-run notice [FR-180, FR-181]
 - [ ] T156 Tests (chain break detected), docs; OTel export only after its own amendment
 
 ## P20: A12 retention

@@ -187,6 +187,49 @@
       "refusedBy": "validator",
       "why": "a file URL on another origin than the index (index at https://agents.acme.example/durbar/index.json)",
       "source": "url"
+    },
+    {
+      "file": "mcp-remote-loopback-url.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "a URL list pointing a session at loopback (FR-040, FR-120 host rules)",
+      "source": "url"
+    },
+    {
+      "file": "mcp-remote-metadata-url.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "a URL list pointing a session at the cloud metadata address (FR-040, FR-120)",
+      "source": "url"
+    },
+    {
+      "file": "mcp-file-literal-token.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "a literal token (JWT-shaped, found by redact.ts) in a machine-folder list file (FR-041, FR-121)",
+      "source": "file"
+    },
+    {
+      "file": "mcp-file-env-not-allowed.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "an env reference in a machine-folder list file that is not in secrets.envAllow (FR-121a)",
+      "source": "file",
+      "machinePolicy": "../managed/policy.json"
+    },
+    {
+      "file": "mcp-file-env-wrong-host.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "an allowed env name sent to a host it is not bound to (ACME_LLM_TOKEN is bound to llm-gateway.acme.example) (FR-121a)",
+      "source": "file",
+      "machinePolicy": "../managed/policy.json"
+    },
+    {
+      "file": "policy-codex-model-inject.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "a model id carrying a quote, '=' and a new line to inject Codex config (FR-082, FR-101)"
     }
   ]
 }
