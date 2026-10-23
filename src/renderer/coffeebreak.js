@@ -139,7 +139,7 @@
     return h>=10||!r?h+' h':h+' h '+r+' min';
   }
 
-  /* Retry now / Try now / Resume (delta 2026-10-23, FR-021): the user may send the resume message for this break only while it is a
+  /* Retry now / Resume (delta 2026-10-23, FR-021): the user may send the resume message for this break only while it is a
      provider break (Durbar's cap is answered in its own card) and no Durbar spending limit is pending (a: the agent, {limit}). Once the
      page has sent it, the break is gone (resumed), so a second press finds nothing. */
   function retryable(b,a){
