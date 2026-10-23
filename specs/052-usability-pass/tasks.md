@@ -324,3 +324,9 @@
 
 ## FR-085 fix: double-click on the top bar zooms the window on a Mac (2026-10-23, issue #591)
 - [x] T180 Mac: a double-click on a drag area (not on a control) sends `window:titleDoubleClick`; main zooms, minimizes or does nothing by `AppleActionOnDoubleClick` (`titleDoubleClickAction`, unit-tested); channel open under the simulator; changelog fragment [FR-085 fix, 2026-10-23]
+
+## FR-176: opening a chat never scrolls the window (2026-10-23, issue #638)
+- [ ] T181 `src/renderer/innerscroll.js` (`reveal`, `focus`, `pin`, pure `delta`/`resetPinned`); `scrollInBody` in `screens.js` uses it; `app.js` has no bare `focus()` and no `scrollIntoView`; `pin(document)` at start [FR-176, FR-055]
+  - Check: `test:innerscroll` (pure parts and the static rule; mutation: a bare `focus()` or `scrollIntoView` put back fails it)
+- [ ] T182 Driver `check-chat-no-scroll` at 1440x900, 1280x800 and 1280x520: open with a waiting question, Show question, Skip, answer in the card, open at the request; the page and the chat frame stay at 0 and the header in view; the safety net puts a forced page scroll back [FR-176]
+  - Check: mutation (old `focusRequest` without the safety net; the safety net alone off) fails it; changelog fragment; agent note
