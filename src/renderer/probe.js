@@ -86,5 +86,23 @@
     if(w>=G.MAIN[0]+sideR[0]+G.GAP){const [m,s]=spread(w,[G.MAIN,sideR]);return {n:2,main:m,reply:0,side:s};}
     return {n:1,main:w,reply:0,side:0};
   }
-  return {svgHollow,styleSplit,GROW,largest,better,pick,GCOL,grownCols};
+  /* ---- Spare height (spec 001 FR-086, FR-087, owner report issue 619): what a drawn office that fits does not need of the floor's height.
+        spreadRows(lines, avail, gap, cap): lines are the stage's rows top to bottom ({h, room}: height in px, a row of rooms or not), avail
+        the floor's inner height, gap the gap between rows (10 px), cap the share of the shortest room row that every room row may grow.
+        Returns {rx, top, rowGap}: rx is added to every room row (whole px, at most cap x the shortest), then top (above the first row) and
+        rowGap (between rows) make the gaps above, between and below the rows even; rowGap is never below gap, and when it would be, the rest
+        is split above the first and below the last row. Nothing to spare (or bad input): {rx: 0, top: 0, rowGap: gap}. ---- */
+  const r2=x=>Math.floor(x*100)/100; /* round down: the rows never end below the floor */
+  function spreadRows(lines,avail,gap,cap){
+    const none={rx:0,top:0,rowGap:gap}, n=Array.isArray(lines)?lines.length:0;
+    if(!n||!(avail>0))return none;
+    const free=avail-lines.reduce((t,l)=>t+(Number(l.h)||0),0)-(n-1)*gap;
+    if(!(free>0))return none;
+    const rooms=lines.filter(l=>l.room), R=rooms.length;
+    const rx=R?Math.max(0,Math.floor(Math.min(free/R,(cap||0)*Math.min(...rooms.map(l=>Number(l.h)||0))))):0;
+    const rest=free-R*rx, g=(rest+(n-1)*gap)/(n+1);
+    if(g>=gap)return {rx,top:r2(g),rowGap:r2(g)};
+    return {rx,top:r2(rest/2),rowGap:gap};
+  }
+  return {svgHollow,styleSplit,GROW,largest,better,pick,GCOL,grownCols,spreadRows};
 })());

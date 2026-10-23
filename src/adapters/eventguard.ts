@@ -11,6 +11,10 @@ const oneOf = (v: unknown, xs: readonly string[]): boolean => typeof v === 'stri
 
 export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'title', 'agentSchedule', 'remote', 'plan'] as const;
 const STATUSES = ['idle', 'working', 'needs-permission', 'error', 'stopped'] as const;
+/** Spec 058 FR-180: the values of `McpServerStatus.signInEnd`. */
+export const SIGN_IN_ENDS = ['next-message', 'failed'] as const;
+/** Spec 058 FR-180: a `signInEnd` main accepts (anything else is ignored, as if missing). */
+export const validSignInEnd = (v: unknown): v is (typeof SIGN_IN_ENDS)[number] => oneOf(v, SIGN_IN_ENDS);
 
 function permissionProblems(p: unknown, where: string): string[] {
   if (!isObj(p)) return [`${where}: not an object`];
@@ -94,6 +98,8 @@ export function eventProblems(e: unknown): string[] {
       break;
     case 'mcp':
       if (!Array.isArray(e.servers) || e.servers.some((s) => !isObj(s) || !str(s.name) || !str(s.status))) out.push('mcp.servers malformed');
+      // spec 058 FR-180: only the two normalized ends of a sign-in the adapter started
+      else if (e.servers.some((s) => isObj(s) && s.signInEnd !== undefined && !oneOf(s.signInEnd, SIGN_IN_ENDS))) out.push('mcp.servers[].signInEnd is not next-message or failed');
       break;
     case 'limit':
       if (!oneOf(e.phase, ['exhausted', 'changed', 'resolved'])) out.push(`limit.phase ${String(e.phase)}`);

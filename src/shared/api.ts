@@ -114,6 +114,7 @@ export type FloorsResult = { ok: true; state: FloorsState } | { ok: false; error
 export type LimitChoice = { kind: 'add'; credits: number } | { kind: 'set'; credits: number } | { kind: 'unset' } | { kind: 'cancel' };
 
 import type { AboutView } from './about';
+import type { AccountView } from './account';
 import type { CompactResult, ContextTier, ModelControl, ModelPricing, ModelSwitchRequest, ModelSwitchResult, PriceClass } from './modelswitch';
 
 /** Saved credit totals as the window receives them (spec 011 FR-026). Numbers, a display name and the folder's own path (already known to the window); the file holds a hash, never the path. */
@@ -534,6 +535,12 @@ export interface AgentMcpEntry {
   error?: string;
   /** Spec 058 FR-011/FR-020: what kind of failure the adapter said it was (only when the vendor said so). */
   errorClass?: McpServerStatus['errorClass'];
+  /** Spec 058 FR-092: when Agent Durbar first saw this state (epoch ms); only for a reported state. */
+  since?: number;
+  /** Spec 058 FR-092: a failed or needs-sign-in state that came after the server was Running in this session. */
+  afterRunning?: boolean;
+  /** Spec 058 FR-092: the transport the adapter reported (`stdio`, `http`, ...); missing = not reported. */
+  transport?: string;
   /** The default from Settings: on for new sessions. */
   defaultOn: boolean;
   /** This agent switched it off. */
@@ -546,10 +553,18 @@ export interface AgentMcpEntry {
   canRestart?: boolean;
   /** Spec 058 FR-065: **Sign in** is offered: the agent app can start its own sign-in, the session runs, and this server reads Needs sign-in. */
   canSignIn?: boolean;
+  /** Spec 058 FR-164: **Sign in again** is offered: the agent app can redo the sign-in itself, the session runs, and this server is on and not waiting for a first sign-in. */
+  canSignInAgain?: boolean;
   /** Spec 058 FR-065: a sign-in is open for this server. The host only, never the address; `expiresInMs` is what is left of the 10 minutes. */
   signIn?: { host: string; opened: boolean; expiresInMs: number; otherSite?: string };
   /** Spec 058 FR-068: the terminal steps for this needs-sign-in server, the agent app's plain text with the name filled in (commands in backticks). */
   signInSteps?: string;
+  /** Spec 058 FR-180: how the agent app said a sign-in Agent Durbar started ended (`next-message`: signed in, applies next message; `failed`). */
+  signInEnd?: 'next-message' | 'failed';
+  /** Spec 058 FR-180: the agent app's own sentence on how far its sign-in was checked, shown under a row that offers Sign in. */
+  signInNote?: string;
+  /** Spec 058 FR-176/FR-181: this needs-sign-in row keeps **Restart**: the agent app picks up a sign-in finished outside Agent Durbar with it. */
+  signInRestart?: boolean;
   /** Spec 058 FR-078: Agent Durbar passed this server as switched off when the session started (Settings or the folder's extras), so a runtime `disabled` is not the app's own doing. */
   launchedOff?: boolean;
   /** Spec 058 FR-078: the user switched this server here since the session started (a runtime `disabled` may be the old state until its event arrives). */
@@ -720,6 +735,8 @@ export interface DurbarApi {
   harnessOpenSignIn?(kind: string, url: string): Promise<{ ok: boolean }>;
   /** `pwshMissing` (spec 052 FR-073): Windows only, PowerShell 7 was not found; the Copilot card shows a hint. */
   copilotAuth?(): Promise<{ known: boolean; signedIn?: boolean; pwshMissing?: boolean }>;
+  /** Spec 051 FR-014: the account each installed agent app reports (`{ [appId]: { status, text } }`); `refresh` asks again. Personal data: shown in the window only. */
+  harnessAccounts?(refresh?: boolean | 'check'): Promise<Record<string, AccountView>>;
   onHarnessProgress?(cb: (p: { kind: string; op: string; lines: string[]; elapsedMs: number; url?: string; code?: string; needsPaste?: boolean }) => void): () => void;
   /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
   /** Remote control ended without the user (spec 012 FR-158, spec 054 FR-062): an agent id, or the id with a plain reason. */
@@ -818,7 +835,7 @@ export interface DurbarApi {
   /** Spec 058 FR-021: restart one MCP server of this agent's running session. */
   agentMcpRestart?(id: string, name: string): Promise<McpRestartResult>;
   /** Spec 058 FR-065: start the agent app's own sign-in for one MCP server. Main keeps the address; the reply has the host only. */
-  agentMcpSignIn?(id: string, name: string): Promise<McpSignInStartResult>;
+  agentMcpSignIn?(id: string, name: string, again?: boolean): Promise<McpSignInStartResult>;
   /** Spec 058 FR-065: open the held sign-in page in the system browser (main holds the address; only after this click). */
   agentMcpOpenSignIn?(id: string, name: string, shownHost: string): Promise<McpOpenSignInResult>;
   /** Spec 058 FR-065: forget the open sign-in. */

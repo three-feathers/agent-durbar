@@ -99,17 +99,21 @@ export class FakeAdapter implements AgentAdapter {
   declare handoffSummary?: (sessionId: string) => Promise<HandoffResult>;
   declare generateText?: (prompt: string) => Promise<{ text: string; costUsd?: number }>;
   declare renameSession?: (sessionId: string, name: string) => Promise<void>;
-  declare startMcpSignIn?: (sessionId: string, name: string) => Promise<McpSignInResult>;
+  declare startMcpSignIn?: (sessionId: string, name: string, opts?: { again?: boolean }) => Promise<McpSignInResult>;
   declare cancelMcpSignIn?: (sessionId: string, name: string) => Promise<void>;
-  declare refreshMcpStatus?: (sessionId: string) => Promise<void>;
+  declare refreshMcpStatus?: (sessionId: string, name?: string) => Promise<void>;
   /** Spec 058: how many `refreshMcpStatus` calls were made, and when (call number N) the named server is reported connected (a test of the poll). */
   refreshCalls = 0;
   connectOnRefresh?: { name: string; at: number };
+  /** Spec 058 FR-180: on read number N, report the named server with this `signInEnd` (still needs-auth), as an adapter that learned how its sign-in ended. */
+  endOnRefresh?: { name: string; at: number; end: 'next-message' | 'failed'; error?: string };
+  /** Every name `refreshMcpStatus` was called with (undefined = no name). */
+  readonly refreshNames: Array<string | undefined> = [];
   /** Test hook: a refresh that takes this long (ms) or never settles (`Infinity`), to see that calls never overlap. */
   refreshDelay?: number;
   refreshFail?: string;
   /** Spec 058: every `startMcpSignIn` / `cancelMcpSignIn` call, in order (test log; no browser is opened). */
-  readonly signInCalls: Array<{ sessionId: string; name: string; cancel?: true }> = [];
+  readonly signInCalls: Array<{ sessionId: string; name: string; cancel?: true; again?: true }> = [];
   /** Spec 058: what the next `startMcpSignIn` resolves with. */
   signInResult: McpSignInResult = { kind: 'browser', url: 'https://auth.example.test/authorize' };
   declare deleteSession?: (sessionId: string) => Promise<void>;
@@ -154,6 +158,8 @@ export class FakeAdapter implements AgentAdapter {
     };
     if (!caps.mcpSignIn) delete (caps as { mcpSignIn?: unknown }).mcpSignIn;
     if (c.mcpSignInSteps === undefined) delete (caps as { mcpSignInSteps?: unknown }).mcpSignInSteps;
+    if (c.mcpSignInNote === undefined) delete (caps as { mcpSignInNote?: unknown }).mcpSignInNote;
+    if (!c.mcpSignInRestart || !caps.mcpRestart) delete (caps as { mcpSignInRestart?: unknown }).mcpSignInRestart;
     if (!c.renameSession || omit.has('renameSession')) delete (caps as { renameSession?: unknown }).renameSession;
     this.capabilities = caps;
     const has = (m: OptionalMember): boolean => !omit.has(m);
@@ -190,21 +196,24 @@ export class FakeAdapter implements AgentAdapter {
     }
     if (caps.mcpSignIn) {
       if (has('startMcpSignIn')) {
-        this.startMcpSignIn = async (sid, name) => {
+        this.startMcpSignIn = async (sid, name, opts) => {
           this.mustGet(sid);
-          this.signInCalls.push({ sessionId: sid, name });
+          this.signInCalls.push({ sessionId: sid, name, ...(opts?.again === true ? { again: true } : {}) });
           return this.signInResult;
         };
       }
       if (has('refreshMcpStatus')) {
-        this.refreshMcpStatus = async (sid) => {
+        this.refreshMcpStatus = async (sid, name?: string) => {
           this.mustGet(sid);
           this.refreshCalls++;
+          this.refreshNames.push(name);
           if (this.refreshDelay === Infinity) return new Promise<void>(() => undefined);
           if (this.refreshDelay) await new Promise((r) => setTimeout(r, this.refreshDelay));
           if (this.refreshFail) throw new Error(this.refreshFail);
           const c = this.connectOnRefresh;
           if (c && this.refreshCalls >= c.at) this.emit(sid, { type: 'mcp', servers: [{ name: c.name, status: 'connected' }] });
+          const f = this.endOnRefresh;
+          if (f && this.refreshCalls >= f.at) this.emit(sid, { type: 'mcp', servers: [{ name: f.name, status: 'needs-auth', errorClass: 'auth', signInEnd: f.end, ...(f.error ? { error: f.error } : {}) }] });
         };
       }
       if (has('cancelMcpSignIn')) {

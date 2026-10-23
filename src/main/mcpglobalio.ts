@@ -7,7 +7,7 @@
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { NAME_RE, validateInput } from '../shared/mcp';
+import { NAME_RE, claudeOAuthOf, validateInput } from '../shared/mcp';
 import type { McpServerSpec } from '../shared/mcp';
 import type { GlobalApp, GlobalApplyItem, GlobalDiff, GlobalDiffItem, GlobalApplyResult, GlobalAppState, GlobalPreview, GlobalPreviewItem, GlobalSecretMode, GlobalState } from '../shared/api';
 import { addToText, APP_LABEL, differences, uncopyable, GLOBAL_APPS, neededVars, neutralFrom, offOf, previewText, readGlobal, removeFromText, textHash } from './mcpglobal';
@@ -174,15 +174,21 @@ interface Pending {
   files: PendingFile[];
 }
 
-/** A server of an app's list as a session option (main only; values included). */
-function specOf(e: Record<string, unknown>): McpServerSpec | undefined {
+/**
+ * A server of an app's list as a session option (main only; values included). Spec 058 FR-186: a Claude Code `http`/`sse` entry also
+ * carries the allow-listed part of its `oauth` object (`claudeOAuthOf`; never a client secret); nothing about it is logged.
+ */
+function specOf(e: Record<string, unknown>, app?: GlobalApp): McpServerSpec | undefined {
   const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
   const map = (v: unknown): Record<string, string> =>
     v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([, x]) => typeof x === 'string') as [string, string][]) : {};
   const type = str(e.type)?.toLowerCase();
   if (str(e.command) && (type === undefined || type === 'stdio' || type === 'local'))
     return { type: 'stdio', command: str(e.command), args: Array.isArray(e.args) ? e.args.filter((a): a is string => typeof a === 'string') : [], env: map(e.env), tools: ['*'] };
-  if (str(e.url) && (type === 'http' || type === 'sse' || type === undefined)) return { type: type === 'sse' ? 'sse' : 'http', url: str(e.url), headers: map(e.headers), tools: ['*'] };
+  if (str(e.url) && (type === 'http' || type === 'sse' || type === undefined)) {
+    const oauth = app === 'claude' && Object.prototype.hasOwnProperty.call(e, 'oauth') ? claudeOAuthOf(e.oauth) : undefined;
+    return { type: type === 'sse' ? 'sse' : 'http', url: str(e.url), headers: map(e.headers), tools: ['*'], ...(oauth ? { oauth } : {}) };
+  }
   return undefined;
 }
 
@@ -246,7 +252,7 @@ export class GlobalLists {
     const out: Record<string, McpServerSpec> = {};
     for (const [name, e] of g.values) {
       if (off.has(name)) continue;
-      const s = specOf(e);
+      const s = specOf(e, app);
       if (s) out[name] = s;
     }
     return out;

@@ -146,8 +146,13 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('startMcpSignIn'), !!cap.mcpSignIn, M('C2', 'startMcpSignIn() <=> capabilities.mcpSignIn (spec 058 FR-064)'));
     if (has('cancelMcpSignIn')) assert.ok(cap.mcpSignIn, M('C2', 'cancelMcpSignIn() only with capabilities.mcpSignIn'));
     if (has('refreshMcpStatus')) assert.ok(cap.mcpSignIn, M('C2', 'refreshMcpStatus() only with capabilities.mcpSignIn (spec 058 FR-064)'));
+    if (cap.mcpSignInAgain !== undefined) assert.ok(typeof cap.mcpSignInAgain === 'boolean' && (!cap.mcpSignInAgain || cap.mcpSignIn), M('C2', 'mcpSignInAgain is a boolean, and only with mcpSignIn (spec 058 FR-164)'));
     assert.ok(cap.mcpSignInSteps === undefined || (typeof cap.mcpSignInSteps === 'string' && cap.mcpSignInSteps.length > 0), M('C2', 'mcpSignInSteps is a non-empty string or missing'));
     assert.strictEqual(typeof cap.mcpSignIn, cap.mcpSignIn === undefined ? 'undefined' : 'boolean', M('C2', 'mcpSignIn is a boolean or missing'));
+    // spec 058 FR-180: the row's note only where the row can show a sign-in (Sign in or the terminal steps); a non-empty sentence
+    if (cap.mcpSignInNote !== undefined) assert.ok(typeof cap.mcpSignInNote === 'string' && cap.mcpSignInNote.length > 0 && (!!cap.mcpSignIn || !!cap.mcpSignInSteps), M('C2', 'mcpSignInNote is a non-empty string, only with mcpSignIn or mcpSignInSteps (spec 058 FR-180)'));
+    // spec 058 FR-176/FR-181: Restart as the end of a sign-in needs a Restart
+    if (cap.mcpSignInRestart !== undefined) assert.ok(cap.mcpSignInRestart === true && !!cap.mcpRestart && has('restartMcpServer'), M('C2', 'mcpSignInRestart only with mcpRestart and restartMcpServer() (spec 058 FR-176)'));
     assert.strictEqual(has('setPermMode'), cap.permModeSwitch !== 'none', M('C2', "setPermMode() <=> permModeSwitch !== 'none'"));
     ran('C2');
   }
@@ -355,7 +360,7 @@ export const ALL_OPTIONAL = Object.keys(OMITTABLE) as OptionalMember[];
 /** Optional `AgentAdapter` members FakeAdapter does not implement (so it cannot omit them): fields, and methods no fake test needs yet. */
 const NOT_IN_FAKE = [
   'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'reloadAgentProfiles', 'selectAgentProfile', 'setRemote',
-  'authStatus', 'verifySignIn', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand',
+  'authStatus', 'verifySignIn', 'accountInfo', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand',
 ];
 
 /** The optional members of `interface AgentAdapter`, read from `src/adapters/types.ts` with the TypeScript parser (no hand-kept copy). */
@@ -410,6 +415,10 @@ async function main(): Promise<void> {
     assert.ok(eventProblems({ ...base, phase: 'failed', mcpServer: '', mcpAuth: true }).length > 0, 'mcpAuth with an empty mcpServer is refused');
     assert.ok(eventProblems({ ...base, phase: 'failed', mcpServer: 'notes', mcpAuth: false }).length > 0, 'mcpAuth false is refused');
     assert.ok(eventProblems({ ...base, phase: 'failed', mcpServer: 'notes', mcpAuth: 'yes' }).length > 0, 'mcpAuth of another type is refused');
+    // spec 058 FR-180 (T151): signInEnd is one of two values, or missing
+    const mev = (x: Record<string, unknown>) => eventProblems({ type: 'mcp', sessionId: 's', timestamp: 1, servers: [{ name: 'notes', status: 'needs-auth', ...x }] });
+    assert.deepStrictEqual([mev({}), mev({ signInEnd: 'next-message' }), mev({ signInEnd: 'failed' })], [[], [], []], 'signInEnd next-message, failed or missing pass');
+    for (const bad of ['connected', '', 'FAILED', 1, true, null, {}]) assert.ok(mev({ signInEnd: bad }).length > 0, `signInEnd ${JSON.stringify(bad)} is refused`);
     const si = new FakeAdapter({ script: [], capabilities: { mcpSignIn: true } });
     assert.strictEqual(si.capabilities.mcpSignIn, true);
     assert.ok(si.startMcpSignIn && si.cancelMcpSignIn, 'sign-in members exist with the flag');
@@ -417,6 +426,11 @@ async function main(): Promise<void> {
     assert.ok(noCancel.startMcpSignIn && !noCancel.cancelMcpSignIn, 'cancel is optional');
     const off = new FakeAdapter({ script: [] });
     assert.ok(!off.startMcpSignIn && !off.cancelMcpSignIn && !('mcpSignIn' in off.capabilities) && !('mcpSignInSteps' in off.capabilities), 'no members and no fields without the flag');
+    // FR-180: the note and the Restart end come only with their flags
+    assert.ok(!('mcpSignInNote' in off.capabilities) && !('mcpSignInRestart' in off.capabilities), 'no note and no Restart end by default');
+    const noted = new FakeAdapter({ script: [], capabilities: { mcpSignIn: true, mcpSignInNote: 'Not checked on a real account yet.', mcpSignInRestart: true, mcpRestart: true } });
+    assert.deepStrictEqual([noted.capabilities.mcpSignInNote, noted.capabilities.mcpSignInRestart], ['Not checked on a real account yet.', true]);
+    assert.ok(!('mcpSignInRestart' in new FakeAdapter({ script: [], capabilities: { mcpSignInRestart: true, mcpRestart: false } }).capabilities), 'no Restart end without mcpRestart');
     const omitted = new FakeAdapter({ script: [], capabilities: { mcpSignIn: true }, omit: ['startMcpSignIn'] });
     assert.ok(!omitted.startMcpSignIn && !omitted.capabilities.mcpSignIn, 'omitting startMcpSignIn forces the flag off');
     const sid = await si.start({ workspace: WS, permissionMode: 'read-only', quiet: true });
@@ -432,6 +446,8 @@ async function main(): Promise<void> {
     ['fake-rename-any', () => new FakeAdapter({ script: SCRIPT, capabilities: { renameSession: 'any' } })],
     ['fake-rename-next', () => new FakeAdapter({ script: SCRIPT, capabilities: { renameSession: 'next-turn' } })],
     ['fake-signin', () => new FakeAdapter({ script: SCRIPT, capabilities: { mcpSignIn: true, mcpSignInSteps: 'In a terminal, run `fake login {name}`.' } })],
+    ['fake-signin-note', () => new FakeAdapter({ script: SCRIPT, capabilities: { mcpSignIn: true, mcpRestart: true, mcpSignInRestart: true, mcpSignInSteps: 'Run `fake login {name}`, then press Restart on this row.', mcpSignInNote: 'Not checked on a real account yet.' } })],
+    ['fake-steps-only', () => new FakeAdapter({ script: SCRIPT, capabilities: { mcpSignInSteps: 'Run `fake login {name}`.', mcpSignInNote: 'Not checked on a real account yet.' } })],
     ['fake-bare', () => new FakeAdapter({ script: SCRIPT, omit: ALL_OPTIONAL })],
     ['fake-readonly', () => new FakeAdapter({ script: SCRIPT, capabilities: { permissionModes: ['read-only'] } })],
   ];

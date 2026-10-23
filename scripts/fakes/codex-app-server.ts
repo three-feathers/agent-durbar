@@ -38,6 +38,11 @@ export interface FakeCodexOptions {
   rateLimits?: 'ok' | 'unauthorized' | 'network' | 'missing';
   /** What `getAuthStatus` reports as `authMethod` (default `chatgpt`; null = not signed in). */
   authMethod?: string | null;
+  /**
+   * Spec 051 FR-011: what `account/read` answers: an object is sent as the result as it is; `missing` = method not found (an older
+   * Codex); `error` = another error. Default: a ChatGPT Plus account with a fake email.
+   */
+  account?: Record<string, unknown> | 'missing' | 'error';
   /** spec 059: answer `thread/name/set` with this error message. */
   refuseRename?: string;
   /** Exit (no answer) when a request with this method arrives. */
@@ -378,6 +383,12 @@ export class FakeCodexServer {
         if (r === 'unauthorized') return this.fail(child, id, -32603, 'failed to fetch codex rate limits: 401 Unauthorized');
         if (r === 'network') return this.fail(child, id, -32603, 'failed to fetch codex rate limits: error sending request');
         return this.reply(child, id, { rateLimits: { primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1792403999 }, secondary: null } });
+      }
+      case 'account/read': {
+        const a = this.opts.account ?? { account: { type: 'chatgpt', email: 'fake@example.invalid', planType: 'plus' }, requiresOpenaiAuth: true };
+        if (a === 'missing') return this.fail(child, id, -32601, `method not found: ${method}`);
+        if (a === 'error') return this.fail(child, id, -32603, 'failed to read the account');
+        return this.reply(child, id, a);
       }
       case 'getAuthStatus':
         return this.reply(child, id, { authMethod: this.opts.authMethod === undefined ? 'chatgpt' : this.opts.authMethod, authToken: null, requiresOpenaiAuth: true });

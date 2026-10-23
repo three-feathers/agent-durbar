@@ -28,6 +28,10 @@
  * finishes; an agent away at a lobby place is not in the lounge.
  * Screenshots: 001-shutters-{1440x900,1280x800}.png and 001-shutters-peek-1440x900.png.
  *
+ * Spec 001 FR-086..FR-088 (owner report, issue #619): in every layout that fits, the gap below the last row is at most max(24 px, the even gap),
+ * the gaps between rows are even within 1 px, the top and bottom gaps equal within 1 px and the rooms of a row equally tall; plus a "spare
+ * height" case with 4 one-agent folders, 2 agents in 2 folders and 1 agent at 1280x600, 1280x800, 1440x900 and 1920x1080.
+ *
  *   npm run check:office-fill            (builds first; Linux runs it under xvfb)
  */
 const assert = require('assert');
@@ -72,6 +76,36 @@ const BADGE_ON_NAME_JS = `[...document.querySelectorAll('#stage .desk.shut')].fi
   const rg=document.createRange();rg.selectNodeContents(n);const t=rg.getBoundingClientRect(),el=n.getBoundingClientRect(),b=c.getBoundingClientRect();
   const l=Math.max(t.left,el.left),r=Math.min(t.right,el.right),tp=Math.max(t.top,el.top),bt=Math.min(t.bottom,el.bottom);
   return b.left<r&&b.right>l&&b.top<bt&&b.bottom>tp;}).map(e=>e.dataset.id)`;
+/* spec 001 FR-086..FR-088 (issue #619): the stage's rows (children grouped by their top) and the gaps above the first, between and below the
+   last row, inside the floor's content box; the heights of the rooms of each row (equal within 1 px when they stretch together) */
+function ROWS() {
+  const s = document.getElementById('stage'), f = document.getElementById('floor'), cs = getComputedStyle(f), fr = f.getBoundingClientRect();
+  const top = fr.top + parseFloat(cs.paddingTop), bot = fr.bottom - parseFloat(cs.paddingBottom), rows = [];
+  for (const k of s.children) {
+    if (!k.getClientRects().length || k.classList.contains('scene-out')) continue;
+    const r = k.getBoundingClientRect(), row = rows.find((x) => Math.abs(x.t - r.top) < 2);
+    if (row) { row.b = Math.max(row.b, r.bottom); if (k.classList.contains('room')) row.rh.push(r.height); }
+    else rows.push({ t: r.top, b: r.bottom, rh: k.classList.contains('room') ? [r.height] : [], kind: k.classList.contains('room') ? 'room' : k.className.split(' ')[0] });
+  }
+  rows.sort((a, b) => a.t - b.t);
+  if (!rows.length) return null;
+  const gaps = [rows[0].t - top];
+  for (let i = 1; i < rows.length; i++) gaps.push(rows[i].t - rows[i - 1].b);
+  gaps.push(bot - rows[rows.length - 1].b);
+  return { gaps: gaps.map((g) => Math.round(g * 10) / 10), kinds: rows.map((r) => r.kind + ':' + Math.round(r.b - r.t)), spread: rows.map((r) => r.rh.length ? Math.max(...r.rh) - Math.min(...r.rh) : 0) };
+}
+/* the spare-height rules on those rows: the gap below the last row at most max(24 px, the even gap); the gaps between rows even within 1 px;
+   the top and bottom gaps equal within 1 px; the rooms of a row equally tall. Returns the problems, empty when they hold */
+function spareProblems(label, g) {
+  if (!g) return [`${label}: no rows`];
+  const out = [], inner = g.gaps.slice(1, -1), top = g.gaps[0], bottom = g.gaps[g.gaps.length - 1], even = inner.length ? Math.max(...inner) : top;
+  if (bottom > Math.max(24, even) + 1) out.push(`${label}: ${bottom} px empty below the last row (gaps ${g.gaps.join(', ')}; rows ${g.kinds.join(', ')})`);
+  if (inner.length && Math.max(...inner) - Math.min(...inner) > 1) out.push(`${label}: uneven gaps between rows (${g.gaps.join(', ')})`);
+  if (Math.abs(top - bottom) > 1) out.push(`${label}: the top gap ${top} and the bottom gap ${bottom} differ (${g.gaps.join(', ')})`);
+  if (inner.length && Math.min(...inner) > 10.5 && Math.abs(top - Math.min(...inner)) > 1) out.push(`${label}: the gaps are not even (${g.gaps.join(', ')})`);
+  if (g.spread.some((x) => x > 1)) out.push(`${label}: the rooms of a row are not equally tall (${g.spread.join(', ')})`);
+  return out;
+}
 const MAX_CHARS = 90; /* owner 2026-10-22: a readable measure, about 80-90 characters a line */
 const GHP = 'ghp_' + 'Fill0Token0Value0123456789ab', PAT = 'github_pat_' + '11FILL0TOKEN_value0123456789abcdef';
 
@@ -132,9 +166,20 @@ module.exports = async (ctx) => {
     check(st.lines.every((l) => l <= 8.01 && Math.abs(l - Math.round(l)) < 0.02), `${label}: grown text boxes of ${st.lines.map((l) => l.toFixed(2)).join(', ')} lines`);
     if (st.gf) check(st.d === 'roomy' && st.gf >= 1.1 && st.gf <= 2.5, `${label}: grown f=${st.gf} on ${st.d}`);
     check(st.measure <= MAX_CHARS, `${label}: a grown desk line of ${st.measure} characters (limit ${MAX_CHARS})`);
+    if (st.fit === 'ok') for (const p of spareProblems(label, await js(`(${ROWS.toString()})()`))) failures.push(p); /* FR-087 in every layout that fits */
     return st;
   };
 
+  /* ---- spare height (FR-086..FR-088, owner report issue #619): few rooms, a short wide window too; the space is not all left at the bottom ---- */
+  for (const [w, h] of [[1280, 600], [1280, 800], [1440, 900], [1920, 1080]]) {
+    for (const [n, k] of [[4, 'solo'], [2, '2'], [1, '1']]) {
+      const label = `spare height, ${n} agent${n > 1 ? 's' : ''} in ${k === 'solo' ? n : k} folder${n > 1 ? 's' : ''}, ${w}x${h}`;
+      const st = await one(label, n, w, h, { simrooms: k, simhelpers: '0' });
+      const g = await js(`(${ROWS.toString()})()`);
+      check(st.deskH <= Math.round(92 * 2.5) + 1, `${label}: a desk ${st.deskH} px tall (cap 230)`);
+      rows.push(`${label}: gaps ${g ? g.gaps.join(', ') : '-'}; rows ${g ? g.kinds.join(', ') : '-'}`);
+    }
+  }
   /* ---- the matrix, no helpers ---- */
   for (const [w, h] of [[1280, 800], [1440, 900], [1920, 1080]]) {
     for (const k of [1, 2, 3]) {

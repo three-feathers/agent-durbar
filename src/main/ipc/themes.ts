@@ -7,7 +7,7 @@ import type { AdapterRouter } from '../../adapters/router';
 import { MAX_DESCRIPTION, MAX_PASSES, THEME_IDEAS, TOP_BAR_ISSUE, buildFixPrompt, buildRetryPrompt, buildThemePrompt, isBlocking, keepArt, parseGeneratedTheme } from '../../shared/themegen';
 import { errText } from '../agentops';
 import type { DevEnv } from '../devhooks';
-import { cliServers, copilotDir } from '../mcpfiles';
+import { copilotDir, copilotServerNames } from '../mcpfiles';
 import { UserThemeStore } from '../themes';
 
 export interface ThemesIpcDeps {
@@ -42,7 +42,7 @@ export function register(deps: ThemesIpcDeps): void {
     let cost = 0;
     let nano = 0;
     // Copilot loads the servers of ~/.copilot/mcp-config.json and its built-in one by itself: all of them are switched off by name (FR-015)
-    const genOpts = kind === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((s) => s.name) } : {};
+    const genOpts = kind === 'copilot' ? { disabledMcpServers: copilotServerNames(copilotDir(dev)) } : {};
     const ask = async (prompt: string): Promise<string> => {
       const r = await ad.generateText!(prompt, genOpts);
       if (r.costUsd) cost += r.costUsd;
