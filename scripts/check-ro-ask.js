@@ -81,6 +81,14 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!document.getElementById('modeMenu')`, 3000), `${w}: Escape closes the menu`);
     assert.strictEqual(await active(), 'ro-ask', `${w}: focus back on the button`);
 
+    if (!kb) { // a second click on the button closes the menu (it toggles)
+      await js(`document.querySelector(${jsLiteral(BTN)}).click()`);
+      assert.ok(await until(`!!document.getElementById('modeMenu')`, 3000), `${w}: opens again`);
+      await js(`document.querySelector(${jsLiteral(BTN)}).click()`);
+      assert.ok(await until(`!document.getElementById('modeMenu')`, 3000), `${w}: a second click closes the menu`);
+      assert.strictEqual(await js(`document.querySelector(${jsLiteral(BTN)}).getAttribute('aria-expanded')`), 'false', `${w}: aria-expanded=false after the toggle`);
+      await js(`document.querySelector(${jsLiteral(BTN)}).focus()`);
+    }
     // 4) Allow all keeps its confirmation; cancelling it changes nothing
     await key(kb ? 'Space' : 'Return', [], { char: 'always' });
     assert.ok(await until(`!!document.getElementById('modeMenu')`, 3000), `${w}: ${kb ? 'Space' : 'Enter'} opens the menu`);
