@@ -55,8 +55,8 @@ export const needsSignIn = (s: { status?: string; errorClass?: string } | undefi
  * Spec 058 FR-164: a server that can be signed in again: reported by the session as connected or failed (not one that waits for its
  * first sign-in, which gets Sign in), and not a local (stdio) server, which has no OAuth sign-in.
  */
-export const canSignInAgainStatus = (s: { status?: string; errorClass?: string; transport?: string } | undefined): boolean =>
-  !!s && !needsSignIn(s) && (s.status === 'connected' || s.status === 'failed') && s.transport !== 'stdio';
+export const canSignInAgainStatus = (s: { status?: string; errorClass?: string; transport?: string; source?: string } | undefined): boolean =>
+  !!s && !needsSignIn(s) && (s.status === 'connected' || s.status === 'failed') && s.transport !== 'stdio' && s.source !== 'builtin'; // a built-in server uses the Copilot sign-in itself
 
 /** A server name that is safe to put in a command the user may copy: no spaces, quotes, newlines or shell characters (a folder extra's name comes from a file). */
 const PLAIN_NAME = /^[A-Za-z0-9_.@:+-]{1,64}$/;

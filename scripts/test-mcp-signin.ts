@@ -332,7 +332,7 @@ async function main(): Promise<void> {
       const sid = await ad.start({ workspace: ws, quiet: true });
       const live: McpServerStatus[] = [
         { name: 'teams', status: 'needs-auth', errorClass: 'auth' }, { name: 'web', status: 'connected', transport: 'http' }, { name: 'down', status: 'failed', error: '500' },
-        { name: 'local', status: 'connected', transport: 'stdio' }, { name: 'slow', status: 'pending' }, { name: 'off', status: 'disabled' },
+        { name: 'local', status: 'connected', transport: 'stdio' }, { name: 'slow', status: 'pending' }, { name: 'off', status: 'disabled' }, { name: 'gh', status: 'connected', source: 'builtin' },
       ];
       const d = { agents: new Map([[sid, info(sid)]]), router: routerOf(ad), live: () => live, secrets: () => [] };
       // a connected and a failed remote server can be signed in again; the runtime gets `again` (Copilot: forceReauth)
@@ -340,7 +340,7 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(ad.signInCalls.at(-1), { sessionId: sid, name: 'web', again: true });
       assert.strictEqual((await mcpSignInOp(d, store, sid, 'down', true)).ok, true);
       // not for: a server waiting for its first sign-in (that is Sign in), a local one, pending, disabled; only `true` counts as again
-      for (const n of ['teams', 'local', 'slow', 'off']) assert.match((await mcpSignInOp(d, store, sid, n, true) as { error: string }).error, /cannot be signed in again now/, n);
+      for (const n of ['teams', 'local', 'slow', 'off', 'gh']) assert.match((await mcpSignInOp(d, store, sid, n, true) as { error: string }).error, /cannot be signed in again now/, n);
       assert.match((await mcpSignInOp(d, store, sid, 'down', 'true') as { error: string }).error, /does not need a sign-in/, 'a string "true" is not again');
       assert.strictEqual(ad.signInCalls.length, 2, 'nothing else reached the runtime');
       // an agent app without the capability: refused before the runtime

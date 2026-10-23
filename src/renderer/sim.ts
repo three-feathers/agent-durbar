@@ -1301,7 +1301,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           const st = reported(n);
           const needs = st.status === 'needs-auth' || (st.status === 'failed' && st.errorClass === 'auth');
           // spec 058 FR-164: Sign in again on a connected or failed server (main's canSignInAgainStatus), with the host once it is open
-          if (live && !s.mcpOff?.has(n) && !needs && (st.status === 'connected' || st.status === 'failed') && simMcpAuth !== 'manual') {
+          if (live && !s.mcpOff?.has(n) && !needs && (st.status === 'connected' || st.status === 'failed') && simMcpAuth !== 'manual' && !fakeCli.some((c) => c.name === n && c.origin === 'builtin')) { // a built-in server uses the Copilot sign-in itself (main: canSignInAgainStatus)
             const o = simSignOpen(s, n);
             return { canSignInAgain: true, ...(o ? { signIn: { host: 'auth.example.com', opened: o.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - o.at)) } } : {}) };
           }

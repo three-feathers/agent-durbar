@@ -14,7 +14,8 @@
  * - Cancel returns to Sign in with focus on it; Switch off for this session goes through the existing switch;
  * - simmcpauth=manual: no Sign in, the steps are open; Claude and Codex rows (simkinds=mixed) keep today's behaviour;
  * - the dialog fits the window and its text is at least 10.5px.
- * Shots: 058-mcp-signin-row-, -steps-, -confirm-, -waiting-, -manual-<w>x<h>.png. Prints "[058 signin] PASS".
+ * - FR-164: Sign in again on a running server (not the built-in one): a confirmation, then Open sign-in page with the host only; Cancel.
+ * Shots: 058-mcp-signin-row-, -again-ask-, -again-, -steps-, -confirm-, -waiting-, -manual-<w>x<h>.png. Prints "[058 signin] PASS".
  */
 const assert = require('assert');
 const path = require('path');
@@ -69,6 +70,25 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!!document.querySelector('#agMcp button[data-signin="my-notes"][aria-label="Sign in to my-notes"]')`), 'Sign in has an accessible name');
     await check(w, 'row');
     await shot(`058-mcp-signin-row-${w}x${h}.png`);
+
+    // ---- FR-164: Sign in again on a running remote server (not on the built-in one), one confirmation, then the usual two steps ----
+    assert.ok(other.buttons.includes('Sign in again…'), 'a running server offers Sign in again: ' + JSON.stringify(other.buttons));
+    assert.ok(!(await info('github-mcp-server')).buttons.includes('Sign in again…'), 'the built-in server uses the Copilot sign-in: no Sign in again');
+    assert.ok(!n.buttons.includes('Sign in again…'), 'a needs-sign-in row has Sign in, not Sign in again');
+    await click('github', 'Sign in again…');
+    assert.ok(await until(`!!document.getElementById('modeDlg')`), 'a confirmation opens');
+    const ask = await js(`document.getElementById('modeDlg').textContent`);
+    assert.ok(/Sign in again to github\?/.test(ask) && /never reads or changes your keychain/.test(ask), 'the confirmation says what happens: ' + ask);
+    await shot(`058-mcp-signin-again-ask-${w}x${h}.png`);
+    await js(`[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Sign in again').click()`);
+    assert.ok(await until(`!!window.__row('github')&&!!window.__row('github').querySelector('button[data-signopen]')`), 'Open sign-in page shows for github');
+    assert.ok(/Sign-in page on auth\.example\.com/.test((await info('github')).text), 'the host only');
+    assert.ok(!/https?:\/\/|authorize|state=/i.test(await dlgText()), 'no address anywhere in the dialog');
+    await check(w, 'again');
+    await shot(`058-mcp-signin-again-${w}x${h}.png`);
+    await click('github', 'Cancel');
+    assert.ok(await until(`!window.__row('github').querySelector('button[data-signopen]')&&[...window.__row('github').querySelectorAll('button')].some(b=>b.textContent==='Sign in again…')`), 'back to Sign in again after Cancel');
+    await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
 
     // ---- the terminal steps ----
     await click('my-notes', 'How to sign in from a terminal');
