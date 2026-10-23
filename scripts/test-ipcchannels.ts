@@ -114,10 +114,13 @@ const FROM_APP = [
   'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:setMode', 'agents:setRemote',
   'app:dismissSinceAway', 'app:sinceAway',
   'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run',
-  'profiles:create', 'profiles:generate', 'profiles:save', // spec 043 FR-011: writes to profile files
+  'profiles:create', 'profiles:delete', 'profiles:generate', 'profiles:save', // spec 043 FR-011, FR-040: writes to (or deletes) profile files
   'schedules:remove', 'schedules:runNow', 'schedules:save',
 ];
 assert.strictEqual(new Set(FROM_APP).size, FROM_APP.length, 'no channel twice in the list');
+// spec 043 FR-041 (review on #572): an ended or removed session is forgotten by the profile list freshness; a change prunes the rest
+for (const c of ['agents:end', 'agents:remove']) assert.ok(/profileFreshness\?\.forget\(/.test(regs.get(c)?.[0]?.block ?? ''), `"${c}" must forget the session's profile freshness`);
+assert.ok(/fresh\.prune\(/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'profiles.ts'), 'utf8')), 'profiles.ts prunes sessions no longer in the office on a change');
 for (const c of FROM_APP) {
   const r = regs.get(c);
   assert.ok(r && r.length === 1, `"${c}" is registered`);

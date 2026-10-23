@@ -353,7 +353,7 @@ const OMITTABLE: Record<OptionalMember, true> = {
 export const ALL_OPTIONAL = Object.keys(OMITTABLE) as OptionalMember[];
 /** Optional `AgentAdapter` members FakeAdapter does not implement (so it cannot omit them): fields, and methods no fake test needs yet. */
 const NOT_IN_FAKE = [
-  'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'selectAgentProfile', 'setRemote',
+  'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'reloadAgentProfiles', 'selectAgentProfile', 'setRemote',
   'authStatus', 'verifySignIn', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand',
 ];
 

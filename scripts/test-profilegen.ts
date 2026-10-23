@@ -5,7 +5,7 @@
  */
 import * as assert from 'assert';
 import * as path from 'path';
-import { buildProfilePrompt, MAX_GEN_ANSWER, MAX_PROFILE_BYTES, maxProfileBytes, parseToolList, PROFILE_QUESTIONS, profileTemplate, SUCCESS_SECTIONS, userTextOf, validateGeneratedProfile } from '../src/shared/profiletemplates';
+import { buildProfilePrompt, MAX_GEN_ANSWER, SAFETY_LINES, MAX_PROFILE_BYTES, maxProfileBytes, parseToolList, PROFILE_QUESTIONS, profileTemplate, SUCCESS_SECTIONS, userTextOf, validateGeneratedProfile } from '../src/shared/profiletemplates';
 import { generateProfile } from '../src/main/profilegen';
 import type { OneShot } from '../src/main/profilegen';
 import { maxBytesFor } from '../src/main/profilefiles';
@@ -16,7 +16,7 @@ const PE = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'profilee
 const parse = (t: string): FrontmatterParse => PE.parseFrontmatter(t);
 
 // ---- prompt ----
-const Q: GenInput = { app: 'claude', name: 'pay-reviewer', mode: 'questions', answers: { title: 'Payments reviewer', tools: 'Read, Grep and Edit only after I agree', behavior: 'Brief, asks me when unsure', bogus: 'ignored' } as Record<string, string> };
+const Q: GenInput = { app: 'claude', name: 'pay-reviewer', mode: 'questions', answers: { role: 'Payments reviewer', safety: 'Read, Grep and Edit only after I agree', ask: 'Brief, asks me when unsure', bogus: 'ignored' } as Record<string, string> };
 {
   const p = buildProfilePrompt(Q);
   for (const s of ['Payments reviewer', 'Read, Grep and Edit only after I agree', 'Brief, asks me when unsure', 'name: pay-reviewer', '# Agent Success Profile: pay-reviewer']) assert.ok(p.includes(s), `prompt has ${s}`);
@@ -27,12 +27,13 @@ const Q: GenInput = { app: 'claude', name: 'pay-reviewer', mode: 'questions', an
   assert.ok(!/[\\/]home[\\/]|[A-Z]:\\|~\/|https?:/.test(p), 'no paths or URLs that the user did not type');
   const cp = buildProfilePrompt({ app: 'copilot', name: 'x', mode: 'describe', description: 'A docs helper' });
   assert.ok(/tools: \[view, grep, glob\]/.test(cp) && /no model line/.test(cp) && cp.includes('A docs helper'), 'Copilot rules');
-  const long = buildProfilePrompt({ app: 'claude', name: 'x', mode: 'questions', answers: { title: 'y'.repeat(5000) } });
+  const long = buildProfilePrompt({ app: 'claude', name: 'x', mode: 'questions', answers: { role: 'y'.repeat(5000) } });
   assert.ok(!long.includes('y'.repeat(MAX_GEN_ANSWER + 1)) && long.includes('y'.repeat(MAX_GEN_ANSWER)), 'answers capped');
   assert.strictEqual(PROFILE_QUESTIONS.length, 8);
   assert.deepStrictEqual([...new Set(PROFILE_QUESTIONS.map((q) => q.section))].sort(), SUCCESS_SECTIONS.map((s) => s.heading).sort(), 'one question per section');
   assert.strictEqual(userTextOf({ app: 'claude', name: 'x', mode: 'describe', description: ' a\u0001b ' }), 'a b', 'control characters out');
 }
+
 
 // ---- reply check ----
 const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra = ''): string => {
@@ -40,6 +41,45 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
   if (tools !== undefined) t = t.replace(/^tools: .*$/m, tools);
   return extra ? t.replace('---\n\n', extra + '---\n\n') : t;
 };
+
+// ---- spec 043 FR-043 (issue #570): a better structured Agent Success Profile ----
+{
+  // the eight sections, in this order, as the owner listed them
+  assert.deepStrictEqual(SUCCESS_SECTIONS.map((s) => s.heading), ['Role and goal', 'Scope and non-goals', 'Inputs and context to gather first', 'Working method', 'Quality bar and definition of done', 'Safety limits', 'Output format', 'When to ask the user']);
+  for (const app of ['claude', 'copilot'] as const) {
+    const p = buildProfilePrompt({ ...Q, app });
+    // the skeleton in the prompt has every section, in order
+    const at = SUCCESS_SECTIONS.map((s) => p.indexOf('## ' + s.heading + '\n'));
+    assert.ok(at.every((i) => i > 0) && at.every((i, k) => k === 0 || i > at[k - 1]), `${app}: the skeleton's sections in order ${JSON.stringify(at)}`);
+    // the two fixed safety lines: in the template's Safety limits section and asked for word for word
+    const tpl = profileTemplate(app, 'x', 'success');
+    const safety = tpl.slice(tpl.indexOf('## Safety limits'), tpl.indexOf('## Output format'));
+    assert.strictEqual(SAFETY_LINES.length, 2);
+    for (const l of SAFETY_LINES) assert.ok(safety.includes(l) && p.includes(l), `${app}: safety line in the template and the prompt: ${l}`);
+    assert.ok(/permission mode/i.test(SAFETY_LINES[0]) && /never .*widen/i.test(SAFETY_LINES[0]) && /secret/i.test(SAFETY_LINES[1]), 'one line for the permission mode, one for secrets');
+    assert.ok(/word for word/i.test(p), `${app}: the safety lines are kept word for word`);
+    // better thinking: the goal and done first, then steps; concrete and checkable; assumptions marked; numbered steps
+    assert.ok(/before (you )?writ/i.test(p) && /goal/i.test(p) && /done/i.test(p), `${app}: think the role through first`);
+    assert.ok(/concrete/i.test(p) && /checkable/i.test(p), `${app}: concrete, checkable lines`);
+    assert.ok(/said nothing about a section.*"Assumed:"/.test(p), `${app}: mark assumptions where the user said nothing`);
+    assert.ok(/numbered/i.test(p), `${app}: numbered steps in the working method`);
+    // harness-agnostic: the section guidance and the rules for the body name no agent app or vendor tool (only the front matter line does)
+    const guidance = SUCCESS_SECTIONS.map((s) => s.guide).join(' ') + ' ' + SAFETY_LINES.join(' ');
+    assert.ok(!/copilot|claude|codex|openai|anthropic|github|\b(Bash|Edit|Write|shell|powershell|view|grep|glob)\b/i.test(guidance), 'no agent app or tool names in the guidance: ' + guidance.match(/copilot|claude|codex|openai|anthropic|github|\b(Bash|Edit|Write|shell|powershell|view|grep|glob)\b/i));
+    assert.ok(/harness|any agent app|agent-app-neutral|not tied to/i.test(p), `${app}: asks for instructions that work in any agent app`);
+    // only what the user typed: the answers, quoted; no paths or URLs; the questionnaire has one question per new section
+    assert.ok(p.includes('"""Payments reviewer"""') && !p.includes('ignored'), `${app}: the user's answers quoted, unknown ids dropped`);
+    assert.ok(!/[\\/]home[\\/]|[A-Z]:\\|~\/|https?:/.test(p), `${app}: no paths or URLs`);
+  }
+  assert.deepStrictEqual(PROFILE_QUESTIONS.map((q) => q.section), SUCCESS_SECTIONS.map((s) => s.heading), 'one question per section, in order');
+  // the reply check warns (does not refuse) when Safety limits lacks the permission mode or the secrets line
+  const noSafety = filled('claude', 'pay-reviewer').replace(SAFETY_LINES[0], 'Be careful.').replace(SAFETY_LINES[1], 'Be nice.');
+  const w = validateGeneratedProfile(noSafety, Q, parse);
+  assert.ok(w.ok && w.warnings.some((x) => /permission mode/.test(x)) && w.warnings.some((x) => /secret/.test(x)), 'missing safety lines: warned: ' + JSON.stringify(w));
+  const kept = validateGeneratedProfile(filled('claude', 'pay-reviewer'), Q, parse);
+  assert.ok(kept.ok && !kept.warnings.some((x) => /permission mode|secret/.test(x)), 'with the safety lines: no warning');
+}
+
 {
   const ok = validateGeneratedProfile(filled('claude', 'pay-reviewer'), Q, parse);
   assert.ok(ok.ok, JSON.stringify(ok));
@@ -53,20 +93,20 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
   assert.ok(!star.ok, '* refused');
   const noTools = validateGeneratedProfile(filled('claude', 'pay-reviewer').replace(/^tools: .*\n/m, ''), Q, parse);
   assert.ok(!noTools.ok && /no tools line/.test(noTools.error), 'a missing tools line is refused (it would allow every tool)');
-  const partial = validateGeneratedProfile(filled('claude', 'pay-reviewer').replace(/## Key Success Criteria\n/, ''), Q, parse);
-  assert.ok(!partial.ok && /Key Success Criteria/.test(partial.error), 'a missing section is refused');
+  const partial = validateGeneratedProfile(filled('claude', 'pay-reviewer').replace(/## Quality bar and definition of done\n/, ''), Q, parse);
+  assert.ok(!partial.ok && /Quality bar and definition of done/.test(partial.error), 'a missing section is refused');
   const mcp = validateGeneratedProfile(filled('copilot', 'pay-reviewer', undefined, 'mcp-servers:\n  github:\n    type: http\n'), { ...Q, app: 'copilot' }, parse);
   assert.ok(!mcp.ok && /mcp-servers/.test(mcp.error), 'extra front matter keys refused');
   assert.ok(!validateGeneratedProfile('# no front matter', Q, parse).ok);
   assert.ok(!validateGeneratedProfile(filled('claude', 'pay-reviewer').replace(/^description: .*\n/m, ''), Q, parse).ok, 'no description refused');
-  const html = validateGeneratedProfile('```markdown\n' + filled('claude', 'pay-reviewer').replace('## Skills\n', '## Skills\n<script>alert(1)</script><img src=x onerror=alert(1)>\n') + '\n```', Q, parse);
+  const html = validateGeneratedProfile('```markdown\n' + filled('claude', 'pay-reviewer').replace('## Output format\n', '## Output format\n<script>alert(1)</script><img src=x onerror=alert(1)>\n') + '\n```', Q, parse);
   assert.ok(html.ok && !/<[A-Za-z!/?]/.test(html.text) && html.text.includes('&lt;script>') && html.warnings.filter((w) => /HTML/.test(w)).length === 1, 'fence removed, HTML kept only as text, with a note');
   // nested and overlapping tags, comments, closing tags: no "<" that opens a tag survives (one pass, nothing re-forms)
   for (const evil of ['<scr<script>ipt>alert(1)</scr</script>ipt>', '<<script>script>x', '<!--<script>-->', '</style><svg/onload=x>', '<<img src=x onerror=y>>', '<?xml x?>', '<ScRiPt>a</sCrIpT>']) {
-    const r = validateGeneratedProfile(filled('claude', 'pay-reviewer').replace('## Skills\n', '## Skills\n' + evil + '\n'), Q, parse);
+    const r = validateGeneratedProfile(filled('claude', 'pay-reviewer').replace('## Output format\n', '## Output format\n' + evil + '\n'), Q, parse);
     assert.ok(r.ok && !/<[A-Za-z!/?]/.test(r.text), `neutralised: ${evil}`);
   }
-  assert.ok(validateGeneratedProfile(filled('claude', 'pay-reviewer').replace('## Skills\n', '## Skills\nUse a < b and 3<4 as text\n'), Q, parse).ok, 'a plain "<" stays');
+  assert.ok(validateGeneratedProfile(filled('claude', 'pay-reviewer').replace('## Output format\n', '## Output format\nUse a < b and 3<4 as text\n'), Q, parse).ok, 'a plain "<" stays');
   const renamed = validateGeneratedProfile(filled('claude', 'other-name'), Q, parse);
   assert.ok(renamed.ok && /^---\nname: pay-reviewer\n/.test(renamed.text), 'the chosen name wins');
   const cop = validateGeneratedProfile(filled('copilot', 'pay-reviewer'), { app: 'copilot', name: 'pay-reviewer', mode: 'describe', description: 'reviews code' }, parse);
@@ -89,7 +129,7 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
     const safe = validateGeneratedProfile(filled('claude', 'p'), D(said), parse);
     assert.ok(safe.ok && safe.warnings.some((w) => w.startsWith(`You mentioned ${tool}; it is not granted`)) && safe.extraTools.length === 0, `"${said}": ${tool} in the warnings, nothing granted: ${JSON.stringify(safe)}`);
   }
-  const q = validateGeneratedProfile(filled('claude', 'p', 'tools: Read, Bash'), { app: 'claude', name: 'p', mode: 'questions', answers: { tools: 'never use Bash' } }, parse);
+  const q = validateGeneratedProfile(filled('claude', 'p', 'tools: Read, Bash'), { app: 'claude', name: 'p', mode: 'questions', answers: { safety: 'never use Bash' } }, parse);
   assert.ok(!q.ok, 'a questionnaire answer does not grant either');
   // an explicit scope only when listed, compared whole
   const git = filled('claude', 'p', 'tools: Read, Grep, Glob, Bash(git:*)');
@@ -114,10 +154,10 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
 {
   const noName = validateGeneratedProfile(filled('claude', 'x').replace(/^name: .*\n/m, ''), Q, parse);
   assert.ok(noName.ok && /^---\nname: pay-reviewer\n/.test(noName.text), 'no name key: inserted');
-  const body = filled('claude', 'x').replace(/^name: .*\n/m, '').replace('## Skills\n', '## Skills\nname: keep-this-line\n');
+  const body = filled('claude', 'x').replace(/^name: .*\n/m, '').replace('## Output format\n', '## Output format\nname: keep-this-line\n');
   const b = validateGeneratedProfile(body, Q, parse);
   assert.ok(b.ok && b.text.includes('\nname: keep-this-line\n') && /^---\nname: pay-reviewer\n/.test(b.text), 'a body line "name:" is never rewritten: ' + (b.ok ? b.text.slice(0, 80) : b.error));
-  const both = validateGeneratedProfile(filled('claude', 'other').replace('## Skills\n', '## Skills\nname: keep-this-line\n'), Q, parse);
+  const both = validateGeneratedProfile(filled('claude', 'other').replace('## Output format\n', '## Output format\nname: keep-this-line\n'), Q, parse);
   assert.ok(both.ok && both.text.includes('name: keep-this-line') && (both.text.match(/^name: pay-reviewer$/gm) ?? []).length === 1, 'front matter name rewritten, body untouched');
 }
 
@@ -146,7 +186,7 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
   // a reply that names it twice is refused by the parser before any rewrite (never a silent pick)
   assert.ok(!validateGeneratedProfile(nameLine('"name": a\nname: b'), Q, parse).ok, 'two name keys refused');
   // a body line with a quoted key is body text and stays
-  const qb = validateGeneratedProfile(filled('claude', 'x').replace('## Skills\n', '## Skills\n"name": keep-this-line\n'), Q, parse);
+  const qb = validateGeneratedProfile(filled('claude', 'x').replace('## Output format\n', '## Output format\n"name": keep-this-line\n'), Q, parse);
   assert.ok(qb.ok && qb.text.includes('\n"name": keep-this-line\n') && names(qb.text).join() === 'pay-reviewer', 'quoted name in the body untouched');
 }
 
@@ -154,7 +194,7 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
 {
   for (const app of ['claude', 'copilot'] as const) assert.strictEqual(maxProfileBytes(app), maxBytesFor(app), `one limit for the reply and the save path (${app})`);
   const cap = maxProfileBytes('claude'); // 64 KB: Claude Code's own cap (FR-021)
-  const withSkills = (x: string, app: 'claude' | 'copilot' = 'claude'): string => filled(app, 'pay-reviewer').replace('## Skills\n', '## Skills\n' + x + '\n');
+  const withSkills = (x: string, app: 'claude' | 'copilot' = 'claude'): string => filled(app, 'pay-reviewer').replace('## Output format\n', '## Output format\n' + x + '\n');
   const grow = withSkills('<b'.repeat(Math.floor(cap / 3)));
   assert.ok(Buffer.byteLength(grow) < cap, 'under the cap before neutralising');
   const g = validateGeneratedProfile(grow, Q, parse);
@@ -188,13 +228,13 @@ void (async () => {
     assert.ok(!r.ok && r.error.includes(why) && calls.length === before, `refused before any request: ${why} ${JSON.stringify(r)}`);
   }
   // caps: over-long text is refused before any request; exactly the cap is sent whole
-  for (const [bad, why] of [[{ ...base, description: 'd'.repeat(2001) }, 'longer than 2000'], [{ ...base, mode: 'questions', answers: { title: 'ok', duties: 'a'.repeat(MAX_GEN_ANSWER + 1) } }, `longer than ${MAX_GEN_ANSWER}`]] as [unknown, string][]) {
+  for (const [bad, why] of [[{ ...base, description: 'd'.repeat(2001) }, 'longer than 2000'], [{ ...base, mode: 'questions', answers: { role: 'ok', method: 'a'.repeat(MAX_GEN_ANSWER + 1) } }, `longer than ${MAX_GEN_ANSWER}`]] as [unknown, string][]) {
     const before: number = calls.length;
     const r = await generateProfile(bad, deps);
     assert.ok(!r.ok && r.error.includes(why) && calls.length === before, `refused before any request: ${why}`);
   }
   assert.ok((await generateProfile({ ...base, description: 'd'.repeat(2000) }, deps)).ok && calls[calls.length - 1].includes('d'.repeat(2000)), 'exactly 2000 characters are sent');
-  await generateProfile({ ...base, mode: 'questions', answers: { title: 'a'.repeat(MAX_GEN_ANSWER), bogus: 'zzz-unknown' } }, deps);
+  await generateProfile({ ...base, mode: 'questions', answers: { role: 'a'.repeat(MAX_GEN_ANSWER), bogus: 'zzz-unknown' } }, deps);
   const last = calls[calls.length - 1];
   assert.ok(last.includes('a'.repeat(MAX_GEN_ANSWER)) && !last.includes('zzz-unknown'), 'an answer at the cap is sent whole, unknown questions dropped');
   // tools go through the field only
@@ -219,7 +259,7 @@ void (async () => {
     const d3 = { ...deps, oneShot: () => slow };
     // one user action, then Cancel (the promise is dropped), then Create again, several times, in the same tick and later
     const first = generateProfile(base, d3);
-    const dupes = [generateProfile(base, d3), generateProfile({ ...base, by: 'other' }, d3), generateProfile({ ...base, mode: 'questions', answers: { title: 'x' } }, d3)];
+    const dupes = [generateProfile(base, d3), generateProfile({ ...base, by: 'other' }, d3), generateProfile({ ...base, mode: 'questions', answers: { role: 'x' } }, d3)];
     await new Promise((r) => setTimeout(r, 5));
     assert.strictEqual(paid, 1, 'one paid request while the first runs');
     const again = await Promise.all(dupes);

@@ -381,6 +381,7 @@ body.has-bridge #topBtns{display:flex}
 .mode-menu .mm-prow{display:flex;align-items:stretch;gap:2px}
 .mode-menu .mm-prow>button[data-prof]{flex:1;min-width:0}
 .mode-menu button.mm-edit{flex:none;align-self:center;align-items:center;padding:4px 8px;font-size:var(--t4-size);font-weight:600;color:var(--blue-ink);border-radius:8px}
+.mode-menu button.mm-del{color:var(--red-ink)} /* spec 043 FR-040: Delete beside Edit, red like the shared menu's danger rows */
 /* Settings > Profiles (custom agents) */
 .pf-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
 .pf-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--raised)}

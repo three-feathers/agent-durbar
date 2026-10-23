@@ -31,6 +31,23 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   assert.ok(src.indexOf('syntaxErrors([...new Set(') > 0 && src.indexOf('syntaxErrors([...new Set(') < src.indexOf('await Promise.all(Array.from({ length: jobs }, worker))'), 'the syntax pass runs before the first driver starts');
   // the real runner: a broken driver named with --only stops before Electron, at once, with the file and exit 1
 }
+// spec 001 FR-082/FR-083: every screenshot the README and the website link is retaken by `npm run shots:docs`, or has a reason
+{
+  const DOCS = path.join(ROOT, 'scripts', 'shots-docs.js');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const docs = require(DOCS) as { coverage: () => { linked: string[]; uncovered: string[]; unlinked: string[]; explainedButMade: string[]; missingDrivers: string[] }; NO_DRIVER: Record<string, string> };
+  const c = docs.coverage();
+  assert.ok(c.linked.length >= 30, `the README, gallery and landing page link ${c.linked.length} screenshots`);
+  assert.deepStrictEqual(c.uncovered, [], 'every linked screenshot has a driver in scripts/shots-docs.js DOC_SHOTS, or a reason in NO_DRIVER');
+  assert.deepStrictEqual(c.unlinked, [], 'DOC_SHOTS retakes only linked screenshots');
+  assert.deepStrictEqual(c.explainedButMade, [], 'a file is either retaken or explained, not both');
+  assert.deepStrictEqual(c.missingDrivers, [], 'every driver in DOC_SHOTS exists');
+  for (const [f, why] of Object.entries(docs.NO_DRIVER)) assert.ok(typeof why === 'string' && why.length >= 10, `NO_DRIVER ${f} says why`);
+  for (const f of c.linked) assert.ok(fs.existsSync(path.join(ROOT, 'docs', 'screenshots', f)), `linked screenshot exists: ${f}`);
+  const dsrc = fs.readFileSync(DOCS, 'utf8');
+  assert.ok(!/shell: true|execSync\(|exec\(/.test(dsrc) && /suite\.runOne/.test(dsrc), 'shots-docs starts drivers through ui-suite runOne, never a shell');
+  assert.ok(/DURBAR_SIM_CLOCK: clock/.test(dsrc), 'shots-docs pins the page clock (FR-084)');
+}
 const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
 assert.ok(/app\.exit\(failed \? 1 : 0\)/.test(main), 'a failing driver exits 1 (FR-090)');
 assert.ok(/dev\.DURBAR_DRIVER \|\| dev\.DURBAR_SHOT \? \{ enableLargerThanScreen: true \}/.test(main), 'test windows may be larger than the screen (FR-093, macOS runners)');
@@ -131,7 +148,9 @@ const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));
   assert.ok(!codes.some((c) => c.includes("querySelectorAll('*').length")) && !sleeps.includes(200), 'settle: false skips the settling wait');
   // shot prepares the page by its prep: toasts are removed, calm hides them, mouse moves the pointer
   codes.length = 0; await H.shot('/tmp/t.png', { prep: 'toasts', delay: 0 }); assert.ok(codes.some((c) => c.includes('#toasts .toast') && c.includes('remove()')), "prep 'toasts' removes the toasts");
-  codes.length = 0; events.length = 0; await H.shot('/tmp/t.png', { prep: 'none', delay: 0 }); assert.strictEqual(codes.length, 0, "prep 'none' does nothing to the page");
+  codes.length = 0; events.length = 0; await H.shot('/tmp/t.png', { prep: 'none', delay: 0 }); assert.deepStrictEqual(codes.map((c) => c.includes('.walker.walking')), [true], "prep 'none' does nothing to the page but wait for walking figures (spec 001 FR-085)");
+  codes.length = 0; await H.shot('/tmp/t.png', { prep: 'none', delay: 0, walking: true }); assert.strictEqual(codes.length, 0, 'walking: true skips the walk wait');
+  codes.length = 0; await H.calm(); assert.ok(codes[0].includes('shotCalm') && codes.slice(1).some((c) => c.includes('.walker.walking')), 'calm hides the toasts, then waits until no figure walks');
   events.length = 0; await H.shot('/tmp/t.png', { prep: 'mouse', delay: 0 }); assert.strictEqual(events[0].type, 'mouseMove', "prep 'mouse' moves the pointer");
   codes.length = 0; sleeps.length = 0; await H.shot('/tmp/t.png', { settle: true, delay: 0 }); assert.ok(codes.some((c) => c.includes("querySelectorAll('*').length")), 'shot settles when asked');
   // values spliced into page code are escaped, whatever they hold

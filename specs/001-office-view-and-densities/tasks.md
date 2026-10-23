@@ -147,3 +147,15 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 
 - [x] T064 `app.js` `renderOffice`: a layout picked with `heads: true` is searched again when a header on screen no longer holds its parts (`headHolds`, shared with `headsFit`), once per layout key and header contents (`HEAD_RETRY`); simulator hook `__durbarSimUi.quietHeads` and `paint`; `check:office` case `kinds WxH mixed kinds late siren` [FR-023]
   - Check: mutation (drop the relayout) fails the case at 1280x800 with DejaVu fonts.
+
+## Changes 2026-10-23 (owner: linked screenshots follow the office)
+
+- [x] T105 Spec FR-082/FR-083, plan delta, the rule in `AGENTS.md`, `.github/pull_request_template.md`, `docs/collaboration.md` [FR-082, FR-083]
+- [x] T106 `scripts/shots-docs.js` on `ui-suite.js` `runOne` (`freeze: false`, `HERO_OUT`, `SHOTS_DIR`); `shots-006-home` honours `OUT`; `npm run shots:docs` [FR-082]
+- [x] T107 `test:uisuite`: every README, gallery and landing image has a driver or a reason [FR-083]
+- [x] T109 Pinned clock, time zone and locale for simulator screenshots: `src/main/simclock.ts`, `src/renderer/simclock.js` (first script), `DURBAR_SIM_CLOCK`; `test:simclock`; `--out <dir>`; `H.load` keeps `simclock` across a driver's reloads [FR-084]
+- [x] T108 Retake the stale linked screenshots with `npm run shots:docs` (simulator, Linux Xvfb) and check each picture by eye [FR-082]
+- [x] T110 `driver-helpers.js` `settleWalk` (in `waits`), used by `calm` and `shot` (`walking: true` opts out); `shots-001-lobby` uses it instead of its own copy; `test:uisuite` cases [FR-085]
+- [x] T111 Issue #573 (owner: option b): gallery `040-theme-picker-1440x900.png` (new shot in `shots-040-aitheme`: the picker's own click on Durbar · Indian Court), landing `040-aitheme-preview-1440x900.png`; `NO_DRIVER` empty [FR-083]
+- [x] T112 Review on #574 (fjcabello): `simClockSetup(dev, simulator)` pure and tested by behaviour (packaged and no-simulator are no-ops); `shots-docs` validates `SHOTS_DOCS_CLOCK` with `simClockQuery` before Electron; the rule names the `NO_DRIVER` path in AGENTS.md, the PR template, `docs/collaboration.md`, `.github/copilot-instructions.md` [FR-083, FR-084]
+  - Check: `test:simclock`; mutations caught: no clock validation, validation after the Electron install, `simClockSetup` without the simulator guard, no `TZ`, main passing `true` for the simulator. Re-review: `test:simclock` also asserts main calls `simClockSetup(` exactly once (mutations: call removed, called twice).
