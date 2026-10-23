@@ -53,8 +53,21 @@ module.exports = async (ctx) => {
     await emit({ type: 'status', sessionId: ids[5], timestamp: ts, status: 'idle' });
   };
   const back = async () => { await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click();})()`); await until(`!document.body.classList.contains('panel-open')`); };
-  const ONLY = process.env.DM_ONLY || ''; // DM_ONLY=lounge runs the lounge step alone (to prove it catches a raw reply by itself)
-  for (const [w, h] of ONLY === 'lounge' ? [] : [[1440, 900], [1280, 800]]) {
+  const sendFailStep = async () => {
+    const id = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>!x.parent&&x.live);return a?a.id:''})()`);
+    assert.ok(id, 'sendfail: a live agent');
+    await js(`document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(id)})+']').click()`);
+    await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`);
+    await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0;return v(document.getElementById('sendBtn'))})()`, 15000);
+    await js(`(()=>{const m=document.getElementById('msgInput');m.focus();m.value='hello';m.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
+    assert.ok(await until(`[...document.querySelectorAll('#chat .note')].some(n=>/Send failed/.test(n.textContent))`, 6000), 'sendfail: no "Send failed" note');
+    const note = (await js(`[...document.querySelectorAll('#chat .note')].filter(n=>/Send failed/.test(n.textContent)).map(n=>n.textContent+' '+[...n.querySelectorAll('*')].concat(n).map(e=>[...e.attributes].map(a=>a.value).join(' ')).join(' ')).join(' | ')`)).toLowerCase();
+    for (const nd of NEEDLES) assert.ok(!note.includes(nd), `sendfail: "${nd.slice(0, 10)}..." shows in the note: ${note.slice(0, 200)}`);
+    assert.ok(/\[redacted\]/.test(note) && /refused the message/.test(note), 'sendfail: the note keeps the error, masked: ' + note.slice(0, 160));
+    await back();
+  };
+  const ONLY = process.env.DM_ONLY || ''; // DM_ONLY=lounge or sendfail runs that step alone (to prove it catches a raw text by itself)
+  for (const [w, h] of ONLY ? [] : [[1440, 900], [1280, 800]]) {
     for (const level of ['expert', 'simple']) {
       const Q = { simreply: 'secrets', simsched: '1' };
       await H.load({ w, h, query: Q, ready: 'fit', settle: false });
@@ -92,7 +105,7 @@ module.exports = async (ctx) => {
       const perm = await js(`window.__durbarSimUi.agents().filter(x=>/^(Waiting for permission|Allowed): (run|fetch)/.test(x.task||'')).map(x=>x.task)`);
       assert.ok(perm.length >= 2 && perm.every((t) => /\[redacted\]/.test(t) && !t.toLowerCase().includes(KEY.toLowerCase())), `${tag}: the permission lines are stored masked: ${JSON.stringify(perm)}`);
       await scan(tag, 'permission lines, runtime title, sub-agent name, Markdown-split tokens');
-      // 2a. the lobby (spec 001 FR-034..FR-040): the tiles' chips and titles, the Boss queue, and the navigator (Ctrl+J)
+      // 2a. the lobby (spec 001 FR-034..FR-040): the tiles' chips and titles, the Boss queue, and the navigator (Ctrl+F, ⌘F on a Mac; spec 074 since 2026-10-23)
       assert.ok(await until(`document.querySelectorAll('.lobby .pv').length>0`, 15000), `${tag}: agents stand in the lobby`);
       if (level === 'expert') await until(`[...document.querySelectorAll('.lobby .pv')].some(e=>/curl|fetch|example\\.test/i.test(e.textContent+' '+e.title+' '+(e.getAttribute('aria-label')||'')))`, 8000);
       const lob = await js(`(()=>{const pv=[...document.querySelectorAll('.lobby .pv')];return {n:pv.length,boss:document.querySelectorAll('.lobby .place.boss .pv').length,
@@ -116,8 +129,8 @@ module.exports = async (ctx) => {
         await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
       }
       await scan(tag, 'token-named agent at a lobby place (chip, + menu, place tooltips)');
-      await H.key('J', ['control'], { char: 'never' });
-      assert.ok(await until(`!!document.getElementById('palDlg')`, 5000), `${tag}: the navigator opens with Ctrl+J`);
+      await H.key('F', [process.platform === 'darwin' ? 'meta' : 'control'], { char: 'never' });
+      assert.ok(await until(`!!document.getElementById('palDlg')`, 5000), `${tag}: the navigator opens with Ctrl+F (⌘F)`);
       await scan(tag, 'navigator, first level');
       await js(`(()=>{const i=document.getElementById('palIn');i.value='c ';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
       await until(`document.querySelectorAll('#palDlg [role=option],#palDlg .pal-row,#palDlg li').length>0`, 3000);
@@ -126,7 +139,7 @@ module.exports = async (ctx) => {
       await js(`(()=>{const i=document.getElementById('palIn');i.value='f ';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
       let atAgents = false;
       for (let n = 1; n <= 8 && !atAgents; n++) {
-        if (!(await js(`!!document.getElementById('palDlg')`))) { await H.key('J', ['control'], { char: 'never' }); await until(`!!document.getElementById('palDlg')`, 3000); await js(`(()=>{const i=document.getElementById('palIn');i.value='f ';i.dispatchEvent(new Event('input',{bubbles:true}));})()`); }
+        if (!(await js(`!!document.getElementById('palDlg')`))) { await H.key('F', [process.platform === 'darwin' ? 'meta' : 'control'], { char: 'never' }); await until(`!!document.getElementById('palDlg')`, 3000); await js(`(()=>{const i=document.getElementById('palIn');i.value='f ';i.dispatchEvent(new Event('input',{bubbles:true}));})()`); }
         await js(`(()=>{const i=document.getElementById('palIn');i.value=${jsLiteral(String(n))};i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
         await ctx.sleep(150);
         if (await js(`(document.getElementById('palCrumb')||{textContent:''}).textContent.split('›').length>=3`)) atAgents = true;
@@ -181,7 +194,7 @@ module.exports = async (ctx) => {
       await scan(tag, 'resumed session');
     }
   }
-  if (ONLY !== 'lounge') {
+  if (!ONLY) {
   // 5b. a grown desk (spec 001 FR-041..FR-047): with few agents a card grows and shows the start of its last reply
   await H.load({ w: 1440, h: 900, query: { sim: '3', simreply: 'secrets', simsched: '1' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=3&&document.getElementById('stage').dataset.fit` });
   const gm = await js(`window.__durbarSimUi.agents().filter(x=>!x.parent&&x.live).map(x=>x.id)`);
@@ -200,6 +213,7 @@ module.exports = async (ctx) => {
   assert.ok(await until(`[...document.querySelectorAll('#stage .desk.card .intent, #stage .desk.card .gx-t')].some(e=>/every link resolves/.test(e.textContent))`, 8000), 'grown: a desk shows the start of its reply');
   await scan('grown', 'grown desks: reply line and reply column');
   }
+  if (ONLY !== 'sendfail') {
   // 5c. the lounge (spec 001 FR-051..FR-057): the couch bubble, the dream cloud and its tooltip, the peek card and the tooltips and labels cut a reply at 160, 90, 300 and 140
   await H.load({ w: 1440, h: 900, query: { sim: '7', simrooms: '1', simhelpers: '0', simreply: 'secrets' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=7&&document.getElementById('stage').dataset.fit` });
   const pad = (n) => 'Checking the registry module and its tests. '.repeat(8).slice(0, n - 1) + ' ';
@@ -222,6 +236,8 @@ module.exports = async (ctx) => {
   await scan('lounge', 'lounge: couch, beds, peek cards, tooltips');
   for (let k = 0; k < 4; k++) { await js(`window.__durbarSimUi.loungeTurn()`); assert.ok(await until(split, 10000), `lounge after turn ${k + 1}: the split holds`); await ctx.sleep(120); await scan('lounge', 'lounge after turn ' + (k + 1)); }
   if (ONLY === 'lounge') { console.log('[done-desk-mask] all checks passed'); return; }
+  }
+  if (ONLY !== 'sendfail') {
   // 6. a restored session continued (simresume=1)
   await H.load({ w: 1440, h: 900, query: { simreply: 'secrets', simresume: '1' }, ready: 'fit' });
   const r = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.info&&x.info.resumeLast);return a?a.id:''})()`);
@@ -231,6 +247,12 @@ module.exports = async (ctx) => {
   assert.ok(await js(`(window.__taskLog||[]).some(t=>/^Continued: /.test(t))`), 'a continued line was stored');
   await back();
   await scan('continued', 'continued session');
+  }
+  // 6b. a send the agent app refuses with an error that holds token shapes (simsendfail=secret; spec 041 FR-065 delta 2026-10-23, issue #608
+  //     review): the chat's "Send failed" note shows the error masked. The office SCAN skips #chat, so the note is read on its own.
+  await H.load({ w: 1440, h: 900, query: { simsendfail: 'secret' }, ready: 'fit' });
+  await sendFailStep();
+  if (ONLY === 'sendfail') { console.log('[done-desk-mask] all checks passed'); return; }
   // 7. no redact module: fail closed, Durbar's own words stay
   await H.load({ w: 1440, h: 900, query: { simreply: 'secrets', simsched: '1', noredact: '1' }, ready: 'fit' });
   const nr = await js(`(()=>({fin:window.__durbarSimUi.agents().filter(a=>a.task==='Finished.').length,done:[...document.querySelectorAll('#stage .desk.is-done')].map(d=>d.title),page:document.body.innerText}))()`);

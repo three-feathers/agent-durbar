@@ -189,6 +189,36 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
 
 ## Changes
 
+### 2026-10-23: token shapes in the list are masked (issue #608, security)
+
+Found while reviewing #567: a `SKILL.md`, command or prompt file whose description held a token shape (a fake `ghp_...`) showed it in
+full in the "/" list row and its tooltip, while every other surface masks token shapes (spec 041 FR-065, spec 012).
+
+- **FR-013 Masked text in the list (constitution III).** Every text the "/" list shows or reads out is masked through the shared
+  window helper (`DurbarSafeText`, spec 041 FR-065), not a new masker: the name, the argument hint, the description and the place
+  (`where`) in the row; the tooltip (each part masked, then the whole cut to 300); the "Could not list commands" error (masked, then
+  cut); the "Inserted /name" announcement; and the FR-005 note "Sent the text of ..." (masked, then cut to 160). The row uses
+  `mask` (the text as written, also a token split by Markdown), not `excerpt`, because `excerpt` drops `_` and Markdown and would
+  change a name such as `release_notes`. The name inserted into the box and sent stays the real one (it must match the file).
+  No mask function (redact module missing): the fields are empty, never the raw text (fail closed).
+- **FR-014 Main masks before it cuts.** Main cuts descriptions to 200, argument hints to 80 and places to 160 (FR-003, FR-010). A cut
+  inside a secret leaves a half secret that no pattern knows, so the window could not mask it any more. Main now runs the full
+  `redact()` from `src/shared/redact.ts` first (token shapes, credentials in a URL, an `authorization:` value, the environment's secret
+  values), then cuts. This covers the front matter, the built-ins from the CLI's startup list and `publicSlash`.
+- **Markdown: both passes, combined (review of PR #614, fjcabello).** Markdown can split a token (`gh`+backtick+`p_...`,
+  `ghp_<20>**K1l2...**`) or glue it to the word before it (`x**ghp_...**` gives `xghp_...`, and no token shape starts after a letter).
+  Taking either the raw pass's output or the Markdown-free pass's output lost what the other found (`see x**ghp_A...** and gh`+backtick+
+  `p_Z...` showed the first token). Now the Markdown-free text is masked AND every token-like run of the raw text that `redact`
+  changes on its own is masked in that output, with the token characters glued after it: `redactMarkdown` in main, `both` in the
+  window's `safetext.js` (which fixes every `DurbarSafeText` surface: `mask` and `excerpt`; spec 041 FR-065 delta 2026-10-23).
+- **The send's note (review of PR #614).** A VS Code prompt file's note echoes `${input:NAME}` names (FR-012), so a token-shaped
+  name reached the chat. `expandSlash` masks the note with `redact()`, and the window shows `r.slashNote` masked, then cut (200 / 240).
+- Tests: `test:slashcommands` (tokens at the 200, 80 and 160 cut positions, split by Markdown, through `discoverSlash`,
+  `cleanBuiltins` and `publicSlash`; the window helpers with the real `safetext.js` and `redact`); `check:slash-suggest` (page
+  address `simslash=secret`: a folder skill and a command with fake tokens in the name, hint, description and place, at the tooltip's
+  300 cut and split by Markdown; no raw token in the list's text, `title`, `aria-*`, the announcement or the "Sent the text of" note).
+  Mutation-checked: raw text in the row, cut before mask in main and in the tooltip; one pass instead of both (window and main); token shapes only instead of `redact()` in main; the note raw in main and in the window.
+
 ### 2026-10-23: review on #615 (fjcabello)
 
 - **Size cap on the expanded text (FR-005, FR-012).** A 64 KB prompt file of 6,500 `${input:a}` sent with a 10 KB argument built a
