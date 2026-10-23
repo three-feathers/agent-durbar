@@ -57,7 +57,7 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
   Esc order, no overlap with the box, inside the panel, at most 8 rows visible, no text under 10.5px, at 1440x900 and 1280x800, a dark
   theme pass; time from `/` to the list showing under 100 ms; the "Sent the text of" note; screenshots
   `docs/screenshots/073-slash-1440x900.png`, `073-slash-1280x800.png` [SC-001..SC-003]
-- [x] T014 [P] Docs: `README.md` feature list and known limits, CHANGELOG line under Unreleased, `specs/README.md` row, `docs/agent-notes.md`
+- [x] T014 [P] Docs: `README.md` feature list and known limits, changelog fragment `changelog.d/073-slash-suggestions.md`, the specs-index block in `spec.md`, `docs/agent-notes.md`
   entries (Claude `--setting-sources ""` hides folder commands; built-ins run in print mode; Copilot `session.send` does not run
   built-ins; Codex prompts are TUI-only) [VIII]
 - [x] T015 `npm run typecheck && npm run build && npm test` (nice), then `/speckit-converge`
@@ -80,6 +80,19 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
 
 - [x] T027 Merge of `main` (2026-10-23): spec 010's sim guard (`src/main/simguard.ts`, #514) lists `listSlashCommands` and
   `expandSlashCommand` as optional members with no capability, so the simulator's stand-in adapter has neither (`test:simguard`)
+
+## Phase 8: Review on #535 (fjcabello, 2026-10-23; spec *Changes*)
+
+- [ ] T028 `src/adapters/slashcommands.ts`: one `entryFile` check for discovery and expansion: real path inside the root, named
+  `SKILL.md` (skills) or `*.md`, not under `.git`; tests for links to `.env`, `.git/config`, a `.md` under `.git`, `../auth.json`
+  (Codex home) and a `SKILL.md` linked to `.env`, each neither listed nor expanded [FR-002]
+- [ ] T029 `readHead` opens with `O_RDONLY | O_NONBLOCK` (0 where the OS has none) and reads only a regular file; test: a FIFO swapped
+  in after discovery gives no expansion within a time limit (child process; skipped on Windows) [FR-002, FR-005]
+- [ ] T030 Test: a `SKILL.md` swapped after discovery for a link out of the folder is not expanded (kills the mutation that drops the
+  re-check in `expansionOf`) [FR-005]
+- [ ] T031 `slashsuggest.js`: `optionHtml` (moved from `app.js`) escapes every field, unit-tested with a hostile entry; `filter` uses
+  `DurbarNav.rank` (navigator.js) with `label: name`, `kw: description` [FR-008]
+- [ ] T032 Mutation-check T028-T031; `npm run typecheck && npm run build`, `test:slashcommands`, `check:slash-suggest`
 
 ## Known gaps (open tasks, not this PR)
 

@@ -6,7 +6,7 @@ title: Slash suggestions: `/` in the message box lists the folder's, the user's 
 status: **built** 2026-10-22 (`test:slashcommands`, `check:slash-suggest`); real: Claude Code (folder command not loaded, built-in `/context` runs), Copilot (`session.send` does not run built-ins); Codex read only
 -->
 
-**Feature Branch**: `073-slash-suggestions` (stacked on `005-composer-toolbar`, PR #498)
+**Feature Branch**: `073-slash-suggestions` (based on `main`; its first base, `005-composer-toolbar`, landed as #498)
 **Created**: 2026-10-22
 **Status**: Built 2026-10-22 (unit tests, simulator driver; vendor behaviour checked with 3 real prompts, Codex read only)
 **Input**: Owner request (Vikram, Telegram, 2026-10-22): "When there are skills or prompts in the folder or workspace - show autofill suggestions and options when you type /".
@@ -87,7 +87,11 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   `description?`, `argumentHint?`, `source: 'folder' | 'user' | 'app'`, `kind: 'skill' | 'command' | 'prompt' | 'builtin'`, `where?`
   (a display path: relative to the folder, or `~/…` for the user's home; never an absolute path). No vendor type crosses it.
 - **FR-002 Discovery rules (shared, pure where possible).** One module reads entries for every adapter: only inside the session's
-  folders (workspace roots) and the documented user directories; real paths checked so no symbolic link leads out of its directory; at
+  folders (workspace roots) and the documented user directories; real paths checked so no symbolic link leads out of its directory; an
+  entry's **real** file (after following links) must also be named `SKILL.md` (skills) or end in `.md` (commands, prompts) and must not
+  lie under a `.git` folder, so a link such as `.claude/commands/review.md -> ../../.env` (or to `.git/config`, `~/.codex/auth.json`,
+  `~/.claude/.credentials.json`) is neither listed nor sent; a file is opened without blocking and read only when it is a regular file
+  (never a FIFO or device); at
   most 100 files per directory and 300 in total; files over 64 KB skipped; listing reads at most the first 8 KB of a file; no shell, no
   execution; file contents are never logged. A discovery is cached per set of places (one folder or workspace and its user
   directories) and reused while it is under 30 s old **and** none of the places' directories changed (mtime); opening the list
@@ -111,7 +115,9 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   - command or prompt: the file's body (front matter removed) with `$ARGUMENTS` replaced by the rest of the line and `$1`..`$9` by its
     words; when the body has no placeholder and there are arguments, they follow as `ARGUMENTS: …`;
   - skill: a short line naming the skill and its folder, the body of `SKILL.md`, then `ARGUMENTS: …` when there are any;
-  - the file is read again (64 KB cap); an unreadable or vanished file sends the typed text unchanged;
+  - the file is read again (64 KB cap) and checked again with every FR-002 rule (real path inside its root, the name rule, not under
+    `.git`, a regular file opened without blocking): a file swapped after the list was made for a link out of its folder, a FIFO or a
+    device, or an unreadable or vanished file, sends the typed text unchanged at once;
   - Durbar never runs the `!command` lines or reads the `@file` references a Claude command may hold: they are sent as text.
   The chat shows what the user typed, with a small note "Sent the text of <where>".
 - **FR-006 Built-ins are sent as typed.** A built-in is never expanded; the app runs it (Claude Code, `real:` `/context`).
@@ -126,7 +132,10 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   with a `listbox` of `option`s; focus stays in the box. The list is a **menu** (`docs/design-rules.md`, #530): the shared menu look,
   width (`--menu-w`, 320px) and padding (6px), placed above the message box at its left edge with `placeMenu` (spec 005 FR-037), theme
   tokens only, text at least 10.5px, never over the box. A long name and a long description end in an ellipsis; the row's `title`
-  holds the full name, description and place, so nothing is unreadable (checked with a 64-character name in a 480px panel). A live region says how many entries match when the list opens. Escape closes the list before anything else listens.
+  holds the full name, description and place, so nothing is unreadable (checked with a 64-character name in a 480px panel). Every
+  field is HTML-escaped by the row builder in `slashsuggest.js` (unit-tested with a hostile entry). Typing filters with the palette's
+  shared matcher (`DurbarNav.rank`, spec 074): the name starts with the text, then a word of the name does, then the name contains
+  it, then the description does; folder, user, app order inside each step. A live region says how many entries match when the list opens. Escape closes the list before anything else listens.
 - **FR-009 No false offers.** An app's built-ins are listed only where typing them through Durbar runs them. Copilot (`session.send`
   does not run built-ins, `real:`) and Codex (TUI only, `read:`) list none. [KNOWN GAP] running Copilot built-ins through
   `session.rpc.commands.invoke` is not built.
@@ -162,6 +171,21 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   in this version.
 
 ## Changes
+
+### 2026-10-23: review on #535 (fjcabello)
+
+- **Links to secrets (FR-002).** Containment was checked only against the whole folder or user directory, so a folder could ship
+  `.claude/commands/review.md -> ../../.env` and `/review` sent the secret to the model. Now the real target must also be named
+  `SKILL.md` or `*.md` and must not be under `.git`. Tests: links to `.env`, `.git/config`, a `.md` under `.git`, `../auth.json` in a
+  Codex home and a `SKILL.md` linked to `.env` are neither listed nor expanded.
+- **No hang on send (FR-002, FR-005).** The re-read on send opened the file with a blocking `open`, so a FIFO swapped in after the
+  list was made froze main. Files are now opened with `O_NONBLOCK` (where the OS has it) and read only when `fstat` says regular file.
+  Test: a FIFO swapped in after discovery gives no expansion at once (POSIX only; skipped on Windows, which has no `mkfifo`).
+- **Re-check tested (FR-005).** A `SKILL.md` swapped after discovery for a link out of the folder is not sent (test).
+- **Escaping tested (FR-008).** The row builder moved from `app.js` into `slashsuggest.js` (`optionHtml`) and is unit-tested with
+  `<img src=x onerror=alert(1)>`, `"><b>` and `&` in every field.
+- **Shared matcher (FR-008).** `filter` uses `DurbarNav.rank` (spec 074) instead of its own prefix and substring matching.
+
 
 ### 2026-10-22: review on #535 (rubenlupi)
 
