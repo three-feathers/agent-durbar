@@ -35,7 +35,10 @@ module.exports = async (ctx) => {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const { js } = H;
   const shot = (name, w, h) => H.shot(path.join(OUT, `034-${name}-${w}x${h}.png`), { prep: 'toasts', delay: 300, tag: '034', what: `${name} ${w} ${h}` }); /* the simulator's start-up toast would cover the office */
-  const load = (w, h, extra) => H.load({ w, h, query: extra }); // was a fixed 1500 ms; now waits for the page to stop changing (FR-096)
+  /* spec 017 FR-014: the mood drawings live in the desk scenes, which a closed cabin door replaces; this driver checks the scenes, so the
+     cabins are off (set once, kept by the profile across the loads below) */
+  let cabinsOff = false;
+  const load = async (w, h, extra) => { await H.load({ w, h, query: extra }); if (!cabinsOff) { cabinsOff = true; await H.js(`localStorage.setItem('durbar.doorsigns','off')`); await H.load({ w, h, query: extra }); } }; // was a fixed 1500 ms; now waits for the page to stop changing (FR-096)
   /* every main desk: name, away, mood (from data-sig), labels, visible text, scene box size */
   const desks = () => js(`[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>{const sv=d.querySelector('svg.scene'),sig=(sv&&sv.dataset.sig)||'',m=/\\|(normal|heavy|monster)(\\w*)$/.exec(sig),b=sv?sv.getBoundingClientRect():{width:0,height:0};
     return {id:d.dataset.id,name:d.querySelector('.name').textContent.trim(),room:((d.closest('.room')||document).querySelector('.room-name')||{textContent:''}).textContent.trim(),away:d.classList.contains('is-away'),st:d.dataset.state||(/is-(\\w+)/.exec(d.className)||[])[1],

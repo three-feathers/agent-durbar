@@ -225,7 +225,7 @@ export interface ScheduleInfo {
   /** Why the app paused it (FR-014, FR-015). */
   pausedReason?: 'cap' | 'session-ended';
   done?: boolean;
-  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' };
+  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'skipped-door-full' };
   /** FR-014: one session instead of the folder's agent. */
   target?: { session: string; agent: string; name?: string };
   /** FR-015: the schedule's own limit and what its runs spent. */
@@ -747,6 +747,17 @@ export interface DurbarApi {
   /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
   /** Remote control ended without the user (spec 012 FR-158, spec 054 FR-062): an agent id, or the id with a plain reason. */
   onRemoteOff?(cb: (p: string | { id: string; reason?: string }) => void): () => void;
+  /** Spec 017 FR-015..FR-017: per agent id, a door the user closed and how many runs are held there (only doors that are closed or hold something). */
+  doorsList?(): Promise<Record<string, { closed: boolean; held: number }>>;
+  setDoor?(id: string, closed: boolean): Promise<{ ok: true; closed: boolean; held: number; remoteOff?: boolean } | { ok: false; error: string }>;
+  releaseHeld?(id: string, action: 'send' | 'discard'): Promise<{ ok: true; queued?: number; sent?: number; discarded?: number } | { ok: false; error: string }>;
+  onDoorsChanged?(cb: (doors: Record<string, { closed: boolean; held: number }>) => void): () => void;
+  /** Review on #631: the held prompts of a door (the window masks and cuts them in the Send all dialog). */
+  doorsHeld?(id: string): Promise<{ prompt: string; at: number }[]>;
+  /** Send all stopped; the runs stay held (why: paused-all, paused, cap, ended, failed). */
+  onDoorsStopped?(cb: (p: { id: string; why: string }) => void): () => void;
+  /** A scheduled run could not be kept at a closed door whose queue is full. */
+  onDoorsFull?(cb: (p: { id: string }) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */
   onRemoteUrl?(cb: (p: { id: string; url: string }) => void): () => void;
   onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[] }) => void): () => void;
