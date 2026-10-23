@@ -179,6 +179,8 @@ references: `src/main/main.ts:123` is now `main.ts:142` (`outward`); `src/adapte
 - [x] T117 (issue #544) The MCP dialog's footer never overlaps a long list (body scrolls inside `.dlg.wide`), and a runtime-`disabled` server reads
   who turned it off, with its switch off and disabled and a hint [FR-077, FR-078]
   [IMPLEMENTED] `src/renderer/screens.css` (`.dlg.wide` body scrolls), `mcpwords.js` (`offBy`, `stateOf` context), `screens.js`; `sim:` the simulator keeps a reported list over a switch (`mcpAppOff`). `test:` `scripts/test-mcpwords.ts`; `sim:` `scripts/shots-058-mcp-words.js` (14+ servers at 1440x900, 1280x800, 1280x600; before/after `docs/screenshots/058-mcp-dialog-fit-*`). `[KNOWN GAP]` not seen on a real agent app.
+- [x] T118 (issue #544, second report) The MCP dialog's footer is an opaque separate layer above the scrolling body, so a repaint after a switch toggle never puts a row or switch over *Done* [FR-077a]
+  [IMPLEMENTED] `src/renderer/screens.css`; `sim:` `scripts/shots-058-mcp-words.js` (toggle the last row off and on at 1440x900, 1280x800, 1280x600: *Done* hit-tested at centre and corners, no element meets the footer; mutation checked), shots `docs/screenshots/058-mcp-dialog-toggle-*`.
 
 #### PR sequence for #364 (each PR ticks its tasks and updates docs; `npm run typecheck && npm run build && npm test`)
 

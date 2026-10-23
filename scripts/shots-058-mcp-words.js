@@ -44,6 +44,12 @@ module.exports = async (ctx) => {
     const rs=q('#scrDlg .mcp-rsess').getBoundingClientRect(),note=els[els.length-1].getBoundingClientRect();
     return {inBody:els.every(e=>body.contains(e)),clear:els.every(e=>{const r=e.getBoundingClientRect();return r.bottom<=btn.top+0.5||r.top>=btn.bottom-0.5||r.top<bb.top||r.bottom>bb.bottom;}),
       vis:els.every(e=>{const r=e.getBoundingClientRect();return r.top>=bb.top-0.5&&r.bottom<=bb.bottom+0.5;}),btnTop:btn.top,rsBottom:rs.bottom,noteBottom:note.bottom,noteAfterRs:note.top>=rs.bottom-0.5};})()`);
+  /* issue #544 (second report): after a switch toggle the dialog repaints; Done must stay fully visible and hit-testable (centre and corners), and no row meets the footer */
+  const footerIntegrity = () => js(`(()=>{const q=s=>document.querySelector(s),r=e=>e.getBoundingClientRect(),ft=r(q('#scrDlg .dbtn')),done=[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Done'),d=r(done);
+    const pts=[[.5,.5],[.1,.15],[.9,.15],[.1,.85],[.9,.85]].map(([x,y])=>[d.left+d.width*x,d.top+d.height*y]);
+    const hits=pts.map(([x,y])=>{const el=document.elementFromPoint(x,y);return el===done||done.contains(el);});
+    const bb=r(q('#scrDlg .dbody')),over=[...document.querySelectorAll('#scrDlg .dbody *')].filter(e=>{const b=r(e),t=Math.max(b.top,bb.top),bt=Math.min(b.bottom,bb.bottom);return b.width>0&&b.height>0&&bt>t&&bt>ft.top+0.5&&t<ft.bottom-0.5&&b.right>ft.left&&b.left<ft.right;}).length; /* the part of an element the scroller shows */
+    return {hits,over,visible:d.top>=0&&d.bottom<=innerHeight&&d.width>0,btnTop:ft.top};})()`);
   const emit = (id, servers) => js(`window.__durbarSimEmit({type:'mcp',sessionId:${jsLiteral(id)},timestamp:Date.now(),servers:${jsLiteral(servers)}})`);
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
@@ -148,6 +154,7 @@ module.exports = async (ctx) => {
   const many = [];
   for (let i = 1; i <= 8; i++) many.push({ name: `cli-server-${i}`, status: i === 3 ? 'failed' : 'connected', transport: 'stdio', source: 'user', ...(i === 3 ? { error: 'spawn ENOENT' } : {}) });
   for (const n of ['azure', 'com.microsoft/azure', 'powerbi-modeling-mcp', 'workiq', 'Microsoft MCP Server for Enterprise', 'microsoft/markitdown']) many.push({ name: n, status: 'disabled', transport: 'stdio', source: 'user' });
+  many.push({ name: 'zz-last-row', status: 'connected', transport: 'stdio', source: 'user' }); // the last row has a working switch (issue #544: toggling it)
   for (const [w, h] of [[1440, 900], [1280, 800], [1280, 600]]) {
     await H.load({ w, h, ready: 'fit', focus: true });
     await closePanel();
@@ -174,6 +181,16 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#agMcp li:last-child').scrollIntoView({block:'end'})`);
     const lastHit = await js(`(()=>{const sw=document.querySelector('#agMcp li:last-child .srv-act')||document.querySelector('#agMcp li:last-child'),r=sw.getBoundingClientRect(),el=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return !!el&&!el.closest('.dbtn')&&!!el.closest('#agMcp');})()`);
     assert.ok(lastHit, `${w}x${h}: the last row is reachable and not under the footer`);
+    // issue #544: toggle the LAST row off and on; the footer stays clear and Done clickable after each repaint
+    for (const want of ['false', 'true']) {
+      await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove());(()=>{const sw=document.querySelector('#agMcp li:last-child button.swt');if(!sw||sw.disabled)throw new Error('the last row has no working switch');sw.scrollIntoView({block:'end'});sw.click();})()`);
+      assert.ok(await until(`document.querySelector('#agMcp li:last-child button.swt').getAttribute('aria-checked')===${jsLiteral(want)}`), `${w}x${h}: the last switch turned ${want}`);
+      await settle();
+      const fi = await footerIntegrity();
+      assert.ok(fi.visible && fi.hits.every(Boolean), `${w}x${h}: Done is visible and clickable after the last switch turned ${want} ${JSON.stringify(fi)}`);
+      assert.strictEqual(fi.over, 0, `${w}x${h}: no body element meets the footer after the toggle ${JSON.stringify(fi)}`);
+      if (w === 1440 || w === 1280) await shot(`058-mcp-dialog-toggle-${want === 'false' ? 'off' : 'on'}-${w}x${h}.png`);
+    }
     // FR-078: a server the agent app turned off reads who did it, and its switch agrees
     const ro = await js(`[...document.querySelectorAll('#agMcp li.srv')].map(li=>({n:li.dataset.n,word:li.querySelector('.mst-w').textContent,on:li.querySelector('button.swt').getAttribute('aria-checked'),dis:li.querySelector('button.swt').disabled,hint:(li.querySelector('.srv-hint')||{}).textContent||''}))`);
     for (const x of ro.filter((r) => many.some((m) => m.name === r.n && m.status === 'disabled'))) {

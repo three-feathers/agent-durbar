@@ -415,6 +415,16 @@ height and its rows spilled over the footer instead of scrolling. (2) Six server
     <app>'s own MCP settings, then restart the session."). Agent Durbar does not claim it can switch it on.
   [IMPLEMENTED] `test:` `test-mcpwords.ts`, `test-mcp-session.ts` (`launchedOff`, `switchedHere`); `sim:` `shots-058-mcp-words.js`.
 
+### 2026-10-23: the footer is its own layer, also after a switch toggle (issue #544, second report)
+
+**Status**: built (T117), simulator only; `[KNOWN GAP]` not seen on a real Mac with this CSS (the owner's dev build of main had the bug).
+
+**Problem** (owner, real Mac, dev build of main f28ed2da, `real:` issue #544): toggling an MCP switch off and on made the overlap worse. The last row (`workiq`, "Off for this session", switch on) sat under the footer, *Settings* / *Folder extras…* / *Done* were drawn over the row text, and after the toggle the last row's switch was drawn over *Done*. Rows and footer shared space and z-order, and the repaint that follows a toggle re-rendered the body into that shared space.
+
+#### Requirements (delta)
+
+- **FR-077a** The wide dialog is a column of three separate things: the scroller (`.dbody`: `flex:1 1 auto; min-height:0; overflow:auto`, its own stacking context at `z-index:0`), and the footer (`.dbtn` and a visible `.derr`: `flex:none`, `position:relative`, `z-index:2`, an opaque `--surface` background). The body's own repaint (toggle, `mcp` event, Details, Restart) never changes that, so no row control (a switch included: its knob is inside the scroller, clipped by it) can paint over *Done* or over the buttons. After each toggle of the last row (off, then on), at 1440x900, 1280x800 and 1280x600: *Done* is fully visible and `elementFromPoint` at its centre and four corners returns *Done* or its child, and no element's visible part (clipped to the scroller) meets the footer's rect. [IMPLEMENTED] `src/renderer/screens.css`; `sim:` `scripts/shots-058-mcp-words.js` (`footerIntegrity`; mutation: removing the body and footer rules fails the driver), `docs/screenshots/058-mcp-dialog-toggle-*`.
+
 ### 2026-10-20: MCP OAuth sign-in (issue #364)
 
 **Status**: specified and clarified, **no code**. The owner answered Q12-Q19 on 2026-10-20 (Q12 B, the rest A: all the recommended
