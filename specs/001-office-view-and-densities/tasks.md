@@ -147,3 +147,8 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 
 - [x] T064 `app.js` `renderOffice`: a layout picked with `heads: true` is searched again when a header on screen no longer holds its parts (`headHolds`, shared with `headsFit`), once per layout key and header contents (`HEAD_RETRY`); simulator hook `__durbarSimUi.quietHeads` and `paint`; `check:office` case `kinds WxH mixed kinds late siren` [FR-023]
   - Check: mutation (drop the relayout) fails the case at 1280x800 with DejaVu fonts.
+
+## Changes 2026-10-23 (back from the Boss with reduced motion, Windows flake in check-office-fill)
+
+- [x] T065 `app.js` `dropBack`: a figure on its way back that is dropped without a walk (reduced motion, no desk, not the office) draws the office again; `check-office-fill` case `lounge after the Boss, reduced motion` [FR-051]
+  - Check: mutation (the reduced-motion branch back to `dropWalker`) fails the case.
