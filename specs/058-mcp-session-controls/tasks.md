@@ -359,7 +359,7 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
 - [x] T137 Sign in again (owner-approved): per row and for all, the runtime's `forceReauth` sign-in, guards in main, simulator; fakes only [FR-164]
 - [ ] T138 On the owner's Mac: Sign in again to all, then quit and reopen: count the prompts (expected 0 if `forceReauth` re-creates the items) [FR-164]
 - [x] T139 Review on #625 (fjcabello): FR-160 credits the real CI build and strict verify; FR-162 points to the test pre-release; every mac packaging script runs the check (`--arch` per build, per app); `dispose` stops a runtime that is still starting [FR-160, FR-161]
-- [x] T150 Re-review on #625 (fjcabello): a Sign in again entry is not finished by the old "connected"; offered only for a remote server Durbar knows by its https address with a source the runtime named (fail closed); a re-read keeps source and transport; no partition command in README or tasks; the confirmation says the server stays signed out until finished; a second press does nothing; pending servers get their own wording; plan refreshed [FR-163, FR-164]
+- [x] T159 Re-review on #625 (fjcabello): a Sign in again entry is not finished by the old "connected"; offered only for a remote server Durbar knows by its https address with a source the runtime named (fail closed); a re-read keeps source and transport; no partition command in README or tasks; the confirmation says the server stays signed out until finished; a second press does nothing; pending servers get their own wording; plan refreshed [FR-163, FR-164]
 
 ## Phase 10: MCP health, failure reason, when, Copy diagnostics, chip dot (delta 2026-10-23, issue #603)
 

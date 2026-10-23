@@ -257,7 +257,7 @@ T120 (spec) first; T121 (unit tests) and T122 (driver) before T123-T124 (code); 
   - V: the dialog is checked at 1440x900 and 1280x800;
   - VI (parity): a mac-only packaging option; the other OSes are unchanged;
   - VII (honest limits): `[KNOWN GAP]`s until the Mac checks (T136, T138). No purchase (spec 014 stays separate).
-- **Order**: T130 first; T131 and T132 independent; T133 docs; T134 on a Mac; T135 and T137 after the owner's results; T139 and T150 review fixes.
+- **Order**: T130 first; T131 and T132 independent; T133 docs; T134 on a Mac; T135 and T137 after the owner's results; T139 and T159 review fixes.
 
 ## Delta: MCP health, failure reason, when, Copy diagnostics, chip dot (issue #603, 2026-10-23)
 
