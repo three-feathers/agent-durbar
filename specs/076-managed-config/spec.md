@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Managed configuration for organizations: one admin-only config folder (policy.json, MCP list, icon, theme pack) sets the display name and icon, allowed agent apps, MCP lists and endpoints, an agent/profile/skill registry, OpenTelemetry, theme and custom LLMs with admin token pricing, plus the accepted additions (mode lock, proxy and CA, feature switches, installers, signing, spend caps, folder rules, updates, registry/MDM sources, signed config, audit log, retention, rebrand build, legal notice, version pins, endpoint auth, sign-in, vendor settings view); everything set there is locked; a narrow-only user layer; bad config fails closed and visibly
-status: **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test fixtures included; Q1-Q12 answered by Vikram (Q10: admin token pricing); A1-A19 accepted by Vikram as requirements FR-150..FR-197 (signing certificate purchase still needs his OK); Paco's security review (17 items) and re-review (10 items) folded in; R1-R8 answered by Vikram with the recommended defaults; R9-R11 answered by Vikram (copilotAllContent, Claude foundry and Codex amazon-bedrock, Claude identity stated in the notice)
+status: **draft** 2026-10-23 (spec only): samples, JSON schemas and hostile test fixtures included; Q1-Q12 answered by Vikram (Q10: admin token pricing); A1-A19 accepted by Vikram as requirements FR-150..FR-197 (signing certificate purchase still needs his OK); Paco's security review (17 items) and re-review (10 items) folded in; R1-R8 answered by Vikram with the recommended defaults; R9-R11 answered by Vikram (copilotAllContent, Claude foundry and Codex amazon-bedrock, Claude identity stated in the notice); P27 (issue #602, FR-198..FR-207): vendor policies greyed out before a start, in progress
 -->
 
 **Feature Branch**: `076-managed-config`
@@ -860,6 +860,85 @@ fail closed per FR-012, locked UI per FR-014.
 - **FR-197** FR-004 (dev variables ignored under a policy, `allowDevHooks`) plus: under a machine policy without `allowDevHooks`, a
   packaged build also refuses DevTools (no menu item, no shortcut) on top of spec 008 FR-038.
 
+### O. The vendors' own policies greyed out before a session starts (issue #602, owner go 2026-10-23)
+
+Today Durbar offers a mode, model or MCP server that the company's Claude Code, Copilot or Codex policy blocks, and the session fails
+halfway. This section reads the vendors' **own** machine policy files (read-only), and greys out what they block, with the reason, before
+anything starts. It needs nothing of P1 (Durbar's own `policy.json`) and is the first slice of P26 (FR-194, FR-195). Vendor evidence:
+the research rows above, plus `read:` 2026-10-23 of https://code.claude.com/docs/en/managed-settings.md,
+https://code.claude.com/docs/en/settings-reference.md (`availableModels`, `availableModelsMatch`, `deniedModels`,
+`permissions.disableBypassPermissionsMode`, `allowedMcpServers`, `deniedMcpServers`), https://code.claude.com/docs/en/permissions.md (the
+`mcp__<server>__<tool>` rules), GitHub's *Enterprise managed settings* reference (`permissions.disableBypassPermissionsMode`,
+`allowedMcpServers`, `deniedMcpServers`, URL canonicalization, `{ "overridable": v }`) and
+https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_approval_policies`, `allowed_sandbox_modes`,
+`[allowed_permission_profiles]`, locations).
+
+- **FR-198 What is read, and from where.** Each adapter reads its own app's documented **machine file** policy, read-only, never written:
+  Claude Code `managed-settings.json` and `managed-settings.d/*.json` in `/Library/Application Support/ClaudeCode/` (macOS),
+  `/etc/claude-code/` (Linux, WSL) and `C:\Program Files\ClaudeCode\` (Windows); Copilot `managed-settings.json` in
+  `/Library/Application Support/GitHubCopilot/`, `/etc/github-copilot/` and `%ProgramFiles%\GitHubCopilot\` (on POSIX a file that is a
+  symlink, not owned by root or writable by others is ignored, as Copilot does); Codex `requirements.toml` in `/etc/codex/` (Linux,
+  macOS) and `%ProgramData%\OpenAI\Codex\` (Windows). The Windows folders come from the `ProgramFiles` / `ProgramData` environment
+  values, with `C:\Program Files` / `C:\ProgramData` when unset. The reading lives behind `AgentAdapter` (optional
+  `readOrgPolicy()`, one file per app in `src/adapters/<app>OrgPolicy.ts`); `src/main`, `src/shared` and the window see only FR-199's
+  normalized shape.
+- **FR-199 One normalized shape.** `src/shared/orgpolicy.ts` `OrgPolicy`: the app's name, whether a file was found, whether it could
+  not be read, the blocked permission modes (`read-only`, `ask`, `allow`), a model allow-list and deny-list, an MCP server allow-list and
+  deny-list (each entry exactly one of name, command with its arguments, URL pattern), MCP tool deny rules, and the file paths read.
+  It carries no other value of the files. Pure helpers answer *is this mode / model / server / tool blocked, and why*.
+- **FR-200 Mapping (only these keys are read; every other key is ignored).**
+
+  | Durbar thing | Claude Code | Copilot | Codex |
+  |---|---|---|---|
+  | **Allow all** | `permissions.disableBypassPermissionsMode` = `"disable"` (Durbar's Allow all is `bypassPermissions`) | `permissions.disableBypassPermissionsMode` = `"disable"` or `"allow-auto-only"` (`{ "overridable": v }` reads as `v`; a team override is not visible on disk) | `allowed_approval_policies` without `never`, `allowed_sandbox_modes` without `danger-full-access`, or `[allowed_permission_profiles]` without `":danger-full-access" = true` |
+  | **Read-only / Ask first** | never blocked by these keys | never blocked by these keys | `allowed_approval_policies` without `never` (Read-only) or `on-request` (Ask first); `[allowed_permission_profiles]` without `durbar_ro = true` (both use that profile) |
+  | **Models** | `availableModels` (allow-list; family aliases `opus`, `sonnet`, `haiku`; a model id also allows ids that extend it unless `availableModelsMatch` = `"exact"`; `best`, `opusplan`, `default` ignored) and `deniedModels` (an id without a minor version also blocks later minor versions); the Default/`auto` choice is never greyed | none: `model` is a default, not a lock | none documented |
+  | **MCP servers** | `allowedMcpServers`, `deniedMcpServers` (`serverName`, `serverCommand`, `serverUrl`); built-in servers skip the allow-list | the same keys; deny wins; built-in servers skip both lists | `[KNOWN GAP]` (FR-206) |
+  | **MCP tools** | `permissions.deny` rules `mcp__*`, `*`, `mcp__<server>`, `mcp__<server>__*`, `mcp__<server>__<tool>` and `mcp__<server>__<prefix>*` (server names with other characters than letters, digits, `_`, `-` read as `_`; rules with parentheses are skipped, as Claude Code does) | none: `permissions.deny` has no MCP tool selector | none |
+
+  Several Claude files (`managed-settings.json` plus drop-ins) combine: a lock set anywhere applies, deny-lists are joined, allow-lists
+  are intersected (Durbar's stricter reading where the vendor docs do not say how the file tier combines). An MCP server Durbar knows
+  only by name (reported by the running session, no command or URL known) is greyed only by a name rule; a URL or command rule that
+  cannot be checked leaves it as it is (the running app reports the truth). URL patterns are matched after the canonicalization GitHub
+  documents (lower-case scheme and host, default port and fragment dropped, `*` in the host never crosses `/`), one pass, no regular
+  expressions built from the file.
+- **FR-201 Hostile input: allow-list, all or nothing, strictest on doubt.** Only the keys of FR-200 are read, as **own properties**
+  of plain objects; every list is capped (256 entries, 512 characters an entry); a file over 256 KiB, a file that is not a JSON object
+  (Claude, Copilot) or a TOML line Durbar cannot read inside a key it reads (Codex) makes that **app's whole policy unreadable**, which
+  reads as its strictest state: Allow all blocked (Codex: every mode blocked), every non-default model blocked, every MCP server not
+  built in blocked, every MCP tool blocked. A single key with a wrong type or a bad entry (all or nothing, never a partial list) reads
+  as that key's strictest value: a lock on, an empty allow-list, a deny-list that denies everything. The reason then says *could not be
+  read*, not *blocked*. Nothing from a policy file is ever logged or put in an error; an error names the path and what was wrong
+  (*too large*, *not valid JSON*, *unreadable key `allowedMcpServers`*).
+- **FR-202 Greyed out, with the reason, before a start.** The window shows each blocked choice disabled with the words **Blocked by
+  your organization's <app> policy** (or **Your organization's <app> policy could not be read; treated as blocked**) as visible small
+  text or the option's label, and as its tooltip: the permission mode menu of a session (`#modeChip` menu) and the defaults' mode
+  select (`#permMode`); the model choices of the new-session dialog and the model menu (`models:list` marks them `orgBlocked`); each
+  MCP server row (the chat's MCP panel and Settings' live MCP list of spec 058 FR-082, through `agents:mcp`), whose switch is disabled;
+  and each tool in a server's tools list (`agents:mcpTools`), whose checkbox is disabled. A disabled item is skipped by the keyboard
+  like the menus' other disabled items and keeps `aria-disabled` with the reason as its description.
+- **FR-203 Main refuses as well (the window is not the guard).** Starting or resuming a session in a blocked mode or with a blocked
+  model, `agents:setMode` to a blocked mode, `agents:setModel` to a blocked model and switching on a blocked MCP server for a session are
+  refused in main with FR-202's words; nothing is started, saved or changed. The user picks another mode or model, which applies at the
+  next start (spec 018).
+- **FR-204 Fresh enough, cheap.** Each app's policy is read when first needed and again when the last read is older than 60 seconds
+  (a vendor changes it rarely: Claude re-reads every 30 minutes, Copilot hourly). No watcher, no write, no network.
+- **FR-205 The simulator.** `?simorgpolicy=1` gives the simulator a canned policy (Claude Code and Copilot: Allow all blocked; Claude
+  Code: model `haiku` blocked and the `create_issue` tool of `github` blocked; Copilot: MCP server `my-notes` blocked) so the greyed
+  states can be checked and pictured with no agent app and no policy file. The simulator answers `orgpolicy:view` from its own canned
+  bridge (main refuses every channel under `DURBAR_SIM`).
+- **FR-206 Honest limits.** `[KNOWN GAP]` Not read: macOS MDM profiles (`com.anthropic.claudecode`, `com.github.copilot`,
+  `com.openai.codex`) and the Windows registry (`HKLM\SOFTWARE\Policies\ClaudeCode`, `...\GitHubCopilot`) need native code (FR-176,
+  P17); Claude Code's and Copilot's **server-managed** settings and Codex's cloud requirements are not on disk; Codex `managed_config.toml`
+  and its `mcp_servers` identities (command and argument rules with regular expressions) are not evaluated; Claude Code's
+  `managed-mcp.json` exclusive mode, `allowManagedPermissionRulesOnly` and non-MCP tool rules (Durbar lists no built-in tools); Copilot's
+  `sandbox` and `permissions.deny/ask` rules (they block single operations, not a Durbar choice). Where these apply, the session still
+  fails the vendor's way, as before. `[KNOWN GAP]` No real managed machine was used: the mapping is `read:` from the vendors' docs and
+  `test:` on fixture files, not checked against a real Claude Code, Copilot or Codex refusing a start.
+- **FR-207 For the Organization page.** `orgpolicy:view` returns, per app, whether a file was found, whether it was unreadable, its
+  paths, the blocked modes with their reasons, and counts of the model, server and tool rules (no values). The window uses it for the
+  mode menus; spec 076's Settings > Organization page (FR-194) will list it.
+
 ### M. Testing
 
 - **FR-140** Unit tests (no credits): folder resolution (Windows Known Folder, not the env var), trust check (POSIX parents, Windows
@@ -910,6 +989,7 @@ then the rest. Phases after P1 that do not depend on each other may run in paral
 | P24 | A16 authenticated endpoints (FR-190, FR-191) | P10 |
 | P25 | A17 sign-in passthrough (FR-192, FR-193) | P1 |
 | P26 | A18 vendor managed settings view (FR-194, FR-195) | P1 |
+| P27 | Vendor policies greyed out before a start (FR-198..FR-207, issue #602); first slice of P26, built ahead of P1 (owner go 2026-10-23) | none |
 
 ## Clarifications
 
@@ -1008,3 +1088,7 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
   (content only on explicit opt-in, visible), FR-081..FR-086, FR-100..FR-102, FR-142, FR-192, FR-194, FR-195 rewritten with the exact
   variables and keys; the former `[KNOWN GAP]`s for Copilot OTel and Claude Bedrock/Vertex names are closed; per-session acceptance
   checks stay `[KNOWN GAP]` (T100, T111); R9-R11 answered by Vikram the same day (option a each).
+- **2026-10-23** Issue #602 (owner go, Vikram): section O, FR-198..FR-207 and phase P27: the vendors' own machine policy files
+  (Claude Code `managed-settings.json` and drop-ins, Copilot `managed-settings.json`, Codex `requirements.toml`) are read, normalized
+  and the blocked modes, models, MCP servers and MCP tools are greyed out with the reason and refused in main before a start. Built
+  ahead of P1. MDM, registry and server-managed sources stay `[KNOWN GAP]` (FR-206). Spec 018 gets a cross-reference.

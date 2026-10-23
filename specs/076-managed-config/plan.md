@@ -149,6 +149,27 @@ only to the child and never logged (FR-121).
 The vendor's own managed settings (Claude `managed-settings.json` `env`, Codex `requirements.toml`/`managed_config.toml`, Copilot
 `managed-settings.json` `telemetry`) win over what Durbar passes; FR-194/FR-195 show it.
 
+### D8 Vendor policies greyed out (section O, phase P27, issue #602)
+
+- `src/shared/orgpolicy.ts` (no imports, pure): the `OrgPolicy` type, `emptyOrgPolicy`, `strictestOrgPolicy`, and the questions
+  `modeBlocked`, `modelBlocked`, `mcpBlocked`, `toolBlocked`, each answering a reason string or `undefined`; the hostile-input helpers
+  (`ownStringList`, `ownObject`) and the URL matcher (canonicalize, then one pass over `*` segments; no `RegExp` from file text).
+- `src/adapters/claudeOrgPolicy.ts`, `copilotOrgPolicy.ts`, `codexOrgPolicy.ts`: `parse...(text)` (pure, fixture-tested) and
+  `read...(fs, platform, env)` (paths of FR-198, size cap, Copilot's POSIX ownership rule through an injected `lstat`). Codex reads only
+  top-level `allowed_approval_policies` / `allowed_sandbox_modes` single-line arrays (`codextoml.ts` `tomlStringArray`) and the
+  `[allowed_permission_profiles]` table's `name = true|false` lines; a multi-line array or any other line inside those keys makes the
+  file unreadable (strictest).
+- `AgentAdapter.readOrgPolicy?(): Promise<OrgPolicy>` on the three real adapters; `fake.ts` and the simulator's stand-ins have none.
+- `src/main/orgpolicy.ts` `OrgPolicyCache`: per adapter id, 60 s TTL (FR-204), never throws (a reader error is the strictest state),
+  `refusal(adapterId, { mode, model })` for the starters and setters, `view()` for `orgpolicy:view` (FR-207).
+- Wiring: `addWorkspace` and the restart/resume path in `main.ts` (before `ad.start`), `setModeOp` (`agentops.ts`), `agents:setModel`
+  and `models:list` (`ipc/model.ts`), `agentMcpReply` (`mcpsession.ts`, new `orgBlocked(name)` hook like `serverUrl`) and its server
+  definitions from the same lists `serverUrlOf` reads, `agents:mcpTools` (`mcptoolsop.ts`), the per-session MCP switch.
+- Window: one `orgWhy` helper in `app.js` fed by `orgpolicy:view` (read at start and when the window regains focus), used by
+  `fillPermSelect`, the mode menu and `fillModelSelect`; `screens.js` shows `orgBlocked` on MCP rows and tools.
+- Reused, not duplicated: the mode lists (`DurbarModels.modesFor`/`fallbackMode`), `ModelOption.disabled`-style marking, the MCP row and
+  tools list of spec 058/069, `codextoml.ts`.
+
 ## Testing
 
 - `scripts/test-policy.ts`: dirs per OS (Known Folder, not env), trust check (POSIX parent chain, Windows probe), dev variables
@@ -159,6 +180,10 @@ The vendor's own managed settings (Claude `managed-settings.json` `env`, Codex `
   child env.
 - `scripts/test-policy-fetch.ts`: limits, redirects, timeouts, cache, failures with a local fake server.
 - `scripts/test-registry.ts`: index reader, install with hash check, local edits, uninstall, never overwriting foreign files.
+- `scripts/test-orgpolicy.ts` (P27): per-app parsing on fixture text, the mapping table of FR-200, the hostile matrix of FR-201
+  (wrong types, inherited and `__proto__` keys, oversized files and lists, partial lists, multi-line TOML, symlinked or user-owned
+  Copilot files), URL and model matching, main's refusals; mutation-checked. `scripts/shots-076-orgpolicy.js`: the greyed states in
+  the simulator (`?simorgpolicy=1`).
 - Simulator drivers and screenshots per phase at 1440x900 and 1280x800 (`DURBAR_MANAGED_DIR`).
 
 ## Complexity tracking
