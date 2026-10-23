@@ -103,3 +103,7 @@
 ## 2026-10-23: nightly-watch branch filter
 
 - [x] T103 (2026-10-23, owner question) `branches: [main]` on `workflow_run` in `.github/workflows/nightly-watch.yml` [FR-116]. Files: that workflow, `changelog.d/008-nightly-watch-filter.md`. Done when the YAML parses and, after the merge, `gh run list --workflow nightly-watch.yml` shows no more runs for PR branches.
+
+## 2026-10-23: release notes folded at tag time
+
+- [x] T104 (2026-10-23, owner-approved in the team chat by Paco and Vikram) Fold at tag time [FR-117..FR-120]. Files: `.github/workflows/release.yml` (`verify` job, notes file, always a draft pre-release, never latest), `scripts/release-notes.js` (new), `scripts/changelog.js` (`notes`, `build --stdout`, `--previous`), `scripts/test-changelog.js`, `changelog.d/README.md`, `docs/collaboration.md`, `AGENTS.md`, `README.md`, `changelog.d/008-fold-at-tag.md`. Review on #648 (8 fixes: full main ref, the hostile-writer gap, final releases sort above pre-releases, draft-only `--clobber`, no token in any checkout and only `matrix.*` in `run:`, the fold conflict, the test-build mutant, text). Done when the tests pass and each planted mutation of a guard fails them, a dry run of `release-notes.js` on a local scratch tag (never pushed) gives the notes, and `npm run typecheck && npm run build && npm test` pass. After the merge: the next tag's run is the first real check (`[KNOWN GAP]` until then).

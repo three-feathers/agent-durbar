@@ -8,6 +8,7 @@
   else root.DurbarProfileEditor=factory(root);
 })(typeof self!=='undefined'?self:this,function(win){
   'use strict';
+  const focusIn=(el,o)=>{if(typeof window!=='undefined'&&window.DurbarScroll)window.DurbarScroll.focus(el,o);else if(el&&typeof el.focus==='function')el.focus({preventScroll:true});}; /* spec 052 FR-176: focus never scrolls the page (innerscroll.js, looked up at call time: this file may load first, or run in Node tests) */
   const MODES=['edit','split','preview'];
   const MODE_KEY='durbar.profileEditor.mode';
   const APP_LABEL={copilot:'GitHub Copilot',claude:'Claude Code'};
@@ -190,11 +191,11 @@
     doc.removeEventListener('focusin',onFocusIn,true);
     const ov=$('peOv');if(ov)ov.remove();
     st=null;
-    if(opener&&typeof opener.focus==='function'&&doc.contains(opener))opener.focus();
+    if(opener&&typeof opener.focus==='function'&&doc.contains(opener))focusIn(opener);
     return true;
   }
   /* focus stays in the editor (unless a question dialog is open on top of it) */
-  function onFocusIn(e){const ov=$('peOv');if(!ov||$('modeDlg')||$('peNewOv')||$('peAiOv'))return;if(!ov.contains(e.target)){const t=$('peSrc');if(t)t.focus();}}
+  function onFocusIn(e){const ov=$('peOv');if(!ov||$('modeDlg')||$('peNewOv')||$('peAiOv'))return;if(!ov.contains(e.target)){const t=$('peSrc');if(t)focusIn(t);}}
 
   async function save(overwrite){
     if(!st||!st.writable||st.saving)return;
@@ -304,11 +305,11 @@
       if((e.ctrlKey||e.metaKey)&&!e.altKey&&(e.key==='s'||e.key==='S')){e.preventDefault();e.stopPropagation();save(false);return;}
       if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();return;}
       if(e.key==='Tab'){const it=[...ov.querySelectorAll('button:not([disabled]):not([hidden]),textarea,[tabindex="0"]')].filter(x=>x.offsetParent!==null);if(!it.length)return;const i=it.indexOf(doc.activeElement);
-        if(e.shiftKey&&i<=0){e.preventDefault();it[it.length-1].focus();}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();it[0].focus();}}
+        if(e.shiftKey&&i<=0){e.preventDefault();focusIn(it[it.length-1]);}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();focusIn(it[0]);}}
     });
     ov.addEventListener('mousedown',e=>{if(e.target===ov)e.preventDefault();}); /* a click beside the editor does not close it (unsaved work) */
     doc.addEventListener('focusin',onFocusIn,true);
-    (st.mode==='preview'?$('pePrev'):src).focus();
+    focusIn(st.mode==='preview'?$('pePrev'):src);
     if(st.mode!=='preview'){src.setSelectionRange(0,0);src.scrollTop=0;}
   }
 
@@ -339,16 +340,16 @@
     const hint=()=>{const app=$('peNApp').value,pl=$('peNPlace').value,n=$('peNName').value.trim()||'<name>';setText($('peNHint'),'File: '+joinHint(newDirHint(app,pl==='user'?'user':'folder',l&&l.userDirs),newFileName(app,n))+(pl==='user'?'':' in '+baseName((folders.find(f=>f&&f.id===pl)||{}).path||'')));};
     hint();ov.addEventListener('input',hint);ov.addEventListener('change',hint);
     return new Promise(resolve=>{
-      const done=v=>{ov.remove();if(opener&&opener.focus&&doc.contains(opener)&&!v)opener.focus();resolve(v);};
+      const done=v=>{ov.remove();if(opener&&opener.focus&&doc.contains(opener)&&!v)focusIn(opener);resolve(v);};
       const go=async()=>{
         const name=$('peNName').value.trim(),er=$('peNErr');
-        if(!validName(name)){er.hidden=false;setText(er,NAME_RE.test(name)&&RESERVED_RE.test(name)?'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9): choose another.':'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');$('peNName').focus();return;}
+        if(!validName(name)){er.hidden=false;setText(er,NAME_RE.test(name)&&RESERVED_RE.test(name)?'That name is reserved on Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9): choose another.':'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');focusIn($('peNName'));return;}
         const pl=$('peNPlace').value;
         const tp=(ov.querySelector('input[name="peNTpl"]:checked')||{}).value||DEF;
         /* FR-042: Create writes nothing; the template opens as a draft and the first Save creates the file (main checks again) */
         const app=$('peNApp').value,fn=newFileName(app,name),folder=pl==='user'?undefined:(folders.find(f=>f&&f.id===pl)||{}).path;
         const taken=((l&&l.files)||[]).some(f=>f&&f.app===app&&f.fileName===fn&&(pl==='user'?f.scope==='user':f.scope==='folder'&&f.folder===folder));
-        if(taken){er.hidden=false;setText(er,fn+' exists already. Choose another name, or open it from the list.');$('peNName').focus();return;}
+        if(taken){er.hidden=false;setText(er,fn+' exists already. Choose another name, or open it from the list.');focusIn($('peNName'));return;}
         const tpl=win.exports&&win.exports.profileTemplate;
         if(typeof tpl!=='function'){er.hidden=false;setText(er,'The templates are not loaded.');return;}
         done('draft');openDraft({app,place:pl,name,folder,template:tp,text:tpl(app,name,tp)},{pristine:true,returnFocus:opener,note:'Not saved yet: Save creates '+fn+'.'});
@@ -358,14 +359,14 @@
       const aiB=ov.querySelector('#peNAi');
       if(aiB){const tplNow=()=>(ov.querySelector('input[name="peNTpl"]:checked')||{}).value||DEF;const sync=()=>{aiB.hidden=tplNow()!=='success';};sync();ov.addEventListener('change',sync);
         aiB.onclick=async()=>{const name=$('peNName').value.trim(),er=$('peNErr');
-          if(!NAME_RE.test(name)){er.hidden=false;setText(er,'Choose a name first: letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');$('peNName').focus();return;}
+          if(!NAME_RE.test(name)){er.hidden=false;setText(er,'Choose a name first: letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');focusIn($('peNName'));return;}
           const pl=$('peNPlace').value; /* 'user' or a folder id from main's list (FR-020) */
           const r=await aiCreate({app:$('peNApp').value,place:pl,name,folder:pl==='user'?undefined:(folders.find(f=>f&&f.id===pl)||{}).path});
-          if(r==='done'){ov.remove();resolve('ai');}else if($('peNName'))$('peNName').focus();};}ov.querySelector('#peNCancel').onclick=()=>done(null);
+          if(r==='done'){ov.remove();resolve('ai');}else if($('peNName'))focusIn($('peNName'));};}ov.querySelector('#peNCancel').onclick=()=>done(null);
       ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done(null);}else if(e.key==='Enter'&&e.target.id==='peNName'){e.preventDefault();go();}
-        else if(e.key==='Tab'){const it=[...ov.querySelectorAll('select,input:not([type=radio]),input[type=radio]:checked,button')];const i=it.indexOf(doc.activeElement);if(e.shiftKey&&i<=0){e.preventDefault();it[it.length-1].focus();}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();it[0].focus();}}});
+        else if(e.key==='Tab'){const it=[...ov.querySelectorAll('select,input:not([type=radio]),input[type=radio]:checked,button')];const i=it.indexOf(doc.activeElement);if(e.shiftKey&&i<=0){e.preventDefault();focusIn(it[it.length-1]);}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();focusIn(it[0]);}}});
       ov.addEventListener('click',e=>{if(e.target===ov)done(null);});
-      $('peNName').focus();
+      focusIn($('peNName'));
     });
   }
 
@@ -405,7 +406,7 @@
     let mode='describe',waiting=null; /* aiRun.n: requests not ended yet, also after Stop waiting or a closed dialog (FR-036, FR-039) */
     const paintCost=()=>{if(!by)return;const k=kinds.find(x=>x.id===by.value)||kinds[0];setText(ov.querySelector('#peACost'),'1 prompt. '+costLine(k)+' No tools, nothing kept.');setText(ov.querySelector('#peAGo'),'Create with AI (1 prompt, '+(k.displayName||k.id)+')');};
     paintCost();if(by)by.addEventListener('change',paintCost);
-    const setHow=m=>{mode=m;ov.querySelectorAll('[data-am]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.am===m)));ov.querySelector('#peADesc').hidden=m!=='describe';ov.querySelector('#peAQ').hidden=m!=='questions';const f=ov.querySelector(m==='describe'?'#peADescT':'#peAQ textarea');if(f)f.focus();};
+    const setHow=m=>{mode=m;ov.querySelectorAll('[data-am]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.am===m)));ov.querySelector('#peADesc').hidden=m!=='describe';ov.querySelector('#peAQ').hidden=m!=='questions';const f=ov.querySelector(m==='describe'?'#peADescT':'#peAQ textarea');if(f)focusIn(f);};
     ov.addEventListener('click',e=>{const b=e.target.closest('[data-am]');if(b&&!waiting)setHow(b.dataset.am);});
     const busy=on=>{ov.querySelectorAll('textarea,select,input,[data-am]').forEach(x=>{x.disabled=on;});const g=ov.querySelector('#peAGo');if(g){g.hidden=on;g.disabled=aiRun.n>0;}ov.querySelector('#peALate').hidden=on||!aiRun.n;ov.querySelector('#peAStop').hidden=!on;ov.querySelector('#peAWait').hidden=!on;};
     const err=m=>{const e=ov.querySelector('#peAErr');e.hidden=!m;setText(e,m||'');};
@@ -436,8 +437,8 @@
         openDraft({app:t.app,place:t.place,name:t.name,folder:t.folder,text:r.text},{mode:'split',note:'Written by '+r.by+'.'+spent+(r.warnings&&r.warnings.length?' Note: '+r.warnings.join('; ')+'.':'')+' Read it, change what you like, then Save.'});
       };
       ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cancel();}
-        else if(e.key==='Tab'){const it=[...ov.querySelectorAll('button:not([hidden]):not([disabled]),textarea:not([disabled]),select:not([disabled])')].filter(x=>x.offsetParent!==null);const i=it.indexOf(doc.activeElement);if(!it.length)return;if(e.shiftKey&&i<=0){e.preventDefault();it[it.length-1].focus();}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();it[0].focus();}}});
-      const f=ov.querySelector('#peADescT')||ov.querySelector('#peACancel');f.focus();
+        else if(e.key==='Tab'){const it=[...ov.querySelectorAll('button:not([hidden]):not([disabled]),textarea:not([disabled]),select:not([disabled])')].filter(x=>x.offsetParent!==null);const i=it.indexOf(doc.activeElement);if(!it.length)return;if(e.shiftKey&&i<=0){e.preventDefault();focusIn(it[it.length-1]);}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();focusIn(it[0]);}}});
+      const f=ov.querySelector('#peADescT')||ov.querySelector('#peACancel');focusIn(f);
     });
   }
 

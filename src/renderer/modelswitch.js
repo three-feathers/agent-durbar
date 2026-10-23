@@ -162,13 +162,54 @@
     const span=nn(e.tokensBefore)&&nn(e.tokensAfter)?': '+fmtTokens(e.tokensBefore)+' → '+fmtTokens(e.tokensAfter)+' tokens':nn(e.tokensRemoved)?': '+fmtTokens(e.tokensRemoved)+' tokens removed':'';
     return head+span+'.';
   }
+  /* ---- Spec 007 FR-012..FR-017: the routing preference of Copilot's Auto, cheapest first. Pure. ---- */
+  const AUTO_TIERS=['efficiency','balance','intelligence'];
+  const AUTO_TIER_NAME={efficiency:'Efficiency',balance:'Balance',intelligence:'Intelligence'};
+  const AUTO_TIER_HINT={efficiency:'Auto picks the cheapest models that fit',balance:'Auto balances cost and capability',intelligence:'Auto picks the most capable models'};
+  const isTier=t=>typeof t==='string'&&AUTO_TIERS.includes(t);
+  /* The tiers the menu shows for a model: only on `auto`, only the three names, in their order (anything else the list carries is ignored). */
+  function autoTiersOf(m){
+    if(!m||m.id!=='auto'||!Array.isArray(m.autoTiers))return [];
+    return AUTO_TIERS.filter(t=>m.autoTiers.includes(t));
+  }
+  /* The tier in effect: a locked organization tier, else the agent's own, else the organization's default, else Efficiency (what a new Auto session gets).
+     A lock on a tier outside the three names (FR-017, fails closed) is in effect too, but cannot be named: ''. */
+  function autoTierOf(m,own){
+    const g=m&&m.autoTierManaged&&typeof m.autoTierManaged==='object'?m.autoTierManaged:null;
+    if(g&&g.locked===true)return isTier(g.tier)?g.tier:'';
+    if(isTier(own))return own;
+    if(g&&isTier(g.tier))return g.tier;
+    return 'efficiency';
+  }
+  const autoTierLocked=m=>!!(m&&m.autoTierManaged&&typeof m.autoTierManaged==='object'&&m.autoTierManaged.locked===true); /* fails closed: also with no name */
+  /* FR-014: a higher tier asks first (Auto may route to models that cost more per token, and a tier's price is not reported); a lower or equal one does not. */
+  function autoTierConfirm(from,to){
+    if(!isTier(to))return {needed:false,valid:false,reasons:[]};
+    const a=AUTO_TIERS.indexOf(isTier(from)?from:'efficiency'),b=AUTO_TIERS.indexOf(to);
+    if(b<=a)return {needed:false,valid:true,reasons:[]};
+    return {needed:true,valid:true,reasons:[
+      'With '+AUTO_TIER_NAME[to]+' routing, Auto may pick models that cost more per token than with '+AUTO_TIER_NAME[AUTO_TIERS[a]]+'.',
+      'The price of a routing tier is not reported, so the cost cannot be compared before the next message.']};
+  }
+  const autoTierName=t=>isTier(t)?AUTO_TIER_NAME[t]:'';
+  const FAIL_WHY={'policy-rejected':'the model it picked is not allowed by policy','request-failed':'the routing request failed','setup-failed':'the routing could not be prepared','unsupported':'your Copilot provider does not support Auto routing'};
+  /* FR-019: the note after a tier switch the runtime could not apply; it names the tier still in effect. Plain text. */
+  function autoTierFailText(e){
+    if(!e)return '';
+    const want=isTier(e.requested)?AUTO_TIER_NAME[e.requested]+' routing':'the default routing';
+    const now=isTier(e.effective)?AUTO_TIER_NAME[e.effective]+' routing':'its default routing';
+    const why=typeof e.reason==='string'&&Object.prototype.hasOwnProperty.call(FAIL_WHY,e.reason)?FAIL_WHY[e.reason]:''; /* own keys only */
+    return 'Copilot could not switch Auto to '+want+(why?' ('+why+')':'')+'. It still uses '+now+'.';
+  }
+
   const CAUSE={'rate-limit':'because of a rate limit','fallback':'because the request was refused','runtime':'by the runtime','resume':'when the session resumed'};
   /* The line for a model change: ours says what happened; one the runtime made says so plainly (spec 030 FR-015). */
   function modelChangeText(e,nameOf){
     if(!e)return '';
     const nm=nameOf||(x=>x);
     const to=nm(e.model),from=e.previousModel?nm(e.previousModel):'';
-    if(e.cause==='user')return 'Model set to '+to+(e.tier==='long'?' (long context)':'')+'. The next message uses it.';
+    const rt=e.model==='auto'&&isTier(e.autoTier)?' ('+AUTO_TIER_NAME[e.autoTier]+' routing)':''; /* spec 007 FR-013 */
+    if(e.cause==='user')return 'Model set to '+to+rt+(e.tier==='long'?' (long context)':'')+'. The next message uses it.';
     return 'The runtime changed the model'+(from?' from '+from:'')+' to '+to+' '+(CAUSE[e.cause]||CAUSE.runtime)+'. The next message uses it.';
   }
 
@@ -254,5 +295,5 @@
     return m.includes(cur)?cur:'read-only';
   }
 
-  return {handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,compactionFoldText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
+  return {AUTO_TIERS,AUTO_TIER_HINT,autoTiersOf,autoTierOf,autoTierLocked,autoTierConfirm,autoTierName,autoTierFailText,handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,compactionFoldText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
 })());

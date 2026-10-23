@@ -8,6 +8,11 @@ const THEME=window.THEME; /* theme packs (specs 035-040): tokens, words, motion;
 const T_=n=>THEME.token(n);
 const wordOf=k=>THEME.word(k);
 const qs = new URLSearchParams(location.search);
+/* spec 052 FR-176 (issue 638): focus and scroll into view never move the page; innerscroll.js. No bare focus() or scrollIntoView here
+   (test:innerscroll checks it): a plain focus() also scrolled html (overflow:hidden), which hid the chat header. */
+const SCROLL=window.DurbarScroll;
+const focusIn=(el,o)=>SCROLL.focus(el,o);
+SCROLL.pin(document);
 const NO_REDACT=qs.has('sim')&&qs.get('noredact')==='1'; /* spec 041 FR-065 test only (simulator): the page as if the redact module were missing, to check it fails closed */
 /* spec 052 FR-084: Command (⌘) on a Mac, Ctrl elsewhere; keys are shown per platform (src/renderer/keys.js) */
 const KEYS=window.DurbarKeys;
@@ -360,9 +365,9 @@ function openAtRequest(id){
 /* spec 052 FR-016 / spec 001 FR-034: a pending request into view and focused: a question's first answer control, else the card itself (never its
    Approve button: an Enter right after must not approve). Shared by the answer bar's "show" and openAtRequest. */
 function focusRequest(card){
-  card.scrollIntoView({block:'center'});
-  const f=card.classList.contains('question')?card.querySelector('.q-opt,.q-other,.q-form input,.q-form select,.q-open'):null;if(f){f.focus();return;}
-  if(!card.hasAttribute('tabindex'))card.setAttribute('tabindex','-1');card.focus();
+  SCROLL.reveal(card,{block:'center',scroller:card.closest('#chat')||undefined});
+  const f=card.classList.contains('question')?card.querySelector('.q-opt,.q-other,.q-form input,.q-form select,.q-open'):null;if(f){focusIn(f,{reveal:false});return;}
+  if(!card.hasAttribute('tabindex'))card.setAttribute('tabindex','-1');focusIn(card,{reveal:false});
 }
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#stage [data-pvopen]');if(b){openAtRequest(b.dataset.pvopen);return;}
   const pb=e.target.closest&&e.target.closest('#stage [data-post]');if(pb)openSchedSettings();});
@@ -412,9 +417,9 @@ function openPlaceMenu(pid,anchor){
   m.style.top=(ab.bottom+6+b.height<=innerHeight-8?ab.bottom+6:Math.max(8,ab.top-6-b.height))+'px';
   m.addEventListener('click',e=>{const t=e.target.closest('[data-pvopen]');if(!t)return;closeModeMenu();openAtRequest(t.dataset.pvopen);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-pvopen]')],i=its.indexOf(document.activeElement);
-    if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
-    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&document.contains(anchor))anchor.focus();}});
-  m.querySelector('button').focus();
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&document.contains(anchor))focusIn(anchor);}});
+  focusIn(m.querySelector('button'));
 }
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#stage [data-placemore]');if(!b)return;e.stopImmediatePropagation();
   if(document.getElementById('modeMenu')){closeModeMenu();return;}openPlaceMenu(b.dataset.placemore,b);},true);
@@ -1308,7 +1313,7 @@ const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">
 const detailChosen=()=>{try{return localStorage.getItem('durbar.detail');}catch(e){return null;}};
 const welcomeHTML=()=>{const c=detailChosen();return WELCOME_HTML.replace(/data-wl-level="(expert|simple)" aria-pressed="false"/g,(m,l)=>c===l?'data-wl-level="'+l+'" aria-pressed="true"':m);};
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-wl-level]');if(!b)return;const l=b.dataset.wlLevel;setDetail(l);
-  const again=document.querySelector('[data-wl-level="'+l+'"]');if(again)again.focus();announce(l==='simple'?'Simple: plain words, without developer details.':'Expert: every detail is shown.');});
+  const again=document.querySelector('[data-wl-level="'+l+'"]');if(again)focusIn(again);announce(l==='simple'?'Simple: plain words, without developer details.':'Expert: every detail is shown.');});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-wl]');if(!b)return;
   if(b.dataset.wl==='add')$('addFolder').click();
   else if(b.dataset.wl==='setup')window.DurbarScreens.openSettings('harnesses'); /* spec 051 FR-008 */
@@ -1462,7 +1467,7 @@ function renderList(){
   $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents"><div class="lrow lhead" role="row">${head}</div>${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
 }
 document.addEventListener('click',e=>{const b=e.target.closest('#list [data-lsort]');if(!b)return;
-  LSORT=ACT.nextSort(LSORT,b.dataset.lsort);renderList();const n=document.querySelector(`#list [data-lsort="${CSS.escape(b.dataset.lsort)}"]`);if(n)n.focus();});
+  LSORT=ACT.nextSort(LSORT,b.dataset.lsort);renderList();const n=document.querySelector(`#list [data-lsort="${CSS.escape(b.dataset.lsort)}"]`);if(n)focusIn(n);});
 
 function renderAll(){
   syncChatNos(); /* spec 074 FR-011 */
@@ -1751,19 +1756,19 @@ function wireMenu(btnId,menuId){
   const btn=$(btnId), m=$(menuId); if(!btn||!m)return;
   /* spec 052 FR-057, FR-081: skip items Simple hides with CSS (Copy resume command, MCP servers, Tools and usage, Control from GitHub), so arrows never land on them */
   const items=()=>[...m.querySelectorAll('[role="menuitem"],input')].filter(x=>!x.hidden&&!x.disabled&&!x.closest('[hidden]')&&x.getClientRects().length);
-  const close=(back)=>{if(m.hidden)return;m.hidden=true;btn.setAttribute('aria-expanded','false');document.removeEventListener('mousedown',outside,true);if(back)btn.focus();};
+  const close=(back)=>{if(m.hidden)return;m.hidden=true;btn.setAttribute('aria-expanded','false');document.removeEventListener('mousedown',outside,true);if(back)focusIn(btn);};
   const outside=e=>{if(!m.contains(e.target)&&e.target!==btn&&!btn.contains(e.target))close(false);};
-  const open=(first)=>{m.hidden=false;btn.setAttribute('aria-expanded','true');document.addEventListener('mousedown',outside,true);const it=items();if(it.length)(first==='last'?it[it.length-1]:it[0]).focus();};
+  const open=(first)=>{m.hidden=false;btn.setAttribute('aria-expanded','true');document.addEventListener('mousedown',outside,true);const it=items();if(it.length)focusIn(first==='last'?it[it.length-1]:it[0]);};
   btn.onclick=()=>m.hidden?open('first'):close(true);
   if(btnId==='topMoreBtn')m.addEventListener('change',()=>close(true));
   btn.onkeydown=e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();open(e.key==='ArrowUp'?'last':'first');}};
   m.onkeydown=e=>{
     const it=items(), k=it.indexOf(document.activeElement);
     if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close(true);}
-    else if(e.key==='ArrowDown'){e.preventDefault();it[(k+1)%it.length].focus();}
-    else if(e.key==='ArrowUp'){e.preventDefault();it[(k-1+it.length)%it.length].focus();}
-    else if(e.key==='Home'){e.preventDefault();it[0].focus();}
-    else if(e.key==='End'){e.preventDefault();it[it.length-1].focus();}
+    else if(e.key==='ArrowDown'){e.preventDefault();focusIn(it[(k+1)%it.length]);}
+    else if(e.key==='ArrowUp'){e.preventDefault();focusIn(it[(k-1+it.length)%it.length]);}
+    else if(e.key==='Home'){e.preventDefault();focusIn(it[0]);}
+    else if(e.key==='End'){e.preventDefault();focusIn(it[it.length-1]);}
     else if(e.key==='Tab')close(false);
   };
   m.addEventListener('click',e=>{if(e.target.closest('[role="menuitem"]'))close(false);});
@@ -1776,7 +1781,7 @@ function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-acti
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
 const chatKeyText=k=>keyText(KEYS.chatParts(k,IS_MAC)), chatKeyAria=k=>ariaKeys(KEYS.chatParts(k,IS_MAC)); /* FR-084: Alt+A elsewhere, ⌥⌘A on a Mac */
-const answerPress=(src,what)=>()=>{const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)m.focus();};
+const answerPress=(src,what)=>()=>{const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)focusIn(m);};
 function wireAnswerBar(a){
   if(answerObs){answerObs.m.disconnect();answerObs.i.disconnect();answerObs=null;}
   const bar=$('answerBar'), chat=$('chat'); if(!bar||!chat)return;
@@ -1817,14 +1822,14 @@ function wireAnswerBar(a){
     const act=bar.querySelector('.ab-act');
     const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);return b;};
     if(fit){
-      const said=w=>{announce('Answered: '+w);const m=$('msgInput');if(m)m.focus();};
+      const said=w=>{announce('Answered: '+w);const m=$('msgInput');if(m)focusIn(m);};
       for(const o of fit.opts){const lb=(o.querySelector('.q-lbl')||o).textContent;add(lb,'ab-opt',()=>{o.click();fit.ok.click();said(lb);},o.title);}
       const box=document.createElement('input');box.type='text';box.className='ab-other';box.maxLength=500;box.placeholder='Other answer';box.setAttribute('aria-label','Other answer: '+fit.q);box.setAttribute('aria-keyshortcuts','Enter');box.title='Type your own answer; Enter sends it';
       box.addEventListener('keydown',ev=>{if(ev.key!=='Enter'||ev.shiftKey||ev.isComposing||ev.altKey||ev.ctrlKey||ev.metaKey)return;ev.preventDefault();
         const v=box.value.replace(/\s+/g,' ').trim();if(!v){announce('Type an answer first, or choose an option.');return;}
         fit.other.value=v;fit.other.dispatchEvent(new Event('input',{bubbles:true}));fit.ok.click();said(v);});
       act.appendChild(box);
-      if(fit.skip)add(fit.skip.textContent,'danger',()=>{fit.skip.click();announce('Skipped');const m=$('msgInput');if(m)m.focus();},fit.skip.title);
+      if(fit.skip)add(fit.skip.textContent,'danger',()=>{fit.skip.click();announce('Skipped');const m=$('msgInput');if(m)focusIn(m);},fit.skip.title);
     }
     else if(q)add('Answer in chat','primary',show);
     /* FR-016: a long request is answered in the chat only; the wide grant (any arguments) stays in the card */
@@ -1835,7 +1840,7 @@ function wireAnswerBar(a){
       const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
     add(q?'Show question':'Show in chat','ghost',show,q?'Scroll to the question in the chat':'Scroll to the request in the chat');
     bar.hidden=false;
-    if(hadFocus){const f=act.querySelector('button,input');if(f)f.focus();}
+    if(hadFocus){const f=act.querySelector('button,input');if(f)focusIn(f);}
   }
   const check=()=>{const p=pending();if(p!==card){card=p;cardVisible=inView();}else cardVisible=inView();paint();};
   const mo=new MutationObserver(()=>check());mo.observe(chat,{childList:true,subtree:true});
@@ -1971,7 +1976,7 @@ function openPanel(id,focus){
     if(!e.clipboardData.getData('text/plain'))e.preventDefault(); /* image only: attach; image + text: attach and let the text paste */
     addFiles(fl,{imagesOnly:true});});
   $('grants').onclick=e=>{
-    if(e.target.closest('#grantsBtn')){grantsOpen=!grantsOpen;const b=$('grantsBtn'),p=$('grantsPop');b.setAttribute('aria-expanded',String(grantsOpen));p.hidden=!grantsOpen;if(grantsOpen){const f=p.querySelector('[data-revoke]');if(f)f.focus();}return;}
+    if(e.target.closest('#grantsBtn')){grantsOpen=!grantsOpen;const b=$('grantsBtn'),p=$('grantsPop');b.setAttribute('aria-expanded',String(grantsOpen));p.hidden=!grantsOpen;if(grantsOpen){const f=p.querySelector('[data-revoke]');if(f)focusIn(f);}return;}
     if(e.target.closest('#grantsAll')){revokeAllGrants();return;}
     const b=e.target.closest('[data-revoke]');
     if(b){const r=liveRoot(byId(ui.selected));const all=[...$('grants').querySelectorAll('[data-revoke]')];grantsFocus=all.indexOf(b);bridge.revokeGrant(r.id,b.dataset.revoke);}};
@@ -1979,7 +1984,7 @@ function openPanel(id,focus){
   $('grants').addEventListener('focusout',e=>{if(grantsOpen&&e.relatedTarget&&!e.relatedTarget.closest('#grants')&&!e.relatedTarget.closest('.dlg-ov'))closeGrants(false);});
   $('grants').onkeydown=e=>{if(e.key==='Escape'&&grantsOpen){e.preventDefault();e.stopPropagation();closeGrants(true);}};
   if(!window.__grantsOutside){window.__grantsOutside=true;document.addEventListener('click',e=>{const path=e.composedPath();if(grantsOpen&&!path.some(n=>n.id==='grants')&&!path.some(n=>n.classList&&n.classList.contains('dlg-ov')))closeGrants(false);}); /* a click in the Revoke all dialog (Cancel) is not outside: it behaves like Esc and keeps the list open */ /* composedPath: a revoke redraws the list, so the clicked button may already be detached here */}
-  $('attached').onclick=e=>{const po=e.target.closest('[data-planoff]');if(po){const pa=byId(ui.selected);if(pa)pa.planNext=false;renderAttached();const m=$('msgInput');if(m)m.focus();return;}const b=e.target.closest('[data-rm]');if(b){attached.splice(+b.dataset.rm,1);renderAttached();setSend();attNotice([]);}};
+  $('attached').onclick=e=>{const po=e.target.closest('[data-planoff]');if(po){const pa=byId(ui.selected);if(pa)pa.planNext=false;renderAttached();const m=$('msgInput');if(m)focusIn(m);return;}const b=e.target.closest('[data-rm]');if(b){attached.splice(+b.dataset.rm,1);renderAttached();setSend();attNotice([]);}};
   const input=$('msgInput');
   fitPlaceholder();if(window.ResizeObserver){if(phRO)phRO.disconnect();else phRO=new ResizeObserver(fitPlaceholder);phRO.observe(input);}
   input.addEventListener('input',autoGrow);
@@ -1988,7 +1993,7 @@ function openPanel(id,focus){
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
   wireComposerGrip(); /* spec 005 FR-044..FR-048 */
-  renderAll(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)cur.scrollIntoView({inline:'nearest',block:'nearest'});
+  renderAll(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)SCROLL.reveal(cur,{inline:'nearest'});
   /* spec 074 FR-022 (issue 587): this chat's unsent text comes back */
   {const m=$('msgInput'),dr=DRAFTS.get(id);if(m&&dr){m.value=dr.t;autoGrow();}if(dr&&dr.att.length){renderAttached();setSend();}}
   /* spec 074 FR-019: a chat the user opened gets the cursor in its message box (the title when it has none) */
@@ -2077,7 +2082,7 @@ function drawSlash(src){
   u.input.setAttribute('aria-expanded','true');
   if(u.items.length)u.input.setAttribute('aria-activedescendant','slashOpt-'+u.active);else u.input.removeAttribute('aria-activedescendant');
   placeSlash(el,u.input);
-  const act=document.getElementById('slashOpt-'+u.active); if(act)act.scrollIntoView({block:'nearest'});
+  const act=document.getElementById('slashOpt-'+u.active); if(act)SCROLL.reveal(act);
 }
 /* FR-008 (review on PR 535): the row's tooltip has what an ellipsis may cut: the full name, the description and the place (a data
    tooltip, at most 300 characters); FR-013: each part masked (DurbarSafeText), then the whole cut */
@@ -2226,9 +2231,9 @@ function openCtxMenu(a0,anchor){
     else if(b.dataset.act==='ctxTools')window.DurbarScreens.openTools(null,'agents');});
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('button')],i=it.indexOf(document.activeElement);
     if(!it.length&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();}
-    else if(e.key==='ArrowDown'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
-    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeCtxMenu();const t=$('ctxChip')||anchor;if(t&&t.focus&&document.contains(t))t.focus();}});
-  (m.querySelector('button')||m).focus();
+    else if(e.key==='ArrowDown'){e.preventDefault();focusIn(it[(i+1)%it.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(it[(i+it.length-1)%it.length]);}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeCtxMenu();const t=$('ctxChip')||anchor;if(t&&t.focus&&document.contains(t))focusIn(t);}});
+  focusIn(m.querySelector('button')||m);
 }
 /* FR-040: one row always. Controls that do not fit go, by rank, into the "⋯" popover (same nodes, ids and handlers); the mode never does. */
 let ctFitting=false;
@@ -2255,7 +2260,7 @@ function fitToolbar(){
   }finally{if(ctObs)ctObs.mut.takeRecords();ctFitting=false;if(ae&&ae!==document.activeElement&&document.contains(ae)&&ae.getClientRects().length)ae.focus({preventScroll:true});}
 }
 let ctObs=null;
-function closeCtMore(back){const pop=$('ctMorePop'),b=$('ctMoreBtn');if(!pop||pop.hidden)return;pop.hidden=true;if(b)b.setAttribute('aria-expanded','false');document.removeEventListener('mousedown',ctOutside,true);if(back&&b)b.focus();requestAnimationFrame(fitToolbar);}
+function closeCtMore(back){const pop=$('ctMorePop'),b=$('ctMoreBtn');if(!pop||pop.hidden)return;pop.hidden=true;if(b)b.setAttribute('aria-expanded','false');document.removeEventListener('mousedown',ctOutside,true);if(back&&b)focusIn(b);requestAnimationFrame(fitToolbar);}
 function ctOutside(e){const pop=$('ctMorePop'),b=$('ctMoreBtn');if(!pop)return;const t=e.target;
   if(pop.contains(t)||(b&&b.contains(t))||(t.closest&&t.closest('#modeMenu,#modelMenu,#agentMenu,#ctxMenu,.dlg-ov,[role="dialog"]')))return;closeCtMore(false);}
 function wireToolbar(){
@@ -2263,7 +2268,7 @@ function wireToolbar(){
   const bar=$('cToolbar'); if(!bar)return;
   [...bar.querySelectorAll('.ct')].forEach((n,i)=>{n.dataset.pos=String(i);});
   const more=$('ctMoreBtn'),pop=$('ctMorePop');
-  more.onclick=()=>{if(!pop.hidden){closeCtMore(true);return;}pop.hidden=false;more.setAttribute('aria-expanded','true');document.addEventListener('mousedown',ctOutside,true);const f=pop.querySelector('button:not([hidden])');if(f)f.focus();};
+  more.onclick=()=>{if(!pop.hidden){closeCtMore(true);return;}pop.hidden=false;more.setAttribute('aria-expanded','true');document.addEventListener('mousedown',ctOutside,true);const f=pop.querySelector('button:not([hidden])');if(f)focusIn(f);};
   pop.onkeydown=e=>{if(e.key==='Escape'&&!document.querySelector('#modeMenu,#modelMenu,#agentMenu,#ctxMenu')){e.preventDefault();e.stopPropagation();closeCtMore(true);}};
   let raf=0;const later=()=>{if(ctFitting||raf)return;raf=requestAnimationFrame(()=>{raf=0;fitToolbar();});};
   const res=new ResizeObserver(later);res.observe(bar);bar.querySelectorAll('.ct').forEach(n=>res.observe(n)); /* a chip that grows, or shows in Simple */
@@ -2275,7 +2280,7 @@ function closePanel(){closeSlash();keepDraft();
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
   renderAll();
-  const n=id&&document.querySelector(`[data-id="${CSS.escape(id)}"]`); if(n)n.focus();
+  const n=id&&document.querySelector(`[data-id="${CSS.escape(id)}"]`); if(n)focusIn(n);
 }
 
 /* ---------------- events ---------------- */
@@ -2298,7 +2303,7 @@ document.addEventListener('click',e=>{
   if(e.target.closest('#closeAll,#openAll')){const shut=!!e.target.closest('#closeAll');
     ROOMS.filter(r=>roomShown(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id)).forEach(r=>setRoomClosed(r,shut,true));
     layoutKey='';renderAll();return;}
-  const st=e.target.closest('.stat[data-k]'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)n.focus();return;}
+  const st=e.target.closest('.stat[data-k]'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)focusIn(n);return;}
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
   const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){if(e.target.closest('.xbody'))return;const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;} /* spec 052 FR-063: the open body (Copy, Show all, selecting text) keeps it open */
@@ -2371,7 +2376,7 @@ document.addEventListener('keydown',e=>{
   if(!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.isComposing&&e.target.matches&&e.target.matches('#list button.lrow, #list .lsort')&&/^(j|k|J|K|ArrowDown|ArrowUp)$/.test(e.key)){
     const rows=[...document.querySelectorAll('#list button.lrow')], i=rows.indexOf(e.target), down=/^(j|J|ArrowDown)$/.test(e.key);
     const n=i<0?(down?rows[0]:null):rows[Math.max(0,Math.min(rows.length-1,i+(down?1:-1)))];
-    if(n){e.preventDefault();n.focus();n.scrollIntoView({block:'nearest'});}
+    if(n){e.preventDefault();focusIn(n);}
     return;
   }
   /* spec 052 FR-014: N opens the next agent that needs you (waiting, error or at its limit), outside text fields and dialogs */
@@ -2395,7 +2400,7 @@ document.addEventListener('keydown',e=>{
       for(const x of all){if(x===e.target)continue;const q=x.getBoundingClientRect(),dy=down?q.top-r.bottom:r.top-q.bottom;if(dy<-2)continue;
         const d=dy*3+Math.abs((q.left+q.right)/2-cx);if(d<bd){bd=d;next=x;}}
     }
-    if(next){e.preventDefault();next.focus();next.scrollIntoView({block:'nearest',inline:'nearest'});}
+    if(next){e.preventDefault();focusIn(next,{inline:'nearest'});}
   }
 });
 /* spec 052 FR-015: folders restored in Allow all, named in a strip under the top bar, with a one-click way back to Ask first. Counts folders. */
@@ -2495,7 +2500,7 @@ function pendingCardOf(a){const c=getChat(a);const all=[...c.el.querySelectorAll
 let inboxBack=null;
 let inboxTick=0;
 function closeInbox(){clearInterval(inboxTick);inboxTick=0;const d=$('inboxDlg');if(!d)return;d.remove();const back=inboxBack;inboxBack=null;
-  const b=back&&back.isConnected&&back.getClientRects().length&&!back.disabled?back:$('inboxBtn');if(b&&b.getClientRects().length)b.focus();}
+  const b=back&&back.isConnected&&back.getClientRects().length&&!back.disabled?back:$('inboxBtn');if(b&&b.getClientRects().length)focusIn(b);}
 /* spec 052 FR-034: one polite live region for requests and answers (screen readers hear them; nothing visible changes) */
 let announceT=0;
 function announce(text){const el=$('srAnnounce');if(!el||!text)return;clearTimeout(announceT);el.textContent='';announceT=setTimeout(()=>{el.textContent=String(text).slice(0,300);},60);}
@@ -2518,10 +2523,10 @@ function openInbox(focusId){
 function inboxKey(e){
   const d=$('inboxDlg'); if(!d)return;
   if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeInbox();return;}
-  if(e.key==='Tab'){const f=[...d.querySelectorAll('button,summary,[tabindex="-1"].ib-h,input')].filter(x=>x.getClientRects().length);if(!f.length)return;const i=f.indexOf(document.activeElement);if(e.shiftKey&&(i<=0)){e.preventDefault();f[f.length-1].focus();}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();f[0].focus();}return;}
+  if(e.key==='Tab'){const f=[...d.querySelectorAll('button,summary,[tabindex="-1"].ib-h,input')].filter(x=>x.getClientRects().length);if(!f.length)return;const i=f.indexOf(document.activeElement);if(e.shiftKey&&(i<=0)){e.preventDefault();focusIn(f[f.length-1]);}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();focusIn(f[0]);}return;}
   if(e.altKey||e.ctrlKey||e.metaKey)return;
   const rows=[...d.querySelectorAll('.inbox-row')], row=document.activeElement&&document.activeElement.closest('.inbox-row'), ri=rows.indexOf(row);
-  const go=i=>{const r=rows[Math.max(0,Math.min(rows.length-1,i))];if(r)r.querySelector('.ib-h').focus();};
+  const go=i=>{const r=rows[Math.max(0,Math.min(rows.length-1,i))];if(r)focusIn(r.querySelector('.ib-h'));};
   const k=e.key.toLowerCase();
   if(k==='j'||e.key==='ArrowDown'){e.preventDefault();go(ri+1);return;}
   if(k==='k'||e.key==='ArrowUp'){e.preventDefault();go(ri<0?0:ri-1);return;}
@@ -2568,7 +2573,7 @@ function paintInbox(focusIndex){
         /* spec 052 FR-047/FR-048: the row's buttons go busy, then the row shows the answer for 600ms, folds away in 200ms, then the list repaints */
         if(row.classList.contains('settled')||row.dataset.answering)return; row.dataset.answering='1';
         act.querySelectorAll('button').forEach(x=>{if(x!==ev.currentTarget)x.disabled=true;});const done=busy(ev.currentTarget,'Sending…');
-        row.querySelector('.ib-h').focus();src.click();
+        focusIn(row.querySelector('.ib-h'));src.click();
         setTimeout(()=>{const left=needsMeOrder().length;announce(word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
           if(!row.isConnected){done();paintInbox(i);return;}
           row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(k==='deny'?'no':k==='other'?'':'yes');p.textContent=k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
@@ -2580,7 +2585,7 @@ function paintInbox(focusIndex){
     body.appendChild(row);
   });
   /* FR-033: focus a heading (it reads the agent and its request through the row), never a button */
-  if(focusIndex!=null){const hs=body.querySelectorAll('.ib-h');const h=hs[Math.min(focusIndex,hs.length-1)]||body.querySelector('.inbox-empty')||$('inboxClose');if(h)h.focus();}
+  if(focusIndex!=null){const hs=body.querySelectorAll('.ib-h');const h=hs[Math.min(focusIndex,hs.length-1)]||body.querySelector('.inbox-empty')||$('inboxClose');if(h)focusIn(h);}
 }
 function openNextNeedsMe(){
   const list=needsMeOrder(); if(!list.length){toast('Nobody needs you right now.',2600);return;}
@@ -2635,7 +2640,7 @@ const kbdHTML=keys=>(keys||[]).map(k=>'<kbd>'+esc(k)+'</kbd>').join('');
 /* spec 074 (review on PR 597): the element focus goes back to. When the office was drawn again while the box was open, the old desk
    node is gone: take the shown one with the same data-id (the desk, or the list row in the list view) */
 function liveBack(b){if(!b||b.isConnected||!b.dataset||!b.dataset.id)return b;return [...document.querySelectorAll('[data-id="'+CSS.escape(b.dataset.id)+'"]')].find(x=>x.getClientRects().length)||null;}
-function closePalette(back){const d=$('palDlg');if(!d)return;d.remove();palNav=null;const b=liveBack(palBack);palBack=null;if(back!==false&&b&&b.isConnected&&b.getClientRects().length)b.focus();}
+function closePalette(back){const d=$('palDlg');if(!d)return;d.remove();palNav=null;const b=liveBack(palBack);palBack=null;if(back!==false&&b&&b.isConnected&&b.getClientRects().length)focusIn(b);}
 /* spec 074 (issue 548): the same box in a "Go to" mode with levels (start, folders, agents, chats). null = Ctrl+K's search. */
 let palNav=null;
 const NAV_START=()=>[{kind:'start',q:'',active:0}];
@@ -2643,7 +2648,7 @@ const PAL_FOOT='<kbd>↑</kbd><kbd>↓</kbd> move <kbd>Enter</kbd> open <kbd>Esc
 const NAV_FOOT='<kbd>↑</kbd><kbd>↓</kbd> move <kbd>Enter</kbd> open <kbd>Esc</kbd> back <kbd>F</kbd> folders <kbd>C</kbd> and a number: a chat';
 function openPalette(opts){
   const nav=!!(opts&&opts.nav);
-  if($('palDlg')){if(nav!==!!palNav){palNav=nav?NAV_START():null;palMode();}$('palIn').focus();return;}
+  if($('palDlg')){if(nav!==!!palNav){palNav=nav?NAV_START():null;palMode();}focusIn($('palIn'));return;}
   closeInbox();
   palBack=document.activeElement&&document.activeElement!==document.body?document.activeElement:null;
   palNav=nav?NAV_START():null;
@@ -2658,7 +2663,7 @@ function openPalette(opts){
     if(!navRecording&&NAV.comboMatches(e,NAV_KEY,IS_MAC)){e.preventDefault();e.stopPropagation();if(palNav)closePalette();else{palNav=NAV_START();palMode();}return;}
     if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(palNav&&navBack())return;closePalette();return;} /* FR-007: back one level, closes at the start */
     if(e.key==='Backspace'&&palNav&&!inp.value&&palNav.length>1){e.preventDefault();e.stopPropagation();navBack();return;}
-    if(e.key==='Tab'){e.preventDefault();inp.focus();return;} /* the input is the only stop: Tab stays inside */
+    if(e.key==='Tab'){e.preventDefault();focusIn(inp);return;} /* the input is the only stop: Tab stays inside */
     if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(palItems.length)palSetActive((palActive+(e.key==='ArrowDown'?1:-1)+palItems.length)%palItems.length);return;}
     if(e.key==='Home'&&e.ctrlKey){e.preventDefault();palSetActive(0);return;}
     if(e.key==='End'&&e.ctrlKey){e.preventDefault();palSetActive(palItems.length-1);return;}
@@ -2667,7 +2672,7 @@ function openPalette(opts){
   });
   inp.addEventListener('input',()=>{if(palNav){navTop().q=inp.value;navShow(true);}else palPaint(inp.value);});
   palMode();
-  inp.focus();
+  focusIn(inp);
 }
 /* the labels, foot line and list of the current mode */
 function palMode(){
@@ -2742,7 +2747,7 @@ function palSetActive(i){
   list.querySelectorAll('[role="option"]').forEach(o=>o.setAttribute('aria-selected',String(+o.dataset.i===i)));
   const o=$('palO'+i);
   inp.setAttribute('aria-activedescendant',o?o.id:'');
-  if(o)o.scrollIntoView({block:'nearest'});
+  if(o)SCROLL.reveal(o);
 }
 function palRun(i){
   const x=palItems[i]; if(!x)return;
@@ -2752,10 +2757,10 @@ function palRun(i){
   if(x.run===openKbdHelp){openKbdHelp(b);return;}
   x.run();
   /* an action that moves focus (a chat, the inbox, Settings) keeps it; otherwise focus goes back to where it was */
-  setTimeout(()=>{const f=document.activeElement;if((!f||f===document.body)&&b&&b.isConnected&&b.getClientRects().length)b.focus();},0);
+  setTimeout(()=>{const f=document.activeElement;if((!f||f===document.body)&&b&&b.isConnected&&b.getClientRects().length)focusIn(b);},0);
 }
 /* FR-043: the shortcut sheet */
-function closeKbdHelp(){const d=$('kbdDlg');if(!d)return;d.remove();const b=palBack;palBack=null;if(b&&b.isConnected&&b.getClientRects().length)b.focus();}
+function closeKbdHelp(){const d=$('kbdDlg');if(!d)return;d.remove();const b=palBack;palBack=null;if(b&&b.isConnected&&b.getClientRects().length)focusIn(b);}
 function openKbdHelp(back){
   if($('kbdDlg'))return;
   palBack=back instanceof Element?back:(document.activeElement&&document.activeElement!==document.body?document.activeElement:null);
@@ -2789,7 +2794,7 @@ function openKbdHelp(back){
   d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><div class="kb-cols"><div class="kb-col"><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In Go to (the navigator)</h4><table class="kb-t"><tbody>'+inNav.map(r=>row(r[0],r[1])).join('')+'</tbody></table></div><div class="kb-col"><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table></div></div><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeKbdHelp();});
-  d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeKbdHelp();}else if(e.key==='Tab'){e.preventDefault();$('kbdClose').focus();}});
+  d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeKbdHelp();}else if(e.key==='Tab'){e.preventDefault();focusIn($('kbdClose'));}});
   $('kbdClose').onclick=closeKbdHelp;
   /* spec 052 (2026-10-21, round 1): focusing Close must not scroll the sheet to its end (the title and Ctrl K were hidden at 1280x800) */
   $('kbdClose').focus({preventScroll:true});d.querySelector('.kbd-dlg').scrollTop=0;
@@ -3032,8 +3037,8 @@ function toggleFloors(on){
   const pop=$('floorsPop'),btn=$('floorsBtn');
   const show=on===undefined?pop.hidden:on;
   pop.hidden=!show; btn.setAttribute('aria-expanded',String(show));
-  if(show){floorsErr='';renderFloorsPanel();const f=pop.querySelector('button,input,select');if(f)f.focus();}
-  else if(document.activeElement&&pop.contains(document.activeElement))btn.focus();
+  if(show){floorsErr='';renderFloorsPanel();const f=pop.querySelector('button,input,select');if(f)focusIn(f);}
+  else if(document.activeElement&&pop.contains(document.activeElement))focusIn(btn);
 }
 const roomsOnFloor=id=>roomsInOrder().filter(r=>(floorById(r.floor)||{}).id===id);
 /* Attention on a floor that is off (FR-010, maintainer decision in issue #122): plain text in the Floors controls only,
@@ -3078,7 +3083,7 @@ function paintFloors(box,html){
   box.innerHTML=html;
   if(!fk)return;
   const el=fk.id?box.querySelector('#'+CSS.escape(fk.id)):box.querySelector(`[data-fl="${CSS.escape(fk.fl)}"][data-floor="${CSS.escape(fk.key)}"],[data-fl="${CSS.escape(fk.fl)}"][data-room="${CSS.escape(fk.key)}"]`);
-  if(el&&!el.disabled)el.focus();else box.focus();
+  if(el&&!el.disabled)focusIn(el);else focusIn(box);
 }
 function renderFloorsPanel(){
   const pop=$('floorsPop'); if(!pop||pop.hidden||!floorsLive())return;
@@ -3122,7 +3127,7 @@ async function floorAction(el){
   if(fl==='create'){
     const box=el.closest('.floors-ui'),inp=box&&box.querySelector('.fl-new input'),name=inp?inp.value:'',iid=inp&&inp.id;
     const r=await floorCall(bridge.createFloor(name));
-    if(r&&r.ok){const i2=iid&&document.getElementById(iid);if(i2){i2.value='';i2.focus();}}
+    if(r&&r.ok){const i2=iid&&document.getElementById(iid);if(i2){i2.value='';focusIn(i2);}}
     return;
   }
 }
@@ -3602,7 +3607,7 @@ function openCapDialog(a){
   $('cdSave').onclick=()=>{const v=parseFloat($('cdVal').value);if(!(v>=min)||v>(usd?1e4:1e6)){const er=$('cdErr');er.textContent=usd?'Enter an amount from $'+MIN_USD_CAP+' to $10,000, or use Remove limit.':'Enter a number from '+MIN_CAP+' (the runtime minimum), or use Remove limit.';er.hidden=false;return;}apply(Math.round(v*100)/100);};
   d.addEventListener('click',e=>{if(e.target===d)closeCapDlg();});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeCapDlg();}if(e.key==='Enter'&&e.target.id==='cdVal')$('cdSave').click();});
-  $('cdVal').focus();
+  focusIn($('cdVal'));
 }
 document.addEventListener('click',e=>{const c=e.target.closest('#capChip');if(!c)return;const a=byId(ui.selected);if(a)openCapDialog(liveRoot(a));});
 /* The runtime reached the cap and waits for the user: inline notice with Raise limit / Remove limit / Stop here (spec 052 FR-075: "Raise limit" for both units: it raises Durbar's limit, it buys nothing). */
@@ -3621,7 +3626,7 @@ function showLimit(a,e){
     settleLimit(a,choice.kind);
   };
   row.appendChild(amt);
-  mk('Raise limit','primary',usd?'Let the agent use this many more dollars (counted from what it used or the limit, whichever is higher) and continue':'Raise the limit by this many AI credits and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){amt.focus();return;}answer({kind:'add',credits:Math.round(v*100)/100});});
+  mk('Raise limit','primary',usd?'Let the agent use this many more dollars (counted from what it used or the limit, whichever is higher) and continue':'Raise the limit by this many AI credits and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){focusIn(amt);return;}answer({kind:'add',credits:Math.round(v*100)/100});});
   mk('Remove limit','session','Remove the limit and let the agent continue',()=>answer({kind:'unset'}));
   mk('Stop here','danger','Cancel the blocked request. The agent is ready for your next message (the limit stays).',()=>answer({kind:'cancel'}));
   n.appendChild(row);
@@ -3648,7 +3653,7 @@ function showPlan(a,e){
   n.appendChild(row);
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   a.plan={requestId:e.requestId,n,st,row};
-  if(ui.selected===a.id)ok.focus();
+  if(ui.selected===a.id)focusIn(ok);
 }
 function settlePlan(a,action){
   const P=a.plan;if(!P)return;a.plan=null;
@@ -3695,7 +3700,7 @@ function showQuestion(a,e){
   };
   const ok=document.createElement('button');ok.type='button';ok.className='btn primary';ok.textContent='Answer';
   ok.onclick=()=>{const ans={};qs.forEach((q,i)=>{const o=others[i].value.replace(/\s+/g,' ').trim();const v=[...picks[i]].concat(o?[o]:[]).join(', ');if(v)ans[q.question]=v;});
-    if(Object.keys(ans).length<qs.length){const miss=qs.findIndex(q=>!ans[q.question]);(others[miss]||ok).focus();toast('Choose an answer for each question, or Skip.',3500);return;}send(ans);};
+    if(Object.keys(ans).length<qs.length){const miss=qs.findIndex(q=>!ans[q.question]);focusIn(others[miss]||ok);toast('Choose an answer for each question, or Skip.',3500);return;}send(ans);};
   const skip=document.createElement('button');skip.type='button';skip.className='btn danger';skip.textContent='Skip';skip.title='Do not answer; the agent decides itself';skip.onclick=()=>send(null);
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st};
@@ -3742,7 +3747,7 @@ function showElicitation(a,e){
     busy(true);
     const r=bridge.answerElicitation?await bridge.answerElicitation(a.id,e.requestId,action,values).catch(err=>({ok:false,error:String(err&&err.message||err)})):{ok:false,error:'This build cannot answer MCP requests.'};
     if(!r||!r.ok){busy(false);const bad=r&&r.field?inputs.find(x=>x.f.name===r.field):null;
-      if(bad){bad.err.textContent=r.error||'Check this field.';bad.el.setAttribute('aria-invalid','true');bad.el.focus();}
+      if(bad){bad.err.textContent=r.error||'Check this field.';bad.el.setAttribute('aria-invalid','true');focusIn(bad.el);}
       else addNote(liveChat(a),'Could not answer: '+esc((r&&r.error)||'unknown error'),true);return;}
     settleQuestion(a,null,action);
   };
@@ -3756,7 +3761,7 @@ function showElicitation(a,e){
     const open=btn('Open in browser','primary q-open','Open '+(R.host||'the page')+' in your browser',async()=>{
       const r=bridge.openElicitationUrl?await bridge.openElicitationUrl(a.id,e.requestId).catch(()=>({ok:false})):{ok:false,error:'This build cannot open it.'};
       if(!r||!r.ok){addNote(liveChat(a),'Could not open the page: '+esc((r&&r.error)||'unknown error'),true);return;}
-      open.className='btn q-open';open.textContent='Open again';done.hidden=false;done.focus();announce('Opened '+(R.host||'the page')+' in your browser. Press Done when you have finished there.');});
+      open.className='btn q-open';open.textContent='Open again';done.hidden=false;focusIn(done);announce('Opened '+(R.host||'the page')+' in your browser. Press Done when you have finished there.');});
     row.appendChild(open);row.appendChild(done);
   }else{
     const form=document.createElement('form');form.className='q-form';form.noValidate=true;form.setAttribute('aria-label','Form from '+(R.source||'an MCP server'));
@@ -3791,7 +3796,7 @@ function showElicitation(a,e){
       let first=null;const values={};
       for(const x of inputs){const m=elicitCheck(x.f,x.el);x.err.textContent=m;if(m){x.el.setAttribute('aria-invalid','true');if(!first)first=x;}else x.el.removeAttribute('aria-invalid');
         if(!m){if(x.f.type==='boolean')values[x.f.name]=x.el.checked;else{const v=x.el.value;if(v.trim()!=='')values[x.f.name]=(x.f.type==='number'||x.f.type==='integer')?Number(v):v;}}}
-      if(first){first.el.focus();announce(first.err.textContent);return;}
+      if(first){focusIn(first.el);announce(first.err.textContent);return;}
       send('accept',values);
     };
     form.onsubmit=ev=>{ev.preventDefault();submit();};
@@ -3989,7 +3994,7 @@ function roAskHint(a,n){
 }
 /* the button (or its copy in the answer bar) opens the mode menu anchored to itself; a second press closes it */
 function roAskOpen(a,b){
-  if(document.getElementById('modeMenu')&&b.getAttribute('aria-expanded')==='true'){closeModeMenu();b.focus();return;}
+  if(document.getElementById('modeMenu')&&b.getAttribute('aria-expanded')==='true'){closeModeMenu();focusIn(b);return;}
   const r=b.getBoundingClientRect();if(openModeMenu(a,r.left,r.bottom+4,b,{modesOnly:true}))b.setAttribute('aria-expanded','true');
 }
 /* spec 003 FR-096: after a switch out of Read-only the button goes; when the switch came from it, one line says to ask the agent again
@@ -4050,16 +4055,16 @@ function renderGrants(){
     const f=grantsFocus;grantsFocus=null;
     const btns=[...box.querySelectorAll('[data-revoke]')];
     const t=f==='chip'?$('grantsBtn'):btns[Math.min(f,btns.length-1)];
-    if(t)t.focus();
+    if(t)focusIn(t);
   }
   if(!gs.length&&hadFocus&&!box.contains(document.activeElement)){ /* none left: the chips are gone; the composer is the same neighbour as after answering a card */
-    grantsFocus=null;grantsAllBusy='';const m=$('msgInput');if(m)m.focus();announce('All permissions revoked.');
+    grantsFocus=null;grantsAllBusy='';const m=$('msgInput');if(m)focusIn(m);announce('All permissions revoked.');
   }
 }
 function closeGrants(toChip){
   if(!grantsOpen)return;grantsOpen=false;
   const b=$('grantsBtn'),p=$('grantsPop');if(b)b.setAttribute('aria-expanded','false');if(p)p.hidden=true;
-  if(toChip&&b)b.focus();
+  if(toChip&&b)focusIn(b);
 }
 async function revokeAllGrants(){
   const r=liveRoot(byId(ui.selected));if(!r)return;const gs=(r.grants||[]).slice();
@@ -4228,6 +4233,7 @@ function onLiveEvent(e){
     if(p&&a.profileList){const known=a.profileList.find(x=>x.id===p.id);if(known)Object.assign(p,{source:known.source,description:known.description,path:known.path});}
     a.profile=p;updateAgentChip(a);scheduleRender();return;}
   case 'model':onModelEvent(a,e);return;
+  case 'autoTierFailed':onAutoTierFailed(a,e);return;
   case 'compaction':onCompaction(a,e);return;
   case 'thinking':{if(a.coffee&&!a.limit)endCoffee(a,'the agent went on');const t=ensureTurn(a);tThink(t.T,e.reasoningId,e.delta);setState(a,'thinking',null);return;}
   case 'output':{const t=ensureTurn(a);const out=tText(t.T,e);if(out!=null)a.lastOutput=out;if(!a.coffee)setState(a,'working',null);return;} /* spec 068: text after a usage limit does not end the break */
@@ -4371,11 +4377,11 @@ function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the th
   m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}" title="${esc(MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
-  m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)mi.focus();return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
+  m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)focusIn(mi);return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('[data-mode],[data-act],[data-op]')],i=it.indexOf(document.activeElement);
-    if(e.key==='ArrowDown'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
-    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
-  (m.querySelector('[aria-checked="true"]')||m.querySelector('button')).focus();
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(it[(i+1)%it.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(it[(i+it.length-1)%it.length]);}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))focusIn(anchor);}});
+  focusIn(m.querySelector('[aria-checked="true"]')||m.querySelector('button'));
   const c=$('modeChip');if(c&&anchor===c)c.setAttribute('aria-expanded','true');
   return true;
 }
@@ -4435,7 +4441,7 @@ function refocusAnchor(anchor){
   let t=anchor&&document.contains(anchor)?anchor:null;
   if(!t&&anchor&&(anchor.id==='modeChip'||anchor.id==='modelChip'||anchor.id==='compactBtn'||anchor.id==='ctxChip'||anchor.id==='agentChip'))t=$(anchor.id);
   if(!t&&anchor&&anchor.dataset&&anchor.dataset.id)t=document.querySelector('#stage [data-id="'+anchor.dataset.id+'"]');
-  if(t&&t.focus)t.focus();
+  if(t&&t.focus)focusIn(t);
 }
 async function changeMode(a,mode,anchor){
   try{await changeModeInner(a,mode,anchor);}finally{refocusAnchor(anchor);}
@@ -4501,7 +4507,7 @@ function openFolderMenu(r,x,y,anchor){
       +(bridge.setFolderHidden?it('hide','Hide','Out of the office; its sessions keep running'):'')
       +it('rm','Remove folder','Ends its sessions; nothing on disk is deleted','mm-danger');
     place();
-    (focusMove&&m.querySelector('[data-fact="floor"]')||m.querySelector('button')).focus();
+    focusIn(focusMove&&m.querySelector('[data-fact="floor"]')||m.querySelector('button'));
   };
   const paintFloors=()=>{
     const cur=(floorById(r.floor)||{}).id;
@@ -4509,7 +4515,7 @@ function openFolderMenu(r,x,y,anchor){
     m.innerHTML=`<button type="button" role="menuitem" data-fact="back"><span class="mt"><b>‹ Back</b></span></button>`+FLOORS.floors.map(f=>{const here=f.id===cur,n=roomsOnFloor(f.id).length;
       return `<button type="button" role="menuitemradio" data-fact="to" data-floor="${esc(f.id)}" aria-checked="${here}"${here?' aria-disabled="true"':''}><span class="mt"><b>${esc(f.name)}</b><small>${esc(here?'Here now':(f.on?n+' folder'+(n===1?'':'s'):'Off: the folder leaves the office'))}</small></span><span class="ck">${here?'✓':''}</span></button>`;}).join('');
     place();
-    (m.querySelector('[data-fact="to"]:not([aria-disabled="true"])')||m.querySelector('button')).focus();
+    focusIn(m.querySelector('[data-fact="to"]:not([aria-disabled="true"])')||m.querySelector('button'));
   };
   document.body.appendChild(m);paintTop(false);
   m.addEventListener('click',e=>{const t=e.target.closest('[data-fact]');if(!t)return;const f=t.dataset.fact;
@@ -4521,10 +4527,10 @@ function openFolderMenu(r,x,y,anchor){
     const ag=agents.find(q=>!q.parent&&q.room===r.id);
     if(f==='new'){if(ag)newSession(ag);}else if(f==='sched')openSchedules(r);else if(f==='rename')renameFolder(r,anchor);else if(f==='hide')hideFolder(r,true);else removeFolder(r);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-fact]')],i=its.indexOf(document.activeElement),sub=!!m.querySelector('[data-fact="back"]');
-    if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
     else if(e.key==='ArrowRight'&&document.activeElement&&document.activeElement.dataset.fact==='floor'){e.preventDefault();paintFloors();}
     else if(sub&&(e.key==='ArrowLeft'||e.key==='Escape')){e.preventDefault();e.stopPropagation();paintTop(true);}
-    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))focusIn(anchor);}});
 }
 /* spec 033 FR-024: the menu's move is the Floors panel's (moveRoomToFloor, FR-005), then the action toast with Undo (spec 030/052) */
 async function moveFolderByMenu(r,floorId,anchor){
@@ -4569,7 +4575,7 @@ async function ensureModels(k){
 }
 function modelLabel(info){
   const m=modelsFor(info.adapterId).find(x=>x.id===(info.model||'auto')), nm=m?m.name:(info.model||'auto')==='auto'?'Auto':info.model;
-  const eff=(info.effort?' · '+info.effort+' effort':'')+(info.tier==='long'?' · long context':'');
+  const eff=(info.effort?' · '+info.effort+' effort':'')+(info.tier==='long'?' · long context':'')+((info.model||'auto')==='auto'&&DM.autoTierName(info.autoTier)?' · '+info.autoTier+' routing':''); /* spec 007 FR-013: only once the agent chose a tier */
   const mult=m&&m.multiplier!=null?' · ×'+m.multiplier+' credit multiplier':'';
   return {name:nm,text:nm+eff,title:'Model: '+nm+eff+mult+(m&&m.multiplier!=null?' (as reported by your Copilot account)':'')};
 }
@@ -4662,8 +4668,8 @@ function toggleDefaults(on,back){
     pop.style.top=Math.round(r.bottom+6)+'px';
     pop.style.left=Math.round(Math.max(14,Math.min(r.left,innerWidth-pop.offsetWidth-14)))+'px';
     const first=[...pop.querySelectorAll('select,button')].find(x=>!x.hidden&&!x.disabled&&x.getClientRects().length);
-    if(first)first.focus();
-  }else if(back)btn.focus();
+    if(first)focusIn(first);
+  }else if(back)focusIn(btn);
 }
 function wireDefaults(){
   const pop=$('defaultsPop'),btn=$('defaultsBtn'); if(!pop||!btn)return;
@@ -4806,9 +4812,9 @@ async function openAgentMenu(a0,x,y,anchor){
     if(busyNow(a)){a.pendingProfile=p;updateAgentChip(a);addNote(liveChat(a),'The profile changes to '+esc(p.name)+' when the current reply ends.');return;}
     applyProfile(a,p,anchor);});
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('button')],i=it.indexOf(document.activeElement);
-    if(e.key==='ArrowDown'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
-    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeAgentMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
-  (m.querySelector('[aria-checked="true"]')||m.querySelector('button')).focus();
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(it[(i+1)%it.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(it[(i+it.length-1)%it.length]);}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeAgentMenu();if(anchor&&anchor.focus&&document.contains(anchor))focusIn(anchor);}});
+  focusIn(m.querySelector('[aria-checked="true"]')||m.querySelector('button'));
 }
 /* select (null id = default); a repository agent asks once with what it brings (spec 043 US2) */
 async function applyProfile(a,p,anchor){
@@ -4839,6 +4845,11 @@ function openModelMenu(a0,x,y,anchor){
   let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
   h+='<p class="mm-h">Model</p>'+list.map(m=>{const chk=m.id===curId,w=DM.windowOf(m);
     return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${esc(DM.priceLine(m))}${w?' · '+esc(DM.fmtTokens(w))+' window':''}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
+  /* spec 007 FR-013/FR-017: the Auto routing tier, a group like the effort (Copilot's Auto only); a locked organization tier shows disabled */
+  const ats=curId==='auto'?DM.autoTiersOf(cur):[];
+  if(ats.length){const atNow=DM.autoTierOf(cur,a.info.autoTier),lock=DM.autoTierLocked(cur);
+    /* review on PR 642: the locked reason is the buttons' description (aria-describedby), not only a title; a lock with no known name still locks */
+    h+='<p class="mm-h">Auto routing</p><div class="mm-seg" role="group" aria-label="Auto routing"'+(lock?' aria-describedby="mmAutoLock"':'')+'>'+ats.map(t=>`<button type="button" data-autotier="${esc(t)}" aria-pressed="${t===atNow}"${lock?' aria-disabled="true" aria-describedby="mmAutoLock"':dis} title="${esc(DM.AUTO_TIER_HINT[t]+(lock?'. Set by your organization\'s Copilot policy.':'.'))}">${esc(DM.autoTierName(t))}</button>`).join('')+'</div>'+(lock?`<p class="mm-why mm-lock" id="mmAutoLock" role="note">Set by your organization's Copilot policy${atNow?': '+esc(DM.autoTierName(atNow)):''}.</p>`:'');}
   if((cur.efforts||[]).length)h+='<p class="mm-h">Reasoning effort</p><div class="mm-seg" role="group" aria-label="Reasoning effort">'+['',...cur.efforts].map(x=>{const on2=(a.info.effort||'')===x;return `<button type="button" data-effort="${esc(x)}" aria-pressed="${on2}"${dis}>${x?esc(x):'Default'}</button>`;}).join('')+'</div>';
   /* spec 005 FR-050: the window choice of this model only: Long context where it has one, else the one window it has */
   const w0=DM.windowOf(cur);
@@ -4855,14 +4866,15 @@ function openModelMenu(a0,x,y,anchor){
     if(b.dataset.cancelq){closeModelMenu();cancelPendingModel(a,anchor);return;}
     if(b.getAttribute('aria-disabled')==='true')return;
     closeModelMenu();
-    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick,a.info.adapterId);chooseModel(a,{model:t.id,contextTier:t.id===cur.id?tier:'default'},anchor);}
+    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick,a.info.adapterId),own=a.info.autoTier;chooseModel(a,Object.assign({model:t.id,contextTier:t.id===cur.id?tier:'default'},t.id!==cur.id&&own&&DM.autoTiersOf(t).includes(own)&&!DM.autoTierLocked(t)?{autoTier:own}:{}),anchor);} /* spec 007 FR-016: back on Auto with the agent's own tier */
     else if(b.dataset.effort!==undefined)chooseModel(a,{model:cur.id,effort:b.dataset.effort||null,contextTier:tier},anchor);
     else if(b.dataset.tier)chooseModel(a,{model:cur.id,contextTier:tier==='long'?'default':'long'},anchor);
+    else if(b.dataset.autotier!==undefined)chooseAutoTier(a,b.dataset.autotier,anchor);
   });
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('button')],i=it.indexOf(document.activeElement);
-    if(e.key==='ArrowDown'||e.key==='ArrowRight'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'||e.key==='ArrowLeft'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
-    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModelMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
-  (m.querySelector('[aria-checked="true"]')||m.querySelector('button')).focus();
+    if(e.key==='ArrowDown'||e.key==='ArrowRight'){e.preventDefault();focusIn(it[(i+1)%it.length]);}else if(e.key==='ArrowUp'||e.key==='ArrowLeft'){e.preventDefault();focusIn(it[(i+it.length-1)%it.length]);}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModelMenu();if(anchor&&anchor.focus&&document.contains(anchor))focusIn(anchor);}});
+  focusIn(m.querySelector('[aria-checked="true"]')||m.querySelector('button'));
   const c=$('modelChip');if(c&&anchor===c)c.setAttribute('aria-expanded','true');
 }
 
@@ -4878,32 +4890,57 @@ async function chooseModelInner(a,req,anchor){
   const cap=isUsdCap(a)?undefined:a.info.maxAiCredits,used=a.usage?a.usage.nano/1e9:0; /* the switch estimate is in AI credits: a dollar cap is not compared */
   const cf=DM.confirmFor(cur,tgt,{tokens,cap,used,tierFrom,tierTo});
   const confirm={};
-  if(cf.needed){
+  if(cf.needed||(req.autoTier&&tgt.id==='auto'&&DM.autoTierConfirm('efficiency',req.autoTier).needed)){
     const lines=cf.reasons.map(r=>r.text);
     lines.push('Price now: '+DM.priceLine(cur,tierFrom)+'. New: '+DM.priceLine(tgt,tierTo)+'.');
     if(cf.estimate!==undefined&&!cf.overCap)lines.push('Reading this conversation once would cost about '+DM.fmtCredits(cf.estimate)+' AI credits with '+tgt.name+' (an estimate, if nothing is cached).');
     if(cap>0)lines.push('Your spending limit of '+fmtCap(cap)+' AI credits is not changed.');
     if(busyNow(a))lines.push('A reply is running: the switch applies when it ends.'+(ctrlOf(a).unverified?' If you stop the reply, whether the switch still applies is not verified.':''));
     if(ctrlOf(a).unverified)lines.push(UNVERIFIED_WHY);
-    const r=await askDialog({title:'Switch '+a.name+' to '+tgt.name+(tierTo==='long'?' (long context)':'')+'?',body:'The conversation is kept. From the next message this agent uses the new model.',lines,returnFocus:anchor,
+    /* review on PR 642: back on Auto with the agent's own tier: the dialog names it, with the higher-tier reasons when it is above Efficiency */
+    const at=req.autoTier&&tgt.id==='auto'?req.autoTier:'';
+    if(at)lines.unshift(...DM.autoTierConfirm('efficiency',at).reasons,'Auto routes with '+DM.autoTierName(at)+', the tier this agent chose before.');
+    const r=await askDialog({title:'Switch '+a.name+' to '+tgt.name+(at?' ('+DM.autoTierName(at)+' routing)':'')+(tierTo==='long'?' (long context)':'')+'?',body:'The conversation is kept. From the next message this agent uses the new model.',lines,returnFocus:anchor,
       buttons:[{label:'Cancel',value:null},{label:cf.compaction?'Compact and switch':cf.overCap?'Switch anyway':'Switch',value:'ok',cls:'primary'+(cf.overCap?' warn':'')}]});
     if(!r)return;
     if(cf.compaction)confirm.compaction='accept';
   }
   /* an effort the new model does not support is cleared (its default), never sent: the runtime would refuse the switch */
   const effort=req.effort!==undefined?req.effort:(a.info.effort&&tgt.id!==cur.id&&!(tgt.efforts||[]).includes(a.info.effort)?null:undefined);
-  await sendModelChange(a,Object.assign({model:tgt.id,contextTier:tierTo},effort!==undefined?{effort}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom},tgt,anchor});
+  await sendModelChange(a,Object.assign({model:tgt.id,contextTier:tierTo},effort!==undefined?{effort}:{},req.autoTier?{autoTier:req.autoTier}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom,autoTier:a.info.autoTier},tgt,anchor});
+}
+/* spec 007 FR-014: a tier of Auto, switched like a model (same call, Undo, queue); a higher tier asks first with the app's dialog */
+async function chooseAutoTier(a,to,anchor){
+  try{
+    const cur=modelOf('auto',a.info.adapterId);
+    if((a.info.model||'auto')!=='auto'||!DM.autoTiersOf(cur).includes(to)||DM.autoTierLocked(cur))return;
+    const from=DM.autoTierOf(cur,a.info.autoTier);
+    if(from===to&&!a.pendingModel)return;
+    const cf=DM.autoTierConfirm(from,to);
+    if(cf.needed){
+      const lines=cf.reasons.slice(), cap=isUsdCap(a)?undefined:a.info.maxAiCredits;
+      if(cap>0)lines.push('Your spending limit of '+fmtCap(cap)+' AI credits is not changed.');
+      if(busyNow(a))lines.push('A reply is running: the change applies when it ends.');
+      if(ctrlOf(a).unverified)lines.push(UNVERIFIED_WHY);
+      const r=await askDialog({title:'Switch '+a.name+' to '+DM.autoTierName(to)+' routing?',body:'The conversation is kept. From the next message Auto routes with the new preference.',lines,returnFocus:anchor,
+        buttons:[{label:'Cancel',value:null},{label:'Switch',value:'ok',cls:'primary'}]});
+      if(!r)return;
+    }
+    await sendModelChange(a,{model:'auto',autoTier:to,contextTier:tierOf(a)},{prev:{model:'auto',effort:a.info.effort,tier:tierOf(a),autoTier:a.info.autoTier},tgt:cur,anchor}); /* Undo restores the agent's own choice, "none" included */
+  }finally{refocusAnchor(anchor);}
 }
 async function sendModelChange(a,req,ctx){
   const res=await bridge.setModel(a.id,req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok){toast('Could not change the model: '+esc((res&&res.error)||'unknown error'),6000);return;}
-  const r=res.result||{},nm=ctx.tgt.name+(req.contextTier==='long'?' (long context)':'');
+  const r=res.result||{},nm=ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+' routing)':'')+(req.contextTier==='long'?' (long context)':'');
   if(r.status==='applied'){
+    if(req.autoTier){a.info.autoTier=req.autoTier;updateModelChip(a);} /* spec 007 FR-016: also when the runtime sends no model change for a tier */
+    else if(req.autoTier===null){a.info.autoTier=undefined;updateModelChip(a);}
     /* spec 052 (2026-10-21): one Undo toast per agent; a newer switch replaces the older toast (only the last switch can be undone) */
     if(!ctx.undo){document.querySelectorAll('#toasts .toast[data-undo-model="'+CSS.escape(a.id)+'"]').forEach(t=>t.remove());const t=toastAction(esc(a.name)+': <b>'+esc(nm)+'</b> from the next message.','Undo',()=>undoModel(a,ctx.prev,ctx.anchor),8000);if(t&&t.dataset)t.dataset.undoModel=a.id;}
     else toast(esc(a.name)+': back to <b>'+esc(nm)+'</b>.',3800);
   }else if(r.status==='queued'){
-    a.pendingModel={queueId:r.queueId,name:ctx.tgt.name,tier:req.contextTier,prev:ctx.prev};updateModelChip(a);
+    a.pendingModel={queueId:r.queueId,name:ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+')':''),tier:req.contextTier,prev:ctx.prev};updateModelChip(a);
     toast(esc(a.name)+' is replying: <b>'+esc(nm)+'</b> applies when the reply ends.',5000);
   }else if(r.status==='needs-confirmation'){
     const cf=r.confirmation||{};
@@ -4914,7 +4951,9 @@ async function sendModelChange(a,req,ctx){
 }
 async function undoModel(a,prev,anchor){
   if(!bridge.setModel)return;
-  const req={model:prev.model,contextTier:prev.tier,effort:prev.effort||null};
+  /* spec 007 FR-014/FR-016: back to the agent's own tier, or to none of its own (null: the default again); never against a lock */
+  const am=modelOf('auto',a.info.adapterId),tierOk=prev.model==='auto'&&DM.autoTiersOf(am).length&&!DM.autoTierLocked(am);
+  const req=Object.assign({model:prev.model,contextTier:prev.tier,effort:prev.effort||null},tierOk?{autoTier:DM.autoTiersOf(am).includes(prev.autoTier)?prev.autoTier:null}:{});
   await sendModelChange(a,req,{prev,tgt:modelOf(prev.model),anchor,undo:true});
   refocusAnchor(anchor);
 }
@@ -4933,6 +4972,7 @@ function onModelEvent(a,e){
     a.info.model=e.model;
     if(e.cause==='user'||e.effort!==undefined)a.info.effort=e.effort;
     a.info.tier=e.tier==='long'?'long':undefined;
+    if(e.cause==='user'&&e.autoTier)a.info.autoTier=e.autoTier; /* spec 007 FR-016 */
     a.role=roleFor(a.info);
   }
   a.ctxWaiting=true; /* the runtime reports the new window with the next message */
@@ -4945,6 +4985,13 @@ function onModelEvent(a,e){
     if(e.cause!=='user'){n.classList.remove('info');toast(esc(a.name)+': the runtime switched to <b>'+esc(nm(e.model))+'</b> ('+(e.cause==='rate-limit'?'rate limit':e.cause==='fallback'?'request refused':'its own choice')+').',5200);}
   }
   updateModelChip(a);updateCtxChip(a);scheduleRender();
+}
+/* spec 007 FR-019: the runtime kept the tier it had: show that one again and say so (never silent) */
+function onAutoTierFailed(a,e){
+  if((a.info.model||'auto')!=='auto')return;
+  a.info.autoTier=e.effective;
+  const t=DM.autoTierFailText(e);addInfoNote(liveChat(a),t,'rt');toast(esc(a.name)+': '+esc(t),6000);
+  updateModelChip(a);scheduleRender();
 }
 function onCompaction(a,e){
   const chat=liveChat(a), at=()=>new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
@@ -5009,7 +5056,7 @@ function maybeSuggestFresh(a){
   n.innerHTML='<b>This conversation is '+pct+'% full.</b> '+esc(why)+' A new session starts clean in the same folder; this one keeps its history.<div class="note-actions"><button class="btn" type="button" data-fresh="new">New session…</button>'+(canHandoff(a)?'<button class="btn" type="button" data-fresh="sum">New session with a summary…</button>':'')+'<button class="btn" type="button" data-fresh="x">Dismiss</button></div>';
   n.querySelector('[data-fresh="new"]').onclick=()=>newSession(a);
   const sb=n.querySelector('[data-fresh="sum"]');if(sb)sb.onclick=()=>newSession(a,{summary:true});
-  n.querySelector('[data-fresh="x"]').onclick=()=>{a.freshDismissed=true;n.remove();a.freshNote=null;const i=$('msgInput');if(i)i.focus();};
+  n.querySelector('[data-fresh="x"]').onclick=()=>{a.freshDismissed=true;n.remove();a.freshNote=null;const i=$('msgInput');if(i)focusIn(i);};
   chat.el.appendChild(n);a.freshNote=n;stickyScroll(chat);
 }
 
@@ -5179,7 +5226,7 @@ function newSession(a0,o){
     if(profId){const na=liveById(r.agent.id),p=(a.profileList||[]).find(x=>x.id===profId);if(na&&p){na.profileList=a.profileList;applyProfile(na,p);}}
     if(first){const keep=attached;attached=[];await sendLive(first,r.agent.id);attached=keep;renderAttached();}
   };
-  $('sdGo').focus();
+  focusIn($('sdGo'));
 }
 
 /* spec 030 FR-036: the hand-off summary in an editable box; resolves to the edited text, or null (Cancel). User text: never logged. */
@@ -5195,9 +5242,9 @@ function reviewHandoff(a,text,costUsd,toApp){
     const ta=$('hoText');ta.value=text;
     const done=v=>{d.remove();resolve(v);};
     $('hoCancel').onclick=()=>done(null);
-    $('hoGo').onclick=()=>{const v=ta.value.trim();if(!v){ta.focus();return;}done(v);};
+    $('hoGo').onclick=()=>{const v=ta.value.trim();if(!v){focusIn(ta);return;}done(v);};
     d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();done(null);}});
-    ta.focus();ta.setSelectionRange(0,0);ta.scrollTop=0;
+    focusIn(ta);ta.setSelectionRange(0,0);ta.scrollTop=0;
   });
 }
 
@@ -5340,11 +5387,11 @@ function openSchedules(r,from,opts){
     if(s.target){const a=agents.find(x=>x.id===s.target.session&&x.live&&x.info);tgt={id:s.target.session,agent:s.target.agent,name:a?a.name:(s.target.name||'one session'),live:a||null};}
     applyTgt();$('scTarget').value=s.target?s.target.session:'';$('scToHint').hidden=!$('scTarget').value;syncCap();
     if(s.cap&&$('scCap')&&!$('scCapL').hidden)$('scCap').value=String(s.cap.amount);
-    $('scFormT').scrollIntoView({block:'nearest'});$('scPrompt').focus();
+    SCROLL.reveal($('scFormT'));focusIn($('scPrompt'));
   };
   /* one builder for Add and Save (FR-023: main checks it again); null after telling the user what is missing */
   const buildInput=()=>{
-    const prompt=$('scPrompt').value.trim();if(!prompt){$('scPrompt').focus();toast('Write the prompt first.',3000);return null;}
+    const prompt=$('scPrompt').value.trim();if(!prompt){focusIn($('scPrompt'));toast('Write the prompt first.',3000);return null;}
     const kind=d.querySelector('input[name="scKind"]:checked').value;
     const input={folder:editing?editing.folder:folderKeyOf(r),prompt};
     if(editing){input.id=editing.id;input.edit=true;}
@@ -5403,7 +5450,7 @@ function openSchedules(r,from,opts){
     else if(t.every){d.querySelector('input[name="scKind"][value="every"]').checked=true;$('scEvery').value=String(t.every);}
     note.textContent=t.needs+(t.decides?' At the end it asks you what to do next: the agent shows as Waiting, with a question card in its chat.':'')+' You can edit the prompt and the time before adding it.';note.hidden=false;
   });
-  if(!editing)(tpl||$('scPrompt')).focus();
+  if(!editing)focusIn(tpl||$('scPrompt'));
 }
 async function refreshSchedules(){if(!bridge.listSchedules)return;SCHED=await bridge.listSchedules();schedChanged();}
 /* everything that shows schedules: the Folders panel, the open dialog, room chips (office render), Settings (spec 044 FR-009..FR-011) */
@@ -5573,7 +5620,7 @@ async function renamePrevRow(a0,id,opener){
   await renameSessionUi(a,{id,title:row.title,name:row.named?row.title:'',runtime:row.runtime!==undefined?row.runtime:row.title},{opener,onDone:out=>{
     if(out.name){row.runtime=row.runtime!==undefined?row.runtime:row.title;row.title=out.name;row.named=true;}
     else{row.title=row.runtime!==undefined?row.runtime:row.title;row.named=false;}
-    if(ui.selected===a.id){renderPrev(a);const r=[...document.querySelectorAll('.prev-row')].find(x=>x.dataset.pk===id),f=r&&r.querySelector('.prev-more');if(f)f.focus();}
+    if(ui.selected===a.id){renderPrev(a);const r=[...document.querySelectorAll('.prev-row')].find(x=>x.dataset.pk===id),f=r&&r.querySelector('.prev-more');if(f)focusIn(f);}
   }});
 }
 /* spec 006 FR-035: open or closed is one display preference of this computer (localStorage, like the detail level; no session data) */
@@ -5592,7 +5639,7 @@ function initPrev(a){
 function setPrevOpen(ra,open,byKey){
   const st=prevOf(ra); st.open=open; st.touched=true; setPrevPref(open); renderPrev(ra);
   const btn=$('prevBtn');
-  if(byKey){const f=open?($('prevQ')||document.querySelector('#prevLists .prev-row .btn')):null;(f||btn)&&(f||btn).focus();}
+  if(byKey){const f=open?($('prevQ')||document.querySelector('#prevLists .prev-row .btn')):null;(f||btn)&&focusIn(f||btn);}
   if(byKey&&open)announce(SIMPLE?'Earlier chats shown.':'Previous sessions shown.'); /* a click already says it through aria-expanded; closing returns focus to the toggle, which says it */
 }
 function togglePrevByKey(){
@@ -5678,7 +5725,7 @@ function renderPrev(a){
     h+='</div>';
   }
   box.hidden=false; box.classList.toggle('open',!!st.open); panel.hidden=!st.open; panel.innerHTML=h;
-  if(qf){const nq=$('prevQ');if(nq){nq.focus();try{nq.setSelectionRange(qSel[0],qSel[1]);}catch(e){}}}
+  if(qf){const nq=$('prevQ');if(nq){focusIn(nq);try{nq.setSelectionRange(qSel[0],qSel[1]);}catch(e){}}}
   const nb=panel.querySelector('.prev-body'); if(nb){nb.scrollTop=keepScroll;
     /* spec 052 (2026-10-21, round 1): a cut last row read like text over the chat; fade it while more rows are below */
     const more=()=>nb.classList.toggle('more-below',nb.scrollTop+nb.clientHeight<nb.scrollHeight-2);
@@ -5761,7 +5808,7 @@ function focusAfterRow(rows,idx){
   const keyed=rows.map(r=>all.find(e=>e.dataset.pg===r.g&&e.dataset.pk===r.k)).filter(Boolean);
   const t=keyed[idx]||keyed[idx-1]||null;
   const f=t?t.querySelector('.prev-more'):($('prevQ')||$('prevBtn'));
-  if(f&&f.focus)f.focus();
+  if(f&&f.focus)focusIn(f);
 }
 function visibleRows(a){const r=[];document.querySelectorAll('#prevLists .prev-row').forEach(e=>r.push({g:e.dataset.pg,k:e.dataset.pk}));return r;}
 async function markPrev(a,g,k,mark){
@@ -5774,7 +5821,7 @@ async function markPrev(a,g,k,mark){
   refreshPrevLists(a);
   announce(mark==='hide'?'Hidden. Show hidden brings it back.':mark==='pin'?'Pinned to top.':mark==='unpin'?'Unpinned.':'Shown again.');
   if(mark==='hide'&&!st.showHidden){const after=visibleRows(a);focusAfterRow(after,Math.min(at,after.length));}
-  else{const e=prevRowEl(g,k);const f=e&&e.querySelector('.prev-more');if(f)f.focus();}
+  else{const e=prevRowEl(g,k);const f=e&&e.querySelector('.prev-more');if(f)focusIn(f);}
   return true;
 }
 function openPrevMenu(a,g,k,anchor,x,y){
@@ -5790,16 +5837,16 @@ function openPrevMenu(a,g,k,anchor,x,y){
     +(canDel?(feat(a,'deleteSession')?it('delete','Delete…','Removes it from the agent app, VS Code and the CLI','mm-danger'):it('delete','Delete…','','mm-danger',window.DurbarSessionSearch.noDeleteReason(kindWord(a.info&&a.info.adapterId)))):'');
   document.body.appendChild(m);
   const b=m.getBoundingClientRect(); m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px'; m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
-  const back=()=>{const e=prevRowEl(g,k),f=e&&e.querySelector('.prev-more');if(f)f.focus();else if(anchor.focus&&document.contains(anchor))anchor.focus();};
+  const back=()=>{const e=prevRowEl(g,k),f=e&&e.querySelector('.prev-more');if(f)focusIn(f);else if(anchor.focus&&document.contains(anchor))focusIn(anchor);};
   m.addEventListener('click',e=>{const t=e.target.closest('[data-pact]');if(!t)return;
     if(t.getAttribute('aria-disabled')==='true'){e.preventDefault();return;}
     closeModeMenu();
     const act=t.dataset.pact;
     if(act==='delete')deletePrev(a,g,k,item);else if(act==='rename')renamePrevRow(a,k,()=>{const e=prevRowEl(g,k);return (e&&e.querySelector('.prev-more'))||anchor;});else markPrev(a,g,k,act);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-pact]')],i=its.indexOf(document.activeElement);
-    if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
-  m.querySelector('button').focus();
+  focusIn(m.querySelector('button'));
 }
 async function deletePrev(a,g,k,item){
   const st=prevOf(a), root=liveRoot(a), kind=(root.info&&root.info.adapterId)||'copilot', w=DEL_WORDS[kind]||{app:kindWord(kind),cli:kindWord(kind)+' CLI'};
@@ -5845,7 +5892,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.pv==='toggle'){if(ra.parent)return;setPrevOpen(ra,!prevOf(ra).open,false);}
   else if(b.dataset.pv==='resume')resumePrev(ra,b.dataset.sid,b);
   else if(b.dataset.pv==='view')viewVs(ra,b.dataset.key,b);
-  else if(b.dataset.pv==='showhidden'){const st=prevOf(ra);st.showHidden=!st.showHidden;refreshPrevLists(ra);const nb=document.querySelector('#prevLists [data-pv="showhidden"]');if(nb)nb.focus();}
+  else if(b.dataset.pv==='showhidden'){const st=prevOf(ra);st.showHidden=!st.showHidden;refreshPrevLists(ra);const nb=document.querySelector('#prevLists [data-pv="showhidden"]');if(nb)focusIn(nb);}
   else if(b.dataset.pv==='more'){const row=b.closest('.prev-row');if(row){const r=b.getBoundingClientRect();openPrevMenu(ra,row.dataset.pg,row.dataset.pk,b,r.left,r.bottom+4);}}
 });
 /* FR-027: right-click, Shift+F10 or the context-menu key on a row open the same menu as its ⋯ */
