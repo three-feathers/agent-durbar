@@ -78,10 +78,21 @@ export const STAGE_PREFIX = 'agent-durbar-att-';
  * at start. Only folders with that prefix, directly in `tmp`, and never a symbolic link. Returns how many were removed.
  */
 export function sweepStaleStageDirs(tmp: string, now = Date.now(), maxAgeMs = 24 * 3600_000): number {
+  return sweepStaleTempDirs(tmp, [STAGE_PREFIX], now, maxAgeMs);
+}
+
+/**
+ * Folders under `tmp` whose name starts with one of `prefixes`, older than `maxAgeMs`, removed (at most 500 a call). Only real
+ * directories directly in `tmp`: a symbolic link (or anything else) is never followed or removed. Spec 004 FR-010 (staging) and spec
+ * 051 FR-022 (the account probe's `durbar-acct-` and the one-shots' `durbar-gen-` folders a quit mid-call left behind).
+ */
+export function sweepStaleTempDirs(tmp: string, prefixes: readonly string[], now = Date.now(), maxAgeMs = 24 * 3600_000): number {
+  const ok = prefixes.filter((p) => /^[a-z][a-z-]{2,30}-$/.test(p));
+  if (!ok.length) return 0;
   let removed = 0;
   let names: string[];
   try {
-    names = fs.readdirSync(tmp).filter((n) => n.startsWith(STAGE_PREFIX));
+    names = fs.readdirSync(tmp).filter((n) => ok.some((p) => n.startsWith(p)));
   } catch {
     return 0;
   }
