@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: index
 title: Permission modes, approvals, session grants
-status: implemented; delta 2026-10-19: Windows grant keys, request ids (FR-088, FR-089); delta 2026-10-21: each session comes back in its own last mode, visibly (FR-090..FR-093)
+status: implemented; delta 2026-10-19: Windows grant keys, request ids (FR-088, FR-089); delta 2026-10-21: each session comes back in its own last mode, visibly (FR-090..FR-093); delta 2026-10-23: a Read-only refusal opens the mode menu (FR-094..FR-098)
 -->
 
 **Feature Branch**: `003-permissions-and-approvals` (reverse-engineered; milestones 1, 3, 5)
@@ -211,3 +211,27 @@ The mode names stay **Read-only / Ask first / Allow all** (internal `read-only` 
 - Not changed: grants stay session-only (FR-027); switching to Allow all still asks for confirmation; Allow all and remote control still never run together (spec 054 FR-011; a resumed session starts without remote control).
 - Checks: `scripts/test-folders.ts` (parse, cap 50, the owner's case A=Allow all / B=Read-only after a restart, older file), `scripts/test-agentops.ts` (`setModeOp` writes the session mode under the resume id; `resumeModeOp` cases and log line), `scripts/shots-003-mode-back.js` in `check:ui` (simulator, 1440x900 and 1280x800: resume of an Allow all session from a Read-only one, a session with nothing remembered, the restart note). Screenshots `docs/screenshots/003-mode-back-*.png`.
 - `[KNOWN GAP]` Not run on a real Copilot, Claude Code or Codex session (no credits spent); the restore path only passes the mode to the adapter's start options, which spec 012 already checked per vendor. Sessions from before this change have no remembered mode and come back as before (folder or opener mode), now with the note saying so.
+
+### 2026-10-23: a Read-only refusal opens the mode menu (owner request; T031, issue #618)
+
+**Why.** The owner (Vikram, 2026-10-23): "When an action is stopped because of read only mode, when we suggest to move to ask first - make that message clickable and show mode change options". `read:` before this change a Read-only denial in the chat said "(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)" as plain text, and spec 052 FR-074 added one button **Switch this agent to Ask first** (once per agent until its mode changed) that switched straight to Ask first, without showing the other modes. This spec owns it because the refusal is the outcome of the permission check (FR-001, FR-006); the menu itself is spec 018's and stays unchanged apart from a "modes only" option. This delta supersedes the button wording and the once-per-agent rule of spec 052 FR-074.
+
+**Where a Read-only refusal is shown (reviewed for this delta).**
+
+| Place | Suggests Ask first? | After this delta |
+|---|---|---|
+| Chat: the denied request's note (`showPerm`, a real adapter's `needs-permission` status with a denied permission) and a request settled as denied by the mode (`settlePerm`, the simulator's `permission` event) | yes, in text | the button below (FR-094) |
+| Needs you: the agent's row while the denial is its pending card | the copied button | opens the same menu (FR-097) |
+| Codex refusing Read-only / Ask first at send (spec 012 FR-087, `modeRefusalAction`) | no (on purpose) | unchanged: its **Change mode…** button already opens the same menu |
+| Desk bubble / list row (`taskText`: Simple "Read-only stopped it: wanted to …", Expert "Denied (read-only mode): …") | no | unchanged (the desk opens the chat, where the button is) |
+| Activity log (Tools > Activity, decision *Denied*) | no | unchanged (a record) |
+| Remote control / Telegram (spec 054, spec 041) | no | unchanged, text only; the agent itself is told "Agent Durbar is in read-only mode: this action was denied. Do not retry it." (`permissions.ts`) |
+
+- **FR-094** `[IMPLEMENTED]` (sim: `check-ro-ask`) **The suggestion is a button.** When the agent can switch modes (`setPermMode`, the `modes` feature), a Read-only denial reads "(denied: this agent is in Read-only)" and offers one button **Switch to Ask first…** (`data-act="ro-ask"`, `aria-haspopup="menu"`, `aria-expanded`, the theme's `.btn`, 10.5px floor) under it. There is one such button per agent, on its newest denial: a newer denial moves it there (no pile of buttons when an agent tries five writes). An agent that cannot switch modes keeps the plain-text suggestion.
+- **FR-095** `[IMPLEMENTED]` (sim: `check-ro-ask`) **It opens the usual mode menu.** The button opens `openModeMenu` (the composer mode chip's menu, also opened by spec 012's **Change mode…**) anchored to the button, with the modes only: Read-only, Ask first and Allow all (as the agent kind offers them), each with its help line, the current one ticked (`aria-checked`), focus on it. Choosing a mode goes through `changeMode`, so Allow all keeps its confirmation (FR-014) and the grants question stays. Enter or Space opens it; arrows move; Escape or Tab closes it and focus returns to the button. A click on the button while the menu is open closes it.
+- **FR-096** `[IMPLEMENTED]` (sim: `check-ro-ask`) **After a switch: say what to do, never resend.** The usual toast ("<name>: **Ask first** from the next request.") appears; the button is replaced by one line: "Now in Ask first. Ask <name> to try again: it will wait for your OK." (Allow all: "…: it will run without asking."), and focus moves to the message box. No **Retry**: a denied tool call has no safe retry path (the agent was told not to retry it, and resending the prompt could repeat what already ran), so nothing is resent automatically. A mode changed another way (the chip) removes the button without that line. Choosing Read-only again, or cancelling the Allow all confirmation, changes nothing and keeps the button.
+- **FR-097** `[IMPLEMENTED]` (read: the code) **Needs you.** When the denial is the agent's pending card (a real adapter's `needs-permission` status puts it in *waiting*), its row offers **Switch to Ask first…** too (`aria-haspopup="menu"`); it closes the inbox, opens the chat and opens the same menu on the chat's button, so focus returns there.
+- **FR-098** (hook only) **A managed policy can lock the mode** (spec 076, not built). `roAskHint` carries a comment where such a lock would show the plain text instead of the button; nothing else is done now.
+- Not changed: what Read-only denies (FR-001), the denial text the agent receives, the Codex send refusal (spec 012 FR-087), Allow all's confirmation, remote and Telegram text.
+- `[KNOWN GAP]` Not run on a real Copilot, Claude Code or Codex session (no credits spent): the real adapters' denial reaches the same `showPerm` path the driver checks with a synthetic `needs-permission` event; the simulator's own denial goes through `settlePerm`. FR-097 (Needs you) is checked by reading the code and the synthetic event in the driver, not with a real waiting agent.
+
