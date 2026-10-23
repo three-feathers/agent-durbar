@@ -57,6 +57,12 @@
           "status": "failed"
         }
       ]
+    },
+    {
+      "type": "retry",
+      "phase": "retrying",
+      "attempt": 1,
+      "reason": "other"
     }
   ]
 }

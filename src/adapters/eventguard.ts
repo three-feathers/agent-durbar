@@ -9,7 +9,8 @@ const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string'
 const optNum = (v: unknown): boolean => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
 const oneOf = (v: unknown, xs: readonly string[]): boolean => typeof v === 'string' && xs.includes(v);
 
-export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'title', 'agentSchedule', 'remote', 'plan'] as const;
+export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'retry', 'title', 'agentSchedule', 'remote', 'plan'] as const;
+const RETRY_REASONS = ['rate-limit', 'overloaded', 'server', 'network', 'timeout', 'auth', 'other'] as const;
 const STATUSES = ['idle', 'working', 'needs-permission', 'error', 'stopped'] as const;
 /** Spec 058 FR-180: the values of `McpServerStatus.signInEnd`. */
 export const SIGN_IN_ENDS = ['next-message', 'failed'] as const;
@@ -111,6 +112,14 @@ export function eventProblems(e: unknown): string[] {
       if (e.estimated !== undefined && typeof e.estimated !== 'boolean') out.push('usageLimit.estimated is not a boolean');
       if (e.paid !== undefined && typeof e.paid !== 'boolean') out.push('usageLimit.paid is not a boolean');
       if (e.update !== undefined && typeof e.update !== 'boolean') out.push('usageLimit.update is not a boolean');
+      break;
+    case 'retry': // spec 034 FR-016
+      if (!oneOf(e.phase, ['retrying', 'gave-up'])) out.push(`retry.phase ${String(e.phase)}`);
+      if (!(Number.isInteger(e.attempt) && (e.attempt as number) >= 1)) out.push('retry.attempt is not a positive whole number');
+      if (e.maxAttempts !== undefined && !(Number.isInteger(e.maxAttempts) && (e.maxAttempts as number) >= 1)) out.push('retry.maxAttempts is not a positive whole number');
+      if (!oneOf(e.reason, RETRY_REASONS)) out.push(`retry.reason ${String(e.reason)}`);
+      if (e.httpStatus !== undefined && !(Number.isInteger(e.httpStatus) && (e.httpStatus as number) >= 100 && (e.httpStatus as number) <= 599)) out.push('retry.httpStatus is not an HTTP status');
+      if (!optNum(e.delayMs)) out.push('retry.delayMs is not a non-negative number');
       break;
     case 'title':
       if (!str(e.title) || !e.title) out.push('title.title missing');

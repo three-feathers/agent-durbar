@@ -192,7 +192,7 @@ for (const f of files) {
 {
   const fx = load('init.json');
   const quiet = run(fx.messages, true);
-  assert.deepStrictEqual(quiet.map((e) => e.type), ['mcp']);
+  assert.deepStrictEqual(quiet.map((e) => e.type), ['mcp', 'retry']); // spec 034 FR-017: the fixture's api_retry is a retry now (it was ignored before)
   const m = new ClaudeMapper(() => undefined);
   m.map(fx.messages[0]);
   assert.strictEqual(m.info.model, 'claude-synthetic-1');
