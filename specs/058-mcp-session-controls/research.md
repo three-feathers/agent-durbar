@@ -330,7 +330,7 @@ release, 2026-10-23). Codex is not installed on the machine that did this resear
 | `codex mcp login <name>` | Browser mode reads no stdin (only `--no-browser` pastes), opens the browser with `webbrowser::open`, prints the address only if that fails, waits up to 300 s, prints "Successfully logged in to MCP server '<name>'." It knows only `configured_servers(config)` (`config.toml`), and it runs in its own process, so a running app-server is not told. | `read:` `cli/src/mcp_cmd.rs:543-626`; `cli/src/mcp_login.rs:40-180`; `perform_oauth_login.rs:775-805` |
 | Where the token is kept | Keyring service "Codex MCP Credentials", key `compute_store_key(name, url)` (type, url, empty headers); else `CODEX_HOME/.credentials.json`. Durbar does not set `CODEX_HOME` for its sessions (it reads the user's), so a terminal sign-in and Durbar's are the same entry for the same name and address. | `read:` `rmcp-client/src/oauth.rs:17, 100, 857, 1054-1075`; `code:` `src/main/main.ts:150` |
 
-**Decisions this supports** (spec *Changes* 2026-10-23, FR-163..FR-172): use each app's in-session call; never spawn a login command;
+**Decisions this supports** (spec *Changes* 2026-10-23, FR-163..FR-173): use each app's in-session call; never spawn a login command;
 no Cancel call for either app (forget only); keep main's entry only as long as the app's listener (5 minutes); poll Claude Code with
 `mcp_status` and keep the "a re-read is not a new status" rule; for Codex, trust the completion notification, read once, and fall back
-to the next message on a fresh child. Open for the owner: Q20-Q24.
+to the next message on a fresh child. Q20, Q21, Q23, Q24 answered A by the owner 2026-10-23; Q22 A provisional (default, not asked yet) (spec *Owner answers*).

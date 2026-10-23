@@ -235,9 +235,9 @@ T120 (spec) first; T121 (unit tests) and T122 (driver) before T123-T124 (code); 
 
 ## Delta: Sign in for Claude Code and Codex (T099, T100; issue #364 step 5, 2026-10-23)
 
-**Spec**: [spec.md](spec.md) *Changes* > 2026-10-23 "MCP Sign in for Claude Code and Codex" (FR-163..FR-172, SC-090, SC-091).
-**Research**: [research.md](research.md) section 7.8. **Open**: Q20-Q24 (owner); the plan below follows the recommended options and
-names the task that changes if the owner picks another.
+**Spec**: [spec.md](spec.md) *Changes* > 2026-10-23 "MCP Sign in for Claude Code and Codex" (FR-163..FR-173, SC-090, SC-091).
+**Research**: [research.md](research.md) section 7.8. **Answers**: Q20, Q21, Q23, Q24 answered A by the owner 2026-10-23; Q22 A provisional (default, not asked yet);
+see spec *Owner answers*.
 
 ### Summary
 
@@ -248,7 +248,7 @@ that show without the in-app call, and an honest note per app. Never spawn a log
 
 ### Constitution Check (delta)
 
-- **I**: spec delta, research and these tasks first; Q20-Q24 asked, not guessed.
+- **I**: spec delta, research and these tasks first; Q20, Q21, Q23, Q24 asked and answered; Q22 provisional until Paco answers on #629.
 - **II**: `mcp_authenticate`, `mcpServer/oauth/login` and `mcpServer/oauthLogin/completed` stay in `src/adapters/claude.ts` and
   `src/adapters/codex.ts`; the window sees `canSignIn`, a host, `signInEnd: 'next-message' | 'failed'`, steps and a note (plain text).
 - **III**: the address stays in main memory (FR-065, unchanged); no callback, code, client secret or redirect address passes through
@@ -290,5 +290,5 @@ that show without the in-app call, and an honest note per app. Never spawn a log
 - **PR A (Claude Code + shared)**: T136, T137, T099, T138 (Claude part), T139 (Claude part), T140 (Claude part).
 - **PR B (Codex)**: T100, T138 (Codex part), T139 (Codex part), T140 (Codex part), then T141.
 - Phase 8c: T106 after PR A, T107 after PR B (Q24).
-- If the owner picks Q20 B: T100 also resumes the thread on a fresh child after success (no prompt). Q21 B: only the Claude steps text
-  in T099 changes. Q22 B: a spec 069 task to carry Claude's `oauth` object, before T106.
+- PR A also carries the FR-173 fix (T142).
+- If Paco answers Q22 B on #629: a spec 069 task to carry Claude's `oauth` object, before T106; nothing else changes.
