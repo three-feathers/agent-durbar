@@ -300,7 +300,7 @@
   /* Furniture and a plain figure for now: the characters (clothes, hair, eyewear, mug, desk prop) come with the art format.
      `o.crew` is the character id app.js hands over; it is part of the signature so a scene is never reused for another character. */
   /* The character is a portrait (spec 077 FR-050..FR-055): `<image>` in a fixed box, one picture per pose, chosen by the status. Everything
-     else (halo, screen, bubble, error mark, sweat, horns, stars, ambulance, cup and steam, the typing and waving arms) is the shared code over it. When
+     else (halo, screen, bubble, error mark, sweat, horns, stars, ambulance, cup and steam) is the shared code over it; the art has its own hands. When
      the id is unknown or its pictures did not load (`o.crewFb`, set by app.js), the kit draws a plain office-style figure on the same furniture (FR-017). */
   const crewApi = () => { const g = typeof self !== 'undefined' ? self : globalThis; return g.DurbarCrew || (typeof require === 'function' ? require('./crew.js') : null); };
   const crewPic = (o) => { const C = crewApi(); return C && !o.crewFb && C.usable(o.crew) ? C : null; };
@@ -326,9 +326,9 @@
     monitor: (o) => `<rect x="139" y="76" width="10" height="9" fill="${o.T('--monitor-stand')}"/><rect x="130" y="83" width="28" height="3.5" rx="1.75" fill="${o.T('--monitor-stand')}"/><rect x="112" y="32" width="64" height="45" rx="8" fill="${o.T('--monitor-frame')}"/><circle cx="144" cy="74.8" r="1.2" fill="${o.T('--crew-accent-2')}"/>`,
     keyboard: (o) => `<rect x="58" y="82" width="40" height="4" rx="2" fill="${o.T('--laptop')}"/><rect x="62" y="83.2" width="6" height="1.6" rx=".8" fill="${o.T('--crew-accent-2')}" opacity=".8"/><rect x="71" y="83.2" width="6" height="1.6" rx=".8" fill="${o.T('--crew-accent')}" opacity=".8"/>`,
     cup: (o) => `<rect x="98" y="76" width="10" height="10" rx="3" fill="${o.T('--cup')}" stroke="${o.T('--cup-line')}" stroke-width="1"/><rect x="98" y="79" width="10" height="2.4" fill="${o.T('--crew-accent')}"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="${o.T('--cup-line')}" stroke-width="1.4"/>` + steam(o),
-    /* over a portrait the hands and sleeves are the character's, not the agent's shirt and skin */
-    arm: (o, x1, y1, x2, y2) => { const C = crewPic(o); return roundArm(o, x1, y1, x2, y2, C ? C.CAST[o.crew].sleeve : undefined); },
-    hand: (o, x, y) => { const C = crewPic(o); return C ? `<circle cx="${x}" cy="${y}" r="3.6" fill="${C.CAST[o.crew].skin}"/>` : roundHand(o, x, y); },
+    /* the art carries the hands (a wave, a mug), so over a portrait the code draws none (spec 077 FR-059) */
+    arm: (o, x1, y1, x2, y2) => crewPic(o) ? '' : roundArm(o, x1, y1, x2, y2),
+    hand: (o, x, y) => crewPic(o) ? '' : roundHand(o, x, y),
   };
 
   return { KITS, draw, avatar };

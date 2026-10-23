@@ -81,7 +81,7 @@ module.exports = async (ctx) => {
     const seen = new Set();
     for (const [i, sc] of mains.entries()) {
       assert.strictEqual(sc.images.length, 1, `${tag}: scene ${i} (${sc.st}) draws exactly one portrait`);
-      const im = sc.images[0], id = (/\|crew\|(\w+)/.exec(sc.sig) || [])[1];
+      const im = sc.images[0], id = (/\|crew\|([\w-]+)/.exec(sc.sig) || [])[1];
       seen.add(id);
       assert.strictEqual(im.href, C.file(id, C.poseFor(sc.st)), `${tag}: scene ${i} (${sc.st}) shows the ${C.poseFor(sc.st)} pose of ${id}`);
       assert.deepStrictEqual([im.x, im.y, im.w, im.h], [C.BOX.x, C.BOX.y, C.BOX.w, C.BOX.h], `${tag}: scene ${i}: the portrait's fixed box`);
@@ -90,7 +90,7 @@ module.exports = async (ctx) => {
       assert.ok(!sc.plain, `${tag}: scene ${i}: no plain figure under a portrait`);
       sharpOk(`${tag} scene ${i}`, im, nat[im.href]);
     }
-    assert.ok(seen.size >= 3, `${tag}: several characters on screen (${[...seen]})`);
+    assert.ok(seen.size === C.IDS.length, `${tag}: all ${C.IDS.length} characters on screen with 15 agents (least-used pick) (${[...seen]})`);
     for (const [kind, list] of [['walker', s.walkers], ['chip', s.chips], ['lounge figure', s.lounge]]) for (const [i, imgs] of list.entries()) {
       assert.strictEqual(imgs.length, 1, `${tag}: ${kind} ${i} draws the portrait`);
       sharpOk(`${tag} ${kind} ${i}`, imgs[0], nat[imgs[0].href]);
@@ -123,7 +123,7 @@ module.exports = async (ctx) => {
       fs.cpSync(path.join(__dirname, '..', 'dist'), path.join(tmp, 'dist'), { recursive: true });
       const index = path.join(tmp, 'dist', 'renderer', 'index.html');
       const lost = 'punk';
-      fs.rmSync(path.join(tmp, 'dist', 'renderer', 'crew', `${lost}-waiting.webp`));
+      fs.rmSync(path.join(tmp, 'dist', 'renderer', 'crew', 'art', `${lost}-waiting.webp`));
       await H.load({ w: 1440, h: 900, index, query: { theme: ID }, ready: 'fit', settle: false });
       await H.office(15);
       assert.ok(await H.until(`window.THEME.current().id===${jsLiteral(ID)}`, 4000), 'the theme is on');

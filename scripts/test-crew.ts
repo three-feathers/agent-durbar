@@ -11,12 +11,13 @@ const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')
   assignCrew: (m: Record<string, string>, ids: string[], chars: string[], rand?: (id: string) => number) => Record<string, string>;
   pruneCrew: (m: Record<string, string>, ids: string[]) => Record<string, string>;
   loadCrew: (j: unknown, ids?: string[]) => Record<string, string>;
-  POSES: string[]; BOX: { x: number; y: number; w: number; h: number }; CAST: Record<string, { skin: string; sleeve: string }>;
+  POSES: string[]; BOX: { x: number; y: number; w: number; h: number };
   poseFor: (st: string) => string; file: (id: string, pose: string) => string; files: (ids?: string[]) => string[]; usable: (id: unknown, bad?: Set<string>) => boolean;
 };
 
 const ids = ['a', 'b', 'c', 'd'];
-assert.ok(C.IDS.length >= 4 && new Set(C.IDS).size === C.IDS.length, 'the character ids are distinct');
+assert.deepStrictEqual(C.IDS, ['punk', 'gamer', 'hacker', 'rocker', 'buzzcut', 'bookworm', 'scientist', 'metalhead', 'bob-glasses', 'skater', 'surfer', 'disco', 'sporty'], 'the 13 characters (FR-059)');
+assert.ok(C.IDS.every((i) => /^[a-z]+(-[a-z]+)?$/.test(i)), 'ids are file-name safe');
 
 // ---- seeded: repeatable, in [0,1), and different ids differ ----
 const s1 = C.seeded('session-1'), s2 = C.seeded('session-1');
@@ -89,14 +90,30 @@ assert.deepStrictEqual(C.POSES, ['working', 'waiting', 'resting']);
 const POSE: Record<string, string> = { working: 'working', thinking: 'working', avatar: 'working', waiting: 'waiting', error: 'waiting', done: 'resting', idle: 'resting' };
 for (const [st, pose] of Object.entries(POSE)) assert.strictEqual(C.poseFor(st), pose, st + ' shows the ' + pose + ' pose');
 assert.strictEqual(C.poseFor('whatever'), 'resting', 'an unknown status rests');
-assert.strictEqual(C.file('punk', 'working'), 'crew/punk-working.webp');
+assert.strictEqual(C.file('punk', 'working'), 'crew/art/punk-working.webp');
+assert.strictEqual(C.file('bob-glasses', 'resting'), 'crew/art/bob-glasses-resting.webp');
 assert.strictEqual(C.files().length, C.IDS.length * 3, 'three pictures per character');
-assert.ok(C.files(['punk']).every((f) => f.startsWith('crew/punk-')));
+assert.ok(C.files(['punk']).every((f) => f.startsWith('crew/art/punk-')));
 assert.ok(C.usable('punk') && C.usable('punk', new Set(['gamer'])), 'a known character with no failed picture');
 assert.ok(!C.usable('punk', new Set(['punk'])), 'a character with a failed picture is not usable');
 assert.ok(!C.usable('nope') && !C.usable('') && !C.usable(undefined) && !C.usable('__proto__') && !C.usable('constructor'), 'unknown ids are not usable');
 // the box keeps clear of the monitor and halo (x 101-187), the bubble and badge corner (x 16-61, y 3-34) and the cup zone (x 96-114, y 66-87), FR-014
+assert.strictEqual(C.BOX.w, C.BOX.h, 'the box is square, like the 352x352 art (FR-059)');
 assert.ok(C.BOX.x + C.BOX.w <= 96, 'the box ends before the cup zone and the monitor');
 assert.ok(C.BOX.y >= 34, 'the box starts under the bubble and badge corner');
 assert.ok(C.BOX.y + C.BOX.h <= 86, 'the box ends at the desk top');
+// a stored id that no longer exists (an old placeholder-only id) is dropped, and the session gets a new character
+{
+  const stored = C.loadCrew({ s1: 'nerd', s2: 'surfer', s3: 'metal' });
+  assert.deepStrictEqual(stored, { s2: 'surfer' }, 'unknown stored ids are dropped, known ones kept');
+  const again = C.assignCrew(stored, ['s1', 's2', 's3'], C.IDS, () => 0);
+  assert.strictEqual(again.s2, 'surfer');
+  assert.ok(C.IDS.includes(again.s1) && C.IDS.includes(again.s3) && again.s1 !== 'surfer' && again.s3 !== 'surfer', 'the dropped sessions get known, unused characters');
+}
+// thirteen sessions: every character once, no twin
+{
+  const ss = Array.from({ length: 13 }, (_, i) => 's' + i);
+  const m = C.assignCrew({}, ss, C.IDS, (id) => C.seededRand(id));
+  assert.strictEqual(new Set(Object.values(m)).size, 13, 'thirteen sessions wear thirteen different characters');
+}
 console.log('crew tests passed');

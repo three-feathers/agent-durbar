@@ -1,8 +1,8 @@
-# Cheeky Crew real art: provenance (spec 077 FR-054), ART REVIEW ONLY
+# Cheeky Crew real art: provenance (spec 077 FR-054)
 
-These 39 pictures (13 characters x working, waiting, resting) are the candidate real art for issue #558. They are **not wired in yet**: the kit still draws the placeholders one folder up, and `copy-assets` does not ship this folder. They are here so the team can review them (PR "art review"). When the art is accepted they replace the placeholders, `crew.js` lists the new characters, and `test:crew-assets` checks these rows.
+These 39 pictures (13 characters x working, waiting, resting) are the real art of the Cheeky Crew (issue #558). They are wired in: `src/renderer/crew.js` lists the 13 characters, `scripts/copy-assets.js` ships only the `.webp` files of this folder (not this file or the prompt files), and `npm run test:crew-assets` checks every picture against these rows. The flat placeholders and `scripts/crew-placeholders.py` are gone.
 
-Format: 352x352 WebP (q82), resized from Paco's 1254x1254 RGBA PNGs (the originals are not committed), no EXIF/XMP/ICC chunks. The old Einstein-like scientist from batch 1 is dropped (owner, 2026-10-23); the scientist here is the new one from batch 2.
+Format: 352x352 WebP (q82; `surfer-waiting.webp` and `surfer-resting.webp` re-encoded at q80 on 2026-10-23 because q82 was over the 40 KB cap, FR-050), resized from Paco's 1254x1254 RGBA PNGs (the originals are not committed), no EXIF/XMP/ICC chunks. The old Einstein-like scientist from batch 1 is dropped (owner, 2026-10-23); the scientist here is the new one from batch 2.
 
 Batch 2 notes (2026-10-23):
 - **Names.** The prompt named the files `nerd`, `metal` and `nerd-girl`; we keep `bookworm`, `metalhead` and `bob-glasses`. Each row gives the prompt's name.

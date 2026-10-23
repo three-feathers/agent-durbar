@@ -7,28 +7,21 @@
 })(typeof self !== 'undefined' ? self : this, (function () {
   'use strict';
 
-  /* the characters, in a fixed order (a new one is appended, so the old ones never move); Phase 1 of spec 077 */
-  const IDS = ['punk', 'scientist', 'gamer', 'hacker'];
+  /* the characters, in a fixed order (a new one is appended, so the old ones never move); the 13 of spec 077 (the old order's three are kept, a stored id that no longer exists is dropped by loadCrew) */
+  const IDS = ['punk', 'gamer', 'hacker', 'rocker', 'buzzcut', 'bookworm', 'scientist', 'metalhead', 'bob-glasses', 'skater', 'surfer', 'disco', 'sporty'];
   const MAX_ENTRIES = 500, MAX_ID = 200;
-  /* the portraits (spec 077 FR-050..FR-055): three poses per character, `crew/<id>-<pose>.webp`, drawn in a fixed box of the 200x124 stage.
-     The box (x 52-96, y 36-86) keeps clear of the monitor and halo, the thought bubble and badge corner and the cup zone (FR-014); its
-     bottom edge meets the desk top, and the laptop is drawn after it. The picture is 4 pixels per stage unit. */
+  /* the portraits (spec 077 FR-050..FR-055, FR-059): three poses per character, `crew/art/<id>-<pose>.webp`, 352x352 and square, drawn in a
+     fixed square box of the 200x124 stage. The box (x 52-96, y 42-86) keeps clear of the monitor and halo, the thought bubble and badge
+     corner and the cup zone (FR-014); its bottom edge meets the desk top, and the laptop is drawn after it. 8 pixels per stage unit. The
+     art carries the hands (waving, holding a mug), so the code draws no arms over it (FR-059). */
   const POSES = ['working', 'waiting', 'resting'];
-  const BOX = { x: 52, y: 36, w: 44, h: 50 }, PX_PER_UNIT = 4;
-  /* what the code draws over a portrait: the hands and arms (typing and waving are status cues) take the character's skin and sleeve colour
-     (skin comes from the character in this kit, spec 070 D3 delta, Q1.2); these are the cast's colours, not theme colours */
-  const CAST = {
-    punk: { skin: '#f1c7a3', sleeve: '#22252a' },
-    scientist: { skin: '#e8b48f', sleeve: '#f7f7f4' },
-    gamer: { skin: '#c98b62', sleeve: '#7b5cd6' },
-    hacker: { skin: '#b07a58', sleeve: '#3a4250' },
-  };
+  const BOX = { x: 52, y: 42, w: 44, h: 44 }, PX_PER_UNIT = 8;
   /* the pose for a status: working and thinking type, waiting and error need the person, the rest rests */
   const poseFor = (st) => (st === 'working' || st === 'thinking' || st === 'avatar') ? 'working' : (st === 'waiting' || st === 'error') ? 'waiting' : 'resting';
-  const file = (id, pose) => 'crew/' + id + '-' + pose + '.webp';
+  const file = (id, pose) => 'crew/art/' + id + '-' + pose + '.webp';
   const files = (ids) => (ids || IDS).reduce((a, id) => a.concat(POSES.map((p) => file(id, p))), []);
   /* FR-055: a character can be drawn when it is known and none of its pictures failed to load (`bad`: a Set of character ids) */
-  const usable = (id, bad) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(CAST, id) && IDS.includes(id) && !(bad && bad.has && bad.has(id));
+  const usable = (id, bad) => typeof id === 'string' && IDS.includes(id) && !(bad && bad.has && bad.has(id));
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 
   /* a small repeatable random source from a string (the session id): FNV-1a into mulberry32 */
@@ -91,5 +84,5 @@
     return out;
   }
 
-  return { POSES, BOX, PX_PER_UNIT, CAST, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { POSES, BOX, PX_PER_UNIT, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());

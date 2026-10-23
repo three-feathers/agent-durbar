@@ -54,7 +54,7 @@ for (const kit of K.KITS.slice(1)) {
   assert.ok(/stroke-width="1\.1"><circle/.test(plain), 'the fallback figure keeps the agent\'s own glasses (FR-017: the office figure with the agent\'s look)');
   for (const [st, pose] of [['working', 'working'], ['thinking', 'working'], ['waiting', 'waiting'], ['error', 'waiting'], ['idle', 'resting'], ['done', 'resting']]) {
     const svg: string = K.draw('crew', { id: 'c1' }, { ...base, st, crew: 'punk' });
-    assert.ok(svg.includes(`<image class="crew-pic" href="crew/punk-${pose}.webp" x="52" y="36" width="44" height="50"`), `${st}: the ${pose} picture in its box`);
+    assert.ok(svg.includes(`<image class="crew-pic" href="crew/art/punk-${pose}.webp" x="52" y="42" width="44" height="44"`), `${st}: the ${pose} picture in its box`);
     assert.strictEqual((svg.match(/<image/g) || []).length, 1, st + ': one picture');
     assert.ok(/\|crew\|punk"/.test(svg), st + ': the character id ends the signature');
     assert.ok(CUE[st].test(svg) && svg.includes('class="pp"'), st + ': the status cue is still drawn over, and the person can be hidden (.pp)');
@@ -63,13 +63,13 @@ for (const kit of K.KITS.slice(1)) {
     assert.ok(!/NaN|undefined/.test(svg), st + ': no NaN');
     assert.strictEqual(parser.parseFromString(svg, 'image/svg+xml').getElementsByTagName('parsererror').length, 0, st + ': valid SVG');
   }
-  // the moods are overlays over the portrait; the hands and sleeves are the character's
+  // the moods are overlays over the portrait; the art has its own hands (FR-059)
   for (const [mood, re] of [[{ body: 'heavy' }, /class="sweat"/], [{ body: 'monster' }, /M64\.5 35\.5l-4\.2-9\.5/], [{ body: 'normal', trouble: 'dizzy' }, /class="dizzy"/], [{ body: 'normal', trouble: 'ambulance' }, /class="amb"/]] as [object, RegExp][])
     assert.ok(re.test(K.draw('crew', { id: 'c1' }, { ...base, mood, crew: 'punk' })), JSON.stringify(mood) + ': drawn over the portrait');
   const typing: string = K.draw('crew', { id: 'c1' }, { ...base, crew: 'punk' });
-  assert.ok(typing.includes('hand-l') && typing.includes('hand-r') && typing.includes('stroke="#22252a"') && typing.includes('fill="#f1c7a3"'), 'the typing hands wear the character\'s sleeve and skin');
-  const wave: string = K.draw('crew', { id: 'c1' }, { ...base, st: 'waiting', crew: 'gamer' });
-  assert.ok(/animateTransform|class="wave"/.test(wave), 'the waving arm is drawn over the portrait');
+  const ARM = /<line [^>]*stroke-width="8"/;
+  assert.ok(!ARM.test(typing) && !ARM.test(K.draw('crew', { id: 'c1' }, { ...base, st: 'waiting', crew: 'gamer' })), 'no code arm or hand over a portrait: the picture carries them (FR-059)');
+  assert.ok(ARM.test(K.draw('crew', { id: 'c1' }, { ...base, crew: 'punk', crewFb: true })), 'the plain figure keeps its arms');
   // FR-017/FR-055: an unknown id, or a character whose pictures did not load, draws the plain figure on the same furniture, never an empty chair
   for (const [label, extra] of [['unknown id', { crew: 'nope' }], ['failed pictures', { crew: 'punk', crewFb: true }]] as [string, object][]) {
     const fb: string = K.draw('crew', { id: 'c1' }, { ...base, ...extra });
@@ -82,12 +82,12 @@ for (const kit of K.KITS.slice(1)) {
   assert.ok(/\|crew\|punk"/.test(a) && /\|crew\|gamer"/.test(b) && a !== b, 'another character is another signature');
   // the walking figure: the same portrait, cropped by its view box, with no face drawn over it; the fallback has the face
   const av: string = K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'punk' });
-  assert.ok(av.includes('crew/punk-working.webp') && !av.includes('r="1.35"'), 'the walking figure wears the portrait');
+  assert.ok(av.includes('crew/art/punk-working.webp') && !av.includes('r="1.35"'), 'the walking figure wears the portrait');
   const avFb: string = K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'punk', crewFb: true });
   assert.ok(!avFb.includes('<image') && avFb.includes('r="1.35"'), 'and the plain face when the pictures failed');
   assert.ok(T('--crew-accent') && T('--crew-ink') && T('--crew-accent-2'), 'the crew tokens exist');
   // every character, every pose, from the real pictures' names
-  for (const id of ['punk', 'scientist', 'gamer', 'hacker']) for (const st of STATUS) assert.ok(K.draw('crew', { id: 'x' }, { ...base, st, crew: id }).includes(`crew/${id}-`), id + '/' + st);
+  for (const id of ['punk', 'gamer', 'hacker', 'rocker', 'buzzcut', 'bookworm', 'scientist', 'metalhead', 'bob-glasses', 'skater', 'surfer', 'disco', 'sporty']) for (const st of STATUS) assert.ok(K.draw('crew', { id: 'x' }, { ...base, st, crew: id }).includes(`crew/art/${id}-`), id + '/' + st);
 }
 // every built-in pack names its kit; Clean Office stays on the office kit
 for (const [id, kit] of [['clean-office', 'office'], ['corporate', 'corporate'], ['retro', 'pixel'], ['durbar-indian', 'court-indian'], ['durbar-european', 'court-european'], ['durbar-japanese', 'court-japanese'], ['cheeky-crew', 'crew']]) {

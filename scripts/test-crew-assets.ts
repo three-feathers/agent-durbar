@@ -6,12 +6,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const ROOT = path.join(__dirname, '..', '..');
-const DIR = path.join(ROOT, 'src', 'renderer', 'crew');
+const DIR = path.join(ROOT, 'src', 'renderer', 'crew', 'art');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { IDS: string[]; POSES: string[]; BOX: { w: number; h: number }; PX_PER_UNIT: number; CAST: Record<string, unknown>; files: (ids?: string[]) => string[] };
+const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { IDS: string[]; POSES: string[]; BOX: { w: number; h: number }; PX_PER_UNIT: number; files: (ids?: string[]) => string[] };
 
-const MAX_FILE = 40 * 1024, MAX_TOTAL = 1.5 * 1024 * 1024; // FR-050 (3 poses)
-const COLUMNS = ['file', 'character', 'tool and version', 'date', 'prompt', 'made by', 'edited by', 'licence', 'generator terms read'];
+const MAX_FILE = 40 * 1024, MAX_TOTAL = 1.5 * 1024 * 1024; // FR-050 (3 poses per character; 13 characters are 1.2 MB)
+const COLUMNS = ['file', 'character', 'tool', 'date', 'prompt', 'made by', 'edited by', 'licence', 'generator terms read'];
 
 /** The RIFF chunks of a WebP: [fourcc, size] in order, and the picture's size from its VP8, VP8L or VP8X header. */
 export function webpInfo(buf: Buffer): { chunks: string[]; width: number; height: number } {
@@ -60,6 +60,7 @@ export function problems(files: Map<string, Buffer>, md: string, header = md): s
     let info;
     try { info = webpInfo(buf); } catch (e) { out.push(`${name}: not a WebP file`); continue; }
     for (const c of info.chunks) if (!['VP8 ', 'VP8L', 'VP8X', 'ALPH'].includes(c)) out.push(`${name}: metadata or unexpected chunk "${c}" (strip EXIF, XMP, ICC and text)`);
+    if (info.width !== 352 || info.height !== 352) out.push(`${name}: ${info.width}x${info.height}, the art is 352x352 (FR-059)`);
     if (info.width < C.BOX.w * C.PX_PER_UNIT || info.height < C.BOX.h * C.PX_PER_UNIT) out.push(`${name}: ${info.width}x${info.height}, the stage box needs at least ${C.BOX.w * C.PX_PER_UNIT}x${C.BOX.h * C.PX_PER_UNIT} (2x of its largest shown size)`);
     if (Math.abs(info.width / info.height - C.BOX.w / C.BOX.h) > 0.01) out.push(`${name}: ${info.width}x${info.height} does not have the box's shape ${C.BOX.w}:${C.BOX.h}`);
   }
@@ -75,8 +76,7 @@ const md = fs.readFileSync(path.join(DIR, 'ASSETS.md'), 'utf8');
 const real = problems(files, md);
 assert.deepStrictEqual(real, [], 'the shipped pictures pass: ' + real.join('; '));
 for (const id of C.IDS) for (const pose of C.POSES) assert.ok(files.has(`${id}-${pose}.webp`), `${id}-${pose}.webp exists (every character, every pose)`);
-assert.deepStrictEqual([...files.keys()].sort(), C.files().map((f) => f.replace(/^crew\//, '')).sort(), 'the folder holds exactly the pictures crew.js names');
-assert.deepStrictEqual(Object.keys(C.CAST).sort(), [...C.IDS].sort(), 'the cast has an entry per character');
+assert.deepStrictEqual([...files.keys()].sort(), C.files().map((f) => f.replace(/^crew\/art\//, '')).sort(), 'the folder holds exactly the pictures crew.js names');
 
 // ---- the check itself: each rule fails when its case is broken (so a rule removed from the check shows here) ----
 {
@@ -100,7 +100,14 @@ assert.deepStrictEqual(Object.keys(C.CAST).sort(), [...C.IDS].sort(), 'the cast 
 // ---- packaging: the build copies the folder and electron-builder packs dist (FR-050, T040) ----
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as { build: { files: string[] } };
 assert.ok(pkg.build.files.includes('dist/**/*'), 'electron-builder packs everything under dist/, so dist/renderer/crew/ ships');
-assert.ok(/'crew'/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8')), 'copy-assets.js copies the crew folder');
+const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8');
+assert.ok(/'crew', 'art'/.test(copy) && /\.webp/.test(copy), 'copy-assets.js copies the .webp files of crew/art');
+assert.ok(!/ASSETS|PROMPTS/.test(copy.replace(/\/\/.*$/gm, '')), 'copy-assets.js does not ship ASSETS.md or the prompt files');
+// the build output holds the pictures when dist/ exists (npm run build first; the full run builds before the tests)
+const OUT = path.join(ROOT, 'dist', 'renderer', 'crew', 'art');
+if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
+  assert.deepStrictEqual(fs.readdirSync(OUT).sort(), [...files.keys()].sort(), 'dist/renderer/crew/art holds exactly the pictures: no ASSETS.md, no prompts');
+}
 const csp = /Content-Security-Policy" content="([^"]*)"/.exec(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8'));
 assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;", 'the CSP is unchanged (FR-057)');
 console.log('crew assets tests passed (' + files.size + ' pictures)');

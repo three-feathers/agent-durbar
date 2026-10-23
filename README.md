@@ -240,6 +240,7 @@ Codex in Read-only and Ask first gets an OS-enforced permission profile limited 
 - **Corporate:** a navy bar, white rooms with an accent edge, square corners.
 - **Retro Pixel:** a dark arcade page with pixel characters at CRT desks.
 - **Durbar · Indian / European / Japanese:** three royal courts, each with its own frames, colours and court place names.
+- **Cheeky Crew** (experimental, spec 077): a playful desk and 13 young, cheeky, office-safe characters. Each session gets one at random, among those the office uses least, kept per session; a picture shows it working, waiting or resting. If a picture is missing, the plain figure is drawn.
 - **Make a theme with AI:** describe a look ("a pirate ship at night"), or pick one of the ideas, and Claude Code, Codex or Copilot designs a light or dark theme: colours, a style, place names and art for the people and furniture. Durbar keeps only safe values, cleans the art like an imported pack, and checks that text stays readable; the AI gets up to 3 passes to fix what fails. Try it on the whole app before you save it. One theme costs about a cent on Claude (haiku); Copilot spends AI credits from your plan (shown with the result): about 0.25 AI credits per pass on a free plan, checked on 2026-10-20.
 - **Your own themes:** a folder with a `manifest.json` (colours, fonts, corner radii, shadows, the people's clothes and hair colours, a UI style and a scene kit from fixed lists, small SVG art including the desk's cup and laptop, place names), imported and exported in Settings. A theme is data only: no scripts and no CSS. Fonts are installed system fonts from an allow-list (a theme never downloads a font or loads a font file), sizes and spacing stay the app's so the office always fits, SVG art is rebuilt from allowed shapes, a value that is merely unusable falls back to the default and a text colour that would be hard to read is adjusted just enough (the theme stays light or dark), with a note in Settings, and a pack with markup or CSS in a value is refused with a message (spec 070).
 
@@ -328,6 +329,8 @@ Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spe
 [MIT](LICENSE), Copyright (c) 2026 Three Feathers contributors.
 
 Agent Durbar is by **Three Feathers**. Key contributors: [vikramgorla](https://github.com/vikramgorla), [fjcabello](https://github.com/fjcabello) and [rubenlupi](https://github.com/rubenlupi) (GitHub handles are used as the names). The names live in [`src/shared/about.ts`](src/shared/about.ts) and are shown in the OS About panel and in Settings > About.
+
+The Cheeky Crew pictures (`src/renderer/crew/art/`) were made with ChatGPT image generation from prompts written by Paco's agent, prompted by Paco, who also did the final pass; the tool, date and prompt of each are in [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) (spec 077).
 
 The app id is `io.github.three-feathers.agentdurbar` since 2026-10-16. A build from before then is a separate app to the OS; uninstall it by hand. Saved data is kept.
 
