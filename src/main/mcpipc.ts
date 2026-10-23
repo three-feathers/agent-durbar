@@ -14,8 +14,10 @@ import { mcpSecretValues } from './mcpmask';
 import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRestartOp } from './mcpsession';
 import { mcpToolsOp } from './mcptoolsop';
-import { McpSignInStore, SignInPoller, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp } from './mcpsignin';
+import { McpSignInStore, SignInPoller, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, serverUrlFor } from './mcpsignin';
 import { McpStore } from './mcpstore';
+import { mcpHealthUpdate } from '../shared/mcphealth';
+import type { McpHealthMark } from '../shared/mcphealth';
 import type { SecretCodec } from './mcpstore';
 
 /**
@@ -58,6 +60,8 @@ export function registerMcpIpc(deps: {
   globalFor?(agentId: string): Record<string, McpServerSpec>;
   /** Spec 069 FR-011: the names of each agent app's user list, read now. */
   globalNames?(): Partial<Record<GlobalApp, string[]>>;
+  /** Spec 058 FR-185: the addresses of Codex's own `config.toml` servers (the values-free view), for the "different site" line of a Codex agent. */
+  codexServers?(): Record<string, { url?: string }>;
   /** The agent app of an agent (`copilot`, `claude`, `codex`, ...). */
   appOf?(agentId: string): string | undefined;
   /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */
@@ -85,6 +89,8 @@ export function registerMcpIpc(deps: {
       return []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
     }
   };
+  /** Spec 058 FR-092: per session, when each server's state started and whether a failure came after Running (dropped when it stops). */
+  const health = new Map<string, Map<string, McpHealthMark>>();
   /** Spec 058 FR-065: the sign-in pages the agent apps handed back, in memory only (never logged, never written), for at most 10 minutes. */
   const signIns = new McpSignInStore(deps.now ?? Date.now, deps.openUrl ?? (async () => { throw new Error('no browser'); }));
   /** FR-064 (real 2026-10-23): while a sign-in page is open, read the agent app's server list again every 5 s (at most 10 minutes) and when the window regains focus. */
@@ -93,12 +99,30 @@ export function registerMcpIpc(deps: {
     return ad && ad.isLive(id) ? ad.refreshMcpStatus?.(id, name) : undefined;
   }, deps.timers ?? { set: (fn, ms) => setInterval(fn, ms), clear: (h) => clearInterval(h as ReturnType<typeof setInterval>) });
   signIns.hooks = { opened: (a, n) => poller.start(a, n), dropped: (a, n) => poller.stop(a, n) };
+  /**
+   * FR-176: after Cancel or the time limit, a browser step the user still finishes is picked up by the agent app, but no page is held, so
+   * nothing polls. For 5 minutes after an attempt, the dialog opening or the window regaining focus reads the list once for that session
+   * (one read in flight per agent; a failing read changes nothing).
+   */
+  const rechecking = new Set<string>();
+  const recheck = (id: string): void => {
+    const names = signIns.recent(id);
+    const ad = router.forAgent(id);
+    if (!names.length || rechecking.has(id) || !ad?.isLive(id) || typeof ad.refreshMcpStatus !== 'function') return;
+    rechecking.add(id);
+    void Promise.resolve()
+      .then(() => ad.refreshMcpStatus?.(id, names[0]))
+      .catch(() => undefined)
+      .finally(() => rechecking.delete(id));
+  };
   router.onEvent((e) => {
     if (e.type === 'mcp') {
       live.set(e.sessionId, e.servers);
+      health.set(e.sessionId, mcpHealthUpdate(health.get(e.sessionId), e.servers, Date.now()));
       signIns.onServers(e.sessionId, e.servers); // connected: the sign-in is finished
     } else if (e.type === 'status' && e.status === 'stopped') {
       live.delete(e.sessionId);
+      health.delete(e.sessionId);
       signIns.dropAgent(e.sessionId); // End session, Restart session (it ends the session first), a failed reconnect
     }
   });
@@ -178,7 +202,10 @@ export function registerMcpIpc(deps: {
   ipcHandle('agents:mcp', (_e, id: unknown, focus?: unknown): AgentMcpReply => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, servers: [], live: false };
-    if (focus === true) poller.kick(a.id); // only the window regaining focus asks for this (a repaint after an `mcp` event must not, or each read would trigger the next)
+    if (focus === true) {
+      poller.kick(a.id); // only the window regaining focus or the dialog opening asks for this (a repaint after an `mcp` event must not, or each read would trigger the next)
+      recheck(a.id);
+    }
     const s = store();
     const dis = new Set(s.ambientDisabled());
     // Spec 069 FR-009/FR-011: each agent app's own list. Copilot loads the Copilot CLI list itself; Durbar passes Claude Code's list to
@@ -199,7 +226,9 @@ export function registerMcpIpc(deps: {
       app: deps.appOf?.(a.id),
       claudeList: (gn.claude ?? []).map((n) => ({ name: n, enabled: !dis.has(claudeOffKey(n)) })),
       toolsOff: s.toolsOffFor(keyOf(a)),
+      health: health.get(a.id),
       signIn: (n) => signIns.view(a.id, n),
+      serverUrl: (n) => serverUrlOf(a.id, n),
       global: gn,
       builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
     });
@@ -208,19 +237,19 @@ export function registerMcpIpc(deps: {
   const restarting = new Set<string>();
   ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
     mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
-  /** Spec 058 FR-075: the server's own address, for the "different site" line: this folder's extra, the user list Durbar passes, then the Copilot CLI list. */
+  /** Spec 058 FR-075/FR-185: the server's own address, for the "different site" line, from the lists this agent's app uses (`serverUrlFor`). */
   const serverUrlOf = (agentId: string, name: string): string | undefined => {
     const a = agents.get(agentId);
     if (!a) return undefined;
     try {
-      return store().list(keyOf(a)).find((v) => v.name === name)?.url ?? deps.globalFor?.(agentId)?.[name]?.url ?? cli().servers.find((v) => v.name === name)?.url;
+      return serverUrlFor(deps.appOf?.(agentId), name, { extras: () => store().list(keyOf(a)), copilot: () => cli().servers, claude: () => deps.globalFor?.(agentId) ?? {}, codex: () => deps.codexServers?.() ?? {} });
     } catch {
       return undefined;
     }
   };
   /** Spec 058 FR-065: Sign in, Open sign-in page, Cancel. Window only; main holds the address, the window gets the host. */
-  ipcHandle('agents:mcpSignIn', (e, id: unknown, name: unknown) =>
-    fromApp(e) ? mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf }, signIns, id, name) : { ok: false, error: 'invalid request' });
+  ipcHandle('agents:mcpSignIn', (e, id: unknown, name: unknown, again?: unknown) =>
+    fromApp(e) ? mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf }, signIns, id, name, again) : { ok: false, error: 'invalid request' });
   ipcHandle('agents:mcpOpenSignIn', (e, id: unknown, name: unknown, host: unknown) => (fromApp(e) ? mcpOpenSignInOp(signIns, agents, id, name, host) : { ok: false, error: 'invalid request' }));
   ipcHandle('agents:mcpCancelSignIn', (e, id: unknown, name: unknown) => (fromApp(e) ? mcpCancelSignInOp({ agents, router }, signIns, id, name) : { ok: false, error: 'invalid request' }));
   /** Spec 069 FR-061: the tools turned off for one server in this agent's folder (applies to new sessions and after Restart session). */

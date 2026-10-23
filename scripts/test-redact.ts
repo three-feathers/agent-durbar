@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
 
 // CPU time of f in ms (user + system of this process), not wall time: it does not grow when other processes take the CPU, so the
 // timing checks below hold on a loaded machine or runner (spec 041 `## Changes` 2026-10-22, T068). It still counts every step the
@@ -465,7 +465,8 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const u = maskSecretUrl('https://h.test/p?' + q + '=' + SEC + '&page=2');
     assert.strictEqual(u, 'https://h.test/p?' + q + '=' + R + '&page=2', q);
   }
-  assert.strictEqual(maskSecretUrl('https://h.test/?code=abc&page=2'), 'https://h.test/?code=abc&page=2');
+  // review on PR #630: an OAuth authorization `code` is a secret (it was kept before); the page number stays
+  assert.strictEqual(maskSecretUrl('https://h.test/?code=abc&page=2'), 'https://h.test/?code=' + R + '&page=2');
   // review round 2: spaces in connection strings, JSON headers, command split, dash values, minor shapes
   masked(['--conn', 'Server=x; Password=' + SEC], ['--conn', 'Server=x; Password=' + R], 'conn with a space after ;');
   masked(['--conn', 'Server=x; Password = ' + SEC + ' ;Database=d'], ['--conn', 'Server=x; Password=' + R + ';Database=d'], 'conn with spaces around =');
@@ -1048,6 +1049,58 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   };
   walk(path.join(srcRoot, 'src'));
   assert.deepStrictEqual(offenders, [], 'used in: ' + offenders.join(', '));
+}
+
+// Review on PR #630 (spec 058 FR-093): home folders to `~`, OAuth query values, a bearer token in any case
+{
+  const h = (t: string, homes?: string[]) => maskHomePaths(t, homes ?? []);
+  assert.strictEqual(h('spawn /home/vikram/.local/bin/x ENOENT'), 'spawn ~/.local/bin/x ENOENT');
+  assert.strictEqual(h('/Users/ana/x and /Users/ana'), '~/x and ~');
+  assert.strictEqual(h('C:\\Users\\vikram\\AppData\\npx.cmd'), '~\\AppData\\npx.cmd');
+  assert.strictEqual(h('c:/Users/vikram/x'), '~/x');
+  assert.strictEqual(h('{"p":"C:\\\\Users\\\\vikram\\\\x"}'), '{"p":"~\\\\x"}', 'JSON-escaped');
+  assert.strictEqual(h('C:\\Users\\Bob Smith\\AppData'), '~\\AppData', 'a Windows user name with a space');
+  assert.strictEqual(h('/srv/data/home/x'), '/srv/data/home/x', 'not a home folder');
+  assert.strictEqual(h('x /opt/me/proj and /opt/me', ['/opt/me']), 'x ~/proj and ~', 'a given home folder');
+  assert.strictEqual(h('/opt/meow/x', ['/opt/me']), '/opt/meow/x', 'only a whole folder name');
+  assert.strictEqual(h('/x', ['/']), '/x', 'a too-short home is ignored');
+  const t0 = Date.now();
+  maskHomePaths('/home/' + 'a'.repeat(1_000_000), []);
+  maskHomePaths('/home/a '.repeat(100_000), []);
+  assert.ok(Date.now() - t0 < 1500, 'bounded on hostile input');
+  const u = maskSecretUrl('https://x.test/cb?code=AbC123&state=xyz9&Code=Q1&id_token=i.d.t&refresh_token=rr&ok=1#access_token=at1');
+  for (const v of ['AbC123', 'xyz9', 'Q1', 'i.d.t', 'rr', 'at1']) assert.ok(!u.includes(v), 'OAuth value masked: ' + v + ' in ' + u);
+  assert.ok(u.includes('ok=1'));
+  assert.deepStrictEqual(maskSecretArgs(['--code', 'abc', '--state', 'x']), ['--code', 'abc', '--state', 'x'], 'flags are unchanged by the OAuth rule (it is URL-only)');
+  for (const b of ['bearer abcdefgh12345678', 'BEARER abcdefgh12345678', 'Bearer abcdefgh12345678']) assert.ok(!redact(b).includes('abcdefgh12345678'), b);
+}
+
+// ---- spec 058 (security review on #635): OAuth query values in redact() itself, so the debug sink masks a CLI's stderr line ----
+{
+  const lines: string[] = [];
+  const sink = createDebugSink('/dev/null', {}, (_f, d) => lines.push(d));
+  const page = 'https://auth.example.com/authorize?response_type=code&client_id=durbar&code_challenge=PKCECHALLENGE123&state=STATEVALUE456&redirect_uri=http%3A%2F%2F127.0.0.1%3A41234%2Fcallback';
+  const cb = 'http://127.0.0.1:41234/callback?code=AUTHCODE789&state=STATEVALUE456';
+  const enc = 'next=' + encodeURIComponent(cb);
+  const frag = 'https://app.example.com/cb#access_token=ACCESSTOK111;id_token=IDTOK222&refresh_token=REFRESH333';
+  const other = 'POST /token code_verifier=x client_secret=y'; // not a URL query: unchanged by this rule
+  sink({ stderr: `MCP OAuth for notes: ${page}\nlistening ${cb}\n${enc}\n${frag}\n${other}` });
+  const out = lines.join('');
+  for (const v of ['PKCECHALLENGE123', 'STATEVALUE456', 'AUTHCODE789', 'ACCESSTOK111', 'IDTOK222', 'REFRESH333']) assert.ok(!out.includes(v), `${v} is masked in the debug sink: ${out}`);
+  assert.ok(out.includes('client_id=durbar') && out.includes('response_type=code') && out.includes('127.0.0.1') && out.includes('auth.example.com/authorize'), 'the rest of the line stays readable');
+  assert.ok(out.includes('code_verifier=x client_secret=y'), 'only query and fragment values');
+  assert.strictEqual(redact('?CODE=abc&State=def'), '?CODE=[redacted]&State=[redacted]', 'any case');
+  assert.strictEqual(redact('see ?codec=1&statement=2'), 'see ?codec=1&statement=2', 'a longer name is not one of them');
+  assert.ok(!JSON.parse(lines[0]).stderr.includes('AUTHCODE'), 'the line stays valid JSON');
+  // bounded and linear: long values and long runs of separators
+  const t1 = cpuMs(() => void redact('?code=' + 'a'.repeat(200_000)), 2000);
+  const t2 = cpuMs(() => void redact('?code=' + 'a'.repeat(800_000)), 2000);
+  const r1 = cpuMs(() => void redact('&state='.repeat(30_000)), 2000);
+  const r2 = cpuMs(() => void redact('&state='.repeat(120_000)), 2000);
+  const s1 = cpuMs(() => void redact('%3F'.repeat(60_000)), 2000);
+  const s2 = cpuMs(() => void redact('%3F'.repeat(240_000)), 2000);
+  console.log(`redact: oauth query linearity value ${t1.toFixed(0)}/${t2.toFixed(0)} ms, names ${r1.toFixed(0)}/${r2.toFixed(0)} ms, separators ${s1.toFixed(0)}/${s2.toFixed(0)} ms`);
+  for (const [a, b, what] of [[t1, t2, 'value'], [r1, r2, 'names'], [s1, s2, 'separators']] as const) assert.ok(b < Math.max(250, a * 10), `oauth query rule is linear (${what}: ${a} -> ${b} ms CPU for 4x input)`); // a floor well above Windows' ~16 ms timer step and CI load; backtracking would take seconds
 }
 
 console.log('redact: all checks passed');

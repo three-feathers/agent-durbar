@@ -2,7 +2,7 @@ import { FolderSetupStore } from './foldersetupstore';
 import { acceptedFor, hasFolderRules, scanFolderSetupCached } from './foldersetup';
 import type { FolderSetupStart } from '../shared/foldersetup';
 import type { McpServerSpec } from '../shared/mcp';
-import { cliServers, copilotDir } from './mcpfiles'; // spec 061 FR-015: the explainer switches Copilot's own servers off
+import { copilotDir, copilotServerNames } from './mcpfiles'; // spec 061 FR-015: the explainer switches Copilot's own servers off
 import { parseEffort } from '../shared/effort';
 import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron';
 import { register as registerActivityIpc } from './ipc/activity';
@@ -17,6 +17,7 @@ import { register as registerFoldersIpc } from './ipc/folders';
 import { register as registerFolderSetupIpc } from './ipc/foldersetupipc';
 import { register as registerHarnessIpc } from './ipc/harness';
 import { register as registerModelIpc } from './ipc/model';
+import { onAutoTierFailed } from './ipc/model';
 import { register as registerPreviousIpc } from './ipc/previous';
 import { register as registerProfilesIpc } from './ipc/profiles';
 import { createProfileFreshness } from './profilefiles';
@@ -45,7 +46,8 @@ import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { startOptionsOf } from './startopts';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
-import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs } from '../shared/attachments';
+import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs, sweepStaleTempDirs } from '../shared/attachments';
+import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import type { AddResult, AgentInfo, PermMode, PickedFile, SessionOptions } from '../shared/api';
 import { GROUND } from '../shared/floors';
 import { createElicitTracker } from '../shared/elicit';
@@ -59,6 +61,7 @@ import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
 import { maskMcpEvent, maskMcpHistory } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
+import { appServerUrls } from './mcpsignin';
 import { globalFiles } from './mcpglobal';
 import { GlobalLists, sessionGlobalFor } from './mcpglobalio';
 import { register as registerMcpGlobalIpc } from './ipc/mcpglobal';
@@ -159,6 +162,7 @@ const mcp = registerMcpIpc({
   log: (a, action) => logActivity(a, 'mcp-restart', action),
   openUrl: (url) => shell.openExternal(url), // spec 058 FR-065: the held sign-in page, only after the user's click
   globalNames: () => Object.fromEntries(globalLists.state(() => []).apps.map((x) => [x.app, x.servers.map((v) => v.name)])),
+  codexServers: () => appServerUrls(globalLists.state(() => []).apps, 'codex'), // spec 058 FR-185: the values-free view, addresses only (the "different site" line)
 });
 registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
 /** Files the user picked through the native dialog; only these can be attached. */
@@ -260,8 +264,12 @@ router.onEvent((e) => {
   a.model = e.model;
   if (e.cause === 'user' || e.effort !== undefined) a.effort = e.effort;
   a.tier = e.tier === 'long' ? 'long' : undefined;
-  if (e.cause === 'user') folderStore?.setModelChoice(wsKey(a), { model: e.model, effort: e.effort, contextTier: a.tier });
+  if (e.cause === 'user' && e.autoTier) a.autoTier = e.autoTier; // spec 007 FR-016: a tier the user chose (a runtime change is shown, never saved)
+  if (e.cause === 'user') folderStore?.setModelChoice(wsKey(a), { model: e.model, effort: e.effort, contextTier: a.tier, autoTier: e.autoTier });
 });
+
+/** Spec 007 FR-019: a tier switch the runtime could not apply: the tier still in effect is shown and saved again, so a resume does not ask for the failed one. */
+router.onEvent((e) => onAutoTierFailed(e, agents, folderStore, wsKey));
 
 // Dev/test: DURBAR_LOG=/path/events.jsonl records every normalized event and what is sent to the SDK.
 if (dev.DURBAR_LOG) {
@@ -418,6 +426,7 @@ function restoreFolders(): void {
         if (ls) info.resumeLast = true;
         if (f.label) info.label = f.label;
         if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
+        if (f.autoTier) info.autoTier = f.autoTier; // spec 007 FR-016
         router.bind(info.id, kind);
         agents.set(info.id, info);
         applyStoredAlias(info); // spec 059 FR-014
@@ -669,7 +678,7 @@ function oneShotFor(id: string): { name: string; generate: (prompt: string) => R
   if (!registry.has(id)) return undefined;
   const ad = router.instance(id);
   if (typeof ad.generateText !== 'function') return undefined;
-  const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
+  const opts = id === 'copilot' ? { disabledMcpServers: copilotServerNames(copilotDir(dev)) } : {};
   return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
 }
 registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id), profileFreshness });
@@ -889,6 +898,7 @@ app.whenReady().then(() => {
   activityStore = new ActivityStore(path.join(app.getPath('userData'), 'activity.json'));
   activityStore.load();
   sweepStaleStageDirs(os.tmpdir()); // spec 004 FR-010: staging folders a crash left behind
+  sweepStaleTempDirs(os.tmpdir(), ACCOUNT_TEMP_PREFIXES, Date.now(), 3600_000); // spec 051 FR-022: account-probe and one-shot folders a quit left behind
   agentTrust = new AgentTrustStore(path.join(app.getPath('userData'), 'durbar-agent-trust.json'));
   agentTrust.load();
   usageTotalsStore.load();

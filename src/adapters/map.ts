@@ -10,8 +10,11 @@ import { isMcpAuthChallenge } from './mcpauth';
 import type { AgentEvent, CompactionEvent, ContextTier, McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import { nonEmptyStr as str } from '../shared/guards';
+import { parseAutoTier } from '../shared/modelswitch';
 import { EditStreams, editOf } from './edits';
 import { usageLimitClosing } from './usagelimit';
+import { markAuthError } from './autherrors';
+import { RetryTracker, copilotRetry } from './retry';
 
 export type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> : never) : never;
 
@@ -27,6 +30,8 @@ const positive = (v: unknown): number | undefined => (typeof v === 'number' && v
 const triggerOf = (v: unknown): CompactionEvent['trigger'] => (v === 'manual' ? 'manual' : v === 'model_switch' ? 'model-switch' : v === 'context_limit_retry' ? 'overflow' : 'auto');
 
 const SUBAGENT_NAME_FALLBACK = 'Sub-agent';
+/** Spec 034 FR-017: events that show the model answered (a retried call went through). Usage is not one: a failed turn can report cost too. */
+const PROGRESS = new Set(['assistant.message_delta', 'assistant.message', 'assistant.reasoning_delta', 'assistant.reasoning', 'assistant.tool_call_delta', 'tool.execution_start']);
 
 export class EventMapper {
   /** callId -> tool name (and MCP origin), so complete/update events can carry them. */
@@ -46,6 +51,8 @@ export class EventMapper {
   private compaction: { trigger: CompactionEvent['trigger']; limit?: number } | undefined;
   /** A model Agent Durbar asked for: the next change to it is the user's own (cause `user`), not the runtime's. */
   private expected: string | undefined;
+  /** Spec 034 FR-017: the main agent's model-call retries in this turn (`model.call_failure`). */
+  private retries = new RetryTracker();
 
   constructor(private readonly emit: (body: EventBody) => void) {}
 
@@ -56,6 +63,7 @@ export class EventMapper {
     this.reasoningSeen.clear();
     this.instances.clear();
     this.model = this.tier = this.compaction = this.expected = undefined;
+    this.retries.reset();
   }
 
   /** Tell the mapper the user asked for `model`, so the matching `session.model_change` is reported with cause `user`. */
@@ -78,13 +86,28 @@ export class EventMapper {
     for (const s of servers) {
       if (!s || typeof s.name !== 'string') continue;
       listed.add(s.name);
-      const next = mcpStatus(s.name, s);
+      const read = mcpStatus(s.name, s);
+      // spec 058 FR-091 (review on PR #630): the list has no classification and may have no transport; while the state is the same,
+      // what the runtime's own status event said stays (a failed `os_not_found` must not turn into "reason unknown" on each poll).
+      // FR-164 (review on #625): source and transport are kept whatever the state, so a stdio or built-in server never looks remote
+      const prev = this.mcp.get(s.name);
+      const same = prev && prev.status === read.status;
+      const next = { ...read, source: knownSource(read.source) ?? prev?.source ?? read.source, transport: read.transport ?? prev?.transport, ...(same && prev.errorClass ? { errorClass: prev.errorClass } : {}) };
       if (this.derivedAuth.has(s.name) && next.status === 'connected') continue; // the same "connected" the runtime always says: not new
       this.derivedAuth.delete(s.name);
       this.mcp.set(s.name, next);
     }
     for (const n of [...this.mcp.keys()]) if (!listed.has(n)) { this.mcp.delete(n); this.derivedAuth.delete(n); }
     this.emitMcp();
+  }
+
+  /**
+   * Spec 058 FR-163: the last status of one MCP server of this session as Durbar knows it (`needs-auth` while tool failures marked it),
+   * undefined when the runtime has not reported the server. Read by the adapter to avoid asking the runtime about a failed server.
+   */
+  mcpStatusOf(name: string): string | undefined {
+    if (this.derivedAuth.has(name)) return 'needs-auth';
+    return this.mcp.get(name)?.status;
   }
 
   private emitMcp(): void {
@@ -102,7 +125,15 @@ export class EventMapper {
     const d = ev.data ?? {};
     if (ev.type === 'subagent.started' && ev.agentId && d.toolCallId) this.instances.set(ev.agentId, d.toolCallId);
     const agentId = this.who(ev);
+    // spec 034 FR-017: the model answered the main agent (text, reasoning, a tool call), so a retried call went through
+    if (!agentId && PROGRESS.has(ev.type)) this.retries.progress();
     switch (ev.type) {
+      case 'model.call_failure': {
+        // spec 034 FR-017: a failed model call of the top-level agent that the runtime retries; fixed reason and numbers, never the message
+        const info = agentId ? null : copilotRetry(d);
+        if (info) this.emit(this.retries.retry(info));
+        return;
+      }
       case 'user.message':
         // The main agent's user message is the one the user typed (the renderer already shows it); a sub-agent's is its task prompt.
         if (agentId && typeof d.content === 'string') this.emit({ type: 'user', text: d.content, agentId });
@@ -194,6 +225,8 @@ export class EventMapper {
       case 'session.model_change': {
         if (agentId || typeof d.newModel !== 'string' || !d.newModel) return;
         const tier = tierOf(d.contextTier);
+        // spec 007 FR-016: the three names only; FR-020: an organization default (`autoTierManaged: true`) is never reported as the user's own tier
+        const autoTier = d.newModel === 'auto' && d.autoTierManaged !== true ? parseAutoTier(d.autoTier) : undefined;
         const cause = d.cause === 'rate_limit_auto_switch' ? 'rate-limit' : d.cause === 'refusal_fallback' ? 'fallback' : this.expected === d.newModel ? 'user' : 'runtime';
         if (this.expected === d.newModel) this.expected = undefined;
         this.model = d.newModel;
@@ -205,8 +238,17 @@ export class EventMapper {
           effort: typeof d.reasoningEffort === 'string' ? d.reasoningEffort : undefined,
           previousEffort: str(d.previousReasoningEffort),
           tier,
+          ...(autoTier ? { autoTier } : {}),
           cause,
         });
+      }
+      case 'session.auto_tier_switch_failed': {
+        // spec 007 FR-019: the tier asked for did not take; the one in effect stays (three names only, else "the default")
+        if (agentId) return;
+        const r = d.reason;
+        const reason = r === 'policy_rejected' ? 'policy-rejected' : r === 'request_failed' ? 'request-failed' : r === 'setup_failed' ? 'setup-failed' : r === 'unsupported' ? 'unsupported' : 'unknown';
+        const requested = parseAutoTier(d.requestedAutoTier), effective = parseAutoTier(d.effectiveAutoTier);
+        return this.emit({ type: 'autoTierFailed', reason, ...(requested ? { requested } : {}), ...(effective ? { effective } : {}) });
       }
       case 'session.compaction_start': {
         if (agentId) return;
@@ -244,8 +286,13 @@ export class EventMapper {
       case 'session.mcp_server_status_changed':
         if (typeof d.serverName !== 'string') return;
         this.derivedAuth.delete(d.serverName);
-        this.mcp.set(d.serverName, mcpStatus(d.serverName, { status: d.status, error: d.error, source: d.configSource ?? this.mcp.get(d.serverName)?.source, transport: this.mcp.get(d.serverName)?.transport }));
+      {
+        const st = mcpStatus(d.serverName, { status: d.status, error: d.error, source: knownSource(d.configSource) ?? this.mcp.get(d.serverName)?.source ?? d.configSource, transport: this.mcp.get(d.serverName)?.transport });
+        // spec 058 FR-091: the runtime's own classification of a failed start, known values only (a later state drops it)
+        const cls = st.status === 'failed' ? copilotErrorClass(d.errorClassification) : undefined;
+        this.mcp.set(d.serverName, cls ? { ...st, errorClass: cls } : st);
         return this.emitMcp();
+      }
       case 'session.mcp_server_removed':
         if (typeof d.serverName === 'string' && this.mcp.delete(d.serverName)) this.emitMcp();
         return;
@@ -335,16 +382,23 @@ export class EventMapper {
         this.toolNames.clear();
         this.reasoningSeen.clear();
         this.edits.clear();
+        if (!agentId) this.retries.reset();
         return this.emit({ type: 'status', status: 'idle', intent: d.aborted ? 'Aborted' : undefined });
       case 'session.error': {
         // spec 068 FR-002: a used-up quota or a rate limit that stopped the turn is a coffee break, not an error
         const lim = agentId ? null : copilotUsageLimit(d.errorType, d.errorCode);
+        // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)
+        const err: EventBody = { type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType, d.message) };
+        // spec 034 FR-017: a turn that fails after a retry gave up; not at a usage limit and not at a sign-in failure (the sign-in card says why)
+        const auth = (markAuthError(err) as { errorKind?: string }).errorKind === 'auth';
+        const gaveUp = !agentId && !lim && !auth ? this.retries.gaveUp() : undefined;
+        if (!agentId) this.retries.reset();
+        if (gaveUp) this.emit(gaveUp);
         if (lim) {
           this.emit(lim);
           return this.emit(usageLimitClosing());
         }
-        // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)
-        return this.emit({ type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType, d.message) });
+        return this.emit(err);
       }
       default:
         return;
@@ -372,7 +426,34 @@ export function copilotUsageLimit(errorType: unknown, errorCode: unknown): (Even
   return null;
 }
 
+/**
+ * Spec 058 FR-091 (issue #603): Copilot's `errorClassification` ("Runtime-produced classification for the final failed connection;
+ * ... Additional string values may be introduced") to Durbar's `errorClass`. Known values only (read: the runtime's strings in
+ * `@github/copilot-sdk-linux-x64` 1.0.22; `os_not_found` real 2026-10-21, spec 058 T060); anything else is not guessed (undefined).
+ */
+const COPILOT_CLASS: Record<string, McpServerStatus['errorClass']> = {
+  os_not_found: 'not-found',
+  config_invalid: 'config',
+  os_permission_denied: 'permission',
+  os_connection_refused: 'refused',
+  os_network_unreachable: 'refused',
+  os_connection_closed: 'disconnected',
+  timeout_initialize: 'timeout',
+  timeout_connection: 'timeout',
+  timeout_subscription: 'timeout',
+};
+export function copilotErrorClass(v: unknown): McpServerStatus['errorClass'] | undefined {
+  if (typeof v !== 'string' || !v) return undefined;
+  if (Object.prototype.hasOwnProperty.call(COPILOT_CLASS, v)) return COPILOT_CLASS[v];
+  return /^process_(linux|windows|macos)_(exited|terminated|crashed)$/.test(v) ? 'exited' : undefined;
+}
+
 const num = (v: unknown): number | undefined => (typeof v === 'number' && v >= 0 ? v : undefined);
+
+/** A source the runtime actually named: `unknown` or a missing one never replaces what it said before (review on #625). */
+function knownSource(v: unknown): string | undefined {
+  return typeof v === 'string' && v && v !== 'unknown' ? v : undefined;
+}
 
 function mcpStatus(name: string, s: Record<string, any>): McpServerStatus { // eslint-disable-line @typescript-eslint/no-explicit-any
   return { name, status: str(s.status) ?? 'pending', source: str(s.source), transport: str(s.transport), error: str(s.error)?.slice(0, 300) };

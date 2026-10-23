@@ -7,12 +7,13 @@
 import type { FolderSetupStart } from '../shared/foldersetup';
 import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit';
 import type { McpServerSpec } from '../shared/mcp';
-import type { CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
+import type { AutoTier, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
 import type { EditInfo } from '../shared/edits';
+import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
 export type { EditInfo };
 export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
@@ -37,8 +38,11 @@ export interface StartOptions {
   /** Folder or .code-workspace file; one session per workspace. */
   workspace: string;
   model?: string;
-  /** For model 'auto': routing preference ('efficiency' is the cheapest). */
-  autoTier?: 'efficiency' | 'balance' | 'intelligence';
+  /**
+   * For model 'auto': the routing preference the user chose and Durbar saved (spec 007 FR-016); it goes on create AND resume.
+   * Absent: a new `auto` session gets the adapter's default (Copilot: `efficiency`, or nothing under a managed tier), a resume nothing.
+   */
+  autoTier?: AutoTier;
   /** Cap for this session in the adapter's `capUnit`: AI credits (treated as AIU, spec 011 FR-015) or dollars (spec 012 FR-150). Soft. */
   maxAiCredits?: number;
   /** Resume an existing session by the vendor's own session id (disk-backed). */
@@ -258,7 +262,20 @@ export interface ModelEvent extends BaseEvent {
   effort?: string;
   previousEffort?: string;
   tier?: ContextTier;
+  /** Spec 007 FR-016: the Auto routing tier the runtime reports with the change (one of the three names only). */
+  autoTier?: AutoTier;
   cause: 'user' | 'runtime' | 'rate-limit' | 'fallback' | 'resume';
+}
+
+/**
+ * Spec 007 FR-019: the runtime could not switch the Auto routing tier (Copilot `session.auto_tier_switch_failed`: "the previously effective
+ * preference remains active"). `effective` = the tier still in use (absent: the provider's default); `requested` absent = a return to the default failed.
+ */
+export interface AutoTierFailedEvent extends BaseEvent {
+  type: 'autoTierFailed';
+  requested?: AutoTier;
+  effective?: AutoTier;
+  reason: 'policy-rejected' | 'request-failed' | 'setup-failed' | 'unsupported' | 'unknown';
 }
 
 /** Compaction of the context (spec 030): `auto` = the runtime did it at its threshold, `manual` = the user asked, `model-switch` = before a switch to a smaller window, `overflow` = after the window was exceeded. */
@@ -274,8 +291,11 @@ export interface CompactionEvent extends BaseEvent {
   error?: string;
 }
 
-/** Result of `startMcpSignIn` (spec 058 FR-064). */
-export type McpSignInResult = { kind: 'browser'; url: string } | { kind: 'connected' };
+/**
+ * Result of `startMcpSignIn` (spec 058 FR-064). `ttlMs` (FR-180): how long the agent app's own listener still waits for the browser
+ * step, as the adapter knows it; main keeps the address for `min(ttlMs, 10 minutes)`. Missing = 10 minutes.
+ */
+export type McpSignInResult = { kind: 'browser'; url: string; ttlMs?: number } | { kind: 'connected' };
 
 export interface McpServerStatus {
   name: string;
@@ -285,8 +305,13 @@ export interface McpServerStatus {
   source?: string;
   transport?: string;
   error?: string;
-  /** Spec 058 FR-011: normalized kind of failure, set by the adapter only when the vendor says so; missing = not said. */
-  errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config';
+  /** Spec 058 FR-011 / FR-091: normalized kind of failure, set by the adapter only when the vendor says so; missing = not said. */
+  errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config' | 'refused' | 'disconnected' | 'permission';
+  /**
+   * Spec 058 FR-180: set only by an adapter about a sign-in it started (`startMcpSignIn`): `next-message` = signed in, applies with the
+   * next message; `failed` = the agent app said the browser step failed. Main ends the open sign-in for it as for `connected`.
+   */
+  signInEnd?: 'next-message' | 'failed';
 }
 
 /** Spec 069 FR-031: one tool of an MCP server (main masks and cuts the description before the window gets it). */
@@ -344,6 +369,26 @@ export interface UsageLimitEvent extends BaseEvent {
   source: string;
   /** A later detail of the break this turn already reported (a reset time read afterwards); ignored when the agent is no longer on a break. */
   update?: boolean;
+}
+
+/** Spec 034 FR-016: why the agent app retries a model call (a fixed label chosen by the adapter, never the provider's text). */
+export type RetryReason = 'rate-limit' | 'overloaded' | 'server' | 'network' | 'timeout' | 'auth' | 'other';
+
+/**
+ * Spec 034 FR-016 (issue #600): the agent app retries a failed model API call by itself (`retrying`), or ran out of retries and the turn
+ * fails (`gave-up`, sent just before the error status). `attempt` is the retry number (1 = the first retry); on `gave-up`, the retries made.
+ * `maxAttempts` only when the agent app says how many it makes. No vendor field and no provider message: a fixed reason and numbers.
+ */
+export interface RetryEvent extends BaseEvent {
+  type: 'retry';
+  phase: 'retrying' | 'gave-up';
+  attempt: number;
+  maxAttempts?: number;
+  reason: RetryReason;
+  /** HTTP status of the failed call, 100-599, when the agent app gave one. */
+  httpStatus?: number;
+  /** How long the agent app waits before this retry, when it said so. */
+  delayMs?: number;
 }
 
 /**
@@ -494,10 +539,12 @@ export type AgentEvent =
   | UsageEvent
   | ContextEvent
   | ModelEvent
+  | AutoTierFailedEvent
   | CompactionEvent
   | McpStatusEvent
   | LimitEvent
   | UsageLimitEvent
+  | RetryEvent
   | TitleEvent;
 
 /** Spec 012 FR-156: the answer of `verifySignIn`. */
@@ -575,7 +622,7 @@ export interface AgentAdapter {
    * `browser`: the user finishes in the browser at `url` (main keeps it, the window only gets the host); `connected`: already signed in.
    * Rejects when the runtime has no such call or refuses it (the UI then shows `capabilities.mcpSignInSteps`).
    */
-  startMcpSignIn?(sessionId: string, name: string): Promise<McpSignInResult>;
+  startMcpSignIn?(sessionId: string, name: string, opts?: { again?: boolean }): Promise<McpSignInResult>;
   /**
    * Spec 058 FR-064 (real 2026-10-23: the runtime sent no event for a finished sign-in for a long while): read the session's MCP
    * servers from the agent app again and emit the usual `mcp` event. Optional, only with `startMcpSignIn`. Main calls it every 5 s while a
@@ -613,6 +660,11 @@ export interface AgentAdapter {
    * credits); `unknown` when it cannot tell. `detail` is a short, safe sentence: never a token, email or account name.
    */
   verifySignIn?(): Promise<SignInCheck>;
+  /**
+   * Spec 051 FR-011: the account the app reports as signed in (a login or email, the plan), asked without a prompt (no credits).
+   * Personal data: the adapter never passes it to `debug`, and main sends it only to the window (FR-015). Never a token.
+   */
+  accountInfo?(opts?: AccountInfoOptions): Promise<AccountIdentity>;
   /**
    * Spec 012 FR-158: pick up a new sign-in made outside the adapter (Settings or the chat's sign-in card) in anything the adapter
    * keeps across sessions (Copilot's shared runtime client). Live sessions survive it. Optional: an adapter that starts a

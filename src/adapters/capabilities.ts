@@ -47,6 +47,18 @@ export interface AdapterCapabilities {
   readonly mcpSignIn?: boolean;
   /** Spec 058 FR-068: plain text for signing in from a terminal when the in-app sign-in cannot run; `{name}` stands for the server name. Missing = a generic line. */
   readonly mcpSignInSteps?: string;
+  /** Spec 058 FR-180: one plain sentence under a row that offers Sign in, saying how far this app's sign-in was checked. Missing = none. */
+  readonly mcpSignInNote?: string;
+  /**
+   * Spec 058 FR-176/FR-181 (Q21 A): after a sign-in finished outside Agent Durbar (a terminal, or a browser step after Cancel), **Restart** on
+   * the row makes the running session pick it up, so a row that needs a sign-in keeps its Restart. Only with `mcpRestart`; missing = false.
+   */
+  readonly mcpSignInRestart?: boolean;
+  /**
+   * Spec 058 FR-164: `startMcpSignIn(id, name, { again: true })` makes the agent app forget the server's stored sign-in and run a new
+   * one through its own flow (Copilot `forceReauth`), so the agent app writes the sign-in again itself. Only with `mcpSignIn`; missing = false.
+   */
+  readonly mcpSignInAgain?: boolean;
   /** `handoffSummary()` exists (spec 030 FR-034); missing = false. */
   readonly handoff?: boolean;
   /** `generateText()` exists: one prompt, no tools, no session kept (spec 040 FR-015); missing = false. */

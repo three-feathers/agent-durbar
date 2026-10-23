@@ -91,7 +91,7 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .stat.attn{background:var(--warn-bg)}
 .stat.attn span.l{color:var(--amber-ink);font-weight:600}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none;display:inline-block}
-.dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour */
+.dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing,.dot.retrying{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour; spec 034 FR-018: Retrying too */
 .dot.idle{background:transparent;border:2px solid var(--c-idle);box-shadow:0 0 0 1px var(--pc-idle)} .dot.error{background:var(--c-error)} .dot.done{background:var(--c-done)}
 /* spec 052 FR-006: a shape as well as a colour (deuteranopia): waiting is a diamond, error a triangle, idle a ring, working and done circles */
 .dot.waiting{border-radius:1.5px;transform:rotate(45deg) scale(.86);box-shadow:0 0 0 1px var(--amber-ink)} /* spec 052 FR-052: a darker edge so it shows on light surfaces (size unchanged) */
@@ -183,6 +183,10 @@ body.has-bridge #liveBar{display:flex}
 #floor{flex:1;min-width:0;position:relative;overflow:hidden;padding:12px 16px 12px}
 #floor.scrolls{overflow-y:auto}
 .stage{display:flex;flex-wrap:wrap;gap:12px;align-content:flex-start;align-items:stretch}
+/* spec 001 FR-086, FR-087: spare height (spreadOffice sets --rx, padding-top and row-gap): a room row's extra height goes half under the header,
+   half under the desks, so the header stays at the top and the desks keep their size */
+.stage[data-spread] .room>.room-head{margin-bottom:calc(var(--rx) / 2)}
+.stage[data-spread] .room>.units{margin-bottom:calc(var(--rx) / 2)}
 /* spec 001 FR-033: a room's width inputs are read only by the element that carries them, so they do not inherit; changing them
    (the layout search tries several column counts) then restyles that element, not every desk inside it */
 @property --w{syntax:"*";inherits:false}
@@ -242,7 +246,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .st-working{--pb:var(--pb-working);--pc:var(--pc-working);--pd:var(--c-working)} .st-thinking{--pb:var(--pb-thinking);--pc:var(--pc-thinking);--pd:var(--c-thinking)}
 .st-waiting{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} .st-idle{--pb:var(--pb-idle);--pc:var(--pc-idle);--pd:var(--c-idle)}
 .st-error{--pb:var(--pb-error);--pc:var(--red-ink);--pd:var(--c-error)} .st-done{--pb:var(--pb-done);--pc:var(--pc-done);--pd:var(--c-done)}
-.st-failing{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} /* spec 052 FR-062: "Failing" reuses the waiting colours (no new status colour) */
+.st-failing,.st-retrying{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} /* spec 052 FR-062: "Failing" reuses the waiting colours (no new status colour); spec 034 FR-018: "Retrying" too */
 .st-idle i{background:transparent;border:1.5px solid var(--c-idle)}
 /* spec 052 FR-101: on cards and list rows a status that needs nothing from you is a dot and the word in its colour; Waiting, Error,
    Failing and Limit reached (a waiting state) keep the filled pill. Only colours change: the pill keeps its height and padding */
@@ -607,10 +611,10 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .desk.card:hover{background:var(--raised);border-color:var(--line-2)}
 /* waiting, error and failing: a light tint, and a 3px edge inside the card as the main signal (no coloured border on top) */
 .desk.card.is-waiting{background:var(--card-waiting);border-color:var(--line-hair);box-shadow:inset 3px 0 0 var(--c-waiting)}
-.desk.card.is-failing{background:color-mix(in srgb,var(--card-waiting) 55%,var(--surface));box-shadow:inset 3px 0 0 var(--c-waiting)}
+.desk.card.is-failing,.desk.card.is-retrying{background:color-mix(in srgb,var(--card-waiting) 55%,var(--surface));box-shadow:inset 3px 0 0 var(--c-waiting)}
 .desk.card.is-error{background:var(--card-error);border-color:var(--line-hair);box-shadow:inset 3px 0 0 var(--c-error)}
 .desk.card[aria-pressed="true"],.helper.hc[aria-pressed="true"]{border-color:var(--sel-border,#7fa0bd);box-shadow:0 0 0 1.5px var(--sel-border,#7fa0bd)}
-.desk.card.is-waiting[aria-pressed="true"],.desk.card.is-failing[aria-pressed="true"],.helper.hc.is-waiting[aria-pressed="true"]{box-shadow:inset 3px 0 0 var(--c-waiting),0 0 0 1.5px var(--sel-border,#7fa0bd)}
+.desk.card.is-waiting[aria-pressed="true"],.desk.card.is-failing[aria-pressed="true"],.desk.card.is-retrying[aria-pressed="true"],.helper.hc.is-waiting[aria-pressed="true"]{box-shadow:inset 3px 0 0 var(--c-waiting),0 0 0 1.5px var(--sel-border,#7fa0bd)}
 .desk.card.is-error[aria-pressed="true"],.helper.hc.is-error[aria-pressed="true"]{box-shadow:inset 3px 0 0 var(--c-error),0 0 0 1.5px var(--sel-border,#7fa0bd)}
 .sc{display:block;min-width:0}
 .sc>svg{width:100%;height:auto;display:block;overflow:visible}
@@ -1271,6 +1275,10 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 /* spec 052 FR-001: the answer bar above the composer, while a waiting request is out of view */
 .answer-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 auto 8px;width:min(860px,calc(100% - 32px));padding:8px 10px 8px 14px;background:var(--warn-bg);border:1px solid var(--tone-warn-line);border-radius:12px;box-shadow:0 4px 14px rgba(40,35,25,.08)}
 .answer-bar[hidden]{display:none}
+/* spec 068 FR-022: the chat's coffee-break bar: the answer bar's shape in calm surface tokens (a break is not an alarm, FR-005) */
+.coffee-bar{background:var(--surface-2);border-color:var(--line)}
+.coffee-bar .ab-q b{color:var(--ink)}
+.coffee-bar .cb-left{color:var(--ink-2)}
 .answer-bar .ab-q{flex:1 1 280px;min-width:0;font-size:13px;line-height:1.4;color:var(--ink);max-height:8.6em;overflow:auto;overflow-wrap:break-word}
 .answer-bar .ab-q b{color:var(--amber-ink)}
 .answer-bar .ab-act{display:flex;gap:6px;flex-wrap:wrap}
@@ -1463,6 +1471,14 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 /* on a desk card (every density) it sits on the scene's corner, never in the name row, so it cannot squeeze the name (2026-10-23:
    in card density at 1280x800 with Windows fonts an inline badge left a name 19px wide) */
 .stage .desk.card .chatno{position:absolute;left:2px;top:2px;margin:0;z-index:1;box-shadow:0 0 0 1px var(--card)}
+/* spec 074 FR-024 (issue 612): a chat with an unsent draft. An icon (no text, so a desk's text still starts with its name), 12px,
+   theme tokens only; on a desk card under the chat number on the scene's corner, inline elsewhere (full desk, list row, strip). */
+.draft-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:5px;border:1px solid var(--line-2);border-radius:4px;background:var(--surface-2);color:var(--ink-2);vertical-align:-3px}
+.draft-mark svg{width:12px;height:12px;display:block}
+.stage .desk.card .draft-mark,.stage .desk.shut .draft-mark{position:absolute;left:2px;top:20px;margin:0;z-index:4;box-shadow:0 0 0 1px var(--card)}
+.stage .desk.shut .draft-mark{left:auto;right:2px;top:2px} /* a lounge resident's box is short: the top corner the number leaves free */
+.stage .desk.shut.rest-old .draft-mark{right:auto;top:auto;left:2px;bottom:2px} /* on a nap bed the name is on top and the number bottom right */
+.sitem .stx b .draft-mark{margin:0 0 0 4px;width:14px;height:14px}
 .pal-dlg kbd,.kbd-dlg kbd{display:inline-block;min-width:20px;padding:1px 6px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:11px;font-weight:600;line-height:1.5;color:var(--ink-2);text-align:center}
 .dlg.kbd-dlg{width:min(var(--dlg-w-m),calc(100vw - 32px))}
 /* spec 052 (2026-10-21, round 1): two columns where there is room, so the whole sheet fits a 1280x800 window without scrolling */
@@ -1684,11 +1700,36 @@ h2,h3,h4{text-wrap:balance}
 .ctoolbar .cti{width:14px;height:14px;flex:none}
 .ctoolbar .mchip{gap:var(--s-1)}
 .ctoolbar .ct-n{min-width:16px;padding:0 4px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:var(--t5-size);font-weight:600;line-height:16px;text-align:center}
+/* spec 058 FR-094 (issue 603): a server of this chat failed: a small dot in the error colour next to the count (the chip's name says it too) */
+.ctoolbar .ct-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--c-error);box-shadow:0 0 0 2px var(--surface)}
 .ct-more{position:relative;flex:none}
 .ct-more-pop{position:absolute;right:0;bottom:calc(100% + 6px);z-index:70;display:flex;flex-direction:column;align-items:flex-start;gap:var(--s-1);min-width:180px;max-width:min(360px,calc(100vw - 32px));padding:var(--s-2);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:0 14px 40px color-mix(in srgb,var(--ink) 22%,transparent)}
 .ct-more-pop[hidden]{display:none}
 .ct-more-pop .ct{max-width:100%}
 .mode-menu .mm-info{margin:2px 10px 6px;font-size:var(--t4-size);line-height:var(--t4-lh);color:var(--ink-2);max-width:var(--measure,560px)}
+/* spec 005 FR-051 (issue 627): the context ring: a 28px round button, a 16px ring filled by the share in use, coloured by level (tokens only) */
+.ctoolbar .ctxchip.ctxring{width:28px;padding:0;justify-content:center;gap:0}
+.ctxring .ring{width:16px;height:16px;flex:none;display:block}
+.ctxring .ring circle{fill:none;stroke-width:2.6}
+.ctxring .ring .rt{stroke:var(--line-2)}
+.ctxring.unk .ring .rt{stroke:var(--muted);stroke-dasharray:6 6}
+.ctxring .ring .rv{stroke:var(--green);stroke-linecap:round}
+.ctxring.warn .ring .rv{stroke:var(--amber)}
+.ctxring.high .ring .rv{stroke:var(--red)}
+.ctxring .ring .rd{fill:var(--red-ink);stroke:none}
+.ctxring:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+/* FR-052: the token summary (VS Code style): used / size with a bar, then one bar per reported type */
+#ctxMenu.ctx-sum{min-width:260px;max-width:min(340px,calc(100vw - 24px))}
+.ctx-sum .cb-head{margin:2px 10px 8px}
+.ctx-sum .cb-total{margin:0 0 4px;font-size:var(--t4-size);font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+.ctx-sum .cb-total-bar,.ctx-sum .cb-bar{display:block;height:6px;border-radius:3px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line);overflow:hidden}
+.ctx-sum .cb-total-bar i,.ctx-sum .cb-bar i{display:block;height:100%;border-radius:3px;background:var(--blue)}
+.ctx-sum .cb-head.ok .cb-total-bar i{background:var(--green)} .ctx-sum .cb-head.warn .cb-total-bar i{background:var(--amber)} .ctx-sum .cb-head.high .cb-total-bar i{background:var(--red)}
+.ctx-sum .cb-rows{list-style:none;margin:0 10px 8px;padding:0;display:flex;flex-direction:column;gap:6px}
+.ctx-sum .cb-row{display:grid;grid-template-columns:1fr auto;column-gap:8px;row-gap:3px;align-items:baseline}
+.ctx-sum .cb-l{font-size:var(--t4-size);color:var(--ink-2)}
+.ctx-sum .cb-n{font-size:var(--t4-size);color:var(--muted);font-variant-numeric:tabular-nums}
+.ctx-sum .cb-bar{grid-column:1 / -1;height:5px}
 body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tidy up memory lives in the memory chip's menu */
 /* spec 052 FR-167 (T149): what is typed or chosen in a dialog field is regular weight; a bold label does not pass its weight on. The last rule of the file, so it wins over the fields' own `font:inherit`. */
 .dlg :is(input,select,textarea):not([type=checkbox]):not([type=radio]){font-weight:400}

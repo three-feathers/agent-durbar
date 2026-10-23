@@ -9,8 +9,13 @@ const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string'
 const optNum = (v: unknown): boolean => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
 const oneOf = (v: unknown, xs: readonly string[]): boolean => typeof v === 'string' && xs.includes(v);
 
-export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'title', 'agentSchedule', 'remote', 'plan'] as const;
+export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'retry', 'title', 'agentSchedule', 'remote', 'plan'] as const;
+const RETRY_REASONS = ['rate-limit', 'overloaded', 'server', 'network', 'timeout', 'auth', 'other'] as const;
 const STATUSES = ['idle', 'working', 'needs-permission', 'error', 'stopped'] as const;
+/** Spec 058 FR-180: the values of `McpServerStatus.signInEnd`. */
+export const SIGN_IN_ENDS = ['next-message', 'failed'] as const;
+/** Spec 058 FR-180: a `signInEnd` main accepts (anything else is ignored, as if missing). */
+export const validSignInEnd = (v: unknown): v is (typeof SIGN_IN_ENDS)[number] => oneOf(v, SIGN_IN_ENDS);
 
 function permissionProblems(p: unknown, where: string): string[] {
   if (!isObj(p)) return [`${where}: not an object`];
@@ -94,6 +99,8 @@ export function eventProblems(e: unknown): string[] {
       break;
     case 'mcp':
       if (!Array.isArray(e.servers) || e.servers.some((s) => !isObj(s) || !str(s.name) || !str(s.status))) out.push('mcp.servers malformed');
+      // spec 058 FR-180: only the two normalized ends of a sign-in the adapter started
+      else if (e.servers.some((s) => isObj(s) && s.signInEnd !== undefined && !oneOf(s.signInEnd, SIGN_IN_ENDS))) out.push('mcp.servers[].signInEnd is not next-message or failed');
       break;
     case 'limit':
       if (!oneOf(e.phase, ['exhausted', 'changed', 'resolved'])) out.push(`limit.phase ${String(e.phase)}`);
@@ -105,6 +112,14 @@ export function eventProblems(e: unknown): string[] {
       if (e.estimated !== undefined && typeof e.estimated !== 'boolean') out.push('usageLimit.estimated is not a boolean');
       if (e.paid !== undefined && typeof e.paid !== 'boolean') out.push('usageLimit.paid is not a boolean');
       if (e.update !== undefined && typeof e.update !== 'boolean') out.push('usageLimit.update is not a boolean');
+      break;
+    case 'retry': // spec 034 FR-016
+      if (!oneOf(e.phase, ['retrying', 'gave-up'])) out.push(`retry.phase ${String(e.phase)}`);
+      if (!(Number.isInteger(e.attempt) && (e.attempt as number) >= 1)) out.push('retry.attempt is not a positive whole number');
+      if (e.maxAttempts !== undefined && !(Number.isInteger(e.maxAttempts) && (e.maxAttempts as number) >= 1)) out.push('retry.maxAttempts is not a positive whole number');
+      if (!oneOf(e.reason, RETRY_REASONS)) out.push(`retry.reason ${String(e.reason)}`);
+      if (e.httpStatus !== undefined && !(Number.isInteger(e.httpStatus) && (e.httpStatus as number) >= 100 && (e.httpStatus as number) <= 599)) out.push('retry.httpStatus is not an HTTP status');
+      if (!optNum(e.delayMs)) out.push('retry.delayMs is not a non-negative number');
       break;
     case 'title':
       if (!str(e.title) || !e.title) out.push('title.title missing');

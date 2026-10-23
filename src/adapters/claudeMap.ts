@@ -9,6 +9,7 @@
 import { isAuthError } from './autherrors';
 import { isMcpAuthChallenge } from './mcpauth';
 import { resetMs, usageLimitClosing } from './usagelimit';
+import { RetryTracker, claudeRetry } from './retry';
 import type { EventBody } from './map';
 import type { McpServerStatus } from './types';
 import { nonEmptyStr as str } from '../shared/guards';
@@ -95,15 +96,47 @@ export function claudeMcpServers(list: unknown): McpServerStatus[] {
     const source = str((s as { source?: unknown }).source);
     const error = str((s as { error?: unknown }).error);
     const status = str((s as { status?: unknown }).status) ?? 'pending';
+    // Spec 058 FR-091: `config.type` (`stdio`, `sse`, `http`, ...) is the transport, only as a plain word; never inferred from other keys
+    const cfg = (s as { config?: unknown }).config;
+    const type = cfg && typeof cfg === 'object' ? str((cfg as { type?: unknown }).type) : undefined;
+    const transport = type && /^[a-z][a-z0-9_-]{0,19}$/.test(type) ? type : undefined;
     // Spec 058 FR-060: the CLI reports a remote server that answered 401/403 as `needs-auth` (read: SDK docs; research)
-    servers.push({ name, status, ...(source ? { source } : {}), ...(error ? { error: error.slice(0, 300) } : {}), ...(status === 'needs-auth' ? { errorClass: 'auth' as const } : {}) });
+    servers.push({ name, status, ...(source ? { source } : {}), ...(transport ? { transport } : {}), ...(error ? { error: error.slice(0, 300) } : {}), ...(status === 'needs-auth' ? { errorClass: 'auth' as const } : {}) });
   }
   return servers;
+}
+
+/**
+ * Spec 058 FR-091 (T024, issue #603): `system/init.mcp_server_errors` (`[{name, type, message}]`: "MCP server config entries from
+ * --mcp-config that failed validation and were skipped"; read: CLI 2.1.309 schema) as `failed` rows with `errorClass: 'config'`.
+ * Names already in the CLI's list are not repeated.
+ */
+export function claudeMcpServerErrors(list: unknown, listed: readonly string[]): McpServerStatus[] {
+  const out: McpServerStatus[] = [];
+  const seen = new Set(listed);
+  for (const e of Array.isArray(list) ? list : []) {
+    if (out.length >= 100) break;
+    const name = str((e as { name?: unknown } | null)?.name);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const message = str((e as { message?: unknown }).message);
+    out.push({ name, status: 'failed', errorClass: 'config', ...(message ? { error: message.slice(0, 300) } : {}) });
+  }
+  return out;
+}
+
+/** A later `mcp_status` list does not name the servers skipped at launch: keep them, unless the CLI now lists that name. */
+export function withSkipped(list: McpServerStatus[], skipped: readonly McpServerStatus[]): McpServerStatus[] {
+  if (!skipped.length) return list;
+  const names = new Set(list.map((x) => x.name));
+  return [...list, ...skipped.filter((x) => !names.has(x.name))];
 }
 
 export class ClaudeMapper {
   /** Configured MCP server names from `system/init`. */
   private servers: string[] = [];
+  /** Spec 058 FR-091: servers the CLI skipped at launch (`init.mcp_server_errors`), as failed rows; read by the adapter for later lists. */
+  skipped: McpServerStatus[] = [];
   /** tool_use id -> tool name (and MCP origin), so the result carries them. */
   private tools = new Map<string, { tool: string; mcpServer?: string; mcpTool?: string }>();
   /** Sub-agent `task_id` -> spawning tool_use id (from `task_started`). */
@@ -139,6 +172,8 @@ export class ClaudeMapper {
   private abortExpected = false;
   /** FR-157: an assistant message of this turn carried Claude's `error: authentication_failed`. */
   private authFailed = false;
+  /** Spec 034 FR-017: the main agent's model-call retries in this turn (`api_retry`). */
+  private retries = new RetryTracker();
   /** Spec 068: this turn reported a usage limit; its closing error result ends the turn quietly (the coffee break says why). */
   private limited = false;
   expectAbort(): void {
@@ -147,8 +182,10 @@ export class ClaudeMapper {
 
   reset(): void {
     this.abortExpected = false;
+    this.retries.reset(); // spec 034 FR-017: a respawn starts without the old turn's retries
     this.limited = false;
     this.servers = [];
+    this.skipped = [];
     this.tools.clear();
     this.tasks.clear();
     this.openSubagents.clear();
@@ -186,8 +223,10 @@ export class ClaudeMapper {
       case 'system':
         return this.system(m);
       case 'stream_event':
+        if (!agentId) this.retries.progress(); // spec 034 FR-017: the model answered, so a retry went through
         return this.stream(m, agentId);
       case 'assistant':
+        if (!agentId) this.retries.progress();
         if (!agentId && claudeAuthFailure(m)) this.authFailed = true;
         return this.assistant(m, agentId);
       case 'user':
@@ -210,9 +249,17 @@ export class ClaudeMapper {
 
   private system(m: ClaudeMessage): void {
     switch (m.subtype) {
+      case 'api_retry': {
+        // spec 034 FR-017: Claude Code retries a failed API call by itself; a fixed reason and numbers only (never the provider's text)
+        const info = this.who(m) ? null : claudeRetry(m); // a helper's retry is not shown (main agent only)
+        if (info) this.emit(this.retries.retry(info));
+        return;
+      }
       case 'init': {
-        const servers = claudeMcpServers(m.mcp_servers);
-        this.servers = servers.map((s) => s.name);
+        const listed = claudeMcpServers(m.mcp_servers);
+        this.servers = listed.map((s) => s.name);
+        this.skipped = claudeMcpServerErrors(m.mcp_server_errors, this.servers);
+        const servers = withSkipped(listed, this.skipped);
         this.info = { sessionId: str(m.session_id), cwd: str(m.cwd), model: str(m.model), cliVersion: str(m.claude_code_version), apiKeySource: str(m.apiKeySource) };
         if (!this.opts.quiet) this.emit({ type: 'status', status: 'idle', intent: `Ready in ${this.info.cwd ?? 'the folder'}` });
         this.emit({ type: 'mcp', servers });
@@ -245,7 +292,7 @@ export class ClaudeMapper {
         });
       }
       default:
-        // task_progress (no `update` phase exists for sub-agents in v1), status, compact_boundary, api_retry, hooks...: ignored.
+        // task_progress (no `update` phase exists for sub-agents in v1), status, compact_boundary, hooks...: ignored.
         return;
     }
   }
@@ -430,10 +477,14 @@ export class ClaudeMapper {
     this.authFailed = false;
     const limited = this.limited;
     this.limited = false;
+    // spec 034 FR-017: the turn's retry run ends here; it is emitted only on the plain error path below (a usage limit, an abort and a
+    // sign-in failure return before it, so they never "gave up")
+    const gaveUp = this.retries.gaveUp();
     if (!auth && subtype === 'success' && m.is_error !== true) return this.emit({ type: 'status', status: 'idle' });
     if (!auth && limited) return this.emit(usageLimitClosing());
     if (!auth && aborted && subtype === 'error_during_execution') return; // the adapter already reported "Aborted"
     if (auth) return this.emit({ type: 'status', status: 'error', intent: (str(m.result) ?? 'Claude Code could not authenticate.').replace(/\s+/g, ' ').slice(0, 300), errorKind: 'auth' });
+    if (gaveUp) this.emit(gaveUp);
     const denials = Array.isArray(m.permission_denials) ? m.permission_denials.length : 0;
     const text = subtype === 'success' ? 'error' : subtype;
     this.emit({ type: 'status', status: 'error', intent: denials ? `${text} (${denials} permission denial${denials === 1 ? '' : 's'})` : text });

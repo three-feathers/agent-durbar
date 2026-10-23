@@ -18,6 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { cleanSessionTitle } from './history';
 import { isInsideRoots } from './permissions';
+import { redact, redactMarkdown } from '../shared/redact';
 import type { SlashCommand, SlashExpansion } from './types';
 
 export const MAX_SLASH_PER_DIR = 100;
@@ -118,7 +119,24 @@ export interface DiscoverOptions {
   caseInsensitive?: boolean;
 }
 
-const oneLine = (v: unknown, max: number): string | undefined => cleanSessionTitle(v, max);
+/* FR-014 (issue #608; review of PR #614): everything `redact` knows (token shapes, credentials in a URL, an `authorization:` value, the
+   environment's secret values) is masked BEFORE the cut, so no half secret (which no pattern knows) reaches the window. Markdown can split
+   a token (`gh`+backtick+`p_...`, `ghp_<20>**K1l2...**`) or glue it to a word (`x**ghp_...**`): `redactMarkdown` masks the text with
+   the Markdown marks removed AND everything the raw pass finds (the same rule as the window's DurbarSafeText, spec 041 FR-065). */
+const MD_ESC = /\\([\\`*_{}\[\]()#+\-.!~|<>])/g;
+const MD_MARKS = /[*`~[\]]/g;
+export function maskSlashText(s: string): string {
+  const u = s.replace(MD_ESC, '$1');
+  if (!/[*`~[\]]/.test(u)) return redact(u);
+  const k = u.replace(MD_MARKS, '');
+  const m = redactMarkdown(u, k);
+  return m !== k ? m : redact(u);
+}
+/** One line, secrets masked (redact), then cut to `max` (FR-003, FR-010, FR-014). */
+const oneLine = (v: unknown, max: number): string | undefined => {
+  const s = cleanSessionTitle(v, Number.MAX_SAFE_INTEGER);
+  return s === undefined ? undefined : cleanSessionTitle(maskSlashText(s), max);
+};
 
 /** The real path of `p` when it stays inside `root` (both real), else undefined. */
 function inside(p: string, root: string, o: Required<DiscoverOptions>): string | undefined {
@@ -429,7 +447,8 @@ export function expandSlash(text: string, entries: readonly SlashEntry[], opts: 
   const where = e.where ?? e.name;
   // over the cap: the line goes as typed, and the chat says why (review on #615)
   if ('tooLarge' in out) return { text: String(text ?? ''), where, asTyped: true, note: `Not expanded: the text of ${where} with these words would be over ${MAX_SLASH_EXPANDED / 1024} KB, so the line was sent as typed.` };
-  return { text: out.text, where, ...(out.note ? { note: out.note } : {}) };
+  // the note echoes `${input:NAME}` names (up to 41 characters): masked here too, so a token-shaped name never reaches the chat (FR-014)
+  return { text: out.text, where, ...(out.note ? { note: redact(out.note) } : {}) };
 }
 
 const placesKey = (places: readonly SlashPlace[]): string => JSON.stringify(places.map((p) => [p.dir, p.root, p.scope, p.kind, p.layout, p.prefix ?? '', p.whereBase]));

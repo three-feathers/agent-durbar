@@ -20,7 +20,13 @@ import type { AgentInfo } from '../src/shared/api';
 import { createDebugSink } from '../src/shared/redact';
 import { agentMcpReply, signInStepsFor } from '../src/main/mcpsession';
 import type { McpReplyInput } from '../src/main/mcpsession';
-import { MAX_SIGN_INS, McpSignInStore, POLL_MS, SIGN_IN_TTL_MS, blockedAuthHost, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, registrableDomain, signInErrorText, signInSiteNote } from '../src/main/mcpsignin';
+import { MAX_SIGN_INS, McpSignInStore, POLL_MS, RECENT_SIGN_IN_MS, SIGN_IN_MIN_TTL_MS, SIGN_IN_TTL_MS, appServerUrls, blockedAuthHost, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, registrableDomain, serverUrlFor, signInErrorText, signInSiteNote } from '../src/main/mcpsignin';
+import type { ServerUrlSources } from '../src/main/mcpsignin';
+import type { McpServerSpec } from '../src/shared/mcp';
+import { SIGN_IN_MIN_TTL_MS as SHARED_MIN_TTL_MS, SIGN_IN_REQUEST_TIMEOUT_MS, signInTtlMs } from '../src/shared/mcp';
+import { CLAUDE_SIGN_IN_TIMEOUT_MS, ClaudeAdapter, claudeArgs } from '../src/adapters/claude';
+import { createCliTransport } from '../src/adapters/claudeTransport';
+import { fakeSpawn } from './fakes/claude-cli';
 import { McpStore } from '../src/main/mcpstore';
 
 const PAGE = 'https://auth.example.com/authorize?client_id=abc&state=SECRETSTATE123&code_challenge=PKCEPKCEPKCE';
@@ -45,7 +51,7 @@ async function main(): Promise<void> {
       const pre = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'preload', 'preload.ts'), 'utf8');
       const lines = pre.split('\n').filter((l) => /agents:mcp(SignIn|OpenSignIn|CancelSignIn)'/.test(l)).map((l) => l.trim());
       assert.deepStrictEqual(lines, [
-        "agentMcpSignIn: (id, name) => ipcRenderer.invoke('agents:mcpSignIn', id, name),",
+        "agentMcpSignIn: (id, name, again) => ipcRenderer.invoke('agents:mcpSignIn', id, name, again === true),",
         "agentMcpOpenSignIn: (id, name, host) => ipcRenderer.invoke('agents:mcpOpenSignIn', id, name, host),",
         "agentMcpCancelSignIn: (id, name) => ipcRenderer.invoke('agents:mcpCancelSignIn', id, name),",
       ], 'the three preload lines');
@@ -324,6 +330,69 @@ async function main(): Promise<void> {
       assert.ok(!cap.has('a', 's0'), 'and they are gone');
     }
 
+    // ---- FR-164 (owner 2026-10-23): Sign in again, through the agent app's own forced sign-in only ----
+    {
+      const store = new McpSignInStore(() => 0, async () => undefined);
+      const mk = (caps: Record<string, unknown>) => { const ad = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, ...caps } }); ad.signInResult = { kind: 'browser', url: PAGE }; return ad; };
+      const ad = mk({ mcpSignInAgain: true });
+      const sid = await ad.start({ workspace: ws, quiet: true });
+      const live: McpServerStatus[] = [
+        { name: 'teams', status: 'needs-auth', errorClass: 'auth', source: 'user' }, { name: 'web', status: 'connected', transport: 'http', source: 'user' }, { name: 'down', status: 'failed', error: '500', source: 'workspace' },
+        { name: 'local', status: 'connected', transport: 'stdio', source: 'user' }, { name: 'slow', status: 'pending', source: 'user' }, { name: 'off', status: 'disabled', source: 'user' }, { name: 'gh', status: 'connected', source: 'builtin' },
+        // review on #625, fail closed: a source the runtime did not name, or `unknown`, a built-in name, a `memory` transport, no address
+        { name: 'nosrc', status: 'connected' }, { name: 'unk', status: 'connected', source: 'unknown' }, { name: 'github-mcp-server', status: 'connected', source: 'user' },
+        { name: 'mem', status: 'connected', source: 'user', transport: 'memory' }, { name: 'noaddr', status: 'connected', source: 'user' }, { name: 'plain', status: 'connected', source: 'user' },
+      ];
+      const URLS: Record<string, string> = { web: 'https://web.example.test/mcp', down: 'http://down.example.test/mcp', teams: 'https://t.example.test', slow: 'https://s.example.test', off: 'https://o.example.test', gh: 'https://api.githubcopilot.com/mcp/', nosrc: 'https://n.example.test', unk: 'https://u.example.test', 'github-mcp-server': 'https://api.githubcopilot.com/mcp/', mem: 'https://m.example.test', plain: 'ftp://p.example.test' };
+      const d = { agents: new Map([[sid, info(sid)]]), router: routerOf(ad), live: () => live, secrets: () => [], serverUrl: (_id: string, n: string) => URLS[n] };
+      // a connected and a failed remote server can be signed in again; the runtime gets `again` (Copilot: forceReauth)
+      assert.deepStrictEqual(await mcpSignInOp(d, store, sid, 'web', true), { ok: true, kind: 'browser', host: 'auth.example.com', otherSite: 'web.example.test' });
+      assert.deepStrictEqual(ad.signInCalls.at(-1), { sessionId: sid, name: 'web', again: true });
+      assert.strictEqual((await mcpSignInOp(d, store, sid, 'down', true)).ok, true);
+      // not for: a server waiting for its first sign-in (that is Sign in), a local one, pending, disabled; only `true` counts as again
+      for (const n of ['teams', 'local', 'slow', 'off', 'gh', 'nosrc', 'unk', 'github-mcp-server', 'mem', 'noaddr', 'plain']) assert.match((await mcpSignInOp(d, store, sid, n, true) as { error: string }).error, /cannot be signed in again now/, n);
+      assert.match((await mcpSignInOp(d, store, sid, 'down', 'true') as { error: string }).error, /does not need a sign-in/, 'a string "true" is not again');
+      assert.strictEqual(ad.signInCalls.length, 2, 'nothing else reached the runtime');
+      // an agent app without the capability: refused before the runtime
+      const no = mk({});
+      const sid2 = await no.start({ workspace: ws, quiet: true });
+      const d2 = { ...d, agents: new Map([[sid2, info(sid2)]]), router: routerOf(no) };
+      assert.match((await mcpSignInOp(d2, store, sid2, 'web', true) as { error: string }).error, /cannot sign in again/);
+      assert.strictEqual(no.signInCalls.length, 0);
+      // the reply: canSignInAgain only with the capability, a running session, the server on, and a connected or failed remote server
+      const rep = (x: AgentAdapter, id: string, off = new Set<string>()) => agentMcpReply({ a: info(id), ad: x, live, off, secrets: [], cli: live.map((l) => ({ name: l.name, enabled: true })), extras: [], ambientDisabled: new Set(), signIn: () => undefined, serverUrl: (n) => URLS[n] });
+      const again = (r: ReturnType<typeof rep>) => r.servers.filter((x) => x.canSignInAgain).map((x) => x.name);
+      assert.deepStrictEqual(again(rep(ad, sid)), ['web', 'down']);
+      assert.deepStrictEqual(again(rep(ad, sid, new Set(['web']))), ['down'], 'a server switched off here: no');
+      assert.deepStrictEqual(again(rep(no, sid2)), [], 'no capability: no');
+      assert.deepStrictEqual(again(agentMcpReply({ a: info(sid), ad, live, off: new Set(), secrets: [], cli: live.map((l) => ({ name: l.name, enabled: true })), extras: [], ambientDisabled: new Set(), signIn: () => undefined })), [], 'no known address at all: nothing offered');
+      // an open sign-in stays visible while the row reads Starting (a server signed in again passes through it)
+      const held = agentMcpReply({ a: info(sid), ad, live, off: new Set(), secrets: [], cli: live.map((l) => ({ name: l.name, enabled: true })), extras: [], ambientDisabled: new Set(), signIn: (n) => (n === 'slow' ? { host: 'auth.example.com', opened: true, expiresInMs: 1000 } : undefined), serverUrl: (n) => URLS[n] });
+      assert.deepStrictEqual(held.servers.find((x) => x.name === 'slow')!.signIn, { host: 'auth.example.com', opened: true, expiresInMs: 1000 }, 'pending row keeps its open sign-in');
+      await ad.stop(sid);
+      assert.deepStrictEqual(again(rep(ad, sid)), [], 'no running session: no');
+
+      // review on #625: a Sign in again entry is not finished by the OLD "connected" (a re-read, the 5 s poll, another server's event)
+      const st2 = new McpSignInStore(() => 0, async () => undefined);
+      assert.ok(st2.begin('A', 'web', PAGE, 'auth.example.com', undefined, { again: true }));
+      assert.ok(st2.begin('A', 'first', PAGE, 'auth.example.com'));
+      for (let i = 0; i < 3; i++) st2.onServers('A', [{ name: 'web', status: 'connected' }, { name: 'other', status: 'failed' }]);
+      assert.ok(st2.has('A', 'web'), 'still held: connected before any other state is the old sign-in');
+      st2.onServers('A', [{ name: 'first', status: 'connected' }]);
+      assert.ok(!st2.has('A', 'first'), 'a first sign-in still finishes on connected');
+      st2.onServers('A', [{ name: 'web', status: 'pending' }]);
+      assert.ok(st2.has('A', 'web'), 'another state: still waiting');
+      st2.onServers('A', [{ name: 'web', status: 'connected' }]);
+      assert.ok(!st2.has('A', 'web'), 'connected after another state: finished');
+      // the op marks the entry: through mcpSignInOp, the next connected event does not drop it
+      const ad3 = mk({ mcpSignInAgain: true });
+      const sid3 = await ad3.start({ workspace: ws, quiet: true });
+      const st3 = new McpSignInStore(() => 0, async () => undefined);
+      assert.strictEqual((await mcpSignInOp({ ...d, agents: new Map([[sid3, info(sid3)]]), router: routerOf(ad3) }, st3, sid3, 'web', true)).ok, true);
+      st3.onServers(sid3, [{ name: 'web', status: 'connected' }]);
+      assert.ok(st3.has(sid3, 'web'), 'Sign in again from the op is held past the old connected');
+    }
+
     // ---- the reply (FR-020, FR-068) ----
     {
       const ad = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInSteps: STEPS } });
@@ -538,6 +607,19 @@ async function main(): Promise<void> {
           ad.refreshFail = undefined;
           await call('agents:mcpCancelSignIn', sid, 'teams');
           assert.strictEqual(running.size, 0);
+          // spec 058 FR-180 (T152): a signInEnd from the adapter ends the entry and stops the poll, as connected does
+          for (const end of ['next-message', 'failed'] as const) {
+            emit(mcpEvent(NEEDS));
+            await call('agents:mcpSignIn', sid, 'teams');
+            await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com');
+            assert.strictEqual(running.size, 1);
+            ad.endOnRefresh = { name: 'teams', at: ad.refreshCalls + 1, end, error: 'denied' };
+            await tick();
+            assert.strictEqual(running.size, 0, `${end}: the timer is cleared`);
+            const row = ((await call('agents:mcp', sid)) as unknown as { servers: Array<{ name: string; signIn?: unknown; signInEnd?: string; status?: string }> }).servers.find((x) => x.name === 'teams')!;
+            assert.deepStrictEqual([row.signIn, row.signInEnd, row.status], [undefined, end, 'needs-auth'], `${end}: the entry is gone and the row carries the end`);
+            ad.endOnRefresh = undefined;
+          }
           // the stub for the rest of this block: nothing is left open
           emit(mcpEvent([{ name: 'teams', status: 'connected' }]));
         }
@@ -555,6 +637,254 @@ async function main(): Promise<void> {
         else delete require.cache[electronPath];
       }
     }
+    // ---- spec 058 FR-180 (T152): a time limit per entry, the two sign-in ends, steps without the in-app call ----
+    {
+      let t = 0;
+      const st = new McpSignInStore(() => t, async () => undefined);
+      // the agent app's listener time: 5 minutes minus the time to the answer minus 10 s, at least 30 s
+      assert.deepStrictEqual([signInTtlMs(0), signInTtlMs(1_500), signInTtlMs(200_000), signInTtlMs(259_999), signInTtlMs(400_000)], [290_000, 288_500, 90_000, 30_001, 30_000]);
+      // review on #635: a broken wait (negative, NaN, Infinity) counts as the full 30 s request timeout, never as no wait
+      assert.deepStrictEqual([signInTtlMs(NaN), signInTtlMs(-5), signInTtlMs(-Infinity), signInTtlMs(Infinity)], [260_000, 260_000, 260_000, 260_000]);
+      assert.ok(st.begin('a', 'claude-srv', PAGE, 'auth.example.com', undefined, { ttlMs: signInTtlMs(25_000) }) && st.begin('a', 'copilot-srv', PAGE, 'auth.example.com'));
+      assert.deepStrictEqual([st.view('a', 'claude-srv')!.expiresInMs, st.view('a', 'copilot-srv')!.expiresInMs], [265_000, 600_000], 'each entry shows its own limit');
+      t = 264_999;
+      assert.ok(st.has('a', 'claude-srv'), 'one millisecond before its own limit it is open');
+      t = 265_000;
+      assert.ok(!st.has('a', 'claude-srv') && st.has('a', 'copilot-srv'), 'the entry with ttlMs ends at its own limit; Copilot\'s keeps its 10 minutes');
+      assert.strictEqual(st.view('a', 'copilot-srv')!.expiresInMs, 335_000);
+      t = 600_000;
+      assert.ok(!st.has('a', 'copilot-srv'), 'and Copilot\'s at 10 minutes');
+      // a ttlMs over 10 minutes is capped; missing = 10 minutes; present but not a positive finite number = the 30 s minimum (review on #635)
+      for (const [bad, want] of [[3_600_000, 600_000], [undefined, 600_000], [NaN, 30_000], [0, 30_000], [-1, 30_000], [Infinity, 30_000], ['5000' as unknown as number, 30_000], [null as unknown as number, 30_000], [45_000, 45_000]] as const) {
+        assert.ok(st.begin('b', 'x', PAGE, 'h', undefined, { ttlMs: bad }));
+        assert.strictEqual(st.view('b', 'x')!.expiresInMs, want, `ttlMs ${String(bad)}`);
+        st.drop('b', 'x');
+      }
+      // signInEnd drops the entry as connected does; only the two values count
+      st.begin('a', 'n1', PAGE, 'h');
+      st.begin('a', 'n2', PAGE, 'h');
+      st.begin('a', 'n3', PAGE, 'h');
+      st.onServers('a', [{ name: 'n1', status: 'needs-auth', signInEnd: 'next-message' }, { name: 'n2', status: 'needs-auth', signInEnd: 'failed' }, { name: 'n3', status: 'needs-auth', signInEnd: 'bogus' as never }]);
+      assert.deepStrictEqual(['n1', 'n2', 'n3'].map((n) => st.has('a', n)), [false, false, true], 'next-message and failed end it; another value does not');
+      // FR-176: the attempts of the last 5 minutes that are no longer held
+      t = 1_000_000;
+      const r = new McpSignInStore(() => t, async () => undefined);
+      r.begin('a', 'x', PAGE, 'h');
+      r.begin('a', 'y', PAGE, 'h');
+      r.begin('b', 'x', PAGE, 'h');
+      assert.deepStrictEqual(r.recent('a'), [], 'a held sign-in is polled, not re-read');
+      r.drop('a', 'x');
+      assert.deepStrictEqual(r.recent('a'), ['x'], 'after Cancel it is recent');
+      r.onServers('a', [{ name: 'y', status: 'connected' }]);
+      assert.deepStrictEqual(r.recent('a'), ['x'], 'a connected server is no longer an attempt');
+      t += RECENT_SIGN_IN_MS - 1;
+      assert.deepStrictEqual(r.recent('a'), ['x']);
+      t += 1;
+      assert.deepStrictEqual(r.recent('a'), [], 'after 5 minutes it is forgotten');
+      r.drop('b', 'x');
+      r.begin('b', 'z', PAGE, 'h');
+      r.drop('b', 'z');
+      r.dropAgent('b');
+      assert.deepStrictEqual(r.recent('b'), [], 'End session forgets the attempts too');
+      for (let i = 0; i < MAX_SIGN_INS + 10; i++) { r.begin('c', `s${i}`, PAGE, 'h'); r.drop('c', `s${i}`); }
+      assert.strictEqual(r.recent('c').length, MAX_SIGN_INS, 'at most 64 attempts are remembered');
+      // mcpSignInOp passes the adapter's ttlMs
+      t = 0;
+      const store = new McpSignInStore(() => t, async () => undefined);
+      const ad = new FakeAdapter({ displayName: 'Claude Code', capabilities: { mcpSignIn: true } });
+      ad.signInResult = { kind: 'browser', url: PAGE, ttlMs: 120_000 };
+      const sid = await ad.start({ workspace: ws, quiet: true });
+      const d = { agents: new Map([[sid, info(sid)]]), router: routerOf(ad), live: () => NEEDS, secrets: () => [] };
+      assert.deepStrictEqual(await mcpSignInOp(d, store, sid, 'teams'), { ok: true, kind: 'browser', host: 'auth.example.com' });
+      assert.strictEqual(store.view(sid, 'teams')!.expiresInMs, 120_000, 'the entry keeps the adapter\'s limit');
+      t = 120_000;
+      assert.strictEqual((await mcpOpenSignInOp(store, d.agents, sid, 'teams', 'auth.example.com')).gone, true, 'Open sign-in page never points at a closed listener');
+    }
+
+    // ---- FR-180 in the reply: steps on mcpSignInSteps alone, signInEnd, the note, Restart kept ----
+    {
+      const CL = "If Sign in is not available, run `claude mcp login {name}` in a terminal and finish in your browser. This works only for a server in Claude Code's own settings. Then press Restart on this row.";
+      const live: McpServerStatus[] = [{ name: 'notes', status: 'needs-auth', errorClass: 'auth', signInEnd: 'failed' }, { name: 'web', status: 'connected', signInEnd: 'weird' as never }, { name: 'ext', status: 'needs-auth' }];
+      const base = (ad: FakeAdapter, sid: string): McpReplyInput => ({ a: info(sid), ad, live, off: new Set(), secrets: [], cli: [], extras: [{ name: 'ext', enabled: true, trusted: true }], ambientDisabled: new Set(), app: 'claude', claudeList: [{ name: 'notes', enabled: true }, { name: 'web', enabled: true }] });
+      const by = (r: ReturnType<typeof agentMcpReply>, n: string) => r.servers.find((x) => x.name === n)!;
+      // the SDK transport's shape: steps, no in-app call
+      const stepsOnly = new FakeAdapter({ displayName: 'Claude Code', capabilities: { mcpSignInSteps: CL, mcpSignInNote: 'Not checked on a real account yet.', mcpRestart: false } });
+      const s1 = await stepsOnly.start({ workspace: ws, quiet: true });
+      const r1 = agentMcpReply(base(stepsOnly, s1));
+      assert.deepStrictEqual([by(r1, 'notes').canSignIn, by(r1, 'notes').signInSteps], [undefined, CL.replace('{name}', 'notes')], 'the steps show without mcpSignIn');
+      assert.strictEqual(by(r1, 'notes').signInNote, undefined, 'no note where no Sign in is offered');
+      assert.strictEqual(by(r1, 'ext').signInSteps, undefined, 'a folder extra without Sign in gets no "use Sign in here" line');
+      // the CLI transport's shape
+      const full = new FakeAdapter({ displayName: 'Claude Code', capabilities: { mcpSignIn: true, mcpRestart: true, mcpSignInRestart: true, mcpSignInSteps: CL, mcpSignInNote: 'Not checked on a real account yet.' } });
+      const s2 = await full.start({ workspace: ws, quiet: true });
+      const r2 = agentMcpReply(base(full, s2));
+      const n2 = by(r2, 'notes');
+      assert.deepStrictEqual([n2.canSignIn, n2.signInEnd, n2.signInNote, n2.signInRestart, n2.canRestart], [true, 'failed', 'Not checked on a real account yet.', true, true]);
+      assert.deepStrictEqual([by(r2, 'web').signInEnd, by(r2, 'web').signInNote, by(r2, 'web').signInRestart], [undefined, undefined, undefined], 'an unknown signInEnd is not passed on; a running row has no note');
+      assert.strictEqual(by(r2, 'ext').signInSteps, 'This server is only known to Agent Durbar; use Sign in here.');
+      // an app without the Restart end (Copilot) keeps Restart hidden on a needs-sign-in row
+      const cop = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpRestart: true, mcpSignInSteps: STEPS } });
+      const s3 = await cop.start({ workspace: ws, quiet: true });
+      assert.strictEqual(by(agentMcpReply(base(cop, s3)), 'notes').signInRestart, undefined);
+    }
+
+    // ---- review on #635: a real ClaudeAdapter on the fake CLI transport, through mcpSignInOp: main's address rule applies to Claude's answer ----
+    {
+      let authUrl = '';
+      const sp = fakeSpawn();
+      sp.next = (c) => {
+        c.onWrite = (o) => {
+          if (o.type === 'control_request') {
+            const r = o.request as { subtype: string };
+            const response = r.subtype === 'mcp_authenticate' ? { authUrl, requiresUserAction: true, callbackExpected: true, state: 'SECRETSTATE123', callbackPort: 41234 } : r.subtype === 'mcp_status' ? { mcpServers: [{ name: 'notes', status: 'needs-auth' }] } : {};
+            setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
+          } else if (o.type === 'user') {
+            setTimeout(() => { c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: ws, tools: [], mcp_servers: [{ name: 'notes', status: 'needs-auth' }] }); c.send({ type: 'result', subtype: 'success', is_error: false }); }, 0);
+          }
+        };
+      };
+      const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+      let idle = false;
+      ad.onEvent((e) => { if (e.type === 'status' && (e as { status: string }).status === 'idle') idle = true; });
+      const sid = await ad.start({ workspace: ws, quiet: true, mcpServers: { notes: { type: 'http', url: 'https://mcp.example.com/mcp' } } });
+      await ad.send(sid, { text: 'hi' });
+      for (let i = 0; i < 500 && !idle; i++) await new Promise((r) => setTimeout(r, 2));
+      assert.ok(idle, 'the CLI ran one turn');
+      const store = new McpSignInStore(() => 0, async () => undefined);
+      const d = { agents: new Map([[sid, info(sid)]]), router: routerOf(ad), live: () => [{ name: 'notes', status: 'needs-auth', errorClass: 'auth' as const }], secrets: () => [] };
+      for (const bad of ['http://auth.example.com/authorize?state=SECRETSTATE123', 'https://127.0.0.1:41234/authorize', 'https://intranet/authorize', 'https://localhost/authorize', 'https://[::1]/authorize', 'https://user:pw@auth.example.com/a', 'https://auth.example.com/a b']) {
+        authUrl = bad;
+        const r = await mcpSignInOp(d, store, sid, 'notes');
+        assert.deepStrictEqual([r.ok, (r as { manual?: boolean }).manual], [false, true], `Claude answered ${bad}: the terminal steps show`);
+        assert.ok(!store.has(sid, 'notes'), `nothing held for ${bad}`);
+        assert.ok(!JSON.stringify(r).includes('SECRETSTATE') && !JSON.stringify(r).includes('127.0.0.1') && !JSON.stringify(r).includes('intranet'), 'the refusal repeats no address');
+      }
+      authUrl = 'https://auth.example.com/authorize?state=SECRETSTATE123';
+      assert.deepStrictEqual(await mcpSignInOp(d, store, sid, 'notes'), { ok: true, kind: 'browser', host: 'auth.example.com' }, 'and a good https page is held');
+      assert.ok(store.view(sid, 'notes')!.expiresInMs <= 290_000 && store.view(sid, 'notes')!.expiresInMs >= 30_000, 'with Claude\'s listener time');
+      await ad.stop(sid);
+    }
+
+    // ---- FR-185 (T157): the "different site" line compares with this app's own server, never another app's list ----
+    {
+      const src = (o: Partial<{ extras: Array<{ name: string; url?: string }>; copilot: Array<{ name: string; url?: string }>; claude: Record<string, { url?: string }>; codex: Record<string, { url?: string }> }>): ServerUrlSources => ({ extras: () => o.extras ?? [], copilot: () => o.copilot ?? [], claude: () => o.claude ?? {}, codex: () => o.codex ?? {} });
+      const copilotNotes = [{ name: 'notes', url: 'https://tools.other.example/mcp' }];
+      // the false warning: Codex's notes is on notes.example, its page on login.notes.example; the Copilot CLI list has another notes
+      const falseWarn = src({ copilot: copilotNotes, codex: { notes: { url: 'https://mcp.notes.example/mcp' } } });
+      assert.strictEqual(serverUrlFor('codex', 'notes', falseWarn), 'https://mcp.notes.example/mcp', 'Codex: its own config.toml');
+      assert.strictEqual(signInSiteNote(serverUrlFor('codex', 'notes', falseWarn), 'login.notes.example'), undefined, 'no false "different site" line');
+      // the hidden warning: Codex's notes is on notes.example, the page on evil.example, and the Copilot notes happens to be on evil.example
+      const hidden = src({ copilot: [{ name: 'notes', url: 'https://mcp.evil.example/mcp' }], codex: { notes: { url: 'https://mcp.notes.example/mcp' } } });
+      assert.strictEqual(signInSiteNote(serverUrlFor('codex', 'notes', hidden), 'login.evil.example'), 'mcp.notes.example', 'the real warning shows');
+      // Claude Code: extras, then the user list Durbar passes
+      const cl = src({ copilot: copilotNotes, claude: { notes: { url: 'https://mcp.notes.example/mcp' } } });
+      assert.strictEqual(signInSiteNote(serverUrlFor('claude', 'notes', cl), 'login.notes.example'), undefined, 'Claude: no false line');
+      assert.strictEqual(signInSiteNote(serverUrlFor('claude', 'notes', src({ copilot: [{ name: 'notes', url: 'https://mcp.evil.example/mcp' }], claude: { notes: { url: 'https://mcp.notes.example/mcp' } } })), 'login.evil.example'), 'mcp.notes.example', 'Claude: the real warning shows');
+      // no match in the app's own lists: no line (never a line against another app's server)
+      assert.strictEqual(serverUrlFor('claude', 'notes', src({ copilot: copilotNotes })), undefined, 'Claude: a Copilot-only name has no address');
+      assert.strictEqual(serverUrlFor('codex', 'notes', src({ copilot: copilotNotes, claude: { notes: { url: 'https://x.example/' } } })), undefined, 'Codex: neither Copilot\'s nor Claude\'s list');
+      assert.strictEqual(serverUrlFor(undefined, 'notes', src({ copilot: copilotNotes })), undefined, 'an unknown app: extras only');
+      assert.strictEqual(serverUrlFor('claude', '__proto__', src({})), undefined, 'own names only');
+      // the folder's extra comes first for every app; Copilot is unchanged (extras, then its CLI list)
+      const ex = src({ extras: [{ name: 'notes', url: 'https://extra.example/mcp' }], copilot: copilotNotes, claude: { notes: { url: 'https://c.example/' } }, codex: { notes: { url: 'https://d.example/' } } });
+      assert.deepStrictEqual(['copilot', 'claude', 'codex'].map((a) => serverUrlFor(a, 'notes', ex)), ['https://extra.example/mcp', 'https://extra.example/mcp', 'https://extra.example/mcp']);
+      assert.strictEqual(serverUrlFor('copilot', 'notes', src({ copilot: copilotNotes, claude: { notes: { url: 'https://c.example/' } } })), 'https://tools.other.example/mcp', 'Copilot: its CLI list');
+      assert.strictEqual(serverUrlFor('copilot', 'notes', src({ claude: { notes: { url: 'https://c.example/' } }, codex: { notes: { url: 'https://d.example/' } } })), undefined, 'Copilot: never another app\'s list');
+      // review on #635: Codex's addresses come from the values-free Settings view, as {name: {url}} only
+      const view = [{ app: 'copilot', servers: [{ name: 'notes', url: 'https://tools.other.example/mcp', envKeys: [], headerKeys: [] }] }, { app: 'codex', servers: [{ name: 'notes', url: 'https://mcp.notes.example/mcp', envKeys: ['TOKEN'], headerKeys: ['Authorization'] }, { name: 'local', envKeys: [], headerKeys: [] }, { name: 'notes', url: 'https://dup.example/' }] }];
+      const cx = appServerUrls(view, 'codex');
+      assert.deepStrictEqual({ ...cx }, { notes: { url: 'https://mcp.notes.example/mcp' }, local: {} }, 'addresses only, first entry wins, no keys or values');
+      assert.strictEqual(serverUrlFor('codex', 'notes', src({ copilot: copilotNotes, codex: cx })), 'https://mcp.notes.example/mcp');
+      assert.strictEqual(appServerUrls(view, 'codex').toString, undefined, 'no prototype: a name like toString is never inherited');
+      // one source each (review on #635): the store's minimum is the shared one, and a broken wait uses the adapter's request limit
+      assert.strictEqual(SIGN_IN_MIN_TTL_MS, SHARED_MIN_TTL_MS, 'the store\'s minimum is the shared constant');
+      assert.strictEqual(SIGN_IN_MIN_TTL_MS, 30_000);
+      assert.strictEqual(CLAUDE_SIGN_IN_TIMEOUT_MS, SIGN_IN_REQUEST_TIMEOUT_MS, 'Claude\'s request limit is the shared one');
+      assert.strictEqual(signInTtlMs(NaN), signInTtlMs(SIGN_IN_REQUEST_TIMEOUT_MS), 'a broken wait counts as the whole request limit');
+      assert.strictEqual(signInTtlMs(1e9), SIGN_IN_MIN_TTL_MS, 'the floor is the shared minimum');
+      // the other lists are not even read for an app that does not use them
+      let reads = 0;
+      const counting: ServerUrlSources = { extras: () => [], copilot: () => { reads++; return copilotNotes; }, claude: () => ({}), codex: () => ({ notes: { url: 'https://mcp.notes.example/' } }) };
+      serverUrlFor('codex', 'notes', counting);
+      assert.strictEqual(reads, 0, 'Codex does not read the Copilot CLI list');
+    }
+
+    // ---- FR-185 and FR-176 through the channels (stand-in electron; Claude and Codex agents) ----
+    {
+      const electronPath = require.resolve('electron');
+      const handlers = new Map<string, (e: unknown, ...a: unknown[]) => unknown>();
+      const fake = { ipcMain: { handle: (ch: string, fn: (e: unknown, ...a: unknown[]) => unknown) => handlers.set(ch, fn), on: () => undefined }, safeStorage: { isEncryptionAvailable: () => false } };
+      const saved = require.cache[electronPath];
+      require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: fake } as unknown as NodeJS.Module;
+      // the modules that took `ipcMain` from the first stand-in load again with this one
+      for (const m of ['../src/main/mcpipc', '../src/main/ipcguard']) delete require.cache[require.resolve(m)];
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { registerMcpIpc } = require('../src/main/mcpipc') as typeof import('../src/main/mcpipc');
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
+        const cdir = path.join(ws, 'copilot-185');
+        fs.mkdirSync(cdir, { recursive: true });
+        fs.writeFileSync(path.join(cdir, 'mcp-config.json'), JSON.stringify({ mcpServers: { notes: { type: 'http', url: 'https://tools.other.example/mcp' } } }));
+        const store = new McpStore(path.join(ws, 'm185.json'));
+        store.load();
+        const ad = new FakeAdapter({ displayName: 'Claude Code', capabilities: { mcpSignIn: true } });
+        ad.signInResult = { kind: 'browser', url: 'https://login.notes.example/authorize?state=SECRETSTATE123' };
+        const sClaude = await ad.start({ workspace: ws, quiet: true });
+        const sCodex = await ad.start({ workspace: ws, quiet: true });
+        const agents = new Map([[sClaude, info(sClaude)], [sCodex, info(sCodex)]]);
+        let listener: (e: AgentEvent) => void = () => undefined;
+        let t = 10_000;
+        registerMcpIpc({
+          store: () => store, agents,
+          router: { onEvent: (cb: (e: AgentEvent) => void) => { listener = cb; return () => undefined; }, forAgent: () => ad } as never,
+          dev: { DURBAR_COPILOT_DIR: cdir } as never,
+          appOf: (id) => (id === sClaude ? 'claude' : 'codex'),
+          globalFor: (id): Record<string, McpServerSpec> => (id === sClaude ? { notes: { type: 'http', url: 'https://mcp.notes.example/mcp' } } : {}),
+          codexServers: () => ({ notes: { url: 'https://mcp.notes.example/mcp' } }),
+          openUrl: async () => undefined,
+          now: () => t,
+          timers: { set: () => ({}), clear: () => undefined },
+        });
+        ad.onEvent((e) => listener(e));
+        const indexUrl = pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href;
+        const frame = { url: indexUrl };
+        const win = { senderFrame: frame, sender: { mainFrame: frame } };
+        const call = (ch: string, ...a: unknown[]) => handlers.get(ch)!(win, ...a) as Promise<Record<string, unknown>>;
+        for (const sid of [sClaude, sCodex]) listener({ type: 'mcp', sessionId: sid, timestamp: 1, servers: NEEDS.map((x) => (x.name === 'teams' ? { ...x, name: 'notes' } : x)) } as AgentEvent);
+        assert.deepStrictEqual(await call('agents:mcpSignIn', sClaude, 'notes'), { ok: true, kind: 'browser', host: 'login.notes.example' }, 'Claude: no false line from the Copilot CLI list');
+        assert.deepStrictEqual(await call('agents:mcpSignIn', sCodex, 'notes'), { ok: true, kind: 'browser', host: 'login.notes.example' }, 'Codex: no false line from the Copilot CLI list');
+        // FR-176: after Cancel, the next dialog open or focus reads once (with the server's name); a plain repaint does not; 5 minutes later nothing
+        await call('agents:mcpCancelSignIn', sClaude, 'notes');
+        ad.refreshCalls = 0;
+        ad.refreshNames.length = 0;
+        await call('agents:mcp', sClaude);
+        await new Promise((r) => setImmediate(r));
+        assert.strictEqual(ad.refreshCalls, 0, 'a plain agents:mcp reads nothing');
+        await call('agents:mcp', sClaude, true);
+        await new Promise((r) => setImmediate(r));
+        assert.deepStrictEqual(ad.refreshNames, ['notes'], 'open or focus within 5 minutes of an attempt: one read');
+        await call('agents:mcp', sCodex, true);
+        await new Promise((r) => setImmediate(r));
+        assert.strictEqual(ad.refreshCalls, 1, 'a held, unopened sign-in of another agent is not re-read');
+        ad.refreshDelay = Infinity;
+        await call('agents:mcp', sClaude, true);
+        await call('agents:mcp', sClaude, true);
+        await new Promise((r) => setImmediate(r));
+        assert.strictEqual(ad.refreshCalls, 2, 'one read in flight per agent');
+        ad.refreshDelay = undefined;
+        t += RECENT_SIGN_IN_MS;
+        const c0 = ad.refreshCalls;
+        listener({ type: 'status', sessionId: sCodex, timestamp: 2, status: 'stopped' } as AgentEvent);
+        await call('agents:mcp', sCodex, true);
+        await new Promise((r) => setImmediate(r));
+        assert.strictEqual(ad.refreshCalls, c0, 'after 5 minutes (or End session) nothing is read');
+      } finally {
+        if (saved) require.cache[electronPath] = saved;
+        else delete require.cache[electronPath];
+      }
+    }
+
     done = true;
     console.log('[058] mcp signin: PASS');
   } finally {
