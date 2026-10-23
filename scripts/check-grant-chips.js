@@ -140,9 +140,13 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`document.querySelectorAll('#grantsPop .gp-row').length`), 8, 'stuck: a revoke that fails leaves the grants');
   await js(`document.getElementById('backBtn').click()`); await until(`!document.body.classList.contains('panel-open')&&!!document.querySelector(${jsLiteral(`#stage .desk[data-id="${ids[1]}"]`)})`);
   await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${ids[1]}"]`)}).click()`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('grants')`);
+  /* spec 074 FR-019 (2026-10-23): opening a chat puts the cursor in its message box on purpose. The check stays "no late focus move":
+     put the focus on the chat title, then nothing may take it away */
+  assert.ok(await until(`document.activeElement&&document.activeElement.id==='msgInput'`), 'stuck: opening the other desk puts the cursor in its message box (spec 074 FR-019)');
+  await js(`document.getElementById('panelTitle').focus()`);
   await ctx.sleep(150); // the checks below are that nothing happens (no announcement, no focus move): give a late handler its chance
   assert.ok(await js(`document.getElementById('grants').hidden`), 'stuck: the other agent has no grants');
   assert.notStrictEqual(await js(`document.getElementById('srAnnounce').textContent`), 'All permissions revoked.', 'stuck: a failed Revoke all on one agent does not announce for another');
-  assert.notStrictEqual(await js(`document.activeElement.id`), 'msgInput', 'stuck: the focus is not taken to the composer of another agent');
+  assert.strictEqual(await js(`document.activeElement.id`), 'panelTitle', 'stuck: a failed Revoke all moves no focus later (not to the composer of another agent)');
   console.log('[grant-chips] all checks passed');
 };
