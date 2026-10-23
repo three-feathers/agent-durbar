@@ -175,7 +175,8 @@ module.exports = async (ctx) => {
     const shut = ds.find((d) => d.cabin && d.cabin.kind === 'closed');
     await js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(shut.id)})+'"] .cabin').click()`);
     const opened = await until(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(String(shut.name))}`, 6000);
-    assert.ok(opened, `${w}: clicking ${shut.name}'s closed door opens its chat (${await js(`document.body.className+' | '+((document.getElementById('panelTitle')||{}).textContent||'')`)})`);
+    const seenTitle = opened ? '' : await js(`document.body.className+' | '+((document.getElementById('panelTitle')||{}).textContent||'')`);
+    assert.ok(opened, w + ': clicking ' + shut.name + "'s closed door opens its chat (" + seenTitle + ')');
     await H.key('Escape'); await until(`!document.body.classList.contains('panel-open')`, 4000); await rerender();
 
     /* FR-005: contrast and size in every built-in theme (the theme path the Settings picker uses) */
