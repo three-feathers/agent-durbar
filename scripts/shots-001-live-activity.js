@@ -1,6 +1,6 @@
 /*
  * Spec 001 FR-028..FR-032: live activity on the desks. Simulator only (events sent through the simulator's test hook), no credits.
- * Sparse office (3 agents): the side panel next to each desk. Dense office (15 agents): the readout in the desk's text line, the name
+ * Sparse office (3 agents, `density=full`: by default few agents get grown desks, spec 001 FR-042): the side panel next to each desk. Dense office (15 agents): the readout in the desk's text line, the name
  * still shown. Checks: the office page rules (overlap, clipping, text >= 10.5px), no secret in the readout, at most 4 paints a second,
  * no layout shift while text streams, and the setting off restores today's text. Linux with xvfb-run:
  *
@@ -20,8 +20,10 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const js = (c) => ctx.js(c);
   const emit = (e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${q(e)}))`);
-  const load = async (n, w, h) => {
-    await H.load({ w, h, query: { sim: String(n) }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}`, settle: false });
+  /* extra: more page address values; the sparse office forces `full` (spec 001 FR-042: a few agents get grown desks by default,
+     checked in check-office-fill.js), so the side panel is still checked here */
+  const load = async (n, w, h, extra) => {
+    await H.load({ w, h, query: { sim: String(n), ...(extra || {}) }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}`, settle: false });
     await ctx.sleep(300);
   };
   const think = (id, rid, delta) => emit({ type: 'thinking', sessionId: id, reasoningId: rid, delta });
@@ -37,7 +39,7 @@ module.exports = async (ctx) => {
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     /* ---- sparse: the side panel ---- */
-    await load(3, w, h);
+    await load(3, w, h, { density: 'full' });
     await feed();
     let st = await js(`({side:document.getElementById('stage').dataset.side,d:document.getElementById('stage').dataset.d})`);
     assert.deepStrictEqual(st, { side: '1', d: 'full' }, `${w}: 3 agents use the side panel`);
@@ -110,7 +112,7 @@ module.exports = async (ctx) => {
 
     /* ---- the setting off: today's text, no side panel ---- */
     await js(`localStorage.setItem('durbar.liveActivity','off')`);
-    await load(3, w, h);
+    await load(3, w, h, { density: 'full' });
     await feed();
     st = await js(`({side:document.getElementById('stage').dataset.side,n:document.querySelectorAll('#stage .liveside').length,t:(document.querySelector('#stage .desk[data-id="sim-2"] .task')||{}).textContent})`);
     assert.deepStrictEqual([st.side, st.n], ['0', 0], `${w}: off: no side panel`);

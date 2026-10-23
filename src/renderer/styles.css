@@ -705,6 +705,33 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .stage[data-d="roomy"] .helper.hc .hname{font-size:12.5px;line-height:16px}
 .stage[data-d="roomy"] .helper.hc .hs{font-size:11px;line-height:14px}
 .stage[data-d="roomy"] .helpers.hstrip>.more{font-size:12px}
+/* spec 001 FR-041..FR-045: grown desks. With few agents a roomy card grows by --gf (1 to 2.5, set with data-grow on the stage by the layout
+   search): taller, a wider column and drawing, the same text sizes. Its text line fills the card (at most 8 lines) and keeps the newest
+   lines in view like the side panel (.over, set by measuring); from --gf 1.4 (data-grow="2") the name may take two lines. */
+.stage[data-d="roomy"][data-grow]{--cmax:1600px;--sw:calc(104px * min(var(--gf,1),1.6))}
+.stage[data-d="roomy"][data-grow] .desk.card{height:calc(var(--ch) * var(--gf,1));align-items:stretch;padding-top:8px;padding-bottom:8px;grid-template-columns:min(var(--sw),max(104px,36%)) minmax(0,1fr)} /* a narrow grown card keeps the text its room */
+.stage[data-d="roomy"][data-grow] .desk.card>.sc{align-self:center}
+.stage[data-d="roomy"][data-grow] .desk.card .ci{min-height:0;gap:4px}
+.stage[data-d="roomy"][data-grow] .desk.card .intent{flex:1 1 0;min-height:0;max-height:128px;display:flex;flex-direction:column;justify-content:flex-start;-webkit-line-clamp:unset;overflow:hidden;overflow-wrap:break-word}
+.stage[data-d="roomy"][data-grow="2"] .desk.card .l1{flex-wrap:wrap;row-gap:0}
+.stage[data-d="roomy"][data-grow="2"] .desk.card .l1 .name{flex:1 1 100%;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+/* spec 001 FR-047..FR-049 (owner 2026-10-22): a wide grown desk shows more, in columns, never longer lines. The render pass (setGrownCols,
+   app.js) sets data-gc (2 or 3) and the column widths --gm/--gr/--gs from DurbarProbe.grownCols, and caps the card at their sum. Without
+   data-gc (a narrow desk, the probe) the side is not shown. 16px between columns: the card's 10px column gap, 5px of padding and the 1px rule. */
+.desk.card .gx{display:none}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc]{grid-template-columns:min(var(--sw),max(104px,36%)) var(--gm) minmax(0,1fr)}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc] .gx{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0;overflow:hidden;padding-left:5px;border-left:1px solid var(--line-hair);text-align:left}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc="3"] .gx{flex-direction:row;gap:16px}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc="3"] .gx-r{flex:none;width:var(--gr)}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc="3"] .gx-f{flex:none;width:var(--gs)}
+.desk.card .gx-r{display:flex;flex-direction:column;flex:1 1 0;min-height:0;min-width:0;gap:2px}
+.desk.card .gx-r.is-empty{display:none}
+.desk.card .gx-h,.desk.card .gx-k{font-size:10.5px;line-height:15px;color:var(--muted);font-weight:600}
+.desk.card .gx-t{flex:1 1 0;min-height:0;font-size:11.5px;line-height:15px;color:var(--ink-2);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;overflow-wrap:break-word}
+.desk.card .gx-f{display:flex;flex-direction:column;flex:none;min-width:0;justify-content:flex-end}
+.desk.card[data-gc="3"] .gx-f{justify-content:flex-start}
+.desk.card .gx-l{font-size:11px;line-height:15px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.desk.card .gx-l .gx-k{margin-right:4px}
 
 /* =====================================================================
    Full-screen chat (replaces the docked panel)
@@ -1583,7 +1610,7 @@ h2,h3,h4{text-wrap:balance}
 .liveside .ls-k{font-size:11px;line-height:14px;font-weight:600;color:var(--muted);letter-spacing:.01em}
 /* the newest words stay in view: text that does not fit sits at the bottom of its box and older lines leave at the top, fading (.over is set by measuring) */
 .liveside .ls-t{flex:1 1 0;min-height:0;font-size:12px;line-height:17px;color:var(--ink-2);display:flex;flex-direction:column;justify-content:flex-start;overflow:hidden;overflow-wrap:break-word}
-.liveside .ls-t.over{justify-content:flex-end;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 20px);mask-image:linear-gradient(to bottom,transparent 0,#000 20px)}
+.liveside .ls-t.over,.stage[data-d="roomy"][data-grow] .desk.card .intent.over{justify-content:flex-end;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 20px);mask-image:linear-gradient(to bottom,transparent 0,#000 20px)}
 .liveside[data-lk="think"] .ls-t,:is(.task,.intent)[data-lk="think"]{font-style:italic}
 .stage[data-d="full"] .liveside+.helpers{margin-left:0} /* the helper column's -2px tuck is for its desk's connector, not the panel */
 
