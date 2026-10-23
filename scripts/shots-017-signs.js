@@ -45,7 +45,7 @@ const TABLE = {
   dnd: { word: 'Do not disturb', short: 'DND', icon: 'bar', open: false },
   away: { word: 'Away', short: 'Away', icon: 'clock', open: false },
   meeting: { word: 'In a meeting', short: 'Meeting', icon: 'people', open: false },
-  retrying: { word: 'Retrying', short: 'Retrying', icon: 'retry', open: false, tipRe: /^Retrying \(attempt \d+ of \d+\)/ }, // spec 034 FR-018: the pill's tooltip is the whole retry line
+  retrying: { word: 'Retrying', short: 'Retrying', icon: 'retry', open: false },
   failing: { word: 'Failing', short: 'Failing', icon: 'bolt', open: false },
   thinking: { word: 'Thinking', short: 'Thinking', icon: 'bubble', open: false },
   busy: { word: 'Busy', short: 'Busy', icon: 'dot', open: false },
@@ -88,7 +88,6 @@ function readDesks() {
   return [...document.querySelectorAll('#stage .desk[data-id]:not(.shut)')].filter((d) => d.getClientRects().length).map((d) => {
     const a = list.find((x) => x.id === d.dataset.id) || {};
     const kids = list.filter((x) => x.parent === a.id).map((h) => (h.paused ? 'idle' : h.state));
-    const sg = [...d.querySelectorAll('.dsign')].find((x) => x.getClientRects().length);
     /* FR-011..FR-013: the cabin in the scene's place (closed) or over it (open) */
     const cab = d.querySelector('[data-cabin]'), csg = cab && cab.querySelector('.cb-sign'), cw = csg && csg.querySelector('.cb-w'), cic = csg && csg.querySelector('.ds-ic');
     const scn = [...d.querySelectorAll('svg.scene')].some((x) => x.getClientRects().length && x.getBoundingClientRect().height > 4);
@@ -106,18 +105,13 @@ function readDesks() {
       font: cw ? parseFloat(getComputedStyle(cw).fontSize) : 0, contrast: ctc ? Math.round(ratio(ctc, cbg) * 100) / 100 : 0, cut: !!cw && cw.scrollWidth > cw.clientWidth + 0.5,
       inDesk: !!CR && CR.width > 1 && CR.left >= D0.left - 0.5 && CR.right <= D0.right + 0.5 && CR.top >= D0.top - 0.5 && CR.bottom <= D0.bottom + 0.5 } : null;
     const base = { toggle: tg ? { pressed: tg.getAttribute('aria-pressed'), label: tg.getAttribute('aria-label') || '', hits: tgHits, w: Math.round(TG.width), h: Math.round(TG.height) } : null, userClosed: !!tg && tg.getAttribute('aria-pressed') === 'true', limit: !!a.limit, cabin, scene: scn, id: d.dataset.id, name: a.name, parent: !!a.parent, state: d.dataset.state, paused: !!a.paused, coffee: !!a.coffee, ended: d.dataset.state === 'idle' && a.label === 'Ended', helpers: kids, failing: d.classList.contains('is-failing'), retrying: d.classList.contains('is-retrying'), label: d.getAttribute('aria-label') || '', helper: d.classList.contains('helper') };
-    if (!sg) return base;
-    const w = sg.querySelector('.dsw'), ic = sg.querySelector('.ds-ic'), door = sg.querySelector('.door-svg'), D = d.getBoundingClientRect();
-    const tc = rgb(getComputedStyle(w).color), bg = bgOf(sg);
-    const inDesk = [door, ic].filter(Boolean).every((g) => { const r = g.getBoundingClientRect(); return r.width > 1 && r.height > 1 && r.left >= D.left - 0.5 && r.right <= D.right + 0.5 && r.top >= D.top - 0.5 && r.bottom <= D.bottom + 0.5; });
-    /* the characters that show: the word's own width against the room it gets */
-    const probe = w.cloneNode(true); Object.assign(probe.style, { position: 'absolute', visibility: 'hidden', maxWidth: 'none', width: 'auto', overflow: 'visible' }); w.parentNode.appendChild(probe);
-    const full = probe.getBoundingClientRect().width; probe.remove();
-    const shown = w.clientWidth >= full - 0.5 ? w.textContent.length : Math.floor((w.clientWidth / Math.max(full, 1)) * w.textContent.length) - 1;
+    /* review on PR 631 (shots-034-retry): the desk's pill and status word stay the plain ones (Working, Retrying with spec 034's line,
+       Error ...); the meeting-room sign is on the cabin door */
+    const pl = [...d.querySelectorAll('.pill,.stl')].find((x) => x.getClientRects().length);
     return Object.assign(base, {
-      sign: sg.dataset.sign, cls: sg.className, narrow: sg.classList.contains('stl'), word: w.textContent, icon: ic && ic.dataset.icon, hasDoor: !!door, open: !!(door && door.querySelector('.leaf')),
-      title: sg.getAttribute('title') || '', font: parseFloat(getComputedStyle(w).fontSize), icColor: ic && getComputedStyle(ic).color, txColor: getComputedStyle(w).color,
-      contrast: tc ? Math.round(ratio(tc, bg) * 100) / 100 : 0, inDesk, shown, cut: w.clientWidth < full - 0.5, dims: [w.clientWidth, full, sg.getBoundingClientRect().width, sg.parentElement.getBoundingClientRect().width, sg.parentElement.className].join(' '),
+      sign: csg && csg.dataset.sign, cls: csg ? csg.className : '', icon: cic && cic.dataset.icon, title: csg ? csg.getAttribute('title') || '' : '',
+      icColor: cic && getComputedStyle(cic).color, txColor: cw && getComputedStyle(cw).color,
+      pill: pl ? pl.textContent.trim() : '', pillCls: pl ? pl.className : '', pillSign: !!(pl && (pl.classList.contains('dsign') || pl.querySelector('.ds-ic'))),
     });
   });
 }
@@ -130,7 +124,7 @@ module.exports = async (ctx) => {
   const walksDone = `![...document.querySelectorAll('#walkers .walker')].some((w)=>w.classList.contains('walking')||w.getAnimations().some((a)=>a.playState==='running'))`;
   /* the usage line is fitted after a render (fitUsage); a sign is measured once that has run, i.e. once no sign word is cut (at most 3 s; the
      assertions below then report any that stays cut) */
-  const settled = `![...document.querySelectorAll('#stage .dsign .dsw')].some((e)=>e.getClientRects().length&&e.scrollWidth>e.clientWidth+0.5)`;
+  const settled = `![...document.querySelectorAll('#stage .cb-sign .cb-w')].some((e)=>e.getClientRects().length&&e.scrollWidth>e.clientWidth+0.5)`;
   const rerender = async () => { await js(`window.__durbarSimUi.render()`); await ctx.sleep(400); await until(walksDone, 8000); await until(settled, 3000); await ctx.sleep(200); };
   /* mixed states the simulator does not make by itself: one paused, one ended, one on a coffee break (Durbar's paths set these flags) */
   const mix = () => js(`(()=>{const L=window.__durbarSimUi.agents().filter(a=>!a.parent);const pick=(n,f)=>{const a=L.find(x=>x.name===n)||L.find(f);return a;};
@@ -148,15 +142,10 @@ module.exports = async (ctx) => {
       const [key, tone] = expected(d), t = TABLE[key];
       const tag = `${w} ${d.name} (${d.state}${d.paused ? ', paused' : ''}${d.coffee ? ', coffee' : ''}${d.ended ? ', ended' : ''})`;
       assert.strictEqual(d.sign, key, `${tag}: sign`);
-      assert.strictEqual(d.word, d.narrow ? t.short : t.word, `${tag}: word (${d.narrow ? 'short, mini/micro' : 'full'})`);
-      assert.strictEqual(d.icon, t.icon, `${tag}: icon`);
-      if (d.narrow) assert.ok(!d.hasDoor, `${tag}: the mini/micro sign has no door (icon and short word only)`);
-      else { assert.ok(d.hasDoor, `${tag}: the sign shows the door`); assert.strictEqual(d.open, t.open, `${tag}: the door is ${t.open ? 'open' : 'closed'}`); }
       assert.ok(d.cls.split(' ').includes('st-' + tone), `${tag}: colour st-${tone} (${d.cls})`);
-      assert.ok(d.font >= 10.5, `${tag}: sign text ${d.font}px >= 10.5px`);
       assert.strictEqual(d.icColor, d.txColor, `${tag}: the icon is drawn in the text colour`);
-      assert.ok(d.contrast >= 3, `${tag}: contrast ${d.contrast} >= 3`);
-      assert.ok(d.inDesk, `${tag}: door and icon inside the desk`);
+      /* review on PR 631: the pill or status word stays the plain one (other features read it: spec 034's Retrying line, 052's Failing) */
+      assert.ok(!d.pillSign && /^(Working|Thinking|Retrying|Failing|Waiting|Idle|Error|Done|Paused|Ended|Limit reached|Stopped|Coffee break|Away)/.test(d.pill), `${tag}: the pill keeps the plain status word: ${d.pill}`);
       /* owner 2026-10-23: a real office cabin */
       const c = d.cabin;
       assert.ok(c, `${tag}: has a cabin`);
@@ -171,8 +160,8 @@ module.exports = async (ctx) => {
       assert.ok(!c.underBadge, `${tag}: the chat number does not cover the door's sign`);
       assert.strictEqual(c.icon, t.icon, `${tag}: the door's sign icon`);
       assert.ok(c.font >= 10.5 && c.contrast >= 3 && !c.cut && c.inDesk, `${tag}: the door's sign is legible and whole: ${JSON.stringify(c)}`);
-      assert.ok(d.shown >= 3, `${tag}: at least three characters of "${d.word}" show (${d.shown}; ${d.dims})`);
-      assert.ok(t.tipRe ? t.tipRe.test(d.title) : d.title.startsWith((t.tip || t.word) + ': '), `${tag}: the tooltip names the sign and the plain word (Retrying: spec 034's whole line): ${d.title}`);
+      if (t.tip) assert.ok(d.title.startsWith(t.tip), `${tag}: the door sign's tooltip: ${d.title}`);
+      else assert.strictEqual(d.title, t.word, `${tag}: the door sign's tooltip is its full word`);
       /* owner Q6: an error burns, inside its scene, clear of its tag, flickering unless motion is reduced */
       assert.strictEqual(c.fire, key === 'attention', `${tag}: ${key === 'attention' ? 'flames on the desk' : 'no flames'}`);
       if (c.fire) assert.ok(c.fireIn && (c.flicker || c.reduced), `${tag}: the flames stay in the scene, clear of the tag, and flicker: ${JSON.stringify(c)}`);
@@ -194,14 +183,14 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#stage .unit [data-doorset="'+CSS.escape(window.__durbarSimUi.agents().find((a)=>a.name===${jsLiteral(m.paused)}).id)+'"]').focus()`);
     await H.key('Return');
     assert.ok(await until(`document.querySelector('#stage .unit .cb-toggle[aria-pressed="true"]')!==null`, 4000), `${w}: Enter on the door button closes the door`);
-    assert.ok(await until(`[...document.querySelectorAll('#stage .desk[data-id] .dsign')].some((e)=>e.dataset.sign==='shut')`, 4000), `${w}: the closed door shows Do not disturb (you closed it)`);
+    assert.ok(await until(`[...document.querySelectorAll('#stage .desk[data-id] .cb-sign')].some((e)=>e.dataset.sign==='shut')`, 4000), `${w}: the closed door shows Do not disturb (you closed it)`);
     await H.clearToasts();
     await rerender();
     const ds = await desks();
     assert.ok(ds.filter((d) => !d.helper).length >= 13, `${w}: the main desks are shown (${ds.length})`);
     checkDesks(w, ds, seen);
-    console.log('[017-signs]', w, ds.filter((d) => d.sign).map((d) => `${d.name}=${d.sign}${d.cut ? '(cut)' : ''}:${d.contrast}`).join(' '));
-    assert.deepStrictEqual(ds.filter((d) => d.cut).map((d) => `${d.name} "${d.word}"`), [], `${w}: no sign word is cut with 15 agents`);
+    console.log('[017-signs]', w, ds.filter((d) => d.sign).map((d) => `${d.name}=${d.sign}:${d.cabin && d.cabin.contrast}`).join(' '));
+    assert.deepStrictEqual(ds.filter((d) => d.cabin && d.cabin.cut).map((d) => `${d.name} "${d.cabin.word}"`), [], `${w}: no door sign word is cut with 15 agents`);
     const page = await js(`(${pageCheck.toString()})(false, 5)`);
     assert.deepStrictEqual(page.problems, [], `${w}: office layout rules`);
     /* FR-007: next to a long sign, a token count is dropped whole, never cut to a misleading "1" */
@@ -231,13 +220,13 @@ module.exports = async (ctx) => {
       for (const th of THEMES) {
         await js(`window.THEME.setTheme(${jsLiteral(th)})`);
         await js(`(()=>{document.getElementById('stage').innerHTML='';window.dispatchEvent(new Event('resize'));return true})()`);
-        assert.ok(await until(`window.THEME.current().id===${jsLiteral(th)}&&document.querySelectorAll('#stage .dsign').length>=13`, 8000), `${th}: theme applied and signs drawn`);
+        assert.ok(await until(`window.THEME.current().id===${jsLiteral(th)}&&document.querySelectorAll('#stage .cb-sign').length>=13`, 8000), `${th}: theme applied and signs drawn`);
         await ctx.sleep(500); await until(walksDone, 8000);
         const tds = (await desks()).filter((d) => d.sign);
-        const low = tds.filter((d) => !(d.contrast >= 3) || !(d.font >= 10.5) || d.icColor !== d.txColor || !d.cabin || !(d.cabin.contrast >= 3) || !(d.cabin.font >= 10.5) || d.cabin.cut);
-        console.log('[017-signs]', th, 'min contrast', Math.min(...tds.map((d) => d.contrast)), 'below 4.5:', tds.filter((d) => d.contrast < 4.5).map((d) => `${d.sign}:${d.contrast}`).join(' ') || 'none');
+        const low = tds.filter((d) => d.icColor !== d.txColor || !d.cabin || !(d.cabin.contrast >= 3) || !(d.cabin.font >= 10.5) || d.cabin.cut);
+        console.log('[017-signs]', th, 'door signs below 4.5:', tds.filter((d) => d.cabin && d.cabin.contrast < 4.5).map((d) => `${d.sign}:${d.cabin.contrast}`).join(' ') || 'none');
         console.log('[017-signs]', th, 'door signs min contrast', Math.min(...tds.map((d) => (d.cabin ? d.cabin.contrast : 0))));
-        assert.deepStrictEqual(low.map((d) => `${d.name} ${d.sign} ${d.contrast} ${d.font}px ${JSON.stringify(d.cabin)}`), [], `${th}: every sign (pill and door) >= 3:1, >= 10.5px, whole, icons in the text colour`);
+        assert.deepStrictEqual(low.map((d) => `${d.name} ${d.sign} ${JSON.stringify(d.cabin)}`), [], `${th}: every sign (pill and door) >= 3:1, >= 10.5px, whole, icons in the text colour`);
         if (w === SIZES[0][0]) await H.shot(path.join(OUT, `017-cabins-${th}-${w}x${h}.png`), { prep: 'calm', blur: true, tag: '017-signs', what: th });
         const tp = await js(`(${pageCheck.toString()})(false, 5)`);
         assert.deepStrictEqual(tp.problems, [], `${th} ${w}: office layout rules`);
@@ -248,12 +237,12 @@ module.exports = async (ctx) => {
     /* FR-008: the Settings switch brings back the plain words, and the signs again */
     const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); assert.ok(await until(`!!document.getElementById('signSw')`, 4000), 'Settings has the signs switch'); await js(`document.getElementById('signSw').click()`); await H.key('Escape'); await ctx.sleep(500); };
     await toggle();
-    assert.ok(await until(`document.querySelectorAll('#stage .dsign').length===0`, 4000), `${w}: switch off: no sign`);
+    assert.ok(await until(`document.querySelectorAll('#stage .cb-sign').length===0`, 4000), `${w}: switch off: no sign`);
     const plain = await js(`[...document.querySelectorAll('#stage .desk[data-id]:not(.helper):not(.shut)')].map(d=>[...d.querySelectorAll('.pill,.stl')].find(x=>x.getClientRects().length)).filter(Boolean).map(x=>x.textContent.trim())`);
     assert.ok(plain.length >= 13 && plain.some((t) => /^(Working|Thinking)/.test(t)) && plain.some((t) => /^Waiting/.test(t)), `${w}: switch off: plain words ${JSON.stringify(plain)}`);
     assert.strictEqual(await js(`localStorage.getItem('durbar.doorsigns')`), 'off', 'kept per computer');
     await toggle();
-    assert.ok(await until(`document.querySelectorAll('#stage .dsign').length>=13`, 4000), `${w}: switch on: signs back`);
+    assert.ok(await until(`document.querySelectorAll('#stage .cb-sign').length>=13`, 4000), `${w}: switch on: signs back`);
     console.log('[017-signs]', w, 'ok');
   }
   /* ---- review on #631 (Paco): a coffee break that resumes by itself, from the app's real sequence (simbreak: Tomas hits a 5-hour
@@ -294,7 +283,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`${sb}.listSchedules().then((d)=>(d.schedules.find((x)=>x.id==='sched-fire')||{}).last?.outcome==='held')`, 15000), 'the scheduled run is held');
     assert.ok(await until(`${sb}.doorsList().then((d)=>(d[${jsLiteral(target)}]||{}).held===1)`, 3000), 'one run waits at the door');
     assert.strictEqual(await userMsgs(), before, 'the held run did not reach the agent (its state did not change)');
-    assert.ok(await until(`[...document.querySelectorAll('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .dsign .dsw')].some((e)=>/^Do not disturb · 1 held$/.test(e.textContent))`, 8000), 'the sign says Do not disturb · 1 held: ' + (await js(`[...document.querySelectorAll('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .dsign')].map((e)=>e.dataset.sign+'='+e.textContent).join(' | ')`)));
+    assert.ok(await until(`[...document.querySelectorAll('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .cb-sign')].some((e)=>/^Do not disturb \\(you closed it\\) · 1 held$/.test(e.getAttribute('title')||''))`, 8000), 'the door sign says Do not disturb (you closed it) · 1 held: ' + (await js(`[...document.querySelectorAll('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .cb-sign')].map((e)=>e.dataset.sign+'='+e.getAttribute('title')).join(' | ')`)));
     assert.match(await js(`${btn}.getAttribute('aria-label')`), /^Open the door: .+ \(1 held\)$/, 'the button names the held run');
     await H.shot(path.join(OUT, '017-held-1440x900.png'), { prep: 'calm', tag: '017-signs', what: 'held' });
     // opening asks; Escape keeps the door closed (the safer default) and keeps the run
@@ -321,7 +310,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/Remote control stays off/.test(t.textContent))`, 3000), 'reopening says remote control stays off');
     assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/Send all stopped because schedules are paused .Pause all./.test(t.textContent))`, 6000), 'Pause all stops Send all and says why: ' + (await js(`[...document.querySelectorAll('#toasts .toast')].map((t)=>t.textContent).join(' | ')`)) + ' held=' + (await js(`window.__durbarSimUi.bridge().doorsList().then((d)=>JSON.stringify(d))`)));
     assert.strictEqual(await js(`${sb}.doorsList().then((d)=>(d[${jsLiteral(target)}]||{}).held)`), 1, 'the run is still held (not sent, not lost)');
-    assert.ok(await until(`[...document.querySelectorAll('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .dsign .dsw')].some((e)=>/^(Available|Done) · 1 held$/.test(e.textContent))`, 4000), 'an open door with a held run is not plain Available');
+    assert.ok(await until(`[...document.querySelectorAll('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .cb-sign')].some((e)=>/^(Available|Done) · 1 held$/.test(e.getAttribute('title')||''))`, 4000), 'an open door with a held run is not plain Available');
     assert.match(await js(`${btn}.getAttribute('aria-label')`), /^Send or discard 1 held: /, 'its button offers the choice');
     await js(`${sb}.setSchedulesPaused(false)`);
     await js(`${btn}.click()`);
