@@ -402,13 +402,13 @@ function openCoffeeMenu(id,anchor){
   m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';
   m.style.top=(ab.bottom+6+b.height<=innerHeight-8?ab.bottom+6:Math.max(8,ab.top-6-b.height))+'px';
   /* focus back to the entry; after Retry now the agent has left the corner, so to its desk (never lost to the page) */
-  const back=()=>{const f=document.querySelector('#stage [data-coffeeid="'+CSS.escape(id)+'"]')||(document.contains(anchor)?anchor:null)||document.querySelector('#stage .desk[data-id="'+CSS.escape(id)+'"]');if(f)f.focus();};
+  const back=()=>{const f=document.querySelector('#stage [data-coffeeid="'+CSS.escape(id)+'"]')||(document.contains(anchor)?anchor:null)||document.querySelector('#stage .desk[data-id="'+CSS.escape(id)+'"]');if(f)focusIn(f);};
   m.addEventListener('click',e=>{const t=e.target.closest('[data-cact]');if(!t)return;if(t.getAttribute('aria-disabled')==='true'){e.preventDefault();announce(coffeeNoRetry(a)||'Not available now');return;}closeModeMenu();
     if(t.dataset.cact==='retry'){announce(retryCoffee(a)?'Retry now: '+a.name:(coffeeNoRetry(a)||'Nothing was sent'));scheduleRender();requestAnimationFrame(()=>requestAnimationFrame(back));}else openAtRequest(id);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-cact]')],i=its.indexOf(document.activeElement);
-    if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
-  m.querySelector('button').focus();
+  focusIn(m.querySelector('button'));
 }
 document.addEventListener('contextmenu',e=>{const b=e.target.closest&&e.target.closest('#stage [data-coffeeid]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();openCoffeeMenu(b.dataset.coffeeid,b);},true);
 document.addEventListener('keydown',e=>{if(!((e.key==='F10'&&e.shiftKey)||e.key==='ContextMenu'))return;const b=e.target.closest&&e.target.closest('#stage [data-coffeeid]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();openCoffeeMenu(b.dataset.coffeeid,b);},true);
@@ -3923,11 +3923,11 @@ function paintCoffeeBar(){ /* its key lives on the function (no let: the panel c
     bar.querySelector('b').textContent='On a '+coffeeWord().toLowerCase();
     const act=bar.querySelector('.ab-act');
     const add=(label,cls,fn,title)=>{const x=document.createElement('button');x.type='button';x.className='btn '+cls;x.textContent=label;x.title=title;x.onclick=fn;act.appendChild(x);return x;};
-    const r=add('Retry now','primary',()=>{const who=byId(key);if(!who)return;if(retryCoffee(who)){announce('Retry now: '+who.name);const m=$('msgInput');if(m)m.focus();}else announce(coffeeNoRetry(who)||'Nothing was sent');},RETRY_TIP);
+    const r=add('Retry now','primary',()=>{const who=byId(key);if(!who)return;if(retryCoffee(who)){announce('Retry now: '+who.name);const m=$('msgInput');if(m)focusIn(m);}else announce(coffeeNoRetry(who)||'Nothing was sent');},RETRY_TIP);
     r.dataset.coffeeRetry='1';
     add('Show in chat','ghost',()=>{const who=byId(key);if(who&&who.coffeeCard&&who.coffeeCard.isConnected)focusRequest(who.coffeeCard);},'Scroll to the coffee-break card in the chat');
     bar.hidden=false;
-    if(had)r.focus();
+    if(had)focusIn(r);
   }
   const t=bar.querySelector('.cb-left'), txt='· '+words;if(t.textContent!==txt)t.textContent=txt;
   /* FR-021 (review on PR 640): disabled with the reason while a retry is not allowed (a pending spending limit) */
