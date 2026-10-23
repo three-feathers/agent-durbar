@@ -329,7 +329,7 @@ function focusRequest(card){
   if(!card.hasAttribute('tabindex'))card.setAttribute('tabindex','-1');card.focus();
 }
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#stage [data-pvopen]');if(b){openAtRequest(b.dataset.pvopen);return;}
-  const pb=e.target.closest&&e.target.closest('#stage [data-post]');if(pb)openSchedSettings();});
+  const pb=e.target.closest&&e.target.closest('#stage [data-post]');if(pb)openSchedulesView();});
 /* spec 001 FR-034: who goes to the Boss. A live main agent whose oldest pending request in its chat is a question ('q') or a permission ('p'):
    not the spending limit (the Bank, FR-035) or a coffee break (spec 068), not an error (that stays at the desk). Run before every render. */
 function bossKind(a){
