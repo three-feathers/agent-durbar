@@ -43,6 +43,8 @@ import { sessionIdOk } from '../shared/sessionid';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 import { isObj } from '../shared/guards';
+import { codexAccount } from './accounts';
+import type { AccountIdentity } from '../shared/account';
 
 const CODEX_ID = 'codex';
 const CODEX_NAME = 'OpenAI Codex';
@@ -460,6 +462,18 @@ export class CodexAdapter implements AgentAdapter {
       });
     } catch (e) {
       return { status: signInFromError(e) };
+    }
+  }
+
+  /**
+   * Spec 051 FR-011: the account Codex reports, from `account/read` with `refreshToken: false` on a short-lived app-server (local
+   * auth state; no prompt, nothing billed). An older Codex without the method is `unknown`. Personal data: never passed to `debug`.
+   */
+  async accountInfo(): Promise<AccountIdentity> {
+    try {
+      return codexAccount(await this.probe((rpc) => rpc.request('account/read', { refreshToken: false })));
+    } catch {
+      return { status: 'unknown' };
     }
   }
 

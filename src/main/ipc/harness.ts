@@ -12,6 +12,8 @@ import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind, runRequest, simManagers 
 import type { DevEnv } from '../devhooks';
 import { HarnessSetup, confirmText, posixTrusted } from '../harnesssetup';
 import { simulatorOn } from '../simguard';
+import { createAccountCache } from '../accounts';
+import type { AccountIdentity } from '../../shared/account';
 import type { createRemoteOps } from '../remoteops';
 
 export interface HarnessIpcDeps {
@@ -30,6 +32,20 @@ export function register(deps: HarnessIpcDeps): void {
   /* Spec 051: harness setup inside the app. One fixed install, update or sign-in at a time (argv, no shell); progress and the end go to
      the window; detection runs again when it ends. Nothing of the output is logged. */
   const sysExe = (name: string): string => path.win32.join(process.env.SystemRoot && path.win32.isAbsolute(process.env.SystemRoot) ? process.env.SystemRoot : 'C:\\Windows', 'System32', name);
+  /* Spec 051 FR-014, FR-015: the account each app reports, cached for the run; sent only to the window, never logged. None under
+     the simulator (spec 010 FR-030): its page answers a fake identity itself. */
+  const accounts = createAccountCache({
+    list: () => adaptersList(false),
+    check: (id) => {
+      if (simulatorOn(dev) || !registry.has(id)) return undefined;
+      try {
+        const ad = router.instance(id);
+        return typeof ad.accountInfo === 'function' ? () => (ad.accountInfo as () => Promise<AccountIdentity>)() : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+  });
   const harnessSetup = new HarnessSetup({
     detectEnv: nodeDetectEnv(),
     spawn: (file, args, opts) => spawn(file, args as string[], opts),
@@ -48,6 +64,7 @@ export function register(deps: HarnessIpcDeps): void {
     redetect: async () => { await adaptersList(true); },
     // spec 012 FR-158: only an adapter already created is refreshed (none is created here); Copilot restarts its shared client
     afterSignIn: async (kind: string) => {
+      accounts.forget(kind); // spec 051 FR-014: the account line is asked again after a sign-in
       const ad = router.created().find((x) => x.id === kind);
       if (!ad?.refreshAuth) return;
       // spec 012 FR-158 / 054 FR-011: a reconnected session is not remote any more; say so instead of keeping a stale Remote chip
@@ -96,6 +113,7 @@ export function register(deps: HarnessIpcDeps): void {
     await shell.openExternal(new URL(url).href);
     return { ok: true };
   });
+  ipcHandle('harness:accounts', async (e, refresh: unknown) => (fromApp(e) ? accounts.get(refresh === true) : {}));
   ipcHandle('harness:copilotAuth', async (e) => {
     if (!fromApp(e)) return { known: false };
     const pw = harnessSetup.pwshMissing() ? { pwshMissing: true } : {}; // spec 052 FR-073: Windows only, a file check, no process

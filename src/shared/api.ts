@@ -114,6 +114,7 @@ export type FloorsResult = { ok: true; state: FloorsState } | { ok: false; error
 export type LimitChoice = { kind: 'add'; credits: number } | { kind: 'set'; credits: number } | { kind: 'unset' } | { kind: 'cancel' };
 
 import type { AboutView } from './about';
+import type { AccountView } from './account';
 import type { CompactResult, ContextTier, ModelControl, ModelPricing, ModelSwitchRequest, ModelSwitchResult, PriceClass } from './modelswitch';
 
 /** Saved credit totals as the window receives them (spec 011 FR-026). Numbers, a display name and the folder's own path (already known to the window); the file holds a hash, never the path. */
@@ -700,6 +701,8 @@ export interface DurbarApi {
   harnessOpenSignIn?(kind: string, url: string): Promise<{ ok: boolean }>;
   /** `pwshMissing` (spec 052 FR-073): Windows only, PowerShell 7 was not found; the Copilot card shows a hint. */
   copilotAuth?(): Promise<{ known: boolean; signedIn?: boolean; pwshMissing?: boolean }>;
+  /** Spec 051 FR-014: the account each installed agent app reports (`{ [appId]: { status, text } }`); `refresh` asks again. Personal data: shown in the window only. */
+  harnessAccounts?(refresh?: boolean): Promise<Record<string, AccountView>>;
   onHarnessProgress?(cb: (p: { kind: string; op: string; lines: string[]; elapsedMs: number; url?: string; code?: string; needsPaste?: boolean }) => void): () => void;
   /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
   /** Remote control ended without the user (spec 012 FR-158, spec 054 FR-062): an agent id, or the id with a plain reason. */

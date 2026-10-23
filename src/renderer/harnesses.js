@@ -32,6 +32,33 @@
   const RESTART_HINT = 'Installed? If Durbar still says Not installed, close and reopen Durbar, then choose Check again.';
   let B = null; /* the bridge */
   let onChange = () => {};
+  /* spec 051 FR-013..FR-015: the last account answer per app ({ [id]: { status, text } }), in memory only; never logged or sent on */
+  let ACC = null;
+  let onAccounts = () => {};
+  const ACC_WAIT = 'Checking the account…';
+  /* the card's account line: only for a ready app (a not-signed-in card already says so); filled in after the screen is painted */
+  function acctHTML(id, st) {
+    if (st !== 'ready' || !B || !B.harnessAccounts) return '';
+    const v = ACC && ACC[id];
+    return `<p class="scr-note small hs-acct" data-acct="${esc(id)}"${v ? '' : ' aria-busy="true"'}>${esc(v ? v.text : ACC_WAIT)}</p>`;
+  }
+  function paintAccounts() {
+    document.querySelectorAll('.hs-acct[data-acct]').forEach((p) => {
+      const v = ACC && ACC[p.dataset.acct];
+      p.textContent = v && typeof v.text === 'string' ? v.text : 'Account unknown';
+      p.removeAttribute('aria-busy');
+    });
+  }
+  /* FR-014: asks main (refresh = ask the apps again: Settings opened, Check again, a sign-in ended), then fills the lines */
+  async function loadAccounts(refresh) {
+    if (!B || !B.harnessAccounts) return ACC;
+    let r = null;
+    try { r = await B.harnessAccounts(!!refresh); } catch (e) { r = null; }
+    ACC = r && typeof r === 'object' ? r : ACC || {};
+    paintAccounts();
+    onAccounts(ACC);
+    return ACC;
+  }
 
   /* the cards; `kinds` from listAdapters, `copilot` from copilotAuth (Copilot's detection itself is free of I/O, FR-007) */
   function sectionHTML(kinds, copilot) {
@@ -48,7 +75,7 @@
       /* spec 012 FR-156: a ready card also says how far the sign-in was checked (the hint withSignIn set) */
       const hint = st === 'ready' ? [simV ? '' : k.version ? 'Version ' + k.version + '.' : 'Ready to use.', k.hint && /^Signed in/.test(k.hint) ? k.hint : ''].filter(Boolean).join(' ') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
       return `<li class="hs-card" data-kind="${esc(k.id)}"><div class="hs-top"><span class="hs-name"><b title="${esc(k.displayName || k.id)}">${esc(k.displayName || k.id)}</b>${FOR[k.id] ? `<span class="hs-for">${esc(FOR[k.id])}</span>` : ''}</span><span class="hs-st hs-${cls}"${simV ? ' title="Simulated version."' : ''}>${esc(word)}</span></div>
-        ${PLAN[k.id] ? `<p class="scr-note small hs-plan-uses">${esc(PLAN[k.id])}</p>` : ''}${hint ? `<p class="scr-note small">${esc(hint)}</p>` : ''}${k.where && st !== 'not-installed' ? `<p class="scr-note small hs-where">Found at <code>${esc(String(k.where).slice(0, 200)).replace(/[\\/]/g, '$&<wbr>')}</code></p>` : ''}${k.id === 'copilot' && copilot && copilot.pwshMissing ? `<p class="scr-note small hs-pwsh">${esc(PWSH_HINT)}</p>` : ''}
+        ${PLAN[k.id] ? `<p class="scr-note small hs-plan-uses">${esc(PLAN[k.id])}</p>` : ''}${acctHTML(k.id, st)}${hint ? `<p class="scr-note small">${esc(hint)}</p>` : ''}${k.where && st !== 'not-installed' ? `<p class="scr-note small hs-where">Found at <code>${esc(String(k.where).slice(0, 200)).replace(/[\\/]/g, '$&<wbr>')}</code></p>` : ''}${k.id === 'copilot' && copilot && copilot.pwshMissing ? `<p class="scr-note small hs-pwsh">${esc(PWSH_HINT)}</p>` : ''}
         <div class="hs-act">${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(k.id)}">${esc(label)}</button>` : ''}<button class="btn sm" type="button" data-hs="check" data-kind="${esc(k.id)}">Check again</button></div></li>`;
     }).join('');
     return `<section class="scr-sec" aria-labelledby="hsH"><h3 id="hsH" tabindex="-1">Agent apps</h3>
@@ -205,9 +232,10 @@
   }
 
   window.DurbarHarnesses = {
-    init(o) { B = o.bridge; onChange = o.onChange || onChange; toastLike = o.toast || toastLike; },
+    init(o) { B = o.bridge; onChange = o.onChange || onChange; toastLike = o.toast || toastLike; onAccounts = o.onAccounts || onAccounts; },
     available: () => !!(B && B.harnessRun),
     sectionHTML,
+    loadAccounts,
     onClick,
     /* spec 012 FR-157: the same sign-in flow from the chat's sign-in card; resolves with {ok} when it ends (cancelled = not ok) */
     signIn(kind, name) {

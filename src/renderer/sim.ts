@@ -1984,6 +1984,20 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       listAdapters: async () => simAdapters(),
       onAdaptersChanged: () => () => undefined, // FR-157: the window marks the app itself from the auth error; nothing else pushes here
       // Spec 051 FR-009: harness setup in the simulator: canned plans and output (a fake link and code), nothing runs
+      // spec 051 FR-014: a fake identity per ready app (never a real account, so screenshots show no personal data); `simacct=unknown`
+      // and `simacct=apikey` change Claude Code's line. The lines are what main's accountLine makes of these answers (checked by test:account).
+      harnessAccounts: async () => {
+        const simAcct = simQuery.get('simacct');
+        const out: Record<string, { status: 'signed-in' | 'signed-out' | 'unknown'; text: string }> = {};
+        for (const a of simAdapters()) {
+          if (a.state === 'not-signed-in') out[a.id] = { status: 'signed-out', text: 'Not signed in' };
+          else if (a.state !== 'ready') continue;
+          else if (a.id === 'copilot') out[a.id] = { status: 'signed-in', text: 'Signed in as octo-sim (GitHub, through the GitHub CLI)' };
+          else if (a.id === 'claude') out[a.id] = simAcct === 'unknown' ? { status: 'unknown', text: 'Account unknown' } : simAcct === 'apikey' ? { status: 'signed-in', text: 'Signed in with an Anthropic API key' } : { status: 'signed-in', text: 'Signed in as sim@example.com · Claude Pro' };
+          else if (a.id === 'codex') out[a.id] = { status: 'signed-in', text: 'Signed in as sim@example.com · ChatGPT Plus' };
+        }
+        return out;
+      },
       copilotAuth: async () => ({ known: true, signedIn: true, ...(simQuery.get('simnopwsh') === '1' ? { pwshMissing: true } : {}) }), // spec 052 FR-073: page address simnopwsh=1 shows the Windows PowerShell 7 hint
       // spec 060 FR-002: in the app, ask main for the real routes of this OS (main assumes a typical new machine under the simulator);
       // the made-up list below is only for the page opened in a plain browser, where there is no main process

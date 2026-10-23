@@ -113,7 +113,7 @@ const FROM_APP = [
   'activity:clear', 'activity:export', 'activity:list',
   'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:setMode', 'agents:setRemote',
   'app:dismissSinceAway', 'app:sinceAway',
-  'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run',
+  'harness:accounts', 'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run',
   'profiles:create', 'profiles:delete', 'profiles:generate', 'profiles:save', // spec 043 FR-011, FR-040: writes to (or deletes) profile files
   'schedules:remove', 'schedules:runNow', 'schedules:save',
 ];

@@ -77,7 +77,7 @@ export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean
   cancelMcpSignIn: (c: Caps) => !!c.mcpSignIn,
   setPermMode: (c: Caps) => c.permModeSwitch !== 'none',
   resolvePermission: null, revokeGrant: null, setModel: null, cancelQueuedModel: null, compact: null, resolvePlan: null,
-  answerQuestion: null, answerElicitation: null, listAgentProfiles: null, reloadAgentProfiles: null, selectAgentProfile: null, authStatus: null, verifySignIn: null,
+  answerQuestion: null, answerElicitation: null, listAgentProfiles: null, reloadAgentProfiles: null, selectAgentProfile: null, authStatus: null, verifySignIn: null, accountInfo: null,
   refreshAuth: null, resumeIdOf: null, debug: null, writeGuard: null,
   listSlashCommands: null, expandSlashCommand: null, // spec 073: no capability; absent from the stand-in, so no "/" list and no expansion under the simulator
 });

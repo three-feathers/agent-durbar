@@ -50,6 +50,8 @@ import type { HandoffResult } from './handoff';
 import { sessionIdOk } from '../shared/sessionid';
 import { allowedRemoteUrl, cleanRemoteError, isRemoteVisibility } from '../shared/remote';
 import type { RemoteState } from '../shared/remote';
+import { copilotAccount } from './accounts';
+import type { AccountIdentity } from '../shared/account';
 
 const IMAGE_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -413,6 +415,18 @@ export class CopilotAdapter implements AgentAdapter {
   async authStatus(): Promise<{ signedIn: boolean }> {
     const s = await (await this.getClient()).getAuthStatus();
     return { signedIn: !!s.isAuthenticated };
+  }
+
+  /**
+   * Spec 051 FR-011: the account the runtime reports (`getAuthStatus()`: login, host, how it signed in). No prompt, no credits.
+   * `statusMessage` is not read. Personal data: never passed to `debug` (FR-015).
+   */
+  async accountInfo(): Promise<AccountIdentity> {
+    try {
+      return copilotAccount(await (await this.getClient()).getAuthStatus());
+    } catch {
+      return { status: 'unknown' };
+    }
   }
 
   /**
