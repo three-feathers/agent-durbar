@@ -96,6 +96,13 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
   size check; fjcabello's re-review) [FR-002, FR-005]
 - [x] T032 Mutation-check T028-T031; `npm run typecheck && npm run build`, `test:slashcommands`, `check:slash-suggest`
 
+## Phase 9: Token shapes masked in the list (issue #608, 2026-10-23; spec *Changes*, FR-012, FR-013)
+
+- [ ] T034 Tests first: `test:slashcommands` (main masks before the 200/80/160 cuts, Markdown-split tokens; window `view`/`tip`
+  with the real `safetext.js`) and `check:slash-suggest` (`simslash=secret`: no raw token in the DOM, `title`, `aria-*`, the
+  announcement or the "Sent the text of" note); then the fix in `slashcommands.ts`, `slashsuggest.js`, `app.js` and the simulator;
+  mutation-check (raw row text; cut before mask) [FR-012, FR-013]
+
 ## Known gaps (open tasks, not this PR)
 
 - [ ] T026 [KNOWN GAP] Run the allow-listed Claude built-ins other than `/context` (`compact`, `cost`, `init`, `review`,
