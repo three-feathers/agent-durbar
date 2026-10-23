@@ -78,11 +78,13 @@ export class EventMapper {
     for (const s of servers) {
       if (!s || typeof s.name !== 'string') continue;
       listed.add(s.name);
-      // review on #625: `rpc.mcp.list` items carry no transport (SDK 1.0.22 `McpServer`) and may leave out the source: keep what the
-      // runtime reported before, so a stdio or built-in server never looks like a remote one after a re-read
+      const read = mcpStatus(s.name, s);
+      // spec 058 FR-091 (review on PR #630): the list has no classification and may have no transport; while the state is the same,
+      // what the runtime's own status event said stays (a failed `os_not_found` must not turn into "reason unknown" on each poll).
+      // FR-164 (review on #625): source and transport are kept whatever the state, so a stdio or built-in server never looks remote
       const prev = this.mcp.get(s.name);
-      const got = mcpStatus(s.name, s);
-      const next = { ...got, source: knownSource(got.source) ?? prev?.source ?? got.source, transport: got.transport ?? prev?.transport };
+      const same = prev && prev.status === read.status;
+      const next = { ...read, source: knownSource(read.source) ?? prev?.source ?? read.source, transport: read.transport ?? prev?.transport, ...(same && prev.errorClass ? { errorClass: prev.errorClass } : {}) };
       if (this.derivedAuth.has(s.name) && next.status === 'connected') continue; // the same "connected" the runtime always says: not new
       this.derivedAuth.delete(s.name);
       this.mcp.set(s.name, next);
@@ -257,8 +259,13 @@ export class EventMapper {
       case 'session.mcp_server_status_changed':
         if (typeof d.serverName !== 'string') return;
         this.derivedAuth.delete(d.serverName);
-        this.mcp.set(d.serverName, mcpStatus(d.serverName, { status: d.status, error: d.error, source: knownSource(d.configSource) ?? this.mcp.get(d.serverName)?.source ?? d.configSource, transport: this.mcp.get(d.serverName)?.transport }));
+      {
+        const st = mcpStatus(d.serverName, { status: d.status, error: d.error, source: knownSource(d.configSource) ?? this.mcp.get(d.serverName)?.source ?? d.configSource, transport: this.mcp.get(d.serverName)?.transport });
+        // spec 058 FR-091: the runtime's own classification of a failed start, known values only (a later state drops it)
+        const cls = st.status === 'failed' ? copilotErrorClass(d.errorClassification) : undefined;
+        this.mcp.set(d.serverName, cls ? { ...st, errorClass: cls } : st);
         return this.emitMcp();
+      }
       case 'session.mcp_server_removed':
         if (typeof d.serverName === 'string' && this.mcp.delete(d.serverName)) this.emitMcp();
         return;
@@ -383,6 +390,28 @@ export function copilotUsageLimit(errorType: unknown, errorCode: unknown): (Even
   if (errorType === 'rate_limit') return { type: 'usageLimit', scope: 'rate', source: Object.prototype.hasOwnProperty.call(COPILOT_RATE, code) ? COPILOT_RATE[code] : 'Copilot rate limit' };
   if (errorType === 'quota' && (code === 'quota_exceeded' || code === 'session_quota_exceeded')) return { type: 'usageLimit', scope: 'quota', paid: true, source: 'Copilot premium requests' };
   return null;
+}
+
+/**
+ * Spec 058 FR-091 (issue #603): Copilot's `errorClassification` ("Runtime-produced classification for the final failed connection;
+ * ... Additional string values may be introduced") to Durbar's `errorClass`. Known values only (read: the runtime's strings in
+ * `@github/copilot-sdk-linux-x64` 1.0.22; `os_not_found` real 2026-10-21, spec 058 T060); anything else is not guessed (undefined).
+ */
+const COPILOT_CLASS: Record<string, McpServerStatus['errorClass']> = {
+  os_not_found: 'not-found',
+  config_invalid: 'config',
+  os_permission_denied: 'permission',
+  os_connection_refused: 'refused',
+  os_network_unreachable: 'refused',
+  os_connection_closed: 'disconnected',
+  timeout_initialize: 'timeout',
+  timeout_connection: 'timeout',
+  timeout_subscription: 'timeout',
+};
+export function copilotErrorClass(v: unknown): McpServerStatus['errorClass'] | undefined {
+  if (typeof v !== 'string' || !v) return undefined;
+  if (Object.prototype.hasOwnProperty.call(COPILOT_CLASS, v)) return COPILOT_CLASS[v];
+  return /^process_(linux|windows|macos)_(exited|terminated|crashed)$/.test(v) ? 'exited' : undefined;
 }
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' && v >= 0 ? v : undefined);

@@ -2,7 +2,7 @@
 import type { AgentEvent, McpServerStatus } from '../adapters/types';
 import type { McpServerSpec } from '../shared/mcp';
 import type { EditInfo } from '../shared/edits';
-import { cut, maskSecretUrl, redact, secretFlag } from '../shared/redact';
+import { cut, maskHomePaths, maskSecretUrl, redact, secretFlag } from '../shared/redact';
 
 export const MCP_ERROR_MAX_CHARS = 300;
 
@@ -33,6 +33,7 @@ export function maskMcpText(text: unknown, values: readonly string[] = [], max?:
   let s = typeof text === 'string' ? text : String(text);
   for (const v of values) if (v.length >= 4 && s.includes(v)) s = s.split(v).join('[redacted]');
   s = redact(s); // env values and token shapes on the whole text: linear, about 7 ms per MB
+  s = maskHomePaths(s); // spec 058 FR-093 (review on PR #630): `/home/<user>`, `C:\\Users\\<user>` -> `~`, so no user name leaves main
   if (max !== undefined) s = cut(s, max);
   return maskFlagValues(maskSecretUrl(s)); // the slow URL pass runs on the shorter text
 }

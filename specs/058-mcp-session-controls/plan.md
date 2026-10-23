@@ -257,4 +257,49 @@ T120 (spec) first; T121 (unit tests) and T122 (driver) before T123-T124 (code); 
   - V: the dialog is checked at 1440x900 and 1280x800;
   - VI (parity): a mac-only packaging option; the other OSes are unchanged;
   - VII (honest limits): `[KNOWN GAP]`s until the Mac checks (T136, T138). No purchase (spec 014 stays separate).
-- **Order**: T130 first; T131 and T132 independent; T133 docs; T134 on a Mac; T135 and T137 after the owner's results; T139 and T140 review fixes.
+- **Order**: T130 first; T131 and T132 independent; T133 docs; T134 on a Mac; T135 and T137 after the owner's results; T139 and T150 review fixes.
+
+## Delta: MCP health, failure reason, when, Copy diagnostics, chip dot (issue #603, 2026-10-23)
+
+### Summary
+
+Per failed server a plain reason ("Not installed (command not found)", "Crashed on start", "Timed out", "Disconnected later", "Refused:
+needs sign-in", ..., "Failed (reason unknown)"), when Agent Durbar saw it, and *Copy diagnostics* (masked), in the chat dialog and the
+Settings live rows; a dot on the composer's MCP chip when a server of the open chat failed (FR-090..FR-097).
+
+### Constitution check (delta)
+
+- I: spec delta, plan and tasks committed before code.
+- II: adapters map vendor values into `errorClass` (adapter-neutral words); main and the renderer never see a vendor value.
+- III: no new IPC channel; the reply gains `since`, `afterRunning`, `transport` (no secret, no path). Diagnostics are built from the
+  reply's masked error and passed through the shared `redact()` again in the page; fail closed.
+- IV: unit tests with fakes and a simulator driver; no real session.
+- V: words plus icons; the dot is a shape plus words in the chip's name; 10.5px minimum.
+
+### Design
+
+1. `src/adapters/types.ts`: `errorClass` gains `refused`, `disconnected`, `permission`.
+2. `src/adapters/map.ts` (Copilot): `copilotErrorClass(value)` (exported, pure) from `errorClassification`; set on
+   `session.mcp_server_status_changed` failed states only.
+3. `src/adapters/claudeMap.ts`: `claudeMcpServers` reads `config.type` as `transport`; `claudeMcpServerErrors(list)` turns
+   `init.mcp_server_errors` into `failed` + `config` rows, merged by `ClaudeMapper` into the init list (names not already listed).
+4. `src/shared/mcphealth.ts` (no imports): `mcpHealthUpdate(prev, servers, now)` -> per server `{status, since, ran, afterRunning}`.
+   Main (`mcpipc.ts`) keeps one map per session next to `live`, dropped on `stopped`; the simulator calls the same function through
+   `window.exports` (loaded in `index.html` after `exports-shim.js`, like `profiletemplates.js`).
+5. `src/main/mcpsession.ts`: `agentMcpReply` takes `health` and adds `since`, `afterRunning`, `transport`; `AgentMcpEntry` in
+   `src/shared/api.ts` gets the three optional fields.
+6. `src/renderer/mcpwords.js`: one text classifier shared by `hintFor` and the new `reasonOf`; `whenText(since, now)`;
+   `diagnostics(o)` (pure; the caller passes `redact`).
+7. `src/renderer/screens.js`: one helper for the reason line and the *Copy diagnostics* button, used by the chat dialog's rows and the
+   Settings live rows; copy through the existing `copyText`.
+8. `src/renderer/app.js`: `mcpOpts(r)` (the options the chip and `mcpSession` pass, plus `appVersion` from the agent app list), and the
+   chip's failed count and dot (`refreshMcpCount`). `styles.css` / `screens.css`: the dot and the reason line, theme tokens only.
+9. `src/renderer/sim.ts`: the simulator's reply adds the same fields (health via the shared function), its failed server keeps its
+   errorClass; driver-reported failures carry theirs.
+10. Tests: `scripts/test-mcphealth.ts` (new), `test-mcpwords` (reasons, when, diagnostics masked with a planted token),
+    `test-mcp-session` (reply fields), `test-events` (Copilot classes), `test-claude-map` (errors, transport); driver
+    `scripts/shots-058-mcp-health.js` in `ui-suite.js`.
+
+### Order
+
+T140 first; T141-T143 (tests) before T144-T147 (code); T148 docs, screenshots and converge.

@@ -12,6 +12,7 @@ import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRestartResu
 import { maskMcpError } from './mcpmask';
 import { sourcesFor } from './mcpglobal';
 import { BUILTIN_SERVERS } from './mcpfiles';
+import type { McpHealthMark } from '../shared/mcphealth';
 
 const NOT_RUNNING = 'This session is not running. Send a message to start it.';
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -46,6 +47,8 @@ export interface McpReplyInput {
   builtin?: ReadonlySet<string>;
   /** Spec 069 FR-061: tools turned off in this agent's folder, by server. */
   toolsOff?: Readonly<Record<string, readonly string[]>>;
+  /** Spec 058 FR-092: when each server's state started and whether a failure came after Running (`mcpHealthUpdate`). */
+  health?: ReadonlyMap<string, McpHealthMark>;
   /** Spec 058 FR-065: the open sign-in of one server (host only), from `McpSignInStore.view`. */
   signIn?(name: string): { host: string; opened: boolean; expiresInMs: number; otherSite?: string } | undefined;
   /** FR-164: the server's own address when Durbar knows one (a folder extra, a list Durbar passes, the Copilot CLI list); stdio has none. */
@@ -89,6 +92,9 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const on = defaultOn && !off.has(name);
     // FR-030: Restart only for a server the running session knows (the runtime reported it) and that is switched on
     const canRestart = canRestartAny && on && !!st && st.status !== 'disabled';
+    // FR-092: the mark only dates the state it was made for (a stale mark never dates a new state)
+    const hm = st ? i.health?.get(name) : undefined;
+    const mark = hm && hm.status === (st?.status ?? '') ? hm : undefined;
     // FR-065/FR-068: a row that reads Needs sign-in, on, in a running session; the steps are the agent app's own text (missing = none)
     const needs = isLive && on && needsSignIn(st);
     const canSignIn = needs && typeof ad?.startMcpSignIn === 'function';
@@ -97,7 +103,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const steps = needs && ad?.capabilities.mcpSignIn ? signInStepsFor(ad.capabilities.mcpSignInSteps, name, origin) : undefined;
     // an open sign-in stays visible whatever the row reads meanwhile (a server signed in again passes through Starting or Needs sign-in)
     const open = isLive && on && typeof ad?.startMcpSignIn === 'function' ? i.signIn?.(name) : undefined;
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(mark ? { since: mark.since } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];

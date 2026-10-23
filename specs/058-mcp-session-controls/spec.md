@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: MCP servers in a session (issue #349): plain state words and how servers start per agent app, the masked failure reason with a hint, per-server Restart where the agent app has one (Copilot, Claude Code), Restart session with these servers, Open log folder (reveal only)
-status: **Specified and clarified** (spec, research, plan, tasks); the owner answered Q1-Q11 on 2026-10-20 (all option A). Built so far: MCP error and event masking (`maskMcpError`, `maskMcpEvent`; #362, #382); per-server Restart (Copilot, Claude Code) and Restart session with these servers (T030-T034, T040-T044, #349; simulator and fakes, not on a real account); state words and icons, hints, *Details* with *Copy* and live refresh of the open dialog (T113-T115, #364 step 4; simulator and tests; the start line, toggle timing and logs are not built yet); delta 2026-10-20 (issue #364): MCP OAuth sign-in (needs-auth from a 401, start the agent app's own sign-in or show terminal steps, switch off for this session), specified and clarified (owner answered Q12-Q19 on 2026-10-20); built so far (PR 1): the classifier `isMcpAuthChallenge`, `isAuthError` ignoring it, and masking of failed MCP tool cards (T091, T092, T097); PR 2: the types, event guard and fake for sign-in (`errorClass`, `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `mcpAuth`; T112, T093); no adapter sets them yet, no sign-in yet; delta 2026-10-23 (issue #596, owner): live state and actions of every server in Settings > MCP servers over the running chats (FR-080..FR-087) built, simulator and unit tests only
+status: **Specified and clarified** (spec, research, plan, tasks); the owner answered Q1-Q11 on 2026-10-20 (all option A). Built so far: MCP error and event masking (`maskMcpError`, `maskMcpEvent`; #362, #382); per-server Restart (Copilot, Claude Code) and Restart session with these servers (T030-T034, T040-T044, #349; simulator and fakes, not on a real account); state words and icons, hints, *Details* with *Copy* and live refresh of the open dialog (T113-T115, #364 step 4; simulator and tests; the start line, toggle timing and logs are not built yet); delta 2026-10-20 (issue #364): MCP OAuth sign-in (needs-auth from a 401, start the agent app's own sign-in or show terminal steps, switch off for this session), specified and clarified (owner answered Q12-Q19 on 2026-10-20); built so far (PR 1): the classifier `isMcpAuthChallenge`, `isAuthError` ignoring it, and masking of failed MCP tool cards (T091, T092, T097); PR 2: the types, event guard and fake for sign-in (`errorClass`, `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `mcpAuth`; T112, T093); no adapter sets them yet, no sign-in yet; delta 2026-10-23 (issue #596, owner): live state and actions of every server in Settings > MCP servers over the running chats (FR-080..FR-087) built, simulator and unit tests only; delta 2026-10-23 (issue #603): MCP health, a plain failure reason per server (never guessed), when it was seen, Copy diagnostics (masked) and a dot on the MCP chip (FR-090..FR-097; simulator and unit tests, not on a real account)
 -->
 
 **Feature Branch**: `058-mcp-session-controls`
@@ -1029,3 +1029,97 @@ server.
     2. **Keep sign-ins only in the session** (FR-070 alternative, `in-memory`). No keychain at all, but a new sign-in per session. A trade-off for the owner.
     3. **FR-164 Sign in again.** Helps only if the cause is items written by another program and never rewritten later. Built, harmless, unproven.
     4. **Document** that using the Copilot CLI and Durbar on the same MCP sign-ins can make macOS ask again whenever the other one has saved them.
+
+### 2026-10-23: MCP health: a clear failure reason per server, when, Copy diagnostics, and a dot on the MCP chip (owner go, issue #603)
+
+**Status**: specified 2026-10-23, built in the same PR (tasks T140-T148; simulator and unit tests only, not on a real account).
+
+**Input**: owner (Vikram, 2026-10-23, Telegram DM, relayed by his agent; issue #603): on his real setup *playwright* and
+*markitdown-mcp* show "Failed" with "command not found". He wants, per server, a clear reason (not installed, crashed on start, timed
+out, disconnected later, refused or sign-in), when it happened, and a **Copy diagnostics** button (masked), plus a small red dot on the
+composer's MCP chip when a server of that chat failed. Wanted in the next pre-release with #598 (Sign in) and #625.
+
+**Reuse, no parallel version** (AGENTS.md, *Look for an existing capability first*):
+- the state words, icons and hints stay `DurbarMcpWords` (`stateOf`, `hintFor`); the reason is a new pure function in the same helper
+  (`reasonOf`) that shares the hint's text rules (one classifier, so the hint and the reason never disagree);
+- the rows are the chat dialog's rows (FR-030) and the Settings > MCP live rows (FR-082): one shared renderer helper draws the reason
+  line and the *Copy diagnostics* button in both, next to the existing *Details* / *Copy* (FR-007);
+- the data is the existing `agents:mcp` reply (`agentMcpReply`): main already masks every error there (FR-005, `maskMcpError`); this
+  delta adds three plain fields to each entry and **no IPC channel**;
+- the adapters' existing `errorClass` (FR-011) carries the vendor's own classification; T022's Copilot part and T024 are built here.
+
+#### Requirements (delta)
+
+- **FR-090** `[IMPLEMENTED]` (`test:` test-mcpwords) **Reason** (`DurbarMcpWords.reasonOf`, pure). A failed or needs-sign-in server gets
+  one reason, from what the agent app said, in this order:
+  1. needs sign-in (`needs-auth`, or `errorClass: 'auth'`): "Refused: needs sign-in";
+  2. the adapter's `errorClass`: `not-found` "Not installed (command not found)"; `exited` "Crashed on start", or "Disconnected later"
+     when it was Running in this session before it failed (FR-092); `disconnected` "Disconnected later"; `timeout` "Timed out";
+     `refused` "Refused the connection"; `permission` "Permission denied"; `config` "Settings look wrong";
+  3. otherwise the masked error text, with FR-006's rules (the same classifier as the hint), first `401` / `403` / "unauthorized" /
+     "forbidden" -> "Refused: needs sign-in" with the sign-in hint (review on #630: `SSE stream terminated: 401` is an auth refusal,
+     not a crash, so this rule comes before every crash rule); then `ENOENT` / "command not found" / "is not
+     recognized" -> not installed; `EACCES` -> permission denied; timed out -> timed out; `ECONNREFUSED` / host not found -> refused;
+     exited / crashed -> crashed on start or disconnected later (FR-092); configuration error -> settings look wrong;
+  4. otherwise, when it was Running before it failed: "Disconnected later" (that is what was seen; no cause is claimed);
+  5. otherwise **"Failed (reason unknown)"**. A reason is never guessed.
+  Other states have no reason. The row shows "Reason: <reason>" under the state word (word and icon unchanged, FR-001).
+- **FR-091** `[IMPLEMENTED]` (`test:` test-events for Copilot, test-claude-map) **What each adapter maps** (adapter-neutral values only, constitution II):
+  - Copilot `session.mcp_server_status_changed.errorClassification` (known values only; "Additional string values may be introduced"):
+    `os_not_found` -> `not-found` (`real:` 2026-10-21, T060); `config_invalid` -> `config`; `os_permission_denied` -> `permission`;
+    `os_connection_refused`, `os_network_unreachable` -> `refused`; `os_connection_closed` -> `disconnected`;
+    `process_<os>_exited` / `_terminated` / `_crashed` -> `exited`; `timeout_initialize` / `timeout_connection` /
+    `timeout_subscription` -> `timeout`. Every other value (`process_spawn_failed`, `*_launch_failed`, `protocol_*`, `http_*`,
+    `lifecycle_*`, `unclassified_unknown`, new ones) sets nothing: the text rule or "reason unknown" decides. The values come from the
+    runtime's strings (`read:` `@github/copilot-sdk-linux-x64` 1.0.22 `runtime.node`); only `os_not_found` was seen on a real run.
+    A later `connected` or `pending` drops the class. A re-read of the list (the 5 s poll while a sign-in page is open, FR-064) has no
+    classification: while the state is unchanged the class and transport from the runtime's own event stay (review on #630).
+  - Claude Code: `system/init.mcp_server_errors` (`[{name, type, message}]`, "MCP server config entries from --mcp-config that failed
+    validation and were skipped"; `read:` CLI 2.1.309 schema text) become `failed` rows with `errorClass: 'config'` and the message
+    (T024); `mcp_status` / `init.mcp_servers` `config.type` (`stdio`, `sse`, `http`) becomes `transport` when it is a plain word.
+    Claude Code's OpenTelemetry event `claude_code.mcp_server_connection` is **not** read: Durbar has no OTel receiver, so it would
+    need one (`[KNOWN GAP]`, follow-up only if the text rule is not enough).
+  - Codex: `failureReason` has one value (`reauthenticationRequired`, `read:` `codex app-server generate-json-schema`, codex-cli
+    0.163.0), already mapped to `auth` (T095); other Codex failures use the text rule and FR-092. Nothing new is mapped.
+- **FR-092** `[IMPLEMENTED]` (`test:` test-mcphealth, test-mcp-session) **When, and whether it ran first** (`src/shared/mcphealth.ts`,
+  pure, no imports; main and the simulator use the same function). Main keeps, per session and server, the time the server's state
+  last changed (when an `mcp` event first showed it), whether it was Running since its last start (`pending` starts again, `connected`
+  marks it), and for a failed or needs-sign-in state whether it was Running before. The list is dropped when the session stops (End
+  session, Restart session). `agents:mcp` adds to each entry with a reported state `since` (epoch milliseconds) and `afterRunning`
+  (true only when it failed after Running), and `transport` when the adapter reported one. The row shows "seen at 14:02" (local time; with
+  the date when it is not today); the time is when Agent Durbar saw the state, which the word "seen" says.
+- **FR-093** `[IMPLEMENTED]` (`test:` test-mcpwords; `sim:` shots-058-mcp-health) **Copy diagnostics.** Every failed or needs-sign-in
+  row (chat dialog and Settings live rows) has a *Copy diagnostics* button (named "Copy diagnostics of <server>"; in Settings "...
+  for <chat>"). It copies plain text built by `DurbarMcpWords.diagnostics` from the reply only: the server name, the state word, the
+  reason, the time in UTC only (ISO 8601; a local time next to it would give away the user's time zone in a public issue), the transport
+  ("not reported" when missing), the agent app and its version (from the agent app list the window already has; "version not known"
+  when missing), and the masked error ("none reported"). No folder, agent name or environment value; home folders read `~` (below).
+  Masking (review on #630, all in the shared `src/shared/redact.ts`, no local copy):
+  - main masks the error (FR-005, `maskMcpText`), now also `maskHomePaths`: `/home/<user>`, `/Users/<user>`, `<drive>:\Users\<user>`
+    (also with `/` or JSON-doubled `\\`, a Windows name with a space when a separator follows it) and this process's `HOME` /
+    `USERPROFILE` become `~`;
+  - `maskSecretUrl` also masks the OAuth query and fragment values `code`, `state`, `id_token`, `refresh_token`, `access_token`,
+    `code_verifier`, `client_secret` (URL only, never flags; spec 041 FR-053's `?code=` example used to stay unmasked), and the bare
+    `Bearer <token>` shape matches in any case;
+  - in the page, each value is masked (`maskSecretUrl`, then `maskHomePaths`, through `DurbarRedact`) **before** it is cut and
+    flattened, so no head of a token survives a cut, and the whole text is masked once more; control characters and bidi/format marks
+    (U+200E/F, U+202A-202E, U+2066-2069, U+FEFF) are flattened (`plain`);
+  - if a masking function is missing or throws, nothing is copied and a toast says so (fail closed).
+- **FR-094** `[IMPLEMENTED]` (`sim:` shots-058-mcp-health) **The dot on the MCP chip.** When any server of the open chat is failed or
+  needs a sign-in, the composer's MCP chip shows a small dot in the error colour (theme token `--c-error`, a shape next to the count, so
+  not colour alone) and its name and tooltip say it: "MCP servers: 3 on, 1 failed. Open the list" ("2 failed"); the tooltip is "MCP
+  servers for this agent: 3 on, 1 failed. Click to see why." (at most 120 characters, spec 052 FR-171). The dot goes when no
+  server is failed. It follows the same `agents:mcp` read as the count (spec 005 FR-037), so an `mcp` event updates it.
+- **FR-095** `[IMPLEMENTED]` (`sim:`) **Sign in stays first.** On a needs-sign-in row the sign-in action stays the primary action (the
+  chat dialog's *Sign in* button from #598, FR-064, which replaces Restart there; Settings' *Open in chat*, FR-082); *Copy diagnostics*
+  is a small secondary button after *Details*.
+- **FR-096** `[IMPLEMENTED]` (`sim:`) **Layout.** Text at least 10.5px; the reason line wraps; 12 servers with reasons fit the chat
+  dialog at 1280x800 and 1440x900 (the list scrolls inside the dialog); the chip with its dot fits the composer toolbar at both sizes.
+- **FR-097** `[KNOWN GAP]` Not checked on a real agent app: the Copilot classification values except `os_not_found`, Claude's
+  `mcp_server_errors` and `config.type`, and the "disconnected later" sequence; macOS and Windows not seen (simulator on Linux only).
+
+#### Success criteria (delta)
+
+- **SC-090** For a server that failed, the user reads in plain words why (or "reason unknown") and when, and can paste a masked
+  diagnostics text into an issue; a planted token in the server's error never appears in that text.
+- **SC-091** Without opening the MCP list, the composer's MCP chip shows that a server of this chat failed.
