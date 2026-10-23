@@ -1075,4 +1075,32 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   for (const b of ['bearer abcdefgh12345678', 'BEARER abcdefgh12345678', 'Bearer abcdefgh12345678']) assert.ok(!redact(b).includes('abcdefgh12345678'), b);
 }
 
+// ---- spec 058 (security review on #635): OAuth query values in redact() itself, so the debug sink masks a CLI's stderr line ----
+{
+  const lines: string[] = [];
+  const sink = createDebugSink('/dev/null', {}, (_f, d) => lines.push(d));
+  const page = 'https://auth.example.com/authorize?response_type=code&client_id=durbar&code_challenge=PKCECHALLENGE123&state=STATEVALUE456&redirect_uri=http%3A%2F%2F127.0.0.1%3A41234%2Fcallback';
+  const cb = 'http://127.0.0.1:41234/callback?code=AUTHCODE789&state=STATEVALUE456';
+  const enc = 'next=' + encodeURIComponent(cb);
+  const frag = 'https://app.example.com/cb#access_token=ACCESSTOK111;id_token=IDTOK222&refresh_token=REFRESH333';
+  const other = 'POST /token code_verifier=x client_secret=y'; // not a URL query: unchanged by this rule
+  sink({ stderr: `MCP OAuth for notes: ${page}\nlistening ${cb}\n${enc}\n${frag}\n${other}` });
+  const out = lines.join('');
+  for (const v of ['PKCECHALLENGE123', 'STATEVALUE456', 'AUTHCODE789', 'ACCESSTOK111', 'IDTOK222', 'REFRESH333']) assert.ok(!out.includes(v), `${v} is masked in the debug sink: ${out}`);
+  assert.ok(out.includes('client_id=durbar') && out.includes('response_type=code') && out.includes('127.0.0.1') && out.includes('auth.example.com/authorize'), 'the rest of the line stays readable');
+  assert.ok(out.includes('code_verifier=x client_secret=y'), 'only query and fragment values');
+  assert.strictEqual(redact('?CODE=abc&State=def'), '?CODE=[redacted]&State=[redacted]', 'any case');
+  assert.strictEqual(redact('see ?codec=1&statement=2'), 'see ?codec=1&statement=2', 'a longer name is not one of them');
+  assert.ok(!JSON.parse(lines[0]).stderr.includes('AUTHCODE'), 'the line stays valid JSON');
+  // bounded and linear: long values and long runs of separators
+  const t1 = cpuMs(() => void redact('?code=' + 'a'.repeat(200_000)), 2000);
+  const t2 = cpuMs(() => void redact('?code=' + 'a'.repeat(800_000)), 2000);
+  const r1 = cpuMs(() => void redact('&state='.repeat(30_000)), 2000);
+  const r2 = cpuMs(() => void redact('&state='.repeat(120_000)), 2000);
+  const s1 = cpuMs(() => void redact('%3F'.repeat(60_000)), 2000);
+  const s2 = cpuMs(() => void redact('%3F'.repeat(240_000)), 2000);
+  console.log(`redact: oauth query linearity value ${t1.toFixed(0)}/${t2.toFixed(0)} ms, names ${r1.toFixed(0)}/${r2.toFixed(0)} ms, separators ${s1.toFixed(0)}/${s2.toFixed(0)} ms`);
+  for (const [a, b, what] of [[t1, t2, 'value'], [r1, r2, 'names'], [s1, s2, 'separators']] as const) assert.ok(b < Math.max(40, a * 10), `oauth query rule is linear (${what}: ${a} -> ${b} ms CPU for 4x input)`);
+}
+
 console.log('redact: all checks passed');

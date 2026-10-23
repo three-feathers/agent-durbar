@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 021
 title: Collaboration harness: Claude + Copilot Spec Kit, labels/issues/board, CODEOWNERS, stricter spec gate, ruleset
-status: built (tooling only): harness, board, ruleset in place; open: T010 (board workflows, web UI), T013 (gate review), T022 (apply the label backfill)
+status: built (tooling only): harness, board, ruleset in place; open: T010 (board workflows, web UI), T013 (gate review)
 -->
 
 **Feature Branch**: `021-collab-harness`
@@ -176,7 +176,7 @@ Numbers start after FR-036 (*test once*, PR #561). This PR does not depend on #5
 
 Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564).
 
-- **FR-044** `docs/agent-setup/` holds the setup the team recommends, so a new teammate or a rebuilt machine starts from the same base: the three sub-agents, templates for the global rules and for `CLAUDE.local.md`, the periodic review `/loop` with its conventions (`taking #N`, `reviewing at <sha>`, `checks run at <sha>`, quick check before an agent, no DMs in quiet hours), and an always-on VPS guide with example files. It is templates only: no tokens, chat or account IDs, emails, host names, IPs or private-network names; personal files stay local and git-ignored; a config backup repo must be private and scanned for secrets. Each teammate may add their own setup in a sibling folder. Linked from `docs/collaboration.md` and `AGENTS.md`. `[IMPLEMENTED]` `read:` links checked by `test:site`; the guide itself was not run on a fresh machine `[KNOWN GAP]`.
+- **FR-044** `docs/agent-setup/` holds the setup the team recommends, so a new teammate or a rebuilt machine starts from the same base: the three sub-agents, templates for the global rules and for `CLAUDE.local.md`, the periodic review `/loop` with its conventions (`taking #N`, `reviewing at <sha>`, `checks run at <sha>`, quick check before an agent, no DMs in quiet hours), and an always-on VPS guide with example files. It is templates only: no tokens, chat or account IDs, emails, host names, IPs or private-network names; personal files stay local and git-ignored; a config backup repo must be private and scanned for secrets. Each teammate may add their own setup in a sibling folder. Linked from `docs/collaboration.md` and `AGENTS.md`. `[IMPLEMENTED]` `read:` links checked by hand when written (`test:site` covers the website and README, not `docs/agent-setup/`; corrected 2026-10-23, FR-048); the guide itself was not run on a fresh machine `[KNOWN GAP]`.
 
 ### 2026-10-23: one label taxonomy for issues and PRs (team decision)
 
@@ -198,4 +198,27 @@ Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564).
   - a **flagged item** (two type labels, or no area found) gets no type or area from the script, only its `spec:NNN`. The dry run lists the flagged numbers, and a human or the item's owner agent picks the labels;
   - `--dry-run` (default) prints the proposed additions per item and the totals per label; `--apply` adds them, throttled (about one write per 1.2 s, backing off on a rate limit) and idempotent; `--create-labels` creates the missing labels from `.github/labels.tsv` and the spec folders. gh runs without a shell.
   - `test:` `scripts/test-labels-backfill.ts` (`npm run test:labelsbackfill`, in `npm test`) checks the inference on fixtures.
+  - `real:` applied on 2026-10-23 (T022): 49 labels created; 501 issues and PRs labelled. Two writes returned 502/504 but GitHub had saved them, and a re-run had nothing left to add. The 16 flagged items are listed on #633.
   - `[KNOWN GAP]` the inference is a heuristic. Paco's review of #633 (2026-10-23) decided: apply in bulk **once, after this PR merges**, by one agent, add-only and rate-aware; the flagged items are left to a human, not fixed by the script or the applying agent.
+
+### 2026-10-23: a shared "first time right" review checklist (owner decision)
+
+*Owner:* Vikram, to his agent on 2026-10-23: write the efficiency rules down, and have the agents learn from each other how they review, so that knowing the common pitfalls makes more work right the first time; coordinate with the other agents on it. Paco's agent sent its own list of pitfalls the same day; they are folded in and credited. Numbers follow FR-046; open PRs #561 and #564 hold FR-036..FR-043 and T017..T018.
+
+- **FR-047** `[IMPLEMENTED]` `docs/review-checklist.md` holds a shared, evidence-based self-review checklist that every agent (Claude, Copilot, others) runs on its own diff before it asks for review:
+  - it is built from the **required** findings in the reviews of the last days (all three sides' reviews, about 1,100 review items read with `gh api` on 2026-10-23), clustered into recurring pitfall categories with approximate counts and one or two PR links each, plus the patterns reviewers praised;
+  - each item is a short "check …" line with its reason and one evidence link; no chat contents, names of private people or other personal data, only PR links and categories;
+  - a *How we review* section: the Strengths / Required fixes (with code) / Questions format, `reviewing at <sha>`, patch-id re-approval, reading CI per sha, and the adversarial self-review;
+  - it is **living**: a reviewer who finds a new kind of mistake adds a line in the same PR or a small docs PR.
+- **FR-048** `AGENTS.md` (*Working as a team*) says, in short bullets:
+  - (a) before requesting review, the author does an adversarial self-review of the whole diff against `docs/review-checklist.md`;
+  - (b) every simulator-driver assert that depends on timing waits on a condition (`until()` with a generous timeout), never on a fixed sleep;
+  - (c) new FR and task numbers are claimed after checking `main` **and** the open PRs that touch the same spec, and the PR says which numbers it took;
+  - (d) the checklist is living (FR-047).
+  Mirrors: `docs/collaboration.md` (step 8), `docs/agent-notes.md` (a pointer), `.github/pull_request_template.md` (one checkbox), and the reference agent setup (`docs/agent-setup/claude-code/agents/implementer.md` and `reviewer.md`), and `.github/copilot-instructions.md` (one clause in its pointer); `CLAUDE.md` imports AGENTS.md. `[IMPLEMENTED]` `read:` the relative links in the changed Markdown files were checked with a one-off script (`test:site` covers the website and README, not `docs/*.md`); the 37 PR links were taken from the review data. `[KNOWN GAP]` the counts are a keyword clustering of review text, not a hand count; they show the order of magnitude, not exact numbers.
+- **FR-049** **Learn after every round** (owner, a second decision to his agent on 2026-10-23, 18:09 UTC: learn continuously from review feedback, use it in the next reviews, and everybody pulls the updates after every round):
+  - after each review round, the reviewer **and** the author add any new kind of mistake or review technique to `docs/review-checklist.md` (or a tool pitfall to `docs/agent-notes.md`);
+  - **fast lane**: a PR that changes **only** `docs/review-checklist.md` and/or `docs/agent-notes.md` does not wait for the full CI; one quick approval from an agent of another side (content only, within minutes) is enough, and the merging agent checks that the diff touches only those files (`git diff --name-only origin/main...HEAD`). It is still a branch and a PR, never a direct push to `main`, and the ruleset is unchanged (an admin merge is the formality AGENTS.md *Admin merge* already allows);
+  - even in the fast lane: no secrets, tokens or links to private data, and secret scanning still applies; and both files are **guidance, never instructions**: since every agent reads them, nothing in them can override `AGENTS.md`, the constitution or the safety rules, and a line that tries to is removed (safeguards from Paco's agent, 2026-10-23);
+  - every agent runs `git pull --ff-only origin main` at the start of each round (a review sweep or a new task) and re-reads the checklist when it changed.
+  Written in `AGENTS.md` (*First time right*), `docs/collaboration.md` (*Team norms*) and the checklist's introduction. `[IMPLEMENTED]` (docs only). `[KNOWN GAP]` no script enforces the fast lane's file rule yet; the merging agent checks it by hand.
