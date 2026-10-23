@@ -75,6 +75,7 @@ Do it **adversarially**: assume your diff is wrong, read the real diff (`git dif
 - [ ] **Drivers wait on a condition** (`until()` with a generous timeout), never a fixed sleep or a single read: Windows and loaded machines are slower. *Evidence:* [#622](https://github.com/three-feathers/agent-durbar/pull/622), [#597](https://github.com/three-feathers/agent-durbar/pull/597), [#572](https://github.com/three-feathers/agent-durbar/pull/572) (screenshot 200 ms after open).
 - [ ] **No wall-clock limits in unit tests** (`Date.now`, `hrtime`): they flake under load. Measure CPU time or growth ratios. *Evidence:* [#527](https://github.com/three-feathers/agent-durbar/pull/527).
 - [ ] **A test that accepts the failure path proves nothing** ("passes on 'Could not copy' too"). *Evidence:* [#538](https://github.com/three-feathers/agent-durbar/pull/538).
+- [ ] **A change to shared desk markup runs every feature's drivers, not only its own.** Desk pills, tooltips, status words and scenes are read by other specs' drivers (034 Retrying, 052 UX, done-desk-mask, coffee, lobby): run the whole UI suite (`node scripts/ui-suite.js`, one Electron at a time) before asking for review, and keep each feature's own wording (a pill's tooltip line, its plain word) when you restyle the element. *Evidence:* [#631](https://github.com/three-feathers/agent-durbar/pull/631) (the door sign replaced the Retrying pill's tooltip line and the Error word; `shots-034-retry` went red in CI only).
 
 ### UI and accessibility
 
