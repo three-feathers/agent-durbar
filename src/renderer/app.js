@@ -1076,7 +1076,7 @@ function setSignsOn(on){SIGN_PREF=!!on;try{localStorage.setItem('durbar.doorsign
 /* spec 017 FR-015: doors the user closed (id -> {closed, held}), from main (bridge.doorsList, kept fresh by onDoorsChanged) */
 let DOORS={};
 const doorOf=a=>(a&&!a.parent&&DOORS[a.id])||{closed:false,held:0};
-const signOf=(a,resting)=>window.DurbarRoom.doorSign({state:vis(a),paused:!!a.paused,coffee:!!a.coffee,limit:!!a.limit,ended:vis(a)==='idle'&&a.label==='Ended',resting:!!resting,failing:isFailing(a),retrying:typeof isRetrying==='function'&&isRetrying(a),helpers:helpersOf(a).map(vis),userClosed:doorOf(a).closed,held:doorOf(a).held});
+const signOf=(a,resting)=>window.DurbarRoom.doorSign({state:vis(a),paused:!!a.paused,coffee:!!a.coffee,limit:!!a.limit,ended:vis(a)==='idle'&&a.label==='Ended',resting:!!resting,failing:isFailing(a),retrying:isRetrying(a),helpers:helpersOf(a).map(vis),userClosed:doorOf(a).closed,held:doorOf(a).held});
 const signTitle=(a,g)=>g.key==='shut'?'Do not disturb (you closed it)'+(doorOf(a).held?' · '+doorOf(a).held+' held':''):g.word;
 /* the sign in the pill's place (cls 'pill': door, icon, word and the warning a pill carries) or in the mini/micro status word's place
    (cls 'stl': icon and short word only, so it gives way like the status word did and a long name keeps three characters, FR-007) */
