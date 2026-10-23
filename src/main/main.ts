@@ -18,6 +18,7 @@ import { register as registerHarnessIpc } from './ipc/harness';
 import { register as registerModelIpc } from './ipc/model';
 import { register as registerPreviousIpc } from './ipc/previous';
 import { register as registerProfilesIpc } from './ipc/profiles';
+import { register as registerSlashIpc } from './ipc/slash';
 import { register as registerQuestionsIpc } from './ipc/questions';
 import { register as registerRemoteIpc } from './ipc/remote';
 import { register as registerSchedulesIpc } from './ipc/schedules';
@@ -35,7 +36,7 @@ import { detectorFor, setLoginPath } from '../adapters/detect';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
-import { restorable, validMode } from './agentops';
+import { restorable, sendWithSlash, validMode } from './agentops';
 import type { OpsDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
@@ -276,6 +277,7 @@ const infoFor = (workspace: string, permMode: PermMode, id: string, model: strin
     // spec 030 FR-040: the adapter says whether its switch was checked on a real account and whether it has a context tier
     modelControl: modelControlFor(ad, { unverified: !ad.capabilities.modelSwitch?.verified, contextTier: ad.capabilities.modelSwitch?.contextTier }),
     profiles: typeof ad.listAgentProfiles === 'function' && typeof ad.selectAgentProfile === 'function' ? true : undefined, // spec 043
+    ...(typeof ad.listSlashCommands === 'function' ? { slash: true as const } : {}), // spec 073: the composer's "/" list
     adapterId: ad.id,
     // spec 061 FR-012: the mode chip says "+ folder rules" when this folder's accepted hooks or allow rules apply to this app
     ...(folderSetupStart(ws.workspaceFile ?? ws.cwd, ws.folders, ad.id).rules ? { folderRules: true } : {}),
@@ -435,7 +437,7 @@ router.onEvent((e) => {
   if (s) toRenderer('agents:checkpoint', { id: e.sessionId, ...s });
 });
 
-async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string }> {
+async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string; slash?: string }> {
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
   if (safe.length > MAX_ATTACH_FILES) return { ok: false, error: `Up to ${MAX_ATTACH_FILES} attachments per message (got ${safe.length}).` };
@@ -447,14 +449,16 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
   try {
     await ensureLive(agents.get(id) as AgentInfo); // an ended or not-yet-started agent starts (resumes) its session here
     checkpoints().beginTurn(id, rootsOf(agents.get(id) as AgentInfo)); // spec 065 FR-002: a send starts a turn (scheduled prompts too)
-    await ad.send(id, {
+    // spec 073 FR-005: a leading `/name` of a folder or user entry is sent as that entry's text (the apps do not load them in Durbar's
+    // sessions); built-ins and anything else go as typed. Scheduled prompts come through here too.
+    const { slash } = await sendWithSlash(ad, id, {
       text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
       ...(plan ? { plan: true } : {}),
     });
     for (const a of safe) pickedFiles.delete(a.path); // spec 004 FR-015: a sent file must be picked again to be sent again
     noteLastSession(agents.get(id));
-    return { ok: true };
+    return slash ? { ok: true, slash } : { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -659,6 +663,7 @@ function oneShotFor(id: string): { name: string; generate: (prompt: string) => R
   return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
 }
 registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id) });
+registerSlashIpc({ agents, router, ensureLive }); // spec 073
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey });
 registerAdaptersIpc({ adaptersList });
 registerFoldersIpc({ agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });

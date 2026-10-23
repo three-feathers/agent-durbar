@@ -92,6 +92,7 @@ const api: DurbarApi = {
   openElicitationUrl: (id, requestId) => ipcRenderer.invoke('agents:openElicitationUrl', id, requestId),
   listProfiles: (id) => ipcRenderer.invoke('agents:listProfiles', id),
   selectProfile: (id, profileId, confirm) => ipcRenderer.invoke('agents:selectProfile', id, profileId, confirm),
+  slashCommands: (id) => ipcRenderer.invoke('agents:slashCommands', id), // spec 073
   listProfileFiles: () => ipcRenderer.invoke('profiles:listFiles'),
   readProfileFile: (fileId) => ipcRenderer.invoke('profiles:read', fileId),
   saveProfileFile: (fileId, text, baseSha, overwrite) => ipcRenderer.invoke('profiles:save', fileId, text, baseSha, overwrite),
