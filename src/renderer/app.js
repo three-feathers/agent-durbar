@@ -2113,9 +2113,9 @@ function drawSlash(src){
     document.body.appendChild(el);}
   const app=kindWord(liveRoot(u.a)&&liveRoot(u.a).info&&liveRoot(u.a).info.adapterId);
   el.setAttribute('aria-label',(u.a.live?app:'Demo')+' commands');
-  const err=src&&src.error?`<p class="sl-empty" role="presentation">Could not list commands: ${esc(DurbarCutText.cutText(src.error,120))}</p>`:'';
+  const err=src&&src.error?`<p class="sl-empty" role="presentation">Could not list commands: ${esc(safeExcerpt(src.error,120,'unknown error'))}</p>`:''; /* FR-013: masked, then cut */
   el.innerHTML=u.loading?'<p class="sl-empty" role="presentation">Looking for commands…</p>'
-    :u.items.length?u.items.map((x,i)=>SLASH.optionHtml(x,i,i===u.active,slashTip(x))).join('') /* escaped in slashsuggest.js (FR-008) */
+    :u.items.length?u.items.map((x,i)=>SLASH.optionHtml(SLASH.view(x,safeMask),i,i===u.active,slashTip(x))).join('') /* masked (FR-013) and escaped in slashsuggest.js (FR-008) */
     :err||`<p class="sl-empty" role="presentation">${u.tok.query?'No matching commands':'No commands for this agent app here'}</p>`;
   u.input.setAttribute('aria-expanded','true');
   if(u.items.length)u.input.setAttribute('aria-activedescendant','slashOpt-'+u.active);else u.input.removeAttribute('aria-activedescendant');
@@ -2123,11 +2123,8 @@ function drawSlash(src){
   const act=document.getElementById('slashOpt-'+u.active); if(act)act.scrollIntoView({block:'nearest'});
 }
 /* FR-008 (review on PR 535): the row's tooltip has what an ellipsis may cut: the full name, the description and the place (a data
-   tooltip, at most 300 characters) */
-function slashTip(x){
-  const place=x.source==='app'?'Built-in command of the agent app':x.where?'Sends the text of '+x.where:'';
-  return DurbarCutText.cutText(['/'+x.name,x.description,place].filter(Boolean).join('\n'),300);
-}
+   tooltip, at most 300 characters); FR-013: each part masked (DurbarSafeText), then the whole cut */
+function slashTip(x){return SLASH.tip(x,safeMask,DurbarCutText.cutText);}
 /* a menu (--menu-w, design-rules.md) above the message box at its left edge, at most 8 rows (the rest scroll inside), never over the
    box (SC-003) */
 function placeSlash(el,input){
@@ -2153,7 +2150,7 @@ function slashPick(){
   const r=SLASH.insert(u.input.value,u.tok.start,end,u.items[u.active].name);
   u.input.value=r.value; u.input.setSelectionRange(r.caret,r.caret);
   closeSlash(); autoGrow(); u.input.focus({preventScroll:true});
-  announce('Inserted /'+u.items[u.active].name);
+  announce('Inserted /'+SLASH.view(u.items[u.active],safeMask).name); /* FR-013: the read-out name is masked too */
 }
 /* ---------------- spec 005 FR-037..FR-042: the composer toolbar and the one Send / Stop slot ----------------
    The chips that set how the next message runs sit in a row under the message box (VS Code style); the header keeps who and what.
@@ -4269,9 +4266,9 @@ async function sendLive(text,forId,opts){
   if(a.planNext){a.planNext=false;renderAttached();}
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
-  if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
-  else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(r.slash,160))+'</code> (the agent app does not load it in Durbar’s sessions).'+(r.slashNote?' '+esc(DurbarCutText.cutText(r.slashNote,200)):'')); /* spec 073 FR-005; slashNote: a VS Code prompt file */
-  else if(r.slashNote)addNote(chat,esc(DurbarCutText.cutText(r.slashNote,240))); /* spec 073 (review on PR 615): over the size cap, sent as typed */
+  if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc((r.error&&safeMask(r.error))||'unknown error'),true); /* spec 041 FR-065 (delta 2026-10-23): the app's error is masked (shown whole, not cut); no mask: a neutral word */modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
+  else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(safeMask(r.slash),160))+'</code> (the agent app does not load it in Durbar’s sessions).'+(r.slashNote?' '+esc(DurbarCutText.cutText(safeMask(r.slashNote),200)):'')); /* spec 073 FR-005; slashNote: masked, then cut (FR-013) */
+  else if(r.slashNote)addNote(chat,esc(DurbarCutText.cutText(safeMask(r.slashNote),240))); /* spec 073 (review on PR 615): over the size cap, sent as typed; masked, then cut (FR-013) */
 }
 /* spec 012 FR-087 (owner 2026-10-20, option c): a refusal of Read-only / Ask first (Codex's sandbox could not start, or Codex cannot
    limit reads) never suggests a mode in its text; a "Change mode…" button opens the usual mode menu, with every mode and its help */

@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 021
 title: Collaboration harness: Claude + Copilot Spec Kit, labels/issues/board, CODEOWNERS, stricter spec gate, ruleset
-status: built (tooling only): harness, board, ruleset in place; open: T010 (board workflows, web UI) and T013 (gate review)
+status: built (tooling only): harness, board, ruleset in place; open: T010 (board workflows, web UI), T013 (gate review), T022 (apply the label backfill)
 -->
 
 **Feature Branch**: `021-collab-harness`
@@ -154,3 +154,24 @@ Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564), which land first.
 
 - **FR-044** `docs/agent-setup/` holds the setup the team recommends, so a new teammate or a rebuilt machine starts from the same base: the three sub-agents, templates for the global rules and for `CLAUDE.local.md`, the periodic review `/loop` with its conventions (`taking #N`, `reviewing at <sha>`, `checks run at <sha>`, quick check before an agent, no DMs in quiet hours), and an always-on VPS guide with example files. It is templates only: no tokens, chat or account IDs, emails, host names, IPs or private-network names; personal files stay local and git-ignored; a config backup repo must be private and scanned for secrets. Each teammate may add their own setup in a sibling folder. Linked from `docs/collaboration.md` and `AGENTS.md`. `[IMPLEMENTED]` `read:` links checked by `test:site`; the guide itself was not run on a fresh machine `[KNOWN GAP]`.
 
+### 2026-10-23: one label taxonomy for issues and PRs (team decision)
+
+*Team decision:* in the team group on 2026-10-23 the owner (Vikram) asked the three agents to agree a minimal tagging taxonomy and to apply it to the existing issues and PRs; Paco's and Ruben's agents agreed, and Vikram's agent owns it. Numbers follow FR-044; open PRs #561 and #564 hold FR-036..FR-043.
+
+- **FR-045** Every issue and PR carries:
+  1. exactly **one type** label: `bug`, `enhancement`, `task`, `documentation` or `question`;
+  2. **at least one** `area:*` label: the ten existing ones (`adapters`, `ci`, `docs`, `harness`, `mcp`, `packaging`, `permissions`, `platform`, `ui`, `usage`) plus the new `area:security` and `area:schedules` (in `.github/labels.tsv`);
+  3. `spec:NNN` for **every spec it touches** (one label per `specs/NNN-*` folder on `main`, description `Spec NNN: <folder>`, as `sync-labels.sh` makes them);
+  4. flags only when true: `status:claimed`, `status:blocked`, `needs-owner-approval`; on PRs only `spec-exempt` and `docs-n/a`; `accessibility`.
+
+  GitHub's defaults (`duplicate`, `wontfix`, `invalid`, ...) stay for closing. No other label families are added.
+  Who tags: the opener when creating; reviewers fix gaps in the review; the PR sweep backfills.
+- **FR-046** `scripts/labels-backfill.ts` (`npm run labels:backfill`) backfills the taxonomy, **add-only** (it never removes a label):
+  - it reads, with `gh`, the open issues and PRs plus those closed in the last 30 days (`--days N`); older closed ones are skipped;
+  - type: kept when the item has one; otherwise a spec-only PR (only `specs/`, plus its changelog fragment) is `task`, since spec work is Spec Kit work, not user docs; a change only to user docs (README, `docs/`, guides; not `specs/`, `AGENTS.md` or `CLAUDE.md`) or a `Docs:` title is `documentation`; then fix/bug words (`bug`), a title ending in `?` (`question`), a `Tnnn` in the title or release/chore words (`task`), idea/feature/owner-request words or a PR that changes `src/` (`enhancement`), else `task`. Two type labels are flagged for a human, never removed;
+  - spec: the title prefix (`NNN:`, `[NNN`, `Spec NNN`), the branch `NNN-`, changed `specs/NNN-*` folders, and for issues "spec NNN" in the body (only when the body names at most three specs). Only numbers with a folder in `specs/` count;
+  - area (only when the item has none): from a PR's changed paths **only where the mapping is unambiguous**: a directory or named file that belongs to one area (`src/adapters/` adapters, `src/renderer/` except `app.js` ui, `.github/workflows/` ci, `src/main/mcp*` mcp, `src/main/schedules.ts` schedules, `src/shared/redact.ts` security, ...), and a changed `specs/NNN-*` folder gives that spec's area (`specs/058-*` mcp). Shared files (`README.md`, `package.json`, `CHANGELOG.md`, `changelog.d/`, `src/renderer/app.js` alone, `src/main/main.ts`, tests) give no area. Docs and harness paths count only when nothing else matched, because nearly every PR touches the docs. Without a path area: the area of the item's specs, then the title's own words. An item still without an area is flagged;
+  - a **flagged item** (two type labels, or no area found) gets no type or area from the script, only its `spec:NNN`. The dry run lists the flagged numbers, and a human or the item's owner agent picks the labels;
+  - `--dry-run` (default) prints the proposed additions per item and the totals per label; `--apply` adds them, throttled (about one write per 1.2 s, backing off on a rate limit) and idempotent; `--create-labels` creates the missing labels from `.github/labels.tsv` and the spec folders. gh runs without a shell.
+  - `test:` `scripts/test-labels-backfill.ts` (`npm run test:labelsbackfill`, in `npm test`) checks the inference on fixtures.
+  - `[KNOWN GAP]` the inference is a heuristic. Paco's review of #633 (2026-10-23) decided: apply in bulk **once, after this PR merges**, by one agent, add-only and rate-aware; the flagged items are left to a human, not fixed by the script or the applying agent.

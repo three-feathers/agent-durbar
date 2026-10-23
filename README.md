@@ -283,6 +283,7 @@ npm run check:themes      # on demand: the full layout check in every theme, a f
 npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned); then checks the Electron fuses and the display names
 npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app opens its window and offers no debugger (xvfb on Linux)
 npm run specs:index       # the full specs index from each spec's specs-index block, into specs/INDEX.md (git-ignored); --add specs/NNN-x for a new spec; specs:check in npm test
+npm run labels:backfill   # dry run: the labels each issue and PR is missing (spec 021 FR-045); -- --create-labels --apply adds them (add-only)
 npm run changelog:check   # check the changelog.d/ fragments (in npm test); changelog:preview lists them; changelog:build folds them at a release
 ```
 
