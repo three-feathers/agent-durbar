@@ -39,6 +39,22 @@ All checks 2026-10-22, Linux. Real prompts: 3 (owner budget 3).
 - **Decision**: list folder and user skills and the user's prompts from files and expand them; no built-ins. **Alternative**: the native
   `skill` input item: not used now because the runtime's acceptance of an arbitrary path is unverified ([KNOWN GAP] in tasks).
 
+## R5 VS Code prompt files (2026-10-23, owner request, issue #613)
+
+- `real:` (0 prompts) scratch folder with `.github/prompts/hello.prompt.md` and a control `.github/skills/greet/SKILL.md`, no prompt
+  sent: SDK 1.0.22 (runtime 1.0.98) and SDK 1.0.26 (runtime 1.0.103, newest on npm that day). `session.rpc.commands.list({includeSkills:
+  true, includeClientCommands: true})`: `[]` without config discovery (Durbar's sessions), `greet` only with it; with built-ins 32 / 33
+  entries, none a prompt file; `session.rpc.skills.list()`: `greet` and 2 built-in skills with discovery, nothing without. The runtime
+  binaries hold no `.prompt.md` or `github/prompts` string.
+- Likely explanation of a hand-typed `/prompt-name` that "works": the model gets the literal text and reads
+  `.github/prompts/<name>.prompt.md` itself with its file tools. Not run (a prompt).
+- `read:` VS Code docs (code.visualstudio.com/docs/copilot/customization/prompt-files): workspace prompt files in `.github/prompts`,
+  user prompt files in the VS Code profile's user data; front matter `name`, `description`, `argument-hint`, `agent`, `model`, `tools`
+  (older files use `mode`); `${input:name}` / `${input:name:placeholder}`, `${selection}`, `#file:`, `#tool:`; extra words after
+  `/name` are passed along (`/create-react-form formName=MyForm`). Settings page (code.visualstudio.com/docs/configure/settings): the
+  user folder is `%APPDATA%\Code\User` (Windows), `$HOME/Library/Application Support/Code/User` (macOS), `$HOME/.config/Code/User` (Linux).
+- **Decision**: Durbar lists and expands them (FR-012) for every app; settings are named, not applied.
+
 ## R4 UI pattern
 
 - WAI-ARIA APG combobox with listbox popup: focus stays in the textarea, `aria-activedescendant` names the active option,

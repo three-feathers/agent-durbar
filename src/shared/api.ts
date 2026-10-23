@@ -811,8 +811,9 @@ export interface DurbarApi {
   pickAttachments(want?: 'image' | 'file'): Promise<PickedFile[]>;
   /** Pasted / dropped file bytes (renderer has no path): checked (10 MB, real image format), sanitized, written to a private temp folder. */
   stageAttachment(name: string, mime: string, data: ArrayBuffer): Promise<StageResult>;
-  /** `slash` (spec 073 FR-005): the message started with a folder or user entry and its text was sent; the value says where it came from. */
-  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string }>;
+  /** `slash` (spec 073 FR-005): the message started with a folder or user entry and its text was sent; the value says where it came from.
+   *  `slashNote` (a VS Code prompt file): the settings not applied and the variables left as written. */
+  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }>;
   /** Spec 073 FR-010: the "/" entries of the agent's app in its folder (folder, user, app). */
   slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
   /** Spec 066: answer a proposed plan (window only). */
