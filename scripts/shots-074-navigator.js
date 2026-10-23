@@ -32,6 +32,8 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until, settle, key } = H;
   const wc = H.wc();
+  /* wait for the focus to land (a condition, not a pause; review on PR 597) */
+  const focusOn = (id, ms = 8000) => until(`(document.activeElement&&document.activeElement.id)===${jsLiteral(id)}`, ms);
   const shot = (name, w, h) => H.shot(path.join(OUT, `074-navigator-${name}-${w}x${h}.png`), { tag: '074', what: `${name} ${w}x${h}` });
   const type = async (t) => { wc.insertText(t); await ctx.sleep(80); };
   const open = async () => { await key('F', [MOD], { char: 'never' }); await until(`!!document.getElementById('palDlg')`, 3000); };
@@ -83,6 +85,7 @@ module.exports = async (ctx) => {
     let s = await nav();
     assert.strictEqual(s.label, 'Go to', `${w}: the palette opened in Go-to mode`);
     assert.strictEqual(s.crumb, 'Go to');
+    await focusOn('palIn');
     assert.strictEqual(s.focus, 'palIn', `${w}: the cursor is in the box`);
     assert.deepStrictEqual(s.opts.slice(0, 2).map((o) => o.l), ['Folders', 'Chats'], `${w}: Folders and Chats rows first`);
     const floors = s.opts.slice(2);
@@ -114,6 +117,7 @@ module.exports = async (ctx) => {
       p = await panel();
       assert.strictEqual(p.title, want.l, `${w}: the picked agent's chat`);
     }
+    await focusOn('msgInput');
     assert.ok(p.open && p.focus === 'msgInput' && p.caret, `${w}: the chat is open with the cursor in the message box: ${JSON.stringify(p)}`);
     assert.ok(!(await H.exists('#palDlg')), `${w}: the box closed`);
     await type('hello from Go to');
@@ -140,6 +144,7 @@ module.exports = async (ctx) => {
     await type('3');
     await until(`document.body.classList.contains('panel-open')`, 3000);
     p = await panel();
+    await focusOn('msgInput');
     assert.ok(p.no === 'C3' && p.focus === 'msgInput', `${w}: c 3 opened chat 3 with the cursor in the message box: ${JSON.stringify(p)}`);
     const selId = await js(`document.querySelector('#stage .desk[aria-pressed="true"], #stage .desk.sel')?.dataset.id||''`);
     const c3 = await js(`(()=>{const b=[...document.querySelectorAll('#stage .desk[data-id] .chatno')].find(x=>x.dataset.n==='C3');return b?b.closest('.desk').dataset.id:''})()`);
@@ -165,7 +170,7 @@ module.exports = async (ctx) => {
     // FR-019: the cursor lands in the message box, whatever opened the chat
     const opened = async (how) => {
       await until(`document.body.classList.contains('panel-open')`, 3000);
-      await until(`document.activeElement&&document.activeElement.id==='msgInput'`, 3000); /* the condition, not a fixed sleep (review #597) */
+      await focusOn('msgInput'); /* the condition, not a fixed sleep (review on PR 597) */
       const q = await box();
       assert.ok(q.focus === 'msgInput' && q.v === '' && q.s === 0, `${w}: ${how}: the cursor is in the message box: ${JSON.stringify(q)}`);
       return q;
@@ -230,7 +235,7 @@ module.exports = async (ctx) => {
     await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.querySelector('.name')&&x.querySelector('.name').textContent.trim()===${jsLiteral(titleW)});d.focus();})()`);
     await key('Return', []);
     await until(`document.body.classList.contains('panel-open')`, 3000);
-    await until(`document.activeElement&&document.activeElement.id==='msgInput'`, 3000); /* the condition, not a fixed sleep (review #597) */
+    await focusOn('msgInput'); /* the condition, not a fixed sleep (review on PR 597) */
     c = await box();
     assert.ok(c.title === titleW && c.v === 'half-written prompt' && c.focus === 'msgInput' && c.s === c.v.length, `${w}: the unsent text is back, cursor at its end: ${JSON.stringify(c)}`);
     // outside text: Ctrl+A opens Needs you, but not in the chat log or with a selection; Ctrl+Backspace goes back to the office
@@ -281,7 +286,7 @@ module.exports = async (ctx) => {
       await js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(id)})+'"]').focus()`);
       await key('Return', []);
       await until(`document.body.classList.contains('panel-open')`, 3000);
-      await until(`document.activeElement&&document.activeElement.id==='msgInput'`, 3000); /* the condition, not a fixed sleep (review #597) */
+      await focusOn('msgInput'); /* the condition, not a fixed sleep (review on PR 597) */
       return box();
     };
     let ma = await marks(dA);
@@ -296,6 +301,7 @@ module.exports = async (ctx) => {
     assert.ok(ma.strip && ma.stripAria && ma.title === 'Unsent draft', `${w}: after switching chats, A's strip item has the pencil, "Unsent draft" for screen readers and as tooltip: ${JSON.stringify(ma)}`);
     assert.ok(!mb.strip, `${w}: the open chat B has no pencil`);
     c = await box();
+    await focusOn('msgInput');
     assert.ok(c.focus === 'msgInput' && c.v === '', `${w}: B opens with an empty box and the cursor in it: ${JSON.stringify(c)}`);
     await type('draft for B');
     await key('Escape', [], { char: 'never' });
@@ -415,8 +421,9 @@ module.exports = async (ctx) => {
     assert.strictEqual(s.crumb, 'Go to', `${w}: Backspace in an empty box: back to the start`);
     await key('Escape', [], { char: 'never' });
     assert.ok(!(await H.exists('#palDlg')), `${w}: Esc at the start closes`);
-    await until(`(document.activeElement&&document.activeElement.dataset.id)===${jsLiteral(deskId)}`, 3000); /* review #597: it flaked when read once */
-    assert.strictEqual(await js(`document.activeElement&&document.activeElement.dataset.id`), deskId, `${w}: focus is back on the desk`);
+    /* review on PR 597: wait (generously, Windows CI is slow) for the focus to return, and say where it is when it does not */
+    await until(`(document.activeElement&&document.activeElement.dataset.id)===${jsLiteral(deskId)}`, 8000);
+    assert.strictEqual(await js(`document.activeElement&&document.activeElement.dataset.id`), deskId, `${w}: focus is back on the desk (it is on ${await js(`(()=>{const a=document.activeElement;return a?a.tagName+'#'+a.id+'.'+String(a.className).slice(0,40)+' '+(a.dataset&&a.dataset.id||''):'nothing'})()`)})`);
     // the shortcut again closes an open navigator (toggle); Ctrl+K and the shortcut share one box
     await open();
     await key('F', [MOD], { char: 'never' });

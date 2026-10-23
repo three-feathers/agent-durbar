@@ -2561,7 +2561,10 @@ function palFilter(q){
   q=q.trim().toLowerCase(); return NAV.rank(palAll(!q),q); /* spec 074: the matching is shared with the navigator */
 }
 const kbdHTML=keys=>(keys||[]).map(k=>'<kbd>'+esc(k)+'</kbd>').join('');
-function closePalette(back){const d=$('palDlg');if(!d)return;d.remove();palNav=null;const b=palBack;palBack=null;if(back!==false&&b&&b.isConnected&&b.getClientRects().length)b.focus();}
+/* spec 074 (review on PR 597): the element focus goes back to. When the office was drawn again while the box was open, the old desk
+   node is gone: take the shown one with the same data-id (the desk, or the list row in the list view) */
+function liveBack(b){if(!b||b.isConnected||!b.dataset||!b.dataset.id)return b;return [...document.querySelectorAll('[data-id="'+CSS.escape(b.dataset.id)+'"]')].find(x=>x.getClientRects().length)||null;}
+function closePalette(back){const d=$('palDlg');if(!d)return;d.remove();palNav=null;const b=liveBack(palBack);palBack=null;if(back!==false&&b&&b.isConnected&&b.getClientRects().length)b.focus();}
 /* spec 074 (issue 548): the same box in a "Go to" mode with levels (start, folders, agents, chats). null = Ctrl+K's search. */
 let palNav=null;
 const NAV_START=()=>[{kind:'start',q:'',active:0}];

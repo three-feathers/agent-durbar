@@ -89,6 +89,8 @@ Tests first: T031-T032 are written and fail before T033-T037.
 
 - [x] T045 Spec 052 FR-175: one `modalOpen()` helper (any `aria-modal`) for every global shortcut that waits for no dialog (Ctrl+O, Ctrl+`, Ctrl+Shift+H, the chat answer keys, I, ?, N); driver step under *End all sessions?*; mutation-checked
 
+- [x] T046 Focus return after the office redraws (`liveBack` in `closePalette`); `focusOn` waits (8 s) for every focus check in `shots-074-navigator`, with the actual focus in the failure message
+
 ## Dependencies
 
 T001 → T003-T007 → T008-T010 (US1) → T011 (US2) → T012 (US3); T013-T014 (US4) need T007; T015 needs T008 and T014; T016-T019 last. US2 and US3 extend the same palette code as US1, so they follow it.
