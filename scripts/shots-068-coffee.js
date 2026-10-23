@@ -137,6 +137,27 @@ module.exports = async (ctx) => {
     // a mouse click on the entry opens the chat too
     await js(`window.__entry().click()`);
     assert.ok(await until(`!document.getElementById('coffeeBar').hidden&&/Tomas/.test(document.getElementById('msgInput').getAttribute('aria-label'))`, 8000), `${w}: a click on the entry opens Tomas's chat`);
+    /* Review on #640 (FR-021): a provider break while Durbar's spending limit is pending: the bar's Retry now is disabled with the reason,
+       and pressing the card's, the bar's (handler forced) or the menu's Retry now sends nothing and keeps the break. Behavioural, not a source regex. */
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.name==='Tomas'&&!x.parent);a.limit={requestId:'probe-640'};})()`);
+    assert.ok(await until(`document.querySelector('#coffeeBar [data-coffee-retry]').disabled`, 5000), `${w}: the bar's Retry now is disabled while the spending limit is pending`);
+    const pend = await js(`(()=>{const rb=document.querySelector('#coffeeBar [data-coffee-retry]');const t=rb.title;
+      const card=document.querySelector('#chat .note.perm.coffee:not(.settled) .note-actions button.primary');card.click();
+      rb.disabled=false;rb.click();return {t,card:card.textContent}})()`);
+    assert.ok(/not available: Answer the spending limit first/.test(pend.t), `${w}: the disabled button says why: ${pend.t}`);
+    assert.strictEqual(pend.card, 'Retry now');
+    await ctx.sleep(1500);
+    assert.strictEqual(await js(resumes), 0, `${w}: nothing is sent while Durbar's spending limit is pending`);
+    assert.ok(await js(`!!document.querySelector('#chat .note.perm.coffee:not(.settled)')&&(()=>{const a=window.__durbarSimUi.agents().find(x=>x.name==='Tomas'&&!x.parent);const d=document.querySelector('#stage .desk[data-id="'+CSS.escape(a.id)+'"]');return a.coffee===true&&!!d&&d.dataset.place==='coffee';})()&&!/resumed by you/.test(document.getElementById('chat').textContent)`), `${w}: the break is still on`);
+    // the answer bar (FR-022): a newer waiting card, out of view, still gets the bar although the oldest waiting card is the coffee card
+    await js(`(()=>{const c=document.getElementById('chat'),host=c.firstElementChild||c;const sp=document.createElement('div');sp.id='probeSpacer';sp.style.height='2400px';host.appendChild(sp);
+      const n=document.createElement('div');n.id='probeCard';n.className='note perm';n.innerHTML='<b>Probe:</b> <span class="psum">a newer waiting request</span><span class="pstate"></span><div class="note-actions"><button type="button" class="btn primary">OK</button></div>';host.appendChild(n);
+      c.dataset.pin='0';c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
+    const abOk = await until(`!document.getElementById('answerBar').hidden&&/a newer waiting request/.test(document.getElementById('answerBar').textContent)`, 5000);
+    const abSeen = await js(`(()=>{const c=document.getElementById('chat'),b=document.getElementById('answerBar');return 'probe:'+!!document.getElementById('probeCard')+' top:'+c.scrollTop+'/'+c.scrollHeight+' bar:'+b.hidden+' '+b.textContent.slice(0,80)})()`);
+    assert.ok(abOk, `${w}: the answer bar shows the newer waiting card (${abSeen})`);
+    await js(`(()=>{for(const id of ['probeCard','probeSpacer']){const e=document.getElementById(id);if(e)e.remove();}const a=window.__durbarSimUi.agents().find(x=>x.name==='Tomas'&&!x.parent);delete a.limit;})()`);
+    assert.ok(await until(`!document.querySelector('#coffeeBar [data-coffee-retry]').disabled`, 5000), `${w}: Retry now is enabled again once the limit is answered`);
     await js(`document.getElementById('backBtn').click()`);
     await until(`!document.body.classList.contains('panel-open')`, 3000);
     // FR-020: Shift+F10 opens the small menu; arrows move; Escape returns focus to the entry
@@ -145,6 +166,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!document.getElementById('modeMenu')`, 3000), `${w}: Shift+F10 opens the coffee menu`);
     const mm = await js(`(()=>{const m=document.getElementById('modeMenu');return {items:[...m.querySelectorAll('[role="menuitem"] b')].map(x=>x.textContent),label:m.getAttribute('aria-label'),focus:document.activeElement&&document.activeElement.dataset.cact}})()`);
     assert.deepStrictEqual(mm.items, ['Open chat', 'Retry now'], `${w}: menu items`);
+    assert.ok(await js(`/goes back on its break/.test(document.querySelector('#modeMenu [data-cact="retry"] small').textContent)&&/other agents on a break/.test(document.querySelector('#modeMenu [data-cact="retry"]').title)`), `${w}: the menu's Retry now says what an early retry does (FR-021)`);
     assert.ok(mm.focus === 'open' && /^Tomas: Coffee break, back in ([5-9]|1[01]) min$/.test(mm.label), `${w}: menu: ${JSON.stringify(mm)}`);
     await H.key('Down', [], { char: 'never' });
     assert.strictEqual(await js(`document.activeElement.dataset.cact`), 'retry', `${w}: ArrowDown moves to Retry now`);
@@ -165,6 +187,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!document.querySelector('#chat .note.perm.coffee:not(.settled)')&&!document.getElementById('coffeeBar').hidden`, 8000), `${w}: back on the break`);
     const reHit = await until(`/^On a coffee break · resets in ([5-9]|1[01]) min/.test(document.getElementById('coffeeBar').innerText.replace(/\\s+/g,' ').trim())`, 5000), barNow = await js(`document.getElementById('coffeeBar').innerText`);
     assert.ok(reHit, `${w}: after a re-hit the bar says when it resets (it will ask): ${barNow}`);
+    assert.ok(await js(`/hit the limit again right after a resume/.test(document.querySelector('#chat .note.perm.coffee:not(.settled)').textContent)`), `${w}: the card says why it asks now (FR-024)`);
     // a double press of the bar's Retry now: one resume message, not two
     await js(`(()=>{const b=document.querySelector('#coffeeBar [data-coffee-retry]');b.click();b.click();})()`);
     assert.ok(await until(`${byYou}>=2`, 5000), `${w}: the bar's Retry now resumed`);

@@ -15,7 +15,7 @@ import { eventProblems as validateEvent } from '../src/adapters/eventguard';
 import { AgentStateTracker } from '../src/main/mcp/agentstate';
 import type { AgentEvent } from '../src/adapters/types';
 
-interface Break { id: string; kind: string; phase: string; resetsAt?: number; estimated: boolean; paid: boolean; source: string; noAuto: boolean }
+interface Break { id: string; kind: string; phase: string; rehit?: boolean; heldByRehit?: boolean; resetsAt?: number; estimated: boolean; paid: boolean; source: string; noAuto: boolean }
 interface Breaks {
   start(id: string, info: Record<string, unknown>, policy: string): Break | null;
   get(id: string): Break | null; has(id: string): boolean; autoResumes(id: string): boolean;
@@ -368,7 +368,7 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   // review on #462: the window's timer passes the held agents to the core (FR-007), and main's schedule busy check is scheduleBusy with the tracker (FR-008)
   const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
   assert.ok(app.includes('BREAKS.tick({hold:COFFEE.holdIds(agents)})'), 'coffeeTick passes holdIds(agents)');
-  assert.ok(/function resumeCoffee[\s\S]{0,200}if\(a\.limit\)return;/.test(app), 'resumeCoffee sends nothing while a Durbar spending limit is pending');
+  assert.ok(/function resumeCoffee[\s\S]{0,200}if\(a\.limit\)return false;/.test(app), 'resumeCoffee sends nothing while a Durbar spending limit is pending');
   const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
   assert.ok(/isBusy: \(folder, session\) => scheduleBusy\(folder, session, \{[^\n]*busy: busyStatus, breaks: agentState \}\)/.test(main), 'scheduleDeps.isBusy is scheduleBusy with busyStatus and the tracker');
 }
@@ -429,6 +429,37 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   assert.ok(!/'Try now'/.test(app), 'Try now is renamed Retry now (owner, 2026-10-23)');
   assert.ok(/const go=boss\|\|bank\|\|cf;/.test(app), 'a coffee-corner entry is a button like the Boss and the Bank');
   assert.ok(/id="coffeeBar"/.test(app), 'the chat has the coffee-break bar');
+}
+
+// 13. Review on #640 (FR-024): a re-hit after a resume marks why the agent and the app's other agents now ask.
+{
+  const B = mk();
+  const t0 = clock;
+  B.start('x', { kind: 'provider', app: 'claude', resetsAt: t0 + 5 * MIN }, 'auto');
+  B.start('y', { kind: 'provider', app: 'claude', resetsAt: t0 + 5 * MIN }, 'auto');
+  B.start('z', { kind: 'provider', app: 'codex', resetsAt: t0 + 5 * MIN }, 'auto');
+  assert.ok(!B.get('y')!.heldByRehit && !B.get('x')!.rehit, 'no flags before a re-hit');
+  B.resumed('x');
+  clock = t0 + 30000;
+  const x = B.start('x', { kind: 'provider', app: 'claude', resetsAt: t0 + 5 * MIN }, 'auto')!;
+  assert.strictEqual(x.rehit, true, 'the agent that hit the limit again right after its resume');
+  assert.strictEqual(B.get('y')!.heldByRehit, true, 'the same app\'s other agent on a break is held');
+  assert.ok(!B.get('z')!.heldByRehit, 'another agent app is not touched');
+  assert.strictEqual(B.autoResumes('y'), false, 'and it will ask, not resume by itself');
+  assert.ok(B.autoResumes('z'), 'the other app still resumes by itself');
+  // a fresh break later (not within 2 min of a resume) carries no flag
+  clock = t0 + 10 * MIN; B.end('x');
+  const later = B.start('x', { kind: 'provider', app: 'claude', resetsAt: clock + MIN }, 'auto')!;
+  assert.ok(!later.rehit, 'a later break is not a re-hit');
+  clock = t0;
+}
+
+// 14. Review on #640 (FR-021, FR-022) wiring: honest Retry now and the answer bar.
+{
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  assert.ok(/void sendLive\(COFFEE\.RESUME_TEXT,a\.id,\{fromComposer:false,coffee:true\}\);\s*return true;\s*\}/.test(app), 'resumeCoffee returns true when it sent');
+  assert.ok(/const waiting=\(\)=>\[\.\.\.chat\.querySelectorAll\('\.note\.perm:not\(\.settled\):not\(\.coffee\)'\)\]/.test(app), 'the answer bar leaves coffee cards out of its list, not the whole bar');
+  assert.ok(!/card\.classList\.contains\('coffee'\)\)\{if\(painted/.test(app), 'the answer bar is no longer hidden for a coffee card');
 }
 
 console.log('coffee break tests passed');

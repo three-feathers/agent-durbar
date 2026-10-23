@@ -389,17 +389,17 @@ function openCoffeeMenu(id,anchor){
   closeModeMenu();
   const a=byId(id); if(!a||!a.coffee)return;
   const can=COFFEE.retryable(BREAKS.get(id),a), left=coffeeLeftWords(a);
-  const it=(act,label,sub)=>`<button type="button" role="menuitem" data-cact="${act}" title="${esc(sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
+  const it=(act,label,sub,dis)=>`<button type="button" role="menuitem" data-cact="${act}"${dis?' aria-disabled="true"':''} title="${esc(act==='retry'&&!dis?RETRY_TIP:sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',a.name+': '+coffeeWord()+(left?', '+left:''));
-  m.innerHTML=it('open','Open chat','See '+a.name+'’s chat and its coffee-break card')+(can?it('retry','Retry now','Send one message now so the agent continues'):'');
+  m.innerHTML=it('open','Open chat','See '+a.name+'’s chat and its coffee-break card')+it('retry','Retry now',can?'Send one message now; if the limit has not reset yet, the agent goes back on its break':coffeeNoRetry(a)||'Not available now',!can);
   document.body.appendChild(m);
   const ab=anchor.getBoundingClientRect(),b=m.getBoundingClientRect();
   m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';
   m.style.top=(ab.bottom+6+b.height<=innerHeight-8?ab.bottom+6:Math.max(8,ab.top-6-b.height))+'px';
   /* focus back to the entry; after Retry now the agent has left the corner, so to its desk (never lost to the page) */
   const back=()=>{const f=document.querySelector('#stage [data-coffeeid="'+CSS.escape(id)+'"]')||(document.contains(anchor)?anchor:null)||document.querySelector('#stage .desk[data-id="'+CSS.escape(id)+'"]');if(f)f.focus();};
-  m.addEventListener('click',e=>{const t=e.target.closest('[data-cact]');if(!t)return;closeModeMenu();
-    if(t.dataset.cact==='retry'){retryCoffee(a);announce('Retry now: '+a.name);scheduleRender();requestAnimationFrame(()=>requestAnimationFrame(back));}else openAtRequest(id);});
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-cact]');if(!t)return;if(t.getAttribute('aria-disabled')==='true'){e.preventDefault();announce(coffeeNoRetry(a)||'Not available now');return;}closeModeMenu();
+    if(t.dataset.cact==='retry'){announce(retryCoffee(a)?'Retry now: '+a.name:(coffeeNoRetry(a)||'Nothing was sent'));scheduleRender();requestAnimationFrame(()=>requestAnimationFrame(back));}else openAtRequest(id);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-cact]')],i=its.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
@@ -1777,7 +1777,8 @@ function wireAnswerBar(a){
   chat.addEventListener('scroll',recheck,{passive:true});window.addEventListener('resize',recheck);
   const io={observe(){},unobserve(){},disconnect(){chat.removeEventListener('scroll',recheck);window.removeEventListener('resize',recheck);}};
   /* FR-016: the oldest waiting request first, and how many there are */
-  const waiting=()=>[...chat.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));
+  /* spec 068 FR-022 (review on #640): coffee cards have their own bar (#coffeeBar); the answer bar shows the oldest other waiting card */
+  const waiting=()=>[...chat.querySelectorAll('.note.perm:not(.settled):not(.coffee)')].filter(n=>n.querySelector(':scope > .note-actions button'));
   const pending=()=>waiting()[0]||null;
   const textOf=requestText;
   /* FR-016: to the request itself, not to its Approve button (an Enter right after must not approve) */
@@ -1791,8 +1792,7 @@ function wireAnswerBar(a){
     return {opts,other,ok,skip,tag:tag?tag.textContent:'',q:safeMask(qt.textContent.replace(/\s+/g,' ').trim())};};
   let painted='';
   function paint(){
-    /* spec 068 FR-022: a coffee-break card has its own bar (#coffeeBar), always shown; the answer bar does not repeat it */
-    if(!card||cardVisible||card.classList.contains('coffee')){if(painted||!bar.hidden){bar.hidden=true;bar.innerHTML='';painted='';}return;}
+    if(!card||cardVisible){if(painted||!bar.hidden){bar.hidden=true;bar.innerHTML='';painted='';}return;}
     const n=waiting().length, text=textOf(card);
     /* the same request, count and words: keep the bar as it is (a repaint would drop what you type in its box and its focus) */
     const key=n+'\u0001'+text;if(painted&&bar._card===card&&painted===key&&!bar.hidden)return;
@@ -3821,14 +3821,18 @@ const coffeeTask=a=>breakWord(a)+' — '+coffeeUntil(a);
 const BREAK_MARGIN=SIM_BREAK?2000:COFFEE.MARGIN_MS;
 const coffeeLeftWords=a=>{const b=a&&BREAKS.get(a.id);if(!b)return '';const au=BREAKS.autoResumes(a.id),w=COFFEE.backInText(b,au,Date.now(),BREAK_MARGIN);return w?(au?'back in ':'resets in ')+w:'';};
 const coffeeUntilWords=a=>{const b=a&&BREAKS.get(a.id);return b?(b.kind==='cap'?'until you raise the limit':b.resetsAt?'until '+COFFEE.whenText(b.resetsAt,Date.now()):'until the limit resets'):'';};
+/* FR-021 (review on #640): what an early Retry now does, on every Retry now; and why a retry is not allowed now */
+const RETRY_TIP='Send one message now so the agent continues. If the limit has not reset yet, it goes back on its break and then asks before going on, as do this app’s other agents on a break';
+const coffeeNoRetry=a=>{const b=a&&BREAKS.get(a.id);return !b||!a.coffee?'The coffee break is over':a.limit?'Answer the spending limit first':b.kind!=='provider'?'Answer the spending limit first':'';};
 /* the card's sentence: what is used up, and what happens next */
 function coffeeSentence(a){
   const b=BREAKS.get(a.id); if(!b)return '';
   const when=b.resetsAt?COFFEE.atWhen(b.resetsAt,Date.now())+(b.estimated?' (an estimate)':''):''; /* "at 14:30", "Fri 9:00", "1 Nov" (FR-004) */
   const what=SIMPLE||!b.source?'The usage limit is used up.':b.source+' is used up.';
   if(b.phase==='back')return 'The limit has reset. Resume sends one message so the agent continues where it stopped.';
+  const why=b.rehit?' It hit the limit again right after a resume, so it will not go on by itself; this app’s other agents on a break will ask too.':b.heldByRehit?' Another agent of this app hit the limit again right after a resume, so this one will ask before it goes on.':''; /* FR-024 */
   const next=BREAKS.autoResumes(a.id)?' The agent comes back '+when+' and continues by itself.':b.resetsAt?' The limit resets '+when+'; the agent will ask you before it goes on'+(b.paid?' (going on may be billed).':'.'):' The agent app did not say when it resets.';
-  return what+next+' Retry now sends one message to continue (after a long break it can cost a little more).';
+  return what+why+next+' Retry now sends one message to continue (after a long break it can cost a little more).';
 }
 /* the chat card (FR-009): Retry now / Stay on break, or, once the limit has reset and the agent asks, Resume / Not now. The inbox copies the buttons. */
 function showCoffee(a,back){
@@ -3844,7 +3848,7 @@ function showCoffee(a,back){
     mk('Resume','primary','Send one message so the agent continues where it stopped',()=>resumeCoffee(a,'user'));
     mk('Not now','','Leave it here; the agent goes on with your next message',()=>{endCoffee(a,'not now');setState(a,'idle',null,'The usage limit has reset. Send a message to go on.');});
   } else {
-    mk('Retry now','primary','Send one message now so the agent continues (if the limit has not reset yet, it goes back on its break)',()=>retryCoffee(a));
+    mk('Retry now','primary',RETRY_TIP,()=>{if(!retryCoffee(a))announce(coffeeNoRetry(a)||'Nothing was sent');});
     if(BREAKS.autoResumes(a.id))mk('Stay on break','','Do not continue by itself; ask me when the limit resets',()=>{BREAKS.stay(a.id);showCoffee(a,false);setState(a,'waiting',coffeeWord(),coffeeTask(a));});
   }
   n.appendChild(row);
@@ -3875,17 +3879,18 @@ function endCoffee(a,why){
 /* FR-007: one fixed message to the same session (automatic at the reset, or Retry now / Resume). FR-021: the first call ends the break, so a
    second press (double click, the menu and the bar) finds none and sends nothing; the core says when the user may retry (retryable). */
 function resumeCoffee(a,how){
-  if(!a||!a.coffee)return;
-  const b=BREAKS.get(a.id); if(!COFFEE.retryable(b,a))return;
-  if(a.limit)return; /* FR-007: never while Durbar's spending limit is pending (main would hold the message anyway) */
+  if(!a||!a.coffee)return false;
+  const b=BREAKS.get(a.id); if(!COFFEE.retryable(b,a))return false;
+  if(a.limit)return false; /* FR-007: never while Durbar's spending limit is pending (main would hold the message anyway) */
   a.coffee=false;a.coffeeKind='';BREAKS.resumed(a.id);
   if(VISITS.unpin(a.id))scheduleRender();
   if(a.coffeeCard){const r=a.coffeeCard.querySelector('.note-actions');if(r)r.remove();a.coffeeCard.querySelector('.pstate').textContent=' → '+(how==='auto'?'resumed by itself':'resumed');a.coffeeCard.classList.add('settled','approved');a.coffeeCard=null;}
   addNote(liveChat(a),'Back from the '+esc(coffeeWord().toLowerCase())+' ('+(how==='auto'?'resumed by itself after the limit reset':'resumed by you')+').');
   paintCoffeeBar();
   void sendLive(COFFEE.RESUME_TEXT,a.id,{fromComposer:false,coffee:true});
+  return true;
 }
-/* spec 068 FR-021 (owner 2026-10-23): Retry now is the timer's own path: one fixed message, the session's mode and caps */
+/* spec 068 FR-021 (owner 2026-10-23): Retry now is the timer's own path: one fixed message, the session's mode and caps; true when it sent */
 const retryCoffee=a=>resumeCoffee(a,'user');
 /* FR-022: the chat's coffee-break bar: always shown while the open chat's agent is on a provider break (not yet back), with Retry now */
 function paintCoffeeBar(){ /* its key lives on the function (no let: the panel can paint before this line ran) */
@@ -3900,13 +3905,16 @@ function paintCoffeeBar(){ /* its key lives on the function (no let: the panel c
     bar.querySelector('b').textContent='On a '+coffeeWord().toLowerCase();
     const act=bar.querySelector('.ab-act');
     const add=(label,cls,fn,title)=>{const x=document.createElement('button');x.type='button';x.className='btn '+cls;x.textContent=label;x.title=title;x.onclick=fn;act.appendChild(x);return x;};
-    const r=add('Retry now','primary',()=>{const who=byId(key);if(!who)return;retryCoffee(who);announce('Retry now: '+who.name);const m=$('msgInput');if(m)m.focus();},'Send one message now so the agent continues (if the limit has not reset yet, it goes back on its break)');
+    const r=add('Retry now','primary',()=>{const who=byId(key);if(!who)return;if(retryCoffee(who)){announce('Retry now: '+who.name);const m=$('msgInput');if(m)m.focus();}else announce(coffeeNoRetry(who)||'Nothing was sent');},RETRY_TIP);
     r.dataset.coffeeRetry='1';
     add('Show in chat','ghost',()=>{const who=byId(key);if(who&&who.coffeeCard&&who.coffeeCard.isConnected)focusRequest(who.coffeeCard);},'Scroll to the coffee-break card in the chat');
     bar.hidden=false;
     if(had)r.focus();
   }
   const t=bar.querySelector('.cb-left'), txt='· '+words;if(t.textContent!==txt)t.textContent=txt;
+  /* FR-021 (review on #640): disabled with the reason while a retry is not allowed (a pending spending limit) */
+  const rb=bar.querySelector('[data-coffee-retry]'), no=COFFEE.retryable(b,a)?'':coffeeNoRetry(a)||'Not available now';
+  if(rb){rb.disabled=!!no;const tt=no?'Retry now is not available: '+no:RETRY_TIP;if(rb.title!==tt)rb.title=tt;}
   bar.setAttribute('aria-label',coffeeWord()+(words?', '+words:''));
 }
 /* the window's timer: what the break core says is due (FR-007, FR-011) */
