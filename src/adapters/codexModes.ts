@@ -87,6 +87,26 @@ export function codexInstallRoot(located: string, realpath: (p: string) => strin
 }
 
 /**
+ * FR-162: the file to spawn for the located `codex`: its resolved path. Codex's sandbox helper runs `current_exe()` again,
+ * which on macOS is the unresolved link (`/opt/homebrew/bin/codex`); seatbelt canonicalizes read roots, so under the
+ * read-limited profile the link is not readable and `execvp` fails with EPERM (openai/codex#41493). The resolved file
+ * lies inside the FR-138 install root, so the profile needs no new root. npm: `.../bin/codex.js` (POSIX runs it by its
+ * shebang). Windows: only a resolved `.exe` replaces the located path (a `.js` cannot be spawned without a launcher).
+ * A path that cannot be resolved stays as located (the install root is then missing, so a limited mode fails closed).
+ */
+export function codexSpawnPath(located: string, realpath: (p: string) => string, platform: string): string {
+  let real: string;
+  try {
+    real = realpath(located);
+  } catch {
+    return located;
+  }
+  if (typeof real !== 'string' || !real || real.includes('\0')) return located;
+  if (platform === 'win32') return /\.exe$/i.test(real) ? real : located;
+  return real;
+}
+
+/**
  * Spawn arguments that define the profile (`codex app-server -c key=value`). An argv array for `spawn` without a
  * shell: each element is one argument, nothing is quoted for a shell.
  */

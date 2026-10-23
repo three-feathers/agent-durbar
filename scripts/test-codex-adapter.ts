@@ -11,7 +11,7 @@ import * as path from 'path';
 import { offeredDescriptors } from '../src/adapters/experimental';
 import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter, codexChildEnv, linuxSandboxHint, macSandboxHint } from '../src/adapters/codex';
 import { CodexMapper } from '../src/adapters/codexMap';
-import { CODEX_INITIALIZE_CAPABILITIES, codexProfileArgs, codexWorkspaceRoots } from '../src/adapters/codexModes';
+import { CODEX_INITIALIZE_CAPABILITIES, codexProfileArgs, codexSpawnPath, codexWorkspaceRoots } from '../src/adapters/codexModes';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
 import type { AgentEvent, PermissionMode } from '../src/adapters/types';
 import { eventProblems } from '../src/adapters/eventguard';
@@ -231,6 +231,66 @@ async function main(): Promise<void> {
         assert.strictEqual(server.spawns.length, 0, `${binary} / ${mode}: nothing spawned`);
         assert.deepStrictEqual(events, []);
       }
+    }
+    // FR-162 (#660, openai/codex#41493): the RESOLVED codex is spawned (macOS current_exe() is the unresolved link, unreadable
+    // under the read-limited seatbelt profile), for sessions and probes alike; the install root stays the resolved folder
+    {
+      const LINK = '/opt/homebrew/bin/codex';
+      const REAL = '/opt/homebrew/Caskroom/codex/0.163.0/bin/codex';
+      const NPM_LINK = '/usr/local/bin/codex';
+      const NPM_REAL = '/usr/local/lib/node_modules/@openai/codex/bin/codex.js';
+      const links: Record<string, string> = { [LINK]: REAL, [NPM_LINK]: NPM_REAL, 'C:\\tools\\codex.exe': 'D:\\pkg\\codex\\codex.exe', 'C:\\tools\\codex': 'C:\\npm\\node_modules\\@openai\\codex\\bin\\codex.js', '/usr/bin/codex': '/opt/x/codex.cmd' };
+      const fakeReal = (p: string): string => {
+        if (p in links) return links[p];
+        if (Object.values(links).includes(p) || p.startsWith(ws) || p.startsWith(os.tmpdir())) return fs.existsSync(p) ? fs.realpathSync.native(p) : p;
+        throw Object.assign(new Error(`ENOENT: ${p}`), { code: 'ENOENT' });
+      };
+      const mk = (binary: string, platform = 'darwin') => {
+        const server = new FakeCodexServer();
+        const ad = new CodexAdapter({ spawn: server.spawn, locate: async () => ({ path: binary, version: '0.163.0' }), platform, env: {}, realpath: fakeReal, closeGraceMs: 20, killGraceMs: 20 });
+        return { server, ad };
+      };
+      const profileOf = (args: readonly string[]): string => args.find((a) => a.startsWith('permissions.durbar_ro.filesystem=')) ?? '';
+      for (const mode of ['read-only', 'ask', 'allow'] as PermissionMode[]) {
+        const { server, ad } = mk(LINK);
+        await ad.start({ workspace: ws, permissionMode: mode });
+        assert.strictEqual(server.spawns[0].file, REAL, `${mode}: the resolved Homebrew binary is spawned, not the link`);
+        assert.notStrictEqual(server.spawns[0].file, LINK);
+        const prof = profileOf(server.spawns[0].args as string[]);
+        assert.ok(prof.includes('"/opt/homebrew/Caskroom/codex/0.163.0"="read"'), `${mode}: the install root is the resolved folder: ${prof}`);
+        assert.ok(!prof.includes('/opt/homebrew/bin'), `${mode}: the profile is not widened to the link's folder`);
+        await ad.dispose();
+      }
+      {
+        // a probe (previous sessions) spawns the resolved path too
+        const { server, ad } = mk(LINK);
+        await ad.listPreviousSessions(ws).catch(() => undefined);
+        assert.ok(server.spawns.length >= 1 && server.spawns.every((x) => x.file === REAL), 'probes spawn the resolved binary');
+        await ad.dispose();
+      }
+      {
+        // npm: the link resolves to bin/codex.js, spawned as it is on macOS and Linux (shebang); install root = the package
+        for (const platform of ['darwin', 'linux']) {
+          const { server, ad } = mk(NPM_LINK, platform);
+          await ad.start({ workspace: ws, permissionMode: 'read-only' });
+          assert.strictEqual(server.spawns[0].file, NPM_REAL, `${platform}: npm codex.js spawned`);
+          assert.ok(profileOf(server.spawns[0].args as string[]).includes('"/usr/local/lib/node_modules/@openai/codex"="read"'));
+          await ad.dispose();
+        }
+      }
+      {
+        // a link that resolves to a .cmd/.bat is refused like the shim itself (D4), nothing spawned
+        const { server, ad } = mk('/usr/bin/codex', 'linux');
+        await assert.rejects(() => ad.start({ workspace: ws, permissionMode: 'allow' }), /\.cmd launcher/);
+        await assert.rejects(() => ad.listPreviousSessions(ws), /not found/);
+        assert.strictEqual(server.spawns.length, 0, 'a resolved shim is never spawned');
+      }
+      // the pure helper: Windows takes only a resolved .exe; an unresolvable path stays as located
+      assert.strictEqual(codexSpawnPath(LINK, fakeReal, 'darwin'), REAL);
+      assert.strictEqual(codexSpawnPath('C:\\tools\\codex.exe', fakeReal, 'win32'), 'D:\\pkg\\codex\\codex.exe', 'win32: a resolved .exe is used');
+      assert.strictEqual(codexSpawnPath('C:\\tools\\codex', fakeReal, 'win32'), 'C:\\tools\\codex', 'win32: a resolved codex.js is not spawned (no launcher), the located path stays');
+      assert.strictEqual(codexSpawnPath('/nowhere/codex', fakeReal, 'darwin'), '/nowhere/codex', 'unresolvable: located path');
+      assert.strictEqual(codexSpawnPath(LINK, () => 'a\0b', 'darwin'), LINK, 'a NUL in the resolved path is not used');
     }
     // session folders are resolved through the injected realpath: a symlink to the filesystem root is dropped
     {
@@ -643,10 +703,20 @@ async function main(): Promise<void> {
     }
     // FR-140: the Linux sandbox error (real text, Ubuntu with unprivileged user namespaces blocked) gets a plain hint; other errors none
     // FR-140 delta: the macOS sandbox error (real text, GitHub macOS runner) gets its own plain hint; the Linux one does not apply
-    assert.ok(macSandboxHint("error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 71: sandbox-exec: execvp() of '/Users/x/.local/bin/codex' failed: Operation not permitted").includes('could not start its macOS sandbox'));
+    // FR-162: the two macOS causes get their own text. execvp EPERM (real, owner's Mac 2026-10-23): a symlinked codex, not a restricted Durbar
+    for (const execvp of ["error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 71: sandbox-exec: execvp() of '/Users/x/.local/bin/codex' failed: Operation not permitted", "fs sandbox helper failed with status exit status: 71: sandbox-exec: execvp() of '/opt/homebrew/bin/codex' failed: Operation not permitted"]) {
+      const h = macSandboxHint(execvp);
+      assert.ok(h.includes('could not start its macOS sandbox') && h.includes('run its own program again') && h.includes('starts the real file') && /report/.test(h), h);
+      assert.ok(!/runs restricted|start Durbar normally/.test(h), 'the execvp case does not blame a restricted Durbar: ' + h);
+    }
+    const nested = macSandboxHint('sandbox-exec: sandbox_apply: Operation not permitted');
+    assert.ok(nested.includes('could not start its macOS sandbox') && nested.includes('runs restricted') && nested.includes('Start Durbar normally'), nested);
+    assert.ok(!/real file|own program/.test(nested), 'the nested case keeps its own text: ' + nested);
+    const other = macSandboxHint('sandbox-exec: something else');
+    assert.ok(other.includes('could not start its macOS sandbox') && !/runs restricted|real file/.test(other), other);
     assert.strictEqual(macSandboxHint('bwrap: loopback: Failed RTM_NEWADDR'), '');
     // FR-087 (owner 2026-10-20): no refusal text suggests Allow all; the window offers "Change mode…" instead
-    for (const h of [linuxSandboxHint('bwrap: loopback: Failed RTM_NEWADDR'), macSandboxHint('sandbox-exec: execvp() failed')]) assert.ok(h && !/allow all/i.test(h), 'no Allow all hint: ' + h);
+    for (const h of [linuxSandboxHint('bwrap: loopback: Failed RTM_NEWADDR'), macSandboxHint('sandbox-exec: execvp() failed'), macSandboxHint("sandbox-exec: execvp() of '/a/codex' failed: Operation not permitted"), macSandboxHint('sandbox_apply: Operation not permitted')]) assert.ok(h && !/allow all/i.test(h), 'no Allow all hint: ' + h);
     assert.ok(linuxSandboxHint('error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 1: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted').includes('blocks unprivileged user namespaces'));
     assert.strictEqual(linuxSandboxHint('permissions profile not supported'), '');
     // FR-147: Durbar's MCP servers go to Codex as config.mcp_servers; the list and startup states become `mcp` events; a switch applies next message
