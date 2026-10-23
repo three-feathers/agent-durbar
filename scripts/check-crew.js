@@ -23,6 +23,8 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const ID = 'cheeky-crew';
 /* FR-014 zones in stage units: [x0, y0, x1, y1] */
 const ZONES = { 'monitor and halo': [101, 22, 187, 88], 'bubble and badge corner': [16, 3, 61, 34], 'cup zone': [96, 66, 114, 87] };
+/* FR-060: the screen's frame starts here; the portrait box ends here, so the status colour is never under it */
+const MONITOR_LEFT = 112, DESK_TOP = 86;
 
 /* in the page: every desk scene's portrait, and every other place one is drawn */
 function survey() {
@@ -40,6 +42,43 @@ function survey() {
     lounge: q('.lg-av').filter((e) => e.getClientRects().length).map((e) => [...e.querySelectorAll('image')].map(info)),
     broken: q('image').filter((i) => i.getClientRects().length && !i.getAttribute('href')).length,
   };
+}
+
+
+/* FR-060, in the page: every place a portrait is drawn, with the boxes the face must stay clear of */
+function faces() {
+  const q = (s) => [...document.querySelectorAll(s)].filter((e) => e.getClientRects().length);
+  const r = (e) => { const b = e.getBoundingClientRect(); return [b.x, b.y, b.x + b.width, b.y + b.height]; };
+  const base = (svg, use, clip, extra) => {
+    const im = svg.querySelector('image');
+    return Object.assign({ use, href: im ? im.getAttribute('href') : '', vb: (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number), svg: r(svg), clip: r(clip), covers: [] }, extra);
+  };
+  const out = [];
+  for (const svg of q('#stage .desk[data-id]:not(.shut) svg.scene, #stage .helper svg.scene')) {
+    const card = svg.closest('.desk, .helper'), covers = [];
+    for (const e of card.querySelectorAll('.chatno')) if (e.getClientRects().length) covers.push(['chat badge', r(e)]);
+    const w = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      const p = n.parentElement;
+      if (!n.nodeValue.trim() || p.closest('svg') || p.closest('.chatno') || !p.getClientRects().length) continue;
+      covers.push(['card text', r(p)]);
+    }
+    const mon = svg.querySelector('rect[x="112"][y="32"]');
+    out.push(base(svg, svg.closest('.helper') ? 'helper' : 'desk', svg, { covers, monitor: !!mon }));
+    const im = svg.querySelector('image'), kids = [...svg.children];
+    out[out.length - 1].order = im && mon ? kids.indexOf(im) < kids.indexOf(mon) : null;
+  }
+  for (const svg of q('.walker .wk svg')) out.push(base(svg, 'walker', svg.parentElement));
+  for (const svg of q('.lg-av:not(.lying) svg')) {
+    const av = svg.parentElement, couch = av.closest('.lg-couch'), sofa = couch && couch.querySelector('.lg-sofa'), name = av.parentElement.querySelector('.lg-name');
+    const covers = name ? [['name label', r(name)]] : [];
+    for (const e of av.parentElement.querySelectorAll('.chatno')) if (e.getClientRects().length) covers.push(['chat badge', r(e)]);
+    const x = base(svg, 'seat', av, { covers });
+    x.sofaBehind = !!sofa && !!(sofa.compareDocumentPosition(av) & Node.DOCUMENT_POSITION_FOLLOWING) && +getComputedStyle(sofa).zIndex <= (+getComputedStyle(av).zIndex || 0);
+    x.back = sofa ? r(sofa.querySelector('.sf-back')) : null;
+    out.push(x);
+  }
+  return out;
 }
 
 /* natural sizes of the portraits (in the page: an Image per file) */
@@ -61,6 +100,52 @@ module.exports = async (ctx) => {
     await H.settle();
     await H.js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
     await ctx.sleep(250);
+  };
+
+  /* FR-060: for each use at this size, the drawn face box is inside what is visible, and the things that must stay readable are not on it */
+  const faceChecks = async (tag) => {
+    const list = await H.js(`(${faces.toString()})()`);
+    const uses = {};
+    for (const f of list) {
+      if (!f.href) continue; // the plain figure (fallback) has no picture
+      const m = /crew\/art\/([\w-]+)-(working|waiting|resting)\.webp/.exec(f.href);
+      assert.ok(m, `${tag}: ${f.use}: a crew picture (${f.href})`);
+      const [id, pose] = [m[1], m[2]];
+      const fb = C.faceBox(id, pose); // stage units
+      const [vx, vy, vw, vh] = f.vb, R = f.svg;
+      const sc = Math.min((R[2] - R[0]) / vw, (R[3] - R[1]) / vh), ox = R[0] + ((R[2] - R[0]) - vw * sc) / 2, oy = R[1] + ((R[3] - R[1]) - vh * sc) / 2;
+      const px = [ox + (fb[0] - vx) * sc, oy + (fb[1] - vy) * sc, ox + (fb[0] + fb[2] - vx) * sc, oy + (fb[1] + fb[3] - vy) * sc];
+      const where = `${tag} ${f.use} ${id}-${pose}`;
+      uses[f.use] = (uses[f.use] || 0) + 1;
+      // inside the visible clip: the view box, the element's own box
+      const eps = 0.75;
+      assert.ok(fb[0] >= vx - 1e-6 && fb[1] >= vy - 1e-6 && fb[0] + fb[2] <= vx + vw + 1e-6 && fb[1] + fb[3] <= vy + vh + 1e-6, `${where}: the face box ${fb.map((n) => +n.toFixed(1))} is inside the view box ${f.vb}`);
+      assert.ok(px[0] >= f.clip[0] - eps && px[1] >= f.clip[1] - eps && px[2] <= f.clip[2] + eps && px[3] <= f.clip[3] + eps, `${where}: the face box ${px.map(Math.round)} is inside the visible clip ${f.clip.map(Math.round)}`);
+      if (f.use === 'walker') { // a round clip: the four corners of the face box are inside the circle
+        const cx = (f.clip[0] + f.clip[2]) / 2, cy = (f.clip[1] + f.clip[3]) / 2, rad = Math.min(f.clip[2] - f.clip[0], f.clip[3] - f.clip[1]) / 2;
+        for (const [x, y] of [[px[0], px[1]], [px[2], px[1]], [px[0], px[3]], [px[2], px[3]]]) assert.ok(Math.hypot(x - cx, y - cy) <= rad + 0.5, `${where}: a corner of the face box is outside the round avatar`);
+        assert.ok((px[2] - px[0]) >= 0.35 * (f.clip[2] - f.clip[0]), `${where}: the face fills the circle (${Math.round(px[2] - px[0])} of ${Math.round(f.clip[2] - f.clip[0])} px)`);
+      }
+      if (f.use === 'desk' || f.use === 'helper') {
+        assert.ok(f.order === true, `${where}: the portrait is drawn before (under) the monitor and the desk`);
+        assert.ok(fb[0] + fb[2] <= MONITOR_LEFT && fb[1] + fb[3] <= DESK_TOP, `${where}: the face is left of the monitor and its chin above the desk top`);
+        for (const [name, z] of Object.entries(ZONES)) assert.ok(!hit([fb[0], fb[1], fb[0] + fb[2], fb[1] + fb[3]], z), `${where}: the face keeps clear of the ${name}`);
+      }
+      // a seat is small (about 38 px) and its chat-number badge sits on its top-left corner by design (spec 074): there the eyes-and-nose
+      // core of the face box (its middle half) must be clear of the badge; everywhere else the whole face box must be
+      for (const [name, c] of f.covers) {
+        if (f.use === 'seat' && name === 'chat badge' && f.clip[2] - f.clip[0] < 30) continue; // a 20 px seat (1280x800) is smaller than its own number badge, whatever the picture
+        const core = f.use === 'seat' && name === 'chat badge' ? [px[0] + 0.25 * (px[2] - px[0]), px[1] + 0.25 * (px[3] - px[1]), px[2] - 0.25 * (px[2] - px[0]), px[3] - 0.25 * (px[3] - px[1])] : px;
+        const dx = Math.min(core[2], c[2]) - Math.max(core[0], c[0]), dy = Math.min(core[3], c[3]) - Math.max(core[1], c[1]); // overlap depth, 1.5 px of sub-pixel slack
+        assert.ok(!(dx > 1.5 && dy > 1.5), `${where}: the face box ${core.map(Math.round)} is not under the ${name} ${c.map(Math.round)}`);
+      }
+      if (f.use === 'seat') {
+        assert.ok(f.sofaBehind, `${where}: the couch is drawn behind the figure, its back does not cover the face`);
+        assert.ok(px[1] >= f.clip[1] - eps, `${where}: the head is not cut at the top`);
+      }
+    }
+    for (const u of ['desk', 'helper', 'walker', 'seat']) assert.ok(uses[u] >= 1, `${tag}: a ${u} portrait is on screen to check (${JSON.stringify(uses)})`);
+    console.log(`[crew] ${tag} faces`, JSON.stringify(uses));
   };
   const sizes = async () => Object.fromEntries((await H.js(naturals(C.files()))).map(([f, w, h]) => [f, [w, h]]));
   const sharpOk = (tag, img, nat) => {
@@ -86,10 +171,11 @@ module.exports = async (ctx) => {
       assert.strictEqual(im.href, C.file(id, C.poseFor(sc.st)), `${tag}: scene ${i} (${sc.st}) shows the ${C.poseFor(sc.st)} pose of ${id}`);
       assert.deepStrictEqual([im.x, im.y, im.w, im.h], [C.BOX.x, C.BOX.y, C.BOX.w, C.BOX.h], `${tag}: scene ${i}: the portrait's fixed box`);
       const box = [im.x, im.y, im.x + im.w, im.y + im.h];
-      for (const [name, z] of Object.entries(ZONES)) assert.ok(!hit(box, z), `${tag}: scene ${i}: the portrait box ${box} keeps clear of the ${name} ${z} (FR-014)`);
+      assert.ok(box[2] <= MONITOR_LEFT, `${tag}: scene ${i}: the portrait box ${box} ends before the monitor frame (x ${MONITOR_LEFT}), so the status colour is not covered`);
       assert.ok(!sc.plain, `${tag}: scene ${i}: no plain figure under a portrait`);
       sharpOk(`${tag} scene ${i}`, im, nat[im.href]);
     }
+    await faceChecks(tag);
     assert.ok(seen.size === C.IDS.length, `${tag}: all ${C.IDS.length} characters on screen with 15 agents (least-used pick) (${[...seen]})`);
     for (const [kind, list] of [['walker', s.walkers], ['chip', s.chips], ['lounge figure', s.lounge]]) for (const [i, imgs] of list.entries()) {
       assert.strictEqual(imgs.length, 1, `${tag}: ${kind} ${i} draws the portrait`);

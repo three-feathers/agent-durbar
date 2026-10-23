@@ -11,7 +11,7 @@ const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')
   assignCrew: (m: Record<string, string>, ids: string[], chars: string[], rand?: (id: string) => number) => Record<string, string>;
   pruneCrew: (m: Record<string, string>, ids: string[]) => Record<string, string>;
   loadCrew: (j: unknown, ids?: string[]) => Record<string, string>;
-  POSES: string[]; BOX: { x: number; y: number; w: number; h: number };
+  POSES: string[]; BOX: { x: number; y: number; w: number; h: number }; PX_PER_UNIT: number; FACE: Record<string, Record<string, number[]>>; FACE_W: number; FACE_H: number; faceBox: (id: string, pose: string) => number[] | null; viewBox: (id: string, pose: string, use?: string) => string | null;
   poseFor: (st: string) => string; file: (id: string, pose: string) => string; files: (ids?: string[]) => string[]; usable: (id: unknown, bad?: Set<string>) => boolean;
 };
 
@@ -97,11 +97,31 @@ assert.ok(C.files(['punk']).every((f) => f.startsWith('crew/art/punk-')));
 assert.ok(C.usable('punk') && C.usable('punk', new Set(['gamer'])), 'a known character with no failed picture');
 assert.ok(!C.usable('punk', new Set(['punk'])), 'a character with a failed picture is not usable');
 assert.ok(!C.usable('nope') && !C.usable('') && !C.usable(undefined) && !C.usable('__proto__') && !C.usable('constructor'), 'unknown ids are not usable');
-// the box keeps clear of the monitor and halo (x 101-187), the bubble and badge corner (x 16-61, y 3-34) and the cup zone (x 96-114, y 66-87), FR-014
+// FR-014 / FR-060: the portrait box is 88x88 at x 24, y 22 (twice the first build's); it ends where the monitor's frame starts (x 112), so the screen's colour is never under it
+assert.deepStrictEqual(C.BOX, { x: 24, y: 22, w: 88, h: 88 }, 'the desk portrait box');
 assert.strictEqual(C.BOX.w, C.BOX.h, 'the box is square, like the 352x352 art (FR-059)');
-assert.ok(C.BOX.x + C.BOX.w <= 96, 'the box ends before the cup zone and the monitor');
-assert.ok(C.BOX.y >= 34, 'the box starts under the bubble and badge corner');
-assert.ok(C.BOX.y + C.BOX.h <= 86, 'the box ends at the desk top');
+assert.ok(C.BOX.x + C.BOX.w <= 112, 'the box ends before the monitor');
+assert.strictEqual(C.BOX.w * C.PX_PER_UNIT, 352, 'the art is 4 pixels per stage unit');
+// FR-060: every picture has a face point, and its face box is inside the picture, clear of the monitor and the badge corner and above the desk top (y 86)
+for (const id of C.IDS) for (const pose of C.POSES) {
+  const b = C.faceBox(id, pose);
+  assert.ok(b, id + '-' + pose + ' has a face box');
+  const [x, y, w, h] = b as number[];
+  assert.ok(x >= C.BOX.x && x + w <= C.BOX.x + C.BOX.w && y >= C.BOX.y && y + h <= C.BOX.y + C.BOX.h, id + '-' + pose + ': the face is inside its picture');
+  assert.ok(x + w <= 112, id + '-' + pose + ': the face is left of the monitor');
+  assert.ok(y >= 34, id + '-' + pose + ': the face is under the thought bubble and badge corner');
+  assert.ok(y + h <= 86, id + '-' + pose + ': the chin is above the desk top, which hides the lower bust');
+  const vb = (C.viewBox(id, pose, 'face') as string).split(' ').map(Number);
+  assert.ok(vb[0] >= C.BOX.x && vb[1] >= C.BOX.y && vb[0] + vb[2] <= C.BOX.x + C.BOX.w && vb[1] + vb[3] <= C.BOX.y + C.BOX.h, id + '-' + pose + ': the avatar crop is inside the picture');
+  assert.ok(vb[0] + vb[2] / 2 > x && vb[0] + vb[2] / 2 < x + w, id + '-' + pose + ': the avatar crop is centred on the face');
+}
+for (const id of C.IDS) for (const pose of C.POSES) {
+  const sv = (C.viewBox(id, pose, 'seat') as string).split(' ').map(Number), [fx, fy, fw, fh] = C.faceBox(id, pose) as number[];
+  assert.ok(sv[1] === C.BOX.y && sv[0] + sv[2] <= C.BOX.x + C.BOX.w, id + '-' + pose + ': a seat shows the picture from its top edge, not past its right edge');
+  assert.ok(fx >= sv[0] && fx + fw <= sv[0] + sv[2] && fy + fh <= sv[1] + sv[3], id + '-' + pose + ': the whole face box is in the seat crop');
+}
+assert.strictEqual(C.viewBox('nope', 'working', 'face'), null, 'an unknown character has no crop');
+assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.IDS].sort(), 'a face table row per character');
 // a stored id that no longer exists (an old placeholder-only id) is dropped, and the session gets a new character
 {
   const stored = C.loadCrew({ s1: 'nerd', s2: 'surfer', s3: 'metal' });

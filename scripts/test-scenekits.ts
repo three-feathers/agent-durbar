@@ -54,7 +54,7 @@ for (const kit of K.KITS.slice(1)) {
   assert.ok(/stroke-width="1\.1"><circle/.test(plain), 'the fallback figure keeps the agent\'s own glasses (FR-017: the office figure with the agent\'s look)');
   for (const [st, pose] of [['working', 'working'], ['thinking', 'working'], ['waiting', 'waiting'], ['error', 'waiting'], ['idle', 'resting'], ['done', 'resting']]) {
     const svg: string = K.draw('crew', { id: 'c1' }, { ...base, st, crew: 'punk' });
-    assert.ok(svg.includes(`<image class="crew-pic" href="crew/art/punk-${pose}.webp" x="52" y="42" width="44" height="44"`), `${st}: the ${pose} picture in its box`);
+    assert.ok(svg.includes(`<image class="crew-pic" href="crew/art/punk-${pose}.webp" x="24" y="22" width="88" height="88"`), `${st}: the ${pose} picture in its box`);
     assert.strictEqual((svg.match(/<image/g) || []).length, 1, st + ': one picture');
     assert.ok(/\|crew\|punk"/.test(svg), st + ': the character id ends the signature');
     assert.ok(CUE[st].test(svg) && svg.includes('class="pp"'), st + ': the status cue is still drawn over, and the person can be hidden (.pp)');
@@ -83,6 +83,14 @@ for (const kit of K.KITS.slice(1)) {
   // the walking figure: the same portrait, cropped by its view box, with no face drawn over it; the fallback has the face
   const av: string = K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'punk' });
   assert.ok(av.includes('crew/art/punk-working.webp') && !av.includes('r="1.35"'), 'the walking figure wears the portrait');
+  // FR-060: the round avatar crops the face of the picture, a seat shows the whole bust, the fallback keeps the old crop
+  const vbOf = (svg: string) => (/viewBox="([^"]+)"/.exec(svg) || [])[1];
+  const seat: string = K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'punk', view: 'seat' });
+  assert.ok(/^[\d.]+ 22 66 66$/.test(vbOf(seat)), 'a seat shows the top three quarters of the bust, from the top edge');
+  assert.notStrictEqual(vbOf(av), vbOf(seat), 'a chip crops the face, a seat shows more of the bust');
+  assert.ok(vbOf(av).split(' ').map(Number).every((n) => Number.isFinite(n)), 'a numeric view box');
+  assert.notStrictEqual(vbOf(K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'gamer' })), vbOf(av), 'each character has its own face crop');
+  assert.strictEqual(vbOf(K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'punk', crewFb: true })), '50 20 48 48', 'the plain figure keeps the old crop');
   const avFb: string = K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'punk', crewFb: true });
   assert.ok(!avFb.includes('<image') && avFb.includes('r="1.35"'), 'and the plain face when the pictures failed');
   assert.ok(T('--crew-accent') && T('--crew-ink') && T('--crew-accent-2'), 'the crew tokens exist');

@@ -131,7 +131,7 @@
     s += afterPerson(o);
     return s + '</svg>';
   }
-  /* the walking figure in the lobby: head and shoulders of the same kit */
+  /* the walking figure in the lobby, chips, chat header and seats: head and shoulders of the same kit (`base.view`: 'seat' for a couch) */
   function avatar(kitId, a, base) {
     const K = KIT[kitId];
     if (!K) return null;
@@ -140,7 +140,8 @@
     o.arm = o.shade(o.k.shirt, -0.14); o.skinD = o.shade(o.k.skin, -0.08); o.seed = (a && (a.id || a.name)) || o.k.shirt + o.k.hair;
     o.st = 'avatar';
     const art = artOf(o);
-    return `<svg viewBox="50 20 48 48" width="100%" height="100%"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">${K.hairBack ? K.hairBack(o) : ''}${K.body(o)}${art.body}${K.head(o)}${K.hair(o)}${K.noFace && K.noFace(o) ? '' : face(Object.assign({}, o, { st: 'working' }), K.crisp)}${K.headTop ? K.headTop(o) : ''}${art.head}</svg>`;
+    const vb = (K.avatarView && K.avatarView(o)) || '50 20 48 48';
+    return `<svg viewBox="${vb}" width="100%" height="100%"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">${K.hairBack ? K.hairBack(o) : ''}${K.body(o)}${art.body}${K.head(o)}${K.hair(o)}${K.noFace && K.noFace(o) ? '' : face(Object.assign({}, o, { st: 'working' }), K.crisp)}${K.headTop ? K.headTop(o) : ''}${art.head}</svg>`;
   }
 
   const KIT = {};
@@ -307,6 +308,8 @@
   KIT.crew = {
     sigExtra: (o) => (o.crew || '') + (o.crewFb ? '|fb' : ''),
     noFace: (o) => !!crewPic(o),
+    /* FR-060: the round avatars crop the face of this picture; `o.view === 'seat'` (a couch in the lounge) shows the whole bust */
+    avatarView: (o) => { const C = crewPic(o); return C ? C.viewBox(o.crew, C.poseFor(o.st), o.view) : null; },
     chair: (o) => { const ch = o.T('--chair'); return `<rect x="47" y="33" width="54" height="65" rx="17" fill="${ch}"/><rect x="53" y="39" width="42" height="53" rx="12" fill="${o.shade(ch, 0.14)}"/><rect x="60" y="41" width="28" height="4" rx="2" fill="${o.T('--crew-accent')}"/>`; },
     hairBack: (o) => !crewPic(o) && o.k.style === 'long' ? `<path d="M60 44a14 14 0 0 1 28 0v14q0 4-4 4H64q-4 0-4-4z" fill="${o.k.hair}"/>` : '',
     body: (o) => { const C = crewPic(o); if (C) { const b = C.BOX; return `<image class="crew-pic" href="${C.file(o.crew, C.poseFor(o.st))}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" preserveAspectRatio="xMidYMid meet"/>`; } return `<path d="${torso(o)}" fill="${o.k.shirt}"/><path d="M69.5 63.5q4.5 5 9 0" fill="none" stroke="${o.shade(o.k.shirt, 0.35)}" stroke-width="2" stroke-linecap="round"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${o.skinD}"/>`; },
