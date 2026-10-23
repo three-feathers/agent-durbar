@@ -1068,7 +1068,7 @@ adapter sets it). The owners asked to treat MCP as a priority.
   - **Never copied**: every other key, in particular `clientSecret` and any secret-shaped key (Claude Code keeps the client secret in
     the keychain or its credentials file, not in the config: `read:` docs `mcp.md` "Use pre-configured OAuth credentials"; a
     `clientSecret` found in the file is dropped all the same), `xaa` (it needs `CLAUDE_CODE_ENABLE_XAA`, which Durbar does not set),
-    and unknown keys. Keys are read with own-property checks from the plain parsed object, so `__proto__`, `constructor` and
+    and unknown keys. **An extra key is dropped on its own and never stops the valid fields from copying** (only a bad value in an allow-listed field stops the copy, below). Keys are read with own-property checks from the plain parsed object, so `__proto__`, `constructor` and
     `prototype` are never read or written.
   - **All or nothing**: when `oauth` is not a plain object, or any allow-listed key is present with the wrong type, shape or length, no
     `oauth` is copied at all (the server still starts, as today, without it). A stdio entry never gets one. A folder extra (Durbar's own

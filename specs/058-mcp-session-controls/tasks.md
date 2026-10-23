@@ -396,9 +396,11 @@ shared parts; PR B = Codex (Q23 A).
 - [ ] T158 (PR A) FR-186 (Q22 B): `McpServerSpec.oauth?` with the four allow-listed fields; `specOf` copies them from the raw Claude
   entry (own properties only, all-or-nothing on a wrong type, shape or length); `mcpConfigOf` writes `oauth` for http/sse only; no
   log line with a value. Tests in `scripts/test-mcp-global.ts` (it covers `sessionServers`/`specOf`) and `scripts/test-claude-adapter.ts`: a
-  valid object is copied exactly; a hostile object (`clientSecret`, `client_secret`, `xaa`, `__proto__` / `constructor` keys, a nested
-  object as `clientId`, a 100 kB `scopes`, `callbackPort` 0, 70000 and `"8080"`, `authServerMetadataUrl` `http:` or `javascript:`)
-  copies nothing or only the valid fields as FR-186 says; a non-object `oauth` and a stdio entry copy nothing; the `--mcp-config` JSON
+  valid object is copied exactly; **keys outside the allow-list are dropped while the valid
+  fields still copy** (`clientSecret`, `client_secret`, `xaa`, an unknown key, and own `__proto__` / `constructor` keys next to a valid
+  `clientId`/`callbackPort`: the copy holds exactly the valid fields); **a bad value in an allow-listed field means nothing is copied**
+  (a nested object as `clientId`, a 100 kB `scopes`, `callbackPort` 0, 70000, 1.5 and `"8080"`, `authServerMetadataUrl` `http:` or
+  `javascript:`: no `oauth` at all); a non-object `oauth` and a stdio entry copy nothing; the `--mcp-config` JSON
   never holds `clientSecret`; the debug sink holds no field value. Mutation: copying the whole object fails the test; dropping the
-  all-or-nothing check fails it [FR-186]
+  all-or-nothing check fails it; **dropping everything when an extra key is present** (instead of dropping only that key) fails it [FR-186]
 - [ ] T156 `/speckit-converge` for this delta after PR B; tick T099, T100 and Phase 11; FR-184 gaps updated from T106/T107
