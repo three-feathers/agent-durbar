@@ -272,7 +272,8 @@ const BADGE_KEY='<svg viewBox="0 0 12 12" width="9" height="9" fill="none" strok
    " Open the chat." */
 const visitorWords=(a,v,cut)=>{const C=cut?DurbarCutText.cutText:(t=>String(t)),n=C(a.name,30);
   if(v&&(v.place===window.DurbarPlaces.COFFEE||v.place===window.DurbarPlaces.BANK)){const u=coffeeUntilWords(a),l=coffeeLeftWords(a); /* delta 2026-10-23 FR-019: and the time left */
-    return n+(u||l?' ('+(u?C(u,cut?24:40):'')+(u&&l?' · ':'')+l+')':'');}
+    const nm=cut?C(a.name,24):n; /* name 24 + until 24 + time left 20 + the hint stays within 120 (spec 052 FR-168) */
+    return nm+(u||l?' ('+(u?C(u,cut?24:40):'')+(u&&l?' · ':'')+l+')':'');}
   const r=roomOf(a);return n+(r?' ('+C(r.name,22)+')':'')+(v?': '+C(visitDoing(a,v),40):'');};
 /* A place tile's title: at most 4 names (each cut), then "and N more", then the longest wait at the Boss; one line, well under 300 characters */
 const placeTip=(pid,ids,wait)=>{const C=DurbarCutText.cutText,nm=ids.slice(0,4).map(id=>C(byId(id).name,30)),more=ids.length-nm.length;
