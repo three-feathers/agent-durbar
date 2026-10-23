@@ -182,6 +182,7 @@ export class ClaudeMapper {
 
   reset(): void {
     this.abortExpected = false;
+    this.retries.reset(); // spec 034 FR-017: a respawn starts without the old turn's retries
     this.limited = false;
     this.servers = [];
     this.skipped = [];

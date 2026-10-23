@@ -4228,6 +4228,7 @@ function onRetry(a,e){
   const note=a.retryNote; a.retryNote=null;
   if(r.action==='gave-up'){const line=RETRY.gaveUpLine(r.info);a.gaveUp=line;if(note){note.textContent=line+'.';note.classList.add('err');}else addNote(chat,esc(line)+'.',true);}
   else if(r.action==='went-through'&&note)note.textContent=RETRY.wentThroughLine(r.info);
+  else if(r.action==='ended'&&note)note.textContent=RETRY.endedLine(r.info,r.why); /* never leave "tries again by itself" after a Stop, an End, a coffee break or a sign-in failure */
   if(r.action!=='gave-up'&&a.retryLine!==undefined&&a.task===a.retryLine)setState(a,a.state,undefined,a.retryTask);
   a.retryLine=a.retryTask=undefined;
   if(ui.selected===a.id)updatePanelHeader();

@@ -12,6 +12,7 @@ import { cleanSessionTitle } from './history';
 import { nonEmptyStr as str } from '../shared/guards';
 import { EditStreams, editOf } from './edits';
 import { usageLimitClosing } from './usagelimit';
+import { markAuthError } from './autherrors';
 import { RetryTracker, copilotRetry } from './retry';
 
 export type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> : never) : never;
@@ -28,8 +29,8 @@ const positive = (v: unknown): number | undefined => (typeof v === 'number' && v
 const triggerOf = (v: unknown): CompactionEvent['trigger'] => (v === 'manual' ? 'manual' : v === 'model_switch' ? 'model-switch' : v === 'context_limit_retry' ? 'overflow' : 'auto');
 
 const SUBAGENT_NAME_FALLBACK = 'Sub-agent';
-/** Spec 034 FR-017: events that show the model answered (a retried call went through). */
-const PROGRESS = new Set(['assistant.message_delta', 'assistant.message', 'assistant.reasoning_delta', 'assistant.reasoning', 'assistant.usage', 'assistant.tool_call_delta', 'tool.execution_start']);
+/** Spec 034 FR-017: events that show the model answered (a retried call went through). Usage is not one: a failed turn can report cost too. */
+const PROGRESS = new Set(['assistant.message_delta', 'assistant.message', 'assistant.reasoning_delta', 'assistant.reasoning', 'assistant.tool_call_delta', 'tool.execution_start']);
 
 export class EventMapper {
   /** callId -> tool name (and MCP origin), so complete/update events can carry them. */
@@ -123,7 +124,7 @@ export class EventMapper {
     const d = ev.data ?? {};
     if (ev.type === 'subagent.started' && ev.agentId && d.toolCallId) this.instances.set(ev.agentId, d.toolCallId);
     const agentId = this.who(ev);
-    // spec 034 FR-017: the model answered the main agent (text, reasoning, a tool call, usage), so a retried call went through
+    // spec 034 FR-017: the model answered the main agent (text, reasoning, a tool call), so a retried call went through
     if (!agentId && PROGRESS.has(ev.type)) this.retries.progress();
     switch (ev.type) {
       case 'model.call_failure': {
@@ -374,16 +375,18 @@ export class EventMapper {
       case 'session.error': {
         // spec 068 FR-002: a used-up quota or a rate limit that stopped the turn is a coffee break, not an error
         const lim = agentId ? null : copilotUsageLimit(d.errorType, d.errorCode);
-        // spec 034 FR-017: a turn that fails after a retry gave up (not at a usage limit)
-        const gaveUp = !agentId && !lim ? this.retries.gaveUp() : undefined;
+        // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)
+        const err: EventBody = { type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType, d.message) };
+        // spec 034 FR-017: a turn that fails after a retry gave up; not at a usage limit and not at a sign-in failure (the sign-in card says why)
+        const auth = (markAuthError(err) as { errorKind?: string }).errorKind === 'auth';
+        const gaveUp = !agentId && !lim && !auth ? this.retries.gaveUp() : undefined;
         if (!agentId) this.retries.reset();
         if (gaveUp) this.emit(gaveUp);
         if (lim) {
           this.emit(lim);
           return this.emit(usageLimitClosing());
         }
-        // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)
-        return this.emit({ type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType, d.message) });
+        return this.emit(err);
       }
       default:
         return;

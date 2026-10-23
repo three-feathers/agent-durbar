@@ -18,6 +18,7 @@ import { resetMs, usageLimitClosing } from './usagelimit';
 import { isObj, nonEmptyStr as str } from '../shared/guards';
 import { isMcpAuthChallenge } from './mcpauth';
 import { RetryTracker, codexRetry } from './retry';
+import { isAuthError } from './autherrors';
 
 /** The shape of a JSON-RPC notification as read off the wire (`id` absent). Names mirror the protocol; not a vendor type. */
 export interface CodexNotification {
@@ -173,7 +174,7 @@ export class CodexMapper {
     if (!r) return;
     const agentId = r.agentId;
     // spec 034 FR-017: anything the model streams or starts for the main agent means the retried call went through
-    if (!agentId && (method.startsWith('item/') || method === 'thread/tokenUsage/updated')) this.retries.progress();
+    if (!agentId && method.startsWith('item/')) this.retries.progress(); // not usage: a failed turn can report tokens too
 
     switch (method) {
       case 'error': {
@@ -250,7 +251,12 @@ export class CodexMapper {
     }
     const turn = own(params, 'turn');
     const status = ownStr(turn, 'status');
-    const gaveUp = agentId === undefined && status === 'failed' && errorKind(own(own(turn, 'error'), 'codexErrorInfo'))?.toLowerCase() !== 'usagelimitexceeded' ? this.retries.gaveUp() : undefined;
+    // spec 034 FR-017: not at a usage limit and not at a sign-in failure (the error text the adapter marks as one, markAuthError)
+    const failRaw = errorKind(own(own(turn, 'error'), 'codexErrorInfo'));
+    const failMsg = ownStr(own(turn, 'error'), 'message');
+    const failKind = failRaw?.toLowerCase();
+    const failAuth = isAuthError(failRaw && failMsg ? `${failRaw}: ${failMsg}` : (failRaw ?? failMsg)); // the same text the adapter marks (markAuthError on the intent)
+    const gaveUp = agentId === undefined && status === 'failed' && failKind !== 'usagelimitexceeded' && !failAuth ? this.retries.gaveUp() : undefined;
     if (agentId === undefined) this.retries.reset();
     if (gaveUp) this.emit(gaveUp); // a turn that failed after a retry gave up (not at a usage limit)
     if (status === 'completed') return this.emit({ type: 'status', status: 'idle', agentId });

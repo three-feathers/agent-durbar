@@ -28,17 +28,27 @@
     const n=whole(own(s,'attempt'),1,MAX_ATTEMPT);
     return n!==undefined?'The request went through after '+plural(n)+'.':'The request went through.';
   }
+  /* how a run of retries ended when the call neither went through nor gave up: stopped (Stop or End), a usage limit (a coffee break),
+     a sign-in failure (the sign-in card says what to do) or the turn ended without an answer */
+  function endedLine(s,why){
+    const n=whole(own(s,'attempt'),1,MAX_ATTEMPT), after=n!==undefined?' (after '+plural(n)+')':'';
+    if(why==='stopped')return 'Stopped while retrying'+after+'.';
+    if(why==='limit')return 'Retrying ended at a usage limit'+after+'.';
+    if(why==='auth')return 'Retrying ended: the agent app needs you to sign in'+after+'.';
+    return 'The turn ended'+(n!==undefined?' after '+plural(n):'')+'.';
+  }
   /* the chat note while retrying */
   const noteLine=s=>retryLine(s)+'. The agent app tries again by itself.';
   /* the whole line, Durbar's own words only (kept as a task line when no redact module is loaded) */
   const LINE_RE=/^(Retrying( \(attempt \d{1,4}( of \d{1,4})?\))?|Gave up( after \d{1,4} retr(y|ies))?) – (rate limit|servers busy|server error|connection problem|timed out|sign-in problem|API error)( \(HTTP \d{3}\))?$/;
 
   const stateOf=e=>({attempt:whole(own(e,'attempt'),1,MAX_ATTEMPT),max:whole(own(e,'maxAttempts'),1,MAX_ATTEMPT),reason:Object.prototype.hasOwnProperty.call(REASONS,own(e,'reason'))?own(e,'reason'):'other',status:whole(own(e,'httpStatus'),100,599)});
-  const PROGRESS={output:1,thinking:1,toolCall:1,usage:1};
+  const PROGRESS={output:1,thinking:1,toolCall:1}; /* not usage: a turn that fails after retries can still report its cost (Claude's result) */
 
   /* The rule of the clarifications: one main agent's retry mark `prev` (null when none) and its next normalized event ->
      {state, action}: 'start' | 'update' (retrying), 'went-through' (the model answered), 'gave-up' (the turn failed after a retry),
-     'ended' (the turn ended otherwise: stopped, finished, a usage limit), or null (no change). */
+     'ended' with `why` (the turn ended otherwise: 'stopped', 'limit', 'auth' or 'done'), or null (no change). A sign-in failure, a stop
+     and a usage limit never give up. */
   function next(prev,e){
     const t=own(e,'type');
     if(t==='retry'){
@@ -52,13 +62,16 @@
     if(t==='status'){
       const st=own(e,'status');
       if(st==='needs-permission')return {state:null,action:'went-through',info:prev}; /* the model asked for a tool: the call went through */
+      if(st==='error'&&own(e,'errorKind')==='auth')return {state:null,action:'ended',info:prev,why:'auth'};
       if(st==='error')return {state:null,action:'gave-up',info:prev}; /* an adapter that sent no gave-up: the error after a retry is one */
-      if(st==='idle'||st==='stopped')return {state:null,action:'ended',info:prev};
+      if(st==='stopped'||(st==='idle'&&own(e,'intent')==='Aborted'))return {state:null,action:'ended',info:prev,why:'stopped'};
+      if(st==='idle'&&own(e,'reason')==='usage-limit')return {state:null,action:'ended',info:prev,why:'limit'};
+      if(st==='idle')return {state:null,action:'ended',info:prev,why:'done'};
       return {state:prev,action:null};
     }
-    if(t==='usageLimit')return {state:null,action:'ended',info:prev}; /* spec 068: a coffee break, not a retry */
+    if(t==='usageLimit')return {state:null,action:'ended',info:prev,why:'limit'}; /* spec 068: a coffee break, not a retry */
     return {state:prev,action:null};
   }
 
-  return {REASONS,LINE_RE,reasonWords,retryLine,gaveUpLine,wentThroughLine,noteLine,next};
+  return {REASONS,LINE_RE,reasonWords,retryLine,gaveUpLine,wentThroughLine,endedLine,noteLine,next};
 })());

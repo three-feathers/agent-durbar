@@ -9,7 +9,7 @@
  * At 1440x900 and 1280x800 it checks: Clara's pill says Retrying (desk, chat header, list), her task line and the pill's tooltip carry the
  * line, her desk keeps its size when the mark ends; one chat note per run, updated in place by a 4th retry, then "went through" after an
  * answer (pill back to Working, the task line restored); Tomas's task line and his note say he gave up; an error after a retry with no
- * gave-up event from the adapter is a gave-up too; Serious mode still shows Retrying. Every wait is until() and its result is asserted.
+ * gave-up event from the adapter is a gave-up too; Serious mode still shows Retrying; a Stop turns the note into "Stopped while retrying". Every wait is until() and its result is asserted.
  * Writes retry-office-*.png, retry-chat-*.png and retry-gaveup-*.png into OUT.
  */
 const assert = require('assert');
@@ -116,6 +116,16 @@ module.exports = async (ctx) => {
     await emit({ type: 'retry', sessionId: c.id, timestamp: Date.now(), phase: 'retrying', attempt: 1, reason: 'rate-limit', httpStatus: 429 });
     await ok(`__rDesk(${jsLiteral('Clara')}).querySelector('.pill').innerText.trim()==='Retrying'`, 'Serious mode: Retrying shows');
     await serious(false);
+
+    // review on PR 645 (4): a Stop while retrying finalizes the note (no "tries again by itself" left behind)
+    await emit({ type: 'status', sessionId: c.id, timestamp: Date.now(), status: 'idle', intent: 'Aborted' });
+    await ok(`__rDesk(${jsLiteral('Clara')}).querySelector('.pill').innerText.trim()!=='Retrying'`, 'a Stop ends Retrying');
+    await openChat('Clara');
+    n = await notes();
+    assert.strictEqual(n.length, 2, 'the went-through note and this run\'s note: ' + JSON.stringify(n));
+    assert.deepStrictEqual(n[1], { text: 'Stopped while retrying (after 1 retry).', err: false }, 'the note says the retries were stopped');
+    assert.ok(!n.some((x) => /tries again by itself/.test(x.text)), 'no stale "tries again" note');
+    await closeChat();
   }
   console.log('[034-retry] PASS');
 };

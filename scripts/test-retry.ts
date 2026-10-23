@@ -19,6 +19,7 @@ const R = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'retry.js'
   retryLine(s: unknown): string;
   gaveUpLine(s: unknown): string;
   wentThroughLine(s: unknown): string;
+  endedLine(s: unknown, why?: string): string;
   noteLine(s: unknown): string;
   next(prev: St, e: unknown): { state: St; action: string | null; info?: St };
 };
@@ -107,7 +108,30 @@ assert.strictEqual(reasonOfStatus(418), 'other');
   assert.strictEqual(t.retry({ reason: 'other', attempt: 4, max: 3 }).maxAttempts, undefined, 'a max below the attempt is dropped');
   t.reset();
   assert.strictEqual(t.gaveUp(), undefined);
+  // the cap: 1001 un-numbered retries stop counting at 1000 (the guard's and the renderer's limit)
+  const big = new RetryTracker();
+  let last = 0;
+  for (let k = 0; k < 1001; k++) last = big.retry({ reason: 'network' }).attempt;
+  assert.strictEqual(last, 1000);
+  assert.strictEqual(big.gaveUp()?.attempt, 1000);
 }
+
+/** The keys a retry event may have: nothing else (no provider text can ride along). */
+const RETRY_KEYS = new Set(['type', 'phase', 'attempt', 'maxAttempts', 'reason', 'httpStatus', 'delayMs']);
+const TOKEN = 'ghp_' + 'Z'.repeat(36);
+const clean = (o: EventBody[], what: string): void => {
+  for (const e of o) {
+    assert.ok(!JSON.stringify(e).includes('ghp_'), `${what}: no provider text in ${JSON.stringify(e)}`);
+    if (e.type === 'retry') for (const k of Object.keys(e)) assert.ok(RETRY_KEYS.has(k), `${what}: unexpected key ${k}`);
+  }
+};
+/** What the renderer makes of a run of normalized events (DurbarRetry.next folded over them). */
+const fold = (o: EventBody[]): string[] => {
+  let st: St = null;
+  const acts: string[] = [];
+  for (const e of o) { const r = R.next(st, e); st = r.state; if (r.action) acts.push(r.action + ((r as { why?: string }).why ? ':' + (r as { why?: string }).why : '')); }
+  return acts;
+};
 
 // 5. ClaudeMapper: api_retry -> retrying; the error that ends the turn gave up first; progress, a usage limit, an abort and a helper do not
 {
@@ -135,6 +159,23 @@ assert.strictEqual(reasonOfStatus(418), 'other');
   assert.ok(!kinds(o).some((k) => k.startsWith('retry:gave-up')));
   o = run([retry(1), { type: 'result', subtype: 'error_max_turns', is_error: true }]);
   assert.deepStrictEqual(kinds(o), ['retry:retrying:1:rate-limit:429', 'retry:gave-up:1:rate-limit:429', 'status:error']);
+  // review on PR 645 (2): a failed turn that still cost money reports usage before it gives up; the renderer shows one outcome, never "went through" too
+  o = run([retry(1), retry(2), { type: 'result', subtype: 'error_during_execution', is_error: true, total_cost_usd: 0.05 }]);
+  assert.deepStrictEqual(kinds(o), ['retry:retrying:1:rate-limit:429', 'retry:retrying:2:rate-limit:429', 'usage', 'retry:gave-up:2:rate-limit:429', 'status:error']);
+  assert.deepStrictEqual(fold(o), ['start', 'update', 'gave-up']);
+  // review on PR 645 (6): provider text in the message never reaches an event
+  o = run([{ ...retry(1), error: TOKEN, message: TOKEN, error_status: 503 }, fail]);
+  clean(o, 'claude');
+  assert.deepStrictEqual(kinds(o).slice(0, 2), ['retry:retrying:1:overloaded:503', 'retry:gave-up:1:overloaded:503']);
+  // review on PR 645 (5): reset() (each respawn) forgets the old turn's retries
+  {
+    const out: EventBody[] = [];
+    const m = new ClaudeMapper((b) => out.push(b));
+    m.map(retry(1) as never);
+    m.reset();
+    m.map({ type: 'result', subtype: 'error_max_turns', is_error: true } as never);
+    assert.deepStrictEqual(kinds(out), ['retry:retrying:1:rate-limit:429', 'status:error'], 'no gave-up for a turn that never retried');
+  }
 }
 
 // 6. CodexMapper: error(willRetry) -> retrying, counted; turn/completed failed gave up first; progress, usage limit, a child thread
@@ -155,6 +196,14 @@ assert.strictEqual(reasonOfStatus(418), 'other');
   assert.ok(!kinds(o).some((k) => k.startsWith('retry:gave-up')), 'nor in PascalCase');
   o = run([err('serverOverloaded'), { method: 'turn/completed', params: { threadId: 'th', turn: { id: 't1', status: 'completed' } } }, failed()]);
   assert.ok(!kinds(o).some((k) => k.startsWith('retry:gave-up')), 'a finished turn clears the run');
+  // usage is not progress: a failed turn may report tokens
+  o = run([err('serverOverloaded'), { method: 'thread/tokenUsage/updated', params: { threadId: 'th', tokenUsage: { last: { inputTokens: 5, outputTokens: 0 } } } }, failed()]);
+  assert.ok(kinds(o).includes('retry:gave-up:1:overloaded'), kinds(o).join());
+  // review on PR 645 (3): a sign-in failure after retries is not a gave-up (the sign-in card says why)
+  o = run([err('serverOverloaded'), failed('unauthorized')]);
+  assert.deepStrictEqual(kinds(o), ['retry:retrying:1:overloaded', 'status:error']);
+  o = run([err('serverOverloaded'), { method: 'turn/completed', params: { threadId: 'th', turn: { id: 't1', status: 'failed', error: { message: 'HTTP 401: token expired', codexErrorInfo: 'other' } } } }]);
+  assert.deepStrictEqual(kinds(o), ['retry:retrying:1:overloaded', 'status:error'], 'an auth message too');
   o = run([err('serverOverloaded', true, 'other-thread'), failed()]);
   assert.deepStrictEqual(kinds(o), ['status:error'], 'an unknown thread is ignored');
 }
@@ -177,6 +226,17 @@ assert.strictEqual(reasonOfStatus(418), 'other');
   assert.deepStrictEqual(kinds(o), ['status:error'], "a helper's failed call is not shown");
   o = run([fail({ statusCode: 400 }), sessErr]);
   assert.deepStrictEqual(kinds(o), ['status:error'], 'a 400 is not retried');
+  // review on PR 645 (3): a sign-in failure after retries is not a gave-up
+  o = run([fail(), { type: 'session.error', data: { errorType: 'authentication', message: 'Not authorized' } }]);
+  assert.deepStrictEqual(kinds(o), ['retry:retrying:1:overloaded:503', 'status:error']);
+  o = run([fail(), { type: 'session.error', data: { errorType: 'query', message: 'Session was not created with authentication info or custom provider' } }]);
+  assert.deepStrictEqual(kinds(o), ['retry:retrying:1:overloaded:503', 'status:error'], 'the message-only sign-in failure too');
+  // usage is not progress: a failed turn may report it
+  o = run([fail(), { type: 'assistant.usage', data: { model: 'm', inputTokens: 1 } }, sessErr]);
+  assert.ok(kinds(o).includes('retry:gave-up:1:overloaded:503'));
+  // review on PR 645 (6): the provider message never reaches an event
+  o = run([fail({ errorMessage: TOKEN, errorCode: TOKEN, errorType: TOKEN }), fail({ retryAttempt: 1, errorMessage: TOKEN }), sessErr]);
+  clean(o, 'copilot');
 }
 
 // 8. The event guard
@@ -221,7 +281,7 @@ assert.strictEqual(reasonOfStatus(418), 'other');
   r = R.next(s1, ev({ attempt: 2 }));
   assert.strictEqual(r.action, 'update');
   assert.strictEqual(r.state?.attempt, 2);
-  for (const t of ['output', 'thinking', 'toolCall', 'usage']) {
+  for (const t of ['output', 'thinking', 'toolCall']) {
     r = R.next(s1, { type: t });
     assert.strictEqual(r.action, 'went-through', t);
     assert.strictEqual(r.state, null);
@@ -230,8 +290,20 @@ assert.strictEqual(reasonOfStatus(418), 'other');
   r = R.next(s1, { type: 'status', status: 'error' });
   assert.strictEqual(r.action, 'gave-up', 'an error after a retry gave up (an adapter that sent none)');
   assert.deepStrictEqual(r.info, s1);
-  for (const st of ['idle', 'stopped']) assert.strictEqual(R.next(s1, { type: 'status', status: st }).action, 'ended');
-  assert.strictEqual(R.next(s1, { type: 'usageLimit' }).action, 'ended');
+  const why = (e: unknown): string => { const x = R.next(s1, e) as { action: string | null; why?: string }; return `${x.action}:${x.why}`; };
+  assert.strictEqual(why({ type: 'status', status: 'stopped' }), 'ended:stopped');
+  assert.strictEqual(why({ type: 'status', status: 'idle', intent: 'Aborted' }), 'ended:stopped');
+  assert.strictEqual(why({ type: 'status', status: 'idle', intent: 'Usage limit reached', reason: 'usage-limit' }), 'ended:limit');
+  assert.strictEqual(why({ type: 'usageLimit' }), 'ended:limit');
+  assert.strictEqual(why({ type: 'status', status: 'idle' }), 'ended:done');
+  assert.strictEqual(why({ type: 'status', status: 'error', errorKind: 'auth' }), 'ended:auth', 'a sign-in failure never gives up');
+  assert.strictEqual(R.next(s1, { type: 'usage' }).action, null, 'usage is not progress');
+  assert.strictEqual(R.endedLine({ attempt: 3 }, 'stopped'), 'Stopped while retrying (after 3 retries).');
+  assert.strictEqual(R.endedLine({ attempt: 1 }, 'limit'), 'Retrying ended at a usage limit (after 1 retry).');
+  assert.strictEqual(R.endedLine({ attempt: 2 }, 'auth'), 'Retrying ended: the agent app needs you to sign in (after 2 retries).');
+  assert.strictEqual(R.endedLine({ attempt: 2 }, 'done'), 'The turn ended after 2 retries.');
+  assert.strictEqual(R.endedLine({}, 'stopped'), 'Stopped while retrying.');
+  assert.strictEqual(R.endedLine({}, 'done'), 'The turn ended.');
   for (const e of [{ type: 'status', status: 'working', intent: 'x' }, { type: 'context' }, { type: 'mcp' }, { type: 'model' }, { type: 'title' }]) {
     r = R.next(s1, e);
     assert.strictEqual(r.action, null, JSON.stringify(e));
