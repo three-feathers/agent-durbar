@@ -20,8 +20,9 @@
 - **VI Parity**: paths per OS in one pure function; POSIX trust check, Windows ACL `[KNOWN GAP]`; tests run the three platforms'
   branches from any OS.
 - **VII Quality gates**: typecheck, build, `npm test`; new tests listed below.
-- **VIII Honest limits**: `[KNOWN GAP]`s in the spec (Windows ACL, run-time icon limits, Copilot OTel/BYOK through the SDK, Codex
-  per-thread `[otel]`, Bedrock/Vertex names, vendor enforcement outside Durbar) and the README *Known limits*.
+- **VIII Honest limits**: `[KNOWN GAP]`s in the spec (Windows ACL, run-time icon limits, Copilot BYOK and OTel export through the
+  SDK's headless runtime, Codex per-thread `otel.*`/`model_providers` and `metrics_exporter` sub-keys, vendor enforcement outside
+  Durbar) and the README *Known limits*. The OTel and provider variable names themselves are confirmed (`read:` 2026-10-23, D7).
 
 ## Technical context
 
@@ -104,6 +105,42 @@ stay open. No last-known-good copy (R3). Key-level failures set that area's stri
 `net.fetch` with `redirect: 'manual'` to check each hop is https; an `AbortController` for timeouts; a byte counter on the body stream
 aborts past the cap; JSON parsed only after the whole body is in. In tests the injected fetch may target `http://127.0.0.1`; the app's
 own fetch refuses anything but `https:`.
+
+### D7 Adapter mapping (policy key -> each app's real variable, flag or key)
+
+Every cell was read in the vendor's documentation on 2026-10-23 (spec research table, `read:` URLs there) unless marked `[KNOWN GAP]`.
+"env" means the child's environment (Claude: `deps.env`; Copilot: the SDK client's `env` option; Codex: the app-server child's env).
+"override" means a Codex thread config override sent beside `codexMcpConfig`. Values from `*FromEnv` names are read at launch, passed
+only to the child and never logged (FR-121).
+
+| Policy key | Claude Code | Codex | Copilot CLI (SDK) |
+|---|---|---|---|
+| `telemetry.otel` present | env `CLAUDE_CODE_ENABLE_TELEMETRY=1` | override `otel.*` (`[KNOWN GAP]` per-thread acceptance, T111) | SDK `telemetry: {...}` -> `COPILOT_OTEL_ENABLED=true` |
+| `.endpoint` | env `OTEL_EXPORTER_OTLP_ENDPOINT` | `otel.<exporter>.<otlp-http or otlp-grpc>.endpoint`, http: `+ /v1/logs`, `/v1/traces`, `/v1/metrics` | SDK `telemetry.otlpEndpoint` |
+| `.protocol` `http/protobuf` | env `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` (always set: no default) | `otlp-http`, `protocol = "binary"` | SDK `otlpProtocol: "http/protobuf"` |
+| `.protocol` `http/json` | `=http/json` | `otlp-http`, `protocol = "json"` | `otlpProtocol: "http/json"` |
+| `.protocol` `grpc` | `=grpc` | `otlp-grpc` | not supported: Copilot export off, shown |
+| `.signals` `metrics` | env `OTEL_METRICS_EXPORTER=otlp` (else `none`) | `otel.metrics_exporter` (`[KNOWN GAP]` sub-keys, T111) | always on with traces (no per-signal switch) |
+| `.signals` `logs` | env `OTEL_LOGS_EXPORTER=otlp` (else `none`) | `otel.exporter` (else `"none"`) | no logs signal: shown |
+| `.signals` `traces` | env `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` + `OTEL_TRACES_EXPORTER=otlp` (beta) | `otel.trace_exporter` (else `"none"`) | always on with metrics |
+| `.headersFromEnv` | env `OTEL_EXPORTER_OTLP_HEADERS` (percent-encoded `k=v,k=v`) | `otel.<exporter>.<kind>.headers` map | env `OTEL_EXPORTER_OTLP_HEADERS` |
+| `.resourceAttributes` | env `OTEL_RESOURCE_ATTRIBUTES` (percent-encoded) | none documented (not passed; shown) | env `OTEL_RESOURCE_ATTRIBUTES` |
+| `.logPrompts` true | env `OTEL_LOG_USER_PROMPTS=1` and `OTEL_LOG_ASSISTANT_RESPONSES=0` | `otel.log_user_prompt = true` | **not passed** (all-or-nothing; R9); SDK `captureContent: false` |
+| `.logPrompts` false (default) | no `OTEL_LOG_*` content variable in env | `otel.log_user_prompt = false` | SDK `captureContent: false` |
+| removed from env when `telemetry` is set (FR-085) | every `OTEL_*` not set above, incl. `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`, `OTEL_LOG_RAW_API_BODIES`, `OTEL_LOG_MANAGED_SETTINGS`, per-signal endpoint/headers/protocol, `BETA_TRACING_ENDPOINT`, `ENABLE_BETA_TRACING_DETAILED` | (config only) | every `OTEL_*` and `COPILOT_OTEL_*` not set above, incl. `COPILOT_OTEL_FILE_EXPORTER_PATH` |
+| `llm.claude.provider` `gateway` | env `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` (from `authTokenFromEnv`) | | |
+| `llm.claude.provider` `bedrock` | env `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION` (`region`), `ANTHROPIC_BEDROCK_BASE_URL` (`baseUrl`), `AWS_BEARER_TOKEN_BEDROCK` (`authTokenFromEnv`, optional) | | |
+| `llm.claude.provider` `vertex` | env `CLAUDE_CODE_USE_VERTEX=1`, `CLOUD_ML_REGION` (`region`), `ANTHROPIC_VERTEX_PROJECT_ID` (`projectId`), `ANTHROPIC_VERTEX_BASE_URL` (`baseUrl`) | | |
+| `llm.claude.model` / `.smallFastModel` | env `ANTHROPIC_MODEL` / `ANTHROPIC_DEFAULT_HAIKU_MODEL` | | |
+| `llm.codex.provider` | | override `model_provider = <id>`, `model_providers.<id>.{name, base_url, env_key, wire_api = "responses"}` (`[KNOWN GAP]` per-thread acceptance, T100) | |
+| `llm.codex.model` | | override `model` | |
+| `llm.copilot.*` | | | env `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_API_KEY` / `COPILOT_PROVIDER_BEARER_TOKEN` (from the named vars), `COPILOT_PROVIDER_AZURE_API_VERSION`, `COPILOT_MODEL`, `COPILOT_OFFLINE` (`[KNOWN GAP]` headless runtime, T100) |
+| stripped when `llm.<app>` is set (FR-100a) | `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, other `ANTHROPIC_*`, `CLAUDE_CODE_USE_*`, `CLAUDE_CODE_SKIP_*_AUTH`, `AWS_BEARER_TOKEN_BEDROCK`, `CLOUD_ML_REGION`, `VERTEX_REGION_CLAUDE_*` not set above | `OPENAI_API_KEY`, `CODEX_API_KEY` (unless the `env_key`), `CODEX_ACCESS_TOKEN` | other `COPILOT_PROVIDER_*`, `COPILOT_PROVIDER_API_KEY_COMMAND`; `COPILOT_PROVIDERS_CONFIG` -> a Durbar-owned empty registry (`[KNOWN GAP]`, T100) |
+| `signIn.*` (FR-192) | `forceLoginMethod`, `forceLoginOrgUUID` (settings) | `forced_login_method`, `forced_chatgpt_workspace_id` | env `COPILOT_GH_HOST` |
+| never set by Durbar | `otelHeadersHelper` (a script), `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` (would override the organization's Claude model pins) | `model_providers.<id>.auth.command` (a command) | `telemetry.headersProvider`, `COPILOT_PROVIDER_API_KEY_COMMAND` (commands) |
+
+The vendor's own managed settings (Claude `managed-settings.json` `env`, Codex `requirements.toml`/`managed_config.toml`, Copilot
+`managed-settings.json` `telemetry`) win over what Durbar passes; FR-194/FR-195 show it.
 
 ## Testing
 

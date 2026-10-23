@@ -84,7 +84,7 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 
 ## P11: custom LLM per agent app, pricing and token caps
 
-- [ ] T100 No-prompt checks: Codex `model_providers` override (offline schema), Copilot BYOK variables via the SDK runtime (dummy endpoint), Claude Code gateway and Bedrock/Vertex variable names (docs + local fake gateway); record in agent-notes [FR-100..FR-102, FR-142]
+- [ ] T100 No-prompt checks: Codex `model_providers` per-thread override (offline `codex app-server generate-json-schema`), Copilot BYOK variables via the SDK's headless runtime (dummy endpoint) and an empty `COPILOT_PROVIDERS_CONFIG` falling back to the env provider, Claude Code gateway/Bedrock/Vertex variables (names confirmed in the docs 2026-10-23; check against a local fake gateway); record in agent-notes [FR-100..FR-102, FR-142]
 - [ ] T101 `src/adapters/<app>Policy.ts` mapping; Copilot `createClient` `env` option; vendor credential stripping; missing token blocks the start; model chip with host and first-run notice [FR-100..FR-102, FR-100a, FR-124]
 - [ ] T102 Locked model picker; sign-in check wording [FR-103, FR-105]
 - [ ] T103 `llm.pricing` and `llm.tokenCap`/`requirePricing`: validator (non-negative finite prices <= 10,000 per 1M, ISO currency, match pattern, no duplicate match, token cap 1,000..1e9), exact-then-glob matcher, cost formula [FR-106, FR-107]
@@ -94,10 +94,10 @@ Each phase is one small PR. Tasks reference the spec's FRs. Nothing is built yet
 ## P12: OpenTelemetry per agent app
 
 - [ ] T110 Constitution amendment for Q4 via `/speckit-constitution` (hard prerequisite: no other P12 task merges before it)
-- [ ] T111 No-prompt checks: Codex per-thread `[otel]`, Copilot OTel variables (`copilot help`) [FR-082, FR-083, FR-142]
+- [ ] T111 No-prompt checks: Codex per-thread `otel.*` and the `metrics_exporter` sub-keys (offline schema); Copilot SDK `telemetry` option plus env headers reaching a local fake OTLP collector (`copilot help monitoring`; ask the owner first if spans need a turn); Claude Code env against a local fake collector [FR-082, FR-083, FR-142]
 - [ ] T112 Mapping per app with percent-encoded headers; missing header variable blocks the start; user OTel variables replaced [FR-080..FR-085]
-- [ ] T113 Top-bar and session chip naming the host; first-run notice with the exported fields per app and the "cannot redact" line [FR-086]
-- [ ] T114 Tests (header encoding, env binding to the endpoint host, missing variable), Organization page per-app status, docs
+- [ ] T113 Top-bar and session chip naming the host (*with prompt text* when `logPrompts`); first-run notice with the exported fields per app (FR-086 list, Codex output snippets, Claude identity attributes) and the "cannot redact" line [FR-080a, FR-086]
+- [ ] T114 Tests (header encoding, env binding to the endpoint host, missing variable, the D7 mapping table per app including unsupported protocol/signal cases and the content-flag stripping), Organization page per-app status, docs
 
 ## P13: agent, profile and skill registry
 

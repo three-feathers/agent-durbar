@@ -70,12 +70,16 @@ Every row was read in the vendor's own documentation on 2026-10-23 unless marked
 | Chrome | Linux `/etc/opt/chrome/policies/managed/*.json` (mandatory) and `.../recommended/` (user may change); Windows registry through Group Policy; macOS managed preferences (exact plist path *unconfirmed* in the pages read) | Platform policy > machine cloud > OS user > cloud user; machine beats user; mandatory beats recommended; the same policy in two files is undefined | `chrome://policy`: Reload, status OK/error per policy, "show policies with no value" | `read:` https://chromium.googlesource.com/chromium/src/+/main/docs/enterprise/policies.md, https://support.google.com/chrome/a/answer/9027408, https://support.google.com/chrome/a/answer/9037717 |
 | Claude Code | macOS `/Library/Application Support/ClaudeCode/managed-settings.json`; Linux/WSL `/etc/claude-code/managed-settings.json`; Windows `C:\Program Files\ClaudeCode\managed-settings.json` (the old `C:\ProgramData\ClaudeCode` is **no longer read**); `managed-settings.d/` drop-ins; `managed-mcp.json`. MDM: macOS domain `com.anthropic.claudecode`; Windows `HKLM\SOFTWARE\Policies\ClaudeCode` value `Settings` (JSON); `HKCU` only when no admin source exists; re-read every 30 min | Managed > command line > project local > project > user; lists merge; a present but unparseable managed file makes Claude Code **refuse to start** | | `read:` https://code.claude.com/docs/en/managed-settings, https://code.claude.com/docs/en/settings |
 | Claude Code, MCP | `allowedMcpServers`, `deniedMcpServers`, `allowManagedMcpServersOnly`, `managed-mcp.json` | | | same (`managed-mcp` page referenced, not read) |
-| Claude Code, OTel | Off until `CLAUDE_CODE_ENABLE_TELEMETRY=1`; `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` (`otlp`...), `OTEL_EXPORTER_OTLP_PROTOCOL` (must be set), `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_LOG_USER_PROMPTS` (off by default) | Managed `env` can lock them | | `read:` https://code.claude.com/docs/en/monitoring-usage |
-| Claude Code, network and LLM | `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` (no SOCKS); bundled CAs plus the OS store (`CLAUDE_CODE_CERT_STORE`); `NODE_EXTRA_CA_CERTS`; mTLS `CLAUDE_CODE_CLIENT_CERT`/`_KEY`; `ANTHROPIC_BASE_URL` for a gateway; `allowedProviders: ["customEndpoint"]` (2.1.285+) pins it | | | `read:` https://code.claude.com/docs/en/network-config, https://code.claude.com/docs/en/llm-gateway. Bedrock/Vertex variable names (`CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`) *unconfirmed* in the pages read |
-| Copilot CLI, custom models (BYOK) | Env vars: `COPILOT_PROVIDER_BASE_URL` (required), `COPILOT_PROVIDER_TYPE` (`openai`, `azure`, `anthropic`), `COPILOT_PROVIDER_API_KEY` or `COPILOT_PROVIDER_BEARER_TOKEN`, `COPILOT_PROVIDER_WIRE_API`, `COPILOT_PROVIDER_AZURE_API_VERSION`, `COPILOT_PROVIDER_MODEL_ID`, `COPILOT_MODEL`; `COPILOT_OFFLINE=true` avoids GitHub contact | Models need tool calling and streaming | | `read:` https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-byok-models |
+| Claude Code, OTel | Off until `CLAUDE_CODE_ENABLE_TELEMETRY=1`. Exporters: `OTEL_METRICS_EXPORTER` (`console`, `otlp`, `prometheus`, `none`), `OTEL_LOGS_EXPORTER` (`console`, `otlp`, `none`); traces are **beta** and need `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` plus `OTEL_TRACES_EXPORTER`. `OTEL_EXPORTER_OTLP_PROTOCOL` (`grpc`, `http/json`, `http/protobuf`) has **no default** and must be set; `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` (static); per-signal `OTEL_EXPORTER_OTLP_{METRICS,LOGS,TRACES}_{ENDPOINT,PROTOCOL,HEADERS}` (per-signal headers are merged); `OTEL_METRIC_EXPORT_INTERVAL` (60000 ms), `OTEL_LOGS_EXPORT_INTERVAL` (5000 ms); `OTEL_RESOURCE_ATTRIBUTES` (`k=v,k=v`; `"`, `,`, `;`, `\`, spaces and non-ASCII must be percent-encoded). Dynamic headers: the `otelHeadersHelper` setting (a script, http protocols only; on failure exports stop with a warning). mTLS: `CLAUDE_CODE_CLIENT_CERT`/`_KEY` (http), `OTEL_EXPORTER_OTLP_CLIENT_KEY`/`_CLIENT_CERTIFICATE`/`OTEL_EXPORTER_OTLP_CERTIFICATE` (grpc). **Content gates, all off by default:** `OTEL_LOG_USER_PROMPTS` (prompt text), `OTEL_LOG_ASSISTANT_RESPONSES` (**follows `OTEL_LOG_USER_PROMPTS` when unset**), `OTEL_LOG_TOOL_DETAILS` (Bash commands, tool input, MCP/skill names), `OTEL_LOG_TOOL_CONTENT` (tool output, traces only), `OTEL_LOG_RAW_API_BODIES` (full API bodies; implies all the others), `OTEL_LOG_MANAGED_SETTINGS`. Identity on by default: `session.id`, `user.account_uuid`, `user.account_id`, `organization.id`, `user.email` when available (`OTEL_METRICS_INCLUDE_SESSION_ID`, `OTEL_METRICS_INCLUDE_ACCOUNT_UUID` turn the metric ones off). Metrics: `claude_code.session.count`, `.lines_of_code.count`, `.pull_request.count`, `.commit.count`, `.cost.usage` (USD, approximate), `.token.usage` (`input`, `output`, `cacheRead`, `cacheCreation`), `.code_edit_tool.decision`, `.active_time.total`. Events: `claude_code.user_prompt`, `.assistant_response`, `.tool_result`, `.api_request` (tokens, `cost_usd`), `.api_error`, `.api_refusal`, `.tool_decision`, `.safety_event`, `.mcp_server_connection`, `.hook_*`, `.compaction`, `.managed_settings_resolved`, `.api_request_body`/`.api_response_body` (raw bodies only) | Managed `env` locks endpoint, protocol and headers and removes developer-set per-signal values; exporter selectors are locked only when managed settings set them (2.1.223+); OTel exporter variables in `.claude/settings.json`/`settings.local.json` are ignored; `OTEL_*` is not passed to Bash, hooks, MCP or language servers | `claude --debug-file <path>`: `[3P telemetry]` lines | `read:` https://code.claude.com/docs/en/monitoring-usage 2026-10-23 |
+| Claude Code, network and LLM | `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` (no SOCKS); bundled CAs plus the OS store (`CLAUDE_CODE_CERT_STORE`); `NODE_EXTRA_CA_CERTS`; mTLS `CLAUDE_CODE_CLIENT_CERT`/`_KEY`; gateway: `ANTHROPIC_BASE_URL` plus `ANTHROPIC_AUTH_TOKEN` (sent as `Authorization: Bearer <value>`); `allowedProviders: ["customEndpoint"]` (2.1.285+) pins it. **Bedrock:** `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION` (optional when the AWS profile has one), optional `ANTHROPIC_BEDROCK_BASE_URL`; credentials from the AWS chain, or `AWS_BEARER_TOKEN_BEDROCK` (an API key; when set, the chain is not used). **Vertex** (now "Google Cloud's Agent Platform"): `CLAUDE_CODE_USE_VERTEX=1`, `CLOUD_ML_REGION` (e.g. `global`), `ANTHROPIC_VERTEX_PROJECT_ID` (wins over `GOOGLE_CLOUD_PROJECT`), optional `ANTHROPIC_VERTEX_BASE_URL`, per-model `VERTEX_REGION_CLAUDE_*`; credentials from Google ADC. **Microsoft Foundry:** `CLAUDE_CODE_USE_FOUNDRY=1`, `ANTHROPIC_FOUNDRY_RESOURCE` or `ANTHROPIC_FOUNDRY_BASE_URL`, `ANTHROPIC_FOUNDRY_API_KEY` or `ANTHROPIC_FOUNDRY_AUTH_TOKEN` (else the Azure credential chain). Models: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`; `ANTHROPIC_SMALL_FAST_MODEL` is **deprecated** (use `ANTHROPIC_DEFAULT_HAIKU_MODEL`). An empty value in a settings `env` block counts as unset. `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` (for embedding hosts) makes Claude Code ignore provider, endpoint and auth variables in settings files **and model pins in managed settings**, and skips the third-party telemetry opt-out | Managed > CLI > project > user | | `read:` https://code.claude.com/docs/en/network-config, https://code.claude.com/docs/en/llm-gateway, https://code.claude.com/docs/en/amazon-bedrock, https://code.claude.com/docs/en/google-vertex-ai, https://code.claude.com/docs/en/microsoft-foundry, https://code.claude.com/docs/en/env-vars 2026-10-23 |
+| Copilot CLI, custom models (BYOK) | Env vars: `COPILOT_PROVIDER_BASE_URL` (required), `COPILOT_PROVIDER_TYPE` (`openai` default, `azure`, `anthropic`), `COPILOT_PROVIDER_API_KEY` or `COPILOT_PROVIDER_BEARER_TOKEN`, `COPILOT_PROVIDER_WIRE_API`, `COPILOT_PROVIDER_AZURE_API_VERSION`, `COPILOT_PROVIDER_MODEL_ID`, `COPILOT_PROVIDER_WIRE_MODEL` (Azure: the deployment name), `COPILOT_PROVIDER_MAX_PROMPT_TOKENS`, `COPILOT_PROVIDER_MAX_OUTPUT_TOKENS`, `COPILOT_MODEL` (required); `COPILOT_OFFLINE=true` avoids GitHub contact. Also `COPILOT_PROVIDERS_CONFIG` (a `providers.json` registry, default `~/.copilot/providers.json`, which **takes precedence** over the env provider when it declares any) and `COPILOT_PROVIDER_API_KEY_COMMAND` (a shell command printing a key) | Models need tool calling and streaming | | `read:` https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-byok-models, https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference#environment-variables, https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference 2026-10-23 |
 | Copilot, MCP registry | Org setting points at an HTTPS registry implementing MCP registry API **v0.1** (`GET /v0.1/servers`, `/v0.1/servers/{name}/versions/latest`), CORS open for GET; public preview; GitHub calls managed settings the more secure option | | | `read:` https://docs.github.com/en/copilot/how-tos/administer-copilot/manage-mcp-usage/configure-mcp-registry |
-| Copilot CLI, config and OTel | `COPILOT_HOME` moves `~/.copilot`; enterprise managed settings exist (can block `/allow-all`); `--disable-client-telemetry` does not affect a user-configured OTel export. OTel variables (`COPILOT_OTEL_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`, http only) *unconfirmed*: only third-party pages found | | | `read:` https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/configure-copilot-cli, https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference |
-| Codex CLI | `~/.codex/config.toml`: `model_providers.<id>` (`base_url`, `env_key`, `wire_api = "responses"`; ids `openai`, `ollama`, `lmstudio` reserved); `[otel]` `exporter = none / otlp-http / otlp-grpc`, `log_user_prompt` opt-in; project config cannot set providers or `[otel]` | | | `read:` https://learn.chatgpt.com/docs/config-file/config-reference |
+| Copilot CLI, config | `COPILOT_HOME` moves `~/.copilot`; `--disable-client-telemetry` does not affect a user-configured OTel export | | | `read:` https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/configure-copilot-cli, https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference |
+| Copilot CLI, OTel | Off by default; on with `COPILOT_OTEL_ENABLED=true`, or when `OTEL_EXPORTER_OTLP_ENDPOINT` or `COPILOT_OTEL_FILE_EXPORTER_PATH` is set. `COPILOT_OTEL_EXPORTER_TYPE` (`otlp-http` default, `file`), `OTEL_EXPORTER_OTLP_PROTOCOL` (`http/json` default, `http/protobuf`; **no gRPC**), `OTEL_EXPORTER_OTLP_{TRACES,METRICS}_PROTOCOL`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SERVICE_NAME` (`github-copilot`), `OTEL_RESOURCE_ATTRIBUTES` (percent-encoded), `COPILOT_OTEL_SOURCE_NAME`, `OTEL_LOG_LEVEL`, and `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` (default false; **all or nothing**: prompts, responses, system prompt, tool schemas, tool arguments and results). Dynamic headers: `telemetry.headersProvider` (`path`, `args`, `refreshIntervalMs`; user or managed settings, never repository settings; not a shell). Signals: **traces and metrics only** (no OTel logs signal; lifecycle events are span events). Spans `invoke_agent` > `chat`, `execute_tool` (GenAI semantic conventions: `gen_ai.usage.input_tokens`/`output_tokens`/`cache_read.input_tokens`/`cache_creation.input_tokens`, `gen_ai.conversation.id` = session id, `github.copilot.nano_aiu`, `github.copilot.cost` = a billing multiplier, **not money**, `enduser.pseudo.id`). Metrics: `gen_ai.client.operation.duration`, `gen_ai.client.token.usage`, `gen_ai.client.operation.time_to_first_chunk`, `.time_per_output_chunk`, `gen_ai.invoke_agent.duration`/`.inference_calls`/`.tool_calls`, `gen_ai.invoke_workflow.duration`, `github.copilot.tool.call.count`/`.duration`, `github.copilot.agent.turn.count`, `github.copilot.mcp.server.connection.count`, `github.copilot.code.lines_added`/`lines_removed`. Span events: `github.copilot.hook.start`/`end`/`error`, `session.truncation`, `session.compaction_start`/`_complete`, `skill.invoked`, `session.shutdown` (premium requests, lines, files), `session.abort`, `exception` | Managed `telemetry` beats SDK config and environment variables | | `read:` https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference#opentelemetry-monitoring, https://docs.github.com/en/copilot/concepts/enterprise/opentelemetry 2026-10-23 |
+| Copilot SDK, OTel and env | `new CopilotClient({ telemetry: { otlpEndpoint, otlpProtocol ("http/json" or "http/protobuf"), filePath, exporterType ("otlp-http" or "file"), sourceName, captureContent } })` sets `COPILOT_OTEL_ENABLED=true` and the matching variables on the spawned runtime; there is **no header option** (headers go through env). The client `env` option is the runtime child's environment (inherits `process.env` when not set) | | | `read:` https://docs.github.com/en/copilot/how-tos/copilot-sdk/observability/opentelemetry 2026-10-23; `read:` installed `@github/copilot-sdk` 1.0.22 `dist/types.d.ts` (`TelemetryConfig`, `env`) and `dist/client.js` (the env it sets), 2026-10-23 |
+| Copilot, managed settings | Files `/etc/github-copilot/managed-settings.json`, `/Library/Application Support/GitHubCopilot/managed-settings.json`, `%ProgramFiles%\GitHubCopilot\managed-settings.json` (POSIX: refused if a symlink, not root-owned or world-writable); MDM plist `com.github.copilot`, registry `HKLM\SOFTWARE\Policies\GitHubCopilot`; server-managed from an enterprise `.github-private` repo `copilot/managed-settings.json` with `{ "overridable": v }` team overrides; policy hooks in `/etc/github-copilot/policy.d/*.json` or `C:\ProgramData\GitHub\Copilot\policy.d\*.json`. Keys (CLI column): `permissions.disableBypassPermissionsMode` (`disable`, `allow-auto-only`), `permissions.deny/ask/allow` (`Shell(...)`, `Read(...)`, `Edit(...)`, `Domain(...)`), `features.computerUse`, `model`, `autoTier`, `enabledPlugins`, `extraKnownMarketplaces`, `strictKnownMarketplaces`, `telemetry` (`enabled`, `endpoint`, `protocol` `http/json`/`http/protobuf`, `capture.identity/prompts/responses/toolArguments/toolOutput/policyDetail` all false by default, legacy `captureContent`, `lockCaptureContent`, `serviceName`, `resourceAttributes`, `headers`, `headersProvider`), `remoteControl`, `forceRemoteSettingsRefresh`, `allowedMcpServers`/`deniedMcpServers` (`serverName`, `serverUrl`, `serverCommand`), `sandbox` (`enabled`, `failIfUnavailable`, `allowBypass`, `userPolicy.filesystem`/`network`/`proxy.url`, ...) | MDM beats server per key; managed beats local, SDK and env; for `telemetry` the top managed source supplies the **whole** object; re-fetched hourly; an unreadable device policy fails closed (sandbox at its strictest) | | `read:` https://docs.github.com/en/copilot/reference/enterprise-administrators/enterprise-managed-settings, https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference#mdm-managed-settings, https://docs.github.com/en/copilot/how-tos/administer-copilot/manage-for-enterprise/use-managed-settings/get-started, https://docs.github.com/en/copilot/reference/hooks-reference 2026-10-23 |
+| Codex CLI, providers | `~/.codex/config.toml` `model_provider = "<id>"` and `model_providers.<id>`: `name`, `base_url`, `env_key`, `wire_api = "responses"`, `query_params` (Azure `api-version`), `http_headers`, `env_http_headers`, `request_max_retries`, `stream_max_retries`, `stream_idle_timeout_ms`, `auth.{command,args,timeout_ms,refresh_interval_ms}` (not with `env_key`); ids `openai`, `ollama`, `lmstudio` reserved; `openai_base_url` moves the built-in provider; **Bedrock**: `model_provider = "amazon-bedrock"` with `[model_providers.amazon-bedrock.aws]` `profile`, `region`. Env: `CODEX_HOME`, `CODEX_API_KEY`, `CODEX_CA_CERTIFICATE` (else `SSL_CERT_FILE`). Project config **ignores** `model_provider`, `model_providers`, `openai_base_url`, `notify`, `profile(s)`, `otel` | `-c key=value` (TOML) overrides; precedence user < profile < project < CLI; managed layers override `--config` | | `read:` https://learn.chatgpt.com/docs/config-file/config-advanced, https://learn.chatgpt.com/docs/config-file/config-reference, https://learn.chatgpt.com/docs/config-file/environment-variables 2026-10-23 |
+| Codex CLI, OTel | `[otel]` only in user or managed config (no OTel environment variables in the env-var reference). `environment` (default `dev`), `exporter` (log events: `none`, `otlp-http`, `otlp-grpc`), `trace_exporter` (same values), `metrics_exporter` (`none`, `statsig`, `otlp-http`, `otlp-grpc`), `log_user_prompt` (default false); per exporter `endpoint`, `protocol` (`binary` or `json`, http only), `headers` (static map; the docs' example uses `"${OTLP_TOKEN}"`), `tls.ca-certificate`/`client-certificate`/`client-private-key`. Events: `codex.conversation_starts` (model, reasoning, sandbox and approval policy), `codex.api_request`, `codex.sse_event` (token counts on `response.completed`), `codex.websocket_request`/`_event`, `codex.user_prompt` (length; text only with `log_user_prompt`), `codex.tool_decision` (config or user), `codex.tool_result` (**includes an output snippet by default**). Metrics: `codex.api_request` (+`.duration_ms`), `codex.sse_event`, `codex.websocket.request`/`.event`, `codex.tool.call` (+`.duration_ms`), tags `auth_mode`, `originator`, `session_source`, `model`, `app.version`. `[analytics] enabled = false` also turns off custom OTLP metrics exporters | Managed config can pin `[otel]`; docs advise keeping `log_user_prompt = false` | | `read:` https://learn.chatgpt.com/docs/config-file/config-advanced, https://learn.chatgpt.com/docs/config-file/config-reference, https://learn.chatgpt.com/docs/enterprise/managed-configuration 2026-10-23 |
 | Codex, managed | `/etc/codex/requirements.toml` (Linux, macOS), `%ProgramData%\OpenAI\Codex\requirements.toml` (Windows); legacy `managed_config.toml`; macOS MDM domain `com.openai.codex` keys `config_toml_base64`, `requirements_toml_base64`; locks `allowed_approval_policies`, `allowed_sandbox_modes` | Managed layers override `--config` | | `read:` https://learn.chatgpt.com/docs/enterprise/managed-configuration.md |
 | MCP registry | Official registry (preview) stores `server.json` metadata (schema draft in the registry repo); not for private servers, "not designed for self-hosting"; an OpenAPI spec for others to implement; hosts should consume downstream registries | | | `read:` https://modelcontextprotocol.io/registry/about |
 | OpenTelemetry | `OTEL_EXPORTER_OTLP_ENDPOINT` (http appends `/v1/<signal>`), `OTEL_EXPORTER_OTLP_HEADERS` (`k=v,k=v`), `OTEL_EXPORTER_OTLP_PROTOCOL` (`grpc`, `http/protobuf` default, `http/json`), per-signal overrides | | | `read:` https://opentelemetry.io/docs/specs/otel/protocol/exporter/ |
@@ -83,8 +87,9 @@ Every row was read in the vendor's own documentation on 2026-10-23 unless marked
 | macOS MDM | Configuration profile payload `com.apple.ManagedClient.preferences` with *Forced* values; apps read them through CFPreferences; `CFPreferencesAppValueIsForced` says the user cannot change a key and the UI should be disabled | | | `read:` https://developer.apple.com/documentation/devicemanagement/managedpreferences (search extract only) |
 
 *Not read (general knowledge, to be checked before the phase that needs it):* electron-builder MSI/PKG/per-machine targets and
-electron-updater generic feeds (the docs URLs tried returned 404); Chrome's exact Windows key and macOS plist path; Copilot CLI OTel
-and proxy/CA support; Claude Code Bedrock/Vertex variable names.
+electron-updater generic feeds (the docs URLs tried returned 404); Chrome's exact Windows key and macOS plist path; Copilot CLI
+proxy/CA support. Copilot CLI OTel and Claude Code's Bedrock/Vertex variables were read on 2026-10-23 (rows above), after Vikram's
+comment on PR #575 linking the three vendors' OTel pages.
 
 **What the research says for Durbar.** (1) Every product uses a root/admin-owned location per OS and a "machine beats user" order;
 JSON on Linux, registry/MDM on Windows/macOS. A folder of JSON files works on all three today with no native code; registry and MDM
@@ -157,9 +162,10 @@ script is listed and needs the user's tick the first time (FR-066).
 
 ### User Story 5 - Telemetry to the company's collector (Priority: P2)
 
-With `telemetry.otel` set, every Claude Code and Codex session Durbar starts exports metrics and logs to Acme's collector, with the
-`Authorization` header taken from the `ACME_OTEL_AUTH_HEADER` environment variable. Settings > Organization says per agent app whether
-it exports (*Claude Code: on; Codex: on; Copilot: not supported by this version*). Prompts are not exported unless `logPrompts` is true.
+With `telemetry.otel` set, every Claude Code, Codex and Copilot session Durbar starts exports to Acme's collector, with the
+`Authorization` header taken from the `ACME_OTEL_AUTH_HEADER` environment variable. Settings > Organization says per agent app what
+it exports (*Claude Code: metrics, logs; Codex: logs, metrics; Copilot CLI: metrics, traces (no logs signal)*). Prompt text is not
+exported unless `logPrompts` is true, and then the chip says *with prompt text*; no other content is ever turned on by Durbar (FR-080a).
 
 ### User Story 6 - The company's own models (Priority: P2)
 
@@ -421,32 +427,81 @@ wrong number.
 - **FR-080 One setting, mapped per agent app.** `telemetry.otel` (`endpoint` https, `protocol`, `signals`, `headersFromEnv`,
   `resourceAttributes`, `logPrompts` default false, `apps`) is turned into each app's own settings in the environment or config of
   the sessions Durbar starts. Durbar itself sends nothing. **The constitution III amendment (Q4) is a hard prerequisite: no P12 code merges
-  before it.** Header variables must be in `secrets.envAllow` and bound to the endpoint's host (FR-121a).
-- **FR-081 Claude Code:** `CLAUDE_CODE_ENABLE_TELEMETRY=1`; `OTEL_METRICS_EXPORTER=otlp` / `OTEL_LOGS_EXPORTER=otlp` for the signals
-  chosen (traces only if the installed version documents them); `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`,
+  before it.** Header variables must be in `secrets.envAllow` and bound to the endpoint's host (FR-121a). What each app can do, as read in
+  its documentation on 2026-10-23 (research table):
+
+  | | Claude Code | Codex | Copilot CLI (through the SDK) |
+  |---|---|---|---|
+  | Signals | metrics, logs; traces **beta** | logs (events), traces, metrics | traces, metrics (no logs signal) |
+  | Protocols | `grpc`, `http/protobuf`, `http/json` | `otlp-http` (`binary`/`json`), `otlp-grpc` | `http/protobuf`, `http/json` (no gRPC) |
+  | Where it is set | environment variables | `[otel]` config (no env variables) | SDK `telemetry` option plus env |
+  | Prompt text | `OTEL_LOG_USER_PROMPTS` | `log_user_prompt` | only with all content (`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`) |
+  | Other content | responses, tool details, tool output, raw API bodies: separate flags, all off | `codex.tool_result` carries an **output snippet by default** | none unless all content is on |
+
+  A `signals` or `protocol` value an app cannot honour is not approximated: that app's export stays off and Settings > Organization
+  says why (*Copilot CLI does not support gRPC*; *Copilot CLI has no logs signal*). An app that gets at least one signal exports it.
+- **FR-080a Content stays off unless the admin opts in, and the user sees it.** `logPrompts` is the only content switch in v1 and it
+  means **prompt text only**. For every app Durbar removes from the child environment every content flag the policy did not ask for,
+  including ones the user set (FR-085). When `logPrompts` is true, the top-bar chip reads *Telemetry (with prompt text): <host>* and
+  the first-start notice says so in its first line. An app that cannot export prompt text without exporting more (Copilot) does not
+  export content at all; the notice says *Copilot CLI: prompt text not exported (it can only export all content)* (R9, open).
+- **FR-081 Claude Code** (all `read:` https://code.claude.com/docs/en/monitoring-usage 2026-10-23): `CLAUDE_CODE_ENABLE_TELEMETRY=1`;
+  `OTEL_METRICS_EXPORTER=otlp` or `none` and `OTEL_LOGS_EXPORTER=otlp` or `none` for the signals chosen; for `traces`,
+  `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` and `OTEL_TRACES_EXPORTER=otlp` (the notice says *traces: beta*);
+  `OTEL_EXPORTER_OTLP_PROTOCOL` is **always** set (Claude Code has no default); `OTEL_EXPORTER_OTLP_ENDPOINT`;
   `OTEL_EXPORTER_OTLP_HEADERS` built from `headersFromEnv` with each value **percent-encoded** (the OTel format is `k=v,k=v`, so a `,`
   or `=` in a value must not split it), values read from Durbar's own environment at launch and never written to disk or logs;
-  `OTEL_RESOURCE_ATTRIBUTES` from `resourceAttributes` (the schema refuses `,` and `=` in values); `OTEL_LOG_USER_PROMPTS=1` only when
-  `logPrompts` is true.
-- **FR-082 Codex:** config overrides on the thread (`otel.exporter = "otlp-http"` or `"otlp-grpc"` with the endpoint and headers,
-  `otel.log_user_prompt` from `logPrompts`), in the same way `codexMcpConfig` passes MCP overrides today. Whether Codex accepts `[otel]`
-  as a per-thread override (not only from `config.toml`) is `[KNOWN GAP]` until checked offline with `codex app-server
-  generate-json-schema` (agent-notes); if it does not, Durbar writes nothing to the user's `config.toml` and reports *Codex: set by
-  your organization's Codex config* only when `/etc/codex` already sets it, else *not supported from Durbar*.
-- **FR-083 Copilot:** `[KNOWN GAP]` Copilot CLI's OTel support is not confirmed in GitHub's documentation (only third-party pages). The
-  phase that implements FR-080 first confirms the variables with `copilot help` output (no prompt, no credits); until then Copilot is
-  shown as *not supported by this version* and nothing is passed.
+  `OTEL_RESOURCE_ATTRIBUTES` from `resourceAttributes` (the schema refuses `,` and `=` in values; Durbar percent-encodes the rest as
+  the docs require). Content: `OTEL_LOG_USER_PROMPTS=1` only when `logPrompts` is true, and then always `OTEL_LOG_ASSISTANT_RESPONSES=0`
+  (unset, it follows `OTEL_LOG_USER_PROMPTS` and would export replies); `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`,
+  `OTEL_LOG_RAW_API_BODIES`, `OTEL_LOG_MANAGED_SETTINGS`, every per-signal `OTEL_EXPORTER_OTLP_*_{ENDPOINT,HEADERS,PROTOCOL}` and
+  `BETA_TRACING_ENDPOINT`/`ENABLE_BETA_TRACING_DETAILED` are removed from the child environment. Durbar does **not** use
+  `otelHeadersHelper` (it runs a script; FR-122) and does **not** set `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` (it would make Claude
+  Code ignore model pins in the organization's Claude managed settings, against FR-195). Claude Code's own managed-settings `env`
+  still wins over what Durbar passes (FR-195).
+- **FR-082 Codex** (`read:` https://learn.chatgpt.com/docs/config-file/config-reference and config-advanced 2026-10-23): config
+  overrides on the thread, in the same way `codexMcpConfig` passes MCP overrides today: `logs` -> `otel.exporter`, `traces` ->
+  `otel.trace_exporter`, `metrics` -> `otel.metrics_exporter`, each `{ otlp-http = { endpoint, protocol, headers } }` for
+  `http/protobuf` (`protocol = "binary"`) or `http/json` (`"json"`), or `{ otlp-grpc = { endpoint, headers } }` for `grpc`; signals not
+  chosen are `"none"`. For http the endpoint gets `/v1/logs`, `/v1/traces` or `/v1/metrics` appended (the docs' example gives the full
+  path). `headers` carries the values read at launch (sent over the app-server pipe, never on a command line or in a file);
+  `otel.log_user_prompt` from `logPrompts`. Codex has no content switch for `codex.tool_result`'s output snippet, so the notice says
+  *Codex: tool output snippets are exported*. `[KNOWN GAP]` until checked offline (T111): whether `codex app-server` accepts `otel.*` as a
+  per-thread override (project config ignores `otel`; the CLI layer may set it), and the sub-keys of `metrics_exporter` (the reference
+  lists `endpoint`/`protocol`/`headers` only for `exporter` and `trace_exporter`). If the override is refused, Durbar writes nothing to
+  the user's `config.toml` and reports *Codex: set by your organization's Codex config* when `/etc/codex` already sets it, else *not
+  supported from Durbar*. A user's `[analytics] enabled = false` turns off Codex's OTLP metrics; the notice says metrics may be missing
+  for that reason.
+- **FR-083 Copilot** (`read:` https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference#opentelemetry-monitoring
+  and the SDK observability page 2026-10-23; `read:` installed `@github/copilot-sdk` 1.0.22): the SDK client's `telemetry` option
+  `{ otlpEndpoint, otlpProtocol, exporterType: "otlp-http", captureContent: false }` (the SDK turns it into `COPILOT_OTEL_ENABLED=true`,
+  `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `COPILOT_OTEL_EXPORTER_TYPE`,
+  `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false`); `OTEL_EXPORTER_OTLP_HEADERS` (percent-encoded) and
+  `OTEL_RESOURCE_ATTRIBUTES` through the same new `env` option on `createClient` as FR-102. `grpc` is not supported by Copilot CLI:
+  export off for Copilot, said in Settings > Organization. Copilot exports traces and metrics together (no per-signal switch is
+  documented); the notice says so when `signals` lists only one of them. `COPILOT_OTEL_FILE_EXPORTER_PATH` is removed from the child
+  environment. An organization's Copilot managed `telemetry` object beats SDK config and env (FR-195). `[KNOWN GAP]` (T111): the bundled
+  runtime exporting to a local fake collector on session start, checked without a prompt; if spans appear only after a turn, the check
+  that needs a turn asks the owner first.
 - **FR-084** A header variable that is missing from the environment at launch: that app's session does **not** start, with *Your
   organization's telemetry is not set up on this computer (ACME_OTEL_AUTH_HEADER is not set). Contact IT.* Durbar never starts without
   the export the organization asked for, and never exports without the header.
 - **FR-085** User-level OTel variables already in the user's environment are left as they are when no policy sets `telemetry`; when a
-  policy sets it, the policy's values replace them for Durbar's sessions (every `OTEL_*` and the app's own telemetry switches).
+  policy sets it, the policy's values replace them for Durbar's sessions: every `OTEL_*`, `CLAUDE_CODE_ENABLE_TELEMETRY`,
+  `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`, `COPILOT_OTEL_*` and `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` are removed and only
+  the policy's values are set.
 - **FR-086 Visible and honest.** While telemetry is in force, the top bar shows a chip *Telemetry: otel.acme.example* and each affected
-  session's header shows it too; the first start after the policy appears (or after the endpoint changes) shows a notice naming the host
-  and, per app, what that app exports according to its documentation (Claude Code: usage metrics such as sessions, tokens, cost, lines
-  changed and active time, and events such as API requests and tool decisions, prompt text only with `logPrompts`; Codex: what its
-  `[otel]` documentation lists; Copilot: *unknown* until FR-083 is checked). The notice says that Durbar cannot filter or redact what an
-  agent app exports itself.
+  session's header shows it too; the first start after the policy appears (or after the endpoint or `logPrompts` changes) shows a notice
+  naming the host and, per app, what that app exports according to its documentation (2026-10-23):
+  - Claude Code: usage metrics (sessions, tokens, cost estimate, lines changed, commits, pull requests, active time, edit decisions) and
+    events (prompts as length only, API requests and errors, tool results and decisions, MCP connections, hooks, compaction), with the
+    account id, organization id and the account e-mail when known; prompt text only with `logPrompts`;
+  - Codex: events (conversation start with model and sandbox policy, API requests, stream events with token counts, prompts as length
+    only, tool decisions, tool results **with an output snippet**), metrics (request, stream and tool counts and durations); prompt text
+    only with `logPrompts`;
+  - Copilot CLI: traces (agent invocations, model calls, tool calls with token counts and AI units) and metrics (durations, token use,
+    tool calls, lines changed); a pseudonymous user id; never prompt text from Durbar's policy (FR-080a).
+  The notice says that Durbar cannot filter or redact what an agent app exports itself.
 ### I. Owner item 6: theme
 
 - **FR-090** `appearance.theme` is a bundled theme id or `{ "pack": "themes/<id>" }`, a data-only pack checked by `checkUserManifest`
@@ -458,28 +513,40 @@ wrong number.
 
 ### J. Owner item 7: custom LLM per agent app
 
-- **FR-100 Claude Code.** `llm.claude.provider`:
-  - `gateway`: `ANTHROPIC_BASE_URL=<baseUrl>` and `ANTHROPIC_AUTH_TOKEN` taken at launch from the variable named in
-    `authTokenFromEnv` (in `secrets.envAllow`, bound to the gateway's host, FR-121a); `ANTHROPIC_MODEL` / `ANTHROPIC_SMALL_FAST_MODEL`
-    from `model` / `smallFastModel` when set;
-  - `bedrock` and `vertex`: the provider switch variables and `region` / `projectId`, with credentials left to the cloud SDK's own
-    chain (profile, SSO, workload identity). The exact variable names are `[KNOWN GAP]` until read in Claude Code's Bedrock and Vertex
-    pages in the implementing phase.
-- **FR-100a No fallback to the vendor.** When a policy sets a provider for an app, the user's own credentials for that app's public
-  vendor are **removed** from the child environment (Claude: `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` and any `ANTHROPIC_*`/
-  `CLAUDE_CODE_USE_*` the policy did not set; Codex: `OPENAI_API_KEY` unless it is the provider's `env_key`, and Codex's other vendor
-  variables; Copilot: any `COPILOT_PROVIDER_*` the policy did not set), and a missing token variable stops the session from starting
+- **FR-100 Claude Code.** `llm.claude.provider` (all `read:` 2026-10-23; pages in the research table):
+  - `gateway`: `ANTHROPIC_BASE_URL=<baseUrl>` and `ANTHROPIC_AUTH_TOKEN` (Claude Code sends it as `Authorization: Bearer <value>`)
+    taken at launch from the variable named in `authTokenFromEnv` (in `secrets.envAllow`, bound to the gateway's host, FR-121a);
+  - `bedrock`: `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION=<region>` when set, `ANTHROPIC_BEDROCK_BASE_URL=<baseUrl>` when set; credentials
+    from the AWS SDK chain (profile, SSO, workload identity), or `AWS_BEARER_TOKEN_BEDROCK` from `authTokenFromEnv` when the admin names
+    one (then the chain is not used);
+  - `vertex` (Google Cloud's Agent Platform, formerly Vertex AI): `CLAUDE_CODE_USE_VERTEX=1`, `CLOUD_ML_REGION=<region>` (e.g.
+    `global`), `ANTHROPIC_VERTEX_PROJECT_ID=<projectId>` (Claude Code uses it even when `GOOGLE_CLOUD_PROJECT` differs),
+    `ANTHROPIC_VERTEX_BASE_URL=<baseUrl>` when set; credentials from Google Application Default Credentials;
+  - models for every provider: `ANTHROPIC_MODEL` from `model`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` from `smallFastModel`
+    (`ANTHROPIC_SMALL_FAST_MODEL` is deprecated and is not set).
+  Microsoft Foundry (`CLAUDE_CODE_USE_FOUNDRY=1`, `ANTHROPIC_FOUNDRY_RESOURCE`/`_BASE_URL`, `ANTHROPIC_FOUNDRY_API_KEY`/`_AUTH_TOKEN`) is
+  documented but not in the v1 schema (R10, open). Durbar does not set `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` (FR-081).
+- **FR-100a No fallback to the vendor.** When a policy sets a provider for an app, the user's own credentials and provider switches for
+  that app are **removed** from the child environment (Claude: `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `AWS_BEARER_TOKEN_BEDROCK`
+  and any `ANTHROPIC_*`, `CLAUDE_CODE_USE_*`, `CLAUDE_CODE_SKIP_*_AUTH`, `CLOUD_ML_REGION` and `VERTEX_REGION_CLAUDE_*` the policy did not
+  set; Codex: `OPENAI_API_KEY` and `CODEX_API_KEY` unless one is the provider's `env_key`, `CODEX_ACCESS_TOKEN`; Copilot: any
+  `COPILOT_PROVIDER_*` the policy did not set and `COPILOT_PROVIDER_API_KEY_COMMAND` (a shell command); the user's
+  `COPILOT_PROVIDERS_CONFIG` is replaced by a Durbar-owned path holding no providers, so a user `~/.copilot/providers.json`, which would
+  take precedence over the env provider, is not read; `[KNOWN GAP]` until T100 checks that an empty registry falls back to the env
+  provider), and a missing token variable stops the session from starting
   with *Your organization's model is not set up on this computer (ACME_LLM_TOKEN is not set)*. A session never silently falls back to
   the public endpoint. The session header shows *Model: <provider name> (<host>)*, and the first start after the policy appears shows a
   notice naming the host.
-- **FR-101 Codex.** `llm.codex.provider` becomes `model_providers.<id>` (`base_url`, `env_key` = `apiKeyFromEnv`, `wire_api =
+- **FR-101 Codex.** `llm.codex.provider` becomes `model_providers.<id>` (`name`, `base_url`, `env_key` = `apiKeyFromEnv`, `wire_api =
   "responses"`) and `model_provider = <id>` plus `model` as thread config overrides (or `-c` flags), never written into the user's
-  `config.toml`. Reserved ids (`openai`, `ollama`, `lmstudio`) are refused.
+  `config.toml`. Reserved ids (`openai`, `ollama`, `lmstudio`) are refused. Codex's own Bedrock provider (`model_provider =
+  "amazon-bedrock"` with `aws.profile`/`aws.region`) is documented but not in the v1 schema (R10, open). `[KNOWN GAP]` until T100: the
+  app-server accepting `model_providers` as a per-thread override (project config ignores it; the CLI layer may set it).
 - **FR-102 Copilot (BYOK).** `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_API_KEY` or
   `COPILOT_PROVIDER_BEARER_TOKEN` (from the named variables), `COPILOT_PROVIDER_AZURE_API_VERSION`, `COPILOT_MODEL`, and
-  `COPILOT_OFFLINE=true` when `offline` is set, passed through a new `env` option on the Copilot client (`createClient`). Whether the
-  SDK-started runtime reads these like the CLI does is `[KNOWN GAP]` until checked (no prompt needed: the model list and the error on a
-  dummy endpoint show it).
+  `COPILOT_OFFLINE=true` when `offline` is set, passed through the SDK client's `env` option on `createClient` (confirmed in the installed
+  SDK 1.0.22: it is the runtime child's environment). `[KNOWN GAP]` until T100: the SDK-started (`--headless`) runtime reading the
+  `COPILOT_PROVIDER_*` variables like the interactive CLI (no prompt needed: the model list and the error on a dummy endpoint show it).
 - **FR-103 Locked model.** When a policy sets a model, the model picker (spec 030) shows it locked; switching is refused in main.
 - **FR-104 Costs.** A session on a custom provider is priced from `llm.pricing` (FR-106). Its cost appears in Cost views, usage totals
   and caps exactly like a vendor-priced session, in the pricing's currency. A session whose model has no matching price shows *price
@@ -700,16 +767,23 @@ fail closed per FR-012, locked UI per FR-014.
 **A17 Sign-in passthrough**
 - **FR-192** `signIn.claude.forceLoginMethod`, `signIn.codex.forcedLoginMethod`/`workspaceId` and `signIn.copilot.host` (GitHub
   Enterprise or a data-residency host) are passed to the apps through their documented settings so users sign in with the company
-  account. Durbar still never sees or stores a token (constitution III). The exact setting names are `[KNOWN GAP]` until read in each
-  vendor's docs in the implementing phase.
+  account. Durbar still never sees or stores a token (constitution III). Names read on 2026-10-23: Claude Code `forceLoginMethod` and
+  `forceLoginOrgUUID` (settings keys; `read:` https://code.claude.com/docs/en/managed-settings), Codex `forced_login_method` and
+  `forced_chatgpt_workspace_id` (`read:` https://learn.chatgpt.com/docs/config-file/config-reference), Copilot CLI `COPILOT_GH_HOST`
+  (overrides `GH_HOST` for Copilot only; `read:` https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference#environment-variables).
+  `[KNOWN GAP]` how each is passed per session (a `--settings` JSON for Claude, a thread override for Codex, the client `env` for
+  Copilot) until checked without a prompt in that phase.
 - **FR-193** A session whose app reports a different account type than the forced one does not start, with the vendor's own message.
 
 **A18 Vendor managed settings shown**
 - **FR-194** Settings > Organization lists, read-only, whether Claude Code `managed-settings.json` / `managed-mcp.json`, Codex
-  `requirements.toml` / `managed_config.toml` exist at their documented machine paths, and shows their top-level keys (values of keys
+  `requirements.toml` / `managed_config.toml`, and Copilot CLI `managed-settings.json` (`/etc/github-copilot/`,
+  `/Library/Application Support/GitHubCopilot/`, `%ProgramFiles%\GitHubCopilot\`) exist at their documented machine paths, and shows their top-level keys (values of keys
   that `redact.ts` flags are masked). Durbar never writes them.
 - **FR-195** Where a vendor's managed setting and Durbar's policy disagree for Durbar's sessions, the stricter one is what happens (the
-  vendor enforces its own); the page says which.
+  vendor enforces its own); the page says which. Known cases (`read:` 2026-10-23): Claude Code's managed `env` and `allowedProviders`;
+  Codex managed `[otel]` and `model_providers`; Copilot's managed `telemetry` object, which replaces SDK config and env as a whole, and
+  its server-managed settings, which Durbar cannot see on disk (the page says *may also be set by your GitHub enterprise*).
 
 **A19 Dev and debug switches**
 - **FR-197** FR-004 (dev variables ignored under a policy, `allowDevHooks`) plus: under a machine policy without `allowDevHooks`, a
@@ -726,9 +800,10 @@ fail closed per FR-012, locked UI per FR-014.
   rules.
 - **FR-141** Simulator: `DURBAR_MANAGED_DIR=specs/076-managed-config/samples/managed` shows branding, theme, locked controls, the
   Organization page and closed mode (a broken-fixtures folder); screenshots at 1440x900 and 1280x800.
-- **FR-142** Real checks, each needing **no prompt** and listed per phase: Codex `[otel]` and `model_providers` override acceptance (offline
-  schema), Copilot BYOK and OTel variables (`copilot help`, a dummy endpoint), Claude Code variables against a local fake gateway with
-  a request log (no real model call). Any check that needs a model call asks the owner first and states its cost.
+- **FR-142** Real checks, each needing **no prompt** and listed per phase: Codex `otel.*` (including `metrics_exporter` sub-keys) and
+  `model_providers` override acceptance (offline `codex app-server generate-json-schema`), Copilot BYOK and OTel through the SDK runtime
+  (`copilot help monitoring` / `copilot help providers`, a dummy provider endpoint, a local fake OTLP collector), Claude Code variables
+  against a local fake gateway and a local fake OTLP collector with a request log (no real model call). Any check that needs a model call asks the owner first and states its cost.
 
 ## Phases (each a small PR, spec first)
 
@@ -828,6 +903,19 @@ All eight are **answered with the recommended default** below; the spec already 
 - **R8** (answered 2026-10-23, owner: recommended default) A required stdio MCP server that a user declines at the trust prompt: start sessions without it, or block that folder's
   sessions? *Recommended:* start without it and show it (FR-044); an organization that needs it enforced uses a remote server.
 
+### Open questions from the OTel and LLM research (2026-10-23, for Vikram)
+
+Each has a recommended default that the spec already follows; nothing is built until answered.
+
+- **R9** (open) Copilot CLI can export prompt text only together with all other content (responses, system prompt, tool arguments and
+  results). With `logPrompts: true`, should Copilot export nothing (recommended, FR-080a), or should a separate admin key
+  (`telemetry.otel.copilotAllContent`, shown as *Telemetry (with all content)*) allow it?
+- **R10** (open) Add the providers the vendors document but v1 leaves out: Claude Code `foundry` (Microsoft Foundry) and Codex
+  `amazon-bedrock`? *Recommended:* yes, as a small follow-up schema change in P11, same rules (no secrets, env names bound to hosts).
+- **R11** (open) Claude Code sends the account UUID, organization id and, when known, the account e-mail with its OTel data by default.
+  Keep the vendor default and say it in the notice (recommended, FR-086), or add `telemetry.otel.identity: false`, which sets
+  `OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false` (events keep the ids; the docs give no switch for them)?
+
 ## Success Criteria
 
 - **SC-001** An admin can configure all seven owner items with only the files in `samples/managed/` changed, without rebuilding Durbar.
@@ -839,4 +927,9 @@ All eight are **answered with the recommended default** below; the spec already 
 
 ## Changes
 
-(none yet)
+- **2026-10-23** OTel and custom-LLM facts confirmed in the vendors' documentation after Vikram's comment on PR #575 (Copilot CLI
+  OTel page, Claude Code monitoring page, Codex advanced config and their neighbouring pages): research rows for Claude Code OTel and
+  providers, Copilot CLI OTel, SDK, BYOK and managed settings, Codex providers and OTel; FR-080 per-app capability table, new FR-080a
+  (content only on explicit opt-in, visible), FR-081..FR-086, FR-100..FR-102, FR-142, FR-192, FR-194, FR-195 rewritten with the exact
+  variables and keys; the former `[KNOWN GAP]`s for Copilot OTel and Claude Bedrock/Vertex names are closed; per-session acceptance
+  checks stay `[KNOWN GAP]` (T100, T111); open questions R9-R11.
