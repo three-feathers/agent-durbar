@@ -1730,6 +1730,8 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .lg-bed .bd-pil{fill:var(--bubble,var(--surface));stroke:var(--line-2);stroke-width:.6}
 .lg-blanket .bd-blk{fill:color-mix(in srgb,var(--sage) 55%,var(--surface))}
 .lg-av.lying{position:absolute;left:3px;bottom:calc(min(62%,34px) * .42);height:min(34px,calc(100% - 15px));aspect-ratio:1;transform:rotate(-80deg);border-radius:50%;overflow:hidden}
+/* issue 576: a sleeper's name is on the top line, where the chat number sits on the couch: the number goes to the bed's foot corner, beside the lying character, so the name stays whole */
+.stage .desk.shut.rest-old .chatno{left:auto;top:auto;right:2px;bottom:2px}
 .desk.shut.rest-old .lg-name{top:0;bottom:auto;background:transparent;font-weight:500;color:var(--ink-2)}
 .lg-beds>.shut-more{width:52px;height:auto;padding:0 2px;font-size:10.5px;line-height:13px;flex:none;border-radius:10px;white-space:normal}
 /* the peek card: beside the lounge (left, or right when measured too close to the room's edge), never moving anything */
