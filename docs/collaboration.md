@@ -33,6 +33,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
    gh issue edit N --add-assignee @me --add-label status:claimed
    ```
    Check the issue has exactly one assignee (you). If someone else is also there, back off.
+   **Label what you open** (issues and PRs alike): one type (`bug`, `enhancement`, `task`, `documentation`, `question`), at least one `area:*` and `spec:NNN` for every spec it touches; flags (`status:*`, `needs-owner-approval`, `spec-exempt`, `docs-n/a`, `accessibility`) only when true. The full list is in AGENTS.md, *Labels*.
 3. **Branch** `NNN-slug`, where NNN is the spec number from the issue label `spec:NNN`, in its own worktree:
    ```bash
    git switch main && git pull
@@ -72,7 +73,7 @@ The *Spec Kit gate* check explains itself. Common causes: branch is not `NNN-slu
 
 ## For the maintainer
 
-- Labels: `bash .github/scripts/sync-labels.sh` (creates `spec:NNN` per spec folder, `area:*`, `status:*`).
+- Labels: `bash .github/scripts/sync-labels.sh` (creates `spec:NNN` per spec folder, `area:*`, `status:*`). Backfill the taxonomy on issues and PRs: `npm run labels:backfill` (dry run: proposed additions and totals), then `-- --create-labels --apply` (add-only, throttled, safe to re-run).
 - Issues from a spec: `bash .github/scripts/tasks-to-issues.sh specs/NNN-name [--task T020] [--area x] --create` (dry run without `--create`), or `/speckit-taskstoissues` in Claude / `/speckit.taskstoissues` in Copilot (needs the GitHub MCP server). Open backlog: `.github/scripts/backlog-issues.sh`.
 - After adding Spec Kit extensions or presets, run `specify integration use claude` and `specify integration use copilot` once each and commit the result; they only register for the default integration.
 - Board: <https://github.com/orgs/three-feathers/projects/1> (public, linked to the repo; created and refreshed by `bash .github/scripts/create-board.sh`, safe to re-run, needs `gh` scope `project`). Fields: Status (Todo, Claimed, In progress, In review, Done), Spec ID, Owner, Area.

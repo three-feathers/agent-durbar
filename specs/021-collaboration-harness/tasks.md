@@ -16,3 +16,6 @@
 - [x] T015 (2026-10-20) Team rules into `AGENTS.md` (review findings fixed in the PR, existing-capability check, re-approval by patch id, admin merge, OKs in chat, working hours, branch cleanup, spec numbers, share what you learn) and the mirrors (`CLAUDE.md`, `.github/copilot-instructions.md`, PR template, `docs/collaboration.md`); new `docs/agent-notes.md` seeded from the agents' memory [FR-030..FR-034]
 - [x] T016 (2026-10-20) Rule *read every review and comment before a merge* in AGENTS.md and its mirrors; `scripts/pr-gate.sh` [FR-035]
 - [x] T019 (2026-10-22) `docs/agent-setup/` (README, claude-code templates and agents, loops.md, always-on-host.md and examples), links from `docs/collaboration.md` and `AGENTS.md` [FR-044]
+- [x] T020 (2026-10-23) Label taxonomy in `AGENTS.md` and its mirrors (`docs/collaboration.md`, `.github/copilot-instructions.md`); `area:security` and `area:schedules` in `.github/labels.tsv` [FR-045]
+- [x] T021 (2026-10-23) `scripts/labels-backfill.ts` with dry run, `--apply`, `--create-labels`; `scripts/test-labels-backfill.ts` in `npm test`; dry run posted on the PR for review [FR-046]
+- [ ] T022 After the PR is approved: `npm run labels:backfill -- --create-labels --apply`, then fix the flagged items by hand [FR-045, FR-046]
