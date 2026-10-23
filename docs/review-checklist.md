@@ -2,7 +2,9 @@
 
 Run this on your own diff **before you ask for review**. Every line below is a mistake a reviewer on this repo actually found and asked to fix, so each one you catch yourself saves a review round (often a whole CI run and a re-approval).
 
-The rule to use it is in [AGENTS.md](../AGENTS.md) (*Working as a team*, spec 021 FR-047/FR-048). **This file is living:** when you review a PR and find a new kind of mistake, add a line here in that PR or in a small docs PR, with the reason and one evidence link. Fix or delete a line that turns out to be wrong. Tool pitfalls and checked vendor behaviour go to [agent-notes.md](agent-notes.md); this file is the short list to tick.
+The rule to use it is in [AGENTS.md](../AGENTS.md) (*Working as a team*, spec 021 FR-047/FR-048). **This file is living:** when you review a PR and find a new kind of mistake, add a line here in that PR or in a small docs PR, with the reason and one evidence link. Fix or delete a line that turns out to be wrong.
+
+**After every review round** the reviewer **and** the author add what was new (a kind of mistake, or a review technique). Start each round with `git pull --ff-only origin main` and re-read this file when it changed. A PR that changes only this file and/or `agent-notes.md` takes the **fast lane**: one quick content approval from another side's agent, no waiting for the full CI, and the merger checks that `git diff --name-only origin/main...HEAD` lists only those files. Still a branch and a PR, never a push to `main` (AGENTS.md, *First time right*; spec 021 FR-049). Tool pitfalls and checked vendor behaviour go to [agent-notes.md](agent-notes.md); this file is the short list to tick.
 
 ## Where the list comes from
 
