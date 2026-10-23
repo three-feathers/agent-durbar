@@ -120,3 +120,17 @@ specs/005-chat-fullscreen-and-agent-strip/
 **Constitution check.** I: no adapter types in the renderer (capabilities through `feat`). II/III: no new permission path; the mode is never hidden in the overflow; Allow all stays red. IV: simulator only. V: 10.5px floor, 28px controls, no overlap at both sizes; the office is untouched. VI: CSS and DOM only. VIII: decisions and gaps written in the spec.
 
 **Risks.** PR #479 (Ruben, `check:ui-text`) changes `styles.css` and dialogs: rebase and run its check once it is on `main`. PR #463 touches `app.js` chat code (different functions). Issue #452 (dockable panel) will reuse FR-040.
+
+## Delta 2026-10-23: the message box grows, resizes and remembers its size (issue #592, FR-044..FR-049)
+
+**Shape.** Renderer only. The arithmetic is a new pure UMD helper `src/renderer/composersize.js` (`window.DurbarComposerSize`, Node `module.exports`), unit-tested by `scripts/test-composer-size.ts` (`npm run test:composersize`, in `test:serial`): `limits({panelH, chatH, boxH})` → `{min, max, auto}`, `clamp`, `keyStep(key, h, limits)`, `parse(stored)`. `app.js` keeps one `sizeComposer()` (replaces the body of `autoGrow`) that measures the panel, the chat and the box, applies the chosen size or the automatic one, and updates the handle's ARIA values; `wireComposerGrip()` in `openPanel` wires pointer, double-click and keys. `styles.css`: `.inbox textarea` loses `max-height:110px` (the cap is set inline), `.cgrip` handle (tokens only).
+
+| Piece | Where | Notes |
+| --- | --- | --- |
+| Limits | `composersize.js` | min 36; max = box + chat − 140 (transcript floor); auto = clamp(max(110, 0.4 × panel)) ≤ max. |
+| Apply | `sizeComposer()` in `app.js` | Chosen size: height = clamp(chosen). Automatic: height = min(scrollHeight, auto). `overflow-y` auto only when the text is taller. Called on input, open, send, and from a `ResizeObserver` on `#chat` (idempotent: the box + chat sum does not change). |
+| Handle | `#composerGrip` at the top of `.composer` | `role=separator`, `tabindex=0`; `pointerdown` (preventDefault: the box keeps focus) + `setPointerCapture`; `dblclick` and Enter reset; arrows/Page/Home/End through `keyStep`. |
+| Store | `localStorage['durbar.composerHeight']` | `try`/`catch` like `durbar.detail`; removed on reset. |
+| Driver | `scripts/check-composer-toolbar.js` | Long prompt grows to the cap then scrolls; drag changes and clamps; reload remembers; double-click resets; keys; both sizes. |
+
+**Constitution check.** I: no adapter code. III: no new data stored beyond a pixel number. IV: simulator and unit test only. V: no text added, toolbar unchanged, the transcript keeps 140px. VI: pointer events and CSS only. VIII: no real screen reader or touch screen tried (`[KNOWN GAP]` in the tasks).

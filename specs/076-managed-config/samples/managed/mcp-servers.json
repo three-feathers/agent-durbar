@@ -1,0 +1,51 @@
+{
+  "$schema": "./schema/mcp-list.schema.json",
+  "version": 1,
+  "publisher": "Acme Corp IT",
+  "updated": "2026-10-23T09:00:00Z",
+  "servers": [
+    {
+      "id": "github",
+      "name": "GitHub",
+      "description": "Issues, pull requests and code search on github.com.",
+      "transport": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "auth": { "type": "oauth" },
+      "docsUrl": "https://github.com/github/github-mcp-server",
+      "apps": ["copilot", "claude", "codex"],
+      "recommended": true
+    },
+    {
+      "id": "atlassian",
+      "name": "Atlassian (Jira, Confluence)",
+      "description": "Read and update Jira issues and Confluence pages.",
+      "transport": "http",
+      "url": "https://mcp.atlassian.com/v1/sse",
+      "auth": { "type": "oauth" },
+      "docsUrl": "https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/"
+    },
+    {
+      "id": "acme-docs",
+      "name": "Acme internal docs",
+      "description": "Search the internal engineering handbook.",
+      "transport": "http",
+      "url": "https://mcp.acme.example/docs",
+      "auth": {
+        "type": "header",
+        "header": "Authorization",
+        "valueFromEnv": "ACME_DOCS_TOKEN",
+        "prefix": "Bearer "
+      },
+      "required": true
+    },
+    {
+      "id": "playwright",
+      "name": "Playwright",
+      "description": "Drive a local browser for UI checks.",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@0.0.41"],
+      "needs": ["node"]
+    }
+  ]
+}

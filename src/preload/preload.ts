@@ -160,6 +160,8 @@ const api: DurbarApi = {
   // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace…; only the two known words pass
   onMenuAdd: (cb) => sub<unknown>('menu:add', (k) => { if (k === 'folder' || k === 'workspace') cb(k); }),
   onFullScreen: (cb) => sub<boolean>('window:fullScreen', (on) => cb(on === true)),
+  // spec 052 FR-085: a double-click on a drag area of the top bar (Mac only); main reads the system setting
+  titleDoubleClick: () => ipcRenderer.send('window:titleDoubleClick'),
   platform: process.platform,
 };
 contextBridge.exposeInMainWorld('agentDurbar', api);
