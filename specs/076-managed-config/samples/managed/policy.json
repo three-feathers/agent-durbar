@@ -1,0 +1,76 @@
+{
+  "$schema": "./schema/policy.schema.json",
+  "version": 1,
+  "organization": {
+    "name": "Acme Corp",
+    "supportUrl": "https://it.acme.example/durbar",
+    "supportEmail": "it-help@acme.example"
+  },
+  "branding": {
+    "displayName": "Acme Agents",
+    "icon": "icons/acme-agents.png"
+  },
+  "agentApps": {
+    "allowed": ["claude", "copilot"],
+    "allowInAppInstall": false
+  },
+  "mcp": {
+    "mode": "allowlist",
+    "lists": [
+      { "file": "mcp-servers.json" },
+      { "url": "https://mcp-catalog.acme.example/durbar/mcp-servers.json", "refreshHours": 24 }
+    ],
+    "allow": [
+      { "name": "github" },
+      { "url": "https://mcp.atlassian.com/*" }
+    ],
+    "deny": [
+      { "command": "npx", "argsPrefix": ["-y", "@modelcontextprotocol/server-filesystem"] }
+    ]
+  },
+  "registries": {
+    "items": [
+      {
+        "name": "Acme agents and skills",
+        "url": "https://agents.acme.example/durbar/index.json",
+        "checkHours": 12,
+        "updates": "notify"
+      }
+    ]
+  },
+  "telemetry": {
+    "otel": {
+      "endpoint": "https://otel.acme.example:4318",
+      "protocol": "http/protobuf",
+      "signals": ["metrics", "logs"],
+      "headersFromEnv": { "Authorization": "ACME_OTEL_AUTH_HEADER" },
+      "resourceAttributes": { "department": "engineering" },
+      "logPrompts": false,
+      "apps": ["claude", "copilot", "codex"]
+    }
+  },
+  "appearance": {
+    "theme": { "pack": "themes/acme-steel" },
+    "allowUserThemes": false,
+    "allowThemeMaker": false
+  },
+  "llm": {
+    "claude": {
+      "provider": "gateway",
+      "baseUrl": "https://llm-gateway.acme.example/anthropic",
+      "authTokenFromEnv": "ACME_LLM_TOKEN",
+      "model": "acme-sonnet",
+      "smallFastModel": "acme-haiku"
+    },
+    "codex": {
+      "provider": {
+        "id": "acme",
+        "name": "Acme gateway",
+        "baseUrl": "https://llm-gateway.acme.example/openai/v1",
+        "apiKeyFromEnv": "ACME_LLM_TOKEN",
+        "wireApi": "responses"
+      },
+      "model": "acme-coder"
+    }
+  }
+}

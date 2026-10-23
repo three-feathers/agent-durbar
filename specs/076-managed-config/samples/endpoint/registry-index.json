@@ -1,0 +1,41 @@
+{
+  "$schema": "../managed/schema/registry-index.schema.json",
+  "version": 1,
+  "publisher": "Acme Corp IT",
+  "updated": "2026-10-23T09:00:00Z",
+  "items": [
+    {
+      "id": "acme-reviewer",
+      "kind": "agent-profile",
+      "app": "claude",
+      "name": "Acme code reviewer",
+      "description": "Reviews a diff against the Acme secure coding guide.",
+      "version": "1.4.0",
+      "files": [
+        { "path": "acme-reviewer.md", "url": "https://agents.acme.example/durbar/claude/acme-reviewer.md", "sha256": "3f1d0c2a9b8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a392817061e2d", "bytes": 4120 }
+      ]
+    },
+    {
+      "id": "acme-release-notes",
+      "kind": "skill",
+      "app": "claude",
+      "name": "Release notes",
+      "description": "Writes release notes in the Acme format.",
+      "version": "0.3.1",
+      "files": [
+        { "path": "acme-release-notes/SKILL.md", "url": "https://agents.acme.example/durbar/skills/acme-release-notes/SKILL.md", "sha256": "9a8b7c6d5e4f30211f0e9d8c7b6a5948372615049f8e7d6c5b4a3928170615aa", "bytes": 2048 }
+      ]
+    },
+    {
+      "id": "acme-triage",
+      "kind": "agent-profile",
+      "app": "copilot",
+      "name": "Issue triage",
+      "description": "Labels and sizes new issues.",
+      "version": "2.0.0",
+      "files": [
+        { "path": "acme-triage.agent.md", "url": "https://agents.acme.example/durbar/copilot/acme-triage.agent.md", "sha256": "0011223344556677889900aabbccddeeff00112233445566778899aabbccddee", "bytes": 3001 }
+      ]
+    }
+  ]
+}

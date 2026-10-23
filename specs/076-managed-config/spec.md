@@ -1,0 +1,516 @@
+# Feature Specification: Managed configuration for organizations
+
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: Managed configuration for organizations: one admin-only config folder (policy.json, MCP list, icon, theme pack) sets the display name and icon, allowed agent apps, MCP lists and endpoints, an agent/profile/skill registry, OpenTelemetry, theme and custom LLMs; everything set there is locked (Set by your organization); bad config fails safe and visibly
+status: **draft** 2026-10-23 (spec only): samples and JSON schemas included; Q1-Q12 and proposed additions A1-A19 wait for Vikram
+-->
+
+**Feature Branch**: `076-managed-config`
+**Created**: 2026-10-23
+**Status**: Draft (spec only). Nothing built. Clarifications Q1-Q12 are open for Vikram; the "Proposed additions" need an owner decision.
+**Input**: Owner request by Vikram (2026-10-23): "Durbar must be packageable and usable in corporate environments. All of it is driven by a config folder (config files plus icons), and anything set there is locked, i.e. not editable in the UI (shown as *Set by your organization*):
+1. change the app display name and icon (the original name stays in About and credits);
+2. restrict which agent apps (harnesses) are allowed;
+3. restrict and also complement the MCP list, including a custom endpoint that serves an MCP list as JSON (with a sample JSON and a schema);
+4. a source for an agent/profile and skill registry, from which users load agents, profiles and skills, with automatic change checks and updates;
+5. OpenTelemetry endpoints, per agent app as far as its CLI supports them;
+6. set a theme (a custom theme pack or a bundled one);
+7. a custom LLM config for agent apps that support it, so a company can use its own hosted models.
+Research what else companies need for packaging, and suggest additions."
+
+## Summary
+
+An IT department drops one folder (a `policy.json`, optional MCP list, optional theme pack and icon) into a fixed, admin-only place on
+each machine. Durbar reads it at start, validates it against a published JSON schema, and applies it **above** the user's own settings.
+Every control a policy key covers is shown disabled with a lock and the words **Set by your organization**. A broken folder never
+silently loosens anything: Durbar starts in a visible, locked-down safe mode instead. A new **Settings > Organization** page shows the
+effective policy, where each value came from, and every error.
+
+Durbar does **not** become a second enforcement layer for the agent apps' own enterprise controls. Where a vendor has its own managed
+settings (Claude Code `managed-settings.json`, Codex `requirements.toml`, GitHub's Copilot policies), Durbar's policy configures the
+sessions **Durbar** starts and the spec says plainly that hard enforcement for a terminal user is the vendor's mechanism (FR-131).
+
+## Research (`read:` evidence, 2026-10-23)
+
+Every row was read in the vendor's own documentation on 2026-10-23 unless marked *unconfirmed*.
+
+| Product | Where managed config lives | Lock / precedence | Diagnostics / UI | Source |
+|---|---|---|---|---|
+| VS Code | Windows registry `Software\Policies\Microsoft\VSCode` set by GPO/Intune via shipped ADMX/ADML; macOS configuration profile (sample `.mobileconfig` in the bundle, 1.99+); Linux `/etc/vscode/policy.json` (1.106+, root:root 0644) | Computer beats user; a policy beats default, user and workspace values. A Linux syntax error means the policy does not apply (logged) | Lock icon, "managed by your organization" on the setting | `read:` https://code.visualstudio.com/docs/enterprise/policies |
+| VS Code policies relevant here | `AllowedExtensions`, `UpdateMode`, `ChatMCP` (`chat.mcp.access`), `ChatAllowedMcpServers`/`ChatDeniedMcpServers` (deny wins), `ChatAllowManagedMcpServersOnly`, `McpGalleryServiceUrl`, `ExtensionGalleryServiceUrl` | | | same |
+| Chrome | Linux `/etc/opt/chrome/policies/managed/*.json` (mandatory) and `.../recommended/` (user may change); Windows registry through Group Policy; macOS managed preferences (exact plist path *unconfirmed* in the pages read) | Platform policy > machine cloud > OS user > cloud user; machine beats user; mandatory beats recommended; the same policy in two files is undefined | `chrome://policy`: Reload, status OK/error per policy, "show policies with no value" | `read:` https://chromium.googlesource.com/chromium/src/+/main/docs/enterprise/policies.md, https://support.google.com/chrome/a/answer/9027408, https://support.google.com/chrome/a/answer/9037717 |
+| Claude Code | macOS `/Library/Application Support/ClaudeCode/managed-settings.json`; Linux/WSL `/etc/claude-code/managed-settings.json`; Windows `C:\Program Files\ClaudeCode\managed-settings.json` (the old `C:\ProgramData\ClaudeCode` is **no longer read**); `managed-settings.d/` drop-ins; `managed-mcp.json`. MDM: macOS domain `com.anthropic.claudecode`; Windows `HKLM\SOFTWARE\Policies\ClaudeCode` value `Settings` (JSON); `HKCU` only when no admin source exists; re-read every 30 min | Managed > command line > project local > project > user; lists merge; a present but unparseable managed file makes Claude Code **refuse to start** | | `read:` https://code.claude.com/docs/en/managed-settings, https://code.claude.com/docs/en/settings |
+| Claude Code, MCP | `allowedMcpServers`, `deniedMcpServers`, `allowManagedMcpServersOnly`, `managed-mcp.json` | | | same (`managed-mcp` page referenced, not read) |
+| Claude Code, OTel | Off until `CLAUDE_CODE_ENABLE_TELEMETRY=1`; `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` (`otlp`...), `OTEL_EXPORTER_OTLP_PROTOCOL` (must be set), `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_LOG_USER_PROMPTS` (off by default) | Managed `env` can lock them | | `read:` https://code.claude.com/docs/en/monitoring-usage |
+| Claude Code, network and LLM | `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` (no SOCKS); bundled CAs plus the OS store (`CLAUDE_CODE_CERT_STORE`); `NODE_EXTRA_CA_CERTS`; mTLS `CLAUDE_CODE_CLIENT_CERT`/`_KEY`; `ANTHROPIC_BASE_URL` for a gateway; `allowedProviders: ["customEndpoint"]` (2.1.285+) pins it | | | `read:` https://code.claude.com/docs/en/network-config, https://code.claude.com/docs/en/llm-gateway. Bedrock/Vertex variable names (`CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`) *unconfirmed* in the pages read |
+| Copilot CLI, custom models (BYOK) | Env vars: `COPILOT_PROVIDER_BASE_URL` (required), `COPILOT_PROVIDER_TYPE` (`openai`, `azure`, `anthropic`), `COPILOT_PROVIDER_API_KEY` or `COPILOT_PROVIDER_BEARER_TOKEN`, `COPILOT_PROVIDER_WIRE_API`, `COPILOT_PROVIDER_AZURE_API_VERSION`, `COPILOT_PROVIDER_MODEL_ID`, `COPILOT_MODEL`; `COPILOT_OFFLINE=true` avoids GitHub contact | Models need tool calling and streaming | | `read:` https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-byok-models |
+| Copilot, MCP registry | Org setting points at an HTTPS registry implementing MCP registry API **v0.1** (`GET /v0.1/servers`, `/v0.1/servers/{name}/versions/latest`), CORS open for GET; public preview; GitHub calls managed settings the more secure option | | | `read:` https://docs.github.com/en/copilot/how-tos/administer-copilot/manage-mcp-usage/configure-mcp-registry |
+| Copilot CLI, config and OTel | `COPILOT_HOME` moves `~/.copilot`; enterprise managed settings exist (can block `/allow-all`); `--disable-client-telemetry` does not affect a user-configured OTel export. OTel variables (`COPILOT_OTEL_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`, http only) *unconfirmed*: only third-party pages found | | | `read:` https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/configure-copilot-cli, https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference |
+| Codex CLI | `~/.codex/config.toml`: `model_providers.<id>` (`base_url`, `env_key`, `wire_api = "responses"`; ids `openai`, `ollama`, `lmstudio` reserved); `[otel]` `exporter = none / otlp-http / otlp-grpc`, `log_user_prompt` opt-in; project config cannot set providers or `[otel]` | | | `read:` https://learn.chatgpt.com/docs/config-file/config-reference |
+| Codex, managed | `/etc/codex/requirements.toml` (Linux, macOS), `%ProgramData%\OpenAI\Codex\requirements.toml` (Windows); legacy `managed_config.toml`; macOS MDM domain `com.openai.codex` keys `config_toml_base64`, `requirements_toml_base64`; locks `allowed_approval_policies`, `allowed_sandbox_modes` | Managed layers override `--config` | | `read:` https://learn.chatgpt.com/docs/enterprise/managed-configuration.md |
+| MCP registry | Official registry (preview) stores `server.json` metadata (schema draft in the registry repo); not for private servers, "not designed for self-hosting"; an OpenAPI spec for others to implement; hosts should consume downstream registries | | | `read:` https://modelcontextprotocol.io/registry/about |
+| OpenTelemetry | `OTEL_EXPORTER_OTLP_ENDPOINT` (http appends `/v1/<signal>`), `OTEL_EXPORTER_OTLP_HEADERS` (`k=v,k=v`), `OTEL_EXPORTER_OTLP_PROTOCOL` (`grpc`, `http/protobuf` default, `http/json`), per-signal overrides | | | `read:` https://opentelemetry.io/docs/specs/otel/protocol/exporter/ |
+| Electron | `session.setProxy` modes `direct`, `auto_detect`, `pac_script`, `fixed_servers`, `system`; with no config Electron uses the system proxy | | | `read:` https://www.electronjs.org/docs/latest/api/structures/proxy-config, https://www.electronjs.org/docs/latest/api/session |
+| macOS MDM | Configuration profile payload `com.apple.ManagedClient.preferences` with *Forced* values; apps read them through CFPreferences; `CFPreferencesAppValueIsForced` says the user cannot change a key and the UI should be disabled | | | `read:` https://developer.apple.com/documentation/devicemanagement/managedpreferences (search extract only) |
+
+*Not read (general knowledge, to be checked before the phase that needs it):* electron-builder MSI/PKG/per-machine targets and
+electron-updater generic feeds (the docs URLs tried returned 404); Chrome's exact Windows key and macOS plist path; Copilot CLI OTel
+and proxy/CA support; Claude Code Bedrock/Vertex variable names.
+
+**What the research says for Durbar.** (1) Every product uses a root/admin-owned location per OS and a "machine beats user" order;
+JSON on Linux, registry/MDM on Windows/macOS. A folder of JSON files works on all three today with no native code; registry and MDM
+are a later, optional source (Proposed addition A9). (2) Products disagree on a broken policy: VS Code ignores it, Claude Code refuses
+to start. Durbar takes a third, visible path (FR-010). (3) Windows `C:\ProgramData` is writable by standard users for new folders;
+Claude Code moved off it. Durbar's machine folder lives under `%ProgramFiles%` (FR-002). (4) The three agent apps already accept
+proxy, CA, OTel and custom-model settings through environment variables or config overrides, so Durbar's job is to **pass** them into
+the sessions it starts, not to reimplement them.
+
+## Existing capabilities reused (AGENTS.md: look first)
+
+| Need | Existing code path (reuse or extend, no parallel version) |
+|---|---|
+| Settings and their IPC | `src/main/settings.ts` `SettingsStore`, `src/shared/credits.ts` `AppSettings`/`parseSettings`, `src/main/ipc/settings.ts` `settings:get` (adds `about` today; adds `policy` here), `src/shared/api.ts` `AppSettingsView` |
+| Display name and About | `src/shared/about.ts` (`aboutView`), `src/main/appmenu.ts` `MENU_APP_NAME`, window title `src/main/main.ts` (BrowserWindow and quit dialog), spec 008 FR-033/FR-034 (no `app.setName`; profile folder chosen in code) |
+| Icons | `build/icon.{png,ico,icns,svg}`; `BrowserWindow` `icon`; `app.dock.setIcon` on macOS |
+| Theme | `src/renderer/theme.js` (bundled ids, e.g. `clean-office`, `corporate`, `retro`), `src/shared/themes.ts` `checkUserManifest` and `USER_THEME_LIMITS`, `src/main/themes.ts` `UserThemeStore`, theme maker `src/shared/themegen.ts` / `src/main/ipc/themes.ts` (specs 035, 040, 070) |
+| Agent apps | `src/adapters/descriptors.ts`, `src/adapters/registry.ts` `createRegistry`/`detectAll`, `src/main/ipc/adapters.ts` `adapters:list`, harness setup `src/main/harnesssetup.ts`, `src/main/ipc/harness.ts`, `src/renderer/harnesses.js` (spec 051) |
+| MCP | `src/main/mcpfiles.ts`, global lists `src/main/mcpglobal.ts`/`mcpglobalio.ts`/`ipc/mcpglobal.ts` (spec 069), session controls `src/main/mcpsession.ts` (spec 058), extras `src/main/mcpstore.ts`/`mcpipc.ts`, folder setup `src/main/foldersetup.ts` (spec 061), the adapters' `mcpServers`/`disabledMcpServers` options (`copilot.ts`, `codexMcp.ts` `codexMcpConfig`, Claude `--strict-mcp-config`). The catalog idea is issue #539 |
+| Agent profiles and skills | `src/main/profilefiles.ts` (`profileDirs`, `userAgentDirs`, `saveProfileFile`), `src/main/ipc/profiles.ts`, `src/adapters/claudeAgents.ts` (spec 043); skills and prompts discovery from spec 073 (PR #535, open) |
+| Child process environment | Claude `src/adapters/claude.ts` `deps.env`; Codex `codexChildEnv` (`src/adapters/codex.ts`); Copilot `createClient()` in `src/adapters/copilot.ts` (inherits `process.env`; needs an `env` option); profile homes from spec 049 |
+| Trust prompts | `src/main/agenttrust.ts` `AgentTrustStore`/`hashAgentFile`, folder setup dialog (spec 061), `askDialog` in `src/renderer/dialog.js` |
+| Network fetch | none in main today for arbitrary URLs; use Electron `net.fetch` (Chromium stack: system proxy and OS certificate store) |
+| Things that change settings from outside the window | Durbar MCP server (spec 041), remote control (spec 054), office assistant (spec 048): all must refuse a locked key (FR-016) |
+
+Not present today (so nothing to reuse): an auto-updater (`package.json` `"publish": null`), a log file, time-based retention, a
+stored default permission mode (the `#permMode` select chooses per folder), an app-wide remote-control switch, MSI/PKG/deb targets.
+
+## User Scenarios & Testing *(mandatory)*
+
+### User Story 1 - IT rolls out a locked setup (Priority: P1)
+
+Priya in IT copies a `managed` folder (policy, MCP list, icon, theme pack) to `C:\Program Files\AgentDurbar\managed\` on 400 laptops
+with her usual software-deployment tool. Ana opens Durbar: the window says *Acme Agents*, the icon is Acme's, only Claude Code and
+Copilot are offered, the MCP catalog lists Acme's servers first, and the theme picker is greyed with a lock and *Set by your
+organization*. About still says *based on Agent Durbar* with the original credits.
+
+**Independent Test**: simulator with `DURBAR_MANAGED_DIR=specs/076-managed-config/samples/managed` (dev hooks only): the window
+title, the agent-app list, the theme and Settings > Organization match the sample; every covered control is disabled with the words.
+
+**Acceptance Scenarios**:
+1. **Given** the sample folder, **When** Durbar starts, **Then** the title is *Acme Agents* and About shows *Acme Agents, based on Agent Durbar* and the unchanged credits.
+2. **Given** `agentApps.allowed: ["claude","copilot"]`, **When** Ana opens New session, **Then** Codex is not offered and Settings > Agent apps shows Codex as *Turned off by your organization*.
+3. **Given** a locked theme, **When** Ana opens Settings > Look, **Then** the picker is disabled, shows a lock icon and *Set by your organization*, and Import / Make with AI are hidden when `allowUserThemes`/`allowThemeMaker` are false.
+
+### User Story 2 - A broken policy fails safe and visibly (Priority: P1)
+
+Priya's script truncates `policy.json`. Durbar starts with a red banner: *Your organization's settings could not be read
+(policy.json, line 12: unexpected end). Durbar is in safe mode: Read-only, no new MCP servers, no installs. Contact IT:
+it-help@acme.example.* Ana can still read her agents and chat in Read-only.
+
+**Acceptance Scenarios**:
+1. **Given** an unparseable or schema-invalid `policy.json`, **When** Durbar starts, **Then** safe mode (FR-011) applies and the banner names the file, the place and the error.
+2. **Given** one invalid key in an otherwise valid file, **When** Durbar starts, **Then** only that key's area is put in its safe state (FR-012), the rest of the policy applies, and Settings > Organization lists the error.
+3. **Given** the folder is fixed, **When** Ana chooses **Reload organization settings** (or restarts), **Then** safe mode ends.
+
+### User Story 3 - The company's MCP list from an endpoint (Priority: P1)
+
+Acme publishes `https://mcp-catalog.acme.example/durbar/mcp-servers.json`. With `mcp.mode: "allowlist"`, Ana's **Add an MCP server**
+catalog shows only Acme's servers; a pasted config for an unknown server is refused with *Not on your organization's list*. A
+folder's own `.mcp.json` server that is not on the list is shown in the folder dialog as *Blocked by your organization* and not
+started. A server marked `required` is in every session and its switch is locked on.
+
+### User Story 4 - Agents and skills from the company registry (Priority: P2)
+
+Acme's registry index lists a *Code reviewer* agent profile and a *Release notes* skill. Settings > Agents and skills shows them with
+**Install**. Two days later the index has version 1.5.0 of the reviewer; Durbar shows *Update available* (or, with `updates: "auto"`,
+updates it and says so). A file whose SHA-256 does not match is refused. A skill that ships a script is never run by Durbar; the
+script is listed and needs the user's tick the first time (FR-066).
+
+### User Story 5 - Telemetry to the company's collector (Priority: P2)
+
+With `telemetry.otel` set, every Claude Code and Codex session Durbar starts exports metrics and logs to Acme's collector, with the
+`Authorization` header taken from the `ACME_OTEL_AUTH_HEADER` environment variable. Settings > Organization says per agent app whether
+it exports (*Claude Code: on; Codex: on; Copilot: not supported by this version*). Prompts are not exported unless `logPrompts` is true.
+
+### User Story 6 - The company's own models (Priority: P2)
+
+With `llm.claude.provider: "gateway"` and `baseUrl`, Claude Code sessions talk to Acme's gateway with the token from `ACME_LLM_TOKEN`;
+Codex sessions use the `acme` provider. The model picker shows the configured model, locked. Cost shows *price unknown* rather than a
+wrong number.
+
+### Edge Cases
+
+- The machine folder exists but is writable by a standard user (POSIX: not root-owned or group/world-writable). Durbar treats it as invalid (FR-005) and enters safe mode, because a user could otherwise loosen it.
+- An icon that is not a PNG, too large or not square: the default icon is kept, the error is listed; the display name still applies.
+- `agentApps.allowed` names no app that is installed: the office shows *No allowed agent app is installed. Contact IT* with the support link; nothing else breaks.
+- A session that was started with an app that is now disallowed: it stays in the list, its history is readable, Send and Resume are disabled with *Turned off by your organization*.
+- The MCP endpoint is down or slow: the last good copy (cached with its fetch time) is used and marked *Last updated 3 days ago*; with no copy yet, `allowlist` means no org servers are offered and user additions stay refused (fail closed).
+- An endpoint redirects to `http://` or another host on a non-https scheme: refused.
+- A registry file was edited by the user after install: the update does not overwrite it; it is flagged *Changed locally* with **Replace** and **Keep**.
+- The user sets `ANTHROPIC_BASE_URL` in their own shell while a policy sets `llm.claude`: the policy value wins for Durbar's sessions.
+- Two layers set the same key: the higher layer wins (FR-007); Settings > Organization shows the losing value as *overridden*.
+
+## Requirements *(mandatory)*
+
+### A. Config folder, format and precedence
+
+- **FR-001 One folder, plain files.** Managed configuration is a folder holding `policy.json` (required when the folder exists) and
+  any files it names by relative path: an MCP list (`mcp-servers.json`), icons, theme packs under `themes/<id>/`, a local registry
+  index. Paths in `policy.json` are relative, may not be absolute, contain `..` or leave the folder (checked after resolving links).
+- **FR-002 Machine folder per OS** (resolved in one pure function with an injected environment, constitution VI):
+  - Windows: `%ProgramFiles%\AgentDurbar\managed\` (admin-only by default; **not** `%ProgramData%`, which standard users can write to);
+  - macOS: `/Library/Application Support/AgentDurbar/managed/`;
+  - Linux: `/etc/agent-durbar/managed/`.
+  The same path for an installed build and for a portable or AppImage build.
+- **FR-003 User folder (lower layer).** `<appData>/AgentDurbar/managed/` per user (outside the profile folder, so a profile reset does
+  not drop it). It uses the same format, is locked in the UI the same way, and is labelled *Set by your organization (user)* in
+  Settings > Organization, which says it is not tamper-proof. A machine policy with `allowUserConfig: false` turns it off. Keys that
+  only make sense machine-wide (`allowUserConfig`, `required` MCP servers) are ignored at this layer with a listed warning. (Q3)
+- **FR-004 No override in packaged builds.** `DURBAR_MANAGED_DIR` points at another folder only when the dev hooks are on (spec 010
+  FR-017; `npm start`, the simulator, tests). A packaged build ignores it, so a user cannot swap the machine folder for their own.
+- **FR-005 Folder trust check.** POSIX: the machine folder and `policy.json` must be owned by root (uid 0) and not group- or
+  world-writable; otherwise the folder is treated as invalid (FR-010). Windows: `[KNOWN GAP]` the ACL is not checked in phase 1 (reading
+  an ACL needs native code or `icacls` parsing); the location under `%ProgramFiles%` is relied on and the gap is documented.
+- **FR-006 Format.** JSON (UTF-8, optional BOM, CRLF or LF), `version: 1`, validated against
+  [samples/managed/schema/policy.schema.json](samples/managed/schema/policy.schema.json) (JSON Schema 2020-12). The schemas are
+  published with the app and on the website. JSON is chosen because it needs no new dependency, maps onto the Windows registry and
+  macOS plists later (A9), and is what VS Code, Chrome and Claude Code use. Unknown top-level keys are an error (a typo must not pass
+  as "unset"); unknown keys inside an object are errors too (the schema is closed).
+- **FR-007 Precedence, per key path:** machine folder > user folder > the user's own setting in Durbar > Durbar's default. The highest
+  layer that sets a key wins; lists are **not** merged across layers, except MCP lists and registries, which the machine layer can
+  extend with the user layer only when `allowUserConfig` is true (the union, machine entries first). Session-level choices (a mode, a
+  model, a cap) must stay within the effective policy at all times.
+- **FR-008 When it is read.** At start, before the first window and before any adapter starts; again on **Reload organization
+  settings** (Settings > Organization) and when the folder changes (a file watcher, debounced to 2 s). A reload that tightens a rule
+  applies to new sessions at once and to running sessions at their next launch or resume; a running session that now breaks a rule
+  (a disallowed app, a disallowed MCP server) is marked *Restart needed by your organization's settings* and its Send is disabled
+  until it is restarted. Durbar never kills a turn mid-way.
+- **FR-009 Limits.** `policy.json` at most 256 KiB; each named file at most 1 MiB (theme packs keep `USER_THEME_LIMITS`); the folder
+  at most 200 files and 20 MiB in total. Larger is an error (FR-010/FR-012).
+
+### B. Validation and failure behaviour (fail safe and visibly)
+
+- **FR-010 Whole-file failure.** `policy.json` missing while the folder exists, unreadable, not JSON, failing the trust check (FR-005),
+  over the size limit, or with a `version` Durbar does not know: **safe mode** for that layer (FR-011). The user layer's failure only
+  drops the user layer (with a banner) and never weakens the machine layer. (Q2)
+- **FR-011 Safe mode** is the most restrictive state that still lets the user read their work: permission mode capped at Read-only for
+  every session; no MCP server added beyond those already accepted, and folder MCP servers off; in-app install/update of agent apps off;
+  registry installs and updates off; remote control off; theme and name unchanged (the default). A red, non-dismissable banner names the
+  file, the line and column when known, the error and the organization's support link or address when those could be read (else a
+  generic *Contact your IT department*). Agents, chats and history stay readable.
+- **FR-012 Key-level failure.** When the file parses but one key fails the schema, only that key's area takes its safe value and the
+  rest applies: `branding` invalid: the default name and icon; `agentApps.allowed` invalid or empty: no agent app may start (fail
+  closed) with the banner; `mcp` invalid: treated as `mode: "off"` (no MCP server starts, `required` ones included); `registries`
+  invalid: none; `telemetry` invalid: nothing exported (not "export somewhere else"); `appearance` invalid: the default theme, locked;
+  `llm.<app>` invalid: that app may not start (its traffic must not silently go to the public vendor endpoint the company wanted to
+  avoid). Each failure is listed in Settings > Organization and in a yellow banner.
+- **FR-013 Errors are readable.** Every message names the file, the JSON path (`/mcp/lists/1/url`) and what was expected, in plain
+  words ("must start with https://"), never a raw stack trace. The validator is a small, dependency-free module in `src/shared`
+  driven by the same rules as the published schema (a test checks that the samples and a set of broken fixtures give the same verdict
+  as the schema, using `ajv`, which is already installed as a dependency of electron-builder (test only, never shipped), so the two cannot drift). (plan D2)
+
+### C. Locked UI
+
+- **FR-014 Locked controls.** Every control a policy key covers is shown, disabled (`aria-disabled` and not focusable as an input),
+  with a lock icon **and** the words *Set by your organization* (colour is never the only signal, constitution V). Hovering or focusing
+  the words names the key (`agentApps.allowed`) and the layer (machine or user). Hidden is used only where the policy turns a feature
+  off entirely (`allowThemeMaker: false` hides *Make with AI*); a short line says *Turned off by your organization* where the feature
+  used to be, so a user knows why it is gone.
+- **FR-015 Settings > Organization.** A page (shown only when a policy is in force, or in safe mode) with: the organization name and
+  support links; each layer's folder, file hashes (SHA-256, first 12 hex) and load time; the effective value of every key and its
+  source; overridden values; errors and warnings; per agent app what was passed (OTel on/off, custom model on/off, never a secret
+  value); and **Reload organization settings**. This is the diagnostics view (like `chrome://policy`). **Copy as text** copies the
+  same, with env-var names but no values.
+- **FR-016 Every writer respects locks.** Settings IPC, the Durbar MCP server (spec 041), remote control (spec 054), the office assistant
+  (spec 048), schedules (spec 044) and the command palette refuse a change to a locked key in main with the error *Set by your
+  organization*. The window is not trusted to enforce it (constitution III).
+
+### D. Owner item 1: display name and icon
+
+- **FR-020 Display name.** `branding.displayName` (1-40 characters, no control characters or `<`/`>`) replaces *Agent Durbar* in the
+  window title, the quit dialog, the macOS app-menu labels (`MENU_APP_NAME`, display only), OS notifications' title and the first-run
+  text. It never changes `app.setName`, the app id, the profile folder or the safeStorage key (spec 008 FR-033/FR-034; agent-notes:
+  a name change makes a new macOS Keychain key and old MCP secrets stop decrypting).
+- **FR-021 Original name kept.** About shows *<displayName>, based on Agent Durbar*, the version, the unchanged Three Feathers
+  copyright, the contributors from `src/shared/about.ts` and the MIT licence; Help and the website link still point at the project.
+  The test that keeps credits in step (`test:about`) also checks they are present under a policy name.
+- **FR-022 Icon.** `branding.icon`: a square PNG, 256-1024 px, at most 1 MiB, checked by its header (magic bytes, width, height) before
+  use. Applied to the window (`BrowserWindow` icon; Windows taskbar and Linux window), the macOS Dock at run time (`app.dock.setIcon`)
+  and the About panel. `[KNOWN GAP]` installer, Start-menu shortcut, `.desktop` file, Finder and the macOS menu bar's bold app name
+  come from the packaged app and do not change at run time; Proposed addition A13 (a rebrand build) covers them.
+- **FR-023 Theme words that name the app** (scene signs, the lobby) use the display name when set.
+
+### E. Owner item 2: allowed agent apps
+
+- **FR-030** `agentApps.allowed` (subset of `copilot`, `claude`, `codex`) filters `adapters:list` in main: a disallowed app is not
+  detected, not offered in New session, the office assistant, profile AI, theme maker or *Continue VS Code chat*, and not started by
+  schedules (a schedule for it is shown paused with *Turned off by your organization*). The simulator honours the same list.
+- **FR-031** Settings > Agent apps lists a disallowed app with the lock line and no Install, Update or Sign-in button.
+- **FR-032** `agentApps.allowInAppInstall: false` disables Install and Update in Settings > Agent apps (spec 051) for every app; the
+  line says the IT department installs agent apps. Sign-in still works (it is the vendor's own flow).
+- **FR-033** Existing sessions of a disallowed app follow FR-008 (readable, not resumable).
+
+### F. Owner item 3: MCP lists (restrict and complement)
+
+- **FR-040 Org MCP lists.** `mcp.lists` names up to 8 sources, each a local `file` or an https `url`, in one of two formats:
+  `durbar-mcp-list-v1` ([schema](samples/managed/schema/mcp-list.schema.json), [sample](samples/managed/mcp-servers.json)), or
+  `mcp-registry-v0.1` (an MCP registry that implements `GET /v0.1/servers`, the API GitHub's Copilot registry setting and VS Code use).
+  Entries are de-duplicated by id (the first source wins) and shown in the MCP catalog of issue #539 under the organization's name,
+  `recommended` ones first. **Complement**: users pick an org server instead of typing its command or URL.
+- **FR-041 No secrets in a list.** A list entry names secrets by environment variable (`valueFromEnv`, `env.X.fromEnv`) or says
+  `auth: oauth` (the sign-in of spec 058 / #364). An entry with a literal `Authorization` value, a URL with `user:pass@` or a query
+  parameter named like a secret (`token`, `key`, `secret`, `password`, `sig`) is refused with the reason.
+- **FR-042 Modes.** `mcp.mode`:
+  - `open` (default when only `lists` is set): users may add any server; `deny` still applies;
+  - `allowlist`: only servers from the org lists or matching `allow` can be added, accepted from a folder (spec 061) or started; the
+    add form and *Paste a config* refuse others with *Not on your organization's list*;
+  - `off`: no MCP server starts except `required` ones.
+  `deny` always wins over `allow` and over list entries. Matching: `name` exact (case-insensitive), `url` exact or a prefix ending in
+  `*` compared after URL normalisation (scheme, host lower case, default port dropped), `command` by base name without extension plus
+  an optional `argsPrefix`.
+- **FR-043 Enforcement points**, all in main: the extras store (`mcpstore.ts`), global add and harmonize (spec 069, which also refuses to
+  write a disallowed server into another app's file), folder setup (spec 061: a blocked server is listed as *Blocked by your
+  organization* and not offered), the session start options (`startopts.ts`: every server Durbar knows about that is not allowed is
+  passed as disabled: Copilot `disabledMcpServers`, Codex `mcp_servers.<n>.enabled = false`, Claude not passed at all since
+  `--strict-mcp-config`), and the session MCP switches (spec 058/069; a required server's switch is locked on).
+- **FR-044 Required servers.** `required: true` on an entry from a **machine-layer** list adds the server to every session of the apps
+  in its `apps` (default all), locked on. From the user layer it is ignored with a warning.
+- **FR-045 `mcp.allowFolderServers: false`** turns off folder MCP servers (spec 061) for every folder, with the lock line in the folder
+  dialog.
+- **FR-046 Endpoint fetches** follow FR-120 (https, size, time, redirects, cache). A list is refreshed at start and every `refreshHours`
+  (default 24); the catalog shows when it was last fetched. A fetch failure keeps the last good copy.
+- **FR-047 Sample and schema** are part of this spec and are published with the docs: `samples/managed/mcp-servers.json` and
+  `samples/managed/schema/mcp-list.schema.json`.
+
+### G. Owner item 4: agent, profile and skill registry
+
+- **FR-060 Sources.** `registries.items` names up to 8 registries (an https `url` or a local `file` in the folder) serving an index in
+  the format of [samples/managed/schema/registry-index.schema.json](samples/managed/schema/registry-index.schema.json)
+  ([sample](samples/endpoint/registry-index.json)). Item kinds: `agent-profile` (spec 043), `skill` and `prompt` (spec 073), each for
+  one agent app. `registries.allowUserRegistries` (default true) lets users add their own registry URL in Settings; a user registry
+  goes through the trust step (FR-066) for every item. (Q1: "profile" here means an agent profile file of spec 043.)
+- **FR-061 Install.** **Install** downloads each file (FR-120 limits; at most 16 files, 256 KiB each), checks its SHA-256 against the
+  index **before** writing, and writes it into the agent app's user-level place that Durbar already uses: Claude Code
+  `<CLAUDE_CONFIG_DIR or ~/.claude>/agents/` and `.../skills/<id>/`, Copilot `~/.copilot/agents/` (and the skills and prompts places of
+  spec 073 when it lands); Codex where spec 073 defines one, else *not supported* (`[KNOWN GAP]` until then). Writes reuse spec 043's
+  safe writer (temp file plus rename, owner-only mode). A file that exists and was not installed by Durbar is never overwritten
+  (*A file with this name exists; rename it or remove it first*). (Q7)
+- **FR-062 Bookkeeping.** `<userData>/registry-installs.json` records per item: registry, id, version, files with their installed
+  SHA-256 and path. No content, no secrets.
+- **FR-063 Change checks.** Each registry is checked at start and every `checkHours` (default 24, 1-168) with `If-None-Match`/
+  `If-Modified-Since`. A newer `version` of an installed item shows *Update available* on Settings > Agents and skills and a quiet badge;
+  `updates: "auto"` (machine layer only) installs it and posts a toast *Updated Code reviewer to 1.5.0*. (Q8)
+- **FR-064 Local edits are kept.** Before an update, each installed file's current hash is compared with the recorded one; a file the
+  user changed is not replaced; the item shows *Changed locally* with **Replace with 1.5.0** and **Keep mine**.
+- **FR-065 Removal and deprecation.** An item removed from its registry, or `deprecated: true`, is marked *No longer offered* and is not
+  removed by itself; **Uninstall** removes only files whose hash still matches what Durbar installed.
+- **FR-066 Never run code from a registry.** Durbar never executes a downloaded file. An item that contains anything other than
+  Markdown or plain text (`.md`, `.txt`, `.json`, `.yaml`) or whose agent-profile front matter grants tools that write or run commands
+  is shown in full before install with the list of what it can do; items from the machine policy's registries are trusted by the
+  admin's choice (shown, no tick needed) unless they contain such files, which always need the user's tick (constitution III
+  Amendment 1: the user sees it listed). Items from user registries always need the tick. The tick is remembered per file hash
+  (reusing `AgentTrustStore`).
+- **FR-067 Locked items.** An item from a machine registry may be marked managed: the profile editor (spec 043) opens it read-only with
+  the lock line. Users can still copy it to a new profile.
+
+### H. Owner item 5: OpenTelemetry
+
+- **FR-080 One setting, mapped per agent app.** `telemetry.otel` (`endpoint` https, `protocol`, `signals`, `headersFromEnv`,
+  `resourceAttributes`, `logPrompts` default false, `apps`) is turned into each app's own settings in the environment or config of
+  the sessions Durbar starts. Durbar itself sends nothing (constitution III "No telemetry": see Q4).
+- **FR-081 Claude Code:** `CLAUDE_CODE_ENABLE_TELEMETRY=1`; `OTEL_METRICS_EXPORTER=otlp` / `OTEL_LOGS_EXPORTER=otlp` for the signals
+  chosen (traces only if the installed version documents them); `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`,
+  `OTEL_EXPORTER_OTLP_HEADERS` built from `headersFromEnv` (values read from Durbar's own environment at launch, never written to disk
+  or logs), `OTEL_RESOURCE_ATTRIBUTES` from `resourceAttributes`; `OTEL_LOG_USER_PROMPTS=1` only when `logPrompts` is true.
+- **FR-082 Codex:** config overrides on the thread (`otel.exporter = "otlp-http"` or `"otlp-grpc"` with the endpoint and headers,
+  `otel.log_user_prompt` from `logPrompts`), in the same way `codexMcpConfig` passes MCP overrides today. Whether Codex accepts `[otel]`
+  as a per-thread override (not only from `config.toml`) is `[KNOWN GAP]` until checked offline with `codex app-server
+  generate-json-schema` (agent-notes); if it does not, Durbar writes nothing to the user's `config.toml` and reports *Codex: set by
+  your organization's Codex config* only when `/etc/codex` already sets it, else *not supported from Durbar*.
+- **FR-083 Copilot:** `[KNOWN GAP]` Copilot CLI's OTel support is not confirmed in GitHub's documentation (only third-party pages). The
+  phase that implements FR-080 first confirms the variables with `copilot help` output (no prompt, no credits); until then Copilot is
+  shown as *not supported by this version* and nothing is passed.
+- **FR-084** A header value that is missing from the environment at launch: the session starts without export and Settings >
+  Organization shows *ACME_OTEL_AUTH_HEADER is not set*. Durbar never falls back to an unauthenticated export silently.
+- **FR-085** User-level OTel variables already in the user's environment are left as they are when no policy sets `telemetry`; when a
+  policy sets it, the policy's values replace them for Durbar's sessions.
+
+### I. Owner item 6: theme
+
+- **FR-090** `appearance.theme` is a bundled theme id or `{ "pack": "themes/<id>" }`, a data-only pack checked by `checkUserManifest`
+  (spec 040, same limits; never code). The theme applies at start and the picker is locked (FR-014).
+- **FR-091** `allowUserThemes: false` hides Import and the user themes list; `allowThemeMaker: false` hides *Make with AI* (spec 040).
+  Without `appearance.theme`, these two keys still apply and the user picks among the remaining themes.
+- **FR-092** A pack that fails the check: the default theme (Clean Office), locked, with the error listed (FR-012).
+- **FR-093** Serious mode and density stay user choices unless a later key covers them.
+
+### J. Owner item 7: custom LLM per agent app
+
+- **FR-100 Claude Code.** `llm.claude.provider`:
+  - `gateway`: `ANTHROPIC_BASE_URL=<baseUrl>` and `ANTHROPIC_AUTH_TOKEN` taken at launch from the variable named in
+    `authTokenFromEnv`; `ANTHROPIC_MODEL` / `ANTHROPIC_SMALL_FAST_MODEL` from `model` / `smallFastModel` when set;
+  - `bedrock` and `vertex`: the provider switch variables and `region` / `projectId`, with credentials left to the cloud SDK's own
+    chain (profile, SSO, workload identity). The exact variable names are `[KNOWN GAP]` until read in Claude Code's Bedrock and Vertex
+    pages in the implementing phase.
+- **FR-101 Codex.** `llm.codex.provider` becomes `model_providers.<id>` (`base_url`, `env_key` = `apiKeyFromEnv`, `wire_api =
+  "responses"`) and `model_provider = <id>` plus `model` as thread config overrides (or `-c` flags), never written into the user's
+  `config.toml`. Reserved ids (`openai`, `ollama`, `lmstudio`) are refused.
+- **FR-102 Copilot (BYOK).** `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_API_KEY` or
+  `COPILOT_PROVIDER_BEARER_TOKEN` (from the named variables), `COPILOT_PROVIDER_AZURE_API_VERSION`, `COPILOT_MODEL`, and
+  `COPILOT_OFFLINE=true` when `offline` is set, passed through a new `env` option on the Copilot client (`createClient`). Whether the
+  SDK-started runtime reads these like the CLI does is `[KNOWN GAP]` until checked (no prompt needed: the model list and the error on a
+  dummy endpoint show it).
+- **FR-103 Locked model.** When a policy sets a model, the model picker (spec 030) shows it locked; switching is refused in main.
+- **FR-104 Costs.** Sessions on a custom provider show *price unknown* in Cost views and usage totals; a credit or dollar cap that
+  cannot be computed is shown as *not available with your organization's model* rather than enforced on wrong numbers. (Q10)
+- **FR-105 Sign-in checks.** Durbar's sign-in check (spec 012 `authcheck.ts`) treats an app with a policy provider as *Using your
+  organization's model* instead of asking the user to sign in to the vendor.
+
+### K. Security (constitution III)
+
+- **FR-120 Fetching.** Every fetch (MCP lists, registry indexes and files) uses Electron `net.fetch` in main (system proxy, OS
+  certificate store), `https:` only, at most 3 redirects and each must stay `https:`, 10 s connect and 30 s total timeout, a size cap
+  (lists and indexes 2 MiB, files 256 KiB) enforced while streaming, `Accept: application/json`, no cookies, no credentials in the URL,
+  no `Authorization` header from the policy (`[KNOWN GAP]`: authenticated endpoints need Proposed addition A16). Responses are parsed
+  with the same validators, never evaluated. The last good copy is cached under `<userData>/managed-cache/` with its fetch time and hash.
+- **FR-121 No secrets in config files.** No schema field takes a secret value. Secrets are named by environment variable
+  (`*FromEnv`) or come from the agent app's own sign-in or the OS credential store it uses. A literal that looks like a secret (FR-041
+  rules, plus `sk-`, `ghp_`, `github_pat_`, `xox`, `AKIA` prefixes) anywhere in `policy.json` is an error. Values read from env vars at
+  launch are passed only to the child process, never stored, logged, sent to the window or shown (Settings > Organization shows the
+  variable name and *set* / *not set*).
+- **FR-122 Nothing runs from the folder or a registry.** Durbar never executes a file from the managed folder, a list or a registry.
+  `command` entries in MCP lists are started like any other stdio MCP server (no shell, argument array, spec 019), only after they pass
+  FR-042 and the existing trust steps.
+- **FR-123 Paths stay inside.** Every relative path in the policy and every registry `path` is resolved and checked to stay inside its
+  folder (no `..`, no absolute path, no drive letter, no backslash, links resolved with `realpath` before the check).
+- **FR-124 Children get only what they need.** Policy env vars are added per app (Claude's to Claude, Codex's to Codex); Codex keeps
+  `codexChildEnv`'s stripping of other tools' credentials.
+- **FR-125 Read-only for the window.** The policy is computed in main; the window gets a view (values, sources, errors) with secret
+  variable values never included; all checks happen in main.
+
+### L. Windows, macOS and Linux parity (constitution VI)
+
+- **FR-130** Folder paths (FR-002/FR-003), the trust check (FR-005), icon handling (FR-022) and env injection are pure functions with an
+  injected platform, tested for all three from any OS. macOS Dock icon and Windows taskbar behaviour are `[KNOWN GAP]` (not run on a real
+  Mac or Windows PC) until a person checks them; the Windows ACL check is `[KNOWN GAP]` (FR-005).
+- **FR-131 Honest scope.** Durbar's policy governs what Durbar does and the sessions Durbar starts. A user with a terminal can still run
+  `claude`, `copilot` or `codex` directly; for that, the docs point admins to each vendor's own managed settings (Claude Code
+  `managed-settings.json` / `managed-mcp.json`, Codex `requirements.toml`, GitHub Copilot enterprise policies). Settings > Organization
+  shows when a vendor's own managed file exists on the machine (presence only, Proposed addition A18 for more).
+- **FR-132** The sample folder is valid on all three (forward slashes in relative paths; Durbar accepts `/` on Windows).
+
+### M. Testing
+
+- **FR-140** Unit tests (no credits): folder resolution, trust check, precedence, validator vs the schema on the samples and on broken
+  fixtures, every safe state of FR-011/FR-012, MCP matching, list and index parsing, secret detection, path containment, env mapping per
+  app, fetch limits with a local fake server (`http://127.0.0.1` allowed **only** in tests through an injected fetch), registry update and
+  local-edit rules.
+- **FR-141** Simulator: `DURBAR_MANAGED_DIR=specs/076-managed-config/samples/managed` shows branding, theme, locked controls, the
+  Organization page and safe mode (a broken-fixtures folder); screenshots at 1440x900 and 1280x800.
+- **FR-142** Real checks, each needing **no prompt** and listed per phase: Codex `[otel]` and `model_providers` override acceptance (offline
+  schema), Copilot BYOK and OTel variables (`copilot help`, a dummy endpoint), Claude Code variables against a local fake gateway with
+  a request log (no real model call). Any check that needs a model call asks the owner first and states its cost.
+
+## Proposed additions (need owner decision)
+
+Ranked by how often they block a corporate rollout. None is in the phases below until Vikram says yes; each would become its own
+section of this spec (or a new spec) first.
+
+1. **A1 Lock the permission mode.** `permissions.maxMode` (`read-only` or `ask`) caps every session; `allowAll: false` removes *Allow
+   all*; `defaultMode` sets new folders' default. The most-asked control in agent tools (Claude Code `disableBypassPermissionsMode`,
+   Copilot blocking `/allow-all`, Codex `allowed_approval_policies`).
+2. **A2 Proxy and custom CA.** Durbar's own fetches already follow the system proxy and OS store (Electron). Add `network.proxy`
+   (`system`, `pac`, fixed) for Durbar and pass `HTTPS_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS` (a PEM file in the folder),
+   `CLAUDE_CODE_CERT_STORE` and mTLS variables to the agent apps. Without it nothing works behind a TLS-inspecting proxy.
+3. **A3 Code signing and notarization** (spec 014, needs a purchase). Unsigned apps are blocked by AppLocker/WDAC, Gatekeeper and most
+   endpoint tools; also a prerequisite for MDM-deployed PKGs and for macOS Keychain stability.
+4. **A4 Installer formats and silent, per-machine install.** MSI (or NSIS `perMachine` with `/S`), macOS PKG, `.deb`/`.rpm`; documented
+   silent flags; the installer can place the `managed` folder. Air-gapped install: Durbar is already self-contained; agent apps come
+   from IT (`allowInAppInstall: false`).
+5. **A5 Switch features off.** `features.remoteControl` (spec 054), `features.durbarMcpServer` (spec 041), `features.officeAssistantModel`
+   (spec 048), `features.profileAi` (spec 043), `features.vscodeChat` (specs 009/056), future chat channels (Telegram, idea #485).
+6. **A6 Spend caps.** A maximum per-session cap and a locked default cap (spec 011), per currency (AI credits, dollars); later a daily or
+   monthly ceiling per user from the existing usage totals.
+7. **A7 Allowed and blocked folders.** `folders.allowedRoots` and `folders.blocked` (glob) checked when a folder is added and at session
+   start; honest gap: an agent app's own tools can still reach outside unless its sandbox enforces it.
+8. **A8 Updates.** Durbar has no auto-updater today. Reserve `updates.mode` (`off`, `notify`, `feed:<https url>`) so the future updater
+   honours it from day one; agent-app updates follow `allowInAppInstall`.
+9. **A9 OS-native policy sources.** Windows `HKLM\SOFTWARE\Policies\ThreeFeathers\AgentDurbar` (value `PolicyJson`, or `ManagedDir`) with
+   shipped ADMX/ADML for GPO and Intune; macOS managed preferences domain `io.github.three-feathers.agentdurbar` (key `PolicyJson`,
+   `CFPreferencesAppValueIsForced`), deployable by Jamf/Intune/Kandji; same schema, same precedence (registry/MDM above the folder).
+10. **A10 Signed or integrity-checked config.** A detached Ed25519 signature for `policy.json`, MCP lists and registry indexes, with the
+    public key in the machine folder; unsigned remote content refused when a key is set.
+11. **A11 Audit log.** A local append-only JSONL of approvals, denials, mode changes, MCP adds and policy reloads (no prompt text by
+    default), with a location and retention, exportable; optionally as OTel logs from Durbar itself (needs the constitution amendment of Q4).
+12. **A12 Data retention and locations.** Retention days for activity, checkpoints and usage history; the profile folder location (roaming
+    profiles, VDI); a log file location once logging exists.
+13. **A13 Rebrand build.** A script that builds installers with the company's product name, icons, shortcuts and app id (white label),
+    covering what FR-022 cannot change at run time.
+14. **A14 Legal banner and terms.** A first-run notice (text or a link) the user must acknowledge, shown again when its hash changes.
+15. **A15 Pin agent-app versions.** Minimum and maximum versions per app; outside the range the app is shown *Version not allowed*.
+16. **A16 Authenticated endpoints.** Lists and registries behind SSO or a token: a token from an env var or the OS credential store, or
+    the OS's integrated authentication through Chromium (Kerberos/NTLM via `net.fetch` when the server asks).
+17. **A17 Identity and sign-in passthrough.** Force each app's login method (Claude Code `forceLoginMethod`, Copilot on GitHub
+    Enterprise / data-residency hosts, Codex workspace id), so users sign in with the company account; Durbar still stores nothing.
+18. **A18 Show the vendors' own managed settings** in Settings > Organization (Claude Code `managed-settings.json`, Codex
+    `requirements.toml`), read-only, so admins see the full picture in one place.
+19. **A19 Disable dev and debug switches** in packaged builds under a policy (`DURBAR_DEV=1`, DevTools), on top of spec 008 FR-038.
+
+## Phases (each a small PR, spec first)
+
+| Phase | Content | Depends on |
+|---|---|---|
+| P0 | This spec, samples and schemas (this PR) | |
+| P1 | Loader (paths, trust check, parse, validator, precedence, reload, watcher), safe mode, lock plumbing in settings IPC and FR-016 writers, Settings > Organization, `DURBAR_MANAGED_DIR` dev hook, simulator, tests (FR-001..FR-016, FR-120..FR-125 where they apply, FR-130..FR-132, FR-140/141) | Q2, Q3 |
+| P2 | Branding and theme (FR-020..FR-023, FR-090..FR-093) | P1, Q5 |
+| P3 | Allowed agent apps and in-app install (FR-030..FR-033) | P1 |
+| P4 | MCP: matching, modes, enforcement points, required servers, local lists (FR-040..FR-045, FR-047) | P1; catalog UI after #539's spec |
+| P5 | MCP endpoints: fetch, cache, `durbar-mcp-list-v1` and `mcp-registry-v0.1` readers (FR-046, FR-120) | P4 |
+| P6 | Custom LLM per app (FR-100..FR-105), with the no-prompt checks of FR-142 | P1, Q10 |
+| P7 | OpenTelemetry per app (FR-080..FR-085), with the no-prompt checks | P1, Q4 |
+| P8 | Agent, profile and skill registry (FR-060..FR-067) | P1, P5 (fetch), spec 073 for skills, Q1, Q7, Q8 |
+
+## Clarifications
+
+Open questions for Vikram, each with a recommended default. Until answered, the plan follows the default.
+
+- **Q1** Item 4 says "agents/profiles": is a *profile* an agent profile file (spec 043, what the Profile menu shows) or a Durbar profile
+  (spec 049, a separate office with its own sign-ins)? *Recommended:* spec 043 agent profile files; Durbar profiles are not
+  distributed by a registry.
+- **Q2** A broken machine policy: safe mode (FR-011: locked down, Read-only, readable) or refuse to start (like Claude Code)?
+  *Recommended:* safe mode with a red banner; refusing to start locks users out of their history and gives IT no diagnostics.
+- **Q3** Support a per-user config folder (FR-003), locked in the UI but not tamper-proof? *Recommended:* yes, below the machine
+  layer, turned off by `allowUserConfig: false`; it lets IT deploy per user without admin rights and lets a user try a company setup.
+- **Q4** Constitution III says "No telemetry". OTel export configured by the organization's admin, sent by the agent apps to the
+  organization's own collector (Durbar itself sends nothing): amend principle III (MINOR, 1.2.0) to say so explicitly? *Recommended:*
+  yes, amendment before P7; Durbar's own OTel (A11) stays out until a separate decision.
+- **Q5** Display name: run time only (window, menus, About, notifications) now, and installer/shortcut names only through a rebrand build
+  (A13)? *Recommended:* yes.
+- **Q6** When `mcp.lists` is set but `mcp.mode` is not: `open` (org servers added, users may still add their own) or `allowlist`?
+  *Recommended:* `open`: "complement" by default, "restrict" only when the admin says so.
+- **Q7** Where registry items are installed: into each agent app's user-level folders (`~/.claude/agents`, `~/.copilot/agents`, ...),
+  which also makes them work in a terminal, or a Durbar-owned folder passed only to Durbar's sessions? *Recommended:* the app's user
+  folders, with Durbar's bookkeeping file, never overwriting a file it did not install.
+- **Q8** Registry updates: `notify` (the user clicks Update) or `auto` by default? *Recommended:* `notify`, with `auto` allowed from the
+  machine layer.
+- **Q9** OS-native sources (Windows registry with ADMX, macOS MDM profile) in the first version, or the folder first?
+  *Recommended:* folder first (P1-P8); registry and MDM as A9 after the folder format is proven, same schema.
+- **Q10** Costs on a custom model: show *price unknown* and disable caps that cannot be computed, or let the policy give per-model
+  prices? *Recommended:* *price unknown* now; prices in the policy later if asked.
+- **Q11** Folder name `AgentDurbar` (no space) in all three locations? *Recommended:* yes (matches the app id style and avoids quoting
+  in deployment scripts).
+- **Q12** Which proposed additions go first? *Recommended order:* A1 (mode lock), A2 (proxy and CA), A5 (feature switches), A4
+  (installers), A3 (signing, needs the purchase), then the rest as asked.
+
+## Success Criteria
+
+- **SC-001** An admin can configure all seven owner items with only the files in `samples/managed/` changed, without rebuilding Durbar.
+- **SC-002** Every policy key that is set is visibly locked in the UI and refused in main from every writer (tested per key).
+- **SC-003** No broken or partial folder makes Durbar less restrictive than with no folder at all (tested with the broken fixtures).
+- **SC-004** No secret value appears in any config file, cache, log, IPC message or the Organization page (tested).
+- **SC-005** All policy tests run with zero AI credits on Windows, macOS and Linux CI.
+
+## Changes
+
+(none yet)

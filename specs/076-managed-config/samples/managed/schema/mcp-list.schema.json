@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://three-feathers.github.io/agent-durbar/schema/mcp-list.v1.json",
+  "title": "Agent Durbar MCP server list (v1)",
+  "description": "A list of MCP servers an organization offers or requires. Served from the config folder or from an https endpoint. Holds no secret values: secrets are named by environment variable or come from an OAuth sign-in.",
+  "type": "object",
+  "required": ["version", "servers"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "publisher": { "type": "string", "maxLength": 120 },
+    "updated": { "type": "string", "format": "date-time" },
+    "servers": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/server" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$" },
+    "app": { "enum": ["copilot", "claude", "codex"] },
+    "envName": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$" },
+    "server": {
+      "type": "object",
+      "required": ["id", "name", "transport"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 300 },
+        "transport": { "enum": ["stdio", "http", "sse"] },
+        "url": { "type": "string", "pattern": "^https://", "maxLength": 2048 },
+        "command": { "type": "string", "maxLength": 260, "description": "Program name or absolute path; never run through a shell." },
+        "args": { "type": "array", "maxItems": 64, "items": { "type": "string", "maxLength": 1024 } },
+        "env": {
+          "type": "object",
+          "description": "Environment for a stdio server. Values are plain non-secret text or a reference to another environment variable.",
+          "maxProperties": 32,
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string", "maxLength": 1024 },
+              { "type": "object", "required": ["fromEnv"], "additionalProperties": false, "properties": { "fromEnv": { "$ref": "#/$defs/envName" } } }
+            ]
+          }
+        },
+        "auth": {
+          "oneOf": [
+            { "type": "object", "required": ["type"], "additionalProperties": false, "properties": { "type": { "const": "none" } } },
+            { "type": "object", "required": ["type"], "additionalProperties": false, "properties": { "type": { "const": "oauth" } } },
+            {
+              "type": "object",
+              "required": ["type", "header", "valueFromEnv"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "const": "header" },
+                "header": { "type": "string", "pattern": "^[A-Za-z0-9-]{1,64}$" },
+                "valueFromEnv": { "$ref": "#/$defs/envName" },
+                "prefix": { "type": "string", "maxLength": 32 }
+              }
+            }
+          ]
+        },
+        "docsUrl": { "type": "string", "pattern": "^https://", "maxLength": 2048 },
+        "apps": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/app" } },
+        "needs": { "type": "array", "maxItems": 8, "items": { "enum": ["node", "python", "docker", "uv"] } },
+        "recommended": { "type": "boolean", "description": "Shown first in the catalog." },
+        "required": { "type": "boolean", "description": "Only honoured from the machine config folder or a list it names: added to every session and cannot be switched off." }
+      },
+      "allOf": [
+        { "if": { "properties": { "transport": { "const": "stdio" } } }, "then": { "required": ["command"], "not": { "required": ["url"] } } },
+        { "if": { "properties": { "transport": { "enum": ["http", "sse"] } } }, "then": { "required": ["url"], "not": { "required": ["command"] } } }
+      ]
+    }
+  }
+}
