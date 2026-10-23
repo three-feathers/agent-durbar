@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "secrets": {
+    "envAllow": [
+      {
+        "name": "ACME_FOUNDRY_KEY",
+        "hosts": [
+          "other-ai.services.ai.azure.com"
+        ]
+      }
+    ]
+  },
+  "llm": {
+    "claude": {
+      "provider": "foundry",
+      "resource": "acme-ai",
+      "apiKeyFromEnv": "ACME_FOUNDRY_KEY"
+    }
+  }
+}

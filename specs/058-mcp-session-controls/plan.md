@@ -191,3 +191,44 @@ cannot run; offer *Switch off for this session* next to each signal; mask failed
 
 Phase 8a (no answers needed): T091-T097. Phase 8b (T090 done): T098-T104. Phase 8c (owner go-ahead): T105-T107. Then T108-T109.
 Depends on 058 Phase 1-2 for `errorClass`, the word table and the new dialog rows (T010, T011, T020, T026).
+
+## Delta: live status and actions in Settings (issue #596, 2026-10-23)
+
+### Summary
+
+Settings > MCP servers gets a *Live in your chats* list (FR-080..FR-087): each server's state aggregated over the running chats, an
+expander per server with each chat's state, hint, Details, Restart, Restart session and Open in chat. Renderer only; no new IPC.
+
+### Constitution check (delta)
+
+- I/III (safe, no secrets): the data is `agents:mcp`, already masked in main (FR-005); no new channel, nothing new leaves main.
+- II (adapters are plug-ins): the renderer reads only `canRestart`, `canRestartSession` and the existing options (`mcpRestart` feature);
+  no vendor name is tested in code.
+- IV (simulator first): a new driver `shots-058-mcp-settings` on `DURBAR_SIM=15` with injected `mcp` reports; unit tests in
+  `test-mcpwords`. No real session.
+- V (calm UI): words plus icons, 10.5px minimum, fits 1280x800 with 10+ servers (scrolls inside Settings).
+
+### Design
+
+1. `src/renderer/mcpwords.js`: `aggregate(sessions, configured)` (pure): sessions = `[{id, name, folder, reply}]` where `reply` is an
+   `agents:mcp` reply; returns `[{name, chats:[{id, name, folder, entry}], parts:[{key, word, icon, cls, n}], summary, icon, cls,
+   attention}]`, plus `RANK` (the urgency order). Unit-tested on its own.
+2. `src/renderer/screens.js`:
+   - `liveSection()` / `liveRowsHTML()`: the list inside the MCP section, painted from `liveData` (loaded with `loadLive()`: one
+     `agents:mcp` per running main chat from `X.agents()`, in parallel, errors ignored per chat).
+   - `mcpRestartCall(a, name, onSent)` and `mcpRestartSessionFlow(a, start, hooks)`: the chat dialog's Restart and Restart session code
+     moved out of `agentMcp` unchanged, so both places share one flow (FR-031, FR-023, FR-027).
+   - live refresh: `mcpEvent(id)` also schedules `repaintLive()` when Settings is open (150 ms throttle, focus kept by a key of
+     `[action, server, chat]`); announcements of state changes as FR-004.
+   - the chat dialog's *Settings* button: `open('settings', {section: 'mcp'})`.
+3. `src/renderer/app.js`: `mcpSession(id)` in the screens context (the live agent object and the same options the MCP chip passes:
+   `toggle`, `restart`, `appName`, and whether the chat shows MCP); `DurbarScreens.mcpEvent` is also called when a session stops.
+4. `src/renderer/screens.css`: the live list's rows (expander, chat rows), theme tokens only.
+5. `src/renderer/sim.ts` (simulator only): servers a driver reported for a session stay in the simulator's own `mcp` report after a
+   Restart (Starting, then Running), and runtime rows get `canRestart` as main's `agentMcpReply` gives them.
+6. Docs: README MCP line with the picture `058-mcp-settings-1440x900.png` (retaken by `npm run shots:docs`), changelog fragment,
+   `docs/agent-notes.md` (page overflow checks in Settings; the simulator's kept reports).
+
+### Order
+
+T120 (spec) first; T121 (unit tests) and T122 (driver) before T123-T124 (code); T125 docs and screenshots; T126 converge.
