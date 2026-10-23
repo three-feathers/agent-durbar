@@ -1,0 +1,1 @@
+- **Codex usage limit now gives the coffee break** (spec 068, #646): Codex spells the error `usageLimitExceeded`, the code compared a capitalised form, so a real Codex limit showed as a plain error. Both spellings are accepted; tests use the real one. Not checked on a real Codex account.

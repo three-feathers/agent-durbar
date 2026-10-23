@@ -1276,12 +1276,18 @@ async function main(): Promise<void> {
     assert.strictEqual(server.spawns.length, 0);
   }
 
-  // ---- spec 012 FR-157: a turn that fails because of the sign-in is marked errorKind 'auth'; a usage limit is not
+  // ---- spec 012 FR-157: a turn that fails because of the sign-in is marked errorKind 'auth'; a usage limit is a coffee break, not
   {
     for (const [err, kind] of [[{ message: 'unexpected status 401 Unauthorized: token expired', codexErrorInfo: 'unauthorized' }, 'auth'], [{ message: 'You hit your usage limit', codexErrorInfo: 'usageLimitExceeded' }, undefined]] as const) {
       const { ad, events } = make({ server: { turnScript: [{ method: 'turn/completed', params: { threadId: 'thr_main', turn: { id: 'turn_1', status: 'failed', error: err } } }] } });
       const sid = await ad.start({ workspace: dir(), permissionMode: 'read-only', quiet: true });
       await ad.send(sid, { text: 'hi' });
+      if (kind === undefined) { // a usage limit is a coffee break (spec 068, #646: the protocol's spelling), never an error and never a sign-in problem
+        await until('usage limit', () => events.find((x) => x.type === 'usageLimit'));
+        assert.ok(!events.some((x) => x.type === 'status' && x.status === 'error'), 'a usage limit is not an error');
+        await ad.dispose();
+        continue;
+      }
       const e = await until('error status', () => events.find((x) => x.type === 'status' && x.status === 'error'));
       assert.strictEqual((e as { errorKind?: string }).errorKind, kind, `errorKind for ${err.message}`);
       assert.deepStrictEqual(eventProblems(e), []);

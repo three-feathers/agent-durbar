@@ -45,7 +45,10 @@ const capText = (s: string): string => (s.length > CODEX_TEXT_CAP ? s.slice(0, C
 const capIntent = (s: string): string => (s.length > CODEX_INTENT_CAP ? s.slice(0, CODEX_INTENT_CAP) : s);
 const ownStr = (o: unknown, k: string): string | undefined => str(own(o, k));
 
-/** `codexErrorInfo` is a string ("UsageLimitExceeded") or a one-key object ({ HttpConnectionFailed: {...} }). */
+/** Spec 068 FR-002 (#646): the usage-limit kind in either spelling ("usageLimitExceeded" is the protocol's, "UsageLimitExceeded" an older one). */
+const isUsageLimitKind = (kind: string | undefined): boolean => !!kind && kind.charAt(0).toLowerCase() + kind.slice(1) === 'usageLimitExceeded';
+
+/** `codexErrorInfo` is a string (the protocol spells it "usageLimitExceeded") or a one-key object ({ httpConnectionFailed: {...} }). The first letter's case differs between sources, so compare with `isUsageLimitKind`. */
 function errorKind(info: unknown): string | undefined {
   if (typeof info === 'string') return info || undefined;
   if (isObj(info)) {
@@ -244,14 +247,14 @@ export class CodexMapper {
       const err = own(turn, 'error');
       const kind = errorKind(own(err, 'codexErrorInfo'));
       const message = ownStr(err, 'message');
-      if (kind === 'UsageLimitExceeded' && !agentId) {
+      if (isUsageLimitKind(kind) && !agentId) {
         // spec 068 FR-002: the plan's usage window is used up: a coffee break (with the reset time from the last rate-limit update), not an error
         const rl = this.rateLimit;
         const at = rl?.resetsAt && rl.resetsAt > Date.now() ? rl.resetsAt : undefined; // a window update read long ago may have reset already: unknown
         this.emit({ type: 'usageLimit', scope: 'plan', ...(at ? { resetsAt: at } : {}), source: `Codex ${rl?.label ?? 'usage limit'}` });
         return this.emit(usageLimitClosing());
       }
-      const text = kind === 'UsageLimitExceeded' ? 'Codex usage limit reached' : kind && message ? `${kind}: ${message}` : (kind ?? message ?? 'Turn failed');
+      const text = isUsageLimitKind(kind) ? 'Codex usage limit reached' : kind && message ? `${kind}: ${message}` : (kind ?? message ?? 'Turn failed');
       return this.emit({ type: 'status', status: 'error', intent: capIntent(text), agentId });
     }
   }
