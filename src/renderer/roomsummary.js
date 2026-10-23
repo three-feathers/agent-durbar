@@ -49,7 +49,7 @@
     const sign=(key,tone)=>Object.assign({key,tone,figure:'',effect:''},SIGNS[key]);
     if(st==='error')return sign('attention','error');
     if(st==='waiting'&&o.limit)return sign('limit','waiting');
-    /* review on #631 (Paco): a coffee break is entered as `waiting` (startCoffee); one that resumes by itself (not Durbar's cap, which
+    /* review on PR 631 (Paco): a coffee break is entered as `waiting` (startCoffee); one that resumes by itself (not Durbar's cap, which
        sets `limit`) is Do not disturb, not a wait for you */
     const shut=()=>{const n=Number.isInteger(o.held)&&o.held>0?o.held:0, g=sign('shut','idle');if(n){g.word='Do not disturb · '+n+' held';g.short='DND · '+n;}return g;};
     if(o.coffee&&!o.limit)return o.userClosed?shut():sign('dnd','idle');
@@ -58,12 +58,12 @@
     if(o.paused)return sign('dnd','idle');
     if(o.ended||o.resting)return sign('away','idle');
     if(isWork(st)){
-      /* review on #631: colour is never the only cue: failing tool calls and thinking keep their own word and icon */
+      /* review on PR 631: colour is never the only cue: failing tool calls and thinking keep their own word and icon */
       if(o.failing)return sign('failing','failing');
       if(Array.isArray(o.helpers)&&o.helpers.some(isWork))return sign('meeting',st);
       return st==='thinking'?sign('thinking','thinking'):sign('busy','working');
     }
-    /* review on #631: an open door that still holds runs (a Send all that stopped, a restart) is never plain "Available": it shows the count */
+    /* review on PR 631: an open door that still holds runs (a Send all that stopped, a restart) is never plain "Available": it shows the count */
     const n=Number.isInteger(o.held)&&o.held>0?o.held:0;
     if(n){const g=sign('pending',st==='done'?'done':'idle');g.word=(st==='done'?'Done':'Available')+' · '+n+' held';g.short=n+' held';return g;}
     return st==='done'?sign('done','done'):sign('available','idle');

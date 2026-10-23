@@ -1190,7 +1190,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .cb-waiting .cb-sign{bottom:auto;top:6%;left:auto;right:4%;transform:none}
 .cabin.cb-f:not(.cb-waiting) .cb-sign{top:auto;bottom:9%;left:50%;right:auto;transform:translateX(-50%)} /* a full desk: clear of its status badge (top right) */
 .cabin.cb-f.cb-waiting .cb-sign{top:auto;bottom:6%}
-/* review on #631: where the desk is narrow (card, mini, micro) the door's sign is its icon only, so it never runs under the chat number;
+/* review on PR 631: where the desk is narrow (card, mini, micro) the door's sign is its icon only, so it never runs under the chat number;
    the word is on the desk's status pill or word right beside it (colour is still never the only cue) */
 .stage:is([data-d="card"],[data-d="mini"],[data-d="micro"]) .cb-sign .cb-w{display:none}
 .stage:is([data-d="card"],[data-d="mini"],[data-d="micro"]) .cb-sign{padding:0 3px;gap:0}

@@ -1122,7 +1122,7 @@ function morphParts(stage,parts){
    if that fails the door stays open and says so). Opening it with runs held asks, listing them: Send all (in order, through the
    scheduler), Discard, or Keep closed (the default: Escape and Enter keep it closed). An open door that still holds runs asks the same. */
 const doorRemoteOff=new Set(); /* agents whose remote control the door turned off: reopening says it stays off */
-/* review on #631: the held prompts, each masked first, then its first line cut (never cut before masking); fail closed without the mask */
+/* review on PR 631: the held prompts, each masked first, then its first line cut (never cut before masking); fail closed without the mask */
 async function heldLines(a){
   const list=bridge.doorsHeld?await bridge.doorsHeld(a.id).catch(()=>[]):[], R=window.DurbarRedact, out=[];
   const MAXL=8;
@@ -5537,7 +5537,7 @@ if(bridge&&bridge.onCheckpoint)bridge.onCheckpoint(n=>{const a=n&&liveById(n.id)
 /* spec 017 FR-015..FR-017: doors the user closed, from main; a change redraws the desks (same sizes, so no new layout) */
 const setDoors=d=>{const o={};if(d&&typeof d==='object')for(const [k,v] of Object.entries(d))if(v&&typeof v==='object')o[k]={closed:v.closed===true,held:Number.isInteger(v.held)&&v.held>0?v.held:0};DOORS=o;scheduleRender();};
 if(bridge&&bridge.doorsList){bridge.doorsList().then(setDoors).catch(()=>{});if(bridge.onDoorsChanged)bridge.onDoorsChanged(setDoors);}
-/* review on #631: why Send all stopped (the runs stay held), and a run a full door could not keep: never silent */
+/* review on PR 631: why Send all stopped (the runs stay held), and a run a full door could not keep: never silent */
 const STOP_WHY={'paused-all':'schedules are paused (Pause all)',paused:'its schedule is paused',cap:"its schedule reached its own limit",ended:'its session has ended',failed:'it could not be sent'};
 if(bridge&&bridge.onDoorsStopped)bridge.onDoorsStopped(p=>{const a=p&&byId(p.id);if(!a)return;const t=esc(a.name)+': Send all stopped because '+esc(STOP_WHY[p.why]||'it could not go now')+'. The rest stay held; use the door button to send or discard them.';toast(t,6000).classList.add('err');addNote(liveChat(a),t);});
 if(bridge&&bridge.onDoorsFull)bridge.onDoorsFull(p=>{const a=p&&byId(p.id);if(!a)return;const t='A scheduled prompt for '+esc(a.name)+' was not kept: its closed door already holds as many prompts as it can. Open the door to send or discard them.';toast(t,6000).classList.add('err');addNote(liveChat(a),t);});
