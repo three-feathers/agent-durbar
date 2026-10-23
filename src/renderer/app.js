@@ -3891,6 +3891,7 @@ function roAskAfterSwitch(a,mode,anchor){
   const l=document.createElement('p');l.className='ro-done';
   l.textContent='Now in '+MODE_NAME[mode]+'. Ask '+a.name+' to try again: '+(mode==='allow'?'it will run without asking.':'it will wait for your OK.');
   note.appendChild(l);
+  announce(l.textContent); /* focus moves to the message box, so a screen reader hears the line here (review on PR 622) */
   const mi=$('msgInput');if(mi&&ui.selected&&liveRoot(byId(ui.selected)||a)===a)mi.focus({preventScroll:true});
 }
 function settlePerm(a,p){

@@ -100,6 +100,9 @@ module.exports = async (ctx) => {
     assert.ok(await H.exists(BTN), `${w}: the button stays after a cancel`);
 
     // 5) choose Ask first; count sends to prove nothing is resent
+    // scope (review on PR 622): another Read-only agent must stay Read-only after this agent's switch
+    const bystander = await js(`(window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&a.info&&a.info.permMode==='read-only'&&a.id!==${jsLiteral(id)})||{}).id`);
+    assert.ok(bystander, `${w}: a second Read-only agent for the scope check`);
     await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__sends=0;if(!b.__wrapped){const o=b.send;b.send=function(){window.__sends++;return o.apply(this,arguments)};b.__wrapped=1;}})()`);
     if (kb) {
       await js(`document.querySelector(${jsLiteral(BTN)}).focus()`); await key('Return');
@@ -110,6 +113,7 @@ module.exports = async (ctx) => {
     } else {
       await js(`document.querySelector(${jsLiteral(BTN)}).click()`);
       assert.ok(await until(`!!document.getElementById('modeMenu')`, 3000), `${w}: the menu opens again`);
+      assert.strictEqual(await js(`document.getElementById('modeMenu').getAttribute('aria-label')`), `Permission mode for ${name}`, `${w}: the menu names this agent`);
       await js(`document.querySelector('#modeMenu [data-mode="ask"]').click()`);
     }
     assert.ok(await until(`((window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)})||{}).info||{}).permMode==='ask'`, 5000), `${w}: the mode changed to Ask first`);
@@ -118,6 +122,11 @@ module.exports = async (ctx) => {
     const after = await js(`(()=>{const l=document.querySelector('#chat .ro-done');return {line:l&&l.textContent,toast:[...document.querySelectorAll('#toasts .toast')].map(t=>t.textContent).join(' | ')}})()`);
     assert.strictEqual(after.line, `Now in Ask first. Ask ${name} to try again: it will wait for your OK.`, `${w}: says to ask again`);
     assert.ok(/Ask first/.test(after.toast), `${w}: the usual toast: ${after.toast}`);
+    const said = `Now in Ask first. Ask ${name} to try again: it will wait for your OK.`;
+    const heard = await until(`(document.getElementById('srAnnounce')||{}).textContent===${jsLiteral(said)}`, 3000);
+    const sr = await H.text('#srAnnounce', 'textContent');
+    assert.ok(heard, `${w}: the line is announced (live region: ${sr})`);
+    assert.strictEqual(await modeOf(bystander), 'read-only', `${w}: the other Read-only agent stays Read-only (the switch is for this agent only)`);
     assert.strictEqual(await active(), 'msgInput', `${w}: focus moves to the message box`);
     assert.strictEqual(await js('window.__sends'), 0, `${w}: nothing is resent`);
     assert.ok(!(await js(`!![...document.querySelectorAll('#chat button')].find(b=>/^Retry/.test(b.textContent))`)), `${w}: no Retry`);
@@ -137,7 +146,10 @@ module.exports = async (ctx) => {
       await js(`document.querySelector(${jsLiteral(sel)}).click()`);
       assert.ok(await until(`!document.getElementById('inboxDlg')&&!!document.getElementById('modeMenu')&&document.body.classList.contains('panel-open')`, 5000), `${w}: the inbox closes and the menu opens in the chat`);
       assert.deepStrictEqual(await menuItems(), ['read-only*', 'ask', 'allow'], `${w}: the same menu from Needs you`);
+      const otherName = await js(`(window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(other)})||{}).name`);
+      assert.strictEqual(await js(`document.getElementById('modeMenu').getAttribute('aria-label')`), `Permission mode for ${otherName}`, `${w}: the menu from Needs you names that agent`);
       await key('Escape');
+      assert.ok(await until(`!document.getElementById('modeMenu')`, 3000), `${w}: Escape closes the menu from Needs you`);
       assert.strictEqual(await active(), 'ro-ask', `${w}: focus on the chat's button`);
       assert.strictEqual(await modeOf(other), 'read-only', `${w}: nothing changed without a choice`);
     }
