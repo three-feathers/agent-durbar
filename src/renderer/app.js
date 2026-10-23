@@ -41,6 +41,17 @@ const chatNoHTML=a=>{const n=chatNoOf(a);return n?`<span class="chatno" data-n="
    get a character by the same rule and are not stored. Only the crew scene kit asks (crewOf), so other themes cost nothing. */
 const CREW_KEY='durbar.crew', CREW=window.DurbarCrew;
 let CREW_MAP={}, CREW_FOR=null, CREW_HELP={};
+/* FR-055: every portrait is loaded and decoded once the crew kit is first used; a character with a picture that is missing or cannot be
+   decoded is marked bad and its desks draw the plain office-style figure (the mark is in the signature and the cache keys, so they redraw) */
+const CREW_BAD=new Set(); let crewLoaded=false;
+function crewPreload(){
+  if(crewLoaded)return; crewLoaded=true;
+  for(const id of CREW.IDS)for(const pose of CREW.POSES){
+    const f=CREW.file(id,pose), im=new Image();
+    const bad=()=>{if(CREW_BAD.has(id))return;CREW_BAD.add(id);console.warn('[crew] picture '+f+' is missing or cannot be decoded: '+id+' is drawn as the plain figure');scheduleRender();};
+    im.onerror=bad; im.src=f; if(im.decode)im.decode().catch(bad);
+  }
+}
 const crewRand=()=>rememberOn()?undefined:CREW.seededRand;
 function syncCrew(){
   if(CREW_FOR!==agents){CREW_FOR=agents;CREW_MAP={};CREW_HELP={};if(!demoOn&&rememberOn()){try{CREW_MAP=CREW.loadCrew(localStorage.getItem(CREW_KEY));}catch(e){CREW_MAP={};}}}
@@ -51,6 +62,7 @@ function syncCrew(){
 }
 const crewOf=a=>{
   if(!a)return '';
+  crewPreload();
   if(a.parent){
     if(CREW_FOR!==agents)syncCrew();
     if(!CREW_HELP[a.id])CREW_HELP[a.id]=CREW.pickCharacter(a.id,CREW.IDS,Object.values(CREW_MAP).concat(Object.values(CREW_HELP)),crewRand());
@@ -60,7 +72,7 @@ const crewOf=a=>{
   return CREW_MAP[a.id]||'';
 };
 /* the character in a cache key or a walker's key: nothing outside the crew kit, so the other themes' keys do not change */
-const crewKey=a=>THEME.sceneKit()==='crew'?'|'+crewOf(a):'';
+const crewKey=a=>{if(THEME.sceneKit()!=='crew')return '';const c=crewOf(a);return '|'+c+(CREW_BAD.has(c)?'!':'');};
 const chatNoWords=a=>{const n=chatNoOf(a);return n?', chat '+n:'';};
 const INBOX_KEY=keyText(['mod','shift','A']), NEXT_KEY=keyText(['mod','shift','N']), PAL_KEY=keyText(['mod','K']);
 /* spec 006 FR-036: show or hide Previous sessions (H for history) */
@@ -612,7 +624,7 @@ function scene(a,mini,c){
   const kit=THEME.sceneKit(); /* another theme's people and desks (spec 035 FR-013); the office kit is the code below */
   /* spec 040 FR-023: the signature names the theme too, so a theme switch redraws the desk (same signature = the old SVG is kept) */
   const tk=THEME.themeIdForCache();
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS,themeKey:tk,art:kitArt(),crew:kit==='crew'?crewOf(a):''});if(v)return c?v:stillSig(v);}
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS,themeKey:tk,art:kitArt(),crew:kit==='crew'?crewOf(a):'',crewFb:kit==='crew'&&CREW_BAD.has(crewOf(a))});if(v)return c?v:stillSig(v);}
   let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${tk}|${mood.body}${mood.trouble||''}${mood.coffee?'C':''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
   s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T_('--scene-shadow')}" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
@@ -683,7 +695,7 @@ function stillSig(svg){return SERIOUS?svg.replace(' data-sig="',' data-sig="stil
 function avatar(a){
   const k=themedLook(a.look);
   const kit=THEME.sceneKit();
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:kit==='crew'?crewOf(a):''});if(v)return v;}
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:kit==='crew'?crewOf(a):'',crewFb:kit==='crew'&&CREW_BAD.has(crewOf(a))});if(v)return v;}
   return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/>${charArt('body')}<circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}${charArt('head')}<circle cx="71.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><circle cx="79.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="${T_('--mouth')}" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 }
 const PLANT=()=>'<svg class="room-plant" width="26" height="30" viewBox="0 0 26 30" aria-hidden="true" focusable="false">'+THEME.slot('plant')+'</svg>';

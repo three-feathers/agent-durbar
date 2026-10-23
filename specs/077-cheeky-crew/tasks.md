@@ -24,12 +24,12 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [-] T020 [SVG] DROPPED (Q1 = (d) raster, 2026-10-23): Character 2, the **mad scientist** (goggles over see-through lenses, lab coat, flask) [FR-010, FR-014, Q7]
 - [-] T021 [SVG] DROPPED (Q1 = (d) raster, 2026-10-23): Character 3, the **gamer** (cat-ear headphones, gamepad) [FR-010, FR-014]
 - [-] T022 [SVG] DROPPED (Q1 = (d) raster, 2026-10-23): Character 4, the **hooded hacker** (hood as `back` and `hair`, rubber duck) [FR-010, FR-014]
-- [ ] T023 [both] Driver `scripts/check-crew.js` in `check:ui`: Cheeky Crew picked in Settings, every character x status x mood x density, `getBBox()` of every `[data-part]` (raster: the `<image>` box and the overlay positions, FR-058) against FR-014, element count per character, reload with a stored map keeps the character [FR-014, FR-040, SC-002, SC-003]
-- [ ] T024 [both] `check:office` with Cheeky Crew at 1440x900 and 1280x800, every density, chat closed and open; `check:geometry` every-theme list (main and nightly) [SC-001, SC-005]
+- [~] T023 [both] Driver `scripts/check-crew.js` in `check:ui`: Cheeky Crew picked in Settings, every character x status x mood x density, `getBBox()` of every `[data-part]` (raster: the `<image>` box and the overlay positions, FR-058) against FR-014, element count per character, reload with a stored map keeps the character [FR-014, FR-040, SC-002, SC-003]
+- [~] T024 [both] `check:office` with Cheeky Crew at 1440x900 and 1280x800, every density, chat closed and open; `check:geometry` every-theme list (main and nightly) [SC-001, SC-005]
 - [ ] T025 [both] Screenshots: office at 1440x900 and 1280x800 (15 agents) and one sheet of the 4 characters in every status and density, in `docs/screenshots/` [FR-041]
 - [ ] T026 [both] Docs: README theme list and known limits, `changelog.d/077-cheeky-crew.md`, spec status and `[IMPLEMENTED]` tags, specs-index block, `docs/agent-notes.md` entry for anything learned (for example the compiler and the reserved colours) [docs]
 - [ ] T027 [both] Owner review of the Phase 1 sheet; their notes become tasks in this list before Phase 2 starts [OD6]
-- [ ] T028 [both] Run-time fallback: the `crew` kit draws the office figure when the character module is missing, an id is unknown or a part throws; unit tests in `test:scenekits`; one driver run with the module removed [FR-017]
+- [x] T028 [both] Run-time fallback: the `crew` kit draws the office figure when the character module is missing, an id is unknown or a part throws; unit tests in `test:scenekits`; one driver run with the module removed [FR-017]
 
 ## Phase 2: the other 8 characters (one per task, each with its sheet row and FR-014 checked by T023's driver; [SVG]: a drawn file; [raster]: a reviewed picture with its `ASSETS.md` row, as T050)
 
@@ -45,13 +45,13 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 
 ## Raster path (only if T002 picks (d) or (e); replaces T011, T012, T016, T017 and T019-T022)
 
-- [ ] T040 [raster] `src/renderer/crew/` asset folder copied by `copy-assets.js`; check electron-builder's file list ships it; CSP unchanged [FR-050, FR-057]
-- [ ] T041 [raster] `src/renderer/crew/ASSETS.md` provenance table (file, character, tool and version, date, prompt kept, made by, edited by and how, licence, generator terms read by an owner) [FR-054]
-- [ ] T042 [raster] `test:crew-assets`: every picture has a row and every row a file; per-file and total size caps; no metadata chunks; 2x size from the header [FR-050, FR-051, FR-054]
-- [ ] T043 [raster] `KIT.crew` draws the picture as `<image>` per pose with the shared overlays (halo, screen, bubble, error mark, sweat, horns, stars, ambulance, cup and steam; arms with one pose); `avatar()` crop; unit tests in `test:scenekits` [FR-052, FR-053]
-- [ ] T044 [raster] Preload and `decode()` on theme apply; a failed picture falls back to the office figure (T028's path); unit test of the decision; driver step with one picture removed [FR-055]
-- [ ] T045 [raster] `check-office-fill.js` leaves the `<image>` box out of its flat-colour share; `check-crew.js` checks shown size against natural size and a capture against a canvas drawing [FR-051, FR-058]
-- [ ] T046 [raster] Spec deltas agreed with Vikram: spec 070 D3 and FR-040 (bitmaps, cast skin tones), spec 034 FR-002 (moods by overlays in the crew kit) [FR-053, Q1.2]
+- [x] T040 [raster] `src/renderer/crew/` asset folder copied by `copy-assets.js`; check electron-builder's file list ships it; CSP unchanged [FR-050, FR-057]
+- [x] T041 [raster] `src/renderer/crew/ASSETS.md` provenance table (file, character, tool and version, date, prompt kept, made by, edited by and how, licence, generator terms read by an owner) [FR-054]
+- [x] T042 [raster] `test:crew-assets`: every picture has a row and every row a file; per-file and total size caps; no metadata chunks; 2x size from the header [FR-050, FR-051, FR-054]
+- [x] T043 [raster] `KIT.crew` draws the picture as `<image>` per pose with the shared overlays (halo, screen, bubble, error mark, sweat, horns, stars, ambulance, cup and steam; arms with one pose); `avatar()` crop; unit tests in `test:scenekits` [FR-052, FR-053]
+- [x] T044 [raster] Preload and `decode()` on theme apply; a failed picture falls back to the office figure (T028's path); unit test of the decision; driver step with one picture removed [FR-055]
+- [x] T045 [raster] `check-office-fill.js` leaves the `<image>` box out of its flat-colour share; `check-crew.js` checks shown size against natural size and a capture against a canvas drawing [FR-051, FR-058]
+- [x] T046 [raster] Spec deltas agreed with Vikram: spec 070 D3 and FR-040 (bitmaps, cast skin tones), spec 034 FR-002 (moods by overlays in the crew kit) [FR-053, Q1.2]
 - [ ] T050 [raster] Character 1, the punk: picture(s) edited for FR-056, reviewed by a person (line in the PR), `ASSETS.md` row [FR-050, FR-054, FR-056]
 - [ ] T051 [raster] Character 2, the mad scientist: as T050 [FR-050, FR-054, FR-056]
 - [ ] T052 [raster] Character 3, the gamer: as T050 (no console or headphone logos) [FR-050, FR-054, FR-056]

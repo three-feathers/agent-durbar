@@ -105,7 +105,6 @@
     o.arm = o.shade(o.k.shirt, -0.14);
     o.skinD = o.shade(o.k.skin, -0.08);
     o.seed = (a && (a.id || a.name)) || o.k.shirt + o.k.hair;
-    if (K.noGlasses) o.k = Object.assign({}, o.k, { glasses: false }); /* spec 077 FR-016: the character decides on eyewear */
     const { st, mood, mini, c, k, T } = o;
     const art = artOf(o); /* a theme's character, desk and monitor art (spec 040 FR-023), drawn over every kit as over the office one */
     let s = `<svg class="scene${c ? ' sc-c' : ''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses ? 1 : 0}|${c ? 'c' : mini ? 'm' : 'f'}|${o.themeKey || ''}|${mood.body}${mood.trouble || ''}${mood.coffee ? 'C' : ''}|${kitId}${K.sigExtra ? '|' + K.sigExtra(o) : ''}" viewBox="${c ? '16 5 176 116' : mini ? '22 4 166 118' : '0 0 200 124'}"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">`;
@@ -118,7 +117,7 @@
     s += K.body(o) + art.body;
     const tilt = mood.trouble === 'faint' ? 'rotate(-24 74 56)' : st === 'idle' ? 'rotate(-7 74 56)' : st === 'error' ? 'rotate(4 74 56)' : '';
     s += `<g ${tilt ? `transform="${tilt}"` : ''}${mood.trouble === 'faint' ? ' style="transform-box:view-box"' : ''}><g class="${st === 'working' ? 'head' : ''}">`;
-    s += K.head(o) + K.hair(o) + horns(o, K.crisp) + face(o, K.crisp) + (K.headTop ? K.headTop(o) : '') + art.head;
+    s += K.head(o) + K.hair(o) + horns(o, K.crisp) + (K.noFace && K.noFace(o) ? '' : face(o, K.crisp)) + (K.headTop ? K.headTop(o) : '') + art.head;
     s += '</g></g>' + sweat(o) + '</g>';
     s += K.desk(o) + art.desk;
     s += K.monitor(o);
@@ -140,9 +139,8 @@
     o.shade = safeShade(base);
     o.arm = o.shade(o.k.shirt, -0.14); o.skinD = o.shade(o.k.skin, -0.08); o.seed = (a && (a.id || a.name)) || o.k.shirt + o.k.hair;
     o.st = 'avatar';
-    if (K.noGlasses) o.k = Object.assign({}, o.k, { glasses: false });
     const art = artOf(o);
-    return `<svg viewBox="50 20 48 48" width="100%" height="100%"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">${K.hairBack ? K.hairBack(o) : ''}${K.body(o)}${art.body}${K.head(o)}${K.hair(o)}${face(Object.assign({}, o, { st: 'working' }), K.crisp)}${K.headTop ? K.headTop(o) : ''}${art.head}</svg>`;
+    return `<svg viewBox="50 20 48 48" width="100%" height="100%"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">${K.hairBack ? K.hairBack(o) : ''}${K.body(o)}${art.body}${K.head(o)}${K.hair(o)}${K.noFace && K.noFace(o) ? '' : face(Object.assign({}, o, { st: 'working' }), K.crisp)}${K.headTop ? K.headTop(o) : ''}${art.head}</svg>`;
   }
 
   const KIT = {};
@@ -301,14 +299,20 @@
   /* ---------- Crew (spec 077): a playful desk for the Cheeky Crew theme; colours from tokens only, no literals ---------- */
   /* Furniture and a plain figure for now: the characters (clothes, hair, eyewear, mug, desk prop) come with the art format.
      `o.crew` is the character id app.js hands over; it is part of the signature so a scene is never reused for another character. */
+  /* The character is a portrait (spec 077 FR-050..FR-055): `<image>` in a fixed box, one picture per pose, chosen by the status. Everything
+     else (halo, screen, bubble, error mark, sweat, horns, stars, ambulance, cup and steam, the typing and waving arms) is the shared code over it. When
+     the id is unknown or its pictures did not load (`o.crewFb`, set by app.js), the kit draws a plain office-style figure on the same furniture (FR-017). */
+  const crewApi = () => { const g = typeof self !== 'undefined' ? self : globalThis; return g.DurbarCrew || (typeof require === 'function' ? require('./crew.js') : null); };
+  const crewPic = (o) => { const C = crewApi(); return C && !o.crewFb && C.usable(o.crew) ? C : null; };
   KIT.crew = {
-    noGlasses: true,
-    sigExtra: (o) => o.crew || '',
+    sigExtra: (o) => (o.crew || '') + (o.crewFb ? '|fb' : ''),
+    noFace: (o) => !!crewPic(o),
     chair: (o) => { const ch = o.T('--chair'); return `<rect x="47" y="33" width="54" height="65" rx="17" fill="${ch}"/><rect x="53" y="39" width="42" height="53" rx="12" fill="${o.shade(ch, 0.14)}"/><rect x="60" y="41" width="28" height="4" rx="2" fill="${o.T('--crew-accent')}"/>`; },
-    hairBack: (o) => o.k.style === 'long' ? `<path d="M60 44a14 14 0 0 1 28 0v14q0 4-4 4H64q-4 0-4-4z" fill="${o.k.hair}"/>` : '',
-    body: (o) => `<path d="${torso(o)}" fill="${o.k.shirt}"/><path d="M69.5 63.5q4.5 5 9 0" fill="none" stroke="${o.shade(o.k.shirt, 0.35)}" stroke-width="2" stroke-linecap="round"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${o.skinD}"/>`,
-    head: (o) => `<circle cx="74" cy="44" r="12.5" fill="${o.k.skin}"/>`,
+    hairBack: (o) => !crewPic(o) && o.k.style === 'long' ? `<path d="M60 44a14 14 0 0 1 28 0v14q0 4-4 4H64q-4 0-4-4z" fill="${o.k.hair}"/>` : '',
+    body: (o) => { const C = crewPic(o); if (C) { const b = C.BOX; return `<image class="crew-pic" href="${C.file(o.crew, C.poseFor(o.st))}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" preserveAspectRatio="xMidYMid meet"/>`; } return `<path d="${torso(o)}" fill="${o.k.shirt}"/><path d="M69.5 63.5q4.5 5 9 0" fill="none" stroke="${o.shade(o.k.shirt, 0.35)}" stroke-width="2" stroke-linecap="round"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${o.skinD}"/>`; },
+    head: (o) => crewPic(o) ? '' : `<circle cx="74" cy="44" r="12.5" fill="${o.k.skin}"/>`,
     hair: (o) => {
+      if (crewPic(o)) return '';
       const c = o.k.hair, st = o.k.style;
       const cap = `<path d="M61.5 43C60.5 32 67 29.5 74 29.5C81 29.5 87.5 32 86.5 43C84.5 37.5 80.5 36 74 36C67.5 36 63.5 37.5 61.5 43Z" fill="${c}"/>`;
       if (st === 'bun') return cap + `<circle cx="74" cy="27.5" r="5" fill="${c}"/>`;
@@ -322,8 +326,9 @@
     monitor: (o) => `<rect x="139" y="76" width="10" height="9" fill="${o.T('--monitor-stand')}"/><rect x="130" y="83" width="28" height="3.5" rx="1.75" fill="${o.T('--monitor-stand')}"/><rect x="112" y="32" width="64" height="45" rx="8" fill="${o.T('--monitor-frame')}"/><circle cx="144" cy="74.8" r="1.2" fill="${o.T('--crew-accent-2')}"/>`,
     keyboard: (o) => `<rect x="58" y="82" width="40" height="4" rx="2" fill="${o.T('--laptop')}"/><rect x="62" y="83.2" width="6" height="1.6" rx=".8" fill="${o.T('--crew-accent-2')}" opacity=".8"/><rect x="71" y="83.2" width="6" height="1.6" rx=".8" fill="${o.T('--crew-accent')}" opacity=".8"/>`,
     cup: (o) => `<rect x="98" y="76" width="10" height="10" rx="3" fill="${o.T('--cup')}" stroke="${o.T('--cup-line')}" stroke-width="1"/><rect x="98" y="79" width="10" height="2.4" fill="${o.T('--crew-accent')}"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="${o.T('--cup-line')}" stroke-width="1.4"/>` + steam(o),
-    arm: (o, x1, y1, x2, y2) => roundArm(o, x1, y1, x2, y2),
-    hand: (o, x, y) => roundHand(o, x, y),
+    /* over a portrait the hands and sleeves are the character's, not the agent's shirt and skin */
+    arm: (o, x1, y1, x2, y2) => { const C = crewPic(o); return roundArm(o, x1, y1, x2, y2, C ? C.CAST[o.crew].sleeve : undefined); },
+    hand: (o, x, y) => { const C = crewPic(o); return C ? `<circle cx="${x}" cy="${y}" r="3.6" fill="${C.CAST[o.crew].skin}"/>` : roundHand(o, x, y); },
   };
 
   return { KITS, draw, avatar };

@@ -4,6 +4,11 @@ What coding agents on this repo learned the hard way, so the next agent does not
 
 Each entry has the date it was learned, what happened, and how to apply it, with its evidence (`real:` = run and seen, `read:` = from code or docs, a PR or issue number). Add an entry in the PR where you learned it. Fix or delete an entry that turns out to be wrong. **Never** put secrets, tokens, personal data or chat contents here.
 
+## Scene kit pictures (spec 077)
+
+- **A picture in a scene is an `<image href>` with a relative path, and `file:` pages allow it under `img-src 'self'`** (2026-10-23, `sim:`, spec 077). The Cheeky Crew portraits load from `dist/renderer/crew/` with the CSP unchanged. Detect a missing or broken one with `new Image()` and `decode()` (an SVG `<image>` has no `naturalWidth`); the desk then redraws because the failure is in its `data-sig` and cache keys. `check-crew.js` removes one picture from a copy of `dist/` (`H.load({ index })`) to prove it; the copy's page logs one "refused a call that did not come from its own window" for `app:version`, which is expected there.
+- **Pillow writes a clean WebP** (2026-10-23, `real:` Pillow 10.2): `im.save(..., 'WEBP', exif=b'')` leaves only the `VP8`/`VP8L`/`VP8X`/`ALPH` chunks; `test:crew-assets` reads the RIFF chunks and fails on `EXIF`, `XMP ` or `ICCP`. Drawing a transparent shape with `rounded_rectangle` on an RGBA image punches a hole, it does not skip.
+
 ## Shell and process pitfalls
 
 - **Iterate with `npm test -- --bail`** (2026-10-22, spec 008 FR-115, issue #563). It stops at the first failing suite and stops the running ones (process group on POSIX, `taskkill /T /F` on Windows), so you see the failure in seconds. It is ignored when `CI` is set. It is for the loop only: the final run before a PR, PR CI and the merge queue run everything (`npm test` without the flag), so every failure shows at once and a flake can be told from a real break.

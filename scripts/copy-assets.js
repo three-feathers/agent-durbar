@@ -9,6 +9,10 @@ fs.mkdirSync(outDir, { recursive: true });
 for (const f of ['index.html', 'styles.css', 'app.js', 'harnesses.js', 'signin.js', 'demo.js', 'markdown.js', 'dialog.js', 'sessionname.js', 'roomsummary.js', 'sessionsearch.js', 'usagetotals.js', 'costtable.js', 'modelswitch.js', 'schedtemplates.js', 'places.js', 'cuttext.js', 'probe.js', 'grantlabel.js', 'mcpwords.js', 'editview.js', 'place-icons.js', 'mood.js', 'attention.js', 'keys.js', 'activity.js', 'toolstats.js', 'theme.js', 'themes.css', 'scenekits.js', 'screens.js', 'screens.css', 'activitytable.js', 'gitstatus.js', 'checkpoints.js', 'exports-shim.js', 'liveact.js', 'foldersetup.js', 'navigator.js', 'crew.js', 'shutters.js', 'coffeebreak.js', 'profileeditor.js']) {
   fs.copyFileSync(path.join(srcDir, f), path.join(outDir, f));
 }
+// spec 077: the Cheeky Crew portraits (bundled pictures only; the page's CSP allows img-src 'self'). electron-builder packs dist/**/*, so they ship.
+const crewOut = path.join(outDir, 'crew');
+fs.mkdirSync(crewOut, { recursive: true });
+for (const f of fs.readdirSync(path.join(srcDir, 'crew'))) if (f.endsWith('.webp')) fs.copyFileSync(path.join(srcDir, 'crew', f), path.join(crewOut, f));
 // Markdown parser and sanitiser, bundled from node_modules (no CDN); exact versions are pinned in package.json.
 const vendor = path.join(outDir, 'vendor');
 fs.mkdirSync(vendor, { recursive: true });
