@@ -99,3 +99,7 @@
 ## 2026-10-22: `npm test -- --bail` (issue #563)
 
 - [x] T102 (2026-10-22, issue #563) Opt-in fail-fast for `npm test` [FR-115]. Files: `scripts/run-tests.js` (`parseArgs`, `loadSuites`, `stopChild`, `runSuites` exported; detached spawn, group kill / `taskkill /T /F`), `scripts/test-run-tests.ts` and `scripts/test-run-tests-real.ts` (new), `package.json` (`test:runtests`, `test:runtestsreal`, in `test:serial`), `README.md`, `docs/agent-notes.md`, `changelog.d/008-test-bail.md`. Done when the unit test passes and fails with the stop removed, and `npm run typecheck && npm run build && npm test` pass.
+
+## 2026-10-23: nightly-watch branch filter
+
+- [x] T103 (2026-10-23, owner question) `branches: [main]` on `workflow_run` in `.github/workflows/nightly-watch.yml` [FR-116]. Files: that workflow, `changelog.d/008-nightly-watch-filter.md`. Done when the YAML parses and, after the merge, `gh run list --workflow nightly-watch.yml` shows no more runs for PR branches.
