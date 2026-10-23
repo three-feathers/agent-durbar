@@ -70,6 +70,9 @@ import type { ActivityDecision } from '../shared/activity';
 import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
+import { isSimBlocked, sealChildProcess, simDetectorFor, simGuardDescriptors, simulatorCount, simulatorOn } from './simguard';
+import childProcess = require('child_process');
+import { initSimGuard, simRefusedChannels } from './ipcguard';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
 import { SettingsStore } from './settings';
@@ -126,7 +129,13 @@ let sinceAway: SinceAway | null = null;
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 
 /** Only Copilot is registered; every agent is routed to its adapter through the router (spec 012 FR-046..FR-050). Adapters are typed as the neutral interface: optional members say what each can do (spec 030 FR-017, spec 012 FR-027). */
-const registry = createRegistry([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)]); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
+/** Spec 010 FR-022: the simulator runs in the window only; main then never reaches a real agent app (FR-023 in ipcguard.ts, FR-024 here). */
+const SIMULATOR = simulatorOn(dev);
+initSimGuard(SIMULATOR); // spec 010 FR-031: ipcguard uses this decision; it runs before any register* below
+// spec 010 FR-030: under the simulator no child process starts at all (detection probes, git, VS Code, installs): each starter refuses and is counted
+const childSeal = SIMULATOR ? sealChildProcess(childProcess as unknown as Record<string, unknown>) : undefined;
+// spec 010 FR-024: under the simulator every descriptor creates an inert stand-in, never the real adapter
+const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)], SIMULATOR)); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
 const agents = new Map<string, AgentInfo>();
 /** Spec 069: the agent apps' own user-level MCP lists (read live; written only after the window's per-file confirmation). */
@@ -508,6 +517,7 @@ let runTheme: string | undefined;
 let adaptersInfo: Promise<AdapterInfo[]> | undefined;
 /** The adapter's own sign-in question, when it has one (spec 012 FR-156): `verifySignIn` (a free server call where the app has one), else `authStatus`. */
 const signInCheck = (id: string): (() => Promise<SignInAnswer>) | undefined => {
+  if (SIMULATOR) return undefined; // spec 010 FR-030: no sign-in question under the simulator
   try {
     if (!registry.has(id)) return undefined;
     const ad = router.instance(id);
@@ -520,7 +530,7 @@ const signInCheck = (id: string): (() => Promise<SignInAnswer>) | undefined => {
 /* spec 060 FR-003: the login shell's PATH, read once (at most 3 s) before the first detection; not under the simulator */
 let loginPathRead: Promise<void> | undefined;
 const loginPathReady = (): Promise<void> => {
-  if (!loginPathRead) loginPathRead = dev.DURBAR_SIM ? Promise.resolve() : readLoginShellPath(nodeLoginPathDeps()).then((dirs) => {
+  if (!loginPathRead) loginPathRead = SIMULATOR ? Promise.resolve() : readLoginShellPath(nodeLoginPathDeps()).then((dirs) => {
     setLoginPath(dirs);
     // what is found must also run: agent apps, their probes and MCP servers start with this PATH (an nvm `claude` needs its `node`)
     if (dirs.length) process.env.PATH = mergeLoginPath(process.env.PATH, dirs);
@@ -529,7 +539,7 @@ const loginPathReady = (): Promise<void> => {
 };
 const adaptersList = (refresh: boolean): Promise<AdapterInfo[]> => {
   // spec 012 FR-156: after the probes, each agent app that can tell is asked whether its sign-in works; cached until Check again
-  if (!adaptersInfo || refresh) adaptersInfo = loginPathReady().then(() => detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const }))).then((infos) => withSignIn(infos, signInCheck));
+  if (!adaptersInfo || refresh) adaptersInfo = loginPathReady().then(() => detectAll(registry, simDetectorFor(SIMULATOR, detectorFor))).then((infos) => withSignIn(infos, signInCheck));
   return adaptersInfo;
 };
 /** Spec 012 FR-157: a session refused because of the sign-in marks its agent app `not-signed-in` in the cached list and tells the window. */
@@ -756,10 +766,10 @@ function createWindow(): void {
   win.webContents.session.setPermissionRequestHandler((_wc, permission, done) => done(permissionAllowed(permission)));
   win.webContents.session.setPermissionCheckHandler((_wc, permission) => permissionAllowed(permission));
   // DURBAR_SIM=N: simulated live agents (fake events, no sessions, no AI credits). See src/renderer/sim.ts.
-  const sim = parseInt(dev.DURBAR_SIM ?? '', 10);
+  // spec 010 FR-022: the same rule as main's guard (simulatorOn), so the window never simulates while main answers for real
   const query: Record<string, string> = {};
-  if (sim > 0) {
-    query.sim = String(sim);
+  if (SIMULATOR) {
+    query.sim = String(simulatorCount(dev));
     if (dev.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
     if (dev.DURBAR_SIM_ROOMS) query.simrooms = dev.DURBAR_SIM_ROOMS;
     if (dev.DURBAR_SIM_FLOORS === '1') query.simfloors = '1';
@@ -867,14 +877,17 @@ app.whenReady().then(() => {
   {
     const file = path.join(app.getPath('userData'), 'durbar-schedules.json');
     scheduler = new Scheduler(loadSchedules(file, Date.now()), scheduleDeps(file));
-    scheduler.start(); // missed once-runs are marked, intervals continue from now (spec 044 FR-002)
+    // spec 010 FR-025: the profile's saved schedules would send real prompts; under the simulator they are read, never run
+    if (SIMULATOR) console.warn('[simguard] DURBAR_SIM: the scheduler is not started');
+    else scheduler.start(); // missed once-runs are marked, intervals continue from now (spec 044 FR-002)
     // spec 052 FR-089: the Since you were away card, from the saved quit time and the runs the scheduler just marked missed
     sinceAway = buildSinceAway(quitAt, startedAt, scheduler.doc.schedules, (f) => folderStore?.get(f)?.label ?? folderNameOf(/\.code-workspace$/i.test(f) ? { workspaceFile: f, cwd: f } : { cwd: f })) ?? null;
   }
   createWindow();
   // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.
   const open = (dev.DURBAR_OPEN ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));
-  if (open.length) void addMany(open, validMode(dev.DURBAR_PERM));
+  if (open.length && SIMULATOR) console.warn('[simguard] DURBAR_SIM: DURBAR_OPEN is ignored (it would start real sessions)'); // spec 010 FR-025
+  else if (open.length) void addMany(open, validMode(dev.DURBAR_PERM));
   // Dev/test: DURBAR_DRIVER=/path/driver.js runs a UI-driving script against the real window + adapter.
   // The module exports async (ctx) => void with ctx = { win, addMany, shot(file), js(code), sleep(ms), waitFor(expr, ms) }.
   if (dev.DURBAR_DRIVER) {
@@ -883,6 +896,12 @@ app.whenReady().then(() => {
         return win as BrowserWindow;
       },
       addMany,
+      /** Spec 010 FR-026: the adapters main has created; under the simulator only stand-ins (`simBlocked`), if any. */
+      createdAdapters: () => router.created().map((a) => ({ id: a.id, simBlocked: isSimBlocked(a) })),
+      /** Spec 010 FR-030: child processes main tried to start under the simulator (each refused); undefined without it. */
+      childProcessAttempts: () => childSeal?.tried(),
+      /** Spec 010 FR-032: the IPC channels main refused under the simulator since startup (none on a plain start). */
+      simRefused: () => simRefusedChannels(),
       js: <T>(code: string): Promise<T> => (win as BrowserWindow).webContents.executeJavaScript(code, true) as Promise<T>,
       sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
       shot: async (file: string) => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()),
