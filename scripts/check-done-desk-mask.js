@@ -201,7 +201,7 @@ module.exports = async (ctx) => {
   await scan('grown', 'grown desks: reply line and reply column');
   }
   // 5c. the lounge (spec 001 FR-051..FR-057): the couch bubble, the dream cloud and its tooltip, the peek card and the tooltips and labels cut a reply at 160, 90, 300 and 140
-  await H.load({ w: 1440, h: 900, query: { sim: '7', simrooms: '1', simhelpers: '0', simreply: 'secrets', simsched: '1' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=7&&document.getElementById('stage').dataset.fit` });
+  await H.load({ w: 1440, h: 900, query: { sim: '7', simrooms: '1', simhelpers: '0', simreply: 'secrets' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=7&&document.getElementById('stage').dataset.fit` });
   const pad = (n) => 'Checking the registry module and its tests. '.repeat(8).slice(0, n - 1) + ' ';
   const TL = GHP.slice(4);
   const replies = [pad(155) + GHP + ' end', pad(135) + GHP + ' end', pad(295) + GHP + ' end', pad(85) + GHP + ' end',
