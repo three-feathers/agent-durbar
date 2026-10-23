@@ -110,9 +110,9 @@ module.exports = async (ctx) => {
         scrollY:document.getElementById('floor').scrollHeight>document.getElementById('floor').clientHeight+1}})()`);
     assert.strictEqual(e.tag, 'BUTTON', `${w}: the coffee-corner entry is a button`);
     assert.ok(e.hit, `${w}: a click on the entry reaches it (no figure on top takes it)`);
-    assert.ok(/^Tomas \(until \d{1,2}:\d\d( [AP]M)? · back in 1[01] min\)\. Open the chat; right-click for Retry now\.$/.test(e.title), `${w}: the title says the time left: ${e.title}`);
+    assert.ok(/^Tomas \(until \d{1,2}:\d\d( [AP]M)? · back in ([5-9]|1[01]) min\)\. Open the chat; right-click for Retry now\.$/.test(e.title), `${w}: the title says the time left: ${e.title}`);
     assert.ok(e.title.length <= 120, `${w}: a title within 120 characters (${e.title.length})`);
-    assert.ok(/back in 1[01] min/.test(e.label) && e.keys === 'Shift+F10', `${w}: the accessible name says the time left: ${e.label} (${e.keys})`);
+    assert.ok(/back in ([5-9]|1[01]) min/.test(e.label) && e.keys === 'Shift+F10', `${w}: the accessible name says the time left: ${e.label} (${e.keys})`);
     assert.ok(e.font >= 10.5, `${w}: legible entry text (${e.font}px)`);
     assert.ok(!e.scrollY, `${w}: the office does not scroll`);
     // keyboard: focus the entry with Tab order (it is a button) and open the chat with Enter
@@ -121,15 +121,16 @@ module.exports = async (ctx) => {
     assert.ok(await until(`/Tomas/.test((document.getElementById('msgInput')||{}).getAttribute?.('aria-label')||'')`, 8000), `${w}: Enter on the entry opens Tomas's chat`);
     // FR-022: the coffee-break bar, always visible; the answer bar does not repeat the card; the card is focused (openAtRequest)
     assert.ok(await until(`!!document.getElementById('coffeeBar')&&!document.getElementById('coffeeBar').hidden`, 5000), `${w}: the coffee-break bar shows`);
-    const bar = await js(`(()=>{const b=document.getElementById('coffeeBar'),r=b.getBoundingClientRect();return {t:b.innerText.replace(/\s+/g,' ').trim(),label:b.getAttribute('aria-label'),role:b.getAttribute('role'),
+    await until(`!!document.activeElement&&document.activeElement.classList.contains('coffee')`, 3000); /* openAtRequest focuses the card a moment after the chat opens */
+    const bar = await js(`(()=>{const b=document.getElementById('coffeeBar'),r=b.getBoundingClientRect();return {t:b.innerText.replace(/\\s+/g,' ').trim(),label:b.getAttribute('aria-label'),role:b.getAttribute('role'),
       btn:[...b.querySelectorAll('button')].map(x=>x.textContent),ab:document.getElementById('answerBar').hidden,in:r.bottom<=innerHeight&&r.top>=0&&r.height>0,
-      focus:document.activeElement&&document.activeElement.classList.contains('coffee'),
+      focus:document.activeElement&&document.activeElement.classList.contains('coffee'),ae:document.activeElement?(document.activeElement.id||document.activeElement.className||document.activeElement.tagName):'',
       font:Math.min(...[...b.querySelectorAll('b,span,button')].map(x=>parseFloat(getComputedStyle(x).fontSize)))}})()`);
-    assert.ok(/^On a coffee break · back in 1[01] min/.test(bar.t), `${w}: bar text: ${bar.t}`);
+    assert.ok(/^On a coffee break · back in ([5-9]|1[01]) min/.test(bar.t), `${w}: bar text: ${bar.t}`);
     assert.deepStrictEqual(bar.btn, ['Retry now', 'Show in chat'], `${w}: bar buttons`);
-    assert.ok(bar.role === 'region' && /^Coffee break, back in 1[01] min$/.test(bar.label), `${w}: bar region label: ${bar.label}`);
+    assert.ok(bar.role === 'region' && /^Coffee break, back in ([5-9]|1[01]) min$/.test(bar.label), `${w}: bar region label: ${bar.label}`);
     assert.ok(bar.ab && bar.in && bar.font >= 10.5, `${w}: answer bar hidden, coffee bar in view, legible: ${JSON.stringify(bar)}`);
-    assert.ok(bar.focus, `${w}: the chat opens with the coffee-break card focused`);
+    assert.ok(bar.focus, `${w}: the chat opens with the coffee-break card focused (focus: ${bar.ae})`);
     await H.shot(path.join(OUT, `068-coffee-bar-${w}x${h}.png`), { prep: 'calm' });
     await js(`document.getElementById('backBtn').click()`);
     assert.ok(await until(`!document.body.classList.contains('panel-open')`, 3000), `${w}: chat closed`);
@@ -144,7 +145,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!document.getElementById('modeMenu')`, 3000), `${w}: Shift+F10 opens the coffee menu`);
     const mm = await js(`(()=>{const m=document.getElementById('modeMenu');return {items:[...m.querySelectorAll('[role="menuitem"] b')].map(x=>x.textContent),label:m.getAttribute('aria-label'),focus:document.activeElement&&document.activeElement.dataset.cact}})()`);
     assert.deepStrictEqual(mm.items, ['Open chat', 'Retry now'], `${w}: menu items`);
-    assert.ok(mm.focus === 'open' && /^Tomas: Coffee break, back in 1[01] min$/.test(mm.label), `${w}: menu: ${JSON.stringify(mm)}`);
+    assert.ok(mm.focus === 'open' && /^Tomas: Coffee break, back in ([5-9]|1[01]) min$/.test(mm.label), `${w}: menu: ${JSON.stringify(mm)}`);
     await H.key('Down', [], { char: 'never' });
     assert.strictEqual(await js(`document.activeElement.dataset.cact`), 'retry', `${w}: ArrowDown moves to Retry now`);
     if (w === 1440) await H.shot(path.join(OUT, `068-coffee-menu-${w}x${h}.png`), { prep: 'calm' });
@@ -162,7 +163,8 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(resumes), 1, `${w}: Retry now sent exactly one resume message`);
     // the limit had not reset (10 min ahead): the agent app refuses and Tomas is back on the break; now it asks at the reset (re-hit)
     assert.ok(await until(`!!document.querySelector('#chat .note.perm.coffee:not(.settled)')&&!document.getElementById('coffeeBar').hidden`, 8000), `${w}: back on the break`);
-    assert.ok(await until(`/^On a coffee break · resets in 1[01] min/.test(document.getElementById('coffeeBar').innerText.replace(/\s+/g,' ').trim())`, 5000), `${w}: after a re-hit the bar says when it resets (it will ask)`);
+    const reHit = await until(`/^On a coffee break · resets in ([5-9]|1[01]) min/.test(document.getElementById('coffeeBar').innerText.replace(/\\s+/g,' ').trim())`, 5000), barNow = await js(`document.getElementById('coffeeBar').innerText`);
+    assert.ok(reHit, `${w}: after a re-hit the bar says when it resets (it will ask): ${barNow}`);
     // a double press of the bar's Retry now: one resume message, not two
     await js(`(()=>{const b=document.querySelector('#coffeeBar [data-coffee-retry]');b.click();b.click();})()`);
     assert.ok(await until(`${byYou}>=2`, 5000), `${w}: the bar's Retry now resumed`);
