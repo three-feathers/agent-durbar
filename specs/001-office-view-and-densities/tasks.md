@@ -52,6 +52,29 @@
 - [x] T037 Settings > General: *Live activity on desks* switch (default on, `localStorage`) [FR-032]
 - [x] T038 `scripts/shots-001-live-activity.js`: simulator driver and screenshots at 1440x900 and 1280x800, dense (15) and sparse (3); `check:office`, `check:geometry`; README, CHANGELOG, specs index [FR-029]
 
+## Changes 2026-10-22 (grown desks when there are few agents, owner)
+
+Numbered T088..T102 since 2026-10-23 (first written as T057..T071; PR #511 took T057..T062 on main first, and #554 uses T072..T087).
+
+- [x] T088 `src/renderer/probe.js` (`GROW`, `largest`, `better`, `pick`) and their cases in `scripts/test-probe.ts` (`npm run test:probe`) (synthetic fit tests; box model with 1, 2, 4, 6, 10, 15 agents in 1-3 folders at 1280x800, 1440x900, 1920x1080) [FR-041, FR-042, FR-046]
+- [x] T089 `chooseLayout`: grow search after the candidates (after `full` or `roomy`, at f >= 1.1; never `card`/`mini`/`micro` or a forced density); `renderOffice` sets `--gf` and `data-grow`; helper boost after [FR-041, FR-042, FR-044]
+- [x] T090 Grown card text: `liveact.js` `long` readout (+ `test:liveact` cases); `deskLine` grown text (readout, last reply excerpt masked, task); `fitSide` on grown text lines after render and paint; `styles.css` grown rules (height, widths, two-line title, max 8 lines, fade) [FR-043, FR-045]
+- [x] T091 `sim.ts` `simrooms=1..5`, `simhelpers=0`; `scripts/check-office-fill.js` driver + `npm run check:office-fill` + `scripts/ui-suite.js`; `shots-001-live-activity.js` forces `full` for the side-panel part [FR-046]
+- [x] T092 `check:office`, `check:geometry`, `npm test`; screenshots `docs/screenshots/001-fill-{4,6,15}-{1440x900,1280x800}.png` (simulator); README office section, `changelog.d/001-office-fill-space.md`, the specs-index block of this spec [FR-045, FR-046]
+- [x] T093 (review of #532) `liveact.js` `excerpt(raw, redact)`: mask the raw reply, then `plain`, then cut; `grownLine` uses it and fails closed (`Finished.`) without `redact`; `test:liveact` token cases (ghp_, github_pat_, sk-, Bearer; plain, backticks, bold, underscores, code block, link) [FR-043]
+- [x] T094 (review of #532) The `src/shared/redact.ts` underscore fix (key shapes anchored on "no letter or digit before", `test:redact` cases, spec 012 FR-080 delta) moved to PR #543, which owns it; #532 carries none of it and merges after #543 (its `check:office-fill` `_${PAT}_` case depends on it) [FR-043; spec 012 FR-080]
+- [x] T095 (review of #532) `liveact.js`: `long` computed lazily in `of()`; `chooseLayout` starts with `GROW=0`; `test:probe` source check [FR-042, FR-043]
+- [x] T096 (review of #532) `check:office-fill`: `ghp_` and `github_pat_` tokens in the done reply; FR-042, README and CHANGELOG say *f* may drop several steps at once [FR-042, FR-046]
+- [ ] T097 (review of #532) One helper for "mask the raw text, then strip the Markdown": #541's shared `safetext.js` and `DurbarLiveAct.excerpt` become a single helper. Whichever of #532 and #541 lands second points `grownLine` and the non-grown Done desk text (`taskOf`) at that helper and removes the other [FR-043]
+
+## Changes 2026-10-22 (owner decisions on #532: grown desks first; a wide grown desk shows more in columns)
+
+- [x] T098 Spec: owner decisions recorded (FR-029 order, decision (2) replaced), FR-047..FR-050; plan delta [FR-029, FR-047..FR-050]
+- [x] T099 `src/renderer/probe.js` `GCOL`, `grownCols`; `scripts/test-probe.ts` cases [FR-047, FR-048]
+- [x] T100 `liveact.js` last tool phrase (`tool` in `of()`) + `test:liveact`; `a.busySince` in `setState`, the 30 s tick [FR-047]
+- [x] T101 `cardHTML` grown side column (`.gx`: reply excerpt, facts); `renderOffice` sets `data-gc`, `--gm/--gr/--gs`, `fitLines` on reply; `styles.css` grid columns, measure, collapse [FR-047..FR-049]
+- [x] T102 `check:office-fill`: 1 and 2 agents at 1440x900, 1280x800, 1920x1080 (multi-column, measure <= 90 characters per line, page rules); mutation check; `npm test`, `check:office`; screenshots `001-fill-{1,4,6}-1440x900.png`, `001-fill-1-1920x1080.png`; changelog fragment, README [FR-050]
+
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 
 - [x] T039 `src/renderer/probe.js` (`svgHollow`, `styleSplit`), `probeSet` in `chooseLayout`, `@property` for `--w`/`--min`/`--cols` in `styles.css`; `scripts/test-probe.ts` (`npm run test:probe`) [FR-033]

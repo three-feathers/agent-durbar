@@ -11,9 +11,13 @@
   const PAINT_MS=250;       /* FR-030: at most 4 paints a second per desk */
   const LINE_MAX=160;       /* one-line readout (desk text line) */
   const PANEL_MAX=200;      /* side panel, a few lines */
+  const STREAM_MAX=600;     /* a grown desk (spec 001 FR-043): up to 8 lines, the newest sentences */
   const cutOf=(s,n)=>{s=String(s==null?'':s).replace(/\s+/g,' ').trim();const c=Array.from(s);return c.length<=n?s:c.slice(0,n-1).join('').trimEnd()+'…';};
   /* Markdown to plain words: code blocks, links, emphasis, headings and list marks go; whitespace collapses */
   const plain=t=>ST.plain(t);
+  /* spec 001 FR-043, spec 041 FR-065: a reply shown on a desk. Masked by safetext's maskRaw (unescaped, and again on the plain-kept text when Markdown
+     could split a token), then made plain. No working mask: '' (fail closed). Never a bare redact(raw). */
+  const excerpt=(raw,redact)=>{const m=ST.maskRaw(String(raw==null?'':raw),redact);return m?plain(m):'';};
   /* a heading line ("**Planning the change**", "## Plan") is a title, not a sentence: it is left out */
   const HEAD=/^[ \t]*(?:#{1,6}[ \t].*|\*\*[^*\n]+\*\*[ \t]*)$/gm;
   /* The newest whole sentences that fit in `max` characters (only the newest one with `one`). A sentence ends at . ! ? or … followed by a
@@ -52,8 +56,11 @@
   function create(opts){
     const o=opts||{}, mask=o.mask||{}, red=s=>mask.redact?ST.maskRaw(s,mask.redact):s; /* FR-065: also masks a token that Markdown broke up (ghp\_..., gh`p_...) */
     const st=new Map();
-    const get=id=>{let s=st.get(id);if(!s){s={kind:'',text:'',lines:'',buf:'',rid:null,lastPaint:-Infinity};st.set(id,s);}return s;};
-    const set=(s,kind,text,lines)=>{const ch=s.kind!==kind||s.text!==text||s.lines!==lines;s.kind=kind;s.text=text;s.lines=lines;return ch;};
+    const get=id=>{let s=st.get(id);if(!s){s={kind:'',text:'',lines:'',long:null,body:'',tool:'',buf:'',rid:null,lastPaint:-Infinity};st.set(id,s);}return s;};
+    /* body: the masked text a grown desk's `long` is made from, only when one asks (of()); a tool phrase or '' has none (long = lines) */
+    const set=(s,kind,text,lines,body)=>{body=body||'';const ch=s.kind!==kind||s.text!==text||s.lines!==lines||(s.body!==body&&s.long!==null);
+      if(s.body!==body)s.long=null;s.kind=kind;s.text=text;s.lines=lines;s.body=body;return ch;};
+    const longOf=s=>{if(!s.body)return s.lines||s.text;if(s.long===null)s.long=lastSentences(s.body,STREAM_MAX);return s.long;};
     function onEvent(id,e,extra){
       if(!e||e.agentId)return false; /* helpers' events never change the main desk */
       const s=get(id), x=extra||{};
@@ -62,30 +69,33 @@
         if(s.kind!=='think'||(e.reasoningId&&e.reasoningId!==s.rid)){s.buf='';s.rid=e.reasoningId||null;}
         s.buf=(s.buf+String(e.delta||'')).slice(-KEEP);
         const body=red(s.buf);
-        return set(s,'think','Thinking: '+lastSentences(body,LINE_MAX-10,true),lastSentences(body,PANEL_MAX));}
+        return set(s,'think','Thinking: '+lastSentences(body,LINE_MAX-10,true),lastSentences(body,PANEL_MAX),body);}
       case 'output':{
         if(s.kind!=='reply')s.buf='';
         s.buf=e.final&&typeof e.text==='string'?e.text.slice(-KEEP):(s.buf+String(e.delta||'')).slice(-KEEP);
         const body=red(s.buf), l=lastSentences(body,LINE_MAX-10,true);
         if(!l)return false;
-        return set(s,'reply','Replying: '+l,lastSentences(body,PANEL_MAX));}
+        return set(s,'reply','Replying: '+l,lastSentences(body,PANEL_MAX),body);}
       case 'toolCall':{
         if(e.phase!=='start'||x.skip)return false;
         s.buf='';
         const p=phrase({kind:x.kind,tool:e.tool,label:x.label,simple:x.simple},mask);
+        s.tool=p; /* spec 001 FR-047: the last tool of this turn stays for a wide grown desk while the agent thinks or replies */
         return set(s,'tool',p,p);}
-      case 'user':s.buf='';return set(s,'','','');
+      case 'user':s.buf='';s.tool='';return set(s,'','','');
       case 'status':
         if(e.status==='working')return false;
-        s.buf='';return set(s,'','','');
+        s.buf='';s.tool='';return set(s,'','','');
       default:return false;
       }
     }
     return {
       onEvent,
-      /* {kind, text, lines} or null when there is nothing to show */
-      of:id=>{const s=st.get(id);return s&&s.text?{kind:s.kind,text:s.text,lines:s.lines||s.text}:null;},
-      clear:id=>{const s=st.get(id);if(s){s.buf='';set(s,'','','');}},
+      /* {kind, text, lines, long, tool} or null when there is nothing to show (long: a grown desk's newest sentences, spec 001 FR-043;
+         tool: the last tool phrase of this turn, masked, or '', FR-047) */
+      of:id=>{const s=st.get(id);if(!s||!s.text)return null;const o={kind:s.kind,text:s.text,lines:s.lines||s.text,tool:s.tool||''};
+        Object.defineProperty(o,'long',{enumerable:true,get:()=>longOf(s)||o.lines});return o;},
+      clear:id=>{const s=st.get(id);if(s){s.buf='';s.tool='';set(s,'','','');}},
       drop:id=>{st.delete(id);},
       /* FR-030: may this desk be painted now? Records the paint when it may. */
       due:(id,now)=>{const s=get(id);if(now-s.lastPaint>=PAINT_MS){s.lastPaint=now;return true;}return false;},
@@ -95,5 +105,5 @@
     };
   }
   const KIND_WORD={think:'Thinking',tool:'Working',reply:'Replying'};
-  return {create,phrase,lastSentences,plain,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX};
+  return {create,phrase,lastSentences,plain,excerpt,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX};
 })());
