@@ -36,18 +36,38 @@
   let ACC = null;
   let onAccounts = () => {};
   const ACC_WAIT = 'Checking the account…';
+  /* spec 051 FR-016 (owner, 2026-10-23): the name is masked and blurred until the user reveals it with the eye button next to it. The
+     reveal lives only in this painted view (no state is kept): any repaint or a new visit to Settings shows it hidden again. */
+  const EYE = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>';
+  const SHOW_LABEL = 'Show the account name', HIDE_LABEL = 'Hide the account name';
+  function acctInner(v) {
+    if (!v || typeof v.text !== 'string') return esc('Account unknown');
+    const m = typeof v.masked === 'string' && v.masked ? v.text.indexOf(v.masked) : -1;
+    if (m < 0 || typeof v.name !== 'string') return esc(v.text);
+    return `${esc(v.text.slice(0, m))}<span class="hs-acct-name is-hidden">${esc(v.masked)}</span>${esc(v.text.slice(m + v.masked.length))}<button type="button" class="hs-reveal" data-hs="reveal" aria-pressed="false" aria-label="${SHOW_LABEL}" title="${SHOW_LABEL}">${EYE}</button>`;
+  }
   /* the card's account line: only for a ready app (a not-signed-in card already says so); filled in after the screen is painted */
   function acctHTML(id, st) {
     if (st !== 'ready' || !B || !B.harnessAccounts) return '';
     const v = ACC && ACC[id];
-    return `<p class="scr-note small hs-acct" data-acct="${esc(id)}"${v ? '' : ' aria-busy="true"'}>${esc(v ? v.text : ACC_WAIT)}</p>`;
+    return `<p class="scr-note small hs-acct" data-acct="${esc(id)}"${v ? '' : ' aria-busy="true"'}>${v ? acctInner(v) : esc(ACC_WAIT)}</p>`;
   }
   function paintAccounts() {
     document.querySelectorAll('.hs-acct[data-acct]').forEach((p) => {
-      const v = ACC && ACC[p.dataset.acct];
-      p.textContent = v && typeof v.text === 'string' ? v.text : 'Account unknown';
+      p.innerHTML = acctInner(ACC && ACC[p.dataset.acct]);
       p.removeAttribute('aria-busy');
     });
+  }
+  /* the eye button: swaps the masked name for the clear one (from memory) and back; nothing is saved */
+  function reveal(btn) {
+    const p = btn.closest('.hs-acct'), span = p && p.querySelector('.hs-acct-name'), v = p && ACC && ACC[p.dataset.acct];
+    if (!span || !v || typeof v.name !== 'string') return;
+    const show = btn.getAttribute('aria-pressed') !== 'true';
+    span.textContent = show ? v.name : v.masked;
+    span.classList.toggle('is-hidden', !show);
+    btn.setAttribute('aria-pressed', String(show));
+    btn.setAttribute('aria-label', show ? HIDE_LABEL : SHOW_LABEL);
+    btn.title = show ? HIDE_LABEL : SHOW_LABEL;
   }
   /* FR-014: asks main (refresh = ask the apps again: Settings opened, Check again, a sign-in ended), then fills the lines */
   async function loadAccounts(refresh) {
@@ -225,7 +245,8 @@
   function onClick(e) {
     const b = e.target.closest && e.target.closest('[data-hs]'); if (!b) return false;
     const kind = b.dataset.kind, card = b.closest('.hs-card'), name = card ? card.querySelector('b').textContent : kind;
-    if (b.dataset.hs === 'check') onChange(true);
+    if (b.dataset.hs === 'reveal') reveal(b);
+    else if (b.dataset.hs === 'check') onChange(true);
     else if (b.dataset.hs === 'install' || b.dataset.hs === 'update') install(kind, b.dataset.hs, name);
     else if (b.dataset.hs === 'signin') signin(kind, name);
     return true;

@@ -21,21 +21,31 @@ export interface AccountCacheDeps {
 }
 
 export function createAccountCache(deps: AccountCacheDeps) {
-  const cache = new Map<string, Promise<AccountView>>();
-  const ask = (fn: () => Promise<AccountIdentity>): Promise<AccountView> => {
+  /* `view`: the answer the window gets (the app's, or "unknown" after the time limit); `running`: true until the app's own call has
+     settled, also after the time limit. A refresh while one is running joins it, so concurrent opens of Settings or Check again
+     start no second `codex app-server` or `claude auth status` (review on #620). */
+  const cache = new Map<string, { view: Promise<AccountView>; running: boolean }>();
+  const ask = (fn: () => Promise<AccountIdentity>): { view: Promise<AccountView>; running: boolean } => {
+    const entry = { view: Promise.resolve(accountView(undefined)), running: true };
+    const call = Promise.resolve().then(fn);
+    void call.then(
+      () => { entry.running = false; },
+      () => { entry.running = false; },
+    );
     let timer: ReturnType<typeof setTimeout> | undefined;
     const limit = new Promise<undefined>((res) => {
       timer = setTimeout(() => res(undefined), deps.timeoutMs ?? ACCOUNT_TIMEOUT_MS);
     });
-    return Promise.race([Promise.resolve().then(fn), limit])
+    entry.view = Promise.race([call, limit])
       .catch(() => undefined)
       .then((a) => accountView(a))
       .finally(() => {
         if (timer) clearTimeout(timer);
       });
+    return entry;
   };
   return {
-    /** `{ [appId]: { status, text } }` for every installed app whose adapter can tell. `refresh` asks again. */
+    /** `{ [appId]: AccountView }` for every installed app whose adapter can tell. `refresh` asks again unless an ask is still running. */
     async get(refresh = false): Promise<Record<string, AccountView>> {
       let infos: AdapterInfo[] = [];
       try {
@@ -57,13 +67,14 @@ export function createAccountCache(deps: AccountCacheDeps) {
           }
           const fn = deps.check(i.id);
           if (!fn) return;
-          if (refresh || !cache.has(i.id)) cache.set(i.id, ask(fn));
-          out[i.id] = await (cache.get(i.id) as Promise<AccountView>);
+          const have = cache.get(i.id);
+          if (!have || (refresh && !have.running)) cache.set(i.id, ask(fn));
+          out[i.id] = await (cache.get(i.id) as { view: Promise<AccountView> }).view;
         }),
       );
       return out;
     },
-    /** A sign-in for this app ended: its next answer is asked again. */
+    /** A sign-in for this app ended: its next answer is asked again (a call still running is left to finish). */
     forget(id: string): void {
       cache.delete(id);
     },

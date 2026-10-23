@@ -1991,13 +1991,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       // and `simacct=apikey` change Claude Code's line. The lines are what main's accountLine makes of these answers (checked by test:account).
       harnessAccounts: async () => {
         const simAcct = simQuery.get('simacct');
-        const out: Record<string, { status: 'signed-in' | 'signed-out' | 'unknown'; text: string }> = {};
+        // spec 051 FR-016: the line is masked; `name` is the clear (fake) name for the Settings reveal only
+        type V = { status: 'signed-in' | 'signed-out' | 'unknown'; text: string; masked?: string; name?: string };
+        const out: Record<string, V> = {};
+        const SIM_EMAIL: V = { status: 'signed-in', text: 'Signed in as s•••@example.com · Claude Pro', masked: 's•••@example.com', name: 'sim@example.com' };
         for (const a of simAdapters()) {
           if (a.state === 'not-signed-in') out[a.id] = { status: 'signed-out', text: 'Not signed in' };
           else if (a.state !== 'ready') continue;
-          else if (a.id === 'copilot') out[a.id] = { status: 'signed-in', text: 'Signed in as octo-sim (GitHub, through the GitHub CLI)' };
-          else if (a.id === 'claude') out[a.id] = simAcct === 'unknown' ? { status: 'unknown', text: 'Account unknown' } : simAcct === 'apikey' ? { status: 'signed-in', text: 'Signed in with an Anthropic API key' } : { status: 'signed-in', text: 'Signed in as sim@example.com · Claude Pro' };
-          else if (a.id === 'codex') out[a.id] = { status: 'signed-in', text: 'Signed in as sim@example.com · ChatGPT Plus' };
+          else if (a.id === 'copilot') out[a.id] = { status: 'signed-in', text: 'Signed in as o••• (GitHub, through the GitHub CLI)', masked: 'o•••', name: 'octo-sim' };
+          else if (a.id === 'claude') out[a.id] = simAcct === 'unknown' ? { status: 'unknown', text: 'Account unknown' } : simAcct === 'apikey' ? { status: 'signed-in', text: 'Signed in with an Anthropic API key' } : SIM_EMAIL;
+          else if (a.id === 'codex') out[a.id] = { status: 'signed-in', text: 'Signed in as s•••@example.com · ChatGPT Plus', masked: 's•••@example.com', name: 'sim@example.com' };
         }
         return out;
       },

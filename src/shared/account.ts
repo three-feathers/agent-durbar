@@ -18,10 +18,16 @@ export interface AccountIdentity {
   method?: AccountMethod;
 }
 
-/** What the window gets per app (`harness:accounts`): only the status and the line to show. */
+/**
+ * What the window gets per app (`harness:accounts`). `text` is the line with the name masked (FR-016: "Signed in as v•••@example.com ·
+ * Claude Pro"); `masked` is that masked name as it appears in `text`, and `name` the clear name, kept only in the window's memory for
+ * the Settings reveal. Tooltips and "About agent apps" use `text` only.
+ */
 export interface AccountView {
   status: AccountIdentity['status'];
   text: string;
+  masked?: string;
+  name?: string;
 }
 
 export const NAME_MAX = 80;
@@ -43,6 +49,18 @@ export function planWord(v: unknown): string | undefined {
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
 
+/**
+ * FR-016 (owner, 2026-10-23): a name as shown before the user reveals it. An email keeps its first character and its domain
+ * ("v•••@example.com"); a login keeps its first character ("o•••"); one character or less is "•••". Characters, not UTF-16 units.
+ */
+export function maskName(name: string): string {
+  const at = name.lastIndexOf('@');
+  const local = at > 0 ? name.slice(0, at) : name;
+  const chars = Array.from(local);
+  const head = chars.length > 1 ? chars[0] : '';
+  return head + '•••' + (at > 0 ? name.slice(at) : '');
+}
+
 const METHOD_TEXT: Record<AccountMethod, string> = {
   account: '',
   'gh-cli': 'through the GitHub CLI',
@@ -59,11 +77,12 @@ const METHOD_TEXT: Record<AccountMethod, string> = {
  * - signed in, nothing else: "Signed in; the app does not say which account";
  * - "Not signed in" / "Account unknown".
  */
-export function accountLine(a: AccountIdentity | undefined | null): string {
+export function accountLine(a: AccountIdentity | undefined | null, o: { mask?: boolean } = {}): string {
   if (!a || typeof a !== 'object') return 'Account unknown';
   if (a.status === 'signed-out') return 'Not signed in';
   if (a.status !== 'signed-in') return 'Account unknown';
-  const name = cleanName(a.name);
+  const clear = cleanName(a.name);
+  const name = clear && o.mask ? maskName(clear) : clear;
   const service = cleanName(a.service, WORD_MAX);
   const plan = cleanName(a.plan, WORD_MAX);
   const how = a.method && Object.prototype.hasOwnProperty.call(METHOD_TEXT, a.method) ? METHOD_TEXT[a.method] : '';
@@ -79,8 +98,14 @@ export function accountLine(a: AccountIdentity | undefined | null): string {
   return 'Signed in; the app does not say which account';
 }
 
-/** FR-014: what main sends the window for one app. */
+/** FR-014, FR-016: what main sends the window for one app: the masked line, plus the masked and clear name when there is one. */
 export function accountView(a: AccountIdentity | undefined | null): AccountView {
   const status = a && (a.status === 'signed-in' || a.status === 'signed-out') ? a.status : 'unknown';
-  return { status, text: accountLine(a) };
+  const view: AccountView = { status, text: accountLine(a, { mask: true }) };
+  const name = status === 'signed-in' && a ? cleanName(a.name) : undefined;
+  if (name) {
+    view.masked = maskName(name);
+    view.name = name;
+  }
+  return view;
 }

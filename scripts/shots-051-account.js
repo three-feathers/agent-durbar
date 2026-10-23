@@ -7,16 +7,19 @@
  *     DURBAR_DRIVER=$PWD/scripts/shots-051-account.js xvfb-run -a npx electron . --no-sandbox
  *
  * Checks: Settings > Agent apps shows the account line on each ready card (and none on a card that is not ready or not signed in), at
- * least 10.5px and inside its card; the agent-app picker's options and the select carry it as a tooltip; "About agent apps" lists it;
- * the API-key and unknown forms. Prints "[051-account] PASS".
+ * least 10.5px and inside its card; the name is masked and blurred, and the eye button (labelled, keyboard) reveals it in that view
+ * only; the agent-app picker's options and the select carry the masked line as a tooltip; "About agent apps" lists it masked; no
+ * clear name is in the page before a reveal; the API-key and unknown forms. Prints "[051-account] PASS".
  */
 const assert = require('assert');
 const path = require('path');
-const { helpers } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 
-const COPILOT = 'Signed in as octo-sim (GitHub, through the GitHub CLI)';
-const CLAUDE = 'Signed in as sim@example.com · Claude Pro';
+// spec 051 FR-016: every line is masked until the eye button reveals it in Settings (the clear names are the simulator's fakes)
+const COPILOT = 'Signed in as o••• (GitHub, through the GitHub CLI)';
+const CLAUDE = 'Signed in as s•••@example.com · Claude Pro';
+const CLEAR = ['octo-sim', 'sim@example.com'];
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -35,10 +38,30 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(await lines(), [['copilot', COPILOT], ['claude', CLAUDE], ['codex', null]], 'one line per ready card, none for a card that is not ready');
     const fit = await js(`[...document.querySelectorAll('.hs-acct')].map(p=>{const c=p.closest('.hs-card').getBoundingClientRect(),r=p.getBoundingClientRect();return {in:r.left>=c.left-0.5&&r.right<=c.right+0.5,px:parseFloat(getComputedStyle(p).fontSize),h:r.height}})`);
     assert.ok(fit.every((f) => f.in && f.px >= 10.5 && f.h > 0), 'inside the card, at least 10.5px: ' + JSON.stringify(fit));
+    // FR-016: masked and blurred, with a labelled eye button; no clear name anywhere in the page yet
+    const hid = await js(`[...document.querySelectorAll('.hs-acct .hs-acct-name')].map(n=>({t:n.textContent,hidden:n.classList.contains('is-hidden'),blur:getComputedStyle(n).filter}))`);
+    assert.deepStrictEqual(hid.map((x) => [x.t, x.hidden]), [['o•••', true], ['s•••@example.com', true]], 'names masked: ' + JSON.stringify(hid));
+    assert.ok(hid.every((x) => /blur/.test(x.blur)), 'and blurred');
+    const clearIn = () => js(`(()=>{const t=document.body.innerText+' '+[...document.querySelectorAll('[title],[aria-label]')].map(e=>e.title+' '+e.getAttribute('aria-label')).join(' ');return ${jsLiteral(CLEAR)}.filter(n=>t.includes(n))})()`);
+    assert.deepStrictEqual(await clearIn(), [], 'no clear name in the page before a reveal');
+    const btns = await js(`[...document.querySelectorAll('.hs-acct .hs-reveal')].map(b=>({l:b.getAttribute('aria-label'),p:b.getAttribute('aria-pressed'),tag:b.tagName,w:b.getBoundingClientRect().width,h:b.getBoundingClientRect().height}))`);
+    assert.ok(btns.length === 2 && btns.every((b) => b.tag === 'BUTTON' && b.l === 'Show the account name' && b.p === 'false' && b.w >= 24 && b.h >= 24), 'a labelled button, at least 24px: ' + JSON.stringify(btns));
     await js(`document.getElementById('hsH').scrollIntoView()`); await settle();
-    await shot(`051-account-${w}x${h}.png`);
+    await shot(`051-account-${w}x${h}.png`); // blurred: the picture shows no name
+    // keyboard: focus the Claude button and press Enter, then Space to hide again
+    await js(`document.querySelector('.hs-card[data-kind="claude"] .hs-reveal').focus()`);
+    await H.key('Return'); await settle();
+    const shown = await js(`(()=>{const c=document.querySelector('.hs-card[data-kind="claude"]'),b=c.querySelector('.hs-reveal'),n=c.querySelector('.hs-acct-name');return {t:n.textContent,hidden:n.classList.contains('is-hidden'),p:b.getAttribute('aria-pressed'),l:b.getAttribute('aria-label'),focus:document.activeElement===b,other:document.querySelector('.hs-card[data-kind="copilot"] .hs-acct-name').textContent}})()`);
+    assert.deepStrictEqual(shown, { t: 'sim@example.com', hidden: false, p: 'true', l: 'Hide the account name', focus: true, other: 'o•••' }, 'Enter reveals this one name only: ' + JSON.stringify(shown));
+    await H.key('Space'); await settle();
+    assert.strictEqual(await js(`document.querySelector('.hs-card[data-kind="claude"] .hs-acct-name').textContent`), 's•••@example.com', 'Space hides it again');
+    // per view, never saved: reveal, leave Settings, come back: hidden again
+    await js(`document.querySelector('.hs-card[data-kind="copilot"] .hs-reveal').click()`);
+    assert.strictEqual(await js(`document.querySelector('.hs-card[data-kind="copilot"] .hs-acct-name').textContent`), 'octo-sim', 'a click reveals too');
+    await H.key('Escape'); await settle();
+    await openSettings();
+    assert.deepStrictEqual(await js(`[...document.querySelectorAll('.hs-acct .hs-acct-name')].map(n=>n.textContent)`), ['o•••', 's•••@example.com'], 'a new visit shows them hidden again');
     // the picker: each ready option's tooltip and the select's own tooltip for the chosen app
-    await js(`(document.querySelector('.scr-back')||document.querySelector('[data-scr-close]')||{click(){}}).click()`);
     await H.key('Escape'); await settle();
     const pick = await js(`(()=>{const s=document.getElementById('kindSel');return {title:s.title,opts:[...s.options].map(o=>[o.value,o.title||''])}})()`);
     assert.deepStrictEqual(pick.opts.find((o) => o[0] === 'copilot'), ['copilot', 'Copilot: ' + COPILOT], 'the Copilot option says the account: ' + JSON.stringify(pick));
@@ -52,6 +75,7 @@ module.exports = async (ctx) => {
     assert.ok(about.some((t) => t.startsWith('Copilot: ready · ' + COPILOT)), 'About lists the Copilot account: ' + JSON.stringify(about));
     assert.ok(about.some((t) => t.startsWith('Claude Code: ready · ' + CLAUDE)), 'About lists the Claude account');
     assert.ok(about.some((t) => /^Codex: too old/.test(t) && !/Signed in/.test(t)), 'no account on an app that is not ready');
+    assert.deepStrictEqual(await clearIn(), [], 'the tooltips and About agent apps hold no clear name');
     await H.key('Escape'); await settle();
   }
   // the other forms (one size each): an API key, unknown, and not signed in

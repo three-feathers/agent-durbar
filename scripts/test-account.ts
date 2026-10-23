@@ -11,12 +11,12 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { accountLine, accountView, cleanName, planWord, NAME_MAX } from '../src/shared/account';
+import { accountLine, accountView, cleanName, maskName, planWord, NAME_MAX } from '../src/shared/account';
 import type { AccountIdentity } from '../src/shared/account';
 import { claudeAccount, codexAccount, copilotAccount } from '../src/adapters/accounts';
 import { ClaudeAdapter } from '../src/adapters/claude';
 import { CodexAdapter } from '../src/adapters/codex';
-import { claudeAuthStatus, claudeLoggedIn } from '../src/adapters/detect';
+import { claudeAuthStatus, claudeLoggedIn, nodeExec } from '../src/adapters/detect';
 import type { DetectEnv, Exec } from '../src/adapters/detect';
 import { createAccountCache } from '../src/main/accounts';
 import { withSignIn } from '../src/main/authcheck';
@@ -58,7 +58,24 @@ void (async () => {
     assert.strictEqual(accountLine(null), 'Account unknown');
     assert.strictEqual(accountLine({ status: 'weird' } as unknown as AccountIdentity), 'Account unknown');
     assert.strictEqual(accountLine({ status: 'signed-in', name: 'x', method: 'nope' } as unknown as AccountIdentity), 'Signed in as x');
-    assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'a' }), { status: 'signed-in', text: 'Signed in as a' });
+    // FR-016: the view's line is masked; the clear name travels only for the Settings reveal
+    assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'a' }), { status: 'signed-in', text: 'Signed in as •••', masked: '•••', name: 'a' });
+    assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'vikram@example.com', plan: 'Claude Pro' }), { status: 'signed-in', text: 'Signed in as v•••@example.com · Claude Pro', masked: 'v•••@example.com', name: 'vikram@example.com' });
+    assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli' }), { status: 'signed-in', text: 'Signed in as o••• (GitHub, through the GitHub CLI)', masked: 'o•••', name: 'octocat' });
+    assert.deepStrictEqual(accountView({ status: 'signed-in', service: 'OpenAI', method: 'api-key' }), { status: 'signed-in', text: 'Signed in with an OpenAI API key' }, 'no name: nothing to mask or reveal');
+    assert.deepStrictEqual(accountView({ status: 'signed-out', name: 'stale@example.com' }), { status: 'signed-out', text: 'Not signed in' }, 'a signed-out answer carries no name');
+    assert.deepStrictEqual(accountView({ status: 'unknown', name: 'x@example.com' }), { status: 'unknown', text: 'Account unknown' });
+    for (const n of ['vikram@example.com', 'octocat', 'a.b+c@sub.example.org', 'é@example.com']) {
+      const v = accountView({ status: 'signed-in', name: n, plan: 'P' });
+      assert.ok(!v.text.includes(n) && v.text.includes(v.masked as string), `the line never holds the clear name: ${v.text}`);
+    }
+    assert.strictEqual(maskName('vikram@example.com'), 'v•••@example.com');
+    assert.strictEqual(maskName('octocat'), 'o•••');
+    assert.strictEqual(maskName('o'), '•••');
+    assert.strictEqual(maskName('@example.com'), '@•••', 'no local part: treated as a login');
+    assert.strictEqual(maskName('a@b@example.com'), 'a•••@example.com', 'the last @ starts the domain');
+    assert.strictEqual(maskName('😀x@example.com'), '😀•••@example.com', 'a character, not half a surrogate pair');
+    assert.strictEqual(maskName('x@example.com'), '•••@example.com', 'a one-character local part shows nothing of it');
     assert.deepStrictEqual(accountView({ status: 'bogus' } as unknown as AccountIdentity), { status: 'unknown', text: 'Account unknown' });
     assert.deepStrictEqual(accountView(undefined), { status: 'unknown', text: 'Account unknown' });
     // cleanName: one line, no control or bidi characters, at most NAME_MAX
@@ -223,17 +240,17 @@ void (async () => {
       list: async () => list,
       check: (id) => (id === 'basic' ? undefined : async () => { asked.push(id); return answer; }),
     });
-    assert.deepStrictEqual(await cache.get(), { copilot: { status: 'signed-in', text: 'Signed in as octocat (GitHub)' }, claude: { status: 'signed-out', text: 'Not signed in' } });
+    assert.deepStrictEqual(await cache.get(), { copilot: { status: 'signed-in', text: 'Signed in as o••• (GitHub)', masked: 'o•••', name: 'octocat' }, claude: { status: 'signed-out', text: 'Not signed in' } });
     assert.deepStrictEqual(asked, ['copilot'], 'only a ready app with accountInfo is asked; a signed-out one is not; not-installed and no-method are left out');
     await cache.get();
     assert.deepStrictEqual(asked, ['copilot'], 'asked once per run');
     answer = { status: 'signed-in', name: 'other' };
-    assert.strictEqual((await cache.get()).copilot.text, 'Signed in as octocat (GitHub)', 'cached');
-    assert.strictEqual((await cache.get(true)).copilot.text, 'Signed in as other', 'refresh asks again');
+    assert.strictEqual((await cache.get()).copilot.name, 'octocat', 'cached');
+    assert.strictEqual((await cache.get(true)).copilot.name, 'other', 'refresh asks again');
     assert.deepStrictEqual(asked, ['copilot', 'copilot']);
     answer = { status: 'signed-in', name: 'after-sign-in' };
     cache.forget('copilot');
-    assert.strictEqual((await cache.get()).copilot.text, 'Signed in as after-sign-in', 'a finished sign-in clears that app');
+    assert.strictEqual((await cache.get()).copilot.name, 'after-sign-in', 'a finished sign-in clears that app');
     // an app that is no longer installed drops its answer
     list = [info('copilot', 'not-installed')];
     assert.deepStrictEqual(await cache.get(), {});
@@ -252,6 +269,46 @@ void (async () => {
     assert.ok(Date.now() - t0 < 2000, 'the time limit holds');
     const syncThrow = createAccountCache({ list: async () => [info('copilot', 'ready')], check: () => () => { throw new Error('sync'); } });
     assert.deepStrictEqual(await syncThrow.get(), { copilot: { status: 'unknown', text: 'Account unknown' } });
+    // review on #620 (item 2): concurrent refreshes join the running ask; a refresh after it settled asks again
+    {
+      let calls = 0;
+      let release: (a: AccountIdentity) => void = () => undefined;
+      const c = createAccountCache({ list: async () => [info('codex', 'ready')], check: () => () => { calls++; return new Promise<AccountIdentity>((r) => { release = r; }); } });
+      const ps = Array.from({ length: 10 }, () => c.get(true));
+      await new Promise((r) => setTimeout(r, 5));
+      assert.strictEqual(calls, 1, 'ten concurrent refreshes make one ask');
+      release({ status: 'signed-in', name: 'one' });
+      const all = await Promise.all(ps);
+      assert.ok(all.every((x) => x.codex.name === 'one'), 'all ten get the same answer');
+      await c.get(true);
+      assert.strictEqual(calls, 2, 'a refresh after the ask settled asks again');
+      release({ status: 'signed-in', name: 'two' });
+    }
+    // an ask still running after the time limit is not started again by a refresh (it is not stopped, so no second child piles up)
+    {
+      let calls = 0;
+      let release: (a: AccountIdentity) => void = () => undefined;
+      const c = createAccountCache({ list: async () => [info('codex', 'ready')], timeoutMs: 20, check: () => () => { calls++; return new Promise<AccountIdentity>((r) => { release = r; }); } });
+      assert.strictEqual((await c.get(true)).codex.status, 'unknown', 'over the limit: unknown');
+      assert.strictEqual((await c.get(true)).codex.status, 'unknown');
+      assert.strictEqual(calls, 1, 'the slow call is joined, not repeated');
+      release({ status: 'signed-in', name: 'late' });
+      await new Promise((r) => setTimeout(r, 5));
+      const again = c.get(true);
+      await new Promise((r) => setTimeout(r, 2));
+      assert.strictEqual(calls, 2, 'once it settled, a refresh asks again');
+      release({ status: 'signed-in', name: 'second' });
+      assert.strictEqual((await again).codex.name, 'second');
+    }
+    // a failed call also frees the slot
+    {
+      let calls = 0;
+      const c = createAccountCache({ list: async () => [info('codex', 'ready')], check: () => async () => { calls++; throw new Error('x'); } });
+      await c.get(true);
+      await new Promise((r) => setTimeout(r, 5));
+      await c.get(true);
+      assert.strictEqual(calls, 2, 'a refresh after a failed ask asks again');
+    }
     const broken = createAccountCache({ list: async () => { throw new Error('x'); }, check: () => undefined });
     assert.deepStrictEqual(await broken.get(), {});
   }
@@ -278,43 +335,67 @@ void (async () => {
       'src/renderer/app.js', 'src/renderer/harnesses.js', 'src/renderer/screens.js', 'src/renderer/sim.ts',
     ];
     assert.deepStrictEqual(touches.filter((f) => !ALLOWED.includes(f)), [], 'the account path is in the listed files only');
-    // main's cache and the mappers never log
+    // main's cache and the mappers never log: no debug, console, stdout/stderr, file write or stream, activity entry or message
+    const NO_LOG = /\b(debug|console\.|logActivity|appendActivity|toRenderer|writeFile|appendFile|writeSync|createWriteStream|process\.(stdout|stderr)|\.write\(|webContents|send\()/;
+    for (const bad of ['process.stderr.write(x)', 'process.stdout.write(x)', 'fs.appendFile(p, x)', 'fs.createWriteStream(p)', 'fs.writeFileSync(p, x)', 'fs.appendFileSync(p, x)', 'this.debug?.(x)', 'console.error(x)', 'win.webContents.send(c, x)', 'stream.write(x)', 'fs.writeSync(fd, x)']) {
+      assert.ok(NO_LOG.test(bad), `the no-log check catches ${bad}`);
+    }
     for (const f of ['src/main/accounts.ts', 'src/adapters/accounts.ts', 'src/shared/account.ts']) {
       const s = strip(fs.readFileSync(path.join(ROOT, f), 'utf8'));
-      assert.ok(!/\b(debug|console\.|logActivity|appendActivity|toRenderer|writeFile)/.test(s), `${f} writes no log`);
+      assert.ok(!NO_LOG.test(s), `${f} writes no log`);
     }
     // the IPC handler only returns the answer: no log, no event broadcast, no activity entry in its block
     const ipc = strip(fs.readFileSync(path.join(ROOT, 'src/main/ipc/harness.ts'), 'utf8'));
     const block = ipc.slice(ipc.indexOf("ipcHandle('harness:accounts'"), ipc.indexOf("ipcHandle('harness:copilotAuth'"));
-    assert.ok(block.length > 20 && !/\b(debug|console\.|log|toRenderer|send)\b/.test(block), 'harness:accounts only answers the window');
+    assert.ok(block.length > 20 && !NO_LOG.test(block) && !/\blog\b/.test(block), 'harness:accounts only answers the window');
     assert.ok(/afterSignIn: async \(kind: string\) => \{\s*accounts\.forget\(kind\)/.test(ipc), 'a finished sign-in clears that app (FR-014)');
     const cacheBlock = ipc.slice(ipc.indexOf('const accounts = createAccountCache'), ipc.indexOf('const harnessSetup = new HarnessSetup'));
-    assert.ok(cacheBlock.length > 20 && !/\b(debug|console\.|toRenderer)\b/.test(cacheBlock), 'the cache wiring logs nothing');
+    assert.ok(cacheBlock.length > 20 && !NO_LOG.test(cacheBlock), 'the cache wiring logs nothing');
     // the adapters' accountInfo bodies never call debug
     for (const f of ['src/adapters/claude.ts', 'src/adapters/codex.ts', 'src/adapters/copilot.ts']) {
       const s = strip(fs.readFileSync(path.join(ROOT, f), 'utf8'));
       const i = s.indexOf('async accountInfo(');
       assert.ok(i > 0, `${f} has accountInfo`);
       const body = s.slice(i, s.indexOf('\n  }\n', i));
-      assert.ok(!/debug|console\./.test(body), `${f} accountInfo does not log`);
+      assert.ok(!NO_LOG.test(body), `${f} accountInfo does not log`);
     }
     // the window's account code sends nothing on: no bridge call but harnessAccounts in its lines
     const hs = fs.readFileSync(path.join(ROOT, 'src/renderer/harnesses.js'), 'utf8');
     const acc = hs.slice(hs.indexOf('let ACC = null'), hs.indexOf('/* a small modal'));
     assert.ok(acc.includes('B.harnessAccounts') && !/B\.(?!harnessAccounts)\w+\(/.test(acc), 'the window only reads the answer');
-    // the simulator's fake identities are what accountLine makes of fake answers (so the screenshots match the real wording)
+    // the simulator's fake identities are what accountView makes of fake answers (so the screenshots match the real wording, masked)
     const sim = fs.readFileSync(path.join(ROOT, 'src/renderer/sim.ts'), 'utf8');
-    for (const [a, t] of [
-      [{ status: 'signed-in', name: 'octo-sim', service: 'GitHub', method: 'gh-cli' }, 'Signed in as octo-sim (GitHub, through the GitHub CLI)'],
-      [{ status: 'signed-in', name: 'sim@example.com', plan: 'Claude Pro' }, 'Signed in as sim@example.com · Claude Pro'],
-      [{ status: 'signed-in', service: 'Anthropic', method: 'api-key' }, 'Signed in with an Anthropic API key'],
-      [{ status: 'signed-in', name: 'sim@example.com', plan: 'ChatGPT Plus' }, 'Signed in as sim@example.com · ChatGPT Plus'],
-      [{ status: 'unknown' }, 'Account unknown'],
-      [{ status: 'signed-out' }, 'Not signed in'],
-    ] as Array<[AccountIdentity, string]>) {
-      assert.strictEqual(accountLine(a), t);
-      assert.ok(sim.includes(`'${t}'`), `the simulator shows "${t}"`);
+    for (const a of [
+      { status: 'signed-in', name: 'octo-sim', service: 'GitHub', method: 'gh-cli' },
+      { status: 'signed-in', name: 'sim@example.com', plan: 'Claude Pro' },
+      { status: 'signed-in', service: 'Anthropic', method: 'api-key' },
+      { status: 'signed-in', name: 'sim@example.com', plan: 'ChatGPT Plus' },
+      { status: 'unknown' },
+      { status: 'signed-out' },
+    ] as AccountIdentity[]) {
+      const v = accountView(a);
+      assert.ok(sim.includes(`text: '${v.text}'`), `the simulator shows "${v.text}"`);
+      if (v.masked) assert.ok(sim.includes(`masked: '${v.masked}', name: '${v.name}'`), `the simulator's reveal for ${v.text}`);
     }
+    // FR-016: the picker tooltips and About agent apps read the masked line only, never the clear name
+    const appJs = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
+    assert.ok(/ACCTS\[id\]\.text/.test(appJs) && !/ACCTS\[[^\]]+\]\.name|\.name\b[^;\n]*ACCTS|ACCTS[^;\n]*\.name\b/.test(appJs.replace(/k\.name/g, '')), 'app.js uses the masked text only');
+    // the reveal is not saved: no storage or settings call in the window's account code
+    assert.ok(!/localStorage|sessionStorage|setSettings|saveSettings|indexedDB/.test(acc), 'the reveal is never saved');
+  }
+
+  // ---- 6. review on #620 (item 4): `auth status` output over 64 KiB is refused (the exec's cap), not parsed
+  {
+    const env = { platform: process.platform, env: process.env, homedir: '/h', isFile: () => true, listDir: () => [] } as unknown as DetectEnv;
+    const big = JSON.stringify({ loggedIn: true, email: 'x'.repeat(70 * 1024) + '@example.com' });
+    const script = `process.stdout.write(${JSON.stringify(big)})`;
+    const run: Exec = (file, args, o) => nodeExec(process.execPath, ['-e', script], o);
+    const r = await nodeExec(process.execPath, ['-e', script], { timeoutMs: 10000 });
+    assert.ok(r.errorCode && /MAXBUFFER/i.test(r.errorCode), `a child that prints more than 64 KiB is cut off: ${r.errorCode}`);
+    assert.strictEqual(await claudeAuthStatus('/x/claude', env, run), undefined, 'too much output is unclear, not an identity');
+    const small = JSON.stringify({ loggedIn: true, email: 'x'.repeat(60 * 1024) + '@example.com' });
+    const ok = await nodeExec(process.execPath, ['-e', `process.stdout.write(${JSON.stringify(small)})`], { timeoutMs: 10000 });
+    assert.ok(!ok.errorCode && ok.stdout.length === small.length, 'under the cap the output is whole');
   }
 
   console.log('test:account ok');
