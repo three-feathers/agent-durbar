@@ -36,6 +36,31 @@ function syncChatNos(){
 const chatNoOf=a=>{if(!a||a.parent)return 0;if(CHATNO_FOR!==agents||!(a.id in CHATNO))syncChatNos();return CHATNO[a.id]||0;};
 /* FR-012: the badge "C3" (text, not colour); the element around it carries the words ("chat 3") */
 const chatNoHTML=a=>{const n=chatNoOf(a);return n?`<span class="chatno" data-n="C${n}" aria-hidden="true" title="Chat ${n}: ${esc(navKeyText())}, then C ${n}"></span>`:'';}; /* the text is CSS content: it stays out of the desk's own text (names come first there) */
+/* spec 077 (Cheeky Crew): which character a session wears. Random among the ones the office uses least, kept per session id in this window's
+   localStorage like the chat numbers (ids and character names only), outside the simulator and the demo; there the pick is seeded by the id. Helpers
+   get a character by the same rule and are not stored. Only the crew scene kit asks (crewOf), so other themes cost nothing. */
+const CREW_KEY='durbar.crew', CREW=window.DurbarCrew;
+let CREW_MAP={}, CREW_FOR=null, CREW_HELP={};
+const crewRand=()=>rememberOn()?undefined:CREW.seededRand;
+function syncCrew(){
+  if(CREW_FOR!==agents){CREW_FOR=agents;CREW_MAP={};CREW_HELP={};if(!demoOn&&rememberOn()){try{CREW_MAP=CREW.loadCrew(localStorage.getItem(CREW_KEY));}catch(e){CREW_MAP={};}}}
+  const ids=agents.filter(a=>!a.parent).map(a=>a.id);
+  /* a session that is gone frees its character once the office has loaded (before that, restored sessions keep theirs) */
+  const next=CREW.assignCrew(agentsListed||demoOn?CREW.pruneCrew(CREW_MAP,ids):CREW_MAP,ids,CREW.IDS,crewRand());
+  if(JSON.stringify(next)!==JSON.stringify(CREW_MAP)){CREW_MAP=next;if(!demoOn&&rememberOn()){try{localStorage.setItem(CREW_KEY,JSON.stringify(CREW_MAP));}catch(e){}}}
+}
+const crewOf=a=>{
+  if(!a)return '';
+  if(a.parent){
+    if(CREW_FOR!==agents)syncCrew();
+    if(!CREW_HELP[a.id])CREW_HELP[a.id]=CREW.pickCharacter(a.id,CREW.IDS,Object.values(CREW_MAP).concat(Object.values(CREW_HELP)),crewRand());
+    return CREW_HELP[a.id];
+  }
+  if(CREW_FOR!==agents||!(a.id in CREW_MAP))syncCrew();
+  return CREW_MAP[a.id]||'';
+};
+/* the character in a cache key or a walker's key: nothing outside the crew kit, so the other themes' keys do not change */
+const crewKey=a=>THEME.sceneKit()==='crew'?'|'+crewOf(a):'';
 const chatNoWords=a=>{const n=chatNoOf(a);return n?', chat '+n:'';};
 const INBOX_KEY=keyText(['mod','shift','A']), NEXT_KEY=keyText(['mod','shift','N']), PAL_KEY=keyText(['mod','K']);
 /* spec 006 FR-036: show or hide Previous sessions (H for history) */
@@ -421,7 +446,7 @@ function syncWalkers(){
     if(!w){
       const a=byId(id); if(!a)return;
       const el=document.createElement('span'); el.className='walker'; el.setAttribute('aria-hidden','true'); el.innerHTML='<span class="wk">'+avatar(a)+'</span>'; layer.appendChild(el);
-      w={el,back:false,walking:false,shown:false,timer:0,to:'',tk:THEME.themeIdForCache()}; walkers.set(id,w);
+      w={el,back:false,walking:false,shown:false,timer:0,to:'',tk:THEME.themeIdForCache()+crewKey(a)}; walkers.set(id,w);
       /* a visit that began a while ago and is only now drawn (its tile got wider, the queue shorter) is already there: no walk from the desk */
       const v=VISITS.at(id), long=!!v&&Date.now()-v.since>WALK_MS+500;
       const from=long?pos:(deskPos(id)||pos); el.style.transition='none'; el.style.transform=`translate(${from.x}px,${from.y}px)`; void el.offsetWidth; w.shown=true;
@@ -442,7 +467,7 @@ function syncWalkers(){
   });
   /* spec 040 FR-023: a figure drawn before a theme switch is drawn again in the new theme (it is not rebuilt while it walks or rests) */
   const tk=THEME.themeIdForCache();
-  walkers.forEach((w,id)=>{const a=byId(id);if(a&&w.tk!==tk){const wk=w.el.querySelector('.wk');if(wk)wk.innerHTML=avatar(a);w.tk=tk;}});
+  walkers.forEach((w,id)=>{const a=byId(id),wtk=a?tk+crewKey(a):'';if(a&&w.tk!==wtk){const wk=w.el.querySelector('.wk');if(wk)wk.innerHTML=avatar(a);w.tk=wtk;}}); /* spec 077 FR-024: and when its character changes */
   /* spec 034 FR-015: the figure away at a place keeps its mood (ring, horns, trouble dot); none in Serious mode (moodFor) */
   walkers.forEach((w,id)=>{const a=byId(id),m=moodFor(a);w.el.dataset.body=m.body;w.el.dataset.trouble=m.trouble||'';w.el.dataset.coffee=m.coffee?'1':''; /* spec 068: a cup in the hand */
     /* spec 001 FR-034: at the Boss, a tiny badge on the figure: ? for a question, a key for a permission */
@@ -587,7 +612,7 @@ function scene(a,mini,c){
   const kit=THEME.sceneKit(); /* another theme's people and desks (spec 035 FR-013); the office kit is the code below */
   /* spec 040 FR-023: the signature names the theme too, so a theme switch redraws the desk (same signature = the old SVG is kept) */
   const tk=THEME.themeIdForCache();
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS,themeKey:tk,art:kitArt()});if(v)return c?v:stillSig(v);}
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS,themeKey:tk,art:kitArt(),crew:kit==='crew'?crewOf(a):''});if(v)return c?v:stillSig(v);}
   let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${tk}|${mood.body}${mood.trouble||''}${mood.coffee?'C':''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
   s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T_('--scene-shadow')}" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
@@ -658,7 +683,7 @@ function stillSig(svg){return SERIOUS?svg.replace(' data-sig="',' data-sig="stil
 function avatar(a){
   const k=themedLook(a.look);
   const kit=THEME.sceneKit();
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt()});if(v)return v;}
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:kit==='crew'?crewOf(a):''});if(v)return v;}
   return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/>${charArt('body')}<circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}${charArt('head')}<circle cx="71.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><circle cx="79.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="${T_('--mouth')}" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 }
 const PLANT=()=>'<svg class="room-plant" width="26" height="30" viewBox="0 0 26 30" aria-hidden="true" focusable="false">'+THEME.slot('plant')+'</svg>';
@@ -833,7 +858,7 @@ let HCAP=1; /* helpers shown on a compact strip before "+N more" (a layout param
 let HBOOST=new Map(); /* agent id -> helpers shown, for agents that get more than HCAP because the floor has room left over (see chooseLayout) */
 const helperCap=(d,a)=>(a&&HBOOST.get(a.id))||HCAP;
 const SC_CACHE=new Map();
-function sceneCacheKey(a){const st=vis(a),k=a.look,m=moodFor(a);return st+k.shirt+k.skin+k.hair+k.style+(k.glasses?1:0)+'|'+m.body+(m.trouble||'')+'|'+THEME.themeIdForCache();}
+function sceneCacheKey(a){const st=vis(a),k=a.look,m=moodFor(a);return st+k.shirt+k.skin+k.hair+k.style+(k.glasses?1:0)+'|'+m.body+(m.trouble||'')+'|'+THEME.themeIdForCache()+crewKey(a);}
 function sceneC(a){const key=sceneCacheKey(a);let v=SC_CACHE.get(key);if(!v){v=scene(a,false,true);SC_CACHE.set(key,v);}return v;}
 function visibleHelpers(a,d){
   const all=helpersOf(a).slice().sort((x,y)=>prio(x)-prio(y));

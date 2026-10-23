@@ -44,8 +44,21 @@ for (const kit of K.KITS.slice(1)) {
   const odd: string = K.draw(kit, { id: 'o' }, { st: 'working', mood: { body: 'normal' }, k: { shirt: '#369', skin: 'peru', hair: 'rgb(1 2 3)', style: 'short' }, mini: false, c: false, T, shade, reduced: false });
   assert.ok(!/NaN/.test(odd), kit + ': short or named colours do not break shading');
 }
+// spec 077: the crew kit's furniture comes from tokens, the character id is in the signature, and the kit decides on eyewear (FR-016, FR-024)
+{
+  const base = { st: 'working', mood: { body: 'normal' }, k: { shirt: '#336699', skin: '#e0b090', hair: '#222222', style: 'short', glasses: true }, mini: false, c: false, T, shade, reduced: true };
+  const plain: string = K.draw('crew', { id: 'c1' }, base);
+  assert.ok(/\|crew\|"/.test(plain), 'no character: the signature ends with the kit and an empty id');
+  const a: string = K.draw('crew', { id: 'c1' }, { ...base, crew: 'punk' }), b: string = K.draw('crew', { id: 'c1' }, { ...base, crew: 'gamer' });
+  assert.ok(/\|crew\|punk"/.test(a) && /\|crew\|gamer"/.test(b), 'the character id is the last part of the signature');
+  assert.ok(a !== b, 'another character is another drawing (another signature)');
+  assert.ok(!/<g fill="none" stroke="[^"]*" stroke-width="1\.1"><circle/.test(plain), 'the agent\'s own glasses are not drawn on the crew kit');
+  const av: string = K.avatar('crew', { id: 'c1' }, { k: base.k, T, shade, crew: 'punk' });
+  assert.ok(!/stroke-width="1\.1"/.test(av), 'nor on its walking figure');
+  assert.ok(T('--crew-accent') && T('--crew-ink') && T('--crew-accent-2'), 'the crew tokens exist');
+}
 // every built-in pack names its kit; Clean Office stays on the office kit
-for (const [id, kit] of [['clean-office', 'office'], ['corporate', 'corporate'], ['retro', 'pixel'], ['durbar-indian', 'court-indian'], ['durbar-european', 'court-european'], ['durbar-japanese', 'court-japanese']]) {
+for (const [id, kit] of [['clean-office', 'office'], ['corporate', 'corporate'], ['retro', 'pixel'], ['durbar-indian', 'court-indian'], ['durbar-european', 'court-european'], ['durbar-japanese', 'court-japanese'], ['cheeky-crew', 'crew']]) {
   THEME.setTheme(id);
   assert.strictEqual(THEME.sceneKit(), kit, id + ' draws with the ' + kit + ' kit');
 }

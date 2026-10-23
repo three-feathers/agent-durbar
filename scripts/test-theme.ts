@@ -113,7 +113,7 @@ assert.strictEqual(T._validateManifest({ id: 'u1' }).ui, 'clean', 'no ui = clean
 assert.strictEqual(T._validateManifest({ id: 'u2', ui: 'retro' }).ui, 'retro');
 assert.strictEqual(T._validateManifest({ id: 'u3', ui: 'x"><style>' }).ui, 'clean', 'unknown ui = clean');
 assert.deepStrictEqual(T.UI_STYLES, ['clean', 'corporate', 'retro', 'court-indian', 'court-european', 'court-japanese']);
-for (const [id, ui] of [['corporate', 'corporate'], ['retro', 'retro'], ['durbar-indian', 'court-indian'], ['durbar-european', 'court-european'], ['durbar-japanese', 'court-japanese'], ['clean-office', 'clean']]) {
+for (const [id, ui] of [['corporate', 'corporate'], ['retro', 'retro'], ['durbar-indian', 'court-indian'], ['durbar-european', 'court-european'], ['durbar-japanese', 'court-japanese'], ['clean-office', 'clean'], ['cheeky-crew', 'clean']]) {
   T.setTheme(id);
   assert.strictEqual(T.current().manifest.ui, ui, id + ' uses the ' + ui + ' UI style');
 }
@@ -135,7 +135,7 @@ assert.ok(pixPack.art['hair-acc']&&pixPack.art['hair-acc'].includes('<rect'),'pi
 
 // --- Every built-in pack (specs 036-039) ---
 const packs=T.list().map((t:any)=>t.id);
-assert.deepStrictEqual(packs,['clean-office','corporate','retro','durbar-indian','durbar-european','durbar-japanese'],'all six built-in packs registered');
+assert.deepStrictEqual(packs,['clean-office','corporate','retro','durbar-indian','durbar-european','durbar-japanese','cheeky-crew'],'all seven built-in packs registered');
 for(const id of packs){
   T.setTheme(id);
   assert.strictEqual(T.current().id,id);
@@ -149,7 +149,7 @@ for(const id of packs){
 const OVERLAY_SLOTS=['char-body','char-robe','char-headwear','char-collar','desk-back','desk-art','monitor-art','hair-acc'];
 const ROOM_SLOTS=['room-back-wall','room-back-window','room-floor'];
 const ICON_SLOTS=['place-library','place-software','place-terminal','place-web','place-other'];
-const THEMED_PACKS=['corporate','retro','durbar-indian','durbar-european','durbar-japanese'];
+const THEMED_PACKS=['corporate','retro','durbar-indian','durbar-european','durbar-japanese']; /* Cheeky Crew has no art slots (spec 077 FR-030) */
 assert.deepStrictEqual([...T.ART_SLOTS].sort(),['plant',...ROOM_SLOTS,'lobby-art','door-art',...ICON_SLOTS,...OVERLAY_SLOTS,'gadget-cup','gadget-laptop'].sort(),'the whitelist is exactly what the renderer draws');
 
 /* Clean Office omits every slot but the plant: THEME.slot() returns null (the renderer draws the default). */

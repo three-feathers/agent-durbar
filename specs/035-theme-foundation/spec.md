@@ -106,3 +106,6 @@ status: **built** on branch `035-theme-foundation` (PR #137): loader, sanitizer,
 
 Owner (Vikram, team chat 2026-10-22 06:17 UTC): run theme layout, geometry and screenshot checks on pull requests only for Clean Office and Retro (dark, its own display font and art); the other styles change only what FR-010 allows, which `test:theme` checks statically on every PR. Nothing in FR-009..FR-013 changes; only where the FR-010 layout proof runs (spec 008 FR-111).
 
+### 2026-10-23: the kit list gains `crew` (spec 077)
+
+FR-013's fixed kit list is now `office`, `corporate`, `pixel`, `court-indian`, `court-european`, `court-japanese` and `crew` (the Cheeky Crew theme's kit, spec 077); a user theme may name it like any other kit.

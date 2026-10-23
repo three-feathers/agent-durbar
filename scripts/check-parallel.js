@@ -44,7 +44,7 @@ const available = () => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const variants = themes
-  ? ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'].map((t) => ({ name: t, env: { DURBAR_THEME: t, OFFICE_THEME: t } }))
+  ? ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese', 'cheeky-crew'].map((t) => ({ name: t, env: { DURBAR_THEME: t, OFFICE_THEME: t } }))
       .concat([{ name: 'user theme', env: { OFFICE_USER_THEME: 'scripts/fixtures/themes/check-user.json' } }])
   : [{ name: 'default', env: {} }];
 const jobs = [];

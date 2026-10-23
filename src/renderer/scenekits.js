@@ -7,7 +7,7 @@
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DurbarScenes = api;
 })(typeof self !== 'undefined' ? self : this, function () {
-  const KITS = ['office', 'corporate', 'pixel', 'court-indian', 'court-european', 'court-japanese'];
+  const KITS = ['office', 'corporate', 'pixel', 'court-indian', 'court-european', 'court-japanese', 'crew'];
 
   /* a small stable pick from a list, so each agent keeps its own turban or sash colour */
   const pick = (seed, list) => { let h = 0; for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return list[h % list.length]; };
@@ -105,9 +105,10 @@
     o.arm = o.shade(o.k.shirt, -0.14);
     o.skinD = o.shade(o.k.skin, -0.08);
     o.seed = (a && (a.id || a.name)) || o.k.shirt + o.k.hair;
+    if (K.noGlasses) o.k = Object.assign({}, o.k, { glasses: false }); /* spec 077 FR-016: the character decides on eyewear */
     const { st, mood, mini, c, k, T } = o;
     const art = artOf(o); /* a theme's character, desk and monitor art (spec 040 FR-023), drawn over every kit as over the office one */
-    let s = `<svg class="scene${c ? ' sc-c' : ''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses ? 1 : 0}|${c ? 'c' : mini ? 'm' : 'f'}|${o.themeKey || ''}|${mood.body}${mood.trouble || ''}${mood.coffee ? 'C' : ''}|${kitId}" viewBox="${c ? '16 5 176 116' : mini ? '22 4 166 118' : '0 0 200 124'}"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">`;
+    let s = `<svg class="scene${c ? ' sc-c' : ''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses ? 1 : 0}|${c ? 'c' : mini ? 'm' : 'f'}|${o.themeKey || ''}|${mood.body}${mood.trouble || ''}${mood.coffee ? 'C' : ''}|${kitId}${K.sigExtra ? '|' + K.sigExtra(o) : ''}" viewBox="${c ? '16 5 176 116' : mini ? '22 4 166 118' : '0 0 200 124'}"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">`;
     s += `<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T('--scene-shadow')}" opacity=".06"/>`;
     s += K.backdrop ? K.backdrop(o) : '';
     s += halo(o);
@@ -139,6 +140,7 @@
     o.shade = safeShade(base);
     o.arm = o.shade(o.k.shirt, -0.14); o.skinD = o.shade(o.k.skin, -0.08); o.seed = (a && (a.id || a.name)) || o.k.shirt + o.k.hair;
     o.st = 'avatar';
+    if (K.noGlasses) o.k = Object.assign({}, o.k, { glasses: false });
     const art = artOf(o);
     return `<svg viewBox="50 20 48 48" width="100%" height="100%"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">${K.hairBack ? K.hairBack(o) : ''}${K.body(o)}${art.body}${K.head(o)}${K.hair(o)}${face(Object.assign({}, o, { st: 'working' }), K.crisp)}${K.headTop ? K.headTop(o) : ''}${art.head}</svg>`;
   }
@@ -293,6 +295,34 @@
     cup: (o) => `<path d="M98 79h11q-1 7-5.5 7q-4.5 0-5.5-7z" fill="#6b4b3a"/><path d="M98 79h11" stroke="#cdbf9f" stroke-width="1.2"/>` + steam(o),
     props: (o) => `<path d="M165 86q0-6 6-6q6 0 6 6z" fill="${LACQUER}"/><path d="M171 80q-5-4-1-10q2 4 6 3q-1 5-5 7z" fill="#4f6b3f"/>`,
     arm: (o, x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${o.arm}" stroke-width="9.5" stroke-linecap="butt"/>`,
+    hand: (o, x, y) => roundHand(o, x, y),
+  };
+
+  /* ---------- Crew (spec 077): a playful desk for the Cheeky Crew theme; colours from tokens only, no literals ---------- */
+  /* Furniture and a plain figure for now: the characters (clothes, hair, eyewear, mug, desk prop) come with the art format.
+     `o.crew` is the character id app.js hands over; it is part of the signature so a scene is never reused for another character. */
+  KIT.crew = {
+    noGlasses: true,
+    sigExtra: (o) => o.crew || '',
+    chair: (o) => { const ch = o.T('--chair'); return `<rect x="47" y="33" width="54" height="65" rx="17" fill="${ch}"/><rect x="53" y="39" width="42" height="53" rx="12" fill="${o.shade(ch, 0.14)}"/><rect x="60" y="41" width="28" height="4" rx="2" fill="${o.T('--crew-accent')}"/>`; },
+    hairBack: (o) => o.k.style === 'long' ? `<path d="M60 44a14 14 0 0 1 28 0v14q0 4-4 4H64q-4 0-4-4z" fill="${o.k.hair}"/>` : '',
+    body: (o) => `<path d="${torso(o)}" fill="${o.k.shirt}"/><path d="M69.5 63.5q4.5 5 9 0" fill="none" stroke="${o.shade(o.k.shirt, 0.35)}" stroke-width="2" stroke-linecap="round"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${o.skinD}"/>`,
+    head: (o) => `<circle cx="74" cy="44" r="12.5" fill="${o.k.skin}"/>`,
+    hair: (o) => {
+      const c = o.k.hair, st = o.k.style;
+      const cap = `<path d="M61.5 43C60.5 32 67 29.5 74 29.5C81 29.5 87.5 32 86.5 43C84.5 37.5 80.5 36 74 36C67.5 36 63.5 37.5 61.5 43Z" fill="${c}"/>`;
+      if (st === 'bun') return cap + `<circle cx="74" cy="27.5" r="5" fill="${c}"/>`;
+      if (st === 'curly') return cap + `<circle cx="64" cy="33" r="3.4" fill="${c}"/><circle cx="74" cy="29.5" r="3.6" fill="${c}"/><circle cx="84" cy="33" r="3.4" fill="${c}"/>`;
+      return cap;
+    },
+    desk: (o) => {
+      const d = o.T('--desk'), f = o.T('--desk-front');
+      return `<rect x="10" y="86" width="180" height="7" rx="3.5" fill="${d}"/><rect x="10" y="86" width="180" height="2" rx="1" fill="${o.T('--crew-accent')}"/><rect x="15" y="93" width="170" height="21" rx="6" fill="${f}"/><rect x="22" y="98" width="46" height="11" rx="5.5" fill="${o.T('--desk-drawer')}"/><rect x="142" y="98" width="36" height="11" rx="5.5" fill="${o.T('--desk-drawer')}"/><circle cx="45" cy="103.5" r="1.6" fill="${o.T('--crew-ink')}"/><circle cx="160" cy="103.5" r="1.6" fill="${o.T('--crew-ink')}"/>`;
+    },
+    monitor: (o) => `<rect x="139" y="76" width="10" height="9" fill="${o.T('--monitor-stand')}"/><rect x="130" y="83" width="28" height="3.5" rx="1.75" fill="${o.T('--monitor-stand')}"/><rect x="112" y="32" width="64" height="45" rx="8" fill="${o.T('--monitor-frame')}"/><circle cx="144" cy="74.8" r="1.2" fill="${o.T('--crew-accent-2')}"/>`,
+    keyboard: (o) => `<rect x="58" y="82" width="40" height="4" rx="2" fill="${o.T('--laptop')}"/><rect x="62" y="83.2" width="6" height="1.6" rx=".8" fill="${o.T('--crew-accent-2')}" opacity=".8"/><rect x="71" y="83.2" width="6" height="1.6" rx=".8" fill="${o.T('--crew-accent')}" opacity=".8"/>`,
+    cup: (o) => `<rect x="98" y="76" width="10" height="10" rx="3" fill="${o.T('--cup')}" stroke="${o.T('--cup-line')}" stroke-width="1"/><rect x="98" y="79" width="10" height="2.4" fill="${o.T('--crew-accent')}"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="${o.T('--cup-line')}" stroke-width="1.4"/>` + steam(o),
+    arm: (o, x1, y1, x2, y2) => roundArm(o, x1, y1, x2, y2),
     hand: (o, x, y) => roundHand(o, x, y),
   };
 

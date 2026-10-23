@@ -9,15 +9,17 @@ Nothing here starts until the owner answers Q1-Q8 in `spec.md` (or accepts the r
 
 ## Phase 1: the kit, the machinery and 4 characters (shown to the owner first)
 
+**Held 2026-10-23 (coordinator): the owner showed a richer, raster reference style, so Q1 (the art format) may change from compiled SVG. T011, T012, T016, T017 and T019-T023 (and the art parts of T024-T025) wait for that decision. Done meanwhile, whatever the format: T010, T013, T014, T015 (furniture and a plain placeholder figure; `[~]` = the character parts wait), T018.**
+
 - [x] T010 Pure `src/renderer/crew.js`: `pickCharacter` (least used, injected random), `seeded`, `assignCrew`, `pruneCrew`, `loadCrew` (500 entries, 200-char ids, unknown ids dropped); `scripts/test-crew.ts` as `test:crew` in `npm test` [FR-020, FR-021]
 - [ ] T011 Compiler `scripts/crew-compile.js`: `data-part` split, `guide` dropped, reserved and `--crew-*` colour mapping, unknown colour fails, every part through `sanitizeSlot` unchanged, size caps; fixture SVGs and cases in `test:crew` [FR-011, FR-012, FR-013]
 - [ ] T012 Drawing guide `src/renderer/crew/_guide.svg` (crew furniture, FR-014 zones as outlines, reserved colour swatches) and a short `src/renderer/crew/README.md` (parts, zones, colours, provenance rule) [FR-011, FR-014]
-- [ ] T013 `--crew-*` tokens in `CLEAN_TOKENS` and the built-in **Cheeky Crew** pack in `theme.js`; check the AI prompt's token list and any token cap first; `test:theme` applies it as designed [FR-002, FR-012]
-- [ ] T014 Kit list: `crew` in `scenekits.js` `KITS`, `theme.js` `SCENE_KITS`, `src/shared/themes.ts`; `cheeky-crew` in `src/main/ipc/themes.ts` and the test and driver lists (plan step 5); dated one-line delta to spec 035 FR-013 [FR-001, FR-002]
-- [ ] T015 `KIT.crew` furniture (chair, desk, monitor, keyboard, cup) from tokens only, with a placeholder character (no parts yet); `test:scenekits` every-kit loops include `crew`; other kits byte-identical [FR-003, SC-005]
+- [x] T013 `--crew-*` tokens in `CLEAN_TOKENS` and the built-in **Cheeky Crew** pack in `theme.js`; check the AI prompt's token list and any token cap first; `test:theme` applies it as designed [FR-002, FR-012]
+- [x] T014 Kit list: `crew` in `scenekits.js` `KITS`, `theme.js` `SCENE_KITS`, `src/shared/themes.ts`; `cheeky-crew` in `src/main/ipc/themes.ts` and the test and driver lists (plan step 5); dated one-line delta to spec 035 FR-013 [FR-001, FR-002]
+- [~] T015 `KIT.crew` furniture (chair, desk, monitor, keyboard, cup) from tokens only, with a placeholder character (no parts yet); `test:scenekits` every-kit loops include `crew`; other kits byte-identical [FR-003, SC-005]
 - [ ] T016 `KIT.crew` draws the character parts (`back`, `body`/`body-wide`, `hair` with `headwear`, `top`, `cup`, `desk`) from injected parts; glasses off; character id in the signature; `headwear` dropped when the theme has `char-headwear`; unit tests in `test:scenekits` [FR-011, FR-016, FR-024, FR-030]
 - [ ] T017 Build: `copy-assets.js` runs the compiler to `dist/renderer/crew-art.js` and copies `crew.js`; `index.html` loads both before `scenekits.js`; `test:theme-tokens` scans the compiled output at 0 literals [FR-013, SC-004]
-- [ ] T018 `app.js`: `CREW_KEY='durbar.crew'`, `crewOf(a)` next to `syncChatNos` (save only with `rememberOn()`, prune only after `agentsListed`); `crew` passed to the kit in `scene()` and `avatar()` only on the `crew` kit; character id in `sceneCacheKey` and the walker key; helpers not stored [FR-021..FR-024]
+- [x] T018 `app.js`: `CREW_KEY='durbar.crew'`, `crewOf(a)` next to `syncChatNos` (save only with `rememberOn()`, prune only after `agentsListed`); `crew` passed to the kit in `scene()` and `avatar()` only on the `crew` kit; character id in `sceneCacheKey` and the walker key; helpers not stored [FR-021..FR-024]
 - [ ] T019 Character 1, the **punk** (mohawk, skull mug as `cup`) [FR-010, FR-014]
 - [ ] T020 Character 2, the **mad scientist** (goggles over see-through lenses, lab coat, flask) [FR-010, FR-014, Q7]
 - [ ] T021 Character 3, the **gamer** (cat-ear headphones, gamepad) [FR-010, FR-014]

@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { checkUserManifest, USER_THEME_LIMITS } from '../src/shared/themes';
 import { UserThemeStore } from '../src/main/themes';
 
-const BUILT = new Set(['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese']);
+const BUILT = new Set(['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese', 'cheeky-crew']);
 
 // --- manifest validation ---
 assert.strictEqual(checkUserManifest('{"id":"ocean","name":"Ocean"}').ok, true);
