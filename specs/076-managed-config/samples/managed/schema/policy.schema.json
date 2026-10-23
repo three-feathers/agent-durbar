@@ -20,7 +20,11 @@
       "additionalProperties": false,
       "properties": {
         "name": {
-          "type": "string",
+          "allOf": [
+            {
+              "$ref": "#/$defs/text"
+            }
+          ],
           "minLength": 1,
           "maxLength": 80
         },
@@ -29,24 +33,29 @@
         },
         "supportEmail": {
           "type": "string",
-          "format": "email",
-          "maxLength": 254
+          "maxLength": 254,
+          "pattern": "^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.[A-Za-z]{2,63}$",
+          "description": "Shown as a mailto: link built with encodeURIComponent; machine layer only."
         }
       }
     },
     "allowUserConfig": {
       "type": "boolean",
-      "description": "Machine folder only. false: the per-user config folder is ignored."
+      "default": false,
+      "description": "Machine layer only. Default false: with a machine policy present, the per-user folder is ignored. true: the user folder may only narrow the machine policy (FR-003)."
     },
     "branding": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "displayName": {
-          "type": "string",
+          "allOf": [
+            {
+              "$ref": "#/$defs/text"
+            }
+          ],
           "minLength": 1,
-          "maxLength": 40,
-          "pattern": "^[^\\u0000-\\u001f<>]+$"
+          "maxLength": 40
         },
         "icon": {
           "$ref": "#/$defs/relPath",
@@ -64,11 +73,33 @@
           "items": {
             "$ref": "#/$defs/app"
           },
-          "description": "Agent apps that may be used. An empty list is refused as an error (it would leave nothing to use)."
+          "description": "Agent apps that may be used. An empty list is refused as an error (it would leave nothing to use).",
+          "minItems": 1
         },
         "allowInAppInstall": {
           "type": "boolean",
           "description": "false: Settings > Agent apps cannot install or update an app; the IT department deploys them."
+        },
+        "versions": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "A15 (FR-188).",
+          "patternProperties": {
+            "^(copilot|claude|codex)$": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "min": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "max": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -82,7 +113,7 @@
             "allowlist",
             "off"
           ],
-          "description": "open: users add any server (allow/deny still apply); allowlist: only servers from the org lists or matching allow; off: no MCP servers except required ones."
+          "description": "open: users add any server (allow/deny still apply); allowlist: only servers defined in the org lists; off: no MCP servers except required ones."
         },
         "lists": {
           "type": "array",
@@ -126,7 +157,11 @@
             "additionalProperties": false,
             "properties": {
               "name": {
-                "type": "string",
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/text"
+                  }
+                ],
                 "minLength": 1,
                 "maxLength": 80
               },
@@ -147,7 +182,12 @@
                   "notify",
                   "auto"
                 ],
-                "default": "notify"
+                "default": "notify",
+                "description": "auto only for a registry given as a local file (until signatures, A10)."
+              },
+              "tokenFromEnv": {
+                "$ref": "#/$defs/envName",
+                "description": "A16 (FR-190): bearer token for this endpoint; the name must be in secrets.envAllow bound to this host."
               }
             },
             "oneOf": [
@@ -161,12 +201,28 @@
                   "file"
                 ]
               }
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "required": [
+                    "url"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "updates": {
+                      "const": "notify"
+                    }
+                  }
+                }
+              }
             ]
           }
         },
         "allowUserRegistries": {
           "type": "boolean",
-          "default": true
+          "default": false
         }
       }
     },
@@ -222,7 +278,7 @@
               "additionalProperties": {
                 "type": "string",
                 "maxLength": 128,
-                "pattern": "^[^,=]*$"
+                "pattern": "^[\\x20-\\x2b\\x2d-\\x3c\\x3e-\\x7e]*$"
               }
             },
             "logPrompts": {
@@ -488,6 +544,423 @@
           "description": "true: a custom-model session whose model has no price does not start."
         }
       }
+    },
+    "allowDevHooks": {
+      "type": "boolean",
+      "default": false,
+      "description": "Machine layer only. With a machine policy present, packaged builds ignore DURBAR_DEV and every DURBAR_* hook unless this is true (FR-004)."
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Machine layer only. The only environment variables any *FromEnv field may name, each bound to where its value may be sent (FR-121a).",
+      "properties": {
+        "envAllow": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false,
+            "minProperties": 2,
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/envName"
+              },
+              "hosts": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 8,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?$"
+                },
+                "description": "Exact host[:port] the value may be sent to (an HTTP header to an MCP server, an OTLP header, an LLM gateway)."
+              },
+              "mcpServers": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 8,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                },
+                "description": "Ids of stdio MCP servers from a machine-folder list that may receive it in their environment."
+              }
+            }
+          }
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Machine layer only.",
+      "properties": {
+        "allowPrivateHosts": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])$"
+          },
+          "description": "Hosts (exact) that may resolve to private (RFC 1918, ULA) addresses for list and registry fetches. Loopback, link-local and cloud metadata addresses are always refused."
+        },
+        "proxy": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "A2 (FR-155). Durbar's own traffic and the agent apps' HTTPS_PROXY/NO_PROXY.",
+          "properties": {
+            "mode": {
+              "enum": [
+                "system",
+                "pac",
+                "fixed",
+                "direct"
+              ],
+              "default": "system"
+            },
+            "pacUrl": {
+              "$ref": "#/$defs/httpsUrl"
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^https?://[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:[0-9]{1,5}$",
+              "description": "Proxy host:port; no credentials (the OS or Kerberos/NTLM negotiates them)."
+            },
+            "bypass": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9.*:/-]{1,253}$"
+              }
+            }
+          }
+        },
+        "caCertFile": {
+          "$ref": "#/$defs/relPath",
+          "description": "A2: PEM bundle in the folder, passed as NODE_EXTRA_CA_CERTS; certificates only (a private key in it is an error)."
+        },
+        "useSystemCertStore": {
+          "type": "boolean",
+          "description": "A2: CLAUDE_CODE_CERT_STORE=bundled,system and the equivalent for other apps where supported.",
+          "default": true
+        },
+        "clientCert": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "A2 mTLS: files only by path in the folder; a key passphrase only by env name.",
+          "properties": {
+            "certFile": {
+              "$ref": "#/$defs/relPath"
+            },
+            "keyFile": {
+              "$ref": "#/$defs/relPath"
+            },
+            "keyPassphraseFromEnv": {
+              "$ref": "#/$defs/envName"
+            }
+          }
+        }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A1 (FR-150..FR-152). Can only narrow; no key can widen a mode.",
+      "properties": {
+        "maxMode": {
+          "enum": [
+            "read-only",
+            "ask"
+          ],
+          "description": "The highest mode any session may use."
+        },
+        "defaultMode": {
+          "enum": [
+            "read-only",
+            "ask"
+          ],
+          "description": "Default for new folders; never Allow all."
+        },
+        "allowAll": {
+          "type": "boolean",
+          "description": "false removes Allow all everywhere (implied by maxMode)."
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A5 (FR-158). false turns a feature off.",
+      "properties": {
+        "remoteControl": {
+          "type": "boolean",
+          "description": "spec 054"
+        },
+        "durbarMcpServer": {
+          "type": "boolean",
+          "description": "spec 041"
+        },
+        "officeAssistantModel": {
+          "type": "boolean",
+          "description": "spec 048 model layer"
+        },
+        "profileAi": {
+          "type": "boolean",
+          "description": "spec 043 Create with AI"
+        },
+        "themeMaker": {
+          "type": "boolean",
+          "description": "spec 040 Make with AI (same as appearance.allowThemeMaker)"
+        },
+        "vscodeChat": {
+          "type": "boolean",
+          "description": "specs 009/056"
+        },
+        "chatChannels": {
+          "type": "boolean",
+          "description": "future chat channels such as Telegram (idea 485)"
+        },
+        "scheduledPrompts": {
+          "type": "boolean",
+          "description": "spec 044"
+        }
+      }
+    },
+    "caps": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A6 (FR-170). Can only narrow. Units: aiCredits (Copilot), usd (Claude/Codex vendor prices), or the llm.pricing currency.",
+      "properties": {
+        "maxSessionAiCredits": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "maxSessionUsd": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "defaultSessionAiCredits": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "defaultSessionUsd": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "requireCap": {
+          "type": "boolean",
+          "description": "true: no session starts without a cap it can enforce (a price or a token cap)."
+        },
+        "dailyUsd": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "monthlyUsd": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      }
+    },
+    "folders": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A7 (FR-172).",
+      "properties": {
+        "allowedRoots": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 512,
+            "pattern": "^(/|[A-Za-z]:\\\\|~/|%USERPROFILE%\\\\)[^\\u0000-\\u001f]*$"
+          }
+        },
+        "blocked": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "maxLength": 512,
+            "pattern": "^[^\\u0000-\\u001f]+$"
+          },
+          "description": "Globs; blocked wins over allowedRoots."
+        }
+      }
+    },
+    "updates": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A8 (FR-174).",
+      "properties": {
+        "mode": {
+          "enum": [
+            "off",
+            "notify",
+            "auto"
+          ],
+          "default": "notify"
+        },
+        "feedUrl": {
+          "$ref": "#/$defs/httpsUrl"
+        }
+      }
+    },
+    "signing": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A10 (FR-178).",
+      "properties": {
+        "publicKeys": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "pattern": "^ed25519:[A-Za-z0-9+/]{43}=$"
+          }
+        },
+        "requireFor": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "remoteMcpLists",
+              "registries",
+              "userLayer"
+            ]
+          }
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A11 (FR-180).",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Local append-only audit log."
+        },
+        "retentionDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "includePromptText": {
+          "type": "boolean",
+          "description": "default false",
+          "default": false
+        },
+        "exportOtel": {
+          "type": "boolean",
+          "description": "Also as OTel logs to telemetry.otel (needs the principle III amendment).",
+          "default": false
+        }
+      }
+    },
+    "dataRetention": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A12 (FR-182).",
+      "properties": {
+        "activityDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "checkpointDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "usageHistoryDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "logDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        }
+      }
+    },
+    "legal": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A14 (FR-186).",
+      "properties": {
+        "noticeFile": {
+          "$ref": "#/$defs/relPath",
+          "description": "Plain text or Markdown in the folder, at most 32 KiB."
+        },
+        "noticeUrl": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "requireAcceptance": {
+          "type": "boolean",
+          "description": "",
+          "default": true
+        }
+      }
+    },
+    "signIn": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A17 (FR-192).",
+      "properties": {
+        "claude": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "forceLoginMethod": {
+              "enum": [
+                "claudeai",
+                "console"
+              ]
+            }
+          }
+        },
+        "copilot": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": {
+              "$ref": "#/$defs/httpsUrl"
+            }
+          }
+        },
+        "codex": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "forcedLoginMethod": {
+              "enum": [
+                "chatgpt",
+                "api"
+              ]
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{1,64}$"
+            }
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -500,9 +973,9 @@
     },
     "httpsUrl": {
       "type": "string",
-      "pattern": "^https://[^\\s@]+$",
       "maxLength": 2048,
-      "description": "https only; no user:password@ part."
+      "pattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::[0-9]{1,5})?(?:/[\\x21-\\x7e]*)?$",
+      "description": "https only; host (letters, digits, dots, hyphens; IDN as punycode), optional port and path; no user:password@, no spaces, no control characters. Identical in all three schemas."
     },
     "relPath": {
       "type": "string",
@@ -535,6 +1008,10 @@
           "minimum": 1,
           "maximum": 168,
           "default": 24
+        },
+        "tokenFromEnv": {
+          "$ref": "#/$defs/envName",
+          "description": "A16 (FR-190): bearer token for this endpoint; the name must be in secrets.envAllow bound to this host."
         }
       },
       "oneOf": [
@@ -554,19 +1031,22 @@
       "type": "object",
       "minProperties": 1,
       "additionalProperties": false,
+      "description": "allow/deny entry. name refers to an org list entry id and matches only a server whose definition equals that entry (FR-042).",
       "properties": {
         "name": {
           "type": "string",
-          "maxLength": 64
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
         },
         "url": {
           "type": "string",
           "maxLength": 2048,
-          "description": "Exact URL, or a prefix ending in *."
+          "pattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::[0-9]{1,5})?(?:/[\\x21-\\x29\\x2b-\\x7e]*)?(?:/\\*)?$",
+          "description": "Exact https URL, or a prefix ending in /* (the * only right after a /)."
         },
         "command": {
           "type": "string",
-          "maxLength": 260
+          "maxLength": 260,
+          "pattern": "^[A-Za-z0-9._@/\\\\:-]+$"
         },
         "argsPrefix": {
           "type": "array",
@@ -577,6 +1057,11 @@
           }
         }
       }
+    },
+    "text": {
+      "type": "string",
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff<>]+$",
+      "description": "No control, zero-width or bidi characters, no < or >."
     }
   }
 }

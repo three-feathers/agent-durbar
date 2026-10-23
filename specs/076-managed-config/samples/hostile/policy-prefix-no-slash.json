@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "mcp": {
+    "allow": [
+      {
+        "url": "https://mcp.acme.example*"
+      }
+    ]
+  }
+}

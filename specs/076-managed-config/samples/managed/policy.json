@@ -6,6 +6,39 @@
     "supportUrl": "https://it.acme.example/durbar",
     "supportEmail": "it-help@acme.example"
   },
+  "allowUserConfig": false,
+  "allowDevHooks": false,
+  "secrets": {
+    "envAllow": [
+      {
+        "name": "ACME_DOCS_TOKEN",
+        "hosts": [
+          "mcp.acme.example"
+        ]
+      },
+      {
+        "name": "ACME_OTEL_AUTH_HEADER",
+        "hosts": [
+          "otel.acme.example:4318"
+        ]
+      },
+      {
+        "name": "ACME_LLM_TOKEN",
+        "hosts": [
+          "llm-gateway.acme.example"
+        ]
+      }
+    ]
+  },
+  "network": {
+    "allowPrivateHosts": [
+      "mcp-catalog.acme.example",
+      "agents.acme.example"
+    ],
+    "proxy": {
+      "mode": "system"
+    }
+  },
   "branding": {
     "displayName": "Acme Agents",
     "icon": "icons/acme-agents.png"
@@ -16,6 +49,26 @@
       "copilot"
     ],
     "allowInAppInstall": false
+  },
+  "permissions": {
+    "maxMode": "ask",
+    "defaultMode": "read-only"
+  },
+  "features": {
+    "remoteControl": false,
+    "durbarMcpServer": false,
+    "chatChannels": false
+  },
+  "caps": {
+    "maxSessionUsd": 20,
+    "defaultSessionUsd": 5,
+    "requireCap": true
+  },
+  "folders": {
+    "blocked": [
+      "~/.ssh/**",
+      "~/.aws/**"
+    ]
   },
   "mcp": {
     "mode": "allowlist",
@@ -132,5 +185,12 @@
       "force": false
     },
     "requirePricing": false
+  },
+  "updates": {
+    "mode": "off"
+  },
+  "legal": {
+    "noticeUrl": "https://it.acme.example/ai-use-policy",
+    "requireAcceptance": true
   }
 }
