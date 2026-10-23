@@ -274,8 +274,11 @@ export interface CompactionEvent extends BaseEvent {
   error?: string;
 }
 
-/** Result of `startMcpSignIn` (spec 058 FR-064). */
-export type McpSignInResult = { kind: 'browser'; url: string } | { kind: 'connected' };
+/**
+ * Result of `startMcpSignIn` (spec 058 FR-064). `ttlMs` (FR-180): how long the agent app's own listener still waits for the browser
+ * step, as the adapter knows it; main keeps the address for `min(ttlMs, 10 minutes)`. Missing = 10 minutes.
+ */
+export type McpSignInResult = { kind: 'browser'; url: string; ttlMs?: number } | { kind: 'connected' };
 
 export interface McpServerStatus {
   name: string;
@@ -287,6 +290,11 @@ export interface McpServerStatus {
   error?: string;
   /** Spec 058 FR-011 / FR-091: normalized kind of failure, set by the adapter only when the vendor says so; missing = not said. */
   errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config' | 'refused' | 'disconnected' | 'permission';
+  /**
+   * Spec 058 FR-180: set only by an adapter about a sign-in it started (`startMcpSignIn`): `next-message` = signed in, applies with the
+   * next message; `failed` = the agent app said the browser step failed. Main ends the open sign-in for it as for `connected`.
+   */
+  signInEnd?: 'next-message' | 'failed';
 }
 
 /** Spec 069 FR-031: one tool of an MCP server (main masks and cuts the description before the window gets it). */
