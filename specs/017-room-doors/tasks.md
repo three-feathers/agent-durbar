@@ -17,4 +17,4 @@
 - [x] T014 Door button on desks, DND sign with held count, open dialog (Send all / Discard / Keep closed) (FR-015, FR-017)
 - [x] T015 Limit pose (wallet) at the door and on lobby figures; waving at the Boss; fire on an error (FR-019..FR-022)
 - [x] T016 Driver checks and mutation checks for T014-T015; screenshots retaken
-
+- [x] T017 Review on #631 (re-review): remote off told and checked, Send all through the Scheduler, full queue visible, atomic and capped doors file, open door with held runs, the dialog lists them (FR-024; 044 FR-113; 054 FR-042)

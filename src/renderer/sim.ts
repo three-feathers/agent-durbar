@@ -487,6 +487,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
     let simSchedHook: ((e: AgentEvent) => void) | undefined; // spec 044 FR-018: usage of a scheduled run counts toward its limit
     const simDoorSubs: ((d: Record<string, { closed: boolean; held: number }>) => void)[] = []; // listeners can subscribe before the schedules start
+    const simDoorStopSubs: ((p: { id: string; why: string }) => void)[] = [];
+    const simRemoteOffSubs: ((p: { id: string; reason?: string }) => void)[] = []; // spec 054 FR-040: the door's remote-off event, as main sends it
     let simDoorsRef: { map: Map<string, { closed: boolean; held: { prompt: string; at: number; scheduleId?: string }[]; releasing?: boolean }>; subs: ((d: Record<string, { closed: boolean; held: number }>) => void)[]; list(): Record<string, { closed: boolean; held: number }>; changed(): void } | undefined; // spec 017 FR-015 (set below, with the schedules)
     let selfMcp = false; /* the simulator's own `mcp` event, as opposed to one a driver reports */
     const emit = (e: AgentEvent): void => {
@@ -667,14 +669,27 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     window.setInterval(() => {
       const now = Date.now();
       let any = false;
-      // Send all: the next held run goes when the agent is free again
+      // Send all: the next held run goes when the agent is free again, through the schedule's rules (spec 044 FR-111, as main's Scheduler.releaseHeld)
       simDoors.map.forEach((d, id) => {
         if (d.closed || !d.releasing) return;
         const s = sims.find((x) => x.info.id === id);
-        if (!s || !simIdle(s)) return;
-        const r = d.held.shift();
+        const r = d.held[0];
+        if (!s || !r) { d.releasing = false; simDoors.changed(); return; }
+        const sc = simSched.list.find((x) => x.id === r.scheduleId);
+        const stop = (why: string) => { d.releasing = false; simDoors.changed(); simDoorStopSubs.forEach((f) => f({ id, why })); };
+        if (!sc) { d.held.shift(); if (!d.held.length) d.releasing = false; simDoors.changed(); return; } // its schedule was deleted
+        if (simSched.pausedAll) return stop('paused-all');
+        if (sc.paused) return stop('paused');
+        if (sc.cap && (sc.spent ?? 0) >= sc.cap.amount) return stop('cap');
+        if (!simIdle(s) || (!!s.breakUntil && Date.now() < s.breakUntil)) return; // busy: next tick
+        d.held.shift();
         if (!d.held.length) d.releasing = false;
-        if (r) { emit({ type: 'user', sessionId: id, timestamp: now, text: r.prompt } as AgentEvent); void api.send(id, r.prompt, []); }
+        emit({ type: 'user', sessionId: id, timestamp: now, text: r.prompt } as AgentEvent);
+        simSched.ran.forEach((f) => f({ agentId: id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
+        simSched.attrib.set(id, sc.id);
+        sc.last = { at: now, outcome: 'sent' };
+        void api.send(id, r.prompt, []);
+        simSched.changed();
         simDoors.changed();
       });
       for (const sc of simSched.list) {
@@ -1791,11 +1806,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const D = simDoorsRef;
         if (!D || !sims.some((x) => x.info.id === id) || typeof closed !== 'boolean') return { ok: false as const, error: 'invalid request' };
         const d = D.map.get(id) ?? { closed: false, held: [] };
+        const remoteOff = closed && simRemote.has(id);
+        if (remoteOff) { simRemote.delete(id); simRemoteOffSubs.forEach((f) => f({ id, reason: 'the door is closed (Do not disturb)' })); } // spec 054 FR-040
         d.closed = closed;
-        if (closed) { d.releasing = false; simRemote.delete(id); } // spec 054 FR-040: remote control off
+        if (closed) d.releasing = false;
         D.map.set(id, d);
         D.changed();
-        return { ok: true as const, closed, held: d.held.length };
+        return { ok: true as const, closed, held: d.held.length, ...(remoteOff ? { remoteOff: true } : {}) };
       },
       releaseHeld: async (id, action) => {
         const d = simDoorsRef?.map.get(id);
@@ -1808,6 +1825,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true as const, queued: n };
       },
       onDoorsChanged: (cb) => { simDoorSubs.push(cb); return () => undefined; },
+      onDoorsStopped: (cb) => { simDoorStopSubs.push(cb); return () => undefined; },
+      onDoorsFull: () => () => undefined,
+      onRemoteOff: (cb) => { simRemoteOffSubs.push(cb); return () => undefined; },
+      doorsHeld: async (id) => (simDoorsRef?.map.get(id)?.held ?? []).map((h) => ({ prompt: h.prompt, at: h.at })),
       resolvePlan: async (id: string, requestId: string, answer: { kind: string; feedback?: string }) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || !s.planReq || s.planReq.id !== requestId) return { ok: false, error: 'unknown plan' };

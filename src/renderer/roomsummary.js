@@ -40,7 +40,8 @@
     thinking:{word:'Thinking',short:'Thinking',door:'closed',icon:'bubble'},
     busy:{word:'Busy',short:'Busy',door:'closed',icon:'dot'},
     done:{word:'Done',short:'Done',door:'open',icon:'check'},
-    available:{word:'Available',short:'Available',door:'open',icon:'ring'}
+    available:{word:'Available',short:'Available',door:'open',icon:'ring'},
+    pending:{word:'Available · held',short:'Held',door:'open',icon:'inbox'}
   };
   const SIGN_KEYS=Object.freeze(Object.keys(SIGNS));
   function doorSign(x){
@@ -62,6 +63,9 @@
       if(Array.isArray(o.helpers)&&o.helpers.some(isWork))return sign('meeting',st);
       return st==='thinking'?sign('thinking','thinking'):sign('busy','working');
     }
+    /* review on #631: an open door that still holds runs (a Send all that stopped, a restart) is never plain "Available": it shows the count */
+    const n=Number.isInteger(o.held)&&o.held>0?o.held:0;
+    if(n){const g=sign('pending',st==='done'?'done':'idle');g.word=(st==='done'?'Done':'Available')+' · '+n+' held';g.short=n+' held';return g;}
     return st==='done'?sign('done','done'):sign('available','idle');
   }
   return {summarizeRoom,doorSign,SIGN_KEYS};

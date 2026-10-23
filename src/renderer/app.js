@@ -1017,6 +1017,7 @@ const SIGN_ICONS={
   people:'<circle cx="4.2" cy="4" r="1.7" fill="currentColor"/><circle cx="8.2" cy="4.4" r="1.5" fill="currentColor"/><path d="M1.2 10.2c.3-2.2 1.5-3.2 3-3.2s2.7 1 3 3.2ZM7.6 7.2c1.6-.3 2.9.6 3.2 3H8.5" fill="currentColor"/>',
   dot:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6" r="2.5" fill="currentColor"/>',
   check:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.8 6.1 5.3 7.6 8.3 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
+  inbox:'<path d="M1.6 7.2 3 2.4h6l1.4 4.8v2.6H1.6Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M1.6 7.2h2.6l.7 1.2h2.2l.7-1.2h2.6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>',
   bolt:'<path d="M6.8 1.2 2.6 6.9h3l-.8 3.9 4.6-6H6.4Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>',
   bubble:'<path d="M2 3.4A1.6 1.6 0 0 1 3.6 1.8h4.8A1.6 1.6 0 0 1 10 3.4v3A1.6 1.6 0 0 1 8.4 8H5.2L3 10V8h0A1.6 1.6 0 0 1 2 6.4Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><circle cx="4.4" cy="4.9" r=".6" fill="currentColor"/><circle cx="6" cy="4.9" r=".6" fill="currentColor"/><circle cx="7.6" cy="4.9" r=".6" fill="currentColor"/>',
   ring:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/>',
@@ -1069,9 +1070,9 @@ function cabinHTML(a,kind,sceneHTML){
 /* spec 017 FR-015: the door button beside a desk (not inside it: a button cannot hold a button), on the scene's corner */
 function doorBtnHTML(a){
   if(!signsOn()||!bridge||!bridge.setDoor||demoOn||a.parent)return '';
-  const d=doorOf(a), lab=d.closed?'Open the door: '+a.name+(d.held?' ('+d.held+' held)':''):'Close the door (do not disturb): '+a.name;
+  const d=doorOf(a), lab=d.closed?'Open the door: '+a.name+(d.held?' ('+d.held+' held)':''):d.held?'Send or discard '+d.held+' held: '+a.name:'Close the door (do not disturb): '+a.name;
   /* the tooltip names the agent cut short (a long session title, spec 052 FR-171's 120 characters); the accessible name is whole */
-  const tip=(d.closed?'Open the door: ':'Close the door (do not disturb): ')+DurbarCutText.cutText(a.name,60)+(d.closed&&d.held?' ('+d.held+' held)':'');
+  const tip=(d.closed?'Open the door: ':d.held?'Send or discard '+d.held+' held: ':'Close the door (do not disturb): ')+DurbarCutText.cutText(a.name,60)+(d.closed&&d.held?' ('+d.held+' held)':'');
   return `<button class="cb-toggle" type="button" data-doorset="${esc(a.id)}" aria-pressed="${d.closed}" aria-label="${esc(lab)}" title="${esc(tip)}">${doorSvg(!d.closed,true)}</button>`;
 }
 function roomArt(){
@@ -1117,33 +1118,60 @@ function morphParts(stage,parts){
   }
   return true;
 }
-/* spec 017 FR-015, FR-017: the door button of a desk. Closing it: Do not disturb (scheduled runs are held, remote control goes off).
-   Opening it with runs held asks: Send all (in order), Discard, or Keep closed (the default: Escape and Enter keep it closed). */
+/* spec 017 FR-015, FR-017: the door button of a desk. Closing it: Do not disturb (scheduled runs are held, remote control goes off first;
+   if that fails the door stays open and says so). Opening it with runs held asks, listing them: Send all (in order, through the
+   scheduler), Discard, or Keep closed (the default: Escape and Enter keep it closed). An open door that still holds runs asks the same. */
+const doorRemoteOff=new Set(); /* agents whose remote control the door turned off: reopening says it stays off */
+/* review on #631: the held prompts, each masked first, then its first line cut (never cut before masking); fail closed without the mask */
+async function heldLines(a){
+  const list=bridge.doorsHeld?await bridge.doorsHeld(a.id).catch(()=>[]):[], R=window.DurbarRedact, out=[];
+  const MAXL=8;
+  for(const h of (Array.isArray(list)?list:[]).slice(0,MAXL)){
+    const t=h&&typeof h.prompt==='string'?h.prompt:'';
+    const m=R&&typeof R.redact==='function'?R.redact(t):null;
+    out.push(m===null?'(hidden: masking is not available)':DurbarCutText.cutText(String(m).split(/\r?\n/).find(x=>x.trim())||'(empty)',90));
+  }
+  if(Array.isArray(list)&&list.length>MAXL)out.push('and '+(list.length-MAXL)+' more');
+  return out;
+}
+async function askHeld(a,btn,closed){
+  const n=doorOf(a).held, lines=await heldLines(a);
+  return askDialog({title:(closed?'Open the door of ':'Held prompts of ')+a.name+'?',body:n+(n===1?' prompt was':' prompts were')+' held while the door was closed. Send all sends them in order through the schedules (Pause all and each schedule\'s limit still apply): the first now, each next one when '+a.name+' is free again.',
+    lines,buttons:[{label:closed?'Keep closed':'Not now',value:null},...(closed?[]:[{label:'Close the door',value:'close'}]),{label:'Discard',value:'discard'},{label:'Send all ('+n+')',value:'send'}],returnFocus:()=>document.querySelector(`[data-doorset="${CSS.escape(a.id)}"]`)||btn});
+}
+async function sendOrDiscard(a,how,n){
+  const q=await bridge.releaseHeld(a.id,how).catch(()=>null);
+  if(!q||!q.ok){toast('The held prompts are still there: '+esc((q&&q.error)||'could not '+how+' them')+'.',5200).classList.add('err');return;}
+  toast(esc(a.name)+': '+(how==='send'?(n===1?'the held prompt goes out when '+esc(a.name)+' is free.':'the '+n+' held prompts go out one by one.'):(n===1?'1 held prompt discarded.':n+' held prompts discarded.')),4200);
+}
+async function closeDoor(a){
+  const r=await bridge.setDoor(a.id,true).catch(()=>null);
+  if(!r||!r.ok){toast('Could not close the door'+(r&&r.error?': '+esc(r.error):'.'),5200).classList.add('err');return;}
+  DOORS[a.id]={closed:true,held:r.held||0};
+  if(r.remoteOff)doorRemoteOff.add(a.id); /* main also sent agents:remoteOff: the Remote chip and the card's tag go (onRemoteOff) */
+  scheduleRender();
+  announce(a.name+': door closed. Do not disturb: scheduled prompts are held until you open it.');
+  toast(esc(a.name)+': door closed. Scheduled prompts wait here until you open it'+(r.remoteOff?'; remote control is off.':'.'),4200);
+}
 async function toggleDoor(id,btn){
   const a=byId(id); if(!a||a.parent||!bridge||!bridge.setDoor)return;
   const cur=doorOf(a);
-  if(!cur.closed){
-    const r=await bridge.setDoor(a.id,true).catch(()=>null);
-    if(!r||!r.ok){toast('Could not close the door'+(r&&r.error?': '+esc(r.error):'.'),4200).classList.add('err');return;}
-    DOORS[a.id]={closed:true,held:r.held||0};scheduleRender();
-    announce(a.name+': door closed. Do not disturb: scheduled prompts are held until you open it.');
-    toast(esc(a.name)+': door closed. Scheduled prompts wait here until you open it'+(a.remote?'; remote control is off.':'.'),4200);
-    return;
+  if(!cur.closed&&!cur.held)return closeDoor(a);
+  if(!cur.closed){ /* an open door that still holds runs */
+    const v=await askHeld(a,btn,false);
+    if(!v||!v.value)return;
+    if(v.value==='close')return closeDoor(a);
+    return sendOrDiscard(a,v.value,cur.held);
   }
-  if(cur.held){
-    const n=cur.held, v=await askDialog({title:'Open the door of '+a.name+'?',body:n+(n===1?' prompt was':' prompts were')+' held while the door was closed. Send all sends them in order: the first now, each next one when '+a.name+' is free again.',
-      buttons:[{label:'Keep closed',value:null},{label:'Discard',value:'discard'},{label:'Send all ('+n+')',value:'send'}],returnFocus:()=>document.querySelector(`[data-doorset="${CSS.escape(a.id)}"]`)||btn});
-    if(!v||!v.value)return; /* Keep closed */
-    const r=await bridge.setDoor(a.id,false).catch(()=>null);
-    if(!r||!r.ok){toast('Could not open the door.',4200).classList.add('err');return;}
-    const q=await bridge.releaseHeld(a.id,v.value).catch(()=>null);
-    if(!q||!q.ok){toast('The held prompts are still there: '+esc((q&&q.error)||'could not '+v.value+' them')+'.',5200).classList.add('err');return;}
-    toast(esc(a.name)+': door open. '+(v.value==='send'?(n===1?'The held prompt goes out now.':'The '+n+' held prompts go out one by one.'):(n===1?'1 held prompt discarded.':n+' held prompts discarded.')),4200);
-    return;
-  }
+  let how=null;
+  if(cur.held){const v=await askHeld(a,btn,true);if(!v||!v.value)return;how=v.value;} /* Keep closed */
   const r=await bridge.setDoor(a.id,false).catch(()=>null);
   if(!r||!r.ok){toast('Could not open the door.',4200).classList.add('err');return;}
-  DOORS[a.id]={closed:false,held:0};scheduleRender();announce(a.name+': door open.');
+  DOORS[a.id]={closed:false,held:r.held||0};scheduleRender();
+  const stays=doorRemoteOff.delete(a.id)?' Remote control stays off; turn it on again from the chat if you need it.':'';
+  announce(a.name+': door open.'+stays);
+  if(stays)toast(esc(a.name)+': door open.'+esc(stays),5200);
+  if(how)await sendOrDiscard(a,how,cur.held);
 }
 function setRoomClosed(r,closed,quiet){
   if(!!r.closed===!!closed)return;
@@ -5260,7 +5288,7 @@ const schedulesOf=r=>SCHED.schedules.filter(s=>s.folder===folderKeyOf(r));
 const clock=ms=>{const d=new Date(ms),n=new Date(),t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return d.toDateString()===n.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+t;};
 const recurringS=s=>s.every!==undefined||!!s.rule;
 const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done).map(s=>recurringS(s)?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
-const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused','skipped-cap':'not sent: reached its limit','skipped-ended':'not sent: the session has ended',missed:'missed: the app was closed',failed:'could not send',held:'held: the door is closed (Do not disturb)'};
+const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused','skipped-cap':'not sent: reached its limit','skipped-ended':'not sent: the session has ended',missed:'missed: the app was closed',failed:'could not send',held:'held: the door is closed (Do not disturb)','skipped-door-full':'not kept: the closed door already holds as many prompts as it can'};
 const DAY3=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 /* spec 044 FR-012: "every day at 08:30", "weekdays at 09:00", "weekly on Mon, Thu at 17:00" (Monday first) */
 const ruleText=r=>r.kind==='weekdays'?'weekdays at '+r.time:r.kind==='weekly'?'weekly on '+[...(r.days||[])].sort((a,b)=>((a+6)%7)-((b+6)%7)).map(d=>DAY3[d]).join(', ')+' at '+r.time:'every day at '+r.time;
@@ -5509,6 +5537,10 @@ if(bridge&&bridge.onCheckpoint)bridge.onCheckpoint(n=>{const a=n&&liveById(n.id)
 /* spec 017 FR-015..FR-017: doors the user closed, from main; a change redraws the desks (same sizes, so no new layout) */
 const setDoors=d=>{const o={};if(d&&typeof d==='object')for(const [k,v] of Object.entries(d))if(v&&typeof v==='object')o[k]={closed:v.closed===true,held:Number.isInteger(v.held)&&v.held>0?v.held:0};DOORS=o;scheduleRender();};
 if(bridge&&bridge.doorsList){bridge.doorsList().then(setDoors).catch(()=>{});if(bridge.onDoorsChanged)bridge.onDoorsChanged(setDoors);}
+/* review on #631: why Send all stopped (the runs stay held), and a run a full door could not keep: never silent */
+const STOP_WHY={'paused-all':'schedules are paused (Pause all)',paused:'its schedule is paused',cap:"its schedule reached its own limit",ended:'its session has ended',failed:'it could not be sent'};
+if(bridge&&bridge.onDoorsStopped)bridge.onDoorsStopped(p=>{const a=p&&byId(p.id);if(!a)return;const t=esc(a.name)+': Send all stopped because '+esc(STOP_WHY[p.why]||'it could not go now')+'. The rest stay held; use the door button to send or discard them.';toast(t,6000).classList.add('err');addNote(liveChat(a),t);});
+if(bridge&&bridge.onDoorsFull)bridge.onDoorsFull(p=>{const a=p&&byId(p.id);if(!a)return;const t='A scheduled prompt for '+esc(a.name)+' was not kept: its closed door already holds as many prompts as it can. Open the door to send or discard them.';toast(t,6000).classList.add('err');addNote(liveChat(a),t);});
 if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(p=>{const id=typeof p==='string'?p:p&&p.id;const a=liveById(id);if(!a||!a.remote)return;a.remote=null;updateRemoteUi(a);
   /* spec 054 FR-062: the adapter's own reason when it has one; otherwise the sign-in reconnect (spec 012 FR-158) */
   const why=p&&typeof p==='object'&&typeof p.reason==='string'&&p.reason?esc(p.reason.slice(0,300)):esc(a.name)+' reconnected after the new sign-in';

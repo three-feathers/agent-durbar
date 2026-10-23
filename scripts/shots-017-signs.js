@@ -278,9 +278,16 @@ module.exports = async (ctx) => {
     const target = await js(`${sb}.listSchedules().then((d)=>{const s=d.schedules.find((x)=>x.id==='sched-fire');return s&&s.target?s.target.session:null})`);
     assert.ok(target, 'the simulator has a one-off schedule for an agent');
     const btn = `document.querySelector('#stage .unit [data-doorset="'+CSS.escape(${jsLiteral(target)})+'"]')`;
+    const roleText = `(document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .role')||{}).textContent||''`;
+    /* spec 054 FR-040 (review on #631): remote control on first; closing the door turns it off and the window drops the Remote tag */
+    const rem = await js(`window.__durbarSimUi.bridge().setRemote(${jsLiteral(target)},true).then((r)=>{const a=window.__durbarSimUi.agents().find((x)=>x.id===${jsLiteral(target)});if(r.ok&&a){a.remote={on:true,url:r.url};window.__durbarSimUi.render();}return !!r.ok;})`);
+    assert.ok(rem, 'remote control turned on in the simulator');
+    assert.ok(await until(`/Remote/.test(${roleText})`, 3000), 'the card says Remote');
     await js(`${btn}.focus()`);
     await H.key('Return');
     assert.ok(await until(`${btn}.getAttribute('aria-pressed')==='true'`, 4000), 'held: the door is closed');
+    assert.ok(await until(`!/Remote/.test(${roleText})`, 4000) && await until(`!(window.__durbarSimUi.agents().find((x)=>x.id===${jsLiteral(target)})||{}).remote`, 1000), 'closing the door turned remote control off, and the card no longer says Remote');
+    assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/door closed.*remote control is off/.test(t.textContent))`, 3000), 'the toast says remote control is off (only because it really went off)');
     const userMsgs = () => js(`(window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)})||{}).state`);
     const before = await userMsgs();
     assert.ok(await until(`${sb}.listSchedules().then((d)=>(d.schedules.find((x)=>x.id==='sched-fire')||{}).last?.outcome==='held')`, 15000), 'the scheduled run is held');
@@ -294,17 +301,32 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!document.getElementById('modeDlg')`, 4000), 'opening with a held run asks');
     const dlg = await js(`({t:document.querySelector('#modeDlg h3').textContent,b:[...document.querySelectorAll('#modeDlg .dbtn button')].map((x)=>x.textContent),f:document.activeElement&&document.activeElement.textContent})`);
     assert.deepStrictEqual(dlg.b, ['Keep closed', 'Discard', 'Send all (1)'], 'Keep closed, Discard, Send all: ' + JSON.stringify(dlg));
+    /* review on #631: the dialog lists what it would send (masked, then cut) */
+    const lines = await js(`[...document.querySelectorAll('#modeDlg li')].map((x)=>x.textContent)`);
+    assert.deepStrictEqual(lines, ['Scheduled check-in: summarise what changed'], 'the dialog lists the held prompt: ' + JSON.stringify(lines));
     assert.strictEqual(dlg.f, 'Keep closed', 'focus starts on Keep closed, so Enter never sends by accident');
     await H.shot(path.join(OUT, '017-held-dialog-1440x900.png'), { prep: 'none', tag: '017-signs', what: 'held dialog' });
     await H.key('Escape');
     assert.ok(await until(`!document.getElementById('modeDlg')`, 3000));
     assert.strictEqual(await js(`${btn}.getAttribute('aria-pressed')`), 'true', 'Escape keeps the door closed');
     assert.strictEqual(await js(`${sb}.doorsList().then((d)=>(d[${jsLiteral(target)}]||{}).held)`), 1, 'and keeps the held run');
-    // Send all: the door opens and the run goes to the agent
+    // review on #631: Send all goes through the schedules: with Pause all on it stops, and the open door still shows the held run
+    assert.ok(await js(`${sb}.setSchedulesPaused(true).then((r)=>r.ok)`), 'Pause all on');
+    await H.clearToasts();
     await js(`${btn}.click()`);
     assert.ok(await until(`!!document.getElementById('modeDlg')`, 4000));
     await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^Send all/.test(x.textContent)).click()`);
     assert.ok(await until(`${btn}.getAttribute('aria-pressed')==='false'`, 4000), 'Send all opens the door');
+    assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/Remote control stays off/.test(t.textContent))`, 3000), 'reopening says remote control stays off');
+    assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/Send all stopped because schedules are paused .Pause all./.test(t.textContent))`, 6000), 'Pause all stops Send all and says why: ' + (await js(`[...document.querySelectorAll('#toasts .toast')].map((t)=>t.textContent).join(' | ')`)) + ' held=' + (await js(`window.__durbarSimUi.bridge().doorsList().then((d)=>JSON.stringify(d))`)));
+    assert.strictEqual(await js(`${sb}.doorsList().then((d)=>(d[${jsLiteral(target)}]||{}).held)`), 1, 'the run is still held (not sent, not lost)');
+    assert.ok(await until(`[...document.querySelectorAll('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .dsign .dsw')].some((e)=>/^(Available|Done) · 1 held$/.test(e.textContent))`, 4000), 'an open door with a held run is not plain Available');
+    assert.match(await js(`${btn}.getAttribute('aria-label')`), /^Send or discard 1 held: /, 'its button offers the choice');
+    await js(`${sb}.setSchedulesPaused(false)`);
+    await js(`${btn}.click()`);
+    assert.ok(await until(`!!document.getElementById('modeDlg')`, 4000));
+    assert.deepStrictEqual(await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].map((x)=>x.textContent)`), ['Not now', 'Close the door', 'Discard', 'Send all (1)'], 'an open door with held runs asks the same, plus Close the door');
+    await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^Send all/.test(x.textContent)).click()`);
     assert.ok(await until(`${sb}.doorsList().then((d)=>!d[${jsLiteral(target)}])`, 8000), 'nothing is held any more');
     assert.ok(await until(`['working','thinking'].includes((window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)})||{}).state)`, 8000), 'the held run reached the agent');
     console.log('[017-signs] held run: held at the closed door, kept by Escape, sent by Send all');
