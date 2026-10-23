@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: MCP servers in a session (issue #349): plain state words and how servers start per agent app, the masked failure reason with a hint, per-server Restart where the agent app has one (Copilot, Claude Code), Restart session with these servers, Open log folder (reveal only)
-status: **Specified and clarified** (spec, research, plan, tasks); the owner answered Q1-Q11 on 2026-10-20 (all option A). Built so far: MCP error and event masking (`maskMcpError`, `maskMcpEvent`; #362, #382); per-server Restart (Copilot, Claude Code) and Restart session with these servers (T030-T034, T040-T044, #349; simulator and fakes, not on a real account); state words and icons, hints, *Details* with *Copy* and live refresh of the open dialog (T113-T115, #364 step 4; simulator and tests; the start line, toggle timing and logs are not built yet); delta 2026-10-20 (issue #364): MCP OAuth sign-in (needs-auth from a 401, start the agent app's own sign-in or show terminal steps, switch off for this session), specified and clarified (owner answered Q12-Q19 on 2026-10-20); built so far (PR 1): the classifier `isMcpAuthChallenge`, `isAuthError` ignoring it, and masking of failed MCP tool cards (T091, T092, T097); PR 2: the types, event guard and fake for sign-in (`errorClass`, `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `mcpAuth`; T112, T093); no adapter sets them yet, no sign-in yet; delta 2026-10-23 (issue #596, owner): live state and actions of every server in Settings > MCP servers over the running chats (FR-080..FR-087) built, simulator and unit tests only; delta 2026-10-23 (issue #603): MCP health, a plain failure reason per server (never guessed), when it was seen, Copy diagnostics (masked) and a dot on the MCP chip (FR-090..FR-097; simulator and unit tests, not on a real account)
+status: **Specified and clarified** (spec, research, plan, tasks); the owner answered Q1-Q11 on 2026-10-20 (all option A). Built so far: MCP error and event masking (`maskMcpError`, `maskMcpEvent`; #362, #382); per-server Restart (Copilot, Claude Code) and Restart session with these servers (T030-T034, T040-T044, #349; simulator and fakes, not on a real account); state words and icons, hints, *Details* with *Copy* and live refresh of the open dialog (T113-T115, #364 step 4; simulator and tests; the start line, toggle timing and logs are not built yet); delta 2026-10-20 (issue #364): MCP OAuth sign-in (needs-auth from a 401, start the agent app's own sign-in or show terminal steps, switch off for this session), specified and clarified (owner answered Q12-Q19 on 2026-10-20); built so far (PR 1): the classifier `isMcpAuthChallenge`, `isAuthError` ignoring it, and masking of failed MCP tool cards (T091, T092, T097); PR 2: the types, event guard and fake for sign-in (`errorClass`, `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `mcpAuth`; T112, T093); no adapter sets them yet, no sign-in yet; delta 2026-10-23 (issue #596, owner): live state and actions of every server in Settings > MCP servers over the running chats (FR-080..FR-087) built, simulator and unit tests only; delta 2026-10-23 (issue #603): MCP health, a plain failure reason per server (never guessed), when it was seen, Copy diagnostics (masked) and a dot on the MCP chip (FR-090..FR-097; simulator and unit tests, not on a real account); delta 2026-10-23 (T099, T100): Sign in for Claude Code and Codex specified (FR-175..FR-186; Q20, Q21, Q23, Q24: A; Q22: B (owner, 2026-10-23)), no code
 -->
 
 **Feature Branch**: `058-mcp-session-controls`
@@ -11,7 +11,7 @@ status: **Specified and clarified** (spec, research, plan, tasks); the owner ans
 **Status**: Specified and clarified (spec, research, plan and tasks). Built 2026-10-21 (#349): per-server Restart and Restart session
 with these servers (US3, US4; tasks T030-T034, T040-T044), simulator and fakes only. The owner answered Q1-Q11 on 2026-10-20 (all option A,
 see *Clarifications*). Delta 2026-10-20 (issue #364, MCP OAuth sign-in, FR-060..FR-076): specified and clarified (the owner answered
-Q12-Q19 on 2026-10-20, all the recommended option); Copilot's **Sign in** is built (2026-10-23: T098, T101, T102, T104 in the simulator and on fakes, checked once on a real account (Copilot, macOS, 2026-10-23: worked, the row was slow; the later parts only in the simulator and tests), see *Changes* and FR-074); Claude Code and Codex are not (T099, T100).
+Q12-Q19 on 2026-10-20, all the recommended option); Copilot's **Sign in** is built (2026-10-23: T098, T101, T102, T104 in the simulator and on fakes, checked once on a real account (Copilot, macOS, 2026-10-23: worked, the row was slow; the later parts only in the simulator and tests), see *Changes* and FR-074); Claude Code and Codex are not (T099, T100); their design is specified in *Changes* 2026-10-23 (FR-175..FR-186; Q20, Q21, Q23, Q24: A; Q22: B (owner, 2026-10-23)), no code.
 **Input**: Issue #349. Owner (Paco, 2026-10-20): "in a session, when I open MCP I can enable and disable servers, but I miss VS Code's
 start/stop/show logs; it is not clear how to start them."
 
@@ -493,12 +493,12 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
     `session.mcp_server_status_changed`. Durbar **never** registers `onMcpAuthRequest`, never calls `oauth.handlePendingRequest` or
     `oauth.complete` (both would pass tokens or callbacks through Durbar), never sends `clientSecret`, `clientId` or `redirectUri`, and
     does not use `prepareLogin` (owned installations; Durbar's servers are plain configuration).
-  - **Claude Code**: control request `mcp_authenticate { serverName }` with **no** `redirectUri` (the CLI keeps its own localhost
+  - **Claude Code** (refined 2026-10-23 by FR-175/FR-176: 5-minute listener, poll every 5 s, mark rule): control request `mcp_authenticate { serverName }` with **no** `redirectUri` (the CLI keeps its own localhost
     callback). `requiresUserAction: false` = already signed in. Afterwards Durbar asks `mcp_status` every 3 s while the sign-in is open
     (at most 10 minutes) and emits `mcp`. Needs a launched CLI: a needs-auth row only exists after the CLI reported it, so this holds
     except right after *Restart session* (Q11), where the button says "Send a message first". `mcp_oauth_callback_url` (pasting a callback
     URL) is not used.
-  - **Codex**: `mcpServer/oauth/login { name, threadId }`; the completion `mcpServer/oauthLogin/completed` is matched by `loginId` (or
+  - **Codex** (refined 2026-10-23 by FR-177/FR-178: `timeoutSecs`, the one-read check, `signInEnd`, no cancel): `mcpServer/oauth/login { name, threadId }`; the completion `mcpServer/oauthLogin/completed` is matched by `loginId` (or
     `name` + `threadId` when an older Codex omits it). Success: the row reads "Signed in: applies with your next message", and the next
     message runs on a fresh child that resumes the thread (the FR-147 switch path), because Codex says to start a fresh session to use the
     saved grant (Q18). Failure: the masked `error`.
@@ -513,7 +513,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   - never writes the address to the activity log, the `DURBAR_LOG` sink, a debug line or disk; it is dropped on success, Cancel, the
     time limit, *End session*, *Restart session* and app exit.
   `agents:mcpOpenSignIn(id, name)` opens the held address with `shell.openExternal` only after that click (as spec 012 FR-154 does for an
-  elicitation URL). `agents:mcpCancelSignIn(id, name)` forgets it (Codex: also `account/login/cancel` when the method exists; Copilot's
+  elicitation URL). `agents:mcpCancelSignIn(id, name)` forgets it (Codex: dropped 2026-10-23, `account/login/cancel` does not reach an MCP login, see FR-177; Copilot's
   `cancelLogin` is for owned logins only, so a manual login is just forgotten and the runtime's listener ends on its own, `[KNOWN GAP]`).
   `[IMPLEMENTED]` (T101, 2026-10-23, Copilot's path; the code is adapter-neutral): `src/main/mcpsignin.ts` (`McpSignInStore` with an injected clock and opener, `mcpSignInOp`, `mcpOpenSignInOp`, `mcpCancelSignInOp`), the three channels in `src/main/mcpipc.ts` (`ipcHandle` and `fromApp(e)`, listed in `test:ipcchannels` and refused under `DURBAR_SIM`), preload and `DurbarApi`. The address is checked with `elicitHttpsUrl` when it arrives and again when it is opened; the window gets `{host, opened, expiresInMs}`; the entry is dropped by the `mcp` event that reports the server connected, by Cancel, by the 10-minute limit (checked on every access, no timer), and by the `stopped` status (End session, and Restart session, which ends the session first, #473); app exit clears memory. An adapter error is shown with every address hidden and the MCP masks applied. `agents:mcp` entries carry `canSignIn`, `signIn` and `signInSteps` (`signInStepsFor` in `src/main/mcpsession.ts`: a name with characters other than letters, digits and `_.@:+-` is shown as `<server name>` and never put in a command). No activity-log row is written for a sign-in. `test:` `scripts/test-mcp-signin.ts` (store, operations, reply, and the registered channels on a stand-in electron with the `DURBAR_LOG` sink, the activity hook and the console searched for the address). The origin tag and "different site" line (FR-075, T110) are built, see FR-075.
 - **FR-066** **Switch off for this session.** The needs-auth row and the FR-063 card offer **Switch off for this session**: the existing
@@ -532,9 +532,9 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   - Copilot (reworded 2026-10-23 after the first T105 result, see FR-074): "If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth <name>` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23)." Only for servers in the Copilot CLI list; for a folder extra: "This server is only known to Agent Durbar; use Sign in
     here." With `persistent` storage (Q12 B) the runtime keeps MCP sign-ins in the OS keychain; whether that is the same entry the CLI's
     `/mcp auth` writes, so a CLI sign-in is seen by a Durbar session, is unverified (`[KNOWN GAP]`, T105).
-  - Claude Code: "In a terminal, run `claude mcp login <name>`, then use *Restart session with these servers*." Only for a server that is
+  - Claude Code (replaced 2026-10-23 by FR-181): "In a terminal, run `claude mcp login <name>`, then use *Restart session with these servers*." Only for a server that is
     also in Claude Code's own MCP settings; whether Durbar's `--mcp-config` copy reuses that sign-in is unverified (`[KNOWN GAP]`).
-  - Codex: "In a terminal, run `codex mcp login <name>`, then use *Restart session with these servers*." Only for a server in Codex's
+  - Codex (replaced 2026-10-23 by FR-181): "In a terminal, run `codex mcp login <name>`, then use *Restart session with these servers*." Only for a server in Codex's
     `config.toml`; reuse for Durbar's thread overrides is unverified (`[KNOWN GAP]`).
   `[IMPLEMENTED]` Copilot (T098, T102, 2026-10-23): the adapter's text with the name filled in (`signInStepsFor`), shown in the row's *How to sign in from a terminal* with **Copy** (it copies the commands, one per line); open by default where the app cannot start a sign-in. Claude Code and Codex: not yet (their adapters have no `mcpSignInSteps` until T099/T100).
 - **FR-069** **Dialog flow** (renderer, FR-030 layout):
@@ -979,3 +979,233 @@ composer's MCP chip when a server of that chat failed. Wanted in the next pre-re
 - **SC-090** For a server that failed, the user reads in plain words why (or "reason unknown") and when, and can paste a masked
   diagnostics text into an issue; a planted token in the server's error never appears in that text.
 - **SC-091** Without opening the MCP list, the composer's MCP chip shows that a server of this chat failed.
+
+### 2026-10-23: MCP Sign in for Claude Code and Codex (T099, T100; issue #364 step 5; owner priority)
+
+**Status**: specified, **no code**. Research: [research.md](research.md) section 7.8 (read only: the installed Claude Code 2.1.304
+program and its docs, the `openai/codex` source at tag `rust-v0.163.0`; no session started, no sign-in, no credits, no user config,
+keychain or token file opened). Plan: [plan.md](plan.md) *Delta: Sign in for Claude Code and Codex*. Tasks: [tasks.md](tasks.md)
+Phase 11 (T099, T100, T150-T158) and Phase 8c (T106, T107 reworded). Q20, Q21, Q23, Q24: A; Q22: B (owner, 2026-10-23) (see *Owner answers* below).
+
+**Why**: Copilot's **Sign in** landed in #598 (FR-064, FR-065, FR-069). Claude Code and Codex rows still read "Needs sign-in" with no
+button and no terminal steps (`signInStepsFor` only runs when `capabilities.mcpSignIn` is set, `src/main/mcpsession.ts:82`, and neither
+adapter sets it). The owners asked to treat MCP as a priority.
+
+**What the research changed** (all `read:`, research 7.8):
+
+- **Claude Code can start its own sign-in inside Durbar's session**, even though the docs say a `-p` or SDK run cannot. The stream-json
+  control loop of 2.1.304 answers `mcp_authenticate {serverName}`: it finds the server among the running CLI's own clients (so
+  `--mcp-config` servers should count; read from the program, not run), runs discovery, registration and PKCE with `skipBrowserOpen: true`, starts its own listener on
+  `127.0.0.1` and answers `{authUrl, requiresUserAction: true, callbackExpected: true, redirectScheme: 'localhost', state, callbackPort}`,
+  or `{requiresUserAction: false}` when no browser step is needed. After the callback it stores the token and **reconnects the server
+  in the same CLI**. The listener gives up after 5 minutes. A failure after the answer is only logged by the CLI; no message reaches
+  Durbar. There is no cancel request (`mcp_clear_auth` deletes a stored sign-in; it is not a cancel).
+- **`claude mcp login <name>` cannot be run by Durbar**: it gives up with "stdin isn't a terminal" as soon as its listener waits when
+  stdin is not a TTY, and it only knows servers in Claude Code's own settings (not `--mcp-config`). It also prints the authorization
+  address on stdout.
+- **Codex's in-session call is stable and covers Durbar's servers**: `mcpServer/oauth/login {name, threadId, timeoutSecs?}` (not marked
+  experimental) reads the thread's current MCP config (so the `thread/start` `config.mcp_servers` override should count: inferred, not run), answers
+  `{authorizationUrl, loginId}` and later sends `mcpServer/oauthLogin/completed {name, threadId, loginId, success, error?}`. On success it
+  calls `invalidate_mcp_runtimes()`, which marks every loaded thread's MCP runtime dirty and schedules a refresh; the README still says
+  "start a fresh session after success". Default listener timeout 300 s. **`account/login/cancel` does not cancel it**: it only knows
+  enterprise and ChatGPT logins, and a plain MCP login's `loginId` is registered nowhere, so the call answers `notFound`. FR-064's and
+  FR-065's "Codex: also `account/login/cancel`" is therefore dropped.
+- **`codex mcp login <name>`** needs no TTY in browser mode (it opens the browser itself and waits 300 s), but it only knows servers in
+  `config.toml`, and a running app-server does not learn of it. The in-session call is better on every count, so Durbar does not spawn it.
+- **Where the sign-in is kept, and who shares it**: Claude Code keys it by `<server name>|sha256({type, url, headers})[0:16]`, in the
+  macOS keychain or else `~/.claude/.credentials.json` (plain text; the CLI warns "Storing credentials in plaintext"). Codex keys it by
+  name and URL, in the keyring (service "Codex MCP Credentials") or else `CODEX_HOME/.credentials.json`. So a sign-in made in the user's
+  own terminal and one made from Durbar are the same entry when the name, address (and for Claude the headers) match.
+
+#### Requirements (delta)
+
+- **FR-175** **Claude Code: Sign in in the running CLI.** `ClaudeAdapter.startMcpSignIn(sessionId, name)` sends the control request
+  `{subtype: 'mcp_authenticate', serverName: name}` with a 30 s timeout, and nothing else: **no** `redirectUri` (the CLI keeps its own
+  localhost callback), never `mcp_oauth_callback_url` (that would pass the callback, with its code, through Durbar), never
+  `mcp_clear_auth`. The answer:
+  - `authUrl` a string and `requiresUserAction: true` and `callbackExpected !== false`: `{kind: 'browser', url: authUrl, ttlMs}` with
+    `ttlMs` = 300000 minus the time from sending the request to its answer, minus 10000, and at least 30000 (FR-180). The CLI's 300 s
+    timer starts inside `performMCPOAuthFlow`, before it answers (discovery and registration run first), so Durbar's entry must end
+    before the listener does: **Open sign-in page** never points at a closed listener. `state`, `callbackPort` and `redirectScheme` are read by nothing and never logged.
+  - `requiresUserAction: false`: `{kind: 'connected'}`.
+  - `callbackExpected: false` (a claude.ai connector: the page signs in on claude.ai, and the CLI does not reconnect until it starts
+    again) or any other shape: rejects, so the terminal steps show. Not expected with `--strict-mcp-config` (`[KNOWN GAP]`).
+  - A control error (for example "Server not found", "does not support OAuth authentication", "blocked by enterprise managed policy",
+    "is not supported in this context"): rejects with the CLI's text; main masks it (FR-067) and shows the terminal steps.
+  - **The call is undocumented, so its absence is a normal case.** A timeout (30 s), or a control error saying the CLI does not know
+    the subtype, rejects with the manual-steps message (FR-068/FR-181), the same as a refusal. A later answer to a timed-out request is
+    dropped unread: `claudeTransport.ts` already drops a `control_response` with an unknown `request_id`; keep it that way, and never
+    log the body (it holds the address).
+  - The CLI is not running (`!s.transport?.alive`: no message yet in this launch): rejects with "Send a message first, then sign in."
+    (Q15). A server that was off at launch (`launchedOff`) or is switched off: rejects with "Switch it on first; it starts with your
+    next message."
+  - Only on the CLI transport: the SDK transport (`DURBAR_CLAUDE_TRANSPORT=sdk`) sends no `mcp_authenticate` (`claudeSdk.ts` refuses
+    unknown requests), so `CLAUDE_SDK_CAPABILITIES` drops `mcpSignIn` and the members, as it does for `mcpRestart` (contract C2).
+- **FR-176** **Claude Code: finishing.** The CLI reconnects the server itself after the browser step; Durbar learns it by asking.
+  `ClaudeAdapter.refreshMcpStatus(sessionId, name)` sends `mcp_status` (15 s), keeps `lastMcp`, and emits `mcp` through `withAuthSeen`
+  (as `refreshMcp` does today). Main's existing `SignInPoller` calls it every 5 s once the page was opened, and on window focus (FR-064
+  poll, unchanged). The usual case is the CLI's own `needs-auth` turning `connected`; that ends the sign-in through
+  `McpSignInStore.onServers` (unchanged). **A re-read is not a new status** (as Copilot's round 3 on #598): when the row reads Needs
+  sign-in only because of an FR-060 tool-call challenge while the CLI kept saying `connected`, a poll that still says `connected` keeps
+  the mark, so no poll toasts "Signed in" by itself. That case ends with the CLI's next `init` (the next message), a switch toggle, or
+  **Restart** on the row; `restartMcpServer` therefore also deletes the name from `mcpAuthSeen` and emits through `withAuthSeen` (the
+  FR-060 `[KNOWN GAP]` "whichever PR merges second", still open in `src/adapters/claude.ts:871-887`). When such an entry ends at its
+  limit, the row adds "If you finished in your browser, press Restart on this row." A failed browser step leaves the row on Needs
+  sign-in; the entry ends at its 5-minute limit with the existing text "Sign-in was not finished. Press Sign in to try again." No
+  `cancelMcpSignIn` (Cancel only forgets; the CLI's listener ends by itself within 5 minutes, `[KNOWN GAP]` as for Copilot).
+  **After Cancel or the time limit**, a finish in the browser is still picked up by the CLI. The adapter remembers when it last started
+  an attempt per server; within 5 minutes of that, the next dialog open or window focus (`agents:mcp(id, true)`) reads `mcp_status`
+  once for that session, so the row does not stay on Needs sign-in. A second `mcp_authenticate` while an earlier one still listens is
+  allowed; its answer (or its error, masked) is handled as for the first. What the CLI does with the first listener then is not known
+  from the read (T106).
+- **FR-177** **Codex: Sign in on the session's thread.** `CodexAdapter.startMcpSignIn(sessionId, name)` sends
+  `mcpServer/oauth/login {name, threadId: <the live thread>, timeoutSecs: 300}` and nothing else: no `clientRegistration`, no `scopes`
+  (Codex's own discovery and the server's config decide). The answer `authorizationUrl` (string) is `{kind: 'browser', url, ttlMs}`, with `ttlMs` computed as in
+  FR-175 (Codex's `timeoutSecs: 300` timer also starts before it answers); `loginId` (when present) is kept in the adapter with the name, for FR-178. MethodNotFound (an older Codex) or any error:
+  rejects with the reason (main masks it and shows the terminal steps). No live child: rejects with the FR-064 "not running" text. No
+  `cancelMcpSignIn` (see *What the research changed*).
+- **FR-178** **Codex: finishing.** On `mcpServer/oauthLogin/completed` for this thread (matched by `loginId`, else by `name` and
+  `threadId` when an older Codex omits it; a completion for another thread or an unknown login is ignored). The adapter keeps the
+  `loginId` of **every** attempt it started in this session for 6 minutes (Cancel and the time limit only forget main's entry; Codex's
+  earlier listener keeps running):
+  - a `success: true` completion for **any** of them counts as signed in (below), also after Cancel;
+  - a `success: false` ends the open entry only when its `loginId` is the current attempt's; without a `loginId` (an older Codex), a
+    failure ends the entry only when no other attempt for that name was started after it;
+  - `success: true`: the server's FR-060 challenge mark is cleared, and the adapter reads `mcpServerStatus/list {threadId, serverName}`
+    once. `connected`: the usual `mcp` event (the row reads Running; main drops the entry). Anything else: the adapter sets `relaunch`
+    (the FR-147 path: the next message runs on a fresh child that resumes the thread, Q18) and emits that server with
+    `signInEnd: 'next-message'` (FR-180), which reads "Signed in: applies with your next message".
+  - **That relaunch is the FR-144/FR-147 path, unchanged** (Q20 A): it runs only between turns; it resumes the same thread with the
+    session's current permission mode, sandbox and approval policy, its switched-off servers and tools, and the folder's extras; it
+    sends no prompt. End session or Restart session before the next message drops it. A sign-in never widens permissions or brings
+    back a switched-off server.
+  - `success: false`: the server stays Needs sign-in, its `error` is Codex's `error` text (main masks it, FR-067), and it carries
+    `signInEnd: 'failed'`, which ends the entry under the rule above ("Sign-in did not finish: <masked reason>. Press Sign in to try again.").
+  - `CodexAdapter.refreshMcpStatus(sessionId, name)` (the 5 s poll) reads `mcpServerStatus/list` with `serverName` and **merges** that one
+    server into `live.mcp` (today's `refreshMcp` replaces the whole map; a one-server page must not drop the others), keeping the
+    challenge mark as `refreshMcp` does.
+- **FR-179** **Durbar never runs a sign-in command.** No `claude mcp login`, `claude mcp logout`, `codex mcp login` or `codex mcp logout`
+  subprocess, and no terminal window opened for one: Claude's needs a TTY (it stops without one) and neither knows Durbar's own servers;
+  Codex's is not seen by a running session. Both stay in the terminal steps (FR-181) for the user to run. Durbar never reads, copies or
+  deletes the apps' credential stores.
+- **FR-180** **What main and the types need (adapter-neutral, reusing #598).** `McpSignInStore`, `mcpSignInOp`, `mcpOpenSignInOp`,
+  `mcpCancelSignInOp`, `SignInPoller`, the three channels, preload, `DurbarApi`, `simguard` and the dialog row stay as they are, plus:
+  - `McpSignInResult`'s browser kind takes an optional `ttlMs`; `McpSignInStore.begin` keeps the entry for `min(ttlMs, 10 minutes)`, so
+    the window never offers **Open sign-in page** after the app's listener closed. Missing = 10 minutes (Copilot unchanged).
+  - `McpServerStatus` takes an optional `signInEnd?: 'next-message' | 'failed'` (normalized, set only by an adapter about a sign-in it
+    started). `McpSignInStore.onServers` drops the entry for it as for `connected`; `agentMcpReply` passes it on the row; the event guard
+    accepts only those two values.
+  - The terminal steps show wherever the adapter has `mcpSignInSteps`, also without `mcpSignIn` (today `mcpsession.ts:82` needs both), so
+    the Claude SDK transport and a Codex without the call still get the steps.
+  - **The "different site" lookup is per app** (FR-075; a bug in #598's `serverUrlOf`, see FR-185).
+  - The honest note under the row (`src/renderer/screens.js:1113`, today hard-coded "Checked once on a real account; other servers and
+    systems not yet." for every app) comes from a new plain capability text `mcpSignInNote` via `agents:mcp`: Copilot keeps its sentence;
+    Claude Code and Codex say "Not checked on a real account yet." until T106 or T107.
+- **FR-181** **Terminal steps** (replace FR-068's Claude Code and Codex bullets; the adapters' `mcpSignInSteps`, `{name}` filled in by
+  `signInStepsFor`; a folder extra keeps "This server is only known to Agent Durbar; use Sign in here."):
+  - Claude Code: "If Sign in is not available, run `claude mcp login {name}` in a terminal and finish in your browser. This works only
+    for a server in Claude Code's own settings. Then press Restart on this row." (Q21; Restart is FR-012's `mcp_reconnect`; the docs say
+    an SDK session reconnects the server instead of starting again.)
+  - Codex: "If Sign in is not available, run `codex mcp login {name}` in a terminal and finish in your browser. This works only for a
+    server in Codex's config.toml. Then use Restart session with these servers."
+  `[KNOWN GAP]` whether the terminal sign-in is the same entry as Durbar's copy of the server (same key only when the name, address and,
+  for Claude, the headers match; Durbar's copy carries the allow-listed `oauth` fields since FR-186), and whether the running
+  CLI or app-server reads it without a restart: T106, T107. Claude's key hashes the `headers`, so a header whose value changes (a
+  rotating value from a helper; whether the CLI hashes before or after `${VAR}` expansion is not known. Durbar passes the user list's
+  `${VAR}` references as written, spec 069 FR-009, so its copy has the same text; a folder extra with secrets filled in by Durbar
+  does not) makes the terminal sign-in and Durbar's copy **different entries**. A server whose
+  `Authorization` header is configured does not use OAuth at all (`read:` docs, "static_auth_header" in 2.1.304), so this concerns
+  other headers only.
+- **FR-182** **Words** (renderer, FR-069 layout, reusing `signHTML`): the waiting text names the app ("Claude Code keeps the sign-in in
+  your system's credential store when one is available; Agent Durbar never sees it", FR-076, unchanged wording); `signInEnd: 'next-message'`
+  reads "Signed in: applies with your next message" with a toast "Signed in to <name>. It applies with your next message."; `signInEnd:
+  'failed'` reads the FR-178 failure line with **Sign in** again. Each change goes through the polite live region.
+- **FR-183** **Simulator and tests** (0 credits): `simmcpauth=1` also gives the Claude and Codex sim kinds one needs-auth server (Claude:
+  Running 2 s after Open; Codex: "Signed in: applies with your next message"; `simmcpauth=codexfail`: the failure line);
+  `simmcpauth=manual` shows each app's steps. Fakes: the Claude transport fake answers `mcp_authenticate` (browser, no-action, error,
+  `callbackExpected: false`) and records requests (asserts no `redirectUri`, no `mcp_oauth_callback_url`, no `mcp_clear_auth`); the Codex
+  fake app-server answers `mcpServer/oauth/login` and sends `mcpServer/oauthLogin/completed` (by `loginId`, without it, another thread,
+  failure) and asserts no `account/login/cancel`. Both: no address in the `DURBAR_LOG` sink, the activity log or a debug line; no
+  subprocess is spawned for a sign-in. Screenshots at 1440x900 and 1280x800 for a Claude and a Codex row.
+- **FR-184** **Honest limits.** Everything above is `read:`. `[KNOWN GAP]` until T106 and T107: that 2.1.304's stream-json loop answers
+  `mcp_authenticate` in a real run (the docs say a `-p` or SDK run cannot sign in; the program says it can); that Codex accepts a
+  server from Durbar's thread override (read from `current_mcp_config_and_runtime_context`, not run); whether Codex's
+  `invalidate_mcp_runtimes` already reconnects the running thread (then the row reads Running without a relaunch); servers that need a
+  pre-registered OAuth client (FR-186, not run); the `mcp_authenticate` handler and its answer are read from **2.1.304 only**: on any other
+  version the feature rests on FR-175's fallback (timeout or unknown subtype -> terminal steps); Windows and macOS (no OS-specific code: each app opens its own listener, Durbar opens the page with
+  `shell.openExternal`).
+  `read:` (research 7.8) **Plain-text storage without a keyring**: Claude Code falls back to `<config dir>/.credentials.json` ("Storing
+  credentials in plaintext") and Codex to `CODEX_HOME/.credentials.json` when no system keyring is available (common on Linux). Agent
+  Durbar never reads or changes those files; the README *Known limits* says so (T155).
+- **FR-185** **Bug in #598: the "different site" line can compare with the wrong server** (review on #629). `serverUrlOf` in
+  `src/main/mcpipc.ts:212-220` looks for the server's address in this folder's extras, then `globalFor(agentId)` (spec 069; it
+  returns Claude Code's user list for a Claude agent and `{}` for every other app, `src/main/mcpglobalio.ts:425-427`), then **the
+  Copilot CLI list for every app**. Scenario: a Codex agent uses `notes` from `~/.codex/config.toml` at `https://mcp.notes.example`,
+  and the Copilot CLI list also has a `notes` at `https://tools.other.example`. Codex's sign-in page is on `login.notes.example`, and
+  the confirm says it is on a different site than `tools.other.example`: a false warning. The reverse hides a real warning: a Codex
+  `notes` at `https://evil.example` whose page is on `login.evil.example`, with a Copilot `notes` on `example.net`, gets compared
+  with `example.net`. Fix: the lookup is per app. Copilot: folder extras, then the Copilot CLI list (unchanged). Claude Code: folder
+  extras, then the user list Durbar passes (`globalFor`). Codex: folder extras, then the `url` of its own `config.toml` entry as
+  spec 069's `GlobalLists` reads it. No match: no line (never a wrong one). Built in PR A (Copilot is not affected today, so the
+  fix lands with the first app it matters for; Codex's rule is tested there too). Test: T157.
+
+- **FR-186** **Claude Code's `oauth` settings reach Durbar's copy** (Q22 B, owner 2026-10-23; changes spec 069 FR-009, see its
+  *Changes* 2026-10-23). When main builds a Claude agent's `--mcp-config` from Claude Code's user list (spec 069 FR-009, `specOf` in
+  `src/main/mcpglobalio.ts:178-187`, reading the raw entry the existing `readGlobal` keeps), an `http` or `sse` entry's `oauth` object
+  is copied through an **allow-list** into a new optional `McpServerSpec.oauth`, and `mcpConfigOf` (`src/adapters/claude.ts:167-176`)
+  writes it back as `oauth` on that server:
+  - **Copied, each only with the type Claude Code's own schema has** (`read:` Claude Code 2.1.304 config schema, byte offset
+    236849261: `oauth: {clientId?: string, callbackPort?: positive int, authServerMetadataUrl?: string url starting "https://",
+    scopes?: non-empty string, xaa?: boolean}`): `clientId` (a non-empty string, at most 256 characters), `callbackPort` (an integer
+    1-65535), `authServerMetadataUrl` (a string of at most 2048 characters that parses as a URL with `https:`; nothing else), `scopes`
+    (a non-empty string of at most 1024 characters; Claude Code's form is one space-separated string, not an array).
+  - **Never copied**: every other key, in particular `clientSecret` and any secret-shaped key (Claude Code keeps the client secret in
+    the keychain or its credentials file, not in the config: `read:` docs `mcp.md` "Use pre-configured OAuth credentials"; a
+    `clientSecret` found in the file is dropped all the same), `xaa` (it needs `CLAUDE_CODE_ENABLE_XAA`, which Durbar does not set),
+    and unknown keys. **An extra key is dropped on its own and never stops the valid fields from copying** (only a bad value in an allow-listed field stops the copy, below). Keys are read with own-property checks from the plain parsed object, so `__proto__`, `constructor` and
+    `prototype` are never read or written.
+  - **All or nothing**: when `oauth` is not a plain object, or any allow-listed key is present with the wrong type, shape or length, no
+    `oauth` is copied at all (the server still starts, as today, without it). A stdio entry never gets one. A folder extra (Durbar's own
+    store) has no `oauth` field, so it is not affected.
+  - **Nothing from it is logged**: not the object, not a field, not a refusal reason with a value (a debug line may say "oauth not
+    copied for <name>" and nothing else). The `--mcp-config` file is written as today (mode 0600, private temp folder, deleted on exit).
+  - **Why it helps**: Claude Code's token key is `<name>|sha256({type, url, headers})[0:16]` and ignores `oauth` (`read:` 2.1.304 offset
+    240010882), so a Sign in through Durbar (FR-175) and one through the user's own CLI (`claude mcp login`) are the same stored entry,
+    and a server that has no dynamic client registration can now sign in from Durbar with the user's registered client id and port.
+  - **Not changed**: spec 069's copy between apps (FR-021, FR-023) still lists `oauth` as a field the other apps' writers do not carry;
+    Durbar never writes `oauth` into any app's file. Copilot and Codex sessions are not affected.
+  `[KNOWN GAP]` not run: that the CLI accepts these fields from `--mcp-config` as it does from its settings (the same schema `Ht` is used
+  for `http` and `sse` entries in 2.1.304, `read:`), and a real server with a pre-registered client (T106).
+
+#### Success criteria (delta)
+
+- **SC-175** In the simulator, a Claude Code and a Codex "Needs sign-in" row offer **Sign in**, show the host-only confirm, and end on
+  Running (Claude Code) or "Signed in: applies with your next message" (Codex); a refused or missing call shows that app's terminal steps.
+- **SC-176** On the fakes, neither adapter ever sends a callback, a client secret, a redirect address or a cancel the app does not have,
+  and no authorization address reaches a log, a debug line or the window (only its host).
+
+#### Owner answers (Paco, 2026-10-23)
+
+- **Q20: A.** "Signed in: applies with your next message"; the next message runs on a fresh child.
+- **Q21: A.** "Then press Restart on this row" (`mcp_reconnect`).
+- **Q22: B** (owner, 2026-10-23). Carry an allow-listed part of Claude Code's `oauth` object into Durbar's `--mcp-config` copy, never a client secret: FR-186.
+- **Q23: A.** One PR per adapter: Claude Code first, with the shared parts, then Codex.
+- **Q24: A.** The T116 CI check is extended to both apps (each dispatch needs the owner's OK), then one run on the owner's Mac.
+
+#### The questions as asked
+
+- **Q20 Codex after a sign-in that is not yet connected.** A) "Signed in: applies with your next message", the next message runs on a
+  fresh child (as Q18; recommended: no new behaviour, 0 credits). B) Durbar resumes the thread on a fresh child at once when no turn
+  runs (no prompt, 0 credits, as the FR-144/FR-147 relaunch), so the row can read Running before the next message.
+- **Q21 Claude Code steps after a terminal sign-in.** A) "Then press Restart on this row" (FR-012 `mcp_reconnect`; the docs say an SDK
+  session reconnects the server instead of starting again; recommended). B) "Then use Restart session with these servers" (as the 2026-10-20
+  text; slower, also certain).
+- **Q22 Servers that need a pre-registered OAuth client** (`oauth.clientId` in Claude Code's settings; Durbar's copy drops `oauth`). A)
+  Sign in shows the app's masked error and the terminal steps: `claude mcp login` in the user's own CLI uses the client id, and the
+  stored sign-in's key ignores `oauth`, so Durbar's copy finds it after Restart (recommended: no new code). B) Carry Claude's `oauth`
+  object (client id, callback port, scopes, metadata address; never a client secret) into Durbar's `--mcp-config` (a spec 069 change).
+- **Q23 How to split the work.** A) One PR per adapter (owner, 2026-10-21): Claude Code first with the shared parts (FR-180, FR-182,
+  FR-183 Claude), then Codex (recommended). B) One PR for both.
+- **Q24 The real checks (T106, T107; 0 AI credits, no prompt, but a real app account and an OAuth MCP server).** A) Extend the CI check
+  of T116 (`scripts/mcp-oauth-real.ts`, the demo OAuth server, the headless "browser") to Claude Code and Codex on `ubuntu-latest`, then
+  one run on the owner's Mac with a real provider (recommended: repeatable; each dispatch needs the owner's OK). B) The owner's Mac only.
