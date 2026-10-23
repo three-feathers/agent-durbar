@@ -11,9 +11,9 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 **Website:** <https://three-feathers.github.io/agent-durbar/>
 
 > **Status: alpha.**
-> - The newest pre-release is [`v0.1.0-alpha.13`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.13). It is unsigned and not notarized.
+> - The newest pre-release is [`v0.1.0-alpha.14`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.14). It is unsigned and not notarized.
 > - What changed in each release is in the [CHANGELOG](CHANGELOG.md).
-> - **Where it has been run:** Linux by hand every day. macOS by hand on the owner's and a teammate's Macs (macOS 26, Apple Silicon), from source and the simulator, including real Copilot sessions; fixes from those runs are merged. Windows by hand on a real PC on 2026-10-21 by the owner with a colleague; its findings are filed ([#467](https://github.com/three-feathers/agent-durbar/issues/467): Copilot was not found or offered for install without Node.js).
+> - **Where it has been run:** Linux by hand every day. macOS by hand on the owner's and a teammate's Macs (macOS 26, Apple Silicon), from source and the simulator, including real Copilot sessions; fixes from those runs are merged. The Copilot MCP Sign in and the keychain change were checked on the owner's Mac with a test build (`v0.1.0-alpha.14-mcptest.1`) before they merged. Windows by hand on a real PC on 2026-10-21 by the owner with a colleague; its findings are filed ([#467](https://github.com/three-feathers/agent-durbar/issues/467): Copilot was not found or offered for install without Node.js).
 > - **What CI checks on Linux, macOS and Windows:** every change builds and starts the packaged app (spec 012 T044), and the UI checks run on all three (spec 008, [#389](https://github.com/three-feathers/agent-durbar/pull/389)). A real-account end-to-end workflow, where Copilot, Claude Code and Codex each install, sign in and answer on all three OSes, passed 9 of 9 on 2026-10-20 (spec 062, [#402](https://github.com/three-feathers/agent-durbar/pull/402)); real installs of each agent app as a standard and an admin user are checked in CI too (spec 060, [#393](https://github.com/three-feathers/agent-durbar/pull/393)). Since 2026-10-22 pull requests run Linux and Windows; macOS runs on every push to `main` and nightly (spec 008), and the real-account workflow runs daily on cheap models instead of on every push (spec 062).
 > - Built by [Three Feathers](https://github.com/three-feathers), tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
 
@@ -90,6 +90,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 
 **Models, context and tools**
 - Pick the model and reasoning effort per session, and switch them in a running session: Claude Code and Codex from the next message, the conversation kept (checked on real accounts 2026-10-20); Copilot too, but not yet seen on a paid plan.
+- Copilot's **Auto** model has a routing choice in the same model menu: *Efficiency* (the default), *Balance* or *Intelligence*, remembered per agent; a higher tier asks first, since Auto may then pick models that cost more. Shown only when the bundled Copilot runtime supports it (1.0.87+); a tier set by your organization's Copilot policy is shown locked (also one Durbar cannot name), and a tier Copilot could not switch to is reported, with the tier still in use. Not yet run on a real account with Balance or Intelligence (simulator and unit tests only).
 - A context ring under the message box shows how full the window is; a click opens the token summary with **Compact**. The model's menu shows its window.
 - **MCP servers:**
   - your Copilot CLI list (`~/.copilot/mcp-config.json`) is used first;

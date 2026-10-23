@@ -1,1 +1,0 @@
-- **Nightly watch no longer floods the Actions list** (spec 008, FR-116): `nightly-watch.yml` only starts for runs of `main`, not for every PR and merge-queue run (it was skipped anyway). Checked by YAML parse; the effect shows after the merge.

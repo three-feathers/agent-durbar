@@ -44,6 +44,8 @@ export interface AgentInfo {
   effort?: string;
   /** Context tier of this session (spec 030); absent = the model's default. */
   tier?: ContextTier;
+  /** Spec 007 FR-016: the Auto routing tier this agent chose (kept while it uses another model); absent = the default. */
+  autoTier?: AutoTier;
   /** What the agent's adapter can do about model and context (spec 030); absent = nothing (a new session is needed). */
   modelControl?: ModelControl;
   /** The agent's kind can select custom agents (spec 043). */
@@ -115,7 +117,7 @@ export type LimitChoice = { kind: 'add'; credits: number } | { kind: 'set'; cred
 
 import type { AboutView } from './about';
 import type { AccountView } from './account';
-import type { CompactResult, ContextTier, ModelControl, ModelPricing, ModelSwitchRequest, ModelSwitchResult, PriceClass } from './modelswitch';
+import type { AutoTier, CompactResult, ContextTier, ManagedAutoTier, ModelControl, ModelPricing, ModelSwitchRequest, ModelSwitchResult, PriceClass } from './modelswitch';
 
 /** Saved credit totals as the window receives them (spec 011 FR-026). Numbers, a display name and the folder's own path (already known to the window); the file holds a hash, never the path. */
 export interface UsageTotalsView {
@@ -257,6 +259,10 @@ export interface ModelChoice {
   contextTiers?: ContextTier[];
   /** Window in tokens of the long-context tier, when reported. */
   longWindow?: number;
+  /** Spec 007 FR-012: the Auto routing tiers (Copilot's `auto` only). */
+  autoTiers?: AutoTier[];
+  /** Spec 007 FR-017: the organization's Auto tier, when set. */
+  autoTierManaged?: ManagedAutoTier;
 }
 
 export interface PickedFile {

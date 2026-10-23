@@ -17,6 +17,7 @@ import { register as registerFoldersIpc } from './ipc/folders';
 import { register as registerFolderSetupIpc } from './ipc/foldersetupipc';
 import { register as registerHarnessIpc } from './ipc/harness';
 import { register as registerModelIpc } from './ipc/model';
+import { onAutoTierFailed } from './ipc/model';
 import { register as registerPreviousIpc } from './ipc/previous';
 import { register as registerProfilesIpc } from './ipc/profiles';
 import { createProfileFreshness } from './profilefiles';
@@ -266,8 +267,12 @@ router.onEvent((e) => {
   a.model = e.model;
   if (e.cause === 'user' || e.effort !== undefined) a.effort = e.effort;
   a.tier = e.tier === 'long' ? 'long' : undefined;
-  if (e.cause === 'user') folderStore?.setModelChoice(wsKey(a), { model: e.model, effort: e.effort, contextTier: a.tier });
+  if (e.cause === 'user' && e.autoTier) a.autoTier = e.autoTier; // spec 007 FR-016: a tier the user chose (a runtime change is shown, never saved)
+  if (e.cause === 'user') folderStore?.setModelChoice(wsKey(a), { model: e.model, effort: e.effort, contextTier: a.tier, autoTier: e.autoTier });
 });
+
+/** Spec 007 FR-019: a tier switch the runtime could not apply: the tier still in effect is shown and saved again, so a resume does not ask for the failed one. */
+router.onEvent((e) => onAutoTierFailed(e, agents, folderStore, wsKey));
 
 // Dev/test: DURBAR_LOG=/path/events.jsonl records every normalized event and what is sent to the SDK.
 if (dev.DURBAR_LOG) {
@@ -424,6 +429,7 @@ function restoreFolders(): void {
         if (ls) info.resumeLast = true;
         if (f.label) info.label = f.label;
         if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
+        if (f.autoTier) info.autoTier = f.autoTier; // spec 007 FR-016
         router.bind(info.id, kind);
         agents.set(info.id, info);
         applyStoredAlias(info); // spec 059 FR-014
