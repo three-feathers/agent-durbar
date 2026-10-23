@@ -146,7 +146,7 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
 
 **Codex's sandbox on macOS and Windows.** Read-only and Ask first always need Codex's own sandbox. If it cannot start, the session does not start and nothing runs. Durbar says why, and the message has a **Change mode…** button that opens the usual mode menu (it never picks a mode for you):
 - **Windows:** Codex's *elevated sandbox* must be set up once, and the native `codex.exe` used, not a `.cmd` shim.
-- **macOS:** on GitHub's macOS runners, macOS refused Codex's `sandbox-exec` (2026-10-20). Whether an ordinary Mac ever does this is not known yet. Durbar shows a plain message instead of the raw error.
+- **macOS:** when Codex is reached through a link (Homebrew's `/opt/homebrew/bin/codex`, or the official installer's `~/.local/bin/codex`), its sandbox could not run Codex's own program again and Read-only and Ask first were refused (`sandbox-exec: execvp() … Operation not permitted`; openai/codex#41493, confirmed on a Mac 2026-10-23). Durbar now starts Codex from its real file, so the sandbox can run it; a full session with this fix has not been re-run on a Mac yet. The earlier refusal on GitHub's macOS runners (2026-10-20) is very likely the same cause. If Durbar itself runs inside another sandbox (a managed Mac or a CI machine), macOS can still refuse it; Durbar then shows a plain message instead of the raw error.
 
 ## Install
 
