@@ -103,3 +103,7 @@
 ## 2026-10-23: nightly-watch branch filter
 
 - [x] T103 (2026-10-23, owner question) `branches: [main]` on `workflow_run` in `.github/workflows/nightly-watch.yml` [FR-116]. Files: that workflow, `changelog.d/008-nightly-watch-filter.md`. Done when the YAML parses and, after the merge, `gh run list --workflow nightly-watch.yml` shows no more runs for PR branches.
+
+## 2026-10-23: release PR fragment check (stopgap)
+
+- [x] T104 (2026-10-23, team diagnosis) A release PR fails CI and `pr-gate.sh` when a `changelog.d` fragment would stay unfolded in what lands [FR-117]. Files: `scripts/changelog.js` (`check --release`, `releaseVerdict`, `releaseCheck`), `scripts/test-changelog.js`, `.github/workflows/ci.yml` (one step in `build-test`, ubuntu), `scripts/pr-gate.sh`, `changelog.d/README.md`, `docs/collaboration.md`, `README.md` (Development), `changelog.d/008-release-fragment-check.md`. Done when the unit tests pass, each planted mutation fails them, and a local dry run on a temporary clone shows a release merge with a leftover fragment failing and a clean one passing.
