@@ -23,8 +23,9 @@ import * as path from 'path';
 import * as vm from 'vm';
 import {
   BUILTIN_ALLOW, MAX_SLASH_BYTES, fillPromptFile, promptInputs, vscodeUserPromptDirs, MAX_SLASH_EXPANDED, expansionWithNote, MAX_SLASH_FILES, MAX_SLASH_PER_DIR, SlashCache, claudeSlashPlaces, cleanBuiltins, codexSlashPlaces,
-  copilotHomeDir, copilotSlashPlaces, discoverSlash, displayBase, expandSlash, mergeSlash, parseFrontMatter, publicSlash, slashLineName,
+  copilotHomeDir, copilotSlashPlaces, discoverSlash, displayBase, expandSlash, maskSlashText, mergeSlash, parseFrontMatter, publicSlash, slashLineName,
 } from '../src/adapters/slashcommands';
+import { redact } from '../src/shared/redact';
 import type { SlashFs, SlashPlace } from '../src/adapters/slashcommands';
 import { parseClaudeAgent } from '../src/adapters/claudeAgents';
 import { ClaudeAdapter } from '../src/adapters/claude';
@@ -417,6 +418,106 @@ async function main(): Promise<void> {
     const l = await ad.listSlashCommands('s1');
     assert.deepStrictEqual(l.map((e) => `${e.source}:${e.name}`).filter((x) => /cx-skill|p1/.test(x)), ['folder:cx-skill', 'user:prompts:p1']);
     assert.strictEqual((await ad.expandSlashCommand('s1', '/prompts:p1 go'))!.text, 'P1 go');
+  });
+
+  // spec 073 FR-013/FR-014 (issue #608): fake token shapes, built at run time (push protection)
+  const TOK = { ghp: 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8', pat: 'github' + '_pat_' + '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij', sk: 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789' };
+  const BODY = { ghp: TOK.ghp.slice(4), pat: TOK.pat.slice(11), sk: TOK.sk.slice(3) };
+  /** any 6 characters of a token's body (also a half token left by a cut, or a tail left by a Markdown split) */
+  const leak = (t: unknown): string | undefined => {
+    const s = String(t ?? '');
+    for (const [k, b] of Object.entries(BODY)) for (let i = 0; i + 6 <= b.length; i++) if (s.includes(b.slice(i, i + 6))) return `${k}:${b.slice(i, i + 6)}`;
+    return undefined;
+  };
+  const at = (n: number, tok: string, tail = ' tail'): string => 'a'.repeat(n - 1) + ' ' + tok + tail; // the token starts at index n
+  const splits = (g: string): string[] => [g.slice(0, 2) + '`' + g.slice(2) + '`', '**' + g.slice(0, 24) + '**' + g.slice(24), g.replace('_', '\\_'), '~~' + g + '~~', '[' + g + '](x)'];
+
+  await test('FR-014: main masks token shapes BEFORE it cuts (front matter, built-ins, publicSlash), also split by Markdown', () => {
+    const r = path.join(tmp, 'tokrepo');
+    const cases: string[] = [];
+    // tokens right at the cut positions: description 200, argument hint 80 (a cut inside leaves a half token no pattern knows)
+    for (const [i, t] of [TOK.ghp, TOK.pat, TOK.sk].entries()) {
+      for (const pos of [180, 185, 190, 195]) {
+        const f = `c${i}-${pos}`;
+        write(path.join(r, '.claude', 'commands', `${f}.md`), `---\ndescription: ${at(pos, t)}\nargument-hint: ${at(pos - 120, t)}\n---\nbody`);
+        cases.push(f);
+      }
+    }
+    // split by Markdown, at the start and at the cut
+    splits(TOK.ghp).forEach((sp, i) => {
+      write(path.join(r, '.claude', 'skills', `md${i}`, 'SKILL.md'), `---\nname: md${i}\ndescription: ${at(186, sp)}\nargument-hint: <${sp}>\n---\nbody`);
+      write(path.join(r, '.claude', 'commands', `mdx${i}.md`), `---\ndescription: before ${sp} after\nargument-hint: x ${sp}\n---\nbody`);
+    });
+    const l = discoverSlash(claudeSlashPlaces([r], path.join(tmp, 'nohome', '.claude'), path.join(tmp, 'nohome')));
+    assert.ok(l.length >= cases.length + 10, `listed ${l.length}`);
+    for (const e of l) {
+      for (const k of ['description', 'argumentHint'] as const) assert.strictEqual(leak(e[k]), undefined, `${e.name}.${k} leaks: ${e[k]}`);
+      assert.ok((e.description ?? '').length <= 200 && (e.argumentHint ?? '').length <= 80, `${e.name}: still cut`);
+    }
+    assert.ok(l.find((e) => e.name === 'c0-185')!.description!.includes('[redacted]'), 'the token is masked, not dropped silently');
+    assert.strictEqual(l.find((e) => e.name === 'mdx0')!.description, 'before [redacted] after', 'a backtick-split token is masked whole');
+    // the CLI's built-in list (FR-007)
+    const b = cleanBuiltins([{ name: 'compact', description: at(190, TOK.ghp), argumentHint: at(70, '**' + TOK.sk.slice(0, 24) + '**' + TOK.sk.slice(24)) }]);
+    assert.strictEqual(leak(b[0].description), undefined, b[0].description);
+    assert.strictEqual(leak(b[0].argumentHint), undefined, b[0].argumentHint);
+    // what crosses to the window: the place (cut to 160), and strings that never went through discovery
+    const pub = publicSlash([
+      { name: 'w', source: 'folder', kind: 'command', where: 'commands/' + 'd'.repeat(130) + '/' + TOK.ghp + '.md', description: at(195, TOK.pat), argumentHint: at(75, TOK.sk) },
+      { name: 'v', source: 'user', kind: 'skill', where: '~/.claude/skills/' + splits(TOK.sk)[1] + '/SKILL.md' },
+    ]);
+    for (const e of pub) for (const k of ['description', 'argumentHint', 'where'] as const) assert.strictEqual(leak(e[k]), undefined, `${e.name}.${k} leaks: ${e[k]}`);
+    assert.ok(pub[0].where!.length <= 160 && pub[0].where!.includes('[redacted]'), pub[0].where);
+    // review of PR #614: a token that removing `**` glues to a word, while a second token is found by the other pass
+    for (const t of [`see x**${TOK.ghp}** and gh\`${TOK.ghp.slice(2)}\``, `a**${TOK.ghp}`, `x**${TOK.ghp.slice(0, 24)}**${TOK.ghp.slice(24)}**`, `1*${TOK.sk}*`]) {
+      assert.strictEqual(leak(maskSlashText(t)), undefined, `glued: ${maskSlashText(t)}`);
+      write(path.join(r, '.claude', 'commands', 'glue.md'), `---\ndescription: ${t}\n---\nbody`);
+      const d = discoverSlash(claudeSlashPlaces([r], path.join(tmp, 'nohome', '.claude'), path.join(tmp, 'nohome'))).find((e) => e.name === 'glue')!.description;
+      assert.strictEqual(leak(d), undefined, `glued, listed: ${d}`);
+    }
+    // the full redact() runs before the cut: credentials in a URL whose `@` falls after the 200 cut, and an `authorization:` value
+    const pw = 'hunter2secretpassword';
+    const cred = publicSlash([{ name: 'u', source: 'folder', kind: 'command', description: 'a'.repeat(170) + ' https://bob:' + pw + '@host.example/x', argumentHint: 'a'.repeat(60) + ' authorization: ' + pw }]);
+    assert.ok(!cred[0].description!.includes('hunter2') && !cred[0].argumentHint!.includes('hunter2'), JSON.stringify(cred[0]));
+    // no token: the text is kept as written (Markdown and `_` stay)
+    assert.strictEqual(maskSlashText('Run `npm test` on my_branch **now**'), 'Run `npm test` on my_branch **now**');
+  });
+
+  await test('FR-014: the send note of a prompt file masks a token-shaped ${input:NAME} (review of PR #614)', () => {
+    const r = path.join(tmp, 'tokprompts');
+    write(path.join(r, '.github', 'prompts', 'tok.prompt.md'), '---\ndescription: tok\n---\nUse ${input:' + TOK.ghp + '} and ${input:' + TOK.ghp.slice(0, 24) + '}');
+    const l = discoverSlash(copilotSlashPlaces([r], path.join(tmp, 'nohome2', '.copilot'), path.join(tmp, 'nohome2')));
+    const x = expandSlash('/tok', l) as { note?: string } | undefined;
+    assert.ok(x && x.note && /left as written/.test(x.note), JSON.stringify(x));
+    assert.strictEqual(leak(x!.note), undefined, x!.note);
+  });
+
+  await test('FR-013: the list shows masked text (slashsuggest.js view/tip with the real safetext.js and redact); fails closed', () => {
+    const R = path.join(__dirname, '..', '..', 'src', 'renderer');
+    const W = require(path.join(R, 'slashsuggest.js')) as { view(x: unknown, mask: unknown): Record<string, string>; tip(x: unknown, mask: unknown, cut: unknown): string; optionHtml(x: unknown, i: number, a: boolean, t: string): string };
+    const ST = require(path.join(R, 'safetext.js')) as { create(o: { redact: (s: string) => string; cut: (s: string, n: number) => string }): { mask(t: unknown): string } };
+    const { cutText } = require(path.join(R, 'cuttext.js')) as { cutText: (t: unknown, n: number) => string };
+    const SAFE = ST.create({ redact: (s) => redact(s, {}), cut: cutText });
+    const g = TOK.ghp;
+    const ents = [
+      { name: g, description: 'skill named by a token ' + TOK.sk, argumentHint: '<' + TOK.pat + '>', source: 'folder', kind: 'skill', where: '.claude/skills/' + g + '/SKILL.md' },
+      ...splits(g).map((sp, i) => ({ name: `m${i}`, description: 'x ' + sp + ' y', argumentHint: sp, source: 'folder', kind: 'command', where: `.claude/commands/${sp}.md` })),
+    ];
+    // the tooltip cuts at 300: a token that starts at 285 of the joined text (a cut first would leave "sk-proj-AbCdEf")
+    const head = '/deploy'.length + 1 + 200 + 1 + 'Sends the text of '.length;
+    ents.push({ name: 'deploy', description: 'd'.repeat(200), argumentHint: '', source: 'folder', kind: 'command', where: 'c/' + 'n'.repeat(285 - head - 3) + '-' + TOK.sk + '.md' });
+    assert.ok(leak(cutText(['/deploy', 'd'.repeat(200), 'Sends the text of ' + ents[ents.length - 1].where].join('\n'), 300)), 'cut before mask really leaks here: the test can tell the orders apart');
+    for (const e of ents) {
+      const v = W.view(e, SAFE.mask), t = W.tip(e, SAFE.mask, cutText), h = W.optionHtml(v, 0, true, t);
+      for (const [k, x] of Object.entries({ ...v, tip: t, html: h })) assert.strictEqual(leak(x), undefined, `${e.name}: ${k} leaks: ${x}`);
+      assert.ok(t.length <= 300);
+    }
+    assert.strictEqual(W.view(ents[0], SAFE.mask).name, '[redacted]');
+    assert.strictEqual(W.view({ name: 'release_notes', description: 'Use my_var', source: 'folder', kind: 'skill' }, SAFE.mask).name, 'release_notes', 'mask, not excerpt: `_` stays');
+    // fail closed: no mask, or one that throws or gives '' -> empty fields, never the raw text
+    for (const m of [undefined, () => '', () => { throw new Error('x'); }, () => 5]) {
+      const v = W.view(ents[0], m), t = W.tip(ents[0], m, cutText);
+      assert.ok(!leak(JSON.stringify(v)) && !leak(t) && v.name === '' && v.description === '', JSON.stringify(v));
+    }
   });
 
   // ---- VS Code prompt files (spec 073 delta 2026-10-23) ----

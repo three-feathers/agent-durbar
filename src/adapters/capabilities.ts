@@ -47,6 +47,11 @@ export interface AdapterCapabilities {
   readonly mcpSignIn?: boolean;
   /** Spec 058 FR-068: plain text for signing in from a terminal when the in-app sign-in cannot run; `{name}` stands for the server name. Missing = a generic line. */
   readonly mcpSignInSteps?: string;
+  /**
+   * Spec 058 FR-164: `startMcpSignIn(id, name, { again: true })` makes the agent app forget the server's stored sign-in and run a new
+   * one through its own flow (Copilot `forceReauth`), so the agent app writes the sign-in again itself. Only with `mcpSignIn`; missing = false.
+   */
+  readonly mcpSignInAgain?: boolean;
   /** `handoffSummary()` exists (spec 030 FR-034); missing = false. */
   readonly handoff?: boolean;
   /** `generateText()` exists: one prompt, no tools, no session kept (spec 040 FR-015); missing = false. */

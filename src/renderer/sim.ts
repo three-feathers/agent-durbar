@@ -108,7 +108,7 @@ interface SimAgent {
   mcpRestarting?: Set<string>;
   mcpFixed?: Set<string>;
   /** Spec 058 FR-071 (simmcpauth): servers with a sign-in open (Sign in pressed); `opened` after Open sign-in page. Dropped by End session and Restart session. */
-  mcpSign?: Map<string, { opened: boolean; at: number }>;
+  mcpSign?: Map<string, { opened: boolean; at: number; again?: boolean }>;
   /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
   mcpReported?: SimAgent['mcpLive']; /* the last list a driver reported through `__durbarSimEmit` (not the simulator's own): its names stay in the dialog */
   mcpAppOff?: Set<string>; /* servers a reported `mcp` list had as `disabled` that this agent's switch did not turn off (the agent app's own config) */
@@ -174,6 +174,26 @@ const SIM_SLASH_LONG: SimSlash[] = [
   { name: 'x'.repeat(64), description: SIM_SLASH_DESC.slice(0, 200), argumentHint: '<from-tag> <to-tag> <area> <audience>', source: 'folder', kind: 'command', where: '.claude/commands/' + 'x'.repeat(64) + '.md' },
   { name: 'release-notes-for-the-customer-reconciliation-batch-jobs-2026', description: SIM_SLASH_DESC.slice(0, 120), source: 'user', kind: 'skill', where: '~/.claude/skills/release-notes-long/SKILL.md' },
 ];
+
+/* Spec 073 FR-013/FR-014 (issue #608), page address simslash=secret: a folder skill and a command whose name, argument hint, description
+   and place hold fake token shapes, also split by Markdown, escaped, and one that straddles the tooltip's 300-character cut. Built at
+   run time: the file holds no secret-looking literal. check:slash-suggest asserts none of them reaches the list, its tooltips, ARIA or
+   the "Sent the text of" note. */
+const SIM_TOK = { ghp: 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8', pat: 'github' + '_pat_' + '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij', sk: 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789' };
+const simSlashSecret = (): SimSlash[] => {
+  const g = SIM_TOK.ghp;
+  const desc = ('Deploy check: ' + g.slice(0, 2) + '`' + g.slice(2) + '` then **' + g.slice(0, 24) + '**' + g.slice(24) + ' and ' + g.replace('_', '\\_') + ' ').padEnd(200, '.').slice(0, 200);
+  const line = '/deploy-check'.length + 1 + desc.length + 1 + 'Sends the text of '.length; // where the place starts in the tooltip
+  const where = '.claude/commands/' + 'n'.repeat(285 - line - '.claude/commands/'.length - 1) + '-' + SIM_TOK.sk + '.md'; // the sk token starts at 285 of 300
+  return [
+    { name: g, description: 'Skill named by a token: ' + SIM_TOK.sk, argumentHint: '<' + SIM_TOK.pat + '>', source: 'folder', kind: 'skill', where: '.claude/skills/' + g + '/SKILL.md' },
+    { name: 'deploy-check', description: desc, argumentHint: '<env> ' + SIM_TOK.pat, source: 'folder', kind: 'command', where },
+    // a VS Code prompt file whose `${input:NAME}` is token-shaped: the send's note echoes it (review of PR #614, FR-013)
+    { name: 'token-input', description: 'A prompt file with a token-shaped input name', source: 'folder', kind: 'prompt', where: '.github/prompts/token-input.prompt.md', note: 'VS Code settings not applied: mode; left as written: ${input:' + g + '}.' },
+  ];
+};
+/** The simulated list: the long or secret entries the page address asks for, then the kind's own (FR-011). */
+const simSlashFor = (kind: string, q: URLSearchParams): SimSlash[] => [...(q.get('simslash') === 'long' ? SIM_SLASH_LONG : q.get('simslash') === 'secret' ? simSlashSecret() : []), ...simSlash(kind)];
 
 const SIM_PROFILES = [
   { id: 'reviewer', name: 'Reviewer', description: 'Reviews changes and points at risks; never edits files', source: 'repo' as const, path: '~/work/mcp-swiss/.github/agents/reviewer.agent.md', tools: ['view', 'grep', 'glob'], model: 'sim-deep' },
@@ -698,6 +718,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       { name: 'my-notes', transport: 'stdio', source: 'user' },
       { name: 'github-mcp-server', transport: 'http', source: 'builtin' },
     ];
+    /* spec 058 FR-164: `simmcpauth=again` adds two remote (OAuth) servers to the Copilot CLI list, the only kind Sign in again is for */
+    const SIM_REMOTE = simQs?.get('simmcpauth') === 'again' ? [{ name: 'team-wiki', url: 'https://wiki.example.test/mcp' }, { name: 'crm', url: 'https://crm.example.test/mcp' }] : [];
+    for (const r of SIM_REMOTE) CLI_SERVERS.push({ name: r.name, transport: 'http', source: 'user' });
     const serversOf = (s: SimAgent): { name: string; transport: string; source: string }[] => [
       ...CLI_SERVERS,
       ...(fakeExtras[s.info.cwd] ?? []).filter((v) => v.enabled && v.trusted).map((v) => ({ name: v.name, transport: v.transport, source: 'workspace' })),
@@ -709,7 +732,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simMcpAuth = simQs?.get('simmcpauth') ?? '';
     /* `simmcpttl=N` (seconds, 1-600): the time limit of an open sign-in, so a driver can see "Sign-in was not finished" (real: 10 minutes) */
     const simMcpTtl = Math.max(1, Math.min(600, Math.floor(Number(simQs?.get('simmcpttl'))) || 600)) * 1000;
-    const simSignOpen = (s: SimAgent, n: string): { opened: boolean; at: number } | undefined => {
+    /* FR-164 like main: only a server of the lists with an http(s) address; never built-in, never stdio */
+    const simRemoteMcp = (n: string): boolean => SIM_REMOTE.some((r) => r.name === n);
+    const simSignOpen = (s: SimAgent, n: string): { opened: boolean; at: number; again?: boolean } | undefined => {
       const e = s.mcpSign?.get(n);
       if (e && Date.now() - e.at >= simMcpTtl) { s.mcpSign?.delete(n); return undefined; }
       return e;
@@ -1047,6 +1072,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       { name: 'github', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'npx', args: ['-y', '@example/github-mcp'], enabled: true },
       { name: 'my-notes', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'node', args: ['/home/vikram/tools/notes-mcp.js'], enabled: true },
       { name: 'github-mcp-server', origin: 'builtin' as const, enabled: true },
+      ...SIM_REMOTE.map((r) => ({ name: r.name, origin: 'copilot-config' as const, transport: 'http' as const, url: r.url, enabled: true })),
     ];
     // ---- Fake agent-app lists (spec 069 FR-040): in memory; previews masked like main's; nothing is written anywhere ----
     type GApp = 'copilot' | 'claude' | 'codex';
@@ -1311,7 +1337,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const signOf = (n: string, origin: 'cli' | 'folder' | 'runtime') => {
           if (!simMcpAuth || (s.info.adapterId ?? 'copilot') !== 'copilot') return {};
           const st = reported(n);
-          if (!live || s.mcpOff?.has(n) || (st.status !== 'needs-auth' && !(st.status === 'failed' && st.errorClass === 'auth'))) return {};
+          const needs = st.status === 'needs-auth' || (st.status === 'failed' && st.errorClass === 'auth');
+          // like main: an open Sign in again stays visible while the row reads Starting
+          const held = live && !s.mcpOff?.has(n) && !needs ? simSignOpen(s, n) : undefined;
+          if (held?.again && st.status === 'pending') return { signIn: { host: 'auth.example.com', opened: held.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - held.at)) } };
+          // spec 058 FR-164: Sign in again on a connected or failed server (main's canSignInAgainStatus), with the host once it is open
+          if (live && !s.mcpOff?.has(n) && !needs && (st.status === 'connected' || st.status === 'failed') && simMcpAuth !== 'manual' && simRemoteMcp(n)) { // main: canSignInAgainStatus (a remote server Durbar knows by its https address)
+            const o = simSignOpen(s, n);
+            return { canSignInAgain: true, ...(o ? { signIn: { host: 'auth.example.com', opened: o.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - o.at)) } } : {}) };
+          }
+          if (!live || s.mcpOff?.has(n) || !needs) return {};
           const open = simSignOpen(s, n);
           const steps = origin === 'folder' ? 'This server is only known to Agent Durbar; use Sign in here.' : 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth ' + n + '` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).';
           return { signInSteps: steps, ...(simMcpAuth === 'manual' ? {} : { canSignIn: true, ...(open ? { signIn: { host: 'auth.example.com', opened: open.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - open.at)) } } : {}) }) };
@@ -1368,14 +1403,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true };
       },
       /* spec 058 FR-071: Sign in -> the host -> Open sign-in page (opens nothing; "Running" after 2 s). The address is never in the page. */
-      agentMcpSignIn: async (id, name) => {
+      agentMcpSignIn: async (id, name, again) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || (s.info.adapterId ?? 'copilot') !== 'copilot' || !simMcpAuth) return { ok: false, error: 'Unknown agent or server.' };
         if (simMcpAuth === 'manual') return { ok: false, manual: true, error: 'This Copilot version cannot start a sign-in from Agent Durbar.' };
         const st = simServer(s, sims.indexOf(s), name, true);
-        if (st.status !== 'needs-auth') return { ok: false, error: name + ' does not need a sign-in.' };
+        if (again === true ? !((st.status === 'connected' || st.status === 'failed') && simRemoteMcp(name)) : st.status !== 'needs-auth') return { ok: false, error: name + (again === true ? ' cannot be signed in again now.' : ' does not need a sign-in.') };
         if (simSignOpen(s, name)) return { ok: false, error: 'A sign-in for ' + name + ' is already open.' };
-        (s.mcpSign ??= new Map()).set(name, { opened: false, at: Date.now() });
+        (s.mcpSign ??= new Map()).set(name, { opened: false, at: Date.now(), ...(again === true ? { again: true } : {}) });
         return { ok: true, kind: 'browser', host: 'auth.example.com' };
       },
       agentMcpOpenSignIn: async (id, name, shownHost) => {
@@ -1384,8 +1419,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s || !e || shownHost !== 'auth.example.com') return { ok: false, gone: true, error: 'That sign-in is no longer open. Press Sign in again.' };
         e.opened = true;
         console.info('[sim] would open the sign-in page on auth.example.com');
+        // FR-164: like the runtime after forceReauth, a server signed in again first leaves "connected" (Starting), then connects again
+        if (e.again) { (s.mcpRestarting ??= new Set()).add(name); mcpStatus(s, sims.indexOf(s)); }
         window.setTimeout(() => {
-          if (!s.mcpSign?.delete(name)) return; // cancelled or ended meanwhile
+          s.mcpRestarting?.delete(name);
+          if (!s.mcpSign?.delete(name)) { mcpStatus(s, sims.indexOf(s)); return; } // cancelled or ended meanwhile
           (s.mcpFixed ??= new Set()).add(name);
           mcpStatus(s, sims.indexOf(s)); // the runtime reports the server connected: the open dialog follows it
         }, 2000);
@@ -1580,9 +1618,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent', entries: [] };
         // page address simslash=long (spec 073 FR-008, review on #535): a 64-character name, a long hint and a 200-character description
-        // come first, for check:ui-text's long-text pass
-        const long = simQuery.get('simslash') === 'long' ? SIM_SLASH_LONG : [];
-        return { ok: true, entries: [...long, ...simSlash(s.info.adapterId ?? 'copilot')].map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
+        // come first, for check:ui-text's long-text pass; simslash=secret: fake token shapes (FR-014, issue #608)
+        return { ok: true, entries: simSlashFor(s.info.adapterId ?? 'copilot', simQuery).map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
       },
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
@@ -2174,6 +2211,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
         if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Raise limit, Remove limit or Stop here first.' };
+        // spec 041 FR-065 delta (issue #608 review): `simsendfail=secret` fakes an app error that holds token shapes, also split by Markdown
+        if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'secret')
+          return { ok: false, error: 'The agent app refused the message: ' + SECRETS_TEXT + ' Also gh`p_' + SIM_TOK.ghp.slice(4) + '` and ' + SIM_TOK.ghp.slice(0, 24) + '**' + SIM_TOK.ghp.slice(24) + '** (split late).' };
         // spec 012 FR-087: `simsendfail=sandbox` fakes Codex refusing Read-only / Ask first (the real Linux message), for the driver
         if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'sandbox' && s.info.permMode !== 'allow')
           return { ok: false, error: "Codex refused the session settings: fs sandbox helper failed: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox, so nothing ran. To allow it for bubblewrap, see the README (Codex)." };
@@ -2197,7 +2237,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         window.setTimeout(() => void reply(s, text), 400);
         // spec 073 FR-011: a folder or user entry is "sent as its text", as the real adapters do (FR-005)
         const sl = /^\/([A-Za-z0-9][A-Za-z0-9._:-]{0,63})(?:\s|$)/.exec(String(text).trim());
-        const hit = sl ? simSlash(kind).find((e) => e.source !== 'app' && e.name.toLowerCase() === sl[1].toLowerCase()) : undefined;
+        const hit = sl ? simSlashFor(kind, simQuery).find((e) => e.source !== 'app' && e.name.toLowerCase() === sl[1].toLowerCase()) : undefined;
         return hit ? { ok: true, slash: hit.where ?? hit.name, ...(hit.note ? { slashNote: hit.note } : {}) } : { ok: true };
       },
       stop: async (id) => {

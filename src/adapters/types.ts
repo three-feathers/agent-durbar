@@ -576,7 +576,7 @@ export interface AgentAdapter {
    * `browser`: the user finishes in the browser at `url` (main keeps it, the window only gets the host); `connected`: already signed in.
    * Rejects when the runtime has no such call or refuses it (the UI then shows `capabilities.mcpSignInSteps`).
    */
-  startMcpSignIn?(sessionId: string, name: string): Promise<McpSignInResult>;
+  startMcpSignIn?(sessionId: string, name: string, opts?: { again?: boolean }): Promise<McpSignInResult>;
   /**
    * Spec 058 FR-064 (real 2026-10-23: the runtime sent no event for a finished sign-in for a long while): read the session's MCP
    * servers from the agent app again and emit the usual `mcp` event. Optional, only with `startMcpSignIn`. Main calls it every 5 s while a

@@ -146,6 +146,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('startMcpSignIn'), !!cap.mcpSignIn, M('C2', 'startMcpSignIn() <=> capabilities.mcpSignIn (spec 058 FR-064)'));
     if (has('cancelMcpSignIn')) assert.ok(cap.mcpSignIn, M('C2', 'cancelMcpSignIn() only with capabilities.mcpSignIn'));
     if (has('refreshMcpStatus')) assert.ok(cap.mcpSignIn, M('C2', 'refreshMcpStatus() only with capabilities.mcpSignIn (spec 058 FR-064)'));
+    if (cap.mcpSignInAgain !== undefined) assert.ok(typeof cap.mcpSignInAgain === 'boolean' && (!cap.mcpSignInAgain || cap.mcpSignIn), M('C2', 'mcpSignInAgain is a boolean, and only with mcpSignIn (spec 058 FR-164)'));
     assert.ok(cap.mcpSignInSteps === undefined || (typeof cap.mcpSignInSteps === 'string' && cap.mcpSignInSteps.length > 0), M('C2', 'mcpSignInSteps is a non-empty string or missing'));
     assert.strictEqual(typeof cap.mcpSignIn, cap.mcpSignIn === undefined ? 'undefined' : 'boolean', M('C2', 'mcpSignIn is a boolean or missing'));
     assert.strictEqual(has('setPermMode'), cap.permModeSwitch !== 'none', M('C2', "setPermMode() <=> permModeSwitch !== 'none'"));
