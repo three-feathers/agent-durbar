@@ -845,6 +845,11 @@ async function main(): Promise<void> {
       auth = { error };
       await assert.rejects(ad.startMcpSignIn(sid, 'notes'), /This Claude Code version cannot start a sign-in from Agent Durbar\./, error);
     }
+    // review on #635: an "invalid ... request" is a refusal of this server: its own reason is kept
+    for (const error of ['Invalid request type for server notes', 'invalid control request: server notes is disabled', 'Unknown server: notes']) {
+      auth = { error };
+      await assert.rejects(ad.startMcpSignIn(sid, 'notes'), (e: Error) => e.message === error, error);
+    }
     // a timeout: the manual-steps message; the late answer is dropped unread
     auth = { hold: true };
     const evBefore = ev.length;
@@ -867,6 +872,15 @@ async function main(): Promise<void> {
     for (let i = 0; i < 3; i++) await ad.refreshMcpStatus(sid, 'notes');
     assert.deepStrictEqual(reqs, [{ subtype: 'mcp_status' }, { subtype: 'mcp_status' }, { subtype: 'mcp_status' }], 'each read is one mcp_status');
     assert.strictEqual(st('notes'), 'needs-auth', 'three polls that still say connected keep a mark-only needs-auth (no "Signed in" by itself)');
+    // review on #635: Sign in answering "no browser step needed" ends a mark-only needs-auth at once (the row agrees with the toast)
+    auth = { response: { requiresUserAction: false, callbackExpected: false } };
+    assert.deepStrictEqual(await ad.startMcpSignIn(sid, 'notes'), { kind: 'connected' });
+    assert.strictEqual(st('notes'), 'connected', 'the mark is gone and the row reads the CLI\'s connected');
+    const evN = ev.length;
+    assert.deepStrictEqual(await ad.startMcpSignIn(sid, 'notes'), { kind: 'connected' });
+    assert.strictEqual(ev.length, evN, 'without a mark nothing extra is emitted');
+    await ad.send(sid, { text: 'challenge' });
+    await until('marked again', () => (st('notes') === 'needs-auth' ? true : undefined));
     // Restart ends the mark (the FR-060 gap): mcp_reconnect, then the list through the mark rule
     reqs.length = 0;
     await ad.restartMcpServer(sid, 'notes');
@@ -888,6 +902,35 @@ async function main(): Promise<void> {
     assert.ok(!/auth\.example\.com|SECRETSTATE/.test(JSON.stringify(ev)), 'no address in an event');
     await ad.stop(sid);
     await assert.rejects(ad.startMcpSignIn(sid, 'notes'), /not running/);
+    // review on #635: the default clock is monotonic: a wall-clock jump during the request does not shrink ttlMs
+    {
+      const sp2 = fakeSpawn();
+      const realNow = Date.now;
+      sp2.next = (c2) => {
+        c2.onWrite = (o) => {
+          if (o.type === 'control_request') {
+            const r = o.request as { subtype: string };
+            if (r.subtype === 'mcp_authenticate') Date.now = () => realNow() + 3_600_000; // the wall clock jumps an hour ahead
+            const response = r.subtype === 'mcp_authenticate' ? { authUrl: PAGE, requiresUserAction: true } : {};
+            return void setTimeout(() => c2.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
+          }
+          if (o.type === 'user') setTimeout(() => { c2.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, tools: [], mcp_servers: [] }); c2.send({ type: 'result', subtype: 'success', is_error: false }); }, 0);
+        };
+      };
+      const ad2 = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+      let idle2 = false;
+      ad2.onEvent((e) => { if (e.type === 'status' && (e as { status: string }).status === 'idle') idle2 = true; });
+      const s2 = await ad2.start({ workspace: WS, quiet: true });
+      await ad2.send(s2, { text: 'hi' });
+      await until('idle2', () => (idle2 ? true : undefined));
+      try {
+        const r2 = (await ad2.startMcpSignIn(s2, 'notes')) as { ttlMs: number };
+        assert.ok(r2.ttlMs > 280_000, `ttlMs from a monotonic clock: ${r2.ttlMs}`);
+      } finally {
+        Date.now = realNow;
+      }
+      await ad2.stop(s2);
+    }
     // the SDK transport sends no mcp_authenticate: no Sign in members, the steps and the note stay (FR-180)
     const sdk = new ClaudeAdapter({ sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
     assert.deepStrictEqual([sdk.capabilities.mcpSignIn, sdk.capabilities.mcpSignInRestart, typeof sdk.startMcpSignIn, typeof sdk.refreshMcpStatus, !!sdk.capabilities.mcpSignInSteps, !!sdk.capabilities.mcpSignInNote], [undefined, undefined, 'undefined', 'undefined', true, true]);

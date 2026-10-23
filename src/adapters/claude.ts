@@ -109,8 +109,12 @@ export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() =>
 export const CLAUDE_SIGN_IN_TIMEOUT_MS = 30_000;
 /** Spec 058 FR-175/FR-181: the message for a CLI that does not answer the call (timeout, unknown subtype): main shows the terminal steps. */
 export const CLAUDE_NO_SIGN_IN = 'This Claude Code version cannot start a sign-in from Agent Durbar.';
-/** A control error that says the CLI does not know the request at all (an older or newer CLI), not a refusal of this server. */
-const UNKNOWN_SUBTYPE = /\b(unknown|unsupported|unrecognized|unrecognised|unhandled|invalid)\b[^\n]{0,40}\b(subtype|control request|request type)\b/i;
+/**
+ * A control error that says the CLI does not know the request at all (an older or newer CLI), not a refusal of this server: "unknown /
+ * unsupported / unrecognized / unhandled ... subtype" or "... control request". Not "invalid": an "invalid request" can be a refusal of this
+ * server, and its own reason is shown then (review on #635).
+ */
+const UNKNOWN_SUBTYPE = /\b(unknown|unsupported|unrecognized|unrecognised|unhandled)\b[^\n]{0,40}\b(subtype|control request)\b/i;
 /** Spec 066: one sentence added to a plan-first message, so the plan reaches the card (Claude's plan file cannot be written in Read-only). */
 export const CLAUDE_PLAN_NOTE = '(Plan first: write the full plan in your reply, not in a file, then call ExitPlanMode. Do not change anything yet.)';
 /** The text blocks of one assistant message (top level). */
@@ -483,7 +487,7 @@ export interface ClaudeAdapterDeps {
   loggedIn?: () => Promise<boolean | undefined>;
   /** Spec 051 FR-011: the parsed `claude auth status --json` (local); tests inject a fake. Default: runs it on the found `claude`. */
   authJson?: () => Promise<Record<string, unknown> | undefined>;
-  /** Spec 058 FR-175: the clock of a sign-in's `ttlMs` (tests inject one). Default `Date.now`. */
+  /** Spec 058 FR-175: the clock of a sign-in's `ttlMs` (tests inject one). Default `performance.now()` (monotonic). */
   now?: () => number;
   /** Spec 058 FR-175: how long to wait for the `mcp_authenticate` answer (tests pass a short one). Default 30 s. */
   signInTimeoutMs?: number;
@@ -944,7 +948,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const t = s.transport;
     if (!t?.alive) throw new Error('Send a message first, then sign in.'); // Q15: no early CLI launch for a sign-in
     if (s.launchedOff?.has(name) || (s.options.disabledMcpServers ?? []).includes(name)) throw new Error('Switch it on first; it starts with your next message.');
-    const now = this.deps.now ?? Date.now;
+    const now = this.deps.now ?? (() => performance.now()); // monotonic: a wall-clock jump never stretches or empties ttlMs (review on #635)
     const sent = now();
     let r: Record<string, unknown>;
     try {
@@ -958,7 +962,12 @@ export class ClaudeAdapter implements AgentAdapter {
     if (this.sessions.get(sessionId) !== s || s.transport !== t || !t.alive) throw new Error('Claude Code restarted during the sign-in. Press Sign in again.');
     const url = r?.authUrl;
     if (typeof url === 'string' && url && r.requiresUserAction === true && r.callbackExpected !== false) return { kind: 'browser', url, ttlMs: signInTtlMs(now() - sent) };
-    if (r?.requiresUserAction === false && url === undefined) return { kind: 'connected' };
+    if (r?.requiresUserAction === false && url === undefined) {
+      // FR-175 (review on #635): the CLI says this server needs no browser step: a real change, so its FR-060 mark ends (as Restart
+      // does) and the row reads what the CLI reports, in step with the "Signed in" toast
+      if (s.mcpAuthSeen?.delete(name) && s.lastMcp) this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
+      return { kind: 'connected' };
+    }
     // a claude.ai connector (`callbackExpected: false`) or any other shape: not a sign-in Durbar can finish here
     throw new Error('Claude Code cannot finish this sign-in inside Agent Durbar.');
   }

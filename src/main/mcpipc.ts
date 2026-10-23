@@ -60,8 +60,8 @@ export function registerMcpIpc(deps: {
   globalFor?(agentId: string): Record<string, McpServerSpec>;
   /** Spec 069 FR-011: the names of each agent app's user list, read now. */
   globalNames?(): Partial<Record<GlobalApp, string[]>>;
-  /** Spec 058 FR-185: the servers of Codex's own `config.toml` (spec 069 `GlobalLists`), for the "different site" line of a Codex agent. */
-  codexServers?(): Record<string, McpServerSpec>;
+  /** Spec 058 FR-185: the addresses of Codex's own `config.toml` servers (the values-free view), for the "different site" line of a Codex agent. */
+  codexServers?(): Record<string, { url?: string }>;
   /** The agent app of an agent (`copilot`, `claude`, `codex`, ...). */
   appOf?(agentId: string): string | undefined;
   /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */

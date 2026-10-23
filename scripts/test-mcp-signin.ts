@@ -20,10 +20,13 @@ import type { AgentInfo } from '../src/shared/api';
 import { createDebugSink } from '../src/shared/redact';
 import { agentMcpReply, signInStepsFor } from '../src/main/mcpsession';
 import type { McpReplyInput } from '../src/main/mcpsession';
-import { MAX_SIGN_INS, McpSignInStore, POLL_MS, RECENT_SIGN_IN_MS, SIGN_IN_TTL_MS, blockedAuthHost, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, registrableDomain, serverUrlFor, signInErrorText, signInSiteNote } from '../src/main/mcpsignin';
+import { MAX_SIGN_INS, McpSignInStore, POLL_MS, RECENT_SIGN_IN_MS, SIGN_IN_MIN_TTL_MS, SIGN_IN_TTL_MS, appServerUrls, blockedAuthHost, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, registrableDomain, serverUrlFor, signInErrorText, signInSiteNote } from '../src/main/mcpsignin';
 import type { ServerUrlSources } from '../src/main/mcpsignin';
 import type { McpServerSpec } from '../src/shared/mcp';
 import { signInTtlMs } from '../src/shared/mcp';
+import { ClaudeAdapter, claudeArgs } from '../src/adapters/claude';
+import { createCliTransport } from '../src/adapters/claudeTransport';
+import { fakeSpawn } from './fakes/claude-cli';
 import { McpStore } from '../src/main/mcpstore';
 
 const PAGE = 'https://auth.example.com/authorize?client_id=abc&state=SECRETSTATE123&code_challenge=PKCEPKCEPKCE';
@@ -576,7 +579,9 @@ async function main(): Promise<void> {
       let t = 0;
       const st = new McpSignInStore(() => t, async () => undefined);
       // the agent app's listener time: 5 minutes minus the time to the answer minus 10 s, at least 30 s
-      assert.deepStrictEqual([signInTtlMs(0), signInTtlMs(1_500), signInTtlMs(200_000), signInTtlMs(259_999), signInTtlMs(400_000), signInTtlMs(NaN), signInTtlMs(-5)], [290_000, 288_500, 90_000, 30_001, 30_000, 290_000, 290_000]);
+      assert.deepStrictEqual([signInTtlMs(0), signInTtlMs(1_500), signInTtlMs(200_000), signInTtlMs(259_999), signInTtlMs(400_000)], [290_000, 288_500, 90_000, 30_001, 30_000]);
+      // review on #635: a broken wait (negative, NaN, Infinity) counts as the full 30 s request timeout, never as no wait
+      assert.deepStrictEqual([signInTtlMs(NaN), signInTtlMs(-5), signInTtlMs(-Infinity), signInTtlMs(Infinity)], [260_000, 260_000, 260_000, 260_000]);
       assert.ok(st.begin('a', 'claude-srv', PAGE, 'auth.example.com', undefined, signInTtlMs(25_000)) && st.begin('a', 'copilot-srv', PAGE, 'auth.example.com'));
       assert.deepStrictEqual([st.view('a', 'claude-srv')!.expiresInMs, st.view('a', 'copilot-srv')!.expiresInMs], [265_000, 600_000], 'each entry shows its own limit');
       t = 264_999;
@@ -586,8 +591,8 @@ async function main(): Promise<void> {
       assert.strictEqual(st.view('a', 'copilot-srv')!.expiresInMs, 335_000);
       t = 600_000;
       assert.ok(!st.has('a', 'copilot-srv'), 'and Copilot\'s at 10 minutes');
-      // a ttlMs over 10 minutes is capped; a value that is not a positive number is ignored
-      for (const [bad, want] of [[3_600_000, 600_000], [NaN, 600_000], [0, 600_000], [-1, 600_000], [Infinity, 600_000], ['5000' as unknown as number, 600_000], [45_000, 45_000]] as const) {
+      // a ttlMs over 10 minutes is capped; missing = 10 minutes; present but not a positive finite number = the 30 s minimum (review on #635)
+      for (const [bad, want] of [[3_600_000, 600_000], [undefined, 600_000], [NaN, 30_000], [0, 30_000], [-1, 30_000], [Infinity, 30_000], ['5000' as unknown as number, 30_000], [null as unknown as number, 30_000], [45_000, 45_000]] as const) {
         assert.ok(st.begin('b', 'x', PAGE, 'h', undefined, bad));
         assert.strictEqual(st.view('b', 'x')!.expiresInMs, want, `ttlMs ${String(bad)}`);
         st.drop('b', 'x');
@@ -660,6 +665,43 @@ async function main(): Promise<void> {
       assert.strictEqual(by(agentMcpReply(base(cop, s3)), 'notes').signInRestart, undefined);
     }
 
+    // ---- review on #635: a real ClaudeAdapter on the fake CLI transport, through mcpSignInOp: main's address rule applies to Claude's answer ----
+    {
+      let authUrl = '';
+      const sp = fakeSpawn();
+      sp.next = (c) => {
+        c.onWrite = (o) => {
+          if (o.type === 'control_request') {
+            const r = o.request as { subtype: string };
+            const response = r.subtype === 'mcp_authenticate' ? { authUrl, requiresUserAction: true, callbackExpected: true, state: 'SECRETSTATE123', callbackPort: 41234 } : r.subtype === 'mcp_status' ? { mcpServers: [{ name: 'notes', status: 'needs-auth' }] } : {};
+            setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
+          } else if (o.type === 'user') {
+            setTimeout(() => { c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: ws, tools: [], mcp_servers: [{ name: 'notes', status: 'needs-auth' }] }); c.send({ type: 'result', subtype: 'success', is_error: false }); }, 0);
+          }
+        };
+      };
+      const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+      let idle = false;
+      ad.onEvent((e) => { if (e.type === 'status' && (e as { status: string }).status === 'idle') idle = true; });
+      const sid = await ad.start({ workspace: ws, quiet: true, mcpServers: { notes: { type: 'http', url: 'https://mcp.example.com/mcp' } } });
+      await ad.send(sid, { text: 'hi' });
+      for (let i = 0; i < 500 && !idle; i++) await new Promise((r) => setTimeout(r, 2));
+      assert.ok(idle, 'the CLI ran one turn');
+      const store = new McpSignInStore(() => 0, async () => undefined);
+      const d = { agents: new Map([[sid, info(sid)]]), router: routerOf(ad), live: () => [{ name: 'notes', status: 'needs-auth', errorClass: 'auth' as const }], secrets: () => [] };
+      for (const bad of ['http://auth.example.com/authorize?state=SECRETSTATE123', 'https://127.0.0.1:41234/authorize', 'https://intranet/authorize', 'https://localhost/authorize', 'https://[::1]/authorize', 'https://user:pw@auth.example.com/a', 'https://auth.example.com/a b']) {
+        authUrl = bad;
+        const r = await mcpSignInOp(d, store, sid, 'notes');
+        assert.deepStrictEqual([r.ok, (r as { manual?: boolean }).manual], [false, true], `Claude answered ${bad}: the terminal steps show`);
+        assert.ok(!store.has(sid, 'notes'), `nothing held for ${bad}`);
+        assert.ok(!JSON.stringify(r).includes('SECRETSTATE') && !JSON.stringify(r).includes('127.0.0.1') && !JSON.stringify(r).includes('intranet'), 'the refusal repeats no address');
+      }
+      authUrl = 'https://auth.example.com/authorize?state=SECRETSTATE123';
+      assert.deepStrictEqual(await mcpSignInOp(d, store, sid, 'notes'), { ok: true, kind: 'browser', host: 'auth.example.com' }, 'and a good https page is held');
+      assert.ok(store.view(sid, 'notes')!.expiresInMs <= 290_000 && store.view(sid, 'notes')!.expiresInMs >= 30_000, 'with Claude\'s listener time');
+      await ad.stop(sid);
+    }
+
     // ---- FR-185 (T157): the "different site" line compares with this app's own server, never another app's list ----
     {
       const src = (o: Partial<{ extras: Array<{ name: string; url?: string }>; copilot: Array<{ name: string; url?: string }>; claude: Record<string, { url?: string }>; codex: Record<string, { url?: string }> }>): ServerUrlSources => ({ extras: () => o.extras ?? [], copilot: () => o.copilot ?? [], claude: () => o.claude ?? {}, codex: () => o.codex ?? {} });
@@ -685,6 +727,13 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(['copilot', 'claude', 'codex'].map((a) => serverUrlFor(a, 'notes', ex)), ['https://extra.example/mcp', 'https://extra.example/mcp', 'https://extra.example/mcp']);
       assert.strictEqual(serverUrlFor('copilot', 'notes', src({ copilot: copilotNotes, claude: { notes: { url: 'https://c.example/' } } })), 'https://tools.other.example/mcp', 'Copilot: its CLI list');
       assert.strictEqual(serverUrlFor('copilot', 'notes', src({ claude: { notes: { url: 'https://c.example/' } }, codex: { notes: { url: 'https://d.example/' } } })), undefined, 'Copilot: never another app\'s list');
+      // review on #635: Codex's addresses come from the values-free Settings view, as {name: {url}} only
+      const view = [{ app: 'copilot', servers: [{ name: 'notes', url: 'https://tools.other.example/mcp', envKeys: [], headerKeys: [] }] }, { app: 'codex', servers: [{ name: 'notes', url: 'https://mcp.notes.example/mcp', envKeys: ['TOKEN'], headerKeys: ['Authorization'] }, { name: 'local', envKeys: [], headerKeys: [] }, { name: 'notes', url: 'https://dup.example/' }] }];
+      const cx = appServerUrls(view, 'codex');
+      assert.deepStrictEqual({ ...cx }, { notes: { url: 'https://mcp.notes.example/mcp' }, local: {} }, 'addresses only, first entry wins, no keys or values');
+      assert.strictEqual(serverUrlFor('codex', 'notes', src({ copilot: copilotNotes, codex: cx })), 'https://mcp.notes.example/mcp');
+      assert.strictEqual(appServerUrls(view, 'codex').toString, undefined, 'no prototype: a name like toString is never inherited');
+      assert.strictEqual(SIGN_IN_MIN_TTL_MS, 30_000);
       // the other lists are not even read for an app that does not use them
       let reads = 0;
       const counting: ServerUrlSources = { extras: () => [], copilot: () => { reads++; return copilotNotes; }, claude: () => ({}), codex: () => ({ notes: { url: 'https://mcp.notes.example/' } }) };
@@ -724,7 +773,7 @@ async function main(): Promise<void> {
           dev: { DURBAR_COPILOT_DIR: cdir } as never,
           appOf: (id) => (id === sClaude ? 'claude' : 'codex'),
           globalFor: (id): Record<string, McpServerSpec> => (id === sClaude ? { notes: { type: 'http', url: 'https://mcp.notes.example/mcp' } } : {}),
-          codexServers: () => ({ notes: { type: 'http', url: 'https://mcp.notes.example/mcp' } }),
+          codexServers: () => ({ notes: { url: 'https://mcp.notes.example/mcp' } }),
           openUrl: async () => undefined,
           now: () => t,
           timers: { set: () => ({}), clear: () => undefined },

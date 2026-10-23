@@ -19,6 +19,8 @@ import { needsSignIn, validServerName } from './mcpsession';
 export const SIGN_IN_TTL_MS = 10 * 60 * 1000;
 /** FR-176: for this long after a sign-in started, a dialog open or a window focus reads the server list once (a finish after Cancel shows). */
 export const RECENT_SIGN_IN_MS = 5 * 60 * 1000;
+/** FR-180: the shortest limit; also what an adapter's invalid `ttlMs` gets. */
+export const SIGN_IN_MIN_TTL_MS = 30_000;
 /** At most this many open sign-ins in all (a window cannot fill memory with them). */
 export const MAX_SIGN_INS = 64;
 
@@ -69,6 +71,13 @@ export interface ServerUrlSources {
   /** Codex's own `config.toml` entries as spec 069's `GlobalLists` reads them. */
   codex(): Readonly<Record<string, { url?: string }>>;
 }
+/** FR-185: an app's list as the values-free Settings view has it (`GlobalLists.state`), as `{name: {url}}` (no env or header value is read). */
+export function appServerUrls(apps: ReadonlyArray<{ app: string; servers: ReadonlyArray<{ name: string; url?: string }> }>, app: string): Record<string, { url?: string }> {
+  const out: Record<string, { url?: string }> = Object.create(null);
+  for (const a of apps) if (a.app === app) for (const v of a.servers) if (typeof v.name === 'string' && !(v.name in out)) out[v.name] = typeof v.url === 'string' ? { url: v.url } : {};
+  return out;
+}
+
 /**
  * Spec 058 FR-185 (T157; a bug in #598): the server's own address for the "different site" line, from the lists **this agent's app**
  * uses: Copilot: folder extras, then the Copilot CLI list; Claude Code: folder extras, then its user list; Codex: folder extras, then its
@@ -178,12 +187,13 @@ export class McpSignInStore {
   }
   /**
    * Hold an address that already passed `elicitHttpsUrl`. False when one is open for this server (one at a time). FR-180: `ttlMs` (the
-   * agent app's own listener time, from the adapter) shortens the limit; missing or not a positive number = 10 minutes.
+   * agent app's own listener time, from the adapter) shortens the limit: missing = 10 minutes; present but not a positive finite number
+   * (0, negative, NaN, Infinity, a string) = the 30-second minimum (review on #635: a broken value never gets the longest limit).
    */
   begin(agentId: string, name: string, url: string, host: string, otherSite?: string, ttlMs?: number): boolean {
     this.sweep();
     if (this.live(agentId, name) || this.entries.size >= MAX_SIGN_INS) return false;
-    const ttl = typeof ttlMs === 'number' && Number.isFinite(ttlMs) && ttlMs > 0 ? Math.min(ttlMs, this.ttlMs) : this.ttlMs;
+    const ttl = ttlMs === undefined ? this.ttlMs : typeof ttlMs === 'number' && Number.isFinite(ttlMs) && ttlMs > 0 ? Math.min(ttlMs, this.ttlMs) : Math.min(SIGN_IN_MIN_TTL_MS, this.ttlMs);
     const k = McpSignInStore.key(agentId, name);
     this.entries.set(k, { url, host, at: this.now(), ttl, opened: false, ...(otherSite ? { otherSite } : {}) });
     this.attempts.delete(k); // newest last: the cap below drops the oldest
