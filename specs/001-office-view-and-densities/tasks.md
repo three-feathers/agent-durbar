@@ -143,9 +143,9 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 
 ## Changes 2026-10-23 (owner: linked screenshots follow the office)
 
-- [ ] T105 Spec FR-082/FR-083, plan delta, the rule in `AGENTS.md`, `.github/pull_request_template.md`, `docs/collaboration.md` [FR-082, FR-083]
-- [ ] T106 `scripts/shots-docs.js` on `ui-suite.js` `runOne` (`freeze: false`, `HERO_OUT`, `SHOTS_DIR`); `shots-006-home` honours `OUT`; `npm run shots:docs` [FR-082]
-- [ ] T107 `test:uisuite`: every README, gallery and landing image has a driver or a reason [FR-083]
-- [ ] T109 Pinned clock, time zone and locale for simulator screenshots: `src/main/simclock.ts`, `src/renderer/simclock.js` (first script), `DURBAR_SIM_CLOCK`; `test:simclock`; `--out <dir>` [FR-084]
-- [ ] T108 Retake the stale linked screenshots with `npm run shots:docs` (simulator, Linux Xvfb) and check each picture by eye [FR-082]
+- [x] T105 Spec FR-082/FR-083, plan delta, the rule in `AGENTS.md`, `.github/pull_request_template.md`, `docs/collaboration.md` [FR-082, FR-083]
+- [x] T106 `scripts/shots-docs.js` on `ui-suite.js` `runOne` (`freeze: false`, `HERO_OUT`, `SHOTS_DIR`); `shots-006-home` honours `OUT`; `npm run shots:docs` [FR-082]
+- [x] T107 `test:uisuite`: every README, gallery and landing image has a driver or a reason [FR-083]
+- [x] T109 Pinned clock, time zone and locale for simulator screenshots: `src/main/simclock.ts`, `src/renderer/simclock.js` (first script), `DURBAR_SIM_CLOCK`; `test:simclock`; `--out <dir>`; `H.load` keeps `simclock` across a driver's reloads [FR-084]
+- [x] T108 Retake the stale linked screenshots with `npm run shots:docs` (simulator, Linux Xvfb) and check each picture by eye [FR-082]
 

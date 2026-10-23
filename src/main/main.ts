@@ -132,15 +132,15 @@ const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 /** Only Copilot is registered; every agent is routed to its adapter through the router (spec 012 FR-046..FR-050). Adapters are typed as the neutral interface: optional members say what each can do (spec 030 FR-017, spec 012 FR-027). */
 /** Spec 010 FR-022: the simulator runs in the window only; main then never reaches a real agent app (FR-023 in ipcguard.ts, FR-024 here). */
 const SIMULATOR = simulatorOn(dev);
+initSimGuard(SIMULATOR); // spec 010 FR-031: ipcguard uses this decision; it runs before any register* below
+// spec 010 FR-030: under the simulator no child process starts at all (detection probes, git, VS Code, installs): each starter refuses and is counted
+const childSeal = SIMULATOR ? sealChildProcess(childProcess as unknown as Record<string, unknown>) : undefined;
 // spec 001 FR-084: simulator screenshots pin the clock (the page's), the time zone and the locale, so unchanged screens give the same pixels
 const SIM_CLOCK = SIMULATOR ? simClockQuery(dev.DURBAR_SIM_CLOCK) : undefined;
 if (SIM_CLOCK) {
   process.env.TZ = 'UTC'; // inherited by the renderer
   app.commandLine.appendSwitch('lang', 'en-US');
 }
-initSimGuard(SIMULATOR); // spec 010 FR-031: ipcguard uses this decision; it runs before any register* below
-// spec 010 FR-030: under the simulator no child process starts at all (detection probes, git, VS Code, installs): each starter refuses and is counted
-const childSeal = SIMULATOR ? sealChildProcess(childProcess as unknown as Record<string, unknown>) : undefined;
 // spec 010 FR-024: under the simulator every descriptor creates an inert stand-in, never the real adapter
 const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)], SIMULATOR)); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);

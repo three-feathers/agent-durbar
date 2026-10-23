@@ -99,7 +99,10 @@ function helpers(ctx) {
    */
   const load = async (o = {}) => {
     if (o.w && o.h) ctx.win.setContentSize(o.w, o.h);
-    const query = { sim: '15', simfreeze: '1', ...(o.query || {}) };
+    // spec 001 FR-084: a pinned simulator clock (main's `simclock`, from DURBAR_SIM_CLOCK) stays pinned across the driver's reloads
+    let clock = null;
+    try { clock = new URL(wc().getURL()).searchParams.get('simclock'); } catch { clock = null; }
+    const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.query || {}) };
     for (const k of Object.keys(query)) if (query[k] === undefined) delete query[k];
     await ctx.win.loadFile(o.index || INDEX, { query });
     const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=15`;

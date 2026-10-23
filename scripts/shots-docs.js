@@ -45,7 +45,6 @@ const DOC_SHOTS = [
   { name: 'shots-024', files: ['024-lobby-1440x900.png'] },
   { name: 'shots-030-handoff', files: ['handoff-review-1440x900.png'] },
   { name: 'shots-033', files: ['033-floors-on-1440x900.png'] },
-  { name: 'shots-040-aitheme', env: { DURBAR_SIM_KINDS: 'mixed' }, files: [{ to: '040-aitheme-pirate-1440x900.png', from: '040-aitheme-1440x900.png' }] },
   { name: 'shots-043-ai', files: ['043-ai-questionnaire-1440x900.png'] },
   { name: 'shots-043-editor', files: ['043-editor-new-asp-split-1440x900.png', '043-editor-split-clean-1440x900.png'] },
   { name: 'shots-044-templates', files: ['044-templates-1440x900.png'] },
@@ -64,8 +63,10 @@ const DOC_SHOTS = [
   })),
 ];
 
-/** Linked pictures that no driver retakes, with the reason (FR-083). Empty today; a new entry needs a reason a reviewer accepts. */
-const NO_DRIVER = {};
+/** Linked pictures that no driver retakes, with the reason (FR-083). A new entry needs a reason a reviewer accepts. */
+const NO_DRIVER = {
+  '040-aitheme-pirate-1440x900.png': 'made from a real AI generation ("a pirate ship at night", spec 040 real: 2026-10-19); the simulator\'s canned theme is another look (Night-shift newsroom) and the manifest was not kept, so a retake needs a real run (owner approval) or a stored manifest',
+};
 
 const target = (f) => (typeof f === 'string' ? f : f.to);
 const source = (f) => (typeof f === 'string' ? f : f.from);

@@ -43,4 +43,7 @@ const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), '
 const first = /<script src="([^"]+)"/.exec(html);
 assert.strictEqual(first && first[1], 'simclock.js', 'the shim is the first script of the page');
 assert.ok(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8').includes("'simclock.js'"), 'the build copies it');
+// drivers reload the page with their own query: the shared H.load keeps a pinned clock (else only the first page would be pinned)
+const helpersSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'driver-helpers.js'), 'utf8');
+assert.ok(/searchParams\.get\('simclock'\)/.test(helpersSrc) && /simclock: clock/.test(helpersSrc), 'H.load carries simclock across reloads');
 console.log('simclock: ok');
