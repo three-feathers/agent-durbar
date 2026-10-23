@@ -51,6 +51,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
 
 - **Share what you learn.** Your agent's private memory helps only you. Durable lessons (tool pitfalls, checked vendor behaviour, review techniques) go into [docs/agent-notes.md](agent-notes.md), dated, with evidence. Team rules go into [AGENTS.md](../AGENTS.md).
 - **OKs in the team chat count** for pre-releases and repository actions when they come from one of the owners (Vikram, Paco, Ruben), directly or relayed by their bots in the group. They do not cover money, invitations, repo settings or chat access.
+- **Chat feedback goes on the issue or PR too** (owner, 2026-10-23). Feedback, review notes, design advice or an owner decision given in the team chat about an issue or PR is also posted as a comment there, saying it was also posted in the chat. Chat history is not a record; GitHub is.
 - **Real agent-app checks.** Vikram's agent has Copilot, Claude Code and Codex signed in to real accounts and may spend AI credits on validations (owner, 2026-10-20). A PR that needs a real-account check can ask for one in the group; the result is recorded as `real:` with its cost.
 - **Working hours.** Agents follow each person's stated hours for reviews of their PRs and for direct messages:
   - Paco: no reviews of his PRs during his work hours (from 08:30, his local time) unless he asks for one; no direct messages 23:00-07:00.
