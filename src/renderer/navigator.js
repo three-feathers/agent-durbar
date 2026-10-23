@@ -212,15 +212,16 @@
   const sameCombo=(a,b)=>!!a&&!!b&&sig(a)===sig(b);
 
   /* ---------------- Ctrl+A and Ctrl+Backspace outside text (issue 587, spec 074 FR-020, FR-021) ---------------- */
-  /* 'inbox' for Ctrl+A (⌘A), 'office' for Ctrl+Backspace (⌘⌫), 'attached' when going back would drop attachments, or '' to leave
+  /* 'inbox' for Ctrl+A (⌘A), 'office' for Ctrl+Backspace (⌘⌫), or '' to leave
      the key to text editing. Never in an editable field (even an empty one: holding the key to delete words would close the chat
      the moment the box empties), with text selected or under a dialog; Ctrl+A also not in the chat log, where it selects the
-     conversation. ctx: {editable, log, selected, dialog, attached}, read from the page by the caller. */
+     conversation. ctx: {editable, log, selected, dialog}, read from the page by the caller. Unsent text and attachments are kept per
+     chat (FR-022), so going back loses nothing. */
   function textSafeKey(e,mac,ctx){
     if(!e||e.isComposing||e.altKey||e.shiftKey)return '';
     if(!(mac?!!e.metaKey&&!e.ctrlKey:!!e.ctrlKey&&!e.metaKey))return '';
     const c=ctx||{}; if(c.editable||c.selected||c.dialog)return '';
-    if(e.code==='Backspace'||e.key==='Backspace')return c.attached?'attached':'office';
+    if(e.code==='Backspace'||e.key==='Backspace')return 'office';
     /* the typed letter first, like the app's other shortcuts; the position only when the key types no Latin letter (Cyrillic…),
        so AZERTY's Ctrl+Q (position A) stays Ctrl+Q */
     const k=String(e.key||'');

@@ -13,9 +13,10 @@
 | navigator | Esc, or Backspace on an empty filter | back one level; closes at the start level |
 | navigator | Tab | stays in the input |
 | chat opened by the navigator | Enter in the message box | send (existing composer) |
+| any chat with an unsent draft, not open | | a pencil on its desk, list row and strip item, "Unsent draft" (FR-024) |
 | any chat the user opens (desk, list row, strip, Ctrl+K, navigator, Needs you, Ctrl+`; not N / next agent, which focuses the title) | | the cursor at the end of the message box (its unsent text restored); never the answer bar; no box: the chat title |
 | outside text (no editable field focused, nothing selected, no dialog) | Ctrl+A / ⌘A | open Needs you (not in the chat log) |
-| outside text, a chat or the VS Code view open | Ctrl+Backspace / ⌘⌫ | back to the office (attachments waiting: stays, with a note) |
+| outside text, a chat or the VS Code view open | Ctrl+Backspace / ⌘⌫ | back to the office (the chat's unsent text and attachments are kept, FR-022) |
 | in an editable field, with a selection, in a dialog | Ctrl+A, Ctrl+Backspace | the field's own select all / delete; nothing else |
 
 The module `src/renderer/navigator.js` exposes (Node and `window.DurbarNav`):

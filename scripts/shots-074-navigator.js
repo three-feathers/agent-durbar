@@ -17,8 +17,10 @@
  *        box Ctrl+Backspace and Ctrl+A edit text as always (the chat stays, Needs you stays closed, an empty box too); outside
  *        text Ctrl+A opens Needs you and Ctrl+Backspace goes back to the office, but not in the chat log (Ctrl+A) or with a
  *        selection; unsent text is back when the chat opens again.
+ *   #612 a draft in chat A, switch to B: A's strip item, then its desk and list row show the pencil ("Unsent draft", >= 10.5px, inside,
+ *        no text); back in A its text is intact; sending clears A's pencil, emptying B's box clears B's.
  *   FR-012 / V  every badge and navigator text is at least 10.5px; badges stay inside their desk; the box fits the window.
- * Screenshots: 074-navigator-{start,floor,chats,chat,settings,office,list}-<w>x<h>.png
+ * Screenshots: 074-navigator-{start,floor,chats,chat,settings,office,list,drafts}-<w>x<h>.png
  */
 const assert = require('assert');
 const path = require('path');
@@ -262,6 +264,70 @@ module.exports = async (ctx) => {
     await key('Backspace', [], { char: 'never' });
     await key('Escape', [], { char: 'never' });
     await H.office();
+
+    // ---- issue #612 (FR-022, FR-024): each chat keeps its unsent text, and a pencil marks the chats that have one ----
+    const pair = await js(`[...document.querySelectorAll('#stage .desk[data-id]')].filter(d=>/^(idle|done)$/.test(d.dataset.state)).slice(0,2).map(d=>d.dataset.id)`);
+    assert.strictEqual(pair.length, 2, `${w}: two idle desks to draft in`);
+    const [dA, dB] = pair;
+    const marks = (id) => js(`(()=>{const e=CSS.escape(${jsLiteral(id)}),q=s=>document.querySelector(s);
+      const desk=q('#stage .desk[data-id="'+e+'"]'),row=q('#list .lrow[data-id="'+e+'"]'),strip=q('#stripList .sitem[data-sw="'+e+'"]'),m=x=>x&&x.querySelector('.draft-mark');
+      const shown=x=>!!x&&x.getBoundingClientRect().width>0;
+      const px=x=>{const k=m(x);if(!k||!shown(x))return 99;const r=k.querySelector('svg').getBoundingClientRect();return Math.min(r.width,r.height)};
+      const inside=x=>{const k=m(x);if(!k||!shown(x))return true;const r=k.getBoundingClientRect(),b=x.getBoundingClientRect(),top=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return r.width>0&&!!top&&k.contains(top)&&r.left>=b.left-0.5&&r.right<=b.right+0.5&&r.top>=b.top-0.5&&r.bottom<=b.bottom+0.5};
+      const aria=x=>x?/, unsent draft/.test(x.getAttribute('aria-label')||''):null;
+      return {desk:!!m(desk),deskAria:aria(desk),row:!!m(row),rowAria:aria(row),strip:!!m(strip),stripAria:aria(strip),title:(m(desk)||m(row)||m(strip)||{}).title||'',
+        px:Math.min(px(desk),px(row),px(strip)),inside:inside(desk)&&inside(row)&&inside(strip)}})()`);
+    const openDesk = async (id) => {
+      await js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(id)})+'"]').focus()`);
+      await key('Return', []);
+      await until(`document.body.classList.contains('panel-open')`, 3000);
+      await ctx.sleep(150);
+      return box();
+    };
+    let ma = await marks(dA);
+    assert.ok(!ma.desk && !ma.deskAria, `${w}: no pencil before any draft: ${JSON.stringify(ma)}`);
+    await openDesk(dA);
+    await type('draft for A');
+    await js(`document.querySelector('#stripList .sitem[data-sw="'+CSS.escape(${jsLiteral(dB)})+'"]').click()`);
+    await until(`(document.querySelector('#stripList .sitem.sel')||{}).dataset.sw===${jsLiteral(dB)}`, 3000);
+    await ctx.sleep(150);
+    ma = await marks(dA);
+    let mb = await marks(dB);
+    assert.ok(ma.strip && ma.stripAria && ma.title === 'Unsent draft', `${w}: after switching chats, A's strip item has the pencil, "Unsent draft" for screen readers and as tooltip: ${JSON.stringify(ma)}`);
+    assert.ok(!mb.strip, `${w}: the open chat B has no pencil`);
+    c = await box();
+    assert.ok(c.focus === 'msgInput' && c.v === '', `${w}: B opens with an empty box and the cursor in it: ${JSON.stringify(c)}`);
+    await type('draft for B');
+    await key('Escape', [], { char: 'never' });
+    await H.office();
+    ma = await marks(dA); mb = await marks(dB);
+    assert.ok(ma.desk && ma.deskAria && mb.desk && mb.deskAria, `${w}: both desks show the pencil and say "unsent draft": ${JSON.stringify({ ma, mb })}`);
+    assert.ok(ma.px >= 10.5 && ma.inside && mb.inside, `${w}: the pencil is at least 10.5px, inside its desk and not covered: ${JSON.stringify(ma)}`);
+    assert.ok(await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(dA)})+'"]'),n=d.querySelector('.name');return d.innerText.trim().startsWith(n.innerText.trim())&&n.scrollWidth<=n.clientWidth+0.5})()`), `${w}: the pencil adds no text and does not squeeze the name`);
+    await shot('drafts', w, h);
+    await js(`document.getElementById('vList').click()`);
+    await until(`document.querySelectorAll('#list button.lrow').length>=15`, 5000);
+    ma = await marks(dA);
+    assert.ok(ma.row && ma.rowAria && ma.inside && ma.px >= 10.5, `${w}: the list row shows the pencil too: ${JSON.stringify(ma)}`);
+    await js(`document.getElementById('vOffice').click()`);
+    await H.office();
+    c = await openDesk(dA);
+    assert.ok(c.v === 'draft for A' && c.focus === 'msgInput' && c.s === c.v.length, `${w}: A's text is intact, cursor at its end: ${JSON.stringify(c)}`);
+    assert.ok(!(await marks(dA)).strip && (await marks(dB)).strip, `${w}: while A is open its own strip item has no pencil; B's has one`);
+    await key('Return', [], { char: 'never' });
+    await until(`[...document.querySelectorAll('#chat .msg.user .bubble')].some(b=>b.textContent==='draft for A')&&document.getElementById('msgInput').value===''`, 5000);
+    await key('Escape', [], { char: 'never' });
+    await H.office();
+    ma = await marks(dA); mb = await marks(dB);
+    assert.ok(!ma.desk && !ma.deskAria && mb.desk, `${w}: sent: A's pencil is gone, B's stays: ${JSON.stringify({ ma, mb })}`);
+    c = await openDesk(dB);
+    assert.strictEqual(c.v, 'draft for B', `${w}: then B's text is intact`);
+    await key('A', [MOD], { char: 'never' });
+    await key('Backspace', [], { char: 'never' });
+    await key('Escape', [], { char: 'never' });
+    await H.office();
+    mb = await marks(dB);
+    assert.ok(!mb.desk && !mb.deskAria, `${w}: emptied: B's pencil is gone: ${JSON.stringify(mb)}`);
 
     // ---- review 2026-10-23: the empty reason is announced; a hostile agent name stays plain text ----
     await open();

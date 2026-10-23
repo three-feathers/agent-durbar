@@ -34,7 +34,7 @@ const N = require(path.join(ROOT, 'src', 'renderer', 'navigator.js')) as {
   takenBy: (c: Combo, mac: boolean) => [string, string, string?] | null;
   textSafeKey: (e: Ev, mac: boolean, ctx: Ctx) => string;
 };
-type Ctx = Partial<{ editable: boolean; log: boolean; selected: boolean; dialog: boolean; attached: boolean }>;
+type Ctx = Partial<{ editable: boolean; log: boolean; selected: boolean; dialog: boolean }>;
 
 // ---- matching: the palette's order (spec 052 FR-042), now shared ----
 const items: Item[] = [{ kind: 'x', label: 'Frontend app' }, { kind: 'x', label: 'api' }, { kind: 'x', label: 'My api tests' }, { kind: 'x', label: 'core', kw: 'apis' }];
@@ -289,8 +289,6 @@ assert.deepStrictEqual(N.loadCombo(JSON.stringify({ mod: true, code: 'KeyJ' }), 
     }
     assert.strictEqual(N.textSafeKey(A(mac), mac, { log: true }), '', `${os}: Ctrl/⌘+A in the chat log selects the conversation`);
     assert.strictEqual(N.textSafeKey(B(mac), mac, { log: true }), 'office', `${os}: Ctrl/⌘+Backspace in the chat log goes back (no text there to lose)`);
-    assert.strictEqual(N.textSafeKey(B(mac), mac, { attached: true }), 'attached', `${os}: attachments waiting: stay and say so`);
-    assert.strictEqual(N.textSafeKey(A(mac), mac, { attached: true }), 'inbox', `${os}: attachments do not matter to Needs you (the chat stays open behind it)`);
     for (const x of [{ shiftKey: true }, { altKey: true }, { isComposing: true }] as Ev[]) {
       assert.strictEqual(N.textSafeKey(A(mac, x), mac, {}), '', `${os}: not with ${JSON.stringify(x)} (Ctrl+Shift+A is its own shortcut)`);
       assert.strictEqual(N.textSafeKey(B(mac, x), mac, {}), '', `${os}: Backspace not with ${JSON.stringify(x)}`);
