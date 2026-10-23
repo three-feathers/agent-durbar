@@ -158,7 +158,7 @@ export class McpSignInStore {
     const e = this.live(agentId, name);
     if (!e) return 'gone';
     // bound to what the user saw: a host the window did not show is never opened (the window repaints with the current one)
-    
+    if (typeof shownHost !== 'string' || shownHost !== e.host) return 'gone';
     const u = strictHttpsUrl(e.url);
     if (!u) {
       this.drop(agentId, name);
