@@ -249,6 +249,11 @@ body.has-bridge #topBtns{display:flex}
 .hs-acct-who{white-space:nowrap} /* spec 051 FR-018 (owner): the name and its eye button stay on one line; the rest of the line wraps after them */
 .hs-acct-who .hs-reveal{margin-left:4px}
 .hs-plan-uses[hidden]{display:none}
+/* spec 051 FR-021 (owner): a signed-in card's facts, one per line, bold label and colon; in a narrow card the value wraps under its label */
+.hs-facts{margin:4px 0;font-size:var(--t5-size);line-height:1.5;color:var(--ink-2)}
+.hs-fact{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px}
+.hs-fact dt{font-weight:700;color:var(--ink)}
+.hs-fact dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .hs-reveal{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-left:6px;min-width:24px;min-height:24px;padding:2px;border:1px solid var(--line-ctl);border-radius:6px;background:transparent;color:inherit;cursor:pointer}
 .hs-reveal:hover{background:var(--surface-2)}
 .hs-reveal:focus-visible{outline:3px solid var(--focus);outline-offset:1px;box-shadow:0 0 0 5px var(--focus-halo,transparent)}

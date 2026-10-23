@@ -13,6 +13,8 @@ const drop = (a: AccountIdentity): AccountIdentity => {
   if (a.service) out.service = a.service;
   if (a.plan) out.plan = a.plan;
   if (a.method) out.method = a.method;
+  if (a.provider) out.provider = a.provider;
+  if (a.via) out.via = a.via;
   return out;
 };
 
@@ -38,7 +40,10 @@ export function copilotAccount(s: unknown): AccountIdentity {
   if (!s.isAuthenticated) return { status: 'signed-out' };
   const t = s.authType;
   const method: AccountIdentity['method'] = t === 'gh-cli' ? 'gh-cli' : t === 'env' || t === 'token' ? 'token' : t === 'api-key' || t === 'hmac' ? 'api-key' : t === 'user' ? 'account' : undefined;
-  return drop({ status: 'signed-in', name: cleanName(s.login), service: githubService(s.host), method });
+  // FR-021: the route as the runtime names it (`authType`); an unknown one gives no "Signed in via" line
+  const via = t === 'gh-cli' ? 'GitHub CLI' : t === 'user' ? 'Copilot CLI login' : t === 'env' ? 'Token from the environment' : t === 'token' ? 'Token' : t === 'api-key' ? 'API key' : t === 'hmac' ? 'HMAC key' : undefined;
+  const service = githubService(s.host);
+  return drop({ status: 'signed-in', name: cleanName(s.login), service, method, provider: service, via });
 }
 
 const CLAUDE_PROVIDERS: Record<string, string> = { bedrock: 'Amazon Bedrock', vertex: 'Google Vertex AI', foundry: 'Microsoft Foundry' };
@@ -53,13 +58,13 @@ export function claudeAccount(j: unknown): AccountIdentity {
   if (!j.loggedIn || j.authMethod === 'none') return { status: 'signed-out' };
   const provider = typeof j.apiProvider === 'string' && j.apiProvider !== 'firstParty' ? CLAUDE_PROVIDERS[j.apiProvider.toLowerCase()] ?? cleanName(j.apiProvider, 40) : undefined;
   const email = cleanName(j.email);
-  if (provider) return drop({ status: 'signed-in', name: email, service: provider, method: 'provider' });
+  if (provider) return drop({ status: 'signed-in', name: email, service: provider, method: 'provider', provider });
   if (j.authMethod === 'claude.ai') {
     const plan = planWord(j.subscriptionType);
-    return drop({ status: 'signed-in', name: email, service: 'Claude', plan: plan ? `Claude ${plan}` : undefined, method: 'account' });
+    return drop({ status: 'signed-in', name: email, service: 'Claude', plan: plan ? `Claude ${plan}` : undefined, method: 'account', provider: 'Claude', via: 'Claude login' });
   }
-  if (j.authMethod === 'api_key') return drop({ status: 'signed-in', name: email, service: 'Anthropic', method: 'api-key' });
-  if (j.authMethod === 'oauth_token') return drop({ status: 'signed-in', name: email, service: 'Claude', method: 'token' });
+  if (j.authMethod === 'api_key') return drop({ status: 'signed-in', name: email, service: 'Anthropic', method: 'api-key', provider: 'Anthropic', via: 'API key' });
+  if (j.authMethod === 'oauth_token') return drop({ status: 'signed-in', name: email, service: 'Claude', method: 'token', provider: 'Claude', via: 'Long-lived token' });
   if (j.authMethod === 'third_party') return drop({ status: 'signed-in', name: email, method: 'provider' });
   return drop({ status: 'signed-in', name: email });
 }
@@ -75,10 +80,10 @@ export function codexAccount(r: unknown): AccountIdentity {
   if (!isObj(a)) return { status: 'unknown' };
   if (a.type === 'chatgpt') {
     const plan = planWord(a.planType);
-    return drop({ status: 'signed-in', name: cleanName(a.email), service: 'ChatGPT', plan: plan ? `ChatGPT ${plan}` : undefined, method: 'account' });
+    return drop({ status: 'signed-in', name: cleanName(a.email), service: 'ChatGPT', plan: plan ? `ChatGPT ${plan}` : undefined, method: 'account', provider: 'OpenAI (ChatGPT)', via: 'ChatGPT login' });
   }
-  if (a.type === 'apiKey') return { status: 'signed-in', service: 'OpenAI', method: 'api-key' };
-  if (a.type === 'amazonBedrock') return { status: 'signed-in', service: 'Amazon Bedrock', method: 'provider' };
+  if (a.type === 'apiKey') return { status: 'signed-in', service: 'OpenAI', method: 'api-key', provider: 'OpenAI', via: 'API key' };
+  if (a.type === 'amazonBedrock') return { status: 'signed-in', service: 'Amazon Bedrock', method: 'provider', provider: 'Amazon Bedrock' };
   return { status: 'signed-in' };
 }
 

@@ -78,13 +78,22 @@ void (async () => {
     assert.strictEqual(accountLine({ status: 'signed-in', name: 'x', method: 'nope' } as unknown as AccountIdentity), 'Signed in as x');
     // FR-016: the view's line is masked; the clear name travels only for the Settings reveal
     assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'a' }), { status: 'signed-in', text: 'Signed in as •••', masked: '•••', name: 'a' });
-    assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'vikram@example.com', plan: 'Claude Pro' }), { status: 'signed-in', text: 'Signed in as v•••@example.com · Claude Pro', masked: 'v•••@example.com', name: 'vikram@example.com', plan: 'Claude Pro', bare: 'Signed in as v•••@example.com' });
+    assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'vikram@example.com', plan: 'Claude Pro' }), { status: 'signed-in', text: 'Signed in as v•••@example.com · Claude Pro', masked: 'v•••@example.com', name: 'vikram@example.com', plan: 'Claude Pro' });
     // FR-018: the plan on its own, and the Settings line without it
-    assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'sim@example.com', service: 'Claude', plan: 'Claude Max', method: 'account' }), { status: 'signed-in', text: 'Signed in as s•••@example.com · Claude Max', masked: 's•••@example.com', name: 'sim@example.com', plan: 'Claude Max', bare: 'Signed in as s•••@example.com (Claude)' });
-    assert.deepStrictEqual(accountView({ status: 'signed-in', plan: 'ChatGPT Plus' }), { status: 'signed-in', text: 'Signed in · ChatGPT Plus', plan: 'ChatGPT Plus', bare: 'Signed in; the app does not say which account' });
+    assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'sim@example.com', service: 'Claude', plan: 'Claude Max', method: 'account' }), { status: 'signed-in', text: 'Signed in as s•••@example.com · Claude Max', masked: 's•••@example.com', name: 'sim@example.com', plan: 'Claude Max' });
+    assert.deepStrictEqual(accountView({ status: 'signed-in', plan: 'ChatGPT Plus' }), { status: 'signed-in', text: 'Signed in · ChatGPT Plus', plan: 'ChatGPT Plus' });
     assert.deepStrictEqual(accountView({ status: 'signed-out', plan: 'Claude Pro' }), { status: 'signed-out', text: 'Not signed in' }, 'no plan without a sign-in');
     assert.deepStrictEqual(accountView({ status: 'unknown', plan: 'Claude Pro' }), { status: 'unknown', text: 'Account unknown' });
     assert.strictEqual(accountView({ status: 'signed-in', name: 'o', plan: 'x\ny' }).plan, 'x y', 'the plan is one clean line');
+    // FR-021: the facts the card lists; only for a sign-in, cleaned like the rest
+    assert.deepStrictEqual(accountView({ status: 'signed-in', name: 'o', provider: 'GitHub', via: 'GitHub CLI' }), { status: 'signed-in', text: 'Signed in as •••', masked: '•••', name: 'o', provider: 'GitHub', via: 'GitHub CLI' });
+    assert.deepStrictEqual(accountView({ status: 'signed-out', provider: 'GitHub', via: 'GitHub CLI' }), { status: 'signed-out', text: 'Not signed in' }, 'no facts without a sign-in');
+    assert.deepStrictEqual(accountView({ status: 'unknown', provider: 'GitHub' }), { status: 'unknown', text: 'Account unknown' });
+    assert.strictEqual(accountView({ status: 'signed-in', provider: 'Git\nHub', via: 7 as unknown as string }).provider, 'Git Hub');
+    assert.strictEqual(accountView({ status: 'signed-in', via: 7 as unknown as string }).via, undefined, 'a wrong type gives no line');
+    assert.strictEqual(copilotAccount({ isAuthenticated: true, authType: 'something-new', login: 'x' }).via, undefined, 'an unknown route gives no "Signed in via" line');
+    assert.strictEqual(claudeAccount({ loggedIn: true, authMethod: 'third_party', apiProvider: 'bedrock' }).via, undefined, 'a cloud provider: no guessed route');
+    assert.strictEqual(codexAccount({ account: { type: 'amazonBedrock' } }).via, undefined);
     assert.strictEqual(copilotPlanLabel('individual'), 'Copilot Individual');
     assert.strictEqual(copilotPlanLabel('business'), 'Copilot Business');
     assert.strictEqual(copilotPlanLabel('free_limited_copilot'), 'Copilot Free limited');
@@ -131,28 +140,28 @@ void (async () => {
   // ---- 2. the mappers (FR-011)
   {
     // Copilot getAuthStatus
-    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, authType: 'gh-cli', host: 'https://github.com', login: 'octocat' }), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli' });
-    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, authType: 'user', login: 'octocat' }), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'account' });
-    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, authType: 'env' }), { status: 'signed-in', service: 'GitHub', method: 'token' });
-    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, authType: 'token', login: 'bot' }), { status: 'signed-in', name: 'bot', service: 'GitHub', method: 'token' });
-    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, authType: 'hmac' }), { status: 'signed-in', service: 'GitHub', method: 'api-key' });
-    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, host: 'https://ghe.example.com/', login: 'me' }), { status: 'signed-in', name: 'me', service: 'ghe.example.com' });
+    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, authType: 'gh-cli', host: 'https://github.com', login: 'octocat' }), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli', provider: 'GitHub', via: 'GitHub CLI' });
+    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, authType: 'user', login: 'octocat' }), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'account', provider: 'GitHub', via: 'Copilot CLI login' });
+    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, authType: 'env' }), { status: 'signed-in', service: 'GitHub', method: 'token', provider: 'GitHub', via: 'Token from the environment' });
+    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, authType: 'token', login: 'bot' }), { status: 'signed-in', name: 'bot', service: 'GitHub', method: 'token', provider: 'GitHub', via: 'Token' });
+    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, authType: 'hmac' }), { status: 'signed-in', service: 'GitHub', method: 'api-key', provider: 'GitHub', via: 'HMAC key' });
+    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, host: 'https://ghe.example.com/', login: 'me' }), { status: 'signed-in', name: 'me', service: 'ghe.example.com', provider: 'ghe.example.com' });
     assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, host: 'ghe.example.com', login: 'me' }).service, 'ghe.example.com');
     assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, host: 'http://[bad', login: 'me' }).service, 'GitHub');
-    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, login: 42, authType: 7 }), { status: 'signed-in', service: 'GitHub' });
+    assert.deepStrictEqual(copilotAccount({ isAuthenticated: true, login: 42, authType: 7 }), { status: 'signed-in', service: 'GitHub', provider: 'GitHub' });
     assert.ok(!JSON.stringify(copilotAccount({ isAuthenticated: true, login: 'o', statusMessage: MARK })).includes(MARK), 'statusMessage is never read');
     assert.deepStrictEqual(copilotAccount({ isAuthenticated: false, login: 'stale' }), { status: 'signed-out' });
     assert.deepStrictEqual(copilotAccount({ login: 'x' }), { status: 'unknown' });
     assert.deepStrictEqual(copilotAccount(null), { status: 'unknown' });
     assert.deepStrictEqual(copilotAccount('yes'), { status: 'unknown' });
     // Claude auth status --json (field names as in the 2.1.304 bundle)
-    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'claude.ai', apiProvider: 'firstParty', email: 'you@example.com', orgId: 'o', orgName: 'Org', subscriptionType: 'pro' }), { status: 'signed-in', name: 'you@example.com', service: 'Claude', plan: 'Claude Pro', method: 'account' });
-    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'claude.ai', email: null, subscriptionType: null }), { status: 'signed-in', service: 'Claude', method: 'account' });
-    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'api_key', apiProvider: 'firstParty', apiKeySource: 'ANTHROPIC_API_KEY' }), { status: 'signed-in', service: 'Anthropic', method: 'api-key' });
-    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'api_key', email: 'k@example.com' }), { status: 'signed-in', name: 'k@example.com', service: 'Anthropic', method: 'api-key' });
-    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'oauth_token' }), { status: 'signed-in', service: 'Claude', method: 'token' });
-    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'third_party', apiProvider: 'bedrock' }), { status: 'signed-in', service: 'Amazon Bedrock', method: 'provider' });
-    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'api_key', apiProvider: 'vertex' }), { status: 'signed-in', service: 'Google Vertex AI', method: 'provider' });
+    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'claude.ai', apiProvider: 'firstParty', email: 'you@example.com', orgId: 'o', orgName: 'Org', subscriptionType: 'pro' }), { status: 'signed-in', name: 'you@example.com', service: 'Claude', plan: 'Claude Pro', method: 'account', provider: 'Claude', via: 'Claude login' });
+    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'claude.ai', email: null, subscriptionType: null }), { status: 'signed-in', service: 'Claude', method: 'account', provider: 'Claude', via: 'Claude login' });
+    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'api_key', apiProvider: 'firstParty', apiKeySource: 'ANTHROPIC_API_KEY' }), { status: 'signed-in', service: 'Anthropic', method: 'api-key', provider: 'Anthropic', via: 'API key' });
+    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'api_key', email: 'k@example.com' }), { status: 'signed-in', name: 'k@example.com', service: 'Anthropic', method: 'api-key', provider: 'Anthropic', via: 'API key' });
+    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'oauth_token' }), { status: 'signed-in', service: 'Claude', method: 'token', provider: 'Claude', via: 'Long-lived token' });
+    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'third_party', apiProvider: 'bedrock' }), { status: 'signed-in', service: 'Amazon Bedrock', method: 'provider', provider: 'Amazon Bedrock' });
+    assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'api_key', apiProvider: 'vertex' }), { status: 'signed-in', service: 'Google Vertex AI', method: 'provider', provider: 'Google Vertex AI' });
     assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'third_party' }), { status: 'signed-in', method: 'provider' });
     assert.deepStrictEqual(claudeAccount({ loggedIn: true, authMethod: 'something-new' }), { status: 'signed-in' });
     assert.ok(!JSON.stringify(claudeAccount({ loggedIn: true, authMethod: 'claude.ai', orgName: MARK, orgId: MARK })).includes(MARK), 'the organisation is not read');
@@ -162,10 +171,10 @@ void (async () => {
     assert.deepStrictEqual(claudeAccount(undefined), { status: 'unknown' });
     assert.deepStrictEqual(claudeAccount([1]), { status: 'unknown' });
     // Codex account/read (GetAccountResponse of codex-cli 0.163.0)
-    assert.deepStrictEqual(codexAccount({ account: { type: 'chatgpt', email: 'you@example.com', planType: 'plus' }, requiresOpenaiAuth: true }), { status: 'signed-in', name: 'you@example.com', service: 'ChatGPT', plan: 'ChatGPT Plus', method: 'account' });
-    assert.deepStrictEqual(codexAccount({ account: { type: 'chatgpt', email: null, planType: 'unknown' }, requiresOpenaiAuth: true }), { status: 'signed-in', service: 'ChatGPT', method: 'account' });
-    assert.deepStrictEqual(codexAccount({ account: { type: 'apiKey' }, requiresOpenaiAuth: true }), { status: 'signed-in', service: 'OpenAI', method: 'api-key' });
-    assert.deepStrictEqual(codexAccount({ account: { type: 'amazonBedrock', usesCodexManagedCredentials: false }, requiresOpenaiAuth: false }), { status: 'signed-in', service: 'Amazon Bedrock', method: 'provider' });
+    assert.deepStrictEqual(codexAccount({ account: { type: 'chatgpt', email: 'you@example.com', planType: 'plus' }, requiresOpenaiAuth: true }), { status: 'signed-in', name: 'you@example.com', service: 'ChatGPT', plan: 'ChatGPT Plus', method: 'account', provider: 'OpenAI (ChatGPT)', via: 'ChatGPT login' });
+    assert.deepStrictEqual(codexAccount({ account: { type: 'chatgpt', email: null, planType: 'unknown' }, requiresOpenaiAuth: true }), { status: 'signed-in', service: 'ChatGPT', method: 'account', provider: 'OpenAI (ChatGPT)', via: 'ChatGPT login' });
+    assert.deepStrictEqual(codexAccount({ account: { type: 'apiKey' }, requiresOpenaiAuth: true }), { status: 'signed-in', service: 'OpenAI', method: 'api-key', provider: 'OpenAI', via: 'API key' });
+    assert.deepStrictEqual(codexAccount({ account: { type: 'amazonBedrock', usesCodexManagedCredentials: false }, requiresOpenaiAuth: false }), { status: 'signed-in', service: 'Amazon Bedrock', method: 'provider', provider: 'Amazon Bedrock' });
     assert.deepStrictEqual(codexAccount({ account: { type: 'future' }, requiresOpenaiAuth: true }), { status: 'signed-in' });
     assert.deepStrictEqual(codexAccount({ account: null, requiresOpenaiAuth: true }), { status: 'signed-out' });
     assert.deepStrictEqual(codexAccount({ account: null, requiresOpenaiAuth: false }), { status: 'unknown' }, 'a custom provider needs no OpenAI sign-in: not "signed out"');
@@ -185,7 +194,7 @@ void (async () => {
     (ad as unknown as { planTimeoutMs: number }).planTimeoutMs = 30;
     const debug: string[] = [];
     ad.debug = (m) => debug.push(m);
-    assert.deepStrictEqual(await ad.accountInfo(), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli', plan: 'Copilot Individual' });
+    assert.deepStrictEqual(await ad.accountInfo(), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli', provider: 'GitHub', via: 'GitHub CLI', plan: 'Copilot Individual' });
     assert.deepStrictEqual(c.authCalls, ['getAuthStatus'], 'only the local status: no quota, no model call');
     // FR-018: the plan comes from a throw-away session: no tools, no MCP, a temp folder, no message, then disconnected, deleted and removed
     {
@@ -210,13 +219,13 @@ void (async () => {
       c2.createSession = async (cfg: Record<string, unknown>) => { const sx = await orig(cfg); prep(sx as unknown as Record<string, unknown>); return sx; };
       const ad2 = new FakeCopilot(c2);
       (ad2 as unknown as { planTimeoutMs: number }).planTimeoutMs = 30;
-      assert.deepStrictEqual(await ad2.accountInfo(), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli' }, `no plan when ${label}`);
+      assert.deepStrictEqual(await ad2.accountInfo(), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli', provider: 'GitHub', via: 'GitHub CLI' }, `no plan when ${label}`);
       assert.ok((c2 as unknown as { deleted: string[] }).deleted.length === 1, `the session is deleted when ${label}`);
     }
     {
       const c3 = new AuthFakeClient();
       c3.createSession = async () => { throw new Error('no sessions'); };
-      assert.deepStrictEqual(await new FakeCopilot(c3).accountInfo(), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli' }, 'no session possible: no plan');
+      assert.deepStrictEqual(await new FakeCopilot(c3).accountInfo(), { status: 'signed-in', name: 'octocat', service: 'GitHub', method: 'gh-cli', provider: 'GitHub', via: 'GitHub CLI' }, 'no session possible: no plan');
       const c4 = new AuthFakeClient();
       c4.answer = { isAuthenticated: false };
       await new FakeCopilot(c4).accountInfo();
@@ -239,7 +248,7 @@ void (async () => {
       a.debug = (m) => debug.push(m);
       return a;
     };
-    assert.deepStrictEqual(await mk({ loggedIn: true, authMethod: 'claude.ai', email: MARK, subscriptionType: 'max' }).accountInfo(), { status: 'signed-in', name: MARK, service: 'Claude', plan: 'Claude Max', method: 'account' });
+    assert.deepStrictEqual(await mk({ loggedIn: true, authMethod: 'claude.ai', email: MARK, subscriptionType: 'max' }).accountInfo(), { status: 'signed-in', name: MARK, service: 'Claude', plan: 'Claude Max', method: 'account', provider: 'Claude', via: 'Claude login' });
     assert.deepStrictEqual(await mk({ loggedIn: false }).accountInfo(), { status: 'signed-out' });
     assert.deepStrictEqual(await mk(undefined).accountInfo(), { status: 'unknown' });
     assert.deepStrictEqual(await mk('throw').accountInfo(), { status: 'unknown' });
@@ -274,9 +283,9 @@ void (async () => {
       return { server, ad, debug };
     };
     const cases: Array<[FakeCodexOptions['account'], AccountIdentity]> = [
-      [undefined, { status: 'signed-in', name: 'fake@example.invalid', service: 'ChatGPT', plan: 'ChatGPT Plus', method: 'account' }],
-      [{ account: { type: 'chatgpt', email: MARK, planType: 'pro' }, requiresOpenaiAuth: true }, { status: 'signed-in', name: MARK, service: 'ChatGPT', plan: 'ChatGPT Pro', method: 'account' }],
-      [{ account: { type: 'apiKey' }, requiresOpenaiAuth: true }, { status: 'signed-in', service: 'OpenAI', method: 'api-key' }],
+      [undefined, { status: 'signed-in', name: 'fake@example.invalid', service: 'ChatGPT', plan: 'ChatGPT Plus', method: 'account', provider: 'OpenAI (ChatGPT)', via: 'ChatGPT login' }],
+      [{ account: { type: 'chatgpt', email: MARK, planType: 'pro' }, requiresOpenaiAuth: true }, { status: 'signed-in', name: MARK, service: 'ChatGPT', plan: 'ChatGPT Pro', method: 'account', provider: 'OpenAI (ChatGPT)', via: 'ChatGPT login' }],
+      [{ account: { type: 'apiKey' }, requiresOpenaiAuth: true }, { status: 'signed-in', service: 'OpenAI', method: 'api-key', provider: 'OpenAI', via: 'API key' }],
       [{ account: null, requiresOpenaiAuth: true }, { status: 'signed-out' }],
       ['missing', { status: 'unknown' }],
       ['error', { status: 'unknown' }],
@@ -438,12 +447,14 @@ void (async () => {
     assert.ok(acc.includes('B.harnessAccounts') && !/B\.(?!harnessAccounts)\w+\(/.test(acc), 'the window only reads the answer');
     // the simulator's fake identities are what accountView makes of fake answers (so the screenshots match the real wording, masked)
     const sim = readSrc('src/renderer/sim.ts');
+    // the simulator's identities come from the real mappers, so its facts are worded as a real answer's would be
+    const simCopilot = copilotAccount({ isAuthenticated: true, authType: 'gh-cli', host: 'https://github.com', login: 'octo-sim' });
     for (const a of [
-      { status: 'signed-in', name: 'octo-sim', service: 'GitHub', method: 'gh-cli', plan: 'Copilot Individual' },
-      { status: 'signed-in', name: 'octo-sim', service: 'GitHub', method: 'gh-cli' },
-      { status: 'signed-in', name: 'sim@example.com', service: 'Claude', plan: 'Claude Pro', method: 'account' },
-      { status: 'signed-in', service: 'Anthropic', method: 'api-key' },
-      { status: 'signed-in', name: 'sim@example.com', service: 'ChatGPT', plan: 'ChatGPT Plus', method: 'account' },
+      { ...simCopilot, plan: 'Copilot Individual' },
+      simCopilot,
+      claudeAccount({ loggedIn: true, authMethod: 'claude.ai', apiProvider: 'firstParty', email: 'sim@example.com', subscriptionType: 'pro' }),
+      claudeAccount({ loggedIn: true, authMethod: 'api_key', apiProvider: 'firstParty' }),
+      codexAccount({ account: { type: 'chatgpt', email: 'sim@example.com', planType: 'plus' }, requiresOpenaiAuth: true }),
       { status: 'unknown' },
       { status: 'signed-out' },
     ] as AccountIdentity[]) {

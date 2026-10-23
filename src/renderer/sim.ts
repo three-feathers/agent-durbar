@@ -2043,20 +2043,21 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       // and `simacct=apikey` change Claude Code's line. The lines are what main's accountLine makes of these answers (checked by test:account).
       harnessAccounts: async () => {
         const simAcct = simQuery.get('simacct');
-        // spec 051 FR-016, FR-018: the line is masked; `name` is the clear (fake) name for the Settings reveal only; `plan` replaces the
-        // generic plan blurb and `bare` is the Settings line without it. These are accountView's answers for fake identities (test:account).
-        // `simacct=noplan`: Copilot reports no plan (the blurb goes, no plan line).
-        type V = { status: 'signed-in' | 'signed-out' | 'unknown'; text: string; masked?: string; name?: string; plan?: string; bare?: string };
+        // spec 051 FR-016, FR-018, FR-021: the line is masked; `name` is the clear (fake) name for the Settings reveal only; `plan`,
+        // `provider` and `via` are the card's facts. These are accountView's answers for fake identities, mapped like the real ones
+        // (test:account). `simacct=noplan`: Copilot reports no plan.
+        type V = { status: 'signed-in' | 'signed-out' | 'unknown'; text: string; masked?: string; name?: string; plan?: string; provider?: string; via?: string };
         const out: Record<string, V> = {};
-        const SIM_COPILOT: V = { status: 'signed-in', text: 'Signed in as o••• · Copilot Individual', masked: 'o•••', name: 'octo-sim', plan: 'Copilot Individual', bare: 'Signed in as o••• (GitHub, through the GitHub CLI)' };
-        const SIM_COPILOT_NOPLAN: V = { status: 'signed-in', text: 'Signed in as o••• (GitHub, through the GitHub CLI)', masked: 'o•••', name: 'octo-sim' };
-        const SIM_CLAUDE: V = { status: 'signed-in', text: 'Signed in as s•••@example.com · Claude Pro', masked: 's•••@example.com', name: 'sim@example.com', plan: 'Claude Pro', bare: 'Signed in as s•••@example.com (Claude)' };
-        const SIM_CODEX: V = { status: 'signed-in', text: 'Signed in as s•••@example.com · ChatGPT Plus', masked: 's•••@example.com', name: 'sim@example.com', plan: 'ChatGPT Plus', bare: 'Signed in as s•••@example.com (ChatGPT)' };
+        const SIM_COPILOT: V = { status: 'signed-in', text: 'Signed in as o••• · Copilot Individual', masked: 'o•••', name: 'octo-sim', plan: 'Copilot Individual', provider: 'GitHub', via: 'GitHub CLI' };
+        const SIM_COPILOT_NOPLAN: V = { status: 'signed-in', text: 'Signed in as o••• (GitHub, through the GitHub CLI)', masked: 'o•••', name: 'octo-sim', provider: 'GitHub', via: 'GitHub CLI' };
+        const SIM_CLAUDE: V = { status: 'signed-in', text: 'Signed in as s•••@example.com · Claude Pro', masked: 's•••@example.com', name: 'sim@example.com', plan: 'Claude Pro', provider: 'Claude', via: 'Claude login' };
+        const SIM_CLAUDE_KEY: V = { status: 'signed-in', text: 'Signed in with an Anthropic API key', provider: 'Anthropic', via: 'API key' };
+        const SIM_CODEX: V = { status: 'signed-in', text: 'Signed in as s•••@example.com · ChatGPT Plus', masked: 's•••@example.com', name: 'sim@example.com', plan: 'ChatGPT Plus', provider: 'OpenAI (ChatGPT)', via: 'ChatGPT login' };
         for (const a of simAdapters()) {
           if (a.state === 'not-signed-in') out[a.id] = { status: 'signed-out', text: 'Not signed in' };
           else if (a.state !== 'ready') continue;
           else if (a.id === 'copilot') out[a.id] = simAcct === 'noplan' ? SIM_COPILOT_NOPLAN : SIM_COPILOT;
-          else if (a.id === 'claude') out[a.id] = simAcct === 'unknown' ? { status: 'unknown', text: 'Account unknown' } : simAcct === 'apikey' ? { status: 'signed-in', text: 'Signed in with an Anthropic API key' } : SIM_CLAUDE;
+          else if (a.id === 'claude') out[a.id] = simAcct === 'unknown' ? { status: 'unknown', text: 'Account unknown' } : simAcct === 'apikey' ? SIM_CLAUDE_KEY : SIM_CLAUDE;
           else if (a.id === 'codex') out[a.id] = SIM_CODEX;
         }
         return out;

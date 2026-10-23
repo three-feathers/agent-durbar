@@ -40,48 +40,38 @@
      reveal lives only in this painted view (no state is kept): any repaint or a new visit to Settings shows it hidden again. */
   const EYE = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>';
   const SHOW_LABEL = 'Show the account name', HIDE_LABEL = 'Hide the account name';
-  /* spec 051 FR-018: Settings shows the line without the plan (`bare`), since the plan has its own line; the name and its eye button are
-     one unit that never wraps apart (`.hs-acct-who`), and the rest of the line wraps after it */
-  function acctInner(v) {
-    if (!v || typeof v.text !== 'string') return esc('Account unknown');
-    const line = typeof v.bare === 'string' && v.bare ? v.bare : v.text;
-    const m = typeof v.masked === 'string' && v.masked ? line.indexOf(v.masked) : -1;
-    if (m < 0 || typeof v.name !== 'string') return esc(line);
-    return `${esc(line.slice(0, m))}<span class="hs-acct-who"><span class="hs-acct-name is-hidden">${esc(v.masked)}</span><button type="button" class="hs-reveal" data-hs="reveal" aria-pressed="false" aria-label="${SHOW_LABEL}" title="${SHOW_LABEL}">${EYE}</button></span>${esc(line.slice(m + v.masked.length))}`;
+  /* the masked name and its eye button: one unit that never wraps apart (FR-019) */
+  const whoHTML = (v) => `<span class="hs-acct-who"><span class="hs-acct-name is-hidden">${esc(v.masked)}</span><button type="button" class="hs-reveal" data-hs="reveal" aria-pressed="false" aria-label="${SHOW_LABEL}" title="${SHOW_LABEL}">${EYE}</button></span>`;
+  /* spec 051 FR-021 (owner, 2026-10-23 14:12 UTC): a signed-in card lists what the app reports, one fact per line with a bold label:
+     Plan, Account (masked, with the eye), Provider, Signed in via. A fact the app does not report has no line (never a guess). */
+  function factsHTML(v) {
+    const rows = [];
+    const row = (label, html) => rows.push(`<div class="hs-fact"><dt>${esc(label)}:</dt><dd>${html}</dd></div>`);
+    if (typeof v.plan === 'string' && v.plan) row('Plan', esc(v.plan));
+    if (typeof v.masked === 'string' && v.masked && typeof v.name === 'string') row('Account', whoHTML(v));
+    if (typeof v.provider === 'string' && v.provider) row('Provider', esc(v.provider));
+    if (typeof v.via === 'string' && v.via) row('Signed in via', esc(v.via));
+    return rows.length ? `<dl class="hs-facts">${rows.join('')}</dl>` : `<p class="scr-note small hs-acct">${esc(v.text)}</p>`;
   }
-  /* spec 051 FR-018 (owner, 2026-10-23): the generic "Uses your … plan" blurb only while the app is not known to be signed in; once it
-     is, the plan the app reports ("Plan: Claude Max"), or nothing when it reports none (never a guess) */
-  function planInner(id, st) {
+  /* the card's account block (`[data-acct]`): the generic "Uses your … plan" blurb (FR-018) while the app is not known to be signed in,
+     with the account line under it on a ready card ("Checking the account…", "Account unknown"); the facts once it is signed in */
+  function boxInner(id, st) {
+    const blurb = PLAN[id] ? `<p class="scr-note small hs-plan-uses">${esc(PLAN[id])}</p>` : '';
+    if (st !== 'ready' || !B || !B.harnessAccounts) return blurb;
     const v = ACC && ACC[id];
-    if (st === 'ready' && v && v.status === 'signed-in') return v.plan ? { text: 'Plan: ' + v.plan, real: true } : { text: '', real: true };
-    return { text: PLAN[id] || '', real: false };
+    if (!v) return blurb + `<p class="scr-note small hs-acct" aria-busy="true">${esc(ACC_WAIT)}</p>`;
+    if (v.status === 'signed-in' && typeof v.text === 'string') return factsHTML(v);
+    return blurb + `<p class="scr-note small hs-acct">${esc(typeof v.text === 'string' ? v.text : 'Account unknown')}</p>`;
   }
-  function planHTML(id, st) {
-    if (!PLAN[id]) return '';
-    const p = planInner(id, st);
-    return `<p class="scr-note small hs-plan-uses${p.real ? ' hs-plan-real' : ''}" data-plan-for="${esc(id)}" data-st="${esc(st)}"${p.text ? '' : ' hidden'}>${esc(p.text)}</p>`;
-  }
-  /* the card's account line: only for a ready app (a not-signed-in card already says so); filled in after the screen is painted */
   function acctHTML(id, st) {
-    if (st !== 'ready' || !B || !B.harnessAccounts) return '';
-    const v = ACC && ACC[id];
-    return `<p class="scr-note small hs-acct" data-acct="${esc(id)}"${v ? '' : ' aria-busy="true"'}>${v ? acctInner(v) : esc(ACC_WAIT)}</p>`;
+    return `<div class="hs-acct-box" data-acct="${esc(id)}" data-st="${esc(st)}">${boxInner(id, st)}</div>`;
   }
   function paintAccounts() {
-    document.querySelectorAll('.hs-acct[data-acct]').forEach((p) => {
-      p.innerHTML = acctInner(ACC && ACC[p.dataset.acct]);
-      p.removeAttribute('aria-busy');
-    });
-    document.querySelectorAll('[data-plan-for]').forEach((p) => {
-      const v = planInner(p.dataset.planFor, p.dataset.st);
-      p.textContent = v.text;
-      p.hidden = !v.text;
-      p.classList.toggle('hs-plan-real', v.real);
-    });
+    document.querySelectorAll('.hs-acct-box[data-acct]').forEach((p) => { p.innerHTML = boxInner(p.dataset.acct, p.dataset.st); });
   }
   /* the eye button: swaps the masked name for the clear one (from memory) and back; nothing is saved */
   function reveal(btn) {
-    const p = btn.closest('.hs-acct'), span = p && p.querySelector('.hs-acct-name'), v = p && ACC && ACC[p.dataset.acct];
+    const p = btn.closest('[data-acct]'), span = btn.closest('.hs-acct-who') && btn.closest('.hs-acct-who').querySelector('.hs-acct-name'), v = p && ACC && ACC[p.dataset.acct];
     if (!span || !v || typeof v.name !== 'string') return;
     const show = btn.getAttribute('aria-pressed') !== 'true';
     span.textContent = show ? v.name : v.masked;
@@ -116,7 +106,7 @@
       /* spec 012 FR-156: a ready card also says how far the sign-in was checked (the hint withSignIn set) */
       const hint = st === 'ready' ? [simV ? '' : k.version ? 'Version ' + k.version + '.' : 'Ready to use.', k.hint && /^Signed in/.test(k.hint) ? k.hint : ''].filter(Boolean).join(' ') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
       return `<li class="hs-card" data-kind="${esc(k.id)}"><div class="hs-top"><span class="hs-name"><b title="${esc(k.displayName || k.id)}">${esc(k.displayName || k.id)}</b>${FOR[k.id] ? `<span class="hs-for">${esc(FOR[k.id])}</span>` : ''}</span><span class="hs-st hs-${cls}"${simV ? ' title="Simulated version."' : ''}>${esc(word)}</span></div>
-        ${planHTML(k.id, st)}${acctHTML(k.id, st)}${hint ? `<p class="scr-note small">${esc(hint)}</p>` : ''}${k.where && st !== 'not-installed' ? `<p class="scr-note small hs-where">Found at <code>${esc(String(k.where).slice(0, 200)).replace(/[\\/]/g, '$&<wbr>')}</code></p>` : ''}${k.id === 'copilot' && copilot && copilot.pwshMissing ? `<p class="scr-note small hs-pwsh">${esc(PWSH_HINT)}</p>` : ''}
+        ${acctHTML(k.id, st)}${hint ? `<p class="scr-note small">${esc(hint)}</p>` : ''}${k.where && st !== 'not-installed' ? `<p class="scr-note small hs-where">Found at <code>${esc(String(k.where).slice(0, 200)).replace(/[\\/]/g, '$&<wbr>')}</code></p>` : ''}${k.id === 'copilot' && copilot && copilot.pwshMissing ? `<p class="scr-note small hs-pwsh">${esc(PWSH_HINT)}</p>` : ''}
         <div class="hs-act">${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(k.id)}">${esc(label)}</button>` : ''}<button class="btn sm" type="button" data-hs="check" data-kind="${esc(k.id)}">Check again</button></div></li>`;
     }).join('');
     return `<section class="scr-sec" aria-labelledby="hsH"><h3 id="hsH" tabindex="-1">Agent apps</h3>

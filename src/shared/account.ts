@@ -16,6 +16,10 @@ export interface AccountIdentity {
   /** The plan, when the app reports one: "Claude Max", "ChatGPT Plus". */
   plan?: string;
   method?: AccountMethod;
+  /** FR-021: who provides the account, as the card's "Provider" line: "GitHub", "Claude", "Anthropic", "OpenAI (ChatGPT)", "Amazon Bedrock". */
+  provider?: string;
+  /** FR-021: how the app signed in, as the card's "Signed in via" line: "GitHub CLI", "Claude login", "ChatGPT login", "API key". */
+  via?: string;
 }
 
 /**
@@ -30,8 +34,9 @@ export interface AccountView {
   name?: string;
   /** FR-018: the plan the app reports ("Claude Max", "ChatGPT Plus", "Copilot Individual"); not personal data, never logged either. */
   plan?: string;
-  /** FR-018: `text` without the plan, for Settings, which shows the plan on its own line in place of the generic plan blurb. */
-  bare?: string;
+  /** FR-021: the card's "Provider" and "Signed in via" lines, only when the app reports them. */
+  provider?: string;
+  via?: string;
 }
 
 export const NAME_MAX = 80;
@@ -81,14 +86,14 @@ const METHOD_TEXT: Record<AccountMethod, string> = {
  * - signed in, nothing else: "Signed in; the app does not say which account";
  * - "Not signed in" / "Account unknown".
  */
-export function accountLine(a: AccountIdentity | undefined | null, o: { mask?: boolean; noPlan?: boolean } = {}): string {
+export function accountLine(a: AccountIdentity | undefined | null, o: { mask?: boolean } = {}): string {
   if (!a || typeof a !== 'object') return 'Account unknown';
   if (a.status === 'signed-out') return 'Not signed in';
   if (a.status !== 'signed-in') return 'Account unknown';
   const clear = cleanName(a.name);
   const name = clear && o.mask ? maskName(clear) : clear;
   const service = cleanName(a.service, WORD_MAX);
-  const plan = o.noPlan ? undefined : cleanName(a.plan, WORD_MAX);
+  const plan = cleanName(a.plan, WORD_MAX);
   const how = a.method && Object.prototype.hasOwnProperty.call(METHOD_TEXT, a.method) ? METHOD_TEXT[a.method] : '';
   if (name) {
     if (plan) return `Signed in as ${name} · ${plan}`;
@@ -112,9 +117,12 @@ export function accountView(a: AccountIdentity | undefined | null): AccountView 
     view.name = name;
   }
   const plan = status === 'signed-in' && a ? cleanName(a.plan, WORD_MAX) : undefined;
-  if (plan) {
-    view.plan = plan;
-    view.bare = accountLine(a, { mask: true, noPlan: true });
+  if (plan) view.plan = plan;
+  if (status === 'signed-in' && a) {
+    const provider = cleanName(a.provider, WORD_MAX);
+    const via = cleanName(a.via, WORD_MAX);
+    if (provider) view.provider = provider;
+    if (via) view.via = via;
   }
   return view;
 }
