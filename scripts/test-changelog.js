@@ -5,6 +5,8 @@
  * `node scripts/changelog.js check`, the suite's second step.
  * Spec 008 FR-117..FR-120 (fold at tag time): `notes` / `build --stdout`, `scripts/release-notes.js` on throwaway git repositories
  * (tag on main, version, previous release folded, the checked-out commit), and the wiring of `.github/workflows/release.yml`.
+ * Spec 008 FR-121..FR-124 (issue #658, test builds): the tag classifier, a test tag off main accepted while a regular one stays
+ * refused, its notes (only the unmerged commits, masked then cut, capped), its version rule, and that it is never the previous release.
  */
 'use strict';
 const assert = require('assert');
@@ -295,6 +297,143 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     g(d, 'checkout', '-q', 'v0.1.1-alpha.1');
     assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.1-alpha.1' }), /no section for the previous release v0\.1\.0: merge its fold PR/, 'the unfolded final release is caught');
   }
+  // --- spec 008 FR-121..FR-124 (issue #658): test builds from branches ---
+  {
+    // the classifier: a release version plus -test.N is a test build; checked before TAG_RE (which also matches v1.2.3-test.4)
+    for (const t of ['v0.1.0-alpha.15-test.1', 'v0.1.0-test.2', 'v1.2.3-rc.4-test.10', 'v0.1.0-beta.1-test.0', 'v10.20.30-alpha.99-test.123']) {
+      assert.strictEqual(rn.tagKind(t), 'test', `${t} is a test build`);
+      assert.ok(!rn.RELEASE_TAG_RE.test(t), `${t} is never a release`);
+    }
+    for (const t of ['v0.1.0-alpha.15', 'v0.1.0', 'v1.2.3-rc.1', 'v0.1.0-mcptest.1', 'v0.1.0-test.1.2', 'v0.1.0-test.x']) assert.strictEqual(rn.tagKind(t), 'release', `${t} takes the regular path (on main)`);
+    for (const t of ['v0.1.0-alpha.14-mcptest.1', 'v0.1.0-alpha.15-test', 'v0.1.0-alpha.15-test.1.2', 'v0.1.0-alpha.15-test.x', 'v0.1.0-alpha.15-Test.1', 'v0.1.0-alpha.15-test.1\n',
+      ' v0.1.0-test.1', 'v0.1.0-gamma.1-test.1', 'v0.1.0-alpha.15-test.1;rm', 'v0.1.0-alpha-test.1', 'v0.1.0-alpha.15-test.-1', 'v0.1.0-alpha.15-test.1-test.2', '', undefined, 7]) {
+      assert.strictEqual(rn.tagKind(t), '', `${JSON.stringify(t)} refused`);
+    }
+    assert.strictEqual(rn.TEST_TAG_RE.exec('v0.1.0-alpha.15-test.3')[1], '0.1.0-alpha.15', 'the base version is the tag without -test.N');
+  }
+  if (!process.features.typescript) {
+    console.log('test-changelog: test-build notes skipped (this Node has no type stripping, so src/shared/redact.ts cannot load; CI runs them)');
+  } else {
+    const { redact, cut } = rn.loadRedact();
+    const TOKEN = `ghp_${'Ab1'.repeat(12)}`;
+    const LONG = `Long subject with ${TOKEN} inside ${'word '.repeat(60)}end`;
+    // a branch off main: the version bump commit is on main, three commits are not (one masked, one long, one naming a PR)
+    const sideRepo = () => {
+      const d = gitRepo();
+      g(d, 'checkout', '-q', '-b', 'side');
+      fs.writeFileSync(path.join(d, 'side.txt'), '1\n');
+      commit(d, 'Fix the MCP sign-in (#123)');
+      fs.writeFileSync(path.join(d, 'side.txt'), '2\n');
+      commit(d, `Debug line with ${TOKEN} by mistake`);
+      fs.writeFileSync(path.join(d, 'side.txt'), '3\n');
+      commit(d, LONG);
+      return d;
+    };
+    const topts = { ...opts, tag: 'v0.1.0-alpha.11-test.1' };
+    {
+      const d = sideRepo();
+      g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-alpha.11-test.1');
+      g(d, 'tag', '-a', '-m', 'release on the same commit', 'v0.1.0-alpha.11');
+      g(d, 'checkout', '-q', 'v0.1.0-alpha.11-test.1');
+      const status = g(d, 'status', '--porcelain');
+      // a regular tag off main is still refused, even on the very commit a test tag may build
+      assert.throws(() => rn.releaseNotes(d, opts), /is not on refs\/heads\/main: only commits on main are released/, 'a regular tag off main is still refused');
+      const r = rn.releaseNotes(d, topts);
+      assert.strictEqual(r.kind, 'test');
+      assert.strictEqual(r.title, 'Agent Durbar v0.1.0-alpha.11-test.1 (test build)');
+      assert.strictEqual(r.previous, '', 'a test build has no previous release');
+      assert.strictEqual(r.source, 'commits');
+      assert.strictEqual(r.commits, 3, 'only the commits that are not on main');
+      const sha = (rev) => g(d, 'rev-parse', '--short=12', rev);
+      const expected = [
+        rn.TEST_PREAMBLE,
+        '',
+        '## v0.1.0-alpha.11-test.1 (test build, 2026-10-23)',
+        '',
+        'Commits not on `main` (3, newest first; [compare](https://github.com/three-feathers/agent-durbar/compare/main...v0.1.0-alpha.11-test.1)):',
+        '',
+        `- \`${sha('HEAD')}\` ${cut(redact(LONG), rn.TEST_SUBJECT_MAX)}`,
+        `- \`${sha('HEAD~1')}\` Debug line with [redacted] by mistake`,
+        `- \`${sha('HEAD~2')}\` Fix the MCP sign-in (#123)`,
+        '',
+        'Pull requests named in them: #123',
+        '',
+      ].join('\n');
+      assert.strictEqual(r.notes, expected, 'the unmerged commits, newest first, masked, then cut; the PRs they name');
+      assert.ok(!r.notes.includes('ghp_') && !r.notes.includes('Ab1Ab1'), 'no part of the token is left');
+      const longLine = r.notes.split('\n').find((l) => l.includes('Long subject'));
+      assert.ok(longLine.endsWith(' [truncated]') && longLine.length < rn.TEST_SUBJECT_MAX + 40, 'a long subject is cut');
+      assert.ok(longLine.length > rn.TEST_SUBJECT_MAX, 'cut after the mask: the full length is kept for the text after the token');
+      assert.ok(!/alpha\.11 version|alpha\.10|Change A|Change B/.test(r.notes), 'no commit of main and no changelog fragment');
+      assert.strictEqual(g(d, 'status', '--porcelain'), status, 'no tracked file changed');
+      const sum = rn.summary(r, topts.tag);
+      assert.ok(sum.startsWith('### Test build v0.1.0-alpha.11-test.1') && /Commits not on `main`: 3/.test(sum) && /No fold PR/.test(sum), 'the summary says it is a test build');
+      assert.ok(!/changelog:build|git switch|git push/.test(sum), 'no fold PR commands for a test build');
+      // the CLI writes the notes and the title
+      const out = path.join(d, '..', `${path.basename(d)}-tnotes.md`);
+      const title = path.join(d, '..', `${path.basename(d)}-ttitle.txt`);
+      execFileSync(process.execPath, [path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', topts.tag, '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', out, '--title-out', title], { env: gitEnv, stdio: 'ignore' });
+      assert.strictEqual(fs.readFileSync(out, 'utf8'), r.notes);
+      assert.strictEqual(fs.readFileSync(title, 'utf8'), 'Agent Durbar v0.1.0-alpha.11-test.1 (test build)\n');
+      // fail closed: without type stripping redact.ts cannot load, and there are no notes rather than unmasked ones
+      fs.rmSync(out);
+      let failed;
+      try {
+        execFileSync(process.execPath, ['--no-experimental-strip-types', path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', topts.tag, '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', out], { env: gitEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      } catch (e) { failed = e; }
+      assert.ok(failed && failed.status === 1 && /masked with src\/shared\/redact\.ts, which needs Node 22\.18/.test(failed.stderr), 'no redaction: refused');
+      assert.ok(!fs.existsSync(out), 'no redaction: no notes file');
+      // the version: package.json must be the tag without -test.N
+      g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-alpha.12-test.1');
+      g(d, 'checkout', '-q', 'v0.1.0-alpha.12-test.1');
+      assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.0-alpha.12-test.1' }), /test tag v0\.1\.0-alpha\.12-test\.1 needs package\.json version 0\.1\.0-alpha\.12 \(the tag without -test\.N\): the branch has v0\.1\.0-alpha\.11/);
+      // the checked-out commit must be the tag's, and the main ref must exist, for a test tag too
+      g(d, 'checkout', '-q', 'main');
+      assert.throws(() => rn.releaseNotes(d, topts), /checked-out commit is not v0\.1\.0-alpha\.11-test\.1's commit/);
+      g(d, 'checkout', '-q', 'v0.1.0-alpha.11-test.1');
+      assert.throws(() => rn.releaseNotes(d, { ...topts, mainRef: 'refs/remotes/origin/main' }), /no refs\/remotes\/origin\/main in this checkout/);
+      assert.throws(() => rn.releaseNotes(d, { ...topts, mainRef: 'main' }), /must be a full ref name/);
+      // a regular tag keeps its own version check
+      assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.0-alpha.12' }), /tag v0\.1\.0-alpha\.12 does not match package\.json version v0\.1\.0-alpha\.11: land the version PR first/);
+    }
+    {
+      // a test tag on main lists no commits; a test tag is never the previous release of the next real one
+      const d = gitRepo();
+      g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-alpha.11-test.1');
+      g(d, 'checkout', '-q', 'v0.1.0-alpha.11-test.1');
+      const r = rn.releaseNotes(d, topts);
+      assert.strictEqual(r.commits, 0);
+      assert.ok(r.notes.includes('Commits not on `main`: none') && !r.notes.includes('Pull requests named'), 'on main: no commits to list');
+      g(d, 'checkout', '-q', 'main');
+      g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-alpha.10-test.1', 'v0.1.0-alpha.10');
+      g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-alpha.11-test.2');
+      pkg(d, '0.1.0-alpha.11');
+      fs.writeFileSync(path.join(d, 'changelog.d', 'c.md'), '- Change C.\n');
+      commit(d, 'one more change');
+      g(d, 'tag', '-a', '-m', 'alpha.11', 'v0.1.0-alpha.11');
+      assert.strictEqual(rn.previousRelease(d, g(d, 'rev-parse', 'v0.1.0-alpha.11^{commit}'), 'v0.1.0-alpha.11'), 'v0.1.0-alpha.10', 'test tags in between are skipped');
+      g(d, 'checkout', '-q', 'v0.1.0-alpha.11');
+      const rel = rn.releaseNotes(d, opts);
+      assert.strictEqual(rel.kind, 'release');
+      assert.strictEqual(rel.title, 'Agent Durbar v0.1.0-alpha.11');
+      assert.ok(rel.notes.startsWith(rn.PREAMBLE) && rel.notes.endsWith('- Change A.\n- Change B.\n- Change C.\n'), 'the real release still gets its fragments');
+    }
+    {
+      // at most TEST_COMMITS_MAX commits are listed, then a count of the rest
+      const d = gitRepo();
+      // one git fast-import for the empty commits (a git commit per step took seconds)
+      const steps = Array.from({ length: rn.TEST_COMMITS_MAX + 2 }, (_, i) => `step ${i + 1}`);
+      const stream = steps.map((m, i) => `commit refs/heads/many\ncommitter t <t@example.invalid> 1792749600 +0000\ndata ${m.length}\n${m}\n${i ? '' : 'from refs/heads/main^0\n'}\n`).join('');
+      execFileSync('git', ['fast-import', '--quiet'], { cwd: d, env: gitEnv, input: stream, stdio: ['pipe', 'ignore', 'pipe'] });
+      g(d, 'checkout', '-q', 'many');
+      g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-alpha.11-test.1');
+      g(d, 'checkout', '-q', 'v0.1.0-alpha.11-test.1');
+      const r = rn.releaseNotes(d, topts);
+      assert.strictEqual(r.commits, rn.TEST_COMMITS_MAX + 2);
+      assert.strictEqual(r.notes.split('\n').filter((l) => /^- `[0-9a-f]{12}` step \d+$/.test(l)).length, rn.TEST_COMMITS_MAX, 'the cap');
+      assert.ok(r.notes.includes(`- … and 2 more: see the compare link.`) && r.notes.includes(`step ${rn.TEST_COMMITS_MAX + 2}`) && !/ step 2$/m.test(r.notes), 'newest first, the rest counted');
+    }
+  }
 }
 
 // --- spec 008 FR-117..FR-120: the wiring of .github/workflows/release.yml (it only runs on GitHub) ---
@@ -318,6 +457,12 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   assert.match(jobs['draft-release'], /pattern: agent-durbar-\*/, 'the packages only, not the notes file, become release assets');
   assert.match(jobs['draft-release'], /gh release create "\$TAG" dist-artifacts\/\* --draft --prerelease --latest=false --verify-tag/, 'always a draft pre-release, never latest');
   assert.match(jobs['draft-release'], /--notes-file notes\/release-notes\.md/, 'the notes from verify');
+  // spec 008 FR-124: the title comes from verify ("(test build)" for a test tag), through the notes artifact; a missing file stops the job
+  assert.match(jobs.verify, /--out release-notes\.md --title-out release-title\.txt /, 'verify writes the title');
+  assert.match(jobs.verify, /^ {10}path: \|\n {12}release-notes\.md\n {12}release-title\.txt\n/m, 'the notes artifact carries the title');
+  assert.match(jobs['draft-release'], /^ {10}TITLE="\$\(cat notes\/release-title\.txt\)"/m, 'draft-release reads the title first (bash -e)');
+  assert.match(jobs['draft-release'], /--verify-tag \\\n {14}--title "\$TITLE" --notes-file/, 'the release is created with that title');
+  assert.ok(!/main-ref (?!refs\/remotes\/origin\/main )/.test(wf) && !/-test/.test(jobs['draft-release']), 'one path for both kinds: no tag pattern in the workflow, the script decides');
   assert.match(wf, /CSC_IDENTITY_AUTO_DISCOVERY: 'false'/, 'signing unchanged: never looks for identities');
   assert.ok(!/git push|gh pr create|pull-requests:|gh release edit|--publish always/.test(wf), 'nothing pushes, opens a PR or publishes');
   // every checkout keeps no token; inside run scripts only matrix values are interpolated (never the tag or any github.* text)
