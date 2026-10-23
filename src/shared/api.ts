@@ -546,6 +546,8 @@ export interface AgentMcpEntry {
   canRestart?: boolean;
   /** Spec 058 FR-065: **Sign in** is offered: the agent app can start its own sign-in, the session runs, and this server reads Needs sign-in. */
   canSignIn?: boolean;
+  /** Spec 058 FR-164: **Sign in again** is offered: the agent app can redo the sign-in itself, the session runs, and this server is on and not waiting for a first sign-in. */
+  canSignInAgain?: boolean;
   /** Spec 058 FR-065: a sign-in is open for this server. The host only, never the address; `expiresInMs` is what is left of the 10 minutes. */
   signIn?: { host: string; opened: boolean; expiresInMs: number; otherSite?: string };
   /** Spec 058 FR-068: the terminal steps for this needs-sign-in server, the agent app's plain text with the name filled in (commands in backticks). */
@@ -818,7 +820,7 @@ export interface DurbarApi {
   /** Spec 058 FR-021: restart one MCP server of this agent's running session. */
   agentMcpRestart?(id: string, name: string): Promise<McpRestartResult>;
   /** Spec 058 FR-065: start the agent app's own sign-in for one MCP server. Main keeps the address; the reply has the host only. */
-  agentMcpSignIn?(id: string, name: string): Promise<McpSignInStartResult>;
+  agentMcpSignIn?(id: string, name: string, again?: boolean): Promise<McpSignInStartResult>;
   /** Spec 058 FR-065: open the held sign-in page in the system browser (main holds the address; only after this click). */
   agentMcpOpenSignIn?(id: string, name: string, shownHost: string): Promise<McpOpenSignInResult>;
   /** Spec 058 FR-065: forget the open sign-in. */

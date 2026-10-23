@@ -932,9 +932,20 @@ server.
   no `codesign`) and fails the mac package build (`dist:mac:arm64`, `dist:mac:x64`, after `electron-builder`) when a runtime file is
   unsigned, ad-hoc, of another team, or the wrapper's identifier is not `copilot`. `[IMPLEMENTED]` 2026-10-23, `test:` `test:runtimesign`
   (synthetic Mach-O files, the regex against the real app paths, the scripts), `read:` passes on the real 1.0.22 darwin-arm64 and
-  darwin-x64 files and fails on a copy with the ad-hoc flag set. `[KNOWN GAP]` not yet run in a mac package build or on a Mac: whether
-  `codesign --verify --deep --strict` (osx-sign's strict verify) and Gatekeeper accept the GitHub-signed files inside the ad-hoc app, and
-  how many prompts remain (the check list below).
+  darwin-x64 files and fails on a copy with the ad-hoc flag set. `real:` CI, release run 39954528774 (test build `v0.1.0-alpha.14-mcptest.1`, macOS job 120416934009):
+  - both arches were packed with this `signIgnore`;
+  - the check logged `check-runtime-signature: the Copilot runtime keeps GitHub's signature (team VEKTX9H2N7)` for arm64 and x64;
+  - `@electron/osx-sign`'s `codesign --verify --deep --strict` of the ad-hoc app, which holds the GitHub-signed nested files, passed (it runs after every signing and throws on failure, `read:` `sign.js`; review by Paco's agent on #625).
+
+  `real:` the owner's Mac (FR-162 results): a session opened and worked on the GitHub-signed runtime.
+
+  The check runs in every script that can pack a mac app, and it does nothing off macOS:
+  - `dist:mac:arm64` and `dist:mac:x64` run it with `--arch`, so each step checks only its own build;
+  - `dist` and `pack:dir` run it too.
+
+  It requires the runtime in each packed app on its own, and names the app in each problem (review on #625).
+
+  `[KNOWN GAP]` Gatekeeper/`spctl` on a quarantined download.
 - **FR-161** **One Copilot runtime per app run.** Every session, sign-in check and one-shot uses the adapter's one client; a session end
   never stops it; only app exit (`dispose`) and a sign-in change (spec 012 FR-158) start or stop it. A start that failed is not cached:
   the next use starts again (before, the rejected start was kept and every later Copilot call failed until restart). A runtime that exits
@@ -947,7 +958,7 @@ server.
   1. Before: the current release (alpha.13). Keychain Access: note the `copilot-mcp-oauth*` items and the Copilot sign-in item, their
      *Access Control* lists. Quit Durbar. Open Durbar, open **two** Copilot sessions in folders with one OAuth MCP server you are signed
      in to. Count every keychain dialog, write down the program name and item name of each, and which button you pressed.
-  2. After: a mac build of this PR (`npm run dist:mac:arm64`, or the PR's CI artifact). The log must show
+  2. After: the test pre-release `v0.1.0-alpha.14-mcptest.1` (it includes this PR), or a local `npm run dist:mac:arm64` of this branch (pull requests build no mac package). A local build's log must show
      `check-runtime-signature: the Copilot runtime keeps GitHub's signature`. `codesign -dv --verbose=2 "<app>/Contents/Resources/app.asar.unpacked/node_modules/@github/copilot-sdk-darwin-arm64/prebuilds/darwin-arm64/copilot-runtime"`
      must say `Identifier=copilot` and `TeamIdentifier=VEKTX9H2N7`; `codesign --verify --deep --strict "<app>"` must pass.
   3. Repeat step 1's two sessions. Expected: **0** dialogs for items written by `copilot login` / the `copilot` CLI; at most **1 per
@@ -978,11 +989,21 @@ server.
     - one-shot sessions turn the user's servers off by name;
     - at launch, restored agents stay lazy: only the chat that is opened resumes its session, on the one runtime (FR-161).
   - The 4 prompts for one failing server therefore come from the runtime's own connect and refresh for that server, and its items' old lists. `[IMPLEMENTED]` 2026-10-23, `test:` `test:copilotshared` (0 runtime calls for 15 opens of failed, needs-sign-in and pending rows; 3 polls of a failed server only check `isServerRunning`; one restart per press).
-- **FR-164** (**approved by the owner 2026-10-23, in the chat**; this changes the earlier Out-of-scope Q19 A for this one use; build after the root cause is confirmed) **Re-sign in old servers**:
-  - A one-click action in MCP servers (Copilot sessions only) that, for each server with a stored sign-in, calls the runtime's own `rpc.mcp.oauth.login({ serverName, forceReauth: true })`. Per the SDK, this "clears any cached OAuth token for the server and runs a full new authorization" (`read:` SDK 1.0.22 `rpc.d.ts`). The new items are then written by the GitHub-signed runtime.
-  - Durbar never reads, writes or deletes keychain items itself.
-  - Open questions before building:
-    - whether `forceReauth` deletes the keychain item or only overwrites its data, which would keep the old lists;
-    - whether it also clears the stored client registration (the second item per server);
-    - whether deleting an old item asks once more.
-  - Until those are checked, the manual Keychain Access workaround above is the tested path to suggest.
+- **FR-164** **Sign in again** (owner approved it in the chat on 2026-10-23, which changes the earlier Out-of-scope Q19 A for this one use):
+  - **What the user sees:** each Copilot MCP row that is connected or failed and is not a local (stdio) server has **Sign in again…**. Two or more such rows also show **Sign in again to all (N)…**.
+  - **What happens:** one confirmation, then for each server the runtime's own `rpc.mcp.oauth.login({ serverName, forceReauth: true })`. Per the SDK, this "clears any cached OAuth token for the server and runs a full new authorization" (`read:` SDK 1.0.22 `rpc.d.ts`). Each row then offers the usual **Open sign-in page** (FR-065: the address stays in main, the window gets the host only).
+  - **Guards:**
+    - `agents:mcpSignIn(id, name, again)`: only a literal `true` counts;
+    - the agent app must have `capabilities.mcpSignInAgain` (Copilot only);
+    - the server must be connected or failed and not waiting for a first sign-in (`canSignInAgainStatus`);
+    - one sign-in per server at a time.
+  - **Never:** Durbar reads, writes or deletes no keychain item itself, and makes no other OAuth call.
+  - `[IMPLEMENTED]` 2026-10-23, `test:` `test:mcpsignin` (op guards, the reply's `canSignInAgain`), `test:copilotshared` (only `forceReauth` is added to the login call), `test:runtime` (contract: `mcpSignInAgain` only with `mcpSignIn`), and the simulator's canned flow.
+  - `[KNOWN GAP]` Not run on a real account. Still unknown:
+    - whether `forceReauth` deletes and re-creates the keychain item, or only rewrites its data (which would keep the old access and partition lists);
+    - whether it also replaces the stored client registration (the second item per server);
+    - whether removing an old item asks once more.
+    That needs the owner's Mac (T136).
+- **Hypothesis from Paco's agent** (review on #625; unverified until the owner's check): the old items' access list *and* partition list name the old ad-hoc build. That gives two prompts per item, the first for the access list ("confidential information") and the second for the partition list. "Always Allow" fixes only the access list, so the partition prompt returns on every launch (26 = 2 × 13). The fixes this points to:
+  - re-creating each item from the signed runtime (FR-164);
+  - **user-run only**, never by Durbar (it needs the login keychain password): `security set-generic-password-partition-list -S teamid:VEKTX9H2N7,apple-tool:,apple: -s <service> -a <account>` for each item.

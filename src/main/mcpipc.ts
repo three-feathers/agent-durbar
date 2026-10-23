@@ -219,8 +219,8 @@ export function registerMcpIpc(deps: {
     }
   };
   /** Spec 058 FR-065: Sign in, Open sign-in page, Cancel. Window only; main holds the address, the window gets the host. */
-  ipcHandle('agents:mcpSignIn', (e, id: unknown, name: unknown) =>
-    fromApp(e) ? mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf }, signIns, id, name) : { ok: false, error: 'invalid request' });
+  ipcHandle('agents:mcpSignIn', (e, id: unknown, name: unknown, again?: unknown) =>
+    fromApp(e) ? mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf }, signIns, id, name, again) : { ok: false, error: 'invalid request' });
   ipcHandle('agents:mcpOpenSignIn', (e, id: unknown, name: unknown, host: unknown) => (fromApp(e) ? mcpOpenSignInOp(signIns, agents, id, name, host) : { ok: false, error: 'invalid request' }));
   ipcHandle('agents:mcpCancelSignIn', (e, id: unknown, name: unknown) => (fromApp(e) ? mcpCancelSignInOp({ agents, router }, signIns, id, name) : { ok: false, error: 'invalid request' }));
   /** Spec 069 FR-061: the tools turned off for one server in this agent's folder (applies to new sessions and after Restart session). */

@@ -15,7 +15,10 @@ const chk = require(path.join(root, 'scripts', 'check-runtime-signature.js')) as
   parseSignatures(buf: Buffer): Array<{ signed?: boolean; adhoc?: boolean; identifier?: string; teamId?: string; error?: string }>;
   isMachO(buf: Buffer): boolean;
   problemOf(file: string, buf: Buffer): string | undefined;
-  findRuntimeFiles(releaseDir: string, productName: string): string[];
+  findRuntimeFiles(releaseDir: string, productName: string, arch?: string): string[];
+  findRuntimeApps(releaseDir: string, productName: string, arch?: string): Array<{ app: string; files: string[] }>;
+  checkApps(apps: Array<{ app: string; files: string[] }>, releaseDir: string): string[];
+  macFolderOf(arch: string): string;
   checkFiles(files: string[]): string[];
 };
 
@@ -112,8 +115,24 @@ try {
   assert.deepStrictEqual(chk.checkFiles([...found, txt]), [], 'a non-Mach-O file is skipped');
   assert.deepStrictEqual(chk.checkFiles([txt]), ['no Mach-O runtime file found']);
   assert.deepStrictEqual(chk.checkFiles([r2]), ['copilot-runtime not found among the checked files']);
+  // review on #625 (fjcabello): per app and per arch, never one flag across apps
+  assert.deepStrictEqual([chk.macFolderOf('arm64'), chk.macFolderOf('x64'), chk.macFolderOf('universal')], ['mac-arm64', 'mac', 'mac-universal']);
+  const arm = chk.findRuntimeApps(tmp, 'Agent Durbar', 'arm64');
+  assert.deepStrictEqual(arm.map((a) => path.relative(tmp, a.app)), [path.join('mac-arm64', 'Agent Durbar.app')], '--arch arm64 checks only that build');
+  assert.deepStrictEqual(arm[0].files.sort(), [r1, r2].sort());
+  assert.deepStrictEqual(chk.findRuntimeApps(tmp, 'Agent Durbar', 'x64')[0].files, [r3]);
+  assert.deepStrictEqual(chk.checkApps(chk.findRuntimeApps(tmp, 'Agent Durbar'), tmp), [], 'both apps carry a GitHub-signed runtime');
+  assert.deepStrictEqual(chk.checkApps([], tmp), ['no packed mac app found']);
+  assert.deepStrictEqual(chk.checkApps(chk.findRuntimeApps(tmp, 'Agent Durbar', 'universal'), tmp), ['no packed mac app found'], 'an arch that was not built is not passed by another app');
+  // a second app WITHOUT the runtime fails on its own, even though another app has one (the old global flag let it pass)
+  put(path.join('mac-universal', 'Agent Durbar.app', 'Contents', 'MacOS', 'Agent Durbar'), adhoc);
+  const probs = chk.checkApps(chk.findRuntimeApps(tmp, 'Agent Durbar'), tmp);
+  assert.deepStrictEqual(probs, [`${path.join('mac-universal', 'Agent Durbar.app')}: no Mach-O runtime file found`], 'each problem names its app');
+  assert.deepStrictEqual(chk.checkApps(chk.findRuntimeApps(tmp, 'Agent Durbar', 'arm64'), tmp), [], 'the arm64 step is not failed by a stale other build');
   fs.writeFileSync(r1, adhoc);
   assert.strictEqual(chk.checkFiles(found).length, 1, 'a re-signed runtime is reported');
+  assert.match(chk.checkApps(chk.findRuntimeApps(tmp, 'Agent Durbar', 'arm64'), tmp)[0], /^mac-arm64.*copilot-runtime: ad-hoc/);
+  assert.deepStrictEqual(chk.checkApps(chk.findRuntimeApps(tmp, 'Agent Durbar', 'x64'), tmp), [], 'the x64 build is judged on its own files');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
@@ -138,6 +157,12 @@ for (const f of [
   app,
 ]) assert.ok(!skipped(f), `still signed by electron-builder: ${f}`);
 assert.strictEqual(pkg.build.mac.identity, '-', 'ad-hoc builds (signing with a Developer ID is spec 014, needs the owner)');
-for (const s of ['dist:mac:arm64', 'dist:mac:x64']) assert.match(pkg.scripts[s], /electron-builder[^&]*&&.*node scripts\/check-runtime-signature\.js/, `${s} runs the signature check after packing`);
+for (const [s, arch] of [['dist:mac:arm64', ' --arch arm64'], ['dist:mac:x64', ' --arch x64'], ['dist', '']]) {
+  assert.ok(pkg.scripts[s].includes(`electron-builder`) && new RegExp(`electron-builder[^&]*--publish never && node scripts/check-runtime-signature\\.js${arch} &&`).test(pkg.scripts[s]), `${s} runs the signature check (${arch.trim() || 'every mac app'}) right after packing`);
+}
+// every script that packs a mac app runs it (a no-op off macOS); Windows and Linux builds do not need it
+for (const [name, cmd] of Object.entries(pkg.scripts)) {
+  if (/electron-builder/.test(cmd) && !/--win|--linux/.test(cmd)) assert.match(cmd, /check-runtime-signature\.js/, `${name} can pack a mac app and must run the check`);
+}
 
 console.log('runtime signature (spec 058 FR-160): all checks passed');

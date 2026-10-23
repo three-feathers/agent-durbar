@@ -295,7 +295,7 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
   no early Claude CLI launch after Restart session (Q11), no use of Copilot `stopServer` (Q2).
 - Delta 2026-10-20 (issue #364, constitution III, not a question): no call that hands a token, code or callback URL through Durbar (Copilot
   `onMcpAuthRequest`, `oauth.handlePendingRequest`, `oauth.respond`, `oauth.complete`; Claude `mcp_oauth_callback_url`), no client id or
-  secret asked from the user, no `redirectUri` of Durbar's own. No "Sign in with another account" (Q19 A): no `forceReauth`, no `mcp_clear_auth`.
+  secret asked from the user, no `redirectUri` of Durbar's own. No "Sign in with another account" (Q19 A): no `forceReauth`, no `mcp_clear_auth`. (Changed 2026-10-23 by the owner for one use only: Copilot's **Sign in again**, FR-164, which re-creates keychain sign-ins saved by older builds.)
 - No automatic switch-off after repeated failures (Q17 A); no early Claude CLI launch for a sign-in (Q15 A); no `http:` authorization
   pages (Q16 A); no automatic Restart session after a Codex sign-in (Q18 A).
 
@@ -337,4 +337,6 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
 - [ ] T134 Mac check list (FR-162) run on a Mac by Paco's team; counts before and after on #623; README and FR-160 `[KNOWN GAP]` updated [FR-162]
 - [x] T135 Record the owner's Mac result (FR-162) and the root-cause analysis; FR-163: `listMcpTools` asks nothing of a server that is not connected; `test:copilotshared` counts runtime calls [FR-162, FR-163]
 - [ ] T136 Confirm the cause on the owner's Mac: the program name in the dialog, Durbar running from /Applications, and whether deleting the old `copilot-mcp-oauth*` items in Keychain Access and signing in again gives 0 prompts on the next launch [FR-162]
-- [ ] T137 Re-sign in old servers (owner-approved): `forceReauth` sign-in per server through the runtime, after T136 and a check that `forceReauth` re-creates the items [FR-164]
+- [x] T137 Sign in again (owner-approved): per row and for all, the runtime's `forceReauth` sign-in, guards in main, simulator; fakes only [FR-164]
+- [ ] T138 On the owner's Mac: Sign in again to all, then quit and reopen: count the prompts (expected 0 if `forceReauth` re-creates the items); else the user-run partition-list command [FR-164]
+- [x] T139 Review on #625 (fjcabello): FR-160 credits the real CI build and strict verify; FR-162 points to the test pre-release; every mac packaging script runs the check (`--arch` per build, per app); `dispose` stops a runtime that is still starting [FR-160, FR-161]

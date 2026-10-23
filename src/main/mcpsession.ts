@@ -51,6 +51,12 @@ export interface McpReplyInput {
 
 /** Spec 058 FR-065: the one rule for "this row needs a sign-in" (the window uses the same): the runtime's `needs-auth`, or a failed server whose failure is an auth one. */
 export const needsSignIn = (s: { status?: string; errorClass?: string } | undefined): boolean => !!s && (s.status === 'needs-auth' || (s.status === 'failed' && s.errorClass === 'auth'));
+/**
+ * Spec 058 FR-164: a server that can be signed in again: reported by the session as connected or failed (not one that waits for its
+ * first sign-in, which gets Sign in), and not a local (stdio) server, which has no OAuth sign-in.
+ */
+export const canSignInAgainStatus = (s: { status?: string; errorClass?: string; transport?: string } | undefined): boolean =>
+  !!s && !needsSignIn(s) && (s.status === 'connected' || s.status === 'failed') && s.transport !== 'stdio';
 
 /** A server name that is safe to put in a command the user may copy: no spaces, quotes, newlines or shell characters (a folder extra's name comes from a file). */
 const PLAIN_NAME = /^[A-Za-z0-9_.@:+-]{1,64}$/;
@@ -79,9 +85,11 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     // FR-065/FR-068: a row that reads Needs sign-in, on, in a running session; the steps are the agent app's own text (missing = none)
     const needs = isLive && on && needsSignIn(st);
     const canSignIn = needs && typeof ad?.startMcpSignIn === 'function';
+    // FR-164: Sign in again, where the agent app can redo the sign-in itself (Copilot), for an on server the running session reports
+    const canSignInAgain = isLive && on && !!ad?.capabilities.mcpSignInAgain && typeof ad?.startMcpSignIn === 'function' && canSignInAgainStatus(st);
     const steps = needs && ad?.capabilities.mcpSignIn ? signInStepsFor(ad.capabilities.mcpSignInSteps, name, origin) : undefined;
-    const open = canSignIn ? i.signIn?.(name) : undefined;
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
+    const open = canSignIn || canSignInAgain ? i.signIn?.(name) : undefined;
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];

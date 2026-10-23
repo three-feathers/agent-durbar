@@ -24,6 +24,16 @@ class FlakyStartCopilot extends RestartingFakeCopilot {
   }
 }
 
+/** A Copilot adapter whose runtime start waits until the test opens the gate (a quit during the first start). */
+class GatedStartCopilot extends RestartingFakeCopilot {
+  open!: () => void;
+  private gate = new Promise<void>((r) => (this.open = r));
+  protected async createClient(): Promise<never> {
+    await this.gate;
+    return super.createClient();
+  }
+}
+
 async function main(): Promise<void> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-shared-'));
   const dirs = ['a', 'b', 'c', 'd'].map((n) => { const d = path.join(root, n); fs.mkdirSync(d); return d; });
@@ -120,6 +130,25 @@ async function main(): Promise<void> {
       assert.ok(ad.isLive(a));
     }
 
+    // ---- review on #625: dispose during an in-flight first start stops the runtime that start brings up, and keeps nothing
+    {
+      const ad = new GatedStartCopilot();
+      const first = ad.start({ workspace: dirs[0], quiet: true }).catch((e: unknown) => e);
+      await sleep(5);
+      const disposing = ad.dispose();
+      await sleep(5);
+      ad.open();
+      await disposing;
+      assert.strictEqual(ad.clients.length, 1, 'the start went through');
+      assert.strictEqual(ad.clients[0].stopped, 1, 'dispose stopped the runtime that was still starting');
+      await first;
+      // a later use after dispose starts a new runtime instead of reusing the stopped one
+      await ad.start({ workspace: dirs[1], quiet: true });
+      assert.strictEqual(ad.clients.length, 2, 'the stopped client is not kept');
+      // dispose with nothing started: nothing to stop
+      await new GatedStartCopilot().dispose();
+    }
+
     // ---- FR-163: nothing Durbar does asks the runtime to connect a server that is not connected (each attempt can read the keychain)
     {
       const ad = new RestartingFakeCopilot();
@@ -153,6 +182,18 @@ async function main(): Promise<void> {
       // a server the runtime has not reported yet: asked as before (the runtime's own answer decides)
       await ad.listMcpTools(sid, 'unknown-yet');
       assert.strictEqual(connects(), 3);
+      // FR-164: Sign in uses the runtime's login as before; Sign in again adds forceReauth and nothing else
+      s.loginAnswer = { authorizationUrl: 'https://auth.example.com/a' };
+      s.calls.length = 0;
+      await ad.startMcpSignIn(sid, 'later');
+      await ad.startMcpSignIn(sid, 'ok', { again: true });
+      const logins = s.calls.filter((c) => c.name === 'mcp.oauth.login').map((c) => c.args[0] as Record<string, unknown>);
+      assert.strictEqual(logins.length, 2);
+      assert.strictEqual('forceReauth' in logins[0], false, 'a first sign-in never forces');
+      assert.strictEqual(logins[1].forceReauth, true, 'Sign in again forces a new authorization in the runtime');
+      assert.deepStrictEqual(Object.keys(logins[1]).sort(), ['callbackSuccessMessage', 'clientName', 'forceReauth', 'serverName']);
+      assert.ok(!s.calls.some((c) => /oauth\.(handlePendingRequest|complete|prepareLogin|cancelLogin)/.test(c.name)), 'no other OAuth call');
+      assert.strictEqual(ad.capabilities.mcpSignInAgain, true);
     }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

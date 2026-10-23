@@ -45,7 +45,7 @@ async function main(): Promise<void> {
       const pre = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'preload', 'preload.ts'), 'utf8');
       const lines = pre.split('\n').filter((l) => /agents:mcp(SignIn|OpenSignIn|CancelSignIn)'/.test(l)).map((l) => l.trim());
       assert.deepStrictEqual(lines, [
-        "agentMcpSignIn: (id, name) => ipcRenderer.invoke('agents:mcpSignIn', id, name),",
+        "agentMcpSignIn: (id, name, again) => ipcRenderer.invoke('agents:mcpSignIn', id, name, again === true),",
         "agentMcpOpenSignIn: (id, name, host) => ipcRenderer.invoke('agents:mcpOpenSignIn', id, name, host),",
         "agentMcpCancelSignIn: (id, name) => ipcRenderer.invoke('agents:mcpCancelSignIn', id, name),",
       ], 'the three preload lines');
@@ -322,6 +322,41 @@ async function main(): Promise<void> {
       t += SIGN_IN_TTL_MS;
       assert.ok(cap.begin('a', 'one-more', PAGE, 'h'), 'expired entries are swept when one is added');
       assert.ok(!cap.has('a', 's0'), 'and they are gone');
+    }
+
+    // ---- FR-164 (owner 2026-10-23): Sign in again, through the agent app's own forced sign-in only ----
+    {
+      const store = new McpSignInStore(() => 0, async () => undefined);
+      const mk = (caps: Record<string, unknown>) => { const ad = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, ...caps } }); ad.signInResult = { kind: 'browser', url: PAGE }; return ad; };
+      const ad = mk({ mcpSignInAgain: true });
+      const sid = await ad.start({ workspace: ws, quiet: true });
+      const live: McpServerStatus[] = [
+        { name: 'teams', status: 'needs-auth', errorClass: 'auth' }, { name: 'web', status: 'connected', transport: 'http' }, { name: 'down', status: 'failed', error: '500' },
+        { name: 'local', status: 'connected', transport: 'stdio' }, { name: 'slow', status: 'pending' }, { name: 'off', status: 'disabled' },
+      ];
+      const d = { agents: new Map([[sid, info(sid)]]), router: routerOf(ad), live: () => live, secrets: () => [] };
+      // a connected and a failed remote server can be signed in again; the runtime gets `again` (Copilot: forceReauth)
+      assert.deepStrictEqual(await mcpSignInOp(d, store, sid, 'web', true), { ok: true, kind: 'browser', host: 'auth.example.com' });
+      assert.deepStrictEqual(ad.signInCalls.at(-1), { sessionId: sid, name: 'web', again: true });
+      assert.strictEqual((await mcpSignInOp(d, store, sid, 'down', true)).ok, true);
+      // not for: a server waiting for its first sign-in (that is Sign in), a local one, pending, disabled; only `true` counts as again
+      for (const n of ['teams', 'local', 'slow', 'off']) assert.match((await mcpSignInOp(d, store, sid, n, true) as { error: string }).error, /cannot be signed in again now/, n);
+      assert.match((await mcpSignInOp(d, store, sid, 'down', 'true') as { error: string }).error, /does not need a sign-in/, 'a string "true" is not again');
+      assert.strictEqual(ad.signInCalls.length, 2, 'nothing else reached the runtime');
+      // an agent app without the capability: refused before the runtime
+      const no = mk({});
+      const sid2 = await no.start({ workspace: ws, quiet: true });
+      const d2 = { ...d, agents: new Map([[sid2, info(sid2)]]), router: routerOf(no) };
+      assert.match((await mcpSignInOp(d2, store, sid2, 'web', true) as { error: string }).error, /cannot sign in again/);
+      assert.strictEqual(no.signInCalls.length, 0);
+      // the reply: canSignInAgain only with the capability, a running session, the server on, and a connected or failed remote server
+      const rep = (x: AgentAdapter, id: string, off = new Set<string>()) => agentMcpReply({ a: info(id), ad: x, live, off, secrets: [], cli: live.map((l) => ({ name: l.name, enabled: true })), extras: [], ambientDisabled: new Set(), signIn: () => undefined });
+      const again = (r: ReturnType<typeof rep>) => r.servers.filter((x) => x.canSignInAgain).map((x) => x.name);
+      assert.deepStrictEqual(again(rep(ad, sid)), ['web', 'down']);
+      assert.deepStrictEqual(again(rep(ad, sid, new Set(['web']))), ['down'], 'a server switched off here: no');
+      assert.deepStrictEqual(again(rep(no, sid2)), [], 'no capability: no');
+      await ad.stop(sid);
+      assert.deepStrictEqual(again(rep(ad, sid)), [], 'no running session: no');
     }
 
     // ---- the reply (FR-020, FR-068) ----

@@ -112,14 +112,26 @@ function problemOf(file, buf) {
   return undefined;
 }
 
-/** The runtime files of every packed `<productName>.app` in a `release/mac...` folder under `releaseDir`. */
-function findRuntimeFiles(releaseDir, productName) {
+/** electron-builder's output folder for an arch (`mac` = x64, `mac-arm64`, `mac-universal`). */
+function macFolderOf(arch) {
+  return arch === 'x64' ? 'mac' : `mac-${arch}`;
+}
+
+/**
+ * Every packed `<productName>.app` under `releaseDir` (only the folder of `arch` when given), each with its own runtime files:
+ * `[{ app, files }]`. An app without the runtime package still appears, with no files, so the check fails for that app (review on #625).
+ */
+function findRuntimeApps(releaseDir, productName, arch) {
   if (!fs.existsSync(releaseDir)) return [];
+  const folders = fs.readdirSync(releaseDir).filter((n) => (arch ? n === macFolderOf(arch) : /^mac/.test(n))).sort();
   const out = [];
-  for (const d of fs.readdirSync(releaseDir).filter((n) => /^mac/.test(n)).sort()) {
-    const gh = path.join(releaseDir, d, `${productName}.app`, 'Contents', 'Resources', 'app.asar.unpacked', 'node_modules', '@github');
-    if (!fs.existsSync(gh)) continue;
-    for (const pkg of fs.readdirSync(gh).filter((n) => /^copilot-sdk-darwin-/.test(n)).sort()) {
+  for (const d of folders) {
+    const app = path.join(releaseDir, d, `${productName}.app`);
+    if (!fs.existsSync(app)) continue;
+    const files = [];
+    const gh = path.join(app, 'Contents', 'Resources', 'app.asar.unpacked', 'node_modules', '@github');
+    const pkgs = fs.existsSync(gh) ? fs.readdirSync(gh).filter((n) => /^copilot-sdk-darwin-/.test(n)).sort() : [];
+    for (const pkg of pkgs) {
       const pre = path.join(gh, pkg, 'prebuilds');
       if (!fs.existsSync(pre)) continue;
       for (const plat of fs.readdirSync(pre).sort()) {
@@ -127,15 +139,21 @@ function findRuntimeFiles(releaseDir, productName) {
         if (!fs.statSync(dir).isDirectory()) continue;
         for (const f of fs.readdirSync(dir).sort()) {
           const p = path.join(dir, f);
-          if (fs.statSync(p).isFile()) out.push(p);
+          if (fs.statSync(p).isFile()) files.push(p);
         }
       }
     }
+    out.push({ app, files });
   }
   return out;
 }
 
-/** Check files; returns the problems (empty = all GitHub-signed). Non-Mach-O files are skipped; at least one runtime binary is required. */
+/** The runtime files of every packed app, flattened (kept for callers that only need the list). */
+function findRuntimeFiles(releaseDir, productName, arch) {
+  return findRuntimeApps(releaseDir, productName, arch).flatMap((a) => a.files);
+}
+
+/** Check files of ONE app; returns the problems (empty = all GitHub-signed). Non-Mach-O files are skipped; the runtime is required. */
 function checkFiles(files) {
   const problems = [];
   let checked = 0;
@@ -153,22 +171,44 @@ function checkFiles(files) {
   return problems;
 }
 
-module.exports = { GITHUB_TEAM_ID, parseSignatures, isMachO, problemOf, findRuntimeFiles, checkFiles };
+/** Check each app on its own (the runtime must be in every app); each problem names its app. No app at all is a problem too. */
+function checkApps(apps, releaseDir) {
+  if (!apps.length) return ['no packed mac app found'];
+  const problems = [];
+  for (const a of apps) for (const p of checkFiles(a.files)) problems.push(`${path.relative(releaseDir, a.app)}: ${p}`);
+  return problems;
+}
+
+module.exports = { GITHUB_TEAM_ID, parseSignatures, isMachO, problemOf, macFolderOf, findRuntimeApps, findRuntimeFiles, checkFiles, checkApps };
 
 if (require.main === module) {
-  let files = process.argv.slice(2).map((f) => path.resolve(f));
-  if (!files.length) {
+  const argv = process.argv.slice(2);
+  const ai = argv.indexOf('--arch');
+  const arch = ai >= 0 ? argv[ai + 1] : undefined;
+  if (ai >= 0 && !['arm64', 'x64', 'universal'].includes(arch)) {
+    console.error('check-runtime-signature: --arch must be arm64, x64 or universal');
+    process.exit(1);
+  }
+  const files = argv.filter((_, i) => ai < 0 || (i !== ai && i !== ai + 1)).map((f) => path.resolve(f));
+  let problems;
+  let what;
+  if (files.length) {
+    problems = checkFiles(files);
+    what = `${files.length} file(s)`;
+  } else {
     if (process.platform !== 'darwin') {
       console.log('check-runtime-signature: no mac package on this platform, nothing to check');
       process.exit(0);
     }
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    files = findRuntimeFiles(path.resolve('release'), (pkg.build && pkg.build.productName) || pkg.name);
+    const releaseDir = path.resolve('release');
+    const apps = findRuntimeApps(releaseDir, (pkg.build && pkg.build.productName) || pkg.name, arch);
+    problems = checkApps(apps, releaseDir);
+    what = apps.map((a) => `${path.relative(releaseDir, a.app)} (${a.files.length} file(s))`).join(', ');
   }
-  const problems = checkFiles(files);
   if (problems.length) {
     for (const p of problems) console.error(`check-runtime-signature: ${p}`);
     process.exit(1);
   }
-  console.log(`check-runtime-signature: the Copilot runtime keeps GitHub's signature (team ${GITHUB_TEAM_ID}), ${files.length} file(s)`);
+  console.log(`check-runtime-signature: the Copilot runtime keeps GitHub's signature (team ${GITHUB_TEAM_ID}), ${what}`);
 }

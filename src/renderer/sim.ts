@@ -1299,7 +1299,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const signOf = (n: string, origin: 'cli' | 'folder' | 'runtime') => {
           if (!simMcpAuth || (s.info.adapterId ?? 'copilot') !== 'copilot') return {};
           const st = reported(n);
-          if (!live || s.mcpOff?.has(n) || (st.status !== 'needs-auth' && !(st.status === 'failed' && st.errorClass === 'auth'))) return {};
+          const needs = st.status === 'needs-auth' || (st.status === 'failed' && st.errorClass === 'auth');
+          // spec 058 FR-164: Sign in again on a connected or failed server (main's canSignInAgainStatus), with the host once it is open
+          if (live && !s.mcpOff?.has(n) && !needs && (st.status === 'connected' || st.status === 'failed') && simMcpAuth !== 'manual') {
+            const o = simSignOpen(s, n);
+            return { canSignInAgain: true, ...(o ? { signIn: { host: 'auth.example.com', opened: o.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - o.at)) } } : {}) };
+          }
+          if (!live || s.mcpOff?.has(n) || !needs) return {};
           const open = simSignOpen(s, n);
           const steps = origin === 'folder' ? 'This server is only known to Agent Durbar; use Sign in here.' : 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth ' + n + '` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).';
           return { signInSteps: steps, ...(simMcpAuth === 'manual' ? {} : { canSignIn: true, ...(open ? { signIn: { host: 'auth.example.com', opened: open.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - open.at)) } } : {}) }) };
@@ -1356,12 +1362,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true };
       },
       /* spec 058 FR-071: Sign in -> the host -> Open sign-in page (opens nothing; "Running" after 2 s). The address is never in the page. */
-      agentMcpSignIn: async (id, name) => {
+      agentMcpSignIn: async (id, name, again) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || (s.info.adapterId ?? 'copilot') !== 'copilot' || !simMcpAuth) return { ok: false, error: 'Unknown agent or server.' };
         if (simMcpAuth === 'manual') return { ok: false, manual: true, error: 'This Copilot version cannot start a sign-in from Agent Durbar.' };
         const st = simServer(s, sims.indexOf(s), name, true);
-        if (st.status !== 'needs-auth') return { ok: false, error: name + ' does not need a sign-in.' };
+        if (again === true ? !(st.status === 'connected' || st.status === 'failed') : st.status !== 'needs-auth') return { ok: false, error: name + (again === true ? ' cannot be signed in again now.' : ' does not need a sign-in.') };
         if (simSignOpen(s, name)) return { ok: false, error: 'A sign-in for ' + name + ' is already open.' };
         (s.mcpSign ??= new Map()).set(name, { opened: false, at: Date.now() });
         return { ok: true, kind: 'browser', host: 'auth.example.com' };

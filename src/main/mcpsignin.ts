@@ -12,7 +12,7 @@ import type { AdapterRouter } from '../adapters/router';
 import type { McpServerStatus } from '../adapters/types';
 import type { AgentInfo, McpOpenSignInResult, McpSignInStartResult } from '../shared/api';
 import { maskMcpError } from './mcpmask';
-import { needsSignIn, validServerName } from './mcpsession';
+import { canSignInAgainStatus, needsSignIn, validServerName } from './mcpsession';
 
 /** FR-065: how long main keeps an address; the runtime's own listener ends on its own (`[KNOWN GAP]`, how long). */
 export const SIGN_IN_TTL_MS = 10 * 60 * 1000;
@@ -215,7 +215,7 @@ export function signInErrorText(err: unknown, secrets: readonly string[], fallba
  * session and one sign-in at a time; asks the runtime; checks the address; keeps it. The reply carries the host only. `manual: true`
  * tells the dialog to show the terminal steps (FR-068).
  */
-export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unknown, name: unknown): Promise<McpSignInStartResult> {
+export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unknown, name: unknown, again?: unknown): Promise<McpSignInStartResult> {
   const a = typeof id === 'string' ? d.agents.get(id) : undefined;
   const ad = a ? d.router.forAgent(a.id) : undefined;
   if (!a || !ad || !validServerName(name)) return { ok: false, error: UNKNOWN };
@@ -223,12 +223,15 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
   if (!ad.isLive(a.id)) return { ok: false, manual: true, error: NOT_RUNNING };
   const st = d.live(a.id).find((x) => x.name === name);
   if (!st) return { ok: false, error: `${name} is not running in this session.` };
-  if (!needsSignIn(st)) return { ok: false, error: `${name} does not need a sign-in.` };
+  // FR-164: Sign in again (only `true` counts) is for a server the agent app can sign in again itself, and not one that waits for its first sign-in
+  const redo = again === true;
+  if (redo && !ad.capabilities.mcpSignInAgain) return { ok: false, error: `${ad.displayName} cannot sign in again from Agent Durbar.` };
+  if (redo ? !canSignInAgainStatus(st) : !needsSignIn(st)) return { ok: false, error: redo ? `${name} cannot be signed in again now.` : `${name} does not need a sign-in.` };
   if (!store.reserve(a.id, name)) return { ok: false, error: store.has(a.id, name) ? `A sign-in for ${name} is already open.` : 'A sign-in for this server is already starting, or too many are open.' };
   try {
     let r;
     try {
-      r = await ad.startMcpSignIn(a.id, name);
+      r = redo ? await ad.startMcpSignIn(a.id, name, { again: true }) : await ad.startMcpSignIn(a.id, name);
     } catch (err) {
       return { ok: false, manual: true, error: signInErrorText(err, d.secrets(a.id), 'Could not start the sign-in.') };
     }
