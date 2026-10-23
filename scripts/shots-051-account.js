@@ -91,8 +91,9 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('kindHelp').click()`);
     assert.ok(await until(`document.querySelectorAll('.dlist li').length>=3`), 'About agent apps opened');
     const about = await js(`[...document.querySelectorAll('.dlist li')].map(l=>l.textContent)`);
-    assert.ok(about.some((t) => t.startsWith('Copilot: ready · ' + COPILOT_TIP)), 'About lists the Copilot account: ' + JSON.stringify(about));
-    assert.ok(about.some((t) => t.startsWith('Claude Code: ready · ' + CLAUDE_TIP)), 'About lists the Claude account');
+    // FR-020: About says "ready" already, so it lists only the masked name and the plan
+    assert.ok(about.some((t) => t.startsWith('Copilot: ready · o••• · Copilot Individual')), 'About lists the Copilot account: ' + JSON.stringify(about));
+    assert.ok(about.some((t) => t.startsWith('Claude Code: ready · s•••@example.com · Claude Pro')), 'About lists the Claude account');
     assert.ok(about.some((t) => /^Codex: too old/.test(t) && !/Signed in/.test(t)), 'no account on an app that is not ready');
     assert.deepStrictEqual(await clearIn(), [], 'the tooltips and About agent apps hold no clear name');
     await H.key('Escape'); await settle();

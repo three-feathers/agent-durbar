@@ -4460,6 +4460,9 @@ const pickKind=want=>{const ch=DMK().kindChoices(KINDS);const w=ch.find(k=>k.id=
 /* spec 051 FR-013, FR-015: the account line per app ({ [id]: { status, text } } from harness:accounts), in memory only; a tooltip, never logged */
 let ACCTS=null;
 const acctText=(id,state)=>state==='ready'&&ACCTS&&ACCTS[id]&&typeof ACCTS[id].text==='string'?ACCTS[id].text:'';
+/* spec 051 FR-020: in About agent apps the line already says "ready", so the account is only the masked name and plan ("o••• · Copilot
+   Individual"): the dialog body stays within its 8 lines (spec 052 FR-170, check-ui-text in CI's DejaVu font) */
+const aboutAcct=t=>t.replace(/^Signed in as /,'');
 const kindTitle=k=>{const t=acctText(k.id,k.state);return t?k.name+': '+t:'';};
 const kindOptions=()=>DMK().kindChoices(KINDS).map(k=>`<option value="${esc(k.id)}"${k.disabled?' disabled':''}${kindTitle(k)?` title="${esc(kindTitle(k))}"`:''}>${esc(k.shortName||k.name)}${k.stateText?' ('+esc(k.stateText)+')':''}</option>`).join('');
 /* Toolbar: model and effort follow the chosen kind. A kind other than the default has no model list yet (FR-062, T049), so both are hidden and it starts with its own default. */
@@ -4550,7 +4553,7 @@ async function aboutKinds(){
   for(;;){
     const ch=DMK().kindChoices(KINDS);
     const r=await askDialog({title:'About agent apps',size:'m',body:'Each agent app (Copilot, Claude Code, Codex) runs agents its own way. Only an app that is ready can be chosen. Settings > Agent apps can install, update or sign in to one for you.',
-      lines:ch.map(k=>k.name+': '+(k.state==='ready'?'ready':k.stateText)+(acctText(k.id,k.state)?' · '+acctText(k.id,k.state):'')+(k.version?' · version '+k.version:'')+(k.hint?' · '+k.hint:'')),
+      lines:ch.map(k=>k.name+': '+(k.state==='ready'?'ready':k.stateText)+(acctText(k.id,k.state)?' · '+aboutAcct(acctText(k.id,k.state)):'')+(k.version?' · version '+k.version:'')+(k.hint?' · '+k.hint:'')),
       buttons:[{label:'Close',value:null},{label:'Check again',value:'again'},{label:'Set up agent apps…',value:'setup',cls:'primary'}],returnFocus:()=>$('kindHelp')});
     if(r&&r.value==='setup'){window.DurbarScreens.openSettings('harnesses');return;} /* spec 051 FR-008 */
     if(!r||r.value!=='again')return;

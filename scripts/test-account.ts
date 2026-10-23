@@ -38,6 +38,15 @@ class AuthFakeClient extends FakeClient {
   }
 }
 
+/** A source file with its line endings normalised: Windows checks out CRLF (agent notes, "Static source checks and CRLF"). */
+const readSrc = (f: string): string => fs.readFileSync(path.join(path.join(__dirname, '..', '..'), f), 'utf8').replace(/\r\n/g, '\n');
+/** The method body that starts at `head`, up to its closing two-space `}` line; '' when not found. CRLF is normalised first. */
+const bodyOf = (text: string, head: string): string => {
+  const t = text.replace(/\r\n/g, '\n');
+  const i = t.indexOf(head);
+  const j = i < 0 ? -1 : t.indexOf('\n  }\n', i);
+  return i < 0 || j < 0 ? '' : t.slice(i, j);
+};
 // a promise that never settles empties the event loop and Node exits 0 without the last line: count that as a failure
 let finished = false;
 process.on('exit', (code) => {
@@ -387,7 +396,7 @@ void (async () => {
     const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : /\.(ts|js)$/.test(e.name) ? [path.join(dir, e.name)] : []));
     const files = walk(path.join(ROOT, 'src')).map((f) => path.relative(ROOT, f).split(path.sep).join('/'));
     const strip = (s: string): string => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-    const touches = files.filter((f) => /\baccountInfo\b|harness:accounts|harnessAccounts|\bAccountView\b|\bcreateAccountCache\b|from '\.\/accounts'|from '\.\.\/accounts'/.test(strip(fs.readFileSync(path.join(ROOT, f), 'utf8'))));
+    const touches = files.filter((f) => /\baccountInfo\b|harness:accounts|harnessAccounts|\bAccountView\b|\bcreateAccountCache\b|from '\.\/accounts'|from '\.\.\/accounts'/.test(strip(readSrc(f))));
     const ALLOWED = [
       'src/adapters/accounts.ts', 'src/adapters/claude.ts', 'src/adapters/codex.ts', 'src/adapters/copilot.ts', 'src/adapters/types.ts', 'src/main/accounts.ts',
       'src/main/ipc/harness.ts', 'src/main/simguard.ts', 'src/preload/preload.ts', 'src/shared/account.ts', 'src/shared/api.ts',
@@ -400,11 +409,11 @@ void (async () => {
       assert.ok(NO_LOG.test(bad), `the no-log check catches ${bad}`);
     }
     for (const f of ['src/main/accounts.ts', 'src/adapters/accounts.ts', 'src/shared/account.ts']) {
-      const s = strip(fs.readFileSync(path.join(ROOT, f), 'utf8'));
+      const s = strip(readSrc(f));
       assert.ok(!NO_LOG.test(s), `${f} writes no log`);
     }
     // the IPC handler only returns the answer: no log, no event broadcast, no activity entry in its block
-    const ipc = strip(fs.readFileSync(path.join(ROOT, 'src/main/ipc/harness.ts'), 'utf8'));
+    const ipc = strip(readSrc('src/main/ipc/harness.ts'));
     const block = ipc.slice(ipc.indexOf("ipcHandle('harness:accounts'"), ipc.indexOf("ipcHandle('harness:copilotAuth'"));
     assert.ok(block.length > 20 && !NO_LOG.test(block) && !/\blog\b/.test(block), 'harness:accounts only answers the window');
     assert.ok(/afterSignIn: async \(kind: string\) => \{\s*accounts\.forget\(kind\)/.test(ipc), 'a finished sign-in clears that app (FR-014)');
@@ -412,18 +421,23 @@ void (async () => {
     assert.ok(cacheBlock.length > 20 && !NO_LOG.test(cacheBlock), 'the cache wiring logs nothing');
     // the adapters' accountInfo bodies never call debug
     for (const f of ['src/adapters/claude.ts', 'src/adapters/codex.ts', 'src/adapters/copilot.ts']) {
-      const s = strip(fs.readFileSync(path.join(ROOT, f), 'utf8'));
-      const i = s.indexOf('async accountInfo(');
-      assert.ok(i > 0, `${f} has accountInfo`);
-      const body = s.slice(i, s.indexOf('\n  }\n', i));
+      const s = strip(readSrc(f));
+      const body = bodyOf(s, 'async accountInfo(');
+      assert.ok(body.length > 20, `${f} has accountInfo`);
+      // Windows checks out CRLF: the same body must come out of a CRLF copy (CI windows-latest, 4a777a26)
+      assert.strictEqual(bodyOf(s.replace(/\n/g, '\r\n'), 'async accountInfo('), body, `${f}: the body is found with CRLF endings too`);
       assert.ok(!NO_LOG.test(body), `${f} accountInfo does not log`);
+      if (f.endsWith('copilot.ts')) {
+        const plan = bodyOf(s, 'private async copilotPlan(');
+        assert.ok(plan.length > 20 && !NO_LOG.test(plan) && !/\.send\(\{|\bsend\(/.test(plan), 'the plan session logs nothing and sends no message');
+      }
     }
     // the window's account code sends nothing on: no bridge call but harnessAccounts in its lines
-    const hs = fs.readFileSync(path.join(ROOT, 'src/renderer/harnesses.js'), 'utf8');
+    const hs = readSrc('src/renderer/harnesses.js');
     const acc = hs.slice(hs.indexOf('let ACC = null'), hs.indexOf('/* a small modal'));
     assert.ok(acc.includes('B.harnessAccounts') && !/B\.(?!harnessAccounts)\w+\(/.test(acc), 'the window only reads the answer');
     // the simulator's fake identities are what accountView makes of fake answers (so the screenshots match the real wording, masked)
-    const sim = fs.readFileSync(path.join(ROOT, 'src/renderer/sim.ts'), 'utf8');
+    const sim = readSrc('src/renderer/sim.ts');
     for (const a of [
       { status: 'signed-in', name: 'octo-sim', service: 'GitHub', method: 'gh-cli', plan: 'Copilot Individual' },
       { status: 'signed-in', name: 'octo-sim', service: 'GitHub', method: 'gh-cli' },
@@ -438,7 +452,7 @@ void (async () => {
       assert.ok(sim.includes(lit), `the simulator has ${lit}`);
     }
     // FR-016: the picker tooltips and About agent apps read the masked line only, never the clear name
-    const appJs = fs.readFileSync(path.join(ROOT, 'src/renderer/app.js'), 'utf8');
+    const appJs = readSrc('src/renderer/app.js');
     assert.ok(/ACCTS\[id\]\.text/.test(appJs) && !/ACCTS\[[^\]]+\]\.name|\.name\b[^;\n]*ACCTS|ACCTS[^;\n]*\.name\b/.test(appJs.replace(/k\.name/g, '')), 'app.js uses the masked text only');
     // the reveal is not saved: no storage or settings call in the window's account code
     assert.ok(!/localStorage|sessionStorage|setSettings|saveSettings|indexedDB/.test(acc), 'the reveal is never saved');
