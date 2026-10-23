@@ -63,7 +63,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(n.buttons.filter((b) => ['Sign in', 'Switch off for this session', 'How to sign in from a terminal'].includes(b)), ['Sign in', 'Switch off for this session', 'How to sign in from a terminal']);
     assert.ok(!n.buttons.includes('Restart'), 'a needs-sign-in row has no Restart: ' + JSON.stringify(n.buttons));
     assert.ok(await js(`!!window.__row('my-notes').querySelector('.srv-act button.primary[data-signin]')`), 'Sign in is the primary action, where Restart would be');
-    assert.ok(/Sign in from Agent Durbar has not been checked on a real account yet\./.test(n.text), 'FR-074 in the row: ' + n.text);
+    assert.ok(/Checked once on a real account; other servers and systems not yet\./.test(n.text), 'FR-074 in the row: ' + n.text);
     const other = await info('github');
     assert.ok(other && !other.sign && other.status === 'Running', 'a running server has no sign-in block: ' + JSON.stringify(other));
     assert.ok(await js(`!!document.querySelector('#agMcp button[data-signin="my-notes"][aria-label="Sign in to my-notes"]')`), 'Sign in has an accessible name');
@@ -90,7 +90,7 @@ module.exports = async (ctx) => {
     assert.ok(/Sign-in page on auth\.example\.com/.test(n.text), 'the host: ' + n.text);
     assert.ok(/Sign-in page on auth\.example\.com · from Copilot/.test(n.text), 'FR-075: the source tag next to the host: ' + n.text);
     assert.ok(!/different site than the server/.test(n.text), 'no other-site line for a server with no address of its own');
-    assert.ok(/not been checked on a real account yet/.test(n.text), 'FR-074 in the confirm');
+    assert.ok(/Checked once on a real account/.test(n.text), 'FR-074 in the confirm');
     assert.strictEqual(await js(`window.__row('my-notes').querySelector('button[data-signopen]').dataset.signhost`), 'auth.example.com', 'Open is bound to the host that was shown');
     assert.ok(n.buttons.includes('Open sign-in page') && n.buttons.includes('Cancel') && !n.buttons.includes('Sign in'), 'Open sign-in page and Cancel: ' + JSON.stringify(n.buttons));
     assert.strictEqual(n.focus, 'Open sign-in page', 'focus moved to Open sign-in page');

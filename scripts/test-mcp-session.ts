@@ -358,9 +358,38 @@ async function main(): Promise<void> {
       s.calls.length = 0;
       s.listAnswer = [{ name: 'agent365-teams', status: 'connected' }, { name: 'figma', status: 'needs-auth' }];
       assert.strictEqual(typeof ad.refreshMcpStatus, 'function');
-      await ad.refreshMcpStatus(sid);
-      assert.deepStrictEqual(s.calls.map((c) => c.name), ['mcp.list'], 'one list call and nothing that starts or signs in');
+      s.running = false;
+      await ad.refreshMcpStatus(sid, 'agent365-teams');
+      assert.deepStrictEqual(s.calls.map((c) => c.name), ['mcp.isServerRunning'], 'a server with no client yet: one cheap check, no list (it could start servers)');
+      assert.strictEqual(seen.length, 0);
+      s.running = true;
+      s.calls.length = 0;
+      await ad.refreshMcpStatus(sid, 'agent365-teams');
+      assert.deepStrictEqual(s.calls.map((c) => c.name), ['mcp.isServerRunning', 'mcp.list'], 'running: then one list call, and nothing that starts or signs in');
       assert.deepStrictEqual((seen[0] as Array<{ name: string; status: string }>).map((x) => [x.name, x.status]), [['agent365-teams', 'connected'], ['figma', 'needs-auth']], 'the usual mcp event follows');
+      // review on #598 (issue #364's case): the runtime says `connected` while the tool calls fail with the OAuth challenge. A re-read that
+      // still says connected is not "signed in": the row stays needs-auth, the sign-in entry is kept, and only a status event clears it.
+      {
+        const challenge = 'MCP tool catalog changed before tool "x" could be invoked: Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)';
+        s.handler!({ type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'teams', status: 'connected' }] } });
+        s.handler!({ type: 'tool.execution_start', data: { toolCallId: 't1', toolName: 'teams-x', mcpServerName: 'teams', mcpToolName: 'x', arguments: {} } });
+        s.handler!({ type: 'tool.execution_complete', data: { toolCallId: 't1', success: false, error: { message: challenge } } });
+        const lastList = (): Array<{ name: string; status: string }> => seen[seen.length - 1] as Array<{ name: string; status: string }>;
+        assert.strictEqual(lastList()[0].status, 'needs-auth');
+        const { McpSignInStore } = await import('../src/main/mcpsignin');
+        const store = new McpSignInStore(() => 0, async () => undefined);
+        store.begin(sid, 'teams', 'https://auth.example.com/a', 'auth.example.com');
+        s.listAnswer = [{ name: 'teams', status: 'connected' }];
+        for (let i = 0; i < 3; i++) {
+          await ad.refreshMcpStatus(sid, 'teams');
+          store.onServers(sid, lastList() as never);
+        }
+        assert.strictEqual(lastList()[0].status, 'needs-auth', 'three polls that say connected leave needs-auth');
+        assert.ok(store.has(sid, 'teams'), 'the sign-in entry is kept (no "Signed in")');
+        s.handler!({ type: 'session.mcp_server_status_changed', data: { serverName: 'teams', status: 'connected' } });
+        store.onServers(sid, lastList() as never);
+        assert.ok(lastList()[0].status === 'connected' && !store.has(sid, 'teams'), 'the runtime\'s own status clears it and the entry');
+      }
       delete (s.rpc.mcp as Record<string, unknown>).list;
       await ad.refreshMcpStatus(sid); // a runtime without the call: nothing happens
       await ad.refreshMcpStatus('no-such-session');

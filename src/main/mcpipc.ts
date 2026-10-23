@@ -87,10 +87,10 @@ export function registerMcpIpc(deps: {
   };
   /** Spec 058 FR-065: the sign-in pages the agent apps handed back, in memory only (never logged, never written), for at most 10 minutes. */
   const signIns = new McpSignInStore(deps.now ?? Date.now, deps.openUrl ?? (async () => { throw new Error('no browser'); }));
-  /** FR-064 (real 2026-10-23): while a sign-in page is open, read the agent app's server list again every 3 s and when the window regains focus. */
-  const poller = new SignInPoller(signIns, (id) => {
+  /** FR-064 (real 2026-10-23): while a sign-in page is open, read the agent app's server list again every 5 s (at most 10 minutes) and when the window regains focus. */
+  const poller = new SignInPoller(signIns, (id, name) => {
     const ad = router.forAgent(id);
-    return ad && ad.isLive(id) ? ad.refreshMcpStatus?.(id) : undefined;
+    return ad && ad.isLive(id) ? ad.refreshMcpStatus?.(id, name) : undefined;
   }, deps.timers ?? { set: (fn, ms) => setInterval(fn, ms), clear: (h) => clearInterval(h as ReturnType<typeof setInterval>) });
   signIns.hooks = { opened: (a, n) => poller.start(a, n), dropped: (a, n) => poller.stop(a, n) };
   router.onEvent((e) => {

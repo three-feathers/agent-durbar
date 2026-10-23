@@ -158,14 +158,14 @@ export class McpSignInStore {
     const e = this.live(agentId, name);
     if (!e) return 'gone';
     // bound to what the user saw: a host the window did not show is never opened (the window repaints with the current one)
-    if (typeof shownHost !== 'string' || shownHost !== e.host) return 'gone';
+    
     const u = strictHttpsUrl(e.url);
     if (!u) {
       this.drop(agentId, name);
       return 'refused';
     }
     try {
-      await this.openUrl(typeof shownHost === 'string' && shownHost.startsWith('https://') ? shownHost : u.url);
+      await this.openUrl(u.url);
     } catch {
       return 'failed'; // the entry stays: the user may press Open again
     }
@@ -297,11 +297,11 @@ export interface PollTimers {
   set(fn: () => unknown, ms: number): unknown;
   clear(handle: unknown): void;
 }
-export const POLL_MS = 3000;
+export const POLL_MS = 5000;
 
 /**
  * Real 2026-10-23 (owner's Mac, Copilot): after the browser sign-in the runtime sent no status for a long while, so the row stayed on
- * "Open sign-in page / Cancel". While a sign-in page has been opened, the agent app's server list is read again every 3 seconds, and
+ * "Open sign-in page / Cancel". While a sign-in page has been opened, the agent app's server list is read again every 5 seconds, and
  * when the window regains focus (`kick`). One timer per entry, cleared in every case the entry ends (connected, Cancel, the 10-minute
  * limit, End session, Restart session, a refused address); one read at a time per entry (a slow read is not stacked on).
  */
@@ -310,7 +310,7 @@ export class SignInPoller {
   private readonly busy = new Set<string>();
   constructor(
     private readonly store: McpSignInStore,
-    private readonly refresh: (agentId: string) => Promise<void> | void,
+    private readonly refresh: (agentId: string, name: string) => Promise<void> | void,
     private readonly t: PollTimers,
     private readonly ms: number = POLL_MS,
   ) {}
@@ -337,7 +337,7 @@ export class SignInPoller {
     if (this.busy.has(k)) return;
     this.busy.add(k);
     try {
-      await this.refresh(agentId);
+      await this.refresh(agentId, name);
     } catch {
       /* the next tick tries again */
     } finally {

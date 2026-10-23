@@ -63,6 +63,30 @@ export class EventMapper {
     this.expected = model;
   }
 
+  /** Servers marked needs-auth because their tool calls failed with the OAuth challenge while the runtime said "connected" (FR-060): only the runtime's own next status for the server clears the mark. */
+  private derivedAuth = new Set<string>();
+
+  /**
+   * Spec 058 FR-060/FR-064: a server list read again by Durbar (the poll while a sign-in page is open), not an event from the runtime.
+   * It applies what changed, but a server that the tool failures marked needs-auth and that the list still calls `connected` keeps the
+   * mark: Copilot reports `connected` while its tool calls fail (issue #364), so a re-read must not read as "signed in". Only a status
+   * the runtime sends itself (`status_changed`, `servers_loaded`), or a re-read that lists another status, replaces the mark.
+   */
+  reread(servers: unknown): void {
+    if (!Array.isArray(servers)) return;
+    const listed = new Set<string>();
+    for (const s of servers) {
+      if (!s || typeof s.name !== 'string') continue;
+      listed.add(s.name);
+      const next = mcpStatus(s.name, s);
+      if (this.derivedAuth.has(s.name) && next.status === 'connected') continue; // the same "connected" the runtime always says: not new
+      this.derivedAuth.delete(s.name);
+      this.mcp.set(s.name, next);
+    }
+    for (const n of [...this.mcp.keys()]) if (!listed.has(n)) { this.mcp.delete(n); this.derivedAuth.delete(n); }
+    this.emitMcp();
+  }
+
   private emitMcp(): void {
     this.emit({ type: 'mcp', servers: [...this.mcp.values()].map((x) => ({ ...x })) });
   }
@@ -148,6 +172,7 @@ export class EventMapper {
         if (mcpAuth && meta.mcpServer) {
           const prev = this.mcp.get(meta.mcpServer);
           this.mcp.set(meta.mcpServer, { ...(prev ?? { name: meta.mcpServer }), status: 'needs-auth', errorClass: 'auth' });
+          this.derivedAuth.add(meta.mcpServer);
           this.emitMcp();
         }
         return;
@@ -213,10 +238,12 @@ export class EventMapper {
       }
       case 'session.mcp_servers_loaded':
         this.mcp.clear();
+        this.derivedAuth.clear();
         for (const s of Array.isArray(d.servers) ? d.servers : []) if (s && typeof s.name === 'string') this.mcp.set(s.name, mcpStatus(s.name, s));
         return this.emitMcp();
       case 'session.mcp_server_status_changed':
         if (typeof d.serverName !== 'string') return;
+        this.derivedAuth.delete(d.serverName);
         this.mcp.set(d.serverName, mcpStatus(d.serverName, { status: d.status, error: d.error, source: d.configSource ?? this.mcp.get(d.serverName)?.source, transport: this.mcp.get(d.serverName)?.transport }));
         return this.emitMcp();
       case 'session.mcp_server_removed':

@@ -176,7 +176,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToolFilter: true, // spec 069 FR-062: session excludedTools (read: SDK types; not run on a real account)
   mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
-  mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account, T105)
+  mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
   mcpSignInSteps: 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', // FR-068
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
@@ -1275,16 +1275,22 @@ export class CopilotAdapter implements AgentAdapter {
 
   /**
    * Spec 058 FR-064: read the session's server list again (`rpc.mcp.list`, @experimental: "Cache misses may start and wait for MCP
-   * servers", read: SDK 1.0.22) and feed it to the mapper as the runtime's own `session.mcp_servers_loaded`, so the usual `mcp` event follows.
-   * Real 2026-10-23: after a browser sign-in the runtime sent no status event for a long while. A missing method or a failure changes nothing.
+   * servers", read: SDK 1.0.22) and hand it to the mapper's `reread`, which keeps a needs-auth mark that the tool failures set while the list still says `connected` (a re-read is not a new status from the runtime; issue #364), so the usual `mcp` event follows.
+   * Real 2026-10-23: after a browser sign-in the runtime sent no status event for a long while. A missing method or a failure changes nothing. `[KNOWN GAP]` (T105) whether `list` can still start other servers on a real runtime.
    */
-  async refreshMcpStatus(sessionId: string): Promise<void> {
+  async refreshMcpStatus(sessionId: string, name?: string): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (!live) return;
-    const mcp = live.session.rpc.mcp as unknown as { list?: () => Promise<{ servers?: unknown }> };
+    const mcp = live.session.rpc.mcp as unknown as { list?: () => Promise<{ servers?: unknown }>; isServerRunning?: (p: { serverName: string }) => Promise<{ running?: unknown }> };
     if (typeof mcp.list !== 'function') return;
+    // `isServerRunning` is the one-server check ("has an active client and transport", it starts nothing): `list` ("cache misses may start
+    // and wait for MCP servers") is only called once this server has a client, which is the case a finished sign-in leads to
+    if (name !== undefined && typeof mcp.isServerRunning === 'function') {
+      const q = await mcp.isServerRunning({ serverName: name });
+      if (q?.running !== true) return;
+    }
     const r = await mcp.list();
-    if (this.sessions.get(sessionId) === live && Array.isArray(r?.servers)) this.mapperFor(sessionId).map({ type: 'session.mcp_servers_loaded', data: { servers: r.servers } } as unknown as RawEvent);
+    if (this.sessions.get(sessionId) === live && Array.isArray(r?.servers)) this.mapperFor(sessionId).reread(r.servers);
   }
 
   /** Spec 069 FR-031: a live `tools/list` through the runtime; it throws when the server is not connected. */

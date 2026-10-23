@@ -22,6 +22,7 @@ export class FakeSession {
   loginAnswer: unknown = { authorizationUrl: 'https://auth.example.test/authorize?state=abc' };
   loginFail?: Error | string;
   listAnswer: unknown[] = [];
+  running = true;
   compactAnswer: unknown = { success: true, tokensRemoved: 5000, messagesRemoved: 4, contextWindow: { tokenLimit: 100000, currentTokens: 12000, messagesLength: 3 } };
   removed = true;
   /** Events `send` replays through the handler, in order (a recorded fixture). */
@@ -65,6 +66,7 @@ export class FakeSession {
       // spec 069 FR-031: a live tools/list for one server; `toolsFail` makes it reject (the runtime throws when not connected)
       listTools: async (a: unknown) => { this.calls.push({ name: 'mcp.listTools', args: [a] }); if (this.toolsFail) throw new Error(this.toolsFail); return this.toolsAnswer; },
       // spec 058: `list` is what `refreshMcpStatus` reads (`listAnswer` is the servers the runtime says it has now)
+      isServerRunning: async (a: unknown) => { this.calls.push({ name: 'mcp.isServerRunning', args: [a] }); return { running: this.running }; },
       list: async () => { this.calls.push({ name: 'mcp.list', args: [] }); return { servers: this.listAnswer }; },
       stopServer: async (a: unknown) => this.rec('mcp.stopServer', undefined, a),
       reload: async () => this.rec('mcp.reload', undefined),

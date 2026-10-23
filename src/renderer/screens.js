@@ -950,7 +950,7 @@
         if(open)steps=`<div class="srv-det"><p class="srv-steps" tabindex="0" aria-label="${esc('How to sign in to '+n+' from a terminal')}">${stepsHTML(x.signInSteps)}</p>${stepsCmds(x.signInSteps)?`<button class="btn sm" type="button" data-copysteps="${en}" aria-label="${esc('Copy the commands to sign in to '+n)}">Copy</button>`:''}</div>`;
       }
       /* FR-074: said in the row until the real check (T105) has run */
-      const honest=x.canSignIn||x.signIn?`<span class="srv-sgl mut">Sign in from Agent Durbar has not been checked on a real account yet.</span>`:'';
+      const honest=x.canSignIn||x.signIn?`<span class="srv-sgl mut">Checked once on a real account; other servers and systems not yet.</span>`:'';
       return `<div class="srv-sign">${line}${honest}${acts?`<div class="srv-sgact">${acts}</div>`:''}${steps}</div>`;
     };
     const body=s=>{
@@ -1092,7 +1092,7 @@
       },150);
     };
     mcpDlgHook=onEvent;
-    /* spec 058 FR-064 (real 2026-10-23): coming back from the browser, read again at once (main also reads every 3 s while a sign-in page is open) */
+    /* spec 058 FR-064 (real 2026-10-23): coming back from the browser, read again at once (main also reads every 5 s while a sign-in page is open) */
     const onFocus=()=>{if(dlg&&dlg.isConnected&&(waited.size||(st.servers||[]).some(x=>x.signIn))){void Promise.resolve(X.bridge.agentMcp(a.id,true)).catch(()=>0);void repaint();}};
     window.addEventListener('focus',onFocus);
     /* FR-065/FR-069 (T102): the two-step Sign in. Main holds the address; this code only ever has the host. */

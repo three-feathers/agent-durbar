@@ -459,7 +459,7 @@ async function main(): Promise<void> {
         assert.strictEqual((await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com')).gone, true);
         // ---- real 2026-10-23: the runtime sent no status after the browser sign-in; the page's server list is read again while a page is open ----
         {
-          assert.strictEqual(POLL_MS, 3000);
+          assert.strictEqual(POLL_MS, 5000, 'every 5 seconds');
           emit(mcpEvent(NEEDS));
           assert.strictEqual((await call('agents:mcpSignIn', sid, 'teams')).ok, true);
           assert.strictEqual(running.size, 0, 'no timer before the page is opened');
