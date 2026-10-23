@@ -423,7 +423,8 @@ module.exports = async (ctx) => {
     assert.ok(!(await H.exists('#palDlg')), `${w}: Esc at the start closes`);
     /* review on PR 597: wait (generously, Windows CI is slow) for the focus to return, and say where it is when it does not */
     await until(`(document.activeElement&&document.activeElement.dataset.id)===${jsLiteral(deskId)}`, 8000);
-    assert.strictEqual(await js(`document.activeElement&&document.activeElement.dataset.id`), deskId, `${w}: focus is back on the desk (it is on ${await js(`(()=>{const a=document.activeElement;return a?a.tagName+'#'+a.id+'.'+String(a.className).slice(0,40)+' '+(a.dataset&&a.dataset.id||''):'nothing'})()`)})`);
+    const focusNow = await js(`(()=>{const a=document.activeElement;return a?a.tagName+'#'+a.id+'.'+String(a.className).slice(0,40)+' '+(a.dataset&&a.dataset.id||''):'nothing'})()`);
+    assert.strictEqual(await js(`document.activeElement&&document.activeElement.dataset.id`), deskId, `${w}: focus is back on the desk (it is on ${focusNow})`);
     // the shortcut again closes an open navigator (toggle); Ctrl+K and the shortcut share one box
     await open();
     await key('F', [MOD], { char: 'never' });
