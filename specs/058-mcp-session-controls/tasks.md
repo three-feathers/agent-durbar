@@ -360,7 +360,7 @@ shared parts; PR B = Codex (Q23 A).
   `mcpSignInSteps` (`src/main/mcpsession.ts:82`); tests in `scripts/test-mcp-signin.ts` (an entry with `ttlMs` expires at its own limit, Copilot's still at 10 minutes; `ttlMs` = 300000 minus the request time minus 10000, at
   least 30000, with a slow answer on an injected clock;
   a `signInEnd` drops the entry and stops the poller; steps without `mcpSignIn`); mutation-check each [FR-168]
-- [ ] T099 Claude Code (PR A) `startMcpSignIn` (`mcp_authenticate {serverName}` only, 30 s; browser with `ttlMs: 300000`;
+- [ ] T099 Claude Code (PR A) `startMcpSignIn` (`mcp_authenticate {serverName}` only, 30 s; browser with `ttlMs` = 300000 minus the request-to-answer time minus 10000, at least 30000 (FR-163);
   `requiresUserAction: false` -> connected; `callbackExpected: false`, other shapes and control errors -> reject; a timeout and an
   unknown-subtype error -> the terminal steps, a late answer dropped unread, no address in any log; `ttlMs` from the request time;
   after Cancel, one `mcp_status` read on the next focus within 5 minutes; a second Sign in while the first listens; CLI not running ->
@@ -369,7 +369,7 @@ shared parts; PR B = Codex (Q23 A).
   `mcpSignInSteps` (FR-169 text), `mcpSignInNote`; none of them on the SDK transport; tests in `scripts/test-claude-adapter.ts` on the
   test transport (request bodies have no `redirectUri`; no `mcp_oauth_callback_url`, no `mcp_clear_auth`; a poll that still says
   connected keeps a mark-only needs-auth; a needs-auth -> connected poll ends it; mutation-checked) [FR-163, FR-164, FR-169, SC-091]
-- [ ] T100 Codex (PR B) `startMcpSignIn` (`mcpServer/oauth/login {name, threadId, timeoutSecs: 300}`; browser with `ttlMs: 300000`;
+- [ ] T100 Codex (PR B) `startMcpSignIn` (`mcpServer/oauth/login {name, threadId, timeoutSecs: 300}`; browser with `ttlMs` = 300000 minus the request-to-answer time minus 10000, at least 30000 (FR-163);
   keep `loginId`; MethodNotFound or error -> reject), the `mcpServer/oauthLogin/completed` branch (by `loginId`, else name + thread;
   success: clear the mark, read the one server, connected -> `mcp`, else `relaunch` + `signInEnd: 'next-message'`; failure: Codex's
   error + `signInEnd: 'failed'`), `refreshMcpStatus` (one server, merged into `live.mcp`); capabilities as T099; no `cancelMcpSignIn`;
