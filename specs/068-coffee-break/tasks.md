@@ -17,3 +17,4 @@
 - [x] T015 Review fix: `StatusEvent.reason: 'usage-limit'` on the closing status (`usageLimitClosing()` in every adapter, the event guard); the window and the MCP read state key on it; tests [FR-002]
 - [x] T016 Review fix: FR-004 words ("at" only before a time of today) and FR-012 converged; tests §6 [FR-004, FR-012]
 - [x] T017 Merge main (#515: `check:ui-text` without an allow list) [all]
+- [x] T023 Bug fix (issue #646, PR for branch 068-codex-usage-case): compare Codex's `codexErrorInfo` kind with the first letter folded so the real `usageLimitExceeded` gives the coffee break; fixture and tests use it, one keeps the old spelling, mutation check [FR-002]
