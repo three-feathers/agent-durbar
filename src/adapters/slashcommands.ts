@@ -4,7 +4,7 @@
  *
  * - `discoverSlash` lists entries from the places an adapter names (`claudeSlashPlaces`, `copilotSlashPlaces`, `codexSlashPlaces`):
  *   only inside the session's folders and the documented user directories, with real paths checked (no symbolic link leads out of
- *   its folder or user directory), at most 100 files per directory and 300 in all, files over 64 KB skipped, 8 KB read per file.
+ *   its folder or user directory; the real file is `SKILL.md` or `*.md` and not under `.git`), at most 100 files per directory and 300 in all, files over 64 KB skipped, 8 KB read per file.
  * - `expandSlash` turns a message that starts with `/<name>` of a folder or user entry into that entry's text (FR-005).
  * - `SlashCache` keeps one discovery per set of places (30 s, unchanged directory mtimes) so a send never rescans: a message that is
  *   not `/<name>` causes no IO at all, and a `/<name>` one reads only that entry's file (review on #535).
@@ -92,7 +92,8 @@ const realFs: SlashFs = {
   lstat: (p) => fs.lstatSync(p),
   readdir: (p) => fs.readdirSync(p),
   readHead: (p, max, limit) => {
-    const fd = fs.openSync(p, 'r');
+    // never blocks: a FIFO or device swapped in after discovery opens at once and fails the regular-file check (review on #535)
+    const fd = fs.openSync(p, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0));
     try {
       const st = fs.fstatSync(fd);
       if (!st.isFile() || st.size > limit) throw new Error('too large');
@@ -126,6 +127,28 @@ function inside(p: string, root: string, o: Required<DiscoverOptions>): string |
   return isInsideRoots(real, [realRoot], { realpath: (x) => x, caseInsensitive: o.caseInsensitive }) ? real : undefined;
 }
 
+/**
+ * FR-002 (review on #535): the real path of an entry's file when it stays inside `root`, is not under a `.git` folder and is named
+ * `SKILL.md` (skills) or `*.md` (commands, prompts), checked on the real target so a link such as `review.md -> ../../.env` is refused.
+ * Used by discovery and again by expansion.
+ */
+function entryFile(p: string, root: string, kind: SlashCommand['kind'], o: Required<DiscoverOptions>): string | undefined {
+  let real: string;
+  let realRoot: string;
+  try {
+    real = o.fs.realpath(p);
+    realRoot = o.fs.realpath(root);
+  } catch {
+    return undefined;
+  }
+  if (!isInsideRoots(real, [realRoot], { realpath: (x) => x, caseInsensitive: o.caseInsensitive })) return undefined;
+  const fold = (x: string): string => (o.caseInsensitive ? x.toLowerCase() : x);
+  if (path.relative(realRoot, real).split(/[\\/]+/).some((part) => fold(part) === '.git')) return undefined;
+  const base = path.basename(real);
+  const named = kind === 'skill' ? fold(base) === fold('SKILL.md') : base.toLowerCase().endsWith('.md');
+  return named ? real : undefined;
+}
+
 const whereOf = (place: SlashPlace, file: string): string => {
   const rel = path.relative(place.root, file).split(path.sep).join('/');
   return place.whereBase ? `${place.whereBase.replace(/\/+$/, '')}/${rel}` : rel;
@@ -157,7 +180,7 @@ export function discoverSlash(places: readonly SlashPlace[], opts: DiscoverOptio
       else continue;
       inDir++;
       files++;
-      const file = inside(candidate, place.root, o);
+      const file = entryFile(candidate, place.root, place.kind, o);
       if (!file) continue;
       let text: string;
       try {
@@ -240,7 +263,7 @@ const SLASH_LINE = /^\/([A-Za-z0-9][A-Za-z0-9._:-]{0,63})(?:\s+([\s\S]*))?$/;
 export function expansionOf(e: SlashEntry, rest: string, opts: DiscoverOptions = {}): string | undefined {
   if (!e.file || !e.root || e.source === 'app') return undefined;
   const o: Required<DiscoverOptions> = { fs: opts.fs ?? realFs, caseInsensitive: opts.caseInsensitive ?? (process.platform === 'win32' || process.platform === 'darwin') };
-  const file = inside(e.file, e.root, o);
+  const file = entryFile(e.file, e.root, e.kind, o); // every FR-002 rule again: the file may have been swapped since the list was made
   if (!file) return undefined;
   let text: string;
   try {

@@ -3,15 +3,18 @@
  *
  *  - front matter, names, `user-invocable: false`, de-duplication and order (folder, user, app);
  *  - the places of each app (Claude Code, Copilot, Codex), also as Windows paths;
- *  - safety: symbolic links out of a folder or user directory, oversized files, the per-directory and total caps, bad names;
+ *  - safety: symbolic links out of a folder or user directory, links to secrets inside it (`.env`, `.git/…`, `auth.json`), a file
+ *    swapped after discovery (a link out, a FIFO), oversized files, the per-directory and total caps, bad names;
  *  - expansion: `$ARGUMENTS`, `$1`..`$9`, no placeholder, skills, built-ins and unknown names left alone, a vanished file;
  *  - the built-in allow list (FR-007: an unknown built-in is not offered) and what crosses to the window (`publicSlash`);
  *  - the per-folder cache (review on #535): a message that is not `/name` reads nothing, a warm `/name` reads only its file, and the
  *    cache is renewed by a changed directory, by age and by the list opening;
  *  - the Claude adapter merges files with the probe's built-ins; the Copilot and Codex adapters list their places;
- *  - the renderer's pure helpers (`slashsuggest.js`): the word at the caret, filtering, insertion.
+ *  - the renderer's pure helpers (`slashsuggest.js`): the word at the caret, filtering with the shared `DurbarNav.rank`, insertion,
+ *    and the option row's escaping (a hostile entry).
  */
 import * as assert from 'assert';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -133,6 +136,77 @@ async function main(): Promise<void> {
     const l = discoverSlash(claudeSlashPlaces([r], u, path.join(tmp, 'linkhome')));
     assert.deepStrictEqual(l.map((e) => e.name), ['inside', 'ok']);
     assert.ok(!JSON.stringify(l).includes('SECRET'));
+  });
+
+  await test('safety (review on #535): a link inside the folder to a secret is neither listed nor expanded', () => {
+    if (!canLink) return console.log('  (skipped: this OS refuses symbolic links here)');
+    const r = path.join(tmp, 'secretrepo');
+    write(path.join(r, '.env'), 'API_KEY=SECRET-ENV');
+    write(path.join(r, '.git', 'config'), '[remote] url = https://SECRET-GIT@example');
+    write(path.join(r, '.git', 'notes.md'), 'SECRET-GITMD');
+    write(path.join(r, '.claude', 'commands', 'ok.md'), 'fine');
+    const cmds = path.join(r, '.claude', 'commands');
+    fs.symlinkSync(path.join(r, '.env'), path.join(cmds, 'review.md'), 'file');
+    fs.symlinkSync(path.join(r, '.git', 'config'), path.join(cmds, 'gitcfg.md'), 'file');
+    fs.symlinkSync(path.join(r, '.git', 'notes.md'), path.join(cmds, 'gitmd.md'), 'file');
+    fs.mkdirSync(path.join(r, '.claude', 'skills', 'envskill'), { recursive: true });
+    fs.symlinkSync(path.join(r, '.env'), path.join(r, '.claude', 'skills', 'envskill', 'SKILL.md'), 'file');
+    // a Codex home: prompts/x.md -> ../auth.json
+    const home = path.join(tmp, 'secrethome');
+    const cx = path.join(home, '.codex');
+    write(path.join(cx, 'auth.json'), '{"token":"SECRET-AUTH"}');
+    fs.mkdirSync(path.join(cx, 'prompts'), { recursive: true });
+    fs.symlinkSync(path.join('..', 'auth.json'), path.join(cx, 'prompts', 'x.md'), 'file');
+    const claude = discoverSlash(claudeSlashPlaces([r], path.join(home, '.claude'), home));
+    assert.deepStrictEqual(claude.map((e) => e.name), ['ok'], 'only the real Markdown file is listed');
+    const codex = discoverSlash(codexSlashPlaces([r], cx, home));
+    assert.ok(!codex.some((e) => e.name === 'prompts:x'), 'a prompt linked to auth.json is not listed');
+    assert.ok(!JSON.stringify([claude, codex]).includes('SECRET'));
+    // expansion checks again, even for an entry that claims such a file (forged or from an older list)
+    const forged = (file: string, root: string, kind: 'command' | 'skill' | 'prompt', name = 'x') => expandSlash(`/${name} go`, [{ name, source: 'folder', kind, file, root }]);
+    for (const [f, root, kind] of [
+      [path.join(cmds, 'review.md'), r, 'command'], [path.join(cmds, 'gitcfg.md'), r, 'command'], [path.join(cmds, 'gitmd.md'), r, 'command'],
+      [path.join(r, '.claude', 'skills', 'envskill', 'SKILL.md'), r, 'skill'], [path.join(cx, 'prompts', 'x.md'), cx, 'prompt'],
+      [path.join(r, '.env'), r, 'command'], [path.join(cx, 'auth.json'), cx, 'prompt'],
+    ] as const) assert.strictEqual(forged(f, root, kind), undefined, `${path.relative(tmp, f)} is not expanded`);
+    assert.ok(forged(path.join(cmds, 'ok.md'), r, 'command'), 'the real command still expands');
+  });
+
+  await test('safety (review on #535): a SKILL.md swapped after discovery for a link out of the folder is not sent', () => {
+    if (!canLink) return console.log('  (skipped: this OS refuses symbolic links here)');
+    const r = path.join(tmp, 'swaprepo');
+    const out = write(path.join(tmp, 'swap-outside', 'SKILL.md'), '---\nname: s\n---\nSECRET-OUTSIDE');
+    const skill = write(path.join(r, '.claude', 'skills', 's', 'SKILL.md'), '---\nname: s\n---\ninside body');
+    const places = claudeSlashPlaces([r], path.join(tmp, 'swaphome', '.claude'), path.join(tmp, 'swaphome'));
+    const list = discoverSlash(places);
+    assert.ok(expandSlash('/s', list)?.text.includes('inside body'));
+    fs.unlinkSync(skill);
+    fs.symlinkSync(out, skill, 'file');
+    assert.strictEqual(expandSlash('/s', list), undefined, 'the swapped file is checked again and refused');
+  });
+
+  await test('safety (review on #535): a FIFO swapped in after discovery gives no expansion at once (no hang)', () => {
+    if (process.platform === 'win32') return console.log('  (skipped on Windows: no mkfifo; the regular-file check still applies)');
+    const r = path.join(tmp, 'fiforepo');
+    write(path.join(r, '.claude', 'skills', 'f', 'SKILL.md'), '---\nname: f\n---\nbody');
+    write(path.join(r, '.claude', 'commands', 'c.md'), 'body');
+    const mod = path.join(__dirname, '..', 'src', 'adapters', 'slashcommands.js');
+    // discovery, then the swap, then the send, in a child with a time limit: a blocking open would hang it, not this suite
+    const code = `
+      const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
+      const S = require(${JSON.stringify(mod)});
+      const r = ${JSON.stringify(r)};
+      const list = S.discoverSlash(S.claudeSlashPlaces([r], path.join(r, 'nohome'), r));
+      if (list.length !== 2) throw new Error('setup: ' + list.length);
+      for (const f of [path.join(r, '.claude', 'skills', 'f', 'SKILL.md'), path.join(r, '.claude', 'commands', 'c.md')]) {
+        fs.unlinkSync(f); execFileSync('mkfifo', [f]);
+      }
+      const a = S.expandSlash('/f hi', list), b = S.expandSlash('/c hi', list);
+      process.stdout.write(JSON.stringify([a === undefined, b === undefined]));`;
+    const t0 = Date.now();
+    const res = execFileSync(process.execPath, ['-e', code], { timeout: 8000, encoding: 'utf8' });
+    assert.deepStrictEqual(JSON.parse(res), [true, true], 'both FIFOs are refused');
+    assert.ok(Date.now() - t0 < 8000);
   });
 
   await test('safety: oversized files, the per-directory cap and the total cap', () => {
@@ -335,7 +409,10 @@ async function main(): Promise<void> {
   await test('renderer helpers (slashsuggest.js): word at the caret, filter, insert', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'slashsuggest.js'), 'utf8');
     const ctx: { DurbarSlash?: Record<string, (...a: unknown[]) => unknown> } = {};
-    vm.runInNewContext(src, ctx); // like the page: no `module`, the API lands on the global object
+    vm.createContext(ctx);
+    // like the page: no `module`, the APIs land on the global object; the shared matcher (navigator.js) is there too
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'navigator.js'), 'utf8'), ctx);
+    vm.runInContext(src, ctx);
     // results come from another realm: compare them as plain JSON
     const S = Object.fromEntries(Object.entries(ctx.DurbarSlash!).map(([k, f]) => [k, typeof f === 'function' ? (...a: unknown[]) => JSON.parse(JSON.stringify(f(...a) ?? null)) : f])) as Record<string, (...a: unknown[]) => unknown>;
     assert.deepStrictEqual(S.tokenAt('/', 1), { start: 0, query: '' });
@@ -352,6 +429,21 @@ async function main(): Promise<void> {
     assert.deepStrictEqual((S.filter(entries, '') as { name: string }[]).map((e) => e.name), ['review-pr', 'release-notes', 'mine', 'pre-release', 'compact'], 'folder, user, app');
     assert.deepStrictEqual((S.filter(entries, 'rel') as { name: string }[]).map((e) => e.name), ['release-notes', 'pre-release'], 'prefix matches first, then others');
     assert.deepStrictEqual((S.filter(entries, 'zzz') as unknown[]), []);
+    // the shared matcher (DurbarNav.rank): a word of the name before a name that only contains the text, then the description
+    const more = [
+      { name: 'mynotes', source: 'folder', kind: 'command' }, { name: 'release-notes', source: 'folder', kind: 'skill' },
+      { name: 'zz', source: 'user', kind: 'command', description: 'Takes notes' }, { name: 'notes', source: 'app', kind: 'builtin' },
+    ];
+    assert.deepStrictEqual((S.filter(more, 'notes') as { name: string }[]).map((e) => e.name), ['notes', 'release-notes', 'mynotes', 'zz']);
+    // the option row escapes every field (FR-008, the XSS guard)
+    const bad = '<img src=x onerror=alert(1)>"><b>&';
+    const html = String(S.optionHtml({ name: 'ok', description: bad, argumentHint: bad, source: 'folder', kind: 'command' }, 0, true, bad));
+    const html2 = String(S.optionHtml({ name: bad, source: bad, kind: bad }, '1" onclick="x', false, ''));
+    for (const h of [html, html2]) {
+      assert.ok(!/<img|<b>|onerror=alert\(1\)>|" onclick=/.test(h.replace(/<b class="sl-name">/g, '')), 'no element or attribute from the entry');
+      assert.ok(h.includes('&lt;img src=x onerror=alert(1)&gt;&quot;&gt;&lt;b&gt;&amp;'), 'the text shows literally');
+    }
+    assert.ok(html.includes('aria-selected="true"') && html.includes('id="slashOpt-0"'));
     assert.deepStrictEqual(S.insert('hello /re', 6, 9, 'review-pr'), { value: 'hello /review-pr ', caret: 17 });
     assert.deepStrictEqual(S.insert('/re tail', 0, 3, 'review-pr'), { value: '/review-pr tail', caret: 11 }, 'no double space before existing text');
   });

@@ -83,16 +83,16 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
 
 ## Phase 8: Review on #535 (fjcabello, 2026-10-23; spec *Changes*)
 
-- [ ] T028 `src/adapters/slashcommands.ts`: one `entryFile` check for discovery and expansion: real path inside the root, named
+- [x] T028 `src/adapters/slashcommands.ts`: one `entryFile` check for discovery and expansion: real path inside the root, named
   `SKILL.md` (skills) or `*.md`, not under `.git`; tests for links to `.env`, `.git/config`, a `.md` under `.git`, `../auth.json`
   (Codex home) and a `SKILL.md` linked to `.env`, each neither listed nor expanded [FR-002]
-- [ ] T029 `readHead` opens with `O_RDONLY | O_NONBLOCK` (0 where the OS has none) and reads only a regular file; test: a FIFO swapped
+- [x] T029 `readHead` opens with `O_RDONLY | O_NONBLOCK` (0 where the OS has none) and reads only a regular file; test: a FIFO swapped
   in after discovery gives no expansion within a time limit (child process; skipped on Windows) [FR-002, FR-005]
-- [ ] T030 Test: a `SKILL.md` swapped after discovery for a link out of the folder is not expanded (kills the mutation that drops the
+- [x] T030 Test: a `SKILL.md` swapped after discovery for a link out of the folder is not expanded (kills the mutation that drops the
   re-check in `expansionOf`) [FR-005]
-- [ ] T031 `slashsuggest.js`: `optionHtml` (moved from `app.js`) escapes every field, unit-tested with a hostile entry; `filter` uses
+- [x] T031 `slashsuggest.js`: `optionHtml` (moved from `app.js`) escapes every field, unit-tested with a hostile entry; `filter` uses
   `DurbarNav.rank` (navigator.js) with `label: name`, `kw: description` [FR-008]
-- [ ] T032 Mutation-check T028-T031; `npm run typecheck && npm run build`, `test:slashcommands`, `check:slash-suggest`
+- [x] T032 Mutation-check T028-T031; `npm run typecheck && npm run build`, `test:slashcommands`, `check:slash-suggest`
 
 ## Known gaps (open tasks, not this PR)
 
