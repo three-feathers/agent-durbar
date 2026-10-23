@@ -1,0 +1,9 @@
+{
+  "id": "acme-steel",
+  "name": "Acme Steel",
+  "ui": "corporate",
+  "scene": "corporate",
+  "tokens": {
+    "--bg": "#eef2f6"
+  }
+}

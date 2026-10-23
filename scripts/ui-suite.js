@@ -29,15 +29,18 @@ const SIM = { DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
 /** Every driver that asserts (not only screenshots), with the settings its header documents. */
 const DRIVERS = [
   { name: 'shots-001-welcome', sim: false }, // the first-run screen: no simulator
+  { name: 'check-office-fill' }, // spec 001 FR-041..FR-046: grown desks with few agents (its own sim, simrooms and simhelpers per layout)
   { name: 'shots-017' },
   { name: 'shots-018' },
   { name: 'shots-033', env: { DURBAR_SIM_FLOORS: '1' } },
+  { name: 'shots-033-move', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-024 (#590): Move to floor in the folder menu, with Undo
   { name: 'shots-034-list' },
   { name: 'shots-044-everywhere' },
   { name: 'shots-044-templates' },
   // spec 060 FR-002: the per-OS assertion needs a known manager set, the one the driver expects for the host OS (a real Windows host
   // has PowerShell; winget,brew,npm there hid the PowerShell route and failed the check)
   { name: 'shots-051-setup', env: { DURBAR_SIM_MANAGERS: process.platform === 'win32' ? 'powershell,winget,npm' : 'winget,brew,npm' } },
+  { name: 'shots-051-account' }, // spec 051 FR-013: the signed-in account line, the picker tooltips and About agent apps (a fake identity)
   { name: 'shots-051-setup', label: 'shots-051-setup win32', env: { DURBAR_SIM_MANAGERS: 'powershell,winget,npm', DURBAR_SIM_PLATFORM: 'win32' } }, // spec 060 FR-011/FR-012: Windows' routes (PowerShell installer, winget, npm) and Run beside each command, on every OS
   { name: 'shots-052-ux', env: { DURBAR_SIM_KINDS: 'mixed' } },
   { name: 'shots-052-addleft' }, // FR-164: + Folder / + Workspace leftmost, one row in every theme, the File menu and Ctrl+O
@@ -46,24 +49,42 @@ const DRIVERS = [
   { name: 'shots-003-mode-back' },
   { name: 'shots-012-signin-chat' },
   { name: 'shots-058-mcp-restart' }, // spec 058: per-server Restart and Restart session with these servers
+  { name: 'shots-058-mcp-signin' }, // spec 058 T102/T104: Sign in for a Copilot server that needs it (simmcpauth), the two-step open, the steps
   { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog
+  { name: 'shots-058-mcp-settings' }, // spec 058 FR-080..FR-086 (#596): live MCP state over the running chats in Settings
+  { name: 'shots-058-mcp-health' }, // spec 058 FR-090..FR-096 (#603): failure reason, when, Copy diagnostics (masked), the MCP chip dot
   { name: 'shots-model', label: 'shots-model 1440', env: { MODEL_W: '1440', MODEL_H: '900' } },
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },
+  { name: 'shots-043-editor' }, // spec 043 FR-014: the profile file editor (modes, split widths, save round trip, unsaved guard)
+  { name: 'shots-043-ai' }, // spec 043 FR-026..FR-039: Create with AI (canned generation, Extra tools, Stop waiting, Cancel and reopen)
+  { name: 'shots-043-manage' }, // spec 043 FR-040..FR-042: nothing written before Save, the Profile menu refreshes at once, Delete from the menu and Settings
   { name: 'check-dialog-focus' },
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },
   { name: 'check-sched-edit' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
+  { name: 'check-sim-guard' }, // spec 010 FR-026: the real preload API is refused by main under DURBAR_SIM
+  { name: 'shots-069-mcp-global' }, // spec 069: add to the agent apps' own lists, review, remove, source chips
+  { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
+  { name: 'shots-069-mcp-tools' }, // spec 069 part 3: tools on expand, Remove in the agent dialog (058's state words and Details stay)
   { name: 'shots-059-long-url' }, // spec 059 FR-019: a long unbroken name stays in its card, the inbox and the Schedules rows
   { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows
   { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
+  { name: 'check-ro-ask' }, // spec 003 FR-094..FR-097: a Read-only denial's "Switch to Ask first…" opens the mode menu
+  { name: 'check-composer-toolbar' }, // spec 005 FR-037..FR-043: chat settings under the message box, one Send / Stop slot
+  { name: 'check-slash-suggest' }, // spec 073: the "/" list in the message box (keyboard, ARIA, geometry)
+  { name: 'check-edits' }, // spec 005 FR-020..FR-026: file edits in the chat
+  { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
+  { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
+  { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor
   { name: 'check-ui-text' }, // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast
+  { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
 ];
 
 /** The screenshot variables the drivers read; all point at one folder. */
-const OUT_VARS = ['OUT', 'SHOTS_012', 'SHOTS_021', 'SHOTS_024', 'SHOTS_033', 'SHOTS_034', 'SHOTS_OUT', 'MODEL_OUT', 'CARDMENU_OUT', 'MODE_OUT', 'ABOUT_OUT'];
+const OUT_VARS = ['OUT', 'SHOTS_012', 'SHOTS_021', 'SHOTS_024', 'SHOTS_033', 'SHOTS_034', 'SHOTS_OUT', 'MODEL_OUT', 'CARDMENU_OUT', 'MODE_OUT', 'ABOUT_OUT', 'HERO_OUT', 'SHOTS_DIR'];
 const TIMEOUT_MS = Number(process.env.UI_SUITE_TIMEOUT_MS || 600_000);
 
 function args(a = process.argv.slice(2)) {
@@ -86,6 +107,7 @@ function runOne(d, outDir) {
   const user = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-user-'));
   const env = { ...process.env, ...(d.sim === false ? {} : SIM), ...(d.env || {}), DURBAR_USER_DATA: user, DURBAR_DRIVER: path.join(__dirname, d.name + '.js') };
   if (d.sim === false) { delete env.DURBAR_SIM; delete env.DURBAR_SIM_FREEZE; }
+  if (d.freeze === false) delete env.DURBAR_SIM_FREEZE; // a driver that needs the live simulator (spec 001 FR-082: shots-docs.js)
   for (const v of OUT_VARS) env[v] = outDir;
   const argv = [ROOT, '--no-sandbox'];
   const useXvfb = process.platform === 'linux' && (!process.env.DISPLAY || process.env.UI_SUITE_XVFB === '1'); // UI_SUITE_XVFB=1: keep windows off a desktop
@@ -157,5 +179,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { syntaxErrors, main };
+module.exports = { syntaxErrors, main, runOne, DRIVERS }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });

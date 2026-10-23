@@ -1,6 +1,6 @@
 {
   "provenance": "synthetic",
-  "description": "Error results, an aborted message, a credits_required rate-limit event and a rate-limit event that is ignored.",
+  "description": "Error results, an aborted message, a credits_required rate-limit event (a coffee break, spec 068) and a rate-limit event that is ignored.",
   "messages": [
     {
       "type": "result",
@@ -74,9 +74,10 @@
       "intent": "Aborted"
     },
     {
-      "type": "status",
-      "status": "error",
-      "intent": "Claude usage limit reached"
+      "type": "usageLimit",
+      "scope": "quota",
+      "paid": true,
+      "source": "Claude extra usage"
     }
   ]
 }

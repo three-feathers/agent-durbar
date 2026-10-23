@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "llm": {
+    "codex": {
+      "provider": {
+        "id": "acme",
+        "baseUrl": "https://llm.acme.example/v1"
+      },
+      "bedrock": {
+        "region": "eu-central-1"
+      }
+    }
+  }
+}

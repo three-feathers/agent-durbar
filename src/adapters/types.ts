@@ -12,6 +12,9 @@ import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
+import type { EditInfo } from '../shared/edits';
+import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
+export type { EditInfo };
 export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
@@ -66,6 +69,11 @@ export interface StartOptions {
   mcpServers?: Record<string, McpServerSpec>;
   /** Exact MCP server names that must not start in this session (also switches off servers the runtime loads by itself). */
   disabledMcpServers?: string[];
+  /**
+   * Spec 069 FR-062: single MCP tools the user turned off for this folder, by server name (tool names as the server lists them). Each adapter
+   * passes them to its agent app's own filter and refuses them in its permission broker (FR-063).
+   */
+  disabledMcpTools?: Record<string, string[]>;
 }
 
 export interface Attachment {
@@ -103,6 +111,11 @@ export interface StatusEvent extends BaseEvent {
    * invalid. Main then marks the app `not-signed-in` and the chat offers Sign in. Only this word leaves the adapter, never the account.
    */
   errorKind?: 'auth';
+  /**
+   * Spec 068 FR-002: set on the `idle` status that closes a turn the agent app ended at a usage limit (right after its `usageLimit`).
+   * The window and the MCP read state key the coffee break on this marker, never on the display text of `intent` (2026-10-22).
+   */
+  reason?: 'usage-limit';
 }
 
 export interface PermissionInfo {
@@ -176,6 +189,11 @@ export interface ToolCallEvent extends BaseEvent {
   /** Set when the tool belongs to an MCP server: the server's configured name and the tool's own name there. */
   mcpServer?: string;
   mcpTool?: string;
+  /**
+   * Spec 005 FR-018: set on calls of file-changing tools (edit, create, write, patch): the files, their kind and a masked, cut
+   * unified diff with line counts. `partial` while the model is still writing the arguments (FR-019). Display only.
+   */
+  edit?: EditInfo;
   /** Spec 058 FR-063: this failed MCP tool call needs the user to sign in to `mcpServer` (set by the adapter, never carries vendor text). Only on `phase: 'failed'` with `mcpServer`. */
   mcpAuth?: true;
 }
@@ -268,8 +286,14 @@ export interface McpServerStatus {
   source?: string;
   transport?: string;
   error?: string;
-  /** Spec 058 FR-011: normalized kind of failure, set by the adapter only when the vendor says so; missing = not said. */
-  errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config';
+  /** Spec 058 FR-011 / FR-091: normalized kind of failure, set by the adapter only when the vendor says so; missing = not said. */
+  errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config' | 'refused' | 'disconnected' | 'permission';
+}
+
+/** Spec 069 FR-031: one tool of an MCP server (main masks and cuts the description before the window gets it). */
+export interface McpToolInfo {
+  name: string;
+  description?: string;
 }
 
 /** The MCP servers of a session and their state (full list; a new event replaces the previous one). */
@@ -303,6 +327,24 @@ export interface LimitEvent extends BaseEvent {
   usedAiCredits?: number;
   /** The chosen action (resolved only): add | set | unset | cancel. */
   action?: string;
+}
+
+/**
+ * Spec 068 FR-001: a usage limit of the agent app stopped or blocked the turn (a plan window, a quota or a rate limit), so the
+ * agent goes on a coffee break. Never a vendor field: `source` is a short fixed label chosen by the adapter ("5-hour window"),
+ * never the provider's message, account or plan name. `resetsAt` (epoch ms) only when the agent app said when it resets;
+ * `estimated` when it said the time is a guess; `update` for a later detail of the same break; `paid` when going on after the reset may lead to paid usage (the default asks first).
+ * Durbar's own spending limit is the `limit` event, not this one.
+ */
+export interface UsageLimitEvent extends BaseEvent {
+  type: 'usageLimit';
+  scope: 'plan' | 'quota' | 'rate';
+  resetsAt?: number;
+  estimated?: boolean;
+  paid?: boolean;
+  source: string;
+  /** A later detail of the break this turn already reported (a reset time read afterwards); ignored when the agent is no longer on a break. */
+  update?: boolean;
 }
 
 /**
@@ -352,6 +394,30 @@ export interface AgentProfile {
   model?: string;
   /** Names of the MCP servers the profile brings. */
   mcpServers?: string[];
+}
+
+/**
+ * Spec 073 FR-001: one entry of the "/" list in the composer: a skill, command or prompt file of the session's folder or of the user,
+ * or a built-in of the agent app. Generic across adapters; `where` is a display path (folder-relative or `~/…`), never absolute.
+ */
+/**
+ * Spec 073 FR-005: what to send for a `/name` line. `where` is the entry's place; `note` is shown in the chat; `asTyped` (review on
+ * #615): the expansion would be over the size cap, so `text` is the line as typed and only the note is shown.
+ */
+export interface SlashExpansion {
+  text: string;
+  where: string;
+  note?: string;
+  asTyped?: true;
+}
+
+export interface SlashCommand {
+  name: string;
+  description?: string;
+  argumentHint?: string;
+  source: 'folder' | 'user' | 'app';
+  kind: 'skill' | 'command' | 'prompt' | 'builtin';
+  where?: string;
 }
 
 /** The selected agent profile of the session changed (spec 043 FR-001); null = the default agent. */
@@ -432,6 +498,7 @@ export type AgentEvent =
   | CompactionEvent
   | McpStatusEvent
   | LimitEvent
+  | UsageLimitEvent
   | TitleEvent;
 
 /** Spec 012 FR-156: the answer of `verifySignIn`. */
@@ -479,8 +546,18 @@ export interface AgentAdapter {
   answerElicitation?(sessionId: string, requestId: string, answer: ElicitAnswer): void;
   /** Agent profiles the session can use (spec 043 FR-001). */
   listAgentProfiles?(sessionId: string): Promise<AgentProfile[]>;
+  /**
+   * Spec 043 FR-041: read the session's agent files again, so a profile created, changed or deleted through Durbar is listed (or
+   * gone) without a restart. Optional: an adapter that reads the files on every list needs none. Resolves false when it could not.
+   */
+  reloadAgentProfiles?(sessionId: string): Promise<boolean>;
   /** Select a profile for the next turns, or null for the default agent (spec 043 FR-001). Emits `agentProfile`. */
   selectAgentProfile?(sessionId: string, id: string | null): Promise<AgentProfile | null>;
+  /** Spec 073 FR-001: the "/" entries this session's agent app offers (folder, then user, then app built-ins that run when typed). */
+  listSlashCommands?(sessionId: string): Promise<SlashCommand[]>;
+  /** Spec 073 FR-005: the text to send for a message that starts with a folder or user entry's `/name`, and where it came from; `note`
+   * (a VS Code prompt file) names settings not applied and variables left as written; undefined = send as typed. */
+  expandSlashCommand?(sessionId: string, text: string): Promise<SlashExpansion | undefined>;
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */
   setMcpEnabled?(sessionId: string, name: string, enabled: boolean): Promise<void>;
   /**
@@ -490,11 +567,22 @@ export interface AgentAdapter {
    */
   restartMcpServer?(sessionId: string, name: string): Promise<void>;
   /**
+   * Spec 069 FR-031: the tools one MCP server of a running session offers, as the agent app reports them now. Optional
+   * (`capabilities.mcpTools`). Rejects with a short, user-facing sentence when the session or the server is not running.
+   */
+  listMcpTools?(sessionId: string, name: string): Promise<McpToolInfo[]>;
+  /**
    * Spec 058 FR-064: start the agent app's own sign-in for one MCP server of a running session. Optional (`capabilities.mcpSignIn`).
    * `browser`: the user finishes in the browser at `url` (main keeps it, the window only gets the host); `connected`: already signed in.
    * Rejects when the runtime has no such call or refuses it (the UI then shows `capabilities.mcpSignInSteps`).
    */
-  startMcpSignIn?(sessionId: string, name: string): Promise<McpSignInResult>;
+  startMcpSignIn?(sessionId: string, name: string, opts?: { again?: boolean }): Promise<McpSignInResult>;
+  /**
+   * Spec 058 FR-064 (real 2026-10-23: the runtime sent no event for a finished sign-in for a long while): read the session's MCP
+   * servers from the agent app again and emit the usual `mcp` event. Optional, only with `startMcpSignIn`. Main calls it every 5 s while a
+   * sign-in page is open and when the window regains focus; it must be safe to call often and never start a server by itself.
+   */
+  refreshMcpStatus?(sessionId: string, name?: string): Promise<void>;
   /** Spec 058 FR-064: stop a sign-in started by `startMcpSignIn` where the runtime can. Optional, only with `startMcpSignIn`. */
   cancelMcpSignIn?(sessionId: string, name: string): Promise<void>;
   /** Change the model, effort or context tier of a live session; applies from the next message (spec 030). Optional: adapters that cannot omit it and the UI offers a new session instead. */
@@ -526,6 +614,11 @@ export interface AgentAdapter {
    * credits); `unknown` when it cannot tell. `detail` is a short, safe sentence: never a token, email or account name.
    */
   verifySignIn?(): Promise<SignInCheck>;
+  /**
+   * Spec 051 FR-011: the account the app reports as signed in (a login or email, the plan), asked without a prompt (no credits).
+   * Personal data: the adapter never passes it to `debug`, and main sends it only to the window (FR-015). Never a token.
+   */
+  accountInfo?(opts?: AccountInfoOptions): Promise<AccountIdentity>;
   /**
    * Spec 012 FR-158: pick up a new sign-in made outside the adapter (Settings or the chat's sign-in card) in anything the adapter
    * keeps across sessions (Copilot's shared runtime client). Live sessions survive it. Optional: an adapter that starts a

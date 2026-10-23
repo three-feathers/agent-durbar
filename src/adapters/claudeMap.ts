@@ -8,9 +8,11 @@
  */
 import { isAuthError } from './autherrors';
 import { isMcpAuthChallenge } from './mcpauth';
+import { resetMs, usageLimitClosing } from './usagelimit';
 import type { EventBody } from './map';
 import type { McpServerStatus } from './types';
 import { nonEmptyStr as str } from '../shared/guards';
+import { EditStreams, editOf } from './edits';
 
 /** Fields of the SDK messages this mapper reads (structural subset; shapes from the SDK docs, unverified on a real account). */
 export interface ClaudeContentBlock {
@@ -93,15 +95,47 @@ export function claudeMcpServers(list: unknown): McpServerStatus[] {
     const source = str((s as { source?: unknown }).source);
     const error = str((s as { error?: unknown }).error);
     const status = str((s as { status?: unknown }).status) ?? 'pending';
+    // Spec 058 FR-091: `config.type` (`stdio`, `sse`, `http`, ...) is the transport, only as a plain word; never inferred from other keys
+    const cfg = (s as { config?: unknown }).config;
+    const type = cfg && typeof cfg === 'object' ? str((cfg as { type?: unknown }).type) : undefined;
+    const transport = type && /^[a-z][a-z0-9_-]{0,19}$/.test(type) ? type : undefined;
     // Spec 058 FR-060: the CLI reports a remote server that answered 401/403 as `needs-auth` (read: SDK docs; research)
-    servers.push({ name, status, ...(source ? { source } : {}), ...(error ? { error: error.slice(0, 300) } : {}), ...(status === 'needs-auth' ? { errorClass: 'auth' as const } : {}) });
+    servers.push({ name, status, ...(source ? { source } : {}), ...(transport ? { transport } : {}), ...(error ? { error: error.slice(0, 300) } : {}), ...(status === 'needs-auth' ? { errorClass: 'auth' as const } : {}) });
   }
   return servers;
+}
+
+/**
+ * Spec 058 FR-091 (T024, issue #603): `system/init.mcp_server_errors` (`[{name, type, message}]`: "MCP server config entries from
+ * --mcp-config that failed validation and were skipped"; read: CLI 2.1.309 schema) as `failed` rows with `errorClass: 'config'`.
+ * Names already in the CLI's list are not repeated.
+ */
+export function claudeMcpServerErrors(list: unknown, listed: readonly string[]): McpServerStatus[] {
+  const out: McpServerStatus[] = [];
+  const seen = new Set(listed);
+  for (const e of Array.isArray(list) ? list : []) {
+    if (out.length >= 100) break;
+    const name = str((e as { name?: unknown } | null)?.name);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const message = str((e as { message?: unknown }).message);
+    out.push({ name, status: 'failed', errorClass: 'config', ...(message ? { error: message.slice(0, 300) } : {}) });
+  }
+  return out;
+}
+
+/** A later `mcp_status` list does not name the servers skipped at launch: keep them, unless the CLI now lists that name. */
+export function withSkipped(list: McpServerStatus[], skipped: readonly McpServerStatus[]): McpServerStatus[] {
+  if (!skipped.length) return list;
+  const names = new Set(list.map((x) => x.name));
+  return [...list, ...skipped.filter((x) => !names.has(x.name))];
 }
 
 export class ClaudeMapper {
   /** Configured MCP server names from `system/init`. */
   private servers: string[] = [];
+  /** Spec 058 FR-091: servers the CLI skipped at launch (`init.mcp_server_errors`), as failed rows; read by the adapter for later lists. */
+  skipped: McpServerStatus[] = [];
   /** tool_use id -> tool name (and MCP origin), so the result carries them. */
   private tools = new Map<string, { tool: string; mcpServer?: string; mcpTool?: string }>();
   /** Sub-agent `task_id` -> spawning tool_use id (from `task_started`). */
@@ -112,6 +146,9 @@ export class ClaudeMapper {
   private thinkingStreamed = new Set<string>();
   /** Sub-agents started and not yet closed (by `task_notification` or by the Agent tool's own result): each gets exactly one closing event. */
   private openSubagents = new Set<string>();
+  /** Spec 005 FR-019: streamed arguments of file-changing tool_use blocks, and stream block index -> tool_use id per stream. */
+  private edits = new EditStreams();
+  private blockIds = new Map<string, string>();
   /** Running `total_cost_usd` already reported (streaming mode: the SDK sends totals, Durbar wants per-call amounts). */
   private lastCostTotal = 0;
   /** Per assistant message id, the usage already emitted (the most recent USAGE_IDS_CAP ids, oldest dropped first; FR-082). */
@@ -134,18 +171,24 @@ export class ClaudeMapper {
   private abortExpected = false;
   /** FR-157: an assistant message of this turn carried Claude's `error: authentication_failed`. */
   private authFailed = false;
+  /** Spec 068: this turn reported a usage limit; its closing error result ends the turn quietly (the coffee break says why). */
+  private limited = false;
   expectAbort(): void {
     this.abortExpected = true;
   }
 
   reset(): void {
     this.abortExpected = false;
+    this.limited = false;
     this.servers = [];
+    this.skipped = [];
     this.tools.clear();
     this.tasks.clear();
     this.openSubagents.clear();
     this.streamMessage.clear();
     this.thinkingStreamed.clear();
+    this.edits.clear();
+    this.blockIds.clear();
     this.lastCostTotal = 0;
     this.usageCounted.clear();
     this.info = {};
@@ -185,8 +228,12 @@ export class ClaudeMapper {
       case 'result':
         return this.result(m);
       case 'rate_limit_event': {
-        const info = (m.rate_limit_info ?? m) as Record<string, unknown>;
-        if (info.errorCode === 'credits_required' || m.errorCode === 'credits_required') this.emit({ type: 'status', status: 'error', intent: 'Claude usage limit reached' });
+        // spec 068 FR-002: a usage window that is used up (`rejected`) or `credits_required` puts the agent on a coffee break
+        const lim = claudeUsageLimit(m);
+        if (lim && !this.limited) {
+          this.limited = true;
+          this.emit(lim);
+        }
         return;
       }
       default:
@@ -197,8 +244,10 @@ export class ClaudeMapper {
   private system(m: ClaudeMessage): void {
     switch (m.subtype) {
       case 'init': {
-        const servers = claudeMcpServers(m.mcp_servers);
-        this.servers = servers.map((s) => s.name);
+        const listed = claudeMcpServers(m.mcp_servers);
+        this.servers = listed.map((s) => s.name);
+        this.skipped = claudeMcpServerErrors(m.mcp_server_errors, this.servers);
+        const servers = withSkipped(listed, this.skipped);
         this.info = { sessionId: str(m.session_id), cwd: str(m.cwd), model: str(m.model), cliVersion: str(m.claude_code_version), apiKeySource: str(m.apiKeySource) };
         if (!this.opts.quiet) this.emit({ type: 'status', status: 'idle', intent: `Ready in ${this.info.cwd ?? 'the folder'}` });
         this.emit({ type: 'mcp', servers });
@@ -244,15 +293,40 @@ export class ClaudeMapper {
   }
 
   private stream(m: ClaudeMessage, agentId: string | undefined): void {
-    const ev = m.event as { type?: string; index?: number; message?: { id?: string }; delta?: { type?: string; text?: unknown; thinking?: unknown } } | undefined;
+    const ev = m.event as { type?: string; index?: number; message?: { id?: string }; content_block?: { type?: string; id?: unknown; name?: unknown }; delta?: { type?: string; text?: unknown; thinking?: unknown; partial_json?: unknown } } | undefined;
     if (!ev || typeof ev !== 'object') return;
     const key = agentId ?? '';
     if (ev.type === 'message_start') {
       const id = str(ev.message?.id);
       if (id) this.streamMessage.set(key, id);
+      for (const k of this.blockIds.keys()) if (k.startsWith(key + '\u0000')) this.blockIds.delete(k);
+      return;
+    }
+    // Spec 005 FR-019: a file-changing tool_use streams its arguments; the call starts as soon as they name the file
+    if (ev.type === 'content_block_start' && ev.content_block && ev.content_block.type === 'tool_use') {
+      const id = str(ev.content_block.id);
+      const name = str(ev.content_block.name);
+      if (id && name && num(ev.index) !== undefined) {
+        if (this.blockIds.size >= 64) this.blockIds.delete(this.blockIds.keys().next().value as string);
+        this.blockIds.set(`${key}\u0000${ev.index}`, id);
+        this.edits.begin(id, name);
+      }
       return;
     }
     if (ev.type !== 'content_block_delta' || !ev.delta || typeof ev.delta !== 'object') return;
+    if (ev.delta.type === 'input_json_delta') {
+      const id = this.blockIds.get(`${key}\u0000${num(ev.index) ?? -1}`);
+      const part = typeof ev.delta.partial_json === 'string' ? ev.delta.partial_json : '';
+      if (!id || !part || !this.edits.toolOf(id)) return; // only file-changing tools are streamed
+      for (const step of this.edits.delta(id, part)) {
+        if (step.phase === 'start') {
+          const tool = this.edits.toolOf(id) ?? '';
+          this.tools.set(id, { tool });
+          this.emit({ type: 'toolCall', callId: id, tool, phase: 'start', args: step.args, agentId });
+        } else this.emit({ type: 'toolCall', callId: id, ...(this.tools.get(id) ?? { tool: '' }), phase: 'update', edit: step.edit, agentId });
+      }
+      return;
+    }
     const text = str(ev.delta.text);
     const thinking = str(ev.delta.thinking);
     if (ev.delta.type === 'text_delta' && text) return this.emit({ type: 'output', delta: text, agentId });
@@ -283,7 +357,10 @@ export class ClaudeMapper {
           const mcp = parseMcpToolName(name, this.servers);
           const meta = { tool: name, ...(mcp ?? {}) };
           this.tools.set(callId, meta);
-          this.emit({ type: 'toolCall', callId, ...meta, phase: 'start', args: b.input, agentId });
+          const edit = editOf(name, b.input);
+          // FR-019: a call that already started from its streamed arguments gets its whole arguments as an update (no second row)
+          const early = this.edits.takeStarted(callId);
+          this.emit({ type: 'toolCall', callId, ...meta, phase: early ? 'update' : 'start', args: b.input, ...(edit ? { edit } : {}), agentId });
           if (isSubagentTool(name) && !this.openSubagents.has(callId)) {
             this.openSubagents.add(callId);
             const input = (b.input ?? {}) as { prompt?: unknown; description?: unknown; subagent_type?: unknown };
@@ -361,6 +438,8 @@ export class ClaudeMapper {
   private result(m: ClaudeMessage): void {
     // End of turn: forget per-turn stream state so the tables stay bounded.
     this.thinkingStreamed.clear();
+    this.edits.clear();
+    this.blockIds.clear();
     this.streamMessage.clear();
     const mu = m.modelUsage;
     if (mu && typeof mu === 'object') {
@@ -384,13 +463,39 @@ export class ClaudeMapper {
     // The text of a turn that ended well is never read (an answer may well talk about a 401); Claude's own error marker is.
     const auth = this.authFailed || ((subtype !== 'success' || m.is_error === true) && isAuthError(m.result));
     this.authFailed = false;
+    const limited = this.limited;
+    this.limited = false;
     if (!auth && subtype === 'success' && m.is_error !== true) return this.emit({ type: 'status', status: 'idle' });
+    if (!auth && limited) return this.emit(usageLimitClosing());
     if (!auth && aborted && subtype === 'error_during_execution') return; // the adapter already reported "Aborted"
     if (auth) return this.emit({ type: 'status', status: 'error', intent: (str(m.result) ?? 'Claude Code could not authenticate.').replace(/\s+/g, ' ').slice(0, 300), errorKind: 'auth' });
     const denials = Array.isArray(m.permission_denials) ? m.permission_denials.length : 0;
     const text = subtype === 'success' ? 'error' : subtype;
     this.emit({ type: 'status', status: 'error', intent: denials ? `${text} (${denials} permission denial${denials === 1 ? '' : 's'})` : text });
   }
+}
+
+/** Spec 068: the fixed labels a Claude usage window may get (never the provider's own text). */
+const CLAUDE_WINDOWS: Record<string, string> = { five_hour: '5-hour window', seven_day: 'weekly limit', seven_day_opus: 'weekly Opus limit', seven_day_sonnet: 'weekly Sonnet limit', overage: 'extra usage' };
+
+/**
+ * Spec 068 FR-002: a `rate_limit_event` that means the turn cannot go on: `rate_limit_info.status === 'rejected'` (a usage window is
+ * used up) or `errorCode: 'credits_required'` (extra usage needs credits: paid). `resetsAt` may be seconds or ms. `allowed` and
+ * `allowed_warning` are information only (null). `read:` the field names come from the SDK docs (spec 012 research), not a real run.
+ */
+export function claudeUsageLimit(m: ClaudeMessage, now = Date.now()): (EventBody & { type: 'usageLimit' }) | null {
+  const info = (m.rate_limit_info && typeof m.rate_limit_info === 'object' ? m.rate_limit_info : m) as Record<string, unknown>;
+  const credits = info.errorCode === 'credits_required' || m.errorCode === 'credits_required';
+  if (!credits && info.status !== 'rejected') return null;
+  const kind = typeof info.rateLimitType === 'string' && Object.prototype.hasOwnProperty.call(CLAUDE_WINDOWS, info.rateLimitType) ? CLAUDE_WINDOWS[info.rateLimitType] : undefined;
+  const resetsAt = resetMs(info.resetsAt, now);
+  return {
+    type: 'usageLimit',
+    scope: credits ? 'quota' : 'plan',
+    ...(resetsAt ? { resetsAt } : {}),
+    ...(credits ? { paid: true } : {}),
+    source: credits ? 'Claude extra usage' : `Claude ${kind ?? 'usage limit'}`,
+  };
 }
 
 /**

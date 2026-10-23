@@ -10,6 +10,8 @@ import { isMcpAuthChallenge } from './mcpauth';
 import type { AgentEvent, CompactionEvent, ContextTier, McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import { nonEmptyStr as str } from '../shared/guards';
+import { EditStreams, editOf } from './edits';
+import { usageLimitClosing } from './usagelimit';
 
 export type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> : never) : never;
 
@@ -31,6 +33,8 @@ export class EventMapper {
   private toolNames = new Map<string, { tool: string; mcpServer?: string; mcpTool?: string }>();
   /** MCP servers of the session by name (the runtime reports a list once and then single changes). */
   private mcp = new Map<string, McpServerStatus>();
+  /** Spec 005 FR-019: streamed arguments of file-changing tool calls (`assistant.tool_call_delta`). */
+  private edits = new EditStreams();
   /** Reasoning block ids that already streamed as deltas (so the complete block is not shown twice). */
   private reasoningSeen = new Set<string>();
   /** SDK sub-agent instance id -> spawning `task` tool call id. */
@@ -47,6 +51,7 @@ export class EventMapper {
 
   reset(): void {
     this.toolNames.clear();
+    this.edits.clear();
     this.mcp.clear();
     this.reasoningSeen.clear();
     this.instances.clear();
@@ -56,6 +61,45 @@ export class EventMapper {
   /** Tell the mapper the user asked for `model`, so the matching `session.model_change` is reported with cause `user`. */
   expectUserModel(model: string | undefined): void {
     this.expected = model;
+  }
+
+  /** Servers marked needs-auth because their tool calls failed with the OAuth challenge while the runtime said "connected" (FR-060): only the runtime's own next status for the server clears the mark. */
+  private derivedAuth = new Set<string>();
+
+  /**
+   * Spec 058 FR-060/FR-064: a server list read again by Durbar (the poll while a sign-in page is open), not an event from the runtime.
+   * It applies what changed, but a server that the tool failures marked needs-auth and that the list still calls `connected` keeps the
+   * mark: Copilot reports `connected` while its tool calls fail (issue #364), so a re-read must not read as "signed in". Only a status
+   * the runtime sends itself (`status_changed`, `servers_loaded`), or a re-read that lists another status, replaces the mark.
+   */
+  reread(servers: unknown): void {
+    if (!Array.isArray(servers)) return;
+    const listed = new Set<string>();
+    for (const s of servers) {
+      if (!s || typeof s.name !== 'string') continue;
+      listed.add(s.name);
+      const read = mcpStatus(s.name, s);
+      // spec 058 FR-091 (review on PR #630): the list has no classification and may have no transport; while the state is the same,
+      // what the runtime's own status event said stays (a failed `os_not_found` must not turn into "reason unknown" on each poll).
+      // FR-164 (review on #625): source and transport are kept whatever the state, so a stdio or built-in server never looks remote
+      const prev = this.mcp.get(s.name);
+      const same = prev && prev.status === read.status;
+      const next = { ...read, source: knownSource(read.source) ?? prev?.source ?? read.source, transport: read.transport ?? prev?.transport, ...(same && prev.errorClass ? { errorClass: prev.errorClass } : {}) };
+      if (this.derivedAuth.has(s.name) && next.status === 'connected') continue; // the same "connected" the runtime always says: not new
+      this.derivedAuth.delete(s.name);
+      this.mcp.set(s.name, next);
+    }
+    for (const n of [...this.mcp.keys()]) if (!listed.has(n)) { this.mcp.delete(n); this.derivedAuth.delete(n); }
+    this.emitMcp();
+  }
+
+  /**
+   * Spec 058 FR-163: the last status of one MCP server of this session as Durbar knows it (`needs-auth` while tool failures marked it),
+   * undefined when the runtime has not reported the server. Read by the adapter to avoid asking the runtime about a failed server.
+   */
+  mcpStatusOf(name: string): string | undefined {
+    if (this.derivedAuth.has(name)) return 'needs-auth';
+    return this.mcp.get(name)?.status;
   }
 
   private emitMcp(): void {
@@ -107,12 +151,28 @@ export class EventMapper {
           costMultiplier: d.cost,
           creditsStatus: d.aiCreditsStatus,
         });
+      case 'assistant.tool_call_delta': {
+        // Spec 005 FR-019: the model is still writing the call's arguments (ephemeral; the tool name comes "when known")
+        const id = str(d.toolCallId);
+        if (!id || typeof d.inputDelta !== 'string') return;
+        for (const step of this.edits.delta(id, d.inputDelta, str(d.toolName))) {
+          if (step.phase === 'start') {
+            const meta = { tool: this.edits.toolOf(id) ?? str(d.toolName) ?? 'edit' };
+            this.toolNames.set(id, meta);
+            this.emit({ type: 'toolCall', callId: id, ...meta, phase: 'start', args: step.args, agentId });
+          } else this.emit({ type: 'toolCall', callId: id, ...(this.toolNames.get(id) ?? { tool: '' }), phase: 'update', edit: step.edit, agentId });
+        }
+        return;
+      }
       case 'tool.execution_start': {
         // MCP tools: the runtime names the tool `<server>-<tool>` and adds the server and tool name as separate fields.
         const mcpServer = str(d.mcpConfigServerName) ?? str(d.mcpServerName);
         const meta = { tool: d.toolName, ...(mcpServer ? { mcpServer, mcpTool: str(d.mcpToolName) ?? d.toolName } : {}) };
         this.toolNames.set(d.toolCallId, meta);
-        return this.emit({ type: 'toolCall', callId: d.toolCallId, ...meta, phase: 'start', args: d.arguments, agentId });
+        const edit = mcpServer ? undefined : editOf(String(d.toolName ?? ''), d.arguments);
+        // FR-019: a call that started from its streamed arguments gets the whole arguments as an update (no second row)
+        const early = typeof d.toolCallId === 'string' && this.edits.takeStarted(d.toolCallId);
+        return this.emit({ type: 'toolCall', callId: d.toolCallId, ...meta, phase: early ? 'update' : 'start', args: d.arguments, ...(edit ? { edit } : {}), agentId });
       }
       case 'tool.execution_partial_result':
         return this.emit({ type: 'toolCall', callId: d.toolCallId, ...(this.toolNames.get(d.toolCallId) ?? { tool: '' }), phase: 'update', output: d.partialOutput, agentId });
@@ -127,6 +187,7 @@ export class EventMapper {
         if (mcpAuth && meta.mcpServer) {
           const prev = this.mcp.get(meta.mcpServer);
           this.mcp.set(meta.mcpServer, { ...(prev ?? { name: meta.mcpServer }), status: 'needs-auth', errorClass: 'auth' });
+          this.derivedAuth.add(meta.mcpServer);
           this.emitMcp();
         }
         return;
@@ -192,12 +253,19 @@ export class EventMapper {
       }
       case 'session.mcp_servers_loaded':
         this.mcp.clear();
+        this.derivedAuth.clear();
         for (const s of Array.isArray(d.servers) ? d.servers : []) if (s && typeof s.name === 'string') this.mcp.set(s.name, mcpStatus(s.name, s));
         return this.emitMcp();
       case 'session.mcp_server_status_changed':
         if (typeof d.serverName !== 'string') return;
-        this.mcp.set(d.serverName, mcpStatus(d.serverName, { status: d.status, error: d.error, source: d.configSource ?? this.mcp.get(d.serverName)?.source, transport: this.mcp.get(d.serverName)?.transport }));
+        this.derivedAuth.delete(d.serverName);
+      {
+        const st = mcpStatus(d.serverName, { status: d.status, error: d.error, source: knownSource(d.configSource) ?? this.mcp.get(d.serverName)?.source ?? d.configSource, transport: this.mcp.get(d.serverName)?.transport });
+        // spec 058 FR-091: the runtime's own classification of a failed start, known values only (a later state drops it)
+        const cls = st.status === 'failed' ? copilotErrorClass(d.errorClassification) : undefined;
+        this.mcp.set(d.serverName, cls ? { ...st, errorClass: cls } : st);
         return this.emitMcp();
+      }
       case 'session.mcp_server_removed':
         if (typeof d.serverName === 'string' && this.mcp.delete(d.serverName)) this.emitMcp();
         return;
@@ -286,17 +354,72 @@ export class EventMapper {
         // spec 002 FR-016 (T024): what a turn left behind (a tool that never completed, reasoning never closed, e.g. after Stop) is dropped
         this.toolNames.clear();
         this.reasoningSeen.clear();
+        this.edits.clear();
         return this.emit({ type: 'status', status: 'idle', intent: d.aborted ? 'Aborted' : undefined });
-      case 'session.error':
+      case 'session.error': {
+        // spec 068 FR-002: a used-up quota or a rate limit that stopped the turn is a coffee break, not an error
+        const lim = agentId ? null : copilotUsageLimit(d.errorType, d.errorCode);
+        if (lim) {
+          this.emit(lim);
+          return this.emit(usageLimitClosing());
+        }
         // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)
         return this.emit({ type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType, d.message) });
+      }
       default:
         return;
     }
   }
 }
 
+/** Spec 068: Copilot's `rate_limit` codes and their fixed labels (`read:` SDK typings, `RateLimitErrorCode`). */
+const COPILOT_RATE: Record<string, string> = {
+  user_weekly_rate_limited: 'Copilot weekly limit',
+  user_global_rate_limited: 'Copilot rate limit',
+  rate_limited: 'Copilot rate limit',
+  user_model_rate_limited: 'Copilot model rate limit',
+  integration_rate_limited: 'Copilot rate limit',
+};
+/**
+ * Spec 068 FR-002: `session.error` -> coffee break. `rate_limit` (any code) is a rate window (no money); `quota` with `quota_exceeded` or
+ * `session_quota_exceeded` is the premium-request quota (going on may be billed as overage: `paid`). Other quota codes
+ * (`billing_not_configured`, ...) and every other category stay errors. The reset time comes later from the adapter (account.getQuota).
+ */
+export function copilotUsageLimit(errorType: unknown, errorCode: unknown): (EventBody & { type: 'usageLimit' }) | null {
+  const code = typeof errorCode === 'string' ? errorCode : '';
+  if (errorType === 'rate_limit') return { type: 'usageLimit', scope: 'rate', source: Object.prototype.hasOwnProperty.call(COPILOT_RATE, code) ? COPILOT_RATE[code] : 'Copilot rate limit' };
+  if (errorType === 'quota' && (code === 'quota_exceeded' || code === 'session_quota_exceeded')) return { type: 'usageLimit', scope: 'quota', paid: true, source: 'Copilot premium requests' };
+  return null;
+}
+
+/**
+ * Spec 058 FR-091 (issue #603): Copilot's `errorClassification` ("Runtime-produced classification for the final failed connection;
+ * ... Additional string values may be introduced") to Durbar's `errorClass`. Known values only (read: the runtime's strings in
+ * `@github/copilot-sdk-linux-x64` 1.0.22; `os_not_found` real 2026-10-21, spec 058 T060); anything else is not guessed (undefined).
+ */
+const COPILOT_CLASS: Record<string, McpServerStatus['errorClass']> = {
+  os_not_found: 'not-found',
+  config_invalid: 'config',
+  os_permission_denied: 'permission',
+  os_connection_refused: 'refused',
+  os_network_unreachable: 'refused',
+  os_connection_closed: 'disconnected',
+  timeout_initialize: 'timeout',
+  timeout_connection: 'timeout',
+  timeout_subscription: 'timeout',
+};
+export function copilotErrorClass(v: unknown): McpServerStatus['errorClass'] | undefined {
+  if (typeof v !== 'string' || !v) return undefined;
+  if (Object.prototype.hasOwnProperty.call(COPILOT_CLASS, v)) return COPILOT_CLASS[v];
+  return /^process_(linux|windows|macos)_(exited|terminated|crashed)$/.test(v) ? 'exited' : undefined;
+}
+
 const num = (v: unknown): number | undefined => (typeof v === 'number' && v >= 0 ? v : undefined);
+
+/** A source the runtime actually named: `unknown` or a missing one never replaces what it said before (review on #625). */
+function knownSource(v: unknown): string | undefined {
+  return typeof v === 'string' && v && v !== 'unknown' ? v : undefined;
+}
 
 function mcpStatus(name: string, s: Record<string, any>): McpServerStatus { // eslint-disable-line @typescript-eslint/no-explicit-any
   return { name, status: str(s.status) ?? 'pending', source: str(s.source), transport: str(s.transport), error: str(s.error)?.slice(0, 300) };

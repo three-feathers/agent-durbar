@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ClaudeMapper, parseMcpToolName } from '../src/adapters/claudeMap';
+import { ClaudeMapper, claudeMcpServerErrors, claudeMcpServers, parseMcpToolName, withSkipped } from '../src/adapters/claudeMap';
 import type { ClaudeMessage } from '../src/adapters/claudeMap';
 import type { EventBody } from '../src/adapters/map';
 
@@ -87,6 +87,30 @@ for (const f of files) {
   assert.deepStrictEqual(mcp.servers.map((x) => [x.name, x.status, x.errorClass]), [['notes', 'needs-auth', 'auth'], ['web', 'connected', undefined], ['bad', 'failed', undefined]], 'needs-auth carries errorClass auth; failed is not guessed');
 }
 
+// 3c. Spec 058 FR-091 (issue #603, T142): `init.mcp_server_errors` (config entries skipped at launch, read: CLI 2.1.309 schema) become
+// failed rows with errorClass config; `config.type` is the transport when it is a plain word.
+{
+  const errs = claudeMcpServerErrors([{ name: 'remote', type: 'invalid_config', message: 'url entry with no type' }, { name: 'x', message: 7 }, { name: '' }, null, { name: 'web', type: 'y', message: 'dup of a listed one' }], ['web']);
+  assert.deepStrictEqual(errs, [{ name: 'remote', status: 'failed', errorClass: 'config', error: 'url entry with no type' }, { name: 'x', status: 'failed', errorClass: 'config' }], 'listed names are not repeated; no message, no error key');
+  assert.deepStrictEqual(claudeMcpServerErrors(undefined, []), []);
+  assert.strictEqual(claudeMcpServerErrors([{ name: 'long', message: 'm'.repeat(1000) }], [])[0].error?.length, 300, 'cut like other errors');
+  assert.strictEqual(claudeMcpServerErrors(Array.from({ length: 300 }, (_, i) => ({ name: 'n' + i })), []).length, 100, 'capped like the list');
+  const listed = claudeMcpServers([{ name: 'a', status: 'connected', config: { type: 'http', url: 'https://x.test' } }, { name: 'b', status: 'failed', config: { command: 'x' } }, { name: 'c', status: 'failed', config: { type: 'weird type!' } }, { name: 'd', status: 'connected', config: { type: 'stdio' } }]);
+  assert.deepStrictEqual(listed.map((x) => x.transport), ['http', undefined, undefined, 'stdio'], 'only a plain config.type word; never inferred');
+  const init = { type: 'system', subtype: 'init', session_id: 's', mcp_servers: [{ name: 'web', status: 'connected' }], mcp_server_errors: [{ name: 'remote', type: 'invalid_config', message: 'bad entry' }] } as ClaudeMessage;
+  const evs: EventBody[] = [];
+  const m = new ClaudeMapper((b) => evs.push(b), { quiet: true });
+  m.map(init);
+  const mcp = evs.find((e) => e.type === 'mcp') as { servers: { name: string; status: string; errorClass?: string; error?: string }[] };
+  assert.deepStrictEqual(mcp.servers.map((x) => [x.name, x.status, x.errorClass, x.error]), [['web', 'connected', undefined, undefined], ['remote', 'failed', 'config', 'bad entry']]);
+  assert.deepStrictEqual(m.skipped.map((x) => x.name), ['remote'], 'kept for later mcp_status lists');
+  // a later mcp_status list (no skipped servers in it) keeps them; a name the CLI now lists wins
+  assert.deepStrictEqual(withSkipped([{ name: 'web', status: 'failed' }], m.skipped).map((x) => [x.name, x.status]), [['web', 'failed'], ['remote', 'failed']]);
+  assert.deepStrictEqual(withSkipped([{ name: 'remote', status: 'connected' }], m.skipped).map((x) => [x.name, x.status]), [['remote', 'connected']]);
+  m.reset();
+  assert.deepStrictEqual(m.skipped, [], 'a relaunch starts over');
+}
+
 // 4. Sub-agents: events carry their parent (the spawning tool_use id), by parent_tool_use_id and by agent_id via task_started.
 {
   const out = run(load('subagent-task.json').messages);
@@ -145,10 +169,10 @@ for (const f of files) {
   assert.deepStrictEqual(m.stats(), { tools: 0, tasks: 0, openSubagents: 0, streamMessage: 0, thinkingStreamed: 0 }, 'all tables empty after the turn');
 }
 
-// 5. Errors: an error result maps to an error status; success to idle; the usage limit to an error.
+// 5. Errors: an error result maps to an error status; success to idle; the usage limit to a coffee break (spec 068).
 {
   const st = run(load('error.json').messages).filter((e) => e.type === 'status');
-  assert.deepStrictEqual(st.map((e) => (e.type === 'status' ? e.status : '')), ['error', 'error', 'idle', 'error']);
+  assert.deepStrictEqual(st.map((e) => (e.type === 'status' ? e.status : '')), ['error', 'error', 'idle']); // spec 068: credits_required is a coffee break (usageLimit), not an error status
   const ok = run(load('result-success.json').messages);
   assert.strictEqual(ok[ok.length - 1].type === 'status' && (ok[ok.length - 1] as { status: string }).status, 'idle');
 }

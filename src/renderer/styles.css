@@ -113,6 +113,7 @@ body.has-bridge #liveBar{display:flex}
 .note.err{background:var(--pb-error,#f6e2df);border-color:var(--tone-bad-line);color:var(--red-ink)}
 .note .btn{height:28px;margin:0;padding:0 10px}
 .note-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.note .ro-done{margin:6px 0 0;color:var(--ink-2)} /* spec 003 FR-096: after a switch from a Read-only denial; inherits the note's size (10.5px floor) */
 /* spec 012 FR-157: the chat's sign-in card; the raw error only in a small, closed Details */
 .note.signin .signin-details{margin-top:6px;font-size:11px;color:var(--muted)}
 .note.signin .signin-details pre{white-space:pre-wrap;word-break:break-word;margin:4px 0 0;font-size:11px}
@@ -432,6 +433,22 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .pdiff .dl.hunk{color:var(--blue-ink)}
 .pdiff .dl.file{color:var(--muted);font-weight:600}
 .pdiff .dmore{display:block;padding:2px 8px 0;color:var(--muted);font-family:inherit}
+/* spec 005 FR-020/FR-021: a file edit in the chat, an edit row and its diff (the permission card's .pdiff colours) */
+.chip.editchip .ed-head{display:inline-flex;align-items:baseline;gap:6px;min-width:0;overflow:hidden;flex:0 1 auto}
+.chip.editchip .ed-verb{color:var(--ink-2);flex:none}
+.chip.editchip .ed-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0}
+.chip.editchip .ed-dir{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 2 auto;min-width:0}
+.ed-count{display:inline-flex;gap:5px;flex:none;font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.ed-count i{font-style:normal}
+.ed-count .add{color:var(--pc-done)}
+.ed-count .del{color:var(--red-ink)}
+.chips>.ediff{flex:1 1 100%;min-width:0;margin:0 0 2px}
+.chips>.ediff[hidden]{display:none}
+.ediff>summary{font-size:11px;color:var(--muted)}
+.ediff>pre{max-height:min(320px,40vh)}
+.ediff .dl.file{display:flex;align-items:baseline;gap:8px;padding-top:2px;color:var(--ink-2)}
+.ediff .xall{display:block;margin:4px 8px 0;height:28px;padding:0 10px;font:600 11px/1 system-ui,sans-serif;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer}
+.ediff.partial>pre{border-style:dashed}
 /* spec 052 FR-062: "active 2m ago" next to the chat header's status */
 .ph-ago{font-size:var(--t5-size);color:var(--muted);white-space:nowrap}
 .ph-ago:empty{display:none}
@@ -460,7 +477,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .att button:hover{background:rgba(0,0,0,.07)}
 .inbox{display:flex;align-items:flex-end;gap:4px;border:1px solid var(--line-2);border-radius:14px;background:var(--raised);padding:6px}
 .inbox:focus-within{border-color:var(--sel-border,#7fa0bd);box-shadow:0 0 0 3px #dbe7f1}
-.inbox textarea{flex:1;border:0;outline:0;resize:none;font:inherit;font-size:var(--t3-size);padding:7px 6px;min-height:36px;max-height:110px;background:transparent;color:var(--ink)}
+.inbox textarea{flex:1;border:0;outline:0;resize:none;font:inherit;font-size:var(--t3-size);padding:7px 6px;min-height:36px;background:transparent;color:var(--ink)}
 .ib{width:34px;height:34px;border-radius:10px;border:0;background:transparent;cursor:pointer;display:grid;place-items:center;color:var(--ink-2);flex:none}
 .ib:hover{background:var(--surface-2)}
 .ib svg{width:18px;height:18px}
@@ -650,7 +667,10 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sc-c .halo{animation:halo var(--m-halo,3.6s ease-in-out infinite alternate)}
 .sc-c .halo-waiting{animation-duration:2.6s}
 .sc-c .halo-error{animation:none}
-@keyframes halo{from{opacity:.5}to{opacity:1}}
+/* the halo pulses its fill-opacity, not its opacity (review of #554): an opacity animation runs on the compositor, so the chair and the figure drawn
+   over the halo go to a layer of their own, and where Chromium cannot merge that layer into the page (it depends on the desks around: the lounge's
+   two-row room did it) it draws them blurred. fill-opacity is painted with the scene, a few steps a second like the other compact animations. */
+@keyframes halo{from{fill-opacity:.5}to{fill-opacity:1}}
 .sc-c .wave{transform-origin:20% 90%;animation:wave var(--m-wave,2.8s ease-in-out infinite)}
 @keyframes wave{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(6deg)}}
 .sc-c .cursor{animation:dotp var(--m-cursor,1.6s ease-in-out infinite)}
@@ -689,6 +709,33 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .stage[data-d="roomy"] .helper.hc .hname{font-size:12.5px;line-height:16px}
 .stage[data-d="roomy"] .helper.hc .hs{font-size:11px;line-height:14px}
 .stage[data-d="roomy"] .helpers.hstrip>.more{font-size:12px}
+/* spec 001 FR-041..FR-045: grown desks. With few agents a roomy card grows by --gf (1 to 2.5, set with data-grow on the stage by the layout
+   search): taller, a wider column and drawing, the same text sizes. Its text line fills the card (at most 8 lines) and keeps the newest
+   lines in view like the side panel (.over, set by measuring); from --gf 1.4 (data-grow="2") the name may take two lines. */
+.stage[data-d="roomy"][data-grow]{--cmax:1600px;--sw:calc(104px * min(var(--gf,1),1.6))}
+.stage[data-d="roomy"][data-grow] .desk.card{height:calc(var(--ch) * var(--gf,1));align-items:stretch;padding-top:8px;padding-bottom:8px;grid-template-columns:min(var(--sw),max(104px,36%)) minmax(0,1fr)} /* a narrow grown card keeps the text its room */
+.stage[data-d="roomy"][data-grow] .desk.card>.sc{align-self:center}
+.stage[data-d="roomy"][data-grow] .desk.card .ci{min-height:0;gap:4px}
+.stage[data-d="roomy"][data-grow] .desk.card .intent{flex:1 1 0;min-height:0;max-height:128px;display:flex;flex-direction:column;justify-content:flex-start;-webkit-line-clamp:unset;overflow:hidden;overflow-wrap:break-word}
+.stage[data-d="roomy"][data-grow="2"] .desk.card .l1{flex-wrap:wrap;row-gap:0}
+.stage[data-d="roomy"][data-grow="2"] .desk.card .l1 .name{flex:1 1 100%;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+/* spec 001 FR-047..FR-049 (owner 2026-10-22): a wide grown desk shows more, in columns, never longer lines. The render pass (setGrownCols,
+   app.js) sets data-gc (2 or 3) and the column widths --gm/--gr/--gs from DurbarProbe.grownCols, and caps the card at their sum. Without
+   data-gc (a narrow desk, the probe) the side is not shown. 16px between columns: the card's 10px column gap, 5px of padding and the 1px rule. */
+.desk.card .gx{display:none}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc]{grid-template-columns:min(var(--sw),max(104px,36%)) var(--gm) minmax(0,1fr)}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc] .gx{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0;overflow:hidden;padding-left:5px;border-left:1px solid var(--line-hair);text-align:left}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc="3"] .gx{flex-direction:row;gap:16px}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc="3"] .gx-r{flex:none;width:var(--gr)}
+.stage[data-d="roomy"][data-grow] .desk.card[data-gc="3"] .gx-f{flex:none;width:var(--gs)}
+.desk.card .gx-r{display:flex;flex-direction:column;flex:1 1 0;min-height:0;min-width:0;gap:2px}
+.desk.card .gx-r.is-empty{display:none}
+.desk.card .gx-h,.desk.card .gx-k{font-size:10.5px;line-height:15px;color:var(--muted);font-weight:600}
+.desk.card .gx-t{flex:1 1 0;min-height:0;font-size:11.5px;line-height:15px;color:var(--ink-2);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;overflow-wrap:break-word}
+.desk.card .gx-f{display:flex;flex-direction:column;flex:none;min-width:0;justify-content:flex-end}
+.desk.card[data-gc="3"] .gx-f{justify-content:flex-start}
+.desk.card .gx-l{font-size:11px;line-height:15px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.desk.card .gx-l .gx-k{margin-right:4px}
 
 /* =====================================================================
    Full-screen chat (replaces the docked panel)
@@ -754,20 +801,31 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 #chat{padding:16px max(16px,calc((100% - 880px)/2))}
 .composer{padding:8px max(16px,calc((100% - 880px)/2))}
 .ph{padding-left:max(16px,calc((100% - 1240px)/2));padding-right:max(16px,calc((100% - 1240px)/2))}
-.panel-in.viewing .composer,.panel-in.viewing .prev,.panel-in.viewing #prevBtn{display:none}
+.panel-in.viewing .composer,.panel-in.viewing .prev{display:none}
 .nothink{font-size:11px;color:var(--muted)}
 .think.streaming .think-body:empty::before{content:"The model reasons privately first. A summary of its reasoning appears here when it finishes thinking.";color:var(--muted)}
 
 /* previous sessions */
-/* spec 052 FR-095: the bar is gone; "Previous (N)" in the header's actions opens this panel under the header (same lists, same behaviour) */
-.prev{flex:none;border-bottom:1px solid var(--line);background:var(--soft);padding:4px max(16px,calc((100% - 1240px)/2)) 0}
+/* spec 006 FR-033 (2026-10-21): a section of its own above the chat. Collapsed it is one slim row (a 28px toggle, 32px with its border):
+   the shared chevron, the label, a count pill and a muted breakdown that is cut first; the whole row is the toggle. Open, the lists show under it. */
+.prev{flex:none;border-bottom:1px solid var(--line);background:var(--soft);padding:2px max(16px,calc((100% - 1240px)/2)) 1px}
 .prev[hidden]{display:none}
-#prevBtn[aria-expanded="true"]{background:var(--surface-2);border-color:var(--line-ctl)}
+.prev-bar{display:flex;min-width:0}
+.prev-toggle{display:flex;align-items:center;gap:var(--s-2);flex:1;min-width:0;height:28px;margin:0 -8px;padding:0 8px;border:0;border-radius:var(--r-sm);background:transparent;color:var(--ink);font:inherit;font-size:var(--t4-size);text-align:left;cursor:pointer;white-space:nowrap}
+.prev-toggle:hover{background:var(--surface-2)}
+.prev-toggle .chev{width:12px;height:12px;flex:none;color:var(--ink-2);transition:transform .2s}
+.prev-toggle[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.prev-l{flex:none;font-weight:650}
+.prev-c{flex:none;min-width:20px;height:18px;padding:0 var(--s-1);box-sizing:border-box;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-2);font-size:var(--t5-size);font-weight:650;line-height:16px;text-align:center}
+.prev-c[hidden]{display:none}
+.prev-sub{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:var(--t5-size);font-weight:500}
+@media (prefers-reduced-motion:reduce){.prev-toggle .chev{transition:none}}
+.prev-panel[hidden]{display:none}
 .prev-body{max-height:min(30vh,250px);overflow-y:auto;padding:0 18px 8px 0;scrollbar-gutter:stable} /* spec 006 FR-027: an overlay scrollbar (macOS) must never sit over the ⋯ buttons or take their clicks: 14px clear on the right */
 /* spec 052 (2026-10-21, round 1): the panel ends with a clear edge, and the list fades out while more rows are below */
-.prev{box-shadow:0 6px 10px -8px rgba(40,30,10,.28)}
+.prev.open{box-shadow:0 6px 10px -8px rgba(40,30,10,.28)} /* only while the lists are open: collapsed it is a plain row */
 .prev-body.more-below{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent)}
-.prev-q{display:block;box-sizing:border-box;width:100%;height:28px;margin:4px 0;padding:0 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--raised);color:var(--ink);font:inherit;font-size:var(--t4-size)}
+.prev-q{display:block;box-sizing:border-box;width:100%;height:28px;margin:4px 0;padding:0 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--raised);color:var(--ink);font:inherit;font-size:var(--t4-size)} /* FR-037: a token, so a dark theme has a dark field */
 .prev-n{font-weight:500;color:var(--muted);font-size:var(--t4-size);margin-left:4px}
 .prev-h{font-size:var(--t4-size);font-weight:650;color:var(--ink);margin:8px 0 4px}
 .prev-h small{font-size:var(--t5-size);font-weight:500;color:var(--muted);margin-left:4px} /* FR-166: the browser's own "smaller" gave 10px */
@@ -989,15 +1047,53 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .door:hover .door-svg .leaf{transform:scaleX(.82)}
 /* ---- lobby and walking figures (spec 024): one shared band with the places agents go to ---- */
 .lobby{flex:0 0 100%;display:flex;gap:8px;align-items:stretch;min-width:0}
-.place{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:7px;height:36px;box-sizing:border-box;padding:0 10px;border-radius:12px;border:1px solid var(--wall);background:color-mix(in srgb,var(--raised) 55%,transparent);color:var(--ink-2);transition:background .2s,border-color .2s}
+.place{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:4px;height:58px;box-sizing:border-box;padding:5px 10px;border-radius:12px;border:1px solid var(--wall);background:color-mix(in srgb,var(--raised) 55%,var(--bg));color:var(--ink-2);transition:background .2s,border-color .2s}
 .place.busy{background:var(--raised);border-color:var(--place-busy)}
 .place .pic{flex:none;width:18px;height:18px}
 .place .pn{flex:0 1 auto;min-width:0;font-size:12.5px;font-weight:650;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.place .prow{flex:1 1 auto;display:flex;align-items:center;gap:6px;min-width:0;justify-content:flex-end}
+/* spec 001 FR-036: a header row (icon, name, count) and the visitors under it: figure, name and what it does there (or initials) */
+.place .plh{display:flex;align-items:center;gap:7px;min-width:0;height:18px}
+.place .pc{margin-left:auto;flex:none;font-size:11.5px;font-weight:650;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.place .prow{flex:none;display:flex;align-items:center;gap:6px;min-width:0;height:28px;overflow:hidden}
+.place .pv{flex:1 1 0;max-width:170px;min-width:0;display:flex;align-items:center;gap:5px;height:28px}
+.place[data-chips="initials"] .pv{flex:0 0 46px;gap:2px} /* 22px for two letters ("Om" at 11px bold is about 20px) */
+.place[data-chips="initials"] .pv-more{flex:0 0 auto} /* spec 001 FR-039: "+N" is a bare circle in this mode (initialSpots counts it as 22 px) */
+.place .pv .slot{flex:none}
+.place .pv-t{display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:13px}
+.place .pv-n{font-size:11px;font-weight:650;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place .pv-a{font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place .pv-none{font-size:11px;color:var(--muted)}
+.place .pv-more{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left;border-radius:8px}
+.place .pv-more:hover .slot{background:var(--raised)}
+.place .pv-more:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .place .pslots{display:flex;gap:3px;flex:none}
+/* ---- spec 001 FR-034/FR-035/FR-038: the Boss (a queue), the Bank and the Postbox; tokens only ---- */
+.place .pv-go{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left;border-radius:8px}
+.place .pv-go:hover .pv-n{text-decoration:underline}
+.place .pv-go:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.place .bw{margin-left:auto;flex:none;font-size:10.5px;font-weight:600;color:var(--amber-ink);white-space:nowrap}
+.place .bw+.pc{margin-left:0}
+.place.boss.busy{border-color:color-mix(in srgb,var(--c-waiting) 55%,var(--line));background:color-mix(in srgb,var(--c-waiting) 10%,var(--raised))}
+.walker .wb{position:absolute;left:-6px;top:-6px;min-width:13px;height:13px;box-sizing:border-box;padding:0 2px;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;background:var(--amber-ink);color:var(--surface);border:1.5px solid var(--surface);font-size:10.5px;font-weight:800;line-height:1}
+.walker[data-ask]:not([data-ask=""])::after{display:none} /* at the Boss the badge says what is wanted; the trouble dot would crowd it */
+.place.postbox{flex-direction:row;align-items:stretch;gap:8px;font:inherit;text-align:left;cursor:pointer}
+.place.postbox:hover{background:var(--raised)}
+.place.postbox:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.place.postbox .pb-l{flex:0 0 84px;width:84px;display:flex;flex-direction:column;justify-content:center;gap:1px;min-width:0} /* fixed: every theme lays out like Clean Office (check:geometry); a long theme word is cut, its full name is in the label */
+.place.postbox.unnamed .pb-l{flex-basis:64px;width:64px}
+.place.postbox .pb-n{flex:none;font-size:10.5px;line-height:13px;font-weight:600;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place.postbox .pb-flag{align-self:flex-start;font-size:10.5px;font-weight:650;line-height:13px;padding:0 4px;border-radius:var(--r-sm);color:var(--red-ink);background:color-mix(in srgb,var(--red-ink) 12%,transparent);white-space:nowrap}
+.place.postbox.unnamed .pb-flag{max-width:64px;overflow:hidden;text-overflow:ellipsis}
+.place.postbox .pb-r{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;border-left:1px solid var(--line);padding-left:8px}
+.place.postbox .pb-line{font-size:10.5px;line-height:13px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place.postbox .pb-none{color:var(--muted)}
+.letter{position:absolute;left:0;top:0;width:16px;height:12px;margin:-6px 0 0 -8px;color:var(--ink-2);pointer-events:none;z-index:3}
+.letter svg{display:block}
+.letter.flying{transition:transform .9s cubic-bezier(.3,.1,.3,1)}
+@media (prefers-reduced-motion:reduce){.letter{display:none}}
 .place-add{flex:none;align-self:center;width:26px;height:26px;box-sizing:border-box;padding:0;border-radius:50%;border:1.5px dashed var(--line-2);background:color-mix(in srgb,var(--raised) 55%,transparent);color:var(--ink-2);font:inherit;font-size:16px;line-height:1;cursor:pointer}
 .place-add:hover{background:var(--raised);border-style:solid}
-.place-add:focus-visible{outline:2px solid var(--focus,#4a7fa8);outline-offset:2px}
+.place-add:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .slot{width:22px;height:22px;box-sizing:border-box;border-radius:50%;border:1.5px dashed var(--line-2);display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:650;color:var(--muted)}
 .slot.on{border-color:transparent}
 .slot.more{border-style:solid;border-color:var(--line-2);background:color-mix(in srgb,var(--raised) 80%,transparent);color:var(--ink-2)}
@@ -1013,6 +1109,8 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .walker[data-body="monster"]::before{content:"";position:absolute;left:3px;right:3px;top:-5px;height:7px;background:#6f8a6a;clip-path:polygon(0 100%,14% 0,30% 100%,70% 100%,86% 0,100% 100%)}
 .walker[data-trouble]:not([data-trouble=""])::after{content:"";position:absolute;right:-3px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--amber-ink);border:1.5px solid var(--surface)}
 .walker[data-trouble="ambulance"]::after,.walker[data-trouble="faint"]::after{background:var(--red-ink)}
+/* spec 068: an agent on a coffee break holds a cup (calm: no trouble dot) */
+.walker[data-coffee="1"]::after{content:"";position:absolute;right:-4px;bottom:-2px;width:8px;height:8px;border-radius:1px 1px 3px 3px;background:var(--cup);border:1.5px solid var(--cup-line);box-shadow:2px 0 0 -0.5px var(--cup-line)}
 @media (prefers-reduced-motion:reduce){.walker.walking .wk{animation:none}.walker,.place{transition:none!important}}
 .doors{flex:0 0 100%;display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
 .plate{--tone:#c9c2b2;--tonebg:#f6f2e9;display:flex;align-items:center;gap:9px;min-width:210px;max-width:320px;flex:0 1 auto;min-height:44px;padding:5px 12px 5px 8px;border-radius:14px;border:1.5px solid var(--tone);background:var(--tonebg);cursor:pointer;text-align:left;transition:background .15s,border-color .15s,transform .15s}
@@ -1047,6 +1145,17 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .mode-chip .mode-restored{font-size:10.5px;font-weight:600;letter-spacing:.02em;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid var(--tone-warn-line);color:var(--amber-ink)}
 .mode-chip.mode-allow{color:var(--red-ink);background:var(--pb-error);border-color:var(--tone-bad-line)} /* spec 052 FR-065: the chat header says Allow all in the same red as the cards */
 .mode-menu{position:fixed;z-index:70;width:min(var(--menu-w),calc(100vw - 16px));background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:var(--shadow-pop);display:flex;flex-direction:column;gap:2px}
+/* spec 073: the composer's "/" list: the menus' look (.mode-menu), as wide as the other menus (--menu-w) at the box's left edge, at most 8 rows then it scrolls; tokens only, 10.5px floor */
+.slash-list{gap:0;overflow-y:auto;overscroll-behavior:contain} /* a menu: --menu-w and the 6px padding of .mode-menu (FR-008) */
+.slash-list .sl-opt{display:flex;flex-direction:column;gap:1px;min-height:40px;justify-content:center;padding:4px 10px;border-radius:10px;cursor:pointer;color:var(--ink)}
+.slash-list .sl-opt[aria-selected="true"]{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--focus)}
+.slash-list .sl-opt:hover{background:var(--surface-2)}
+.slash-list .sl-line{display:flex;align-items:baseline;gap:8px;min-width:0}
+.slash-list .sl-name{font:600 13px/1.3 var(--font-mono);color:var(--ink);white-space:nowrap;min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis} /* the row's title has the full name */
+.slash-list .sl-hint{font:11px/1.3 var(--font-mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 0} /* the hint takes only the room the name and the source word leave */
+.slash-list .sl-src{margin-left:auto;flex:none;font-size:10.5px;font-weight:600;letter-spacing:.02em;color:var(--ink-2);white-space:nowrap}
+.slash-list .sl-desc{font-size:11.5px;line-height:1.35;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slash-list .sl-empty{margin:0;padding:8px 10px;font-size:12px;color:var(--ink-2)}
 .mode-menu button{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:8px 10px;border:0;border-radius:10px;background:transparent;cursor:pointer}
 .mode-menu button:hover,.mode-menu button:focus-visible{background:var(--surface-2)}
 .mode-menu .mi{width:16px;height:16px;margin-top:2px;flex:none;color:var(--muted)}.mode-menu .mi svg{width:16px;height:16px}
@@ -1319,6 +1428,17 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .pal-empty{margin:0;padding:14px 10px;font-size:13px;color:var(--muted)}
 .pal-foot{margin:0;border-top:1px solid var(--line);padding:8px 16px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
 .pal-foot kbd+kbd{margin-left:-2px}
+/* spec 074 (issue 548): Go to (the navigator): the breadcrumb above the input and the number of each item */
+.pal-crumb{margin:8px 0 0;font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pal-n{flex:none;min-width:30px;padding:1px 5px;border:1px solid var(--line-2);border-radius:5px;background:var(--surface-2);font-size:11px;font-weight:700;line-height:1.5;color:var(--ink-2);text-align:center;font-variant-numeric:tabular-nums}
+/* FR-012: the chat number on desk cards, list rows and the chat header: text, at least 10.5px, never colour alone */
+.chatno{flex:none;display:inline-block;margin-right:5px;padding:0 4px;border:1px solid var(--line-2);border-radius:4px;background:var(--surface-2);font-size:10.5px;font-weight:700;line-height:14px;color:var(--ink-2);font-variant-numeric:tabular-nums;vertical-align:1px}
+.chatno::before{content:attr(data-n)}
+.lname .chatno{margin-right:-4px}
+.ph-id .sub .chatno{margin-right:6px}
+/* on a desk card (every density) it sits on the scene's corner, never in the name row, so it cannot squeeze the name (2026-10-23:
+   in card density at 1280x800 with Windows fonts an inline badge left a name 19px wide) */
+.stage .desk.card .chatno{position:absolute;left:2px;top:2px;margin:0;z-index:1;box-shadow:0 0 0 1px var(--card)}
 .pal-dlg kbd,.kbd-dlg kbd{display:inline-block;min-width:20px;padding:1px 6px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:11px;font-weight:600;line-height:1.5;color:var(--ink-2);text-align:center}
 .dlg.kbd-dlg{width:min(var(--dlg-w-m),calc(100vw - 32px))}
 /* spec 052 (2026-10-21, round 1): two columns where there is room, so the whole sheet fits a 1280x800 window without scrolling */
@@ -1505,10 +1625,48 @@ h2,h3,h4{text-wrap:balance}
 .liveside .ls-k{font-size:11px;line-height:14px;font-weight:600;color:var(--muted);letter-spacing:.01em}
 /* the newest words stay in view: text that does not fit sits at the bottom of its box and older lines leave at the top, fading (.over is set by measuring) */
 .liveside .ls-t{flex:1 1 0;min-height:0;font-size:12px;line-height:17px;color:var(--ink-2);display:flex;flex-direction:column;justify-content:flex-start;overflow:hidden;overflow-wrap:break-word}
-.liveside .ls-t.over{justify-content:flex-end;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 20px);mask-image:linear-gradient(to bottom,transparent 0,#000 20px)}
+.liveside .ls-t.over,.stage[data-d="roomy"][data-grow] .desk.card .intent.over{justify-content:flex-end;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 20px);mask-image:linear-gradient(to bottom,transparent 0,#000 20px)}
 .liveside[data-lk="think"] .ls-t,:is(.task,.intent)[data-lk="think"]{font-style:italic}
 .stage[data-d="full"] .liveside+.helpers{margin-left:0} /* the helper column's -2px tuck is for its desk's connector, not the panel */
 
+/* spec 001 FR-037: the room header counts in words when the header has room (fitUsage drops the words first, then the path) */
+.rd .rdw{font-weight:500}
+.room-head.no-words .rdw,#probe .rdw{display:none} /* the words never decide the layout: the search measures without them */
+/* ---- spec 005 FR-037..FR-042: the composer toolbar under the message box, and one Send / Stop slot inside its right edge.
+   Tokens only (docs/design-rules.md 1-3, 9); controls 28px like the header's; the office is untouched. ---- */
+.inbox{align-items:flex-end}
+.inbox textarea{padding-left:8px}
+.run-slot{display:flex;align-items:center;gap:var(--s-1);flex:none}
+.run-slot .send{margin-left:0}
+.run-slot [hidden]{display:none!important}
+.ib.stop{background:var(--surface-2);color:var(--red-ink);border:1px solid var(--line-ctl)}
+.ib.stop:hover{background:var(--pb-error)}
+.ib.stop[aria-busy="true"]{cursor:progress;color:var(--muted)}
+.run-spin{display:inline-grid;place-items:center;width:20px;height:20px;flex:none;color:var(--blue-ink)}
+.run-spin i{display:block;width:16px;height:16px;border-radius:50%;border:2px solid var(--line-2);border-top-color:currentColor;animation:run-spin .9s linear infinite}
+@keyframes run-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.run-spin i{width:8px;height:8px;border:0;background:currentColor;animation:none}} /* FR-038: a static dot, no motion */
+.ctoolbar{--h-chip:28px;display:flex;align-items:center;gap:var(--s-1);margin-top:var(--s-1);min-width:0}
+.ct-items{display:flex;align-items:center;gap:var(--s-1);flex:1 1 auto;min-width:0;overflow:hidden;padding:2px 0} /* one row; what does not fit goes into ⋯ (FR-040) */
+.ct{display:inline-flex;align-items:center;flex:none;min-width:0}
+.ct:empty{display:none}
+.ctoolbar .ib.ct-ib{width:28px;height:28px;border-radius:var(--r-md)}
+.ctoolbar .ib.ct-ib svg{width:16px;height:16px}
+.ctoolbar #ctMoreBtn{font-size:var(--t3-size);font-weight:700;color:var(--ink-2)}
+.ctoolbar #ctMoreBtn[hidden]{display:none}
+.ctoolbar .mchip,.ctoolbar .mode-chip,.ctoolbar .ctxchip{height:28px;font-size:var(--t4-size)}
+.ctoolbar .mchip-btn span{max-width:220px}
+.ctoolbar .cti{width:14px;height:14px;flex:none}
+.ctoolbar .mchip{gap:var(--s-1)}
+.ctoolbar .ct-n{min-width:16px;padding:0 4px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:var(--t5-size);font-weight:600;line-height:16px;text-align:center}
+/* spec 058 FR-094 (issue 603): a server of this chat failed: a small dot in the error colour next to the count (the chip's name says it too) */
+.ctoolbar .ct-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--c-error);box-shadow:0 0 0 2px var(--surface)}
+.ct-more{position:relative;flex:none}
+.ct-more-pop{position:absolute;right:0;bottom:calc(100% + 6px);z-index:70;display:flex;flex-direction:column;align-items:flex-start;gap:var(--s-1);min-width:180px;max-width:min(360px,calc(100vw - 32px));padding:var(--s-2);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:0 14px 40px color-mix(in srgb,var(--ink) 22%,transparent)}
+.ct-more-pop[hidden]{display:none}
+.ct-more-pop .ct{max-width:100%}
+.mode-menu .mm-info{margin:2px 10px 6px;font-size:var(--t4-size);line-height:var(--t4-lh);color:var(--ink-2);max-width:var(--measure,560px)}
+body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tidy up memory lives in the memory chip's menu */
 /* spec 052 FR-167 (T149): what is typed or chosen in a dialog field is regular weight; a bold label does not pass its weight on. The last rule of the file, so it wins over the fields' own `font:inherit`. */
 .dlg :is(input,select,textarea):not([type=checkbox]):not([type=radio]){font-weight:400}
 .dlg :is(input,textarea)::placeholder{font-weight:400}
@@ -1516,3 +1674,89 @@ h2,h3,h4{text-wrap:balance}
 .dlg.m{width:min(var(--dlg-w-m),calc(100vw - 32px))}
 .dlg.l{width:min(var(--dlg-w-l),calc(100vw - 32px))}
 .sched-dlg .sc-form{display:flex;flex-direction:column;gap:var(--dlg-gap)} /* FR-167: groups of fields are one gap apart (the Prompt label touched the select above it) */
+
+/* spec 001 FR-051..FR-055: finished agents rest in a lounge corner at the end of the desk row, at the row's height: a couch (recent) and
+   power-nap beds (old), with the agents' own characters, a speech bubble and a dream cloud that take turns. Sizes match shutters.js
+   (SEAT_W 64, COUCH_PAD 8, BUNK_W 72 for a bunk of two beds, MORE_W 52, GAP 6, PAD 8, MIN_W 150), which the layout counts. Furniture from theme tokens only. Reduced
+   motion: no settle-in and no fade (the global rule). Text never under 10.5px. */
+.stage:not([data-d="full"]) .units.has-shut{display:flex;flex-wrap:nowrap;align-items:flex-start;gap:var(--gap);max-width:none}
+.stage:not([data-d="full"]) .units-in{flex:1 1 0;min-width:0;display:grid;grid-template-columns:repeat(var(--cols,1),minmax(0,1fr));gap:calc(var(--gap) + 2px) var(--gap);align-content:start;align-items:start;max-width:calc(var(--cols,1)*var(--cmax) + (var(--cols,1) - 1)*var(--gap))}
+.lounge{flex:none;width:var(--shw);min-width:0;position:relative;display:flex;flex-direction:column;justify-content:flex-end;gap:3px;padding:3px 8px 4px;border-radius:12px;
+  background:color-mix(in srgb,var(--chair) 22%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--chair) 45%,transparent);container:lounge / size;--bubh:18px}
+.stage:not([data-d="full"]) .lounge{height:var(--ch)}
+.stage[data-d="roomy"][data-grow] .lounge{height:calc(var(--ch) * var(--gf,1))}
+.stage[data-d="full"] .lounge{align-self:stretch;min-height:120px}
+/* the bubbles, in the upper part: one over the couch, one (a dream cloud) over the beds; each line in turn, the tail at its speaker.
+   1 line in a short row, 2 from 100px, 3 from 150px (the corner's inner height) (FR-052: fewer lines at small densities) */
+.lg-bubs{display:flex;gap:6px;height:var(--bubh);flex:none;min-width:0}
+.lg-gap{display:none}
+.lg-bub{position:relative;flex:0 0 auto;min-width:0;height:100%;border-radius:9px;background:var(--bubble,var(--surface));border:1px solid var(--bubble-line,var(--line-2))}
+.lg-bub.none{visibility:hidden}
+.lg-bub.dream{border-style:dashed;border-radius:12px}
+.lg-t{position:absolute;inset:1px 7px;font-size:10.5px;line-height:15px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .6s ease}
+.lg-t.on{opacity:1}
+.lg-bub::after{content:"";position:absolute;bottom:-5px;left:calc(var(--tail,50%) - 4px);width:7px;height:7px;background:var(--bubble,var(--surface));border-right:1px solid var(--bubble-line,var(--line-2));border-bottom:1px solid var(--bubble-line,var(--line-2));transform:rotate(45deg)}
+.lg-bub.dream::after{border-radius:50%;transform:none;width:6px;height:6px;bottom:-8px;border:1px solid var(--bubble-line,var(--line-2))}
+.lg-bub.none::after{display:none}
+.lg-zz{font-weight:700;color:var(--muted);font-size:10.5px;letter-spacing:1px}
+@container lounge (min-height:100px){.lg-bubs{height:36px}.lg-t{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:14px;inset:3px 8px}}
+@container lounge (min-height:150px){.lg-bubs{height:51px}.lg-t{-webkit-line-clamp:3;font-size:11px}}
+/* the furniture: the rest of the corner's height */
+.lg-in{flex:1 1 0;min-height:0;display:flex;align-items:stretch;gap:6px;margin-top:3px}
+.lg-couches,.lg-beds{flex:0 0 auto;display:flex;align-items:stretch;gap:6px;min-width:0}
+.lg-couch{position:relative;flex:0 0 auto;display:flex;align-items:stretch;justify-content:center;padding:0 4px}
+.lg-sofa{position:absolute;left:0;right:0;bottom:0;width:100%;height:min(46%,64px);z-index:0}
+.lg-sofa .sf-back{fill:color-mix(in srgb,var(--chair) 85%,var(--ink))}
+.lg-sofa .sf-seat{fill:var(--chair)}
+.lg-sofa .sf-arm{fill:color-mix(in srgb,var(--chair) 70%,var(--ink))}
+.lg-sofa .sf-leg,.lg-bed .bd-leg{fill:color-mix(in srgb,var(--ink) 55%,transparent)}
+.stage .desk.shut{position:static;flex:none;width:64px;height:auto;min-width:0;padding:0;border:0;border-radius:8px;background:transparent;box-shadow:none;cursor:pointer}
+.stage .desk.shut:hover{background:color-mix(in srgb,var(--raised) 50%,transparent);border:0;transform:none}
+.stage .desk.shut[aria-pressed="true"]{box-shadow:0 0 0 1.5px var(--sel-border)}
+.lg-sp{position:relative;display:block;width:100%;height:100%;z-index:1;transform-origin:50% 100%}
+.stage .desk.shut .chatno{position:absolute;left:2px;top:2px;margin:0;z-index:4;box-shadow:0 0 0 1px var(--card)} /* spec 074 FR-012 on a lounge resident: the chat number in the character's own box (as on a desk card) */
+/* a character on the couch: as large as the corner allows (up to a desk figure), its name on the cushion */
+.desk.shut.rest-recent .lg-av{position:absolute;left:50%;bottom:calc(min(46%,64px) * .42);height:min(56px,calc(100% - min(46%,64px) * .42 - 2px));aspect-ratio:1;transform:translateX(-50%);border-radius:50% 50% 30% 30%;overflow:hidden}
+.lg-av>svg{display:block;width:100%;height:100%}
+.desk.shut .lg-name{position:absolute;left:1px;right:1px;bottom:2px;z-index:3;font-size:10.5px;line-height:13px;font-weight:600;color:var(--ink);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:color-mix(in srgb,var(--surface) 78%,transparent);border-radius:6px;padding:0 2px}
+/* nap beds as bunks: two to a column (the lower bunk first); in a short row the two lie side by side */
+.lg-bunk{flex:0 0 72px;width:72px;display:flex;flex-direction:column-reverse;gap:3px;min-height:0}
+.lg-bunk{background:linear-gradient(var(--desk-front,var(--desk)),var(--desk-front,var(--desk))) left bottom/3px 100% no-repeat,linear-gradient(var(--desk-front,var(--desk)),var(--desk-front,var(--desk))) right bottom/3px 100% no-repeat} /* the bunk's posts */
+.stage .lg-bunk>.desk.shut{width:100%;flex:0 0 calc(50% - 1.5px);min-height:0}
+@container lounge (max-height:99px){.desk.shut.rest-recent .lg-av{bottom:13px;height:calc(100% - 13px)}.desk.shut .lg-name{line-height:12px}.lg-bunk{flex-direction:row;background:none}.stage .lg-bunk>.desk.shut{width:auto;flex:1 1 0;min-width:0}}
+.lg-bed,.lg-blanket{position:absolute;left:0;bottom:0;width:100%;height:min(62%,34px)}
+.lg-blanket{z-index:2;pointer-events:none}
+.lg-bed .bd-frame{fill:var(--desk-front,var(--desk))}
+.lg-bed .bd-head{fill:color-mix(in srgb,var(--desk-front,var(--desk)) 80%,var(--ink))}
+.lg-bed .bd-mat{fill:var(--surface)}
+.lg-bed .bd-pil{fill:var(--bubble,var(--surface));stroke:var(--line-2);stroke-width:.6}
+.lg-blanket .bd-blk{fill:color-mix(in srgb,var(--sage) 55%,var(--surface))}
+.lg-av.lying{position:absolute;left:3px;bottom:calc(min(62%,34px) * .42);height:min(34px,calc(100% - 15px));aspect-ratio:1;transform:rotate(-80deg);border-radius:50%;overflow:hidden}
+/* issue 576: a sleeper's name is on the top line, where the chat number sits on the couch: the number goes to the bed's foot corner, beside the lying character, so the name stays whole */
+.stage .desk.shut.rest-old .chatno{left:auto;top:auto;right:2px;bottom:2px}
+.desk.shut.rest-old .lg-name{top:0;bottom:auto;background:transparent;font-weight:500;color:var(--ink-2)}
+.lg-beds>.shut-more{width:52px;height:auto;padding:0 2px;font-size:10.5px;line-height:13px;flex:none;border-radius:10px;white-space:normal}
+/* the peek card: beside the lounge (left, or right when measured too close to the room's edge), never moving anything */
+.desk.shut .peek{display:none;position:absolute;right:calc(100% + 6px);top:0;z-index:30;width:300px;flex-direction:column;gap:3px;padding:8px 10px;border-radius:10px;
+  background:var(--surface);border:1px solid var(--line-2);box-shadow:0 10px 28px color-mix(in srgb,var(--ink) 16%,transparent);transform-origin:100% 0;pointer-events:none;text-align:left}
+.desk.shut.pk-right .peek{right:auto;left:calc(100% + 6px);transform-origin:0 0}
+.desk.shut:hover .peek,.desk.shut:focus-visible .peek{display:flex;animation:shut-peek .18s ease-out}
+.peek .pk-h{display:flex;align-items:baseline;gap:6px;min-width:0}
+.peek .pk-h b{font-size:13px;line-height:17px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.peek .pk-role{font-size:11px;line-height:17px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.peek .pk-st{display:flex;align-items:center;gap:5px;font-size:11px;line-height:15px;color:var(--ink-2)}
+.peek .sh-mark{width:11px;height:11px;flex:none;color:var(--c-done)}
+.peek .pk-tx{font-size:11.5px;line-height:15px;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:normal}
+/* FR-055: one settle-in when an agent arrives in the lounge, one rise when it goes back to its desk (transform only) */
+.desk.shut.rolling .lg-sp{animation:shut-in .22s ease-out}
+.unit.unrolling{animation:shut-out .22s ease-out;transform-origin:50% 100%}
+@keyframes shut-in{from{transform:translateY(25%) scale(.85);opacity:.2}to{transform:none;opacity:1}}
+@keyframes shut-out{from{transform:scale(.92);opacity:.35}to{transform:none;opacity:1}}
+@keyframes shut-peek{from{transform:scale(.9);opacity:0}to{transform:none;opacity:1}}
+/* ---- spec 005 FR-045, FR-049 (issue 592): the message box's resize handle on the composer's top edge. Tokens only; no text. ---- */
+.composer{position:relative}
+.cgrip{position:absolute;left:0;right:0;top:0;height:8px;cursor:ns-resize;touch-action:none;z-index:1;border-radius:var(--r-sm)}
+.cgrip::after{content:"";position:absolute;left:50%;top:2px;width:36px;height:4px;margin-left:-18px;border-radius:999px;background:var(--line-2)}
+.cgrip:hover::after,.cgrip.dragging::after{background:var(--muted)}
+.cgrip:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}

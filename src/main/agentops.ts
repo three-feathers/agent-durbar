@@ -3,6 +3,7 @@
  * (spec 012 FR-054). Moved verbatim from `main.ts` and `mcpipc.ts` so they can be tested: no Electron, no file system.
  */
 import type { AdapterRouter } from '../adapters/router';
+import type { AgentAdapter, AgentMessage } from '../adapters/types';
 import { interruptOf, refusesLive, setCapOf, setMcpEnabledOf, setPermModeOf } from '../adapters/router';
 import { parseCapIn } from '../shared/credits';
 import type { AgentInfo, PermMode } from '../shared/api';
@@ -137,4 +138,22 @@ export function restorable(folders: SavedFolder[], has: (id: string) => boolean,
 export async function endSessionOp(d: { release(id: string): Promise<void>; router: Pick<AdapterRouter, 'forAgent'> }, id: string): Promise<void> {
   await d.release(id);
   await d.router.forAgent(id)?.stop(id);
+}
+
+/**
+ * Spec 073 FR-005: main's one send step (scheduled prompts too). A leading `/name` of a folder or user entry is sent as that entry's
+ * text; built-ins and anything else go as typed, and so does the typed text when the expansion fails. `slash` is the entry's place,
+ * `slashNote` what a VS Code prompt file could not carry over (2026-10-23 delta).
+ */
+export async function sendWithSlash(
+  ad: Pick<AgentAdapter, 'send' | 'expandSlashCommand'>,
+  id: string,
+  msg: AgentMessage,
+): Promise<{ slash?: string; slashNote?: string }> {
+  const text = String(msg.text ?? '');
+  const slash = ad.expandSlashCommand ? await ad.expandSlashCommand(id, text).catch(() => undefined) : undefined;
+  const expanded = slash && !slash.asTyped ? slash : undefined; // asTyped: over the size cap, the line goes as typed (review on #615)
+  await ad.send(id, { ...msg, text: expanded ? expanded.text : text });
+  if (slash?.asTyped) return slash.note ? { slashNote: slash.note } : {};
+  return expanded ? { slash: expanded.where, ...(expanded.note ? { slashNote: expanded.note } : {}) } : {};
 }

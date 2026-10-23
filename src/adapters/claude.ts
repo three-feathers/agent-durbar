@@ -18,34 +18,42 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ClaudeMapper, claudeMcpServers } from './claudeMap';
+import { ClaudeMapper, claudeMcpServers, withSkipped } from './claudeMap';
 import type { ClaudeMessage } from './claudeMap';
 import { claudeOptionsFor, parseMcpTool, preToolUseDecision, toolKind } from './claudeModes';
 import { createCliTransport } from './claudeTransport';
 import type { ClaudeTransport, ControlAnswer, IncomingControl, TransportHandlers, UserContent } from './claudeTransport';
 import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './capabilities';
 import type { EventBody } from './map';
-import { PermissionBroker, startModeOf } from './permissions';
+import { PermissionBroker, claudeServerPart, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { McpToolInfo } from './types';
+import { normMcpTools } from './mcptools';
 import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
+import { claudeAccount } from './accounts';
+import type { AccountIdentity } from '../shared/account';
 
 /** FR-156: what Settings says of a Claude Code that `auth status` calls signed in: only the first message can confirm it. */
 export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
 import { parseUsdCap } from '../shared/credits';
-import { simpleDiff, clipDiff } from '../shared/diff';
+import { clipDiff } from '../shared/diff';
+import { MCP_TOOL_OFF_RE } from '../shared/mcp';
+import { editOf } from './edits';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { allowedRemoteUrl, cleanRemoteError } from '../shared/remote';
 import type { RemoteState } from '../shared/remote';
 import { resolveWorkspaceCwd } from './workspace';
-import { listClaudeSessions, readClaudeHistory } from './claudeHistory';
+import { claudeConfigDir, listClaudeSessions, readClaudeHistory } from './claudeHistory';
 import type { HistoryResult, PreviousSession } from './history';
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
+import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache, vscodeUserPromptDirs } from './slashcommands';
+import type { SlashPlace } from './slashcommands';
 import { agentsArg, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
-import type { AgentProfile, AskedQuestion, ElicitAnswer } from './types';
+import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
 import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 
 export const CLAUDE_ID = 'claude';
@@ -70,6 +78,8 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true, // FR-133: mcp_toggle + mcp_status
   mcpStart: 'next-message', // spec 058 FR-010: the CLI (and its servers) is launched with the next message
   mcpToggleApplies: 'live', // FR-133 (a server that was off at launch: next message)
+  mcpToolFilter: true, // spec 069 FR-062: --disallowedTools mcp__<server>__<tool> (read: CLI docs; not run on a real account)
+  mcpTools: true, // spec 069 FR-031: the tools of a server in the mcp_status reply (read: docs McpServerStatus.tools; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: control request mcp_reconnect (read: CLI 2.1.304 strings; not checked on a real account)
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
   oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
@@ -82,9 +92,10 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
 /** Spec 059 FR-007: the SDK transport (dev opt-in, `DURBAR_CLAUDE_TRANSPORT=sdk`) does not apply `--name`, so it does not offer a rename. */
 export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() => {
   // the SDK transport sends only a few control requests (claudeSdk.ts): no rename, no mcp_reconnect
-  const { renameSession: _r, mcpRestart: _m, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown };
+  const { renameSession: _r, mcpRestart: _m, mcpTools: _t, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown; mcpTools?: unknown };
   void _r;
   void _m;
+  void _t;
   return rest;
 })()) as AdapterCapabilities;
 /** Spec 066: one sentence added to a plan-first message, so the plan reaches the card (Claude's plan file cannot be written in Read-only). */
@@ -147,16 +158,11 @@ export function editDiffOf(toolName: string, input: Record<string, unknown> | un
   if (!input) return undefined;
   const f = file ?? 'file';
   const str = (v: unknown): v is string => typeof v === 'string';
-  if (toolName === 'Edit' && str(input.old_string) && str(input.new_string)) return simpleDiff(f, input.old_string, input.new_string) || undefined;
-  if (toolName === 'Write' && str(input.content)) return simpleDiff(f, '', input.content) || undefined;
-  if (toolName === 'MultiEdit' && Array.isArray(input.edits)) {
-    const parts = input.edits
-      .slice(0, 50)
-      .map((e) => (e && typeof e === 'object' && str((e as Record<string, unknown>).old_string) && str((e as Record<string, unknown>).new_string) ? simpleDiff(f, (e as Record<string, string>).old_string, (e as Record<string, string>).new_string) : ''))
-      .filter(Boolean);
-    return parts.length ? clipDiff(parts.join('\n')) : undefined;
-  }
-  return undefined;
+  // the inputs that carry text to compare; spec 005 FR-018: the diff itself comes from the shared edit normalizer (masked, cut)
+  const ok = (toolName === 'Edit' && str(input.old_string) && str(input.new_string)) || (toolName === 'Write' && str(input.content)) || (toolName === 'MultiEdit' && Array.isArray(input.edits));
+  if (!ok) return undefined;
+  const body = editOf(toolName, { ...input, edits: Array.isArray(input.edits) ? input.edits.slice(0, 50) : undefined, file_path: f })?.files[0]?.diff;
+  return body ? clipDiff(`--- a/${f.replace(/[\r\n]+/g, ' ')}\n+++ b/${f.replace(/[\r\n]+/g, ' ')}\n${body}`) : undefined;
 }
 
 /** Durbar's MCP servers as the CLI's `--mcp-config` JSON (`disabled` names left out). Never logged: env and headers may hold secrets. */
@@ -180,7 +186,7 @@ export interface ClaudeLaunch {
   effort?: string;
   /** spec 043 FR-008: the custom agent for this launch (`--agents` JSON and `--agent` name). */
   agent?: { name: string; json: string };
-  /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged. */
+  /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged, never on the command line (`cliLaunchArgs` passes a private file). */
   mcpConfig?: string;
   appendSystemPrompt?: string;
   /** spec 006 FR-019: the workspace's other folders (`--add-dir`, once each). */
@@ -193,6 +199,8 @@ export interface ClaudeLaunch {
   folderAllow?: string[];
   /** Spec 059 FR-007: the user's name for the session; the CLI stores it as the session title (`--name`, also with `--resume`). */
   name?: string;
+  /** Spec 069 FR-062: single MCP tools turned off in Durbar, as `mcp__<server>__<tool>`, added to the mode's `--disallowedTools`. */
+  disallowedMcpTools?: string[];
 }
 
 export const CLAUDE_EFFORTS: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -234,13 +242,21 @@ export function claudeNameOk(name: unknown): boolean {
 }
 
 /** The CLI argv (FR-111). Mode flags come from `claudeOptionsFor`, so an unknown mode gets Read-only. */
+/** Spec 069 FR-062: Claude Code's names of the tools turned off in Durbar (other names cannot be turned off at all: FR-063, `MCP_TOOL_OFF_RE`). */
+export function claudeDisallowedMcp(off: Readonly<Record<string, readonly string[]>> | undefined): string[] {
+  const out: string[] = [];
+  for (const [server, tools] of Object.entries(off ?? {})) for (const t of tools ?? []) if (typeof t === 'string' && MCP_TOOL_OFF_RE.test(t)) out.push(`mcp__${claudeServerPart(server)}__${t}`);
+  return out.slice(0, 5000);
+}
+
 export function claudeArgs(i: ClaudeLaunch): string[] {
   const o = claudeOptionsFor(i.mode, i.folderAllow);
   const a = ['-p', '--output-format', 'stream-json', '--verbose', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio', '--include-partial-messages'];
   a.push('--permission-mode', o.permissionMode);
   if (o.allowDangerouslySkipPermissions) a.push('--allow-dangerously-skip-permissions');
   if (o.allowedTools?.length) a.push('--allowedTools', o.allowedTools.join(','));
-  if (o.disallowedTools?.length) a.push('--disallowedTools', o.disallowedTools.join(','));
+  const deny = [...(o.disallowedTools ?? []), ...(i.disallowedMcpTools ?? [])];
+  if (deny.length) a.push('--disallowedTools', deny.join(','));
   a.push('--setting-sources', o.settingSources.join(','));
   if (o.strictMcpConfig) a.push('--strict-mcp-config');
   if (i.mcpConfig) a.push('--mcp-config', i.mcpConfig);
@@ -375,7 +391,59 @@ export type TransportFactory = (o: TransportInput) => ClaudeTransport | Promise<
 /** Spec 012 FR-159: the entrypoint Claude records for the chat sessions Durbar starts (not an SDK value, so `claude --resume` lists them). */
 export const CLAUDE_ENTRYPOINT = 'agent-durbar';
 
-export const cliTransportFactory: TransportFactory = (o) => createCliTransport({ file: o.file, args: claudeArgs(o.launch), cwd: o.cwd, env: o.env, handlers: o.handlers });
+/**
+ * Spec 069 FR-009 (change 2026-10-22, review 6 on #489): the `--mcp-config` JSON holds env and header values (Claude Code's user list
+ * and the folder's extras), and a command line is visible to every local user (`ps`). It goes into `mcp-config.json`, mode 0600, in a
+ * new private temp folder (`mkdtemp`, 0700); `--mcp-config` gets the path; `cleanup` deletes the folder (on the CLI's exit).
+ */
+export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): { file: string; cleanup: () => void } {
+  const dir = fs.mkdtempSync(path.join(tmpRoot, 'durbar-mcp-'));
+  const cleanup = (): void => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* the OS cleans its temp folder */
+    }
+  };
+  try {
+    if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
+    const file = path.join(dir, 'mcp-config.json');
+    fs.writeFileSync(file, json, { mode: 0o600, flag: 'wx' });
+    return { file, cleanup };
+  } catch (e) {
+    cleanup();
+    throw e;
+  }
+}
+
+/** The CLI argv for a launch, with the MCP JSON moved to a private file (`privateMcpConfig`). */
+export function cliLaunchArgs(launch: ClaudeLaunch, tmpRoot?: string): { args: string[]; cleanup: () => void } {
+  if (!launch.mcpConfig) return { args: claudeArgs(launch), cleanup: () => undefined };
+  const p = privateMcpConfig(launch.mcpConfig, tmpRoot);
+  return { args: claudeArgs({ ...launch, mcpConfig: p.file }), cleanup: p.cleanup };
+}
+
+export const cliTransportFactory: TransportFactory = (o) => {
+  const { args, cleanup } = cliLaunchArgs(o.launch);
+  try {
+    return createCliTransport({
+      file: o.file,
+      args,
+      cwd: o.cwd,
+      env: o.env,
+      handlers: {
+        ...o.handlers,
+        exit: (info) => {
+          cleanup();
+          o.handlers.exit(info);
+        },
+      },
+    });
+  } catch (e) {
+    cleanup();
+    throw e;
+  }
+};
 
 export interface ClaudeAdapterDeps {
   /** Absolute path of `claude` (from detect); resolved lazily at the first start of a CLI. */
@@ -390,10 +458,14 @@ export interface ClaudeAdapterDeps {
   env?: () => NodeJS.ProcessEnv;
   /** Claude's config folder (tests); default `CLAUDE_CONFIG_DIR` or `~/.claude`. */
   configDir?: string;
+  /** VS Code's user prompt folders (spec 073 delta 2026-10-23); default `vscodeUserPromptDirs()`. Tests pass their own. */
+  vscodePromptDirs?: string[];
   /** Runs `claude` once with fixed arguments (spec 030 FR-034: the hand-off summary); tests inject a fake. */
   runOnce?: RunOnce;
   /** Spec 012 FR-156: `loggedIn` of `claude auth status --json` (local); tests inject a fake. Default: runs it on the found `claude`. */
   loggedIn?: () => Promise<boolean | undefined>;
+  /** Spec 051 FR-011: the parsed `claude auth status --json` (local); tests inject a fake. Default: runs it on the found `claude`. */
+  authJson?: () => Promise<Record<string, unknown> | undefined>;
 }
 
 export type RunOnce = (file: string, args: string[], o: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }) => Promise<{ code: number | null; stdout: string }>;
@@ -516,6 +588,7 @@ export class ClaudeAdapter implements AgentAdapter {
     this.capabilities = deps.sdkTransport ? CLAUDE_SDK_CAPABILITIES : CLAUDE_CAPABILITIES;
     if (deps.sdkTransport) (this as { renameSession?: unknown }).renameSession = undefined;
     if (deps.sdkTransport) (this as { restartMcpServer?: unknown }).restartMcpServer = undefined;
+    if (deps.sdkTransport) (this as { listMcpTools?: unknown }).listMcpTools = undefined;
   }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
@@ -540,27 +613,46 @@ export class ClaudeAdapter implements AgentAdapter {
     return { status: 'unknown', detail: CLAUDE_LOCAL_SIGN_IN };
   }
 
-  private modelCache?: { at: number; list: Promise<ModelOption[]> };
+  /**
+   * Spec 051 FR-011: the account `claude auth status --json` reports (email and plan for a Claude sign-in, an API key, a provider).
+   * Local, no prompt, nothing billed. Personal data: never passed to `debug` (FR-015).
+   */
+  async accountInfo(): Promise<AccountIdentity> {
+    const probe = this.deps.authJson ?? (async () => {
+      const p = await this.deps.claudePath();
+      if (!p) return undefined;
+      const { claudeAuthStatus, nodeDetectEnv, nodeExec } = await import('./detect');
+      return claudeAuthStatus(p, nodeDetectEnv(), nodeExec);
+    });
+    return claudeAccount(await probe().catch(() => undefined));
+  }
+
+  private initCache?: { at: number; reply: Promise<Record<string, unknown>> };
 
   /**
    * FR-118: the models the user's `claude` offers, from its `initialize` reply. A short-lived CLI in Read-only in the temp
    * folder; no prompt is written, so no tokens are spent. Cached 10 minutes; any failure is an empty list.
    */
   listModelOptions(): Promise<ModelOption[]> {
-    const now = Date.now();
-    if (this.modelCache && now - this.modelCache.at < 10 * 60_000) return this.modelCache.list;
-    const list = this.probeModels().catch((e) => {
-      this.debug?.(`claude: model list failed: ${e instanceof Error ? e.message : String(e)}`);
-      this.modelCache = undefined; // try again next time
-      return [] as ModelOption[];
-    });
-    this.modelCache = { at: now, list };
-    return list;
+    return this.initReply().then((r) => claudeModelOptions(r.models));
   }
 
-  private async probeModels(): Promise<ModelOption[]> {
+  /** The probe's `initialize` reply (models, and spec 073's built-in `commands`), cached 10 minutes; a failure is `{}` and is retried next time. */
+  private initReply(): Promise<Record<string, unknown>> {
+    const now = Date.now();
+    if (this.initCache && now - this.initCache.at < 10 * 60_000) return this.initCache.reply;
+    const reply = this.probeInit().catch((e) => {
+      this.debug?.(`claude: initialize probe failed: ${e instanceof Error ? e.message : String(e)}`);
+      this.initCache = undefined; // try again next time
+      return {} as Record<string, unknown>;
+    });
+    this.initCache = { at: now, reply };
+    return reply;
+  }
+
+  private async probeInit(): Promise<Record<string, unknown>> {
     const file = await this.deps.claudePath();
-    if (!file) return [];
+    if (!file) return {};
     const make = this.deps.makeTransport ?? cliTransportFactory;
     const t = await make({
       file,
@@ -570,11 +662,30 @@ export class ClaudeAdapter implements AgentAdapter {
       handlers: { message: () => undefined, control: async () => ({ error: 'not handled in the model probe' }), exit: () => undefined },
     });
     try {
-      const r = await t.request({ subtype: 'initialize' }, 20_000);
-      return claudeModelOptions(r.models);
+      return await t.request({ subtype: 'initialize' }, 20_000);
     } finally {
       await t.close().catch(() => undefined);
     }
+  }
+
+  /** Spec 073 FR-004: the folder's and the user's skills and commands (Claude does not load them: `--setting-sources ""`). */
+  private readonly slash = new SlashCache();
+  private slashPlaces(s: Session): SlashPlace[] {
+    return claudeSlashPlaces(s.roots, this.deps.configDir ?? claudeConfigDir(), undefined, this.deps.vscodePromptDirs ?? vscodeUserPromptDirs());
+  }
+
+  /** Spec 073 FR-001: files first, then the built-ins of the CLI's `initialize` reply that run in Durbar's sessions (FR-006, FR-007). */
+  async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
+    const s = this.sessions.get(sessionId);
+    if (!s) return [];
+    const builtins = cleanBuiltins((await this.initReply()).commands);
+    return mergeSlash(this.slash.list(this.slashPlaces(s), { refresh: true }), builtins); // the window opening its list: read afresh
+  }
+
+  /** Spec 073 FR-005: a folder or user entry is sent as its text (real 2026-10-22: Claude sends an unknown `/name` to the model as is). */
+  async expandSlashCommand(sessionId: string, text: string): Promise<SlashExpansion | undefined> {
+    const s = this.sessions.get(sessionId);
+    return s ? this.slash.expand(text, () => this.slashPlaces(s)) : undefined; // no IO unless the text is a `/name` line
   }
 
   /** spec 043 FR-008: the custom agents of the session's folders and of the user (read by the adapter; Claude does not load them). */
@@ -642,7 +753,8 @@ export class ClaudeAdapter implements AgentAdapter {
     const exists = this.deps.sessionExists ?? claudeSessionExists;
     const resumable = options.resumeSessionId !== undefined || (given !== undefined && exists(id));
     const roots = [...new Set([ws.cwd, ...ws.folders])];
-    const broker = new PermissionBroker({ roots, mode, emit: (e) => this.onBroker(id, e), beforeWrite: (paths) => this.writeGuard?.(id, paths) ?? Promise.resolve() }); // spec 065 FR-001
+    const blocked = mcpToolBlockList(options.disabledMcpTools); // spec 069 FR-063
+    const broker = new PermissionBroker({ roots, mode, blockedTools: () => blocked, emit: (e) => this.onBroker(id, e), beforeWrite: (paths) => this.writeGuard?.(id, paths) ?? Promise.resolve() }); // spec 065 FR-001
     const mapper = new ClaudeMapper((b) => this.onMapped(id, b), { quiet: true, onDropped: (why) => this.debug?.(`claude: dropped ${why}`) });
     this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable, capUsd: usdCap(options.maxAiCredits), spentUsd: 0, ...(this.pendingNames.has(id) ? { pendingName: this.pendingNames.get(id), needsRelaunch: false } : {}) });
     this.pendingNames.delete(id);
@@ -766,7 +878,7 @@ export class ClaudeAdapter implements AgentAdapter {
     s.mcpAuthSeen?.delete(name); // a real change for this server
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      s.lastMcp = claudeMcpServers(r.mcpServers);
+      s.lastMcp = withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped);
       this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
     } catch {
       /* the toggle worked; the list comes with the next init */
@@ -786,10 +898,22 @@ export class ClaudeAdapter implements AgentAdapter {
     await s.transport.request({ subtype: 'mcp_reconnect', serverName: name }, 30_000);
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      this.emit(s.id, { type: 'mcp', servers: claudeMcpServers(r.mcpServers) });
+      this.emit(s.id, { type: 'mcp', servers: withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped) });
     } catch {
       /* the reconnect worked; the list comes with the next init */
     }
+  }
+
+  /** Spec 069 FR-031: the tools of one server, from the CLI's `mcp_status` reply (no extra start: only a running CLI is asked). */
+  async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
+    const s = this.sessions.get(sessionId);
+    if (!s) throw new Error('This session is not running. Send a message to start it.');
+    if (!s.transport?.alive) throw new Error('Claude Code starts its MCP servers with your next message; send one to see the tools.');
+    const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
+    const list: unknown[] = Array.isArray(r?.mcpServers) ? r.mcpServers : [];
+    const srv = list.find((x) => !!x && typeof x === 'object' && (x as { name?: unknown }).name === name) as { tools?: unknown; status?: unknown } | undefined;
+    if (!srv) throw new Error(`${name} is not running in this session.`);
+    return normMcpTools(srv.tools);
   }
 
   /** FR-128: the user's answers (question text -> label(s)), or null when they skipped. */
@@ -861,6 +985,7 @@ export class ClaudeAdapter implements AgentAdapter {
       effort: o.reasoningEffort,
       ...(s.agent ? { agent: { name: s.agent.profile.id, json: agentsArg(s.agent) } } : {}),
       mcpConfig: mcpConfigOf(o.mcpServers, o.disabledMcpServers),
+      ...(claudeDisallowedMcp(o.disabledMcpTools).length ? { disallowedMcpTools: claudeDisallowedMcp(o.disabledMcpTools) } : {}),
       settingsJson: claudeSettingsJson(o.folderSetup),
       ...(o.folderSetup?.rules?.allow.length ? { folderAllow: o.folderSetup.rules.allow } : {}),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
@@ -955,7 +1080,7 @@ export class ClaudeAdapter implements AgentAdapter {
     s.mcpRefreshing = true;
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      s.lastMcp = claudeMcpServers(r.mcpServers);
+      s.lastMcp = withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped);
       this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
     } catch {
       /* the list comes with the next init */

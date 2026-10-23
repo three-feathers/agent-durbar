@@ -213,6 +213,8 @@ Spec 012 adds two agent kinds that do not report AI credits. The units stay sepa
   - *Stop here* dropped it.
 - `[KNOWN GAP]`: a long agentic turn is stopped only after the call that crosses the cap; that call's own cost is never cut. Durbar learns a resumed session's earlier spending only from the runtime's first checkpoint, so the first message after a resume is never held.
 
+- **2026-10-21, spec 068 (coffee break), cross-reference.** When the cap is reached the agent now shows a coffee break "until you raise the limit" (card label *Coffee break* instead of *Limit reached*, figure in the lobby's coffee corner). The limit notice, its choices and the `limit` events are unchanged, and it never resumes by itself. `sim:` `scripts/shots-068-coffee.js` (Omar).
+
 ### 2026-10-22: tooltip wording of the totals (spec 052 FR-168, issue #464)
 
 A data tooltip is at most 300 characters and 8 lines (spec 052), so the text of FR-019, FR-020 and spec 033 FR-016 is shortened and built in `usagetotals.js` `tooltip()`:

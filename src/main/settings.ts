@@ -89,6 +89,22 @@ export class SettingsStore {
     return v;
   }
 
+  /** Spec 068 FR-006: what happens when a coffee break ends: `auto` (default: resume by itself when it costs nothing extra) or `ask`. */
+  get breakResume(): 'auto' | 'ask' {
+    return this.s.breakResume === 'ask' ? 'ask' : 'auto';
+  }
+
+  /** Only 'auto' or 'ask' changes it; anything else keeps the current value. Only 'ask' is written. Returns the value now in force. */
+  setBreakResume(v: unknown): 'auto' | 'ask' {
+    if (v !== 'auto' && v !== 'ask') return this.breakResume;
+    const next: AppSettings = { ...this.s };
+    if (v === 'ask') next.breakResume = 'ask';
+    else delete next.breakResume;
+    this.s = next;
+    this.save();
+    return v;
+  }
+
   /** Active theme id (spec 037). Undefined = Clean Office; the renderer resolves unknown ids itself. */
   get theme(): string | undefined {
     return this.s.theme;

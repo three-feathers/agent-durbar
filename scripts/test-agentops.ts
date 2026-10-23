@@ -4,7 +4,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { FakeAdapter } from '../src/adapters/fake';
 import { ALL_OPTIONAL as ALL } from './test-adapter-contract';
-import { restorable, resumeModeOp, setCapOp, setMcpOp, setModeOp, stopTurnOp } from '../src/main/agentops';
+import { restorable, resumeModeOp, sendWithSlash, setCapOp, setMcpOp, setModeOp, stopTurnOp } from '../src/main/agentops';
+import type { AgentMessage } from '../src/adapters/types';
 import type { OpsDeps } from '../src/main/agentops';
 import type { SavedFolder } from '../src/main/folders';
 import type { AgentInfo, PermMode } from '../src/shared/api';
@@ -199,6 +200,37 @@ async function main(): Promise<void> {
     restorable([sf(secret, 'a-one'), sf(secret, 'a-two')], () => false, (m) => w2.push(m));
     assert.strictEqual(w2.length, 2, 'e: two different unknown ids warn twice');
     assert.deepStrictEqual(restorable([], () => true, () => assert.fail('no warning')), [], 'e: empty in, empty out');
+  }
+  // (f) spec 073 FR-005 (review on #535): main's send step expands a `/name` and falls back to the typed text
+  {
+    const sent: AgentMessage[] = [];
+    const asked: string[] = [];
+    const ad = (expand?: (id: string, t: string) => Promise<{ text: string; where: string; note?: string; asTyped?: true } | undefined>) => ({
+      send: async (_id: string, m: AgentMessage) => { sent.push(m); },
+      ...(expand ? { expandSlashCommand: expand } : {}),
+    });
+    const att = [{ path: '/x/a.png', kind: 'image' as const }];
+    const ok = ad(async (id, t) => (asked.push(`${id}:${t}`), t.startsWith('/review') ? { text: 'EXPANDED body', where: '.claude/commands/review.md' } : undefined));
+    assert.deepStrictEqual(await sendWithSlash(ok, 's1', { text: '/review 42', attachments: att, plan: true }), { slash: '.claude/commands/review.md' }, 'f: where comes back');
+    assert.deepStrictEqual(sent.pop(), { text: 'EXPANDED body', attachments: att, plan: true }, 'f: the expanded text reaches send, with the attachments and plan');
+    assert.deepStrictEqual(asked, ['s1:/review 42'], 'f: the adapter is asked with the agent id and the typed text');
+    assert.deepStrictEqual(await sendWithSlash(ok, 's1', { text: 'hi' }), {}, 'f: no expansion, no slash');
+    assert.deepStrictEqual(sent.pop(), { text: 'hi' }, 'f: the typed text is sent');
+    const bad = ad(async () => { throw new Error('disk gone'); });
+    assert.deepStrictEqual(await sendWithSlash(bad, 's1', { text: '/review 1' }), {}, 'f: a rejected expansion is not an error');
+    assert.deepStrictEqual(sent.pop(), { text: '/review 1' }, 'f: a rejected expansion sends the typed text');
+    assert.deepStrictEqual(await sendWithSlash(ad(), 's1', { text: '/review 1' }), {}, 'f: an adapter without expansion sends as typed');
+    assert.deepStrictEqual(sent.pop(), { text: '/review 1' });
+    // spec 073 delta 2026-10-23: a VS Code prompt file's note comes back as slashNote
+    const noted = ad(async () => ({ text: 'P', where: '.github/prompts/p.prompt.md', note: 'VS Code settings not applied: mode.' }));
+    assert.deepStrictEqual(await sendWithSlash(noted, 's1', { text: '/p' }), { slash: '.github/prompts/p.prompt.md', slashNote: 'VS Code settings not applied: mode.' }, 'f: the note comes back');
+    assert.deepStrictEqual(sent.pop(), { text: 'P' });
+    // review on #615: over the size cap the adapter answers asTyped; the typed line is sent and only the note comes back
+    const capped = ad(async () => ({ text: 'NOT SENT', where: 'p.md', asTyped: true as const, note: 'Not expanded: too big.' }));
+    assert.deepStrictEqual(await sendWithSlash(capped, 's1', { text: '/p huge' }), { slashNote: 'Not expanded: too big.' }, 'f: asTyped gives only the note');
+    assert.deepStrictEqual(sent.pop(), { text: '/p huge' }, 'f: asTyped sends the typed line');
+    const failing = { send: async () => { throw new Error('send failed'); }, expandSlashCommand: async () => ({ text: 'X', where: 'w' }) };
+    await assert.rejects(sendWithSlash(failing, 's1', { text: '/review' }), /send failed/, 'f: a failed send still rejects (sendOp reports it)');
   }
   console.log('agentops: ok');
 }

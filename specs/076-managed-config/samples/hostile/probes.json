@@ -1,0 +1,285 @@
+{
+  "description": "Hostile cases from the security review of PR #575 (Paco's agent's ajv probe and its findings). refusedBy: schema = the published JSON Schema refuses it (checked with ajv); validator = only Durbar's validator can see it (it needs the source, the layer or another file) and the test asserts both verdicts.",
+  "machinePolicyForUserLayer": "../managed/policy.json",
+  "probes": [
+    {
+      "file": "policy-userinfo-url.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "user:password@ in an https URL"
+    },
+    {
+      "file": "policy-space-url.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "space in a URL"
+    },
+    {
+      "file": "policy-bad-email.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "email without a domain (format: email is not enforced by ajv; the pattern is)"
+    },
+    {
+      "file": "policy-mailto-inject.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "query in an email"
+    },
+    {
+      "file": "policy-empty-allowed.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "agentApps.allowed empty"
+    },
+    {
+      "file": "policy-bidi-name.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "bidi override in displayName"
+    },
+    {
+      "file": "policy-control-name.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "control character in a name"
+    },
+    {
+      "file": "policy-prefix-no-slash.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "URL prefix * not right after a /"
+    },
+    {
+      "file": "policy-registry-url-auto.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "updates: auto from a URL registry (needs signatures, A10)"
+    },
+    {
+      "file": "policy-envallow-no-binding.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "an env var allowed with no host or server bound"
+    },
+    {
+      "file": "policy-otel-attr-comma.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "resource attribute value injecting another attribute"
+    },
+    {
+      "file": "policy-env-not-allowed.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "*FromEnv names a variable that is not in secrets.envAllow"
+    },
+    {
+      "file": "policy-env-wrong-host.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "an allowed variable sent to a host it is not bound to"
+    },
+    {
+      "file": "policy-secret-literal.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "a JWT-shaped literal (redact.ts detectors)"
+    },
+    {
+      "file": "policy-user-widens.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "user layer widening the machine allow list and MCP mode (machine sample allows claude, copilot; mode allowlist)",
+      "layer": "user"
+    },
+    {
+      "file": "policy-user-machine-only.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "user layer setting machine-only keys (llm, telemetry)",
+      "layer": "user"
+    },
+    {
+      "file": "policy-dup-price.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "duplicate pricing match"
+    },
+    {
+      "file": "mcp-userinfo-url.json",
+      "schema": "mcp-list",
+      "refusedBy": "schema",
+      "why": "user:password@ in a server URL"
+    },
+    {
+      "file": "mcp-space-url.json",
+      "schema": "mcp-list",
+      "refusedBy": "schema",
+      "why": "space in a server URL"
+    },
+    {
+      "file": "mcp-bad-date.json",
+      "schema": "mcp-list",
+      "refusedBy": "schema",
+      "why": "updated is not a date-time"
+    },
+    {
+      "file": "mcp-bidi-name.json",
+      "schema": "mcp-list",
+      "refusedBy": "schema",
+      "why": "bidi override in a server name"
+    },
+    {
+      "file": "mcp-remote-required-stdio.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "required stdio command from a URL list (fleet-wide command execution)",
+      "source": "url"
+    },
+    {
+      "file": "mcp-remote-stdio.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "any stdio entry from a URL list",
+      "source": "url"
+    },
+    {
+      "file": "mcp-remote-fromenv.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "an env reference from a URL list",
+      "source": "url"
+    },
+    {
+      "file": "reg-userinfo-url.json",
+      "schema": "registry-index",
+      "refusedBy": "schema",
+      "why": "user:password@ in a file URL"
+    },
+    {
+      "file": "reg-reserved-name.json",
+      "schema": "registry-index",
+      "refusedBy": "schema",
+      "why": "Windows reserved name"
+    },
+    {
+      "file": "reg-trailing-dot.json",
+      "schema": "registry-index",
+      "refusedBy": "schema",
+      "why": "trailing dot"
+    },
+    {
+      "file": "reg-dotdot.json",
+      "schema": "registry-index",
+      "refusedBy": "schema",
+      "why": "'..' segment"
+    },
+    {
+      "file": "reg-drive.json",
+      "schema": "registry-index",
+      "refusedBy": "schema",
+      "why": "drive letter"
+    },
+    {
+      "file": "reg-other-origin.json",
+      "schema": "registry-index",
+      "refusedBy": "validator",
+      "why": "a file URL on another origin than the index (index at https://agents.acme.example/durbar/index.json)",
+      "source": "url"
+    },
+    {
+      "file": "mcp-remote-loopback-url.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "a URL list pointing a session at loopback (FR-040, FR-120 host rules)",
+      "source": "url"
+    },
+    {
+      "file": "mcp-remote-metadata-url.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "a URL list pointing a session at the cloud metadata address (FR-040, FR-120)",
+      "source": "url"
+    },
+    {
+      "file": "mcp-file-literal-token.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "a literal token (JWT-shaped, found by redact.ts) in a machine-folder list file (FR-041, FR-121)",
+      "source": "file"
+    },
+    {
+      "file": "mcp-file-env-not-allowed.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "an env reference in a machine-folder list file that is not in secrets.envAllow (FR-121a)",
+      "source": "file",
+      "machinePolicy": "../managed/policy.json"
+    },
+    {
+      "file": "mcp-file-env-wrong-host.json",
+      "schema": "mcp-list",
+      "refusedBy": "validator",
+      "why": "an allowed env name sent to a host it is not bound to (ACME_LLM_TOKEN is bound to llm-gateway.acme.example) (FR-121a)",
+      "source": "file",
+      "machinePolicy": "../managed/policy.json"
+    },
+    {
+      "file": "policy-codex-model-inject.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "a model id carrying a quote, '=' and a new line to inject Codex config (FR-082, FR-101)"
+    },
+    {
+      "file": "policy-user-trustedhosts.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "user layer setting network.trustedHosts, a machine-only key (FR-003); valid by the shared schema, refused by the validator for the user layer",
+      "layer": "user"
+    },
+    {
+      "file": "policy-copilot-all-content-string.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "copilotAllContent must be a real boolean, so a truthy string cannot turn on full-content export (R9)"
+    },
+    {
+      "file": "policy-user-copilot-all-content.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "a user layer turning on Copilot's full-content export (telemetry is machine-only, FR-003, R9)",
+      "layer": "user"
+    },
+    {
+      "file": "policy-foundry-no-resource.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "foundry without resource or baseUrl (R10)"
+    },
+    {
+      "file": "policy-codex-provider-and-bedrock.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "Codex custom provider and amazon-bedrock at once (R10)"
+    },
+    {
+      "file": "policy-foundry-wrong-host.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "Foundry key bound to another host than the one derived from resource (acme-ai.services.ai.azure.com) (FR-121a)"
+    },
+    {
+      "file": "policy-bedrock-wrong-host.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "Bedrock token bound to us-east-1 while the policy's region derives bedrock-runtime.eu-central-1.amazonaws.com (FR-121a)"
+    },
+    {
+      "file": "policy-bedrock-token-no-region.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "a Bedrock token with neither region nor baseUrl: no host can be derived, so the binding cannot be checked (FR-121a)"
+    }
+  ]
+}

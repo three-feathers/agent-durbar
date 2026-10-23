@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "secrets": {
+    "envAllow": [
+      {
+        "name": "AWS_SECRET_ACCESS_KEY"
+      }
+    ]
+  }
+}

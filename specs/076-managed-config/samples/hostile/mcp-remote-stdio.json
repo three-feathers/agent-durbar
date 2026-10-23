@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "servers": [
+    {
+      "id": "x",
+      "name": "X",
+      "transport": "stdio",
+      "command": "node",
+      "args": [
+        "x.js"
+      ]
+    }
+  ]
+}

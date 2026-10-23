@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "llm": {
+    "pricing": {
+      "currency": "USD",
+      "models": [
+        {
+          "match": "m",
+          "inputPer1M": 1,
+          "outputPer1M": 1,
+          "cachedInputPer1M": 1
+        },
+        {
+          "match": "m",
+          "inputPer1M": 0,
+          "outputPer1M": 0,
+          "cachedInputPer1M": 0
+        }
+      ]
+    }
+  }
+}
