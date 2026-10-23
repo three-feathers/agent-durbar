@@ -49,5 +49,14 @@
     });
   }
 
-  return {isMac,modDown,chatKeyDown,chatParts,keyLabels,keyText,ariaKeys,ariaFor,textFor};
+  /* spec 052 FR-085 (issue 591): should a double-click on this element act like a title-bar double-click? Yes on the bare drag areas of
+     the top bar, the agent strip, a notice strip and a screen header; no on a control or the agent list inside them. */
+  var TITLE_AREAS='.topbar,.strip,.notice-strip,.scr-head';
+  var TITLE_CONTROLS='button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu,.strip-list,[data-id]';
+  function shouldSendTitleDoubleClick(t){
+    if(!t||typeof t.closest!=='function')return false;
+    return !!t.closest(TITLE_AREAS)&&!t.closest(TITLE_CONTROLS);
+  }
+
+  return {shouldSendTitleDoubleClick,isMac,modDown,chatKeyDown,chatParts,keyLabels,keyText,ariaKeys,ariaFor,textFor};
 })());

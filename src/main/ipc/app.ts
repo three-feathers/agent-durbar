@@ -4,7 +4,7 @@ import { fromAppFrame as fromApp, ipcHandle, ipcOn } from '../ipcguard';
 import { isHttpUrl } from '../../shared/url';
 import { parseBadgeCount, shouldBounce, shouldFlash } from '../badge';
 import type { SinceAway } from '../daily';
-import { titleDoubleClickAction } from '../titledblclick';
+import { handleTitleDoubleClick } from '../titledblclick';
 
 export interface AppIpcDeps {
   /** What happened while the app was closed; null after the card is dismissed. */
@@ -26,20 +26,13 @@ export function register(deps: AppIpcDeps): void {
   });
   /* spec 052 FR-085 (issue #591): the Mac title bar is hidden, so a double-click on the page's drag area does what the system is set to do */
   ipcOn('window:titleDoubleClick', (e) => {
-    const w = liveWin();
-    if (process.platform !== 'darwin' || !w || e.sender !== w.webContents) return;
-    let setting: unknown;
-    try {
-      setting = systemPreferences.getUserDefault('AppleActionOnDoubleClick', 'string');
-    } catch {
-      setting = ''; // unreadable: the macOS default
-    }
-    const action = titleDoubleClickAction(setting);
-    if (action === 'minimize') w.minimize();
-    else if (action === 'zoom') {
-      if (w.isMaximized()) w.unmaximize();
-      else w.maximize();
-    }
+    handleTitleDoubleClick({
+      platform: process.platform,
+      win: liveWin(),
+      sender: e.sender,
+      getSetting: () => systemPreferences.getUserDefault('AppleActionOnDoubleClick', 'string'),
+      now: Date.now,
+    });
   });
   ipcHandle('app:version', () => app.getVersion());
   ipcHandle('app:sinceAway', (e) => (fromApp(e) ? getSinceAway() : null));

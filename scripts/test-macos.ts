@@ -5,7 +5,7 @@ import * as path from 'path';
 import type { MenuItemConstructorOptions } from 'electron';
 import { ADD_FOLDER_ACCELERATOR, ADD_FOLDER_LABEL, ADD_WORKSPACE_ACCELERATOR, ADD_WORKSPACE_LABEL, HELP_LINK_LABEL, MENU_APP_NAME, SETTINGS_ACCELERATOR, appMenuTemplate, disposeOnQuit, hideOnClose, windowChrome } from '../src/main/appmenu';
 import { shouldBounce, shouldFlash } from '../src/main/badge';
-import { titleDoubleClickAction } from '../src/main/titledblclick';
+import { NATIVE_ZOOM_WINDOW_MS, handleTitleDoubleClick, noteWindowZoom, resetWindowZoom, titleDoubleClickAction } from '../src/main/titledblclick';
 
 const ROOT = path.join(__dirname, '..', '..');
 type Ev = Partial<{ key: string; code: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }>;
@@ -20,6 +20,7 @@ const K = require(path.join(ROOT, 'src', 'renderer', 'keys.js')) as {
   ariaKeys: (p: string[], mac: boolean) => string;
   ariaFor: (v: string, mac: boolean) => string;
   textFor: (v: string, mac: boolean) => string;
+  shouldSendTitleDoubleClick: (t: unknown) => boolean;
 };
 
 // ---- FR-084: platform and modifier ----
@@ -174,7 +175,64 @@ for (const v of ['Maximize', 'Fill', 'maximize', 'FILL', ' Maximize ', '', undef
 for (const v of ['Minimize', 'minimize', 'MINIMIZE', ' Minimize\n']) assert.strictEqual(titleDoubleClickAction(v), 'minimize', `double-click "${v}" minimizes`);
 for (const v of ['None', 'none', 'NONE']) assert.strictEqual(titleDoubleClickAction(v), 'none', `double-click "${v}" does nothing`);
 assert.ok(preload.includes("ipcRenderer.send('window:titleDoubleClick')"), 'preload sends the title double-click');
-assert.ok(/platform==='darwin'&&window\.agentDurbar\.titleDoubleClick\)document\.addEventListener\('dblclick'/.test(app) && app.includes("closest('.topbar,.strip,.notice-strip,.scr-head')"), 'the page sends it only on a Mac, from a drag area');
-assert.ok(/ipcOn\('window:titleDoubleClick'[\s\S]*?process\.platform !== 'darwin'[\s\S]*?e\.sender !== w\.webContents[\s\S]*?AppleActionOnDoubleClick/.test(appIpc) && appIpc.includes('liveWin()'), 'main answers only on darwin, for its own window, from the system setting, not a destroyed window');
+// the main handler, with a fake window and a fake system setting
+{
+  const WC = {};
+  const mk = (maximized = false, destroyed = false) => {
+    const calls: string[] = [];
+    return { calls, win: { webContents: WC, isDestroyed: () => destroyed, isMaximized: () => maximized, maximize: () => calls.push('maximize'), unmaximize: () => calls.push('unmaximize'), minimize: () => calls.push('minimize') } };
+  };
+  const run = (setting: unknown, o: { platform?: string; maximized?: boolean; destroyed?: boolean; sender?: unknown; now?: number; noWin?: boolean; throws?: boolean } = {}): string[] => {
+    const m = mk(o.maximized, o.destroyed);
+    handleTitleDoubleClick({ platform: o.platform ?? 'darwin', win: o.noWin ? undefined : m.win, sender: 'sender' in o ? o.sender : WC, getSetting: () => { if (o.throws) throw new Error('no'); return setting; }, now: () => o.now ?? 1e9 });
+    return m.calls;
+  };
+  resetWindowZoom();
+  for (const v of ['Maximize', 'Fill', '', undefined, 'weird']) {
+    assert.deepStrictEqual(run(v), ['maximize'], `"${String(v)}": a window that is not maximized is maximized`);
+    assert.deepStrictEqual(run(v, { maximized: true }), ['unmaximize'], `"${String(v)}": a maximized window is restored`);
+  }
+  assert.deepStrictEqual(run('Minimize'), ['minimize']);
+  assert.deepStrictEqual(run('Minimize', { maximized: true }), ['minimize']);
+  assert.deepStrictEqual(run('None'), []);
+  assert.deepStrictEqual(run('None', { maximized: true }), []);
+  assert.deepStrictEqual(run('Minimize', { throws: false, platform: 'win32' }), [], 'Windows: nothing');
+  assert.deepStrictEqual(run('Maximize', { platform: 'linux' }), [], 'Linux: nothing');
+  assert.deepStrictEqual(run('Maximize', { destroyed: true }), [], 'a destroyed window: nothing');
+  assert.deepStrictEqual(run('Maximize', { noWin: true }), [], 'no window: nothing');
+  assert.deepStrictEqual(run('Maximize', { sender: {} }), [], 'another sender: nothing');
+  assert.deepStrictEqual(run('Minimize', { sender: undefined }), [], 'no sender: nothing');
+  assert.deepStrictEqual(run('x', { throws: true }), ['maximize'], 'an unreadable setting zooms');
+  // the system zoomed on the same double-click: our message must not undo it
+  noteWindowZoom(5000);
+  assert.deepStrictEqual(run('Maximize', { now: 5000 + NATIVE_ZOOM_WINDOW_MS - 1 }), [], 'a zoom just happened: ignored');
+  assert.deepStrictEqual(run('Maximize', { now: 5000 + NATIVE_ZOOM_WINDOW_MS }), ['maximize'], 'later: acts');
+  noteWindowZoom(5000);
+  assert.deepStrictEqual(run('Minimize', { now: 5001 }), ['minimize'], 'minimize is not a zoom: not held back');
+  resetWindowZoom();
+}
+// the page's filter, on a fake element tree: closest(selector) matches when a node on the way up carries one of the selector's parts
+{
+  type N = { tags: string[]; parent?: N; closest(sel: string): N | null };
+  const node = (tags: string[], parent?: N): N => {
+    const n: N = { tags, parent, closest(sel: string) { const parts = sel.split(','); for (let c: N | undefined = n; c; c = c.parent) if (c.tags.some((t) => parts.includes(t))) return c; return null; } };
+    return n;
+  };
+  const should = (n: N | null): boolean => K.shouldSendTitleDoubleClick(n);
+  const topbar = node(['.topbar']), strip = node(['.strip']), notice = node(['.notice-strip']), head = node(['.scr-head']), list = node(['.strip-list'], strip);
+  assert.ok(should(topbar) && should(strip) && should(notice) && should(head), 'a bare drag area sends');
+  assert.ok(should(node(['span'], topbar)) && should(node(['div'], node(['div'], head))), 'plain text inside a drag area sends');
+  for (const c of ['button', 'a', 'input', 'select', 'textarea', 'label', 'summary', '[role="button"]', '[role="menu"]', '[role="group"]', '[tabindex]', '.more-menu', '[data-id]']) {
+    assert.ok(!should(node([c], topbar)), `a double-click on ${c} sends nothing`);
+    assert.ok(!should(node(['svg'], node([c], topbar))), `a double-click inside ${c} sends nothing`);
+  }
+  assert.ok(!should(node(['button'], list)) && !should(list), 'the agent list sends nothing');
+  assert.ok(!should(node(['div'])), 'outside every drag area: nothing');
+  assert.ok(!should(null) && !K.shouldSendTitleDoubleClick({}), 'no element: nothing');
+}
+assert.ok(preload.includes("ipcRenderer.send('window:titleDoubleClick')"), 'preload sends the title double-click');
+assert.ok(/platform==='darwin'&&window\.agentDurbar\.titleDoubleClick\)document\.addEventListener\('dblclick',e=>\{\s*if\(KEYS\.shouldSendTitleDoubleClick\(e\.target\)\)/.test(app), 'the page sends it only on a Mac, through the filter');
+assert.ok(/handleTitleDoubleClick\(\{[\s\S]*?process\.platform[\s\S]*?liveWin\(\)[\s\S]*?e\.sender[\s\S]*?AppleActionOnDoubleClick/.test(appIpc), 'main hands the handler the platform, the live window, the sender and the system setting');
+assert.ok(/w\.on\('maximize', \(\) => noteWindowZoom/.test(main) && /w\.on\('unmaximize', \(\) => noteWindowZoom/.test(main), 'main notes the system\'s own zoom');
 
 console.log('macos tests passed');
