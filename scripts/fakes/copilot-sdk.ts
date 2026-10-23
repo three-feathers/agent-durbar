@@ -31,6 +31,10 @@ export class FakeSession {
   sendFail = '';
   /** `send` never settles (spec 040 FR-015 timeout path). */
   sendHangs = false;
+  /** Spec 051 FR-018: what `rpc.gitHubAuth.getStatus` answers (a no-prompt status that carries `copilotPlan`); `statusFail` rejects; `statusHangs` never settles; `noGitHubAuth` leaves the method out. */
+  statusAnswer: unknown = { isAuthenticated: true, authType: 'gh-cli', login: 'someone', statusMessage: 'ok', copilotPlan: 'individual' };
+  statusFail = '';
+  statusHangs = false;
   constructor(public sessionId: string, public config: Record<string, unknown>) {}
   private rec<T>(name: string, v: T, ...args: unknown[]): T { this.calls.push({ name, args }); return v; }
   on(h: (ev: unknown) => void): () => void { this.handler = h; return () => { this.handler = undefined; }; }
@@ -58,6 +62,14 @@ export class FakeSession {
       set: async (a: unknown) => { this.calls.push({ name: 'name.set', args: [a] }); if (this.nameSetFail) throw new Error(this.nameSetFail); },
     },
     metadata: { isProcessing: async () => this.rec('isProcessing', { processing: this.processing }) },
+    gitHubAuth: {
+      getStatus: async () => {
+        this.calls.push({ name: 'gitHubAuth.getStatus', args: [] });
+        if (this.statusHangs) return new Promise<unknown>(() => undefined);
+        if (this.statusFail) throw new Error(this.statusFail);
+        return this.statusAnswer;
+      },
+    } as Record<string, unknown> | undefined,
     mcp: {
       enable: async (a: unknown) => this.rec('mcp.enable', undefined, a),
       disable: async (a: unknown) => this.rec('mcp.disable', undefined, a),

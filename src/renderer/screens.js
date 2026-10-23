@@ -327,11 +327,13 @@
         <p class="scr-note small" id="aboutCredits">Contributors: ${ab.contributors.map(c=>esc(c.label)).join(', ')}</p>
         <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
     /* spec 051: Settings > Agent apps (install, update, sign in) */
-    let hsSec='';
+    let hsSec='',acctAgain=false;
     if(window.DurbarHarnesses&&window.DurbarHarnesses.available()&&X.bridge.listAdapters){
       let kinds=[],cp=null;try{kinds=(await X.bridge.listAdapters(!!X._hsRefresh))||[];}catch(e){kinds=[];}X._hsRefresh=false;
       if(X.bridge.copilotAuth&&kinds.some(k=>k.id==='copilot'&&k.state==='ready')){try{cp=await X.bridge.copilotAuth();}catch(e){cp=null;}}
       hsSec=window.DurbarHarnesses.sectionHTML(kinds,cp);
+      /* spec 051 FR-014: the account lines are filled in after the paint (Codex needs about 2 s); asked again on open, Check again and after a sign-in */
+      acctAgain=X._acctRefresh==='check'?'check':!!X._acctRefresh;X._acctRefresh=false;
     }
     /* spec 043 FR-010, FR-019: Settings > Agent Success Profiles (custom agents): the profile files of the office's folders and yours */
     const pfSec=profilesOn()?`<section class="scr-sec" id="pfSec" aria-labelledby="pfH">${await profilesInner()}</section>`:'';
@@ -370,6 +372,7 @@
         <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Folder extras…</b> in an agent's MCP menu opens the same list. Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p></details>
       </section></details>${aboutSec}</div>`;
+    if(hsSec)window.DurbarHarnesses.loadAccounts(acctAgain); /* spec 051 FR-014: the account lines fill in after the paint (Codex takes about 2 s) */
     wireHead();
     /* spec 051 FR-008: entry points open Settings at Agent apps */
     let atSec=false; /* a section was asked for (harnesses, mcp, schedules): its heading keeps the focus instead of the h2 */
@@ -1113,11 +1116,15 @@
     /* spec 058 FR-065/FR-069 (T102): Sign in. `signBusy` = the call to the app is under way; `waited` = a sign-in this dialog saw open (so a vanished one reads "not finished");
        `signNote` = one line under the row; `openSteps` = servers whose terminal steps are open; `wantFocus` = the control to focus after the next repaint. */
     const signBusy=new Set(), waited=new Set(), signNote=new Map(), openSteps=new Set();
+    /* FR-164 (review on PR 625): a Sign in again of a connected server: its "connected" is the old sign-in until another state was seen */
+    const againWait=new Set(), againSaw=new Set();
     let wantFocus=null, expT=0;
     /* the steps text has its commands in backticks: they show as code, and Copy puts only the commands on the clipboard, one per line */
     const stepParts=t=>String(t||'').split('`');
     const stepsHTML=t=>stepParts(t).map((p,i)=>i%2?`<code>${esc(p)}</code>`:esc(p)).join('');
     const stepsCmds=t=>stepParts(t).filter((p,i)=>i%2).join('\n');
+    /* spec 058 FR-164: Sign in again on a row Copilot can redo (connected or failed, not waiting for a first sign-in) */
+    const againB=x=>!x.canSignInAgain||x.signIn||!X.bridge.agentMcpSignIn?'':signBusy.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Signing in again to '+x.name)}">Signing in…</button>`:`<button class="btn sm" type="button" data-signagain="${esc(x.name)}" aria-label="${esc('Sign in again to '+x.name+'…')}" title="Forget the saved sign-in and sign in again (for keychain prompts that keep coming back)">Sign in again…</button>`;
     const signHTML=(x,s)=>{
       const n=x.name,app=s.app||(o&&o.appName)||'Your agent app',si=x.signIn,en=esc(n);
       let line='',acts='';
@@ -1172,14 +1179,18 @@
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
         const sg=x.canSignIn||x.signInSteps||x.signIn?signHTML(x,s):'';
         return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hh.why}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
-          <div class="srv-act">${rs}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff?' disabled':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
+          <div class="srv-act">${rs}${againB(x)}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff?' disabled':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
+      /* spec 058 FR-164 (owner 2026-10-23): sign in again to every server Copilot can redo, so the signed runtime writes each sign-in anew */
+      const againN=(s.servers||[]).filter(x=>x.canSignInAgain&&!x.signIn).length;
+      const againAll=againN>1&&X.bridge.agentMcpSignIn?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpSignAgainAll"${againBusy?' disabled':''}>${againBusy?'Starting sign-ins…':'Sign in again to all ('+againN+')…'}</button><span class="dsub small">For keychain prompts that come back on every launch (sign-ins saved by an older Agent Durbar): ${esc(s.app||'the agent app')} forgets each saved sign-in and you sign in again in your browser, one page per server.</span></div>`:'';
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}${againAll}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
     };
     let dlg=null;
     /* spec 069 FR-032/FR-033: expanded rows and their tools, loaded once per open dialog (again after a Restart) */
     const expanded=new Set(), toolsOf=new Map();
+    let againBusy=false; /* spec 058 FR-164: Sign in again to all is running */
     let uid=0; /* ids for aria-describedby of the tool boxes, unique per paint */
     function toolsHTML(n){
       const r=toolsOf.get(n), id='mt-'+esc(n);
@@ -1237,14 +1248,17 @@
     let seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
     const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return [];
       /* FR-069: a sign-in this dialog saw open that is gone now: connected = signed in; still needs a sign-in = the time limit (or End session) ended it */
+      for(const n of againWait){const x=st.servers.find(y=>y.name===n);if(x&&x.status!=='connected')againSaw.add(n);}
       for(const n of [...waited]){const x=st.servers.find(y=>y.name===n);
         if(x&&x.signIn)continue;
         waited.delete(n);
+        const redo=againWait.delete(n), saw=againSaw.delete(n);
+        if(redo&&!(x&&x.status==='connected'&&saw)){signNote.set(n,'Sign-in was not finished. '+n+' may stay signed out until you sign in again.');continue;}
         if(x&&x.status==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');}
         else if(x&&(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth')))signNote.set(n,'Sign-in was not finished. Press Sign in to try again.');}
       for(const x of st.servers)if(x.status==='connected')signNote.delete(x.name);
       const f=document.activeElement,inside=f&&dlg.contains(f);
-      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.diag!==undefined?['diag',f.dataset.diag]:f.dataset.signin!==undefined?['signin',f.dataset.signin]:f.dataset.signopen!==undefined?['signopen',f.dataset.signopen]:f.dataset.signcancel!==undefined?['signcancel',f.dataset.signcancel]:f.dataset.swoff!==undefined?['swoff',f.dataset.swoff]:f.dataset.steps!==undefined?['steps',f.dataset.steps]:f.dataset.copysteps!==undefined?['copysteps',f.dataset.copysteps]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.diag!==undefined?['diag',f.dataset.diag]:f.dataset.signagain!==undefined?['signagain',f.dataset.signagain]:f.dataset.signin!==undefined?['signin',f.dataset.signin]:f.dataset.signopen!==undefined?['signopen',f.dataset.signopen]:f.dataset.signcancel!==undefined?['signcancel',f.dataset.signcancel]:f.dataset.swoff!==undefined?['swoff',f.dataset.swoff]:f.dataset.steps!==undefined?['steps',f.dataset.steps]:f.dataset.copysteps!==undefined?['copysteps',f.dataset.copysteps]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
       const errTop=key&&key[0]==='err'?f.scrollTop:0;
       const bodyEl=dlg.querySelector('.dbody'),top=bodyEl.scrollTop;
       bodyEl.innerHTML=body(st);bodyEl.scrollTop=top; /* FR-004: the scroll position stays */
@@ -1287,19 +1301,33 @@
     window.addEventListener('focus',onFocus);
     /* FR-065/FR-069 (T102): the two-step Sign in. Main holds the address; this code only ever has the host. */
     const call=async(fn,...args)=>{try{return await fn(...args);}catch(e){return {ok:false,error:String(e&&e.message||e)};}};
-    const signIn=async n=>{
+    const signIn=async(n,again)=>{
       if(signBusy.has(n)||!X.bridge.agentMcpSignIn)return;
       signBusy.add(n);signNote.delete(n);await repaint();
-      const r=await call(X.bridge.agentMcpSignIn,a.id,n);
+      const r=again===true?await call(X.bridge.agentMcpSignIn,a.id,n,true):await call(X.bridge.agentMcpSignIn,a.id,n);
       signBusy.delete(n);
       if(r&&r.ok&&r.kind==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');X.announce('Signed in to '+n+'.');}
-      else if(r&&r.ok){waited.add(n);wantFocus=['signopen',n];X.announce('Sign-in page on '+r.host+'. Press Open sign-in page to continue.');}
+      else if(r&&r.ok){waited.add(n);if(again===true)againWait.add(n);wantFocus=['signopen',n];X.announce('Sign-in page on '+r.host+'. Press Open sign-in page to continue.');}
       else{
         if(r&&r.manual)openSteps.add(n);
         signNote.set(n,'Could not start the sign-in: '+((r&&r.error)||'unknown error')+(r&&r.manual?' Use the steps below.':''));
         X.toast('Could not start the sign-in for '+esc(n)+'.',5200).classList.add('err');X.announce('Could not start the sign-in for '+n+'.');
       }
       await repaint();
+    };
+    /* FR-164: one confirmation, then the runtime's own forced sign-in per server, one after the other; each row then offers Open sign-in page */
+    const signAgain=async(names,btn)=>{
+      if(!names.length||againBusy)return;
+      againBusy=true; /* from the first press: a second press (a row, or to all) while the confirmation or the sign-ins run does nothing */
+      try{
+        const ask=window.DurbarDialog&&window.DurbarDialog(document);
+        const one=names.length===1, what=one?names[0]:names.length+' servers';
+        const lines=['Copilot forgets the saved sign-in'+(one?'':'s')+' and you sign in again in your browser'+(one?'.':', one page per server.'),(one?'The server stays':'Each server stays')+' signed out until you finish in your browser; Cancel or the time limit leaves it signed out.','Use this when macOS keeps asking for keychain access on every launch: the new sign-in is saved by the current Copilot runtime.','Agent Durbar never reads or changes your keychain.'];
+        const ok=ask?!!(await ask({title:'Sign in again to '+what+'?',body:'Sign in again to '+what+'?',lines,returnFocus:()=>btn,buttons:[{label:'Cancel',value:null},{label:'Sign in again',value:'ok',cls:'primary'}]})):window.confirm('Sign in again to '+what+'?');
+        if(!ok)return;
+        await repaint();
+        for(const n of names)await signIn(n,true);
+      }finally{againBusy=false;await repaint();}
     };
     const openSign=async(n,host)=>{
       const r=await call(X.bridge.agentMcpOpenSignIn,a.id,n,host);
@@ -1360,6 +1388,8 @@
         const dg=e.target.closest('button[data-diag]');
         if(dg){const sv=st.servers.find(x=>x.name===dg.dataset.diag);if(sv)void copyDiagnostics(sv.name,sv,st.app||o&&o.appName,o&&o.appVersion);return;}
         if(e.target.closest('#mcpRestartSess')){void restartSession();return;}
+        const ag=e.target.closest('button[data-signagain]');if(ag&&!ag.disabled){void signAgain([ag.dataset.signagain],ag);return;}
+        const aa=e.target.closest('#mcpSignAgainAll');if(aa&&!aa.disabled){void signAgain((st.servers||[]).filter(x=>x.canSignInAgain&&!x.signIn).map(x=>x.name),aa);return;}
         const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
         const r=await X.bridge.setAgentMcp(a.id,b.dataset.n,on);
         if(r&&r.error)X.toast(esc(r.error),5200);
@@ -1561,9 +1591,9 @@
   }
 
   window.DurbarScreens={oneShotCostLine,aiCredits,
-    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onChange:(again)=>{X._hsRefresh=true;if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
+    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
-    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
+    openSettings:(section)=>{mcp=null;X._acctRefresh=X._acctRefresh==='check'?'check':true;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
     mcpEvent:id=>{if(mcpDlgHook)mcpDlgHook(id);liveEvent(id);},
