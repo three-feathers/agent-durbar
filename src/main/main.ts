@@ -83,6 +83,7 @@ import { REPO_URL, aboutPanelOptions } from '../shared/about';
 import { modelControlFor } from '../shared/modelswitch';
 import { createDebugSink } from '../shared/redact';
 import { profileDir } from './profiledir';
+import { simClockQuery } from './simclock';
 import { debugSwitchesToRemove } from './debugguard';
 import { aumidToSet } from './aumid';
 
@@ -131,6 +132,12 @@ const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 /** Only Copilot is registered; every agent is routed to its adapter through the router (spec 012 FR-046..FR-050). Adapters are typed as the neutral interface: optional members say what each can do (spec 030 FR-017, spec 012 FR-027). */
 /** Spec 010 FR-022: the simulator runs in the window only; main then never reaches a real agent app (FR-023 in ipcguard.ts, FR-024 here). */
 const SIMULATOR = simulatorOn(dev);
+// spec 001 FR-084: simulator screenshots pin the clock (the page's), the time zone and the locale, so unchanged screens give the same pixels
+const SIM_CLOCK = SIMULATOR ? simClockQuery(dev.DURBAR_SIM_CLOCK) : undefined;
+if (SIM_CLOCK) {
+  process.env.TZ = 'UTC'; // inherited by the renderer
+  app.commandLine.appendSwitch('lang', 'en-US');
+}
 initSimGuard(SIMULATOR); // spec 010 FR-031: ipcguard uses this decision; it runs before any register* below
 // spec 010 FR-030: under the simulator no child process starts at all (detection probes, git, VS Code, installs): each starter refuses and is counted
 const childSeal = SIMULATOR ? sealChildProcess(childProcess as unknown as Record<string, unknown>) : undefined;
@@ -777,6 +784,7 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_TITLES === '1') query.simtitles = '1'; // spec 001/002 deltas 2026-10-18: main agents with session titles
     if (/^[0-3]$/.test(dev.DURBAR_SIM_PLACES ?? '')) query.simplaces = dev.DURBAR_SIM_PLACES as string; // spec 024 FR-026: custom places seeded in the simulator
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
+    if (SIM_CLOCK) query.simclock = SIM_CLOCK; // spec 001 FR-084: a pinned page clock for screenshots
   }
   win.on('focus', () => win?.flashFrame(false)); // spec 052 FR-059: the taskbar flash stops when you come back
   {
