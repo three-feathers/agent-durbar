@@ -972,6 +972,11 @@ server.
   - Starting one Microsoft MCP server that fails: **4** prompts.
   - A server with no stored sign-in: Sign in, browser, authenticated, with **no** keychain prompt. The GitHub-signed runtime creates its own items without asking.
   - So the expected "at most 1 per old item, then 0" did **not** happen. "Always Allow" does not stick for items written by older (ad-hoc) Durbar builds.
+  - **Third launch (`real:`, owner, 13:57 UTC): no keychain prompt at all.** The sequence was launch 1 ≈25 prompts (Always Allow), launch 2 ≈26 prompts (Always Allow), launch 3 **0**. So trust did settle, but only after two rounds of Always Allow, not one.
+  - Hypothesis (not verified) for why two rounds were needed:
+    - the first round's "Always Allow" covered one of the two kinds of item (or one of the two programs that had written them), and the second round covered the other;
+    - or a refresh after the first grant rewrote the items once.
+  - Remaining risk: a user who also uses the `copilot` CLI on the same MCP sign-ins may see prompts return if the two programs keep taking turns writing them (see the second analysis below). Using the installed CLI as the runtime (option 1 there) is only for if prompts come back.
 
 - **Root-cause analysis after the Mac result** (`read:`; not confirmed on a Mac):
   - **The requester is the same binary every time.** The packaged app spawns `Contents/Resources/app.asar.unpacked/node_modules/@github/copilot-sdk-darwin-<arch>/prebuilds/darwin-<arch>/copilot-runtime` directly (`unpackedRuntimePath`, `RuntimeConnection.forStdio({ path })`). The SDK's `startCLIServer` spawns that path with no copy and no extraction. Its argv[0] is that path, and it is not run through node or Electron. The SDK's copy-to-cache path (`materializeRuntimeBundle`) only applies when `COPILOT_CLI_USE_NPM_PACKAGE` is true, and it is `false` in 1.0.22. The wrapper loads `runtime.node` in-process (`dlopen`, `copilot_runtime_host_start_with_options`). So the identity is GitHub's `copilot` (Developer ID, stable) at a stable path, unless the app itself runs translocated. App Translocation (a random read-only path) happens when an unsigned app is opened from Downloads or a disk image without being moved to Applications. It changes the path on every launch, but not the Developer ID requirement.
