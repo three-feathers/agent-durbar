@@ -98,7 +98,7 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
 
 ## Phase 9: Token shapes masked in the list (issue #608, 2026-10-23; spec *Changes*, FR-012, FR-013)
 
-- [ ] T034 Tests first: `test:slashcommands` (main masks before the 200/80/160 cuts, Markdown-split tokens; window `view`/`tip`
+- [x] T034 Tests first: `test:slashcommands` (main masks before the 200/80/160 cuts, Markdown-split tokens; window `view`/`tip`
   with the real `safetext.js`) and `check:slash-suggest` (`simslash=secret`: no raw token in the DOM, `title`, `aria-*`, the
   announcement or the "Sent the text of" note); then the fix in `slashcommands.ts`, `slashsuggest.js`, `app.js` and the simulator;
   mutation-check (raw row text; cut before mask) [FR-012, FR-013]

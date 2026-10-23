@@ -16,6 +16,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { cleanSessionTitle } from './history';
 import { isInsideRoots } from './permissions';
+import { maskTokenShapes } from '../shared/redact';
 import type { SlashCommand } from './types';
 
 export const MAX_SLASH_PER_DIR = 100;
@@ -112,7 +113,23 @@ export interface DiscoverOptions {
   caseInsensitive?: boolean;
 }
 
-const oneLine = (v: unknown, max: number): string | undefined => cleanSessionTitle(v, max);
+/* FR-013 (issue #608): token shapes are masked BEFORE the cut, so no half token (which no pattern knows) reaches the window. Also on
+   the text with Markdown escapes and the marks that can split a token removed (`gh`+backtick+`p_...`, `ghp_<20>**K1l2...**`), used
+   when that finds a token the raw pass missed: the same rule as the window's DurbarSafeText.mask (spec 041 FR-065). */
+const MD_ESC = /\\([\\`*_{}\[\]()#+\-.!~|<>])/g;
+const MD_MARKS = /[*`~[\]]/g;
+export function maskSlashText(s: string): string {
+  const m1 = maskTokenShapes(s, '[redacted]');
+  const k = s.replace(MD_ESC, '$1').replace(MD_MARKS, '');
+  if (k === s) return m1;
+  const m2 = maskTokenShapes(k, '[redacted]');
+  return m2 !== k ? m2 : m1;
+}
+/** One line, token shapes masked, then cut to `max` (FR-003, FR-010, FR-013). */
+const oneLine = (v: unknown, max: number): string | undefined => {
+  const s = cleanSessionTitle(v, Number.MAX_SAFE_INTEGER);
+  return s === undefined ? undefined : cleanSessionTitle(maskSlashText(s), max);
+};
 
 /** The real path of `p` when it stays inside `root` (both real), else undefined. */
 function inside(p: string, root: string, o: Required<DiscoverOptions>): string | undefined {
