@@ -61,7 +61,7 @@ function SCENES() {
     if (!s || !s.getClientRects().length) return null;
     const c = d.getBoundingClientRect(), r = s.getBoundingClientRect(), flat = new Set();
     s.querySelectorAll('[fill^="#"]').forEach((e) => { const v = e.getAttribute('fill').toLowerCase(); if (v.length === 7 && !e.closest('[opacity],.halo,.glow')) flat.add(v); });
-    return { id: d.dataset.id, card: [c.width, c.height].map((x) => Math.round(x * 100) / 100), rel: [r.left - c.left, r.top - c.top, r.width, r.height].map((x) => Math.round(x * 100) / 100), box: [r.left, r.top, r.width, r.height].map(Math.round), flat: [...flat] };
+    return { id: d.dataset.id, grown: !!document.getElementById('stage').dataset.grow, card: [c.width, c.height].map((x) => Math.round(x * 100) / 100), rel: [r.left - c.left, r.top - c.top, r.width, r.height].map((x) => Math.round(x * 100) / 100), box: [r.left, r.top, r.width, r.height].map(Math.round), flat: [...flat] };
   }).filter(Boolean);
 }
 const MAX_CHARS = 90; /* owner 2026-10-22: a readable measure, about 80-90 characters a line */
@@ -111,7 +111,7 @@ module.exports = async (ctx) => {
     }
     return best;
   };
-  const looks = async () => { const out = new Map(); for (const sc of await js(`(${SCENES.toString()})()`)) out.set(sc.id, { card: sc.card, rel: sc.rel, sharp: await sharp(sc) }); return out; };
+  const looks = async () => { const out = new Map(); for (const sc of await js(`(${SCENES.toString()})()`)) out.set(sc.id, { grown: sc.grown, card: sc.card, rel: sc.rel, sharp: await sharp(sc) }); return out; };
 
   const one = async (label, n, w, h, query) => {
     await load(n, w, h, query);
@@ -170,7 +170,10 @@ module.exports = async (ctx) => {
           /* a desk of the same size: the same box; a grown desk the lounge made wider (1920x1080): the same rules, i.e. the same aspect, the
              same left inset and centred in its card's height */
           if (a.card.every((x, i) => Math.abs(x - b.card[i]) <= 0.5)) check(a.rel.every((x, i) => Math.abs(x - b.rel[i]) <= 0.5), `15 agents at ${w}x${h}: desk ${id} (${a.card}) has its scene at ${a.rel} with the lounge, ${b.rel} without`);
-          else for (const [k, v] of [['on', a], ['off', b]]) check(Math.abs(v.rel[0] - b.rel[0]) <= 0.5 && Math.abs(v.rel[2] / v.rel[3] - b.rel[2] / b.rel[3]) <= 0.01 && Math.abs(v.rel[1] - (v.card[1] - v.rel[3]) / 2) <= 1, `15 agents at ${w}x${h}: desk ${id}'s scene (lounge ${k}) is at ${v.rel} in a ${v.card} card: not the grown desk's aspect, inset or centring`);
+          else if (a.grown && b.grown) for (const [k, v] of [['on', a], ['off', b]]) check(Math.abs(v.rel[0] - b.rel[0]) <= 0.5 && Math.abs(v.rel[2] / v.rel[3] - b.rel[2] / b.rel[3]) <= 0.01 && Math.abs(v.rel[1] - (v.card[1] - v.rel[3]) / 2) <= 1, `15 agents at ${w}x${h}: desk ${id}'s scene (lounge ${k}) is at ${v.rel} in a ${v.card} card: not the grown desk's aspect, inset or centring`);
+          /* a card that is not grown but changed width with the lounge: its scene may sit by design off the card's centre; the box must still be
+             inside its card and keep its height within 1 px and its aspect; the sharpness check below applies to every desk */
+          else for (const [k, v] of [['on', a], ['off', b]]) check(v.rel[0] >= -0.5 && v.rel[1] >= -0.5 && v.rel[0] + v.rel[2] <= v.card[0] + 0.5 && v.rel[1] + v.rel[3] <= v.card[1] + 0.5 && Math.abs(v.rel[2] / v.rel[3] - b.rel[2] / b.rel[3]) <= 0.01, `15 agents at ${w}x${h}: desk ${id}'s scene (lounge ${k}) is at ${v.rel} in a ${v.card} card: outside the card or another aspect`);
           check(a.sharp >= b.sharp - 3, `15 agents at ${w}x${h}: desk ${id}'s scene is drawn less sharp with the lounge (${a.sharp}% of its pixels in its flat colours, ${b.sharp}% without)`);
         }
         check(same >= 10, `15 agents at ${w}x${h}: only ${same} desks open with the lounge on and off`);
