@@ -205,7 +205,7 @@ Rules that always apply:
   - *Explain with AI* asks an installed agent app what a hook does and how risky it looks. It is advisory and can be wrong: the command shown is what runs.
 
   Accepted hooks and allow rules act without asking, even in Read-only, and the mode chip then reads *Read-only + folder rules*. Codex cannot run a folder's hooks from Durbar, and the dialog says so. Reopen the list from the mode menu: *This folder's setup…*. Without your answer, nothing of it applies. Copilot's runtime would otherwise run a repository's hooks by itself (checked 2026-10-20), so Durbar switches that off.
-- **Durbar never stores or logs** tokens, session content or your prompts. Debug logs are redacted. A session name you choose is stored in Durbar's folder file and sent to the agent app that has the session.
+- **Durbar never stores or logs** tokens, session content or your prompts. Debug logs are redacted, and so is the agent text shown on the office floor (desk lines, tooltips, the inbox, session titles), by known token patterns only: a secret with no recognisable shape is not masked. A session name you choose is stored in Durbar's folder file and sent to the agent app that has the session.
 
 What Durbar does not do (the same list is in Settings):
 - Durbar asks Claude Code and Copilot to stay in their folders but cannot force them; only Codex is held there by the system (in Read-only and Ask first).

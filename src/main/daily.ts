@@ -77,7 +77,7 @@ export interface MissedRun {
   id: string;
   /** The folder's display name (its label, else its base name); never the full path. */
   folderName: string;
-  /** The prompt's first 80 characters, one line. */
+  /** The prompt on one line, whole (at most what the scheduler keeps): the window masks it and then cuts it, so a token is never cut before it is masked (spec 041 FR-065). */
   prompt: string;
   /** A repeating schedule (its next run is still planned) or a one-time one (it will not run again by itself). */
   repeats: boolean;
@@ -87,10 +87,7 @@ export interface SinceAway {
   missed: MissedRun[];
 }
 
-const snippet = (t: string): string => {
-  const one = t.replace(/\s+/g, ' ').trim();
-  return [...one].length > 80 ? [...one].slice(0, 79).join('') + '…' : one;
-};
+const snippet = (t: string): string => t.replace(/\s+/g, ' ').trim();
 
 /**
  * FR-089: what happened while the app was closed, from the stores only. `quitAt` is the saved quit time, `startedAt` the
