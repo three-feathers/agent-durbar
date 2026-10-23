@@ -1,6 +1,6 @@
 /** IPC for the Copilot CLI MCP list (global, read live), the per-folder MCP extras and the per-agent MCP switches (specs 019, 020). The renderer never receives a secret value or a file path. */
 import { safeStorage } from 'electron';
-import { ipcHandle } from './ipcguard';
+import { fromAppFrame as fromApp, ipcHandle } from './ipcguard';
 import * as path from 'path';
 import type { AgentInfo, AgentMcpReply, GlobalApp, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
@@ -14,6 +14,7 @@ import { mcpSecretValues } from './mcpmask';
 import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRestartOp } from './mcpsession';
 import { mcpToolsOp } from './mcptoolsop';
+import { McpSignInStore, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp } from './mcpsignin';
 import { McpStore } from './mcpstore';
 import type { SecretCodec } from './mcpstore';
 
@@ -61,6 +62,10 @@ export function registerMcpIpc(deps: {
   appOf?(agentId: string): string | undefined;
   /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */
   log?(a: AgentInfo, action: string): void;
+  /** Spec 058 FR-065: opens a sign-in page in the system browser (main's `shell.openExternal`); only called after the user's click. */
+  openUrl?(url: string): Promise<void>;
+  /** The clock of the sign-in store's 10-minute limit (tests). */
+  now?(): number;
 }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[] } {
   const { agents, router, dev } = deps;
   const store = deps.store;
@@ -79,9 +84,16 @@ export function registerMcpIpc(deps: {
       return []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
     }
   };
+  /** Spec 058 FR-065: the sign-in pages the agent apps handed back, in memory only (never logged, never written), for at most 10 minutes. */
+  const signIns = new McpSignInStore(deps.now ?? Date.now, deps.openUrl ?? (async () => { throw new Error('no browser'); }));
   router.onEvent((e) => {
-    if (e.type === 'mcp') live.set(e.sessionId, e.servers);
-    else if (e.type === 'status' && e.status === 'stopped') live.delete(e.sessionId);
+    if (e.type === 'mcp') {
+      live.set(e.sessionId, e.servers);
+      signIns.onServers(e.sessionId, e.servers); // connected: the sign-in is finished
+    } else if (e.type === 'status' && e.status === 'stopped') {
+      live.delete(e.sessionId);
+      signIns.dropAgent(e.sessionId); // End session, Restart session (it ends the session first), a failed reconnect
+    }
   });
 
   /** The Copilot CLI list is read again on every call, so edits of the file show up the next time a screen opens. */
@@ -174,6 +186,7 @@ export function registerMcpIpc(deps: {
       app: deps.appOf?.(a.id),
       claudeList: (gn.claude ?? []).map((n) => ({ name: n, enabled: !dis.has(claudeOffKey(n)) })),
       toolsOff: s.toolsOffFor(keyOf(a)),
+      signIn: (n) => signIns.view(a.id, n),
       global: gn,
       builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
     });
@@ -182,6 +195,11 @@ export function registerMcpIpc(deps: {
   const restarting = new Set<string>();
   ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
     mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
+  /** Spec 058 FR-065: Sign in, Open sign-in page, Cancel. Window only; main holds the address, the window gets the host. */
+  ipcHandle('agents:mcpSignIn', (e, id: unknown, name: unknown) =>
+    fromApp(e) ? mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor }, signIns, id, name) : { ok: false, error: 'invalid request' });
+  ipcHandle('agents:mcpOpenSignIn', (e, id: unknown, name: unknown) => (fromApp(e) ? mcpOpenSignInOp(signIns, agents, id, name) : { ok: false, error: 'invalid request' }));
+  ipcHandle('agents:mcpCancelSignIn', (e, id: unknown, name: unknown) => (fromApp(e) ? mcpCancelSignInOp({ agents, router }, signIns, id, name) : { ok: false, error: 'invalid request' }));
   /** Spec 069 FR-061: the tools turned off for one server in this agent's folder (applies to new sessions and after Restart session). */
   ipcHandle('agents:setMcpToolsOff', (_e, id: unknown, name: unknown, off: unknown) => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;

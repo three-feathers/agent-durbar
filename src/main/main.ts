@@ -151,6 +151,7 @@ const mcp = registerMcpIpc({
   appOf: appIdOf,
   globalFor: (id) => (mcpStore ? sessionGlobalFor(appIdOf(id), globalLists, mcpStore.ambientDisabled()) : {}),
   log: (a, action) => logActivity(a, 'mcp-restart', action),
+  openUrl: (url) => shell.openExternal(url), // spec 058 FR-065: the held sign-in page, only after the user's click
   globalNames: () => Object.fromEntries(globalLists.state(() => []).apps.map((x) => [x.app, x.servers.map((v) => v.name)])),
 });
 registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });

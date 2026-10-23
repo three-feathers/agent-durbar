@@ -544,6 +544,12 @@ export interface AgentMcpEntry {
   toolsOff?: string[];
   /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
   canRestart?: boolean;
+  /** Spec 058 FR-065: **Sign in** is offered: the agent app can start its own sign-in, the session runs, and this server reads Needs sign-in. */
+  canSignIn?: boolean;
+  /** Spec 058 FR-065: a sign-in is open for this server. The host only, never the address; `expiresInMs` is what is left of the 10 minutes. */
+  signIn?: { host: string; opened: boolean; expiresInMs: number };
+  /** Spec 058 FR-068: the terminal steps for this needs-sign-in server, the agent app's plain text with the name filled in (commands in backticks). */
+  signInSteps?: string;
 }
 
 /** `agents:mcp` (spec 019 FR-009, spec 058 FR-020). */
@@ -574,6 +580,20 @@ export interface McpToolsResult {
   /** The session is not running: nothing was asked. */
   notRunning?: boolean;
   error?: string;
+}
+
+/** `agents:mcpSignIn` (spec 058 FR-065): the host only, never the address. `manual` = show the terminal steps (FR-068). The error is masked and has no address. */
+export type McpSignInStartResult =
+  | { ok: true; kind: 'browser'; host: string }
+  | { ok: true; kind: 'connected' }
+  | { ok: false; error: string; manual?: boolean };
+
+/** `agents:mcpOpenSignIn` (spec 058 FR-065): `gone` = the sign-in is no longer open (time limit, End session, connected). */
+export interface McpOpenSignInResult {
+  ok: boolean;
+  error?: string;
+  gone?: boolean;
+  manual?: boolean;
 }
 
 /** `agents:mcpRestart` (spec 058 FR-021): the error is short and masked. */
@@ -792,6 +812,12 @@ export interface DurbarApi {
   agentMcp?(id: string): Promise<AgentMcpReply>;
   /** Spec 058 FR-021: restart one MCP server of this agent's running session. */
   agentMcpRestart?(id: string, name: string): Promise<McpRestartResult>;
+  /** Spec 058 FR-065: start the agent app's own sign-in for one MCP server. Main keeps the address; the reply has the host only. */
+  agentMcpSignIn?(id: string, name: string): Promise<McpSignInStartResult>;
+  /** Spec 058 FR-065: open the held sign-in page in the system browser (main holds the address; only after this click). */
+  agentMcpOpenSignIn?(id: string, name: string): Promise<McpOpenSignInResult>;
+  /** Spec 058 FR-065: forget the open sign-in. */
+  agentMcpCancelSignIn?(id: string, name: string): Promise<{ ok: boolean; error?: string }>;
   /** Spec 069 FR-032: the tools of one MCP server of this agent's running session. */
   agentMcpTools?(id: string, name: string): Promise<McpToolsResult>;
   /** Spec 069 FR-061: the tools of one server turned off in this agent's folder (applies to new sessions and after Restart session). */
