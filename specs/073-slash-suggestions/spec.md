@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Slash suggestions: `/` in the message box lists the folder's, the user's and the app's skills, commands and prompt files; a folder or user entry is sent as its file's text
-status: **built** 2026-10-22 (`test:slashcommands`, `check:slash-suggest`); real: Claude Code (folder command not loaded, built-in `/context` runs), Copilot (`session.send` does not run built-ins); Codex read only
+status: **built** 2026-10-22, VS Code prompt files 2026-10-23 (`test:slashcommands`, `check:slash-suggest`); real: Claude Code (folder command not loaded, built-in `/context` runs), Copilot (`session.send` does not run built-ins); Codex read only
 -->
 
 **Feature Branch**: `073-slash-suggestions` (based on `main`; its first base, `005-composer-toolbar`, landed as #498)
@@ -103,8 +103,8 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
     `CLAUDE_CONFIG_DIR` (default `~/.claude`). Built-ins: the `commands` of the CLI's `initialize` answer (no prompt), only those on the FR-007 allow list.
   - GitHub Copilot: each folder's `.github/skills`, `.claude/skills` and `.agents/skills` (`<name>/SKILL.md`); the user's
     `$COPILOT_HOME/skills` (default `~/.copilot`; GitHub docs: `COPILOT_HOME` replaces the whole `~/.copilot` path, `read:`) and
-    `~/.agents/skills`. No built-ins (FR-009). `.github/prompts/*.prompt.md` is a VS Code feature that the
-    Copilot CLI does not read, so it is not listed.
+    `~/.agents/skills`. No built-ins (FR-009). VS Code prompt files are listed and expanded by Durbar (delta 2026-10-23, FR-012):
+    the Copilot CLI does not read them (`real:` probe).
   - Codex: each folder's `.agents/skills/<name>/SKILL.md`; the user's `~/.agents/skills` and `$CODEX_HOME/skills`; custom prompts in
     `$CODEX_HOME/prompts/*.md` (default `~/.codex`), named `prompts:<name>` as in the Codex CLI. No built-ins (FR-009).
 - **FR-005 Sending a folder or user entry.** When a message starts with `/<name>` and `<name>` is one of the session's folder or user
@@ -142,6 +142,18 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
 - **FR-010 IPC.** A window-only `agents:slashCommands` takes an agent id, looks the agent up in main, and returns at most 300 entries
   in the FR-001 shape (strings re-checked and cut). The window fetches the list the first time the list opens in a chat (so opening a chat never starts a
   session) and again when it opens with a copy older than 30 s.
+- **FR-012 VS Code prompt files (delta 2026-10-23).** Every app (Claude Code, Copilot, Codex) also lists each folder's
+  `.github/prompts/*.prompt.md` (source folder) and VS Code's user prompt folders (source user): `prompts` in VS Code's user data
+  folder `Code/User` (and `Code - Insiders/User`): `%APPDATA%` on Windows, `~/Library/Application Support` on macOS,
+  `$XDG_CONFIG_HOME` (default `~/.config`) on Linux (`read:` VS Code docs). Kind `prompt`. Name: front-matter `name` when it is a safe
+  command name, else the file name without `.prompt.md`. Description from `description`; the front-matter keys `mode`, `agent`,
+  `model` and `tools` are named in the description as "(VS Code settings not applied: …)" and are not applied ([KNOWN GAP]). The hint
+  is `argument-hint`, else the input variables (`<placeholder or name>`). Sending (FR-005): the body without front matter, with
+  `${input:name}` / `${input:name:placeholder}` filled from the rest of the line (`name=value` words first, then the other words in
+  order, the last variable taking the rest; `"a b"` is one word), then `$ARGUMENTS` / `$1`..`$9`; with no placeholder used, the words
+  follow as `ARGUMENTS: …`. Any other `${…}` (`${selection}`, `${file}`, an input with no value) and `#file:` / `#tool:` references are
+  sent as written, and the chat note says so ("left as written: …", plain variable names only) together with the settings not applied.
+  Every FR-002 rule applies, and the real file must itself end in `.prompt.md` (a link from `x.prompt.md` to a `README.md` is refused).
 - **FR-011 Simulator.** Every simulated agent kind answers `slashCommands` with canned folder, user and (Claude only) built-in entries,
   and the simulated send shows the FR-005 note for a folder entry. No disk reads, no real app. The page address `simslash=long` puts two entries with long names,
   hint and description first (for `check:ui-text`).
@@ -171,6 +183,28 @@ with "No commands for this agent app here" for a bare `/`, so the user learns th
   in this version.
 
 ## Changes
+
+### 2026-10-23: VS Code prompt files in the list (owner request, Vikram; issue #613)
+
+- **Why.** In a Copilot chat the list showed only skills, not the user's `.github/prompts/*.prompt.md`; typing `/prompt-name` by hand
+  "works somehow".
+- **Probe (`real:` 2026-10-23, 0 prompts).** A scratch folder with `.github/prompts/hello.prompt.md` and, as a control,
+  `.github/skills/greet/SKILL.md`; `session.rpc.commands.list({includeSkills, includeClientCommands})`, `commands.list({includeBuiltins})`
+  and `session.rpc.skills.list()` on SDK 1.0.22 (runtime 1.0.98, the app's) and SDK 1.0.26 (runtime 1.0.103, newest on npm). Neither
+  runtime lists the prompt file, with or without `enableConfigDiscovery` (with it, the control skill `greet` is listed; without it,
+  nothing is: Durbar's setting). The runtimes contain no `.prompt.md` or `github/prompts` string. So the runtime does not run prompt
+  files; the likely reason a hand-typed `/prompt-name` "works" is that the model, given the literal text, finds and reads
+  `.github/prompts/<name>.prompt.md` with its own file tools (not checked: it would cost a prompt).
+- **Decision.** Durbar lists and expands prompt files itself through the FR-005 path (FR-012), for **every** app, not only Copilot:
+  the expansion is Durbar's, so it works the same in Claude Code and Codex chats, and a folder's prompt files are the folder's.
+- **[KNOWN GAP]** `mode`, `agent`, `model` and `tools` are not applied (shown in the list and the note); `${selection}`, `${file}` and
+  the other editor variables have no value outside VS Code and are sent as written; `#file:` references are not read; only VS Code's
+  default profile folder is listed (a named profile's `User/profiles/<id>/prompts` is not); nested folders under `.github/prompts`
+  are not listed; macOS and Windows user paths are `read:` only (unit-tested as paths, not run on those systems).
+- Tests: `test:slashcommands` (places per OS, discovery for each app, front matter, `${input:…}` filling, hostile cases: links to
+  `.env`, `.git`, out of the folder and to a plain `.md`, an oversized file, a FIFO swapped in, a swap after the list), `test:agentops`
+  (the note comes back), `check:slash-suggest` (the simulator lists a prompt file with its description and the send shows the note).
+
 
 ### 2026-10-23: review on #535 (fjcabello)
 

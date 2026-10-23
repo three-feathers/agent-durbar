@@ -96,6 +96,24 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
   size check; fjcabello's re-review) [FR-002, FR-005]
 - [x] T032 Mutation-check T028-T031; `npm run typecheck && npm run build`, `test:slashcommands`, `check:slash-suggest`
 
+## Phase 9: VS Code prompt files (owner request 2026-10-23, issue #613; spec *Changes*, FR-012)
+
+- [x] T034 Probe at no cost whether the Copilot runtime lists `.github/prompts/*.prompt.md` (SDK 1.0.22 / runtime 1.0.98 and SDK
+  1.0.26 / runtime 1.0.103; `commands.list`, `skills.list`, with and without config discovery) and record it (`real:`, research R5)
+- [x] T035 `src/adapters/slashcommands.ts`: layout `prompt-files`, `vscodeUserPromptDirs` (per OS, Insiders too), the folder's
+  `.github/prompts` and the VS Code user folders in `claudeSlashPlaces`, `copilotSlashPlaces`, `codexSlashPlaces`; front-matter `name`,
+  the settings hint in the description, the input-variable hint; `entryFile` requires a real `*.prompt.md` [FR-012, FR-002]
+- [x] T036 `src/adapters/slashcommands.ts`: `fillPromptFile` (`${input:…}` by `name=value` then position, `$ARGUMENTS`, `$1`..`$9`,
+  variables left as written) and the note; `expandSlashCommand` returns `note`, `sendWithSlash` returns `slashNote`, the window adds
+  it to the "Sent the text of" note (`src/main/agentops.ts`, `src/main/main.ts`, `src/main/ipc/types.ts`, `src/shared/api.ts`,
+  `src/adapters/types.ts`, `src/renderer/app.js`); the three adapters pass the VS Code folders [FR-012, FR-005]
+- [x] T037 Tests: `scripts/test-slashcommands.ts` (paths per OS, discovery for each app, front matter, filling, hostile: links to
+  `.env`, `.git`, out of the folder and to a plain `.md`, oversized, a FIFO, a swap after the list; the Copilot and Codex adapters),
+  `scripts/test-agentops.ts` (`slashNote`); simulator `write-tests` prompt file (`src/renderer/sim.ts`) and `check:slash-suggest`
+  (listed with its description and hint, the send's note); mutation-checked [FR-012]
+- [x] T038 Docs: `README.md`, `changelog.d/073-prompt-files.md`, `docs/agent-notes.md` (the probe), research R5; `npm run typecheck &&
+  npm run build && npm test`
+
 ## Known gaps (open tasks, not this PR)
 
 - [ ] T026 [KNOWN GAP] Run the allow-listed Claude built-ins other than `/context` (`compact`, `cost`, `init`, `review`,
@@ -104,6 +122,8 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
 - [ ] T016 [KNOWN GAP] Codex: send a chosen skill as the native `{type:'skill'}` input item instead of its text (needs a real check)
 - [ ] T017 [KNOWN GAP] Copilot built-ins through `session.rpc.commands.invoke` (experimental API; needs a real check and a safe list)
 - [ ] T018 [KNOWN GAP] Nested command folders and parent-folder skill discovery; Codex named `$KEY` arguments
+- [ ] T039 [KNOWN GAP] VS Code prompt files: apply `mode` / `agent` / `model` / `tools`, list named VS Code profiles' prompt folders,
+  and check the macOS and Windows user folders on real machines (FR-012)
 
 ## Story map
 
