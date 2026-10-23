@@ -46,6 +46,13 @@ Each entry has the date it was learned, what happened, and how to apply it, with
   - *What*: resetting both sides of a failing text pair to the default theme also reset `--surface`/`--bg`, which many pairs share; over a few passes one dim colour turned a whole dark theme light, with dark ink left on the pack's own dark `--surface-2` (about 1.3:1, a pair nobody checked).
   - *How to apply*: fix only the text or accent side, minimally (mix toward white or black until the pair passes), and test a dark theme with one failing pair: it must stay dark. A list duplicated between `src/renderer` (plain JS) and `src/shared` (TS) needs an equality test, or it drifts silently (#515 added pairs to one copy).
 
+- **A workflow cannot usefully open the fold PR with `GITHUB_TOKEN`** (2026-10-23, `read:` GitHub Actions docs on triggering a workflow from a workflow, spec 008 FR-120).
+  - *What*: pushes and PRs made with the job's `GITHUB_TOKEN` start no `pull_request` or `merge_group` workflow, so the required checks never report and the PR cannot enter the merge queue. Opening PRs from Actions also needs the repository setting *Allow GitHub Actions to create and approve pull requests* (a settings change: *Needs approval*).
+  - *How to apply*: release notes come from the tag (`release.yml` `verify`); the fold into `CHANGELOG.md` is a doc-only PR that an agent opens by hand from the tag (`changelog.d/README.md`). Do not add `pull-requests: write` or a push to a tag workflow to "automate" it.
+- **Git ref names in release checks: full refs, and `versionsort.suffix`** (2026-10-23, review on #648, `test:` `test:changelog`).
+  - *What*: a short name such as `origin/main` resolves to `refs/tags/origin/main` before `refs/remotes/origin/main`, and a checkout with `fetch-depth: 0` fetches every tag, so a tag with that name can stand in for the branch. `git tag --sort=-v:refname` puts `v0.1.0` below `v0.1.0-alpha.N` unless run with `-c versionsort.suffix=-`.
+  - *How to apply*: pass and require full `refs/...` names and check them with `git show-ref --verify`; sort release tags with `git -c versionsort.suffix=- tag --sort=-v:refname` (`scripts/release-notes.js`).
+
 ## Simulator and drivers
 
 - **A driver screenshot with `blur: true` takes the focus out of an open popover** (2026-10-23, spec 005 T085, `real:` `check:composer-toolbar`). `H.shot(..., { blur: true })` blurs the active element, so a later `key('Escape')` meant for the popover goes to the page (it closed the chat and the next step threw). Put the focus back after the shot (`document.querySelector('#ctxMenu button').focus()`), or take the picture after the keyboard steps.
