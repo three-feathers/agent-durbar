@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Remote control and chat channels: Copilot remote steering from github.com and GitHub Mobile (Phase 1); Claude Code Remote Control from claude.ai and the Claude app (Phase 2); Claude Code channels wizard out of scope, moved to idea #485 (owner 2026-10-21)
-status: **Phases 1-2 built** (unit, simulator driver); Copilot real check 2026-10-20: not started on a free plan, also in a private GitHub repository, started on Pro; owner used a real Copilot remote session 2026-10-21 ("works perfectly"); Claude `remote_control` real over `claude -p`, Durbar window sim only; Codex explain-only; Phase 3 planned
+status: **Phases 1-2 built** (unit, simulator driver); Copilot real check 2026-10-20: not started on a free plan, also in a private GitHub repository, started on Pro; owner used a real Copilot remote session 2026-10-21 ("works perfectly"); Claude `remote_control` real over `claude -p`, Durbar window sim only; Codex explain-only; Phase 3 planned; delta 2026-10-23 (owner): a door closed by you turns remote control off and refuses it (FR-040; queuing remote messages is a known gap, FR-041)
 -->
 
 **Feature Branch**: `054-remote-control`
@@ -173,3 +173,11 @@ Owner answers on #298: Q1 test Copilot remote in a private repository; **Q2 "thi
 - `real:` 2026-10-21, owner (Vikram): "I did a real remote Copilot session today, it works perfectly" (Copilot Pro; on Copilot Free remote does not start, as recorded 2026-10-20). The owner did not say whether github.com or GitHub Mobile was used, or what happened to the GitHub task after End session. This closes T020 by the owner's use; the Pro run of 2026-10-20 already answered Q1-Q4. `[KNOWN GAP]` kept: FR-003 (whether the GitHub task stays after End session) and the `remote_steerable_changed` event while steering from github.com were not recorded separately.
 - Claude Code channels (Telegram, Discord, iMessage) and the wizard (FR-020..FR-026, T030-T035) are **out of scope**: owner decision 2026-10-21, "For Claude, no need to support Telegram — rethink non-native channels later; keep it as a future idea". Moved to idea issue #485. Claude Remote Control (Phase 2, FR-060..FR-064) stays built.
 - Codex in the ChatGPT mobile app (Phase 3, T040/T041) stays planned research in this spec, tracked by issue #490.
+
+### 2026-10-23: a door closed by you and remote messages (owner decision, spec 017 FR-018, issue #616)
+
+Owner (Vikram, DM 14:45 UTC): while the user has closed an agent's cabin door, remote messages for that agent are held until the door reopens.
+
+- **FR-040** [IMPLEMENTED] `test: test-remote` Closing the door turns remote control **off** for that session (the same path as the menu's Stop remote control), so nothing from github.com or claude.ai can reach the agent while the door is closed; turning remote control on is refused while the door is closed ("The door is closed (Do not disturb). Open it first."). Opening the door does not turn it on again by itself: turning it on keeps its own confirmation (FR-011).
+- **FR-041** [KNOWN GAP] Remote messages are typed into the agent app's own session (Copilot on github.com, Claude Code on claude.ai); they never pass through Durbar, so Durbar cannot queue them. With remote control off, what the vendor does with a message typed meanwhile (refused, or kept on its side) is not checked (`read:` only; no real account used). Chat-channel messages (Telegram) are not part of the app (FR-020..FR-026 are out of scope since 2026-10-21), so there is nothing of theirs to hold.
+

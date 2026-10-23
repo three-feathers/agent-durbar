@@ -44,3 +44,5 @@ Not done and not planned here: the owner moved Claude channels to idea #485 ("Fo
 - [x] T052 Copilot "not started" message [FR-063]; README Codex line [FR-064]
 - [x] T053 Unit tests (fake CLI and remote ops), simulator Claude kind with remote, driver and screenshots (`054-remote-claude-link-*`); real: `remote_control` over `claude -p` stream-json returned a claude.ai `session_url` (2026-10-20); through Durbar's window: sim only [FR-060..FR-064]
 
+## 2026-10-23 delta (owner, spec 017 doors)
+- [ ] T040 Door closed by you: remote control off and refused (FR-040; built in spec 017 T013)

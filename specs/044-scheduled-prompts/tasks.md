@@ -61,3 +61,6 @@
 - [ ] T066 Simulator: the run log with the same rules (compared with main's on one sequence in `test:schedules`), `scheduleRuns`, `simsched=1` seed history, opt-in `simws=1` workspace room [FR-044]
 - [ ] T067 Driver `scripts/check-sched-history.js` (`npm run check:sched-history`, in `ui-suite.js`) at 1440x900 and 1280x800 per the plan, with its three mutation checks; screenshots `docs/screenshots/044-history-*.png`, `044-folder-here-*.png`; re-run `check:sched-edit`, `check:sched-top`, `shots-044-everywhere`, `shots-006-remove`, `check:sched-sendto`, `shots-001-lobby`, `check:ui-text` [FR-040..FR-044]
 - [ ] T068 Docs: README *Scheduled prompts* line (history per schedule, *Schedules here* on a folder) and *Development* (`check:sched-history`, `test:schedhist`); a `changelog.d/044-schedule-history.md` fragment; the spec 044 header (specs-index status line and **Status**); tags `[IMPLEMENTED]`/`[KNOWN GAP]` on FR-036..FR-045; `docs/agent-notes.md` entry if something was learned [all]
+
+## 2026-10-23 delta (owner, spec 017 doors)
+- [ ] T110 Held runs at a door closed by you (FR-110..FR-112; built in spec 017 T012)
