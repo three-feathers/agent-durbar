@@ -11,9 +11,11 @@ import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, SlashCommand, SlashExpansion, StartOptions, Unsubscribe, WriteGuard } from './types';
 import type { McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
+import { codexSlashPlaces, SlashCache, vscodeUserPromptDirs } from './slashcommands';
+import type { SlashPlace } from './slashcommands';
 import { cleanPlanText, reviseText } from './plan';
 import type { AdapterDescriptor } from './capabilities';
 import type { EventBody } from './map';
@@ -675,6 +677,26 @@ export class CodexAdapter implements AgentAdapter {
     if (!options.quiet) this.emit(live.sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
     if (!options.quiet) void this.refreshMcp(live); // FR-147: the session's MCP servers; a quiet start emits nothing (C3), so its first message reads them
     return live.sid;
+  }
+
+  /**
+   * Spec 073 FR-004/FR-009: the folder's and the user's skills and the user's custom prompts (`prompts:<name>`), read by Durbar: the
+   * app-server lists no commands or prompts and expands neither (that is the TUI's work, read: 0.163.0 schema). No built-ins.
+   */
+  private readonly slash = new SlashCache();
+  private slashPlaces(live: { roots: string[] }): SlashPlace[] {
+    const env = this.env ?? process.env;
+    return codexSlashPlaces(live.roots, env.CODEX_HOME || path.join(os.homedir(), '.codex'), undefined, vscodeUserPromptDirs(env));
+  }
+
+  async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
+    const live = this.sessions.get(sessionId);
+    return live ? this.slash.list(this.slashPlaces(live), { refresh: true }) : []; // the window opening its list: read afresh
+  }
+
+  async expandSlashCommand(sessionId: string, text: string): Promise<SlashExpansion | undefined> {
+    const live = this.sessions.get(sessionId);
+    return live ? this.slash.expand(text, () => this.slashPlaces(live)) : undefined; // no IO unless the text is a `/name` line
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {

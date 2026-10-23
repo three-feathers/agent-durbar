@@ -32,9 +32,11 @@ import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel'
 import { PermissionBroker, isInsideRoots, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
-import type { AgentProfile, PlanAnswer } from './types';
-import type { McpToolInfo } from './types';
+import type { AgentProfile, PlanAnswer, SlashCommand, SlashExpansion } from './types';
+import type { McpSignInResult, McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
+import { copilotHomeDir, copilotSlashPlaces, SlashCache, vscodeUserPromptDirs } from './slashcommands';
+import type { SlashPlace } from './slashcommands';
 import { cleanPlanText } from './plan';
 import { copilotQuotaReset } from './usagelimit';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
@@ -112,6 +114,19 @@ export function agentDirsFor(folders: readonly string[], home = os.homedir()): s
   return [...new Set(folders)].map((f) => path.join(f, '.github', 'agents')).concat(path.join(home, '.copilot', 'agents'));
 }
 
+/** The part of the SDK's `session.rpc.agent` that FR-041 uses; `reload` is @experimental and may be missing in another SDK. */
+export type AgentRpc = { reload?: () => Promise<unknown> } | undefined;
+/** spec 043 FR-041: true when the runtime read its agent files again; false (never a throw) when it cannot. */
+export async function reloadAgentsRpc(rpc: AgentRpc): Promise<boolean> {
+  if (!rpc || typeof rpc.reload !== 'function') return false;
+  try {
+    await rpc.reload();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** spec 043 FR-001: an SDK agent as a generic profile; undefined for sub-agent-only agents. */
 export function profileOf(a: { id?: unknown; name?: unknown; displayName?: unknown; description?: unknown; path?: unknown; source?: unknown; userInvocable?: unknown; tools?: unknown; model?: unknown; mcpServers?: unknown }, folders: readonly string[] = []): AgentProfile | undefined {
   const id = typeof a.id === 'string' && a.id ? a.id : typeof a.name === 'string' ? a.name : '';
@@ -161,6 +176,8 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToolFilter: true, // spec 069 FR-062: session excludedTools (read: SDK types; not run on a real account)
   mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
+  mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
+  mcpSignInSteps: 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', // FR-068
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
   planMode: true, // spec 066 FR-003: mode.set plan + onExitPlanModeRequest (@experimental)
@@ -755,12 +772,37 @@ export class CopilotAdapter implements AgentAdapter {
     cancelElicitations(live.elicitations);
   }
 
+  /**
+   * Spec 073 FR-004/FR-009: the folder's and the user's skills, read by Durbar (the session has no config discovery, so the runtime does
+   * not load them; real 2026-10-22). No built-ins: `session.send` hands a typed built-in to the model as text (real 2026-10-22).
+   */
+  private readonly slash = new SlashCache();
+  private slashPlaces(live: { cwd: string; folders?: string[] }): SlashPlace[] {
+    return copilotSlashPlaces([live.cwd, ...(live.folders ?? [])], copilotHomeDir(), undefined, vscodeUserPromptDirs());
+  }
+
+  async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
+    const live = this.sessions.get(sessionId);
+    return live ? this.slash.list(this.slashPlaces(live), { refresh: true }) : []; // the window opening its list: read afresh
+  }
+
+  async expandSlashCommand(sessionId: string, text: string): Promise<SlashExpansion | undefined> {
+    const live = this.sessions.get(sessionId);
+    return live ? this.slash.expand(text, () => this.slashPlaces(live)) : undefined; // no IO unless the text is a `/name` line
+  }
+
   /** spec 043 FR-002: the session's selectable custom agents (`rpc.agent.list`, @experimental). */
   async listAgentProfiles(sessionId: string): Promise<AgentProfile[]> {
     const live = this.sessions.get(sessionId);
     if (!live) return [];
     const r = (await live.session.rpc.agent.list()) as { agents?: unknown[] } | undefined;
     return (r?.agents ?? []).map((a) => profileOf(a as Parameters<typeof profileOf>[0], live.folders ?? [live.cwd])).filter((p): p is AgentProfile => !!p);
+  }
+
+  /** spec 043 FR-041: read the agent files again (`rpc.agent.reload`, @experimental), so a new or deleted file shows in the list. */
+  async reloadAgentProfiles(sessionId: string): Promise<boolean> {
+    const live = this.sessions.get(sessionId);
+    return live ? reloadAgentsRpc(live.session.rpc.agent as unknown as AgentRpc) : false;
   }
 
   /** spec 043 FR-002: select a custom agent for the next turns, or the default agent (null). The runtime confirms with an event. */
@@ -1202,6 +1244,53 @@ export class CopilotAdapter implements AgentAdapter {
     }
     await mcp.disable({ serverName: name });
     await mcp.enable({ serverName: name });
+  }
+
+  /**
+   * Spec 058 FR-064 (T098): the runtime's own OAuth sign-in for one remote MCP server of this session. `rpc.mcp.oauth.login`
+   * (`@experimental`, read: SDK 1.0.22 `McpOauthLoginRequest`) with only the server name and two display texts: the runtime keeps its
+   * default loopback flow (discovery, PKCE, its own callback listener, token exchange, storage and reconnect), so no token and no
+   * callback ever pass through Durbar. Never `handlePendingRequest`, `complete`, `prepareLogin`, `cancelLogin` or `onMcpAuthRequest`,
+   * and never `clientId`, `clientSecret`, `redirectUri`, `grantType` or `forceReauth`. No `authorizationUrl` in the answer = cached
+   * tokens were still valid and the server is already connected. The result arrives later as `session.mcp_server_status_changed`.
+   * A missing method, or a runtime that does not know it, rejects with a plain message (main then shows the terminal steps).
+   */
+  async startMcpSignIn(sessionId: string, name: string): Promise<McpSignInResult> {
+    const live = this.sessions.get(sessionId);
+    if (!live) throw new Error('This session is not running. Send a message to start it, then sign in.');
+    const oauth = (live.session.rpc.mcp as unknown as { oauth?: { login?: (p: { serverName: string; clientName: string; callbackSuccessMessage: string }) => Promise<{ authorizationUrl?: unknown }> } }).oauth;
+    if (!oauth || typeof oauth.login !== 'function') throw new Error('This Copilot version cannot start a sign-in from Agent Durbar.');
+    let r: { authorizationUrl?: unknown } | undefined;
+    try {
+      r = await oauth.login({ serverName: name, clientName: 'Agent Durbar', callbackSuccessMessage: 'You can close this tab and go back to Agent Durbar.' });
+    } catch (err) {
+      if (isMethodNotFound(err)) throw new Error('This Copilot version cannot start a sign-in from Agent Durbar.');
+      throw new Error(sdkErrorText(err));
+    }
+    const url = r?.authorizationUrl;
+    if (url === undefined || url === null || url === '') return { kind: 'connected' };
+    if (typeof url !== 'string') throw new Error('Copilot sent a sign-in page that Agent Durbar cannot read.');
+    return { kind: 'browser', url };
+  }
+
+  /**
+   * Spec 058 FR-064: read the session's server list again (`rpc.mcp.list`, @experimental: "Cache misses may start and wait for MCP
+   * servers", read: SDK 1.0.22) and hand it to the mapper's `reread`, which keeps a needs-auth mark that the tool failures set while the list still says `connected` (a re-read is not a new status from the runtime; issue #364), so the usual `mcp` event follows.
+   * Real 2026-10-23: after a browser sign-in the runtime sent no status event for a long while. A missing method or a failure changes nothing. `[KNOWN GAP]` (T105) whether `list` can still start other servers on a real runtime.
+   */
+  async refreshMcpStatus(sessionId: string, name?: string): Promise<void> {
+    const live = this.sessions.get(sessionId);
+    if (!live) return;
+    const mcp = live.session.rpc.mcp as unknown as { list?: () => Promise<{ servers?: unknown }>; isServerRunning?: (p: { serverName: string }) => Promise<{ running?: unknown }> };
+    if (typeof mcp.list !== 'function') return;
+    // `isServerRunning` is the one-server check ("has an active client and transport", it starts nothing): `list` ("cache misses may start
+    // and wait for MCP servers") is only called once this server has a client, which is the case a finished sign-in leads to
+    if (name !== undefined && typeof mcp.isServerRunning === 'function') {
+      const q = await mcp.isServerRunning({ serverName: name });
+      if (q?.running !== true) return;
+    }
+    const r = await mcp.list();
+    if (this.sessions.get(sessionId) === live && Array.isArray(r?.servers)) this.mapperFor(sessionId).reread(r.servers);
   }
 
   /** Spec 069 FR-031: a live `tools/list` through the runtime; it throws when the server is not connected. */

@@ -176,6 +176,11 @@ references: `src/main/main.ts:123` is now `main.ts:142` (`outward`); `src/adapte
   simulator: the existing needs-auth and failed rows (`src/renderer/sim.ts:514`) get a canned error; screenshots at 1440x900 and
   1280x800. Start line, toggle timing and the two scopes sentence stay in T026 (#349) [FR-001, FR-002, FR-004, FR-030]
   [IMPLEMENTED] `sim:` `scripts/shots-058-mcp-words.js` (in `check:ui`), shots `docs/screenshots/058-mcp-words-*`. Rows show the word and icon, the hint, *Details* (open state kept over repaints) with *Copy* (the masked text only); an `mcp` event for the agent repaints the open dialog after 150 ms (several events = one repaint), keeps the focus by server name (a closed *Details* falls back to the switch) and the scroll position, and says what changed through `#srAnnounce`; the 1.5 s re-read after Restart is gone. The simulator now keeps the last `mcp` event per session (as main's `live`), gives sim agents 5, 10 and 15 a `my-notes` that needs a sign-in (`errorClass: 'auth'`), and emits `mcp` events at the start and end of a canned Restart. `real:` (T060, spec *Changes* 2026-10-21) a real Copilot Restart was followed by `session.mcp_server_removed`, then `status_changed` `not_configured` -> `pending` -> `connected` within about 75 ms, so the dialog can rely on those events instead of the old 1.5 s re-read; `[KNOWN GAP]` that was seen on the adapter's event stream, not with this dialog open on a real account, Claude's restart events are tested on the fake CLI only, and the dialog is not checked against a real runtime event stream, and Copy is checked with a stubbed clipboard (the text written equals the shown error; mutation-checked), not with a real clipboard on macOS or Windows. The announcement, the one-repaint throttle, the 120-character tooltips and the Details/needs-sign-in view in `check:ui-text` (surfaces `agent-mcp-signin`, `agent-mcp-failed`) are asserted and were each mutation-checked (review on #538).
+- [x] T117 (issue #544) The MCP dialog's footer never overlaps a long list (body scrolls inside `.dlg.wide`), and a runtime-`disabled` server reads
+  who turned it off, with its switch off and disabled and a hint [FR-077, FR-078]
+  [IMPLEMENTED] `src/renderer/screens.css` (`.dlg.wide` body scrolls), `mcpwords.js` (`offBy`, `stateOf` context), `screens.js`; `sim:` the simulator keeps a reported list over a switch (`mcpAppOff`). `test:` `scripts/test-mcpwords.ts`; `sim:` `scripts/shots-058-mcp-words.js` (14+ servers at 1440x900, 1280x800, 1280x600; before/after `docs/screenshots/058-mcp-dialog-fit-*`). `[KNOWN GAP]` not seen on a real agent app.
+- [x] T118 (issue #544, second report) The MCP dialog's footer is an opaque separate layer above the scrolling body, so a repaint after a switch toggle never puts a row or switch over *Done* [FR-077a]
+  [IMPLEMENTED] `src/renderer/screens.css`; `sim:` `scripts/shots-058-mcp-words.js` (toggle the last row off and on at 1440x900, 1280x800, 1280x600: *Done* hit-tested at centre and corners, no element meets the footer; mutation checked), shots `docs/screenshots/058-mcp-dialog-toggle-*`.
 
 #### PR sequence for #364 (each PR ticks its tasks and updates docs; `npm run typecheck && npm run build && npm test`)
 
@@ -222,29 +227,34 @@ say "End this session (More > End session), then send a message to resume it"; t
 
 ### Phase 8b: Sign in, steps and shortcut (after T090)
 
-- [ ] T098 [P] Copilot `startMcpSignIn`: `rpc.mcp.oauth.login({serverName, clientName, callbackSuccessMessage})` when it is a function,
+- [x] T098 [P] Copilot `startMcpSignIn`: `rpc.mcp.oauth.login({serverName, clientName, callbackSuccessMessage})` when it is a function,
   else manual; no URL -> connected; `mcpOAuthTokenStorage: 'persistent'` on create and resume (Q12 B: in the shared `config` of `src/adapters/copilot.ts:576-577`, so
   the FR-158 reconnect at `copilot.ts:337` keeps it; not in `oneShotConfig` or `renameResumeConfig`); fake SDK: recorder, no-method mode, no-URL mode, asserts no
   `handlePendingRequest` and no `onMcpAuthRequest` [FR-064, FR-070, SC-012]
+  [IMPLEMENTED] 2026-10-23 (Copilot; FR-070 by #471): `startMcpSignIn` + `mcpSignIn`/`mcpSignInSteps` in `src/adapters/copilot.ts`; fake SDK recorder in `scripts/fakes/copilot-sdk.ts`; test: `scripts/test-mcp-session.ts`. Not run on a real account (T105)
 - [ ] T099 [P] Claude `startMcpSignIn`: `mcp_authenticate {serverName}` without `redirectUri`; `requiresUserAction: false` -> connected;
   "not supported in this context" -> manual; `mcp_status` every 3 s while open; not launched -> "Send a message first" (Q15); fake CLI
   test [FR-064, SC-012]
 - [ ] T100 [P] Codex `startMcpSignIn`: `mcpServer/oauth/login {name, threadId}`; completion by `loginId` (else name + thread); success ->
   next message on a fresh child (Q18); unknown method -> manual; `cancelMcpSignIn` -> `account/login/cancel`; fake app-server test
   [FR-064, SC-012]
-- [ ] T101 Main: `src/main/mcpsignin.ts` (pure store, injected clock and opener) and `agents:mcpSignIn` / `agents:mcpOpenSignIn` /
+- [x] T101 Main: `src/main/mcpsignin.ts` (pure store, injected clock and opener) and `agents:mcpSignIn` / `agents:mcpOpenSignIn` /
   `agents:mcpCancelSignIn`; `elicitHttpsUrl` check (Q16); host-only replies; drops on connected, Cancel, 10 minutes, End, Restart
   session (the Restart session hook waits for T040/T041, #349, not built on 2026-10-21); `canSignIn`, `signIn`, `signInSteps` in `agents:mcp`; preload and `DurbarApi`; tests: host only, `http:` and user:password
   refused, expiry, Cancel, End, no address in the `DURBAR_LOG` sink or activity log [FR-065, SC-011]
-- [ ] T102 Dialog: needs-auth row (hint, Sign in, Switch off for this session, terminal steps with Copy; the steps end with "End this session (More > End session), then send a message to resume it" until T040-T042 exist, then the Restart button), two-step open (Q13), waiting and
+  [IMPLEMENTED] 2026-10-23: `src/main/mcpsignin.ts`, `src/main/mcpipc.ts`, `src/main/mcpsession.ts`, preload, `src/shared/api.ts`; test: `scripts/test-mcp-signin.ts` (`test:mcpsignin`), `test:ipcchannels`, `test:simguard`. Restart session drops the entry through the `stopped` status (#473 exists)
+- [x] T102 Dialog: needs-auth row (hint, Sign in, Switch off for this session, terminal steps with Copy; the steps end with "End this session (More > End session), then send a message to resume it" until T040-T042 exist, then the Restart button), two-step open (Q13), waiting and
   time-limit states, toasts, live region; Switch off calls the existing `setMcp` [FR-066, FR-068, FR-069]
+  [IMPLEMENTED] 2026-10-23 for Copilot rows (a row shows the block only where `canSignIn` or `signInSteps` came from main; Claude and Codex rows unchanged until T099/T100): `src/renderer/screens.js`, `screens.css`; sim: `scripts/shots-058-mcp-signin.js`
 - [ ] T103 Tool card line for `mcpAuth`: "<server> needs you to sign in", **Sign in…** opens the dialog at that row (Q14), **Switch off
   for this session** [FR-063, FR-066]
-- [ ] T104 Simulator `simmcpauth=1` / `simmcpauth=manual`; screenshots at 1440x900 and 1280x800 (`docs/screenshots/058-mcp-signin-*.png`)
+- [x] T104 Simulator `simmcpauth=1` / `simmcpauth=manual`; screenshots at 1440x900 and 1280x800 (`docs/screenshots/058-mcp-signin-*.png`)
   [FR-071, FR-073]
+  [IMPLEMENTED] 2026-10-23, dialog part, Copilot: `simmcpauth=1|manual` (+ `simmcpttl=N`) in `src/renderer/sim.ts`; `docs/screenshots/058-mcp-signin-*-{1440x900,1280x800}.png`. The tool card part waits for T103
 
-- [ ] T110 (its manual-steps wording follows T102's: End session, then a message, until T040-T042) Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
+- [x] T110 (its manual-steps wording follows T102's: End session, then a message, until T040-T042) Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
   domains differ (pure helper `signInSiteNote(serverUrl, pageHost)` with unit tests: same domain, other domain, `co.uk`, stdio) [FR-075]
+  [IMPLEMENTED] 2026-10-23 (review on #598): `src/main/mcpsignin.ts`, `screens.js`; `test:mcpsignin`
 - [ ] T111 Trust confirmation of per-folder extras and the Copilot waiting text say a sign-in may be kept in the system keychain
   after the session [FR-076]
 
@@ -298,3 +308,22 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
   after the task it checks; T108-T109 last. T095 includes T023 (same file). Note 2026-10-21: T112-T115 replace the earlier "T010, T011,
   T020, T026 before" for #364; the rest of those tasks builds on T112-T115 in #349.
 - MVP = Phases 1-2 (words, masked errors, live refresh): it answers the owner's "not clear how to start them" on its own.
+
+## Phase 9: live status and actions in Settings (delta 2026-10-23, issue #596)
+
+- [x] T120 Spec delta FR-080..FR-087, plan delta and these tasks, committed before code
+- [x] T121 [P] Unit tests for `DurbarMcpWords.aggregate` in `scripts/test-mcpwords.ts` (counts and words, urgency order, "uses" rule,
+  not-started rows, sorting, caps, unknown tokens) [FR-081, FR-086]
+- [x] T122 [P] Simulator driver `scripts/shots-058-mcp-settings.js` (several agents, ~10 servers in mixed states injected as `mcp`
+  reports): aggregate words, the expander, Restart and Restart session calling the right chat (recorded on the simulator's bridge),
+  Details masked, Open in chat, live refresh, no overlap and 10.5px at 1440x900 and 1280x800; in `scripts/ui-suite.js` [FR-080..FR-085]
+- [x] T123 `aggregate` in `src/renderer/mcpwords.js` [FR-081]
+- [x] T124 Settings list, expander, actions, live refresh and the attention count in `src/renderer/screens.js` and `screens.css`; the
+  shared Restart and Restart session flow used by the chat dialog too; `mcpSession` and the stop hook in `src/renderer/app.js`
+  [FR-080, FR-082..FR-086]
+- [x] T125 Docs: README MCP section line, `changelog.d/058-mcp-settings-live.md`, screenshots (driver at 1440x900 and 1280x800; the
+  linked Settings shots retaken), specs-index block [FR-085]
+- [x] T126 `/speckit-converge` for the delta; tick tasks; mutation-check the driver and the unit tests
+
+- [x] T127 Review on #609 (fjcabello): needs-sign-in rows lead with Open in chat, Restart behind More; load sequence numbers and no
+  reload while the list is hidden; a needs-sign-in-only case in `test-mcpwords`; the driver pins each (mutation-checked) [FR-082, FR-083]

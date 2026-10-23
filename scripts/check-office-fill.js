@@ -66,6 +66,12 @@ function SCENES() {
     return { holes, id: d.dataset.id, grown: !!document.getElementById('stage').dataset.grow, card: [c.width, c.height].map((x) => Math.round(x * 100) / 100), rel: [r.left - c.left, r.top - c.top, r.width, r.height].map((x) => Math.round(x * 100) / 100), box: [r.left, r.top, r.width, r.height].map(Math.round), flat: [...flat] };
   }).filter(Boolean);
 }
+/* issue 576: in the lounge, a resting agent's chat badge must not sit on its name. The name's text box is the range of its text clipped to
+   the name element (an ellipsis cuts it); it lists the ids whose badge rect meets it. */
+const BADGE_ON_NAME_JS = `[...document.querySelectorAll('#stage .desk.shut')].filter(e=>{const c=e.querySelector('.chatno'),n=e.querySelector('.lg-name');if(!c||!n||!c.getClientRects().length)return false;
+  const rg=document.createRange();rg.selectNodeContents(n);const t=rg.getBoundingClientRect(),el=n.getBoundingClientRect(),b=c.getBoundingClientRect();
+  const l=Math.max(t.left,el.left),r=Math.min(t.right,el.right),tp=Math.max(t.top,el.top),bt=Math.min(t.bottom,el.bottom);
+  return b.left<r&&b.right>l&&b.top<bt&&b.bottom>tp;}).map(e=>e.dataset.id)`;
 const MAX_CHARS = 90; /* owner 2026-10-22: a readable measure, about 80-90 characters a line */
 const GHP = 'ghp_' + 'Fill0Token0Value0123456789ab', PAT = 'github_pat_' + '11FILL0TOKEN_value0123456789abcdef';
 
@@ -154,6 +160,7 @@ module.exports = async (ctx) => {
       if (n === 15 && w !== 1920) check(!st.gf, `15 agents with helpers at ${w}x${h} are grown`);
       /* FR-053: Noor and Maya (done, each in a folder where others work) roll in; the 15 agents still fit (checked by one()) */
       if (n === 15) { const sh = await js(`[...document.querySelectorAll('#stage .desk.shut')].map(e=>(e.getAttribute('aria-label')||'').split(',')[0]).sort().join(',')`); check(sh === 'Maya,Noor', `15 agents at ${w}x${h}: rolled ${sh}, not Maya,Noor`);
+        if (w !== 1920) { const cb = await js(`${BADGE_ON_NAME_JS}.join(',')`); check(cb === '', `15 agents at ${w}x${h}: the chat badge covers the name of ${cb} in the lounge (issue 576)`); }
         const hh = await js(`[...document.querySelectorAll('#stage .lounge')].map(e=>{const d=e.closest('.room').querySelector('.desk.card');return d?Math.abs(e.getBoundingClientRect().height-d.getBoundingClientRect().height):99})`);
         check(hh.every((x) => x <= 1), `15 agents at ${w}x${h}: a rolled agent is not as tall as the desks in its room (${hh})`);
         /* review of #554 (Paco): the lounge changes no working desk's scene. Every desk open with the setting on and off has the same scene box
@@ -309,6 +316,7 @@ module.exports = async (ctx) => {
       check(/, (resting on the couch|asleep on a nap bed), finished (just now|\d+ (minute|hour|day)s? ago): /.test(x.l) && /[^.]\. Open chat panel\.$/.test(x.l), `${tag}: ${x.id} label "${x.l}"`);
     }
     for (const x of a.labels) check(x.nm.shown && x.nm.in && x.nm.font >= 10.5 && x.l.startsWith(x.nm.t + ','), `${tag}: ${x.id} does not show its name on its character (${JSON.stringify(x.nm)})`);
+    { const cb = await js(`${BADGE_ON_NAME_JS}.join(',')`); check(cb === '', `${tag}: the chat badge covers the name of ${cb} (issue 576)`); }
     check(a.labels.filter((x) => a.recent.includes(x.id)).every((x) => x.avH >= (a.lg.h >= 150 ? 44 : 24)), `${tag}: the couch characters are too small for a ${a.lg.h}px lounge (${a.labels.map((x) => x.avH)})`);
     check(/resting on the couch, finished 2 minutes ago: Done\. The edge cases/.test((a.labels.find((x) => x.id === 'sim-2') || {}).l || ''), `${tag}: Mira's label`);
     /* the bubbles: a speech bubble over the couch, a dream cloud over the beds, inside the lounge, >= 10.5px, masked */
@@ -396,6 +404,30 @@ module.exports = async (ctx) => {
     check(aw && as && /^(done|idle)$/.test(as.state), `${tag}: an agent away at a place is in the lounge, or the case did not keep it finished (${JSON.stringify(as)})`);
     await H.until(`!document.querySelector('.walker.walking')`, 6000); await ctx.sleep(250);
     const pr = await page(); check(!pr.length, `${tag}: ${pr.slice(0, 4).join('; ')}`);
+  }
+
+  /* spec 001 FR-051 (change 2026-10-23, the Windows flake "Mira, Jonas and Noor are not resting before the checks"): with reduced motion
+     (the Windows runner reports it by itself) a figure coming back from the Boss is dropped without a walk. The office must be drawn again
+     then, or Jonas keeps his empty chair and stays out of the lounge until some other change draws it (about 4 s here, longer on CI).
+     Reduced motion is emulated before the page loads (the app reads it once); the three events arrive in one frame, so only the drop
+     can draw the lounge. */
+  {
+    const tag = 'lounge after the Boss, reduced motion';
+    const dbg = ctx.win.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    try {
+      await load(14, 1440, 900, { simrooms: '2', simhelpers: '0' });
+      const pre = await js(`({reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,away:!!document.querySelector('#stage .desk.is-away[data-id="sim-3"]'),boss:!!document.querySelector('.walker')})`);
+      check(pre.reduced && pre.away, `${tag}: the case did not start with reduced motion and Jonas at the Boss ${JSON.stringify(pre)}`);
+      await js(`(()=>{const E=(e)=>window.__durbarSimEmit(Object.assign({timestamp:Date.now()},e));E({type:'status',sessionId:'sim-3',status:'working',intent:'Working'});E({type:'output',sessionId:'sim-3',final:true,text:'Renamed the tool and kept the old name as an alias for one release.'});E({type:'status',sessionId:'sim-3',status:'idle'});return true})()`);
+      const ok = await H.until(`!!document.querySelector('#stage .desk.shut[data-id="sim-3"]')`, 1500);
+      const st = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="sim-3"]');return {cls:d?d.className:'',vis:document.visibilityState,walkers:document.querySelectorAll('.walker').length}})()`);
+      check(ok, `${tag}: Jonas, back from the Boss and finished, is not in the lounge within 1.5 s ${JSON.stringify(st)}`);
+    } finally {
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+      dbg.detach();
+    }
   }
 
   rows.forEach((r) => console.log('[office-fill]', r));

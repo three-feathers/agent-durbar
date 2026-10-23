@@ -1,6 +1,6 @@
 /** IPC for the Copilot CLI MCP list (global, read live), the per-folder MCP extras and the per-agent MCP switches (specs 019, 020). The renderer never receives a secret value or a file path. */
 import { safeStorage } from 'electron';
-import { ipcHandle } from './ipcguard';
+import { fromAppFrame as fromApp, ipcHandle } from './ipcguard';
 import * as path from 'path';
 import type { AgentInfo, AgentMcpReply, GlobalApp, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
@@ -14,6 +14,7 @@ import { mcpSecretValues } from './mcpmask';
 import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRestartOp } from './mcpsession';
 import { mcpToolsOp } from './mcptoolsop';
+import { McpSignInStore, SignInPoller, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp } from './mcpsignin';
 import { McpStore } from './mcpstore';
 import type { SecretCodec } from './mcpstore';
 
@@ -61,6 +62,11 @@ export function registerMcpIpc(deps: {
   appOf?(agentId: string): string | undefined;
   /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */
   log?(a: AgentInfo, action: string): void;
+  /** Spec 058 FR-065: opens a sign-in page in the system browser (main's `shell.openExternal`); only called after the user's click. */
+  openUrl?(url: string): Promise<void>;
+  /** The clock of the sign-in store's 10-minute limit, and the timers of its 3-second poll (tests). */
+  now?(): number;
+  timers?: import('./mcpsignin').PollTimers;
 }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[] } {
   const { agents, router, dev } = deps;
   const store = deps.store;
@@ -79,9 +85,22 @@ export function registerMcpIpc(deps: {
       return []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
     }
   };
+  /** Spec 058 FR-065: the sign-in pages the agent apps handed back, in memory only (never logged, never written), for at most 10 minutes. */
+  const signIns = new McpSignInStore(deps.now ?? Date.now, deps.openUrl ?? (async () => { throw new Error('no browser'); }));
+  /** FR-064 (real 2026-10-23): while a sign-in page is open, read the agent app's server list again every 5 s (at most 10 minutes) and when the window regains focus. */
+  const poller = new SignInPoller(signIns, (id, name) => {
+    const ad = router.forAgent(id);
+    return ad && ad.isLive(id) ? ad.refreshMcpStatus?.(id, name) : undefined;
+  }, deps.timers ?? { set: (fn, ms) => setInterval(fn, ms), clear: (h) => clearInterval(h as ReturnType<typeof setInterval>) });
+  signIns.hooks = { opened: (a, n) => poller.start(a, n), dropped: (a, n) => poller.stop(a, n) };
   router.onEvent((e) => {
-    if (e.type === 'mcp') live.set(e.sessionId, e.servers);
-    else if (e.type === 'status' && e.status === 'stopped') live.delete(e.sessionId);
+    if (e.type === 'mcp') {
+      live.set(e.sessionId, e.servers);
+      signIns.onServers(e.sessionId, e.servers); // connected: the sign-in is finished
+    } else if (e.type === 'status' && e.status === 'stopped') {
+      live.delete(e.sessionId);
+      signIns.dropAgent(e.sessionId); // End session, Restart session (it ends the session first), a failed reconnect
+    }
   });
 
   /** The Copilot CLI list is read again on every call, so edits of the file show up the next time a screen opens. */
@@ -153,9 +172,13 @@ export function registerMcpIpc(deps: {
   });
   ipcHandle('mcp:removeLegacy', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().removeLegacy(name) }));
 
-  ipcHandle('agents:mcp', (_e, id: unknown): AgentMcpReply => {
+  /** Spec 058 FR-078: what Agent Durbar passed as disabled at the last session start, and what the user switched since: a runtime `disabled` for these is ours, not the agent app's. */
+  const launched = new Map<string, Set<string>>();
+  const touched = new Map<string, Set<string>>();
+  ipcHandle('agents:mcp', (_e, id: unknown, focus?: unknown): AgentMcpReply => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, servers: [], live: false };
+    if (focus === true) poller.kick(a.id); // only the window regaining focus asks for this (a repaint after an `mcp` event must not, or each read would trigger the next)
     const s = store();
     const dis = new Set(s.ambientDisabled());
     // Spec 069 FR-009/FR-011: each agent app's own list. Copilot loads the Copilot CLI list itself; Durbar passes Claude Code's list to
@@ -171,9 +194,12 @@ export function registerMcpIpc(deps: {
       cli: all,
       extras: s.list(keyOf(a)),
       ambientDisabled: dis,
+      launchedOff: launched.get(a.id),
+      switchedHere: touched.get(a.id),
       app: deps.appOf?.(a.id),
       claudeList: (gn.claude ?? []).map((n) => ({ name: n, enabled: !dis.has(claudeOffKey(n)) })),
       toolsOff: s.toolsOffFor(keyOf(a)),
+      signIn: (n) => signIns.view(a.id, n),
       global: gn,
       builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
     });
@@ -182,6 +208,21 @@ export function registerMcpIpc(deps: {
   const restarting = new Set<string>();
   ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
     mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
+  /** Spec 058 FR-075: the server's own address, for the "different site" line: this folder's extra, the user list Durbar passes, then the Copilot CLI list. */
+  const serverUrlOf = (agentId: string, name: string): string | undefined => {
+    const a = agents.get(agentId);
+    if (!a) return undefined;
+    try {
+      return store().list(keyOf(a)).find((v) => v.name === name)?.url ?? deps.globalFor?.(agentId)?.[name]?.url ?? cli().servers.find((v) => v.name === name)?.url;
+    } catch {
+      return undefined;
+    }
+  };
+  /** Spec 058 FR-065: Sign in, Open sign-in page, Cancel. Window only; main holds the address, the window gets the host. */
+  ipcHandle('agents:mcpSignIn', (e, id: unknown, name: unknown) =>
+    fromApp(e) ? mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf }, signIns, id, name) : { ok: false, error: 'invalid request' });
+  ipcHandle('agents:mcpOpenSignIn', (e, id: unknown, name: unknown, host: unknown) => (fromApp(e) ? mcpOpenSignInOp(signIns, agents, id, name, host) : { ok: false, error: 'invalid request' }));
+  ipcHandle('agents:mcpCancelSignIn', (e, id: unknown, name: unknown) => (fromApp(e) ? mcpCancelSignInOp({ agents, router }, signIns, id, name) : { ok: false, error: 'invalid request' }));
   /** Spec 069 FR-061: the tools turned off for one server in this agent's folder (applies to new sessions and after Restart session). */
   ipcHandle('agents:setMcpToolsOff', (_e, id: unknown, name: unknown, off: unknown) => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -190,7 +231,11 @@ export function registerMcpIpc(deps: {
   });
   /** Spec 069 FR-032: the tools of one server of this agent's running session, masked and cut. */
   ipcHandle('agents:mcpTools', (_e, id: unknown, name: unknown) => mcpToolsOp({ agents, router, secrets: secretValuesFor }, id, name));
-  ipcHandle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
+  ipcHandle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
+    const r = await setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled);
+    if (r.ok && typeof id === 'string' && typeof name === 'string') { const t = touched.get(id) ?? new Set<string>(); t.add(name); touched.set(id, t); }
+    return r;
+  });
 
   return {
     secretValuesFor,
@@ -199,6 +244,8 @@ export function registerMcpIpc(deps: {
       if (!a) return { mcpServers: {}, disabledMcpServers: [...(off.get(agentId) ?? [])] };
       // Only this agent's own folder's extras are passed (spec 020 FR-012).
       const r = store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames());
+      launched.set(agentId, new Set(r.disabledMcpServers));
+      touched.delete(agentId);
       // Spec 069 FR-009: the agent app's own user list that Durbar passes itself (Claude Code); a folder extra of the same name wins.
       const toolsOff = store().toolsOffFor(keyOf(a)); // spec 069 FR-061/FR-062
       return { mcpServers: mergeSessionServers(deps.globalFor?.(agentId) ?? {}, r.mcpServers, off.get(agentId)), disabledMcpServers: r.disabledMcpServers, ...(Object.keys(toolsOff).length ? { disabledMcpTools: toolsOff } : {}) };

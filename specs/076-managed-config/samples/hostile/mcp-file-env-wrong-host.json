@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "servers": [
+    {
+      "id": "docs2",
+      "name": "Docs 2",
+      "transport": "http",
+      "url": "https://mcp.other.example/",
+      "auth": {
+        "type": "header",
+        "header": "Authorization",
+        "valueFromEnv": "ACME_LLM_TOKEN",
+        "prefix": "Bearer "
+      }
+    }
+  ]
+}

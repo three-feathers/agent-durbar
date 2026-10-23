@@ -1,1 +1,0 @@
-- `npm test -- --bail` (or `TEST_BAIL=1`) stops at the first failing suite and stops the suites still running (their whole process group, TERM then KILL after 5 s, or tree with `taskkill /T /F` on Windows), for quick local iteration. Ignored under `CI`: plain `npm test`, PR CI and the merge queue run everything. [spec 008 FR-115]

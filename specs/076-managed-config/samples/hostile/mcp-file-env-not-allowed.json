@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "servers": [
+    {
+      "id": "x",
+      "name": "X",
+      "transport": "stdio",
+      "command": "node",
+      "args": [
+        "server.js"
+      ],
+      "env": {
+        "AWS": {
+          "fromEnv": "AWS_SECRET_ACCESS_KEY"
+        }
+      }
+    }
+  ]
+}

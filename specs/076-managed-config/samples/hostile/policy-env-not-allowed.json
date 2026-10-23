@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "telemetry": {
+    "otel": {
+      "endpoint": "https://otel.acme.example",
+      "headersFromEnv": {
+        "Authorization": "AWS_SECRET_ACCESS_KEY"
+      }
+    }
+  }
+}

@@ -51,6 +51,14 @@ body.screen-open .workspace{display:none}
 .srv-hint{display:block;font-size:11px;color:var(--ink-2);overflow-wrap:anywhere}
 .srv-detbtn{align-self:flex-start;margin-top:2px}
 .srv-det{display:flex;align-items:flex-start;gap:8px;margin-top:4px}
+/* spec 058 FR-069: the needs-sign-in block under a row's hint */
+.srv-sign{flex:1 0 100%;display:flex;flex-direction:column;gap:6px;margin-top:2px}
+.srv-sgl{display:block;font-size:11px;color:var(--ink);overflow-wrap:anywhere}
+.srv-sgl.mut{color:var(--muted)}
+.srv-sgl.srv-warn{color:var(--tone-warn-ink);font-weight:600}
+.srv-sgact{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.srv-steps{flex:1;min-width:0;margin:0;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:11px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.srv-steps code{font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:0 3px;border-radius:4px;background:var(--surface-2)}
 .srv-err{flex:1;min-width:0;margin:0;max-height:96px;overflow:auto;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
 .srv-name{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .mst i{width:8px;height:8px;border-radius:50%;background:var(--gray)}
@@ -58,7 +66,13 @@ body.screen-open .workspace{display:none}
 .mst.none{color:var(--muted)}
 
 /* dialogs */
-.dlg.wide{width:min(var(--dlg-w-m),calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto}
+.dlg.wide{width:min(var(--dlg-w-m),calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:hidden}
+/* spec 058 FR-077: a long body scrolls inside the dialog; the title and the buttons stay in view and never sit on the rows (the body has min-height:0, so without its own overflow its rows spilled over the footer) */
+.dlg.wide .dbody{flex:1 1 auto;min-height:0;overflow:auto;position:relative;z-index:0;padding:5px} /* 5px: the focus ring is a 3px outline 1px off the control (4px), so the first and last control in the scroller are not clipped */
+.dlg.wide>:not(.dbody){flex:none}
+/* issue #544 (second report: after a switch toggle the last row's switch drew over Done): the footer is its own opaque layer above the scroller, so no row control can paint over it, whatever the body repaints. The import and folder-setup dialogs are `.dlg.wide.imp` and share these rules */
+.dlg.wide>.dbtn,.dlg.wide>.derr:not([hidden]){position:relative;z-index:2}
+.dlg.wide>.dbtn{background:var(--surface);box-shadow:0 -6px 6px -6px color-mix(in srgb,var(--ink) 18%,transparent)}
 .dlg .dbody{display:flex;flex-direction:column;gap:var(--dlg-gap);min-height:0}
 .dlg .derr{margin:0;font-size:var(--t3-size);color:var(--tone-bad-ink);background:var(--tone-bad-bg);border:1px solid var(--tone-bad-line);border-radius:10px;padding:6px 10px}
 .dlg .derr[hidden]{display:none}
@@ -162,7 +176,6 @@ body.has-bridge #topBtns{display:flex}
 
 /* import from VS Code (spec 020 FR-023): the list scrolls inside the dialog, the buttons stay in view */
 .dlg.imp{width:min(var(--dlg-w-l),calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:hidden;padding:var(--dlg-pad);border-radius:var(--r-xl);background:var(--surface)} /* the generic `.imp` box rule (padding 8px 10px, a 10px radius, --surface-2) must not shrink a dialog that happens to carry the class: the import list and the folder-setup dialog */
-.dlg.imp .dbody{overflow:auto;padding-right:2px}
 .imp-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .imp-count{font-size:11px;color:var(--muted);margin-left:4px}
 .imp-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
@@ -381,6 +394,7 @@ body.has-bridge #topBtns{display:flex}
 .mode-menu .mm-prow{display:flex;align-items:stretch;gap:2px}
 .mode-menu .mm-prow>button[data-prof]{flex:1;min-width:0}
 .mode-menu button.mm-edit{flex:none;align-self:center;align-items:center;padding:4px 8px;font-size:var(--t4-size);font-weight:600;color:var(--blue-ink);border-radius:8px}
+.mode-menu button.mm-del{color:var(--red-ink)} /* spec 043 FR-040: Delete beside Edit, red like the shared menu's danger rows */
 /* Settings > Profiles (custom agents) */
 .pf-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
 .pf-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--raised)}
@@ -426,3 +440,13 @@ body.has-bridge #topBtns{display:flex}
 
 /* spec 074 FR-013: Settings > Keyboard, the current Go to shortcut */
 .navkey-now{display:inline-block;min-width:20px;padding:2px 8px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:12px;font-weight:600;color:var(--ink-2)}
+/* spec 058 FR-080..FR-085: Settings > MCP servers, live state over the running chats; the chats of a server listed under it */
+.lv-box{margin-bottom:var(--sec-gap)}
+.srv.lv{align-items:flex-start}
+.srv.lv .mst{min-width:0;overflow-wrap:anywhere}
+.lv-chats{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.lv-chat{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);min-width:0}
+.lv-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.lv-who{font-size:12px;min-width:0;overflow-wrap:anywhere}
+.lv-act{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px}
+.scr-adv>summary #advMcpAtt[hidden]{display:none}

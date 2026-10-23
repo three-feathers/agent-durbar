@@ -8,6 +8,8 @@ on:
   workflow_run:
     workflows: [CI, UI on three OSes, Installed app, Packaged check, Install check]
     types: [completed]
+    # Only runs of main (scheduled and push): PR and merge-queue runs (gh-readonly-queue/...) never start this workflow.
+    branches: [main]
 
 permissions:
   contents: read

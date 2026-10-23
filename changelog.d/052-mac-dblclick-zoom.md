@@ -1,0 +1,1 @@
+- **Mac: double-click on the top bar** (spec 052 FR-085, #591): a double-click on an empty part of the top bar, the agent strip or a screen header zooms the window, minimizes it or does nothing, as set in System Settings > Desktop & Dock. Windows and Linux are unchanged. Unit-tested mapping; not yet tried on a real Mac.

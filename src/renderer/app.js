@@ -8,6 +8,7 @@ const THEME=window.THEME; /* theme packs (specs 035-040): tokens, words, motion;
 const T_=n=>THEME.token(n);
 const wordOf=k=>THEME.word(k);
 const qs = new URLSearchParams(location.search);
+const NO_REDACT=qs.has('sim')&&qs.get('noredact')==='1'; /* spec 041 FR-065 test only (simulator): the page as if the redact module were missing, to check it fails closed */
 /* spec 052 FR-084: Command (⌘) on a Mac, Ctrl elsewhere; keys are shown per platform (src/renderer/keys.js) */
 const KEYS=window.DurbarKeys;
 const IS_MAC=KEYS.isMac(navigator.platform);
@@ -80,6 +81,10 @@ const PREV_KEYS=['mod','shift','H'], PREV_KEY=keyText(PREV_KEYS);
 const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-164: + Folder, + Workspace (the Mac File menu has the same keys) */
 /* spec 052 FR-085: the window's platform from the preload (the Mac title bar styles are gated on html[data-platform="darwin"]) */
 if(window.agentDurbar&&window.agentDurbar.platform==='darwin')document.documentElement.dataset.platform='darwin';
+/* spec 052 FR-085 (issue 591): the Mac title bar is hidden; a double-click on a drag area (not on a control) zooms like a title bar */
+if(window.agentDurbar&&window.agentDurbar.platform==='darwin'&&window.agentDurbar.titleDoubleClick)document.addEventListener('dblclick',e=>{
+  if(KEYS.shouldSendTitleDoubleClick(e.target))window.agentDurbar.titleDoubleClick();
+});
 /* the keys written in index.html are the Windows/Linux ones: rewrite them for a Mac */
 if(IS_MAC){document.querySelectorAll('[aria-keyshortcuts]').forEach(el=>el.setAttribute('aria-keyshortcuts',KEYS.ariaFor(el.getAttribute('aria-keyshortcuts'),true)));
   document.querySelectorAll('[data-keys-text]').forEach(el=>{if(el.title)el.title=KEYS.textFor(el.title,true);for(const n of el.querySelectorAll('small'))n.textContent=KEYS.textFor(n.textContent,true);});}
@@ -272,9 +277,8 @@ const isAway=a=>!a.parent&&(!!VISITS.at(a.id)||RETURNING.has(a.id));
 const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id),D=window.DurbarPlaces;if(v&&(v.place===D.COFFEE||v.place===D.BANK))return taskText(a);
   if(v&&v.place===D.BOSS)return wordOf('boss-note')+' · '+taskText(a); /* spec 001 FR-034: the empty desk's small note */return v?(SIMPLE?(PLACE_VERB[v.place]||'Using a tool')+' · '+taskText(a):'At '+placeLabel(v.place)+': '+visitDoing(a,v)+' · '+taskText(a)):taskText(a);};
 /* spec 001 FR-036, spec 041 FR-065: the desk card's title and accessible name mask agent text before any cut (a token cut mid-way no longer
-   matches a token shape). The shared src/shared/redact.ts (window.DurbarRedact); without it the title keeps only the name and the label drops the text (fail closed). Whichever of PR 511 and PR 567
-   lands second moves this to DurbarSafeText. */
-const deskMask=t=>{const R=window.DurbarRedact;try{return R&&typeof R.redact==='function'?R.redact(t):'';}catch(_){return '';}};
+   matches a token shape). Through DurbarSafeText (safeMask); without redact the title keeps only the name and the label drops the text (fail closed). */
+const deskMask=t=>safeMask(t); /* the one mask (DurbarSafeText, FR-065): unescaped, Markdown-aware, '' when redact is missing */
 const deskTip=a=>{const full=a.name+' · '+(a.profile?a.profile.name+' · '+a.role:a.role)+kindTag(a)+remoteTag(a)+' · '+stWord(a)+': '+taskOf(a),m=deskMask(full);
   return DurbarCutText.cutText(m||a.name,200);};
 /* A result of addPlace/updatePlace/removePlace (or a settings read): the places and the map as they are now. Agents standing at a place that is gone
@@ -339,7 +343,7 @@ function postboxHTML(p,box){
   const D=window.DurbarPlaces, paused=!!S.pausedAll, list=S.schedules||[], next=D.postNext(list,paused).slice(0,3);
   const today=D.lettersToday(list,paused,Date.now(),(window.DurbarSchedTemplates||{}).nextRuleRun), miss=D.postMissed(list), named=!box||box.named;
   const line=x=>{const room=ROOMS.find(r=>folderKeyOf(r)===x.s.folder), fold=room?room.name:(String(x.s.folder||'').split(/[\\/]/).filter(Boolean).pop()||'');
-    return {short:clock(x.t)+' · '+DurbarCutText.cutText(x.s.prompt,60), full:clock(x.t)+' · '+fold+' · '+DurbarCutText.cutText(x.s.prompt,200), long:clock(x.t)+' · '+fold+' · '+DurbarCutText.cutText(x.s.prompt,60)};};
+    return {short:clock(x.t)+' · '+safeExcerpt(x.s.prompt,60,''), full:clock(x.t)+' · '+fold+' · '+safeExcerpt(x.s.prompt,200,''), long:clock(x.t)+' · '+fold+' · '+safeExcerpt(x.s.prompt,60,'')};};
   const ls=next.map(line), empty=paused?'All paused':'No letters';
   const sum=(today?today+' today':'none today')+(miss?', '+miss+' missed':'');
   const label=`${placeLabelFull(p.id)}: ${sum}. ${ls.length?'Next: '+ls.map(l=>l.full).join('; '):empty}. Open Settings > Schedules.`;
@@ -418,6 +422,10 @@ const WALK_MS=1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the oth
 const walkers=new Map(); /* agent id -> {el, back, walking, shown, timer, to} */
 const walkCount=()=>{let n=0;walkers.forEach(w=>{if(w.walking)n++;});return n;};
 function dropWalker(id){const w=walkers.get(id);if(!w)return;clearTimeout(w.timer);if(w.off)w.off();w.el.remove();walkers.delete(id);RETURNING.delete(id);}
+/* spec 001 FR-051 (change 2026-10-23): a figure on its way back that is dropped without a walk (reduced motion, no desk on screen, not the office)
+   is back now: draw again, as the end of a walk does, or the desk kept its empty chair (and a finished agent stayed out of the lounge) until
+   some other change drew the office */
+function dropBack(id){const was=RETURNING.has(id);dropWalker(id);if(was)scheduleRender();}
 /* Before the desks are drawn: an agent whose visit just ended keeps its empty chair until its figure is back. */
 function prepareWalkers(){
   if(ui.view!=='office'||!lobbyOn())return;
@@ -427,7 +435,7 @@ function prepareWalkers(){
    opened/closed rooms never leave one in the wrong place) and start the walks. */
 function syncWalkers(){
   const layer=$('walkers'), floor=$('floor'); if(!layer||!floor)return;
-  if(ui.view!=='office'||!lobbyOn()){[...walkers.keys()].forEach(dropWalker);return;}
+  if(ui.view!=='office'||!lobbyOn()){[...walkers.keys()].forEach(dropBack);return;}
   const fr=floor.getBoundingClientRect();
   if(!fr.width||!fr.height)return; /* office hidden (full-screen chat open): leave the figures as they are until it is shown again */
   const center=el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)};};
@@ -471,7 +479,7 @@ function syncWalkers(){
   [...walkers.keys()].forEach(id=>{
     if(want.has(id))return;
     const w=walkers.get(id), dp=deskPos(id);
-    if(!dp||REDUCED){dropWalker(id);return;} /* no desk on screen (room closed, filtered out) or no animation wanted: just disappear */
+    if(!dp||REDUCED){dropBack(id);return;} /* no desk on screen (room closed, filtered out) or no animation wanted: just disappear */
     if(VISITS.at(id)){dropWalker(id);return;} /* still at the place, now inside its "+N" (a narrower tile, a longer queue): it did not leave, so no walk back */
     if(w.back)return;
     w.back=true; RETURNING.add(id);
@@ -768,7 +776,7 @@ const CANDIDATES=[['full',3,'side'],['full',2,'side'],['full',3],['full',2],['ro
    Painted by textContent at most 4 times a second, never by a re-layout. ---- */
 let LIVE_SIDE=false; const SIDE_W=196, SIDE_GAP=8;
 let LIVE_PREF=(()=>{try{return localStorage.getItem('durbar.liveActivity')!=='off';}catch(e){return true;}})();
-const LIVE_MASK=(()=>{const L=window.DurbarLiveAct,R=window.DurbarRedact;if(!L||!R||typeof R.redact!=='function')return null;
+const LIVE_MASK=(()=>{const L=window.DurbarLiveAct,R=NO_REDACT?null:window.DurbarRedact;if(!L||!R||typeof R.redact!=='function')return null;
   return {redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t)};})();
 const LIVEACT=LIVE_MASK?window.DurbarLiveAct.create({mask:LIVE_MASK}):null;
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
@@ -784,11 +792,7 @@ function setGrow(el,f){if(f){el.style.setProperty('--gf',String(f));el.dataset.g
 /* the text of a grown desk: the readout with its newest sentences, else the start of the last reply (Done, Idle), else the desk text.
    The reply is masked on the raw text before Markdown is removed (excerpt); with no working mask nothing from it shows (fail closed). */
 /* the start of the last reply, masked on the raw text, plain, cut to 600; '' without a reply or a working mask (fail closed) */
-function replyExcerpt(a){
-  const R=window.DurbarRedact;
-  const t=a.lastOutput?window.DurbarLiveAct.excerpt(a.lastOutput,R&&typeof R.redact==='function'?x=>R.redact(x):null):'';
-  return t?DurbarCutText.cutText(t,600):'';
-}
+function replyExcerpt(a){return safeExcerpt(a.lastOutput,600,'');} /* spec 041 FR-065: the one mask (safetext), then the cut; '' with no working mask */
 /* does the main text of a grown desk show the last reply (a Done or Idle desk with one)? Then no reply column repeats it (FR-047) */
 const grownShowsReply=a=>!a.parent&&!liveShown(a)&&(vis(a)==='done'||vis(a)==='idle')&&!!a.lastOutput;
 function grownLine(a){
@@ -947,12 +951,8 @@ function shutPlan(r){
 }
 let SHUT_PREV=null; /* ids rolled at the last render: a newly rolled agent rolls in once (FR-055), a desk that unrolls rolls out once */
 const SHUT_MARK='<svg class="sh-mark" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><circle cx="6" cy="6" r="5.2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.6 6.2 5.3 7.8 8.4 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-/* the reply, masked on the raw text before Markdown goes (FR-043's excerpt); without a working mask nothing from it (fail closed) */
-function shutReply(a,n){
-  const R=window.DurbarRedact, L=window.DurbarLiveAct;
-  const t=a.lastOutput&&L&&L.excerpt?L.excerpt(a.lastOutput,R&&typeof R.redact==='function'?x=>R.redact(x):null):'';
-  return t?DurbarCutText.cutText(t,n):vis(a)==='done'?'Finished.':'Ready.';
-}
+/* the reply for the couch bubble, the dream cloud and its tooltip, the peek card: masked, then cut (spec 041 FR-065); without a working mask nothing from it (fail closed) */
+function shutReply(a,n){const fb=vis(a)==='done'?'Finished.':'Ready.';return (a.lastOutput?safeExcerpt(a.lastOutput,n,fb):'')||fb;}
 /* FR-052: the lounge. Each resting agent is its own character (avatar(a): the theme's scene kit, the same person as on its desk) on a couch
    seat (recent) or a nap bed (old); a speech bubble over the couch and a dream cloud over the beds take turns (LOUNGE_TURN, FR-055). */
 let LOUNGE_TURN=0;
@@ -1119,7 +1119,7 @@ function roomHTML({r,mains,all,rolled},d,aw,cap){
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}<span class="rdw"> ${LABELS[k].toLowerCase()}</span></span>`:''}).join(''); /* spec 001 FR-037: "5 working" when the header has room */
   /* spec 052 FR-006: the counts in words too (screen readers, and a tooltip for colour-blind users) */
   const dotsLabel=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?n+' '+LABELS[k].toLowerCase():'';}).filter(Boolean).join(', ');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${al.siren?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(showPath(r.path))}</span>${(()=>{const u=roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${al.siren&&!SIM_QUIET_HEADS.has('siren')?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(showPath(r.path))}</span>${(()=>{const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const sw=shutW(r,rolled), widths=mains.map(a=>unitWidth(a,d)).concat(sw?[sw]:[]); /* FR-053: the squeezed group sits in the desks' row */
@@ -1214,7 +1214,7 @@ function chooseLayout(sizing,aw,ah){
   const probe=$('probe'); probe.style.width=aw+'px';
   GROW=0; setGrow(probe,0); /* a grown render leaves GROW on: the plain candidates are probed with plain text */
   const openOnly=sizing.filter(m=>!m.r.closed);
-  if(!openOnly.length){probe.innerHTML=svgHollow(stageHTML(sizing,'card',aw,1));probe.dataset.d='card';const ok=probe.scrollHeight<=ah+1;probe.innerHTML='';probePrev=null;return {d:'card',hcap:1,cap:1,fit:ok,boost:[]};}
+  if(!openOnly.length){probe.innerHTML=svgHollow(stageHTML(sizing,'card',aw,1));probe.dataset.d='card';const ok=probe.scrollHeight<=ah+1;probe.innerHTML='';probePrev=null;return {d:'card',hcap:1,cap:1,fit:ok,boost:[],heads:false};}
   /* spec 001 FR-023 (change 2026-10-23): a layout fits when the office fits the floor AND every room header holds its parts. A layout that
      fits only by size is kept as the fallback (soft), so a header that cannot fit anywhere never sends the office into scroll mode. */
   const sizeFits=()=>probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1;
@@ -1227,7 +1227,7 @@ function chooseLayout(sizing,aw,ah){
     HCAP=hcap; HBOOST=new Map(); LIVE_SIDE=!!side; probe.dataset.d=d; probe.style.height='auto';
     if(d==='full'){
       probeSet(probe,stageHTML(sizing,d,aw));
-      if(fits()){res={d,hcap,cap:0,fit:true,boost:[],side:!!side};break;}
+      if(fits()){res={d,hcap,cap:0,fit:true,boost:[],side:!!side,heads:true};break;}
       if(!soft&&sizeFits())soft={d,hcap,cap:0,fit:true,boost:[],side:!!side};
       lastAny={d,hcap,cap:0,fit:false,boost:[],side:!!side};continue;
     }
@@ -1246,7 +1246,7 @@ function chooseLayout(sizing,aw,ah){
         if(headsFit(probe)&&(!best||miss<best.miss-6))best={c,h,miss};
       }
     }
-    if(best){res={d,hcap,cap:best.c,fit:true,boost:[]};break;}
+    if(best){res={d,hcap,cap:best.c,fit:true,boost:[],heads:true};break;}
     if(bySize&&!soft)soft={d,hcap,cap:bySize.c,fit:true,boost:[]};
     lastAny={d,hcap,cap:any.c,fit:false,boost:[]};
   }
@@ -1255,7 +1255,7 @@ function chooseLayout(sizing,aw,ah){
      than `roomy`. Never after card/mini/micro (15 agents lay out as before) or with a forced density. */
   if(res&&res.fit&&!FORCE_DENSITY&&(res.d==='full'||res.d==='roomy')){
     const g=growSearch(sizing,aw,ah,openOnly,GR.MIN+GR.STEP);
-    if(g)res={d:'roomy',hcap:3,cap:g.c,fit:true,boost:[],grow:g.f};
+    if(g)res={d:'roomy',hcap:3,cap:g.c,fit:true,boost:[],grow:g.f,heads:res.heads};
   }
   /* Leftover floor space (also what closed rooms free up): give the agents with the most helpers more of them, one step up
      (1 -> 3, 2 -> 3, 3 -> 6 shown before "+N more"), attention first, while the layout still fits. */
@@ -1289,6 +1289,8 @@ function growSearch(sizing,aw,ah,openOnly,lo){
   return best;
 }
 let layoutKey='', layout=null;
+let SIM_QUIET_HEADS=new Set(); /* spec 001 FR-023 (2026-10-23): simulator only (__durbarSimUi.quietHeads(['siren','aiu'])): room headers drawn without those parts, so a driver can lay the office out first and add them after, as a late siren or cost does */
+let HEAD_RETRY=''; /* the layout key and header contents of the last relayout made because a header no longer held its parts */
 /* spec 001 FR-026: what a new user needs before the first folder: sign in once (spec 052 FR-056: named by the AI account, not the app), add a folder (Read-only), or look around in the demo */
 const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">Welcome to Agent Durbar</h2>
   <p class="wl-sub">Your AI agents in one office: see what each one is doing, chat with it, and decide what it may do. For code, documents, research or notes, with GitHub Copilot, Claude Code or OpenAI Codex side by side.</p>
@@ -1346,6 +1348,14 @@ function renderOffice(){
   stagePrev=parts; SHUT_PREV=new Set(model.flatMap(m=>(m.rolled||[]).map(x=>x.a.id)));
   stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap); stage.dataset.side=layout.side?'1':'0';
   fitUsage(stage);
+  /* spec 001 FR-023 (change 2026-10-23): the layout is cached by the office's shape, but a header can gain a part without the shape changing
+     (the siren, the cost chip, the MCP chip arrive after the first layout). A layout picked because its headers held their parts is
+     searched again when a header on screen no longer does; once per layout key and header contents, so it cannot loop. */
+  const heads=stage.querySelectorAll('.room-head');
+  if(layout.heads&&[...heads].some(h=>!headHolds(h))){
+    const sig=key+'\n'+[...heads].map(h=>[...h.children].map(e=>e.getAttribute('class')).join(' ')+'='+h.textContent).join('\n');
+    if(sig!==HEAD_RETRY){HEAD_RETRY=sig;layoutKey='';renderOffice();return;}
+  }
   if(layout.side)stage.querySelectorAll('.liveside .ls-t').forEach(fitSide);
   if(layout.grow){stage.querySelectorAll('.desk.card').forEach(setGrownCols);stage.querySelectorAll('.desk.card .intent').forEach(fitLines);stage.querySelectorAll('.desk.card[data-gc] .gx-t').forEach(fitClamp);} /* FR-043, FR-047: columns, then whole lines, the newest in view */
   floor.classList.toggle('scrolls',!layout.fit);
@@ -1376,11 +1386,12 @@ function fitHead(hd){
 }
 /* spec 001 FR-023 (change 2026-10-23): after those steps, every part of every room header is inside its header (what check:office asserts) */
 function headsFit(root){
-  for(const hd of root.querySelectorAll('.room-head')){
-    fitHead(hd);
-    const H=hd.getBoundingClientRect();
-    for(const e of hd.children){if(!e.getClientRects().length)continue;const r=e.getBoundingClientRect();if(r.width>0&&r.right>H.right+1)return false;}
-  }
+  for(const hd of root.querySelectorAll('.room-head')){fitHead(hd);if(!headHolds(hd))return false;}
+  return true;
+}
+function headHolds(hd){
+  const H=hd.getBoundingClientRect();
+  for(const e of hd.children){if(!e.getClientRects().length)continue;const r=e.getBoundingClientRect();if(r.width>0&&r.right>H.right+1)return false;}
   return true;
 }
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{const s=document.getElementById('stage');if(s)fitUsage(s);}).catch(()=>{});
@@ -1664,7 +1675,37 @@ function fitPlaceholder(){const t=$('msgInput');if(!t)return;const full=t.getAtt
   if(!phCtx)phCtx=document.createElement('canvas').getContext('2d');phCtx.font=cs.font;const fits=x=>phCtx.measureText(x).width<=w-1;
   const text=window.DurbarCutText.fitCut(full,fits);
   if(t.placeholder!==text)t.placeholder=text;}
-function autoGrow(){const t=$('msgInput');if(!t)return;t.style.height='auto';t.style.height=Math.min(110,t.scrollHeight)+'px';setSend();}
+/* spec 005 FR-044..FR-048 (issue 592): the message box grows with its text up to 40% of the chat panel (never under the old 110px), and the
+   transcript always keeps 140px (DurbarComposerSize). A size chosen with the handle on the composer's top edge fixes the height; double-click
+   or Enter on the handle goes back to growing. One value for the whole app, a display preference of this computer (localStorage, like the
+   detail level). */
+const CSZ=window.DurbarComposerSize;
+let composerChosen=(()=>{try{return CSZ.parse(localStorage.getItem(CSZ.KEY));}catch(e){return null;}})();
+function composerLimits(t){const c=$('chat'),p=t.closest('.panel-in');return CSZ.limits({panelH:p?p.clientHeight:0,chatH:c?c.clientHeight:0,boxH:t.getBoundingClientRect().height});}
+function sizeComposer(){const t=$('msgInput');if(!t)return;const lim=composerLimits(t);let h;
+  if(composerChosen!=null)h=CSZ.clamp(composerChosen,lim);
+  else{const was=t.style.height;t.style.height='auto';h=CSZ.height({chosen:null,content:t.scrollHeight,lim});if(was===h+'px')t.style.height=was;}
+  if(t.style.height!==h+'px')t.style.height=h+'px';t.style.maxHeight=lim.max+'px';
+  const g=$('composerGrip');if(g){g.setAttribute('aria-valuenow',String(h));g.setAttribute('aria-valuemin',String(lim.min));g.setAttribute('aria-valuemax',String(lim.max));}}
+function setComposerChosen(h){composerChosen=h;try{if(h==null)localStorage.removeItem(CSZ.KEY);else localStorage.setItem(CSZ.KEY,String(h));}catch(e){}sizeComposer();}
+let cszRO=null,cszRaf=0;
+function wireComposerGrip(){const g=$('composerGrip'),t=$('msgInput');if(!g||!t)return;
+  let drag=null;
+  const boxH=()=>Math.round(t.getBoundingClientRect().height);
+  g.addEventListener('mousedown',e=>e.preventDefault()); /* the box keeps the focus and its caret */
+  g.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();drag={id:e.pointerId,y:e.clientY,h:boxH(),lim:composerLimits(t),moved:false};try{g.setPointerCapture(e.pointerId);}catch(_){}});
+  g.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;const dy=drag.y-e.clientY;if(!drag.moved&&Math.abs(dy)<2)return;
+    if(!drag.moved){drag.moved=true;g.classList.add('dragging');}composerChosen=CSZ.clamp(drag.h+dy,drag.lim);sizeComposer();});
+  const end=e=>{if(!drag||e.pointerId!==drag.id)return;const moved=drag.moved;drag=null;g.classList.remove('dragging');try{g.releasePointerCapture(e.pointerId);}catch(_){}if(moved)setComposerChosen(composerChosen);};
+  g.addEventListener('pointerup',end);g.addEventListener('pointercancel',end);
+  g.addEventListener('dblclick',e=>{e.preventDefault();setComposerChosen(null);});
+  g.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||e.isComposing)return;const r=CSZ.keyStep(e.key,boxH(),composerLimits(t));if(r==null)return;
+    e.preventDefault();e.stopPropagation();setComposerChosen(r==='reset'?null:r);});
+  /* the limits follow the window and whatever opens above the chat (Previous sessions, the answer bar); once per frame */
+  if(window.ResizeObserver){if(cszRO)cszRO.disconnect();else cszRO=new ResizeObserver(()=>{if(!cszRaf)cszRaf=requestAnimationFrame(()=>{cszRaf=0;sizeComposer();});});cszRO.observe($('chat'));}
+  sizeComposer();
+}
+function autoGrow(){sizeComposer();setSend();}
 function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a=byId(ui.selected);const busy=a&&chats[a.id]&&chats[a.id].busy;b.setAttribute('aria-disabled',String(!!busy||(!t.value.trim()&&!attached.length)));syncRunState();}
 
 function updatePanelHeader(){
@@ -1707,7 +1748,7 @@ function wireMenu(btnId,menuId){
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
-function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff,.pcmd,.pfold[hidden]'+(SIMPLE?'':',.pfold')).forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}let answerObs=null;
+function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff,.pcmd,.pfold[hidden]'+(SIMPLE?'':',.pfold')).forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */const q=n.querySelector('.q-text');return safeMask((q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,''));} /* spec 041 FR-065: the question is agent text; the answer bar, the inbox and announcements read it from here */let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
 const chatKeyText=k=>keyText(KEYS.chatParts(k,IS_MAC)), chatKeyAria=k=>ariaKeys(KEYS.chatParts(k,IS_MAC)); /* FR-084: Alt+A elsewhere, ⌥⌘A on a Mac */
@@ -1734,7 +1775,7 @@ function wireAnswerBar(a){
     const opts=[...it[0].querySelectorAll('.q-opt')],other=it[0].querySelector('.q-other'),ok=c.querySelector(':scope > .note-actions .btn.primary'),skip=c.querySelector(':scope > .note-actions .btn.danger');
     if(it[0].querySelector('.q-opts[role="group"]')||opts.length>4||!other||!ok||opts.some(o=>(o.querySelector('.q-lbl')||o).textContent.length>40))return null;
     const qt=it[0].querySelector('.q-text').cloneNode(true),tag=qt.querySelector('.tag');if(tag)tag.remove();
-    return {opts,other,ok,skip,tag:tag?tag.textContent:'',q:qt.textContent.replace(/\s+/g,' ').trim()};};
+    return {opts,other,ok,skip,tag:tag?tag.textContent:'',q:safeMask(qt.textContent.replace(/\s+/g,' ').trim())};};
   let painted='';
   function paint(){
     if(!card||cardVisible){if(painted||!bar.hidden){bar.hidden=true;bar.innerHTML='';painted='';}return;}
@@ -1764,7 +1805,10 @@ function wireAnswerBar(a){
     else if(q)add('Answer in chat','primary',show);
     /* FR-016: a long request is answered in the chat only; the wide grant (any arguments) stays in the card */
     /* FR-060: Alt+A / Alt+S / Alt+D (⌥⌘A/S/D on a Mac, FR-084) press the same buttons (permission requests only) */
-    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
+    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){
+      /* spec 003 FR-095: a Read-only denial's "Switch to Ask first…" opens the mode menu here, anchored to the bar's own button */
+      if(src.dataset.act==='ro-ask'){const b=add(src.textContent,'',()=>roAskOpen(a,b),src.title);b.dataset.act='ro-ask';b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');continue;}
+      const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
     add(q?'Show question':'Show in chat','ghost',show,q?'Scroll to the question in the chat':'Scroll to the request in the chat');
     bar.hidden=false;
     if(hadFocus){const f=act.querySelector('button,input');if(f)f.focus();}
@@ -1814,7 +1858,7 @@ async function showFolderStatus(a,chip){
   if(r&&r.value==='vscode'&&bridge.openInVSCode)openLive(a,chip);
 }
 function openPanel(id,focus){
-  const a=byId(id); if(!a)return; ui.selected=id; attached=[];
+  const a=byId(id); if(!a)return; closeSlash(); ui.selected=id; attached=[];
   noteRecentChat(a); rememberUi();
   document.body.classList.add('panel-open');
   const room=roomOf(a), parent=a.parent?byId(a.parent):null;
@@ -1833,7 +1877,7 @@ function openPanel(id,focus){
    <div class="prev" id="prev" role="region" aria-label="${SIMPLE?'Earlier chats':'Previous sessions'}" hidden>${a.live&&!a.parent?`<div class="prev-bar"><button class="prev-toggle" id="prevBtn" type="button" data-pv="toggle" aria-expanded="false" aria-controls="prevPanel" aria-keyshortcuts="${esc(ariaKeys(PREV_KEYS))}">${ICON('chev')}<span class="prev-l">${SIMPLE?'Earlier chats':'Previous sessions'}</span><span class="prev-c" hidden></span><span class="prev-sub"></span></button></div><div class="prev-panel" id="prevPanel" hidden></div>`:''}</div>
    <div id="chat" role="log" aria-live="off" aria-label="Chat with ${esc(a.name)}" tabindex="0"></div>
    <div class="answer-bar" id="answerBar" role="region" aria-label="Waiting for your answer" hidden></div>
-   <div class="composer"><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
+   <div class="composer"><div class="cgrip" id="composerGrip" role="separator" aria-orientation="horizontal" aria-label="Resize message box" aria-controls="msgInput" tabindex="0" title="Drag to resize the message box. Double-click to let it grow with your text again."></div><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
     <div class="inbox">
      <textarea id="msgInput" rows="1" placeholder="Message ${esc(a.name)}…" aria-label="Message ${esc(a.name)}"></textarea>
      ${runSlotHTML(a)}</div>
@@ -1896,9 +1940,11 @@ function openPanel(id,focus){
   const input=$('msgInput');
   fitPlaceholder();if(window.ResizeObserver){if(phRO)phRO.disconnect();else phRO=new ResizeObserver(fitPlaceholder);phRO.observe(input);}
   input.addEventListener('input',autoGrow);
+  initSlash(a,input); /* spec 073: the "/" list; its keydown runs first, so Enter / Tab / Esc pick or close while it is open */
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
+  wireComposerGrip(); /* spec 005 FR-044..FR-048 */
   renderAll(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)cur.scrollIntoView({inline:'nearest',block:'nearest'});
   if(focus!==false)$('panelTitle').focus({preventScroll:true});
 }
@@ -1908,6 +1954,117 @@ function composerHint(a){
   if(!a||!a.live)return base+' · Demo: sample data';
   const r=liveRoot(a)||a, m=MODE_NAME[((r.info||a.info)||{}).permMode];
   return base+' · '+(SIM?'Demo, no credits used':'Live '+kindWord(r.info&&r.info.adapterId))+(m?' · '+m:'');
+}
+/* ---------------- spec 073: the "/" list in the message box (an ARIA combobox with a listbox; focus stays in the box) ----------------
+   Entries come from main (agents:slashCommands: the folder's, the user's, and the app's built-ins that run when typed) or the simulator;
+   a demo chat has a few canned ones. Typing filters; ArrowUp/Down move; Tab or Enter put "/name " in the box; Esc closes the list only. */
+var SLASH=window.DurbarSlash||null; /* var: openPanel can run before this line during start-up (restored chat) */
+var SLASH_CACHE=new Map(); /* agent id -> {at, list, error} (30 s, FR-010) */
+var SLASH_ROWS=8;
+var DEMO_SLASH=[
+  {name:'review',description:'Review the changes on this branch',argumentHint:'<focus>',source:'folder',kind:'command',where:'.claude/commands/review.md'},
+  {name:'release-notes',description:'Draft release notes from the merged pull requests',source:'folder',kind:'skill',where:'.claude/skills/release-notes/SKILL.md'},
+  {name:'explain',description:'Explain a file or function in plain words',argumentHint:'<path>',source:'user',kind:'command',where:'~/.claude/commands/explain.md'},
+  {name:'compact',description:'Free up context by summarising the conversation so far',source:'app',kind:'builtin'},
+];
+var slashUi=null; /* {a, input, items, active, tok, el, loading} while the list is open */
+function slashOf(a){
+  if(!a||!SLASH)return null;
+  if(!a.live)return {list:DEMO_SLASH};
+  const r=liveRoot(a); if(!r||!r.info||!r.info.slash||!bridge.slashCommands)return null;
+  return SLASH_CACHE.get(r.id)||null;
+}
+async function fetchSlash(a){
+  const r=liveRoot(a); if(!r||!bridge.slashCommands)return;
+  const cur=SLASH_CACHE.get(r.id); if(cur&&(cur.pending||Date.now()-cur.at<30000))return;
+  SLASH_CACHE.set(r.id,{at:Date.now(),list:cur?cur.list:null,pending:true});
+  let res=null;try{res=await bridge.slashCommands(r.id);}catch(e){res={ok:false,error:String(e&&e.message||e),entries:[]};}
+  SLASH_CACHE.set(r.id,{at:Date.now(),list:res&&res.ok&&Array.isArray(res.entries)?res.entries:[],error:res&&!res.ok?res.error:null});
+  if(slashUi&&liveRoot(slashUi.a)===r)slashUpdate(true);
+}
+function slashSupported(a){return !!(window.DurbarSlash&&a&&!a.parent&&(!a.live||(liveRoot(a).info&&liveRoot(a).info.slash&&bridge.slashCommands)));}
+function initSlash(a,input){
+  if(!slashSupported(a))return;
+  input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-expanded','false');input.setAttribute('aria-controls','slashList');
+  input.addEventListener('keydown',e=>slashKey(e,a,input));
+  input.addEventListener('input',()=>{if(!input.dataset.composing)slashUpdate();});
+  input.addEventListener('compositionstart',()=>{input.dataset.composing='1';});
+  input.addEventListener('compositionend',()=>{delete input.dataset.composing;slashUpdate();});
+  input.addEventListener('click',()=>slashUpdate());
+  input.addEventListener('keyup',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'||e.key==='Home'||e.key==='End')slashUpdate();});
+  input.addEventListener('blur',()=>{setTimeout(()=>{if(slashUi&&document.activeElement!==slashUi.input)closeSlash();},0);});
+}
+function closeSlash(){
+  const u=slashUi; slashUi=null;
+  const el=document.getElementById('slashList'); if(el)el.remove();
+  if(u&&u.input){u.input.setAttribute('aria-expanded','false');u.input.removeAttribute('aria-activedescendant');}
+}
+/* open, refilter or close the list for the word at the caret (FR-008) */
+function slashUpdate(refetched){
+  const input=$('msgInput'); const a=byId(ui.selected);
+  if(!input||!a||!slashSupported(a)||input.dataset.composing){closeSlash();return;}
+  const tok=SLASH.tokenAt(input.value,input.selectionStart);
+  if(!tok||input.selectionStart!==input.selectionEnd){closeSlash();return;}
+  if(a.live)fetchSlash(a);
+  const src=slashOf(a), loading=!src||!src.list;
+  const items=loading?[]:SLASH.filter(src.list,tok.query);
+  const opening=!slashUi;
+  const keep=slashUi&&slashUi.tok.query===tok.query&&slashUi.items[slashUi.active]?slashUi.items[slashUi.active].name:null; /* a new query starts at the first match */
+  slashUi={a,input,items,tok,loading,active:Math.max(0,keep?items.findIndex(x=>x.name===keep):0)};
+  if(slashUi.active<0)slashUi.active=0;
+  drawSlash(src);
+  if(opening||refetched)announce(loading?'Looking for commands…':items.length?items.length+(items.length===1?' command':' commands')+'. Arrow keys to choose, Tab to insert.':(tok.query?'No matching commands':'No commands for this agent app here'));
+}
+function drawSlash(src){
+  const u=slashUi; if(!u)return;
+  let el=document.getElementById('slashList');
+  if(!el){el=document.createElement('div');el.id='slashList';el.className='mode-menu slash-list';el.setAttribute('role','listbox');
+    el.addEventListener('mousedown',e=>e.preventDefault()); /* the box keeps the focus */
+    el.addEventListener('click',e=>{const o=e.target.closest('[role="option"]');if(!o||!slashUi)return;slashUi.active=+o.dataset.i;slashPick();});
+    document.body.appendChild(el);}
+  const app=kindWord(liveRoot(u.a)&&liveRoot(u.a).info&&liveRoot(u.a).info.adapterId);
+  el.setAttribute('aria-label',(u.a.live?app:'Demo')+' commands');
+  const err=src&&src.error?`<p class="sl-empty" role="presentation">Could not list commands: ${esc(DurbarCutText.cutText(src.error,120))}</p>`:'';
+  el.innerHTML=u.loading?'<p class="sl-empty" role="presentation">Looking for commands…</p>'
+    :u.items.length?u.items.map((x,i)=>SLASH.optionHtml(x,i,i===u.active,slashTip(x))).join('') /* escaped in slashsuggest.js (FR-008) */
+    :err||`<p class="sl-empty" role="presentation">${u.tok.query?'No matching commands':'No commands for this agent app here'}</p>`;
+  u.input.setAttribute('aria-expanded','true');
+  if(u.items.length)u.input.setAttribute('aria-activedescendant','slashOpt-'+u.active);else u.input.removeAttribute('aria-activedescendant');
+  placeSlash(el,u.input);
+  const act=document.getElementById('slashOpt-'+u.active); if(act)act.scrollIntoView({block:'nearest'});
+}
+/* FR-008 (review on PR 535): the row's tooltip has what an ellipsis may cut: the full name, the description and the place (a data
+   tooltip, at most 300 characters) */
+function slashTip(x){
+  const place=x.source==='app'?'Built-in command of the agent app':x.where?'Sends the text of '+x.where:'';
+  return DurbarCutText.cutText(['/'+x.name,x.description,place].filter(Boolean).join('\n'),300);
+}
+/* a menu (--menu-w, design-rules.md) above the message box at its left edge, at most 8 rows (the rest scroll inside), never over the
+   box (SC-003) */
+function placeSlash(el,input){
+  const box=input.closest('.inbox')||input, br=box.getBoundingClientRect(), panel=$('panel'), pr=panel?panel.getBoundingClientRect():{top:8};
+  const row=el.querySelector('.sl-opt'), rh=row?row.getBoundingClientRect().height:40;
+  const room=Math.max(rh+12,br.top-Math.max(8,pr.top)-12);
+  el.style.maxHeight=Math.min(room,Math.ceil(rh*SLASH_ROWS+10))+'px'; /* 8 rows, the padding and the border */
+  placeMenu(el,br.left,br.bottom+6,box);
+}
+function slashKey(e,a,input){
+  if(!slashUi||e.isComposing)return;
+  const u=slashUi, n=u.items.length;
+  if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeSlash();return;}
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){if(!n)return;e.preventDefault();e.stopImmediatePropagation();u.active=(u.active+(e.key==='ArrowDown'?1:n-1))%n;drawSlash(slashOf(a));return;}
+  if((e.key==='Tab'&&!e.shiftKey&&!e.altKey&&!e.ctrlKey&&!e.metaKey)||(e.key==='Enter'&&!e.shiftKey&&!e.altKey&&!e.ctrlKey&&!e.metaKey)){
+    if(!n){if(e.key==='Tab'){closeSlash();}return;} /* nothing to pick: Tab moves on, Enter sends as typed */
+    e.preventDefault();e.stopImmediatePropagation();slashPick();
+  }
+}
+function slashPick(){
+  const u=slashUi; if(!u||!u.items[u.active])return;
+  const end=u.tok.start+1+u.tok.query.length;
+  const r=SLASH.insert(u.input.value,u.tok.start,end,u.items[u.active].name);
+  u.input.value=r.value; u.input.setSelectionRange(r.caret,r.caret);
+  closeSlash(); autoGrow(); u.input.focus({preventScroll:true});
+  announce('Inserted /'+u.items[u.active].name);
 }
 /* ---------------- spec 005 FR-037..FR-042: the composer toolbar and the one Send / Stop slot ----------------
    The chips that set how the next message runs sit in a row under the message box (VS Code style); the header keeps who and what.
@@ -1977,11 +2134,11 @@ function syncRunState(){
   const was=RUN_SAID.id===a.id?RUN_SAID.run:null; RUN_SAID.id=a.id; RUN_SAID.run=run;
   if(was!==null&&was!==run){announce(run?'Working…':RUN_SAID.stopped?'Stopped':'Reply finished');RUN_SAID.stopped=false;} /* a new turn forgets an earlier Stop */
 }
-/* the mode, model, profile and context menus: below their chip, or above it when the chip sits in the composer toolbar (FR-037) */
+/* the mode, model, profile and context menus: below their chip, or above it when the chip sits in the composer toolbar (FR-037); spec 073's "/" list too */
 function placeMenu(m,x,y,anchor){
   const r=m.getBoundingClientRect();
   let py=y;
-  if(anchor&&anchor.closest&&anchor.closest('#cToolbar')&&document.contains(anchor)){const ar=anchor.getBoundingClientRect();py=ar.top-r.height-6;if(py<8)py=y;}
+  if(anchor&&anchor.closest&&anchor.closest('#cToolbar,#panel .composer')&&document.contains(anchor)){const ar=anchor.getBoundingClientRect();py=ar.top-r.height-6;if(py<8)py=y;}
   const px=Math.max(8,Math.min(x,innerWidth-r.width-8));py=Math.max(8,Math.min(py,innerHeight-r.height-8));
   m.style.left=px+'px';m.style.top=py+'px';
   return {px,py};
@@ -2055,7 +2212,7 @@ function wireToolbar(){
   ctObs={res,mut};
   fitToolbar();
 }
-function closePanel(){
+function closePanel(){closeSlash();
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
   renderAll();
@@ -2333,6 +2490,8 @@ function paintInbox(focusIndex){
     const kOf=src=>src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
     if(card&&!q)for(const src of [...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>RANK[kOf(x)]-RANK[kOf(y)])){
       const k=kOf(src);
+      /* spec 003 FR-097: the Read-only denial's "Switch to Ask first…" opens the same mode menu, from the chat (the inbox is modal) */
+      if(src.dataset.act==='ro-ask'){add(src.textContent,'',k,()=>{closeInbox();openPanel(a.id,true);requestAnimationFrame(()=>{if(!src.isConnected)return;src.focus({preventScroll:true});src.click();});},src.title);ans.lastElementChild.setAttribute('aria-haspopup','menu');continue;}
       add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],k,ev=>{const word=k==='deny'?'Denied':k==='other'?src.textContent:'Allowed';
         /* spec 052 FR-047/FR-048: the row's buttons go busy, then the row shows the answer for 600ms, folds away in 200ms, then the list repaints */
         if(row.classList.contains('settled')||row.dataset.answering)return; row.dataset.answering='1';
@@ -2652,7 +2811,7 @@ async function renderAwayStrip(){
   const missed=Array.isArray(s.missed)?s.missed:[];
   el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>Since you were away</b> ('+esc(awayWords(s.awayMs))+'): '+
     (missed.length?(missed.length===1?'1 scheduled prompt':missed.length+' scheduled prompts')+' did not run while the app was closed.':'nothing was scheduled while the app was closed.')+
-    '</span>'+(missed.length?'<span class="aw-list">'+missed.map(m=>'<span class="aw-it" data-sched="'+esc(m.id)+'"><span class="aw-w"><b>'+esc(m.folderName)+'</b>: “'+esc(m.prompt)+'”'+(m.repeats?' <small>(runs again as planned)</small>':'')+'</span>'+(bridge.runScheduleNow?'<button class="btn" type="button" data-awrun="'+esc(m.id)+'">Run missed now</button>':'')+'</span>').join('')+'</span>':'')+
+    '</span>'+(missed.length?'<span class="aw-list">'+missed.map(m=>'<span class="aw-it" data-sched="'+esc(m.id)+'"><span class="aw-w"><b>'+esc(m.folderName)+'</b>: “'+esc(safeExcerpt(m.prompt,80,''))+'”'+(m.repeats?' <small>(runs again as planned)</small>':'')+'</span>'+(bridge.runScheduleNow?'<button class="btn" type="button" data-awrun="'+esc(m.id)+'">Run missed now</button>':'')+'</span>').join('')+'</span>':'')+
     '<span class="ns-act"><button class="btn" type="button" data-aw="close">Dismiss</button></span>';
   el.hidden=false;
   el.querySelector('[data-aw="close"]').onclick=()=>{el.hidden=true;el.innerHTML='';if(bridge.dismissSinceAway)bridge.dismissSinceAway().catch(()=>{});scheduleRender();};
@@ -2682,7 +2841,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -2903,7 +3062,7 @@ function addLiveAgent(info){
   let room=LIVE.rooms.find(r=>r.path===info.cwd);
   if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.label||info.roomName||info.name),folderName:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],floor:info.floor||'ground',hidden:!!info.hidden,closed:!!info.closed||CLOSED_Q.includes(info.roomName||info.name)};LIVE.rooms.push(room);}
   let name=info.name; const dup=LIVE.agents.filter(x=>!x.parent&&x.room===room.id&&x.baseName===info.name).length; if(dup)name=info.name+' #'+(dup+1);
-  LIVE.agents.push({id:info.id,name:SN().displayName(info.alias,info.title,name),alias:info.alias,folderLabel:name,title:info.title,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':null,task:info.lazy?(info.resumeLast?'Your last session here. It continues when you open it.':'Saved folder. A session starts with your first message.'):'Ready. Send a message to start.',
+  LIVE.agents.push({id:info.id,name:SN().displayName(info.alias,safeMask(info.title)||undefined,name),alias:info.alias,folderLabel:name,title:safeMask(info.title)||undefined,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':null,task:info.lazy?(info.resumeLast?'Your last session here. It continues when you open it.':'Saved folder. A session starts with your first message.'):'Ready. Send a message to start.',
     look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false,pend:new Map(),settled:new Set(),grants:[]});
   if(!demoOn){if(!ui.expanded)ui.expanded={};renderFilter();scheduleRender();loadUsageBaseline();}
   if(pendingOpen===info.id){pendingOpen=null;if(!demoOn)openPanel(info.id,false);}
@@ -3025,7 +3184,7 @@ const EV=window.DurbarEditView;
 /* the card's task line for a tool start: "Editing app.js" for a file edit (FR-020), else "<tool> <label>" as before */
 function toolTask(e,folder,max){const lbl=editLabel(e)||toolLabel(e.args);
   if(toolKind(e.tool)==='edit'&&lbl&&!e.mcpServer)return SHORT((e.edit?EV.summary(e.edit,{running:true,simple:SIMPLE,folder}).text:'Editing '+EV.displayPath(lbl,folder).name),max);
-  return e.tool+(lbl?' '+SHORT(lbl,max):'');}
+  return e.tool+(lbl?' '+safeToolLabel(e.tool,lbl,max):'');} /* FR-065: a command through maskSecretCommand, a URL through maskSecretUrl (the way LIVEACT masks it) */
 /* FR-024: the adapters mask before sending; the page masks again with the same module when it is loaded (window.DurbarRedact) */
 const edRed=t=>{const R=window.DurbarRedact;try{return R&&typeof R.redact==='function'?R.redact(t):t;}catch(_){return t;}};
 const editLabel=e=>e&&e.edit&&Array.isArray(e.edit.files)&&e.edit.files[0]?String(e.edit.files[0].path||''):'';
@@ -3179,7 +3338,7 @@ function subBlock(s,T){
   v.paint=()=>{
     el.classList.toggle('running',s.status==='running');el.classList.toggle('failed',s.status==='failed');el.classList.toggle('done',s.status==='done');
     el.querySelector('.sub-name').textContent=s.name;
-    el.querySelector('.sub-task').textContent=s.status==='running'?SHORT(plainMd(s.task||s.prompt),90):SHORT(plainMd(s.result||s.lastFinal||s.error||s.task),110);
+    el.querySelector('.sub-task').textContent=s.status==='running'?safeExcerpt(s.task||s.prompt,90):safeExcerpt(s.result||s.lastFinal||s.error||s.task,110);
     el.querySelector('.sub-st').textContent=subStatusText(s);
     el.querySelector('.sub-open').hidden=!s.card;
   };
@@ -3217,22 +3376,22 @@ function onSubEvent(a,e){
   subPaint(s);
   /* helper card: what it is doing right now */
   if(e.type==='thinking')setState(card,'thinking',null);
-  else if(e.type==='output')setState(card,'working',null,e.final?SHORT(plainMd(e.text),100):undefined);
+  else if(e.type==='output')setState(card,'working',null,e.final?safeExcerpt(e.text,100):undefined);
   else if(e.type==='toolCall'&&e.phase==='start'){setState(card,'working',null,toolTask(e,s.parent&&s.parent.info&&s.parent.info.cwd,80));}
-  else if(e.type==='status'&&e.intent)setState(card,'working',null,SHORT(e.intent,100));
+  else if(e.type==='status'&&e.intent)setState(card,'working',null,safeExcerpt(e.intent,100));
   if(ui.selected===card.id)updatePanelHeader();
 }
 function onSubagent(a,e){
   const s=subRec(a,e.subagentId), card=s.card;
-  if(e.name)s.name=e.name; if(e.model)s.model=e.model; if(e.agentName)s.agentName=e.agentName;
+  if(e.name)s.name=safeMask(e.name)||s.name; if(e.model)s.model=e.model; if(e.agentName)s.agentName=safeMask(e.agentName)||''; /* spec 041 FR-065 */
   if(e.task&&e.phase==='started')s.task=e.task;
   if(e.durationMs)s.durationMs=e.durationMs; if(e.totalTokens)s.tokens=e.totalTokens; if(e.totalToolCalls!=null)s.tools=Math.max(s.tools,e.totalToolCalls);
   card.name=s.name;card.role=s.agentName?'Helper · '+s.agentName:'Helper';
   if(e.phase==='started'){s.status='running';setState(card,'working',null,s.task||'Working');}
   else{
     s.t1=Date.now();
-    if(e.phase==='failed'){s.status='failed';s.error=e.error||e.task||'Failed';setState(card,'error',null,SHORT(s.error,100));}
-    else{s.status='done';setState(card,'done','Done',SHORT(plainMd(s.result||s.task),100));}
+    if(e.phase==='failed'){s.status='failed';s.error=e.error||e.task||'Failed';setState(card,'error',null,safeExcerpt(s.error,100));}
+    else{s.status='done';setState(card,'done','Done',safeExcerpt(s.result||s.task,100));}
     s.views.forEach(v=>{tEnd(v.T,{note:false});});
     subCollapse(s);
   }
@@ -3246,14 +3405,14 @@ function onTaskTool(a,e){
     const g=e.args||{};
     if(g.prompt&&!s.prompt)s.prompt=String(g.prompt);
     if(g.description&&!s.task)s.task=String(g.description);
-    if(g.agent_type&&!s.agentName)s.agentName=String(g.agent_type);
-    if(s.name==='Sub-agent'&&s.task)s.name=SHORT(s.task,40);
+    if(g.agent_type&&!s.agentName)s.agentName=safeMask(String(g.agent_type))||''; /* spec 041 FR-065 */
+    if(s.name==='Sub-agent'&&s.task)s.name=SHORT(safeMask(s.task),40);
   } else {
     if(e.phase==='complete'&&e.output)s.result=String(e.output);
     if(e.phase==='failed'){s.status='failed';s.error=String(e.output||'Failed');}
     else if(s.status==='running'){s.status='done';}
     s.views.forEach(v=>tEnd(v.T,{note:false}));
-    if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',SHORT(plainMd(s.result||s.error||s.task),100));
+    if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',safeExcerpt(s.result||s.error||s.task,100));
     subCollapse(s);
   }
   subPaint(s);scheduleRender();
@@ -3292,14 +3451,34 @@ function closeTurn(a){
   a.turn=null;
 }
 function setState(a,state,label,task){
+  if(typeof task==='string')task=taskMask(task); /* spec 041 FR-065: backstop, whatever path built the line (the helper masks before cutting; this one cannot repair a cut token) */
   const ch=a.state!==state||(label!==undefined&&a.label!==label)||(task!==undefined&&a.task!==task);
   a.state=state; if(label!==undefined)a.label=label; if(task!==undefined)a.task=task;
+  if(SIM&&task!==undefined)(window.__taskLog=window.__taskLog||[]).push(a.task); /* simulator only: every task line ever stored, for the FR-065 driver (a line is often replaced at once) */
   if(state==='working'||state==='thinking'){if(!a.busySince)a.busySince=Date.now();}else if(state==='done'||state==='idle')a.busySince=null; /* spec 001 FR-047: time on task */
   if(ch&&a.live&&a.info&&a.info.modelControl&&a.info.modelControl.compact&&!a.parent)updateCtxChip(a); /* the Compact button is greyed while the agent works */
   if(ch)scheduleRender();
 }
-const plainMd=t=>String(t==null?'':t).replace(/```[\s\S]*?```/g,' code ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
 const SHORT=(v,n)=>DurbarCutText.cutText(v,n);
+const RED=!NO_REDACT&&window.DurbarRedact&&typeof window.DurbarRedact.redact==='function'?window.DurbarRedact:null;
+const STX=window.DurbarSafeText; /* if safetext.js did not load the page still draws, and shows no agent text */
+const SAFE=STX?STX.create({redact:RED?t=>RED.redact(t):null,cut:SHORT}):{ready:false,mask:()=>'',excerpt:(t,n,fb)=>t?(fb==null?'Finished.':fb):''}; /* spec 041 FR-065: agent text is masked on the raw text, then made plain, then cut; no redact module: neutral words, never the raw text */
+const safeExcerpt=(t,n,fb)=>SAFE.excerpt(t,n,fb),safeMask=t=>SAFE.mask(t);
+/* the tool label of a task line, masked the way the live readout (LIVEACT) masks it: a command by maskSecretCommand, a URL by maskSecretUrl, else redact; then cut */
+const TOOLMASK=RED?{redact:t=>RED.redact(t),cmd:t=>RED.maskSecretCommand(t),url:t=>RED.maskSecretUrl(t)}:{};
+const safeToolLabel=(tool,l,n)=>{const m=STX?STX.maskLabel(l,toolKind(tool),TOOLMASK):'';return m?SHORT(m,n):'';};
+/* setState's backstop (FR-065): the task text is masked. With no redact module only Durbar's own fixed words stay (agent text is blanked) */
+const FIXED_TASK=new Set(['Ready','Thinking','Working','Finished.','Waiting for permission','Waiting for your OK on a plan','The agent asks you a question','Stopped. Ready for your next message.','Signed in again. Ready for your message.','Session ended. Send a message to resume it.','Ready. Send a message to start.','Plan rejected. Nothing was changed.','Continuing your last session…','Your last session here. It continues when you open it.']);
+const FIXED_TASK_FORMAT=/^Stopped at \$?[\d.,]+( AIU)?\. (Raise the limit to go on|Ready for your next message)\.$/; /* Durbar's own limit lines, whole string: a prefix alone would let agent text through */
+/* a permission line from an adapter ("Waiting for permission: run <command>", "Allowed: fetch <url>", ...): the part after the verb is a command or a URL, masked like a tool label (--api-key K, ?key=K) */
+const PERM_LINE=/^(Waiting for permission|Denied \(read-only mode\)|Allowed for this session|Allowed|Approved|Denied): (run|fetch|write|edit|read|mcp)\b ?([\s\S]*)$/;
+const taskMask=t=>{
+  if(!SAFE.ready)return FIXED_TASK.has(t)||FIXED_TASK_FORMAT.test(t)?t:(/^Waiting for permission\b/.test(t)?'Waiting for permission':'');
+  const p=PERM_LINE.exec(t);
+  if(p){const rest=STX?STX.maskLabel(p[3],p[2]==='run'?'run':'tool',TOOLMASK):'';return p[1]+': '+p[2]+(rest?' '+rest:'');}
+  return SAFE.mask(t);};
+/* a working or error intent: masked and plain through the helper (a permission line is left to taskMask, which keeps its command's own characters) */
+const intentText=t=>typeof t!=='string'||!t||PERM_LINE.test(t)?t:(SAFE.ready?SAFE.excerpt(t,null,''):t);
 const toolArg=args=>!args||typeof args!=='object'?'':String(args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'');
 function toolLabel(args){return toolArg(args).replace(/\s+/g,' ').slice(0,400);}
 /* spec 052 FR-063: the whole argument as written (line breaks kept), for the open chip; at most 20000 characters */
@@ -3446,7 +3625,7 @@ function showQuestion(a,e){
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st};
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce(a.name+' asks: '+((qs[0]&&qs[0].question)||'a question'));renderInboxBtn();
+  announce(a.name+' asks: '+(safeMask((qs[0]&&qs[0].question)||'')||'a question'));renderInboxBtn();
 }
 /* ---------- MCP elicitation (spec 012 FR-151): a form in the question card, or an https page opened only after a click.
    Text only, never HTML; values are never logged or shown afterwards. Main checks the answer again before the agent gets it. ---------- */
@@ -3550,7 +3729,7 @@ function showElicitation(a,e){
   n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st,elicit:isUrl?'url':'form'};
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce(a.name+': '+(R.source?R.source+' ':'an MCP server ')+(isUrl?'asks you to open a page on '+(R.host||'the web'):'asks for input')+'. '+SHORT(R.message||'',160));renderInboxBtn();
+  announce(a.name+': '+(R.source?R.source+' ':'an MCP server ')+(isUrl?'asks you to open a page on '+(R.host||'the web'):'asks for input')+'. '+safeExcerpt(R.message||'',160,''));renderInboxBtn();
 }
 function settleQuestion(a,answers,action){
   const Q=a.question;if(!Q)return;a.question=null;
@@ -3694,8 +3873,8 @@ function showPerm(a,p){
   if(pl&&pl.cmd){const d=document.createElement('details');d.className='pcmd';const sm=document.createElement('summary');sm.textContent='Show the command';
     const pre=document.createElement('pre');pre.textContent=pl.cmd;d.append(sm,pre);n.appendChild(d);}
   const st=n.querySelector('.pstate');
-  if(p.state==='denied'){st.innerHTML=' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
-    roAskHint(a,n);
+  if(p.state==='denied'){ /* spec 003 FR-094: with the button the text no longer repeats the suggestion */
+    st.innerHTML=roAskHint(a,n)?' <i>(denied: this agent is in Read-only)</i>':' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
   }
   else if(p.state==='pending'){
     const row=document.createElement('div');row.className='note-actions';
@@ -3715,16 +3894,42 @@ function showPerm(a,p){
   if(p.state==='pending')announce(SIMPLE&&pl?plain:a.name+' needs your OK: '+p.summary);
   renderInboxBtn();
 }
-/* spec 052 FR-074: under a request denied by Read-only, one inline "Switch this agent to Ask first", once per agent until its mode
-   changes. It goes through the usual mode-change path (changeMode), with its dialogs. */
+/* spec 003 FR-094..FR-096 (owner 2026-10-23, supersedes spec 052 FR-074's button): under a request denied by Read-only, one button
+   "Switch to Ask first…" per agent, on its newest denial (a newer one moves it). It opens the usual mode menu (openModeMenu, modes only),
+   anchored to it; a choice goes through changeMode with its dialogs. Returns true when the button is shown. */
 function roAskHint(a,n){
-  if(!a.info||a.info.permMode!=='read-only'||a.roHintShown||!bridge.setPermMode||!feat(a,'modes'))return;
-  a.roHintShown=true;
-  const row=document.createElement('div');row.className='note-actions';
-  const b=document.createElement('button');b.type='button';b.className='btn';b.dataset.act='ro-ask';b.textContent='Switch this agent to Ask first';
-  b.title='Ask first: each edit, command or web request waits for your OK.';
-  b.onclick=async()=>{b.disabled=true;await changeMode(a,'ask',b);if(a.info.permMode==='ask')row.remove();else b.disabled=false;};
-  row.appendChild(b);n.appendChild(row);
+  if(!a.info||a.info.permMode!=='read-only'||!bridge.setPermMode||!feat(a,'modes'))return false;
+  /* spec 003 FR-098 hook: when a managed policy (spec 076, not built) locks the mode, return false here so the plain text stays. */
+  let h=a.roHint;
+  if(!h||!h.b){
+    const row=document.createElement('div');row.className='note-actions';
+    const b=document.createElement('button');b.type='button';b.className='btn';b.dataset.act='ro-ask';b.textContent='Switch to Ask first…';
+    b.title='Choose a permission mode. Ask first: each edit, command or web request waits for your OK.';
+    b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');
+    b.onclick=()=>roAskOpen(a,b);
+    row.appendChild(b);h=a.roHint={row,b};
+  }
+  n.appendChild(h.row);
+  return true;
+}
+/* the button (or its copy in the answer bar) opens the mode menu anchored to itself; a second press closes it */
+function roAskOpen(a,b){
+  if(document.getElementById('modeMenu')&&b.getAttribute('aria-expanded')==='true'){closeModeMenu();b.focus();return;}
+  const r=b.getBoundingClientRect();if(openModeMenu(a,r.left,r.bottom+4,b,{modesOnly:true}))b.setAttribute('aria-expanded','true');
+}
+/* spec 003 FR-096: after a switch out of Read-only the button goes; when the switch came from it, one line says to ask the agent again
+   (no Retry: a denied tool call has no safe retry, and nothing is resent) and focus moves to the message box */
+function roAskAfterSwitch(a,mode,anchor){
+  const h=a.roHint; if(!h||mode==='read-only')return;
+  a.roHint=null;
+  const note=h.row.parentNode, mine=!!(anchor&&anchor.dataset&&anchor.dataset.act==='ro-ask'); /* the chat's button or its answer-bar copy */
+  h.row.remove();
+  if(!mine||!note)return;
+  const l=document.createElement('p');l.className='ro-done';
+  l.textContent='Now in '+MODE_NAME[mode]+'. Ask '+a.name+' to try again: '+(mode==='allow'?'it will run without asking.':'it will wait for your OK.');
+  note.appendChild(l);
+  announce(l.textContent); /* focus moves to the message box, so a screen reader hears the line here (review on PR 622) */
+  const mi=$('msgInput');if(mi&&ui.selected&&liveRoot(byId(ui.selected)||a)===a)mi.focus({preventScroll:true});
 }
 function settlePerm(a,p){
   let e=a.pend.get(p.requestId);
@@ -3797,6 +4002,8 @@ async function revokeAllGrants(){
 const STATS=window.DurbarStats.createStats();
 let statsRefresh=0;
 function feedStats(a,e){
+  /* spec 058 FR-083: Settings' live MCP list follows a chat that stops or becomes ready again */
+  if(e.type==='status'&&(e.status==='stopped'||e.status==='idle')&&!e.agentId&&window.DurbarScreens.liveEvent)window.DurbarScreens.liveEvent(a.id);
   /* sub-agent events are counted for the agent that owns them (a.id is the session) */
   if(e.type==='toolCall')STATS.recordTool(a.id,e);
   else if(e.type==='usage')STATS.recordModel(a.id,e.model);
@@ -3828,7 +4035,8 @@ function updateCtxChip(a){
 /* A main agent's session title from the runtime (issue #126): shown instead of the folder name everywhere a.name is shown;
    the folder stays in the room header and in the tooltip. Sub-agents keep their own names. */
 function applyTitle(a,title){
-  if(typeof title!=='string'||!title||a.title===title)return;
+  if(typeof title!=='string'||!title)return;
+  title=safeMask(title); if(!title||a.title===title)return; /* spec 041 FR-065: a runtime title is agent text and becomes the agent's name; no mask: the folder name stays */
   a.title=title; repaintName(a);
 }
 /* spec 059: the display name is the user's name, else the runtime's title, else the folder label (FR-001); the tooltip never shows the runtime title once the user named the session (FR-003) */
@@ -3887,9 +4095,9 @@ function onLiveEvent(e){
       if(e.status==='working'||e.status==='stopped'||e.status==='idle'||e.status==='error'){endCoffee(a,e.status==='working'||wentOn?'the agent went on':e.status==='error'?'an error':'stopped');if(wentOn)a.worked=true;}
     }
     if(e.status==='working'){a.worked=true; const tt=ensureTurn(a); if(e.intent){a.intent=e.intent;if(!/^(Thinking|Approved|Allowed|Denied|Waiting for permission)/.test(e.intent))tIntent(tt.T,e.intent);}
-      if(a.state!=='working'&&a.state!=='thinking')setState(a,'working',null,e.intent||a.task); else if(e.intent)setState(a,a.state,undefined,e.intent);}
+      if(a.state!=='working'&&a.state!=='thinking')setState(a,'working',null,intentText(e.intent)||a.task); else if(e.intent)setState(a,a.state,undefined,intentText(e.intent));}
     else if(e.status==='needs-permission'){
-      ensureTurn(a); setState(a,'waiting',null,e.intent||'Waiting for permission');
+      ensureTurn(a); setState(a,'waiting',null,intentText(e.intent)||'Waiting for permission');
       if(e.permission)showPerm(a,e.permission);
     }
     else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');if(a.question)settleQuestion(a,null,'cancel');if(a.pendingProfile){const n=a.pendingProfile.name;a.pendingProfile=undefined;updateAgentChip(a);addNote(chat,'The waiting switch to the agent '+esc(n)+' was dropped when you stopped the reply.');}const was=a.worked;a.worked=false;closeTurn(a);
@@ -3899,12 +4107,12 @@ function onLiveEvent(e){
       if(a.pendingModel){const nm=a.pendingModel.name;a.pendingModel=undefined;updateModelChip(a);addNote(chat,'The queued switch to '+esc(nm)+' was dropped when you stopped the reply. Choose it again if you still want it.');}
       setState(a,'idle',null,'Stopped. Ready for your next message.');}
     else if(e.status==='idle'){const was=a.worked;a.worked=false;closeTurn(a);if(a.pendingProfile){const p=a.pendingProfile;a.pendingProfile=undefined;applyProfile(a,p);}
-      if(was)setState(a,'done','Done',a.lastOutput?SHORT(plainMd(a.lastOutput),140):'Finished.'); else setState(a,'idle',null,a.task);
+      if(was)setState(a,'done','Done',a.lastOutput?safeExcerpt(a.lastOutput,140):'Finished.'); else setState(a,'idle',null,a.task);
       updateCtxChip(a);maybeSuggestFresh(a);
       /* a queued switch applies when the turn ends (its model event follows at once); if none came, do not leave "Next: ..." standing */
       if(a.pendingModel){const p=a.pendingModel;setTimeout(()=>{if(a.pendingModel===p){a.pendingModel=undefined;updateModelChip(a);}},2000);}}
     else if(e.status==='error'&&e.errorKind==='auth'){closeTurn(a);a.worked=false;markKindSignedOut(kindOf(a));showSignInCard(a,{detail:e.intent||''});setState(a,'error',null,kindWord(kindOf(a))+' needs you to sign in again.');} /* spec 012 FR-157 */
-    else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,SHORT(e.intent||'Error',140));}
+    else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,safeExcerpt(e.intent||'Error',140,'Error'));}
     else if(e.status==='stopped'){
       if(a.limit)settleLimit(a,'cancel');
       /* a permission still pending when the session stops is denied cleanly: no Approve/Deny left behind, grants gone */
@@ -3940,7 +4148,7 @@ function onLiveEvent(e){
   case 'toolCall':{const t=ensureTurn(a);
     if(isTaskTool(e.tool)||(t.T.chipEls[e.callId]===undefined&&a.subs&&a.subs.has(e.callId)))onTaskTool(a,e);
     else tTool(t.T,e);
-    if(e.phase==='start'&&!isTaskTool(e.tool)&&!a.coffee)setState(a,a.state==='thinking'?'working':a.state,null,a.intent||toolTask(e,a.info&&a.info.cwd,90));
+    if(e.phase==='start'&&!isTaskTool(e.tool)&&!a.coffee)setState(a,a.state==='thinking'?'working':a.state,null,intentText(a.intent)||toolTask(e,a.info&&a.info.cwd,90));
     stickyScroll(chat);return;}
   case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
     a.usageText=usageLong(a);recordUsage(a,e);scheduleRender();
@@ -3968,7 +4176,9 @@ async function sendLive(text,forId,opts){
   if(a.planNext){a.planNext=false;renderAttached();}
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
-  if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
+  if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
+  else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(r.slash,160))+'</code> (the agent app does not load it in Durbar’s sessions).'+(r.slashNote?' '+esc(DurbarCutText.cutText(r.slashNote,200)):'')); /* spec 073 FR-005; slashNote: a VS Code prompt file */
+  else if(r.slashNote)addNote(chat,esc(DurbarCutText.cutText(r.slashNote,240))); /* spec 073 (review on PR 615): over the size cap, sent as typed */
 }
 /* spec 012 FR-087 (owner 2026-10-20, option c): a refusal of Read-only / Ask first (Codex's sandbox could not start, or Codex cannot
    limit reads) never suggests a mode in its text; a "Change mode…" button opens the usual mode menu, with every mode and its help */
@@ -4059,17 +4269,18 @@ function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRes
   const fr=a.info.folderRules?' + folder rules':'';
   if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m]+fr)}</span>`; /* spec 052 FR-065 */
   return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
-function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
-function openModeMenu(a0,x,y,anchor){
+function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');document.querySelectorAll('[data-act="ro-ask"][aria-expanded="true"]').forEach(b=>b.setAttribute('aria-expanded','false'));}}
+function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the three modes and the note, without Model, Plan first, folder setup or card actions */
   const a=liveRoot(a0); if(!a||!a.live)return false;
   /* spec 005 FR-017: Stop and End session for a main agent opened from its card (not from the chat header chip) */
-  const ops=anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&bridge.stop?DMK().cardMenuActions(a,capsFor(a)):{stop:null,end:null};
-  const canRen=!!(anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&canRenameSession(a)); /* spec 059 FR-006: Rename… in the card menu */
+  const only=!!(o&&o.modesOnly);
+  const ops=!only&&anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&bridge.stop?DMK().cardMenuActions(a,capsFor(a)):{stop:null,end:null};
+  const canRen=!only&&!!(anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&canRenameSession(a)); /* spec 059 FR-006: Rename… in the card menu */
   const hasMode=!!bridge.setPermMode&&feat(a,'modes'), hasOps=!!(ops.stop||(ops.end&&bridge.end)||canRen);
   if(!hasMode&&!hasOps)return false;
   closeModeMenu();
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
-  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}" title="${esc(MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
+  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}" title="${esc(MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
   m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)mi.focus();return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
@@ -4157,7 +4368,7 @@ async function changeModeInner(a,mode,anchor){
   }
   const res=await bridge.setPermMode(a.id,mode,opts).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
-  a.info.permMode=mode; a.info.permRestored=undefined; a.info.permFrom=undefined; a.role=roleFor(a.info); a.roHintShown=false;
+  a.info.permMode=mode; a.info.permRestored=undefined; a.info.permFrom=undefined; a.role=roleFor(a.info); roAskAfterSwitch(a,mode,anchor);
   if(opts.clearGrants)setGrants(a,[]);
   renderRestoreStrip();
   toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+(capsFor(a).permModeSwitch==='next-message'?'</b>. Applies from the next message.':'</b> from the next request.')+(mode==='allow'?' Everything runs without asking.':''),4200);
@@ -4180,32 +4391,75 @@ document.addEventListener('click',e=>{
   if(cb&&!cb.closest('#ctxMenu')){e.stopPropagation();const a=byId(ui.selected);if(a)compactDialog(liveRoot(a),cb);return;}
   const chip=e.target.closest('#modeChip');
   if(chip){e.stopPropagation();if(document.getElementById('modeMenu')){closeModeMenu();return;}const r=chip.getBoundingClientRect(),a=byId(ui.selected);if(a)openModeMenu(a,r.left,r.bottom+6,chip);return;}
-  if(!e.target.closest('#modeMenu'))closeModeMenu();
+  if(!e.target.closest('#modeMenu,[data-act="ro-ask"]'))closeModeMenu(); /* spec 003 FR-095: the Read-only denial's button toggles the menu itself */
 },true);
-/* spec 006 FR-022: folder actions on a room's header (right-click, or the context-menu key on its door), same menu element as the mode menu */
+/* spec 006 FR-022: folder actions on a room's header (right-click, or the context-menu key on its door), same menu element as the mode menu.
+   spec 033 FR-024 (issue 590): with two or more floors, "Move to floor ▸" opens a second level in the same element (‹ Back, one radio
+   item per floor, the current one ticked and disabled); the move is the Floors panel's moveRoomToFloor, then an Undo toast. */
 function openFolderMenu(r,x,y,anchor){
   if(!r||demoOn||!bridge||!bridge.removeFolder)return;
   closeModeMenu();
-  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Folder '+r.name);
-  const it=(act,label,sub,cls)=>`<button type="button" role="menuitem" data-fact="${act}"${cls?` class="${cls}"`:''}><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
-  m.innerHTML=(bridge.newSession&&anyKindReady()?it('new','New session','Another agent with its own chat here'):'')
-    +(bridge.listSchedules?it('sched','Schedules',(()=>{const n=schedulesOf(r).filter(s=>!s.done).length;return n?n+' scheduled, '+(nextRunOf(schedulesOf(r))?'next '+nextRunOf(schedulesOf(r)):'paused'):'Prompts sent here at a time, every day or at an interval';})()):'')
-    +(bridge.renameFolder?it('rename','Rename…','A display name for this room'):'')
-    +(bridge.setFolderHidden?it('hide','Hide','Out of the office; its sessions keep running'):'')
-    +it('rm','Remove folder','Ends its sessions; nothing on disk is deleted','mm-danger');
-  document.body.appendChild(m);
-  const b=m.getBoundingClientRect(); m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px'; m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
-  m.addEventListener('click',e=>{const t=e.target.closest('[data-fact]');if(!t)return;closeModeMenu();const ag=agents.find(q=>!q.parent&&q.room===r.id);
-    if(t.dataset.fact==='new'){if(ag)newSession(ag);}else if(t.dataset.fact==='sched')openSchedules(r);else if(t.dataset.fact==='rename')renameFolder(r,anchor);else if(t.dataset.fact==='hide')hideFolder(r,true);else removeFolder(r);});
-  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-fact]')],i=its.indexOf(document.activeElement);
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');
+  const it=(act,label,sub,cls,extra)=>`<button type="button" role="menuitem" data-fact="${act}"${cls?` class="${cls}"`:''}${extra||''}><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
+  const canMove=floorsLive()&&FLOORS.floors.length>1&&!!bridge.moveFolderToFloor;
+  const place=()=>{m.style.left='0px';m.style.top='0px';const b=m.getBoundingClientRect();m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';};
+  const paintTop=focusMove=>{
+    m.setAttribute('aria-label','Folder '+r.name);
+    const here=canMove&&floorById(r.floor);
+    m.innerHTML=(bridge.newSession&&anyKindReady()?it('new','New session','Another agent with its own chat here'):'')
+      +(bridge.listSchedules?it('sched','Schedules',(()=>{const n=schedulesOf(r).filter(s=>!s.done).length;return n?n+' scheduled, '+(nextRunOf(schedulesOf(r))?'next '+nextRunOf(schedulesOf(r)):'paused'):'Prompts sent here at a time, every day or at an interval';})()):'')
+      +(bridge.renameFolder?it('rename','Rename…','A display name for this room'):'')
+      +(canMove?`<button type="button" role="menuitem" data-fact="floor" aria-haspopup="menu" aria-expanded="false"><span class="mt"><b>Move to floor</b><small>${esc(here?'Now on '+here.name+'. Its agents go with it':'Its agents go with it')}</small></span><span class="ck" aria-hidden="true">▸</span></button>`:'')
+      +(bridge.setFolderHidden?it('hide','Hide','Out of the office; its sessions keep running'):'')
+      +it('rm','Remove folder','Ends its sessions; nothing on disk is deleted','mm-danger');
+    place();
+    (focusMove&&m.querySelector('[data-fact="floor"]')||m.querySelector('button')).focus();
+  };
+  const paintFloors=()=>{
+    const cur=(floorById(r.floor)||{}).id;
+    m.setAttribute('aria-label','Move '+r.name+' to floor');
+    m.innerHTML=`<button type="button" role="menuitem" data-fact="back"><span class="mt"><b>‹ Back</b></span></button>`+FLOORS.floors.map(f=>{const here=f.id===cur,n=roomsOnFloor(f.id).length;
+      return `<button type="button" role="menuitemradio" data-fact="to" data-floor="${esc(f.id)}" aria-checked="${here}"${here?' aria-disabled="true"':''}><span class="mt"><b>${esc(f.name)}</b><small>${esc(here?'Here now':(f.on?n+' folder'+(n===1?'':'s'):'Off: the folder leaves the office'))}</small></span><span class="ck">${here?'✓':''}</span></button>`;}).join('');
+    place();
+    (m.querySelector('[data-fact="to"]:not([aria-disabled="true"])')||m.querySelector('button')).focus();
+  };
+  document.body.appendChild(m);paintTop(false);
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-fact]');if(!t)return;const f=t.dataset.fact;
+    if(f==='floor'){paintFloors();return;}
+    if(f==='back'){paintTop(true);return;}
+    if(t.getAttribute('aria-disabled')==='true')return;
+    closeModeMenu();
+    if(f==='to'){moveFolderByMenu(r,t.dataset.floor,anchor);return;}
+    const ag=agents.find(q=>!q.parent&&q.room===r.id);
+    if(f==='new'){if(ag)newSession(ag);}else if(f==='sched')openSchedules(r);else if(f==='rename')renameFolder(r,anchor);else if(f==='hide')hideFolder(r,true);else removeFolder(r);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-fact]')],i=its.indexOf(document.activeElement),sub=!!m.querySelector('[data-fact="back"]');
     if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
+    else if(e.key==='ArrowRight'&&document.activeElement&&document.activeElement.dataset.fact==='floor'){e.preventDefault();paintFloors();}
+    else if(sub&&(e.key==='ArrowLeft'||e.key==='Escape')){e.preventDefault();e.stopPropagation();paintTop(true);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
-  m.querySelector('button').focus();
+}
+/* spec 033 FR-024: the menu's move is the Floors panel's (moveRoomToFloor, FR-005), then the action toast with Undo (spec 030/052) */
+async function moveFolderByMenu(r,floorId,anchor){
+  const from=(floorById(r.floor)||{}).id,to=floorById(floorId);
+  if(!to||to.id===from)return;
+  const fail=res=>{toast(esc((res&&res.error)||'Could not move the folder.'),5000).classList.add('err');};
+  const res=await moveRoomToFloor(r.id,to.id);
+  if(!res||!res.ok){fail(res);return;}
+  refocusAnchor(anchor);
+  const fromName=(floorById(from)||{}).name||'';
+  toastAction(esc(r.name)+' moved to <b>'+esc(to.name)+'</b>.'+(to.on?'':' That floor is off, so it left the office.'),'Undo',async()=>{
+    const u=await moveRoomToFloor(r.id,from);
+    if(!u||!u.ok){fail(u);return;}
+    announce(r.name+' is back on '+fromName+'.');
+  },8000); /* the toast area is a polite live region, so the move is announced once */
 }
 document.addEventListener('contextmenu',e=>{
   const h=e.target.closest('#stage .room-head');
   if(h&&!e.target.closest('.desk')){const door=h.querySelector('[data-door]'),r=door&&ROOMS.find(x=>x.id===door.dataset.door);
     if(r&&bridge&&bridge.removeFolder&&!demoOn){e.preventDefault();const b=h.getBoundingClientRect();openFolderMenu(r,e.clientX||b.left+16,e.clientY||b.bottom,door);return;}}
+  /* spec 033 FR-024: in the List view the Folder cell opens the folder menu of that row's folder; the rest of the row keeps the agent's menu */
+  const lf=e.target.closest('#list .lrow[data-id] .lfold');
+  if(lf&&bridge&&bridge.removeFolder&&!demoOn){const a=byId(lf.closest('.lrow').dataset.id),rr=a&&roomOf(a);if(rr&&ROOMS.includes(rr)){e.preventDefault();const b=lf.getBoundingClientRect();openFolderMenu(rr,e.clientX||b.left+8,e.clientY||b.bottom,lf.closest('.lrow'));return;}}
   const d=e.target.closest('.desk[data-id], .helper[data-id], .lrow[data-id]');if(!d||d.closest('#panel'))return;
   const a=byId(d.dataset.id),ra=a&&liveRoot(a);if(!ra||!ra.live)return;
   const r=d.getBoundingClientRect();
@@ -4416,14 +4670,17 @@ async function openAgentMenu(a0,x,y,anchor){
   m.innerHTML='<p class="mm-h">Profile</p><p class="mm-why" role="note">Looking for profiles…</p>';document.body.appendChild(m);
   const place=()=>placeMenu(m,x,y,anchor);place(); /* spec 005 FR-037: above a toolbar chip */
   const c=$('agentChip');if(c&&anchor===c)c.setAttribute('aria-expanded','true');
-  const r=await bridge.listProfiles(a.id).catch(err=>({ok:false,error:String(err&&err.message||err),profiles:[]}));
+  const PE=window.DurbarProfileEditor, canEdit=!!(PE&&bridge.readProfileFile&&bridge.listProfileFiles);
+  /* spec 043 FR-040: main's file list, read beside the profiles, says which files may be deleted (writable plain files) */
+  const [r,lf]=await Promise.all([bridge.listProfiles(a.id).catch(err=>({ok:false,error:String(err&&err.message||err),profiles:[]})),canEdit&&bridge.deleteProfileFile?bridge.listProfileFiles().catch(()=>null):null]);
   if(!document.body.contains(m))return;
   a.profileList=r.ok?r.profiles:a.profileList;
   const curId=a.profile?a.profile.id:null;
-  const PE=window.DurbarProfileEditor, canEdit=!!(PE&&bridge.readProfileFile&&bridge.listProfileFiles);
+  const plat=(window.agentDurbar&&window.agentDurbar.platform)||'';
+  const canDel=file=>!!(PE&&PE.samePath&&lf&&lf.files&&lf.files.some(f=>f.writable&&PE.samePath(f.path,file,plat))); /* case folded only on Windows and macOS (review on PR 572) */
   const item=(id,name,sub,tag,file)=>{const b=`<button type="button" role="menuitemradio" aria-checked="${id===curId}" data-prof="${esc(id===null?'':id)}"><span class="mt"><b>${esc(name)}${tag?' <span class="tag">'+esc(tag)+'</span>':''}</b>${sub?'<small>'+esc(sub)+'</small>':''}</span><span class="ck">${id===curId?'✓':''}</span></button>`;
     /* spec 043 FR-014: an Edit button beside a profile that has a file opens the editor (the row itself still selects) */
-    return file&&canEdit?`<div class="mm-prow">${b}<button type="button" class="mm-edit" data-edit="${esc(id)}" title="${esc('Open '+name+' in the editor')}" aria-label="${esc('Edit the file of '+name)}">Edit</button></div>`:b;};
+    return file&&canEdit?`<div class="mm-prow">${b}<button type="button" class="mm-edit" data-edit="${esc(id)}" title="${esc('Open '+name+' in the editor')}" aria-label="${esc('Edit the file of '+name)}">Edit</button>${canDel(file)?`<button type="button" class="mm-edit mm-del" data-del="${esc(id)}" title="${esc('Delete the file of '+name+' from disk')}" aria-label="${esc('Delete the file of '+name)}">Delete</button>`:''}</div>`:b;};
   let h='<p class="mm-h">Profile</p>'+item(null,'Default','The standard agent of this session','');
   if(!r.ok)h+=`<p class="mm-why" role="note">${esc(r.error||'Could not list the profiles.')}</p>`;
   else if(!r.profiles.length)h+='<p class="mm-why" role="note">No profiles found. Put agent files in <code>.github/agents/*.agent.md</code> in this folder, or in <code>~/.copilot/agents</code>.</p>';
@@ -4432,6 +4689,7 @@ async function openAgentMenu(a0,x,y,anchor){
   m.innerHTML=h;place();
   m.addEventListener('click',e=>{if(e.target.closest('button[data-newprof]')){closeAgentMenu();PE.newProfile({app:a.info&&a.info.adapterId==='claude'?'claude':'copilot',returnFocus:anchor||$('agentChip')});return;}
     const ed=e.target.closest('button[data-edit]');if(ed){const p=(a.profileList||[]).find(x=>x.id===ed.dataset.edit);closeAgentMenu();if(p&&p.path)PE.openByPath(p.path,{returnFocus:anchor||$('agentChip')});return;}
+    const dl=e.target.closest('button[data-del]');if(dl){const p=(a.profileList||[]).find(x=>x.id===dl.dataset.del);closeAgentMenu();if(p&&p.path)PE.removeByPath(p.path,{returnFocus:anchor||$('agentChip')});return;} /* spec 043 FR-040 */
     const b=e.target.closest('button[data-prof]');if(!b)return;closeAgentMenu();
     const id=b.dataset.prof||null, p=id?(a.profileList||[]).find(x=>x.id===id):{id:null,name:'Default'};if(!p)return;
     if((a.profile?a.profile.id:null)===id&&!a.pendingProfile)return;
@@ -5235,6 +5493,7 @@ function togglePrevByKey(){
 /* the two groups of Previous sessions, pinned first, hidden ones out unless shown, filtered by the title query (spec 006 FR-023..FR-027) */
 const PIN_SVG='<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false"><path d="M9.5 1.5l5 5-2 .5-2.5 2.5.5 3.5-1 1L6.5 10 3 13.5l-.5-.5L6 9.5 2.5 6l1-1 3.5.5L9.5 3z" fill="currentColor"/></svg>';
 function prevRow(x,g,k,title,sub,main,info,a){
+  title=safeMask(title)||'Session'; /* spec 041 FR-065: a session title is agent text */
   const hid=info.hidden, mark=(info.pinned?`<span class="prev-pin" title="Pinned">${PIN_SVG}<span class="sr-only">Pinned</span></span>`:'')+(hid?'<span class="tag prev-hidtag">Hidden</span>':'');
   return `<div class="prev-row${hid?' is-hidden':''}" data-pg="${g}" data-pk="${esc(k)}"><div class="prev-tx"><b title="${esc(title)}">${mark}<span class="prev-t">${esc(title)}</span></b><small>${sub}</small></div>${main}<button class="btn sm prev-more" type="button" data-pv="more" aria-haspopup="menu" aria-label="Actions for ${esc(title)}" title="${g==='cli'?'Pin, rename, hide or delete':'Pin, hide or delete'}">⋯</button></div>`;
 }
@@ -5319,7 +5578,7 @@ async function wakeLast(a){
   a.waking=false;
   if(!r||!r.ok){setState(a,'idle','Not started','Your last session here. It continues when you open it.');toast('Could not continue the last session: '+esc((r&&r.error)||'unknown error'),7000);return;}
   if(a.info){a.info.resumeLast=false;a.info.lazy=false;}
-  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,'Continued after restart');setState(a,'idle',null,'Continued: '+SHORT(r.title||'last session',90));}
+  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,'Continued after restart');setState(a,'idle',null,'Continued: '+SHORT(safeMask(r.title)||'last session',90));}
   else{if(r.resumed===false)addNote(liveChat(a),'The last session is no longer available; this is a new session.');setState(a,'idle',null,'Ready. Send a message to start.');}
   modeBackNote(a);
 }
@@ -5345,7 +5604,7 @@ async function resumePrev(a,sid,btn){
   const na=liveById(r.agent.id); if(!na)return;
   na.resumed=true; na.sent=false; replayHistory(na,r.history,r.title);
   modeBackNote(na,r.modeWas);
-  setState(na,'idle',null,'Resumed: '+SHORT(r.title||'',90));
+  setState(na,'idle',null,'Resumed: '+SHORT(safeMask(r.title),90));
   openPanel(na.id,false);
 }
 function leaveVsView(){
@@ -5559,6 +5818,9 @@ if(bridge){
     previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,adapterId:x.info&&x.info.adapterId,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=modelsFor(a.info&&a.info.adapterId).find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
+    /* spec 058 FR-082: a running chat for Settings' live MCP list: the live agent (state, grants, remote: the Restart session questions)
+       and the same options the MCP chip passes to the chat's MCP dialog */
+    mcpSession:id=>{const r=LIVE.agents.find(y=>y.id===id&&y.live&&!y.parent);return r?{a:r,mcp:!!feat(r,'mcp'),o:{toggle:feat(r,'mcpToggle'),restart:feat(r,'mcpRestart'),appName:kindWord(kindOf(r))}}:null;},
     folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
     openAgent:id=>openPanel(id,false),
     /* spec 058 FR-027: Restart session failed because the sign-in expired: the chat's sign-in card (spec 012 FR-157), as for a failed message */
@@ -5612,5 +5874,5 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 /* spec 008 FR-113, simulator only: false until the agents are listed, the frozen simulator has replayed every script and the saved usage
    totals are read; then any queued frame is drawn now (a stalled animation frame once left a comparison driver measuring a stale page) */
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
-if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn}; /* bridge: the simulator's fake (spec 005 T073: a driver counts Stop calls); render: spec 001 FR-057 drivers move a finish time back; never set outside DURBAR_SIM */
+if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent}; /* bridge: the simulator's fake (spec 005 T073: a driver counts Stop calls); render: spec 001 FR-057 drivers move a finish time back; never set outside DURBAR_SIM */
 })();

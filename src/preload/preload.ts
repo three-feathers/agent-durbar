@@ -92,12 +92,14 @@ const api: DurbarApi = {
   openElicitationUrl: (id, requestId) => ipcRenderer.invoke('agents:openElicitationUrl', id, requestId),
   listProfiles: (id) => ipcRenderer.invoke('agents:listProfiles', id),
   selectProfile: (id, profileId, confirm) => ipcRenderer.invoke('agents:selectProfile', id, profileId, confirm),
+  slashCommands: (id) => ipcRenderer.invoke('agents:slashCommands', id), // spec 073
   listProfileFiles: () => ipcRenderer.invoke('profiles:listFiles'),
   readProfileFile: (fileId) => ipcRenderer.invoke('profiles:read', fileId),
   saveProfileFile: (fileId, text, baseSha, overwrite) => ipcRenderer.invoke('profiles:save', fileId, text, baseSha, overwrite),
   createProfileFile: (app, place, name, template, text) => ipcRenderer.invoke('profiles:create', app, place, name, template, text),
   generateProfile: (req) => ipcRenderer.invoke('profiles:generate', req),
   openProfileInVSCode: (fileId) => ipcRenderer.invoke('profiles:openInVSCode', fileId),
+  deleteProfileFile: (fileId) => ipcRenderer.invoke('profiles:delete', fileId),
   usageAllTime: () => ipcRenderer.invoke('usage:allTime'),
   usageReset: () => ipcRenderer.invoke('usage:reset'),
   usageTotals: () => ipcRenderer.invoke('usage:totals'),
@@ -127,9 +129,12 @@ const api: DurbarApi = {
   mcpGlobalDiff: () => ipcRenderer.invoke('mcp:globalDiff'),
   mcpGlobalCopyPreview: (name, from, to) => ipcRenderer.invoke('mcp:globalCopyPreview', name, from, to),
   mcpGlobalSetOff: (app, name, off) => ipcRenderer.invoke('mcp:globalSetOff', app, name, off),
-  agentMcp: (id) => ipcRenderer.invoke('agents:mcp', id),
+  agentMcp: (id, focus) => ipcRenderer.invoke('agents:mcp', id, focus),
   setAgentMcp: (id, name, enabled) => ipcRenderer.invoke('agents:setMcp', id, name, enabled),
   agentMcpRestart: (id, name) => ipcRenderer.invoke('agents:mcpRestart', id, name),
+  agentMcpSignIn: (id, name) => ipcRenderer.invoke('agents:mcpSignIn', id, name),
+  agentMcpOpenSignIn: (id, name, host) => ipcRenderer.invoke('agents:mcpOpenSignIn', id, name, host),
+  agentMcpCancelSignIn: (id, name) => ipcRenderer.invoke('agents:mcpCancelSignIn', id, name),
   agentMcpTools: (id, name) => ipcRenderer.invoke('agents:mcpTools', id, name),
   setAgentMcpToolsOff: (id, name, off) => ipcRenderer.invoke('agents:setMcpToolsOff', id, name, off),
   agentMcpRestartSession: (id, confirmed) => ipcRenderer.invoke('agents:mcpRestartSession', id, confirmed),
@@ -158,6 +163,8 @@ const api: DurbarApi = {
   // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace…; only the two known words pass
   onMenuAdd: (cb) => sub<unknown>('menu:add', (k) => { if (k === 'folder' || k === 'workspace') cb(k); }),
   onFullScreen: (cb) => sub<boolean>('window:fullScreen', (on) => cb(on === true)),
+  // spec 052 FR-085: a double-click on a drag area of the top bar (Mac only); main reads the system setting
+  titleDoubleClick: () => ipcRenderer.send('window:titleDoubleClick'),
   platform: process.platform,
 };
 contextBridge.exposeInMainWorld('agentDurbar', api);
