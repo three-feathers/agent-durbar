@@ -18,4 +18,4 @@
 - [x] T019 (2026-10-22) `docs/agent-setup/` (README, claude-code templates and agents, loops.md, always-on-host.md and examples), links from `docs/collaboration.md` and `AGENTS.md` [FR-044]
 - [x] T020 (2026-10-23) Label taxonomy in `AGENTS.md` and its mirrors (`docs/collaboration.md`, `.github/copilot-instructions.md`); `area:security` and `area:schedules` in `.github/labels.tsv` [FR-045]
 - [x] T021 (2026-10-23) `scripts/labels-backfill.ts` with dry run, `--apply`, `--create-labels`; `scripts/test-labels-backfill.ts` in `npm test`; dry run posted on the PR for review [FR-046]
-- [ ] T022 After the PR is approved: `npm run labels:backfill -- --create-labels --apply`, then fix the flagged items by hand [FR-045, FR-046]
+- [ ] T022 Once, after the PR merges, one agent runs `npm run labels:backfill -- --create-labels --apply` (add-only, throttled) and posts the flagged item numbers on #633 for a human to label; the agent does not label them itself [FR-045, FR-046]

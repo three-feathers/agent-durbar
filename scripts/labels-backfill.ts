@@ -47,23 +47,26 @@ export const SPEC_AREAS: Record<string, string[]> = {
   '075': ['docs'], '076': ['adapters'], '077': ['ui'], '078': ['packaging'],
 };
 
-// Changed path -> area (first match per rule; a path may give several areas).
+// Changed path -> area, only where the mapping is unambiguous (Paco's review of #633): a directory or a named file that belongs
+// to one area. Shared files (README.md, package.json, CHANGELOG.md, changelog.d/, src/renderer/app.js alone, src/main/main.ts,
+// the IPC and preload glue, tests) give no area by themselves. A changed specs/NNN-* folder gives that spec's area (SPEC_AREAS).
 const PATH_RULES: Array<[RegExp, string]> = [
   [/^src\/adapters\//, 'adapters'],
-  [/^src\/renderer\//, 'ui'],
+  [/^src\/renderer\/(?!app\.js$)/, 'ui'],
+  [/^src\/main\/(themes|floors|names|sessionnames)\.ts$|^src\/shared\/(themes|themetokens|themegen|floors|places|names|sessionname)\.ts$/, 'ui'],
   [/^\.github\/(workflows|scripts)\//, 'ci'],
-  [/^(AGENTS\.md|CLAUDE\.md|\.claude\/|\.specify\/|\.github\/(ISSUE_TEMPLATE|copilot-instructions|pull_request_template|CODEOWNERS|labels\.tsv)|docs\/(collaboration|agent-notes)\.md|docs\/agent-setup\/|scripts\/(pr-gate\.sh|labels-backfill\.ts|test-labels-backfill\.ts))/, 'harness'],
-  [/^(docs\/(?!collaboration\.md|agent-notes\.md|agent-setup\/)|README\.md)/, 'docs'],
-  [/mcp/i, 'mcp'],
-  [/permission|modes?\b|-modes|grant|approval/i, 'permissions'],
-  [/schedul|loops?\b/i, 'schedules'],
-  [/redact|safetext|secret|security|wincmd/i, 'security'],
-  [/^build\/|electron-builder|after-pack|packaging|notar|installer|fuses|sign(ing)?\b/i, 'packaging'],
-  [/usage|credit|cost/i, 'usage'],
-  [/platform|macos|mac-titlebar|win32/i, 'platform'],
+  [/^(AGENTS\.md|CLAUDE\.md|\.claude\/|\.specify\/|\.github\/(ISSUE_TEMPLATE\/|copilot-instructions\.md|pull_request_template\.md|CODEOWNERS|labels\.tsv)|docs\/(collaboration|agent-notes)\.md|docs\/agent-setup\/|scripts\/(pr-gate\.sh|labels-backfill\.ts|test-labels-backfill\.ts))/, 'harness'],
+  [/^docs\/(?!collaboration\.md|agent-notes\.md|agent-setup\/)/, 'docs'],
+  [/^src\/main\/mcp(\/|\w*\.ts$)|^src\/shared\/mcp\w*\.ts$|^src\/adapters\/(mcp\w*|codexMcp)\.ts$/, 'mcp'],
+  [/^src\/adapters\/(permissions|claudeModes|codexModes)\.ts$|^src\/main\/agenttrust\.ts$/, 'permissions'],
+  [/^src\/main\/schedules\.ts$|^src\/shared\/(schedrules|looppace)\.ts$/, 'schedules'],
+  [/^src\/shared\/(redact|wincmd|guards)\.ts$|^src\/main\/(hardening|ipcguard|debugguard)\.ts$/, 'security'],
+  [/^(electron-builder\.[a-z]+|build\/|scripts\/(after-pack|pack-esm-\w+|installed-app-\w+|install-check|prepare-runtime|check-fuses(-launch)?)\.[jt]s)$|^build\//, 'packaging'],
+  [/^src\/main\/(usagestore|usagetotalsstore)\.ts$|^src\/shared\/(credits|toolusage|usagedoc)\.ts$|^src\/adapters\/usagelimit\.ts$/, 'usage'],
+  [/^\.github\/platforms\.json$|^src\/main\/(aumid|titledblclick|loginpath)\.ts$|^scripts\/check-mac-titlebar\.js$/, 'platform'],
 ];
 
-// Title (and branch) words -> area, for issues and for PRs whose paths said nothing.
+// Title (and branch) words -> area: the author's own words, used only when neither the paths nor the specs gave an area.
 const WORD_RULES: Array<[RegExp, string]> = [
   [/\b(adapter|copilot|codex|claude code|sdk)\b/i, 'adapters'],
   [/\b(ui|office|chat|screen|theme|desk|room|floor|dialog|menu|button|composer)\b/i, 'ui'],
@@ -83,7 +86,11 @@ export const MAX_BODY_SPECS = 3;
 // Areas that only count when no other area matched: nearly every PR touches the docs and the agent notes (docs in sync).
 const SECONDARY = new Set(['docs', 'harness']);
 
-const DOCS_ONLY = /^(docs\/|specs\/|changelog\.d\/|README\.md|CHANGELOG\.md|CONTRIBUTING\.md|SECURITY\.md|AGENTS\.md|CLAUDE\.md|[^/]+\.md$)/;
+// documentation: user-facing docs only (README, docs/, guides). Spec Kit work (specs/) and the agent rules (AGENTS.md, CLAUDE.md)
+// are not documentation: a spec-only PR is a task with the feature's area (Paco's review of #633).
+const DOCS_ONLY = /^(docs\/(?!collaboration\.md|agent-notes\.md|agent-setup\/)|changelog\.d\/|README\.md|CHANGELOG\.md|CONTRIBUTING\.md|SECURITY\.md|(?!AGENTS\.md|CLAUDE\.md)[^/]+\.md$)/;
+const SPEC_ONLY = /^(specs\/|changelog\.d\/)/;
+const SHARED_ONLY = /^(changelog\.d\/|CHANGELOG\.md)/;
 
 /** spec numbers the item touches, kept only when specs/NNN-* exists. */
 export function inferSpecs(item: Item, knownSpecs: Set<string>): string[] {
@@ -106,17 +113,23 @@ export function inferSpecs(item: Item, knownSpecs: Set<string>): string[] {
 
 export function inferAreas(item: Item, specs: string[]): string[] {
   const areas = new Set<string>();
-  for (const f of item.files ?? []) for (const [re, a] of PATH_RULES) if (re.test(f)) areas.add(a);
+  for (const f of item.files ?? []) {
+    for (const [re, a] of PATH_RULES) if (re.test(f)) areas.add(a);
+    const m = /^specs\/(\d{3})-/.exec(f);
+    if (m) for (const a of SPEC_AREAS[m[1]] ?? []) areas.add(a);
+  }
   if ([...areas].some((a) => !SECONDARY.has(a))) for (const a of SECONDARY) areas.delete(a);
-  if (!areas.size) for (const [re, a] of WORD_RULES) if (re.test(`${item.title} ${item.branch ?? ''}`.replace(/[-_]/g, ' '))) areas.add(a);
   if (!areas.size) for (const s of specs) for (const a of SPEC_AREAS[s] ?? []) areas.add(a);
+  if (!areas.size) for (const [re, a] of WORD_RULES) if (re.test(`${item.title} ${item.branch ?? ''}`.replace(/[-_]/g, ' '))) areas.add(a);
   return [...areas].sort();
 }
 
 export function inferType(item: Item): string | null {
   const text = `${item.title} ${(item.branch ?? '').replace(/[-_/]/g, ' ')}`.replace(/\breview fix(es)?\b/gi, 'review');
   const files = item.files ?? [];
-  if (item.kind === 'pr' && files.length && files.every((f) => DOCS_ONLY.test(f))) return 'documentation';
+  const own = files.filter((f) => !SHARED_ONLY.test(f));
+  if (item.kind === 'pr' && own.length && own.every((f) => SPEC_ONLY.test(f))) return 'task';
+  if (item.kind === 'pr' && own.length && own.every((f) => DOCS_ONLY.test(f))) return 'documentation';
   if (/^\s*(docs?|readme)\b/i.test(item.title)) return 'documentation';
   if (/\b(fix(es|ed)?|bug|broken|crash\w*|regression|flak[ey]\w*|wrong|fails?)\b/i.test(text)) return 'bug';
   if (/\?\s*$/.test(item.title) || /^\s*question\b/i.test(item.title)) return 'question';
@@ -129,20 +142,21 @@ export function inferType(item: Item): string | null {
 
 export function propose(item: Item, knownSpecs: Set<string>): Proposal {
   const has = new Set(item.labels);
-  const add: string[] = [];
   const notes: string[] = [];
   const types = item.labels.filter((l) => (TYPE_LABELS as readonly string[]).includes(l));
   if (types.length > 1) notes.push(`has ${types.length} type labels (${types.join(', ')}): a human picks one`);
-  if (!types.length) { const t = inferType(item); if (t) add.push(t); }
   const specs = inferSpecs(item, knownSpecs);
-  for (const s of specs) if (!has.has(`spec:${s}`)) add.push(`spec:${s}`);
+  const specAdds = specs.filter((s) => !has.has(`spec:${s}`)).map((s) => `spec:${s}`);
+  let areaAdds: string[] = [];
   if (!item.labels.some((l) => l.startsWith('area:'))) {
     const allSpecs = [...new Set([...specs, ...item.labels.filter((l) => /^spec:\d{3}$/.test(l)).map((l) => l.slice(5))])];
-    const areas = inferAreas(item, allSpecs);
-    if (!areas.length) notes.push('no area found: a human adds one');
-    for (const a of areas) add.push(`area:${a}`);
+    areaAdds = inferAreas(item, allSpecs).map((a) => `area:${a}`);
+    if (!areaAdds.length) notes.push('no area found: a human adds one');
   }
-  return { item, add, notes };
+  // A flagged item gets no type or area from the script (Paco, #633): a human or the item's owner agent picks them.
+  if (notes.length) return { item, add: specAdds, notes };
+  const typeAdd = types.length ? [] : [inferType(item)].filter((t): t is string => !!t);
+  return { item, add: [...typeAdd, ...specAdds, ...areaAdds], notes };
 }
 
 export function totals(proposals: Proposal[]): Array<[string, number]> {
@@ -244,7 +258,7 @@ async function main(argv: string[]): Promise<number> {
   console.log('\nTotals (label: items it would be added to):');
   for (const [l, n] of totals(proposals)) console.log(`  ${l}: ${n}${existing.has(l) ? '' : ' (label missing)'}`);
   const flagged = proposals.filter((p) => p.notes.length).length;
-  if (flagged) console.log(`\n${flagged} items need a human look (lines with !).`);
+  if (flagged) console.log(`\n${flagged} items need a human look (lines with !): ${proposals.filter((p) => p.notes.length).map((p) => `#${p.item.number}`).join(' ')}`);
 
   if (apply) {
     let done = 0;

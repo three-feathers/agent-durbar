@@ -33,7 +33,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
    gh issue edit N --add-assignee @me --add-label status:claimed
    ```
    Check the issue has exactly one assignee (you). If someone else is also there, back off.
-   **Label what you open** (issues and PRs alike): one type (`bug`, `enhancement`, `task`, `documentation`, `question`), at least one `area:*` and `spec:NNN` for every spec it touches; flags (`status:*`, `needs-owner-approval`, `spec-exempt`, `docs-n/a`, `accessibility`) only when true. The full list is in AGENTS.md, *Labels*.
+   **Label what you open** (issues and PRs alike): one type (`bug`, `enhancement`, `task`, `documentation`, `question`; `documentation` is for README, `docs/` and guides, a spec-only PR is a `task`), at least one `area:*` and `spec:NNN` for every spec it touches; flags (`status:*`, `needs-owner-approval`, `spec-exempt`, `docs-n/a`, `accessibility`) only when true. The full list is in AGENTS.md, *Labels*.
 3. **Branch** `NNN-slug`, where NNN is the spec number from the issue label `spec:NNN`, in its own worktree:
    ```bash
    git switch main && git pull

@@ -4,7 +4,7 @@ import * as path from 'path';
 import { inferAreas, inferSpecs, inferType, propose, totals, wantedLabels, Item, SPEC_AREAS } from './labels-backfill';
 
 const root = path.resolve(__dirname, '..', '..');
-const known = new Set(['003', '021', '044', '045', '058']);
+const known = new Set(['003', '021', '044', '045', '058', '025']);
 const pr = (o: Partial<Item>): Item => ({ kind: 'pr', number: 1, title: '', body: '', labels: [], files: [], ...o });
 const issue = (o: Partial<Item>): Item => ({ kind: 'issue', number: 2, title: '', body: '', labels: [], ...o });
 
@@ -19,7 +19,7 @@ assert.deepStrictEqual(inferSpecs(pr({ title: 'x', body: 'like spec 044' }), kno
 assert.deepStrictEqual(inferSpecs(issue({ title: 'idea', body: 'spec 003, spec 021, spec 044, spec 045' }), known), [], 'an issue body naming many specs does not count');
 
 // areas from paths
-assert.deepStrictEqual(inferAreas(pr({ files: ['src/adapters/claude.ts', 'src/renderer/app.js'] }), []), ['adapters', 'ui']);
+assert.deepStrictEqual(inferAreas(pr({ files: ['src/adapters/claude.ts', 'src/renderer/styles.css'] }), []), ['adapters', 'ui']);
 assert.deepStrictEqual(inferAreas(pr({ files: ['.github/workflows/ci.yml'] }), []), ['ci']);
 assert.deepStrictEqual(inferAreas(pr({ files: ['docs/research.md'] }), []), ['docs']);
 assert.deepStrictEqual(inferAreas(pr({ files: ['src/main/mcp/protocol.ts'] }), []), ['mcp']);
@@ -27,9 +27,13 @@ assert.deepStrictEqual(inferAreas(pr({ files: ['src/main/schedules.ts'] }), []),
 assert.deepStrictEqual(inferAreas(pr({ files: ['src/shared/redact.ts'] }), []), ['security']);
 assert.deepStrictEqual(inferAreas(pr({ files: ['electron-builder.yml'] }), []), ['packaging']);
 assert.deepStrictEqual(inferAreas(pr({ files: ['src/main/usagestore.ts'] }), []), ['usage']);
-assert.deepStrictEqual(inferAreas(pr({ files: ['src/main/permissions.ts'] }), []), ['permissions']);
+assert.deepStrictEqual(inferAreas(pr({ files: ['src/adapters/permissions.ts'] }), []), ['adapters', 'permissions']);
+assert.deepStrictEqual(inferAreas(pr({ files: ['specs/058-mcp-session-controls/spec.md'] }), []), ['mcp'], 'a spec folder gives its area');
+// shared files give no area by themselves (Paco, #633): README, package.json, the changelog, app.js alone
+assert.deepStrictEqual(inferAreas(pr({ files: ['README.md', 'package.json', 'package-lock.json', 'CHANGELOG.md', 'changelog.d/x.md', 'src/renderer/app.js', 'src/main/main.ts'] }), []), []);
+assert.deepStrictEqual(inferAreas(pr({ files: ['scripts/shots-mcp.js', 'docs/screenshots/mcp-dialog.png'] }), []), ['docs'], 'no area from a word inside a path');
 assert.deepStrictEqual(inferAreas(pr({ files: ['AGENTS.md', 'docs/collaboration.md'] }), []), ['harness']);
-assert.deepStrictEqual(inferAreas(pr({ files: ['src/renderer/app.js', 'README.md', 'docs/agent-notes.md', 'package.json', 'package-lock.json'] }), []), ['ui'], 'docs, harness and package.json are not areas next to code');
+assert.deepStrictEqual(inferAreas(pr({ files: ['src/renderer/styles.css', 'README.md', 'docs/agent-notes.md', 'package.json', 'package-lock.json'] }), []), ['ui'], 'docs, harness and package.json are not areas next to code');
 // areas from words, then from the spec map
 assert.deepStrictEqual(inferAreas(issue({ title: 'MCP server list flickers' }), []), ['mcp']);
 assert.deepStrictEqual(inferAreas(issue({ title: 'Something odd' }), ['044']), ['schedules']);
@@ -37,7 +41,11 @@ assert.deepStrictEqual(inferAreas(issue({ title: 'Something odd' }), []), []);
 for (const areas of Object.values(SPEC_AREAS)) for (const a of areas) assert.ok(['adapters', 'ci', 'docs', 'harness', 'mcp', 'packaging', 'permissions', 'platform', 'ui', 'usage', 'security', 'schedules'].includes(a), a);
 
 // type
-assert.strictEqual(inferType(pr({ title: '021: labels taxonomy', files: ['specs/021-x/spec.md', 'AGENTS.md', 'changelog.d/x.md'] })), 'documentation');
+// spec-only is Spec Kit work: task; documentation is README, docs/ and guides (Paco, #633)
+assert.strictEqual(inferType(pr({ title: '058: spec for MCP Sign in', files: ['specs/058-mcp-session-controls/spec.md', 'specs/058-mcp-session-controls/tasks.md', 'changelog.d/058-x.md'] })), 'task', 'spec-only PR');
+assert.strictEqual(inferType(pr({ title: 'README: shorter', files: ['README.md'] })), 'documentation', 'README-only PR');
+assert.strictEqual(inferType(pr({ title: 'docs: research page', files: ['docs/research.md', 'changelog.d/x.md'] })), 'documentation');
+assert.notStrictEqual(inferType(pr({ title: '021: team rules', files: ['AGENTS.md', 'CLAUDE.md'] })), 'documentation', 'agent rules are not documentation');
 assert.strictEqual(inferType(pr({ title: '001: fix lounge flake', files: ['src/renderer/app.js'] })), 'bug');
 assert.notStrictEqual(inferType(pr({ title: '044: review fixes on the delta', files: ['src/main/x.ts'] })), 'bug', 'review fixes are not a bug');
 assert.strictEqual(inferType(pr({ title: '001: arrow keys move between desks', files: ['src/renderer/app.js'] })), 'enhancement', 'a src change without other words');
@@ -57,6 +65,13 @@ p = propose(issue({ title: 'odd', labels: ['bug', 'enhancement'] }), known);
 assert.ok(p.notes.some((n) => n.includes('2 type labels')));
 assert.ok(p.notes.some((n) => n.includes('no area')));
 assert.ok(!p.add.includes('bug') && !p.add.includes('enhancement'));
+p = propose(pr({ title: '058: spec for MCP Sign in', branch: '058-mcp-signin-spec', files: ['specs/058-mcp-session-controls/spec.md'] }), known);
+assert.deepStrictEqual(p.add, ['task', 'spec:058', 'area:mcp'], 'spec-only PR: task, the spec, the feature area');
+p = propose(pr({ title: 'Bump version', files: ['package.json', 'README.md'] }), known);
+assert.deepStrictEqual(p.add, [], 'only shared files: flagged, no type or area guessed');
+assert.ok(p.notes.some((n) => n.includes('no area')));
+p = propose(issue({ title: '044: odd', labels: ['bug', 'enhancement'] }), known);
+assert.deepStrictEqual(p.add, ['spec:044'], 'a flagged item only gets its spec labels');
 p = propose(issue({ title: 'odd', labels: ['spec:044'] }), known);
 assert.deepStrictEqual(p.add, ['task', 'area:schedules'], 'area from an existing spec label');
 p = propose(pr({ title: '045: redact tokens', branch: '045-redact', files: ['src/shared/redact.ts', 'specs/045-security-sweep/spec.md'] }), known);
