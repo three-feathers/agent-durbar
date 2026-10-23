@@ -134,10 +134,21 @@ assert.ok(Date.now() - t0 < 500, 'a long text is read in linear time');
   // a chat whose switch is off but the app still reports a state counts (it is what the session really does)
   const b = W.aggregate([chat('x', [srv('s', 'disabled', { off: true })])]);
   assert.strictEqual(by(b, 's').summary, 'Off for this session in 1 chat');
+  // a disabled server reads as the chat dialog says it (FR-078): off in Settings, off in the agent app
+  const off2 = W.aggregate([{ id: 'o1', name: 'A', folder: 'f', reply: { ok: true, live: true, app: 'Copilot', servers: [srv('t', 'disabled', { defaultOn: false })] } }, chat('o2', [srv('t', 'disabled')])]);
+  assert.strictEqual(by(off2, 't').summary, 'Off in Settings in 1 chat · Turned off by the agent app in 1 chat', 'each off reason is its own part, in the chat dialog\'s words');
+  // review on #609 (fjcabello): a server whose only state is needs sign-in needs attention on its own
+  const na = W.aggregate([chat('n1', [srv('auth-only', 'needs-auth')]), chat('n2', [srv('fine', 'connected')])]);
+  assert.strictEqual(by(na, 'auth-only').summary, 'Needs sign-in in 1 chat');
+  assert.strictEqual(by(na, 'auth-only').cls, 'needs-auth');
+  assert.strictEqual(by(na, 'auth-only').icon, W.stateOf('needs-auth').icon);
+  assert.ok(by(na, 'auth-only').attention, 'needs sign-in alone needs attention');
+  assert.strictEqual(na.attention, 1, 'and is counted');
+  assert.strictEqual(na.servers[0].name, 'auth-only', 'and comes first');
   // the urgency order (FR-081)
   assert.deepStrictEqual(W.RANK, ['failed', 'needs-auth', 'pending', 'unknown', 'none', 'connected', 'not_configured', 'stopped', 'disabled']);
   const all = W.aggregate([['connected', 'disabled', 'stopped', 'not_configured', undefined, 'weird', 'pending', 'needs-auth', 'failed'].map((st, i) => chat('k' + i, [srv('one', st)]))].flat());
-  assert.strictEqual(by(all, 'one').summary, 'Failed in 1 chat · Needs sign-in in 1 chat · Starting in 1 chat · Unknown state: weird in 1 chat · Not started yet in 1 chat · Running in 1 chat · Not set up for this session in 1 chat · Stopped in 1 chat · Off for this session in 1 chat');
+  assert.strictEqual(by(all, 'one').summary, 'Failed in 1 chat · Needs sign-in in 1 chat · Starting in 1 chat · Unknown state: weird in 1 chat · Not started yet in 1 chat · Running in 1 chat · Not set up for this session in 1 chat · Stopped in 1 chat · Turned off by the agent app in 1 chat');
   // two different unknown tokens are two parts, each named
   const u = W.aggregate([chat('p', [srv('z', 'odd')]), chat('q', [srv('z', 'odder')]), chat('r', [srv('z', 'odd')])]);
   assert.strictEqual(by(u, 'z').summary, 'Unknown state: odd in 2 chats · Unknown state: odder in 1 chat');

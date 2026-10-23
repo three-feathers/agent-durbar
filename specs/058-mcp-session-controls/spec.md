@@ -787,10 +787,15 @@ spec 069's lists, and changes nothing in them.
     confirmation (busy, session grants, remote control), the same `needsConfirm` round trip, and on an expired sign-in Settings closes
     and the chat shows FR-027's sign-in card.
   - **Open in chat**: closes Settings and opens that chat with its MCP dialog, so the per-chat dialog can be found from Settings.
-  - Needs-sign-in rows show the chat dialog's sign-in hint. When issue #364's *Sign in* (FR-064, Paco's) lands, its button is added to
-    this row through the same code; this delta builds no sign-in of its own.
+  - **Needs-sign-in rows** (review on #609, fjcabello; `needs-auth`, or `failed` with `errorClass: 'auth'`): a Restart does not fix a
+    missing sign-in, so the main action is **Open in chat** (a primary button), with the chat dialog's sign-in hint and "Sign in from the
+    chat's MCP list"; Restart and Restart session sit behind a closed **More** (kept open over a repaint). When #598 (issue #364's *Sign
+    in*, FR-064, Paco's) lands, its button is added to this row through the same row code, reusing it; this delta builds no sign-in of
+    its own. Until then the chat's MCP list shows the same hint (the sign-in itself runs in the agent app).
 - **FR-083** `[IMPLEMENTED]` (`sim:`) **Live refresh.** While Settings is open, an `mcp` event of any running chat (and a chat that
-  stops or is ready again) reloads the list (throttled to one reload per 150 ms) without repainting the rest of Settings, keeping the focus on the same
+  stops or is ready again) reloads the list (throttled to one reload per 150 ms) without repainting the rest of Settings; each load has a sequence number and
+  the replies of an older load that ends after a newer one are dropped (review on #609); while the list is hidden (*Advanced* collapsed)
+  nothing is reloaded, and the list reloads when it opens again; keeping the focus on the same
   control (by server, chat and action) and the scroll position; state changes are announced through the existing polite live region, as
   FR-004 does in the chat dialog. An action the user just took is not announced back.
 - **FR-084** `[IMPLEMENTED]` (`sim:`) **Finding it.** The *Advanced: MCP servers* heading shows how many servers need attention ("2

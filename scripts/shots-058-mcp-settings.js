@@ -55,7 +55,7 @@ module.exports = async (ctx) => {
   const toggle = (n) => js(`(()=>{const b=[...document.querySelectorAll('#liveList button[data-lv]')].find(x=>x.dataset.lv===${jsLiteral(n)});if(!b)return false;b.focus();b.click();return true})()`);
   const minFont = () => js(`(()=>{let min=99,who='';document.querySelectorAll('#advMcp summary, #advMcp summary *, #liveH, #liveH *, #liveBox, #liveBox *').forEach(e=>{if(!e.getClientRects().length)return;const own=[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());if(!own)return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'.'+e.className}});return {min,who}})()`);
   /* FR-085: every control of the list is the top element at its centre once scrolled into view (nothing covers it), no page overflow */
-  const unobstructed = () => js(`(()=>{const bad=[];const sc=document.querySelector('#screen .scr-body');const pageX=document.documentElement.scrollWidth<=innerWidth,y0=document.scrollingElement.scrollTop;for(const b of document.querySelectorAll('#liveBox button')){const s0=sc.getBoundingClientRect();sc.scrollTop+=b.getBoundingClientRect().top-s0.top-s0.height/2;const r=b.getBoundingClientRect();if(!r.width)continue;const t=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);if(!t||!(t===b||b.contains(t)))bad.push((b.getAttribute('aria-label')||b.textContent)+' under '+(t?t.tagName+'.'+t.className:'nothing'));if(r.right>innerWidth+1||r.left<-1)bad.push('outside: '+b.textContent);}sc.scrollTop=0;return {bad,pageX,pageY:y0===0&&document.scrollingElement.scrollTop===0&&sc.scrollHeight>sc.clientHeight&&sc.getBoundingClientRect().bottom<=innerHeight+1,y0};})()`);
+  const unobstructed = () => js(`(()=>{const bad=[];const sc=document.querySelector('#screen .scr-body');const pageX=document.documentElement.scrollWidth<=innerWidth,y0=document.scrollingElement.scrollTop;for(const b of document.querySelectorAll('#liveBox button, #liveBox summary')){if(!b.checkVisibility())continue;const s0=sc.getBoundingClientRect();sc.scrollTop+=b.getBoundingClientRect().top-s0.top-s0.height/2;const r=b.getBoundingClientRect();if(!r.width)continue;const t=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);if(!t||!(t===b||b.contains(t)))bad.push((b.getAttribute('aria-label')||b.textContent)+' under '+(t?t.tagName+'.'+t.className:'nothing'));if(r.right>innerWidth+1||r.left<-1)bad.push('outside: '+b.textContent);}sc.scrollTop=0;return {bad,pageX,pageY:y0===0&&document.scrollingElement.scrollTop===0&&sc.scrollHeight>sc.clientHeight&&sc.getBoundingClientRect().bottom<=innerHeight+1,y0};})()`);
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, ready: 'fit', focus: true, query: { simkinds: 'mixed' } });
@@ -137,9 +137,25 @@ module.exports = async (ctx) => {
     // ---- FR-083: a new report repaints in place, keeps the focus, announces ----
     await toggle('linear');
     assert.ok(await until(`[...document.querySelectorAll('#liveList li.lv-chat')].some(x=>x.dataset.lvs==='linear')`), 'linear opened');
+    /* review on #609: a needs-sign-in chat leads with Open in chat; Restart waits behind More */
+    const na = await js(`(()=>{const c=[...document.querySelectorAll('#liveList li.lv-chat')].find(x=>x.dataset.lvs==='linear'&&x.dataset.lvc===${jsLiteral(B.id)});if(!c)return null;const first=c.querySelector('.lv-act > button');const more=c.querySelector('details.lv-more');const rs=c.querySelector('[data-lvrs]');return {w:c.querySelector('.mst-w').textContent,first:first&&first.dataset.lvopen!==undefined,primary:!!(first&&first.classList.contains('primary')),note:(c.querySelector('.lv-auth')||{}).textContent||'',more:!!more,moreOpen:!!(more&&more.open),rsInMore:!!(rs&&more&&more.contains(rs)),rsVisible:!!(rs&&rs.checkVisibility())};})()`);
+    assert.ok(na && na.w === 'Needs sign-in', 'the needs-sign-in chat: ' + JSON.stringify(na));
+    assert.ok(na.first && na.primary, 'Open in chat is the first, main action: ' + JSON.stringify(na));
+    assert.match(na.note, /Sign in from the chat's MCP list/, 'it says where to sign in');
+    assert.ok(na.more && !na.moreOpen && na.rsInMore && !na.rsVisible, 'Restart is behind a closed More: ' + JSON.stringify(na));
+    await js(`(()=>{const c=[...document.querySelectorAll('#liveList li.lv-chat')].find(x=>x.dataset.lvs==='linear'&&x.dataset.lvc===${jsLiteral(B.id)});c.querySelector('details.lv-more summary').click();})()`);
+    assert.ok(await until(`(()=>{const c=[...document.querySelectorAll('#liveList li.lv-chat')].find(x=>x.dataset.lvs==='linear'&&x.dataset.lvc===${jsLiteral(B.id)});const b=c&&c.querySelector('[data-lvrs]');return !!(b&&b.checkVisibility())})()`), 'More shows Restart');
+    const pcA = (await chatsOf('linear')).find((x) => x.id === A.id);
+    assert.ok(pcA && pcA.w === 'Running' && pcA.rs, 'a running chat keeps Restart in view');
     await js(`document.querySelector('#liveList button[data-lv="linear"]').focus()`);
     await js(`(()=>{const l=document.getElementById('srLive')||document.querySelector('[aria-live=polite]');window.__ann=l;})()`);
+    /* review on #609: an older load that ends after a newer one never wins (a slow reply for B, then a fast one) */
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();if(!b.__lvSlow){b.__lvSlow=true;const o=b.agentMcp;b.agentMcp=async id=>{const r=await o(id);if(window.__slowId===id){window.__slowId=null;await new Promise(z=>setTimeout(z,1200));}return r;};}window.__slowId=${jsLiteral(B.id)};})()`);
+    await emit(B.id, mix(1).map((s) => (s.name === 'linear' ? { name: 'linear', status: 'failed', error: 'stale reply' } : s)));
+    await ctx.sleep(400); // the first reload is in flight, holding the stale state
     await emit(B.id, mix(1).map((s) => (s.name === 'linear' ? { name: 'linear', status: 'connected' } : s)));
+    await ctx.sleep(1600); // long after the slow, older reply came back
+    assert.strictEqual(await js(`(document.querySelector('#liveList li.srv.lv[data-lvn="linear"] .srv-top .mst-w')||{}).textContent`), 'Running in 3 chats', 'the newer reply wins over a slower, older one');
     assert.ok(await until(`(document.querySelector('#liveList li.srv.lv[data-lvn="linear"] .srv-top .mst-w')||{}).textContent==='Running in 3 chats'`), 'the row follows the new report');
     assert.ok(await js(`document.activeElement&&document.activeElement.dataset.lv==='linear'`), 'the focus stayed on the same toggle');
     assert.ok(await until(`[...document.querySelectorAll('[aria-live]')].some(x=>/linear: Running in 3 chats/.test(x.textContent))`), 'the change is announced');
@@ -175,12 +191,30 @@ module.exports = async (ctx) => {
     await js(`(()=>{const sc=document.querySelector('#screen .scr-body');const l=document.querySelector('#liveList li.srv.lv:last-child');sc.scrollTop+=l.getBoundingClientRect().bottom-sc.getBoundingClientRect().bottom+40;})()`);
     await shot(`058-mcp-settings-chats-${w}x${h}.png`);
 
-    // ---- Open in chat ----
+    // ---- Open in chat (from the needs-sign-in row, its main action) ----
+    await emit(B.id, mix(1));
+    assert.ok(await until(`[...document.querySelectorAll('#liveList li.lv-chat.auth')].some(x=>x.dataset.lvs==='linear'&&x.dataset.lvc===${jsLiteral(B.id)})`), 'linear needs a sign-in in B again');
     await press('linear', B.id, 'lvopen');
     assert.ok(await until(`!document.body.classList.contains('screen-open')&&document.querySelectorAll('#agMcp li.srv').length>0`), 'Settings closed and the chat MCP dialog opened');
     assert.ok(await js(`/MCP servers for /.test(document.getElementById('scrDlgT').textContent)&&document.getElementById('scrDlgT').textContent.endsWith(${jsLiteral(B.name)})`), 'it is that chat\'s dialog');
     await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Done').click()`);
     await until(`!document.getElementById('scrDlg')`);
+  }
+
+  // ---- review on #609: no reload while the list is hidden; it reloads when it opens ----
+  await H.load({ w: 1280, h: 800, ready: 'fit', focus: true, query: { simkinds: 'mixed' } });
+  {
+    const id = await js(`window.__durbarSimUi.agents().find(a=>a.live&&!a.parent).id`);
+    await js(`document.getElementById('settingsBtn').click()`);
+    assert.ok(await until(`!!document.getElementById('advMcp')&&!!document.getElementById('liveBox')`), 'Settings opened');
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__mcpCalls=0;const o=b.agentMcp;b.agentMcp=(i)=>{window.__mcpCalls++;return o(i);};})()`);
+    await js(`document.getElementById('advMcp').open=false`);
+    await emit(id, [{ name: 'hidden-one', status: 'failed' }]);
+    await ctx.sleep(500);
+    assert.strictEqual(await js(`window.__mcpCalls`), 0, 'no agents:mcp call while the list is hidden');
+    await js(`document.getElementById('advMcp').open=true`);
+    assert.ok(await until(`!!document.querySelector('#liveList li.srv.lv[data-lvn="hidden-one"]')`), 'opening it reloads the list');
+    await js(`document.getElementById('scrClose').click()`);
   }
 
   // ---- no running chat: says so, no actions ----

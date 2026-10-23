@@ -105,8 +105,10 @@
         seen.add(e.name);
         const reported=!(e.status===undefined||e.status===null||e.status==='');
         if(!reported&&(e.defaultOn===false||e.off===true))continue;
-        const k=keyOf(e.status), sv=stateOf(e.status);
-        row(e.name).chats.push({id:String(c.id),name:plain(c.name,80),folder:plain(c.folder,80),entry:e,state:{key:k==='unknown'?'unknown:'+sv.word:k,rank:RANK.indexOf(k),word:sv.word,icon:sv.icon,cls:sv.cls}});
+        /* the chat dialog's own words (FR-078: who turned a `disabled` server off), so both places say the same */
+        const sv=stateOf(e.status,{off:e.off,defaultOn:e.defaultOn,origin:e.origin,app:rp.app,launchedOff:e.launchedOff,switchedHere:e.switchedHere});
+        const k=e.status==='disabled'&&sv.cls==='pending'?'pending':keyOf(e.status);
+        row(e.name).chats.push({id:String(c.id),name:plain(c.name,80),folder:plain(c.folder,80),entry:e,state:{key:k==='unknown'||k==='disabled'?k+':'+sv.word:k,rank:RANK.indexOf(k),word:sv.word,icon:sv.icon,cls:sv.cls}});
       }
     }
     for(const n of Array.isArray(configured)?configured:[])if(okName(n))row(n);

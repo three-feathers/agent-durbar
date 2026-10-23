@@ -319,3 +319,6 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
 - [x] T125 Docs: README MCP section line, `changelog.d/058-mcp-settings-live.md`, screenshots (driver at 1440x900 and 1280x800; the
   linked Settings shots retaken), specs-index block [FR-085]
 - [x] T126 `/speckit-converge` for the delta; tick tasks; mutation-check the driver and the unit tests
+
+- [x] T127 Review on #609 (fjcabello): needs-sign-in rows lead with Open in chat, Restart behind More; load sequence numbers and no
+  reload while the list is hidden; a needs-sign-in-only case in `test-mcpwords`; the driver pins each (mutation-checked) [FR-082, FR-083]
