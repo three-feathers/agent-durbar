@@ -1,0 +1,196 @@
+{
+  "$schema": "./schema/policy.schema.json",
+  "version": 1,
+  "organization": {
+    "name": "Acme Corp",
+    "supportUrl": "https://it.acme.example/durbar",
+    "supportEmail": "it-help@acme.example"
+  },
+  "allowUserConfig": false,
+  "allowDevHooks": false,
+  "secrets": {
+    "envAllow": [
+      {
+        "name": "ACME_DOCS_TOKEN",
+        "hosts": [
+          "mcp.acme.example"
+        ]
+      },
+      {
+        "name": "ACME_OTEL_AUTH_HEADER",
+        "hosts": [
+          "otel.acme.example:4318"
+        ]
+      },
+      {
+        "name": "ACME_LLM_TOKEN",
+        "hosts": [
+          "llm-gateway.acme.example"
+        ]
+      }
+    ]
+  },
+  "network": {
+    "trustedHosts": [
+      "mcp-catalog.acme.example",
+      "agents.acme.example"
+    ],
+    "proxy": {
+      "mode": "system"
+    }
+  },
+  "branding": {
+    "displayName": "Acme Agents",
+    "icon": "icons/acme-agents.png"
+  },
+  "agentApps": {
+    "allowed": [
+      "claude",
+      "copilot"
+    ],
+    "allowInAppInstall": false
+  },
+  "permissions": {
+    "maxMode": "ask",
+    "defaultMode": "read-only"
+  },
+  "features": {
+    "remoteControl": false,
+    "durbarMcpServer": false,
+    "chatChannels": false
+  },
+  "caps": {
+    "maxSessionUsd": 20,
+    "defaultSessionUsd": 5,
+    "requireCap": true
+  },
+  "folders": {
+    "blocked": [
+      "~/.ssh/**",
+      "~/.aws/**"
+    ]
+  },
+  "mcp": {
+    "mode": "allowlist",
+    "lists": [
+      {
+        "file": "mcp-servers.json"
+      },
+      {
+        "url": "https://mcp-catalog.acme.example/durbar/mcp-servers.json",
+        "refreshHours": 24
+      }
+    ],
+    "allow": [
+      {
+        "name": "github"
+      },
+      {
+        "url": "https://mcp.atlassian.com/*"
+      }
+    ],
+    "deny": [
+      {
+        "command": "npx",
+        "argsPrefix": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem"
+        ]
+      }
+    ]
+  },
+  "registries": {
+    "items": [
+      {
+        "name": "Acme agents and skills",
+        "url": "https://agents.acme.example/durbar/index.json",
+        "checkHours": 12,
+        "updates": "notify"
+      }
+    ]
+  },
+  "telemetry": {
+    "otel": {
+      "endpoint": "https://otel.acme.example:4318",
+      "protocol": "http/protobuf",
+      "signals": [
+        "metrics",
+        "logs"
+      ],
+      "headersFromEnv": {
+        "Authorization": "ACME_OTEL_AUTH_HEADER"
+      },
+      "resourceAttributes": {
+        "department": "engineering"
+      },
+      "logPrompts": false,
+      "apps": [
+        "claude",
+        "copilot",
+        "codex"
+      ]
+    }
+  },
+  "appearance": {
+    "theme": {
+      "pack": "themes/acme-steel"
+    },
+    "allowUserThemes": false,
+    "allowThemeMaker": false
+  },
+  "llm": {
+    "claude": {
+      "provider": "gateway",
+      "baseUrl": "https://llm-gateway.acme.example/anthropic",
+      "authTokenFromEnv": "ACME_LLM_TOKEN",
+      "model": "acme-sonnet",
+      "smallFastModel": "acme-haiku"
+    },
+    "codex": {
+      "provider": {
+        "id": "acme",
+        "name": "Acme gateway",
+        "baseUrl": "https://llm-gateway.acme.example/openai/v1",
+        "apiKeyFromEnv": "ACME_LLM_TOKEN",
+        "wireApi": "responses"
+      },
+      "model": "acme-coder"
+    },
+    "pricing": {
+      "currency": "USD",
+      "models": [
+        {
+          "match": "acme-sonnet",
+          "inputPer1M": 2.5,
+          "outputPer1M": 12,
+          "cachedInputPer1M": 0.25
+        },
+        {
+          "match": "acme-haiku",
+          "inputPer1M": 0.6,
+          "outputPer1M": 3,
+          "cachedInputPer1M": 0.06
+        },
+        {
+          "match": "acme-coder*",
+          "inputPer1M": 1.2,
+          "outputPer1M": 6,
+          "cachedInputPer1M": 0.12,
+          "reasoningPer1M": 6
+        }
+      ]
+    },
+    "tokenCap": {
+      "maxTokensPerSession": 5000000,
+      "force": false
+    },
+    "requirePricing": false
+  },
+  "updates": {
+    "mode": "off"
+  },
+  "legal": {
+    "noticeUrl": "https://it.acme.example/ai-use-policy",
+    "requireAcceptance": true
+  }
+}

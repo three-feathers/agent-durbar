@@ -191,3 +191,150 @@ cannot run; offer *Switch off for this session* next to each signal; mask failed
 
 Phase 8a (no answers needed): T091-T097. Phase 8b (T090 done): T098-T104. Phase 8c (owner go-ahead): T105-T107. Then T108-T109.
 Depends on 058 Phase 1-2 for `errorClass`, the word table and the new dialog rows (T010, T011, T020, T026).
+
+## Delta: live status and actions in Settings (issue #596, 2026-10-23)
+
+### Summary
+
+Settings > MCP servers gets a *Live in your chats* list (FR-080..FR-087): each server's state aggregated over the running chats, an
+expander per server with each chat's state, hint, Details, Restart, Restart session and Open in chat. Renderer only; no new IPC.
+
+### Constitution check (delta)
+
+- I/III (safe, no secrets): the data is `agents:mcp`, already masked in main (FR-005); no new channel, nothing new leaves main.
+- II (adapters are plug-ins): the renderer reads only `canRestart`, `canRestartSession` and the existing options (`mcpRestart` feature);
+  no vendor name is tested in code.
+- IV (simulator first): a new driver `shots-058-mcp-settings` on `DURBAR_SIM=15` with injected `mcp` reports; unit tests in
+  `test-mcpwords`. No real session.
+- V (calm UI): words plus icons, 10.5px minimum, fits 1280x800 with 10+ servers (scrolls inside Settings).
+
+### Design
+
+1. `src/renderer/mcpwords.js`: `aggregate(sessions, configured)` (pure): sessions = `[{id, name, folder, reply}]` where `reply` is an
+   `agents:mcp` reply; returns `[{name, chats:[{id, name, folder, entry}], parts:[{key, word, icon, cls, n}], summary, icon, cls,
+   attention}]`, plus `RANK` (the urgency order). Unit-tested on its own.
+2. `src/renderer/screens.js`:
+   - `liveSection()` / `liveRowsHTML()`: the list inside the MCP section, painted from `liveData` (loaded with `loadLive()`: one
+     `agents:mcp` per running main chat from `X.agents()`, in parallel, errors ignored per chat).
+   - `mcpRestartCall(a, name, onSent)` and `mcpRestartSessionFlow(a, start, hooks)`: the chat dialog's Restart and Restart session code
+     moved out of `agentMcp` unchanged, so both places share one flow (FR-031, FR-023, FR-027).
+   - live refresh: `mcpEvent(id)` also schedules `repaintLive()` when Settings is open (150 ms throttle, focus kept by a key of
+     `[action, server, chat]`); announcements of state changes as FR-004.
+   - the chat dialog's *Settings* button: `open('settings', {section: 'mcp'})`.
+3. `src/renderer/app.js`: `mcpSession(id)` in the screens context (the live agent object and the same options the MCP chip passes:
+   `toggle`, `restart`, `appName`, and whether the chat shows MCP); `DurbarScreens.mcpEvent` is also called when a session stops.
+4. `src/renderer/screens.css`: the live list's rows (expander, chat rows), theme tokens only.
+5. `src/renderer/sim.ts` (simulator only): servers a driver reported for a session stay in the simulator's own `mcp` report after a
+   Restart (Starting, then Running), and runtime rows get `canRestart` as main's `agentMcpReply` gives them.
+6. Docs: README MCP line with the picture `058-mcp-settings-1440x900.png` (retaken by `npm run shots:docs`), changelog fragment,
+   `docs/agent-notes.md` (page overflow checks in Settings; the simulator's kept reports).
+
+### Order
+
+T120 (spec) first; T121 (unit tests) and T122 (driver) before T123-T124 (code); T125 docs and screenshots; T126 converge.
+
+## Delta: MCP health, failure reason, when, Copy diagnostics, chip dot (issue #603, 2026-10-23)
+
+### Summary
+
+Per failed server a plain reason ("Not installed (command not found)", "Crashed on start", "Timed out", "Disconnected later", "Refused:
+needs sign-in", ..., "Failed (reason unknown)"), when Agent Durbar saw it, and *Copy diagnostics* (masked), in the chat dialog and the
+Settings live rows; a dot on the composer's MCP chip when a server of the open chat failed (FR-090..FR-097).
+
+### Constitution check (delta)
+
+- I: spec delta, plan and tasks committed before code.
+- II: adapters map vendor values into `errorClass` (adapter-neutral words); main and the renderer never see a vendor value.
+- III: no new IPC channel; the reply gains `since`, `afterRunning`, `transport` (no secret, no path). Diagnostics are built from the
+  reply's masked error and passed through the shared `redact()` again in the page; fail closed.
+- IV: unit tests with fakes and a simulator driver; no real session.
+- V: words plus icons; the dot is a shape plus words in the chip's name; 10.5px minimum.
+
+### Design
+
+1. `src/adapters/types.ts`: `errorClass` gains `refused`, `disconnected`, `permission`.
+2. `src/adapters/map.ts` (Copilot): `copilotErrorClass(value)` (exported, pure) from `errorClassification`; set on
+   `session.mcp_server_status_changed` failed states only.
+3. `src/adapters/claudeMap.ts`: `claudeMcpServers` reads `config.type` as `transport`; `claudeMcpServerErrors(list)` turns
+   `init.mcp_server_errors` into `failed` + `config` rows, merged by `ClaudeMapper` into the init list (names not already listed).
+4. `src/shared/mcphealth.ts` (no imports): `mcpHealthUpdate(prev, servers, now)` -> per server `{status, since, ran, afterRunning}`.
+   Main (`mcpipc.ts`) keeps one map per session next to `live`, dropped on `stopped`; the simulator calls the same function through
+   `window.exports` (loaded in `index.html` after `exports-shim.js`, like `profiletemplates.js`).
+5. `src/main/mcpsession.ts`: `agentMcpReply` takes `health` and adds `since`, `afterRunning`, `transport`; `AgentMcpEntry` in
+   `src/shared/api.ts` gets the three optional fields.
+6. `src/renderer/mcpwords.js`: one text classifier shared by `hintFor` and the new `reasonOf`; `whenText(since, now)`;
+   `diagnostics(o)` (pure; the caller passes `redact`).
+7. `src/renderer/screens.js`: one helper for the reason line and the *Copy diagnostics* button, used by the chat dialog's rows and the
+   Settings live rows; copy through the existing `copyText`.
+8. `src/renderer/app.js`: `mcpOpts(r)` (the options the chip and `mcpSession` pass, plus `appVersion` from the agent app list), and the
+   chip's failed count and dot (`refreshMcpCount`). `styles.css` / `screens.css`: the dot and the reason line, theme tokens only.
+9. `src/renderer/sim.ts`: the simulator's reply adds the same fields (health via the shared function), its failed server keeps its
+   errorClass; driver-reported failures carry theirs.
+10. Tests: `scripts/test-mcphealth.ts` (new), `test-mcpwords` (reasons, when, diagnostics masked with a planted token),
+    `test-mcp-session` (reply fields), `test-events` (Copilot classes), `test-claude-map` (errors, transport); driver
+    `scripts/shots-058-mcp-health.js` in `ui-suite.js`.
+
+### Order
+
+T140 first; T141-T143 (tests) before T144-T147 (code); T148 docs, screenshots and converge.
+
+## Delta: Sign in for Claude Code and Codex (T099, T100; issue #364 step 5, 2026-10-23)
+
+**Spec**: [spec.md](spec.md) *Changes* > 2026-10-23 "MCP Sign in for Claude Code and Codex" (FR-175..FR-186, SC-175, SC-176).
+**Research**: [research.md](research.md) section 7.8. **Answers**: Q20, Q21, Q23, Q24: A; Q22: B (owner, 2026-10-23);
+see spec *Owner answers*.
+
+### Summary
+
+Give Claude Code and Codex rows the same **Sign in** Copilot has, through each app's own in-session call (Claude Code's
+`mcp_authenticate` control request, Codex's `mcpServer/oauth/login`), reusing #598's store, channels, poller and dialog row. Add only
+what the two apps need that Copilot did not: a per-attempt time limit, a "signed in, applies next message" and a "failed" end, steps
+that show without the in-app call, and an honest note per app. Never spawn a login command.
+
+### Constitution Check (delta)
+
+- **I**: spec delta, research and these tasks first; Q20-Q24 asked and answered by the owner (Q22: B, 2026-10-23).
+- **II**: `mcp_authenticate`, `mcpServer/oauth/login` and `mcpServer/oauthLogin/completed` stay in `src/adapters/claude.ts` and
+  `src/adapters/codex.ts`; the window sees `canSignIn`, a host, `signInEnd: 'next-message' | 'failed'`, steps and a note (plain text).
+- **III**: the address stays in main memory (FR-065, unchanged); no callback, code, client secret or redirect address passes through
+  Durbar; no subprocess, no shell; the CLI's `state` and `callbackPort` are read by nothing; errors are masked (FR-067).
+- **IV**: fakes (Claude transport, Codex app-server), simulator, unit tests; real checks T106/T107 wait for the owner (0 prompts).
+- **V**: the existing row, words plus icons, live region, two-step open; screenshots at 1440x900 and 1280x800.
+- **VI**: no OS-specific code: each app opens its own `127.0.0.1` listener; Durbar opens the page with `shell.openExternal`.
+- **VIII**: the row says "Not checked on a real account yet." for both apps (FR-180 note) until T106/T107; README the same.
+
+### Design
+
+1. **Types** (`src/adapters/types.ts`, `capabilities.ts`, the event guard, `fake.ts`): `McpSignInResult` browser `ttlMs?: number`;
+   `McpServerStatus.signInEnd?: 'next-message' | 'failed'`; capability `mcpSignInNote?: string`. Contract C2: `mcpSignInNote` only with
+   `mcpSignIn` or `mcpSignInSteps`. Fake adapter: options for `ttlMs` and for emitting `signInEnd`.
+2. **Main** (`src/main/mcpsignin.ts`, `src/main/mcpsession.ts`, `src/shared/api.ts`): `McpSignInStore.begin(..., ttlMs?)` stores its own
+   limit (`min(ttlMs, SIGN_IN_TTL_MS)`; `live`, `sweep`, `view` read the entry's limit); `onServers` drops on `connected` **or** `signInEnd`;
+   `agentMcpReply` adds `signInEnd` (the existing `signIn` stays the open sign-in's view) and `signInNote` per row, and computes
+   `signInSteps` from `mcpSignInSteps` alone (`mcpsession.ts:82`).
+3. **Claude Code** (`src/adapters/claude.ts`): `startMcpSignIn` (FR-175), `refreshMcpStatus` (FR-176, the existing `refreshMcp` body
+   with a name), `restartMcpServer` also deletes the name from `mcpAuthSeen`, keeps `lastMcp` and emits through `withAuthSeen`;
+   capabilities `mcpSignIn: true`, `mcpSignInSteps`, `mcpSignInNote`; `CLAUDE_SDK_CAPABILITIES` drops them and the constructor removes the
+   members on the SDK transport (as for `restartMcpServer`). Fake: the test transport in `scripts/test-claude-adapter.ts` answers
+   `mcp_authenticate` and records request bodies.
+4. **Codex** (`src/adapters/codex.ts`): `startMcpSignIn` (FR-177) keeps `{name, loginId}` per live session; the notification handler
+   gets an `mcpServer/oauthLogin/completed` branch next to `mcpServer/startupStatus/updated` (FR-178); `refreshMcpStatus` reads one
+   server and merges it; capabilities as for Claude. Fake: `scripts/fakes/codex-app-server.ts` answers the method, sends the notification
+   on a test call, and records `account/login/cancel` (must stay empty).
+5. **Renderer** (`src/renderer/screens.js`, `mcpwords.js`): the note from `signInNote` instead of the hard-coded sentence
+   (`screens.js:1113`); `signInEnd: 'next-message'` and `'failed'` states and toasts; Claude's "press Restart on this row" line after an
+   expired mark-only entry (FR-176). No new IPC.
+6. **Simulator** (`src/renderer/sim.ts`, `scripts/shots-058-mcp-signin.js`): FR-183 modes for the Claude and Codex sim kinds; the
+   driver's "Claude and Codex keep today's behaviour" block becomes their sign-in checks.
+7. **Docs**: README *MCP servers* (Sign in now for all three apps; terminal steps; "not checked on a real account yet" for Claude Code
+   and Codex), `changelog.d/<branch>.md`, `docs/agent-notes.md` (Claude's `mcp_authenticate` exists though the docs say no;
+   `claude mcp login` needs a TTY; the token keys; Codex cancel does not reach MCP logins), FR `[IMPLEMENTED]` tags.
+
+### Order (Q23 A: one PR per adapter)
+
+- **PR A (Claude Code + shared)**: T151, T152, T099, T153 (Claude part), T154 (Claude part), T155 (Claude part).
+- **PR B (Codex)**: T100, T153 (Codex part), T154 (Codex part), T155 (Codex part), then T156.
+- Phase 8c: T106 after PR A, T107 after PR B (Q24).
+- PR A also carries the FR-185 fix (T157).
+- PR A also carries FR-186 (Q22 B: the allow-listed Claude `oauth` fields in Durbar's `--mcp-config`; T158), with a dated pointer in
+  spec 069 *Changes*.

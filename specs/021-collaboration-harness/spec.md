@@ -148,3 +148,9 @@ The owner set these rules in the team chat on 2026-10-20 and asked for them, and
 
 - **FR-035** Before any merge, the merging agent reads every review, review thread, line comment and PR comment; a required change in a plain comment counts as *request changes*; nothing is merged while a request, an unresolved thread or an unanswered comment from someone else is open. `scripts/pr-gate.sh <N>` (bash and `gh`, verdict only, never merges) checks it together with the checks, CodeQL and the open alerts on the merge and head refs. `real:` it held #369 on an unanswered comment and passed #390 (2026-10-20). Mirrors: PR template checkbox, `docs/collaboration.md` step 9, `docs/agent-notes.md`.
 
+### 2026-10-22: reference agent setup in the repo (agreed in the team chat; Vikram's agent adds theirs next to it)
+
+Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564), which land first.
+
+- **FR-044** `docs/agent-setup/` holds the setup the team recommends, so a new teammate or a rebuilt machine starts from the same base: the three sub-agents, templates for the global rules and for `CLAUDE.local.md`, the periodic review `/loop` with its conventions (`taking #N`, `reviewing at <sha>`, `checks run at <sha>`, quick check before an agent, no DMs in quiet hours), and an always-on VPS guide with example files. It is templates only: no tokens, chat or account IDs, emails, host names, IPs or private-network names; personal files stay local and git-ignored; a config backup repo must be private and scanned for secrets. Each teammate may add their own setup in a sibling folder. Linked from `docs/collaboration.md` and `AGENTS.md`. `[IMPLEMENTED]` `read:` links checked by `test:site`; the guide itself was not run on a fresh machine `[KNOWN GAP]`.
+

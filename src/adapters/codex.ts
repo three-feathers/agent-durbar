@@ -11,10 +11,10 @@ import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, SlashCommand, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, SlashCommand, SlashExpansion, StartOptions, Unsubscribe, WriteGuard } from './types';
 import type { McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
-import { codexSlashPlaces, SlashCache } from './slashcommands';
+import { codexSlashPlaces, SlashCache, vscodeUserPromptDirs } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
 import { cleanPlanText, reviseText } from './plan';
 import type { AdapterDescriptor } from './capabilities';
@@ -43,6 +43,8 @@ import { sessionIdOk } from '../shared/sessionid';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 import { isObj } from '../shared/guards';
+import { codexAccount } from './accounts';
+import type { AccountIdentity } from '../shared/account';
 
 const CODEX_ID = 'codex';
 const CODEX_NAME = 'OpenAI Codex';
@@ -463,6 +465,18 @@ export class CodexAdapter implements AgentAdapter {
     }
   }
 
+  /**
+   * Spec 051 FR-011: the account Codex reports, from `account/read` with `refreshToken: false` on a short-lived app-server (local
+   * auth state; no prompt, nothing billed). An older Codex without the method is `unknown`. Personal data: never passed to `debug`.
+   */
+  async accountInfo(): Promise<AccountIdentity> {
+    try {
+      return codexAccount(await this.probe((rpc) => rpc.request('account/read', { refreshToken: false })));
+    } catch {
+      return { status: 'unknown' };
+    }
+  }
+
   private modelCache?: { at: number; list: Promise<ModelOption[]> };
   /** FR-142: the models this Codex account offers (`model/list`, no prompt). Cached 10 minutes; a failure is an empty list. */
   listModelOptions(): Promise<ModelOption[]> {
@@ -686,7 +700,7 @@ export class CodexAdapter implements AgentAdapter {
   private readonly slash = new SlashCache();
   private slashPlaces(live: { roots: string[] }): SlashPlace[] {
     const env = this.env ?? process.env;
-    return codexSlashPlaces(live.roots, env.CODEX_HOME || path.join(os.homedir(), '.codex'));
+    return codexSlashPlaces(live.roots, env.CODEX_HOME || path.join(os.homedir(), '.codex'), undefined, vscodeUserPromptDirs(env));
   }
 
   async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
@@ -694,7 +708,7 @@ export class CodexAdapter implements AgentAdapter {
     return live ? this.slash.list(this.slashPlaces(live), { refresh: true }) : []; // the window opening its list: read afresh
   }
 
-  async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined> {
+  async expandSlashCommand(sessionId: string, text: string): Promise<SlashExpansion | undefined> {
     const live = this.sessions.get(sessionId);
     return live ? this.slash.expand(text, () => this.slashPlaces(live)) : undefined; // no IO unless the text is a `/name` line
   }

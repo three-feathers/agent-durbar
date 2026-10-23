@@ -403,6 +403,30 @@ module.exports = async (ctx) => {
     const pr = await page(); check(!pr.length, `${tag}: ${pr.slice(0, 4).join('; ')}`);
   }
 
+  /* spec 001 FR-051 (change 2026-10-23, the Windows flake "Mira, Jonas and Noor are not resting before the checks"): with reduced motion
+     (the Windows runner reports it by itself) a figure coming back from the Boss is dropped without a walk. The office must be drawn again
+     then, or Jonas keeps his empty chair and stays out of the lounge until some other change draws it (about 4 s here, longer on CI).
+     Reduced motion is emulated before the page loads (the app reads it once); the three events arrive in one frame, so only the drop
+     can draw the lounge. */
+  {
+    const tag = 'lounge after the Boss, reduced motion';
+    const dbg = ctx.win.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    try {
+      await load(14, 1440, 900, { simrooms: '2', simhelpers: '0' });
+      const pre = await js(`({reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,away:!!document.querySelector('#stage .desk.is-away[data-id="sim-3"]'),boss:!!document.querySelector('.walker')})`);
+      check(pre.reduced && pre.away, `${tag}: the case did not start with reduced motion and Jonas at the Boss ${JSON.stringify(pre)}`);
+      await js(`(()=>{const E=(e)=>window.__durbarSimEmit(Object.assign({timestamp:Date.now()},e));E({type:'status',sessionId:'sim-3',status:'working',intent:'Working'});E({type:'output',sessionId:'sim-3',final:true,text:'Renamed the tool and kept the old name as an alias for one release.'});E({type:'status',sessionId:'sim-3',status:'idle'});return true})()`);
+      const ok = await H.until(`!!document.querySelector('#stage .desk.shut[data-id="sim-3"]')`, 1500);
+      const st = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id="sim-3"]');return {cls:d?d.className:'',vis:document.visibilityState,walkers:document.querySelectorAll('.walker').length}})()`);
+      check(ok, `${tag}: Jonas, back from the Boss and finished, is not in the lounge within 1.5 s ${JSON.stringify(st)}`);
+    } finally {
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+      dbg.detach();
+    }
+  }
+
   rows.forEach((r) => console.log('[office-fill]', r));
   if (failures.length) { failures.forEach((f) => console.log('[office-fill] FAIL', f)); assert.fail(`${failures.length} problems`); }
   console.log(`[office-fill] all checks passed (${rows.length} layouts)`);

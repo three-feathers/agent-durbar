@@ -49,7 +49,7 @@
     const n=Number(i)|0;
     return `<div class="sl-opt" role="option" id="slashOpt-${n}" data-i="${n}" aria-selected="${!!active}" title="${esc(tip||'')}"><span class="sl-line"><b class="sl-name">/${esc(x.name)}</b>${x.argumentHint?`<span class="sl-hint">${esc(x.argumentHint)}</span>`:''}<span class="sl-src sl-${esc(x.source)}">${esc(SOURCE_WORD[x.source]||x.source)} · ${esc(KIND_WORD[x.kind]||x.kind)}</span></span>${x.description?`<span class="sl-desc">${esc(x.description)}</span>`:''}</div>`;
   }
-  /* FR-012 (issue #608): what the list SHOWS of an entry, masked. `mask` is the page's DurbarSafeText mask (spec 041 FR-065; app.js
+  /* FR-013 (issue #608): what the list SHOWS of an entry, masked. `mask` is the page's DurbarSafeText mask (spec 041 FR-065; app.js
      passes SAFE.mask): token shapes hidden, also one split by Markdown, the text otherwise as written (not `excerpt`, which drops `_`
      and would change `release_notes`). No mask function, or one that gives '' (no redact module): the field is empty, never the raw
      text (fail closed). The real entry keeps its name: picking inserts and sends that one. */

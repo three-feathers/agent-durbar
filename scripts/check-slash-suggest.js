@@ -16,7 +16,7 @@
  *   - a Copilot chat lists no app built-ins (spec 073 FR-009);
  *   - with the entries fetched, the list opens in under 100 ms (SC-002);
  *   - a dark user theme: the same geometry; screenshots;
- *   - simslash=secret (spec 073 FR-012, issue #608): a folder skill and a command with fake token shapes in the name, hint,
+ *   - simslash=secret (spec 073 FR-013, issue #608): a folder skill and a command with fake token shapes in the name, hint,
  *     description and place, split by Markdown, escaped, and one at the tooltip's 300-character cut: no raw token (not even 6
  *     characters of one) in the list's text, any `title` or `aria-*`, the announcement or the "Sent the text of" note.
  * A miss throws (DRIVER FAILED); the npm script exits non-zero unless "all checks passed" is printed.
@@ -96,11 +96,11 @@ module.exports = async (ctx) => {
     check(await until(`!!document.querySelector('#slashList [role="option"]')`, 4000), `${tag}: "/" opens no list`);
     let m = await M();
     m.P.forEach((p) => check(false, `${tag}: ${p}`));
-    check(m.n === 10 && m.visible <= 8 && m.scrolls, `${tag}: rows ${JSON.stringify({ n: m.n, visible: m.visible, scrolls: m.scrolls })}`);
+    check(m.n === 11 && m.visible <= 8 && m.scrolls, `${tag}: rows ${JSON.stringify({ n: m.n, visible: m.visible, scrolls: m.scrolls })}`);
     const ord = m.sources.join(',');
     check(/^(folder,)+(user,)+(app,?)+$/.test(ord + ','), `${tag}: order folder, user, app (${ord})`);
     check(m.active === 'slashOpt-0', `${tag}: the first row is not active (${m.active})`);
-    check(await until(`/10 commands/.test(document.getElementById('srAnnounce').textContent)`, 2000), `${tag}: the count is not announced`);
+    check(await until(`/11 commands/.test(document.getElementById('srAnnounce').textContent)`, 2000), `${tag}: the count is not announced`);
     await shot(`073-slash-${tag}.png`);
     (await M()).P.forEach((p) => check(false, `${tag} (at the screenshot, fonts loaded): ${p}`));
 
@@ -115,7 +115,7 @@ module.exports = async (ctx) => {
     check(m.open && m.n === 0 && /No matching commands/.test(m.empty), `${tag}: no match does not say so (${JSON.stringify(m)})`);
     for (let i = 0; i < 6; i++) await key('Backspace');
     m = await M();
-    check(m.n === 10, `${tag}: Backspace back to "/" does not list all again (${m.n})`);
+    check(m.n === 11, `${tag}: Backspace back to "/" does not list all again (${m.n})`);
 
     /* Tab inserts "/name " and keeps the focus in the box */
     await typeChars('re');
@@ -133,6 +133,19 @@ module.exports = async (ctx) => {
     await typeChars('src/app.js');
     await key('Return');
     check(await until(`[...document.querySelectorAll('#panel .note')].some(n=>/Sent the text of/.test(n.textContent)&&/explain\\.md/.test(n.textContent))`, 5000), `${tag}: no "Sent the text of" note after sending /explain`);
+
+    /* spec 073 delta 2026-10-23: a VS Code prompt file is listed with its description and the settings hint; sending it says so */
+    await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0;return v(document.getElementById('sendBtn'))})()`, 15000);
+    await focusBox();
+    await typeChars('/write');
+    m = await M();
+    const pr = await js(`(()=>{const o=document.querySelector('#slashList [role="option"]');return o?o.textContent+' | '+(o.getAttribute('title')||''):''})()`);
+    check(m.names.join() === '/write-tests' && /Write unit tests for a file/.test(pr) && /VS Code settings not applied/.test(pr) && /\.github\/prompts\/write-tests\.prompt\.md/.test(pr), `${tag}: the prompt file row is "${pr}" (${m.names.join()})`);
+    await key('Return');
+    check(await value() === '/write-tests ', `${tag}: Enter on the prompt file inserted "${await value()}"`);
+    await typeChars('src/app.js');
+    await key('Return');
+    check(await until(`[...document.querySelectorAll('#panel .note')].some(n=>/Sent the text of/.test(n.textContent)&&/write-tests\\.prompt\\.md/.test(n.textContent)&&/VS Code settings not applied: mode, tools/.test(n.textContent))`, 5000), `${tag}: no prompt-file note after sending /write-tests`);
 
     /* Esc closes only the list; a second Esc closes the chat as before */
     await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0;return v(document.getElementById('sendBtn'))})()`, 15000);
@@ -183,7 +196,7 @@ module.exports = async (ctx) => {
     m.P.forEach((p) => check(false, `${tag} dark: ${p}`));
     if (w === SIZES[0][0]) await shot(`073-slash-dark-${tag}.png`);
   }
-  /* FR-012 (issue #608): token shapes never reach the list, its tooltips, ARIA, the announcement or the note. Checked once (one size):
+  /* FR-013 (issue #608): token shapes never reach the list, its tooltips, ARIA, the announcement or the note. Checked once (one size):
      masking does not depend on the layout. The bodies are built at run time like the simulator's (push protection). */
   {
     const BODY = ['A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8', '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij', 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'];

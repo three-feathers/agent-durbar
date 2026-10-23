@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "network": {
+    "trustedHosts": [
+      "evil.example",
+      "169-254-169-254.nip.io"
+    ]
+  }
+}

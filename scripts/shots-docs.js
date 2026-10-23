@@ -35,6 +35,7 @@ const DOC_SHOTS = [
   { name: 'shots-001-live-activity', freeze: false, files: ['001-live-activity-dense-1440x900.png', '001-live-activity-side-1440x900.png'] },
   { name: 'shots-001-lobby', files: ['001-lobby-15-1280x800.png', '001-lobby-15-1440x900.png', '001-lobby-15-1440x900-retro.png', '001-lobby-3-1440x900.png'] },
   { name: 'shots-005-cardmenu', files: ['005-card-menu-stop-end-1440x900.png'] },
+  { name: 'check-ro-ask', files: ['003-ro-ask-menu-1440x900.png'] },
   { name: 'check-composer-toolbar', files: ['005-composer-expert-light-1440x900.png'] },
   { name: 'check-edits', files: ['005-edit-expert-1440x900.png'] },
   { name: 'shots-006-home', files: ['006-home-warning-1440x900.png'] },
@@ -58,6 +59,8 @@ const DOC_SHOTS = [
   { name: 'shots-068-coffee', files: ['068-coffee-office-15-1440x900.png'] },
   { name: 'check-slash-suggest', files: ['073-slash-1440x900.png'] },
   { name: 'shots-074-navigator', files: ['074-navigator-start-1440x900.png'] },
+  { name: 'shots-058-mcp-settings', files: ['058-mcp-settings-1440x900.png'] },
+  { name: 'shots-058-mcp-health', files: ['058-mcp-health-1440x900.png'] },
   // one office per theme (shots-themes.js, the Settings path); the README (035-*) and the landing page (site-theme-*) show the same
   ...THEMES.map(([id, short]) => ({
     label: `shots-themes ${id}`, name: 'shots-themes', env: { DURBAR_THEME: id, SHOTS_SIZE: '1440x900', SHOTS_PREFIX: '' },

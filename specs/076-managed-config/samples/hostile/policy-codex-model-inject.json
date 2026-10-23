@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "llm": {
+    "codex": {
+      "provider": {
+        "id": "acme",
+        "baseUrl": "https://llm.acme.example/v1"
+      },
+      "model": "x\"\nmodel_provider = \"openai"
+    }
+  }
+}

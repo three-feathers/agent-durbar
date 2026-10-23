@@ -2,13 +2,14 @@ import { FolderSetupStore } from './foldersetupstore';
 import { acceptedFor, hasFolderRules, scanFolderSetupCached } from './foldersetup';
 import type { FolderSetupStart } from '../shared/foldersetup';
 import type { McpServerSpec } from '../shared/mcp';
-import { cliServers, copilotDir } from './mcpfiles'; // spec 061 FR-015: the explainer switches Copilot's own servers off
+import { copilotDir, copilotServerNames } from './mcpfiles'; // spec 061 FR-015: the explainer switches Copilot's own servers off
 import { parseEffort } from '../shared/effort';
 import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron';
 import { register as registerActivityIpc } from './ipc/activity';
 import { register as registerAdaptersIpc } from './ipc/adapters';
 import { register as registerAgentsIpc } from './ipc/agents';
 import { register as registerAppIpc } from './ipc/app';
+import { noteWindowZoom } from './titledblclick';
 import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
 import { register as registerFloorsIpc } from './ipc/floors';
@@ -44,7 +45,8 @@ import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { startOptionsOf } from './startopts';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
-import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs } from '../shared/attachments';
+import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs, sweepStaleTempDirs } from '../shared/attachments';
+import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import type { AddResult, AgentInfo, PermMode, PickedFile, SessionOptions } from '../shared/api';
 import { GROUND } from '../shared/floors';
 import { createElicitTracker } from '../shared/elicit';
@@ -156,6 +158,7 @@ const mcp = registerMcpIpc({
   appOf: appIdOf,
   globalFor: (id) => (mcpStore ? sessionGlobalFor(appIdOf(id), globalLists, mcpStore.ambientDisabled()) : {}),
   log: (a, action) => logActivity(a, 'mcp-restart', action),
+  openUrl: (url) => shell.openExternal(url), // spec 058 FR-065: the held sign-in page, only after the user's click
   globalNames: () => Object.fromEntries(globalLists.state(() => []).apps.map((x) => [x.app, x.servers.map((v) => v.name)])),
 });
 registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
@@ -443,7 +446,7 @@ router.onEvent((e) => {
   if (s) toRenderer('agents:checkpoint', { id: e.sessionId, ...s });
 });
 
-async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string; slash?: string }> {
+async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }> {
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
   if (safe.length > MAX_ATTACH_FILES) return { ok: false, error: `Up to ${MAX_ATTACH_FILES} attachments per message (got ${safe.length}).` };
@@ -457,14 +460,14 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
     checkpoints().beginTurn(id, rootsOf(agents.get(id) as AgentInfo)); // spec 065 FR-002: a send starts a turn (scheduled prompts too)
     // spec 073 FR-005: a leading `/name` of a folder or user entry is sent as that entry's text (the apps do not load them in Durbar's
     // sessions); built-ins and anything else go as typed. Scheduled prompts come through here too.
-    const { slash } = await sendWithSlash(ad, id, {
+    const { slash, slashNote } = await sendWithSlash(ad, id, {
       text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
       ...(plan ? { plan: true } : {}),
     });
     for (const a of safe) pickedFiles.delete(a.path); // spec 004 FR-015: a sent file must be picked again to be sent again
     noteLastSession(agents.get(id));
-    return slash ? { ok: true, slash } : { ok: true };
+    return slash ? { ok: true, slash, ...(slashNote ? { slashNote } : {}) } : { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -667,7 +670,7 @@ function oneShotFor(id: string): { name: string; generate: (prompt: string) => R
   if (!registry.has(id)) return undefined;
   const ad = router.instance(id);
   if (typeof ad.generateText !== 'function') return undefined;
-  const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
+  const opts = id === 'copilot' ? { disabledMcpServers: copilotServerNames(copilotDir(dev)) } : {};
   return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
 }
 registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id), profileFreshness });
@@ -821,6 +824,9 @@ function createWindow(): void {
     // the top bar drops the room it keeps for the traffic lights while the window is full screen (macOS only, see styles.css)
     w.on('enter-full-screen', () => toRenderer('window:fullScreen', true));
     w.on('leave-full-screen', () => toRenderer('window:fullScreen', false));
+    // spec 052 FR-085 (#591): remember a zoom the system did itself, so the page's double-click message does not undo it
+    w.on('maximize', () => noteWindowZoom(Date.now()));
+    w.on('unmaximize', () => noteWindowZoom(Date.now()));
   }
   win.webContents.on('did-finish-load', () => agentState.clearPaused()); // a fresh page starts with nobody paused (Paused is window-only, spec 041 T014)
   void win.loadFile(INDEX_HTML, { query });
@@ -884,6 +890,7 @@ app.whenReady().then(() => {
   activityStore = new ActivityStore(path.join(app.getPath('userData'), 'activity.json'));
   activityStore.load();
   sweepStaleStageDirs(os.tmpdir()); // spec 004 FR-010: staging folders a crash left behind
+  sweepStaleTempDirs(os.tmpdir(), ACCOUNT_TEMP_PREFIXES, Date.now(), 3600_000); // spec 051 FR-022: account-probe and one-shot folders a quit left behind
   agentTrust = new AgentTrustStore(path.join(app.getPath('userData'), 'durbar-agent-trust.json'));
   agentTrust.load();
   usageTotalsStore.load();

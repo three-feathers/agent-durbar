@@ -70,6 +70,7 @@ const api: DurbarApi = {
   harnessOpenPage: (kind) => ipcRenderer.invoke('harness:openPage', kind),
   harnessOpenSignIn: (kind, url) => ipcRenderer.invoke('harness:openSignIn', kind, url),
   copilotAuth: () => ipcRenderer.invoke('harness:copilotAuth'),
+  harnessAccounts: (refresh?: boolean | 'check') => ipcRenderer.invoke('harness:accounts', refresh === 'check' ? 'check' : refresh === true),
   onHarnessProgress: (cb) => sub('harness:progress', cb),
   onHarnessDone: (cb) => sub('harness:done', cb),
   onRemoteOff: (cb) => sub('agents:remoteOff', cb),
@@ -129,9 +130,12 @@ const api: DurbarApi = {
   mcpGlobalDiff: () => ipcRenderer.invoke('mcp:globalDiff'),
   mcpGlobalCopyPreview: (name, from, to) => ipcRenderer.invoke('mcp:globalCopyPreview', name, from, to),
   mcpGlobalSetOff: (app, name, off) => ipcRenderer.invoke('mcp:globalSetOff', app, name, off),
-  agentMcp: (id) => ipcRenderer.invoke('agents:mcp', id),
+  agentMcp: (id, focus) => ipcRenderer.invoke('agents:mcp', id, focus),
   setAgentMcp: (id, name, enabled) => ipcRenderer.invoke('agents:setMcp', id, name, enabled),
   agentMcpRestart: (id, name) => ipcRenderer.invoke('agents:mcpRestart', id, name),
+  agentMcpSignIn: (id, name) => ipcRenderer.invoke('agents:mcpSignIn', id, name),
+  agentMcpOpenSignIn: (id, name, host) => ipcRenderer.invoke('agents:mcpOpenSignIn', id, name, host),
+  agentMcpCancelSignIn: (id, name) => ipcRenderer.invoke('agents:mcpCancelSignIn', id, name),
   agentMcpTools: (id, name) => ipcRenderer.invoke('agents:mcpTools', id, name),
   setAgentMcpToolsOff: (id, name, off) => ipcRenderer.invoke('agents:setMcpToolsOff', id, name, off),
   agentMcpRestartSession: (id, confirmed) => ipcRenderer.invoke('agents:mcpRestartSession', id, confirmed),
@@ -160,6 +164,8 @@ const api: DurbarApi = {
   // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace…; only the two known words pass
   onMenuAdd: (cb) => sub<unknown>('menu:add', (k) => { if (k === 'folder' || k === 'workspace') cb(k); }),
   onFullScreen: (cb) => sub<boolean>('window:fullScreen', (on) => cb(on === true)),
+  // spec 052 FR-085: a double-click on a drag area of the top bar (Mac only); main reads the system setting
+  titleDoubleClick: () => ipcRenderer.send('window:titleDoubleClick'),
   platform: process.platform,
 };
 contextBridge.exposeInMainWorld('agentDurbar', api);

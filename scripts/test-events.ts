@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { EventMapper } from '../src/adapters/map';
+import { EventMapper, copilotErrorClass } from '../src/adapters/map';
 import { eventProblems } from '../src/adapters/eventguard';
 import type { EventBody, RawEvent } from '../src/adapters/map';
 
@@ -142,6 +142,49 @@ const run = (events: RawEvent[]): EventBody[] => {
   const t2 = out2.find((e) => e.type === 'toolCall') as { mcpServer?: string };
   assert.strictEqual(t2.mcpServer, undefined, 'built-in tools carry no MCP fields');
 }
+// Spec 058 FR-091 (issue #603, T142): Copilot's `errorClassification` -> errorClass, known values only; a later state drops it.
+{
+  const cases: [string, string | undefined][] = [
+    ['os_not_found', 'not-found'], ['config_invalid', 'config'], ['os_permission_denied', 'permission'], ['os_connection_refused', 'refused'],
+    ['os_network_unreachable', 'refused'], ['os_connection_closed', 'disconnected'], ['process_linux_exited', 'exited'], ['process_windows_crashed', 'exited'],
+    ['process_macos_terminated', 'exited'], ['timeout_initialize', 'timeout'], ['timeout_connection', 'timeout'], ['timeout_subscription', 'timeout'],
+    // not mapped: never guessed
+    ['process_spawn_failed', undefined], ['process_linux_launch_failed', undefined], ['protocol_other', undefined], ['http_4xx_other', undefined],
+    ['lifecycle_cancelled', undefined], ['unclassified_unknown', undefined], ['config_integration_unavailable', undefined], ['os_resource_exhausted', undefined],
+    ['process_beos_exited', undefined], ['toString', undefined], ['', undefined],
+  ];
+  for (const [v, want] of cases) assert.strictEqual(copilotErrorClass(v), want, v);
+  for (const bad of [undefined, null, 5, {}, ['os_not_found']]) assert.strictEqual(copilotErrorClass(bad), undefined);
+  const out = run([
+    { type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'pw', status: 'pending', source: 'user', transport: 'stdio' }] } },
+    { type: 'session.mcp_server_status_changed', data: { serverName: 'pw', status: 'failed', error: 'spawn playwright ENOENT', errorClassification: 'os_not_found', configSource: 'user' } },
+    { type: 'session.mcp_server_status_changed', data: { serverName: 'pw', status: 'pending' } },
+    { type: 'session.mcp_server_status_changed', data: { serverName: 'pw', status: 'failed', errorClassification: 'something_new' } },
+    { type: 'session.mcp_server_status_changed', data: { serverName: 'pw', status: 'connected', errorClassification: 'os_not_found' } },
+  ]);
+  const ms = (out.filter((e) => e.type === 'mcp') as { servers: { name: string; status: string; errorClass?: string; transport?: string }[] }[]).map((m) => m.servers[0]);
+  assert.deepStrictEqual(ms.map((x) => [x.status, x.errorClass]), [['pending', undefined], ['failed', 'not-found'], ['pending', undefined], ['failed', undefined], ['connected', undefined]], 'only a failed state carries the class; an unknown value sets none');
+  assert.strictEqual(ms[1].transport, 'stdio', 'the transport from the loaded list is kept');
+  assert.ok(!('errorClass' in ms[0]) && !('errorClass' in ms[3]), 'no empty key');
+  for (const e of out) assert.deepStrictEqual(eventProblems({ ...e, sessionId: 's', timestamp: 1 } as never), [], 'the event guard accepts it');
+}
+// Review on PR #630 (item 4): the 5 s re-read (`rpc.mcp.list`, spec 058 FR-064) has no classification: an unchanged failed state keeps
+// the class and the transport the runtime's own event gave; a changed state drops them.
+{
+  const sink: EventBody[] = [];
+  const mapper = new EventMapper((b) => sink.push(b));
+  const last = () => (sink.filter((e) => e.type === 'mcp').pop() as unknown as { servers: { name: string; status: string; errorClass?: string; transport?: string }[] }).servers;
+  mapper.map({ type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'pw', status: 'pending', transport: 'stdio' }] } });
+  mapper.map({ type: 'session.mcp_server_status_changed', data: { serverName: 'pw', status: 'failed', error: 'spawn pw ENOENT', errorClassification: 'os_not_found' } });
+  mapper.reread([{ name: 'pw', status: 'failed', error: 'spawn pw ENOENT' }]);
+  assert.deepStrictEqual(last().map((x) => [x.status, x.errorClass, x.transport]), [['failed', 'not-found', 'stdio']], 'kept over a re-read');
+  mapper.reread([{ name: 'pw', status: 'failed', transport: 'http' }]);
+  assert.deepStrictEqual(last().map((x) => [x.errorClass, x.transport]), [['not-found', 'http']], 'a transport the list names wins');
+  mapper.reread([{ name: 'pw', status: 'connected' }]);
+  assert.deepStrictEqual(last().map((x) => [x.status, x.errorClass]), [['connected', undefined]], 'another state drops the class');
+  mapper.reread([{ name: 'pw', status: 'failed' }]);
+  assert.strictEqual(last()[0].errorClass, undefined, 'and a new failure from a re-read has none (never guessed)');
+}
 // Spec 058 T094: a failed MCP tool with the server's OAuth challenge -> mcpAuth and needs-auth; the next status replaces it.
 {
   const text = 'MCP tool catalog changed before tool "x" could be invoked: Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)';
@@ -163,6 +206,36 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.strictEqual(ms.length, 3, 'loaded, needs-auth, next status; non-matching failures and a successful call quoting the text emit no list');
   assert.deepStrictEqual([ms[1].servers[0].status, ms[1].servers[0].errorClass, ms[1].servers[0].source], ['needs-auth', 'auth', 'user']);
   assert.deepStrictEqual([ms[2].servers[0].status, ms[2].servers[0].errorClass], ['connected', undefined], 'next runtime status replaces it');
+}
+// Spec 058 FR-060 (review on #598): a re-read of the server list (the poll while a sign-in page is open) is not a new status from the runtime.
+{
+  const text = 'Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)';
+  const sink: EventBody[] = [];
+  const mapper = new EventMapper((b) => sink.push(b));
+  const feed = (ev: RawEvent): void => mapper.map(ev);
+  const last = (): { name: string; status: string; errorClass?: string }[] => (sink.filter((e) => e.type === 'mcp').pop() as unknown as { servers: { name: string; status: string; errorClass?: string }[] }).servers;
+  feed({ type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'srv', status: 'connected' }, { name: 'other', status: 'connected' }] } });
+  feed({ type: 'tool.execution_start', data: { toolCallId: 'a', toolName: 'srv-x', mcpServerName: 'srv', mcpToolName: 'x', arguments: {} } });
+  feed({ type: 'tool.execution_complete', data: { toolCallId: 'a', success: false, error: { message: text } } });
+  assert.deepStrictEqual(last().filter((x) => x.name === 'srv').map((x) => [x.status, x.errorClass]), [['needs-auth', 'auth']]);
+  mapper.reread([{ name: 'srv', status: 'connected' }, { name: 'other', status: 'failed', error: 'boom' }]);
+  assert.deepStrictEqual(last().map((x) => [x.name, x.status]), [['srv', 'needs-auth'], ['other', 'failed']], 'a re-read keeps the mark, and still applies a real change of another server');
+  mapper.reread([{ name: 'srv', status: 'connected' }, { name: 'other', status: 'failed' }]);
+  assert.strictEqual(last().find((x) => x.name === 'srv')!.status, 'needs-auth', 'and again');
+  mapper.reread([{ name: 'srv', status: 'failed', error: 'x' }, { name: 'other', status: 'failed' }]);
+  assert.strictEqual(last().find((x) => x.name === 'srv')!.status, 'failed', 'a re-read that lists another status replaces the mark');
+  mapper.reread([{ name: 'srv', status: 'connected' }]);
+  assert.deepStrictEqual(last().map((x) => [x.name, x.status]), [['srv', 'connected']], 'then connected counts, and a server no longer listed is gone');
+  // only the runtime's own status clears the mark
+  feed({ type: 'tool.execution_start', data: { toolCallId: 'b', toolName: 'srv-x', mcpServerName: 'srv', mcpToolName: 'x', arguments: {} } });
+  feed({ type: 'tool.execution_complete', data: { toolCallId: 'b', success: false, error: { message: text } } });
+  assert.strictEqual(last()[0].status, 'needs-auth');
+  feed({ type: 'session.mcp_server_status_changed', data: { serverName: 'srv', status: 'connected' } });
+  assert.strictEqual(last()[0].status, 'connected', 'status_changed replaces it');
+  feed({ type: 'tool.execution_start', data: { toolCallId: 'c', toolName: 'srv-x', mcpServerName: 'srv', mcpToolName: 'x', arguments: {} } });
+  feed({ type: 'tool.execution_complete', data: { toolCallId: 'c', success: false, error: { message: text } } });
+  feed({ type: 'session.mcp_servers_loaded', data: { servers: [{ name: 'srv', status: 'connected' }] } });
+  assert.strictEqual(last()[0].status, 'connected', 'servers_loaded replaces it');
 }
 // Credit cap events (spec 011). Shapes are taken from the SDK 1.0.22 type definitions (session-events.d.ts), NOT recorded from a real session.
 {

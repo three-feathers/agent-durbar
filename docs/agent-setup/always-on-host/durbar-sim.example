@@ -1,0 +1,8 @@
+#!/bin/sh
+# durbar-sim start|stop|logs : the simulator on the virtual display (watch it over noVNC)
+case "$1" in
+  start) cd ~/<workspace>/agent-durbar && git checkout -q main && git pull -q && npm ci --no-audit --no-fund >/dev/null && npm run -s build >/dev/null && systemctl --user start durbar-sim ;;
+  stop) systemctl --user stop durbar-sim ;;
+  logs) journalctl --user -u durbar-sim -n 50 --no-pager ;;
+  *) echo "usage: durbar-sim start|stop|logs" ;;
+esac
