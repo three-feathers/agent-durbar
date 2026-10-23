@@ -54,6 +54,7 @@ Docs: n/a <reason>
 - [ ] `npm run typecheck && npm run build && npm test` pass locally (no AI credits spent)
 - [ ] Tests added or updated in `scripts/` (permission broker, attachments, launcher, history/VS Code readers, folder store, adapter mapping)
 - [ ] UI change: screenshots at **1440x900** and **1280x800** with 15 simulated agents (`DURBAR_SIM=15`), added under `docs/screenshots/` and linked below
+- [ ] UI change: every **linked** screenshot (README, website gallery, landing page) that shows the changed screen is retaken too, not only this spec's (`npm run shots:docs`, or `-- --only <driver,...>`); a new linked picture has its driver in `DOC_SHOTS`, or a written reason in `NO_DRIVER` (`scripts/shots-docs.js`), named here
 - [ ] Real-session check, if any (state the prompt count and the AI credits it used) — otherwise "simulator only"
 - [ ] README/docs claims match the code; anything unverified is worded as unverified
 - [ ] Screenshots I changed or that now show old wording (for example a renamed button) are replaced, or listed below as needing a real run
