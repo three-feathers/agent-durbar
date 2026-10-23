@@ -10,7 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { listClaudeAgents, MAX_AGENT_BYTES, parseClaudeAgent } from '../src/adapters/claudeAgents';
 import { DEFAULT_TEMPLATE, PROFILE_TEMPLATES, profileTemplate, SAFETY_LINES, SUCCESS_SECTIONS } from '../src/shared/profiletemplates';
-import { atomicOps, createProfileFile, createProfileFreshness, defaultProfileEnv, listAgentProfilesFresh, deleteProfileFile, encodeLike, fileIdOf, folderIdOf, headOf, isProfileName, listProfileFiles, maxBytesFor, MAX_PROFILE_BYTES, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../src/main/profilefiles';
+import { atomicOps, deleteOps, createProfileFile, createProfileFreshness, defaultProfileEnv, listAgentProfilesFresh, deleteProfileFile, encodeLike, fileIdOf, folderIdOf, headOf, isProfileName, listProfileFiles, maxBytesFor, MAX_PROFILE_BYTES, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../src/main/profilefiles';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-profilefiles-'));
 const WS = path.join(tmp, 'ws');
@@ -358,6 +358,33 @@ const W0 = folderIdOf(WS);
   fr.seen('a');
   fr.forget('a');
   assert.strictEqual(fr.needsReload('a'), true, 'a forgotten (ended) session starts over and reloads');
+  // review on #572: prune drops sessions that left the office (folders:remove, a replaced session), keeps the others
+  const pr = createProfileFreshness();
+  pr.changed();
+  pr.seen('keep');
+  pr.seen('gone');
+  pr.prune((id) => id === 'keep');
+  assert.strictEqual(pr.needsReload('keep'), false, 'a kept session keeps what it saw');
+  assert.strictEqual(pr.needsReload('gone'), true, 'a pruned session has no entry any more');
+}
+
+// review on #572: the last lstat before the unlink refuses an entry swapped for a link or a folder after it was resolved
+{
+  const made = createProfileFile(dirs(), 'claude', W0, 'swapped');
+  assert.ok(made.ok);
+  const file = path.join(WS, '.claude', 'agents', 'swapped.md');
+  const real = deleteOps.lstat;
+  for (const kind of ['link', 'folder']) {
+    deleteOps.lstat = (p: string) => ({ ...real(p), isFile: () => false, isSymbolicLink: () => kind === 'link', isDirectory: () => kind === 'folder' }) as fs.Stats;
+    try {
+      const r = deleteProfileFile(dirs(), (made as { id: string }).id);
+      assert.ok(!r.ok && /plain file/.test(r.error), `a ${kind} swapped in: refused`);
+    } finally {
+      deleteOps.lstat = real;
+    }
+    assert.ok(fs.existsSync(file), `and nothing was deleted (${kind})`);
+  }
+  assert.ok(deleteProfileFile(dirs(), (made as { id: string }).id).ok, 'the real file then deletes');
 }
 
 // FR-041: the profile list of a session asks the adapter to read the agent files again once after a change; an adapter without the

@@ -49,6 +49,14 @@ module.exports = async (ctx) => {
     return js(`[...document.querySelectorAll('#agentMenu button[data-prof] .mt b')].map(b=>b.firstChild.textContent.trim())`);
   };
 
+  /**
+   * Review on #572: a dialog or menu fades in (styles.css `dlgin`, `dlgov`); a capture taken too soon on a loaded machine is half
+   * faded. Wait until its animations have finished and it is fully opaque, and fail if that never happens.
+   */
+  const steady = async (sel) => {
+    const ok = await until(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return false;const all=[e,...e.querySelectorAll('*')];return e.getAnimations({subtree:true}).every(a=>a.playState==='finished')&&all.every(x=>getComputedStyle(x).opacity==='1')})()`, 5000);
+    assert.ok(ok, `${sel} finished its animations and is fully opaque before the capture`);
+  };
   let first = true;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h });
@@ -119,12 +127,14 @@ module.exports = async (ctx) => {
     assert.ok((await menuNames()).includes(name), 'the Profile menu lists the new profile at once');
     // FR-040: Delete in the Profile menu, beside Edit; none for a file it cannot write
     assert.ok(await js(`!!document.querySelector('#agentMenu .mm-del[aria-label=${jsLiteral('Delete the file of ' + name)}]')`), 'Delete beside the new profile');
-    await H.shot(path.join(OUT, `043-profile-menu-delete-${w}x${h}.png`), { prep: 'calm', delay: 200 });
+    await steady('#agentMenu');
+    await H.shot(path.join(OUT, `043-profile-menu-delete-${w}x${h}.png`), { prep: 'calm', delay: 0 });
     await js(`document.querySelector('#agentMenu .mm-del[aria-label=${jsLiteral('Delete the file of ' + name)}]').click()`);
     assert.ok(await until(`!!document.getElementById('modeDlg')`), 'the confirmation');
     const dlg = await js(`({t:document.getElementById('mdT').textContent,b:document.getElementById('mdB').textContent,l:document.getElementById('mdL')?document.getElementById('mdL').textContent:'',focus:document.activeElement&&document.activeElement.textContent,danger:!![...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent==='Delete'&&/danger/.test(b.className))})`);
-    assert.ok(dlg.t === `Delete the profile ${name}?` && /deleted from disk/.test(dlg.b) && /keep it until they end/.test(dlg.b) && /triager-/.test(dlg.l) && dlg.focus === 'Cancel' && dlg.danger, 'askDialog with Cancel focused and a red Delete: ' + JSON.stringify(dlg));
-    await H.shot(path.join(OUT, `043-profile-delete-confirm-${w}x${h}.png`), { prep: 'calm', delay: 200 });
+    assert.ok(dlg.t === `Delete the profile ${name}?` && /deleted from disk/.test(dlg.b) && /goes back to its default agent/.test(dlg.b) && /triager-/.test(dlg.l) && dlg.focus === 'Cancel' && dlg.danger, 'askDialog with Cancel focused and a red Delete: ' + JSON.stringify(dlg));
+    await steady('#modeDlg');
+    await H.shot(path.join(OUT, `043-profile-delete-confirm-${w}x${h}.png`), { prep: 'calm', delay: 0 });
     await H.clickText('#modeDlg .dbtn button', 'Cancel');
     assert.ok(await until(`!document.getElementById('modeDlg')`), 'Cancel closes');
     assert.ok((await menuNames()).includes(name), 'Cancel keeps it');

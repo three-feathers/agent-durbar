@@ -408,12 +408,16 @@ export function pathOfProfile(dirs: readonly ProfileDir[], id: unknown): string 
  * Spec 043 FR-040: deletes a listed profile file by id. The id is resolved again from the current folders (directly inside its real
  * agent folder, not a link); only a writable file is deleted, with `unlinkSync` (one file, never a folder, no shell).
  */
+/** The last check before the unlink; tests swap it to prove a link or folder swapped in after resolving is refused (FR-040). */
+export const deleteOps = { lstat: (p: string): fs.Stats => fs.lstatSync(p) };
+
 export function deleteProfileFile(dirs: readonly ProfileDir[], id: unknown): { ok: true; id: string } | Fail {
   const f = resolveId(dirs, id);
   if (!f) return { ok: false, error: 'That profile file is not in the list any more.' };
   if (!f.info.writable) return { ok: false, error: f.info.note ?? 'You cannot delete this file.' };
   try {
-    if (!fs.lstatSync(f.file).isFile()) return { ok: false, error: 'Only a plain file can be deleted here.' }; // a link or anything else, checked once more
+    // checked once more right before the unlink: the scan excluded links and non-files, but the entry may have been swapped since
+    if (!deleteOps.lstat(f.file).isFile()) return { ok: false, error: 'Only a plain file can be deleted here.' };
     fs.unlinkSync(f.file);
   } catch {
     return { ok: false, error: 'The file could not be deleted.' };
@@ -429,7 +433,10 @@ export interface ProfileFreshness {
   changed(): void;
   needsReload(sessionId: string): boolean;
   seen(sessionId: string): void;
+  /** A session that ended or left the office (agents:end, agents:remove). */
   forget(sessionId: string): void;
+  /** Drops every session `keep` says is gone (folders:remove and a replaced session leave no entry behind). */
+  prune(keep: (sessionId: string) => boolean): void;
 }
 export function createProfileFreshness(): ProfileFreshness {
   let version = 0;
@@ -439,6 +446,9 @@ export function createProfileFreshness(): ProfileFreshness {
     needsReload: (id) => (seenAt.get(id) ?? 0) !== version,
     seen: (id) => void seenAt.set(id, version),
     forget: (id) => void seenAt.delete(id),
+    prune: (keep) => {
+      for (const id of [...seenAt.keys()]) if (!keep(id)) seenAt.delete(id);
+    },
   };
 }
 

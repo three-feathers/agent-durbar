@@ -116,7 +116,18 @@
   /** dir + file with the folder's own separator (a Windows user folder uses backslashes). */
   const joinHint=(dir,file)=>{const d=String(dir);const sep=d.includes('\\')&&!d.includes('/')?'\\':'/';return d.replace(/[\\/]+$/,'')+sep+file;};
 
-  const pure={parseFrontmatter,throttle,loadMode,saveMode,MODES,MODE_KEY,NAME_RE,RESERVED_RE,validName,newFileName,newDirHint,joinHint,placeText,baseName};
+  /**
+   * Spec 043 FR-040 (review on PR 572): the same file, as main compares folders (`sameDir`): separators normalised, and case folded only
+   * where the file system ignores case by default (Windows, macOS). On Linux `/w/App` and `/w/app` are two folders, so Delete never
+   * picks the other one.
+   */
+  function samePath(a,b,platform){
+    const n=s=>String(s||'').replace(/\\/g,'/');
+    const x=n(a),y=n(b);
+    return platform==='win32'||platform==='darwin'?x.toLowerCase()===y.toLowerCase():x===y;
+  }
+
+  const pure={samePath,parseFrontmatter,throttle,loadMode,saveMode,MODES,MODE_KEY,NAME_RE,RESERVED_RE,validName,newFileName,newDirHint,joinHint,placeText,baseName};
   if(!win)return pure;
 
   /* ---------------- the editor (page only) ---------------- */
@@ -442,7 +453,7 @@
     if(!f){X.toast('That profile file is not in the list any more.',5000);return false;}
     if(!f.writable){X.toast(X.esc(f.note||'You cannot delete this file.'),5000);return false;}
     const back=(opts&&opts.returnFocus)||null;
-    const v=await X.askDialog({title:'Delete the profile '+f.name+'?',body:'The file is deleted from disk. Sessions that use this profile keep it until they end.',lines:['File: '+f.path],returnFocus:back?()=>back:undefined,
+    const v=await X.askDialog({title:'Delete the profile '+f.name+'?',body:'The file is deleted from disk. A running session that uses this profile goes back to its default agent (Claude Code keeps it until the session ends).',lines:['File: '+f.path],returnFocus:back?()=>back:undefined,
       buttons:[{label:'Cancel',value:null},{label:'Delete',value:'delete',cls:'primary danger'}]});
     if(!v)return false;
     const r=await X.bridge.deleteProfileFile(id).catch(e=>({ok:false,error:String(e&&e.message||e)}));
@@ -458,11 +469,12 @@
     if(!f){X.toast('This profile\'s file is not in the list of profile files (Settings > Profiles).',5000);return false;}
     return remove(f.id,opts);
   }
-  const normPath=s=>String(s||'').replace(/\\/g,'/').toLowerCase(); /* the agent app may spell the path differently (separators, drive letter case) */
+  /* the agent app may spell the path differently (separators; drive letter case on Windows, case on macOS) */
+  const platform=()=>(win.agentDurbar&&win.agentDurbar.platform)||'';
   async function fileByPath(p){
     if(!X||!X.bridge.listProfileFiles)return null;
     const l=await X.bridge.listProfileFiles().catch(()=>null);
-    return (l&&(l.files.find(x=>x.path===p)||l.files.find(x=>normPath(x.path)===normPath(p))))||null;
+    return (l&&(l.files.find(x=>x.path===p)||l.files.find(x=>samePath(x.path,p,platform()))))||null;
   }
 
   /** The Profile menu's Edit button: the session's profile carries its file path; main's list gives the id for it. */

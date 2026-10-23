@@ -6,6 +6,7 @@ import { errText } from '../agentops';
 import type { AgentTrustStore } from '../agenttrust';
 import { hashAgentFile } from '../agenttrust';
 import { PROFILE_ID } from '../folders';
+import type { ProfileFreshness } from '../profilefiles';
 import { createProfileFile, createProfileFreshness, deleteProfileFile, listAgentProfilesFresh, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../profilefiles';
 import { openInVSCode } from '../vscode';
 import * as path from 'path';
@@ -23,13 +24,20 @@ export interface ProfilesIpcDeps {
   ensureLive: EnsureLive;
   /** Spec 043 FR-028: an app's one-shot text call (the theme maker's path: no tools, no session), or undefined. */
   oneShot(id: string): OneShot | undefined;
+  /** Spec 043 FR-041: shared with ipc/agents.ts, which forgets a session when it ends or is removed. */
+  profileFreshness?: ProfileFreshness;
 }
 
 export function register(deps: ProfilesIpcDeps): void {
   const { agents, router, wsKey, ensureLive } = deps;
   const agentTrust = deps.getAgentTrust;
   /* spec 043 FR-041: files changed through Durbar; a session that missed a change re-reads its agent files on its next list */
-  const fresh = createProfileFreshness();
+  const fresh = deps.profileFreshness ?? createProfileFreshness();
+  /** A change: count it, and drop sessions no longer in the office (folders:remove and a replaced session do not call forget). */
+  const changed = (): void => {
+    fresh.changed();
+    fresh.prune((id) => agents.has(id));
+  };
   // ---- custom agent per session (spec 043 FR-003): list, select; a repository agent needs a confirmation for its exact file ----
   ipcHandle('agents:listProfiles', async (_e, id: unknown) => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -81,20 +89,20 @@ export function register(deps: ProfilesIpcDeps): void {
   ipcHandle('profiles:save', (e, id: unknown, text: unknown, baseSha: unknown, overwrite: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
     const r = saveProfileFile(dirs(), id, text, baseSha, overwrite === true);
-    if (r.ok) fresh.changed();
+    if (r.ok) changed();
     return r;
   });
   ipcHandle('profiles:create', (e, app: unknown, place: unknown, name: unknown, template: unknown, text: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
     const r = createProfileFile(dirs(), app, place, name, template === undefined ? 'success' : template, text); // text: a reviewed AI draft (FR-029)
-    if (r.ok) fresh.changed();
+    if (r.ok) changed();
     return r;
   });
   /* spec 043 FR-040: delete one listed, writable file by id (resolved again in main; no shell, never a folder) */
   ipcHandle('profiles:delete', (e, id: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
     const r = deleteProfileFile(dirs(), id);
-    if (r.ok) fresh.changed();
+    if (r.ok) changed();
     return r;
   });
   /* spec 043 FR-026..FR-028: one prompt to an agent app's one-shot path; the reply is checked and handed back as a draft (nothing written) */
