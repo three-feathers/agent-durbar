@@ -387,6 +387,49 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 ## Changes
 
+### 2026-10-22: the MCP dialog fits a long list, and a word never contradicts its switch (issue #544)
+
+**Status**: built (T117), simulator and unit tests only; `[KNOWN GAP]` not seen on a real agent app (the owner's macOS build had the bug).
+
+**Problem** (owner, real Mac, a build with #538, 14 servers, `real:` issue #544): (1) with a list taller than the window the footer
+buttons (*Settings*, *Folder extras…*, *Done*) sat on the last rows and the last switch drew over *Done*. Cause: `.dlg.wide` is a
+flex column with `overflow:auto`, and `.dlg .dbody` has `min-height:0` but visible overflow, so the body shrank to the dialog's
+height and its rows spilled over the footer instead of scrolling. (2) Six servers the agent app had turned off itself (runtime status
+`disabled`, switch on) read "Off for this session", as if the user had switched them off here.
+
+#### Requirements (delta)
+
+- **FR-077** **The footer never overlaps the rows.** In a wide dialog (`.dlg.wide`, so the agent's MCP dialog) the title and the
+  buttons stay in view and only the body scrolls, with a few pixels of padding so the switches' focus ring is not clipped (`.dlg.imp` does the same). At 1440x900,
+  1280x800 and 1280x600 with 14 or more servers, no row's box meets the button row and *Done* is visible and clickable. The *Restart session with these servers* row and the "Applies to this agent until the app is closed" line are part of the scrolling body, never on the buttons (owner, macOS, issue #544). Other
+  `dialog()` users with a wide body behave the same. [IMPLEMENTED] `sim:` `shots-058-mcp-words.js`.
+- **FR-078** **A word says who turned the server off, and never contradicts the switch.** A server the runtime reports `disabled`:
+  - reads "Off for this session" only when the user's switch here is off (`off`);
+  - "Off in Settings" / "Off in folder extras" when the Settings or extras default is off (the separate "off in ..." tag is then left out);
+  - "Off until the session restarts" when Agent Durbar itself passed it as off when the session started (`launchedOff` on the `agents:mcp`
+    entry, kept by main from the start options: Copilot `disabledMcpServers`, Codex's disabled list) and the user has since switched it on
+    in Settings; its switch stays on, and its hint points to *Restart session with these servers*;
+  - "Starting" while the user has just switched it on here (`switchedHere`) and the runtime's old `disabled` has not been replaced yet (no flicker);
+  - otherwise the agent app or its config turned it off, and the word is "Off in <app name>" (`app` of the reply; without it
+    "Turned off by the agent app"). That row's switch shows off and is disabled, and its hint says where to change it ("Turn it on in
+    <app>'s own MCP settings, then restart the session."). Agent Durbar does not claim it can switch it on.
+  [IMPLEMENTED] `test:` `test-mcpwords.ts`, `test-mcp-session.ts` (`launchedOff`, `switchedHere`); `sim:` `shots-058-mcp-words.js`.
+
+### 2026-10-23: the footer is its own layer, also after a switch toggle (issue #544, second report)
+
+**Status**: built (T117), simulator only; `[KNOWN GAP]` not seen on a real Mac with this CSS (the owner's dev build of main had the bug).
+
+**Problem** (owner, real Mac, dev build of main f28ed2da, `real:` issue #544): toggling an MCP switch off and on made the overlap worse. The last row (`workiq`, "Off for this session", switch on) sat under the footer, *Settings* / *Folder extras…* / *Done* were drawn over the row text, and after the toggle the last row's switch was drawn over *Done*. Rows and footer shared space and z-order, and the repaint that follows a toggle re-rendered the body into that shared space.
+
+#### Requirements (delta)
+
+- **FR-077a** The wide dialog is a column of three separate things: the scroller (`.dbody`: `flex:1 1 auto; min-height:0; overflow:auto`, its own stacking context at `z-index:0`), and the footer (`.dbtn` and a visible `.derr`: `flex:none`, `position:relative`, `z-index:2`, an opaque `--surface` background). The body's own repaint (toggle, `mcp` event, Details, Restart) never changes that, so no row control (a switch included: its knob is inside the scroller, clipped by it) can paint over *Done* or over the buttons. After each toggle of the last row (off, then on), at 1440x900, 1280x800 and 1280x600: *Done* is fully visible and `elementFromPoint` at its centre and four corners returns *Done* or its child, and no element's visible part (clipped to the scroller) meets the footer's rect. The same rules serve every `dialog({wide:true})` (theme picker, review, trust, add/edit server) and the import and folder-setup dialogs, which are `.dlg.wide.imp` (one rule set, so they cannot drift; the duplicate `.dlg.imp .dbody` rule was removed). The scroller has 5px of padding: the focus ring is a 3px outline 1px off the control, and the old 2px/4px padding clipped the last control's ring (found by the check below).
+[IMPLEMENTED] `src/renderer/screens.css`; `sim:` `scripts/shots-058-mcp-words.js`:
+  - `footerIntegrity`: after each toggle, *Done* hit-tested and no element's visible part meets the footer;
+  - `assertFooterStyle`: the footer's computed background is opaque (alpha 1) and equals the dialog's, its `position` is not `static`, its `z-index` is above the scroller's. It runs at the three sizes and in every built-in theme at 1280x800;
+  - `wideDialogOk`: the add-server and trust dialogs at 1280x600 keep every footer button visible and hit-testable, and the first and last control in the scroller show their whole focus ring.
+  Mutations (each fails the driver): removing the scroller rules (`Done is visible and nothing covers it`); removing only the footer rules (`the footer is an opaque, positioned layer above the scroller`); padding back to `2px 4px 2px 2px` (`the focus ring of the first and last control is not clipped`). Shots `docs/screenshots/058-mcp-dialog-toggle-*`, `058-mcp-wide-*`.
+
 ### 2026-10-20: MCP OAuth sign-in (issue #364)
 
 **Status**: specified and clarified, **no code**. The owner answered Q12-Q19 on 2026-10-20 (Q12 B, the rest A: all the recommended

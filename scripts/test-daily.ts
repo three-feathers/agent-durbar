@@ -68,8 +68,7 @@ assert.deepStrictEqual(parseAppState(JSON.stringify({ window: { x: 0, y: 0, widt
   assert.strictEqual(s.awayMs, 3 * 3600_000);
   assert.deepStrictEqual(s.missed.map((m) => m.id), ['a', 'b'], 'only runs marked missed at this start');
   assert.deepStrictEqual(s.missed[0], { id: 'a', folderName: 'My app', prompt: 'Summarise yesterday’s commits', repeats: true });
-  assert.strictEqual([...s.missed[1].prompt].length, 80, 'long prompts are cut to 80 characters');
-  assert.ok(s.missed[1].prompt.endsWith('…'));
+  assert.strictEqual([...s.missed[1].prompt].length, 200, 'a long prompt is sent whole: the window masks it, then cuts it to 80 (spec 041 FR-065)');
   assert.strictEqual(s.missed[1].repeats, false);
   assert.strictEqual(s.missed[1].folderName, 'site');
   assert.deepStrictEqual(buildSinceAway(start - 2 * AWAY_MIN_MS, start, [], name), { awayMs: 2 * AWAY_MIN_MS, missed: [] }, 'nothing missed: the card still says how long');

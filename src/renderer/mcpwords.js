@@ -21,11 +21,30 @@
   const tokenText=t=>plain(t,40);
   /* `status` is the runtime's token (missing/empty = no state yet). Returns {word, icon, cls}; an unknown token reads "Unknown state: <token>"
      (plain text, the caller escapes) and gets the neutral class. */
-  function stateOf(status){
+  function stateOf(status,ctx){
+    if(status==='disabled'&&ctx){const w=offWord(ctx);if(w.by==='pending')return Object.assign({},STATES.pending);if(w)return {word:w.word,icon:'off',cls:'disabled'};}
     if(status===undefined||status===null||status==='')return Object.assign({},NONE);
     if(typeof status==='string'&&Object.prototype.hasOwnProperty.call(STATES,status))return Object.assign({},STATES[status]);
     const t=tokenText(typeof status==='string'?status:'?');
     return {word:t?'Unknown state: '+t:'Unknown state',icon:'dash',cls:'unknown'};
+  }
+  /* Spec 058 FR-078: who turned a `disabled` server off. ctx = {off (this session's switch), defaultOn (false: off in Settings or the folder's extras),
+     origin, app}. The word and the row's switch must agree: the switch is on only when none of these is true. by: 'here' | 'settings' | 'start' | 'pending' | 'app'. */
+  function offBy(ctx){
+    if(!ctx)return 'app';
+    if(ctx.off)return 'here';
+    if(ctx.defaultOn===false)return 'settings';
+    if(ctx.launchedOff)return 'start'; /* Durbar passed it as off when the session started: only a restart changes it */
+    if(ctx.switchedHere)return 'pending'; /* switched on here; the runtime's old `disabled` is about to be replaced by its event */
+    return 'app';
+  }
+  function offWord(ctx){
+    const by=offBy(ctx),app=ctx&&ctx.app?plain(ctx.app,40):'';
+    if(by==='here')return {by,word:'Off for this session'};
+    if(by==='start')return {by,word:'Off until the session restarts'};
+    if(by==='pending')return {by,word:'Starting'};
+    if(by==='settings')return {by,word:ctx&&ctx.origin==='folder'?'Off in folder extras':'Off in Settings'};
+    return {by,word:app?'Off in '+app:'Turned off by the agent app'};
   }
   /* 16x16 icon bodies (stroke, no fill), one per shape name; static markup, safe to place in a row */
   const ICONS={
@@ -50,6 +69,8 @@
   function signInHint(app){return 'This server needs you to sign in. '+(app?app:'Your agent app')+' keeps the sign-in; Agent Durbar never sees it.';}
   function hintFor(o){
     const status=o&&o.status, cls=o&&o.errorClass, app=o&&o.app?String(o.app):'';
+    if(status==='disabled'&&o.by==='start')return 'It was off when this session started. Use Restart session with these servers to start it.';
+    if(status==='disabled'&&o.by==='app')return 'Turn it on in '+(app?plain(app,40)+'\u2019s own':'the agent app\u2019s own')+' MCP settings, then restart the session. Agent Durbar cannot switch it on here.';
     if(status==='needs-auth'||(status==='failed'&&cls==='auth'))return signInHint(app);
     if(status!=='failed')return '';
     if(typeof cls==='string'&&Object.prototype.hasOwnProperty.call(CLASS_HINT,cls))return CLASS_HINT[cls];
@@ -104,5 +125,5 @@
     for(const r of servers)if(r.attention)attention++;
     return {servers,attention,chats};
   }
-  return {stateOf,iconSvg,hintFor,signInHint,plain,aggregate,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
+  return {stateOf,offBy,iconSvg,hintFor,signInHint,plain,aggregate,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
 })());

@@ -70,6 +70,16 @@ async function main(): Promise<void> {
       assert.strictEqual(by('later').canRestart, undefined, 'a server the running session never reported: no Restart');
       assert.strictEqual(by('local').canRestart, undefined, 'an untrusted extra (off): no Restart');
       assert.strictEqual(by('rt-only').origin, 'runtime');
+      // FR-078: which names Agent Durbar itself switched off (at the session start, or here since) ride on the reply; the app's own `disabled` carries neither
+      assert.strictEqual(by('off-one').launchedOff, undefined, 'no flag without the sets');
+      const r2 = agentMcpReply({ ...base, launchedOff: new Set(['off-one', 'web']), switchedHere: new Set(['notes']) });
+      const by2 = (n: string) => r2.servers.find((x) => x.name === n)!;
+      assert.strictEqual(by2('off-one').launchedOff, true);
+      assert.strictEqual(by2('web').launchedOff, true);
+      assert.strictEqual(by2('notes').switchedHere, true);
+      assert.strictEqual(by2('notes').launchedOff, undefined);
+      assert.strictEqual(by2('rt-only').launchedOff, undefined, 'a server Durbar never disabled has no flag: `disabled` is the app\'s');
+      assert.strictEqual(by2('rt-only').switchedHere, undefined);
       // T114: errorClass passes through only when the adapter set it; the app's display name rides on the reply
       assert.strictEqual(by('signed-out').errorClass, 'auth');
       assert.strictEqual(by('signed-out').status, 'needs-auth');
