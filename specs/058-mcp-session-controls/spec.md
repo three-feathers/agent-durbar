@@ -691,3 +691,45 @@ token issued for another resource, and a refresh keeps its resource; the test al
 (400) and checks the server's address is `http://127.0.0.1:` (taken from the bound address). New `[KNOWN GAP]`s in FR-070: the
 Linux tokens file's encryption and permissions; the cached-catalog tool call 401.
 
+
+### 2026-10-23: MCP Sign in, Copilot first (T098, T101, T102, T104; owner priority)
+
+**Why now**: the owner (Paco, issue #364, 2026-10-23) made the in-app MCP **Sign in** his top priority: Copilot servers that need a
+sign-in (his `agent365-teams` case) block his work, and today the only way is a terminal (`copilot`, `/mcp auth <name>`, then Restart
+session). Decision for this step: **one PR for Copilot first**; Claude (T099) and Codex (T100) follow in their own PRs, and their rows
+keep today's behaviour (no Sign in button, no new text) until then. T103 (the tool card line) and T110 (origin tag and "different site"
+line) are **not** in this slice; the two-step confirm shows the host only for now (FR-075 stays open, `[KNOWN GAP]`).
+
+**What this slice builds** (all on the fakes and the simulator; **no real Copilot session and no real OAuth**; T105 runs later on the
+owner's Mac):
+- **T098 (Copilot part)**: `startMcpSignIn` calls `session.rpc.mcp.oauth.login({ serverName, clientName: 'Agent Durbar',
+  callbackSuccessMessage })` when it is a function (`@experimental`, `read:` SDK 1.0.22 `dist/generated/rpc.d.ts`: `McpOauthLoginRequest`
+  has `serverName`, `forceReauth?`, `clientName?`, `callbackSuccessMessage?`, `clientId?`, `clientSecret?`, `publicClient?`,
+  `grantType?`, `redirectUri?`, `loginId?`, `expectedInstallationId?`; `McpOauthLoginResult` has `authorizationUrl?` and, for owned
+  installations only, `loginId`/`status`/`authorizationId`). No `authorizationUrl` = the server is already connected. The runtime's
+  default loopback flow is used (its listener starts before the call returns); Durbar passes none of `redirectUri`, `clientId`,
+  `clientSecret`, `grantType`, `forceReauth`, never calls `handlePendingRequest`, `complete`, `prepareLogin` or `cancelLogin`, and never
+  sets `onMcpAuthRequest` (no token or callback ever passes through Durbar). A missing method or a runtime that does not know it
+  (JSON-RPC MethodNotFound) rejects with a message that makes main show the manual steps. Copilot has no `cancelMcpSignIn` (its
+  `cancelLogin` is for owned logins only, FR-065). `mcpOAuthTokenStorage: 'persistent'` is already in (FR-070).
+- **T101 (main)**: `src/main/mcpsignin.ts` (pure store with an injected clock and opener, plus the three operations) and the channels
+  `agents:mcpSignIn`, `agents:mcpOpenSignIn`, `agents:mcpCancelSignIn` (window-only through `ipcHandle` and `fromApp(e)`; ids and
+  names validated). The address is checked with `elicitHttpsUrl` when it arrives and again before it is opened (https only, no
+  user:password, at most 2048 characters); main keeps `{url, host}` per agent and server for at most 10 minutes and the window only ever
+  gets the host. The entry is dropped on connected (the next `mcp` event), Cancel, the time limit, End session, Restart session (it ends
+  the session first) and app exit. `agents:mcp` entries carry `canSignIn`, `signIn` (`{host, opened}` while one is open) and
+  `signInSteps` (the adapter's plain text with the name filled in); the activity log and the `DURBAR_LOG` sink never see the address.
+- **T102 (dialog)**: the needs-sign-in row (Copilot only for now) shows the hint, **Sign in**, **Switch off for this session** (the
+  existing `setMcp`), and the terminal steps with **Copy**; after Sign in, "Sign-in page on **host**" with **Open sign-in page** and
+  **Cancel** (Q13), then the waiting text ("Copilot keeps this sign-in in your system keychain", FR-076) and, after the time limit,
+  "Sign-in was not finished". A reported `connected` refreshes the row (the dialog already follows `mcp` events); toasts and the polite
+  live region say what changed. Copilot's manual route reads: In a terminal, run `copilot`, type `/mcp auth <name>`, finish in your
+  browser, then use **Restart session with these servers** (that button exists since #473).
+- **T104 (simulator)**: page address `simmcpauth=1` (each Copilot sim agent from the first has one server in needs-sign-in; Sign in ->
+  host `auth.example.com` -> Open sign-in page shows a toast and opens nothing -> Running after 2 s) and `simmcpauth=manual` (Sign in
+  is refused and the steps show). Screenshots `docs/screenshots/058-mcp-signin-*.png` at 1440x900 and 1280x800.
+
+**Honest limits**: everything is `read:` from the SDK types plus fakes until T105. Not checked on a real account: that `oauth.login`
+returns an https `authorizationUrl` for a plain remote server, how long the runtime's callback listener waits, what happens to the
+listener after Cancel (no Copilot cancel exists for a manual login, `[KNOWN GAP]` as in FR-065), and whether a CLI `/mcp auth` is seen
+by Durbar's session.
