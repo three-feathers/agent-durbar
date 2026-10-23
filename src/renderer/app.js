@@ -1777,7 +1777,7 @@ function wireAnswerBar(a){
   chat.addEventListener('scroll',recheck,{passive:true});window.addEventListener('resize',recheck);
   const io={observe(){},unobserve(){},disconnect(){chat.removeEventListener('scroll',recheck);window.removeEventListener('resize',recheck);}};
   /* FR-016: the oldest waiting request first, and how many there are */
-  /* spec 068 FR-022 (review on #640): coffee cards have their own bar (#coffeeBar); the answer bar shows the oldest other waiting card */
+  /* spec 068 FR-022 (review on PR 640): coffee cards have their own bar (#coffeeBar); the answer bar shows the oldest other waiting card */
   const waiting=()=>[...chat.querySelectorAll('.note.perm:not(.settled):not(.coffee)')].filter(n=>n.querySelector(':scope > .note-actions button'));
   const pending=()=>waiting()[0]||null;
   const textOf=requestText;
@@ -3834,7 +3834,7 @@ const coffeeTask=a=>breakWord(a)+' — '+coffeeUntil(a);
 const BREAK_MARGIN=SIM_BREAK?2000:COFFEE.MARGIN_MS;
 const coffeeLeftWords=a=>{const b=a&&BREAKS.get(a.id);if(!b)return '';const au=BREAKS.autoResumes(a.id),w=COFFEE.backInText(b,au,Date.now(),BREAK_MARGIN);return w?(au?'back in ':'resets in ')+w:'';};
 const coffeeUntilWords=a=>{const b=a&&BREAKS.get(a.id);return b?(b.kind==='cap'?'until you raise the limit':b.resetsAt?'until '+COFFEE.whenText(b.resetsAt,Date.now()):'until the limit resets'):'';};
-/* FR-021 (review on #640): what an early Retry now does, on every Retry now; and why a retry is not allowed now */
+/* FR-021 (review on PR 640): what an early Retry now does, on every Retry now; and why a retry is not allowed now */
 const RETRY_TIP='Send one message now so the agent continues. If the limit has not reset yet, it goes back on its break and then asks before going on, as do this app’s other agents on a break';
 const coffeeNoRetry=a=>{const b=a&&BREAKS.get(a.id);return !b||!a.coffee?'The coffee break is over':a.limit?'Answer the spending limit first':b.kind!=='provider'?'Answer the spending limit first':'';};
 /* the card's sentence: what is used up, and what happens next */
@@ -3925,7 +3925,7 @@ function paintCoffeeBar(){ /* its key lives on the function (no let: the panel c
     if(had)r.focus();
   }
   const t=bar.querySelector('.cb-left'), txt='· '+words;if(t.textContent!==txt)t.textContent=txt;
-  /* FR-021 (review on #640): disabled with the reason while a retry is not allowed (a pending spending limit) */
+  /* FR-021 (review on PR 640): disabled with the reason while a retry is not allowed (a pending spending limit) */
   const rb=bar.querySelector('[data-coffee-retry]'), no=COFFEE.retryable(b,a)?'':coffeeNoRetry(a)||'Not available now';
   if(rb){rb.disabled=!!no;const tt=no?'Retry now is not available: '+no:RETRY_TIP;if(rb.title!==tt)rb.title=tt;}
   bar.setAttribute('aria-label',coffeeWord()+(words?', '+words:''));

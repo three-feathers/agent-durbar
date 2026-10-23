@@ -46,7 +46,7 @@
           source:typeof i.source==='string'?i.source:'',policy:policy==='ask'?'ask':'auto',phase:'on',noAuto:false,reminded:false};
         const r=lastResume.get(id);
         if(kind==='provider'&&r!=null&&t-r<rehit){ /* the resume hit the limit again: no more automatic resumes here, nor for the app's others */
-          b.noAuto=true;b.rehit=true; /* FR-024 (review on #640): the card says why it asks now */
+          b.noAuto=true;b.rehit=true; /* FR-024 (review on PR 640): the card says why it asks now */
           breaks.forEach(x=>{if(x.app===b.app&&x.kind==='provider'){x.noAuto=true;if(x!==b)x.heldByRehit=true;}});
         }
         breaks.set(id,b);
