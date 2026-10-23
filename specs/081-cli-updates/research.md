@@ -43,6 +43,7 @@ The owner's Codex 0.163.0 (Homebrew cask) was one version behind on that day.
 ## R3 The apps' own updaters
 
 - **Claude Code** (`read:` code.claude.com/docs/en/setup): native installs update themselves in the background; `claude update` applies an update now; for Homebrew, WinGet or apk installs it prints "Claude is up to date!" and does not update them. `DISABLE_AUTOUPDATER=1` stops only the background check (`claude update` still works); `DISABLE_UPDATES` blocks every update path, manual ones too; `autoUpdatesChannel` (`latest`/`stable`), `minimumVersion`; managed `requiredMinimumVersion`/`requiredMaximumVersion` stop Claude Code from starting outside the range. `claude doctor` reports the install and the auto-update state. The docs warn: no `sudo npm install -g`, and no `npm update -g`.
+- **Codex, `codex update` is curl-to-shell** (`read:` openai/codex @970111f6 `codex-rs/tui/src/update_action.rs`, found by Paco's agent in the review of #663). For a standalone install it runs `sh -c "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"`, and on Windows `powershell -ExecutionPolicy Bypass -c "…irm …install.ps1 | iex"`, with `sh`, `curl` and `powershell` from `PATH`. For an install method it cannot detect, it exits with "Could not detect the Codex installation method". Spec 081 therefore does not use it (FR-009; Q3 asked again).
 - **Codex**: the docs say to re-run the installer to update. The source has a `codex update` subcommand (`codex-rs/cli/src/main.rs`) and an update banner: at most every 20 h, behind the config key `check_for_update_on_startup`, cached in `<CODEX_HOME>/version.json`; it looks up GitHub `releases/latest` (and npm for npm installs, formulae.brew.sh for brew) and suggests `npm install -g @openai/codex`, `brew upgrade --cask codex`, or `curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh` (Windows: `$env:CODEX_NON_INTERACTIVE=1; irm …install.ps1 | iex`) (`codex-rs/tui/src/update_action.rs`). `codex update` is **not documented** (*unconfirmed* as a supported command).
 - **GitHub Copilot CLI** (`read:` docs.github.com `cli-command-reference`; the copilot-cli changelog): `copilot update` downloads and installs the latest (channel arguments `stable`/`prerelease`); `copilot version` "displays version information **and checks for updates**" (so it contacts GitHub: Durbar must not use it as a plain version probe); an auto-updater keeps packages under `~/.copilot/pkg`; `--no-auto-update` exists. Whether `copilot --version` works offline is *unconfirmed*.
 
@@ -66,11 +67,11 @@ Durbar's `routeOwning` (`src/shared/harnesssetup.ts`) already covers `node_modul
 
 | App | npm | Homebrew | winget | Official / native |
 |---|---|---|---|---|
-| Codex | `npm install -g @openai/codex@latest` | `brew upgrade --cask codex` | (no route today) | installer again with `CODEX_NON_INTERACTIVE=1` (docs; Q3) |
-| Claude Code | `npm install -g @anthropic-ai/claude-code@latest` | `brew upgrade --cask claude-code` (or `claude-code@latest`) | `winget upgrade --id Anthropic.ClaudeCode -e --source winget` | `claude update` (documented; Q3) |
-| Copilot CLI | `npm install -g @github/copilot@latest` | `brew upgrade --cask --greedy copilot-cli` (auto-updating cask) | `winget upgrade --id GitHub.Copilot -e --source winget` | `copilot update` (documented; Q3) |
+| Codex | `npm install -g @openai/codex@<checked>` | `brew upgrade --cask codex` | (no route today) | installer again through spec 060's checked download, with `CODEX_NON_INTERACTIVE=1` (docs; `codex update` not used, R3; Q3 asked again) |
+| Claude Code | `npm install -g @anthropic-ai/claude-code@<checked>` | `brew upgrade --cask claude-code` (or `claude-code@latest`) | `winget upgrade --id Anthropic.ClaudeCode -e --source winget` | `claude update` (documented; Q3) |
+| Copilot CLI | `npm install -g @github/copilot@<checked>` | `brew upgrade --cask --greedy copilot-cli` (auto-updating cask) | `winget upgrade --id GitHub.Copilot -e --source winget` | `copilot update` (documented; Q3) |
 
-The first three columns are the rows already in `ROUTES`; only `--greedy`, the `@latest` cask and the own updaters are new.
+The first three columns are the rows already in `ROUTES`. New are: pinning to the checked version for npm and winget (`--version <checked>`), `--greedy`, the `@latest` cask, and the own updaters. winget's agreement flags come only after the user has seen the terms (spec 081 FR-004).
 
 ## R7 What a check contacts (privacy)
 
@@ -79,7 +80,19 @@ The first three columns are the rows already in `ROUTES`; only `--greedy`, the `
 - winget: the winget source CDN (*the exact host is not documented in the pages read*).
 - Claude Code native: `downloads.claude.ai` (code.claude.com/docs/en/network-config lists it for "update version checks"); `storage.googleapis.com` only before 2.1.116.
 - Codex standalone: `chatgpt.com`, `releases.openai.com`, `api.github.com`/`github.com`.
-- Copilot: the GitHub release API (`copilot update` and `copilot version` authenticate those calls, changelog), so a Copilot check sends the user's GitHub sign-in to GitHub; spec 081 uses the npm, Homebrew or winget source for the "latest" of a Copilot CLI that one of those installed, and the GitHub releases API without credentials (`api.github.com/repos/github/copilot-cli/releases/latest`) for a script install.
+- Copilot: the GitHub release API (`copilot update` and `copilot version` authenticate those calls, changelog), so a Copilot check sends the user's GitHub sign-in to GitHub; spec 081 uses the npm, Homebrew or winget source for the "latest" of a Copilot CLI that one of those installed, and, for a script install, the `Location` header of `github.com/github/copilot-cli/releases/latest` without credentials (R8; the API's JSON is too big).
 - `downloads.claude.ai/claude-code-releases/latest` and `/stable` answer plain text but are **not documented** as an API; the documented items are `…/<ver>/manifest.json` (signed since 2.1.89). Using them is a choice for the plan.
 
 None of these is Durbar's own server, and none receives anything from Durbar beyond what the tool itself sends.
+
+## R8 Reading "latest" without a body (added 2026-10-24, review of #663)
+
+- `api.github.com/repos/openai/codex/releases/latest` is about **570 KB** (measured by Paco's agent, 2026-10-24), because of the release notes and asset list. That is far over a 64 KiB cap.
+- `https://github.com/<owner>/<repo>/releases/latest` answers with a redirect to the tag. `real:` 2026-10-24, HEAD requests:
+  - `302`, `location: https://github.com/openai/codex/releases/tag/rust-v0.164.0`;
+  - `location: https://github.com/github/copilot-cli/releases/tag/v1.0.103`.
+
+  Reading only the `Location` header gives the version with no body.
+- `https://downloads.claude.ai/claude-code-releases/stable` and `/latest` answered `2.1.308` and `2.1.309` as plain text (`real:` 2026-10-24).
+- Claude Code's channel is chosen by `autoUpdatesChannel` (`latest` or `stable`), and `minimumVersion` sets a floor for `claude update` (`read:` code.claude.com/docs/en/setup). Durbar does not read Claude's settings files, so it cannot know the channel (spec 081 Q7).
+- Integrity (`read:` code.claude.com/docs/en/setup, *Binary integrity and code signing*): each Claude Code release publishes a GPG-signed `manifest.json` with SHA256 checksums. The docs describe checking it by hand and do not say that `claude update` checks it.
