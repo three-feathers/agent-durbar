@@ -33,7 +33,7 @@ module.exports = async (ctx) => {
   const page = async (label) => { const r = await js(`(${pageCheck.toString()})(false, 5)`); assert.deepStrictEqual(r.problems, [], `${label}: office page rules`); return r.info; };
   /* a page load that the start-up page interrupts (ERR_FAILED -2, seen under heavy machine load) is tried once more */
   const hload = async (o) => { try { await H.load(o); } catch (e) { if (!/ERR_FAILED|ERR_ABORTED/.test(String(e && e.message))) throw e; await ctx.sleep(500); await H.load(o); } };
-  const settleWalk = () => H.until(`!document.querySelector('.walker.walking')`, 6000);
+  const { settleWalk } = H; // shared with calm and every shot (driver-helpers, spec 001 FR-085)
   const load = async (n, w, h, extra = {}) => {
     await hload({ w, h, query: { sim: String(n), simsched: '1', ...extra }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}&&!!document.querySelector('#stage .place.boss')` });
     await H.until(`document.querySelector('#stage .place.boss.busy')`, 6000); await ctx.sleep(1500); await settleWalk(); await ctx.sleep(300);
