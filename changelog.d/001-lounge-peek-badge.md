@@ -1,1 +1,0 @@
-- **Fixed: in the lounge, a sleeping agent's chat number no longer covers its name** ("Noor" read "oor"). The number moves to the foot corner of the bed; `check:office-fill` now fails when a badge meets a name (spec 001 FR-054, issue 576).
