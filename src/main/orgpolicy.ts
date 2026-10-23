@@ -83,6 +83,16 @@ export class OrgPolicyCache {
     return OrgPolicyCache.refusalOf(await this.fresh(id), ask);
   }
 
+  /** FR-201: the advice words for a start (`doubt` on its mode or model), or undefined; never a refusal. */
+  async advice(id: string | undefined, ask: OrgAsk): Promise<string | undefined> {
+    const p = await this.fresh(id);
+    if (!p) return undefined;
+    const m = ask.mode !== undefined ? modeVerdict(p, ask.mode) : undefined;
+    if (m && !m.refuse) return m.why;
+    const md = ask.model !== undefined ? modelVerdict(p, ask.model) : undefined;
+    return md && !md.refuse ? md.why : undefined;
+  }
+
   /** The same from the last read, for a caller that cannot wait (the mode switch); a stale cache reads again in the background. */
   refusalNow(id: string | undefined, ask: OrgAsk): string | undefined {
     return OrgPolicyCache.refusalOf(this.cached(id), ask);
@@ -114,13 +124,4 @@ export class OrgPolicyCache {
     }
     return out;
   }
-}
-
-/**
- * FR-203: the check every start and resume runs before the adapter's `start` (`addWorkspace` and the lazy start in main.ts): throws the
- * refusal's words, so nothing is started or saved.
- */
-export async function assertOrgAllows(cache: Pick<OrgPolicyCache, 'refusal'>, adapterId: string | undefined, ask: OrgAsk): Promise<void> {
-  const no = await cache.refusal(adapterId, ask);
-  if (no) throw new Error(no);
 }

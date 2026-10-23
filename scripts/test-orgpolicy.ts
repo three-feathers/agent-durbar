@@ -18,8 +18,10 @@ import type { OrgFs } from '../src/adapters/orgpolicyfiles';
 import { FakeAdapter } from '../src/adapters/fake';
 import { emptyOrgPolicy, globMatch, mcpVerdict, modelVerdict, modeVerdict, orgBlockedText, orgDoubtText, orgFatalText, orgPolicyView, ownValue, toolVerdict, urlMatches } from '../src/shared/orgpolicy';
 import type { OrgPolicy, OrgVerdict } from '../src/shared/orgpolicy';
-import { assertOrgAllows, OrgPolicyCache, ORG_POLICY_TTL_MS } from '../src/main/orgpolicy';
-import { setMcpOp, setModeOp } from '../src/main/agentops';
+import { OrgPolicyCache, ORG_POLICY_TTL_MS } from '../src/main/orgpolicy';
+import { setMcpOp, setModeOp, startGuardOp } from '../src/main/agentops';
+import * as fs from 'fs';
+import * as path from 'path';
 import { setModelOp, withOrgModels } from '../src/main/ipc/model';
 import { agentMcpReply } from '../src/main/mcpsession';
 import { mcpToolsOp } from '../src/main/mcptoolsop';
@@ -342,8 +344,23 @@ async function main(): Promise<void> {
     assert.strictEqual(now.refusalNow('c', { mode: 'allow' }), undefined, 'f: nothing read yet: no refusal (the read starts)');
     await now.fresh('c');
     assert.ok(now.refusalNow('c', { mode: 'allow' }), 'f: after the read: refused');
-    await assert.rejects(assertOrgAllows(now, 'c', { mode: 'allow', model: 'auto' }), (e: Error) => e.message === `${orgBlockedText(C)}: pick another permission mode.`, 'f: a blocked start throws the refusal');
-    await assertOrgAllows(now, 'c', { mode: 'ask', model: 'auto' });
+    // the start guard both start paths of main.ts use (startGuardOp): refused before the adapter starts; advice starts, with its words
+    const starts: string[] = [];
+    const startPol = new OrgPolicyCache({
+      ids: () => ['c', 'x'],
+      adapter: (id) => (id === 'c' ? { displayName: C, readOrgPolicy: () => claude({ permissions: { disableBypassPermissionsMode: 'disable' }, deniedModels: ['haiku'] }) } : { displayName: 'Codex', readOrgPolicy: () => codex('allowed_sandbox_modes = ["read-only", 2]\n') }),
+    });
+    const go = (tag: string) => async () => (starts.push(tag), `id-${tag}`);
+    await assert.rejects(startGuardOp(startPol, 'c', { mode: 'allow', model: 'auto' }, go('mode')), (e: Error) => e.message === `${orgBlockedText(C)}: pick another permission mode.`, 'f: a blocked mode refuses the start');
+    await assert.rejects(startGuardOp(startPol, 'c', { mode: 'ask', model: 'haiku' }, go('model')), (e: Error) => e.message === `${orgBlockedText(C)}: pick another model.`, 'f: a blocked model refuses the start');
+    assert.deepStrictEqual(starts, [], 'f: the adapter was not started for a refused start');
+    assert.deepStrictEqual(await startGuardOp(startPol, 'c', { mode: 'ask', model: 'sonnet' }, go('ok')), { result: 'id-ok' }, 'f: an allowed start starts, no note');
+    assert.deepStrictEqual(await startGuardOp(startPol, 'x', { mode: 'allow', model: 'auto' }, go('advice')), { result: 'id-advice', note: orgDoubtText('Codex') }, 'f: an advisory mode starts, with the advice words');
+    assert.deepStrictEqual(starts, ['ok', 'advice'], 'f: exactly the allowed and the advisory starts ran');
+    // second layer: both start paths of main.ts go through the guard, and nothing in main.ts calls an adapter's start directly
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8').replace(/\r/g, '');
+    assert.strictEqual((mainSrc.match(/startGuardOp\(orgPolicies, /g) ?? []).length, 2, 'f: main.ts: addWorkspace and the lazy start call startGuardOp');
+    assert.strictEqual((mainSrc.match(/await ad\.start\(/g) ?? []).length, 0, 'f: main.ts: no adapter start outside the guard');
 
     const fa = new FakeAdapter({ id: 'claude' });
     const agents = new Map<string, AgentInfo>([['s', { id: 's', name: 's', cwd: '/w', folders: [], permMode: 'ask', adapterId: 'claude', model: 'sonnet' } as unknown as AgentInfo]]);

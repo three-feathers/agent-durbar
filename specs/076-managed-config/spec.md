@@ -948,7 +948,7 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
   items (spec 069 FR-064) and does nothing when chosen; a select never holds a refused value and falls back to the first allowed one,
   the most restrictive (Read-only first).
 - **FR-203 Main refuses as well (the window is not the guard), only `blocked` and `fatal`.** Starting or resuming a session in a refused
-  mode or with a refused model (`assertOrgAllows` before the adapter's `start`), `agents:setMode` (`setModeOp`), `agents:setModel`
+  mode or with a refused model (`startGuardOp` in `agentops.ts`, which runs the check before it calls the adapter's `start`; both start paths of main.ts go through it, and advice starts with its words as `note`), `agents:setMode` (`setModeOp`), `agents:setModel`
   (`setModelOp`) and switching a refused MCP server on (`setMcpOp`) are refused in main with FR-202's words; nothing is started, saved or
   changed. Switching a server off is never refused. Advice is never refused. The user picks another mode or model, which applies at the
   next start (spec 018).
@@ -1140,5 +1140,5 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
   - unreadable Codex files are advice.
 
   Copilot is now read through its runtime's `managedSettings.resolve` (one shared reader, used by spec 007's Auto tier as well), with
-  the file as a fallback. The main-side refusals moved behind injectable ops (`setModelOp`, `setMcpOp`, `assertOrgAllows`,
+  the file as a fallback. The main-side refusals moved behind injectable ops (`setModelOp`, `setMcpOp`, `startGuardOp`,
   `withOrgModels`) and are tested by behaviour.

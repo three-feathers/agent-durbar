@@ -165,3 +165,24 @@ export async function sendWithSlash(
   if (slash?.asTyped) return slash.note ? { slashNote: slash.note } : {};
   return expanded ? { slash: expanded.where, ...(expanded.note ? { slashNote: expanded.note } : {}) } : {};
 }
+
+/** What `startGuardOp` asks about the agent app's own organization policy (spec 076 FR-203): `OrgPolicyCache` fits. */
+export interface StartGuardDeps {
+  /** Why the policy refuses this start (`blocked` / `fatal`), after a fresh enough read. */
+  refusal(adapterId: string | undefined, ask: { mode?: string; model?: string }): Promise<string | undefined>;
+  /** The advice words when Durbar could not read the policy the vendor's way (`doubt`): the start goes ahead. */
+  advice?(adapterId: string | undefined, ask: { mode?: string; model?: string }): Promise<string | undefined>;
+}
+
+/**
+ * Spec 076 FR-203: every start and resume of a session (`addWorkspace` and the lazy start in main.ts) goes through here. A mode or model
+ * the agent app's own organization policy refuses throws its words before `start` runs, so nothing is started or saved; advice does
+ * not stop the start and comes back as `note`.
+ */
+export async function startGuardOp<T>(d: StartGuardDeps, adapterId: string | undefined, ask: { mode?: string; model?: string }, start: () => Promise<T>): Promise<{ result: T; note?: string }> {
+  const no = await d.refusal(adapterId, ask);
+  if (no) throw new Error(no);
+  const note = await d.advice?.(adapterId, ask);
+  const result = await start();
+  return note ? { result, note } : { result };
+}

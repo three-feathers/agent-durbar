@@ -164,10 +164,10 @@ The vendor's own managed settings (Claude `managed-settings.json` `env`, Codex `
 - `AgentAdapter.readOrgPolicy?(): OrgPolicy | Promise<OrgPolicy>` on the three real adapters; `fake.ts` and the simulator's stand-ins have
   none.
 - `src/main/orgpolicy.ts` `OrgPolicyCache`: per adapter id, 60 s TTL on a monotonic clock, one read at a time (FR-204), never throws
-  (a reader error is `doubt`); `refusal` (fresh) and `refusalNow` (last read), `assertOrgAllows` for the starters, `view()` for
+  (a reader error is `doubt`); `refusal` (fresh), `refusalNow` (last read) and `advice` for the starters, `view()` for
   `orgpolicy:view` (FR-207).
 - Wiring, each behind an op with injectable deps and tested by behaviour:
-  - `assertOrgAllows` in `addWorkspace` and the lazy start in `main.ts`;
+  - `startGuardOp` (`agentops.ts`) around the adapter start in `addWorkspace` and the lazy start in `main.ts` (a static check in `test:orgpolicy` keeps both there);
   - `setModeOp` `orgRefusal` (`agentops.ts`);
   - `setMcpOp` `orgMcpRefusal` (`agentops.ts`), with the server definitions from the same lists `serverUrlOf` reads;
   - `setModelOp` and `withOrgModels` (`ipc/model.ts`);
