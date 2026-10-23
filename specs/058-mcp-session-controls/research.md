@@ -294,3 +294,43 @@ Workflow *MCP OAuth real check* (`.github/workflows/mcp-oauth-real.yml`, manual)
 - Run 39680132357 (the first dispatch, commit db47a560) failed before any session: the script read
   `require.resolve('@github/copilot-sdk/package.json')`, which the SDK's `exports` map refuses; fixed in f9458b31.
 
+
+### 7.8 Claude Code and Codex sign-in, checked again (2026-10-23, T099/T100 design)
+
+Read only. **No session was started, nobody signed in, no credits were spent, and no user config, keychain, token or log file was
+opened.** Sources: the installed Claude Code **2.1.304** program (`~/.local/share/claude/versions/2.1.304`, a Bun bundle; read with a
+byte search, quoted below by byte offset because the code is minified), its `--help` (run with a temporary `HOME` and every `XDG_*`
+there, `--strict-mcp-config --setting-sources ""`, from an empty folder; nothing was written to the temporary home), the Claude Code
+docs as Markdown (`code.claude.com/docs/en/mcp.md`, `/agent-sdk/mcp.md`, `/agent-sdk/typescript.md`), and `openai/codex` at tag
+**`rust-v0.163.0`** (Durbar's tested Codex) through the GitHub API; the app-server README is the same at `rust-v0.164.0` (latest
+release, 2026-10-23). Codex is not installed on the machine that did this research, so no `generate-ts` was run.
+
+**Claude Code 2.1.304**
+
+| Question | Finding | Evidence |
+| --- | --- | --- |
+| Does stream-json answer `mcp_authenticate`? | Yes, in the same control loop as `channel_enable` and `mcp_oauth_callback_url`. It looks the name up with `_i(name)` (the running CLI's own MCP clients, then dynamically added ones), refuses a managed-policy block, a disabled server and a non-HTTP/SSE server ("does not support OAuth authentication"), then runs `performMCPOAuthFlow(..., {skipBrowserOpen: true, redirectUri})` and answers `{authUrl, requiresUserAction: true, callbackExpected: true, redirectScheme, state, callbackPort}` or `{requiresUserAction: false, callbackExpected: false}`. A claude.ai connector answers its claude.ai address with `callbackExpected: false`. | `read:` offset 273749159 (handler); `_i` offset 273626212 (`w().mcp.clients.find(...)`); `wV` offset 267639528 (`sse`/`http` only) |
+| What happens after the browser step? | The flow's promise resolves in the CLI; unless the identity changed or a policy now blocks it, the CLI **reconnects the server itself** (`Oa(name, config)`, then updates its state). A failure is only written to the CLI's debug log ("MCP OAuth failed for ..."); no control message reaches the host. | `read:` offset 273749159 (`St.then(async()=>{... Oa(J,he) ... lt(J,zt)}).catch(... t(\`MCP OAuth failed ...\`))`) |
+| Listener and timeout | `listen(port, "127.0.0.1")`, `setTimeout(..., 300000)` "Authentication timeout": 5 minutes. | `read:` offset ~276363461 (`llo`, exported as `performMCPOAuthFlow`) |
+| Cancel | None for a started flow. `mcp_clear_auth` clears stored credentials; `mcp_oauth_callback_url` submits a pasted callback (with the code). | `read:` offsets 262983564 (`mcpClearAuth`, `mcpSubmitOAuthCallbackUrl`), 273751912 |
+| Docs | "A `claude -p` or Agent SDK run has no `/mcp` panel, so Claude Code can't run the OAuth flow there" and "The SDK doesn't open a browser or run an interactive OAuth flow". Both are true of *opening* a browser; the control request that returns the address is undocumented. After a terminal sign-in, "in an Agent SDK session, reconnect the server instead" of starting the run again. | `read:` docs `mcp.md` ("Authenticate with remote MCP servers", "Mid-session drops of a remote server"), `agent-sdk/mcp.md` "OAuth2 authentication" |
+| `claude mcp login <name>` as a subprocess | Options: `--no-browser` only (no `--mcp-config`). It looks the name up in Claude Code's configured scopes (`hasDynamicMcpConfig: false`), revokes the server's stored tokens first, prints "If the browser didn't open, visit: <address>" on stdout, opens the browser, and **gives up when stdin is not a TTY** ("stdin isn't a terminal, so authentication can't be completed here"). So Durbar cannot spawn it with pipes. | `read:` `--help` output; offset 277824793 (`mcpLoginHandler`: `onWaitingForCallback: if(!process.stdin.isTTY){...abort()}`) |
+| Where the token is kept | `mcpOAuth[<key>]` in Claude Code's credential store; key `bd(name, config)` = `<name>|sha256(JSON{type, url, headers})[0:16]`. Store: the macOS keychain (`security find-generic-password`), else `<config dir>/.credentials.json` with "Warning: Storing credentials in plaintext." The docs' "stores OAuth sign-ins per endpoint" is close, but the name is part of the key. | `read:` offsets 240010882 (`bd`), 276074543 (`mcpOAuth`), 239090092 (keychain probe, `.credentials.json`) |
+| Durbar's copy of a server | `mcpConfigOf` passes `type`, `url`, `headers` (`src/adapters/claude.ts:167-176`); spec 069 does not copy Claude's `oauth` object (`src/main/mcpglobal.ts:805-813`). So the key matches the user's own entry when the name, address and headers match; a server that needs a pre-registered client cannot use DCR in Durbar's copy. | `code:` |
+
+**Codex (`rust-v0.163.0`)**
+
+| Question | Finding | Evidence |
+| --- | --- | --- |
+| Request and answer | `McpServerOauthLoginParams {name, threadId?, clientRegistration?, scopes?, timeoutSecs?}`; `McpServerOauthLoginResponse {authorizationUrl, loginId?}`; notification `McpServerOauthLoginCompletedNotification {name, threadId, loginId?, success, error?}`. Not marked `#[experimental]`. | `read:` `app-server-protocol/schema/typescript/v2/McpServerOauthLogin{Params,Response,CompletedNotification}.ts`; `protocol/common.rs:1246-1250, 2014` |
+| Which servers | With `threadId`: `thread.current_mcp_config_and_runtime_context()` (the thread's session config), then `effective_mcp_servers`; an unknown name is "No MCP server named '<name>' found."; only streamable HTTP. So Durbar's `thread/start` `config.mcp_servers` override should count (inferred: the session config is built from it; not run). | `read:` `app-server/src/request_processors/mcp_processor.rs:132-170, 260-272`; `core/src/codex_thread.rs:1030-1036` |
+| After success | `thread_manager.invalidate_mcp_runtimes()` (not for enterprise servers): every loaded thread's `request_mcp_runtime_refresh()` marks its MCP runtime dirty and schedules a prewarm (`refresh_mcp_if_dirty`). It does not call `reconnect_on_next_refresh()` (only `Op::RefreshMcpServers` does). The README: "Start a fresh session after success to use the saved grant." Whether the running thread reconnects by itself is therefore unknown. | `read:` `mcp_processor.rs:335-360`; `core/src/thread_manager.rs:859-872`; `core/src/session/mcp_prewarm.rs:9-19`; `core/src/session/handlers.rs:238-241`; README "Enterprise sign-in" |
+| Timeout | `DEFAULT_OAUTH_TIMEOUT_SECS = 300`, `timeoutSecs` overrides it (at least 1). | `read:` `rmcp-client/src/perform_oauth_login.rs:560, 734-735` |
+| Cancel | `account/login/cancel {loginId}` tries the enterprise login, then the ChatGPT account login; an MCP login's `loginId` is a fresh `Uuid::now_v7()` held by neither, so it answers `notFound`. "Starting another enterprise sign-in cancels the previous attempt" is about enterprise servers only. | `read:` `account_processor.rs:818-834`; `mcp_processor.rs:328-332` |
+| `codex mcp login <name>` | Browser mode reads no stdin (only `--no-browser` pastes), opens the browser with `webbrowser::open`, prints the address only if that fails, waits up to 300 s, prints "Successfully logged in to MCP server '<name>'." It knows only `configured_servers(config)` (`config.toml`), and it runs in its own process, so a running app-server is not told. | `read:` `cli/src/mcp_cmd.rs:543-626`; `cli/src/mcp_login.rs:40-180`; `perform_oauth_login.rs:775-805` |
+| Where the token is kept | Keyring service "Codex MCP Credentials", key `compute_store_key(name, url)` (type, url, empty headers); else `CODEX_HOME/.credentials.json`. Durbar does not set `CODEX_HOME` for its sessions (it reads the user's), so a terminal sign-in and Durbar's are the same entry for the same name and address. | `read:` `rmcp-client/src/oauth.rs:17, 100, 857, 1054-1075`; `code:` `src/main/main.ts:150` |
+
+**Decisions this supports** (spec *Changes* 2026-10-23, FR-163..FR-172): use each app's in-session call; never spawn a login command;
+no Cancel call for either app (forget only); keep main's entry only as long as the app's listener (5 minutes); poll Claude Code with
+`mcp_status` and keep the "a re-read is not a new status" rule; for Codex, trust the completion notification, read once, and fall back
+to the next message on a fresh child. Open for the owner: Q20-Q24.
