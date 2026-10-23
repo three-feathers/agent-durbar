@@ -5,9 +5,12 @@
  *
  *   node scripts/changelog.js check                      validate fragments; warn (or fail, after the cut-over) on bullets under Unreleased
  *   node scripts/changelog.js preview                    print the bullets the next release would get, change nothing
- *   node scripts/changelog.js build --release "<heading>" [--dry-run]
+ *   node scripts/changelog.js build --release "<heading>" [--dry-run] [--previous <tag>]
  *                                                        new "## <heading>" section under Unreleased with every fragment and every
  *                                                        bullet still under Unreleased; deletes the fragments; marks the cut-over
+ *   node scripts/changelog.js build --release "<heading>" --stdout [--previous <tag>]
+ *                                                        spec 008 FR-117: print only that section (the release notes of a tag),
+ *                                                        change nothing; a version already in CHANGELOG.md prints its section
  *
  * Fragment format: one or more top-level bullets ("- text"), each optionally followed by indented lines ("  more" or "  - sub");
  * blank lines between bullets are fine; nothing else (no headings, no unindented prose). File names are lower case
@@ -138,16 +141,26 @@ const squeeze = (lines) => {
 /* The edited head (blank runs squeezed, one blank line before the next section) and the untouched rest of the file. */
 const joinParts = (head, rest) => `${head.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\n+$/, '')}\n\n${rest.join('\n')}`;
 
-/* build: returns { changed, text, removed } and, unless dryRun, writes CHANGELOG.md and deletes the folded fragments. */
-function build(root = ROOT, { release, dryRun = false } = {}) {
+// the version token of a "## v..." heading, not the whole heading: a different date or link must not make a second section
+const ver = (h) => (/^##\s+(v\S+)/.exec(h) || [])[1];
+
+/* Spec 008 FR-118: the previous release must already be folded, or the next release's notes would list its fragments again. */
+function requirePrevious(parts, previous) {
+  if (!previous) return;
+  if (!parts.rest.some((l) => ver(l) === previous)) {
+    throw new Error(`CHANGELOG.md has no section for the previous release ${previous}: merge its fold PR (changelog.d/README.md) before tagging the next release`);
+  }
+}
+
+/* build: returns { changed, text, removed, section } and, unless dryRun, writes CHANGELOG.md and deletes the folded fragments. */
+function build(root = ROOT, { release, dryRun = false, previous } = {}) {
   const { errors } = check(root);
   if (errors.length) throw new Error(`fix these first:\n  ${errors.join('\n  ')}`);
   const { parts, frs, bullets } = pending(root);
+  requirePrevious(parts, previous);
   if (!bullets.length) return { changed: false, removed: [] };
   if (!release || !release.trim() || /\n/.test(release)) throw new Error('give the release heading: --release "v0.1.0-alpha.N ([pre-release](<url>), YYYY-MM-DD)"');
   const heading = `## ${release.trim().replace(/^##\s*/, '')}`;
-  // the version token, not the whole heading: a different date or link must not make a second section for the same version
-  const ver = (h) => (/^##\s+(v\S+)/.exec(h) || [])[1];
   const v = ver(heading);
   if (!v) throw new Error(`the release heading must start with the version, like "v0.1.0-alpha.12 (...)": got "${release}"`);
   const clash = parts.rest.find((l) => ver(l) === v);
@@ -163,10 +176,35 @@ function build(root = ROOT, { release, dryRun = false } = {}) {
     fs.writeFileSync(path.join(root, 'CHANGELOG.md'), text);
     for (const f of removed) fs.unlinkSync(path.join(root, f));
   }
-  return { changed: true, text, removed };
+  return { changed: true, text, removed, section: [heading, '', ...bullets.join('\n').split('\n')].join('\n') };
 }
 
-module.exports = { MARKER, INTRO, splitChangelog, bulletBlocks, parseFragment, readFragments, check, pending, build };
+/*
+ * Spec 008 FR-117: the release notes of a tag, from the tagged commit's own files; writes nothing. Returns { section, source }:
+ * source 'fragments' (the new flow: what `build` would fold) or 'changelog' (the version is already in CHANGELOG.md, folded the
+ * old way by a release PR; its section is used as it is). Refuses invalid fragments, a heading without a version, a previous
+ * release that is not folded yet, and a release with nothing in it.
+ */
+function notes(root = ROOT, { release, previous } = {}) {
+  const { errors } = check(root);
+  if (errors.length) throw new Error(`fix these first:\n  ${errors.join('\n  ')}`);
+  if (!release || !release.trim() || /\n/.test(release)) throw new Error('give the release heading: --release "v0.1.0-alpha.N ([pre-release](<url>), YYYY-MM-DD)"');
+  const v = ver(`## ${release.trim().replace(/^##\s*/, '')}`);
+  if (!v) throw new Error(`the release heading must start with the version, like "v0.1.0-alpha.12 (...)": got "${release}"`);
+  const { parts } = pending(root);
+  requirePrevious(parts, previous);
+  const at = parts.rest.findIndex((l) => ver(l) === v);
+  if (at >= 0) {
+    let end = parts.rest.findIndex((l, i) => i > at && /^## /.test(l));
+    if (end < 0) end = parts.rest.length;
+    return { section: squeeze(parts.rest.slice(at, end)).join('\n'), source: 'changelog' };
+  }
+  const r = build(root, { release, dryRun: true });
+  if (!r.changed) throw new Error(`nothing to release for ${v}: no changelog.d/ fragments and no ${v} section in CHANGELOG.md`);
+  return { section: r.section, source: 'fragments' };
+}
+
+module.exports = { MARKER, INTRO, splitChangelog, bulletBlocks, parseFragment, readFragments, check, pending, build, notes };
 
 if (require.main === module) {
   const [cmd, ...args] = process.argv.slice(2);
@@ -183,13 +221,15 @@ if (require.main === module) {
     } else if (cmd === 'preview') {
       const { bullets } = pending(root);
       console.log(bullets.length ? bullets.join('\n') : '(nothing pending)');
+    } else if (cmd === 'build' && args.includes('--stdout')) {
+      process.stdout.write(`${notes(root, { release: opt('--release'), previous: opt('--previous') }).section}\n`);
     } else if (cmd === 'build') {
-      const r = build(root, { release: opt('--release'), dryRun: args.includes('--dry-run') });
+      const r = build(root, { release: opt('--release'), dryRun: args.includes('--dry-run'), previous: opt('--previous') });
       if (!r.changed) console.log('nothing to fold: no fragments and no bullets under Unreleased');
       else if (args.includes('--dry-run')) process.stdout.write(r.text);
       else console.log(`folded into CHANGELOG.md; removed ${r.removed.length} fragment(s)${r.removed.length ? `: ${r.removed.join(', ')}` : ''}`);
     } else {
-      console.error('usage: node scripts/changelog.js check [--strict] | preview | build --release "<heading>" [--dry-run]');
+      console.error('usage: node scripts/changelog.js check [--strict] | preview | build --release "<heading>" [--dry-run | --stdout] [--previous <tag>]');
       process.exit(2);
     }
   } catch (e) {
