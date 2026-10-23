@@ -40,6 +40,7 @@ assert.strictEqual(fromQuery('?sim=15'), undefined);
 const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 const main = strip(fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8'));
 assert.ok(/const simClock = simClockSetup\(dev, SIMULATOR\);/.test(main), 'main takes the setup from dev and its one simulator decision');
+assert.strictEqual((main.match(/\bsimClockSetup\s*\(/g) || []).length, 1, 'main calls simClockSetup( exactly once (one decision; review on #574)');
 assert.ok(/Object\.assign\(process\.env, simClock\.env\);/.test(main) && /for \(const \[name, value\] of simClock\.switches\) app\.commandLine\.appendSwitch\(name, value\);/.test(main), 'main applies exactly the env and switches of the setup');
 assert.ok(/if \(simClock\.query\) query\.simclock = simClock\.query;/.test(main), 'main passes the query value of the setup');
 assert.ok(!/process\.env\.TZ\s*=|appendSwitch\('lang'/.test(main), 'no other TZ or --lang change in main');
