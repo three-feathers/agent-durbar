@@ -164,3 +164,11 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 
 - [x] T065 `app.js` `dropBack`: a figure on its way back that is dropped without a walk (reduced motion, no desk, not the office) draws the office again; `check-office-fill` case `lounge after the Boss, reduced motion` [FR-051]
   - Check: mutation (the reduced-motion branch back to `dropWalker`) fails the case.
+
+## Changes 2026-10-23 (owner report: spare height left at the bottom, issue #619)
+
+- [ ] T066 Tests first: `test:probe` cases for `DurbarProbe.spread`; `check-office-fill` case "spare height" (4 one-agent folders, 2 agents in 2 folders, 1 agent at 1280x600, 1280x800, 1440x900, 1920x1080): bottom gap at most max(24 px, even gap), even gaps within 1 px, rooms of a row equally tall; fails on `main` [FR-088]
+- [ ] T067 `probe.js` `spread`; `app.js` `spreadOffice` after drawing (fit only); `styles.css` `.stage[data-spread]` room margins and row gap [FR-086, FR-087]
+  - Check: mutations (no room growth cap; all the spare at the bottom; no spread call) fail the checks.
+- [ ] T068 Changelog fragment; `npm run shots:docs` retakes the linked office screenshots [FR-082]
+
