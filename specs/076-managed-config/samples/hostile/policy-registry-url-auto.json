@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "registries": {
+    "items": [
+      {
+        "name": "R",
+        "url": "https://agents.acme.example/i.json",
+        "updates": "auto"
+      }
+    ]
+  }
+}
