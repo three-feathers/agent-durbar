@@ -1,8 +1,11 @@
 name: Release
 
-# Push a tag like v0.1.0-alpha.1 (it must match "version" in package.json).
-# Builds UNSIGNED packages on macOS, Windows and Linux and attaches them to a DRAFT release.
-# Nothing is published automatically: review the draft and publish it by hand.
+# Push a tag like v0.1.0-alpha.1 on a commit of main (it must match "version" in package.json: a version-only PR lands first).
+# The verify job refuses any other tag and writes the release notes from exactly the tagged commit's changelog.d/ fragments
+# (spec 008 FR-117..FR-120: fold at tag time, so no release PR has to fold them and go stale while the queue lands more).
+# Builds UNSIGNED packages on macOS, Windows and Linux and attaches them to a DRAFT pre-release, never marked latest.
+# Nothing is published automatically: review the draft and publish it by hand. Nothing here pushes to any branch: the fold
+# into CHANGELOG.md is a normal doc-only PR afterwards (changelog.d/README.md).
 on:
   push:
     tags: ['v*']
@@ -15,8 +18,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    name: Check the tag and write the release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # every branch and tag: the tag must be on main, and the previous release tag is looked up
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      # Plain Node and git: no dependency install (no package code runs here), no token, no network.
+      - name: Tag on main, matching package.json; notes from the tagged commit
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: node scripts/release-notes.js --tag "$TAG" --repo "$REPO" --main-ref refs/remotes/origin/main --out release-notes.md --summary "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+          retention-days: 14
+
   build:
     name: Build (${{ matrix.name }})
+    needs: verify
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60 # spec 008 FR-110; the slowest build (macOS, both architectures) took 5 min on alpha.10
     strategy:
@@ -42,18 +73,12 @@ jobs:
               release/*.AppImage
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
-      - name: Tag must match package.json version
-        shell: bash
-        run: |
-          v="$(node -p "require('./package.json').version")"
-          if [ "${GITHUB_REF_NAME}" != "v${v}" ]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match package.json version v${v}" >&2
-            exit 1
-          fi
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -74,30 +99,39 @@ jobs:
     name: Draft release
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: build
+    needs: [verify, build]
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          pattern: agent-durbar-*
           path: dist-artifacts
           merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: notes
       - name: Checksums
         run: |
           cd dist-artifacts
           sha256sum * > SHA256SUMS.txt
           ls -la
+      # Always a draft pre-release, never "latest" (owner decision). An existing release only gets its files replaced, so notes
+      # the release manager edited on the draft are kept, and only while it is still a draft: a published release is never touched.
       - name: Create or update DRAFT pre-release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          flags="--draft"
-          case "$TAG" in *-*) flags="$flags --prerelease";; esac
           if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" != "true" ]; then
+              echo "Release $TAG is already published: its files are not replaced (spec 008 FR-120)" >&2
+              exit 1
+            fi
             gh release upload "$TAG" dist-artifacts/* --clobber
           else
-            gh release create "$TAG" dist-artifacts/* $flags --verify-tag --title "Agent Durbar $TAG" \
-              --notes "Unsigned alpha build of Agent Durbar. Not code-signed or notarized: see the README for the macOS Gatekeeper and Windows SmartScreen steps. Requires GitHub Copilot (copilot login). Independent project, not affiliated with GitHub or Microsoft."
+            gh release create "$TAG" dist-artifacts/* --draft --prerelease --latest=false --verify-tag \
+              --title "Agent Durbar $TAG" --notes-file notes/release-notes.md
           fi

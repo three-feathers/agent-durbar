@@ -228,7 +228,7 @@ Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564).
 - **FR-050** `[IMPLEMENTED]` (docs only) Five rules agreed in the team chat on 2026-10-23, in `AGENTS.md` (*Working as a team*) with mirrors in `docs/collaboration.md` and `.github/copilot-instructions.md`, and two pitfalls in `docs/agent-notes.md`:
   - **Review SLA**: pick up another side's PR within about 30 minutes of a push or review request, inside each human's working hours; post `taking #N` then `reviewing at <sha>`; a side with few heavy agents may take longer for security-heavy reviews but posts `taking #N` at once.
   - **FINAL**: the first line starting with `FINAL` about who owns a task ends the ownership talk; nobody replies about it again.
-  - **Release freeze**: `freeze` before the release PR lands, no queued merges, `queue open` after; changelog fragments re-folded before queuing so none stays unfolded on `main`, until spec 008's fold-at-tag lands.
+  - **Release freeze**: retired 2026-10-23 when spec 008's fold-at-tag landed (FR-117..FR-120, PR #648). Release notes are now built from the tagged commit, so no merge freeze is needed.
   - **Main checkout**: never check out a PR or branch there; use a worktree.
   - **Branch cleanup**: delete a PR's branch only once that PR's state is `MERGED`; leaving the merge queue is not merging.
   `[KNOWN GAP]` nothing enforces these; they rest on the agents following the text.

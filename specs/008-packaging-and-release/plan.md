@@ -71,3 +71,11 @@ specs/008-packaging-and-release/
 - `nightly-watch.yml` (`workflow_run` on the five workflows, scheduled runs only) uses `gh issue list/create/comment` with the job token (`issues: write` on that job only).
 - Measuring: the PR's own runs with `gh api .../actions/runs/<id>/jobs` (queue = `started_at - created_at`, run = `completed_at - started_at`), compared with the before numbers in the spec.
 - Pending runs were cleaned up by hand the same morning (owner-approved): superseded PR runs cancelled; the release PR (#517), `main`, tags, the real-account workflows and the newest run of each open PR kept.
+
+## 2026-10-23: fold the release notes at tag time (T104, FR-117..FR-120, owner-approved)
+
+- Reuse spec 025's fold: `changelog.js` gets `notes()` (the section `build` would write, or the version's existing section; writes nothing), `build --stdout` for the command line, and `--previous <tag>` on both (refuse when the previous release is not folded yet). `build` returns the section it wrote, so the notes and the fold PR are the same text.
+- `scripts/release-notes.js` (new, plain Node, git through `execFileSync` with argument lists, no shell, no network) does every tag check and writes the notes file and the job summary. It is testable on throwaway git repositories, which a shell step in YAML would not be.
+- `release.yml`: new `verify` job (`contents: read`, `persist-credentials: false`, `fetch-depth: 0`, no `npm ci`), `build` needs it, its tag step moves into it; `draft-release` needs both, downloads the packages by pattern and the notes by name, `--draft --prerelease --latest=false --notes-file`. No new permission anywhere.
+- The fold into `CHANGELOG.md` stays a person's (or agent's) doc-only PR from the tag, then `git merge origin/main`: the workflow neither pushes nor opens PRs (reasons in FR-120).
+- Docs: `changelog.d/README.md` (release steps), `docs/collaboration.md` (*For the maintainer*), AGENTS.md (*Keep docs in sync*: the fold PR, not a release PR), `README.md` (*Development* line), a fragment.

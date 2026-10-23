@@ -36,6 +36,7 @@
     dnd:{word:'Do not disturb',short:'DND',door:'closed',icon:'bar'},
     away:{word:'Away',short:'Away',door:'closed',icon:'clock'},
     meeting:{word:'In a meeting',short:'Meeting',door:'closed',icon:'people'},
+    retrying:{word:'Retrying',short:'Retrying',door:'closed',icon:'retry'},
     failing:{word:'Failing',short:'Failing',door:'closed',icon:'bolt'},
     thinking:{word:'Thinking',short:'Thinking',door:'closed',icon:'bubble'},
     busy:{word:'Busy',short:'Busy',door:'closed',icon:'dot'},
@@ -59,6 +60,7 @@
     if(o.ended||o.resting)return sign('away','idle');
     if(isWork(st)){
       /* review on PR 631: colour is never the only cue: failing tool calls and thinking keep their own word and icon */
+      if(o.retrying)return sign('retrying','retrying'); /* spec 034 FR-018 (merged from main): the agent app retries the model call; its own word, as the pill */
       if(o.failing)return sign('failing','failing');
       if(Array.isArray(o.helpers)&&o.helpers.some(isWork))return sign('meeting',st);
       return st==='thinking'?sign('thinking','thinking'):sign('busy','working');
