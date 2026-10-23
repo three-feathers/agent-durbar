@@ -175,6 +175,26 @@ const SIM_SLASH_LONG: SimSlash[] = [
   { name: 'release-notes-for-the-customer-reconciliation-batch-jobs-2026', description: SIM_SLASH_DESC.slice(0, 120), source: 'user', kind: 'skill', where: '~/.claude/skills/release-notes-long/SKILL.md' },
 ];
 
+/* Spec 073 FR-013/FR-014 (issue #608), page address simslash=secret: a folder skill and a command whose name, argument hint, description
+   and place hold fake token shapes, also split by Markdown, escaped, and one that straddles the tooltip's 300-character cut. Built at
+   run time: the file holds no secret-looking literal. check:slash-suggest asserts none of them reaches the list, its tooltips, ARIA or
+   the "Sent the text of" note. */
+const SIM_TOK = { ghp: 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8', pat: 'github' + '_pat_' + '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij', sk: 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789' };
+const simSlashSecret = (): SimSlash[] => {
+  const g = SIM_TOK.ghp;
+  const desc = ('Deploy check: ' + g.slice(0, 2) + '`' + g.slice(2) + '` then **' + g.slice(0, 24) + '**' + g.slice(24) + ' and ' + g.replace('_', '\\_') + ' ').padEnd(200, '.').slice(0, 200);
+  const line = '/deploy-check'.length + 1 + desc.length + 1 + 'Sends the text of '.length; // where the place starts in the tooltip
+  const where = '.claude/commands/' + 'n'.repeat(285 - line - '.claude/commands/'.length - 1) + '-' + SIM_TOK.sk + '.md'; // the sk token starts at 285 of 300
+  return [
+    { name: g, description: 'Skill named by a token: ' + SIM_TOK.sk, argumentHint: '<' + SIM_TOK.pat + '>', source: 'folder', kind: 'skill', where: '.claude/skills/' + g + '/SKILL.md' },
+    { name: 'deploy-check', description: desc, argumentHint: '<env> ' + SIM_TOK.pat, source: 'folder', kind: 'command', where },
+    // a VS Code prompt file whose `${input:NAME}` is token-shaped: the send's note echoes it (review of PR #614, FR-013)
+    { name: 'token-input', description: 'A prompt file with a token-shaped input name', source: 'folder', kind: 'prompt', where: '.github/prompts/token-input.prompt.md', note: 'VS Code settings not applied: mode; left as written: ${input:' + g + '}.' },
+  ];
+};
+/** The simulated list: the long or secret entries the page address asks for, then the kind's own (FR-011). */
+const simSlashFor = (kind: string, q: URLSearchParams): SimSlash[] => [...(q.get('simslash') === 'long' ? SIM_SLASH_LONG : q.get('simslash') === 'secret' ? simSlashSecret() : []), ...simSlash(kind)];
+
 const SIM_PROFILES = [
   { id: 'reviewer', name: 'Reviewer', description: 'Reviews changes and points at risks; never edits files', source: 'repo' as const, path: '~/work/mcp-swiss/.github/agents/reviewer.agent.md', tools: ['view', 'grep', 'glob'], model: 'sim-deep' },
   { id: 'docs-writer', name: 'Docs writer', description: 'Writes and tidies documentation in plain English', source: 'user' as const, path: '~/.copilot/agents/docs-writer.agent.md' },
@@ -1601,9 +1621,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent', entries: [] };
         // page address simslash=long (spec 073 FR-008, review on #535): a 64-character name, a long hint and a 200-character description
-        // come first, for check:ui-text's long-text pass
-        const long = simQuery.get('simslash') === 'long' ? SIM_SLASH_LONG : [];
-        return { ok: true, entries: [...long, ...simSlash(s.info.adapterId ?? 'copilot')].map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
+        // come first, for check:ui-text's long-text pass; simslash=secret: fake token shapes (FR-014, issue #608)
+        return { ok: true, entries: simSlashFor(s.info.adapterId ?? 'copilot', simQuery).map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
       },
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
@@ -2195,6 +2214,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
         if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Raise limit, Remove limit or Stop here first.' };
+        // spec 041 FR-065 delta (issue #608 review): `simsendfail=secret` fakes an app error that holds token shapes, also split by Markdown
+        if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'secret')
+          return { ok: false, error: 'The agent app refused the message: ' + SECRETS_TEXT + ' Also gh`p_' + SIM_TOK.ghp.slice(4) + '` and ' + SIM_TOK.ghp.slice(0, 24) + '**' + SIM_TOK.ghp.slice(24) + '** (split late).' };
         // spec 012 FR-087: `simsendfail=sandbox` fakes Codex refusing Read-only / Ask first (the real Linux message), for the driver
         if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'sandbox' && s.info.permMode !== 'allow')
           return { ok: false, error: "Codex refused the session settings: fs sandbox helper failed: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox, so nothing ran. To allow it for bubblewrap, see the README (Codex)." };
@@ -2218,7 +2240,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         window.setTimeout(() => void reply(s, text), 400);
         // spec 073 FR-011: a folder or user entry is "sent as its text", as the real adapters do (FR-005)
         const sl = /^\/([A-Za-z0-9][A-Za-z0-9._:-]{0,63})(?:\s|$)/.exec(String(text).trim());
-        const hit = sl ? simSlash(kind).find((e) => e.source !== 'app' && e.name.toLowerCase() === sl[1].toLowerCase()) : undefined;
+        const hit = sl ? simSlashFor(kind, simQuery).find((e) => e.source !== 'app' && e.name.toLowerCase() === sl[1].toLowerCase()) : undefined;
         return hit ? { ok: true, slash: hit.where ?? hit.name, ...(hit.note ? { slashNote: hit.note } : {}) } : { ok: true };
       },
       stop: async (id) => {

@@ -113,6 +113,26 @@ export function redact(text: unknown, env?: Env): string {
   }
 }
 
+/**
+ * `k` is `u` with its Markdown marks removed. Masks `k`, and also every token-like run of `u` that `redact` changes on its own, together
+ * with the token characters glued after it (spec 073 FR-014, review of PR #614): removing `**` can glue a token to the word before it
+ * (`x**ghp_...**` -> `xghp_...`, which no shape matches) or join a late-split token's tail (`ghp_<20>**K1l2...`). Anything either pass
+ * finds is masked; neither pass's output simply wins. The window's DurbarSafeText (`src/renderer/safetext.js`, `both`) does the same.
+ */
+export function redactMarkdown(u: string, k: string, env?: Env): string {
+  let m = redact(k, env);
+  const seen = new Set<string>();
+  const found: string[] = [];
+  for (const r of u.match(/[A-Za-z0-9_\-.+/=:@%]{12,}/g) ?? []) {
+    if (seen.has(r)) continue;
+    seen.add(r);
+    if (redact(r, env) !== r) found.push(r);
+  }
+  found.sort((a, b) => b.length - a.length);
+  for (const r of found) m = m.replace(new RegExp(r.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '[A-Za-z0-9_-]*', 'g'), () => MASK);
+  return m;
+}
+
 const MASK = '[redacted]';
 /** T065 (#374): a string longer than this is replaced by `[redacted]` whole, before any rule runs and never cut, so a 1 MB arg costs nothing. Above the 4096 display cap (T054) and the 4096 per-arg limit of per-folder extras (FR-022). */
 export const MASK_INPUT_MAX = 12288;
