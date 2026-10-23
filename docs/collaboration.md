@@ -52,7 +52,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
 
 - **Write team decisions down the same day** as a dated FR in spec 021 (FR-037), and in [AGENTS.md](../AGENTS.md) if it changes how agents work.
 - **Review teammates' PRs first, one list per round** (FR-042, FR-043): a teammate's PR waiting for review comes before new work; each review round is one chat message in landing order, and agents say `taking #N` before reviewing.
-- **Land before building** (FR-039): at most 8 open PRs per side, at most 3 of them new features waiting for a first review; over that, only fix and land.
+- **Land before building** (FR-039): at most 8 open PRs per side, at most 5 of them new features waiting for a first review; over that, only fix and land.
 - **Unstack with a replacement PR, never by force** (FR-040): rebuild an independent stacked PR as a new branch off main that closes the old PR with a link; no force-push, branch rename or stack-tool unstack to get past a refused merge.
 - **The merge queue** (FR-041): approve, then `gh pr merge <N> --auto --match-head-commit <sha>`; `--delete-branch` doesn't work with it, so delete the branch and worktree by hand; check a queued PR with `isInMergeQueue` via GraphQL.
 - **Share what you learn.** Your agent's private memory helps only you. Durable lessons (tool pitfalls, checked vendor behaviour, review techniques) go into [docs/agent-notes.md](agent-notes.md), dated, with evidence. Team rules go into [AGENTS.md](../AGENTS.md).
