@@ -108,7 +108,7 @@ interface SimAgent {
   mcpRestarting?: Set<string>;
   mcpFixed?: Set<string>;
   /** Spec 058 FR-071 (simmcpauth): servers with a sign-in open (Sign in pressed); `opened` after Open sign-in page. Dropped by End session and Restart session. */
-  mcpSign?: Map<string, { opened: boolean; at: number }>;
+  mcpSign?: Map<string, { opened: boolean; at: number; again?: boolean }>;
   /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
   mcpReported?: SimAgent['mcpLive']; /* the last list a driver reported through `__durbarSimEmit` (not the simulator's own): its names stay in the dialog */
   mcpAppOff?: Set<string>; /* servers a reported `mcp` list had as `disabled` that this agent's switch did not turn off (the agent app's own config) */
@@ -698,6 +698,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       { name: 'my-notes', transport: 'stdio', source: 'user' },
       { name: 'github-mcp-server', transport: 'http', source: 'builtin' },
     ];
+    /* spec 058 FR-164: `simmcpauth=again` adds two remote (OAuth) servers to the Copilot CLI list, the only kind Sign in again is for */
+    const SIM_REMOTE = simQs?.get('simmcpauth') === 'again' ? [{ name: 'team-wiki', url: 'https://wiki.example.test/mcp' }, { name: 'crm', url: 'https://crm.example.test/mcp' }] : [];
+    for (const r of SIM_REMOTE) CLI_SERVERS.push({ name: r.name, transport: 'http', source: 'user' });
     const serversOf = (s: SimAgent): { name: string; transport: string; source: string }[] => [
       ...CLI_SERVERS,
       ...(fakeExtras[s.info.cwd] ?? []).filter((v) => v.enabled && v.trusted).map((v) => ({ name: v.name, transport: v.transport, source: 'workspace' })),
@@ -709,7 +712,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simMcpAuth = simQs?.get('simmcpauth') ?? '';
     /* `simmcpttl=N` (seconds, 1-600): the time limit of an open sign-in, so a driver can see "Sign-in was not finished" (real: 10 minutes) */
     const simMcpTtl = Math.max(1, Math.min(600, Math.floor(Number(simQs?.get('simmcpttl'))) || 600)) * 1000;
-    const simSignOpen = (s: SimAgent, n: string): { opened: boolean; at: number } | undefined => {
+    /* FR-164 like main: only a server of the lists with an http(s) address; never built-in, never stdio */
+    const simRemoteMcp = (n: string): boolean => SIM_REMOTE.some((r) => r.name === n);
+    const simSignOpen = (s: SimAgent, n: string): { opened: boolean; at: number; again?: boolean } | undefined => {
       const e = s.mcpSign?.get(n);
       if (e && Date.now() - e.at >= simMcpTtl) { s.mcpSign?.delete(n); return undefined; }
       return e;
@@ -1047,6 +1052,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       { name: 'github', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'npx', args: ['-y', '@example/github-mcp'], enabled: true },
       { name: 'my-notes', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'node', args: ['/home/vikram/tools/notes-mcp.js'], enabled: true },
       { name: 'github-mcp-server', origin: 'builtin' as const, enabled: true },
+      ...SIM_REMOTE.map((r) => ({ name: r.name, origin: 'copilot-config' as const, transport: 'http' as const, url: r.url, enabled: true })),
     ];
     // ---- Fake agent-app lists (spec 069 FR-040): in memory; previews masked like main's; nothing is written anywhere ----
     type GApp = 'copilot' | 'claude' | 'codex';
@@ -1311,7 +1317,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const signOf = (n: string, origin: 'cli' | 'folder' | 'runtime') => {
           if (!simMcpAuth || (s.info.adapterId ?? 'copilot') !== 'copilot') return {};
           const st = reported(n);
-          if (!live || s.mcpOff?.has(n) || (st.status !== 'needs-auth' && !(st.status === 'failed' && st.errorClass === 'auth'))) return {};
+          const needs = st.status === 'needs-auth' || (st.status === 'failed' && st.errorClass === 'auth');
+          // like main: an open Sign in again stays visible while the row reads Starting
+          const held = live && !s.mcpOff?.has(n) && !needs ? simSignOpen(s, n) : undefined;
+          if (held?.again && st.status === 'pending') return { signIn: { host: 'auth.example.com', opened: held.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - held.at)) } };
+          // spec 058 FR-164: Sign in again on a connected or failed server (main's canSignInAgainStatus), with the host once it is open
+          if (live && !s.mcpOff?.has(n) && !needs && (st.status === 'connected' || st.status === 'failed') && simMcpAuth !== 'manual' && simRemoteMcp(n)) { // main: canSignInAgainStatus (a remote server Durbar knows by its https address)
+            const o = simSignOpen(s, n);
+            return { canSignInAgain: true, ...(o ? { signIn: { host: 'auth.example.com', opened: o.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - o.at)) } } : {}) };
+          }
+          if (!live || s.mcpOff?.has(n) || !needs) return {};
           const open = simSignOpen(s, n);
           const steps = origin === 'folder' ? 'This server is only known to Agent Durbar; use Sign in here.' : 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth ' + n + '` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).';
           return { signInSteps: steps, ...(simMcpAuth === 'manual' ? {} : { canSignIn: true, ...(open ? { signIn: { host: 'auth.example.com', opened: open.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - open.at)) } } : {}) }) };
@@ -1368,14 +1383,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true };
       },
       /* spec 058 FR-071: Sign in -> the host -> Open sign-in page (opens nothing; "Running" after 2 s). The address is never in the page. */
-      agentMcpSignIn: async (id, name) => {
+      agentMcpSignIn: async (id, name, again) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || (s.info.adapterId ?? 'copilot') !== 'copilot' || !simMcpAuth) return { ok: false, error: 'Unknown agent or server.' };
         if (simMcpAuth === 'manual') return { ok: false, manual: true, error: 'This Copilot version cannot start a sign-in from Agent Durbar.' };
         const st = simServer(s, sims.indexOf(s), name, true);
-        if (st.status !== 'needs-auth') return { ok: false, error: name + ' does not need a sign-in.' };
+        if (again === true ? !((st.status === 'connected' || st.status === 'failed') && simRemoteMcp(name)) : st.status !== 'needs-auth') return { ok: false, error: name + (again === true ? ' cannot be signed in again now.' : ' does not need a sign-in.') };
         if (simSignOpen(s, name)) return { ok: false, error: 'A sign-in for ' + name + ' is already open.' };
-        (s.mcpSign ??= new Map()).set(name, { opened: false, at: Date.now() });
+        (s.mcpSign ??= new Map()).set(name, { opened: false, at: Date.now(), ...(again === true ? { again: true } : {}) });
         return { ok: true, kind: 'browser', host: 'auth.example.com' };
       },
       agentMcpOpenSignIn: async (id, name, shownHost) => {
@@ -1384,8 +1399,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s || !e || shownHost !== 'auth.example.com') return { ok: false, gone: true, error: 'That sign-in is no longer open. Press Sign in again.' };
         e.opened = true;
         console.info('[sim] would open the sign-in page on auth.example.com');
+        // FR-164: like the runtime after forceReauth, a server signed in again first leaves "connected" (Starting), then connects again
+        if (e.again) { (s.mcpRestarting ??= new Set()).add(name); mcpStatus(s, sims.indexOf(s)); }
         window.setTimeout(() => {
-          if (!s.mcpSign?.delete(name)) return; // cancelled or ended meanwhile
+          s.mcpRestarting?.delete(name);
+          if (!s.mcpSign?.delete(name)) { mcpStatus(s, sims.indexOf(s)); return; } // cancelled or ended meanwhile
           (s.mcpFixed ??= new Set()).add(name);
           mcpStatus(s, sims.indexOf(s)); // the runtime reports the server connected: the open dialog follows it
         }, 2000);

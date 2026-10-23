@@ -233,6 +233,32 @@ expander per server with each chat's state, hint, Details, Restart, Restart sess
 
 T120 (spec) first; T121 (unit tests) and T122 (driver) before T123-T124 (code); T125 docs and screenshots; T126 converge.
 
+## Delta: fewer macOS keychain prompts (issue #623, 2026-10-23)
+
+- **Packaging** (FR-160): `package.json` `build.mac.signIgnore` keeps the GitHub signature of `@github/copilot-sdk-darwin-*/prebuilds/*`. `scripts/check-runtime-signature.js` (plain Node, Mach-O parser, no `codesign`) checks each packed `.app` on its own and names the app in each problem. It runs right after `electron-builder` in every script that can pack a mac app:
+  - `dist:mac:arm64` and `dist:mac:x64` pass `--arch`, so each step checks only its own build;
+  - `dist` and `pack:dir` run it too (it does nothing off macOS).
+  Windows and Linux packages are unchanged.
+- **Adapter** (FR-161, FR-163, FR-164), all behind `AgentAdapter` (constitution I):
+  - one `CopilotClient` per run: `getClient` clears a rejected start, and `dispose` stops a start still in flight;
+  - `listMcpTools` asks nothing of a server whose last status is not `connected`, with its own wording for `pending`;
+  - the mapper keeps a source or transport that a re-read leaves out or calls `unknown`;
+  - `startMcpSignIn(id, name, { again: true })` adds only `forceReauth` to the runtime's `oauth.login`, behind `capabilities.mcpSignInAgain`.
+- **Main** (FR-164): `agents:mcpSignIn(id, name, again)` (only a literal `true`); `canSignInAgainStatus(status, url)` fails closed (an http(s) address Durbar knows, a named non-built-in source, no `stdio`/`memory`); `McpSignInStore` marks such an entry so the old "connected" does not finish it; `agentMcpReply` offers `canSignInAgain` with the server's address from `serverUrlOf`.
+- **Window**: Sign in again per row and to all in the per-agent MCP dialog. One confirmation that says the server stays signed out until finished. A second press does nothing. "Signed in" is shown only after another state was seen. The simulator's `simmcpauth=again` adds two remote servers.
+- **Tests**:
+  - `test-runtime-sign` and `test-copilot-shared`: one runtime, retry, dispose, FR-163 counts, re-read keeps source and transport, `forceReauth` only;
+  - `test-mcp-signin`: op guards, fail-closed candidates, the held entry;
+  - `test-adapter-contract`;
+  - `shots-058-mcp-signin`: Sign in again rows, no false "Signed in", to all with a second press.
+  Mutations are listed in the PR.
+- **Constitution**:
+  - II (no secrets): Durbar never reads, writes or deletes keychain items;
+  - V: the dialog is checked at 1440x900 and 1280x800;
+  - VI (parity): a mac-only packaging option; the other OSes are unchanged;
+  - VII (honest limits): `[KNOWN GAP]`s until the Mac checks (T136, T138). No purchase (spec 014 stays separate).
+- **Order**: T130 first; T131 and T132 independent; T133 docs; T134 on a Mac; T135 and T137 after the owner's results; T139 and T159 review fixes.
+
 ## Delta: MCP health, failure reason, when, Copy diagnostics, chip dot (issue #603, 2026-10-23)
 
 ### Summary
