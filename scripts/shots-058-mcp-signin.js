@@ -12,9 +12,12 @@
  * - the steps (copilot, /mcp auth <name>) with Copy; Sign in -> "Sign-in page on auth.example.com" (no address anywhere), focus on
  *   Open sign-in page; Open -> toast, waiting text with the credential-store sentence; then Running and a toast; the live region says so;
  * - Cancel returns to Sign in with focus on it; Switch off for this session goes through the existing switch;
- * - simmcpauth=manual: no Sign in, the steps are open; Claude and Codex rows (simkinds=mixed) keep today's behaviour;
+ * - simmcpauth=manual: no Sign in, the steps are open;
+ * - spec 058 FR-175..FR-183 (simkinds=mixed): a Claude Code row signs in the same way (its own steps, note and Restart kept; the limit
+ *   line says to press Restart; Restart picks the sign-in up); Codex rows keep today's behaviour until PR B;
  * - the dialog fits the window and its text is at least 10.5px.
- * Shots: 058-mcp-signin-row-, -steps-, -confirm-, -waiting-, -manual-<w>x<h>.png. Prints "[058 signin] PASS".
+ * Shots: 058-mcp-signin-row-, -steps-, -confirm-, -waiting-, -manual-, and -claude-row-, -claude-steps-, -claude-confirm-,
+ * -claude-manual-<w>x<h>.png. Prints "[058 signin] PASS".
  */
 const assert = require('assert');
 const path = require('path');
@@ -168,9 +171,62 @@ module.exports = async (ctx) => {
     await shot(`058-mcp-signin-manual-${w}x${h}.png`);
     await closeDlg();
 
-    // ---- Claude and Codex keep today's behaviour (Copilot first) ----
+    // ---- spec 058 FR-175..FR-183 (T154): a Claude Code row signs in the same way; Codex keeps today's behaviour until PR B ----
     await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpauth: '1', simkinds: 'mixed' } });
-    await openMcp('sim-5'); // Codex in the mixed set; its my-notes asks for a sign-in the old canned way
+    await openMcp('sim-6'); // Claude Code in the mixed set
+    await js(`(()=>{window.__live=[];const el=document.getElementById('srAnnounce');new MutationObserver(()=>{if(el.textContent)window.__live.push(el.textContent);}).observe(el,{childList:true,characterData:true,subtree:true});})()`);
+    n = await info('my-notes');
+    assert.strictEqual(n.status, 'Needs sign-in', 'Claude: Needs sign-in: ' + JSON.stringify(n));
+    assert.ok(/Claude Code keeps the sign-in; Agent Durbar never sees it\./.test(n.text), 'Claude: the hint names the app: ' + n.text);
+    assert.deepStrictEqual(n.buttons.filter((b) => ['Sign in', 'Restart', 'Switch off for this session', 'How to sign in from a terminal'].includes(b)), ['Sign in', 'Restart', 'Switch off for this session', 'How to sign in from a terminal'], 'Claude: Sign in first, and Restart kept (FR-181 Q21 A): ' + JSON.stringify(n.buttons));
+    assert.ok(/Not checked on a real account yet\./.test(n.text) && !/Checked once/.test(n.text), 'FR-180: Claude Code\'s own note: ' + n.text);
+    await check(w, 'claude row');
+    await shot(`058-mcp-signin-claude-row-${w}x${h}.png`);
+    await click('my-notes', 'How to sign in from a terminal');
+    assert.ok(await until(`!!window.__row('my-notes').querySelector('.srv-steps')`), 'Claude: steps opened');
+    const csteps = await js(`window.__row('my-notes').querySelector('.srv-steps').textContent`);
+    assert.ok(/If Sign in is not available, run claude mcp login my-notes in a terminal/.test(csteps) && /works only for a server in Claude Code's own settings/.test(csteps) && /Then press Restart on this row\./.test(csteps), 'FR-181 Claude steps: ' + csteps);
+    assert.deepStrictEqual(await js(`[...window.__row('my-notes').querySelectorAll('.srv-steps code')].map(c=>c.textContent)`), ['claude mcp login my-notes']);
+    await check(w, 'claude steps');
+    await shot(`058-mcp-signin-claude-steps-${w}x${h}.png`);
+    await click('my-notes', 'How to sign in from a terminal');
+    await click('my-notes', 'Sign in');
+    assert.ok(await until(`!!window.__row('my-notes').querySelector('button[data-signopen]')`), 'Claude: Open sign-in page shows');
+    n = await info('my-notes');
+    assert.ok(/Sign-in page on auth\.example\.com/.test(n.text) && n.focus === 'Open sign-in page', 'Claude: the host and the focus: ' + JSON.stringify(n));
+    assert.ok(!n.buttons.includes('Restart'), 'no Restart while a sign-in is open');
+    assert.ok(!/https?:\/\/|authorize|state=|code_challenge/i.test(await dlgText()), 'Claude: no address anywhere in the dialog');
+    await check(w, 'claude confirm');
+    await shot(`058-mcp-signin-claude-confirm-${w}x${h}.png`);
+    await click('my-notes', 'Open sign-in page');
+    assert.ok(await until(`/Finish signing in in your browser\. This row updates when Claude Code reports the server\./.test(window.__row('my-notes').textContent)`), 'Claude: the waiting text names the app');
+    assert.ok(await until(`(window.__row('my-notes').querySelector('.mst')||{}).textContent==='Running'`, 8000), 'Claude: Running 2 s after Open');
+    assert.ok(await until(`/Signed in to my-notes\./.test([...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' '))`), 'Claude: a toast');
+    assert.ok(await until(`/my-notes: Running/.test(window.__live.join(' | '))`, 3000), 'Claude: the live region says so');
+    await closeDlg();
+    // the time limit: Claude's row adds how to finish with Restart (FR-176)
+    await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpauth: '1', simkinds: 'mixed', simmcpttl: '3' } });
+    await openMcp('sim-6');
+    await click('my-notes', 'Sign in');
+    assert.ok(await until(`!!window.__row('my-notes').querySelector('button[data-signopen]')`), 'Claude: confirm before the limit');
+    assert.ok(await until(`/Sign-in was not finished\. Press Sign in to try again\. If you finished in your browser, press Restart on this row\./.test(window.__row('my-notes').textContent)`, 8000), 'Claude: the limit line with Restart');
+    n = await info('my-notes');
+    assert.ok(n.buttons.includes('Sign in') && n.buttons.includes('Restart'), 'Claude: Sign in and Restart after the limit: ' + JSON.stringify(n.buttons));
+    await click('my-notes', 'Restart');
+    assert.ok(await until(`(window.__row('my-notes').querySelector('.mst')||{}).textContent==='Running'`, 6000), 'Claude: Restart picks the sign-in up');
+    await closeDlg();
+    // manual: the app cannot start a sign-in here; its steps show
+    await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpauth: 'manual', simkinds: 'mixed' } });
+    await openMcp('sim-6');
+    n = await info('my-notes');
+    assert.ok(!n.buttons.includes('Sign in') && n.buttons.includes('Restart'), 'Claude manual: no Sign in, Restart kept: ' + JSON.stringify(n.buttons));
+    assert.ok(/claude mcp login my-notes/.test(await js(`window.__row('my-notes').querySelector('.srv-steps').textContent`)), 'Claude manual: the steps are open');
+    await check(w, 'claude manual');
+    await shot(`058-mcp-signin-claude-manual-${w}x${h}.png`);
+    await closeDlg();
+    // Codex: today's behaviour until PR B (T100)
+    await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpauth: '1', simkinds: 'mixed' } });
+    await openMcp('sim-5');
     n = await info('my-notes');
     assert.strictEqual(n.status, 'Needs sign-in', 'Codex still reads Needs sign-in: ' + JSON.stringify(n));
     assert.ok(!n.sign && !n.buttons.includes('Sign in') && !n.buttons.includes('Switch off for this session'), 'Codex: no sign-in block yet: ' + JSON.stringify(n));

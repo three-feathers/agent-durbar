@@ -1099,7 +1099,8 @@
     const fixed=!!o&&o.toggle===false; /* this agent kind cannot switch servers while it runs (spec 012 FR-067): shown, with the reason */
     const noServerRestart=!!o&&o.restart===false; /* spec 058 FR-032: e.g. Codex: no per-server Restart, only Restart session */
     const load=async()=>X.bridge.agentMcp(a.id);
-    let st=await load();
+    /* FR-176: opening the dialog counts as a look (like the window regaining focus): main reads the list once soon after a sign-in attempt */
+    let st=await X.bridge.agentMcp(a.id,true);
     const restarting=new Set(); /* server names whose Restart is under way (FR-031: the button stays disabled) */
     const openDet=new Set(); /* server names whose Details are open (kept over a repaint) */
     let sessBusy=false;
@@ -1131,8 +1132,8 @@
         acts+=x.canSignIn?`<button class="btn sm" type="button" data-steps="${en}" aria-expanded="${open?'true':'false'}" aria-label="${esc((open?'Hide':'Show')+' how to sign in to '+n+' from a terminal')}">How to sign in from a terminal</button>`:'';
         if(open)steps=`<div class="srv-det"><p class="srv-steps" tabindex="0" aria-label="${esc('How to sign in to '+n+' from a terminal')}">${stepsHTML(x.signInSteps)}</p>${stepsCmds(x.signInSteps)?`<button class="btn sm" type="button" data-copysteps="${en}" aria-label="${esc('Copy the commands to sign in to '+n)}">Copy</button>`:''}</div>`;
       }
-      /* FR-074: said in the row until the real check (T105) has run */
-      const honest=x.canSignIn||x.signIn?`<span class="srv-sgl mut">Checked once on a real account; other servers and systems not yet.</span>`:'';
+      /* FR-074/FR-180: the agent app's own sentence on how far its sign-in was checked (main sends it with the row) */
+      const honest=(x.canSignIn||x.signIn)&&x.signInNote?`<span class="srv-sgl mut">${esc(x.signInNote)}</span>`:'';
       return `<div class="srv-sign">${line}${honest}${acts?`<div class="srv-sgact">${acts}</div>`:''}${steps}</div>`;
     };
     const body=s=>{
@@ -1154,7 +1155,9 @@
         /* spec 058 (2026-10-23, Vikram's report): on a row that needs a sign-in, Restart is a dead end ("needs auth" again), so Sign in takes its place and Restart is hidden */
         const needsSign=(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth'))&&!!(x.canSignIn||x.signInSteps);
         const signB=needsSign&&x.canSignIn&&!x.signIn?(signBusy.has(x.name)?`<button class="btn sm primary" type="button" disabled aria-label="${esc('Signing in to '+x.name)}">Signing in…</button>`:`<button class="btn sm primary" type="button" data-signin="${esc(x.name)}" aria-label="${esc('Sign in to '+x.name)}" title="Start ${esc(s.app||'your agent app')}'s own sign-in for this server">Sign in</button>`):'';
-        const rs=needsSign?signB:x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
+        const rsB=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
+        /* FR-176/FR-181 (Q21 A): an app that picks up a sign-in finished outside Durbar with Restart (Claude Code) keeps it next to Sign in */
+        const rs=needsSign?signB+(x.signInRestart&&!x.signIn?rsB:''):rsB;
         /* spec 069 FR-030/FR-033 on spec 058's row: the name opens the tools list; Remove for entries of an agent app's list or this folder */
         const open=expanded.has(x.name), canTools=!!(s.canListTools&&X.bridge.agentMcpTools);
         const nameB=`<b class="srv-name" title="${esc(W.plain(x.name,120))}">${esc(x.name)}</b>`;
@@ -1234,7 +1237,7 @@
         if(x&&x.signIn)continue;
         waited.delete(n);
         if(x&&x.status==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');}
-        else if(x&&(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth')))signNote.set(n,'Sign-in was not finished. Press Sign in to try again.');}
+        else if(x&&(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth')))signNote.set(n,notFinished(x));}
       for(const x of st.servers)if(x.status==='connected')signNote.delete(x.name);
       const f=document.activeElement,inside=f&&dlg.contains(f);
       const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.diag!==undefined?['diag',f.dataset.diag]:f.dataset.signin!==undefined?['signin',f.dataset.signin]:f.dataset.signopen!==undefined?['signopen',f.dataset.signopen]:f.dataset.signcancel!==undefined?['signcancel',f.dataset.signcancel]:f.dataset.swoff!==undefined?['swoff',f.dataset.swoff]:f.dataset.steps!==undefined?['steps',f.dataset.steps]:f.dataset.copysteps!==undefined?['copysteps',f.dataset.copysteps]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
@@ -1276,10 +1279,13 @@
     };
     mcpDlgHook=onEvent;
     /* spec 058 FR-064 (real 2026-10-23): coming back from the browser, read again at once (main also reads every 5 s while a sign-in page is open) */
-    const onFocus=()=>{if(dlg&&dlg.isConnected&&(waited.size||(st.servers||[]).some(x=>x.signIn))){void Promise.resolve(X.bridge.agentMcp(a.id,true)).catch(()=>0);void repaint();}};
+    /* FR-176: main decides whether to read (an open sign-in page, or an attempt in the last 5 minutes); the reply is an `mcp` event */
+    const onFocus=()=>{if(!dlg||!dlg.isConnected)return;void Promise.resolve(X.bridge.agentMcp(a.id,true)).catch(()=>0);if(waited.size||(st.servers||[]).some(x=>x.signIn))void repaint();};
     window.addEventListener('focus',onFocus);
     /* FR-065/FR-069 (T102): the two-step Sign in. Main holds the address; this code only ever has the host. */
     const call=async(fn,...args)=>{try{return await fn(...args);}catch(e){return {ok:false,error:String(e&&e.message||e)};}};
+    /* FR-176: the time limit ended a sign-in; an app that finishes outside Durbar with Restart (Claude Code) says how */
+    function notFinished(x){return 'Sign-in was not finished. Press Sign in to try again.'+(x&&x.signInRestart?' If you finished in your browser, press Restart on this row.':'');}
     const signIn=async n=>{
       if(signBusy.has(n)||!X.bridge.agentMcpSignIn)return;
       signBusy.add(n);signNote.delete(n);await repaint();
@@ -1298,7 +1304,7 @@
       const r=await call(X.bridge.agentMcpOpenSignIn,a.id,n,host);
       if(r&&r.ok){wantFocus=['signcancel',n];X.toast('Opened the sign-in page in your browser.',3600);X.announce('Opened the sign-in page. Finish signing in in your browser.');}
       else{
-        if(r&&r.gone){waited.delete(n);signNote.set(n,'Sign-in was not finished. Press Sign in to try again.');}
+        if(r&&r.gone){waited.delete(n);signNote.set(n,notFinished((st.servers||[]).find(y=>y.name===n)));}
         else if(r&&r.manual){waited.delete(n);openSteps.add(n);signNote.set(n,(r.error||'The sign-in page was refused.')+' Use the steps below.');}
         X.toast(esc((r&&r.error)||'Could not open the sign-in page.'),5200).classList.add('err');
       }
