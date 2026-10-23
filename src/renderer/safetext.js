@@ -1,6 +1,8 @@
 /* Agent text on the office floor (spec 041 FR-065, issue #541): a desk, tooltip, inbox row, answer bar or card line built from what an
-   agent wrote is masked on the RAW text first (redact), then made plain (Markdown stripped), then cut. The order matters: making it plain
-   removes `_`, `*` and backticks (so `ghp_...` would no longer match) and a cut inside a token leaves a half token no pattern knows.
+   agent wrote is masked BEFORE it is cut, and on the text with its Markdown removed but its `_` kept: excerpt = unescape, plainKeep, redact, drop
+   `_`, cut; mask = redact the unescaped text, and when one of `* ` ~ [ ]` is present also redact the plain-kept text (shown if it found more).
+   The order matters: dropping `_` first would break `ghp_...`, a cut inside a token leaves a half token no pattern knows, and a second pass over
+   an earlier mask's output leaves the tail of a late-split token in clear (`[redacted]` glued to its tail).
    The single owner of `plain` and `excerpt`: liveact.js and app.js use these, they keep no copy.
    Fails closed: no redact function, a throwing one, or a result that is not a string gives '' (the wrapper from `create` then shows a
    neutral word). Pure: no DOM. In the page: window.DurbarSafeText; in Node (tests): module.exports. */
