@@ -111,6 +111,7 @@ Order: after Phases 2 and 3.
   - (e) docs: the spec entry gets the chosen S and B and the measurements and its status set to built; the cost `[KNOWN GAP]` in the masking follow-ups entry is marked closed; one CHANGELOG line under *Unreleased*; the `specs/README.md` row for 041; `npm run typecheck && npm run build && npm test` green.
 
 - [x] T069 (unit + driver) Agent text on the office floor is masked before it is cut (issue #541; spec `## Changes` 2026-10-22; FR-065). Files: `src/renderer/safetext.js` (new: the one owner of `plain`, `excerpt(raw, redact, n?)` (unescape, plain keeping `_`, mask, drop `_`, cut), `mask` (the unescaped text; also the plain-kept text when `* ` ~ [ ]` is present) and `maskLabel`; `create({redact, cut})` is the page wrapper; fails closed), `src/renderer/app.js` (every `SHORT(plainMd(...))` of agent output goes through `excerpt`; intents and the stored task go through `mask`), `src/renderer/index.html`, `scripts/copy-assets.js`, `src/renderer/sim.ts` (`simreply=secrets`: the done reply holds three planted secrets built at run time). Tests: `scripts/test-safetext.ts` (order, `_` and `*` inside tokens, cut inside a token, fail closed, linear time on 200k characters), `scripts/check-done-desk-mask.js` in `check:ui` (a done reply with `ghp_`, `github_pat_` and `sk-` on a non-grown desk: none in the DOM text, any `title` or `aria-label`; also sub-agent task, result and error, tool starts with `--api-key` and `?key=`, an error intent, a question in the inbox and the answer bar, the list view, previous, resumed and continued sessions, and a page without redact). Mutation (`plainMd` before `redact`) makes the driver fail. [FR-065]
+- [x] T070 (driver) The chat's "Send failed" note shows the agent app's error masked through `safeMask` (spec `## Changes` 2026-10-23; FR-065; review of PR #614). Files: `src/renderer/app.js` (`sendLive`), `src/renderer/sim.ts` (`simsendfail=secret`), `scripts/check-done-desk-mask.js` (step 6b, `DM_ONLY=sendfail`)
   - After #554 (2026-10-23): `shutReply` (lounge) goes through `safeExcerpt`; driver step 5c rests six agents (3 couch, 3 beds) with tokens at the cuts 90/140/160/300 and Markdown-split tokens, runs `loungeTurn()` and scans after each turn (`DM_ONLY=lounge` runs it alone).
   - After #532 (2026-10-23): the grown desk's reply and streamed body, and the away card's missed prompt (`daily.ts` no longer cuts it), are masked then cut; driver `sim=3` grown scan, `sinceAway` sim stub, `test-safetext` away case; the navigator close and the lobby wait are no longer flaky.
   - Review of #567 at 4408045d: the `task` tool's `agent_type` and the Postbox's schedule prompt are masked; the driver feeds both, loads `simsched=1`, scans a token-named agent at a lobby place (chip or +N menu) and Go to on the agents level.
@@ -142,7 +143,7 @@ Order: after Phases 2 and 3.
 | FR-062 | T010 |
 | FR-063 | T020 |
 | FR-064 | T013, T038 |
-| FR-065 | T069 |
+| FR-065 | T069, T070 |
 | SC-001 | T015, T016 |
 | SC-002 | T031, T038 |
 | SC-003 | T040 |
