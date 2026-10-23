@@ -1,9 +1,10 @@
 /** IPC for the app itself: external links, version, the "Since you were away" card, the taskbar badge and window focus (spec 045 FR-060; moved out of main.ts as it was). */
-import { app, BrowserWindow, shell } from 'electron';
-import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
+import { app, BrowserWindow, shell, systemPreferences } from 'electron';
+import { fromAppFrame as fromApp, ipcHandle, ipcOn } from '../ipcguard';
 import { isHttpUrl } from '../../shared/url';
 import { parseBadgeCount, shouldBounce, shouldFlash } from '../badge';
 import type { SinceAway } from '../daily';
+import { handleTitleDoubleClick } from '../titledblclick';
 
 export interface AppIpcDeps {
   /** What happened while the app was closed; null after the card is dismissed. */
@@ -22,6 +23,16 @@ export function register(deps: AppIpcDeps): void {
     if (!isHttpUrl(url)) return { ok: false };
     await shell.openExternal(url);
     return { ok: true };
+  });
+  /* spec 052 FR-085 (issue #591): the Mac title bar is hidden, so a double-click on the page's drag area does what the system is set to do */
+  ipcOn('window:titleDoubleClick', (e) => {
+    handleTitleDoubleClick({
+      platform: process.platform,
+      win: liveWin(),
+      sender: e.sender,
+      getSetting: () => systemPreferences.getUserDefault('AppleActionOnDoubleClick', 'string'),
+      now: Date.now,
+    });
   });
   ipcHandle('app:version', () => app.getVersion());
   ipcHandle('app:sinceAway', (e) => (fromApp(e) ? getSinceAway() : null));

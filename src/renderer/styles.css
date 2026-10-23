@@ -113,6 +113,7 @@ body.has-bridge #liveBar{display:flex}
 .note.err{background:var(--pb-error,#f6e2df);border-color:var(--tone-bad-line);color:var(--red-ink)}
 .note .btn{height:28px;margin:0;padding:0 10px}
 .note-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.note .ro-done{margin:6px 0 0;color:var(--ink-2)} /* spec 003 FR-096: after a switch from a Read-only denial; inherits the note's size (10.5px floor) */
 /* spec 012 FR-157: the chat's sign-in card; the raw error only in a small, closed Details */
 .note.signin .signin-details{margin-top:6px;font-size:11px;color:var(--muted)}
 .note.signin .signin-details pre{white-space:pre-wrap;word-break:break-word;margin:4px 0 0;font-size:11px}
@@ -476,7 +477,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .att button:hover{background:rgba(0,0,0,.07)}
 .inbox{display:flex;align-items:flex-end;gap:4px;border:1px solid var(--line-2);border-radius:14px;background:var(--raised);padding:6px}
 .inbox:focus-within{border-color:var(--sel-border,#7fa0bd);box-shadow:0 0 0 3px #dbe7f1}
-.inbox textarea{flex:1;border:0;outline:0;resize:none;font:inherit;font-size:var(--t3-size);padding:7px 6px;min-height:36px;max-height:110px;background:transparent;color:var(--ink)}
+.inbox textarea{flex:1;border:0;outline:0;resize:none;font:inherit;font-size:var(--t3-size);padding:7px 6px;min-height:36px;background:transparent;color:var(--ink)}
 .ib{width:34px;height:34px;border-radius:10px;border:0;background:transparent;cursor:pointer;display:grid;place-items:center;color:var(--ink-2);flex:none}
 .ib:hover{background:var(--surface-2)}
 .ib svg{width:18px;height:18px}
@@ -1666,6 +1667,8 @@ h2,h3,h4{text-wrap:balance}
 .ctoolbar .cti{width:14px;height:14px;flex:none}
 .ctoolbar .mchip{gap:var(--s-1)}
 .ctoolbar .ct-n{min-width:16px;padding:0 4px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:var(--t5-size);font-weight:600;line-height:16px;text-align:center}
+/* spec 058 FR-094 (issue 603): a server of this chat failed: a small dot in the error colour next to the count (the chip's name says it too) */
+.ctoolbar .ct-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--c-error);box-shadow:0 0 0 2px var(--surface)}
 .ct-more{position:relative;flex:none}
 .ct-more-pop{position:absolute;right:0;bottom:calc(100% + 6px);z-index:70;display:flex;flex-direction:column;align-items:flex-start;gap:var(--s-1);min-width:180px;max-width:min(360px,calc(100vw - 32px));padding:var(--s-2);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:0 14px 40px color-mix(in srgb,var(--ink) 22%,transparent)}
 .ct-more-pop[hidden]{display:none}
@@ -1759,3 +1762,9 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 @keyframes shut-in{from{transform:translateY(25%) scale(.85);opacity:.2}to{transform:none;opacity:1}}
 @keyframes shut-out{from{transform:scale(.92);opacity:.35}to{transform:none;opacity:1}}
 @keyframes shut-peek{from{transform:scale(.9);opacity:0}to{transform:none;opacity:1}}
+/* ---- spec 005 FR-045, FR-049 (issue 592): the message box's resize handle on the composer's top edge. Tokens only; no text. ---- */
+.composer{position:relative}
+.cgrip{position:absolute;left:0;right:0;top:0;height:8px;cursor:ns-resize;touch-action:none;z-index:1;border-radius:var(--r-sm)}
+.cgrip::after{content:"";position:absolute;left:50%;top:2px;width:36px;height:4px;margin-left:-18px;border-radius:999px;background:var(--line-2)}
+.cgrip:hover::after,.cgrip.dragging::after{background:var(--muted)}
+.cgrip:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}

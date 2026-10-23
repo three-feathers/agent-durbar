@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "llm": {
+    "claude": {
+      "provider": "foundry",
+      "apiKeyFromEnv": "K"
+    }
+  }
+}

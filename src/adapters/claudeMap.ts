@@ -95,15 +95,47 @@ export function claudeMcpServers(list: unknown): McpServerStatus[] {
     const source = str((s as { source?: unknown }).source);
     const error = str((s as { error?: unknown }).error);
     const status = str((s as { status?: unknown }).status) ?? 'pending';
+    // Spec 058 FR-091: `config.type` (`stdio`, `sse`, `http`, ...) is the transport, only as a plain word; never inferred from other keys
+    const cfg = (s as { config?: unknown }).config;
+    const type = cfg && typeof cfg === 'object' ? str((cfg as { type?: unknown }).type) : undefined;
+    const transport = type && /^[a-z][a-z0-9_-]{0,19}$/.test(type) ? type : undefined;
     // Spec 058 FR-060: the CLI reports a remote server that answered 401/403 as `needs-auth` (read: SDK docs; research)
-    servers.push({ name, status, ...(source ? { source } : {}), ...(error ? { error: error.slice(0, 300) } : {}), ...(status === 'needs-auth' ? { errorClass: 'auth' as const } : {}) });
+    servers.push({ name, status, ...(source ? { source } : {}), ...(transport ? { transport } : {}), ...(error ? { error: error.slice(0, 300) } : {}), ...(status === 'needs-auth' ? { errorClass: 'auth' as const } : {}) });
   }
   return servers;
+}
+
+/**
+ * Spec 058 FR-091 (T024, issue #603): `system/init.mcp_server_errors` (`[{name, type, message}]`: "MCP server config entries from
+ * --mcp-config that failed validation and were skipped"; read: CLI 2.1.309 schema) as `failed` rows with `errorClass: 'config'`.
+ * Names already in the CLI's list are not repeated.
+ */
+export function claudeMcpServerErrors(list: unknown, listed: readonly string[]): McpServerStatus[] {
+  const out: McpServerStatus[] = [];
+  const seen = new Set(listed);
+  for (const e of Array.isArray(list) ? list : []) {
+    if (out.length >= 100) break;
+    const name = str((e as { name?: unknown } | null)?.name);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const message = str((e as { message?: unknown }).message);
+    out.push({ name, status: 'failed', errorClass: 'config', ...(message ? { error: message.slice(0, 300) } : {}) });
+  }
+  return out;
+}
+
+/** A later `mcp_status` list does not name the servers skipped at launch: keep them, unless the CLI now lists that name. */
+export function withSkipped(list: McpServerStatus[], skipped: readonly McpServerStatus[]): McpServerStatus[] {
+  if (!skipped.length) return list;
+  const names = new Set(list.map((x) => x.name));
+  return [...list, ...skipped.filter((x) => !names.has(x.name))];
 }
 
 export class ClaudeMapper {
   /** Configured MCP server names from `system/init`. */
   private servers: string[] = [];
+  /** Spec 058 FR-091: servers the CLI skipped at launch (`init.mcp_server_errors`), as failed rows; read by the adapter for later lists. */
+  skipped: McpServerStatus[] = [];
   /** tool_use id -> tool name (and MCP origin), so the result carries them. */
   private tools = new Map<string, { tool: string; mcpServer?: string; mcpTool?: string }>();
   /** Sub-agent `task_id` -> spawning tool_use id (from `task_started`). */
@@ -149,6 +181,7 @@ export class ClaudeMapper {
     this.abortExpected = false;
     this.limited = false;
     this.servers = [];
+    this.skipped = [];
     this.tools.clear();
     this.tasks.clear();
     this.openSubagents.clear();
@@ -211,8 +244,10 @@ export class ClaudeMapper {
   private system(m: ClaudeMessage): void {
     switch (m.subtype) {
       case 'init': {
-        const servers = claudeMcpServers(m.mcp_servers);
-        this.servers = servers.map((s) => s.name);
+        const listed = claudeMcpServers(m.mcp_servers);
+        this.servers = listed.map((s) => s.name);
+        this.skipped = claudeMcpServerErrors(m.mcp_server_errors, this.servers);
+        const servers = withSkipped(listed, this.skipped);
         this.info = { sessionId: str(m.session_id), cwd: str(m.cwd), model: str(m.model), cliVersion: str(m.claude_code_version), apiKeySource: str(m.apiKeySource) };
         if (!this.opts.quiet) this.emit({ type: 'status', status: 'idle', intent: `Ready in ${this.info.cwd ?? 'the folder'}` });
         this.emit({ type: 'mcp', servers });

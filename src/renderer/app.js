@@ -44,6 +44,10 @@ const PREV_KEYS=['mod','shift','H'], PREV_KEY=keyText(PREV_KEYS);
 const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-164: + Folder, + Workspace (the Mac File menu has the same keys) */
 /* spec 052 FR-085: the window's platform from the preload (the Mac title bar styles are gated on html[data-platform="darwin"]) */
 if(window.agentDurbar&&window.agentDurbar.platform==='darwin')document.documentElement.dataset.platform='darwin';
+/* spec 052 FR-085 (issue 591): the Mac title bar is hidden; a double-click on a drag area (not on a control) zooms like a title bar */
+if(window.agentDurbar&&window.agentDurbar.platform==='darwin'&&window.agentDurbar.titleDoubleClick)document.addEventListener('dblclick',e=>{
+  if(KEYS.shouldSendTitleDoubleClick(e.target))window.agentDurbar.titleDoubleClick();
+});
 /* the keys written in index.html are the Windows/Linux ones: rewrite them for a Mac */
 if(IS_MAC){document.querySelectorAll('[aria-keyshortcuts]').forEach(el=>el.setAttribute('aria-keyshortcuts',KEYS.ariaFor(el.getAttribute('aria-keyshortcuts'),true)));
   document.querySelectorAll('[data-keys-text]').forEach(el=>{if(el.title)el.title=KEYS.textFor(el.title,true);for(const n of el.querySelectorAll('small'))n.textContent=KEYS.textFor(n.textContent,true);});}
@@ -381,6 +385,10 @@ const WALK_MS=1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the oth
 const walkers=new Map(); /* agent id -> {el, back, walking, shown, timer, to} */
 const walkCount=()=>{let n=0;walkers.forEach(w=>{if(w.walking)n++;});return n;};
 function dropWalker(id){const w=walkers.get(id);if(!w)return;clearTimeout(w.timer);if(w.off)w.off();w.el.remove();walkers.delete(id);RETURNING.delete(id);}
+/* spec 001 FR-051 (change 2026-10-23): a figure on its way back that is dropped without a walk (reduced motion, no desk on screen, not the office)
+   is back now: draw again, as the end of a walk does, or the desk kept its empty chair (and a finished agent stayed out of the lounge) until
+   some other change drew the office */
+function dropBack(id){const was=RETURNING.has(id);dropWalker(id);if(was)scheduleRender();}
 /* Before the desks are drawn: an agent whose visit just ended keeps its empty chair until its figure is back. */
 function prepareWalkers(){
   if(ui.view!=='office'||!lobbyOn())return;
@@ -390,7 +398,7 @@ function prepareWalkers(){
    opened/closed rooms never leave one in the wrong place) and start the walks. */
 function syncWalkers(){
   const layer=$('walkers'), floor=$('floor'); if(!layer||!floor)return;
-  if(ui.view!=='office'||!lobbyOn()){[...walkers.keys()].forEach(dropWalker);return;}
+  if(ui.view!=='office'||!lobbyOn()){[...walkers.keys()].forEach(dropBack);return;}
   const fr=floor.getBoundingClientRect();
   if(!fr.width||!fr.height)return; /* office hidden (full-screen chat open): leave the figures as they are until it is shown again */
   const center=el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)};};
@@ -434,7 +442,7 @@ function syncWalkers(){
   [...walkers.keys()].forEach(id=>{
     if(want.has(id))return;
     const w=walkers.get(id), dp=deskPos(id);
-    if(!dp||REDUCED){dropWalker(id);return;} /* no desk on screen (room closed, filtered out) or no animation wanted: just disappear */
+    if(!dp||REDUCED){dropBack(id);return;} /* no desk on screen (room closed, filtered out) or no animation wanted: just disappear */
     if(VISITS.at(id)){dropWalker(id);return;} /* still at the place, now inside its "+N" (a narrower tile, a longer queue): it did not leave, so no walk back */
     if(w.back)return;
     w.back=true; RETURNING.add(id);
@@ -1630,7 +1638,37 @@ function fitPlaceholder(){const t=$('msgInput');if(!t)return;const full=t.getAtt
   if(!phCtx)phCtx=document.createElement('canvas').getContext('2d');phCtx.font=cs.font;const fits=x=>phCtx.measureText(x).width<=w-1;
   const text=window.DurbarCutText.fitCut(full,fits);
   if(t.placeholder!==text)t.placeholder=text;}
-function autoGrow(){const t=$('msgInput');if(!t)return;t.style.height='auto';t.style.height=Math.min(110,t.scrollHeight)+'px';setSend();}
+/* spec 005 FR-044..FR-048 (issue 592): the message box grows with its text up to 40% of the chat panel (never under the old 110px), and the
+   transcript always keeps 140px (DurbarComposerSize). A size chosen with the handle on the composer's top edge fixes the height; double-click
+   or Enter on the handle goes back to growing. One value for the whole app, a display preference of this computer (localStorage, like the
+   detail level). */
+const CSZ=window.DurbarComposerSize;
+let composerChosen=(()=>{try{return CSZ.parse(localStorage.getItem(CSZ.KEY));}catch(e){return null;}})();
+function composerLimits(t){const c=$('chat'),p=t.closest('.panel-in');return CSZ.limits({panelH:p?p.clientHeight:0,chatH:c?c.clientHeight:0,boxH:t.getBoundingClientRect().height});}
+function sizeComposer(){const t=$('msgInput');if(!t)return;const lim=composerLimits(t);let h;
+  if(composerChosen!=null)h=CSZ.clamp(composerChosen,lim);
+  else{const was=t.style.height;t.style.height='auto';h=CSZ.height({chosen:null,content:t.scrollHeight,lim});if(was===h+'px')t.style.height=was;}
+  if(t.style.height!==h+'px')t.style.height=h+'px';t.style.maxHeight=lim.max+'px';
+  const g=$('composerGrip');if(g){g.setAttribute('aria-valuenow',String(h));g.setAttribute('aria-valuemin',String(lim.min));g.setAttribute('aria-valuemax',String(lim.max));}}
+function setComposerChosen(h){composerChosen=h;try{if(h==null)localStorage.removeItem(CSZ.KEY);else localStorage.setItem(CSZ.KEY,String(h));}catch(e){}sizeComposer();}
+let cszRO=null,cszRaf=0;
+function wireComposerGrip(){const g=$('composerGrip'),t=$('msgInput');if(!g||!t)return;
+  let drag=null;
+  const boxH=()=>Math.round(t.getBoundingClientRect().height);
+  g.addEventListener('mousedown',e=>e.preventDefault()); /* the box keeps the focus and its caret */
+  g.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();drag={id:e.pointerId,y:e.clientY,h:boxH(),lim:composerLimits(t),moved:false};try{g.setPointerCapture(e.pointerId);}catch(_){}});
+  g.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;const dy=drag.y-e.clientY;if(!drag.moved&&Math.abs(dy)<2)return;
+    if(!drag.moved){drag.moved=true;g.classList.add('dragging');}composerChosen=CSZ.clamp(drag.h+dy,drag.lim);sizeComposer();});
+  const end=e=>{if(!drag||e.pointerId!==drag.id)return;const moved=drag.moved;drag=null;g.classList.remove('dragging');try{g.releasePointerCapture(e.pointerId);}catch(_){}if(moved)setComposerChosen(composerChosen);};
+  g.addEventListener('pointerup',end);g.addEventListener('pointercancel',end);
+  g.addEventListener('dblclick',e=>{e.preventDefault();setComposerChosen(null);});
+  g.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||e.isComposing)return;const r=CSZ.keyStep(e.key,boxH(),composerLimits(t));if(r==null)return;
+    e.preventDefault();e.stopPropagation();setComposerChosen(r==='reset'?null:r);});
+  /* the limits follow the window and whatever opens above the chat (Previous sessions, the answer bar); once per frame */
+  if(window.ResizeObserver){if(cszRO)cszRO.disconnect();else cszRO=new ResizeObserver(()=>{if(!cszRaf)cszRaf=requestAnimationFrame(()=>{cszRaf=0;sizeComposer();});});cszRO.observe($('chat'));}
+  sizeComposer();
+}
+function autoGrow(){sizeComposer();setSend();}
 function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a=byId(ui.selected);const busy=a&&chats[a.id]&&chats[a.id].busy;b.setAttribute('aria-disabled',String(!!busy||(!t.value.trim()&&!attached.length)));syncRunState();}
 
 function updatePanelHeader(){
@@ -1730,7 +1768,10 @@ function wireAnswerBar(a){
     else if(q)add('Answer in chat','primary',show);
     /* FR-016: a long request is answered in the chat only; the wide grant (any arguments) stays in the card */
     /* FR-060: Alt+A / Alt+S / Alt+D (⌥⌘A/S/D on a Mac, FR-084) press the same buttons (permission requests only) */
-    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
+    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){
+      /* spec 003 FR-095: a Read-only denial's "Switch to Ask first…" opens the mode menu here, anchored to the bar's own button */
+      if(src.dataset.act==='ro-ask'){const b=add(src.textContent,'',()=>roAskOpen(a,b),src.title);b.dataset.act='ro-ask';b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');continue;}
+      const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
     add(q?'Show question':'Show in chat','ghost',show,q?'Scroll to the question in the chat':'Scroll to the request in the chat');
     bar.hidden=false;
     if(hadFocus){const f=act.querySelector('button,input');if(f)f.focus();}
@@ -1816,7 +1857,7 @@ function openPanel(id,focus){
    <div class="prev" id="prev" role="region" aria-label="${SIMPLE?'Earlier chats':'Previous sessions'}" hidden>${a.live&&!a.parent?`<div class="prev-bar"><button class="prev-toggle" id="prevBtn" type="button" data-pv="toggle" aria-expanded="false" aria-controls="prevPanel" aria-keyshortcuts="${esc(ariaKeys(PREV_KEYS))}">${ICON('chev')}<span class="prev-l">${SIMPLE?'Earlier chats':'Previous sessions'}</span><span class="prev-c" hidden></span><span class="prev-sub"></span></button></div><div class="prev-panel" id="prevPanel" hidden></div>`:''}</div>
    <div id="chat" role="log" aria-live="off" aria-label="Chat with ${esc(a.name)}" tabindex="0"></div>
    <div class="answer-bar" id="answerBar" role="region" aria-label="Waiting for your answer" hidden></div>
-   <div class="composer"><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
+   <div class="composer"><div class="cgrip" id="composerGrip" role="separator" aria-orientation="horizontal" aria-label="Resize message box" aria-controls="msgInput" tabindex="0" title="Drag to resize the message box. Double-click to let it grow with your text again."></div><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
     <div class="inbox">
      <textarea id="msgInput" rows="1" placeholder="Message ${esc(a.name)}…" aria-label="Message ${esc(a.name)}"></textarea>
      ${runSlotHTML(a)}</div>
@@ -1883,6 +1924,7 @@ function openPanel(id,focus){
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
+  wireComposerGrip(); /* spec 005 FR-044..FR-048 */
   renderAll(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)cur.scrollIntoView({inline:'nearest',block:'nearest'});
   /* spec 074 FR-022 (issue 587): this chat's unsent text comes back */
   {const m=$('msgInput'),dr=DRAFTS.get(id);if(m&&dr){m.value=dr.t;autoGrow();}if(dr&&dr.att.length){renderAttached();setSend();}}
@@ -2038,11 +2080,13 @@ function composerToolbarHTML(a,mdlName){
     +`</div><div class="ct-more"><button class="ib ct-ib" id="ctMoreBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="ctMorePop" aria-label="More chat settings" title="More chat settings" hidden>⋯</button><div class="ct-more-pop" id="ctMorePop" role="group" aria-label="More chat settings" hidden></div></div></div>`;
 }
 /* FR-037 item 5: the MCP chip: the icon and how many servers are switched on for this agent (the dialog is spec 019/058's) */
-const MCP_N=new Map();
+const MCP_N=new Map(), MCP_F=new Map(); /* per agent: servers switched on; servers failed or needing a sign-in (spec 058 FR-094) */
 function mcpChipHTML(a){
-  const n=MCP_N.get(a.id), known=typeof n==='number';
-  const lab=known?'MCP servers: '+n+' on. Open the list':'MCP servers. Open the list';
-  return `<button class="mchip mchip-btn" id="mcpBtn" type="button" aria-label="${esc(lab)}" title="MCP servers for this agent${known?': '+n+' switched on':''}. Click to see or switch them (set globally in Settings).">${CT_IC.mcp}<span>MCP</span>${known?`<b class="ct-n">${n}</b>`:''}</button>`;
+  const n=MCP_N.get(a.id), known=typeof n==='number', f=MCP_F.get(a.id)||0;
+  /* spec 058 FR-094 (issue 603): a dot in the error colour when a server failed, said in the name and tooltip too (never colour alone) */
+  const failed=f?', '+f+' failed':'';
+  const lab=known?'MCP servers: '+n+' on'+failed+'. Open the list':'MCP servers'+(f?': '+f+' failed':'')+'. Open the list';
+  return `<button class="mchip mchip-btn${f?' mcp-failed':''}" id="mcpBtn" type="button" aria-label="${esc(lab)}" title="${f?esc('MCP servers for this agent: '+(known?n+' on, ':'')+f+' failed. Click to see why.'):`MCP servers for this agent${known?': '+n+' switched on':''}. Click to see or switch them (set globally in Settings).`}">${CT_IC.mcp}<span>MCP</span>${known?`<b class="ct-n">${n}</b>`:''}${f?'<i class="ct-dot" aria-hidden="true"></i>':''}</button>`;
 }
 async function refreshMcpCount(a){
   if(!a||!bridge.agentMcp||!ui.selected)return;
@@ -2050,7 +2094,8 @@ async function refreshMcpCount(a){
   let st=null;try{st=await bridge.agentMcp(a.id);}catch(e){st=null;}
   if(!st||!st.ok)return;
   const n=(st.servers||[]).filter(x=>x.defaultOn&&!x.off).length;
-  if(MCP_N.get(a.id)===n)return; MCP_N.set(a.id,n);
+  const f=(st.servers||[]).filter(x=>x.status==='failed'||x.status==='needs-auth').length;
+  if(MCP_N.get(a.id)===n&&(MCP_F.get(a.id)||0)===f)return; MCP_N.set(a.id,n);MCP_F.set(a.id,f);
   const el=$('mcpBtn'),cur=ui.selected&&byId(ui.selected);if(!el||!cur||liveRoot(cur)!==a)return;
   const had=document.activeElement===el;el.outerHTML=mcpChipHTML(a);if(had){const f=$('mcpBtn');if(f)f.focus({preventScroll:true});}
 }
@@ -2441,6 +2486,8 @@ function paintInbox(focusIndex){
     const kOf=src=>src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
     if(card&&!q)for(const src of [...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>RANK[kOf(x)]-RANK[kOf(y)])){
       const k=kOf(src);
+      /* spec 003 FR-097: the Read-only denial's "Switch to Ask first…" opens the same mode menu, from the chat (the inbox is modal) */
+      if(src.dataset.act==='ro-ask'){add(src.textContent,'',k,()=>{closeInbox();openPanel(a.id,true);requestAnimationFrame(()=>{if(!src.isConnected)return;src.focus({preventScroll:true});src.click();});},src.title);ans.lastElementChild.setAttribute('aria-haspopup','menu');continue;}
       add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],k,ev=>{const word=k==='deny'?'Denied':k==='other'?src.textContent:'Allowed';
         /* spec 052 FR-047/FR-048: the row's buttons go busy, then the row shows the answer for 600ms, folds away in 200ms, then the list repaints */
         if(row.classList.contains('settled')||row.dataset.answering)return; row.dataset.answering='1';
@@ -3822,8 +3869,8 @@ function showPerm(a,p){
   if(pl&&pl.cmd){const d=document.createElement('details');d.className='pcmd';const sm=document.createElement('summary');sm.textContent='Show the command';
     const pre=document.createElement('pre');pre.textContent=pl.cmd;d.append(sm,pre);n.appendChild(d);}
   const st=n.querySelector('.pstate');
-  if(p.state==='denied'){st.innerHTML=' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
-    roAskHint(a,n);
+  if(p.state==='denied'){ /* spec 003 FR-094: with the button the text no longer repeats the suggestion */
+    st.innerHTML=roAskHint(a,n)?' <i>(denied: this agent is in Read-only)</i>':' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
   }
   else if(p.state==='pending'){
     const row=document.createElement('div');row.className='note-actions';
@@ -3843,16 +3890,42 @@ function showPerm(a,p){
   if(p.state==='pending')announce(SIMPLE&&pl?plain:a.name+' needs your OK: '+p.summary);
   renderInboxBtn();
 }
-/* spec 052 FR-074: under a request denied by Read-only, one inline "Switch this agent to Ask first", once per agent until its mode
-   changes. It goes through the usual mode-change path (changeMode), with its dialogs. */
+/* spec 003 FR-094..FR-096 (owner 2026-10-23, supersedes spec 052 FR-074's button): under a request denied by Read-only, one button
+   "Switch to Ask first…" per agent, on its newest denial (a newer one moves it). It opens the usual mode menu (openModeMenu, modes only),
+   anchored to it; a choice goes through changeMode with its dialogs. Returns true when the button is shown. */
 function roAskHint(a,n){
-  if(!a.info||a.info.permMode!=='read-only'||a.roHintShown||!bridge.setPermMode||!feat(a,'modes'))return;
-  a.roHintShown=true;
-  const row=document.createElement('div');row.className='note-actions';
-  const b=document.createElement('button');b.type='button';b.className='btn';b.dataset.act='ro-ask';b.textContent='Switch this agent to Ask first';
-  b.title='Ask first: each edit, command or web request waits for your OK.';
-  b.onclick=async()=>{b.disabled=true;await changeMode(a,'ask',b);if(a.info.permMode==='ask')row.remove();else b.disabled=false;};
-  row.appendChild(b);n.appendChild(row);
+  if(!a.info||a.info.permMode!=='read-only'||!bridge.setPermMode||!feat(a,'modes'))return false;
+  /* spec 003 FR-098 hook: when a managed policy (spec 076, not built) locks the mode, return false here so the plain text stays. */
+  let h=a.roHint;
+  if(!h||!h.b){
+    const row=document.createElement('div');row.className='note-actions';
+    const b=document.createElement('button');b.type='button';b.className='btn';b.dataset.act='ro-ask';b.textContent='Switch to Ask first…';
+    b.title='Choose a permission mode. Ask first: each edit, command or web request waits for your OK.';
+    b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');
+    b.onclick=()=>roAskOpen(a,b);
+    row.appendChild(b);h=a.roHint={row,b};
+  }
+  n.appendChild(h.row);
+  return true;
+}
+/* the button (or its copy in the answer bar) opens the mode menu anchored to itself; a second press closes it */
+function roAskOpen(a,b){
+  if(document.getElementById('modeMenu')&&b.getAttribute('aria-expanded')==='true'){closeModeMenu();b.focus();return;}
+  const r=b.getBoundingClientRect();if(openModeMenu(a,r.left,r.bottom+4,b,{modesOnly:true}))b.setAttribute('aria-expanded','true');
+}
+/* spec 003 FR-096: after a switch out of Read-only the button goes; when the switch came from it, one line says to ask the agent again
+   (no Retry: a denied tool call has no safe retry, and nothing is resent) and focus moves to the message box */
+function roAskAfterSwitch(a,mode,anchor){
+  const h=a.roHint; if(!h||mode==='read-only')return;
+  a.roHint=null;
+  const note=h.row.parentNode, mine=!!(anchor&&anchor.dataset&&anchor.dataset.act==='ro-ask'); /* the chat's button or its answer-bar copy */
+  h.row.remove();
+  if(!mine||!note)return;
+  const l=document.createElement('p');l.className='ro-done';
+  l.textContent='Now in '+MODE_NAME[mode]+'. Ask '+a.name+' to try again: '+(mode==='allow'?'it will run without asking.':'it will wait for your OK.');
+  note.appendChild(l);
+  announce(l.textContent); /* focus moves to the message box, so a screen reader hears the line here (review on PR 622) */
+  const mi=$('msgInput');if(mi&&ui.selected&&liveRoot(byId(ui.selected)||a)===a)mi.focus({preventScroll:true});
 }
 function settlePerm(a,p){
   let e=a.pend.get(p.requestId);
@@ -3925,6 +3998,8 @@ async function revokeAllGrants(){
 const STATS=window.DurbarStats.createStats();
 let statsRefresh=0;
 function feedStats(a,e){
+  /* spec 058 FR-083: Settings' live MCP list follows a chat that stops or becomes ready again */
+  if(e.type==='status'&&(e.status==='stopped'||e.status==='idle')&&!e.agentId&&window.DurbarScreens.liveEvent)window.DurbarScreens.liveEvent(a.id);
   /* sub-agent events are counted for the agent that owns them (a.id is the session) */
   if(e.type==='toolCall')STATS.recordTool(a.id,e);
   else if(e.type==='usage')STATS.recordModel(a.id,e.model);
@@ -4098,7 +4173,8 @@ async function sendLive(text,forId,opts){
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
   if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
-  else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(r.slash,160))+'</code> (the agent app does not load it in Durbar’s sessions).'); /* spec 073 FR-005 */
+  else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(r.slash,160))+'</code> (the agent app does not load it in Durbar’s sessions).'+(r.slashNote?' '+esc(DurbarCutText.cutText(r.slashNote,200)):'')); /* spec 073 FR-005; slashNote: a VS Code prompt file */
+  else if(r.slashNote)addNote(chat,esc(DurbarCutText.cutText(r.slashNote,240))); /* spec 073 (review on PR 615): over the size cap, sent as typed */
 }
 /* spec 012 FR-087 (owner 2026-10-20, option c): a refusal of Read-only / Ask first (Codex's sandbox could not start, or Codex cannot
    limit reads) never suggests a mode in its text; a "Change mode…" button opens the usual mode menu, with every mode and its help */
@@ -4114,6 +4190,8 @@ function modeRefusalAction(a,note,error){
 const SIGNIN=window.DurbarSignIn||null;
 const PROMPTS=SIGNIN?SIGNIN.createPromptMemory():null;
 const kindOf=a=>(liveRoot(a).info&&liveRoot(a).info.adapterId)||'copilot';
+/* spec 058: the options the MCP dialog gets (the chip and Settings' Open in chat alike); FR-093: the agent app's version for Copy diagnostics, from the agent app list */
+const mcpOpts=r=>{const k=kindOf(r),d=(KINDS||[]).find(x=>x.id===k);return {toggle:feat(r,'mcpToggle'),restart:feat(r,'mcpRestart'),appName:kindWord(k),...(d&&typeof d.version==='string'&&d.version?{appVersion:d.version}:{})};};
 /* the window's own copy of the adapter list follows at once (main also sends the changed list; the simulator has no main) */
 function markKindSignedOut(kind){
   if(!KINDS)return;
@@ -4189,17 +4267,18 @@ function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRes
   const fr=a.info.folderRules?' + folder rules':'';
   if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m]+fr)}</span>`; /* spec 052 FR-065 */
   return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
-function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
-function openModeMenu(a0,x,y,anchor){
+function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');document.querySelectorAll('[data-act="ro-ask"][aria-expanded="true"]').forEach(b=>b.setAttribute('aria-expanded','false'));}}
+function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the three modes and the note, without Model, Plan first, folder setup or card actions */
   const a=liveRoot(a0); if(!a||!a.live)return false;
   /* spec 005 FR-017: Stop and End session for a main agent opened from its card (not from the chat header chip) */
-  const ops=anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&bridge.stop?DMK().cardMenuActions(a,capsFor(a)):{stop:null,end:null};
-  const canRen=!!(anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&canRenameSession(a)); /* spec 059 FR-006: Rename… in the card menu */
+  const only=!!(o&&o.modesOnly);
+  const ops=!only&&anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&bridge.stop?DMK().cardMenuActions(a,capsFor(a)):{stop:null,end:null};
+  const canRen=!only&&!!(anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&canRenameSession(a)); /* spec 059 FR-006: Rename… in the card menu */
   const hasMode=!!bridge.setPermMode&&feat(a,'modes'), hasOps=!!(ops.stop||(ops.end&&bridge.end)||canRen);
   if(!hasMode&&!hasOps)return false;
   closeModeMenu();
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
-  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}" title="${esc(MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
+  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}" title="${esc(MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
   m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)mi.focus();return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
@@ -4287,7 +4366,7 @@ async function changeModeInner(a,mode,anchor){
   }
   const res=await bridge.setPermMode(a.id,mode,opts).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
-  a.info.permMode=mode; a.info.permRestored=undefined; a.info.permFrom=undefined; a.role=roleFor(a.info); a.roHintShown=false;
+  a.info.permMode=mode; a.info.permRestored=undefined; a.info.permFrom=undefined; a.role=roleFor(a.info); roAskAfterSwitch(a,mode,anchor);
   if(opts.clearGrants)setGrants(a,[]);
   renderRestoreStrip();
   toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+(capsFor(a).permModeSwitch==='next-message'?'</b>. Applies from the next message.':'</b> from the next request.')+(mode==='allow'?' Everything runs without asking.':''),4200);
@@ -4299,7 +4378,7 @@ document.addEventListener('click',e=>{
   if(cc){e.stopPropagation();if(document.getElementById('ctxMenu')){closeCtxMenu();return;}const a=byId(ui.selected);if(a)openCtxMenu(a,cc);return;} /* spec 005 FR-037 */
   if(!e.target.closest('#ctxMenu'))closeCtxMenu();
   const mb=e.target.closest('#mcpBtn'); /* spec 005 FR-037: the MCP chip opens the existing dialog; the count follows it */
-  if(mb){e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r)Promise.resolve(window.DurbarScreens.agentMcp(r,{toggle:feat(r,'mcpToggle'),restart:feat(r,'mcpRestart'),appName:kindWord(kindOf(r))})).finally(()=>refreshMcpCount(r));return;}
+  if(mb){e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r)Promise.resolve(window.DurbarScreens.agentMcp(r,mcpOpts(r))).finally(()=>refreshMcpCount(r));return;}
   const ac=e.target.closest('#agentChip');
   if(ac){e.stopPropagation();if(document.getElementById('agentMenu')){closeAgentMenu();return;}const r=ac.getBoundingClientRect(),a=byId(ui.selected);if(a)openAgentMenu(a,r.left,r.bottom+6,ac);return;}
   if(!e.target.closest('#agentMenu'))closeAgentMenu();
@@ -4310,7 +4389,7 @@ document.addEventListener('click',e=>{
   if(cb&&!cb.closest('#ctxMenu')){e.stopPropagation();const a=byId(ui.selected);if(a)compactDialog(liveRoot(a),cb);return;}
   const chip=e.target.closest('#modeChip');
   if(chip){e.stopPropagation();if(document.getElementById('modeMenu')){closeModeMenu();return;}const r=chip.getBoundingClientRect(),a=byId(ui.selected);if(a)openModeMenu(a,r.left,r.bottom+6,chip);return;}
-  if(!e.target.closest('#modeMenu'))closeModeMenu();
+  if(!e.target.closest('#modeMenu,[data-act="ro-ask"]'))closeModeMenu(); /* spec 003 FR-095: the Read-only denial's button toggles the menu itself */
 },true);
 /* spec 006 FR-022: folder actions on a room's header (right-click, or the context-menu key on its door), same menu element as the mode menu.
    spec 033 FR-024 (issue 590): with two or more floors, "Move to floor ▸" opens a second level in the same element (‹ Back, one radio
@@ -4446,7 +4525,14 @@ function fillPermSelect(sel,caps){
 }
 /* the first kind that is ready, preferring `want` */
 const pickKind=want=>{const ch=DMK().kindChoices(KINDS);const w=ch.find(k=>k.id===want&&!k.disabled);return w?w.id:(ch.find(k=>!k.disabled)||{id:''}).id;};
-const kindOptions=()=>DMK().kindChoices(KINDS).map(k=>`<option value="${esc(k.id)}"${k.disabled?' disabled':''}>${esc(k.shortName||k.name)}${k.stateText?' ('+esc(k.stateText)+')':''}</option>`).join('');
+/* spec 051 FR-013, FR-015: the account line per app ({ [id]: { status, text } } from harness:accounts), in memory only; a tooltip, never logged */
+let ACCTS=null;
+const acctText=(id,state)=>state==='ready'&&ACCTS&&ACCTS[id]&&typeof ACCTS[id].text==='string'?ACCTS[id].text:'';
+/* spec 051 FR-020: in About agent apps the line already says "ready", so the account is only the masked name and plan ("o••• · Copilot
+   Individual"): the dialog body stays within its 8 lines (spec 052 FR-170, check-ui-text in CI's DejaVu font) */
+const aboutAcct=t=>t.replace(/^Signed in as /,'');
+const kindTitle=k=>{const t=acctText(k.id,k.state);return t?k.name+': '+t:'';};
+const kindOptions=()=>DMK().kindChoices(KINDS).map(k=>`<option value="${esc(k.id)}"${k.disabled?' disabled':''}${kindTitle(k)?` title="${esc(kindTitle(k))}"`:''}>${esc(k.shortName||k.name)}${k.stateText?' ('+esc(k.stateText)+')':''}</option>`).join('');
 /* Toolbar: model and effort follow the chosen kind. A kind other than the default has no model list yet (FR-062, T049), so both are hidden and it starts with its own default. */
 function syncKindModel(){
   const ms=$('modelSel'),ef=$('effortSel');
@@ -4458,6 +4544,7 @@ function syncKindModel(){
   ms.hidden=!ok;
   fillEffortSelect(ef,ms.value,undefined,!ok||(c&&!DMK().shows(c,'effort')),k);
   fillPermSelect($('permMode'),kindCaps(id));
+  if(KINDS)kindSelTitle($('kindSel'),KIND_SEL_TITLE); /* spec 051 FR-013: the chosen app's account in the tooltip */
   renderDefaultsChip();
 }
 /* spec 052 FR-105 (round 11): the defaults for new sessions are one chip in the top bar ("Copilot · Read-only · Auto"); the selects
@@ -4513,6 +4600,20 @@ async function loadKinds(refresh){
   const r=await bridge.listAdapters(refresh===true).catch(()=>null);
   KINDS=Array.isArray(r)&&r.length?r:null;
   applyKinds();
+  if(KINDS&&bridge.harnessAccounts&&!ACCTS)bridge.harnessAccounts(false).then(setAccounts,()=>undefined); /* spec 051 FR-014: once per run here; Settings refreshes it */
+}
+/* spec 051 FR-013: the picker's tooltips (each option, and the select for the chosen app) and the open New session dialog's select */
+const KIND_SEL_TITLE='Agent app for new folders and sessions';
+function kindSelTitle(sel,base){
+  if(!sel)return;
+  const k=DMK().kindChoices(KINDS).find(x=>x.id===sel.value),t=k?acctText(k.id,k.state):'';
+  sel.title=base+(t?'. '+k.shortName+': '+t:'');
+}
+function setAccounts(a){
+  ACCTS=a&&typeof a==='object'?a:null;
+  if(!KINDS)return;
+  for(const sel of [$('kindSel'),$('sdKind')]){if(!sel)continue;const v=sel.value;sel.innerHTML=kindOptions();sel.value=v;}
+  kindSelTitle($('kindSel'),KIND_SEL_TITLE);kindSelTitle($('sdKind'),'Agent app for this session');
 }
 /* spec 052 FR-051: the toast names the agent app when it is known */
 function notReadyToast(ch){toast(esc((ch&&ch.shortName)||'That agent app')+' isn\'t ready yet. Set it up in Settings &gt; Agent apps.',6000);}
@@ -4520,7 +4621,7 @@ async function aboutKinds(){
   for(;;){
     const ch=DMK().kindChoices(KINDS);
     const r=await askDialog({title:'About agent apps',size:'m',body:'Each agent app (Copilot, Claude Code, Codex) runs agents its own way. Only an app that is ready can be chosen. Settings > Agent apps can install, update or sign in to one for you.',
-      lines:ch.map(k=>k.name+': '+(k.state==='ready'?'ready':k.stateText)+(k.version?' · version '+k.version:'')+(k.hint?' · '+k.hint:'')),
+      lines:ch.map(k=>k.name+': '+(k.state==='ready'?'ready':k.stateText)+(acctText(k.id,k.state)?' · '+aboutAcct(acctText(k.id,k.state)):'')+(k.version?' · version '+k.version:'')+(k.hint?' · '+k.hint:'')),
       buttons:[{label:'Close',value:null},{label:'Check again',value:'again'},{label:'Set up agent apps…',value:'setup',cls:'primary'}],returnFocus:()=>$('kindHelp')});
     if(r&&r.value==='setup'){window.DurbarScreens.openSettings('harnesses');return;} /* spec 051 FR-008 */
     if(!r||r.value!=='again')return;
@@ -4929,7 +5030,8 @@ function newSession(a0,o){
     if(c)fillPermSelect($('sdPerm'),c);
   };
   if($('sdKind'))$('sdKind').value=pickKind(ho?handoverTargets(a)[0].id:(a.info.adapterId||defaultKind()));
-  eff(); $('sdModel').onchange=eff; if($('sdKind'))$('sdKind').onchange=()=>{eff();agentRow();};
+  kindSelTitle($('sdKind'),'Agent app for this session'); /* spec 051 FR-013 */
+  eff(); $('sdModel').onchange=eff; if($('sdKind'))$('sdKind').onchange=()=>{eff();agentRow();kindSelTitle($('sdKind'),'Agent app for this session');};
   /* spec 043 T010: the new session can start with a custom agent of this folder (the same list as the Agent chip; same kind only) */
   const agentRow=()=>{const l=$('sdAgentL');if(!l)return;l.hidden=!(l.dataset.ready==='1'&&(kindNow()||a.info.adapterId||'')===(a.info.adapterId||kindNow()||''));};
   if($('sdAgentL'))bridge.listProfiles(a.id).then(r=>{
@@ -5731,12 +5833,15 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,adapterId:x.info&&x.info.adapterId,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=modelsFor(a.info&&a.info.adapterId).find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
+    /* spec 058 FR-082: a running chat for Settings' live MCP list: the live agent (state, grants, remote: the Restart session questions)
+       and the same options the MCP chip passes to the chat's MCP dialog */
+    mcpSession:id=>{const r=LIVE.agents.find(y=>y.id===id&&y.live&&!y.parent);return r?{a:r,mcp:!!feat(r,'mcp'),o:mcpOpts(r)}:null;},
     folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
     openAgent:id=>openPanel(id,false),
     /* spec 058 FR-027: Restart session failed because the sign-in expired: the chat's sign-in card (spec 012 FR-157), as for a failed message */

@@ -100,3 +100,12 @@ specs/003-permissions-and-approvals/
 - `src/main/main.ts`: `restoreFolders` uses `modeForSession` per restored session and sets `permFrom`; `sessions:resume` uses `resumeModeOp` and returns `modeWas`; `noteLastSession` writes the session's current mode.
 - `src/shared/api.ts`: `AgentInfo.permFrom`, `ResumeResult.modeWas`. `src/renderer/app.js`: `modeBackNote` after a wake or a resume; chip tooltip. `src/renderer/sim.ts`: the same rule with a canned remembered mode (`prev-1` = Allow all).
 - Tests: `scripts/test-folders.ts`, `scripts/test-agentops.ts`; driver `scripts/shots-003-mode-back.js` (in `check:ui`).
+
+## 2026-10-23 delta: a Read-only refusal opens the mode menu (T031, FR-094..FR-098)
+
+- Reuse, no new popup: `openModeMenu(a, x, y, anchor, {modesOnly:true})` in `src/renderer/app.js` (spec 018's menu; the new option leaves out Model, Plan first and This folder's setup) and `changeMode` (its Allow all confirmation and grants dialog). The same menu spec 012 FR-087's **Change mode…** opens.
+- `roAskHint(a, note)`: one button per agent (`a.roHint`), moved to the newest denial; `aria-haspopup`/`aria-expanded`; toggles the menu. `showPerm`: the denied text drops "Switch it to Ask first…" when the button is shown.
+- `roAskAfterSwitch(a, mode, anchor)` called from `changeModeInner` after a successful switch: removes the button; when the switch came from it, adds the "Ask <name> to try again" line and focuses `#msgInput`. Replaces `a.roHintShown`.
+- Needs you (`paintInbox`): a copied `ro-ask` button closes the inbox, opens the chat and clicks the chat's button.
+- Test: `scripts/check-ro-ask.js` in `scripts/ui-suite.js`: a synthetic `needs-permission` denial and a real simulator denial (a Read-only agent asked to edit), the menu's items and ticks, Ask first chosen, the mode changed (chip and `#modeChip` text), keyboard path (Enter, Arrow, Enter; Escape returns focus), Allow all cancel keeps Read-only. Mutation check: the old FR-074 button (switch at once, no menu) fails it.
+

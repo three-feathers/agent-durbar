@@ -145,6 +145,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('deleteSession'), !!cap.deleteSession, M('C2', 'deleteSession() <=> capabilities.deleteSession (spec 006 FR-028)'));
     assert.strictEqual(has('startMcpSignIn'), !!cap.mcpSignIn, M('C2', 'startMcpSignIn() <=> capabilities.mcpSignIn (spec 058 FR-064)'));
     if (has('cancelMcpSignIn')) assert.ok(cap.mcpSignIn, M('C2', 'cancelMcpSignIn() only with capabilities.mcpSignIn'));
+    if (has('refreshMcpStatus')) assert.ok(cap.mcpSignIn, M('C2', 'refreshMcpStatus() only with capabilities.mcpSignIn (spec 058 FR-064)'));
     assert.ok(cap.mcpSignInSteps === undefined || (typeof cap.mcpSignInSteps === 'string' && cap.mcpSignInSteps.length > 0), M('C2', 'mcpSignInSteps is a non-empty string or missing'));
     assert.strictEqual(typeof cap.mcpSignIn, cap.mcpSignIn === undefined ? 'undefined' : 'boolean', M('C2', 'mcpSignIn is a boolean or missing'));
     assert.strictEqual(has('setPermMode'), cap.permModeSwitch !== 'none', M('C2', "setPermMode() <=> permModeSwitch !== 'none'"));
@@ -347,14 +348,14 @@ export async function runContract(name: string, make: () => ContractTarget, hook
 const OMITTABLE: Record<OptionalMember, true> = {
   interrupt: true, resolvePermission: true, revokeGrant: true, setCap: true, resolveLimit: true, setMcpEnabled: true, setModel: true,
   cancelQueuedModel: true, compact: true, listModelOptions: true, listPreviousSessions: true, history: true, setPermMode: true,
-  handoffSummary: true, generateText: true, deleteSession: true, renameSession: true, startMcpSignIn: true, cancelMcpSignIn: true,
+  handoffSummary: true, generateText: true, deleteSession: true, renameSession: true, startMcpSignIn: true, cancelMcpSignIn: true, refreshMcpStatus: true,
   restartMcpServer: true, listMcpTools: true,
 };
 export const ALL_OPTIONAL = Object.keys(OMITTABLE) as OptionalMember[];
 /** Optional `AgentAdapter` members FakeAdapter does not implement (so it cannot omit them): fields, and methods no fake test needs yet. */
 const NOT_IN_FAKE = [
   'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'reloadAgentProfiles', 'selectAgentProfile', 'setRemote',
-  'authStatus', 'verifySignIn', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand',
+  'authStatus', 'verifySignIn', 'accountInfo', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand',
 ];
 
 /** The optional members of `interface AgentAdapter`, read from `src/adapters/types.ts` with the TypeScript parser (no hand-kept copy). */

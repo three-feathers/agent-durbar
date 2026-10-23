@@ -18,7 +18,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ClaudeMapper, claudeMcpServers } from './claudeMap';
+import { ClaudeMapper, claudeMcpServers, withSkipped } from './claudeMap';
 import type { ClaudeMessage } from './claudeMap';
 import { claudeOptionsFor, parseMcpTool, preToolUseDecision, toolKind } from './claudeModes';
 import { createCliTransport } from './claudeTransport';
@@ -31,6 +31,8 @@ import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec
 import type { McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
 import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
+import { claudeAccount } from './accounts';
+import type { AccountIdentity } from '../shared/account';
 
 /** FR-156: what Settings says of a Claude Code that `auth status` calls signed in: only the first message can confirm it. */
 export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
@@ -47,11 +49,11 @@ import { resolveWorkspaceCwd } from './workspace';
 import { claudeConfigDir, listClaudeSessions, readClaudeHistory } from './claudeHistory';
 import type { HistoryResult, PreviousSession } from './history';
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
-import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache } from './slashcommands';
+import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache, vscodeUserPromptDirs } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
 import { agentsArg, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
-import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand } from './types';
+import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
 import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 
 export const CLAUDE_ID = 'claude';
@@ -456,10 +458,14 @@ export interface ClaudeAdapterDeps {
   env?: () => NodeJS.ProcessEnv;
   /** Claude's config folder (tests); default `CLAUDE_CONFIG_DIR` or `~/.claude`. */
   configDir?: string;
+  /** VS Code's user prompt folders (spec 073 delta 2026-10-23); default `vscodeUserPromptDirs()`. Tests pass their own. */
+  vscodePromptDirs?: string[];
   /** Runs `claude` once with fixed arguments (spec 030 FR-034: the hand-off summary); tests inject a fake. */
   runOnce?: RunOnce;
   /** Spec 012 FR-156: `loggedIn` of `claude auth status --json` (local); tests inject a fake. Default: runs it on the found `claude`. */
   loggedIn?: () => Promise<boolean | undefined>;
+  /** Spec 051 FR-011: the parsed `claude auth status --json` (local); tests inject a fake. Default: runs it on the found `claude`. */
+  authJson?: () => Promise<Record<string, unknown> | undefined>;
 }
 
 export type RunOnce = (file: string, args: string[], o: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }) => Promise<{ code: number | null; stdout: string }>;
@@ -607,6 +613,20 @@ export class ClaudeAdapter implements AgentAdapter {
     return { status: 'unknown', detail: CLAUDE_LOCAL_SIGN_IN };
   }
 
+  /**
+   * Spec 051 FR-011: the account `claude auth status --json` reports (email and plan for a Claude sign-in, an API key, a provider).
+   * Local, no prompt, nothing billed. Personal data: never passed to `debug` (FR-015).
+   */
+  async accountInfo(): Promise<AccountIdentity> {
+    const probe = this.deps.authJson ?? (async () => {
+      const p = await this.deps.claudePath();
+      if (!p) return undefined;
+      const { claudeAuthStatus, nodeDetectEnv, nodeExec } = await import('./detect');
+      return claudeAuthStatus(p, nodeDetectEnv(), nodeExec);
+    });
+    return claudeAccount(await probe().catch(() => undefined));
+  }
+
   private initCache?: { at: number; reply: Promise<Record<string, unknown>> };
 
   /**
@@ -651,7 +671,7 @@ export class ClaudeAdapter implements AgentAdapter {
   /** Spec 073 FR-004: the folder's and the user's skills and commands (Claude does not load them: `--setting-sources ""`). */
   private readonly slash = new SlashCache();
   private slashPlaces(s: Session): SlashPlace[] {
-    return claudeSlashPlaces(s.roots, this.deps.configDir ?? claudeConfigDir());
+    return claudeSlashPlaces(s.roots, this.deps.configDir ?? claudeConfigDir(), undefined, this.deps.vscodePromptDirs ?? vscodeUserPromptDirs());
   }
 
   /** Spec 073 FR-001: files first, then the built-ins of the CLI's `initialize` reply that run in Durbar's sessions (FR-006, FR-007). */
@@ -663,7 +683,7 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   /** Spec 073 FR-005: a folder or user entry is sent as its text (real 2026-10-22: Claude sends an unknown `/name` to the model as is). */
-  async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined> {
+  async expandSlashCommand(sessionId: string, text: string): Promise<SlashExpansion | undefined> {
     const s = this.sessions.get(sessionId);
     return s ? this.slash.expand(text, () => this.slashPlaces(s)) : undefined; // no IO unless the text is a `/name` line
   }
@@ -858,7 +878,7 @@ export class ClaudeAdapter implements AgentAdapter {
     s.mcpAuthSeen?.delete(name); // a real change for this server
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      s.lastMcp = claudeMcpServers(r.mcpServers);
+      s.lastMcp = withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped);
       this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
     } catch {
       /* the toggle worked; the list comes with the next init */
@@ -878,7 +898,7 @@ export class ClaudeAdapter implements AgentAdapter {
     await s.transport.request({ subtype: 'mcp_reconnect', serverName: name }, 30_000);
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      this.emit(s.id, { type: 'mcp', servers: claudeMcpServers(r.mcpServers) });
+      this.emit(s.id, { type: 'mcp', servers: withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped) });
     } catch {
       /* the reconnect worked; the list comes with the next init */
     }
@@ -1060,7 +1080,7 @@ export class ClaudeAdapter implements AgentAdapter {
     s.mcpRefreshing = true;
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      s.lastMcp = claudeMcpServers(r.mcpServers);
+      s.lastMcp = withSkipped(claudeMcpServers(r.mcpServers), s.mapper.skipped);
       this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
     } catch {
       /* the list comes with the next init */

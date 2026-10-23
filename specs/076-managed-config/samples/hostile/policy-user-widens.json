@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "agentApps": {
+    "allowed": [
+      "copilot",
+      "claude",
+      "codex"
+    ]
+  },
+  "mcp": {
+    "mode": "open"
+  }
+}

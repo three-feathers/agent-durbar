@@ -1,0 +1,14 @@
+[Unit]
+Description=Virtual display :99
+[Service]
+ExecStart=/usr/bin/Xvfb :99 -screen 0 1440x900x24 -nolisten tcp
+Restart=on-failure
+# Hardening. Drop the lines your distro refuses (user units may lack the namespaces some of them need).
+# No PrivateTmp here: the X socket lives in /tmp/.X11-unix and the other units must see it.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/tmp
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_UNIX
+[Install]
+WantedBy=default.target

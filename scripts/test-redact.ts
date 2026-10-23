@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
 
 // CPU time of f in ms (user + system of this process), not wall time: it does not grow when other processes take the CPU, so the
 // timing checks below hold on a loaded machine or runner (spec 041 `## Changes` 2026-10-22, T068). It still counts every step the
@@ -465,7 +465,8 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const u = maskSecretUrl('https://h.test/p?' + q + '=' + SEC + '&page=2');
     assert.strictEqual(u, 'https://h.test/p?' + q + '=' + R + '&page=2', q);
   }
-  assert.strictEqual(maskSecretUrl('https://h.test/?code=abc&page=2'), 'https://h.test/?code=abc&page=2');
+  // review on PR #630: an OAuth authorization `code` is a secret (it was kept before); the page number stays
+  assert.strictEqual(maskSecretUrl('https://h.test/?code=abc&page=2'), 'https://h.test/?code=' + R + '&page=2');
   // review round 2: spaces in connection strings, JSON headers, command split, dash values, minor shapes
   masked(['--conn', 'Server=x; Password=' + SEC], ['--conn', 'Server=x; Password=' + R], 'conn with a space after ;');
   masked(['--conn', 'Server=x; Password = ' + SEC + ' ;Database=d'], ['--conn', 'Server=x; Password=' + R + ';Database=d'], 'conn with spaces around =');
@@ -1048,6 +1049,30 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   };
   walk(path.join(srcRoot, 'src'));
   assert.deepStrictEqual(offenders, [], 'used in: ' + offenders.join(', '));
+}
+
+// Review on PR #630 (spec 058 FR-093): home folders to `~`, OAuth query values, a bearer token in any case
+{
+  const h = (t: string, homes?: string[]) => maskHomePaths(t, homes ?? []);
+  assert.strictEqual(h('spawn /home/vikram/.local/bin/x ENOENT'), 'spawn ~/.local/bin/x ENOENT');
+  assert.strictEqual(h('/Users/ana/x and /Users/ana'), '~/x and ~');
+  assert.strictEqual(h('C:\\Users\\vikram\\AppData\\npx.cmd'), '~\\AppData\\npx.cmd');
+  assert.strictEqual(h('c:/Users/vikram/x'), '~/x');
+  assert.strictEqual(h('{"p":"C:\\\\Users\\\\vikram\\\\x"}'), '{"p":"~\\\\x"}', 'JSON-escaped');
+  assert.strictEqual(h('C:\\Users\\Bob Smith\\AppData'), '~\\AppData', 'a Windows user name with a space');
+  assert.strictEqual(h('/srv/data/home/x'), '/srv/data/home/x', 'not a home folder');
+  assert.strictEqual(h('x /opt/me/proj and /opt/me', ['/opt/me']), 'x ~/proj and ~', 'a given home folder');
+  assert.strictEqual(h('/opt/meow/x', ['/opt/me']), '/opt/meow/x', 'only a whole folder name');
+  assert.strictEqual(h('/x', ['/']), '/x', 'a too-short home is ignored');
+  const t0 = Date.now();
+  maskHomePaths('/home/' + 'a'.repeat(1_000_000), []);
+  maskHomePaths('/home/a '.repeat(100_000), []);
+  assert.ok(Date.now() - t0 < 1500, 'bounded on hostile input');
+  const u = maskSecretUrl('https://x.test/cb?code=AbC123&state=xyz9&Code=Q1&id_token=i.d.t&refresh_token=rr&ok=1#access_token=at1');
+  for (const v of ['AbC123', 'xyz9', 'Q1', 'i.d.t', 'rr', 'at1']) assert.ok(!u.includes(v), 'OAuth value masked: ' + v + ' in ' + u);
+  assert.ok(u.includes('ok=1'));
+  assert.deepStrictEqual(maskSecretArgs(['--code', 'abc', '--state', 'x']), ['--code', 'abc', '--state', 'x'], 'flags are unchanged by the OAuth rule (it is URL-only)');
+  for (const b of ['bearer abcdefgh12345678', 'BEARER abcdefgh12345678', 'Bearer abcdefgh12345678']) assert.ok(!redact(b).includes('abcdefgh12345678'), b);
 }
 
 console.log('redact: all checks passed');

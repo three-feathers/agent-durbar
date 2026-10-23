@@ -28,6 +28,7 @@ export function simulatorCount(dev: Readonly<Record<string, string | undefined>>
 export const SIM_OPEN_CHANNELS: Readonly<Record<string, string>> = Object.freeze({
   'harness:plans': 'the simulator asks main for this OS\'s install routes (spec 060 FR-002); main answers from the simulated managers and runs nothing',
   'app:version': 'renderer.ts asks for the app version on every page load (FR-032, review on #514); main only returns app.getVersion(): no adapter, no process, no profile file',
+  'window:titleDoubleClick': 'a double-click on the Mac top bar zooms or minimizes the app\'s own window (spec 052 FR-085); main only reads a system setting and calls the window: no adapter, no process, no file',
 });
 
 export function simChannelOpen(channel: string): boolean {
@@ -74,9 +75,10 @@ export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean
   deleteSession: (c: Caps) => !!c.deleteSession,
   startMcpSignIn: (c: Caps) => !!c.mcpSignIn,
   cancelMcpSignIn: (c: Caps) => !!c.mcpSignIn,
+  refreshMcpStatus: (c: Caps) => !!c.mcpSignIn,
   setPermMode: (c: Caps) => c.permModeSwitch !== 'none',
   resolvePermission: null, revokeGrant: null, setModel: null, cancelQueuedModel: null, compact: null, resolvePlan: null,
-  answerQuestion: null, answerElicitation: null, listAgentProfiles: null, reloadAgentProfiles: null, selectAgentProfile: null, authStatus: null, verifySignIn: null,
+  answerQuestion: null, answerElicitation: null, listAgentProfiles: null, reloadAgentProfiles: null, selectAgentProfile: null, authStatus: null, verifySignIn: null, accountInfo: null,
   refreshAuth: null, resumeIdOf: null, debug: null, writeGuard: null,
   listSlashCommands: null, expandSlashCommand: null, // spec 073: no capability; absent from the stand-in, so no "/" list and no expansion under the simulator
 });

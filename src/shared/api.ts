@@ -114,6 +114,7 @@ export type FloorsResult = { ok: true; state: FloorsState } | { ok: false; error
 export type LimitChoice = { kind: 'add'; credits: number } | { kind: 'set'; credits: number } | { kind: 'unset' } | { kind: 'cancel' };
 
 import type { AboutView } from './about';
+import type { AccountView } from './account';
 import type { CompactResult, ContextTier, ModelControl, ModelPricing, ModelSwitchRequest, ModelSwitchResult, PriceClass } from './modelswitch';
 
 /** Saved credit totals as the window receives them (spec 011 FR-026). Numbers, a display name and the folder's own path (already known to the window); the file holds a hash, never the path. */
@@ -534,6 +535,12 @@ export interface AgentMcpEntry {
   error?: string;
   /** Spec 058 FR-011/FR-020: what kind of failure the adapter said it was (only when the vendor said so). */
   errorClass?: McpServerStatus['errorClass'];
+  /** Spec 058 FR-092: when Agent Durbar first saw this state (epoch ms); only for a reported state. */
+  since?: number;
+  /** Spec 058 FR-092: a failed or needs-sign-in state that came after the server was Running in this session. */
+  afterRunning?: boolean;
+  /** Spec 058 FR-092: the transport the adapter reported (`stdio`, `http`, ...); missing = not reported. */
+  transport?: string;
   /** The default from Settings: on for new sessions. */
   defaultOn: boolean;
   /** This agent switched it off. */
@@ -544,6 +551,12 @@ export interface AgentMcpEntry {
   toolsOff?: string[];
   /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
   canRestart?: boolean;
+  /** Spec 058 FR-065: **Sign in** is offered: the agent app can start its own sign-in, the session runs, and this server reads Needs sign-in. */
+  canSignIn?: boolean;
+  /** Spec 058 FR-065: a sign-in is open for this server. The host only, never the address; `expiresInMs` is what is left of the 10 minutes. */
+  signIn?: { host: string; opened: boolean; expiresInMs: number; otherSite?: string };
+  /** Spec 058 FR-068: the terminal steps for this needs-sign-in server, the agent app's plain text with the name filled in (commands in backticks). */
+  signInSteps?: string;
   /** Spec 058 FR-078: Agent Durbar passed this server as switched off when the session started (Settings or the folder's extras), so a runtime `disabled` is not the app's own doing. */
   launchedOff?: boolean;
   /** Spec 058 FR-078: the user switched this server here since the session started (a runtime `disabled` may be the old state until its event arrives). */
@@ -578,6 +591,20 @@ export interface McpToolsResult {
   /** The session is not running: nothing was asked. */
   notRunning?: boolean;
   error?: string;
+}
+
+/** `agents:mcpSignIn` (spec 058 FR-065): the host only, never the address. `manual` = show the terminal steps (FR-068). The error is masked and has no address. */
+export type McpSignInStartResult =
+  | { ok: true; kind: 'browser'; host: string; otherSite?: string }
+  | { ok: true; kind: 'connected' }
+  | { ok: false; error: string; manual?: boolean };
+
+/** `agents:mcpOpenSignIn` (spec 058 FR-065): `gone` = the sign-in is no longer open (time limit, End session, connected). */
+export interface McpOpenSignInResult {
+  ok: boolean;
+  error?: string;
+  gone?: boolean;
+  manual?: boolean;
 }
 
 /** `agents:mcpRestart` (spec 058 FR-021): the error is short and masked. */
@@ -700,6 +727,8 @@ export interface DurbarApi {
   harnessOpenSignIn?(kind: string, url: string): Promise<{ ok: boolean }>;
   /** `pwshMissing` (spec 052 FR-073): Windows only, PowerShell 7 was not found; the Copilot card shows a hint. */
   copilotAuth?(): Promise<{ known: boolean; signedIn?: boolean; pwshMissing?: boolean }>;
+  /** Spec 051 FR-014: the account each installed agent app reports (`{ [appId]: { status, text } }`); `refresh` asks again. Personal data: shown in the window only. */
+  harnessAccounts?(refresh?: boolean | 'check'): Promise<Record<string, AccountView>>;
   onHarnessProgress?(cb: (p: { kind: string; op: string; lines: string[]; elapsedMs: number; url?: string; code?: string; needsPaste?: boolean }) => void): () => void;
   /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
   /** Remote control ended without the user (spec 012 FR-158, spec 054 FR-062): an agent id, or the id with a plain reason. */
@@ -793,9 +822,16 @@ export interface DurbarApi {
   mcpGlobalRemoveApply?(token: string): Promise<GlobalApplyResult>;
   /** Spec 069 FR-009: switch one server of an app's list off (or on) for new Durbar sessions (Copilot and Claude Code). */
   mcpGlobalSetOff?(app: GlobalApp, name: string, off: boolean): Promise<{ ok: boolean }>;
-  agentMcp?(id: string): Promise<AgentMcpReply>;
+  /** `focus: true` = the window regained focus: main reads the agent app's MCP list again when a sign-in page is open (spec 058 FR-064). */
+  agentMcp?(id: string, focus?: boolean): Promise<AgentMcpReply>;
   /** Spec 058 FR-021: restart one MCP server of this agent's running session. */
   agentMcpRestart?(id: string, name: string): Promise<McpRestartResult>;
+  /** Spec 058 FR-065: start the agent app's own sign-in for one MCP server. Main keeps the address; the reply has the host only. */
+  agentMcpSignIn?(id: string, name: string): Promise<McpSignInStartResult>;
+  /** Spec 058 FR-065: open the held sign-in page in the system browser (main holds the address; only after this click). */
+  agentMcpOpenSignIn?(id: string, name: string, shownHost: string): Promise<McpOpenSignInResult>;
+  /** Spec 058 FR-065: forget the open sign-in. */
+  agentMcpCancelSignIn?(id: string, name: string): Promise<{ ok: boolean; error?: string }>;
   /** Spec 069 FR-032: the tools of one MCP server of this agent's running session. */
   agentMcpTools?(id: string, name: string): Promise<McpToolsResult>;
   /** Spec 069 FR-061: the tools of one server turned off in this agent's folder (applies to new sessions and after Restart session). */
@@ -811,8 +847,9 @@ export interface DurbarApi {
   pickAttachments(want?: 'image' | 'file'): Promise<PickedFile[]>;
   /** Pasted / dropped file bytes (renderer has no path): checked (10 MB, real image format), sanitized, written to a private temp folder. */
   stageAttachment(name: string, mime: string, data: ArrayBuffer): Promise<StageResult>;
-  /** `slash` (spec 073 FR-005): the message started with a folder or user entry and its text was sent; the value says where it came from. */
-  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string }>;
+  /** `slash` (spec 073 FR-005): the message started with a folder or user entry and its text was sent; the value says where it came from.
+   *  `slashNote` (a VS Code prompt file): the settings not applied and the variables left as written. */
+  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }>;
   /** Spec 073 FR-010: the "/" entries of the agent's app in its folder (folder, user, app). */
   slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
   /** Spec 066: answer a proposed plan (window only). */
@@ -849,6 +886,8 @@ export interface DurbarApi {
   onMenuAdd?(cb: (kind: 'folder' | 'workspace') => void): () => void;
   /** The window entered (true) or left (false) full screen, spec 052 FR-085. */
   onFullScreen?(cb: (on: boolean) => void): () => void;
+  /** A double-click on a drag area of the top bar, spec 052 FR-085 (Mac only; main zooms, minimizes or ignores it by the system setting). */
+  titleDoubleClick?(): void;
   /** The OS the app runs on ('darwin', 'win32', 'linux'), spec 052 FR-085: the Mac title bar styles. */
   platform?: string;
 }

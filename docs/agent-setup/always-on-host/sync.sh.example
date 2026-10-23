@@ -1,0 +1,29 @@
+#!/bin/bash
+# Copy my Claude Code setup (a fixed allow-list, never secrets or session data) into this PRIVATE repo,
+# commit and push if it changed.
+# Never add: ~/.claude/settings.json, chat channel folders, sessions, history, transcripts (projects/*.jsonl),
+# caches, token files.
+set -euo pipefail
+D="$(cd "$(dirname "$0")" && pwd)"
+mkdir -p "$D/global/agents" "$D/agent-durbar" "$D/vps/bin" "$D/vps/systemd"
+cp ~/.claude/CLAUDE.md "$D/global/CLAUDE.md"
+cp ~/.claude/agents/*.md "$D/global/agents/"
+cp ~/<workspace>/agent-durbar/CLAUDE.local.md "$D/agent-durbar/CLAUDE.local.md"
+for f in ~/bin/durbar-session ~/bin/durbar-sim; do [ -f "$f" ] && cp "$f" "$D/vps/bin/"; done   # optional files: a missing one must not stop the backup
+cp ~/.config/systemd/user/*.service ~/.config/systemd/user/*.timer "$D/vps/systemd/" 2>/dev/null || true
+# refuse to commit anything that looks like a secret
+if grep -rIlE "gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|sk-[A-Za-z0-9-]{20,}|xox[abprs]-|AKIA[0-9A-Z]{16}|[0-9]{8,10}:[A-Za-z0-9_-]{35}|BEGIN [A-Z ]*PRIVATE KEY" "$D" --exclude-dir=.git --exclude=sync.sh; then
+  echo "config-sync: a file looks like it holds a secret; nothing committed" >&2; exit 1
+fi
+# CLAUDE.local.md holds real chat IDs, which the pattern above does not know. This repo MUST be private.
+# ID-shaped numbers only warn (the backup still runs); extend the pattern above if you learn a new secret shape.
+if grep -rIEn -- '-?[0-9]{9,}' "$D" --exclude-dir=.git --exclude=sync.sh >/dev/null; then
+  echo "config-sync: warning: ID-shaped numbers found (chat IDs?). Fine only in a private repo." >&2
+fi
+cd "$D"
+git add -A
+git diff --cached --quiet && { echo "config-sync: no changes"; exit 0; }
+git commit -q -m "sync $(date -u +%Y-%m-%dT%H:%MZ)"
+# the token comes from your gh login at push time; nothing is stored in the repo
+git -c credential.helper= -c credential.helper='!f(){ echo username=x-access-token; echo "password=$(gh auth token -u <your-github-user>)"; }; f' push -q
+echo "config-sync: pushed"
