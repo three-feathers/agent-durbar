@@ -1,6 +1,6 @@
 {
   "name": "agent-durbar",
-  "version": "0.1.0-alpha.13",
+  "version": "0.1.0-alpha.14-mcptest.1",
   "description": "Office-style command center to see, chat with and coordinate AI agents across harnesses (GitHub Copilot, Claude Code, OpenAI Codex), for anyone who works with agents.",
   "private": true,
   "desktopName": "agent-durbar.desktop",
