@@ -16,11 +16,24 @@ Rules (checked by `npm run changelog:check`, part of `npm test`):
 
 A follow-up PR on the same branch edits its own file. `npm run changelog:preview` prints what the next release will list.
 
-At release time the release PR runs
+## At release time: fold at tag time (spec 008 FR-117..FR-120)
 
-```bash
-npm run changelog:build -- --release "v0.1.0-alpha.N ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.N), YYYY-MM-DD)"
-```
+No release PR folds the notes before the tag any more (its notes went stale while the merge queue kept landing fragments), and
+no merge freeze is needed:
 
-which writes a new section under *Unreleased* with every fragment (by file name), then any bullet still under *Unreleased*, and
-deletes the fragments. The release manager then adds the release's intro paragraph as before.
+1. A **version-only PR** sets the new version (`package.json`, `package-lock.json`, the simulator's About label).
+2. The release manager **tags a commit on `main`**. `release.yml`'s `verify` job checks the tag (on `main`, equal to
+   `package.json`, the previous release already folded) and writes the draft's notes from exactly that commit's fragments:
+   `node scripts/changelog.js build --release "<heading>" --stdout` prints the same section and edits nothing.
+3. A **doc-only fold PR**, from the tag, with the heading from the run's job summary:
+
+   ```bash
+   git fetch origin --tags && git switch -c NNN-fold-0.1.0-alpha.N v0.1.0-alpha.N
+   npm run changelog:build -- --release "v0.1.0-alpha.N ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.N), YYYY-MM-DD)"
+   # add the release's intro paragraph and the README status block, commit
+   git merge origin/main   # fragments that landed after the tag come back for the next release
+   ```
+
+   `changelog:build` writes a new section under *Unreleased* with every fragment (by file name), then any bullet still under
+   *Unreleased*, and deletes the fragments. The PR goes through the queue like any other; the workflow never pushes to `main`
+   or opens it. Merge it before the next tag: `verify` refuses a tag while the previous release has no section.
