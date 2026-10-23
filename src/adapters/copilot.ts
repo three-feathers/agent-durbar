@@ -311,13 +311,25 @@ export class CopilotAdapter implements AgentAdapter {
   /** One mapper per session (it remembers tool names, reasoning ids and sub-agent ids of that session). */
   private mappers = new Map<string, EventMapper>();
 
-  /** Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). Protected so a test can hand in a fake client (no runtime process, no credits). */
+  /**
+   * Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). Protected so a test can hand in a fake client (no runtime process, no credits).
+   * Spec 058 FR-161: ONE runtime per app run for every session, one-shot and check (each runtime process reads Copilot's keychain items
+   * again, so a runtime per session would ask again per session on a Mac). A start that failed is not kept: the next call starts again
+   * instead of failing for the rest of the run. A runtime that exits later is restarted by the SDK itself on the next create or resume
+   * (`read:` SDK 1.0.22 `client.js` `createSession`/`resumeSessionInternal`: `if (!this.connection) await this.start()`).
+   */
   protected async getClient(): Promise<CopilotClient> {
     if (this.client) return this.client;
-    const starting = (this.starting ??= this.createClient().then((c) => {
-      if (this.starting === starting) this.client = c;
-      return c;
-    }));
+    const starting = (this.starting ??= this.createClient().then(
+      (c) => {
+        if (this.starting === starting) this.client = c;
+        return c;
+      },
+      (e: unknown) => {
+        if (this.starting === starting) this.starting = undefined;
+        throw e;
+      },
+    ));
     return starting;
   }
 

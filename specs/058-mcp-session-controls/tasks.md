@@ -327,3 +327,11 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
 
 - [x] T127 Review on #609 (fjcabello): needs-sign-in rows lead with Open in chat, Restart behind More; load sequence numbers and no
   reload while the list is hidden; a needs-sign-in-only case in `test-mcpwords`; the driver pins each (mutation-checked) [FR-082, FR-083]
+
+## Phase 10: fewer macOS keychain prompts (delta 2026-10-23, issue #623, owner report; related #525)
+
+- [x] T130 Spec delta: who reads the keychain, why Always Allow does not stick, the options, FR-160..FR-162 (spec *Changes* 2026-10-23)
+- [x] T131 `mac.signIgnore` for the Copilot runtime prebuilds and `scripts/check-runtime-signature.js` in `dist:mac:*`; `test:runtimesign` [FR-160]
+- [x] T132 `CopilotAdapter.getClient`: a failed runtime start is not cached; `test:copilotshared` (one runtime for N sessions, session end, retry, per-session modes and folders) [FR-161]
+- [x] T133 Docs: README *Keychain prompts on a Mac*, `changelog.d/058-keychain-prompts.md`, `docs/agent-notes.md` entry
+- [ ] T134 Mac check list (FR-162) run on a Mac by Paco's team; counts before and after on #623; README and FR-160 `[KNOWN GAP]` updated [FR-162]
