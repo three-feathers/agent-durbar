@@ -428,7 +428,7 @@ function syncWalkers(){
     let w=walkers.get(id);
     if(!w){
       const a=byId(id); if(!a)return;
-      const el=document.createElement('span'); el.className='walker'; el.setAttribute('aria-hidden','true'); el.innerHTML='<span class="wk">'+avatar(a)+'</span>'; layer.appendChild(el);
+      const el=document.createElement('span'); el.className='walker'; el.dataset.agent=a.id; el.setAttribute('aria-hidden','true'); el.innerHTML='<span class="wk">'+avatar(a)+'</span>'; layer.appendChild(el);
       w={el,back:false,walking:false,shown:false,timer:0,to:'',tk:THEME.themeIdForCache()}; walkers.set(id,w);
       /* a visit that began a while ago and is only now drawn (its tile got wider, the queue shorter) is already there: no walk from the desk */
       const v=VISITS.at(id), long=!!v&&Date.now()-v.since>WALK_MS+500;
@@ -455,7 +455,11 @@ function syncWalkers(){
   walkers.forEach((w,id)=>{const a=byId(id),m=moodFor(a);w.el.dataset.body=m.body;w.el.dataset.trouble=m.trouble||'';w.el.dataset.coffee=m.coffee?'1':''; /* spec 068: a cup in the hand */
     /* spec 001 FR-034: at the Boss, a tiny badge on the figure: ? for a question, a key for a permission */
     const v=VISITS.at(id),k=v&&v.place===window.DurbarPlaces.BOSS?v.label:'';
-    if((w.el.dataset.ask||'')!==k){w.el.dataset.ask=k;let b=w.el.querySelector('.wb');if(!k){if(b)b.remove();}else{if(!b){b=document.createElement('span');b.className='wb';w.el.appendChild(b);}b.innerHTML=k==='q'?'?':BADGE_KEY;}}});
+    if((w.el.dataset.ask||'')!==k){w.el.dataset.ask=k;let b=w.el.querySelector('.wb');if(!k){if(b)b.remove();}else{if(!b){b=document.createElement('span');b.className='wb';w.el.appendChild(b);}b.innerHTML=k==='q'?'?':BADGE_KEY;}}
+    /* spec 017 FR-019, FR-020 (owner 2026-10-23): the same pose as at the door: an empty wallet at Durbar's spending limit wherever the
+       figure is (Bank, coffee corner, walking), a wave while it waits at the Boss; drawn in its own colours, still with reduced motion */
+    const pr=a&&signsOn()?(a.limit?'wallet':k?'wave':''):'';
+    if((w.el.dataset.prop||'')!==pr){w.el.dataset.prop=pr;let q=w.el.querySelector('.wprop');if(!pr){if(q)q.remove();}else{if(!q){q=document.createElement('span');q.className='wprop';q.setAttribute('aria-hidden','true');w.el.appendChild(q);}q.innerHTML=pr==='wallet'?walletSvg(a,'w-wallet'):waveArmSvg(a,'w-arm');}}});
 }
 function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key),usd=usdEstimates(r.id),m=t.calls&&!(t.unreported>=t.calls&&!usd)?approx(t.nano/1e9*AIU_USD+usd):'';return t.calls&&!demoOn?{long:m||window.DurbarUsage.fmtTotal(t),short:m||window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
 
@@ -895,7 +899,7 @@ function unitHTML(a,d){
       <div class="info"><div class="who">${chatNoHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
       <p class="task"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</p>${signsOn()?signHTML(a,'pill'):`<span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span>`}</div></button>`;    if(LIVE_SIDE)desk+=sideHTML(a);
   } else desk=cardHTML(a,d,nSubs);
-  return `<div class="unit${nSubs?' has-h':''}${SHUT_PREV&&SHUT_PREV.has(a.id)?' unrolling':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}</div>`;
+  return `<div class="unit${nSubs?' has-h':''}${SHUT_PREV&&SHUT_PREV.has(a.id)?' unrolling':''}" data-key="unit:${esc(a.id)}">${desk}${doorBtnHTML(a)}${helpers}</div>`;
 }
 const unitWidth=(a,d)=>{const D=DENS[d];return D.cw+(d==='full'&&LIVE_SIDE?SIDE_W+SIDE_GAP+(helpersOf(a).length?2:0):0)+(helpersOf(a).length?(d==='full'?D.hw+14+8:D.hw+18):0);};
 /* ---- spec 001 FR-051..FR-056: finished agents rest in the lounge when their room has others at work. A resting agent is not a desk in the
@@ -1013,18 +1017,32 @@ const SIGN_ICONS={
   people:'<circle cx="4.2" cy="4" r="1.7" fill="currentColor"/><circle cx="8.2" cy="4.4" r="1.5" fill="currentColor"/><path d="M1.2 10.2c.3-2.2 1.5-3.2 3-3.2s2.7 1 3 3.2ZM7.6 7.2c1.6-.3 2.9.6 3.2 3H8.5" fill="currentColor"/>',
   dot:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6" r="2.5" fill="currentColor"/>',
   check:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.8 6.1 5.3 7.6 8.3 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
-  ring:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/>'
+  ring:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/>',
+  wallet:'<rect x="1.4" y="3.2" width="9.2" height="6.8" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M1.6 4.6 8.6 2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8.4" cy="6.6" r=".9" fill="currentColor"/>',
+  lock:'<rect x="2.3" y="5.3" width="7.4" height="5.2" rx="1.1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 5.3V3.9a2 2 0 0 1 4 0v1.4" fill="none" stroke="currentColor" stroke-width="1.3"/>'
 };
+/* spec 017 FR-011a, FR-019, FR-020 (owner 2026-10-23): the figure's props, in the agent's own shirt and skin colours and the theme's door
+   tokens (no new colours); `still` under reduced motion or in Serious mode (FR-022) */
+const motionStill=()=>REDUCED||SERIOUS?' still':'';
+function waveArmSvg(a,cls){const k=themedLook(a.look);return `<svg class="${cls}${motionStill()}" viewBox="24 0 24 48" aria-hidden="true" focusable="false"><path d="M37.5 47 41 30.5" stroke="${k.shirt}" stroke-width="5.5" stroke-linecap="round" fill="none"/><circle cx="41.8" cy="26.6" r="3.6" fill="${k.skin}"/></svg>`;}
+/* an open, empty wallet held out in both hands (calm, no money): the theme's door colours for the leather, the surface inside */
+function walletSvg(a,cls){const k=themedLook(a.look),t=T_;return `<svg class="${cls}${motionStill()}" viewBox="0 0 48 30" aria-hidden="true" focusable="false"><path d="M6 29 12 17M42 29 36 17" stroke="${k.shirt}" stroke-width="5" stroke-linecap="round" fill="none"/><rect x="9" y="6" width="30" height="16" rx="3" fill="${t('--door-leaf-line')}"/><rect x="12" y="8.5" width="24" height="11" rx="2" fill="${t('--surface')}"/><path d="M17 14h14" stroke="${t('--door-leaf-line')}" stroke-width="1.4" stroke-dasharray="2 2.4" stroke-linecap="round"/><circle cx="12" cy="17" r="3.2" fill="${k.skin}"/><circle cx="36" cy="17" r="3.2" fill="${k.skin}"/></svg>`;}
+/* FR-021: small flames on the desk of an agent in error, in the error and waiting colour tokens; they flicker, still under FR-022 */
+function fireSvg(){const t=T_;return `<svg class="cb-fire${motionStill()}" viewBox="0 0 60 24" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false"><g class="fl fl1"><path d="M10 24C4 20 7 13 11 9c0 5 4 5 4 10 0 3-2 5-5 5Z" fill="${t('--c-error')}"/><path d="M11 24c-2-2-1-5 1-7 0 3 2 3 2 5 0 1-1 2-3 2Z" fill="${t('--c-waiting')}"/></g><g class="fl fl2"><path d="M30 24c-7-4-4-13 1-18 0 6 6 7 6 13 0 3-3 5-7 5Z" fill="${t('--c-error')}"/><path d="M31 24c-3-2-2-6 1-9 0 4 3 4 3 7 0 1-2 2-4 2Z" fill="${t('--c-waiting')}"/></g><g class="fl fl3"><path d="M50 24c-5-3-3-9 1-12 0 4 4 5 4 9 0 2-2 3-5 3Z" fill="${t('--c-error')}"/><path d="M50.5 24c-2-1.5-1-4 .8-6 0 2.5 2 2.8 2 4.6 0 .9-1.3 1.4-2.8 1.4Z" fill="${t('--c-waiting')}"/></g></svg>`;}
 const signIcon=k=>`<svg class="ds-ic" viewBox="0 0 12 12" aria-hidden="true" focusable="false" data-icon="${k}">${SIGN_ICONS[k]||''}</svg>`;
 let SIGN_PREF=(()=>{try{return localStorage.getItem('durbar.doorsigns')!=='off';}catch(e){return true;}})();
 const signsOn=()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)&&SIGN_PREF;
 function setSignsOn(on){SIGN_PREF=!!on;try{localStorage.setItem('durbar.doorsigns',SIGN_PREF?'on':'off');}catch(e){}layoutKey='';scheduleRender();}
-const signOf=(a,resting)=>window.DurbarRoom.doorSign({state:vis(a),paused:!!a.paused,coffee:!!a.coffee,limit:!!a.limit,ended:vis(a)==='idle'&&a.label==='Ended',resting:!!resting,failing:isFailing(a),helpers:helpersOf(a).map(vis)});
+/* spec 017 FR-015: doors the user closed (id -> {closed, held}), from main (bridge.doorsList, kept fresh by onDoorsChanged) */
+let DOORS={};
+const doorOf=a=>(a&&!a.parent&&DOORS[a.id])||{closed:false,held:0};
+const signOf=(a,resting)=>window.DurbarRoom.doorSign({state:vis(a),paused:!!a.paused,coffee:!!a.coffee,limit:!!a.limit,ended:vis(a)==='idle'&&a.label==='Ended',resting:!!resting,failing:isFailing(a),helpers:helpersOf(a).map(vis),userClosed:doorOf(a).closed,held:doorOf(a).held});
+const signTitle=(a,g)=>g.key==='shut'?'Do not disturb (you closed it)'+(doorOf(a).held?' · '+doorOf(a).held+' held':''):g.word;
 /* the sign in the pill's place (cls 'pill': door, icon, word and the warning a pill carries) or in the mini/micro status word's place
    (cls 'stl': icon and short word only, so it gives way like the status word did and a long name keeps three characters, FR-007) */
 function signHTML(a,cls){
   const g=signOf(a);
-  return `<span class="${cls} dsign st-${g.tone} ds-${g.key}" data-sign="${g.key}" title="${esc(g.word)}: ${esc(stWord(a))}${isFailing(a)?' ('+MOOD.failStreak(a.id)+' tool calls failed in a row)':''}">${cls==='pill'?doorSvg(g.door==='open',true):''}${signIcon(g.icon)}<span class="dsw">${esc(cls==='stl'?g.short:g.word)}</span>${cls==='pill'?pillWarn(a):''}</span>`;
+  return `<span class="${cls} dsign st-${g.tone} ds-${g.key}" data-sign="${g.key}" title="${esc(signTitle(a,g))}: ${esc(stWord(a))}${isFailing(a)?' ('+MOOD.failStreak(a.id)+' tool calls failed in a row)':''}">${cls==='pill'?doorSvg(g.door==='open',true):''}${signIcon(g.icon)}<span class="dsw">${esc(cls==='stl'?g.short:g.word)}</span>${cls==='pill'?pillWarn(a):''}</span>`;
 }
 /* spec 017 FR-011..FR-014 (owner 2026-10-23, "real office cabin style"): each session is a cabin. While the agent is busy, waits, must
    not be disturbed or is away, its cabin door is closed and drawn in place of the desk scene (same box, so the layout is unchanged): the
@@ -1034,16 +1052,23 @@ function signHTML(a,cls){
 function cabinHTML(a,kind,sceneHTML){
   if(!signsOn())return sceneHTML;
   const g=signOf(a), tag=`<span class="cb-sign st-${g.tone}" data-sign="${g.key}">${signIcon(g.icon)}<span class="cb-w" data-w="${esc(g.short)}"></span></span>`; /* the word as CSS content: a desk's text still starts with its name (drivers and the office check find desks that way) */
-  if(g.door==='open')return `<span class="cb-scene cb-${kind}">${sceneHTML}<span class="cb-open" data-cabin="open" aria-hidden="true"><span class="cb-leaf-open"></span>${tag}</span></span>`;
+  if(g.door==='open')return `<span class="cb-scene cb-${kind}">${sceneHTML}<span class="cb-open" data-cabin="open" aria-hidden="true"><span class="cb-leaf-open"></span>${g.effect==='fire'?fireSvg():''}${tag}</span></span>`;
+  /* FR-019: at Durbar's spending limit the agent stands at its closed door holding out an empty wallet, the Limit sign above */
+  if(g.figure==='wallet')return `<span class="cabin cb-${kind} cb-waiting cb-limit st-${g.tone}" data-cabin="limit" aria-hidden="true"><span class="cb-door"><span class="cb-knob"></span></span><span class="cb-figure">${avatar(a)}${walletSvg(a,'cb-wallet')}</span>${tag}</span>`;
   /* owner 2026-10-23 13:59 UTC: someone waiting for you is not shut in: it stands in front of its closed door and waves, the sign above it.
      The figure is the scene kit's avatar; the waving arm is drawn in its own shirt and skin colours; no animation with reduced motion or
      in Serious mode (a static raised hand) */
   if(g.figure==='wave'){
-    const k=themedLook(a.look), still=REDUCED||SERIOUS?' still':'';
-    const arm=`<svg class="cb-arm${still}" viewBox="24 0 24 48" aria-hidden="true" focusable="false"><path d="M37.5 47 41 30.5" stroke="${k.shirt}" stroke-width="5.5" stroke-linecap="round" fill="none"/><circle cx="41.8" cy="26.6" r="3.6" fill="${k.skin}"/></svg>`;
+    const arm=waveArmSvg(a,'cb-arm');
     return `<span class="cabin cb-${kind} cb-waiting st-${g.tone}" data-cabin="waiting" aria-hidden="true"><span class="cb-door"><span class="cb-knob"></span></span><span class="cb-figure">${avatar(a)}${arm}</span>${tag}</span>`;
   }
   return `<span class="cabin cb-${kind} st-${g.tone}" data-cabin="closed" aria-hidden="true"><span class="cb-door"><span class="cb-photo">${avatar(a)}</span><span class="cb-knob"></span></span>${tag}</span>`;
+}
+/* spec 017 FR-015: the door button beside a desk (not inside it: a button cannot hold a button), on the scene's corner */
+function doorBtnHTML(a){
+  if(!signsOn()||!bridge||!bridge.setDoor||demoOn||a.parent)return '';
+  const d=doorOf(a), lab=d.closed?'Open the door: '+a.name+(d.held?' ('+d.held+' held)':''):'Close the door (do not disturb): '+a.name;
+  return `<button class="cb-toggle" type="button" data-doorset="${esc(a.id)}" aria-pressed="${d.closed}" aria-label="${esc(lab)}" title="${esc(lab)}">${doorSvg(!d.closed,true)}</button>`;
 }
 function roomArt(){
   let s='';
@@ -1087,6 +1112,34 @@ function morphParts(stage,parts){
     morphNode(kids[i],n);
   }
   return true;
+}
+/* spec 017 FR-015, FR-017: the door button of a desk. Closing it: Do not disturb (scheduled runs are held, remote control goes off).
+   Opening it with runs held asks: Send all (in order), Discard, or Keep closed (the default: Escape and Enter keep it closed). */
+async function toggleDoor(id,btn){
+  const a=byId(id); if(!a||a.parent||!bridge||!bridge.setDoor)return;
+  const cur=doorOf(a);
+  if(!cur.closed){
+    const r=await bridge.setDoor(a.id,true).catch(()=>null);
+    if(!r||!r.ok){toast('Could not close the door'+(r&&r.error?': '+esc(r.error):'.'),4200).classList.add('err');return;}
+    DOORS[a.id]={closed:true,held:r.held||0};scheduleRender();
+    announce(a.name+': door closed. Do not disturb: scheduled prompts are held until you open it.');
+    toast(esc(a.name)+': door closed. Scheduled prompts wait here until you open it'+(a.remote?'; remote control is off.':'.'),4200);
+    return;
+  }
+  if(cur.held){
+    const n=cur.held, v=await askDialog({title:'Open the door of '+a.name+'?',body:n+(n===1?' prompt was':' prompts were')+' held while the door was closed. Send all sends them in order: the first now, each next one when '+a.name+' is free again.',
+      buttons:[{label:'Keep closed',value:null},{label:'Discard',value:'discard'},{label:'Send all ('+n+')',value:'send'}],returnFocus:()=>document.querySelector(`[data-doorset="${CSS.escape(a.id)}"]`)||btn});
+    if(!v||!v.value)return; /* Keep closed */
+    const r=await bridge.setDoor(a.id,false).catch(()=>null);
+    if(!r||!r.ok){toast('Could not open the door.',4200).classList.add('err');return;}
+    const q=await bridge.releaseHeld(a.id,v.value).catch(()=>null);
+    if(!q||!q.ok){toast('The held prompts are still there: '+esc((q&&q.error)||'could not '+v.value+' them')+'.',5200).classList.add('err');return;}
+    toast(esc(a.name)+': door open. '+(v.value==='send'?(n===1?'The held prompt goes out now.':'The '+n+' held prompts go out one by one.'):(n===1?'1 held prompt discarded.':n+' held prompts discarded.')),4200);
+    return;
+  }
+  const r=await bridge.setDoor(a.id,false).catch(()=>null);
+  if(!r||!r.ok){toast('Could not open the door.',4200).classList.add('err');return;}
+  DOORS[a.id]={closed:false,held:0};scheduleRender();announce(a.name+': door open.');
 }
 function setRoomClosed(r,closed,quiet){
   if(!!r.closed===!!closed)return;
@@ -2243,6 +2296,7 @@ document.addEventListener('click',e=>{
   if(so){const blk=so.closest('.subblk'),id=blk&&blk.dataset.sub,par=ui.selected&&byId(ui.selected),card=par&&liveById(par.id+':'+id);if(card)openPanel(card.id,false);return;}
   const pc=e.target.closest('[data-parentchat]');
   if(pc){const cur=byId(ui.selected);if(cur&&cur.parent)openPanel(cur.parent,false);return;}
+  const dset=e.target.closest('[data-doorset]'); if(dset){toggleDoor(dset.dataset.doorset,dset);return;} /* spec 017 FR-015: before the desk's own click */
   const dr=e.target.closest('[data-door]'); if(dr){const r=ROOMS.find(x=>x.id===dr.dataset.door);if(r)setRoomClosed(r,!r.closed);return;}
   if(e.target.closest('#closeAll,#openAll')){const shut=!!e.target.closest('#closeAll');
     ROOMS.filter(r=>roomShown(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id)).forEach(r=>setRoomClosed(r,shut,true));
@@ -5115,7 +5169,7 @@ const schedulesOf=r=>SCHED.schedules.filter(s=>s.folder===folderKeyOf(r));
 const clock=ms=>{const d=new Date(ms),n=new Date(),t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return d.toDateString()===n.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+t;};
 const recurringS=s=>s.every!==undefined||!!s.rule;
 const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done).map(s=>recurringS(s)?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
-const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused','skipped-cap':'not sent: reached its limit','skipped-ended':'not sent: the session has ended',missed:'missed: the app was closed',failed:'could not send'};
+const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused','skipped-cap':'not sent: reached its limit','skipped-ended':'not sent: the session has ended',missed:'missed: the app was closed',failed:'could not send',held:'held: the door is closed (Do not disturb)'};
 const DAY3=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 /* spec 044 FR-012: "every day at 08:30", "weekdays at 09:00", "weekly on Mon, Thu at 17:00" (Monday first) */
 const ruleText=r=>r.kind==='weekdays'?'weekdays at '+r.time:r.kind==='weekly'?'weekly on '+[...(r.days||[])].sort((a,b)=>((a+6)%7)-((b+6)%7)).map(d=>DAY3[d]).join(', ')+' at '+r.time:'every day at '+r.time;
@@ -5361,6 +5415,9 @@ async function undoCheckpoint(a,turn,btn){
   checkpointNote(a,Object.assign({id:a.id},u.undo));
 }
 if(bridge&&bridge.onCheckpoint)bridge.onCheckpoint(n=>{const a=n&&liveById(n.id);if(a)checkpointNote(a,n);});
+/* spec 017 FR-015..FR-017: doors the user closed, from main; a change redraws the desks (same sizes, so no new layout) */
+const setDoors=d=>{const o={};if(d&&typeof d==='object')for(const [k,v] of Object.entries(d))if(v&&typeof v==='object')o[k]={closed:v.closed===true,held:Number.isInteger(v.held)&&v.held>0?v.held:0};DOORS=o;scheduleRender();};
+if(bridge&&bridge.doorsList){bridge.doorsList().then(setDoors).catch(()=>{});if(bridge.onDoorsChanged)bridge.onDoorsChanged(setDoors);}
 if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(p=>{const id=typeof p==='string'?p:p&&p.id;const a=liveById(id);if(!a||!a.remote)return;a.remote=null;updateRemoteUi(a);
   /* spec 054 FR-062: the adapter's own reason when it has one; otherwise the sign-in reconnect (spec 012 FR-158) */
   const why=p&&typeof p==='object'&&typeof p.reason==='string'&&p.reason?esc(p.reason.slice(0,300)):esc(a.name)+' reconnected after the new sign-in';

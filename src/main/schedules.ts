@@ -335,6 +335,11 @@ export interface SchedulerDeps {
   waitOf?(session: string): LoopWait | undefined;
   /** After any change (for the renderer). */
   changed?(doc: SchedulesDoc): void;
+  /**
+   * Spec 044 FR-110 (owner 2026-10-23): the run's agent has its door closed by the user (Do not disturb). Main queues the run there and
+   * answers true: the run is then held (not sent, not dropped). False when the door is open (or there is no such agent).
+   */
+  hold?(s: Schedule, now: number): boolean;
 }
 
 export class Scheduler {
@@ -659,6 +664,7 @@ export class Scheduler {
         if (this.doc.pausedAll) outcome = 'skipped-paused';
         else if (s.target && !this.deps.hasSession(s.target.session)) outcome = 'skipped-ended';
         else if (s.cap && (s.spent ?? 0) >= s.cap.amount) outcome = 'skipped-cap';
+        else if (this.deps.hold?.(s, now)) outcome = 'held'; // FR-110: queued at a door closed by the user, before busy (a held run is never lost)
         else if (this.deps.isBusy(s.folder, s.target?.session)) outcome = 'skipped-busy';
         else {
           const r = await this.deps.send(s.folder, s.prompt, s).catch(() => false);

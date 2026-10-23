@@ -25,10 +25,14 @@
      busy, waits, must not be disturbed or is away; open when its work is done, when it is free, and on an error (so the trouble on the
      desk stays in sight, Clarifications Q6). `figure` (owner 2026-10-23 13:59 UTC): 'wave' when the agent waits for you: it stands in
      front of its closed door, waving, instead of the door with its photo. `tone` is an existing status colour (.st-*), never a new one; `short` is the
-     word where a desk has least room (the mini and micro status word), the full word is then in its tooltip. */
+     word where a desk has least room (the mini and micro status word), the full word is then in its tooltip.
+     Owner answers 2026-10-23 14:45 UTC: Durbar's spending limit has its own sign and pose ('limit', figure 'wallet'); a door the user
+     closed (x.userClosed, x.held = runs held there) is 'shut', after an error and a wait for you; an error carries effect 'fire'. */
   const SIGNS={
-    attention:{word:'Needs attention',short:'Alert',door:'open',icon:'alert'},
+    attention:{word:'Needs attention',short:'Alert',door:'open',icon:'alert',effect:'fire'},
+    limit:{word:'Limit reached',short:'Limit',door:'closed',icon:'wallet',figure:'wallet'},
     waiting:{word:'Waiting for you',short:'Waiting',door:'closed',icon:'hourglass',figure:'wave'},
+    shut:{word:'Do not disturb · by you',short:'DND',door:'closed',icon:'lock'},
     dnd:{word:'Do not disturb',short:'DND',door:'closed',icon:'bar'},
     away:{word:'Away',short:'Away',door:'closed',icon:'clock'},
     meeting:{word:'In a meeting',short:'Meeting',door:'closed',icon:'people'},
@@ -39,9 +43,16 @@
   const SIGN_KEYS=Object.freeze(Object.keys(SIGNS));
   function doorSign(x){
     const o=x&&typeof x==='object'?x:{}, st=o.state;
-    const sign=(key,tone)=>Object.assign({key,tone,figure:''},SIGNS[key]);
+    const sign=(key,tone)=>Object.assign({key,tone,figure:'',effect:''},SIGNS[key]);
     if(st==='error')return sign('attention','error');
+    if(st==='waiting'&&o.limit)return sign('limit','waiting');
     if(st==='waiting')return sign('waiting','waiting');
+    if(o.userClosed){
+      /* FR-015: a door the user closed; its held runs counted on the sign */
+      const n=Number.isInteger(o.held)&&o.held>0?o.held:0, g=sign('shut','idle');
+      if(n){g.word='Do not disturb · '+n+' held';g.short='DND · '+n;}
+      return g;
+    }
     if(o.paused||o.coffee)return sign('dnd','idle');
     if(o.ended||o.resting)return sign('away','idle');
     if(isWork(st)){

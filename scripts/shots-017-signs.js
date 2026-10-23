@@ -39,7 +39,9 @@ const THEMES = ['clean-office', 'corporate', 'durbar-european', 'durbar-indian',
 /* the oracle: spec 017 FR-003's table, written out again here (not imported) so a wrong mapping in the app fails */
 const TABLE = {
   attention: { word: 'Needs attention', short: 'Alert', icon: 'alert', open: true },
+  limit: { word: 'Limit reached', short: 'Limit', icon: 'wallet', open: false, wallet: true },
   waiting: { word: 'Waiting for you', short: 'Waiting', icon: 'hourglass', open: false, wave: true },
+  shut: { word: 'Do not disturb · by you', short: 'DND', icon: 'lock', open: false, tip: 'Do not disturb (you closed it)' },
   dnd: { word: 'Do not disturb', short: 'DND', icon: 'bar', open: false },
   away: { word: 'Away', short: 'Away', icon: 'clock', open: false },
   meeting: { word: 'In a meeting', short: 'Meeting', icon: 'people', open: false },
@@ -50,7 +52,9 @@ const TABLE = {
 function expected(d) {
   const work = (s) => s === 'working' || s === 'thinking';
   if (d.state === 'error') return ['attention', 'error'];
+  if (d.state === 'waiting' && d.limit) return ['limit', 'waiting'];
   if (d.state === 'waiting') return ['waiting', 'waiting'];
+  if (d.userClosed) return ['shut', 'idle'];
   if (d.paused || d.coffee) return ['dnd', 'idle'];
   if (d.ended) return ['away', 'idle'];
   if (work(d.state)) return [d.helpers.some(work) ? 'meeting' : 'busy', d.failing ? 'failing' : d.state];
@@ -88,10 +92,15 @@ function readDesks() {
     /* the waving figure: its avatar and arm, the arm moving (unless reduced motion), and the sign on top of it (the point in the sign's middle is the sign) */
     const arm = cab && cab.querySelector('.cb-arm'), fig = cab && cab.querySelector('.cb-figure');
     const onTop = !!CR && (() => { const e = document.elementFromPoint(CR.left + CR.width / 2, CR.top + CR.height / 2); return !!e && !!e.closest('.cb-sign'); })();
-    const cabin = cab ? { kind: cab.dataset.cabin, figure: !!(fig && fig.querySelector('svg:not(.cb-arm)')), arm: !!arm, waving: !!arm && arm.getAnimations().length > 0, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches, onTop, photo: !!cab.querySelector('.cb-photo svg'), door: !!cab.querySelector('.cb-door'), leaf: !!cab.querySelector('.cb-leaf-open'), sign: csg && csg.dataset.sign, word: cw && cw.dataset.w, icon: cic && cic.dataset.icon,
+    /* FR-021: the flames, inside the scene box and clear of the tag; FR-015: the door button, on the scene, clear of the desk's words */
+    const fire = cab && cab.querySelector('.cb-fire'), FR = fire && fire.getBoundingClientRect(), SB = cab && (cab.closest('.cb-scene') || cab).getBoundingClientRect();
+    const meets = (p, q) => p.left < q.right - 0.5 && q.left < p.right - 0.5 && p.top < q.bottom - 0.5 && q.top < p.bottom - 0.5;
+    const tg = d.parentElement && d.parentElement.querySelector(':scope > .cb-toggle'), TG = tg && tg.getBoundingClientRect();
+    const tgHits = TG ? [...d.querySelectorAll('.name,.intent,.task,.pill,.stl,.role,.chatno,.cb-sign')].filter((e) => e.getClientRects().length && meets(TG, e.getBoundingClientRect())).map((e) => e.className) : [];
+    const cabin = cab ? { kind: cab.dataset.cabin, wallet: !!cab.querySelector('.cb-wallet'), fire: !!fire, fireIn: !!FR && FR.left >= SB.left - 0.5 && FR.right <= SB.right + 0.5 && FR.top >= SB.top - 0.5 && FR.bottom <= SB.bottom + 0.5 && !(CR && meets(FR, CR)), flicker: !!fire && [...fire.querySelectorAll('.fl')].some((g) => g.getAnimations().length > 0), figure: !!(fig && fig.querySelector('svg:not(.cb-arm)')), arm: !!arm, waving: !!arm && arm.getAnimations().length > 0, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches, onTop, photo: !!cab.querySelector('.cb-photo svg'), door: !!cab.querySelector('.cb-door'), leaf: !!cab.querySelector('.cb-leaf-open'), sign: csg && csg.dataset.sign, word: cw && cw.dataset.w, icon: cic && cic.dataset.icon,
       font: cw ? parseFloat(getComputedStyle(cw).fontSize) : 0, contrast: ctc ? Math.round(ratio(ctc, cbg) * 100) / 100 : 0, cut: !!cw && cw.scrollWidth > cw.clientWidth + 0.5,
       inDesk: !!CR && CR.width > 1 && CR.left >= D0.left - 0.5 && CR.right <= D0.right + 0.5 && CR.top >= D0.top - 0.5 && CR.bottom <= D0.bottom + 0.5 } : null;
-    const base = { cabin, scene: scn, id: d.dataset.id, name: a.name, parent: !!a.parent, state: d.dataset.state, paused: !!a.paused, coffee: !!a.coffee, ended: d.dataset.state === 'idle' && a.label === 'Ended', helpers: kids, failing: d.classList.contains('is-failing'), label: d.getAttribute('aria-label') || '', helper: d.classList.contains('helper') };
+    const base = { toggle: tg ? { pressed: tg.getAttribute('aria-pressed'), label: tg.getAttribute('aria-label') || '', hits: tgHits, w: Math.round(TG.width), h: Math.round(TG.height) } : null, userClosed: !!tg && tg.getAttribute('aria-pressed') === 'true', limit: !!a.limit, cabin, scene: scn, id: d.dataset.id, name: a.name, parent: !!a.parent, state: d.dataset.state, paused: !!a.paused, coffee: !!a.coffee, ended: d.dataset.state === 'idle' && a.label === 'Ended', helpers: kids, failing: d.classList.contains('is-failing'), label: d.getAttribute('aria-label') || '', helper: d.classList.contains('helper') };
     if (!sg) return base;
     const w = sg.querySelector('.dsw'), ic = sg.querySelector('.ds-ic'), door = sg.querySelector('.door-svg'), D = d.getBoundingClientRect();
     const tc = rgb(getComputedStyle(w).color), bg = bgOf(sg);
@@ -133,6 +142,13 @@ module.exports = async (ctx) => {
     console.log('[017-signs]', w, 'mixed', JSON.stringify(m));
     assert.ok(m.paused && m.ended && m.coffee && m.done, `${w}: found agents to pause, end, send on a break and finish: ${JSON.stringify(m)}`);
     await rerender();
+    /* FR-015: close one door with the keyboard (focus its button, Enter): the paused agent's door, so plain DND is still seen elsewhere */
+    await js(`document.querySelector('#stage .unit [data-doorset="'+CSS.escape(window.__durbarSimUi.agents().find((a)=>a.name===${jsLiteral(m.paused)}).id)+'"]').focus()`);
+    await H.key('Return');
+    assert.ok(await until(`document.querySelector('#stage .unit .cb-toggle[aria-pressed="true"]')!==null`, 4000), `${w}: Enter on the door button closes the door`);
+    assert.ok(await until(`[...document.querySelectorAll('#stage .desk[data-id] .dsign')].some((e)=>e.dataset.sign==='shut')`, 4000), `${w}: the closed door shows Do not disturb (you closed it)`);
+    await H.clearToasts();
+    await rerender();
     const ds = await desks();
     assert.ok(ds.filter((d) => !d.helper).length >= 13, `${w}: the main desks are shown (${ds.length})`);
     const seen = new Set();
@@ -153,8 +169,9 @@ module.exports = async (ctx) => {
       /* owner 2026-10-23: a real office cabin */
       const c = d.cabin;
       assert.ok(c, `${tag}: has a cabin`);
-      assert.strictEqual(c.kind, t.open ? 'open' : t.wave ? 'waiting' : 'closed', `${tag}: the cabin is ${t.open ? 'open' : t.wave ? 'a closed door with the agent waving in front' : 'closed'}`);
+      assert.strictEqual(c.kind, t.open ? 'open' : t.wave ? 'waiting' : t.wallet ? 'limit' : 'closed', `${tag}: the cabin is ${t.open ? 'open' : t.wave ? 'a closed door with the agent waving in front' : 'closed'}`);
       if (t.open) assert.ok(d.scene && c.leaf && !c.door, `${tag}: open: the desk scene shows, with an open leaf`);
+      else if (t.wallet) assert.ok(c.kind === 'limit' && !d.scene && c.door && !c.photo && c.figure && c.wallet && c.onTop, `${tag}: spending limit: the agent at its closed door holding an empty wallet, under a readable sign: ${JSON.stringify(c)}`);
       else if (t.wave) assert.ok(c.kind === 'waiting' && !d.scene && c.door && !c.photo && c.figure && c.arm && (c.waving || c.reduced) && c.onTop, `${tag}: waiting: the agent stands in front of its closed door, waving, under a readable sign: ${JSON.stringify(c)}`);
       else assert.ok(!d.scene && c.door && c.photo && !c.figure, `${tag}: closed: the door with the agent's photo in place of the desk scene`);
       assert.strictEqual(c.sign, key, `${tag}: the door's sign`);
@@ -162,7 +179,13 @@ module.exports = async (ctx) => {
       assert.strictEqual(c.icon, t.icon, `${tag}: the door's sign icon`);
       assert.ok(c.font >= 10.5 && c.contrast >= 3 && !c.cut && c.inDesk, `${tag}: the door's sign is legible and whole: ${JSON.stringify(c)}`);
       assert.ok(d.shown >= 3, `${tag}: at least three characters of "${d.word}" show (${d.shown}; ${d.dims})`);
-      assert.ok(d.title.startsWith(t.word + ': '), `${tag}: the tooltip names the sign and the plain word: ${d.title}`);
+      assert.ok(d.title.startsWith((t.tip || t.word) + ': '), `${tag}: the tooltip names the sign and the plain word: ${d.title}`);
+      /* owner Q6: an error burns, inside its scene, clear of its tag, flickering unless motion is reduced */
+      assert.strictEqual(c.fire, key === 'attention', `${tag}: ${key === 'attention' ? 'flames on the desk' : 'no flames'}`);
+      if (c.fire) assert.ok(c.fireIn && (c.flicker || c.reduced), `${tag}: the flames stay in the scene, clear of the tag, and flicker: ${JSON.stringify(c)}`);
+      /* FR-015: every main desk has its door button: 24px, pressed exactly when the user closed the door, on the scene and clear of the words */
+      assert.ok(d.toggle && d.toggle.w >= 24 && d.toggle.h >= 24 && d.toggle.hits.length === 0, `${tag}: the door button is there, 24px, clear of the words: ${JSON.stringify(d.toggle)}`);
+      assert.ok(key === 'shut' ? /^Open the door: /.test(d.toggle.label) : /^Close the door \(do not disturb\): /.test(d.toggle.label), `${tag}: the door button says what it does: ${d.toggle.label}`);
       assert.ok(/(Working|Thinking|Failing|Waiting|Idle|Error|Done|Paused|Ended|Limit reached|Stopped)/.test(d.label), `${tag}: the accessible name keeps the plain word: ${d.label.slice(0, 120)}`);
       seen.add(key);
     }
@@ -178,6 +201,12 @@ module.exports = async (ctx) => {
     /* FR-009: a resting agent in the lounge says Away */
     const peeks = await js(`[...document.querySelectorAll('#stage .desk.shut .peek .dsign-tx')].map(x=>({k:x.dataset.sign,t:x.textContent.trim(),i:(x.querySelector('.ds-ic')||{dataset:{}}).dataset.icon}))`);
     assert.ok(peeks.length >= 1 && peeks.every((p) => p.k === 'away' && p.t === 'Away' && p.i === 'clock'), `${w}: lounge peeks say Away: ${JSON.stringify(peeks)}`);
+    /* FR-019, FR-020: in the lobby the spending limit holds the empty wallet (at the Bank) and a wait at the Boss waves; nobody else carries a prop */
+    const figs = await js(`[...document.querySelectorAll('#walkers .walker[data-agent]')].map((el)=>{const a=window.__durbarSimUi.agents().find((x)=>x.id===el.dataset.agent)||{};const p=el.querySelector('.wprop svg');return {name:a.name,limit:!!a.limit,ask:el.dataset.ask||'',prop:p?(p.classList.contains('w-wallet')?'wallet':p.classList.contains('w-arm')?'wave':'?'):'',moving:!!p&&p.getAnimations().length>0}})`);
+    console.log('[017-signs]', w, 'lobby figures', JSON.stringify(figs));
+    assert.ok(figs.some((f) => f.limit && f.prop === 'wallet'), `${w}: the agent at its spending limit holds the wallet in the lobby: ${JSON.stringify(figs)}`);
+    assert.ok(figs.some((f) => !f.limit && f.ask && f.prop === 'wave' && f.moving), `${w}: an agent waiting at the Boss waves: ${JSON.stringify(figs)}`);
+    assert.deepStrictEqual(figs.filter((f) => f.prop !== (f.limit ? 'wallet' : f.ask ? 'wave' : '')).map((f) => f.name), [], `${w}: props only where they belong`);
     await H.shot(path.join(OUT, `017-signs-${w}x${h}.png`), { prep: 'calm', blur: true, tag: '017-signs', what: `${w}x${h}` });
     /* FR-014: a click on a closed door opens that agent's chat */
     const shut = ds.find((d) => d.cabin && d.cabin.kind === 'closed');
@@ -216,6 +245,45 @@ module.exports = async (ctx) => {
     await toggle();
     assert.ok(await until(`document.querySelectorAll('#stage .dsign').length>=13`, 4000), `${w}: switch on: signs back`);
     console.log('[017-signs]', w, 'ok');
+  }
+  /* ---- FR-015..FR-017, spec 044 FR-110: a scheduled run for an agent behind a door you closed is held (not sent, not lost), and Send all
+     sends it when you open the door. The simulator's one-off schedule (simschedfire) targets the first idle agent. ---- */
+  {
+    await H.load({ w: 1440, h: 900, focus: true, query: { simschedfire: '6' } });
+    const sb = 'window.__durbarSimUi.bridge()';
+    const target = await js(`${sb}.listSchedules().then((d)=>{const s=d.schedules.find((x)=>x.id==='sched-fire');return s&&s.target?s.target.session:null})`);
+    assert.ok(target, 'the simulator has a one-off schedule for an agent');
+    const btn = `document.querySelector('#stage .unit [data-doorset="'+CSS.escape(${jsLiteral(target)})+'"]')`;
+    await js(`${btn}.focus()`);
+    await H.key('Return');
+    assert.ok(await until(`${btn}.getAttribute('aria-pressed')==='true'`, 4000), 'held: the door is closed');
+    const userMsgs = () => js(`(window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)})||{}).state`);
+    const before = await userMsgs();
+    assert.ok(await until(`${sb}.listSchedules().then((d)=>(d.schedules.find((x)=>x.id==='sched-fire')||{}).last?.outcome==='held')`, 15000), 'the scheduled run is held');
+    assert.ok(await until(`${sb}.doorsList().then((d)=>(d[${jsLiteral(target)}]||{}).held===1)`, 3000), 'one run waits at the door');
+    assert.strictEqual(await userMsgs(), before, 'the held run did not reach the agent (its state did not change)');
+    assert.ok(await until(`[...document.querySelectorAll('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .dsign .dsw')].some((e)=>/^Do not disturb · 1 held$/.test(e.textContent))`, 8000), 'the sign says Do not disturb · 1 held: ' + (await js(`[...document.querySelectorAll('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .dsign')].map((e)=>e.dataset.sign+'='+e.textContent).join(' | ')`)));
+    assert.match(await js(`${btn}.getAttribute('aria-label')`), /^Open the door: .+ \(1 held\)$/, 'the button names the held run');
+    await H.shot(path.join(OUT, '017-held-1440x900.png'), { prep: 'calm', tag: '017-signs', what: 'held' });
+    // opening asks; Escape keeps the door closed (the safer default) and keeps the run
+    await js(`${btn}.click()`);
+    assert.ok(await until(`!!document.getElementById('modeDlg')`, 4000), 'opening with a held run asks');
+    const dlg = await js(`({t:document.querySelector('#modeDlg h3').textContent,b:[...document.querySelectorAll('#modeDlg .dbtn button')].map((x)=>x.textContent),f:document.activeElement&&document.activeElement.textContent})`);
+    assert.deepStrictEqual(dlg.b, ['Keep closed', 'Discard', 'Send all (1)'], 'Keep closed, Discard, Send all: ' + JSON.stringify(dlg));
+    assert.strictEqual(dlg.f, 'Keep closed', 'focus starts on Keep closed, so Enter never sends by accident');
+    await H.shot(path.join(OUT, '017-held-dialog-1440x900.png'), { prep: 'none', tag: '017-signs', what: 'held dialog' });
+    await H.key('Escape');
+    assert.ok(await until(`!document.getElementById('modeDlg')`, 3000));
+    assert.strictEqual(await js(`${btn}.getAttribute('aria-pressed')`), 'true', 'Escape keeps the door closed');
+    assert.strictEqual(await js(`${sb}.doorsList().then((d)=>(d[${jsLiteral(target)}]||{}).held)`), 1, 'and keeps the held run');
+    // Send all: the door opens and the run goes to the agent
+    await js(`${btn}.click()`);
+    assert.ok(await until(`!!document.getElementById('modeDlg')`, 4000));
+    await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^Send all/.test(x.textContent)).click()`);
+    assert.ok(await until(`${btn}.getAttribute('aria-pressed')==='false'`, 4000), 'Send all opens the door');
+    assert.ok(await until(`${sb}.doorsList().then((d)=>!d[${jsLiteral(target)}])`, 8000), 'nothing is held any more');
+    assert.ok(await until(`['working','thinking'].includes((window.__durbarSimUi.agents().find((a)=>a.id===${jsLiteral(target)})||{}).state)`, 8000), 'the held run reached the agent');
+    console.log('[017-signs] held run: held at the closed door, kept by Escape, sent by Send all');
   }
   console.log('[017-signs] all checks passed; shots in', OUT);
 };

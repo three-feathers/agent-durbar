@@ -23,6 +23,9 @@ import { createProfileFreshness } from './profilefiles';
 import { register as registerSlashIpc } from './ipc/slash';
 import { register as registerQuestionsIpc } from './ipc/questions';
 import { register as registerRemoteIpc } from './ipc/remote';
+import { register as registerDoorsIpc } from './ipc/doors';
+import { Doors, loadDoors, saveDoors } from './doors';
+import type { HeldRun } from './doors';
 import { register as registerSchedulesIpc } from './ipc/schedules';
 import { register as registerSettingsIpc } from './ipc/settings';
 import { register as registerThemesIpc } from './ipc/themes';
@@ -474,6 +477,9 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
 
 // ---- scheduled prompts (spec 044): per folder, while the app runs; the run goes through the user's own send path ----
 let scheduler: Scheduler | undefined;
+/* spec 017 FR-015..FR-017, spec 044 FR-110: doors the user closed (Do not disturb) and the runs held there; keyed by the session's resume id */
+let doors: Doors | undefined;
+const doorKey = (a: AgentInfo): string => resumeIdFor(a.id);
 const folderAgent = (folder: string): AgentInfo | undefined => [...agents.values()].find((x) => wsKey(x) === folder);
 /** The session a schedule runs in: its target (FR-014), only while that session is in this folder, else the folder's agent. */
 const scheduleAgent = (s: { folder: string; target?: { session: string } }): AgentInfo | undefined => {
@@ -493,6 +499,15 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     if (!caps) return undefined;
     const unit = caps.capUnit === 'usd' ? 'usd' : 'aiu';
     return (unit === 'usd' ? caps.usage.costUsd : caps.usage.nanoAiu) ? unit : undefined; // FR-015: a limit needs the spend in that unit
+  },
+  /* spec 044 FR-110: a run for an agent behind a door the user closed is queued there (held): never sent, never dropped. A full queue
+     (spec 017 FR-016, 200 runs) still answers true, so nothing goes out while the door is closed. */
+  hold: (s, now) => {
+    const a = scheduleAgent(s);
+    if (!a || !doors?.isClosed(doorKey(a))) return false;
+    if (!doors.hold(doorKey(a), { at: now, prompt: s.prompt, scheduleId: s.id })) console.warn('[doors] queue full, a scheduled run was not kept');
+    doorsIpc.changed();
+    return true;
   },
   send: async (folder, prompt, s) => {
     const a = scheduleAgent(s);
@@ -646,7 +661,25 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 
 // ---- IPC (spec 045 FR-060): every handler lives in src/main/ipc/<area>.ts, registered here through ipcHandle / ipcOn (ipcguard.ts). ----
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
-const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
+const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity, doorClosed: (id) => { const a = agents.get(id); return !!a && !!doors?.isClosed(doorKey(a)); } });
+/* spec 017 FR-017: a held run goes out through the same path as a scheduled one (the window shows it as the user's message) */
+const sendHeld = async (a: AgentInfo, run: HeldRun): Promise<boolean> => {
+  const ad = router.forAgent(a.id);
+  if (!ad) return false;
+  agentState.ensure(a.id, a.lazy);
+  agentState.noteSend(a.id);
+  try {
+    await ensureLive(a);
+    toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: run.prompt });
+    await ad.send(a.id, { text: run.prompt });
+    noteLastSession(a);
+    return true;
+  } catch {
+    agentState.noteSendFailed(a.id);
+    return false;
+  }
+};
+const doorsIpc = registerDoorsIpc({ agents, router, doors: () => doors, keyOf: doorKey, remoteOps, toRenderer, busy: busyStatus, sendHeld });
 registerAppIpc({ getSinceAway: () => sinceAway, clearSinceAway: () => { sinceAway = null; }, getWin: () => win });
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
@@ -893,6 +926,10 @@ app.whenReady().then(() => {
   agentTrust.load();
   usageTotalsStore.load();
   restoreFolders();
+  {
+    const dfile = path.join(app.getPath('userData'), 'durbar-doors.json');
+    doors = new Doors(loadDoors(dfile), (doc) => { try { saveDoors(dfile, doc); } catch (err) { console.warn('[doors] could not save', err instanceof Error ? err.message : err); } });
+  }
   {
     const file = path.join(app.getPath('userData'), 'durbar-schedules.json');
     scheduler = new Scheduler(loadSchedules(file, Date.now()), scheduleDeps(file));

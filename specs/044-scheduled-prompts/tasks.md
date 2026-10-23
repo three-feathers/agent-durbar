@@ -63,4 +63,4 @@
 - [ ] T068 Docs: README *Scheduled prompts* line (history per schedule, *Schedules here* on a folder) and *Development* (`check:sched-history`, `test:schedhist`); a `changelog.d/044-schedule-history.md` fragment; the spec 044 header (specs-index status line and **Status**); tags `[IMPLEMENTED]`/`[KNOWN GAP]` on FR-036..FR-045; `docs/agent-notes.md` entry if something was learned [all]
 
 ## 2026-10-23 delta (owner, spec 017 doors)
-- [ ] T110 Held runs at a door closed by you (FR-110..FR-112; built in spec 017 T012)
+- [x] T110 Held runs at a door closed by you (FR-110..FR-112; built in spec 017 T012)

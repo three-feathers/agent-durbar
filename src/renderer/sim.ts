@@ -458,6 +458,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (server) (simDoc.servers[server] ??= { calls: 0, failed: 0 })[f]++;
     };
     let simSchedHook: ((e: AgentEvent) => void) | undefined; // spec 044 FR-018: usage of a scheduled run counts toward its limit
+    const simDoorSubs: ((d: Record<string, { closed: boolean; held: number }>) => void)[] = []; // listeners can subscribe before the schedules start
+    let simDoorsRef: { map: Map<string, { closed: boolean; held: { prompt: string; at: number; scheduleId?: string }[]; releasing?: boolean }>; subs: ((d: Record<string, { closed: boolean; held: number }>) => void)[]; list(): Record<string, { closed: boolean; held: number }>; changed(): void } | undefined; // spec 017 FR-015 (set below, with the schedules)
     let selfMcp = false; /* the simulator's own `mcp` event, as opposed to one a driver reports */
     const emit = (e: AgentEvent): void => {
       listeners.forEach((l) => l(e));
@@ -625,9 +627,26 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       else sc.spent = (sc.spent ?? 0) + amt;
       simSched.changed();
     };
+    /* spec 017 FR-015..FR-017, spec 044 FR-110: doors the user closed and the runs held there (memory only: the simulator keeps no profile) */
+    type SimHeld = { prompt: string; at: number; scheduleId?: string };
+    const simDoors = { map: new Map<string, { closed: boolean; held: SimHeld[]; releasing?: boolean }>(), subs: simDoorSubs,
+      list(): Record<string, { closed: boolean; held: number }> { const o: Record<string, { closed: boolean; held: number }> = {}; this.map.forEach((v, k) => { if (v.closed || v.held.length) o[k] = { closed: v.closed, held: v.held.length }; }); return o; },
+      changed() { const d = this.list(); this.subs.forEach((f) => f(d)); } };
+    simDoorsRef = simDoors;
+    const simIdle = (s: SimAgent): boolean => !(s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm);
     window.setInterval(() => {
       const now = Date.now();
       let any = false;
+      // Send all: the next held run goes when the agent is free again
+      simDoors.map.forEach((d, id) => {
+        if (d.closed || !d.releasing) return;
+        const s = sims.find((x) => x.info.id === id);
+        if (!s || !simIdle(s)) return;
+        const r = d.held.shift();
+        if (!d.held.length) d.releasing = false;
+        if (r) { emit({ type: 'user', sessionId: id, timestamp: now, text: r.prompt } as AgentEvent); void api.send(id, r.prompt, []); }
+        simDoors.changed();
+      });
       for (const sc of simSched.list) {
         if (sc.target && !sc.done && !sc.paused && !sims.some((x) => x.info.id === sc.target?.session)) { sc.paused = true; sc.pausedReason = 'session-ended'; any = true; continue; } // FR-014
         const recurring = sc.every !== undefined || !!sc.rule;
@@ -636,7 +655,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         any = true;
         const s = simAgentOf(sc);
         const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm || (!!s.breakUntil && Date.now() < s.breakUntil)); // spec 068 FR-008: a coffee break counts as busy
-        const outcome = simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
+        const door = s ? simDoors.map.get(s.info.id) : undefined;
+        const outcome = simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : door?.closed ? 'held' : busy ? 'skipped-busy' : 'sent';
+        if (outcome === 'held' && door) { door.held.push({ prompt: sc.prompt, at: now, scheduleId: sc.id }); simDoors.changed(); } // spec 044 FR-110
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
           simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
@@ -1715,6 +1736,29 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setSchedulesPaused: async (on) => { simSched.pausedAll = on === true; simSched.changed(); return { ok: true, pausedAll: simSched.pausedAll }; },
       onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
       onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },
+      // spec 017 FR-015..FR-017: doors the user closes (memory only in the simulator)
+      doorsList: async () => simDoorsRef?.list() ?? {},
+      setDoor: async (id, closed) => {
+        const D = simDoorsRef;
+        if (!D || !sims.some((x) => x.info.id === id) || typeof closed !== 'boolean') return { ok: false as const, error: 'invalid request' };
+        const d = D.map.get(id) ?? { closed: false, held: [] };
+        d.closed = closed;
+        if (closed) { d.releasing = false; simRemote.delete(id); } // spec 054 FR-040: remote control off
+        D.map.set(id, d);
+        D.changed();
+        return { ok: true as const, closed, held: d.held.length };
+      },
+      releaseHeld: async (id, action) => {
+        const d = simDoorsRef?.map.get(id);
+        if (!simDoorsRef || !d || (action !== 'send' && action !== 'discard')) return { ok: false as const, error: 'invalid request' };
+        if (d.closed) return { ok: false as const, error: 'Open the door first.' };
+        if (action === 'discard') { const n = d.held.length; d.held = []; simDoorsRef.changed(); return { ok: true as const, discarded: n }; }
+        const n = d.held.length;
+        d.releasing = n > 0;
+        simDoorsRef.changed();
+        return { ok: true as const, queued: n };
+      },
+      onDoorsChanged: (cb) => { simDoorSubs.push(cb); return () => undefined; },
       resolvePlan: async (id: string, requestId: string, answer: { kind: string; feedback?: string }) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || !s.planReq || s.planReq.id !== requestId) return { ok: false, error: 'unknown plan' };
@@ -1877,6 +1921,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setRemote: async (id, on) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || typeof on !== 'boolean') return { ok: false, error: 'unknown agent' };
+        if (on && simDoorsRef?.map.get(id)?.closed) return { ok: false, error: 'The door is closed (Do not disturb). Open it first.' }; // spec 054 FR-040
         const k = caps(s.info.adapterId ?? 'copilot');
         if (!k.remote) return { ok: false, error: 'This agent app cannot be controlled remotely.' };
         await new Promise((r) => window.setTimeout(r, 600));
