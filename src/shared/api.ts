@@ -10,6 +10,7 @@ import type { McpServerInput, McpServerView, McpTransport, McpTrustInfo } from '
 export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
 
 import type { AdapterInfo } from './adapters';
+import type { OrgPolicyAppView } from './orgpolicy';
 import type { ActivityRow } from './activity';
 import type { RemoteState } from './remote';
 export type { RemoteState };
@@ -259,6 +260,10 @@ export interface ModelChoice {
   contextTiers?: ContextTier[];
   /** Window in tokens of the long-context tier, when reported. */
   longWindow?: number;
+  /** Spec 076 FR-202 (issue #602): the agent app's own organization policy blocks this model; the reason to show. */
+  orgBlocked?: string;
+  /** Spec 076 FR-201: the policy may block it (Durbar could not read all of it); advice, still selectable. */
+  orgDoubt?: string;
   /** Spec 007 FR-012: the Auto routing tiers (Copilot's `auto` only). */
   autoTiers?: AutoTier[];
   /** Spec 007 FR-017: the organization's Auto tier, when set. */
@@ -554,6 +559,10 @@ export interface AgentMcpEntry {
   /** Spec 069 FR-011: every list that has this name. */
   sources?: McpSourceTag[];
   /** Spec 069 FR-061: tools of this server turned off in this agent's folder. */
+  /** Spec 076 FR-202 (issue #602): the agent app's own organization policy blocks this server; the reason to show. */
+  orgBlocked?: string;
+  /** Spec 076 FR-201: the policy may block it (Durbar could not read all of it); advice, still usable. */
+  orgDoubt?: string;
   toolsOff?: string[];
   /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
   canRestart?: boolean;
@@ -599,7 +608,7 @@ export interface AgentMcpReply {
 /** `agents:mcpTools` (spec 069 FR-032): one server's tools, masked and cut in main. */
 export interface McpToolsResult {
   ok: boolean;
-  tools?: { name: string; description?: string }[];
+  tools?: { name: string; description?: string; orgBlocked?: string; orgDoubt?: string }[];
   /** How many the server listed (more than `tools` when it listed over 500). */
   total?: number;
   /** The session is not running: nothing was asked. */
@@ -649,6 +658,8 @@ export interface DurbarApi {
   /** Models the account offers (no credits used). */
   /** Models of an agent kind (spec 012 FR-120); no kind = the default kind. */
   listModels?(kind?: string): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }>;
+  /** Spec 076 FR-207 (issue #602): per agent app, what its own organization policy blocks (modes with reasons, counts; no values). */
+  orgPolicyView?(): Promise<Record<string, OrgPolicyAppView>>;
   /** Adapters and whether each can run (spec 012 FR-033). `refresh` probes again instead of using the cached answer. */
   listAdapters?(refresh?: boolean): Promise<AdapterInfo[]>;
   /** Spec 012 FR-157: main changed the cached list by itself (a session was refused because of the sign-in). */
@@ -747,6 +758,8 @@ export interface DurbarApi {
   /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
   /** Remote control ended without the user (spec 012 FR-158, spec 054 FR-062): an agent id, or the id with a plain reason. */
   onRemoteOff?(cb: (p: string | { id: string; reason?: string }) => void): () => void;
+  /** Spec 076 FR-203: a session started under advice of its agent app's organization policy; the words to show (no policy values). */
+  onOrgNote?(cb: (p: { id: string; text: string }) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */
   onRemoteUrl?(cb: (p: { id: string; url: string }) => void): () => void;
   onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[] }) => void): () => void;

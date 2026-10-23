@@ -25,6 +25,12 @@ status: milestone 7
 
 ## Changes
 
+### 2026-10-23: a mode the vendor's organization policy blocks (cross-reference to spec 076 section O, issue #602)
+
+A mode that the agent app's own machine policy blocks (for example Allow all under Claude Code or Copilot
+`permissions.disableBypassPermissionsMode`, or a Codex `requirements.toml` without `never`) is shown disabled in the mode menus with
+"Blocked by your organization's <app> policy", and main refuses it at start and on a switch (spec 076 FR-202, FR-203).
+
 ### 2026-10-18: live switch per agent kind (cross-reference to spec 012; T028, issue #47)
 
 Mode names here follow spec 003 FR-028: the `allow` mode is shown as **Allow all** (this spec's acceptance text above still says "Allow edits", its older name).

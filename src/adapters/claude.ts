@@ -11,6 +11,8 @@
  * - Settings files are never loaded (`--setting-sources ""`, Q8); the folder's `CLAUDE.md` (with `@` imports inside the
  *   folder) goes in as an appended system prompt instead (owner decision, review of #160).
  */
+import { readClaudeOrgPolicy } from './claudeOrgPolicy';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import { claudeSettingsJson } from '../shared/foldersetup';
 import { isAuthError, markAuthError } from './autherrors';
 import { spawn } from 'child_process';
@@ -644,6 +646,11 @@ export class ClaudeAdapter implements AgentAdapter {
    * Spec 051 FR-011: the account `claude auth status --json` reports (email and plan for a Claude sign-in, an API key, a provider).
    * Local, no prompt, nothing billed. Personal data: never passed to `debug` (FR-015).
    */
+  /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
+  readOrgPolicy(): OrgPolicy {
+    return readClaudeOrgPolicy();
+  }
+
   async accountInfo(): Promise<AccountIdentity> {
     const probe = this.deps.authJson ?? (async () => {
       const p = await this.deps.claudePath();

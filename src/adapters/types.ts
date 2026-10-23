@@ -9,6 +9,7 @@ import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit
 import type { McpServerSpec } from '../shared/mcp';
 import type { AutoTier, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
+import type { OrgPolicy } from '../shared/orgpolicy';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
@@ -655,6 +656,11 @@ export interface AgentAdapter {
   renameSession?(sessionId: string, name: string): Promise<void>;
   /** Spec 051 FR-007: whether this harness is signed in, checked without a prompt (no credits). Only the yes/no leaves the adapter. */
   authStatus?(): Promise<{ signedIn: boolean }>;
+  /**
+   * Spec 076 FR-198 (issue #602): this agent app's OWN organization policy on this machine (its documented machine files), read-only,
+   * normalized the way the app reads it; an empty policy when there is none. Copilot asks its runtime first (FR-198).
+   */
+  readOrgPolicy?(): OrgPolicy | Promise<OrgPolicy>;
   /**
    * Spec 012 FR-156: whether the sign-in really works, asked of the service where the app offers a free call (no prompt, no
    * credits); `unknown` when it cannot tell. `detail` is a short, safe sentence: never a token, email or account name.

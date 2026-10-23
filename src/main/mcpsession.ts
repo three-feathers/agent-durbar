@@ -5,6 +5,7 @@
  *  - `mcpRestartSessionOp`: `agents:mcpRestartSession`, end and resume the same session with the current servers (FR-022, FR-027).
  * Nothing here knows a vendor: it only calls `AgentAdapter` members and reads `capabilities` (constitution II).
  */
+import type { OrgVerdict } from '../shared/orgpolicy';
 import { isAuthError } from '../adapters/autherrors';
 import { validSignInEnd } from '../adapters/eventguard';
 import type { AdapterRouter } from '../adapters/router';
@@ -54,6 +55,8 @@ export interface McpReplyInput {
   signIn?(name: string): { host: string; opened: boolean; expiresInMs: number; otherSite?: string } | undefined;
   /** FR-164: the server's own address when Durbar knows one (a folder extra, a list Durbar passes, the Copilot CLI list); stdio has none. */
   serverUrl?(name: string): string | undefined;
+  /** Spec 076 FR-202 (issue #602): why the agent app's own organization policy blocks this server, or undefined. */
+  orgBlocked?(name: string): OrgVerdict | undefined;
 }
 
 /** Spec 058 FR-065: the one rule for "this row needs a sign-in" (the window uses the same): the runtime's `needs-auth`, or a failed server whose failure is an auth one. */
@@ -123,6 +126,9 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
   for (const e of entries) {
     const t = i.toolsOff?.[e.name];
     if (t?.length) e.toolsOff = [...t];
+    const org = i.orgBlocked?.(e.name);
+    if (org?.refuse) e.orgBlocked = org.why;
+    else if (org) e.orgDoubt = org.why; // spec 076 FR-201: advice only
   }
   if (i.global) {
     const folder = new Set(i.extras.map((v) => v.name));
