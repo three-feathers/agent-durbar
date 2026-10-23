@@ -293,6 +293,7 @@ module.exports = async (ctx) => {
     check(cm && ['System instructions', 'Tool definitions', 'Chat messages'].every((l) => cm.labels.includes(l)) && cm.bars === cm.labels.length && !cm.note, `${tag}: the summary's bars ${JSON.stringify(cm)}`);
     check(cm && !cm.small.length && cm.inside, `${tag}: the summary has text under 10.5px or leaves the window ${JSON.stringify(cm)}`);
     await shot(`005-composer-ctxsummary-${tag}.png`);
+    await js(`(()=>{const b=document.querySelector('#ctxMenu button');if(b)b.focus();})()`); /* the screenshot blurs the page */
     await key('Escape');
     check(await until(`!document.getElementById('ctxMenu')&&(document.activeElement||{}).id==='ctxChip'`, 3000), `${tag}: Escape does not close the context menu back to its chip`);
 
@@ -449,6 +450,7 @@ module.exports = async (ctx) => {
         const cs = await js(`(${SUMMARY.toString()})()`);
         check(cs && cs.note === 'Breakdown not reported by Claude Code.' && cs.labels.length === 0 && /tokens · \d+%$/.test(cs.total), `${tag}: Claude Code's summary ${JSON.stringify(cs)}`);
         await shot(`005-composer-ctxsummary-total-${tag}.png`);
+        await js(`(()=>{const b=document.querySelector('#ctxMenu button');if(b)b.focus();})()`);
         await key('Escape');
         check(await until(`!document.getElementById('ctxMenu')&&(document.activeElement||{}).id==='ctxChip'`, 3000), `${tag}: Escape does not close the summary back to the ring`);
       }
