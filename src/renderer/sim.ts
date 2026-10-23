@@ -1028,7 +1028,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
 
     async function reply(s: SimAgent, text: string): Promise<void> {
       closeOpen(s);
-      s.state = 'working'; // spec 007 FR-018 (review on #642): a reply in progress is busy, so a model or tier switch asked now is queued as on a real runtime
+      s.state = 'working'; // spec 007 FR-018 (review on PR 642): a reply in progress is busy, so a model or tier switch asked now is queued as on a real runtime
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: 'Answering: ' + text.slice(0, 60) });
       if (/\bfallback\b/i.test(text)) runtimeSwitch(s, 'fallback'); // demo: the runtime switches models by itself (spec 030 FR-015)
       if (!/\bquick\b/i.test(text)) for (let i = 0; i < 4; i++) { think(s, 1); await wait(650); } // "quick": a turn where the model sends no reasoning

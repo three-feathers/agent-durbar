@@ -589,7 +589,7 @@ export class CopilotAdapter implements AgentAdapter {
     if (!options.some((o) => o.id === 'auto')) return options;
     const client = await this.getClient();
     this.managedTier = undefined;
-    // both reads at once (review on #642): the worst case is one time limit, not two
+    // both reads at once (review on PR 642): the worst case is one time limit, not two
     const [status, managed] = await Promise.all([typeof client.getStatus === 'function' ? this.capped(client.getStatus(), this.policyTimeoutMs) : undefined, this.autoTierPolicy()]);
     return withAutoTiers(options, runtimeHasAutoTiers(status?.version), managed);
   }
