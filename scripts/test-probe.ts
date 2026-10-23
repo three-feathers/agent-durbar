@@ -197,4 +197,62 @@ for (const [w, h] of [[1280, 800], [1440, 900], [1920, 1080]]) {
   assert.ok(css.some((l) => /^\.desk\.card \.gx\{display:none\}/.test(l)), 'the side is hidden without data-gc (and in the probe)');
   assert.ok(css.filter((l) => /\.gx|gx-/.test(l)).every((l) => !/font-size:(\d+(\.\d+)?)px/.test(l) || parseFloat(/font-size:(\d+(\.\d+)?)px/.exec(l)![1]) >= 10.5), 'side text at least 10.5 px');
 }
+// spec 001 FR-086..FR-088 (issue #619): the spare height of a drawn office grows the room rows first (at most cap x the shortest), then
+// even gaps above, between and below the rows; the 10 px row gap is a floor; never taller than the floor
+{
+  const { spreadRows } = require(path.join(R, 'probe.js')) as {
+    spreadRows: (lines: { h: number; room: boolean }[], avail: number, gap: number, cap: number) => { rx: number; top: number; rowGap: number };
+  };
+  type Line = { h: number; room: boolean };
+  const lay = (lines: Line[], r: { rx: number; top: number; rowGap: number }) => {
+    const used = r.top + lines.reduce((t, l) => t + l.h + (l.room ? r.rx : 0), 0) + (lines.length - 1) * r.rowGap;
+    return used;
+  };
+  const owner: Line[] = [{ h: 296, room: true }, { h: 58, room: false }, { h: 296, room: true }]; // 4 one-agent rooms, 2 rows, the lobby between
+  // nothing to spare: nothing changes
+  assert.deepStrictEqual(spreadRows(owner, 670, 10, 0.2), { rx: 0, top: 0, rowGap: 10 });
+  assert.deepStrictEqual(spreadRows(owner, 500, 10, 0.2), { rx: 0, top: 0, rowGap: 10 }, 'an office that does not fit is left alone');
+  assert.deepStrictEqual(spreadRows([], 800, 10, 0.2), { rx: 0, top: 0, rowGap: 10 });
+  assert.deepStrictEqual(spreadRows(owner, NaN, 10, 0.2), { rx: 0, top: 0, rowGap: 10 });
+  // a little to spare: the rooms take it all (rows grow first), the gaps stay
+  assert.deepStrictEqual(spreadRows(owner, 690, 10, 0.2), { rx: 10, top: 0, rowGap: 10 });
+  // 1440x900 (floor 828): the rooms grow to their cap (20% of 296 = 59), the rest is four even gaps of 15
+  {
+    const r = spreadRows(owner, 828, 10, 0.2);
+    assert.strictEqual(r.rx, 59, `rx ${r.rx}`);
+    assert.ok(Math.abs(r.top - 15) < 0.02 && Math.abs(r.rowGap - 15) < 0.02, JSON.stringify(r));
+    assert.ok(Math.abs(828 - lay(owner, r) - 15) < 0.1, 'the gap below the last row is the even gap');
+  }
+  // no room row (only the lobby and the door plates): even gaps only
+  {
+    const r = spreadRows([{ h: 58, room: false }, { h: 40, room: false }], 400, 10, 0.2);
+    assert.strictEqual(r.rx, 0);
+    assert.ok(Math.abs(r.top - r.rowGap) < 0.02 && Math.abs(400 - lay([{ h: 58, room: false }, { h: 40, room: false }], r) - r.top) < 0.1, JSON.stringify(r));
+  }
+  // properties over many shapes
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  for (let k = 0; k < 4000; k++) {
+    const n = 1 + Math.floor(rnd() * 5), lines: Line[] = [];
+    for (let i = 0; i < n; i++) lines.push({ h: 40 + Math.floor(rnd() * 300), room: rnd() < 0.7 });
+    const used = lines.reduce((t, l) => t + l.h, 0) + (n - 1) * 10, avail = used + Math.floor(rnd() * 600) - 40;
+    const r = spreadRows(lines, avail, 10, 0.2), rooms = lines.filter((l) => l.room), minRoom = Math.min(...rooms.map((l) => l.h));
+    const tag = `${JSON.stringify(lines)} in ${avail}: ${JSON.stringify(r)}`;
+    if (avail <= used) { assert.deepStrictEqual(r, { rx: 0, top: 0, rowGap: 10 }, tag); continue; }
+    const total = lay(lines, r), bottom = avail - total;
+    assert.ok(total <= avail + 1e-6, `taller than the floor: ${tag}`);
+    assert.ok(r.rx >= 0 && (!rooms.length ? r.rx === 0 : r.rx <= 0.2 * minRoom + 1e-6), `room growth over the cap: ${tag}`);
+    assert.ok(r.rowGap >= 10 - 1e-6 && r.top >= 0, `gaps: ${tag}`);
+    // rooms first: a gap above 0 at the top only once the rooms reached their cap (or there are no rooms), up to rounding
+    if (rooms.length && r.top > rooms.length) assert.ok(r.rx >= Math.floor(0.2 * minRoom) - 1e-6, `gaps before the rooms grew: ${tag}`);
+    // even: the bottom gap is the top gap, and the gap between rows is the same once it is above 10
+    assert.ok(Math.abs(bottom - r.top) <= 1, `bottom ${bottom} against top ${r.top}: ${tag}`);
+    if (r.rowGap > 10 + 1e-6 && n > 1) assert.ok(Math.abs(r.rowGap - r.top) <= 1, `uneven gaps: ${tag}`);
+    assert.ok(bottom <= Math.max(10, r.rowGap) + 1, `too much at the bottom: ${tag}`);
+  }
+  // the page: renderOffice spreads the drawn office only when it fits, after drawing; the CSS splits a room's extra above and below its desks
+  assert.ok(/function spreadOffice\(stage,on\)\{[\s\S]*?window\.DurbarProbe\.spreadRows\(/.test(app), 'spreadOffice uses spreadRows');
+  assert.ok(/spreadOffice\(stage,!!layout\.fit\)/.test(app), 'renderOffice spreads the office it drew');
+  assert.ok(css.some((l) => /^\.stage\[data-spread\] \.room>\.room-head\{margin-bottom:calc\(var\(--rx\) \/ 2\)\}/.test(l)), 'a grown room keeps its header at the top');
+}
 console.log('test-probe: ok');
