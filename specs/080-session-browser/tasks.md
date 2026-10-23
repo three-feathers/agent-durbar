@@ -9,7 +9,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 **Prerequisites**:
 
 - Q1-Q5, Q-P1..Q-P3 and the review questions are decided (spec.md *Clarifications*: Vikram's owner input and the coordinator under Ruben's delegation). No task waits for an answer.
-- **T030 depends on T006**, the constitution amendment for the Read-only read exception (an owner PR on an owned path).
+- **T030 merges with `BROWSER_READONLY_READS = false`.** Only the later PR that sets it to `true` needs T006, the constitution amendment for the Read-only read exception (an owner PR on an owned path).
 - **Phase 2 depends on the shared relay core**, 041 T018's `bridgecore.ts`, which 072 T033 and 080 T033 reuse (proposed on #556). Until it is merged, Phase 2 waits; it does not build a second core.
 - **Phase 3 depends on T005** (the cookie-encryption fuse, a spec 008 delta).
 
@@ -66,7 +66,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 
     Every other MCP call is still denied in Read-only.
   - AC1: an owner PR on `.specify/memory/constitution.md` (an owned path, CODEOWNERS) through `/speckit.constitution`, with a MINOR version bump and the Sync Impact Report. It cites Vikram's approval (PR #647 comment) and Ruben's delegation (#556).
-  - AC2: T030 does not merge before it. Until then `BROWSER_READONLY_READS` stays `false`.
+  - AC2: T030 may merge before it, with `BROWSER_READONLY_READS = false`. The PR that sets the constant to `true` (a one-line change plus its tests) does not merge before T006.
 - [ ] T010 Simulator probe of the Electron assumptions (throwaway branch code, not merged). Results go into research.md R1 as `sim:`, with the Electron version. [Assumptions, FR-008, FR-025, FR-046, FR-061, FR-070, FR-073]
   - AC0: the probe uses **FR-010's exact `webPreferences`, `devTools: false` included**. A dev build with DevTools on proves nothing for packaged builds.
   - AC1: records whether a `WebContentsView` covers an HTML menu drawn by the app's page.
@@ -141,8 +141,8 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     A view whose driver is `agent` but has no call in the current turn **can** be picked.
   - AC2: with no candidate, the new view is loaded over the cap and the bar note is shown (test).
   - AC3: sim driver: open 6 browsers with no forms; 4 are loaded, and the 2 others reload with *Reloaded to save memory*.
-  - AC4: sim driver: open 6 with an edited form in 5 of them; nothing with an edited form is unloaded.
-  - AC5: memory of main plus the view processes with 4 and with **15 live views**, measured on Linux and recorded in research.md (`sim:`).
+  - AC4: sim driver: open 6 views and type characters into 5 of them after load; none of those 5 is unloaded.
+  - AC5: memory of main plus the view processes with 4 and with **15 live views, three of them driven at once** by fake agents (FR-013), measured on Linux and recorded in research.md (`sim:`).
   - AC6: main's memory after 50 sessions start and end, each opening a view, recorded in research.md (`sim:`). Electron keeps each partition's session object until quit (FR-023 `read:` note).
 - [ ] T014 [US1] `src/main/ipc/browser.ts` plus preload `DurbarApi` additions: open, navigate, back, forward, reload, stop, bounds, visible, overlay, mute, openSystem. [FR-003]
   - AC1: every handler is `fromApp`-checked, takes a session id looked up in main, and validates bounds (finite, inside the window).
@@ -188,9 +188,9 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 
 ## Phase 2: US3 + US4, the agent drives its session's browser
 
-**Depends on**: Phase 1 merged; 041 T018's `bridgecore.ts` merged (the shared relay); T006 merged before T030.
+**Depends on**: Phase 1 merged; 041 T018's `bridgecore.ts` merged (the shared relay); T030 merges with `BROWSER_READONLY_READS = false`; flipping it to `true` waits for T006.
 
-- [ ] T030 [US3] Classification and modes in `src/adapters/permissions.ts` (shared with main's host). **Needs T006.** [FR-050..FR-054]
+- [ ] T030 [US3] Classification and modes in `src/adapters/permissions.ts` (shared with main's host). Merges with `BROWSER_READONLY_READS = false`; the flip to `true` is a separate PR after T006. [FR-050..FR-054]
   - AC1: `durbar-browser` tools map to read / url / drive by name; an unknown tool of that server is denied.
   - AC2: Read-only runs `read` tools on the open page and shows *Agent can read this page (Read-only)*; url and drive are denied with FR-051's text. Read calls on metadata, link-local or private LAN pages, or on pages with private or loopback frames, are refused; a loopback page the user opened can be read (FR-051, FR-058). The constant `BROWSER_READONLY_READS` in `src/shared/browserserver.ts` (default `false` until T006 merges) keeps every Read-only read denied and removes `readOnlyHint`; a test covers both settings, including FR-041's two Read-only texts.
   - AC3: Ask first:
@@ -305,7 +305,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC3: a sim driver: a grant for test host A, then a click on a link, a GET form and a script redirect to test host B; each asks and none leaves before the answer.
 - [ ] T042 [US3] [US4] Docs for Phase 2. [Phase 2 FRs]
   - AC1: README:
-    - *Safety model*: Read-only lets the agent read only the open page (once T006 is in; before that, no browser), never private-network pages; Ask first is the browse mode and asks per site; form posts, downloads and uploads; the untrusted-page warning;
+    - *Safety model*: Read-only lets the agent read only the open page (once T006 is in; before that, no browser), never private-network pages; while agent control is on, private and loopback frames and subresources inside a public page are blocked, also on pages you opened yourself; Ask first is the browse mode and asks per site; form posts, downloads and uploads; the untrusted-page warning;
     - MCP and Tools text: the built-in `durbar-browser`;
     - known limits, prompt injection included.
   - AC2: a changelog fragment.
@@ -360,13 +360,13 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - T001-T004 can run in parallel;
   - T010 comes before T012 and before any Phase 2 task;
   - T005 comes before T050;
-  - T006 (owner PR) comes before T030.
+  - T006 (owner PR) comes before the PR that sets `BROWSER_READONLY_READS` to `true`, not before T030.
 - **Phase 1:**
   - T011 → T012 → T013, then T014 → T015 → T016;
   - T017 needs T014 and T015;
   - T018 can start after T012 and must pass before T019.
 - **Phase 2:** needs Phase 1 and **041 T018 `bridgecore.ts`** (shared with 072 T033; proposed on #556).
-  - T031 → T032 → T033 → T035 (T030 after T006; T034 and T043 run in parallel) → T044 → T036 → T037 → T038 → T039 → T040 → T042;
+  - T031 → T032 → T033 → T035 (T030, T034 and T043 run in parallel) → T044 → T036 → T037 → T038 → T039 → T040 → T042;
   - T041 any time after T037.
 - **Phase 3:** T005 and Phase 2, then T050 → T051 → T052.
 - **Phase 4 (later):** Phase 2, then T070 → T071 → T072.

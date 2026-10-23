@@ -133,7 +133,7 @@ Many sessions in one folder use the same test account. I turn on **Keep browser 
 
 ### Edge Cases
 
-- **Fifteen sessions with browsers.** Views are created only when a Browser tab is first used. About `MAX_LIVE_VIEWS` keep a loaded page (a soft cap). The least recently shown view that is safe to unload is unloaded and reloads its address when shown again. A view with a POSTed page, an edited form field or the agent driving is never picked (FR-011).
+- **Fifteen sessions with browsers.** Views are created only when a Browser tab is first used. About `MAX_LIVE_VIEWS` keep a loaded page (a soft cap). The least recently shown view that is safe to unload is unloaded and reloads its address when shown again. A view whose page was reached by POST, that had any character key input since its page loaded, or that has a `durbar-browser` call in flight or in the current turn is never picked (FR-011).
 - **A view and the chat panel at the same time.** In full-screen chat (spec 005) the Browser tab is a tab too; a side-by-side split waits for #452 (Q4).
 - **Durbar overlays.** Menus, dialogs, toasts and the slash list are drawn by the app's page, which a native view covers. While one overlaps the view, the view is hidden and a still picture of it is shown (FR-008).
 - **Popups and `target=_blank`.**
@@ -328,7 +328,7 @@ Many sessions in one folder use the same test account. I turn on **Keep browser 
   - **loopback** (`localhost`, `*.localhost`, `127.0.0.0/8`, `::1`, and the unspecified addresses `0.0.0.0`, `0` and `[::]`, which reach local services on Linux and macOS): an ordinary host in Ask first (asks once, grantable); no ask in Allow all, because dev servers are the main use;
   - **public**: FR-051..FR-053.
 
-  The user's own typing in the address field and the user's own browsing are not limited by these classes (US1's dev server on `localhost` is the main use), except that metadata and link-local hosts stay refused while agent control is on.
+  The user's own typing in the address field and the user's own browsing are not limited by these classes (US1's dev server on `localhost` is the main use), with two exceptions while agent control is on: metadata and link-local hosts stay refused, and under a public top-level page every private and loopback subframe and subresource is cancelled (the iframe fence below), **also on pages the user opened and drives**.
 
   **Frames and subresources (SSRF through iframes).** While agent control is on and the top-level page is public, every subframe and subresource request to a private or loopback host is cancelled (`session.webRequest.onBeforeRequest`, by the request's literal host). A read call is refused with *This page shows content from your local network* when any frame of the page is private or loopback, unless the top-level page itself is that host and the user opened it. T010 AC14 records what Chromium's Local Network Access checks do under FR-025's deny-all handlers.
 
@@ -410,10 +410,10 @@ Many sessions in one folder use the same test account. I turn on **Keep browser 
 
 ### Key Entities
 
-- **Session browser**: the view of one session. Its partition name, current URL, title, loading state, driver (`agent`/`user`, FR-060), muted, whether the page was reached by POST or has an edited field (FR-011), downloads list, `live` or `unloaded`. In main's memory only.
+- **Session browser**: the view of one session. Its partition name, current URL, title, loading state, driver (`none`/`agent`/`user`, FR-060), muted, whether the page was reached by POST, whether there was character key input since it loaded, whether a `durbar-browser` call is in flight or ran in the current turn (FR-011), downloads list, `live` or `unloaded`. In main's memory only.
 - **Browser token**: random per-session secret binding a `durbar-browser` connection to one session's view.
 - **Browser grant**: a session grant for one host and one kind (`browser:read|url|drive:<host>`, FR-052), in the one grant store the broker and the host share (FR-055), shown and revoked like other grants.
-- **Approval ticket**: a single-use, 30 s, in-memory record (session, tool, host) from a broker *approve once* (FR-055). Never a grant.
+- **Approval ticket**: a single-use, 30 s, in-memory record (session, tool, host, and a hash of the call's arguments where the agent app passes them) from a broker *approve once* (FR-055). Never a grant.
 - **Folder login store** (US5): the per-folder persistent partition id, saved with the folder (an id, never content).
 
 ## Success Criteria *(mandatory)*
@@ -483,7 +483,7 @@ All decided by the coordinator under Ruben's delegation (Ruben, 2026-10-23, rela
 
   **Decided: (a).** Phase 3 turns the fuse on, through a spec 008 delta (T005); FR-029 and T012 AC8 state that one exception. On Linux without a keyring, *Keep browser logins* is refused with the reason, never silently weak (FR-085).
 - **User agent (FR-028).** **Decided:** a Chrome user agent without the Electron and app tokens, set per view; `app.userAgentFallback` is not touched. Provider blocks and fingerprinting argue for it (`read:`).
-- **LRU unload (FR-011).** **Decided:** never unload a view whose page was reached by POST, has a form field edited since it loaded, or is driven by the agent. If no view qualifies, the new one goes over the cap and the bar says so. The cap is soft.
+- **LRU unload (FR-011).** *Superseded by the FR-011 rewrite after Vikram's re-review (R15): the rules are now "reached by POST", "any character key input since the page loaded" and "a `durbar-browser` call in flight or in the current turn".* First decision: never unload a view whose page was reached by POST, has a form field edited since it loaded, or is driven by the agent. If no view qualifies, the new one goes over the cap and the bar says so. The cap is soft.
 - **Audio (FR-012).** **Decided:** views start muted, with a bar toggle.
 - **Build order of the relay core.** **Decided:** it is built once, as 041 T018's `bridgecore.ts`; 072 T033 and 080 T033 reuse it. The coordinator posts this proposal on #556. 080 Phase 2 depends on it (tasks.md).
 
