@@ -22,7 +22,18 @@ const PE = require(R('profileeditor.js')) as {
   newFileName(app: string, n: string): string;
   newDirHint(app: string, scope: string, userDirs?: unknown): string;
   joinHint(dir: string, file: string): string;
+  samePath(a: string, b: string, platform: string): boolean;
 };
+
+// ---- spec 043 FR-040 (review on #572): the Delete path match folds case only on Windows and macOS ----
+{
+  assert.strictEqual(PE.samePath('/w/App/.github/agents/x.agent.md', '/w/app/.github/agents/x.agent.md', 'linux'), false, 'Linux: /w/App and /w/app are two folders');
+  assert.strictEqual(PE.samePath('/w/app/x.md', '/w/app/x.md', 'linux'), true, 'Linux: the same path');
+  assert.strictEqual(PE.samePath('/w/App/x.md', '/w/app/x.md', ''), false, 'unknown platform: no folding');
+  assert.strictEqual(PE.samePath('/w/App/x.md', '/w/app/x.md', 'darwin'), true, 'macOS: case folded');
+  assert.strictEqual(PE.samePath('C:\\W\\x.md', 'c:/w/x.md', 'win32'), true, 'Windows: separators and drive letter case');
+  assert.strictEqual(PE.samePath('a\\b', 'a/b', 'linux'), true, 'separators normalised everywhere');
+}
 
 // ---- front matter (FR-015) ----
 {

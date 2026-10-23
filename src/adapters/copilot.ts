@@ -32,9 +32,11 @@ import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel'
 import { PermissionBroker, isInsideRoots, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
-import type { AgentProfile, PlanAnswer } from './types';
+import type { AgentProfile, PlanAnswer, SlashCommand } from './types';
 import type { McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
+import { copilotHomeDir, copilotSlashPlaces, SlashCache } from './slashcommands';
+import type { SlashPlace } from './slashcommands';
 import { cleanPlanText } from './plan';
 import { copilotQuotaReset } from './usagelimit';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
@@ -110,6 +112,19 @@ const nanoOf = (v: unknown): number | undefined => (typeof v === 'number' && Num
 /** spec 043 FR-002: the folders Copilot reads agent files from: each session folder's `.github/agents` and the user's `~/.copilot/agents`. */
 export function agentDirsFor(folders: readonly string[], home = os.homedir()): string[] {
   return [...new Set(folders)].map((f) => path.join(f, '.github', 'agents')).concat(path.join(home, '.copilot', 'agents'));
+}
+
+/** The part of the SDK's `session.rpc.agent` that FR-041 uses; `reload` is @experimental and may be missing in another SDK. */
+export type AgentRpc = { reload?: () => Promise<unknown> } | undefined;
+/** spec 043 FR-041: true when the runtime read its agent files again; false (never a throw) when it cannot. */
+export async function reloadAgentsRpc(rpc: AgentRpc): Promise<boolean> {
+  if (!rpc || typeof rpc.reload !== 'function') return false;
+  try {
+    await rpc.reload();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** spec 043 FR-001: an SDK agent as a generic profile; undefined for sub-agent-only agents. */
@@ -755,12 +770,37 @@ export class CopilotAdapter implements AgentAdapter {
     cancelElicitations(live.elicitations);
   }
 
+  /**
+   * Spec 073 FR-004/FR-009: the folder's and the user's skills, read by Durbar (the session has no config discovery, so the runtime does
+   * not load them; real 2026-10-22). No built-ins: `session.send` hands a typed built-in to the model as text (real 2026-10-22).
+   */
+  private readonly slash = new SlashCache();
+  private slashPlaces(live: { cwd: string; folders?: string[] }): SlashPlace[] {
+    return copilotSlashPlaces([live.cwd, ...(live.folders ?? [])], copilotHomeDir());
+  }
+
+  async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
+    const live = this.sessions.get(sessionId);
+    return live ? this.slash.list(this.slashPlaces(live), { refresh: true }) : []; // the window opening its list: read afresh
+  }
+
+  async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined> {
+    const live = this.sessions.get(sessionId);
+    return live ? this.slash.expand(text, () => this.slashPlaces(live)) : undefined; // no IO unless the text is a `/name` line
+  }
+
   /** spec 043 FR-002: the session's selectable custom agents (`rpc.agent.list`, @experimental). */
   async listAgentProfiles(sessionId: string): Promise<AgentProfile[]> {
     const live = this.sessions.get(sessionId);
     if (!live) return [];
     const r = (await live.session.rpc.agent.list()) as { agents?: unknown[] } | undefined;
     return (r?.agents ?? []).map((a) => profileOf(a as Parameters<typeof profileOf>[0], live.folders ?? [live.cwd])).filter((p): p is AgentProfile => !!p);
+  }
+
+  /** spec 043 FR-041: read the agent files again (`rpc.agent.reload`, @experimental), so a new or deleted file shows in the list. */
+  async reloadAgentProfiles(sessionId: string): Promise<boolean> {
+    const live = this.sessions.get(sessionId);
+    return live ? reloadAgentsRpc(live.session.rpc.agent as unknown as AgentRpc) : false;
   }
 
   /** spec 043 FR-002: select a custom agent for the next turns, or the default agent (null). The runtime confirms with an event. */

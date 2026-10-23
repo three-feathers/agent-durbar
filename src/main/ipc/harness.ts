@@ -11,6 +11,7 @@ import type { AdapterInfo } from '../../shared/adapters';
 import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind, runRequest, simManagers } from '../../shared/harnesssetup';
 import type { DevEnv } from '../devhooks';
 import { HarnessSetup, confirmText, posixTrusted } from '../harnesssetup';
+import { simulatorOn } from '../simguard';
 import type { createRemoteOps } from '../remoteops';
 
 export interface HarnessIpcDeps {
@@ -61,7 +62,7 @@ export function register(deps: HarnessIpcDeps): void {
   // spec 060 FR-002: under the simulator the routes are the real ones for this OS, with a typical new machine's package managers
   // spec 060 FR-011: DURBAR_SIM_PLATFORM=win32|darwin|linux shows another OS's routes and commands in the simulator (screenshots)
   const simOs = (): NodeJS.Platform => (['win32', 'darwin', 'linux'].includes(dev.DURBAR_SIM_PLATFORM ?? '') ? dev.DURBAR_SIM_PLATFORM as NodeJS.Platform : process.platform);
-  ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? (dev.DURBAR_SIM ? harnessSetup.plans(kind, op, simManagers(simOs(), dev.DURBAR_SIM_MANAGERS), simOs()) : harnessSetup.plans(kind, op)) : { plans: [], page: '', name: '', manual: [] }));
+  ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? (simulatorOn(dev) ? harnessSetup.plans(kind, op, simManagers(simOs(), dev.DURBAR_SIM_MANAGERS), simOs()) : harnessSetup.plans(kind, op)) : { plans: [], page: '', name: '', manual: [] }));
   ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
     // spec 060 FR-012: the window sends only an index into main's fixed table; anything else is refused, never read as "the first"
     const req = fromApp(e) ? runRequest(kind, op, planIndex) : undefined;

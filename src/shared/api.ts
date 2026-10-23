@@ -48,6 +48,8 @@ export interface AgentInfo {
   modelControl?: ModelControl;
   /** The agent's kind can select custom agents (spec 043). */
   profiles?: boolean;
+  /** Spec 073: the agent app offers a "/" list in the composer (`slashCommands`). */
+  slash?: true;
   /** Spec 061 FR-012: the folder's own hooks or allow rules (accepted by the person) apply to this agent's sessions. */
   folderRules?: boolean;
   /** Restored from the saved folder list: no runtime session yet, it starts with the first message. */
@@ -182,6 +184,16 @@ export interface ProfileFileInfo {
 export interface ProfileFolderInfo {
   id: string;
   path: string;
+}
+
+/** Spec 073 FR-001: one entry of the composer's "/" list as the window sees it (same shape as the adapter's `SlashCommand`; no absolute path). */
+export interface SlashCommandInfo {
+  name: string;
+  description?: string;
+  argumentHint?: string;
+  source: 'folder' | 'user' | 'app';
+  kind: 'skill' | 'command' | 'prompt' | 'builtin';
+  where?: string;
 }
 
 /** A custom agent profile as the renderer sees it (spec 043; same shape as the adapter's `AgentProfile`). */
@@ -532,6 +544,10 @@ export interface AgentMcpEntry {
   toolsOff?: string[];
   /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
   canRestart?: boolean;
+  /** Spec 058 FR-078: Agent Durbar passed this server as switched off when the session started (Settings or the folder's extras), so a runtime `disabled` is not the app's own doing. */
+  launchedOff?: boolean;
+  /** Spec 058 FR-078: the user switched this server here since the session started (a runtime `disabled` may be the old state until its event arrives). */
+  switchedHere?: boolean;
 }
 
 /** `agents:mcp` (spec 019 FR-009, spec 058 FR-020). */
@@ -727,6 +743,8 @@ export interface DurbarApi {
   /** Spec 043 FR-013/FR-018: `place` = the `id` of one of `listProfileFiles().folders`, or 'user'; `template` defaults to the Agent Success Profile; `text`: a reviewed AI draft (FR-029). */
   createProfileFile?(app: 'copilot' | 'claude', place: string, name: string, template?: 'success' | 'standard', text?: string): Promise<{ ok: true; id: string; info: ProfileFileInfo } | { ok: false; error: string }>;
   openProfileInVSCode?(fileId: string): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 043 FR-040: delete a listed, writable profile file by id (main resolves it again; never a path from the window). */
+  deleteProfileFile?(fileId: string): Promise<{ ok: true; id: string } | { ok: false; error: string }>;
   /** Spec 043 FR-026..FR-028: one prompt to an agent app's one-shot path (`by`); a checked draft, nothing written. */
   generateProfile?(req: { app: 'copilot' | 'claude'; name: string; by: string; mode: 'describe' | 'questions'; description?: string; answers?: Record<string, string>; tools?: string }): Promise<{ ok: true; text: string; warnings: string[]; extraTools?: string[]; by: string; costUsd?: number; nanoAiu?: number } | { ok: false; error: string; busy?: true; costUsd?: number; nanoAiu?: number }>; // busy: a request is still running (spec 043 FR-039)
 
@@ -793,7 +811,10 @@ export interface DurbarApi {
   pickAttachments(want?: 'image' | 'file'): Promise<PickedFile[]>;
   /** Pasted / dropped file bytes (renderer has no path): checked (10 MB, real image format), sanitized, written to a private temp folder. */
   stageAttachment(name: string, mime: string, data: ArrayBuffer): Promise<StageResult>;
-  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string }>;
+  /** `slash` (spec 073 FR-005): the message started with a folder or user entry and its text was sent; the value says where it came from. */
+  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string }>;
+  /** Spec 073 FR-010: the "/" entries of the agent's app in its folder (folder, user, app). */
+  slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
   /** Spec 066: answer a proposed plan (window only). */
   resolvePlan?(id: string, requestId: string, answer: { kind: 'approve' | 'reject' | 'revise'; feedback?: string }): Promise<{ ok: boolean; error?: string }>;
   /** Interrupt the current turn only; the agent returns to Ready. */
@@ -828,6 +849,8 @@ export interface DurbarApi {
   onMenuAdd?(cb: (kind: 'folder' | 'workspace') => void): () => void;
   /** The window entered (true) or left (false) full screen, spec 052 FR-085. */
   onFullScreen?(cb: (on: boolean) => void): () => void;
+  /** A double-click on a drag area of the top bar, spec 052 FR-085 (Mac only; main zooms, minimizes or ignores it by the system setting). */
+  titleDoubleClick?(): void;
   /** The OS the app runs on ('darwin', 'win32', 'linux'), spec 052 FR-085: the Mac title bar styles. */
   platform?: string;
 }

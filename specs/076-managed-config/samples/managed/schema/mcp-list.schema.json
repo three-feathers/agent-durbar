@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://three-feathers.github.io/agent-durbar/schema/mcp-list.v1.json",
+  "title": "Agent Durbar MCP server list (v1)",
+  "description": "A list of MCP servers an organization offers or requires. Served from the config folder or from an https endpoint. Holds no secret values: secrets are named by environment variable or come from an OAuth sign-in. stdio entries, env references (fromEnv, valueFromEnv) and required are accepted only from a list file in the machine config folder; a list fetched from a URL may carry only http/sse servers with auth none or oauth (FR-040, FR-041).",
+  "type": "object",
+  "required": [
+    "version",
+    "servers"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "const": 1
+    },
+    "publisher": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/text"
+        }
+      ],
+      "maxLength": 120
+    },
+    "updated": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?(?:Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "servers": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/server"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+    },
+    "app": {
+      "enum": [
+        "copilot",
+        "claude",
+        "codex"
+      ]
+    },
+    "envName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+    },
+    "server": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "transport"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/text"
+            }
+          ],
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/text"
+            }
+          ],
+          "maxLength": 300
+        },
+        "transport": {
+          "enum": [
+            "stdio",
+            "http",
+            "sse"
+          ]
+        },
+        "url": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "command": {
+          "type": "string",
+          "maxLength": 260,
+          "pattern": "^[A-Za-z0-9._@/\\\\:-]+$",
+          "description": "Program name or absolute path; never run through a shell. stdio entries are accepted only from a list file in the machine folder (FR-040)."
+        },
+        "args": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "env": {
+          "type": "object",
+          "description": "Environment for a stdio server. Values are plain non-secret text or a reference to another environment variable.",
+          "maxProperties": 32,
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "object",
+                "required": [
+                  "fromEnv"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "fromEnv": {
+                    "$ref": "#/$defs/envName"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "auth": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "none"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "oauth"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "header",
+                "valueFromEnv"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "header"
+                },
+                "header": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9-]{1,64}$"
+                },
+                "valueFromEnv": {
+                  "$ref": "#/$defs/envName"
+                },
+                "prefix": {
+                  "type": "string",
+                  "maxLength": 32
+                }
+              }
+            }
+          ]
+        },
+        "docsUrl": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "apps": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/app"
+          }
+        },
+        "needs": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "enum": [
+              "node",
+              "python",
+              "docker",
+              "uv"
+            ]
+          }
+        },
+        "recommended": {
+          "type": "boolean",
+          "description": "Shown first in the catalog."
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Honoured only from a list file in the machine folder (FR-044); refused from a URL list or the user layer."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "transport": {
+                "const": "stdio"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "command"
+            ],
+            "not": {
+              "required": [
+                "url"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transport": {
+                "enum": [
+                  "http",
+                  "sse"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "url"
+            ],
+            "not": {
+              "required": [
+                "command"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "httpsUrl": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::[0-9]{1,5})?(?:/[\\x21-\\x7e]*)?$",
+      "description": "https only; host (letters, digits, dots, hyphens; IDN as punycode), optional port and path; no user:password@, no spaces, no control characters. Identical in all three schemas."
+    },
+    "text": {
+      "type": "string",
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff<>]+$"
+    }
+  }
+}

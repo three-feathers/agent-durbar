@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: MCP servers in a session (issue #349): plain state words and how servers start per agent app, the masked failure reason with a hint, per-server Restart where the agent app has one (Copilot, Claude Code), Restart session with these servers, Open log folder (reveal only)
-status: **Specified and clarified** (spec, research, plan, tasks); the owner answered Q1-Q11 on 2026-10-20 (all option A). Built so far: MCP error and event masking (`maskMcpError`, `maskMcpEvent`; #362, #382); per-server Restart (Copilot, Claude Code) and Restart session with these servers (T030-T034, T040-T044, #349; simulator and fakes, not on a real account); state words and icons, hints, *Details* with *Copy* and live refresh of the open dialog (T113-T115, #364 step 4; simulator and tests; the start line, toggle timing and logs are not built yet); delta 2026-10-20 (issue #364): MCP OAuth sign-in (needs-auth from a 401, start the agent app's own sign-in or show terminal steps, switch off for this session), specified and clarified (owner answered Q12-Q19 on 2026-10-20); built so far (PR 1): the classifier `isMcpAuthChallenge`, `isAuthError` ignoring it, and masking of failed MCP tool cards (T091, T092, T097); PR 2: the types, event guard and fake for sign-in (`errorClass`, `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `mcpAuth`; T112, T093); no adapter sets them yet, no sign-in yet
+status: **Specified and clarified** (spec, research, plan, tasks); the owner answered Q1-Q11 on 2026-10-20 (all option A). Built so far: MCP error and event masking (`maskMcpError`, `maskMcpEvent`; #362, #382); per-server Restart (Copilot, Claude Code) and Restart session with these servers (T030-T034, T040-T044, #349; simulator and fakes, not on a real account); state words and icons, hints, *Details* with *Copy* and live refresh of the open dialog (T113-T115, #364 step 4; simulator and tests; the start line, toggle timing and logs are not built yet); delta 2026-10-20 (issue #364): MCP OAuth sign-in (needs-auth from a 401, start the agent app's own sign-in or show terminal steps, switch off for this session), specified and clarified (owner answered Q12-Q19 on 2026-10-20); built so far (PR 1): the classifier `isMcpAuthChallenge`, `isAuthError` ignoring it, and masking of failed MCP tool cards (T091, T092, T097); PR 2: the types, event guard and fake for sign-in (`errorClass`, `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `mcpAuth`; T112, T093); no adapter sets them yet, no sign-in yet; delta 2026-10-23 (issue #596, owner): live state and actions of every server in Settings > MCP servers over the running chats (FR-080..FR-087) built, simulator and unit tests only
 -->
 
 **Feature Branch**: `058-mcp-session-controls`
@@ -387,6 +387,49 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 ## Changes
 
+### 2026-10-22: the MCP dialog fits a long list, and a word never contradicts its switch (issue #544)
+
+**Status**: built (T117), simulator and unit tests only; `[KNOWN GAP]` not seen on a real agent app (the owner's macOS build had the bug).
+
+**Problem** (owner, real Mac, a build with #538, 14 servers, `real:` issue #544): (1) with a list taller than the window the footer
+buttons (*Settings*, *Folder extras…*, *Done*) sat on the last rows and the last switch drew over *Done*. Cause: `.dlg.wide` is a
+flex column with `overflow:auto`, and `.dlg .dbody` has `min-height:0` but visible overflow, so the body shrank to the dialog's
+height and its rows spilled over the footer instead of scrolling. (2) Six servers the agent app had turned off itself (runtime status
+`disabled`, switch on) read "Off for this session", as if the user had switched them off here.
+
+#### Requirements (delta)
+
+- **FR-077** **The footer never overlaps the rows.** In a wide dialog (`.dlg.wide`, so the agent's MCP dialog) the title and the
+  buttons stay in view and only the body scrolls, with a few pixels of padding so the switches' focus ring is not clipped (`.dlg.imp` does the same). At 1440x900,
+  1280x800 and 1280x600 with 14 or more servers, no row's box meets the button row and *Done* is visible and clickable. The *Restart session with these servers* row and the "Applies to this agent until the app is closed" line are part of the scrolling body, never on the buttons (owner, macOS, issue #544). Other
+  `dialog()` users with a wide body behave the same. [IMPLEMENTED] `sim:` `shots-058-mcp-words.js`.
+- **FR-078** **A word says who turned the server off, and never contradicts the switch.** A server the runtime reports `disabled`:
+  - reads "Off for this session" only when the user's switch here is off (`off`);
+  - "Off in Settings" / "Off in folder extras" when the Settings or extras default is off (the separate "off in ..." tag is then left out);
+  - "Off until the session restarts" when Agent Durbar itself passed it as off when the session started (`launchedOff` on the `agents:mcp`
+    entry, kept by main from the start options: Copilot `disabledMcpServers`, Codex's disabled list) and the user has since switched it on
+    in Settings; its switch stays on, and its hint points to *Restart session with these servers*;
+  - "Starting" while the user has just switched it on here (`switchedHere`) and the runtime's old `disabled` has not been replaced yet (no flicker);
+  - otherwise the agent app or its config turned it off, and the word is "Off in <app name>" (`app` of the reply; without it
+    "Turned off by the agent app"). That row's switch shows off and is disabled, and its hint says where to change it ("Turn it on in
+    <app>'s own MCP settings, then restart the session."). Agent Durbar does not claim it can switch it on.
+  [IMPLEMENTED] `test:` `test-mcpwords.ts`, `test-mcp-session.ts` (`launchedOff`, `switchedHere`); `sim:` `shots-058-mcp-words.js`.
+
+### 2026-10-23: the footer is its own layer, also after a switch toggle (issue #544, second report)
+
+**Status**: built (T117), simulator only; `[KNOWN GAP]` not seen on a real Mac with this CSS (the owner's dev build of main had the bug).
+
+**Problem** (owner, real Mac, dev build of main f28ed2da, `real:` issue #544): toggling an MCP switch off and on made the overlap worse. The last row (`workiq`, "Off for this session", switch on) sat under the footer, *Settings* / *Folder extras…* / *Done* were drawn over the row text, and after the toggle the last row's switch was drawn over *Done*. Rows and footer shared space and z-order, and the repaint that follows a toggle re-rendered the body into that shared space.
+
+#### Requirements (delta)
+
+- **FR-077a** The wide dialog is a column of three separate things: the scroller (`.dbody`: `flex:1 1 auto; min-height:0; overflow:auto`, its own stacking context at `z-index:0`), and the footer (`.dbtn` and a visible `.derr`: `flex:none`, `position:relative`, `z-index:2`, an opaque `--surface` background). The body's own repaint (toggle, `mcp` event, Details, Restart) never changes that, so no row control (a switch included: its knob is inside the scroller, clipped by it) can paint over *Done* or over the buttons. After each toggle of the last row (off, then on), at 1440x900, 1280x800 and 1280x600: *Done* is fully visible and `elementFromPoint` at its centre and four corners returns *Done* or its child, and no element's visible part (clipped to the scroller) meets the footer's rect. The same rules serve every `dialog({wide:true})` (theme picker, review, trust, add/edit server) and the import and folder-setup dialogs, which are `.dlg.wide.imp` (one rule set, so they cannot drift; the duplicate `.dlg.imp .dbody` rule was removed). The scroller has 5px of padding: the focus ring is a 3px outline 1px off the control, and the old 2px/4px padding clipped the last control's ring (found by the check below).
+[IMPLEMENTED] `src/renderer/screens.css`; `sim:` `scripts/shots-058-mcp-words.js`:
+  - `footerIntegrity`: after each toggle, *Done* hit-tested and no element's visible part meets the footer;
+  - `assertFooterStyle`: the footer's computed background is opaque (alpha 1) and equals the dialog's, its `position` is not `static`, its `z-index` is above the scroller's. It runs at the three sizes and in every built-in theme at 1280x800;
+  - `wideDialogOk`: the add-server and trust dialogs at 1280x600 keep every footer button visible and hit-testable, and the first and last control in the scroller show their whole focus ring.
+  Mutations (each fails the driver): removing the scroller rules (`Done is visible and nothing covers it`); removing only the footer rules (`the footer is an opaque, positioned layer above the scroller`); padding back to `2px 4px 2px 2px` (`the focus ring of the first and last control is not clipped`). Shots `docs/screenshots/058-mcp-dialog-toggle-*`, `058-mcp-wide-*`.
+
 ### 2026-10-20: MCP OAuth sign-in (issue #364)
 
 **Status**: specified and clarified, **no code**. The owner answered Q12-Q19 on 2026-10-20 (Q12 B, the rest A: all the recommended
@@ -691,3 +734,82 @@ token issued for another resource, and a refresh keeps its resource; the test al
 (400) and checks the server's address is `http://127.0.0.1:` (taken from the bound address). New `[KNOWN GAP]`s in FR-070: the
 Linux tokens file's encryption and permissions; the cached-catalog tool call 401.
 
+
+### 2026-10-23: live status and actions in Settings (owner request, issue #596)
+
+**Status**: specified 2026-10-23, built in the same PR (tasks T120-T126; simulator and unit tests only, not on a real account).
+
+**Input**: owner (Vikram, 2026-10-23, real use on macOS): the per-chat MCP dialog (More > MCP servers, or the MCP chip under the
+message box) shows each server's live state with Restart, Details and the switches, but he only found it after being told. He wants
+the same in **global Settings > MCP servers**, not only inside a chat. Owner-urgent: it may go past the team's "land before building"
+cap (`AGENTS.md`, backlog first), and the PR says so.
+
+**Why this spec owns it** (not spec 069): the state words, icons, hints, *Details*/*Copy*, per-server Restart and *Restart session with
+these servers* are spec 058's (FR-001, FR-006, FR-007, FR-012, FR-021, FR-022, T113-T115). Spec 069 owns the *configured* lists in
+Settings (add, remove, harmonize, source chips); this delta only shows spec 058's live state and actions in a second place, next to
+spec 069's lists, and changes nothing in them.
+
+**Reuse, no parallel version** (AGENTS.md, *Look for an existing capability first*):
+- the words, icons and hints are `DurbarMcpWords` (`src/renderer/mcpwords.js`: `stateOf`, `iconSvg`, `hintFor`, `plain`); the
+  aggregation is a new pure function in the same helper (`aggregate`), so the two places can never use different words;
+- the data is the existing `agents:mcp` reply of each running session (`agentMcpReply` in `src/main/mcpsession.ts`): main already masks
+  every error there (FR-005), so the Settings view gets nothing the chat dialog does not; **no new IPC channel**;
+- Restart is the existing `agents:mcpRestart` (Copilot `restartServer`, Claude `mcp_reconnect`; Codex has none) and Restart session is
+  the existing `agents:mcpRestartSession`, through one shared renderer flow that the chat dialog now uses too (same busy, grants and
+  remote-control confirmation, FR-023; same sign-in card on an expired sign-in, FR-027);
+- *Open in chat* opens the existing chat dialog (`DurbarScreens.agentMcp`) with the same options the MCP chip passes.
+
+#### Requirements (delta)
+
+- **FR-080** `[IMPLEMENTED]` (`sim:` shots-058-mcp-settings) **Live status in Settings.** Settings > MCP servers starts with a *Live in
+  your chats* list: one row per MCP server that a running chat uses or that one of the configured lists in that section has (the Copilot
+  CLI list and spec 069's Claude Code and Codex lists). Each row shows the server's name and its **live state aggregated over the running
+  chats that use it** (FR-081). A server no running chat uses reads "Not started yet" (FR-001's word). With no running chat the list says
+  so in one plain sentence ("No chat is running, so no MCP server is running. Live states show here while a chat runs.") and has no
+  actions.
+- **FR-081** `[IMPLEMENTED]` (`test:` test-mcpwords) **Aggregation** (`DurbarMcpWords.aggregate`, pure): per server, the running chats
+  that use it are counted by state, with FR-001's words and the count: "Running in 3 chats", "Needs sign-in in 1 chat", "Failed in 1
+  chat · Running in 2 chats". Order, most urgent first: Failed, Needs sign-in, Starting, unknown states, Not started yet, Running, Not
+  set up for this session, Stopped, Off for this session. The row's icon and colour class are those of the most urgent state (never
+  colour alone, constitution V). A chat "uses" a server when its `agents:mcp` reply lists it and it is switched on for that chat, or the
+  agent app reported a state for it. A chat's server with no reported state counts as "Not started yet" (for example Copilot and Claude
+  start servers with the next message). Rows with a failed or needs-sign-in chat come first, then servers a running chat uses, then the rest, each group by name. Names (1-200
+  characters) are compared exactly (as `agents:mcp` lists them); at most 200 servers and 50 chats are shown.
+- **FR-082** `[IMPLEMENTED]` (`sim:`) **Per-server expander.** Each row has a toggle (a button with `aria-expanded`, named "Show the
+  chats that use <server>") that lists the chats using it: the agent's name and folder, that chat's state word and icon, the hint for a
+  failed or needs-sign-in state (FR-006, the same words as the chat dialog, with the agent app's name), *Details* with the masked text and
+  *Copy* (FR-007; the text came masked from main), and these actions:
+  - **Restart** (only when that chat's reply has `canRestart`): restarts this server in this chat only, through `agents:mcpRestart`, with
+    FR-031's feedback ("Restarting…", disabled, then a toast). Named "Restart <server> for <agent>".
+  - For an agent app with no per-server Restart (Codex): FR-032's line "<App> cannot restart one server; use Restart session with these
+    servers".
+  - **Restart session with these servers** (when that chat's reply has `canRestartSession`): FR-022 and FR-023 unchanged; the same
+    confirmation (busy, session grants, remote control), the same `needsConfirm` round trip, and on an expired sign-in Settings closes
+    and the chat shows FR-027's sign-in card.
+  - **Open in chat**: closes Settings and opens that chat with its MCP dialog, so the per-chat dialog can be found from Settings.
+  - **Needs-sign-in rows** (review on #609, fjcabello; `needs-auth`, or `failed` with `errorClass: 'auth'`): a Restart does not fix a
+    missing sign-in, so the main action is **Open in chat** (a primary button), with the chat dialog's sign-in hint and "Sign in from the
+    chat's MCP list"; Restart and Restart session sit behind a closed **More** (kept open over a repaint). When #598 (issue #364's *Sign
+    in*, FR-064, Paco's) lands, its button is added to this row through the same row code, reusing it; this delta builds no sign-in of
+    its own. Until then the chat's MCP list shows the same hint (the sign-in itself runs in the agent app).
+- **FR-083** `[IMPLEMENTED]` (`sim:`) **Live refresh.** While Settings is open, an `mcp` event of any running chat (and a chat that
+  stops or is ready again) reloads the list (throttled to one reload per 150 ms) without repainting the rest of Settings; each load has a sequence number and
+  the replies of an older load that ends after a newer one are dropped (review on #609); while the list is hidden (*Advanced* collapsed)
+  nothing is reloaded, and the list reloads when it opens again; keeping the focus on the same
+  control (by server, chat and action) and the scroll position; state changes are announced through the existing polite live region, as
+  FR-004 does in the chat dialog. An action the user just took is not announced back.
+- **FR-084** `[IMPLEMENTED]` (`sim:`) **Finding it.** The *Advanced: MCP servers* heading shows how many servers need attention ("2
+  need attention": failed or needs sign-in in at least one chat), and the chat dialog's *Settings* button now opens Settings at its MCP
+  servers section (it opened Settings at the top).
+- **FR-085** `[IMPLEMENTED]` (`sim:`) **Layout.** Text at least 10.5px; with 10 or more servers and their expanders the list scrolls
+  inside Settings' own scroller (no page scroll, no horizontal overflow) at 1440x900 and 1280x800; no control is covered (checked with
+  `elementFromPoint`); theme tokens only (`test:theme-tokens`).
+- **FR-086** `[IMPLEMENTED]` (`sim:`; `test:` test-mcpwords) **Nothing new leaves main.** The renderer shows only what `agents:mcp`
+  returns (masked errors, names, states, flags); *Copy* copies that masked text. No path, no secret value, no new IPC channel.
+- **FR-087** `[KNOWN GAP]` Not checked with real agent apps: the aggregation reads the same `mcp` reports as the chat dialog, whose
+  real-account limits are FR-050 and FR-051; macOS and Windows not seen (simulator on Linux only).
+
+#### Success criteria (delta)
+
+- **SC-080** From Settings alone, a user can see which servers failed or need a sign-in in which chat, restart one server in one chat,
+  restart a chat's session, and reach that chat's own MCP dialog, without opening a chat first.
