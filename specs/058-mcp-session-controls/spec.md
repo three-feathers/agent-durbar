@@ -691,3 +691,77 @@ token issued for another resource, and a refresh keeps its resource; the test al
 (400) and checks the server's address is `http://127.0.0.1:` (taken from the bound address). New `[KNOWN GAP]`s in FR-070: the
 Linux tokens file's encryption and permissions; the cached-catalog tool call 401.
 
+
+### 2026-10-23: live status and actions in Settings (owner request, issue #596)
+
+**Status**: specified 2026-10-23, built in the same PR (tasks T120-T126; simulator and unit tests only, not on a real account).
+
+**Input**: owner (Vikram, 2026-10-23, real use on macOS): the per-chat MCP dialog (More > MCP servers, or the MCP chip under the
+message box) shows each server's live state with Restart, Details and the switches, but he only found it after being told. He wants
+the same in **global Settings > MCP servers**, not only inside a chat. Owner-urgent: it may go past the team's "land before building"
+cap (`AGENTS.md`, backlog first), and the PR says so.
+
+**Why this spec owns it** (not spec 069): the state words, icons, hints, *Details*/*Copy*, per-server Restart and *Restart session with
+these servers* are spec 058's (FR-001, FR-006, FR-007, FR-012, FR-021, FR-022, T113-T115). Spec 069 owns the *configured* lists in
+Settings (add, remove, harmonize, source chips); this delta only shows spec 058's live state and actions in a second place, next to
+spec 069's lists, and changes nothing in them.
+
+**Reuse, no parallel version** (AGENTS.md, *Look for an existing capability first*):
+- the words, icons and hints are `DurbarMcpWords` (`src/renderer/mcpwords.js`: `stateOf`, `iconSvg`, `hintFor`, `plain`); the
+  aggregation is a new pure function in the same helper (`aggregate`), so the two places can never use different words;
+- the data is the existing `agents:mcp` reply of each running session (`agentMcpReply` in `src/main/mcpsession.ts`): main already masks
+  every error there (FR-005), so the Settings view gets nothing the chat dialog does not; **no new IPC channel**;
+- Restart is the existing `agents:mcpRestart` (Copilot `restartServer`, Claude `mcp_reconnect`; Codex has none) and Restart session is
+  the existing `agents:mcpRestartSession`, through one shared renderer flow that the chat dialog now uses too (same busy, grants and
+  remote-control confirmation, FR-023; same sign-in card on an expired sign-in, FR-027);
+- *Open in chat* opens the existing chat dialog (`DurbarScreens.agentMcp`) with the same options the MCP chip passes.
+
+#### Requirements (delta)
+
+- **FR-080** `[IMPLEMENTED]` (`sim:` shots-058-mcp-settings) **Live status in Settings.** Settings > MCP servers starts with a *Live in
+  your chats* list: one row per MCP server that a running chat uses or that one of the configured lists in that section has (the Copilot
+  CLI list and spec 069's Claude Code and Codex lists). Each row shows the server's name and its **live state aggregated over the running
+  chats that use it** (FR-081). A server no running chat uses reads "Not started yet" (FR-001's word). With no running chat the list says
+  so in one plain sentence ("No chat is running, so no MCP server is running. Live states show here while a chat runs.") and has no
+  actions.
+- **FR-081** `[IMPLEMENTED]` (`test:` test-mcpwords) **Aggregation** (`DurbarMcpWords.aggregate`, pure): per server, the running chats
+  that use it are counted by state, with FR-001's words and the count: "Running in 3 chats", "Needs sign-in in 1 chat", "Failed in 1
+  chat · Running in 2 chats". Order, most urgent first: Failed, Needs sign-in, Starting, unknown states, Not started yet, Running, Not
+  set up for this session, Stopped, Off for this session. The row's icon and colour class are those of the most urgent state (never
+  colour alone, constitution V). A chat "uses" a server when its `agents:mcp` reply lists it and it is switched on for that chat, or the
+  agent app reported a state for it. A chat's server with no reported state counts as "Not started yet" (for example Copilot and Claude
+  start servers with the next message). Rows with a failed or needs-sign-in chat come first; otherwise the order is by name. Names are
+  compared exactly (as `agents:mcp` lists them); at most 200 servers and 50 chats are shown.
+- **FR-082** `[IMPLEMENTED]` (`sim:`) **Per-server expander.** Each row has a toggle (a button with `aria-expanded`, named "Show the
+  chats that use <server>") that lists the chats using it: the agent's name and folder, that chat's state word and icon, the hint for a
+  failed or needs-sign-in state (FR-006, the same words as the chat dialog, with the agent app's name), *Details* with the masked text and
+  *Copy* (FR-007; the text came masked from main), and these actions:
+  - **Restart** (only when that chat's reply has `canRestart`): restarts this server in this chat only, through `agents:mcpRestart`, with
+    FR-031's feedback ("Restarting…", disabled, then a toast). Named "Restart <server> for <agent>".
+  - For an agent app with no per-server Restart (Codex): FR-032's line "<App> cannot restart one server; use Restart session with these
+    servers".
+  - **Restart session with these servers** (when that chat's reply has `canRestartSession`): FR-022 and FR-023 unchanged; the same
+    confirmation (busy, session grants, remote control), the same `needsConfirm` round trip, and on an expired sign-in Settings closes
+    and the chat shows FR-027's sign-in card.
+  - **Open in chat**: closes Settings and opens that chat with its MCP dialog, so the per-chat dialog can be found from Settings.
+  - Needs-sign-in rows show the chat dialog's sign-in hint. When issue #364's *Sign in* (FR-064, Paco's) lands, its button is added to
+    this row through the same code; this delta builds no sign-in of its own.
+- **FR-083** `[IMPLEMENTED]` (`sim:`) **Live refresh.** While Settings is open, an `mcp` event of any running chat (and a chat that
+  stops) reloads the list (throttled to one reload per 150 ms) without repainting the rest of Settings, keeping the focus on the same
+  control (by server, chat and action) and the scroll position; state changes are announced through the existing polite live region, as
+  FR-004 does in the chat dialog. An action the user just took is not announced back.
+- **FR-084** `[IMPLEMENTED]` (`sim:`) **Finding it.** The *Advanced: MCP servers* heading shows how many servers need attention ("2
+  need attention": failed or needs sign-in in at least one chat), and the chat dialog's *Settings* button now opens Settings at its MCP
+  servers section (it opened Settings at the top).
+- **FR-085** `[IMPLEMENTED]` (`sim:`) **Layout.** Text at least 10.5px; with 10 or more servers and their expanders the list scrolls
+  inside Settings' own scroller (no page scroll, no horizontal overflow) at 1440x900 and 1280x800; no control is covered (checked with
+  `elementFromPoint`); theme tokens only (`test:theme-tokens`).
+- **FR-086** `[IMPLEMENTED]` (`sim:`; `test:` test-mcpwords) **Nothing new leaves main.** The renderer shows only what `agents:mcp`
+  returns (masked errors, names, states, flags); *Copy* copies that masked text. No path, no secret value, no new IPC channel.
+- **FR-087** `[KNOWN GAP]` Not checked with real agent apps: the aggregation reads the same `mcp` reports as the chat dialog, whose
+  real-account limits are FR-050 and FR-051; macOS and Windows not seen (simulator on Linux only).
+
+#### Success criteria (delta)
+
+- **SC-080** From Settings alone, a user can see which servers failed or need a sign-in in which chat, restart one server in one chat,
+  restart a chat's session, and reach that chat's own MCP dialog, without opening a chat first.
