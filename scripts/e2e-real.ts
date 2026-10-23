@@ -4,7 +4,11 @@
  * one tiny read-only turn → stop. USES A FEW CREDITS (one one-line prompt per app). Never run it on your own machine: it installs
  * software into your home folder and signs Codex in with the key in OPENAI_API_KEY.
  *
- *   node dist-scripts/scripts/e2e-real.js <out.json> [--only claude,copilot,codex]
+ *   node dist-scripts/scripts/e2e-real.js <out.json> [--only claude,copilot,codex] [--no-turn]
+ *
+ * `--no-turn` stops after the model list (no prompt, no tokens): the workflow passes it on macOS and Windows except on Mondays or
+ * a manual run with `full_turn: true` (FR-007). Codex runs a small model and a low effort (FR-008): `E2E_CODEX_MODEL` /
+ * `E2E_CODEX_EFFORT` when set, otherwise a listed `mini` (then `nano`) model and `low`.
  *
  * Secrets come from the environment only (COPILOT_GITHUB_TOKEN, ANTHROPIC_API_KEY, OPENAI_API_KEY). They are never printed, logged,
  * written to a file or put on a command line: the Codex key goes over stdin, and every line printed goes through `redact()`.
@@ -18,13 +22,14 @@ import type { SetupDone } from '../src/main/harnesssetup';
 import { detectClaude, detectCodex, detectCopilot, nodeDetectEnv, nodeExec } from '../src/adapters/detect';
 import type { SetupKind } from '../src/shared/harnesssetup';
 import { CLAUDE_DESCRIPTOR } from '../src/adapters/claude';
-import { CODEX_DESCRIPTOR } from '../src/adapters/codex';
+import { CODEX_DESCRIPTOR, codexModelFlag } from '../src/adapters/codex';
 import { COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
 import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { redact } from '../src/shared/redact';
+import type { ModelOption } from '../src/shared/modelswitch';
 
 type Step = 'install' | 'detect' | 'sign-in' | 'models' | 'turn';
-interface Row { app: SetupKind; os: string; ok: boolean; failedAt?: Step; route?: string; version?: string; signIn?: string; models?: number; sampleModels?: string; readOnly?: string; answer?: string; usage?: string; secs: number; detail?: string }
+interface Row { app: SetupKind; os: string; ok: boolean; failedAt?: Step; route?: string; version?: string; signIn?: string; models?: number; sampleModels?: string; readOnly?: string; model?: string; answer?: string; usage?: string; secs: number; detail?: string }
 
 const APPS: { kind: SetupKind; model?: string; descriptor: { create(): AgentAdapter } }[] = [
   { kind: 'copilot', model: 'auto', descriptor: COPILOT_DESCRIPTOR },
@@ -34,6 +39,23 @@ const APPS: { kind: SetupKind; model?: string; descriptor: { create(): AgentAdap
 const SECRETS = ['COPILOT_GITHUB_TOKEN', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'].map((k) => process.env[k]).filter((v): v is string => !!v && v.length >= 8);
 /** Every printed line: secret values cut out first (belt and braces with Actions' own masking), then the usual redaction. */
 const clean = (s: unknown): string => { let t = String(s ?? ''); for (const v of SECRETS) t = t.split(v).join('[secret]'); return redact(t).replace(/\s+/g, ' ').slice(0, 300); };
+/** FR-008: the effort the spec 012 FR-142 real run used; `minimal`/`none` were never tried with Codex's tools. */
+const CHEAP_EFFORT = 'low';
+const EFFORT_SHAPE = /^[a-z][a-z0-9_-]{0,15}$/;
+
+/** FR-008: Codex's model and effort for the turn. The env wins; otherwise a listed `mini`, then `nano`, model; otherwise Codex's default. */
+export function cheapCodex(models: ModelOption[], env: NodeJS.ProcessEnv = process.env): { model?: string; effort?: string } {
+  const want = env.E2E_CODEX_MODEL?.trim();
+  const usable = models.filter((m) => !m.disabled && codexModelFlag(m.id));
+  const pick = want && codexModelFlag(want) ? { id: want, efforts: usable.find((m) => m.id === want)?.efforts ?? [] }
+    : usable.find((m) => /(^|[-_.])mini($|[-_.])/i.test(m.id)) ?? usable.find((m) => /(^|[-_.])nano($|[-_.])/i.test(m.id))
+    ?? usable[0]; // `listModelOptions` puts Codex's default first (spec 012 FR-142)
+  const envEffort = env.E2E_CODEX_EFFORT?.trim();
+  const effort = envEffort && EFFORT_SHAPE.test(envEffort) ? envEffort
+    : pick?.efforts.includes(CHEAP_EFFORT) ? CHEAP_EFFORT : pick?.efforts[0];
+  return { ...(pick ? { model: pick.id } : {}), ...(effort ? { effort } : {}) };
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 function killTree(child: { pid?: number }): void {
@@ -90,7 +112,7 @@ function codexLogin(bin: string): Promise<string | undefined> {
   });
 }
 
-async function check(app: (typeof APPS)[number]): Promise<Row> {
+async function check(app: (typeof APPS)[number], noTurn: boolean): Promise<Row> {
   const t0 = Date.now();
   const row: Row = { app: app.kind, os: process.platform, ok: false, secs: 0 };
   const fail = (at: Step, detail: unknown): Row => ({ ...row, failedAt: at, detail: clean(detail), secs: Math.round((Date.now() - t0) / 1000) });
@@ -124,13 +146,16 @@ async function check(app: (typeof APPS)[number]): Promise<Row> {
     row.models = models.length;
     row.sampleModels = models.slice(0, 4).map((m) => m.id).join(', ');
     // an empty list is recorded, not failed: a Copilot Free login lists none and still runs `auto` (real 2026-10-20); the turn decides
+    if (noTurn) { row.readOnly = 'skipped (--no-turn)'; return { ...row, ok: true, secs: Math.round((Date.now() - t0) / 1000) }; }
+    const pick = app.kind === 'codex' ? cheapCodex(models) : { model: app.model };
+    row.model = [pick.model ?? 'default', 'effort' in pick ? pick.effort : undefined].filter(Boolean).join(' / ');
 
     // the turn, read-only first (Durbar's default). Codex's read-only sandbox depends on the OS (Linux user namespaces, macOS
     // sandbox-exec, the Windows elevated sandbox): when it cannot start, that is recorded and the same one-line prompt, which uses
     // no tool, runs once more with full access in a throw-away folder, to prove the account and the turn itself.
-    const ro = await turn(ad, app, events, 'read-only');
+    const ro = await turn(ad, app, events, 'read-only', pick);
     row.readOnly = ro.ok ? 'ok' : ro.detail;
-    const t = ro.ok || app.kind !== 'codex' ? ro : await turn(ad, app, events, 'allow');
+    const t = ro.ok || app.kind !== 'codex' ? ro : await turn(ad, app, events, 'allow', pick);
     row.answer = t.answer;
     row.usage = t.usage;
     if (!t.ok) return fail('turn', t.detail);
@@ -142,11 +167,11 @@ async function check(app: (typeof APPS)[number]): Promise<Row> {
   return { ...row, ok: true, secs: Math.round((Date.now() - t0) / 1000) };
 }
 
-async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentEvent[], mode: 'read-only' | 'allow'): Promise<{ ok: boolean; detail?: string; answer?: string; usage?: string }> {
+async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentEvent[], mode: 'read-only' | 'allow', pick: { model?: string; effort?: string }): Promise<{ ok: boolean; detail?: string; answer?: string; usage?: string }> {
   {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), `durbar-e2e-${app.kind}-`));
     try {
-      const sid = await ad.start({ workspace: dir, permissionMode: mode, ...(app.model ? { model: app.model } : {}), quiet: true });
+      const sid = await ad.start({ workspace: dir, permissionMode: mode, ...(pick.model ? { model: pick.model } : {}), ...(pick.effort ? { reasoningEffort: pick.effort } : {}), quiet: true });
       await ad.send(sid, { text: 'Reply with only the word ok.' });
       const deadline = Date.now() + 180_000;
       while (Date.now() < deadline && !events.some((e) => e.type === 'status' && (e.status === 'idle' || e.status === 'error') && e.sessionId === sid)) await sleep(250);
@@ -173,15 +198,17 @@ async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentE
 
 async function main(): Promise<void> {
   const outFile = process.argv[2];
-  if (!outFile) throw new Error('usage: e2e-real.js <out.json> [--only claude,copilot,codex]');
+  if (!outFile) throw new Error('usage: e2e-real.js <out.json> [--only claude,copilot,codex] [--no-turn]');
+  const noTurn = process.argv.includes('--no-turn');
   const i = process.argv.indexOf('--only');
   const only = i > 0 ? new Set(process.argv[i + 1].split(',')) : undefined;
   const rows: Row[] = [];
-  for (const app of APPS) if (!only || only.has(app.kind)) { const r = await check(app); rows.push(r); console.log(clean(`${r.ok ? 'ok  ' : 'FAIL'} ${r.app} ${r.failedAt ? 'at ' + r.failedAt + ': ' + r.detail : ''}`)); }
+  for (const app of APPS) if (!only || only.has(app.kind)) { const r = await check(app, noTurn); rows.push(r); console.log(clean(`${r.ok ? 'ok  ' : 'FAIL'} ${r.app} ${r.failedAt ? 'at ' + r.failedAt + ': ' + r.detail : ''}`)); }
   fs.writeFileSync(outFile, JSON.stringify(rows, null, 2));
   const esc = (v: unknown) => clean(v).replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
-  console.log(`\n### E2E with real accounts on ${process.platform}\n\n| App | Result | Install route | Version | Sign-in | Models | Read-only turn | Answer | Usage | Time | Detail |\n|---|---|---|---|---|---|---|---|---|---|---|`);
-  for (const r of rows) console.log(`| ${r.app} | ${r.ok ? 'ok' : 'FAIL at ' + r.failedAt} | ${esc(r.route)} | ${esc(r.version)} | ${esc(r.signIn)} | ${r.models ?? ''} ${r.sampleModels ? '(' + esc(r.sampleModels) + ')' : ''} | ${esc(r.readOnly)} | ${esc(r.answer)} | ${esc(r.usage)} | ${r.secs} s | ${esc(r.detail)} |`);
+  console.log(`\n### E2E with real accounts on ${process.platform}${noTurn ? ' (no turn: install, sign-in and models only)' : ''}\n\n| App | Result | Install route | Version | Sign-in | Models | Model used | Read-only turn | Answer | Usage | Time | Detail |\n|---|---|---|---|---|---|---|---|---|---|---|---|`);
+  for (const r of rows) console.log(`| ${r.app} | ${r.ok ? 'ok' : 'FAIL at ' + r.failedAt} | ${esc(r.route)} | ${esc(r.version)} | ${esc(r.signIn)} | ${r.models ?? ''} ${r.sampleModels ? '(' + esc(r.sampleModels) + ')' : ''} | ${esc(r.model)} | ${esc(r.readOnly)} | ${esc(r.answer)} | ${esc(r.usage)} | ${r.secs} s | ${esc(r.detail)} |`);
   if (rows.some((r) => !r.ok)) process.exitCode = 1;
 }
-main().catch((e) => { console.error('e2e-real:', clean(e instanceof Error ? e.message : e)); process.exit(1); });
+// only when run, so `test:platforms` can import `cheapCodex` without starting a check
+if (require.main === module) main().catch((e) => { console.error('e2e-real:', clean(e instanceof Error ? e.message : e)); process.exit(1); });

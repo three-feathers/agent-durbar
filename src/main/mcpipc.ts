@@ -2,7 +2,7 @@
 import { safeStorage } from 'electron';
 import { ipcHandle } from './ipcguard';
 import * as path from 'path';
-import type { AgentInfo, AgentMcpReply, McpFolderState, McpState } from '../shared/api';
+import type { AgentInfo, AgentMcpReply, GlobalApp, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
 import { setMcpOp } from './agentops';
 import type { AdapterRouter } from '../adapters/router';
@@ -11,7 +11,9 @@ import type { DevEnv } from './devhooks';
 import { BUILTIN_SERVERS, cliServers, copilotDir } from './mcpfiles';
 import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
 import { mcpSecretValues } from './mcpmask';
+import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRestartOp } from './mcpsession';
+import { mcpToolsOp } from './mcptoolsop';
 import { McpStore } from './mcpstore';
 import type { SecretCodec } from './mcpstore';
 
@@ -46,7 +48,20 @@ export const safeStorageCodec: SecretCodec = {
 const keyOf = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const nameOfKey = (key: string): string => path.basename(key).replace(/\.code-workspace$/i, '') || key;
 
-export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; router: Pick<AdapterRouter, 'onEvent' | 'forAgent'>; dev: DevEnv; /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */ log?(a: AgentInfo, action: string): void }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] }; secretValuesFor(agentId: string): string[] } {
+export function registerMcpIpc(deps: {
+  store: () => McpStore;
+  agents: Map<string, AgentInfo>;
+  router: Pick<AdapterRouter, 'onEvent' | 'forAgent'>;
+  dev: DevEnv;
+  /** Spec 069 FR-009: servers of the agent app's own user list that Durbar passes itself (Claude Code), values included (main only). */
+  globalFor?(agentId: string): Record<string, McpServerSpec>;
+  /** Spec 069 FR-011: the names of each agent app's user list, read now. */
+  globalNames?(): Partial<Record<GlobalApp, string[]>>;
+  /** The agent app of an agent (`copilot`, `claude`, `codex`, ...). */
+  appOf?(agentId: string): string | undefined;
+  /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */
+  log?(a: AgentInfo, action: string): void;
+}): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[] } {
   const { agents, router, dev } = deps;
   const store = deps.store;
   /** Per agent id, this run only: servers the user switched off for that agent. */
@@ -58,7 +73,8 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     const a = agents.get(agentId);
     if (!a) return [];
     try {
-      return mcpSecretValues(store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames()).mcpServers);
+      // Spec 069 FR-009: the user list's values too (all of them, also one a folder extra shadows: masking more is safe).
+      return mcpSecretValues(deps.globalFor?.(agentId), store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames()).mcpServers);
     } catch {
       return []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
     }
@@ -144,23 +160,41 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, servers: [], live: false };
     const s = store();
+    const dis = new Set(s.ambientDisabled());
+    // Spec 069 FR-009/FR-011: each agent app's own list. Copilot loads the Copilot CLI list itself; Durbar passes Claude Code's list to
+    // Claude sessions; Codex reports its own list as the session runs (runtime rows).
+    const gn = deps.globalNames?.() ?? {};
+    const all = cli().servers;
     return agentMcpReply({
       a,
       ad: router.forAgent(a.id),
       live: live.get(a.id) ?? [],
       off: off.get(a.id) ?? new Set<string>(),
       secrets: secretValuesFor(a.id),
-      cli: cli().servers,
+      cli: all,
       extras: s.list(keyOf(a)),
-      ambientDisabled: new Set(s.ambientDisabled()),
+      ambientDisabled: dis,
       launchedOff: launched.get(a.id),
       switchedHere: touched.get(a.id),
+      app: deps.appOf?.(a.id),
+      claudeList: (gn.claude ?? []).map((n) => ({ name: n, enabled: !dis.has(claudeOffKey(n)) })),
+      toolsOff: s.toolsOffFor(keyOf(a)),
+      global: gn,
+      builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
     });
   });
   /** Spec 058 FR-021: restart one server of this agent's running session; one at a time per server. */
   const restarting = new Set<string>();
   ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
-    mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled()]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
+    mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
+  /** Spec 069 FR-061: the tools turned off for one server in this agent's folder (applies to new sessions and after Restart session). */
+  ipcHandle('agents:setMcpToolsOff', (_e, id: unknown, name: unknown, off: unknown) => {
+    const a = typeof id === 'string' ? agents.get(id) : undefined;
+    if (!a) return { ok: false, error: 'Unknown agent.' };
+    return store().setToolsOff(keyOf(a), name as string, off);
+  });
+  /** Spec 069 FR-032: the tools of one server of this agent's running session, masked and cut. */
+  ipcHandle('agents:mcpTools', (_e, id: unknown, name: unknown) => mcpToolsOp({ agents, router, secrets: secretValuesFor }, id, name));
   ipcHandle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
     const r = await setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled);
     if (r.ok && typeof id === 'string' && typeof name === 'string') { const t = touched.get(id) ?? new Set<string>(); t.add(name); touched.set(id, t); }
@@ -176,7 +210,9 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
       const r = store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames());
       launched.set(agentId, new Set(r.disabledMcpServers));
       touched.delete(agentId);
-      return { mcpServers: r.mcpServers, disabledMcpServers: r.disabledMcpServers };
+      // Spec 069 FR-009: the agent app's own user list that Durbar passes itself (Claude Code); a folder extra of the same name wins.
+      const toolsOff = store().toolsOffFor(keyOf(a)); // spec 069 FR-061/FR-062
+      return { mcpServers: mergeSessionServers(deps.globalFor?.(agentId) ?? {}, r.mcpServers, off.get(agentId)), disabledMcpServers: r.disabledMcpServers, ...(Object.keys(toolsOff).length ? { disabledMcpTools: toolsOff } : {}) };
     },
   };
 }

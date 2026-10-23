@@ -137,6 +137,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('setMcpEnabled'), cap.mcpToggle, M('C2', 'setMcpEnabled() <=> capabilities.mcpToggle'));
     assert.strictEqual(has('restartMcpServer'), !!cap.mcpRestart, M('C2', 'restartMcpServer() <=> capabilities.mcpRestart (spec 058 FR-012)'));
     if (cap.mcpRestart) assert.ok(cap.mcpToggle, M('C2', 'a per-server restart only exists where servers can be switched (spec 058 FR-012)'));
+    assert.strictEqual(has('listMcpTools'), !!cap.mcpTools, M('C2', 'listMcpTools() <=> capabilities.mcpTools (spec 069 FR-031)'));
     assert.strictEqual(has('handoffSummary'), !!cap.handoff, M('C2', 'handoffSummary() <=> capabilities.handoff'));
     assert.strictEqual(has('generateText'), !!cap.oneShot, M('C2', 'generateText() <=> capabilities.oneShot'));
     assert.strictEqual(has('setRemote'), !!cap.remote, M('C2', 'setRemote() <=> capabilities.remote (spec 054 FR-001)'));
@@ -347,13 +348,13 @@ const OMITTABLE: Record<OptionalMember, true> = {
   interrupt: true, resolvePermission: true, revokeGrant: true, setCap: true, resolveLimit: true, setMcpEnabled: true, setModel: true,
   cancelQueuedModel: true, compact: true, listModelOptions: true, listPreviousSessions: true, history: true, setPermMode: true,
   handoffSummary: true, generateText: true, deleteSession: true, renameSession: true, startMcpSignIn: true, cancelMcpSignIn: true,
-  restartMcpServer: true,
+  restartMcpServer: true, listMcpTools: true,
 };
 export const ALL_OPTIONAL = Object.keys(OMITTABLE) as OptionalMember[];
 /** Optional `AgentAdapter` members FakeAdapter does not implement (so it cannot omit them): fields, and methods no fake test needs yet. */
 const NOT_IN_FAKE = [
   'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'selectAgentProfile', 'setRemote',
-  'authStatus', 'verifySignIn', 'refreshAuth', 'resumeIdOf',
+  'authStatus', 'verifySignIn', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand',
 ];
 
 /** The optional members of `interface AgentAdapter`, read from `src/adapters/types.ts` with the TypeScript parser (no hand-kept copy). */
@@ -379,7 +380,7 @@ function checkOptionalLists(): void {
   const fn = (ad: FakeAdapter, m: string): boolean => typeof (ad as unknown as Record<string, unknown>)[m] === 'function';
   const bare = new FakeAdapter({ omit: ALL_OPTIONAL });
   assert.deepStrictEqual(inIface.filter((m) => fn(bare, m)), [], 'fake-bare has no optional AgentAdapter method');
-  const full = new FakeAdapter({ capabilities: { deleteSession: true, renameSession: 'any', mcpSignIn: true, mcpRestart: true } });
+  const full = new FakeAdapter({ capabilities: { deleteSession: true, renameSession: 'any', mcpSignIn: true, mcpRestart: true, mcpTools: true } });
   assert.deepStrictEqual(ALL_OPTIONAL.filter((m) => !fn(full, m)), [], 'FakeAdapter implements every member in ALL_OPTIONAL');
   assert.deepStrictEqual(NOT_IN_FAKE.filter((m) => fn(full, m)), [], 'a member FakeAdapter implements belongs in OptionalMember, not NOT_IN_FAKE');
 }

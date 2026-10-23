@@ -13,6 +13,8 @@
  *   - a unit that does not contain its own desk and helpers,
  *   - a helper strip with a background, border or a height that is not its content's (the 2026-10-16 `.strip` collision),
  *   - the floor scrolling or the page overflowing (stage data-fit must be ok), text below 10.5px,
+ *   - the fixed lobby tiles (spec 001 FR-034/FR-035/FR-038/FR-039): the Boss not in the middle of the row, the coffee corner, Bank and Postbox not last in that order;
+ *   - who is at a place (spec 001 FR-036): visitor entries that overlap, stick out of their tile or entry, have no name or tooltip, a count that is not the number of visitors;
  *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room or the door plates, not holding its places (5 plus the custom ones, spec 024 FR-026), more than one row of tiles, a missing Add button below 8 tiles or one at 8, a place or slot
  *     sticking out of its tile, a walking figure that is not standing on a slot once the walks have settled, or more figures than empty chairs.
  *   - room headers (spec 001 FR-023/FR-024, also `simrooms=solo`: one agent per folder): two header parts overlapping, or one leaving its header;
@@ -90,18 +92,39 @@ function pageCheck(expanded, expectPlaces) {
       if (ox > T && oy > T) problems.push(`lobby overlaps ${name(e)} by ${ox.toFixed(1)}x${oy.toFixed(1)}px`);
     });
     const places = [...lobby.querySelectorAll('.place')];
-    if (places.length !== expectPlaces) problems.push(`lobby has ${places.length} places, not ${expectPlaces}`);
+    /* spec 001 FR-039: the Boss in the middle of the row; the coffee corner (spec 068), the Bank and the Postbox (when the app has schedules) last */
+    const ids = places.map((pl) => pl.dataset.place), post = ids.includes('postbox') ? 1 : 0, tail = post ? ['coffee', 'bank', 'postbox'] : ['coffee', 'bank'];
+    if (ids.slice(-tail.length).join() !== tail.join()) problems.push(`the lobby does not end with ${tail.join(', ')}: ${ids.join(', ')}`);
+    if (ids.filter((x) => x === 'boss').length !== 1 || ids.indexOf('boss') !== Math.min(expectPlaces, Math.floor((expectPlaces + tail.length + 1) / 2))) problems.push(`the Boss is not in the middle of the lobby: ${ids.join(', ')}`);
+    if (places.length !== expectPlaces + 3 + post) problems.push(`lobby has ${places.length} tiles, not ${expectPlaces} places, the Boss, the coffee corner, the Bank${post ? ' and the Postbox' : ''}`);
     /* spec 024 FR-022: custom places make tiles narrower, never a second row; the Add button is there below 8 tiles and gone at 8 */
     const tops = new Set(places.map((pl) => Math.round(R(pl).y)));
     if (tops.size > 1) problems.push(`lobby tiles are on ${tops.size} rows, not one`);
-    if (L.h > 38) problems.push(`lobby is ${L.h.toFixed(0)}px tall, not 36`);
+    if (L.h > 60 || L.h < 56) problems.push(`lobby is ${L.h.toFixed(0)}px tall, not 58`); /* spec 001 FR-036: a header row and the visitors under it */
     const addBtns = lobby.querySelectorAll('.place-add');
-    if (addBtns.length !== (places.length < 8 ? 1 : 0)) problems.push(`${addBtns.length} Add buttons with ${places.length} places`);
+    if (addBtns.length !== (expectPlaces < 8 ? 1 : 0)) problems.push(`${addBtns.length} Add buttons with ${expectPlaces} places`);
     addBtns.forEach((b) => { inside(b, L, 'the lobby'); if (!b.getAttribute('aria-label')) problems.push('the Add button has no accessible name'); });
     /* spec 052 FR-013: a themed place may add its plain name, "Cartridge Bay (Software library): …" */
     const fullName = (t, n) => t.startsWith(n + ':') || t.startsWith(n + ' (');
-    places.forEach((pl) => { const n = pl.querySelector('.pn'); if (!n || !fullName(pl.getAttribute('aria-label'), n.textContent) || !fullName(pl.title, n.textContent)) problems.push(`place ${pl.dataset.place}: its full name is not in the tooltip and the label`); });
-    places.forEach((pl) => { inside(pl, L, 'the lobby'); pl.querySelectorAll('.pic, .pn, .prow, .slot').forEach((e) => inside(e, R(pl), 'its place ' + pl.dataset.place)); });
+    places.forEach((pl) => { const n = pl.querySelector('.pn'); if (pl.classList.contains('unnamed')) { if (!/: /.test(pl.getAttribute('aria-label') || '') || !pl.title) problems.push(`the unnamed ${pl.dataset.place} tile has no label`); return; } if (!n || !fullName(pl.getAttribute('aria-label'), n.textContent) || !fullName(pl.title, n.textContent)) problems.push(`place ${pl.dataset.place}: its full name is not in the tooltip and the label`); });
+    places.forEach((pl) => { inside(pl, L, 'the lobby'); pl.querySelectorAll('.pic, .pn, .pc, .bw, .prow, .slot, .pv, .pb-l, .pb-r, .pb-line').forEach((e) => inside(e, R(pl), 'its place ' + pl.dataset.place)); });
+    /* spec 001 FR-036: who is at a place: entries do not overlap, each shows a name (or initials) that is not cut to nothing, and its tooltip names the agent */
+    places.forEach((pl) => {
+      const pv = [...pl.querySelectorAll('.pv')].map((e) => [e, R(e)]);
+      for (let i = 0; i < pv.length; i++) for (let j = i + 1; j < pv.length; j++) { const p = pv[i][1], q = pv[j][1]; const ox = Math.min(p.r, q.r) - Math.max(p.x, q.x), oy = Math.min(p.b, q.b) - Math.max(p.y, q.y); if (ox > T && oy > T) problems.push(`place ${pl.dataset.place}: visitor entries overlap`); }
+      pv.forEach(([e]) => {
+        const n = e.querySelector('.pv-n');
+        if (e.classList.contains('pv-more')) { if (!/^\d+ more at /.test(e.getAttribute('aria-label') || '') || !(e.title || '').trim()) problems.push(`place ${pl.dataset.place}: "+N" without its names`); return; }
+        if (!n || !n.textContent.trim()) { problems.push(`place ${pl.dataset.place}: a visitor entry without a name`); return; }
+        const cut = n.scrollWidth > n.clientWidth + 0.5;
+        if (cut && (n.classList.contains('pv-i') || n.clientWidth < 18)) problems.push(`place ${pl.dataset.place}: the name "${n.textContent}" is cut to ${n.clientWidth}px`);
+        if (!(e.title || '').trim()) problems.push(`place ${pl.dataset.place}: a visitor entry without a tooltip`);
+        [...e.querySelectorAll('.pv-n, .pv-a, .slot')].forEach((t) => inside(t, R(e), `a visitor entry at ${pl.dataset.place}`));
+      });
+      const shown = pl.querySelectorAll('.pv:not(.pv-more)').length, more = pl.querySelector('.pv-more'), n = more ? shown + parseInt(more.textContent.replace(/[^0-9]/g, ''), 10) : shown;
+      const count = pl.querySelector('.pc');
+      if ((count ? parseInt(count.textContent, 10) : 0) !== n) problems.push(`place ${pl.dataset.place}: count ${count ? count.textContent : 'none'} but ${n} visitors`);
+    });
     const slots = [...lobby.querySelectorAll('.slot.on')].map(R);
     const walkers = [...document.querySelectorAll('#walkers .walker')];
     walkers.forEach((w) => {
@@ -286,7 +309,7 @@ async function driver(ctx) {
     await forceFonts(w, h);
     await sleep(500);
     /* spec 024: agents go to the lobby after 600 ms and the walk takes about 1 s: wait until somebody is there and nobody is walking */
-    try { await ctx.waitFor(`!!document.querySelector('.place.busy')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await sleep(150); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
+    try { await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await sleep(150); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
   };
   /* spec 024 T027 (#406): a figure that is still walking (the renderer marks it `.walking`; under load that mark can end while the CSS transition is still running, so a running transition on the figure counts as walking too) is not on a slot yet, and under load
      the walk can still be going when the case is measured. Re-measure while a figure is walking, in small steps for up to SETTLE_MS; a figure
@@ -384,14 +407,20 @@ async function driver(ctx) {
       }
     }
   }
-  /* spec 059 FR-016 (SC-005): every main agent carries a 60-character user name, both sizes; the run fails when no card shows one */
+  /* spec 059 FR-016 (SC-005): every main agent carries a 60-character user name, both sizes; the run fails when no card shows one. sim 3 is the full layout (FR-019: the URL-like name must stay in its 164px card) */
   for (const [w, h] of SIZES) {
-    for (const sim of [12, 15]) {
+    for (const sim of [3, 12, 15]) {
       if (!mine()) continue;
-      await run(`long names sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simnames=long`, w, h, sim === 15 ? `names-sim15-${w}x${h}` : '');
+      await run(`long names sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simnames=long${sim === 3 ? '&density=full' : ''}`, w, h, sim === 15 ? `names-sim15-${w}x${h}` : '');
       const shown = await ctx.js(`[...document.querySelectorAll('#stage .desk .name')].some((n)=>n.textContent.length>=50)`);
       total++;
       if (!shown) { failed++; console.log(`FAIL long names sim${sim}-${w}x${h}: no long name on any card`); }
+      /* spec 059 FR-019 (issue #536): one name is a single URL-like token; no card name may leave its card (checked on the card, on its own box, and by scrollWidth) */
+      const stray = await ctx.js(`[...document.querySelectorAll('#stage .desk .name')].filter((n)=>{const c=n.closest('.desk').getBoundingClientRect(),b=n.getBoundingClientRect();return b.right>c.right+0.5||b.left<c.left-0.5||(n.matches('.who .name')&&(n.scrollWidth>n.clientWidth+1||b.height>2*parseFloat(getComputedStyle(n).lineHeight)+1));}).map((n)=>n.textContent.slice(0,30))`);
+      const url = await ctx.js(`[...document.querySelectorAll('#stage .desk .name')].some((n)=>n.textContent.includes('https://example.invalid/'))`);
+      total++;
+      if (!url) { failed++; console.log(`FAIL long names sim${sim}-${w}x${h}: no URL-like name on any card`); }
+      else if (stray.length) { failed++; console.log(`FAIL long names sim${sim}-${w}x${h}: name leaves its card: ${JSON.stringify(stray)}`); }
     }
   }
   /* spec 001/002 deltas 2026-10-18 (issue #126): main agents with session titles (one long enough to be ellipsized), both sizes;
@@ -482,6 +511,18 @@ async function driver(ctx) {
     if (!mine()) continue;
     const tag = `kinds ${w}x${h} mixed kinds`;
     await run(tag, 'sim=15&simfreeze=1&simkinds=mixed', w, h, shotsDir ? `kinds-${w}x${h}-mixed` : '');
+    /* spec 001 FR-023 (change 2026-10-23, the merge-queue flake on 7a756cb8): the office is laid out before a room's siren arrives (it comes
+       with the moods, after the first layout), then the siren is drawn without a new layout key. Every header must still hold its parts. */
+    {
+      const frames = 'await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))';
+      const late = await ctx.js(`(async()=>{const u=window.__durbarSimUi;const sirens=()=>document.querySelectorAll('#stage .room-head .siren').length;const before=sirens();
+        u.quietHeads(['siren']);u.render();${frames};const quiet=sirens();u.quietHeads([]);u.paint();${frames};return {before,quiet,after:sirens()};})()`);
+      const r = await ctx.js(`(${pageCheck.toString()})(false, ${expectPlaces})`);
+      const P = r.problems.filter((p) => /^header (part|of)/.test(p));
+      if (!late.before || late.quiet || late.after !== late.before) P.unshift(`the late-siren hook did not work ${JSON.stringify(late)}`);
+      total++;
+      if (P.length) { failed++; console.log(`FAIL ${tag} late siren: ${P.slice(0, 4).join('; ')}`); }
+    }
     /* spec 052 (2026-10-21): the card and full densities with dollar estimates (where a cut cost was found at 1280x800) */
     /* forced densities do not fit 15 agents (the app picks the density itself), so only the card-contents rule applies here */
     for (const dens of ['card', 'full']) {
@@ -524,6 +565,20 @@ async function driver(ctx) {
     }
     const strip = document.getElementById('stripList');
     if (strip && R(strip).right > innerWidth + 1) P.push('the agent strip leaves the window');
+    /* spec 005 FR-037..FR-040: the chat settings are one row under the message box, inside the window, nothing overlapping; the
+       Send / Stop slot sits inside the box */
+    const bar = document.getElementById('cToolbar'), row = document.getElementById('ctItems'), box = document.querySelector('#panel .inbox');
+    if (bar && row && box && bar.getClientRects().length) {
+      if (R(bar).top < R(box).bottom - 0.5) P.push('the chat settings are not under the message box');
+      if (row.scrollWidth > row.clientWidth + 1) P.push('the chat settings row overflows');
+      const ks = [...bar.querySelectorAll('#ctItems > .ct > *, #ctMoreBtn')].filter((c) => c.getClientRects().length && R(c).width > 0);
+      for (const c of ks) { const r = R(c); if (r.left < -1 || r.right > innerWidth + 1) P.push(`${c.id || c.className} leaves the window`); }
+      for (let i = 0; i < ks.length; i++) for (let j = i + 1; j < ks.length; j++) {
+        const a = R(ks[i]), b = R(ks[j]); if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > T && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > T) P.push(`${ks[i].id} overlaps ${ks[j].id}`);
+      }
+      const slot = document.getElementById('runSlot');
+      if (!slot || !box.contains(slot)) P.push('the Send / Stop slot is not in the message box');
+    }
     /* spec 052 FR-139: a main agent's header has + New next to Previous, named "New session in <folder>", on the same row as
        the other actions and as the chips (the header does not wrap) */
     const nb = document.getElementById('newSessHdrBtn');

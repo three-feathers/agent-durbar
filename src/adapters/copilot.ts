@@ -29,11 +29,16 @@ import { EventMapper } from './map';
 import type { EventBody, RawEvent } from './map';
 import { compactResultFrom, modelConfig, modelOptionFrom, runtimeMessage, sdkTier, switchResultFrom } from './copilotmodel';
 import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel';
-import { PermissionBroker, isInsideRoots, startModeOf } from './permissions';
+import { PermissionBroker, isInsideRoots, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
-import type { AgentProfile, PlanAnswer } from './types';
+import type { AgentProfile, PlanAnswer, SlashCommand } from './types';
+import type { McpToolInfo } from './types';
+import { normMcpTools } from './mcptools';
+import { copilotHomeDir, copilotSlashPlaces, SlashCache } from './slashcommands';
+import type { SlashPlace } from './slashcommands';
 import { cleanPlanText } from './plan';
+import { copilotQuotaReset } from './usagelimit';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import { unpackedRuntimePath } from './runtime';
@@ -155,6 +160,8 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true,
   mcpStart: 'next-message', // spec 058 FR-010 (real 2026-10-21, runtime 1.0.22: the servers start with the first message, not at create or resume)
   mcpToggleApplies: 'live', // spec 019 (real: mcp.enable/disable)
+  mcpToolFilter: true, // spec 069 FR-062: session excludedTools (read: SDK types; not run on a real account)
+  mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
@@ -232,6 +239,13 @@ export const ONE_SHOT_TIMEOUT_MS = 180_000;
  * switched off by name, no skills, custom agents, discovered config, instructions, hooks, git context, memory, session store or
  * infinite-session workspace, an empty temp folder as the working directory, and the cheapest `auto` routing (as a new `auto` session).
  */
+/** Spec 069 FR-062: Copilot's filter strings for the tools turned off in Durbar (`mcp:<server>-<tool>`). */
+export function copilotExcludedTools(off: Readonly<Record<string, readonly string[]>> | undefined): string[] {
+  const out: string[] = [];
+  for (const [server, tools] of Object.entries(off ?? {})) for (const t of tools ?? []) if (typeof t === 'string' && t) out.push(`mcp:${server}-${t}`);
+  return out.slice(0, 5000);
+}
+
 export function oneShotConfig(dir: string, disabledMcpServers: readonly string[] = []): Record<string, unknown> {
   return {
     workingDirectory: dir,
@@ -486,9 +500,11 @@ export class CopilotAdapter implements AgentAdapter {
     const { cwd, folders } = resolveWorkspaceCwd(options.workspace);
     const client = await this.getClient();
     let sid = options.resumeSessionId ?? options.sessionId ?? '';
+    const blocked = mcpToolBlockList(options.disabledMcpTools); // spec 069 FR-063
     const broker = new PermissionBroker({
       roots: [cwd, ...folders],
       mode: startModeOf(options),
+      blockedTools: () => blocked,
       beforeWrite: (paths) => this.writeGuard?.(sid, paths) ?? Promise.resolve(), // spec 065 FR-001
       emit: (e: BrokerEvent) => {
         switch (e.type) {
@@ -588,6 +604,9 @@ export class CopilotAdapter implements AgentAdapter {
       // `disabledMcpServers` switches those off by name. Values (env, headers) are secrets: never logged, only names.
       ...(options.mcpServers && Object.keys(options.mcpServers).length ? { mcpServers: options.mcpServers as unknown as Record<string, MCPServerConfig> } : {}),
       ...(options.disabledMcpServers?.length ? { disabledMcpServers: options.disabledMcpServers } : {}),
+      // spec 069 FR-062: single MCP tools turned off in Durbar; `excludedTools` "always takes precedence" (read: SDK 1.0.22 types.d.ts), MCP
+      // tools by the runtime's wire name `<server>-<tool>` (read: toolSet.d.ts addMcp("github-list_issues")); not run on a real account
+      ...(copilotExcludedTools(options.disabledMcpTools).length ? { excludedTools: copilotExcludedTools(options.disabledMcpTools) } : {}),
       // AI-credit cap (spec 011): the SDK calls it "AI Credits"; the app treats 1 AIU = 1 credit. `sessionLimits` is @experimental in SDK 1.0.22.
       ...(options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? { sessionLimits: { maxAiCredits: options.maxAiCredits } } : {}),
       onPermissionRequest,
@@ -736,6 +755,25 @@ export class CopilotAdapter implements AgentAdapter {
     for (const q of [...(live.questions?.values() ?? [])]) q.resolve(null);
     for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop / End reject an open plan
     cancelElicitations(live.elicitations);
+  }
+
+  /**
+   * Spec 073 FR-004/FR-009: the folder's and the user's skills, read by Durbar (the session has no config discovery, so the runtime does
+   * not load them; real 2026-10-22). No built-ins: `session.send` hands a typed built-in to the model as text (real 2026-10-22).
+   */
+  private readonly slash = new SlashCache();
+  private slashPlaces(live: { cwd: string; folders?: string[] }): SlashPlace[] {
+    return copilotSlashPlaces([live.cwd, ...(live.folders ?? [])], copilotHomeDir());
+  }
+
+  async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
+    const live = this.sessions.get(sessionId);
+    return live ? this.slash.list(this.slashPlaces(live), { refresh: true }) : []; // the window opening its list: read afresh
+  }
+
+  async expandSlashCommand(sessionId: string, text: string): Promise<{ text: string; where: string } | undefined> {
+    const live = this.sessions.get(sessionId);
+    return live ? this.slash.expand(text, () => this.slashPlaces(live)) : undefined; // no IO unless the text is a `/name` line
   }
 
   /** spec 043 FR-002: the session's selectable custom agents (`rpc.agent.list`, @experimental). */
@@ -1187,6 +1225,20 @@ export class CopilotAdapter implements AgentAdapter {
     await mcp.enable({ serverName: name });
   }
 
+  /** Spec 069 FR-031: a live `tools/list` through the runtime; it throws when the server is not connected. */
+  async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
+    const live = this.sessions.get(sessionId);
+    if (!live) throw new Error('This session is not running. Send a message to start it.');
+    const mcp = live.session.rpc.mcp as unknown as { listTools?: (p: { serverName: string }) => Promise<{ tools?: unknown }> };
+    if (typeof mcp.listTools !== 'function') throw new Error('This Copilot version cannot list a server\'s tools.');
+    try {
+      const r = await mcp.listTools({ serverName: name });
+      return normMcpTools(r?.tools);
+    } catch (err) {
+      throw new Error(sdkErrorText(err));
+    }
+  }
+
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
     this.sessions.get(sessionId)?.broker.resolve(requestId, approve, remember, broad);
   }
@@ -1220,11 +1272,31 @@ export class CopilotAdapter implements AgentAdapter {
     for (const l of this.listeners) l(event);
   }
 
+  /**
+   * Spec 068 FR-002: the premium-request quota is used up but the error said nothing about when it resets: ask `account.getQuota` once
+   * (a read that spends nothing, spec 012 FR-156) and send the same break again with the reset date. Best effort: any failure keeps the
+   * break without a time ("resets later").
+   */
+  private async quotaReset(sid: string, body: EventBody & { type: 'usageLimit' }): Promise<void> {
+    try {
+      const client = await this.getClient();
+      const rpc = (client as unknown as { rpc?: { account?: { getQuota?: (p: object) => Promise<unknown> } } }).rpc;
+      if (typeof rpc?.account?.getQuota !== 'function') return;
+      const r = copilotQuotaReset(await rpc.account.getQuota({}));
+      if (r && this.sessions.has(sid)) this.emit(sid, { ...body, resetsAt: r.resetsAt, ...(r.estimated ? { estimated: true } : {}), update: true }); // update: ignored when the break already ended (Try now, a message)
+    } catch (e) {
+      this.debug?.(`quota reset not read: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   /** SDK SessionEvent -> normalized event(s): see map.ts (pure, unit-tested with recorded fixtures). */
   private mapperFor(sid: string): EventMapper {
     let m = this.mappers.get(sid);
     if (!m) {
-      m = new EventMapper((body) => this.emit(sid, body));
+      m = new EventMapper((body) => {
+        this.emit(sid, body);
+        if (body.type === 'usageLimit' && body.scope === 'quota' && !body.resetsAt) void this.quotaReset(sid, body);
+      });
       this.mappers.set(sid, m);
     }
     return m;

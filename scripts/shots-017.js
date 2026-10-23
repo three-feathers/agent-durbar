@@ -159,7 +159,7 @@ module.exports = async (ctx) => {
     await load(w, h, { open: 'sim-1' });
     await ctx.waitFor(`document.getElementById('newSessBtn')`, 5000);
     // Copilot keeps every control the capability gates could hide (FR-061): Stop, cap chip, mode menu with 3 modes, history box
-    assert.ok(await js(`(()=>{const e=document.getElementById('stopBtn');return !!e&&!e.hidden&&e.getClientRects().length>0})()`), `${w}: Copilot keeps the Stop button`);
+    assert.ok(await js(`(()=>{const e=document.getElementById('stopBtn');return !!e&&!!e.closest('#runSlot')})()`), `${w}: Copilot keeps the Stop button (in the message box, shown while a turn runs: spec 005 FR-038)`);
     assert.ok(await js(`(()=>{const e=document.getElementById('capChip');return !!e&&e.getClientRects().length>0})()`), `${w}: Copilot keeps the cap chip`);
     assert.ok(await js(`!!document.getElementById('modeChip')`), `${w}: Copilot keeps the mode chip`);
     await js(`document.getElementById('modeChip').click()`);

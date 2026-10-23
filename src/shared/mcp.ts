@@ -74,6 +74,12 @@ export interface McpTrustInfo {
 }
 
 export const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,47}$/;
+/**
+ * Spec 069 FR-063 (change 2026-10-22): an MCP tool name Durbar can turn off. Every agent app's own filter takes such a name (Claude Code
+ * `--disallowedTools mcp__<server>__<tool>` cannot carry a comma or a space); a tool with any other character cannot be turned off,
+ * because Claude Code in Allow all never asks Durbar's broker. The renderer keeps a copy of this pattern (`screens.js`).
+ */
+export const MCP_TOOL_OFF_RE = /^[A-Za-z0-9_.-]{1,128}$/;
 export const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 export const HEADER_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 export const MAX_SERVERS = 100;

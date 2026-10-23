@@ -10,7 +10,7 @@ import { isObj } from '../shared/guards';
 const NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** `{mcp_servers: {...}}` for the thread `config`, or undefined when there is nothing to say. Disabled names get `enabled: false`. */
-export function codexMcpConfig(servers: Readonly<Record<string, McpServerSpec>> | undefined, disabled: readonly string[] = []): { mcp_servers: Record<string, Record<string, unknown>> } | undefined {
+export function codexMcpConfig(servers: Readonly<Record<string, McpServerSpec>> | undefined, disabled: readonly string[] = [], toolsOff: Readonly<Record<string, readonly string[]>> = {}): { mcp_servers: Record<string, Record<string, unknown>> } | undefined {
   const out: Record<string, Record<string, unknown>> = {};
   for (const [name, s] of Object.entries(servers ?? {})) {
     if (!NAME.test(name) || !isObj(s)) continue;
@@ -28,6 +28,12 @@ export function codexMcpConfig(servers: Readonly<Record<string, McpServerSpec>> 
     }
   }
   for (const name of disabled) if (NAME.test(name)) out[name] = { ...(out[name] ?? {}), enabled: false };
+  // spec 069 FR-062: single tools turned off in Durbar, for Durbar's own servers and as an override of the user's (real: codex-cli 0.163.0,
+  // 2026-10-22: a `-c` override of `disabled_tools` hides the tool in `mcpServerStatus/list`; this thread/start path not run)
+  for (const [name, tools] of Object.entries(toolsOff)) {
+    const list = (tools ?? []).filter((t) => typeof t === 'string' && t).slice(0, 500);
+    if (NAME.test(name) && list.length) out[name] = { ...(out[name] ?? {}), disabled_tools: list };
+  }
   return Object.keys(out).length ? { mcp_servers: out } : undefined;
 }
 
