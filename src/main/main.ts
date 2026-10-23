@@ -159,6 +159,7 @@ const mcp = registerMcpIpc({
   log: (a, action) => logActivity(a, 'mcp-restart', action),
   openUrl: (url) => shell.openExternal(url), // spec 058 FR-065: the held sign-in page, only after the user's click
   globalNames: () => Object.fromEntries(globalLists.state(() => []).apps.map((x) => [x.app, x.servers.map((v) => v.name)])),
+  codexServers: () => globalLists.sessionServers('codex', new Set()), // spec 058 FR-185: only its `url` is read (the "different site" line)
 });
 registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
 /** Files the user picked through the native dialog; only these can be attached. */

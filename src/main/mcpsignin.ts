@@ -11,11 +11,14 @@ import { elicitHttpsUrl } from '../shared/elicit';
 import type { AdapterRouter } from '../adapters/router';
 import type { McpServerStatus } from '../adapters/types';
 import type { AgentInfo, McpOpenSignInResult, McpSignInStartResult } from '../shared/api';
+import { validSignInEnd } from '../adapters/eventguard';
 import { maskMcpError } from './mcpmask';
 import { needsSignIn, validServerName } from './mcpsession';
 
-/** FR-065: how long main keeps an address; the runtime's own listener ends on its own (`[KNOWN GAP]`, how long). */
+/** FR-065: how long main keeps an address at most; the runtime's own listener ends on its own. FR-180: an entry with a `ttlMs` keeps its own, shorter limit. */
 export const SIGN_IN_TTL_MS = 10 * 60 * 1000;
+/** FR-176: for this long after a sign-in started, a dialog open or a window focus reads the server list once (a finish after Cancel shows). */
+export const RECENT_SIGN_IN_MS = 5 * 60 * 1000;
 /** At most this many open sign-ins in all (a window cannot fill memory with them). */
 export const MAX_SIGN_INS = 64;
 
@@ -23,6 +26,8 @@ interface Entry {
   url: string;
   host: string;
   at: number;
+  /** FR-180: this entry's own limit (`min(ttlMs, 10 minutes)`). */
+  ttl: number;
   opened: boolean;
   /** FR-075: the server's own host, set only when the sign-in page is on a different site than the server. */
   otherSite?: string;
@@ -51,6 +56,32 @@ export function signInSiteNote(serverUrl: string | undefined, pageHost: string):
   } catch {
     return undefined;
   }
+}
+
+/** FR-185: where each agent app's servers come from, read lazily (only the lists the agent's app uses are read). */
+export interface ServerUrlSources {
+  /** This folder's extras in Agent Durbar. */
+  extras(): ReadonlyArray<{ name: string; url?: string }>;
+  /** The Copilot CLI list (`~/.copilot/mcp-config.json`). */
+  copilot(): ReadonlyArray<{ name: string; url?: string }>;
+  /** Claude Code's user list as Durbar passes it to a Claude session (spec 069 FR-009, `globalFor`). */
+  claude(): Readonly<Record<string, { url?: string }>>;
+  /** Codex's own `config.toml` entries as spec 069's `GlobalLists` reads them. */
+  codex(): Readonly<Record<string, { url?: string }>>;
+}
+/**
+ * Spec 058 FR-185 (T157; a bug in #598): the server's own address for the "different site" line, from the lists **this agent's app**
+ * uses: Copilot: folder extras, then the Copilot CLI list; Claude Code: folder extras, then its user list; Codex: folder extras, then its
+ * `config.toml`. Another app's list is never consulted, and no match means no line (never a line against the wrong server).
+ */
+export function serverUrlFor(app: string | undefined, name: string, src: ServerUrlSources): string | undefined {
+  const extra = src.extras().find((v) => v.name === name)?.url;
+  if (extra !== undefined) return extra;
+  const own = (m: Readonly<Record<string, { url?: string }>>): string | undefined => (Object.prototype.hasOwnProperty.call(m, name) ? m[name]?.url : undefined);
+  if (app === 'copilot') return src.copilot().find((v) => v.name === name)?.url;
+  if (app === 'claude') return own(src.claude());
+  if (app === 'codex') return own(src.codex());
+  return undefined;
 }
 
 /**
@@ -106,6 +137,8 @@ export class McpSignInStore {
     return had;
   }
   private readonly pending = new Set<string>();
+  /** FR-176: when a sign-in of each server last started (a browser page was held), kept for 5 minutes; nothing else. */
+  private readonly attempts = new Map<string, number>();
   constructor(
     private readonly now: () => number,
     private readonly openUrl: (url: string) => Promise<void>,
@@ -118,7 +151,7 @@ export class McpSignInStore {
   private live(agentId: string, name: string): Entry | undefined {
     const k = McpSignInStore.key(agentId, name);
     const e = this.entries.get(k);
-    if (e && this.now() - e.at >= this.ttlMs) {
+    if (e && this.now() - e.at >= e.ttl) {
       this.del(k);
       return undefined;
     }
@@ -126,7 +159,8 @@ export class McpSignInStore {
   }
   /** Drop every entry past the limit (called when one is added, so the map cannot grow without bound). */
   private sweep(): void {
-    for (const [k, e] of [...this.entries]) if (this.now() - e.at >= this.ttlMs) this.del(k);
+    for (const [k, e] of [...this.entries]) if (this.now() - e.at >= e.ttl) this.del(k);
+    for (const [k, at] of [...this.attempts]) if (this.now() - at >= RECENT_SIGN_IN_MS) this.attempts.delete(k);
   }
   has(agentId: string, name: string): boolean {
     return !!this.live(agentId, name);
@@ -142,16 +176,34 @@ export class McpSignInStore {
   release(agentId: string, name: string): void {
     this.pending.delete(McpSignInStore.key(agentId, name));
   }
-  /** Hold an address that already passed `elicitHttpsUrl`. False when one is open for this server (one at a time). */
-  begin(agentId: string, name: string, url: string, host: string, otherSite?: string): boolean {
+  /**
+   * Hold an address that already passed `elicitHttpsUrl`. False when one is open for this server (one at a time). FR-180: `ttlMs` (the
+   * agent app's own listener time, from the adapter) shortens the limit; missing or not a positive number = 10 minutes.
+   */
+  begin(agentId: string, name: string, url: string, host: string, otherSite?: string, ttlMs?: number): boolean {
     this.sweep();
     if (this.live(agentId, name) || this.entries.size >= MAX_SIGN_INS) return false;
-    this.entries.set(McpSignInStore.key(agentId, name), { url, host, at: this.now(), opened: false, ...(otherSite ? { otherSite } : {}) });
+    const ttl = typeof ttlMs === 'number' && Number.isFinite(ttlMs) && ttlMs > 0 ? Math.min(ttlMs, this.ttlMs) : this.ttlMs;
+    const k = McpSignInStore.key(agentId, name);
+    this.entries.set(k, { url, host, at: this.now(), ttl, opened: false, ...(otherSite ? { otherSite } : {}) });
+    this.attempts.delete(k); // newest last: the cap below drops the oldest
+    this.attempts.set(k, this.now());
+    if (this.attempts.size > MAX_SIGN_INS) this.attempts.delete(this.attempts.keys().next().value as string);
     return true;
+  }
+  /** FR-176: servers of this agent whose sign-in started within the last 5 minutes and is no longer held (Cancel, the time limit). */
+  recent(agentId: string): string[] {
+    this.sweep();
+    const out: string[] = [];
+    for (const k of this.attempts.keys()) {
+      const [a, n] = splitKey(k);
+      if (a === agentId && !this.entries.has(k)) out.push(n);
+    }
+    return out;
   }
   view(agentId: string, name: string): SignInView | undefined {
     const e = this.live(agentId, name);
-    return e ? { host: e.host, opened: e.opened, expiresInMs: Math.max(0, this.ttlMs - (this.now() - e.at)), ...(e.otherSite ? { otherSite: e.otherSite } : {}) } : undefined;
+    return e ? { host: e.host, opened: e.opened, expiresInMs: Math.max(0, e.ttl - (this.now() - e.at)), ...(e.otherSite ? { otherSite: e.otherSite } : {}) } : undefined;
   }
   /** Open the held address in the system browser: re-checked here, only after the user's click (FR-065). */
   async open(agentId: string, name: string, shownHost: unknown): Promise<'opened' | 'gone' | 'refused' | 'failed'> {
@@ -179,14 +231,21 @@ export class McpSignInStore {
   /** End session, Restart session and an agent that is gone: every sign-in of that agent. */
   dropAgent(agentId: string): void {
     for (const k of [...this.entries.keys()]) if (k.startsWith(`${agentId}\0`)) this.del(k);
+    for (const k of [...this.attempts.keys()]) if (k.startsWith(`${agentId}\0`)) this.attempts.delete(k);
   }
   /** App exit. */
   clear(): void {
     for (const k of [...this.entries.keys()]) this.del(k);
+    this.attempts.clear();
   }
-  /** `mcp` event: a server the runtime now reports connected has finished its sign-in. */
+  /** `mcp` event: a server the runtime now reports connected has finished its sign-in; FR-180: so has one the adapter marks with a `signInEnd`. */
   onServers(agentId: string, servers: readonly McpServerStatus[]): void {
-    for (const s of servers) if (s.status === 'connected') this.drop(agentId, s.name);
+    for (const s of servers) {
+      if (s.status === 'connected' || validSignInEnd(s.signInEnd)) {
+        this.drop(agentId, s.name);
+        this.attempts.delete(McpSignInStore.key(agentId, s.name));
+      }
+    }
   }
 }
 
@@ -253,7 +312,8 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
       return { ok: false, manual: true, error: 'Agent Durbar opens only https sign-in pages, and this one is not.' };
     }
     const otherSite = signInSiteNote(d.serverUrl?.(a.id, name), u.host);
-    if (!store.begin(a.id, name, u.url, u.host, otherSite)) return { ok: false, error: 'Too many sign-ins are open. Cancel one first.' };
+    // FR-180: the app's listener time, when the adapter knows it (the store caps it at 10 minutes and ignores a bad value)
+    if (!store.begin(a.id, name, u.url, u.host, otherSite, r.ttlMs)) return { ok: false, error: 'Too many sign-ins are open. Cancel one first.' };
     return { ok: true, kind: 'browser', host: u.host, ...(otherSite ? { otherSite } : {}) };
   } finally {
     store.release(a.id, name);

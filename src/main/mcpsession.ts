@@ -6,6 +6,7 @@
  * Nothing here knows a vendor: it only calls `AgentAdapter` members and reads `capabilities` (constitution II).
  */
 import { isAuthError } from '../adapters/autherrors';
+import { validSignInEnd } from '../adapters/eventguard';
 import type { AdapterRouter } from '../adapters/router';
 import type { AgentAdapter, McpServerStatus } from '../adapters/types';
 import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRestartResult, McpRestartSessionResult } from '../shared/api';
@@ -85,9 +86,16 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     // FR-065/FR-068: a row that reads Needs sign-in, on, in a running session; the steps are the agent app's own text (missing = none)
     const needs = isLive && on && needsSignIn(st);
     const canSignIn = needs && typeof ad?.startMcpSignIn === 'function';
-    const steps = needs && ad?.capabilities.mcpSignIn ? signInStepsFor(ad.capabilities.mcpSignInSteps, name, origin) : undefined;
+    // FR-180: the steps come from the adapter's own text alone (also without an in-app call: Claude's SDK transport, an older app)
+    // (a folder extra is known only to Durbar: its line points at Sign in, so it shows only where Sign in is offered)
+    const steps = needs && ad?.capabilities.mcpSignInSteps && (origin !== 'folder' || canSignIn) ? signInStepsFor(ad.capabilities.mcpSignInSteps, name, origin) : undefined;
     const open = canSignIn ? i.signIn?.(name) : undefined;
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(mark ? { since: mark.since } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
+    // FR-180: how the adapter says a sign-in it started ended (only the two normalized values); the app's note where the row offers Sign in
+    const end = st && validSignInEnd(st.signInEnd) ? st.signInEnd : undefined;
+    const note = (canSignIn || open) && ad?.capabilities.mcpSignInNote ? ad.capabilities.mcpSignInNote : undefined;
+    // FR-176/FR-181: Restart ends a sign-in made outside Durbar (Claude Code), so a needs-sign-in row keeps it where the app says so
+    const signRestart = needs && canRestart && !!ad?.capabilities.mcpSignInRestart && !!steps;
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(mark ? { since: mark.since } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];
