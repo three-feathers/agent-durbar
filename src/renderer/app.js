@@ -864,7 +864,7 @@ const visitPlace=a=>{const v=a.parent?null:VISITS.at(a.id);return v?v.place:(RET
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
   return `<button class="desk card is-${st}${isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(deskTip(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}${chatNoWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
-    <span class="sc">${sceneC(a)}</span>
+    <span class="sc">${cabinHTML(a,'c',sceneC(a))}</span>
     <span class="ci"><span class="l1">${chatNoHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span>${signsOn()?signHTML(a,'stl'):`<span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span>`}</span>    <span class="intent"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</span>
     <span class="l3">${signsOn()?signHTML(a,'pill'):`<span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span>`}<span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span>${GROW?grownSideHTML(a):''}</button>`;
 }
@@ -891,7 +891,7 @@ function unitHTML(a,d){
   let desk;
   if(d==='full'){
     desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}${chatNoWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
-      ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
+      ${cabinHTML(a,'f',scene(a,false))}<span class="badge ${st}">${badgeSVG(st)}</span>
       <div class="info"><div class="who">${chatNoHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
       <p class="task"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</p>${signsOn()?signHTML(a,'pill'):`<span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span>`}</div></button>`;    if(LIVE_SIDE)desk+=sideHTML(a);
   } else desk=cardHTML(a,d,nSubs);
@@ -1012,7 +1012,8 @@ const SIGN_ICONS={
   clock:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6 3.4V6l1.8 1.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
   people:'<circle cx="4.2" cy="4" r="1.7" fill="currentColor"/><circle cx="8.2" cy="4.4" r="1.5" fill="currentColor"/><path d="M1.2 10.2c.3-2.2 1.5-3.2 3-3.2s2.7 1 3 3.2ZM7.6 7.2c1.6-.3 2.9.6 3.2 3H8.5" fill="currentColor"/>',
   dot:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6" r="2.5" fill="currentColor"/>',
-  check:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.8 6.1 5.3 7.6 8.3 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>'
+  check:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.8 6.1 5.3 7.6 8.3 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
+  ring:'<circle cx="6" cy="6" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/>'
 };
 const signIcon=k=>`<svg class="ds-ic" viewBox="0 0 12 12" aria-hidden="true" focusable="false" data-icon="${k}">${SIGN_ICONS[k]||''}</svg>`;
 let SIGN_PREF=(()=>{try{return localStorage.getItem('durbar.doorsigns')!=='off';}catch(e){return true;}})();
@@ -1024,6 +1025,17 @@ const signOf=(a,resting)=>window.DurbarRoom.doorSign({state:vis(a),paused:!!a.pa
 function signHTML(a,cls){
   const g=signOf(a);
   return `<span class="${cls} dsign st-${g.tone} ds-${g.key}" data-sign="${g.key}" title="${esc(g.word)}: ${esc(stWord(a))}${isFailing(a)?' ('+MOOD.failStreak(a.id)+' tool calls failed in a row)':''}">${cls==='pill'?doorSvg(g.door==='open',true):''}${signIcon(g.icon)}<span class="dsw">${esc(cls==='stl'?g.short:g.word)}</span>${cls==='pill'?pillWarn(a):''}</span>`;
+}
+/* spec 017 FR-011..FR-014 (owner 2026-10-23, "real office cabin style"): each session is a cabin. While the agent is busy, waits, must
+   not be disturbed or is away, its cabin door is closed and drawn in place of the desk scene (same box, so the layout is unchanged): the
+   door in the theme's door colours (the folder door's tokens), the agent's photo (its avatar from the scene kit) and a meeting-room sign
+   (icon and short word in the status colours). When its work is done, it is free or it has an error, the door stands open: the desk
+   scene as today, an open door leaf at its edge and a tag (Done, Available, Alert). kind: 'c' (card scene box) or 'f' (full desk). */
+function cabinHTML(a,kind,sceneHTML){
+  if(!signsOn())return sceneHTML;
+  const g=signOf(a), tag=`<span class="cb-sign st-${g.tone}" data-sign="${g.key}">${signIcon(g.icon)}<span class="cb-w">${esc(g.short)}</span></span>`;
+  if(g.door==='open')return `<span class="cb-scene cb-${kind}">${sceneHTML}<span class="cb-open" data-cabin="open" aria-hidden="true"><span class="cb-leaf-open"></span>${tag}</span></span>`;
+  return `<span class="cabin cb-${kind} st-${g.tone}" data-cabin="closed" aria-hidden="true"><span class="cb-door"><span class="cb-photo">${avatar(a)}</span><span class="cb-knob"></span></span>${tag}</span>`;
 }
 function roomArt(){
   let s='';

@@ -674,10 +674,10 @@
     const on=!!X.shutters.get();
     return `<div class="scr-row"><span class="scr-row-l" id="shL">Finished agents rest in the lounge</span>${sw(on,'Finished agents rest in the lounge: in a room where others still work, finished agents move to a couch, then to a nap bed','id="shutSw" aria-describedby="shN"')}<span class="scr-note small" id="shN">In a room where others still work, finished agents rest on a couch, and after 10 minutes on a nap bed, so the busy desks get the space.</span></div>`;
   }
-  /* spec 017 FR-008: meeting-room door signs on the desks (Busy, Waiting for you, Available, ...), on by default; kept per computer */
+  /* spec 017 FR-008, FR-014: cabin doors and meeting-room signs on the desks, on by default; kept per computer */
   function signsRow(){
     const on=!!X.signs.get();
-    return `<div class="scr-row"><span class="scr-row-l" id="dsL">Meeting-room signs on desks</span>${sw(on,'Meeting-room signs on desks: each desk shows a door sign such as Busy, Waiting for you or Available instead of the plain status word','id="signSw" aria-describedby="dsN"')}<span class="scr-note small" id="dsN">Each desk shows a door sign, like a meeting room: Busy, In a meeting, Waiting for you, Needs attention, Available, Do not disturb or Away. Off shows the plain status word.</span></div>`;
+    return `<div class="scr-row"><span class="scr-row-l" id="dsL">Cabin doors and meeting-room signs</span>${sw(on,'Cabin doors and meeting-room signs: a busy agent works behind a closed door with its photo and a sign such as Busy or Waiting for you; the door opens when it is done or free','id="signSw" aria-describedby="dsN"')}<span class="scr-note small" id="dsN">Each session is a cabin: while the agent works, waits or must not be disturbed, its door is closed with its photo and a sign (Busy, In a meeting, Waiting for you, Do not disturb, Away); when it is done or free, the door stands open (Done, Available). Off shows the plain desks and status words.</span></div>`;
   }
   function liveActRow(){
     const on=!!X.liveAct.get();

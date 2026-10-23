@@ -21,16 +21,19 @@
   /* spec 017 FR-003 (2026-10-23, owner): the meeting-room door sign of one session (a main agent), derived from its shown state.
      x: {state (the shown state, vis), paused, coffee, limit, ended, resting, failing, helpers:[shown states]}. First match wins:
      error > waiting (a question, a permission or Durbar's spending limit) > paused or a coffee break > ended or resting > a helper at
-     work while it works > working/thinking > idle/done. `tone` is an existing status colour (.st-*), never a new one; `short` is the
+     work while it works > working/thinking > done > idle. `door` (owner 2026-10-23, a real office cabin): closed while the agent is
+     busy, waits, must not be disturbed or is away; open when its work is done, when it is free, and on an error (so the trouble on the
+     desk stays in sight, Clarifications Q6). `tone` is an existing status colour (.st-*), never a new one; `short` is the
      word where a desk has least room (the mini and micro status word), the full word is then in its tooltip. */
   const SIGNS={
-    attention:{word:'Needs attention',short:'Alert',door:'closed',icon:'alert'},
+    attention:{word:'Needs attention',short:'Alert',door:'open',icon:'alert'},
     waiting:{word:'Waiting for you',short:'Waiting',door:'closed',icon:'hourglass'},
     dnd:{word:'Do not disturb',short:'DND',door:'closed',icon:'bar'},
     away:{word:'Away',short:'Away',door:'closed',icon:'clock'},
     meeting:{word:'In a meeting',short:'Meeting',door:'closed',icon:'people'},
     busy:{word:'Busy',short:'Busy',door:'closed',icon:'dot'},
-    available:{word:'Available',short:'Available',door:'open',icon:'check'}
+    done:{word:'Done',short:'Done',door:'open',icon:'check'},
+    available:{word:'Available',short:'Available',door:'open',icon:'ring'}
   };
   const SIGN_KEYS=Object.freeze(Object.keys(SIGNS));
   function doorSign(x){
@@ -44,7 +47,7 @@
       const tone=o.failing?'failing':st;
       return sign(Array.isArray(o.helpers)&&o.helpers.some(isWork)?'meeting':'busy',tone);
     }
-    return sign('available','done');
+    return st==='done'?sign('done','done'):sign('available','idle');
   }
   return {summarizeRoom,doorSign,SIGN_KEYS};
 })());

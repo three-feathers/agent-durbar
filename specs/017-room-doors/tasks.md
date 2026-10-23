@@ -10,3 +10,4 @@
 - [x] T007 Desk signs in app.js and styles.css; lounge peek; drivers that read the desk pill updated (FR-004..FR-007, FR-009)
 - [x] T008 Settings switch "Meeting-room signs on desks" (FR-008)
 - [ ] T009 Screenshots 017-signs-*.png at 1440x900 and 1280x800 (DURBAR_SIM=15); linked office screenshots retaken (`npm run shots:docs`); README line; changelog fragment
+- [x] T010 Cabins (owner 2026-10-23): closed door with the agent's photo and the sign in place of the desk scene; open leaf and Done/Available/Alert tag when open; driver and unit tests updated; drivers that check desk scenes adapted (FR-011..FR-014)

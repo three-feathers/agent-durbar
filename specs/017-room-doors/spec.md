@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 015-018
 title: Room doors (collapse/expand)
-status: milestone 7; delta 2026-10-23 (owner): meeting-room door signs on session desks (FR-003..FR-010, simulator-checked; closing a single session's door is an open owner question)
+status: milestone 7; delta 2026-10-23 (owner): sessions as office cabins, closed door with photo and meeting-room sign while busy, open with a Done tag when done (FR-003..FR-014, simulator-checked; a user-closed door is an open owner question)
 -->
 
 **Feature Branch**: `017-room-doors` (milestone 7; amends 001, 006)
@@ -44,29 +44,40 @@ Each session (a main agent's desk) shows a **door sign**, like the sign beside a
 
   | Sign (`key`) | Word | When | Door | Icon | Colour (existing `.st-*`) |
   |---|---|---|---|---|---|
-  | `attention` | Needs attention | state `error` | closed | triangle with ! | `st-error` |
+  | `attention` | Needs attention | state `error` | **open** (Q6) | triangle with ! | `st-error` |
   | `waiting` | Waiting for you | state `waiting` (a question, a permission, or Durbar's spending limit) | closed | hourglass | `st-waiting` |
   | `dnd` | Do not disturb | paused (the chat's Pause), or on a coffee break (spec 068) that is not the spending limit | closed | circle with a bar | `st-idle` |
   | `away` | Away | the session ended, or the agent rests in the lounge (spec 001 FR-051) | closed | clock | `st-idle`, dashed edge |
   | `meeting` | In a meeting | `working`/`thinking` while one of its helpers works (the room plate's "Meeting in progress") | closed | two people | the state's own (`st-working`/`st-thinking`) |
   | `busy` | Busy | `working` or `thinking` | closed | filled dot | the state's own; `st-failing` while tool calls fail in a row (spec 052 FR-062) |
-  | `available` | Available | `idle` or `done` | **open** | check | `st-done` |
+  | `done` | Done | `done` (owner 2026-10-23: "when work is done, door is open with a done tag") | **open** | check | `st-done` |
+  | `available` | Available | `idle` | **open** | ring | `st-idle` |
 
   Words are the room plate's words where one exists ("Waiting for you", "Needs attention", "Available"). Unknown or missing input reads `available` (never throws).
 - **FR-004** [IMPLEMENTED] `sim: shots-017-signs` On every main desk (full desk pill, card and roomy pill, the mini and micro status word), the sign shows door glyph + icon + word (mini and micro: icon + short word, see FR-007). The door glyph is `doorSvg()` (the room door's paths and viewBox) drawn in the sign's ink (`currentColor`), so it keeps contrast on every plate; the icon is drawn in the same ink. Helpers keep their plain status word (a helper is not a session).
 - **FR-005** [IMPLEMENTED] `sim: shots-017-signs` Colour is never the only cue: each sign has its own icon and word; the plate is filled with the tone's `--pb-*` and its text and glyphs use the tone's ink. Text and glyph contrast against the plate is at least **3:1 in all 6 themes** (the driver measures it; 4.5:1 is reported, not required), and the sign's text is at least 10.5px.
 - **FR-006** [IMPLEMENTED] `sim: shots-017-signs` The plain state word stays everywhere else: the desk's accessible name (`stWord`), its tooltip, the list view, the chat header, the top-bar counters and the inbox. The sign's own `title` names both ("Busy: Working"). The desk keeps `data-state` and its `is-*` class, so filters, drivers and counts are unchanged. The sign carries `data-sign="<key>"`.
 - **FR-007** [IMPLEMENTED] `sim: shots-017-signs` Layout: the sign takes the pill's place and size class, so the density search is unchanged; 15 agents still fit at 1440x900 and 1280x800 without overlap or office scroll (`check-office-overlap` rules) and the word gives way (ellipsis) before the name, as the status word does (spec 001 FR-025), with the full word in the tooltip. On cards the sign keeps its full word and the usage line gives way: the token count is dropped whole (spec 052's usage fitting), never cut to a misleading first digit; the cost stays. The mini and micro status word uses the short word (Alert, Waiting, DND, Away, Meeting, Busy, Available) with the icon but no door, so it gives way like the status word did and a long name keeps three characters (`check:office` long names and titles at 1280x800).
-- **FR-008** [IMPLEMENTED] `sim: shots-017-signs` Settings > Detail level: a switch **Meeting-room signs on desks** (on by default, kept per computer like "Finished agents rest in the lounge"). Off shows the plain status word pill exactly as before.
+- **FR-008** [IMPLEMENTED] `sim: shots-017-signs` Settings > Detail level: a switch **Cabin doors and meeting-room signs** (on by default, kept per computer like "Finished agents rest in the lounge"). Off shows the plain status word pill exactly as before.
 - **FR-009** [IMPLEMENTED] `sim: shots-017-signs` A resting agent's peek in the lounge says **Away** with the sign's icon (FR-003), in place of the plain word.
+- **FR-011** [IMPLEMENTED] `sim: shots-017-signs` **Cabins (owner 2026-10-23).** Each session is an office cabin. While its door is closed (Busy, In a meeting, Waiting for you, Do not disturb, Away), the cabin door is drawn **in place of the desk scene**, in the scene's own box (same aspect ratio, so the layout search and the density are unchanged): the door in the theme's door tokens (`--door-bg`, `--door-leaf`, `--door-leaf-line`, `--door-knob`, the folder door's colours), the agent's **photo** (its avatar from the theme's scene kit, the same person as at its desk and in the lounge) in a round frame on the door, and the **sign** (icon and short word) on the door in the status colours.
+- **FR-012** [IMPLEMENTED] `sim: shots-017-signs` While its door is open (Done, Available, Needs attention), the desk scene shows as before, with an **open door leaf** at the scene's left edge and the sign as a **tag** (icon and short word: Done, Available, Alert) in the scene's top corner.
+- **FR-013** [IMPLEMENTED] `sim: shots-017-signs` The door's sign is at least 10.5px, never cut, inside its desk, and at least 3:1 against its plate in all 6 themes; the photo and the door are decoration (`aria-hidden`), the desk's accessible name is unchanged.
+- **FR-014** [IMPLEMENTED] `sim: shots-017-signs` A click on a closed door (it is part of the desk button) opens that agent's chat, as a click on the desk did. The Settings switch (FR-008, now **Cabin doors and meeting-room signs**) turns the cabins off too.
 - **FR-010** Safe default for the door itself: the sign is **not a toggle**. Clicking a desk (or its sign) opens the chat as before; nothing about a session's prompts, schedules or remote messages changes. See Clarifications Q1.
 
-#### Clarifications (open, for the owner)
+#### Clarifications
+
+- **2026-10-23 (owner, Vikram, team chat 11:44 UTC):** "When door is closed - you show the photo and status on the door like a meeting room in place of where you show desk today. When work is done, door is open with a done tag… Real office cabin style." Built as FR-011..FR-014. The door closes and opens **with the state**; it is not a button the user toggles (the open question Q1 stays for a user-closed door).
+
+Open, for the owner (recommended defaults built or planned):
 
 - **Q1: what does closing a single session's door do?** Options: (a) visual only, like a room: the desk folds into a small door plate with its sign and frees space; (b) "do not disturb": the door sign turns to Do not disturb and scheduled prompts (spec 044) and remote messages (spec 054) wait until the door opens again, with a count of what waits; (c) both. **Recommended default (coordinator, 2026-10-23): (b) Do not disturb that holds scheduled and remote messages**, because it is what a closed meeting-room door means; it changes when prompts run, so it needs its own spec deltas in 044 and 054 (where held prompts are shown, what happens to a missed time, whether a typed message in the chat still goes through: recommended yes, only automatic senders wait). **Built now:** the sign only (FR-010); no session door toggle until the owner confirms (b) or picks another option.
 - **Q2: Durbar's spending limit: "Waiting for you" or "Do not disturb"?** The owner's note suggested DND "?". **Default: Waiting for you**, because the agent stops until you raise the limit (it is in the inbox, spec 011); an agent-app usage window (spec 068 coffee break) that resumes by itself is DND.
 - **Q3: colour of Do not disturb.** Chat apps use red. **Default: the idle grey**, so red stays for trouble (Needs attention); the icon (circle with a bar) and the word tell it apart. Say if red is wanted.
-- **Q4: "Done" desks.** A finished agent at its desk is **Available** (it takes the next prompt); in the lounge it is **Away** (owner list: "Away / Closed (ended or resting)").
+- **Q4: "Done" and idle desks.** Answered in part by the owner: done is an **open door with a Done tag**. **Default for idle (never worked, or stopped): an open door with Available** (it takes the next prompt). In the lounge a resting agent is **Away** (owner list: "Away / Closed (ended or resting)").
+- **Q5: mood drawings behind a closed door.** The spec 034 drawings on a desk (tapping while it waits, fainting at the spending limit, the coffee cup) are inside the cabin, so a closed door hides them; the words stay (accessible name, tooltip, inbox). **Default: hidden while the door is closed**; the photo on the door could show the mood later if wanted.
+- **Q6: an error opens the door.** Errors are not in the owner's closed list. **Default: open**, so the red desk and the ambulance (spec 034) stay in sight; the tag says Alert.
 
 #### Limits
 
