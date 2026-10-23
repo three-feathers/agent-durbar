@@ -453,8 +453,9 @@ wrong number.
 
   A `signals` or `protocol` value an app cannot honour is not approximated: that app's export stays off and Settings > Organization
   says why (*Copilot CLI does not support gRPC*; *Copilot CLI has no logs signal*). An app that gets at least one signal exports it.
-- **FR-080a Content stays off unless the admin opts in, and the user sees it.** `logPrompts` is the only content switch in v1 and it
-  means **prompt text only**. For every app Durbar removes from the child environment every content flag the policy did not ask for,
+- **FR-080a Content stays off unless the admin opts in, and the user sees it.** v1 has exactly **two** content switches: `logPrompts`,
+  which means **prompt text only** (Claude Code, Codex), and `copilotAllContent`, which means **Copilot's full conversation** (R9,
+  below). Nothing else turns content export on. For every app Durbar removes from the child environment every content flag the policy did not ask for,
   including ones the user set (FR-085). When `logPrompts` is true, the top-bar chip reads *Telemetry (with prompt text): <host>* and
   the first-start notice says so in its first line. An app that cannot export prompt text without exporting more (Copilot) does not
   export content because of `logPrompts`; the notice says *Copilot CLI: prompt text not exported (it can only export all content)*.
@@ -511,7 +512,7 @@ wrong number.
   `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`, `COPILOT_OTEL_*` and `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` are removed and only
   the policy's values are set.
 - **FR-086 Visible and honest.** While telemetry is in force, the top bar shows a chip *Telemetry: otel.acme.example* and each affected
-  session's header shows it too; the first start after the policy appears (or after the endpoint or `logPrompts` changes) shows a notice
+  session's header shows it too; the first start after the policy appears (or after the endpoint, `logPrompts` or `copilotAllContent` changes) shows a notice
   naming the host and, per app, what that app exports according to its documentation (2026-10-23):
   - Claude Code: usage metrics (sessions, tokens, cost estimate, lines changed, commits, pull requests, active time, edit decisions) and
     events (prompts as length only, API requests and errors, tool results and decisions, MCP connections, hooks, compaction), with the
@@ -655,6 +656,23 @@ wrong number.
   header, an OTLP header, an LLM gateway, an endpoint token) or to stdio MCP server ids (`mcpServers`). A reference to an unlisted
   name, or to a listed name for another host or server, is an error for that key or entry. A URL list never references env vars
   (FR-041).
+  **The destination host** of each reference is the host of the URL it goes with (`baseUrl`, a server `url`, the OTLP `endpoint`, the
+  list or registry `url`). Where a field has no URL, the host is **derived only from a documented pattern**, else a URL is required:
+  - Claude `foundry` with `resource` and no `baseUrl`: `<resource>.services.ai.azure.com` (`read:`
+    https://code.claude.com/docs/en/microsoft-foundry.md 2026-10-23: Claude Code builds the endpoint from the resource name, example
+    `ANTHROPIC_FOUNDRY_BASE_URL=https://{resource}.services.ai.azure.com/anthropic`, and refuses a URL or host name in
+    `ANTHROPIC_FOUNDRY_RESOURCE`). Reliable: the resource name is a single DNS label (schema pattern), so the host is fixed by it.
+  - Claude `bedrock` with `authTokenFromEnv` and no `baseUrl`: `bedrock-runtime.<region>.amazonaws.com` and
+    `bedrock.<region>.amazonaws.com` (`read:` https://docs.aws.amazon.com/general/latest/gr/bedrock.html 2026-10-23, the regional
+    endpoint list; https://code.claude.com/docs/en/amazon-bedrock.md 2026-10-23, example
+    `ANTHROPIC_BEDROCK_BASE_URL=https://bedrock-runtime.us-east-1.amazonaws.com`). This needs `region` in the policy (the schema requires
+    `region` or `baseUrl` when a token is named): without it the region would come from the user's AWS configuration, which the user
+    controls. Regions outside the standard `amazonaws.com` partition (`cn-*`, `us-gov-*`) and FIPS endpoints need an explicit `baseUrl`,
+    because their host names differ. `[KNOWN GAP]` which of the two hosts Claude Code sends the token to is checked in T100.
+  - Everything else that names a variable has a URL (`gateway`, Codex `provider`, Copilot BYOK, MCP headers, OTLP, endpoint tokens).
+  Chosen this way, rather than always requiring `baseUrl`, because both patterns are documented and fixed by values the schema already
+  constrains; anything outside them falls back to requiring `baseUrl`. Fixtures: `policy-foundry-wrong-host`,
+  `policy-bedrock-wrong-host`, `policy-bedrock-token-no-region`.
 - **FR-122 Nothing runs from the folder or a registry.** Durbar never executes a file from the managed folder, a list or a registry.
   `command` entries in MCP lists are started like any other stdio MCP server (no shell, argument array, spec 019), only after they pass
   FR-042 and the existing trust steps.

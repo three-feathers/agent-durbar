@@ -262,6 +262,24 @@
       "schema": "policy",
       "refusedBy": "schema",
       "why": "Codex custom provider and amazon-bedrock at once (R10)"
+    },
+    {
+      "file": "policy-foundry-wrong-host.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "Foundry key bound to another host than the one derived from resource (acme-ai.services.ai.azure.com) (FR-121a)"
+    },
+    {
+      "file": "policy-bedrock-wrong-host.json",
+      "schema": "policy",
+      "refusedBy": "validator",
+      "why": "Bedrock token bound to us-east-1 while the policy's region derives bedrock-runtime.eu-central-1.amazonaws.com (FR-121a)"
+    },
+    {
+      "file": "policy-bedrock-token-no-region.json",
+      "schema": "policy",
+      "refusedBy": "schema",
+      "why": "a Bedrock token with neither region nor baseUrl: no host can be derived, so the binding cannot be checked (FR-121a)"
     }
   ]
 }

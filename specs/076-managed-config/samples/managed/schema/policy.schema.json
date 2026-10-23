@@ -448,6 +448,33 @@
                   "authTokenFromEnv"
                 ]
               }
+            },
+            {
+              "if": {
+                "properties": {
+                  "provider": {
+                    "const": "bedrock"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "authTokenFromEnv"
+                ]
+              },
+              "then": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "region"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "baseUrl"
+                    ]
+                  }
+                ]
+              }
             }
           ]
         },
