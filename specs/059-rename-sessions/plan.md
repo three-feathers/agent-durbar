@@ -112,3 +112,118 @@ adapter and contract tests, `test:activity`); `npm run check:office` with 60-cha
 | --- | --- | --- |
 | `inApp` flag and sync rule | lets a later rename in the CLI win over a stale Durbar copy, while a Durbar-only name stays put | dropping the local copy after an app rename loses the activity-log name (FR-012) and the instant display |
 | Two capability values (`any`, `next-turn`) | Claude applies the name at its next launch, Copilot and Codex now | one boolean would make the dialog promise a rename in Claude that has not happened yet |
+
+## Rename in place (delta 2026-10-23, issue #636, FR-020..FR-027)
+
+Decisions D1..D9 are in spec.md *Changes* (coordinator, under Ruben's delegation). No main, preload, shared, adapter or store change: the
+work is renderer-only, plus tests, drivers, docs and screenshots.
+
+### Existing code reused (AGENTS.md "Look for an existing capability first")
+
+- Save logic: `renameSessionUi` (`src/renderer/app.js:4370`) and `renameFolder` (`app.js:5469`). Each is split into a *submit* part
+  (`submitSessionName(a, prev, text, o)` → the `bridge.renameSession` call, the rule-reason regex, `a.alias` + `repaintName` / `o.onDone`,
+  announcements and toasts; `submitFolderName(r, text)` → `bridge.renameFolder`, `r.name`, `renderFilter/renderFolders/scheduleRender`, the
+  panel refresh) and the dialog loop that calls it. The inline field calls the same submit parts. No copy of the rule: the session pre-check
+  is `SN().nameError` (`src/renderer/sessionname.js`), as the dialog's `input.check`.
+- Who may rename: `canRenameSession` (`app.js:4368`); folders: the guards of `renameFolder` / `openFolderMenu` (`bridge.renameFolder`,
+  `!demoOn`, a main agent in the room).
+- Names and tooltips: `repaintName` (`app.js:4092`), `nameTipAttr` (`app.js:703`), `SN().nameTip`.
+- Previous rows: `renamePrevRow` (`app.js:5534`) keeps its `onDone`; the row pencil calls the inline helper with the same `prev` object.
+- Focus return after a re-render: `refocusAnchor` (`app.js:4396`) and the keys `renderAll` already uses (`data-id`, `data-door`, `data-pk`).
+- IME guard: the same `e.isComposing` test as `dialog.js:48`.
+
+### New module `src/renderer/inlinename.js` (window.DurbarInlineName; module.exports in Node)
+
+- **Pure part** (unit-tested, no DOM): `keyAction(e)` → `'save' | 'cancel' | 'tab' | null` (`null` while `isComposing` or `keyCode===229`);
+  `pasteText(s)` → CR/LF/CRLF/TAB to one space each; `outcome(prefill, text)` → `'same' | 'reset' | 'save'` (whitespace collapse and trim,
+  as `cleanDisplayName`); `blurAction(windowHasFocus, ruleError)` → `'keep' | 'save' | 'revert'`.
+- **DOM part** `open({doc, anchor, value, max, label, hint, check, submit, onClose, reanchor})`: one `<input type="text">` in a fixed
+  layer appended to `document.body` (like `#modeMenu`), placed over `anchor.getBoundingClientRect()` with the anchor's computed font size,
+  weight and line height; width = max(anchor box, 120px) clipped to the item's inner box. It is **not** inside the card, row or heading,
+  so `morphHTML`, the list's `innerHTML` and `repaintName` cannot remove it or overwrite its value (FR-023 item 5). `reanchor()` returns the
+  current name element (found by key) or `null`; the app calls `DurbarInlineName.follow()` at the end of `renderAll`, `renderPrev`,
+  `renderFolders`, on `resize` and on the floor's `scroll`: a new box moves the field, `null` closes it (FR-023 items 4 and 5).
+  Keydown on the field calls `stopPropagation()` for Esc/Enter/Tab/F2 so the global handler (`app.js:2322`, Esc closes the chat) never
+  sees them. One instance at a time (FR-021 item 10). Error line: a `<p role="alert">` under the field (12px, theme tokens).
+- Why a layer over the name and not an input inside it: the desk card and list row are `<button>`s (an input inside a button is invalid
+  and gets the button's click), and the office morphs and the list is rebuilt on every status tick.
+
+### Markup changes in `app.js` and `styles.css`
+
+- Header (`openPanel`, `app.js:1877`): `<h2 id="panelTitle" tabindex="-1" aria-label="<name>">` holds `<button type="button"
+  class="ttl-btn" id="panelTitleBtn" aria-label="Rename session <name>">name</button>` when `canRenameSession`, plain text otherwise
+  (helpers). `repaintName` updates the button's text and both labels, never an open field. Keydown F2/Enter on `#panelTitle` or the button
+  opens the field; the click guard of FR-020 item 1 (`e.detail>1`, 400 ms after `openPanel`).
+- Desk card (`cardHTML` `app.js:864`, `unitHTML` `app.js:879`): a `<button class="ren" data-ren="<id>">` after the desk button inside `.unit`,
+  absolutely positioned at the name's line end per density (CSS per `[data-d]`), shown on `.unit:hover`, `.unit:focus-within`,
+  `@media (hover:none)`. The delegated click handler (`app.js:2260-2273`) checks `[data-ren]` before `[data-id]`. `morphChildren` keeps it
+  (keyed by `data-key="ren:<id>"`).
+- List row (`renderList`, `app.js:1412`): each row in `<div class="lrow-w" data-key>` with the row button and two positioned pencils
+  (session name cell, Folder cell). Check that `#list button.lrow` J/K (`app.js:2333`), `shots-034-list` and `check-office` selectors still
+  match; any `.list-wrap>.lrow` CSS selector is updated.
+- Previous row (`prevRow`, `app.js:5572`): an in-flow pencil after `.prev-t` for `g==='cli'` rows.
+- Room header (`roomHTML`, `app.js:1080`, head at 1085): an in-flow pencil after `.room-name`; Folders panel rows (`renderFolders`, `app.js:5438`): after
+  the `<b>` name.
+- F2 (global keydown, `app.js:2281`): on `[data-id]` (desk, list row), `[data-door]`, `[data-foldermenu]`, `#panelTitle` and inside a
+  `.prev-row`; not under `modalOpen()`, not in a field. Shortcut sheet row (`openKbdHelp`, `app.js:2722`).
+- Icon: a new `ICON('rename')` SVG (pencil with a baseline) so it does not read as the draft mark (`draftHTML` uses `ICON('edit')`);
+  final glyph is open question Q-A below.
+
+### Simulator hooks (`src/renderer/sim.ts`, `app.js` `__durbarSimUi`; simulator only)
+
+- `__durbarSimRetitle(title, alias)` exists (late title on the open chat, `app.js:4101`); add `retitle(id, title)` for any agent so a
+  card or row edit can get one.
+- `renamedElsewhere(id, alias)` → `onAgentRenamed` (the `agents:renamed` path).
+- `renameRoomElsewhere(roomId, label)` → sets `r.name` and re-renders, as another path would (FR-023 item 2).
+- `endAgent(id)` and `removeAgent(id)` → the existing `emit` status path and `removeLiveAgent` (FR-023 items 3 and 4).
+- `inline()` → `{open, value, anchorKey, error, busy}` of the open field, for drivers.
+- The fake bridge's `renameSession` / `renameFolder` (`sim.ts:2376-2387`) get a call counter so a driver can assert "no call".
+
+### Checks
+
+- `scripts/test-inlinename.ts` (`test:inlinename`, in `npm test`): `keyAction` (Enter, Esc, Tab, F2, composing Enter, keyCode 229),
+  `pasteText` (LF, CRLF, CR, TAB, U+2028 left alone), `outcome` (same with extra spaces, empty, spaces only, new), `blurAction`. Mutation
+  ideas: drop the `isComposing` test; make `pasteText` delete instead of replace; make `outcome` compare without trim → each must fail.
+- `scripts/test-sessionname.ts` (extend): the template guard covers the new `aria-label`s ("Rename session <name>") with `esc()`.
+- `scripts/check-rename-inline.js` (`npm run check:rename-inline`, added to `DRIVERS` in `scripts/ui-suite.js`), 1440x900 and 1280x800,
+  Expert and Simple: every FR-020 surface (header click, F2, Enter on focused title; card pencil and F2 at full and mini density; list row
+  pencil and F2; Previous row pencil, hidden row; room header, Folders panel, list Folder cell; closed-room plate F2); every FR-021 item
+  (Enter, blur, window blur, Tab, Esc not closing the chat, unchanged = 0 calls, empty reset, rule error on Enter and on blur, composing
+  Enter via `KeyboardEvent({isComposing:true})`, paste via a synthetic `paste` event with `DataTransfer`, busy, two edits); every FR-023
+  item through the hooks; no pencil on helpers, VS Code rows, demo; the card / header / row / room header box is the same before and while
+  editing (D8, `getBoundingClientRect` equal); the field's computed font size ≥ 10.5px; the escaped `EVIL` name of `check-rename.js` in the
+  field and the labels; the header's `-webkit-app-region` is not `drag` with `data-platform="darwin"`. A miss prints `DRIVER FAILED`.
+  Mutation ideas for the review: remove the `stopPropagation` on Esc (the chat closes); render the input inside `.name` (a status tick
+  removes it); drop the `detail>1` guard (a double-click on a desk edits the header); call submit on unchanged text (the call counter
+  fails); `visibility:hidden` on the pencil (Tab skips it).
+- `check:ui-text` (`scripts/check-ui-text.js`): a surface `rename-inline` with the field open on the header and on a card with
+  `simnames=long`, so the existing rules run on it (10.5px, clipped text, tooltip lengths: the pencil's 120, the header's data tooltip 300);
+  one new rule `inline-edit-fit`: the field is inside the window and inside the item's box, and opening it moved no box.
+- `npm run check:office` (15 agents, `simnames=long`) with every pencil forced visible (a sim query `simrenshow=1` or a class on `body`):
+  no overlap with status, pill, badge, chat number, draft mark; office fits. Also `npm run check:rename` must still pass (dialog paths).
+- `npm run typecheck && npm run build && npm test`.
+
+### Screenshots
+
+- New, made by `check-rename-inline.js` with `OUT=docs/screenshots`: `059-rename-inline-header-{1440x900,1280x800}.png`,
+  `059-rename-inline-card-…`, `059-rename-inline-prev-…`, `059-rename-inline-folder-…` (the field open, 15 agents). Linked from the spec;
+  if one goes into the README or the gallery, its driver is added to `DOC_SHOTS` in `scripts/shots-docs.js`.
+- Linked pictures that may change (from `node scripts/shots-docs.js --list`, 2026-10-23): the header button and the pencils are invisible
+  until hover or focus, so most pictures do not change; those that show a focused or hovered card, a chat header or a Previous row are
+  retaken and looked at: `shots-hero` (`m6-fullchat-sim15-1280x800.png`), `shots-003-011` (`m6-fullchat-sim15-1440x900.png`),
+  `shots-005-cardmenu`, `shots-006-prevmarks`, `shots-052-ux`, `shots-074-navigator`:
+  `npm run shots:docs -- --only shots-hero,shots-003-011,shots-005-cardmenu,shots-006-prevmarks,shots-052-ux,shots-074-navigator`.
+  Commit only the ones that differ; say in the PR which did not change.
+
+### Constitution check (delta)
+
+I spec first (this delta, spec-only commit before `src/`). II no adapter or IPC change. III no new IPC, main still validates, names escaped.
+IV simulator and unit tests only, 0 credits. V no layout change, 10.5px floor, no emoji glyph, keyboard and screen-reader paths. VI no
+OS-specific code; the macOS drag region is checked in the simulator only (`[KNOWN GAP]` on a real Mac and on Windows). VII tests,
+driver, screenshots. VIII the spec says `[KNOWN GAP]` until built.
+
+### Questions decided by the coordinator (2026-10-23, under Ruben's delegation)
+
+- **Q-A** A distinct "rename" glyph (pencil over a baseline) for the button; the draft mark (`ICON('edit')`) stays unchanged.
+- **Q-B** Folders panel rows and the folder name on the floor only. The list view's Folder cell gets no pencil (it repeats on every row of
+  the folder and would put two pencils on one focused row); its folder is renamed from the Folders panel, the floor or the menu.
