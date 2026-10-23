@@ -10,7 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { listClaudeAgents, MAX_AGENT_BYTES, parseClaudeAgent } from '../src/adapters/claudeAgents';
 import { DEFAULT_TEMPLATE, PROFILE_TEMPLATES, profileTemplate, SUCCESS_SECTIONS } from '../src/shared/profiletemplates';
-import { atomicOps, createProfileFile, defaultProfileEnv, encodeLike, fileIdOf, folderIdOf, headOf, isProfileName, listProfileFiles, maxBytesFor, MAX_PROFILE_BYTES, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../src/main/profilefiles';
+import { atomicOps, createProfileFile, createProfileFreshness, defaultProfileEnv, listAgentProfilesFresh, deleteProfileFile, encodeLike, fileIdOf, folderIdOf, headOf, isProfileName, listProfileFiles, maxBytesFor, MAX_PROFILE_BYTES, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../src/main/profilefiles';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-profilefiles-'));
 const WS = path.join(tmp, 'ws');
@@ -297,6 +297,108 @@ const W0 = folderIdOf(WS);
   assert.ok(!fs.existsSync(path.join(A, '.claude')) && !fs.existsSync(path.join(C, '.claude')), 'and nothing is written elsewhere');
 }
 
+// spec 043 FR-040 (issue #570): delete by id from main's list only: the file goes, its folder and the other files stay; unknown,
+// malformed and stale ids are refused; a read-only file is refused and kept
+{
+  const made = createProfileFile(dirs(), 'claude', W0, 'to-delete');
+  assert.ok(made.ok, 'made a file to delete');
+  const file = path.join(WS, '.claude', 'agents', 'to-delete.md');
+  const others = listProfileFiles(dirs()).filter((f) => f.fileName !== 'to-delete.md').map((f) => f.path);
+  for (const bad of [undefined, null, 1, '', '../x', 'f'.repeat(32), file, { id: (made as { id: string }).id }]) assert.ok(!deleteProfileFile(dirs(), bad).ok, `refused: ${String(bad).slice(0, 40)}`);
+  assert.ok(fs.existsSync(file), 'still there after the refusals');
+  const del = deleteProfileFile(dirs(), (made as { id: string }).id);
+  assert.ok(del.ok, 'deleted: ' + JSON.stringify(del));
+  assert.ok(!fs.existsSync(file), 'the file is gone from disk');
+  assert.ok(fs.statSync(path.join(WS, '.claude', 'agents')).isDirectory(), 'its agent folder stays');
+  assert.ok(!listProfileFiles(dirs()).some((f) => f.fileName === 'to-delete.md'), 'and from the list');
+  for (const o of others) assert.ok(fs.existsSync(o), 'other profile files stay: ' + path.basename(o));
+  const again = deleteProfileFile(dirs(), (made as { id: string }).id);
+  assert.ok(!again.ok && /not in the list/.test(again.error), 'a second delete of the same id is refused');
+  // a file of a folder that left the office: its id is not in the list any more
+  const gone = createProfileFile(dirs(), 'copilot', W0, 'left-office');
+  assert.ok(gone.ok);
+  assert.ok(!deleteProfileFile(profileDirs([], env), (gone as { id: string }).id).ok, 'a folder no longer in the office: refused');
+  assert.ok(fs.existsSync(path.join(WS, '.github', 'agents', 'left-office.agent.md')), 'and kept');
+  assert.ok(deleteProfileFile(dirs(), (gone as { id: string }).id).ok);
+  if (process.platform !== 'win32') {
+    const ro = path.join(WS, '.github', 'agents', 'keep-ro.agent.md');
+    fs.writeFileSync(ro, 'read only\n');
+    fs.chmodSync(path.join(WS, '.github', 'agents'), 0o555); // unlink needs the folder writable
+    let realRo = true;
+    try {
+      fs.accessSync(path.join(WS, '.github', 'agents'), fs.constants.W_OK);
+      realRo = false;
+    } catch {
+      /* read-only as expected */
+    }
+    if (realRo) {
+      const info = listProfileFiles(dirs()).find((f) => f.fileName === 'keep-ro.agent.md')!;
+      assert.ok(!info.writable, 'listed read-only');
+      const r = deleteProfileFile(dirs(), info.id);
+      assert.ok(!r.ok && r.error === info.note, 'a read-only file is refused with its note');
+    }
+    fs.chmodSync(path.join(WS, '.github', 'agents'), 0o755);
+    assert.ok(fs.existsSync(ro), 'kept');
+    fs.unlinkSync(ro);
+  }
+}
+
+// spec 043 FR-041 (issue #570): main counts file changes made through Durbar; a session lists with a reload once per change it has not seen
+{
+  const fr = createProfileFreshness();
+  assert.strictEqual(fr.needsReload('a'), false, 'nothing changed yet: no reload');
+  fr.changed();
+  assert.strictEqual(fr.needsReload('a'), true, 'a change: the next list reloads');
+  fr.seen('a');
+  assert.strictEqual(fr.needsReload('a'), false, 'once seen, no second reload');
+  assert.strictEqual(fr.needsReload('b'), true, 'another session has not seen it');
+  fr.changed();
+  fr.changed();
+  assert.strictEqual(fr.needsReload('a'), true, 'a new change after it was seen');
+  fr.seen('a');
+  fr.forget('a');
+  assert.strictEqual(fr.needsReload('a'), true, 'a forgotten (ended) session starts over and reloads');
+}
+
+// FR-041: the profile list of a session asks the adapter to read the agent files again once after a change; an adapter without the
+// member (Claude Code reads the folders each time) lists as before; a failed reload lists the old list and tries again next time
+void (async () => {
+  const calls: string[] = [];
+  let fail = false;
+  const ad = {
+    listAgentProfiles: async (id: string) => (calls.push('list:' + id), [{ id: 'p', name: 'p', source: 'user' as const }]),
+    reloadAgentProfiles: async (id: string) => {
+      calls.push('reload:' + id);
+      if (fail) throw new Error('rpc missing');
+    },
+  };
+  const fr = createProfileFreshness();
+  await listAgentProfilesFresh(ad, 's1', fr);
+  assert.deepStrictEqual(calls.splice(0), ['list:s1'], 'no change yet: list only');
+  fr.changed();
+  const l = await listAgentProfilesFresh(ad, 's1', fr);
+  assert.deepStrictEqual(calls.splice(0), ['reload:s1', 'list:s1'], 'after a change: reload, then list');
+  assert.strictEqual(l[0].id, 'p');
+  await listAgentProfilesFresh(ad, 's1', fr);
+  assert.deepStrictEqual(calls.splice(0), ['list:s1'], 'reloaded once per change');
+  fr.changed();
+  fail = true;
+  await listAgentProfilesFresh(ad, 's1', fr);
+  assert.deepStrictEqual(calls.splice(0), ['reload:s1', 'list:s1'], 'a failed reload still lists');
+  fail = false;
+  await listAgentProfilesFresh(ad, 's1', fr);
+  assert.deepStrictEqual(calls.splice(0), ['reload:s1', 'list:s1'], 'and tries again next time');
+  const plain = { listAgentProfiles: async (id: string) => (calls.push('list:' + id), []) };
+  fr.changed();
+  await listAgentProfilesFresh(plain, 's2', fr);
+  assert.deepStrictEqual(calls.splice(0), ['list:s2'], 'no reload member: list only');
+  assert.deepStrictEqual(await listAgentProfilesFresh({}, 's3', fr), [], 'no list member: empty');
+  console.log('profile list freshness checked');
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+
 // read-only file: listed, opens, cannot be saved (POSIX permissions; root can write anyway, so only checked when it really is read-only)
 if (process.platform !== 'win32') {
   const ro = path.join(WS, '.github', 'agents', 'ro.agent.md');
@@ -369,6 +471,9 @@ if (canLink) {
   assert.ok(alias && !alias.writable && /link/i.test(alias.note || ''), 'a link inside: read-only');
   const r = readProfileFile(dirs(), alias.id);
   if (r.ok) assert.ok(!saveProfileFile(dirs(), alias.id, 'x', r.sha256, true).ok, 'a link is never written');
+  // FR-040: a link is never deleted (neither the link nor what it points to); the id of a link out is not in the list
+  assert.ok(!deleteProfileFile(dirs(), alias.id).ok && fs.existsSync(path.join(WS, '.github', 'agents', 'alias.agent.md')) && fs.existsSync(REV), 'a link inside is not deleted, nor its target');
+  assert.ok(!deleteProfileFile(dirs(), fileIdOf(path.join(WS, '.github', 'agents', 'escape.agent.md'))).ok && fs.existsSync(path.join(OUTSIDE, 'secret.md')), 'a link out: refused, the outside file stays');
   // a linked .claude folder that points outside the office folder
   const WS2 = path.join(tmp, 'ws2');
   fs.mkdirSync(WS2);
