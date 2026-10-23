@@ -9,14 +9,14 @@
  *
  * At 1440x900 and 1280x800, with mixed states (the simulator's own plus, set through __durbarSimUi: one agent paused, one ended, one on
  * a coffee break), it fails (exit 1) when:
- *   - a main desk has no sign, or its key, word, icon, door (open only for Available) or colour class is not the one its state calls
+ *   - a main desk has no sign, or its key, word, icon, door (pill signs; open only for Available) or colour class is not the one its state calls
  *     for (the expected sign is computed here from the state, independently of roomsummary.js); not every one of the 7 signs is seen;
  *   - a helper tile shows a sign (a helper is not a session);
  *   - the desk's accessible name lost its plain status word, or the sign's tooltip does not name both;
  *   - sign text is below 10.5px, an icon is not in the text colour, or text contrast against the plate is below 3:1 in any of the
  *     6 built-in themes (4.5:1 is printed, not required);
  *   - a sign word is cut at all with these 15 agents (a long name may cut it elsewhere, never below three characters), or a glyph leaves its desk;
- *   - the mini/micro status word does not use the short word (Alert, Waiting, DND, Away, Meeting, Busy, Available);
+ *   - the mini/micro status word does not use the short word, or shows a door (icon and short word only there) (Alert, Waiting, DND, Away, Meeting, Busy, Available);
  *   - the office breaks a layout rule (check-office-overlap's pageCheck: overlap, clipping, office scroll, text size) or shows fewer than 15 desks;
  *   - a resting agent's lounge peek does not say Away;
  *   - Settings > "Meeting-room signs on desks" off does not bring back the plain status words (and on again the signs).
@@ -80,13 +80,13 @@ function readDesks() {
     if (!sg) return base;
     const w = sg.querySelector('.dsw'), ic = sg.querySelector('.ds-ic'), door = sg.querySelector('.door-svg'), D = d.getBoundingClientRect();
     const tc = rgb(getComputedStyle(w).color), bg = bgOf(sg);
-    const inDesk = [door, ic].every((g) => { const r = g.getBoundingClientRect(); return r.width > 1 && r.height > 1 && r.left >= D.left - 0.5 && r.right <= D.right + 0.5 && r.top >= D.top - 0.5 && r.bottom <= D.bottom + 0.5; });
+    const inDesk = [door, ic].filter(Boolean).every((g) => { const r = g.getBoundingClientRect(); return r.width > 1 && r.height > 1 && r.left >= D.left - 0.5 && r.right <= D.right + 0.5 && r.top >= D.top - 0.5 && r.bottom <= D.bottom + 0.5; });
     /* the characters that show: the word's own width against the room it gets */
     const probe = w.cloneNode(true); Object.assign(probe.style, { position: 'absolute', visibility: 'hidden', maxWidth: 'none', width: 'auto', overflow: 'visible' }); w.parentNode.appendChild(probe);
     const full = probe.getBoundingClientRect().width; probe.remove();
     const shown = w.clientWidth >= full - 0.5 ? w.textContent.length : Math.floor((w.clientWidth / Math.max(full, 1)) * w.textContent.length) - 1;
     return Object.assign(base, {
-      sign: sg.dataset.sign, cls: sg.className, narrow: sg.classList.contains('stl'), word: w.textContent, icon: ic && ic.dataset.icon, open: !!(door && door.querySelector('.leaf')),
+      sign: sg.dataset.sign, cls: sg.className, narrow: sg.classList.contains('stl'), word: w.textContent, icon: ic && ic.dataset.icon, hasDoor: !!door, open: !!(door && door.querySelector('.leaf')),
       title: sg.getAttribute('title') || '', font: parseFloat(getComputedStyle(w).fontSize), icColor: ic && getComputedStyle(ic).color, txColor: getComputedStyle(w).color,
       contrast: tc ? Math.round(ratio(tc, bg) * 100) / 100 : 0, inDesk, shown, cut: w.clientWidth < full - 0.5,
     });
@@ -124,7 +124,8 @@ module.exports = async (ctx) => {
       assert.strictEqual(d.sign, key, `${tag}: sign`);
       assert.strictEqual(d.word, d.narrow ? t.short : t.word, `${tag}: word (${d.narrow ? 'short, mini/micro' : 'full'})`);
       assert.strictEqual(d.icon, t.icon, `${tag}: icon`);
-      assert.strictEqual(d.open, t.open, `${tag}: the door is ${t.open ? 'open' : 'closed'}`);
+      if (d.narrow) assert.ok(!d.hasDoor, `${tag}: the mini/micro sign has no door (icon and short word only)`);
+      else { assert.ok(d.hasDoor, `${tag}: the sign shows the door`); assert.strictEqual(d.open, t.open, `${tag}: the door is ${t.open ? 'open' : 'closed'}`); }
       assert.ok(d.cls.split(' ').includes('st-' + tone), `${tag}: colour st-${tone} (${d.cls})`);
       assert.ok(d.font >= 10.5, `${tag}: sign text ${d.font}px >= 10.5px`);
       assert.strictEqual(d.icColor, d.txColor, `${tag}: the icon is drawn in the text colour`);

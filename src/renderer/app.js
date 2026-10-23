@@ -1015,10 +1015,11 @@ let SIGN_PREF=(()=>{try{return localStorage.getItem('durbar.doorsigns')!=='off';
 const signsOn=()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)&&SIGN_PREF;
 function setSignsOn(on){SIGN_PREF=!!on;try{localStorage.setItem('durbar.doorsigns',SIGN_PREF?'on':'off');}catch(e){}layoutKey='';scheduleRender();}
 const signOf=(a,resting)=>window.DurbarRoom.doorSign({state:vis(a),paused:!!a.paused,coffee:!!a.coffee,limit:!!a.limit,ended:vis(a)==='idle'&&a.label==='Ended',resting:!!resting,failing:isFailing(a),helpers:helpersOf(a).map(vis)});
-/* the sign in the pill's place (cls 'pill', plus the warning a pill carries) or in the mini/micro status word's place (cls 'stl') */
+/* the sign in the pill's place (cls 'pill': door, icon, word and the warning a pill carries) or in the mini/micro status word's place
+   (cls 'stl': icon and short word only, so it gives way like the status word did and a long name keeps three characters, FR-007) */
 function signHTML(a,cls){
   const g=signOf(a);
-  return `<span class="${cls} dsign st-${g.tone} ds-${g.key}" data-sign="${g.key}" title="${esc(g.word)}: ${esc(stWord(a))}${isFailing(a)?' ('+MOOD.failStreak(a.id)+' tool calls failed in a row)':''}">${doorSvg(g.door==='open',true)}${signIcon(g.icon)}<span class="dsw">${esc(cls==='stl'?g.short:g.word)}</span>${cls==='pill'?pillWarn(a):''}</span>`;
+  return `<span class="${cls} dsign st-${g.tone} ds-${g.key}" data-sign="${g.key}" title="${esc(g.word)}: ${esc(stWord(a))}${isFailing(a)?' ('+MOOD.failStreak(a.id)+' tool calls failed in a row)':''}">${cls==='pill'?doorSvg(g.door==='open',true):''}${signIcon(g.icon)}<span class="dsw">${esc(cls==='stl'?g.short:g.word)}</span>${cls==='pill'?pillWarn(a):''}</span>`;
 }
 function roomArt(){
   let s='';
