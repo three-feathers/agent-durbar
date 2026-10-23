@@ -54,7 +54,10 @@ function waits(ctx) {
     await until(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(String(name))}`);
     await settle();
   };
-  return { until, settle, office, chatOf };
+  /** Spec 001 FR-085: no lobby figure is mid-walk (the 1 s WALK_MS transition of `syncWalkers` marks a figure `.walking`), at most `ms`.
+   *  Used by `calm` and every `shot`, so no screenshot catches a figure between two places. */
+  const settleWalk = (ms = 6000) => until(`!document.querySelector('.walker.walking')`, ms);
+  return { until, settle, settleWalk, office, chatOf };
 }
 
 /**
@@ -89,7 +92,7 @@ function helpers(ctx) {
     await ctx.sleep(o.pause === undefined ? 50 : o.pause);
   };
   /** Hide the start-up toasts with a style (once). `keepActions`: keep the ones with a button. `blur`: also drop the focus ring. */
-  const calm = (o = {}) => js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts${o.keepActions ? ' .toast:not(.with-act)' : ''}{display:none!important}';document.head.append(s);}${o.blur ? 'if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();' : ''}})()`);
+  const calm = async (o = {}) => { await js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts${o.keepActions ? ' .toast:not(.with-act)' : ''}{display:none!important}';document.head.append(s);}${o.blur ? 'if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();' : ''}})()`); await w.settleWalk(); };
   /** Remove the toasts that are on screen now. */
   const clearToasts = () => js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
   /**
@@ -120,6 +123,7 @@ function helpers(ctx) {
     else if (prep === 'calm') await calm({ keepActions: o.keepActions, blur: o.blur });
     else if (prep === 'mouse') wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
     if (o.settle) await w.settle();
+    if (prep !== 'calm' && !o.walking) await w.settleWalk(); // FR-085 (calm already waited); `walking: true` keeps a figure mid-walk on purpose
     await ctx.sleep(o.delay === undefined ? 150 : o.delay);
     await ctx.shot(file);
     if (o.tag) console.log(`[${o.tag}] saved`, o.what !== undefined ? o.what : path.basename(file));

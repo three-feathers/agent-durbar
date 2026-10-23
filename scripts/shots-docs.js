@@ -45,6 +45,7 @@ const DOC_SHOTS = [
   { name: 'shots-024', files: ['024-lobby-1440x900.png'] },
   { name: 'shots-030-handoff', files: ['handoff-review-1440x900.png'] },
   { name: 'shots-033', files: ['033-floors-on-1440x900.png'] },
+  { name: 'shots-040-aitheme', env: { DURBAR_SIM_KINDS: 'mixed' }, files: ['040-theme-picker-1440x900.png', '040-aitheme-preview-1440x900.png'] },
   { name: 'shots-043-ai', files: ['043-ai-questionnaire-1440x900.png'] },
   { name: 'shots-043-editor', files: ['043-editor-new-asp-split-1440x900.png', '043-editor-split-clean-1440x900.png'] },
   { name: 'shots-044-templates', files: ['044-templates-1440x900.png'] },
@@ -63,10 +64,23 @@ const DOC_SHOTS = [
   })),
 ];
 
-/** Linked pictures that no driver retakes, with the reason (FR-083). A new entry needs a reason a reviewer accepts. */
-const NO_DRIVER = {
-  '040-aitheme-pirate-1440x900.png': 'made from a real AI generation ("a pirate ship at night", spec 040 real: 2026-10-19); the simulator\'s canned theme is another look (Night-shift newsroom) and the manifest was not kept, so a retake needs a real run (owner approval) or a stored manifest',
-};
+/** Linked pictures that no driver retakes, with the reason (FR-083). Empty: every linked picture is retaken; a new entry needs a reason a reviewer accepts. */
+const NO_DRIVER = {};
+
+/** main's own validator (src/main/simclock.ts, built by `npm run build`), so the script and the app accept exactly the same values. */
+function builtClockQuery() {
+  for (const f of [path.join(ROOT, 'dist', 'main', 'simclock.js'), path.join(ROOT, 'dist-scripts', 'src', 'main', 'simclock.js')]) {
+    if (fs.existsSync(f)) return require(f).simClockQuery;
+  }
+  throw new Error('dist/main/simclock.js is missing: run `npm run build` first (npm run shots:docs does)');
+}
+
+/** Review on #574: the clock to pin, checked like main checks it. A value main would ignore fails here, before any driver starts. */
+function pinnedClock(value, query = builtClockQuery()) {
+  const v = value === undefined || value === '' ? CLOCK : String(value);
+  if (!query(v)) throw new Error(`SHOTS_DOCS_CLOCK=${JSON.stringify(v)} is not a UTC time main accepts (YYYY-MM-DDTHH:MM[:SS]Z, for example ${CLOCK}); nothing was retaken`);
+  return v;
+}
 
 const target = (f) => (typeof f === 'string' ? f : f.to);
 const source = (f) => (typeof f === 'string' ? f : f.from);
@@ -111,7 +125,7 @@ function suiteEnv(d, suite) {
 }
 
 /** `run` and `ensure` are for tests; by default the real ui-suite runner and Electron install. */
-async function main({ argv = process.argv.slice(2), run, ensure } = {}) {
+async function main({ argv = process.argv.slice(2), run, ensure, clockQuery } = {}) {
   const a = args(argv);
   if (a.list) { for (const d of DOC_SHOTS) console.log(`${(d.label || d.name).padEnd(30)} ${d.files.map(target).join(' ')}`); return; }
   const c = coverage();
@@ -124,6 +138,7 @@ async function main({ argv = process.argv.slice(2), run, ensure } = {}) {
   if (problems.length) { for (const p of problems) console.error('shots-docs: ' + p); throw new Error(`${problems.length} problem(s) in the linked-screenshot list`); }
   if (a.check) { console.log(`shots-docs: ${c.linked.length} linked screenshots, each with a driver or a reason`); return; }
 
+  const clock = pinnedClock(process.env.SHOTS_DOCS_CLOCK, clockQuery || builtClockQuery()); // before any Electron starts
   const suite = require('./ui-suite');
   const runOne = run || suite.runOne;
   const todo = DOC_SHOTS.filter((d) => !a.only || a.only.has(d.name) || a.only.has(d.label || ''));
@@ -131,7 +146,6 @@ async function main({ argv = process.argv.slice(2), run, ensure } = {}) {
   if (!(ensure || require('./ensure-electron').ensureElectron)()) throw new Error('the Electron binary is not installed and could not be fetched');
   const out = path.resolve(a.out || SHOTS);
   fs.mkdirSync(out, { recursive: true });
-  const clock = process.env.SHOTS_DOCS_CLOCK || CLOCK;
   const jobs = Math.max(1, Math.min(4, Number(process.env.SHOTS_DOCS_JOBS || 1) || 1));
   console.log(`shots-docs: ${todo.length} driver runs on ${process.platform}, ${jobs} at a time, clock ${clock} UTC, into ${out}`);
   const failed = [];
@@ -167,5 +181,5 @@ async function main({ argv = process.argv.slice(2), run, ensure } = {}) {
   return { copied, failed };
 }
 
-module.exports = { DOC_SHOTS, NO_DRIVER, linkedImages, coverage, main };
+module.exports = { DOC_SHOTS, NO_DRIVER, CLOCK, linkedImages, coverage, pinnedClock, main };
 if (require.main === module) main().catch((e) => { console.error('shots-docs:', e.message); process.exitCode = 1; });

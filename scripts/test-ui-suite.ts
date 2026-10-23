@@ -148,7 +148,9 @@ const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));
   assert.ok(!codes.some((c) => c.includes("querySelectorAll('*').length")) && !sleeps.includes(200), 'settle: false skips the settling wait');
   // shot prepares the page by its prep: toasts are removed, calm hides them, mouse moves the pointer
   codes.length = 0; await H.shot('/tmp/t.png', { prep: 'toasts', delay: 0 }); assert.ok(codes.some((c) => c.includes('#toasts .toast') && c.includes('remove()')), "prep 'toasts' removes the toasts");
-  codes.length = 0; events.length = 0; await H.shot('/tmp/t.png', { prep: 'none', delay: 0 }); assert.strictEqual(codes.length, 0, "prep 'none' does nothing to the page");
+  codes.length = 0; events.length = 0; await H.shot('/tmp/t.png', { prep: 'none', delay: 0 }); assert.deepStrictEqual(codes.map((c) => c.includes('.walker.walking')), [true], "prep 'none' does nothing to the page but wait for walking figures (spec 001 FR-085)");
+  codes.length = 0; await H.shot('/tmp/t.png', { prep: 'none', delay: 0, walking: true }); assert.strictEqual(codes.length, 0, 'walking: true skips the walk wait');
+  codes.length = 0; await H.calm(); assert.ok(codes[0].includes('shotCalm') && codes.slice(1).some((c) => c.includes('.walker.walking')), 'calm hides the toasts, then waits until no figure walks');
   events.length = 0; await H.shot('/tmp/t.png', { prep: 'mouse', delay: 0 }); assert.strictEqual(events[0].type, 'mouseMove', "prep 'mouse' moves the pointer");
   codes.length = 0; sleeps.length = 0; await H.shot('/tmp/t.png', { settle: true, delay: 0 }); assert.ok(codes.some((c) => c.includes("querySelectorAll('*').length")), 'shot settles when asked');
   // values spliced into page code are escaped, whatever they hold
