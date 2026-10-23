@@ -5,7 +5,7 @@ Nothing here starts until the owner answers Q1-Q8 in `spec.md` (or accepts the r
 ## Phase 0: spec (PR: 077-cheeky-crew)
 
 - [x] T000 Spec, plan and tasks; specs-index block; owner questions Q1-Q8 [spec]
-- [x] T001 Owner answers Q1-Q8 recorded under `## Clarifications` in `spec.md`; plan and tasks adjusted (*If the owner decides otherwise*) [all]
+- [x] T001 Owner answers Q1-Q8 recorded under `## Owner answers` in `spec.md`; plan and tasks adjusted (*If the owner decides otherwise*) [all]
 
 ## Phase 1: the kit, the machinery and 4 characters (shown to the owner first)
 
