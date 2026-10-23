@@ -764,6 +764,148 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
 
+  // ---- spec 058 FR-175/FR-176 (T099): Sign in through mcp_authenticate, refreshMcpStatus, Restart ends the mark; SC-176 ----
+  {
+    const sp = fakeSpawn();
+    const reqs: Record<string, unknown>[] = [];
+    let clock = 1_000_000;
+    let servers: Array<Record<string, unknown>> = [{ name: 'notes', status: 'connected' }, { name: 'web', status: 'connected' }];
+    /** What the fake CLI answers to mcp_authenticate: a response body, an error text, or `hold` (no answer; the id is kept). */
+    let auth: { response?: Record<string, unknown>; error?: string; hold?: boolean; delayClock?: number } = {};
+    let held: string | undefined;
+    let child: FakeClaudeChild | undefined;
+    const PAGE = 'https://auth.example.com/authorize?state=SECRETSTATE123&code_challenge=PKCEPKCE';
+    sp.next = (c) => {
+      child = c;
+      c.onWrite = (o) => {
+        if (o.type === 'control_request') {
+          const r = o.request as Record<string, unknown>;
+          if (r.subtype !== 'initialize') reqs.push(r);
+          const ok = (response: Record<string, unknown>) => setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
+          if (r.subtype === 'mcp_authenticate') {
+            if (auth.delayClock) clock += auth.delayClock;
+            if (auth.hold) { held = o.request_id as string; return; }
+            if (auth.error !== undefined) return void setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'error', request_id: o.request_id, error: auth.error } }), 0);
+            return ok(auth.response ?? {});
+          }
+          if (r.subtype === 'mcp_reconnect') servers = servers.map((x) => (x.name === r.serverName ? { name: x.name, status: 'connected' } : x));
+          return ok(r.subtype === 'mcp_status' ? { mcpServers: servers } : {});
+        }
+        if (o.type !== 'user') return;
+        const text = JSON.stringify(o);
+        setTimeout(() => {
+          c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, tools: [], mcp_servers: servers });
+          if (text.includes('challenge')) {
+            c.send({ type: 'assistant', message: { id: 'm-c1', content: [{ type: 'tool_use', id: 'c1', name: 'mcp__notes__q', input: {} }] } });
+            c.send({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'c1', content: 'MCP OAuth challenge required (HTTP 401)', is_error: true }] } });
+          }
+          c.send({ type: 'result', subtype: 'success', is_error: false });
+        }, 0);
+      };
+    };
+    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}), now: () => clock, signInTimeoutMs: 60 });
+    const debug: string[] = [];
+    ad.debug = (m) => debug.push(m);
+    const ev: AgentEvent[] = [];
+    ad.onEvent((e) => ev.push(e));
+    // capabilities (FR-181 text, FR-180 note, Q21 A Restart), no cancel member
+    const c = ad.capabilities;
+    assert.deepStrictEqual([c.mcpSignIn, c.mcpSignInRestart, c.mcpSignInNote, typeof ad.startMcpSignIn, typeof ad.refreshMcpStatus, typeof (ad as { cancelMcpSignIn?: unknown }).cancelMcpSignIn], [true, true, 'Not checked on a real account yet.', 'function', 'function', 'undefined']);
+    assert.strictEqual(c.mcpSignInSteps, "If Sign in is not available, run `claude mcp login {name}` in a terminal and finish in your browser. This works only for a server in Claude Code's own settings. Then press Restart on this row.");
+    await assert.rejects(ad.startMcpSignIn('no-such-session', 'notes'), /not running/);
+    const sid = await ad.start({ workspace: WS, quiet: true, mcpServers: { notes: { type: 'http', url: 'https://mcp.example.com/mcp' }, web: { type: 'http', url: 'https://w.example.com/mcp' }, gone: { type: 'http', url: 'https://g.example.com/mcp' } } as never, disabledMcpServers: ['gone'] });
+    await assert.rejects(ad.startMcpSignIn(sid, 'notes'), /^Error: Send a message first, then sign in\.$/, 'Q15: the CLI is not launched for a sign-in');
+    assert.strictEqual(sp.calls.length, 0, 'no CLI was started');
+    await ad.send(sid, { text: 'hi' });
+    await until('idle', () => ev.some((e) => e.type === 'status' && (e as { status: string }).status === 'idle'));
+    // the browser answer, with the time from request to answer taken off the CLI's 5 minutes
+    auth = { response: { authUrl: PAGE, requiresUserAction: true, callbackExpected: true, redirectScheme: 'localhost', state: 'SECRETSTATE123', callbackPort: 41234 }, delayClock: 25_000 };
+    reqs.length = 0;
+    assert.deepStrictEqual(await ad.startMcpSignIn(sid, 'notes'), { kind: 'browser', url: PAGE, ttlMs: 265_000 }, 'browser, ttlMs = 300000 - 25000 - 10000');
+    assert.deepStrictEqual(reqs, [{ subtype: 'mcp_authenticate', serverName: 'notes' }], 'exactly mcp_authenticate {serverName}: no redirectUri, nothing else');
+    auth.delayClock = 280_000;
+    assert.strictEqual(((await ad.startMcpSignIn(sid, 'notes')) as { ttlMs: number }).ttlMs, 30_000, 'a slow answer: at least 30 s');
+    auth.delayClock = undefined;
+    // a second Sign in while the first listens is allowed
+    assert.strictEqual((await ad.startMcpSignIn(sid, 'notes')).kind, 'browser');
+    // no browser step needed
+    auth = { response: { requiresUserAction: false, callbackExpected: false } };
+    assert.deepStrictEqual(await ad.startMcpSignIn(sid, 'notes'), { kind: 'connected' });
+    // a claude.ai connector, or any other shape: rejected (the terminal steps show)
+    for (const response of [{ authUrl: 'https://claude.ai/x', requiresUserAction: true, callbackExpected: false }, { authUrl: 7, requiresUserAction: true }, { authUrl: PAGE }, { authUrl: PAGE, requiresUserAction: false }, {}, { requiresUserAction: 'false' }]) {
+      auth = { response };
+      await assert.rejects(ad.startMcpSignIn(sid, 'notes'), /cannot finish this sign-in inside Agent Durbar/, `shape ${JSON.stringify(response).slice(0, 60)}`);
+    }
+    // a refusal keeps the CLI's text (main masks it); an unknown subtype is the manual-steps message
+    auth = { error: 'Server not found: notes' };
+    await assert.rejects(ad.startMcpSignIn(sid, 'notes'), /^Error: Server not found: notes$/);
+    auth = { error: 'Server "notes" is not supported in this context' };
+    await assert.rejects(ad.startMcpSignIn(sid, 'notes'), /not supported in this context/);
+    for (const error of ['Unsupported control request subtype: mcp_authenticate', 'Unknown request subtype mcp_authenticate', 'unrecognized control request']) {
+      auth = { error };
+      await assert.rejects(ad.startMcpSignIn(sid, 'notes'), /This Claude Code version cannot start a sign-in from Agent Durbar\./, error);
+    }
+    // a timeout: the manual-steps message; the late answer is dropped unread
+    auth = { hold: true };
+    const evBefore = ev.length;
+    await assert.rejects(ad.startMcpSignIn(sid, 'notes'), /This Claude Code version cannot start a sign-in from Agent Durbar\./, 'a timeout shows the terminal steps');
+    child!.send({ type: 'control_response', response: { subtype: 'success', request_id: held, response: { authUrl: PAGE, requiresUserAction: true } } });
+    await tick(10);
+    assert.strictEqual(ev.length, evBefore, 'the late answer changes nothing');
+    // a server off at launch, or switched off since
+    auth = { response: { authUrl: PAGE, requiresUserAction: true } };
+    await assert.rejects(ad.startMcpSignIn(sid, 'gone'), /Switch it on first; it starts with your next message\./);
+    await ad.setMcpEnabled(sid, 'web', false);
+    await assert.rejects(ad.startMcpSignIn(sid, 'web'), /Switch it on first/);
+    await ad.setMcpEnabled(sid, 'web', true);
+    // refreshMcpStatus: one mcp_status, emitted; a re-read is not a new status
+    type Row = { name: string; status: string; errorClass?: string };
+    const st = (n: string): string | undefined => (([...ev].reverse().find((e) => e.type === 'mcp') as unknown as { servers: Row[] }).servers.find((x) => x.name === n))?.status;
+    await ad.send(sid, { text: 'challenge' });
+    await until('marked', () => (st('notes') === 'needs-auth' ? true : undefined));
+    reqs.length = 0;
+    for (let i = 0; i < 3; i++) await ad.refreshMcpStatus(sid, 'notes');
+    assert.deepStrictEqual(reqs, [{ subtype: 'mcp_status' }, { subtype: 'mcp_status' }, { subtype: 'mcp_status' }], 'each read is one mcp_status');
+    assert.strictEqual(st('notes'), 'needs-auth', 'three polls that still say connected keep a mark-only needs-auth (no "Signed in" by itself)');
+    // Restart ends the mark (the FR-060 gap): mcp_reconnect, then the list through the mark rule
+    reqs.length = 0;
+    await ad.restartMcpServer(sid, 'notes');
+    assert.deepStrictEqual(reqs, [{ subtype: 'mcp_reconnect', serverName: 'notes' }, { subtype: 'mcp_status' }]);
+    assert.strictEqual(st('notes'), 'connected', 'Restart picks up a sign-in finished elsewhere');
+    // the CLI's own needs-auth -> connected on a poll ends it, also with a mark
+    servers = [{ name: 'notes', status: 'needs-auth' }, { name: 'web', status: 'connected' }];
+    await ad.send(sid, { text: 'challenge' });
+    await until('needs-auth', () => (st('notes') === 'needs-auth' ? true : undefined));
+    servers = [{ name: 'notes', status: 'connected' }, { name: 'web', status: 'connected' }];
+    await ad.refreshMcpStatus(sid, 'notes');
+    assert.strictEqual(st('notes'), 'connected', 'a needs-auth -> connected read ends the sign-in');
+    // SC-176: nothing else was ever sent, no subprocess was started for a sign-in, and no address reached a debug line or an event
+    const all = sp.calls.length;
+    assert.strictEqual(all, 1, 'one CLI launch, no sign-in subprocess');
+    const sent = child!.written.join('\n');
+    for (const bad of ['mcp_oauth_callback_url', 'mcp_clear_auth', 'redirectUri', 'clientSecret']) assert.ok(!sent.includes(bad), `never sent: ${bad}`);
+    assert.ok(!/auth\.example\.com|SECRETSTATE|PKCEPKCE/.test(debug.join('\n')), 'no address in a debug line');
+    assert.ok(!/auth\.example\.com|SECRETSTATE/.test(JSON.stringify(ev)), 'no address in an event');
+    await ad.stop(sid);
+    await assert.rejects(ad.startMcpSignIn(sid, 'notes'), /not running/);
+    // the SDK transport sends no mcp_authenticate: no Sign in members, the steps and the note stay (FR-180)
+    const sdk = new ClaudeAdapter({ sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
+    assert.deepStrictEqual([sdk.capabilities.mcpSignIn, sdk.capabilities.mcpSignInRestart, typeof sdk.startMcpSignIn, typeof sdk.refreshMcpStatus, !!sdk.capabilities.mcpSignInSteps, !!sdk.capabilities.mcpSignInNote], [undefined, undefined, 'undefined', 'undefined', true, true]);
+  }
+
+  // ---- spec 058 FR-186 (T158): the allow-listed oauth fields reach --mcp-config, never a client secret ----
+  {
+    const json = (spec: Record<string, unknown>): Record<string, unknown> => JSON.parse(mcpConfigOf({ s: spec as never })!).mcpServers.s;
+    const ok = { clientId: 'durbar-client', callbackPort: 8080, authServerMetadataUrl: 'https://login.example.com/.well-known/oauth-authorization-server', scopes: 'read write' };
+    assert.deepStrictEqual(json({ type: 'http', url: 'https://mcp.example.com/mcp', oauth: ok }).oauth, ok, 'copied exactly');
+    assert.deepStrictEqual(json({ type: 'sse', url: 'https://mcp.example.com/sse', oauth: { clientId: 'a' } }).oauth, { clientId: 'a' }, 'sse too');
+    const planted = json({ type: 'http', url: 'https://mcp.example.com/mcp', oauth: { ...ok, clientSecret: 'sk-PLANTED-SECRET', xaa: true } });
+    assert.deepStrictEqual(planted.oauth, ok, 'whatever the spec object holds, only the four fields are written');
+    assert.ok(!mcpConfigOf({ s: { type: 'http', url: 'https://m.example/', oauth: { ...ok, clientSecret: 'sk-PLANTED-SECRET' } } as never })!.includes('PLANTED'), 'the JSON never holds a client secret');
+    assert.strictEqual(json({ type: 'stdio', command: 'node', oauth: ok }).oauth, undefined, 'a stdio server never gets one');
+    assert.strictEqual(json({ type: 'http', url: 'https://mcp.example.com/mcp', oauth: { callbackPort: 0 } }).oauth, undefined, 'a bad value: none');
+  }
+
   // ---- custom agents (spec 043 FR-008): chosen before the first message, passed on the first launch; a started session refuses ----
   {
     const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cagent-cfg-'));

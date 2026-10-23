@@ -4,6 +4,7 @@
  * no network, no credits; every file lives in a temp folder.
  */
 import * as assert from 'assert';
+import { mcpConfigOf } from '../src/adapters/claude';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -866,6 +867,57 @@ ok('a plain secret copied from an owner-only file never lands in a more open one
   assert.ok(res.ok, JSON.stringify(res));
   assert.ok(fs.readFileSync(ct, 'utf8').includes(SECRET), 'the value is copied as it is');
   assert.strictEqual(fs.statSync(ct).mode & 0o777, 0o600, 'the 0644 target is left 0600');
+});
+
+// ---------------------------------------------------------------- spec 058 FR-186 (T158): Claude's oauth, allow-listed
+ok('FR-186: a Claude entry\'s oauth is copied through the allow-list, all or nothing, never a secret', () => {
+  const home = tmp();
+  const OK = { clientId: 'durbar-client', callbackPort: 8080, authServerMetadataUrl: 'https://login.example.com/.well-known/oauth-authorization-server', scopes: 'read write' };
+  const big = 's'.repeat(100 * 1024);
+  // raw JSON text, so own `__proto__` / `constructor` keys really are in the parsed object
+  const entry = (oauth: string): string => `{"type":"http","url":"https://mcp.example.com/mcp","oauth":${oauth}}`;
+  const cases: Record<string, string> = {
+    valid: entry(JSON.stringify(OK)),
+    extras: entry(`{"clientId":"durbar-client","callbackPort":8080,"clientSecret":"sk-PLANTED-SECRET","client_secret":"sk-PLANTED-2","xaa":true,"surprise":1,"__proto__":{"polluted":true},"constructor":{"x":1},"prototype":2}`),
+    nestedId: entry(`{"clientId":{"a":"b"},"scopes":"read"}`),
+    bigScopes: entry(JSON.stringify({ clientId: 'a', scopes: big })),
+    port0: entry(`{"clientId":"a","callbackPort":0}`),
+    port70000: entry(`{"clientId":"a","callbackPort":70000}`),
+    port15: entry(`{"clientId":"a","callbackPort":1.5}`),
+    portStr: entry(`{"clientId":"a","callbackPort":"8080"}`),
+    metaHttp: entry(`{"clientId":"a","authServerMetadataUrl":"http://login.example.com/x"}`),
+    metaJs: entry(`{"clientId":"a","authServerMetadataUrl":"javascript:alert(1)"}`),
+    emptyId: entry(`{"clientId":""}`),
+    arrayScopes: entry(`{"scopes":["read","write"]}`),
+    notObject: entry(`"clientId=a"`),
+    arrayOauth: entry(`[{"clientId":"a"}]`),
+    nullOauth: entry(`null`),
+    stdio: `{"type":"stdio","command":"node","args":["s.js"],"oauth":${JSON.stringify(OK)}}`,
+    sse: `{"type":"sse","url":"https://mcp.example.com/sse","oauth":{"clientId":"a"}}`,
+  };
+  fs.writeFileSync(path.join(home, '.claude.json'), `{"mcpServers":{${Object.entries(cases).map(([k, v]) => `"${k}":${v}`).join(',')}}}`);
+  const lists = new GlobalLists(() => globalFiles({}, home));
+  const s = lists.sessionServers('claude', new Set());
+  assert.deepStrictEqual(s.valid.oauth, OK, 'a valid object is copied exactly');
+  assert.deepStrictEqual(s.extras.oauth, { clientId: 'durbar-client', callbackPort: 8080 }, 'extra keys are dropped on their own; the valid fields still copy');
+  assert.ok(!Object.prototype.hasOwnProperty.call(s.extras.oauth, '__proto__') && ({} as Record<string, unknown>).polluted === undefined, 'no prototype key read or written');
+  for (const k of ['nestedId', 'bigScopes', 'port0', 'port70000', 'port15', 'portStr', 'metaHttp', 'metaJs', 'emptyId', 'arrayScopes', 'notObject', 'arrayOauth', 'nullOauth']) {
+    assert.ok(s[k], `${k}: the server still starts`);
+    assert.strictEqual(s[k].oauth, undefined, `${k}: a bad value means no oauth at all`);
+  }
+  assert.strictEqual(s.stdio.oauth, undefined, 'a stdio entry never gets one');
+  assert.deepStrictEqual(s.sse.oauth, { clientId: 'a' });
+  assert.ok(!JSON.stringify(s).includes('PLANTED'), 'no client secret anywhere in the session options');
+  // the --mcp-config JSON a Claude session gets
+  const cfg = mcpConfigOf(s)!;
+  assert.ok(!cfg.includes('PLANTED') && !cfg.includes('clientSecret') && !cfg.includes('xaa'), 'the --mcp-config never holds a client secret');
+  assert.deepStrictEqual(JSON.parse(cfg).mcpServers.valid.oauth, OK);
+  // other apps never carry it (Copilot and Codex sessions are not affected)
+  const cf = globalFiles({}, home).copilot.file;
+  fs.mkdirSync(path.dirname(cf), { recursive: true });
+  fs.writeFileSync(cf, `{"mcpServers":{"valid":${cases.valid}}}`);
+  const cop = lists.sessionServers('copilot', new Set());
+  assert.ok(cop.valid && cop.valid.oauth === undefined, 'only a Claude entry carries it');
 });
 
 console.log(`test-mcp-global: ${n} checks passed`);
