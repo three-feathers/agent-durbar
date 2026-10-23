@@ -4196,6 +4196,7 @@ function onLiveEvent(e){
     if(p&&a.profileList){const known=a.profileList.find(x=>x.id===p.id);if(known)Object.assign(p,{source:known.source,description:known.description,path:known.path});}
     a.profile=p;updateAgentChip(a);scheduleRender();return;}
   case 'model':onModelEvent(a,e);return;
+  case 'autoTierFailed':onAutoTierFailed(a,e);return;
   case 'compaction':onCompaction(a,e);return;
   case 'thinking':{if(a.coffee&&!a.limit)endCoffee(a,'the agent went on');const t=ensureTurn(a);tThink(t.T,e.reasoningId,e.delta);setState(a,'thinking',null);return;}
   case 'output':{const t=ensureTurn(a);const out=tText(t.T,e);if(out!=null)a.lastOutput=out;if(!a.coffee)setState(a,'working',null);return;} /* spec 068: text after a usage limit does not end the break */
@@ -4537,7 +4538,7 @@ async function ensureModels(k){
 }
 function modelLabel(info){
   const m=modelsFor(info.adapterId).find(x=>x.id===(info.model||'auto')), nm=m?m.name:(info.model||'auto')==='auto'?'Auto':info.model;
-  const eff=(info.effort?' · '+info.effort+' effort':'')+(info.tier==='long'?' · long context':'');
+  const eff=(info.effort?' · '+info.effort+' effort':'')+(info.tier==='long'?' · long context':'')+((info.model||'auto')==='auto'&&DM.autoTierName(info.autoTier)?' · '+info.autoTier+' routing':''); /* spec 007 FR-013: only once the agent chose a tier */
   const mult=m&&m.multiplier!=null?' · ×'+m.multiplier+' credit multiplier':'';
   return {name:nm,text:nm+eff,title:'Model: '+nm+eff+mult+(m&&m.multiplier!=null?' (as reported by your Copilot account)':'')};
 }
@@ -4807,6 +4808,11 @@ function openModelMenu(a0,x,y,anchor){
   let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
   h+='<p class="mm-h">Model</p>'+list.map(m=>{const chk=m.id===curId,w=DM.windowOf(m);
     return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${esc(DM.priceLine(m))}${w?' · '+esc(DM.fmtTokens(w))+' window':''}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
+  /* spec 007 FR-013/FR-017: the Auto routing tier, a group like the effort (Copilot's Auto only); a locked organization tier shows disabled */
+  const ats=curId==='auto'?DM.autoTiersOf(cur):[];
+  if(ats.length){const atNow=DM.autoTierOf(cur,a.info.autoTier),lock=DM.autoTierLocked(cur);
+    /* review on PR 642: the locked reason is the buttons' description (aria-describedby), not only a title; a lock with no known name still locks */
+    h+='<p class="mm-h">Auto routing</p><div class="mm-seg" role="group" aria-label="Auto routing"'+(lock?' aria-describedby="mmAutoLock"':'')+'>'+ats.map(t=>`<button type="button" data-autotier="${esc(t)}" aria-pressed="${t===atNow}"${lock?' aria-disabled="true" aria-describedby="mmAutoLock"':dis} title="${esc(DM.AUTO_TIER_HINT[t]+(lock?'. Set by your organization\'s Copilot policy.':'.'))}">${esc(DM.autoTierName(t))}</button>`).join('')+'</div>'+(lock?`<p class="mm-why mm-lock" id="mmAutoLock" role="note">Set by your organization's Copilot policy${atNow?': '+esc(DM.autoTierName(atNow)):''}.</p>`:'');}
   if((cur.efforts||[]).length)h+='<p class="mm-h">Reasoning effort</p><div class="mm-seg" role="group" aria-label="Reasoning effort">'+['',...cur.efforts].map(x=>{const on2=(a.info.effort||'')===x;return `<button type="button" data-effort="${esc(x)}" aria-pressed="${on2}"${dis}>${x?esc(x):'Default'}</button>`;}).join('')+'</div>';
   /* spec 005 FR-050: the window choice of this model only: Long context where it has one, else the one window it has */
   const w0=DM.windowOf(cur);
@@ -4823,9 +4829,10 @@ function openModelMenu(a0,x,y,anchor){
     if(b.dataset.cancelq){closeModelMenu();cancelPendingModel(a,anchor);return;}
     if(b.getAttribute('aria-disabled')==='true')return;
     closeModelMenu();
-    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick,a.info.adapterId);chooseModel(a,{model:t.id,contextTier:t.id===cur.id?tier:'default'},anchor);}
+    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick,a.info.adapterId),own=a.info.autoTier;chooseModel(a,Object.assign({model:t.id,contextTier:t.id===cur.id?tier:'default'},t.id!==cur.id&&own&&DM.autoTiersOf(t).includes(own)&&!DM.autoTierLocked(t)?{autoTier:own}:{}),anchor);} /* spec 007 FR-016: back on Auto with the agent's own tier */
     else if(b.dataset.effort!==undefined)chooseModel(a,{model:cur.id,effort:b.dataset.effort||null,contextTier:tier},anchor);
     else if(b.dataset.tier)chooseModel(a,{model:cur.id,contextTier:tier==='long'?'default':'long'},anchor);
+    else if(b.dataset.autotier!==undefined)chooseAutoTier(a,b.dataset.autotier,anchor);
   });
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('button')],i=it.indexOf(document.activeElement);
     if(e.key==='ArrowDown'||e.key==='ArrowRight'){e.preventDefault();focusIn(it[(i+1)%it.length]);}else if(e.key==='ArrowUp'||e.key==='ArrowLeft'){e.preventDefault();focusIn(it[(i+it.length-1)%it.length]);}
@@ -4846,32 +4853,57 @@ async function chooseModelInner(a,req,anchor){
   const cap=isUsdCap(a)?undefined:a.info.maxAiCredits,used=a.usage?a.usage.nano/1e9:0; /* the switch estimate is in AI credits: a dollar cap is not compared */
   const cf=DM.confirmFor(cur,tgt,{tokens,cap,used,tierFrom,tierTo});
   const confirm={};
-  if(cf.needed){
+  if(cf.needed||(req.autoTier&&tgt.id==='auto'&&DM.autoTierConfirm('efficiency',req.autoTier).needed)){
     const lines=cf.reasons.map(r=>r.text);
     lines.push('Price now: '+DM.priceLine(cur,tierFrom)+'. New: '+DM.priceLine(tgt,tierTo)+'.');
     if(cf.estimate!==undefined&&!cf.overCap)lines.push('Reading this conversation once would cost about '+DM.fmtCredits(cf.estimate)+' AI credits with '+tgt.name+' (an estimate, if nothing is cached).');
     if(cap>0)lines.push('Your spending limit of '+fmtCap(cap)+' AI credits is not changed.');
     if(busyNow(a))lines.push('A reply is running: the switch applies when it ends.'+(ctrlOf(a).unverified?' If you stop the reply, whether the switch still applies is not verified.':''));
     if(ctrlOf(a).unverified)lines.push(UNVERIFIED_WHY);
-    const r=await askDialog({title:'Switch '+a.name+' to '+tgt.name+(tierTo==='long'?' (long context)':'')+'?',body:'The conversation is kept. From the next message this agent uses the new model.',lines,returnFocus:anchor,
+    /* review on PR 642: back on Auto with the agent's own tier: the dialog names it, with the higher-tier reasons when it is above Efficiency */
+    const at=req.autoTier&&tgt.id==='auto'?req.autoTier:'';
+    if(at)lines.unshift(...DM.autoTierConfirm('efficiency',at).reasons,'Auto routes with '+DM.autoTierName(at)+', the tier this agent chose before.');
+    const r=await askDialog({title:'Switch '+a.name+' to '+tgt.name+(at?' ('+DM.autoTierName(at)+' routing)':'')+(tierTo==='long'?' (long context)':'')+'?',body:'The conversation is kept. From the next message this agent uses the new model.',lines,returnFocus:anchor,
       buttons:[{label:'Cancel',value:null},{label:cf.compaction?'Compact and switch':cf.overCap?'Switch anyway':'Switch',value:'ok',cls:'primary'+(cf.overCap?' warn':'')}]});
     if(!r)return;
     if(cf.compaction)confirm.compaction='accept';
   }
   /* an effort the new model does not support is cleared (its default), never sent: the runtime would refuse the switch */
   const effort=req.effort!==undefined?req.effort:(a.info.effort&&tgt.id!==cur.id&&!(tgt.efforts||[]).includes(a.info.effort)?null:undefined);
-  await sendModelChange(a,Object.assign({model:tgt.id,contextTier:tierTo},effort!==undefined?{effort}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom},tgt,anchor});
+  await sendModelChange(a,Object.assign({model:tgt.id,contextTier:tierTo},effort!==undefined?{effort}:{},req.autoTier?{autoTier:req.autoTier}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom,autoTier:a.info.autoTier},tgt,anchor});
+}
+/* spec 007 FR-014: a tier of Auto, switched like a model (same call, Undo, queue); a higher tier asks first with the app's dialog */
+async function chooseAutoTier(a,to,anchor){
+  try{
+    const cur=modelOf('auto',a.info.adapterId);
+    if((a.info.model||'auto')!=='auto'||!DM.autoTiersOf(cur).includes(to)||DM.autoTierLocked(cur))return;
+    const from=DM.autoTierOf(cur,a.info.autoTier);
+    if(from===to&&!a.pendingModel)return;
+    const cf=DM.autoTierConfirm(from,to);
+    if(cf.needed){
+      const lines=cf.reasons.slice(), cap=isUsdCap(a)?undefined:a.info.maxAiCredits;
+      if(cap>0)lines.push('Your spending limit of '+fmtCap(cap)+' AI credits is not changed.');
+      if(busyNow(a))lines.push('A reply is running: the change applies when it ends.');
+      if(ctrlOf(a).unverified)lines.push(UNVERIFIED_WHY);
+      const r=await askDialog({title:'Switch '+a.name+' to '+DM.autoTierName(to)+' routing?',body:'The conversation is kept. From the next message Auto routes with the new preference.',lines,returnFocus:anchor,
+        buttons:[{label:'Cancel',value:null},{label:'Switch',value:'ok',cls:'primary'}]});
+      if(!r)return;
+    }
+    await sendModelChange(a,{model:'auto',autoTier:to,contextTier:tierOf(a)},{prev:{model:'auto',effort:a.info.effort,tier:tierOf(a),autoTier:a.info.autoTier},tgt:cur,anchor}); /* Undo restores the agent's own choice, "none" included */
+  }finally{refocusAnchor(anchor);}
 }
 async function sendModelChange(a,req,ctx){
   const res=await bridge.setModel(a.id,req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok){toast('Could not change the model: '+esc((res&&res.error)||'unknown error'),6000);return;}
-  const r=res.result||{},nm=ctx.tgt.name+(req.contextTier==='long'?' (long context)':'');
+  const r=res.result||{},nm=ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+' routing)':'')+(req.contextTier==='long'?' (long context)':'');
   if(r.status==='applied'){
+    if(req.autoTier){a.info.autoTier=req.autoTier;updateModelChip(a);} /* spec 007 FR-016: also when the runtime sends no model change for a tier */
+    else if(req.autoTier===null){a.info.autoTier=undefined;updateModelChip(a);}
     /* spec 052 (2026-10-21): one Undo toast per agent; a newer switch replaces the older toast (only the last switch can be undone) */
     if(!ctx.undo){document.querySelectorAll('#toasts .toast[data-undo-model="'+CSS.escape(a.id)+'"]').forEach(t=>t.remove());const t=toastAction(esc(a.name)+': <b>'+esc(nm)+'</b> from the next message.','Undo',()=>undoModel(a,ctx.prev,ctx.anchor),8000);if(t&&t.dataset)t.dataset.undoModel=a.id;}
     else toast(esc(a.name)+': back to <b>'+esc(nm)+'</b>.',3800);
   }else if(r.status==='queued'){
-    a.pendingModel={queueId:r.queueId,name:ctx.tgt.name,tier:req.contextTier,prev:ctx.prev};updateModelChip(a);
+    a.pendingModel={queueId:r.queueId,name:ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+')':''),tier:req.contextTier,prev:ctx.prev};updateModelChip(a);
     toast(esc(a.name)+' is replying: <b>'+esc(nm)+'</b> applies when the reply ends.',5000);
   }else if(r.status==='needs-confirmation'){
     const cf=r.confirmation||{};
@@ -4882,7 +4914,9 @@ async function sendModelChange(a,req,ctx){
 }
 async function undoModel(a,prev,anchor){
   if(!bridge.setModel)return;
-  const req={model:prev.model,contextTier:prev.tier,effort:prev.effort||null};
+  /* spec 007 FR-014/FR-016: back to the agent's own tier, or to none of its own (null: the default again); never against a lock */
+  const am=modelOf('auto',a.info.adapterId),tierOk=prev.model==='auto'&&DM.autoTiersOf(am).length&&!DM.autoTierLocked(am);
+  const req=Object.assign({model:prev.model,contextTier:prev.tier,effort:prev.effort||null},tierOk?{autoTier:DM.autoTiersOf(am).includes(prev.autoTier)?prev.autoTier:null}:{});
   await sendModelChange(a,req,{prev,tgt:modelOf(prev.model),anchor,undo:true});
   refocusAnchor(anchor);
 }
@@ -4901,6 +4935,7 @@ function onModelEvent(a,e){
     a.info.model=e.model;
     if(e.cause==='user'||e.effort!==undefined)a.info.effort=e.effort;
     a.info.tier=e.tier==='long'?'long':undefined;
+    if(e.cause==='user'&&e.autoTier)a.info.autoTier=e.autoTier; /* spec 007 FR-016 */
     a.role=roleFor(a.info);
   }
   a.ctxWaiting=true; /* the runtime reports the new window with the next message */
@@ -4913,6 +4948,13 @@ function onModelEvent(a,e){
     if(e.cause!=='user'){n.classList.remove('info');toast(esc(a.name)+': the runtime switched to <b>'+esc(nm(e.model))+'</b> ('+(e.cause==='rate-limit'?'rate limit':e.cause==='fallback'?'request refused':'its own choice')+').',5200);}
   }
   updateModelChip(a);updateCtxChip(a);scheduleRender();
+}
+/* spec 007 FR-019: the runtime kept the tier it had: show that one again and say so (never silent) */
+function onAutoTierFailed(a,e){
+  if((a.info.model||'auto')!=='auto')return;
+  a.info.autoTier=e.effective;
+  const t=DM.autoTierFailText(e);addInfoNote(liveChat(a),t,'rt');toast(esc(a.name)+': '+esc(t),6000);
+  updateModelChip(a);scheduleRender();
 }
 function onCompaction(a,e){
   const chat=liveChat(a), at=()=>new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
