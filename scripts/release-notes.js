@@ -89,7 +89,8 @@ function previousRelease(root, commit, tag) {
 
 /*
  * Spec 008 FR-122: the notes of a test build: the commits in `<mainRef>..<commit>` (newest first, at most TEST_COMMITS_MAX), each
- * its short sha and subject line, the subject masked and then cut; the PR numbers named in them; a compare link. No fragments.
+ * its short sha and subject line, the subject masked, then cut, then shown as inline code; the PR numbers named in them (outside the
+ * code, so they link); a compare link. No fragments.
  */
 function testNotes(root, { tag, repo, commit, mainRef, date, redact = loadRedact() }) {
   const total = Number(git(root, ['rev-list', '--count', `${mainRef}..${commit}`]));
@@ -100,7 +101,10 @@ function testNotes(root, { tag, repo, commit, mainRef, date, redact = loadRedact
     const tab = l.indexOf('\t');
     const subject = redact.cut(redact.redact(l.slice(tab + 1)), TEST_SUBJECT_MAX); // mask first, then cut (constitution III)
     for (const [, n] of subject.matchAll(/(?<![\w&])#(\d{1,7})\b/g)) prs.add(Number(n));
-    return `- \`${l.slice(0, tab)}\` ${subject}`;
+    // inline code, so nothing in a subject renders: no mention, link, image or HTML, and no Markdown that would rebuild a masked
+    // token (`gh**p_…**`, `ghp&#95;…`); a backtick would end the span, so it becomes a quote
+    const code = subject.replace(/`/g, "'") || '(no subject)';
+    return `- \`${l.slice(0, tab)}\` \`${code}\``;
   });
   const heading = `${tag} (test build, ${date})`;
   const compare = `https://github.com/${repo}/compare/main...${tag}`;

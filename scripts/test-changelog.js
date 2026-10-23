@@ -352,9 +352,9 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
         '',
         'Commits not on `main` (3, newest first; [compare](https://github.com/three-feathers/agent-durbar/compare/main...v0.1.0-alpha.11-test.1)):',
         '',
-        `- \`${sha('HEAD')}\` ${cut(redact(LONG), rn.TEST_SUBJECT_MAX)}`,
-        `- \`${sha('HEAD~1')}\` Debug line with [redacted] by mistake`,
-        `- \`${sha('HEAD~2')}\` Fix the MCP sign-in (#123)`,
+        `- \`${sha('HEAD')}\` \`${cut(redact(LONG), rn.TEST_SUBJECT_MAX)}\``,
+        `- \`${sha('HEAD~1')}\` \`Debug line with [redacted] by mistake\``,
+        `- \`${sha('HEAD~2')}\` \`Fix the MCP sign-in (#123)\``,
         '',
         'Pull requests named in them: #123',
         '',
@@ -362,7 +362,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
       assert.strictEqual(r.notes, expected, 'the unmerged commits, newest first, masked, then cut; the PRs they name');
       assert.ok(!r.notes.includes('ghp_') && !r.notes.includes('Ab1Ab1'), 'no part of the token is left');
       const longLine = r.notes.split('\n').find((l) => l.includes('Long subject'));
-      assert.ok(longLine.endsWith(' [truncated]') && longLine.length < rn.TEST_SUBJECT_MAX + 40, 'a long subject is cut');
+      assert.ok(longLine.endsWith(' [truncated]`') && longLine.length < rn.TEST_SUBJECT_MAX + 40, 'a long subject is cut');
       assert.ok(longLine.length > rn.TEST_SUBJECT_MAX, 'cut after the mask: the full length is kept for the text after the token');
       assert.ok(!/alpha\.11 version|alpha\.10|Change A|Change B/.test(r.notes), 'no commit of main and no changelog fragment');
       assert.strictEqual(g(d, 'status', '--porcelain'), status, 'no tracked file changed');
@@ -419,6 +419,32 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
       assert.ok(rel.notes.startsWith(rn.PREAMBLE) && rel.notes.endsWith('- Change A.\n- Change B.\n- Change C.\n'), 'the real release still gets its fragments');
     }
     {
+      // subjects are untrusted Markdown: each one is a single code span, so no mention, link, image or HTML renders, and Markdown or
+      // HTML that would rebuild a token redact() cannot see (bold, an empty tag, a comment, an entity) shows literally (review on #665)
+      const T36 = 'Ab1'.repeat(12);
+      const hostile = [
+        'Ping @octocat about `code` and **bold** <b>tag</b> ![x](https://example.invalid/i.png) [a](http://x)',
+        `gh**p_${T36}**`,
+        `g<b></b>hp_${T36}`,
+        `ghp<!---->_${T36}`,
+        `ghp&#95;${T36}`,
+      ];
+      const d = gitRepo();
+      g(d, 'checkout', '-q', '-b', 'hostile');
+      hostile.forEach((m, i) => { fs.writeFileSync(path.join(d, 'side.txt'), `${i}\n`); commit(d, m); });
+      g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-alpha.11-test.1');
+      g(d, 'checkout', '-q', 'v0.1.0-alpha.11-test.1');
+      const items = rn.releaseNotes(d, topts).notes.split('\n').filter((l) => /^- `[0-9a-f]{12}` /.test(l));
+      assert.strictEqual(items.length, hostile.length);
+      for (const l of items) {
+        const m = /^- `[0-9a-f]{12}` `([^`]*)`$/.exec(l);
+        assert.ok(m, `one code span per subject, nothing outside it: ${l}`);
+      }
+      const spans = items.map((l) => /^- `[0-9a-f]{12}` `([^`]*)`$/.exec(l)[1]).reverse(); // newest first in the notes
+      assert.strictEqual(spans[0], "Ping @octocat about 'code' and **bold** <b>tag</b> ![x](https://example.invalid/i.png) [a](http://x)", 'a backtick becomes a quote, the rest stays literal inside the span');
+      assert.deepStrictEqual(spans.slice(1), hostile.slice(1), 'the four masking-bypass forms are inside a code span, so they render literally, never as a ghp_ token');
+    }
+    {
       // at most TEST_COMMITS_MAX commits are listed, then a count of the rest
       const d = gitRepo();
       // one git fast-import for the empty commits (a git commit per step took seconds)
@@ -430,8 +456,8 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
       g(d, 'checkout', '-q', 'v0.1.0-alpha.11-test.1');
       const r = rn.releaseNotes(d, topts);
       assert.strictEqual(r.commits, rn.TEST_COMMITS_MAX + 2);
-      assert.strictEqual(r.notes.split('\n').filter((l) => /^- `[0-9a-f]{12}` step \d+$/.test(l)).length, rn.TEST_COMMITS_MAX, 'the cap');
-      assert.ok(r.notes.includes(`- … and 2 more: see the compare link.`) && r.notes.includes(`step ${rn.TEST_COMMITS_MAX + 2}`) && !/ step 2$/m.test(r.notes), 'newest first, the rest counted');
+      assert.strictEqual(r.notes.split('\n').filter((l) => /^- `[0-9a-f]{12}` `step \d+`$/.test(l)).length, rn.TEST_COMMITS_MAX, 'the cap');
+      assert.ok(r.notes.includes(`- … and 2 more: see the compare link.`) && r.notes.includes(`step ${rn.TEST_COMMITS_MAX + 2}`) && !/`step 2`$/m.test(r.notes), 'newest first, the rest counted');
     }
   }
 }
