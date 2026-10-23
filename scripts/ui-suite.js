@@ -69,6 +69,7 @@ const DRIVERS = [
   { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
   { name: 'check-ui-text' }, // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast
+  { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
 ];
 
 /** The screenshot variables the drivers read; all point at one folder. */
