@@ -45,3 +45,17 @@ A generic "agent profile" in the adapter interface; Copilot maps it to the SDK's
 5. `app.js`: an **Edit** button on each profile row of the Profile menu (rows stay radio items); `screens.js`: Settings section *Profiles (custom agents)* with Open and New profile….
 6. `sim.ts`: in-memory profile files and the five bridge calls.
 7. Tests: `test:profilefiles` (main: list, id-only resolve, `..`/separator names refused, symlink file and symlinked folder escape refused, size cap, atomic save round trip in a temp folder, CRLF and BOM kept, conflict on external change, overwrite, create, read-only); `test:profileeditor` (front matter parser; preview sanitisation of `<script>`, `onerror`, `javascript:` links through `markdown.js` in jsdom). Driver `shots-043-editor.js` (modes, split widths, typing → preview, save round trip, unsaved guard, New profile, menu entry) with screenshots at both sizes in Clean Office and a dark theme; added to `check:ui`.
+
+## 2026-10-23: delete, refresh at once, nothing written before Save, a better prompt (FR-040..FR-043, T020, issue #570)
+
+**Constitution check.** I: the reload is a generic optional adapter member (`reloadAgentProfiles`); only `copilot.ts` knows `rpc.agent.reload`; the prompt's section guidance names no agent app. II: the safety lines say the session's permission mode decides. III: delete runs in main by id only (`resolveId` again, writable plain files, `unlinkSync`, no shell, never a folder), `fromApp` on `profiles:delete`; nothing is logged. V: the confirmation is the shared `askDialog` (Cancel focused); Delete sits beside Edit in the existing Profile menu row and beside Open in the Settings row; screenshots at both sizes. VIII: the real Copilot reload is a known gap.
+
+**Design.**
+
+1. `src/main/profilefiles.ts`: `deleteProfileFile(dirs, id)`; `createProfileFreshness()` (a change counter and the change each session saw); `listAgentProfilesFresh(adapter, id, freshness)` (reload once after a change, then list).
+2. `src/main/ipc/profiles.ts`: `profiles:delete`; `profiles:save`, `profiles:create` and `profiles:delete` count a change; `agents:listProfiles` lists through `listAgentProfilesFresh`. Preload and `api.ts`: `deleteProfileFile`.
+3. `src/adapters/types.ts`: optional `reloadAgentProfiles(sessionId)`; `copilot.ts`: `reloadAgentsRpc(rpc.agent)` (false, never a throw, when it is missing or fails).
+4. `src/renderer/profileeditor.js`: `remove(id)` / `removeByPath(path)` (askDialog, then the bridge; the open editor on that file closes; the change listeners are told), the New form's Create opens a template draft (`openDraft` with `pristine`), and an untouched template draft closes without asking. `app.js`: the Profile menu reads main's file list beside the profiles and shows Delete for writable files; `screens.js`: Delete… in the Settings row.
+5. `src/shared/profiletemplates.ts`: the eight sections, `SAFETY_LINES`, the questionnaire and the prompt; the reply check warns without the safety lines.
+6. `sim.ts`: `deleteProfileFile` in memory; the Profile menu lists the FR-005 profiles while their file exists, plus Copilot files made in the run.
+7. Tests: `test:profilefiles`, `test:agentprofiles`, `test:profilegen`, `test:ipcchannels`; driver `shots-043-manage` (in `check:ui`).

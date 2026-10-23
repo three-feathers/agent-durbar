@@ -111,6 +111,8 @@ module.exports = async (ctx) => {
     if (theme === 'dark') await until(`window.THEME&&THEME.current().id==='audit-dark'`, 6000);
   };
   const reset = async () => {
+    // spec 073: the "/" list surfaces leave a "/" in the box, canned entries and a narrow panel; clear them first
+    await js(`(()=>{const n=document.getElementById('narrowPanel');if(n)n.remove();const i=document.getElementById('msgInput');if(i&&i.value.startsWith('/')){i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));}})()`);
     for (let i = 0; i < 3; i++) {
       const open = await js(`!!document.querySelector('.dlg-ov,#modeMenu,#agentMenu,#modelMenu,#moreMenu:not([hidden]),#topMoreMenu:not([hidden]),#defaultsPop:not([hidden]),#foldersPop:not([hidden]),#floorsPop:not([hidden])')`);
       if (!open) break;
@@ -269,6 +271,26 @@ module.exports = async (ctx) => {
   add('allow-all-confirm', 'dialog', ['#modeDlg .dlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#modeChip'); await until(`!!document.getElementById('modeMenu')`, 2000); await H.click('#modeMenu [data-mode="allow"]'); return until(`!!document.querySelector('#modeDlg .dlg')`, 2000); });
   add('chat-model-menu', 'menu', ['#modelMenu'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#modelChip'); return until(`!!document.getElementById('modelMenu')`, 2000); });
   add('chat-agent-menu', 'menu', ['#agentMenu'], async () => { if (!(await openChatWhere(`document.getElementById('agentChip')`))) return false; await H.click('#agentChip'); return until(`!!document.getElementById('agentMenu')`, 2000); });
+  // spec 073 FR-008 (review on #535): the composer's "/" list is a menu (--menu-w, 6px padding)
+  const typeSlash = `(()=>{const i=document.getElementById('msgInput');i.focus();i.value='/';i.setSelectionRange(1,1);i.dispatchEvent(new Event('input',{bubbles:true}));})()`;
+  // the long pass (simslash=long: a 64-character name, a long hint, a 200-character description) runs in a 480px panel (spec 005
+  // FR-040): ellipses with the full text in the row's title, and the source word stays whole inside the list
+  add('chat-slash-list', 'menu', ['#slashList'], async () => {
+    if (!(await openChat('Ada'))) return false;
+    const long = extraQuery.simslash === 'long';
+    if (long) { await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`); await settle(400); }
+    await js(typeSlash);
+    if (!(await until(`!!document.querySelector('#slashList [role="option"]')`, 3000))) return false;
+    if (!long) return true;
+    const st = await js(`(()=>{const l=document.getElementById('slashList'),lr=l.getBoundingClientRect(),p=document.getElementById('panel').getBoundingClientRect();const o=document.querySelector('#slashList [role="option"]'),n=o.querySelector('.sl-name');
+      return {panel:Math.round(p.width),name:n.textContent,cut:n.scrollWidth>n.clientWidth,tip:o.title,bad:[...l.querySelectorAll('.sl-src')].filter(e=>{const r=e.getBoundingClientRect();return r.right>lr.right-6.5||r.left<lr.left||e.scrollWidth>e.clientWidth+1;}).map(e=>e.textContent)}})()`);
+    const fail = (detail) => found.push({ surface: 'chat-slash-long', theme: themeId || theme, size: `${W}x${Hh}`, rule: 'slash-long', el: '#slashList', detail });
+    if (st.panel !== 480) fail(`the panel is ${st.panel}px, not 480px`);
+    if (st.name.length !== 65 || !st.cut) fail(`the first row's name is not the cut 64-character fixture ("${st.name.slice(0, 20)}…", cut ${st.cut})`);
+    if (!st.tip.startsWith(st.name) || !st.tip.includes('Draft the release notes')) fail('the row title lacks the full name or description');
+    for (const t of st.bad) fail(`the source word "${t}" is cut or pushed out of the list`);
+    return true;
+  });
   // spec 043 FR-014 (review on #488): the Profile menu with its Edit and New profile rows, the profile editor and the New profile form
   add('profile-menu', 'menu', ['#agentMenu'], async () => { if (!(await openChatWhere(`document.getElementById('agentChip')`))) return false; await H.click('#agentChip'); return until(`!!document.querySelector('#agentMenu .mm-edit')&&!!document.querySelector('#agentMenu [data-newprof]')`, 3000); });
   add('profile-editor', 'dialog', ['#peOv .dlg'], async () => { await openSettingsAt(null); if (!(await until(`!!document.querySelector('#pfSec .pf-row [data-pf-open]')`, 4000))) return false; await js(`document.querySelector('#pfSec .pf-row [data-pf-open]').click()`); return until(`!!document.getElementById('peOv')&&document.getElementById('peSrc').value.length>0`, 4000); });
@@ -330,6 +352,7 @@ module.exports = async (ctx) => {
     { name: 'list-view-long', base: 'list-view', query: { simnames: 'long' } },
     { name: 'palette-long', base: 'palette', query: { simnames: 'long' } },
     { name: 'chat-first-long', base: 'chat-first', query: { simnames: 'long' } },
+    { name: 'chat-slash-long', base: 'chat-slash-list', query: { simslash: 'long' } }, // spec 073 (review on #535): long names in a 480px panel
     { name: 'chat-title-long', base: 'chat-first', query: { simtitles: 'long' } },
     { name: 'chat-helper-long', base: 'chat-helper-long', query: { simtitles: 'long' } }, // T179
     { name: 'chat-reply-long', base: 'chat-reply', query: { simreply: 'long' } }, // T155: replies and sub-agent prompts that run to the right edge (the Copy button covers no text)

@@ -138,6 +138,35 @@ const SIM_CLAUDE_MODELS: ModelChoice[] = [
   { id: 'haiku', name: 'Sim Haiku', efforts: [] },
 ];
 /* spec 043: what a session's custom agents look like (made up; no real agent files) */
+/** Spec 073 FR-011: canned "/" entries per agent app (folder, user, and Claude Code's built-ins); nothing is read from disk. */
+type SimSlash = { name: string; description?: string; argumentHint?: string; source: 'folder' | 'user' | 'app'; kind: 'skill' | 'command' | 'prompt' | 'builtin'; where?: string };
+function simSlash(kind: string): SimSlash[] {
+  const common: SimSlash[] = [
+    { name: 'review-pr', description: 'Review a pull request: risks, tests, and what to change', argumentHint: '<number>', source: 'folder', kind: 'command', where: '.claude/commands/review-pr.md' },
+    { name: 'release-notes', description: 'Draft release notes from the merged pull requests', source: 'folder', kind: 'skill', where: '.claude/skills/release-notes/SKILL.md' },
+    { name: 'refactor-plan', description: 'Plan a refactor in small, safe steps', argumentHint: '<module>', source: 'folder', kind: 'skill', where: '.claude/skills/refactor-plan/SKILL.md' },
+    { name: 'triage', description: 'Sort new issues by area and urgency', source: 'folder', kind: 'command', where: '.claude/commands/triage.md' },
+    { name: 'explain', description: 'Explain a file or a function in plain words', argumentHint: '<path>', source: 'user', kind: 'command', where: '~/.claude/commands/explain.md' },
+    { name: 'standup', description: 'Summarise yesterday’s commits for the stand-up', source: 'user', kind: 'skill', where: '~/.claude/skills/standup/SKILL.md' },
+  ];
+  if (kind === 'claude')
+    return common.concat([
+      { name: 'compact', description: 'Free up context by summarizing the conversation so far', argumentHint: '<optional custom summarization instructions>', source: 'app', kind: 'builtin' },
+      { name: 'context', description: 'Show current context usage', source: 'app', kind: 'builtin' },
+      { name: 'init', description: 'Initialize a new CLAUDE.md file with codebase documentation', source: 'app', kind: 'builtin' },
+      { name: 'security-review', description: 'Complete a security review of the pending changes on the current branch', source: 'app', kind: 'builtin' },
+    ]);
+  const swap = (w?: string): string | undefined => (w ? (kind === 'codex' ? w.replace('.claude/commands/', '.agents/skills/').replace('.claude/skills/', '.agents/skills/').replace('~/.claude/', '~/.agents/') : w.replace('.claude/commands/', '.github/skills/').replace('.claude/skills/', '.github/skills/').replace('~/.claude/', '~/.copilot/')) : w);
+  const skills: SimSlash[] = common.map((e) => ({ ...e, kind: 'skill' as const, where: swap(e.where) }));
+  return kind === 'codex' ? skills.concat([{ name: 'prompts:draft-pr', description: 'Draft a pull request description', argumentHint: 'TITLE', source: 'user', kind: 'prompt', where: '~/.codex/prompts/draft-pr.md' }]) : skills;
+}
+
+const SIM_SLASH_DESC = 'Draft the release notes from every merged pull request since the last tag, grouped by area, with breaking changes first and a link to each pull request and the issues it closes';
+const SIM_SLASH_LONG: SimSlash[] = [
+  { name: 'x'.repeat(64), description: SIM_SLASH_DESC.slice(0, 200), argumentHint: '<from-tag> <to-tag> <area> <audience>', source: 'folder', kind: 'command', where: '.claude/commands/' + 'x'.repeat(64) + '.md' },
+  { name: 'release-notes-for-the-customer-reconciliation-batch-jobs-2026', description: SIM_SLASH_DESC.slice(0, 120), source: 'user', kind: 'skill', where: '~/.claude/skills/release-notes-long/SKILL.md' },
+];
+
 const SIM_PROFILES = [
   { id: 'reviewer', name: 'Reviewer', description: 'Reviews changes and points at risks; never edits files', source: 'repo' as const, path: '~/work/mcp-swiss/.github/agents/reviewer.agent.md', tools: ['view', 'grep', 'glob'], model: 'sim-deep' },
   { id: 'docs-writer', name: 'Docs writer', description: 'Writes and tidies documentation in plain English', source: 'user' as const, path: '~/.copilot/agents/docs-writer.agent.md' },
@@ -343,7 +372,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const helpers = noHelpers ? 0 : helpers0;
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room + (opts.names === 'long' ? '-customer-reconciliation-batch-jobs-2026'.slice(0, 55 - room.length) : ''); // simnames=long: a folder name is long too (60 characters at most, spec 059)
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
-      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true } as AgentInfo;
+      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true, slash: true } as AgentInfo;
       // Spec 052 FR-046: a pending permission card only happens in Ask first, so a waiting agent starts in Ask first (Jonas was Allow all
       // and restored, Lena Read-only); the restored Allow-all folder the restore strip names is then Tomas's (swisscontract-ai).
       if (state === 'waiting' && info.permMode !== 'ask') { info.permMode = 'ask'; info.permRestored = undefined; }
@@ -508,7 +537,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     }
     const simTrusted = new Set<string>(); // spec 043: repository agents confirmed in this run
     // spec 043 FR-017: profile files in memory (no disk): the FR-005 profiles, a Claude one, a read-only one and one with a front matter error
-    type SimPF = { id: string; app: 'copilot' | 'claude'; scope: 'folder' | 'user'; folder?: string; fileName: string; path: string; writable: boolean; note?: string; text: string };
+    type SimPF = { id: string; app: 'copilot' | 'claude'; scope: 'folder' | 'user'; folder?: string; fileName: string; path: string; writable: boolean; note?: string; text: string; made?: boolean };
     const pfHash = (s: string): string => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16).padStart(8, '0').repeat(8); };
     const pfHead = (t: string): { name?: string; description?: string } => {
       const m = /^---\n([\s\S]*?)\n---/.exec(t); const o: { name?: string; description?: string } = {};
@@ -533,6 +562,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     ];
     const pfInfo = (f: SimPF) => { const h = pfHead(f.text); return { id: f.id, app: f.app, scope: f.scope, ...(f.folder ? { folder: f.folder } : {}), fileName: f.fileName, path: f.path, name: h.name || f.fileName.replace(/(\.agent)?\.md$/, ''), ...(h.description ? { description: h.description } : {}), size: f.text.length, writable: f.writable, ...(f.note ? { note: f.note } : {}) }; };
     /** As main (FR-020): each folder with an id (a hash of its path); New profile sends the id back. */
+    /** spec 043 FR-041: a session's Copilot profiles follow the in-memory files: the FR-005 ones while their file is there, plus Copilot files made in this run. */
+    const simProfiles = () => [
+      ...SIM_PROFILES.filter((p) => simPF.some((f) => f.path === p.path)),
+      ...simPF.filter((f) => f.made && f.app === 'copilot').map((f) => { const h = pfHead(f.text); return { id: f.fileName.replace(/\.agent\.md$/, ''), name: h.name || f.fileName, description: h.description ?? '', source: (f.scope === 'user' ? 'user' : 'repo') as 'user' | 'repo', path: f.path }; }),
+    ];
     const pfFolders = (): { id: string; path: string }[] => [...new Set(sims.map((s) => s.info.cwd))].map((p) => ({ id: pfHash('folder\0' + p).slice(0, 32), path: p }));
     const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
       changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
@@ -1397,7 +1431,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.11 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.13 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
@@ -1460,10 +1494,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         console.info('[sim] would open in the system browser:', simE.url);
         return { ok: true };
       },
+      slashCommands: async (id) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent', entries: [] };
+        // page address simslash=long (spec 073 FR-008, review on #535): a 64-character name, a long hint and a 200-character description
+        // come first, for check:ui-text's long-text pass
+        const long = simQuery.get('simslash') === 'long' ? SIM_SLASH_LONG : [];
+        return { ok: true, entries: [...long, ...simSlash(s.info.adapterId ?? 'copilot')] };
+      },
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || (s.info.adapterId && s.info.adapterId !== 'copilot')) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
-        return { ok: true, profiles: SIM_PROFILES.map((p) => ({ ...p, trusted: p.source !== 'repo' || simTrusted.has(p.id) })) };
+        return { ok: true, profiles: simProfiles().map((p) => ({ ...p, trusted: p.source !== 'repo' || simTrusted.has(p.id) })) };
       },
       selectProfile: async (id, profileId, confirm) => {
         const s = sims.find((x) => x.info.id === id);
@@ -1472,7 +1514,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           emit({ type: 'agentProfile', sessionId: id, timestamp: now(), profile: null } as AgentEvent);
           return { ok: true, profile: null };
         }
-        const p = SIM_PROFILES.find((x) => x.id === profileId);
+        const p = simProfiles().find((x) => x.id === profileId);
         if (!p) return { ok: false, error: 'That agent is not available in this session.' };
         if (p.source === 'repo' && !simTrusted.has(p.id)) {
           if (confirm !== true) return { ok: false, needsConfirm: true, profile: p };
@@ -1506,8 +1548,17 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const tpl = (self as unknown as { exports?: { profileTemplate?: (a: string, n: string, k?: string) => string } }).exports?.profileTemplate;
         if (!tpl) return { ok: false as const, error: 'The templates are not loaded.' };
         const f = pf(app, place === 'user' ? 'user' : 'folder', folder, file, typeof text === 'string' ? text : tpl(app, name, template === 'standard' ? 'standard' : 'success')); // text: a reviewed AI draft (FR-029)
+        f.made = true;
         simPF.push(f);
         return { ok: true as const, id: f.id, info: pfInfo(f) };
+      },
+      // spec 043 FR-040: delete in memory, with main's rules (a listed id, a writable file)
+      deleteProfileFile: async (fileId) => {
+        const i = simPF.findIndex((x) => x.id === fileId);
+        if (i < 0) return { ok: false as const, error: 'That profile file is not in the list any more.' };
+        if (!simPF[i].writable) return { ok: false as const, error: simPF[i].note || 'You cannot delete this file.' };
+        simPF.splice(i, 1);
+        return { ok: true as const, id: String(fileId) };
       },
       // spec 043 FR-030: a canned Agent Success Profile from the answers (no credits), checked like a real reply
       generateProfile: async (req) => {
@@ -1528,7 +1579,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           simGenRunning = false;
         }
         const said = req.mode === 'describe' ? String(req.description ?? '') : Object.values(req.answers ?? {}).join(' ');
-        const summary = req.mode === 'describe' ? said : String((req.answers ?? {}).title || said);
+        const summary = req.mode === 'describe' ? said : String((req.answers ?? {}).role || said);
         const spend = req.by === 'claude' ? { costUsd: 0.003 } : req.by === 'copilot' ? { nanoAiu: 15_000_000 } : {};
         if (/\bfail\b/i.test(said)) return { ok: false as const, error: 'The agent app gave no answer.', ...spend };
         let text = T.profileTemplate(req.app, req.name, 'success').replace(/^description: .*$/m, 'description: ' + (summary.slice(0, 120).replace(/[:#\n]/g, ' ').trim() || 'A focused agent'));
@@ -1536,7 +1587,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (tl.tools.length) { const all = [...(T.DEFAULT_READ_TOOLS[req.app] ?? []), ...tl.tools].join(', '); text = text.replace(/^tools: .*$/m, 'tools: ' + (req.app === 'copilot' ? '[' + all + ']' : all)); }
         const a = req.answers ?? {};
         for (const q of T.PROFILE_QUESTIONS) {
-          const v = req.mode === 'describe' ? (q.id === 'title' ? said.slice(0, 200) : '') : a[q.id];
+          const v = req.mode === 'describe' ? (q.id === 'role' ? said.slice(0, 200) : '') : a[q.id];
           if (v) text = text.replace(new RegExp('(## ' + q.section + '\\n\\n)[^\\n]*'), (_m, h: string) => h + v);
         }
         const v = T.validateGeneratedProfile(text, { app: req.app, name: req.name, mode: req.mode, description: req.description, answers: req.answers, tools: tl.tools }, (t) => PE.parseFrontmatter(t));
@@ -2037,7 +2088,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         s.breakUntil = undefined;
         window.setTimeout(() => void reply(s, text), 400);
-        return { ok: true };
+        // spec 073 FR-011: a folder or user entry is "sent as its text", as the real adapters do (FR-005)
+        const sl = /^\/([A-Za-z0-9][A-Za-z0-9._:-]{0,63})(?:\s|$)/.exec(String(text).trim());
+        const hit = sl ? simSlash(kind).find((e) => e.source !== 'app' && e.name.toLowerCase() === sl[1].toLowerCase()) : undefined;
+        return hit ? { ok: true, slash: hit.where ?? hit.name } : { ok: true };
       },
       stop: async (id) => {
         // Stop = interrupt the turn only (like the real adapter): pending approval denied, grants kept, back to Ready.

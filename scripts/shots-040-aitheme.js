@@ -22,6 +22,15 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: { simkinds: 'mixed' } });
     await js(`document.getElementById('settingsBtn').click()`);
     await ctx.waitFor(`!!document.getElementById('thAi')`, 6000);
+    // the theme picker with a built-in theme picked (website gallery, issue #573): the same click as a person's, then back to Clean Office
+    const pick = (id) => js(`(()=>{const b=document.querySelector('#thList [data-theme='+${jsLiteral(JSON.stringify(id))}+']');if(!b)return false;b.click();return true})()`);
+    assert.ok(await pick('durbar-indian'), 'the picker lists the built-in Indian Court');
+    await H.until(`window.THEME.current().id==='durbar-indian'&&document.querySelector('#thList [data-theme="durbar-indian"]').getAttribute('aria-pressed')==='true'`, 3000);
+    assert.strictEqual(await js(`window.THEME.current().id`), 'durbar-indian', 'a click in the picker applies the theme at once');
+    await js(`(()=>{const l=document.getElementById('thList'),sec=l.closest('section')||l;let p=sec.parentElement;while(p&&p.scrollHeight<=p.clientHeight+1)p=p.parentElement;if(p)p.scrollTop+=sec.getBoundingClientRect().top-p.getBoundingClientRect().top-12;return true})()`);
+    await H.until(`(()=>{const r=document.getElementById('thList').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight})()`, 3000);
+    await H.shot(path.join(OUT, `040-theme-picker-${w}x${h}.png`), { prep: 'toasts', delay: 300 });
+    assert.ok(await pick('clean-office')); await H.until(`window.THEME.current().id==='clean-office'`, 3000);
     // export on a built-in theme explains instead of doing nothing
     await js(`document.getElementById('thExport').click()`); await ctx.sleep(300);
     assert.match(await lastToast(), /built into the app/);
@@ -44,7 +53,7 @@ module.exports = async (ctx) => {
     assert.match(pv.title, /^Theme: Night-shift newsroom/);
     assert.ok(pv.sw >= 5 && pv.words >= 5);
     // Try it: applied live, not saved
-    await ctx.shot(path.join(OUT, `040-aitheme-preview-${w}x${h}.png`));
+    await H.shot(path.join(OUT, `040-aitheme-preview-${w}x${h}.png`), { prep: 'toasts' }); // no toasts from the steps before (the landing page shows it)
     await js(`[...document.querySelectorAll('#scrDlg .dbtn button')].find(b=>b.textContent==='Try it').click()`); await ctx.sleep(700);
     assert.match(await js(`window.THEME.current().id`), /^ai-night-shift-newsroom/);
     assert.ok(await js(`!!document.getElementById('aiTryBar')&&document.getElementById('screen').hidden`), 'Settings closed; the try bar is over the office');
