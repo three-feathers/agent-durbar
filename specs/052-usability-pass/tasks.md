@@ -321,3 +321,6 @@
 
 - [x] T178 Review on #545: `.ph-id h2` is cut and `.sub` kept whole; `fitCut` (pure, unit-tested incl. the band where the text fits but not with `…`); `cutText` keeps flags whole; resize case (ResizeObserver mutation fails); the four late cases folded into one `chat-late` pass [FR-174]
 - [x] T179 Review on #545: a helper's role line stays inside the heading (`.sub` flex-shrink 1, `h2` 4, titles on both); surface `chat-helper-long` and rule `heading-spill` in `check:ui-text` (mutation `.sub{flex:0 0 auto}` fails) [FR-174]
+
+## FR-085 fix: double-click on the top bar zooms the window on a Mac (2026-10-23, issue #591)
+- [ ] T180 Mac: a double-click on a drag area (not on a control) sends `window:titleDoubleClick`; main zooms, minimizes or does nothing by `AppleActionOnDoubleClick` (`titleDoubleClickAction`, unit-tested); channel open under the simulator; changelog fragment [FR-085 fix, 2026-10-23]
