@@ -18,9 +18,15 @@ const assert = require('assert');
 const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
+/* the page's mod key: Meta (⌘) on a Mac, Control elsewhere (the same inline pattern as scripts/check-ui-text.js); the texts the app shows follow it */
+const MAC = process.env.SCHED_TOP_FORCE_MAC === '1' /* mutation check only */ || process.platform === 'darwin';
+const MOD = MAC ? 'meta' : 'control';
+const KEYTXT = MAC ? '⇧⌘S' : 'Ctrl+Shift+S';
+const ARIA = MAC ? 'Meta+Shift+S' : 'Control+Shift+S';
+const re = (t) => t.replace(/[+⇧⌘]/g, '\\$&');
 
 /* runs in the page: the geometry of the top bar with the button shown */
-function barCheck(simple, width) {
+function barCheck(simple, width, aria) {
   const P = [];
   const R = (e) => e.getBoundingClientRect();
   const vis = (e) => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
@@ -42,7 +48,7 @@ function barCheck(simple, width) {
   const wantWord = simple || width >= 1920; /* the counters' rule: the word shows from 1920px in Expert (2040px on a Mac) */
   if (wordShown !== wantWord) P.push(`the word is ${wordShown ? 'shown' : 'hidden'}, expected ${wantWord ? 'shown' : 'hidden'}`);
   if (!/^Schedules/.test(sc.getAttribute('aria-label') || '')) P.push('aria-label: ' + sc.getAttribute('aria-label'));
-  if (sc.getAttribute('aria-keyshortcuts') !== 'Control+Shift+S') P.push('aria-keyshortcuts: ' + sc.getAttribute('aria-keyshortcuts'));
+  if (sc.getAttribute('aria-keyshortcuts') !== aria) P.push('aria-keyshortcuts: ' + sc.getAttribute('aria-keyshortcuts'));
   if ((sc.title || '').length > 120 || (sc.getAttribute('aria-label') || '').length > 120) P.push('title or name over 120 characters');
   /* the folder filter shows its value whole: a select has no ellipsis, so a cut would read "All folde" (scrollWidth cannot tell; measure the text) */
   const sel = document.getElementById('wsFilter'), cs = getComputedStyle(sel), shown = sel.options[sel.selectedIndex].text;
@@ -108,8 +114,8 @@ module.exports = async (ctx) => {
       check(s.count === '4' && !s.none, `${tag} ${level}: count ${s.count}, expected 4`);
       check(s.trouble && s.mark, `${tag} ${level}: no badge without a stamp (two runs in the last 24 hours)`);
       check(/4 active, next at .+\. 2 schedules missed or failed a run\.$/.test(s.label), `${tag} ${level}: name "${s.label}"`);
-      check(/^Schedules: 4 active, next .+\. 2 schedules missed or failed a run \(Ctrl\+Shift\+S\)$/.test(s.title), `${tag} ${level}: title "${s.title}"`);
-      const P = await js(`(${barCheck.toString()})(${simple},${w})`);
+      check(new RegExp(`^Schedules: 4 active, next .+\\. 2 schedules missed or failed a run \\(${re(KEYTXT)}\\)$`).test(s.title), `${tag} ${level}: title "${s.title}"`);
+      const P = await js(`(${barCheck.toString()})(${simple},${w},${jsLiteral(ARIA)})`);
       check(!P.length, `${tag} ${level}: ${P.join('; ')}`);
 
       /* a stamp between the two runs: only the newer one counts (the missed run 4 hours ago; the failed one was 6 hours ago) */
@@ -156,7 +162,7 @@ module.exports = async (ctx) => {
       if (level === 'expert') {
         await load(w, h, level, Date.now());
         const keyOpen = async (where) => {
-          await H.key('S', ['control', 'shift'], { char: 'never', pause: 100 });
+          await H.key('S', [MOD, 'shift'], { char: 'never', pause: 100 });
           const ok = await until(`!document.getElementById('screen').hidden&&document.activeElement===document.getElementById('schH')`);
           check(ok, `${tag}: Ctrl+Shift+S did not open Schedules from ${where}`);
           if (ok) await closeScreen();
@@ -180,13 +186,13 @@ module.exports = async (ctx) => {
         await js(`document.getElementById('kbdHelpBtn').click()`);
         check(await until(`!!document.getElementById('kbdDlg')`), `${tag}: the shortcut sheet did not open`);
         const sheet = await js(`document.getElementById('kbdDlg').innerText`);
-        check(/Schedules/.test(sheet) && /Ctrl/.test(sheet), `${tag}: the shortcut sheet has no Schedules row: ${sheet.slice(0, 120)}`);
-        await H.key('S', ['control', 'shift'], { char: 'never', pause: 300 });
+        check(/Schedules/.test(sheet) && (MAC ? /⌘/ : /Ctrl/).test(sheet), `${tag}: the shortcut sheet has no Schedules row: ${sheet.slice(0, 120)}`);
+        await H.key('S', [MOD, 'shift'], { char: 'never', pause: 300 });
         check(await js(`document.getElementById('screen').hidden&&!!document.getElementById('kbdDlg')`), `${tag}: Ctrl+Shift+S acted under the shortcut sheet`);
         await H.key('Escape'); await until(`!document.getElementById('kbdDlg')`);
 
         /* Ctrl+K, "sched", Enter */
-        await H.key('K', ['control'], { char: 'never', pause: 100 });
+        await H.key('K', [MOD], { char: 'never', pause: 100 });
         check(await until(`!!document.getElementById('palIn')`), `${tag}: the palette did not open`);
         await js(`(()=>{const i=document.getElementById('palIn');i.value='sched';i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
         check(await until(`[...document.querySelectorAll('#palList [role="option"]')].some(o=>/Schedules/.test(o.textContent))`), `${tag}: the palette has no Schedules item`);
@@ -198,12 +204,12 @@ module.exports = async (ctx) => {
         await js(`document.getElementById('topMoreBtn').click()`);
         await js(`(()=>{const t=document.getElementById('demoToggle');t.checked=true;t.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
         check(await until(`document.getElementById('schedTopBtn').hidden`), `${tag}: the button shows in the demo`);
-        await H.key('K', ['control'], { char: 'never', pause: 100 });
+        await H.key('K', [MOD], { char: 'never', pause: 100 });
         await js(`(()=>{const i=document.getElementById('palIn');i.value='sched';i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
         await settle();
         check(await js(`![...document.querySelectorAll('#palList [role="option"]')].some(o=>/^Schedules/.test(o.textContent.trim()))`), `${tag}: the palette lists Schedules in the demo`);
         await H.key('Escape'); await until(`!document.getElementById('palDlg')`);
-        await H.key('S', ['control', 'shift'], { char: 'never', pause: 300 });
+        await H.key('S', [MOD, 'shift'], { char: 'never', pause: 300 });
         check(await js(`document.getElementById('screen').hidden`), `${tag}: Ctrl+Shift+S opened Settings in the demo`);
         await js(`(()=>{const t=document.getElementById('demoToggle');t.checked=false;t.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
         check(await until(`!document.getElementById('schedTopBtn').hidden`), `${tag}: the button did not come back after the demo`);
@@ -220,7 +226,7 @@ module.exports = async (ctx) => {
     check(!/did not run/.test(first), 'a scheduled-prompt announcement was made at start: ' + first);
     await js(`window.__ann=[];new MutationObserver(()=>{const t=document.getElementById('srAnnounce').textContent;if(/did not run/.test(t))window.__ann.push(t)}).observe(document.getElementById('srAnnounce'),{childList:true,characterData:true,subtree:true});true`);
     check(await js(`window.__durbarSimSched.fail('sched-s1')`), 'the simulator could not fail a run');
-    const heard = await until(`window.__ann.length===1&&/did not run.*Ctrl\\+Shift\\+S/.test(window.__ann[0])`);
+    const heard = await until(`window.__ann.length===1&&/did not run/.test(window.__ann[0])&&window.__ann[0].includes(${jsLiteral(KEYTXT)})`);
     check(heard, 'announcement: ' + JSON.stringify(await js('window.__ann')));
     check((await state()).label.includes('3 schedules missed or failed a run'), 'the name does not say 3 schedules');
     await js(`window.__durbarSimSched.fail('sched-s1')`); /* the same run again: the count does not grow */
@@ -279,7 +285,7 @@ module.exports = async (ctx) => {
     await H.load({ w, h: hh, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
     await until(`!document.getElementById('schedTopBtn').hidden`);
     if (mac) { await js(`document.documentElement.dataset.platform='darwin';window.DurbarFit&&window.DurbarFit();true`); await js(`new Promise(r=>setTimeout(r,0))`); }
-    const P = await js(`(${barCheck.toString()})(${level === 'simple'},${w})`);
+    const P = await js(`(${barCheck.toString()})(${level === 'simple'},${w},${jsLiteral(ARIA)})`);
     check(!P.length, `${w}px ${level}${mac ? ' with the Mac room' : ''}: ${P.join('; ')}`);
   }
   await js(`localStorage.setItem('durbar.detail','expert');true`);
