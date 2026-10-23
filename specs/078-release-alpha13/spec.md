@@ -3,12 +3,12 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Release v0.1.0-alpha.13 (pre-release)
-status: release PR open (2026-10-23)
+status: **published as a pre-release 2026-10-23** (tag on `1336a79`)
 -->
 
 **Feature Branch**: `078-release-alpha13`
 **Created**: 2026-10-23
-**Status**: Release PR open
+**Status**: **Published as a pre-release on 2026-10-23** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.13>; release PR #580; annotated tag on `1336a79`, whose CI, CodeQL, packaged check, installed-app check and UI checks (Linux and Windows on `main`; macOS runs nightly) were green). The draft had 8 files, and every package matched `SHA256SUMS.txt` (checked against GitHub's own asset digests). Not marked latest.
 **Input**: Vikram (Telegram DM, 2026-10-23 03:58 UTC), on cutting the next pre-release after the lounge (#554) merged: "Fantastic, do it"; at 04:01 UTC he asked for #535 (`/` suggestions) to be in it too, so the release waits for both #554 and #535.
 
 ## Context
