@@ -76,6 +76,10 @@ scripts/ui-suite.js         lists the new driver
 package.json                test:navigator in test:serial
 ```
 
+### Follow-up 2026-10-23 (issue #587)
+
+Same files, no new module: `navigator.js` gets the new default (`KeyF`), `textSafeKey` (the pure rule for Ctrl+A and Ctrl+Backspace: which action, or none when focus is in text, text is selected, a dialog is open, or attachments wait) and two `TAKEN` entries; `app.js` gets one `focusComposer` helper used by every user open, the per-chat unsent text (`DRAFTS`, memory only) and the handler lines that call `textSafeKey`; `index.html` (Needs you tooltip), `screens.js` (Settings note) and the `?` sheet show the keys. Tests first: unit cases in `test-navigator.ts`, real key presses in `shots-074-navigator.js`.
+
 ## Complexity Tracking
 
 None.

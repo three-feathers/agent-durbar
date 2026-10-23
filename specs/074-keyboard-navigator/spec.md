@@ -2,7 +2,7 @@
 
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
-title: Keyboard navigator (issue #548): one configurable shortcut (default Ctrl+J, ⌘J on a Mac) opens the command palette in "Go to" mode; floor, F folder, agent, or C and a number for a numbered chat; the chat opens with the cursor in the message box
+title: Keyboard navigator (issue #548): one configurable shortcut (default Ctrl+F, ⌘F on a Mac; Ctrl+J until 2026-10-23) opens the command palette in "Go to" mode; floor, F folder, agent, or C and a number for a numbered chat; the chat opens with the cursor in the message box; follow-up #587: opening any chat puts the cursor in its message box, Ctrl+A (⌘A) opens Needs you and Ctrl+Backspace (⌘⌫) goes back to the office, both only outside text
 status: **built** 2026-10-22: unit tests, simulator driver and screenshots at both sizes; defaults D1-D7 chosen by Vikram's agent, for the owners to confirm; not tried on a real Mac or Windows machine
 -->
 
@@ -62,7 +62,7 @@ At any level, Escape goes back one level (with that level's filter as it was); a
 
 ### User Story 4 - Choose my own shortcut (Priority: P2)
 
-Lena already uses Ctrl+J in another tool. In **Settings > Keyboard** she presses **Change…**, presses Ctrl+Shift+G, and it is saved. A combination the app or the operating system already uses (Ctrl+K, Ctrl+C, ⌘Space, Alt+Tab, ...) is refused with a sentence naming what uses it. **Reset** brings back the default.
+Lena already uses Ctrl+F in another tool. In **Settings > Keyboard** she presses **Change…**, presses Ctrl+Shift+G, and it is saved. A combination the app or the operating system already uses (Ctrl+K, Ctrl+C, ⌘Space, Alt+Tab, ...) is refused with a sentence naming what uses it. **Reset** brings back the default.
 
 **Independent Test**: on the simulator, change the shortcut, check the old one no longer opens the navigator and the new one does; try Ctrl+K and see it refused.
 
@@ -86,7 +86,7 @@ The `?` shortcut sheet lists the navigator shortcut and the in-box keys; the Ctr
 - The navigator shortcut is pressed while the navigator is open: the box closes (toggle, like Spotlight). Pressed while the Ctrl+K palette is open: the palette switches to the navigator's start level.
 - Another modal dialog is open (a confirmation, a question, Settings while recording): the shortcut does nothing there; that dialog keeps its focus.
 - The chosen agent is a helper (sub-agent) or not a live session: helpers are never listed; a non-live demo agent opens its chat with focus on the chat title.
-- The open chat's unsent draft is kept when the navigator opens another chat (the existing per-chat draft behaviour applies; nothing is sent by the navigator itself).
+- The open chat's unsent text is kept when the navigator opens another chat and comes back when that chat is opened again (FR-022, 2026-10-23; before that date the text was dropped, although this line said otherwise). Nothing is sent by the navigator itself.
 - Simple and Expert detail levels behave the same.
 - Text in the box and the chat-number badges is never smaller than 10.5px; with 15 agents the office still fits at 1440x900 and 1280x800.
 
@@ -95,7 +95,7 @@ The `?` shortcut sheet lists the navigator shortcut and the in-box keys; the Ctr
 ### Functional Requirements
 
 - **FR-001** One box: the navigator MUST be the existing command palette (spec 052 FR-042) opened in a "Go to" mode with levels, not a second, separate dialog. It keeps the palette's look, focus trap, ARIA combobox/listbox roles, live result count and focus return.
-- **FR-002** Shortcut: a configurable keyboard shortcut MUST open the navigator from anywhere in the app (office, list, an open chat, text fields included), except while another modal dialog is open. Default: **Ctrl+J** on Windows and Linux, **⌘J** on a Mac (FR-084 of spec 052). Pressing it again closes the box.
+- **FR-002** Shortcut: a configurable keyboard shortcut MUST open the navigator from anywhere in the app (office, list, an open chat, text fields included), except while another modal dialog is open. Default: **Ctrl+F** on Windows and Linux, **⌘F** on a Mac (FR-084 of spec 052; "F for floor", issue #587; it was Ctrl+J / ⌘J until 2026-10-23, see Changes). Pressing it again closes the box.
 - **FR-003** Levels: the box MUST show one level at a time, named in a breadcrumb line above the input (for example "Go to › Upstairs › api"):
   - **Start**: the floors that are on (when two or more are on), or else every folder on a floor that is on; plus two rows, **Folders** (`F`) and **Chats** (`C`).
   - **Folders**: folders on floors that are on and not hidden, in office order (on a picked floor: that floor's folders only).
@@ -107,7 +107,7 @@ The `?` shortcut sheet lists the navigator shortcut and the in-box keys; the Ctr
 - **FR-006** Numbers: at the floor and folder levels every item shows its position number; typing a filter made only of digits picks by number. At the agent and chat levels the number is the chat number ("C3" is picked with `3`). A number opens its item straight away when no other number starts with the typed digits; otherwise it is highlighted and Enter opens it.
 - **FR-007** Keys inside the box: ↑/↓ move, Enter picks the highlighted item, Escape goes back one level (closes at the start level), Backspace in an empty filter goes back one level, Tab stays in the box. Going back restores that level's filter text and highlight.
 - **FR-008** Single choice: picking a folder that has exactly one main session MUST open that chat directly (the box closes, as for any opened chat).
-- **FR-009** Open a chat: picking an agent or a chat MUST open its chat (the same path as clicking its desk) and put the cursor at the end of its message box. If the session has no message box (not live), focus goes to the chat title.
+- **FR-009** Open a chat: picking an agent or a chat MUST open its chat (the same path as clicking its desk) and put the cursor at the end of its message box. If the session has no message box (not live), focus goes to the chat title. Since 2026-10-23 (FR-019) every way of opening a chat does the same.
 - **FR-010** Sending: the navigator MUST NOT send anything itself. Enter in the message box sends through the existing composer, so the folder's permission mode, the spending limit, the plan-first and attachment rules and every approval stay exactly as they are. The navigator adds no way to approve tools.
 - **FR-011** Chat numbers: every main session in the office MUST have a chat number, a positive integer:
   - a new session gets the lowest number not held by another session in the office;
@@ -126,8 +126,17 @@ The `?` shortcut sheet lists the navigator shortcut and the in-box keys; the Ctr
   - is a known OS shortcut (Ctrl+Space, Ctrl+Shift+Space, Super/⌘+Space, ⌥⌘Space, ⌃⌘Space, Alt+Tab, ⌘Tab, Ctrl+Alt+Delete, Ctrl+Alt+T, Ctrl+Alt+L, Ctrl+Alt+arrow keys).
 - **FR-015** Discovery: the `?` shortcut sheet MUST list the navigator shortcut (the current one) and the in-box keys (`F`, `C` + number, numbers, Esc back); the Ctrl+K palette MUST have a "Go to… (navigator)" action showing it; the box's foot line names ↑↓, Enter, Esc back, and F / C.
 - **FR-016** Accessibility: the box is a modal dialog with a combobox input (`aria-activedescendant`), a listbox with options, the breadcrumb as the dialog's description, and a polite announcement of the level and result count on every change; with no items, the announcement says why ("No chat 7 here…") and the empty text has no role inside the listbox (2026-10-23). Everything reachable without a mouse; options also respond to a click.
-- **FR-017** Platforms: the same on Windows, macOS and Linux; ⌘ replaces Ctrl on a Mac in matching and in every label; keys are matched by their position (`code`), so keyboard layouts do not move the shortcut; the letter a key types (`key`) counts too: recording refuses a combination whose position or typed letter is taken, and a press whose typed letter is another shortcut's is left to it (2026-10-23). Known limit, stated in Settings and the README: on a Mac with Dvorak, ⌘J types H and macOS takes ⌘H (Hide) before the page sees it, so ⌘J cannot be Go to there; pick another key (2026-10-23, review round 2).
+- **FR-017** Platforms: the same on Windows, macOS and Linux; ⌘ replaces Ctrl on a Mac in matching and in every label; keys are matched by their position (`code`), so keyboard layouts do not move the shortcut; the letter a key types (`key`) counts too: recording refuses a combination whose position or typed letter is taken, and a press whose typed letter is another shortcut's is left to it (2026-10-23). Known limit, stated in Settings and the README: on a Mac with Dvorak, ⌘J types H and macOS takes ⌘H (Hide) before the page sees it, so ⌘J cannot be Go to there; pick another key (2026-10-23, review round 2). Since the default became ⌘F (2026-10-23) this matters only to a Mac Dvorak user who picks ⌘J; with ⌘F, Go to follows the key's position, so on Dvorak it is the key that types U.
 - **FR-018** Simulator: everything works with `DURBAR_SIM=15` (and with floors), with zero AI credits.
+- **FR-019** Cursor in the message box (2026-10-23, issue #587): every time the user opens a chat (a click or Enter on a desk, a list row or the strip, the Ctrl+K palette, the navigator, the Needs you inbox's Open and Answer in chat, N / Ctrl+Shift+N, Ctrl+\`), the cursor MUST land at the end of that chat's message box, so typing and Enter send at once. No usable message box (a helper, a chat that is not live): the chat title, as before. A chat that waits for a permission answer is no exception: focus goes to the message box, **never** to the answer bar, so no Enter or Space can approve anything by accident; the answer bar stays visible and its keys (Alt/⌥⌘ + A, S, D) and buttons work as before. Chats the app opens by itself (restoring the last chat at start, a session that just started) keep their current focus.
+- **FR-020** Back to the office (2026-10-23, issue #587): **Ctrl+Backspace** on Windows and Linux, **⌘⌫** on a Mac, MUST close the open chat (and a full-screen view or Settings screen) and show the office, the same as the chat's Office button, but only when:
+  - focus is not in an editable field (a text box, the message box, a search box, a select, anything `contenteditable`), **even an empty one** (holding the key to delete words would otherwise close the chat the moment the box is empty); in a field the key keeps its text meaning (delete a word, delete to the start of the line);
+  - no text is selected on the page, and no dialog (`aria-modal`) is open;
+  - the chat has no attachments waiting to be sent; with attachments it stays and says so (unsent text is kept, FR-022).
+  In the message box, Esc goes back to the office as before.
+- **FR-021** Needs you with Ctrl+A (2026-10-23, issue #587): **Ctrl+A** (⌘A) MUST open the Needs you inbox under the same conditions as FR-020 (not in an editable field, no text selected, no dialog) and also not while focus is in the chat log, where Ctrl+A selects the conversation to copy it. Everywhere else it stays Select all. **Ctrl+Shift+A** (⇧⌘A) and **I** keep working as before; Ctrl+Shift+A is the one that works from the message box too.
+- **FR-022** Unsent text is kept (2026-10-23): text typed in a chat's message box and not sent MUST be kept for that chat (in memory, this window only, not saved to disk) when the chat is closed (Esc, the Office button, Ctrl+Backspace) or another chat is opened, and MUST come back in its message box when that chat opens again. Sending clears it. Attachments are not kept (FR-020 refuses to go back while some wait).
+- **FR-023** Clash list (2026-10-23): Ctrl/⌘+Backspace is in the list of taken shortcuts ("Back to the office"), and Ctrl/⌘+A names Select all and Needs you; Ctrl/⌘+F is free (it is the default) and Ctrl/⌘+J is no longer taken by anything in the app. The `?` sheet, the Needs you button's tooltip and `aria-keyshortcuts`, Settings > Keyboard and the README show the new keys with the platform's names (Ctrl, Backspace on Windows and Linux; ⌘, ⌫ on a Mac).
 
 ### Key Entities
 
@@ -149,7 +158,7 @@ The `?` shortcut sheet lists the navigator shortcut and the in-box keys; the Ctr
 
 Defaults chosen by Vikram's agent, each changeable by the owners (listed for review in the PR):
 
-- **D1 Shortcut**: Ctrl+J / ⌘J ("J for jump"). Not used by the app, by text fields, or by Windows, GNOME/KDE or macOS globally. Rejected: Ctrl+Space (input-method switching on Linux and Windows, previous input source on a Mac), Ctrl/⌘+Shift+Space (input-method and IME toggles on some setups), ⌘Space (Spotlight), Ctrl/⌘+K (the palette itself), Ctrl+P (print expectations).
+- **D1 Shortcut**: Ctrl+F / ⌘F since 2026-10-23 (owner request, issue #587: "F for floor"; checks in the Changes entry of that date). Until then Ctrl+J / ⌘J ("J for jump"). Not used by the app, by text fields, or by Windows, GNOME/KDE or macOS globally. Rejected: Ctrl+Space (input-method switching on Linux and Windows, previous input source on a Mac), Ctrl/⌘+Shift+Space (input-method and IME toggles on some setups), ⌘Space (Spotlight), Ctrl/⌘+K (the palette itself), Ctrl+P (print expectations).
 - **D2 One box**: the navigator is the palette in a "Go to" mode (FR-001), so there is one focus trap, one look and one set of keys to learn; Ctrl+K keeps its current mixed search.
 - **D3 One floor**: with fewer than two floors on, the floor level is skipped and the start level lists the folders.
 - **D4 Letters**: `f`/`c` need a following space or digit (FR-004), so filtering folders named "core" or "frontend" still works.
@@ -159,7 +168,34 @@ Defaults chosen by Vikram's agent, each changeable by the owners (listed for rev
 
 Out of scope: VS Code chats (spec 009) and previous sessions (spec 006) are not numbered or listed; global (system-wide) shortcuts when the app is not focused; searching message text (issue #430).
 
+## Clarifications
+
+### Session 2026-10-23 (issue #587, owner feedback by Ruben; defaults chosen by Vikram's agent, for the owners to confirm)
+
+The issue asked to settle each conflict in the spec. Where a choice may need an owner, the default below is what is built:
+
+- Q: Should Ctrl+J / ⌘J stay as an alias of Go to for a while? → A (default): **no**. One shortcut, shown everywhere (FR-002); a hidden second key would also keep Ctrl+J away from users who want it for their own shortcut. Go to shipped in v0.1.0-alpha.13, a pre-release, one day before; the changelog says the key moved. Anyone who had set their own shortcut keeps it (it is saved; the default never was).
+- Q: May Ctrl+Backspace (⌘⌫) go back from an **empty** message box? → A (default): **no** (FR-020). Holding the key to delete words would close the chat the moment the box empties; Esc already goes back from the message box.
+- Q: Does Ctrl+A (⌘A) open Needs you while focus is in the chat log? → A (default): **no** (FR-021): there it selects the conversation, which people copy.
+- Q: "Start screen" for Ctrl+Backspace: the office or the navigator's start level? → A: **the office** (the issue says "the start screen (the office / home view)"); the navigator's own start level is reached with Esc or Backspace in its empty box (FR-007).
+- Q: Focus when the opened chat waits for a permission answer? → A: the message box, never the answer bar (FR-019): a focused Allow button would approve on Enter.
+
 ## Changes
+
+### 2026-10-23: Ctrl+F, cursor in the message box, Ctrl+Backspace and Ctrl+A (issue #587)
+
+Owner feedback (Ruben, after a test drive, filed by his agent): four tweaks, each with a rule that never takes a key away from text editing. New: FR-019 to FR-023; amended: FR-002 (default key), FR-009, FR-017 (Dvorak note), D1, the draft edge case (it claimed a per-chat draft that did not exist).
+
+Checks before choosing (`read:` the code at main 1336a79c):
+
+- **Ctrl+F / ⌘F** is free: the page has no find (no `findInPage`, no Ctrl+F handler), the Mac menu (`appmenu.ts`: app, File, Edit role, View, Window, Help) has no Find item, Windows and Linux have no menu, and Ctrl+F / ⌘F edits nothing in a text field. ⌃⌘F (full screen on a Mac) stays taken, and ⌃F on a Mac stays a text key (FR-014). Chat search (#430) does not exist yet; if it wants Ctrl+F, that spec decides then, and Go to moves or the search takes another key. No open pull request uses Ctrl+F, Ctrl+J or Ctrl+Backspace.
+- **Ctrl+J / ⌘J** was used only by Go to; it becomes free (Settings may record it).
+- **Ctrl+Backspace / ⌘⌫** deletes a word (Windows, Linux) or to the start of the line (Mac) in a text field, and does nothing elsewhere; the app used Backspace only inside the Go-to box.
+- **Ctrl+A / ⌘A** is Select all everywhere (the Mac Edit menu has it too); the app used only Ctrl+Shift+A for Needs you.
+- Opening a chat focused the title after a keyboard open, nothing after a mouse click, and the message box only from the navigator; closing a chat or opening another dropped the unsent text.
+
+Rules (FR-019 to FR-023): the cursor goes to the message box on every user open (never to the answer bar); Ctrl+Backspace and Ctrl+A act only outside editable fields, with no text selected and no dialog, and Ctrl+A also not in the chat log; Ctrl+Backspace refuses to close a chat with attachments waiting; unsent text is kept per chat in memory. The key decisions are in *Clarifications* above (Session 2026-10-23), each with the default built.
+
 
 ### 2026-10-22: built
 
