@@ -206,6 +206,12 @@
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
         <p class="scr-note">Expert adds tokens, models, context and paths. Permissions work the same in both.</p>
         <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}${X.shutters&&X.shutters.usable()?shuttersRow():''}</section>`:'';
+    /* spec 074 FR-013 (issue 548): the navigator shortcut, recorded here, checked for clashes, kept for this window */
+    const keySec=X.navKey?`<section class="scr-sec" aria-labelledby="keyH"><h3 id="keyH">Keyboard</h3>
+        <p class="scr-note">Go to (the navigator) opens from anywhere: a floor, a folder, an agent, or a chat by its number (C and the number).</p>
+        <div class="scr-row"><span class="scr-row-l" id="navKeyL">Go to shortcut</span><kbd class="navkey-now" id="navKeyNow">${esc(X.navKey.text())}</kbd><button class="btn" type="button" id="navKeyRec" aria-describedby="navKeyL">Change…</button><button class="btn" type="button" id="navKeyReset"${X.navKey.isDefault()?' disabled':''}>Reset to ${esc(X.navKey.defText())}</button></div>
+        <p class="scr-note small" id="navKeyMsg" role="status"></p>
+        <p class="scr-note small">Shortcuts the app, text editing or your operating system already use are refused. The list of operating system shortcuts is a known list, not every one there is. On a Mac with a Dvorak layout, ⌘J types H and macOS keeps ⌘H for Hide, so pick another key there.</p></section>`:'';
     /* spec 052 FR-066, FR-093: what Durbar does not do, in calm plain words (checked against the README's Safety model and Costs and caps) */
     const notSec=`<section class="scr-sec" aria-labelledby="notH"><h3 id="notH">What Durbar does not do</h3><ul class="scr-not">
         <li>Durbar asks Claude Code and Copilot to stay in their folders but cannot force them; only Codex is held there by the system (in Read-only and Ask first).</li>
@@ -213,7 +219,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
@@ -235,6 +241,7 @@
     if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}}
     if($('pfSec'))wireProfiles();
     if(X.floors&&$('floorsSet'))X.floors.render();
+    if($('navKeyRec'))wireNavKey();
     if(X.sched&&$('schedSet'))X.sched.render();
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');
@@ -596,6 +603,29 @@
     if(res&&res.ok)X.toast(esc(label)+' was deleted.',3200); else X.toast('Could not delete '+esc(label)+'.',4200);
     await paintSettings();
     const nb=document.querySelector('#myPlaces ~ .scr-tools [data-pl-act="add"], .scr-tools [data-pl-act="add"]')||document.getElementById('plH'); if(nb)nb.focus(); /* the Add button, or the Places heading */
+  }
+  /* spec 074 FR-013 / FR-014: Change… records the next key combination; Escape cancels; a refused one says why */
+  function wireNavKey(){
+    const rec=$('navKeyRec'),msg=$('navKeyMsg'),now=$('navKeyNow'),reset=$('navKeyReset');
+    let onKey=null;
+    const stop=()=>{if(onKey)window.removeEventListener('keydown',onKey,true);onKey=null;X.navKey.recording(false);rec.textContent='Change…';rec.setAttribute('aria-pressed','false');};
+    const show=t=>{now.textContent=X.navKey.text();reset.disabled=X.navKey.isDefault();msg.textContent=t;};
+    rec.onclick=()=>{
+      if(onKey){stop();msg.textContent='Not changed.';return;}
+      X.navKey.recording(true);rec.textContent='Press the keys… (Esc to cancel)';rec.setAttribute('aria-pressed','true');msg.textContent='Press the new shortcut now.';
+      onKey=e=>{
+        if(e.key==='Escape'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey){e.preventDefault();e.stopPropagation();stop();msg.textContent='Not changed.';rec.focus();return;}
+        if(e.key==='Tab'&&!e.ctrlKey&&!e.metaKey&&!e.altKey)return; /* Tab still leaves the button */
+        const c=X.navKey.fromEvent(e); if(!c)return; /* a modifier alone: wait for the key */
+        e.preventDefault();e.stopPropagation();
+        const why=X.navKey.clash(c);
+        if(why){msg.textContent=X.navKey.textOf(c)+' cannot be used. '+why+' Try another, or press Esc.';return;}
+        stop();X.navKey.set(c);show('Saved: '+X.navKey.text()+' opens Go to.');rec.focus();
+      };
+      window.addEventListener('keydown',onKey,true);
+    };
+    rec.onblur=()=>{if(onKey){stop();msg.textContent='Not changed.';}};
+    reset.onclick=()=>{X.navKey.set(null);show('Back to '+X.navKey.text()+'.');rec.focus();};
   }
   async function onSettingsClick(e){
     const pa=e.target.closest('[data-pl-act]');

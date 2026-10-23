@@ -423,3 +423,6 @@ body.has-bridge #topBtns{display:flex}
 .dlg .pe-ai-wait{margin:0;font-size:var(--t3-size);color:var(--ink-2)}
 .dlg .pe-ai-wait[hidden]{display:none}
 .dlg .dbtn .btn[hidden]{display:none}
+
+/* spec 074 FR-013: Settings > Keyboard, the current Go to shortcut */
+.navkey-now{display:inline-block;min-width:20px;padding:2px 8px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:12px;font-weight:600;color:var(--ink-2)}
