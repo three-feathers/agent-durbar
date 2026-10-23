@@ -54,7 +54,7 @@
 
 ## Changes 2026-10-22 (grown desks when there are few agents, owner)
 
-Numbered T088..T102 since 2026-10-23 (first written as T057..T071; PR #511 took T057..T062 on main first, and #554 uses T072..T087).
+Numbered T088..T102 since 2026-10-23 (first written as T057..T071; PR #511 took T057..T062 on main first, and #554 uses T072..T087, T103, T104).
 
 - [x] T088 `src/renderer/probe.js` (`GROW`, `largest`, `better`, `pick`) and their cases in `scripts/test-probe.ts` (`npm run test:probe`) (synthetic fit tests; box model with 1, 2, 4, 6, 10, 15 agents in 1-3 folders at 1280x800, 1440x900, 1920x1080) [FR-041, FR-042, FR-046]
 - [x] T089 `chooseLayout`: grow search after the candidates (after `full` or `roomy`, at f >= 1.1; never `card`/`mini`/`micro` or a forced density); `renderOffice` sets `--gf` and `data-grow`; helper boost after [FR-041, FR-042, FR-044]
@@ -93,6 +93,8 @@ Numbered T088..T102 since 2026-10-23 (first written as T057..T071; PR #511 took 
 - [x] T085 (review of #554, fjcabello) Spec: the state is `data-state` and the first `is-*` class, the resting kind `rest-recent`/`rest-old`; FR-051's helper and away rules checked in the page; stale wording [FR-051, FR-054, FR-057]
 - [x] T086 `app.js` desk buttons `data-state` (state class first, `rest-*` kind, `data-rest`); `styles.css`, `shots-033`, `shots-034`, `check:office-fill` selectors; `test:shutters` source checks of `shutInput` (away, busy helper); `check:office-fill` cases (a Done agent with a working helper keeps its desk and helper; an agent away at a place is not in the lounge), mutation checks; stale strip/chip wording (`app.js`, `shutters.js`, `styles.css`, `driver-helpers.js`, `test-shutters.ts`) [FR-051, FR-054, FR-057]
 - [x] T087 (review of #554, fjcabello, 23:09) Cause of the blurred desk scene beside the lounge (a composited halo animation, not the layout); `styles.css` halo pulses `fill-opacity`; `check:office-fill` same scene box and sharpness with the lounge on and off, mutation checks (old halo; a rule that moves scenes beside the lounge); `check-theme-art`; spec note, `docs/agent-notes.md` [FR-057]
+- [x] T103 (CI on #554 after #511/#552) `chooseLayout`: `headsFit` (the header steps of `fitUsage`, now `fitHead`) is part of "fits"; size-only fit kept as fallback; `check:office` with DejaVu fonts [FR-023]
+- [x] T104 (CI on #554 after #552) The lounge resident's `C3` badge on its character (`.stage .desk.shut .chatno`), none in the peek; `shots-074-navigator` [FR-054, spec 074 FR-012]
 
 ## Changes 2026-10-21 (layout speed, PR #457 finding)
 

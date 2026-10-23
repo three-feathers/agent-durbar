@@ -925,11 +925,11 @@ function restHTML(x,i){
   const roll=SHUT_PREV&&!SHUT_PREV.has(a.id)?' rolling':'';
   const where=k==='recent'?'resting on the couch':'asleep on a nap bed';
   const lab=`${esc(a.name)}${chatNoWords(a)}, ${esc(who)}, folder ${esc(roomOf(a).path)}, ${where}, ${st==='done'?'finished':'idle after its reply'}${said?' '+esc(said):''}: ${esc(line)}${/[.!?…]$/.test(line)?'':'.'} Open chat panel.`; /* every part escaped here */
-  const peek=`<span class="peek" aria-hidden="true"><span class="pk-h">${chatNoHTML(a)}<b>${esc(a.name)}</b><span class="pk-role">${esc(who)}</span></span><span class="pk-st">${SHUT_MARK}${esc(stWord(a))}${ago?' · finished '+esc(ago):''} · ${where}</span><span class="pk-tx">${esc(shutReply(a,300))}</span></span>`;
+  const peek=`<span class="peek" aria-hidden="true"><span class="pk-h"><b>${esc(a.name)}</b><span class="pk-role">${esc(who)}</span></span><span class="pk-st">${SHUT_MARK}${esc(stWord(a))}${ago?' · finished '+esc(ago):''} · ${where}</span><span class="pk-tx">${esc(shutReply(a,300))}</span></span>`;
   const art=k==='recent'
     ?`<span class="lg-av">${avatar(a)}</span>`
     :`<svg class="lg-bed" viewBox="0 0 44 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bd-frame" x="1" y="10" width="42" height="11" rx="3"/><rect class="bd-head" x="1" y="3" width="5" height="18" rx="2"/><rect class="bd-mat" x="5" y="8" width="37" height="6" rx="2.5"/><rect class="bd-pil" x="6" y="5" width="10" height="5" rx="2.5"/><rect class="bd-leg" x="3" y="20" width="3" height="4"/><rect class="bd-leg" x="38" y="20" width="3" height="4"/></svg><span class="lg-av lying">${avatar(a)}</span><svg class="lg-blanket" viewBox="0 0 44 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="bd-blk" d="M17 6.5q12-3 25 1V14H17z"/></svg>`;
-  return `<button class="desk shut is-${st} rest-${k}${roll}" type="button" data-id="${esc(a.id)}" data-state="${st}" data-rest="${k}" aria-pressed="${ui.selected===a.id}" aria-label="${lab}"><span class="lg-sp">${art}<span class="name lg-name">${esc(a.name)}</span></span>${peek}</button>`;
+  return `<button class="desk shut is-${st} rest-${k}${roll}" type="button" data-id="${esc(a.id)}" data-state="${st}" data-rest="${k}" aria-pressed="${ui.selected===a.id}" aria-label="${lab}"><span class="lg-sp">${chatNoHTML(a)}${art}<span class="name lg-name">${esc(a.name)}</span></span>${peek}</button>`;
 }
 /* FR-053: a room's resting agents, their couches and beds, and the corner's width (DurbarShutters.width, counted by the layout) */
 function shutGroup(r,rolled){
@@ -1178,7 +1178,11 @@ function chooseLayout(sizing,aw,ah){
   GROW=0; setGrow(probe,0); /* a grown render leaves GROW on: the plain candidates are probed with plain text */
   const openOnly=sizing.filter(m=>!m.r.closed);
   if(!openOnly.length){probe.innerHTML=svgHollow(stageHTML(sizing,'card',aw,1));probe.dataset.d='card';const ok=probe.scrollHeight<=ah+1;probe.innerHTML='';probePrev=null;return {d:'card',hcap:1,cap:1,fit:ok,boost:[]};}
-  const fits=()=>probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1;
+  /* spec 001 FR-023 (change 2026-10-23): a layout fits when the office fits the floor AND every room header holds its parts. A layout that
+     fits only by size is kept as the fallback (soft), so a header that cannot fit anywhere never sends the office into scroll mode. */
+  const sizeFits=()=>probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1;
+  const fits=()=>sizeFits()&&headsFit(probe);
+  let soft=null;
   const cands=FORCE_DENSITY?CANDIDATES.filter(c=>c[0]===FORCE_DENSITY):CANDIDATES;
   let res=null, lastAny=null;
   for(const [d,hcap,side] of cands){
@@ -1187,25 +1191,29 @@ function chooseLayout(sizing,aw,ah){
     if(d==='full'){
       probeSet(probe,stageHTML(sizing,d,aw));
       if(fits()){res={d,hcap,cap:0,fit:true,boost:[],side:!!side};break;}
+      if(!soft&&sizeFits())soft={d,hcap,cap:0,fit:true,boost:[],side:!!side};
       lastAny={d,hcap,cap:0,fit:false,boost:[],side:!!side};continue;
     }
     const D=DENS[d], over=2*D.rp+4;
     const maxCap=Math.max(1,Math.min(Math.max(...openOnly.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
-    let best=null, any=null;
+    let best=null, bySize=null, any=null;
     for(let c=maxCap;c>=1;c--){
       probeSet(probe,stageHTML(sizing,d,aw,c));
       const h=probe.scrollHeight;
       if(!any||h<any.h-8)any={c,h};
-      if(fits()){
+      if(sizeFits()){
         /* among layouts that fit, prefer desks close to a comfortable width (not stretched, not squeezed) */
         let tw=0; const ds=probe.querySelectorAll('.desk.card'); ds.forEach(e=>{tw+=e.getBoundingClientRect().width;});
         const miss=Math.abs(tw/Math.max(1,ds.length)-D.cw*1.3);
-        if(!best||miss<best.miss-6)best={c,h,miss};
+        if(!bySize||miss<bySize.miss-6)bySize={c,h,miss};
+        if(headsFit(probe)&&(!best||miss<best.miss-6))best={c,h,miss};
       }
     }
     if(best){res={d,hcap,cap:best.c,fit:true,boost:[]};break;}
+    if(bySize&&!soft)soft={d,hcap,cap:bySize.c,fit:true,boost:[]};
     lastAny={d,hcap,cap:any.c,fit:false,boost:[]};
   }
+  if(!res&&soft)res=soft;
   /* spec 001 FR-042: when the search picked `full` or `roomy` (few agents), grown `roomy` desks win if they fit at least one step larger
      than `roomy`. Never after card/mini/micro (15 agents lay out as before) or with a forced density. */
   if(res&&res.fit&&!FORCE_DENSITY&&(res.d==='full'||res.d==='roomy')){
@@ -1319,14 +1327,24 @@ function fitUsage(root){
     for(const st of USE_STEPS){if(fits())break;u.classList.add(st);}
   }
   /* the same for room headers: a name cut (even by a pixel, which shows an ellipsis) while its path still shows hides the path (also in the tooltip) */
+  root.querySelectorAll('.room-head').forEach(fitHead);
+}
+function fitHead(hd){
+  hd.classList.remove('no-path','no-words');
+  const n=hd.querySelector('.room-name'),p=hd.querySelector('.room-path');
+  /* spec 001 FR-037: the count words go first (the counts stay, the words are in the tooltip and label), then the path */
+  const tight=()=>(n&&n.scrollWidth>n.clientWidth+0.5)||hd.scrollWidth>hd.clientWidth+0.5;
+  if(hd.querySelector('.rdw')&&tight())hd.classList.add('no-words');
+  if(n&&p&&p.getClientRects().length&&n.scrollWidth>n.clientWidth+0.5)hd.classList.add('no-path');
+}
+/* spec 001 FR-023 (change 2026-10-23): after those steps, every part of every room header is inside its header (what check:office asserts) */
+function headsFit(root){
   for(const hd of root.querySelectorAll('.room-head')){
-    hd.classList.remove('no-path','no-words');
-    const n=hd.querySelector('.room-name'),p=hd.querySelector('.room-path');
-    /* spec 001 FR-037: the count words go first (the counts stay, the words are in the tooltip and label), then the path */
-    const tight=()=>(n&&n.scrollWidth>n.clientWidth+0.5)||hd.scrollWidth>hd.clientWidth+0.5;
-    if(hd.querySelector('.rdw')&&tight())hd.classList.add('no-words');
-    if(n&&p&&p.getClientRects().length&&n.scrollWidth>n.clientWidth+0.5)hd.classList.add('no-path');
+    fitHead(hd);
+    const H=hd.getBoundingClientRect();
+    for(const e of hd.children){if(!e.getClientRects().length)continue;const r=e.getBoundingClientRect();if(r.width>0&&r.right>H.right+1)return false;}
   }
+  return true;
 }
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{const s=document.getElementById('stage');if(s)fitUsage(s);}).catch(()=>{});
 /* spec 052 FR-164: the top bar is one row. When its parts do not fit (a narrow window, a wide theme or system font, the Mac traffic
