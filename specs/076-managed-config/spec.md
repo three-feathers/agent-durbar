@@ -907,7 +907,8 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
   | **MCP tools** | `permissions.deny` rules `mcp__*`, `*`, `mcp__<server>`, `mcp__<server>__*`, `mcp__<server>__<tool>` and `mcp__<server>__<prefix>*` (server names with other characters than letters, digits, `_`, `-` read as `_`; rules with parentheses are skipped, as Claude Code does) | none: `permissions.deny` has no MCP tool selector | none |
 
   **Claude Code drop-ins combine as Claude Code documents it** (`read:` managed-settings, *Split a file-based policy across teams*):
-  `managed-settings.json` first, then the drop-ins in name order; a later single value replaces an earlier one, **lists combine with
+  `managed-settings.json` first, then the drop-ins in name order (only lower-case `*.json`, no hidden files, exactly what Claude Code
+  reads); a later single value replaces an earlier one, **lists combine with
   duplicates removed** (allow-lists and deny-lists alike), nested blocks merge key by key. **Codex host overrides**: Durbar matches
   `hostname_patterns` (case-insensitive, `*` and `?`) against the local host name; Codex prefers the fully qualified name, which Durbar
   does not resolve, so when no override matches the local name but one would change the verdict, the result is advice (`doubt`). An
@@ -931,8 +932,9 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
     value it cannot read, a file that is not JSON, an allow-list that lost entries.
   - Codex: its docs do not say what Codex does with a `requirements.toml` or value it cannot parse (question on PR 644), so Durbar does
     not guess a refusal: a file or key it cannot read is advice for the modes that key governs.
-  - Durbar's own limits (a file over 1 MiB, more than 64 drop-ins, a list over 4,096 entries or an entry over 2,048 characters, nesting
-    over 32 levels) are advice, never a refusal.
+  - Durbar's own limits are advice, never a refusal: a file over 1 MiB, more than 64 drop-ins, a list over 4,096 entries or an entry over
+    2,048 characters, nesting over 32 levels, and more than 64 KiB of model, server and tool rules in total (review on PR 644: a whole
+    verdict stays cheap; verdicts are also remembered per policy read, so a repaint of the MCP list does not work them out again).
 
   Nothing from a policy is ever logged or put in an error; a problem names the path and what was wrong (*not valid JSON*,
   *`allowedMcpServers` has 2 invalid entries (stripped)*).

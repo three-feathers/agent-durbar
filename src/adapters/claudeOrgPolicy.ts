@@ -4,7 +4,7 @@
  * ("Split a file-based policy across teams", "Keys that fail closed", the fallback table) and settings-reference.md, 2026-10-23.
  * Only the keys of FR-200 are read; MDM, the registry and server-managed settings are not (FR-206).
  */
-import { emptyOrgPolicy, hasOwn, isPlainObject, mcpToolRules, ORG_LIMITS, ownMcpRules, ownStrings, ownValue, wholeOrgPolicy } from '../shared/orgpolicy';
+import { boundOrgPolicy, emptyOrgPolicy, hasOwn, isPlainObject, mcpToolRules, ORG_LIMITS, ownMcpRules, ownStrings, ownValue, wholeOrgPolicy } from '../shared/orgpolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import { dropInFiles, joinFor, jsonObject, nodeOrgFs, programFiles, readPolicyFile } from './orgpolicyfiles';
 import type { OrgFs } from './orgpolicyfiles';
@@ -145,7 +145,7 @@ export function parseClaudeOrgPolicy(o: Record<string, unknown>, paths: string[]
     }
   }
   out.unreadable = out.problems.length > 0;
-  return out;
+  return boundOrgPolicy(out);
 }
 
 /**

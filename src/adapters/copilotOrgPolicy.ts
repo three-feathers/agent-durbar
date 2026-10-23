@@ -8,7 +8,7 @@
  * know (a team override of an `overridable` value, a bad value) is `doubt`, never a refusal. `read:` GitHub's *Enterprise managed
  * settings* reference and the Copilot CLI config-dir reference, 2026-10-23.
  */
-import { emptyOrgPolicy, hasOwn, isPlainObject, ownMcpRules, ownValue, wholeOrgPolicy } from '../shared/orgpolicy';
+import { boundOrgPolicy, emptyOrgPolicy, hasOwn, isPlainObject, ownMcpRules, ownValue, wholeOrgPolicy } from '../shared/orgpolicy';
 import type { OrgMcpRule, OrgPolicy } from '../shared/orgpolicy';
 import { joinFor, jsonObject, nodeOrgFs, programFiles, readPolicyFile } from './orgpolicyfiles';
 import type { OrgFs } from './orgpolicyfiles';
@@ -102,7 +102,7 @@ export function copilotOrgPolicyFromResolve(r: unknown): OrgPolicy | undefined {
   const settings = ownValue(resolved, 'settings');
   if (isPlainObject(settings)) mcpLists(out, settings, 'the Copilot runtime', false);
   out.unreadable = out.problems.length > 0;
-  return out;
+  return boundOrgPolicy(out);
 }
 
 export function parseCopilotOrgPolicy(o: Record<string, unknown>, p: string): OrgPolicy {
@@ -125,7 +125,7 @@ export function parseCopilotOrgPolicy(o: Record<string, unknown>, p: string): Or
   }
   mcpLists(out, o, p, true);
   out.unreadable = out.problems.length > 0;
-  return out;
+  return boundOrgPolicy(out);
 }
 
 /**

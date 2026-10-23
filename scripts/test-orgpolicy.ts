@@ -16,9 +16,9 @@ import { copilotOrgPolicyFromResolve, parseCopilotOrgPolicy, readCopilotFileOrgP
 import { hostMatches, parseCodexOrgPolicy, readCodexOrgPolicy, tomlStatements } from '../src/adapters/codexOrgPolicy';
 import type { OrgFs } from '../src/adapters/orgpolicyfiles';
 import { FakeAdapter } from '../src/adapters/fake';
-import { emptyOrgPolicy, globMatch, mcpVerdict, modelVerdict, modeVerdict, orgBlockedText, orgDoubtText, orgFatalText, orgPolicyView, ownValue, toolVerdict, urlMatches } from '../src/shared/orgpolicy';
+import { boundOrgPolicy, emptyOrgPolicy, ORG_LIMITS, orgVerdictStats, globMatch, mcpVerdict, modelVerdict, modeVerdict, orgBlockedText, orgDoubtText, orgFatalText, orgPolicyView, ownValue, toolVerdict, urlMatches } from '../src/shared/orgpolicy';
 import type { OrgPolicy, OrgVerdict } from '../src/shared/orgpolicy';
-import { OrgPolicyCache, ORG_POLICY_TTL_MS } from '../src/main/orgpolicy';
+import { orgGuardedStart, OrgPolicyCache, ORG_POLICY_TTL_MS } from '../src/main/orgpolicy';
 import { setMcpOp, setModeOp, startGuardOp } from '../src/main/agentops';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -127,6 +127,9 @@ async function main(): Promise<void> {
     assert.strictEqual(m.models.exact, false, 'a: a single value: the later file wins');
     assert.deepStrictEqual(m.paths, [CF, '/etc/claude-code/managed-settings.d/10-x.json', '/etc/claude-code/managed-settings.d/20-y.json'], 'a: hidden and non-JSON drop-ins are not read; name order');
     assert.strictEqual(readClaudeOrgPolicy('linux', {}, fakeFs({})).found, false, 'a: no file: nothing found, nothing blocked');
+    // review on PR 644: Claude Code reads only lower-case `*.json` drop-ins
+    const upper = readClaudeOrgPolicy('linux', {}, fakeFs({ '/etc/claude-code/managed-settings.d': { dir: ['10-x.JSON', '20-y.Json'] }, '/etc/claude-code/managed-settings.d/10-x.JSON': '{"permissions":{"disableBypassPermissionsMode":"disable"}}', '/etc/claude-code/managed-settings.d/20-y.Json': '{"permissions":{"disableBypassPermissionsMode":"disable"}}' }));
+    assert.strictEqual(modes(upper), '---', 'a: a drop-in named .JSON or .Json is not read (Claude Code does not read it)');
     assert.strictEqual(modes(readClaudeOrgPolicy('linux', {}, fakeFs({ [CF]: '   ' }))), '---', 'a: an empty file counts as {}');
     const win = readClaudeOrgPolicy('win32', { ProgramFiles: 'D:\\Programs' }, fakeFs({ 'D:\\Programs\\ClaudeCode\\managed-settings.json': '{"permissions":{"disableBypassPermissionsMode":"disable"}}' }));
     assert.strictEqual(modes(win), '--B', 'a: Windows path under Program Files from the environment');
@@ -357,6 +360,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(await startGuardOp(startPol, 'c', { mode: 'ask', model: 'sonnet' }, go('ok')), { result: 'id-ok' }, 'f: an allowed start starts, no note');
     assert.deepStrictEqual(await startGuardOp(startPol, 'x', { mode: 'allow', model: 'auto' }, go('advice')), { result: 'id-advice', note: orgDoubtText('Codex') }, 'f: an advisory mode starts, with the advice words');
     assert.deepStrictEqual(starts, ['ok', 'advice'], 'f: exactly the allowed and the advisory starts ran');
+    assert.strictEqual(orgGuardedStart, startGuardOp, 'f: orgGuardedStart (the review\'s name) is the same op');
     // second layer: both start paths of main.ts go through the guard, and nothing in main.ts calls an adapter's start directly
     const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8').replace(/\r/g, '');
     assert.strictEqual((mainSrc.match(/startGuardOp\(orgPolicies, /g) ?? []).length, 2, 'f: main.ts: addWorkspace and the lazy start call startGuardOp');
@@ -413,6 +417,37 @@ async function main(): Promise<void> {
     const used = process.cpuUsage(t0);
     const ms = (used.user + used.system) / 1000;
     assert.ok(ms < 5000, `g: 5 hostile matches took ${ms.toFixed(0)} ms of CPU`);
+    // review on PR 644: the whole verdict is bounded. At the rule cap, the worst rule shape against a long URL stays cheap; past it, advice
+    const per = 2000;
+    const n = Math.floor(ORG_LIMITS.ruleChars / per);
+    const atCap = emptyOrgPolicy('X');
+    atCap.found = true;
+    atCap.mcp.deny = Array.from({ length: n }, (_, i) => ({ url: 'https://x/' + '*' + 'a'.repeat(per - 13 - String(i).length) + 'b' + i }));
+    atCap.tools.deny = [];
+    assert.strictEqual(boundOrgPolicy(atCap), atCap, 'g: at the cap the rules are kept');
+    assert.strictEqual(atCap.mcp.deny.length, n, 'g: all of them');
+    const url = 'https://x/' + 'a'.repeat(2048);
+    const t1 = process.cpuUsage();
+    assert.strictEqual(mcpVerdict(atCap, { name: 's', url }), undefined, 'g: no rule matches');
+    const u1 = process.cpuUsage(t1);
+    const ms1 = (u1.user + u1.system) / 1000;
+    assert.ok(ms1 < 1000, `g: one whole verdict at the cap took ${ms1.toFixed(0)} ms of CPU`);
+    const over = emptyOrgPolicy('X');
+    over.found = true;
+    over.mcp.deny = Array.from({ length: n + 2 }, () => ({ url: 'https://x/' + 'a'.repeat(per - 10) }));
+    boundOrgPolicy(over);
+    assert.deepStrictEqual(mcpVerdict(over, { name: 's', url: 'https://y/' }), { why: orgDoubtText('X'), refuse: false }, 'g: past the cap: advice, never a refusal');
+    assert.ok(over.problems.some((x) => x.includes('longer in total')), 'g: and said so');
+    assert.ok(readClaudeOrgPolicy('linux', {}, fakeFs({ [CF]: JSON.stringify({ deniedMcpServers: Array.from({ length: 40 }, (_, i) => ({ serverUrl: 'https://x/' + 'a'.repeat(2000) + i })) }) })).mcp.all === 'doubt', 'g: the Claude reader applies the cap');
+    // the memo: one evaluation per server per policy read; a new read evaluates again
+    const before = orgVerdictStats.evaluations;
+    for (let i = 0; i < 50; i++) mcpVerdict(atCap, { name: 's', url });
+    assert.strictEqual(orgVerdictStats.evaluations, before, 'g: repaints answer from the memo (no new evaluation)');
+    for (let i = 0; i < 5; i++) toolVerdict(atCap, 'srv', 'tool');
+    assert.strictEqual(orgVerdictStats.evaluations, before + 1, 'g: one evaluation for a new tool');
+    const reread = { ...atCap };
+    mcpVerdict(reread, { name: 's', url });
+    assert.strictEqual(orgVerdictStats.evaluations, before + 2, 'g: a new policy read evaluates again');
     assert.strictEqual(globMatch('a*b*c', 'axxbyyc'), true, 'g: glob basics');
     assert.strictEqual(globMatch('a*b', 'ab'), true, 'g: empty star');
     assert.strictEqual(globMatch('a*b', 'ac'), false, 'g: no match');

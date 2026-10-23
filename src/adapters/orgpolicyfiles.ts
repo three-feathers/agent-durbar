@@ -70,7 +70,7 @@ export function dropInFiles(fsx: OrgFs, dir: string, join: (a: string, b: string
     const st = fsx.stat(dir);
     if (!st) return { files: [] };
     if (!st.isDirectory()) return { problem: `${dir}: not a folder` };
-    const names = fsx.readdir(dir).filter((n) => n.toLowerCase().endsWith('.json') && !n.startsWith('.')).sort();
+    const names = fsx.readdir(dir).filter((n) => n.endsWith('.json') && !n.startsWith('.')).sort(); // exactly what Claude Code reads: lower-case `.json`, no hidden files
     if (names.length > ORG_LIMITS.files) return { tooMany: `${dir}: more files than Agent Durbar reads` };
     return { files: names.map((n) => join(dir, n)) };
   } catch (e) {

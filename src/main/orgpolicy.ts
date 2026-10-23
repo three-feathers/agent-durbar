@@ -125,3 +125,6 @@ export class OrgPolicyCache {
     return out;
   }
 }
+
+/** Paco's name for the start guard (review on PR 644): the one op both start paths of main.ts call, `startGuardOp` in agentops.ts. */
+export { startGuardOp as orgGuardedStart } from './agentops';

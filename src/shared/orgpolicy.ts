@@ -55,7 +55,39 @@ export interface OrgVerdict {
 }
 
 /** Limits on what is read (FR-201). Over a limit Durbar cannot read the key as the vendor does: `doubt`, never a refusal. */
-export const ORG_LIMITS = Object.freeze({ fileBytes: 1024 * 1024, listItems: 4096, itemChars: 2048, commandParts: 256, files: 64, depth: 32 });
+export const ORG_LIMITS = Object.freeze({ fileBytes: 1024 * 1024, listItems: 4096, itemChars: 2048, commandParts: 256, files: 64, depth: 32, ruleChars: 64 * 1024, memo: 4096 });
+
+/**
+ * FR-201 (review on PR 644): the whole policy's rules are bounded, not only each one. Past `ruleChars` characters of model, server and
+ * tool rules in total, Durbar does not check them one by one (a verdict could cost a lot of CPU on every repaint of the MCP list): they are
+ * dropped and those areas become advice. Each reader calls this on its result.
+ */
+export function boundOrgPolicy(p: OrgPolicy): OrgPolicy {
+  const len = (r: OrgMcpRule): number => (r.name?.length ?? 0) + (r.url?.length ?? 0) + (r.command ?? []).reduce((n, x) => n + x.length + 1, 0);
+  const total = (p.models.allow ?? []).reduce((n, x) => n + x.length, 0) + p.models.deny.reduce((n, x) => n + x.length, 0) + (p.mcp.allow ?? []).reduce((n, r) => n + len(r), 0) + p.mcp.deny.reduce((n, r) => n + len(r), 0) + p.tools.deny.reduce((n, x) => n + x.length, 0);
+  if (total <= ORG_LIMITS.ruleChars) return p;
+  const doubt = (m: OrgMark | undefined): OrgMark => (m === 'fatal' ? 'fatal' : 'doubt');
+  p.models = { deny: [], exact: p.models.exact, all: doubt(p.models.all) };
+  p.mcp = { deny: [], all: doubt(p.mcp.all), builtinSkipsDeny: p.mcp.builtinSkipsDeny };
+  p.tools = { deny: [], all: doubt(p.tools.all) };
+  p.problems.push(`its rules are longer in total than Agent Durbar checks (${ORG_LIMITS.ruleChars} characters)`);
+  p.unreadable = true;
+  return p;
+}
+
+/** How many server and tool verdicts were worked out (not answered from the memo); for the tests. */
+export const orgVerdictStats = { evaluations: 0 };
+/** Verdicts per policy read: a new read is a new object, so the memo never outlives the policy it was made for. */
+const memo = new WeakMap<object, Map<string, OrgVerdict | null>>();
+function memoized(p: OrgPolicy, key: string, work: () => OrgVerdict | undefined): OrgVerdict | undefined {
+  let m = memo.get(p);
+  if (!m) memo.set(p, (m = new Map()));
+  if (m.has(key)) return m.get(key) ?? undefined;
+  orgVerdictStats.evaluations++;
+  const v = work();
+  if (m.size < ORG_LIMITS.memo) m.set(key, v ?? null);
+  return v;
+}
 
 export function emptyOrgPolicy(app: string, builtinSkipsDeny = false): OrgPolicy {
   return { app, found: false, unreadable: false, paths: [], problems: [], modes: {}, models: { deny: [], exact: false }, mcp: { deny: [], builtinSkipsDeny }, tools: { deny: [] } };
@@ -277,6 +309,10 @@ function ruleMatches(r: OrgMcpRule, s: OrgMcpServer): boolean | undefined {
 
 export function mcpVerdict(p: OrgPolicy | undefined, s: OrgMcpServer): OrgVerdict | undefined {
   if (!p || !p.found) return undefined;
+  return memoized(p, 'mcp\0' + JSON.stringify([s.name, s.command ?? null, s.args ?? null, s.url ?? null, !!s.builtin]), () => mcpWork(p, s));
+}
+
+function mcpWork(p: OrgPolicy, s: OrgMcpServer): OrgVerdict | undefined {
   const skipsDeny = !!s.builtin && p.mcp.builtinSkipsDeny;
   if (p.mcp.all && (p.mcp.all === 'fatal' || !s.builtin)) return verdictOf(p, p.mcp.all);
   if (!skipsDeny && p.mcp.deny.some((r) => ruleMatches(r, s) === true)) return verdictOf(p, p.mcp.denyMark ?? 'blocked');
@@ -297,6 +333,10 @@ export const claudeServerSegment = (name: string): string => name.replace(/[^A-Z
 
 export function toolVerdict(p: OrgPolicy | undefined, server: string, tool: string): OrgVerdict | undefined {
   if (!p || !p.found) return undefined;
+  return memoized(p, 'tool\0' + JSON.stringify([server, tool]), () => toolWork(p, server, tool));
+}
+
+function toolWork(p: OrgPolicy, server: string, tool: string): OrgVerdict | undefined {
   if (p.tools.all) return verdictOf(p, p.tools.all);
   const seg = claudeServerSegment(server);
   const full = `mcp__${seg}__${tool}`;
