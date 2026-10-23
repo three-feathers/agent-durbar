@@ -86,6 +86,12 @@ t('focus never focuses with scrolling, then reveals in the inner scroller (or no
   assert.strictEqual(chat.scrollTop, 0);
   assert.ok(frame.every((e) => e.scrollTop === 0));
   S.focus(null); // no element: nothing happens
+  // both axes, as a native focus: a chip off the right edge of a horizontal strip comes into view, the frame stays
+  const strip = new El('.strip', pin, { top: 0, bottom: 40, left: 0, right: 300 }, 'auto');
+  const chip = new El('.chip', strip, { top: 5, bottom: 35, left: 320, right: 380 });
+  S.focus(chip);
+  assert.strictEqual(strip.scrollLeft, 80);
+  assert.ok(frame.every((e) => e.scrollTop === 0 && e.scrollLeft === 0));
 });
 
 t('pin: a scroll on a pinned container (or the page) is put back; an inner scroller keeps its place', () => {

@@ -1,4 +1,4 @@
-/* Scrolling and focus that never move the page (spec 052 FR-055, FR-176; issue #638).
+/* Scrolling and focus that never move the page (spec 052 FR-055, FR-176; issue 638).
    `el.focus()` and `el.scrollIntoView()` scroll EVERY ancestor that can scroll, including `html`, `body` and boxes with
    `overflow:hidden`. In this app those must stay still: when one moved, the top bar and the chat header slid off the top and a
    blank band was left at the bottom, with no scrollbar to bring them back. So:
@@ -52,11 +52,11 @@
     }
   }
 
-  /* focus without moving the page; o as for reveal, or {reveal:false} to keep every scroller where it is */
+  /* focus without moving the page; o as for reveal (inline defaults to 'nearest'), or {reveal:false} to keep every scroller where it is */
   function focus(el, o){
     if(!el||typeof el.focus!=='function')return;
     el.focus({preventScroll:true});
-    if(!o||o.reveal!==false)reveal(el,o);
+    if(!o||o.reveal!==false)reveal(el,Object.assign({inline:'nearest'},o)); /* both axes, as a native focus */
   }
 
   /* Pure part of the safety net: puts every element of `els` that is scrolled back to 0; returns how many it moved. */
