@@ -35,7 +35,7 @@ if [ "$mergeable" = MERGEABLE ]; then
   if git fetch -q origin "$base" && git fetch -q origin "pull/$p/head" && head=$(git rev-parse FETCH_HEAD) \
      && tree=$(git merge-tree --write-tree "origin/$base" "$head"); then
     node "$(dirname "$0")/changelog.js" check --release --root "$(git rev-parse --show-toplevel)" --base "origin/$base" --head "$tree" >/dev/null 2>&1 \
-      || bad="$bad release-notes=stale(merge $base, rerun changelog:build: node scripts/changelog.js check --release --base origin/$base --head $tree)"
+      || bad="$bad release-notes=stale(a fragment landed after the fold: merge $base, npm run changelog:build -- --release <same heading> --amend; see changelog.d/README.md)"
   else
     bad="$bad release-notes=unchecked(git fetch or merge-tree failed)"
   fi
