@@ -322,3 +322,24 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
 
 - [x] T127 Review on #609 (fjcabello): needs-sign-in rows lead with Open in chat, Restart behind More; load sequence numbers and no
   reload while the list is hidden; a needs-sign-in-only case in `test-mcpwords`; the driver pins each (mutation-checked) [FR-082, FR-083]
+
+## Phase 10: MCP health, failure reason, when, Copy diagnostics, chip dot (delta 2026-10-23, issue #603)
+
+- [x] T140 Spec delta FR-090..FR-097, plan delta and these tasks, committed before code
+- [ ] T141 [P] Unit tests: `scripts/test-mcphealth.ts` (since, ran, afterRunning, restart resets, unchanged state keeps its time) and
+  `test-mcpwords` (every reason, text rules shared with the hint, "Failed (reason unknown)", whenText, diagnostics content and masking
+  with a planted fake token through `maskMcpError` and `redact`) [FR-090, FR-092, FR-093]
+- [ ] T142 [P] Adapter tests with fakes: Copilot `errorClassification` values in `test-events` (known values, unknown values set
+  nothing, a later `connected` drops the class); Claude `mcp_server_errors` and `config.type` in `test-claude-map`; `agents:mcp`
+  reply fields in `test-mcp-session` [FR-091, FR-092]
+- [ ] T143 [P] Simulator driver `scripts/shots-058-mcp-health.js` (mixed failures injected as `mcp` reports): reason words, time,
+  Copy diagnostics content (masked; a planted fake token is not in it), Settings rows, the chip dot and its name at 1440x900 and
+  1280x800; in `scripts/ui-suite.js` [FR-093..FR-096]
+- [ ] T144 Adapters: `errorClass` values, Copilot `copilotErrorClass`, Claude errors and transport (also T022's Copilot class part
+  and T024) [FR-091]
+- [ ] T145 `src/shared/mcphealth.ts`, main's per-session marks and the reply fields [FR-092]
+- [ ] T146 `mcpwords.js` (`reasonOf`, `whenText`, `diagnostics`, shared classifier); the shared row helper in `screens.js` for the
+  chat dialog and Settings; `screens.css` [FR-090, FR-093, FR-095, FR-096]
+- [ ] T147 The chip dot and `mcpOpts` in `app.js`; `styles.css`; the simulator's fields in `sim.ts` [FR-094]
+- [ ] T148 Docs (README MCP line, `changelog.d/058-mcp-health.md`, screenshots at 1440x900 and 1280x800 and the linked MCP shots
+  retaken), `/speckit-converge`, tick tasks, mutation checks
