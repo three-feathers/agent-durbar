@@ -620,9 +620,9 @@ export interface AgentAdapter {
   authStatus?(): Promise<{ signedIn: boolean }>;
   /**
    * Spec 076 FR-198 (issue #602): this agent app's OWN organization policy on this machine (its documented machine files), read-only,
-   * normalized; an empty policy when there is none. Never throws: a file that cannot be read is the strictest state (FR-201).
+   * normalized the way the app reads it; an empty policy when there is none. Copilot asks its runtime first (FR-198).
    */
-  readOrgPolicy?(): OrgPolicy;
+  readOrgPolicy?(): OrgPolicy | Promise<OrgPolicy>;
   /**
    * Spec 012 FR-156: whether the sign-in really works, asked of the service where the app offers a free call (no prompt, no
    * credits); `unknown` when it cannot tell. `detail` is a short, safe sentence: never a token, email or account name.

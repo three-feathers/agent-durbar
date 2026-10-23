@@ -151,24 +151,36 @@ The vendor's own managed settings (Claude `managed-settings.json` `env`, Codex `
 
 ### D8 Vendor policies greyed out (section O, phase P27, issue #602)
 
-- `src/shared/orgpolicy.ts` (no imports, pure): the `OrgPolicy` type, `emptyOrgPolicy`, `strictestOrgPolicy`, and the questions
-  `modeBlocked`, `modelBlocked`, `mcpBlocked`, `toolBlocked`, each answering a reason string or `undefined`; the hostile-input helpers
-  (`ownStringList`, `ownObject`) and the URL matcher (canonicalize, then one pass over `*` segments; no `RegExp` from file text).
-- `src/adapters/claudeOrgPolicy.ts`, `copilotOrgPolicy.ts`, `codexOrgPolicy.ts`: `parse...(text)` (pure, fixture-tested) and
-  `read...(fs, platform, env)` (paths of FR-198, size cap, Copilot's POSIX ownership rule through an injected `lstat`). Codex reads only
-  top-level `allowed_approval_policies` / `allowed_sandbox_modes` single-line arrays (`codextoml.ts` `tomlStringArray`) and the
-  `[allowed_permission_profiles]` table's `name = true|false` lines; a multi-line array or any other line inside those keys makes the
-  file unreadable (strictest).
-- `AgentAdapter.readOrgPolicy?(): Promise<OrgPolicy>` on the three real adapters; `fake.ts` and the simulator's stand-ins have none.
-- `src/main/orgpolicy.ts` `OrgPolicyCache`: per adapter id, 60 s TTL (FR-204), never throws (a reader error is the strictest state),
-  `refusal(adapterId, { mode, model })` for the starters and setters, `view()` for `orgpolicy:view` (FR-207).
-- Wiring: `addWorkspace` and the restart/resume path in `main.ts` (before `ad.start`), `setModeOp` (`agentops.ts`), `agents:setModel`
-  and `models:list` (`ipc/model.ts`), `agentMcpReply` (`mcpsession.ts`, new `orgBlocked(name)` hook like `serverUrl`) and its server
-  definitions from the same lists `serverUrlOf` reads, `agents:mcpTools` (`mcptoolsop.ts`), the per-session MCP switch.
-- Window: one `orgWhy` helper in `app.js` fed by `orgpolicy:view` (read at start and when the window regains focus), used by
-  `fillPermSelect`, the mode menu and `fillModelSelect`; `screens.js` shows `orgBlocked` on MCP rows and tools.
-- Reused, not duplicated: the mode lists (`DurbarModels.modesFor`/`fallbackMode`), `ModelOption.disabled`-style marking, the MCP row and
-  tools list of spec 058/069, `codextoml.ts`.
+- `src/shared/orgpolicy.ts` (no imports, pure): the `OrgPolicy` type with a mark per thing (`blocked`, `fatal`, `doubt`),
+  `emptyOrgPolicy`, `wholeOrgPolicy`, and the questions `modeVerdict`, `modelVerdict`, `mcpVerdict`, `toolVerdict`, each answering
+  `{ why, refuse }` or `undefined`; the hostile-input helpers (`ownValue`, and `ownStrings` / `ownMcpRules`, which strip a bad entry the
+  way the vendors do) and the URL and host matchers (canonicalize, then one pass over `*`/`?`; no `RegExp` from file text).
+- `src/adapters/claudeOrgPolicy.ts`: `mergeClaudeSettings` (Claude Code's documented drop-in merge), `parseClaudeOrgPolicy` (each key's
+  documented fallback) and `readClaudeOrgPolicy` (paths, `EACCES` skipped, a non-JSON file `fatal`).
+- `src/adapters/copilotOrgPolicy.ts`: `resolveCopilotManaged` (the runtime's `managedSettings.resolve`, capped in time; the one shared
+  Copilot policy reader, also for spec 007's Auto tier), `copilotOrgPolicyFromResolve`, and the file fallback `readCopilotFileOrgPolicy`.
+- `src/adapters/codexOrgPolicy.ts`: the TOML subset (top-level `allowed_approval_policies` / `allowed_sandbox_modes`,
+  `[allowed_permission_profiles]`, `[[remote_sandbox_config]]` with `hostname_patterns`), via a strict one-pass statement splitter.
+- `AgentAdapter.readOrgPolicy?(): OrgPolicy | Promise<OrgPolicy>` on the three real adapters; `fake.ts` and the simulator's stand-ins have
+  none.
+- `src/main/orgpolicy.ts` `OrgPolicyCache`: per adapter id, 60 s TTL on a monotonic clock, one read at a time (FR-204), never throws
+  (a reader error is `doubt`); `refusal` (fresh) and `refusalNow` (last read), `assertOrgAllows` for the starters, `view()` for
+  `orgpolicy:view` (FR-207).
+- Wiring, each behind an op with injectable deps and tested by behaviour:
+  - `assertOrgAllows` in `addWorkspace` and the lazy start in `main.ts`;
+  - `setModeOp` `orgRefusal` (`agentops.ts`);
+  - `setMcpOp` `orgMcpRefusal` (`agentops.ts`), with the server definitions from the same lists `serverUrlOf` reads;
+  - `setModelOp` and `withOrgModels` (`ipc/model.ts`);
+  - `agentMcpReply`'s `orgBlocked(name)` hook (`mcpsession.ts`);
+  - `mcpToolsOp`'s `orgTool` (`mcptoolsop.ts`).
+- Window: one `orgMode` helper in `app.js` fed by `orgpolicy:view` (read at start and when the window regains focus), used by
+  `fillPermSelect` / `markOrgModes`, the mode menu and `fillModelSelect`; `screens.js` shows `orgBlocked` / `orgDoubt` on MCP rows,
+  the live list and tools.
+- Reused, not duplicated:
+  - the mode lists (`DurbarModels.modesFor` / `fallbackMode`);
+  - the MCP row and tools list of spec 058/069;
+  - `codextoml.ts`'s approach;
+  - for Copilot, its own runtime instead of a second parser.
 
 ## Testing
 

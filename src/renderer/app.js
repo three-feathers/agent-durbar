@@ -4331,8 +4331,8 @@ function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the th
   if(!hasMode&&!hasOps)return false;
   closeModeMenu();
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
-  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>{const w=orgModeWhy(a.info.adapterId,k); /* spec 076 FR-202: blocked by the app's organization policy: disabled, the reason as its text */
-    return `<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}${w?' mm-org':''}"${w?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`;}).join('')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
+  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>{const o=orgMode(a.info.adapterId,k),w=o?o.why:''; /* spec 076 FR-202: blocked: disabled, the reason as its text; advice (FR-201): the words, still selectable */
+    return `<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`;}).join('')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
   m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)mi.focus();return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b||b.getAttribute('aria-disabled')==='true')return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
@@ -4540,7 +4540,7 @@ function modelLabel(info){
 function fillModelSelect(sel,cur,kind,prefix){
   const list=modelsFor(kind);
   /* spec 076 FR-202: a model the agent app's organization policy blocks is listed disabled, with the reason */
-  sel.innerHTML=(list.length?list:[{id:'auto',name:'Auto'}]).map(m=>`<option value="${esc(m.id)}"${m.orgBlocked?` disabled title="${esc(m.orgBlocked)}"`:''}>${prefix||''}${esc(m.name)}${m.multiplier!=null?' ×'+m.multiplier:''}${m.orgBlocked?ORG_SHORT:''}</option>`).join('');
+  sel.innerHTML=(list.length?list:[{id:'auto',name:'Auto'}]).map(m=>`<option value="${esc(m.id)}"${m.orgBlocked?` disabled title="${esc(m.orgBlocked)}"`:m.orgDoubt?` title="${esc(m.orgDoubt)}"`:''}>${prefix||''}${esc(m.name)}${m.multiplier!=null?' ×'+m.multiplier:''}${m.orgBlocked?ORG_SHORT:m.orgDoubt?ORG_MAYBE:''}</option>`).join('');
   const ok=list.filter(m=>!m.orgBlocked);
   sel.value=ok.some(m=>m.id===cur)?cur:firstModelId(ok.length?ok:list);
 }
@@ -4584,18 +4584,19 @@ function fillPermSelect(sel,caps,kind){
 /* spec 076 FR-202 (issue 602): what each agent app's OWN organization policy blocks, per app id, from main (`orgpolicy:view`: the
    blocked modes with their reasons, no values of the policy files). Read at start and when the window regains focus. */
 let ORG={};
-const orgModeWhy=(kind,mode)=>{const v=ORG[kind||defaultKind()||'copilot'];return v&&v.modes&&typeof v.modes[mode]==='string'?v.modes[mode]:'';};
-const ORG_SHORT=' (blocked by your organization)';
+/* {why, refuse} or null: `refuse` is blocked (disabled, main refuses it); otherwise advice (Durbar could not read all of the policy) */
+const orgMode=(kind,mode)=>{const v=ORG[kind||defaultKind()||'copilot'],x=v&&v.modes&&v.modes[mode];return x&&typeof x.why==='string'?{why:x.why,refuse:x.refuse===true}:null;};
+const ORG_SHORT=' (blocked by your organization)', ORG_MAYBE=' (may be blocked by your organization)';
 /* A blocked mode stays in the list, disabled, with the reason as its tooltip and a short note in its label; a select that holds one
    falls back to the first mode that is not blocked (the list is ordered Read-only, Ask first, Allow all: the most restrictive first) */
 function markOrgModes(sel,kind){
   if(!sel)return;
   for(const o of sel.options){
-    const w=orgModeWhy(kind,o.value);
+    const w=orgMode(kind,o.value);
     if(o.dataset.lbl===undefined)o.dataset.lbl=o.textContent;
-    o.disabled=!!w;o.title=w;o.textContent=o.dataset.lbl+(w?ORG_SHORT:'');
+    o.disabled=!!(w&&w.refuse);o.title=w?w.why:'';o.textContent=o.dataset.lbl+(w?(w.refuse?ORG_SHORT:ORG_MAYBE):'');
   }
-  if(orgModeWhy(kind,sel.value)){const ok=[...sel.options].find(o=>!o.disabled);if(ok)sel.value=ok.value;}
+  if((orgMode(kind,sel.value)||{}).refuse){const ok=[...sel.options].find(o=>!o.disabled);if(ok)sel.value=ok.value;}
 }
 async function loadOrgPolicy(){
   if(!bridge.orgPolicyView)return;
@@ -4829,8 +4830,10 @@ function openModelMenu(a0,x,y,anchor){
   const kl=modelsFor(a.info.adapterId), list=kl.length?kl:[cur];
   let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
   h+='<p class="mm-h">Model</p>'+list.map(m=>{const chk=m.id===curId,w=DM.windowOf(m);
-    const ob=m.orgBlocked&&!chk?m.orgBlocked:''; /* spec 076 FR-202: blocked by the app's organization policy */
-    return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis||(ob?' aria-disabled="true"':'')}${ob?` class="mm-org" title="${esc(ob)}"`:''}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${ob?esc(ob):esc(DM.priceLine(m))+(w?' · '+esc(DM.fmtTokens(w))+' window':'')}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
+    /* spec 076 FR-202: blocked by the app's organization policy: the reason (also on the current model), disabled unless it is the current
+       one; advice (FR-201): the words, still selectable */
+    const ow=m.orgBlocked||m.orgDoubt||'', ob=m.orgBlocked&&!chk;
+    return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis||(ob?' aria-disabled="true"':'')}${ow?` class="${m.orgBlocked?'mm-org':'mm-orgdoubt'}" title="${esc(ow)}"`:''}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${ow?esc(ow):esc(DM.priceLine(m))+(w?' · '+esc(DM.fmtTokens(w))+' window':'')}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
   if((cur.efforts||[]).length)h+='<p class="mm-h">Reasoning effort</p><div class="mm-seg" role="group" aria-label="Reasoning effort">'+['',...cur.efforts].map(x=>{const on2=(a.info.effort||'')===x;return `<button type="button" data-effort="${esc(x)}" aria-pressed="${on2}"${dis}>${x?esc(x):'Default'}</button>`;}).join('')+'</div>';
   /* spec 005 FR-050: the window choice of this model only: Long context where it has one, else the one window it has */
   const w0=DM.windowOf(cur);

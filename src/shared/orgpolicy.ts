@@ -1,18 +1,22 @@
 /**
- * Spec 076 section O (FR-198..FR-207, issue #602): what an agent app's OWN organization policy blocks, in one vendor-neutral shape.
- * The adapters read and parse their app's machine policy file (`src/adapters/<app>OrgPolicy.ts`); main, the window and the tests only
- * see this shape and ask it questions. No imports, no I/O: pure, so it can be tested on fixtures and loaded anywhere.
+ * Spec 076 section O (FR-198..FR-207, issue 602): what an agent app's OWN organization policy blocks, in one vendor-neutral shape.
+ * The adapters read their app's policy (`src/adapters/<app>OrgPolicy.ts`, Copilot through its runtime first); main, the window and the
+ * tests only see this shape and ask it questions. No imports, no I/O: pure, so it can be tested on fixtures and loaded anywhere.
  *
- * Policy files are hostile input (FR-201): readers use `ownValue` / `ownStrings` / `ownMcpRules` (own properties of plain objects only,
- * capped, all or nothing), and a bad value reads as the strictest state of its key, with a "could not be read" reason. Nothing here keeps
- * a value of the file except what the questions need (rule strings), and nothing here logs.
+ * FR-201 (review on PR 644): each key is read the way its VENDOR documents it, including the vendor's own fallback for a bad value (an
+ * invalid allow-list that the vendor enforces as empty is `blocked`; an invalid deny-list the vendor drops blocks nothing; a bad entry the
+ * vendor strips is stripped). Where Durbar cannot know the vendor's reading, the mark is `doubt`: shown as advice, never refused. A
+ * policy the app itself refuses to start with is `fatal`. Policy files are hostile input: own properties of plain objects, capped.
  */
 
 export type OrgMode = 'read-only' | 'ask' | 'allow';
 export const ORG_MODES: readonly OrgMode[] = ['read-only', 'ask', 'allow'];
 
-/** How a thing is blocked: by a rule (`blocked`) or because the value that governs it could not be read (`doubt`, strictest reading). */
-export type OrgMark = 'blocked' | 'doubt';
+/**
+ * `blocked`: a rule of the policy blocks it (refused in main, disabled in the window). `fatal`: the agent app does not start with this
+ * policy at all (refused). `doubt`: Durbar could not read the policy the way the vendor does; shown as advice, never refused.
+ */
+export type OrgMark = 'blocked' | 'fatal' | 'doubt';
 
 /** One MCP server rule: exactly one of a name, a command with its arguments, or a URL pattern with `*` wildcards. */
 export interface OrgMcpRule {
@@ -24,46 +28,55 @@ export interface OrgMcpRule {
 export interface OrgPolicy {
   /** The agent app's name for the reason text ("Claude Code"). */
   app: string;
-  /** A policy file was found and applies. */
+  /** A policy applies (a file was found, or the runtime reported managed settings). */
   found: boolean;
-  /** A file was found but could not be read at all: the whole policy reads as its strictest state. */
+  /** Something of it could not be read (a problem says what). */
   unreadable: boolean;
-  /** The files read (paths only, never their contents). */
+  /** Where it came from: file paths, or the runtime (never the contents). */
   paths: string[];
-  /** What was wrong, by path and kind ("too large", "not a JSON object", "unreadable key allowedMcpServers"); never a value. */
+  /** What was wrong, by path and kind ("not valid JSON", "unreadable key allowedMcpServers"); never a value. */
   problems: string[];
   modes: Partial<Record<OrgMode, OrgMark>>;
-  /** Models: an allow-list (undefined = every model), a deny-list, and how ids in the allow-list match. */
-  models: { allow?: string[]; deny: string[]; exact: boolean; denyAll?: OrgMark; doubt?: boolean };
-  /** MCP servers: an allow-list (undefined = every server), a deny-list; built-in servers skip the allow-list, and the deny-list too when `builtinSkipsDeny`. */
-  mcp: { allow?: OrgMcpRule[]; deny: OrgMcpRule[]; denyAll?: OrgMark; doubt?: boolean; builtinSkipsDeny: boolean };
-  /** MCP tool deny rules in Claude Code's `mcp__<server>__<tool>` form (with `*` wildcards). */
-  tools: { deny: string[]; denyAll?: OrgMark; doubt?: boolean };
+  /** Models: an allow-list (undefined = every model), a deny-list, how allow-list ids match, and a mark for every non-default model. */
+  models: { allow?: string[]; deny: string[]; exact: boolean; all?: OrgMark };
+  /**
+   * MCP servers: an allow-list (undefined = every server) whose misses get `allowMark` (`doubt` when entries Durbar could not read were
+   * dropped), a deny-list whose matches get `denyMark` (`doubt` when a team file may replace it), a mark for every server; built-in servers skip the allow-list, and the deny-list too when `builtinSkipsDeny`.
+   */
+  mcp: { allow?: OrgMcpRule[]; allowMark?: 'blocked' | 'doubt'; deny: OrgMcpRule[]; denyMark?: 'blocked' | 'doubt'; all?: OrgMark; builtinSkipsDeny: boolean };
+  /** MCP tool deny rules in Claude Code's `mcp__<server>__<tool>` form (with `*` wildcards), and a mark for every tool. */
+  tools: { deny: string[]; all?: OrgMark };
 }
 
-/** Limits on what is read from a policy file (FR-201). */
-export const ORG_LIMITS = Object.freeze({ fileBytes: 256 * 1024, listItems: 256, itemChars: 512, commandParts: 64, files: 32 });
+/** A question's answer: the words to show, and whether main refuses it (`blocked`, `fatal`) or only shows it (`doubt`). */
+export interface OrgVerdict {
+  why: string;
+  refuse: boolean;
+}
+
+/** Limits on what is read (FR-201). Over a limit Durbar cannot read the key as the vendor does: `doubt`, never a refusal. */
+export const ORG_LIMITS = Object.freeze({ fileBytes: 1024 * 1024, listItems: 4096, itemChars: 2048, commandParts: 256, files: 64, depth: 32 });
 
 export function emptyOrgPolicy(app: string, builtinSkipsDeny = false): OrgPolicy {
   return { app, found: false, unreadable: false, paths: [], problems: [], modes: {}, models: { deny: [], exact: false }, mcp: { deny: [], builtinSkipsDeny }, tools: { deny: [] } };
 }
 
-/** FR-201: a policy file that exists but cannot be read is the app's strictest state. `allModes`: Codex's every mode can be refused by its policy. */
-export function strictestOrgPolicy(app: string, paths: string[], problems: string[], allModes = false, builtinSkipsDeny = false): OrgPolicy {
+/** A whole policy that cannot be used: `fatal` when the app refuses to start with it, `doubt` when Durbar only could not read it. */
+export function wholeOrgPolicy(app: string, paths: string[], problems: string[], mark: 'fatal' | 'doubt', builtinSkipsDeny = false): OrgPolicy {
   const p = emptyOrgPolicy(app, builtinSkipsDeny);
   p.found = true;
   p.unreadable = true;
   p.paths = [...paths];
   p.problems = [...problems];
-  for (const m of allModes ? ORG_MODES : (['allow'] as const)) p.modes[m] = 'doubt';
-  p.models.denyAll = 'doubt';
-  p.mcp.denyAll = 'doubt';
-  p.tools.denyAll = 'doubt';
+  for (const m of ORG_MODES) p.modes[m] = mark;
+  p.models.all = mark;
+  p.mcp.all = mark;
+  p.tools.all = mark;
   return p;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// Hostile-input helpers (FR-201): own properties of plain objects, capped lists, all or nothing.
+// Hostile-input helpers (FR-201): own properties of plain objects, capped lists.
 
 export const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -74,79 +87,60 @@ export function ownValue(o: unknown, key: string): unknown {
 
 export const hasOwn = (o: unknown, key: string): boolean => isPlainObject(o) && Object.prototype.hasOwnProperty.call(o, key);
 
-/** A list of non-empty strings within the limits, copied; `null` when the value is anything else (one bad item spoils the list). */
-export function ownStrings(v: unknown, maxItems: number = ORG_LIMITS.listItems): string[] | null {
-  if (!Array.isArray(v) || v.length > maxItems) return null;
-  const out: string[] = [];
+/** A list read the vendor's way: `null` when it is not an array; `tooLong` when over Durbar's limits; otherwise the good items and how many were stripped. */
+export type OrgList<T> = null | { tooLong: true } | { tooLong?: false; items: T[]; stripped: number };
+
+/** Non-empty strings; any other item is stripped (Claude Code strips a non-string entry and enforces the rest). */
+export function ownStrings(v: unknown, maxItems: number = ORG_LIMITS.listItems): OrgList<string> {
+  if (!Array.isArray(v)) return null;
+  if (v.length > maxItems) return { tooLong: true };
+  const items: string[] = [];
+  let stripped = 0;
   for (let i = 0; i < v.length; i++) {
     const x: unknown = v[i];
-    if (typeof x !== 'string' || !x || x.length > ORG_LIMITS.itemChars) return null;
-    out.push(x);
+    if (typeof x === 'string' && x.length > ORG_LIMITS.itemChars) return { tooLong: true };
+    if (typeof x !== 'string' || !x) stripped++;
+    else if (!items.includes(x)) items.push(x);
   }
-  return out;
+  return { items, stripped };
 }
 
-/** A list of MCP server rules (`serverName` | `serverCommand` | `serverUrl`, exactly one each); `null` when anything is off. */
-export function ownMcpRules(v: unknown): OrgMcpRule[] | null {
-  if (!Array.isArray(v) || v.length > ORG_LIMITS.listItems) return null;
-  const out: OrgMcpRule[] = [];
+/** MCP server rules (`serverName` | `serverCommand` | `serverUrl`, exactly one each); a bad entry is stripped, as the vendors do. */
+export function ownMcpRules(v: unknown): OrgList<OrgMcpRule> {
+  if (!Array.isArray(v)) return null;
+  if (v.length > ORG_LIMITS.listItems) return { tooLong: true };
+  const items: OrgMcpRule[] = [];
+  let stripped = 0;
   for (let i = 0; i < v.length; i++) {
     const e: unknown = v[i];
-    if (!isPlainObject(e)) return null;
-    const keys = Object.keys(e);
-    if (keys.length !== 1) return null;
-    const k = keys[0];
-    const val = e[k];
-    if (k === 'serverName' && typeof val === 'string' && val && val.length <= ORG_LIMITS.itemChars) out.push({ name: val });
-    else if (k === 'serverUrl' && typeof val === 'string' && val && val.length <= ORG_LIMITS.itemChars) out.push({ url: val });
-    else if (k === 'serverCommand') {
-      const c = ownStrings(val, ORG_LIMITS.commandParts);
-      if (!c || !c.length) return null;
-      out.push({ command: c });
-    } else return null;
+    const keys = isPlainObject(e) ? Object.keys(e) : [];
+    const k = keys.length === 1 ? keys[0] : '';
+    const val = k ? (e as Record<string, unknown>)[k] : undefined;
+    if (typeof val === 'string' && val.length > ORG_LIMITS.itemChars) return { tooLong: true };
+    let rule: OrgMcpRule | undefined;
+    if (k === 'serverName' && typeof val === 'string' && val) rule = { name: val };
+    else if (k === 'serverUrl' && typeof val === 'string' && val) rule = { url: val };
+    else if (k === 'serverCommand' && Array.isArray(val) && val.length > 0 && val.length <= ORG_LIMITS.commandParts && val.every((x) => typeof x === 'string' && x.length <= ORG_LIMITS.itemChars)) rule = { command: [...(val as string[])] };
+    if (!rule) stripped++;
+    else if (!items.some((x) => JSON.stringify(x) === JSON.stringify(rule))) items.push(rule);
   }
-  return out;
-}
-
-/** Intersection of two allow-lists (FR-200: Durbar's stricter reading for several files); undefined means "no list". */
-export function intersectRules<T>(a: T[] | undefined, b: T[] | undefined): T[] | undefined {
-  if (!a) return b && [...b];
-  if (!b) return [...a];
-  const keys = new Set(b.map((x) => JSON.stringify(x)));
-  return a.filter((x) => keys.has(JSON.stringify(x)));
-}
-
-/** Fold `b` into `a` (several files of one app): locks and doubts add up, deny-lists join, allow-lists intersect. */
-export function mergeOrgPolicy(a: OrgPolicy, b: OrgPolicy): OrgPolicy {
-  const worst = (x?: OrgMark, y?: OrgMark): OrgMark | undefined => (x === 'doubt' || y === 'doubt' ? 'doubt' : x ?? y);
-  const modes: OrgPolicy['modes'] = {};
-  for (const m of ORG_MODES) {
-    const w = worst(a.modes[m], b.modes[m]);
-    if (w) modes[m] = w;
-  }
-  return {
-    app: a.app,
-    found: a.found || b.found,
-    unreadable: a.unreadable || b.unreadable,
-    paths: [...a.paths, ...b.paths],
-    problems: [...a.problems, ...b.problems],
-    modes,
-    models: { allow: intersectRules(a.models.allow, b.models.allow), deny: [...a.models.deny, ...b.models.deny], exact: a.models.exact || b.models.exact, denyAll: worst(a.models.denyAll, b.models.denyAll), doubt: !!(a.models.doubt || b.models.doubt) },
-    mcp: { allow: intersectRules(a.mcp.allow, b.mcp.allow), deny: [...a.mcp.deny, ...b.mcp.deny], denyAll: worst(a.mcp.denyAll, b.mcp.denyAll), doubt: !!(a.mcp.doubt || b.mcp.doubt), builtinSkipsDeny: a.mcp.builtinSkipsDeny && b.mcp.builtinSkipsDeny },
-    tools: { deny: [...a.tools.deny, ...b.tools.deny], denyAll: worst(a.tools.denyAll, b.tools.denyAll), doubt: !!(a.tools.doubt || b.tools.doubt) },
-  };
+  return { items, stripped };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Reasons (FR-202): the same words in the window, in main's refusals and in the tests.
 
 export const orgBlockedText = (app: string): string => `Blocked by your organization's ${app} policy`;
-export const orgDoubtText = (app: string): string => `Your organization's ${app} policy could not be read; treated as blocked`;
-const reason = (p: OrgPolicy, mark: OrgMark | undefined): string | undefined => (mark ? (mark === 'doubt' ? orgDoubtText(p.app) : orgBlockedText(p.app)) : undefined);
+export const orgFatalText = (app: string): string => `${app} will not start: your organization's ${app} policy file could not be read`;
+export const orgDoubtText = (app: string): string => `Your organization's ${app} policy may block this (Agent Durbar could not read all of it)`;
+export function verdictOf(p: OrgPolicy, mark: OrgMark | undefined): OrgVerdict | undefined {
+  if (!mark) return undefined;
+  return { why: mark === 'doubt' ? orgDoubtText(p.app) : mark === 'fatal' ? orgFatalText(p.app) : orgBlockedText(p.app), refuse: mark !== 'doubt' };
+}
 
-export function modeBlocked(p: OrgPolicy | undefined, mode: string): string | undefined {
+export function modeVerdict(p: OrgPolicy | undefined, mode: string): OrgVerdict | undefined {
   if (!p || !p.found) return undefined;
-  return (ORG_MODES as readonly string[]).includes(mode) ? reason(p, p.modes[mode as OrgMode]) : undefined;
+  return (ORG_MODES as readonly string[]).includes(mode) ? verdictOf(p, p.modes[mode as OrgMode]) : undefined;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -190,13 +184,13 @@ function modelMatches(entry: string, id: string, exact: boolean): boolean {
   return idCovers(e, id, exact);
 }
 
-export function modelBlocked(p: OrgPolicy | undefined, id: string | undefined): string | undefined {
+export function modelVerdict(p: OrgPolicy | undefined, id: string | undefined): OrgVerdict | undefined {
   if (!p || !p.found) return undefined;
   const m = (id ?? '').trim();
   if (DEFAULT_MODELS.has(m.toLowerCase())) return undefined; // the Default / Auto choice is never greyed (FR-200)
-  if (p.models.denyAll) return reason(p, p.models.denyAll);
-  if (p.models.deny.some((e) => modelMatches(e, m, false))) return reason(p, 'blocked');
-  if (p.models.allow && !p.models.allow.some((e) => modelMatches(e, m, p.models.exact))) return reason(p, p.models.doubt ? 'doubt' : 'blocked');
+  if (p.models.all) return verdictOf(p, p.models.all);
+  if (p.models.deny.some((e) => modelMatches(e, m, false))) return verdictOf(p, 'blocked');
+  if (p.models.allow && !p.models.allow.some((e) => modelMatches(e, m, p.models.exact))) return verdictOf(p, 'blocked');
   return undefined;
 }
 
@@ -212,14 +206,14 @@ export interface OrgMcpServer {
   builtin?: boolean;
 }
 
-/** `*` matches any run of characters (including none); one greedy pass with backtracking to the last star only (linear-ish, capped input). */
-export function globMatch(pattern: string, text: string): boolean {
+/** `*` matches any run of characters (including none), and with `anyChar` `?` matches one; one greedy pass with backtracking to the last star only (linear-ish, capped input). */
+export function globMatch(pattern: string, text: string, anyChar = false): boolean {
   let p = 0;
   let t = 0;
   let star = -1;
   let mark = 0;
   while (t < text.length) {
-    if (p < pattern.length && pattern[p] === text[t]) {
+    if (p < pattern.length && (pattern[p] === text[t] || (anyChar && pattern[p] === '?'))) {
       p++;
       t++;
     } else if (p < pattern.length && pattern[p] === '*') {
@@ -281,16 +275,16 @@ function ruleMatches(r: OrgMcpRule, s: OrgMcpServer): boolean | undefined {
   return false;
 }
 
-export function mcpBlocked(p: OrgPolicy | undefined, s: OrgMcpServer): string | undefined {
+export function mcpVerdict(p: OrgPolicy | undefined, s: OrgMcpServer): OrgVerdict | undefined {
   if (!p || !p.found) return undefined;
   const skipsDeny = !!s.builtin && p.mcp.builtinSkipsDeny;
-  if (p.mcp.denyAll && !s.builtin) return reason(p, p.mcp.denyAll);
-  if (!skipsDeny && p.mcp.deny.some((r) => ruleMatches(r, s) === true)) return reason(p, 'blocked');
+  if (p.mcp.all && (p.mcp.all === 'fatal' || !s.builtin)) return verdictOf(p, p.mcp.all);
+  if (!skipsDeny && p.mcp.deny.some((r) => ruleMatches(r, s) === true)) return verdictOf(p, p.mcp.denyMark ?? 'blocked');
   if (p.mcp.allow && !s.builtin) {
     const results = p.mcp.allow.map((r) => ruleMatches(r, s));
     if (results.includes(true)) return undefined;
-    // FR-200: blocked only when every rule could be checked; a rule Durbar cannot check leaves the row as it is (the app reports the truth)
-    if (!results.includes(undefined)) return reason(p, p.mcp.doubt ? 'doubt' : 'blocked');
+    // FR-200: refused only when every rule could be checked; a rule Durbar cannot check is advice (the running app reports the truth)
+    return verdictOf(p, results.includes(undefined) ? 'doubt' : (p.mcp.allowMark ?? 'blocked'));
   }
   return undefined;
 }
@@ -301,13 +295,13 @@ export function mcpBlocked(p: OrgPolicy | undefined, s: OrgMcpServer): string | 
 /** Claude Code's server segment: characters other than letters, digits, `_` and `-` read as `_`. */
 export const claudeServerSegment = (name: string): string => name.replace(/[^A-Za-z0-9_-]/g, '_');
 
-export function toolBlocked(p: OrgPolicy | undefined, server: string, tool: string): string | undefined {
+export function toolVerdict(p: OrgPolicy | undefined, server: string, tool: string): OrgVerdict | undefined {
   if (!p || !p.found) return undefined;
-  if (p.tools.denyAll) return reason(p, p.tools.denyAll);
+  if (p.tools.all) return verdictOf(p, p.tools.all);
   const seg = claudeServerSegment(server);
   const full = `mcp__${seg}__${tool}`;
   for (const r of p.tools.deny) {
-    if (r === `mcp__${seg}` || globMatch(r, full)) return reason(p, 'blocked');
+    if (r === `mcp__${seg}` || globMatch(r, full)) return verdictOf(p, 'blocked');
   }
   return undefined;
 }
@@ -316,23 +310,25 @@ export function toolBlocked(p: OrgPolicy | undefined, server: string, tool: stri
 export const mcpToolRules = (rules: readonly string[]): string[] => rules.filter((r) => !r.includes('(') && (r === '*' || r.startsWith('mcp__')));
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// FR-207: what the window and the Organization page get (no values of the files).
+// FR-207: what the window and the Organization page get (no values of the policy).
 
 export interface OrgPolicyAppView {
   app: string;
   found: boolean;
   unreadable: boolean;
+  /** Where it came from (file paths, or "Copilot runtime"); never contents. */
   paths: string[];
+  /** Problems by path and kind; never a value. */
   problems: string[];
-  /** Blocked modes and their reasons. */
-  modes: Partial<Record<OrgMode, string>>;
+  /** Per mode: the words, and whether it is refused (blocked) or only advice (doubt). */
+  modes: Partial<Record<OrgMode, OrgVerdict>>;
   counts: { modelAllow: number | null; modelDeny: number; mcpAllow: number | null; mcpDeny: number; toolDeny: number };
 }
 
 export function orgPolicyView(p: OrgPolicy): OrgPolicyAppView {
   const modes: OrgPolicyAppView['modes'] = {};
   for (const m of ORG_MODES) {
-    const r = modeBlocked(p, m);
+    const r = modeVerdict(p, m);
     if (r) modes[m] = r;
   }
   return {

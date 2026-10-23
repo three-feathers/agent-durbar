@@ -1,13 +1,14 @@
 /**
  * Spec 076 FR-198/FR-200/FR-201 (issue #602): Codex's own machine requirements (`requirements.toml`), read-only, normalized to
  * `OrgPolicy`. `read:` https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (2026-10-23). Only
- * `allowed_approval_policies`, `allowed_sandbox_modes` and `[allowed_permission_profiles]` are read; `mcp_servers` identities, cloud
+ * `allowed_approval_policies`, `allowed_sandbox_modes` (with its `[[remote_sandbox_config]]` host overrides) and `[allowed_permission_profiles]` are read; `mcp_servers` identities, cloud
  * requirements, `managed_config.toml` and MDM are not (FR-206).
  *
  * Durbar's modes in Codex (`codexModes.ts`): Read-only = approval `never` + profile `durbar_ro`; Ask first = `on-request` + `durbar_ro`;
  * Allow all = `never` + sandbox `danger-full-access`.
  */
-import { emptyOrgPolicy, ORG_LIMITS, strictestOrgPolicy } from '../shared/orgpolicy';
+import * as os from 'node:os';
+import { emptyOrgPolicy, globMatch, ORG_LIMITS, ORG_MODES, wholeOrgPolicy } from '../shared/orgpolicy';
 import type { OrgMode, OrgPolicy } from '../shared/orgpolicy';
 import { CODEX_RO_PROFILE } from './codexModes';
 import { joinFor, nodeOrgFs, programData, readPolicyFile } from './orgpolicyfiles';
@@ -156,23 +157,35 @@ const APPROVALS = 'allowed_approval_policies';
 const SANDBOXES = 'allowed_sandbox_modes';
 const PROFILES = 'allowed_permission_profiles';
 
-export function parseCodexOrgPolicy(text: string, p: string): OrgPolicy {
+const REMOTE = 'remote_sandbox_config';
+
+/** A host name against a `hostname_patterns` entry: case-insensitive, `*` any run, `?` one character (read: managed-configuration). */
+export const hostMatches = (pattern: string, host: string): boolean => globMatch(pattern.toLowerCase(), host.toLowerCase(), true);
+
+/**
+ * `requirements.toml` as `OrgPolicy`. Codex's docs do not say what Codex does with a file or value it cannot parse, so Durbar does not
+ * guess a refusal: anything it cannot read is `doubt` (advice, never refused). `hosts`: this machine's names for the
+ * `[[remote_sandbox_config]]` host overrides (Codex prefers the fully qualified name, else the local host name).
+ */
+export function parseCodexOrgPolicy(text: string, p: string, hosts: readonly string[] = []): OrgPolicy {
   const st = tomlStatements(text);
-  if (!st) return strictestOrgPolicy(CODEX_APP, [p], [`${p}: not valid TOML`], true);
+  if (!st) return wholeOrgPolicy(CODEX_APP, [p], [`${p}: not valid TOML`], 'doubt');
   let table: string[] = [];
   let approvals: string[] | null | undefined;
   let sandboxes: string[] | null | undefined;
   let profiles: Map<string, boolean> | null | undefined;
+  const remotes: { patterns?: string[] | null; sandboxes?: string[] | null }[] = [];
+  let remotesBad = false;
   const problems: string[] = [];
   const bad = (key: string): void => {
-    if (!problems.includes(`${p}: unreadable key ${key}`)) problems.push(`${p}: unreadable key ${key}`);
+    if (!problems.includes(`${p}: ${key} could not be read`)) problems.push(`${p}: ${key} could not be read`);
   };
   for (const s of st) {
     if (s.startsWith('[')) {
       const arr = s.startsWith('[[');
       const inner = arr ? (s.endsWith(']]') ? s.slice(2, -2) : undefined) : s.endsWith(']') ? s.slice(1, -1) : undefined;
       const k = inner === undefined ? undefined : dotted(inner);
-      if (!k) return strictestOrgPolicy(CODEX_APP, [p], [`${p}: not valid TOML`], true);
+      if (!k) return wholeOrgPolicy(CODEX_APP, [p], [`${p}: not valid TOML`], 'doubt');
       table = k;
       if (k[0] === PROFILES) {
         if (arr || k.length !== 1) {
@@ -180,15 +193,19 @@ export function parseCodexOrgPolicy(text: string, p: string): OrgPolicy {
           profiles = null;
         } else if (profiles === undefined) profiles = new Map();
       }
+      if (k[0] === REMOTE) {
+        if (arr && k.length === 1) remotes.push({});
+        else remotesBad = true;
+      }
       continue;
     }
     const kv = splitOutside(s, '=');
-    if (kv.length < 2) return strictestOrgPolicy(CODEX_APP, [p], [`${p}: not valid TOML`], true);
+    if (kv.length < 2) return wholeOrgPolicy(CODEX_APP, [p], [`${p}: not valid TOML`], 'doubt');
     const key = dotted(kv[0]);
     const value = kv.slice(1).join('=');
     if (!key) {
-      // a key Durbar cannot read at the top level or in the profiles table could be one of its keys: strictest for them (FR-201)
-      if (!table.length || table[0] === PROFILES) {
+      // a key Durbar cannot read at the top level or in one of its tables could be one of its keys: advice for them (FR-201)
+      if (!table.length || table[0] === PROFILES || table[0] === REMOTE) {
         approvals = null;
         sandboxes = null;
         profiles = null;
@@ -201,6 +218,11 @@ export function parseCodexOrgPolicy(text: string, p: string): OrgPolicy {
     const full = [...table, ...key];
     if (full.length === 1 && full[0] === APPROVALS) approvals = approvals === undefined ? stringArray(value) : null;
     else if (full.length === 1 && full[0] === SANDBOXES) sandboxes = sandboxes === undefined ? stringArray(value) : null;
+    else if (full[0] === REMOTE && table[0] === REMOTE && remotes.length) {
+      const e = remotes[remotes.length - 1];
+      if (full.length === 2 && full[1] === 'hostname_patterns') e.patterns = e.patterns === undefined ? stringArray(value) : null;
+      else if (full.length === 2 && full[1] === SANDBOXES) e.sandboxes = e.sandboxes === undefined ? stringArray(value) : null;
+    } else if (full[0] === REMOTE) remotesBad = true; // `remote_sandbox_config` in another shape than an array of tables
     else if (full[0] === PROFILES) {
       if (profiles === null) continue;
       if (full.length === 1) {
@@ -223,7 +245,7 @@ export function parseCodexOrgPolicy(text: string, p: string): OrgPolicy {
     if (doubt) out.modes[m] = 'doubt';
     else if (out.modes[m] !== 'doubt') out.modes[m] = 'blocked';
   };
-  if (approvals === null) for (const m of ['read-only', 'ask', 'allow'] as const) mark(m, true);
+  if (approvals === null) for (const m of ORG_MODES) mark(m, true);
   else if (approvals) {
     if (!approvals.includes('never')) {
       mark('read-only', false);
@@ -231,9 +253,22 @@ export function parseCodexOrgPolicy(text: string, p: string): OrgPolicy {
     }
     if (!approvals.includes('on-request')) mark('ask', false);
   }
-  if (sandboxes === null) mark('allow', true);
-  else if (sandboxes && !sandboxes.includes('danger-full-access')) mark('allow', false);
-  if (profiles === null) for (const m of ['read-only', 'ask', 'allow'] as const) mark(m, true);
+  // Allow all's sandbox mode: the first host override that matches this machine replaces the top-level list (read: managed-configuration)
+  const blocksFull = (list: string[] | undefined): boolean => !!list && !list.includes('danger-full-access');
+  if (remotesBad || remotes.some((e) => e.patterns === null || e.sandboxes === null)) {
+    bad(REMOTE);
+    mark('allow', true);
+  } else if (sandboxes === null) mark('allow', true);
+  else {
+    const hit = remotes.find((e) => (e.patterns ?? []).some((pat) => hosts.some((h) => hostMatches(pat, h))));
+    const eff = hit ? (hit.sandboxes ?? sandboxes) : sandboxes;
+    if (blocksFull(eff)) {
+      // no override matched by the names Durbar knows; one that would allow it may still match Codex's fully qualified name: advice
+      const other = !hit && remotes.some((e) => !blocksFull(e.sandboxes ?? sandboxes));
+      mark('allow', other);
+    }
+  }
+  if (profiles === null) for (const m of ORG_MODES) mark(m, true);
   else if (profiles) {
     if (profiles.get(CODEX_RO_PROFILE) !== true) {
       mark('read-only', false);
@@ -241,13 +276,24 @@ export function parseCodexOrgPolicy(text: string, p: string): OrgPolicy {
     }
     if (profiles.get(':danger-full-access') !== true) mark('allow', false);
   }
+  out.unreadable = out.problems.length > 0;
   return out;
 }
 
-export function readCodexOrgPolicy(platform: string = process.platform, env: Readonly<Record<string, string | undefined>> = process.env, fsx: OrgFs = nodeOrgFs): OrgPolicy {
+/** This machine's host names for the host overrides: the local name (Durbar does not resolve the fully qualified one). */
+export const localHostNames = (): string[] => {
+  try {
+    const h = os.hostname();
+    return h ? [h] : [];
+  } catch {
+    return [];
+  }
+};
+
+export function readCodexOrgPolicy(platform: string = process.platform, env: Readonly<Record<string, string | undefined>> = process.env, fsx: OrgFs = nodeOrgFs, hosts: readonly string[] = localHostNames()): OrgPolicy {
   const f = codexPolicyFile(platform, env);
   const r = readPolicyFile(fsx, f);
   if (r.kind === 'missing') return emptyOrgPolicy(CODEX_APP);
-  if (r.kind === 'bad') return strictestOrgPolicy(CODEX_APP, [f], [r.problem], true);
-  return parseCodexOrgPolicy(r.text, f);
+  if (r.kind !== 'text') return wholeOrgPolicy(CODEX_APP, [f], [r.problem], 'doubt');
+  return parseCodexOrgPolicy(r.text, f, hosts);
 }

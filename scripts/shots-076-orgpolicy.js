@@ -31,6 +31,7 @@ const OUT = process.env.OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-076
 const SIZES = [[1440, 900], [1280, 800]];
 const CLAUDE_TEXT = "Blocked by your organization's Claude Code policy";
 const COPILOT_TEXT = "Blocked by your organization's Copilot policy";
+const CODEX_MAYBE = "Your organization's Codex policy may block this (Agent Durbar could not read all of it)";
 /* simkinds=mixed: the first running main agent of each kind (sim.ts SIM_KIND_BY_AGENT) */
 const pickKind = (k) => `a=>!a.parent&&a.live&&a.info&&a.info.adapterId===${jsLiteral(k)}`;
 
@@ -98,7 +99,31 @@ module.exports = async (ctx) => {
       const hk = await js(`(()=>{const b=document.querySelector('#modelMenu [data-pick="haiku"]');return {dis:b.getAttribute('aria-disabled'),small:b.querySelector('small').textContent}})()`);
       assert.deepStrictEqual(hk, { dis: 'true', small: CLAUDE_TEXT }, 'model menu: haiku is aria-disabled with the reason');
       await closeAll();
+      // review on PR 644 (item 4): the current model, when blocked, still shows the reason
+      const was = await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(CLAUDE_ID)}).info.model`);
+      await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(CLAUDE_ID)}).info.model='haiku'`);
+      await js(`document.getElementById('modelChip').click()`);
+      assert.ok(await until(`!!document.querySelector('#modelMenu [data-pick="haiku"][aria-checked="true"]')`), 'model menu: haiku is the current model');
+      assert.strictEqual(await js(`document.querySelector('#modelMenu [data-pick="haiku"] small').textContent`), CLAUDE_TEXT, 'model menu: the blocked current model shows the reason');
+      await closeAll();
+      await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(CLAUDE_ID)}).info.model=${jsLiteral(was)}`);
     }
+    // review on PR 644 (item 6): the new-session dialog's Permissions select
+    await js(`(document.getElementById('newSessHdrBtn')||document.getElementById('newSessBtn')).click()`);
+    assert.ok(await until(`!!document.getElementById('sdPerm')&&[...document.getElementById('sdPerm').options].some(o=>o.value==='allow'&&o.disabled)`), 'new session: Allow all is disabled in #sdPerm');
+    const sd = await option('sdPerm', 'allow');
+    assert.strictEqual(sd.title, CLAUDE_TEXT, 'new session: the reason is the tooltip');
+    assert.notStrictEqual(await js(`document.getElementById('sdPerm').value`), 'allow', 'new session: the select does not hold Allow all');
+    await js(`document.getElementById('sdCancel').click()`);
+    await until(`!document.getElementById('sessDlg')`);
+
+    // ---- a Codex chat: Durbar could not read all of its policy: advice, still selectable (FR-201) ----
+    await openChat('codex');
+    await js(`document.getElementById('modeChip').click()`);
+    assert.ok(await until(`!!document.querySelector('#modeMenu [data-mode="allow"]')`), 'codex mode menu: open');
+    const cx = await js(`(()=>{const b=document.querySelector('#modeMenu [data-mode="allow"]');return {dis:b.getAttribute('aria-disabled'),small:b.querySelector('small').textContent,doubt:b.classList.contains('mm-orgdoubt')}})()`);
+    assert.deepStrictEqual(cx, { dis: null, small: CODEX_MAYBE, doubt: true }, 'codex mode menu: Allow all shows the advice and stays selectable');
+    await closeAll();
 
     // ---- a Copilot chat's MCP dialog: my-notes greyed with the reason; the switch cannot be turned on ----
     await openChat('copilot');
@@ -111,6 +136,13 @@ module.exports = async (ctx) => {
     await shot('076-orgpolicy-server', w, h);
     const df = await minFont('#agMcp');
     assert.ok(df.min >= 10.5, `MCP: text >= 10.5px (${df.min} ${df.who})`);
+    // review on PR 644 (item 6): Settings' live MCP list shows the reason in that chat's row
+    await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Settings').click()`);
+    assert.ok(await until(`!!document.querySelector('#liveList button[data-lv="my-notes"]')`), 'Settings: the live list has my-notes');
+    await js(`document.querySelector('#liveList button[data-lv="my-notes"]').click()`);
+    assert.ok(await until(`[...document.querySelectorAll('#liveList li.lv-chat .srv-org')].some(x=>x.textContent===${jsLiteral(COPILOT_TEXT + '.')})`), 'Settings: the live list shows the reason in the Copilot chat');
+    await js(`document.getElementById('scrClose').click()`);
+    await until(`!document.getElementById('liveList')`);
     await closeAll();
 
     // ---- a Claude Code chat's tools list: create_issue unticked, aria-disabled, the reason next to it ----
@@ -126,6 +158,13 @@ module.exports = async (ctx) => {
       await js(`document.querySelector('#agMcp input[data-tool="create_issue"]').click()`);
       assert.strictEqual(await js(`document.querySelector('#agMcp input[data-tool="create_issue"]').checked`), false, 'tools: a click does not tick it');
       assert.strictEqual(await js(`document.querySelector('#agMcp input[data-tool="search_issues"]').getAttribute('aria-disabled')`), null, 'tools: the other tools are not disabled');
+      // review on PR 644 (item 5): the blocked tool is left out of the count and the tri-state
+      const head = await js(`(()=>{const b=document.querySelector('#agMcp button[data-tall="github"]');return {checked:b.getAttribute('aria-checked'),text:b.textContent}})()`);
+      assert.ok(head.checked === 'true' && !/\boff\b/.test(head.text), `tools: the header is all on, no "off" count for the blocked tool: ${JSON.stringify(head)}`);
+      await js(`document.querySelector('#agMcp button[data-tall="github"]').click()`);
+      assert.ok(await until(`document.querySelector('#agMcp button[data-tall="github"]').getAttribute('aria-checked')==='false'`), 'tools: "all off" can be reached with a blocked tool in the list');
+      await js(`document.querySelector('#agMcp button[data-tall="github"]').click()`);
+      assert.ok(await until(`document.querySelector('#agMcp button[data-tall="github"]').getAttribute('aria-checked')==='true'`), 'tools: and back on');
     } else assert.fail('tools: the Claude Code session is not running, so the tools list was not checked');
     await shot('076-orgpolicy-mcp', w, h);
     await closeAll();

@@ -41,34 +41,40 @@ export const nodeOrgFs: OrgFs = {
   readdir: (p) => fs.readdirSync(p),
 };
 
-export type ReadOne = { kind: 'missing' } | { kind: 'text'; text: string } | { kind: 'bad'; problem: string };
+export type ReadOne = { kind: 'missing' } | { kind: 'text'; text: string } | { kind: 'denied'; problem: string } | { kind: 'tooLarge'; problem: string } | { kind: 'bad'; problem: string };
 
-/** One policy file: missing, its text, or a problem ("too large", "could not be read"). Never throws. */
+/** The operating system refused the read (a root-only file): Claude Code then starts without that source (read: managed-settings). */
+const deniedCode = (e: unknown): boolean => {
+  const c = (e as { code?: string } | null)?.code;
+  return c === 'EACCES' || c === 'EPERM';
+};
+
+/** One policy file: missing, its text, denied by the OS, over Durbar's size limit, or another read problem. Never throws. */
 export function readPolicyFile(fsx: OrgFs, p: string): ReadOne {
   try {
     const st = fsx.stat(p);
     if (!st) return { kind: 'missing' };
     if (!st.isFile()) return { kind: 'bad', problem: `${p}: not a file` };
-    if (st.size > ORG_LIMITS.fileBytes) return { kind: 'bad', problem: `${p}: too large` };
+    if (st.size > ORG_LIMITS.fileBytes) return { kind: 'tooLarge', problem: `${p}: larger than Agent Durbar reads` };
     const text = fsx.readFile(p);
-    if (text.length > ORG_LIMITS.fileBytes) return { kind: 'bad', problem: `${p}: too large` };
+    if (text.length > ORG_LIMITS.fileBytes) return { kind: 'tooLarge', problem: `${p}: larger than Agent Durbar reads` };
     return { kind: 'text', text };
-  } catch {
-    return { kind: 'bad', problem: `${p}: could not be read` };
+  } catch (e) {
+    return deniedCode(e) ? { kind: 'denied', problem: `${p}: the system refused the read` } : { kind: 'bad', problem: `${p}: could not be read` };
   }
 }
 
-/** The `*.json` files of a drop-in folder, sorted; `bad` when the folder exists but cannot be listed or holds too many. */
-export function dropInFiles(fsx: OrgFs, dir: string, join: (a: string, b: string) => string = path.join): { files: string[] } | { problem: string } {
+/** The `*.json` files of a drop-in folder, sorted; `denied` / `problem` when the folder exists but cannot be listed, `tooMany` over the limit. */
+export function dropInFiles(fsx: OrgFs, dir: string, join: (a: string, b: string) => string = path.join): { files: string[] } | { denied: string } | { tooMany: string } | { problem: string } {
   try {
     const st = fsx.stat(dir);
     if (!st) return { files: [] };
     if (!st.isDirectory()) return { problem: `${dir}: not a folder` };
     const names = fsx.readdir(dir).filter((n) => n.toLowerCase().endsWith('.json') && !n.startsWith('.')).sort();
-    if (names.length > ORG_LIMITS.files) return { problem: `${dir}: too many files` };
+    if (names.length > ORG_LIMITS.files) return { tooMany: `${dir}: more files than Agent Durbar reads` };
     return { files: names.map((n) => join(dir, n)) };
-  } catch {
-    return { problem: `${dir}: could not be read` };
+  } catch (e) {
+    return deniedCode(e) ? { denied: `${dir}: the system refused the read` } : { problem: `${dir}: could not be read` };
   }
 }
 

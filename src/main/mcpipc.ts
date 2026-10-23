@@ -1,5 +1,5 @@
 /** IPC for the Copilot CLI MCP list (global, read live), the per-folder MCP extras and the per-agent MCP switches (specs 019, 020). The renderer never receives a secret value or a file path. */
-import type { OrgMcpServer } from '../shared/orgpolicy';
+import type { OrgMcpServer, OrgVerdict } from '../shared/orgpolicy';
 import { safeStorage } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from './ipcguard';
 import * as path from 'path';
@@ -73,8 +73,10 @@ export function registerMcpIpc(deps: {
   now?(): number;
   timers?: import('./mcpsignin').PollTimers;
   /** Spec 076 FR-202/FR-203 (issue #602): why the agent app's own organization policy blocks a server or a tool of this agent, or undefined. */
-  orgMcp?(agentId: string, s: OrgMcpServer): string | undefined;
-  orgTool?(agentId: string, server: string, tool: string): string | undefined;
+  orgMcp?(agentId: string, s: OrgMcpServer): Promise<OrgVerdict | undefined>;
+  /** The same from the last read, for the often repainted list (never waits). */
+  orgMcpNow?(agentId: string, s: OrgMcpServer): OrgVerdict | undefined;
+  orgTool?(agentId: string, server: string, tool: string): Promise<OrgVerdict | undefined>;
 }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[] } {
   const { agents, router, dev } = deps;
   const store = deps.store;
@@ -233,7 +235,7 @@ export function registerMcpIpc(deps: {
       health: health.get(a.id),
       signIn: (n) => signIns.view(a.id, n),
       serverUrl: (n) => serverUrlOf(a.id, n),
-      orgBlocked: deps.orgMcp ? (n) => deps.orgMcp?.(a.id, serverDefOf(a.id, n)) : undefined,
+      orgBlocked: deps.orgMcpNow ? (n) => deps.orgMcpNow?.(a.id, serverDefOf(a.id, n)) : undefined,
       global: gn,
       builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
     });
@@ -283,10 +285,7 @@ export function registerMcpIpc(deps: {
   /** Spec 069 FR-032: the tools of one server of this agent's running session, masked and cut. */
   ipcHandle('agents:mcpTools', (_e, id: unknown, name: unknown) => mcpToolsOp({ agents, router, secrets: secretValuesFor, orgTool: deps.orgTool }, id, name));
   ipcHandle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
-    // spec 076 FR-203: a server the agent app's own organization policy blocks is never switched on
-    const org = enabled === true && typeof id === 'string' && typeof name === 'string' && agents.has(id) ? deps.orgMcp?.(id, serverDefOf(id, name)) : undefined;
-    if (org) return { ok: false, error: org };
-    const r = await setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled);
+    const r = await setMcpOp({ agents, router, wsKey: keyOf, orgMcpRefusal: async (a, n) => { const v = await deps.orgMcp?.(a.id, serverDefOf(a.id, n)); return v?.refuse ? `${v.why}: it cannot be switched on.` : undefined; } }, off, id, name, enabled);
     if (r.ok && typeof id === 'string' && typeof name === 'string') { const t = touched.get(id) ?? new Set<string>(); t.add(name); touched.set(id, t); }
     return r;
   });

@@ -260,6 +260,8 @@ export interface ModelChoice {
   longWindow?: number;
   /** Spec 076 FR-202 (issue #602): the agent app's own organization policy blocks this model; the reason to show. */
   orgBlocked?: string;
+  /** Spec 076 FR-201: the policy may block it (Durbar could not read all of it); advice, still selectable. */
+  orgDoubt?: string;
 }
 
 export interface PickedFile {
@@ -553,6 +555,8 @@ export interface AgentMcpEntry {
   /** Spec 069 FR-061: tools of this server turned off in this agent's folder. */
   /** Spec 076 FR-202 (issue #602): the agent app's own organization policy blocks this server; the reason to show. */
   orgBlocked?: string;
+  /** Spec 076 FR-201: the policy may block it (Durbar could not read all of it); advice, still usable. */
+  orgDoubt?: string;
   toolsOff?: string[];
   /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
   canRestart?: boolean;
@@ -598,7 +602,7 @@ export interface AgentMcpReply {
 /** `agents:mcpTools` (spec 069 FR-032): one server's tools, masked and cut in main. */
 export interface McpToolsResult {
   ok: boolean;
-  tools?: { name: string; description?: string; orgBlocked?: string }[];
+  tools?: { name: string; description?: string; orgBlocked?: string; orgDoubt?: string }[];
   /** How many the server listed (more than `tools` when it listed over 500). */
   total?: number;
   /** The session is not running: nothing was asked. */

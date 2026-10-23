@@ -1,5 +1,6 @@
 import { copilotHooksJson } from '../shared/foldersetup';
 import { readCopilotOrgPolicy } from './copilotOrgPolicy';
+import type { CopilotManagedClient } from './copilotOrgPolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import { randomUUID } from 'crypto';
@@ -448,8 +449,14 @@ export class CopilotAdapter implements AgentAdapter {
    * No prompt; no credits (FR-022 evidence). `statusMessage` is not read. Personal data: never passed to `debug` (FR-015).
    */
   /** Spec 076 FR-198 (issue #602): the app's own machine policy, read-only. */
-  readOrgPolicy(): OrgPolicy {
-    return readCopilotOrgPolicy();
+  async readOrgPolicy(): Promise<OrgPolicy> {
+    let client: CopilotManagedClient | undefined;
+    try {
+      client = (await this.getClient()) as unknown as CopilotManagedClient;
+    } catch {
+      client = undefined; // no runtime: the machine file is the fallback
+    }
+    return readCopilotOrgPolicy(client);
   }
 
   async accountInfo(opts: AccountInfoOptions = {}): Promise<AccountIdentity> {

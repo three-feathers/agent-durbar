@@ -3,6 +3,7 @@
  * a known agent, a valid server name, an adapter with `listMcpTools`, a running session; at most 500 tools, names cut at 128 characters,
  * each description reduced to its first line, masked (the session's own secret values first) and cut at 200 characters; 10 s at most.
  */
+import type { OrgVerdict } from '../shared/orgpolicy';
 import type { AdapterRouter } from '../adapters/router';
 import type { AgentInfo, McpToolsResult } from '../shared/api';
 import { cut } from '../shared/redact';
@@ -19,7 +20,7 @@ export interface McpToolsDeps {
   secrets(agentId: string): readonly string[];
   timeoutMs?: number;
   /** Spec 076 FR-202 (issue #602): why the agent app's own organization policy blocks this tool, or undefined. */
-  orgTool?(agentId: string, server: string, tool: string): string | undefined;
+  orgTool?(agentId: string, server: string, tool: string): Promise<OrgVerdict | undefined>;
 }
 
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -41,11 +42,12 @@ export async function mcpToolsOp(d: McpToolsDeps, id: unknown, name: unknown): P
       }),
     ]);
     const all = Array.isArray(list) ? list : [];
-    const tools = all.slice(0, MCP_TOOLS_MAX).map((t) => {
+    const org = await Promise.all(all.slice(0, MCP_TOOLS_MAX).map((t) => d.orgTool?.(a.id, name, String(t.name)))); // on the tool's own name, before masking and cutting
+    const tools = all.slice(0, MCP_TOOLS_MAX).map((t, i) => {
       const first = typeof t.description === 'string' ? t.description.split(/\r?\n/).find((l) => l.trim()) : undefined;
       const desc = first === undefined ? undefined : cut(maskMcpText(first.trim(), secrets) ?? '', MCP_TOOL_DESC_MAX);
-      const org = d.orgTool?.(a.id, name, String(t.name)); // on the tool's own name, before masking and cutting
-      return { name: cut(maskMcpText(String(t.name), secrets) ?? '', MCP_TOOL_NAME_MAX), ...(desc ? { description: desc } : {}), ...(org ? { orgBlocked: org } : {}) };
+      const v = org[i];
+      return { name: cut(maskMcpText(String(t.name), secrets) ?? '', MCP_TOOL_NAME_MAX), ...(desc ? { description: desc } : {}), ...(v?.refuse ? { orgBlocked: v.why } : v ? { orgDoubt: v.why } : {}) };
     });
     return { ok: true, tools, total: all.length };
   } catch (err) {

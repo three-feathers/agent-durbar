@@ -21,6 +21,8 @@ export interface OpsDeps {
   log?(a: AgentInfo, decision: 'mode-change' | 'limit-change', action: string): void;
   /** Spec 076 FR-203 (issue #602): why the agent app's own organization policy refuses this mode, or undefined. */
   orgRefusal?(a: AgentInfo, mode: PermMode): string | undefined;
+  /** Spec 076 FR-203: why the agent app's own organization policy refuses switching this MCP server on, or undefined. */
+  orgMcpRefusal?(a: AgentInfo, name: string): Promise<string | undefined>;
 }
 
 const MODE_WORDS: Record<PermMode, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
@@ -104,6 +106,8 @@ export async function setMcpOp(d: OpsDeps, off: Map<string, Set<string>>, id: un
   const ad = d.router.forAgent(a.id);
   // A live session whose adapter cannot switch servers keeps them as they are: refuse and save nothing (spec 012 FR-050).
   if (ad && refusesLive(ad, a.id, !!ad.setMcpEnabled)) return { ok: false, error: 'This agent cannot switch MCP servers while its session is running.' };
+  const org = enabled === true ? await d.orgMcpRefusal?.(a, name) : undefined; // spec 076 FR-203: refused before anything changes
+  if (org) return { ok: false, error: org };
   const set = off.get(a.id) ?? new Set<string>();
   if (enabled === true) set.delete(name);
   else set.add(name);

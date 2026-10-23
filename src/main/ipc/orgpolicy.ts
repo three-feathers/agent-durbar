@@ -3,9 +3,9 @@ import { ipcHandle } from '../ipcguard';
 import type { OrgPolicyAppView } from '../../shared/orgpolicy';
 
 export interface OrgPolicyIpcDeps {
-  view(): Record<string, OrgPolicyAppView>;
+  view(): Promise<Record<string, OrgPolicyAppView>>;
 }
 
 export function register(deps: OrgPolicyIpcDeps): void {
-  ipcHandle('orgpolicy:view', (): Record<string, OrgPolicyAppView> => deps.view());
+  ipcHandle('orgpolicy:view', (): Promise<Record<string, OrgPolicyAppView>> => deps.view());
 }

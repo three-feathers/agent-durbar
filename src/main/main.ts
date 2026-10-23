@@ -78,7 +78,7 @@ import { devEnv, devWarning } from './devhooks';
 import { isSimBlocked, sealChildProcess, simDetectorFor, simGuardDescriptors, simulatorCount, simulatorOn } from './simguard';
 import childProcess = require('child_process');
 import { initSimGuard, simRefusedChannels } from './ipcguard';
-import { OrgPolicyCache } from './orgpolicy';
+import { assertOrgAllows, OrgPolicyCache } from './orgpolicy';
 import { register as registerOrgPolicyIpc } from './ipc/orgpolicy';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
@@ -167,6 +167,7 @@ const mcp = registerMcpIpc({
   globalNames: () => Object.fromEntries(globalLists.state(() => []).apps.map((x) => [x.app, x.servers.map((v) => v.name)])),
   codexServers: () => appServerUrls(globalLists.state(() => []).apps, 'codex'), // spec 058 FR-185: the values-free view, addresses only (the "different site" line)
   orgMcp: (id, s) => orgPolicies.mcp(appIdOf(id), s), // spec 076 FR-202/FR-203
+  orgMcpNow: (id, s) => orgPolicies.mcpNow(appIdOf(id), s),
   orgTool: (id, server, tool) => orgPolicies.tool(appIdOf(id), server, tool),
 });
 registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
@@ -335,8 +336,7 @@ async function addWorkspace(
   const adapterId = picked.id;
   const ad = router.instance(adapterId);
   const draft = infoFor(workspace, permMode, '', model, effort, {}, ad);
-  const orgNo = orgPolicies.refusal(adapterId, { mode: permMode, model }); // spec 076 FR-203: nothing started, nothing written
-  if (orgNo) throw new Error(orgNo);
+  await assertOrgAllows(orgPolicies, adapterId, { mode: permMode, model }); // spec 076 FR-203: nothing started, nothing written
   // Cap: explicit choice (null = none) > the folder's saved cap > the global default (spec 011); a dollar cap only when chosen (FR-150).
   const usdCap = ad.capabilities?.capUnit === 'usd';
   draft.maxAiCredits = startCap(ad.capabilities?.capUnit, opts.maxAiCredits, folderStore?.get(wsKey(draft))?.maxAiCredits, settingsStore?.defaultMaxAiCredits);
@@ -374,8 +374,7 @@ async function ensureLive(a: AgentInfo, opts: { quiet?: boolean } = {}): Promise
         resume = !!prev;
         continued.set(a.id, { resumed: resume, title: prev?.title });
       }
-      const orgNo = orgPolicies.refusal(appIdOf(a.id), { mode: a.permMode, model: a.model }); // spec 076 FR-203
-      if (orgNo) throw new Error(orgNo);
+      await assertOrgAllows(orgPolicies, appIdOf(a.id), { mode: a.permMode, model: a.model }); // spec 076 FR-203
       await ad.start({ ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true });
       a.lazy = false;
       a.resumeLast = undefined;
@@ -532,7 +531,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
-const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusal(appIdOf(a.id), { mode }) };
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }) };
 
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;

@@ -211,10 +211,11 @@ const SIM_MODELS: ModelChoice[] = [
 /**
  * Spec 076 FR-205 (issue 602): `?simorgpolicy=1` gives the simulator a canned organization policy per agent app (main's words; no file
  * is read): Claude Code and Copilot block Allow all, Claude Code blocks the `haiku` model and the `create_issue` tool of `github`,
- * Copilot blocks the `my-notes` MCP server.
+ * Copilot blocks the `my-notes` MCP server; Codex's policy could not be read for Allow all (advice only, still selectable).
  */
 const SIM_ORG = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simorgpolicy') === '1';
 const simOrgText = (app: string): string => `Blocked by your organization's ${app} policy`;
+const simOrgDoubtText = (app: string): string => `Your organization's ${app} policy may block this (Agent Durbar could not read all of it)`;
 const SIM_ORG_APP: Record<string, string> = { copilot: 'Copilot', claude: 'Claude Code' };
 const simOrgMode = (kind: string | undefined, mode: string): string | undefined => (SIM_ORG && mode === 'allow' && SIM_ORG_APP[kind ?? 'copilot'] ? simOrgText(SIM_ORG_APP[kind ?? 'copilot']) : undefined);
 const simOrgModel = (kind: string | undefined, id: string): string | undefined => (SIM_ORG && kind === 'claude' && id === 'haiku' ? simOrgText('Claude Code') : undefined);
@@ -2337,8 +2338,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       /* spec 076 FR-205/FR-207: main's view of the canned policy (no values) */
       orgPolicyView: async (): Promise<Record<string, import('../shared/orgpolicy').OrgPolicyAppView>> => {
         if (!SIM_ORG) return {};
-        const one = (app: string, file: string): import('../shared/orgpolicy').OrgPolicyAppView => ({ app, found: true, unreadable: false, paths: [file], problems: [], modes: { allow: simOrgText(app) }, counts: { modelAllow: null, modelDeny: app === 'Claude Code' ? 1 : 0, mcpAllow: null, mcpDeny: app === 'Copilot' ? 1 : 0, toolDeny: app === 'Claude Code' ? 1 : 0 } });
-        return { copilot: one('Copilot', '/etc/github-copilot/managed-settings.json'), claude: one('Claude Code', '/etc/claude-code/managed-settings.json') };
+        const one = (app: string, file: string, doubt = false): import('../shared/orgpolicy').OrgPolicyAppView => ({ app, found: true, unreadable: doubt, paths: [file], problems: doubt ? [file + ': allowed_sandbox_modes could not be read'] : [], modes: { allow: { why: doubt ? simOrgDoubtText(app) : simOrgText(app), refuse: !doubt } }, counts: { modelAllow: null, modelDeny: app === 'Claude Code' ? 1 : 0, mcpAllow: null, mcpDeny: app === 'Copilot' ? 1 : 0, toolDeny: app === 'Claude Code' ? 1 : 0 } });
+        return { copilot: one('Copilot', '/etc/github-copilot/managed-settings.json'), claude: one('Claude Code', '/etc/claude-code/managed-settings.json'), codex: one('Codex', '/etc/codex/requirements.toml', true) };
       },
       newSession: async (id, o) => {
         const src = sims.find((x) => x.info.id === id);
