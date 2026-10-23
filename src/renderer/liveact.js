@@ -6,6 +6,7 @@
   else{root.DurbarLiveAct=api; if(root.exports&&typeof root.exports.redact==='function')root.DurbarRedact=root.exports;} /* the global `exports` stays: the compiled module reads its own constants from it */
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
+  const ST=(typeof module==='object'&&module.exports?require('./safetext.js'):self.DurbarSafeText)||{plain:()=>'',maskLabel:()=>'',maskRaw:()=>''}; /* no safetext.js: the readout is empty, nothing leaks (fail closed) */ /* spec 041 FR-065: the one owner of plain() and the label mask (safetext.js loads first) */
   const KEEP=1200;          /* characters of the current thinking block or reply kept (the newest) */
   const PAINT_MS=250;       /* FR-030: at most 4 paints a second per desk */
   const LINE_MAX=160;       /* one-line readout (desk text line) */
@@ -13,10 +14,10 @@
   const STREAM_MAX=600;     /* a grown desk (spec 001 FR-043): up to 8 lines, the newest sentences */
   const cutOf=(s,n)=>{s=String(s==null?'':s).replace(/\s+/g,' ').trim();const c=Array.from(s);return c.length<=n?s:c.slice(0,n-1).join('').trimEnd()+'…';};
   /* Markdown to plain words: code blocks, links, emphasis, headings and list marks go; whitespace collapses */
-  const plain=t=>String(t==null?'':t).replace(/```[\s\S]*?(```|$)/g,' ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*+\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
-  /* spec 001 FR-043: a reply shown on a desk. Masked on the RAW text first (`plain` strips `_`, `*` and backticks, so `ghp_…` would
-     become `ghp…` and no longer match), then made plain. No working mask: '' (fail closed). */
-  const excerpt=(raw,redact)=>{if(typeof redact!=='function')return '';let m;try{m=redact(String(raw==null?'':raw));}catch(e){return '';}return typeof m==='string'?plain(m):'';};
+  const plain=t=>ST.plain(t);
+  /* spec 001 FR-043, spec 041 FR-065: a reply shown on a desk. Masked by safetext's maskRaw (unescaped, and again on the plain-kept text when Markdown
+     could split a token), then made plain. No working mask: '' (fail closed). Never a bare redact(raw). */
+  const excerpt=(raw,redact)=>{const m=ST.maskRaw(String(raw==null?'':raw),redact);return m?plain(m):'';};
   /* a heading line ("**Planning the change**", "## Plan") is a title, not a sentence: it is left out */
   const HEAD=/^[ \t]*(?:#{1,6}[ \t].*|\*\*[^*\n]+\*\*[ \t]*)$/gm;
   /* The newest whole sentences that fit in `max` characters (only the newest one with `one`). A sentence ends at . ! ? or … followed by a
@@ -40,7 +41,7 @@
     const m=mask||{}, kind=o&&o.kind||'tool', tool=String(o&&o.tool||'tool'), raw=String(o&&o.label||'').trim();
     if(o&&o.simple)return cutOf(o.simple,LINE_MAX);
     const isUrl=/^[a-z][a-z0-9+.-]{1,20}:\/\//i.test(raw);
-    const lab=!raw?'':kind==='run'&&m.cmd?m.cmd(raw):isUrl&&m.url?m.url(raw):m.redact?m.redact(raw):raw;
+    const lab=ST.maskLabel(raw,kind,m);
     const t=tool.toLowerCase();
     let verb;
     if(isUrl||/fetch|web|url|http/.test(t))verb='Opening';
@@ -53,7 +54,7 @@
   }
   /* Per-agent readouts. onEvent returns true when what a desk should show changed. */
   function create(opts){
-    const o=opts||{}, mask=o.mask||{}, red=s=>mask.redact?mask.redact(s):s;
+    const o=opts||{}, mask=o.mask||{}, red=s=>mask.redact?ST.maskRaw(s,mask.redact):s; /* FR-065: also masks a token that Markdown broke up (ghp\_..., gh`p_...) */
     const st=new Map();
     const get=id=>{let s=st.get(id);if(!s){s={kind:'',text:'',lines:'',long:null,body:'',tool:'',buf:'',rid:null,lastPaint:-Infinity};st.set(id,s);}return s;};
     /* body: the masked text a grown desk's `long` is made from, only when one asks (of()); a tool phrase or '' has none (long = lines) */

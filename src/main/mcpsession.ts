@@ -32,6 +32,10 @@ export interface McpReplyInput {
   extras: ReadonlyArray<{ name: string; enabled: boolean; trusted: boolean; needsSecrets?: boolean }>;
   /** Names switched off in Settings. */
   ambientDisabled: ReadonlySet<string>;
+  /** Spec 058 FR-078: names Agent Durbar passed as disabled when this session started. */
+  launchedOff?: ReadonlySet<string>;
+  /** Spec 058 FR-078: names the user switched here since the session started. */
+  switchedHere?: ReadonlySet<string>;
   /** Spec 069 FR-009: the agent app (`copilot`, `claude`, `codex`); Claude and Codex agents do not list the Copilot CLI list. */
   app?: string;
   /** Spec 069 FR-009: Claude Code's user list with its Settings switch (listed for Claude agents). */
@@ -77,7 +81,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const canSignIn = needs && typeof ad?.startMcpSignIn === 'function';
     const steps = needs && ad?.capabilities.mcpSignIn ? signInStepsFor(ad.capabilities.mcpSignInSteps, name, origin) : undefined;
     const open = canSignIn ? i.signIn?.(name) : undefined;
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}) });
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];

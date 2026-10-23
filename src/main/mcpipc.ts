@@ -172,6 +172,9 @@ export function registerMcpIpc(deps: {
   });
   ipcHandle('mcp:removeLegacy', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().removeLegacy(name) }));
 
+  /** Spec 058 FR-078: what Agent Durbar passed as disabled at the last session start, and what the user switched since: a runtime `disabled` for these is ours, not the agent app's. */
+  const launched = new Map<string, Set<string>>();
+  const touched = new Map<string, Set<string>>();
   ipcHandle('agents:mcp', (_e, id: unknown, focus?: unknown): AgentMcpReply => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, servers: [], live: false };
@@ -191,6 +194,8 @@ export function registerMcpIpc(deps: {
       cli: all,
       extras: s.list(keyOf(a)),
       ambientDisabled: dis,
+      launchedOff: launched.get(a.id),
+      switchedHere: touched.get(a.id),
       app: deps.appOf?.(a.id),
       claudeList: (gn.claude ?? []).map((n) => ({ name: n, enabled: !dis.has(claudeOffKey(n)) })),
       toolsOff: s.toolsOffFor(keyOf(a)),
@@ -226,7 +231,11 @@ export function registerMcpIpc(deps: {
   });
   /** Spec 069 FR-032: the tools of one server of this agent's running session, masked and cut. */
   ipcHandle('agents:mcpTools', (_e, id: unknown, name: unknown) => mcpToolsOp({ agents, router, secrets: secretValuesFor }, id, name));
-  ipcHandle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
+  ipcHandle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
+    const r = await setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled);
+    if (r.ok && typeof id === 'string' && typeof name === 'string') { const t = touched.get(id) ?? new Set<string>(); t.add(name); touched.set(id, t); }
+    return r;
+  });
 
   return {
     secretValuesFor,
@@ -235,6 +244,8 @@ export function registerMcpIpc(deps: {
       if (!a) return { mcpServers: {}, disabledMcpServers: [...(off.get(agentId) ?? [])] };
       // Only this agent's own folder's extras are passed (spec 020 FR-012).
       const r = store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames());
+      launched.set(agentId, new Set(r.disabledMcpServers));
+      touched.delete(agentId);
       // Spec 069 FR-009: the agent app's own user list that Durbar passes itself (Claude Code); a folder extra of the same name wins.
       const toolsOff = store().toolsOffFor(keyOf(a)); // spec 069 FR-061/FR-062
       return { mcpServers: mergeSessionServers(deps.globalFor?.(agentId) ?? {}, r.mcpServers, off.get(agentId)), disabledMcpServers: r.disabledMcpServers, ...(Object.keys(toolsOff).length ? { disabledMcpTools: toolsOff } : {}) };

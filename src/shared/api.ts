@@ -550,6 +550,10 @@ export interface AgentMcpEntry {
   signIn?: { host: string; opened: boolean; expiresInMs: number; otherSite?: string };
   /** Spec 058 FR-068: the terminal steps for this needs-sign-in server, the agent app's plain text with the name filled in (commands in backticks). */
   signInSteps?: string;
+  /** Spec 058 FR-078: Agent Durbar passed this server as switched off when the session started (Settings or the folder's extras), so a runtime `disabled` is not the app's own doing. */
+  launchedOff?: boolean;
+  /** Spec 058 FR-078: the user switched this server here since the session started (a runtime `disabled` may be the old state until its event arrives). */
+  switchedHere?: boolean;
 }
 
 /** `agents:mcp` (spec 019 FR-009, spec 058 FR-020). */

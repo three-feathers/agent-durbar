@@ -955,10 +955,15 @@
     };
     const body=s=>{
       const rows=s.servers.map(x=>{
-        const eff=x.defaultOn&&!x.off;
-        const W=window.DurbarMcpWords, sv=W.stateOf(x.status);
+        const W=window.DurbarMcpWords, app=s.app||o&&o.appName;
+        const octx={off:x.off,defaultOn:x.defaultOn,origin:x.origin,app,launchedOff:x.launchedOff,switchedHere:x.switchedHere};
+        const by=x.status==='disabled'?W.offBy(octx):'';
+        /* FR-078: a server the agent app turned off (runtime `disabled`, but not off here or in Settings) shows its switch off, so the word and the switch agree */
+        const appOff=by==='app';
+        const eff=x.defaultOn&&!x.off&&!appOff;
+        const sv=W.stateOf(x.status,octx);
         const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span></span>`;
-        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app:s.app||o&&o.appName});
+        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by});
         const detOpen=x.error&&openDet.has(x.name);
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
@@ -976,8 +981,8 @@
         const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
         const sg=x.canSignIn||x.signInSteps||x.signIn?signHTML(x,s):'';
-        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
-          <div class="srv-act">${rs}${rmb}${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts'),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
+        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${det}${detBox}</div>
+          <div class="srv-act">${rs}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff?' disabled':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
       return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
@@ -1068,7 +1073,7 @@
         }
       }
       const W=window.DurbarMcpWords,ch=[];
-      for(const x of st.servers){const was=seen.get(x.name);if(was!==undefined&&was!==(x.status||''))ch.push(x.name+': '+W.stateOf(x.status).word);}
+      for(const x of st.servers){const was=seen.get(x.name);if(was!==undefined&&was!==(x.status||''))ch.push(x.name+': '+W.stateOf(x.status,{off:x.off,defaultOn:x.defaultOn,origin:x.origin,app:st.app||o&&o.appName,launchedOff:x.launchedOff,switchedHere:x.switchedHere}).word);}
       seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
       if(wantFocus){const w=wantFocus;wantFocus=null;const el=[...dlg.querySelectorAll('.dbody button:not([disabled])')].find(b=>b.dataset[w[0]]===w[1]);if(el)el.focus();}
       /* the time limit: main drops the address by itself, so look again when it is due */
