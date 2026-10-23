@@ -93,6 +93,107 @@ module.exports = async (ctx) => {
   };
   const load = (w, h, q) => H.load({ w, h, query: q || {}, ready: 'fit' });
 
+  /* spec 005 FR-044..FR-048 (issue 592): the message box's size. Geometry in the page; the drag and the keys are real input events. */
+  const wc = () => ctx.win.webContents;
+  const box = () => js(`(()=>{const R=e=>e.getBoundingClientRect(),t=document.getElementById('msgInput'),g=document.getElementById('composerGrip'),c=document.getElementById('chat'),p=document.querySelector('#panel .panel-in');
+    if(!t||!g||!c||!p)return null;const gr=R(g);
+    return {h:Math.round(R(t).height),sh:t.scrollHeight,ch:t.clientHeight,chat:c.clientHeight,panel:p.clientHeight,gx:Math.round(gr.left+gr.width/2),gy:Math.round(gr.top+gr.height/2),gh:gr.height,
+      role:g.getAttribute('role'),name:g.getAttribute('aria-label'),ctl:g.getAttribute('aria-controls'),orient:g.getAttribute('aria-orientation'),tab:g.tabIndex,
+      now:+g.getAttribute('aria-valuenow'),min:+g.getAttribute('aria-valuemin'),max:+g.getAttribute('aria-valuemax'),
+      stored:(()=>{try{return localStorage.getItem('durbar.composerHeight')}catch(e){return 'ERR'}})(),
+      focus:(document.activeElement||{}).id||'',sel:[t.selectionStart,t.selectionEnd],small:parseFloat(getComputedStyle(g).fontSize)}})()`);
+  const drag = async (b, dy) => {
+    wc().sendInputEvent({ type: 'mouseMove', x: b.gx, y: b.gy });
+    wc().sendInputEvent({ type: 'mouseDown', x: b.gx, y: b.gy, button: 'left', clickCount: 1 });
+    for (let i = 1; i <= 6; i++) { wc().sendInputEvent({ type: 'mouseMove', x: b.gx, y: Math.round(b.gy + (dy * i) / 6), button: 'left', modifiers: ['leftButtonDown'] }); await ctx.sleep(30); }
+    wc().sendInputEvent({ type: 'mouseUp', x: b.gx, y: b.gy + dy, button: 'left', clickCount: 1 });
+    await ctx.sleep(120);
+  };
+  const LONG = Array.from({ length: 80 }, (_, i) => `Line ${i + 1}: please review the plan before you change anything in the folder.`).join('\n');
+  const resizeSteps = async (tag, w, h) => {
+    await js(`(()=>{try{localStorage.removeItem('durbar.composerHeight')}catch(e){}})()`);
+    await load(w, h); await openIdle();
+    let b = await box();
+    check(!!b, `${tag} resize: no handle (#composerGrip) or no message box`);
+    if (!b) return;
+    check(b.role === 'separator' && b.name === 'Resize message box' && b.ctl === 'msgInput' && b.orient === 'horizontal' && b.tab === 0, `${tag} resize: handle ARIA ${JSON.stringify(b)}`);
+    check(b.h >= 35 && b.h <= 40 && b.sh <= b.ch + 1, `${tag} resize: an empty box is not one line (${b.h}px)`);
+    /* FR-044: a long prompt grows past the old 110px to the cap, then scrolls; the transcript keeps 140px */
+    await type(LONG);
+    await ctx.sleep(80);
+    b = await box();
+    const want = Math.min(Math.max(110, Math.round(0.4 * b.panel)), b.h + b.chat - 140);
+    check(b.h > 110 && Math.abs(b.h - want) <= 2, `${tag} resize: a long prompt grows to ${b.h}px, want the cap ${want}px (40% of ${b.panel}, transcript floor)`);
+    check(b.sh > b.ch + 20, `${tag} resize: a long prompt above the cap does not scroll inside the box (${b.sh} <= ${b.ch})`);
+    check(b.chat >= 139, `${tag} resize: the transcript keeps ${b.chat}px (< 140)`);
+    const capH = b.h;
+    console.log(`[composer-toolbar] ${tag} resize: cap ${capH}px (panel ${b.panel}px, transcript ${b.chat}px)`);
+    await type('one\ntwo\nthree');
+    b = await box();
+    check(b.h > 40 && b.h < capH && b.sh <= b.ch + 1, `${tag} resize: three lines are ${b.h}px high and should fit without scrolling`);
+    await type('');
+    b = await box();
+    check(b.h <= 40, `${tag} resize: an emptied box does not shrink back (${b.h}px)`);
+    /* FR-045: drag up 150px: taller, chosen, remembered; the caret stays; the box keeps the focus */
+    await js(`(()=>{const t=document.getElementById('msgInput');t.focus();t.value='keep the caret here';t.dispatchEvent(new Event('input',{bubbles:true}));t.setSelectionRange(5,9);})()`);
+    b = await box();
+    const h0 = b.h;
+    await drag(b, -150);
+    b = await box();
+    check(Math.abs(b.h - (h0 + 150)) <= 3, `${tag} resize: dragging up 150px makes the box ${b.h}px (from ${h0})`);
+    check(String(b.stored) === String(b.h), `${tag} resize: the dragged size is not remembered (stored ${b.stored}, box ${b.h})`);
+    check(b.focus === 'msgInput' && b.sel[0] === 5 && b.sel[1] === 9, `${tag} resize: the drag moved the focus or the caret ${JSON.stringify({ focus: b.focus, sel: b.sel })}`);
+    check(Math.abs(b.now - b.h) <= 1 && b.min === 36 && b.max >= b.h, `${tag} resize: aria values ${JSON.stringify({ now: b.now, min: b.min, max: b.max })}`);
+    /* a chosen size does not follow the text */
+    await type('short');
+    const chosen = b.h;
+    b = await box();
+    check(Math.abs(b.h - chosen) <= 1, `${tag} resize: a chosen size follows the text (${b.h} != ${chosen})`);
+    /* FR-046: drag far up: clamped so the transcript keeps 140px; far down: one line */
+    await drag(b, -(b.gy - 2));
+    b = await box();
+    check(b.chat >= 139 && b.chat <= 142, `${tag} resize: dragged to the top, the transcript keeps ${b.chat}px (want 140)`);
+    check(Math.abs(b.h - b.max) <= 1, `${tag} resize: the top clamp ${b.h} is not aria-valuemax ${b.max}`);
+    await shot(`005-composer-resized-${tag}.png`);
+    await drag(b, h - b.gy - 2);
+    b = await box();
+    check(b.h >= 35 && b.h <= 37, `${tag} resize: dragged to the bottom, the box is ${b.h}px (want 36)`);
+    /* FR-048: keys on the focused handle */
+    await js(`document.getElementById('composerGrip').focus()`);
+    await key('Up'); b = await box();
+    check(b.h === 52, `${tag} resize: Arrow Up gives ${b.h}px (want 36 + 16)`);
+    await key('PageUp'); b = await box();
+    check(b.h === 116, `${tag} resize: Page Up gives ${b.h}px (want 52 + 64)`);
+    await key('Down'); b = await box();
+    check(b.h === 100, `${tag} resize: Arrow Down gives ${b.h}px (want 116 - 16)`);
+    await key('End'); b = await box();
+    check(Math.abs(b.h - b.max) <= 1 && b.chat >= 139, `${tag} resize: End gives ${b.h}px (max ${b.max}, transcript ${b.chat})`);
+    await key('Home'); b = await box();
+    check(b.h === 36, `${tag} resize: Home gives ${b.h}px`);
+    await key('PageUp'); await key('PageUp'); b = await box();
+    const kept = b.h;
+    check(kept === 164 && b.focus === 'composerGrip' && (await js(`document.body.classList.contains('panel-open')`)), `${tag} resize: keys left the chat or the handle ${JSON.stringify({ h: b.h, focus: b.focus })}`);
+    /* FR-047: a reload keeps the size (one value for the app) */
+    await load(w, h); await openIdle();
+    b = await box();
+    check(b.h === kept && String(b.stored) === String(kept), `${tag} resize: after a reload the box is ${b.h}px (want ${kept}, stored ${b.stored})`);
+    /* FR-045: double-click resets to automatic growth and forgets the size */
+    wc().sendInputEvent({ type: 'mouseMove', x: b.gx, y: b.gy });
+    for (const c of [1, 2]) { wc().sendInputEvent({ type: 'mouseDown', x: b.gx, y: b.gy, button: 'left', clickCount: c }); wc().sendInputEvent({ type: 'mouseUp', x: b.gx, y: b.gy, button: 'left', clickCount: c }); }
+    await ctx.sleep(150);
+    b = await box();
+    check(b.h <= 40 && b.stored === null, `${tag} resize: double-click does not reset (${b.h}px, stored ${b.stored})`);
+    await type(LONG); b = await box();
+    check(Math.abs(b.h - capH) <= 2, `${tag} resize: after the reset a long prompt grows to ${b.h}px again (want ${capH})`);
+    /* Enter on the handle resets too */
+    await js(`document.getElementById('composerGrip').focus()`);
+    await key('PageUp'); await key('Return'); b = await box();
+    check(Math.abs(b.h - capH) <= 2 && b.stored === null, `${tag} resize: Enter on the handle does not reset (${b.h}px, stored ${b.stored})`);
+    await type('');
+    const mm = await M();
+    mm.P.forEach((p) => check(false, `${tag} after resize: ${p}`));
+  };
+
   for (const [w, h] of SIZES) {
     const tag = `${w}x${h}`;
     await load(w, h);
@@ -187,6 +288,9 @@ module.exports = async (ctx) => {
       try{const s=document.getElementById('stopBtn');s.click();s.click();await new Promise(r=>setTimeout(r,700));return {n};}finally{b.stop=orig;}})()`);
     check(stops.n === 1, `${tag}: two clicks on Stop call bridge.stop ${stops.n} times (want 1)`);
     check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0;return v(document.getElementById('sendBtn'))&&!v(document.getElementById('stopBtn'))&&!v(document.getElementById('runSpin'))})()`, 6000), `${tag}: Stop does not bring Send back`);
+
+    /* spec 005 FR-044..FR-048 (issue 592): the message box grows to its cap and scrolls, the handle drags, clamps, is remembered and resets */
+    await resizeSteps(tag, w, h);
 
     /* narrow panel (spec #452's docking may give it 480px): one row, "⋯", the mode stays */
     await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`);
