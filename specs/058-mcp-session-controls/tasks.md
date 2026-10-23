@@ -395,15 +395,17 @@ the tasks follow those answers. PR A = Claude Code with the
 shared parts; PR B = Codex (Q23 A).
 
 - [x] T150 Spec delta FR-175..FR-186, research 7.8, plan delta and these tasks, committed before code
-- [ ] T151 [P] Types and contract: `McpSignInResult` browser `ttlMs?`; `McpServerStatus.signInEnd?: 'next-message' | 'failed'` (event
+- [x] T151 [P] Types and contract: `McpSignInResult` browser `ttlMs?`; `McpServerStatus.signInEnd?: 'next-message' | 'failed'` (event
   guard: only those values); capability `mcpSignInNote?`; contract C2 lines (`mcpSignInNote` only with `mcpSignIn` or
   `mcpSignInSteps`); fake adapter options for both; `scripts/test-adapter-contract.ts`, `scripts/test-events.ts` [FR-180]
-- [ ] T152 Main: `McpSignInStore.begin(..., ttlMs)` keeps `min(ttlMs, 10 min)` per entry (`live`, `sweep`, `view`, the poller stop use
+  [IMPLEMENTED] 2026-10-23 (PR A): `src/adapters/types.ts`, `capabilities.ts` (also `mcpSignInRestart`, see spec *PR A notes*), `eventguard.ts` (`validSignInEnd`), `fake.ts` (`endOnRefresh`, `refreshNames`); the guard's tests are in `test-adapter-contract` (where the other `eventProblems` checks live)
+- [x] T152 Main: `McpSignInStore.begin(..., ttlMs)` keeps `min(ttlMs, 10 min)` per entry (`live`, `sweep`, `view`, the poller stop use
   it); `onServers` drops on `connected` or `signInEnd`; `agentMcpReply` adds `signInEnd` and `signInNote`, and `signInSteps` needs only
   `mcpSignInSteps` (`src/main/mcpsession.ts:82`); tests in `scripts/test-mcp-signin.ts` (an entry with `ttlMs` expires at its own limit, Copilot's still at 10 minutes; `ttlMs` = 300000 minus the request time minus 10000, at
   least 30000, with a slow answer on an injected clock;
   a `signInEnd` drops the entry and stops the poller; steps without `mcpSignIn`); mutation-check each [FR-180]
-- [ ] T099 Claude Code (PR A) `startMcpSignIn` (`mcp_authenticate {serverName}` only, 30 s; browser with `ttlMs` = 300000 minus the request-to-answer time minus 10000, at least 30000 (FR-175);
+  [IMPLEMENTED] 2026-10-23 (PR A): `src/main/mcpsignin.ts` (`begin(..., ttlMs)`, `recent`), `mcpsession.ts`, `mcpipc.ts` (the FR-176 re-read), `src/shared/mcp.ts` (`signInTtlMs`); `test:mcpsignin`; mutations killed
+- [x] T099 Claude Code (PR A) `startMcpSignIn` (`mcp_authenticate {serverName}` only, 30 s; browser with `ttlMs` = 300000 minus the request-to-answer time minus 10000, at least 30000 (FR-175);
   `requiresUserAction: false` -> connected; `callbackExpected: false`, other shapes and control errors -> reject; a timeout and an
   unknown-subtype error -> the terminal steps, a late answer dropped unread, no address in any log; `ttlMs` from the request time;
   after Cancel, one `mcp_status` read on the next focus within 5 minutes; a second Sign in while the first listens; CLI not running ->
@@ -412,6 +414,7 @@ shared parts; PR B = Codex (Q23 A).
   `mcpSignInSteps` (FR-181 text), `mcpSignInNote`; none of them on the SDK transport; tests in `scripts/test-claude-adapter.ts` on the
   test transport (request bodies have no `redirectUri`; no `mcp_oauth_callback_url`, no `mcp_clear_auth`; a poll that still says
   connected keeps a mark-only needs-auth; a needs-auth -> connected poll ends it; mutation-checked) [FR-175, FR-176, FR-181, SC-176]
+  [IMPLEMENTED] 2026-10-23 (PR A): `src/adapters/claude.ts`; `test:claudeadapter`; mutations killed. `[KNOWN GAP]` real CLI: T106
 - [ ] T100 Codex (PR B) `startMcpSignIn` (`mcpServer/oauth/login {name, threadId, timeoutSecs: 300}`; browser with `ttlMs` = 300000 minus the request-to-answer time minus 10000, at least 30000 (FR-175);
   keep `loginId`; MethodNotFound or error -> reject), the `mcpServer/oauthLogin/completed` branch (by `loginId`, else name + thread;
   success: clear the mark, read the one server, connected -> `mcp`, else `relaunch` + `signInEnd: 'next-message'`; failure: Codex's
@@ -423,20 +426,26 @@ shared parts; PR B = Codex (Q23 A).
   `config.mcp_servers` (switched-off servers and tools included) as before, sends no prompt, waits for a running turn, and End session
   drops it; mutation-checked)
   [FR-177, FR-178, FR-181, SC-176]
-- [ ] T153 Renderer: the row's note from `signInNote` (replaces the hard-coded sentence at `src/renderer/screens.js:1113`); the
+- [ ] T153 (split: T153a done in PR A, T153b open for PR B) Renderer: the row's note from `signInNote` (replaces the hard-coded sentence at `src/renderer/screens.js:1113`); the
   `signInEnd` states and toasts; Claude's "If you finished in your browser, press Restart on this row." after a mark-only entry expires;
   live region; no new IPC (PR A: Claude parts and the note; PR B: Codex states) [FR-176, FR-182]
-- [ ] T154 Simulator and screenshots: `simmcpauth=1|manual|codexfail` for the Claude and Codex sim kinds in `src/renderer/sim.ts`;
+  - [x] T153a (PR A, Claude Code) [IMPLEMENTED] 2026-10-23: the note from `signInNote`, Restart kept with `signInRestart`, the time-limit line, the dialog open asks `agents:mcp(id, true)`
+  - [ ] T153b (PR B, Codex): the `signInEnd` states and toasts (FR-182)
+- [ ] T154 (split: T154a done in PR A, T154b open for PR B) Simulator and screenshots: `simmcpauth=1|manual|codexfail` for the Claude and Codex sim kinds in `src/renderer/sim.ts`;
   `scripts/shots-058-mcp-signin.js` replaces its "Claude and Codex keep today's behaviour" block with their sign-in checks;
   `docs/screenshots/058-mcp-signin-{claude,codex}-*-{1440x900,1280x800}.png` [FR-183, SC-175]
-- [ ] T155 Docs: README *MCP servers* (Sign in for all three apps, the terminal steps, "not checked on a real account yet" for Claude
+  - [x] T154a (PR A, Claude Code) [IMPLEMENTED] 2026-10-23: the Claude sim kind (`simmcpauth=1|manual`, `simkinds=mixed`), the driver's Claude checks, `058-mcp-signin-claude-{row,steps,confirm,manual}-*.png`
+  - [ ] T154b (PR B, Codex): `simmcpauth=codexfail`, the Codex sim kind, the driver's Codex checks and `058-mcp-signin-codex-*` screenshots
+- [ ] T155 (split: T155a done in PR A, T155b open for PR B) Docs: README *MCP servers* (Sign in for all three apps, the terminal steps, "not checked on a real account yet" for Claude
   Code and Codex; a *Known limits* line: "Without a system keyring (common on Linux), Claude Code and Codex keep an MCP sign-in in a
   plain `.credentials.json` file in their own settings folder; Agent Durbar does not read or change it."), `changelog.d/<branch>.md`, `docs/agent-notes.md` entry (Claude's undocumented `mcp_authenticate`; `claude mcp login`
   needs a TTY; the token keys of both apps; Codex's cancel does not reach MCP logins), `[IMPLEMENTED]` tags in FR-175..FR-183
-- [ ] T157 (PR A) FR-185: `serverUrlOf` per app (Copilot: extras, Copilot CLI list; Claude Code: extras, `globalFor`; Codex: extras,
+  - [x] T155a (PR A, Claude Code) [IMPLEMENTED] 2026-10-23: README (Claude Code Sign in, Known limits incl. the plain `.credentials.json` and "read from 2.1.304 only"), `changelog.d/058-signin-claude.md`, the agent-notes entry, the FR tags
+  - [ ] T155b (PR B, Codex): the README and changelog lines for Codex, the Codex FR tags
+- [x] T157 (PR A) FR-185: `serverUrlOf` per app (Copilot: extras, Copilot CLI list; Claude Code: extras, `globalFor`; Codex: extras,
   its `config.toml` entry's `url`; no match: no line); tests in `scripts/test-mcp-signin.ts`: a Claude and a Codex agent with a
   same-named Copilot CLI entry on another site show no line; Copilot unchanged; mutation: the old fallback fails the test [FR-185]
-- [ ] T158 (PR A) FR-186 (Q22 B): `McpServerSpec.oauth?` with the four allow-listed fields; `specOf` copies them from the raw Claude
+- [x] T158 (PR A) FR-186 (Q22 B): `McpServerSpec.oauth?` with the four allow-listed fields; `specOf` copies them from the raw Claude
   entry (own properties only, all-or-nothing on a wrong type, shape or length); `mcpConfigOf` writes `oauth` for http/sse only; no
   log line with a value. Tests in `scripts/test-mcp-global.ts` (it covers `sessionServers`/`specOf`) and `scripts/test-claude-adapter.ts`: a
   valid object is copied exactly; **keys outside the allow-list are dropped while the valid
