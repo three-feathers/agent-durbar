@@ -302,15 +302,15 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
 ## Phase 9: live status and actions in Settings (delta 2026-10-23, issue #596)
 
 - [x] T120 Spec delta FR-080..FR-087, plan delta and these tasks, committed before code
-- [ ] T121 [P] Unit tests for `DurbarMcpWords.aggregate` in `scripts/test-mcpwords.ts` (counts and words, urgency order, "uses" rule,
+- [x] T121 [P] Unit tests for `DurbarMcpWords.aggregate` in `scripts/test-mcpwords.ts` (counts and words, urgency order, "uses" rule,
   not-started rows, sorting, caps, unknown tokens) [FR-081, FR-086]
-- [ ] T122 [P] Simulator driver `scripts/shots-058-mcp-settings.js` (several agents, ~10 servers in mixed states injected as `mcp`
+- [x] T122 [P] Simulator driver `scripts/shots-058-mcp-settings.js` (several agents, ~10 servers in mixed states injected as `mcp`
   reports): aggregate words, the expander, Restart and Restart session calling the right chat (recorded on the simulator's bridge),
   Details masked, Open in chat, live refresh, no overlap and 10.5px at 1440x900 and 1280x800; in `scripts/ui-suite.js` [FR-080..FR-085]
-- [ ] T123 `aggregate` in `src/renderer/mcpwords.js` [FR-081]
-- [ ] T124 Settings list, expander, actions, live refresh and the attention count in `src/renderer/screens.js` and `screens.css`; the
+- [x] T123 `aggregate` in `src/renderer/mcpwords.js` [FR-081]
+- [x] T124 Settings list, expander, actions, live refresh and the attention count in `src/renderer/screens.js` and `screens.css`; the
   shared Restart and Restart session flow used by the chat dialog too; `mcpSession` and the stop hook in `src/renderer/app.js`
   [FR-080, FR-082..FR-086]
-- [ ] T125 Docs: README MCP section line, `changelog.d/058-mcp-settings-live.md`, screenshots (driver at 1440x900 and 1280x800; the
+- [x] T125 Docs: README MCP section line, `changelog.d/058-mcp-settings-live.md`, screenshots (driver at 1440x900 and 1280x800; the
   linked Settings shots retaken), specs-index block [FR-085]
-- [ ] T126 `/speckit-converge` for the delta; tick tasks; mutation-check the driver and the unit tests
+- [x] T126 `/speckit-converge` for the delta; tick tasks; mutation-check the driver and the unit tests

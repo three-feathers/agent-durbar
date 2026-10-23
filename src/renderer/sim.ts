@@ -692,7 +692,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       return { status: 'connected' };
     };
     const mcpStatus = (s: SimAgent, i: number): void => {
-      emit({ type: 'mcp', sessionId: sid(s), timestamp: now(), servers: serversOf(s).map((m) => ({ ...m, status: 'connected', ...simServer(s, i, m.name, true) })) });
+      const own = serversOf(s), names = new Set(own.map((m) => m.name));
+      /* spec 058 FR-082: servers a driver reported for this session (not the simulator's own) stay in the report; a Restart of one goes
+         Starting, then Running, like the canned ones */
+      const other = (s.mcpLive ?? []).filter((m) => !names.has(m.name)).map((m) => (s.mcpRestarting?.has(m.name) ? { name: m.name, status: 'pending' } : s.mcpFixed?.has(m.name) ? { name: m.name, status: 'connected' } : m));
+      emit({ type: 'mcp', sessionId: sid(s), timestamp: now(), servers: [...own.map((m) => ({ ...m, status: 'connected', ...simServer(s, i, m.name, true) })), ...other] });
     };
 
     let openSeq = 0;
@@ -1268,7 +1272,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           /* spec 069 FR-061: this folder's turned-off tools */
           ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, ...reported(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), sources: gSources(a.name, false), ...toolsOffOf(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}) })),
           ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, ...reported(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), sources: gSources(v.name, true), ...toolsOffOf(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}) })),
-          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name) })) : []),
+          /* like main's agentMcpReply: a running server the runtime reported can be restarted (spec 058 FR-030) */
+          ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name), ...(restartable(m.name, true) && m.status !== 'disabled' ? { canRestart: true } : {}) })) : []),
         ];
         return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true };
       },

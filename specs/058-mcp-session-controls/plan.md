@@ -224,6 +224,10 @@ expander per server with each chat's state, hint, Details, Restart, Restart sess
 3. `src/renderer/app.js`: `mcpSession(id)` in the screens context (the live agent object and the same options the MCP chip passes:
    `toggle`, `restart`, `appName`, and whether the chat shows MCP); `DurbarScreens.mcpEvent` is also called when a session stops.
 4. `src/renderer/screens.css`: the live list's rows (expander, chat rows), theme tokens only.
+5. `src/renderer/sim.ts` (simulator only): servers a driver reported for a session stay in the simulator's own `mcp` report after a
+   Restart (Starting, then Running), and runtime rows get `canRestart` as main's `agentMcpReply` gives them.
+6. Docs: README MCP line with the picture `058-mcp-settings-1440x900.png` (retaken by `npm run shots:docs`), changelog fragment,
+   `docs/agent-notes.md` (page overflow checks in Settings; the simulator's kept reports).
 
 ### Order
 

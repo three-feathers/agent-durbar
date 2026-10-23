@@ -8,7 +8,12 @@ interface Words {
   hintFor: (o: { status?: string; errorClass?: string; error?: string; app?: string }) => string;
   plain: (t: unknown, n: number) => string;
   ICON_NAMES: string[];
+  aggregate: (sessions: unknown[], configured?: unknown) => Agg;
+  RANK: string[];
 }
+interface AggChat { id: string; name: string; folder: string; entry: { name: string; status?: string; error?: string }; state: { key: string; word: string } }
+interface AggRow { name: string; chats: AggChat[]; parts: { key: string; word: string; n: number }[]; summary: string; icon: string; cls: string; attention: boolean }
+interface Agg { servers: AggRow[]; attention: number; chats: number }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'mcpwords.js')) as Words;
 
@@ -71,4 +76,62 @@ assert.strictEqual(h({ status: 'failed', errorClass: 'not-found', error: 'x' }),
 const t0 = Date.now();
 h({ status: 'failed', error: 'a '.repeat(200000) + ';'.repeat(100000) });
 assert.ok(Date.now() - t0 < 500, 'a long text is read in linear time');
+
+// ---- Spec 058 FR-081 (T121): the live state of each server over the running chats, for Settings ----
+{
+  const reply = (servers: unknown[], live = true) => ({ ok: true, live, servers });
+  const srv = (name: string, status?: string, more: Record<string, unknown> = {}) => ({ name, origin: 'cli', defaultOn: true, off: false, ...(status === undefined ? {} : { status }), ...more });
+  const chat = (id: string, servers: unknown[], live = true) => ({ id, name: 'Agent ' + id, folder: 'folder-' + id, reply: reply(servers, live) });
+  const by = (a: Agg, n: string) => { const r = a.servers.find((x) => x.name === n); assert.ok(r, 'row for ' + n); return r as AggRow; };
+  const a = W.aggregate([
+    chat('a', [srv('github', 'connected'), srv('notes', 'failed', { error: 'spawn x ENOENT' }), srv('web', undefined)]),
+    chat('b', [srv('github', 'connected'), srv('notes', 'needs-auth'), srv('docs', 'pending')]),
+    chat('c', [srv('github', 'connected'), srv('notes', 'connected'), srv('off-here', undefined, { off: true }), srv('off-settings', undefined, { defaultOn: false })]),
+    chat('d', [srv('github', 'failed')], false), // not running: never counted
+  ], ['github', 'idle-one', 'off-here']);
+  assert.strictEqual(by(a, 'github').summary, 'Running in 3 chats', 'counts and plural');
+  assert.deepStrictEqual(by(a, 'github').chats.map((c) => c.id), ['a', 'b', 'c'], 'a chat that is not running is left out');
+  assert.strictEqual(by(a, 'notes').summary, 'Failed in 1 chat · Needs sign-in in 1 chat · Running in 1 chat', 'most urgent first, singular');
+  assert.strictEqual(by(a, 'notes').cls, 'failed', 'the row takes the most urgent state');
+  assert.strictEqual(by(a, 'notes').icon, W.stateOf('failed').icon);
+  assert.ok(by(a, 'notes').attention, 'failed or needs sign-in needs attention');
+  assert.ok(!by(a, 'github').attention);
+  assert.strictEqual(by(a, 'web').summary, 'Not started yet in 1 chat', 'on, no state reported yet: not started in that chat');
+  assert.strictEqual(by(a, 'docs').summary, 'Starting in 1 chat');
+  assert.strictEqual(by(a, 'idle-one').summary, 'Not started yet', 'configured, no chat uses it');
+  assert.strictEqual(by(a, 'idle-one').chats.length, 0);
+  assert.strictEqual(by(a, 'off-here').chats.length, 0, 'off in that chat with no state: that chat does not use it');
+  assert.ok(!a.servers.some((x) => x.name === 'off-settings'), 'off in Settings, not configured here, no state: not listed');
+  assert.strictEqual(a.attention, 1, 'one server needs attention');
+  assert.strictEqual(a.chats, 3, 'three running chats');
+  assert.strictEqual(a.servers[0].name, 'notes', 'rows that need attention come first');
+  assert.deepStrictEqual(a.servers.slice(1).map((x) => x.name), ['docs', 'github', 'web', 'idle-one', 'off-here'], 'then the servers a chat uses, then the rest, each by name');
+  // a chat whose switch is off but the app still reports a state counts (it is what the session really does)
+  const b = W.aggregate([chat('x', [srv('s', 'disabled', { off: true })])]);
+  assert.strictEqual(by(b, 's').summary, 'Off for this session in 1 chat');
+  // the urgency order (FR-081)
+  assert.deepStrictEqual(W.RANK, ['failed', 'needs-auth', 'pending', 'unknown', 'none', 'connected', 'not_configured', 'stopped', 'disabled']);
+  const all = W.aggregate([['connected', 'disabled', 'stopped', 'not_configured', undefined, 'weird', 'pending', 'needs-auth', 'failed'].map((st, i) => chat('k' + i, [srv('one', st)]))].flat());
+  assert.strictEqual(by(all, 'one').summary, 'Failed in 1 chat · Needs sign-in in 1 chat · Starting in 1 chat · Unknown state: weird in 1 chat · Not started yet in 1 chat · Running in 1 chat · Not set up for this session in 1 chat · Stopped in 1 chat · Off for this session in 1 chat');
+  // two different unknown tokens are two parts, each named
+  const u = W.aggregate([chat('p', [srv('z', 'odd')]), chat('q', [srv('z', 'odder')]), chat('r', [srv('z', 'odd')])]);
+  assert.strictEqual(by(u, 'z').summary, 'Unknown state: odd in 2 chats · Unknown state: odder in 1 chat');
+  // the entry is passed through as main sent it (masked there): Details shows exactly that text
+  assert.strictEqual(by(a, 'notes').chats[0].entry.error, 'spawn x ENOENT');
+  assert.strictEqual(by(a, 'notes').chats[0].folder, 'folder-a');
+  // bad input never throws, and names are exact
+  const bad = W.aggregate([null, {}, { id: 'n', reply: null }, { id: 'm', reply: { ok: false, live: true, servers: [srv('q', 'connected')] } }, chat('o', [null, { name: '' }, { name: 5 }, srv('Q', 'connected'), srv('q', 'failed')])] as unknown[], 'nope');
+  assert.deepStrictEqual(bad.servers.map((x) => x.name).sort(), ['Q', 'q'], 'only real names; case is kept apart');
+  assert.strictEqual(W.aggregate(undefined as unknown as unknown[]).servers.length, 0);
+  // a chat that lists one server twice is counted once
+  const dup = W.aggregate([chat('d1', [srv('w', 'connected'), srv('w', 'failed')])]);
+  assert.strictEqual(by(dup, 'w').summary, 'Running in 1 chat');
+  // caps: 50 chats, 200 servers
+  const many = W.aggregate(Array.from({ length: 80 }, (_, i) => chat('c' + i, Array.from({ length: 5 }, (_, j) => srv('s' + (i * 5 + j), 'connected')))));
+  assert.strictEqual(many.chats, 50, 'at most 50 chats are read');
+  assert.strictEqual(many.servers.length, 200, 'at most 200 servers are listed');
+  const wide = W.aggregate([chat('one', [srv('zzz', 'connected')])], Array.from({ length: 300 }, (_, i) => 'cfg' + i));
+  assert.strictEqual(wide.servers.length, 200);
+  assert.ok(wide.servers.some((x) => x.name === 'zzz'), 'a server a chat uses is kept before configured-only ones');
+}
 console.log('[058] mcpwords: PASS');

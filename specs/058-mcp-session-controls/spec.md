@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: MCP servers in a session (issue #349): plain state words and how servers start per agent app, the masked failure reason with a hint, per-server Restart where the agent app has one (Copilot, Claude Code), Restart session with these servers, Open log folder (reveal only)
-status: **Specified and clarified** (spec, research, plan, tasks); the owner answered Q1-Q11 on 2026-10-20 (all option A). Built so far: MCP error and event masking (`maskMcpError`, `maskMcpEvent`; #362, #382); per-server Restart (Copilot, Claude Code) and Restart session with these servers (T030-T034, T040-T044, #349; simulator and fakes, not on a real account); state words and icons, hints, *Details* with *Copy* and live refresh of the open dialog (T113-T115, #364 step 4; simulator and tests; the start line, toggle timing and logs are not built yet); delta 2026-10-20 (issue #364): MCP OAuth sign-in (needs-auth from a 401, start the agent app's own sign-in or show terminal steps, switch off for this session), specified and clarified (owner answered Q12-Q19 on 2026-10-20); built so far (PR 1): the classifier `isMcpAuthChallenge`, `isAuthError` ignoring it, and masking of failed MCP tool cards (T091, T092, T097); PR 2: the types, event guard and fake for sign-in (`errorClass`, `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `mcpAuth`; T112, T093); no adapter sets them yet, no sign-in yet
+status: **Specified and clarified** (spec, research, plan, tasks); the owner answered Q1-Q11 on 2026-10-20 (all option A). Built so far: MCP error and event masking (`maskMcpError`, `maskMcpEvent`; #362, #382); per-server Restart (Copilot, Claude Code) and Restart session with these servers (T030-T034, T040-T044, #349; simulator and fakes, not on a real account); state words and icons, hints, *Details* with *Copy* and live refresh of the open dialog (T113-T115, #364 step 4; simulator and tests; the start line, toggle timing and logs are not built yet); delta 2026-10-20 (issue #364): MCP OAuth sign-in (needs-auth from a 401, start the agent app's own sign-in or show terminal steps, switch off for this session), specified and clarified (owner answered Q12-Q19 on 2026-10-20); built so far (PR 1): the classifier `isMcpAuthChallenge`, `isAuthError` ignoring it, and masking of failed MCP tool cards (T091, T092, T097); PR 2: the types, event guard and fake for sign-in (`errorClass`, `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `mcpAuth`; T112, T093); no adapter sets them yet, no sign-in yet; delta 2026-10-23 (issue #596, owner): live state and actions of every server in Settings > MCP servers over the running chats (FR-080..FR-087) built, simulator and unit tests only
 -->
 
 **Feature Branch**: `058-mcp-session-controls`
@@ -730,8 +730,8 @@ spec 069's lists, and changes nothing in them.
   set up for this session, Stopped, Off for this session. The row's icon and colour class are those of the most urgent state (never
   colour alone, constitution V). A chat "uses" a server when its `agents:mcp` reply lists it and it is switched on for that chat, or the
   agent app reported a state for it. A chat's server with no reported state counts as "Not started yet" (for example Copilot and Claude
-  start servers with the next message). Rows with a failed or needs-sign-in chat come first; otherwise the order is by name. Names are
-  compared exactly (as `agents:mcp` lists them); at most 200 servers and 50 chats are shown.
+  start servers with the next message). Rows with a failed or needs-sign-in chat come first, then servers a running chat uses, then the rest, each group by name. Names (1-200
+  characters) are compared exactly (as `agents:mcp` lists them); at most 200 servers and 50 chats are shown.
 - **FR-082** `[IMPLEMENTED]` (`sim:`) **Per-server expander.** Each row has a toggle (a button with `aria-expanded`, named "Show the
   chats that use <server>") that lists the chats using it: the agent's name and folder, that chat's state word and icon, the hint for a
   failed or needs-sign-in state (FR-006, the same words as the chat dialog, with the agent app's name), *Details* with the masked text and
@@ -747,7 +747,7 @@ spec 069's lists, and changes nothing in them.
   - Needs-sign-in rows show the chat dialog's sign-in hint. When issue #364's *Sign in* (FR-064, Paco's) lands, its button is added to
     this row through the same code; this delta builds no sign-in of its own.
 - **FR-083** `[IMPLEMENTED]` (`sim:`) **Live refresh.** While Settings is open, an `mcp` event of any running chat (and a chat that
-  stops) reloads the list (throttled to one reload per 150 ms) without repainting the rest of Settings, keeping the focus on the same
+  stops or is ready again) reloads the list (throttled to one reload per 150 ms) without repainting the rest of Settings, keeping the focus on the same
   control (by server, chat and action) and the scroll position; state changes are announced through the existing polite live region, as
   FR-004 does in the chat dialog. An action the user just took is not announced back.
 - **FR-084** `[IMPLEMENTED]` (`sim:`) **Finding it.** The *Advanced: MCP servers* heading shows how many servers need attention ("2
