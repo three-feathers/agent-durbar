@@ -14,8 +14,8 @@
   const fmt=n=>S.fmtTokens(n);
   const cap=(s,n)=>{s=String(s==null?'':s);return s.length>n?s.slice(0,n-1)+'…':s;};
   /* spec 052 FR-055: bring a heading to the top of the screen's own scroller only. scrollIntoView also scrolled the
-     outer page (overflow:hidden still scrolls), which hid the top bar and left a blank strip at the bottom. */
-  const scrollInBody=h=>{const sc=h.closest('.scr-body');if(sc)sc.scrollTop+=h.getBoundingClientRect().top-sc.getBoundingClientRect().top-12;};
+     outer page (overflow:hidden still scrolls), which hid the top bar and left a blank strip at the bottom. FR-176: the shared helper. */
+  const scrollInBody=h=>{const sc=h.closest('.scr-body');if(sc)window.DurbarScroll.reveal(h,{block:'start',margin:12,scroller:sc});};
 
   /* ---------------- shared: frame, dialogs ---------------- */
   function open(kind,opts){
