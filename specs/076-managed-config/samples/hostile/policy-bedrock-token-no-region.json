@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "secrets": {
+    "envAllow": [
+      {
+        "name": "ACME_BEDROCK_KEY",
+        "hosts": [
+          "bedrock-runtime.eu-central-1.amazonaws.com"
+        ]
+      }
+    ]
+  },
+  "llm": {
+    "claude": {
+      "provider": "bedrock",
+      "authTokenFromEnv": "ACME_BEDROCK_KEY"
+    }
+  }
+}

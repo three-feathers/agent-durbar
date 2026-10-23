@@ -58,6 +58,7 @@ const DOC_SHOTS = [
   { name: 'shots-068-coffee', files: ['068-coffee-office-15-1440x900.png'] },
   { name: 'check-slash-suggest', files: ['073-slash-1440x900.png'] },
   { name: 'shots-074-navigator', files: ['074-navigator-start-1440x900.png'] },
+  { name: 'shots-058-mcp-settings', files: ['058-mcp-settings-1440x900.png'] },
   // one office per theme (shots-themes.js, the Settings path); the README (035-*) and the landing page (site-theme-*) show the same
   ...THEMES.map(([id, short]) => ({
     label: `shots-themes ${id}`, name: 'shots-themes', env: { DURBAR_THEME: id, SHOTS_SIZE: '1440x900', SHOTS_PREFIX: '' },
