@@ -372,6 +372,26 @@ export interface UsageLimitEvent extends BaseEvent {
   update?: boolean;
 }
 
+/** Spec 034 FR-016: why the agent app retries a model call (a fixed label chosen by the adapter, never the provider's text). */
+export type RetryReason = 'rate-limit' | 'overloaded' | 'server' | 'network' | 'timeout' | 'auth' | 'other';
+
+/**
+ * Spec 034 FR-016 (issue #600): the agent app retries a failed model API call by itself (`retrying`), or ran out of retries and the turn
+ * fails (`gave-up`, sent just before the error status). `attempt` is the retry number (1 = the first retry); on `gave-up`, the retries made.
+ * `maxAttempts` only when the agent app says how many it makes. No vendor field and no provider message: a fixed reason and numbers.
+ */
+export interface RetryEvent extends BaseEvent {
+  type: 'retry';
+  phase: 'retrying' | 'gave-up';
+  attempt: number;
+  maxAttempts?: number;
+  reason: RetryReason;
+  /** HTTP status of the failed call, 100-599, when the agent app gave one. */
+  httpStatus?: number;
+  /** How long the agent app waits before this retry, when it said so. */
+  delayMs?: number;
+}
+
 /**
  * The session's display title from the runtime (spec 002 delta 2026-10-18, issue #126): a title made from the first prompt,
  * an auto summary or a name given elsewhere. Top-level agent only, already cleaned (one line, ≤ 80 characters). User text:
@@ -525,6 +545,7 @@ export type AgentEvent =
   | McpStatusEvent
   | LimitEvent
   | UsageLimitEvent
+  | RetryEvent
   | TitleEvent;
 
 /** Spec 012 FR-156: the answer of `verifySignIn`. */
