@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Harness setup inside the app: Settings > Harnesses with install, update and sign-in (issue #299)
-status: **built** (unit, simulator; real sign-in flows started and cancelled); D1 superseded by spec 060 FR-001 (the official installer comes first, downloaded and checked, never piped)
+status: **built** (unit, simulator; real sign-in flows started and cancelled); the signed-in account per app (delta 2026-10-23) in progress; D1 superseded by spec 060 FR-001 (the official installer comes first, downloaded and checked, never piped)
 -->
 
 **Feature Branch**: `051-harness-setup`
@@ -158,3 +158,33 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
   - it is saved into a private temp folder, checked to look like a script (not a web page), and **run as a file, never piped**;
   - package managers come after it, or first when they own the installed copy (Update).
   - Details and tests: spec 060 `## Changes`.
+
+### 2026-10-23: the signed-in account per agent app (owner request, issue #617)
+
+**Input.** Owner (Vikram, 2026-10-23): "When we are logged into agent app, if it possible to show logged in username when available". This delta supersedes the part of FR-007 (and spec 012 FR-132's comment) that dropped the login name: the name may now reach the window, and only the window.
+
+**Research (2026-10-23, this machine: Linux; Copilot SDK/runtime 1.0.22, Claude Code 2.1.304, codex-cli 0.163.0; no prompt, nothing billed).** Each probe printed only the field names and types, not the values:
+
+| App | Call | What it reports | Evidence |
+|---|---|---|---|
+| Copilot | `CopilotClient.getAuthStatus()` on the started runtime (about 0.2 s) | `isAuthenticated`, `authType` (`user`, `env`, `gh-cli`, `hmac`, `api-key`, `token`), `host`, `login`, `statusMessage` | `read:` SDK `types.d.ts` `GetAuthStatusResponse`; `real:` a real account's login shown, `authType: "gh-cli"`, host `https://github.com` |
+| Claude Code | `claude auth status --json` (local) | `loggedIn`, `authMethod` (`claude.ai`, `api_key`, `oauth_token`, `third_party`, `none`), `apiProvider` (`firstParty`, Bedrock, Vertex, ...), and for `claude.ai`: `email`, `orgId`, `orgName`, `subscriptionType` (`pro`, `max`, `team`, `enterprise`); for an API key: `apiKeySource` | `read:` the 2.1.304 bundle (the `cli_auth_status` code); `real:` a real account's email shown, `authMethod: "claude.ai"`, `subscriptionType: "max"` |
+| Codex | app-server `account/read` with `refreshToken: false` (about 2 s with the app-server start) | `account`: `{type: 'chatgpt', email, planType}`, `{type: 'apiKey'}` or `{type: 'amazonBedrock'}`, or `null`; `requiresOpenaiAuth` | `read:` `codex app-server generate-json-schema` (`v2/GetAccountResponse.json`, `PlanType`: `free`, `go`, `plus`, `pro`, `team`, `business`, `enterprise`, `edu`, ...); `real:` a real account's email shown, `type: "chatgpt"`, `planType: "plus"` |
+
+No token, auth file or keychain entry is read: only what the app itself reports. Copilot's `statusMessage` is not used (it can repeat the login).
+
+- **FR-011** **The account, as the app reports it.** An optional adapter method `accountInfo()` answers `{ status: 'signed-in' | 'signed-out' | 'unknown', name?, service?, plan?, method? }` (`src/shared/account.ts`, no vendor types):
+  - Copilot: `getAuthStatus()`: `name` = `login`; `service` = "GitHub", or the host name for another host (GitHub Enterprise); `method` from `authType` (`gh-cli` = "through the GitHub CLI", `env`/`token` = a token from the environment, `api-key`/`hmac` = a key).
+  - Claude Code: `claude auth status --json` (the same call detection makes): `claude.ai` = `name` from `email`, `plan` "Claude Pro/Max/Team/Enterprise" from `subscriptionType`; `api_key` = "an Anthropic API key" (with the email only when the CLI gives one); `oauth_token` = "a long-lived token"; a third-party provider names it (Amazon Bedrock, Google Vertex AI); `loggedIn: false` = signed out.
+  - Codex: `account/read` with `refreshToken: false` on a short-lived app-server: `chatgpt` = `name` from `email`, `plan` "ChatGPT Plus/Pro/..." from `planType`; `apiKey` = "an OpenAI API key"; `amazonBedrock` = "Amazon Bedrock"; `account: null` with `requiresOpenaiAuth` = signed out; an older Codex without the method = unknown.
+  - A missing field, a wrong type, an error or a timeout gives fewer facts or `unknown`, never a guess. Names are cut to one line of at most 80 characters with control characters removed.
+- **FR-012** **One line of text** (`accountLine`, pure): "Signed in as <name> (<service>)", "Signed in as <name> · <plan>", "Signed in with an OpenAI API key", "Signed in; the app does not say which account", "Not signed in", "Account unknown".
+- **FR-013** **Where it shows:**
+  - Settings > Agent apps: one line on each card of an installed app (`.hs-acct`), under the plan line;
+  - the agent-app picker (top bar defaults and the New session dialog): each option's tooltip, and the select's own tooltip for the chosen app;
+  - "About agent apps": the line after each app's state.
+  - Not on a card of an app that is not installed. Not in the agent's chat header (optional in the request; left out to keep the header calm).
+- **FR-014** **Asked once, refreshed when it matters.** Main keeps one answer per app for the run (`harness:accounts`), asked only for apps that are `ready` or `not-signed-in`, each with a 6 s limit; Settings asks again when it opens and on *Check again*, and a sign-in that ends (FR-005) clears that app's answer. Never under the simulator (spec 010 FR-030): the simulator's page answers a fake identity (`octo-sim`, `sim@example.com`), so screenshots never show a real account.
+- **FR-015** **Personal data.** The name and email reach the window only, through `harness:accounts`. They are never written to the debug log (`DURBAR_LOG`), the activity log, exports, telemetry, remote control or chat-channel messages, the MCP agent-state server or `adapters:list` (whose hints stay free of account data, spec 012 FR-156). The adapters do not pass the answer to `debug`.
+- **Tests.** `test:account`: each adapter's `accountInfo` with fake SDK, CLI and app-server answers (every form above, missing fields, wrong types, errors, a hostile name), `accountLine`, the main cache (once per run, refresh, cleared after a sign-in, ready apps only, timeout), and that a marker email never reaches the adapters' debug sink, `adapters:list` or the activity-log writer; a source check that only the allowed files call `accountInfo`. `sim:` `scripts/shots-051-account.js` at 1440x900 and 1280x800.
+- `real:` 2026-10-23, this machine: one probe per installed app with no prompt (above) showed a real account's identity in each; the values are not written anywhere. `[KNOWN GAP]` Not run on macOS or Windows; Copilot through a `copilot login` (`authType: "user"`), an Enterprise host, Claude Code with an API key or a Team plan, and Codex with an API key were read from the docs and code only.
