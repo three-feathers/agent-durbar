@@ -185,6 +185,15 @@ async function main(): Promise<void> {
     assert.strictEqual(expandSlash('/s', list), undefined, 'the swapped file is checked again and refused');
   });
 
+  await test('safety (review on #535): a SKILL.md that grows past 64 KB after discovery is refused, not sent cut off', () => {
+    const r = path.join(tmp, 'growrepo');
+    const skill = write(path.join(r, '.claude', 'skills', 'x', 'SKILL.md'), '---\nname: x\n---\nsmall body');
+    const list = discoverSlash(claudeSlashPlaces([r], path.join(tmp, 'growhome', '.claude'), path.join(tmp, 'growhome')));
+    assert.ok(expandSlash('/x', list)?.text.includes('small body'));
+    fs.writeFileSync(skill, '---\nname: x\n---\n' + 'a'.repeat(MAX_SLASH_BYTES + 1));
+    assert.strictEqual(expandSlash('/x', list), undefined, 'over MAX_SLASH_BYTES on the re-read: the typed text is sent');
+  });
+
   await test('safety (review on #535): a FIFO swapped in after discovery gives no expansion at once (no hang)', () => {
     if (process.platform === 'win32') return console.log('  (skipped on Windows: no mkfifo; the regular-file check still applies)');
     const r = path.join(tmp, 'fiforepo');

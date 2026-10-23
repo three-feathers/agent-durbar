@@ -92,6 +92,8 @@ Independent test: unit fixtures per app (T004) and the adapters' listing on temp
   re-check in `expansionOf`) [FR-005]
 - [x] T031 `slashsuggest.js`: `optionHtml` (moved from `app.js`) escapes every field, unit-tested with a hostile entry; `filter` uses
   `DurbarNav.rank` (navigator.js) with `label: name`, `kw: description` [FR-008]
+- [x] T033 Test: a `SKILL.md` rewritten above 64 KB after discovery is not expanded (kills the mutation that drops `readHead`'s
+  size check; fjcabello's re-review) [FR-002, FR-005]
 - [x] T032 Mutation-check T028-T031; `npm run typecheck && npm run build`, `test:slashcommands`, `check:slash-suggest`
 
 ## Known gaps (open tasks, not this PR)
