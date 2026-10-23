@@ -1326,7 +1326,7 @@ function renderOffice(){
   if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
 }
 
-/* spec 001 FR-086, FR-087 (owner report, issue #619): a drawn office that fits and is shorter than the floor used to leave all the spare
+/* spec 001 FR-086, FR-087 (owner report, issue 619): a drawn office that fits and is shorter than the floor used to leave all the spare
    height below its last row. The rows of rooms grow first (every room row by the same whole px, at most SPREAD_CAP of the shortest; the
    CSS puts half of it under the header and half under the desks), then the rest becomes even gaps above, between and below the rows
    (DurbarProbe.spreadRows, pure). Measured from the layout (offsetTop and the computed border-box height), not the screen box, so a room's

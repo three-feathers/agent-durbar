@@ -86,7 +86,7 @@
     if(w>=G.MAIN[0]+sideR[0]+G.GAP){const [m,s]=spread(w,[G.MAIN,sideR]);return {n:2,main:m,reply:0,side:s};}
     return {n:1,main:w,reply:0,side:0};
   }
-  /* ---- Spare height (spec 001 FR-086, FR-087, owner report issue #619): what a drawn office that fits does not need of the floor's height.
+  /* ---- Spare height (spec 001 FR-086, FR-087, owner report issue 619): what a drawn office that fits does not need of the floor's height.
         spreadRows(lines, avail, gap, cap): lines are the stage's rows top to bottom ({h, room}: height in px, a row of rooms or not), avail
         the floor's inner height, gap the gap between rows (10 px), cap the share of the shortest room row that every room row may grow.
         Returns {rx, top, rowGap}: rx is added to every room row (whole px, at most cap x the shortest), then top (above the first row) and
