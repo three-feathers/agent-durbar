@@ -8,7 +8,7 @@
 
 ## Technical Context
 
-- **Tools**: Electron 44.8.0, electron-builder 26.15.3, Node 22 in CI, `npm ci`.
+- **Tools**: Electron 44.9.1, electron-builder 26.15.3, Node 22 in CI, `npm ci`.
 - **Files**: `package.json` (`build`, scripts `pack:dir`, `dist`, `dist:mac:arm64|x64`, `dist:win`, `dist:linux`), `scripts/prepare-runtime.js`, `scripts/after-pack.js`, `scripts/copy-assets.js`, `build/icon.*`, `.github/workflows/ci.yml`, `release.yml`, `src/adapters/runtime.ts`, `scripts/test-runtime.ts`.
 - **Testing**: `npm run test:runtime`; CI matrix; `pack:dir` smoke (`afterPack` assertions).
 
