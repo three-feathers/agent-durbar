@@ -87,5 +87,6 @@ export function jsonObject(text: string, p: string): { ok: true; value: Record<s
 export const joinFor = (platform: string): ((a: string, b: string) => string) => (platform === 'win32' ? path.win32.join : path.posix.join);
 
 /** Windows' Program Files and ProgramData folders from the environment, with the usual defaults (FR-198). */
-export const programFiles = (env: Readonly<Record<string, string | undefined>>): string => env.ProgramFiles || env.PROGRAMFILES || 'C:\\Program Files';
-export const programData = (env: Readonly<Record<string, string | undefined>>): string => env.ProgramData || env.PROGRAMDATA || 'C:\\ProgramData';
+const absWin = (v: string | undefined): string | undefined => (v && path.win32.isAbsolute(v) && /^[A-Za-z]:[\\/]/.test(v) ? v : undefined); // a drive path only, never relative or UNC
+export const programFiles = (env: Readonly<Record<string, string | undefined>>): string => absWin(env.ProgramFiles) ?? absWin(env.PROGRAMFILES) ?? 'C:\\Program Files';
+export const programData = (env: Readonly<Record<string, string | undefined>>): string => absWin(env.ProgramData) ?? absWin(env.PROGRAMDATA) ?? 'C:\\ProgramData';

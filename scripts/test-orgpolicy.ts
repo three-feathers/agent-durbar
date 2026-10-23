@@ -120,6 +120,10 @@ async function main(): Promise<void> {
     assert.strictEqual(modeBlocked(readClaudeOrgPolicy('linux', {}, fakeFs({})), 'allow'), undefined, 'a: no file: Allow all offered');
     const win = readClaudeOrgPolicy('win32', { ProgramFiles: 'D:\\Programs' }, fakeFs({ 'D:\\Programs\\ClaudeCode\\managed-settings.json': '{"permissions":{"disableBypassPermissionsMode":"disable"}}' }));
     assert.strictEqual(modes(win), '--B', 'a: Windows path under Program Files from the environment');
+    for (const bad of ['relative\\dir', '\\\\server\\share', '', '/etc']) {
+      const r = readClaudeOrgPolicy('win32', { ProgramFiles: bad }, fakeFs({ 'C:\\Program Files\\ClaudeCode\\managed-settings.json': '{"permissions":{"disableBypassPermissionsMode":"disable"}}' }));
+      assert.deepStrictEqual(r.paths, ['C:\\Program Files\\ClaudeCode\\managed-settings.json'], `a: ProgramFiles ${JSON.stringify(bad)} is not a drive path: the default folder`);
+    }
     const mac = readClaudeOrgPolicy('darwin', {}, fakeFs({ '/Library/Application Support/ClaudeCode/managed-settings.json': '{}' }));
     assert.ok(mac.found && modes(mac) === '---', 'a: macOS path; an empty object blocks nothing');
   }

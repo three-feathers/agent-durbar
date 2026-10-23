@@ -21,7 +21,7 @@ export class OrgPolicyCache {
   constructor(private readonly src: OrgPolicySource) {}
 
   private now(): number {
-    return this.src.now ? this.src.now() : Date.now();
+    return this.src.now ? this.src.now() : performance.now(); // monotonic: a wall-clock change neither keeps nor drops a read
   }
 
   /** The policy of one agent app (an empty one for an app that reads none); re-read when older than the TTL (FR-204). */

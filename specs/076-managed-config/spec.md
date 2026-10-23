@@ -879,7 +879,7 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
   `/Library/Application Support/GitHubCopilot/`, `/etc/github-copilot/` and `%ProgramFiles%\GitHubCopilot\` (on POSIX a file that is a
   symlink, not owned by root or writable by others is ignored, as Copilot does); Codex `requirements.toml` in `/etc/codex/` (Linux,
   macOS) and `%ProgramData%\OpenAI\Codex\` (Windows). The Windows folders come from the `ProgramFiles` / `ProgramData` environment
-  values, with `C:\Program Files` / `C:\ProgramData` when unset. The reading lives behind `AgentAdapter` (optional
+  values when they are drive paths (a relative, UNC or empty value is ignored), else `C:\Program Files` / `C:\ProgramData`. The reading lives behind `AgentAdapter` (optional
   `readOrgPolicy()`, one file per app in `src/adapters/<app>OrgPolicy.ts`); `src/main`, `src/shared` and the window see only FR-199's
   normalized shape.
 - **FR-199 One normalized shape.** `src/shared/orgpolicy.ts` `OrgPolicy`: the app's name, whether a file was found, whether it could
