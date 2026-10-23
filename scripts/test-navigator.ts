@@ -9,7 +9,7 @@ type Item = { kind: string; id?: string; label: string; hint?: string; kw?: stri
 type Level = { kind: string; floor?: string; folder?: string; q?: string; active?: number };
 type Snap = { floors: { id: string; name: string }[]; folders: { id: string; name: string; floor: string; hint?: string }[]; chats: { id: string; name: string; folder: string; no: number; hint?: string }[] };
 type Combo = { mod?: boolean; ctrl?: boolean; alt?: boolean; shift?: boolean; code: string; sup?: boolean; typed?: string };
-type Ev = Partial<{ code: string; key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }>;
+type Ev = Partial<{ code: string; key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean; repeat: boolean }>;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const N = require(path.join(ROOT, 'src', 'renderer', 'navigator.js')) as {
   rank: (items: Item[], q: string) => Item[];
@@ -31,7 +31,10 @@ const N = require(path.join(ROOT, 'src', 'renderer', 'navigator.js')) as {
   clashOf: (c: Combo, mac: boolean) => string;
   loadCombo: (j: unknown, mac: boolean) => Combo;
   sameCombo: (a: Combo, b: Combo) => boolean;
+  takenBy: (c: Combo, mac: boolean) => [string, string, string?] | null;
+  textSafeKey: (e: Ev, mac: boolean, ctx: Ctx) => string;
 };
+type Ctx = Partial<{ editable: boolean; log: boolean; selected: boolean; dialog: boolean }>;
 
 // ---- matching: the palette's order (spec 052 FR-042), now shared ----
 const items: Item[] = [{ kind: 'x', label: 'Frontend app' }, { kind: 'x', label: 'api' }, { kind: 'x', label: 'My api tests' }, { kind: 'x', label: 'core', kw: 'apis' }];
@@ -137,14 +140,18 @@ assert.deepStrictEqual(N.crumbs(snap1, [start, { kind: 'chats' }]), ['Go to', 'C
 
 // ---- the shortcut (FR-002, FR-017) ----
 const D = N.DEFAULT_COMBO;
-assert.deepStrictEqual(N.comboParts(D), ['mod', 'J']);
-assert.ok(N.comboMatches({ code: 'KeyJ', ctrlKey: true }, D, false), 'Ctrl+J on Windows and Linux');
-assert.ok(N.comboMatches({ code: 'KeyJ', metaKey: true }, D, true), '⌘J on a Mac');
-assert.ok(!N.comboMatches({ code: 'KeyJ', ctrlKey: true }, D, true), 'Ctrl+J is not ⌘J on a Mac');
-assert.ok(!N.comboMatches({ code: 'KeyJ', metaKey: true }, D, false), 'Super+J is not the shortcut elsewhere');
-assert.ok(!N.comboMatches({ code: 'KeyJ', ctrlKey: true, shiftKey: true }, D, false), 'extra Shift does not match');
-assert.ok(!N.comboMatches({ code: 'KeyJ', ctrlKey: true, isComposing: true }, D, false), 'not while composing (IME)');
-assert.ok(N.comboMatches({ code: 'KeyJ', ctrlKey: true }, D, false) && !N.comboMatches({ code: 'KeyK', ctrlKey: true }, D, false), 'by key position (code)');
+// 2026-10-23 (issue #587): the default is Ctrl+F / ⌘F ("F for floor"); it was Ctrl+J / ⌘J
+assert.deepStrictEqual(N.comboParts(D), ['mod', 'F']);
+assert.ok(N.comboMatches({ code: 'KeyF', ctrlKey: true }, D, false), 'Ctrl+F on Windows and Linux');
+assert.ok(N.comboMatches({ code: 'KeyF', metaKey: true }, D, true), '⌘F on a Mac');
+assert.ok(!N.comboMatches({ code: 'KeyF', ctrlKey: true }, D, true), 'Ctrl+F is not ⌘F on a Mac');
+assert.ok(!N.comboMatches({ code: 'KeyF', metaKey: true }, D, false), 'Super+F is not the shortcut elsewhere');
+assert.ok(!N.comboMatches({ code: 'KeyF', ctrlKey: true, shiftKey: true }, D, false), 'extra Shift does not match');
+assert.ok(!N.comboMatches({ code: 'KeyF', ctrlKey: true, isComposing: true }, D, false), 'not while composing (IME)');
+assert.ok(N.comboMatches({ code: 'KeyF', ctrlKey: true }, D, false) && !N.comboMatches({ code: 'KeyK', ctrlKey: true }, D, false), 'by key position (code)');
+assert.ok(!N.comboMatches({ code: 'KeyJ', key: 'j', ctrlKey: true }, D, false) && !N.comboMatches({ code: 'KeyJ', key: 'j', metaKey: true }, D, true), 'Ctrl+J / ⌘J no longer opens Go to (no alias)');
+assert.ok(N.clashOf({ mod: true, code: 'KeyJ' }, false) === '' && N.clashOf({ mod: true, code: 'KeyJ' }, true) === '', 'Ctrl+J / ⌘J is free to record now');
+assert.ok(N.comboMatches({ code: 'KeyF', key: 'u', metaKey: true }, D, true), 'Mac Dvorak: ⌘ at F types U, nobody\'s, so the default works there');
 assert.strictEqual(N.comboFromEvent({ code: 'ShiftLeft', shiftKey: true }, false), null, 'a modifier alone is not a combination');
 assert.deepStrictEqual(N.comboFromEvent({ code: 'KeyG', ctrlKey: true, shiftKey: true }, false), { mod: true, ctrl: false, alt: false, shift: true, code: 'KeyG', sup: false });
 assert.deepStrictEqual(N.comboParts({ mod: true, shift: true, code: 'Space' }), ['shift', 'mod', 'Space']);
@@ -204,9 +211,10 @@ assert.ok(ok(N.comboFromEvent({ code: 'KeyB', key: 'X', ctrlKey: true, shiftKey:
 const ctrlI: Combo = { mod: true, code: 'KeyI' };
 assert.ok(N.comboMatches({ code: 'KeyI', key: 'i', ctrlKey: true }, ctrlI, false), 'QWERTY: Ctrl+I matches');
 assert.ok(!N.comboMatches(dvC, ctrlI, false), 'Dvorak: the press types C, so Copy keeps it');
-assert.ok(!N.comboMatches({ code: 'KeyJ', key: 'h', metaKey: true }, D, true), 'Mac Dvorak: ⌘ at J types H (Hide), left to macOS');
-assert.ok(N.comboMatches({ code: 'KeyJ', key: 'h', ctrlKey: true }, D, false), 'Linux/Windows Dvorak: Ctrl+H is nobody\'s, so the default still works');
-assert.ok(N.comboMatches({ code: 'KeyJ', key: 'J', ctrlKey: true }, D, false), 'an upper-case key is the same letter');
+const DJ: Combo = { mod: true, code: 'KeyJ' }; /* the old default, now a shortcut a user may pick */
+assert.ok(!N.comboMatches({ code: 'KeyJ', key: 'h', metaKey: true }, DJ, true), 'Mac Dvorak: ⌘ at J types H (Hide), left to macOS');
+assert.ok(N.comboMatches({ code: 'KeyJ', key: 'h', ctrlKey: true }, DJ, false), 'Linux/Windows Dvorak: Ctrl+H is nobody\'s, so Ctrl+J still works');
+assert.ok(N.comboMatches({ code: 'KeyF', key: 'F', ctrlKey: true }, D, false), 'an upper-case key is the same letter');
 
 // every Ctrl/⌘ shortcut of the global keydown handler in app.js is refused (so Go to cannot take one over)
 const HANDLER_START = "document.addEventListener('keydown',e=>{\n  /* spec 052 FR-035";
@@ -264,7 +272,47 @@ assert.deepStrictEqual(N.loadCombo('{bad', true), D);
 assert.deepStrictEqual(N.loadCombo(JSON.stringify({ mod: true, code: 'KeyK' }), false), D, 'a combination that is not allowed falls back to the default');
 assert.deepStrictEqual(N.loadCombo(JSON.stringify({ mod: true, shift: true, code: 'KeyG', extra: 'x' }), false), { mod: true, ctrl: false, alt: false, shift: true, code: 'KeyG' });
 assert.deepStrictEqual(N.loadCombo(JSON.stringify({ ctrl: true, code: 'KeyJ' }), false), D, 'the Mac Control flag is dropped elsewhere (then nothing is left)');
-assert.ok(N.sameCombo({ mod: true, code: 'KeyJ' }, D) && !N.sameCombo({ mod: true, shift: true, code: 'KeyJ' }, D));
+assert.ok(N.sameCombo({ mod: true, code: 'KeyF' }, D) && !N.sameCombo({ mod: true, shift: true, code: 'KeyF' }, D));
+assert.deepStrictEqual(N.loadCombo(JSON.stringify({ mod: true, code: 'KeyJ' }), true), { mod: true, ctrl: false, alt: false, shift: false, code: 'KeyJ' }, 'a saved Ctrl+J / ⌘J (someone\'s own choice) is kept');
+
+// ---- 2026-10-23 (issue #587): Ctrl+A opens Needs you and Ctrl+Backspace goes back to the office, only outside text (FR-020, FR-021) ----
+{
+  const A = (mac: boolean, x: Ev = {}): Ev => Object.assign({ code: 'KeyA', key: 'a' }, mac ? { metaKey: true } : { ctrlKey: true }, x);
+  const B = (mac: boolean, x: Ev = {}): Ev => Object.assign({ code: 'Backspace', key: 'Backspace' }, mac ? { metaKey: true } : { ctrlKey: true }, x);
+  for (const mac of [false, true]) {
+    const os = mac ? 'a Mac' : 'Windows/Linux';
+    assert.strictEqual(N.textSafeKey(A(mac), mac, {}), 'inbox', `${os}: Ctrl/⌘+A outside text opens Needs you`);
+    assert.strictEqual(N.textSafeKey(B(mac), mac, {}), 'office', `${os}: Ctrl/⌘+Backspace outside text goes back to the office`);
+    for (const k of ['editable', 'selected', 'dialog'] as const) {
+      assert.strictEqual(N.textSafeKey(A(mac), mac, { [k]: true }), '', `${os}: Ctrl/⌘+A stays Select all (${k})`);
+      assert.strictEqual(N.textSafeKey(B(mac), mac, { [k]: true }), '', `${os}: Ctrl/⌘+Backspace keeps its text meaning (${k})`);
+    }
+    assert.strictEqual(N.textSafeKey(A(mac), mac, { log: true }), '', `${os}: Ctrl/⌘+A in the chat log selects the conversation`);
+    assert.strictEqual(N.textSafeKey(B(mac), mac, { log: true }), 'office', `${os}: Ctrl/⌘+Backspace in the chat log goes back (no text there to lose)`);
+    for (const x of [{ shiftKey: true }, { altKey: true }, { isComposing: true }] as Ev[]) {
+      assert.strictEqual(N.textSafeKey(A(mac, x), mac, {}), '', `${os}: not with ${JSON.stringify(x)} (Ctrl+Shift+A is its own shortcut)`);
+      assert.strictEqual(N.textSafeKey(B(mac, x), mac, {}), '', `${os}: Backspace not with ${JSON.stringify(x)}`);
+    }
+    assert.strictEqual(N.textSafeKey(A(mac, { ctrlKey: true, metaKey: true }), mac, {}), '', `${os}: never with both Ctrl and ⌘`);
+    assert.strictEqual(N.textSafeKey({ code: 'KeyA', key: 'a' }, mac, {}), '', `${os}: A alone is not ours`);
+    assert.strictEqual(N.textSafeKey({ code: 'Backspace', key: 'Backspace' }, mac, {}), '', `${os}: Backspace alone is not ours`);
+    assert.strictEqual(N.textSafeKey(A(mac, { key: 'A' }), mac, {}), 'inbox', `${os}: upper-case A (Caps Lock) is the same key`);
+    assert.strictEqual(N.textSafeKey(A(mac, { key: 'ф' }), mac, {}), 'inbox', `${os}: a non-Latin layout (key ф at A) counts by position`);
+    assert.strictEqual(N.textSafeKey(A(mac, { key: 'q' }), mac, {}), '', `${os}: AZERTY (position A types q) is Ctrl+Q, not ours`);
+    assert.strictEqual(N.textSafeKey(A(mac, { code: 'KeyQ', key: 'a' }), mac, {}), 'inbox', `${os}: AZERTY's A (position Q) is Ctrl+A`);
+    assert.strictEqual(N.textSafeKey(A(mac, { code: 'KeyK', key: 'k' }), mac, {}), '', `${os}: other letters are not ours`);
+  }
+  assert.strictEqual(N.textSafeKey({ code: 'KeyA', key: 'a', ctrlKey: true }, true, {}), '', 'a Mac: ⌃A is the text key "line start", not ours');
+  assert.strictEqual(N.textSafeKey({ code: 'Backspace', key: 'Backspace', ctrlKey: true }, true, {}), '', 'a Mac: ⌃⌫ is not ours');
+  assert.strictEqual(N.textSafeKey({ code: 'KeyA', key: 'a', metaKey: true }, false, {}), '', 'Windows/Linux: Super+A is not ours');
+  /* TAKEN names both, so Settings can never record them for Go to (FR-023) */
+  for (const mac of [false, true]) {
+    const a = N.takenBy({ mod: true, code: 'KeyA' }, mac), b = N.takenBy({ mod: true, code: 'Backspace' }, mac);
+    assert.ok(a && /Select all/.test(a[1]) && /Needs you/.test(a[1]), `Ctrl/⌘+A is named Select all and Needs you: ${a && a[1]}`);
+    assert.ok(b && /Back to the office/.test(b[1]), `Ctrl/⌘+Backspace is named Back to the office: ${b && b[1]}`);
+    assert.ok(N.clashOf({ mod: true, code: 'Backspace' }, mac) !== '', 'and refused');
+  }
+}
 
 // ---- wiring that a unit test can see ----
 const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
@@ -272,5 +320,6 @@ assert.ok(html.indexOf('src="navigator.js"') > 0 && html.indexOf('src="navigator
 assert.ok(/'navigator\.js'/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8')), 'copy-assets.js copies navigator.js');
 const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
 assert.ok(/const NAV=window\.DurbarNav/.test(app) && /NAV\.rank\(palAll\(/.test(app), 'Ctrl+K uses the shared matching');
+assert.ok(/NAV\.textSafeKey\(e,IS_MAC,/.test(app), 'the global handler asks textSafeKey before Ctrl+A or Ctrl+Backspace act');
 
 console.log('navigator tests passed');

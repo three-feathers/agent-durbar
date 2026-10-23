@@ -12,10 +12,11 @@ OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREE
 
 The driver (`DURBAR_SIM=15`, with floors) checks and screenshots at 1440x900 and 1280x800:
 
-1. Ctrl+J (⌘J on a Mac) opens the palette in Go-to mode at the floor level; `2` picks floor 2; typing filters folders; Enter; `1` opens an agent; the message box has focus; typing and Enter puts the message in that chat.
-2. Ctrl+J, `c`, `3`: chat 3 opens with focus in the message box; its header shows "C3".
+1. Ctrl+F (⌘F on a Mac; Ctrl+J until 2026-10-23) opens the palette in Go-to mode at the floor level; `2` picks floor 2; typing filters folders; Enter; `1` opens an agent; the message box has focus; typing and Enter puts the message in that chat.
+2. Ctrl+F, `c`, `3`: chat 3 opens with focus in the message box; its header shows "C3".
 3. Esc chain: floor → folder → agent level, then Esc, Esc, Esc closes and focus returns.
-4. Settings > Keyboard: change to Ctrl+Shift+G; Ctrl+J no longer opens it, Ctrl+Shift+G does; Ctrl+K is refused with a reason; Reset restores Ctrl+J.
-5. Every new text ≥ 10.5px; the office with badges has no overlap (`check-office-overlap`).
+4. Settings > Keyboard: change to Ctrl+Shift+G; Ctrl+F no longer opens it, Ctrl+Shift+G does; Ctrl+K is refused with a reason; Reset restores Ctrl+F.
+5. Issue #587: Ctrl+J does nothing; the cursor is in the message box after a click or Enter on a desk, a list row, the strip, Ctrl+K and Needs you (a waiting chat stays waiting); in the message box Ctrl+Backspace and Ctrl+A edit text and nothing else happens; outside text Ctrl+A opens Needs you (not in the chat log, not with a selection) and Ctrl+Backspace goes back to the office; unsent text comes back.
+6. Every new text ≥ 10.5px; the office with badges has no overlap (`check-office-overlap`).
 
 Screenshots: `docs/screenshots/074-navigator-*`.
