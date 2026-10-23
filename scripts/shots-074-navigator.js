@@ -354,7 +354,7 @@ module.exports = async (ctx) => {
     await key('`', ['control'], { char: 'never' });
     await key('H', [MOD, 'shift'], { char: 'never' });
     await key('N', process.platform === 'darwin' ? ['alt', 'meta'] : ['alt'], { char: 'never' });
-    for (const k of ['i', '?', 'n']) await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:${jsLiteral(k)},shiftKey:${k === '?'},bubbles:true,cancelable:true}))`);
+    for (const k of ['i', '?', 'n']) await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:${jsLiteral(k)},shiftKey:${jsLiteral(k === '?')},bubbles:true,cancelable:true}))`);
     await ctx.sleep(150); // nothing may happen: give a wrong handler its chance
     const after = await js(`({title:(document.getElementById('panelTitle')||{}).textContent,prev:(document.getElementById('prevBtn')||{getAttribute:()=>''}).getAttribute('aria-expanded'),kbd:!!document.getElementById('kbdDlg'),add:window.__addProbe})`);
     assert.ok(after.title === before.title && after.prev === before.prev && !after.kbd && !after.add, `${w}: under the dialog, Ctrl+O, Ctrl+\`, Ctrl+Shift+H, Alt+N, I, ? and N do nothing (spec 052 FR-175): ${JSON.stringify({ before, after, ctrlO })}`);
