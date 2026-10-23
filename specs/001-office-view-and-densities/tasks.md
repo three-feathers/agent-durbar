@@ -140,3 +140,8 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 - [x] T061 Desk card title masked with `DurbarRedact.redact` before the 200-character cut, accessible name masked, name only without the module; driver case with a `ghp_` token across the cut; the #567 hand-off in spec and plan [FR-036, spec 041 FR-065]
   - Check: mutation (cut, then mask) fails it.
 - [x] T062 `focusRequest(card)` shared by the answer bar's `show` and `openAtRequest` [FR-034]
+
+## Changes 2026-10-23 (a header that gains a part after the layout, merge-queue flake on 7a756cb8)
+
+- [x] T063 `app.js` `renderOffice`: a layout picked with `heads: true` is searched again when a header on screen no longer holds its parts (`headHolds`, shared with `headsFit`), once per layout key and header contents (`HEAD_RETRY`); simulator hook `__durbarSimUi.quietHeads` and `paint`; `check:office` case `kinds WxH mixed kinds late siren` [FR-023]
+  - Check: mutation (drop the relayout) fails the case at 1280x800 with DejaVu fonts.
