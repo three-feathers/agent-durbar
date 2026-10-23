@@ -113,7 +113,7 @@
   const liveBusy=new Set(); /* `<server>\0<chat>`: a Restart under way; `\0<chat>`: a Restart session under way */
   let liveSeen=new Map(); /* server -> the summary last shown (state changes are announced, FR-083) */
   const liveMore=new Set(); /* `<server>\0<chat>` whose More (Restart behind a needs-sign-in row) is open */
-  let liveSeq=0; /* review on #609: each load has a number; a reply of an older load that ends later is dropped */
+  let liveSeq=0; /* review on PR 609: each load has a number; a reply of an older load that ends later is dropped */
   let liveStale=false; /* an event came while the list was hidden (Advanced collapsed): reload when it opens */
   function onLiveToggle(e){const d=e.target;if(!d||!d.matches||!d.matches('details.lv-more'))return;if(d.open)liveMore.add(d.dataset.lvk);else liveMore.delete(d.dataset.lvk);}
   async function loadLive(){
@@ -141,8 +141,8 @@
     const noOne=m&&m.o.restart===false&&rp.canRestartSession?`<span class="srv-hint lv-noone">${esc((m.o.appName||'This agent app')+' cannot restart one server; use Restart session with these servers.')}</span>`:'';
     const sessBusy=liveBusy.has(liveKey('',c.id));
     const rsess=rp.canRestartSession&&X.bridge.agentMcpRestartSession&&m?`<button class="btn sm" type="button" data-lvsess="1"${sessBusy?' disabled':''} aria-label="${esc((sessBusy?'Restarting the session of ':'Restart the session of ')+c.name+' with these servers')}">${sessBusy?'Restarting session…':'Restart session with these servers'}</button>`:'';
-    /* review on #609: a server that needs a sign-in is not fixed by a Restart, so the chat (where the sign-in is) is the main action and
-       Restart waits behind More. Sign in itself joins this row when #598 (spec 058 FR-064) lands, reusing its button: no second sign-in. */
+    /* review on PR 609: a server that needs a sign-in is not fixed by a Restart, so the chat (where the sign-in is) is the main action and
+       Restart waits behind More. Sign in itself joins this row when PR 598 (spec 058 FR-064) lands, reusing its button: no second sign-in. */
     const auth=x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth');
     const oc=m?`<button class="btn sm${auth?' primary':''}" type="button" data-lvopen="1" aria-label="${esc('Open the MCP servers of '+c.name+' in its chat')}">Open in chat</button>`:'';
     const acts=auth?(oc+(rs||rsess?`<details class="scr-more lv-more" data-lvk="${esc(k)}"${liveMore.has(k)?' open':''}><summary data-lvmore="1">More</summary><div class="lv-act">${rs}${rsess}</div></details>`:'')):rs+rsess+oc;
@@ -198,7 +198,7 @@
   let liveT=0;
   function liveEvent(){
     if(!cur||cur.kind!=='settings'||!$('liveBox')||liveT)return;
-    const adv=$('advMcp');if(!adv||!adv.open){liveStale=true;return;} /* review on #609: no reload while the list is hidden */
+    const adv=$('advMcp');if(!adv||!adv.open){liveStale=true;return;} /* review on PR 609: no reload while the list is hidden */
     liveT=setTimeout(async()=>{liveT=0;let ch;try{ch=await repaintLive(true);}catch(e){return;}
       if(ch.length&&X.announce)X.announce(ch.slice(0,3).join('. ')+(ch.length>3?' and '+(ch.length-3)+' more':''));},150);
   }
