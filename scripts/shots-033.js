@@ -39,7 +39,7 @@ module.exports = async (ctx) => {
   const state = () => js(`(()=>{
     const pills=Object.fromEntries([...document.querySelectorAll('#stats .stat[data-k]')].map(b=>[b.dataset.k,+b.querySelector('b').textContent]));
     const c={working:0,waiting:0,idle:0,error:0,done:0};
-    [...document.querySelectorAll('#stage .desk[data-id]')].filter(d=>!d.closest('.helpers')).forEach(d=>{const s=([...d.classList].find(x=>x.startsWith('is-')&&x!=='is-away')||'').slice(3);if(s==='thinking'||s==='working')c.working++;else if(s in c)c[s]++;});
+    [...document.querySelectorAll('#stage .desk[data-id]')].filter(d=>!d.closest('.helpers')).forEach(d=>{const s=d.dataset.state||([...d.classList].find(x=>x.startsWith('is-')&&x!=='is-away')||'').slice(3);if(s==='thinking'||s==='working')c.working++;else if(s in c)c[s]++;});
     document.querySelectorAll('#stage .plate').forEach(p=>{/* a closed room still counts: none closed in this driver */});
     const rooms=[...document.querySelectorAll('#stage .room')].map(r=>({name:r.querySelector('.room-name').textContent,floor:(r.querySelector('.floor-tag')||{}).textContent||null,agents:[...r.querySelectorAll('.desk[data-id] .name')].map(n=>n.textContent.trim())}));
     const lobby=[...document.querySelectorAll('.place')].map(p=>p.getAttribute('aria-label')||'').join(' | ');
