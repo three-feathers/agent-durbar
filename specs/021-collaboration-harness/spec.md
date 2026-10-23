@@ -148,9 +148,33 @@ The owner set these rules in the team chat on 2026-10-20 and asked for them, and
 
 - **FR-035** Before any merge, the merging agent reads every review, review thread, line comment and PR comment; a required change in a plain comment counts as *request changes*; nothing is merged while a request, an unresolved thread or an unanswered comment from someone else is open. `scripts/pr-gate.sh <N>` (bash and `gh`, verdict only, never merges) checks it together with the checks, CodeQL and the open alerts on the merge and head refs. `real:` it held #369 on an unanswered comment and passed #390 (2026-10-20). Mirrors: PR template checkbox, `docs/collaboration.md` step 9, `docs/agent-notes.md`.
 
+### 2026-10-22: decisions taken in the team chat (recorded by Paco's agent; wording checked by Vikram's agent)
+
+Numbers start after FR-036 (*test once*, PR #561). This PR does not depend on #561 and can land first or after it; where a rule mentions `taking #N` or `checks run at <sha>` (FR-036), that is the convention #561 records.
+
+- **FR-037** **Record team decisions the same day.** A decision about how the team or its agents work, taken in the team chat, is written the same day as a dated FR in this spec: who decided, a link to the message or PR, and where it applies. If it changes how agents work, it also goes into `AGENTS.md` (and its mirrors). A decision that only lives in the chat or in one agent's memory does not count yet.
+- **FR-038** **Sub-agents by the size of the change** (both agents' sides adopted it 2026-10-22).
+  - Small (a doc, a spec line, one file, no security impact): one sub-agent on a smaller model. It reads CI for the sha, posts `checks run at <sha>`, and runs no extra local suite. The other team's review is the review.
+  - Medium: one implementer that mutation-checks its own fix; a reviewer only for the risks named for that change.
+  - Large or sensitive (secrets, writing user files, IPC, redaction, permissions, spending): the full analyst → implementer → reviewer, on the top model.
+  - The analyst only when there are decisions to make. At most two heavy agents at a time on one machine. The same implementer keeps a PR through its fix rounds. A recurring sweep does a quick check first and starts an agent only if something new arrived.
+- **FR-039** **Land before building** (team-wide since 2026-10-22: Vikram agreed in the chat that the agents set the numbers, and both agents' sides agreed these from what they saw that day: about 20 merges a day at most, reviews as the bottleneck, CI about 15 minutes with the queue, 1-2 heavy agents per machine).
+  - Each side (one human and their agent) keeps **at most 8 open PRs of its own**, fixes and process PRs included. Over that, it only fixes and lands.
+  - **At most 5 of them are new features waiting for a first review** (3 until the owner decision of 2026-10-23 18:02 UTC below). A 6th feature waits, with only its spec PR open; spec-only PRs don't count.
+  - Security fixes and urgent items the owners order may go over the limit, and the PR says so.
+  - The numbers are checked again weekly, or when the queue or CI times change, and a change is recorded here. Features the owners order still get their spec. Owner decision (Vikram, 2026-10-23 17:47 UTC, on #564 and in the team chat): the limit of 8 open PRs and the features-waiting cap bind all three sides (Vikram, Paco, Ruben). Owner decision (Vikram, 2026-10-23 18:02 UTC, relayed in the team chat): the team aims for at least 5 useful features every 8 hours with no drop in quality, a pre-release (never marked latest) goes out from main about every 8 hours, and the features-waiting cap rises from 3 to 5.
+- **FR-040** **Unstack with a replacement PR.** A stacked PR whose own change does not depend on the PRs below it is rebuilt off main as a new branch and a new PR (as #533, merge commit `4fc7e508`, replaced #516; #533's description says "Replaces #516"). The new PR closes the old one with a link and refers to its review history. Never force-push, rename an open PR's branch or use a stack tool's "unstack" just to get past a refused merge.
+- **FR-041** **Using the merge queue** (the `main protection` ruleset has a merge queue rule, read from the repository rulesets on 2026-10-23; #507, merge commit `d028b3ca`, made the CI run for it on 2026-10-22).
+  - Approve, then `gh pr merge <N> --auto --match-head-commit <sha>`; the queue runs the required checks and merges. `--delete-branch` does not work with the queue, so delete the branch and worktree by hand after the merge.
+  - `gh pr view` shows a queued PR as `autoMergeRequest: null`; check `isInMergeQueue` and `mergeQueueEntry` with the GraphQL API instead.
+  - **`gh stack merge <N>` also merges every lower member of that stack** (Vikram's agent, 2026-10-22: landing #503 also merged #462, #463, #497 and #498, whose latest heads had only dismissed approvals). Before you use it, check that each lower member has a valid approval at its current head; otherwise merge the PRs one by one through the queue.
+  - When an approval was dismissed only by a base move or a merge of main, and the PR's own patch-id is unchanged, re-approving (or an admin merge with a PR comment) is a formality (FR-032).
+- **FR-042** **One combined review list per round.** Each review round gets one message in the team chat, in landing order, instead of many separate nudges. Agents answer `taking #N, #M` before they review (FR-036).
+- **FR-043** **Review teammates' PRs first.** Their approvals are what unblock ours, so a teammate's PR waiting for review comes before starting new work.
+
 ### 2026-10-22: reference agent setup in the repo (agreed in the team chat; Vikram's agent adds theirs next to it)
 
-Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564), which land first.
+Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564).
 
 - **FR-044** `docs/agent-setup/` holds the setup the team recommends, so a new teammate or a rebuilt machine starts from the same base: the three sub-agents, templates for the global rules and for `CLAUDE.local.md`, the periodic review `/loop` with its conventions (`taking #N`, `reviewing at <sha>`, `checks run at <sha>`, quick check before an agent, no DMs in quiet hours), and an always-on VPS guide with example files. It is templates only: no tokens, chat or account IDs, emails, host names, IPs or private-network names; personal files stay local and git-ignored; a config backup repo must be private and scanned for secrets. Each teammate may add their own setup in a sibling folder. Linked from `docs/collaboration.md` and `AGENTS.md`. `[IMPLEMENTED]` `read:` links checked by `test:site`; the guide itself was not run on a fresh machine `[KNOWN GAP]`.
 
