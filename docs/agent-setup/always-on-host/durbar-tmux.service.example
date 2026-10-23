@@ -1,0 +1,15 @@
+[Unit]
+Description=tmux session "durbar" with Claude Code
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# %h is the home directory (systemd's own specifier; do not use $HOME in ExecStart).
+ExecStart=/bin/sh -c 'tmux has-session -t durbar 2>/dev/null || tmux new-session -d -s durbar -c %h/<workspace>/agent-durbar "bash -lc \"%h/bin/durbar-session; exec bash\""'
+ExecStop=/usr/bin/tmux kill-session -t durbar
+# No sandbox lines here: this unit starts the coordinator session, which needs your home and the network.
+
+[Install]
+WantedBy=default.target

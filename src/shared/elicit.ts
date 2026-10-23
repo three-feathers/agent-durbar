@@ -157,6 +157,7 @@ export function elicitHttpsUrl(u: unknown): { url: string; host: string } | unde
   try {
     const p = new URL(u);
     if (p.protocol !== 'https:' || !p.hostname || p.username || p.password) return undefined;
+    if (p.href.length > 2048) return undefined; // normalising (percent-encoding, punycode) can make it longer than the input: the stored form is capped too
     return { url: p.href, host: p.hostname };
   } catch {
     return undefined;

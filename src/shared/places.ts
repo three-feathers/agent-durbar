@@ -29,7 +29,7 @@ export const MAX_PLACE_NAME = 24;
 export const CUSTOM_ICON_IDS = ['star', 'flask', 'database', 'cloud', 'chart', 'chat', 'mail', 'calendar', 'shield', 'box', 'bolt', 'pin'] as const;
 export type CustomIconId = (typeof CUSTOM_ICON_IDS)[number];
 /** Names a custom place cannot take (compared ignoring case): the built-in places, *Stay at desk* and *Default*. */
-export const RESERVED_PLACE_NAMES = ['Library', 'Software library', 'Terminal', 'Web', 'Other tools', 'Stay at desk', 'Default'] as const;
+export const RESERVED_PLACE_NAMES = ['Library', 'Software library', 'Terminal', 'Web', 'Other tools', 'Stay at desk', 'Default', 'Coffee corner', 'Boss', 'Bank', 'Postbox'] as const;
 export const CUSTOM_ID_PATTERN = /^c-[a-z0-9]{6}$/;
 export interface CustomPlace {
   id: CustomPlaceId;
@@ -61,7 +61,20 @@ function nameTaken(name: string, list: readonly CustomPlace[], exceptId?: string
   return RESERVED_PLACE_NAMES.some((r) => fold(r) === f) || list.some((p) => p.id !== exceptId && fold(p.name) === f);
 }
 
-/** Tolerant read of a saved list (spec 024 FR-018): keeps the first 3 valid entries; drops invalid ids and names, repeated ids and names; an unknown icon becomes `pin`. Never throws. */
+/**
+ * A free name for a saved place whose name is reserved or already used (ignoring case): `name (2)`, `name (3)`, ... with the base cut so the
+ * whole stays within 24 code points. Reading a saved list never drops a place for its name (spec 024 FR-018, 2026-10-22): names became
+ * reserved after users could save them ("Coffee corner", "Boss", "Bank", "Postbox"), and dropping the place would also orphan its mappings.
+ */
+function freeSavedName(name: string, list: readonly CustomPlace[]): string {
+  for (let n = 2; ; n++) {
+    const suffix = ` (${n})`;
+    const c = [...name].slice(0, MAX_PLACE_NAME - suffix.length).join('').trimEnd() + suffix;
+    if (!nameTaken(c, list)) return c;
+  }
+}
+
+/** Tolerant read of a saved list (spec 024 FR-018): keeps the first 3 valid entries; drops invalid ids and names and repeated ids; renames a reserved or repeated name (`freeSavedName`); an unknown icon becomes `pin`. Never throws. */
 export function parseCustomPlaces(v: unknown): CustomPlace[] {
   const out: CustomPlace[] = [];
   if (!Array.isArray(v)) return out;
@@ -71,8 +84,8 @@ export function parseCustomPlaces(v: unknown): CustomPlace[] {
     const { id, name, icon } = e as { id?: unknown; name?: unknown; icon?: unknown };
     if (typeof id !== 'string' || !CUSTOM_ID_PATTERN.test(id) || out.some((p) => p.id === id)) continue;
     const nm = cleanPlaceName(name);
-    if (!nm.ok || nameTaken(nm.name, out)) continue;
-    out.push({ id: id as CustomPlaceId, name: nm.name, icon: isIcon(icon) ? icon : 'pin' });
+    if (!nm.ok) continue;
+    out.push({ id: id as CustomPlaceId, name: nameTaken(nm.name, out) ? freeSavedName(nm.name, out) : nm.name, icon: isIcon(icon) ? icon : 'pin' });
   }
   return out;
 }

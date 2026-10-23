@@ -11,6 +11,9 @@ import type { AdapterInfo } from '../../shared/adapters';
 import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind, runRequest, simManagers } from '../../shared/harnesssetup';
 import type { DevEnv } from '../devhooks';
 import { HarnessSetup, confirmText, posixTrusted } from '../harnesssetup';
+import { simulatorOn } from '../simguard';
+import { accountCheck, createAccountCache } from '../accounts';
+import { copilotDir, copilotServerNames } from '../mcpfiles';
 import type { createRemoteOps } from '../remoteops';
 
 export interface HarnessIpcDeps {
@@ -29,6 +32,12 @@ export function register(deps: HarnessIpcDeps): void {
   /* Spec 051: harness setup inside the app. One fixed install, update or sign-in at a time (argv, no shell); progress and the end go to
      the window; detection runs again when it ends. Nothing of the output is logged. */
   const sysExe = (name: string): string => path.win32.join(process.env.SystemRoot && path.win32.isAbsolute(process.env.SystemRoot) ? process.env.SystemRoot : 'C:\\Windows', 'System32', name);
+  /* Spec 051 FR-014, FR-015: the account each app reports, cached for the run; sent only to the window, never logged. None under
+     the simulator (spec 010 FR-030): its page answers a fake identity itself. */
+  const accounts = createAccountCache({
+    list: () => adaptersList(false),
+    check: accountCheck({ simulator: simulatorOn(dev), has: (id) => registry.has(id), instance: (id) => router.instance(id), copilotServers: () => copilotServerNames(copilotDir(dev)) }),
+  });
   const harnessSetup = new HarnessSetup({
     detectEnv: nodeDetectEnv(),
     spawn: (file, args, opts) => spawn(file, args as string[], opts),
@@ -47,6 +56,7 @@ export function register(deps: HarnessIpcDeps): void {
     redetect: async () => { await adaptersList(true); },
     // spec 012 FR-158: only an adapter already created is refreshed (none is created here); Copilot restarts its shared client
     afterSignIn: async (kind: string) => {
+      accounts.forget(kind); // spec 051 FR-014: the account line is asked again after a sign-in
       const ad = router.created().find((x) => x.id === kind);
       if (!ad?.refreshAuth) return;
       // spec 012 FR-158 / 054 FR-011: a reconnected session is not remote any more; say so instead of keeping a stale Remote chip
@@ -61,7 +71,7 @@ export function register(deps: HarnessIpcDeps): void {
   // spec 060 FR-002: under the simulator the routes are the real ones for this OS, with a typical new machine's package managers
   // spec 060 FR-011: DURBAR_SIM_PLATFORM=win32|darwin|linux shows another OS's routes and commands in the simulator (screenshots)
   const simOs = (): NodeJS.Platform => (['win32', 'darwin', 'linux'].includes(dev.DURBAR_SIM_PLATFORM ?? '') ? dev.DURBAR_SIM_PLATFORM as NodeJS.Platform : process.platform);
-  ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? (dev.DURBAR_SIM ? harnessSetup.plans(kind, op, simManagers(simOs(), dev.DURBAR_SIM_MANAGERS), simOs()) : harnessSetup.plans(kind, op)) : { plans: [], page: '', name: '', manual: [] }));
+  ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? (simulatorOn(dev) ? harnessSetup.plans(kind, op, simManagers(simOs(), dev.DURBAR_SIM_MANAGERS), simOs()) : harnessSetup.plans(kind, op)) : { plans: [], page: '', name: '', manual: [] }));
   ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
     // spec 060 FR-012: the window sends only an index into main's fixed table; anything else is refused, never read as "the first"
     const req = fromApp(e) ? runRequest(kind, op, planIndex) : undefined;
@@ -95,6 +105,8 @@ export function register(deps: HarnessIpcDeps): void {
     await shell.openExternal(new URL(url).href);
     return { ok: true };
   });
+  // FR-022: `true` = Settings opened (cached once-per-run facts kept); 'check' = Check again or a finished sign-in (asked anew)
+  ipcHandle('harness:accounts', async (e, refresh: unknown) => (fromApp(e) ? accounts.get(refresh === true || refresh === 'check', refresh === 'check') : {}));
   ipcHandle('harness:copilotAuth', async (e) => {
     if (!fromApp(e)) return { known: false };
     const pw = harnessSetup.pwshMissing() ? { pwshMissing: true } : {}; // spec 052 FR-073: Windows only, a file check, no process

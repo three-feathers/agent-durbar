@@ -70,10 +70,131 @@ const css = fs.readFileSync(path.join(R, 'styles.css'), 'utf8').split(/\r?\n/);
 for (const p of ['w', 'min', 'cols']) {
   assert.ok(css.some((l) => new RegExp(`@property --${p}\\{syntax:"\\*";inherits:false\\}`).test(l)), `--${p} is registered as not inherited`);
   const users = css.filter((l) => new RegExp(`var\\(--${p}[,)]`).test(l));
-  for (const l of users) assert.ok(/^\.room\{|\.units\{/.test(l.trim()) || /^\.stage:not\(\[data-d="full"\]\) \.units\{/.test(l.trim()), `--${p} read only by .room / .units: ${l.slice(0, 80)}`);
+  for (const l of users) assert.ok(/^\.room\{|\.units\{/.test(l.trim()) || /^\.stage:not\(\[data-d="full"\]\) \.units(-in)?\{/.test(l.trim()), `--${p} read only by .room / .units / .units-in (spec 001 FR-053: the desk grid beside squeezed desks carries its own --cols): ${l.slice(0, 80)}`);
 }
 for (const f of fs.readdirSync(R).filter((x) => /\.(css|js)$/.test(x) && x !== 'styles.css')) {
   const s = fs.readFileSync(path.join(R, f), 'utf8');
   assert.ok(!/var\(--(w|min|cols)[,)]/.test(s), `${f} must not read --w, --min or --cols (they do not inherit)`);
+}
+
+// ---- spec 001 FR-041, FR-042, FR-046: grown desks. Which trials run and which result wins (pure); the real fit is measured in the page ----
+type Res = { c: number; f: number; h: number } | null;
+const G = require(path.join(R, 'probe.js')) as {
+  GROW: { MIN: number; MAX: number; STEP: number; TWO_LINES: number };
+  largest: (fits: (f: number) => boolean, lo: number, hi: number, step?: number) => number | null;
+  better: (a: Res, b: Res) => boolean;
+  pick: (cols: number[], lo: number, trial: (c: number, f: number) => { fits: boolean; h: number }) => Res;
+};
+assert.deepStrictEqual([G.GROW.MIN, G.GROW.MAX, G.GROW.STEP], [1, 2.5, 0.1], 'grows from 1.0 to 2.5 in 0.1 steps (owner: up to about 2.5x)');
+{
+  // largest: the largest step that fits, on the grid; null when even the smallest does not; never above the cap
+  let calls = 0;
+  const upTo = (lim: number) => (f: number) => { calls++; return f <= lim + 1e-9; };
+  assert.strictEqual(G.largest(upTo(1.73), 1.1, 2.5), 1.7);
+  assert.strictEqual(G.largest(upTo(9), 1.1, 2.5), 2.5, 'capped at 2.5');
+  assert.strictEqual(G.largest(upTo(1.1), 1.1, 2.5), 1.1);
+  assert.strictEqual(G.largest(upTo(1.05), 1.1, 2.5), null, 'does not fit one step up: no growth');
+  for (let lim = 1.1; lim <= 2.5; lim += 0.1) assert.strictEqual(G.largest(upTo(lim), 1.1, 2.5), Math.round(lim * 10) / 10, `limit ${lim.toFixed(1)}`);
+  calls = 0; G.largest(upTo(1.84), 1.1, 2.5); assert.ok(calls <= 6, `binary search: ${calls} trials for 15 steps`);
+  // every f it tries is on the 0.1 grid (no 1.7000000000000002)
+  const seen: number[] = []; G.largest((f) => { seen.push(f); return f <= 2; }, 1.1, 2.5);
+  assert.ok(seen.every((f) => Math.abs(f * 10 - Math.round(f * 10)) < 1e-9 && String(f).length <= 3), `steps on the grid: ${seen.join(', ')}`);
+}
+{
+  // better: larger f; same f: fills more height (4 px tolerance); then fewer columns
+  assert.ok(G.better({ c: 1, f: 2, h: 100 }, { c: 3, f: 1.9, h: 800 }), 'larger f wins');
+  assert.ok(G.better({ c: 3, f: 2, h: 700 }, { c: 2, f: 2, h: 600 }), 'same f: more height filled');
+  assert.ok(G.better({ c: 2, f: 2, h: 600 }, { c: 3, f: 2, h: 602 }), 'same f, same height: fewer columns');
+  assert.ok(!G.better(null, { c: 1, f: 1.1, h: 1 }) && G.better({ c: 1, f: 1.1, h: 1 }, null), 'anything beats nothing');
+}
+// A simple box model of the office (not the app's layout: a test double for the probe). Rooms are flex items of basis
+// cols*262+(cols-1)*10+32 px, packed into rows; a room is 40 px of header plus rows of (92*f + 12) px desks; a 40 px lobby; 12 px gaps.
+// A desk column is at most 400*f px wide (so wider rooms do not help).
+function model(aw: number, ah: number, rooms: number[]) {
+  return (c: number, f: number) => {
+    const rs = rooms.map((n) => { const cols = Math.min(n, c); return { w: cols * 262 + (cols - 1) * 10 + 32, h: 40 + Math.ceil(n / cols) * (92 * f + 12) + 20 }; });
+    if (rs.some((r) => r.w > aw)) return { fits: false, h: 1e9 };
+    let total = 40, rowW = 0, rowH = 0;
+    for (const r of rs) { if (rowW && rowW + 12 + r.w > aw) { total += rowH + 12; rowW = 0; rowH = 0; } rowW += (rowW ? 12 : 0) + r.w; rowH = Math.max(rowH, r.h); }
+    total += rowH;
+    return { fits: total <= ah, h: total };
+  };
+}
+const split = (n: number, k: number) => { const out = Array(k).fill(0); for (let i = 0; i < n; i++) out[Math.min(k - 1, Math.floor((i * k) / n))]++; return out.filter((x) => x > 0); };
+for (const [w, h] of [[1280, 800], [1440, 900], [1920, 1080]]) {
+  const aw = w - 32, ah = h - 100;
+  for (const k of [1, 2, 3]) {
+    let prev = Infinity;
+    for (const n of [1, 2, 4, 6, 10, 15]) {
+      if (n < k) continue;
+      const rooms = split(n, k), maxCap = Math.max(1, Math.min(Math.max(...rooms), Math.floor((aw - 32 + 10) / 272)));
+      const cols: number[] = []; for (let c = maxCap; c >= 1; c--) cols.push(c);
+      const r = G.pick(cols, 1.1, model(aw, ah, rooms));
+      const f = r ? r.f : 1;
+      assert.ok(f <= prev + 1e-9, `${w}x${h}, ${k} folders: f grew from ${prev} to ${f} at ${n} agents`);
+      assert.ok(f >= 1 && f <= 2.5, `${w}x${h} ${n}/${k}: f ${f} in range`);
+      if (r) { assert.ok(model(aw, ah, rooms)(r.c, r.f).fits, `${w}x${h} ${n}/${k}: the pick fits`); assert.ok(!model(aw, ah, rooms)(r.c, Math.round((r.f + 0.1) * 10) / 10).fits || r.f === 2.5, `${w}x${h} ${n}/${k}: one step larger does not fit (the largest)`); }
+      if (n <= 2) assert.strictEqual(f, 2.5, `${w}x${h}: ${n} agents in ${k} folders grow to the cap`);
+      prev = f;
+    }
+  }
+}
+// the app: the grow search runs after the candidates, only after `full` or `roomy`, never with a forced density; the probe is reset
+{
+  const cl2 = app.slice(app.indexOf('function chooseLayout('), app.indexOf('let layoutKey='));
+  assert.ok(/if\(res&&res\.fit&&!FORCE_DENSITY&&\(res\.d==='full'\|\|res\.d==='roomy'\)\)\{\s*const g=growSearch\(sizing,aw,ah,openOnly,GR\.MIN\+GR\.STEP\);/.test(cl2), 'grow only after full or roomy, one step up at least');
+  assert.ok(cl2.indexOf('growSearch(sizing') > cl2.indexOf('for(const [d,hcap,side] of cands)') && cl2.indexOf('growSearch(sizing') < cl2.indexOf('Leftover floor space'), 'after the candidates, before the helper boost');
+  assert.ok(/probe\.innerHTML='';\s*probePrev=null;\s*LIVE_SIDE=false;\s*GROW=0;\s*setGrow\(probe,0\);/.test(cl2), 'the probe drops the grow factor with its content');
+  const gs = app.slice(app.indexOf('function growSearch('), app.indexOf('let layoutKey='));
+  assert.ok(/window\.DurbarProbe\.pick\(cols,lo,/.test(gs) && /probeSet\(probe,stageHTML\(sizing,'roomy',aw,c\)\)/.test(gs), 'growSearch uses pick and probeSet');
+  assert.ok(/GROW=0; setGrow\(probe,0\);\s*return best;/.test(gs), 'growSearch resets the probe');
+  // review of #532: a grown render leaves GROW on; each search starts with it off, before any candidate is probed
+  const cl = app.slice(app.indexOf('function chooseLayout('), app.indexOf('function growSearch('));
+  const reset = cl.indexOf('GROW=0; setGrow(probe,0);');
+  assert.ok(reset > 0 && reset < cl.indexOf('for(const [d,hcap,side] of cands)') && reset < cl.indexOf('probe.innerHTML=svgHollow'), 'chooseLayout starts with GROW off');
+  // styles: the grown rules exist and keep text sizes (no font-size in them)
+  const grown = css.filter((l) => l.includes('[data-grow'));
+  assert.ok(grown.length >= 5, 'grown desk rules');
+  assert.ok(grown.every((l) => !/font-size/.test(l)), 'grown desks keep the text sizes');
+  assert.ok(grown.some((l) => /height:calc\(var\(--ch\) \* var\(--gf,1\)\)/.test(l)), 'the card height scales with --gf');
+}
+// ---- spec 001 FR-047, FR-048 (owner 2026-10-22): columns on a wide grown desk. More information, never longer lines ----
+{
+  type Cols = { n: number; main: number; reply: number; side: number };
+  const P = require(path.join(R, 'probe.js')) as { GCOL: { GAP: number; MAIN: number[]; MAIN3: number[]; REPLY: number[]; SIDE: number[] }; grownCols: (room: number, o?: { reply?: boolean }) => Cols };
+  const C = P.GCOL;
+  assert.ok(C.MAIN[1] <= 450 && C.REPLY[1] <= 420 && C.SIDE[1] <= 320 && C.MAIN[0] + C.SIDE[0] + C.GAP - 1 <= 460, 'the measure: main <= 450 px (also a single column, below the two-column threshold, stays under 460 px), reply <= 420 px, facts <= 320 px (about 80-85 characters at 11.5-12 px)');
+  const two = C.MAIN[0] + C.SIDE[0] + C.GAP, three = C.MAIN3[0] + C.REPLY[0] + C.SIDE[0] + 2 * C.GAP;
+  // thresholds: one column below `two`, two from it, three from `three` (only with a reply to show)
+  assert.deepStrictEqual(P.grownCols(two - 1, { reply: true }), { n: 1, main: two - 1, reply: 0, side: 0 }, 'narrow: the single-column grown desk');
+  assert.strictEqual(P.grownCols(two, {}).n, 2, 'two columns from the threshold');
+  assert.strictEqual(P.grownCols(three - 1, { reply: true }).n, 2, 'just under three: two');
+  assert.strictEqual(P.grownCols(three, { reply: true }).n, 3, 'three columns with a reply');
+  assert.strictEqual(P.grownCols(5000, {}).n, 2, 'no reply to show: never a reply column');
+  assert.strictEqual(P.grownCols(5000).n, 2, 'no options: no reply column');
+  assert.deepStrictEqual(P.grownCols(5000, { reply: true }), { n: 3, main: C.MAIN[1], reply: C.REPLY[1], side: C.SIDE[1] }, 'very wide: every column at its measure, the rest stays outside the desk');
+  assert.deepStrictEqual(P.grownCols(0, { reply: true }), { n: 1, main: 0, reply: 0, side: 0 }, 'nothing');
+  assert.deepStrictEqual(P.grownCols(NaN as unknown as number), { n: 1, main: 0, reply: 0, side: 0 }, 'not a number');
+  // every width: the columns fit the room, stay within their measure, and the count never drops as the room grows
+  for (const reply of [false, true]) {
+    let prevN = 1;
+    for (let w = 200; w <= 2400; w += 7) {
+      const c = P.grownCols(w, { reply });
+      const used = c.main + (c.n > 1 ? C.GAP + c.side : 0) + (c.n === 3 ? C.GAP + c.reply : 0);
+      assert.ok(used <= w, `${w}${reply ? ' reply' : ''}: ${used} px used`);
+      assert.ok(c.n >= prevN, `${w}${reply ? ' reply' : ''}: ${c.n} columns after ${prevN}`);
+      if (c.n > 1) {
+        assert.ok(c.main >= C.MAIN[0] && c.main <= C.MAIN[1], `${w}: main ${c.main}`);
+        assert.ok(c.side >= C.SIDE[0] && c.side <= (c.n === 2 && reply ? C.REPLY[1] : C.SIDE[1]), `${w}: side ${c.side}`);
+      }
+      if (c.n === 3) assert.ok(c.reply >= C.REPLY[0] && c.reply <= C.REPLY[1] && c.main >= C.MAIN3[0], `${w}: reply ${c.reply}, main ${c.main}`);
+      prevN = c.n;
+    }
+  }
+  // the page: the render pass uses it on grown cards, and the probe never shows the side (the height does not depend on it)
+  assert.ok(/function setGrownCols\(card\)\{[\s\S]*?window\.DurbarProbe\.grownCols\(room,\{reply:gx\.dataset\.rep==='1'\}\)/.test(app), 'setGrownCols uses grownCols');
+  assert.ok(/if\(layout\.grow\)\{stage\.querySelectorAll\('\.desk\.card'\)\.forEach\(setGrownCols\);stage\.querySelectorAll\('\.desk\.card \.intent'\)\.forEach\(fitLines\);/.test(app), 'columns before the whole-line fit, only when grown');
+  assert.ok(css.some((l) => /^\.desk\.card \.gx\{display:none\}/.test(l)), 'the side is hidden without data-gc (and in the probe)');
+  assert.ok(css.filter((l) => /\.gx|gx-/.test(l)).every((l) => !/font-size:(\d+(\.\d+)?)px/.test(l) || parseFloat(/font-size:(\d+(\.\d+)?)px/.exec(l)![1]) >= 10.5), 'side text at least 10.5 px');
 }
 console.log('test-probe: ok');

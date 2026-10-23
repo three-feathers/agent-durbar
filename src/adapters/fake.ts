@@ -8,15 +8,16 @@
 import type { AdapterCapabilities } from './capabilities';
 import type { HandoffResult } from './handoff';
 import type { EventBody } from './map';
-import { PermissionBroker, startModeOf } from './permissions';
+import { PermissionBroker, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
-import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction, McpSignInResult, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
+import { normMcpTools } from './mcptools';
+import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction, McpSignInResult, McpToolInfo, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
 import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
-  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer'
-  | 'startMcpSignIn' | 'cancelMcpSignIn';
+  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer' | 'listMcpTools'
+  | 'startMcpSignIn' | 'cancelMcpSignIn' | 'refreshMcpStatus';
 
 export type Step =
   | { output: string }
@@ -52,6 +53,8 @@ const DEFAULT_CAPS: AdapterCapabilities = {
   mcpStatus: true,
   mcpToggle: true,
   mcpRestart: true,
+  mcpTools: true,
+  mcpToolFilter: true,
   handoff: true,
   oneShot: true,
 };
@@ -83,6 +86,10 @@ export class FakeAdapter implements AgentAdapter {
   readonly restartCalls: Array<{ sessionId: string; name: string }> = [];
   /** Spec 058: when set, `restartMcpServer` rejects with this message. */
   failRestart?: string;
+  declare listMcpTools?: (sessionId: string, name: string) => Promise<McpToolInfo[]>;
+  /** Spec 069: what `listMcpTools` answers per server name (raw, as an agent app would send it), or a rejection text. */
+  toolsByServer: Record<string, unknown> = {};
+  failTools?: string;
   declare setModel?: (sessionId: string, request: ModelSwitchRequest) => Promise<ModelSwitchResult>;
   declare cancelQueuedModel?: (sessionId: string, queueId: string) => Promise<void>;
   declare compact?: (sessionId: string, focus?: string) => Promise<CompactResult>;
@@ -92,10 +99,17 @@ export class FakeAdapter implements AgentAdapter {
   declare handoffSummary?: (sessionId: string) => Promise<HandoffResult>;
   declare generateText?: (prompt: string) => Promise<{ text: string; costUsd?: number }>;
   declare renameSession?: (sessionId: string, name: string) => Promise<void>;
-  declare startMcpSignIn?: (sessionId: string, name: string) => Promise<McpSignInResult>;
+  declare startMcpSignIn?: (sessionId: string, name: string, opts?: { again?: boolean }) => Promise<McpSignInResult>;
   declare cancelMcpSignIn?: (sessionId: string, name: string) => Promise<void>;
+  declare refreshMcpStatus?: (sessionId: string) => Promise<void>;
+  /** Spec 058: how many `refreshMcpStatus` calls were made, and when (call number N) the named server is reported connected (a test of the poll). */
+  refreshCalls = 0;
+  connectOnRefresh?: { name: string; at: number };
+  /** Test hook: a refresh that takes this long (ms) or never settles (`Infinity`), to see that calls never overlap. */
+  refreshDelay?: number;
+  refreshFail?: string;
   /** Spec 058: every `startMcpSignIn` / `cancelMcpSignIn` call, in order (test log; no browser is opened). */
-  readonly signInCalls: Array<{ sessionId: string; name: string; cancel?: true }> = [];
+  readonly signInCalls: Array<{ sessionId: string; name: string; cancel?: true; again?: true }> = [];
   /** Spec 058: what the next `startMcpSignIn` resolves with. */
   signInResult: McpSignInResult = { kind: 'browser', url: 'https://auth.example.test/authorize' };
   declare deleteSession?: (sessionId: string) => Promise<void>;
@@ -131,6 +145,7 @@ export class FakeAdapter implements AgentAdapter {
       caps: c.caps && !omit.has('setCap') && !omit.has('resolveLimit'),
       mcpToggle: c.mcpToggle && !omit.has('setMcpEnabled'),
       mcpRestart: !!c.mcpRestart && !omit.has('restartMcpServer'),
+      mcpTools: !!c.mcpTools && !omit.has('listMcpTools'),
       handoff: !!c.handoff && !omit.has('handoffSummary'),
       oneShot: !!c.oneShot && !omit.has('generateText'),
       mcpSignIn: !!c.mcpSignIn && !omit.has('startMcpSignIn'),
@@ -165,12 +180,31 @@ export class FakeAdapter implements AgentAdapter {
         this.emit(sid, { type: 'mcp', servers: [{ name, status: 'connected' }] });
       };
     }
+    if (caps.mcpTools) {
+      this.listMcpTools = async (sid, name) => {
+        if (!this.sessions.has(sid)) throw new Error('This session is not running. Send a message to start it.');
+        if (this.failTools !== undefined) throw new Error(this.failTools);
+        if (!(name in this.toolsByServer)) throw new Error(`${name} is not running in this session.`);
+        return normMcpTools(this.toolsByServer[name]);
+      };
+    }
     if (caps.mcpSignIn) {
       if (has('startMcpSignIn')) {
-        this.startMcpSignIn = async (sid, name) => {
+        this.startMcpSignIn = async (sid, name, opts) => {
           this.mustGet(sid);
-          this.signInCalls.push({ sessionId: sid, name });
+          this.signInCalls.push({ sessionId: sid, name, ...(opts?.again === true ? { again: true } : {}) });
           return this.signInResult;
+        };
+      }
+      if (has('refreshMcpStatus')) {
+        this.refreshMcpStatus = async (sid) => {
+          this.mustGet(sid);
+          this.refreshCalls++;
+          if (this.refreshDelay === Infinity) return new Promise<void>(() => undefined);
+          if (this.refreshDelay) await new Promise((r) => setTimeout(r, this.refreshDelay));
+          if (this.refreshFail) throw new Error(this.refreshFail);
+          const c = this.connectOnRefresh;
+          if (c && this.refreshCalls >= c.at) this.emit(sid, { type: 'mcp', servers: [{ name: c.name, status: 'connected' }] });
         };
       }
       if (has('cancelMcpSignIn')) {
@@ -216,9 +250,11 @@ export class FakeAdapter implements AgentAdapter {
     const mode = startModeOf(options);
     if (!this.capabilities.permissionModes.includes(mode)) throw new Error(`The ${this.displayName} adapter does not support the ${mode} permission mode.`);
     const sid = options.resumeSessionId ?? options.sessionId ?? `fake-${++this.counter}`;
+    const blocked = mcpToolBlockList(options.disabledMcpTools); // spec 069 FR-063
     const broker = new PermissionBroker({
       roots: [options.workspace],
       mode,
+      blockedTools: () => blocked,
       emit: (e: BrokerEvent) => {
         switch (e.type) {
           case 'pending':

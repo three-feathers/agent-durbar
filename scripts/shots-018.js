@@ -49,7 +49,7 @@ module.exports = async (ctx) => {
   const optionsOf = (id) => js(`[...document.getElementById(${jsLiteral(`${id}`)}).options].map(o=>o.value)`);
   const setSel = (id, v) => js(`(()=>{const s=document.getElementById(${jsLiteral(id)});s.value=${jsLiteral(v)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
   /* buttons with a handler: an onclick property, a data-* action, or the ones the page wires through a delegated listener on the document */
-  const DELEGATED = ['agentChip', 'modeChip', 'modelChip', 'compactBtn', 'ctxChip', 'capChip']; // document-level click handlers in app.js
+  const DELEGATED = ['agentChip', 'modeChip', 'modelChip', 'compactBtn', 'ctxChip', 'capChip', 'mcpBtn']; // document-level click handlers in app.js
   const deadButtons = (root) => js(`(()=>{const D=${jsLiteral(DELEGATED)};return [...document.querySelectorAll(${jsLiteral(`${root} button`)})].filter(b=>!b.disabled&&!b.hidden&&b.getClientRects().length)
     .filter(b=>typeof b.onclick!=='function'&&!Object.keys(b.dataset).length&&!D.includes(b.id)).map(b=>(b.id||b.className||b.textContent).toString().slice(0,40))})()`);
 

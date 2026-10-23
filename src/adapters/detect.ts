@@ -250,8 +250,8 @@ function execFound(found: string, args: readonly string[], env: DetectEnv, exec:
 export const CLAUDE_SIGN_IN_HINT = 'Sign in first: open Settings > Agent apps and choose Sign in… (or run `claude auth login`).';
 
 /**
- * Claude Code (spec 012 FR-132): the version probe, then `claude auth status --json` (no prompt, nothing billed). Only `loggedIn`
- * is read; the email, organisation and plan in that output are never kept. Not signed in = `not-signed-in`; anything unclear
+ * Claude Code (spec 012 FR-132): the version probe, then `claude auth status --json` (no prompt, nothing billed). Detection reads
+ * only `loggedIn`; the email and plan are shown only through `accountInfo` (spec 051 FR-011), never kept here. Not signed in = `not-signed-in`; anything unclear
  * (an older CLI, a timeout, not JSON) keeps `ready` as before.
  */
 export async function detectClaude(env: DetectEnv, exec: Exec, configuredPath?: string): Promise<DetectResult & { path?: string }> {
@@ -264,20 +264,29 @@ export async function detectClaude(env: DetectEnv, exec: Exec, configuredPath?: 
 }
 
 /**
- * `claude auth status --json` of a found `claude` (local, no prompt, nothing billed): its `loggedIn`, or undefined when unclear
- * (an older CLI, a timeout, not JSON). Nothing else of the output (email, organisation, plan) is read or kept. Spec 012 FR-132, FR-156.
+ * `claude auth status --json` of a found `claude` (local, no prompt, nothing billed), parsed; undefined when unclear (an older CLI,
+ * a timeout, not JSON). Spec 051 FR-011: the caller maps only the fields it shows; the answer is never logged or kept on disk.
  */
-export async function claudeLoggedIn(found: string, env: DetectEnv, exec: Exec): Promise<boolean | undefined> {
+export async function claudeAuthStatus(found: string, env: DetectEnv, exec: Exec): Promise<Record<string, unknown> | undefined> {
   try {
     const a = await execFound(found, ['auth', 'status', '--json'], env, exec);
     if (a && !a.timedOut && !a.errorCode && a.stdout) {
-      const loggedIn = (JSON.parse(a.stdout) as { loggedIn?: unknown } | null)?.loggedIn;
-      if (typeof loggedIn === 'boolean') return loggedIn;
+      const j = JSON.parse(a.stdout) as unknown;
+      if (j && typeof j === 'object' && !Array.isArray(j)) return j as Record<string, unknown>;
     }
   } catch {
     /* unclear */
   }
   return undefined;
+}
+
+/**
+ * The `loggedIn` of `claude auth status --json`, or undefined when unclear. Detection reads nothing else of it (spec 012 FR-132,
+ * FR-156); the account line uses `claudeAuthStatus` itself (spec 051 FR-011).
+ */
+export async function claudeLoggedIn(found: string, env: DetectEnv, exec: Exec): Promise<boolean | undefined> {
+  const loggedIn = (await claudeAuthStatus(found, env, exec))?.loggedIn;
+  return typeof loggedIn === 'boolean' ? loggedIn : undefined;
 }
 
 export const CODEX_SIGN_IN_HINT = 'Sign in first: open Settings > Agent apps and choose Sign in… (or run `codex login`).';

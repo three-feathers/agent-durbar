@@ -34,11 +34,13 @@ small PR-sized step with its own test. No task spends AI credits except Phase 6,
   (`McpStore.forSession`); test that no secret reaches the reply [FR-005, SC-002] (done 2026-10-21, #349: the reply is built by
   `agentMcpReply` in `src/main/mcpsession.ts`; the test is in `scripts/test-mcp-session.ts`)
 - [ ] T022 [P] [US2] Copilot mapper: `errorClassification` (known values only) -> `errorClass`, `session.mcp_server_needs_reconnect` ->
-  `needsRestart`; mapper test [FR-011]
+  `needsRestart`; mapper test [FR-011] (note 2026-10-23: the `errorClassification` part is built with T144 for issue #603,
+  `copilotErrorClass`; `needs_reconnect` -> `needsRestart` is still open)
 - [x] T023 [P] [US2] Codex: `failureReason: reauthenticationRequired` and `authStatus: notLoggedIn` -> `errorClass: 'auth'`; test in
   `test-codex-adapter` [FR-011] (note 2026-10-21: done as part of T095 for #364; tick both there)
   [IMPLEMENTED] with T095 below
-- [ ] T024 [P] [US2] Claude mapper: `init.mcp_server_errors` -> `failed` rows with their text; mapper test [FR-011]
+- [x] T024 [P] [US2] Claude mapper: `init.mcp_server_errors` -> `failed` rows with their text; mapper test [FR-011]
+  (note 2026-10-23: built with T144 for issue #603, `claudeMcpServerErrors` with `errorClass: 'config'`, kept in later `mcp_status` lists)
 - [x] T025 [P] [US1] Capability values in the three adapters: Copilot `session`/`live`, Claude `next-message`/`live`, Codex
   `session`/`next-message` (restart and logs stay false here); contract test [FR-010] (done 2026-10-21, #349, with T030/T031: `mcpRestart`
   is true for Copilot and Claude (not on Claude's dev-only SDK transport), false for Codex; `mcpLogs` waits for T050)
@@ -176,6 +178,11 @@ references: `src/main/main.ts:123` is now `main.ts:142` (`outward`); `src/adapte
   simulator: the existing needs-auth and failed rows (`src/renderer/sim.ts:514`) get a canned error; screenshots at 1440x900 and
   1280x800. Start line, toggle timing and the two scopes sentence stay in T026 (#349) [FR-001, FR-002, FR-004, FR-030]
   [IMPLEMENTED] `sim:` `scripts/shots-058-mcp-words.js` (in `check:ui`), shots `docs/screenshots/058-mcp-words-*`. Rows show the word and icon, the hint, *Details* (open state kept over repaints) with *Copy* (the masked text only); an `mcp` event for the agent repaints the open dialog after 150 ms (several events = one repaint), keeps the focus by server name (a closed *Details* falls back to the switch) and the scroll position, and says what changed through `#srAnnounce`; the 1.5 s re-read after Restart is gone. The simulator now keeps the last `mcp` event per session (as main's `live`), gives sim agents 5, 10 and 15 a `my-notes` that needs a sign-in (`errorClass: 'auth'`), and emits `mcp` events at the start and end of a canned Restart. `real:` (T060, spec *Changes* 2026-10-21) a real Copilot Restart was followed by `session.mcp_server_removed`, then `status_changed` `not_configured` -> `pending` -> `connected` within about 75 ms, so the dialog can rely on those events instead of the old 1.5 s re-read; `[KNOWN GAP]` that was seen on the adapter's event stream, not with this dialog open on a real account, Claude's restart events are tested on the fake CLI only, and the dialog is not checked against a real runtime event stream, and Copy is checked with a stubbed clipboard (the text written equals the shown error; mutation-checked), not with a real clipboard on macOS or Windows. The announcement, the one-repaint throttle, the 120-character tooltips and the Details/needs-sign-in view in `check:ui-text` (surfaces `agent-mcp-signin`, `agent-mcp-failed`) are asserted and were each mutation-checked (review on #538).
+- [x] T117 (issue #544) The MCP dialog's footer never overlaps a long list (body scrolls inside `.dlg.wide`), and a runtime-`disabled` server reads
+  who turned it off, with its switch off and disabled and a hint [FR-077, FR-078]
+  [IMPLEMENTED] `src/renderer/screens.css` (`.dlg.wide` body scrolls), `mcpwords.js` (`offBy`, `stateOf` context), `screens.js`; `sim:` the simulator keeps a reported list over a switch (`mcpAppOff`). `test:` `scripts/test-mcpwords.ts`; `sim:` `scripts/shots-058-mcp-words.js` (14+ servers at 1440x900, 1280x800, 1280x600; before/after `docs/screenshots/058-mcp-dialog-fit-*`). `[KNOWN GAP]` not seen on a real agent app.
+- [x] T118 (issue #544, second report) The MCP dialog's footer is an opaque separate layer above the scrolling body, so a repaint after a switch toggle never puts a row or switch over *Done* [FR-077a]
+  [IMPLEMENTED] `src/renderer/screens.css`; `sim:` `scripts/shots-058-mcp-words.js` (toggle the last row off and on at 1440x900, 1280x800, 1280x600: *Done* hit-tested at centre and corners, no element meets the footer; mutation checked), shots `docs/screenshots/058-mcp-dialog-toggle-*`.
 
 #### PR sequence for #364 (each PR ticks its tasks and updates docs; `npm run typecheck && npm run build && npm test`)
 
@@ -222,29 +229,30 @@ say "End this session (More > End session), then send a message to resume it"; t
 
 ### Phase 8b: Sign in, steps and shortcut (after T090)
 
-- [ ] T098 [P] Copilot `startMcpSignIn`: `rpc.mcp.oauth.login({serverName, clientName, callbackSuccessMessage})` when it is a function,
+- [x] T098 [P] Copilot `startMcpSignIn`: `rpc.mcp.oauth.login({serverName, clientName, callbackSuccessMessage})` when it is a function,
   else manual; no URL -> connected; `mcpOAuthTokenStorage: 'persistent'` on create and resume (Q12 B: in the shared `config` of `src/adapters/copilot.ts:576-577`, so
   the FR-158 reconnect at `copilot.ts:337` keeps it; not in `oneShotConfig` or `renameResumeConfig`); fake SDK: recorder, no-method mode, no-URL mode, asserts no
   `handlePendingRequest` and no `onMcpAuthRequest` [FR-064, FR-070, SC-012]
-- [ ] T099 [P] Claude `startMcpSignIn`: `mcp_authenticate {serverName}` without `redirectUri`; `requiresUserAction: false` -> connected;
-  "not supported in this context" -> manual; `mcp_status` every 3 s while open; not launched -> "Send a message first" (Q15); fake CLI
-  test [FR-064, SC-012]
-- [ ] T100 [P] Codex `startMcpSignIn`: `mcpServer/oauth/login {name, threadId}`; completion by `loginId` (else name + thread); success ->
-  next message on a fresh child (Q18); unknown method -> manual; `cancelMcpSignIn` -> `account/login/cancel`; fake app-server test
-  [FR-064, SC-012]
-- [ ] T101 Main: `src/main/mcpsignin.ts` (pure store, injected clock and opener) and `agents:mcpSignIn` / `agents:mcpOpenSignIn` /
+  [IMPLEMENTED] 2026-10-23 (Copilot; FR-070 by #471): `startMcpSignIn` + `mcpSignIn`/`mcpSignInSteps` in `src/adapters/copilot.ts`; fake SDK recorder in `scripts/fakes/copilot-sdk.ts`; test: `scripts/test-mcp-session.ts`. Not run on a real account (T105)
+- T099 (Claude Code `startMcpSignIn`) moved to Phase 11 on 2026-10-23, refined by FR-175/FR-176; its checkbox is there.
+- T100 (Codex `startMcpSignIn`) moved to Phase 11 on 2026-10-23, refined by FR-177/FR-178 (no `account/login/cancel`); its checkbox is there.
+- [x] T101 Main: `src/main/mcpsignin.ts` (pure store, injected clock and opener) and `agents:mcpSignIn` / `agents:mcpOpenSignIn` /
   `agents:mcpCancelSignIn`; `elicitHttpsUrl` check (Q16); host-only replies; drops on connected, Cancel, 10 minutes, End, Restart
   session (the Restart session hook waits for T040/T041, #349, not built on 2026-10-21); `canSignIn`, `signIn`, `signInSteps` in `agents:mcp`; preload and `DurbarApi`; tests: host only, `http:` and user:password
   refused, expiry, Cancel, End, no address in the `DURBAR_LOG` sink or activity log [FR-065, SC-011]
-- [ ] T102 Dialog: needs-auth row (hint, Sign in, Switch off for this session, terminal steps with Copy; the steps end with "End this session (More > End session), then send a message to resume it" until T040-T042 exist, then the Restart button), two-step open (Q13), waiting and
+  [IMPLEMENTED] 2026-10-23: `src/main/mcpsignin.ts`, `src/main/mcpipc.ts`, `src/main/mcpsession.ts`, preload, `src/shared/api.ts`; test: `scripts/test-mcp-signin.ts` (`test:mcpsignin`), `test:ipcchannels`, `test:simguard`. Restart session drops the entry through the `stopped` status (#473 exists)
+- [x] T102 Dialog: needs-auth row (hint, Sign in, Switch off for this session, terminal steps with Copy; the steps end with "End this session (More > End session), then send a message to resume it" until T040-T042 exist, then the Restart button), two-step open (Q13), waiting and
   time-limit states, toasts, live region; Switch off calls the existing `setMcp` [FR-066, FR-068, FR-069]
+  [IMPLEMENTED] 2026-10-23 for Copilot rows (a row shows the block only where `canSignIn` or `signInSteps` came from main; Claude and Codex rows unchanged until T099/T100): `src/renderer/screens.js`, `screens.css`; sim: `scripts/shots-058-mcp-signin.js`
 - [ ] T103 Tool card line for `mcpAuth`: "<server> needs you to sign in", **Sign in…** opens the dialog at that row (Q14), **Switch off
   for this session** [FR-063, FR-066]
-- [ ] T104 Simulator `simmcpauth=1` / `simmcpauth=manual`; screenshots at 1440x900 and 1280x800 (`docs/screenshots/058-mcp-signin-*.png`)
+- [x] T104 Simulator `simmcpauth=1` / `simmcpauth=manual`; screenshots at 1440x900 and 1280x800 (`docs/screenshots/058-mcp-signin-*.png`)
   [FR-071, FR-073]
+  [IMPLEMENTED] 2026-10-23, dialog part, Copilot: `simmcpauth=1|manual` (+ `simmcpttl=N`) in `src/renderer/sim.ts`; `docs/screenshots/058-mcp-signin-*-{1440x900,1280x800}.png`. The tool card part waits for T103
 
-- [ ] T110 (its manual-steps wording follows T102's: End session, then a message, until T040-T042) Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
+- [x] T110 (its manual-steps wording follows T102's: End session, then a message, until T040-T042) Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
   domains differ (pure helper `signInSiteNote(serverUrl, pageHost)` with unit tests: same domain, other domain, `co.uk`, stdio) [FR-075]
+  [IMPLEMENTED] 2026-10-23 (review on #598): `src/main/mcpsignin.ts`, `screens.js`; `test:mcpsignin`
 - [ ] T111 Trust confirmation of per-folder extras and the Copilot waiting text say a sign-in may be kept in the system keychain
   after the session [FR-076]
 
@@ -262,11 +270,32 @@ Record results in research.md section 7 and change `read:` to `real:`. Do not op
   research.md 7.7 [FR-070, FR-074]. Done 2026-10-21: run 39680461023, PASS on `windows-latest` and `ubuntu-latest`. Review on #478
   fixed 2026-10-22 (status sequence per session, one line per file with mode bits, resource-bound demo tokens, two more tests); the
   new logging runs on the next dispatch
-- [ ] T106 [needs-owner-approval] Claude Code: does the stream-json CLI answer `mcp_authenticate` (docs say no, strings say yes); the row
-  goes Running after the browser step; does `claude mcp login <name>` help Durbar's `--mcp-config` copy [FR-074]
-- [ ] T107 [needs-owner-approval] Codex: does the installed Codex have `mcpServer/oauth/login`; does it accept Durbar's thread override
-  server; completion and the next message using the grant; does `codex mcp login <name>` help [FR-074]
-
+- [ ] T106 [needs-owner-approval] Claude Code (after PR A; Q24): with a launched CLI (no prompt), `mcp_authenticate` answers an `authUrl`
+  on `127.0.0.1` (docs say a `-p`/SDK run cannot sign in; 2.1.304's program says it can); after the browser step `mcp_status` says
+  `connected` without a relaunch; a `claude mcp login <name>` in a terminal is seen by Durbar's `--mcp-config` copy after Restart on
+  the row (same key: name, type, url, headers); a server with a pre-registered client, signed in through FR-186's copied `oauth`; what the CLI answers to a second
+  `mcp_authenticate` while the first listens (FR-176) [FR-175, FR-176, FR-181, FR-184]
+  **CI part** (`scripts/mcp-oauth-real.ts`, `.github/workflows/mcp-oauth-real.yml`, as T116): the demo OAuth server's authorization
+  page is `http://127.0.0.1:<port>`, which main refuses by design (Q16, tightened on #598), so the check **drives the adapter's
+  `startMcpSignIn` directly; main's address rule is not relaxed and not exercised here**. `workflow_dispatch` only (never
+  `pull_request`), each dispatch with the owner's OK, 0 prompts. Secrets: only `ANTHROPIC_API_KEY` (the existing repository secret) in that step's env,
+  if the app needs one just to launch with no prompt; whether it does is not known from the read and is the first thing the run
+  records (if none: no secret). The demo tokens and the authorization address are never printed: only hosts and state words go to
+  the log, as `mcp-oauth-real.ts` does today. **Mac part**: one run on the owner's Mac with a real https provider covers main's path
+  (Q16 address rule, host binding, FR-075/FR-185 line, the dialog).
+- [ ] T107 [needs-owner-approval] Codex (after PR B; Q24): `mcpServer/oauth/login` with `threadId` accepts a server from Durbar's
+  thread override; `mcpServer/oauthLogin/completed` arrives with `loginId`; does the running thread reconnect by itself after
+  `invalidate_mcp_runtimes` (then Q20 is moot), or only on a fresh child; a `codex mcp login <name>` in a terminal is seen after
+  Restart session; the relaunch keeps mode and servers on a real child (FR-178) [FR-177, FR-178, FR-181, FR-184]
+  **CI part** (`scripts/mcp-oauth-real.ts`, `.github/workflows/mcp-oauth-real.yml`, as T116): the demo OAuth server's authorization
+  page is `http://127.0.0.1:<port>`, which main refuses by design (Q16, tightened on #598), so the check **drives the adapter's
+  `startMcpSignIn` directly; main's address rule is not relaxed and not exercised here**. `workflow_dispatch` only (never
+  `pull_request`), each dispatch with the owner's OK, 0 prompts. Secrets: only `OPENAI_API_KEY` (the existing repository secret, given to Codex through `codex login --with-api-key`
+  on stdin, never on the command line) in that step's env,
+  if the app needs one just to launch with no prompt; whether it does is not known from the read and is the first thing the run
+  records (if none: no secret). The demo tokens and the authorization address are never printed: only hosts and state words go to
+  the log, as `mcp-oauth-real.ts` does today. **Mac part**: one run on the owner's Mac with a real https provider covers main's path
+  (Q16 address rule, host binding, FR-075/FR-185 line, the dialog).
 ### Phase 8d: docs and close
 
 - [ ] T108 README MCP section (Needs sign-in, Sign in, terminal steps, Switch off for this session, "not checked on a real account yet");
@@ -285,7 +314,7 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
   no early Claude CLI launch after Restart session (Q11), no use of Copilot `stopServer` (Q2).
 - Delta 2026-10-20 (issue #364, constitution III, not a question): no call that hands a token, code or callback URL through Durbar (Copilot
   `onMcpAuthRequest`, `oauth.handlePendingRequest`, `oauth.respond`, `oauth.complete`; Claude `mcp_oauth_callback_url`), no client id or
-  secret asked from the user, no `redirectUri` of Durbar's own. No "Sign in with another account" (Q19 A): no `forceReauth`, no `mcp_clear_auth`.
+  secret asked from the user, no `redirectUri` of Durbar's own. No "Sign in with another account" (Q19 A): no `forceReauth`, no `mcp_clear_auth`. (Changed 2026-10-23 by the owner for one use only: Copilot's **Sign in again**, FR-164, which re-creates keychain sign-ins saved by older builds.)
 - No automatic switch-off after repeated failures (Q17 A); no early Claude CLI launch for a sign-in (Q15 A); no `http:` authorization
   pages (Q16 A); no automatic Restart session after a Codex sign-in (Q18 A).
 
@@ -298,3 +327,123 @@ extras only). T098 stays open for `startMcpSignIn`; T111 stays open for the Copi
   after the task it checks; T108-T109 last. T095 includes T023 (same file). Note 2026-10-21: T112-T115 replace the earlier "T010, T011,
   T020, T026 before" for #364; the rest of those tasks builds on T112-T115 in #349.
 - MVP = Phases 1-2 (words, masked errors, live refresh): it answers the owner's "not clear how to start them" on its own.
+
+## Phase 9: live status and actions in Settings (delta 2026-10-23, issue #596)
+
+- [x] T120 Spec delta FR-080..FR-087, plan delta and these tasks, committed before code
+- [x] T121 [P] Unit tests for `DurbarMcpWords.aggregate` in `scripts/test-mcpwords.ts` (counts and words, urgency order, "uses" rule,
+  not-started rows, sorting, caps, unknown tokens) [FR-081, FR-086]
+- [x] T122 [P] Simulator driver `scripts/shots-058-mcp-settings.js` (several agents, ~10 servers in mixed states injected as `mcp`
+  reports): aggregate words, the expander, Restart and Restart session calling the right chat (recorded on the simulator's bridge),
+  Details masked, Open in chat, live refresh, no overlap and 10.5px at 1440x900 and 1280x800; in `scripts/ui-suite.js` [FR-080..FR-085]
+- [x] T123 `aggregate` in `src/renderer/mcpwords.js` [FR-081]
+- [x] T124 Settings list, expander, actions, live refresh and the attention count in `src/renderer/screens.js` and `screens.css`; the
+  shared Restart and Restart session flow used by the chat dialog too; `mcpSession` and the stop hook in `src/renderer/app.js`
+  [FR-080, FR-082..FR-086]
+- [x] T125 Docs: README MCP section line, `changelog.d/058-mcp-settings-live.md`, screenshots (driver at 1440x900 and 1280x800; the
+  linked Settings shots retaken), specs-index block [FR-085]
+- [x] T126 `/speckit-converge` for the delta; tick tasks; mutation-check the driver and the unit tests
+
+- [x] T127 Review on #609 (fjcabello): needs-sign-in rows lead with Open in chat, Restart behind More; load sequence numbers and no
+  reload while the list is hidden; a needs-sign-in-only case in `test-mcpwords`; the driver pins each (mutation-checked) [FR-082, FR-083]
+
+## Phase 10: fewer macOS keychain prompts (delta 2026-10-23, issue #623, owner report; related #525)
+
+- [x] T130 Spec delta: who reads the keychain, why Always Allow does not stick, the options, FR-160..FR-162 (spec *Changes* 2026-10-23)
+- [x] T131 `mac.signIgnore` for the Copilot runtime prebuilds and `scripts/check-runtime-signature.js` in `dist:mac:*`; `test:runtimesign` [FR-160]
+- [x] T132 `CopilotAdapter.getClient`: a failed runtime start is not cached; `test:copilotshared` (one runtime for N sessions, session end, retry, per-session modes and folders) [FR-161]
+- [x] T133 Docs: README *Keychain prompts on a Mac*, `changelog.d/058-keychain-prompts.md`, `docs/agent-notes.md` entry
+- [ ] T134 Mac check list (FR-162) run on a Mac by Paco's team; counts before and after on #623; README and FR-160 `[KNOWN GAP]` updated [FR-162]
+- [x] T135 Record the owner's Mac result (FR-162) and the root-cause analysis; FR-163: `listMcpTools` asks nothing of a server that is not connected; `test:copilotshared` counts runtime calls [FR-162, FR-163]
+- [ ] T136 (third launch: 0 prompts, real 2026-10-23; the cause of the two rounds is still open) Confirm the cause on the owner's Mac: the program name in the dialog, Durbar running from /Applications, and whether deleting the old `copilot-mcp-oauth*` items in Keychain Access and signing in again gives 0 prompts on the next launch [FR-162]
+- [x] T137 Sign in again (owner-approved): per row and for all, the runtime's `forceReauth` sign-in, guards in main, simulator; fakes only [FR-164]
+- [ ] T138 On the owner's Mac: Sign in again to all, then quit and reopen: count the prompts (expected 0 if `forceReauth` re-creates the items) [FR-164]
+- [x] T139 Review on #625 (fjcabello): FR-160 credits the real CI build and strict verify; FR-162 points to the test pre-release; every mac packaging script runs the check (`--arch` per build, per app); `dispose` stops a runtime that is still starting [FR-160, FR-161]
+- [x] T159 Re-review on #625 (fjcabello): a Sign in again entry is not finished by the old "connected"; offered only for a remote server Durbar knows by its https address with a source the runtime named (fail closed); a re-read keeps source and transport; no partition command in README or tasks; the confirmation says the server stays signed out until finished; a second press does nothing; pending servers get their own wording; plan refreshed [FR-163, FR-164]
+
+## Phase 10: MCP health, failure reason, when, Copy diagnostics, chip dot (delta 2026-10-23, issue #603)
+
+- [x] T140 Spec delta FR-090..FR-097, plan delta and these tasks, committed before code
+- [x] T141 [P] Unit tests: `scripts/test-mcphealth.ts` (since, ran, afterRunning, restart resets, unchanged state keeps its time) and
+  `test-mcpwords` (every reason, text rules shared with the hint, "Failed (reason unknown)", whenText, diagnostics content and masking
+  with a planted fake token through `maskMcpError` and `redact`) [FR-090, FR-092, FR-093]
+- [x] T142 [P] Adapter tests with fakes: Copilot `errorClassification` values in `test-events` (known values, unknown values set
+  nothing, a later `connected` drops the class); Claude `mcp_server_errors` and `config.type` in `test-claude-map`; `agents:mcp`
+  reply fields in `test-mcp-session` [FR-091, FR-092]
+- [x] T143 [P] Simulator driver `scripts/shots-058-mcp-health.js` (mixed failures injected as `mcp` reports): reason words, time,
+  Copy diagnostics content (masked; a planted fake token is not in it), Settings rows, the chip dot and its name at 1440x900 and
+  1280x800; in `scripts/ui-suite.js` [FR-093..FR-096]
+- [x] T144 Adapters: `errorClass` values, Copilot `copilotErrorClass`, Claude errors and transport (also T022's Copilot class part
+  and T024) [FR-091]
+- [x] T145 `src/shared/mcphealth.ts`, main's per-session marks and the reply fields [FR-092]
+- [x] T146 `mcpwords.js` (`reasonOf`, `whenText`, `diagnostics`, shared classifier); the shared row helper in `screens.js` for the
+  chat dialog and Settings; `screens.css` [FR-090, FR-093, FR-095, FR-096]
+- [x] T147 The chip dot and `mcpOpts` in `app.js`; `styles.css`; the simulator's fields in `sim.ts` [FR-094]
+- [x] T148 Docs (README MCP line, `changelog.d/058-mcp-health.md`, screenshots at 1440x900 and 1280x800 and the linked MCP shots
+  retaken), `/speckit-converge`, tick tasks, mutation checks (unit: 12 mutants killed; driver: no page redact() and no chip dot both
+  fail it). Also found and fixed: the simulator told the window of an `mcp` event before it kept the new list, so a reply asked for at
+  once (the chip's count) read the old one; it now keeps the list first, as main does
+- [x] T149 Review on #630 (fjcabello): chip tooltip under 120; home folders to `~` (`maskHomePaths`, shared); OAuth `code`/`state`/token
+  query values and any-case `Bearer` (shared `maskSecretUrl`/`redact`); the 5 s re-read keeps Copilot's class; mask each value before
+  the cut; bidi marks flattened; UTC time only; 401/403 is "Refused: needs sign-in" before any crash rule; an unmasked-token unit test;
+  FR-095 updated. Tests in `test-redact`, `test-mcpwords`, `test-events`; the privacy fixes mutation-checked [FR-090, FR-091, FR-093, FR-094, FR-095]
+
+## Phase 11: Sign in for Claude Code and Codex (delta 2026-10-23, issue #364 step 5; owner priority)
+
+Spec *Changes* 2026-10-23 (FR-175..FR-186, SC-175, SC-176), research 7.8, plan *Delta: Sign in for Claude Code and Codex*. Q20, Q21, Q23, Q24: A; Q22: B (owner, 2026-10-23);
+the tasks follow those answers. PR A = Claude Code with the
+shared parts; PR B = Codex (Q23 A).
+
+- [x] T150 Spec delta FR-175..FR-186, research 7.8, plan delta and these tasks, committed before code
+- [ ] T151 [P] Types and contract: `McpSignInResult` browser `ttlMs?`; `McpServerStatus.signInEnd?: 'next-message' | 'failed'` (event
+  guard: only those values); capability `mcpSignInNote?`; contract C2 lines (`mcpSignInNote` only with `mcpSignIn` or
+  `mcpSignInSteps`); fake adapter options for both; `scripts/test-adapter-contract.ts`, `scripts/test-events.ts` [FR-180]
+- [ ] T152 Main: `McpSignInStore.begin(..., ttlMs)` keeps `min(ttlMs, 10 min)` per entry (`live`, `sweep`, `view`, the poller stop use
+  it); `onServers` drops on `connected` or `signInEnd`; `agentMcpReply` adds `signInEnd` and `signInNote`, and `signInSteps` needs only
+  `mcpSignInSteps` (`src/main/mcpsession.ts:82`); tests in `scripts/test-mcp-signin.ts` (an entry with `ttlMs` expires at its own limit, Copilot's still at 10 minutes; `ttlMs` = 300000 minus the request time minus 10000, at
+  least 30000, with a slow answer on an injected clock;
+  a `signInEnd` drops the entry and stops the poller; steps without `mcpSignIn`); mutation-check each [FR-180]
+- [ ] T099 Claude Code (PR A) `startMcpSignIn` (`mcp_authenticate {serverName}` only, 30 s; browser with `ttlMs` = 300000 minus the request-to-answer time minus 10000, at least 30000 (FR-175);
+  `requiresUserAction: false` -> connected; `callbackExpected: false`, other shapes and control errors -> reject; a timeout and an
+  unknown-subtype error -> the terminal steps, a late answer dropped unread, no address in any log; `ttlMs` from the request time;
+  after Cancel, one `mcp_status` read on the next focus within 5 minutes; a second Sign in while the first listens; CLI not running ->
+  "Send a message first, then sign in."; off at launch or switched off -> reject), `refreshMcpStatus` (`mcp_status`, through
+  `withAuthSeen`), `restartMcpServer` clears `mcpAuthSeen` for the name and emits through `withAuthSeen`; capabilities `mcpSignIn`,
+  `mcpSignInSteps` (FR-181 text), `mcpSignInNote`; none of them on the SDK transport; tests in `scripts/test-claude-adapter.ts` on the
+  test transport (request bodies have no `redirectUri`; no `mcp_oauth_callback_url`, no `mcp_clear_auth`; a poll that still says
+  connected keeps a mark-only needs-auth; a needs-auth -> connected poll ends it; mutation-checked) [FR-175, FR-176, FR-181, SC-176]
+- [ ] T100 Codex (PR B) `startMcpSignIn` (`mcpServer/oauth/login {name, threadId, timeoutSecs: 300}`; browser with `ttlMs` = 300000 minus the request-to-answer time minus 10000, at least 30000 (FR-175);
+  keep `loginId`; MethodNotFound or error -> reject), the `mcpServer/oauthLogin/completed` branch (by `loginId`, else name + thread;
+  success: clear the mark, read the one server, connected -> `mcp`, else `relaunch` + `signInEnd: 'next-message'`; failure: Codex's
+  error + `signInEnd: 'failed'`), `refreshMcpStatus` (one server, merged into `live.mcp`); capabilities as T099; no `cancelMcpSignIn`;
+  fake app-server answers the method and sends the notification; tests in `scripts/test-codex-adapter.ts` (by `loginId`, without it,
+  another thread ignored, failure masked in main, the merge keeps other servers, `account/login/cancel` never sent; an old attempt's
+  success after a new one started counts; an old attempt's failure during a new one does not end it; `ttlMs` from the request time;
+  the `signInEnd: 'next-message'` relaunch's `thread/resume` carries the same permission mode, sandbox, approval policy and
+  `config.mcp_servers` (switched-off servers and tools included) as before, sends no prompt, waits for a running turn, and End session
+  drops it; mutation-checked)
+  [FR-177, FR-178, FR-181, SC-176]
+- [ ] T153 Renderer: the row's note from `signInNote` (replaces the hard-coded sentence at `src/renderer/screens.js:1113`); the
+  `signInEnd` states and toasts; Claude's "If you finished in your browser, press Restart on this row." after a mark-only entry expires;
+  live region; no new IPC (PR A: Claude parts and the note; PR B: Codex states) [FR-176, FR-182]
+- [ ] T154 Simulator and screenshots: `simmcpauth=1|manual|codexfail` for the Claude and Codex sim kinds in `src/renderer/sim.ts`;
+  `scripts/shots-058-mcp-signin.js` replaces its "Claude and Codex keep today's behaviour" block with their sign-in checks;
+  `docs/screenshots/058-mcp-signin-{claude,codex}-*-{1440x900,1280x800}.png` [FR-183, SC-175]
+- [ ] T155 Docs: README *MCP servers* (Sign in for all three apps, the terminal steps, "not checked on a real account yet" for Claude
+  Code and Codex; a *Known limits* line: "Without a system keyring (common on Linux), Claude Code and Codex keep an MCP sign-in in a
+  plain `.credentials.json` file in their own settings folder; Agent Durbar does not read or change it."), `changelog.d/<branch>.md`, `docs/agent-notes.md` entry (Claude's undocumented `mcp_authenticate`; `claude mcp login`
+  needs a TTY; the token keys of both apps; Codex's cancel does not reach MCP logins), `[IMPLEMENTED]` tags in FR-175..FR-183
+- [ ] T157 (PR A) FR-185: `serverUrlOf` per app (Copilot: extras, Copilot CLI list; Claude Code: extras, `globalFor`; Codex: extras,
+  its `config.toml` entry's `url`; no match: no line); tests in `scripts/test-mcp-signin.ts`: a Claude and a Codex agent with a
+  same-named Copilot CLI entry on another site show no line; Copilot unchanged; mutation: the old fallback fails the test [FR-185]
+- [ ] T158 (PR A) FR-186 (Q22 B): `McpServerSpec.oauth?` with the four allow-listed fields; `specOf` copies them from the raw Claude
+  entry (own properties only, all-or-nothing on a wrong type, shape or length); `mcpConfigOf` writes `oauth` for http/sse only; no
+  log line with a value. Tests in `scripts/test-mcp-global.ts` (it covers `sessionServers`/`specOf`) and `scripts/test-claude-adapter.ts`: a
+  valid object is copied exactly; **keys outside the allow-list are dropped while the valid
+  fields still copy** (`clientSecret`, `client_secret`, `xaa`, an unknown key, and own `__proto__` / `constructor` keys next to a valid
+  `clientId`/`callbackPort`: the copy holds exactly the valid fields); **a bad value in an allow-listed field means nothing is copied**
+  (a nested object as `clientId`, a 100 kB `scopes`, `callbackPort` 0, 70000, 1.5 and `"8080"`, `authServerMetadataUrl` `http:` or
+  `javascript:`: no `oauth` at all); a non-object `oauth` and a stdio entry copy nothing; the `--mcp-config` JSON
+  never holds `clientSecret`; the debug sink holds no field value. Mutation: copying the whole object fails the test; dropping the
+  all-or-nothing check fails it; **dropping everything when an extra key is present** (instead of dropping only that key) fails it [FR-186]
+- [ ] T156 `/speckit-converge` for this delta after PR B; tick T099, T100 and Phase 11; FR-184 gaps updated from T106/T107

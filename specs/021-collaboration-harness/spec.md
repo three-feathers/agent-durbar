@@ -150,7 +150,7 @@ The owner set these rules in the team chat on 2026-10-20 and asked for them, and
 
 ### 2026-10-22: decisions taken in the team chat (recorded by Paco's agent; wording checked by Vikram's agent)
 
-Numbers follow FR-036 (*test once*, PR #561), which lands first.
+Numbers start after FR-036 (*test once*, PR #561). This PR does not depend on #561 and can land first or after it; where a rule mentions `taking #N` or `checks run at <sha>` (FR-036), that is the convention #561 records.
 
 - **FR-037** **Record team decisions the same day.** A decision about how the team or its agents work, taken in the team chat, is written the same day as a dated FR in this spec: who decided, a link to the message or PR, and where it applies. If it changes how agents work, it also goes into `AGENTS.md` (and its mirrors). A decision that only lives in the chat or in one agent's memory does not count yet.
 - **FR-038** **Sub-agents by the size of the change** (both agents' sides adopted it 2026-10-22).
@@ -163,12 +163,18 @@ Numbers follow FR-036 (*test once*, PR #561), which lands first.
   - **At most 3 of them are new features waiting for a first review.** A 4th feature waits, with only its spec PR open; spec-only PRs don't count.
   - Security fixes and urgent items the owners order may go over the limit, and the PR says so.
   - The numbers are checked again weekly, or when the queue or CI times change, and a change is recorded here. Features the owners order still get their spec. Ruben's view: pending.
-- **FR-040** **Unstack with a replacement PR.** A stacked PR whose own change does not depend on the PRs below it is rebuilt off main as a new branch and a new PR (as #533 replaced #516). The new PR closes the old one with a link and refers to its review history. Never force-push, rename an open PR's branch or use a stack tool's "unstack" just to get past a refused merge.
-- **FR-041** **Using the merge queue** (on since 2026-10-22, #507).
+- **FR-040** **Unstack with a replacement PR.** A stacked PR whose own change does not depend on the PRs below it is rebuilt off main as a new branch and a new PR (as #533, merge commit `4fc7e508`, replaced #516; #533's description says "Replaces #516"). The new PR closes the old one with a link and refers to its review history. Never force-push, rename an open PR's branch or use a stack tool's "unstack" just to get past a refused merge.
+- **FR-041** **Using the merge queue** (the `main protection` ruleset has a merge queue rule, read from the repository rulesets on 2026-10-23; #507, merge commit `d028b3ca`, made the CI run for it on 2026-10-22).
   - Approve, then `gh pr merge <N> --auto --match-head-commit <sha>`; the queue runs the required checks and merges. `--delete-branch` does not work with the queue, so delete the branch and worktree by hand after the merge.
   - `gh pr view` shows a queued PR as `autoMergeRequest: null`; check `isInMergeQueue` and `mergeQueueEntry` with the GraphQL API instead.
   - **`gh stack merge <N>` also merges every lower member of that stack** (Vikram's agent, 2026-10-22: landing #503 also merged #462, #463, #497 and #498, whose latest heads had only dismissed approvals). Before you use it, check that each lower member has a valid approval at its current head; otherwise merge the PRs one by one through the queue.
   - When an approval was dismissed only by a base move or a merge of main, and the PR's own patch-id is unchanged, re-approving (or an admin merge with a PR comment) is a formality (FR-032).
 - **FR-042** **One combined review list per round.** Each review round gets one message in the team chat, in landing order, instead of many separate nudges. Agents answer `taking #N, #M` before they review (FR-036).
 - **FR-043** **Review teammates' PRs first.** Their approvals are what unblock ours, so a teammate's PR waiting for review comes before starting new work.
+
+### 2026-10-22: reference agent setup in the repo (agreed in the team chat; Vikram's agent adds theirs next to it)
+
+Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564).
+
+- **FR-044** `docs/agent-setup/` holds the setup the team recommends, so a new teammate or a rebuilt machine starts from the same base: the three sub-agents, templates for the global rules and for `CLAUDE.local.md`, the periodic review `/loop` with its conventions (`taking #N`, `reviewing at <sha>`, `checks run at <sha>`, quick check before an agent, no DMs in quiet hours), and an always-on VPS guide with example files. It is templates only: no tokens, chat or account IDs, emails, host names, IPs or private-network names; personal files stay local and git-ignored; a config backup repo must be private and scanned for secrets. Each teammate may add their own setup in a sibling folder. Linked from `docs/collaboration.md` and `AGENTS.md`. `[IMPLEMENTED]` `read:` links checked by `test:site`; the guide itself was not run on a fresh machine `[KNOWN GAP]`.
 

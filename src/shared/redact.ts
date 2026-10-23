@@ -31,7 +31,8 @@ const TOKEN_SHAPES: RegExp[] = [
   shape(String.raw`gh[pousr]_[A-Za-z0-9]{20,}`),
   shape(String.raw`github_pat_[A-Za-z0-9_]{20,}`),
   shape(String.raw`sk-(?:ant-)?[A-Za-z0-9_-]{20,}`),
-  shape(String.raw`Bearer\s{1,8}[A-Za-z0-9._~+/=-]{8,}`),
+  // any case: `bearer xyz` in a lowercased log line is the same secret (review on PR #630)
+  shape(String.raw`[Bb][Ee][Aa][Rr][Ee][Rr]\s{1,8}[A-Za-z0-9._~+/=-]{8,}`),
   // The JWT starts at its literal `eyJ`, and its start and prefix are checked behind it (a bounded lookbehind), so the engine only
   // stops at an `eyJ`. Matching the prefix forward instead tried up to 40 word characters at every position of a run that passes
   // the `%XX` start (`2525…`): linear, but about 40x the cost of the other shapes (T130, review of PR #549). The prefix stays.
@@ -81,7 +82,9 @@ export function cut(s: string, max: number): string {
   let end = max;
   if (end > 0 && /[\ud800-\udbff]/.test(s[end - 1])) end--; // never leave half a surrogate pair
   while (end > 0 && TOKEN_CHAR.test(s[end - 1])) end--;
-  return s.slice(0, end).replace(/[ \t]+$/, '') + TRUNCATED;
+  // a loop, not `/[ \t]+$/`: that regex retries at every blank of a long run (quadratic on a 1 MB run of spaces)
+  while (end > 0 && (s[end - 1] === ' ' || s[end - 1] === '\t')) end--;
+  return s.slice(0, end) + TRUNCATED;
 }
 
 /** Env snapshots made by the masking helpers: their secret list is computed once, so a 100 000-token command does not rescan the env per token. */
@@ -842,6 +845,37 @@ export const _uncappedForTest = {
 };
 
 /**
+ * OAuth query and fragment values that are secrets although their names do not look like one (review on PR #630): an authorization
+ * `code`, the `state` that pairs with it, and the tokens a redirect can carry. Only in a URL's query or fragment, never as flags.
+ */
+const OAUTH_PARAMS = new Set(['code', 'state', 'id_token', 'refresh_token', 'access_token', 'code_verifier', 'client_secret']);
+const oauthParam = (name: string): boolean => {
+  let n = name;
+  if (n.includes('%')) { try { n = decodeURIComponent(n); } catch { /* keep the raw name */ } }
+  return OAUTH_PARAMS.has(n.toLowerCase());
+};
+
+/**
+ * Home folders in free text become `~` (review on PR #630: a copied error must not carry the user name): `/home/<user>`,
+ * `/Users/<user>`, `<drive>:\Users\<user>` (also with `/` or doubled `\\` as in JSON), and the given home folders themselves
+ * (`HOME`, `USERPROFILE` of this process by default). A user name with spaces is covered when a separator follows it. Bounded; never throws.
+ */
+export function maskHomePaths(text: unknown, homes?: readonly (string | undefined)[]): string {
+  try {
+    let s = typeof text === 'string' ? text : text == null ? '' : String(text);
+    const env = (globalThis as { process?: { env?: Env } }).process?.env ?? {};
+    const list = (homes ?? [env.HOME, env.USERPROFILE]).filter((h): h is string => typeof h === 'string' && h.replace(/[\\/]+$/, '').length >= 4);
+    for (const h of [...new Set(list.map((x) => x.replace(/[\\/]+$/, '')))].sort((a, b) => b.length - a.length)) {
+      // only a whole folder: `/home/vik` is not the start of `/home/vikram`
+      for (const v of new Set([h, JSON.stringify(h).slice(1, -1)])) s = s.replace(new RegExp(v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + String.raw`(?![^\\/\s"'<>|:;,*?])`, 'g'), '~');
+    }
+    return s.replace(/(?<![A-Za-z0-9_.~-])(?:\/(?:home|Users)\/|[A-Za-z]:(?:\\{1,2}|\/)Users(?:\\{1,2}|\/))(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})/g, '~');
+  } catch {
+    return '[redaction failed]';
+  }
+}
+
+/**
  * A URL for display (FR-053): everything between `://` and the last `@` of the authority becomes `[redacted]` (with or without a colon),
  * query and fragment values with a secret-looking name (percent-decoded) are masked, and the known path secrets (Telegram bot token,
  * Slack and Discord webhooks) too; then `redact()`. Other path secrets are not detected (`[KNOWN GAP]`).
@@ -850,7 +884,7 @@ export function maskSecretUrl(url: unknown, envIn?: Env): string {
   const env = snapshot(envIn);
   let s = typeof url === 'string' ? url : '';
   s = s.replace(/([a-z][a-z0-9+.-]{1,20}:\/\/)[^/?#\s]{0,2000}@/gi, '$1' + MASK + '@');
-  s = s.replace(/([?&;#])([^=&;#?\s]{1,100})=([^&;#\s]*)/g, (m, sep: string, name: string) => (secretFlag(name) ? `${sep}${name}=${MASK}` : m));
+  s = s.replace(/([?&;#])([^=&;#?\s]{1,100})=([^&;#\s]*)/g, (m, sep: string, name: string) => (secretFlag(name) || oauthParam(name) ? `${sep}${name}=${MASK}` : m));
   s = s.replace(/(\/bot\d{1,20}:)[^/?#\s]+/gi, '$1' + MASK);
   s = s.replace(/(hooks\.slack\.com\/services\/[^/?#\s]+\/[^/?#\s]+\/)[^/?#\s]+/gi, '$1' + MASK);
   s = s.replace(/(\/api(?:\/v\d{1,3})?\/webhooks\/[^/?#\s]+\/)[^/?#\s]+/gi, '$1' + MASK);

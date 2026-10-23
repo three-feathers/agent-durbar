@@ -215,7 +215,7 @@ try {
     const many = parseSettings(JSON.stringify({ customPlaces: [place(1, 'A'), place(2, 'B'), place(3, 'C'), place(4, 'D')], placeMap: { x: 'c-000004', y: 'c-000003' } }));
     assert.deepStrictEqual(many.customPlaces?.map((p) => p.name), ['A', 'B', 'C'], 'more than 3: the first 3 are kept');
     assert.deepStrictEqual({ ...many.placeMap }, { y: 'c-000003' }, 'and a mapping to the 4th is dropped');
-    assert.deepStrictEqual(parseSettings(JSON.stringify({ customPlaces: [place(1, 'A'), place(1, 'B'), place(2, 'a'), place(3, 'Terminal'), place(4, 'C')] })).customPlaces?.map((p) => p.id + p.name), ['c-000001A', 'c-000004C'], 'duplicate ids and names, and reserved names, are dropped (first kept)');
+    assert.deepStrictEqual(parseSettings(JSON.stringify({ customPlaces: [place(1, 'A'), place(1, 'B'), place(2, 'a'), place(3, 'Terminal'), place(4, 'C')] })).customPlaces?.map((p) => p.id + p.name), ['c-000001A', 'c-000002a (2)', 'c-000003Terminal (2)'], 'a duplicate id is dropped (first kept); a repeated or reserved name is kept and renamed (review on PR 511), so the 4th is over the cap');
     assert.strictEqual(parseSettings(JSON.stringify({ customPlaces: [place(1, 'A', 'rocket')] })).customPlaces?.[0].icon, 'pin', 'an unknown icon is shown as pin');
     assert.deepStrictEqual(parseSettings(JSON.stringify({ customPlaces: [{ id: 'bad', name: 'A' }, { id: 'c-aaaaaa', name: '' }, { id: 'c-bbbbbb', name: 'x'.repeat(25) }, null, 5, 'x'] })), {}, 'invalid ids and names are dropped');
     for (const bad of ['"x"', '5', 'null', '{}', '[]', 'true', '{"a":1}']) assert.deepStrictEqual(parseSettings('{"customPlaces":' + bad + '}'), {}, 'customPlaces that is not a list: ' + bad);

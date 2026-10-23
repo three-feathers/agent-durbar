@@ -8,8 +8,11 @@
 import { isAuthError } from '../adapters/autherrors';
 import type { AdapterRouter } from '../adapters/router';
 import type { AgentAdapter, McpServerStatus } from '../adapters/types';
-import type { AgentInfo, AgentMcpEntry, AgentMcpReply, McpRestartResult, McpRestartSessionResult } from '../shared/api';
+import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRestartResult, McpRestartSessionResult } from '../shared/api';
 import { maskMcpError } from './mcpmask';
+import { sourcesFor } from './mcpglobal';
+import { BUILTIN_SERVERS } from './mcpfiles';
+import type { McpHealthMark } from '../shared/mcphealth';
 
 const NOT_RUNNING = 'This session is not running. Send a message to start it.';
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -31,6 +34,47 @@ export interface McpReplyInput {
   extras: ReadonlyArray<{ name: string; enabled: boolean; trusted: boolean; needsSecrets?: boolean }>;
   /** Names switched off in Settings. */
   ambientDisabled: ReadonlySet<string>;
+  /** Spec 058 FR-078: names Agent Durbar passed as disabled when this session started. */
+  launchedOff?: ReadonlySet<string>;
+  /** Spec 058 FR-078: names the user switched here since the session started. */
+  switchedHere?: ReadonlySet<string>;
+  /** Spec 069 FR-009: the agent app (`copilot`, `claude`, `codex`); Claude and Codex agents do not list the Copilot CLI list. */
+  app?: string;
+  /** Spec 069 FR-009: Claude Code's user list with its Settings switch (listed for Claude agents). */
+  claudeList?: ReadonlyArray<{ name: string; enabled: boolean }>;
+  /** Spec 069 FR-011: the names of each app's user list, and the built-in servers, for the source chips. */
+  global?: Partial<Record<GlobalApp, readonly string[]>>;
+  builtin?: ReadonlySet<string>;
+  /** Spec 069 FR-061: tools turned off in this agent's folder, by server. */
+  toolsOff?: Readonly<Record<string, readonly string[]>>;
+  /** Spec 058 FR-092: when each server's state started and whether a failure came after Running (`mcpHealthUpdate`). */
+  health?: ReadonlyMap<string, McpHealthMark>;
+  /** Spec 058 FR-065: the open sign-in of one server (host only), from `McpSignInStore.view`. */
+  signIn?(name: string): { host: string; opened: boolean; expiresInMs: number; otherSite?: string } | undefined;
+  /** FR-164: the server's own address when Durbar knows one (a folder extra, a list Durbar passes, the Copilot CLI list); stdio has none. */
+  serverUrl?(name: string): string | undefined;
+}
+
+/** Spec 058 FR-065: the one rule for "this row needs a sign-in" (the window uses the same): the runtime's `needs-auth`, or a failed server whose failure is an auth one. */
+export const needsSignIn = (s: { status?: string; errorClass?: string } | undefined): boolean => !!s && (s.status === 'needs-auth' || (s.status === 'failed' && s.errorClass === 'auth'));
+/**
+ * Spec 058 FR-164: a server that can be signed in again: reported by the session as connected or failed (not one that waits for its
+ * first sign-in, which gets Sign in), and not a local (stdio) server, which has no OAuth sign-in.
+ */
+export const canSignInAgainStatus = (s: { name?: string; status?: string; errorClass?: string; transport?: string; source?: string } | undefined, url: string | undefined): boolean =>
+  // fail closed (review on #625): only a remote server Durbar knows by its http(s) address (a folder extra, a list Durbar passes or the
+  // Copilot CLI list), never a built-in one (it uses the Copilot sign-in itself), and never a source or transport that says otherwise or
+  // is unknown to the runtime; a stdio server has no address, so it is never a candidate whatever a re-read says
+  !!s && !needsSignIn(s) && (s.status === 'connected' || s.status === 'failed') && typeof url === 'string' && /^https?:\/\//i.test(url) &&
+  !BUILTIN_SERVERS.includes(s.name ?? '') && s.source !== undefined && s.source !== 'builtin' && s.source !== 'unknown' && s.transport !== 'stdio' && s.transport !== 'memory';
+
+/** A server name that is safe to put in a command the user may copy: no spaces, quotes, newlines or shell characters (a folder extra's name comes from a file). */
+const PLAIN_NAME = /^[A-Za-z0-9_.@:+-]{1,64}$/;
+/** Spec 058 FR-068: the adapter's terminal steps with the name filled in; a name with other characters is shown as `<server name>`, never as part of a command. */
+export function signInStepsFor(template: string | undefined, name: string, origin: AgentMcpEntry['origin']): string | undefined {
+  if (origin === 'folder') return 'This server is only known to Agent Durbar; use Sign in here.';
+  if (!template) return undefined;
+  return template.split('{name}').join(PLAIN_NAME.test(name) ? name : '<server name>');
 }
 
 /** `agents:mcp` (spec 019 FR-009, spec 058 FR-020). No path and no secret value: names, states and masked errors only. */
@@ -48,12 +92,34 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const on = defaultOn && !off.has(name);
     // FR-030: Restart only for a server the running session knows (the runtime reported it) and that is switched on
     const canRestart = canRestartAny && on && !!st && st.status !== 'disabled';
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}) });
+    // FR-092: the mark only dates the state it was made for (a stale mark never dates a new state)
+    const hm = st ? i.health?.get(name) : undefined;
+    const mark = hm && hm.status === (st?.status ?? '') ? hm : undefined;
+    // FR-065/FR-068: a row that reads Needs sign-in, on, in a running session; the steps are the agent app's own text (missing = none)
+    const needs = isLive && on && needsSignIn(st);
+    const canSignIn = needs && typeof ad?.startMcpSignIn === 'function';
+    // FR-164: Sign in again, where the agent app can redo the sign-in itself (Copilot), for an on server the running session reports
+    const canSignInAgain = isLive && on && !!ad?.capabilities.mcpSignInAgain && typeof ad?.startMcpSignIn === 'function' && !i.builtin?.has(name) && canSignInAgainStatus(st, i.serverUrl?.(name));
+    const steps = needs && ad?.capabilities.mcpSignIn ? signInStepsFor(ad.capabilities.mcpSignInSteps, name, origin) : undefined;
+    // an open sign-in stays visible whatever the row reads meanwhile (a server signed in again passes through Starting or Needs sign-in)
+    const open = isLive && on && typeof ad?.startMcpSignIn === 'function' ? i.signIn?.(name) : undefined;
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(mark ? { since: mark.since } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
-  for (const am of i.cli) add(am.name, 'cli', am.enabled);
-  const names = new Set(i.cli.map((x) => x.name.toLowerCase()));
+  const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
+  const own = i.app === 'claude' ? (i.claudeList ?? []) : [];
+  for (const am of cli) add(am.name, 'cli', am.enabled);
+  for (const g of own) add(g.name, 'cli', g.enabled);
+  const names = new Set([...cli, ...own].map((x) => x.name.toLowerCase()));
   for (const v of i.extras) if (!names.has(v.name.toLowerCase())) add(v.name, 'folder', v.enabled && v.trusted && !v.needsSecrets);
   for (const x of i.live) add(x.name, 'runtime', !i.ambientDisabled.has(x.name));
+  for (const e of entries) {
+    const t = i.toolsOff?.[e.name];
+    if (t?.length) e.toolsOff = [...t];
+  }
+  if (i.global) {
+    const folder = new Set(i.extras.map((v) => v.name));
+    for (const e of entries) e.sources = sourcesFor(e.name, i.global, folder, i.builtin ?? new Set());
+  }
   const caps = ad?.capabilities;
   return {
     ok: true,
@@ -65,6 +131,8 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     ...(caps?.mcpToggleApplies ? { toggleApplies: caps.mcpToggleApplies } : {}),
     // FR-022: an adapter that can resume, and a running session to restart
     canRestartSession: !!caps?.resume && isLive,
+    ...(typeof ad?.listMcpTools === 'function' ? { canListTools: true } : {}),
+    ...(caps?.mcpToolFilter ? { toolFilter: true } : {}),
   };
 }
 

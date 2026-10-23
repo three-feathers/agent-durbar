@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "servers": [
+    {
+      "id": "x",
+      "name": "X",
+      "transport": "http",
+      "url": "https://mcp.acme.example/a b"
+    }
+  ]
+}

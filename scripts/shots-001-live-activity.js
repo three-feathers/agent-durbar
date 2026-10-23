@@ -1,6 +1,6 @@
 /*
  * Spec 001 FR-028..FR-032: live activity on the desks. Simulator only (events sent through the simulator's test hook), no credits.
- * Sparse office (3 agents): the side panel next to each desk. Dense office (15 agents): the readout in the desk's text line, the name
+ * Sparse office (3 agents, `density=full`: by default few agents get grown desks, spec 001 FR-042): the side panel next to each desk. Dense office (15 agents): the readout in the desk's text line, the name
  * still shown. Checks: the office page rules (overlap, clipping, text >= 10.5px), no secret in the readout, at most 4 paints a second,
  * no layout shift while text streams, and the setting off restores today's text. Linux with xvfb-run:
  *
@@ -11,7 +11,7 @@
 const assert = require('assert');
 const path = require('path');
 const { pageCheck } = require('./check-office-overlap.js');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, waits, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 const q = jsLiteral; /* every value spliced into page code goes through jsLiteral (CodeQL js/bad-code-sanitization) */
 const SECRET = 'S3cr3tV4lue9xQzz';
@@ -20,8 +20,10 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const js = (c) => ctx.js(c);
   const emit = (e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${q(e)}))`);
-  const load = async (n, w, h) => {
-    await H.load({ w, h, query: { sim: String(n) }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}`, settle: false });
+  /* extra: more page address values; the sparse office forces `full` (spec 001 FR-042: a few agents get grown desks by default,
+     checked in check-office-fill.js), so the side panel is still checked here */
+  const load = async (n, w, h, extra) => {
+    await H.load({ w, h, query: { sim: String(n), ...(extra || {}) }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}`, settle: false });
     await ctx.sleep(300);
   };
   const think = (id, rid, delta) => emit({ type: 'thinking', sessionId: id, reasoningId: rid, delta });
@@ -33,11 +35,14 @@ module.exports = async (ctx) => {
   };
   const deskName = (id) => js(`(()=>{const d=document.querySelector('#stage .desk[data-id=${q(id)}]');const n=d&&d.querySelector('.name');const r=n&&n.getBoundingClientRect();return n?{t:n.textContent,w:r.width,label:d.getAttribute('aria-label')}:null})()`);
   const rects = () => js(`[...document.querySelectorAll('#stage .desk, #stage .liveside, #stage .helper')].map(e=>{const r=e.getBoundingClientRect();return [Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height)].join(',')}).join(';')`);
-  const page = async (label) => { const r = await js(`(${pageCheck.toString()})(false, 5)`); assert.deepStrictEqual(r.problems, [], `${label}: office page rules`); return r.info; };
+  const { until } = waits(ctx);
+  /* the live simulator sends figures to places at any time: measure once no figure is mid-walk (a walking one is not on a slot yet;
+     check-office-overlap re-measures the same way). Found by `npm run shots:docs` (spec 001 FR-082): this driver is not in ui-suite. */
+  const page = async (label) => { await until(`![...document.querySelectorAll('#walkers .walker')].some((w)=>w.classList.contains('walking')||w.getAnimations().some((a)=>a.playState==='running'))`, 3000); const r = await js(`(${pageCheck.toString()})(false, 5)`); assert.deepStrictEqual(r.problems, [], `${label}: office page rules`); return r.info; };
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     /* ---- sparse: the side panel ---- */
-    await load(3, w, h);
+    await load(3, w, h, { density: 'full' });
     await feed();
     let st = await js(`({side:document.getElementById('stage').dataset.side,d:document.getElementById('stage').dataset.d})`);
     assert.deepStrictEqual(st, { side: '1', d: 'full' }, `${w}: 3 agents use the side panel`);
@@ -110,7 +115,7 @@ module.exports = async (ctx) => {
 
     /* ---- the setting off: today's text, no side panel ---- */
     await js(`localStorage.setItem('durbar.liveActivity','off')`);
-    await load(3, w, h);
+    await load(3, w, h, { density: 'full' });
     await feed();
     st = await js(`({side:document.getElementById('stage').dataset.side,n:document.querySelectorAll('#stage .liveside').length,t:(document.querySelector('#stage .desk[data-id="sim-2"] .task')||{}).textContent})`);
     assert.deepStrictEqual([st.side, st.n], ['0', 0], `${w}: off: no side panel`);

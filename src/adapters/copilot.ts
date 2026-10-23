@@ -29,11 +29,16 @@ import { EventMapper } from './map';
 import type { EventBody, RawEvent } from './map';
 import { compactResultFrom, modelConfig, modelOptionFrom, runtimeMessage, sdkTier, switchResultFrom } from './copilotmodel';
 import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel';
-import { PermissionBroker, isInsideRoots, startModeOf } from './permissions';
+import { PermissionBroker, isInsideRoots, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
-import type { AgentProfile, PlanAnswer } from './types';
+import type { AgentProfile, PlanAnswer, SlashCommand, SlashExpansion } from './types';
+import type { McpSignInResult, McpToolInfo } from './types';
+import { normMcpTools } from './mcptools';
+import { copilotHomeDir, copilotSlashPlaces, SlashCache, vscodeUserPromptDirs } from './slashcommands';
+import type { SlashPlace } from './slashcommands';
 import { cleanPlanText } from './plan';
+import { copilotQuotaReset } from './usagelimit';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import { unpackedRuntimePath } from './runtime';
@@ -45,6 +50,10 @@ import type { HandoffResult } from './handoff';
 import { sessionIdOk } from '../shared/sessionid';
 import { allowedRemoteUrl, cleanRemoteError, isRemoteVisibility } from '../shared/remote';
 import type { RemoteState } from '../shared/remote';
+import { copilotAccount, copilotPlanLabel } from './accounts';
+import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
+import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
+import { sweepStaleTempDirs } from '../shared/attachments';
 
 const IMAGE_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -109,6 +118,19 @@ export function agentDirsFor(folders: readonly string[], home = os.homedir()): s
   return [...new Set(folders)].map((f) => path.join(f, '.github', 'agents')).concat(path.join(home, '.copilot', 'agents'));
 }
 
+/** The part of the SDK's `session.rpc.agent` that FR-041 uses; `reload` is @experimental and may be missing in another SDK. */
+export type AgentRpc = { reload?: () => Promise<unknown> } | undefined;
+/** spec 043 FR-041: true when the runtime read its agent files again; false (never a throw) when it cannot. */
+export async function reloadAgentsRpc(rpc: AgentRpc): Promise<boolean> {
+  if (!rpc || typeof rpc.reload !== 'function') return false;
+  try {
+    await rpc.reload();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** spec 043 FR-001: an SDK agent as a generic profile; undefined for sub-agent-only agents. */
 export function profileOf(a: { id?: unknown; name?: unknown; displayName?: unknown; description?: unknown; path?: unknown; source?: unknown; userInvocable?: unknown; tools?: unknown; model?: unknown; mcpServers?: unknown }, folders: readonly string[] = []): AgentProfile | undefined {
   const id = typeof a.id === 'string' && a.id ? a.id : typeof a.name === 'string' ? a.name : '';
@@ -155,7 +177,12 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true,
   mcpStart: 'next-message', // spec 058 FR-010 (real 2026-10-21, runtime 1.0.22: the servers start with the first message, not at create or resume)
   mcpToggleApplies: 'live', // spec 019 (real: mcp.enable/disable)
+  mcpToolFilter: true, // spec 069 FR-062: session excludedTools (read: SDK types; not run on a real account)
+  mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22 rpc.d.ts; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
+  mcpSignInAgain: true, // spec 058 FR-164: oauth.login forceReauth ("clears any cached OAuth token for the server and runs a full new authorization", read: SDK 1.0.22 rpc.d.ts; not run on a real account)
+  mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
+  mcpSignInSteps: 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', // FR-068
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
   planMode: true, // spec 066 FR-003: mode.set plan + onExitPlanModeRequest (@experimental)
@@ -226,12 +253,24 @@ export const REMOTE_NOT_STARTED = 'Copilot did not start remote control and gave
 /** Spec 040 FR-015: how long one `generateText` may take before it is aborted (the same 3 minutes as Claude and Codex). */
 export const ONE_SHOT_TIMEOUT_MS = 180_000;
 
+/** Spec 058 FR-163: what `listMcpTools` says for a server that is not connected (nothing is asked of the runtime). */
+export const MCP_NOT_CONNECTED = 'This server is not connected. Restart it or sign in first, then its tools can be listed.';
+/** Spec 058 FR-163 (review on #625): the same for a server that is still starting. */
+export const MCP_STARTING = 'This server is still starting. Its tools can be listed once it is connected.';
+
 /**
  * Spec 040 FR-015: the config of the throw-away session behind `generateText`. Nothing can act and nothing is kept:
  * no tool from any source (`availableTools: []`, and `excludedTools` as a second lock), the MCP servers the runtime would load on its own
  * switched off by name, no skills, custom agents, discovered config, instructions, hooks, git context, memory, session store or
  * infinite-session workspace, an empty temp folder as the working directory, and the cheapest `auto` routing (as a new `auto` session).
  */
+/** Spec 069 FR-062: Copilot's filter strings for the tools turned off in Durbar (`mcp:<server>-<tool>`). */
+export function copilotExcludedTools(off: Readonly<Record<string, readonly string[]>> | undefined): string[] {
+  const out: string[] = [];
+  for (const [server, tools] of Object.entries(off ?? {})) for (const t of tools ?? []) if (typeof t === 'string' && t) out.push(`mcp:${server}-${t}`);
+  return out.slice(0, 5000);
+}
+
 export function oneShotConfig(dir: string, disabledMcpServers: readonly string[] = []): Record<string, unknown> {
   return {
     workingDirectory: dir,
@@ -282,13 +321,25 @@ export class CopilotAdapter implements AgentAdapter {
   /** One mapper per session (it remembers tool names, reasoning ids and sub-agent ids of that session). */
   private mappers = new Map<string, EventMapper>();
 
-  /** Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). Protected so a test can hand in a fake client (no runtime process, no credits). */
+  /**
+   * Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). Protected so a test can hand in a fake client (no runtime process, no credits).
+   * Spec 058 FR-161: ONE runtime per app run for every session, one-shot and check (each runtime process reads Copilot's keychain items
+   * again, so a runtime per session would ask again per session on a Mac). A start that failed is not kept: the next call starts again
+   * instead of failing for the rest of the run. A runtime that exits later is restarted by the SDK itself on the next create or resume
+   * (`read:` SDK 1.0.22 `client.js` `createSession`/`resumeSessionInternal`: `if (!this.connection) await this.start()`).
+   */
   protected async getClient(): Promise<CopilotClient> {
     if (this.client) return this.client;
-    const starting = (this.starting ??= this.createClient().then((c) => {
-      if (this.starting === starting) this.client = c;
-      return c;
-    }));
+    const starting = (this.starting ??= this.createClient().then(
+      (c) => {
+        if (this.starting === starting) this.client = c;
+        return c;
+      },
+      (e: unknown) => {
+        if (this.starting === starting) this.starting = undefined;
+        throw e;
+      },
+    ));
     return starting;
   }
 
@@ -313,6 +364,7 @@ export class CopilotAdapter implements AgentAdapter {
    * is cut (its history stays). Nothing started yet: nothing to do, the first client reads the new sign-in.
    */
   async refreshAuth(): Promise<void> {
+    this.planCache = undefined; // spec 051 FR-022: a new sign-in may have a new plan
     if (this.refreshing) return this.refreshing;
     if (!this.client && !this.starting) return;
     const run = this.reconnect().finally(() => {
@@ -386,6 +438,95 @@ export class CopilotAdapter implements AgentAdapter {
   async authStatus(): Promise<{ signedIn: boolean }> {
     const s = await (await this.getClient()).getAuthStatus();
     return { signedIn: !!s.isAuthenticated };
+  }
+
+  /**
+   * Spec 051 FR-011, FR-018, FR-022: the account the runtime reports (`getAuthStatus()`: login, host, how it signed in) and its plan.
+   * No prompt; no credits (FR-022 evidence). `statusMessage` is not read. Personal data: never passed to `debug` (FR-015).
+   */
+  async accountInfo(opts: AccountInfoOptions = {}): Promise<AccountIdentity> {
+    try {
+      const client = await this.getClient();
+      const id = copilotAccount(await client.getAuthStatus());
+      if (id.status !== 'signed-in') return id;
+      const plan = await this.planOf(client, opts).catch(() => undefined);
+      return plan ? { ...id, plan } : id;
+    } catch {
+      return { status: 'unknown' };
+    }
+  }
+
+  /** The whole plan read (a live session, or the throw-away's create, status and cleanup) may take this long; then no plan (FR-022). */
+  protected planTimeoutMs = 3000;
+  /** Each cleanup call of the throw-away session (disconnect, delete) may take this long. */
+  protected planCleanupMs = 2000;
+  /** A throw-away read still running after this long is not waited for again (a hung `createSession` never blocks Check again). */
+  protected planStaleMs = 30_000;
+  /** The plan, once per run (FR-022): asked again only on `recheck` (Check again, a finished sign-in) or after `refreshAuth`. */
+  private planCache?: Promise<string | undefined>;
+  /** The throw-away read in flight, also after its cap, so a second one never starts beside it. */
+  private planInflight?: { p: Promise<string | undefined>; at: number };
+
+  private capped<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
+    let timer: NodeJS.Timeout | undefined;
+    const limit = new Promise<undefined>((res) => { timer = setTimeout(() => res(undefined), ms); });
+    return Promise.race([p.catch(() => undefined), limit]).finally(() => clearTimeout(timer));
+  }
+
+  /**
+   * FR-022: the plan from a live session first (`gitHubAuth.getStatus` on a running session costs nothing more); otherwise one
+   * throw-away session per run (kept until a recheck or a sign-in). The whole read is capped at `planTimeoutMs`.
+   */
+  private async planOf(client: CopilotClient, opts: AccountInfoOptions): Promise<string | undefined> {
+    for (const live of this.sessions.values()) {
+      const auth = (live.session.rpc as unknown as { gitHubAuth?: { getStatus?: () => Promise<unknown> } }).gitHubAuth;
+      if (typeof auth?.getStatus !== 'function') continue;
+      const st = await this.capped(auth.getStatus(), this.planTimeoutMs);
+      const plan = copilotPlanLabel(st && typeof st === 'object' ? (st as { copilotPlan?: unknown }).copilotPlan : undefined);
+      if (plan) return plan;
+      break; // one live session answers for all of them
+    }
+    if (opts.recheck) this.planCache = undefined;
+    if (!this.planCache) {
+      const fresh = this.planInflight && Date.now() - this.planInflight.at < this.planStaleMs ? this.planInflight.p : this.startPlanRead(client, opts.disabledMcpServers ?? []);
+      this.planCache = this.capped(fresh, this.planTimeoutMs);
+    }
+    return this.planCache;
+  }
+
+  /**
+   * Spec 051 FR-018, FR-022: the Copilot plan, which only a session's `gitHubAuth.getStatus()` reports (`copilotPlan`; the client-level
+   * `getAuthStatus()` has none). A throw-away session like the one-shot's (`oneShotConfig`: no tools, no custom agents, a temp folder,
+   * and every MCP server the runtime would start by itself switched off by name, `disabledMcpServers`), with no message sent. It is
+   * disconnected and deleted (each call capped), and its folder removed, in a `finally`, also when it resolves after the cap. Only
+   * `copilotPlan` is read (the login and message in the same answer are dropped).
+   */
+  private startPlanRead(client: CopilotClient, disabledMcpServers: readonly string[]): Promise<string | undefined> {
+    const run = (async (): Promise<string | undefined> => {
+      sweepStaleTempDirs(os.tmpdir(), ACCOUNT_TEMP_PREFIXES, Date.now(), 3600_000); // leftovers of a quit mid-call (FR-022)
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-acct-'));
+      let session: CopilotSession | undefined;
+      try {
+        const config = { ...oneShotConfig(dir, disabledMcpServers), onPermissionRequest: async (): Promise<PermissionRequestResult> => ({ kind: 'reject', feedback: 'Agent Durbar allows no tools here.' }) as PermissionRequestResult };
+        session = await client.createSession(config as unknown as SessionConfig);
+        const auth = (session.rpc as unknown as { gitHubAuth?: { getStatus?: () => Promise<unknown> } }).gitHubAuth;
+        if (typeof auth?.getStatus !== 'function') return undefined;
+        const st = await this.capped(auth.getStatus(), this.planTimeoutMs);
+        return copilotPlanLabel(st && typeof st === 'object' ? (st as { copilotPlan?: unknown }).copilotPlan : undefined);
+      } finally {
+        if (session) {
+          const id = session.sessionId;
+          await this.capped(session.disconnect(), this.planCleanupMs);
+          await this.capped(client.deleteSession(id), this.planCleanupMs);
+        }
+        fs.rmSync(dir, { recursive: true, force: true });
+        sweepStaleTempDirs(os.tmpdir(), ACCOUNT_TEMP_PREFIXES, Date.now(), 3600_000);
+      }
+    })();
+    const entry = { p: run, at: Date.now() };
+    this.planInflight = entry;
+    void run.catch(() => undefined).finally(() => { if (this.planInflight === entry) this.planInflight = undefined; });
+    return run;
   }
 
   /**
@@ -486,9 +627,11 @@ export class CopilotAdapter implements AgentAdapter {
     const { cwd, folders } = resolveWorkspaceCwd(options.workspace);
     const client = await this.getClient();
     let sid = options.resumeSessionId ?? options.sessionId ?? '';
+    const blocked = mcpToolBlockList(options.disabledMcpTools); // spec 069 FR-063
     const broker = new PermissionBroker({
       roots: [cwd, ...folders],
       mode: startModeOf(options),
+      blockedTools: () => blocked,
       beforeWrite: (paths) => this.writeGuard?.(sid, paths) ?? Promise.resolve(), // spec 065 FR-001
       emit: (e: BrokerEvent) => {
         switch (e.type) {
@@ -588,6 +731,9 @@ export class CopilotAdapter implements AgentAdapter {
       // `disabledMcpServers` switches those off by name. Values (env, headers) are secrets: never logged, only names.
       ...(options.mcpServers && Object.keys(options.mcpServers).length ? { mcpServers: options.mcpServers as unknown as Record<string, MCPServerConfig> } : {}),
       ...(options.disabledMcpServers?.length ? { disabledMcpServers: options.disabledMcpServers } : {}),
+      // spec 069 FR-062: single MCP tools turned off in Durbar; `excludedTools` "always takes precedence" (read: SDK 1.0.22 types.d.ts), MCP
+      // tools by the runtime's wire name `<server>-<tool>` (read: toolSet.d.ts addMcp("github-list_issues")); not run on a real account
+      ...(copilotExcludedTools(options.disabledMcpTools).length ? { excludedTools: copilotExcludedTools(options.disabledMcpTools) } : {}),
       // AI-credit cap (spec 011): the SDK calls it "AI Credits"; the app treats 1 AIU = 1 credit. `sessionLimits` is @experimental in SDK 1.0.22.
       ...(options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? { sessionLimits: { maxAiCredits: options.maxAiCredits } } : {}),
       onPermissionRequest,
@@ -738,12 +884,37 @@ export class CopilotAdapter implements AgentAdapter {
     cancelElicitations(live.elicitations);
   }
 
+  /**
+   * Spec 073 FR-004/FR-009: the folder's and the user's skills, read by Durbar (the session has no config discovery, so the runtime does
+   * not load them; real 2026-10-22). No built-ins: `session.send` hands a typed built-in to the model as text (real 2026-10-22).
+   */
+  private readonly slash = new SlashCache();
+  private slashPlaces(live: { cwd: string; folders?: string[] }): SlashPlace[] {
+    return copilotSlashPlaces([live.cwd, ...(live.folders ?? [])], copilotHomeDir(), undefined, vscodeUserPromptDirs());
+  }
+
+  async listSlashCommands(sessionId: string): Promise<SlashCommand[]> {
+    const live = this.sessions.get(sessionId);
+    return live ? this.slash.list(this.slashPlaces(live), { refresh: true }) : []; // the window opening its list: read afresh
+  }
+
+  async expandSlashCommand(sessionId: string, text: string): Promise<SlashExpansion | undefined> {
+    const live = this.sessions.get(sessionId);
+    return live ? this.slash.expand(text, () => this.slashPlaces(live)) : undefined; // no IO unless the text is a `/name` line
+  }
+
   /** spec 043 FR-002: the session's selectable custom agents (`rpc.agent.list`, @experimental). */
   async listAgentProfiles(sessionId: string): Promise<AgentProfile[]> {
     const live = this.sessions.get(sessionId);
     if (!live) return [];
     const r = (await live.session.rpc.agent.list()) as { agents?: unknown[] } | undefined;
     return (r?.agents ?? []).map((a) => profileOf(a as Parameters<typeof profileOf>[0], live.folders ?? [live.cwd])).filter((p): p is AgentProfile => !!p);
+  }
+
+  /** spec 043 FR-041: read the agent files again (`rpc.agent.reload`, @experimental), so a new or deleted file shows in the list. */
+  async reloadAgentProfiles(sessionId: string): Promise<boolean> {
+    const live = this.sessions.get(sessionId);
+    return live ? reloadAgentsRpc(live.session.rpc.agent as unknown as AgentRpc) : false;
   }
 
   /** spec 043 FR-002: select a custom agent for the next turns, or the default agent (null). The runtime confirms with an event. */
@@ -1187,6 +1358,73 @@ export class CopilotAdapter implements AgentAdapter {
     await mcp.enable({ serverName: name });
   }
 
+  /**
+   * Spec 058 FR-064 (T098): the runtime's own OAuth sign-in for one remote MCP server of this session. `rpc.mcp.oauth.login`
+   * (`@experimental`, read: SDK 1.0.22 `McpOauthLoginRequest`) with only the server name and two display texts: the runtime keeps its
+   * default loopback flow (discovery, PKCE, its own callback listener, token exchange, storage and reconnect), so no token and no
+   * callback ever pass through Durbar. Never `handlePendingRequest`, `complete`, `prepareLogin`, `cancelLogin` or `onMcpAuthRequest`,
+   * and never `clientId`, `clientSecret`, `redirectUri` or `grantType`. `forceReauth` only for the user's **Sign in again** (FR-164, owner
+   * 2026-10-23): the runtime forgets the stored sign-in and writes a new one itself (no keychain access by Durbar). No `authorizationUrl` in the answer = cached
+   * tokens were still valid and the server is already connected. The result arrives later as `session.mcp_server_status_changed`.
+   * A missing method, or a runtime that does not know it, rejects with a plain message (main then shows the terminal steps).
+   */
+  async startMcpSignIn(sessionId: string, name: string, opts: { again?: boolean } = {}): Promise<McpSignInResult> {
+    const live = this.sessions.get(sessionId);
+    if (!live) throw new Error('This session is not running. Send a message to start it, then sign in.');
+    const oauth = (live.session.rpc.mcp as unknown as { oauth?: { login?: (p: { serverName: string; clientName: string; callbackSuccessMessage: string; forceReauth?: boolean }) => Promise<{ authorizationUrl?: unknown }> } }).oauth;
+    if (!oauth || typeof oauth.login !== 'function') throw new Error('This Copilot version cannot start a sign-in from Agent Durbar.');
+    let r: { authorizationUrl?: unknown } | undefined;
+    try {
+      r = await oauth.login({ serverName: name, clientName: 'Agent Durbar', callbackSuccessMessage: 'You can close this tab and go back to Agent Durbar.', ...(opts.again === true ? { forceReauth: true } : {}) });
+    } catch (err) {
+      if (isMethodNotFound(err)) throw new Error('This Copilot version cannot start a sign-in from Agent Durbar.');
+      throw new Error(sdkErrorText(err));
+    }
+    const url = r?.authorizationUrl;
+    if (url === undefined || url === null || url === '') return { kind: 'connected' };
+    if (typeof url !== 'string') throw new Error('Copilot sent a sign-in page that Agent Durbar cannot read.');
+    return { kind: 'browser', url };
+  }
+
+  /**
+   * Spec 058 FR-064: read the session's server list again (`rpc.mcp.list`, @experimental: "Cache misses may start and wait for MCP
+   * servers", read: SDK 1.0.22) and hand it to the mapper's `reread`, which keeps a needs-auth mark that the tool failures set while the list still says `connected` (a re-read is not a new status from the runtime; issue #364), so the usual `mcp` event follows.
+   * Real 2026-10-23: after a browser sign-in the runtime sent no status event for a long while. A missing method or a failure changes nothing. `[KNOWN GAP]` (T105) whether `list` can still start other servers on a real runtime.
+   */
+  async refreshMcpStatus(sessionId: string, name?: string): Promise<void> {
+    const live = this.sessions.get(sessionId);
+    if (!live) return;
+    const mcp = live.session.rpc.mcp as unknown as { list?: () => Promise<{ servers?: unknown }>; isServerRunning?: (p: { serverName: string }) => Promise<{ running?: unknown }> };
+    if (typeof mcp.list !== 'function') return;
+    // `isServerRunning` is the one-server check ("has an active client and transport", it starts nothing): `list` ("cache misses may start
+    // and wait for MCP servers") is only called once this server has a client, which is the case a finished sign-in leads to
+    if (name !== undefined && typeof mcp.isServerRunning === 'function') {
+      const q = await mcp.isServerRunning({ serverName: name });
+      if (q?.running !== true) return;
+    }
+    const r = await mcp.list();
+    if (this.sessions.get(sessionId) === live && Array.isArray(r?.servers)) this.mapperFor(sessionId).reread(r.servers);
+  }
+
+  /** Spec 069 FR-031: a live `tools/list` through the runtime; it throws when the server is not connected. */
+  async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
+    const live = this.sessions.get(sessionId);
+    if (!live) throw new Error('This session is not running. Send a message to start it.');
+    const mcp = live.session.rpc.mcp as unknown as { listTools?: (p: { serverName: string }) => Promise<{ tools?: unknown }> };
+    if (typeof mcp.listTools !== 'function') throw new Error('This Copilot version cannot list a server\'s tools.');
+    // Spec 058 FR-163 (issue #623, real macOS 2026-10-23): a tools/list for a server that is not connected makes the runtime try to
+    // connect it again, and each attempt can read its sign-in from the keychain (one more macOS prompt). Only a connected server, or one
+    // the runtime has not reported yet, is asked; a failed, needs-sign-in or pending one waits for the user's Restart or Sign in.
+    const st = this.mappers.get(sessionId)?.mcpStatusOf(name);
+    if (st !== undefined && st !== 'connected') throw new Error(st === 'pending' ? MCP_STARTING : MCP_NOT_CONNECTED);
+    try {
+      const r = await mcp.listTools({ serverName: name });
+      return normMcpTools(r?.tools);
+    } catch (err) {
+      throw new Error(sdkErrorText(err));
+    }
+  }
+
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
     this.sessions.get(sessionId)?.broker.resolve(requestId, approve, remember, broad);
   }
@@ -1199,9 +1437,12 @@ export class CopilotAdapter implements AgentAdapter {
   async dispose(): Promise<void> {
     await this.refreshing?.catch(() => undefined);
     for (const id of [...this.sessions.keys()]) await this.stop(id);
-    await this.client?.stop();
-    this.client = undefined;
+    // review on #625: a quit during the first start must still stop the runtime that start brings up (else it outlives the app)
+    const pending = this.client ? undefined : this.starting;
     this.starting = undefined;
+    const client = this.client ?? (await pending?.catch(() => undefined));
+    this.client = undefined;
+    await client?.stop();
   }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
@@ -1220,11 +1461,31 @@ export class CopilotAdapter implements AgentAdapter {
     for (const l of this.listeners) l(event);
   }
 
+  /**
+   * Spec 068 FR-002: the premium-request quota is used up but the error said nothing about when it resets: ask `account.getQuota` once
+   * (a read that spends nothing, spec 012 FR-156) and send the same break again with the reset date. Best effort: any failure keeps the
+   * break without a time ("resets later").
+   */
+  private async quotaReset(sid: string, body: EventBody & { type: 'usageLimit' }): Promise<void> {
+    try {
+      const client = await this.getClient();
+      const rpc = (client as unknown as { rpc?: { account?: { getQuota?: (p: object) => Promise<unknown> } } }).rpc;
+      if (typeof rpc?.account?.getQuota !== 'function') return;
+      const r = copilotQuotaReset(await rpc.account.getQuota({}));
+      if (r && this.sessions.has(sid)) this.emit(sid, { ...body, resetsAt: r.resetsAt, ...(r.estimated ? { estimated: true } : {}), update: true }); // update: ignored when the break already ended (Try now, a message)
+    } catch (e) {
+      this.debug?.(`quota reset not read: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   /** SDK SessionEvent -> normalized event(s): see map.ts (pure, unit-tested with recorded fixtures). */
   private mapperFor(sid: string): EventMapper {
     let m = this.mappers.get(sid);
     if (!m) {
-      m = new EventMapper((body) => this.emit(sid, body));
+      m = new EventMapper((body) => {
+        this.emit(sid, body);
+        if (body.type === 'usageLimit' && body.scope === 'quota' && !body.resetsAt) void this.quotaReset(sid, body);
+      });
       this.mappers.set(sid, m);
     }
     return m;
