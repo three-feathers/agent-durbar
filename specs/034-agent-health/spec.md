@@ -174,3 +174,51 @@ status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/sho
   It follows the agent's mood on every render while the figure is away. The figure stays `aria-hidden`; the words are on the card and in the List view. Serious mode shows none of it. This closes the other half of T009. `sim:` `scripts/shots-034-list.js` in the office view at both sizes: in the simulator's lobby a dizzy walker shows its dot, a monster and a heavy one show their rings, and no figure without a trouble has a dot. Screenshots `docs/screenshots/mood-walker-*.png`.
 
 - **2026-10-21, spec 068 (coffee break), supersedes the faint look.** An agent at its credit limit, or at a usage limit of its agent app, is on a coffee break: no trouble drawing (`troubleOf` returns null for `coffee`), a calm room without a siren, and the words "On a coffee break". User Story 2 scenario 2 (fainted at *Limit reached*) no longer happens in the app; the faint drawing stays in the code for any caller that passes `limit` without `coffee`. `test:` mood.
+
+### 2026-10-23: "Retrying" while the agent app retries the model API (issue #600)
+
+**Input**: Vikram (owner go, 2026-10-23, issue #600): when the model API errors or hits a rate limit, the agent apps retry quietly and the desk looks frozen. Show "Retrying (attempt N) – <reason>" on the desk and in the chat, and "Gave up" with the reason if the retries run out. Sources named in the issue (`read:` spec 076 research on PR #575): Claude Code's `api_retry` stream message (ignored until now in `claudeMap.ts`), Copilot's failed model calls, Codex's API request status. Normalized adapter event, no vendor types in the renderer, reason text masked.
+
+#### Clarifications (decided by default and recorded here; open to change in review)
+
+- **Q: What is the reason?** **A short fixed label chosen by the adapter**, never the provider's message: rate limit, servers busy, server error, connection problem, timed out, sign-in problem, API error; plus the HTTP status number when the agent app gives one ("rate limit (HTTP 429)"). No vendor text crosses the adapter, which is stricter than masking it; the task line still goes through the renderer's mask (spec 041 FR-065) like every task line.
+- **Q: What is N?** **The number of the retry**: 1 is the first retry after the first failed call. "of M" only when the agent app says how many retries it will make (Claude Code's `max_retries`).
+- **Q: Which word on the pill?** **Retrying**, one word (spec 052 FR-076), in the waiting colours like *Failing* (spec 052 FR-062), with the full line ("Retrying (attempt 3 of 10) – servers busy (HTTP 529)") as the desk's task line and the pill's tooltip. It is information, not mood: it shows in Serious mode too. *Retrying* wins over *Failing* while both apply (the model call is what is stuck).
+- **Q: When does it end?** At the agent's next sign of progress (output, thinking, a tool call, a permission request, usage) or at the end of the turn. A turn that ends in an error after retries **gave up**: the pill says Error as before and the task line "Gave up after 4 retries – rate limit (HTTP 429)". A usage limit (spec 068 coffee break) or a stop by the user is not "gave up".
+- **Q: The chat?** **One note per run of retries, updated in place** (not one note per attempt): "Retrying (attempt 2 of 10) – rate limit. The agent app tries again by itself.", then "The request went through after 2 retries." or "Gave up after 10 retries – rate limit." No timer, no countdown.
+- **Q: Helpers?** Main agents only (the events of a helper are not used), like the rest of this spec.
+
+#### User scenarios
+
+1. **Given** a working agent whose agent app reports a retry (attempt 3 of 10, servers busy, HTTP 529), **Then** its pill says *Retrying* (desk, card, list, chat header, chat strip) and its task line says "Retrying (attempt 3 of 10) – servers busy (HTTP 529)"; the chat has one note with the same words.
+2. **Given** the next retry, **Then** the same note and line show the new attempt (no second note).
+3. **Given** the agent then answers (output, thinking or a tool call), **Then** the pill goes back to its status and the note says "The request went through after 3 retries."
+4. **Given** the turn ends in an error after retries, **Then** the pill says *Error*, the task line "Gave up after 4 retries – rate limit (HTTP 429)", and the note says the same; the error note of the turn follows as before.
+5. **Given** Serious mode, **Then** all of the above still shows (it is a status, not a drawing).
+
+#### Edge cases
+
+- An agent app that reports no retries: nothing changes (see the gaps below).
+- A retry event of a helper: ignored.
+- A retry while the agent waits for a permission or is on a coffee break: the line is not shown over the waiting request or the break; a permission request or a break ends the retry mark.
+- Malformed values (attempt 0 or negative, a status outside 100-599, a reason outside the list): the event guard rejects the event in tests; the renderer shows "API error" for an unknown reason and leaves out a bad number.
+
+#### Requirements
+
+- **FR-016** `[IMPLEMENTED]` Normalized event `retry` in `src/adapters/types.ts` (`RetryEvent`): `phase: 'retrying' | 'gave-up'`, `attempt` (a positive whole number: the retry number, or on `gave-up` the number of retries made), `maxAttempts?`, `reason: 'rate-limit' | 'overloaded' | 'server' | 'network' | 'timeout' | 'auth' | 'other'`, `httpStatus?` (100-599), `delayMs?`. No vendor field, no provider text. `src/adapters/eventguard.ts` checks it.
+- **FR-017** `[IMPLEMENTED]` Adapters (`src/adapters/retry.ts`, pure: a per-turn `RetryTracker` and one reason mapper per agent app; main agent only):
+  - Claude Code: `system` / `api_retry` (`attempt`, `max_retries`, `retry_delay_ms`, `error_status`, `error`: `rate_limit`, `overloaded`, `server_error`, `authentication_failed`, `cloud_credential_error`, `unknown`; `no_response`) → `retrying`. `read:` the Claude Code 2.1.309 binary's stream-json writer (the shape above), not a real run.
+  - Codex: the `error` notification with `willRetry: true` (`error.codexErrorInfo`: `rateLimitExceeded`, `serverOverloaded`, `internalServerError`, `httpConnectionFailed`, `responseStreamConnectionFailed`, `responseStreamDisconnected`, with `httpStatusCode`) → `retrying`, numbered by the tracker. `read:` `codex app-server generate-ts` for codex-cli 0.163.0 (`ErrorNotification`, `CodexErrorInfo`), not a real run.
+  - Copilot: `model.call_failure` of the top-level agent (`source: 'top_level'`) with a status a client retries (none, 408, 409, 425, 429, 5xx) or `failureKind: 'transport'` → `retrying`, numbered from `retryAttempt` (zero-based index of the failed call) + 1. `read:` `@github/copilot-sdk` 1.0.22 typings (`ModelCallFailureData`), not a real run. `[KNOWN GAP]` The event is described as telemetry; whether the runtime sends it to an SDK client, and whether a retry always follows it, was not seen. If none follows, the error that ends the turn shows "Gave up after 1 retry".
+  - Gave up: a turn that ends in an error status after at least one `retrying` of that turn emits `gave-up` (same reason and status, the last attempt) just before the error status. Not after a usage limit (spec 068), an abort or a sign-in failure, and never twice.
+  - Progress clears the tracker in each mapper (an answer, thinking, a tool call, usage, the end of the turn).
+- **FR-018** `[IMPLEMENTED]` Renderer: pure `src/renderer/retry.js` (`DurbarRetry`, UMD): the reason words, `retryLine`, `gaveUpLine`, `wentThroughLine`, and `next(state, event)`, the rule of the clarifications (which event starts, updates, ends or gives up a retry mark). `app.js` keeps `a.retry` per main agent; `pillSt`/`stWord` give `retrying`/*Retrying* while it is set and the agent is Working or Thinking; `.st-retrying`, `.dot.retrying` and `.desk.card.is-retrying` reuse the *Failing* rules (no new colour, no size change); the status order puts it with *Failing*; the pill's tooltip and the task line carry the line. The lines are Durbar's own words, so they are kept when no redact module is loaded (`FIXED_TASK_FORMAT`). Nothing changes size: `check:office` stays green.
+- **FR-019** `[IMPLEMENTED]` Chat: one note per run of retries (`.note.retry`), updated in place, then "went through" or "gave up" as in the clarifications. A gave-up turn's error keeps the line "Gave up after N retries – reason" as the task line (the pill says Error).
+- **FR-020** `[IMPLEMENTED]` Simulator, `simretry=1`: Clara (working) is retrying (attempt 3 of 10, servers busy, HTTP 529) and stays so (the background ticks skip her); Tomas (error) retries twice for a rate limit (HTTP 429) and gives up before his error. A driver sends further events with `window.__durbarSimEmit`.
+- **FR-021** `[IMPLEMENTED]` Tests, no credits: `scripts/test-retry.ts` (each app's mapping from synthetic messages shaped like the sources above, the tracker's numbering and gave-up rules, the renderer's lines and `next`, the event guard), each case mutation-checked; driver `scripts/shots-034-retry.js` at 1440x900 and 1280x800 (the pill, the line, the one note updated in place, went through, gave up, Serious mode, `check:office` unchanged), screenshots `docs/screenshots/retry-*.png`.
+
+#### Known gaps
+
+- `[KNOWN GAP]` Not run on a real session of any agent app: no retry was provoked (it needs a failing or rate-limited model API). The shapes are `read:` only (above).
+- `[KNOWN GAP]` Claude Code's `api_retry` carries no sub-agent id, so a helper's retries (if Claude Code reports them) show on its main agent.
+- `[KNOWN GAP]` The Durbar MCP server's agent state (spec 041) does not report *Retrying* (it does not report *Failing* either).

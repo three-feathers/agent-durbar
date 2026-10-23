@@ -20,3 +20,13 @@
 - [x] T013 Simulator: a room whose worst agent is heavy only [FR-012]
 - [x] T014 Driver `scripts/shots-034.js` extended, contrast check, screenshots at both sizes, `check:office`, README, CHANGELOG, specs index [FR-011, FR-013, SC-003, SC-004]
 - [x] T015 Room header path text readable in every room: `#5c635e` instead of `--muted` (about 4.2:1 on `main`, now 5.17:1 in calm rooms); the driver checks 4.5:1 at every tone (done in this PR after review)
+
+## 2026-10-23 delta: "Retrying" while the agent app retries (issue #600)
+
+- [ ] T016 Spec delta, plan, tasks (FR-016..FR-021 and T016..T022 taken; checked against `main` and the open PRs on 2026-10-23)
+- [ ] T017 `RetryEvent` in `src/adapters/types.ts`, event guard [FR-016]
+- [ ] T018 `src/adapters/retry.ts` (tracker, reason mappers); Claude (`claudeMap.ts`), Codex (`codexMap.ts`), Copilot (`map.ts`) [FR-017]
+- [ ] T019 `src/renderer/retry.js`; `app.js` pill, task line, chat note, status order; CSS reusing *Failing* [FR-018, FR-019]
+- [ ] T020 Simulator `simretry=1` [FR-020]
+- [ ] T021 `scripts/test-retry.ts` in `npm test` with a mutation check; driver `scripts/shots-034-retry.js` in the UI suite and `shots:docs`; screenshots at both sizes; `check:office` [FR-021]
+- [ ] T022 README, changelog fragment, specs-index block, agent notes [FR-021]
