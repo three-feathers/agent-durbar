@@ -1,1 +1,0 @@
-- **Team agent setup** (spec 021, FR-044): new `docs/agent-setup/` with the recommended Claude Code setup (sub-agents, `CLAUDE.local.md` and global templates, the review `/loop` and its conventions, an always-on VPS guide with example files). Docs only, no personal data; checked with `npm run specs:check`, `changelog:check` and `test:site`.
