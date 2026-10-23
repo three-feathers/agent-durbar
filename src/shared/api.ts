@@ -544,6 +544,10 @@ export interface AgentMcpEntry {
   toolsOff?: string[];
   /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
   canRestart?: boolean;
+  /** Spec 058 FR-078: Agent Durbar passed this server as switched off when the session started (Settings or the folder's extras), so a runtime `disabled` is not the app's own doing. */
+  launchedOff?: boolean;
+  /** Spec 058 FR-078: the user switched this server here since the session started (a runtime `disabled` may be the old state until its event arrives). */
+  switchedHere?: boolean;
 }
 
 /** `agents:mcp` (spec 019 FR-009, spec 058 FR-020). */

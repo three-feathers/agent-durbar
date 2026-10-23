@@ -94,6 +94,8 @@ package.json                       test:floors in npm test
 
 - **Empty state with floors off (change 2026-10-19, issue #133, FR-013)**: the text depends on `FLOORS.floors.length` (the same test as `renderFloorsBtn`, `src/renderer/app.js`), so it never names the top-bar button when the button is hidden. The mixed "hidden or off" branch is only reachable with two or more floors (with one floor, a room is shown unless hidden), but it uses the same rule so a later change cannot break it. No new module: checked on the simulator by `check:office` and `shots-033.js` (the text is built inline in `app.js`, a plain script with no unit-test hook).
 
+- **Move to floor in the folder menu (change 2026-10-23, issue #590, FR-024)**: no new IPC, store or popup. `openFolderMenu` (`src/renderer/app.js`) paints two levels into the shared `#modeMenu` element; the move calls the existing `moveRoomToFloor` (bridge `moveFolderToFloor`, the Floors panel's *Move to* select, FR-005) and the Undo is the existing action toast `toastAction` (spec 030's model-switch Undo). The item is built only when `floorsLive()` and two or more floors exist. Checked by the simulator driver `scripts/shots-033-move.js`.
+
 ## Risks
 
 - Layout regressions from the label in narrow room headers at `mini`/`micro`: the label truncates first (min width 0, ellipsis, tooltip); covered by `check:office`.

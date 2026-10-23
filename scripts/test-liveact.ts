@@ -238,8 +238,8 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   eq(X.excerpt('ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2', null), '', 'excerpt: no mask, nothing (fail closed)');
   eq(X.excerpt('text', () => { throw new Error('x'); }), '', 'excerpt: a mask that throws, nothing');
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
-  ok(/DurbarLiveAct\.excerpt\(a\.lastOutput,/.test(app) && !/redact\([^)]*plain\(a\.lastOutput/.test(app), 'grownLine masks through excerpt');
-  ok(/return t\?DurbarCutText\.cutText\(t,600\):'';/.test(app) && /if\(grownShowsReply\(a\)\)return replyExcerpt\(a\)\|\|\(vis\(a\)==='done'\?'Finished\.':'Ready\.'\);/.test(app), 'grownLine: nothing from the reply without a mask');
+  ok(/function replyExcerpt\(a\)\{return safeExcerpt\(a\.lastOutput,600,''\);\}/.test(app) && !/redact\([^)]*plain\(a\.lastOutput/.test(app), 'grownLine masks through the one helper (spec 041 FR-065)');
+  ok(/if\(grownShowsReply\(a\)\)return replyExcerpt\(a\)\|\|\(vis\(a\)==='done'\?'Finished\.':'Ready\.'\);/.test(app), 'grownLine: nothing from the reply without a mask');
   ok(/const rep=grownShowsReply\(a\)\?'':replyExcerpt\(a\)/.test(app) && !/gx-t">\$\{esc\((a\.lastOutput|taskOf)/.test(app), 'the reply column (FR-047) uses the same masked excerpt');
 }
 // review of #532: `long` is made only when a grown desk reads it; a desk that never does costs what it did before
@@ -254,7 +254,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
 // page wiring: the shim, the compiled redact module and liveact.js load in order before app.js; redact.ts stays import-free
 {
   const html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');
-  ok(/<script src="exports-shim\.js"><\/script>\s*<script src="\.\.\/shared\/redact\.js"><\/script>\s*<script src="liveact\.js"><\/script>\s*<script src="app\.js">/.test(html), 'script order');
+  ok(/<script src="exports-shim\.js"><\/script>\s*<script src="\.\.\/shared\/redact\.js"><\/script>\s*<script src="safetext\.js"><\/script>\s*<script src="liveact\.js"><\/script>\s*<script src="app\.js">/.test(html), 'script order');
   const red = fs.readFileSync(path.join(ROOT, 'src', 'shared', 'redact.ts'), 'utf8');
   ok(!/^\s*import\s/m.test(red) && !/\brequire\(/.test(red), 'redact.ts has no imports (it loads as a page script)');
   const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8');
