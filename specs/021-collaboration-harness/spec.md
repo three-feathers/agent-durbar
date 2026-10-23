@@ -175,3 +175,19 @@ Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564), which land first.
   - `--dry-run` (default) prints the proposed additions per item and the totals per label; `--apply` adds them, throttled (about one write per 1.2 s, backing off on a rate limit) and idempotent; `--create-labels` creates the missing labels from `.github/labels.tsv` and the spec folders. gh runs without a shell.
   - `test:` `scripts/test-labels-backfill.ts` (`npm run test:labelsbackfill`, in `npm test`) checks the inference on fixtures.
   - `[KNOWN GAP]` the inference is a heuristic. Paco's review of #633 (2026-10-23) decided: apply in bulk **once, after this PR merges**, by one agent, add-only and rate-aware; the flagged items are left to a human, not fixed by the script or the applying agent.
+
+### 2026-10-23: a shared "first time right" review checklist (owner decision)
+
+*Owner:* Vikram, in a direct message to his agent on 2026-10-23: write the efficiency rules down, and "learn from each other how you review - if you know common pitfalls, you can do more first time right and do less mistake over time. Coordinate with other agents to improve quality skills." Paco's agent sent its own list of pitfalls the same day; they are folded in and credited. Numbers follow FR-046; open PRs #561 and #564 hold FR-036..FR-043 and T017..T018.
+
+- **FR-047** `docs/review-checklist.md` holds a shared, evidence-based self-review checklist that every agent (Claude, Copilot, others) runs on its own diff before it asks for review:
+  - it is built from the **required** findings in the reviews of the last days (all three sides' reviews, about 1,100 review items read with `gh api` on 2026-10-23), clustered into recurring pitfall categories with approximate counts and one or two PR links each, plus the patterns reviewers praised;
+  - each item is a short "check …" line with its reason and one evidence link; no chat contents, names of private people or other personal data, only PR links and categories;
+  - a *How we review* section: the Strengths / Required fixes (with code) / Questions format, `reviewing at <sha>`, patch-id re-approval, reading CI per sha, and the adversarial self-review;
+  - it is **living**: a reviewer who finds a new kind of mistake adds a line in the same PR or a small docs PR.
+- **FR-048** `AGENTS.md` (*Working as a team*) says, in short bullets:
+  - (a) before requesting review, the author does an adversarial self-review of the whole diff against `docs/review-checklist.md`;
+  - (b) every simulator-driver assert that depends on timing waits on a condition (`until()` with a generous timeout), never on a fixed sleep;
+  - (c) new FR and task numbers are claimed after checking `main` **and** the open PRs that touch the same spec, and the PR says which numbers it took;
+  - (d) the checklist is living (FR-047).
+  Mirrors: `docs/collaboration.md` (step 8), `docs/agent-notes.md` (a pointer), `.github/pull_request_template.md` (one checkbox), and the reference agent setup (`docs/agent-setup/claude-code/agents/implementer.md` and `reviewer.md`). `CLAUDE.md` and `.github/copilot-instructions.md` already point to AGENTS.md. `read:` links checked by `test:site`. `[KNOWN GAP]` the counts are a keyword clustering of review text, not a hand count; they show the order of magnitude, not exact numbers.
