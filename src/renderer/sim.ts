@@ -1280,9 +1280,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const signOf = (n: string, origin: 'cli' | 'folder' | 'runtime') => {
           if (!simMcpAuth || (s.info.adapterId ?? 'copilot') !== 'copilot') return {};
           const st = reported(n);
-          if (!live || s.mcpOff?.has(n) || (st.status !== 'needs-auth' && st.errorClass !== 'auth')) return {};
+          if (!live || s.mcpOff?.has(n) || (st.status !== 'needs-auth' && !(st.status === 'failed' && st.errorClass === 'auth'))) return {};
           const open = simSignOpen(s, n);
-          const steps = origin === 'folder' ? 'This server is only known to Agent Durbar; use Sign in here.' : 'In a terminal, run `copilot`, type `/mcp auth ' + n + '` and finish in your browser. Then use Restart session with these servers.';
+          const steps = origin === 'folder' ? 'This server is only known to Agent Durbar; use Sign in here.' : 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth ' + n + '` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).';
           return { signInSteps: steps, ...(simMcpAuth === 'manual' ? {} : { canSignIn: true, ...(open ? { signIn: { host: 'auth.example.com', opened: open.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - open.at)) } } : {}) }) };
         };
         const toolsOffOf = (n: string) => (simToolsOff[s.info.cwd]?.[n] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[n] ?? [])] } : {});
@@ -1346,10 +1346,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         (s.mcpSign ??= new Map()).set(name, { opened: false, at: Date.now() });
         return { ok: true, kind: 'browser', host: 'auth.example.com' };
       },
-      agentMcpOpenSignIn: async (id, name) => {
+      agentMcpOpenSignIn: async (id, name, shownHost) => {
         const s = sims.find((x) => x.info.id === id);
         const e = s ? simSignOpen(s, name) : undefined;
-        if (!s || !e) return { ok: false, gone: true, error: 'That sign-in is no longer open. Press Sign in again.' };
+        if (!s || !e || shownHost !== 'auth.example.com') return { ok: false, gone: true, error: 'That sign-in is no longer open. Press Sign in again.' };
         e.opened = true;
         console.info('[sim] would open the sign-in page on auth.example.com');
         window.setTimeout(() => {

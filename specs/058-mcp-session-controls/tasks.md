@@ -247,8 +247,9 @@ say "End this session (More > End session), then send a message to resume it"; t
   [FR-071, FR-073]
   [IMPLEMENTED] 2026-10-23, dialog part, Copilot: `simmcpauth=1|manual` (+ `simmcpttl=N`) in `src/renderer/sim.ts`; `docs/screenshots/058-mcp-signin-*-{1440x900,1280x800}.png`. The tool card part waits for T103
 
-- [ ] T110 (its manual-steps wording follows T102's: End session, then a message, until T040-T042) Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
+- [x] T110 (its manual-steps wording follows T102's: End session, then a message, until T040-T042) Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
   domains differ (pure helper `signInSiteNote(serverUrl, pageHost)` with unit tests: same domain, other domain, `co.uk`, stdio) [FR-075]
+  [IMPLEMENTED] 2026-10-23 (review on #598): `src/main/mcpsignin.ts`, `screens.js`; `test:mcpsignin`
 - [ ] T111 Trust confirmation of per-folder extras and the Copilot waiting text say a sign-in may be kept in the system keychain
   after the session [FR-076]
 

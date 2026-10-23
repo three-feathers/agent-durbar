@@ -317,6 +317,12 @@ async function main(): Promise<void> {
       // no token path: nothing but `login` is ever called; the session config has no auth-request handler
       assert.ok(oauth().every((c) => c[0] === 'mcp.oauth.login'), 'never handlePendingRequest, complete, prepareLogin, cancelLogin');
       assert.ok(!('onMcpAuthRequest' in client.created[0]), 'no onMcpAuthRequest in the session config (Durbar never sees a token)');
+      // Sign in -> Cancel (no runtime call) -> Sign in again: the runtime is asked again, with the same three fields and no forceReauth
+      s.calls.length = 0;
+      await ad.startMcpSignIn(sid, 'agent365-teams');
+      await ad.startMcpSignIn(sid, 'agent365-teams');
+      assert.deepStrictEqual(oauth().map((c) => c[0]), ['mcp.oauth.login', 'mcp.oauth.login'], 'each Sign in calls login again');
+      assert.ok(oauth().every((c) => !('forceReauth' in (c[1] as object))), 'no forceReauth (what the runtime does with the first listener is T105)');
       // no URL = cached tokens were valid, the server is already connected
       s.loginAnswer = {};
       assert.deepStrictEqual(await ad.startMcpSignIn(sid, 'agent365-teams'), { kind: 'connected' }, 'no authorizationUrl: connected');
@@ -336,6 +342,19 @@ async function main(): Promise<void> {
       await assert.rejects(ad.startMcpSignIn(sid, 'x'), /cannot start a sign-in/);
       assert.strictEqual(s.calls.length, 0, 'no method: nothing was called');
       await assert.rejects(ad.startMcpSignIn('no-such-session', 'x'), /not running/, 'not live: rejects, nothing started');
+      // refreshMcpStatus (the poll while a sign-in page is open): `rpc.mcp.list`, fed to the mapper as the runtime's own server list
+      const seen: unknown[] = [];
+      ad.onEvent((e) => { if (e.type === 'mcp') seen.push(e.servers); });
+      s.calls.length = 0;
+      s.listAnswer = [{ name: 'agent365-teams', status: 'connected' }, { name: 'figma', status: 'needs-auth' }];
+      assert.strictEqual(typeof ad.refreshMcpStatus, 'function');
+      await ad.refreshMcpStatus(sid);
+      assert.deepStrictEqual(s.calls.map((c) => c.name), ['mcp.list'], 'one list call and nothing that starts or signs in');
+      assert.deepStrictEqual((seen[0] as Array<{ name: string; status: string }>).map((x) => [x.name, x.status]), [['agent365-teams', 'connected'], ['figma', 'needs-auth']], 'the usual mcp event follows');
+      delete (s.rpc.mcp as Record<string, unknown>).list;
+      await ad.refreshMcpStatus(sid); // a runtime without the call: nothing happens
+      await ad.refreshMcpStatus('no-such-session');
+
       await ad.stop(sid);
     }
     done = true;

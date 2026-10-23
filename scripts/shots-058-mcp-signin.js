@@ -10,7 +10,7 @@
  * Checks, at 1440x900 and 1280x800:
  * - the needs-sign-in row: hint, Sign in, Switch off for this session, How to sign in from a terminal; other rows have none of it;
  * - the steps (copilot, /mcp auth <name>) with Copy; Sign in -> "Sign-in page on auth.example.com" (no address anywhere), focus on
- *   Open sign-in page; Open -> toast, waiting text with the keychain sentence; then Running and a toast; the live region says so;
+ *   Open sign-in page; Open -> toast, waiting text with the credential-store sentence; then Running and a toast; the live region says so;
  * - Cancel returns to Sign in with focus on it; Switch off for this session goes through the existing switch;
  * - simmcpauth=manual: no Sign in, the steps are open; Claude and Codex rows (simkinds=mixed) keep today's behaviour;
  * - the dialog fits the window and its text is at least 10.5px.
@@ -63,6 +63,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(n.buttons.filter((b) => ['Sign in', 'Switch off for this session', 'How to sign in from a terminal'].includes(b)), ['Sign in', 'Switch off for this session', 'How to sign in from a terminal']);
     assert.ok(!n.buttons.includes('Restart'), 'a needs-sign-in row has no Restart: ' + JSON.stringify(n.buttons));
     assert.ok(await js(`!!window.__row('my-notes').querySelector('.srv-act button.primary[data-signin]')`), 'Sign in is the primary action, where Restart would be');
+    assert.ok(/Sign in from Agent Durbar has not been checked on a real account yet\./.test(n.text), 'FR-074 in the row: ' + n.text);
     const other = await info('github');
     assert.ok(other && !other.sign && other.status === 'Running', 'a running server has no sign-in block: ' + JSON.stringify(other));
     assert.ok(await js(`!!document.querySelector('#agMcp button[data-signin="my-notes"][aria-label="Sign in to my-notes"]')`), 'Sign in has an accessible name');
@@ -74,6 +75,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!window.__row('my-notes').querySelector('.srv-steps')`), 'steps opened');
     const steps = await js(`window.__row('my-notes').querySelector('.srv-steps').textContent`);
     assert.ok(/copilot/.test(steps) && /\/mcp auth my-notes/.test(steps) && /Restart session with these servers/.test(steps), 'Copilot manual route: ' + steps);
+    assert.ok(/If Sign in is not available/.test(steps) && /may not carry over to this session \(seen on 2026-10-23\)/.test(steps), 'the route is not presented as sure: ' + steps);
     assert.deepStrictEqual(await js(`[...window.__row('my-notes').querySelectorAll('.srv-steps code')].map(c=>c.textContent)`), ['copilot', '/mcp auth my-notes']);
     assert.ok(await js(`!!window.__row('my-notes').querySelector('button[data-copysteps]')`), 'Copy is offered');
     await check(w, 'steps');
@@ -86,6 +88,10 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!window.__row('my-notes').querySelector('button[data-signopen]')`), 'Open sign-in page shows');
     n = await info('my-notes');
     assert.ok(/Sign-in page on auth\.example\.com/.test(n.text), 'the host: ' + n.text);
+    assert.ok(/Sign-in page on auth\.example\.com · from Copilot/.test(n.text), 'FR-075: the source tag next to the host: ' + n.text);
+    assert.ok(!/different site than the server/.test(n.text), 'no other-site line for a server with no address of its own');
+    assert.ok(/not been checked on a real account yet/.test(n.text), 'FR-074 in the confirm');
+    assert.strictEqual(await js(`window.__row('my-notes').querySelector('button[data-signopen]').dataset.signhost`), 'auth.example.com', 'Open is bound to the host that was shown');
     assert.ok(n.buttons.includes('Open sign-in page') && n.buttons.includes('Cancel') && !n.buttons.includes('Sign in'), 'Open sign-in page and Cancel: ' + JSON.stringify(n.buttons));
     assert.strictEqual(n.focus, 'Open sign-in page', 'focus moved to Open sign-in page');
     assert.ok(!/https?:\/\/|authorize|state=|code_challenge/i.test(await dlgText()), 'no address anywhere in the dialog');
@@ -98,7 +104,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`/Opened the sign-in page in your browser/.test([...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' '))`), 'a toast says the page was opened');
     assert.ok(await until(`/Finish signing in in your browser/.test(window.__row('my-notes').textContent)`), 'the waiting text');
     n = await info('my-notes');
-    assert.ok(/GitHub Copilot keeps this sign-in in your system keychain; Agent Durbar never sees it\./.test(n.text), 'the keychain sentence: ' + n.text);
+    assert.ok(/GitHub Copilot keeps the sign-in in your system's credential store when one is available; Agent Durbar never sees it\./.test(n.text) && !/keychain/.test(n.text), 'neutral credential-store sentence, no keychain claim: ' + n.text);
     assert.ok(/This row updates when GitHub Copilot reports the server\./.test(n.text));
     assert.ok(n.focusIn, 'focus stays on the row');
     await check(w, 'waiting');

@@ -42,8 +42,11 @@ export interface McpReplyInput {
   /** Spec 069 FR-061: tools turned off in this agent's folder, by server. */
   toolsOff?: Readonly<Record<string, readonly string[]>>;
   /** Spec 058 FR-065: the open sign-in of one server (host only), from `McpSignInStore.view`. */
-  signIn?(name: string): { host: string; opened: boolean; expiresInMs: number } | undefined;
+  signIn?(name: string): { host: string; opened: boolean; expiresInMs: number; otherSite?: string } | undefined;
 }
+
+/** Spec 058 FR-065: the one rule for "this row needs a sign-in" (the window uses the same): the runtime's `needs-auth`, or a failed server whose failure is an auth one. */
+export const needsSignIn = (s: { status?: string; errorClass?: string } | undefined): boolean => !!s && (s.status === 'needs-auth' || (s.status === 'failed' && s.errorClass === 'auth'));
 
 /** A server name that is safe to put in a command the user may copy: no spaces, quotes, newlines or shell characters (a folder extra's name comes from a file). */
 const PLAIN_NAME = /^[A-Za-z0-9_.@:+-]{1,64}$/;
@@ -70,7 +73,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     // FR-030: Restart only for a server the running session knows (the runtime reported it) and that is switched on
     const canRestart = canRestartAny && on && !!st && st.status !== 'disabled';
     // FR-065/FR-068: a row that reads Needs sign-in, on, in a running session; the steps are the agent app's own text (missing = none)
-    const needs = isLive && on && !!st && (st.status === 'needs-auth' || st.errorClass === 'auth');
+    const needs = isLive && on && needsSignIn(st);
     const canSignIn = needs && typeof ad?.startMcpSignIn === 'function';
     const steps = needs && ad?.capabilities.mcpSignIn ? signInStepsFor(ad.capabilities.mcpSignInSteps, name, origin) : undefined;
     const open = canSignIn ? i.signIn?.(name) : undefined;

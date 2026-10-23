@@ -20,7 +20,7 @@ import type { AgentInfo } from '../src/shared/api';
 import { createDebugSink } from '../src/shared/redact';
 import { agentMcpReply, signInStepsFor } from '../src/main/mcpsession';
 import type { McpReplyInput } from '../src/main/mcpsession';
-import { McpSignInStore, SIGN_IN_TTL_MS, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, signInErrorText } from '../src/main/mcpsignin';
+import { MAX_SIGN_INS, McpSignInStore, POLL_MS, SIGN_IN_TTL_MS, blockedAuthHost, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, registrableDomain, signInErrorText, signInSiteNote } from '../src/main/mcpsignin';
 import { McpStore } from '../src/main/mcpstore';
 
 const PAGE = 'https://auth.example.com/authorize?client_id=abc&state=SECRETSTATE123&code_challenge=PKCEPKCEPKCE';
@@ -40,6 +40,17 @@ process.on('exit', (code) => {
 async function main(): Promise<void> {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-mcp-signin-'));
   try {
+    // ---- the preload passes ids, names and the shown host only: never an address (the window cannot supply one) ----
+    {
+      const pre = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'preload', 'preload.ts'), 'utf8');
+      const lines = pre.split('\n').filter((l) => /agents:mcp(SignIn|OpenSignIn|CancelSignIn)'/.test(l)).map((l) => l.trim());
+      assert.deepStrictEqual(lines, [
+        "agentMcpSignIn: (id, name) => ipcRenderer.invoke('agents:mcpSignIn', id, name),",
+        "agentMcpOpenSignIn: (id, name, host) => ipcRenderer.invoke('agents:mcpOpenSignIn', id, name, host),",
+        "agentMcpCancelSignIn: (id, name) => ipcRenderer.invoke('agents:mcpCancelSignIn', id, name),",
+      ], 'the three preload lines');
+    }
+
     // ---- the store (FR-065) ----
     {
       let t = 1_000;
@@ -57,11 +68,11 @@ async function main(): Promise<void> {
       assert.ok(st.has('a', 'x') && st.view('a', 'x')!.expiresInMs === 1, 'one millisecond before the limit it is still open');
       t += 1;
       assert.ok(!st.has('a', 'x') && st.view('a', 'x') === undefined, 'at 10 minutes it is gone');
-      assert.strictEqual(await st.open('a', 'x'), 'gone', 'an expired sign-in is not opened');
+      assert.strictEqual(await st.open('a', 'x', 'auth.example.com'), 'gone', 'an expired sign-in is not opened');
       assert.deepStrictEqual(opened, []);
       assert.ok(st.begin('a', 'x', PAGE, 'auth.example.com'), 'after the limit a new one may start');
       // opening: only the held address, re-checked
-      assert.strictEqual(await st.open('a', 'x'), 'opened');
+      assert.strictEqual(await st.open('a', 'x', 'auth.example.com'), 'opened');
       assert.deepStrictEqual(opened, [PAGE], 'the opener got the held address, after the call');
       assert.strictEqual(st.view('a', 'x')!.opened, true);
       // dropped: connected, Cancel, End
@@ -79,13 +90,13 @@ async function main(): Promise<void> {
       // a tampered or old entry that is not https is refused at open time (defence in depth) and dropped
       st.begin('a', 'z', 'http://auth.example.com/x', 'auth.example.com');
       opened.length = 0;
-      assert.strictEqual(await st.open('a', 'z'), 'refused');
+      assert.strictEqual(await st.open('a', 'z', 'auth.example.com'), 'refused');
       assert.deepStrictEqual(opened, [], 'http: never reaches the opener');
       assert.ok(!st.has('a', 'z'));
       // the opener fails: the entry stays and the error is not an address
       const bad = new McpSignInStore(() => 0, async () => { throw new Error(`no browser for ${PAGE}`); });
       bad.begin('a', 'x', PAGE, 'h');
-      assert.strictEqual(await bad.open('a', 'x'), 'failed');
+      assert.strictEqual(await bad.open('a', 'x', 'h'), 'failed');
       assert.ok(bad.has('a', 'x') && bad.view('a', 'x')!.opened === false, 'a failed open can be tried again');
     }
 
@@ -120,11 +131,11 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(await mcpSignInOp(d, store, sid, 'teams'), { ok: false, error: 'A sign-in for teams is already open.' });
       assert.strictEqual(calls().length, 1, 'the second press asked nothing');
       // the second step
-      assert.deepStrictEqual(await mcpOpenSignInOp(store, agents, sid, 'teams'), { ok: true });
+      assert.deepStrictEqual(await mcpOpenSignInOp(store, agents, sid, 'teams', 'auth.example.com'), { ok: true });
       assert.deepStrictEqual(opened, [PAGE], 'the held address was opened, once');
-      assert.deepStrictEqual(await mcpOpenSignInOp(store, agents, 'nope', 'teams'), { ok: false, error: 'Unknown agent or server.' });
-      assert.strictEqual((await mcpOpenSignInOp(store, agents, sid, 'x'.repeat(65))).ok, false);
-      assert.strictEqual((await mcpOpenSignInOp(store, agents, sid, 'web')).gone, true, 'nothing held for web');
+      assert.deepStrictEqual(await mcpOpenSignInOp(store, agents, 'nope', 'teams', 'auth.example.com'), { ok: false, error: 'Unknown agent or server.' });
+      assert.strictEqual((await mcpOpenSignInOp(store, agents, sid, 'x'.repeat(65), 'auth.example.com')).ok, false);
+      assert.strictEqual((await mcpOpenSignInOp(store, agents, sid, 'web', 'auth.example.com')).gone, true, 'nothing held for web');
       // Cancel: forgotten, the adapter's cancel is called, a second Cancel is harmless
       assert.deepStrictEqual(await mcpCancelSignInOp(d, store, sid, 'teams'), { ok: true });
       assert.ok(!store.has(sid, 'teams'));
@@ -132,7 +143,7 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(await mcpCancelSignInOp(d, store, sid, 'teams'), { ok: true });
       assert.strictEqual(calls().length, 2, 'cancelling nothing calls nothing');
       assert.strictEqual((await mcpCancelSignInOp(d, store, 'nope', 'teams')).ok, false);
-      assert.strictEqual((await mcpOpenSignInOp(store, agents, sid, 'teams')).gone, true, 'after Cancel nothing opens');
+      assert.strictEqual((await mcpOpenSignInOp(store, agents, sid, 'teams', 'auth.example.com')).gone, true, 'after Cancel nothing opens');
 
       // several servers that need a sign-in at once (figma, signavio, wordserver): each one is independent
       live = [{ name: 'figma', status: 'needs-auth' }, { name: 'signavio', status: 'needs-auth' }, { name: 'wordserver', status: 'needs-auth', errorClass: 'auth' }, ...NEEDS];
@@ -152,7 +163,7 @@ async function main(): Promise<void> {
       t += SIGN_IN_TTL_MS - 1;
       assert.ok(store.has(sid, 'teams'));
       t += 1;
-      const late = await mcpOpenSignInOp(store, agents, sid, 'teams');
+      const late = await mcpOpenSignInOp(store, agents, sid, 'teams', 'auth.example.com');
       assert.deepStrictEqual([late.ok, late.gone], [false, true], 'after 10 minutes the page is not opened');
       assert.match(late.error!, /no longer open/);
       assert.strictEqual((await mcpSignInOp(d, store, sid, 'teams')).ok, true, 'and a new Sign in works');
@@ -183,7 +194,8 @@ async function main(): Promise<void> {
       assert.strictEqual(f.ok, false);
       assert.strictEqual((f as { manual?: boolean }).manual, true);
       const ftext = (f as { error: string }).error;
-      assert.ok(!ftext.includes('SECRETSTATE') && !ftext.includes('example.com') && !ftext.includes(secret) && !ftext.includes('abcdefghijklmnop'), `no address or secret in the error: ${ftext}`);
+      const leaked = [/SECRETSTATE/, /example\.com/i, /abcdefghijklmnop/].some((re) => re.test(ftext)) || ftext.includes(secret);
+      assert.ok(!leaked, `no address or secret in the error: ${ftext}`);
       assert.ok(!store.has(sid, 'teams') && store.reserve(sid, 'teams'), 'a failed start leaves nothing held or reserved');
       store.release(sid, 'teams');
       assert.strictEqual(signInErrorText(new Error('x'), [], 'fallback'), 'x');
@@ -201,6 +213,115 @@ async function main(): Promise<void> {
       const r3 = await mcpSignInOp(d, store, sid, 'teams');
       assert.deepStrictEqual([r3.ok, (r3 as { manual?: boolean }).manual], [false, true]);
       assert.match((r3 as { error: string }).error, /not running\. Send a message to start it, then sign in/);
+    }
+
+    // ---- review on #598: refused addresses, host binding, provenance, session end, cap ----
+    {
+      let t = 0;
+      const opened: string[] = [];
+      const store = new McpSignInStore(() => t, async (u) => { opened.push(u); });
+      const ad = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInSteps: STEPS } });
+      const sid = await ad.start({ workspace: ws, quiet: true });
+      const agents = new Map([[sid, info(sid)]]);
+      let serverUrl: string | undefined;
+      const d = { agents, router: routerOf(ad), live: () => NEEDS, secrets: () => [] as string[], serverUrl: () => serverUrl };
+      const go = async (url: string, su?: string) => {
+        ad.signInResult = { kind: 'browser', url };
+        serverUrl = su;
+        store.drop(sid, 'teams');
+        return mcpSignInOp(d, store, sid, 'teams');
+      };
+      // whitespace, tabs and newlines anywhere in the text are refused (the URL parser would drop them silently)
+      for (const bad of ['https://auth.example.com/a\tb', 'https://auth.example.com/a\nb', 'https://auth.example.com/a\r\nb', ' https://auth.example.com/a', 'https://auth.example.com/a ', '\thttps://auth.example.com/a', 'https://auth.exa\tmple.com/a', 'https://auth.example.com/a\u0000b', 'https://auth.example.com/a b']) {
+        const r = await go(bad);
+        assert.deepStrictEqual([r.ok, (r as { manual?: boolean }).manual], [false, true], `refused: ${JSON.stringify(bad)}`);
+        assert.ok(!store.has(sid, 'teams'), 'nothing held');
+      }
+      // an IDN host is shown, held and opened in punycode
+      const idn = await go('https://аuth.example.com/authorize?x=1');
+      assert.strictEqual(idn.ok, true);
+      const shown = (idn as { host: string }).host;
+      assert.ok(/^xn--/.test(shown), `the confirm shows the punycode host: ${shown}`);
+      assert.ok(shown !== 'auth.example.com' && !/[^\x00-\x7f]/.test(shown), 'a lookalike never reads like the real domain');
+      assert.deepStrictEqual(await mcpOpenSignInOp(store, agents, sid, 'teams', shown), { ok: true });
+      assert.strictEqual(new URL(opened[opened.length - 1]).hostname, shown, 'the opened address has the host that was shown');
+      // the open is bound to the host that was shown: a different, missing or non-string host opens nothing
+      const n0 = opened.length;
+      const r2 = await go('https://auth.example.com/a');
+      assert.strictEqual(r2.ok, true);
+      for (const wrong of ['evil.example.net', '', undefined, null, 7, { host: 'auth.example.com' }, ['auth.example.com'], 'AUTH.example.com']) {
+        const x = await mcpOpenSignInOp(store, agents, sid, 'teams', wrong);
+        assert.deepStrictEqual([x.ok, x.gone], [false, true], `host ${JSON.stringify(wrong)}: refused`);
+      }
+      assert.strictEqual(opened.length, n0, 'a host mismatch opened nothing');
+      assert.strictEqual(store.has(sid, 'teams'), true, 'and the entry stays for the right click');
+      assert.deepStrictEqual(await mcpOpenSignInOp(store, agents, sid, 'teams', 'auth.example.com'), { ok: true });
+      // local and private hosts take the manual route
+      for (const h of ['localhost', 'a.localhost', '127.0.0.1', '127.1.2.3', '2130706433', '0x7f.1', '[::1]', '[fe80::1]', '10.0.0.1', '172.16.5.5', '172.31.255.1', '192.168.1.1', '169.254.1.1', '8.8.8.8', 'intranet', 'auth.example.com.', 'LOCALHOST']) {
+        if (h === 'auth.example.com.') continue;
+        const r = await go(`https://${h}/authorize`);
+        assert.deepStrictEqual([r.ok, (r as { manual?: boolean }).manual], [false, true], `${h} is refused`);
+      }
+      assert.ok(!blockedAuthHost('auth.example.com') && !blockedAuthHost('login.microsoftonline.com') && blockedAuthHost('::1') && blockedAuthHost(''), 'public names stay open');
+      // FR-075: where the page is, compared with the server's own site
+      assert.strictEqual(registrableDomain('login.example.co.uk'), 'example.co.uk');
+      assert.strictEqual(registrableDomain('a.b.example.com'), 'example.com');
+      assert.strictEqual(signInSiteNote('https://mcp.example.com/mcp', 'auth.example.com'), undefined, 'same site: no line');
+      assert.strictEqual(signInSiteNote('https://mcp.example.com/mcp', 'login.example.net'), 'mcp.example.com', 'other site: the server host');
+      assert.strictEqual(signInSiteNote('https://api.example.co.uk/mcp', 'login.example.co.uk'), undefined, 'co.uk: same site');
+      assert.strictEqual(signInSiteNote('https://api.example.co.uk/mcp', 'login.other.co.uk'), 'api.example.co.uk', 'co.uk: other site');
+      assert.strictEqual(signInSiteNote(undefined, 'auth.example.com'), undefined, 'a stdio or runtime-only server has no line');
+      assert.strictEqual(signInSiteNote('node server.js', 'auth.example.com'), undefined);
+      const far = await go('https://login.example.net/authorize', 'https://mcp.example.com/mcp');
+      assert.deepStrictEqual(far, { ok: true, kind: 'browser', host: 'login.example.net', otherSite: 'mcp.example.com' });
+      assert.strictEqual(store.view(sid, 'teams')!.otherSite, 'mcp.example.com', 'the line is part of the view the dialog repaints');
+      const near = await go('https://auth.example.com/authorize', 'https://mcp.example.com/mcp');
+      assert.deepStrictEqual(near, { ok: true, kind: 'browser', host: 'auth.example.com' });
+      assert.strictEqual(store.view(sid, 'teams')!.otherSite, undefined);
+      store.drop(sid, 'teams');
+
+      // Sign in -> Cancel -> Sign in again: the runtime is asked again each time (what its listener does is T105)
+      ad.signInCalls.length = 0;
+      assert.strictEqual((await go('https://auth.example.com/a')).ok, true);
+      await mcpCancelSignInOp(d, store, sid, 'teams');
+      ad.signInResult = { kind: 'browser', url: 'https://auth.example.com/b' };
+      assert.strictEqual((await mcpSignInOp(d, store, sid, 'teams')).ok, true);
+      assert.deepStrictEqual(ad.signInCalls.map((c) => (c.cancel ? 'cancel ' : 'start ') + c.name), ['start teams', 'cancel teams', 'start teams'], 'a second Sign in calls the runtime again');
+      store.drop(sid, 'teams');
+
+      // a status that is not a sign-in need (pending with an auth class) is not signed in
+      const pend = { ...d, live: () => [{ name: 'teams', status: 'pending', errorClass: 'auth' as const }] };
+      assert.match((await mcpSignInOp(pend, store, sid, 'teams') as { error: string }).error, /does not need a sign-in/);
+
+      // the session ends while the runtime is working: nothing is held, the runtime is told to stop, the steps show
+      const stub = ad as unknown as { startMcpSignIn: (s: string, n: string) => Promise<unknown> };
+      const realStart = stub.startMcpSignIn;
+      ad.signInCalls.length = 0;
+      stub.startMcpSignIn = async (s2: string, n: string) => { await ad.stop(s2); return { kind: 'browser', url: 'https://auth.example.com/late' }; };
+      const gone = await mcpSignInOp(d, store, sid, 'teams');
+      assert.deepStrictEqual([gone.ok, (gone as { manual?: boolean }).manual], [false, true]);
+      assert.match((gone as { error: string }).error, /not running/);
+      assert.ok(!store.has(sid, 'teams') && store.reserve(sid, 'teams'), 'a session that ended during the call holds no address');
+      store.release(sid, 'teams');
+      stub.startMcpSignIn = realStart;
+      // the agent removed during the call
+      const ad2 = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true } });
+      const sid3 = await ad2.start({ workspace: ws, quiet: true });
+      const agents3 = new Map([[sid3, info(sid3)]]);
+      const st3 = ad2 as unknown as { startMcpSignIn: (s: string, n: string) => Promise<unknown> };
+      st3.startMcpSignIn = async () => { agents3.delete(sid3); return { kind: 'browser', url: 'https://auth.example.com/late' }; };
+      const g3 = await mcpSignInOp({ agents: agents3, router: routerOf(ad2), live: () => NEEDS, secrets: () => [] }, store, sid3, 'teams');
+      assert.strictEqual(g3.ok, false);
+      assert.ok(!store.has(sid3, 'teams'), 'a removed agent holds no address');
+
+      // the store sweeps what expired and is capped
+      t = 1_000_000;
+      const cap = new McpSignInStore(() => t, async () => undefined);
+      for (let i = 0; i < MAX_SIGN_INS; i++) assert.ok(cap.begin('a', `s${i}`, PAGE, 'h'), `entry ${i}`);
+      assert.ok(!cap.begin('a', 'one-more', PAGE, 'h') && !cap.reserve('a', 'one-more'), `at most ${MAX_SIGN_INS} are held`);
+      t += SIGN_IN_TTL_MS;
+      assert.ok(cap.begin('a', 'one-more', PAGE, 'h'), 'expired entries are swept when one is added');
+      assert.ok(!cap.has('a', 's0'), 'and they are gone');
     }
 
     // ---- the reply (FR-020, FR-068) ----
@@ -268,6 +389,8 @@ async function main(): Promise<void> {
         const logs: string[] = [];
         const opened: string[] = [];
         let t = 50_000;
+        const running = new Set<{ fn: () => unknown }>(); // the poller's timers: one per opened sign-in
+        const tick = async (): Promise<void> => { for (const h of [...running]) await h.fn(); };
         registerMcpIpc({
           store: () => store, agents,
           router: { onEvent: (cb: (e: AgentEvent) => void) => { listener = cb; return () => undefined; }, forAgent: () => ad } as never,
@@ -276,7 +399,9 @@ async function main(): Promise<void> {
           log: (_a, action) => logs.push(action),
           openUrl: async (u) => { opened.push(u); },
           now: () => t,
+          timers: { set: (fn: () => unknown) => { const h = { fn }; running.add(h); return h; }, clear: (h: unknown) => { running.delete(h as { fn: () => unknown }); } },
         });
+        ad.onEvent((e) => listener(e));
         const logFile = path.join(ws, 'events.jsonl');
         const sink = createDebugSink(logFile, process.env, fs.appendFileSync);
         const emit = (e: AgentEvent): void => { sink({ event: e }); listener(e); };
@@ -301,29 +426,121 @@ async function main(): Promise<void> {
         entries = (await call('agents:mcp', sid) as unknown as { servers: Array<Record<string, unknown>> }).servers;
         assert.deepStrictEqual(entries.find((x) => x.name === 'teams')!.signIn, { host: 'auth.example.com', opened: false, expiresInMs: 600_000 });
         assert.deepStrictEqual(opened, [], 'nothing opened yet');
-        assert.deepStrictEqual(await call('agents:mcpOpenSignIn', sid, 'teams'), { ok: true });
+        assert.deepStrictEqual(await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com'), { ok: true });
         assert.deepStrictEqual(opened, [PAGE]);
         assert.strictEqual(((await call('agents:mcp', sid) as unknown as { servers: Array<{ name: string; signIn?: { opened: boolean } }> }).servers.find((x) => x.name === 'teams')!.signIn!.opened), true);
+        // the window cannot supply an address: extra arguments (a URL, an object with a url) change nothing, only the held address opens
+        opened.length = 0;
+        for (const extra of ['https://evil.example/', { url: 'https://evil.example/' }, ['https://evil.example/']]) {
+          assert.deepStrictEqual(await (handlers.get('agents:mcpOpenSignIn')!(win, sid, 'teams', 'auth.example.com', extra) as Promise<unknown>), { ok: true });
+        }
+        assert.deepStrictEqual(opened, [PAGE, PAGE, PAGE], 'the opener only ever got the held address');
+        for (const wrong of ['https://evil.example/', { url: 'https://evil.example/' }]) assert.strictEqual((await call('agents:mcpOpenSignIn', sid, 'teams', wrong)).gone, true, 'a URL in the host slot opens nothing');
+        assert.deepStrictEqual(opened, [PAGE, PAGE, PAGE]);
         // the runtime reports the server connected: the entry is dropped and the row stops offering Sign in
         emit(mcpEvent([{ name: 'teams', status: 'connected' }, { name: 'web', status: 'connected' }]));
-        assert.strictEqual((await call('agents:mcpOpenSignIn', sid, 'teams')).gone, true, 'connected drops the held address');
+        assert.strictEqual((await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com')).gone, true, 'connected drops the held address');
         entries = (await call('agents:mcp', sid) as unknown as { servers: Array<Record<string, unknown>> }).servers;
         assert.strictEqual(entries.find((x) => x.name === 'teams')!.signIn, undefined);
         // End session / Restart session: the stopped event drops it
         emit(mcpEvent(NEEDS));
         assert.strictEqual((await call('agents:mcpSignIn', sid, 'teams')).ok, true);
         emit({ type: 'status', sessionId: sid, timestamp: 2, status: 'stopped' } as AgentEvent);
-        assert.strictEqual((await call('agents:mcpOpenSignIn', sid, 'teams')).gone, true, 'End session drops the held address');
+        assert.strictEqual((await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com')).gone, true, 'End session drops the held address');
         // the time limit, through the channel
         emit(mcpEvent(NEEDS));
         assert.strictEqual((await call('agents:mcpSignIn', sid, 'teams')).ok, true);
         t += SIGN_IN_TTL_MS;
-        assert.strictEqual((await call('agents:mcpOpenSignIn', sid, 'teams')).gone, true, '10 minutes: gone');
-        assert.deepStrictEqual(opened, [PAGE], 'still opened only the one time');
+        assert.strictEqual((await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com')).gone, true, '10 minutes: gone');
+        assert.deepStrictEqual(opened, [PAGE, PAGE, PAGE], 'nothing more was opened after the limit');
         // Cancel through the channel
         assert.strictEqual((await call('agents:mcpSignIn', sid, 'teams')).ok, true);
         assert.deepStrictEqual(await call('agents:mcpCancelSignIn', sid, 'teams'), { ok: true });
-        assert.strictEqual((await call('agents:mcpOpenSignIn', sid, 'teams')).gone, true);
+        assert.strictEqual((await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com')).gone, true);
+        // ---- real 2026-10-23: the runtime sent no status after the browser sign-in; the page's server list is read again while a page is open ----
+        {
+          assert.strictEqual(POLL_MS, 3000);
+          emit(mcpEvent(NEEDS));
+          assert.strictEqual((await call('agents:mcpSignIn', sid, 'teams')).ok, true);
+          assert.strictEqual(running.size, 0, 'no timer before the page is opened');
+          ad.refreshCalls = 0;
+          ad.connectOnRefresh = { name: 'teams', at: 3 };
+          assert.deepStrictEqual(await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com'), { ok: true });
+          assert.strictEqual(running.size, 1, 'one timer for the opened entry');
+          assert.deepStrictEqual(await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com'), { ok: true });
+          assert.strictEqual(running.size, 1, 'opening again does not add a second timer');
+          const row = async () => ((await call('agents:mcp', sid)) as unknown as { servers: Array<{ name: string; status?: string; signIn?: unknown }> }).servers.find((x) => x.name === 'teams')!;
+          await tick();
+          await tick();
+          assert.deepStrictEqual([ad.refreshCalls, (await row()).status], [2, 'needs-auth'], 'two reads: still waiting');
+          assert.ok((await row()).signIn, 'the row still shows the waiting sign-in');
+          await tick();
+          assert.strictEqual(ad.refreshCalls, 3);
+          const flipped = await row();
+          assert.deepStrictEqual([flipped.status, flipped.signIn], ['connected', undefined], 'the third read reports connected: the row flips and the entry is gone');
+          assert.strictEqual(running.size, 0, 'the timer is cleared on connected');
+          const before = ad.refreshCalls;
+          await tick();
+          assert.strictEqual(ad.refreshCalls, before, 'no read after it is cleared');
+          // Cancel clears the timer
+          ad.connectOnRefresh = undefined;
+          emit(mcpEvent(NEEDS));
+          await call('agents:mcpSignIn', sid, 'teams');
+          await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com');
+          assert.strictEqual(running.size, 1);
+          await call('agents:mcpCancelSignIn', sid, 'teams');
+          assert.strictEqual(running.size, 0, 'the timer is cleared on Cancel');
+          // the 10-minute limit clears it (the next tick finds the entry expired)
+          await call('agents:mcpSignIn', sid, 'teams');
+          await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com');
+          assert.strictEqual(running.size, 1);
+          t += SIGN_IN_TTL_MS;
+          const calls0 = ad.refreshCalls;
+          await tick();
+          assert.strictEqual(running.size, 0, 'the timer is cleared at the time limit');
+          assert.strictEqual(ad.refreshCalls, calls0, 'and the expired tick reads nothing');
+          // End session clears it
+          t += 1;
+          await call('agents:mcpSignIn', sid, 'teams');
+          await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com');
+          assert.strictEqual(running.size, 1);
+          emit({ type: 'status', sessionId: sid, timestamp: 3, status: 'stopped' } as AgentEvent);
+          assert.strictEqual(running.size, 0, 'the timer is cleared when the session ends');
+          // no overlapping reads: a read that never settles is not stacked on; the window regaining focus reads at once when none runs
+          ad.refreshDelay = Infinity;
+          emit(mcpEvent(NEEDS));
+          await call('agents:mcpSignIn', sid, 'teams');
+          await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com');
+          const c1 = ad.refreshCalls;
+          void tick();
+          void tick();
+          void tick();
+          await new Promise((r) => setImmediate(r));
+          assert.strictEqual(ad.refreshCalls, c1 + 1, 'three ticks while one read is running make one read');
+          await call('agents:mcp', sid, true);
+          assert.strictEqual(ad.refreshCalls, c1 + 1, 'focus while a read is running does not stack either');
+          await call('agents:mcpCancelSignIn', sid, 'teams');
+          ad.refreshDelay = undefined;
+          // focus: only `focus === true` reads (a repaint after an event must not, or each read would trigger the next)
+          await call('agents:mcpSignIn', sid, 'teams');
+          await call('agents:mcpOpenSignIn', sid, 'teams', 'auth.example.com');
+          const c2 = ad.refreshCalls;
+          await call('agents:mcp', sid);
+          await new Promise((r) => setImmediate(r));
+          assert.strictEqual(ad.refreshCalls, c2, 'a plain agents:mcp call reads nothing');
+          await call('agents:mcp', sid, true);
+          await new Promise((r) => setImmediate(r));
+          assert.strictEqual(ad.refreshCalls, c2 + 1, 'the window regaining focus reads at once');
+          // a failing read is swallowed and the timer stays
+          ad.refreshFail = 'runtime busy';
+          await tick();
+          assert.strictEqual(running.size, 1);
+          ad.refreshFail = undefined;
+          await call('agents:mcpCancelSignIn', sid, 'teams');
+          assert.strictEqual(running.size, 0);
+          // the stub for the rest of this block: nothing is left open
+          emit(mcpEvent([{ name: 'teams', status: 'connected' }]));
+        }
         // the address is nowhere: not the DURBAR_LOG sink, the activity-log hook, the console, nor any reply above
         emit(mcpEvent([{ name: 'teams', status: 'connected' }]));
         const sinkText = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';

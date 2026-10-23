@@ -21,6 +21,7 @@ export class FakeSession {
   /** Spec 058 FR-064: what `rpc.mcp.oauth.login` answers (no `authorizationUrl` = already connected); `loginFail` makes it reject (an Error, or a message). */
   loginAnswer: unknown = { authorizationUrl: 'https://auth.example.test/authorize?state=abc' };
   loginFail?: Error | string;
+  listAnswer: unknown[] = [];
   compactAnswer: unknown = { success: true, tokensRemoved: 5000, messagesRemoved: 4, contextWindow: { tokenLimit: 100000, currentTokens: 12000, messagesLength: 3 } };
   removed = true;
   /** Events `send` replays through the handler, in order (a recorded fixture). */
@@ -63,6 +64,8 @@ export class FakeSession {
       restartServer: async (a: unknown) => this.rec('mcp.restartServer', undefined, a),
       // spec 069 FR-031: a live tools/list for one server; `toolsFail` makes it reject (the runtime throws when not connected)
       listTools: async (a: unknown) => { this.calls.push({ name: 'mcp.listTools', args: [a] }); if (this.toolsFail) throw new Error(this.toolsFail); return this.toolsAnswer; },
+      // spec 058: `list` is what `refreshMcpStatus` reads (`listAnswer` is the servers the runtime says it has now)
+      list: async () => { this.calls.push({ name: 'mcp.list', args: [] }); return { servers: this.listAnswer }; },
       stopServer: async (a: unknown) => this.rec('mcp.stopServer', undefined, a),
       reload: async () => this.rec('mcp.reload', undefined),
       // spec 058 FR-064 (@experimental): only `login` may ever be called by Durbar; the others record so a test can say they never were. A test deletes `oauth` to act as an older runtime.

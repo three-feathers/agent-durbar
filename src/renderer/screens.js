@@ -933,10 +933,11 @@
       const n=x.name,app=s.app||(o&&o.appName)||'Your agent app',si=x.signIn,en=esc(n);
       let line='',acts='';
       if(si&&!si.opened){
-        line=`<span class="srv-sgl">Sign-in page on <b>${esc(si.host)}</b></span>`;
-        acts=`<button class="btn sm primary" type="button" data-signopen="${en}" aria-label="${esc('Open the sign-in page for '+n)}">Open sign-in page</button><button class="btn sm" type="button" data-signcancel="${en}" aria-label="${esc('Cancel the sign-in for '+n)}">Cancel</button>`;
+        /* FR-075: where the server came from (the row's own tag words), and a plain line when the page is on another site than the server */
+        line=`<span class="srv-sgl">Sign-in page on <b>${esc(si.host)}</b> · from ${srcChips(x)}</span>`+(si.otherSite?`<span class="srv-sgl srv-warn">This sign-in page is on a different site than the server (${esc(si.otherSite)}).</span>`:'');
+        acts=`<button class="btn sm primary" type="button" data-signopen="${en}" data-signhost="${esc(si.host)}" aria-label="${esc('Open the sign-in page for '+n)}">Open sign-in page</button><button class="btn sm" type="button" data-signcancel="${en}" aria-label="${esc('Cancel the sign-in for '+n)}">Cancel</button>`;
       }else if(si){
-        line=`<span class="srv-sgl">Finish signing in in your browser. This row updates when ${esc(app)} reports the server. ${esc(app)} keeps this sign-in in your system keychain; Agent Durbar never sees it.</span>`;
+        line=`<span class="srv-sgl">Finish signing in in your browser. This row updates when ${esc(app)} reports the server. ${esc(app)} keeps the sign-in in your system's credential store when one is available; Agent Durbar never sees it.</span>`;
         acts=`<button class="btn sm" type="button" data-signcancel="${en}" aria-label="${esc('Cancel the sign-in for '+n)}">Cancel</button>`;
       }else{
         if(signNote.has(n))line=`<span class="srv-sgl" role="status">${esc(signNote.get(n))}</span>`;
@@ -948,7 +949,9 @@
         acts+=x.canSignIn?`<button class="btn sm" type="button" data-steps="${en}" aria-expanded="${open?'true':'false'}" aria-label="${esc((open?'Hide':'Show')+' how to sign in to '+n+' from a terminal')}">How to sign in from a terminal</button>`:'';
         if(open)steps=`<div class="srv-det"><p class="srv-steps" tabindex="0" aria-label="${esc('How to sign in to '+n+' from a terminal')}">${stepsHTML(x.signInSteps)}</p>${stepsCmds(x.signInSteps)?`<button class="btn sm" type="button" data-copysteps="${en}" aria-label="${esc('Copy the commands to sign in to '+n)}">Copy</button>`:''}</div>`;
       }
-      return `<div class="srv-sign">${line}${acts?`<div class="srv-sgact">${acts}</div>`:''}${steps}</div>`;
+      /* FR-074: said in the row until the real check (T105) has run */
+      const honest=x.canSignIn||x.signIn?`<span class="srv-sgl mut">Sign in from Agent Durbar has not been checked on a real account yet.</span>`:'';
+      return `<div class="srv-sign">${line}${honest}${acts?`<div class="srv-sgact">${acts}</div>`:''}${steps}</div>`;
     };
     const body=s=>{
       const rows=s.servers.map(x=>{
@@ -1043,7 +1046,7 @@
         if(x&&x.signIn)continue;
         waited.delete(n);
         if(x&&x.status==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');}
-        else if(x&&(x.status==='needs-auth'||x.errorClass==='auth'))signNote.set(n,'Sign-in was not finished. Press Sign in to try again.');}
+        else if(x&&(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth')))signNote.set(n,'Sign-in was not finished. Press Sign in to try again.');}
       for(const x of st.servers)if(x.status==='connected')signNote.delete(x.name);
       const f=document.activeElement,inside=f&&dlg.contains(f);
       const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.signin!==undefined?['signin',f.dataset.signin]:f.dataset.signopen!==undefined?['signopen',f.dataset.signopen]:f.dataset.signcancel!==undefined?['signcancel',f.dataset.signcancel]:f.dataset.swoff!==undefined?['swoff',f.dataset.swoff]:f.dataset.steps!==undefined?['steps',f.dataset.steps]:f.dataset.copysteps!==undefined?['copysteps',f.dataset.copysteps]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
@@ -1084,6 +1087,9 @@
       },150);
     };
     mcpDlgHook=onEvent;
+    /* spec 058 FR-064 (real 2026-10-23): coming back from the browser, read again at once (main also reads every 3 s while a sign-in page is open) */
+    const onFocus=()=>{if(dlg&&dlg.isConnected&&(waited.size||(st.servers||[]).some(x=>x.signIn))){void Promise.resolve(X.bridge.agentMcp(a.id,true)).catch(()=>0);void repaint();}};
+    window.addEventListener('focus',onFocus);
     /* FR-065/FR-069 (T102): the two-step Sign in. Main holds the address; this code only ever has the host. */
     const call=async(fn,...args)=>{try{return await fn(...args);}catch(e){return {ok:false,error:String(e&&e.message||e)};}};
     const signIn=async n=>{
@@ -1100,8 +1106,8 @@
       }
       await repaint();
     };
-    const openSign=async n=>{
-      const r=await call(X.bridge.agentMcpOpenSignIn,a.id,n);
+    const openSign=async(n,host)=>{
+      const r=await call(X.bridge.agentMcpOpenSignIn,a.id,n,host);
       if(r&&r.ok){wantFocus=['signcancel',n];X.toast('Opened the sign-in page in your browser.',3600);X.announce('Opened the sign-in page. Finish signing in in your browser.');}
       else{
         if(r&&r.gone){waited.delete(n);signNote.set(n,'Sign-in was not finished. Press Sign in to try again.');}
@@ -1162,7 +1168,7 @@
         const tc=e.target.closest('input[data-tool]');if(tc&&!tc.disabled){const n=tc.dataset.tsrv,x=(st.servers||[]).find(y=>y.name===n)||{},off=new Set(x.toolsOff||[]);if(tc.checked)off.delete(tc.dataset.tool);else off.add(tc.dataset.tool);void saveOff(n,[...off]);return;}
         const mr=e.target.closest('button[data-mrm]');if(mr){const n=mr.dataset.mrm;d._close();void removeOne(n);return;}
         const sb=e.target.closest('button[data-signin]');if(sb&&!sb.disabled){void signIn(sb.dataset.signin);return;}
-        const so=e.target.closest('button[data-signopen]');if(so&&!so.disabled){void openSign(so.dataset.signopen);return;}
+        const so=e.target.closest('button[data-signopen]');if(so&&!so.disabled){void openSign(so.dataset.signopen,so.dataset.signhost);return;}
         const sc=e.target.closest('button[data-signcancel]');if(sc&&!sc.disabled){void cancelSign(sc.dataset.signcancel);return;}
         const sw=e.target.closest('button[data-swoff]');if(sw&&!sw.disabled){void switchOff(sw.dataset.swoff);return;}
         const stp=e.target.closest('button[data-steps]');if(stp){const n=stp.dataset.steps;if(openSteps.has(n))openSteps.delete(n);else openSteps.add(n);void repaint();return;}
@@ -1178,7 +1184,7 @@
         if(r&&r.error)X.toast(esc(r.error),5200);
         await repaint();});}});
     const r=await d0;
-    clearTimeout(evT);evT=0;clearTimeout(expT);expT=0;if(mcpDlgHook===onEvent)mcpDlgHook=null;
+    window.removeEventListener('focus',onFocus);clearTimeout(evT);evT=0;clearTimeout(expT);expT=0;if(mcpDlgHook===onEvent)mcpDlgHook=null;
     if(r&&r.value==='settings')open('settings');
     else if(r&&r.value==='folder'&&X.folderOf){const f=X.folderOf(a);if(f)openFolder(f.key,f.name);}
   }
