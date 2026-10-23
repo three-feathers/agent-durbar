@@ -94,6 +94,28 @@ eq(boom.mask(raw), '', 'a throwing redact: mask gives nothing');
   eq(T.mask(`x gh\`p_${tail}\` y`).includes('A1b2C3d4'), false, 'mask also catches the split token');
   eq(T.mask('a_b *c* `d`'), 'a_b *c* `d`', 'mask leaves an ordinary text as it is');
 }
+// a token split by Markdown LATE (20+ characters in): the first mask must not run on text that an earlier mask already changed
+{
+  const norm = (x: string): string => x.replace(/[_\-*`~[\]()\\#>\s]/g, '');
+  const marks: Array<[string, string, string]> = [['*', '*', '*'], ['`', '`', '`'], ['**', '**', '**'], ['~~', '~~', '~~'], ['link', '[', '](http://u.test)']];
+  let cases = 0;
+  for (const tok of [ghp, pat, sk]) {
+    for (const [name, open, close] of marks) {
+      for (let i = 20; i <= 36 && i < tok.length - 8; i += 2) {
+        const split = tok.slice(0, i) + open + tok.slice(i, i + 8) + close + tok.slice(i + 8);
+        const tail = norm(tok.slice(i));
+        for (const ctx of [`Saved ${split} to the vault.`, `**Done.** ${split}`]) {
+          for (const [what, out] of [['excerpt', T.excerpt(ctx, 400)], ['mask', T.mask(ctx)]] as const) {
+            const o = norm(out);
+            for (let k = 0; k + 6 <= tail.length; k++) assert.ok(!o.includes(tail.slice(k, k + 6)), `${what} leaks "${tail.slice(k, k + 6)}" (${name}, offset ${i}): ${out}`);
+            cases++;
+          }
+        }
+      }
+    }
+  }
+  ok(cases > 300, `split-token cases: ${cases}`);
+}
 // excerpt without n is not cut (the wrapper too)
 eq(T.excerpt('word '.repeat(100), undefined as unknown as number), 'word '.repeat(100).trim(), 'create().excerpt without n does not cut');
 // the stateless parts (liveact.js and the page share them)

@@ -18,17 +18,18 @@
   const plain=(t,codeWord)=>plainKeep(t,codeWord).replace(/_/g,'');
   const SPLIT=/[*`~\[\]]/; /* Markdown marks that can sit inside a token (emphasis, code, strike, link brackets) */
   const cutter=(s,n)=>CT&&typeof CT.cutText==='function'?CT.cutText(s,n):s;
-  /* Mask, make plain, mask AGAIN, then drop `_`: a token split by Markdown (`gh`+backtick+`p_...`, `sk-proj_*Ab...*`) only shows its shape
-     once the Markdown is gone, and `_` must still be there for the pattern. null when masking is not possible. */
+  /* Make plain (keeping `_`), THEN mask, then drop `_`: a token split by Markdown (`gh`+backtick+`p_...`, `ghp_<20 chars>**K1l2...**`) only shows
+     its shape once the Markdown is gone, and `_` must still be there for the pattern. The mask always reads the unescaped raw text made plain,
+     never the output of an earlier mask (a half-masked token joined with its tail matches nothing): the token's own characters are never
+     removed by plainKeep. null when masking is not possible. */
   const maskPlain=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;try{
-    const m1=redact(unesc(raw));if(typeof m1!=='string')return null;
-    const m2=SPLIT.test(m1)?redact(plainKeep(m1,codeWord)):plainKeep(m1,codeWord);if(typeof m2!=='string')return null;
-    return m2.replace(/_/g,'');}catch(e){return null;}};
-  /* the masked text, not made plain or cut: unescaped, masked, and masked again when a token only shows once the Markdown is stripped
-     (the text is shown as it is otherwise). '' when masking is not possible. */
-  const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';try{const m1=redact(unesc(raw));if(typeof m1!=='string')return '';
-    if(!SPLIT.test(m1))return m1; /* no Markdown that can split a token: one pass is enough (and keeps the live readout cheap) */
-    const k=plainKeep(m1),m2=redact(k);if(typeof m2!=='string')return '';return m2===k?m1:m2;}catch(e){return '';}};
+    const m=redact(plainKeep(unesc(raw),codeWord));if(typeof m!=='string')return null;
+    return m.replace(/_/g,'');}catch(e){return null;}};
+  /* the masked text, not made plain or cut: masked as it is, and again on the plain-kept text when Markdown that can split a token is
+     present (otherwise the text is shown as it is). '' when masking is not possible. */
+  const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';try{const u=unesc(raw),m1=redact(u);if(typeof m1!=='string')return '';
+    if(!SPLIT.test(u))return m1; /* no Markdown that can split a token: one pass is enough (and keeps the live readout cheap) */
+    const k=plainKeep(u),m2=redact(k);if(typeof m2!=='string')return '';return m2!==k?m2:m1;}catch(e){return '';}};
   /* raw agent text -> masked, plain, at most n characters (no n: not cut). '' when masking is not possible. */
   const excerpt=(raw,redact,n,codeWord)=>{const p=maskPlain(String(raw==null?'':raw),redact,codeWord);if(p===null)return '';return n==null?p:cutter(p,n);};
   /* a tool label masked the way the live readout (LIVEACT) masks it: a command by maskSecretCommand, a URL by maskSecretUrl, anything else by redact.

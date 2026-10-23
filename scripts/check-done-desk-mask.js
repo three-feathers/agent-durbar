@@ -19,7 +19,7 @@ const GHP = 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const PAT = 'github' + '_pat_' + '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij';
 const SK = 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
 const KEY = 'Kd93' + 'LmP27xQvB' + 'w5Zt';
-const NEEDLES = [GHP, PAT, SK, KEY, GHP.replace(/_/g, ''), PAT.replace(/_/g, ''), 'A1b2C3d4', '11ABCDEFG0', 'proj-AbCdEf', 'projAbCdEf', 'Kd93LmP', 'abcdefghijklmn', 'ghp', 'github_pat', 'githubpat'].map((x) => x.toLowerCase());
+const NEEDLES = [GHP, PAT, SK, KEY, GHP.replace(/_/g, ''), PAT.replace(/_/g, ''), 'A1b2C3d4', '11ABCDEFG0', 'proj-AbCdEf', 'projAbCdEf', 'Kd93LmP', 'abcdefghijklmn', 'k1l2m3n4', 'ghp', 'github_pat', 'githubpat'].map((x) => x.toLowerCase());
 const SCAN = `(()=>{const out=[];const skip=e=>!!e.closest('#chat');
   const w=document.createTreeWalker(document.documentElement,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT);
   for(let n=w.currentNode;n;n=w.nextNode()){
@@ -47,7 +47,7 @@ module.exports = async (ctx) => {
     await emit({ type: 'status', sessionId: ids[4], timestamp: ts, status: 'working', intent: 'Using gh`p_' + TAIL + '` and sk-proj_*' + SKTAIL + '*' });
     await emit({ type: 'status', sessionId: ids[5], timestamp: ts, status: 'working', intent: 'x' });
     await emit({ type: 'output', sessionId: ids[5], timestamp: ts, delta: 'Replying: saved ghp\\_' + TAIL + ' and gh`p_' + TAIL + '` to the vault. ' });
-    await emit({ type: 'output', sessionId: ids[5], timestamp: ts, delta: '', final: true, text: 'Saved ghp\\_' + TAIL + ' and gh`p_' + TAIL + '` to the vault.' });
+    await emit({ type: 'output', sessionId: ids[5], timestamp: ts, delta: '', final: true, text: 'Saved ghp\\_' + TAIL + ' and gh`p_' + TAIL + '` to the vault. Also ' + GHP.slice(0, 24) + '**' + GHP.slice(24) + '** (split late).' });
     await emit({ type: 'status', sessionId: ids[5], timestamp: ts, status: 'idle' });
   };
   const back = async () => { await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click();})()`); await until(`!document.body.classList.contains('panel-open')`); };
