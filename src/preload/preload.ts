@@ -75,6 +75,7 @@ const api: DurbarApi = {
   onHarnessProgress: (cb) => sub('harness:progress', cb),
   onHarnessDone: (cb) => sub('harness:done', cb),
   onRemoteOff: (cb) => sub('agents:remoteOff', cb),
+  onOrgNote: (cb) => sub('agents:orgNote', cb),
   onRemoteUrl: (cb) => sub('agents:remoteUrl', cb),
   exportTheme: (id) => ipcRenderer.invoke('theme:export', id),
   setCap: (id, credits) => ipcRenderer.invoke('agents:setCap', id, credits),

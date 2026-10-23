@@ -219,6 +219,7 @@ const SIM_ORG = typeof location !== 'undefined' && new URLSearchParams(location.
 const simOrgText = (app: string): string => `Blocked by your organization's ${app} policy`;
 const simOrgDoubtText = (app: string): string => `Your organization's ${app} policy may block this (Agent Durbar could not read all of it)`;
 const SIM_ORG_APP: Record<string, string> = { copilot: 'Copilot', claude: 'Claude Code' };
+const simOrgNotes = new Set<(p: { id: string; text: string }) => void>();
 const simOrgMode = (kind: string | undefined, mode: string): string | undefined => (SIM_ORG && mode === 'allow' && SIM_ORG_APP[kind ?? 'copilot'] ? simOrgText(SIM_ORG_APP[kind ?? 'copilot']) : undefined);
 const simOrgModel = (kind: string | undefined, id: string): string | undefined => (SIM_ORG && kind === 'claude' && id === 'haiku' ? simOrgText('Claude Code') : undefined);
 const simOrgServer = (kind: string | undefined, name: string): string | undefined => (SIM_ORG && (kind ?? 'copilot') === 'copilot' && name === 'my-notes' ? simOrgText('Copilot') : undefined);
@@ -2387,6 +2388,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           else if (k.modelSwitch) info.modelControl = { switch: 'next-message', effort: true, contextTier: k.modelSwitch.contextTier, compact: false, windowKnown: true };
         }
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
+        if (SIM_ORG && (info.adapterId ?? 'copilot') === 'codex' && info.permMode === 'allow') setTimeout(() => { for (const cb of simOrgNotes) cb({ id: info.id, text: simOrgDoubtText('Codex') }); }, 50);
         return { ok: true, agent: info };
       },
       setFolderHidden: async () => ({ ok: true }),
@@ -2460,6 +2462,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, name: clean, inApp, ...(pending ? { pending } : {}), ...(note ? { note } : {}) };
       },
       onAgentRenamed: (cb) => { renamedListeners.add(cb); return () => renamedListeners.delete(cb); },
+      /* spec 076 FR-205: like main's start guard, a Codex session started in Allow all (canned advice) shows the advice once */
+      onOrgNote: (cb) => { simOrgNotes.add(cb); return () => simOrgNotes.delete(cb); },
       listPrevious: async (id) => {
         await prevWait();
         const src = sims.find((x) => x.info.id === id);

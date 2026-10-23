@@ -124,6 +124,17 @@ module.exports = async (ctx) => {
     const cx = await js(`(()=>{const b=document.querySelector('#modeMenu [data-mode="allow"]');return {dis:b.getAttribute('aria-disabled'),small:b.querySelector('small').textContent,doubt:b.classList.contains('mm-orgdoubt')}})()`);
     assert.deepStrictEqual(cx, { dis: null, small: CODEX_MAYBE, doubt: true }, 'codex mode menu: Allow all shows the advice and stays selectable');
     await closeAll();
+    // FR-203 (re-check on PR 644): a session started under advice shows the advice once (the start guard's note, a toast)
+    await js(`(document.getElementById('newSessHdrBtn')||document.getElementById('newSessBtn')).click()`);
+    assert.ok(await until(`!!document.getElementById('sdPerm')&&[...document.getElementById('sdPerm').options].some(o=>o.value==='allow'&&!o.disabled)`), 'codex new session: Allow all is selectable (advice)');
+    assert.strictEqual((await option('sdPerm', 'allow')).title, CODEX_MAYBE, 'codex new session: the advice is the tooltip');
+    await js(`(()=>{const s=document.getElementById('sdPerm');s.value='allow';s.dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('sdGo').click()})()`);
+    assert.ok(await until(`[...document.querySelectorAll('.dlg-ov')].some(d=>/^Allow all for/.test(d.textContent.trim()))`), 'codex new session: Allow all asks to confirm');
+    await js(`(()=>{const d=[...document.querySelectorAll('.dlg-ov')].find(x=>/^Allow all for/.test(x.textContent.trim()));const b=d&&d.querySelector('button.primary');if(b)b.click()})()`);
+    const okToast = await until(`[...document.querySelectorAll('#toasts .toast')].some(t=>t.textContent.includes(${jsLiteral(CODEX_MAYBE)}))`);
+    if (!okToast) console.log('[076 debug]', JSON.stringify(await js(`({toasts:[...document.querySelectorAll('#toasts .toast')].map(t=>t.textContent),dlg:[...document.querySelectorAll('.dlg-ov')].map(d=>d.textContent.slice(0,200)),last:(()=>{const a=window.__durbarSimUi.agents();const x=a[a.length-1];return x&&x.info?{id:x.id,k:x.info.adapterId,m:x.info.permMode}:null})()})`)));
+    assert.ok(okToast, 'codex new session: the advice is shown as a toast once the session starts');
+    await closeAll();
 
     // ---- a Copilot chat's MCP dialog: my-notes greyed with the reason; the switch cannot be turned on ----
     await openChat('copilot');

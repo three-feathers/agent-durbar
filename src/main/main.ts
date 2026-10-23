@@ -40,7 +40,7 @@ import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpa
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
 import { restorable, sendWithSlash, startGuardOp, validMode } from './agentops';
-import type { OpsDeps } from './agentops';
+import type { OpsDeps, StartGuardDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
@@ -152,6 +152,8 @@ const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, 
 const router = createRouter(registry);
 /** Spec 076 section O (issue #602): each agent app's own organization policy, read by its adapter, cached 60 s. */
 const orgPolicies = new OrgPolicyCache({ ids: () => registry.list().map((d) => d.id), adapter: (id) => (registry.has(id) ? router.instance(id) : undefined) });
+/** Spec 076 FR-203: the start guard's deps; advice is shown once the session has started (a toast in the window). */
+const orgGuard: StartGuardDeps = { refusal: (id, ask) => orgPolicies.refusal(id, ask), advice: (id, ask) => orgPolicies.advice(id, ask), onNote: (text, id) => toRenderer('agents:orgNote', { id, text }) };
 const agents = new Map<string, AgentInfo>();
 /** Spec 069: the agent apps' own user-level MCP lists (read live; written only after the window's per-file confirmation). */
 const globalLists = new GlobalLists(() => globalFiles({ CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CODEX_HOME: process.env.CODEX_HOME, ...dev }, os.homedir()));
@@ -346,7 +348,7 @@ async function addWorkspace(
   draft.maxAiCredits = startCap(ad.capabilities?.capUnit, opts.maxAiCredits, folderStore?.get(wsKey(draft))?.maxAiCredits, settingsStore?.defaultMaxAiCredits);
   // spec 076 FR-203: a mode or model the app's own organization policy refuses throws before the start (nothing started, nothing written);
   // advice was already shown in the window's menus before this start
-  const { result: id } = await startGuardOp(orgPolicies, adapterId, { mode: permMode, model }, () => ad.start({ ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId }));
+  const { result: id } = await startGuardOp(orgGuard, ad, { ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
   const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, closed: saved?.closed, label: saved?.label, defaultAgent: saved?.defaultAgent };
@@ -380,7 +382,7 @@ async function ensureLive(a: AgentInfo, opts: { quiet?: boolean } = {}): Promise
         resume = !!prev;
         continued.set(a.id, { resumed: resume, title: prev?.title });
       }
-      await startGuardOp(orgPolicies, appIdOf(a.id), { mode: a.permMode, model: a.model }, () => ad.start({ ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true })); // spec 076 FR-203
+      await startGuardOp(orgGuard, ad, { ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true }); // spec 076 FR-203
       a.lazy = false;
       a.resumeLast = undefined;
     })();

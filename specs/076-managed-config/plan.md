@@ -167,7 +167,7 @@ The vendor's own managed settings (Claude `managed-settings.json` `env`, Codex `
   (a reader error is `doubt`); `refusal` (fresh), `refusalNow` (last read) and `advice` for the starters, `view()` for
   `orgpolicy:view` (FR-207).
 - Wiring, each behind an op with injectable deps and tested by behaviour:
-  - `startGuardOp` (`agentops.ts`) around the adapter start in `addWorkspace` and the lazy start in `main.ts` (a static check in `test:orgpolicy` keeps both there);
+  - `startGuardOp(deps, adapter, startOptions)` (`agentops.ts`), the only adapter `start` in main, used by `addWorkspace` and the lazy start in `main.ts` (a static check in `test:orgpolicy` keeps it so); advice goes to the window as `agents:orgNote`;
   - `setModeOp` `orgRefusal` (`agentops.ts`);
   - `setMcpOp` `orgMcpRefusal` (`agentops.ts`), with the server definitions from the same lists `serverUrlOf` reads;
   - `setModelOp` and `withOrgModels` (`ipc/model.ts`);

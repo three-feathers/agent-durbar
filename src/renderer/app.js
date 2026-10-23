@@ -5610,6 +5610,8 @@ async function undoCheckpoint(a,turn,btn){
   checkpointNote(a,Object.assign({id:a.id},u.undo));
 }
 if(bridge&&bridge.onCheckpoint)bridge.onCheckpoint(n=>{const a=n&&liveById(n.id);if(a)checkpointNote(a,n);});
+/* spec 076 FR-203: a session started while Durbar could not read all of its agent app's organization policy: the advice, once */
+if(bridge&&bridge.onOrgNote){bridge.onOrgNote(p=>{if(p&&typeof p.text==='string'&&p.text)toast(esc(p.text.slice(0,300)),7000);});}
 if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(p=>{const id=typeof p==='string'?p:p&&p.id;const a=liveById(id);if(!a||!a.remote)return;a.remote=null;updateRemoteUi(a);
   /* spec 054 FR-062: the adapter's own reason when it has one; otherwise the sign-in reconnect (spec 012 FR-158) */
   const why=p&&typeof p==='object'&&typeof p.reason==='string'&&p.reason?esc(p.reason.slice(0,300)):esc(a.name)+' reconnected after the new sign-in';

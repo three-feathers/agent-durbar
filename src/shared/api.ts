@@ -758,6 +758,8 @@ export interface DurbarApi {
   /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
   /** Remote control ended without the user (spec 012 FR-158, spec 054 FR-062): an agent id, or the id with a plain reason. */
   onRemoteOff?(cb: (p: string | { id: string; reason?: string }) => void): () => void;
+  /** Spec 076 FR-203: a session started under advice of its agent app's organization policy; the words to show (no policy values). */
+  onOrgNote?(cb: (p: { id: string; text: string }) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */
   onRemoteUrl?(cb: (p: { id: string; url: string }) => void): () => void;
   onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[] }) => void): () => void;

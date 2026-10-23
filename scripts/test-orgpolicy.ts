@@ -19,7 +19,7 @@ import { FakeAdapter } from '../src/adapters/fake';
 import { boundOrgPolicy, emptyOrgPolicy, ORG_LIMITS, orgVerdictStats, globMatch, mcpVerdict, modelVerdict, modeVerdict, orgBlockedText, orgDoubtText, orgFatalText, orgPolicyView, ownValue, toolVerdict, urlMatches } from '../src/shared/orgpolicy';
 import type { OrgPolicy, OrgVerdict } from '../src/shared/orgpolicy';
 import { orgGuardedStart, OrgPolicyCache, ORG_POLICY_TTL_MS } from '../src/main/orgpolicy';
-import { setMcpOp, setModeOp, startGuardOp } from '../src/main/agentops';
+import { setMcpOp, setModeOp, startGuardOp, startModeOf } from '../src/main/agentops';
 import * as fs from 'fs';
 import * as path from 'path';
 import { setModelOp, withOrgModels } from '../src/main/ipc/model';
@@ -353,59 +353,25 @@ async function main(): Promise<void> {
       ids: () => ['c', 'x'],
       adapter: (id) => (id === 'c' ? { displayName: C, readOrgPolicy: () => claude({ permissions: { disableBypassPermissionsMode: 'disable' }, deniedModels: ['haiku'] }) } : { displayName: 'Codex', readOrgPolicy: () => codex('allowed_sandbox_modes = ["read-only", 2]\n') }),
     });
-    const go = (tag: string) => async () => (starts.push(tag), `id-${tag}`);
-    await assert.rejects(startGuardOp(startPol, 'c', { mode: 'allow', model: 'auto' }, go('mode')), (e: Error) => e.message === `${orgBlockedText(C)}: pick another permission mode.`, 'f: a blocked mode refuses the start');
-    await assert.rejects(startGuardOp(startPol, 'c', { mode: 'ask', model: 'haiku' }, go('model')), (e: Error) => e.message === `${orgBlockedText(C)}: pick another model.`, 'f: a blocked model refuses the start');
+    const notes: string[] = [];
+    const guard = { refusal: (id: string | undefined, ask: { mode?: string; model?: string }) => startPol.refusal(id, ask), advice: (id: string | undefined, ask: { mode?: string; model?: string }) => startPol.advice(id, ask), onNote: (t: string, sid: string) => { notes.push(`${sid}: ${t}`); } };
+    const adOf = (id: string) => ({ id, start: async (o: { workspace: string }) => (starts.push(`${id}:${o.workspace}`), `sess-${o.workspace}`) });
+    await assert.rejects(startGuardOp(guard, adOf('c'), { workspace: 'w1', permissionMode: 'allow', model: 'auto' }), (e: Error) => e.message === `${orgBlockedText(C)}: pick another permission mode.`, 'f: a blocked mode refuses the start');
+    await assert.rejects(startGuardOp(guard, adOf('c'), { workspace: 'w2', permissionMode: 'ask', model: 'haiku' }), (e: Error) => e.message === `${orgBlockedText(C)}: pick another model.`, 'f: a blocked model refuses the start (the model of the options that are started)');
+    await assert.rejects(startGuardOp(guard, adOf('c'), { workspace: 'w3', allow: true, model: 'auto' }), /pick another permission mode/, 'f: the mode is read from the options as the adapter reads them (allow: true)');
+    await assert.rejects(startGuardOp(guard, adOf('c'), { workspace: 'w4', permissionMode: 'allow' }), /pick another permission mode/, 'f: options without a model still check the mode');
     assert.deepStrictEqual(starts, [], 'f: the adapter was not started for a refused start');
-    assert.deepStrictEqual(await startGuardOp(startPol, 'c', { mode: 'ask', model: 'sonnet' }, go('ok')), { result: 'id-ok' }, 'f: an allowed start starts, no note');
-    assert.deepStrictEqual(await startGuardOp(startPol, 'x', { mode: 'allow', model: 'auto' }, go('advice')), { result: 'id-advice', note: orgDoubtText('Codex') }, 'f: an advisory mode starts, with the advice words');
-    assert.deepStrictEqual(starts, ['ok', 'advice'], 'f: exactly the allowed and the advisory starts ran');
+    assert.deepStrictEqual(await startGuardOp(guard, adOf('c'), { workspace: 'ok', permissionMode: 'ask', model: 'sonnet' }), { result: 'sess-ok' }, 'f: an allowed start starts, no note');
+    assert.deepStrictEqual(await startGuardOp(guard, adOf('x'), { workspace: 'adv', permissionMode: 'allow', model: 'auto' }), { result: 'sess-adv', note: orgDoubtText('Codex') }, 'f: an advisory mode starts, with the advice words');
+    assert.deepStrictEqual(notes, [`sess-adv: ${orgDoubtText('Codex')}`], 'f: the advice is shown once, for the session that started');
+    assert.deepStrictEqual(starts, ['c:ok', 'x:adv'], 'f: exactly the allowed and the advisory starts ran, with their own options');
+    assert.strictEqual(startModeOf({ permissionMode: 'weird' as never }), 'read-only', 'f: an unknown mode reads as read-only, as the adapters read it');
     assert.strictEqual(orgGuardedStart, startGuardOp, 'f: orgGuardedStart (the review\'s name) is the same op');
-    // second layer: both start paths of main.ts go through the guard, and nothing in main.ts calls an adapter's start directly
+    // second layer: both start paths of main.ts go through the guard with the adapter and the options only, and nothing else in main.ts starts an adapter
     const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8').replace(/\r/g, '');
-    assert.strictEqual((mainSrc.match(/startGuardOp\(orgPolicies, /g) ?? []).length, 2, 'f: main.ts: addWorkspace and the lazy start call startGuardOp');
-    assert.strictEqual((mainSrc.match(/await ad\.start\(/g) ?? []).length, 0, 'f: main.ts: no adapter start outside the guard');
-
-    const fa = new FakeAdapter({ id: 'claude' });
-    const agents = new Map<string, AgentInfo>([['s', { id: 's', name: 's', cwd: '/w', folders: [], permMode: 'ask', adapterId: 'claude', model: 'sonnet' } as unknown as AgentInfo]]);
-    const calls: string[] = [];
-    const opsDeps = { agents, router: { forAgent: () => fa }, wsKey: (a: AgentInfo) => a.cwd, store: { setPermMode: () => (calls.push('mode'), true), setMaxAiCredits: () => true, setSessionMode: () => (calls.push('sess'), true) }, orgRefusal: (_a: AgentInfo, m: 'read-only' | 'ask' | 'allow') => (m === 'allow' ? 'no' : undefined) };
-    assert.deepStrictEqual(setModeOp(opsDeps, 's', 'allow', {}), { ok: false, error: 'no' }, 'f: setModeOp refuses a blocked mode');
-    assert.strictEqual(agents.get('s')!.permMode, 'ask', 'f: the mode is unchanged');
-    assert.deepStrictEqual(calls, [], 'f: nothing saved');
-    assert.ok(setModeOp(opsDeps, 's', 'read-only', {}).ok, 'f: another mode still works');
-    const off = new Map<string, Set<string>>([['s', new Set(['bad'])]]);
-    let mcpCalls = 0;
-    (fa as unknown as { setMcpEnabled: unknown }).setMcpEnabled = async () => {
-      mcpCalls++;
-    };
-    const mcpDeps = { ...opsDeps, orgMcpRefusal: async (_a: AgentInfo, n: string) => (n === 'bad' ? 'refused bad' : undefined) };
-    assert.deepStrictEqual(await setMcpOp(mcpDeps, off, 's', 'bad', true), { ok: false, error: 'refused bad' }, 'f: setMcpOp refuses switching a blocked server on');
-    assert.ok(off.get('s')!.has('bad') && mcpCalls === 0, 'f: nothing switched, the off list unchanged');
-    assert.ok((await setMcpOp(mcpDeps, off, 's', 'good', true)).ok, 'f: another server switches on');
-    assert.ok((await setMcpOp(mcpDeps, off, 's', 'bad', false)).ok, 'f: switching it off is never refused');
-    const saved: string[] = [];
-    let switched = 0;
-    (fa as unknown as { setModel: unknown }).setModel = async (_s: string, r: { model: string }) => (switched++, { status: 'applied', model: r.model });
-    const models: ModelChoice[] = [{ id: 'sonnet', name: 'S', efforts: [] }, { id: 'haiku', name: 'H', efforts: [] }];
-    const md = { agents, router: { forAgent: () => fa }, defaultId: 'copilot', models: async () => models, orgModel: async (_id: string, mid: string) => modelVerdict(claude({ deniedModels: ['haiku'] }), mid), save: (_a: AgentInfo, c: { model: string }) => { saved.push(c.model); } };
-    assert.deepStrictEqual(await setModelOp(md, 's', { model: 'haiku' }), { ok: false, error: `${orgBlockedText(C)}: pick another model.` }, 'f: setModelOp refuses a blocked model');
-    assert.strictEqual(agents.get('s')!.model, 'sonnet', 'f: the model is unchanged');
-    assert.deepStrictEqual(saved, [], 'f: nothing saved');
-    assert.strictEqual(switched, 0, 'f: the adapter was not asked');
-    const advice = { ...md, orgModel: async () => D(C) };
-    assert.ok((await setModelOp(advice, 's', { model: 'haiku' })).ok, 'f: advice does not refuse a model');
-    assert.deepStrictEqual(saved, ['haiku'], 'f: and it is saved');
-    const listed = await withOrgModels(models, async (id) => (id === 'haiku' ? B(C) : id === 'sonnet' ? D(C) : undefined));
-    assert.deepStrictEqual(listed, [{ id: 'sonnet', name: 'S', efforts: [], orgDoubt: orgDoubtText(C) }, { id: 'haiku', name: 'H', efforts: [], orgBlocked: orgBlockedText(C) }], 'f: models:list keeps blocked models, marked');
-    const reply = agentMcpReply({ a: agents.get('s')!, ad: fa, live: [], off: new Set(), secrets: [], cli: [{ name: 'bad', enabled: true }, { name: 'maybe', enabled: true }, { name: 'good', enabled: true }], extras: [], ambientDisabled: new Set(), orgBlocked: (n) => (n === 'bad' ? B(C) : n === 'maybe' ? D(C) : undefined) });
-    assert.strictEqual(reply.servers.find((x) => x.name === 'bad')?.orgBlocked, orgBlockedText(C), 'f: the row carries the reason');
-    assert.strictEqual(reply.servers.find((x) => x.name === 'maybe')?.orgDoubt, orgDoubtText(C), 'f: advice is its own field');
-    assert.strictEqual(reply.servers.find((x) => x.name === 'maybe')?.orgBlocked, undefined, 'f: advice is not a block');
-    assert.strictEqual(reply.servers.find((x) => x.name === 'good')?.orgBlocked, undefined, 'f: an allowed row has none');
-    const live = { ...fa, isLive: () => true, listMcpTools: async () => [{ name: 'create_issue' }, { name: 'search' }], displayName: C } as unknown as FakeAdapter;
-    const tr = await mcpToolsOp({ agents, router: { forAgent: () => live }, secrets: () => [], orgTool: async (_id, s, tool) => toolVerdict(claude({ permissions: { deny: ['mcp__github__create_issue'] } }), s, tool) }, 's', 'github');
-    assert.deepStrictEqual(tr.tools, [{ name: 'create_issue', orgBlocked: orgBlockedText(C) }, { name: 'search' }], 'f: the blocked tool carries the reason');
+    assert.strictEqual((mainSrc.match(/startGuardOp\(orgGuard, ad, \{ \.\.\.startOptionsFor\(/g) ?? []).length, 2, 'f: main.ts: addWorkspace and the lazy start call startGuardOp with the adapter and its start options');
+    assert.deepStrictEqual(mainSrc.match(/\.start\(\s*[^)\s]/g) ?? [], [], 'f: main.ts: no other start call with arguments (an adapter start outside the guard)');
+    assert.ok(/onNote: \(text, id\) => toRenderer\('agents:orgNote', \{ id, text \}\)/.test(mainSrc), 'f: main.ts: the advice goes to the window');
   }
 
   // (g) the matcher stays fast on a hostile pattern

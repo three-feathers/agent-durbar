@@ -949,11 +949,19 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
   by your organization)* in a select) but stays selectable. A blocked menu item stays focusable like the menus' other `aria-disabled`
   items (spec 069 FR-064) and does nothing when chosen; a select never holds a refused value and falls back to the first allowed one,
   the most restrictive (Read-only first).
-- **FR-203 Main refuses as well (the window is not the guard), only `blocked` and `fatal`.** Starting or resuming a session in a refused
-  mode or with a refused model (`startGuardOp` in `agentops.ts`, which runs the check before it calls the adapter's `start`; both start paths of main.ts go through it, and advice starts with its words as `note`), `agents:setMode` (`setModeOp`), `agents:setModel`
-  (`setModelOp`) and switching a refused MCP server on (`setMcpOp`) are refused in main with FR-202's words; nothing is started, saved or
-  changed. Switching a server off is never refused. Advice is never refused. The user picks another mode or model, which applies at the
-  next start (spec 018).
+- **FR-203 Main refuses as well (the window is not the guard), only `blocked` and `fatal`.**
+  - **Starts and resumes.** `startGuardOp(deps, adapter, startOptions)` in `agentops.ts` is the only code in main that calls an adapter's
+    `start`; both start paths of main.ts (`addWorkspace` and the lazy start/resume) hand it the adapter and the options only. It checks
+    exactly what is started: the adapter's own id, the options' mode (`permissionMode`, else `allow`/`ask`, an unknown value read-only,
+    as the adapters read it) and the options' model. A refused mode or model throws FR-202's words before `start`, so nothing is
+    started or saved.
+  - **Advice at start.** Advice does not stop the start. Once the session has started, its words are shown once as a toast in the
+    window (`agents:orgNote`).
+  - **Switches.** `agents:setMode` (`setModeOp`), `agents:setModel` (`setModelOp`) and switching a refused MCP server on (`setMcpOp`) are
+    refused the same way; nothing is changed. Switching a server off is never refused, and advice is never refused. The user picks
+    another mode or model, which applies at the next start (spec 018).
+  - **A blocked MCP server does not stop the session** (re-check on PR 644): the session starts, the server's row is off and
+    disabled, and the agent app skips that server itself (the vendors document it as not loaded).
 - **FR-204 Fresh enough, cheap.** Each app's policy is read when first needed and again when the last read is older than 60 seconds
   (monotonic clock; a vendor changes it rarely: Claude re-reads every 30 minutes, Copilot hourly); one read at a time per app. Starts,
   `setModel`, `setMcp` and the window's view wait for a fresh read; the mode switch and the often repainted MCP list use the last read

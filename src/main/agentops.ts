@@ -3,7 +3,7 @@
  * (spec 012 FR-054). Moved verbatim from `main.ts` and `mcpipc.ts` so they can be tested: no Electron, no file system.
  */
 import type { AdapterRouter } from '../adapters/router';
-import type { AgentAdapter, AgentMessage } from '../adapters/types';
+import type { AgentAdapter, AgentMessage, StartOptions } from '../adapters/types';
 import { interruptOf, refusesLive, setCapOf, setMcpEnabledOf, setPermModeOf } from '../adapters/router';
 import { parseCapIn } from '../shared/credits';
 import type { AgentInfo, PermMode } from '../shared/api';
@@ -172,17 +172,28 @@ export interface StartGuardDeps {
   refusal(adapterId: string | undefined, ask: { mode?: string; model?: string }): Promise<string | undefined>;
   /** The advice words when Durbar could not read the policy the vendor's way (`doubt`): the start goes ahead. */
   advice?(adapterId: string | undefined, ask: { mode?: string; model?: string }): Promise<string | undefined>;
+  /** Shows the advice once the session has started (main: a toast in the window, `agents:orgNote`). */
+  onNote?(note: string, sessionId: string): void;
+}
+
+/** The permission mode a set of start options really asks for: `permissionMode` wins; an unknown value is read-only (as the adapters read it). */
+export function startModeOf(o: Pick<StartOptions, 'permissionMode' | 'allow' | 'ask'>): PermMode {
+  if (o.permissionMode !== undefined) return o.permissionMode === 'ask' || o.permissionMode === 'allow' ? o.permissionMode : 'read-only';
+  return o.allow === true ? 'allow' : o.ask === true ? 'ask' : 'read-only';
 }
 
 /**
- * Spec 076 FR-203: every start and resume of a session (`addWorkspace` and the lazy start in main.ts) goes through here. A mode or model
- * the agent app's own organization policy refuses throws its words before `start` runs, so nothing is started or saved; advice does
- * not stop the start and comes back as `note`.
+ * Spec 076 FR-203: every start and resume of a session (`addWorkspace` and the lazy start in main.ts) goes through here, and only here
+ * calls the adapter's `start`. The check is made on exactly the options that are started (their mode and model) and the adapter's own id,
+ * so it cannot drift from what runs. A refused mode or model throws its words before `start`, so nothing is started or saved; advice does
+ * not stop the start, is shown through `onNote`, and comes back as `note`.
  */
-export async function startGuardOp<T>(d: StartGuardDeps, adapterId: string | undefined, ask: { mode?: string; model?: string }, start: () => Promise<T>): Promise<{ result: T; note?: string }> {
-  const no = await d.refusal(adapterId, ask);
+export async function startGuardOp(d: StartGuardDeps, ad: Pick<AgentAdapter, 'id' | 'start'>, opts: StartOptions): Promise<{ result: string; note?: string }> {
+  const ask = { mode: startModeOf(opts), model: opts.model ?? '' };
+  const no = await d.refusal(ad.id, ask);
   if (no) throw new Error(no);
-  const note = await d.advice?.(adapterId, ask);
-  const result = await start();
+  const note = await d.advice?.(ad.id, ask);
+  const result = await ad.start(opts);
+  if (note) d.onNote?.(note, result);
   return note ? { result, note } : { result };
 }
