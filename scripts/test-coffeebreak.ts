@@ -144,6 +144,29 @@ const mk = (o: Record<string, unknown> = {}): Breaks => C.createBreaks({ now, ..
   assert.strictEqual(C.whenText(Date.UTC(2026, 9, 21, 14, 30), n, o), '14:30');
   assert.strictEqual(C.whenText(Date.UTC(2026, 9, 23, 9, 0), n, o), 'Fri 9:00');
   assert.strictEqual(C.whenText(Date.UTC(2026, 10, 1, 0, 0), n, o), '1 Nov');
+  // Just before midnight the reset is on the next day: the weekday form, and "at" is left out (2026-10-24: shots-068-coffee.js failed at 23:54).
+  {
+    const late = Date.UTC(2026, 9, 23, 23, 54), after = Date.UTC(2026, 9, 24, 0, 1); // Fri 23:54 -> Sat 00:01
+    assert.strictEqual(C.whenText(after, late, o), 'Sat 0:01');
+    assert.strictEqual(C.whenText(after, late, { locale: 'en-US', timeZone: 'UTC' }), 'Sat 12:01 AM');
+    assert.strictEqual(C.whenText(Date.UTC(2026, 9, 23, 23, 59), late, { locale: 'en-US', timeZone: 'UTC' }), '11:59 PM');
+    const bn = { id: 'a', kind: 'provider', phase: 'on', resetsAt: after, estimated: false, paid: false, source: '', noAuto: false };
+    assert.strictEqual(C.untilText(bn, true, late, o), 'resumes Sat 0:01');
+    assert.strictEqual(C.atWhen(after, late, o), 'Sat 0:01');
+    // the driver's patterns accept exactly these forms, with and without the weekday, and nothing else
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const drv = require(path.join(__dirname, '..', '..', 'scripts', 'shots-068-coffee.js')) as { CLOCK: string; AT_CLOCK: string };
+    const clock = new RegExp('^' + drv.CLOCK + '$'), atClock = new RegExp('^' + drv.AT_CLOCK + '$');
+    for (const loc of ['en-US', 'en-GB']) {
+      const lo = { locale: loc, timeZone: 'UTC' };
+      for (const [ts, now] of [[after, late], [Date.UTC(2026, 9, 23, 23, 59), late]] as const) {
+        const w = C.whenText(ts, now, lo);
+        assert.ok(clock.test(w), `${loc} ${w}`);
+        assert.ok(atClock.test(C.atWhen(ts, now, lo)), `${loc} ${w} (atWhen)`);
+      }
+    }
+    assert.ok(!clock.test('1 Nov') && !clock.test('soon'));
+  }
   const b = { id: 'a', kind: 'provider', phase: 'on', resetsAt: Date.UTC(2026, 9, 21, 14, 30), estimated: false, paid: false, source: '', noAuto: false };
   assert.strictEqual(C.untilText(b, true, n, o), 'resumes at 14:30');
   // FR-004 (review on #462): "resumes at 14:30" today, "resumes Fri 9:00" within six days, "resumes 1 Nov" further away (no "at" before a day or a date)
