@@ -734,6 +734,14 @@ owner's Mac):
   host `auth.example.com` -> Open sign-in page shows a toast and opens nothing -> Running after 2 s) and `simmcpauth=manual` (Sign in
   is refused and the steps show). Screenshots `docs/screenshots/058-mcp-signin-*.png` at 1440x900 and 1280x800.
 
+**Added the same day (real use by Vikram, macOS, Copilot, about 10 servers)**: pressing **Restart** on a "Needs sign-in" server
+(agent365-wordserver) only gave "needs auth" again and no sign-in page. On a row that needs a sign-in and has a Sign in or terminal
+steps (Copilot now), **Sign in** is the primary action in the place where Restart was, and **Restart is hidden** while the server needs
+auth (the row's other buttons are unchanged); a row of an agent app without Sign in keeps its Restart. Several servers can need a
+sign-in at once (figma, signavio, wordserver): each row's Sign in works on its own, and main's pending store is keyed by agent **and**
+server, so Cancel, connected or the 10-minute limit of one never touches another (`test:mcpsignin`, three servers). `sim:` the driver
+checks a needs-sign-in row shows Sign in as the primary action and no Restart.
+
 **Honest limits**: everything is `read:` from the SDK types plus fakes until T105. Not checked on a real account: that `oauth.login`
 returns an https `authorizationUrl` for a plain remote server, how long the runtime's callback listener waits, what happens to the
 listener after Cancel (no Copilot cancel exists for a manual login, `[KNOWN GAP]` as in FR-065), and whether a CLI `/mcp auth` is seen

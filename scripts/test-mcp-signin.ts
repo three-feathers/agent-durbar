@@ -134,6 +134,19 @@ async function main(): Promise<void> {
       assert.strictEqual((await mcpCancelSignInOp(d, store, 'nope', 'teams')).ok, false);
       assert.strictEqual((await mcpOpenSignInOp(store, agents, sid, 'teams')).gone, true, 'after Cancel nothing opens');
 
+      // several servers that need a sign-in at once (figma, signavio, wordserver): each one is independent
+      live = [{ name: 'figma', status: 'needs-auth' }, { name: 'signavio', status: 'needs-auth' }, { name: 'wordserver', status: 'needs-auth', errorClass: 'auth' }, ...NEEDS];
+      const multi = new McpSignInStore(() => t, async () => undefined);
+      const md = { ...d };
+      for (const n of ['figma', 'signavio', 'wordserver']) assert.strictEqual((await mcpSignInOp(md, multi, sid, n)).ok, true, `${n} signs in`);
+      assert.deepStrictEqual(['figma', 'signavio', 'wordserver'].map((n) => multi.has(sid, n)), [true, true, true], 'three pending entries, one per server');
+      assert.strictEqual((await mcpSignInOp(md, multi, sid, 'figma')).ok, false, 'the same server twice is refused');
+      await mcpCancelSignInOp(md, multi, sid, 'signavio');
+      assert.deepStrictEqual(['figma', 'signavio', 'wordserver'].map((n) => multi.has(sid, n)), [true, false, true], 'Cancel of one leaves the others');
+      multi.onServers(sid, [{ name: 'figma', status: 'connected' }]);
+      assert.deepStrictEqual(['figma', 'wordserver'].map((n) => multi.has(sid, n)), [false, true], 'connected for one leaves the others');
+      ad.signInCalls.length = 0;
+      live = NEEDS;
       // the 10-minute limit
       assert.strictEqual((await mcpSignInOp(d, store, sid, 'teams')).ok, true);
       t += SIGN_IN_TTL_MS - 1;

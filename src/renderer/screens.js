@@ -940,7 +940,6 @@
         acts=`<button class="btn sm" type="button" data-signcancel="${en}" aria-label="${esc('Cancel the sign-in for '+n)}">Cancel</button>`;
       }else{
         if(signNote.has(n))line=`<span class="srv-sgl" role="status">${esc(signNote.get(n))}</span>`;
-        if(x.canSignIn)acts+=signBusy.has(n)?`<button class="btn sm primary" type="button" disabled aria-label="${esc('Signing in to '+n)}">Signing in…</button>`:`<button class="btn sm primary" type="button" data-signin="${en}" aria-label="${esc('Sign in to '+n)}" title="Start ${esc(app)}'s own sign-in for this server">Sign in</button>`;
         if(x.defaultOn&&!x.off)acts+=`<button class="btn sm" type="button" data-swoff="${en}" aria-label="${esc('Switch off '+n+' for this session')}" title="Stop using this server in this session; switch it back on any time">Switch off for this session</button>`;
       }
       let steps='';
@@ -961,7 +960,10 @@
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
         const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-err="${esc(x.name)}" aria-label="${esc('Error text of '+x.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-copy="${esc(x.name)}" aria-label="${esc('Copy the error text of '+x.name)}">Copy</button></div>`:'';
-        const rs=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
+        /* spec 058 (2026-10-23, Vikram's report): on a row that needs a sign-in, Restart is a dead end ("needs auth" again), so Sign in takes its place and Restart is hidden */
+        const needsSign=(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth'))&&!!(x.canSignIn||x.signInSteps);
+        const signB=needsSign&&x.canSignIn&&!x.signIn?(signBusy.has(x.name)?`<button class="btn sm primary" type="button" disabled aria-label="${esc('Signing in to '+x.name)}">Signing in…</button>`:`<button class="btn sm primary" type="button" data-signin="${esc(x.name)}" aria-label="${esc('Sign in to '+x.name)}" title="Start ${esc(s.app||'your agent app')}'s own sign-in for this server">Sign in</button>`):'';
+        const rs=needsSign?signB:x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
         /* spec 069 FR-030/FR-033 on spec 058's row: the name opens the tools list; Remove for entries of an agent app's list or this folder */
         const open=expanded.has(x.name), canTools=!!(s.canListTools&&X.bridge.agentMcpTools);
         const nameB=`<b class="srv-name" title="${esc(W.plain(x.name,120))}">${esc(x.name)}</b>`;
