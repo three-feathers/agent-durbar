@@ -105,7 +105,7 @@ module.exports = async (ctx) => {
       const perm = await js(`window.__durbarSimUi.agents().filter(x=>/^(Waiting for permission|Allowed): (run|fetch)/.test(x.task||'')).map(x=>x.task)`);
       assert.ok(perm.length >= 2 && perm.every((t) => /\[redacted\]/.test(t) && !t.toLowerCase().includes(KEY.toLowerCase())), `${tag}: the permission lines are stored masked: ${JSON.stringify(perm)}`);
       await scan(tag, 'permission lines, runtime title, sub-agent name, Markdown-split tokens');
-      // 2a. the lobby (spec 001 FR-034..FR-040): the tiles' chips and titles, the Boss queue, and the navigator (Ctrl+J)
+      // 2a. the lobby (spec 001 FR-034..FR-040): the tiles' chips and titles, the Boss queue, and the navigator (Ctrl+F, ⌘F on a Mac; spec 074 since 2026-10-23)
       assert.ok(await until(`document.querySelectorAll('.lobby .pv').length>0`, 15000), `${tag}: agents stand in the lobby`);
       if (level === 'expert') await until(`[...document.querySelectorAll('.lobby .pv')].some(e=>/curl|fetch|example\\.test/i.test(e.textContent+' '+e.title+' '+(e.getAttribute('aria-label')||'')))`, 8000);
       const lob = await js(`(()=>{const pv=[...document.querySelectorAll('.lobby .pv')];return {n:pv.length,boss:document.querySelectorAll('.lobby .place.boss .pv').length,
@@ -129,8 +129,8 @@ module.exports = async (ctx) => {
         await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
       }
       await scan(tag, 'token-named agent at a lobby place (chip, + menu, place tooltips)');
-      await H.key('J', ['control'], { char: 'never' });
-      assert.ok(await until(`!!document.getElementById('palDlg')`, 5000), `${tag}: the navigator opens with Ctrl+J`);
+      await H.key('F', [process.platform === 'darwin' ? 'meta' : 'control'], { char: 'never' });
+      assert.ok(await until(`!!document.getElementById('palDlg')`, 5000), `${tag}: the navigator opens with Ctrl+F (⌘F)`);
       await scan(tag, 'navigator, first level');
       await js(`(()=>{const i=document.getElementById('palIn');i.value='c ';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
       await until(`document.querySelectorAll('#palDlg [role=option],#palDlg .pal-row,#palDlg li').length>0`, 3000);
@@ -139,7 +139,7 @@ module.exports = async (ctx) => {
       await js(`(()=>{const i=document.getElementById('palIn');i.value='f ';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
       let atAgents = false;
       for (let n = 1; n <= 8 && !atAgents; n++) {
-        if (!(await js(`!!document.getElementById('palDlg')`))) { await H.key('J', ['control'], { char: 'never' }); await until(`!!document.getElementById('palDlg')`, 3000); await js(`(()=>{const i=document.getElementById('palIn');i.value='f ';i.dispatchEvent(new Event('input',{bubbles:true}));})()`); }
+        if (!(await js(`!!document.getElementById('palDlg')`))) { await H.key('F', [process.platform === 'darwin' ? 'meta' : 'control'], { char: 'never' }); await until(`!!document.getElementById('palDlg')`, 3000); await js(`(()=>{const i=document.getElementById('palIn');i.value='f ';i.dispatchEvent(new Event('input',{bubbles:true}));})()`); }
         await js(`(()=>{const i=document.getElementById('palIn');i.value=${jsLiteral(String(n))};i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
         await ctx.sleep(150);
         if (await js(`(document.getElementById('palCrumb')||{textContent:''}).textContent.split('›').length>=3`)) atAgents = true;
