@@ -511,6 +511,18 @@ async function driver(ctx) {
     if (!mine()) continue;
     const tag = `kinds ${w}x${h} mixed kinds`;
     await run(tag, 'sim=15&simfreeze=1&simkinds=mixed', w, h, shotsDir ? `kinds-${w}x${h}-mixed` : '');
+    /* spec 001 FR-023 (change 2026-10-23, the merge-queue flake on 7a756cb8): the office is laid out before a room's siren arrives (it comes
+       with the moods, after the first layout), then the siren is drawn without a new layout key. Every header must still hold its parts. */
+    {
+      const frames = 'await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))';
+      const late = await ctx.js(`(async()=>{const u=window.__durbarSimUi;const sirens=()=>document.querySelectorAll('#stage .room-head .siren').length;const before=sirens();
+        u.quietHeads(['siren']);u.render();${frames};const quiet=sirens();u.quietHeads([]);u.paint();${frames};return {before,quiet,after:sirens()};})()`);
+      const r = await ctx.js(`(${pageCheck.toString()})(false, ${expectPlaces})`);
+      const P = r.problems.filter((p) => /^header (part|of)/.test(p));
+      if (!late.before || late.quiet || late.after !== late.before) P.unshift(`the late-siren hook did not work ${JSON.stringify(late)}`);
+      total++;
+      if (P.length) { failed++; console.log(`FAIL ${tag} late siren: ${P.slice(0, 4).join('; ')}`); }
+    }
     /* spec 052 (2026-10-21): the card and full densities with dollar estimates (where a cut cost was found at 1280x800) */
     /* forced densities do not fit 15 agents (the app picks the density itself), so only the card-contents rule applies here */
     for (const dens of ['card', 'full']) {
