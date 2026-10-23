@@ -23,8 +23,8 @@ import type { McpReplyInput } from '../src/main/mcpsession';
 import { MAX_SIGN_INS, McpSignInStore, POLL_MS, RECENT_SIGN_IN_MS, SIGN_IN_MIN_TTL_MS, SIGN_IN_TTL_MS, appServerUrls, blockedAuthHost, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, registrableDomain, serverUrlFor, signInErrorText, signInSiteNote } from '../src/main/mcpsignin';
 import type { ServerUrlSources } from '../src/main/mcpsignin';
 import type { McpServerSpec } from '../src/shared/mcp';
-import { signInTtlMs } from '../src/shared/mcp';
-import { ClaudeAdapter, claudeArgs } from '../src/adapters/claude';
+import { SIGN_IN_MIN_TTL_MS as SHARED_MIN_TTL_MS, SIGN_IN_REQUEST_TIMEOUT_MS, signInTtlMs } from '../src/shared/mcp';
+import { CLAUDE_SIGN_IN_TIMEOUT_MS, ClaudeAdapter, claudeArgs } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import { fakeSpawn } from './fakes/claude-cli';
 import { McpStore } from '../src/main/mcpstore';
@@ -796,7 +796,12 @@ async function main(): Promise<void> {
       assert.deepStrictEqual({ ...cx }, { notes: { url: 'https://mcp.notes.example/mcp' }, local: {} }, 'addresses only, first entry wins, no keys or values');
       assert.strictEqual(serverUrlFor('codex', 'notes', src({ copilot: copilotNotes, codex: cx })), 'https://mcp.notes.example/mcp');
       assert.strictEqual(appServerUrls(view, 'codex').toString, undefined, 'no prototype: a name like toString is never inherited');
+      // one source each (review on #635): the store's minimum is the shared one, and a broken wait uses the adapter's request limit
+      assert.strictEqual(SIGN_IN_MIN_TTL_MS, SHARED_MIN_TTL_MS, 'the store\'s minimum is the shared constant');
       assert.strictEqual(SIGN_IN_MIN_TTL_MS, 30_000);
+      assert.strictEqual(CLAUDE_SIGN_IN_TIMEOUT_MS, SIGN_IN_REQUEST_TIMEOUT_MS, 'Claude\'s request limit is the shared one');
+      assert.strictEqual(signInTtlMs(NaN), signInTtlMs(SIGN_IN_REQUEST_TIMEOUT_MS), 'a broken wait counts as the whole request limit');
+      assert.strictEqual(signInTtlMs(1e9), SIGN_IN_MIN_TTL_MS, 'the floor is the shared minimum');
       // the other lists are not even read for an app that does not use them
       let reads = 0;
       const counting: ServerUrlSources = { extras: () => [], copilot: () => { reads++; return copilotNotes; }, claude: () => ({}), codex: () => ({ notes: { url: 'https://mcp.notes.example/' } }) };

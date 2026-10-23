@@ -38,7 +38,7 @@ import type { AccountIdentity } from '../shared/account';
 export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
 import { parseUsdCap } from '../shared/credits';
 import { clipDiff } from '../shared/diff';
-import { MCP_TOOL_OFF_RE, claudeOAuthOf, signInTtlMs } from '../shared/mcp';
+import { MCP_TOOL_OFF_RE, SIGN_IN_REQUEST_TIMEOUT_MS, claudeOAuthOf, signInTtlMs } from '../shared/mcp';
 import { editOf } from './edits';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
@@ -106,7 +106,7 @@ export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() =>
   return rest;
 })()) as AdapterCapabilities;
 /** Spec 058 FR-175: how long Durbar waits for the CLI's answer to `mcp_authenticate` (discovery and registration run first). */
-export const CLAUDE_SIGN_IN_TIMEOUT_MS = 30_000;
+export const CLAUDE_SIGN_IN_TIMEOUT_MS = SIGN_IN_REQUEST_TIMEOUT_MS; // one definition, in src/shared/mcp.ts (signInTtlMs uses the same limit)
 /** Spec 058 FR-175/FR-181: the message for a CLI that does not answer the call (timeout, unknown subtype): main shows the terminal steps. */
 export const CLAUDE_NO_SIGN_IN = 'This Claude Code version cannot start a sign-in from Agent Durbar.';
 /**

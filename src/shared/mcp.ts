@@ -89,15 +89,17 @@ export const APP_SIGN_IN_LISTENER_MS = 300_000;
 /** Spec 058 FR-175: how long Durbar waits for an app's answer to a sign-in request (the most a wait can be). */
 export const SIGN_IN_REQUEST_TIMEOUT_MS = 30_000;
 const SIGN_IN_MARGIN_MS = 10_000;
-const SIGN_IN_MIN_MS = 30_000;
+/** Spec 058 FR-180: the shortest time main keeps a sign-in address (also what an invalid `ttlMs` gets in `McpSignInStore.begin`). */
+export const SIGN_IN_MIN_TTL_MS = 30_000;
 /**
  * Spec 058 FR-175 (FR-180): the time main may keep a sign-in address, so **Open sign-in page** never points at a closed listener: the
  * listener's 5 minutes minus the time from sending the request to its answer, minus 10 seconds, at least 30 seconds. A wait that is
- * negative or not a finite number (a clock that went wrong) counts as the full request timeout (260 s), never as no wait (review on #635).
+ * negative or not a finite number (a clock that went wrong) counts as the whole 30-second request limit (`SIGN_IN_REQUEST_TIMEOUT_MS`),
+ * which leaves a TTL of 260 seconds; it never counts as no wait (review on #635).
  */
 export function signInTtlMs(waitedMs: number): number {
   const w = Number.isFinite(waitedMs) && waitedMs >= 0 ? waitedMs : SIGN_IN_REQUEST_TIMEOUT_MS;
-  return Math.max(SIGN_IN_MIN_MS, APP_SIGN_IN_LISTENER_MS - w - SIGN_IN_MARGIN_MS);
+  return Math.max(SIGN_IN_MIN_TTL_MS, APP_SIGN_IN_LISTENER_MS - w - SIGN_IN_MARGIN_MS);
 }
 
 export interface McpSecretKey {

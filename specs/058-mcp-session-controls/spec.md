@@ -1355,7 +1355,7 @@ adapter sets it). The owners asked to treat MCP as a priority.
     percent-encoded forms) and `code`, `state`, `code_verifier`, `code_challenge`, `id_token`, `access_token`, `refresh_token`,
     `client_secret` (any case), one bounded, linear pattern.
   - **Time limits**: the adapter's clock defaults to `performance.now()` (monotonic). In `signInTtlMs` a negative or non-finite wait
-    counts as the full 30 s request timeout (260 s), never as no wait. In `McpSignInStore.begin` a **missing** `ttlMs` keeps 10 minutes,
+    counts as the whole 30-second request limit, which leaves a TTL of 260 seconds; it never counts as no wait. In `McpSignInStore.begin` a **missing** `ttlMs` keeps 10 minutes,
     but a **present and invalid** one (0, negative, NaN, Infinity, not a number) gets the 30-second minimum.
   - Codex's addresses for FR-185 come from the values-free Settings view (`GlobalLists.state`, `appServerUrls`), not from session specs
     with env and header values.

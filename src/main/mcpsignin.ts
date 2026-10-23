@@ -12,6 +12,7 @@ import type { AdapterRouter } from '../adapters/router';
 import type { McpServerStatus } from '../adapters/types';
 import type { AgentInfo, McpOpenSignInResult, McpSignInStartResult } from '../shared/api';
 import { validSignInEnd } from '../adapters/eventguard';
+import { SIGN_IN_MIN_TTL_MS } from '../shared/mcp';
 import { maskMcpError } from './mcpmask';
 import { canSignInAgainStatus, needsSignIn, validServerName } from './mcpsession';
 
@@ -19,8 +20,8 @@ import { canSignInAgainStatus, needsSignIn, validServerName } from './mcpsession
 export const SIGN_IN_TTL_MS = 10 * 60 * 1000;
 /** FR-176: for this long after a sign-in started, a dialog open or a window focus reads the server list once (a finish after Cancel shows). */
 export const RECENT_SIGN_IN_MS = 5 * 60 * 1000;
-/** FR-180: the shortest limit; also what an adapter's invalid `ttlMs` gets. */
-export const SIGN_IN_MIN_TTL_MS = 30_000;
+/** FR-180: the shortest limit; also what an adapter's invalid `ttlMs` gets (one definition, in src/shared/mcp.ts). */
+export { SIGN_IN_MIN_TTL_MS };
 /** At most this many open sign-ins in all (a window cannot fill memory with them). */
 export const MAX_SIGN_INS = 64;
 
