@@ -140,6 +140,13 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 - [x] T061 Desk card title masked with `DurbarRedact.redact` before the 200-character cut, accessible name masked, name only without the module; driver case with a `ghp_` token across the cut; the #567 hand-off in spec and plan [FR-036, spec 041 FR-065]
   - Check: mutation (cut, then mask) fails it.
 - [x] T062 `focusRequest(card)` shared by the answer bar's `show` and `openAtRequest` [FR-034]
+- [x] T063 The chat badge of a sleeper in the lounge goes to the bed's foot corner so it does not cover the name; `check:office-fill` asserts badge and name rects do not meet (1440x900, 1280x800) [FR-054, issue 576]
+  - Check: mutation (remove the `.rest-old .chatno` rule) fails it.
+
+## Changes 2026-10-23 (a header that gains a part after the layout, merge-queue flake on 7a756cb8)
+
+- [x] T064 `app.js` `renderOffice`: a layout picked with `heads: true` is searched again when a header on screen no longer holds its parts (`headHolds`, shared with `headsFit`), once per layout key and header contents (`HEAD_RETRY`); simulator hook `__durbarSimUi.quietHeads` and `paint`; `check:office` case `kinds WxH mixed kinds late siren` [FR-023]
+  - Check: mutation (drop the relayout) fails the case at 1280x800 with DejaVu fonts.
 
 ## Changes 2026-10-23 (owner: linked screenshots follow the office)
 
@@ -152,4 +159,3 @@ First build (PR #511, morning): T041..T046. The rail parts (T042, T043) were rem
 - [x] T111 Issue #573 (owner: option b): gallery `040-theme-picker-1440x900.png` (new shot in `shots-040-aitheme`: the picker's own click on Durbar · Indian Court), landing `040-aitheme-preview-1440x900.png`; `NO_DRIVER` empty [FR-083]
 - [x] T112 Review on #574 (fjcabello): `simClockSetup(dev, simulator)` pure and tested by behaviour (packaged and no-simulator are no-ops); `shots-docs` validates `SHOTS_DOCS_CLOCK` with `simClockQuery` before Electron; the rule names the `NO_DRIVER` path in AGENTS.md, the PR template, `docs/collaboration.md`, `.github/copilot-instructions.md` [FR-083, FR-084]
   - Check: `test:simclock`; mutations caught: no clock validation, validation after the Electron install, `simClockSetup` without the simulator guard, no `TZ`, main passing `true` for the simulator. Re-review: `test:simclock` also asserts main calls `simClockSetup(` exactly once (mutations: call removed, called twice).
-
