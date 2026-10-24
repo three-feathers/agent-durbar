@@ -67,6 +67,8 @@ module.exports = async (ctx) => {
       await H.load({ query: Q, ready: 'fit', settle: false });
       await until(`document.querySelectorAll('#stage .unit>.ren[data-ren]').length>=6`, 10000);
       ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus();
+      /* a CI window (Windows) may have no OS focus: blurAction keeps the field when document.hasFocus() is false, so every blur-commit step runs with a window that has focus; the one step that tests the opposite sets the false stub itself */
+      await js(`document.hasFocus=()=>true;0`);
       const tag = `${w} ${level}`;
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${tag}: the detail level is on`);
       assert.ok(await js(`typeof __durbarSimUi.inline==='function'&&!!window.__simRenameCalls`), `${tag}: the simulator hooks exist`);
@@ -202,7 +204,7 @@ module.exports = async (ctx) => {
       const n3 = await nSess();
       await js(`(()=>{document.hasFocus=()=>false;document.querySelector('.inl-input').dispatchEvent(new Event('blur'));})()`); await opened();
       assert.ok((await st()).open && (await nSess()) === n3, `${tag}: the window losing focus keeps the field open, no call (2)`);
-      await js(`delete document.hasFocus`);
+      await js(`document.hasFocus=()=>true;0`);
       await js(`document.querySelector('.inl-input').focus()`);
       await js(`document.querySelector('.inl-input').blur()`); await until(`__durbarSimUi.agents().find(x=>x.id===${jsLiteral(A)}).alias==='Away'`, 4000);
       assert.strictEqual(await aliasOf(A), 'Away', `${tag}: a blur inside the window saves`);
@@ -331,14 +333,15 @@ module.exports = async (ctx) => {
       assert.strictEqual((await st()).anchorKey, 'list:' + C, `${tag}: F2 on a row`);
       await type('From the list'); await key('Return'); await settle();
       assert.strictEqual(await aliasOf(C), 'From the list'); assert.strictEqual(await js(`document.activeElement.dataset.id`), C, `${tag}: focus on the row`);
-      await focus(`#list button.lrow[data-id="${C}"]`); await key('j'); await ctx.sleep(100);
-      assert.ok(await js(`document.activeElement.classList.contains('lrow')&&document.activeElement.dataset.id!==${jsLiteral(C)}`), `${tag}: J still moves between rows`);
+      await focus(`#list button.lrow[data-id="${C}"]`); await key('j');
+      assert.ok(await until(`document.activeElement.classList.contains('lrow')&&document.activeElement.dataset.id!==${jsLiteral(C)}`, 4000), `${tag}: J still moves between rows`);
       await focus(`#list button.lrow[data-id="${C}"]`); await key('Return'); await until(`document.body.classList.contains('panel-open')`, 3000); await ctx.sleep(200);
       assert.ok(await panelOpen(), `${tag}: Enter on a focused list row opens the chat`); await none(`${tag}: Enter on a row`);
       await closePanel();
       // an edit open in the list when the view switches to the office: the name is not on screen, the field saves like blur (item 5)
       await click(`#list .ren[data-ren="${C}"]`, 1); await ctx.sleep(120); await type('Switched away');
-      await js(`document.getElementById('vOffice').click()`); await ctx.sleep(600);
+      await js(`document.getElementById('vOffice').click()`);
+      await until(`__durbarSimUi.agents().find(x=>x.id===${jsLiteral(C)}).alias==='Switched away'&&!document.querySelector('.inl-input')`, 4000);
       await none(`${tag} view switch`); assert.strictEqual(await aliasOf(C), 'Switched away', `${tag}: a view switch saves like blur`);
 
       // ---- 3. Previous sessions rows (agent rows, hidden ones too; none on VS Code rows) ----
