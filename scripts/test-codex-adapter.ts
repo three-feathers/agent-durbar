@@ -858,7 +858,7 @@ async function main(): Promise<void> {
     }
     // FR-146: Codex's request_user_input goes to the question card; the answer goes back by question id; secret questions never shown
     {
-      const { server, ad, events } = make({ server: { holdTurn: true } });
+      const { server, ad, events, debug } = make({ server: { holdTurn: true } });
       const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
       await ad.send(sid, { text: 'go' });
       await server.flush();
@@ -889,10 +889,15 @@ async function main(): Promise<void> {
       ad.answerQuestion!(sid, asked2.requestId, null);
       assert.deepStrictEqual((await settles('skip', p2)).result, { answers: {} });
       assert.ok(events.some((e) => e.type === 'question' && e.phase === 'cancelled'));
+      // spec 052 FR-178: the reason is a code on the event and in the debug log, never the question or an answer
+      const cancelled = (): string[] => events.filter((e) => e.type === 'question' && e.phase === 'cancelled').map((e) => String((e as { reason?: string }).reason));
+      assert.deepStrictEqual(cancelled(), ['user']);
       const p3 = req(server, 'item/tool/requestUserInput', { ...qs, itemId: 'ui3' }, child);
       await until('asked a third time', () => events.filter((e) => e.type === 'question' && e.phase === 'asked').length === 4);
       await ad.stop(sid);
       assert.deepStrictEqual((await settles('stop', p3)).result, { answers: {} });
+      assert.deepStrictEqual(cancelled(), ['user', 'stop']);
+      assert.ok(debug.some((m) => /question codex-q-\d+ cancelled: stop/.test(m)) && !debug.some((m) => /Which colour/.test(m)), 'a debug line with the code only');
       await ad.dispose();
     }
     // FR-151: an MCP elicitation with form fields goes to the question card; the answer is {action, content}; Stop cancels

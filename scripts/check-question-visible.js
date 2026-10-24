@@ -102,6 +102,12 @@ module.exports = async (ctx) => {
     const st3 = await js(`document.querySelector('#chat .note.question.settled .pstate').textContent`);
     assert.ok(/ → answered: Teal from the card$/.test(st3), `${w}: the card's Answer sent exactly the custom text: ${st3}`);
     assert.strictEqual(await js(`document.querySelectorAll('#chat .msg.user').length`), users1, `${w}: no ordinary user message follows the answer`);
+    // FR-178: a skipped question says why in the card's tooltip (a code from the event, never text)
+    await open(w, h); await scroll('bottom');
+    await js(`[...document.querySelectorAll('#chat .note.question:not(.settled) .note-actions .btn.danger')].find(b=>b.textContent==='Skip').click()`);
+    await until(`!!document.querySelector('#chat .note.question.settled')`);
+    const sk = await js(`(()=>{const n=document.querySelector('#chat .note.question.settled');return {t:n.querySelector('.pstate').textContent,why:n.dataset.skipWhy,title:n.title}})()`);
+    assert.ok(/skipped$/.test(sk.t) && sk.why === 'user' && sk.title === 'Skipped: you pressed Skip.', `${w}: Skip says why: ${JSON.stringify(sk)}`);
     console.log('[question-visible]', w, 'ok');
   }
   console.log('[question-visible] all checks passed');

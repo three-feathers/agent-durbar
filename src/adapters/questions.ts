@@ -6,6 +6,15 @@ import { cleanSessionTitle } from './history';
 import type { AskedQuestion } from './types';
 import { isObj } from '../shared/guards';
 
+/** Why a question ended unanswered (spec 052 FR-178): a code for the event and the debug log, never any text. */
+export type SkipReason = 'user' | 'stop' | 'interrupt' | 'reconnect' | 'exit' | 'unreadable';
+/** Request id -> the reason noted just before its waiter was resolved with nothing; `take` gives it once ('unreadable' when none was noted). */
+export class SkipNotes {
+  private readonly m = new Map<string, SkipReason>();
+  note(id: string, why: SkipReason): void { this.m.set(id, why); }
+  take(id: string): SkipReason { const w = this.m.get(id) ?? 'unreadable'; this.m.delete(id); return w; }
+}
+
 export const MAX_QUESTIONS = 4;
 export const MAX_OPTIONS = 6;
 export const MAX_ANSWER = 500;

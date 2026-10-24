@@ -421,6 +421,8 @@ export interface QuestionEvent extends BaseEvent {
   elicitation?: ElicitRequest;
   /** `answered` of an elicitation: what the user did (`accept` = submitted or Done, `decline`); a cancel is `phase: 'cancelled'`. */
   elicitAction?: ElicitAction;
+  /** `cancelled` only (spec 052 FR-178): why the question ended unanswered; a reason code, never text. `user`: the window sent Skip; `unreadable`: an answer that held nothing usable. */
+  reason?: 'user' | 'stop' | 'interrupt' | 'reconnect' | 'exit' | 'unreadable';
 }
 
 /** A custom agent the user can select for a session (spec 043 FR-001); generic across adapters. */

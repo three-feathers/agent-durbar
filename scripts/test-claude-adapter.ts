@@ -556,6 +556,9 @@ async function main(): Promise<void> {
     ad.answerQuestion(sid, 'tu-q2', null);
     await until('q2 answer', () => answers.q2);
     assert.strictEqual((answers.q2.hookSpecificOutput as { permissionDecision: string }).permissionDecision, 'deny');
+    // spec 052 FR-178: the reason of each ending is a code on the event (user: Skip; interrupt: Stop below)
+    const reasonOf = (id: string): unknown => (events.find((e) => e.type === 'question' && (e as { requestId?: string; phase: string }).requestId === id && (e as { phase: string }).phase === 'cancelled') as { reason?: string } | undefined)?.reason;
+    assert.strictEqual(reasonOf('tu-q2'), 'user');
     // Stop while a question is open: answered deny, cancelled event
     ask('q3', 'tu-q3');
     await until('asked 3', () => events.find((e) => e.type === 'question' && (e as { requestId?: string }).requestId === 'tu-q3'));
@@ -563,6 +566,7 @@ async function main(): Promise<void> {
     await until('q3 answer', () => answers.q3);
     assert.strictEqual((answers.q3.hookSpecificOutput as { permissionDecision: string }).permissionDecision, 'deny');
     assert.ok(events.some((e) => e.type === 'question' && (e as { requestId?: string; phase: string }).requestId === 'tu-q3' && (e as { phase: string }).phase === 'cancelled'));
+    assert.strictEqual(reasonOf('tu-q3'), 'interrupt');
     // can_use_tool fallback asks too; an input that already has answers is allowed as it is
     cur!.send({ type: 'control_request', request_id: 'c1', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: { questions: [{ question: 'Q?', options: [{ label: 'A' }] }], answers: { 'Q?': 'A' } }, tool_use_id: 'tu-c1' } });
     await until('c1', () => answers.c1);

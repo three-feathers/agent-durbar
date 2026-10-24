@@ -3696,7 +3696,7 @@ function showQuestion(a,e){
   const send=async answers=>{
     const r=await bridge.answerQuestion(a.id,e.requestId,answers).catch(err=>({ok:false,error:String(err&&err.message||err)}));
     if(!r||!r.ok){addNote(liveChat(a),'Could not answer: '+esc((r&&r.error)||'unknown error'),true);return;}
-    settleQuestion(a,answers,undefined,e.requestId);
+    settleQuestion(a,answers,undefined,e.requestId,'user');
   };
   const ok=document.createElement('button');ok.type='button';ok.className='btn primary';ok.textContent='Answer';
   ok.onclick=()=>{const ans={};qs.forEach((q,i)=>{const o=others[i].value.replace(/\s+/g,' ').trim();const v=[...picks[i]].concat(o?[o]:[]).join(', ');if(v)ans[q.question]=v;});
@@ -3811,7 +3811,9 @@ function showElicitation(a,e){
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   announce(a.name+': '+(R.source?R.source+' ':'an MCP server ')+(isUrl?'asks you to open a page on '+(R.host||'the web'):'asks for input')+'. '+safeExcerpt(R.message||'',160,''));renderInboxBtn();
 }
-function settleQuestion(a,answers,action,rid){
+/* spec 052 FR-178: why a question ended unanswered, in words for the card's tooltip (codes only, from the adapter's event or this window; never text of the question) */
+const SKIP_WHY={user:'you pressed Skip',stop:'the turn was stopped',interrupt:'the turn was stopped',reconnect:'the agent app was reconnected',exit:'the agent app ended',unreadable:'the agent app ended the question without an answer',aborted:'the agent app reported the turn as aborted'};
+function settleQuestion(a,answers,action,rid,why){
   /* spec 052 FR-178: the card that was answered is the one settled, by its request id; a second question open at once is neither settled by it nor lost */
   const Q=(rid&&a.qs&&a.qs.get(rid))||a.question;if(!Q)return;if(a.qs)a.qs.delete(Q.requestId);if(a.question===Q)a.question=a.qs&&a.qs.size?[...a.qs.values()].pop():null;
   if(Q.row)Q.row.remove();Q.n.querySelectorAll('.q-opts,.q-form,.q-urlbox').forEach(x=>x.remove());
@@ -3819,6 +3821,7 @@ function settleQuestion(a,answers,action,rid){
   if(Q.elicit){const acc=action==='accept';Q.st.textContent=' → '+(acc?(Q.elicit==='url'?'done':'submitted'):action==='decline'?'declined':'cancelled');Q.n.classList.add('settled',acc?'approved':'denied');
     if(a.state==='waiting')setState(a,'working',null,acc?'Answered':action==='decline'?'Declined':'Cancelled');if(a.question&&a.state==='working')setState(a,'waiting',null,'The agent asks you a question');updatePanelHeader();stickyScroll(liveChat(a));return;}
   Q.st.textContent=answers?' → answered: '+Object.values(answers).join('; '):' → skipped';
+  if(!answers){const w=SKIP_WHY[why]?why:'unknown';Q.n.dataset.skipWhy=w;Q.n.title='Skipped: '+(SKIP_WHY[w]||'the reason was not reported')+'.';}
   Q.n.classList.add('settled',answers?'approved':'denied');
   if(a.state==='waiting')setState(a,'working',null,answers?'Answered':'Question skipped'); /* a Stop already set it idle */
   if(a.question&&a.state==='working')setState(a,'waiting',null,'The agent asks you a question'); /* another question is still open */
@@ -4240,7 +4243,7 @@ function onLiveEvent(e){
       ensureTurn(a); setState(a,'waiting',null,intentText(e.intent)||'Waiting for permission');
       if(e.permission)showPerm(a,e.permission);
     }
-    else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');while(a.question)settleQuestion(a,null,'cancel');if(a.pendingProfile){const n=a.pendingProfile.name;a.pendingProfile=undefined;updateAgentChip(a);addNote(chat,'The waiting switch to the agent '+esc(n)+' was dropped when you stopped the reply.');}const was=a.worked;a.worked=false;closeTurn(a);
+    else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');while(a.question)settleQuestion(a,null,'cancel',undefined,'aborted');if(a.pendingProfile){const n=a.pendingProfile.name;a.pendingProfile=undefined;updateAgentChip(a);addNote(chat,'The waiting switch to the agent '+esc(n)+' was dropped when you stopped the reply.');}const was=a.worked;a.worked=false;closeTurn(a);
       [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
       if(was)addNote(chat,'Stopped by you. The agent is ready for your next message.');
       /* real:(spec 030 T042) the runtime drops a switch that was still queued when the turn is stopped: say so, never leave "Next: ..." behind */
@@ -4275,7 +4278,7 @@ function onLiveEvent(e){
     return;
   case 'question': /* spec 012 FR-130 */
     if(e.phase==='asked'){if(a.qs&&a.qs.has(e.requestId))return;showQuestion(a,e);setState(a,'waiting',null,'The agent asks you a question');updatePanelHeader();scheduleRender();}
-    else if(a.qs&&a.qs.has(e.requestId)){const Q=a.qs.get(e.requestId);settleQuestion(a,e.phase==='answered'?e.answers:null,Q.elicit?(e.phase==='answered'?(e.elicitAction||'accept'):'cancel'):undefined,e.requestId);}
+    else if(a.qs&&a.qs.has(e.requestId)){const Q=a.qs.get(e.requestId);settleQuestion(a,e.phase==='answered'?e.answers:null,Q.elicit?(e.phase==='answered'?(e.elicitAction||'accept'):'cancel'):undefined,e.requestId,e.reason);}
     return;
   case 'agentProfile':{ /* spec 043: the session's custom agent; details from the last list when the event has none */
     const p=e.profile?Object.assign({},(a.profileList||[]).find(x=>x.id===e.profile.id)||{},e.profile.source==='other'&&(a.profileList||[]).some(x=>x.id===e.profile.id)?{}:e.profile):null;

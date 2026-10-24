@@ -482,6 +482,8 @@ async function main(): Promise<void> {
     // spec 002 FR-058: ask_user as a question card, in any mode; choice, free text, skip, Stop
     {
       const t = await setup({ permissionMode: 'read-only' });
+      const dbg: string[] = [];
+      t.ad.debug = (m) => dbg.push(m);
       const iu = t.s.config.onUserInputRequest as (r: unknown) => Promise<{ answer: string; wasFreeform: boolean }>;
       assert.strictEqual(typeof iu, 'function', 'the ask_user handler is passed to the SDK');
       const askOnce = async (choices: string[] | undefined, reply: string | null): Promise<{ answer: string; wasFreeform: boolean }> => {
@@ -542,6 +544,20 @@ async function main(): Promise<void> {
       await t.ad.stop(t.sid);
       assert.deepStrictEqual(await pending, { answer: '(The user skipped the question. Decide yourself.)', wasFreeform: true }, 'Stop skips it');
       assert.ok(t.events.some((e) => e.type === 'question' && e.phase === 'cancelled'));
+      // spec 052 FR-178: each way a question ends unanswered records its reason (a code) on the event and in the debug log, never the text
+      const why = t.events.filter((e) => e.type === 'question' && e.phase === 'cancelled').map((e) => (e as { reason?: string }).reason);
+      assert.deepStrictEqual(why, ['user', 'stop'], 'Skip from the window, then Stop');
+      assert.deepStrictEqual(dbg.filter((m) => /^question .* cancelled: /.test(m)).map((m) => m.split(': ')[1]), ['user', 'stop']);
+      assert.ok(!dbg.some((m) => /Pick one|Still there/.test(m)), 'no question text in the log');
+      {
+        const t3 = await setup({ permissionMode: 'read-only' });
+        const iu3 = t3.s.config.onUserInputRequest as (r: unknown) => Promise<{ answer: string; wasFreeform: boolean }>;
+        const p3 = iu3({ question: 'Interrupt me?', choices: ['Yes'] });
+        await sleep(5);
+        await t3.ad.interrupt(t3.sid);
+        await p3;
+        assert.deepStrictEqual(t3.events.filter((e) => e.type === 'question' && e.phase === 'cancelled').map((e) => (e as { reason?: string }).reason), ['interrupt']);
+      }
     }
 
     // isLive follows the session

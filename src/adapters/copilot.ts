@@ -2,7 +2,8 @@ import { copilotHooksJson } from '../shared/foldersetup';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
-import { parseQuestions } from './questions';
+import { parseQuestions, SkipNotes } from './questions';
+import type { SkipReason } from './questions';
 import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 import type { ElicitAnswer } from '../shared/elicit';
 import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk';
@@ -385,7 +386,7 @@ export class CopilotAdapter implements AgentAdapter {
       busy.set(sid, await this.processing(live));
       live.unsubscribe();
       live.broker.denyPending(); // the old runtime's requests and questions die with it
-      this.cancelQuestions(live);
+      this.cancelQuestions(live, 'reconnect');
       live.limitRequestId = undefined;
       this.emit(sid, { type: 'status', status: 'working', intent: 'Reconnecting Copilot…' });
     }
@@ -721,7 +722,9 @@ export class CopilotAdapter implements AgentAdapter {
       });
       live.questions.delete(requestId);
       if (answer === null) {
-        this.emit(sid, { type: 'question', phase: 'cancelled', requestId });
+        const reason = this.skips.take(requestId);
+        this.debug?.(`question ${requestId.slice(0, 8)} cancelled: ${reason}`); // spec 052 FR-178: a code, never the question or an answer
+        this.emit(sid, { type: 'question', phase: 'cancelled', requestId, reason });
         return { answer: SKIPPED_ANSWER, wasFreeform: true };
       }
       this.emit(sid, { type: 'question', phase: 'answered', requestId, answers: { [asked[0].question]: answer } });
@@ -892,6 +895,7 @@ export class CopilotAdapter implements AgentAdapter {
     const q = this.sessions.get(sessionId)?.questions?.get(requestId);
     if (!q) return;
     const v = answers ? Object.values(answers).find((x) => typeof x === 'string' && x.trim()) : undefined;
+    if (answers === null) this.skips.note(requestId, 'user');
     q.resolve(v ? v.replace(/\s+/g, ' ').trim().slice(0, 500) : null);
   }
 
@@ -906,8 +910,10 @@ export class CopilotAdapter implements AgentAdapter {
     if (w) w(answer);
   }
 
-  private cancelQuestions(live: Live): void {
-    for (const q of [...(live.questions?.values() ?? [])]) q.resolve(null);
+  private readonly skips = new SkipNotes();
+
+  private cancelQuestions(live: Live, why: SkipReason): void {
+    for (const [id, q] of [...(live.questions ?? [])]) { this.skips.note(id, why); q.resolve(null); }
     for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop / End reject an open plan
     cancelElicitations(live.elicitations);
   }
@@ -965,7 +971,7 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.sessions.get(sessionId);
     if (!live) return;
     live.broker.denyPending();
-    this.cancelQuestions(live);
+    this.cancelQuestions(live, 'interrupt');
     await this.cancelLimit(live);
     try {
       await live.session.abort();
@@ -982,7 +988,7 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) return;
     await this.cancelLimit(live);
     live.broker.stop(); // pending permissions are denied cleanly (renderer clears Approve/Deny) and grants are dropped
-    this.cancelQuestions(live);
+    this.cancelQuestions(live, 'stop');
     try {
       await live.session.abort();
     } catch {
