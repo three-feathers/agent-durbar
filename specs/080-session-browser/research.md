@@ -38,7 +38,7 @@ Throwaway probe, not merged, not wired into any npm script. `sim:` Electron 44.8
 | AC15 | ok | the probe processes and their Xvfb displays were checked by PID (none left); the 4 `kill -9` children left none |
 | AC16 | done (spec delta 2026-10-24) | FR-025d, FR-010, FR-011, FR-061, FR-066a, FR-023a, FR-058 and FR-110..FR-113 changed; options in R1b; follow-up probe T007, file identification T008 |
 
-**FRs at risk (for the coordinator; the FRs are not changed in this slice):**
+**FRs at risk (as found by the probe; the 2026-10-24 spec deltas have since changed them, see spec.md `## Changes`):**
 
 - **FR-025d** (AC8, AC13): CDP does not replace the native dialog; it is shown and stays after `Page.handleJavaScriptDialog`. `prompt()` does not exist. Needs a way to keep the dialog from showing (none found yet) or the FR must be rewritten.
 - **FR-066** (AC7): `Input.setIgnoreInputEvents` blocks CDP input too; Watch-only needs another way (for example drop the user's events in the page area before they reach the view).
@@ -57,7 +57,7 @@ Nothing here ran; each choice is checked by T007 before the task that builds it.
 |---|---|---|---|---|
 | A. `disableDialogs: true` on every view; CDP event only for a bar note | No page code; nothing pops over another chat; no call hangs | Nothing drawn, but the user can never answer a dialog | Fits | Chosen first, then **rejected by the owner** (Vikram, 2026-10-24, team chat and PR #682: "a deal breaker, because it takes dialogs away from humans") |
 | B. Main-world shim via `Page.addScriptToEvaluateOnNewDocument` replacing `alert`/`confirm`, reporting through `Runtime.addBinding` | The page sees and can call the binding; bypassable (new frames or realms), and then the native dialog shows anyway; a synchronous `confirm` cannot wait for the user | Same as A when it works | An exception: main-world script plus a `Runtime` binding | Rejected |
-| C. Native dialogs for the user; `Page.handleJavaScriptDialog` answers them only while the agent drives (`false` for `alert`/`confirm`, `true` for the `beforeunload` of its own navigation), with a note in the bar and the tool result | No page code; the user keeps every dialog | `[KNOWN GAP]`s: a hidden session's dialog can show over another chat, and a CDP-answered dialog may stay drawn briefly (T010 AC13); FR-041's confirmation says so | Fits: only `Page` | **Chosen** (owner decision, 2026-10-24) |
+| C. Native dialogs for the user; `Page.handleJavaScriptDialog` closes them with `accept: false` only while the agent drives (never OK), with a note in the bar and the tool result (`beforeunload` is not a dialog in Electron; FR-025e handles it) | No page code; the user keeps every dialog | `[KNOWN GAP]`s: a hidden session's dialog can show over another chat, and a CDP-answered dialog may stay drawn briefly (T010 AC13); FR-041's confirmation says so | Fits: only `Page` | **Chosen** (owner decision, 2026-10-24) |
 | D. Override the private `-run-dialog` listener | Undocumented, internal, can change in any Electron release | Could draw an in-bar answer | Fits | Rejected (unsupported API) |
 
 `prompt()` is unsupported in either case: the renderer throws "prompt() is not supported." (T010 AC8 `sim:`) and the main-process handler refuses the `prompt` type (`read:`). T007 AC1-AC2 measure C's two gaps.

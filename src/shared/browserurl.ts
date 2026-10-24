@@ -1,3 +1,5 @@
+import { isHttpUrl } from './url';
+
 /**
  * Spec 080 FR-005, FR-024: what the session browser's address field accepts, and what a link may do.
  * Pure and linear: no regex backtracks over the input (the length is checked first, then one anchored pattern).
@@ -71,7 +73,8 @@ export function parseAddress(input: unknown): AddressResult {
   } else if (BARE.test(text)) {
     candidate = (loopbackOfAddress(text) ? 'http://' : 'https://') + text;
   } else {
-    return { ok: false, reason: SCHEMEISH.test(text) ? ONLY_WEB : NOT_ADDR };
+    // `http:example.com` and `https:/example.com` are mistyped web addresses, not other schemes
+    return { ok: false, reason: SCHEMEISH.test(text) && !/^https?:/i.test(text) ? ONLY_WEB : NOT_ADDR };
   }
   let u: URL;
   try {
@@ -80,6 +83,10 @@ export function parseAddress(input: unknown): AddressResult {
     return { ok: false, reason: NOT_ADDR };
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return { ok: false, reason: ONLY_WEB };
+  // userinfo (`user:pw@host`, `google.com@evil.com`) is refused: basic auth is cancelled (FR-025c), so it would only leak into history
+  // and the page URL the agent reads, and the text before the `@` looks like the host. The authority is read from the text given.
+  const authority = candidate.slice(candidate.indexOf('//') + 2).split(/[/?#\\]/, 1)[0];
+  if (u.username || u.password || authority.includes('@')) return { ok: false, reason: 'Addresses with a user name or password are not supported.' };
   if (!hostShapeOk(u.hostname)) return { ok: false, reason: NOT_ADDR };
   return { ok: true, url: u.href };
 }
@@ -94,13 +101,13 @@ export function classifyLink(input: unknown): LinkKind {
   if (typeof input !== 'string' || input.length > 4096) return 'refused';
   const text = input.trim();
   if (!text || hasControl(text)) return 'refused';
+  if (isHttpUrl(text)) return 'web';
   let u: URL;
   try {
     u = new URL(text);
   } catch {
     return 'refused';
   }
-  if (u.protocol === 'http:' || u.protocol === 'https:') return 'web';
   if (u.protocol === 'mailto:') return 'mailto';
   return 'refused';
 }
