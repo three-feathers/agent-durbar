@@ -65,5 +65,11 @@ export function cleanAnswers(asked: readonly AskedQuestion[], answers: unknown):
     const v = typeof a === 'string' ? a.replace(/\s+/g, ' ').trim().slice(0, MAX_ANSWER) : '';
     if (v) out[q.question] = v;
   }
+  // spec 052 FR-178: one question asked and one answer given, but under a key that is not the question's text (any difference in how the two
+  // sides cleaned it): it is still that question's answer. Never a skip.
+  if (!Object.keys(out).length && asked.length === 1) {
+    const only = Object.values(answers).filter((a): a is string => typeof a === 'string' && !!a.trim());
+    if (only.length === 1) out[asked[0].question] = only[0].replace(/\s+/g, ' ').trim().slice(0, MAX_ANSWER);
+  }
   return Object.keys(out).length ? out : undefined;
 }

@@ -876,15 +876,21 @@ async function main(): Promise<void> {
       const r = await settles('the answer', p);
       assert.deepStrictEqual(r.result, { answers: { colour: { answers: ['Sage'] } } });
       assert.ok(events.some((e) => e.type === 'question' && e.phase === 'answered'));
+      // spec 052 FR-178: an answer under a key that is not the question's text still answers it
+      const pk = req(server, 'item/tool/requestUserInput', { ...qs, itemId: 'ui-key' }, child);
+      await until('asked for the key test', () => events.filter((e) => e.type === 'question' && e.phase === 'asked').length === 2);
+      const askedK = events.filter((e) => e.type === 'question' && e.phase === 'asked')[1] as { requestId: string };
+      ad.answerQuestion!(sid, askedK.requestId, { 'not the question': 'Blue' });
+      assert.deepStrictEqual((await settles('key', pk)).result, { answers: { colour: { answers: ['Blue'] } } });
       // Skip answers nothing; Stop answers an open question with nothing too
       const p2 = req(server, 'item/tool/requestUserInput', { ...qs, itemId: 'ui2' }, child);
-      await until('asked again', () => events.filter((e) => e.type === 'question' && e.phase === 'asked').length === 2);
-      const asked2 = events.filter((e) => e.type === 'question' && e.phase === 'asked')[1] as { requestId: string };
+      await until('asked again', () => events.filter((e) => e.type === 'question' && e.phase === 'asked').length === 3);
+      const asked2 = events.filter((e) => e.type === 'question' && e.phase === 'asked')[2] as { requestId: string };
       ad.answerQuestion!(sid, asked2.requestId, null);
       assert.deepStrictEqual((await settles('skip', p2)).result, { answers: {} });
       assert.ok(events.some((e) => e.type === 'question' && e.phase === 'cancelled'));
       const p3 = req(server, 'item/tool/requestUserInput', { ...qs, itemId: 'ui3' }, child);
-      await until('asked a third time', () => events.filter((e) => e.type === 'question' && e.phase === 'asked').length === 3);
+      await until('asked a third time', () => events.filter((e) => e.type === 'question' && e.phase === 'asked').length === 4);
       await ad.stop(sid);
       assert.deepStrictEqual((await settles('stop', p3)).result, { answers: {} });
       await ad.dispose();
