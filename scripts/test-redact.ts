@@ -222,6 +222,8 @@ const chat: Record<string, { v: string; secret: string; keep?: string }> = {
   telegramFile: { v: 'https://api.telegram.org/file/bot' + '123456789:' + TG35 + '/photos/x.jpg', secret: AZ, keep: 'https://api.telegram.org/file/bot' },
   telegramLocal: { v: 'http://localhost:8081/bot' + '1234567:' + TG35 + '/getMe', secret: AZ, keep: 'http://localhost:8081/bot' },
   discordBot: { v: DBOT, secret: AZ },
+  discordBotEnc: { v: DBOT.replace(/\./g, '%2E'), secret: AZ },
+  discordBotEnc2: { v: DBOT.replace(/\./g, '%252e'), secret: AZ },
 };
 /** Test fixtures: write every `/` (or the Telegram token's `:` after its digits) in another spelling, on purpose not an escape. */
 const swapSlash = (x: string, to: string): string => x.split('/').join(to);
@@ -339,17 +341,21 @@ assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x'
   assert.strictEqual(redact('token ' + DBOT + ' end', {}), 'token [redacted] end', 'discord bot token');
   assert.strictEqual(redact('{"t":"' + DBOT + '"}', {}), '{"t":"[redacted]"}', 'discord bot token in JSON');
   assert.strictEqual(redact('Bot ' + DBOT, {}), 'Bot [redacted]', 'Authorization: Bot <token>');
-  assert.strictEqual(redact('N' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(27) + 'c'.repeat(30), {}), '[redacted]', 'a longer HMAC is masked whole');
+  for (const dot of ['%2E', '%2e', '%252E', '%25252e']) assert.strictEqual(redact('t=' + DBOT.replace(/\./g, dot) + '&x', {}), 't=[redacted]&x', `discord bot token with ${dot} dots`);
+  for (const sec of ['D', 'T', 'j', 'z']) for (const lead of 'MNO') assert.strictEqual(redact(lead + sec + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(30), {}), '[redacted]', `${lead}${sec} id start`);
+  assert.strictEqual(redact('N' + 'T' + 'a'.repeat(22) + '.abcdef.' + 'b'.repeat(27) + 'c'.repeat(30), {}), '[redacted]', 'a longer HMAC is masked whole');
   for (const [idLen, hmacLen] of [[23, 27], [27, 27], [24, 38], [24, 60]]) {
-    assert.strictEqual(redact('x ' + 'M' + 'a'.repeat(idLen) + '.abcdef.' + 'b'.repeat(hmacLen) + ' y', {}), 'x [redacted] y', `discord bot token with a ${idLen + 1}-character id and a ${hmacLen}-character HMAC`);
+    assert.strictEqual(redact('x ' + 'M' + 'T' + 'a'.repeat(idLen - 1) + '.abcdef.' + 'b'.repeat(hmacLen) + ' y', {}), 'x [redacted] y', `discord bot token with a ${idLen + 1}-character id and a ${hmacLen}-character HMAC`);
   }
-  for (const ok of ['Org.Example.Foo', 'Microsoft.Extensions.Logging.Abstractions.Something', 'M' + 'a'.repeat(23) + '.abcdefg.' + 'b'.repeat(30), 'M' + 'a'.repeat(23) + '.abcde.' + 'b'.repeat(30), 'M' + 'a'.repeat(22) + '.abcdef.' + 'b'.repeat(30),
-    'M' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(26), 'X' + 'a'.repeat(24) + '.abcdef.' + 'b'.repeat(30), 'v1.2.3 N1.2.3 file.tar.gz', 'aM' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(30)]) {
+  for (const ok of ['Org.Example.Foo', 'Microsoft.Extensions.Logging.Abstractions.Something', 'M' + 'T' + 'a'.repeat(23) + '.abcdefg.' + 'b'.repeat(30), 'M' + 'T' + 'a'.repeat(23) + '.abcde.' + 'b'.repeat(30), 'M' + 'T' + 'a'.repeat(21) + '.abcdef.' + 'b'.repeat(30), 'M' + 'a'.repeat(24) + '.abcdef.' + 'b'.repeat(30),
+    'MainActivityControllerImpl.helper.SomeVeryLongClassNameHereXYZ1', 'MyComponentPackageNameHere.module.webpack-chunk-abcdefghijklmnop.js',
+    'org.apache.commons.MathUtilsHelperClassName.common.LongerArtifactNameIsHereOkay', 'NorthwindTradersMarketing.static.MarketingWebsiteCdnAssetsBucketName.com',
+    'M' + 'T' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(26), 'X' + 'T' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(30), 'v1.2.3 N1.2.3 file.tar.gz', 'aM' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(30)]) {
     assert.strictEqual(redact(ok, {}), ok, `discord bot false positive stays: ${ok.slice(0, 30)}`);
     assert.strictEqual(maskTokenShapes(ok, '[s]'), ok, `maskTokenShapes discord bot false positive stays: ${ok.slice(0, 30)}`);
   }
   // a JWT is masked whole by its own shape, even when its signature looks like a Discord HMAC; two in a row both go
-  const jwt = 'ey' + 'JhbGciOiJIUzI1NiJ9.' + 'ey' + 'JzdWIiOiIxMjM0NTY3ODkwIn0.' + 'M' + 'a'.repeat(30);
+  const jwt = 'ey' + 'JhbGciOiJIUzI1NiJ9.' + 'ey' + 'JzdWIiOiIxMjM0NTY3ODkwIn0.' + 'M' + 'T' + 'a'.repeat(30);
   assert.strictEqual(redact('a ' + jwt + ' b ' + DBOT, {}), 'a [redacted] b [redacted]', 'JWT and Discord bot token side by side');
 }
 // same-run growth for the new shapes (review of PR #679): the same call on an input 4 times longer must cost about 4 times more, not 16
@@ -372,8 +378,8 @@ assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x'
     tgBotLookbehind: '/bot1234567:',
     tgFile: 'api.telegram.org/file/bot123456:',
     tgIds: '123456789012:',
-    discordBot: 'M' + 'a'.repeat(24) + '.abcdef.',
-    discordBotRun: 'M' + 'a'.repeat(30) + ' ',
+    discordBot: 'M' + 'T' + 'a'.repeat(24) + '.abcdef.',
+    discordBotRun: 'M' + 'T' + 'a'.repeat(30) + ' ',
     discordBotM: 'M',
     discordBotMDash: 'M-',
     discordBotMDot: 'M', // plus a `.abcdef.` tail so the cheap marker lets it through
@@ -401,7 +407,7 @@ assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x'
       assert.strictEqual(maskTokenShapes(t, '[s]'), maskTokenShapesUnguarded(t, '[s]'), `guard equivalence on ${t.slice(0, 50)}`);
     }
   }
-  pieces.push('xox', 'xoxb-', 'xapp-', 'XOXB-', 'hooks.slack.com', 'HOOKS.Slack.com', 'discord', 'discordapp.com', 'DISCORD.COM', 'api', 'webhooks', 'services', 'api.telegram.org', 'API.TELEGRAM.ORG', 'bot', '/bot', 'file', 'workflows', 'triggers', 'xoxd-', 'xoxc-', '%2B', ':443', '.:8081', '//', DBOT, '.GhIjKl.', ':', '%3A', '%253a', '\\u003a', '\\x3A',
+  pieces.push('xox', 'xoxb-', 'xapp-', 'XOXB-', 'hooks.slack.com', 'HOOKS.Slack.com', 'discord', 'discordapp.com', 'DISCORD.COM', 'api', 'webhooks', 'services', 'api.telegram.org', 'API.TELEGRAM.ORG', 'bot', '/bot', 'file', 'workflows', 'triggers', 'xoxd-', 'xoxc-', '%2B', '%2E', '%252e', ':443', '.:8081', '//', DBOT, '.GhIjKl.', ':', '%3A', '%253a', '\\u003a', '\\x3A',
     '/', '\\/', '%2F', '%252f', '\\u002f', '12345678', '1234567890', AZ, AZ + AZ, TG35, 'T0123ABCD', ' ', '_', '-', '=3D', '%u003D', '.');
   let seed = 12345;
   const rnd = (n: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 8) % n; };
