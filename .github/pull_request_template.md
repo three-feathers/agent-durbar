@@ -52,6 +52,7 @@ Docs: n/a <reason>
 
 ## Verification
 
+- [ ] Before requesting review, I reconciled with current `origin/main`, confirmed the branch is mergeable, agreed the important acceptance cases, ran relevant local preflight checks and verified the cited CI is for the exact head sha
 - [ ] `npm run typecheck && npm run build && npm test` pass locally (no AI credits spent)
 - [ ] Tests added or updated in `scripts/` (permission broker, attachments, launcher, history/VS Code readers, folder store, adapter mapping)
 - [ ] UI change: screenshots at **1440x900** and **1280x800** with 15 simulated agents (`DURBAR_SIM=15`), added under `docs/screenshots/` and linked below
