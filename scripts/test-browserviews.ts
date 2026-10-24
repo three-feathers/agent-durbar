@@ -56,16 +56,37 @@ assert.ok(viewUserAgent('', '152.0.1', 'win32').includes('Windows NT 10.0'));
 // ---- AC3/AC4: the handler list refuses, and installViewHandlers puts every one on ----
 const loaded: string[] = [];
 const popups: string[] = [];
-const h = buildViewHandlers({ sim: false, loadInView: (u) => loaded.push(u), onPopupBlocked: (u) => popups.push(u) });
+const h = buildViewHandlers({ sim: false, currentUrl: () => 'https://example.com/page', loadInView: (u) => loaded.push(u), onPopupBlocked: (u) => popups.push(u) });
 const ev = (): { prevented: number; preventDefault(): void } => ({ prevented: 0, preventDefault() { this.prevented++; } });
 
-assert.deepStrictEqual(h.windowOpen({ url: 'https://example.com/a', disposition: 'foreground-tab' }), { action: 'deny' });
+assert.deepStrictEqual(h.windowOpen({ url: 'https://example.com/a', disposition: 'foreground-tab', referrer: { url: 'https://example.com/page' } }), { action: 'deny' });
 assert.deepStrictEqual(loaded, ['https://example.com/a'], 'a _blank link loads in the same view');
 assert.deepStrictEqual(h.windowOpen({ url: 'https://example.com/b', disposition: 'new-window' }), { action: 'deny' });
 assert.deepStrictEqual(h.windowOpen({ url: 'file:///etc/passwd', disposition: 'foreground-tab' }), { action: 'deny' });
 assert.deepStrictEqual(h.windowOpen({ url: 'javascript:alert(1)', disposition: 'background-tab' }), { action: 'deny' });
 assert.deepStrictEqual(loaded, ['https://example.com/a'], 'a popup or a refused scheme never loads');
 assert.deepStrictEqual(popups, ['https://example.com/b'], 'only http(s) popups are reported (an Open offer); refused schemes are dropped');
+// framebusting: only the view's own top-level origin may load a tab popup in the view
+{
+  const before = loaded.length;
+  const open = (referrer: { url?: string } | null | undefined, url = 'https://evil.test/x', cur?: string): void => {
+    const hh = buildViewHandlers({ currentUrl: () => cur ?? 'https://example.com/page', loadInView: (u) => loaded.push(u), onPopupBlocked: (u) => popups.push(u) });
+    hh.windowOpen({ url, disposition: 'foreground-tab', referrer });
+  };
+  const p0 = popups.length;
+  open({ url: 'http://localhost:1/frame' }, 'http://localhost:1/evil', 'http://127.0.0.1:1/top'); // a cross-origin iframe
+  open({ url: 'https://example.com:8443/page' });  // same host, other port
+  open({ url: 'http://example.com/page' });         // same host, other scheme
+  open({ url: '' }); open({}); open(null); open(undefined); // empty referrer fails closed
+  open({ url: 'about:blank' }); open({ url: 'not a url' }); open({ url: 'https://example.com/page' }, 'https://evil.test/x', 'about:blank');
+  assert.strictEqual(loaded.length, before, 'a cross-origin, empty or opaque referrer never loads in the view');
+  assert.strictEqual(popups.length - p0, 10, 'each becomes an Open in system browser offer');
+  popups.length = p0;
+  open({ url: 'https://example.com/other?x=1#y' }, 'https://example.com/next');
+  assert.strictEqual(loaded.length, before + 1, 'a same-origin opener loads (a top-level scripted open with no gesture too: FR-026 will say same-origin loads)');
+  assert.strictEqual(loaded[loaded.length - 1], 'https://example.com/next');
+  loaded.pop();
+}
 // the OAuth pattern: window.open('') / about:blank must not wipe the user's page
 for (const url of ['', 'about:blank', 'about:srcdoc', 'data:text/html,x', 'blob:https://a.com/x', 'ms-msdt:/id x', 'search-ms:q=x']) {
   for (const disposition of ['foreground-tab', 'background-tab', 'new-window']) h.windowOpen({ url, disposition });
@@ -266,9 +287,10 @@ assert.deepStrictEqual(viewDialogPolicy('agent', { type: 'beforeunload', message
   assert.ok(!/[\u0000-\u001f]/.test(viewDialogPolicy('agent', { type: 'alert', message: 'a\u0000b\nc\u001b[31m' }).note as string), 'no control characters');
 }
 {
-  const t0 = process.hrtime.bigint();
+  const c0 = process.cpuUsage();
   viewDialogPolicy('agent', { type: 'alert', message: 'a '.repeat(100000) });
-  assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 2000, 'a 200k-character message is handled quickly');
+  const c = process.cpuUsage(c0); // CPU time, not wall time: a busy machine must not fail it
+  assert.ok((c.user + c.system) / 1000 < 2000, 'a 200k-character message is handled quickly');
 }
 
 // ---- T013: soft cap picker ----
@@ -330,7 +352,8 @@ function fakeElectron() {
         close: (o: object) => { log.push(`${i}:close ${JSON.stringify(o)}`); destroyed = true; }, isDestroyed: () => destroyed,
       });
       const ses = Object.assign(new EventEmitter(), {
-        setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, setDevicePermissionHandler() {}, setDisplayMediaRequestHandler() {},
+        nulls: 0, set: [] as string[],
+        setPermissionRequestHandler(f: unknown) { if (!f) this.nulls++; this.set.push('req'); }, setPermissionCheckHandler(f: unknown) { if (!f) this.nulls++; }, setDevicePermissionHandler(f: unknown) { if (!f) this.nulls++; }, setDisplayMediaRequestHandler(f: unknown) { if (!f) this.nulls++; },
         clearStorageData: async () => void log.push(`${i}:clearStorage`), clearCache: async () => void log.push(`${i}:clearCache`),
       });
       created.push({ wc, ses });
@@ -366,7 +389,11 @@ function fakeElectron() {
     f.created[0].ses.emit('will-download', ev1, { cancel: () => cancelled++, once() {} });
     assert.strictEqual(ev1.prevented, 1);
     f.log.length = 0;
+    const sesE = f.created[0].ses as EventEmitter & { nulls: number };
+    for (const name of [...VIEW_SESSION_EVENTS]) assert.strictEqual(sesE.listenerCount(name), name === 'will-download' ? 2 : 1, `before teardown: ${name}`);
     await v.destroySessionView('s1');
+    for (const name of [...VIEW_SESSION_EVENTS]) assert.strictEqual(sesE.listenerCount(name), 0, `after teardown no ${name} listener holds the view`);
+    assert.strictEqual(sesE.nulls, 0, 'the deny-all handlers stay: never set to null (Electron would allow by default)');
     assert.strictEqual(cancelled, 1, 'teardown cancels a running download');
     assert.deepStrictEqual(f.log, ['0:detach', '0:close {"waitForBeforeUnload":false}', '0:clearStorage', '0:clearCache'], 'teardown order');
     assert.strictEqual(v.liveViewCount(), 0);

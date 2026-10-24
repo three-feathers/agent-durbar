@@ -124,6 +124,16 @@ function isWebUrl(url: string): boolean {
   }
 }
 
+/** Same http(s) origin, both sides present; anything else (empty, opaque, other scheme) is false. */
+function sameWebOrigin(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b || !isWebUrl(a) || !isWebUrl(b)) return false;
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
 export interface ViewHandlerContext {
   /** Under DURBAR_SIM only (FR-091). */
   sim?: boolean;
@@ -131,6 +141,8 @@ export interface ViewHandlerContext {
   loadInView(url: string): void;
   /** A scripted popup was refused; the bar offers *Open in system browser* for its URL (FR-026). */
   onPopupBlocked(url: string): void;
+  /** The view's current top-level URL; its origin must equal the popup's referrer origin for a tab popup to load in the view. */
+  currentUrl?(): string;
   /** Who drives the view now (FR-060). Decides what `beforeunload` does. */
   driver?(): 'user' | 'agent' | 'none';
   /**
@@ -197,7 +209,7 @@ interface Ev {
 }
 /** Every handler of FR-024..FR-025e, FR-026, FR-027 in one place; `installViewHandlers` puts them on a view. Every default refuses. */
 export interface ViewHandlers {
-  windowOpen(d: { url: string; disposition?: string }): { action: 'deny' };
+  windowOpen(d: { url: string; disposition?: string; referrer?: { url?: string } | null }): { action: 'deny' };
   /** `will-navigate`, `will-redirect` and `will-frame-navigate` (FR-024): the frame is passed in. */
   navigate(d: { url: string; isMainFrame: boolean; preventDefault(): void }): void;
   permissionRequest(wc: unknown, permission: string, callback: (granted: boolean) => void): void;
@@ -220,9 +232,11 @@ export function buildViewHandlers(ctx: ViewHandlerContext): ViewHandlers {
     windowOpen: (d) => {
       // Electron gives no "this came from a click"; a plain link has a tab disposition, a feature-ed window.open is `new-window`.
       // Only http(s) loads in the view: `about:blank` or an empty URL (`window.open('')`, the OAuth pattern) must never wipe the user's page.
+      // And only when the opener is the view's own top-level origin: a cross-origin iframe (which Chromium stops from touching
+      // `top.location`) must not replace the page through `window.open` (framebusting). An empty or opaque referrer fails closed.
       const web = isWebUrl(d.url);
       const tab = d.disposition === 'foreground-tab' || d.disposition === 'background-tab';
-      if (web && tab) ctx.loadInView(d.url);
+      if (web && tab && sameWebOrigin(d.referrer?.url, ctx.currentUrl?.())) ctx.loadInView(d.url);
       else if (web) ctx.onPopupBlocked(d.url); // only http(s) URLs get an *Open in system browser* offer
       return { action: 'deny' };
     },
@@ -283,6 +297,7 @@ export interface ViewWebContentsLike extends Listen {
 }
 export interface ViewSessionLike {
   on(event: string, listener: (...a: never[]) => void): unknown;
+  removeListener(event: string, listener: (...a: never[]) => void): unknown;
   setPermissionRequestHandler(h: ViewHandlers['permissionRequest']): void;
   setPermissionCheckHandler(h: ViewHandlers['permissionCheck']): void;
   setDevicePermissionHandler(h: ViewHandlers['devicePermission']): void;
@@ -291,7 +306,8 @@ export interface ViewSessionLike {
 /** Names of the `webContents` and `session` events installed (a test checks each one). */
 export const VIEW_WEBCONTENTS_EVENTS = ['will-navigate', 'will-redirect', 'will-frame-navigate', 'certificate-error', 'select-client-certificate', 'select-bluetooth-device', 'login', 'will-prevent-unload'] as const;
 export const VIEW_SESSION_EVENTS = ['select-hid-device', 'select-serial-port', 'select-usb-device', 'will-download'] as const;
-export function installViewHandlers(wc: ViewWebContentsLike, ses: ViewSessionLike, h: ViewHandlers): void {
+/** Returns a disposer for the listeners put on the session (Electron keeps the session until quit; the deny-all handlers stay, never `null`). */
+export function installViewHandlers(wc: ViewWebContentsLike, ses: ViewSessionLike, h: ViewHandlers): () => void {
   const on = (t: Listen, ev: string, fn: (...a: never[]) => void): void => void t.on(ev, fn);
   wc.setWindowOpenHandler(h.windowOpen);
   // Electron 44: the three navigation events take one `details` object (url, isMainFrame, preventDefault)
@@ -301,14 +317,20 @@ export function installViewHandlers(wc: ViewWebContentsLike, ses: ViewSessionLik
   on(wc, 'select-bluetooth-device', h.selectBluetooth as never);
   on(wc, 'login', h.login as never);
   on(wc, 'will-prevent-unload', h.willPreventUnload as never);
-  on(ses, 'select-hid-device', h.selectHid as never);
-  on(ses, 'select-serial-port', h.selectSerial as never);
-  on(ses, 'select-usb-device', h.selectUsb as never);
-  on(ses, 'will-download', h.willDownload as never);
+  const sesListeners: [string, (...a: never[]) => void][] = [
+    ['select-hid-device', h.selectHid as never],
+    ['select-serial-port', h.selectSerial as never],
+    ['select-usb-device', h.selectUsb as never],
+    ['will-download', h.willDownload as never],
+  ];
+  for (const [ev, fn] of sesListeners) on(ses, ev, fn);
   ses.setPermissionRequestHandler(h.permissionRequest);
   ses.setPermissionCheckHandler(h.permissionCheck);
   ses.setDevicePermissionHandler(h.devicePermission);
   ses.setDisplayMediaRequestHandler(h.displayMedia);
+  return () => {
+    for (const [ev, fn] of sesListeners) ses.removeListener(ev, fn);
+  };
 }
 
 /**

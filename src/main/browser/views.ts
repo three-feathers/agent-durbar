@@ -111,6 +111,9 @@ export function makeViews(deps: ViewDeps) {
           }
         }
         downloads.clear();
+        // Electron keeps the partition's session until quit: take our listeners (and their hold on this view) off it, keep the deny-all handlers
+        removeSesHandlers();
+        ses.removeListener('will-download', trackDownload);
         try {
           if (wc.debugger.isAttached()) wc.debugger.detach();
         } catch {
@@ -134,6 +137,7 @@ export function makeViews(deps: ViewDeps) {
       loadInView: (url) => void sv.navigate({ url }).catch(() => undefined),
       onPopupBlocked: (url) => events.onPopupBlocked?.(sessionId, url),
       driver: () => sv.driver,
+      currentUrl: () => wc.getURL(),
       askLeave: events.askLeave ? () => events.askLeave!(sessionId) : undefined,
       leave,
       onUnloadBlocked: () => {
@@ -147,12 +151,13 @@ export function makeViews(deps: ViewDeps) {
         void b.settled.then(() => setImmediate(() => void navigateChecked(wc, b.action, sim).catch(() => undefined)));
       },
     });
-    installViewHandlers(wc, ses, handlers);
+    const removeSesHandlers = installViewHandlers(wc, ses, handlers);
     // US3 builds downloads; until then every one is cancelled by the handler above, and any that is running is cancelled on teardown
-    (ses as unknown as { on(e: string, f: (...a: never[]) => void): void }).on('will-download', ((_e: unknown, item: { cancel(): void; once?(e: string, f: () => void): void }) => {
+    const trackDownload = ((_e: unknown, item: { cancel(): void; once?(e: string, f: () => void): void }) => {
       downloads.add(item);
       item.once?.('done', () => downloads.delete(item));
-    }) as never);
+    }) as never;
+    ses.on('will-download', trackDownload);
     wc.setUserAgent(viewUserAgent(wc.getUserAgent(), deps.chromeVersion)); // per view; app.userAgentFallback stays as it is (FR-028)
     wc.setAudioMuted(true); // FR-012
     try {
