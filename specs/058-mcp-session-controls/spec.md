@@ -387,6 +387,8 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 ## Changes
 
+- **2026-10-24, test only (branch 021-flaky-timing)**: the OAuth query-masking linearity check in `scripts/test-redact.ts` takes the best (minimum) CPU time of three runs per size, so a GC pause or busy core cannot fail it; the 250 ms floor is unchanged. The 1 MB MCP output check (FR-067) now allows 6x for a 10x input (correct code measures ~4x, the old cut-after-URL order ~12x). No behaviour change.
+
 ### 2026-10-22: the MCP dialog fits a long list, and a word never contradicts its switch (issue #544)
 
 **Status**: built (T117), simulator and unit tests only; `[KNOWN GAP]` not seen on a real agent app (the owner's macOS build had the bug).
