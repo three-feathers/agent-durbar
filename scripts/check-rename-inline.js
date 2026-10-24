@@ -70,8 +70,9 @@ module.exports = async (ctx) => {
       await until(`document.querySelectorAll('#stage .unit>.ren[data-ren]').length>=6`, 10000);
       ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus();
       /* a CI window (Windows) may have no OS focus: blurAction keeps the field when document.hasFocus() is false, so every blur-commit step runs with a window that has focus; the one step that tests the opposite sets the false stub itself */
-      console.log(`[rename-inline] ${w}x${h} ${level}: the window ${await js(`document.hasFocus()`) ? 'has' : 'has no'} OS focus`);
-      if (process.env.RI_UNFOCUSED === '1') { ctx.win.blur(); await ctx.sleep(300); console.log(`[rename-inline] RI_UNFOCUSED=1: the window ${await js(`document.hasFocus()`) ? 'still has' : 'has no'} OS focus now`); }
+      const hasOs = async () => ((await js('document.hasFocus()')) ? 'has' : 'has no');
+      console.log('[rename-inline] ' + w + 'x' + h + ' ' + level + ': the window ' + (await hasOs()) + ' OS focus');
+      if (process.env.RI_UNFOCUSED === '1') { ctx.win.blur(); await ctx.sleep(300); console.log('[rename-inline] RI_UNFOCUSED=1: the window now ' + (await hasOs()) + ' OS focus'); }
       await js(`document.hasFocus=()=>true;0`);
       const tag = `${w} ${level}`;
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${tag}: the detail level is on`);
