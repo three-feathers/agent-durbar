@@ -170,7 +170,18 @@ export class FakeClient {
     if (dir !== undefined) return { sessionId: id, context: { workingDirectory: dir } };
     return this.onDisk.has(id) ? { sessionId: id } : undefined;
   }
-  async listModels(): Promise<unknown[]> { this.authCalls.push('listModels'); if (this.listModelsFail) throw new Error(this.listModelsFail); return []; }
+  async listModels(): Promise<unknown[]> { this.authCalls.push('listModels'); if (this.listModelsFail) throw new Error(this.listModelsFail); return this.modelInfos; }
+  /** Spec 007 FR-012/FR-017: what `listModels` returns; the runtime version `getStatus` reports (none = no `getStatus`); what `rpc.managedSettings.resolve` answers (`undefined` = method absent), `managedFail` rejects, `managedHangs` never settles. */
+  modelInfos: unknown[] = [];
+  runtimeVersion: string | undefined;
+  managed: unknown;
+  managedFail = '';
+  managedHangs = false;
+  managedCalls = 0;
+  get getStatus(): (() => Promise<unknown>) | undefined {
+    const v = this.runtimeVersion;
+    return v === undefined ? undefined : async () => ({ version: v, protocolVersion: 3 });
+  }
   /** Spec 012 FR-156: what `getAuthStatus()` says (local), and the server calls `verifySignIn` makes, in order. */
   authenticated = true;
   authStatusFail = '';
@@ -190,6 +201,12 @@ export class FakeClient {
     return {
       ...(this.noQuota ? {} : { account: { getQuota: async (p: unknown) => { this.authCalls.push('account.getQuota'); void p; if (this.quotaFail) throw new Error(this.quotaFail); return { quotaSnapshots: {} }; } } }),
       ...(this.noRpcModels ? {} : { models: { list: async () => { this.authCalls.push('models.list'); if (this.modelsFail) throw new Error(this.modelsFail); return { models: [] }; } } }),
+      ...(this.managed === undefined && !this.managedFail && !this.managedHangs ? {} : { managedSettings: { resolve: async (p: unknown) => {
+        void p; this.managedCalls++;
+        if (this.managedHangs) await new Promise(() => undefined);
+        if (this.managedFail) throw new Error(this.managedFail);
+        return this.managed;
+      } } }),
     };
   }
 }

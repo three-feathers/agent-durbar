@@ -2,6 +2,7 @@
    Plain script; app.js calls DurbarScreens.init(ctx) once. No secret value ever reaches this file: the bridge sends key names and "set" flags. */
 (function(){
   'use strict';
+  const focusIn=(el,o)=>{if(typeof window!=='undefined'&&window.DurbarScroll)window.DurbarScroll.focus(el,o);else if(el&&typeof el.focus==='function')el.focus({preventScroll:true});}; /* spec 052 FR-176: focus never scrolls the page (innerscroll.js, looked up at call time: this file may load first, or run in Node tests) */
   const S=window.DurbarStats;
   let X=null; /* ctx from app.js: {bridge, stats, esc, toast, floors:{on(),render()}, agents(), staticLimit(a), openAgent(id), sim, places, placeServers(), setPlaceMap(m)} */
   let cur=null; /* {kind:'settings'|'tools'|'folder', ...} */
@@ -14,8 +15,8 @@
   const fmt=n=>S.fmtTokens(n);
   const cap=(s,n)=>{s=String(s==null?'':s);return s.length>n?s.slice(0,n-1)+'…':s;};
   /* spec 052 FR-055: bring a heading to the top of the screen's own scroller only. scrollIntoView also scrolled the
-     outer page (overflow:hidden still scrolls), which hid the top bar and left a blank strip at the bottom. */
-  const scrollInBody=h=>{const sc=h.closest('.scr-body');if(sc)sc.scrollTop+=h.getBoundingClientRect().top-sc.getBoundingClientRect().top-12;};
+     outer page (overflow:hidden still scrolls), which hid the top bar and left a blank strip at the bottom. FR-176: the shared helper. */
+  const scrollInBody=h=>{const sc=h.closest('.scr-body');if(sc)window.DurbarScroll.reveal(h,{block:'start',margin:12,scroller:sc});};
 
   /* ---------------- shared: frame, dialogs ---------------- */
   function open(kind,opts){
@@ -55,7 +56,7 @@
       /* spec 052 FR-076: a red or amber confirmation starts on Cancel, as in dialog.js (FR-036), so Enter never confirms it unread */
       const pr=row.querySelector('.primary'), risky=pr&&/\b(danger|warn)\b/.test(pr.className)&&row.querySelector('[data-cancel]');
       const first=d.querySelector('input,select,textarea')||(risky?row.querySelector('[data-cancel]'):pr)||row.lastElementChild;
-      if(first)first.focus();
+      if(first)focusIn(first);
       d._close=()=>done(null);
     });
   }
@@ -80,7 +81,7 @@
     sec.addEventListener('click',e=>{
       const o=e.target.closest('[data-pf-open]');if(o){PE().open(o.dataset.pfOpen,{returnFocus:o});return;}
       /* spec 043 FR-040: Delete through askDialog; afterwards focus goes to New (the row is gone) */
-      const dl=e.target.closest('[data-pf-del]');if(dl){PE().remove(dl.dataset.pfDel,{returnFocus:dl}).then(async ok=>{if(!ok)return;await repaintProfiles();const n=$('pfNew');if(n)n.focus();});return;}
+      const dl=e.target.closest('[data-pf-del]');if(dl){PE().remove(dl.dataset.pfDel,{returnFocus:dl}).then(async ok=>{if(!ok)return;await repaintProfiles();const n=$('pfNew');if(n)focusIn(n);});return;}
       if(e.target.closest('#pfNew'))PE().newProfile({returnFocus:$('pfNew')});
     });
   }
@@ -476,7 +477,7 @@
         buttons:[{label:'Cancel',value:null},{label:'Make the theme',value:'go',cls:'primary'}],
         validate:(d)=>{const v=d.querySelector('#aiDesc').value.trim();return v.length<3?'Describe the look in a few words.':false;},
         onOpen:(d)=>{const t=d.querySelector('#aiDesc');t.addEventListener('input',()=>{desc=t.value;});
-          d.addEventListener('click',(e)=>{const b=e.target.closest&&e.target.closest('.ai-idea');if(b){t.value=b.dataset.idea;desc=t.value;t.focus();return;}
+          d.addEventListener('click',(e)=>{const b=e.target.closest&&e.target.closest('.ai-idea');if(b){t.value=b.dataset.idea;desc=t.value;focusIn(t);return;}
             if(e.target.closest&&e.target.closest('#aiMore')){const box=d.querySelector('#aiIdeas');if(box)box.outerHTML=ideaHtml();}});d.querySelector('#aiKind').addEventListener('change',(e)=>{kind=e.target.value;const c=d.querySelector('#aiCost');if(c)c.textContent=aiCostLine(kind);});}});
       if(!r||r.value!=='go')return;
       const busy=X.toast?X.toast('Making the theme… this can take up to a minute.',60000):null;
@@ -551,7 +552,7 @@
       b.addEventListener('click',(e)=>{const t=e.target.closest&&e.target.closest('[data-t]');if(t)done(t.dataset.t);});
       document.addEventListener('keydown',onKey,true);
       document.body.appendChild(b);
-      b.querySelector('[data-t="save"]').focus();
+      focusIn(b.querySelector('[data-t="save"]'));
     });
   }
   /* one server of the Copilot CLI list (or the built-in one): read-only, with its exact command/URL and a switch for new sessions */
@@ -720,13 +721,13 @@
         if(res&&res.customPlaces){X.setCustomPlaces(res.customPlaces,res.placeMap);if(cur&&cur.kind==='settings')paintSettings();}
         if(res&&res.ok){saved=res;return '';}
         const e=d.querySelector('#plNameErr');e.textContent=PLACE_ERR[res&&res.error]||PLACE_ERR.unknown;e.hidden=false;
-        d.querySelector(res&&res.error&&/^name-/.test(res.error)?'#plName':'.dbtn .primary').focus();
+        focusIn(d.querySelector(res&&res.error&&/^name-/.test(res.error)?'#plName':'.dbtn .primary'));
         return true;
       }});
-    if(!r||!saved){if(opener&&opener.focus&&document.contains(opener))opener.focus();return null;}
+    if(!r||!saved){if(opener&&opener.focus&&document.contains(opener))focusIn(opener);return null;}
     const id=existing?existing.id:saved.place&&saved.place.id;
-    if(cur&&cur.kind==='settings'){await paintSettings();const b=document.querySelector(`#myPlaces li[data-place="${CSS.escape(id)}"] [data-pl-act="edit"]`);if(b)b.focus();}
-    else{await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,80)));const t=document.querySelector('.place-add')||document.querySelector(`#stage .place[data-place="${CSS.escape(id)}"]`);if(t)t.focus();} /* from the lobby: the Add button, or the new tile once the cap took the button away */
+    if(cur&&cur.kind==='settings'){await paintSettings();const b=document.querySelector(`#myPlaces li[data-place="${CSS.escape(id)}"] [data-pl-act="edit"]`);if(b)focusIn(b);}
+    else{await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,80)));const t=document.querySelector('.place-add')||document.querySelector(`#stage .place[data-place="${CSS.escape(id)}"]`);if(t)focusIn(t);} /* from the lobby: the Add button, or the new tile once the cap took the button away */
     X.toast(esc(existing?'Saved '+saved.customPlaces.find(p=>p.id===existing.id).name+'.':'Added '+(saved.place?saved.place.name:'the place')+'. Choose its servers in Settings > Places.'),3200);
     return saved;
   }
@@ -738,13 +739,13 @@
     const list=more>0?shown.join(', ')+' and '+more+' more':shown.length>1?shown.slice(0,-1).join(', ')+' and '+shown[shown.length-1]:shown[0];
     const body=srv.length?`${list} ${srv.length>1?'go':'goes'} back to ${srv.length>1?'their':'its'} default place.`:'No server is sent there.';
     const r=await dialog({title:'Delete "'+X.placeLabel(p.id)+'"?',html:`<p class="dsub">${body} Agents that are there now walk back to their desks.</p>`,buttons:[{label:'Cancel',value:null},{label:'Delete',value:'ok',cls:'primary danger'}]});
-    if(!r){if(opener&&opener.focus&&document.contains(opener))opener.focus();return;}
+    if(!r){if(opener&&opener.focus&&document.contains(opener))focusIn(opener);return;}
     const label=X.placeLabel(p.id); /* before setCustomPlaces: afterwards the place is gone and the label is empty */
     let res=null; try{res=await X.bridge.removePlace(id);}catch(err){res=null;}
     if(res&&res.customPlaces)X.setCustomPlaces(res.customPlaces,res.placeMap);
     if(res&&res.ok)X.toast(esc(label)+' was deleted.',3200); else X.toast('Could not delete '+esc(label)+'.',4200);
     await paintSettings();
-    const nb=document.querySelector('#myPlaces ~ .scr-tools [data-pl-act="add"], .scr-tools [data-pl-act="add"]')||document.getElementById('plH'); if(nb)nb.focus(); /* the Add button, or the Places heading */
+    const nb=document.querySelector('#myPlaces ~ .scr-tools [data-pl-act="add"], .scr-tools [data-pl-act="add"]')||document.getElementById('plH'); if(nb)focusIn(nb); /* the Add button, or the Places heading */
   }
   /* spec 074 FR-013 / FR-014: Change… records the next key combination; Escape cancels; a refused one says why */
   function wireNavKey(){
@@ -756,18 +757,18 @@
       if(onKey){stop();msg.textContent='Not changed.';return;}
       X.navKey.recording(true);rec.textContent='Press the keys… (Esc to cancel)';rec.setAttribute('aria-pressed','true');msg.textContent='Press the new shortcut now.';
       onKey=e=>{
-        if(e.key==='Escape'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey){e.preventDefault();e.stopPropagation();stop();msg.textContent='Not changed.';rec.focus();return;}
+        if(e.key==='Escape'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey){e.preventDefault();e.stopPropagation();stop();msg.textContent='Not changed.';focusIn(rec);return;}
         if(e.key==='Tab'&&!e.ctrlKey&&!e.metaKey&&!e.altKey)return; /* Tab still leaves the button */
         const c=X.navKey.fromEvent(e); if(!c)return; /* a modifier alone: wait for the key */
         e.preventDefault();e.stopPropagation();
         const why=X.navKey.clash(c);
         if(why){msg.textContent=X.navKey.textOf(c)+' cannot be used. '+why+' Try another, or press Esc.';return;}
-        stop();X.navKey.set(c);show('Saved: '+X.navKey.text()+' opens Go to.');rec.focus();
+        stop();X.navKey.set(c);show('Saved: '+X.navKey.text()+' opens Go to.');focusIn(rec);
       };
       window.addEventListener('keydown',onKey,true);
     };
     rec.onblur=()=>{if(onKey){stop();msg.textContent='Not changed.';}};
-    reset.onclick=()=>{X.navKey.set(null);show('Back to '+X.navKey.text()+'.');rec.focus();};
+    reset.onclick=()=>{X.navKey.set(null);show('Back to '+X.navKey.text()+'.');focusIn(rec);};
   }
   async function onSettingsClick(e){
     if(e.target.closest('#liveBox')){await onLiveClick(e);return;} /* spec 058 FR-082 */
@@ -1004,7 +1005,7 @@
     const r=await dialog({title:isNew?(st?'Add server':'Add server for all folders'):'Edit "'+v.name+'"',wide:true,html,buttons:[{label:'Cancel',value:null},{label:isNew?'Add server':'Save',value:'ok',cls:'primary'}],
       onOpen:d=>{if(pre){const q=k=>d.querySelector(k);q('#mName').value=pre.name||'';q('#mType').value=pre.transport||'stdio';q('#mCmd').value=pre.command||'';q('#mArgs').value=(pre.args||[]).join('\n');q('#mUrl').value=pre.url||'';q('#mTools').value=(pre.tools||[]).join(', ');}
         sync(d);d.querySelector('#mType').onchange=()=>sync(d);d.querySelectorAll('[name=mScope],[name=gSec]').forEach(x=>{x.onchange=()=>sync(d);});
-        d.addEventListener('click',e=>{const add=e.target.closest('[data-add]');if(add){const box=d.querySelector(add.dataset.add==='env'?'#envRows':'#hdrRows');box.insertAdjacentHTML('beforeend',rowHTML(add.dataset.add,'',false,false));box.lastElementChild.querySelector('.k').focus();}
+        d.addEventListener('click',e=>{const add=e.target.closest('[data-add]');if(add){const box=d.querySelector(add.dataset.add==='env'?'#envRows':'#hdrRows');box.insertAdjacentHTML('beforeend',rowHTML(add.dataset.add,'',false,false));focusIn(box.lastElementChild.querySelector('.k'));}
           const rm=e.target.closest('[data-rm]');if(rm)rm.closest('.krow').remove();});},
       validate:d=>{
         const o=collect(d);
@@ -1260,7 +1261,7 @@
       bodyEl.innerHTML=body(st);bodyEl.scrollTop=top; /* FR-004: the scroll position stays */
       if(key){
         const pre=key[0]==='err'?[...dlg.querySelectorAll('.dbody pre[data-err]')].find(x=>x.dataset.err===key[1]):null;
-        if(pre){pre.focus();pre.scrollTop=errTop;}
+        if(pre){focusIn(pre);pre.scrollTop=errTop;}
         else{
           const btns=[...dlg.querySelectorAll('.dbody button:not([disabled]),.dbody input:not([disabled])')]; /* spec 069 FR-060: the tool checkboxes keep the focus too */
           /* review on PR 503: a tool box is keyed on its server AND its name (two servers may share a tool name); when the list closed,
@@ -1269,13 +1270,13 @@
           const back=(key[0]==='tool'?btns.find(x=>x.dataset.tool===key[1]&&x.dataset.tsrv===key[2]):btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1]))
             ||(srv!==null&&(btns.find(x=>x.dataset.tools===srv)||btns.find(x=>x.dataset.n===srv)))
             ||((key[0]==='copy'||key[0]==='err')&&btns.find(x=>x.dataset.det===key[1]))||(key[0]!=='n'&&key[0]!=='id'&&key[0]!=='tool'&&key[0]!=='tall'?btns.find(x=>x.dataset.n===key[1]):null);
-          if(back)back.focus();
+          if(back)focusIn(back);
         }
       }
       const W=window.DurbarMcpWords,ch=[];
       for(const x of st.servers){const was=seen.get(x.name);if(was!==undefined&&was!==(x.status||''))ch.push(x.name+': '+W.stateOf(x.status,{off:x.off,defaultOn:x.defaultOn,origin:x.origin,app:st.app||o&&o.appName,launchedOff:x.launchedOff,switchedHere:x.switchedHere}).word);}
       seen=new Map(st.servers.map(x=>[x.name,x.status||'']));
-      if(wantFocus){const w=wantFocus;wantFocus=null;const el=[...dlg.querySelectorAll('.dbody button:not([disabled])')].find(b=>b.dataset[w[0]]===w[1]);if(el)el.focus();}
+      if(wantFocus){const w=wantFocus;wantFocus=null;const el=[...dlg.querySelectorAll('.dbody button:not([disabled])')].find(b=>b.dataset[w[0]]===w[1]);if(el)focusIn(el);}
       /* the time limit: main drops the address by itself, so look again when it is due */
       clearTimeout(expT);expT=0;
       const left=st.servers.filter(x=>x.signIn).map(x=>x.signIn.expiresInMs);

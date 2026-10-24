@@ -1,0 +1,1 @@
+- **Coffee-break driver passes at any time of day** (spec 068, test-only): `shots-068-coffee.js` accepts the weekday form ("until Sat 12:01 AM") the reset time takes after midnight; `test:coffeebreak` checks the next-day words and the driver's patterns against `whenText`.
