@@ -32,7 +32,7 @@ All decisions here are *decided by the coordinator under Ruben's delegation, 202
 
 **Write race.** The hash is checked again right before the rename, so an edit made between Durbar's read and its write is imported instead of overwritten. Link swaps: the real path and `lstat` of `.durbar` are checked again right before the rename and the temp file is opened `O_NOFOLLOW` where the OS has it; Node has no `renameat`/`openat`, so a swap in the last few system calls stays possible (`[KNOWN GAP]` in FR-053).
 
-**Keeping it out of commits (question A, default pending owner confirmation).** Paco asked whether to recommend or offer `.git/info/exclude`. Default: offer it as a box, on by default, in the turn-on dialog; Durbar appends one anchored line (`/<rel>/.durbar/`) and never touches `.gitignore` (which is committed, so editing it would itself be a change in the person's repo). It runs no git: the file is found by walking up to `.git` (folder, or a worktree's `.git` file → `gitdir` → `commondir`). An exclude line does not untrack an already committed file; the dialog says so. The `.git` file's `gitdir`/`commondir` are untrusted (a planted file could aim the append anywhere), so the target must be a real git directory (regular `HEAD`, `objects/`, owned by the user on POSIX, an existing `info/`), and folder names are escaped for gitignore (`*?[\`, leading `!`/`#`, trailing spaces) with control characters refused (Paco's re-review of PR #702).
+**Keeping it out of commits (question A, owner-confirmed 2026-10-24).** Paco asked whether to recommend or offer `.git/info/exclude`. Default: offer it as a box, on by default, in the turn-on dialog; Durbar appends one anchored line (`/<rel>/.durbar/`) and never touches `.gitignore` (which is committed, so editing it would itself be a change in the person's repo). It runs no git: the file is found by walking up to `.git` (folder, or a worktree's `.git` file → `gitdir` → `commondir`). An exclude line does not untrack an already committed file; the dialog says so. The `.git` file's `gitdir`/`commondir` are untrusted (a planted file could aim the append anywhere), so the target must be a real git directory (regular `HEAD`, `objects/`, owned by the user on POSIX, an existing `info/`), and folder names are escaped for gitignore (`*?[\`, leading `!`/`#`, trailing spaces) with control characters refused (Paco's re-review of PR #702).
 
 **Safety.** The lessons in `docs/agent-notes.md` (*Reading files a repo ships*, 2026-10-23): refuse links (`lstat`), check the real path is inside the folder, open non-blocking (a FIFO swapped in would freeze main), `fstat` must say regular file, size cap. Writing: temp in the same folder and rename (atomic on every OS; Windows `MoveFileEx` replaces, but fails while another program holds the file open without share-delete, hence one retry).
 
@@ -48,7 +48,7 @@ All decisions here are *decided by the coordinator under Ruben's delegation, 202
 
 **Cost.** A real secret in a saved message cannot be recovered from the note. That is the point. The digest (FR-009) is of the raw text but is a 64-bit hash prefix of a long message, kept only locally, never shown.
 
-Insert sends `[redacted]` where the secret was; the note's `hidden` flag makes FR-024 say so before sending. *(Default pending owner confirmation, question B.)*
+Insert sends `[redacted]` where the secret was; the note's `hidden` flag makes FR-024 say so before sending. *(Default confirmed by the owner 2026-10-24, question B.)*
 
 **Rejected.** Raw in the local store and masked only in `notes.md` (stores tokens: constitution III); an *unmasked* opt-in (same).
 
@@ -76,7 +76,7 @@ Insert sends `[redacted]` where the secret was; the note's `hidden` flag makes F
 
 **Facts.** Constitution V: "No emoji, no blur filters in compact scenes." Compact scenes are the office's small desk densities; the chat log is not one. The chat already uses SVG icons for its marks (`ICON(...)`, `CT_IC` in `src/renderer/app.js`), coloured by theme tokens (spec 070), and a theme-token ratchet counts colour literals (`test:theme-tokens`).
 
-**Decision.** An SVG note icon (D4, FR-041). The emoji is not forbidden in the chat, but it renders differently per OS (and as a box on a Linux without a colour emoji font), cannot follow the theme, and would be the only emoji mark in the chat. Ruben may still ask for the emoji (owner question Q1; Paco agrees with the SVG; default pending owner confirmation); the change would be one line.
+**Decision.** An SVG note icon (D4, FR-041). The emoji is not forbidden in the chat, but it renders differently per OS (and as a box on a Linux without a colour emoji font), cannot follow the theme, and would be the only emoji mark in the chat. Ruben may still ask for the emoji (owner question Q1; Paco agrees with the SVG; owner-confirmed 2026-10-24); the change would be one line.
 
 ## R8 Shortcut
 
@@ -94,7 +94,7 @@ One `NOTES_LIMITS` object: `textChars` 16,000 (a long agent answer is 2-8k; spec
 
 - **Source gone (D11)**: the note never depends on its source. *Open source* finds the session among office agents (`resumeIdFor`), then Previous sessions (spec 006's list and open path), else says so. The message is found by digest (role first, `ord` breaks ties).
 - **Search**: in the window, over the folder's notes already loaded (at most 300); `DurbarNav.rank` for titles, a substring for the masked text. No index on disk. Ctrl+K only gets a *Notes of <folder>* entry; full-text search across chats is #430.
-- **Export**: the `notes.md` format, through main's save dialog, 0600. **Delete**: per note and *Delete all…*, with tombstones. **Remove folder** keeps notes by default, with an unticked *Also delete its notes* box (question C, default pending owner confirmation), the only way to delete a removed folder's notes without adding it back. Any data-reset path (none today besides usage totals) must include `notes/`. #559 later.
+- **Export**: the `notes.md` format, through main's save dialog, 0600. **Delete**: per note and *Delete all…*, with tombstones. **Remove folder** keeps notes by default, with an unticked *Also delete its notes* box (question C, owner-confirmed 2026-10-24), the only way to delete a removed folder's notes without adding it back. Any data-reset path (none today besides usage totals) must include `notes/`. #559 later.
 
 ## R11 Simulator hooks and checks
 
