@@ -526,10 +526,11 @@ process.on('exit', () => {
     {
       /* the alert page's script holds page text: it must not be able to end the <script> (CodeQL js/bad-code-sanitization) */
       const al = await simPage('durbar-sim://pages/alert?html=1&ms=10');
-      const inline = /<script>([\s\S]*?)<\/script>/.exec(al.body);
-      assert.ok(inline && inline[1].includes('alert('), 'the alert page has its inline script');
-      assert.ok(!/<\/|<!--|<img/.test(inline![1]), 'no </script>, <!-- or markup inside the alert script (page text is written with \\u003c)');
-      assert.ok(inline![1].includes('\\u003cimg'), 'the markup in the page text is data, not part of the script');
+      const open = al.body.indexOf('<script>'), close = al.body.indexOf('</script>', open);
+      const inline = open >= 0 && close > open ? al.body.slice(open + '<script>'.length, close) : '';
+      assert.ok(inline.includes('alert('), 'the alert page has its inline script');
+      assert.ok(!/<\/|<!--|<img/i.test(inline), 'no </script>, <!-- or markup inside the alert script (page text is written with \\u003c)');
+      assert.ok(inline.includes('\\u003cimg'), 'the markup in the page text is data, not part of the script');
     }
     const t0 = Date.now();
     const slow = await simPage('durbar-sim://pages/slow?ms=30');
