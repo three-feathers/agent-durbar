@@ -88,12 +88,14 @@ assert.strictEqual(maskMcpError(undefined), undefined);
   // 1 MB of URL-like text: cut to the card limit before the pattern masks, so it stays fast
   {
     maskMcpEvent(card({ output: '?a=&'.repeat(25_000) }), [HDR]); // warm the regexes
-    // CPU time against a 100 KB baseline from the same run, with a generous floor: the old order took ~700 ms, so this catches the slow path without timing the machine
+    // CPU time against a 100 KB baseline from the same run, best of 3 per size: correct code measures ~3.3x for 10x input (the cut makes both cheap), the old order (cut after the URL pass) ~12x and ~700-1200 ms
     const cpuMs = (f: () => void): number => { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); return (d.user + d.system) / 1000; };
-    const a = cpuMs(() => void maskMcpEvent(card({ output: '?a=&'.repeat(25_000) }), [HDR]));
-    let big!: { output: string };
-    const t = cpuMs(() => { big = maskMcpEvent(card({ output: '?a=&'.repeat(250_000) }), [HDR]) as unknown as { output: string }; });
-    assert.ok(t < Math.max(400, a * 20), `1 MB output masked in ${t} ms CPU (100 KB: ${a} ms)`);
+    let a = Infinity, t = Infinity, big!: { output: string };
+    for (let i = 0; i < 3; i++) {
+      a = Math.min(a, cpuMs(() => void maskMcpEvent(card({ output: '?a=&'.repeat(25_000) }), [HDR])));
+      t = Math.min(t, cpuMs(() => { big = maskMcpEvent(card({ output: '?a=&'.repeat(250_000) }), [HDR]) as unknown as { output: string }; }));
+    }
+    assert.ok(t < Math.max(400, a * 6), `1 MB output masked in ${t} ms CPU (100 KB: ${a} ms)`);
     assert.ok(big.output.length <= MCP_CARD_MAX_CHARS + 20, 'cut to the card limit');
     const sec = maskMcpEvent(card({ output: 'w '.repeat(30_000) + 'k=' + HDR + ' ' + GH }), [HDR]) as unknown as { output: string };
     assert.ok(!sec.output.includes(HDR) && !sec.output.includes('ghp_'), 'a secret past the cut leaves nothing');

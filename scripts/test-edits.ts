@@ -373,15 +373,16 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   assert.strictEqual(maskMcpEvent(ev, []), ev, 'no session values: the same object');
   assert.strictEqual(maskEditInfo(ev.edit, ['abc']), ev.edit, 'values under 4 characters are skipped');
   // cost: 20 files of 20,000 characters, the most one update carries, with several values: linear steps only.
-  // Linearity against a baseline from the same run (20 files of 5,000 characters, a quarter of the input; the diff length is what a quadratic step would punish) in CPU time, with a generous floor; never a bare wall-clock bound.
+  // Linearity against a baseline from the same run (20 files of 5,000 characters, a quarter of the input; the diff length is what a quadratic step would punish) in CPU time, with a floor; never a bare wall-clock bound.
   const vals = [HDR, 'another-secret-value', 'third-value-xyz'];
   const mkBig = (chars: number) => ({ files: Array.from({ length: 20 }, (_, i) => ({ path: `/w/${i}.ts`, kind: 'edit' as const, diff: '@@\n' + ('+a=1&b=2?c=3 ' + HDR + '\n').repeat(700).slice(0, chars) })) });
   const cpuMs = (f: () => void): number => { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); return (d.user + d.system) / 1000; };
   const small = mkBig(5000), big = mkBig(20000);
   maskEditInfo(small, vals); // warm the regexes
-  const a = cpuMs(() => { for (let i = 0; i < 3; i++) maskEditInfo(small, vals); }) / 3;
-  const b = cpuMs(() => { for (let i = 0; i < 3; i++) maskEditInfo(big, vals); }) / 3;
-  assert.ok(b < Math.max(250, a * 10), `maskEditInfo is linear (100,000 -> 400,000 characters, 4x per diff: ${a} -> ${b} ms CPU)`); // 4x input; quadratic would be 16x and far above the floor
+  // best (minimum) CPU time of 5 interleaved runs per size, so one GC pause or busy core cannot fail it; linear code measures ~2.3x for 4x input
+  let a = Infinity, b = Infinity;
+  for (let i = 0; i < 5; i++) { a = Math.min(a, cpuMs(() => void maskEditInfo(small, vals))); b = Math.min(b, cpuMs(() => void maskEditInfo(big, vals))); }
+  assert.ok(b < Math.max(100, a * 5), `maskEditInfo is linear (100,000 -> 400,000 characters, 4x per diff: ${a} -> ${b} ms CPU)`); // a quadratic step would be 16x
 }
 
 console.log('edits: ok');
