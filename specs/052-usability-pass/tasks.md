@@ -331,3 +331,6 @@
 - [x] T182 Driver `check-chat-no-scroll` at 1440x900, 1280x800 and 1280x520: open with a waiting question, Show question, Skip, answer in the card, open at the request; the page and the chat frame stay at 0 and the header in view; the safety net puts a forced page scroll back [FR-176]
   - Check: mutation (old `focusRequest` without the safety net; the safety net alone off) fails it; changelog fragment; agent note
 - [x] T183 Review on #641 (fjcabello): `#floor.scrolls` is not pinned (the office scrolls when it does not fit; driver step at 1000x560, mutation); the static rule catches any receiver (`$('x').focus()`, `el?.focus()`, `a.b().focus()`) and covers every renderer file; `screens.js`, `profileeditor.js`, `dialog.js` and `harnesses.js` use `focusIn` [FR-176]
+
+## FR-177: the answer bar cuts a long session name with an ellipsis (2026-10-23, issue #540)
+- [x] T184 Answer bar: the session name in its own one-line span cut with `…` and titled with the full name; count and verb outside the cut; find and remove the mid-word cut; rule `answer-bar-name` in `check:ui-text` on `chat-title-long` (question and permission), mutation checks; before/after shots at 1440x900 and 1280x800 [FR-177]
