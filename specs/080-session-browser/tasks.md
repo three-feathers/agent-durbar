@@ -120,7 +120,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 - **T019**: the README's known limits say dialogs are dismissed (`confirm` cannot be answered; `prompt` is unsupported) and do not claim "nothing on disk" beyond the session's partition until T008 closes FR-023a's gap. T008 comes before T019.
 - **Not Phase 1:** FR-066a's Watch-only mechanism (T038), FR-061's in-flight rule and `insertText` note (T038), the throttling toggle (FR-041's switch, T037), headless (FR-110, Phase 4), and T010 AC10 and AC14 (T060 AC3, T043 AC7).
 
-- [x] T011 [P] [US1] Address parsing in `src/shared/browserurl.ts` and the view navigation predicate `viewNavigationAllowed(url, isMainFrame)` in `src/main/hardening.ts`, with `scripts/test-browserurl.ts` and the 045 hardening tests. [FR-005, FR-024]
+- [x] T011 [P] [US1] Address parsing in `src/shared/browserurl.ts` and the view navigation predicate `viewNavigationAllowed(url, isMainFrame)` in `src/main/hardening.ts`, with `scripts/test-browserurl.ts` (which also covers the 045-owned `viewNavigationAllowed`, spec 045 FR-061). [FR-005, FR-024]
   - AC1: `localhost:3000` and `127.0.0.1:8080` become `http://`; `example.com` becomes `https://`.
   - AC2: the frame rules of FR-024:
     - the main frame allows `http:`, `https:` and `about:blank`;
