@@ -3,7 +3,7 @@
  * and a hidden session's page dialog (toast, chat brought forward once, the *Dialog open* marker). Simulator only (no AI credits); run with
  * DURBAR_SIM_BROWSER_CONSENT=ask so the simulator asks the consent like the app does (it counts as accepted otherwise).
  *
- *   npm run check:ui -- --only check-browser-dialogs
+ *   npm run check:ui -- --only check-browser-dialogs   (1440x900; the suite also runs it at 1280x800)
  *
  *   1. the first Browser tab asks (text, buttons); Not now (and Esc) keep the Chat tab, create no view and write nothing; Open the browser
  *      opens it, is remembered in the settings file and is not asked again;
@@ -64,7 +64,8 @@ module.exports = async (ctx) => {
     wc.sendInputEvent({ type: 'mouseUp', x: r.x, y: r.y, button: 'left', clickCount: 1 });
   };
 
-  const W = 1440, Hh = 900, A = 'sim-1', B = 'sim-2';
+  const [W, Hh] = (process.env.BROWSER_DIALOGS_SIZE || '1440x900').split('x').map(Number); // the suite runs it at both sizes (BROWSER_DIALOGS_SIZE=1280x800)
+  const A = 'sim-1', B = 'sim-2';
   await H.load({ w: W, h: Hh, ready: 'fit', focus: true });
   const o = await H.openSimAgent(`a=>a.id===${jsLiteral(A)}`, '#panelTabs');
   assert.ok(o.ok, 'the chat of the first simulated agent is open: ' + JSON.stringify(o.seen));

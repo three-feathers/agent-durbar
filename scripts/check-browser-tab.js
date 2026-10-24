@@ -189,7 +189,7 @@ module.exports = async (ctx) => {
         await wait(() => views().length === 1 && view() === viewNow, `${tag}: ${name}: the view is back when the overlay closes`);
         await wait(() => js(`!document.getElementById('bShot')`), `${tag}: ${name}: the picture is dropped`);
       };
-      await overlayCase('More menu', () => js(`document.getElementById('moreBtn').click()`), '#moreMenu', () => H.key('Escape', [], { char: 'never' }), tag === '1440x900' ? '080-browser-overlay-1440x900.png' : undefined);
+      await overlayCase('More menu', () => js(`document.getElementById('moreBtn').click()`), '#moreMenu', () => H.key('Escape', [], { char: 'never' }), `080-browser-overlay-${tag}.png`);
       await overlayCase('dialog', () => js(`void window.DurbarDialog(document)({title:'A question',body:'Shown over the page.',buttons:[{label:'Close',value:null}]});0`), '#modeDlg .dlg', () => H.clickText('#modeDlg .dbtn button', 'Close'));
       await overlayCase('toast', () => js(`(()=>{const t=document.createElement('div');t.className='toast';t.id='drvToast';t.textContent='A toast over the page';const box=document.getElementById('toasts');box.style.setProperty('--toast-b',Math.ceil(innerHeight-document.querySelector('#panel .composer').getBoundingClientRect().top+12)+'px');box.appendChild(t);})()`), '#drvToast', () => js(`document.getElementById('drvToast').remove()`));
       await overlayCase('slash list', () => js(`(()=>{const m=document.getElementById('msgInput');m.focus();m.value='/';m.dispatchEvent(new Event('input',{bubbles:true}));})()`), '#slashList', () => js(`(()=>{const m=document.getElementById('msgInput');m.value='';m.dispatchEvent(new Event('input',{bubbles:true}));})()`));
