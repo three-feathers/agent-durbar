@@ -106,6 +106,8 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 ## Changes
 
+- **2026-10-24, test only (branch 021-flaky-timing)**: the FR-024 linear-time checks and the `maskEditInfo` cost check in `scripts/test-edits.ts` measure CPU time (with a wall backstop) and compare with a baseline from the same run, instead of bare wall-clock bounds that failed under a parallel `npm test`. No behaviour change.
+
 ### 2026-10-19: Stop and End session from the office card menu (issue #251, task T026)
 
 *Missing:* Stop and End session were only in the chat header (FR-009), so stopping or ending an agent meant opening its chat first. The office card menu (right-click on a card or a list row, spec 030 FR-022) offered only the permission modes and *Model and context…*.
@@ -318,3 +320,11 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 - The queued switch `→ <model>` stays visible on the model chip: it is a pending state the user asked for.
 - The token summary is a popover anchored to the ring (like the other toolbar menus), not a separate dialog: it reuses `#ctxMenu`, its placement above the toolbar and its keys.
 - The ring's colour steps are the existing `ctxLevel` steps (70% amber, above 90% red), so the ring, the Tools view and the agent's look (spec 038 mood) agree.
+
+### 2026-10-24: the chat panel gets Chat and Browser tabs (spec 080 T003)
+
+*Missing:* the panel shows only the chat. Spec 080 (issue #556) adds a built-in browser per session, shown in the same panel.
+
+*Corrected:*
+- **FR-057** The panel header gets two tabs, **Chat** (default) and **Browser** (`role="tablist"`, arrow keys, names read by screen readers); their content and behaviour are specified in spec 080 FR-002, FR-003 and FR-090. The chat view, its composer and its shortcuts are unchanged while *Chat* is selected.
+- **FR-058** FR-040's 480px rule applies to the tab bar too: with the panel 480px wide the tabs and the existing header controls fit on one row without overlap, and the office still fits 15 agents at 1440x900 and 1280x800 with the Browser tab open (`check:office` and screenshots, 080 FR-090).

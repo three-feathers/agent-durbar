@@ -41,3 +41,9 @@ no merge freeze is needed:
    A fragment edited on `main` after the tag gives a **modify/delete conflict** in `git merge origin/main`. Keep the deletion
    (`git rm changelog.d/<file>`): the tag's text is what was released. If the edit added something genuinely new, put that in
    a new fragment for the next release.
+
+## Test builds (spec 008 FR-121..FR-124)
+
+A test-build tag (`vX.Y.Z[-alpha|beta|rc.N]-test.M`, allowed on a branch) does not use the fragments at all: its notes list the
+branch's commits that are not on `main`, nothing is folded, and its fragments stay where they are until the branch merges and a
+real release folds them. Steps in [docs/collaboration.md](../docs/collaboration.md).

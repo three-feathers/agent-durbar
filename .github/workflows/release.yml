@@ -6,6 +6,8 @@ name: Release
 # Builds UNSIGNED packages on macOS, Windows and Linux and attaches them to a DRAFT pre-release, never marked latest.
 # Nothing is published automatically: review the draft and publish it by hand. Nothing here pushes to any branch: the fold
 # into CHANGELOG.md is a normal doc-only PR afterwards (changelog.d/README.md).
+# Test builds (spec 008 FR-121..FR-124): a tag vX.Y.Z[-alpha|beta|rc.N]-test.M may be on any branch; package.json must be the tag
+# without -test.M. Its draft is titled "(test build)", its notes list the commits not on main (masked), and nothing is folded.
 on:
   push:
     tags: ['v*']
@@ -33,15 +35,17 @@ jobs:
         with:
           node-version: 22
       # Plain Node and git: no dependency install (no package code runs here), no token, no network.
-      - name: Tag on main, matching package.json; notes from the tagged commit
+      - name: Tag on main (or a -test.N tag), matching package.json; notes and title from the tagged commit
         env:
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
-        run: node scripts/release-notes.js --tag "$TAG" --repo "$REPO" --main-ref refs/remotes/origin/main --out release-notes.md --summary "$GITHUB_STEP_SUMMARY"
+        run: node scripts/release-notes.js --tag "$TAG" --repo "$REPO" --main-ref refs/remotes/origin/main --out release-notes.md --title-out release-title.txt --summary "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-notes
-          path: release-notes.md
+          path: |
+            release-notes.md
+            release-title.txt
           if-no-files-found: error
           retention-days: 14
 
@@ -117,14 +121,16 @@ jobs:
           cd dist-artifacts
           sha256sum * > SHA256SUMS.txt
           ls -la
-      # Always a draft pre-release, never "latest" (owner decision). An existing release only gets its files replaced, so notes
-      # the release manager edited on the draft are kept, and only while it is still a draft: a published release is never touched.
+      # Always a draft pre-release, never "latest" (owner decision), test builds too; verify writes the title ("(test build)" for a
+      # test tag). An existing release only gets its files replaced, so notes the release manager edited on the draft are kept, and
+      # only while it is still a draft: a published release is never touched.
       - name: Create or update DRAFT pre-release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
+          TITLE="$(cat notes/release-title.txt)" # bash -e: a missing title file stops the job
           if gh release view "$TAG" >/dev/null 2>&1; then
             if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" != "true" ]; then
               echo "Release $TAG is already published: its files are not replaced (spec 008 FR-120)" >&2
@@ -133,5 +139,5 @@ jobs:
             gh release upload "$TAG" dist-artifacts/* --clobber
           else
             gh release create "$TAG" dist-artifacts/* --draft --prerelease --latest=false --verify-tag \
-              --title "Agent Durbar $TAG" --notes-file notes/release-notes.md
+              --title "$TITLE" --notes-file notes/release-notes.md
           fi

@@ -4,7 +4,7 @@
     {"method":"thread/started","params":{"thread":{"id":"thr_main","cwd":"/work/app"}}},
     {"method":"turn/started","params":{"threadId":"thr_main","turn":{"id":"t1"}}},
     {"method":"turn/completed","params":{"threadId":"thr_main","turn":{"id":"t1","status":"failed","error":{"message":"Sandbox denied the write","codexErrorInfo":"SandboxError"}}}},
-    {"method":"turn/completed","params":{"threadId":"thr_main","turn":{"id":"t2","status":"failed","error":{"message":"You hit your limit","codexErrorInfo":"UsageLimitExceeded"}}}},
+    {"method":"turn/completed","params":{"threadId":"thr_main","turn":{"id":"t2","status":"failed","error":{"message":"You hit your limit","codexErrorInfo":"usageLimitExceeded"}}}},
     {"method":"turn/completed","params":{"threadId":"thr_main","turn":{"id":"t3","status":"failed","error":{"message":"connection reset","codexErrorInfo":{"HttpConnectionFailed":{"httpStatusCode":null}}}}}},
     {"method":"turn/completed","params":{"threadId":"thr_main","turn":{"id":"t4","status":"failed"}}},
     {"method":"turn/completed","params":{"threadId":"thr_main","turn":{"id":"t5","status":"interrupted"}}}

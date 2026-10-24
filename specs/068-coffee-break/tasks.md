@@ -23,3 +23,4 @@
 - [x] T021 Driver `shots-068-coffee.js`: click and Enter open the chat, the menu, Retry now sends once, a double press sends once; screenshots 1440x900 and 1280x800; mutation checks [FR-019..FR-023]
 - [x] T022 Docs: README line, changelog fragment, retake linked coffee-corner shots (`npm run shots:docs -- --only ...`) [all]
 - [ ] T023 Review on #640 (fjcabello): behavioural test of the spend-limit guard (driver: provider break + pending limit, bar and card Retry now send nothing); bar/menu Retry now disabled with a reason; honest announcement; early-retry caveat; answer bar skips coffee cards only; FR-024 re-hit words; stale Try now text; mutations [FR-019..FR-024]
+- [x] T024 Bug fix (issue #646, PR #653): compare Codex's `codexErrorInfo` kind with the first letter folded so the real `usageLimitExceeded` gives the coffee break; fixture and tests use it, one keeps the old spelling, mutation check [FR-002]

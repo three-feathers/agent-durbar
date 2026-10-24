@@ -13,6 +13,10 @@ const assert = require('assert');
 const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers'); /* spec 008 FR-097; jsLiteral: CodeQL js/bad-code-sanitization */
 const OUT = process.env.OUT || '/tmp';
+/* What coffeebreak.js whenText prints: "4:24 PM" today, "Sat 12:01 AM" for a reset after midnight (up to six days away). The reset is minutes
+   ahead of the real clock, so a run just before midnight sees the weekday form (fixed 2026-10-24, spec 068 delta). Never pinned to the clock. */
+const CLOCK = '(?:[A-Za-z]{2,}\\.? )?\\d{1,2}:\\d\\d(?: [AP]M)?';
+const AT_CLOCK = `(?:at \\d{1,2}:\\d\\d(?: [AP]M)?|[A-Za-z]{2,}\\.? \\d{1,2}:\\d\\d(?: [AP]M)?)`; /* atWhen: "at" only for today */
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -45,7 +49,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(o.tiles, 9, `${w} ${n}: five places, the Boss, the coffee corner, the Bank and the Postbox`);
       assert.ok(o.inLobby, `${w} ${n}: the tiles fit the lobby`);
       assert.ok(o.font >= 10.5, `${w} ${n}: legible tile names (${o.font}px)`);
-      assert.ok(/Tomas \(until \d{1,2}:\d\d( [AP]M)?( · back in (less than a minute|\d+ min))?\)/.test(o.label), `${w} ${n}: the corner says who, until when and the time left: ${o.label}`);
+      assert.ok(new RegExp(`Tomas \\(until ${CLOCK}( · back in (less than a minute|\\d+ min))?\\)`).test(o.label), `${w} ${n}: the corner says who, until when and the time left: ${o.label}`);
       if (n === '15') {
         assert.ok(!/Omar/.test(o.label) && /Rosa \(until the limit resets\)/.test(o.label), o.label);
         assert.ok(o.walkers >= 1, `${w}: the figure in the corner holds a cup (${o.walkers}; the rest are the +N)`);
@@ -61,7 +65,7 @@ module.exports = async (ctx) => {
       await ctx.sleep(500);
       const c = await js(`(()=>{const n=document.querySelector('.note.perm.coffee:not(.settled)');return {t:n.textContent,b:[...n.querySelectorAll('.note-actions button')].map(x=>x.textContent)}})()`);
       assert.deepStrictEqual(c.b, ['Retry now', 'Stay on break'], JSON.stringify(c)); /* delta 2026-10-23: Try now is Retry now */
-      assert.ok(/comes back at \d{1,2}:\d\d( [AP]M)? and continues by itself/.test(c.t), c.t);
+      assert.ok(new RegExp(`comes back ${AT_CLOCK} and continues by itself`).test(c.t), c.t);
       await ctx.shot(path.join(OUT, `068-coffee-chat-${w}x${h}.png`));
       // Tomas resumes by itself after the reset (8 s + 2 s margin): back at his desk, one note, the agent works again
       assert.ok(await until(`/Back from the coffee break \\(resumed by itself/.test(document.getElementById('chat').textContent)`, 20000), `${w}: resumed by itself`);
@@ -110,7 +114,7 @@ module.exports = async (ctx) => {
         scrollY:document.getElementById('floor').scrollHeight>document.getElementById('floor').clientHeight+1}})()`);
     assert.strictEqual(e.tag, 'BUTTON', `${w}: the coffee-corner entry is a button`);
     assert.ok(e.hit, `${w}: a click on the entry reaches it (no figure on top takes it)`);
-    assert.ok(/^Tomas \(until \d{1,2}:\d\d( [AP]M)? · back in ([5-9]|1[01]) min\)\. Open the chat; right-click for Retry now\.$/.test(e.title), `${w}: the title says the time left: ${e.title}`);
+    assert.ok(new RegExp(`^Tomas \\(until ${CLOCK} · back in ([5-9]|1[01]) min\\)\\. Open the chat; right-click for Retry now\\.$`).test(e.title), `${w}: the title says the time left: ${e.title}`);
     assert.ok(e.title.length <= 120, `${w}: a title within 120 characters (${e.title.length})`);
     assert.ok(/back in ([5-9]|1[01]) min/.test(e.label) && e.keys === 'Shift+F10', `${w}: the accessible name says the time left: ${e.label} (${e.keys})`);
     assert.ok(e.font >= 10.5, `${w}: legible entry text (${e.font}px)`);
@@ -199,3 +203,5 @@ module.exports = async (ctx) => {
   }
   console.log('shots-068: coffee break ok');
 };
+module.exports.CLOCK = CLOCK; /* test-coffeebreak checks it against whenText */
+module.exports.AT_CLOCK = AT_CLOCK;

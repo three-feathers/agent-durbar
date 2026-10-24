@@ -3,12 +3,12 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Release v0.1.0-alpha.14 (pre-release)
-status: release PR open
+status: **published as a pre-release 2026-10-23** (tag on `9eb68f81`)
 -->
 
 **Feature Branch**: `079-release-alpha14`
 **Created**: 2026-10-23
-**Status**: Release PR open.
+**Status**: **Published as a pre-release on 2026-10-23** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.14>; release PR #637; annotated tag on `9eb68f81`). Not marked latest. No Mac run by the agent: the owner is testing on his Mac.
 **Input**: Vikram (Telegram DM, 2026-10-23 12:20 UTC), on the three linked MCP pull requests: "I can wait, give me all those as they are all linked", so the release is cut from `main` after #598 (Copilot MCP Sign in), #630 (MCP health) and #625 (fewer macOS keychain prompts) have all merged. He then tests it on his Mac.
 
 ## Context
@@ -26,3 +26,13 @@ alpha.13 (spec 078) was the first release built from `changelog.d/` fragments. a
 ## Not in this release
 
 Pull requests still open on 2026-10-23, among them session door signs (#631), the Schedules button (#560) and the AGENTS.md PR (#561).
+
+## Evidence
+
+- `real:` annotated tag `v0.1.0-alpha.14` points at `9eb68f812a6aa7408b9fe795e4a64a3da59b8ea8` (the #637 merge commit on `main`), checked with `git ls-remote`.
+- `real:` release <https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.14>: published 2026-10-23 20:29 UTC, `isPrerelease: true`, `isDraft: false`, 8 assets (`gh release view`).
+- `real:` `release.yml` run 40016756422 (push of the tag) concluded `success`.
+- `real:` the 8 files match: each package's digest in `SHA256SUMS.txt` equals GitHub's own asset digest for that file.
+- `real:` every push check on `9eb68f81` is green (CI Build and test on Linux, Windows and macOS; Packaged check; Package smoke; Installed app; UI checks; Office layout check; CodeQL Analyze x2; Build site; Spec Kit gate; Draft release; Deploy to GitHub Pages). Skipped: the matrix Theme layout jobs and Docs check (by design on `main`). One check is red and is not a build check: a Dependabot *update job* (`npm_and_yarn` for `zod`, run 40016618659) fails because the patched `zod` would downgrade `@github/copilot-sdk` from 1.0.22 to 1.0.14. It does not touch the release artifacts.
+- `real:` FR-005: `v0.1.0-alpha.14-mcptest.1` notes begin with a "Superseded by v0.1.0-alpha.14" line, and `git ls-remote --heads origin 099-mcp-test-build` is empty.
+- Not verified by the agent: no installation or run of any package on macOS (or any real session); the owner is testing the MCP Sign in and keychain change on his Mac. The packages stay unsigned and not notarized.

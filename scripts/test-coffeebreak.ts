@@ -144,6 +144,29 @@ const mk = (o: Record<string, unknown> = {}): Breaks => C.createBreaks({ now, ..
   assert.strictEqual(C.whenText(Date.UTC(2026, 9, 21, 14, 30), n, o), '14:30');
   assert.strictEqual(C.whenText(Date.UTC(2026, 9, 23, 9, 0), n, o), 'Fri 9:00');
   assert.strictEqual(C.whenText(Date.UTC(2026, 10, 1, 0, 0), n, o), '1 Nov');
+  // Just before midnight the reset is on the next day: the weekday form, and "at" is left out (2026-10-24: shots-068-coffee.js failed at 23:54).
+  {
+    const late = Date.UTC(2026, 9, 23, 23, 54), after = Date.UTC(2026, 9, 24, 0, 1); // Fri 23:54 -> Sat 00:01
+    assert.strictEqual(C.whenText(after, late, o), 'Sat 0:01');
+    assert.strictEqual(C.whenText(after, late, { locale: 'en-US', timeZone: 'UTC' }), 'Sat 12:01 AM');
+    assert.strictEqual(C.whenText(Date.UTC(2026, 9, 23, 23, 59), late, { locale: 'en-US', timeZone: 'UTC' }), '11:59 PM');
+    const bn = { id: 'a', kind: 'provider', phase: 'on', resetsAt: after, estimated: false, paid: false, source: '', noAuto: false };
+    assert.strictEqual(C.untilText(bn, true, late, o), 'resumes Sat 0:01');
+    assert.strictEqual(C.atWhen(after, late, o), 'Sat 0:01');
+    // the driver's patterns accept exactly these forms, with and without the weekday, and nothing else
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const drv = require(path.join(__dirname, '..', '..', 'scripts', 'shots-068-coffee.js')) as { CLOCK: string; AT_CLOCK: string };
+    const clock = new RegExp('^' + drv.CLOCK + '$'), atClock = new RegExp('^' + drv.AT_CLOCK + '$');
+    for (const loc of ['en-US', 'en-GB']) {
+      const lo = { locale: loc, timeZone: 'UTC' };
+      for (const [ts, now] of [[after, late], [Date.UTC(2026, 9, 23, 23, 59), late]] as const) {
+        const w = C.whenText(ts, now, lo);
+        assert.ok(clock.test(w), `${loc} ${w}`);
+        assert.ok(atClock.test(C.atWhen(ts, now, lo)), `${loc} ${w} (atWhen)`);
+      }
+    }
+    assert.ok(!clock.test('1 Nov') && !clock.test('soon'));
+  }
   const b = { id: 'a', kind: 'provider', phase: 'on', resetsAt: Date.UTC(2026, 9, 21, 14, 30), estimated: false, paid: false, source: '', noAuto: false };
   assert.strictEqual(C.untilText(b, true, n, o), 'resumes at 14:30');
   // FR-004 (review on #462): "resumes at 14:30" today, "resumes Fri 9:00" within six days, "resumes 1 Nov" further away (no "at" before a day or a date)
@@ -207,7 +230,7 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   m.map({ method: 'thread/started', params: { thread: { id: 'th', cwd: '/w' } } });
   m.map({ method: 'account/rateLimits/updated', params: { rateLimits: { primary: { usedPercent: 100, windowDurationMins: 10080, resetsAt: Math.round(Date.now() / 1000) + 3600 } } } });
   out.length = 0;
-  m.map({ method: 'turn/completed', params: { threadId: 'th', turn: { status: 'failed', error: { message: 'You hit your usage limit', codexErrorInfo: 'UsageLimitExceeded' } } } });
+  m.map({ method: 'turn/completed', params: { threadId: 'th', turn: { status: 'failed', error: { message: 'You hit your usage limit', codexErrorInfo: 'usageLimitExceeded' } } } });
   assert.strictEqual(out.length, 2);
   const l = out[0] as EventBody & { type: 'usageLimit' };
   assert.ok(l.type === 'usageLimit' && l.scope === 'plan' && l.source === 'Codex weekly limit' && typeof l.resetsAt === 'number'); valid(l);
@@ -217,9 +240,27 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   const realNow = Date.now;
   try {
     Date.now = () => realNow() + 2 * 3600_000;
-    m.map({ method: 'turn/completed', params: { threadId: 'th', turn: { status: 'failed', error: { message: 'You hit your usage limit', codexErrorInfo: 'UsageLimitExceeded' } } } });
+    m.map({ method: 'turn/completed', params: { threadId: 'th', turn: { status: 'failed', error: { message: 'You hit your usage limit', codexErrorInfo: 'usageLimitExceeded' } } } });
   } finally { Date.now = realNow; }
   assert.strictEqual((out[0] as EventBody & { type: 'usageLimit' }).resetsAt, undefined, 'a stale reset is unknown');
+  // 2026-10-23 (#646): the protocol's spelling is "usageLimitExceeded"; the old capitalised one still gives the break. A strict compare of either fails one case.
+  for (const spelling of ['usageLimitExceeded', 'UsageLimitExceeded']) {
+    const o2: EventBody[] = [];
+    const m2 = new CodexMapper((b) => o2.push(b));
+    m2.map({ method: 'thread/started', params: { thread: { id: 'th', cwd: '/w' } } });
+    o2.length = 0;
+    m2.map({ method: 'turn/completed', params: { threadId: 'th', turn: { status: 'failed', error: { message: 'x', codexErrorInfo: spelling } } } });
+    assert.deepStrictEqual(o2.map((e) => e.type), ['usageLimit', 'status'], `${spelling}: a coffee break, not an error`);
+    assert.deepStrictEqual(o2[1], usageLimitClosing(), spelling);
+  }
+  { // other kinds stay errors, in either case; a sub-agent's limit is not the session's break and reads as the plain wording
+    const o3: EventBody[] = [];
+    const m3 = new CodexMapper((b) => o3.push(b));
+    m3.map({ method: 'thread/started', params: { thread: { id: 'th', cwd: '/w' } } });
+    o3.length = 0;
+    m3.map({ method: 'turn/completed', params: { threadId: 'th', turn: { status: 'failed', error: { message: 'x', codexErrorInfo: 'contextWindowExceeded' } } } });
+    assert.ok(o3.length === 1 && o3[0].type === 'status' && o3[0].status === 'error');
+  }
 }
 {
   assert.deepStrictEqual(copilotUsageLimit('rate_limit', 'user_weekly_rate_limited'), { type: 'usageLimit', scope: 'rate', source: 'Copilot weekly limit' });
@@ -259,7 +300,7 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   valid(closing);
   const runs: [string, EventBody[]][] = [];
   { const o: EventBody[] = []; const m = new ClaudeMapper((b) => o.push(b)); m.map({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour' } }); m.map({ type: 'result', subtype: 'success', is_error: true, result: 'limit' }); runs.push(['claude', o]); }
-  { const o: EventBody[] = []; const m = new CodexMapper((b) => o.push(b)); m.map({ method: 'thread/started', params: { thread: { id: 'th', cwd: '/w' } } }); o.length = 0; m.map({ method: 'turn/completed', params: { threadId: 'th', turn: { status: 'failed', error: { message: 'x', codexErrorInfo: 'UsageLimitExceeded' } } } }); runs.push(['codex', o]); }
+  { const o: EventBody[] = []; const m = new CodexMapper((b) => o.push(b)); m.map({ method: 'thread/started', params: { thread: { id: 'th', cwd: '/w' } } }); o.length = 0; m.map({ method: 'turn/completed', params: { threadId: 'th', turn: { status: 'failed', error: { message: 'x', codexErrorInfo: 'usageLimitExceeded' } } } }); runs.push(['codex', o]); }
   { const o: EventBody[] = []; const m = new EventMapper((b) => o.push(b)); m.map({ type: 'session.error', data: { errorType: 'rate_limit', errorCode: 'rate_limited', message: 'x' } }); runs.push(['copilot', o]); }
   for (const [name, o] of runs) {
     assert.strictEqual(o[0].type, 'usageLimit', name);
