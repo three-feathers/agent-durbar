@@ -1635,6 +1635,13 @@ html[data-platform="darwin"] .notice-strip:not([hidden]) ~ .workspace .strip{pad
 html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}
 @media (max-width:1440px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{margin-right:-8px}} /* spec 044 FR-034: the bar's column gap is 8px up to 1440px; the traffic-light room stays 78px */
 @media (max-width:1320px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}
+/* spec 044 FR-034: with the traffic-light room and the Schedules button, Expert at 1280..1400px was 54px short (the counters wrapped, measured in DejaVu Sans with floors and mixed agent apps): the buttons' side padding gives it back, after the room itself (above). Simple has room. */
+@media (max-width:1439px){
+  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .topbar :is(.sched-top,.inbox-btn){padding:0 6px}
+  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .topbar .top-add .btn{padding:0 5px}
+  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .topbar .seg button{padding:0 4px}
+  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .stats>.stat:not(.stat-aiu){padding:0 2px}
+}
 /* spec 052 FR-164: on a Mac the traffic lights take 58px more, so the counters keep their words only from 2040px and the defaults chip is
    narrower from 1600 to 1799px (the brand name gives way by measurement, .tb-tight) */
 @media (max-width:2039px){html[data-platform="darwin"]:not([data-fullscreen]) .stats>.stat:not(.stat-aiu) span.l{display:none}}

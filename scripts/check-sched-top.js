@@ -46,7 +46,8 @@ function barCheck(simple, width, aria) {
     if (Math.min(p.right, q.right) - Math.max(p.left, q.left) > 0.5 && Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top) > 0.5) P.push(`overlap ${ctl[i].id} x ${ctl[j].id}`);
   }
   const word = sc.querySelector('.st-word'), wordShown = !!word.getClientRects().length;
-  const wantWord = simple || width >= 1920; /* the counters' rule: the word shows from 1920px in Expert (2040px on a Mac) */
+  const mac = document.documentElement.dataset.platform === 'darwin';
+  const wantWord = simple || width >= (mac ? 2040 : 1920); /* the counters' rule: the word shows from 1920px in Expert (2040px on a Mac) */
   if (wordShown !== wantWord) P.push(`the word is ${wordShown ? 'shown' : 'hidden'}, expected ${wantWord ? 'shown' : 'hidden'}`);
   if (!/^Schedules/.test(sc.getAttribute('aria-label') || '')) P.push('aria-label: ' + sc.getAttribute('aria-label'));
   if (sc.getAttribute('aria-keyshortcuts') !== aria) P.push('aria-keyshortcuts: ' + sc.getAttribute('aria-keyshortcuts'));
@@ -280,9 +281,8 @@ module.exports = async (ctx) => {
     await closeScreen();
   }
 
-  /* FR-034: widths between 1440 and 1920 stay one row in Expert and Simple with floors and mixed agent apps, also with the Mac room forced */
-  for (const level of ['expert', 'simple']) for (const mac of [false, true]) for (const w of [1280, 1440, 1441, 1512, 1600, 1728]) {
-    if (w <= 1440 && mac) continue; /* the Mac room at 1280 wraps (known gap); the Mac room at 1440 is covered by shots-052-addleft */
+  /* FR-034: widths from 1280 to 2040 stay one row in Expert and Simple with floors and mixed agent apps, also with the Mac room forced */
+  for (const level of ['expert', 'simple']) for (const mac of [false, true]) for (const w of [1280, 1320, 1321, 1360, 1400, 1439, 1440, 1441, 1512, 1600, 1728, 1920, 2039, 2040]) {
     const hh = w === 1280 ? 800 : 900;
     await H.load({ w, h: hh, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
     await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)});true`);
