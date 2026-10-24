@@ -33,8 +33,8 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 ## Phase 1: Foundation (blocks every story)
 
-- [ ] T010 [P] Pure note model in `src/shared/notes.ts`. [FR-003, FR-004, FR-006, FR-008]
-  - AC1: `parseNotesDoc` keeps valid notes, drops a bad note and keeps the rest; returns an error for an unknown version, non-JSON or a document over 16 MB.
+- [x] T010 [P] Pure note model in `src/shared/notes.ts`. [FR-003, FR-004, FR-006, FR-008]
+  - AC1: `parseNotesDoc` keeps valid notes, drops a bad note and keeps the rest (and counts it: the store then treats a file with a dropped note as read-only, FR-007); returns an error for an unknown version, non-JSON or a document over `storeBytes`.
   - AC2: `guessTitle` removes Markdown marks, cuts at a word to 80, and gives *Note of <date>* for empty text; `cleanTitle` refuses control characters and empty titles.
   - AC3: `applyChange` refuses a stale `rev` with `stale`, bumps `rev` and `updatedAt` otherwise, and refuses the 301st note with the FR-006 text.
   - AC4: `mergeDocs`: the higher `updatedAt` wins; a tombstone wins over an older edit; tombstones are capped at 300, oldest dropped.
@@ -42,7 +42,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC6: `scripts/test-notes.ts` (new `test:notes`, added to `npm test`) covers AC1..AC5, plus a 1,000-operation random test of two documents merged in turns: no lost and no resurrected note (SC-003).
   - AC7: `NOTES_LIMITS` is the only place with caps (a static test finds no other cap number in the notes modules); `storeBytes` and `mdBytes` are computed from the character caps; a folder at every cap (300 notes of 16,000 three-byte characters full of quotes, backslashes and marker-like lines) serialises under both caps, and one more character is refused before any write.
   - AC8: control characters other than tab and line feed are removed on save.
-- [ ] T011 [P] `maskNoteText` in `src/shared/redact.ts`. [FR-005, SC-002]
+- [x] T011 [P] `maskNoteText` in `src/shared/redact.ts`. [FR-005, SC-002]
   - AC1: it masks every token shape of `test-redact`'s corpus planted as written, inside Markdown (`**`, backticks, `_x_`, links, code fences), after `%3D` and `\n`, and split by `**` or a backtick.
   - AC2: the Markdown outside a masked token is unchanged (headings, lists, code fences, `release_notes`).
   - AC3: a bare token across the 16,000 cut leaves no piece of it when the caller masks then cuts (`ghp_` and a run of its body), and a mutation that cuts first fails the test.
@@ -50,7 +50,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC5: `redact.ts` still has no imports (`test-liveact`).
   - AC6: `maskNoteText(text, values)` masks known values first (longest first, under 4 characters skipped), including a value with no token shape and one split by `**`; it reports whether anything changed (for `hidden`).
   - AC7: main passes the folder's `extraSecretValues` and the session's `secretValuesFor` values; an import or a typed note gets the folder's (test with fakes).
-- [ ] T012 `NotesStore` in `src/main/notesstore.ts`. [FR-002, FR-005, FR-006, FR-007, FR-008]
+- [x] T012 `NotesStore` in `src/main/notesstore.ts`. [FR-002, FR-005, FR-006, FR-007, FR-008]
   - AC1: one file per folder at `notes/<folderFingerprint(key)>.json`; folder 0700 and file 0600 on POSIX (checked with `fs.statSync().mode & 0o777`); no folder path in the file.
   - AC2: writes go through a unique `wx` temp file and rename; a crash between the two (fake `fs` throws on rename) leaves the old file intact.
   - AC3: every stored title and text is the output of `maskNoteText`; a test plants a token in each call path (save, add, update, import) and reads the raw file: no token.
@@ -60,13 +60,13 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC7: tests in `scripts/test-notes.ts` with a temp `DURBAR_USER_DATA`-like folder and an injected `fs`.
   - AC8: `hidden` is set when masking changed title or text, and not otherwise.
   - AC9: the store document keeps `mirror` (sha256, bytes, at) written with the store's next atomic write; after a fresh `NotesStore` on the same folder, the mirror sees its own `notes.md` as unchanged (restart test).
-- [ ] T013 IPC, preload and types. [FR-009, FR-062]
+- [x] T013 IPC, preload and types. [FR-009, FR-062]
   - AC1: `src/main/ipc/notes.ts` registers the FR-062 channels with `fromApp`; `test:ipcchannels` passes with the `import { register as … }` line.
   - AC2: the session id is taken from `resumeIdFor(agentId)` and the app from the agent's adapter id; a session id sent by the window is ignored (test with a fake that sends one).
   - AC3: `digest` = first 16 hex of SHA-256 of `rawDigestInput(text)`; a shared test vector gives the same value as the window helper (T021).
   - AC4: bad input (non-string text, text over 64 KB before masking, unknown agent, unknown note id, non-integer `rev`) is refused with a short reason; nothing is logged with note text.
   - AC5: after a change, `notes:changed {fingerprint}` is sent to the window.
-- [ ] T014 [P] Simulator notes. [FR-060]
+- [x] T014 [P] Simulator notes. [FR-060]
   - AC1: `sim.ts` answers every notes call from an in-memory map per room; nothing is written to disk (`DURBAR_SIM` seal still passes).
   - AC2: `simnotes=some|many|long|secret` seed the store as FR-060 says; `secret` builds its tokens at run time.
   - AC3: the project-file switch answers *Demo: no file written*.
