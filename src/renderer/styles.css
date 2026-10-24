@@ -91,7 +91,7 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .stat.attn{background:var(--warn-bg)}
 .stat.attn span.l{color:var(--amber-ink);font-weight:600}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none;display:inline-block}
-.dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour */
+.dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing,.dot.retrying{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour; spec 034 FR-018: Retrying too */
 .dot.idle{background:transparent;border:2px solid var(--c-idle);box-shadow:0 0 0 1px var(--pc-idle)} .dot.error{background:var(--c-error)} .dot.done{background:var(--c-done)}
 /* spec 052 FR-006: a shape as well as a colour (deuteranopia): waiting is a diamond, error a triangle, idle a ring, working and done circles */
 .dot.waiting{border-radius:1.5px;transform:rotate(45deg) scale(.86);box-shadow:0 0 0 1px var(--amber-ink)} /* spec 052 FR-052: a darker edge so it shows on light surfaces (size unchanged) */
@@ -246,7 +246,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .st-working{--pb:var(--pb-working);--pc:var(--pc-working);--pd:var(--c-working)} .st-thinking{--pb:var(--pb-thinking);--pc:var(--pc-thinking);--pd:var(--c-thinking)}
 .st-waiting{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} .st-idle{--pb:var(--pb-idle);--pc:var(--pc-idle);--pd:var(--c-idle)}
 .st-error{--pb:var(--pb-error);--pc:var(--red-ink);--pd:var(--c-error)} .st-done{--pb:var(--pb-done);--pc:var(--pc-done);--pd:var(--c-done)}
-.st-failing{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} /* spec 052 FR-062: "Failing" reuses the waiting colours (no new status colour) */
+.st-failing,.st-retrying{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} /* spec 052 FR-062: "Failing" reuses the waiting colours (no new status colour); spec 034 FR-018: "Retrying" too */
 .st-idle i{background:transparent;border:1.5px solid var(--c-idle)}
 /* spec 052 FR-101: on cards and list rows a status that needs nothing from you is a dot and the word in its colour; Waiting, Error,
    Failing and Limit reached (a waiting state) keep the filled pill. Only colours change: the pill keeps its height and padding */
@@ -599,10 +599,10 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .desk.card:hover{background:var(--raised);border-color:var(--line-2)}
 /* waiting, error and failing: a light tint, and a 3px edge inside the card as the main signal (no coloured border on top) */
 .desk.card.is-waiting{background:var(--card-waiting);border-color:var(--line-hair);box-shadow:inset 3px 0 0 var(--c-waiting)}
-.desk.card.is-failing{background:color-mix(in srgb,var(--card-waiting) 55%,var(--surface));box-shadow:inset 3px 0 0 var(--c-waiting)}
+.desk.card.is-failing,.desk.card.is-retrying{background:color-mix(in srgb,var(--card-waiting) 55%,var(--surface));box-shadow:inset 3px 0 0 var(--c-waiting)}
 .desk.card.is-error{background:var(--card-error);border-color:var(--line-hair);box-shadow:inset 3px 0 0 var(--c-error)}
 .desk.card[aria-pressed="true"],.helper.hc[aria-pressed="true"]{border-color:var(--sel-border,#7fa0bd);box-shadow:0 0 0 1.5px var(--sel-border,#7fa0bd)}
-.desk.card.is-waiting[aria-pressed="true"],.desk.card.is-failing[aria-pressed="true"],.helper.hc.is-waiting[aria-pressed="true"]{box-shadow:inset 3px 0 0 var(--c-waiting),0 0 0 1.5px var(--sel-border,#7fa0bd)}
+.desk.card.is-waiting[aria-pressed="true"],.desk.card.is-failing[aria-pressed="true"],.desk.card.is-retrying[aria-pressed="true"],.helper.hc.is-waiting[aria-pressed="true"]{box-shadow:inset 3px 0 0 var(--c-waiting),0 0 0 1.5px var(--sel-border,#7fa0bd)}
 .desk.card.is-error[aria-pressed="true"],.helper.hc.is-error[aria-pressed="true"]{box-shadow:inset 3px 0 0 var(--c-error),0 0 0 1.5px var(--sel-border,#7fa0bd)}
 .sc{display:block;min-width:0}
 .sc>svg{width:100%;height:auto;display:block;overflow:visible}
@@ -1263,8 +1263,14 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 /* spec 052 FR-001: the answer bar above the composer, while a waiting request is out of view */
 .answer-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 auto 8px;width:min(860px,calc(100% - 32px));padding:8px 10px 8px 14px;background:var(--warn-bg);border:1px solid var(--tone-warn-line);border-radius:12px;box-shadow:0 4px 14px rgba(40,35,25,.08)}
 .answer-bar[hidden]{display:none}
+/* spec 068 FR-022: the chat's coffee-break bar: the answer bar's shape in calm surface tokens (a break is not an alarm, FR-005) */
+.coffee-bar{background:var(--surface-2);border-color:var(--line)}
+.coffee-bar .ab-q b{color:var(--ink)}
+.coffee-bar .cb-left{color:var(--ink-2)}
 .answer-bar .ab-q{flex:1 1 280px;min-width:0;font-size:13px;line-height:1.4;color:var(--ink);max-height:8.6em;overflow:auto;overflow-wrap:break-word}
 .answer-bar .ab-q b{color:var(--amber-ink)}
+/* spec 052 FR-177: a long session name is cut on one line with an ellipsis (its title holds the whole name); the count and the verb stay readable */
+.answer-bar .ab-q .ab-n{display:inline-block;max-width:50%;vertical-align:bottom;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .answer-bar .ab-act{display:flex;gap:6px;flex-wrap:wrap}
 .answer-bar .btn{height:var(--h-ctl)} /* spec 052 FR-076 */
 .answer-bar .btn.ghost{background:transparent;border-color:transparent;text-decoration:underline;color:var(--ink-2)}

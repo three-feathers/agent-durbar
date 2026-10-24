@@ -3,6 +3,7 @@
    a sign-in shows the vendor's own link and one-time code, and a code pasted for Claude goes straight to Claude's process. */
 (function () {
   'use strict';
+  const focusIn=(el,o)=>{if(typeof window!=='undefined'&&window.DurbarScroll)window.DurbarScroll.focus(el,o);else if(el&&typeof el.focus==='function')el.focus({preventScroll:true});}; /* spec 052 FR-176: focus never scrolls the page (innerscroll.js, looked up at call time: this file may load first, or run in Node tests) */
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const STATE = {
     ready: ['ok', 'Ready'],
@@ -127,7 +128,7 @@
     for (const b of buttons) { const el = document.createElement('button'); el.type = 'button'; el.className = 'btn' + (b.cls ? ' ' + b.cls : ''); el.textContent = b.label; if (b.id) el.id = b.id; el.onclick = () => b.onClick(close); row.appendChild(el); }
     d.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); const c = buttons.find((x) => x.cancel); if (c) c.onClick(close); else close(); } });
     document.body.appendChild(d);
-    const f = d.querySelector('input,select,.btn.primary') || row.lastElementChild; if (f) f.focus();
+    const f = d.querySelector('input,select,.btn.primary') || row.lastElementChild; if (f) focusIn(f);
     return { root: d, close, isClosed: () => closed };
   }
 

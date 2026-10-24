@@ -6,7 +6,7 @@
  * Enable with `DURBAR_SIM=15 npm start` (Electron main passes ?sim=15) or open
  * dist/renderer/index.html?sim=15 in a browser. Extra query params: simwaitold=1 (waiting requests look 2 minutes old), simtotals=1 (totals saved by a previous run), simunreported=<room>
  * (that room reports usage without credits), simfreeze=1 (no ticking),
- * simrooms=solo (one folder per agent), simrooms=1..5 (the agents spread over that many folders, in blocks; spec 001 FR-046), simhelpers=0 (no helpers), simplaces=1..3 (that many custom places, spec 024), seed=N, density=full|card|mini, open=<agent id>.
+ * simrooms=solo (one folder per agent), simrooms=1..5 (the agents spread over that many folders, in blocks; spec 001 FR-046), simhelpers=0 (no helpers), simplaces=1..3 (that many custom places, spec 024), simretry=1 (spec 034 FR-020: one agent retrying, one that gave up), seed=N, density=full|card|mini, open=<agent id>.
  *
  * Plain script (no imports/exports) so it runs unchanged in the sandboxed renderer.
  */
@@ -84,6 +84,8 @@ interface SimOptions {
 type SimScope = { key: string; label: string };
 interface SimAgent {
   info: AgentInfo;
+  /** Spec 034 FR-020 (simretry=1): the agent app keeps retrying, so the background ticks leave this agent alone. */
+  retryHold?: boolean;
   room: string;
   state: 'working' | 'thinking' | 'waiting' | 'error' | 'done' | 'idle';
   intent: string;
@@ -201,7 +203,7 @@ const SIM_PROFILES = [
   { id: 'release-helper', name: 'Release helper', description: 'Prepares release notes from merged pull requests', source: 'repo' as const, path: '~/work/mcp-swiss/.github/agents/release-helper.agent.md', mcpServers: ['github'] },
 ];
 const SIM_MODELS: ModelChoice[] = [
-  { id: 'auto', name: 'Auto', efforts: [] },
+  { id: 'auto', name: 'Auto', efforts: [], autoTiers: ['efficiency', 'balance', 'intelligence'] }, // spec 007 FR-018
   { id: 'sim-fast', name: 'Sim Fast', multiplier: 0.33, efforts: [], contextWindow: 128000, priceClass: 'low', pricing: { inputPerMTok: 20, outputPerMTok: 100, cachedPerMTok: 2 } },
   { id: 'sim-mid', name: 'Sim Mid', multiplier: 1, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', contextWindow: 272000, priceClass: 'medium', pricing: { inputPerMTok: 80, outputPerMTok: 400, cachedPerMTok: 8 } },
   { id: 'sim-deep', name: 'Sim Deep', multiplier: 3, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', contextWindow: 200000, priceClass: 'high', contextTiers: ['default', 'long'], longWindow: 400000,
@@ -944,6 +946,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       else emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'quota', paid: true, source: 'Simulated premium requests' });
       emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Usage limit reached', reason: 'usage-limit' }); // spec 068: the marker, as the adapters' usageLimitClosing()
     };
+    /* spec 034 FR-020 (simretry=1): Clara's agent app is retrying a model call (attempt 3 of 10, servers busy, HTTP 529) and stays so;
+       Tomas's retries twice for a rate limit and gives up before his error. Normalized `retry` events, as the adapters send them. */
+    const simRetry = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simretry') === '1';
+    const simRetries = (s: SimAgent, n: number, max: number | undefined, reason: 'overloaded' | 'rate-limit', httpStatus: number): void => {
+      for (let k = 1; k <= n; k++) emit({ type: 'retry', sessionId: sid(s), timestamp: now(), phase: 'retrying', attempt: k, ...(max ? { maxAttempts: max } : {}), reason, httpStatus, delayMs: 2000 * k });
+    };
     function play(s: SimAgent): void {
       if (s.info.resumeLast) return; // spec 006 FR-021 (simresume=1): restored, nothing runs until its chat is opened
       emit({ type: 'user', sessionId: sid(s), timestamp: now(), text: s.prompt, attachments: (s.attachments ?? []).map((p) => ({ path: p, kind: /\.(png|jpe?g|gif)$/i.test(p) ? 'image' as const : 'file' as const })) });
@@ -973,6 +981,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           toolStep(s, true);
           emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: 'Moved the company handlers first and kept a thin re-export in `registry.ts` so the public API is unchanged. Next I am running the **tests** for the three new modules.' + (opts.reply === 'long' ? ' ' + LONG_TEXT : '') });
           if (simBreakSecs && s.info.name === 'Rosa') window.setTimeout(() => { s.breakUntil = Date.now() + 2 * simBreakSecs * 1000; simLimit(s, 'quota'); }, 1500); // spec 068
+          if (simRetry && s.info.name === 'Clara') { s.retryHold = true; simRetries(s, 3, 10, 'overloaded', 529); } // spec 034 FR-020
           break;
         case 'thinking':
           think(s, 2);
@@ -986,6 +995,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           if (simBreakSecs && s.info.name === 'Tomas') { s.breakUntil = Date.now() + simBreakSecs * 1000; simLimit(s, 'plan'); break; }
           emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: sid(s) + '-fail', tool: 'bash', phase: 'start', args: { command: 'python evals/run.py --prompt v7 --concurrency 8' } });
           emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: sid(s) + '-fail', tool: 'bash', phase: 'failed', output: 'RateLimitError: 429 Too Many Requests (retry after 38s)\nStopped at case 38 of 120. Partial results saved to evals/out/v7-partial.json' });
+          if (simRetry && s.info.name === 'Tomas') { // spec 034 FR-020: the agent app retries, then gives up just before the error status
+            simRetries(s, 2, undefined, 'rate-limit', 429);
+            emit({ type: 'retry', sessionId: sid(s), timestamp: now(), phase: 'gave-up', attempt: 2, reason: 'rate-limit', httpStatus: 429 });
+          }
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'error', intent: (opts.reply === 'secrets' ? SECRETS_TEXT + ' ' : '') + s.intent });
           break;
         case 'done': {
@@ -1000,7 +1013,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     // Slow, calm background activity: one agent advances every few seconds.
     let timer: number | undefined;
     function tick(): void {
-      const live = sims.filter((s) => (s.state === 'working' || s.state === 'thinking') && !s.limitReq);
+      const live = sims.filter((s) => (s.state === 'working' || s.state === 'thinking') && !s.limitReq && !s.retryHold);
       if (!live.length) return;
       const s = pick(live);
       if (s.state === 'working') {
@@ -1031,6 +1044,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
 
     async function reply(s: SimAgent, text: string): Promise<void> {
       closeOpen(s);
+      s.state = 'working'; // spec 007 FR-018 (review on PR 642): a reply in progress is busy, so a model or tier switch asked now is queued as on a real runtime
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: 'Answering: ' + text.slice(0, 60) });
       if (/\bfallback\b/i.test(text)) runtimeSwitch(s, 'fallback'); // demo: the runtime switches models by itself (spec 030 FR-015)
       if (!/\bquick\b/i.test(text)) for (let i = 0; i < 4; i++) { think(s, 1); await wait(650); } // "quick": a turn where the model sends no reasoning
@@ -1820,7 +1834,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
 
     // ---- Model, context tier and compaction (spec 030). Fake: no session, no credits. The queue-on-busy rule and the compaction numbers are made up (sim:), the shapes are the normalized ones. ----
     let queueN = 0;
-    const simModel = (id: string | undefined): ModelChoice | undefined => SIM_MODELS.find((m) => m.id === id);
+    // spec 007 FR-018: page address simtierlock=<tier> = the organization's Copilot policy locks the Auto tier
+    // `other` = a lock on a tier outside the three names (FR-017: fails closed, no name shown); simtierfail=1 = every tier switch fails (FR-019)
+    const tierQ = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+    const simTierLock = (() => { const v = tierQ.get('simtierlock'); return v === 'efficiency' || v === 'balance' || v === 'intelligence' || v === 'other' ? v : undefined; })();
+    const simTierFail = tierQ.get('simtierfail') === '1';
+    const simModelList = (): ModelChoice[] => SIM_MODELS.map((m) => ({ ...m, ...(m.id === 'auto' && simTierLock ? { autoTierManaged: simTierLock === 'other' ? { locked: true } : { tier: simTierLock, locked: true } } : {}) }));
+    const simModel = (id: string | undefined): ModelChoice | undefined => simModelList().find((m) => m.id === id);
     const windowFor = (m: ModelChoice | undefined, tier: ContextTier | undefined): number => (tier === 'long' && m?.longWindow ? m.longWindow : m?.contextWindow ?? 0);
     const isBusy = (s: SimAgent): boolean => s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.compacting;
     const needsCompaction = (s: SimAgent, req: ModelSwitchRequest): boolean => {
@@ -1838,10 +1858,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       else if (!m.efforts.includes(s.info.effort ?? '')) s.info.effort = undefined; // kept when the new model offers it
       s.tier = req.contextTier === 'long' ? 'long' : undefined;
       s.info.tier = s.tier;
+      const ownBefore = s.info.autoTier;
+      if (req.autoTier) s.info.autoTier = req.autoTier; // spec 007 FR-016: kept while on another model
+      else if (req.autoTier === null) s.info.autoTier = undefined;
       s.models = m.id === 'auto' ? undefined : [m.id];
       const w = windowFor(m, s.tier);
       if (w > 0 && s.ctx) s.pendingLimit = w; // reported with the next call, not at once
-      emit({ type: 'model', sessionId: sid(s), timestamp: now(), model: m.id, previousModel, effort: s.info.effort, previousEffort, tier: s.tier ?? 'default', cause });
+      emit({ type: 'model', sessionId: sid(s), timestamp: now(), model: m.id, previousModel, effort: s.info.effort, previousEffort, tier: s.tier ?? 'default', ...(m.id === 'auto' && req.autoTier ? { autoTier: req.autoTier } : {}), cause });
+      if (simTierFail && m.id === 'auto' && req.autoTier) {
+        // FR-019: the runtime could not use the tier; the one before stays in effect (Efficiency when the agent had none)
+        s.info.autoTier = ownBefore;
+        window.setTimeout(() => emit({ type: 'autoTierFailed', sessionId: sid(s), timestamp: now(), requested: req.autoTier ?? undefined, effective: ownBefore ?? 'efficiency', reason: 'request-failed' }), 0);
+      }
     }
 
     async function applyPending(s: SimAgent): Promise<void> {
@@ -1891,6 +1919,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!m) return { ok: false, error: 'That model is not in the list your account offers.' };
         if (req.effort && !m.efforts.includes(req.effort)) return { ok: false, error: 'That model does not offer this reasoning effort.' };
         if (req.contextTier === 'long' && !m.contextTiers?.includes('long')) return { ok: false, error: 'That model has no long-context tier.' };
+        // spec 007 FR-015, as main checks it
+        if (req.autoTier !== undefined && (m.id !== 'auto' || !m.autoTiers?.length || (req.autoTier !== null && !m.autoTiers.includes(req.autoTier)))) return { ok: false, error: 'This model has no Auto routing tier to choose.' };
+        if (req.autoTier !== undefined && m.autoTierManaged?.locked && m.autoTierManaged.tier !== req.autoTier) return { ok: false, error: m.autoTierManaged.tier ? `Your organization's Copilot policy sets the Auto routing to ${m.autoTierManaged.tier}.` : "Your organization's Copilot policy sets the Auto routing." };
         const tier: ContextTier | undefined = req.contextTier === 'long' ? 'long' : undefined;
         if (needsCompaction(s, req)) {
           // The target window is smaller than the context in use: the runtime asks first (status confirmation_required).
@@ -2320,7 +2351,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (opts.grants !== 'stuck' && s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
-      listModels: async (kind) => ({ ok: true, models: (kind === 'claude' ? SIM_CLAUDE_MODELS : !kind || kind === 'copilot' ? SIM_MODELS : []).map((m) => ({ ...m })) }),
+      listModels: async (kind) => ({ ok: true, models: (kind === 'claude' ? SIM_CLAUDE_MODELS : !kind || kind === 'copilot' ? simModelList() : []).map((m) => ({ ...m })) }),
       newSession: async (id, o) => {
         const src = sims.find((x) => x.info.id === id);
         if (!src) return { ok: false, error: 'unknown agent' };

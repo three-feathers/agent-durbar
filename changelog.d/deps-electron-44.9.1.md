@@ -1,0 +1,1 @@
+- Electron 44.8.0 → 44.9.1 (security: blocks compromised eMudhra intermediate certificates in Chromium networking and Node TLS, GHSA-jr5w-w6x2-84p9; Dependabot PR 659).

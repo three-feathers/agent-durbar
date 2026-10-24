@@ -46,8 +46,8 @@
           source:typeof i.source==='string'?i.source:'',policy:policy==='ask'?'ask':'auto',phase:'on',noAuto:false,reminded:false};
         const r=lastResume.get(id);
         if(kind==='provider'&&r!=null&&t-r<rehit){ /* the resume hit the limit again: no more automatic resumes here, nor for the app's others */
-          b.noAuto=true;
-          breaks.forEach(x=>{if(x.app===b.app&&x.kind==='provider')x.noAuto=true;});
+          b.noAuto=true;b.rehit=true; /* FR-024 (review on PR 640): the card says why it asks now */
+          breaks.forEach(x=>{if(x.app===b.app&&x.kind==='provider'){x.noAuto=true;if(x!==b)x.heldByRehit=true;}});
         }
         breaks.set(id,b);
         return b;
@@ -58,7 +58,7 @@
       autoResumes(id){const b=breaks.get(id);return !!b&&b.phase==='on'&&auto(b);},
       /* the break is over without a resume of ours (a message, Stop, the session ended, the agent went on by itself) */
       end(id){return breaks.delete(id);},
-      /* the page sent the resume message (automatic, Try now or Resume): the break is over; a new limit soon after is a re-hit */
+      /* the page sent the resume message (automatic, Retry now or Resume): the break is over; a new limit soon after is a re-hit */
       resumed(id){lastResume.set(id,now());return breaks.delete(id);},
       /* Stay on break: no automatic resume for this break (it asks at the reset time instead) */
       stay(id){const b=breaks.get(id);if(!b)return false;b.noAuto=true;return true;},
@@ -124,5 +124,27 @@
     return 'the limit resets later';
   }
 
-  return {MARGIN_MS,GAP_MS,REHIT_MS,LATE_MS,REMIND_MS,RESUME_TEXT,createBreaks,holdIds,whenText,atWhen,untilText};
+  /* The time left on a break (delta 2026-10-23, FR-023): to the automatic resume (reset + margin) when it resumes by itself, else to the
+     reset. "less than a minute", "N min" (whole minutes, rounded up), "1 h 5 min", "N h" from 10 h, "N days" from 48 h; '' without a reset
+     time or once the break is not on (back, resuming, Durbar's cap). */
+  function backInText(b,auto,nowMs,marginMs){
+    if(!b||b.kind!=='provider'||b.phase!=='on'||!okTime(b.resetsAt))return '';
+    const n=typeof nowMs==='number'?nowMs:Date.now(), m=typeof marginMs==='number'&&marginMs>=0?marginMs:MARGIN_MS;
+    const left=b.resetsAt+(auto?m:0)-n;
+    if(left<60000)return 'less than a minute';
+    const mins=Math.ceil(left/60000);
+    if(mins>=48*60)return Math.floor(mins/(24*60))+' days';
+    if(mins<60)return mins+' min';
+    const h=Math.floor(mins/60), r=mins%60;
+    return h>=10||!r?h+' h':h+' h '+r+' min';
+  }
+
+  /* Retry now / Resume (delta 2026-10-23, FR-021): the user may send the resume message for this break only while it is a
+     provider break (Durbar's cap is answered in its own card) and no Durbar spending limit is pending (a: the agent, {limit}). Once the
+     page has sent it, the break is gone (resumed), so a second press finds nothing. */
+  function retryable(b,a){
+    return !!b&&!!a&&b.kind==='provider'&&(b.phase==='on'||b.phase==='back'||b.phase==='resuming')&&!a.limit;
+  }
+
+  return {MARGIN_MS,GAP_MS,REHIT_MS,LATE_MS,REMIND_MS,RESUME_TEXT,createBreaks,holdIds,whenText,atWhen,untilText,backInText,retryable};
 })());

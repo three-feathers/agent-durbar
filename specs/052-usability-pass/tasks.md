@@ -324,3 +324,13 @@
 
 ## FR-085 fix: double-click on the top bar zooms the window on a Mac (2026-10-23, issue #591)
 - [x] T180 Mac: a double-click on a drag area (not on a control) sends `window:titleDoubleClick`; main zooms, minimizes or does nothing by `AppleActionOnDoubleClick` (`titleDoubleClickAction`, unit-tested); channel open under the simulator; changelog fragment [FR-085 fix, 2026-10-23]
+
+## FR-176: opening a chat never scrolls the window (2026-10-23, issue #638)
+- [x] T181 `src/renderer/innerscroll.js` (`reveal`, `focus`, `pin`, pure `delta`/`resetPinned`); `scrollInBody` in `screens.js` uses it; `app.js` has no bare `focus()` and no `scrollIntoView`; `pin(document)` at start [FR-176, FR-055]
+  - Check: `test:innerscroll` (pure parts and the static rule; mutation: a bare `focus()` or `scrollIntoView` put back fails it)
+- [x] T182 Driver `check-chat-no-scroll` at 1440x900, 1280x800 and 1280x520: open with a waiting question, Show question, Skip, answer in the card, open at the request; the page and the chat frame stay at 0 and the header in view; the safety net puts a forced page scroll back [FR-176]
+  - Check: mutation (old `focusRequest` without the safety net; the safety net alone off) fails it; changelog fragment; agent note
+- [x] T183 Review on #641 (fjcabello): `#floor.scrolls` is not pinned (the office scrolls when it does not fit; driver step at 1000x560, mutation); the static rule catches any receiver (`$('x').focus()`, `el?.focus()`, `a.b().focus()`) and covers every renderer file; `screens.js`, `profileeditor.js`, `dialog.js` and `harnesses.js` use `focusIn` [FR-176]
+
+## FR-177: the answer bar cuts a long session name with an ellipsis (2026-10-23, issue #540)
+- [x] T184 Answer bar: the session name in its own one-line span cut with `…` and titled with the full name; count and verb outside the cut; find and remove the mid-word cut; rule `answer-bar-name` in `check:ui-text` on `chat-title-long` (question and permission), mutation checks; before/after shots at 1440x900 and 1280x800 [FR-177]

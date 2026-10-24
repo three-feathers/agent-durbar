@@ -8,7 +8,7 @@
 
 ## Technical Context
 
-- **Tools**: Electron 44.8.0, electron-builder 26.15.3, Node 22 in CI, `npm ci`.
+- **Tools**: Electron 44.9.1, electron-builder 26.15.3, Node 22 in CI, `npm ci`.
 - **Files**: `package.json` (`build`, scripts `pack:dir`, `dist`, `dist:mac:arm64|x64`, `dist:win`, `dist:linux`), `scripts/prepare-runtime.js`, `scripts/after-pack.js`, `scripts/copy-assets.js`, `build/icon.*`, `.github/workflows/ci.yml`, `release.yml`, `src/adapters/runtime.ts`, `scripts/test-runtime.ts`.
 - **Testing**: `npm run test:runtime`; CI matrix; `pack:dir` smoke (`afterPack` assertions).
 
@@ -71,3 +71,20 @@ specs/008-packaging-and-release/
 - `nightly-watch.yml` (`workflow_run` on the five workflows, scheduled runs only) uses `gh issue list/create/comment` with the job token (`issues: write` on that job only).
 - Measuring: the PR's own runs with `gh api .../actions/runs/<id>/jobs` (queue = `started_at - created_at`, run = `completed_at - started_at`), compared with the before numbers in the spec.
 - Pending runs were cleaned up by hand the same morning (owner-approved): superseded PR runs cancelled; the release PR (#517), `main`, tags, the real-account workflows and the newest run of each open PR kept.
+
+## 2026-10-23: fold the release notes at tag time (T104, FR-117..FR-120, owner-approved)
+
+- Reuse spec 025's fold: `changelog.js` gets `notes()` (the section `build` would write, or the version's existing section; writes nothing), `build --stdout` for the command line, and `--previous <tag>` on both (refuse when the previous release is not folded yet). `build` returns the section it wrote, so the notes and the fold PR are the same text.
+- `scripts/release-notes.js` (new, plain Node, git through `execFileSync` with argument lists, no shell, no network) does every tag check and writes the notes file and the job summary. It is testable on throwaway git repositories, which a shell step in YAML would not be.
+- `release.yml`: new `verify` job (`contents: read`, `persist-credentials: false`, `fetch-depth: 0`, no `npm ci`), `build` needs it, its tag step moves into it; `draft-release` needs both, downloads the packages by pattern and the notes by name, `--draft --prerelease --latest=false --notes-file`. No new permission anywhere.
+- The fold into `CHANGELOG.md` stays a person's (or agent's) doc-only PR from the tag, then `git merge origin/main`: the workflow neither pushes nor opens PRs (reasons in FR-120).
+- Docs: `changelog.d/README.md` (release steps), `docs/collaboration.md` (*For the maintainer*), AGENTS.md (*Keep docs in sync*: the fold PR, not a release PR), `README.md` (*Development* line), a fragment.
+
+## 2026-10-23: test builds from branches (T105, FR-121..FR-124, owner decision, issue #658)
+
+- One path for both kinds: `release.yml` keeps its trigger and jobs; `scripts/release-notes.js` classifies the tag (`tagKind`: `TEST_TAG_RE` first, then `TAG_RE`), so the pattern is in one tested place and not in YAML.
+- Test tag: the FR-118 checks minus the ancestor check and the previous-release check; version = tag without `-test.M`; notes from `git rev-list --count` and `git log --max-count --format=%h%x09%s <main ref>..<commit>` (argument lists, no shell), each subject through `redact` then `cut` from `src/shared/redact.ts`, loaded with Node's type stripping (no `npm ci` in `verify`) and failing closed when it cannot load.
+- Title: `--title-out release-title.txt` in `verify`, uploaded with the notes, read into `TITLE` in `draft-release` (no new expression, output or permission).
+- Reuse: `redact`/`cut` (spec 012) rather than any new masking; `previousRelease` keeps `RELEASE_TAG_RE`, which already leaves test tags out.
+- Tests in `scripts/test-changelog.js` on throwaway repositories (one `git fast-import` for the 102-commit cap case) and the static workflow checks; mutations listed in FR-124.
+- Docs: `docs/collaboration.md` (*Cutting a test build*), `changelog.d/README.md` (test builds have no fragments to fold), README *Development* line, a fragment.
