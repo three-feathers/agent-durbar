@@ -46,6 +46,82 @@ module.exports = async (ctx) => {
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${tag}: the detail level is on`);
       assert.strictEqual(await js(`window.__xss===undefined`), true);
 
+      // 0. Inline chat-header rename: click, keyboard entry, save/cancel, validation, focus, and helper exclusion
+      const inlineOriginalName = (await names('sim-1')).name;
+      await js(`document.querySelector('#stage .desk[data-id="sim-1"]').click()`);
+      assert.ok(await H.until(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle')&&document.getElementById('panelTitle').textContent===${jsLiteral(inlineOriginalName)}`), `${tag}: the main session chat opens`);
+      const mouseClick = async (selector) => {
+        const p=await js(`(()=>{const r=document.querySelector(${jsLiteral(selector)}).getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+        H.wc().sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
+        H.wc().sendInputEvent({ type: 'mouseDown', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+        H.wc().sendInputEvent({ type: 'mouseUp', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+      };
+      const inlineStart = () => mouseClick('#panelTitle');
+      const inlineValue = (v) => js(`(()=>{const i=document.querySelector('#panelTitle [data-inline-rename]');if(!i)return false;i.value=${jsLiteral(v)};i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+      const clickOutside = async () => {
+        const p=await js(`(()=>{const r=document.getElementById('msgInput').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+        H.wc().sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
+        H.wc().sendInputEvent({ type: 'mouseDown', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+        H.wc().sendInputEvent({ type: 'mouseUp', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+      };
+      assert.strictEqual(await js(`document.getElementById('panelTitle').getAttribute('role')`), 'button', `${tag}: the main-session title is a button`);
+      assert.ok(await js(`(()=>{const h=document.getElementById('panelTitle');return h.getAttribute('aria-label')===${jsLiteral('Rename session '+inlineOriginalName)}&&h.getAttribute('aria-keyshortcuts')==='Enter Space F2'&&/Click to rename/.test(h.title)&&/Escape cancels/.test(h.title)})()`), `${tag}: the title has an accessible name and editing instructions`);
+      const hoverPoint=await js(`(()=>{const r=document.getElementById('panelTitle').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+      H.wc().sendInputEvent({ type: 'mouseMove', x: hoverPoint.x, y: hoverPoint.y });
+      assert.ok(await H.until(`(()=>{const h=document.getElementById('panelTitle'),s=getComputedStyle(h);return h.matches(':hover')&&s.cursor==='text'&&s.textDecorationLine.includes('underline')})()`), `${tag}: hover indicates the title can be renamed`);
+      await js(`document.getElementById('panelTitle').focus()`);
+      assert.strictEqual(await js(`!!document.querySelector('#panelTitle [data-inline-rename]')`), false, `${tag}: programmatic focus alone does not start editing`);
+      const titleHeight = await js(`document.getElementById('panelTitle').getBoundingClientRect().height`);
+      await inlineStart();
+      assert.ok(await H.until(`!!document.querySelector('#panelTitle [data-inline-rename]')`), `${tag}: clicking the title starts editing`);
+      assert.ok(await js(`(()=>{const i=document.querySelector('#panelTitle [data-inline-rename]');return i&&document.activeElement===i&&i.selectionStart===0&&i.selectionEnd===i.value.length})()`), `${tag}: inline input is focused and selected`);
+      assert.ok(await js(`Math.abs(document.getElementById('panelTitle').getBoundingClientRect().height-${jsLiteral(titleHeight)})<0.5`), `${tag}: inline editing preserves the header height`);
+      if (w === 1440 && level === 'expert') await shot('059-inline-editor-1440x900.png');
+      if (w === 1280 && level === 'simple') await shot('059-inline-editor-simple-1280x800.png');
+      assert.strictEqual(await inlineValue('Outside saved'), true);
+      await clickOutside();
+      const outsideSaved=await H.until(`!document.querySelector('#panelTitle [data-inline-rename]')&&__durbarSimUi.agents().find(x=>x.id==='sim-1').alias==='Outside saved'`);
+      const outsideState=await js(`(()=>{const a=__durbarSimUi.agents().find(x=>x.id==='sim-1'),i=document.querySelector('#panelTitle [data-inline-rename]');return {editing:!!i,alias:a.alias||'',active:document.activeElement&&document.activeElement.id,error:i&&i.getAttribute('aria-invalid'),toasts:[...document.querySelectorAll('#toasts .toast')].map(t=>t.textContent)}})()`);
+      assert.ok(outsideSaved, `${tag}: clicking outside saves: ${JSON.stringify(outsideState)}`);
+      assert.strictEqual(await js(`document.activeElement&&document.activeElement.id`), 'msgInput', `${tag}: outside-save preserves focus on the clicked control`);
+
+      await js(`document.getElementById('panelTitle').focus()`);
+      await key('Enter');
+      assert.ok(await H.until(`!!document.querySelector('#panelTitle [data-inline-rename]')`), `${tag}: Enter starts editing`);
+      assert.strictEqual(await inlineValue('Enter saved'), true);
+      await key('Enter');
+      assert.ok(await H.until(`!document.querySelector('#panelTitle [data-inline-rename]')&&__durbarSimUi.agents().find(x=>x.id==='sim-1').alias==='Enter saved'`), `${tag}: Enter saves the new name`);
+      assert.strictEqual(await js(`document.activeElement&&document.activeElement.id`), 'panelTitle', `${tag}: Enter-save returns focus to the title`);
+
+      await key(' '); // focus remains on the title after Enter-save
+      assert.ok(await H.until(`!!document.querySelector('#panelTitle [data-inline-rename]')`), `${tag}: Space starts editing`);
+      await inlineValue('Cancelled');
+      await key('Escape');
+      assert.ok(await H.until(`!document.querySelector('#panelTitle [data-inline-rename]')`), `${tag}: Escape cancels`);
+      assert.strictEqual((await names('sim-1')).alias, 'Enter saved', `${tag}: Escape leaves the saved name unchanged`);
+
+      await key('F2');
+      assert.ok(await H.until(`!!document.querySelector('#panelTitle [data-inline-rename]')`), `${tag}: F2 starts editing`);
+      await inlineValue('bad\u0007name');
+      await key('Enter');
+      assert.ok(await H.until(`(()=>{const i=document.querySelector('#panelTitle [data-inline-rename]');return i&&i.getAttribute('aria-invalid')==='true'&&i.getAttribute('aria-describedby')==='panelTitleError'&&document.getElementById('panelTitleError').textContent==='Remove control or hidden characters.'})()`), `${tag}: invalid input is explained and remains editable`);
+      await key('Escape');
+      assert.strictEqual((await names('sim-1')).alias, 'Enter saved', `${tag}: invalid input was not saved`);
+
+      await inlineStart();
+      assert.ok(await H.until(`!!document.querySelector('#panelTitle [data-inline-rename]')`), `${tag}: title can be edited again`);
+      await inlineValue('');
+      await key('Enter');
+      assert.ok(await H.until(`!document.querySelector('#panelTitle [data-inline-rename]')&&!__durbarSimUi.agents().find(x=>x.id==='sim-1').alias`), `${tag}: an empty value resets the name`);
+      await js(`document.getElementById('backBtn').click()`);
+      assert.ok(await H.until(`!document.body.classList.contains('panel-open')`), `${tag}: main chat closes before helper check`);
+      const originalParent = await js(`(()=>{const a=__durbarSimUi.agents().find(x=>x.id==='sim-1');const p=a.parent;a.parent='sim-2';document.querySelector('#stage .desk[data-id="sim-1"]').click();return p||''})()`);
+      assert.ok(await H.until(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle')&&document.getElementById('panelTitle').textContent===${jsLiteral(inlineOriginalName)}`), `${tag}: helper chat opens`);
+      assert.strictEqual(await js(`(()=>{const h=document.getElementById('panelTitle');return h.getAttribute('role')||''})()`), '', `${tag}: helpers have no rename control`);
+      assert.strictEqual(await js(`!!document.querySelector('#panelTitle [data-inline-rename]')`), false, `${tag}: helpers cannot enter inline rename`);
+      await js(`(()=>{const a=__durbarSimUi.agents().find(x=>x.id==='sim-1');a.parent=${jsLiteral(originalParent)}||undefined;document.getElementById('backBtn').click();})()`);
+      assert.ok(await H.until(`!document.body.classList.contains('panel-open')`), `${tag}: helper test closes its chat`);
+
       // 1. the dialog words per kind (sim-1 Claude, sim-5 Codex, sim-2 Copilot, sim-7 has no rename); Escape changes nothing
       const kinds = [['sim-1', /^Also saved in Claude Code at your next message.*may sync/, 'claude'], ['sim-5', /^Also saved in .*Codex.*may sync/, 'codex'], ['sim-2', /^Also saved in .*Copilot.*may sync/, 'copilot'], ['sim-7', /^Only in Agent Durbar\./, 'none']];
       for (const [id, re, kind] of kinds) {

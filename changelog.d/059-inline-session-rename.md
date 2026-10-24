@@ -1,0 +1,1 @@
+- **Inline session rename** (spec 059): a dotted hover underline marks the chat-header title; click it or press Enter, Space or F2 to edit. Enter or clicking outside saves, and Escape cancels. Simulator-checked at 1440x900 and 1280x800 in Simple and Expert.

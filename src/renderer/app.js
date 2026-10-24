@@ -1913,9 +1913,13 @@ function openPanel(id,focus){
   const stripScroll=(p.querySelector('.strip-list')||{}).scrollLeft||0;
   const mdlName=a.live&&a.info?modelLabel(a.info):'';
   const subText=a.role+(parent?' · helper of '+parent.name:'');
+  const titleCanRename=canRenameSession(a);
+  const titleAttrs=titleCanRename
+    ?` role="button" tabindex="0" aria-label="${esc('Rename session '+a.name)}" aria-keyshortcuts="Enter Space F2"`
+    :' tabindex="-1"';
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
-   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${nameTipAttr(a)||` title="${esc(a.name)}"`}>${esc(a.name)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
+   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle"${titleAttrs} title="${esc(panelTitleTip(a))}">${esc(a.name)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
       <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span></div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); spec 006 FR-033 (2026-10-21): Previous sessions moved out of the actions, to their own section above the chat -->${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}<button class="btn sm primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window"><span class="mt">Tools and usage<small>Tools used, models, context window</small></span></button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval"><span class="mt">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}<small>Prompts sent at a set time</small></span></button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder"><span class="mt">+ New session<small>Another agent in this folder</small></span></button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation. You review it first."><span class="mt">Continue in another app…<small>Start there from a summary</small></span></button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}${canRenameSession(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="renameSessBtn" type="button" title="Give this session a short name"><span class="mt">Rename…<small>A short name for this session</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>A later message resumes it</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The folder's other sessions stay."><span class="mt">Remove from office<small>Ends it; history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Forget ${esc(DurbarCutText.cutText(room.name,30))} in Agent Durbar. Its session ends; nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; files stay on disk</small></span></button>`:'')}</div></div></div>
@@ -1934,6 +1938,7 @@ function openPanel(id,focus){
    <div class="drop-ov" id="dropOv" aria-hidden="true"><div>Drop to attach<small>Up to 5 files, 10 MB each. Images: PNG, JPEG, GIF, WebP, BMP.</small></div></div></div>`;
   renderStrip(); const sl=$('stripList'); if(sl)sl.scrollLeft=stripScroll;
   const chat=getChat(a); $('chat').appendChild(chat.el);
+  wirePanelTitle(a);
   updatePanelHeader(); renderGrants();
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl.scrollTop=1e6;
   chatEl.onscroll=()=>{chatEl.dataset.pin=(chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80)?'1':'0';};
@@ -4177,7 +4182,7 @@ function applyTitle(a,title){
 function repaintName(a){
   a.name=SN().displayName(a.alias,a.title,a.folderLabel);
   if(a.info)a.info.alias=a.alias;
-  if(ui.selected===a.id){const h=document.getElementById('panelTitle');if(h){h.textContent=a.name;const t=SN().nameTip(a.alias,a.title,a.folderLabel||a.baseName||'');h.title=t||a.name;}const mi=$('msgInput');if(mi){mi.setAttribute('aria-label','Message '+a.name);fitPlaceholder();}const c=document.getElementById('chat');if(c)c.setAttribute('aria-label','Chat with '+a.name);}
+  if(ui.selected===a.id){const h=document.getElementById('panelTitle');if(h){if(!h.querySelector('[data-inline-rename]')){h.textContent=a.name;if(canRenameSession(a))h.setAttribute('aria-label','Rename session '+a.name);}h.title=panelTitleTip(a);}const mi=$('msgInput');if(mi){mi.setAttribute('aria-label','Message '+a.name);fitPlaceholder();}const c=document.getElementById('chat');if(c)c.setAttribute('aria-label','Chat with '+a.name);}
   if(ui.selected===a.id&&answerObs&&answerObs.rename)answerObs.rename(); /* spec 052 FR-177: the answer bar names the session */
   scheduleRender();
   if(document.getElementById('schedDlg'))try{renderSchedDlg();}catch(e){}
@@ -4478,6 +4483,77 @@ if(window.DurbarProfileEditor)window.DurbarProfileEditor.init({bridge,askDialog,
 /* ---------------- spec 059: rename a session ---------------- */
 /* Main sessions only (never helpers); a started or not started, live or ended card. */
 const canRenameSession=a=>!!(a&&a.live&&!a.parent&&a.info&&bridge.renameSession);
+function panelTitleTip(a){
+  const tip=SN().nameTip(a.alias,a.title,a.folderLabel||a.baseName||'')||a.name;
+  return canRenameSession(a)
+    ?tip+'. Click to rename. Enter, Space, or F2 starts editing; Enter or clicking outside saves; Escape cancels.'
+    :tip;
+}
+function wirePanelTitle(a){
+  const title=$('panelTitle'); if(!title||!canRenameSession(a))return;
+  title.onclick=()=>startInlineRename(a,title);
+  title.onkeydown=e=>{
+    if(e.target!==title||!['Enter',' ','F2'].includes(e.key))return;
+    e.preventDefault();e.stopPropagation();startInlineRename(a,title);
+  };
+}
+function startInlineRename(a,title){
+  if(!canRenameSession(a)||title.querySelector('[data-inline-rename]'))return;
+  let ended=false,saving=false;
+  const input=document.createElement('input');
+  input.type='text';input.className='panel-title-edit';input.dataset.inlineRename='1';
+  input.value=SN().shortName(a.name,SN().MAX);input.maxLength=SN().MAX*2;
+  input.style.height=title.getBoundingClientRect().height+'px';
+  input.setAttribute('aria-label','Rename session '+a.name);
+  const error=document.createElement('span');error.className='sr-only';error.id='panelTitleError';error.setAttribute('role','alert');
+  const clearError=()=>{input.removeAttribute('aria-invalid');input.removeAttribute('aria-describedby');error.textContent='';};
+  const showError=message=>{
+    input.setAttribute('aria-invalid','true');input.setAttribute('aria-describedby',error.id);error.textContent=message;
+    announce(message);toast(esc(message),5000).classList.add('err');
+  };
+  const restore=(focus)=>{
+    if(ended)return;ended=true;error.remove();title.classList.remove('is-inline-editing');title.textContent=a.name;title.title=panelTitleTip(a);
+    if(canRenameSession(a)){title.setAttribute('role','button');title.tabIndex=0;title.setAttribute('aria-keyshortcuts','Enter Space F2');title.setAttribute('aria-label','Rename session '+a.name);}
+    else{title.removeAttribute('role');title.tabIndex=-1;title.removeAttribute('aria-keyshortcuts');title.removeAttribute('aria-label');}
+    if(focus&&document.contains(title))title.focus({preventScroll:true});
+  };
+  const save=async focusTitle=>{
+    if(ended||saving)return;
+    const text=input.value;
+    const errorText=SN().nameError(text,SN().MAX);
+    if(errorText){showError(errorText);input.focus({preventScroll:true});return;}
+    saving=true;input.disabled=true;input.setAttribute('aria-busy','true');
+    const out=await requestSessionRename(a,null,text);
+    if(ended)return;
+    if(out&&!out.ok&&isSessionRenameValidationError(out.error)){
+      saving=false;input.disabled=false;input.removeAttribute('aria-busy');showError(out.error);input.focus({preventScroll:true});return;
+    }
+    restore(focusTitle);
+    if(!applySessionRenameResult(a,out))toast(esc((out&&out.error)||'Could not rename the session.'),5000).classList.add('err');
+  };
+  input.addEventListener('input',clearError);
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){e.preventDefault();e.stopPropagation();restore(true);}
+    else if(e.key==='Enter'&&!e.isComposing){e.preventDefault();e.stopPropagation();save(true);}
+  });
+  input.addEventListener('blur',()=>save(false));
+  title.removeAttribute('role');title.removeAttribute('tabindex');title.removeAttribute('aria-keyshortcuts');title.removeAttribute('aria-label');
+  title.classList.add('is-inline-editing');title.replaceChildren(input);title.after(error);
+  input.focus({preventScroll:true});input.select();
+}
+const isSessionRenameValidationError=error=>/^(Use 1 to|Remove control|That looks like a secret)/.test(error||'');
+async function requestSessionRename(a,sessionId,name){
+  try{return await bridge.renameSession(a.id,sessionId,name);}
+  catch(err){return {ok:false,error:String(err&&err.message||err)};}
+}
+function applySessionRenameResult(a,out,onDone,updateOwn=true){
+  if(!out||!out.ok)return false;
+  if(onDone)onDone(out);
+  else if(updateOwn){a.alias=out.name||undefined;repaintName(a);}
+  announce(out.name?'Renamed.':'Name reset.');
+  if(out.note)toast(esc(out.note),6000);
+  return true;
+}
 /* One dialog for the More menu, the card menu and the Previous sessions row menu. `prev`: null for the agent's own session, else {id,title,runtime} of a Previous sessions row. */
 async function renameSessionUi(a0,prev,o){
   const a=liveRoot(a0); if(!a||!a.live||!bridge.renameSession)return;
@@ -4493,16 +4569,13 @@ async function renameSessionUi(a0,prev,o){
       returnFocus:o&&o.opener,buttons:[{label:'Cancel',value:null},{label:'Rename',value:'ok',cls:'primary'}]});
     if(!res)return;
     text=res.text||'';
-    try{out=await bridge.renameSession(a.id,own?null:prev.id,text);}catch(err){out={ok:false,error:String(err&&err.message||err)};}
+    out=await requestSessionRename(a,own?null:prev.id,text);
     /* main checks the name again with the shared rule (it also refuses a text that looks like a secret): that reason goes back under the field */
-    if(out&&!out.ok&&/^(Use 1 to|Remove control|That looks like a secret)/.test(out.error||'')){reason=out.error;continue;}
+    if(out&&!out.ok&&isSessionRenameValidationError(out.error)){reason=out.error;continue;}
     break;
   }
-  if(!out||!out.ok){toast(esc((out&&out.error)||'Could not rename the session.'),5000).classList.add('err');return;}
-  if(own){a.alias=out.name||undefined;repaintName(a);}
-  else if(o&&o.onDone)o.onDone(out);
-  announce(out.name?'Renamed.':'Name reset.');
-  if(out.note)toast(esc(out.note),6000);
+  if(!applySessionRenameResult(a,out,own?null:(o&&o.onDone?()=>o.onDone(out):null),own))
+    toast(esc((out&&out.error)||'Could not rename the session.'),5000).classList.add('err');
 }
 /* after a mode change the chip is re-rendered; put focus back on it (or the card it was opened from) unless the user moved it on */
 function refocusAnchor(anchor){

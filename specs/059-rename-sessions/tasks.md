@@ -84,9 +84,17 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
   elsewhere); `simnames=long` gets a URL-like name; `check:office` asserts no card `.name` overflows at 1440x900 and 1280x800; before/after screenshots
   `docs/screenshots/059-long-url-name-*.png`; CHANGELOG [all]
 
+## Phase 8: Inline chat-header rename (issue #595)
+
+- [x] T062 FR-020: make an eligible chat-header title an accessible inline rename control (click, Enter, Space, or F2); use the shared
+  rename bridge and FR-002 validation; Enter and outside-click save, Escape cancels; keep the existing Rename… entries; preserve the
+  header height and correct focus behavior. Extend `check:rename` at both sizes and detail levels for valid, empty, invalid, helper,
+  keyboard, blur, focus, and accessibility cases; capture 1440x900 and 1280x800 simulator screenshots. No linked documentation screenshot
+  shows the active title editor.
+
 ## Dependencies
 
 - T010, T011 → T012 → T020 → T021 → T022, T024..T029. T023 any time before T024.
 - T030 → T031, T032, T035 → T033 → T034, T036.
 - T040 needs spec 006 T036 merged (PR #373 carries the spec delta).
-- T050 after T034 and the owner's go-ahead. T060 last.
+- T050 after T034 and the owner's go-ahead. T060 last. T062 follows T060.
