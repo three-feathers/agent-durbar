@@ -86,6 +86,9 @@ assert.ok(/if\(d\.shown\)return;[^\n]*\n\s*if\(host\.say\)host\.say\(d\);/.test(
 assert.ok(/'A page in <b>'\+esc\(a\?a\.name:'a session'\)\+'<\/b> is asking: <span class="pagetext">\\u201c'\+esc\(d\.text\)\+'\\u201d<\/span>/.test(app), 'the toast escapes the session name and the page text');
 assert.ok(/function clearCover\(c\)/.test(pane2) && /clearCover\(cur\);\s*if\(cur\.shown\)\{cur\.shown=false;bridge\.browserVisible\(id,false\);\}/.test(pane2) && /clearCover\(cur\);\s*if\(cur\.shown&&bridge\)bridge\.browserVisible/.test(pane2), 'leaving the Browser tab or the panel clears the cover');
 assert.ok(!/if\(!cur\|\|cur\.tab!=='browser'\)return;/.test(pane2.slice(pane2.indexOf('async function overlay'))), 'overlay(false) does not stop at a non-browser tab');
+assert.ok(/cur\.covered=!!\(host\.covers&&host\.covers\(\)\);\s*await bridge\.browserOverlay\(id,cur\.covered\)[\s\S]*?bridge\.browserVisible\(id,true\)/.test(pane2), 'an attach starts uncovered or, under an open overlay, stays off: main\'s flag is set before the view is attached');
+assert.ok(/function overlaySync\(\)\{const c=coversBrowser\(BP\.paneRect\(\)\)/.test(app), 'the overlay test also sees an overlay open while the attach is in flight');
+assert.ok(/else if\(OVERLAYS\.has\('dom'\)\|\|BP\.covered\(\)\)overlayClose\('dom'\)/.test(app), 'overlaySync also lifts a cover the pane still holds');
 assert.ok(/new MutationObserver\(\(\)=>\{if\(q\)return;/.test(app), 'the overlay observer also runs while no Browser tab shows');
 assert.ok(/PULLED\.has\(id\)\)return;\s*PULLED\.add\(id\)/.test(app) && /if\(!pulling\)PULLED\.delete\(id\)/.test(app), 'a hidden dialog brings a chat forward once, until the user opens it');
 assert.ok(/A page in <b>/.test(app) && /dialogHTML\(x\)/.test(app), 'the toast names the session; the marker is on the strip item and the desks');
@@ -105,4 +108,43 @@ for (const m of block.matchAll(/font-size:\s*([^;}]+)/g)) {
 assert.ok(!/#[0-9a-f]{3,8}\b/i.test(block) && !/rgba?\(/i.test(block), 'theme tokens only: no colour literal');
 assert.ok(/prefers-reduced-motion:reduce\)\{\.bspin\{animation:none\}/.test(block), 'the spinner stops under prefers-reduced-motion (FR-006)');
 assert.ok(/\.panel-in\.on-browser #chat\{[^}]*visibility:hidden/.test(block), 'the chat is out of the way, not unmounted, on the Browser tab (its scroll position stays)');
-console.log('browser pane tests passed');
+// the overlay closes while the attach is still in flight (the pane is not shown yet): the cover is still known and can be lifted
+(async () => {
+  const made: Record<string, unknown> = {};
+  const rect = { left: 0, top: 0, width: 500, height: 300, right: 500, bottom: 300 };
+  const el = (id: string): unknown => {
+    if (made[id]) return made[id];
+    const store: Record<string, unknown> = { dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {}, remove() {} }, getBoundingClientRect: () => rect, appendChild() {}, remove() {}, focus() {}, setAttribute() {}, querySelector: () => el('q'), querySelectorAll: () => [] };
+    return (made[id] = new Proxy(store, { get: (t, k) => (k in t ? t[k as string] : undefined), set: (t, k, v) => ((t[k as string] = v), true) }));
+  };
+  const g = globalThis as unknown as Record<string, unknown>;
+  g.document = { getElementById: (id: string) => el(id), querySelector: () => el('panelIn'), createElement: () => el('new'), activeElement: null };
+  g.window = {};
+  g.requestAnimationFrame = (cb: () => void) => setImmediate(cb);
+  const calls: string[] = [];
+  let covers = true;
+  let release!: () => void;
+  const hold = new Promise<void>((r) => (release = r));
+  const bridge = {
+    browserOpen: async () => ({ ok: true, state: { id: 'a', open: true, url: '', title: '', loading: false, canBack: false, canForward: false, muted: true, driver: 'user', dialogOpen: false } }),
+    browserBounds: async () => ({ ok: true }),
+    browserOverlay: async (_id: string, on: boolean) => { calls.push('overlay ' + on); if (on) await hold; return { ok: true }; },
+    browserVisible: async (_id: string, v: boolean) => { calls.push('visible ' + v); return { ok: true }; },
+    browserSnapshot: async () => ({ ok: false }),
+  };
+  const P = BP as unknown as { init(o: unknown): void; mount(a: unknown): void; select(t: string): Promise<void>; overlay(on: boolean): Promise<void>; covered(): boolean; current(): { shown: boolean } | null; available(a: unknown): boolean };
+  P.init({ bridge, covers: () => covers, recheck: () => undefined, ask: async () => null });
+  P.mount({ id: 'a', live: true });
+  const sel = P.select('browser');
+  await new Promise((r) => setTimeout(r, 20));
+  assert.strictEqual(P.covered(), true, 'a chat attached under an open overlay starts covered');
+  assert.strictEqual(P.current()?.shown, false, 'and is not shown yet: the attach IPCs are in flight');
+  covers = false;
+  await P.overlay(false); // what overlaySync does when the overlay closes now
+  assert.strictEqual(P.covered(), false, 'the cover is lifted although the pane was not shown');
+  assert.ok(calls.includes('overlay false'), 'main is told');
+  release();
+  await sel;
+  assert.deepStrictEqual(calls.slice(-1), ['visible true'], 'the view is attached last, after the flag was cleared');
+  console.log('browser pane (cover during attach) ok');
+})().then(() => console.log('browser pane tests passed'), (e) => { console.error(e); process.exit(1); });

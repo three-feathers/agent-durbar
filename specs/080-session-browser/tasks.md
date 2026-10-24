@@ -224,7 +224,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 - [x] T019 [US1] [US2] Docs for Phase 1. [all Phase 1 FRs]
   - **Status 2026-10-24 (slice 3):** README features, Safety model and Known limits written (AC1), changelog fragment `changelog.d/080-browser-tab.md` (AC2), spec index status (AC3). The README claims only what the simulator checks showed; chat links (T017) and FR-023a's two files are named as open. T008 (identifying the two files) is still open, and the README says so.
   - AC1: README feature list and *Safety model*: session browser isolation, wiped at the end, no debugging port, muted, the refused permissions and choosers, only `mailto:` leaves; known limits, including that downloads may not carry Mark-of-the-Web or quarantine, FR-025d's dialog limits (a hidden session's system dialog shows no session name (Durbar's toast names it and brings its chat forward); a dialog answered for the agent may stay drawn (about 10 s on Xvfb, T007); `prompt()` is unsupported), and, until T008 closes it, that two Chromium files appear in the app's default profile when a view exists (the session's own partition writes nothing).
-  - AC2: a `changelog.d/080-session-browser.md` fragment.
+  - AC2: a `changelog.d/080-browser-tab.md` fragment.
   - AC3: the spec's `specs-index` status; tasks ticked; `[IMPLEMENTED]` tags with `sim:`/`test:` evidence.
 
 **Checkpoint**: MVP: a browser per session, links open there, nothing new for agents.

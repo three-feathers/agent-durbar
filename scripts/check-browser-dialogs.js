@@ -161,8 +161,8 @@ module.exports = async (ctx) => {
   assert.ok(!/A1b2A1b2/.test(toastText) && !/gh[p]_/.test(toastText), 'the page text is masked in the toast: ' + toastText);
   await wait(async () => (await selected()) === A && (await tabSel()), "the session's chat comes forward on its Browser tab");
   await wait(() => views().length === 1 && view() === viewA, "A's view is shown next to its chat");
-  assert.ok(await js(`document.getElementById('tabBrowser').textContent.includes('Dialog open')`), 'the Browser tab says Dialog open');
-  assert.ok(await js(`!!document.querySelector('#stripList [data-sw="'+CSS.escape(${jsLiteral(A)})+'"] .dlg-mark')`), 'the marker is on the session in the strip');
+  await wait(() => js(`document.getElementById('tabBrowser').textContent.includes('Dialog open')`), 'the Browser tab says Dialog open');
+  await wait(() => js(`!!document.querySelector('#stripList [data-sw="'+CSS.escape(${jsLiteral(A)})+'"] .dlg-mark')`), 'the marker is on the session in the strip');
   await dismissNative();
   await wait(async () => !(await js(`document.getElementById('tabBrowser').textContent.includes('Dialog open')||!!document.querySelector('.dlg-mark')`)), 'the marker goes when the dialog closes');
   // the user goes elsewhere; the second alert gives the toast only
@@ -171,7 +171,7 @@ module.exports = async (ctx) => {
   await wait(() => js(`[...document.querySelectorAll('#toasts .toast')].filter(x=>/is asking/.test(x.textContent)).length>=1&&[...document.querySelectorAll('#toasts .toast')].some(x=>/item 2/.test(x.textContent))`), 'the second alert raises its toast', 15000);
   await ctx.sleep(1500);
   assert.strictEqual(await selected(), B, 'the second dialog does not switch the chat again');
-  assert.ok(await js(`!!document.querySelector('#stripList [data-sw="'+CSS.escape(${jsLiteral(A)})+'"] .dlg-mark')`), 'but the marker shows');
+  await wait(() => js(`!!document.querySelector('#stripList [data-sw="'+CSS.escape(${jsLiteral(A)})+'"] .dlg-mark')`), 'but the marker shows');
   await dismissNative();
   await wait(() => js(`!document.querySelector('.dlg-mark')`), 'marker gone');
   // the user comes back to A themselves: it may bring itself forward again
@@ -200,8 +200,7 @@ module.exports = async (ctx) => {
   await js(`void window.DurbarDialog(document)({title:'Still open',body:'x',buttons:[{label:'Close',value:null}]});0`);
   await wait(async () => (await selected()) === A && (await tabSel()), 'the dialog pulls A forward under the open question', 15000);
   await wait(() => views().length === 0, 'the view comes off while the question is open', 6000);
-  await ctx.sleep(500);
-  assert.strictEqual(views().length, 0, 'and stays off while the question is open');
+  for (let i = 0; i < 10; i++) { assert.strictEqual(views().length, 0, 'and stays off while the question is open (no flash)'); await ctx.sleep(100); }
   await dismissNative();
   assert.ok(await H.clickText('#modeDlg .dbtn button', 'Close'));
   await wait(() => views().length === 1 && view() === viewA, 'the view is back when the question closes');

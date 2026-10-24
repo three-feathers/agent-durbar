@@ -20,6 +20,8 @@ import type { SessionView, ViewEvents } from './views';
 export const STATE_KEYS = ['id', 'open', 'url', 'title', 'loading', 'canBack', 'canForward', 'muted', 'driver', 'dialogOpen', 'error', 'note'] as const;
 const MAX_URL = 2048;
 const MAX_TITLE = 200;
+/** How long the still picture may take before the view is hidden without it. */
+export const SNAPSHOT_MS = 300;
 /** A window can hold a page this big and no more; larger numbers are a bug or an attack. */
 const MAX_SIDE = 20_000;
 
@@ -71,6 +73,8 @@ export interface BrowserDeps {
   askLeave(id: string, targetKnown: boolean, shown: boolean): Promise<boolean>;
   /** The window's page loaded again, or a session's view went: answers still waiting for the window are dropped (Stay). */
   dropAsks?(id?: string): void;
+  /** Test hook: the snapshot's time limit (ms). */
+  snapshotMs?: number;
   /** Runs `fn` soon, once (setImmediate); the test passes a manual queue. */
   later?(fn: () => void): void;
 }
@@ -237,14 +241,14 @@ export function makeBrowserController(deps: BrowserDeps) {
               const x = tracked.get(id);
               if (x && !d.forAgent) x.dialogOpen = true;
               changed(id);
-              if (!d.forAgent) deps.pageDialog({ id, type: d.type, text: d.text, shown: !!x?.attachedTo }); // for the agent only the bar note (FR-025d)
+              if (!d.forAgent) deps.pageDialog({ id, type: d.type, text: d.text, shown: !!x?.visible }); // for the agent only the bar note (FR-025d)
             },
             onPageDialogClosed: () => {
               const x = tracked.get(id);
               if (x) x.dialogOpen = false;
               changed(id);
             },
-            askLeave: (_sid, known) => deps.askLeave(id, known, !!tracked.get(id)?.attachedTo),
+            askLeave: (_sid, known) => deps.askLeave(id, known, !!tracked.get(id)?.visible),
           };
           const sv = await deps.views.ensureSessionView(id, events, deps.sim);
           const view = sv.view as BrowserViewLike;
@@ -332,7 +336,6 @@ export function makeBrowserController(deps: BrowserDeps) {
       if (!t) return { ok: false };
       if (visible && !t.bounds) return { ok: false }; // never attach a view that has no place yet
       t.visible = visible;
-      if (visible) t.overlay = false; // a new attach starts uncovered; the window re-asserts an overlay that is still open (a flag left from before can never hide the view for good)
       applyAttach(id);
       return { ok: true };
     },
@@ -366,7 +369,9 @@ export function makeBrowserController(deps: BrowserDeps) {
       const t = tracked.get(id);
       if (!t || t.wc.isDestroyed() || !t.attachedTo) return { ok: false };
       try {
-        const img = await t.wc.capturePage();
+        // a page with a dialog open can leave capturePage waiting for good: the picture is optional, hiding the view is not
+        const img = await Promise.race([t.wc.capturePage(), new Promise<undefined>((r) => setTimeout(() => r(undefined), deps.snapshotMs ?? SNAPSHOT_MS))]);
+        if (!img) return { ok: false };
         const url = img.toDataURL();
         return typeof url === 'string' && url.startsWith('data:image/') ? { ok: true, image: url } : { ok: false };
       } catch {

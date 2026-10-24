@@ -53,7 +53,7 @@ function fakeSession(id: string) {
   const sv = { id, view, driver: 'user' as const, navs, events: undefined as unknown as import('../src/main/browser/views').ViewEvents, navigate: async (a: unknown) => { navs.push(a); return true; }, destroy: async () => undefined };
   return { wc, view, sv, navs };
 }
-function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: ReturnType<typeof fakeWin> | undefined; zoom?: number; consent?: boolean } = {}) {
+function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: ReturnType<typeof fakeWin> | undefined; zoom?: number; consent?: boolean; snapshotMs?: number } = {}) {
   const win = 'win' in opts ? opts.win : fakeWin(undefined, opts.zoom);
   const sessions = new Map<string, ReturnType<typeof fakeSession>>();
   const ensured: string[] = [];
@@ -66,6 +66,7 @@ function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: Retur
   const dropped: (string | undefined)[] = [];
   const consent = { on: opts.consent !== false };
   const deps: BrowserDeps = {
+    snapshotMs: opts.snapshotMs,
     consented: () => consent.on,
     pageDialog: (d) => void dialogs.push(d),
     askLeave: async (id, known, shown) => (leaves.push([id, known, shown]), true),
@@ -92,6 +93,14 @@ function rig(opts: { sim?: boolean; known?: (id: string) => boolean; win?: Retur
 }
 const B = { x: 10, y: 120, width: 600, height: 400 };
 
+// an unfinished run (a promise that never settles ends the process with exit 0) must fail, not pass with half the suite skipped
+let finished = false;
+process.on('exit', () => {
+  if (!finished) {
+    console.error('browser ipc tests did not finish');
+    process.exitCode = 1;
+  }
+});
 (async () => {
   // ---- 1. the controller ----
   // a session id is looked up in main
@@ -138,13 +147,6 @@ const B = { x: 10, y: 120, width: 600, height: 400 };
     r.ctl.visible('s1', false);
     r.ctl.overlay('s1', false);
     assert.deepStrictEqual(r.win.children, [], 'closing an overlay does not show a view the tab did not ask for');
-    // a stale overlay flag never hides a view for good: a new attach starts uncovered
-    r.ctl.visible('s1', true);
-    r.ctl.overlay('s1', true);
-    r.ctl.visible('s1', false);
-    r.ctl.visible('s1', true);
-    assert.deepStrictEqual(r.win.children, [s1.view], 'visible(true) resets the overlay flag');
-    r.ctl.visible('s1', false);
     // new bounds while detached are kept, not attached
     assert.deepStrictEqual(r.ctl.bounds('s1', { ...B, width: 500 }), { ok: true });
     assert.deepStrictEqual(r.win.children, []);
@@ -364,8 +366,11 @@ const B = { x: 10, y: 120, width: 600, height: 400 };
     r.ctl.visible('s1', false);
     ev.onPageDialog!('s1', { type: 'alert', text: 'x', forAgent: false });
     assert.strictEqual((r.dialogs[1] as { shown: boolean }).shown, false, 'a hidden view says so');
+    ev.onPageDialogClosed!('s1'); // the user's dialog above is answered: nothing waits now
     const nDialogs = r.dialogs.length;
     ev.onPageDialog!('s1', { type: 'alert', text: 'y', forAgent: true });
+    r.flush();
+    assert.strictEqual(r.emitted[r.emitted.length - 1].dialogOpen, false, 'a dialog main closed for the agent is not a Dialog open marker (nobody waits)');
     assert.strictEqual(r.dialogs.length, nDialogs, 'a dialog main closed for the agent raises no toast (only the bar note)');
     ev.onDialogNote!('s1', 'The page showed a dialog: "y"');
     ev.onPageDialogClosed!('s1');
@@ -398,6 +403,36 @@ const B = { x: 10, y: 120, width: 600, height: 400 };
     back.load();
     assert.strictEqual(back.browserNoteAccepted, true, 'kept after a restart');
     fs.rmSync(path.dirname(f), { recursive: true, force: true });
+  }
+  // `shown` means the session's Browser tab is selected (visible), not that the view is attached: a covered open chat is still shown
+  {
+    const r = rig();
+    await r.ctl.open('s1');
+    const ev = r.sessions.get('s1')!.sv.events;
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    r.ctl.overlay('s1', true);
+    assert.deepStrictEqual(r.win.children, [], 'covered: not attached');
+    ev.onPageDialog!('s1', { type: 'alert', text: 'x', forAgent: false });
+    await ev.askLeave!('s1', true);
+    assert.strictEqual((r.dialogs[0] as { shown: boolean }).shown, true, 'a covered open chat is shown: no toast, no pull-forward');
+    assert.deepStrictEqual(r.leaves[r.leaves.length - 1], ['s1', true, true]);
+    r.ctl.visible('s1', false);
+    ev.onPageDialog!('s1', { type: 'alert', text: 'y', forAgent: false });
+    assert.strictEqual((r.dialogs[1] as { shown: boolean }).shown, false, 'another chat open: hidden');
+  }
+  // a capture that never answers (a page dialog is open) does not stop the cover
+  {
+    const r = rig({ snapshotMs: 30 });
+    await r.ctl.open('s1');
+    r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
+    r.sessions.get('s1')!.wc.capturePage = () => new Promise(() => undefined);
+    const t0 = Date.now();
+    assert.deepStrictEqual(await r.ctl.snapshot('s1'), { ok: false }, 'no picture, and it answers');
+    assert.ok(Date.now() - t0 < 2000, 'within its time limit');
+    assert.deepStrictEqual(r.ctl.overlay('s1', true), { ok: true });
+    assert.deepStrictEqual(r.win.children, [], 'the view is hidden without the picture');
+    const src = fs.readFileSync(path.join(ROOT, 'src/main/browser/controller.ts'), 'utf8');
+    assert.ok(/Promise\.race\(\[t\.wc\.capturePage\(\)/.test(src), 'the capture has a time limit');
   }
   // ---- the still picture ----
   {
@@ -553,6 +588,7 @@ const B = { x: 10, y: 120, width: 600, height: 400 };
     const sg = read('src/main/simguard.ts');
     for (const c of CH) assert.ok(sg.includes(`'${c}':`), `${c} is open under the simulator (the view only loads simulator pages)`);
   }
+  finished = true;
   console.log('browser ipc tests passed');
 })().catch((e) => {
   console.error(e);

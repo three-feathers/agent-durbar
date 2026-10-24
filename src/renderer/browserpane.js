@@ -179,8 +179,11 @@
     watchSize();
     if(await sendBounds()&&cur&&cur.id===id&&cur.tab==='browser'){
       const img=$('bShot');if(img)img.remove();
-      cur.covered=false; /* a new attach starts uncovered; an overlay still open is found again just below */
-      const v=await bridge.browserVisible(id,true).catch(()=>null); /* main also resets its overlay flag on attach */
+      /* an overlay already open (a menu or question under which this chat came forward) keeps the view off from the start: no attach, no flash;
+         otherwise main's flag is cleared (a flag left from before can never hide the view for good) */
+      cur.covered=!!(host.covers&&host.covers());
+      await bridge.browserOverlay(id,cur.covered).catch(()=>null);
+      const v=await bridge.browserVisible(id,true).catch(()=>null);
       if(cur&&cur.id===id&&cur.tab==='browser'){cur.shown=!!(v&&v.ok);if(cur.shown&&host.recheck)host.recheck();}
       else if(v&&v.ok)bridge.browserVisible(id,false);
     }
@@ -223,7 +226,7 @@
     if(on){
       if(cur.tab!=='browser'||cur.covered||!cur.shown)return;
       cur.covered=true;
-      const r=await bridge.browserSnapshot(id).catch(()=>null);
+      const r=await Promise.race([bridge.browserSnapshot(id).catch(()=>null),new Promise(res=>setTimeout(()=>res(null),600))]); /* the picture is optional: a page with a dialog open can stall the capture, the view still goes */
       if(!cur||cur.id!==id||!cur.covered)return;
       if(r&&r.ok&&typeof r.image==='string'&&r.image.indexOf('data:image/')===0&&v){
         let img=$('bShot');
@@ -310,5 +313,8 @@
   }
   const current=()=>cur?{id:cur.id,tab:cur.tab,shown:cur.shown}:null;
 
-  return {tabKey,barModel,boundsOf,init,available,tabsHTML,paneHTML,mount,hide,select,current,overlay,areaRect,wantTab,dialogOpen};
+  /* The page area while the Browser tab is selected, shown or still attaching (the overlay test must see an overlay that is open during the attach) */
+  function paneRect(){const v=$('bView');return cur&&cur.tab==='browser'&&v?v.getBoundingClientRect():null;}
+  const covered=()=>!!(cur&&cur.covered);
+  return {tabKey,barModel,boundsOf,init,available,tabsHTML,paneHTML,mount,hide,select,current,overlay,areaRect,wantTab,dialogOpen,covered,paneRect};
 })());

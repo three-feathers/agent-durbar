@@ -2945,7 +2945,8 @@ BP.init({ bridge: window.agentDurbar,
   nameOf:id=>{const a=byId(id);return a?a.name:'another session';},
   bringForward:bringBrowserForward,
   marksChanged:()=>scheduleRender(),
-  recheck:()=>overlaySync() });
+  recheck:()=>overlaySync(),
+  covers:()=>{const v=document.getElementById('bView');return !!v&&coversBrowser(v.getBoundingClientRect());} });
 /* spec 080 FR-008 (T016): overlays win. One helper opens and closes an overlay; while any is open and the Browser tab shows, main takes the
    view off and the pane shows a still picture. The shared menu, askDialog, toasts, the slash list and the popovers are found where they appear
    (one observer), so a new menu cannot forget to call it. */
@@ -2953,8 +2954,8 @@ const OVERLAYS=new Set();
 function overlayOpen(key){OVERLAYS.add(key);BP.overlay(true);}
 function overlayClose(key){OVERLAYS.delete(key);if(!OVERLAYS.size)BP.overlay(false);}
 const OVERLAY_SEL='.dlg-ov,[role="dialog"],[role="alertdialog"],[role="menu"]:not([hidden]),[role="listbox"],.mode-menu,.more-menu:not([hidden]),#toasts .toast,.pop:not([hidden]),#grantsPop:not([hidden]),#ctMorePop:not([hidden])';
-function coversBrowser(){
-  const r=BP.areaRect(); if(!r)return false;
+function coversBrowser(r){
+  r=r||BP.areaRect(); if(!r)return false;
   for(const e of document.querySelectorAll(OVERLAY_SEL)){
     if(e.closest('#browserPane')||!e.getClientRects().length)continue;
     const b=e.getBoundingClientRect(); if(b.width<1||b.height<1)continue;
@@ -2962,7 +2963,7 @@ function coversBrowser(){
   }
   return false;
 }
-function overlaySync(){const c=coversBrowser();if(c)overlayOpen('dom');else if(OVERLAYS.has('dom'))overlayClose('dom');}
+function overlaySync(){const c=coversBrowser(BP.paneRect());if(c)overlayOpen('dom');else if(OVERLAYS.has('dom')||BP.covered())overlayClose('dom');} /* BP.covered(): an overlay that closed while the attach was still in flight (the pane was not shown yet) still lifts the cover */
 {let q=false; /* also while no Browser tab shows: a cover left behind is lifted when its overlay closes or the tab goes */
  new MutationObserver(()=>{if(q)return;q=true;requestAnimationFrame(()=>{q=false;overlaySync();});}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','class','style']});}
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
