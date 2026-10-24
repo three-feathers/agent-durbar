@@ -3,7 +3,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, parseLastSession, parseOpenSessions, parsePrevMarks, MAX_PREV_MARKS, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS, MAX_SESSION_NAMES, parseSessionNames, parseSessionModes, modeForSession, MAX_SESSION_MODES } from '../src/main/folders';
+import { MAX_FOLDER_LABEL } from '../src/shared/names';
+import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, labelError, MAX_LABEL, parseLastSession, parseOpenSessions, parsePrevMarks, MAX_PREV_MARKS, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS, MAX_SESSION_NAMES, parseSessionNames, parseSessionModes, modeForSession, MAX_SESSION_MODES } from '../src/main/folders';
 import { GROUND, GROUND_NAME } from '../src/shared/floors';
 
 const abs = (p: string): string => path.resolve('/', p);
@@ -370,6 +371,20 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
   assert.strictEqual(parseLabel('é'.repeat(40)), 'é'.repeat(40), 'characters, not UTF-16 units');
   assert.strictEqual(parseLabel('a\u0007b'), undefined, 'no control characters');
   assert.strictEqual(parseLabel(42), undefined);
+  // spec 059 delta 2026-10-24: the session-name rule for folder names too (hidden characters, bidi overrides, zero width, C1), refused with a reason by labelError
+  for (const v of ['Proj\x07x', 'Proj\u202eexe', 'zero\u200bwidth', 'a\u0085b']) {
+    assert.strictEqual(parseLabel(v), undefined, JSON.stringify(v));
+    assert.strictEqual(labelError(v), 'Remove control or hidden characters.', JSON.stringify(v));
+  }
+  assert.strictEqual(labelError('x'.repeat(41)), `Use 1 to ${MAX_LABEL} characters.`);
+  assert.strictEqual(labelError('x'.repeat(40)), '');
+  assert.strictEqual(labelError(''), '', 'empty is fine: it resets');
+  assert.strictEqual(labelError('   '), '');
+  assert.strictEqual(labelError(42), `Use 1 to ${MAX_LABEL} characters.`);
+  assert.ok(/secret/.test(labelError('ghp_' + 'abcdefghijklmnopqrstuvwxyz0123456789')), 'a token-looking name is refused, as for sessions');
+  assert.strictEqual(MAX_LABEL, MAX_FOLDER_LABEL, 'one length');
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'folders.ts'), 'utf8');
+  assert.ok(/const bad = labelError\(label\);\s*if \(bad\) return \{ ok: false, error: bad \};/.test(src), 'folders:rename refuses an invalid non-empty name with its reason instead of resetting it');
   const d3 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders3-'));
   try {
     const f3 = path.join(d3, 'f.json');

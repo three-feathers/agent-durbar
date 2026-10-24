@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { displayNameOf, renameTarget, syncEntry } from '../src/shared/sessionname';
-import { nameError } from '../src/shared/names';
+import { nameError, MAX_FOLDER_LABEL } from '../src/shared/names';
 import type { SessionNameEntry } from '../src/shared/sessionname';
 
 const e = (o: Partial<SessionNameEntry> = {}): SessionNameEntry => ({ src: 'codex', id: 'abc', name: 'Billing', ...o });
@@ -41,6 +41,8 @@ const SN = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'sessionn
   nameTip(a: unknown, t: unknown, f: string): string;
   shortName(n: string, max?: number): string;
   nameError(v: unknown): string;
+  MAX_FOLDER: number;
+  folderError(v: unknown): string;
   whereLine(cap: unknown, app: string, inApp?: boolean): string;
 };
 const root = path.join(__dirname, '..', '..');
@@ -57,6 +59,9 @@ const src = (p: string): string => fs.readFileSync(path.join(root, p), 'utf8').r
   for (const [a, t, f] of [['Mine', 'Title', 'repo'], [undefined, ' Title ', 'repo'], [undefined, undefined, 'repo #2'], ['  ', '', 'repo']] as const) assert.strictEqual(SN.displayName(a, t, f), displayNameOf(a?.trim() ? { name: a } : undefined, t, f));
   // the pre-check agrees with the shared rule (the secret check is main's)
   for (const v of ['ok', '', '  spaced  out ', 'a'.repeat(61), '\u{1F600}'.repeat(60), 'bad\u0000x', 'rtl\u202etrick', 'zero\u200bwidth', 'a\u0085b', 5, undefined]) assert.strictEqual(SN.nameError(v), nameError(v), JSON.stringify(v));
+  // spec 059 delta 2026-10-24: a folder name uses the same rule at MAX_FOLDER_LABEL (one length, mirrored in the page)
+  assert.strictEqual(SN.MAX_FOLDER, MAX_FOLDER_LABEL);
+  for (const v of ['ok', '', 'x'.repeat(40), 'x'.repeat(41), 'Proj\u0007x', 'Proj\u202eexe', 'zero\u200bwidth', 5]) assert.strictEqual(SN.folderError(v), nameError(v, MAX_FOLDER_LABEL), JSON.stringify(v));
   assert.ok(!/function shortName|shortName\(/.test(src('src/shared/sessionname.ts')), 'no second cut rule: the shared cutter is cuttext.js');
   assert.strictEqual(SN.shortName('Refactor the billing module and then fix the invoices list'), 'Refactor the billing module and then…');
   // tooltips: the user's name and the folder, never the runtime title once named (FR-003)

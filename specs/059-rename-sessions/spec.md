@@ -478,7 +478,7 @@ FR-020..FR-027: built 2026-10-24 on the simulator (T070..T078): `[IMPLEMENTED]` 
   folder name."). After save or cancel, focus returns to the control that started the edit (the title button, the pencil, or the card / row /
   door where F2 was pressed); if it was re-rendered, the same control is found again by its key (`data-id`, `data-door`, `data-pk`), as
   `refocusAnchor` does. Announcements are the polite ones of FR-004 ("Renamed.", "Name reset."). Same words and controls in Simple and
-  Expert. The shortcut sheet (spec 052 FR-043, `openKbdHelp`) gets one row: "F2: rename the focused session or folder". The pencil's tooltip
+  Expert. The shortcut sheet (spec 052 FR-043, `openKbdHelp`) gets one row: "F2: rename the focused session or folder (Fn+F2 on a Mac)" (plain F2 is a media key on many Mac keyboards; the click on the title, Enter on the focused title and the pencil work without it). The pencil's tooltip
   is its `aria-label` (at most 120 characters, spec 052 FR-168). F2 does nothing under a dialog (`modalOpen()`), in a text field, or on an
   item that cannot be renamed.
 - **FR-025** `[IMPLEMENTED]` **Fit (constitution V).** Opening the field changes no element's size or position: the chat header, the card,
@@ -546,3 +546,12 @@ in place*).
 - `[KNOWN GAP]` Not driven: FR-023 item 6 (a dialog opening over the field; the blur path is unit-tested); the demo (`demoOn`) shows no pencil by construction, not driven; the macOS drag region is read in the simulator with `data-platform="darwin"` only, not on a real Mac or on Windows.
 - Linked pictures retaken with `npm run shots:docs -- --only shots-hero,shots-003-011,shots-005-cardmenu,shots-006-prevmarks,shots-052-ux,shots-074-navigator`: none shows a pencil (hidden until hover or focus) and the committed ones already differ from this machine's rendering; none was replaced.
 (no agent call changes; FR-007 is untouched).
+
+### 2026-10-24: one rule for folder names (review of PR #708)
+
+Decided by the coordinator under Ruben's delegation, after Paco's review. A folder's display name (spec 006 FR-018) now follows the SAME rule as a session name, in the dialog, the inline field and main:
+
+- **FR-028** `[IMPLEMENTED]` The rule is `checkDisplayName(v, MAX_FOLDER_LABEL)` (`src/shared/names.ts`): whitespace collapsed, trimmed, 1 to `MAX_FOLDER_LABEL` (40, also `MAX_LABEL` in `src/main/folders.ts`) characters, no control, C1 or hidden characters (bidi overrides, zero width, ...), nothing that looks like a secret. The page mirrors it: `SN().folderError`, `SN().MAX_FOLDER` (`sessionname.js`, compared with the shared rule by `test:sessionname`). `startFolderEdit` and the folder dialog use it (the dialog loops with the reason under its field, as the session dialog does); the literal 40 and `check:()=>''` are gone.
+- **FR-029** `[IMPLEMENTED]` `folders:rename` refuses an invalid non-empty name with `{ ok: false, error }` (the rule's reason) instead of clearing the label and answering `ok:true`; an empty name still resets. `parseLabel` (also used when the file is read back) is the same rule and stays tolerant (an invalid saved label is ignored, the folder kept). The page shows the reason under the field (Enter) or as "Not renamed: ..." (blur, Tab), and under the dialog's input.
+- Evidence: `test:` `scripts/test-folders.ts` (`'Proj\x07x'`, `'Proj\u202eexe'`, `'zero\u200bwidth'`, C1, 41 characters, a token, empty, a static check that the IPC handler refuses), `scripts/test-sessionname.ts` (page mirror); `sim:` `check:rename-inline` (the field and the dialog refuse the three strings and send nothing; the fake `renameFolder` applies main's rule).
+- `[KNOWN GAP]` Not run against real main (the IPC handler is covered by the static check and the store tests, not by an Electron main process).

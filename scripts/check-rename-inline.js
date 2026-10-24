@@ -385,6 +385,25 @@ module.exports = async (ctx) => {
       await click(`#stage .ren[data-renfolder="${rid}"]`, 1); await ctx.sleep(120); await type(''); await key('Return'); await ctx.sleep(400);
       assert.strictEqual((await calls()).folder[nf + 1], '', `${tag}: an empty folder name resets`);
       assert.notStrictEqual(await js(`document.querySelector(${jsLiteral(`#stage .room-head:has([data-door="${rid}"]) .room-name`)}).textContent`), 'Folder renamed', `${tag}: the folder's own name is back`);
+      // one folder-name rule (spec 059 delta 2026-10-24): hidden and control characters are refused with the reason, in the field and in the dialog
+      const nf3 = await nFold();
+      for (const bad of ['Proj\u0007x', 'Proj\u202eexe', 'zero\u200bwidth', 'x'.repeat(41)]) {
+        await click(`#stage .ren[data-renfolder="${rid}"]`, 1); await ctx.sleep(120); await type(bad); await key('Return'); await ctx.sleep(250);
+        const want = bad.length > 40 ? 'Use 1 to 40 characters.' : 'Remove control or hidden characters.';
+        assert.ok((await st()).open && (await err()) && (await err()).t === want, `${tag}: the folder field refuses ${JSON.stringify(bad)} with its reason: ${jsLiteral(await err())}`);
+        await closeField();
+      }
+      assert.strictEqual(await nFold(), nf3, `${tag}: and sends nothing`);
+      await js(`document.getElementById('foldersBtn').click()`); await until(`!document.getElementById('foldersPop').hidden`);
+      for (const bad of ['Proj\u0007x', 'Proj\u202eexe', 'zero\u200bwidth']) {
+        await js(`document.querySelector(${jsLiteral(`#foldersPop [data-fp="rename"][data-room="${rid}"]`)}).click()`); await until(`!!document.getElementById('mdIn')`, 2000);
+        await js(`(()=>{const i=document.getElementById('mdIn');i.value=${jsLiteral(bad)};i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+        await js(`document.querySelector('#modeDlg .btn.primary').click()`); await ctx.sleep(200);
+        assert.strictEqual(await js(`(()=>{const e=document.getElementById('mdErr');return e&&!e.hidden?e.textContent:null})()`), 'Remove control or hidden characters.', `${tag}: the folder dialog refuses ${JSON.stringify(bad)} with the reason`);
+        await key('Escape'); await ctx.sleep(200);
+      }
+      assert.strictEqual(await nFold(), nf3, `${tag}: the dialog sent nothing either`);
+      await js(`(()=>{if(!document.getElementById('foldersPop').hidden)document.getElementById('foldersBtn').click();})()`); await until(`document.getElementById('foldersPop').hidden`);
       // F2 on the door and on the folder ⋯ button
       await focus(`#stage .room-head [data-door="${rid}"]`); await key('F2'); await ctx.sleep(150);
       assert.strictEqual((await st()).anchorKey, 'folder:room:' + rid, `${tag}: F2 on the door`); await closeField();

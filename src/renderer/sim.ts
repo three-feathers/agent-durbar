@@ -216,13 +216,13 @@ const SIM_MODEL_BY_AGENT: Record<number, string> = { 3: 'sim-fast', 4: 'sim-fast
 const SIM_CAPS: Record<string, number> = { Ada: 50, Mira: 30, Omar: 30 };
 /** spec 012 FR-150: dollar caps for kinds that cap their dollar estimate (simulated Claude Code). */
 /* spec 059 FR-002 (the same messages as src/shared/names.ts; the simulator keeps its own copy, it never imports main code) */
-function simNameError(v: unknown): string {
-  if (typeof v !== 'string') return 'Use 1 to 60 characters.';
+function simNameError(v: unknown, max = 60): string {
+  if (typeof v !== 'string') return `Use 1 to ${max} characters.`;
   if (/[\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/.test(v)) return 'Remove control or hidden characters.';
   const n = v.replace(/\s+/g, ' ').trim();
   // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f-\u009f]/.test(n)) return 'Remove control or hidden characters.';
-  if ([...n].length > 60) return 'Use 1 to 60 characters.';
+  if ([...n].length > max) return `Use 1 to ${max} characters.`;
   if (/gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}/.test(n)) return 'That looks like a secret. Use another name.';
   return '';
 }
@@ -2410,8 +2410,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       renameFolder: async (id, label) => { // spec 006 FR-018: the same trimming as main's parseLabel, nothing saved
         simRenameCalls.folder.push(String(label ?? '')); // spec 059 T076: a driver asserts "no call" and what was sent
         if (!sims.some((x) => x.info.id === id)) return { ok: false };
-        const t = String(label ?? '').replace(/\s+/g, ' ').trim();
-        return { ok: true, label: t && [...t].length <= 40 ? t : undefined };
+        const bad = simNameError(label, 40); // main's rule: the session-name rule at 40 characters, refused with its reason
+        if (bad) return { ok: false, error: bad };
+        const t = String(label).replace(/\s+/g, ' ').trim();
+        return { ok: true, label: t || undefined };
       },
       setFolderDefaultAgent: async (id, profileId) => { // spec 043 FR-009: kept for this run only, the same id rule as main
         const src = sims.find((x) => x.info.id === id);

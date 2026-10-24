@@ -684,7 +684,7 @@ export interface DurbarApi {
   /** Ends one main session and takes it out of the office (spec 006 FR-017); refused for the last main session of a folder and for helpers. */
   removeSession?(id: string): Promise<{ ok: boolean; error?: string }>;
   /** Sets the folder's display name (spec 006 FR-018); empty = the folder's own name. */
-  renameFolder?(id: string, label: string): Promise<{ ok: boolean; label?: string }>;
+  renameFolder?(id: string, label: string): Promise<{ ok: boolean; label?: string; error?: string }>;
   setFolderDefaultAgent?(id: string, profileId: string | null): Promise<{ ok: boolean; defaultAgent?: string }>;
   /** Spec 006 FR-021: start a restored agent now (no prompt). `resumed` says whether its last session came back, with its history. */
   wake?(id: string): Promise<{ ok: boolean; error?: string; resumed?: boolean; history?: { items: HistoryItem[]; total: number; truncated: boolean }; title?: string }>;

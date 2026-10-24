@@ -149,7 +149,7 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 
 *Corrected:*
 - **FR-017** `[IMPLEMENTED]` A main session in a folder that has **another** main session has **Remove session** in its chat header. It asks first when the session is working, thinking or waiting for you. It ends the session, takes its card and its helpers out of the office and the list, and closes its chat; the Copilot history stays on disk and is listed under Previous sessions. The last session of a folder has no Remove session (Folders > Remove takes the folder away). Main refuses to remove the last main session of a folder or a helper, whatever the renderer sends.
-- **FR-018** `[IMPLEMENTED]` Folders > **Rename** sets a folder's display name (trimmed, 1 to 40 characters; an empty name goes back to the folder's own name). The room header, door plate, filter, Folders panel, list and tooltips use it; the folder path is unchanged and still shown. It is saved as `label` in `durbar-folders.json` and restored; a saved label that is not a string of 1 to 40 characters is ignored.
+- **FR-018** `[IMPLEMENTED]` Folders > **Rename** sets a folder's display name (trimmed, 1 to 40 characters; an empty name goes back to the folder's own name). The room header, door plate, filter, Folders panel, list and tooltips use it; the folder path is unchanged and still shown. It is saved as `label` in `durbar-folders.json` and restored; a saved label that is not a string of 1 to 40 characters is ignored. *(2026-10-24: the name now follows the session-name rule and a refused name is answered with its reason, not reset: see the delta at the end and spec 059 FR-028, FR-029.)*
 - Both run on the simulator (no credits); `test:folders` covers the saved label; the main handlers are not unit-tested (FR-015). `sim:` `docs/screenshots/006-remove-session-*.png`, `006-rename-folder-*.png`, `006-folders-panel-*.png` (1440x900 and 1280x800). `[KNOWN GAP]` Not run against a real Copilot session (the remove path is the same `stop()` as End session).
 
 
@@ -283,7 +283,8 @@ requirements and tasks (T070..T078) live there. What it means for FR-018 here:
 - The display name of FR-018 can also be edited in place: a pencil next to the name in the room header on the floor, in the Folders panel
   rows and in the list view's Folder cell, and F2 on a focused door, closed-room plate or folder ⋯ button (spec 059 FR-020 item 4).
   Decided by the coordinator under Ruben's delegation.
-- Unchanged: the rule (trimmed, 1 to 40 characters, empty goes back to the folder's own name, main's `parseLabel`), the IPC
+- **Changed 2026-10-24 (spec 059 FR-028, FR-029):** the rule is now the session-name rule at 40 characters (control, C1 and hidden characters, bidi overrides, zero width and token-looking names are refused), and `folders:rename` answers `{ ok: false, error }` with the reason for an invalid non-empty name instead of silently resetting it (empty still resets).
+- Unchanged: the length (trimmed, 1 to 40 characters, empty goes back to the folder's own name, main's `parseLabel`), the IPC
   `folders:rename`, `label` in `durbar-folders.json`, and the Folders panel's **Rename** button and the folder menu's **Rename…** (FR-022),
   which still open the dialog. Both ways in call the same submit code (spec 059 FR-022).
 - FR-018 stays `[IMPLEMENTED]`; the in-place part is `[KNOWN GAP]` in spec 059 until built.

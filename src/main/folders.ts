@@ -11,7 +11,7 @@ import { parseAutoTier, parseTier } from '../shared/modelswitch';
 import type { AutoTier, ContextTier } from '../shared/modelswitch';
 import * as floorOps from '../shared/floors';
 import type { FloorOp, FloorsDoc } from '../shared/floors';
-import { cleanDisplayName } from '../shared/names';
+import { cleanDisplayName, nameError, MAX_FOLDER_LABEL } from '../shared/names';
 import type { SessionNameEntry } from '../shared/sessionname';
 import { markIdOk, markSrcOk } from '../shared/sessionid';
 
@@ -120,14 +120,15 @@ export function modeForSession(f: Pick<SavedFolder, 'sessionModes'> | undefined,
   return { mode: fallback, fromSession: false };
 }
 
-export const MAX_LABEL = 40;
+export const MAX_LABEL = MAX_FOLDER_LABEL;
 
-/** A folder display name (spec 006 FR-018): trimmed, 1 to 40 characters, no control characters; anything else is `undefined` (the folder's own name). */
+/** A folder display name (spec 006 FR-018, spec 059 delta 2026-10-24): the SAME rule as a session name (trimmed, 1 to `MAX_LABEL` characters, no control or hidden characters, nothing that looks like a secret); anything else is `undefined` (the folder's own name). Use `labelError` to refuse instead of reset. */
 export function parseLabel(v: unknown): string | undefined {
-  if (typeof v !== 'string') return undefined;
-  const t = v.replace(/\s+/g, ' ').trim();
-  // eslint-disable-next-line no-control-regex
-  return t && [...t].length <= MAX_LABEL && !/[\u0000-\u001f\u007f]/.test(t) ? t : undefined;
+  return cleanDisplayName(v, MAX_LABEL);
+}
+/** The one-line reason a folder name is refused ('' = fine, including empty). */
+export function labelError(v: unknown): string {
+  return nameError(v, MAX_LABEL);
 }
 
 /** The id rule of `agents:selectProfile` (spec 043 FR-003). */

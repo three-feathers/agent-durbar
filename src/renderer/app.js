@@ -2821,7 +2821,7 @@ function openKbdHelp(back){
     [['Ctrl','`'],'Back to the previous chat (on a Mac too: Control, not Cmd)'],
     [keyLabels(PREV_KEYS),SIMPLE?'Show or hide earlier chats in a chat':'Show or hide previous sessions in a chat'], /* spec 006 FR-036 */
     [['←','→','↑','↓'],'Move between desks'],
-    [['F2'],'Rename the focused session or folder'], /* spec 059 FR-024: in place, on a desk, row, door or chat title */
+    [['F2'],'Rename the focused session or folder (Fn+F2 on a Mac)'], /* spec 059 FR-024: in place, on a desk, row, door or chat title */
     [['Esc'],'Back, or close'],
     [keyLabels(['mod',IS_MAC?'⌫':'Backspace']),'Back to the office from a chat, outside text (in a text box it deletes)'], /* spec 074 FR-020 */
     [['?'],'This list'],
@@ -5677,11 +5677,13 @@ async function removeFolder(r){
   renderFilter(); renderFolders(); scheduleRender(); toast(esc(r.name)+' removed.',3200).classList.add('ok');
 }
 /* spec 006 FR-018: a display name for the room; empty goes back to the folder's own name */
-/* The submit part of a folder rename (FR-022): the dialog and the inline field both call it. Resolves {ok:true} or {ok:false} (a toast was shown). */
+/* The submit part of a folder rename (FR-022): the dialog and the inline field both call it. Resolves {ok:true}, {ok:false,reason} (a rule refusal) or {ok:false} (a toast was shown). */
 async function submitFolderName(r,text){
   const ag=agents.find(x=>!x.parent&&x.room===r.id); if(!ag||!bridge.renameFolder)return {ok:false};
   const own=r.folderName||r.name;
   const out=await bridge.renameFolder(liveRoot(ag).id,text);
+  /* main checks again with the session-name rule and refuses with its reason: it goes back under the field or the dialog's input */
+  if(out&&!out.ok&&/^(Use 1 to|Remove control|That looks like a secret)/.test(out.error||''))return {ok:false,reason:out.error};
   if(!out||!out.ok){toast('Could not rename the folder.',4000);return {ok:false};}
   r.name=out.label||own;
   renderFilter(); renderFolders(); scheduleRender(); if(ui.selected&&roomOf(byId(ui.selected)||{})===r)openPanel(ui.selected,false);
@@ -5689,11 +5691,16 @@ async function submitFolderName(r,text){
 }
 async function renameFolder(r,el){
   const ag=agents.find(x=>!x.parent&&x.room===r.id); if(!ag||!bridge.renameFolder)return;
-  const own=r.folderName||r.name;
-  const res=await askDialog({title:'Rename '+r.name,body:'A display name for this folder in the office, 1 to 40 characters. Leave it empty to use the folder name ('+own+'). The folder on disk is not renamed.',input:{label:'Name',value:r.name,max:40,focus:true},returnFocus:el,
-    buttons:[{label:'Cancel',value:null},{label:'Rename',value:'ok',cls:'primary'}]});
-  if(!res||typeof res.text!=='string')return;
-  await submitFolderName(r,res.text);
+  const own=r.folderName||r.name; let text=r.name, reason='';
+  for(;;){
+    const res=await askDialog({title:'Rename '+r.name,body:'A display name for this folder in the office, 1 to '+SN().MAX_FOLDER+' characters. Leave it empty to use the folder name ('+own+'). The folder on disk is not renamed.',input:{label:'Name',value:text,max:SN().MAX_FOLDER,focus:true,error:reason,submitOnEnter:true,check:SN().folderError},returnFocus:el,
+      buttons:[{label:'Cancel',value:null},{label:'Rename',value:'ok',cls:'primary'}]});
+    if(!res||typeof res.text!=='string')return;
+    text=res.text;
+    const o=await submitFolderName(r,text);
+    if(o.reason){reason=o.reason;continue;}
+    return;
+  }
 }
 /* ---------------- spec 059: rename in place (inlinename.js; FR-020..FR-025, issue 636) ---------------- */
 /* The name's element for a surface ('panel' = the chat title, 'desk' = a card or desk, 'list' = a list row, 'prev' = a Previous sessions row,
@@ -5748,9 +5755,9 @@ function folderNameEl(surface,r){
 function startFolderEdit(r,surface,from){
   if(!canRenameFolder(r)||modalOpen())return false;
   const find=()=>folderNameEl(surface,r), el=find(); if(!el||el==='gone'||!el.getClientRects().length)return false;
-  INL().open({doc:document,anchor:el,value:r.name,max:40,key:'folder:'+surface+':'+r.id,
+  INL().open({doc:document,anchor:el,value:r.name,max:SN().MAX_FOLDER,key:'folder:'+surface+':'+r.id,
     label:'Name of folder '+r.name,hint:'Enter saves, Escape cancels. Empty uses the folder name.',
-    check:()=>'',submit:async t=>{const o=await submitFolderName(r,t);return {ok:o.ok};},
+    check:SN().folderError,submit:async t=>{const o=await submitFolderName(r,t);return {ok:o.ok,reason:o.reason};},
     notify:m=>toast(esc(m),5000).classList.add('err'),onClose:focusAfterGone,reanchor:find,
     maxWidth:360,clip:()=>{const n=find();return n&&n!=='gone'?n.closest('.room-head,.plate,.fp-t'):null;},
     focusBack:()=>{const sel=from==='pencil'?(surface==='fp'?'#foldersPop':'#stage')+' .ren[data-renfolder="'+CSS.escape(r.id)+'"]':surface==='fp'?'#foldersPop [data-fp="rename"][data-room="'+CSS.escape(r.id)+'"]':'#stage [data-door="'+CSS.escape(r.id)+'"]';return document.querySelector(sel)||document.querySelector('#stage [data-door="'+CSS.escape(r.id)+'"]');}});
