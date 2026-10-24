@@ -318,11 +318,11 @@ Paco's notes say "short, in English, no greetings". I type "tell paco 669 is rea
 
 ## Owner questions (few; defaults are written, nothing waits)
 
-- **Q1** D10: a secret blocks the send with no override (default). Or allow *Send anyway* after a second confirmation?
-- **Q2** FR-051: option A uses one agent reply per send (default). Acceptable, or should A wait for a direct call (FR-097)?
-- **Q3** D5: Teams links open in the browser by default (documented); the `msteams:` app link is an opt-in marked *not checked*. Keep?
-- **Q4** D9: allow option A (and the Teams import) in Read-only? Default: no. A yes needs a constitution III amendment first (a task like spec 080's T006, and a Complexity Tracking entry in the plan).
-- **Q5** FR-084: the rate limit, 5 sends per minute and 30 per hour (default). Other numbers?
+- **Q1** D10: a secret blocks the send with no override (default). Or allow *Send anyway* after a second confirmation? **Owner answer (Ruben, 2026-10-24, DM to his coordinator: "Ok" to the defaults): the default stands.**
+- **Q2** FR-051: option A uses one agent reply per send (default). Acceptable, or should A wait for a direct call (FR-097)? **Owner answer (Ruben, 2026-10-24, DM to his coordinator: "Ok" to the defaults): the default stands.**
+- **Q3** D5: Teams links open in the browser by default (documented); the `msteams:` app link is an opt-in marked *not checked*. Keep? **Owner answer (Ruben, 2026-10-24, DM to his coordinator: "Ok" to the defaults): the default stands.**
+- **Q4** D9: allow option A (and the Teams import) in Read-only? Default: no. A yes needs a constitution III amendment first (a task like spec 080's T006, and a Complexity Tracking entry in the plan). **Owner answer (Ruben, 2026-10-24, DM to his coordinator: "Ok" to the defaults): the default stands.**
+- **Q5** FR-084: the rate limit, 5 sends per minute and 30 per hour (default). Other numbers? **Owner answer (Ruben, 2026-10-24, DM to his coordinator: "Ok" to the defaults): the default stands.**
 
 ## Changes
 
