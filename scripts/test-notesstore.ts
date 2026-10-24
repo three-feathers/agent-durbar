@@ -405,6 +405,23 @@ async function main(): Promise<void> {
     const t1 = Date.now();
     const rb = await new NotesStore(dir, { fs: blind }).add(FOLDER, 'demo', { text: 'cannot look' });
     assert.ok(!rb.ok && /busy/.test(rb.error) && Date.now() - t1 >= 1800 && attempts <= 110, `lstat denied: busy after about 2 s, ${attempts} looks`);
+    // create always says EEXIST while lstat and the move always say ENOENT (a lock that is "there" and "gone" at once): busy at about 2 s, no spinning
+    for (const [what, gone] of [['lstat ENOENT', 'lstat'], ['move ENOENT', 'rename']] as const) {
+      fs.rmSync(lock, { force: true });
+      plantOld(); // old enough to be judged stale, so the move path is reached
+      attempts = 0;
+      const enoent = (): never => { throw Object.assign(new Error('gone'), { code: 'ENOENT' }); };
+      const flip = { ...fs,
+        openSync: (f: string, fl: string, m: number) => { if (f.endsWith('.lock')) { attempts++; spin(); throw Object.assign(new Error('exists'), { code: 'EEXIST' }); } return fs.openSync(f, fl, m); },
+        lstatSync: (f: string) => (gone === 'lstat' && f.endsWith('.lock') ? enoent() : fs.lstatSync(f)),
+        renameSync: (a: string, b: string) => { if (a.endsWith('.lock') && b.includes('.stale-')) enoent(); fs.renameSync(a, b); },
+      } as unknown as NotesFs;
+      const t3 = Date.now();
+      const rf = await new NotesStore(dir, { fs: flip }).add(FOLDER, 'demo', { text: 'flip flop' });
+      const took3 = Date.now() - t3;
+      assert.ok(!rf.ok && /busy/.test(rf.error) && took3 >= 1800 && took3 < 6000 && attempts <= 400, `${what}: busy after about 2 s (${took3} ms, ${attempts} tries)`);
+    }
+    fs.rmSync(lock, { force: true });
     // the lock cannot be created (EPERM, EACCES, EBUSY: on Windows a delete-pending lock): wait like for a busy lock, never refuse at once, never spin
     for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
       fs.rmSync(lock, { force: true });

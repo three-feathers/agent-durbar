@@ -196,7 +196,13 @@ export class NotesStore {
     const file = path.join(this.dir, `${fp}.lock`);
     const deadline = Date.now() + 2000;
     try { this.ensureDir(); } catch (e) { return { ok: false, code: 'write', error: `Could not save the notes (${errCode(e)}).` }; }
+    const busy = (): NotesFail => ({ ok: false, code: 'write', error: 'The notes are busy (another Durbar is writing them). Try again.' });
+    let quick = 0;
+    // a retry "at once" (the lock vanished, a takeover worked) is allowed once in a row; the second pauses 20 ms, so a filesystem that keeps
+    // answering EEXIST and then ENOENT can never spin, and the deadline is checked on every pass
+    const again = async (): Promise<void> => { if (++quick > 1) { quick = 0; await this.sleep(20); } };
     for (;;) {
+      if (Date.now() > deadline) return busy();
       try {
         const fd = this.fs.openSync(file, 'wx', 0o600);
         this.fs.closeSync(fd);
@@ -205,20 +211,19 @@ export class NotesStore {
         const code = errCode(e);
         if (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY') {
           // reasoned, not verified on Windows: a lock another process just deleted can still be delete-pending and refuse a new one with these; wait like for a busy lock
-          if (Date.now() > deadline) return { ok: false, code: 'write', error: 'The notes are busy (another Durbar is writing them). Try again.' };
           await this.sleep(20);
           continue;
         }
         if (code !== 'EEXIST') return { ok: false, code: 'write', error: `Could not save the notes (${code}).` };
       }
       let st: nodeFs.Stats | undefined;
-      try { st = this.fs.lstatSync(file); } catch (e) { if (errCode(e) === 'ENOENT') continue; } // gone: try again at once; any other error waits like a busy lock
+      try { st = this.fs.lstatSync(file); } catch (e) { if (errCode(e) === 'ENOENT') { await again(); continue; } } // gone: try again (at once, once); any other error waits like a busy lock
       if (st && Date.now() - st.mtimeMs > 5000) {
         // stale (its owner is gone): move it to a name of our own first, so only one process can take it over, then check it is the
         // lock we judged (same inode and time) before deleting it. A failure other than "it vanished" falls through to the wait below.
         const aside = `${file}.stale-${this.pid}-${this.rand(36 ** 6).toString(36)}`;
         let moved = false;
-        try { this.fs.renameSync(file, aside); moved = true; } catch (e) { if (errCode(e) === 'ENOENT') continue; }
+        try { this.fs.renameSync(file, aside); moved = true; } catch (e) { if (errCode(e) === 'ENOENT') { await again(); continue; } }
         if (moved) {
           let same = false;
           try { const got = this.fs.lstatSync(aside); same = got.ino === st.ino && got.mtimeMs === st.mtimeMs; } catch { /* gone */ }
@@ -229,11 +234,11 @@ export class NotesStore {
             try { this.fs.unlinkSync(aside); } catch { /* a leftover .stale file is harmless */ }
           } else {
             try { this.fs.unlinkSync(aside); } catch { /* the lock itself is gone; a leftover .stale file is harmless */ }
+            await again();
             continue;
           }
         }
       }
-      if (Date.now() > deadline) return { ok: false, code: 'write', error: 'The notes are busy (another Durbar is writing them). Try again.' };
       await this.sleep(20);
     }
   }
