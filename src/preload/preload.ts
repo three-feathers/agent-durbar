@@ -166,6 +166,25 @@ const api: DurbarApi = {
   onFullScreen: (cb) => sub<boolean>('window:fullScreen', (on) => cb(on === true)),
   // spec 052 FR-085: a double-click on a drag area of the top bar (Mac only); main reads the system setting
   titleDoubleClick: () => ipcRenderer.send('window:titleDoubleClick'),
+  // spec 080 T014: the session browser; main checks the sender, looks the session up and answers with BrowserState only
+  browserOpen: (id, address) => ipcRenderer.invoke('browser:open', id, address),
+  browserState: (id) => ipcRenderer.invoke('browser:state', id),
+  browserNavigate: (id, address) => ipcRenderer.invoke('browser:navigate', id, address),
+  browserBack: (id) => ipcRenderer.invoke('browser:back', id),
+  browserForward: (id) => ipcRenderer.invoke('browser:forward', id),
+  browserReload: (id) => ipcRenderer.invoke('browser:reload', id),
+  browserStop: (id) => ipcRenderer.invoke('browser:stop', id),
+  browserBounds: (id, bounds) => ipcRenderer.invoke('browser:bounds', id, bounds),
+  browserVisible: (id, visible) => ipcRenderer.invoke('browser:visible', id, visible),
+  browserOverlay: (id, open) => ipcRenderer.invoke('browser:overlay', id, open),
+  browserMute: (id, muted) => ipcRenderer.invoke('browser:mute', id, muted),
+  browserOpenSystem: (id) => ipcRenderer.invoke('browser:openSystem', id),
+  onBrowserState: (cb) => sub('browser:state', cb),
+  browserConsentAccept: () => ipcRenderer.invoke('browser:consentAccept'),
+  browserSnapshot: (id) => ipcRenderer.invoke('browser:snapshot', id),
+  browserLeaveAnswer: (req, leave) => ipcRenderer.invoke('browser:leaveAnswer', req, leave),
+  onBrowserDialog: (cb) => sub('browser:dialog', cb),
+  onBrowserLeave: (cb) => sub('browser:leave', cb),
   platform: process.platform,
 };
 contextBridge.exposeInMainWorld('agentDurbar', api);

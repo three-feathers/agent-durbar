@@ -113,6 +113,7 @@ const FROM_APP = [
   'activity:clear', 'activity:export', 'activity:list',
   'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:mcpCancelSignIn', 'agents:mcpOpenSignIn', 'agents:mcpSignIn', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:setMode', 'agents:setRemote',
   'app:dismissSinceAway', 'app:sinceAway',
+  'browser:back', 'browser:bounds', 'browser:consentAccept', 'browser:leaveAnswer', 'browser:snapshot', 'browser:forward', 'browser:mute', 'browser:navigate', 'browser:open', 'browser:openSystem', 'browser:overlay', 'browser:reload', 'browser:state', 'browser:stop', 'browser:visible', // spec 080 T014 FR-003: the session browser answers the app's own page only
   'harness:accounts', 'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run',
   'profiles:create', 'profiles:delete', 'profiles:generate', 'profiles:save', // spec 043 FR-011, FR-040: writes to (or deletes) profile files
   'schedules:remove', 'schedules:runNow', 'schedules:save',

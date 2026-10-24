@@ -7,6 +7,8 @@ import type { AgentStateTracker } from '../mcp/agentstate';
 import type { Scheduler } from '../schedules';
 
 export interface FoldersIpcDeps {
+  /** Spec 080 FR-023: each removed session's browser view and partition are destroyed. */
+  browserGone?(id: string): void;
   agents: Map<string, AgentInfo>;
   router: AdapterRouter;
   agentState: AgentStateTracker;
@@ -51,6 +53,7 @@ export function register(deps: FoldersIpcDeps): void {
         /* already gone */
       }
       router.unbind(rid);
+      deps.browserGone?.(rid); // spec 080 FR-023
       agents.delete(rid);
       agentState.remove(rid);
       vsChatRefs.delete(rid);
