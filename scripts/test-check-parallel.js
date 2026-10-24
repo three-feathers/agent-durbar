@@ -30,6 +30,10 @@ let call;
 darwinAvailable((cmd, args, opts) => { call = { cmd, args, opts }; return SAMPLE_4K; });
 assert.ok(call.cmd === 'vm_stat' && Array.isArray(call.args) && call.args.length === 0 && !call.opts.shell && call.opts.timeout > 0, 'no shell, fixed arguments, a timeout');
 
+// a mutant that makes main() hang must fail fast, not hang the suite
+let stage = 'start';
+setTimeout(() => { console.error(`check-parallel test: timed out after 10 s at "${stage}" (main() never finished)`); process.exit(1); }, 10000).unref();
+
 // available(): every input injected
 const MEM = 'MemAvailable:    2048000 kB\n';
 const base = { platform: 'linux', readMeminfo: () => MEM, exec: () => { throw new Error('no vm_stat'); }, freemem: () => 111, now: () => 5000 };
@@ -57,6 +61,7 @@ assert.strictEqual(makeAvailable({ ...base, platform: 'win32', readMeminfo: () =
   assert.strictEqual(await waitForMemory(() => (++reads > 3 ? 2000 : 100), 1000, 120000, fake), true, 'memory came: true');
   assert.strictEqual(await waitForMemory(() => 2000, 1000, 0, fake), true, 'enough memory: no wait even with a zero bound');
 
+  stage = 'main, 4 workers';
   // main: 4 workers under low memory: past the bound nobody starts a second job while one runs, and every job still runs
   const ran = [], logs = [];
   let now = 0, peak = 0;
@@ -67,5 +72,10 @@ assert.strictEqual(makeAvailable({ ...base, platform: 'win32', readMeminfo: () =
   assert.deepStrictEqual(ran.slice().sort(), jobs.map((j) => j.label), 'every job ran');
   assert.strictEqual(peak, 1, `never more than one job at a time under low memory (peak ${peak})`);
   assert.ok(logs.some((l) => /warn .*100 MB/.test(l)), `a warning with the measured memory (${logs.join(' | ')})`);
+  // worker 0 never waits for memory, however large the bound: one worker, low memory, a one-hour bound, the job runs at once
+  stage = 'main, worker 0';
+  const t0 = Date.now(), ran0 = [];
+  const failed0 = await main({ ensure: () => true, runJob: async (j) => { ran0.push(j.label); return 'ok'; }, available: () => 1, jobs: [{ label: 'solo' }], workers: 1, log: () => {}, waitMaxMs: 3600 * 1000 });
+  assert.ok(failed0 === 0 && ran0.join() === 'solo' && Date.now() - t0 < 1000, `worker 0 ran at once (${Date.now() - t0} ms)`);
   console.log('check-parallel: vm_stat parse (4 KB and 16 KB pages, malformed, empty) and the bounded memory wait (spec 008 FR-125)');
 })().catch((e) => { console.error(e); process.exit(1); });
