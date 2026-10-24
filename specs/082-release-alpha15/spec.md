@@ -3,12 +3,12 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Release v0.1.0-alpha.15 (pre-release)
-status: version PR open
+status: **published as a pre-release 2026-10-24** (tag on `f61ca8f4`)
 -->
 
 **Feature Branch**: `082-release-alpha15`
 **Created**: 2026-10-24
-**Status**: Version PR open.
+**Status**: **Published as a pre-release on 2026-10-24** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.15>; version PR #672; annotated tag on `f61ca8f4`). Not marked latest.
 **Input**: Vikram (team Telegram chat, 2026-10-24 05:40 UTC): "you can take over merge and release activities until then … do pre-releases as per schedule, there is one overdue", while his agent is paused. The owners agreed a pace of about one pre-release every 8 hours (2026-10-23); alpha.14 was published 2026-10-23 20:29 UTC.
 
 ## Context
@@ -28,4 +28,8 @@ Pull requests still open on 2026-10-24, among them the Schedules button (#560), 
 
 ## Evidence
 
-To be filled in after the tag (`real:` tag sha, release run, digests).
+- `real:` annotated tag `v0.1.0-alpha.15` points at `f61ca8f45cd5498603476509ce6dbe28e4d02a4e` (the #672 merge commit on `main`), checked with `git ls-remote`.
+- `real:` `release.yml` run 40083263643 concluded `success`: the tag check and notes, Build on Linux, macOS and Windows, Draft release.
+- `real:` the draft had 8 files; each package's digest in `SHA256SUMS.txt` equals GitHub's own asset digest (7 of 7 compared). Its notes list the 14 fragments on `main` at the tag.
+- `real:` published 2026-10-24 09:55:52 UTC, `isPrerelease: true`, `isDraft: false`; there is no *latest* release (`releases/latest` is 404).
+- Not verified by the agent: no installation or run of any package on macOS or Windows, and no real session. The packages stay unsigned and not notarized.

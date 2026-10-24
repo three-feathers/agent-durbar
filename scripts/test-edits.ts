@@ -285,14 +285,18 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
 
 // 10. FR-024: linear time on hostile streamed arguments (review on #463: quadratic regexes took up to 61 s in the main process).
 // Each case took seconds with the old regexes (`/\s+$/` per open bracket, `(.+?)\s*$`, `/\n+$/`); linear code takes milliseconds.
-// The bound is generous for a loaded CI runner and still far below the old cost.
+// CPU time, not wall time, so a loaded parallel run does not flake; the bound is still far below the old cost.
 {
   const BOUND_MS = 1500;
   const timed = (name: string, fn: () => unknown): void => {
-    const t0 = Date.now();
+    const w0 = process.hrtime.bigint();
+    const c0 = process.cpuUsage();
     fn();
-    const ms = Date.now() - t0;
-    assert.ok(ms < BOUND_MS, `${name} took ${ms} ms (bound ${BOUND_MS} ms)`);
+    const c = process.cpuUsage(c0);
+    const ms = (c.user + c.system) / 1000;
+    const wall = Number(process.hrtime.bigint() - w0) / 1e6;
+    assert.ok(ms < BOUND_MS, `${name} took ${ms} ms CPU (bound ${BOUND_MS} ms)`);
+    assert.ok(wall < 20 * BOUND_MS, `${name}: ${wall} ms wall for ${ms} ms CPU (a blocking wait in the timed code?)`);
   };
   const N = 100_000;
   // a whitespace run inside an open value, then more structure: partialJson trims once
@@ -368,12 +372,17 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   for (const p of ['start', 'complete', 'failed'] as const) assert.ok(!JSON.stringify(maskMcpEvent({ ...ev, phase: p }, [HDR])).includes(HDR), `phase ${p}`);
   assert.strictEqual(maskMcpEvent(ev, []), ev, 'no session values: the same object');
   assert.strictEqual(maskEditInfo(ev.edit, ['abc']), ev.edit, 'values under 4 characters are skipped');
-  // cost: 20 files of 20,000 characters, the most one update carries, with several values: linear steps only
-  const big = { files: Array.from({ length: 20 }, (_, i) => ({ path: `/w/${i}.ts`, kind: 'edit' as const, diff: '@@\n' + ('+a=1&b=2?c=3 ' + HDR + '\n').repeat(700).slice(0, 20000) })) };
-  const t0 = Date.now();
-  for (let i = 0; i < 10; i++) maskEditInfo(big, [HDR, 'another-secret-value', 'third-value-xyz']);
-  const ms = (Date.now() - t0) / 10;
-  assert.ok(ms < 150, `maskEditInfo on 400,000 characters took ${ms} ms`);
+  // cost: 20 files of 20,000 characters, the most one update carries, with several values: linear steps only.
+  // Linearity against a baseline from the same run (20 files of 5,000 characters, a quarter of the input; the diff length is what a quadratic step would punish) in CPU time, with a floor; never a bare wall-clock bound.
+  const vals = [HDR, 'another-secret-value', 'third-value-xyz'];
+  const mkBig = (chars: number) => ({ files: Array.from({ length: 20 }, (_, i) => ({ path: `/w/${i}.ts`, kind: 'edit' as const, diff: '@@\n' + ('+a=1&b=2?c=3 ' + HDR + '\n').repeat(700).slice(0, chars) })) });
+  const cpuMs = (f: () => void): number => { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); return (d.user + d.system) / 1000; };
+  const small = mkBig(5000), big = mkBig(20000);
+  maskEditInfo(small, vals); // warm the regexes
+  // best (minimum) CPU time of 5 interleaved runs per size, so one GC pause or busy core cannot fail it; linear code measures 2.3-3.4x for 4x input (seen across runs, including under load), so the 5x limit keeps a margin; a quadratic step would be ~16x
+  let a = Infinity, b = Infinity;
+  for (let i = 0; i < 5; i++) { a = Math.min(a, cpuMs(() => void maskEditInfo(small, vals))); b = Math.min(b, cpuMs(() => void maskEditInfo(big, vals))); }
+  assert.ok(b < Math.max(100, a * 5), `maskEditInfo is linear (100,000 -> 400,000 characters, 4x per diff: ${a} -> ${b} ms CPU)`); // a quadratic step would be 16x
 }
 
 console.log('edits: ok');
