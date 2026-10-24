@@ -64,6 +64,7 @@ const DRIVERS = [
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },
   { name: 'check-sched-edit' },
+  { name: 'check-sched-top' }, // spec 044 FR-027..FR-035: the top-bar Schedules button
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },
