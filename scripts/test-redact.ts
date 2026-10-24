@@ -1199,6 +1199,32 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     assert.notStrictEqual(waited, 'timed-out', 'R12: two here-strings of one kind: the scanner hung');
     assert.strictEqual(Atomics.load(new Int32Array(sab, 0, 1), 0), 1, 'R12: two here-strings of one kind: exact output');
   }
+  // review of PR #669, round 2: the literal bound inside a string with braces, an open group past the bound, masking twice past the bound, junk before a name
+  {
+    const items = '{"items":[' + Array.from({ length: 450 }, (_, i) => `{"id":${i}}`).join(',') + ']}';
+    for (const [what, body] of [['JSON body over 4000 characters', `$h=@{ Body = '${items}'; 'X-Api-Key' = '${T}' }`], ['a quoted } after 4100 characters', `$h=@{ Body = '${'x'.repeat(4100)}'; a = '}'; 'X-Api-Key' = '${T}' }`]]) {
+      assert.ok(!maskSecretCommand('srv ' + body).includes(T), `R12 (command): ${what}`);
+      assert.ok(!maskSecretArgs(['srv', body]).join(' ').includes(T), `R12 (args): ${what}`);
+    }
+    const head = 'x'.repeat(4000 - "@{ Body = '".length);
+    assert.deepStrictEqual(maskSecretArgs(['-Command', `$h=@{ Body = '${'x'.repeat(4100)}';`, `'X-Api-Key' = '${T}' }`]), ['-Command', `$h=@{ Body = '${head}${R}`, '}'], 'R12 args: an open group past the bound hides the later args of the literal');
+    const once = maskSecretArgs(['-Command', `$h=@{ Body = '${'a'.repeat(4100)}' }`]);
+    assert.deepStrictEqual(maskSecretArgs(once), once, 'R12 args: masking twice past the bound gives the same output');
+    const onceC = maskSecretCommand(`srv $h=@{ Body = '${'a'.repeat(4100)}' }`);
+    assert.strictEqual(maskSecretCommand(onceC), onceC, 'R12 command: masking twice past the bound gives the same output');
+    assert.ok(once[1].endsWith(R + '}') && onceC.endsWith(R + '}'), 'R12: the earlier [redacted] and the closer stay');
+  }
+  args(['-Command', `irm -Headers @{\\\\"X-Api-Key\\\\"=\\\\"${T}\\\\"} u`], ['-Command', `irm -Headers @{\\\\"X-Api-Key\\\\"=\\\\"${R}\\\\"} u`], 'R12 args: two backslashes before a quote');
+  assert.ok(!maskSecretCommand(`pwsh -c "irm -Headers @{\\\\\\"X-Api-Key\\\\\\"=\\\\\\"${T}\\\\\\"}"`).includes(T), 'R12: three backslashes before a quote, in a payload');
+  cmd(`srv @{ <# '#>' #> 'X-Api-Key' = '${T}' }`, `srv @{ <# '#>' #> 'X-Api-Key' = '${R}' }`, 'R12: a quote inside a block comment');
+  cmd(`srv @{ <# junk #> x y 'X-Api-Key' = '${T}' }`, `srv @{ <# junk #> x y 'X-Api-Key' = '${R}' }`, 'R12: junk words before a secret name');
+  cmd(`srv @{ token = '${R}' -f= '${T}' }`, `srv @{ token = ${R} }`, 'R12: a hidden value followed by Name=');
+  cmd(`srv @{ token = ${R} ${T}=1 }`, `srv @{ token = ${R} }`, 'R12: a hidden bare value followed by Name=1');
+  cmd(`srv @{ "X-Api-Key = '${T}' }`, `srv @{ "X-Api-Key = '${R}' }`, 'R12: a stray quote before a secret name');
+  cmd(`srv @{ "a; 'X-Api-Key' = '${T}' }`, `srv @{ "a; 'X-Api-Key' = '${R}' }`, 'R12: a stray quote before a quoted secret name');
+  const hiddenQuote = `srv $h=@{ Body = '${'a'.repeat(3989)}${R}' }`; // the bound falls where an earlier [redacted] and its closing quote stand
+  assert.strictEqual(maskSecretCommand(hiddenQuote), hiddenQuote, 'R12: an earlier [redacted] with its closers past the bound is left as it is');
+  cmd(`srv '@{token=${T}; port=1}'`, `srv '@{token=${R}; port=1}'`, 'R12: a quoted word keeps the member after the ;');
   // a doubled quote in a quoted name: the name is api"key
   cmd(`srv @{"api""key"="${T}"}`, `srv @{"api""key"="${R}"}`, 'R12: doubled quote in a name');
   // no member bound; past the 4000-character literal bound everything up to the literal's end is hidden (fail closed), review of PR #669

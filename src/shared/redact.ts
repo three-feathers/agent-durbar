@@ -375,7 +375,7 @@ function maskShellString(v0: string, depth: number, env?: Env, plain = false): s
     outWords[i] = lead + tail;
     if (core !== '') { cores.push(core); idx.push(i); }
   });
-  const masked = maskArgs(cores, snapshot(env), depth);
+  const masked = maskArgs(cores, snapshot(env), depth, false, false);
   idx.forEach((wi, k) => { outWords[wi] = leads[wi] + masked[k] + tails[wi]; });
   let out = seps[0];
   for (let i = 0; i < outWords.length; i++) out += outWords[i] + seps[i + 1];
@@ -702,13 +702,6 @@ function htLitEnd(s: string, p: number, depth: number): number {
   return n;
 }
 
-/** Does a new member `Name =` start at `q` (after spaces)? Used for the value that R12 already hid, when a re-split took the `;` away. */
-const HT_NEXT_MEMBER = /^(?:[^\s=;}"']+|"[^"]*"|'[^']*')[ \t]*=/;
-function htNextMember(s: string, q: number): boolean {
-  while (q < s.length && (s[q] === ' ' || s[q] === '\t')) q++;
-  return HT_NEXT_MEMBER.test(s.slice(q, q + 200));
-}
-
 /**
  * The value ranges to hide in the hashtable literals of `s`: for each member whose name looks secret (`secretFlag`, the test of R7 and the
  * secret flags) the value, without its quotes when it is one plain quoted string or bare word. Any other value of a secret member (an
@@ -719,15 +712,19 @@ function htNextMember(s: string, q: number): boolean {
  */
 function hashtableRanges(s: string): Array<[number, number]> {
   if (!s.includes('\\"')) return htRanges(s);
-  const r = htRanges(s.replace(/\\"/g, ' "')); // same length: a `\"` is a space and a quote
+  const r = htRanges(s.replace(/\\+"/g, (m) => ' '.repeat(m.length - 1) + '"')); // same length: backslashes then a quote are spaces and a quote
   const out: Array<[number, number]> = [];
-  for (const [a, b] of r) { const b2 = s[b - 1] === '\\' && s[b] === '"' ? b - 1 : b; if (b2 > a) out.push([a, b2]); }
+  for (const [a, b] of r) { let b2 = b; if (s[b] === '"') while (b2 > a && s[b2 - 1] === '\\') b2--; if (b2 > a) out.push([a, b2]); }
   return out;
 }
 function htRanges(s: string): Array<[number, number]> {
   const out: Array<[number, number]> = [];
   const n = s.length;
-  const hide = (from2: number, to: number): void => { if (to > from2) out.push([from2, to]); };
+  const hide = (from2: number, to: number): void => {
+    if (to <= from2) return;
+    const last = out[out.length - 1];
+    if (last && last[1] === from2) last[1] = to; else out.push([from2, to]);
+  };
   const toEnd = (q: number): boolean => { // after a value ending at q: only spaces then `;`, `}`, a line break or the end
     while (q < n && (s[q] === ' ' || s[q] === '\t')) q++;
     return q >= n || s[q] === ';' || s[q] === '}' || s[q] === '\n' || s[q] === '\r';
@@ -736,6 +733,8 @@ function htRanges(s: string): Array<[number, number]> {
   let depth = 1;
   let resume = 0;
   let limit = 0;
+  let sp = 0; // the last token boundary (outside any quote) and the bracket depth there: where the past-the-bound scan starts
+  let sd = 1;
   const hsAt = [-2, -2]; // cached here-string closer position per kind ('@ and "@), -1 = none after the scan point
   let cmAt = -2; // cached `#>` position
   let ld = -2; // the last `"` and the last `'`, found once (linear)
@@ -762,7 +761,11 @@ function htRanges(s: string): Array<[number, number]> {
     limit = Math.min(n, at + HT_LITERAL_MAX);
     let p = at + 2;
     depth = 1;
+    sp = p;
+    sd = depth;
     while (p < limit && depth > 0) {
+      sp = p;
+      sd = depth;
       const c = s[p];
       if (c === '}') { p++; depth--; continue; }
       if (c === ';' || htWs(c)) { p++; continue; }
@@ -773,7 +776,7 @@ function htRanges(s: string): Array<[number, number]> {
       let ne: number;
       if (c === '"' || c === "'") {
         const e = htCloseQuote(s, p, mEnd);
-        if (e < 0) { p = mEnd; break; }
+        if (e < 0) { p++; continue; } // a stray quote: the text behind it is read as it is
         ns = p + 1; ne = e; p = e + 1;
       } else {
         ns = p;
@@ -783,7 +786,7 @@ function htRanges(s: string): Array<[number, number]> {
       }
       p = skipSp(p);
       if (p < 0) { p = resume; continue; }
-      if (s[p] !== '=' || p >= mEnd) { while (p < mEnd && s[p] !== ';' && s[p] !== '}' && s[p] !== '\n') p++; continue; } // not `Name = Value`
+      if (s[p] !== '=' || p >= mEnd) { if (c === '"' || c === "'") p = ns; continue; } // not `Name = Value`: a bare word is passed, a quoted one is read again from inside (its quotes may be the stray ones)
       p = skipSp(p + 1);
       if (p < 0) { p = resume; continue; }
       const secret = htSecretName(s.slice(ns, ne)); // `"api""key"` is the name api"key: the quote marks go before the test
@@ -812,9 +815,8 @@ function htRanges(s: string): Array<[number, number]> {
           continue;
         }
         if (!secret) { p = e + 1; continue; }
-        const hidden = e - p === MASK.length + 1 && s.startsWith(MASK, p + 1); // a value hidden already: said again it must give the same text
+        const hidden = e - p === MASK.length + 1 && s.startsWith(MASK, p + 1); // a value hidden already: said again it must give the same text; more after it is code
         if (toEnd(e + 1)) { if (!hidden) hide(p + 1, e); p = e + 1; continue; }
-        if (hidden && htNextMember(s, e + 1)) { p = e + 1; continue; } // (a re-split took the `;` away)
         const end = htExprEnd(s, p, mEnd); // a string followed by more code
         hide(p, end);
         p = Math.max(end, e + 1);
@@ -831,15 +833,16 @@ function htRanges(s: string): Array<[number, number]> {
       if (!secret) continue;
       const hidden = p - vs === MASK.length && s.startsWith(MASK, vs);
       if (toEnd(p) && !/[({]/.test(s.slice(vs, p))) { if (!hidden) hide(vs, p); continue; } // a bare word with brackets (`(Get-Secret)`, `@{a=1}`) is an expression
-      if (hidden && htNextMember(s, p)) continue;
       const end = htExprEnd(s, vs, mEnd);
       hide(vs, end);
       p = Math.max(end, p);
     }
     if (depth > 0 && p >= limit && limit < n) { // past the literal bound: the rest up to the literal's end is hidden (fail closed)
-      const e = htLitEnd(s, p, depth);
-      hide(p, e);
-      p = e;
+      const e = htLitEnd(s, sp, sd); // from the last token boundary: the bound may fall inside a string
+      if (e > p) {
+        if (!(s.startsWith(MASK, p) && /^[\s"';]*$/.test(s.slice(p + MASK.length, e)))) hide(p, e); // (an earlier [redacted] and its closers stay as they are)
+        p = e;
+      }
     }
     from = Math.max(at + 2, p);
   }
@@ -879,12 +882,10 @@ function maskHashtableArgs(args: readonly string[]): readonly string[] {
     const a = args[i];
     if (typeof a !== 'string' || !a.includes('@{')) { out.push(a); i++; continue; }
     let j = i;
-    let len = a.length;
     const st = { depth: 0, q: '' }; // brackets outside quotes, across the args: a `}` inside quotes does not close the literal
     let closed = htClosed(a, a.indexOf('@{'), st);
-    while (!closed && j + 1 < args.length && len < HT_LITERAL_MAX && typeof args[j + 1] === 'string') {
+    while (!closed && j + 1 < args.length && typeof args[j + 1] === 'string') { // (no length bound: a literal that is still open past the bound has its later args hidden)
       j++;
-      len += args[j].length + 1;
       closed = htClosed(args[j], 0, st);
     }
     const group = args.slice(i, j + 1) as string[];
@@ -981,8 +982,8 @@ function maskArgsImpl(args: readonly string[], envIn: Env | undefined, cap: bool
   return maskArgs((cap && Array.isArray(args) ? args.map(capped) : args) as string[], snapshot(envIn), MAX_DEPTH, true);
 }
 
-function maskArgs(args0: readonly string[], env: Env, d: number, top = false): string[] {
-  const args = maskHashtableArgs(args0); // R12
+function maskArgs(args0: readonly string[], env: Env, d: number, top = false, ht = true): string[] {
+  const args = ht ? maskHashtableArgs(args0) : args0; // R12 (not for the words of a text that maskText already read whole: the `;` that ended a member is not in them)
   const rd = (x: string): string => (top ? redact(x, env) : x); // a nested call is redacted by the outer one, over the whole arg
   const out: string[] = [];
   let pending: 'secret' | 'header' | undefined;
