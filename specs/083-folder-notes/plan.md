@@ -52,11 +52,12 @@ No violation; no Complexity Tracking entry.
   "notes": [ {
       "id": "n-[a-z0-9]{12}", "title": "1..80", "text": "≤ 16,000, masked Markdown",
       "createdAt": "ISO UTC", "updatedAt": "ISO UTC", "rev": 1, "done": false,
-      "from": "agent|user|selection|typed",
+      "from": "agent|user|selection|typed|file", "fileEdited": false, "hidden": false,
       "source": { "app": "copilot|claude|codex|…", "session": "<id, sessionIdOk>", "role": "user|agent",
                   "ord": 0, "digest": "[0-9a-f]{16}", "at": "ISO UTC" }   // optional
   } ],
-  "tombstones": [ { "id": "n-…", "deletedAt": "ISO UTC" } ] }
+  "tombstones": [ { "id": "n-…", "deletedAt": "ISO UTC" } ],
+  "mirror": { "sha256": "[0-9a-f]{64}", "bytes": 0, "at": "ISO UTC" } }   // optional: the last notes.md Durbar wrote (FR-053)
 ```
 
 Parsing is tolerant per note (a bad note is dropped, the rest kept) but a bad document (unknown version, not JSON, over 16 MB) is FR-007. Session ids are checked with `sessionIdOk(app, id)` (`src/shared/sessionid.ts`).
@@ -78,13 +79,14 @@ Read: CRLF accepted and turned into LF; a section ends at the next `marker` line
 
 ### Main
 
-- `src/shared/notes.ts` (pure): types, `NOTES_LIMITS`, `parseNotesDoc`, `cleanTitle`, `guessTitle`, `newNoteId(rand)`, `mergeDocs(a, b)`, `applyChange(doc, change, now)` (rev check), `orderForFolder`, `rawDigestInput` (the normalisation both sides use).
+- `src/shared/notes.ts` (pure): types, `NOTES_LIMITS` (character caps, and `storeBytes` / `mdBytes` computed from them, FR-006), `stripControls`, `fitsCap(bytes, cap)`, `parseNotesDoc`, `cleanTitle`, `guessTitle`, `newNoteId(rand)`, `mergeDocs(a, b)`, `applyChange(doc, change, now)` (rev check), `orderForFolder`, `rawDigestInput` (the normalisation both sides use).
 - `src/shared/redact.ts`: `maskNoteText(text, env?)` (R4).
 - `src/shared/notesmd.ts` (pure): `writeNotesMd(notes)`, `parseNotesMd(text)` → `{ ok, sections, conflict?, strayText? }`.
 - `src/main/notesstore.ts`: `NotesStore(dir, { fs?, now?, rand?, platform? })`: `list(folderKey)`, `save`, `update`, `delete`, `deleteAll`, `exportText`; per-folder queue; stat-and-merge; FR-007 read-only state; `notes:changed` callback.
-- `src/main/notesfile.ts`: the project mirror: `syncOut(folderPath, notes, lastHash)`, `readBack(folderPath, lastHash)`, `remove(folderPath, lastHash)`; link, real-path, FIFO, size and Windows-retry guards; injected `fs`.
+- `src/main/notesfile.ts`: the project mirror, used only while `notesFile` is on: `count(folderPath)` (the turn-on dialog only), `syncOut(folderPath, notes, mirror)` (checks, `O_EXCL`+`O_NOFOLLOW` temp, then right before the rename: real path and `lstat` of `.durbar`, `lstat` of `notes.md`, hash equal to `mirror.sha256`; a different hash aborts and imports first; returns the new `mirror` for the store to persist), `readBack(folderPath, mirror)` (≤ `mdBytes`, imports as `from: file` / `fileEdited`), `remove(folderPath, mirror)`, `addExclude(folderPath)` (walk up to `.git`, `gitdir`/`commondir`, append one anchored line with `O_APPEND`/`O_NOFOLLOW`; no git process, no `.gitignore`); link, real-path, FIFO, size and Windows-retry guards; injected `fs`.
 - `src/main/ipc/notes.ts`: `register({ agents, store, file, folders, resumeIdFor, adapterOf, showSaveDialog })`; `fromApp`; `import { register as registerNotes } from './ipc/notes'` (the `test:ipcchannels` rule).
-- `src/main/folders.ts`: `notesFile?: true` on `SavedFolder` (parse and write), set through the notes IPC only.
+- `src/main/folders.ts`: `notesFile?: true` on `SavedFolder` (parse and write), set through the notes IPC only; *Remove folder*'s path takes `{deleteNotes}` and deletes the folder's store file when set (FR-048).
+- **Masking values:** `src/main/ipc/notes.ts` gets `extraSecretValues(folderKey)` (as `mcp/readtools.ts` deps) and `secretValuesFor(agentId)` (`mcpipc.ts`) and passes them to `maskNoteText(text, values)`.
 - `src/preload` + `src/shared/api.ts`: the FR-062 calls, typed.
 
 ### Window

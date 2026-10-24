@@ -6,13 +6,14 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 **Input**: [spec.md](spec.md), [plan.md](plan.md), [research.md](research.md)
 
-**Prerequisites**: Ruben's owner decisions OD1..OD4 (binding) and the coordinator's D1..D11 are recorded in spec.md. No task waits for an answer; the owner questions Q1..Q2 in the PR only change wording or one icon.
+**Prerequisites**: Ruben's owner decisions OD1..OD4 (binding) and the coordinator's D1..D11 are recorded in spec.md. No task waits for an answer: the defaults for Paco's questions A, B, C and Q1 (PR #702) are written in spec.md *Changes* as *default pending owner confirmation*; a different answer changes a default, not the structure.
 
 **Rules for every task**:
 
 - simulator and `npm test` only; zero AI credits; no real session, no `npm run smoke`, no `scripts/capture-raw.ts`;
 - no shell, no git calls from Durbar (FR-051); no path from the window;
-- never log note text, titles or session ids; fake tokens in tests are built at run time;
+- never log note text, titles, session ids or secret values;
+- Durbar runs no git process; the only git-related write is FR-051's one `info/exclude` line; fake tokens in tests are built at run time;
 - `npm run typecheck && npm run build && npm test` green;
 - UI tasks: `npm run check:office`, screenshots at 1440x900 and 1280x800 with `DURBAR_SIM=15`, and `npm run shots:docs -- --only <drivers>` for linked pictures that show the change;
 - renderer comments write "issue 699", never `#699` (theme-token ratchet).
@@ -39,12 +40,16 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC4: `mergeDocs`: the higher `updatedAt` wins; a tombstone wins over an older edit; tombstones are capped at 300, oldest dropped.
   - AC5: `newNoteId` gives `n-` and 12 base-36 characters from an injected uniform random function (no modulo bias).
   - AC6: `scripts/test-notes.ts` (new `test:notes`, added to `npm test`) covers AC1..AC5, plus a 1,000-operation random test of two documents merged in turns: no lost and no resurrected note (SC-003).
+  - AC7: `NOTES_LIMITS` is the only place with caps (a static test finds no other cap number in the notes modules); `storeBytes` and `mdBytes` are computed from the character caps; a folder at every cap (300 notes of 16,000 three-byte characters full of quotes, backslashes and marker-like lines) serialises under both caps, and one more character is refused before any write.
+  - AC8: control characters other than tab and line feed are removed on save.
 - [ ] T011 [P] `maskNoteText` in `src/shared/redact.ts`. [FR-005, SC-002]
   - AC1: it masks every token shape of `test-redact`'s corpus planted as written, inside Markdown (`**`, backticks, `_x_`, links, code fences), after `%3D` and `\n`, and split by `**` or a backtick.
   - AC2: the Markdown outside a masked token is unchanged (headings, lists, code fences, `release_notes`).
   - AC3: a bare token across the 16,000 cut leaves no piece of it when the caller masks then cuts (`ghp_` and a run of its body), and a mutation that cuts first fails the test.
   - AC4: linear time: CPU time for 160k characters is under 16x that of 20k (min of 3 interleaved runs, `cpuMs`), and a deliberately quadratic mutation fails.
   - AC5: `redact.ts` still has no imports (`test-liveact`).
+  - AC6: `maskNoteText(text, values)` masks known values first (longest first, under 4 characters skipped), including a value with no token shape and one split by `**`; it reports whether anything changed (for `hidden`).
+  - AC7: main passes the folder's `extraSecretValues` and the session's `secretValuesFor` values; an import or a typed note gets the folder's (test with fakes).
 - [ ] T012 `NotesStore` in `src/main/notesstore.ts`. [FR-002, FR-005, FR-006, FR-007, FR-008]
   - AC1: one file per folder at `notes/<folderFingerprint(key)>.json`; folder 0700 and file 0600 on POSIX (checked with `fs.statSync().mode & 0o777`); no folder path in the file.
   - AC2: writes go through a unique `wx` temp file and rename; a crash between the two (fake `fs` throws on rename) leaves the old file intact.
@@ -53,6 +58,8 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC5: two `NotesStore` instances on one folder (two processes): each write after the other's re-reads and merges; the stale `rev` path refuses; no lost note in 200 interleaved operations.
   - AC6: writes per folder are queued: two saves started together both land (the test starts both, then awaits `Promise.all`, with an `exit` guard; `docs/agent-notes.md`).
   - AC7: tests in `scripts/test-notes.ts` with a temp `DURBAR_USER_DATA`-like folder and an injected `fs`.
+  - AC8: `hidden` is set when masking changed title or text, and not otherwise.
+  - AC9: the store document keeps `mirror` (sha256, bytes, at) written with the store's next atomic write; after a fresh `NotesStore` on the same folder, the mirror sees its own `notes.md` as unchanged (restart test).
 - [ ] T013 IPC, preload and types. [FR-009, FR-062]
   - AC1: `src/main/ipc/notes.ts` registers the FR-062 channels with `fromApp`; `test:ipcchannels` passes with the `import { register as … }` line.
   - AC2: the session id is taken from `resumeIdFor(agentId)` and the app from the agent's adapter id; a session id sent by the window is ignored (test with a fake that sends one).
@@ -87,6 +94,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC5: *Insert* puts the text in the box per FR-024, sends nothing (the driver checks no `send` call), focuses the box and announces it; it is disabled with a reason in a chat without a usable box.
   - AC6: `TAKEN` has `mod+shift+KeyM`; `test-navigator`'s handler scan passes and fails when the row is removed (mutation); a saved Go to combination equal to it keeps working and the drawer key does nothing (test).
   - AC7: with spec 080's tabs present (or a fake tablist in the driver once they land), opening Notes from Browser selects Chat first. Until then this AC is checked by a unit test on the switch function.
+  - AC8: inserting a note with `hidden` shows *Parts of this note were hidden when it was saved* above the box until it is sent or emptied; a `from: file` note shows *From the project file*; the same from the `/` list.
 - [ ] T023 [US1] Notes in the `/` list. [FR-030, FR-031]
   - AC1: in a chat with notes, `/` lists a *Notes* group after the commands, at most 5 with nothing typed, plus *All notes…*; done notes are not listed.
   - AC2: picking a note replaces the `/word` with the note text (FR-024's blank-line rule), not `/name`, and sends nothing.
@@ -122,8 +130,10 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC1: reached from the folder `⋯` (*Notes (N)…*), the drawer's *All notes of this folder…* and Ctrl+K *Notes of <folder>*; nothing new on the office floor (`check:office` unchanged).
   - AC2: all notes, search, *Done (N)* folded, *Mark done* / *Mark not done*; done notes leave the `/` list and the count.
   - AC3: *Export…* goes through main's save dialog (the window sends no path) and writes FR-052's format without session ids, mode 0600 (unit test with a fake dialog).
-  - AC4: *Delete all…* asks with the count (*Cancel* focused) and leaves tombstones; *Remove folder*'s dialog says the notes stay, and re-adding the folder shows them (unit test on the store key).
+  - AC4: *Delete all…* asks with the count (*Cancel* focused) and leaves tombstones.
   - AC5: screenshots of the screen at both sizes.
+  - AC6: *Remove folder*'s dialog has *Also delete its notes* (only when the folder has notes, unticked by default); unticked: the text says the notes stay and re-adding the folder shows them; ticked: the store file is gone after removal (unit test on the store key and the IPC flag).
+  - AC7: a note is added on #559 (and in this spec) that any data-reset path must include `<userData>/notes/`.
 
 ## Phase 4: User Story 5, the project file (P2)
 
@@ -134,17 +144,22 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC4: a bare `<!-- durbar-note -->` section and a `## ` heading before the first marker parse as new notes; stray text is reported.
   - AC5: `scripts/test-notesmd.ts` (new `test:notesmd`, in `npm test`).
 - [ ] T041 [US5] Mirror in main `src/main/notesfile.ts`. [FR-050, FR-051, FR-053, FR-054]
-  - AC1: writes only when `notesFile` is on; the temp-and-rename path; 0600 on POSIX; the last-written SHA-256 kept.
+  - AC1: writes only when `notesFile` is on; while off, no `stat`, read or write of `notes.md` (a counting fake `fs`), except `count` at turn-on; the temp file opened with `O_EXCL` and `O_NOFOLLOW` where defined; 0600 on POSIX; the new `mirror` returned for the store to persist.
   - AC2: refuses a `.durbar` or `notes.md` that is a link (POSIX symlink; Windows junction where the test can make one, skipped otherwise with a printed reason), a real path outside the folder, a folder, or a FIFO (opened non-blocking; a hang test in a child process with a timeout).
-  - AC3: reads at most 1 MB; edits of known ids import masked; new sections become notes; missing sections delete nothing; conflict or parse error: no import and no write, and the state says why.
+  - AC3: reads at most `mdBytes`; edits of known ids import masked with the folder's values and set `fileEdited`; new sections become `from: file` notes (never `typed`); missing sections delete nothing; conflict or parse error: no import and no write, and the state says why.
   - AC4: Windows rename retry: a fake `fs` that throws `EPERM` once succeeds on the second try; twice gives the FR-053 message; the local store is untouched.
   - AC5: no `child_process` use in the module (a static test), no `.gitignore` write.
+  - AC6: right before the rename, a swapped `.durbar` (a link, or a real path outside) and a `notes.md` turned into a link are refused (fake `fs` that swaps between the checks); a `notes.md` whose hash changed after the read is not overwritten: the temp file is deleted, the edit imported, the write retried next cycle.
+  - AC7: written files never exceed `mdBytes`; a file over `mdBytes` is not read.
+  - AC8: `addExclude` finds `info/exclude` from a `.git` folder, a worktree `.git` file (`gitdir` + `commondir`) and a subfolder of the repository, appends the anchored line once (idempotent), refuses a linked or oversized `exclude` with the reason, and runs no process.
 - [ ] T042 [US5] The switch and its states in the Notes screen. [FR-050, FR-055]
   - AC1: off by default; turning it on shows the FR-050 warning with *Cancel* focused; `notesFile: true` saved in `folders.json` and read back.
   - AC2: not offered for a `.code-workspace`; greyed with a reason when the folder is missing.
   - AC3: the conflict and write-error states show their words in the screen and the drawer.
   - AC4: turning off asks *Leave the file* / *Delete the file*; delete only when the hash matches, else the file stays and the screen says why; `.durbar` removed only when empty.
   - AC5: in the simulator the switch answers *Demo: no file written*; README's *Safety model* line on notes (T024 AC4) now also says the file may be committed and that Durbar never adds it to git.
+  - AC6: with an existing `notes.md` the dialog says how many notes it will add (*marked "From the project file"*); an unreadable or conflicted file says so and the switch stays off.
+  - AC7: inside a git repository the dialog has *Keep it out of commits (adds `.durbar/` to `.git/info/exclude`, local only)*, on by default, with the already-committed line; outside one it is not shown; turning the switch off leaves the line and says so.
 
 ## Phase 5: User Story 6, back to the source (P3)
 
