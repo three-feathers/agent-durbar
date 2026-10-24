@@ -50,7 +50,7 @@ export function maskTokenShapes(text: string, mask: string): string {
 
 /** Key-like shapes. Each is linear: bounded classes, no nested quantifiers, starts anchored where a token cannot already be running. Order matters: header and URL first. */
 const PATTERNS: Array<[RegExp, string]> = [
-  [shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?[^\s",;]+`, 'gi'), '$1[redacted]'],
+  [shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?(?!'?\[redacted\]'?\}*(?:[\s",;]|$))[^\s",;]+`, 'gi'), '$1[redacted]'], // a value R12 already hid, whole, inside single quotes (`Authorization='[redacted]'}`) stays as it is; `[redacted]TOKEN` is not a hidden value
   [shape(String.raw`([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{1,200}:[^\s/@"]{1,200}@`, 'gi'), '$1[redacted]@'],
   [/(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"]{0,2000}/g, '[redacted]'],
   // OAuth values in a URL's query or fragment (an authorization address, a loopback callback), also percent-encoded inside another
@@ -283,7 +283,10 @@ function maskJsonPairs(v: string, force = false): string {
 function maskKv(part: string, depth: number, env?: Env): string {
   const kv = KV.exec(part);
   if (kv) {
-    if (secretFlag(kv[2].replace(ENV_PREFIX, ''))) return `${kv[1]}${kv[2]}=${MASK}`;
+    if (secretFlag(kv[2].replace(ENV_PREFIX, ''))) { // R12: a hashtable member already hidden (`'[redacted]'}`) keeps its quotes and what closes it
+      const hid = /^(["']?)\[redacted\](["';}]*)$/.exec(kv[4]);
+      return hid ? `${kv[1]}${kv[2]}=${hid[1]}${MASK}${hid[2]}` : `${kv[1]}${kv[2]}=${MASK}`;
+    }
     const hv = HDR_NAME_ONLY.exec(kv[4].trim());
     if (hv && secretFlag(hv[1])) return part; // `NAME=Name:` (R5): the value of `Name:` is the next word, masked by maskArgs; masking `Name:` here repeated `[redacted]` at each depth level
     // `OPTS=\"--token x\"`: a stray quote in front of a flag-shaped value is set aside so the flag is seen
@@ -635,12 +638,233 @@ function maskShWords(s: string, d: number, env: Env | undefined): string {
   return failAt < 0 ? out + s.slice(cur) : out + s.slice(cur, failAt) + MASK;
 }
 
+// ---- R12 (spec 041 FR-053, T072, issue #502): PowerShell hashtable literals `@{ Name = Value; ... }` ----
+const HT_LITERAL_MAX = 4000; // a literal is read up to this many characters from its `@{`
+const WORD_END = /[\s;}]/g;
+const HT_MEMBER_MAX = 2000; // and each member up to this many; past either the rest keeps the pattern rules only
+
+/** The index of the quote that closes the string opened at `p` (`""` / `''` doubled, and `` `x `` in a double-quoted one, are escapes), or -1 before `max`. */
+function htCloseQuote(s: string, p: number, max: number): number {
+  const q = s[p];
+  for (let k = p + 1; k < max; k++) {
+    if (q === '"' && s[k] === '`') k++;
+    else if (s[k] === q) { if (s[k + 1] === q) k++; else return k; }
+  }
+  return -1;
+}
+
+/** Fast character tests for the scanner below (ASCII first; a regex only for the rest of Unicode white space). */
+const htWs = (c: string): boolean => { const k = c.charCodeAt(0); return k < 128 ? k === 32 || (k >= 9 && k <= 13) : /\s/.test(c); };
+const htWordStop = (c: string): boolean => c === ';' || c === '}' || htWs(c);
+const htNameStop = (c: string): boolean => c === '=' || c === '"' || c === "'" || c === '{' || htWordStop(c);
+
+/** The name test for a member name (`secretFlag` after the quote marks are removed), remembered for the short names a literal repeats (bounded). */
+const HT_NAMES = new Map<string, boolean>();
+function htSecretName(raw: string): boolean {
+  if (raw.length > 64) return secretFlag(raw.replace(/[`"']/g, ''));
+  let r = HT_NAMES.get(raw);
+  if (r === undefined) {
+    r = secretFlag(raw.replace(/[`"']/g, ''));
+    if (HT_NAMES.size >= 512) HT_NAMES.clear();
+    HT_NAMES.set(raw, r);
+  }
+  return r;
+}
+
+/** Where a PowerShell expression that starts at `p` ends: the next `;`, `}` or line break outside brackets and strings (a backtick continues the line). Never past `max`. */
+function htExprEnd(s: string, p: number, max: number): number {
+  let d = 0;
+  let k = p;
+  while (k < max) {
+    const c = s[k];
+    if (c === '"' || c === "'") { const e = htCloseQuote(s, k, max); if (e < 0) return max; k = e + 1; continue; }
+    if (c === '`') { k += s[k + 1] === '\r' && s[k + 2] === '\n' ? 3 : 2; continue; }
+    if (c === '(' || c === '{') d++;
+    else if (c === ')') { if (d > 0) d--; }
+    else if (c === '}') { if (d === 0) break; d--; }
+    else if ((c === ';' || c === '\n') && d === 0) break;
+    k++;
+  }
+  k = Math.min(k, max);
+  while (k > p && /\s/.test(s[k - 1])) k--;
+  return k;
+}
+
+/**
+ * The value ranges to hide in the hashtable literals of `s`: for each member whose name looks secret (`secretFlag`, the test of R7 and the
+ * secret flags) the value, without its quotes when it is one plain quoted string or bare word. Any other value of a secret member (an
+ * expression, a here-string, a string followed by more code) is hidden whole up to the member's end (fail closed). A member whose value
+ * is a nested literal restarts the scan inside it (any depth, within the literal bound). One pass: every character is read a constant
+ * number of times, so the cost is linear in the text.
+ */
+function hashtableRanges(s: string): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  const n = s.length;
+  const hide = (from2: number, to: number): void => { if (to > from2) out.push([from2, to]); };
+  const toEnd = (q: number): boolean => { // after a value ending at q: only spaces then `;`, `}`, a line break or the end
+    while (q < n && (s[q] === ' ' || s[q] === '\t')) q++;
+    return q >= n || s[q] === ';' || s[q] === '}' || s[q] === '\n' || s[q] === '\r';
+  };
+  let from = 0;
+  const hsAt = [-2, -2]; // cached here-string closer position per kind ('@ and "@), -1 = none after the scan point
+  let ld = -2; // the last `"` and the last `'`, found once (linear)
+  let ls = -2;
+  const lastDq = (): number => (ld === -2 ? (ld = s.lastIndexOf('"')) : ld);
+  const lastSq = (): number => (ls === -2 ? (ls = s.lastIndexOf("'")) : ls);
+  for (;;) {
+    const at = s.indexOf('@{', from);
+    if (at < 0) return out;
+    const limit = Math.min(n, at + HT_LITERAL_MAX);
+    let p = at + 2;
+    let depth = 1;
+    let capEnd = -1; // where a member that used up HT_MEMBER_MAX ended: the rest of the literal keeps the pattern rules only (and is not read again)
+    while (p < limit && depth > 0) {
+      if (capEnd >= 0 && p >= capEnd) { p = limit; break; }
+      const c = s[p];
+      if (c === '}') { p++; depth--; continue; }
+      if (c === ';' || htWs(c)) { p++; continue; }
+      if (c === '@' && s[p + 1] === '{') { p += 2; depth++; continue; }
+      const mEnd = Math.min(limit, p + HT_MEMBER_MAX);
+      capEnd = mEnd - p === HT_MEMBER_MAX ? mEnd : -1;
+      let ns: number;
+      let ne: number;
+      if (c === '"' || c === "'") {
+        const e = htCloseQuote(s, p, mEnd);
+        if (e < 0) { p = mEnd; break; }
+        ns = p + 1; ne = e; p = e + 1;
+      } else {
+        ns = p;
+        while (p < mEnd && !htNameStop(s[p])) p++;
+        ne = p;
+        if (ne === ns) { p++; continue; }
+      }
+      while (p < mEnd && (s[p] === ' ' || s[p] === '\t')) p++;
+      if (s[p] !== '=' || p >= mEnd) { while (p < mEnd && s[p] !== ';' && s[p] !== '}' && s[p] !== '\n') p++; continue; } // not `Name = Value`
+      p++;
+      while (p < mEnd && (s[p] === ' ' || s[p] === '\t')) p++;
+      const secret = htSecretName(s.slice(ns, ne)); // `"api""key"` is the name api"key: the quote marks go before the test
+      if (s.startsWith('[ordered]', p)) p += 9;
+      while (s[p] === '`' && (s[p + 1] === '\n' || (s[p + 1] === '\r' && s[p + 2] === '\n'))) { // a line continuation right after `=`
+        p += s[p + 1] === '\n' ? 2 : 3;
+        while (p < mEnd && (s[p] === ' ' || s[p] === '\t')) p++;
+      }
+      const vc = s[p];
+      if (vc === '@' && s[p + 1] === '{' && !secret) { p += 2; depth++; continue; } // a nested literal: scanned in place
+      if (vc === '@' && (s[p + 1] === "'" || s[p + 1] === '"')) { // here-string: up to its closing `'@` / `"@` at a line start
+        const hq = s[p + 1] === "'" ? 0 : 1; // the closer is searched once per kind, then reused: a text of `@'` openers with no closer stays linear
+        if (hsAt[hq] === -2 || (hsAt[hq] >= 0 && hsAt[hq] < p + 2)) hsAt[hq] = s.indexOf('\n' + s[p + 1] + '@', p + 2); // (positions only grow, so -1 stays -1)
+        const close = hsAt[hq];
+        const end = close < 0 || close + 3 > limit ? limit : close + 3;
+        if (secret) hide(p, end);
+        p = Math.max(end, p + 2); // (always forward, whatever the cache holds)
+        continue;
+      }
+      if (vc === '"' || vc === "'") {
+        const e = htCloseQuote(s, p, mEnd);
+        if (e < 0) { // unclosed: a secret's rest is hidden (fail closed); to the end of the text when no such quote follows at all, else to the member bound
+          const none = (vc === '"' ? lastDq() : lastSq()) <= p;
+          if (secret) hide(p + 1, none ? n : mEnd);
+          p = none ? n : mEnd;
+          continue;
+        }
+        if (!secret || (e - p === MASK.length + 1 && s.startsWith(MASK, p + 1))) { p = e + 1; continue; } // (a value already hidden stays as it is, whatever follows it)
+        if (toEnd(e + 1)) { hide(p + 1, e); p = e + 1; continue; }
+        const end = htExprEnd(s, p, mEnd); // a string followed by more code
+        hide(p, end);
+        p = Math.max(end, e + 1);
+        continue;
+      }
+      const vs = p;
+      while (p < mEnd && !htWordStop(s[p])) p++;
+      if (secret && p >= mEnd && p < n) { // a bare word longer than the member bound: hidden to its end (fail closed), found in one pass
+        WORD_END.lastIndex = p;
+        p = WORD_END.exec(s)?.index ?? n;
+        hide(vs, p);
+        continue;
+      }
+      if (!secret || (p - vs === MASK.length && s.startsWith(MASK, vs))) continue; // (a value already hidden stays as it is, whatever follows it)
+      if (toEnd(p) && !/[({]/.test(s.slice(vs, p))) { hide(vs, p); continue; } // a bare word with brackets (`(Get-Secret)`, `@{a=1}`) is an expression
+      const end = htExprEnd(s, vs, mEnd);
+      hide(vs, end);
+      p = Math.max(end, p);
+    }
+    from = Math.max(at + 2, p);
+  }
+}
+
+/** `s` with the value of each secret-looking hashtable member shown as `[redacted]` (R12), quotes kept. */
+function maskHashtables(s: string): string {
+  if (!s.includes('@{')) return s;
+  const r = hashtableRanges(s);
+  if (!r.length) return s;
+  let out = '';
+  let cur = 0;
+  for (const [a, b] of r) { out += s.slice(cur, a) + MASK; cur = b; }
+  return out + s.slice(cur);
+}
+
+/** Reads `a` from `from` and says whether the literal closes in it: `{` and `}` count outside quotes only (`st` carries the state to the next arg). Linear. */
+function htClosed(a: string, from: number, st: { depth: number; q: string }): boolean {
+  for (let k = from; k < a.length; k++) {
+    const c = a[k];
+    if (st.q) {
+      if (c === '`' && st.q === '"') k++;
+      else if (c === st.q) st.q = ''; // a doubled quote closes and opens again
+    } else if (c === '"' || c === "'") st.q = c;
+    else if (c === '{') st.depth++;
+    else if (c === '}' && --st.depth <= 0) return true;
+  }
+  return false;
+}
+
+/** R12 for an args list: a literal split across args (`@{token=`, `SEC;`, `port=8080}`) is read as the args joined by a space; a value that spans args is hidden in the first and cut from the later ones. */
+function maskHashtableArgs(args: readonly string[]): readonly string[] {
+  if (!Array.isArray(args) || !args.some((a) => typeof a === 'string' && a.includes('@{'))) return args;
+  const out: string[] = [];
+  let i = 0;
+  while (i < args.length) {
+    const a = args[i];
+    if (typeof a !== 'string' || !a.includes('@{')) { out.push(a); i++; continue; }
+    let j = i;
+    let len = a.length;
+    const st = { depth: 0, q: '' }; // brackets outside quotes, across the args: a `}` inside quotes does not close the literal
+    let closed = htClosed(a, a.indexOf('@{'), st);
+    while (!closed && j + 1 < args.length && len < HT_LITERAL_MAX && typeof args[j + 1] === 'string') {
+      j++;
+      len += args[j].length + 1;
+      closed = htClosed(args[j], 0, st);
+    }
+    const group = args.slice(i, j + 1) as string[];
+    const joined = group.join(' ');
+    const ranges = hashtableRanges(joined);
+    if (!ranges.length) { out.push(...group); i = j + 1; continue; }
+    let off = 0;
+    for (const g of group) {
+      const end = off + g.length;
+      let t = '';
+      let cur = off;
+      for (const [r0, r1] of ranges) {
+        if (r1 <= off || r0 >= end) continue;
+        t += joined.slice(cur, Math.max(r0, off, cur));
+        if (r0 >= off) t += MASK; // the range starts here; in a later arg only its tail is cut
+        cur = Math.min(r1, end);
+      }
+      t += joined.slice(cur, end);
+      if (t !== '' || g === '') out.push(t);
+      off = end + 1;
+    }
+    i = j + 1;
+  }
+  return out;
+}
+
 /** A free-standing value or arg: JSON, URL, connection string (`;`/`,`-separated pairs), `NAME=value`, `Name: value`, a shell string. The caller finishes with `redact()`. */
 function maskText(v: string, depth: number, env?: Env, noScript = false): string {
   if (!noScript && SCRIPT_GATE.test(v) && /\s/.test(v)) { // T067 (#447): a shell wrapper whose payload has escaped quotes, decoded one level first
     const sc = maskScriptText(v, depth, env, (seg) => maskText(seg, depth, env, true));
     if (sc !== undefined) return sc;
   }
+  if (v.includes('@{')) v = maskHashtables(v); // R12
   // T067: a leading quote that closes nowhere in the value (`--opt="token=x`) is set aside, so the rules see what is behind it (fail closed)
   if ((v[0] === '"' || v[0] === "'") && v.indexOf(v[0], 1) < 0) return v[0] + maskText(v.slice(1), depth, env, noScript);
   if (v.startsWith('{') || v.startsWith('[')) {
@@ -704,7 +928,8 @@ function maskArgsImpl(args: readonly string[], envIn: Env | undefined, cap: bool
   return maskArgs((cap && Array.isArray(args) ? args.map(capped) : args) as string[], snapshot(envIn), MAX_DEPTH, true);
 }
 
-function maskArgs(args: readonly string[], env: Env, d: number, top = false): string[] {
+function maskArgs(args0: readonly string[], env: Env, d: number, top = false): string[] {
+  const args = maskHashtableArgs(args0); // R12
   const rd = (x: string): string => (top ? redact(x, env) : x); // a nested call is redacted by the outer one, over the whole arg
   const out: string[] = [];
   let pending: 'secret' | 'header' | undefined;
@@ -745,7 +970,7 @@ function maskArgs(args: readonly string[], env: Env, d: number, top = false): st
       if (lead) a0 = a0.slice(1);
       const push = (x: string): void => { out.push(lead && x !== MASK ? lead + x : x); };
       const [a, q] = unquote(a0);
-      const W = (x: string): string => (q && x !== MASK ? q + x + q : x);
+      const W = (x: string): string => (q && (x !== MASK || a === MASK) ? q + x + q : x); // R12: a value already hidden inside its quotes keeps them
       const f = a.startsWith('-') || a.startsWith('/') ? parseFlag(a) : undefined;
       if (pending && !LONG_FLAG.test(a) && (pending === 'secret' || !a.startsWith('-'))) {
         if (pending === 'header' && HDR_NAME_ONLY.test(a)) { push(W(a)); pending = 'secret'; continue; } // R5: `Name:` then its value as the next arg
@@ -846,7 +1071,7 @@ function maskCommandImpl(command: unknown, envIn: Env | undefined, cap: boolean,
     if (cap && typeof command === 'string' && command.length > MASK_INPUT_MAX) return MASK;
     const env = snapshot(envIn);
     const plain = (c: string): string => {
-      const out = maskArgs(joinUnclosed(splitCommand(redact(maskSchemeSecrets(c), env))), env, MAX_DEPTH, true);
+      const out = maskArgs(joinUnclosed(splitCommand(redact(maskSchemeSecrets(maskHashtables(c)), env))), env, MAX_DEPTH, true);
       return (mapWord ? out.map((x) => mapWord(x)) : out).join(' ');
     };
     const c = typeof command === 'string' ? command : '';

@@ -508,6 +508,32 @@ async function main(): Promise<void> {
       assert.ok(all.includes('…/x.json') && all.includes('…/c.json'), '12f: the shell-string paths are reduced');
     }
 
+    // 12f (T072, R12). A PowerShell hashtable literal in an MCP server's `args` and `command` (extras and CLI entries), in all seven tools
+    {
+      const hs: string[] = [];
+      const h = (k: string): string => { const v = `HT${k}-` + 'p0o9i8u7y6t5'; hs.push(v); return v; };
+      const cmds = (tag: string): string[] => [
+        `srv @{"X-Api-Key"="${h(tag + 'a')}"}`, `srv @{'api_key'='${h(tag + 'b')}'}`, `srv @{Authorization = "Bearer ${h(tag + 'c')}"; Port = 8080}`,
+        `srv [ordered]@{ token = ${h(tag + 'd')}; port = 8080 }`, `pwsh -c '@{token=''${h(tag + 'e')}''; port=1}'`, `powershell -Command "@{'api_key'='${h(tag + 'f')}'}"`,
+        `srv @{Authorization='Bearer ${h(tag + 'g')}'}`, `srv @{Headers=@{"X-Api-Key"="${h(tag + 'h')}"}}`, `srv @{token="a" + "${h(tag + 'i')}"; port=1}`, `srv @{token="a ${h(tag + 'j')}`,
+      ];
+      const ext = cmds('E').map((command, i) => ({ name: 'plantedht-' + i, transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command, args: [], env: [], headers: [] } as any));
+      const cli = cmds('C').map((command, i) => ({ name: 'cliht-' + i, origin: 'copilot-config', transport: 'stdio', command, args: [], enabled: true }));
+      const argv = { name: 'plantedhtargs', transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'pwsh',
+        args: ['-c', `@{"X-Api-Key"="${h('Aa')}"}`, `@{token=${h('Ab')};`, 'port=1}', '@{', 'password', '=', `"x ${h('Ac')}"`, '}'], env: [], headers: [] } as any;
+      const cliArgv = { name: 'clihtargs', origin: 'copilot-config', transport: 'stdio', command: 'srv', args: [`@{'api_key'='${h('Ba')}'}`, `@{token=${h('Bb')};`, 'port=1}'], enabled: true };
+      const keep = { name: 'plantedhtkeep', transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'srv @{Port=8080; name="build"}', args: [], env: [], headers: [] } as any;
+      const { call } = mk(15, 40, {
+        mcpExtras: (k: string) => (k === path.join(os.tmpdir(), 'durbar-t016-f0') ? [...ext, argv, keep] : []),
+        mcpCli: () => ({ cli: [...(cli as any[]), cliArgv as any], file: { label: 'x', found: true, skipped: 0 }, secretsPersist: false }),
+      });
+      const all = (await Promise.all(READ_TOOLS.map((t) => call(t.name, t.name === 'durbar_request_status' ? { requestId: 'x' } : {})))).map((r) => r.raw).join('\n');
+      assert.strictEqual(hs.length, 25, '12f: planted hashtable secrets');
+      for (const sec of hs) assert.ok(!all.includes(sec), `12f: T072 hashtable secret ${sec.slice(0, 8)} never appears in any result`);
+      assert.ok(all.includes('[redacted]'), '12f: T072 the member value is shown as [redacted]');
+      assert.ok(all.includes('Port=8080') && all.includes('name='), '12f: T072 the other members stay readable');
+    }
+
     // 12f1. T053: the `url` field goes through the path reducer too (a file URL outside the saved folders)
     {
       const fileExtra = { name: 'f', transport: 'http', enabled: true, trusted: true, needsSecrets: false, url: 'file:///home/me/.aws/c', env: [], headers: [] } as any;
