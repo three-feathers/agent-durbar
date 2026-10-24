@@ -504,7 +504,7 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
 }
 
 // Spec 068 FR-025 (issue #671, real Claude Code 2026-10-24): a Retry while the weekly limit is still active gets the limit as words only
-// (a synthetic assistant message with `error: 'rate_limit'`, then an error result), with no `rate_limit_event`. It is a coffee break again.
+// (a synthetic assistant message with `error: 'rate_limit'`, then an error result; `read:` the message shape from the SDK docs, only the words from the owner's screenshot), with no `rate_limit_event`. It is a coffee break again.
 {
   const SENT = "You've hit your weekly limit · resets 2am (Europe/Zurich)";
   const T = Date.UTC(2026, 9, 24, 12, 0, 0);
@@ -532,11 +532,19 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   assert.strictEqual(claudeLimitText("You've hit your Opus limit", T)!.resetsAt, undefined);
   assert.strictEqual(claudeLimitText('5-hour limit reached ∙ resets 3pm', T)!.window, 'five_hour');
   // not a plan limit: no recognised window and no reset named stays an error; a reset alone proves a limit
-  for (const x of ["You've hit your context limit", 'You have hit your output token limit', "You've hit your rate limit for this tool"]) {
+  for (const x of ["You've hit your context limit", 'You have hit your output token limit', "You've hit your rate limit for this tool", 'Context limit reached. Run /clear to reset the conversation.', "You've hit your context limit · /compact or /clear to reset", 'You have hit your rate limit · resets in 30s']) {
     assert.strictEqual(claudeLimitText(x, T), null, x);
     assert.ok(!run([{ type: 'result', subtype: 'success', is_error: true, result: x }]).some((b) => b.type === 'usageLimit'), x);
   }
   assert.ok(claudeLimitText("You've hit your limit · resets 3pm", T)?.resetsAt, 'a reset with no window word is still a limit');
+  // a reset more than a day ahead: "Oct 27, 9am (Europe/Zurich)", an optional year, minutes (read: the CLI's en-US month/day/hour format)
+  const zurich = (ms: number): string => new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Zurich', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ms);
+  assert.strictEqual(zurich(claudeLimitText("You've hit your weekly limit · resets Oct 27, 9am (Europe/Zurich)", T)!.resetsAt!), '27/10/2026, 09:00');
+  assert.strictEqual(zurich(claudeLimitText("You've hit your limit · resets Oct 27, 2026, 9:30am (Europe/Zurich)", T)!.resetsAt!), '27/10/2026, 09:30');
+  assert.strictEqual(claudeLimitText("You've hit your weekly limit · resets Oct 27, 2027, 9am (Europe/Zurich)", T)!.resetsAt, undefined, 'a year that does not match a date within a month');
+  assert.strictEqual(claudeLimitText("You've hit your limit · resets Oct 27, 9am (Europe/Zurich)", T)!.window, undefined);
+  // an ordinary assistant message that quotes the sentence mid-turn is not a limit (only Claude Code's own error message is)
+  assert.ok(!run([{ type: 'assistant', message: { content: [{ type: 'text', text: SENT }] } }, { type: 'result', subtype: 'success', is_error: false, result: 'done' }]).some((b) => b.type === 'usageLimit'), 'a quoted limit sentence mid-turn');
   // the minute scan stays cheap (worst case: the whole 8-day scan, no match)
   { const t0 = process.hrtime.bigint(); nextClockTime(99, 0, 'Pacific/Chatham', undefined, T); const ms = Number(process.hrtime.bigint() - t0) / 1e6; console.log(`nextClockTime scan: ${ms.toFixed(1)} ms`); assert.ok(ms < 100, `nextClockTime took ${ms} ms`); }
   // no reset in the sentence: the last known one from a rate_limit_event of this session
