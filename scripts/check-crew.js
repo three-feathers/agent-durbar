@@ -146,6 +146,9 @@ module.exports = async (ctx) => {
     }
     for (const u of ['desk', 'helper', 'walker', 'seat']) assert.ok(uses[u] >= 1, `${tag}: a ${u} portrait is on screen to check (${JSON.stringify(uses)})`);
     console.log(`[crew] ${tag} faces`, JSON.stringify(uses));
+    /* the seat's shown size and its chat badge's, for the spec's known gap (the badge check is skipped below 30 px) */
+    const seats = list.filter((f) => f.use === 'seat' && f.href).map((f) => ({ seat: [Math.round(f.clip[2] - f.clip[0]), Math.round(f.clip[3] - f.clip[1])], badge: (f.covers.find(([n]) => n === 'chat badge') || [, null])[1] }));
+    console.log(`[crew] ${tag} seats`, JSON.stringify(seats.map((s) => ({ seat: s.seat, badge: s.badge && [Math.round(s.badge[2] - s.badge[0]), Math.round(s.badge[3] - s.badge[1])] }))));
   };
   const sizes = async () => Object.fromEntries((await H.js(naturals(C.files()))).map(([f, w, h]) => [f, [w, h]]));
   const sharpOk = (tag, img, nat) => {

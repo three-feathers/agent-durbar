@@ -211,7 +211,7 @@ FR-011..FR-016 describe the drawn SVG option (b′). If Q1 picks raster, FR-050.
 - `[KNOWN GAP]` SC-003 in part: the stored map is covered by `test:crew`; no driver reloads the window with a stored map (T023).
 - `[KNOWN GAP]` FR-041 in part: office screenshots and the art sheet (13 characters x 3 poses) are in `docs/screenshots/`; no rendered sheet of every status and density (T025).
 - `[KNOWN GAP]` FR-058 in part: no capture-against-canvas sharpness comparison; `check:crew` checks natural size against shown size instead.
-- `[KNOWN GAP]` At 1280x800 a couch seat is about 20 px, smaller than its own chat-number badge, so the badge covers the seat's portrait (FR-060 delta).
+- `[KNOWN GAP]` At 1280x800 a couch seat is 20x20 px, smaller than its own chat-number badge (25 to 32 x 16 px), so the badge covers the seat's portrait (FR-060 delta; `sim:` re-measured 2026-10-24 by `check:crew`'s seat log line, macOS; 38x38 px at 1440x900).
 
 ## Known limits
 
