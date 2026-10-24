@@ -88,38 +88,38 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 
 Decisions D1..D9: coordinator, under Ruben's delegation. Renderer only; no IPC, store or adapter change; 0 AI credits.
 
-- [ ] T070 [P] `src/renderer/inlinename.js` pure part (`keyAction`, `pasteText`, `outcome`, `blurAction`) and `scripts/test-inlinename.ts`
+- [x] T070 [P] `src/renderer/inlinename.js` pure part (`keyAction`, `pasteText`, `outcome`, `blurAction`) and `scripts/test-inlinename.ts`
   (`test:inlinename` in `npm test`). Done when: composing Enter and keyCode 229 → `null`; LF, CR, CRLF, TAB → one space each, U+2028 kept;
   `outcome('Ab', '  Ab ')==='same'`, `''` and `'   '` → `'reset'`; window blur → `'keep'`, blur with a rule error → `'revert'`; each of the
   three plan mutations makes the test fail [FR-021, FR-027]
-- [ ] T071 Split `renameSessionUi` and `renameFolder` into submit parts (`submitSessionName`, `submitFolderName`) that the dialogs call;
+- [x] T071 Split `renameSessionUi` and `renameFolder` into submit parts (`submitSessionName`, `submitFolderName`) that the dialogs call;
   no behaviour change. Done when: `npm run check:rename` and `test:dialog` pass unchanged; `grep` finds one `bridge.renameSession` and one
   `bridge.renameFolder` call site in `app.js` [FR-022, D5, D6]
-- [ ] T072 DOM part of `inlinename.js` (`open`, `follow`, close, error line, busy, one instance) and its CSS (theme tokens, ≥10.5px);
+- [x] T072 DOM part of `inlinename.js` (`open`, `follow`, close, error line, busy, one instance) and its CSS (theme tokens, ≥10.5px);
   wired at the end of `renderAll`, `renderPrev`, `renderFolders`, on resize and floor scroll. Done when: a status tick, a density change and a
   list rebuild keep the field's value and selection; a removed anchor closes it without a call; Esc/Enter/Tab never reach the global
   keydown (the chat stays open) [FR-021, FR-023 items 4-6]
-- [ ] T073 Chat header: `#panelTitle` with `aria-label` and the inner title button, `repaintName` updates labels but never the field,
+- [x] T073 Chat header: `#panelTitle` with `aria-label` and the inner title button, `repaintName` updates labels but never the field,
   click / F2 / Enter start the edit, the double-click and 400 ms guard, the decorative pencil cue and tooltip. Done when: acceptance
   scenarios 1, 2, 3, 11, 17 pass in the driver; focus on open (`focus==='title'`, `remoteBack`) opens no field; a helper chat's title is
   plain text [FR-020 item 1, FR-023 items 1, 7, D1, D7, D9]
-- [ ] T074 Desk cards (every density) and list rows: sibling pencil buttons (`data-ren`, keyed for the morph), list rows wrapped in
+- [x] T074 Desk cards (every density) and list rows: sibling pencil buttons (`data-ren`, keyed for the morph), list rows wrapped in
   `.lrow-w`, the delegated click checks `[data-ren]` first, F2 on `[data-id]`, `ICON('rename')`. Done when: a card or row click still opens
   the chat; scenarios 4, 5, 15, 16 pass; J/K in the list and `shots-034-list` still pass; `check:office` with pencils forced visible has
   no overlap and still fits 15 agents at both sizes [FR-020 items 2, 5, 6, FR-025, D2, D8]
-- [ ] T075 Previous sessions rows (agent rows, hidden rows too; no VS Code rows) and folder names (room header, Folders panel row; no
+- [x] T075 Previous sessions rows (agent rows, hidden rows too; no VS Code rows) and folder names (room header, Folders panel row; no
   pencil in the list Folder cell; F2 on `[data-door]` and `[data-foldermenu]`). Done when: scenarios 13 and 14 pass; the renamed row keeps search and Resume
   (FR-009); a folder reset brings back the folder's own name; demo mode shows no pencil [FR-020 items 3, 4, FR-023 item 2]
-- [ ] T076 Simulator hooks (`retitle`, `renamedElsewhere`, `renameRoomElsewhere`, `endAgent`, `removeAgent`, `inline()`, call counters on
+- [x] T076 Simulator hooks (`retitle`, `renamedElsewhere`, `renameRoomElsewhere`, `endAgent`, `removeAgent`, `inline()`, call counters on
   the fake `renameSession` / `renameFolder`) and `scripts/check-rename-inline.js` (`npm run check:rename-inline`, in `ui-suite.js`
   `DRIVERS`), 1440x900 and 1280x800, Expert and Simple. Done when: every acceptance scenario 1-17 is asserted; it prints "all checks passed";
   each plan mutation (Esc propagation, input inside `.name`, no `detail` guard, submit on unchanged, `visibility:hidden` pencil) makes it
   print `DRIVER FAILED` [FR-015, FR-027]
-- [ ] T077 Accessibility and fit checks: shortcut sheet row "F2: rename the focused session or folder"; focus return after save and
+- [x] T077 Accessibility and fit checks: shortcut sheet row "F2: rename the focused session or folder"; focus return after save and
   cancel on every surface; `check:ui-text` surface `rename-inline` and rule `inline-edit-fit`; header not a drag region with
   `data-platform="darwin"`. Done when: `npm run check:ui-text` passes and fails with a 10px field font or a field that moves the header by 1px
   [FR-024, FR-025]
-- [ ] T078 Docs and screenshots: README (feature list line on renaming, the room ⋯ line), `changelog.d/059-rename-in-place.md`, spec
+- [x] T078 Docs and screenshots: README (feature list line on renaming, the room ⋯ line), `changelog.d/059-rename-in-place.md`, spec
   `[KNOWN GAP]` → `[IMPLEMENTED]` with `sim:`/`test:` evidence, specs-index status, `docs/screenshots/059-rename-inline-*` at both sizes;
   `npm run shots:docs -- --only shots-hero,shots-003-011,shots-005-cardmenu,shots-006-prevmarks,shots-052-ux,shots-074-navigator`, look at
   each, commit those that changed and list the rest in the PR; close #595 as a duplicate of #636 when the PR opens (D9). Done when:

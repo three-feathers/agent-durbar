@@ -92,6 +92,12 @@ const src = (p: string): string => fs.readFileSync(path.join(root, p), 'utf8').r
   assert.ok(!/innerHTML\s*=\s*[^;\n]*\balias\b/.test(app), 'alias is never assigned through innerHTML');
   // every toast in renameSessionUi escapes what it shows
   assert.ok(/toast\(esc\(\(out&&out\.error\)/.test(app) && /toast\(esc\(out\.note\)/.test(app), 'rename toasts are escaped');
+  // spec 059 FR-020, FR-022 (issue 636): the rename pencil and the chat title button label themselves through esc(); the inline field writes text only;
+  // the dialog and the field share ONE submit part per kind (one bridge call site each, so the two ways in cannot drift)
+  assert.ok(/aria-label="Rename \$\{esc\(a\.name\)\}"/.test(app) && /aria-label="Rename session \$\{esc\(a\.name\)\}"/.test(app), 'the pencil and the title button labels are escaped');
+  assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML/.test(src('src/renderer/inlinename.js')), 'the inline field never builds HTML');
+  assert.strictEqual((app.match(/bridge\.renameSession\(/g) || []).length, 1, 'one bridge.renameSession call site');
+  assert.strictEqual((app.match(/bridge\.renameFolder\(/g) || []).length, 1, 'one bridge.renameFolder call site');
   // the Durbar MCP read tools show the folder label, never the session name
   const read = src('src/main/mcp/readtools.ts');
   assert.ok(!/\balias\b/.test(read) && !/\.title\b/.test(read.replace(/\/\*[\s\S]*?\*\//g, '')), 'read tools do not show session names');

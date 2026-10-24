@@ -399,6 +399,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const listeners = new Set<(e: AgentEvent) => void>();
     const addedListeners = new Set<(a: AgentInfo) => void>();
     const renamedListeners = new Set<(e: { id: string; alias?: string }) => void>();
+    /* spec 059 T076: every renameSession / renameFolder call, in order, for drivers (simulator only) */
+    const simRenameCalls = { session: [] as { id: string; sessionId: string | null; name: string }[], folder: [] as string[] };
+    (window as unknown as { __simRenameCalls?: unknown }).__simRenameCalls = simRenameCalls;
     const simPrevNames = new Map<string, string>(); // spec 059: names of the simulated Previous sessions rows
     const n = Math.max(1, opts.n);
     // spec 001 FR-046: read here from the page address (like simkinds), so app.js's option list stays as it is
@@ -2405,6 +2408,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true };
       },
       renameFolder: async (id, label) => { // spec 006 FR-018: the same trimming as main's parseLabel, nothing saved
+        simRenameCalls.folder.push(String(label ?? '')); // spec 059 T076: a driver asserts "no call" and what was sent
         if (!sims.some((x) => x.info.id === id)) return { ok: false };
         const t = String(label ?? '').replace(/\s+/g, ' ').trim();
         return { ok: true, label: t && [...t].length <= 40 ? t : undefined };
@@ -2415,7 +2419,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         for (const x of sims) if (x.info.cwd === src.info.cwd) x.info.defaultAgent = profileId ?? undefined;
         return { ok: true, defaultAgent: profileId ?? undefined };
       },
-      renameSession: async (id, sessionId, name) => { // spec 059 FR-013, FR-015: in memory; the same rule and answers as main; __simRenameFail makes the next app-side rename fail
+      renameSession: async (id, sessionId, name) => { // (call counter: spec 059 T076) spec 059 FR-013, FR-015: in memory; the same rule and answers as main; __simRenameFail makes the next app-side rename fail
+        simRenameCalls.session.push({ id, sessionId, name: String(name ?? '') });
         const src = sims.find((x) => x.info.id === id);
         if (!src) return { ok: false, error: 'Unknown session.' };
         const bad = simNameError(name);

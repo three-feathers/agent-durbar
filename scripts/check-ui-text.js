@@ -307,6 +307,12 @@ module.exports = async (ctx) => {
   add('new-session', 'dialog', ['#sessDlg .dlg', '#sessDlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#newSessHdrBtn'); return until(`!!document.getElementById('sessDlg')`, 3000); });
   add('handover', 'dialog', ['#sessDlg .dlg', '#sessDlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); if (!(await H.exists('#handoverBtn'))) return false; await H.click('#handoverBtn'); return until(`!!document.getElementById('sessDlg')`, 3000); });
   add('remote-control', 'dialog', ['#modeDlg .dlg', '.dlg-ov .dlg'], async () => { if (!(await openChatWhere(`document.getElementById('remoteBtn')`))) return false; await H.click('#moreBtn'); await H.click('#remoteBtn'); return until(`!!document.querySelector('.dlg-ov .dlg')`, 3000); });
+  // spec 059 FR-025, FR-027 (T077): the rename-in-place field open on a desk card and on the chat header (the 60-character names pass below runs the same with simnames=long)
+  const inlineOpen = (sel, opener) => async () => { await js(`window.__inlBefore={sel:${jsLiteral(sel)},box:(()=>{const e=document.querySelector(${jsLiteral(sel)});const r=e.getBoundingClientRect();return [r.left,r.top,r.width,r.height]})()}`); await js(opener); return until(`!!document.querySelector('.inl-input')`, 3000); };
+  add('rename-inline-card', 'screen', ['.inl-layer'], async () => { await closeChat(); await H.click('#vOffice'); await until(`document.querySelectorAll('#stage .desk[data-id]').length>0&&document.querySelector('#stage .desk[data-id]').getClientRects().length>0`, 3000); return inlineOpen('#stage .desk[data-id="sim-2"]', `document.querySelector('#stage .ren[data-ren="sim-2"]').click()`)(); });
+  S[S.length - 1].inline = true;
+  add('rename-inline-header', 'screen', ['.inl-layer'], async () => { if (!(await openChatWhere('true'))) return false; await ctx.sleep(600); return inlineOpen('#panelHead', `document.getElementById('panelTitleBtn').click()`)(); });
+  S[S.length - 1].inline = true;
   add('rename-session', 'dialog', ['#modeDlg .dlg'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); if (!(await H.exists('#renameSessBtn'))) return false; await H.click('#renameSessBtn'); return until(`!!document.querySelector('#modeDlg .dlg')`, 3000); });
   add('folder-status', 'dialog', ['#modeDlg .dlg', '.dlg-ov .dlg'], async () => { if (!(await openChatWhere(`document.querySelector('#panelHead .folder[role=button]')`))) return false; await js(`document.querySelector('#panelHead .folder[role=button]').click()`); return until(`!!document.querySelector('.dlg-ov .dlg')`, 3000); });
   add('compact', 'dialog', ['#modeDlg .dlg'], async () => { if (!(await openChatWhere(`(()=>{const c=document.getElementById('ctxChip');if(!c)return false;if(!document.getElementById('ctxMenu'))c.click();const b=document.querySelector('#ctxMenu #compactBtn:not([aria-disabled])');if(!b){const m=document.getElementById('ctxMenu');if(m)m.remove();}return !!b})()`))) return false; await H.click('#compactBtn'); return until(`!!document.querySelector('#modeDlg .dlg')`, 3000); });
@@ -352,6 +358,8 @@ module.exports = async (ctx) => {
     { name: 'tools-agents-long', base: 'tools-agents-tab', query: { simnames: 'long' } }, // T154: Tools > Models and context with 60-character names
     { name: 'inbox-long', base: 'inbox', query: { simnames: 'long' } }, // T154: the Needs you headings
     { name: 'list-view-long', base: 'list-view', query: { simnames: 'long' } },
+    { name: 'rename-inline-card-long', base: 'rename-inline-card', query: { simnames: 'long' } }, // spec 059 FR-025: 60-character names under the field
+    { name: 'rename-inline-header-long', base: 'rename-inline-header', query: { simnames: 'long' } },
     { name: 'palette-long', base: 'palette', query: { simnames: 'long' } },
     { name: 'chat-first-long', base: 'chat-first', query: { simnames: 'long' } },
     { name: 'chat-slash-long', base: 'chat-slash-list', query: { simslash: 'long' } }, // spec 073 (review on #535): long names in a 480px panel
@@ -389,6 +397,7 @@ module.exports = async (ctx) => {
     if (!s.contrast && /^settings-/.test(s.name) && !/harnesses/.test(s.name)) for (const x of await js(`window.__uitext.measureRule()`)) found.push({ ...tag, ...x });
     if (dark) for (const sel of await js(`window.__uitext.darkControls.filter(s=>[...document.querySelectorAll(s)].some(window.__uitext.vis))`)) opened.add('dark-control ' + sel);
     if (s.kind === 'chat') for (const sel of ['.cp-btn', '.sub-prompt .pt', '.bubble.caret']) if (await js(`document.querySelectorAll(${jsLiteral('#panel ' + sel)}).length>0`)) opened.add('chat ' + sel);
+    if (s.inline) for (const x of await js(`window.__uitext.inlineFit()`)) found.push({ ...tag, ...x });
     if (!s.contrast) for (const x of await js(`window.__uitext.tooltips()`)) found.push({ ...tag, ...x });
     if (SHOTS && OUT) await H.shot(path.join(OUT, `${s.name}-${theme === 'dark' ? 'dark' : 'light'}-${W}x${Hh}.png`), { prep: 'mouse', delay: 250 });
     console.log(`[ui-text] ${s.name} ${themeId || theme} ${W}x${Hh}: ${v.length} violations`);

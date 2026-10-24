@@ -3,13 +3,13 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Rename sessions (issue #372): a short name of the user's own for any main session, shown on every surface (card, list, chat header, strip, inbox, notifications, Schedules, Previous sessions, activity log) instead of the runtime title; also saved in the agent app (Copilot `name.set`, also for a session that is not open through a prompt-free resume; Codex `thread/name/set`; Claude Code `--name` at the next message); **Rename…** in the chat header More menu and the card menu, and the Previous sessions row menu (spec 006, #379)
-status: **Built, simulator and fakes** (name rule, store, IPC, three adapters, dialog, surfaces, `check:rename`); `real:` app calls by Vikram's agent (Copilot, Codex, Claude CLI lists); open: VS Code visibility, macOS/Windows, T050; delta 2026-10-23: rename in place (#636, #595: click the chat title, a pencil by each name, F2; FR-020..FR-027, T070..T078) specified, not built
+status: **Built, simulator and fakes** (name rule, store, IPC, three adapters, dialog, surfaces, `check:rename`); `real:` app calls by Vikram's agent (Copilot, Codex, Claude CLI lists); open: VS Code visibility, macOS/Windows, T050; delta 2026-10-23: rename in place (#636, #595: click the chat title, a pencil by each name, F2; FR-020..FR-027, T070..T078) built on the simulator 2026-10-24, not run on a real Mac or Windows
 -->
 
 **Feature Branch**: `059-rename-sessions`
 **Created**: 2026-10-20
 **Status**: Built on the simulator and fakes (T010-T040, T060; evidence tags below; T050 real checks open: VS Code, macOS/Windows). The owner answered Q1-Q9 on 2026-10-20 (all A) and changed Q2 to B plus
-added Q10 (Claude `--name`) the same day (see *Changes*). 2026-10-23: rename in place (FR-020..FR-027, issue #636) specified by the coordinator under Ruben's delegation, not built (T070..T078; see *Changes*).
+added Q10 (Claude `--name`) the same day (see *Changes*). 2026-10-23: rename in place (FR-020..FR-027, issue #636) specified by the coordinator under Ruben's delegation and built on the simulator the next day (T070..T078; see *Changes*).
 **Input**: Issue #372. Owner (Paco, 2026-10-20): "it would be nice to be able to rename sessions". Rename in the agent app's own
 store where it has an API (so VS Code and the CLI see the new name too), else a Durbar-only name kept locally; **Rename…** in the
 chat header's More menu, the agent card menu and the Previous sessions row menu (spec 006, issue #368); the new name everywhere the
@@ -376,7 +376,7 @@ Owner request (Ruben, 2026-10-23, issues #636 and #595): rename where the name i
 (D1..D9) were **decided by the coordinator under Ruben's delegation**. They change **Q6** from A (the dialog everywhere) to "in place
 everywhere, the dialog stays as a second way in" (D6). FR-004 (the dialog) and FR-006 (the menu items) are unchanged and stay
 `[IMPLEMENTED]`; spec 006 FR-018 (folder display name) gets a cross-reference delta, because this spec owns the shared editor. Status of
-FR-020..FR-027: specified, not built (`[KNOWN GAP]` until T070..T078 land).
+FR-020..FR-027: built 2026-10-24 on the simulator (T070..T078): `[IMPLEMENTED]` with `test:` and `sim:` evidence below; not run on a real Mac or Windows.
 
 **Decisions (coordinator, under Ruben's delegation):**
 
@@ -399,7 +399,7 @@ FR-020..FR-027: specified, not built (`[KNOWN GAP]` until T070..T078 land).
 
 **Requirements:**
 
-- **FR-020** `[KNOWN GAP]` **Where a name is renamed in place, and how it starts.**
+- **FR-020** `[IMPLEMENTED]` **Where a name is renamed in place, and how it starts.**
   1. **Chat header** (`#panelTitle`, main sessions that `canRenameSession` allows): the heading keeps the name as its text and its
      accessible name (`aria-label` = the display name); inside it the name is a button (`aria-label` "Rename session <name>"). A single
      click on it, or F2 / Enter while the heading or the button has focus, starts the edit. A decorative pencil (`aria-hidden`) shows on
@@ -422,7 +422,7 @@ FR-020..FR-027: specified, not built (`[KNOWN GAP]` until T070..T078 land).
      or `visibility:hidden`, which would drop it from Tab order and screen readers); shown on `:hover`, `:focus-within` and
      `@media (hover:none)`. On cards and list rows it takes no layout space (positioned); it never covers the status word, pill, badge,
      chat number, draft mark or mode icon.
-- **FR-021** `[KNOWN GAP]` **The field.** One single-line text field over the name (positioned on top of the name's box, not inserted into
+- **FR-021** `[IMPLEMENTED]` **The field.** One single-line text field over the name (positioned on top of the name's box, not inserted into
   the card, row or heading markup), with the name's own font size and weight (never under 10.5px), prefilled with the current display name
   (sessions: cut to 60 with `SN().shortName`, as the dialog; folders: `r.name`) and fully selected. `maxlength` as the dialog (sessions 60,
   folders 40). Keys and events:
@@ -446,7 +446,7 @@ FR-020..FR-027: specified, not built (`[KNOWN GAP]` until T070..T078 land).
      reset."), folders call `bridge.renameFolder(id, '')` (the folder's own name).
   9. While the call runs the field is read-only with `aria-busy="true"`; a second Enter or a blur does not send again.
   10. Only one inline edit at a time: starting another (F2 elsewhere, another pencil) first saves the open one, as blur does.
-- **FR-022** `[KNOWN GAP]` **One helper, the existing paths.** A small renderer module (`src/renderer/inlinename.js`, pure key and text
+- **FR-022** `[IMPLEMENTED]` **One helper, the existing paths.** A small renderer module (`src/renderer/inlinename.js`, pure key and text
   logic plus a thin DOM part with an injected `document`) is used by every surface of FR-020. What happens on save is the **existing** code,
   split out so the dialog and the field share it, not copied:
   - sessions: the submit part of `renameSessionUi` (call `bridge.renameSession`, the rule-reason check, `a.alias` + `repaintName` for the
@@ -456,7 +456,7 @@ FR-020..FR-027: specified, not built (`[KNOWN GAP]` until T070..T078 land).
     refresh the open panel), with the same "Could not rename the folder." toast.
   The dialog paths (D6) call the same submit parts, so the two ways in cannot drift. No new IPC channel, no change to `durbar-folders.json`,
   `sessionNames`, `AgentInfo` or the adapters; main's validation (FR-013, spec 006 FR-018) is unchanged.
-- **FR-023** `[KNOWN GAP]` **When something changes while the field is open.**
+- **FR-023** `[IMPLEMENTED]` **When something changes while the field is open.**
   1. **A late runtime title** (`applyTitle`, a `session.title_changed`) while a session without a user name is being edited: the field
      keeps what the user typed; `repaintName` updates the name under the field and the button's labels, never the field's value. Unchanged
      text then makes no call (FR-021 item 5) and the new title shows; typed text is saved as the user's name and wins.
@@ -473,7 +473,7 @@ FR-020..FR-027: specified, not built (`[KNOWN GAP]` until T070..T078 land).
   7. **Note for #587 (kept):** opening a chat may focus `#panelTitle` (spec 074 FR-019 fallback when there is no usable message box,
      `focus==='title'`, `remoteBack`); focus alone never starts an edit, and the Enter that opened the chat from a desk is not seen by the
      header (the edit starts only on a keydown whose target is the title).
-- **FR-024** `[KNOWN GAP]` **Accessibility and words.** The field's `aria-label` is "Name of session <name>" / "Name of folder <name>",
+- **FR-024** `[IMPLEMENTED]` **Accessibility and words.** The field's `aria-label` is "Name of session <name>" / "Name of folder <name>",
   `aria-describedby` points to a short hint (sr-only) "Enter saves, Escape cancels. Empty uses <app>'s title again." (folders: "...uses the
   folder name."). After save or cancel, focus returns to the control that started the edit (the title button, the pencil, or the card / row /
   door where F2 was pressed); if it was re-rendered, the same control is found again by its key (`data-id`, `data-door`, `data-pk`), as
@@ -481,15 +481,15 @@ FR-020..FR-027: specified, not built (`[KNOWN GAP]` until T070..T078 land).
   Expert. The shortcut sheet (spec 052 FR-043, `openKbdHelp`) gets one row: "F2: rename the focused session or folder". The pencil's tooltip
   is its `aria-label` (at most 120 characters, spec 052 FR-168). F2 does nothing under a dialog (`modalOpen()`), in a text field, or on an
   item that cannot be renamed.
-- **FR-025** `[KNOWN GAP]` **Fit (constitution V).** Opening the field changes no element's size or position: the chat header, the card,
+- **FR-025** `[IMPLEMENTED]` **Fit (constitution V).** Opening the field changes no element's size or position: the chat header, the card,
   the row and the room header keep their height and width (the field is drawn over the name's box, at least the box's width and at most the
   card's or row's inner width, scrolling its text inside). Nothing under 10.5px. With 15 agents and 60-character names (`simnames=long`) the
   office fits at 1440x900 and 1280x800 with the pencils shown (hover and focus-within) and with a field open. The header title on macOS is
   outside the window drag region (the chat header `.ph` is not a drag region today, `styles.css:1592`); a check pins it.
-- **FR-026** `[KNOWN GAP]` **Docs and help text.** README (feature list "Rename a session (More menu, the card menu)" and "A room's ⋯ menu
+- **FR-026** `[IMPLEMENTED]` **Docs and help text.** README (feature list "Rename a session (More menu, the card menu)" and "A room's ⋯ menu
   offers ... Rename"): say that a click on the chat title, the pencil next to a name, or F2 renames in place, and that the menus still do. The
   More menu item tooltip "Give this session a short name" and the folder menu hint stay. A `changelog.d/059-rename-in-place.md` fragment.
-- **FR-027** `[KNOWN GAP]` **Checks.** Unit test of the pure part (keys, IME, paste, unchanged, empty) in `scripts/test-inlinename.ts`; a
+- **FR-027** `[IMPLEMENTED]` **Checks.** Unit test of the pure part (keys, IME, paste, unchanged, empty) in `scripts/test-inlinename.ts`; a
   simulator driver `scripts/check-rename-inline.js` (`npm run check:rename-inline`, in `check:ui`) for every surface of FR-020 and every
   item of FR-021 and FR-023, at 1440x900 and 1280x800, Simple and Expert; a `check:ui-text` surface with the field open; screenshots of the
   edit state for the header, a card, a Previous sessions row and a folder; the linked pictures retaken where they changed.
@@ -536,5 +536,13 @@ focus (FR-021 item 2); a dialog opening over the field (FR-023 item 6); two edit
 pencil icon on cards (`draftHTML`, `ICON('edit')`): the rename pencil must not look like it (open question for the coordinator, plan *Rename
 in place*).
 
-**Evidence when built:** `test:` `scripts/test-inlinename.ts`; `sim:` `scripts/check-rename-inline.js` and `check:ui-text`; nothing real
+**Evidence (built 2026-10-24):**
+
+- `test:` `scripts/test-inlinename.ts` (keys, IME, paste, unchanged, empty, blur rule, and the field's logic in jsdom); `scripts/test-sessionname.ts` (escaped labels, one `bridge.renameSession` and one `bridge.renameFolder` call site).
+- `sim:` `scripts/check-rename-inline.js` (`npm run check:rename-inline`, in `check:ui`), 1440x900 and 1280x800, Expert and Simple: scenarios 1-17 except those listed below; `check:ui-text` surfaces `rename-inline-card`, `rename-inline-header` (and `-long`) with the rule `inline-edit-fit`; `check:office` forces every pencil visible and checks none covers the status word, pill, badge, chat number, draft mark or mode icon.
+- Screenshots: `docs/screenshots/059-rename-inline-{header,card,prev,folder}-{1440x900,1280x800}.png`.
+- Mutations that make the driver print `DRIVER FAILED`: no `stopPropagation` on Esc, the input inside the name, no `detail` guard, submit on unchanged text, `visibility:hidden` on the pencil; `check:ui-text` fails with a 10px field font or a field that moves the header by 1px.
+- `sim:` a room hidden or removed while its field is open (hooks `hideRoom`, `removeRoom`) closes the field with no `renameFolder` call and focus stays on a real control; a save still running when another edit opens leaves one field, and its late answer does not take focus (unit test and driver).
+- `[KNOWN GAP]` Not driven: FR-023 item 6 (a dialog opening over the field; the blur path is unit-tested); the demo (`demoOn`) shows no pencil by construction, not driven; the macOS drag region is read in the simulator with `data-platform="darwin"` only, not on a real Mac or on Windows.
+- Linked pictures retaken with `npm run shots:docs -- --only shots-hero,shots-003-011,shots-005-cardmenu,shots-006-prevmarks,shots-052-ux,shots-074-navigator`: none shows a pencil (hidden until hover or focus) and the committed ones already differ from this machine's rendering; none was replaced.
 (no agent call changes; FR-007 is untouched).
