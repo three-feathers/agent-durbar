@@ -9,7 +9,7 @@
  * and froze it). So:
  *   - at most half the CPUs at once (at least 1, at most 4), CHECK_JOBS=n to change it;
  *   - a job starts only while at least 1.5 GB of memory is available (MemAvailable on Linux; free + inactive + speculative pages
- *     from vm_stat on macOS, spec 008 FR-125); a worker that has waited WAIT_MAX_MS (120 s) for that runs its job anyway and says so;
+ *     from vm_stat on macOS, spec 008 FR-125); a worker that has waited WAIT_MAX_MS (120 s) for that runs its job only when no other job is running, and says so;
  *   - if available memory falls under 600 MB, the newest job is stopped (its whole process group) and queued again;
  *   - everything runs at low priority (nice 10), so the desktop and the editor come first;
  *   - a job that takes longer than CHECK_TIMEOUT seconds (default 900) is stopped and counts as failed.
@@ -54,21 +54,25 @@ function parseVmStat(text) {
 function darwinAvailable(exec = execFileSync) {
   try { return parseVmStat(exec('vm_stat', [], { timeout: 3000, encoding: 'utf8' })); } catch (_) { return null; }
 }
-let cached = { at: 0, value: 0 };
-/** Memory a new process can get: MemAvailable on Linux (os.freemem() leaves out the page cache there on old Node), vm_stat on macOS, else freemem. Cached for 1 s. */
-const available = () => {
-  const now = Date.now();
-  if (now - cached.at < 1000) return cached.value;
-  let value = 0;
-  try {
-    const m = /MemAvailable:\s+(\d+) kB/.exec(fs.readFileSync('/proc/meminfo', 'utf8'));
-    if (m) value = Number(m[1]) * 1024;
-  } catch (_) { /* not Linux */ }
-  if (!value && process.platform === 'darwin') value = darwinAvailable() || 0;
-  if (!value) value = os.freemem();
-  cached = { at: now, value };
-  return value;
-};
+/** The reader of available memory; every input is injectable for tests. Cached for 1 s. */
+function makeAvailable({ platform = process.platform, readMeminfo = () => fs.readFileSync('/proc/meminfo', 'utf8'), exec = execFileSync, freemem = os.freemem, now = Date.now } = {}) {
+  let cached = { at: 0, value: 0 };
+  return () => {
+    const t = now();
+    if (cached.at && t - cached.at < 1000) return cached.value;
+    let value = 0;
+    try {
+      const m = /MemAvailable:\s+(\d+) kB/.exec(readMeminfo());
+      if (m) value = Number(m[1]) * 1024;
+    } catch (_) { /* not Linux */ }
+    if (!value && platform === 'darwin') value = darwinAvailable(exec) || 0;
+    if (!value) value = freemem();
+    cached = { at: t, value };
+    return value;
+  };
+}
+/** Memory a new process can get: MemAvailable on Linux (os.freemem() leaves out the page cache there on old Node), vm_stat on macOS, else freemem. */
+const available = makeAvailable();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -143,14 +147,20 @@ async function main({ ensure = ensureElectron, runJob = run, available: avail = 
     stop(newest);
   }, 1000);
   const queue = list.slice();
+  let active = 0; // jobs running now (the guard's `running` set is the real processes; this counts the ones main started)
   let failed = 0;
   await Promise.all(Array.from({ length: Math.min(workers, list.length) }, async (_, worker) => {
     for (let j = queue.shift(); j; j = queue.shift()) {
       // worker 0 always runs (one job at a time is what the serial check did); the others wait for memory
-      if (worker > 0 && !(await waitForMemory(avail, START_MIN, waitMaxMs))) {
-        log(`  warn ${j.label.padEnd(22)} only ${(avail() / MB).toFixed(0)} MB available after ${waitMaxMs / 1000}s (wanted ${START_MIN / MB}); running it anyway`);
+      // after the bound a worker still starts a second job only with the memory; it runs low-memory only when nothing else runs
+      // (so it never waits forever, and worker 0 keeps the load at one job: the 1.5 GB rule holds for every job beyond the first)
+      while (worker > 0 && !(await waitForMemory(avail, START_MIN, waitMaxMs))) {
+        if (active === 0) { log(`  warn ${j.label.padEnd(22)} only ${(avail() / MB).toFixed(0)} MB available after ${waitMaxMs / 1000}s (wanted ${START_MIN / MB}); nothing else runs, so running it`); break; }
+        await sleep(Math.min(2000, Math.max(waitMaxMs, 10))); // not a busy loop when the bound is tiny
       }
-      const res = await runJob(j);
+      active++;
+      let res;
+      try { res = await runJob(j); } finally { active--; }
       if (res === 'again') { queue.push(j); await sleep(5000); } else if (res === 'fail') failed++;
     }
   }));
@@ -159,7 +169,7 @@ async function main({ ensure = ensureElectron, runJob = run, available: avail = 
   return failed;
 }
 
-module.exports = { main, jobs, parseVmStat, darwinAvailable, waitForMemory, WAIT_MAX_MS };
+module.exports = { main, jobs, parseVmStat, darwinAvailable, makeAvailable, waitForMemory, WAIT_MAX_MS };
 
 if (require.main === module) {
   try { os.setPriority(10); } catch (_) { /* not allowed: run at normal priority */ }
