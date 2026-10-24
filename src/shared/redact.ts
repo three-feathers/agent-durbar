@@ -735,8 +735,6 @@ function htRanges(s: string): Array<[number, number]> {
   let sp = 0; // the last token boundary (outside any quote) and the bracket depth there: where the past-the-bound scan starts
   let sd = 1;
   const hsAt = [-2, -2]; // cached here-string closer position per kind ('@ and "@), -1 = none after the scan point
-  const failFrom = [-1, -1]; // a quoted name that did not close before `limit`: the later quotes of its kind in that literal are not tried again (linear)
-  const failLim = [-1, -1];
   let ld = -2; // the last `"` and the last `'`, found once (linear)
   let ls = -2;
   const lastDq = (): number => (ld === -2 ? (ld = s.lastIndexOf('"')) : ld);
@@ -777,9 +775,8 @@ function htRanges(s: string): Array<[number, number]> {
       let ns: number;
       let ne: number;
       if (c === '"' || c === "'") {
-        const kq = c === '"' ? 0 : 1;
-        const e = failLim[kq] === limit && p > failFrom[kq] ? -1 : htCloseQuote(s, p, mEnd);
-        if (e < 0) { failFrom[kq] = Math.min(failLim[kq] === limit ? failFrom[kq] : p, p); failLim[kq] = limit; p++; continue; } // a stray quote: the text behind it is read as it is
+        const e = htCloseQuote(s, p, mEnd);
+        if (e < 0) { p++; continue; } // a stray quote: the text behind it is read as it is
         ns = p + 1; ne = e; p = e + 1;
       } else {
         ns = p;
