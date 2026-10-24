@@ -20,6 +20,8 @@ const asks = [
   'I am reviewing at abc1234 now', 'reviewing at XYZ1234', 'checks run at 6d2a841b',
   // lower-case letters that are not hex: a word, not a sha (review on #561: a [0-9a-z] class must fail here)
   'reviewing at tomorrow', 'checks run at tomorrow: ok',
+  // too short and too long for a sha: 6 hex characters, and 41 (review on #561: `{6,40}` and `{7,}` must fail here)
+  'reviewing at abc123', 'checks run at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: ok',
   // no sha: a note without one is an ask, and a ask can hide behind the words
   'checks run at : one required change: rename foo before merge', 'reviewing at ',
   // text before the note: the note must be the whole comment
