@@ -57,6 +57,8 @@ module.exports = async (ctx) => {
     }
   };
   const opened = () => until(`!!document.querySelector('.inl-input')`, 4000);
+  /* Blur the open field and be sure the field's blur handler ran, in a window with or without OS focus (a CI window, Windows, may have none: Chromium then does not dispatch the blur event for el.blur()). One page call: blur(); when no event came, dispatch the same event once, so the handler never runs twice. Returns whether the real event came. */
+  const blurField = () => js(`(()=>{const i=document.querySelector('.inl-input');let seen=false;i.addEventListener('blur',()=>{seen=true;},{once:true});i.blur();if(!seen)i.dispatchEvent(new FocusEvent('blur'));return seen})()`);
   const none = async (tag) => assert.strictEqual((await st()).open, false, `${tag}: no field is open`);
   const closeField = async () => { if ((await st()).open) { await key('Escape'); await ctx.sleep(120); } };
 
@@ -68,6 +70,8 @@ module.exports = async (ctx) => {
       await until(`document.querySelectorAll('#stage .unit>.ren[data-ren]').length>=6`, 10000);
       ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus();
       /* a CI window (Windows) may have no OS focus: blurAction keeps the field when document.hasFocus() is false, so every blur-commit step runs with a window that has focus; the one step that tests the opposite sets the false stub itself */
+      console.log(`[rename-inline] ${w}x${h} ${level}: the window ${await js(`document.hasFocus()`) ? 'has' : 'has no'} OS focus`);
+      if (process.env.RI_UNFOCUSED === '1') { ctx.win.blur(); await ctx.sleep(300); console.log(`[rename-inline] RI_UNFOCUSED=1: the window ${await js(`document.hasFocus()`) ? 'still has' : 'has no'} OS focus now`); }
       await js(`document.hasFocus=()=>true;0`);
       const tag = `${w} ${level}`;
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${tag}: the detail level is on`);
@@ -177,7 +181,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(await nSess(), n1, `${tag}: nothing was sent`);
       await type('bad\u0007name'); await key('Return'); await opened();
       assert.strictEqual((await err()).t, 'Remove control or hidden characters.');
-      await type('x'.repeat(61)); await js(`document.querySelector('.inl-input').blur()`); await settle();
+      await type('x'.repeat(61)); await blurField(); await settle();
       await none(`${tag} blur with a rule breaker`);
       assert.ok(await js(`[...document.querySelectorAll('.toast')].some(t=>/^Not renamed: Use 1 to 60 characters\\./.test(t.textContent))`), `${tag}: blur with a rule breaker says "Not renamed: ..."`);
       assert.strictEqual(await nSess(), n1, `${tag}: and sends nothing`);
@@ -206,7 +210,7 @@ module.exports = async (ctx) => {
       assert.ok((await st()).open && (await nSess()) === n3, `${tag}: the window losing focus keeps the field open, no call (2)`);
       await js(`document.hasFocus=()=>true;0`);
       await js(`document.querySelector('.inl-input').focus()`);
-      await js(`document.querySelector('.inl-input').blur()`); await until(`__durbarSimUi.agents().find(x=>x.id===${jsLiteral(A)}).alias==='Away'`, 4000);
+      await blurField(); await until(`__durbarSimUi.agents().find(x=>x.id===${jsLiteral(A)}).alias==='Away'`, 4000);
       assert.strictEqual(await aliasOf(A), 'Away', `${tag}: a blur inside the window saves`);
       // the EVIL name saved through the chat header: text in the title and the labels, no element, no script (review of #636, item 3)
       await click('#panelTitleBtn', 1); await ctx.sleep(120); await type(EVIL); await key('Return'); await settle();
