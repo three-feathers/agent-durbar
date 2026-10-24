@@ -379,7 +379,7 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   const cpuMs = (f: () => void): number => { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); return (d.user + d.system) / 1000; };
   const small = mkBig(5000), big = mkBig(20000);
   maskEditInfo(small, vals); // warm the regexes
-  // best (minimum) CPU time of 5 interleaved runs per size, so one GC pause or busy core cannot fail it; linear code measures ~2.3x for 4x input
+  // best (minimum) CPU time of 5 interleaved runs per size, so one GC pause or busy core cannot fail it; linear code measures 2.3-3.4x for 4x input (seen across runs, including under load), so the 5x limit keeps a margin; a quadratic step would be ~16x
   let a = Infinity, b = Infinity;
   for (let i = 0; i < 5; i++) { a = Math.min(a, cpuMs(() => void maskEditInfo(small, vals))); b = Math.min(b, cpuMs(() => void maskEditInfo(big, vals))); }
   assert.ok(b < Math.max(100, a * 5), `maskEditInfo is linear (100,000 -> 400,000 characters, 4x per diff: ${a} -> ${b} ms CPU)`); // a quadratic step would be 16x
