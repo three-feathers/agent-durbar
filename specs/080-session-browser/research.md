@@ -1,6 +1,6 @@
 # Research: Each session gets its own built-in browser (spec 080)
 
-**Date**: 2026-10-23 | **Issue**: #556 | **Cost**: 0 AI credits. Nothing was run: every finding below is `read:` (official docs, READMEs or source files) unless it says otherwise. No CDP proxy, view or MCP server was built or tried.
+**Date**: 2026-10-23 | **Issue**: #556 | **Cost**: 0 AI credits. Findings are `read:` (official docs, READMEs or source files) unless it says otherwise. Only R1a (the T010 simulator probe) ran anything; no CDP proxy or MCP server was built or tried.
 
 ## R1. Electron: the embedded view, partitions, the in-process debugger, fuses
 
@@ -13,6 +13,66 @@
 - **Input events.** `before-input-event` is "Emitted before dispatching the `keydown` and `keyup` events" (keys only). `input-event` is "Emitted when an input event is sent to the WebContents", and `InputEvent.type` covers mouse, touch, pointer, gesture and keyboard types. Unhandled `select-bluetooth-device`: "the first available device will be automatically selected". `will-prevent-unload` with `preventDefault()` "will ignore the `beforeunload` event handler". `read:` <https://www.electronjs.org/docs/latest/api/web-contents>, <https://www.electronjs.org/docs/latest/api/structures/input-event>. Whether CDP-dispatched input fires `input-event`: unknown (T010).
 - **Cookie encryption and Linux keyrings.** The `cookieEncryption` fuse encrypts the on-disk cookie store with OS-level keys and is one-way (<https://www.electronjs.org/docs/latest/tutorial/fuses>). `safeStorage.getSelectedStorageBackend()` returns `basic_text` on Linux when no secret store is available, and then data is "unprotected" (<https://www.electronjs.org/docs/latest/api/safe-storage>). Spec FR-085 refuses saved logins in that case.
 - **Fuses.** Nine fuses; none covers `--remote-debugging-port` or `webContents.debugger`. `nodeCliInspect` only covers `--inspect`-style flags and `SIGUSR1`. `read:` <https://www.electronjs.org/docs/latest/tutorial/fuses>. Durbar already removes the remote-debugging switches from every packaged build (spec 008 FR-038, `specs/008-packaging-and-release/spec.md:209-210`, `real:` packed Linux). In-process debugging does not touch either, so #423 stays closed.
+
+### R1a. Simulator probe (T010, 2026-10-24)
+
+Throwaway probe, not merged, not wired into any npm script. `sim:` Electron 44.8.0, Chromium 152.0.7977.167, Linux, `xvfb-run -a` (never the `:99` display), a local `http` server on 127.0.0.1, 0 AI credits, no network beyond localhost. Every view used FR-010's exact `webPreferences` (`sandbox`, `contextIsolation`, `webSecurity`, `safeDialogs`, `spellcheck: false`, `autoplayPolicy`, `devTools: false`, an in-memory `partition`). **Limits:** the probe ran with `--no-sandbox` (the repo's `chrome-sandbox` is not set up here, as in CI), so `sandbox: true` is requested but the OS sandbox is off; user input was simulated with `webContents.sendInputEvent` (no `xdotool`); one run per case, so the timing ones (hang or not) are single observations; Linux/X11 only (macOS and Windows not run).
+
+| AC | Result | Evidence |
+|---|---|---|
+| AC0 | ok | all views built with FR-010's options, `devTools: false` included |
+| AC1 | ok: the view covers the HTML | `sim:` a blue view over a green HTML block of the app page: 20,000 of 20,000 blue pixels showed in a root screenshot, so FR-008's still picture is needed |
+| AC2 | ok | `debugger.attach` after `about:blank`; `Page.enable` alone; `Accessibility.getFullAXTree` (11 nodes); `DOM.scrollIntoViewIfNeeded`, `getContentQuads`, `focus`; `Overlay.highlightNode` (after `DOM.enable` + `Overlay.enable`, on a node from the current document: a stale node id gives "Could not find node with given id"); `Fetch.enable` with a Document pattern paused the form POST (`GET:Document`, `POST:Document`); `Page.setInterceptFileChooserDialog` gave `Page.fileChooserOpened` |
+| AC3 | ok | in-memory partition: 1 cookie and a `localStorage` value; a second view of the same partition still saw both; after `clearStorageData()` 0 cookies, and a new view sent no cookie and read no `localStorage` |
+| AC4 | ok: it fires | `input-event` fires for `Input.dispatchMouseEvent` (`mouseMove`, `mouseDown`, `mouseUp`) and for `Input.dispatchKeyEvent` (`keyDown`, `keyUp`); it does **not** fire for `Input.insertText`. FR-061's rule (ignore input while a `drive` call runs) is needed, and typing through `insertText` is invisible to the detector |
+| AC5 | confirmed | with permissions allowed, a click that calls `requestFullscreen()` made `enter-html-full-screen` fire, `win.isFullScreen()` became true and the window's `enter-full-screen` fired: the whole window goes fullscreen. With the deny-all handlers (FR-025) nothing happened (no event, no fullscreen). FR-025 stays as written |
+| AC6 | ok | `Fetch` at the request stage paused each hop of `/r1 -> /r2 -> /final` (the last two with `redirectedRequestId`) |
+| AC7 | **fails** | with `Input.setIgnoreInputEvents{ignore:true}` a `sendInputEvent` click was ignored (as wanted) **but a CDP `Input.dispatchMouseEvent` click was ignored too** (the page's counter stayed 0); both worked again after `ignore:false`. FR-066 (Watch-only) cannot use it as written: the agent's own input is blocked as well |
+| AC8 | partly | `alert` and `confirm` arrive as `Page.javascriptDialogOpening` and `Page.handleJavaScriptDialog` answers them (`confirm` gave `true` on accept, `false` on dismiss); `beforeunload` arrives as a dialog, accepting lets the navigation go, dismissing keeps the page; with `will-prevent-unload` and `preventDefault()` the navigation went ahead. **`prompt()` throws in Electron ("prompt() is not supported."), so there is no prompt dialog at all.** **But the native dialog is still shown (see AC13), so "no native dialog ever blocks" does not hold** |
+| AC9 | ok, with one unexplained file | `kill -9` of the main process: 0 processes left. User-data tree (names and sizes only): no `Partitions/` folder and nothing named after the in-memory partition. Two files appear in a run that has a view and not in one that has none: `Cache/Cache_Data/<hash>_0` (456,073 bytes in every run) and a temporary `.org.chromium.Chromium.Network Persistent State.<random>` (476 or 477 bytes). They also appear for a view that loaded nothing, for a view in the default partition, and (the cache file only) for a second window in an in-memory partition, and the cache file's size never changed, so they are not page data (the test pages are a few hundred bytes), but what they are was not identified (contents not read, by rule). A control view in a `persist:` partition wrote a full `Partitions/probe-persist/` tree (cache, code cache, GPU caches, DIPS) |
+| AC10 | not run | no `codex` binary here and the check needs a Codex session; stays with T060 `[KNOWN GAP]` |
+| AC11 | **fails by default** | a view attached but `setVisible(false)`: `Page.captureScreenshot` ok (same size as a shown view's) and `Accessibility.getFullAXTree` ok with and without `backgroundThrottling: false`; `Input.dispatchMouseEvent` **timed out** with the default and worked with `backgroundThrottling: false`; `requestAnimationFrame` ran 0 frames in 500 ms by default and 30 with `false` (a shown view: 30). So FR-010 needs `backgroundThrottling: false` for views an agent drives |
+| AC12 | **fails** | a view never added to a window: pages load and `getFullAXTree` works, but `Page.captureScreenshot` times out (also with `fromSurface: false`, with `backgroundThrottling: false`), `Input.dispatchMouseEvent` timed out in one run (the first mouse event, `mouseMoved`, hangs; a press and release counted in one run and not in another), and no animation frames run (0). `offscreen: true` gives frames but no screenshot and no counted click. A view attached with bounds outside the window or with zero size: no screenshot. What did work (one run each): a view attached to a **hidden window** (`show: false`) with `backgroundThrottling: false`, with `Page.captureScreenshot` `{ fromSurface: false }` (the default screenshot timed out there), and clicks. FR-110's "never added to the window" is not supported; a hidden helper window is the candidate |
+| AC13 | **native dialog shows** | a `confirm` in a shown view, in a hidden view, and in a hidden view with `Page` enabled: a GTK dialog (OK/Cancel) was drawn at the top-left of the screen in all three (screenshot difference of the same box, about 9,000 pixels), the script stayed pending, and the app page stayed responsive. With `Page` enabled `Page.javascriptDialogOpening` arrives **and** the native dialog is shown anyway; `Page.handleJavaScriptDialog` released the script (`true`), but the dialog window was still mapped and drawn 1.5 s later. A hidden session's dialog therefore pops over whatever is shown. (Xvfb without a window manager; not seen on a real desktop) |
+| AC14 | not run | Local Network Access needs a page in the public address space; offline everything is loopback; stays a `[KNOWN GAP]` for FR-058 |
+| AC15 | ok | the probe processes and their Xvfb displays were checked by PID (none left); the 4 `kill -9` children left none |
+| AC16 | done (spec delta 2026-10-24) | FR-025d, FR-010, FR-011, FR-061, FR-066a, FR-023a, FR-058 and FR-110..FR-113 changed; options in R1b; follow-up probe T007, file identification T008 |
+
+**FRs at risk (for the coordinator; the FRs are not changed in this slice):**
+
+- **FR-025d** (AC8, AC13): CDP does not replace the native dialog; it is shown and stays after `Page.handleJavaScriptDialog`. `prompt()` does not exist. Needs a way to keep the dialog from showing (none found yet) or the FR must be rewritten.
+- **FR-066** (AC7): `Input.setIgnoreInputEvents` blocks CDP input too; Watch-only needs another way (for example drop the user's events in the page area before they reach the view).
+- **FR-010** (AC11): `backgroundThrottling: false` is needed for driven views (the spec's own condition is met).
+- **FR-110** (AC12): a detached view cannot be screenshotted or reliably clicked; use an attached hidden view in a shown window, or a hidden helper window with `fromSurface: false` (one run).
+- **FR-023a** (AC9): holds for the partition; two unidentified files in the default profile appear whenever any view exists.
+- **FR-061** (AC4): the detector works for mouse and keys; `Input.insertText` is not reported.
+
+### R1b. Mechanisms after the probe (2026-10-24, for the spec delta)
+
+Nothing here ran; each choice is checked by T007 before the task that builds it.
+
+**JS dialogs (FR-025d).** Facts: Electron has no documented `webContents` event for `alert`/`confirm`/`prompt` (`read:` <https://www.electronjs.org/docs/latest/api/web-contents>, whole page; only `will-prevent-unload` for `beforeunload`). Electron's own handler is the private `-run-dialog` listener in `lib/browser/api/web-contents.ts` (`read:` `electron/electron` `main`, 2026-10-24): `if (!prefs || prefs.disableDialogs) return callback(false, '')`, `if (info.dialogType === 'prompt') return callback(false, '')`, and otherwise `dialog.showMessageBox(parent, options)` with `parent = this.getOwnerBrowserWindow()` (no parent: a free-standing box, which matches the top-left GTK box of T010 AC13). `webPreferences.disableDialogs`: "Whether to disable dialogs completely. Overrides `safeDialogs`" (`read:` <https://www.electronjs.org/docs/latest/api/structures/web-preferences>).
+
+| Option | Safety | Calm UI | FR-046 (no main-world `Runtime`) | Verdict |
+|---|---|---|---|---|
+| A. `disableDialogs: true` on every view; CDP event only for a bar note | No page code, no new surface; nothing can pop over another chat; no call hangs | Nothing drawn; a note in the bar; the user cannot answer `confirm` (`[KNOWN GAP]`) | Fits: only `Page` | **Chosen** |
+| B. Main-world shim via `Page.addScriptToEvaluateOnNewDocument` replacing `alert`/`confirm`, reporting through `Runtime.addBinding` | The page sees and can call the binding (flood, fake messages); bypassable (a script-made `about:blank` iframe's or a new realm's `alert`, a frame the script did not reach), and then the native dialog shows again; `confirm` is synchronous, so a shim cannot wait for the user's answer anyway | Same result as A when it works, a native box when bypassed | An exception: script in the main world plus a `Runtime` binding | Rejected |
+| C. Native dialogs for the shown, user-driven view; A or B for hidden views | `webPreferences` are fixed at creation, so `disableDialogs` cannot follow the driver or visibility; a view hidden while its box is open leaves the box over another chat | A free-standing box with no parent window (T010 AC13) | A: fits; B: as above | Rejected |
+| D. Override the private `-run-dialog` listener | Undocumented, internal (hyphen-prefixed), can change in any Electron release | Could draw an in-bar answer | Fits | Rejected (unsupported API) |
+| E. CDP only (`Page.handleJavaScriptDialog`), the earlier FR-025d | Native box still drawn and stays mapped (T010 AC13) | Fails | Fits | Disproved |
+
+Open for T007: whether `Page.javascriptDialogOpening` still arrives under `disableDialogs` (Chromium's devtools handlers are told before the embedder's dialog manager, `read:` not checked in source), and that no window is mapped.
+
+**Watch-only (FR-066a).**
+
+| Option | Works for | Cost | Verdict |
+|---|---|---|---|
+| A. `Input.setIgnoreInputEvents` on, lifted only around Durbar's own `Input.*` commands on the view's serial queue (FR-049), plus `before-input-event` `preventDefault()` for keys outside that span | Mouse, touch, keys; the agent's commands go through | A few-millisecond window per action in which user input also passes (accepted: Watch-only is not a security boundary); T007 AC4 checks the order holds and whether `insertText` is blocked while ignoring | **Chosen** |
+| B. Transparent input-shield `WebContentsView` above the shown view | Mouse (and keys if it takes focus) | One more renderer process; must follow bounds, FR-008 and focus; accessibility of a shielded page | Fallback |
+| C. Main interception only | `before-input-event` covers keys only; `input-event` documents no `preventDefault` (`read:` web-contents docs) | Mouse not blockable | Rejected |
+| D. HTML overlay in the app page | Nothing: the native view covers the page (T010 AC1) | | Rejected |
+
+**Throttling (FR-010).** `webContents.setBackgroundThrottling(allowed)` exists, and since 28.0.0 "`WebContents.backgroundThrottling` set to false affects all `WebContents` in the host `BrowserWindow`" (`read:` web-contents docs). So "always off" would unthrottle the app page and every view all the time; off only while agent control is on limits that to when an agent can drive. T007 AC3 checks the runtime call on a hidden view.
 
 ## R2. Which MCP browser servers can attach to an existing browser
 
