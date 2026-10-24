@@ -1,3 +1,4 @@
+import { destroyAllViews } from './browser/views';
 import { FolderSetupStore } from './foldersetupstore';
 import { acceptedFor, hasFolderRules, scanFolderSetupCached } from './foldersetup';
 import type { FolderSetupStart } from '../shared/foldersetup';
@@ -997,6 +998,7 @@ app.on('before-quit', (ev) => {
     .finally(() => app.quit());
 });
 app.on('will-quit', () => {
+  void destroyAllViews(); // spec 080 FR-023: the session browsers (none exist until the browser pane lands)
   usageStore?.flush();
   usageTotalsStore?.flush();
   activityStore?.flush();
