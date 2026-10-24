@@ -34,14 +34,14 @@ Main gets a small global contacts store (one JSON file and a send log in `<userD
 | --- | --- |
 | I Spec Kit | This spec, plan and tasks first; deltas in 005 (chat panel, composer), 003/018 (broker message tools, tickets), 073 (`@` trigger), 083 (shared drawer frame), 080 (a note that FR-024 is unchanged) (T001). |
 | II Adapters are plug-ins | Contacts code knows no vendor: links are by channel kind; option A uses normalized `permission`, `toolCall` and `mcp` events and a capability flag `mcpCallArgs`; adapters only pass `args` on `PermissionLike`. |
-| III Safe, no secrets | FX1..FX5: a preview with *Cancel* focused before every send; the secret check in window and main, no override; tickets are single-use, in memory, exact; message tools never auto-approved, Allow all included; no Durbar MCP client (no tokens); window passes ids only, main builds URLs from an allow-list; no shell; 0600 store; log without bodies. |
+| III Safe, no secrets | FX1..FX5: a preview made in main with *Cancel* focused before every send; a single-use `previewId` and a trusted `input-event` within 1 s for every send, and a 5 per minute / 30 per hour limit (D18, FR-083, FR-084); only the app window reaches `contacts:*` (not remote control, schedules, the MCP server or the session browser); the secret check in window and main, no override; tickets are single-use, in memory, exact, and **never made in Read-only**, so Read-only still denies every MCP call (D9: option A and the import are not offered there; option C opens a link and calls no tool); message tools never auto-approved, Allow all included; no Durbar MCP client (no tokens); main builds URLs that must start with an entry of `CONTACT_LINK_ALLOWLIST`; no shell; 0600 store; Durbar's logs hold no message text or message-tool arguments (FX5 as narrowed, FR-082). |
 | IV No credits | C, store and UI need none; A, import and drafting are user-pressed, one reply each, said on the button; every test uses the simulator, `FakeAdapter` and stubbed openers (FR-086, SC-007). |
 | V Calm UI | Drawer inside the panel; nothing on the office floor; 10.5px; icon plus words (no emoji, D13); keyboard and names; chip fits 480px; 15 agents at both sizes (FR-087). |
 | VI Parity | One URL cap on every OS (D7); `shell.openExternal` everywhere; Linux handler gaps written as `[KNOWN GAP]`. |
 | VII Gates | `typecheck`, `build`, `npm test`; a new store and broker logic each get tests (VII.3); screenshots. |
 | VIII Honest limits | *Opened* vs *Sent*; spec *Honest limits*; no OS check claimed. |
 
-No violation; no Complexity Tracking entry.
+No violation; no Complexity Tracking entry. If the owner answers yes to Q4 (option A in Read-only), that is an exception to principle III: it needs a constitution amendment task before any code, and a Complexity Tracking entry here.
 
 ## Data model
 
@@ -74,27 +74,32 @@ No text, digest, address or session id (FR-081).
 
 ### Ticket (memory only)
 
-`{ sessionId, server, tool, argsHash: sha256(canonicalJson(args)), expires, purpose: 'send'|'import', logRef }`, at most one per session.
+`{ sessionId, server, tool, argsHash: sha256(canonicalJson(args)), expires, purpose: 'send'|'import', logRef }`, at most one per session. Never made while the session is in Read-only; `setMode('read-only')` drops it.
+
+### Preview (memory only)
+
+`{ previewId (random, 128 bits), agentId, contactId, channelId, recipient, text, way: 'link'|'link-copy'|'mcp'|'import', url? | {server, tool, canonicalArgs, argsHash}?, expires: now + 60 s, used: false }`. Used up by the first accepted call (FR-083).
 
 ## Modules
 
 - `src/shared/contacts.ts`: `CONTACTS_LIMITS`, `parseContactsDoc`, `cleanContact` (FR-002..FR-004 checks), `applyChange` (rev), `favOrder` moves, `guessInitials`, `fillTemplate`, `canonicalJson`. Pure.
-- `src/shared/contactlinks.ts`: `buildContactLink(channel, text, opts) → {url, encodedLength, copyText?, prefill} | {error}`; `LINK_PREFIXES`; `emailParts(text)`. Pure, tested from any OS.
+- `src/shared/contactlinks.ts`: `buildContactLink(channel, text, opts) → {url, encodedLength, copyText?, prefill} | {error}`; `CONTACT_LINK_ALLOWLIST` (the one list of allowed prefixes, FR-040); `emailParts(text)`. Pure, tested from any OS.
 - `src/shared/redact.ts`: `maskOutgoing(text, values)` (shares the core of 083's `maskNoteText`).
 - `src/shared/teamsimport.ts`: `parsePeople(text) → {people, dropped}`. Pure.
 - `src/main/contactsstore.ts`: the store (load, save, queue, merge on outside change, bad-file rename, log append and cap).
-- `src/main/ipc/contacts.ts`: FR-085 channels; injected `opener`, `clipboard`, `now`; sim stubs; tickets via the session's broker.
+- `src/main/ipc/contacts.ts`: FR-085 channels; previews, the trusted-input clock (from the app window's `input-event`, FR-083) and the rate limit (FR-084); injected `opener`, `clipboard`, `now`, `lastTrustedInput`; sim stubs; tickets via the session's broker.
+- `src/main/activitystore.ts` and the debug sink: message-tool arguments replaced by *(message arguments not logged)* (FR-082).
 - `src/adapters/permissions.ts`: `PermissionLike.args`, `BrokerOptions.messageTools`, the check in `request` (FR-054).
 - `src/adapters/claude.ts` (`permissionLikeOf` adds `args`), `capabilities.ts` (`mcpCallArgs`), `fake.ts` (`sim-teams`).
 - Renderer: `src/renderer/contacts.js` (Settings section, drawer content, chip, preview), small hooks in `app.js` (`@` trigger next to `slashUpdate`, the chip in the composer and `keepDraft`, the Send label), `screens.js` (section), `sim.ts` (canned bridge), `styles.css` (theme tokens only).
 
 ## IPC
 
-As FR-085. Each handler: `fromApp(e)`; ids checked against the store; `agentId` looked up in main's `agents` map (live, main chat, not a helper); text a string ≤ 4,000; FR-033 check in main; results `{ok, error?, outcome?}` with fixed error words (never echoing text).
+As FR-085. Each handler: `fromApp(e)` (the app window's main frame only); sending handlers also need a live `previewId` and a trusted input within 1 s (FR-083) and pass the rate limit (FR-084); ids checked against the store; `agentId` looked up in main's `agents` map (live, main chat, not a helper); text a string ≤ 4,000; FR-033 check in main; results `{ok, error?, outcome?}` with fixed error words (never echoing text).
 
 ## Phases
 
-1. **MVP** (US1, US2, US3): T010..T016 foundation, T020..T026 UI and option C.
+1. **MVP** (US1, US2, US3): T010..T017 foundation (T017: proven click, rate limit, reachability), T020..T026 UI and option C.
 2. **Option A** (US4): T030..T035.
 3. **Teams import** (US5): T040..T042.
 4. **Drafting** (US6): T050..T051.

@@ -62,7 +62,11 @@ Every fact is tagged: `read:` (documentation or code read, not run), `real:` (ru
 
 **Allow all.** Today Allow all approves every non-read request (`permissions.ts:361-364`). The turned-off tools check (`blockedMcp`) already runs before it in every mode (spec 069 FR-063); the message-tool check goes in the same place (FR-054), so Allow all never sends a message by itself (FX1).
 
-**Read-only.** Read-only denies MCP calls. A ticket approves the one call the user asked for with *Send now*, like files the user attached are readable outside the roots (`allowReadPaths`, `permissions.ts:287`): the user's own request, exactly scoped, used once.
+**Read-only** (changed after Paco's review of PR #707). Read-only denies MCP calls (constitution III). A ticket there would be an exception, as spec 080 needed T006 (an amendment) for reads alone, so option A and the import are **not offered in Read-only** (D9); option C opens a link and calls no tool, so it stays. The attached-files precedent (`allowReadPaths`, `permissions.ts:287`) is a read, not a call with side effects, so it does not carry over. Owner question Q4.
+
+**A proven click** (Paco's review of PR #707). Without it, anything that can run script in the app page could call the IPC and mint a ticket. Electron's `webContents` `input-event` reports input sent to the page (mouse, keys), not DOM events made by page script (`read:` Electron `webContents` docs; Durbar already listens to it for the session browser, `src/main/browser/viewcap.ts:16`). Main requires such an event (mouse-up, or Enter or Space) within 1 s before each send, plus a single-use `previewId` bound to everything the user saw (FR-083), and a rate limit (FR-084). Not checked on a real app: whether a key repeat or an accessibility tool's click arrives as `input-event` on each OS `[KNOWN GAP]`.
+
+**Logs** (Paco's review). The message tool's `toolCall` event carries the arguments (the text) into the chat chip and can carry them into the activity and debug logs (Paco's review; not traced in code here); FR-082 leaves them out of both logs, with a test. The agent app's own history is outside Durbar (Honest limits).
 
 **Gap.** Copilot runs a tool marked `readOnlyHint: true` without asking the host (`docs/agent-notes.md`, spec 044, `real:`), so a wrongly marked send tool is not held (FR-056).
 
