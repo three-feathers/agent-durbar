@@ -1825,3 +1825,6 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 /* the room header's pencil is placed like a card's (against the room: the header is not positioned, the plant is placed against the room); the Folders panel and Previous sessions rows have theirs in the flow, hidden with opacity until hover or focus */
 .ren.ren-in{position:static;flex:none}
 .room-head:hover>.ren,.room-head:focus-within>.ren,.fp-row:hover .ren-in,.fp-row:focus-within .ren-in,.prev-row:hover .ren-in,.prev-row:focus-within .ren-in{opacity:1}
+/* the unit scales in when its agent leaves the lounge (shut-out: from .92); the pencil counter-scales (1/.92) so its 24px target stays 24px while it plays (spec 059 FR-025, spec 052) */
+.unit.unrolling>.ren{animation:shut-out-ren .22s ease-out}
+@keyframes shut-out-ren{from{transform:scale(1.0870)}to{transform:none}}

@@ -130,6 +130,21 @@ export function parseLabel(v: unknown): string | undefined {
 export function labelError(v: unknown): string {
   return nameError(v, MAX_LABEL);
 }
+/**
+ * The logic of `folders:rename` (spec 059 FR-029), apart from the IPC so a test can call it with a fake store: an invalid non-empty name is
+ * refused with its reason BEFORE the store is touched (the saved label stays); empty resets; anything valid is saved.
+ */
+export function renameFolderOp(
+  store: { setLabel(workspace: string, label: unknown): { label: string | undefined } | false } | undefined,
+  workspace: string | undefined,
+  label: unknown,
+): { ok: false; error?: string } | { ok: true; label: string | undefined } {
+  if (!store || workspace === undefined) return { ok: false };
+  const bad = labelError(label);
+  if (bad) return { ok: false, error: bad };
+  const r = store.setLabel(workspace, label);
+  return r ? { ok: true, label: r.label } : { ok: false };
+}
 
 /** The id rule of `agents:selectProfile` (spec 043 FR-003). */
 export const PROFILE_ID = /^[A-Za-z0-9._:@/-]{1,100}$/;

@@ -3,7 +3,7 @@ import { ipcHandle } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import type { AgentInfo } from '../../shared/api';
 import type { FolderStore } from '../folders';
-import { labelError } from '../folders';
+import { renameFolderOp } from '../folders';
 import type { AgentStateTracker } from '../mcp/agentstate';
 import type { Scheduler } from '../schedules';
 
@@ -64,13 +64,11 @@ export function register(deps: FoldersIpcDeps): void {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     const store = folderStore();
     if (!a || !store) return { ok: false };
-    // spec 059 delta 2026-10-24: the session-name rule; an invalid non-empty name is refused with its reason (empty still resets)
-    const bad = labelError(label);
-    if (bad) return { ok: false, error: bad };
-    const r = store.setLabel(wsKey(a), label);
-    if (!r) return { ok: false };
+    // spec 059 delta 2026-10-24: the session-name rule; an invalid non-empty name is refused with its reason, the label untouched (empty still resets)
+    const r = renameFolderOp(store, wsKey(a), label);
+    if (!r.ok) return r;
     for (const x of agents.values()) if (wsKey(x) === wsKey(a)) x.label = r.label;
-    return { ok: true, label: r.label };
+    return r;
   });
 
   ipcHandle('folders:setDefaultAgent', (_e, id: unknown, profileId: unknown) => {

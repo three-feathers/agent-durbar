@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { MAX_FOLDER_LABEL } from '../src/shared/names';
-import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, labelError, MAX_LABEL, parseLastSession, parseOpenSessions, parsePrevMarks, MAX_PREV_MARKS, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS, MAX_SESSION_NAMES, parseSessionNames, parseSessionModes, modeForSession, MAX_SESSION_MODES } from '../src/main/folders';
+import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, labelError, renameFolderOp, MAX_LABEL, parseLastSession, parseOpenSessions, parsePrevMarks, MAX_PREV_MARKS, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS, MAX_SESSION_NAMES, parseSessionNames, parseSessionModes, modeForSession, MAX_SESSION_MODES } from '../src/main/folders';
 import { GROUND, GROUND_NAME } from '../src/shared/floors';
 
 const abs = (p: string): string => path.resolve('/', p);
@@ -383,8 +383,24 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
   assert.strictEqual(labelError(42), `Use 1 to ${MAX_LABEL} characters.`);
   assert.ok(/secret/.test(labelError('ghp_' + 'abcdefghijklmnopqrstuvwxyz0123456789')), 'a token-looking name is refused, as for sessions');
   assert.strictEqual(MAX_LABEL, MAX_FOLDER_LABEL, 'one length');
-  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'folders.ts'), 'utf8');
-  assert.ok(/const bad = labelError\(label\);\s*if \(bad\) return \{ ok: false, error: bad \};/.test(src), 'folders:rename refuses an invalid non-empty name with its reason instead of resetting it');
+  // the handler's logic (renameFolderOp) with a fake store: an invalid non-empty name never reaches setLabel, so the saved label stays
+  {
+    const saved = new Map<string, string | undefined>([['/w', 'Kept']]);
+    let setCalls = 0;
+    const fake = { setLabel: (ws: string, l: unknown) => { setCalls++; const t = parseLabel(l); saved.set(ws, t); return { label: t }; } };
+    for (const v of ['Proj\x07x', 'Proj\u202eexe', 'zero\u200bwidth', 'x'.repeat(41), 'ghp_' + 'abcdefghijklmnopqrstuvwxyz0123456789', 42, undefined]) {
+      const r = renameFolderOp(fake, '/w', v);
+      assert.strictEqual(r.ok, false, JSON.stringify(v));
+      assert.ok(!r.ok && typeof r.error === 'string' && r.error.length > 0, `a reason for ${JSON.stringify(v)}`);
+      assert.strictEqual(setCalls, 0, `setLabel was not called for ${JSON.stringify(v)}`);
+      assert.strictEqual(saved.get('/w'), 'Kept', `the label is unchanged after ${JSON.stringify(v)}`);
+    }
+    assert.deepStrictEqual(renameFolderOp(fake, '/w', ''), { ok: true, label: undefined }, 'empty resets');
+    assert.strictEqual(setCalls, 1); assert.strictEqual(saved.get('/w'), undefined, 'the label is reset');
+    assert.deepStrictEqual(renameFolderOp(fake, '/w', '  New   name '), { ok: true, label: 'New name' });
+    assert.deepStrictEqual(renameFolderOp(undefined, '/w', 'x'), { ok: false });
+    assert.deepStrictEqual(renameFolderOp({ setLabel: () => false }, '/w', 'x'), { ok: false }, 'an unknown folder');
+  }
   const d3 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders3-'));
   try {
     const f3 = path.join(d3, 'f.json');
