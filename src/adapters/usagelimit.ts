@@ -48,7 +48,7 @@ const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 /**
  * Spec 068 FR-025: the next time the wall clock of `tz` (an IANA name; the local zone when absent or unknown) reads `hour:minute`, on
- * `weekday` (0 = Sunday) when given; epoch ms, or undefined when none within 8 days. Scans by the minute: it is only run when a limit hits.
+ * `weekday` (0 = Sunday) when given; epoch ms, or undefined when none within 8 days. Scans a quarter-hour apart (about 770 steps); it is only run when a limit hits.
  */
 export function nextClockTime(hour: number, minute: number, tz: string | undefined, weekday: number | undefined, now = Date.now()): number | undefined {
   let fmt: Intl.DateTimeFormat;
@@ -57,8 +57,10 @@ export function nextClockTime(hour: number, minute: number, tz: string | undefin
   } catch {
     return nextClockTime(hour, minute, undefined, weekday, now); // an unknown zone name: the local clock, still a plausible time
   }
-  const start = Math.floor(now / 60_000) * 60_000 + 60_000;
-  for (let t = start; t <= now + 8 * DAY; t += 60_000) {
+  // every zone's offset is a multiple of 15 minutes, so the minute of the hour repeats every 15: scan a quarter-hour apart
+  const first = Math.floor(now / 60_000) + 1;
+  const start = (first + ((((minute - first) % 15) + 15) % 15)) * 60_000;
+  for (let t = start; t <= now + 8 * DAY; t += 15 * 60_000) {
     const p = Object.fromEntries(fmt.formatToParts(t).map((x) => [x.type, x.value]));
     if (Number(p.hour) !== hour || Number(p.minute) !== minute) continue;
     if (weekday !== undefined && WEEKDAYS.indexOf(String(p.weekday).slice(0, 3).toLowerCase()) !== weekday) continue;
@@ -78,7 +80,10 @@ export function claudeLimitText(text: unknown, now = Date.now()): { window: 'fiv
   const m = /\bhit your ([a-z0-9 -]{0,30}?)\s*limit\b/i.exec(text) ?? /\b([a-z0-9 -]{1,30}?)\s+limit reached\b/i.exec(text);
   if (!m) return null;
   const w = m[1].toLowerCase();
-  const window = /week|7-day|seven/.test(w) ? (/opus/.test(w) ? 'seven_day_opus' : /sonnet/.test(w) ? 'seven_day_sonnet' : 'seven_day') : /5-hour|five|session/.test(w) ? 'five_hour' : undefined;
+  const window = /week|7-day|seven|opus|sonnet/.test(w) ? (/opus/.test(w) ? 'seven_day_opus' : /sonnet/.test(w) ? 'seven_day_sonnet' : 'seven_day') : /5-hour|five|session/.test(w) ? 'five_hour' : undefined;
+  // only a clear plan limit: a recognised window, or a reset named ("hit your context limit" and the like stay errors)
+  const namesReset = /\bresets?\b/i.test(text);
+  if (!window && !namesReset) return null;
   const r = /\bresets?\s+(?:(sun|mon|tue|wed|thu|fri|sat)[a-z]*,?\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b(?:\s*\(([A-Za-z0-9_+\-/]{1,40})\))?/i.exec(text);
   let resetsAt: number | undefined;
   if (r) {

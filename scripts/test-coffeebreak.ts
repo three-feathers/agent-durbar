@@ -531,6 +531,14 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   assert.ok(nextClockTime(2, 0, 'Not/AZone', undefined, T), 'an unknown zone falls back to the local clock');
   assert.strictEqual(claudeLimitText("You've hit your Opus limit", T)!.resetsAt, undefined);
   assert.strictEqual(claudeLimitText('5-hour limit reached ∙ resets 3pm', T)!.window, 'five_hour');
+  // not a plan limit: no recognised window and no reset named stays an error; a reset alone proves a limit
+  for (const x of ["You've hit your context limit", 'You have hit your output token limit', "You've hit your rate limit for this tool"]) {
+    assert.strictEqual(claudeLimitText(x, T), null, x);
+    assert.ok(!run([{ type: 'result', subtype: 'success', is_error: true, result: x }]).some((b) => b.type === 'usageLimit'), x);
+  }
+  assert.ok(claudeLimitText("You've hit your limit · resets 3pm", T)?.resetsAt, 'a reset with no window word is still a limit');
+  // the minute scan stays cheap (worst case: the whole 8-day scan, no match)
+  { const t0 = process.hrtime.bigint(); nextClockTime(99, 0, 'Pacific/Chatham', undefined, T); const ms = Number(process.hrtime.bigint() - t0) / 1e6; console.log(`nextClockTime scan: ${ms.toFixed(1)} ms`); assert.ok(ms < 100, `nextClockTime took ${ms} ms`); }
   // no reset in the sentence: the last known one from a rate_limit_event of this session
   const reset = Date.now() + 3 * 3600_000;
   const o2 = run([{ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'seven_day', resetsAt: reset / 1000 } }, res, { type: 'assistant', error: 'rate_limit', message: { content: [{ type: 'text', text: "You've hit your weekly limit" }] } }, { ...res, result: "You've hit your weekly limit" }]);
