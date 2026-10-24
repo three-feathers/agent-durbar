@@ -1,1 +1,0 @@
-- **Team rules from the chat recorded** (spec 021 FR-050): review SLA (about 30 minutes, `taking #N`), `FINAL` settles ownership, release `freeze` / `queue open`, never check out a branch in the main checkout, delete a branch only once its PR is `MERGED`. Docs only.

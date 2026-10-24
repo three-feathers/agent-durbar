@@ -6,7 +6,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 **Input**: [spec.md](spec.md), [plan.md](plan.md), [research.md](research.md)
 
-**Prerequisites**: Ruben's owner decisions OD1..OD4 (binding) and the coordinator's D1..D11 are recorded in spec.md. No task waits for an answer: the defaults for Paco's questions A, B, C and Q1 (PR #702) are written in spec.md *Changes* as *default pending owner confirmation*; a different answer changes a default, not the structure.
+**Prerequisites**: Ruben's owner decisions OD1..OD4 (binding) and the coordinator's D1..D11 are recorded in spec.md. No task waits for an answer: the defaults for Paco's questions A, B, C and Q1 (PR #702) are written in spec.md *Changes* as *owner-confirmed 2026-10-24*; a different answer changes a default, not the structure.
 
 **Rules for every task**:
 
