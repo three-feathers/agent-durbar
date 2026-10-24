@@ -69,7 +69,7 @@ assert.strictEqual(hostOf('not a url'), '');
 // a raw "host" split on / or : would give "localhost" here
 // userinfo is refused (Paco, review of PR 682): the text before the @ looks like the host and the password would reach history
 for (const bad of ['http://localhost:80@evil.com:81/', 'https://user:pw@example.com', 'https://google.com@evil.com', 'user:pw@example.com', 'google.com@evil.com', 'https://@a.com']) assert.match(refused(bad), /user name or password|not a web address|Only http/, bad);
-for (const bad of ['http://localhost:80@evil.com:81/', 'https://user:pw@example.com', 'https://google.com@evil.com', 'https://@a.com']) assert.match(refused(bad), /user name or password/, `reason for ${bad}`);
+for (const bad of ['http://localhost:80@evil.com:81/', 'https://user:pw@example.com', 'https://google.com@evil.com', 'https://@a.com']) assert.strictEqual(refused(bad), 'Addresses with a user name or password are not supported.', `reason for ${bad}`);
 assert.strictEqual(hostOf(url('https://a.com\\@evil.com')), 'a.com', 'a backslash ends the host, so this loads a.com');
 assert.ok(parseAddress('https://a.com/path@x').ok, '@ in the path is fine');
 assert.ok(parseAddress('https://a.com/?u=a@b.c').ok, '@ in the query is fine');
@@ -175,21 +175,22 @@ for (const [name, make] of shapes) {
   assert.ok(t8 < 1000, `${name}: 1 MB took ${t8.toFixed(1)} ms CPU`);
   assert.ok(t8 < t1 * 24, `${name}: 8x the input took ${(t8 / t1).toFixed(1)}x the time (${t1.toFixed(1)} -> ${t8.toFixed(1)} ms): not linear`);
 }
-// the work that runs below the cap (the 1 MB inputs above are cut off by the length check): the same number of calls at about 256 and
-// about 2046 characters (8x the input): linear gives a CPU ratio near 8, quadratic near 64; the limit is 16, with no floor.
+// backtracking: an exponential pattern needs a short input to show, so test it at a small length with a CPU limit (a bad pattern fails
+// here in about a second instead of hanging the suite). Shapes that fail at the very end force a regex to retry every split.
+for (const make of [(n: number) => 'a'.repeat(n - 1) + '!', (n: number) => 'a.'.repeat(n / 2 - 1) + 'a!', (n: number) => 'a-'.repeat(n / 2 - 1) + 'a!', (n: number) => 'a'.repeat(n - 1) + '\u0301!']) {
+  const x = make(26);
+  const ms = cpuMs(() => { for (let i = 0; i < 5; i++) everything(x); });
+  assert.ok(ms < 150, `${JSON.stringify(x)}: ${ms.toFixed(1)} ms CPU at 26 characters (exponential backtracking?)`);
+}
+
+// the work that runs below the cap (the 1 MB inputs above are cut off by the length check): the same number of calls at a small and a big
+// size, so linear gives a CPU ratio near the size step and quadratic near its square. CPU timers tick in about 15.6 ms on Windows: repeat
+// the small input until it costs about 40 ms (several ticks), then run the same count on the big one; no floor that skips the check.
+// The four shapes that catch distinct mutants run with an 8x step and limit 16; the others with a 4x step and limit 10 (cheaper).
 {
-  const small = 256;
-  const big = BROWSER_URL_MAX - 2;
-  const inner: Array<[string, (n: number) => string]> = [
-    ['blanks inside', (n) => 'x' + ' '.repeat(n - 2) + 'x'],
-    ['at signs', (n) => 'http://' + '@'.repeat(n - 7)],
-    ['percent', (n) => 'a.com/' + '%41'.repeat((n - 6) / 3)],
-    ['non-ASCII', (n) => 'ü'.repeat(n)],
-  ];
-  // CPU timers tick in about 15.6 ms on Windows: repeat the small input until it costs about 40 ms (several ticks), then run the same count on the big one
   const run = (s: string, n: number): number => cpuMs(() => { for (let i = 0; i < n; i++) everything(s); });
   const best = (s: string, n: number): number => Math.min(run(s, n), run(s, n), run(s, n));
-  for (const [name, make] of inner) {
+  const check = (name: string, make: (n: number) => string, small: number, big: number, limit: number): void => {
     const a = make(small);
     const b = make(big);
     assert.ok(b.length <= BROWSER_URL_MAX, `${name}: under the cap`);
@@ -198,8 +199,26 @@ for (const [name, make] of shapes) {
     const tSmall = best(a, n);
     const tBig = best(b, n);
     assert.ok(tSmall > 0, `${name}: the small run must register CPU time (n=${n})`);
-    assert.ok(tBig < tSmall * 16, `${name}: 8x the input took ${(tBig / tSmall).toFixed(1)}x the time (${tSmall.toFixed(1)} -> ${tBig.toFixed(1)} ms): not linear`);
-  }
+    assert.ok(tBig < tSmall * limit, `${name}: ${big / small}x the input took ${(tBig / tSmall).toFixed(1)}x the time (${tSmall.toFixed(1)} -> ${tBig.toFixed(1)} ms): not linear`);
+  };
+  const eight: Array<[string, (n: number) => string]> = [
+    ['blanks inside', (n) => 'x' + ' '.repeat(n - 2) + 'x'],
+    ['at signs', (n) => 'http://' + '@'.repeat(n - 7)],
+    ['percent', (n) => 'a.com/' + '%41'.repeat((n - 6) / 3)],
+    ['non-ASCII', (n) => 'ü'.repeat(n)],
+  ];
+  const four: Array<[string, (n: number) => string]> = [
+    ['blanks then y', (n) => 'x' + ' '.repeat(n - 2) + 'y'],
+    ['blanks edges', (n) => ' '.repeat(n / 2) + 'x' + ' '.repeat(n / 2 - 1)],
+    ['dots', (n) => 'a.'.repeat(n / 2)],
+    ['colons', (n) => 'a' + ':'.repeat(n - 1)],
+    ['slashes', (n) => 'a.com/' + '/'.repeat(n - 6)],
+    ['letters', (n) => 'a'.repeat(n)],
+    ['letters then bang', (n) => 'a'.repeat(n - 1) + '!'],
+    ['dotted letters then bang', (n) => 'a.'.repeat(n / 2 - 1) + 'a!'],
+  ];
+  for (const [name, make] of eight) check(name, make, 256, BROWSER_URL_MAX - 2, 16);
+  for (const [name, make] of four) check(name, make, 512, BROWSER_URL_MAX - 2, 10);
 }
 
 console.log('browserurl: ok');
