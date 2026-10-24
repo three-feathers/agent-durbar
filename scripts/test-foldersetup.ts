@@ -197,6 +197,15 @@ assert.strictEqual(parseExplanation('I think it is fine', 'Copilot').ok, false, 
       ['123456789:AAH' + az + '_-AbCdEf', az],
       ['https://api.telegram.org/bot123456789:AAH' + az + '_-AbCdEf/getMe', az, 'api.telegram.org/bot'],
       ['HTTPS://HOOKS.SLACK.COM/services/T0123ABCD/B0123ABCD/' + az, 'T0123ABCD', 'HOOKS.SLACK.COM/services/'],
+      // review of PR #679
+      ['xo' + 'xd-' + 'AbCdEf%2BGh%2FIj' + az, az],
+      ['xo' + 'xc-' + '1234567890-0987654321-' + az, az],
+      ['https://hooks.slack.com/workflows/T0123ABCD/A0123ABCD/123456789/' + az, 'A0123ABCD', 'hooks.slack.com/workflows/'],
+      ['https://hooks.slack.com.:443/triggers/T0123ABCD/123456789/' + az + '_' + az, 'T0123ABCD', 'hooks.slack.com'],
+      ['https://discord.com.:443//api//webhooks//123456789012345678//' + az + '_-' + az, '123456789012345678', 'discord.com'],
+      ['https://api.telegram.org/file/bot123456789:AAH' + az + '_-AbCdEf/photos/x.jpg', az, 'api.telegram.org/file/bot'],
+      ['http://localhost:8081/bot1234567:AAH' + az + '_-AbCdEf/getMe', az, 'localhost'],
+      ['M' + 'TIzNDU2Nzg5MDEyMzQ1Njc4' + '.GhIjKl.' + az + '_-AbC', az],
     ];
     for (const [tok, secret, keep] of chat) {
       const jsonTok = JSON.stringify(tok).slice(1, -1);

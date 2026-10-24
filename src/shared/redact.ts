@@ -36,8 +36,12 @@ const guarded = (re: RegExp, marker: RegExp): Guarded => ({ re, marker });
 const ci = (lit: string): string => lit.replace(/[A-Za-z]/g, (c) => `[${c.toUpperCase()}${c.toLowerCase()}]`).replace(/\./g, String.raw`\.`);
 /** A `/` as written in a URL, JSON-escaped (`\/`, `\\/`, `\u002f`, `\x2f`) or percent-encoded any number of times (`%2F`, `%252F`, up to 8 re-encodings). */
 const SL = String.raw`(?:\\{0,2}\/|\\{1,2}(?:u002[Ff]|x2[Ff])|%(?:25){0,8}2[Ff])`;
+/** One or two of them (`//`) between URL segments. */
+const SL2 = String.raw`(?:${SL}){1,2}`;
 /** A `:` written the same ways (`:`, `\u003a`, `\x3a`, `%3A`, `%253A`, ...). */
 const COLON = String.raw`(?::|\\{1,2}(?:u003[Aa]|x3[Aa])|%(?:25){0,8}3[Aa])`;
+/** After a webhook host: an optional trailing dot and an optional `:port` (the colon in any spelling). */
+const HOSTX = String.raw`\.?(?:${COLON}[0-9]{1,5})?`;
 /** Bare token shapes (GitHub, OpenAI/Anthropic, Bearer, JWT, AWS, Slack, Discord, Telegram); also used by the folder-setup display (spec 061 FR-014). */
 const TOKEN_SHAPES: Array<RegExp | Guarded> = [
   shape(String.raw`gh[pousr]_[A-Za-z0-9]{20,}`),
@@ -50,17 +54,22 @@ const TOKEN_SHAPES: Array<RegExp | Guarded> = [
   // the `%XX` start (`2525…`): linear, but about 40x the cost of the other shapes (T130, review of PR #549). The prefix stays.
   new RegExp(String.raw`(?<=(?:(?<![A-Za-z0-9_-])|${PCT})_{0,8}(?:[A-Za-z0-9]{1,40}_{1,3}){0,4})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}`, 'g'),
   shape(String.raw`(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])`),
-  // Chat-tool secrets (T132, issue #551). Slack tokens: `xoxb-`, `xoxp-`, `xoxa-`, `xoxr-`, `xoxs-`, `xoxe-` and `xapp-`, then 10+
-  // token characters (`xoxo-` is not a Slack prefix).
-  guarded(shape(String.raw`(?:xox[abprse]|xapp)-[A-Za-z0-9-]{10,}`), /xox|xapp-/i),
-  // Webhooks: the fixed host and path sit in a lookbehind (host in any case), so the scheme and host stay and only the secret path is
-  // masked; the segments are bounded classes split by a fixed `/`, so there is no nested quantifier.
-  guarded(new RegExp(String.raw`(?<=${ci('hooks.slack.com')}${SL}${ci('services')}${SL})[A-Za-z0-9]{1,64}${SL}[A-Za-z0-9]{1,64}${SL}[A-Za-z0-9]{1,128}`, 'g'), /hooks\.slack\.com/i),
-  guarded(new RegExp(String.raw`(?<=${ci('discord')}(?:${ci('app')})?${ci('.com')}${SL}${ci('api')}${SL}(?:[Vv][0-9]{1,2}${SL})?${ci('webhooks')}${SL})[0-9]{5,30}${SL}[A-Za-z0-9_-]{20,}`, 'g'), /discord(?:app)?\.com/i),
-  // Telegram bot token: `<8-10 digits>:<exactly 35 chars>` (the real shape, so an id, a session or a file name is not one), bare or
-  // right after `api.telegram.org/bot` (a letter then precedes it).
-  guarded(shape(String.raw`[0-9]{8,10}${COLON}[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])`), /[0-9]{8}[:%\\]/),
-  guarded(new RegExp(String.raw`(?<=${ci('api.telegram.org')}${SL}[Bb][Oo][Tt])[0-9]{8,10}${COLON}[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])`, 'g'), /api\.telegram\.org/i),
+  // Chat-tool secrets (T132, issue #551). Slack tokens: `xoxb-`, `xoxp-`, `xoxa-`, `xoxc-`, `xoxd-` (browser session), `xoxr-`, `xoxs-`,
+  // `xoxe-` and `xapp-`, then 10+ token characters or `%XX` escapes (a URL-encoded `xoxd-…%2B…%2F`); `xoxo-` is not a Slack prefix.
+  guarded(shape(String.raw`(?:xox[abcdeprs]|xapp)-(?:[A-Za-z0-9-]|%[0-9A-Fa-f]{2}){10,}`), /xox|xapp-/i),
+  // Webhooks: the fixed host and path sit in a lookbehind (host in any case, optional trailing dot and `:port`), so the scheme and host
+  // stay and only the secret path is masked. Between segments one or two slashes (`//`); the segments before the last are bounded
+  // classes split by a fixed `/`, the last one is unbounded (`[A-Za-z0-9_-]+`, a long or underscore secret is masked whole), so there
+  // is no nested quantifier. Slack: `services`, `workflows` and `triggers` paths.
+  guarded(new RegExp(String.raw`(?<=${ci('hooks.slack.com')}${HOSTX}${SL2}(?:${ci('services')}|${ci('workflows')}|${ci('triggers')})${SL2})(?:[A-Za-z0-9]{1,64}${SL2}){2,3}[A-Za-z0-9_-]+`, 'g'), /hooks\.slack\.com/i),
+  guarded(new RegExp(String.raw`(?<=${ci('discord')}(?:${ci('app')})?${ci('.com')}${HOSTX}${SL2}${ci('api')}${SL2}(?:[Vv][0-9]{1,2}${SL2})?${ci('webhooks')}${SL2})[0-9]{5,30}${SL2}[A-Za-z0-9_-]{20,}`, 'g'), /discord(?:app)?\.com/i),
+  // Telegram bot token: `<6-12 digits>:<exactly 35 chars>` (the real shape, so an id, a session or a file name is not one), bare or
+  // right after `/bot` on any host, port or path (`api.telegram.org/bot…`, `api.telegram.org/file/bot…`, a local Bot API server, a
+  // proxy): a letter then precedes it, so the lookbehind is host-free.
+  guarded(shape(String.raw`[0-9]{6,12}${COLON}[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])`), /[0-9]{6}[:%\\]/),
+  guarded(new RegExp(String.raw`(?<=${SL}[Bb][Oo][Tt])[0-9]{6,12}${COLON}[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])`, 'g'), /bot[0-9]{6}/i),
+  // Discord bot token: base64 user id, `.`, 6-character timestamp, `.`, HMAC (27 or more); the first character is M, N or O.
+  guarded(shape(String.raw`[MNO][A-Za-z0-9_-]{23,27}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}`), /\.[A-Za-z0-9_-]{6}\./),
 ];
 
 function maskShapes(text: string, mask: string, guard: boolean): string {

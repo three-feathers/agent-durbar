@@ -203,6 +203,7 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
 const AZ = 'AbCdEfGhIjKlMnOpQrStUvWx';
 const TG35 = 'AAH' + AZ + '_-AbCdEf'; // a real-shaped Telegram token part: exactly 35 characters
 assert.strictEqual(TG35.length, 35);
+const DBOT = 'M' + 'TIzNDU2Nzg5MDEyMzQ1Njc4' + '.GhIjKl.' + AZ + '_-AbC'; // user id (24), timestamp (6), HMAC (29)
 const chat: Record<string, { v: string; secret: string; keep?: string }> = {
   slackBot: { v: 'xo' + 'xb-' + '1234567890-0987654321-' + AZ, secret: AZ },
   slackUser: { v: 'xo' + 'xp-' + '1234567890-0987654321-1122334455-' + AZ, secret: AZ },
@@ -212,6 +213,15 @@ const chat: Record<string, { v: string; secret: string; keep?: string }> = {
   discordapp: { v: 'https://discordapp.com/api/webhooks/' + '123456789012345678/' + AZ + '_-' + AZ, secret: AZ + '_-' + AZ, keep: 'https://discordapp.com/api/webhooks/' },
   telegram: { v: '123456789:' + TG35, secret: AZ },
   telegramApi: { v: 'https://api.telegram.org/bot' + '123456789:' + TG35 + '/getMe', secret: AZ, keep: 'https://api.telegram.org/bot' },
+  // review of PR #679: session tokens, Workflow Builder webhooks, other Telegram hosts, Discord bot tokens
+  slackSession: { v: 'xo' + 'xd-' + 'AbCdEf%2BGh%2FIj' + AZ, secret: AZ },
+  slackCookie: { v: 'xo' + 'xc-' + '1234567890-0987654321-' + AZ, secret: AZ },
+  slackWorkflow: { v: 'https://hooks.slack.com/workflows/' + 'T0123ABCD/A0123ABCD/123456789/' + AZ, secret: 'A0123ABCD', keep: 'https://hooks.slack.com/workflows/' },
+  slackTrigger: { v: 'https://hooks.slack.com:443/triggers/' + 'T0123ABCD/123456789/' + AZ, secret: 'T0123ABCD', keep: 'https://hooks.slack.com:443/triggers/' },
+  discordHostVar: { v: 'https://discord.com.:443//api//webhooks//' + '123456789012345678//' + AZ + '_-' + AZ, secret: '123456789012345678', keep: 'https://discord.com.:443//api//webhooks//' },
+  telegramFile: { v: 'https://api.telegram.org/file/bot' + '123456789:' + TG35 + '/photos/x.jpg', secret: AZ, keep: 'https://api.telegram.org/file/bot' },
+  telegramLocal: { v: 'http://localhost:8081/bot' + '1234567:' + TG35 + '/getMe', secret: AZ, keep: 'http://localhost:8081/bot' },
+  discordBot: { v: DBOT, secret: AZ },
 };
 /** Test fixtures: write every `/` (or the Telegram token's `:` after its digits) in another spelling, on purpose not an escape. */
 const swapSlash = (x: string, to: string): string => x.split('/').join(to);
@@ -254,14 +264,14 @@ assert.strictEqual(redact('=3D' + chat.slackBot.v, {}), '=3D[redacted]', 'slack 
 assert.strictEqual(redact('%u003D' + chat.slackApp.v, {}), '%u003D[redacted]', 'slack token after %u003D');
 assert.strictEqual(redact('=3D' + planted.ghp + ' %u003D' + planted.sk, {}), '=3D[redacted] %u003D[redacted]', 'ghp after =3D, sk- after %u003D');
 assert.strictEqual(maskTokenShapes('=3D' + planted.aws, '[s]'), '=3D[s]', 'maskTokenShapes: aws after =3D');
-// Telegram is the exact shape (8-10 digits, `:`, 35 characters, nothing token-like after): ids, sessions and file names are not tokens
+// Telegram is the exact shape (6-12 digits, `:`, 35 characters, nothing token-like after): ids, sessions and file names are not tokens
 {
   const L = (n: number): string => AZ.repeat(2).slice(0, n);
-  for (const ok of ['1729680000:session_' + L(40), 'bundle.js:1234567:' + L(40), 'bundle.js:12345678:' + L(36), 'id=12345678:' + L(36), 'x 123456789:' + L(34), 'x 12345678901:' + L(35), 'x 1234567:' + L(35), 'x 123456789:' + L(35) + '_more']) {
+  for (const ok of ['1729680000:session_' + L(40), 'bundle.js:1234567:' + L(40), 'bundle.js:12345678:' + L(36), 'id=12345678:' + L(36), 'x 123456789:' + L(34), 'x 1234567890123:' + L(35), 'x 12345:' + L(35), 'x 123456789:' + L(35) + '_more']) {
     assert.strictEqual(redact(ok, {}), ok, `telegram false positive stays: ${ok.slice(0, 40)}`);
     assert.strictEqual(maskTokenShapes(ok, '[s]'), ok, `maskTokenShapes telegram false positive stays: ${ok.slice(0, 40)}`);
   }
-  for (const n of [8, 9, 10]) assert.strictEqual(redact('t ' + '1'.repeat(n) + ':' + L(35) + '.', {}), 't [redacted].', `a ${n}-digit id with a 35-character part is a token`);
+  for (const n of [6, 7, 8, 9, 10, 11, 12]) assert.strictEqual(redact('t ' + '1'.repeat(n) + ':' + L(35) + '.', {}), 't [redacted].', `a ${n}-digit id with a 35-character part is a token`);
 }
 // the Slack prefix set: `xoxo-` is not one, `xoxa-` `xoxr-` `xoxs-` `xoxe-` are
 assert.strictEqual(redact('xoxo-hugs-and-kisses xoxo-1234567890123', {}), 'xoxo-hugs-and-kisses xoxo-1234567890123', 'xoxo- is not a Slack token');
@@ -274,6 +284,110 @@ assert.strictEqual(redact('u=' + encodeURIComponent(encodeURIComponent(chat.slac
 assert.strictEqual(redact('HTTPS://HOOKS.SLACK.COM/SERVICES/T0123ABCD/B0123ABCD/' + AZ, {}), 'HTTPS://HOOKS.SLACK.COM/SERVICES/[redacted]', 'upper-case host');
 assert.strictEqual(redact('https://Discord.com/API/Webhooks/123456789012345678/' + AZ + AZ, {}), 'https://Discord.com/API/Webhooks/[redacted]', 'mixed-case discord host');
 assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x', {}), 'https://API.TELEGRAM.ORG/BOT[redacted]/x', 'upper-case telegram host');
+// review of PR #679: every input of the review gets a row (S = a fake secret built at run time)
+{
+  const S = AZ + '9';
+  const TGS = (id: string): string => id + ':' + TG35;
+  const tg = (host: string, tail = '/getMe'): string => host + '/bot' + TGS('123456789') + tail;
+  // 1. Telegram on any host, port or path: only the token goes
+  for (const [host, want] of [['https://api.telegram.org/file', 'https://api.telegram.org/file/bot[redacted]/getMe'], ['http://localhost:8081', 'http://localhost:8081/bot[redacted]/getMe'],
+    ['https://proxy.example.net/tg/v2', 'https://proxy.example.net/tg/v2/bot[redacted]/getMe'], ['https://api.telegram.org:443', 'https://api.telegram.org:443/bot[redacted]/getMe'],
+    ['https://api.telegram.org.', 'https://api.telegram.org./bot[redacted]/getMe']] as const) {
+    assert.strictEqual(redact(tg(host), {}), want, `telegram on ${host}`);
+    assert.strictEqual(maskTokenShapes(tg(host), '[redacted]'), want, `maskTokenShapes telegram on ${host}`);
+  }
+  assert.strictEqual(redact(tg('https://api.telegram.org/file', '/photos/x.jpg'), {}), 'https://api.telegram.org/file/bot[redacted]/photos/x.jpg', 'telegram file download URL');
+  assert.strictEqual(redact('u=' + encodeURIComponent(tg('http://localhost:8081')), {}), 'u=http%3A%2F%2Flocalhost%3A8081%2Fbot[redacted]%2FgetMe', 'encoded local Bot API URL');
+  assert.strictEqual(redact('see ' + 'https://t.me/somebot123456789:short', {}), 'see https://t.me/somebot123456789:short', 'a word ending in bot with a short tail stays');
+  // 2. Slack session tokens, also URL-encoded
+  for (const pre of ['xoxc-', 'xoxd-']) {
+    const t = 'xo' + pre.slice(2);
+    assert.strictEqual(redact('c ' + t + '1234567890-' + S + ' z', {}), 'c [redacted] z', `${t} session token`);
+    assert.strictEqual(redact('cookie=' + t + 'AbCdEf%2BGh%2FIj%3D%3D' + S + '; path=/', {}), 'cookie=[redacted]; path=/', `${t} with %XX escapes: all of it goes`);
+  }
+  assert.strictEqual(redact('d=' + encodeURIComponent('xo' + 'xd-' + 'AbCdEf+Gh/Ij' + S + '=='), {}), 'd=[redacted]', 'URL-encoded xoxd- token');
+  // 3 and 4. Slack Workflow Builder and trigger webhooks, and host variants for both hosts
+  const sw = (path: string): string => path.replace('<s>', S);
+  const slackWant = (h: string, p: string): string => `${h}${p}/[redacted]`;
+  for (const host of ['https://hooks.slack.com', 'https://hooks.slack.com:443', 'https://hooks.slack.com.', 'https://hooks.slack.com.:8443', 'https://HOOKS.SLACK.COM']) {
+    for (const [kind, rest] of [['services', 'T0123ABCD/B0123ABCD/<s>'], ['workflows', 'T0123ABCD/A0123ABCD/123456789/<s>'], ['triggers', 'T0123ABCD/123456789/<s>']] as const) {
+      assert.strictEqual(redact(`${host}/${kind}/${sw(rest)} x`, {}), slackWant(host, `/${kind}`) + ' x', `${host}/${kind}`);
+      assert.strictEqual(redact(`${host}//${kind}//${sw(rest.split('/').join('//'))} x`, {}), `${host}//${kind}//[redacted] x`, `${host}//${kind}// double slashes`);
+    }
+  }
+  for (const host of ['https://discord.com', 'https://discord.com:443', 'https://discord.com.', 'https://discordapp.com.:443']) {
+    const hook = `/api/webhooks/123456789012345678/${AZ}_-${AZ}`;
+    assert.strictEqual(redact(host + hook, {}), host + '/api/webhooks/[redacted]', `${host} webhook`);
+    assert.strictEqual(redact(host + '//api//v10//webhooks//123456789012345678//' + AZ + '_-' + AZ, {}), host + '//api//v10//webhooks//[redacted]', `${host} double slashes`);
+  }
+  assert.strictEqual(redact('https://hooks.slack.com/services/T0123ABCD/B0123ABCD/', {}), 'https://hooks.slack.com/services/T0123ABCD/B0123ABCD/', 'a webhook without its secret stays');
+  assert.strictEqual(redact('https://hooks.slack.com/other/T0123ABCD/B0123ABCD/' + S, {}), 'https://hooks.slack.com/other/T0123ABCD/B0123ABCD/' + S, 'not a webhook path: not touched here');
+  // 5. the last segment is whole: long, underscore and hyphen secrets leave no tail
+  for (const last of ['a'.repeat(300), 'a'.repeat(40) + '_' + S, S + '-' + S + '_' + 'Z'.repeat(150)]) {
+    assert.strictEqual(redact('https://hooks.slack.com/services/T0123ABCD/B0123ABCD/' + last + ' end', {}), 'https://hooks.slack.com/services/[redacted] end', `slack last segment ${last.length} chars`);
+  }
+  // 6. Telegram ids of 6 to 12 digits; the false positives of the review stay
+  for (const n of [6, 7, 11, 12]) {
+    assert.strictEqual(redact('t ' + '7'.repeat(n) + ':' + TG35, {}), 't [redacted]', `${n}-digit bot id`);
+    assert.strictEqual(redact(tg('https://api.telegram.org').replace('123456789', '7'.repeat(n)), {}), 'https://api.telegram.org/bot[redacted]/getMe', `${n}-digit bot id after /bot`);
+  }
+  for (const ok of ['x ' + '7'.repeat(13) + ':' + TG35, 'x ' + '7'.repeat(5) + ':' + TG35, '1729680000:session_' + 'a'.repeat(40), 'bundle.js:1234567:' + 'a'.repeat(40), 'f.js:1234567:' + 'a'.repeat(36), 'f.js:1234567:' + 'a'.repeat(34)]) {
+    assert.strictEqual(redact(ok, {}), ok, `telegram id false positive stays: ${ok.slice(0, 30)}`);
+    assert.strictEqual(maskTokenShapes(ok, '[s]'), ok, `maskTokenShapes telegram id false positive stays: ${ok.slice(0, 30)}`);
+  }
+  // 8. Discord bot tokens: user id . timestamp . HMAC
+  assert.strictEqual(redact('token ' + DBOT + ' end', {}), 'token [redacted] end', 'discord bot token');
+  assert.strictEqual(redact('{"t":"' + DBOT + '"}', {}), '{"t":"[redacted]"}', 'discord bot token in JSON');
+  assert.strictEqual(redact('Bot ' + DBOT, {}), 'Bot [redacted]', 'Authorization: Bot <token>');
+  assert.strictEqual(redact('N' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(27) + 'c'.repeat(30), {}), '[redacted]', 'a longer HMAC is masked whole');
+  for (const [idLen, hmacLen] of [[23, 27], [27, 27], [24, 38], [24, 60]]) {
+    assert.strictEqual(redact('x ' + 'M' + 'a'.repeat(idLen) + '.abcdef.' + 'b'.repeat(hmacLen) + ' y', {}), 'x [redacted] y', `discord bot token with a ${idLen + 1}-character id and a ${hmacLen}-character HMAC`);
+  }
+  for (const ok of ['Org.Example.Foo', 'Microsoft.Extensions.Logging.Abstractions.Something', 'M' + 'a'.repeat(23) + '.abcdefg.' + 'b'.repeat(30), 'M' + 'a'.repeat(23) + '.abcde.' + 'b'.repeat(30), 'M' + 'a'.repeat(22) + '.abcdef.' + 'b'.repeat(30),
+    'M' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(26), 'X' + 'a'.repeat(24) + '.abcdef.' + 'b'.repeat(30), 'v1.2.3 N1.2.3 file.tar.gz', 'aM' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(30)]) {
+    assert.strictEqual(redact(ok, {}), ok, `discord bot false positive stays: ${ok.slice(0, 30)}`);
+    assert.strictEqual(maskTokenShapes(ok, '[s]'), ok, `maskTokenShapes discord bot false positive stays: ${ok.slice(0, 30)}`);
+  }
+  // a JWT is masked whole by its own shape, even when its signature looks like a Discord HMAC; two in a row both go
+  const jwt = 'ey' + 'JhbGciOiJIUzI1NiJ9.' + 'ey' + 'JzdWIiOiIxMjM0NTY3ODkwIn0.' + 'M' + 'a'.repeat(30);
+  assert.strictEqual(redact('a ' + jwt + ' b ' + DBOT, {}), 'a [redacted] b [redacted]', 'JWT and Discord bot token side by side');
+}
+// same-run growth for the new shapes (review of PR #679): the same call on an input 4 times longer must cost about 4 times more, not 16
+{
+  const cpuOf = (text: string): number => {
+    let best = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const c0 = process.cpuUsage();
+      redact(text, {});
+      const d = process.cpuUsage(c0);
+      best = Math.min(best, (d.user + d.system) / 1000);
+    }
+    return best;
+  };
+  const units: Record<string, string> = {
+    slackSession: 'xo' + 'xd-%2B-',
+    slackHook: 'hooks.slack.com/workflows/a/b/',
+    slackHookPort: 'hooks.slack.com.:443//triggers//a//',
+    discordHook: 'discord.com.:443//api//webhooks//1234567//',
+    tgBotLookbehind: '/bot1234567:',
+    tgFile: 'api.telegram.org/file/bot123456:',
+    tgIds: '123456789012:',
+    discordBot: 'M' + 'a'.repeat(24) + '.abcdef.',
+    discordBotRun: 'M' + 'a'.repeat(30) + ' ',
+    discordBotM: 'M',
+    discordBotMDash: 'M-',
+    discordBotMDot: 'M', // plus a `.abcdef.` tail so the cheap marker lets it through
+  };
+  for (const [k, unit] of Object.entries(units)) {
+    const tail = k.endsWith('Dot') ? '.abcdef.' : '';
+    const small = unit.repeat(Math.ceil(10_000 / unit.length)) + tail;
+    const big = unit.repeat(Math.ceil(40_000 / unit.length)) + tail;
+    redact(small, {}); // warm up
+    const a = Math.max(cpuOf(small), 2);
+    const b = cpuOf(big);
+    assert.ok(b / a < 10, `growth ${k}: ${a.toFixed(1)} ms for ${small.length} chars, ${b.toFixed(1)} ms for ${big.length} chars (ratio ${(b / a).toFixed(1)}, limit 10 for 4x input: linear is about 4, quadratic about 16)`);
+  }
+}
 // the guard never changes the result (T132 review): every kind x encoding x prefix, then random strings of markers and separators
 {
   const pieces: string[] = [];
@@ -287,7 +401,7 @@ assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x'
       assert.strictEqual(maskTokenShapes(t, '[s]'), maskTokenShapesUnguarded(t, '[s]'), `guard equivalence on ${t.slice(0, 50)}`);
     }
   }
-  pieces.push('xox', 'xoxb-', 'xapp-', 'XOXB-', 'hooks.slack.com', 'HOOKS.Slack.com', 'discord', 'discordapp.com', 'DISCORD.COM', 'api', 'webhooks', 'services', 'api.telegram.org', 'API.TELEGRAM.ORG', 'bot', ':', '%3A', '%253a', '\\u003a', '\\x3A',
+  pieces.push('xox', 'xoxb-', 'xapp-', 'XOXB-', 'hooks.slack.com', 'HOOKS.Slack.com', 'discord', 'discordapp.com', 'DISCORD.COM', 'api', 'webhooks', 'services', 'api.telegram.org', 'API.TELEGRAM.ORG', 'bot', '/bot', 'file', 'workflows', 'triggers', 'xoxd-', 'xoxc-', '%2B', ':443', '.:8081', '//', DBOT, '.GhIjKl.', ':', '%3A', '%253a', '\\u003a', '\\x3A',
     '/', '\\/', '%2F', '%252f', '\\u002f', '12345678', '1234567890', AZ, AZ + AZ, TG35, 'T0123ABCD', ' ', '_', '-', '=3D', '%u003D', '.');
   let seed = 12345;
   const rnd = (n: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 8) % n; };
