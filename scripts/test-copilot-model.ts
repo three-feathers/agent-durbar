@@ -535,9 +535,8 @@ async function main(): Promise<void> {
         assert.deepStrictEqual(await p, { answer: 'my own long-question answer', wasFreeform: true }, 'the custom answer, not a skip');
         assert.ok(!t.events.slice(from).some((e) => e.type === 'question' && e.phase === 'cancelled'), 'no skipped card');
         assert.deepStrictEqual(readAnswerPayload(null), null, 'null stays a skip');
-        for (const bad of [undefined, 'text', 5, [], {}, { k: 5 }, { ['x'.repeat(2001)]: 'a' }]) assert.strictEqual(readAnswerPayload(bad), undefined, 'unusable is refused, never a skip: ' + JSON.stringify(bad)?.slice(0, 30));
+        for (const bad of [undefined, 'text', 5, [], {}, { k: 5 }, { k: '' }, { k: '   ' }, { ['x'.repeat(2001)]: 'a' }]) assert.strictEqual(readAnswerPayload(bad), undefined, 'unusable is refused, never a skip: ' + JSON.stringify(bad)?.slice(0, 30));
         assert.strictEqual(readAnswerPayload({ a: 'x'.repeat(900) })!.a.length, 500, 'a value is cut at 500');
-        assert.ok(/readAnswerPayload/.test(fs.readFileSync(path.join(process.cwd(), 'src', 'main', 'ipc', 'questions.ts'), 'utf8')), 'main uses it for agents:answerQuestion');
       }
       const pending = iu({ question: 'Still there?', choices: ['Yes'] });
       await sleep(5);

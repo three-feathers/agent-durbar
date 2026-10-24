@@ -108,6 +108,56 @@ module.exports = async (ctx) => {
     await until(`!!document.querySelector('#chat .note.question.settled')`);
     const sk = await js(`(()=>{const n=document.querySelector('#chat .note.question.settled');return {t:n.querySelector('.pstate').textContent,why:n.dataset.skipWhy,title:n.title}})()`);
     assert.ok(/skipped$/.test(sk.t) && sk.why === 'user' && sk.title === 'Skipped: you pressed Skip.', `${w}: Skip says why: ${JSON.stringify(sk)}`);
+    // FR-178: several open questions at once, a cancelled event with a reason, an Aborted idle with two open, and a late cancelled for an answered card.
+    // The simulator's bridge is stubbed to accept any answer (the sim only knows its own question), so the window's own handling is what is checked.
+    await open(w, h); await scroll('bottom');
+    const sid = await js(`window.__durbarSimUi.agents().find(a=>!a.parent&&a.question).id`);
+    await js(`[...document.querySelectorAll('#chat .note.question:not(.settled) .note-actions .btn.danger')].find(b=>b.textContent==='Skip').click()`);
+    await until(`!!document.querySelector('#chat .note.question.settled')`);
+    await js(`window.__durbarSimUi.bridge().answerQuestion=async()=>({ok:true});0`);
+    await js(`window.__qc=q=>[...document.querySelectorAll('#chat .note.question')].find(n=>n.querySelector('.q-text')&&n.querySelector('.q-text').textContent.includes(q));0`);
+    const emitEv = (e) => js(`window.__durbarSimUi.emit(JSON.parse(${jsLiteral(JSON.stringify({ sessionId: sid, timestamp: Date.now(), ...e }))}))`);
+    const ask = (rid, q, opts) => emitEv({ type: 'question', phase: 'asked', requestId: rid, questions: [{ question: q, multiSelect: false, options: opts.map((label) => ({ label })) }] });
+    const ev = emitEv;
+    const has = (q) => `!!window.__qc(${jsLiteral(q)})`;
+    const done = (q) => `window.__qc(${jsLiteral(q)}).classList.contains('settled')`;
+    const stateOf = (q) => js(`(()=>{const n=window.__qc(${jsLiteral(q)});return n?{settled:n.classList.contains('settled'),t:n.querySelector('.pstate').textContent,why:n.dataset.skipWhy||'',title:n.title,denied:n.classList.contains('denied')}:null})()`);
+    const pick = async (q, label) => { await js(`(()=>{const n=window.__qc(${jsLiteral(q)});[...n.querySelectorAll('.q-opt')].find(b=>b.textContent.includes(${jsLiteral(label)})).click();[...n.querySelectorAll(':scope > .note-actions .btn.primary')].find(b=>b.textContent==='Answer').click();})()`); };
+    // two open at once, answered out of order: each card gets its own answer; the other stays open
+    await ask('mq1', 'Pick one?', ['A', 'B']); await ask('mq2', 'Pick two?', ['X', 'Y']);
+    await until(has('Pick two?'));
+    await pick('Pick two?', 'Y');
+    await until(done('Pick two?'));
+    const o2 = await stateOf('Pick two?'), o1 = await stateOf('Pick one?');
+    assert.ok(/answered: Y$/.test(o2.t) && !o1.settled, `${w}: the answered card is settled, the other stays open: ${JSON.stringify({ o1, o2 })}`);
+    assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(sid)}).state`), 'waiting', `${w}: still Waiting while one question is open`);
+    await pick('Pick one?', 'A');
+    await until(done('Pick one?'));
+    assert.ok(/answered: A$/.test((await stateOf('Pick one?')).t), `${w}: the first card got its own answer`);
+    // a cancelled event with a reason: the tooltip says it
+    await ask('mq3', 'Cancelled one?', ['A']);
+    await until(has('Cancelled one?'));
+    await ev({ type: 'question', phase: 'cancelled', requestId: 'mq3', reason: 'reconnect' });
+    await until(done('Cancelled one?'));
+    const c3 = await stateOf('Cancelled one?');
+    assert.ok(/skipped$/.test(c3.t) && c3.why === 'reconnect' && c3.title === 'Skipped: the agent app was reconnected.', `${w}: the reason is in the tooltip: ${JSON.stringify(c3)}`);
+    // an Aborted idle with two open settles both, with the window's own reason
+    await ask('mq4', 'Abort one?', ['A']); await ask('mq5', 'Abort two?', ['A']);
+    await until(has('Abort two?'));
+    await ev({ type: 'status', status: 'idle', intent: 'Aborted' });
+    await until(done('Abort one?')); await until(done('Abort two?'));
+    const a1 = await stateOf('Abort one?'), a2 = await stateOf('Abort two?');
+    assert.ok([a1, a2].every((x) => /skipped$/.test(x.t) && x.why === 'aborted' && x.title === 'Skipped: the agent app reported the turn as aborted.'), `${w}: both skipped as aborted: ${JSON.stringify({ a1, a2 })}`);
+    // a late cancelled for a card already answered: the card is corrected to skipped, with its reason
+    await ask('mq6', 'Late one?', ['A', 'B']);
+    await until(has('Late one?'));
+    await pick('Late one?', 'B');
+    await until(done('Late one?'));
+    assert.ok(/answered: B$/.test((await stateOf('Late one?')).t), `${w}: answered first`);
+    await ev({ type: 'question', phase: 'cancelled', requestId: 'mq6', reason: 'stop' });
+    await until(`/skipped$/.test(window.__qc(${jsLiteral('Late one?')}).querySelector('.pstate').textContent)`);
+    const l6 = await stateOf('Late one?');
+    assert.ok(l6.denied && l6.why === 'stop' && l6.title === 'Skipped: the turn was stopped.', `${w}: a late cancelled corrects the card: ${JSON.stringify(l6)}`);
     console.log('[question-visible]', w, 'ok');
   }
   console.log('[question-visible] all checks passed');

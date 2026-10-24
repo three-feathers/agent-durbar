@@ -409,6 +409,9 @@ export interface AskedQuestion {
   options: { label: string; description?: string }[];
 }
 
+/** Why a question ended unanswered (spec 052 FR-178): a code for the event and the debug log, never text. `user`: the window sent Skip; `unreadable`: an answer that held nothing usable. */
+export type QuestionSkipReason = 'user' | 'stop' | 'interrupt' | 'reconnect' | 'exit' | 'unreadable';
+
 /** The agent asks the user to choose (spec 012 FR-128): `asked` with the questions, then `answered` or `cancelled`. */
 export interface QuestionEvent extends BaseEvent {
   type: 'question';
@@ -421,8 +424,8 @@ export interface QuestionEvent extends BaseEvent {
   elicitation?: ElicitRequest;
   /** `answered` of an elicitation: what the user did (`accept` = submitted or Done, `decline`); a cancel is `phase: 'cancelled'`. */
   elicitAction?: ElicitAction;
-  /** `cancelled` only (spec 052 FR-178): why the question ended unanswered; a reason code, never text. `user`: the window sent Skip; `unreadable`: an answer that held nothing usable. */
-  reason?: 'user' | 'stop' | 'interrupt' | 'reconnect' | 'exit' | 'unreadable';
+  /** `cancelled` only (spec 052 FR-178): why the question ended unanswered. */
+  reason?: QuestionSkipReason;
 }
 
 /** A custom agent the user can select for a session (spec 043 FR-001); generic across adapters. */

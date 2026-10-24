@@ -1435,9 +1435,10 @@ export class ClaudeAdapter implements AgentAdapter {
     return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Answered by the user in Agent Durbar.', updatedInput: { ...input, answers: byOriginal } } };
   }
 
-  /** Stop, interrupt or a crash: unanswered questions are skipped (the hook answers deny). */
+  /** Why each skipped question was skipped (spec 052 FR-178). */
   private readonly skips = new SkipNotes();
 
+  /** Stop, interrupt or a crash: unanswered questions are skipped (the hook answers deny). */
   private cancelQuestions(s: Session, why: SkipReason): void {
     for (const [id, q] of [...(s.questions ?? [])]) { this.skips.note(id, why); q.resolve(null); }
     for (const p of [...(s.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop / End reject an open plan

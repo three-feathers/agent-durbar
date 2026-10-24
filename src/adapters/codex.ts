@@ -1163,13 +1163,14 @@ export class CodexAdapter implements AgentAdapter {
     return { result: { decision: reply.decision } };
   }
 
+  /** Why each skipped question was skipped (spec 052 FR-178). */
+  private readonly skips = new SkipNotes();
+
   /**
    * FR-146: Codex asks the user (`item/tool/requestUserInput`). The questions go to the question card (spec 012 FR-128); the
    * answer goes back keyed by Codex's question id. Skip, Stop and End session answer with nothing. A secret question
    * (`isSecret`) is never shown or answered here: what is typed into the card lands in the chat.
    */
-  private readonly skips = new SkipNotes();
-
   private async askUser(live: Live, params: unknown): Promise<RequestOutcome> {
     const raw = isObj(params) && Array.isArray(params.questions) ? params.questions.filter((q) => isObj(q) && q.isSecret !== true) : [];
     const { asked, originals } = parseQuestionsWithOriginals({ questions: raw });

@@ -3,11 +3,11 @@
  * Pure: no I/O. Text is cut and cleaned here so the renderer and the event log never get unbounded strings.
  */
 import { cleanSessionTitle } from './history';
-import type { AskedQuestion } from './types';
+import type { AskedQuestion, QuestionSkipReason } from './types';
 import { isObj } from '../shared/guards';
 
-/** Why a question ended unanswered (spec 052 FR-178): a code for the event and the debug log, never any text. */
-export type SkipReason = 'user' | 'stop' | 'interrupt' | 'reconnect' | 'exit' | 'unreadable';
+/** Why a question ended unanswered: the one union is `QuestionSkipReason` in types.ts. */
+export type SkipReason = QuestionSkipReason;
 /** Request id -> the reason noted just before its waiter was resolved with nothing; `take` gives it once ('unreadable' when none was noted). */
 export class SkipNotes {
   private readonly m = new Map<string, SkipReason>();
@@ -61,7 +61,7 @@ export function readAnswerPayload(answers: unknown): Record<string, string> | nu
   if (answers === null) return null;
   if (!isObj(answers)) return undefined;
   const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(answers).slice(0, MAX_QUESTIONS)) if (typeof v === 'string' && k.length <= MAX_QUESTION_TEXT) out[k] = v.slice(0, MAX_ANSWER);
+  for (const [k, v] of Object.entries(answers).slice(0, MAX_QUESTIONS)) if (typeof v === 'string' && v.trim() && k.length <= MAX_QUESTION_TEXT) out[k] = v.slice(0, MAX_ANSWER);
   return Object.keys(out).length ? out : undefined;
 }
 

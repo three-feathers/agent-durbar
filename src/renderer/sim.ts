@@ -1617,7 +1617,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       answerQuestion: async (id, requestId, answers) => {
         if (!simQ || simQ.s.info.id !== id || simQ.requestId !== requestId) return { ok: false, error: 'That question is no longer open.' };
         simQ = undefined;
-        emit({ type: 'question', sessionId: id, timestamp: now(), phase: answers ? 'answered' : 'cancelled', requestId, ...(answers ? { answers } : { reason: 'user' as const }) });
+        emit({ type: 'question', sessionId: id, timestamp: now(), phase: answers ? 'answered' : 'cancelled', requestId, ...(answers ? { answers } : {}) });
         emit({ type: 'output', sessionId: id, timestamp: now(), text: answers ? 'Thanks: ' + Object.values(answers).join('; ') + '.' : 'No answer; I will pick Sage for now.', final: true } as AgentEvent);
         return { ok: true };
       },

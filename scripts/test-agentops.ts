@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { FakeAdapter } from '../src/adapters/fake';
 import { ALL_OPTIONAL as ALL } from './test-adapter-contract';
-import { restorable, resumeModeOp, sendWithSlash, setCapOp, setMcpOp, setModeOp, stopTurnOp } from '../src/main/agentops';
+import { answerQuestionOp, restorable, resumeModeOp, sendWithSlash, setCapOp, setMcpOp, setModeOp, stopTurnOp } from '../src/main/agentops';
 import type { AgentMessage } from '../src/adapters/types';
 import type { OpsDeps } from '../src/main/agentops';
 import type { SavedFolder } from '../src/main/folders';
@@ -231,6 +231,25 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(sent.pop(), { text: '/p huge' }, 'f: asTyped sends the typed line');
     const failing = { send: async () => { throw new Error('send failed'); }, expandSlashCommand: async () => ({ text: 'X', where: 'w' }) };
     await assert.rejects(sendWithSlash(failing, 's1', { text: '/review' }), /send failed/, 'f: a failed send still rejects (sendOp reports it)');
+  }
+  // (g) answerQuestionOp (spec 052 FR-178, issue 689): the answer reaches the adapter as given; a long question's key is kept; nothing usable is refused, never a skip
+  {
+    const got: unknown[] = [];
+    const adapter = { answerQuestion: (sid: string, rid: string, ans: unknown) => got.push([sid, rid, ans]) };
+    const agents = new Map<string, AgentInfo>([['g1', { id: 'g1', name: 'g1', cwd: WS, folders: [], permMode: 'ask', adapterId: 'copilot' } as AgentInfo]]);
+    const d = { agents, router: { forAgent: (id: string) => (id === 'g1' ? adapter : undefined) } } as unknown as Pick<OpsDeps, 'agents' | 'router'>;
+    const longQ = 'Which of these long-running approaches should I take? '.repeat(8).trim();
+    assert.ok(longQ.length > 300 && longQ.length < 2000);
+    assert.deepStrictEqual(answerQuestionOp(d, 'g1', 'r1', { [longQ]: 'my own' }), { ok: true });
+    assert.deepStrictEqual(got.pop(), ['g1', 'r1', { [longQ]: 'my own' }], 'g: the answer to a question over 300 characters reaches the adapter');
+    assert.deepStrictEqual(answerQuestionOp(d, 'g1', 'r2', null), { ok: true });
+    assert.deepStrictEqual(got.pop(), ['g1', 'r2', null], 'g: null is a skip');
+    for (const bad of [{ q: '' }, { q: '   ' }, {}, 'text', 5, undefined, { [`${'x'.repeat(2001)}`]: 'a' }]) {
+      assert.strictEqual(answerQuestionOp(d, 'g1', 'r3', bad).ok, false, 'g: refused: ' + JSON.stringify(bad)?.slice(0, 30));
+    }
+    assert.strictEqual(got.length, 0, 'g: a refused answer never reaches the adapter as a skip');
+    assert.strictEqual(answerQuestionOp(d, 'nope', 'r', { q: 'a' }).ok, false);
+    assert.strictEqual(answerQuestionOp(d, 'g1', 'r'.repeat(201), { q: 'a' }).ok, false);
   }
   console.log('agentops: ok');
 }

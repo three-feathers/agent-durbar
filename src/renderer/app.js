@@ -3696,12 +3696,12 @@ function showQuestion(a,e){
   const send=async answers=>{
     const r=await bridge.answerQuestion(a.id,e.requestId,answers).catch(err=>({ok:false,error:String(err&&err.message||err)}));
     if(!r||!r.ok){addNote(liveChat(a),'Could not answer: '+esc((r&&r.error)||'unknown error'),true);return;}
-    settleQuestion(a,answers,undefined,e.requestId,'user');
+    settleQuestion(a,answers,undefined,e.requestId);
   };
   const ok=document.createElement('button');ok.type='button';ok.className='btn primary';ok.textContent='Answer';
   ok.onclick=()=>{const ans={};qs.forEach((q,i)=>{const o=others[i].value.replace(/\s+/g,' ').trim();const v=[...picks[i]].concat(o?[o]:[]).join(', ');if(v)ans[q.question]=v;});
     if(Object.keys(ans).length<qs.length){const miss=qs.findIndex(q=>!ans[q.question]);focusIn(others[miss]||ok);toast('Choose an answer for each question, or Skip.',3500);return;}send(ans);};
-  const skip=document.createElement('button');skip.type='button';skip.className='btn danger';skip.textContent='Skip';skip.title='Do not answer; the agent decides itself';skip.onclick=()=>send(null);
+  const skip=document.createElement('button');skip.type='button';skip.className='btn danger';skip.textContent='Skip';skip.title='Do not answer; the agent decides itself';skip.onclick=()=>{const Q=a.qs&&a.qs.get(e.requestId);if(Q)Q.said='user';send(null);};
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st};(a.qs||(a.qs=new Map())).set(e.requestId,a.question); /* spec 052 FR-178: every open question by request id (two can be open at once) */
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
@@ -3813,6 +3813,9 @@ function showElicitation(a,e){
 }
 /* spec 052 FR-178: why a question ended unanswered, in words for the card's tooltip (codes only, from the adapter's event or this window; never text of the question) */
 const SKIP_WHY={user:'you pressed Skip',stop:'the turn was stopped',interrupt:'the turn was stopped',reconnect:'the agent app was reconnected',exit:'the agent app ended',unreadable:'the agent app ended the question without an answer',aborted:'the agent app reported the turn as aborted'};
+function markSkipped(Q,why){const w=SKIP_WHY[why]?why:'unknown';Q.n.dataset.skipWhy=w;Q.n.title='Skipped: '+(SKIP_WHY[w]||'the reason was not reported')+'.';}
+/* spec 052 FR-178: the agent app was told "skipped" after the card said "answered" (a late cancelled event): the card is corrected, never left saying the opposite */
+function reSkipQuestion(a,rid,why){const Q=a.qDone&&a.qDone.get(rid);if(!Q||Q.done!=='answered'||Q.elicit)return false;Q.done='skipped';Q.st.textContent=' → skipped';Q.n.classList.remove('approved');Q.n.classList.add('denied');markSkipped(Q,why);announce('Skipped: '+(SKIP_WHY[why]||'the agent app ended the question')+'.');return true;}
 function settleQuestion(a,answers,action,rid,why){
   /* spec 052 FR-178: the card that was answered is the one settled, by its request id; a second question open at once is neither settled by it nor lost */
   const Q=(rid&&a.qs&&a.qs.get(rid))||a.question;if(!Q)return;if(a.qs)a.qs.delete(Q.requestId);if(a.question===Q)a.question=a.qs&&a.qs.size?[...a.qs.values()].pop():null;
@@ -3821,8 +3824,9 @@ function settleQuestion(a,answers,action,rid,why){
   if(Q.elicit){const acc=action==='accept';Q.st.textContent=' → '+(acc?(Q.elicit==='url'?'done':'submitted'):action==='decline'?'declined':'cancelled');Q.n.classList.add('settled',acc?'approved':'denied');
     if(a.state==='waiting')setState(a,'working',null,acc?'Answered':action==='decline'?'Declined':'Cancelled');if(a.question&&a.state==='working')setState(a,'waiting',null,'The agent asks you a question');updatePanelHeader();stickyScroll(liveChat(a));return;}
   Q.st.textContent=answers?' → answered: '+Object.values(answers).join('; '):' → skipped';
-  if(!answers){const w=SKIP_WHY[why]?why:'unknown';Q.n.dataset.skipWhy=w;Q.n.title='Skipped: '+(SKIP_WHY[w]||'the reason was not reported')+'.';}
+  if(!answers)markSkipped(Q,why||Q.said);
   Q.n.classList.add('settled',answers?'approved':'denied');
+  Q.done=answers?'answered':'skipped';(a.qDone||(a.qDone=new Map())).set(Q.requestId,Q);if(a.qDone.size>20)a.qDone.delete(a.qDone.keys().next().value); /* the last few settled cards: a late cancelled event can still correct one */
   if(a.state==='waiting')setState(a,'working',null,answers?'Answered':'Question skipped'); /* a Stop already set it idle */
   if(a.question&&a.state==='working')setState(a,'waiting',null,'The agent asks you a question'); /* another question is still open */
   updatePanelHeader();stickyScroll(liveChat(a));
@@ -4279,6 +4283,7 @@ function onLiveEvent(e){
   case 'question': /* spec 012 FR-130 */
     if(e.phase==='asked'){if(a.qs&&a.qs.has(e.requestId))return;showQuestion(a,e);setState(a,'waiting',null,'The agent asks you a question');updatePanelHeader();scheduleRender();}
     else if(a.qs&&a.qs.has(e.requestId)){const Q=a.qs.get(e.requestId);settleQuestion(a,e.phase==='answered'?e.answers:null,Q.elicit?(e.phase==='answered'?(e.elicitAction||'accept'):'cancel'):undefined,e.requestId,e.reason);}
+    else if(e.phase==='cancelled')reSkipQuestion(a,e.requestId,e.reason);
     return;
   case 'agentProfile':{ /* spec 043: the session's custom agent; details from the last list when the event has none */
     const p=e.profile?Object.assign({},(a.profileList||[]).find(x=>x.id===e.profile.id)||{},e.profile.source==='other'&&(a.profileList||[]).some(x=>x.id===e.profile.id)?{}:e.profile):null;

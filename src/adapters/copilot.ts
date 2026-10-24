@@ -2,7 +2,7 @@ import { copilotHooksJson } from '../shared/foldersetup';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
-import { parseQuestions, SkipNotes } from './questions';
+import { MAX_ANSWER, parseQuestions, SkipNotes } from './questions';
 import type { SkipReason } from './questions';
 import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 import type { ElicitAnswer } from '../shared/elicit';
@@ -896,7 +896,7 @@ export class CopilotAdapter implements AgentAdapter {
     if (!q) return;
     const v = answers ? Object.values(answers).find((x) => typeof x === 'string' && x.trim()) : undefined;
     if (answers === null) this.skips.note(requestId, 'user');
-    q.resolve(v ? v.replace(/\s+/g, ' ').trim().slice(0, 500) : null);
+    q.resolve(v ? v.replace(/\s+/g, ' ').trim().slice(0, MAX_ANSWER) : null);
   }
 
   /** spec 012 FR-151: the user's answer to an MCP elicitation (main checked it against the fields). */
@@ -910,6 +910,7 @@ export class CopilotAdapter implements AgentAdapter {
     if (w) w(answer);
   }
 
+  /** Why each skipped question was skipped (spec 052 FR-178). */
   private readonly skips = new SkipNotes();
 
   private cancelQuestions(live: Live, why: SkipReason): void {
