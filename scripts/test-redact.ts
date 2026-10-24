@@ -1224,6 +1224,16 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   cmd(`srv @{ "a; 'X-Api-Key' = '${T}' }`, `srv @{ "a; 'X-Api-Key' = '${R}' }`, 'R12: a stray quote before a quoted secret name');
   const hiddenQuote = `srv $h=@{ Body = '${'a'.repeat(3989)}${R}' }`; // the bound falls where an earlier [redacted] and its closing quote stand
   assert.strictEqual(maskSecretCommand(hiddenQuote), hiddenQuote, 'R12: an earlier [redacted] with its closers past the bound is left as it is');
+  // review of PR #669, round 3: line breaks and non-breaking spaces around =, commented-out secrets, a run of stray quotes
+  cmd(`pwsh -c "$h=@{ token =\n'${T}' }"`, `pwsh -c "$h=@{ token =\n'${R}' }"`, 'R12: a line break after =');
+  args([`$h=@{ 'X-Api-Key' =\n '${T}' }`], [`$h=@{ 'X-Api-Key' =\n '${R}' }`], 'R12 args: a line break after =, quoted name');
+  args(['-Command', `$h=@{ "X-Api-Key" =\r\n "${T}" }`], ['-Command', `$h=@{ "X-Api-Key" =\r\n "${R}" }`], 'R12 args: CRLF after =');
+  args([`@{ x = 1\n token =\n ${T}\n}`], [`@{ x = 1\n token =\n ${R}\n}`], 'R12 args: a bare value on the next line');
+  assert.ok(!maskSecretArgs([`@{ token = '${T}' }`]).join('').includes(T) && !maskSecretArgs([`@{ token = '${T}' }`]).join('').includes(T), 'R12 args: non-breaking spaces around =');
+  assert.ok(!maskSecretCommand(`srv @{ <# 'X-Api-Key' = '${T}' #> 'X-Api-Key' = 'NEW' }`).includes(T), 'R12: a commented-out secret is hidden');
+  assert.ok(!maskSecretArgs(['-Command', `@{ <# c }; $b = @{ 'X-Api-Key' = '${T}' } #>`]).join(' ').includes(T), 'R12 args: a secret in a literal after a } inside a comment');
+  assert.ok(!maskSecretCommand(`srv @{ <# c }; $b = @{ 'X-Api-Key' = '${T}' } #>`).includes(T), 'R12: the same, as a command');
+  assert.ok(!maskSecretCommand(`srv @{ ApiKey <# 'X-Api-Key' = '${T}' #> = 'v' }`).includes(T), 'R12: a commented-out member in the gap before = is hidden');
   cmd(`srv '@{token=${T}; port=1}'`, `srv '@{token=${R}; port=1}'`, 'R12: a quoted word keeps the member after the ;');
   // a doubled quote in a quoted name: the name is api"key
   cmd(`srv @{"api""key"="${T}"}`, `srv @{"api""key"="${R}"}`, 'R12: doubled quote in a name');
@@ -1241,7 +1251,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   cmd(`pwsh -c "$h=@{ <# auth #> 'X-Api-Key' = '${T}' }"`, `pwsh -c "$h=@{ <# auth #> 'X-Api-Key' = '${R}' }"`, 'R12: block comment before a quoted name');
   cmd(`srv $h=@{ <#k#> ApiKey = '${T}' }`, `srv $h=@{ <#k#> ApiKey = '${R}' }`, 'R12: block comment before a bare name');
   cmd(`srv $h=@{ ApiKey <# c #> = <# d #> '${T}' }`, `srv $h=@{ ApiKey <# c #> = <# d #> '${R}' }`, 'R12: block comments around =');
-  cmd(`srv $h=@{ <# open ApiKey = '${T}' }`, `srv $h=@{ ${R}}`, 'R12: an unclosed block comment hides the rest of the literal');
+  cmd(`srv $h=@{ <# open ApiKey = '${T}' }`, `srv $h=@{ <# open ApiKey = '${R}' }`, 'R12: only the <# and #> marks are white space, the inside of a comment is read as code');
   cmd(`srv @{ token = '${R}' + '${T}' }`, `srv @{ token = ${R} }`, 'R12: a hidden value followed by more code');
   cmd(`srv @{ token = "${R}" ${T} }`, `srv @{ token = ${R} }`, 'R12: a hidden quoted value followed by a word');
   cmd(`srv @{ token = ${R} ${T} }`, `srv @{ token = ${R} }`, 'R12: a hidden bare value followed by a word');
@@ -1281,6 +1291,9 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     exprs: '@{token=(' + 'a + '.repeat(MB / 4),
     herestr: "@{token=@'" + 'x'.repeat(MB),
     hereOpeners: "@{a=@'".repeat(MB / 6),
+    strayQuotes: ('@{' + '"'.repeat(3000) + '}').repeat(MB / 3003),
+    strayQuotesSq: ("@{" + "'".repeat(3000) + '}').repeat(MB / 3003),
+    quotedJunk: ('@{' + "'a b' ".repeat(500) + '}').repeat(MB / 3503),
     commentOpeners: '@{<#'.repeat(MB / 4),
     unclosedComment: '@{<#' + 'a'.repeat(MB),
     pastBound: '@{' + 'p=1;'.repeat(MB / 4),
@@ -1315,6 +1328,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const shapes: Record<string, (n: number) => string> = {
       repeatOpen: (n) => '@{'.repeat(n / 2), manyLiterals: (n) => '@{a=b;'.repeat(n / 6), nested: (n) => '@{a=@{'.repeat(n / 6), nestedSecret: (n) => '@{token=@{'.repeat(n / 10),
       unclosedQuote: (n) => '@{token="' + 'a'.repeat(n), longBare: (n) => '@{token=' + 'a'.repeat(n), hereOpeners: (n) => "@{a=@'".repeat(n / 6),
+      strayQuotes: (n) => ('@{' + '"'.repeat(3000) + '}').repeat(n / 3003), quotedJunk: (n) => ('@{' + "'a b' ".repeat(500) + '}').repeat(n / 3503),
       commentOpeners: (n) => '@{<#'.repeat(n / 4), unclosedComment: (n) => '@{<#' + 'a'.repeat(n), pastBound: (n) => '@{' + 'p=1;'.repeat(n / 4), noEquals: (n) => '@{' + 'x;'.repeat(n / 2),
     };
     for (const [k, mk] of Object.entries(shapes)) {

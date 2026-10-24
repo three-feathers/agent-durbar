@@ -731,27 +731,29 @@ function htRanges(s: string): Array<[number, number]> {
   };
   let from = 0;
   let depth = 1;
-  let resume = 0;
   let limit = 0;
   let sp = 0; // the last token boundary (outside any quote) and the bracket depth there: where the past-the-bound scan starts
   let sd = 1;
   const hsAt = [-2, -2]; // cached here-string closer position per kind ('@ and "@), -1 = none after the scan point
-  let cmAt = -2; // cached `#>` position
+  const failFrom = [-1, -1]; // a quoted name that did not close before `limit`: the later quotes of its kind in that literal are not tried again (linear)
+  const failLim = [-1, -1];
   let ld = -2; // the last `"` and the last `'`, found once (linear)
   let ls = -2;
   const lastDq = (): number => (ld === -2 ? (ld = s.lastIndexOf('"')) : ld);
   const lastSq = (): number => (ls === -2 ? (ls = s.lastIndexOf("'")) : ls);
-  const skipC = (p: number): number => { // past the block comment at p; -1 when it never closes (the rest of the literal is hidden, `resume` is where the scan goes on)
-    if (cmAt === -2 || (cmAt >= 0 && cmAt < p + 2)) cmAt = s.indexOf('#>', p + 2);
-    if (cmAt < 0) { const e = htLitEnd(s, p, depth); hide(p, e); resume = Math.max(e, p + 2); return -1; }
-    return cmAt + 2;
-  };
-  const skipSp = (p0: number): number => { // spaces, tabs and block comments
+  let cmAt = -2; // cached `#>` position
+  const skipSp = (p0: number): number => { // the gap between a name, `=` and a value: white space (line breaks too) and block comments; a comment with an `=` in it is hidden (it may be a commented-out member)
     let p = p0;
     for (;;) {
       const ch = s[p];
-      if (ch === ' ' || ch === '\t') p++;
-      else if (ch === '<' && s[p + 1] === '#') { p = skipC(p); if (p < 0) return -1; }
+      if (ch === undefined) return p;
+      if (htWs(ch)) p++;
+      else if (ch === '<' && s[p + 1] === '#') {
+        if (cmAt === -2 || (cmAt >= 0 && cmAt < p + 2)) cmAt = s.indexOf('#>', p + 2);
+        if (cmAt < 0) p += 2; // never closes: only the mark is white space, the text behind it is read as code
+        else { let eq = false; for (let k = p + 2; k < cmAt && !eq; k++) eq = s[k] === '='; if (eq) hide(p + 2, cmAt); p = cmAt + 2; } // (read once: the comment is passed)
+      }
+      else if (ch === '#' && s[p + 1] === '>') p += 2;
       else return p;
     }
   };
@@ -769,14 +771,15 @@ function htRanges(s: string): Array<[number, number]> {
       const c = s[p];
       if (c === '}') { p++; depth--; continue; }
       if (c === ';' || htWs(c)) { p++; continue; }
-      if (c === '<' && s[p + 1] === '#') { const q = skipC(p); p = q < 0 ? resume : q; continue; }
+      if ((c === '<' && s[p + 1] === '#') || (c === '#' && s[p + 1] === '>')) { p += 2; continue; } // block comment marks are white space; the inside is read as code
       if (c === '@' && s[p + 1] === '{') { p += 2; depth++; continue; }
       const mEnd = limit;
       let ns: number;
       let ne: number;
       if (c === '"' || c === "'") {
-        const e = htCloseQuote(s, p, mEnd);
-        if (e < 0) { p++; continue; } // a stray quote: the text behind it is read as it is
+        const kq = c === '"' ? 0 : 1;
+        const e = failLim[kq] === limit && p > failFrom[kq] ? -1 : htCloseQuote(s, p, mEnd);
+        if (e < 0) { failFrom[kq] = Math.min(failLim[kq] === limit ? failFrom[kq] : p, p); failLim[kq] = limit; p++; continue; } // a stray quote: the text behind it is read as it is
         ns = p + 1; ne = e; p = e + 1;
       } else {
         ns = p;
@@ -785,10 +788,8 @@ function htRanges(s: string): Array<[number, number]> {
         if (ne === ns) { p++; continue; }
       }
       p = skipSp(p);
-      if (p < 0) { p = resume; continue; }
-      if (s[p] !== '=' || p >= mEnd) { if (c === '"' || c === "'") p = ns; continue; } // not `Name = Value`: a bare word is passed, a quoted one is read again from inside (its quotes may be the stray ones)
+      if (s[p] !== '=' || p >= mEnd) { if ((c === '"' || c === "'") && s.indexOf(c, ns) >= ne) p = ns; continue; } // not `Name = Value`: a bare word is passed, a quoted one with no doubled quote in it is read again from inside (its quotes may be the stray ones; reading a doubled-quote run again would be quadratic)
       p = skipSp(p + 1);
-      if (p < 0) { p = resume; continue; }
       const secret = htSecretName(s.slice(ns, ne)); // `"api""key"` is the name api"key: the quote marks go before the test
       if (s.startsWith('[ordered]', p)) p += 9;
       while (s[p] === '`' && (s[p + 1] === '\n' || (s[p + 1] === '\r' && s[p + 2] === '\n'))) { // a line continuation right after `=`
