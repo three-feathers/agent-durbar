@@ -21,7 +21,7 @@ The gate is stricter (spec folder per branch number): a legitimate PR may need `
 ## Delta: release incident and deployment rework records (proposed)
 
 - Extend the existing Bug issue form with optional reporter-known deployment context, version/tag, and user impact. Keep unknown/not applicable as valid answers.
-- Define `incident` as a reviewable operational flag, not a replacement for the `bug` issue type. Agents add a concise, structured DORA triage record to the issue only when evidence supports the classification.
+- Define `incident` as a reviewable operational flag for confirmed user impact caused by a published release, not a replacement for the `bug` issue type. Record immediate intervention separately for change-failure classification; add a concise, structured DORA triage record only when evidence supports the classification.
 - Document release-time classification on incident issues: affected tag, suspected introducing PR when known, fixing PR, recovery release, and whether a published release was an unplanned corrective deployment. Unknown values remain explicit; release dates alone are not causal evidence.
 - Include all published user-accessible releases (including prereleases) in the deployment denominator, exclude drafts and unpublished tags, and deduplicate corrective release tags for the numerator. Keep pre-merge review revisions out of deployment rework.
 - Update the canonical `AGENTS.md`, contributor workflow, issue form, label source, and this spec's tasks. No runtime code, new service, or new metric automation is proposed.
