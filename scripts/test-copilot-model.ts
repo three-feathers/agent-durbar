@@ -498,6 +498,24 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(await askOnce(['A', 'B'], '  my   own '), { answer: 'my own', wasFreeform: true });
       assert.deepStrictEqual(await askOnce(undefined, null), { answer: '(The user skipped the question. Decide yourself.)', wasFreeform: true });
       assert.ok(t.events.some((e) => e.type === 'status' && e.intent === 'Waiting for your answer'));
+      // spec 052 FR-178 (issue 689): two questions close together are matched by request id: answered out of order, each gets its own answer, neither is a cancel
+      {
+        const SKIP = '(The user skipped the question. Decide yourself.)';
+        const from = t.events.length;
+        const p1 = iu({ question: 'First?', choices: ['A', 'B'], allowFreeform: true });
+        const p2 = iu({ question: 'Second?', choices: ['X', 'Y'], allowFreeform: true });
+        await sleep(5);
+        const asked = t.events.slice(from).filter((e) => e.type === 'question' && e.phase === 'asked') as unknown as { requestId: string; questions: { question: string }[] }[];
+        assert.strictEqual(asked.length, 2, 'both are asked');
+        const second = asked.find((q) => q.questions[0].question === 'Second?')!, first = asked.find((q) => q.questions[0].question === 'First?')!;
+        t.ad.answerQuestion?.(t.sid, second.requestId, { 'Second?': 'Y' });
+        t.ad.answerQuestion?.(t.sid, first.requestId, { 'First?': 'typed by hand' });
+        const [r1, r2] = [await p1, await p2];
+        assert.deepStrictEqual(r1, { answer: 'typed by hand', wasFreeform: true });
+        assert.deepStrictEqual(r2, { answer: 'Y', wasFreeform: false });
+        assert.ok(r1.answer !== SKIP && r2.answer !== SKIP);
+        assert.ok(!t.events.slice(from).some((e) => e.type === 'question' && e.phase === 'cancelled'), 'no cancelled event');
+      }
       // spec 052 FR-178 (issue 689): a custom answer to a long question (an agent puts its context in the question) reaches the agent as that answer,
       // through the same reading main applies to the window's reply; it used to arrive as a skip (main dropped any question key over 300 characters)
       {
