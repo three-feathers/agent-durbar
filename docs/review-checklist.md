@@ -68,6 +68,8 @@ Do it **adversarially**: assume your diff is wrong, read the real diff (`git dif
 - [ ] **Undo restores the user's own choice, "none" included**, never the value in effect or a default (*Paco's agent*). *Evidence:* [#642](https://github.com/three-feathers/agent-durbar/pull/642).
 - [ ] **Map the vendor's failure event too**, not only the success one: a "requested" state shown without its failure path claims something untrue. *Evidence:* [#642](https://github.com/three-feathers/agent-durbar/pull/642) (`session.auto_tier_switch_failed`).
 - [ ] **Timers use a monotonic clock, and a bad value falls back to the most restrictive choice** (*Paco's agent*). *Evidence:* [#635](https://github.com/three-feathers/agent-durbar/pull/635) (monotonic sign-in clock, minimum for a broken time limit).
+- [ ] **One limit, end to end** (*Paco's agent*, owner request): when a value crosses layers (renderer card, IPC handler in main, adapter, vendor), every layer uses the **same named constant** for its size or count. A smaller cap in a middle layer silently drops the value, and a dropped answer then reads as "no answer" downstream. Grep the old number when you change a limit, and test with a value just over the smallest cap. *Evidence:* [#693](https://github.com/three-feathers/agent-durbar/pull/693) (main kept answers only for questions of 300 characters or fewer while the card allowed 2000, so long questions were "skipped").
+- [ ] **"Nothing usable" is an error, never a default meaning** (*Paco's agent*): when input can't be read, refuse it and say so. Don't let it fall through to a valid state like *skipped*, *none* or *allowed*. *Evidence:* [#693](https://github.com/three-feathers/agent-durbar/pull/693).
 
 ### Tests
 
@@ -76,6 +78,7 @@ Do it **adversarially**: assume your diff is wrong, read the real diff (`git dif
 - [ ] **Drivers wait on a condition** (`until()` with a generous timeout), never a fixed sleep or a single read: Windows and loaded machines are slower. *Evidence:* [#622](https://github.com/three-feathers/agent-durbar/pull/622), [#597](https://github.com/three-feathers/agent-durbar/pull/597), [#572](https://github.com/three-feathers/agent-durbar/pull/572) (screenshot 200 ms after open).
 - [ ] **No wall-clock limits in unit tests** (`Date.now`, `hrtime`): they flake under load. Measure CPU time or growth ratios. *Evidence:* [#527](https://github.com/three-feathers/agent-durbar/pull/527).
 - [ ] **A test that accepts the failure path proves nothing** ("passes on 'Could not copy' too"). *Evidence:* [#538](https://github.com/three-feathers/agent-durbar/pull/538).
+- [ ] **When the simulator bypasses main, test main itself** (*Paco's agent*): the sim talks to the renderer directly for some calls (for example `answerQuestion`), so a driver can't see an IPC handler bug. Put the handler's logic in a pure function a unit test drives, or give the sim a path through main. *Evidence:* [#693](https://github.com/three-feathers/agent-durbar/pull/693).
 
 ### UI and accessibility
 
