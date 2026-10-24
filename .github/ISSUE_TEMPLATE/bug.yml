@@ -23,3 +23,32 @@ body:
     attributes:
       label: OS and version
       description: macOS / Windows / Linux, Agent Durbar version or commit
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Where did you observe this?
+      description: Choose Unknown if you are not sure. Do not include tokens, secrets, or session data.
+      options:
+        - Unknown / not applicable
+        - Published user-facing release
+        - Development or main build
+        - CI, simulator, or test-only build
+  - type: input
+    id: release
+    attributes:
+      label: Agent Durbar version or release tag
+      description: e.g. v0.1.0-alpha.14; leave blank if unknown
+  - type: textarea
+    id: impact
+    attributes:
+      label: User impact and workaround
+      description: Who or what was affected? Was there a workaround or urgent mitigation?
+  - type: dropdown
+    id: intervention
+    attributes:
+      label: Was immediate intervention needed?
+      description: For example, a rollback, hotfix, or urgent mitigation. Choose Unknown if unsure.
+      options:
+        - Unknown / not applicable
+        - Yes
+        - No

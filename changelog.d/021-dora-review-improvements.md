@@ -1,0 +1,1 @@
+- **DORA evidence and review-ready preflight** (spec 021): clarify evidence-based release-incident and corrective-release records, and bring low-cost readiness checks earlier without weakening review or CI coverage.
