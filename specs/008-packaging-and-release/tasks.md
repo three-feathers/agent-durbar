@@ -114,4 +114,4 @@
 
 ## 2026-10-24: macOS nightly UI regression (#683)
 
-- [ ] T106: correct the macOS-only assertion in `scripts/shots-074-navigator.js`: synthetic ⌘⌫ must reach the editable field without being prevented or closing the chat; verify normal Backspace edits text, while Windows/Linux continue to assert Ctrl+Backspace deletes a word. Add the platform limitation to `docs/agent-notes.md` and a changelog fragment. Done when the navigator driver passes locally on macOS, `npm run typecheck && npm run build && npm test` pass, and a post-merge nightly UI run on `main` passes on all three OSes.
+- [ ] T106: correct the macOS-only native text-editing assertions in `scripts/shots-074-navigator.js`: synthetic ⌘⌫ and ⌘A must reach the editable field without being prevented or closing the chat; verify normal Backspace edits text, while Windows/Linux continue to assert Ctrl+Backspace deletes a word and Ctrl+A selects all. Add the platform limitation to `docs/agent-notes.md` and a changelog fragment. Done when the navigator driver passes locally on macOS, `npm run typecheck && npm run build && npm test` pass, and a post-merge nightly UI run on `main` passes on all three OSes.
