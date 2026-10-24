@@ -270,7 +270,7 @@ Record results in research.md section 7 and change `read:` to `real:`. Do not op
   research.md 7.7 [FR-070, FR-074]. Done 2026-10-21: run 39680461023, PASS on `windows-latest` and `ubuntu-latest`. Review on #478
   fixed 2026-10-22 (status sequence per session, one line per file with mode bits, resource-bound demo tokens, two more tests); the
   new logging runs on the next dispatch
-- [x] T160 (issue #509) Replace the free-form `oses` dispatch input with a closed choice (`both`, `windows-latest`,
+- [x] T160 (issue #509) Replace the free-form `oses` dispatch input with a closed choice (`windows-and-ubuntu`, `windows-latest`,
   `ubuntu-latest`, `macos-latest`) mapped to a fixed GitHub-hosted runner matrix; validate the YAML and each selection locally.
   Do not dispatch the workflow; it uses the real Copilot runtime and requires owner approval.
 - [ ] T106 [needs-owner-approval] Claude Code (after PR A; Q24): with a launched CLI (no prompt), `mcp_authenticate` answers an `authUrl`

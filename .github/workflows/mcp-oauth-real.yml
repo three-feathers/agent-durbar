@@ -9,11 +9,11 @@ on:
     inputs:
       oses:
         type: choice
-        description: 'Run on both original runners or select one runner'
+        description: 'Run on Windows and Ubuntu together, or select one runner'
         required: true
-        default: both
+        default: windows-and-ubuntu
         options:
-          - both
+          - windows-and-ubuntu
           - windows-latest
           - ubuntu-latest
           - macos-latest
@@ -34,7 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         # Map only to fixed GitHub-hosted labels; unknown input falls back to the original safe pair.
-        os: ${{ fromJSON(inputs.oses == 'both' && '["windows-latest","ubuntu-latest"]' || inputs.oses == 'windows-latest' && '["windows-latest"]' || inputs.oses == 'ubuntu-latest' && '["ubuntu-latest"]' || inputs.oses == 'macos-latest' && '["macos-latest"]' || '["windows-latest","ubuntu-latest"]') }}
+        os: ${{ fromJSON(inputs.oses == 'windows-and-ubuntu' && '["windows-latest","ubuntu-latest"]' || inputs.oses == 'windows-latest' && '["windows-latest"]' || inputs.oses == 'ubuntu-latest' && '["ubuntu-latest"]' || inputs.oses == 'macos-latest' && '["macos-latest"]' || '["windows-latest","ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
