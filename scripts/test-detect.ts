@@ -117,6 +117,35 @@ async function main(): Promise<void> {
   assert.strictEqual(parseVersion('v1.2.3-beta.1'), '1.2.3-beta.1');
   assert.strictEqual(parseVersion('garbage'), undefined);
   assert.strictEqual(parseVersion('1.2'), undefined);
+  // FR-039 / issue 664: first-line parsing never searches error prose or recovers a partial token.
+  for (const [input, version] of [
+    ['codex 0.200.0', '0.200.0'], ['claude 2.1.3', '2.1.3'], ['Claude Code v2.1.3', '2.1.3'],
+    [' \t(1.2.3)', '1.2.3'], ['codex-cli (rust-v0.163.0+build.5)', '0.163.0'],
+    ['1.2.3\nnot a version', '1.2.3'], ['1.2.3\r\nnot a version', '1.2.3'],
+    ['999999999.123456789.123456789-' + 'r'.repeat(40) + '+' + 'b'.repeat(40), '999999999.123456789.123456789-' + 'r'.repeat(40)],
+    [' '.repeat(195) + '1.2.3', '1.2.3'],
+    [' '.repeat(195) + '1.2.3 trailing text', '1.2.3'],
+  ]) assert.strictEqual(parseVersion(input), version, 'f: accepted ' + JSON.stringify(input));
+  for (const input of [
+    'npm ERR! … node v22.11.0', 'error: 1.2.3', 'other-tool 1.2.3',
+    'hello\n1.2.3', 'hello\r1.2.3', '\n1.2.3', '\r\n1.2.3',
+    'x1.2.3', '1.2.3x', '1.2.3.4', '1234567890.2.3', '1.1234567890.3', '1.2.1234567890',
+    '1.2.3-' + 'r'.repeat(41), '1.2.3+' + 'b'.repeat(41), '1.2.3-', '1.2.3+',
+    ' '.repeat(200) + '1.2.3', ' '.repeat(196) + '1.2.3',
+    ' '.repeat(195) + '1.2.30', ' '.repeat(195) + '1.2.3x',
+    ' '.repeat(195) + '1.2.3-pre', ' '.repeat(195) + '1.2.3+build',
+    ' '.repeat(190) + '1.2.3-rrrrrr', ' '.repeat(190) + '1.2.3+bbbbbb',
+  ]) assert.strictEqual(parseVersion(input), undefined, 'f: rejected ' + JSON.stringify(input));
+  assert.strictEqual(parseVersion(null as never), undefined, 'f: invalid runtime input');
+  {
+    const hostile = '9'.repeat(64 * 1024);
+    const start = process.cpuUsage();
+    assert.strictEqual(parseVersion(hostile), undefined, 'f: long digit run');
+    const elapsed = process.cpuUsage(start);
+    const cpuMs = (elapsed.user + elapsed.system) / 1000;
+    assert.ok(cpuMs < 250, `f: 64 KiB digit run used ${cpuMs.toFixed(1)} ms CPU (catastrophic backstop: 250 ms)`);
+  }
+
 
   // (g) compareVersions
   assert.ok(compareVersions('0.163.0', '0.99.9') > 0, 'g: numeric');
@@ -135,6 +164,9 @@ async function main(): Promise<void> {
       ['enoent', { code: null, stdout: '', stderr: '', errorCode: 'ENOENT' }],
       ['non-zero', { code: 1, stdout: 'codex-cli 0.200.0', stderr: '' }],
       ['unparsable', ok('hello')],
+      ['error prose', ok('npm ERR! … node v22.11.0')],
+      ['later-line version', ok('warning\ncodex-cli 0.200.0')],
+      ['overlong version', ok('codex-cli 1234567890.2.3')],
       ['throws', () => Promise.reject(new Error('boom'))],
     ];
     for (const [name, res] of bads) {

@@ -177,10 +177,15 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
   });
 }
 
-/** The first `x.y.z` (optionally with a pre-release suffix) in the output, without a leading `v`. */
+/** A bounded version token on the first line; known app labels and version prefixes are omitted. */
 export function parseVersion(stdout: string): string | undefined {
-  const m = /\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/.exec(typeof stdout === 'string' ? stdout : '');
-  return m ? m[0] : undefined;
+  if (typeof stdout !== 'string') return undefined;
+  // Inspect one extra character so cutting the line cannot turn an oversized token into a valid version.
+  const prefix = stdout.slice(0, 201);
+  const line = prefix.split(/[\r\n]/, 1)[0];
+  const m = /^[ \t]*(?:(?:codex-cli|codex|claude|Claude Code)[ \t]+)?\(?(?:rust-v|v)?(\d{1,9}\.\d{1,9}\.\d{1,9}(?:-[0-9A-Za-z.-]{1,40})?)(?:\+[0-9A-Za-z.-]{1,40})?(?=$|[ \t)])/.exec(line.slice(0, 200));
+  if (!m || (m[0].length === 200 && line.length > 200 && !/[ \t)]/.test(line[200]))) return undefined;
+  return m[1];
 }
 
 function cmpIdent(a: string, b: string): number {
