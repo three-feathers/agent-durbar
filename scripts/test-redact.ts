@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
 
 // CPU time of f in ms (user + system of this process), not wall time: it does not grow when other processes take the CPU, so the
 // timing checks below hold on a loaded machine or runner (spec 041 `## Changes` 2026-10-22, T068). It still counts every step the
@@ -198,6 +198,116 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
   assert.strictEqual(rec.nested.arr[0], '\n[redacted]', 'sink: a JWT after a newline');
 }
 
+// T131 (spec 012 FR-080 delta 2026-10-23, issue #551): Slack, Discord and Telegram secrets, and the `=XX` / `%uXXXX` starts.
+// Fake values, built at run time so no secret scanner takes them for real ones.
+const AZ = 'AbCdEfGhIjKlMnOpQrStUvWx';
+const TG35 = 'AAH' + AZ + '_-AbCdEf'; // a real-shaped Telegram token part: exactly 35 characters
+assert.strictEqual(TG35.length, 35);
+const chat: Record<string, { v: string; secret: string; keep?: string }> = {
+  slackBot: { v: 'xo' + 'xb-' + '1234567890-0987654321-' + AZ, secret: AZ },
+  slackUser: { v: 'xo' + 'xp-' + '1234567890-0987654321-1122334455-' + AZ, secret: AZ },
+  slackApp: { v: 'xa' + 'pp-' + '1-A0123456789-1234567890123-' + AZ.toLowerCase(), secret: AZ.toLowerCase() },
+  slackHook: { v: 'https://hooks.slack.com/services/' + 'T0123ABCD/B0123ABCD/' + AZ, secret: 'T0123ABCD', keep: 'https://hooks.slack.com/services/' },
+  discord: { v: 'https://discord.com/api/webhooks/' + '123456789012345678/' + AZ + '_-' + AZ, secret: '123456789012345678', keep: 'https://discord.com/api/webhooks/' },
+  discordapp: { v: 'https://discordapp.com/api/webhooks/' + '123456789012345678/' + AZ + '_-' + AZ, secret: AZ + '_-' + AZ, keep: 'https://discordapp.com/api/webhooks/' },
+  telegram: { v: '123456789:' + TG35, secret: AZ },
+  telegramApi: { v: 'https://api.telegram.org/bot' + '123456789:' + TG35 + '/getMe', secret: AZ, keep: 'https://api.telegram.org/bot' },
+};
+for (const [k, c] of Object.entries(chat)) {
+  const encTwice = (x: string): string => encodeURIComponent(encodeURIComponent(x));
+  const titleHost = (x: string): string => x.replace(/^https:\/\/[^/]+/, (h) => h.replace(/(^|[.\/])([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase()));
+  const forms = c.keep
+    ? [c.v, c.v.replace(/\//g, '\\/'), c.v.replace(/\//g, '\\\\/'), c.v.replace(/\//g, '\\u002f'), c.v.replace(/\//g, '\\x2F'), 'https://x.example/?u=' + encodeURIComponent(c.v),
+      'https://x.example/?u=' + encTwice(c.v), 'https://x.example/?u=' + encodeURIComponent(encTwice(c.v)), c.v.replace(/^https:\/\/[^/]+/, (h) => h.toUpperCase()), titleHost(c.v)]
+    : [c.v, c.v.replace(':', '%3A'), c.v.replace(':', '%253a'), c.v.replace(':', '\\u003A'), c.v.replace(':', '\\x3a')];
+  for (const form of forms) {
+    for (const wrap of WRAPS) {
+      const w = wrap(form);
+      // a Telegram token part may hold `_`, so an underscore glued right after it is part of it (35 exactly is the shape): not a token then
+      if (k === 'telegram' && w.includes(form + '_')) continue;
+      const out = redact(`see ${w} now`, {});
+      assert.ok(!out.includes(c.secret), `T131 ${k} in ${w.slice(0, 12)}…: secret part gone (${out})`);
+      assert.ok(out.startsWith('see ') && out.endsWith(' now'), `T131 ${k} in ${w.slice(0, 12)}…: surroundings kept`);
+      const out2 = maskTokenShapes(`see ${w} now`, '[secret hidden]');
+      assert.ok(out2.includes('[secret hidden]') && !out2.includes(c.secret), `T131 maskTokenShapes ${k} in ${w.slice(0, 12)}…: hidden (${out2})`);
+    }
+  }
+  // JSON.stringify output (the debug log redacts after it) and a token right after a quoted-printable or %uXXXX escape
+  assert.ok(!redact(JSON.stringify({ line: c.v }), {}).includes(c.secret), `T131 ${k} in JSON`);
+  for (const e of ['=3D', '=0A', '%u003D', '%u0022', '%u003d']) {
+    const out = redact(`a${e}${c.v}&x`, {});
+    assert.ok(!out.includes(c.secret), `T131 ${k} after ${e}: ${out}`);
+    assert.ok(!maskTokenShapes(`a${e}${c.v}&x`, '[s]').includes(c.secret), `T131 maskTokenShapes ${k} after ${e}`);
+  }
+}
+// exact output: the scheme and host of a webhook stay, the secret path goes
+assert.strictEqual(redact('post ' + chat.slackHook.v + ' now', {}), 'post https://hooks.slack.com/services/[redacted] now', 'slack webhook: host kept');
+assert.strictEqual(redact(chat.discord.v, {}), 'https://discord.com/api/webhooks/[redacted]', 'discord webhook: host kept');
+assert.strictEqual(redact('https://discordapp.com/api/v10/webhooks/123456789012/' + AZ + AZ, {}), 'https://discordapp.com/api/v10/webhooks/[redacted]', 'discordapp versioned');
+assert.strictEqual(redact(chat.telegramApi.v, {}), 'https://api.telegram.org/bot[redacted]/getMe', 'telegram api URL: host and method kept');
+assert.strictEqual(redact('token ' + chat.telegram.v + '.', {}), 'token [redacted].', 'telegram bare token');
+assert.strictEqual(redact('a ' + chat.slackBot.v + ' b', {}), 'a [redacted] b', 'slack bot token');
+assert.strictEqual(redact('=3D' + chat.slackBot.v, {}), '=3D[redacted]', 'slack token after =3D');
+assert.strictEqual(redact('%u003D' + chat.slackApp.v, {}), '%u003D[redacted]', 'slack token after %u003D');
+assert.strictEqual(redact('=3D' + planted.ghp + ' %u003D' + planted.sk, {}), '=3D[redacted] %u003D[redacted]', 'ghp after =3D, sk- after %u003D');
+assert.strictEqual(maskTokenShapes('=3D' + planted.aws, '[s]'), '=3D[s]', 'maskTokenShapes: aws after =3D');
+// Telegram is the exact shape (8-10 digits, `:`, 35 characters, nothing token-like after): ids, sessions and file names are not tokens
+{
+  const L = (n: number): string => AZ.repeat(2).slice(0, n);
+  for (const ok of ['1729680000:session_' + L(40), 'bundle.js:1234567:' + L(40), 'bundle.js:12345678:' + L(36), 'id=12345678:' + L(36), 'x 123456789:' + L(34), 'x 12345678901:' + L(35), 'x 1234567:' + L(35), 'x 123456789:' + L(35) + '_more']) {
+    assert.strictEqual(redact(ok, {}), ok, `telegram false positive stays: ${ok.slice(0, 40)}`);
+    assert.strictEqual(maskTokenShapes(ok, '[s]'), ok, `maskTokenShapes telegram false positive stays: ${ok.slice(0, 40)}`);
+  }
+  for (const n of [8, 9, 10]) assert.strictEqual(redact('t ' + '1'.repeat(n) + ':' + L(35) + '.', {}), 't [redacted].', `a ${n}-digit id with a 35-character part is a token`);
+}
+// the Slack prefix set: `xoxo-` is not one, `xoxa-` `xoxr-` `xoxs-` `xoxe-` are
+assert.strictEqual(redact('xoxo-hugs-and-kisses xoxo-1234567890123', {}), 'xoxo-hugs-and-kisses xoxo-1234567890123', 'xoxo- is not a Slack token');
+for (const c of 'abprse') assert.strictEqual(redact('t xo' + 'x' + c + '-1234567890-' + AZ + ' z', {}), 't [redacted] z', `xox${c}- is masked`);
+// `=XX` is upper case only: after `=3d` the token is glued to a letter, so no rule starts there; after `=3D` it does
+assert.strictEqual(redact('a=3d' + planted.ghp, {}), 'a=3d' + planted.ghp, 'ghp after lower-case =3d: no start (documented limit, spec 012 T131)');
+assert.strictEqual(redact('a=3D' + planted.ghp, {}), 'a=3D[redacted]', 'ghp after upper-case =3D');
+// encodings: any depth of `%25`, and the scheme/host of a webhook kept in the same case it was written
+assert.strictEqual(redact('u=' + encodeURIComponent(encodeURIComponent(chat.slackHook.v)), {}), 'u=https%253A%252F%252Fhooks.slack.com%252Fservices%252F[redacted]', 'double-encoded slack webhook');
+assert.strictEqual(redact('HTTPS://HOOKS.SLACK.COM/SERVICES/T0123ABCD/B0123ABCD/' + AZ, {}), 'HTTPS://HOOKS.SLACK.COM/SERVICES/[redacted]', 'upper-case host');
+assert.strictEqual(redact('https://Discord.com/API/Webhooks/123456789012345678/' + AZ + AZ, {}), 'https://Discord.com/API/Webhooks/[redacted]', 'mixed-case discord host');
+assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x', {}), 'https://API.TELEGRAM.ORG/BOT[redacted]/x', 'upper-case telegram host');
+// the guard never changes the result (T131 review): every kind x encoding x prefix, then random strings of markers and separators
+{
+  const pieces: string[] = [];
+  const prefixes = ['', 'x ', '=3D', '%u003D', '_', '"', '\\n', '%253D'];
+  for (const c of Object.values(chat)) {
+    const vs = [c.v, c.v.replace(/\//g, '\\/'), c.v.replace(/\//g, '%2F'), c.v.replace(/\//g, '%252f'), c.v.replace(/\//g, '\\u002F'), c.v.replace(/\//g, '\\x2f'), c.v.replace(':', '%3a'), c.v.replace(':', '%25253A'), c.v.replace(':', '\\u003a'), c.v.replace(':', '\\x3A'),
+      c.v.toUpperCase(), c.v.replace(/^https:\/\/[^/]+/, (h) => h.toUpperCase())];
+    pieces.push(...vs);
+    for (const v of vs) for (const pre of prefixes) {
+      const t = `see ${pre}${v} now`;
+      assert.strictEqual(maskTokenShapes(t, '[s]'), maskTokenShapesUnguarded(t, '[s]'), `guard equivalence on ${t.slice(0, 50)}`);
+    }
+  }
+  pieces.push('xox', 'xoxb-', 'xapp-', 'XOXB-', 'hooks.slack.com', 'HOOKS.Slack.com', 'discord', 'discordapp.com', 'DISCORD.COM', 'api', 'webhooks', 'services', 'api.telegram.org', 'API.TELEGRAM.ORG', 'bot', ':', '%3A', '%253a', '\\u003a', '\\x3A',
+    '/', '\\/', '%2F', '%252f', '\\u002f', '12345678', '1234567890', AZ, AZ + AZ, TG35, 'T0123ABCD', ' ', '_', '-', '=3D', '%u003D', '.');
+  let seed = 12345;
+  const rnd = (n: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 8) % n; };
+  let changed = 0;
+  for (let i = 0; i < 6000; i++) {
+    let t = '';
+    for (let j = 0, n = 2 + rnd(14); j < n; j++) t += pieces[rnd(pieces.length)];
+    const g = maskTokenShapes(t, '[s]');
+    assert.strictEqual(g, maskTokenShapesUnguarded(t, '[s]'), `guard equivalence on random ${JSON.stringify(t.slice(0, 80))}`);
+    if (g !== t) changed++;
+  }
+  assert.ok(changed > 100, `the random corpus reaches the shapes (${changed} of 6000 changed)`);
+}
+// false positives stay
+for (const ok of ['the xox of it, xoxo, xoxo-friends xoxb- xoxb-short xapp- xapp-abc', 'xoxz-1234567890123 xoxbb-1234567890123', 'at 12:30 or 12345:abc or 1234:short or 1234567:' + 'a'.repeat(29),
+  '12:30:45 123456789:' + 'a'.repeat(29) + ' 1234567890123:' + 'a'.repeat(40) + 'x',
+  'https://hooks.slack.com/services/ https://hooks.slack.com/services/T0123ABCD https://hooks.slack.com/services/T0123ABCD/B0123ABCD https://hooks.slack.com/ https://slack.com/help',
+  'https://discord.com/api/webhooks/ https://discord.com/api/webhooks/123456789 https://discord.com/channels/123456789012/987654321098 https://discord.com/invite/abcdefg https://discord.com/',
+  'https://api.telegram.org/bot https://api.telegram.org/bot123456789:short https://t.me/somebot', 'a%3Dxoxb-short x=3Dfine =3dxoxb-short =3D']) {
+  assert.strictEqual(redact(ok, {}), ok, `false positive stays: ${ok.slice(0, 40)}`);
+  assert.strictEqual(maskTokenShapes(ok, '[s]'), ok, `maskTokenShapes false positive stays: ${ok.slice(0, 40)}`);
+}
+
 // 9. adversarial 1 MB inputs: every pattern stays linear (each under a time limit)
 {
   const MB = 1_000_000;
@@ -266,6 +376,33 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
     escXSk: '\\x3dsk-'.repeat(MB / 7),
     escTJwt: '\\teyJaaaaa.'.repeat(MB / 11),
     escNUrl: '\\na://x:'.repeat(MB / 8),
+    // T131: Slack, Discord and Telegram shapes, and the `=XX` / `%uXXXX` starts
+    slackTok: 'xoxb-'.repeat(MB / 5),
+    slackShort: ('xoxb-' + 'a'.repeat(9) + ' ').repeat(MB / 15),
+    slackLong: 'xapp-' + 'a-'.repeat(MB / 2),
+    slackPct: '%3Dxoxp-'.repeat(MB / 8),
+    slackHook: 'hooks.slack.com/services/'.repeat(MB / 25),
+    slackHookSeg: 'hooks.slack.com/services/' + 'a/'.repeat(MB / 2),
+    slackHookLong: 'hooks.slack.com/services/' + 'a'.repeat(MB),
+    slackHookEsc: 'hooks.slack.com\\/services\\/' + 'a\\/'.repeat(MB / 3),
+    discordHook: 'discord.com/api/webhooks/'.repeat(MB / 25),
+    discordHookLong: 'discordapp.com/api/webhooks/' + '1'.repeat(MB),
+    discordHookTok: 'discord.com/api/webhooks/1234567/' + 'a'.repeat(MB),
+    discordHookRun: 'discord.com/api/webhooks/1234567/aaaaaaaaaaaaaaaaaaa '.repeat(MB / 52),
+    tgDigits: '1'.repeat(MB),
+    tgColon: '123456:'.repeat(MB / 7),
+    tgShort: ('123456789:' + 'a'.repeat(29) + ' ').repeat(MB / 40),
+    tgLong: '123456789:' + 'a'.repeat(MB),
+    tgApi: 'api.telegram.org/bot'.repeat(MB / 20),
+    tgApiLong: 'api.telegram.org/bot123456:' + 'a'.repeat(MB),
+    tgPct: '%3D123456789%3A'.repeat(MB / 15),
+    tgPct25: '25'.repeat(MB / 4) + ':' + '25'.repeat(MB / 4),
+    qpRun: '=3D'.repeat(MB / 3),
+    qpGh: '=3Dghp_'.repeat(MB / 6),
+    qpGhLong: '=3Dghp_' + 'a'.repeat(MB),
+    uRun: '%u003D'.repeat(MB / 6),
+    uSk: '%u003Dsk-'.repeat(MB / 9),
+    uSlack: '%u003Dxoxb-'.repeat(MB / 11),
   };
   // Each case runs in a worker thread that times redact() itself with the thread's own CPU time (`process.threadCpuUsage()`, Node 22
   // and later; wall time from `hrtime` only on Node 20.19, which has no per-thread CPU time), so a busy runner cannot fail the test;

@@ -21,13 +21,25 @@ const LONG_OK_NAME = /^(PATH|PATHEXT|PSMODULEPATH|HOME|HOMEPATH|HOMEDRIVE|USERPR
    (`%253D`, `%2525253D`): the last escape of a re-encoded `%` always follows `25`, so `(?:%|25)XX` covers every depth with a
    fixed-width lookbehind (T130; over-masks a token glued to a literal `25XX`, fail-safe). It may also start right after a backslash
    escape (`\n`, `\t`, `\uXXXX`, `\xXX`), because the debug log redacts *after* `JSON.stringify`, which turns a token at the start of a
-   line into `\nghp_…` (T130, review of PR #549). Every branch is fixed-width, so each position costs O(1): still linear. */
-const PCT = String.raw`(?<=(?:%|25)[0-9A-Fa-f]{2}|\\(?:[nrtbfv]|u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2}))`;
-/** Where a token shape may start: no letter or digit before it, or right after a `%XX` or backslash escape. */
+   line into `\nghp_…` (T130, review of PR #549). A quoted-printable escape (`=3Dghp_…`: `=` and two upper-case hex digits) and a
+   `%uXXXX` escape (`%u003Dghp_…`, merged into the `%XX` branch so the start costs no more per position) start a token too (T131, issue #551). Every branch is fixed-width, so each position costs O(1): still linear. */
+const PCT = String.raw`(?<=(?:%(?:u[0-9A-Fa-f]{2})?|25)[0-9A-Fa-f]{2}|=[0-9A-F]{2}|\\(?:[nrtbfv]|u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2}))`;
+/** Where a token shape may start: no letter or digit before it, or right after a `%XX`, `%uXXXX`, `=XX` or backslash escape. */
 const START = String.raw`(?:(?<![A-Za-z0-9])|${PCT})`;
 const shape = (body: string, flags = 'g'): RegExp => new RegExp(START + body, flags);
-/** Bare token shapes (GitHub, OpenAI/Anthropic, Bearer, JWT, AWS); also used by the folder-setup display (spec 061 FR-014). */
-const TOKEN_SHAPES: RegExp[] = [
+/** A shape that is only tried when the text matches its marker (a cheap test before a 1 MB regex scan). The marker is a superset of
+    every spelling the shape accepts (case-insensitive; `:` also as `\u003a`, `\x3a` or `%…3a`), which `test-redact.ts` checks
+    against the unguarded run (`maskTokenShapesUnguarded`). */
+type Guarded = { re: RegExp; marker: RegExp };
+const guarded = (re: RegExp, marker: RegExp): Guarded => ({ re, marker });
+/** A literal host or word matched in any case: `[Hh][Oo]…`, dots escaped. */
+const ci = (lit: string): string => lit.replace(/[A-Za-z]/g, (c) => `[${c.toUpperCase()}${c.toLowerCase()}]`).replace(/\./g, String.raw`\.`);
+/** A `/` as written in a URL, JSON-escaped (`\/`, `\\/`, `\u002f`, `\x2f`) or percent-encoded any number of times (`%2F`, `%252F`, up to 8 re-encodings). */
+const SL = String.raw`(?:\\{0,2}\/|\\{1,2}(?:u002[Ff]|x2[Ff])|%(?:25){0,8}2[Ff])`;
+/** A `:` written the same ways (`:`, `\u003a`, `\x3a`, `%3A`, `%253A`, ...). */
+const COLON = String.raw`(?::|\\{1,2}(?:u003[Aa]|x3[Aa])|%(?:25){0,8}3[Aa])`;
+/** Bare token shapes (GitHub, OpenAI/Anthropic, Bearer, JWT, AWS, Slack, Discord, Telegram); also used by the folder-setup display (spec 061 FR-014). */
+const TOKEN_SHAPES: Array<RegExp | Guarded> = [
   shape(String.raw`gh[pousr]_[A-Za-z0-9]{20,}`),
   shape(String.raw`github_pat_[A-Za-z0-9_]{20,}`),
   shape(String.raw`sk-(?:ant-)?[A-Za-z0-9_-]{20,}`),
@@ -38,14 +50,36 @@ const TOKEN_SHAPES: RegExp[] = [
   // the `%XX` start (`2525…`): linear, but about 40x the cost of the other shapes (T130, review of PR #549). The prefix stays.
   new RegExp(String.raw`(?<=(?:(?<![A-Za-z0-9_-])|${PCT})_{0,8}(?:[A-Za-z0-9]{1,40}_{1,3}){0,4})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}`, 'g'),
   shape(String.raw`(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])`),
+  // Chat-tool secrets (T131, issue #551). Slack tokens: `xoxb-`, `xoxp-`, `xoxa-`, `xoxr-`, `xoxs-`, `xoxe-` and `xapp-`, then 10+
+  // token characters (`xoxo-` is not a Slack prefix).
+  guarded(shape(String.raw`(?:xox[abprse]|xapp)-[A-Za-z0-9-]{10,}`), /xox|xapp-/i),
+  // Webhooks: the fixed host and path sit in a lookbehind (host in any case), so the scheme and host stay and only the secret path is
+  // masked; the segments are bounded classes split by a fixed `/`, so there is no nested quantifier.
+  guarded(new RegExp(String.raw`(?<=${ci('hooks.slack.com')}${SL}${ci('services')}${SL})[A-Za-z0-9]{1,64}${SL}[A-Za-z0-9]{1,64}${SL}[A-Za-z0-9]{1,128}`, 'g'), /hooks\.slack\.com/i),
+  guarded(new RegExp(String.raw`(?<=${ci('discord')}(?:${ci('app')})?${ci('.com')}${SL}${ci('api')}${SL}(?:[Vv][0-9]{1,2}${SL})?${ci('webhooks')}${SL})[0-9]{5,30}${SL}[A-Za-z0-9_-]{20,}`, 'g'), /discord(?:app)?\.com/i),
+  // Telegram bot token: `<8-10 digits>:<exactly 35 chars>` (the real shape, so an id, a session or a file name is not one), bare or
+  // right after `api.telegram.org/bot` (a letter then precedes it).
+  guarded(shape(String.raw`[0-9]{8,10}${COLON}[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])`), /[0-9]{8}[:%\\]/),
+  guarded(new RegExp(String.raw`(?<=${ci('api.telegram.org')}${SL}[Bb][Oo][Tt])[0-9]{8,10}${COLON}[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])`, 'g'), /api\.telegram\.org/i),
 ];
+
+function maskShapes(text: string, mask: string, guard: boolean): string {
+  let out = text;
+  // A function, so `$&` or `$1` in the mask stays literal; the JWT's prefix is outside its match (lookbehind), so it stays too.
+  for (const t of TOKEN_SHAPES) {
+    if (t instanceof RegExp) out = out.replace(t, () => mask);
+    else if (!guard || t.marker.test(out)) out = out.replace(t.re, () => mask);
+  }
+  return out;
+}
 
 /** Replaces every bare token shape with `mask` (a JWT's leading underscores and words stay). Linear; no env rules, no header or URL rules. */
 export function maskTokenShapes(text: string, mask: string): string {
-  let out = text;
-  // A function, so `$&` or `$1` in the mask stays literal; the JWT's prefix is outside its match (lookbehind), so it stays too.
-  for (const re of TOKEN_SHAPES) out = out.replace(re, () => mask);
-  return out;
+  return maskShapes(text, mask, true);
+}
+/** Test only: the same without the marker guard, to prove the guard never changes the result. */
+export function maskTokenShapesUnguarded(text: string, mask: string): string {
+  return maskShapes(text, mask, false);
 }
 
 /** Key-like shapes. Each is linear: bounded classes, no nested quantifiers, starts anchored where a token cannot already be running. Order matters: header and URL first. */

