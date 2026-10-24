@@ -1,0 +1,1 @@
+- **Constrain the manual MCP OAuth check to GitHub-hosted runners** (spec 058): dispatch offers both original runners or one fixed runner, never a self-hosted label; YAML and selection mapping checked locally, workflow not dispatched.
