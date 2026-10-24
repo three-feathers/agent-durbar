@@ -1201,14 +1201,29 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   }
   // a doubled quote in a quoted name: the name is api"key
   cmd(`srv @{"api""key"="${T}"}`, `srv @{"api""key"="${R}"}`, 'R12: doubled quote in a name');
-  // the bounds, exact: a member of 2500 characters is hidden to its 2000-character bound (the rest keeps the pattern rules, which hide it here), a secret after 4000 characters of literal is not read
-  assert.strictEqual(maskSecretCommand(`srv @{token="${'a'.repeat(2500)}"; Port=1}`), `srv @{token="${R}"; Port=1}`, 'R12: a member past its bound');
-  const longMember = `srv @{p="${'a'.repeat(2500)}"; "token"="${T}"}`; // a member that uses up its 2000 characters ends the scan of the literal: the rest keeps the pattern rules only (KNOWN GAP, spec 041)
-  assert.strictEqual(maskSecretCommand(longMember), longMember, 'R12: after a member past its bound the rest of the literal is not read');
-  assert.strictEqual(maskSecretCommand(`srv @{p="${'a'.repeat(1500)}"; "token"="${T}"}`).includes(T), false, 'R12: the same literal with a member inside the bound is read to the end');
-  const far = `srv @{${'p=1;'.repeat(1100)}"token"="${T}"}`;
-  assert.strictEqual(maskSecretCommand(far), far, 'R12: a secret member after 4000 characters of literal is out of bound (KNOWN GAP, spec 041)');
-  assert.strictEqual(maskSecretCommand(`srv @{p="${'a'.repeat(2500)}"; token=${T}}`).includes(T), false, 'R12: pattern rules still hide a bare KEY=value past a long member');
+  // no member bound; past the 4000-character literal bound everything up to the literal's end is hidden (fail closed), review of PR #669
+  assert.strictEqual(maskSecretCommand(`srv @{token="${'a'.repeat(2500)}"; Port=1}`), `srv @{token="${R}"; Port=1}`, 'R12: a long value is hidden whole');
+  assert.strictEqual(maskSecretCommand(`srv @{p="${'a'.repeat(2500)}"; "token"="${T}"}`), `srv @{p="${'a'.repeat(2500)}"; "token"="${R}"}`, 'R12: a secret member after a 2500-character one');
+  assert.strictEqual(maskSecretCommand(`srv @{p="${'a'.repeat(2500)}"; token=${T}}`), `srv @{p="${'a'.repeat(2500)}"; token=${R}}`, 'R12: a bare secret member after a 2500-character one');
+  const far = maskSecretCommand(`srv @{${'p=1;'.repeat(1100)}"token"="${T}"} tail`);
+  assert.ok(far.startsWith('srv @{' + 'p=1;'.repeat(999)) && far.endsWith(`${R}} tail`) && !far.includes(T), `R12: past the literal bound the rest of the literal is hidden up to its }: ${far.slice(-40)}`);
+  const mem4 = [0, 1, 2, 3].map((i) => `m${i}='${'x'.repeat(1000)}'`).join('; ');
+  for (const [what, got] of [['command', maskSecretCommand(`srv $h=@{ ${mem4}; 'X-Api-Key' = '${T}' }`)], ['args', maskSecretArgs(['srv', `$h=@{ ${mem4}; 'X-Api-Key' = '${T}' }`]).join(' ')],
+    ['pwsh -c', maskSecretCommand(`pwsh -c "$h=@{ Body = '${'x'.repeat(2100)}'; 'X-Api-Key' = '${T}' }"`)]]) assert.ok(!got.includes(T), `R12: ${what}: secrets after long members are hidden`);
+  // review of PR #669: more than one literal in the args, block comments, a value hidden twice, \" in the args form, the display of the args form
+  args(['-Command', '$a=@{x=1}; $h=@{token=', `'${T}'}`], ['-Command', '$a=@{x=1}; $h=@{token=', `'${R}'}`], 'R12 args: a second literal after a closed one');
+  cmd(`pwsh -c "$h=@{ <# auth #> 'X-Api-Key' = '${T}' }"`, `pwsh -c "$h=@{ <# auth #> 'X-Api-Key' = '${R}' }"`, 'R12: block comment before a quoted name');
+  cmd(`srv $h=@{ <#k#> ApiKey = '${T}' }`, `srv $h=@{ <#k#> ApiKey = '${R}' }`, 'R12: block comment before a bare name');
+  cmd(`srv $h=@{ ApiKey <# c #> = <# d #> '${T}' }`, `srv $h=@{ ApiKey <# c #> = <# d #> '${R}' }`, 'R12: block comments around =');
+  cmd(`srv $h=@{ <# open ApiKey = '${T}' }`, `srv $h=@{ ${R}}`, 'R12: an unclosed block comment hides the rest of the literal');
+  cmd(`srv @{ token = '${R}' + '${T}' }`, `srv @{ token = ${R} }`, 'R12: a hidden value followed by more code');
+  cmd(`srv @{ token = "${R}" ${T} }`, `srv @{ token = ${R} }`, 'R12: a hidden quoted value followed by a word');
+  cmd(`srv @{ token = ${R} ${T} }`, `srv @{ token = ${R} }`, 'R12: a hidden bare value followed by a word');
+  cmd(`srv @{ token = '${R}'; port=1 }`, `srv @{ token = '${R}'; port=1 }`, 'R12: a hidden value then a member is unchanged');
+  for (const c of [`srv @{ token = '${T}' ; port = 1 }`, `srv @{Authorization="Bearer ${T}"; a=1}`, `srv @{ <# c #> k = ${T}; b = 2 }`]) assert.strictEqual(maskSecretCommand(maskSecretCommand(c)), maskSecretCommand(c), `R12: masking twice gives the same text: ${c}`);
+  args(['-Command', `irm -Headers @{\\"X-Api-Key\\"=\\"${T}\\"} u`], ['-Command', `irm -Headers @{\\"X-Api-Key\\"=\\"${R}\\"} u`], 'R12 args: \\" as a quote');
+  args([`$h=@{ Body = 'x'; ApiKey = '${T}' }`], [`$h=@{ Body = 'x'; ApiKey = '${R}' }`], 'R12 args: the display keeps the quotes and the closing }');
+
   // false positives: unchanged
   for (const c of ['@{Port=8080}', '@{name="build"}', 'a@b.c', 'see @{ the docs } for more', '@{ hello world }', '@{Name = "x"; Count = 3}', '@{', '@{;}']) {
     assert.strictEqual(maskSecretCommand('srv ' + c), 'srv ' + c, `R12 false positive (command): ${c}`);
@@ -1216,7 +1231,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   }
   assert.strictEqual(maskSecretCommand('srv @{token=}'), 'srv @{token=}', 'R12: an empty value has nothing to hide');
   // one level and the bounds
-  assert.strictEqual(maskSecretCommand(`srv @{token="${'a'.repeat(1500)}"}`), 'srv @{token="[redacted]"}', 'R12: a value of 1500 chars is within the member bound');
+  assert.strictEqual(maskSecretCommand(`srv @{token="${'a'.repeat(1500)}"}`), 'srv @{token="[redacted]"}', 'R12: a value of 1500 chars');
   assert.strictEqual(redact('see @{token=1} here'), 'see @{token=1} here', 'R12 is not part of redact(): free text keeps the pattern rules');
   // Adversarial runs: 1 MB in one arg when it has no space (the scanner and the arg path), and 50k through every path (split into words, command, -c payload).
   // A worker times each with the thread's CPU time, like section 9. The words-and-spaces paths cost seconds per MB even without R12
@@ -1240,6 +1255,9 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     exprs: '@{token=(' + 'a + '.repeat(MB / 4),
     herestr: "@{token=@'" + 'x'.repeat(MB),
     hereOpeners: "@{a=@'".repeat(MB / 6),
+    commentOpeners: '@{<#'.repeat(MB / 4),
+    unclosedComment: '@{<#' + 'a'.repeat(MB),
+    pastBound: '@{' + 'p=1;'.repeat(MB / 4),
     unclosedMany: '@{token="a;'.repeat(MB / 11),
   };
   const mod = require.resolve('../src/shared/redact');
@@ -1265,6 +1283,22 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     assert.ok(!Number.isNaN(ms), `R12 adversarial ${k}: worker hung twice`);
     assert.ok(ms < 1000, `R12 adversarial ${k}: took ${ms.toFixed(1)} ms CPU, limit 1000 ms`);
     assert.ok(wall < 10000, `R12 adversarial ${k}: wall-time backstop ${wall.toFixed(1)} ms`);
+  }
+  // growth: 4x the input costs about 4x (the same run, min CPU of 3 interleaved pairs, like the OAuth rule test), for the shapes that could go quadratic
+  {
+    const shapes: Record<string, (n: number) => string> = {
+      repeatOpen: (n) => '@{'.repeat(n / 2), manyLiterals: (n) => '@{a=b;'.repeat(n / 6), nested: (n) => '@{a=@{'.repeat(n / 6), nestedSecret: (n) => '@{token=@{'.repeat(n / 10),
+      unclosedQuote: (n) => '@{token="' + 'a'.repeat(n), longBare: (n) => '@{token=' + 'a'.repeat(n), hereOpeners: (n) => "@{a=@'".repeat(n / 6),
+      commentOpeners: (n) => '@{<#'.repeat(n / 4), unclosedComment: (n) => '@{<#' + 'a'.repeat(n), pastBound: (n) => '@{' + 'p=1;'.repeat(n / 4), noEquals: (n) => '@{' + 'x;'.repeat(n / 2),
+    };
+    for (const [k, mk] of Object.entries(shapes)) {
+      const time = (x: string): number => cpuMs(() => { _uncappedForTest.maskSecretCommand(x); _uncappedForTest.maskSecretArgs([x]); }, 5000);
+      let a = Infinity;
+      let b = Infinity;
+      for (let i = 0; i < 3; i++) { a = Math.min(a, time(mk(100_000))); b = Math.min(b, time(mk(400_000))); }
+      console.log(`redact: R12 growth ${k} 100k=${Math.round(a)} ms 400k=${Math.round(b)} ms`);
+      assert.ok(b < Math.max(80, a * 10), `R12 growth ${k}: ${a.toFixed(0)} -> ${b.toFixed(0)} ms CPU for 4x the input`);
+    }
   }
   // an unclosed quote or a long bare value of a secret member hides the rest of the text, so the pattern rules do not run over 1 MB again
   // (they cost about 900 ms per MB on this path before; 46 ms on main without R12): a tighter limit than the 1 s above
