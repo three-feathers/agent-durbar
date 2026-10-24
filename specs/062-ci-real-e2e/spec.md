@@ -74,12 +74,12 @@ Replaces parts of FR-001 and FR-003:
 |---|---|---|---|
 | Copilot (official script; npm on Windows) | ok, `auto`, 0.16 AIU | ok | ok |
 | Claude Code 2.1.305 (official) | ok, haiku, ≈ $0.0009 | ok | ok |
-| Codex 0.163.0 (official) | ok, read-only turn too | ok with full access; read-only: macOS refused `sandbox-exec` | ok with full access; read-only: elevated sandbox not set up |
+| Codex 0.163.0 (official) | ok, read-only turn too | ok with full access; read-only: macOS refused `sandbox-exec` (very likely the symlinked `codex` bug, spec 012 FR-162, fixed 2026-10-23; not re-run) | ok with full access; read-only: elevated sandbox not set up |
 
 What the runs found, each fixed in this change unless noted:
 1. **Codex API-key sign-in reported as signed out** (spec 012 FR-156 delta). `account/rateLimits/read` refuses an API-key sign-in although it works; now `getAuthStatus` decides.
 2. **Codex not found after OpenAI's Windows installer** (fixed in spec 060, #393): it installs to `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`.
-3. **Codex's macOS sandbox refused** on the runner: a plain message now (spec 012 FR-140 delta). Owner decision (FR-087 delta, option c): no refusal text suggests a mode, and a **Change mode…** button opens the usual mode menu.
+3. **Codex's macOS sandbox refused** on the runner: a plain message now (spec 012 FR-140 delta). *2026-10-23:* very likely caused by starting Codex through a link (`~/.local/bin/codex`), which the sandbox cannot re-run (openai/codex#41493, confirmed on the owner's Mac); Durbar now starts the resolved path (spec 012 FR-162). Not re-run on the runner yet. Owner decision (FR-087 delta, option c): no refusal text suggests a mode, and a **Change mode…** button opens the usual mode menu.
 4. **Copilot needed Copilot enabled on the account** (a 403 until the owner turned on Copilot Free). Copilot Free lists **no models** and runs `auto`, so an empty list is recorded, not failed.
 5. Script fixes: Codex's `login status` line carried a masked key tail, so only the kind of sign-in is printed now; Windows temp-folder cleanup retries (`EBUSY`).
 

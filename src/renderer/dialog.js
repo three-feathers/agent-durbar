@@ -15,6 +15,7 @@
   else root.DurbarDialog=factory;
 })(typeof self!=='undefined'?self:this, function create(doc){
   'use strict';
+  const focusIn=(el,o)=>{if(typeof window!=='undefined'&&window.DurbarScroll)window.DurbarScroll.focus(el,o);else if(el&&typeof el.focus==='function')el.focus({preventScroll:true});}; /* spec 052 FR-176: focus never scrolls the page (innerscroll.js, looked up at call time: this file may load first, or run in Node tests) */
   const FOCUSABLE='button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])';
   return function askDialog({title,body,lines,input,buttons,check,picks,need,returnFocus,size}){
     return new Promise(resolve=>{
@@ -39,7 +40,7 @@
         doc.removeEventListener('keydown',onKey,true);doc.removeEventListener('focusin',onFocusIn,true);
         d.remove();
         const t=typeof opener==='function'?opener():opener;
-        if(t&&typeof t.focus==='function'&&doc.contains(t))t.focus();
+        if(t&&typeof t.focus==='function'&&doc.contains(t))focusIn(t);
         resolve(v);
       };
       const textOf=()=>input?d.querySelector('#mdIn').value:undefined;
@@ -50,17 +51,17 @@
         if(e.key!=='Tab')return;
         const it=items();if(!it.length)return;
         const i=it.indexOf(doc.activeElement);
-        if(i<0){e.preventDefault();it[e.shiftKey?it.length-1:0].focus();}
-        else if(e.shiftKey&&i===0){e.preventDefault();it[it.length-1].focus();}
-        else if(!e.shiftKey&&i===it.length-1){e.preventDefault();it[0].focus();}
+        if(i<0){e.preventDefault();focusIn(it[e.shiftKey?it.length-1:0]);}
+        else if(e.shiftKey&&i===0){e.preventDefault();focusIn(it[it.length-1]);}
+        else if(!e.shiftKey&&i===it.length-1){e.preventDefault();focusIn(it[0]);}
       };
       /* focus must not leave the dialog (a stray focus() on the control behind it, a click on the backdrop) */
-      const onFocusIn=e=>{if(!d.contains(e.target)){const f=first();if(f)f.focus();}};
+      const onFocusIn=e=>{if(!d.contains(e.target)){const f=first();if(f)focusIn(f);}};
       buttons.forEach(b=>{const el=doc.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;if(b.value===null)el.dataset.cancel='1';el.onclick=()=>{
         if(el.disabled)return;
         if(b.value!==null&&input&&typeof input.check==='function'){
           const msg=input.check(textOf());const er=d.querySelector('#mdErr'),inp=d.querySelector('#mdIn');
-          if(msg){er.textContent=msg;er.hidden=false;er.setAttribute('role','alert');inp.setAttribute('aria-invalid','true');inp.setAttribute('aria-describedby','mdErr');inp.focus();return;}
+          if(msg){er.textContent=msg;er.hidden=false;er.setAttribute('role','alert');inp.setAttribute('aria-invalid','true');inp.setAttribute('aria-describedby','mdErr');focusIn(inp);return;}
         }
         done(b.value===null?null:Object.assign({value:b.value,checked:check?d.querySelector('#mdChk').checked:false},input?{text:textOf()}:{},picks?{picked:pickedOf()}:{}));
       };row.appendChild(el);});
@@ -69,7 +70,7 @@
       d.addEventListener('click',e=>{if(e.target===d)done(null);});
       doc.addEventListener('keydown',onKey,true);doc.addEventListener('focusin',onFocusIn,true);
       doc.body.appendChild(d);
-      (input&&input.focus?d.querySelector('#mdIn'):first()).focus();
+      focusIn(input&&input.focus?d.querySelector('#mdIn'):first());
       if(input&&input.error){const er=d.querySelector('#mdErr'),inp=d.querySelector('#mdIn');er.textContent=input.error;er.hidden=false;er.setAttribute('role','alert');inp.setAttribute('aria-invalid','true');inp.setAttribute('aria-describedby','mdErr');} /* a reason from the caller (main refused the text) */
       if(input&&input.select)d.querySelector('#mdIn').select(); /* spec 059: the prefilled text starts selected, so typing replaces it */ /* input.focus: start in the text field (rename) */
     });

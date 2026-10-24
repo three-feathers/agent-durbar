@@ -7,8 +7,8 @@ import { parseEffort } from '../shared/effort';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseCap } from '../shared/credits';
-import { parseTier } from '../shared/modelswitch';
-import type { ContextTier } from '../shared/modelswitch';
+import { parseAutoTier, parseTier } from '../shared/modelswitch';
+import type { AutoTier, ContextTier } from '../shared/modelswitch';
 import * as floorOps from '../shared/floors';
 import type { FloorOp, FloorsDoc } from '../shared/floors';
 import { cleanDisplayName } from '../shared/names';
@@ -28,6 +28,8 @@ export interface SavedFolder {
   effort?: string;
   /** Context tier chosen for this folder's sessions (spec 030); absent = the model's default. Only ever our own choice, never Copilot's settings. */
   contextTier?: ContextTier;
+  /** Spec 007 FR-016: the Auto routing tier chosen for this folder's agent; kept while it uses another model. Our own file only. */
+  autoTier?: AutoTier;
   /** Per-session credit cap (AIU) for this folder's sessions (spec 011); a plain number. */
   maxAiCredits?: number;
   /** Floor id (spec 033). Absent = the ground floor; never written for it. */
@@ -242,6 +244,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       model: typeof o.model === 'string' && o.model.length <= 100 ? o.model : undefined,
       effort: parseEffort(o.effort),
       contextTier: parseTier(o.contextTier),
+      ...(parseAutoTier(o.autoTier) ? { autoTier: parseAutoTier(o.autoTier) } : {}), // only when set, so older files read back unchanged
       maxAiCredits: parseCap(o.maxAiCredits),
       floor: typeof o.floor === 'string' && o.floor !== floorOps.GROUND && o.floor.length <= 20 ? o.floor : undefined,
       adapterId: parseAdapterId(o.adapterId),
@@ -383,7 +386,7 @@ export class FolderStore {
   }
 
   /** Remember the model choice of an applied switch (spec 030): the model, the effort (`null` clears it, `undefined` keeps it) and the tier (`undefined` = default). Saved in this app's own file only. */
-  setModelChoice(workspace: string, choice: { model: string; effort?: string | null; contextTier?: ContextTier }): boolean {
+  setModelChoice(workspace: string, choice: { model: string; effort?: string | null; contextTier?: ContextTier; autoTier?: AutoTier | null }): boolean {
     const cur = this.get(workspace);
     if (!cur || !choice.model || choice.model.length > 100) return false;
     cur.model = choice.model;
@@ -391,6 +394,20 @@ export class FolderStore {
     else if (choice.effort !== undefined) cur.effort = parseEffort(choice.effort) ?? cur.effort;
     const t = parseTier(choice.contextTier);
     cur.contextTier = t === 'long' ? 'long' : undefined;
+    const at = parseAutoTier(choice.autoTier); // spec 007 FR-016: undefined keeps the saved tier (a switch to another model keeps it), null clears it
+    if (at) cur.autoTier = at;
+    else if (choice.autoTier === null) delete cur.autoTier;
+    this.save();
+    return true;
+  }
+
+  /** Spec 007 FR-019: the tier the runtime kept after a failed tier switch (`null` = none of its own). Only the tier changes. */
+  setAutoTier(workspace: string, tier: AutoTier | null): boolean {
+    const cur = this.get(workspace);
+    if (!cur) return false;
+    const t = parseAutoTier(tier);
+    if (t) cur.autoTier = t;
+    else delete cur.autoTier;
     this.save();
     return true;
   }

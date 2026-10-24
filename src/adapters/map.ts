@@ -10,8 +10,11 @@ import { isMcpAuthChallenge } from './mcpauth';
 import type { AgentEvent, CompactionEvent, ContextTier, McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import { nonEmptyStr as str } from '../shared/guards';
+import { parseAutoTier } from '../shared/modelswitch';
 import { EditStreams, editOf } from './edits';
 import { usageLimitClosing } from './usagelimit';
+import { markAuthError } from './autherrors';
+import { RetryTracker, copilotRetry } from './retry';
 
 export type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> : never) : never;
 
@@ -27,6 +30,8 @@ const positive = (v: unknown): number | undefined => (typeof v === 'number' && v
 const triggerOf = (v: unknown): CompactionEvent['trigger'] => (v === 'manual' ? 'manual' : v === 'model_switch' ? 'model-switch' : v === 'context_limit_retry' ? 'overflow' : 'auto');
 
 const SUBAGENT_NAME_FALLBACK = 'Sub-agent';
+/** Spec 034 FR-017: events that show the model answered (a retried call went through). Usage is not one: a failed turn can report cost too. */
+const PROGRESS = new Set(['assistant.message_delta', 'assistant.message', 'assistant.reasoning_delta', 'assistant.reasoning', 'assistant.tool_call_delta', 'tool.execution_start']);
 
 export class EventMapper {
   /** callId -> tool name (and MCP origin), so complete/update events can carry them. */
@@ -46,6 +51,8 @@ export class EventMapper {
   private compaction: { trigger: CompactionEvent['trigger']; limit?: number } | undefined;
   /** A model Agent Durbar asked for: the next change to it is the user's own (cause `user`), not the runtime's. */
   private expected: string | undefined;
+  /** Spec 034 FR-017: the main agent's model-call retries in this turn (`model.call_failure`). */
+  private retries = new RetryTracker();
 
   constructor(private readonly emit: (body: EventBody) => void) {}
 
@@ -56,6 +63,7 @@ export class EventMapper {
     this.reasoningSeen.clear();
     this.instances.clear();
     this.model = this.tier = this.compaction = this.expected = undefined;
+    this.retries.reset();
   }
 
   /** Tell the mapper the user asked for `model`, so the matching `session.model_change` is reported with cause `user`. */
@@ -117,7 +125,15 @@ export class EventMapper {
     const d = ev.data ?? {};
     if (ev.type === 'subagent.started' && ev.agentId && d.toolCallId) this.instances.set(ev.agentId, d.toolCallId);
     const agentId = this.who(ev);
+    // spec 034 FR-017: the model answered the main agent (text, reasoning, a tool call), so a retried call went through
+    if (!agentId && PROGRESS.has(ev.type)) this.retries.progress();
     switch (ev.type) {
+      case 'model.call_failure': {
+        // spec 034 FR-017: a failed model call of the top-level agent that the runtime retries; fixed reason and numbers, never the message
+        const info = agentId ? null : copilotRetry(d);
+        if (info) this.emit(this.retries.retry(info));
+        return;
+      }
       case 'user.message':
         // The main agent's user message is the one the user typed (the renderer already shows it); a sub-agent's is its task prompt.
         if (agentId && typeof d.content === 'string') this.emit({ type: 'user', text: d.content, agentId });
@@ -209,6 +225,8 @@ export class EventMapper {
       case 'session.model_change': {
         if (agentId || typeof d.newModel !== 'string' || !d.newModel) return;
         const tier = tierOf(d.contextTier);
+        // spec 007 FR-016: the three names only; FR-020: an organization default (`autoTierManaged: true`) is never reported as the user's own tier
+        const autoTier = d.newModel === 'auto' && d.autoTierManaged !== true ? parseAutoTier(d.autoTier) : undefined;
         const cause = d.cause === 'rate_limit_auto_switch' ? 'rate-limit' : d.cause === 'refusal_fallback' ? 'fallback' : this.expected === d.newModel ? 'user' : 'runtime';
         if (this.expected === d.newModel) this.expected = undefined;
         this.model = d.newModel;
@@ -220,8 +238,17 @@ export class EventMapper {
           effort: typeof d.reasoningEffort === 'string' ? d.reasoningEffort : undefined,
           previousEffort: str(d.previousReasoningEffort),
           tier,
+          ...(autoTier ? { autoTier } : {}),
           cause,
         });
+      }
+      case 'session.auto_tier_switch_failed': {
+        // spec 007 FR-019: the tier asked for did not take; the one in effect stays (three names only, else "the default")
+        if (agentId) return;
+        const r = d.reason;
+        const reason = r === 'policy_rejected' ? 'policy-rejected' : r === 'request_failed' ? 'request-failed' : r === 'setup_failed' ? 'setup-failed' : r === 'unsupported' ? 'unsupported' : 'unknown';
+        const requested = parseAutoTier(d.requestedAutoTier), effective = parseAutoTier(d.effectiveAutoTier);
+        return this.emit({ type: 'autoTierFailed', reason, ...(requested ? { requested } : {}), ...(effective ? { effective } : {}) });
       }
       case 'session.compaction_start': {
         if (agentId) return;
@@ -355,16 +382,23 @@ export class EventMapper {
         this.toolNames.clear();
         this.reasoningSeen.clear();
         this.edits.clear();
+        if (!agentId) this.retries.reset();
         return this.emit({ type: 'status', status: 'idle', intent: d.aborted ? 'Aborted' : undefined });
       case 'session.error': {
         // spec 068 FR-002: a used-up quota or a rate limit that stopped the turn is a coffee break, not an error
         const lim = agentId ? null : copilotUsageLimit(d.errorType, d.errorCode);
+        // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)
+        const err: EventBody = { type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType, d.message) };
+        // spec 034 FR-017: a turn that fails after a retry gave up; not at a usage limit and not at a sign-in failure (the sign-in card says why)
+        const auth = (markAuthError(err) as { errorKind?: string }).errorKind === 'auth';
+        const gaveUp = !agentId && !lim && !auth ? this.retries.gaveUp() : undefined;
+        if (!agentId) this.retries.reset();
+        if (gaveUp) this.emit(gaveUp);
         if (lim) {
           this.emit(lim);
           return this.emit(usageLimitClosing());
         }
-        // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)
-        return this.emit({ type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType, d.message) });
+        return this.emit(err);
       }
       default:
         return;

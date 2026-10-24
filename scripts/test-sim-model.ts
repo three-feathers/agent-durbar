@@ -70,6 +70,41 @@ async function main(): Promise<void> {
   assert.strictEqual(info('sim-4').effort, undefined);
   assert.strictEqual(info('sim-4').tier, undefined);
 
+  // spec 007 FR-018: Auto lists the three tiers; a tier only with Auto; the change carries it; kept on another model
+  assert.deepStrictEqual(by('auto').autoTiers, ['efficiency', 'balance', 'intelligence']);
+  assert.ok(models.filter((x) => x.id !== 'auto').every((x) => !x.autoTiers), 'only Auto');
+  assert.ok(!by('auto').autoTierManaged, 'no organization tier without ?simtierlock');
+  assert.match((await setModel('sim-4', { model: 'sim-mid', autoTier: 'balance' })).error ?? '', /no Auto routing tier/);
+  assert.match((await setModel('sim-4', { model: 'auto', autoTier: 'fast' as never })).error ?? '', /no Auto routing tier/);
+  r = await setModel('sim-4', { model: 'auto', autoTier: 'intelligence' });
+  assert.deepStrictEqual([r.ok, r.result?.status, info('sim-4').model, info('sim-4').autoTier], [true, 'applied', 'auto', 'intelligence']);
+  m = of('sim-4', 'model').pop() as Record<string, unknown>;
+  assert.deepStrictEqual([m.model, m.autoTier, m.cause], ['auto', 'intelligence', 'user']);
+  await setModel('sim-4', { model: 'sim-fast' });
+  assert.deepStrictEqual([info('sim-4').model, info('sim-4').autoTier], ['sim-fast', 'intelligence'], 'kept while on another model');
+  assert.ok(!('autoTier' in (of('sim-4', 'model').pop() as object)), 'no tier on a change to another model');
+  // review on #642 (item 4): null = back to none of its own (Undo)
+  await setModel('sim-4', { model: 'auto', autoTier: null });
+  assert.deepStrictEqual([info('sim-4').model, info('sim-4').autoTier], ['auto', undefined]);
+  await setModel('sim-4', { model: 'sim-fast' }); // back where the later checks expect Noor
+  // item 6: a tier switch during a reply is queued, then applies when the turn ends, with the tier on the model change
+  {
+    const busy = infos.find((i) => i.id === 'sim-13') as AgentInfo; // Hugo, idle on Auto; a message makes him reply
+    assert.strictEqual(busy.model ?? 'auto', 'auto');
+    const before = of('sim-13', 'model').length;
+    void (sim.send as NonNullable<DurbarApi['send']>)('sim-13', 'please look at the notes', []);
+    const replying = (): boolean => { const st = of('sim-13', 'status').pop(); return !!st && (st.status === 'working' || st.status === 'thinking'); };
+    for (let i = 0; i < 2000 && !replying(); i++) await new Promise((r) => setImmediate(r));
+    assert.ok(replying(), 'Hugo is replying');
+    const q = await setModel('sim-13', { model: 'auto', autoTier: 'balance' }); // asked in the same tick: the reply is still running
+    assert.deepStrictEqual([q.ok, q.result?.status], [true, 'queued']);
+    assert.ok(q.result?.queueId, 'a queue id to cancel it');
+    assert.strictEqual(busy.autoTier, undefined, 'not applied while the reply runs');
+    for (let i = 0; i < 500 && of('sim-13', 'model').length === before; i++) await sleep(5); // the reply ends (idle): the queue drains
+    const mq = of('sim-13', 'model').pop() as Record<string, unknown>;
+    assert.deepStrictEqual([mq.model, mq.autoTier, mq.cause, busy.autoTier], ['auto', 'balance', 'user', 'balance'], 'drained: the tier applies');
+  }
+
   // a smaller window than the context in use: the runtime asks first (Ada, sim-1: about 200k tokens)
   const before = (of('sim-1', 'context').pop() as { tokens: number }).tokens;
   assert.ok(before > 128000, 'Ada has more context than Sim Fast can hold');

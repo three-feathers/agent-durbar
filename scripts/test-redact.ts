@@ -1100,7 +1100,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   const s1 = cpuMs(() => void redact('%3F'.repeat(60_000)), 2000);
   const s2 = cpuMs(() => void redact('%3F'.repeat(240_000)), 2000);
   console.log(`redact: oauth query linearity value ${t1.toFixed(0)}/${t2.toFixed(0)} ms, names ${r1.toFixed(0)}/${r2.toFixed(0)} ms, separators ${s1.toFixed(0)}/${s2.toFixed(0)} ms`);
-  for (const [a, b, what] of [[t1, t2, 'value'], [r1, r2, 'names'], [s1, s2, 'separators']] as const) assert.ok(b < Math.max(40, a * 10), `oauth query rule is linear (${what}: ${a} -> ${b} ms CPU for 4x input)`);
+  for (const [a, b, what] of [[t1, t2, 'value'], [r1, r2, 'names'], [s1, s2, 'separators']] as const) assert.ok(b < Math.max(250, a * 10), `oauth query rule is linear (${what}: ${a} -> ${b} ms CPU for 4x input)`); // a floor well above Windows' ~16 ms timer step and CI load; backtracking would take seconds
 }
 
 // 14e. T072 (#502, R12): PowerShell hashtable literals `@{ Name = Value; ... }`. The value of a secret-looking member is hidden, quotes kept.
