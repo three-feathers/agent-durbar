@@ -1,0 +1,1 @@
+- **Review-ready preflight** (spec 021): agent guidance and the PR template call for current-base mergeability, clear acceptance cases, relevant local preflight checks and exact-head CI evidence before review; required CI coverage is unchanged.
