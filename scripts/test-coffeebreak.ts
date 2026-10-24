@@ -9,7 +9,7 @@ import { ClaudeMapper, claudeUsageLimit } from '../src/adapters/claudeMap';
 import { CodexMapper, codexRateLimit } from '../src/adapters/codexMap';
 import { EventMapper, copilotUsageLimit } from '../src/adapters/map';
 import type { EventBody } from '../src/adapters/map';
-import { copilotQuotaReset, resetMs, usageLimitClosing } from '../src/adapters/usagelimit';
+import { claudeLimitText, copilotQuotaReset, nextClockTime, resetMs, usageLimitClosing } from '../src/adapters/usagelimit';
 import { scheduleBusy } from '../src/main/schedules';
 import { eventProblems as validateEvent } from '../src/adapters/eventguard';
 import { AgentStateTracker } from '../src/main/mcp/agentstate';
@@ -501,6 +501,45 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   assert.ok(/void sendLive\(COFFEE\.RESUME_TEXT,a\.id,\{fromComposer:false,coffee:true\}\);\s*return true;\s*\}/.test(app), 'resumeCoffee returns true when it sent');
   assert.ok(/const waiting=\(\)=>\[\.\.\.chat\.querySelectorAll\('\.note\.perm:not\(\.settled\):not\(\.coffee\)'\)\]/.test(app), 'the answer bar leaves coffee cards out of its list, not the whole bar');
   assert.ok(!/card\.classList\.contains\('coffee'\)\)\{if\(painted/.test(app), 'the answer bar is no longer hidden for a coffee card');
+}
+
+// Spec 068 FR-025 (issue #671, real Claude Code 2026-10-24): a Retry while the weekly limit is still active gets the limit as words only
+// (a synthetic assistant message with `error: 'rate_limit'`, then an error result), with no `rate_limit_event`. It is a coffee break again.
+{
+  const SENT = "You've hit your weekly limit · resets 2am (Europe/Zurich)";
+  const T = Date.UTC(2026, 9, 24, 12, 0, 0);
+  const run = (msgs: { type: string; [k: string]: unknown }[]): EventBody[] => { const o: EventBody[] = []; const m = new ClaudeMapper((b) => o.push(b)); msgs.forEach((x) => m.map(x)); return o; };
+  const synth = { type: 'assistant', error: 'rate_limit', message: { model: '<synthetic>', content: [{ type: 'text', text: SENT }] } };
+  const res = { type: 'result', subtype: 'success', is_error: true, result: SENT };
+  const o = run([synth, res]);
+  const lim = o.find((b) => b.type === 'usageLimit') as (EventBody & { type: 'usageLimit' }) | undefined;
+  assert.ok(lim, 'the limit sentence gives a usageLimit');
+  assert.strictEqual(lim.source, 'Claude weekly limit');
+  assert.strictEqual(o.filter((b) => b.type === 'usageLimit').length, 1, 'once per turn');
+  assert.deepStrictEqual(o[o.length - 1], usageLimitClosing(), 'the turn closes quietly');
+  assert.ok(!o.some((b) => b.type === 'status' && b.status === 'error'), 'never an error');
+  assert.ok(run([res]).some((b) => b.type === 'usageLimit'), 'the error result alone is enough');
+  // with a rate_limit_event first, still one limit
+  assert.strictEqual(run([{ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'seven_day' } }, synth, res]).filter((b) => b.type === 'usageLimit').length, 1);
+  // the reset the sentence names: 2am in Zurich, within a week, and 02:00 there
+  const t = claudeLimitText(SENT, T)!;
+  assert.strictEqual(t.window, 'seven_day');
+  assert.ok(t.resetsAt && t.resetsAt > T && t.resetsAt < T + 8 * 86_400_000);
+  assert.strictEqual(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Zurich', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(t.resetsAt), '02:00');
+  assert.strictEqual(nextClockTime(14, 30, 'UTC', undefined, T), Date.UTC(2026, 9, 24, 14, 30));
+  assert.strictEqual(new Date(nextClockTime(9, 0, 'UTC', 1, T)!).getUTCDay(), 1, 'a named weekday');
+  assert.ok(nextClockTime(2, 0, 'Not/AZone', undefined, T), 'an unknown zone falls back to the local clock');
+  assert.strictEqual(claudeLimitText("You've hit your Opus limit", T)!.resetsAt, undefined);
+  assert.strictEqual(claudeLimitText('5-hour limit reached ∙ resets 3pm', T)!.window, 'five_hour');
+  // no reset in the sentence: the last known one from a rate_limit_event of this session
+  const reset = Date.now() + 3 * 3600_000;
+  const o2 = run([{ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'seven_day', resetsAt: reset / 1000 } }, res, { type: 'assistant', error: 'rate_limit', message: { content: [{ type: 'text', text: "You've hit your weekly limit" }] } }, { ...res, result: "You've hit your weekly limit" }]);
+  assert.strictEqual(o2.filter((b) => b.type === 'usageLimit').length, 2);
+  assert.strictEqual((o2.filter((b) => b.type === 'usageLimit')[1] as { resetsAt?: number }).resetsAt, Math.round(reset), 'the earlier reset is reused');
+  // what is not a limit stays what it was
+  assert.ok(!run([{ type: 'result', subtype: 'success', is_error: false, result: SENT }]).some((b) => b.type === 'usageLimit'), 'an answer that talks about a limit');
+  const plain = run([{ type: 'assistant', error: 'rate_limit', message: { content: [{ type: 'text', text: 'Too many requests (429)' }] } }, { type: 'result', subtype: 'error_during_execution', is_error: true, result: 'boom' }]);
+  assert.ok(!plain.some((b) => b.type === 'usageLimit') && plain.some((b) => b.type === 'status' && b.status === 'error'), 'a plain 429 error stays an error');
 }
 
 console.log('coffee break tests passed');

@@ -43,3 +43,50 @@ export function copilotQuotaReset(result: unknown, now = Date.now()): { resetsAt
   const resetsAt = resetMs(v.resetDateEpochMs, now) ?? resetMs(v.resetDate, now);
   return resetsAt ? { resetsAt, estimated: v.resetDateEstimated === true } : undefined;
 }
+
+const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+/**
+ * Spec 068 FR-025: the next time the wall clock of `tz` (an IANA name; the local zone when absent or unknown) reads `hour:minute`, on
+ * `weekday` (0 = Sunday) when given; epoch ms, or undefined when none within 8 days. Scans by the minute: it is only run when a limit hits.
+ */
+export function nextClockTime(hour: number, minute: number, tz: string | undefined, weekday: number | undefined, now = Date.now()): number | undefined {
+  let fmt: Intl.DateTimeFormat;
+  try {
+    fmt = new Intl.DateTimeFormat('en-US', { ...(tz ? { timeZone: tz } : {}), hourCycle: 'h23', hour: '2-digit', minute: '2-digit', weekday: 'short' });
+  } catch {
+    return nextClockTime(hour, minute, undefined, weekday, now); // an unknown zone name: the local clock, still a plausible time
+  }
+  const start = Math.floor(now / 60_000) * 60_000 + 60_000;
+  for (let t = start; t <= now + 8 * DAY; t += 60_000) {
+    const p = Object.fromEntries(fmt.formatToParts(t).map((x) => [x.type, x.value]));
+    if (Number(p.hour) !== hour || Number(p.minute) !== minute) continue;
+    if (weekday !== undefined && WEEKDAYS.indexOf(String(p.weekday).slice(0, 3).toLowerCase()) !== weekday) continue;
+    return t;
+  }
+  return undefined;
+}
+
+/**
+ * Spec 068 FR-025: Claude Code's own limit sentence, "You've hit your weekly limit · resets 2am (Europe/Zurich)" (older: "5-hour limit
+ * reached ∙ resets 3pm"). It is what the CLI answers, as a synthetic assistant message and the closing error result, when the limit is
+ * still active and no `rate_limit_event` came first (a Retry after the break). Returns the window label (fixed words, never the text)
+ * and the reset it names, when it reads one. Null when the text is not a limit sentence.
+ */
+export function claudeLimitText(text: unknown, now = Date.now()): { window: 'five_hour' | 'seven_day' | 'seven_day_opus' | 'seven_day_sonnet' | undefined; resetsAt?: number } | null {
+  if (typeof text !== 'string' || text.length > 2000) return null;
+  const m = /\bhit your ([a-z0-9 -]{0,30}?)\s*limit\b/i.exec(text) ?? /\b([a-z0-9 -]{1,30}?)\s+limit reached\b/i.exec(text);
+  if (!m) return null;
+  const w = m[1].toLowerCase();
+  const window = /week|7-day|seven/.test(w) ? (/opus/.test(w) ? 'seven_day_opus' : /sonnet/.test(w) ? 'seven_day_sonnet' : 'seven_day') : /5-hour|five|session/.test(w) ? 'five_hour' : undefined;
+  const r = /\bresets?\s+(?:(sun|mon|tue|wed|thu|fri|sat)[a-z]*,?\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b(?:\s*\(([A-Za-z0-9_+\-/]{1,40})\))?/i.exec(text);
+  let resetsAt: number | undefined;
+  if (r) {
+    const h12 = Number(r[2]);
+    if (h12 >= 1 && h12 <= 12 && Number(r[3] ?? 0) < 60) {
+      const hour = (h12 % 12) + (r[4].toLowerCase() === 'pm' ? 12 : 0);
+      resetsAt = resetMs(nextClockTime(hour, Number(r[3] ?? 0), r[5], r[1] ? WEEKDAYS.indexOf(r[1].toLowerCase()) : undefined, now), now);
+    }
+  }
+  return { window, ...(resetsAt ? { resetsAt } : {}) };
+}

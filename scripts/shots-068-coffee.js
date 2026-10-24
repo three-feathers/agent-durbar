@@ -192,6 +192,11 @@ module.exports = async (ctx) => {
     const reHit = await until(`/^On a coffee break · resets in ([5-9]|1[01]) min/.test(document.getElementById('coffeeBar').innerText.replace(/\\s+/g,' ').trim())`, 5000), barNow = await js(`document.getElementById('coffeeBar').innerText`);
     assert.ok(reHit, `${w}: after a re-hit the bar says when it resets (it will ask): ${barNow}`);
     assert.ok(await js(`/hit the limit again right after a resume/.test(document.querySelector('#chat .note.perm.coffee:not(.settled)').textContent)`), `${w}: the card says why it asks now (FR-024)`);
+    // FR-025 (issue #671): the chat says the retry found the limit still active, and the agent is on the break, never in Error
+    assert.ok(await until(`/The retry found the limit still active/.test(document.getElementById('chat').textContent)`, 5000), `${w}: a note says the retry found the limit still active`);
+    assert.ok(await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.name==='Tomas'&&!x.parent);return a.coffee===true&&a.state!=='error';})()`), `${w}: after the failed retry Tomas is on the break, not in Error`);
+    await ctx.sleep(2500); /* FR-025: nothing is sent by itself after a failed retry (a re-hit never resumes automatically) */
+    assert.strictEqual(await js(resumes), 1, `${w}: a failed retry does not send again by itself`);
     // a double press of the bar's Retry now: one resume message, not two
     await js(`(()=>{const b=document.querySelector('#coffeeBar [data-coffee-retry]');b.click();b.click();})()`);
     assert.ok(await until(`${byYou}>=2`, 5000), `${w}: the bar's Retry now resumed`);
