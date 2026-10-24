@@ -350,6 +350,10 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .avatar{width:44px;height:44px;border-radius:50%;background:var(--avatar-bg,#e7eee8);overflow:hidden;flex:none}
 .ph h2{margin:0;font-size:var(--t1-size);font-weight:var(--t1-weight);line-height:var(--t1-lh);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ph h2:focus{outline:none}
+.ph h2[role="button"]{cursor:text}
+.ph h2[role="button"]:hover{text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
+.ph h2[role="button"]:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
+.panel-title-edit{box-sizing:border-box;width:100%;min-width:0;padding:0 4px;border:1px solid var(--focus);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);font:inherit;letter-spacing:inherit}
 /* spec 052 FR-007: a heading the app focuses itself (tabindex=-1, so screen readers announce the new screen) is not a control: no ring */
 :is(h1,h2,h3,h4)[tabindex="-1"]:focus,:is(h1,h2,h3,h4)[tabindex="-1"]:focus-visible{outline:none}
 .ph .sub{font-size:var(--t5-size);line-height:var(--t5-lh);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

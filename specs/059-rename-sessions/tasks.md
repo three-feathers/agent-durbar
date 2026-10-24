@@ -86,10 +86,11 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 
 ## Phase 8: Inline chat-header rename (issue #595)
 
-- [ ] T062 FR-020: make an eligible chat-header title an accessible inline rename control (click, Enter, Space, or F2); use the shared
+- [x] T062 FR-020: make an eligible chat-header title an accessible inline rename control (click, Enter, Space, or F2); use the shared
   rename bridge and FR-002 validation; Enter and outside-click save, Escape cancels; keep the existing Rename… entries; preserve the
   header height and correct focus behavior. Extend `check:rename` at both sizes and detail levels for valid, empty, invalid, helper,
-  keyboard, blur, focus, and accessibility cases; retake linked chat-header documentation screenshots.
+  keyboard, blur, focus, and accessibility cases; capture 1440x900 and 1280x800 simulator screenshots. No linked documentation screenshot
+  shows the active title editor.
 
 ## Dependencies
 

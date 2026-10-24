@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Rename sessions (issue #372): a short name of the user's own for any main session, shown on every surface (card, list, chat header, strip, inbox, notifications, Schedules, Previous sessions, activity log) instead of the runtime title; also saved in the agent app (Copilot `name.set`, also for a session that is not open through a prompt-free resume; Codex `thread/name/set`; Claude Code `--name` at the next message); **Rename…** in the chat header More menu and the card menu, and the Previous sessions row menu (spec 006, #379)
-status: **Built, simulator and fakes** (name rule, store, IPC, three adapters, dialog, surfaces, `check:rename`); `real:` app calls by Vikram's agent (Copilot, Codex, Claude CLI lists); open: VS Code visibility, macOS/Windows, T050
+status: **Built, simulator and fakes** (name rule, store, IPC, three adapters, dialog, inline chat-header rename, surfaces, `check:rename`); `real:` app calls by Vikram's agent (Copilot, Codex, Claude CLI lists); open: VS Code visibility, macOS/Windows, T050
 -->
 
 **Feature Branch**: `059-rename-sessions`
@@ -274,13 +274,13 @@ FR-023) use the new name; Resume opens an agent with that name.
   with an ellipsis. The full name stays in the existing tooltip (`nameTipAttr`, spec 052 FR-168). Card widths do not change; a full card's name stops at 2 lines, so a card with a long name can only get shorter. `simnames=long`
   (FR-016) gives the third agent (it waits for you, so it is also in the inbox) no alias and a long first-prompt **title** (over 60 characters, which a title may be) that holds one URL-like token (no real address, `example.invalid`); the full-layout cases force `density=full` so they do not depend on grown desks (spec 001, #532), and `check:office` fails when any `.name` on a card overflows
   its box or takes more than 2 lines on a full card (explicit `line-height:18px`) at 1440x900 and 1280x800.
-- **FR-020** Inline rename from the chat header (issue #595). When the selected session can be renamed, its title is a keyboard-accessible button named
+- **FR-020** `[IMPLEMENTED]` Inline rename from the chat header (issue #595). When the selected session can be renamed, its title is a keyboard-accessible button named
   "Rename session <name>"; clicking it or pressing Enter, Space, or F2 while it is focused replaces the title with an input containing the current
   display name, selected. Enter saves; clicking or tabbing outside saves and leaves focus on the outside control; Escape cancels. Enter-save returns
   focus to the title. The existing Rename… menu entries remain. Inline and dialog rename use the same `sessions:rename` bridge and FR-002 validation;
   an invalid value is not saved and the editor stays open with its reason announced. Helpers and sessions that cannot be renamed are not controls.
-  The title keeps its existing alias/runtime tooltip and adds the inline-edit instructions. The input does not increase the header height, and focusing
-  the title when opening a chat never starts editing.
+  The title keeps its existing alias/runtime tooltip and adds the inline-edit instructions. A dotted underline on hover and a keyboard focus ring
+  show it is editable. The input does not increase the header height, and focusing the title when opening a chat never starts editing.
 
 ### Key Entities
 
@@ -383,5 +383,7 @@ Owner (Vikram, 2026-10-24) chose to save when the user clicks outside, like rena
 title becomes a keyboard-accessible inline rename control for eligible sessions; Enter, Space, or F2 starts editing, Enter or clicking
 outside saves, and Escape cancels. Outside-save keeps focus on the clicked control; Enter-save returns focus to the title. The existing
 Rename… menu and its dialog remain, and both entry points share the same rename bridge and FR-002 validation. Helpers remain non-editable.
-The control preserves the existing alias/runtime tooltip, adds its keyboard instructions, and must not change header height. Add T062; verify
-both sizes, accessibility, validation, and save/cancel behavior in the simulator.
+The control preserves the existing alias/runtime tooltip, adds its keyboard instructions, and uses a dotted hover underline plus a visible
+keyboard focus ring. The panel header is not in macOS's draggable-region selectors, so the title click is not swallowed by window dragging
+(`read:` `src/renderer/styles.css`). `sim:` `check:rename` covers both viewport sizes and Simple and Expert modes; linked documentation screenshots
+were reviewed and none depicts the active title editor.

@@ -124,6 +124,8 @@ The editor uses a bounded text input and retains the header's existing height. E
 cancels and restores the title. Blur saves on an outside click or tab navigation, leaving focus on the outside control as native
 rename interactions do. Invalid input remains in the editor, receives the shared validation reason, and is not submitted. The
 title's accessible name identifies the rename action; its tooltip keeps `nameTip` information and adds the save/cancel instructions.
+A dotted underline on hover and a focus-visible ring make the control discoverable. The chat panel header is outside the macOS
+draggable-region selectors, so the title's click is not intercepted by window dragging.
 
 Extend `scripts/check-rename.js` at both viewport sizes and detail levels to check click and keyboard entry, selected input text,
 Enter, outside-save, Escape, invalid and empty values, non-editable helpers, focus behavior, accessible name, and unchanged header
