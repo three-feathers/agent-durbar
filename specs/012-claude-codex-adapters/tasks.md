@@ -194,4 +194,6 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 
 ## Changes 2026-10-24 (issue #664, bounded version detection)
 
-- [ ] T133 Fix `src/adapters/detect.ts` `parseVersion` per the FR-039 delta using the existing detector path; add malformed/error/first-line/boundary/64 KiB CPU-budget and fake-exec regressions in `scripts/test-detect.ts`, retain Codex mode compatibility, prove the original parser mutation fails, update README/changelog/evidence, and run typecheck, build, full tests and convergence. No real sessions.
+- [x] T133 Fix `src/adapters/detect.ts` `parseVersion` per the FR-039 delta using the existing detector path; add malformed/error/first-line/boundary/64 KiB CPU-budget and fake-exec regressions in `scripts/test-detect.ts`, retain Codex mode compatibility, prove the original parser mutation fails, update README/changelog/evidence, and run typecheck, build, full tests and convergence. No real sessions.
+
+T133 verification (2026-10-24, macOS, Node 22.16.0): typecheck and build passed; all 114 offline suites passed in 73.3 s. Manual Spec Kit analysis found full coverage and no conflicts for this delta. Convergence checked FR-039/FR-040 corrected behavior, acceptance cases, the parser plan and constitution I–VIII: no remaining work for #664; existing unrelated real-account tasks stay open. No UI change; no screenshots needed.
