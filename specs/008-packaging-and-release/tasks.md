@@ -111,3 +111,7 @@
 ## 2026-10-23: test builds from branches
 
 - [x] T105 (2026-10-23, owner decision by Vikram, issue #658) Test builds from branches [FR-121..FR-124]. Files: `scripts/release-notes.js` (`TEST_TAG_RE`, `tagKind`, `loadRedact`, `testNotes`, `--title-out`), `.github/workflows/release.yml` (title from `verify`), `scripts/test-changelog.js`, `docs/collaboration.md`, `changelog.d/README.md`, `README.md`, `changelog.d/008-test-builds.md`. Done when the classifier, the off-`main` refusal of a regular tag, the accepted test tag, its masked notes, the cap, the version rule and the previous-release filter are tested, each planted mutation fails the tests, a dry run on a scratch clone with a local test tag (never pushed) gives the notes, and `npm run typecheck && npm run build && npm test` pass. After the merge: the first pushed test tag is the first real check (`[KNOWN GAP]` until then).
+
+## 2026-10-24: macOS nightly UI regression (#683)
+
+- [ ] T106: correct the macOS-only assertion in `scripts/shots-074-navigator.js`: synthetic ⌘⌫ must reach the editable field without being prevented or closing the chat; verify normal Backspace edits text, while Windows/Linux continue to assert Ctrl+Backspace deletes a word. Add the platform limitation to `docs/agent-notes.md` and a changelog fragment. Done when the navigator driver passes locally on macOS, `npm run typecheck && npm run build && npm test` pass, and a post-merge nightly UI run on `main` passes on all three OSes.
