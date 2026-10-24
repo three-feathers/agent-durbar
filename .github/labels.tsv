@@ -4,6 +4,7 @@ task	1d76db	One Spec Kit task (a Tnnn line in specs/NNN-*/tasks.md)
 status:claimed	fbca04	Someone has claimed this (assignee set). Pick another issue.
 status:blocked	b60205	Blocked: see the comment for what is needed
 needs-owner-approval	d93f0b	Needs the maintainer's written yes first (purchase, release, account, settings)
+incident	e11d48	Confirmed user impact in a published release requiring immediate intervention; not every bug
 spec-exempt	cfd3d7	PR with no behavior change, exempt from the spec presence check (reviewer must agree)
 area:ui	c5def5	Renderer, office view, chat, screens
 area:adapters	c5def5	Agent adapters and events (Copilot, Claude, Codex)

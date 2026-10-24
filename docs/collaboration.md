@@ -33,7 +33,8 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
    gh issue edit N --add-assignee @me --add-label status:claimed
    ```
    Check the issue has exactly one assignee (you). If someone else is also there, back off.
-   **Label what you open** (issues and PRs alike): one type (`bug`, `enhancement`, `task`, `documentation`, `question`; `documentation` is for README, `docs/` and guides, a spec-only PR is a `task`), at least one `area:*` and `spec:NNN` for every spec it touches; flags (`status:*`, `needs-owner-approval`, `spec-exempt`, `docs-n/a`, `accessibility`) only when true. The full list is in AGENTS.md, *Labels*.
+   **Label what you open** (issues and PRs alike): one type (`bug`, `enhancement`, `task`, `documentation`, `question`; `documentation` is for README, `docs/` and guides, a spec-only PR is a `task`), at least one `area:*` and `spec:NNN` for every spec it touches; flags (`status:*`, `needs-owner-approval`, `spec-exempt`, `docs-n/a`, `accessibility`, `incident`) only when true. The full list is in AGENTS.md, *Labels*.
+   For bug reports, use the Bug form's deployment-context, version/tag and impact fields when known. `Unknown` is valid. Check the issue and comments; ask the reporter for a missing version when practical, but do not block a fix or infer a release from dates.
 3. **Branch** `NNN-slug`, where NNN is the spec number from the issue label `spec:NNN`, in its own worktree:
    ```bash
    git switch main && git pull
@@ -51,6 +52,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
 
 ## Team norms
 
+- **DORA incident and deployment rework records** (proposed in spec 021 FR-051..FR-053): keep `bug` as the issue type and add the optional `incident` label only for confirmed user impact in a published release that required immediate intervention. On the issue, use the `DORA triage` fields in AGENTS.md for affected release tag(s), suspected introducing PR (or `Unknown`), fixing PR, recovery release tag, and whether a corrective published release was unplanned (`Yes` / `No` / `Unknown`). The fixing PR uses `Closes #N`; it may not be the introducing PR. At release preparation, classify by purpose: a fix in the normal planned release is not deployment rework; an unplanned release intentionally cut to respond to an incident is. Count each published user-accessible release once in the denominator, including prereleases, and count each distinct corrective release tag marked `Yes` once in the numerator. Drafts and unpublished tags do not count; a test build counts only if made available to users/testers. PR review revisions are pre-deployment work, not DORA deployment rework. Never guess when evidence is missing.
 - **Write team decisions down the same day** as a dated FR in spec 021 (FR-037), and in [AGENTS.md](../AGENTS.md) if it changes how agents work.
 - **Review teammates' PRs first, one list per round** (FR-042, FR-043): a teammate's PR waiting for review comes before new work; each review round is one chat message in landing order, and agents say `taking #N` before reviewing.
 - **Land before building** (FR-039): at most 8 open PRs per side, at most 5 of them new features waiting for a first review; over that, only fix and land.
