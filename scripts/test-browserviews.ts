@@ -66,6 +66,14 @@ assert.deepStrictEqual(h.windowOpen({ url: 'file:///etc/passwd', disposition: 'f
 assert.deepStrictEqual(h.windowOpen({ url: 'javascript:alert(1)', disposition: 'background-tab' }), { action: 'deny' });
 assert.deepStrictEqual(loaded, ['https://example.com/a'], 'a popup or a refused scheme never loads');
 assert.deepStrictEqual(popups, ['https://example.com/b'], 'only http(s) popups are reported (an Open offer); refused schemes are dropped');
+// a same-origin popup with features (new-window) is not a tab: offered, never loaded in the view (review of PR #696)
+{
+  const l2: string[] = [], p2: string[] = [];
+  const h2 = buildViewHandlers({ sim: false, currentUrl: () => 'https://example.com/page', loadInView: (u) => l2.push(u), onPopupBlocked: (u) => p2.push(u) });
+  assert.deepStrictEqual(h2.windowOpen({ url: 'https://example.com/c', disposition: 'new-window', referrer: { url: 'https://example.com/page' } }), { action: 'deny' });
+  assert.deepStrictEqual(l2, [], 'a same-origin new-window popup does not load in the view');
+  assert.deepStrictEqual(p2, ['https://example.com/c'], 'a same-origin new-window popup is offered');
+}
 // framebusting: only the view's own top-level origin may load a tab popup in the view
 {
   const before = loaded.length;

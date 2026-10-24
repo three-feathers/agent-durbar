@@ -66,6 +66,8 @@ Throwaway probe, not merged. `sim:` Electron 44.8.0, Chromium 152.0.7977.167, Li
   - **Teardown:** `webContents.close({ waitForBeforeUnload: false })` on a page with a `beforeunload` handler fired no `will-prevent-unload`, and the view was destroyed (one run).
   - **Not checked (`[KNOWN GAP]`):** that the user's OK or Cancel on the native dialog reaches the page (no `xdotool` here, so the box could not be pressed); what the native box shows (title, origin) - I did not read its text, only its size and position; whether `-cancel-dialogs` closes it; the dialog's stay time over several runs (one run: about 10 s, until the process exits).
 
+- `sim:` popup probe (2026-10-24, review of PR #696; Electron 44.9.1 under Paco's probe, 44.8.0 under ours; Xvfb; one run): a cross-origin iframe's `window.open` (with or without a gesture) and opens from its `data:`, `blob:`, `srcdoc` and sandboxed children are offered, not loaded; a same-origin top-level `window.open` and a same-origin `target=_blank` link load in the view; `rel=noreferrer` links and every `_blank` link of a `Referrer-Policy: no-referrer` page have an empty referrer and are offered (fail closed). After teardown the partition session has 0 Durbar listeners and its deny-all handlers still deny; the heap levels off at about 6 KB per session over 3×50 sessions.
+
 ### R1b. Mechanisms after the probe (2026-10-24, for the spec delta)
 
 Nothing here ran; each choice is checked by T007 before the task that builds it.
