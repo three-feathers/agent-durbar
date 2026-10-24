@@ -88,10 +88,12 @@ assert.strictEqual(maskMcpError(undefined), undefined);
   // 1 MB of URL-like text: cut to the card limit before the pattern masks, so it stays fast
   {
     maskMcpEvent(card({ output: '?a=&'.repeat(25_000) }), [HDR]); // warm the regexes
-    const t0 = Date.now();
-    const big = maskMcpEvent(card({ output: '?a=&'.repeat(250_000) }), [HDR]) as unknown as { output: string };
-    // the old order took ~700 ms; ~20-170 ms now depending on machine load, so 400 ms still catches the slow path without flaking
-    assert.ok(Date.now() - t0 < 400, `1 MB output masked in ${Date.now() - t0} ms`);
+    // CPU time against a 100 KB baseline from the same run, with a generous floor: the old order took ~700 ms, so this catches the slow path without timing the machine
+    const cpuMs = (f: () => void): number => { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); return (d.user + d.system) / 1000; };
+    const a = cpuMs(() => void maskMcpEvent(card({ output: '?a=&'.repeat(25_000) }), [HDR]));
+    let big!: { output: string };
+    const t = cpuMs(() => { big = maskMcpEvent(card({ output: '?a=&'.repeat(250_000) }), [HDR]) as unknown as { output: string }; });
+    assert.ok(t < Math.max(400, a * 20), `1 MB output masked in ${t} ms CPU (100 KB: ${a} ms)`);
     assert.ok(big.output.length <= MCP_CARD_MAX_CHARS + 20, 'cut to the card limit');
     const sec = maskMcpEvent(card({ output: 'w '.repeat(30_000) + 'k=' + HDR + ' ' + GH }), [HDR]) as unknown as { output: string };
     assert.ok(!sec.output.includes(HDR) && !sec.output.includes('ghp_'), 'a secret past the cut leaves nothing');

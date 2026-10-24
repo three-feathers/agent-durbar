@@ -106,6 +106,8 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 ## Changes
 
+- **2026-10-24, test only (branch 021-flaky-timing)**: the FR-024 linear-time checks and the `maskEditInfo` cost check in `scripts/test-edits.ts` measure CPU time (with a wall backstop) and compare with a baseline from the same run, instead of bare wall-clock bounds that failed under a parallel `npm test`. No behaviour change.
+
 ### 2026-10-19: Stop and End session from the office card menu (issue #251, task T026)
 
 *Missing:* Stop and End session were only in the chat header (FR-009), so stopping or ending an agent meant opening its chat first. The office card menu (right-click on a card or a list row, spec 030 FR-022) offered only the permission modes and *Model and context…*.

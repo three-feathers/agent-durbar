@@ -1,0 +1,1 @@
+- Tests: the edit-masking and MCP-output-masking speed checks measure CPU time against a baseline from the same run, so a loaded parallel run no longer fails them (specs 005, 019; test only).
