@@ -1265,6 +1265,8 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .answer-bar[hidden]{display:none}
 .answer-bar .ab-q{flex:1 1 280px;min-width:0;font-size:13px;line-height:1.4;color:var(--ink);max-height:8.6em;overflow:auto;overflow-wrap:break-word}
 .answer-bar .ab-q b{color:var(--amber-ink)}
+/* spec 052 FR-176: a long session name is cut on one line with an ellipsis (its title holds the whole name); the count and the verb stay readable */
+.answer-bar .ab-q .ab-n{display:inline-block;max-width:50%;vertical-align:bottom;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .answer-bar .ab-act{display:flex;gap:6px;flex-wrap:wrap}
 .answer-bar .btn{height:var(--h-ctl)} /* spec 052 FR-076 */
 .answer-bar .btn.ghost{background:transparent;border-color:transparent;text-decoration:underline;color:var(--ink-2)}

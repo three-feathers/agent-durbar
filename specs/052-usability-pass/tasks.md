@@ -326,4 +326,4 @@
 - [x] T180 Mac: a double-click on a drag area (not on a control) sends `window:titleDoubleClick`; main zooms, minimizes or does nothing by `AppleActionOnDoubleClick` (`titleDoubleClickAction`, unit-tested); channel open under the simulator; changelog fragment [FR-085 fix, 2026-10-23]
 
 ## FR-176: the answer bar cuts a long session name with an ellipsis (2026-10-23, issue #540)
-- [ ] T181 Answer bar: the session name in its own one-line span cut with `…` and titled with the full name; count and verb outside the cut; find and remove the mid-word cut; rule `answer-bar-name` in `check:ui-text` on `chat-title-long` (question and permission), mutation checks; before/after shots at 1440x900 and 1280x800 [FR-176]
+- [x] T181 Answer bar: the session name in its own one-line span cut with `…` and titled with the full name; count and verb outside the cut; find and remove the mid-word cut; rule `answer-bar-name` in `check:ui-text` on `chat-title-long` (question and permission), mutation checks; before/after shots at 1440x900 and 1280x800 [FR-176]
