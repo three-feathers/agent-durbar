@@ -115,6 +115,7 @@ const FROM_APP = [
   'app:dismissSinceAway', 'app:sinceAway',
   'browser:back', 'browser:bounds', 'browser:consentAccept', 'browser:leaveAnswer', 'browser:snapshot', 'browser:forward', 'browser:mute', 'browser:navigate', 'browser:open', 'browser:openSystem', 'browser:overlay', 'browser:reload', 'browser:state', 'browser:stop', 'browser:visible', // spec 080 T014 FR-003: the session browser answers the app's own page only
   'harness:accounts', 'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run',
+  'notes:add', 'notes:delete', 'notes:deleteAll', 'notes:list', 'notes:save', 'notes:startOver', 'notes:update', // spec 083 FR-062: the folder's notes, by agent id
   'profiles:create', 'profiles:delete', 'profiles:generate', 'profiles:save', // spec 043 FR-011, FR-040: writes to (or deletes) profile files
   'schedules:remove', 'schedules:runNow', 'schedules:save',
 ];

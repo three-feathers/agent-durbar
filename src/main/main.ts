@@ -25,6 +25,9 @@ import { register as registerPreviousIpc } from './ipc/previous';
 import { register as registerProfilesIpc } from './ipc/profiles';
 import { createProfileFreshness } from './profilefiles';
 import { register as registerSlashIpc } from './ipc/slash';
+import { register as registerNotesIpc } from './ipc/notes';
+import { NotesOps } from './notesops';
+import { NotesStore } from './notesstore';
 import { register as registerQuestionsIpc } from './ipc/questions';
 import { register as registerRemoteIpc } from './ipc/remote';
 import { register as registerSchedulesIpc } from './ipc/schedules';
@@ -128,6 +131,8 @@ let mcpStore: McpStore | undefined;
 let usageStore: UsageStore | undefined;
 /** Credit totals per folder kept across restarts (spec 011 FR-025, issue #21). */
 let usageTotalsStore: UsageTotalsStore | undefined;
+/** Notes per folder (spec 083, issue 699), created when the app is ready. */
+let notesOps: NotesOps | undefined;
 let agentTrust: AgentTrustStore | undefined;
 /** Local activity log (spec 052 FR-071): permission answers, automatic approvals, mode and limit changes. Created when the app is ready. */
 let activityStore: ActivityStore | undefined;
@@ -690,6 +695,7 @@ function oneShotFor(id: string): { name: string; generate: (prompt: string) => R
 }
 registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id), profileFreshness });
 registerSlashIpc({ agents, router, ensureLive }); // spec 073
+registerNotesIpc({ getOps: () => notesOps }); // spec 083
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey });
 registerAdaptersIpc({ adaptersList });
 registerFoldersIpc({ browserGone, agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
@@ -898,6 +904,13 @@ app.whenReady().then(() => {
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));
   usageStore.load();
   usageTotalsStore = new UsageTotalsStore(path.join(app.getPath('userData'), 'durbar-usage-totals.json'));
+  // spec 083: notes are masked with the folder's and the session's known secret values before they are stored (FR-005); the window is told which folder changed
+  const notesStore = new NotesStore(path.join(app.getPath('userData'), 'notes'), { onChanged: (fingerprint) => toRenderer('notes:changed', { fingerprint }) });
+  notesOps = new NotesOps({
+    agents, store: () => notesStore, resumeIdFor, adapterIdOf: (id) => router.adapterIdOf(id),
+    folderValues: (key) => mcpStore?.knownSecretValues(key) ?? [], // FR-005: never decrypts, so no keychain prompt from a notes save
+    sessionValues: (id) => (mcpStore?.noPrompt() ? mcp.secretValuesFor(id) : []), // forSession could unlock the vault: only when it cannot
+  });
   appState = new AppStateStore(path.join(app.getPath('userData'), 'durbar-app-state.json'));
   appState.load();
   const startedAt = Date.now();
