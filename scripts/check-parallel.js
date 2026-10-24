@@ -32,7 +32,7 @@ const JOBS = Math.max(1, Number(process.env.CHECK_JOBS) || Math.min(4, Math.floo
 const TIMEOUT_MS = (Number(process.env.CHECK_TIMEOUT) || 900) * 1000;
 const MB = 1024 * 1024;
 const START_MIN = 1536 * MB, PANIC_MIN = 600 * MB;
-const WAIT_MAX_MS = 120 * 1000; // a worker holding a job waits this long for START_MIN, then runs it anyway
+const WAIT_MAX_MS = 120 * 1000; // a worker holding a job waits this long for START_MIN, then runs it only when no other job is running
 const WIN = process.platform === 'win32';
 
 /**
@@ -78,7 +78,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * Wait until `avail()` reaches `min`, at most `maxMs` (spec 008 FR-125: a worker that holds a job must never wait forever).
  * Returns true when the memory came, false when the bound passed. `now` and `wait` are for tests. The panic guard still stops the
- * newest job if memory then runs low, so running anyway cannot freeze the machine.
+ * newest job if memory then runs low, and past the bound a job starts only when nothing else runs, so this cannot freeze the machine.
  */
 async function waitForMemory(avail, min, maxMs, { now = Date.now, wait = sleep, step = 2000 } = {}) {
   const t0 = now();
