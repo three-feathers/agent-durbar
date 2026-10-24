@@ -1,0 +1,1 @@
+- **`check:themes` no longer hangs on macOS** (spec 008 FR-125/FR-126, #670): available memory there counts free, inactive and speculative pages from `vm_stat` (not free pages only), and a parallel worker that has waited 120 s for memory runs its job anyway with a warning instead of waiting forever. Tested on text samples; not yet run on a Mac.
