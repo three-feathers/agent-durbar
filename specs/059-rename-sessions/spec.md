@@ -274,6 +274,13 @@ FR-023) use the new name; Resume opens an agent with that name.
   with an ellipsis. The full name stays in the existing tooltip (`nameTipAttr`, spec 052 FR-168). Card widths do not change; a full card's name stops at 2 lines, so a card with a long name can only get shorter. `simnames=long`
   (FR-016) gives the third agent (it waits for you, so it is also in the inbox) no alias and a long first-prompt **title** (over 60 characters, which a title may be) that holds one URL-like token (no real address, `example.invalid`); the full-layout cases force `density=full` so they do not depend on grown desks (spec 001, #532), and `check:office` fails when any `.name` on a card overflows
   its box or takes more than 2 lines on a full card (explicit `line-height:18px`) at 1440x900 and 1280x800.
+- **FR-020** Inline rename from the chat header (issue #595). When the selected session can be renamed, its title is a keyboard-accessible button named
+  "Rename session <name>"; clicking it or pressing Enter, Space, or F2 while it is focused replaces the title with an input containing the current
+  display name, selected. Enter saves; clicking or tabbing outside saves and leaves focus on the outside control; Escape cancels. Enter-save returns
+  focus to the title. The existing Rename… menu entries remain. Inline and dialog rename use the same `sessions:rename` bridge and FR-002 validation;
+  an invalid value is not saved and the editor stays open with its reason announced. Helpers and sessions that cannot be renamed are not controls.
+  The title keeps its existing alias/runtime tooltip and adds the inline-edit instructions. The input does not increase the header height, and focusing
+  the title when opening a chat never starts editing.
 
 ### Key Entities
 
@@ -369,3 +376,12 @@ gets a pointer. Fix: line clamp on full cards, ellipsis elsewhere, simulator nam
   took `docs/screenshots/059-long-url-name-{before,after}-{1440x900,1280x800}.png` (and `-inbox-` after). Before the fix the name ran 4 lines and out of its card.
 - `test:` the Needs you inbox row (`.ib-n`), the Schedules dialog (row and the "Send to" hint) and the Settings schedule row were checked with the URL-like first prompt (agent 3, which waits for you) and a schedule whose prompt is one long token, at both sizes, by `scripts/shots-059-long-url.js` (in `check:ui`). It guards the Schedules list rows against a prompt that is one long token: that overflow was already fixed on main by spec 044 T047 (`.sched-dlg .sc-list{grid-template-columns:minmax(0,1fr)}`, #531); removing that rule makes this driver fail.
 - `[KNOWN GAP]` The OS notification text and the activity log were read, not rendered (plain text, no layout).
+
+### 2026-10-24: inline rename from the chat header (issue #595)
+
+Owner (Vikram, 2026-10-24) chose to save when the user clicks outside, like renaming a folder in an OS file manager. The chat-header
+title becomes a keyboard-accessible inline rename control for eligible sessions; Enter, Space, or F2 starts editing, Enter or clicking
+outside saves, and Escape cancels. Outside-save keeps focus on the clicked control; Enter-save returns focus to the title. The existing
+Rename… menu and its dialog remain, and both entry points share the same rename bridge and FR-002 validation. Helpers remain non-editable.
+The control preserves the existing alias/runtime tooltip, adds its keyboard instructions, and must not change header height. Add T062; verify
+both sizes, accessibility, validation, and save/cancel behavior in the simulator.

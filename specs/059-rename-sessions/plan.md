@@ -112,3 +112,19 @@ adapter and contract tests, `test:activity`); `npm run check:office` with 60-cha
 | --- | --- | --- |
 | `inApp` flag and sync rule | lets a later rename in the CLI win over a stale Durbar copy, while a Durbar-only name stays put | dropping the local copy after an app rename loses the activity-log name (FR-012) and the instant display |
 | Two capability values (`any`, `next-turn`) | Claude applies the name at its next launch, Copilot and Codex now | one boolean would make the dialog promise a rename in Claude that has not happened yet |
+
+## Delta: inline chat-header rename (#595)
+
+Keep the existing `renameSessionUi` dialog and its More/card/Previous-session entries. Add a chat-header title control for eligible
+main sessions that starts a local inline editor by click, Enter, Space, or F2; opening a chat and programmatically focusing the title
+must not start an edit. Factor the IPC request and successful-result handling so the dialog and inline editor both use
+`bridge.renameSession` and the same FR-002 validation, rather than adding a second rename path.
+
+The editor uses a bounded text input and retains the header's existing height. Enter saves and returns focus to the title; Escape
+cancels and restores the title. Blur saves on an outside click or tab navigation, leaving focus on the outside control as native
+rename interactions do. Invalid input remains in the editor, receives the shared validation reason, and is not submitted. The
+title's accessible name identifies the rename action; its tooltip keeps `nameTip` information and adds the save/cancel instructions.
+
+Extend `scripts/check-rename.js` at both viewport sizes and detail levels to check click and keyboard entry, selected input text,
+Enter, outside-save, Escape, invalid and empty values, non-editable helpers, focus behavior, accessible name, and unchanged header
+height. Retake the linked documentation screenshots that show the chat header with `npm run shots:docs`.
