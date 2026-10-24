@@ -67,13 +67,13 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     Every other MCP call is still denied in Read-only.
   - AC1: an owner PR on `.specify/memory/constitution.md` (an owned path, CODEOWNERS) through `/speckit.constitution`, with a MINOR version bump and the Sync Impact Report. It cites Vikram's approval (PR #647 comment) and Ruben's delegation (#556).
   - AC2: T030 may merge before it, with `BROWSER_READONLY_READS = false`. The PR that sets the constant to `true` (a one-line change plus its tests) does not merge before T006.
-- [ ] T007 Follow-up simulator probe of the mechanisms the 2026-10-24 delta chose (throwaway code, not merged, as T010: FR-010's `webPreferences` with `disableDialogs: true`, `xvfb-run -a`, never `:99`, localhost only). Results go into research.md R1a/R1b as `sim:`, with the Electron version and T010's limits. [FR-010, FR-025d, FR-066a]
-  - AC1 (before T012 merges): `alert` and `confirm` in a **shown** and a **hidden** view, without and with `Page` enabled: no new X window is mapped (window list of the Xvfb root before and after, plus the screenshot diff T010 AC13 used); `confirm` returns `false` and `alert` returns at once (the script is not pending); whether `Page.javascriptDialogOpening` still arrives, and whether a `Page.handleJavaScriptDialog` sent after it errors harmlessly. If the event does not arrive, FR-025d drops the note (spec delta) and T012 does not wait for it.
-  - AC2 (before T012 merges): with `disableDialogs: true`, a `beforeunload` page plus `will-prevent-unload` `preventDefault()` still navigates and shows nothing (FR-025e).
+- [ ] T007 Follow-up simulator probe of the mechanisms the 2026-10-24 delta chose (throwaway code, not merged, as T010: FR-010's `webPreferences` (no `disableDialogs`), `xvfb-run -a`, never `:99`, localhost only). Results go into research.md R1a/R1b as `sim:`, with the Electron version and T010's limits. [FR-010, FR-025d, FR-066a]
+  - AC1 (before T012 merges; FR-025d as the owner decided, no `disableDialogs`): a `confirm` in a **hidden** view while another view is shown: is the native dialog drawn over the shown chat, where, and does it stay until answered (window list of the Xvfb root plus the screenshot diff T010 AC13 used); and in a shown view, that the user's answer (OK and Cancel, through simulated input on the dialog if possible) reaches the page.
+  - AC2 (before T012 merges): while the agent drives, `alert`, `confirm` and a `beforeunload` on an agent navigation are answered through `Page.handleJavaScriptDialog` (`false`, `false`, `true`): the script is released, the navigation proceeds, and **how long the native dialog stays drawn** after the answer (several runs; T010 saw 1.5 s or more), and whether `-cancel-dialogs` closes it.
   - AC3 (before T035): `webContents.setBackgroundThrottling(false)` called **at run time** on an attached, hidden view makes `Input.dispatchMouseEvent` answer and `requestAnimationFrame` run; record whether it also changes the app page's frame rate (Electron's "affects all `WebContents` in the host `BrowserWindow`" note) and whether `setBackgroundThrottling(true)` afterwards restores throttling.
   - AC4 (before T038): Watch-only: with `Input.setIgnoreInputEvents{ignore:true}` a `sendInputEvent` click is ignored; the sequence `ignore:false`, `Input.dispatchMouseEvent` press and release, `ignore:true` on one debugger session counts the CDP click; record whether `Input.insertText` is blocked while ignoring, and whether `before-input-event` `preventDefault()` stops `sendInputEvent` keys and fires for `Input.dispatchKeyEvent`.
   - AC5: zero credits; no process left (checked by PID).
-  - AC6: a failed AC gets a spec delta before the task named in it (AC1-AC2: T012, AC3: T035, AC4: T038; FR-066a's fallback is the input-shield view).
+  - AC6: a failed AC gets a spec delta before the task named in it (AC1-AC2: T012, AC3: T035, AC4: T038; FR-066a's fallback is the input-shield view). AC1-AC2 results update FR-025d's two `[KNOWN GAP]`s.
 - [ ] T008 Identify the two default-profile files of T010 AC9 **without reading their contents** (throwaway probe as T010). [FR-022, FR-023a]
   - AC1: names, sizes and modification times of `Cache/Cache_Data/<hash>_0` and `.org.chromium.Chromium.Network Persistent State.<random>` (and the final `Network Persistent State` file, if any) for: no view; a view that loads nothing; views that load test pages on hosts whose names differ in length by at least 40 characters (`a.localhost` against a long `*.localhost` name). A size that follows the host name length means the file holds host data.
   - AC2: whether they come from the default session's network context (a run with only the app window and a `session.defaultSession` request, no view), recorded.
@@ -113,11 +113,11 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 
 **What the 2026-10-24 delta (T010 results) changes in Phase 1 now:**
 
-- **T012** builds FR-025d as rewritten: `disableDialogs: true` in the options builder; every `Page.javascriptDialogOpening` is answered at once with `accept: false` and becomes a bar note, for shown and hidden views alike; no held dialog, no *Dialog waiting* marker, no OK/Cancel/prompt field. T007 AC1-AC2 must pass before T012 merges. The builder does **not** set `backgroundThrottling` (Phase 1 views stay throttled).
+- **T012** builds FR-025d as the owner decided (Vikram, 2026-10-24): no `disableDialogs`; the user answers native dialogs, shown or hidden view. Phase 1 has no agent control, so main never answers a dialog in Phase 1; the `Page.javascriptDialogOpening` handler is built and unit-tested now (it answers only when the driver is `agent`). T007 AC1-AC2 must be recorded before T012 merges. The builder does **not** set `backgroundThrottling` (Phase 1 views stay throttled).
 - **T013**'s unload picker carries the `browser_type`-since-load flag (FR-011), always false in Phase 1, so Phase 2 does not reopen the picker.
-- **T015** shows the dialog note in the bar (icon and word, page text, *Open in system browser*).
-- **T018** adds `confirm` and `prompt` test pages next to the `alert` one; its driver checks the note and that `confirm` returned `false`.
-- **T019**: the README's known limits say dialogs are dismissed (`confirm` cannot be answered; `prompt` is unsupported) and do not claim "nothing on disk" beyond the session's partition until T008 closes FR-023a's gap. T008 comes before T019.
+- **T015** has the bar's dialog note ready (icon and word, page text); it shows only when main answered a dialog for the agent (Phase 2).
+- **T018** adds `confirm` and `prompt` test pages next to the `alert` one; its driver checks that a native dialog appears for the user and that `prompt()` throws.
+- **T019**: the README's known limits say a hidden session's system dialog can show over another chat, a dialog answered for the agent may stay drawn briefly, and `prompt()` is unsupported; they do not claim "nothing on disk" beyond the session's partition until T008 closes FR-023a's gap. T008 comes before T019.
 - **Not Phase 1:** FR-066a's Watch-only mechanism (T038), FR-061's in-flight rule and `insertText` note (T038), the throttling toggle (FR-041's switch, T037), headless (FR-110, Phase 4), and T010 AC10 and AC14 (T060 AC3, T043 AC7).
 
 - [x] T011 [P] [US1] Address parsing in `src/shared/browserurl.ts` and the view navigation predicate `viewNavigationAllowed(url, isMainFrame)` in `src/main/hardening.ts`, with `scripts/test-browserurl.ts` (which also covers the 045-owned `viewNavigationAllowed`, spec 045 FR-061). [FR-005, FR-024]
@@ -133,7 +133,8 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC6: linear time on 1 MB input (CPU-time check, `docs/agent-notes.md` timing rule).
 - [ ] T012 [US1] `src/main/browser/views.ts`: lazy view per session, partition, hardening, teardown. [FR-001, FR-004, FR-010, FR-012, FR-020, FR-021, FR-023, FR-025..FR-029]
   - AC1: `webPreferences` are exactly FR-010's, from a pure options builder with a unit test:
-    - `sandbox`, `contextIsolation`, `webSecurity`, `disableDialogs`, `safeDialogs` true;
+    - `sandbox`, `contextIsolation`, `webSecurity`, `safeDialogs` true;
+    - no `disableDialogs` key (FR-025d, owner decision 2026-10-24);
     - no `backgroundThrottling` key (Electron's default; FR-010's run-time toggle is Phase 2);
     - `nodeIntegration`, `webviewTag`, `allowRunningInsecureContent`, `experimentalFeatures`, `navigateOnDragDrop`, `spellcheck` false;
     - `autoplayPolicy: 'user-gesture-required'`;
@@ -149,7 +150,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     - `select-client-certificate` calls `preventDefault()` and `callback()` with no certificate;
     - `select-bluetooth-device`, `select-hid-device`, `select-serial-port` and `select-usb-device` call `preventDefault()` with an empty choice;
     - `login` is cancelled;
-    - the debugger is attached at creation after `about:blank`, with only `Page` enabled (FR-042); `disableDialogs: true` dismisses every JS dialog, and each `Page.javascriptDialogOpening` is answered at once with `Page.handleJavaScriptDialog` (`accept: false`, an "already closed" error ignored) and becomes the bar note *The page showed a dialog: "…"* (masked, 120 characters), for every driver and for shown and hidden views alike (FR-025d); a test checks the builder sets `disableDialogs` and that no code path calls `dialog.showMessageBox` for a view;
+    - the debugger is attached at creation after `about:blank`, with only `Page` enabled (FR-042); the `Page.javascriptDialogOpening` handler answers through `Page.handleJavaScriptDialog` **only when the driver is `agent`** (`accept: false` for `alert`/`confirm`, `accept: true` for the `beforeunload` of the agent's own navigation) and otherwise leaves the native dialog to the user (FR-025d); a unit test covers driver `agent`, `user` and `none`, and a test checks the builder sets no `disableDialogs`;
     - `will-prevent-unload` is ignored.
   - AC5: each view gets the Chrome user agent of FR-028 via `setUserAgent`, with no `Electron/` or `agent-durbar/` token (unit test on the UA builder); `app.userAgentFallback` is untouched.
   - AC6: each view starts with `setAudioMuted(true)` (FR-012); the bar toggle is in T015.
@@ -174,7 +175,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC3: the renderer never receives the view's DOM, text, cookies or storage, only URL, title, loading, muted and driver state. The only pixels it gets are FR-008's still picture, as an in-memory image, never written to disk, logged or copied (a test checks the IPC payload types).
 - [ ] T015 [US1] Renderer: tabs, browser bar and pane (`src/renderer/browserpane.js`, `app.js` `openPanel`, `styles.css`, `index.html` script tag). [FR-002, FR-006, FR-007, FR-009, FR-012, FR-090]
   - AC1: `role=tablist` with arrow keys; Chat is the default; Esc behaves as today.
-  - AC2: bar text is at least 10.5px; icon plus word for loading, error, *Sound on/off* and the dialog note of FR-025d (no answer buttons); `prefers-reduced-motion` is respected.
+  - AC2: bar text is at least 10.5px; icon plus word for loading, error, *Sound on/off* and the dialog note of FR-025d (shown only when main answered a dialog for the agent; the user answers the native dialog); `prefers-reduced-motion` is respected.
   - AC3: a `ResizeObserver` sends bounds; full-screen chat works; the tab bar fits a 480px panel.
   - AC4: `check:office` passes with 15 agents, chat open on the Browser tab, at 1440x900 and 1280x800.
   - AC5: screenshots `docs/screenshots/080-browser-*.png` at both sizes, with a driver in `scripts/shots-docs.js` `DOC_SHOTS` if linked.
@@ -198,11 +199,11 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC7: while agent control is on, a chat-link click (FR-058): link-local or metadata is refused with only *Open in system browser*; private asks with the mode's text; loopback opens. Uses T043's classifier.
 - [ ] T018 [US1] [US2] Simulator: test pages and links. [FR-091]
   - AC1: a simulator-only scheme is registered on each view partition only when `DURBAR_SIM` is set, and refused otherwise (test).
-  - AC2: bundled pages for a form (POST), a GET form and a script redirect to another test host, links, a download, a file input, password, `one-time-code` and `cc-number` fields, an element that slides over a button, a `beforeunload` page, an `alert`, a `confirm` and a `prompt` page, a basic-auth challenge and a slow load. The driver checks that each dialog page shows FR-025d's note, that `confirm` returned `false`, and that no window other than the app's is mapped.
+  - AC2: bundled pages for a form (POST), a GET form and a script redirect to another test host, links, a download, a file input, password, `one-time-code` and `cc-number` fields, an element that slides over a button, a `beforeunload` page, an `alert`, a `confirm` and a `prompt` page, a basic-auth challenge and a slow load. The driver checks that each `alert`/`confirm` page raises a native dialog the user can answer (the answer reaches the page) and that `prompt()` throws.
   - AC3: simulated agents print links to them.
   - AC4: a sim driver covers US1 scenarios 1-5 and US2 scenarios 1-3, including SC-002 and SC-004.
 - [ ] T019 [US1] [US2] Docs for Phase 1. [all Phase 1 FRs]
-  - AC1: README feature list and *Safety model*: session browser isolation, wiped at the end, no debugging port, muted, the refused permissions and choosers, only `mailto:` leaves; known limits, including that downloads may not carry Mark-of-the-Web or quarantine, that JS dialogs are dismissed (a `confirm` cannot be answered; `prompt` is unsupported), and, until T008 closes it, that two Chromium files appear in the app's default profile when a view exists (the session's own partition writes nothing).
+  - AC1: README feature list and *Safety model*: session browser isolation, wiped at the end, no debugging port, muted, the refused permissions and choosers, only `mailto:` leaves; known limits, including that downloads may not carry Mark-of-the-Web or quarantine, FR-025d's dialog limits (a hidden session's system dialog can show over another chat; a dialog answered for the agent may stay drawn briefly; `prompt()` is unsupported), and, until T008 closes it, that two Chromium files appear in the app's default profile when a view exists (the session's own partition writes nothing).
   - AC2: a `changelog.d/080-session-browser.md` fragment.
   - AC3: the spec's `specs-index` status; tasks ticked; `[IMPLEMENTED]` tags with `sim:`/`test:` evidence.
 
@@ -268,7 +269,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     - it dispatches at the quad centre.
   - AC4: type uses `DOM.focus` and then `Input.insertText`; press key is limited to the allow-list.
   - AC5: `browser_type` and `browser_press_key` on a password, `one-time-code` or `cc-*` field are refused with *This is a sensitive field; take over to enter it* (fixture page from T018, checked through `DOM.describeNode`).
-  - AC6: while an agent drives, FR-025d's dialog note (from T012's handler) also goes into the tool result of the call that caused it, and no call hangs on an `alert` or `confirm` (sim driver).
+  - AC6: while the driver is `agent`, every `Page.javascriptDialogOpening` is answered with `Page.handleJavaScriptDialog`: `accept: false` for `alert` and `confirm`, `accept: true` for the `beforeunload` of a navigation the agent started; the note goes into the bar and the tool result; no call hangs on an `alert`, `confirm` or `beforeunload` (sim driver). With the driver `user` or `none`, main does not answer (test).
   - AC7: Ask-first requests show the element label as *Page text: "…"*, quoted, cut and masked.
   - AC8: screenshot capped at 2 MB; `wait_for` text or 1-30 s.
   - AC9: every action has a timeout and a clear error.
@@ -288,7 +289,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC4: `McpStore` refuses the reserved name and the helper command, through the existing `reserved` lists of `McpStore.upsert(…, reserved)` and `extraNames(reserved)` (`src/main/mcpstore.ts:364`, `:344`). The ambient Copilot entry is disabled.
   - AC5: the MCP dialogs list it as a built-in, with no edit or remove.
   - AC6: adapter option tests for all three apps.
-  - AC7: turning the switch on asks in every mode with FR-041's confirmation, **No** focused (`askDialog`), with the text for the session's current mode (a test per mode).
+  - AC7: turning the switch on asks in every mode with FR-041's confirmation, **No** focused (`askDialog`), with the text for the session's current mode and the dialog sentence of FR-041 (a test per mode); the switch turns on only after **Yes**.
   - AC8: switching on in Allow all, or switching such a session to Allow all, shows FR-065's one-line warning.
 - [ ] T038 [US4] Driver state, indicator, takeover, hand back, Watch-only, show-on-use (`src/main/browser/driverstate.ts`). [FR-060, FR-061, FR-063, FR-066]
   - AC1: a pure `none`/`agent`/`user` state machine with unit tests:

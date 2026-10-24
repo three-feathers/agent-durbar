@@ -55,13 +55,12 @@ Nothing here ran; each choice is checked by T007 before the task that builds it.
 
 | Option | Safety | Calm UI | FR-046 (no main-world `Runtime`) | Verdict |
 |---|---|---|---|---|
-| A. `disableDialogs: true` on every view; CDP event only for a bar note | No page code, no new surface; nothing can pop over another chat; no call hangs | Nothing drawn; a note in the bar; the user cannot answer `confirm` (`[KNOWN GAP]`) | Fits: only `Page` | **Chosen** |
-| B. Main-world shim via `Page.addScriptToEvaluateOnNewDocument` replacing `alert`/`confirm`, reporting through `Runtime.addBinding` | The page sees and can call the binding (flood, fake messages); bypassable (a script-made `about:blank` iframe's or a new realm's `alert`, a frame the script did not reach), and then the native dialog shows again; `confirm` is synchronous, so a shim cannot wait for the user's answer anyway | Same result as A when it works, a native box when bypassed | An exception: script in the main world plus a `Runtime` binding | Rejected |
-| C. Native dialogs for the shown, user-driven view; A or B for hidden views | `webPreferences` are fixed at creation, so `disableDialogs` cannot follow the driver or visibility; a view hidden while its box is open leaves the box over another chat | A free-standing box with no parent window (T010 AC13) | A: fits; B: as above | Rejected |
-| D. Override the private `-run-dialog` listener | Undocumented, internal (hyphen-prefixed), can change in any Electron release | Could draw an in-bar answer | Fits | Rejected (unsupported API) |
-| E. CDP only (`Page.handleJavaScriptDialog`), the earlier FR-025d | Native box still drawn and stays mapped (T010 AC13) | Fails | Fits | Disproved |
+| A. `disableDialogs: true` on every view; CDP event only for a bar note | No page code; nothing pops over another chat; no call hangs | Nothing drawn, but the user can never answer a dialog | Fits | Chosen first, then **rejected by the owner** (Vikram, 2026-10-24, team chat and PR #682: "a deal breaker, because it takes dialogs away from humans") |
+| B. Main-world shim via `Page.addScriptToEvaluateOnNewDocument` replacing `alert`/`confirm`, reporting through `Runtime.addBinding` | The page sees and can call the binding; bypassable (new frames or realms), and then the native dialog shows anyway; a synchronous `confirm` cannot wait for the user | Same as A when it works | An exception: main-world script plus a `Runtime` binding | Rejected |
+| C. Native dialogs for the user; `Page.handleJavaScriptDialog` answers them only while the agent drives (`false` for `alert`/`confirm`, `true` for the `beforeunload` of its own navigation), with a note in the bar and the tool result | No page code; the user keeps every dialog | `[KNOWN GAP]`s: a hidden session's dialog can show over another chat, and a CDP-answered dialog may stay drawn briefly (T010 AC13); FR-041's confirmation says so | Fits: only `Page` | **Chosen** (owner decision, 2026-10-24) |
+| D. Override the private `-run-dialog` listener | Undocumented, internal, can change in any Electron release | Could draw an in-bar answer | Fits | Rejected (unsupported API) |
 
-Open for T007: whether `Page.javascriptDialogOpening` still arrives under `disableDialogs` (Chromium's devtools handlers are told before the embedder's dialog manager, `read:` not checked in source), and that no window is mapped.
+`prompt()` is unsupported in either case: the renderer throws "prompt() is not supported." (T010 AC8 `sim:`) and the main-process handler refuses the `prompt` type (`read:`). T007 AC1-AC2 measure C's two gaps.
 
 **Watch-only (FR-066a).**
 
