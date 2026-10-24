@@ -523,6 +523,14 @@ process.on('exit', () => {
     assert.ok(post.body.includes('Got 2 field(s)') && post.body.includes('a &lt;b&gt;') && !post.body.includes('<b>'), 'the POST page counts fields and escapes them');
     assert.ok((await simPage('durbar-sim://pages/form', 'POST', '%E0%A4%A')).status === 200, 'a malformed body does not throw');
     assert.ok((await simPage('durbar-sim://pages/getform?q=%3Cscript%3E')).body.includes('&lt;script&gt;'), 'the GET form escapes');
+    {
+      /* the alert page's script holds page text: it must not be able to end the <script> (CodeQL js/bad-code-sanitization) */
+      const al = await simPage('durbar-sim://pages/alert?html=1&ms=10');
+      const inline = /<script>([\s\S]*?)<\/script>/.exec(al.body);
+      assert.ok(inline && inline[1].includes('alert('), 'the alert page has its inline script');
+      assert.ok(!/<\/|<!--|<img/.test(inline![1]), 'no </script>, <!-- or markup inside the alert script (page text is written with \\u003c)');
+      assert.ok(inline![1].includes('\\u003cimg'), 'the markup in the page text is data, not part of the script');
+    }
     const t0 = Date.now();
     const slow = await simPage('durbar-sim://pages/slow?ms=30');
     assert.ok(Date.now() - t0 >= 25 && slow.body.includes('waited 30 ms'), 'the slow page waits');

@@ -20,6 +20,9 @@ export interface SimResponse {
   body: string;
 }
 
+/* A string as JavaScript source for an inline <script>: JSON.stringify alone leaves `</script>`, `<!--` and the line separators U+2028/U+2029 in place, so the page text could end the script (CodeQL js/bad-code-sanitization). */
+const scriptJson = (v: string): string => JSON.stringify(v).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+
 const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
 function safeDecode(s: string): string {
   try {
@@ -48,7 +51,7 @@ const PAGES: Record<string, (req: { method: string; body: string; query: URLSear
     const n = Math.min(Math.max(Number(r.query.get('n')) || 1, 1), 3);
     const markup = r.query.get('html') === '1' ? ' <img src=x onerror="window.__pwn=1">' : '';
     const msg = (i: number): string => `Delete item ${i}?${markup} token=${FAKE_TOKEN()}`;
-    const script = `var n=${n},i=0;function go(){i++;alert(${JSON.stringify('')}+${JSON.stringify(msg(0))}.replace('item 0','item '+i));if(i<n)setTimeout(go,${ms});}setTimeout(go,${ms});`;
+    const script = `var n=${n},i=0;function go(){i++;alert(${scriptJson('')}+${scriptJson(msg(0))}.replace('item 0','item '+i));if(i<n)setTimeout(go,${ms});}setTimeout(go,${ms});`;
     return html('Alert page', '<p id="result">An alert is coming.</p>', `<script>${script}</script>`);
   },
   '/confirm': () => html('Confirm page', '<button id="ask" onclick="document.getElementById(\'result\').textContent=\'confirm returned \'+confirm(\'Delete this item?\')">Ask</button><p id="result"></p>'),
