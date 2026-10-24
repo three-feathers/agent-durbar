@@ -71,7 +71,7 @@ const TOKEN_SHAPES: Array<RegExp | Guarded> = [
   guarded(shape(String.raw`[0-9]{6,12}${COLON}[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])`), /[0-9]{6}[:%\\]/),
   guarded(new RegExp(String.raw`(?<=${SL}[Bb][Oo][Tt])[0-9]{6,12}${COLON}[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])`, 'g'), /bot[0-9]{6}/i),
   // Discord bot token (the id is the base64 of a numeric id, so its second character is D, T, j or z; the dots may be percent-encoded): base64 user id, `.`, 6-character timestamp, `.`, HMAC (27 or more); the first character is M, N or O.
-  guarded(shape(String.raw`[MNO][DTjz][A-Za-z0-9_-]{22,26}${DOT}[A-Za-z0-9_-]{6}${DOT}[A-Za-z0-9_-]{27,}`), /(?:\.|%(?:25){0,8}2[Ee])[A-Za-z0-9_-]{6}(?:\.|%(?:25){0,8}2[Ee])/),
+  guarded(shape(String.raw`[MNO][DTjz][A-Za-z0-9_-]{21,26}${DOT}[A-Za-z0-9_-]{6}${DOT}[A-Za-z0-9_-]{27,}`), /(?:\.|%(?:25){0,8}2[Ee])[A-Za-z0-9_-]{6}(?:\.|%(?:25){0,8}2[Ee])/),
 ];
 
 function maskShapes(text: string, mask: string, guard: boolean): string {

@@ -343,11 +343,18 @@ assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x'
   assert.strictEqual(redact('Bot ' + DBOT, {}), 'Bot [redacted]', 'Authorization: Bot <token>');
   for (const dot of ['%2E', '%2e', '%252E', '%25252e']) assert.strictEqual(redact('t=' + DBOT.replace(/\./g, dot) + '&x', {}), 't=[redacted]&x', `discord bot token with ${dot} dots`);
   for (const sec of ['D', 'T', 'j', 'z']) for (const lead of 'MNO') assert.strictEqual(redact(lead + sec + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(30), {}), '[redacted]', `${lead}${sec} id start`);
+  // a 17-digit id (accounts and bots from 2015 and early 2016) is 23 base64 characters (review of PR #679)
+  for (const id of ['N' + 'DU2Nzg5MDEyMzQ1Njc4OTA', 'N' + 'zg5MDEyMzQ1Njc4OTAxMjM']) {
+    const tok = id + '.GaBcDe.' + 'h'.repeat(27);
+    assert.strictEqual(redact('t ' + tok + ' e', {}), 't [redacted] e', 'discord bot token with a 17-digit id');
+    assert.strictEqual(redact('t=' + tok.replace(/\./g, '%2E') + '&x', {}), 't=[redacted]&x', 'discord bot token with a 17-digit id and %2E dots');
+    assert.strictEqual(redact('{"t":"' + tok + '"}', {}), '{"t":"[redacted]"}', 'discord bot token with a 17-digit id in JSON');
+  }
   assert.strictEqual(redact('N' + 'T' + 'a'.repeat(22) + '.abcdef.' + 'b'.repeat(27) + 'c'.repeat(30), {}), '[redacted]', 'a longer HMAC is masked whole');
-  for (const [idLen, hmacLen] of [[23, 27], [27, 27], [24, 38], [24, 60]]) {
+  for (const [idLen, hmacLen] of [[22, 27], [23, 27], [27, 27], [24, 38], [24, 60]]) {
     assert.strictEqual(redact('x ' + 'M' + 'T' + 'a'.repeat(idLen - 1) + '.abcdef.' + 'b'.repeat(hmacLen) + ' y', {}), 'x [redacted] y', `discord bot token with a ${idLen + 1}-character id and a ${hmacLen}-character HMAC`);
   }
-  for (const ok of ['Org.Example.Foo', 'Microsoft.Extensions.Logging.Abstractions.Something', 'M' + 'T' + 'a'.repeat(23) + '.abcdefg.' + 'b'.repeat(30), 'M' + 'T' + 'a'.repeat(23) + '.abcde.' + 'b'.repeat(30), 'M' + 'T' + 'a'.repeat(21) + '.abcdef.' + 'b'.repeat(30), 'M' + 'a'.repeat(24) + '.abcdef.' + 'b'.repeat(30),
+  for (const ok of ['Org.Example.Foo', 'Microsoft.Extensions.Logging.Abstractions.Something', 'M' + 'T' + 'a'.repeat(23) + '.abcdefg.' + 'b'.repeat(30), 'M' + 'T' + 'a'.repeat(23) + '.abcde.' + 'b'.repeat(30), 'M' + 'T' + 'a'.repeat(20) + '.abcdef.' + 'b'.repeat(30), 'M' + 'a'.repeat(24) + '.abcdef.' + 'b'.repeat(30),
     'MainActivityControllerImpl.helper.SomeVeryLongClassNameHereXYZ1', 'MyComponentPackageNameHere.module.webpack-chunk-abcdefghijklmnop.js',
     'org.apache.commons.MathUtilsHelperClassName.common.LongerArtifactNameIsHereOkay', 'NorthwindTradersMarketing.static.MarketingWebsiteCdnAssetsBucketName.com',
     'M' + 'T' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(26), 'X' + 'T' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(30), 'v1.2.3 N1.2.3 file.tar.gz', 'aM' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(30)]) {
