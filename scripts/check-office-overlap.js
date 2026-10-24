@@ -144,8 +144,37 @@ function pageCheck(expanded, expectPlaces) {
     n.parentNode.appendChild(probe); const need = probe.getBoundingClientRect().width; probe.remove();
     if (n.clientWidth + 0.5 < need) problems.push(`desk name "${full}" shows fewer than three characters (${n.clientWidth}px, needs ${need.toFixed(0)}px)`);
   });
+  /* spec 059 FR-020 item 6, FR-025 (issue 636): the rename pencils are shown on every card (body.ren-show) and none covers the status word, pill,
+     badge, chat number, draft mark or mode icon, or leaves its unit; they are siblings of the card button and take no layout space. */
+  document.body.classList.add('ren-show');
+  stage.querySelectorAll('.unit > .ren[data-ren]').forEach((b) => {
+    if (!b.getClientRects().length) return;
+    const B0 = R(b), B = { x: B0.x + 4, y: B0.y + 4, r: B0.r - 4, b: B0.b - 4 }, u = b.parentElement, d = u.querySelector(':scope > .desk[data-id]'), who = b.dataset.ren; /* the box is a 24px target (spec 052), the glyph 16px in it: overlaps are judged on the glyph */
+    if (B0.w < 23.5 || B0.h < 23.5) problems.push(`pencil ${who} is ${B0.w}x${B0.h}px, under the 24px target`);
+    if (!d) { problems.push(`pencil ${who} has no desk sibling`); return; }
+    if (b.closest('.desk')) problems.push(`pencil ${who} is inside the card button`);
+    const U = R(u), D = R(d);
+    if (B.x < U.x - T || B.r > U.r + T || B.y < U.y - T || B.b > U.b + T) problems.push(`pencil ${who} leaves its unit`);
+    if (B.x < D.x - T || B.r > D.r + T || B.y < D.y - T || B.b > D.b + T) problems.push(`pencil ${who} leaves its card`);
+    d.querySelectorAll('.stl, .pill, .badge, .chatno, .draft-mark, .modeic, .modebadge').forEach((e) => {
+      if (!e.getClientRects().length || getComputedStyle(e).visibility === 'hidden') return;
+      const r = R(e); if (r.w < 1 || r.h < 1) return;
+      if (B.x < r.r - T && B.r > r.x + T && B.y < r.b - T && B.b > r.y + T) problems.push(`pencil ${who} covers ${name(e)}`);
+    });
+  });
   /* spec 052 (2026-10-21; real 15-session office at 1280x800): inside a desk card no icon (svg, status dot, warning) and no cost text
      leaves the card or is cut by a clipping ancestor; a cut cost or icon once went unnoticed by every other rule here */
+  /* spec 059 FR-020 item 4: a room header's pencil stays inside the header and covers no door, chip, siren, floor tag, cost or count */
+  stage.querySelectorAll('.room-head > .ren[data-renfolder]').forEach((b) => {
+    if (!b.getClientRects().length) return;
+    const B0 = R(b), B = { x: B0.x + 4, y: B0.y + 4, r: B0.r - 4, b: B0.b - 4 }, hd = b.parentElement, H = R(hd), who = b.dataset.renfolder;
+    if (B0.w < 23.5 || B0.h < 23.5) problems.push(`room pencil ${who} is ${B0.w}x${B0.h}px, under the 24px target`);
+    if (B.x < H.x - T || B.r > H.r + T || B.y < H.y - T || B.b > H.b + T) problems.push(`room pencil ${who} leaves its header`);
+    [...hd.children].filter((e) => e !== b && !e.classList.contains('room-name') && !e.classList.contains('room-path') && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden').forEach((e) => {
+      const r = R(e); if (r.w < 1 || r.h < 1) return;
+      if (B.x < r.r - T && B.r > r.x + T && B.y < r.b - T && B.b > r.y + T) problems.push(`room pencil ${who} covers ${name(e)}`);
+    });
+  });
   stage.querySelectorAll('.desk.card').forEach((d) => {
     const D = R(d), who = (d.querySelector('.name') || {}).textContent || d.dataset.id || '?';
     d.querySelectorAll('svg, .pill i, .warn, [class*="warn"], .use .aiu, .modeic').forEach((e) => {
@@ -168,7 +197,7 @@ function pageCheck(expanded, expectPlaces) {
   /* spec 001 FR-023 (T030): a room header's parts (door, name, path, dots, +, MCP, AIU, plant, floor tag) never overlap or leave the header */
   stage.querySelectorAll('.room-head').forEach((hd) => {
     const H = R(hd), key = (hd.closest('.room') || {}).dataset?.key || '?';
-    const parts = [...hd.children].filter((e) => e.getClientRects().length && R(e).w > 0 && getComputedStyle(e).visibility !== 'hidden');
+    const parts = [...hd.children].filter((e) => !e.classList.contains('ren') && e.getClientRects().length && R(e).w > 0 && getComputedStyle(e).visibility !== 'hidden'); /* the rename pencil is placed over the name's tail or the path's start on purpose (spec 059): checked against the chips below */
     parts.forEach((e) => { const p = R(e), slack = e.classList.contains('door') ? 5 : 1; /* the door hangs 4px left on purpose */ if (p.x < H.x - slack || p.r > H.r + 1) problems.push(`header part ${name(e)} sticks out of the header of ${key}`); });
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
       const p = R(parts[i]), q = R(parts[j]);
