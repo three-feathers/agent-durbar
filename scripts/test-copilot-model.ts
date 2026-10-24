@@ -498,6 +498,27 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(await askOnce(['A', 'B'], '  my   own '), { answer: 'my own', wasFreeform: true });
       assert.deepStrictEqual(await askOnce(undefined, null), { answer: '(The user skipped the question. Decide yourself.)', wasFreeform: true });
       assert.ok(t.events.some((e) => e.type === 'status' && e.intent === 'Waiting for your answer'));
+      // spec 052 FR-178 (issue 689): a custom answer to a long question (an agent puts its context in the question) reaches the agent as that answer,
+      // through the same reading main applies to the window's reply; it used to arrive as a skip (main dropped any question key over 300 characters)
+      {
+        const { readAnswerPayload } = await import('../src/adapters/questions');
+        const longQ = ('Which of these options should I take for the refactor, given the context? ').repeat(12).replace(/\s+/g, ' ').trim();
+        assert.ok(longQ.length > 300 && longQ.length < 2000);
+        const from = t.events.length;
+        const p = iu({ question: longQ, choices: ['A', 'B'], allowFreeform: true });
+        await sleep(5);
+        const q = t.events.slice(from).find((e) => e.type === 'question' && e.phase === 'asked') as { requestId: string; questions: { question: string }[] } | undefined;
+        assert.ok(q, 'the long question was asked');
+        const read = readAnswerPayload({ [q.questions[0].question]: 'my own long-question answer' });
+        assert.ok(read, 'main reads the reply of a long question');
+        t.ad.answerQuestion?.(t.sid, q.requestId, read);
+        assert.deepStrictEqual(await p, { answer: 'my own long-question answer', wasFreeform: true }, 'the custom answer, not a skip');
+        assert.ok(!t.events.slice(from).some((e) => e.type === 'question' && e.phase === 'cancelled'), 'no skipped card');
+        assert.deepStrictEqual(readAnswerPayload(null), null, 'null stays a skip');
+        for (const bad of [undefined, 'text', 5, [], {}, { k: 5 }, { ['x'.repeat(2001)]: 'a' }]) assert.strictEqual(readAnswerPayload(bad), undefined, 'unusable is refused, never a skip: ' + JSON.stringify(bad)?.slice(0, 30));
+        assert.strictEqual(readAnswerPayload({ a: 'x'.repeat(900) })!.a.length, 500, 'a value is cut at 500');
+        assert.ok(/readAnswerPayload/.test(fs.readFileSync(path.join(process.cwd(), 'src', 'main', 'ipc', 'questions.ts'), 'utf8')), 'main uses it for agents:answerQuestion');
+      }
       const pending = iu({ question: 'Still there?', choices: ['Yes'] });
       await sleep(5);
       await t.ad.stop(t.sid);

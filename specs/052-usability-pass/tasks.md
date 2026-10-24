@@ -334,3 +334,4 @@
 
 ## FR-177: the answer bar cuts a long session name with an ellipsis (2026-10-23, issue #540)
 - [x] T184 Answer bar: the session name in its own one-line span cut with `…` and titled with the full name; count and verb outside the cut; find and remove the mid-word cut; rule `answer-bar-name` in `check:ui-text` on `chat-title-long` (question and permission), mutation checks; before/after shots at 1440x900 and 1280x800 [FR-177]
+- [x] T185 Issue #689: `readAnswerPayload` in `src/adapters/questions.ts` replaces the 300-character key cap in `agents:answerQuestion` (FR-178); unusable answers are refused, not skipped; unit test in `test-copilot-model.ts`; `check:question-visible` custom answer from the bar and the card (no `skipped`, no extra message).
