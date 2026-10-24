@@ -232,3 +232,12 @@ Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564).
   - **Main checkout**: never check out a PR or branch there; use a worktree.
   - **Branch cleanup**: delete a PR's branch only once that PR's state is `MERGED`; leaving the merge queue is not merging.
   `[KNOWN GAP]` nothing enforces these; they rest on the agents following the text.
+
+### 2026-10-24: proposal to record release incidents and deployment rework
+
+The owner asked for a consistent way for agents to document user-reported issues and identify DORA deployment rework, while the regular worker was unavailable. This is a proposal for review, not a team decision or an adopted rule.
+
+- **FR-051** `[PROPOSED]` Bug reports and agent triage distinguish issues observed in published user-facing releases from development, CI, simulator and test-build defects. The Bug issue form captures the observed context, version/tag when known, and user impact, without requiring reporters to know the cause or incident classification.
+- **FR-052** `[PROPOSED]` Agents apply the optional `incident` label only when evidence confirms a published-release user impact requiring immediate intervention. The issue records the affected release tag, suspected introducing PR when known, linked fixing PR, recovery release tag, and whether that release was an unplanned corrective deployment (`Yes`, `No` or `Unknown`). Unknown attribution stays unknown; dates alone do not establish cause or release purpose.
+- **FR-053** `[PROPOSED]` At release time, the agent checks whether the release is a corrective response to a confirmed incident and records that classification on the incident issue. Each published user-accessible release, including a prerelease, is one deployment; drafts and tags without a published release are not. Count each corrective release once in the deployment-rework numerator even if it addresses multiple incident issues. Changes requested in PR review before deployment are not deployment rework.
+- The `bug` label remains the issue type; `incident` is an optional operational flag, not a replacement issue type or a per-release label. PR review activity, if measured, is reported separately from DORA deployment rework.
