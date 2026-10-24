@@ -36,12 +36,12 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - The relay core is T018's `bridgecore.ts`, shared by three flags.
   - AC1: a dated `## Changes` entry in `specs/041-durbar-mcp/spec.md` names the server, flag, scope, token rule, the FR-034 exception and the shared core.
   - AC2: `npm run specs:check` passes.
-- [ ] T002 [P] Spec 045 delta. [FR-010, FR-024, FR-025]
+- [x] T002 [P] Spec 045 delta. [FR-010, FR-024, FR-025]
   - The app window rules (FR-004, FR-005) stay as they are.
   - The session browser view has its own rules (080 FR-010, FR-024..FR-028), in the same `src/main/hardening.ts`.
   - AC1: a dated entry in `specs/045-security-sweep/spec.md` points to 080.
   - AC2: that entry lists `viewNavigationAllowed`, the view permission check and the handler builder as 045-owned.
-- [ ] T003 [P] Spec 005 delta: the chat panel gets *Chat* and *Browser* tabs. [FR-002, FR-090]
+- [x] T003 [P] Spec 005 delta: the chat panel gets *Chat* and *Browser* tabs. [FR-002, FR-090]
   - AC1: a dated entry in `specs/005-chat-fullscreen-and-agent-strip/spec.md`.
   - AC2: FR-040's 480px rule applies to the tab bar too.
 - [ ] T004 [P] Spec 003 delta. [FR-050..FR-056]
@@ -67,7 +67,22 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     Every other MCP call is still denied in Read-only.
   - AC1: an owner PR on `.specify/memory/constitution.md` (an owned path, CODEOWNERS) through `/speckit.constitution`, with a MINOR version bump and the Sync Impact Report. It cites Vikram's approval (PR #647 comment) and Ruben's delegation (#556).
   - AC2: T030 may merge before it, with `BROWSER_READONLY_READS = false`. The PR that sets the constant to `true` (a one-line change plus its tests) does not merge before T006.
-- [ ] T010 Simulator probe of the Electron assumptions (throwaway branch code, not merged). Results go into research.md R1 as `sim:`, with the Electron version. [Assumptions, FR-008, FR-025, FR-046, FR-061, FR-070, FR-073]
+- [ ] T007 Follow-up simulator probe of the mechanisms the 2026-10-24 delta chose (throwaway code, not merged, as T010: FR-010's `webPreferences` (no `disableDialogs`), `xvfb-run -a`, never `:99`, localhost only). Results go into research.md R1a/R1b as `sim:`, with the Electron version and T010's limits. [FR-010, FR-025d, FR-066a]
+  - AC1 (before T012 merges; FR-025d as the owner decided, no `disableDialogs`): a `confirm` in a **hidden** view while another view is shown: is the native dialog drawn over the shown chat, where, does it stay until answered, and **does the box show the page's origin or anything else that names the session** (FR-025d's wrong-session risk) (window list of the Xvfb root plus the screenshot diff T010 AC13 used); and in a shown view, that the user's answer (OK and Cancel, through simulated input on the dialog if possible) reaches the page.
+  - AC2 (before T012 merges): while the agent drives, `alert` and `confirm` are closed through `Page.handleJavaScriptDialog` `accept: false`: the script is released, and **how long the native dialog stays drawn** after the answer (several runs; T010 saw 1.5 s or more), and whether `-cancel-dialogs` closes it.
+  - AC2c (before T012 merges; FR-025e): with `Page` on, a `beforeunload` page, user activation, and `will-prevent-unload` **not** prevented: no native box is mapped (window list and screenshot, as AC1), so Durbar's box is the only one.
+  - AC2b (before T012 merges; FR-025e): on a `beforeunload` page, a link click inside the page: does `will-navigate` (with the target URL) arrive **before** `will-prevent-unload`? Without `preventDefault()` the page stays; after a repeated navigation with `preventDefault()` it leaves; `webContents.close()` without `waitForBeforeUnload` closes with no event. If `will-navigate` comes after, FR-025e's page-started leave stays a `[KNOWN GAP]`.
+  - AC3 (before T035): `webContents.setBackgroundThrottling(false)` called **at run time** on an attached, hidden view makes `Input.dispatchMouseEvent` answer and `requestAnimationFrame` run; record whether it also changes the app page's frame rate (Electron's "affects all `WebContents` in the host `BrowserWindow`" note) and whether `setBackgroundThrottling(true)` afterwards restores throttling.
+  - AC4 (before T038): Watch-only: with `Input.setIgnoreInputEvents{ignore:true}` a `sendInputEvent` click is ignored; the sequence `ignore:false`, `Input.dispatchMouseEvent` press and release, `ignore:true` on one debugger session counts the CDP click; record whether `Input.insertText` is blocked while ignoring, and whether `before-input-event` `preventDefault()` stops `sendInputEvent` keys and fires for `Input.dispatchKeyEvent`.
+  - AC5: zero credits; no process left (checked by PID).
+  - AC6: a failed AC gets a spec delta before the task named in it (AC1-AC2: T012, AC3: T035, AC4: T038; FR-066a's fallback is the input-shield view). AC1-AC2 results update FR-025d's two `[KNOWN GAP]`s.
+- [ ] T008 Identify the two default-profile files of T010 AC9 **without reading their contents** (throwaway probe as T010). [FR-022, FR-023a]
+  - AC1: names, sizes and modification times of `Cache/Cache_Data/<hash>_0` and `.org.chromium.Chromium.Network Persistent State.<random>` (and the final `Network Persistent State` file, if any) for: no view; a view that loads nothing; views that load test pages on hosts whose names differ in length by at least 40 characters (`a.localhost` against a long `*.localhost` name). A size that follows the host name length means the file holds host data.
+  - AC2: whether they come from the default session's network context (a run with only the app window and a `session.defaultSession` request, no view), recorded.
+  - AC3: Chromium's own documentation or source for both names, `read:` with links (for example the network service's persisted server properties and the simple disk cache entry naming).
+  - AC4: contents are never opened, printed, hashed or copied; only `stat` data.
+  - AC5: research.md R1a records the answer; FR-023a's `[KNOWN GAP]` is closed with `sim:`/`read:` or kept with the reason; if either file carries anything from the pages or hosts visited, a FR-022 spec delta comes first. Before T019.
+- [x] T010 Simulator probe of the Electron assumptions (throwaway branch code, not merged). Results go into research.md R1 as `sim:`, with the Electron version. [Assumptions, FR-008, FR-025, FR-046, FR-061, FR-070, FR-073]
   - AC0: the probe uses **FR-010's exact `webPreferences`, `devTools: false` included**. A dev build with DevTools on proves nothing for packaged builds.
   - AC1: records whether a `WebContentsView` covers an HTML menu drawn by the app's page.
   - AC2: records whether these work through `webContents.debugger` on a view after `about:blank`, with `devTools: false`:
@@ -90,15 +105,26 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC13: dialogs in a **shown vs a hidden** view, before and with `Page` enabled: does Electron's default dialog block the whole window, and does a hidden session's dialog pop over another chat? The answer is recorded; FR-025d's "held while hidden" rule is checked to work with `Page.handleJavaScriptDialog`.
   - AC14: Chromium's Local Network Access (private network requests from a public page) under FR-025's deny-all permission handlers: is the request blocked, prompted or allowed? Recorded for FR-058.
   - AC15: zero credits; no process is left (checked by PID).
-  - AC16: if any check fails, a spec delta changes the FR that relies on it before Phase 2.
+  - AC16: if any check fails, a spec delta changes the FR that relies on it before Phase 2. Done: spec delta 2026-10-24 (FR-010, FR-011, FR-023a, FR-025d, FR-058, FR-061, FR-066a, FR-110..FR-113); the new mechanisms are checked by T007, the unidentified files by T008; AC10 moves to T060 AC3 and AC14 to T043 AC7, both `[KNOWN GAP]`.
 
-**Checkpoint**: T001-T004 merged, T010 recorded. T005 is needed only before Phase 3.
+**Checkpoint**: T001-T004 merged, T010 recorded and its delta (2026-10-24) written. T007 AC1-AC2 before T012 merges; T008 before T019. T005 is needed only before Phase 3.
 
 ---
 
 ## Phase 1: US1 + US2, the Browser tab and links (MVP, no agent control)
 
-- [ ] T011 [P] [US1] Address parsing in `src/shared/browserurl.ts` and the view navigation predicate `viewNavigationAllowed(url, isMainFrame)` in `src/main/hardening.ts`, with `scripts/test-browserurl.ts` and the 045 hardening tests. [FR-005, FR-024]
+**What the 2026-10-24 delta (T010 results) changes in Phase 1 now:**
+
+- **T012** builds FR-025d as the owner decided (Vikram, 2026-10-24): no `disableDialogs`; the user answers native dialogs, shown or hidden view. Phase 1 has no agent control, so main never closes a dialog in Phase 1; the `Page.javascriptDialogOpening` handler is built and unit-tested now (it closes with Cancel only when the driver is `agent`), and for a hidden view it raises the toast and marker. T012 also builds FR-025e's *Leave this page?* flow and FR-024's `navigateView()` helper (Paco's review of PR #682). T007 AC1, AC2 and AC2b must be recorded before T012 merges. The builder does **not** set `backgroundThrottling` (Phase 1 views stay throttled).
+- **T013**'s unload picker carries the `browser_type`-since-load flag (FR-011), always false in Phase 1, so Phase 2 does not reopen the picker.
+- **T015** has the bar's dialog note ready (icon and word, page text); it shows only when main answered a dialog for the agent (Phase 2).
+- **T015** AC6 also builds the owner's Q1-Q3: the once-per-app `askDialog` consent, the hidden-dialog toast that brings the session's chat forward with its marker, and the *Leave this page?* box (owner decisions, Vikram, 2026-10-24, relayed on PR #682).
+- **T011** is reopened for FR-005's delta (userinfo, control characters, the not-an-address reason, `isHttpUrl` reuse) and its Windows-safe timing test.
+- **T018** adds `confirm` and `prompt` test pages next to the `alert` one; its driver checks that a native dialog appears for the user and that `prompt()` throws.
+- **T019**: the README's known limits say a hidden session's system dialog shows no session name (Durbar's toast names it and brings its chat forward), a dialog answered for the agent may stay drawn (about 10 s on Xvfb, T007), and `prompt()` is unsupported; they do not claim "nothing on disk" beyond the session's partition until T008 closes FR-023a's gap. T008 comes before T019.
+- **Not Phase 1:** FR-066a's Watch-only mechanism (T038), FR-061's in-flight rule and `insertText` note (T038), the throttling toggle (FR-041's switch, T037), headless (FR-110, Phase 4), and T010 AC10 and AC14 (T060 AC3, T043 AC7).
+
+- [x] T011 [P] [US1] Address parsing in `src/shared/browserurl.ts` and the view navigation predicate `viewNavigationAllowed(url, isMainFrame)` in `src/main/hardening.ts`, with `scripts/test-browserurl.ts` (which also covers the 045-owned `viewNavigationAllowed`, spec 045 FR-061). [FR-005, FR-024]
   - AC1: `localhost:3000` and `127.0.0.1:8080` become `http://`; `example.com` becomes `https://`.
   - AC2: the frame rules of FR-024:
     - the main frame allows `http:`, `https:` and `about:blank`;
@@ -108,16 +134,23 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC3: only `mailto:` gets the *Open* offer. A hostile list (`ms-msdt:`, `search-ms:`, `search:`, `ms-officecmd:`, `ms-settings:`, `smb:`, `file:`, `vscode:`, `slack:`, `tel:`, mixed case, leading spaces) is refused with no offer (SC-008).
   - AC4: text over 2048 characters and text with spaces is refused without a search.
   - AC5: host extraction uses `new URL().hostname`, with userinfo dropped.
-  - AC6: linear time on 1 MB input (CPU-time check, `docs/agent-notes.md` timing rule).
+  - AC6: linear time on 1 MB input (CPU-time check, `docs/agent-notes.md` timing rule). Each case repeats until the small input reaches about 40 ms of CPU, and the big input runs the same count, so a coarse timer (Windows, about 15.6 ms) still measures it; no floor that skips the check and no wall-clock limit (Paco's review of PR #682, items 1 and 9).
+  - **Reopened 2026-10-24 by Paco's review of PR #682 (FR-005 delta):**
+  - AC7: addresses with userinfo are refused with FR-005's reason: `https://user:pw@example.com`, `https://google.com@evil.com`, `user:pw@example.com` (the test that accepted userinfo is flipped).
+  - AC8: `https://a.com/\x01` and `https://a.com/\x7f` are refused (the control-character check is covered by a test, so removing it fails the suite).
+  - AC9: `http:example.com` and `https:/example.com` get the not-an-address reason, not the scheme reason.
+  - AC10: the web branch of the link classifier calls the existing `isHttpUrl` (`src/shared/url.ts`) instead of its own check.
 - [ ] T012 [US1] `src/main/browser/views.ts`: lazy view per session, partition, hardening, teardown. [FR-001, FR-004, FR-010, FR-012, FR-020, FR-021, FR-023, FR-025..FR-029]
   - AC1: `webPreferences` are exactly FR-010's, from a pure options builder with a unit test:
     - `sandbox`, `contextIsolation`, `webSecurity`, `safeDialogs` true;
+    - no `disableDialogs` key (FR-025d, owner decision 2026-10-24);
+    - no `backgroundThrottling` key (Electron's default; FR-010's run-time toggle is Phase 2);
     - `nodeIntegration`, `webviewTag`, `allowRunningInsecureContent`, `experimentalFeatures`, `navigateOnDragDrop`, `spellcheck` false;
     - `autoplayPolicy: 'user-gesture-required'`;
     - `devTools` false when packaged;
     - no preload.
   - AC2: the partition name matches `durbar-browser-[0-9a-f]{32}`, never starts with `persist:`, and is never reused (test).
-  - AC3: the navigation guard uses T011's predicate, on `will-navigate`, `will-redirect` and `will-frame-navigate`, with the frame passed in.
+  - AC3: the navigation guard uses T011's predicate, on `will-navigate`, `will-redirect` and `will-frame-navigate`, with the frame passed in. Every navigation main starts (`loadURL`, history back, forward and go-to-index, `reload`, `Page.navigate`) goes through one `navigateView()` helper that checks `viewNavigationAllowed(url, true)` first (FR-024; Electron fires no `will-navigate` for them). Tests: `navigateView(view, 'file:///etc/passwd')` is refused and `loadURL` is never called; a grep test finds no other `loadURL`, `navigationHistory.go*`, `reload` or `Page.navigate` call on a view outside the helper.
   - AC4: one pure handler-list builder in `src/main/hardening.ts` installs every handler, and a unit test asserts each one is present and refuses:
     - `setWindowOpenHandler` denies, and a `_blank` link loads in the same view;
     - permission request and check handlers deny all, **fullscreen included**;
@@ -126,8 +159,8 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     - `select-client-certificate` calls `preventDefault()` and `callback()` with no certificate;
     - `select-bluetooth-device`, `select-hid-device`, `select-serial-port` and `select-usb-device` call `preventDefault()` with an empty choice;
     - `login` is cancelled;
-    - the debugger is attached at creation after `about:blank`, with only `Page` enabled (FR-042); every JS dialog goes through `Page.handleJavaScriptDialog`: shown in the browser bar for the user to answer when the user drives or agent control is off, dismissed otherwise (FR-025d); a test checks no native dialog path is used;
-    - `will-prevent-unload` is ignored.
+    - the debugger is attached at creation after `about:blank`, with only `Page` enabled (FR-042); the `Page.javascriptDialogOpening` handler closes `alert`/`confirm` through `Page.handleJavaScriptDialog` `accept: false` **only when the driver is `agent`** (never `accept: true`) and otherwise leaves the native dialog to the user (FR-025d); for a **hidden** view (driver not `agent`) it tells the renderer to raise FR-025d's toast, bring that session's chat forward on its Browser tab and set the *Dialog open* marker until `Page.javascriptDialogClosed` (owner decision Q3); dialogs of type `beforeunload` are never answered through CDP (T007 AC2); a unit test covers driver `agent`, `user` and `none`, and a test checks the builder sets no `disableDialogs`;
+    - `will-prevent-unload` (FR-025e, owner decision Q1): for the user or `none`, no `preventDefault()` (the navigation is cancelled) and a *Leave this page?* request to the renderer; on Leave, the one-shot 10 s flag plus, when the target is known, a repeated navigation through `navigateView()`; `preventDefault()` only when the flag is set; for the agent and for teardown, `preventDefault()` at once. A unit test covers each driver, Stay, Leave with a known and an unknown target, the flag's expiry, and that Stay never calls `preventDefault()`.
   - AC5: each view gets the Chrome user agent of FR-028 via `setUserAgent`, with no `Electron/` or `agent-durbar/` token (unit test on the UA builder); `app.userAgentFallback` is untouched.
   - AC6: each view starts with `setAudioMuted(true)` (FR-012); the bar toggle is in T015.
   - AC7: teardown on end, remove, folder remove and quit: detach, close, `clearStorageData`, `clearCache`.
@@ -136,7 +169,8 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC1: a unit test of the unload picker. It never picks:
     - a view whose page was reached by POST;
     - a view with any character key input since its page loaded (from `input-event`);
-    - a view with a `durbar-browser` call in flight or one in the current turn of its session.
+    - a view with a `durbar-browser` call in flight or one in the current turn of its session;
+    - a view where a `browser_type` call ran since its page loaded (`Input.insertText` fires no `input-event`, T010 AC4; always false in Phase 1).
 
     A view whose driver is `agent` but has no call in the current turn **can** be picked.
   - AC2: with no candidate, the new view is loaded over the cap and the bar note is shown (test).
@@ -150,10 +184,14 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC3: the renderer never receives the view's DOM, text, cookies or storage, only URL, title, loading, muted and driver state. The only pixels it gets are FR-008's still picture, as an in-memory image, never written to disk, logged or copied (a test checks the IPC payload types).
 - [ ] T015 [US1] Renderer: tabs, browser bar and pane (`src/renderer/browserpane.js`, `app.js` `openPanel`, `styles.css`, `index.html` script tag). [FR-002, FR-006, FR-007, FR-009, FR-012, FR-090]
   - AC1: `role=tablist` with arrow keys; Chat is the default; Esc behaves as today.
-  - AC2: bar text is at least 10.5px; icon plus word for loading, error and *Sound on/off*; `prefers-reduced-motion` is respected.
+  - AC2: bar text is at least 10.5px; icon plus word for loading, error, *Sound on/off* and the dialog note of FR-025d (shown only when main answered a dialog for the agent; the user answers the native dialog); `prefers-reduced-motion` is respected.
   - AC3: a `ResizeObserver` sends bounds; full-screen chat works; the tab bar fits a 480px panel.
   - AC4: `check:office` passes with 15 agents, chat open on the Browser tab, at 1440x900 and 1280x800.
   - AC5: screenshots `docs/screenshots/080-browser-*.png` at both sizes, with a driver in `scripts/shots-docs.js` `DOC_SHOTS` if linked.
+  - AC6 (FR-025d, FR-025e; owner decisions Q1-Q3, Vikram, 2026-10-24, relayed on PR #682):
+    - the **once-per-app** consent through the existing `askDialog` pattern (as `src/renderer/app.js:4892`), no new component: FR-025d's text, *Not now* / *Open the browser*, remembered in `SettingsStore` (parsed by `parseSettings`) and never asked again for any tab, session or launch; *Not now* opens nothing and a chat link goes to the system browser that time (test of the setting, sim driver);
+    - a hidden session's dialog: the toast *A page in <session> is asking: "…"* (masked), the session's chat brought forward on its Browser tab with the other chat's composer draft kept, and the *Dialog open* marker until the dialog closes (sim driver);
+    - the *Leave this page?* box through `askDialog`, *Leave* / *Stay*, **Stay** focused, and the *Leave, then click again* line when the target is unknown (sim driver).
 - [ ] T016 [US1] Overlays win. [FR-008]
   - AC1: one `overlayOpen` / `overlayClose` helper in `app.js`, called by the shared menu, `askDialog`, toasts, the slash list and tooltips over the panel.
   - AC2: main hides the view and the pane shows a `capturePage` still picture, kept in memory only.
@@ -174,11 +212,11 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC7: while agent control is on, a chat-link click (FR-058): link-local or metadata is refused with only *Open in system browser*; private asks with the mode's text; loopback opens. Uses T043's classifier.
 - [ ] T018 [US1] [US2] Simulator: test pages and links. [FR-091]
   - AC1: a simulator-only scheme is registered on each view partition only when `DURBAR_SIM` is set, and refused otherwise (test).
-  - AC2: bundled pages for a form (POST), a GET form and a script redirect to another test host, links, a download, a file input, password, `one-time-code` and `cc-number` fields, an element that slides over a button, a `beforeunload` page, an `alert`, a basic-auth challenge and a slow load.
+  - AC2: bundled pages for a form (POST), a GET form and a script redirect to another test host, links, a download, a file input, password, `one-time-code` and `cc-number` fields, an element that slides over a button, a `beforeunload` page, an `alert`, a `confirm` and a `prompt` page, a basic-auth challenge and a slow load. The driver checks that each `alert`/`confirm` page raises a native dialog the user can answer (the answer reaches the page) and that `prompt()` throws.
   - AC3: simulated agents print links to them.
   - AC4: a sim driver covers US1 scenarios 1-5 and US2 scenarios 1-3, including SC-002 and SC-004.
 - [ ] T019 [US1] [US2] Docs for Phase 1. [all Phase 1 FRs]
-  - AC1: README feature list and *Safety model*: session browser isolation, wiped at the end, no debugging port, muted, the refused permissions and choosers, only `mailto:` leaves; known limits, including that downloads may not carry Mark-of-the-Web or quarantine.
+  - AC1: README feature list and *Safety model*: session browser isolation, wiped at the end, no debugging port, muted, the refused permissions and choosers, only `mailto:` leaves; known limits, including that downloads may not carry Mark-of-the-Web or quarantine, FR-025d's dialog limits (a hidden session's system dialog shows no session name (Durbar's toast names it and brings its chat forward); a dialog answered for the agent may stay drawn (about 10 s on Xvfb, T007); `prompt()` is unsupported), and, until T008 closes it, that two Chromium files appear in the app's default profile when a view exists (the session's own partition writes nothing).
   - AC2: a `changelog.d/080-session-browser.md` fragment.
   - AC3: the spec's `specs-index` status; tasks ticked; `[IMPLEMENTED]` tags with `sim:`/`test:` evidence.
 
@@ -244,11 +282,12 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     - it dispatches at the quad centre.
   - AC4: type uses `DOM.focus` and then `Input.insertText`; press key is limited to the allow-list.
   - AC5: `browser_type` and `browser_press_key` on a password, `one-time-code` or `cc-*` field are refused with *This is a sensitive field; take over to enter it* (fixture page from T018, checked through `DOM.describeNode`).
-  - AC6: `Page.javascriptDialogOpening` is answered with `Page.handleJavaScriptDialog` (`accept: false`) whenever the driver is not the user. The note goes into the bar and the tool result, and no call hangs on an `alert` (sim driver).
+  - AC6: while the driver is `agent`, every `Page.javascriptDialogOpening` is answered with `Page.handleJavaScriptDialog`: `accept: false` for `alert` and `confirm` (never OK); a `beforeunload` on the agent's navigation is left through FR-025e's `preventDefault()`; the note goes into the bar and the tool result; no call hangs on an `alert`, `confirm` or `beforeunload` page (sim driver). With the driver `user` or `none`, main does not answer (test).
   - AC7: Ask-first requests show the element label as *Page text: "…"*, quoted, cut and masked.
   - AC8: screenshot capped at 2 MB; `wait_for` text or 1-30 s.
   - AC9: every action has a timeout and a clear error.
   - AC10: only the domains of FR-046. A test fails if the module sends any `Runtime.*` method, or uses `Page.createIsolatedWorld` without a spec-named case.
+  - AC11: while agent control is on, the view runs with `setBackgroundThrottling(false)`, and `true` again when it is turned off or the session ends (FR-010; per T007 AC3); a sim driver drives a hidden view.
 - [ ] T036 [US3] Form posts, downloads, uploads. [FR-070..FR-073]
   - AC1: `Fetch` pauses Document non-GET/HEAD requests whenever the switch is on and the driver is not `user`, whatever the timing (a test posts 6 s after a click, and one between turns). Ask first asks with the host through the existing permission request card (`permission` event, `PermissionInfo`, 003 FR-008 IPC), not `askDialog`; Allow all goes ahead with a chat note. If T010 showed `Fetch` does not work, the plan's fallback is used and a spec delta is written first.
   - AC2: `will-download` is gated by mode and driver state (`none` and `agent` are gated, `user` is not); the Ask-first ask uses the same permission card.
@@ -263,7 +302,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC4: `McpStore` refuses the reserved name and the helper command, through the existing `reserved` lists of `McpStore.upsert(…, reserved)` and `extraNames(reserved)` (`src/main/mcpstore.ts:364`, `:344`). The ambient Copilot entry is disabled.
   - AC5: the MCP dialogs list it as a built-in, with no edit or remove.
   - AC6: adapter option tests for all three apps.
-  - AC7: turning the switch on asks in every mode with FR-041's confirmation, **No** focused (`askDialog`), with the text for the session's current mode (a test per mode).
+  - AC7: turning the switch on asks in every mode with FR-041's confirmation, **No** focused (`askDialog`), with the text for the session's current mode and the dialog sentence of FR-041 (a test per mode); the switch turns on only after **Yes**.
   - AC8: switching on in Allow all, or switching such a session to Allow all, shows FR-065's one-line warning.
 - [ ] T038 [US4] Driver state, indicator, takeover, hand back, Watch-only, show-on-use (`src/main/browser/driverstate.ts`). [FR-060, FR-061, FR-063, FR-066]
   - AC1: a pure `none`/`agent`/`user` state machine with unit tests:
@@ -275,7 +314,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     - the gates are open for `none` and `agent`.
   - AC2: the indicator text and icon from that state, `aria-live` polite; the 5 s "working" animation only.
   - AC3: in Co-browsing, user input (mouse, touch, keys, from `input-event`) takes over; a sim driver checks a mouse click. Per T010 AC4, input that arrives while a Durbar `drive` action is in flight is ignored.
-  - AC4: in Watch-only, user input is ignored while the driver is `agent` (`Input.setIgnoreInputEvents`, per T010 AC7), and only the bar's *Take over* button takes over. The per-session switch defaults to Co-browsing (sim driver).
+  - AC4: in Watch-only, user input is ignored while the driver is `agent` by FR-066a's rule: `Input.setIgnoreInputEvents{ignore:true}`, lifted only around Durbar's own `Input.*` commands on the view's queue, plus `before-input-event` `preventDefault()` for keys outside that span (per T007 AC4; T010 AC7 showed `ignore:true` alone blocks the agent too). A sim driver checks that a user click is ignored and the agent's click counts; only the bar's *Take over* button takes over. The per-session switch defaults to Co-browsing.
   - AC5: while `driver = user`, agent calls wait 3 s, then get the takeover text, with no queue.
   - AC6: *Show the browser when the agent uses it* (default off) switches only on the first url or drive call of a turn.
   - AC7: a desk and strip marker with an accessible name; `check:office` with 15 agents and 5 driving at once (FR-013).
@@ -299,6 +338,8 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC4: private hosts ask once per host per session in every mode (Read-only denies); loopback does not ask in Allow all.
   - AC5: iframes: with agent control on and a public top-level test page that frames a private and a loopback test host (simulated hosts in the filter test), the subframe and subresource requests are cancelled, and a read call on a page with such a frame is refused, unless the top-level page is that host and the user opened it.
   - AC6: the metadata list matches FR-058's sourced entries plus the three marked own additions.
+  - AC8: the classifier extends `blockedAuthHost` (`src/main/mcpsignin.ts`), moved into `src/shared/netclass.ts` and still used by spec 058's sign-in path, whose tests keep passing; there is no second IP-literal parser (a grep test).
+  - AC7: Local Network Access (T010 AC14, not run): in a throwaway probe, try marking a loopback test server as public with Chromium's `--ip-address-space-overrides` switch (probe only, never the app; whether Electron 44 honours it is not known), and record whether a private request from that page is blocked, prompted or allowed under FR-025's deny-all handlers. If it cannot be done offline, FR-058's `[KNOWN GAP]` stays and the README says so.
 - [ ] T044 [US3] Agent-caused navigations count as `url`. [FR-057]
   - AC1: while the switch is on and the driver is not `user`, every main-frame Document request (any method, redirects included per T010 AC6) is paused and checked against host grants and FR-058.
   - AC2: Ask first asks with the full masked URL (userinfo removed, token shapes masked, cut to 300 characters).
@@ -339,8 +380,12 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 
 ## Phase 4 (later): headless session browsers (owner input)
 
-- [ ] T070 Measure first: does a `WebContentsView` that is not added to the window still paint, and how much CPU and memory does it save against a shown view (sim, Linux)? The result goes into research.md before T071. [FR-113]
-- [ ] T071 Headless mode: per-session *Run the browser without a view* (default off); every rule of the spec holds (shared tests run with the view detached). [FR-110, FR-111, FR-113]
+- [ ] T070 Measure first (sim, Linux; CI for macOS and Windows): a view in a hidden helper window (`show: false`, FR-110). The result goes into research.md before T071. [FR-110, FR-113]
+  - AC1: several runs of T010 AC12's working case: `Page.captureScreenshot` `{ fromSurface: false }`, `Accessibility.getFullAXTree`, `Input.dispatchMouseEvent` clicks, with throttling off; how often it fails.
+  - AC2: one helper window shared by three headless views against one window per view: does each view still capture and take clicks?
+  - AC3: moving a view from the helper window into Durbar's window and back keeps its page, partition and debugger.
+  - AC4: CPU and memory against a shown view; if it saves nothing worth having, FR-110..FR-113 are dropped by a spec delta.
+- [ ] T071 Headless mode: per-session *Run the browser without a view* (default off), with FR-110's hidden helper window (hardened like the app window, never shown); every rule of the spec holds (shared tests run with the view in the helper window). [FR-110, FR-111, FR-113]
 - [ ] T072 The Browser tab and the desk show a headless browser (*Running without a view*, the host, the last action) with *Show* / *Hide*; `check:office`; screenshots. [FR-112]
 
 ---
@@ -358,7 +403,9 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 
 - **Phase 0:**
   - T001-T004 can run in parallel;
-  - T010 comes before T012 and before any Phase 2 task;
+  - T010 comes before T012 and before any Phase 2 task (done; delta 2026-10-24);
+  - T007 AC1-AC2 before T012 merges, AC3 before T035, AC4 before T038;
+  - T008 before T019;
   - T005 comes before T050;
   - T006 (owner PR) comes before the PR that sets `BROWSER_READONLY_READS` to `true`, not before T030.
 - **Phase 1:**
@@ -376,12 +423,12 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
 
 | Requirement | Tasks |
 |---|---|
-| FR-001..FR-013 | T012, T013, T014, T015, T016, T038, T040 |
-| FR-020..FR-029 (FR-023a, FR-025a..e included) | T002, T010, T011, T012, T017, T019, T035, T036, T050 |
+| FR-001..FR-013 | T007, T012, T013, T014, T015, T016, T035, T038, T040 |
+| FR-020..FR-029 (FR-023a, FR-025a..e included) | T002, T007, T008, T010, T011, T012, T015, T017, T018, T019, T035, T036, T050 |
 | FR-030..FR-033 | T017, T018 |
 | FR-040..FR-049 | T001, T031, T032, T033, T035, T037 |
 | FR-050..FR-058 | T004, T006, T030, T033, T043, T044 |
-| FR-060..FR-066 | T034, T035, T037, T038, T039 |
+| FR-060..FR-066 (FR-066a included) | T007, T034, T035, T037, T038, T039 |
 | FR-070..FR-073 | T036 |
 | FR-080..FR-085 | T005, T050, T051 |
 | FR-090..FR-093 | T015, T018, T033, T040 |

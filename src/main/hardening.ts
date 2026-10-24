@@ -32,3 +32,29 @@ export function permissionAllowed(permission: string): boolean {
 export function senderAllowed(frame: { url: string; isMain: boolean } | null | undefined, indexFile: string, platform: NodeJS.Platform = process.platform): boolean {
   return !!frame && frame.isMain && navigationAllowed(frame.url, indexFile, platform);
 }
+
+/** The simulator's test-page scheme (FR-091); the name is a placeholder until the simulator task fixes it. Allowed only in the main frame and only with `sim`. */
+export const SIM_VIEW_SCHEME = 'durbar-sim:';
+
+/**
+ * Spec 080 FR-024: the session browser view's navigation guard, checked on `will-navigate`, `will-redirect` and `will-frame-navigate`
+ * (the frame is passed in). The app window's own rule stays `navigationAllowed`; this one is for the web page in the view.
+ * - main frame: `http:`, `https:`, `about:blank` (and `SIM_VIEW_SCHEME`, FR-091, only when the caller passes `sim`, that is under DURBAR_SIM);
+ * - subframes: also `about:srcdoc`, `blob:` and `data:`;
+ * - everything else (`file:`, `chrome:`, `devtools:`, `view-source:`, `filesystem:`, `javascript:`, custom schemes) at every level.
+ * The network classes of FR-058 apply on top, elsewhere.
+ */
+export function viewNavigationAllowed(url: string, isMainFrame: boolean, sim = false): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  const scheme = u.protocol;
+  if (scheme === 'http:' || scheme === 'https:') return true;
+  // compared as given, not as URL normalises it: `about:blank#x`, `about:blank?x` and `ABOUT:BLANK` are refused (fail closed)
+  if (scheme === 'about:') return url === 'about:blank' || (!isMainFrame && url === 'about:srcdoc');
+  if (isMainFrame) return sim && scheme === SIM_VIEW_SCHEME;
+  return scheme === 'blob:' || scheme === 'data:';
+}
