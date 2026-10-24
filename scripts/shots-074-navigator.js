@@ -14,7 +14,8 @@
  *        opens Go to; Reset brings Ctrl+F back.
  *   #587 Ctrl+J no longer opens Go to; the cursor lands in the message box after a mouse click or Enter on a desk, a list row, a
  *        Ctrl+K pick and the inbox (a waiting chat: the message box, never the answer bar, and nothing is answered); in the message
- *        box Ctrl+Backspace and Ctrl+A edit text as always (the chat stays, Needs you stays closed, an empty box too); outside
+ *        box Windows/Linux Ctrl+Backspace and Ctrl+A keep their text meaning; macOS synthetic ⌘⌫ / ⌘A are not intercepted,
+ *        and ordinary Backspace edits (chat stays open, Needs you stays closed, empty box too); outside
  *        text Ctrl+A opens Needs you and Ctrl+Backspace goes back to the office, but not in the chat log (Ctrl+A) or with a
  *        selection; unsent text is back when the chat opens again.
  *   #612 a draft in chat A, switch to B: A's strip item, then its desk and list row show the pencil ("Unsent draft", >= 10.5px, inside,
@@ -212,18 +213,49 @@ module.exports = async (ctx) => {
     assert.ok(qw.pend > 0 && !qw.inReq, `${w}: the chat waits for an answer and focus is not on the request or the answer bar: ${JSON.stringify(qw)}`);
     await ctx.sleep(400);
     assert.strictEqual((await box()).pend, qw.pend, `${w}: nothing was answered by opening the chat`);
-    // FR-020 / FR-021: in the message box, Ctrl+Backspace and Ctrl+A keep their text meaning
+    // FR-020 / FR-021: editable-field shortcuts are not intercepted; macOS simulator events do not perform native text editing.
     const TXT = 'keep this text';
+    if (process.platform === 'darwin') {
+      await js(`(()=>{window.__navigatorBackspaceProbe=null;window.addEventListener('keydown',function probe(e){if(e.code!=='Backspace'||!e.metaKey)return;window.removeEventListener('keydown',probe);window.__navigatorBackspaceProbe={key:e.key,code:e.code,target:e.target&&e.target.id,defaultPrevented:e.defaultPrevented};});})()`);
+    }
     await type(TXT);
     await key('Backspace', [MOD], { char: 'never' });
     let c = await box();
     assert.ok(c.open && c.focus === 'msgInput' && !c.inbox && !c.pal, `${w}: Ctrl/⌘+Backspace in the message box keeps the chat open: ${JSON.stringify(c)}`);
-    assert.ok(c.v.length < TXT.length && TXT.startsWith(c.v), `${w}: Ctrl/⌘+Backspace deleted text the normal way, nothing else: ${JSON.stringify(c.v)}`);
+    if (process.platform === 'darwin') {
+      assert.ok(await until(`!!window.__navigatorBackspaceProbe`, 5000), `${w}: synthetic ⌘⌫ reaches the focused message box`);
+      const event = await js(`window.__navigatorBackspaceProbe`);
+      assert.ok(event.key === 'Backspace' && event.code === 'Backspace' && event.target === 'msgInput' && !event.defaultPrevented,
+        `${w}: synthetic ⌘⌫ reaches the message box without the app preventing native text editing: ${JSON.stringify(event)}`);
+      assert.strictEqual(c.v, TXT, `${w}: synthetic ⌘⌫ does not model native macOS text deletion`);
+      await key('Backspace', [], { char: 'never' });
+      assert.ok(await until(`document.getElementById('msgInput').value.length===${jsLiteral(TXT.length - 1)}`, 5000),
+        `${w}: ordinary Backspace edits the focused message box`);
+      c = await box();
+      assert.ok(c.open && c.focus === 'msgInput' && c.v.length === TXT.length - 1 && TXT.startsWith(c.v),
+        `${w}: ordinary Backspace edits the message box and keeps the chat open: ${JSON.stringify(c)}`);
+    } else {
+      assert.ok(c.v.length < TXT.length && TXT.startsWith(c.v), `${w}: Ctrl+Backspace deleted text the normal way, nothing else: ${JSON.stringify(c.v)}`);
+    }
     await type(TXT.slice(c.v.length));
+    if (process.platform === 'darwin') {
+      await js(`(()=>{window.__navigatorSelectAllProbe=null;window.addEventListener('keydown',function probe(e){if(e.code!=='KeyA'||!e.metaKey)return;window.removeEventListener('keydown',probe);window.__navigatorSelectAllProbe={key:e.key,code:e.code,target:e.target&&e.target.id,defaultPrevented:e.defaultPrevented};});})()`);
+    }
     await key('A', [MOD], { char: 'never' });
     c = await box();
-    assert.ok(c.open && !c.inbox && c.v === TXT && c.s === 0 && c.e === TXT.length, `${w}: Ctrl/⌘+A in the message box selects all and Needs you stays closed: ${JSON.stringify(c)}`);
+    if (process.platform === 'darwin') {
+      assert.ok(await until(`!!window.__navigatorSelectAllProbe`, 5000), `${w}: synthetic ⌘A reaches the focused message box`);
+      const event = await js(`window.__navigatorSelectAllProbe`);
+      assert.ok(event.key.toLowerCase() === 'a' && event.code === 'KeyA' && event.target === 'msgInput' && !event.defaultPrevented,
+        `${w}: synthetic ⌘A is not intercepted by the app in the message box: ${JSON.stringify(event)}`);
+      assert.ok(c.open && !c.inbox && c.v === TXT && c.focus === 'msgInput',
+        `${w}: synthetic ⌘A keeps the chat and draft intact: ${JSON.stringify(c)}`);
+    } else {
+      assert.ok(c.open && !c.inbox && c.v === TXT && c.s === 0 && c.e === TXT.length, `${w}: Ctrl+A in the message box selects all and Needs you stays closed: ${JSON.stringify(c)}`);
+    }
+    if (process.platform === 'darwin') await js(`document.getElementById('msgInput').select()`);
     await key('Backspace', [], { char: 'never' });
+    assert.ok(await until(`document.getElementById('msgInput').value===''`, 5000), `${w}: Backspace clears the message-box text`);
     await key('Backspace', [MOD], { char: 'never' });
     c = await box();
     assert.ok(c.open && c.focus === 'msgInput' && c.v === '', `${w}: an empty message box: Ctrl/⌘+Backspace still keeps the chat (Esc is back from here): ${JSON.stringify(c)}`);
@@ -265,8 +297,10 @@ module.exports = async (ctx) => {
     await key('Return', []);
     await until(`document.body.classList.contains('panel-open')`, 3000);
     assert.strictEqual((await box()).v, 'half-written prompt', `${w}: still kept after going back with Ctrl/⌘+Backspace`);
-    await key('A', [MOD], { char: 'never' });
+    if (process.platform === 'darwin') await js(`document.getElementById('msgInput').select()`);
+    else await key('A', [MOD], { char: 'never' });
     await key('Backspace', [], { char: 'never' });
+    assert.ok(await until(`document.getElementById('msgInput').value===''`, 5000), `${w}: Backspace clears the kept draft`);
     await key('Escape', [], { char: 'never' });
     await H.office();
 
@@ -328,8 +362,10 @@ module.exports = async (ctx) => {
     assert.ok(!ma.desk && !ma.deskAria && mb.desk, `${w}: sent: A's pencil is gone, B's stays: ${JSON.stringify({ ma, mb })}`);
     c = await openDesk(dB);
     assert.strictEqual(c.v, 'draft for B', `${w}: then B's text is intact`);
-    await key('A', [MOD], { char: 'never' });
+    if (process.platform === 'darwin') await js(`document.getElementById('msgInput').select()`);
+    else await key('A', [MOD], { char: 'never' });
     await key('Backspace', [], { char: 'never' });
+    assert.ok(await until(`document.getElementById('msgInput').value===''`, 5000), `${w}: Backspace empties B's draft`);
     await key('Escape', [], { char: 'never' });
     await H.office();
     mb = await marks(dB);
