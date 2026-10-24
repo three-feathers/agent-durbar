@@ -1,1 +1,1 @@
-- **Answer bar: long names end in an ellipsis** (spec 052 FR-176, issue #540): a long session name above the message box is cut with `…` and shows the full name on hover; "asks:" stays readable. Checked by `check:ui-text` on the simulator.
+- **Answer bar: long names end in an ellipsis** (spec 052 FR-177, issue #540): a long session name above the message box is cut with `…` and shows the full name on hover; "asks:" stays readable. Checked by `check:ui-text` on the simulator.

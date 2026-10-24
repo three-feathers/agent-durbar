@@ -355,11 +355,11 @@ module.exports = async (ctx) => {
     { name: 'palette-long', base: 'palette', query: { simnames: 'long' } },
     { name: 'chat-first-long', base: 'chat-first', query: { simnames: 'long' } },
     { name: 'chat-slash-long', base: 'chat-slash-list', query: { simslash: 'long' } }, // spec 073 (review on #535): long names in a 480px panel
-    { name: 'chat-title-long', base: 'chat-first', query: { simtitles: 'long', simquestion: '1' } }, // T181 (FR-176): also the answer bar with a pending question (Ada) and a pending permission (Jonas)
+    { name: 'chat-title-long', base: 'chat-first', query: { simtitles: 'long', simquestion: '1' } }, // T184 (FR-177): also the answer bar with a pending question (Ada) and a pending permission (Jonas)
     { name: 'chat-helper-long', base: 'chat-helper-long', query: { simtitles: 'long' } }, // T179
     { name: 'chat-reply-long', base: 'chat-reply', query: { simreply: 'long' } }, // T155: replies and sub-agent prompts that run to the right edge (the Copy button covers no text)
   ];
-  // T181 (FR-176, issue #540): the answer bar with the 120-character title, for a pending question (simquestion=1) and a pending permission (Jonas):
+  // T184 (FR-177, issue #540): the answer bar with the 120-character title, for a pending question (simquestion=1) and a pending permission (Jonas):
   // the rule `answer-bar-name` (ui-text-page.js) measures the name span, its title, the verb and the bar. The bar must show and the name must really be cut.
   const answerBarName = async () => {
     const TITLE = 'Morning stand-up: summarise every open pull request, flag the ones that touch the billing flows and draft the release notes for the whole week'.slice(0, 120);

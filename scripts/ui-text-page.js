@@ -207,7 +207,7 @@
     { const a = Array.from(t.placeholder.replace(/\u2026$/, '')); let k = 0; while (k < a.length && /[\u{1F1E6}-\u{1F1FF}]/u.test(a[a.length - 1 - k])) k++; if (k % 2 === 1) add('placeholder-line', root, t, `the placeholder cuts a flag in two: "${snip(t.placeholder, 50)}"`); }
     if (t.placeholder !== label + '\u2026' && !(t.placeholder.endsWith('\u2026') && label.startsWith(t.placeholder.slice(0, -1).trimEnd()))) add('placeholder-line', root, t, `the shortened placeholder "${snip(t.placeholder, 50)}" has no ellipsis or is not the start of "${snip(label, 50)}"`);
   }
-  /* FR-176 (#540): the answer bar's session name is one line cut with an ellipsis and titled with the whole name; the verb ("asks:", "needs your OK:", "stopped:") is fully visible; the bar does not overflow */
+  /* FR-177 (#540): the answer bar's session name is one line cut with an ellipsis and titled with the whole name; the verb ("asks:", "needs your OK:", "stopped:") is fully visible; the bar does not overflow */
   function answerBarNameRule(root, add) {
     const bar = root.querySelector('#answerBar'); if (!bar || !vis(bar)) return;
     const q = bar.querySelector('.ab-q'), n = bar.querySelector('.ab-n'), lead = bar.querySelector('.ab-q b');
