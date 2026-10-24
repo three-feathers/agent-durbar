@@ -213,13 +213,16 @@ const chat: Record<string, { v: string; secret: string; keep?: string }> = {
   telegram: { v: '123456789:' + TG35, secret: AZ },
   telegramApi: { v: 'https://api.telegram.org/bot' + '123456789:' + TG35 + '/getMe', secret: AZ, keep: 'https://api.telegram.org/bot' },
 };
+/** Test fixtures: write every `/` (or the Telegram token's `:` after its digits) in another spelling, on purpose not an escape. */
+const swapSlash = (x: string, to: string): string => x.split('/').join(to);
+const swapColon = (x: string, to: string): string => x.replace(/([0-9]):/g, (_m, d: string) => d + to);
 for (const [k, c] of Object.entries(chat)) {
   const encTwice = (x: string): string => encodeURIComponent(encodeURIComponent(x));
   const titleHost = (x: string): string => x.replace(/^https:\/\/[^/]+/, (h) => h.replace(/(^|[.\/])([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase()));
   const forms = c.keep
-    ? [c.v, c.v.replace(/\//g, '\\/'), c.v.replace(/\//g, '\\\\/'), c.v.replace(/\//g, '\\u002f'), c.v.replace(/\//g, '\\x2F'), 'https://x.example/?u=' + encodeURIComponent(c.v),
+    ? [c.v, swapSlash(c.v, '\\/'), swapSlash(c.v, '\\\\/'), swapSlash(c.v, '\\u002f'), swapSlash(c.v, '\\x2F'), 'https://x.example/?u=' + encodeURIComponent(c.v),
       'https://x.example/?u=' + encTwice(c.v), 'https://x.example/?u=' + encodeURIComponent(encTwice(c.v)), c.v.replace(/^https:\/\/[^/]+/, (h) => h.toUpperCase()), titleHost(c.v)]
-    : [c.v, c.v.replace(':', '%3A'), c.v.replace(':', '%253a'), c.v.replace(':', '\\u003A'), c.v.replace(':', '\\x3a')];
+    : [c.v, swapColon(c.v, '%3A'), swapColon(c.v, '%253a'), swapColon(c.v, '\\u003A'), swapColon(c.v, '\\x3a')];
   for (const form of forms) {
     for (const wrap of WRAPS) {
       const w = wrap(form);
@@ -276,7 +279,7 @@ assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x'
   const pieces: string[] = [];
   const prefixes = ['', 'x ', '=3D', '%u003D', '_', '"', '\\n', '%253D'];
   for (const c of Object.values(chat)) {
-    const vs = [c.v, c.v.replace(/\//g, '\\/'), c.v.replace(/\//g, '%2F'), c.v.replace(/\//g, '%252f'), c.v.replace(/\//g, '\\u002F'), c.v.replace(/\//g, '\\x2f'), c.v.replace(':', '%3a'), c.v.replace(':', '%25253A'), c.v.replace(':', '\\u003a'), c.v.replace(':', '\\x3A'),
+    const vs = [c.v, swapSlash(c.v, '\\/'), swapSlash(c.v, '%2F'), swapSlash(c.v, '%252f'), swapSlash(c.v, '\\u002F'), swapSlash(c.v, '\\x2f'), swapColon(c.v, '%3a'), swapColon(c.v, '%25253A'), swapColon(c.v, '\\u003a'), swapColon(c.v, '\\x3A'),
       c.v.toUpperCase(), c.v.replace(/^https:\/\/[^/]+/, (h) => h.toUpperCase())];
     pieces.push(...vs);
     for (const v of vs) for (const pre of prefixes) {
