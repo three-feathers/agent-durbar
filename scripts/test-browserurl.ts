@@ -195,8 +195,9 @@ for (const make of [(n: number) => 'a'.repeat(n - 1) + '!', (n: number) => 'a.'.
     const b = make(big);
     assert.ok(b.length <= BROWSER_URL_MAX, `${name}: under the cap`);
     let n = 50;
-    while (run(a, n) < 40 && n < 5_000_000) n *= 2;
-    const tSmall = best(a, n);
+    // calibrate on the measure that is asserted (the best of 3): one jittery run on a coarse timer must not end the loop early
+    let tSmall = best(a, n);
+    while (tSmall < 40 && n < 5_000_000) { n *= 2; tSmall = best(a, n); }
     const tBig = best(b, n);
     assert.ok(tSmall > 0, `${name}: the small run must register CPU time (n=${n})`);
     assert.ok(tBig < tSmall * limit, `${name}: ${big / small}x the input took ${(tBig / tSmall).toFixed(1)}x the time (${tSmall.toFixed(1)} -> ${tBig.toFixed(1)} ms): not linear`);
