@@ -58,7 +58,7 @@ module.exports = async (ctx) => {
   };
   const opened = () => until(`!!document.querySelector('.inl-input')`, 4000);
   /* Blur the open field and be sure the field's blur handler ran, in a window with or without OS focus (a CI window, Windows, may have none: Chromium then does not dispatch the blur event for el.blur()). One page call: blur(); when no event came, dispatch the same event once, so the handler never runs twice. Returns whether the real event came. */
-  const blurField = () => js(`(()=>{const i=document.querySelector('.inl-input');let seen=false;i.addEventListener('blur',()=>{seen=true;},{once:true});i.blur();if(!seen)i.dispatchEvent(new FocusEvent('blur'));return seen})()`);
+  const blurField = () => js(`(()=>{const i=document.querySelector('.inl-input');let seen=false;i.addEventListener('blur',()=>{seen=true;},{once:true});document.hasFocus=()=>true; /* only for this synchronous call: the handler reads it now */ try{i.blur();if(!seen)i.dispatchEvent(new FocusEvent('blur'));}finally{delete document.hasFocus;}return seen})()`);
   const none = async (tag) => assert.strictEqual((await st()).open, false, `${tag}: no field is open`);
   const closeField = async () => { if ((await st()).open) { await key('Escape'); await ctx.sleep(120); } };
 
@@ -69,11 +69,10 @@ module.exports = async (ctx) => {
       await H.load({ query: Q, ready: 'fit', settle: false });
       await until(`document.querySelectorAll('#stage .unit>.ren[data-ren]').length>=6`, 10000);
       ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus();
-      /* a CI window (Windows) may have no OS focus: blurAction keeps the field when document.hasFocus() is false, so every blur-commit step runs with a window that has focus; the one step that tests the opposite sets the false stub itself */
+      /* a CI window (Windows) may have no OS focus, or lose it while a field is open: blurAction keeps the field when document.hasFocus() is false (FR-021 item 2). The driver therefore never stubs hasFocus for long: blurField() stubs it true for ONE synchronous call, and the window-blur step stubs it false for one call. A real OS blur at any other time then keeps the field, as in the app. */
       const hasOs = async () => ((await js('document.hasFocus()')) ? 'has' : 'has no');
       console.log('[rename-inline] ' + w + 'x' + h + ' ' + level + ': the window ' + (await hasOs()) + ' OS focus');
       if (process.env.RI_UNFOCUSED === '1') { ctx.win.blur(); await ctx.sleep(300); console.log('[rename-inline] RI_UNFOCUSED=1: the window now ' + (await hasOs()) + ' OS focus'); }
-      await js(`document.hasFocus=()=>true;0`);
       const tag = `${w} ${level}`;
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${tag}: the detail level is on`);
       assert.ok(await js(`typeof __durbarSimUi.inline==='function'&&!!window.__simRenameCalls`), `${tag}: the simulator hooks exist`);
@@ -209,7 +208,7 @@ module.exports = async (ctx) => {
       const n3 = await nSess();
       await js(`(()=>{document.hasFocus=()=>false;document.querySelector('.inl-input').dispatchEvent(new Event('blur'));})()`); await opened();
       assert.ok((await st()).open && (await nSess()) === n3, `${tag}: the window losing focus keeps the field open, no call (2)`);
-      await js(`document.hasFocus=()=>true;0`);
+      await js(`delete document.hasFocus;0`);
       await js(`document.querySelector('.inl-input').focus()`);
       await blurField(); await until(`__durbarSimUi.agents().find(x=>x.id===${jsLiteral(A)}).alias==='Away'`, 4000);
       assert.strictEqual(await aliasOf(A), 'Away', `${tag}: a blur inside the window saves`);
@@ -313,7 +312,11 @@ module.exports = async (ctx) => {
       await click(`#stage .ren[data-ren="${B}"]`, 1); await opened();
       assert.strictEqual(await js(`document.querySelectorAll('.inl-input').length`), 1, `${tag}: one field on screen while a save runs`);
       assert.strictEqual((await st()).anchorKey, 'desk:' + B);
+      // the window loses its OS focus while the second field is open (a CI window may do it at any time): the field stays, as FR-021 item 2 says
+      ctx.win.blur(); await until(`!document.hasFocus()`, 4000);
       await until(`__durbarSimUi.agents().find(x=>x.id===${jsLiteral(A)}).alias==='Slow save'`, 6000); await settle();
+      assert.ok((await st()).open && (await st()).anchorKey === 'desk:' + B, `${tag}: an OS focus loss kept the second field open`);
+      ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus(); await until(`document.hasFocus()`, 4000);
       assert.strictEqual(await js(`document.querySelectorAll('.inl-input').length`), 1, `${tag}: still one field after the late answer`);
       assert.ok((await fld()).focus, `${tag}: the late answer did not take focus from the second field`);
       assert.strictEqual(await aliasOf(A), 'Slow save', `${tag}: the slow save went through`);
