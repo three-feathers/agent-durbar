@@ -31,10 +31,10 @@ Not done and not planned here: the owner moved Claude channels to idea #485 ("Fo
 - [x] ~~T034 Bun detection and the plugin install command on Linux, macOS and Windows (no prompts)~~ (moved to #485, not run)
 - [x] ~~T035 Only after T030..T034: spec the wizard in detail (FR-020..FR-026), then plan and tasks~~ (moved to #485, not run)
 
-## Phase 3: Codex mobile (planned; research only)
+## Phase 3: Codex mobile (host integration research)
 
-- [ ] T040 Check whether Codex in the ChatGPT mobile app sees a session run by `codex app-server`, and whether the app-server has a method or flag for it (costs about 1 prompt) [FR-030]
-- [ ] T041 If yes: plan Codex `setRemote` on the same capability (FR-031)
+- [x] T040 Research whether ChatGPT mobile reaches `codex app-server` sessions and whether there is a method or flag [FR-030]. `read:` OpenAI documents mobile access through a connected desktop/SSH host using a managed app-server; its daemon controls are not a per-thread method for Durbar's separate stdio child. `real:` 2026-10-24, Codex CLI 0.164.0: one read-only prompt through `CodexAdapter` returned its expected response, but the owner could not see the thread in the already-paired mobile app. The managed daemon was running; desktop UI was closed and remote-control state was not verified. One prompt used; usage not measured. See spec Changes for scope and limitation.
+- [x] T041 Disposition: do not add `CodexAdapter.setRemote` to the existing per-session capability. Mobile access requires managed host/app-server integration, a distinct architecture and permission-boundary design; defer until separately scoped and approved. No implementation planned in this task [FR-031].
 - [x] T011 FR-011 security review: native consent in main, refused in Allow all (and Allow all refused while on), off on GitHub before End/Remove/quit, activity log rows, fromApp on remote/mode/schedule handlers; notification body without the command
 
 ## Phase 2: Claude Remote Control (2026-10-20)
@@ -43,4 +43,3 @@ Not done and not planned here: the owner moved Claude channels to idea #485 ("Fo
 - [x] T051 `ClaudeAdapter.setRemote` over `remote_control`; relaunch turns it back on; `remote` event when that fails [FR-061, FR-062]
 - [x] T052 Copilot "not started" message [FR-063]; README Codex line [FR-064]
 - [x] T053 Unit tests (fake CLI and remote ops), simulator Claude kind with remote, driver and screenshots (`054-remote-claude-link-*`); real: `remote_control` over `claude -p` stream-json returned a claude.ai `session_url` (2026-10-20); through Durbar's window: sim only [FR-060..FR-064]
-

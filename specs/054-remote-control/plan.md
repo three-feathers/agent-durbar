@@ -36,6 +36,12 @@
 7. `src/renderer/sim.ts`: `remote: true` on the Copilot sim kind (off for the others), canned `setRemote` / `openRemote`.
 8. Tests: `scripts/test-remote.ts` (`test:remote` in `package.json`'s `test:serial`, which `scripts/run-tests.js` reads); fake session gains `rpc.remote` / `rpc.visibility`; contract C2 line. Driver `scripts/shots-054-remote.js` (not run here).
 
+## Phase 3 research disposition (2026-10-24, issue #490)
+
+OpenAI documents ChatGPT mobile access through a connected desktop or SSH host backed by a managed app-server. The daemon exposes lifecycle controls (`bootstrap --remote-control`, `enable-remote-control`, `disable-remote-control`); these are host/daemon controls, not a per-thread `setRemote` call. Durbar currently owns one stdio app-server child per Codex session. Do not add these daemon controls as the existing `remote` adapter capability: that would imply a per-session operation and lifetime that the protocol does not provide. A future integration needs a separate design for managed-daemon ownership, connecting Durbar sessions, mobile access and permission boundaries.
+
+`real:` 2026-10-24, Codex CLI 0.164.0: a single read-only prompt through `CodexAdapter`'s own per-session stdio app-server returned the expected response. The owner confirmed an existing mobile pairing but could not see the Durbar conversation. The managed daemon was running, but the desktop UI was closed and its remote-control state was not changed or verified. One prompt was used; usage was not measured. This is evidence about that setup only, not a test of an active connected-desktop workflow. Do not repeat a live prompt to retry the same path; any further check needs a verified active host connection and an explicit prompt budget.
+
 ## Complexity tracking
 
-None. Phases 2 and 3 are spec-only until their research tasks are done on a real account with the owner's go-ahead.
+None. Phase 2 is built. Phase 3 documentation research and the bounded live check are complete; any integration is deferred to a separate design and owner decision.
