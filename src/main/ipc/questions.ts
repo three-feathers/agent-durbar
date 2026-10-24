@@ -3,6 +3,7 @@ import { shell } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import type { AgentInfo } from '../../shared/api';
+import { readAnswerPayload } from '../../adapters/questions';
 import { errText } from '../agentops';
 import { checkElicitAnswer, elicitHttpsUrl } from '../../shared/elicit';
 import type { createElicitTracker } from '../../shared/elicit';
@@ -21,11 +22,9 @@ export function register(deps: QuestionsIpcDeps): void {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     const ad = a ? router.forAgent(a.id) : undefined;
     if (!a || !ad?.answerQuestion || typeof requestId !== 'string' || requestId.length > 200) return { ok: false, error: 'unknown agent or question' };
-    let clean: Record<string, string> | null = null;
-    if (answers && typeof answers === 'object') {
-      clean = {};
-      for (const [k, v] of Object.entries(answers as Record<string, unknown>).slice(0, 4)) if (typeof v === 'string' && k.length <= 300) clean[k] = v.slice(0, 500);
-    }
+    // spec 052 FR-178: a question longer than 300 characters used to lose its answer here and reach the agent as a skip
+    const clean = readAnswerPayload(answers);
+    if (clean === undefined) return { ok: false, error: 'That answer could not be read. Try again, or Skip.' };
     ad.answerQuestion(a.id, requestId, clean);
     return { ok: true };
   });

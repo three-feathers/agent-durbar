@@ -1013,3 +1013,14 @@ Seen in the `chat-title-long` shots (`simtitles=long`, a 120-character title): t
   - Decided by the coordinator under Ruben's delegation: CSS `text-overflow` here (one-line inline-block span), not the measured `fitCut` of FR-174, because the span is a single line, where `text-overflow` is dependable; the screen-reader announcement (`announce(...)`) keeps the full name.
   - Rule `answer-bar-name` in `check:ui-text`: surface `chat-title-long` (`simtitles=long`) with a pending question and a pending permission; the name span ends in an ellipsis (measured: `scrollWidth > clientWidth` with `text-overflow:ellipsis`), its `title` is the full name, the verb is fully visible inside the bar, and the bar does not overflow. Mutation: removing the ellipsis (or the `title`) fails the rule.
   - Shots: `docs/screenshots/052-answer-bar-name-{before,after}-{1440x900,1280x800}.png`; retake linked screenshots that show the answer bar (`npm run shots:docs -- --list`).
+
+### 2026-10-24: a custom answer to a long question reached the agent as a skip (FR-178, issue #689)
+
+Owner report (Vikram, 2026-10-24): a custom ("Other") answer to an agent's question showed the card as "skipped", the agent said the user skipped, and the typed text then showed up as an ordinary message (the user typed it again). Two times out of three.
+
+*Cause:* `agents:answerQuestion` in `src/main/ipc/questions.ts` kept an answer only when the question text (the answer's key) was at most 300 characters, but the card shows and keys questions up to 2,000 (FR-160, `MAX_QUESTION_TEXT`). A question with more than 300 characters (agents put their context in it) lost its whole answer there, and every adapter reads "no usable answer" as a skip. It did not depend on the answer: an option fails the same way. The window and the simulator never reach main, so no simulator check could show it.
+
+- **FR-178** **An answer to a question is never read as a skip because of the question's length** `[IMPLEMENTED]` `test:` `scripts/test-copilot-model.ts` (a 900-character question: the custom answer reaches `ask_user` as that answer, no `cancelled` event), `sim:` `check:question-visible` (a custom answer from the bar and from the card, with a rename while typing: `answered: <exact text>`, no `skipped`, no extra user message).
+  - `readAnswerPayload` (`src/adapters/questions.ts`) is the one reading of the window's reply: strings only, up to 4 entries, a key up to `MAX_QUESTION_TEXT`, a value up to `MAX_ANSWER`; `null` stays a skip.
+  - Nothing usable (not an object, no valid entry) is refused with `{ ok: false, error }`; the card stays open and says "Could not answer", it is never turned into a skip.
+  - `[KNOWN GAP]` The IPC handler itself is not run by a test (it needs Electron); the unit test reads that `agents:answerQuestion` uses `readAnswerPayload`. Not run on a real Copilot session (no credits). Seen only from the report: the retyped message is the user's own.

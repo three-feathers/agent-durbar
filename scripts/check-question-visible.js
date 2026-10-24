@@ -74,10 +74,14 @@ module.exports = async (ctx) => {
     const ren = await js(`(()=>{const i=document.querySelector('#answerBar input.ab-other'),n=document.querySelector('#answerBar .ab-n');return {v:i&&i.value,focus:document.activeElement===i,name:n&&n.textContent,title:n&&n.title}})()`);
     assert.ok(ren.name === NEW && ren.title === NEW, `${w}: the bar shows the new name and title: ${JSON.stringify(ren)}`);
     assert.ok(ren.v === 'Teal, like the links' && ren.focus, `${w}: a rename keeps what you typed and the focus: ${JSON.stringify(ren)}`);
+    const users0 = await js(`document.querySelectorAll('#chat .msg.user').length`);
     await H.key('Enter', [], { pause: 0 });
     await until(`!!document.querySelector('#chat .note.question.settled')`);
     const st = await js(`document.querySelector('#chat .note.question.settled .pstate').textContent`);
     assert.ok(st.includes('answered: Teal, like the links'), `${w}: Enter in the bar's box answered the card: ${st}`);
+    // spec 052 FR-178 (issue 689): a custom answer is the answer, never a skip, and no ordinary user message follows it
+    assert.ok(!st.includes('skipped'), `${w}: not skipped: ${st}`);
+    assert.strictEqual(await js(`document.querySelectorAll('#chat .msg.user').length`), users0, `${w}: the custom answer is not sent as a message too`);
     await until(`document.getElementById('answerBar').hidden`);
     assert.ok(await js(`document.getElementById('answerBar').hidden`), `${w}: answered: the bar goes away`);
     // an option button in the bar answers too
@@ -87,6 +91,17 @@ module.exports = async (ctx) => {
     const st2 = await js(`document.querySelector('#chat .note.question.settled .pstate').textContent`);
     assert.ok(/answered: Blue$/.test(st2.trim()), `${w}: the bar's option answered the card: ${st2}`);
     await until(`document.getElementById('answerBar').hidden`);
+    // FR-178: the card's own Other box and Answer button, with a rename while typing: answered with exactly that text, no extra message
+    await open(w, h); await scroll('bottom');
+    const users1 = await js(`document.querySelectorAll('#chat .msg.user').length`);
+    await js(`document.querySelector('#chat .note.question .q-other').focus()`);
+    ctx.win.webContents.insertText('Teal  from the card'); await ctx.sleep(80);
+    await js(`window.__durbarSimRetitle('Renamed while typing in the card','')`); await ctx.sleep(150);
+    await js(`[...document.querySelectorAll('#chat .note.question:not(.settled) .note-actions .btn.primary')].find(b=>b.textContent==='Answer').click()`);
+    await until(`!!document.querySelector('#chat .note.question.settled')`);
+    const st3 = await js(`document.querySelector('#chat .note.question.settled .pstate').textContent`);
+    assert.ok(/ → answered: Teal from the card$/.test(st3), `${w}: the card's Answer sent exactly the custom text: ${st3}`);
+    assert.strictEqual(await js(`document.querySelectorAll('#chat .msg.user').length`), users1, `${w}: no ordinary user message follows the answer`);
     console.log('[question-visible]', w, 'ok');
   }
   console.log('[question-visible] all checks passed');

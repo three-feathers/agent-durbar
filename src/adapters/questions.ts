@@ -44,6 +44,18 @@ export function parseQuestionsWithOriginals(input: unknown): { asked: AskedQuest
   return { asked: out, originals };
 }
 
+/**
+ * The window's answer as main takes it (spec 052 FR-178): strings only, at most MAX_QUESTIONS entries, a key (the question's text) up to
+ * MAX_QUESTION_TEXT and a value up to MAX_ANSWER. `null` is a skip. `undefined` = nothing usable, which main refuses; it must never read as a skip.
+ */
+export function readAnswerPayload(answers: unknown): Record<string, string> | null | undefined {
+  if (answers === null) return null;
+  if (!isObj(answers)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(answers).slice(0, MAX_QUESTIONS)) if (typeof v === 'string' && k.length <= MAX_QUESTION_TEXT) out[k] = v.slice(0, MAX_ANSWER);
+  return Object.keys(out).length ? out : undefined;
+}
+
 /** The user's answers, kept only for the questions asked, each one line of at most 500 characters; undefined when none is left. */
 export function cleanAnswers(asked: readonly AskedQuestion[], answers: unknown): Record<string, string> | undefined {
   if (!isObj(answers)) return undefined;
