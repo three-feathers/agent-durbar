@@ -175,6 +175,8 @@ status: **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/sho
 
 - **2026-10-21, spec 068 (coffee break), supersedes the faint look.** An agent at its credit limit, or at a usage limit of its agent app, is on a coffee break: no trouble drawing (`troubleOf` returns null for `coffee`), a calm room without a siren, and the words "On a coffee break". User Story 2 scenario 2 (fainted at *Limit reached*) no longer happens in the app; the faint drawing stays in the code for any caller that passes `limit` without `coffee`. `test:` mood.
 
+- **2026-10-23, spec 077 (Cheeky Crew).** In the `crew` kit the character is a portrait (one of three poses by status), so the moods that need a different body are drawn only as overlays: the sweat drop (heavy), the horns (monster), the dizzy stars, the ambulance and the typing and waving arms. Not drawn there: the wider body, the monster skin and frown, closed eyes (unless the resting pose shows them) and the faint tilt. The accessible label and the List view words still carry every mood. Every other kit is unchanged.
+
 ### 2026-10-23: "Retrying" while the agent app retries the model API (issue #600)
 
 **Input**: Vikram (owner go, 2026-10-23, issue #600): when the model API errors or hits a rate limit, the agent apps retry quietly and the desk looks frozen. Show "Retrying (attempt N) – <reason>" on the desk and in the chat, and "Gave up" with the reason if the retries run out. Sources named in the issue (`read:` spec 076 research on PR #575): Claude Code's `api_retry` stream message (ignored until now in `claudeMap.ts`), Copilot's failed model calls, Codex's API request status. Normalized adapter event, no vendor types in the renderer, reason text masked.

@@ -171,6 +171,11 @@
     '--pc-error':'#8e3a32',
     '--pb-done':'#e0eee6',
     '--pc-done':'#2f6a47',
+
+    /* the Cheeky Crew kit's own accents (spec 077): trim and outline colours of its furniture and, later, its characters */
+    '--crew-ink':'#3a3331',
+    '--crew-accent':'#d9577a',
+    '--crew-accent-2':'#2f9c95',
   };
 
   /* ---------- Art slots: Clean Office defaults ----------
@@ -344,7 +349,7 @@
     'gadget-cup','gadget-laptop']; /* spec 070 FR-011: replace the idle cup and the laptop */
   const UI_STYLES=['clean','corporate','retro','court-indian','court-european','court-japanese'];
   /* Scene kits (spec 035 FR-013): how people and desks are drawn; the drawing code is the app's (scenekits.js). */
-  const SCENE_KITS=['office','corporate','pixel','court-indian','court-european','court-japanese'];
+  const SCENE_KITS=['office','corporate','pixel','court-indian','court-european','court-japanese','crew'];
 
   function validateManifest(m){
     if(!m || typeof m!=='object') return null;
@@ -981,6 +986,19 @@
     },
     words:{'place-library':'Bunko','place-coffee':'Chashitsu','place-boss':'Tono','place-bank':'Kura','place-postbox':'Yūbinkyoku','boss-note':'Went to see the Tono','place-software':'Kōbō','place-terminal':'Tanmatsu-shitsu','place-web':'Tsūshinjo','place-other':'Dōgu-beya', /* spec 052 FR-023: Japanese words in the Japanese court (the plain names are in the tooltips, FR-013) */'lobby-label':'The Ō-hiroma: the places where agents work','door-close':'Slide shut','door-open':'Slide open','door-title-prefix':'Slide the fusuma shut'},
     motion:{preset:'court'},
+  });
+
+  /* ---- 077: Cheeky Crew: a playful desk, one of several characters per agent (the characters come with the art) ---- */
+  registerBuiltIn({
+    id:'cheeky-crew', name:'Cheeky Crew', author:'Three Feathers', version:'1.0', extends:'clean-office',
+    ui:'clean',
+    scene:'crew',
+    tokens:{
+      '--bg':'#faf3ea','--chair':'#8573c9','--desk':'#efc267','--desk-front':'#f6d998','--desk-drawer':'#ecc178',
+      '--monitor-stand':'#6e6764','--monitor-frame':'#3a3331','--laptop':'#4d4643',
+      '--cup':'#fff6e8','--cup-line':'#d3b98f',
+    },
+    motion:{preset:'default'},
   });
 
   /* boot: apply Clean Office immediately so the page never has un-tokenized colours */

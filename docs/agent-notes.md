@@ -4,6 +4,11 @@ What coding agents on this repo learned the hard way, so the next agent does not
 
 Each entry has the date it was learned, what happened, and how to apply it, with its evidence (`real:` = run and seen, `read:` = from code or docs, a PR or issue number). Add an entry in the PR where you learned it. Fix or delete an entry that turns out to be wrong. **Never** put secrets, tokens, personal data or chat contents here.
 
+## Scene kit pictures (spec 077)
+
+- **A picture in a scene is an `<image href>` with a relative path, and `file:` pages allow it under `img-src 'self'`** (2026-10-23, `sim:`, spec 077). The Cheeky Crew portraits load from `dist/renderer/crew/` with the CSP unchanged. Detect a missing or broken one with `new Image()` and `decode()` (an SVG `<image>` has no `naturalWidth`); the desk then redraws because the failure is in its `data-sig` and cache keys. `check-crew.js` removes one picture from a copy of `dist/` (`H.load({ index })`) to prove it; the copy's page logs one "refused a call that did not come from its own window" for `app:version`, which is expected there.
+- **Pillow writes a clean WebP** (2026-10-23, `real:` Pillow 10.2): `im.save(..., 'WEBP', exif=b'')` leaves only the `VP8`/`VP8L`/`VP8X`/`ALPH` chunks; `test:crew-assets` reads the RIFF chunks and fails on `EXIF`, `XMP ` or `ICCP`. Drawing a transparent shape with `rounded_rectangle` on an RGBA image punches a hole, it does not skip.
+
 ## Shell and process pitfalls
 
 - **Plain Node can `require()` a `src/shared/*.ts` file** (2026-10-23, spec 008 FR-122, #658, `real:` Node 22.23). Node 22.18 and later strip types by default, so a `.js` script with no `npm ci` or build (the release `verify` job) can load `src/shared/redact.ts` and reuse the real masking instead of copying it. Only erasable TypeScript works (no `enum`, `namespace` or parameter properties), and an older Node or `--no-experimental-strip-types` throws a `SyntaxError`: wrap the `require` and **fail closed** (refuse the output) rather than fall back to unmasked text. `process.features.typescript` tells a test whether it can run.
