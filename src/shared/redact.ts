@@ -22,7 +22,7 @@ const LONG_OK_NAME = /^(PATH|PATHEXT|PSMODULEPATH|HOME|HOMEPATH|HOMEDRIVE|USERPR
    fixed-width lookbehind (T130; over-masks a token glued to a literal `25XX`, fail-safe). It may also start right after a backslash
    escape (`\n`, `\t`, `\uXXXX`, `\xXX`), because the debug log redacts *after* `JSON.stringify`, which turns a token at the start of a
    line into `\nghp_…` (T130, review of PR #549). A quoted-printable escape (`=3Dghp_…`: `=` and two upper-case hex digits) and a
-   `%uXXXX` escape (`%u003Dghp_…`, merged into the `%XX` branch so the start costs no more per position) start a token too (T131, issue #551). Every branch is fixed-width, so each position costs O(1): still linear. */
+   `%uXXXX` escape (`%u003Dghp_…`, merged into the `%XX` branch so the start costs no more per position) start a token too (T132, issue #551). Every branch is fixed-width, so each position costs O(1): still linear. */
 const PCT = String.raw`(?<=(?:%(?:u[0-9A-Fa-f]{2})?|25)[0-9A-Fa-f]{2}|=[0-9A-F]{2}|\\(?:[nrtbfv]|u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2}))`;
 /** Where a token shape may start: no letter or digit before it, or right after a `%XX`, `%uXXXX`, `=XX` or backslash escape. */
 const START = String.raw`(?:(?<![A-Za-z0-9])|${PCT})`;
@@ -50,7 +50,7 @@ const TOKEN_SHAPES: Array<RegExp | Guarded> = [
   // the `%XX` start (`2525…`): linear, but about 40x the cost of the other shapes (T130, review of PR #549). The prefix stays.
   new RegExp(String.raw`(?<=(?:(?<![A-Za-z0-9_-])|${PCT})_{0,8}(?:[A-Za-z0-9]{1,40}_{1,3}){0,4})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}`, 'g'),
   shape(String.raw`(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])`),
-  // Chat-tool secrets (T131, issue #551). Slack tokens: `xoxb-`, `xoxp-`, `xoxa-`, `xoxr-`, `xoxs-`, `xoxe-` and `xapp-`, then 10+
+  // Chat-tool secrets (T132, issue #551). Slack tokens: `xoxb-`, `xoxp-`, `xoxa-`, `xoxr-`, `xoxs-`, `xoxe-` and `xapp-`, then 10+
   // token characters (`xoxo-` is not a Slack prefix).
   guarded(shape(String.raw`(?:xox[abprse]|xapp)-[A-Za-z0-9-]{10,}`), /xox|xapp-/i),
   // Webhooks: the fixed host and path sit in a lookbehind (host in any case), so the scheme and host stay and only the secret path is

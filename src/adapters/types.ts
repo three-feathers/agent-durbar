@@ -7,7 +7,7 @@
 import type { FolderSetupStart } from '../shared/foldersetup';
 import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit';
 import type { McpServerSpec } from '../shared/mcp';
-import type { CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
+import type { AutoTier, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
@@ -38,8 +38,11 @@ export interface StartOptions {
   /** Folder or .code-workspace file; one session per workspace. */
   workspace: string;
   model?: string;
-  /** For model 'auto': routing preference ('efficiency' is the cheapest). */
-  autoTier?: 'efficiency' | 'balance' | 'intelligence';
+  /**
+   * For model 'auto': the routing preference the user chose and Durbar saved (spec 007 FR-016); it goes on create AND resume.
+   * Absent: a new `auto` session gets the adapter's default (Copilot: `efficiency`, or nothing under a managed tier), a resume nothing.
+   */
+  autoTier?: AutoTier;
   /** Cap for this session in the adapter's `capUnit`: AI credits (treated as AIU, spec 011 FR-015) or dollars (spec 012 FR-150). Soft. */
   maxAiCredits?: number;
   /** Resume an existing session by the vendor's own session id (disk-backed). */
@@ -259,7 +262,20 @@ export interface ModelEvent extends BaseEvent {
   effort?: string;
   previousEffort?: string;
   tier?: ContextTier;
+  /** Spec 007 FR-016: the Auto routing tier the runtime reports with the change (one of the three names only). */
+  autoTier?: AutoTier;
   cause: 'user' | 'runtime' | 'rate-limit' | 'fallback' | 'resume';
+}
+
+/**
+ * Spec 007 FR-019: the runtime could not switch the Auto routing tier (Copilot `session.auto_tier_switch_failed`: "the previously effective
+ * preference remains active"). `effective` = the tier still in use (absent: the provider's default); `requested` absent = a return to the default failed.
+ */
+export interface AutoTierFailedEvent extends BaseEvent {
+  type: 'autoTierFailed';
+  requested?: AutoTier;
+  effective?: AutoTier;
+  reason: 'policy-rejected' | 'request-failed' | 'setup-failed' | 'unsupported' | 'unknown';
 }
 
 /** Compaction of the context (spec 030): `auto` = the runtime did it at its threshold, `manual` = the user asked, `model-switch` = before a switch to a smaller window, `overflow` = after the window was exceeded. */
@@ -353,6 +369,26 @@ export interface UsageLimitEvent extends BaseEvent {
   source: string;
   /** A later detail of the break this turn already reported (a reset time read afterwards); ignored when the agent is no longer on a break. */
   update?: boolean;
+}
+
+/** Spec 034 FR-016: why the agent app retries a model call (a fixed label chosen by the adapter, never the provider's text). */
+export type RetryReason = 'rate-limit' | 'overloaded' | 'server' | 'network' | 'timeout' | 'auth' | 'other';
+
+/**
+ * Spec 034 FR-016 (issue #600): the agent app retries a failed model API call by itself (`retrying`), or ran out of retries and the turn
+ * fails (`gave-up`, sent just before the error status). `attempt` is the retry number (1 = the first retry); on `gave-up`, the retries made.
+ * `maxAttempts` only when the agent app says how many it makes. No vendor field and no provider message: a fixed reason and numbers.
+ */
+export interface RetryEvent extends BaseEvent {
+  type: 'retry';
+  phase: 'retrying' | 'gave-up';
+  attempt: number;
+  maxAttempts?: number;
+  reason: RetryReason;
+  /** HTTP status of the failed call, 100-599, when the agent app gave one. */
+  httpStatus?: number;
+  /** How long the agent app waits before this retry, when it said so. */
+  delayMs?: number;
 }
 
 /**
@@ -503,10 +539,12 @@ export type AgentEvent =
   | UsageEvent
   | ContextEvent
   | ModelEvent
+  | AutoTierFailedEvent
   | CompactionEvent
   | McpStatusEvent
   | LimitEvent
   | UsageLimitEvent
+  | RetryEvent
   | TitleEvent;
 
 /** Spec 012 FR-156: the answer of `verifySignIn`. */

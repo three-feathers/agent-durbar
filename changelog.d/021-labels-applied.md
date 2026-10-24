@@ -1,1 +1,0 @@
-- **Label backfill applied** (spec 021 T022): every open issue and PR, plus those closed in the last 30 days, now has a type, an area and its `spec:NNN` labels; 16 items that need a human are listed on #633.

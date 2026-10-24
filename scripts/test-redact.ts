@@ -198,7 +198,7 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
   assert.strictEqual(rec.nested.arr[0], '\n[redacted]', 'sink: a JWT after a newline');
 }
 
-// T131 (spec 012 FR-080 delta 2026-10-23, issue #551): Slack, Discord and Telegram secrets, and the `=XX` / `%uXXXX` starts.
+// T132 (spec 012 FR-080 delta 2026-10-23, issue #551): Slack, Discord and Telegram secrets, and the `=XX` / `%uXXXX` starts.
 // Fake values, built at run time so no secret scanner takes them for real ones.
 const AZ = 'AbCdEfGhIjKlMnOpQrStUvWx';
 const TG35 = 'AAH' + AZ + '_-AbCdEf'; // a real-shaped Telegram token part: exactly 35 characters
@@ -226,18 +226,18 @@ for (const [k, c] of Object.entries(chat)) {
       // a Telegram token part may hold `_`, so an underscore glued right after it is part of it (35 exactly is the shape): not a token then
       if (k === 'telegram' && w.includes(form + '_')) continue;
       const out = redact(`see ${w} now`, {});
-      assert.ok(!out.includes(c.secret), `T131 ${k} in ${w.slice(0, 12)}…: secret part gone (${out})`);
-      assert.ok(out.startsWith('see ') && out.endsWith(' now'), `T131 ${k} in ${w.slice(0, 12)}…: surroundings kept`);
+      assert.ok(!out.includes(c.secret), `T132 ${k} in ${w.slice(0, 12)}…: secret part gone (${out})`);
+      assert.ok(out.startsWith('see ') && out.endsWith(' now'), `T132 ${k} in ${w.slice(0, 12)}…: surroundings kept`);
       const out2 = maskTokenShapes(`see ${w} now`, '[secret hidden]');
-      assert.ok(out2.includes('[secret hidden]') && !out2.includes(c.secret), `T131 maskTokenShapes ${k} in ${w.slice(0, 12)}…: hidden (${out2})`);
+      assert.ok(out2.includes('[secret hidden]') && !out2.includes(c.secret), `T132 maskTokenShapes ${k} in ${w.slice(0, 12)}…: hidden (${out2})`);
     }
   }
   // JSON.stringify output (the debug log redacts after it) and a token right after a quoted-printable or %uXXXX escape
-  assert.ok(!redact(JSON.stringify({ line: c.v }), {}).includes(c.secret), `T131 ${k} in JSON`);
+  assert.ok(!redact(JSON.stringify({ line: c.v }), {}).includes(c.secret), `T132 ${k} in JSON`);
   for (const e of ['=3D', '=0A', '%u003D', '%u0022', '%u003d']) {
     const out = redact(`a${e}${c.v}&x`, {});
-    assert.ok(!out.includes(c.secret), `T131 ${k} after ${e}: ${out}`);
-    assert.ok(!maskTokenShapes(`a${e}${c.v}&x`, '[s]').includes(c.secret), `T131 maskTokenShapes ${k} after ${e}`);
+    assert.ok(!out.includes(c.secret), `T132 ${k} after ${e}: ${out}`);
+    assert.ok(!maskTokenShapes(`a${e}${c.v}&x`, '[s]').includes(c.secret), `T132 maskTokenShapes ${k} after ${e}`);
   }
 }
 // exact output: the scheme and host of a webhook stay, the secret path goes
@@ -264,14 +264,14 @@ assert.strictEqual(maskTokenShapes('=3D' + planted.aws, '[s]'), '=3D[s]', 'maskT
 assert.strictEqual(redact('xoxo-hugs-and-kisses xoxo-1234567890123', {}), 'xoxo-hugs-and-kisses xoxo-1234567890123', 'xoxo- is not a Slack token');
 for (const c of 'abprse') assert.strictEqual(redact('t xo' + 'x' + c + '-1234567890-' + AZ + ' z', {}), 't [redacted] z', `xox${c}- is masked`);
 // `=XX` is upper case only: after `=3d` the token is glued to a letter, so no rule starts there; after `=3D` it does
-assert.strictEqual(redact('a=3d' + planted.ghp, {}), 'a=3d' + planted.ghp, 'ghp after lower-case =3d: no start (documented limit, spec 012 T131)');
+assert.strictEqual(redact('a=3d' + planted.ghp, {}), 'a=3d' + planted.ghp, 'ghp after lower-case =3d: no start (documented limit, spec 012 T132)');
 assert.strictEqual(redact('a=3D' + planted.ghp, {}), 'a=3D[redacted]', 'ghp after upper-case =3D');
 // encodings: any depth of `%25`, and the scheme/host of a webhook kept in the same case it was written
 assert.strictEqual(redact('u=' + encodeURIComponent(encodeURIComponent(chat.slackHook.v)), {}), 'u=https%253A%252F%252Fhooks.slack.com%252Fservices%252F[redacted]', 'double-encoded slack webhook');
 assert.strictEqual(redact('HTTPS://HOOKS.SLACK.COM/SERVICES/T0123ABCD/B0123ABCD/' + AZ, {}), 'HTTPS://HOOKS.SLACK.COM/SERVICES/[redacted]', 'upper-case host');
 assert.strictEqual(redact('https://Discord.com/API/Webhooks/123456789012345678/' + AZ + AZ, {}), 'https://Discord.com/API/Webhooks/[redacted]', 'mixed-case discord host');
 assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x', {}), 'https://API.TELEGRAM.ORG/BOT[redacted]/x', 'upper-case telegram host');
-// the guard never changes the result (T131 review): every kind x encoding x prefix, then random strings of markers and separators
+// the guard never changes the result (T132 review): every kind x encoding x prefix, then random strings of markers and separators
 {
   const pieces: string[] = [];
   const prefixes = ['', 'x ', '=3D', '%u003D', '_', '"', '\\n', '%253D'];
@@ -376,7 +376,7 @@ for (const ok of ['the xox of it, xoxo, xoxo-friends xoxb- xoxb-short xapp- xapp
     escXSk: '\\x3dsk-'.repeat(MB / 7),
     escTJwt: '\\teyJaaaaa.'.repeat(MB / 11),
     escNUrl: '\\na://x:'.repeat(MB / 8),
-    // T131: Slack, Discord and Telegram shapes, and the `=XX` / `%uXXXX` starts
+    // T132: Slack, Discord and Telegram shapes, and the `=XX` / `%uXXXX` starts
     slackTok: 'xoxb-'.repeat(MB / 5),
     slackShort: ('xoxb-' + 'a'.repeat(9) + ' ').repeat(MB / 15),
     slackLong: 'xapp-' + 'a-'.repeat(MB / 2),
@@ -1237,7 +1237,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   const s1 = cpuMs(() => void redact('%3F'.repeat(60_000)), 2000);
   const s2 = cpuMs(() => void redact('%3F'.repeat(240_000)), 2000);
   console.log(`redact: oauth query linearity value ${t1.toFixed(0)}/${t2.toFixed(0)} ms, names ${r1.toFixed(0)}/${r2.toFixed(0)} ms, separators ${s1.toFixed(0)}/${s2.toFixed(0)} ms`);
-  for (const [a, b, what] of [[t1, t2, 'value'], [r1, r2, 'names'], [s1, s2, 'separators']] as const) assert.ok(b < Math.max(40, a * 10), `oauth query rule is linear (${what}: ${a} -> ${b} ms CPU for 4x input)`);
+  for (const [a, b, what] of [[t1, t2, 'value'], [r1, r2, 'names'], [s1, s2, 'separators']] as const) assert.ok(b < Math.max(250, a * 10), `oauth query rule is linear (${what}: ${a} -> ${b} ms CPU for 4x input)`); // a floor well above Windows' ~16 ms timer step and CI load; backtracking would take seconds
 }
 
 console.log('redact: all checks passed');

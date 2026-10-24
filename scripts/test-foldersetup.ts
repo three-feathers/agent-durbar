@@ -185,7 +185,7 @@ assert.strictEqual(parseExplanation('I think it is fine', 'Copilot').ok, false, 
       assert.ok(sh.hidden && sh.text.includes('[secret hidden]') && !sh.text.includes(tok.slice(-12)), `token after _, %XX or \\n hidden: ${sh.text}`);
     }
   }
-  // T131 (spec 012 FR-080 delta 2026-10-23): Slack, Discord and Telegram secrets are hidden too, and the webhook host stays visible
+  // T132 (spec 012 FR-080 delta 2026-10-23): Slack, Discord and Telegram secrets are hidden too, and the webhook host stays visible
   {
     const az = 'AbCdEfGhIjKlMnOpQrStUvWx';
     const chat: Array<[string, string, string?]> = [

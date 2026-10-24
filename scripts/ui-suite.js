@@ -35,6 +35,7 @@ const DRIVERS = [
   { name: 'shots-033', env: { DURBAR_SIM_FLOORS: '1' } },
   { name: 'shots-033-move', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-024 (#590): Move to floor in the folder menu, with Undo
   { name: 'shots-034-list' },
+  { name: 'shots-034-retry' }, // spec 034 FR-021: Retrying and Gave up (simretry=1 in its own query)
   { name: 'shots-044-everywhere' },
   { name: 'shots-044-templates' },
   // spec 060 FR-002: the per-OS assertion needs a known manager set, the one the driver expects for the host OS (a real Windows host
@@ -55,6 +56,7 @@ const DRIVERS = [
   { name: 'shots-058-mcp-health' }, // spec 058 FR-090..FR-096 (#603): failure reason, when, Copy diagnostics (masked), the MCP chip dot
   { name: 'shots-model', label: 'shots-model 1440', env: { MODEL_W: '1440', MODEL_H: '900' } },
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },
+  { name: 'shots-007-autotier' }, // spec 007 FR-013..FR-018 (#607): the Auto routing tier in the model menu, confirm, Undo, the organization lock
   { name: 'shots-043-editor' }, // spec 043 FR-014: the profile file editor (modes, split widths, save round trip, unsaved guard)
   { name: 'shots-043-ai' }, // spec 043 FR-026..FR-039: Create with AI (canned generation, Extra tools, Stop waiting, Cancel and reopen)
   { name: 'shots-043-manage' }, // spec 043 FR-040..FR-042: nothing written before Save, the Profile menu refreshes at once, Delete from the menu and Settings
@@ -64,6 +66,7 @@ const DRIVERS = [
   { name: 'check-sched-edit' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
+  { name: 'check-chat-no-scroll' },
   { name: 'check-sim-guard' }, // spec 010 FR-026: the real preload API is refused by main under DURBAR_SIM
   { name: 'shots-069-mcp-global' }, // spec 069: add to the agent apps' own lists, review, remove, source chips
   { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
