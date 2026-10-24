@@ -67,7 +67,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     Every other MCP call is still denied in Read-only.
   - AC1: an owner PR on `.specify/memory/constitution.md` (an owned path, CODEOWNERS) through `/speckit.constitution`, with a MINOR version bump and the Sync Impact Report. It cites Vikram's approval (PR #647 comment) and Ruben's delegation (#556).
   - AC2: T030 may merge before it, with `BROWSER_READONLY_READS = false`. The PR that sets the constant to `true` (a one-line change plus its tests) does not merge before T006.
-- [ ] T007 Follow-up simulator probe of the mechanisms the 2026-10-24 delta chose (throwaway code, not merged, as T010: FR-010's `webPreferences` (no `disableDialogs`), `xvfb-run -a`, never `:99`, localhost only). Results go into research.md R1a/R1b as `sim:`, with the Electron version and T010's limits. [FR-010, FR-025d, FR-066a]
+- [x] T007 Follow-up simulator probe of the mechanisms the 2026-10-24 delta chose (throwaway code, not merged, as T010: FR-010's `webPreferences` (no `disableDialogs`), `xvfb-run -a`, never `:99`, localhost only). Results go into research.md R1a/R1b as `sim:`, with the Electron version and T010's limits. [FR-010, FR-025d, FR-066a]
   - AC1 (before T012 merges; FR-025d as the owner decided, no `disableDialogs`): a `confirm` in a **hidden** view while another view is shown: is the native dialog drawn over the shown chat, where, does it stay until answered, and **does the box show the page's origin or anything else that names the session** (FR-025d's wrong-session risk) (window list of the Xvfb root plus the screenshot diff T010 AC13 used); and in a shown view, that the user's answer (OK and Cancel, through simulated input on the dialog if possible) reaches the page.
   - AC2 (before T012 merges): while the agent drives, `alert` and `confirm` are closed through `Page.handleJavaScriptDialog` `accept: false`: the script is released, and **how long the native dialog stays drawn** after the answer (several runs; T010 saw 1.5 s or more), and whether `-cancel-dialogs` closes it.
   - AC2c (before T012 merges; FR-025e): with `Page` on, a `beforeunload` page, user activation, and `will-prevent-unload` **not** prevented: no native box is mapped (window list and screenshot, as AC1), so Durbar's box is the only one.
@@ -75,6 +75,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC3 (before T035): `webContents.setBackgroundThrottling(false)` called **at run time** on an attached, hidden view makes `Input.dispatchMouseEvent` answer and `requestAnimationFrame` run; record whether it also changes the app page's frame rate (Electron's "affects all `WebContents` in the host `BrowserWindow`" note) and whether `setBackgroundThrottling(true)` afterwards restores throttling.
   - AC4 (before T038): Watch-only: with `Input.setIgnoreInputEvents{ignore:true}` a `sendInputEvent` click is ignored; the sequence `ignore:false`, `Input.dispatchMouseEvent` press and release, `ignore:true` on one debugger session counts the CDP click; record whether `Input.insertText` is blocked while ignoring, and whether `before-input-event` `preventDefault()` stops `sendInputEvent` keys and fires for `Input.dispatchKeyEvent`.
   - AC5: zero credits; no process left (checked by PID).
+  - Done 2026-10-24 (research R1a-2), with these honest gaps: AC1's user answer reaching the page and the box's text were not checked (no `xdotool`), AC2's `-cancel-dialogs` was not tried, and the dialog stay time is one run `[KNOWN GAP]`. AC2b: `will-navigate` comes after `will-prevent-unload`, so a page-started leave is "Leave, then click again".
   - AC6: a failed AC gets a spec delta before the task named in it (AC1-AC2: T012, AC3: T035, AC4: T038; FR-066a's fallback is the input-shield view). AC1-AC2 results update FR-025d's two `[KNOWN GAP]`s.
 - [ ] T008 Identify the two default-profile files of T010 AC9 **without reading their contents** (throwaway probe as T010). [FR-022, FR-023a]
   - AC1: names, sizes and modification times of `Cache/Cache_Data/<hash>_0` and `.org.chromium.Chromium.Network Persistent State.<random>` (and the final `Network Persistent State` file, if any) for: no view; a view that loads nothing; views that load test pages on hosts whose names differ in length by at least 40 characters (`a.localhost` against a long `*.localhost` name). A size that follows the host name length means the file holds host data.
@@ -140,7 +141,8 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC8: `https://a.com/\x01` and `https://a.com/\x7f` are refused (the control-character check is covered by a test, so removing it fails the suite).
   - AC9: `http:example.com` and `https:/example.com` get the not-an-address reason, not the scheme reason.
   - AC10: the web branch of the link classifier calls the existing `isHttpUrl` (`src/shared/url.ts`) instead of its own check.
-- [ ] T012 [US1] `src/main/browser/views.ts`: lazy view per session, partition, hardening, teardown. [FR-001, FR-004, FR-010, FR-012, FR-020, FR-021, FR-023, FR-025..FR-029]
+- [ ] T012 [US1] `src/main/browser/views.ts`: lazy view per session, partition, hardening, teardown. [FR-001, FR-004, FR-010, FR-012, FR-020, FR-021, FR-023, FR-025..FR-029] `[KNOWN GAP]` an instant Leave answer is not repeated in real Electron (T007 `sim:`, ERR_FAILED); askDialog is never instant.
+  - **Status 2026-10-24 (PR for issue #556, slice 2):** built and tested (`test:browserviews`, fake-Electron and real-Electron smoke): AC1-AC6, AC8, and AC7's teardown at quit (`will-quit`). Not yet wired: teardown on session end, remove and folder remove (comes with T014's IPC), so T012 stays open.
   - AC1: `webPreferences` are exactly FR-010's, from a pure options builder with a unit test:
     - `sandbox`, `contextIsolation`, `webSecurity`, `safeDialogs` true;
     - no `disableDialogs` key (FR-025d, owner decision 2026-10-24);
@@ -166,6 +168,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
   - AC7: teardown on end, remove, folder remove and quit: detach, close, `clearStorageData`, `clearCache`.
   - AC8: no change to `package.json` `electronFuses` or to spec 008's switch removal (diff check). The **one stated exception** is T005's `enableCookieEncryption`, which lands in its own PR.
 - [ ] T013 [US1] Soft view cap and memory. [FR-011, FR-023]
+  - **Status 2026-10-24:** AC1-AC2 (the pure picker `src/main/browser/viewcap.ts`) built and tested; AC3-AC6 (simulator and memory) not done.
   - AC1: a unit test of the unload picker. It never picks:
     - a view whose page was reached by POST;
     - a view with any character key input since its page loaded (from `input-event`);
