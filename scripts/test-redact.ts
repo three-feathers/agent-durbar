@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
 
 // CPU time of f in ms (user + system of this process), not wall time: it does not grow when other processes take the CPU, so the
 // timing checks below hold on a loaded machine or runner (spec 041 `## Changes` 2026-10-22, T068). It still counts every step the
@@ -198,6 +198,246 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
   assert.strictEqual(rec.nested.arr[0], '\n[redacted]', 'sink: a JWT after a newline');
 }
 
+// T132 (spec 012 FR-080 delta 2026-10-23, issue #551): Slack, Discord and Telegram secrets, and the `=XX` / `%uXXXX` starts.
+// Fake values, built at run time so no secret scanner takes them for real ones.
+const AZ = 'AbCdEfGhIjKlMnOpQrStUvWx';
+const TG35 = 'AAH' + AZ + '_-AbCdEf'; // a real-shaped Telegram token part: exactly 35 characters
+assert.strictEqual(TG35.length, 35);
+const DBOT = 'M' + 'TIzNDU2Nzg5MDEyMzQ1Njc4' + '.GhIjKl.' + AZ + '_-AbC'; // user id (24), timestamp (6), HMAC (29)
+const chat: Record<string, { v: string; secret: string; keep?: string }> = {
+  slackBot: { v: 'xo' + 'xb-' + '1234567890-0987654321-' + AZ, secret: AZ },
+  slackUser: { v: 'xo' + 'xp-' + '1234567890-0987654321-1122334455-' + AZ, secret: AZ },
+  slackApp: { v: 'xa' + 'pp-' + '1-A0123456789-1234567890123-' + AZ.toLowerCase(), secret: AZ.toLowerCase() },
+  slackHook: { v: 'https://hooks.slack.com/services/' + 'T0123ABCD/B0123ABCD/' + AZ, secret: 'T0123ABCD', keep: 'https://hooks.slack.com/services/' },
+  discord: { v: 'https://discord.com/api/webhooks/' + '123456789012345678/' + AZ + '_-' + AZ, secret: '123456789012345678', keep: 'https://discord.com/api/webhooks/' },
+  discordapp: { v: 'https://discordapp.com/api/webhooks/' + '123456789012345678/' + AZ + '_-' + AZ, secret: AZ + '_-' + AZ, keep: 'https://discordapp.com/api/webhooks/' },
+  telegram: { v: '123456789:' + TG35, secret: AZ },
+  telegramApi: { v: 'https://api.telegram.org/bot' + '123456789:' + TG35 + '/getMe', secret: AZ, keep: 'https://api.telegram.org/bot' },
+  // review of PR #679: session tokens, Workflow Builder webhooks, other Telegram hosts, Discord bot tokens
+  slackSession: { v: 'xo' + 'xd-' + 'AbCdEf%2BGh%2FIj' + AZ, secret: AZ },
+  slackCookie: { v: 'xo' + 'xc-' + '1234567890-0987654321-' + AZ, secret: AZ },
+  slackWorkflow: { v: 'https://hooks.slack.com/workflows/' + 'T0123ABCD/A0123ABCD/123456789/' + AZ, secret: 'A0123ABCD', keep: 'https://hooks.slack.com/workflows/' },
+  slackTrigger: { v: 'https://hooks.slack.com:443/triggers/' + 'T0123ABCD/123456789/' + AZ, secret: 'T0123ABCD', keep: 'https://hooks.slack.com:443/triggers/' },
+  discordHostVar: { v: 'https://discord.com.:443//api//webhooks//' + '123456789012345678//' + AZ + '_-' + AZ, secret: '123456789012345678', keep: 'https://discord.com.:443//api//webhooks//' },
+  telegramFile: { v: 'https://api.telegram.org/file/bot' + '123456789:' + TG35 + '/photos/x.jpg', secret: AZ, keep: 'https://api.telegram.org/file/bot' },
+  telegramLocal: { v: 'http://localhost:8081/bot' + '1234567:' + TG35 + '/getMe', secret: AZ, keep: 'http://localhost:8081/bot' },
+  discordBot: { v: DBOT, secret: AZ },
+  discordBotEnc: { v: DBOT.replace(/\./g, '%2E'), secret: AZ },
+  discordBotEnc2: { v: DBOT.replace(/\./g, '%252e'), secret: AZ },
+};
+/** Test fixtures: write every `/` (or the Telegram token's `:` after its digits) in another spelling, on purpose not an escape. */
+const swapSlash = (x: string, to: string): string => x.split('/').join(to);
+const swapColon = (x: string, to: string): string => x.replace(/([0-9]):/g, (_m, d: string) => d + to);
+for (const [k, c] of Object.entries(chat)) {
+  const encTwice = (x: string): string => encodeURIComponent(encodeURIComponent(x));
+  const titleHost = (x: string): string => x.replace(/^https:\/\/[^/]+/, (h) => h.replace(/(^|[.\/])([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase()));
+  const forms = c.keep
+    ? [c.v, swapSlash(c.v, '\\/'), swapSlash(c.v, '\\\\/'), swapSlash(c.v, '\\u002f'), swapSlash(c.v, '\\x2F'), 'https://x.example/?u=' + encodeURIComponent(c.v),
+      'https://x.example/?u=' + encTwice(c.v), 'https://x.example/?u=' + encodeURIComponent(encTwice(c.v)), c.v.replace(/^https:\/\/[^/]+/, (h) => h.toUpperCase()), titleHost(c.v)]
+    : [c.v, swapColon(c.v, '%3A'), swapColon(c.v, '%253a'), swapColon(c.v, '\\u003A'), swapColon(c.v, '\\x3a')];
+  for (const form of forms) {
+    for (const wrap of WRAPS) {
+      const w = wrap(form);
+      // a Telegram token part may hold `_`, so an underscore glued right after it is part of it (35 exactly is the shape): not a token then
+      if (k === 'telegram' && w.includes(form + '_')) continue;
+      const out = redact(`see ${w} now`, {});
+      assert.ok(!out.includes(c.secret), `T132 ${k} in ${w.slice(0, 12)}…: secret part gone (${out})`);
+      assert.ok(out.startsWith('see ') && out.endsWith(' now'), `T132 ${k} in ${w.slice(0, 12)}…: surroundings kept`);
+      const out2 = maskTokenShapes(`see ${w} now`, '[secret hidden]');
+      assert.ok(out2.includes('[secret hidden]') && !out2.includes(c.secret), `T132 maskTokenShapes ${k} in ${w.slice(0, 12)}…: hidden (${out2})`);
+    }
+  }
+  // JSON.stringify output (the debug log redacts after it) and a token right after a quoted-printable or %uXXXX escape
+  assert.ok(!redact(JSON.stringify({ line: c.v }), {}).includes(c.secret), `T132 ${k} in JSON`);
+  for (const e of ['=3D', '=0A', '%u003D', '%u0022', '%u003d']) {
+    const out = redact(`a${e}${c.v}&x`, {});
+    assert.ok(!out.includes(c.secret), `T132 ${k} after ${e}: ${out}`);
+    assert.ok(!maskTokenShapes(`a${e}${c.v}&x`, '[s]').includes(c.secret), `T132 maskTokenShapes ${k} after ${e}`);
+  }
+}
+// exact output: the scheme and host of a webhook stay, the secret path goes
+assert.strictEqual(redact('post ' + chat.slackHook.v + ' now', {}), 'post https://hooks.slack.com/services/[redacted] now', 'slack webhook: host kept');
+assert.strictEqual(redact(chat.discord.v, {}), 'https://discord.com/api/webhooks/[redacted]', 'discord webhook: host kept');
+assert.strictEqual(redact('https://discordapp.com/api/v10/webhooks/123456789012/' + AZ + AZ, {}), 'https://discordapp.com/api/v10/webhooks/[redacted]', 'discordapp versioned');
+assert.strictEqual(redact(chat.telegramApi.v, {}), 'https://api.telegram.org/bot[redacted]/getMe', 'telegram api URL: host and method kept');
+assert.strictEqual(redact('token ' + chat.telegram.v + '.', {}), 'token [redacted].', 'telegram bare token');
+assert.strictEqual(redact('a ' + chat.slackBot.v + ' b', {}), 'a [redacted] b', 'slack bot token');
+assert.strictEqual(redact('=3D' + chat.slackBot.v, {}), '=3D[redacted]', 'slack token after =3D');
+assert.strictEqual(redact('%u003D' + chat.slackApp.v, {}), '%u003D[redacted]', 'slack token after %u003D');
+assert.strictEqual(redact('=3D' + planted.ghp + ' %u003D' + planted.sk, {}), '=3D[redacted] %u003D[redacted]', 'ghp after =3D, sk- after %u003D');
+assert.strictEqual(maskTokenShapes('=3D' + planted.aws, '[s]'), '=3D[s]', 'maskTokenShapes: aws after =3D');
+// Telegram is the exact shape (6-12 digits, `:`, 35 characters, nothing token-like after): ids, sessions and file names are not tokens
+{
+  const L = (n: number): string => AZ.repeat(2).slice(0, n);
+  for (const ok of ['1729680000:session_' + L(40), 'bundle.js:1234567:' + L(40), 'bundle.js:12345678:' + L(36), 'id=12345678:' + L(36), 'x 123456789:' + L(34), 'x 1234567890123:' + L(35), 'x 12345:' + L(35), 'x 123456789:' + L(35) + '_more']) {
+    assert.strictEqual(redact(ok, {}), ok, `telegram false positive stays: ${ok.slice(0, 40)}`);
+    assert.strictEqual(maskTokenShapes(ok, '[s]'), ok, `maskTokenShapes telegram false positive stays: ${ok.slice(0, 40)}`);
+  }
+  for (const n of [6, 7, 8, 9, 10, 11, 12]) assert.strictEqual(redact('t ' + '1'.repeat(n) + ':' + L(35) + '.', {}), 't [redacted].', `a ${n}-digit id with a 35-character part is a token`);
+}
+// the Slack prefix set: `xoxo-` is not one, `xoxa-` `xoxr-` `xoxs-` `xoxe-` are
+assert.strictEqual(redact('xoxo-hugs-and-kisses xoxo-1234567890123', {}), 'xoxo-hugs-and-kisses xoxo-1234567890123', 'xoxo- is not a Slack token');
+for (const c of 'abprse') assert.strictEqual(redact('t xo' + 'x' + c + '-1234567890-' + AZ + ' z', {}), 't [redacted] z', `xox${c}- is masked`);
+// `=XX` is upper case only: after `=3d` the token is glued to a letter, so no rule starts there; after `=3D` it does
+assert.strictEqual(redact('a=3d' + planted.ghp, {}), 'a=3d' + planted.ghp, 'ghp after lower-case =3d: no start (documented limit, spec 012 T132)');
+assert.strictEqual(redact('a=3D' + planted.ghp, {}), 'a=3D[redacted]', 'ghp after upper-case =3D');
+// encodings: any depth of `%25`, and the scheme/host of a webhook kept in the same case it was written
+assert.strictEqual(redact('u=' + encodeURIComponent(encodeURIComponent(chat.slackHook.v)), {}), 'u=https%253A%252F%252Fhooks.slack.com%252Fservices%252F[redacted]', 'double-encoded slack webhook');
+assert.strictEqual(redact('HTTPS://HOOKS.SLACK.COM/SERVICES/T0123ABCD/B0123ABCD/' + AZ, {}), 'HTTPS://HOOKS.SLACK.COM/SERVICES/[redacted]', 'upper-case host');
+assert.strictEqual(redact('https://Discord.com/API/Webhooks/123456789012345678/' + AZ + AZ, {}), 'https://Discord.com/API/Webhooks/[redacted]', 'mixed-case discord host');
+assert.strictEqual(redact('https://API.TELEGRAM.ORG/BOT123456789:' + TG35 + '/x', {}), 'https://API.TELEGRAM.ORG/BOT[redacted]/x', 'upper-case telegram host');
+// review of PR #679: every input of the review gets a row (S = a fake secret built at run time)
+{
+  const S = AZ + '9';
+  const TGS = (id: string): string => id + ':' + TG35;
+  const tg = (host: string, tail = '/getMe'): string => host + '/bot' + TGS('123456789') + tail;
+  // 1. Telegram on any host, port or path: only the token goes
+  for (const [host, want] of [['https://api.telegram.org/file', 'https://api.telegram.org/file/bot[redacted]/getMe'], ['http://localhost:8081', 'http://localhost:8081/bot[redacted]/getMe'],
+    ['https://proxy.example.net/tg/v2', 'https://proxy.example.net/tg/v2/bot[redacted]/getMe'], ['https://api.telegram.org:443', 'https://api.telegram.org:443/bot[redacted]/getMe'],
+    ['https://api.telegram.org.', 'https://api.telegram.org./bot[redacted]/getMe']] as const) {
+    assert.strictEqual(redact(tg(host), {}), want, `telegram on ${host}`);
+    assert.strictEqual(maskTokenShapes(tg(host), '[redacted]'), want, `maskTokenShapes telegram on ${host}`);
+  }
+  assert.strictEqual(redact(tg('https://api.telegram.org/file', '/photos/x.jpg'), {}), 'https://api.telegram.org/file/bot[redacted]/photos/x.jpg', 'telegram file download URL');
+  assert.strictEqual(redact('u=' + encodeURIComponent(tg('http://localhost:8081')), {}), 'u=http%3A%2F%2Flocalhost%3A8081%2Fbot[redacted]%2FgetMe', 'encoded local Bot API URL');
+  assert.strictEqual(redact('see ' + 'https://t.me/somebot123456789:short', {}), 'see https://t.me/somebot123456789:short', 'a word ending in bot with a short tail stays');
+  // 2. Slack session tokens, also URL-encoded
+  for (const pre of ['xoxc-', 'xoxd-']) {
+    const t = 'xo' + pre.slice(2);
+    assert.strictEqual(redact('c ' + t + '1234567890-' + S + ' z', {}), 'c [redacted] z', `${t} session token`);
+    assert.strictEqual(redact('cookie=' + t + 'AbCdEf%2BGh%2FIj%3D%3D' + S + '; path=/', {}), 'cookie=[redacted]; path=/', `${t} with %XX escapes: all of it goes`);
+  }
+  assert.strictEqual(redact('d=' + encodeURIComponent('xo' + 'xd-' + 'AbCdEf+Gh/Ij' + S + '=='), {}), 'd=[redacted]', 'URL-encoded xoxd- token');
+  // 3 and 4. Slack Workflow Builder and trigger webhooks, and host variants for both hosts
+  const sw = (path: string): string => path.replace('<s>', S);
+  const slackWant = (h: string, p: string): string => `${h}${p}/[redacted]`;
+  for (const host of ['https://hooks.slack.com', 'https://hooks.slack.com:443', 'https://hooks.slack.com.', 'https://hooks.slack.com.:8443', 'https://HOOKS.SLACK.COM']) {
+    for (const [kind, rest] of [['services', 'T0123ABCD/B0123ABCD/<s>'], ['workflows', 'T0123ABCD/A0123ABCD/123456789/<s>'], ['triggers', 'T0123ABCD/123456789/<s>']] as const) {
+      assert.strictEqual(redact(`${host}/${kind}/${sw(rest)} x`, {}), slackWant(host, `/${kind}`) + ' x', `${host}/${kind}`);
+      assert.strictEqual(redact(`${host}//${kind}//${sw(rest.split('/').join('//'))} x`, {}), `${host}//${kind}//[redacted] x`, `${host}//${kind}// double slashes`);
+    }
+  }
+  for (const host of ['https://discord.com', 'https://discord.com:443', 'https://discord.com.', 'https://discordapp.com.:443']) {
+    const hook = `/api/webhooks/123456789012345678/${AZ}_-${AZ}`;
+    assert.strictEqual(redact(host + hook, {}), host + '/api/webhooks/[redacted]', `${host} webhook`);
+    assert.strictEqual(redact(host + '//api//v10//webhooks//123456789012345678//' + AZ + '_-' + AZ, {}), host + '//api//v10//webhooks//[redacted]', `${host} double slashes`);
+  }
+  assert.strictEqual(redact('https://hooks.slack.com/services/T0123ABCD/B0123ABCD/', {}), 'https://hooks.slack.com/services/T0123ABCD/B0123ABCD/', 'a webhook without its secret stays');
+  assert.strictEqual(redact('https://hooks.slack.com/other/T0123ABCD/B0123ABCD/' + S, {}), 'https://hooks.slack.com/other/T0123ABCD/B0123ABCD/' + S, 'not a webhook path: not touched here');
+  // 5. the last segment is whole: long, underscore and hyphen secrets leave no tail
+  for (const last of ['a'.repeat(300), 'a'.repeat(40) + '_' + S, S + '-' + S + '_' + 'Z'.repeat(150)]) {
+    assert.strictEqual(redact('https://hooks.slack.com/services/T0123ABCD/B0123ABCD/' + last + ' end', {}), 'https://hooks.slack.com/services/[redacted] end', `slack last segment ${last.length} chars`);
+  }
+  // 6. Telegram ids of 6 to 12 digits; the false positives of the review stay
+  for (const n of [6, 7, 11, 12]) {
+    assert.strictEqual(redact('t ' + '7'.repeat(n) + ':' + TG35, {}), 't [redacted]', `${n}-digit bot id`);
+    assert.strictEqual(redact(tg('https://api.telegram.org').replace('123456789', '7'.repeat(n)), {}), 'https://api.telegram.org/bot[redacted]/getMe', `${n}-digit bot id after /bot`);
+  }
+  for (const ok of ['x ' + '7'.repeat(13) + ':' + TG35, 'x ' + '7'.repeat(5) + ':' + TG35, '1729680000:session_' + 'a'.repeat(40), 'bundle.js:1234567:' + 'a'.repeat(40), 'f.js:1234567:' + 'a'.repeat(36), 'f.js:1234567:' + 'a'.repeat(34)]) {
+    assert.strictEqual(redact(ok, {}), ok, `telegram id false positive stays: ${ok.slice(0, 30)}`);
+    assert.strictEqual(maskTokenShapes(ok, '[s]'), ok, `maskTokenShapes telegram id false positive stays: ${ok.slice(0, 30)}`);
+  }
+  // 8. Discord bot tokens: user id . timestamp . HMAC
+  assert.strictEqual(redact('token ' + DBOT + ' end', {}), 'token [redacted] end', 'discord bot token');
+  assert.strictEqual(redact('{"t":"' + DBOT + '"}', {}), '{"t":"[redacted]"}', 'discord bot token in JSON');
+  assert.strictEqual(redact('Bot ' + DBOT, {}), 'Bot [redacted]', 'Authorization: Bot <token>');
+  for (const dot of ['%2E', '%2e', '%252E', '%25252e']) assert.strictEqual(redact('t=' + DBOT.replace(/\./g, dot) + '&x', {}), 't=[redacted]&x', `discord bot token with ${dot} dots`);
+  for (const sec of ['D', 'T', 'j', 'z']) for (const lead of 'MNO') assert.strictEqual(redact(lead + sec + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(30), {}), '[redacted]', `${lead}${sec} id start`);
+  // a 17-digit id (accounts and bots from 2015 and early 2016) is 23 base64 characters (review of PR #679)
+  for (const id of ['N' + 'DU2Nzg5MDEyMzQ1Njc4OTA', 'N' + 'zg5MDEyMzQ1Njc4OTAxMjM']) {
+    const tok = id + '.GaBcDe.' + 'h'.repeat(27);
+    assert.strictEqual(redact('t ' + tok + ' e', {}), 't [redacted] e', 'discord bot token with a 17-digit id');
+    assert.strictEqual(redact('t=' + tok.replace(/\./g, '%2E') + '&x', {}), 't=[redacted]&x', 'discord bot token with a 17-digit id and %2E dots');
+    assert.strictEqual(redact('{"t":"' + tok + '"}', {}), '{"t":"[redacted]"}', 'discord bot token with a 17-digit id in JSON');
+  }
+  assert.strictEqual(redact('N' + 'T' + 'a'.repeat(22) + '.abcdef.' + 'b'.repeat(27) + 'c'.repeat(30), {}), '[redacted]', 'a longer HMAC is masked whole');
+  for (const [idLen, hmacLen] of [[22, 27], [23, 27], [27, 27], [24, 38], [24, 60]]) {
+    assert.strictEqual(redact('x ' + 'M' + 'T' + 'a'.repeat(idLen - 1) + '.abcdef.' + 'b'.repeat(hmacLen) + ' y', {}), 'x [redacted] y', `discord bot token with a ${idLen + 1}-character id and a ${hmacLen}-character HMAC`);
+  }
+  for (const ok of ['Org.Example.Foo', 'Microsoft.Extensions.Logging.Abstractions.Something', 'M' + 'T' + 'a'.repeat(23) + '.abcdefg.' + 'b'.repeat(30), 'M' + 'T' + 'a'.repeat(23) + '.abcde.' + 'b'.repeat(30), 'M' + 'T' + 'a'.repeat(20) + '.abcdef.' + 'b'.repeat(30), 'M' + 'a'.repeat(24) + '.abcdef.' + 'b'.repeat(30),
+    'MainActivityControllerImpl.helper.SomeVeryLongClassNameHereXYZ1', 'MyComponentPackageNameHere.module.webpack-chunk-abcdefghijklmnop.js',
+    'org.apache.commons.MathUtilsHelperClassName.common.LongerArtifactNameIsHereOkay', 'NorthwindTradersMarketing.static.MarketingWebsiteCdnAssetsBucketName.com',
+    'M' + 'T' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(26), 'X' + 'T' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(30), 'v1.2.3 N1.2.3 file.tar.gz', 'aM' + 'a'.repeat(23) + '.abcdef.' + 'b'.repeat(30)]) {
+    assert.strictEqual(redact(ok, {}), ok, `discord bot false positive stays: ${ok.slice(0, 30)}`);
+    assert.strictEqual(maskTokenShapes(ok, '[s]'), ok, `maskTokenShapes discord bot false positive stays: ${ok.slice(0, 30)}`);
+  }
+  // a JWT is masked whole by its own shape, even when its signature looks like a Discord HMAC; two in a row both go
+  const jwt = 'ey' + 'JhbGciOiJIUzI1NiJ9.' + 'ey' + 'JzdWIiOiIxMjM0NTY3ODkwIn0.' + 'M' + 'T' + 'a'.repeat(30);
+  assert.strictEqual(redact('a ' + jwt + ' b ' + DBOT, {}), 'a [redacted] b [redacted]', 'JWT and Discord bot token side by side');
+}
+// same-run growth for the new shapes (review of PR #679): the same call on an input 4 times longer must cost about 4 times more, not 16
+{
+  const cpuOf = (text: string): number => {
+    let best = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const c0 = process.cpuUsage();
+      redact(text, {});
+      const d = process.cpuUsage(c0);
+      best = Math.min(best, (d.user + d.system) / 1000);
+    }
+    return best;
+  };
+  const units: Record<string, string> = {
+    slackSession: 'xo' + 'xd-%2B-',
+    slackHook: 'hooks.slack.com/workflows/a/b/',
+    slackHookPort: 'hooks.slack.com.:443//triggers//a//',
+    discordHook: 'discord.com.:443//api//webhooks//1234567//',
+    tgBotLookbehind: '/bot1234567:',
+    tgFile: 'api.telegram.org/file/bot123456:',
+    tgIds: '123456789012:',
+    discordBot: 'M' + 'T' + 'a'.repeat(24) + '.abcdef.',
+    discordBotRun: 'M' + 'T' + 'a'.repeat(30) + ' ',
+    discordBotM: 'M',
+    discordBotMDash: 'M-',
+    discordBotMDot: 'M', // plus a `.abcdef.` tail so the cheap marker lets it through
+  };
+  for (const [k, unit] of Object.entries(units)) {
+    const tail = k.endsWith('Dot') ? '.abcdef.' : '';
+    const small = unit.repeat(Math.ceil(10_000 / unit.length)) + tail;
+    const big = unit.repeat(Math.ceil(40_000 / unit.length)) + tail;
+    redact(small, {}); // warm up
+    const a = Math.max(cpuOf(small), 2);
+    const b = cpuOf(big);
+    assert.ok(b / a < 10, `growth ${k}: ${a.toFixed(1)} ms for ${small.length} chars, ${b.toFixed(1)} ms for ${big.length} chars (ratio ${(b / a).toFixed(1)}, limit 10 for 4x input: linear is about 4, quadratic about 16)`);
+  }
+}
+// the guard never changes the result (T132 review): every kind x encoding x prefix, then random strings of markers and separators
+{
+  const pieces: string[] = [];
+  const prefixes = ['', 'x ', '=3D', '%u003D', '_', '"', '\\n', '%253D'];
+  for (const c of Object.values(chat)) {
+    const vs = [c.v, swapSlash(c.v, '\\/'), swapSlash(c.v, '%2F'), swapSlash(c.v, '%252f'), swapSlash(c.v, '\\u002F'), swapSlash(c.v, '\\x2f'), swapColon(c.v, '%3a'), swapColon(c.v, '%25253A'), swapColon(c.v, '\\u003a'), swapColon(c.v, '\\x3A'),
+      c.v.toUpperCase(), c.v.replace(/^https:\/\/[^/]+/, (h) => h.toUpperCase())];
+    pieces.push(...vs);
+    for (const v of vs) for (const pre of prefixes) {
+      const t = `see ${pre}${v} now`;
+      assert.strictEqual(maskTokenShapes(t, '[s]'), maskTokenShapesUnguarded(t, '[s]'), `guard equivalence on ${t.slice(0, 50)}`);
+    }
+  }
+  pieces.push('xox', 'xoxb-', 'xapp-', 'XOXB-', 'hooks.slack.com', 'HOOKS.Slack.com', 'discord', 'discordapp.com', 'DISCORD.COM', 'api', 'webhooks', 'services', 'api.telegram.org', 'API.TELEGRAM.ORG', 'bot', '/bot', 'file', 'workflows', 'triggers', 'xoxd-', 'xoxc-', '%2B', '%2E', '%252e', ':443', '.:8081', '//', DBOT, '.GhIjKl.', ':', '%3A', '%253a', '\\u003a', '\\x3A',
+    '/', '\\/', '%2F', '%252f', '\\u002f', '12345678', '1234567890', AZ, AZ + AZ, TG35, 'T0123ABCD', ' ', '_', '-', '=3D', '%u003D', '.');
+  let seed = 12345;
+  const rnd = (n: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 8) % n; };
+  let changed = 0;
+  for (let i = 0; i < 6000; i++) {
+    let t = '';
+    for (let j = 0, n = 2 + rnd(14); j < n; j++) t += pieces[rnd(pieces.length)];
+    const g = maskTokenShapes(t, '[s]');
+    assert.strictEqual(g, maskTokenShapesUnguarded(t, '[s]'), `guard equivalence on random ${JSON.stringify(t.slice(0, 80))}`);
+    if (g !== t) changed++;
+  }
+  assert.ok(changed > 100, `the random corpus reaches the shapes (${changed} of 6000 changed)`);
+}
+// false positives stay
+for (const ok of ['the xox of it, xoxo, xoxo-friends xoxb- xoxb-short xapp- xapp-abc', 'xoxz-1234567890123 xoxbb-1234567890123', 'at 12:30 or 12345:abc or 1234:short or 1234567:' + 'a'.repeat(29),
+  '12:30:45 123456789:' + 'a'.repeat(29) + ' 1234567890123:' + 'a'.repeat(40) + 'x',
+  'https://hooks.slack.com/services/ https://hooks.slack.com/services/T0123ABCD https://hooks.slack.com/services/T0123ABCD/B0123ABCD https://hooks.slack.com/ https://slack.com/help',
+  'https://discord.com/api/webhooks/ https://discord.com/api/webhooks/123456789 https://discord.com/channels/123456789012/987654321098 https://discord.com/invite/abcdefg https://discord.com/',
+  'https://api.telegram.org/bot https://api.telegram.org/bot123456789:short https://t.me/somebot', 'a%3Dxoxb-short x=3Dfine =3dxoxb-short =3D']) {
+  assert.strictEqual(redact(ok, {}), ok, `false positive stays: ${ok.slice(0, 40)}`);
+  assert.strictEqual(maskTokenShapes(ok, '[s]'), ok, `maskTokenShapes false positive stays: ${ok.slice(0, 40)}`);
+}
+
 // 9. adversarial 1 MB inputs: every pattern stays linear (each under a time limit)
 {
   const MB = 1_000_000;
@@ -266,6 +506,33 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
     escXSk: '\\x3dsk-'.repeat(MB / 7),
     escTJwt: '\\teyJaaaaa.'.repeat(MB / 11),
     escNUrl: '\\na://x:'.repeat(MB / 8),
+    // T132: Slack, Discord and Telegram shapes, and the `=XX` / `%uXXXX` starts
+    slackTok: 'xoxb-'.repeat(MB / 5),
+    slackShort: ('xoxb-' + 'a'.repeat(9) + ' ').repeat(MB / 15),
+    slackLong: 'xapp-' + 'a-'.repeat(MB / 2),
+    slackPct: '%3Dxoxp-'.repeat(MB / 8),
+    slackHook: 'hooks.slack.com/services/'.repeat(MB / 25),
+    slackHookSeg: 'hooks.slack.com/services/' + 'a/'.repeat(MB / 2),
+    slackHookLong: 'hooks.slack.com/services/' + 'a'.repeat(MB),
+    slackHookEsc: 'hooks.slack.com\\/services\\/' + 'a\\/'.repeat(MB / 3),
+    discordHook: 'discord.com/api/webhooks/'.repeat(MB / 25),
+    discordHookLong: 'discordapp.com/api/webhooks/' + '1'.repeat(MB),
+    discordHookTok: 'discord.com/api/webhooks/1234567/' + 'a'.repeat(MB),
+    discordHookRun: 'discord.com/api/webhooks/1234567/aaaaaaaaaaaaaaaaaaa '.repeat(MB / 52),
+    tgDigits: '1'.repeat(MB),
+    tgColon: '123456:'.repeat(MB / 7),
+    tgShort: ('123456789:' + 'a'.repeat(29) + ' ').repeat(MB / 40),
+    tgLong: '123456789:' + 'a'.repeat(MB),
+    tgApi: 'api.telegram.org/bot'.repeat(MB / 20),
+    tgApiLong: 'api.telegram.org/bot123456:' + 'a'.repeat(MB),
+    tgPct: '%3D123456789%3A'.repeat(MB / 15),
+    tgPct25: '25'.repeat(MB / 4) + ':' + '25'.repeat(MB / 4),
+    qpRun: '=3D'.repeat(MB / 3),
+    qpGh: '=3Dghp_'.repeat(MB / 6),
+    qpGhLong: '=3Dghp_' + 'a'.repeat(MB),
+    uRun: '%u003D'.repeat(MB / 6),
+    uSk: '%u003Dsk-'.repeat(MB / 9),
+    uSlack: '%u003Dxoxb-'.repeat(MB / 11),
   };
   // Each case runs in a worker thread that times redact() itself with the thread's own CPU time (`process.threadCpuUsage()`, Node 22
   // and later; wall time from `hrtime` only on Node 20.19, which has no per-thread CPU time), so a busy runner cannot fail the test;
@@ -1101,6 +1368,251 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   const s2 = cpuMs(() => void redact('%3F'.repeat(240_000)), 2000);
   console.log(`redact: oauth query linearity value ${t1.toFixed(0)}/${t2.toFixed(0)} ms, names ${r1.toFixed(0)}/${r2.toFixed(0)} ms, separators ${s1.toFixed(0)}/${s2.toFixed(0)} ms`);
   for (const [a, b, what] of [[t1, t2, 'value'], [r1, r2, 'names'], [s1, s2, 'separators']] as const) assert.ok(b < Math.max(250, a * 10), `oauth query rule is linear (${what}: ${a} -> ${b} ms CPU for 4x input)`); // a floor well above Windows' ~16 ms timer step and CI load; backtracking would take seconds
+}
+
+// 14e. T072 (#502, R12): PowerShell hashtable literals `@{ Name = Value; ... }`. The value of a secret-looking member is hidden, quotes kept.
+{
+  const T = 'TOKEN' + '123';
+  const R = '[redacted]';
+  const noT = (x: unknown, what: string): void => assert.ok(!JSON.stringify(x).includes(T), `${what}: no secret in ${JSON.stringify(x)}`);
+  const cmd = (c: string, want: string, what: string): void => { const got = maskSecretCommand(c); assert.strictEqual(got, want, what); noT(got, what); };
+  const args = (a: string[], want: string[], what: string): void => { const got = maskSecretArgs(a); assert.deepStrictEqual(got, want, what); noT(got, what); };
+  // commands
+  cmd(`srv @{"X-Api-Key"="${T}"}`, `srv @{"X-Api-Key"="${R}"}`, 'R12: quoted name, double-quoted value');
+  cmd(`srv @{'api_key'='${T}'}`, `srv @{'api_key'='${R}'}`, 'R12: single quotes');
+  cmd(`srv @{Authorization = "Bearer ${T}"}`, `srv @{Authorization = "${R}"}`, 'R12: spaces around =, a value with a space');
+  cmd(`srv @{ token = ${T}; port = 8080 }`, `srv @{ token = ${R}; port = 8080 }`, 'R12: bare value, the other member stays');
+  cmd(`srv @{ port = 8080; token = ${T} }`, `srv @{ port = 8080; token = ${R} }`, 'R12: the secret member last');
+  cmd(`srv @{\n  port = 8080\n  password = ${T}\n}`, `srv @{ port = 8080 password = ${R} }`, 'R12: members on separate lines (the display joins words with one space)');
+  cmd(`srv @{token='it''s ${T}'; a=1}`, `srv @{token='${R}'; a=1}`, "R12: '' inside a value");
+  cmd(`srv [ordered]@{ password = "p ${T}" }`, `srv [ordered]@{ password = "${R}" }`, 'R12: [ordered]');
+  cmd(`srv @{Authorization="${T}"; 'Content-Type'='x'; cookie=${T}}`, `srv @{Authorization="${R}"; 'Content-Type'='x'; cookie=${R}}`, 'R12: two secret members, a quoted name that is not secret');
+  // payloads of powershell|pwsh -Command, plain and with escapes (T067 path)
+  cmd(`powershell -Command "@{'api_key'='${T}'}"`, `powershell -Command "@{'api_key'='${R}'}"`, 'R12: powershell -Command payload');
+  cmd(`pwsh -c '@{token=''${T}''; port=1}'`, `pwsh -c '@{token=''${R}''; port=1}'`, "R12: pwsh -c payload with '' escapes");
+  cmd('powershell -Command "@{`"X-Api-Key`"=`"' + T + '`"}"', 'powershell -Command "@{`"X-Api-Key`"=`"' + R + '`"}"', 'R12: powershell backtick-escaped quotes');
+  cmd(`sh -c "srv @{\\"token\\"=\\"${T}\\"}"`, `sh -c "srv @{\\"token\\"=\\"${R}\\"}"`, 'R12: sh -c payload with escaped quotes (R3)');
+  // args lists, also split across args
+  args(['srv', `@{"X-Api-Key"="${T}"}`], ['srv', `@{"X-Api-Key"="${R}"}`], 'R12 args: one arg');
+  args(['pwsh', '-c', `@{"X-Api-Key"="${T}"}`], ['pwsh', '-c', `@{"X-Api-Key"="${R}"}`], 'R12 args: pwsh -c payload');
+  args(['powershell', '-Command', `@{token='a''${T}'}`], ['powershell', '-Command', `@{token='${R}'}`], "R12 args: powershell -Command payload with ''");
+  args(['srv', '@{token=', `${T};`, 'port=8080}'], ['srv', '@{token=', `${R};`, 'port=8080}'], 'R12 args: split after =');
+  args(['pwsh', '-c', `@{token=${T};`, 'port=1}'], ['pwsh', '-c', `@{token=${R};`, 'port=1}'], 'R12 args: split inside a pwsh -c payload');
+  args(['srv', '@{', 'token', '=', `"x ${T}"`, '}'], ['srv', '@{', 'token', '=', `"${R}"`, '}'], 'R12 args: one word per arg, quoted value');
+  const spanned = maskSecretArgs(['srv', '@{Authorization', '=', '"Bearer', T + '"', '}']);
+  noT(spanned, 'R12 args: a quoted value that spans args');
+  assert.deepStrictEqual(spanned, ['srv', '@{Authorization', '=', R, '"', '}'], 'R12 args: a quoted value that spans args is hidden in the first and cut from the later ones (the lone quote stays)');
+  args(['--env=@{token=' + T + '; port=1}'], ['--env=@{token=' + R + '; port=1}'], 'R12 args: behind a flag');
+  // quotes stay, with what closes the literal (single quotes, bare names, `''` inside, a value with spaces)
+  cmd(`srv @{Authorization='Bearer ${T}'}`, `srv @{Authorization='${R}'}`, "R12: single-quoted value keeps its quotes and the }");
+  cmd(`powershell -Command "irm -Headers @{Authorization='Bearer ${T}'}"`, `powershell -Command "irm -Headers @{Authorization='${R}'}"`, 'R12: inside a payload the closing quote stays');
+  cmd(`srv @{token='a''b' ; secret='x y ${T}' ; port = 1}`, `srv @{token='${R}' ; secret='${R}' ; port = 1}`, "R12: '' inside, two quoted values with spaces, the other member stays");
+  cmd(`srv @{token='a b ${T}'; port=1}`, `srv @{token='${R}'; port=1}`, 'R12: bare name, quoted value with spaces');
+  cmd(`srv @{token="a b ${T}"}`, `srv @{token="${R}"}`, 'R12: bare name, double-quoted value with spaces');
+  args(['srv', `@{Authorization='${T}'}`], ['srv', `@{Authorization='${R}'}`], 'R12 args: single-quoted value keeps its quotes and the }');
+  // unclosed values are hidden to the end (fail closed)
+  cmd(`srv @{token="a ${T}`, `srv @{token="${R}`, 'R12: unclosed double quote');
+  cmd(`srv @{"X-Api-Key"='a b ${T}`, `srv @{"X-Api-Key"='${R}`, 'R12: unclosed single quote');
+  args(['srv', '@{"X-Api-Key"="a', 'b ' + T], ['srv', `@{"X-Api-Key"="${R}`], 'R12 args: unclosed, split across args');
+  // a backtick escapes the quote inside a double-quoted value
+  cmd('srv @{token="a`"b ' + T + '"}', `srv @{token="${R}"}`, 'R12: backtick-escaped quote inside a double-quoted value');
+  cmd('srv @{"X-Api-Key"="a`" ' + T + '"}', `srv @{"X-Api-Key"="${R}"}`, 'R12: backtick-escaped quote, quoted name');
+  // nested literals (any depth), and the splatting shape
+  cmd(`srv @{Headers=@{"X-Api-Key"="${T}"}}`, `srv @{Headers=@{"X-Api-Key"="${R}"}}`, 'R12: nested literal');
+  cmd(`srv @{h=@{Authorization="Basic ${T}"}}`, `srv @{h=@{Authorization="${R}"}}`, 'R12: nested literal, Authorization');
+  cmd(`srv @{Headers=@{"X-Api-Key"="${T}"; Accept="x"}; Port=1}`, `srv @{Headers=@{"X-Api-Key"="${R}"; Accept="x"}; Port=1}`, 'R12: nested literal, the other members stay');
+  cmd(`srv @{a=@{b=@{token='${T}'}}}`, `srv @{a=@{b=@{token='${R}'}}}`, 'R12: three levels');
+  cmd(`$p=@{Uri='u';Headers=@{"X-Api-Key"="${T}"}}; irm @p`, `$p=@{Uri='u';Headers=@{"X-Api-Key"="${R}"}}; irm @p`, 'R12: splatting shape');
+  args(['pwsh', '-c', `@{h=@{Authorization="Basic ${T}"}}`], ['pwsh', '-c', `@{h=@{Authorization="${R}"}}`], 'R12 args: nested literal in a payload');
+  cmd('srv @{Port=8080; Headers=@{Accept="x"}}', 'srv @{Port=8080; Headers=@{Accept="x"}}', 'R12: a nested literal with nothing secret is unchanged');
+  // expression values of a secret member are hidden whole, up to the member's end
+  cmd(`srv @{token="a" + "${T}"; port=1}`, `srv @{token=${R}; port=1}`, 'R12: string concatenation');
+  cmd(`srv @{token=ConvertTo-SecureString ${T} -AsPlainText; port=1}`, `srv @{token=${R}; port=1}`, 'R12: a command as the value');
+  cmd(`srv @{token=""${T}""; port=1}`, `srv @{token=${R}; port=1}`, 'R12: doubled quotes as the value');
+  cmd(`srv @{token=(Get-Secret ${T} 1); a=2}`, `srv @{token=${R}; a=2}`, 'R12: a parenthesised expression');
+  cmd(`srv @{token=@{a=1}; Port=1}`, `srv @{token=${R}; Port=1}`, 'R12: a nested literal as the value of a secret name is hidden whole');
+  cmd('srv @{token="a" `\n + "' + T + '"; port=1}', `srv @{token=${R}; port=1}`, 'R12: backtick line continuation');
+  for (const [hs, what] of [[`srv @{token=@'\n${T}\n'@; Port=1}`, "here-string '@"], [`srv @{token=@"\n${T}\n"@; Port=1}`, 'here-string "@'], [`srv @{token=@'\r\n${T}\r\n'@\r\nPort=1}`, 'here-string with CRLF']]) {
+    const got = maskSecretCommand(hs);
+    assert.ok(!got.includes(T) && got.includes(R), `R12: ${what}: ${JSON.stringify(got)}`);
+  }
+  // redact() alone: only a whole hidden value is left as it is; `[redacted]` glued to more text is a secret that merely starts like the mask
+  for (const x of [`Authorization: [redacted]${T}`, `Authorization='[redacted]${T}'`, `Authorization=[redacted]${T}`, `authorization: Bearer [redacted]${T}`, `Authorization: Bearer '[redacted]-${T}`, `curl -H "Authorization: [redacted]${T}"`,
+    `Authorization: [redacted]}${T}`, `Authorization='[redacted]'}${T}`, `authorization: Bearer [redacted]}${T}`, `Authorization: [redacted]}}${T}`, `{"h":"Authorization: [redacted]}${T}"}`]) {
+    assert.ok(!redact(x, {}).includes(T), `R12: redact() hides a secret glued to [redacted]: ${x}`);
+  }
+  assert.strictEqual(redact("Authorization='[redacted]'}", {}), "Authorization='[redacted]'}", 'R12: redact() leaves a whole hidden quoted value alone');
+  assert.strictEqual(redact('Authorization: [redacted]', {}), 'Authorization: [redacted]', 'R12: redact() is idempotent on a hidden value');
+  // a backtick line continuation right after `=`
+  cmd('srv @{"X-Api-Key" = `\n"' + T + '"}', `srv @{"X-Api-Key" = ${R} }`, 'R12: continuation after =, quoted value');
+  cmd('srv @{token = `\n' + T + '}', `srv @{token = ${R} }`, 'R12: continuation after =, bare value');
+  cmd('srv @{token = `\r\n' + T + '}', `srv @{token = ${R} }`, 'R12: continuation after =, CRLF');
+  cmd('srv @{token = `\r\n  "' + T + '"; port=1}', `srv @{token = ${R} ; port=1}`, 'R12: continuation after =, indented quoted value, the next member stays');
+  // exact output: what closes the literal stays
+  cmd(`srv @{a=@{b=1}; token="${T}"}`, `srv @{a=@{b=1}; token="${R}"}`, 'R12: after a nested literal the outer literal goes on, quotes and } stay');
+  cmd(`srv @{token=@'\n${T}\n'@}`, `srv @{token=${R}}`, "R12: here-string ends at its closer, no stray '@ or }");
+  cmd(`srv @{Authorization = "Bearer " + "${T}"}`, `srv @{Authorization = ${R}}`, 'R12: an expression stops at the } of the literal');
+  // a } inside quotes does not close the literal when it is split across args
+  args(['srv', "@{token='it}s", `fine ${T}'}`], ['srv', `@{token='${R}`, "'}"], 'R12 args: a } inside quotes does not end the literal');
+  // two here-strings of one kind in a text (the closer search is cached and must be refreshed): exact output, in a worker with a timeout, because a scanner that does not move on hangs
+  {
+    const input = `srv @{a=@'\nx\n'@; password=@'\n${T}\n'@}`;
+    const want = `srv @{a=@'\nx\n'@; password=${R}}`;
+    const wcode = `const {workerData:w}=require('worker_threads');const f=new Int32Array(w.sab,0,1);try{const {maskSecretCommand:m}=require(w.mod);Atomics.store(f,0,m(w.input)===w.want?1:3)}catch(e){Atomics.store(f,0,2)}Atomics.notify(f,0)`;
+    const sab = new SharedArrayBuffer(8);
+    const wk = new Worker(wcode, { eval: true, workerData: { mod: require.resolve('../src/shared/redact'), input, want, sab } });
+    const waited = Atomics.wait(new Int32Array(sab, 0, 1), 0, 0, 20000);
+    void wk.terminate();
+    assert.notStrictEqual(waited, 'timed-out', 'R12: two here-strings of one kind: the scanner hung');
+    assert.strictEqual(Atomics.load(new Int32Array(sab, 0, 1), 0), 1, 'R12: two here-strings of one kind: exact output');
+  }
+  // review of PR #669, round 2: the literal bound inside a string with braces, an open group past the bound, masking twice past the bound, junk before a name
+  {
+    const items = '{"items":[' + Array.from({ length: 450 }, (_, i) => `{"id":${i}}`).join(',') + ']}';
+    for (const [what, body] of [['JSON body over 4000 characters', `$h=@{ Body = '${items}'; 'X-Api-Key' = '${T}' }`], ['a quoted } after 4100 characters', `$h=@{ Body = '${'x'.repeat(4100)}'; a = '}'; 'X-Api-Key' = '${T}' }`]]) {
+      assert.ok(!maskSecretCommand('srv ' + body).includes(T), `R12 (command): ${what}`);
+      assert.ok(!maskSecretArgs(['srv', body]).join(' ').includes(T), `R12 (args): ${what}`);
+    }
+    const head = 'x'.repeat(4000 - "@{ Body = '".length);
+    assert.deepStrictEqual(maskSecretArgs(['-Command', `$h=@{ Body = '${'x'.repeat(4100)}';`, `'X-Api-Key' = '${T}' }`]), ['-Command', `$h=@{ Body = '${head}${R}`, '}'], 'R12 args: an open group past the bound hides the later args of the literal');
+    const once = maskSecretArgs(['-Command', `$h=@{ Body = '${'a'.repeat(4100)}' }`]);
+    assert.deepStrictEqual(maskSecretArgs(once), once, 'R12 args: masking twice past the bound gives the same output');
+    const onceC = maskSecretCommand(`srv $h=@{ Body = '${'a'.repeat(4100)}' }`);
+    assert.strictEqual(maskSecretCommand(onceC), onceC, 'R12 command: masking twice past the bound gives the same output');
+    assert.ok(once[1].endsWith(R + '}') && onceC.endsWith(R + '}'), 'R12: the earlier [redacted] and the closer stay');
+  }
+  args(['-Command', `irm -Headers @{\\\\"X-Api-Key\\\\"=\\\\"${T}\\\\"} u`], ['-Command', `irm -Headers @{\\\\"X-Api-Key\\\\"=\\\\"${R}\\\\"} u`], 'R12 args: two backslashes before a quote');
+  assert.ok(!maskSecretCommand(`pwsh -c "irm -Headers @{\\\\\\"X-Api-Key\\\\\\"=\\\\\\"${T}\\\\\\"}"`).includes(T), 'R12: three backslashes before a quote, in a payload');
+  cmd(`srv @{ <# '#>' #> 'X-Api-Key' = '${T}' }`, `srv @{ <# '#>' #> 'X-Api-Key' = '${R}' }`, 'R12: a quote inside a block comment');
+  cmd(`srv @{ <# junk #> x y 'X-Api-Key' = '${T}' }`, `srv @{ <# junk #> x y 'X-Api-Key' = '${R}' }`, 'R12: junk words before a secret name');
+  cmd(`srv @{ token = '${R}' -f= '${T}' }`, `srv @{ token = ${R} }`, 'R12: a hidden value followed by Name=');
+  cmd(`srv @{ token = ${R} ${T}=1 }`, `srv @{ token = ${R} }`, 'R12: a hidden bare value followed by Name=1');
+  cmd(`srv @{ "X-Api-Key = '${T}' }`, `srv @{ "X-Api-Key = '${R}' }`, 'R12: a stray quote before a secret name');
+  cmd(`srv @{ "a; 'X-Api-Key' = '${T}' }`, `srv @{ "a; 'X-Api-Key' = '${R}' }`, 'R12: a stray quote before a quoted secret name');
+  const hiddenQuote = `srv $h=@{ Body = '${'a'.repeat(3989)}${R}' }`; // the bound falls where an earlier [redacted] and its closing quote stand
+  assert.strictEqual(maskSecretCommand(hiddenQuote), hiddenQuote, 'R12: an earlier [redacted] with its closers past the bound is left as it is');
+  // review of PR #669, round 3: line breaks and non-breaking spaces around =, commented-out secrets, a run of stray quotes
+  cmd(`pwsh -c "$h=@{ token =\n'${T}' }"`, `pwsh -c "$h=@{ token =\n'${R}' }"`, 'R12: a line break after =');
+  args([`$h=@{ 'X-Api-Key' =\n '${T}' }`], [`$h=@{ 'X-Api-Key' =\n '${R}' }`], 'R12 args: a line break after =, quoted name');
+  args(['-Command', `$h=@{ "X-Api-Key" =\r\n "${T}" }`], ['-Command', `$h=@{ "X-Api-Key" =\r\n "${R}" }`], 'R12 args: CRLF after =');
+  args([`@{ x = 1\n token =\n ${T}\n}`], [`@{ x = 1\n token =\n ${R}\n}`], 'R12 args: a bare value on the next line');
+  assert.ok(!maskSecretArgs([`@{ token = '${T}' }`]).join('').includes(T) && !maskSecretArgs([`@{ token = '${T}' }`]).join('').includes(T), 'R12 args: non-breaking spaces around =');
+  assert.ok(!maskSecretCommand(`srv @{ <# 'X-Api-Key' = '${T}' #> 'X-Api-Key' = 'NEW' }`).includes(T), 'R12: a commented-out secret is hidden');
+  assert.ok(!maskSecretArgs(['-Command', `@{ <# c }; $b = @{ 'X-Api-Key' = '${T}' } #>`]).join(' ').includes(T), 'R12 args: a secret in a literal after a } inside a comment');
+  assert.ok(!maskSecretCommand(`srv @{ <# c }; $b = @{ 'X-Api-Key' = '${T}' } #>`).includes(T), 'R12: the same, as a command');
+  assert.ok(!maskSecretCommand(`srv @{ ApiKey <# 'X-Api-Key' = '${T}' #> = 'v' }`).includes(T), 'R12: a commented-out member in the gap before = is hidden');
+  cmd(`srv '@{token=${T}; port=1}'`, `srv '@{token=${R}; port=1}'`, 'R12: a quoted word keeps the member after the ;');
+  // a doubled quote in a quoted name: the name is api"key
+  cmd(`srv @{"api""key"="${T}"}`, `srv @{"api""key"="${R}"}`, 'R12: doubled quote in a name');
+  // no member bound; past the 4000-character literal bound everything up to the literal's end is hidden (fail closed), review of PR #669
+  assert.strictEqual(maskSecretCommand(`srv @{token="${'a'.repeat(2500)}"; Port=1}`), `srv @{token="${R}"; Port=1}`, 'R12: a long value is hidden whole');
+  assert.strictEqual(maskSecretCommand(`srv @{p="${'a'.repeat(2500)}"; "token"="${T}"}`), `srv @{p="${'a'.repeat(2500)}"; "token"="${R}"}`, 'R12: a secret member after a 2500-character one');
+  assert.strictEqual(maskSecretCommand(`srv @{p="${'a'.repeat(2500)}"; token=${T}}`), `srv @{p="${'a'.repeat(2500)}"; token=${R}}`, 'R12: a bare secret member after a 2500-character one');
+  const far = maskSecretCommand(`srv @{${'p=1;'.repeat(1100)}"token"="${T}"} tail`);
+  assert.ok(far.startsWith('srv @{' + 'p=1;'.repeat(999)) && far.endsWith(`${R}} tail`) && !far.includes(T), `R12: past the literal bound the rest of the literal is hidden up to its }: ${far.slice(-40)}`);
+  const mem4 = [0, 1, 2, 3].map((i) => `m${i}='${'x'.repeat(1000)}'`).join('; ');
+  for (const [what, got] of [['command', maskSecretCommand(`srv $h=@{ ${mem4}; 'X-Api-Key' = '${T}' }`)], ['args', maskSecretArgs(['srv', `$h=@{ ${mem4}; 'X-Api-Key' = '${T}' }`]).join(' ')],
+    ['pwsh -c', maskSecretCommand(`pwsh -c "$h=@{ Body = '${'x'.repeat(2100)}'; 'X-Api-Key' = '${T}' }"`)]]) assert.ok(!got.includes(T), `R12: ${what}: secrets after long members are hidden`);
+  // review of PR #669: more than one literal in the args, block comments, a value hidden twice, \" in the args form, the display of the args form
+  args(['-Command', '$a=@{x=1}; $h=@{token=', `'${T}'}`], ['-Command', '$a=@{x=1}; $h=@{token=', `'${R}'}`], 'R12 args: a second literal after a closed one');
+  cmd(`pwsh -c "$h=@{ <# auth #> 'X-Api-Key' = '${T}' }"`, `pwsh -c "$h=@{ <# auth #> 'X-Api-Key' = '${R}' }"`, 'R12: block comment before a quoted name');
+  cmd(`srv $h=@{ <#k#> ApiKey = '${T}' }`, `srv $h=@{ <#k#> ApiKey = '${R}' }`, 'R12: block comment before a bare name');
+  cmd(`srv $h=@{ ApiKey <# c #> = <# d #> '${T}' }`, `srv $h=@{ ApiKey <# c #> = <# d #> '${R}' }`, 'R12: block comments around =');
+  cmd(`srv $h=@{ <# open ApiKey = '${T}' }`, `srv $h=@{ <# open ApiKey = '${R}' }`, 'R12: only the <# and #> marks are white space, the inside of a comment is read as code');
+  cmd(`srv @{ token = '${R}' + '${T}' }`, `srv @{ token = ${R} }`, 'R12: a hidden value followed by more code');
+  cmd(`srv @{ token = "${R}" ${T} }`, `srv @{ token = ${R} }`, 'R12: a hidden quoted value followed by a word');
+  cmd(`srv @{ token = ${R} ${T} }`, `srv @{ token = ${R} }`, 'R12: a hidden bare value followed by a word');
+  cmd(`srv @{ token = '${R}'; port=1 }`, `srv @{ token = '${R}'; port=1 }`, 'R12: a hidden value then a member is unchanged');
+  for (const c of [`srv @{ token = '${T}' ; port = 1 }`, `srv @{Authorization="Bearer ${T}"; a=1}`, `srv @{ <# c #> k = ${T}; b = 2 }`]) assert.strictEqual(maskSecretCommand(maskSecretCommand(c)), maskSecretCommand(c), `R12: masking twice gives the same text: ${c}`);
+  args(['-Command', `irm -Headers @{\\"X-Api-Key\\"=\\"${T}\\"} u`], ['-Command', `irm -Headers @{\\"X-Api-Key\\"=\\"${R}\\"} u`], 'R12 args: \\" as a quote');
+  args([`$h=@{ Body = 'x'; ApiKey = '${T}' }`], [`$h=@{ Body = 'x'; ApiKey = '${R}' }`], 'R12 args: the display keeps the quotes and the closing }');
+
+  // false positives: unchanged
+  for (const c of ['@{Port=8080}', '@{name="build"}', 'a@b.c', 'see @{ the docs } for more', '@{ hello world }', '@{Name = "x"; Count = 3}', '@{', '@{;}']) {
+    assert.strictEqual(maskSecretCommand('srv ' + c), 'srv ' + c, `R12 false positive (command): ${c}`);
+    assert.deepStrictEqual(maskSecretArgs(['srv', c]), ['srv', c], `R12 false positive (args): ${c}`);
+  }
+  assert.strictEqual(maskSecretCommand('srv @{token=}'), 'srv @{token=}', 'R12: an empty value has nothing to hide');
+  // one level and the bounds
+  assert.strictEqual(maskSecretCommand(`srv @{token="${'a'.repeat(1500)}"}`), 'srv @{token="[redacted]"}', 'R12: a value of 1500 chars');
+  assert.strictEqual(redact('see @{token=1} here'), 'see @{token=1} here', 'R12 is not part of redact(): free text keeps the pattern rules');
+  // Adversarial runs: 1 MB in one arg when it has no space (the scanner and the arg path), and 50k through every path (split into words, command, -c payload).
+  // A worker times each with the thread's CPU time, like section 9. The words-and-spaces paths cost seconds per MB even without R12
+  // (the control rows of 14c and 14d run at 200k), so a text with spaces uses 50k; the 1 s limit is the same.
+  const MB = 1_000_000;
+  const adv: Record<string, string> = {
+    repeatOpen: '@{'.repeat(MB / 2),
+    repeatOpenSp: '@{ '.repeat(MB / 3),
+    unclosed: '@{ token = "' + 'a'.repeat(MB),
+    unclosedBare: '@{ token = ' + 'a'.repeat(MB),
+    noEquals: '@{' + 'x ;'.repeat(MB / 3),
+    noEqualsLong: '@{' + 'x'.repeat(MB),
+    manyLiterals: '@{a=b;'.repeat(MB / 12), // 500 KB, same reason
+    manyLiteralsLong: ('@{a=b;' + 'x'.repeat(3000)).repeat(MB / 3006),
+    secretMembers: '@{' + 'token=a;'.repeat(MB / 16), // 500 KB: 1 MB of KEY=value words costs ~800 ms even on main
+    quotesDoubled: '@{token=' + "'''".repeat(MB / 3),
+    namesOnly: '@{' + '"n" '.repeat(MB / 4),
+    tickRun: '@{token="' + '`'.repeat(MB),
+    nested: '@{a=@{'.repeat(MB / 6),
+    nestedSecret: '@{token=@{'.repeat(MB / 10),
+    exprs: '@{token=(' + 'a + '.repeat(MB / 4),
+    herestr: "@{token=@'" + 'x'.repeat(MB),
+    hereOpeners: "@{a=@'".repeat(MB / 6),
+    strayQuotes: ('@{' + '"'.repeat(3000) + '}').repeat(MB / 3003),
+    strayQuotesSq: ("@{" + "'".repeat(3000) + '}').repeat(MB / 3003),
+    quotedJunk: ('@{' + "'a b' ".repeat(500) + '}').repeat(MB / 3503),
+    commentOpeners: '@{<#'.repeat(MB / 4),
+    unclosedComment: '@{<#' + 'a'.repeat(MB),
+    pastBound: '@{' + 'p=1;'.repeat(MB / 4),
+    unclosedMany: '@{token="a;'.repeat(MB / 11),
+  };
+  const mod = require.resolve('../src/shared/redact');
+  const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
+    `try{const {_uncappedForTest:u}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;[()=>u.maskSecretArgs([w.input]),()=>u.maskSecretArgs(['pwsh','-c',w.input]),()=>u.maskSecretArgs(w.input.split(' ')),()=>u.maskSecretCommand(w.input),()=>u.maskSecretCommand('pwsh -c '+JSON.stringify(w.input))][w.path]();const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
+    `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
+  const cases = Object.entries(adv).flatMap(([k2, v2]) => (/\s/.test(v2) ? [] : [[k2, v2, 0]]).concat([0, 1, 2, 3, 4].map((i) => [k2 + '-50k', v2.slice(0, 50_000), i])) as Array<[string, string, number]>);
+  for (const [k0, v, pi] of cases) {
+    const k = `${k0} (path ${pi})`;
+    let ms = NaN;
+    let wall = NaN;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const sab = new SharedArrayBuffer(24);
+      const flag = new Int32Array(sab, 0, 1);
+      const worker = new Worker(code, { eval: true, workerData: { mod, input: v, sab, path: pi } });
+      const waited = Atomics.wait(flag, 0, 0, 60000);
+      void worker.terminate();
+      if (waited === 'timed-out') continue;
+      assert.strictEqual(Atomics.load(flag, 0), 1, `R12 adversarial ${k}: threw in the worker`);
+      [ms, wall] = new Float64Array(sab, 8, 2);
+      break;
+    }
+    assert.ok(!Number.isNaN(ms), `R12 adversarial ${k}: worker hung twice`);
+    assert.ok(ms < 1000, `R12 adversarial ${k}: took ${ms.toFixed(1)} ms CPU, limit 1000 ms`);
+    assert.ok(wall < 10000, `R12 adversarial ${k}: wall-time backstop ${wall.toFixed(1)} ms`);
+  }
+  // growth: 4x the input costs about 4x (the same run, min CPU of 3 interleaved pairs, like the OAuth rule test), for the shapes that could go quadratic
+  {
+    const shapes: Record<string, (n: number) => string> = {
+      repeatOpen: (n) => '@{'.repeat(n / 2), manyLiterals: (n) => '@{a=b;'.repeat(n / 6), nested: (n) => '@{a=@{'.repeat(n / 6), nestedSecret: (n) => '@{token=@{'.repeat(n / 10),
+      unclosedQuote: (n) => '@{token="' + 'a'.repeat(n), longBare: (n) => '@{token=' + 'a'.repeat(n), hereOpeners: (n) => "@{a=@'".repeat(n / 6),
+      strayQuotes: (n) => ('@{' + '"'.repeat(3000) + '}').repeat(n / 3003), quotedJunk: (n) => ('@{' + "'a b' ".repeat(500) + '}').repeat(n / 3503),
+      commentOpeners: (n) => '@{<#'.repeat(n / 4), unclosedComment: (n) => '@{<#' + 'a'.repeat(n), pastBound: (n) => '@{' + 'p=1;'.repeat(n / 4), noEquals: (n) => '@{' + 'x;'.repeat(n / 2),
+    };
+    for (const [k, mk] of Object.entries(shapes)) {
+      const time = (x: string): number => cpuMs(() => { _uncappedForTest.maskSecretCommand(x); _uncappedForTest.maskSecretArgs([x]); }, 5000);
+      let a = Infinity;
+      let b = Infinity;
+      for (let i = 0; i < 3; i++) { a = Math.min(a, time(mk(100_000))); b = Math.min(b, time(mk(400_000))); }
+      console.log(`redact: R12 growth ${k} 100k=${Math.round(a)} ms 400k=${Math.round(b)} ms`);
+      assert.ok(b < Math.max(80, a * 10), `R12 growth ${k}: ${a.toFixed(0)} -> ${b.toFixed(0)} ms CPU for 4x the input`);
+    }
+  }
+  // an unclosed quote or a long bare value of a secret member hides the rest of the text, so the pattern rules do not run over 1 MB again
+  // (they cost about 900 ms per MB on this path before; 46 ms on main without R12): a tighter limit than the 1 s above
+  for (const [k, v] of [['unclosed double quote', '@{token="' + 'a'.repeat(MB)], ['unclosed single quote', "@{'api_key'='" + 'a'.repeat(MB)], ['long bare value', '@{ token = ' + 'a'.repeat(MB)]] as const) {
+    const ms = cpuMs(() => { _uncappedForTest.maskSecretCommand(v); _uncappedForTest.maskSecretArgs([v]); }, 2000);
+    assert.ok(ms < 300, `R12: ${k} on 1 MB took ${ms.toFixed(0)} ms CPU for the command and args paths, limit 300 ms`);
+  }
 }
 
 console.log('redact: all checks passed');

@@ -207,8 +207,35 @@
     { const a = Array.from(t.placeholder.replace(/\u2026$/, '')); let k = 0; while (k < a.length && /[\u{1F1E6}-\u{1F1FF}]/u.test(a[a.length - 1 - k])) k++; if (k % 2 === 1) add('placeholder-line', root, t, `the placeholder cuts a flag in two: "${snip(t.placeholder, 50)}"`); }
     if (t.placeholder !== label + '\u2026' && !(t.placeholder.endsWith('\u2026') && label.startsWith(t.placeholder.slice(0, -1).trimEnd()))) add('placeholder-line', root, t, `the shortened placeholder "${snip(t.placeholder, 50)}" has no ellipsis or is not the start of "${snip(label, 50)}"`);
   }
+  /* FR-177 (#540): the answer bar's session name is one line cut with an ellipsis and titled with the whole name; the verb ("asks:", "needs your OK:", "stopped:") is fully visible; the bar does not overflow */
+  function answerBarNameRule(root, add) {
+    const bar = root.querySelector('#answerBar'); if (!bar || !vis(bar)) return;
+    const q = bar.querySelector('.ab-q'), n = bar.querySelector('.ab-n'), lead = bar.querySelector('.ab-q b');
+    if (!q || !n || !lead) { add('answer-bar-name', root, bar, 'the answer bar has no name span (.ab-n)'); return; }
+    const full = n.textContent.trim(), cs = getComputedStyle(n);
+    if (!full) add('answer-bar-name', root, n, 'the name span is empty');
+    if (n.title !== n.textContent) add('answer-bar-name', root, n, `the name's title is "${snip(n.title, 50)}", not the full name "${snip(full, 50)}"`);
+    if (n.scrollWidth > n.clientWidth + 1 && !(cs.textOverflow === 'ellipsis' && cs.overflow === 'hidden' && cs.whiteSpace === 'nowrap')) add('answer-bar-name', root, n, `the name "${snip(full, 50)}" is cut (${n.scrollWidth}px in ${n.clientWidth}px) with no ellipsis (text-overflow ${cs.textOverflow}, overflow ${cs.overflow}, white-space ${cs.whiteSpace})`);
+    { // the START of the name is what shows (a right-to-left name starts at its right end: dir="auto" on the span)
+      const t = n.firstChild, nr = n.getBoundingClientRect();
+      if (t && t.nodeType === 3 && t.length) { const r = document.createRange(); r.setStart(t, 0); r.setEnd(t, 1); const c = r.getBoundingClientRect(); if (c.width > 0 && (c.left < nr.left - 1 || c.right > nr.right + 1)) add('answer-bar-name', root, n, `the first letter of the name is cut off (${Math.round(c.left)}..${Math.round(c.right)} in ${Math.round(nr.left)}..${Math.round(nr.right)}): the ellipsis must end the name, not hide its start (dir ${cs.direction}, dir attribute "${n.getAttribute('dir')}")`); }
+      if (/[\u0590-\u08ff]/.test(full) && cs.direction !== 'rtl') add('answer-bar-name', root, n, `a right-to-left name has direction ${cs.direction}: dir="auto" is missing`);
+    }
+    const lh = parseFloat(getComputedStyle(q).lineHeight) || 18;
+    if (n.getBoundingClientRect().height > lh * 1.5) add('answer-bar-name', root, n, `the name takes ${Math.round(n.getBoundingClientRect().height)}px: more than one line`);
+    if (n.getBoundingClientRect().width > q.getBoundingClientRect().width * 0.55) add('answer-bar-name', root, n, `the name is ${Math.round(n.getBoundingClientRect().width)}px wide in a ${Math.round(q.getBoundingClientRect().width)}px lead: past about half`);
+    const verb = lead.lastChild; // the text node after the name: "asks:" / "needs your OK:" / "stopped:"
+    if (!verb || verb.nodeType !== 3 || !/(asks|stopped|needs your OK):$/.test(verb.textContent)) add('answer-bar-name', root, lead, 'the verb is not its own text after the name');
+    else {
+      const r = document.createRange(); r.selectNodeContents(verb); const qr = q.getBoundingClientRect();
+      for (const b of r.getClientRects()) if (b.width > 0 && (b.right > qr.right + 1 || b.left < qr.left - 1 || b.bottom > qr.bottom + 1 || b.top < qr.top - 1)) { add('answer-bar-name', root, lead, `the verb "${verb.textContent.trim()}" is cut off: it ends at ${Math.round(b.right)}x${Math.round(b.bottom)}, the lead is ${Math.round(qr.right)}x${Math.round(qr.bottom)}`); break; }
+    }
+    const br = bar.getBoundingClientRect();
+    if (bar.scrollWidth > bar.clientWidth + 1 || br.right > innerWidth + 1 || br.left < -1) add('answer-bar-name', root, bar, `the answer bar overflows: ${bar.scrollWidth}px of content in ${bar.clientWidth}px (right edge ${Math.round(br.right)} of ${innerWidth})`);
+  }
   function chatRules(root, add) {
     placeholderRule(root, add);
+    answerBarNameRule(root, add);
     { const id = root.querySelector('.ph-id'), sub = id && id.querySelector('.sub'); if (sub && vis(sub) && sub.getBoundingClientRect().right > id.getBoundingClientRect().right + 1) add('heading-spill', root, sub, `the role line "${snip(sub.textContent, 50)}" ends at ${Math.round(sub.getBoundingClientRect().right)}px, past the heading box at ${Math.round(id.getBoundingClientRect().right)}px`); }
     for (const b of root.querySelectorAll('.cp-btn,.md .copy')) {
       if (!vis(b)) continue;
