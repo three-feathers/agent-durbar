@@ -3956,6 +3956,7 @@ function startCoffee(a,info){
   if(VISITS.pin(a.id,b.kind==='cap'?window.DurbarPlaces.BANK:window.DurbarPlaces.COFFEE,breakWord(a)))scheduleRender();
   setState(a,'waiting',breakWord(a),coffeeTask(a));
   if(isNew)announce(a.name+': '+coffeeTask(a));
+  if(isNew&&b.rehit&&b.kind==='provider')addNote(liveChat(a),'The resume found the limit still active, so the agent is back on its '+esc(coffeeWord().toLowerCase())+'. Nothing more is sent by itself.'); /* spec 068 FR-025 (issue 671) */
   paintCoffeeBar();
 }
 /* the break ends without a resume of ours (a message, Stop, the agent went on by itself, Not now) */
