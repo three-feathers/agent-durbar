@@ -206,6 +206,7 @@ module.exports = async (ctx) => {
   }
 
   // FR-055: one picture removed from a copy of dist/: its character is drawn as the plain figure, the others keep their pictures
+  // The log's "refused a call that did not come from its own window" for 'app:version' is expected here: the sender guard accepts only the real dist index, and this step loads a temp copy
   {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-dist-'));
     try {
