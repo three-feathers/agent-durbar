@@ -44,28 +44,25 @@ export function copilotQuotaReset(result: unknown, now = Date.now()): { resetsAt
   return resetsAt ? { resetsAt, estimated: v.resetDateEstimated === true } : undefined;
 }
 
-const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 /**
  * Spec 068 FR-025: the next time the wall clock of `tz` (an IANA name; the local zone when absent or unknown) reads `hour:minute`, on
- * `weekday` (0 = Sunday) or on `date` (month 1-12, day, optional year) when given; epoch ms, or undefined when none within 8 days (32 with
- * a date). Scans a quarter-hour apart (every zone's offset is a multiple of 15 minutes, so the minute of the hour repeats every 15; at
+ * `date` (month 1-12, day, optional year) when given; epoch ms, or undefined when none within 8 days (32 with a date). Scans a quarter-hour apart (every zone's offset is a multiple of 15 minutes, so the minute of the hour repeats every 15; at
  * most about 3000 steps); it is only run when a limit hits.
  */
-export function nextClockTime(hour: number, minute: number, tz: string | undefined, weekday: number | undefined, now = Date.now(), date?: { month: number; day: number; year?: number }): number | undefined {
+export function nextClockTime(hour: number, minute: number, tz: string | undefined, now = Date.now(), date?: { month: number; day: number; year?: number }): number | undefined {
   let fmt: Intl.DateTimeFormat;
   try {
-    fmt = new Intl.DateTimeFormat('en-US', { ...(tz ? { timeZone: tz } : {}), hourCycle: 'h23', hour: '2-digit', minute: '2-digit', weekday: 'short', month: 'numeric', day: 'numeric', year: 'numeric' });
+    fmt = new Intl.DateTimeFormat('en-US', { ...(tz ? { timeZone: tz } : {}), hourCycle: 'h23', hour: '2-digit', minute: '2-digit', month: 'numeric', day: 'numeric', year: 'numeric' });
   } catch {
-    return nextClockTime(hour, minute, undefined, weekday, now, date); // an unknown zone name: the local clock, still a plausible time
+    return nextClockTime(hour, minute, undefined, now, date); // an unknown zone name: the local clock, still a plausible time
   }
   const first = Math.floor(now / 60_000) + 1;
   const start = (first + ((((minute - first) % 15) + 15) % 15)) * 60_000;
   for (let t = start; t <= now + (date ? 32 : 8) * DAY; t += 15 * 60_000) {
     const p = Object.fromEntries(fmt.formatToParts(t).map((x) => [x.type, x.value]));
     if (Number(p.hour) !== hour || Number(p.minute) !== minute) continue;
-    if (weekday !== undefined && WEEKDAYS.indexOf(String(p.weekday).slice(0, 3).toLowerCase()) !== weekday) continue;
     if (date && (Number(p.month) !== date.month || Number(p.day) !== date.day || (date.year !== undefined && Number(p.year) !== date.year))) continue;
     return t;
   }
@@ -93,7 +90,7 @@ export function claudeLimitText(text: unknown, now = Date.now()): { window: 'fiv
     if (h12 >= 1 && h12 <= 12 && Number(r[5] ?? 0) < 60) {
       const hour = (h12 % 12) + (r[6].toLowerCase() === 'pm' ? 12 : 0);
       const date = r[1] ? { month: MONTHS.indexOf(r[1].toLowerCase()) + 1, day: Number(r[2]), ...(r[3] ? { year: Number(r[3]) } : {}) } : undefined;
-      resetsAt = resetMs(nextClockTime(hour, Number(r[5] ?? 0), r[7], undefined, now, date), now);
+      resetsAt = resetMs(nextClockTime(hour, Number(r[5] ?? 0), r[7], now, date), now);
     }
   }
   // only a clear plan limit: a recognised window, or a reset time we could read ("hit your context limit ... /clear to reset" stays an error)
