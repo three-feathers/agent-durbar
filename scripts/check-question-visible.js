@@ -95,8 +95,10 @@ module.exports = async (ctx) => {
     await open(w, h); await scroll('bottom');
     const users1 = await js(`document.querySelectorAll('#chat .msg.user').length`);
     await js(`document.querySelector('#chat .note.question .q-other').focus()`);
-    ctx.win.webContents.insertText('Teal  from the card'); await ctx.sleep(80);
-    await js(`window.__durbarSimRetitle('Renamed while typing in the card','')`); await ctx.sleep(150);
+    ctx.win.webContents.insertText('Teal  from the card');
+    await until(`document.querySelector('#chat .note.question:not(.settled) .q-other').value==='Teal  from the card'`);
+    await js(`window.__durbarSimRetitle('Renamed while typing in the card','')`);
+    await until(`document.querySelector('#chat .note.question:not(.settled) .q-other').value==='Teal  from the card'&&document.activeElement===document.querySelector('#chat .note.question:not(.settled) .q-other')`);
     await js(`[...document.querySelectorAll('#chat .note.question:not(.settled) .note-actions .btn.primary')].find(b=>b.textContent==='Answer').click()`);
     await until(`!!document.querySelector('#chat .note.question.settled')`);
     const st3 = await js(`document.querySelector('#chat .note.question.settled .pstate').textContent`);
@@ -123,6 +125,19 @@ module.exports = async (ctx) => {
     const done = (q) => `window.__qc(${jsLiteral(q)}).classList.contains('settled')`;
     const stateOf = (q) => js(`(()=>{const n=window.__qc(${jsLiteral(q)});return n?{settled:n.classList.contains('settled'),t:n.querySelector('.pstate').textContent,why:n.dataset.skipWhy||'',title:n.title,denied:n.classList.contains('denied')}:null})()`);
     const pick = async (q, label) => { await js(`(()=>{const n=window.__qc(${jsLiteral(q)});[...n.querySelectorAll('.q-opt')].find(b=>b.textContent.includes(${jsLiteral(label)})).click();[...n.querySelectorAll(':scope > .note-actions .btn.primary')].find(b=>b.textContent==='Answer').click();})()`); };
+    // one limit end to end: the boxes take their length from MAX_ANSWER, and a combined answer over it is refused on the card, not sent cut
+    const cap = await js(`window.exports.MAX_ANSWER`);
+    assert.strictEqual(cap, 500, `${w}: the page has the limit`);
+    const longOpt = (c) => c.repeat(200);
+    await emitEv({ type: 'question', phase: 'asked', requestId: 'mq0', questions: [{ question: 'Pick many?', multiSelect: true, options: ['a', 'b', 'c'].map((c) => ({ label: longOpt(c) })) }] });
+    await until(has('Pick many?'));
+    assert.strictEqual(await js(`window.__qc('Pick many?').querySelector('.q-other').maxLength`), cap, `${w}: the card's box takes the limit`);
+    await js(`(()=>{const n=window.__qc('Pick many?');n.querySelectorAll('.q-opt').forEach(b=>b.click());[...n.querySelectorAll(':scope > .note-actions .btn.primary')].find(b=>b.textContent==='Answer').click();})()`);
+    await until(`/too long: 500 characters at most/.test(document.body.textContent)`);
+    assert.ok(!(await stateOf('Pick many?')).settled, `${w}: an over-long answer is not sent and the card stays open`);
+    await js(`(()=>{const n=window.__qc('Pick many?');n.querySelectorAll('.q-opt')[2].click();n.querySelectorAll('.q-opt')[1].click();[...n.querySelectorAll(':scope > .note-actions .btn.primary')].find(b=>b.textContent==='Answer').click();})()`);
+    await until(done('Pick many?'));
+    assert.ok(/answered: a{200}$/.test((await stateOf('Pick many?')).t), `${w}: under the limit it is sent whole`);
     // two open at once, answered out of order: each card gets its own answer; the other stays open
     await ask('mq1', 'Pick one?', ['A', 'B']); await ask('mq2', 'Pick two?', ['X', 'Y']);
     await until(has('Pick two?'));

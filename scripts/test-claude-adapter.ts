@@ -572,6 +572,12 @@ async function main(): Promise<void> {
     await until('c1', () => answers.c1);
     assert.strictEqual(answers.c1.behavior, 'allow');
     ad.answerQuestion(sid, 'nope', { x: 'y' }); // unknown ids are ignored
+    // spec 052 FR-178: the agent app exiting while a question is open ends it as skipped with the reason `exit`
+    ask('q5', 'tu-q5');
+    await until('asked 5', () => events.find((e) => e.type === 'question' && (e as { requestId?: string }).requestId === 'tu-q5'));
+    cur!.exit(1, null);
+    await until('q5 cancelled', () => reasonOf('tu-q5'));
+    assert.strictEqual(reasonOf('tu-q5'), 'exit');
     await ad.stop(sid);
   }
 

@@ -5,6 +5,7 @@
 import { cleanSessionTitle } from './history';
 import type { AskedQuestion, QuestionSkipReason } from './types';
 import { isObj } from '../shared/guards';
+import { MAX_ANSWER } from '../shared/answerlimits';
 
 /** Why a question ended unanswered: the one union is `QuestionSkipReason` in types.ts. */
 export type SkipReason = QuestionSkipReason;
@@ -17,7 +18,7 @@ export class SkipNotes {
 
 export const MAX_QUESTIONS = 4;
 export const MAX_OPTIONS = 6;
-export const MAX_ANSWER = 500;
+export { MAX_ANSWER };
 /** Spec 052 FR-160: the card shows all of it; these only bound the event log and the renderer, far above what agents send. */
 export const MAX_QUESTION_TEXT = 2000;
 export const MAX_OPTION_LABEL = 300;
@@ -55,14 +56,19 @@ export function parseQuestionsWithOriginals(input: unknown): { asked: AskedQuest
 
 /**
  * The window's answer as main takes it (spec 052 FR-178): strings only, at most MAX_QUESTIONS entries, a key (the question's text) up to
- * MAX_QUESTION_TEXT and a value up to MAX_ANSWER. `null` is a skip. `undefined` = nothing usable, which main refuses; it must never read as a skip.
+ * MAX_QUESTION_TEXT and a value of at most MAX_ANSWER (longer is refused, not cut). `null` is a skip. `undefined` = nothing usable, which main refuses; it must never read as a skip.
  */
 export function readAnswerPayload(answers: unknown): Record<string, string> | null | undefined {
   if (answers === null) return null;
-  if (!isObj(answers)) return undefined;
+  if (!isObj(answers) || answerTooLong(answers)) return undefined;
   const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(answers).slice(0, MAX_QUESTIONS)) if (typeof v === 'string' && v.trim() && k.length <= MAX_QUESTION_TEXT) out[k] = v.slice(0, MAX_ANSWER);
+  for (const [k, v] of Object.entries(answers).slice(0, MAX_QUESTIONS)) if (typeof v === 'string' && v.trim() && k.length <= MAX_QUESTION_TEXT) out[k] = v;
   return Object.keys(out).length ? out : undefined;
+}
+
+/** An answer over MAX_ANSWER characters (counted as the adapters keep it: one line, trimmed) is refused with a reason, never cut (spec 052 FR-178). */
+export function answerTooLong(answers: unknown): boolean {
+  return isObj(answers) && Object.values(answers).slice(0, MAX_QUESTIONS).some((v) => typeof v === 'string' && v.replace(/\s+/g, ' ').trim().length > MAX_ANSWER);
 }
 
 /** The user's answers, kept only for the questions asked, each one line of at most 500 characters; undefined when none is left. */

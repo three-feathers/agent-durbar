@@ -21,6 +21,9 @@ import { startOptionsOf } from '../src/main/startopts';
 import type { ModelIpcDeps } from '../src/main/ipc/model'; // compiled for the handler test below (loaded under a stand-in electron)
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+/** Wait for a condition, with a generous limit (AGENTS.md: asserts that depend on timing wait, they do not sleep once). */
+const waitFor = async (what: string, cond: () => boolean, ms = 5000): Promise<void> => { const end = Date.now() + ms; while (!cond()) { if (Date.now() > end) throw new Error('timed out waiting for ' + what); await sleep(2); } };
+const askedCount = (evs: { type: string; phase?: string }[], from = 0): number => evs.slice(from).filter((e) => e.type === 'question' && e.phase === 'asked').length;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cm-'));
 const names = (s: FakeSession): string[] => s.calls.map((c) => c.name);
 const arg = (s: FakeSession, name: string): Record<string, unknown> => s.calls.filter((c) => c.name === name).slice(-1)[0].args[0] as Record<string, unknown>;
@@ -489,7 +492,7 @@ async function main(): Promise<void> {
       const askOnce = async (choices: string[] | undefined, reply: string | null): Promise<{ answer: string; wasFreeform: boolean }> => {
         const from = t.events.length;
         const p = iu({ question: 'Pick  one?', choices, allowFreeform: true });
-        await sleep(5);
+        await waitFor('the question', () => askedCount(t.events, from) >= 1);
         const q = t.events.slice(from).find((e) => e.type === 'question' && e.phase === 'asked') as { requestId: string; questions: { question: string; options: { label: string }[] }[] } | undefined;
         assert.ok(q, 'asked');
         assert.strictEqual(q.questions[0].question, 'Pick one?');
@@ -506,7 +509,7 @@ async function main(): Promise<void> {
         const from = t.events.length;
         const p1 = iu({ question: 'First?', choices: ['A', 'B'], allowFreeform: true });
         const p2 = iu({ question: 'Second?', choices: ['X', 'Y'], allowFreeform: true });
-        await sleep(5);
+        await waitFor('the question', () => askedCount(t.events, from) >= 2);
         const asked = t.events.slice(from).filter((e) => e.type === 'question' && e.phase === 'asked') as unknown as { requestId: string; questions: { question: string }[] }[];
         assert.strictEqual(asked.length, 2, 'both are asked');
         const second = asked.find((q) => q.questions[0].question === 'Second?')!, first = asked.find((q) => q.questions[0].question === 'First?')!;
@@ -526,7 +529,7 @@ async function main(): Promise<void> {
         assert.ok(longQ.length > 300 && longQ.length < 2000);
         const from = t.events.length;
         const p = iu({ question: longQ, choices: ['A', 'B'], allowFreeform: true });
-        await sleep(5);
+        await waitFor('the question', () => askedCount(t.events, from) >= 1);
         const q = t.events.slice(from).find((e) => e.type === 'question' && e.phase === 'asked') as { requestId: string; questions: { question: string }[] } | undefined;
         assert.ok(q, 'the long question was asked');
         const read = readAnswerPayload({ [q.questions[0].question]: 'my own long-question answer' });
@@ -536,10 +539,12 @@ async function main(): Promise<void> {
         assert.ok(!t.events.slice(from).some((e) => e.type === 'question' && e.phase === 'cancelled'), 'no skipped card');
         assert.deepStrictEqual(readAnswerPayload(null), null, 'null stays a skip');
         for (const bad of [undefined, 'text', 5, [], {}, { k: 5 }, { k: '' }, { k: '   ' }, { ['x'.repeat(2001)]: 'a' }]) assert.strictEqual(readAnswerPayload(bad), undefined, 'unusable is refused, never a skip: ' + JSON.stringify(bad)?.slice(0, 30));
-        assert.strictEqual(readAnswerPayload({ a: 'x'.repeat(900) })!.a.length, 500, 'a value is cut at 500');
+        assert.strictEqual(readAnswerPayload({ a: 'x'.repeat(500) })!.a.length, 500, 'exactly the cap is kept whole');
+        assert.strictEqual(readAnswerPayload({ a: 'x'.repeat(501) }), undefined, 'just over the cap is refused, not cut');
+        assert.strictEqual(readAnswerPayload({ a: ' ' + 'x'.repeat(500) + '  ' })!.a.trim().length, 500, 'spaces around do not count');
       }
       const pending = iu({ question: 'Still there?', choices: ['Yes'] });
-      await sleep(5);
+      await waitFor('the question', () => t.events.some((e) => e.type === 'question' && e.phase === 'asked' && (e as unknown as { questions: { question: string }[] }).questions[0].question === 'Still there?'));
       await t.ad.stop(t.sid);
       assert.deepStrictEqual(await pending, { answer: '(The user skipped the question. Decide yourself.)', wasFreeform: true }, 'Stop skips it');
       assert.ok(t.events.some((e) => e.type === 'question' && e.phase === 'cancelled'));
@@ -552,7 +557,7 @@ async function main(): Promise<void> {
         const t3 = await setup({ permissionMode: 'read-only' });
         const iu3 = t3.s.config.onUserInputRequest as (r: unknown) => Promise<{ answer: string; wasFreeform: boolean }>;
         const p3 = iu3({ question: 'Interrupt me?', choices: ['Yes'] });
-        await sleep(5);
+        await waitFor('the question', () => askedCount(t3.events) >= 1);
         await t3.ad.interrupt(t3.sid);
         await p3;
         assert.deepStrictEqual(t3.events.filter((e) => e.type === 'question' && e.phase === 'cancelled').map((e) => (e as { reason?: string }).reason), ['interrupt']);
