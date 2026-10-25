@@ -32,6 +32,8 @@
   /* spec 052 FR-072: a CLI installed just now may need Durbar to restart before it shows up (the new PATH is not re-read) */
   const RESTART_HINT = 'Installed? If Durbar still says Not installed, close and reopen Durbar, then choose Check again.';
   let B = null; /* the bridge */
+  let MASK = null; /* the window's masking (DurbarSafeText); none: no vendor reason is shown (fail closed) */
+  let SBXH = null; /* spec 087 FR-012: per app, its OS sandbox on this computer (from main) */
   const activeRun = new Set(); /* kinds with an open progress dialog */
   const waitKinds = new Set(); /* spec 081: updates waiting for sessions to end, started later by main */
   const LASTP = {}, LASTD = {}; /* the last progress and done event per app, so a dialog opened a moment late misses nothing */
@@ -97,6 +99,26 @@
     return ACC;
   }
 
+  /* spec 087 FR-012: "OS sandbox: available (…)" or "not available: <reason>" with the fix, and the stored *Always continue* with its undo */
+  function sbxInner(id) {
+    const v = SBXH && Object.prototype.hasOwnProperty.call(SBXH, id) ? SBXH[id] : null;
+    const T = window.DurbarSandboxText;
+    if (!v || !T) return '';
+    const m = (t) => (typeof t === 'string' && t && MASK ? String(MASK(t.slice(0, 400)) || '') : '');
+    const line = T.hostLine({ available: v.available === true, mechanism: v.mechanism, reason: m(v.reason) });
+    return `<p class="scr-note small hs-sbx-line">${esc(line)}</p>${v.fix && m(v.fix) ? `<p class="scr-note small hs-sbx-fix">${esc(m(v.fix))}</p>` : ''}${v.alwaysContinue ? `<p class="scr-note small hs-sbx-always">Always continue without the OS sandbox on this computer is on. <button type="button" class="btn sm" data-hs="sbxundo" data-kind="${esc(id)}">Undo</button></p>` : ''}`;
+  }
+  function paintSandbox() {
+    document.querySelectorAll('.hs-sbx[data-sbx]').forEach((p) => { p.innerHTML = sbxInner(p.dataset.sbx); });
+  }
+  async function loadSandbox() {
+    if (!B || !B.sandboxHosts) return;
+    let r = null;
+    try { r = await B.sandboxHosts(); } catch (e) { r = null; }
+    SBXH = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+    paintSandbox();
+  }
+
   /* the cards; `kinds` from listAdapters, `copilot` from copilotAuth (Copilot's detection itself is free of I/O, FR-007) */
   function sectionHTML(kinds, copilot) {
     const list = (kinds || []).filter((k) => SETUP_KINDS.includes(k.id));
@@ -116,6 +138,7 @@
       return `<li class="hs-card" data-kind="${esc(k.id)}"><div class="hs-top"><span class="hs-name"><b title="${esc(k.displayName || k.id)}">${esc(k.displayName || k.id)}</b>${FOR[k.id] ? `<span class="hs-for">${esc(FOR[k.id])}</span>` : ''}</span><span class="hs-st hs-${cls}"${simV ? ' title="Simulated version."' : ''}>${esc(word)}</span></div>
         ${acctHTML(k.id, st)}${hint ? `<p class="scr-note small">${esc(hint)}</p>` : ''}${k.where && st !== 'not-installed' ? `<p class="scr-note small hs-where">Found at <code>${esc(String(k.where).slice(0, 200)).replace(/[\\/]/g, '$&<wbr>')}</code></p>` : ''}${k.id === 'copilot' && copilot && copilot.pwshMissing ? `<p class="scr-note small hs-pwsh">${esc(PWSH_HINT)}</p>` : ''}
         <div class="hs-upd" data-upd="${esc(k.id)}">${st === 'not-installed' ? '' : updInner(k.id)}</div>
+        ${st === 'ready' ? `<div class="hs-sbx" data-sbx="${esc(k.id)}">${sbxInner(k.id)}</div>` : ''}
         <div class="hs-act" data-act="${esc(k.id)}">${actInner(k.id, st)}</div></li>`;
     }).join('');
     return `<section class="scr-sec" aria-labelledby="hsH"><h3 id="hsH" tabindex="-1">Agent apps</h3>
@@ -423,6 +446,7 @@
     const b = e.target.closest && e.target.closest('[data-hs]'); if (!b) return false;
     const kind = b.dataset.kind, card = b.closest('.hs-card'), name = card ? card.querySelector('b').textContent : kind;
     if (b.dataset.hs === 'reveal') reveal(b);
+    else if (b.dataset.hs === 'sbxundo') { if (B.sandboxAlwaysOff) B.sandboxAlwaysOff(kind).then(() => loadSandbox()).then(() => toastLike('The OS sandbox note shows again for ' + name + '.')); }
     else if (b.dataset.hs === 'check') onChange(true);
     else if (b.dataset.hs === 'checkall') checkNow();
     else if (b.dataset.hs === 'updcheck') checkNow(kind);
@@ -435,7 +459,7 @@
 
   window.DurbarHarnesses = {
     init(o) {
-      B = o.bridge; onChange = o.onChange || onChange; toastLike = o.toast || toastLike; onAccounts = o.onAccounts || onAccounts; onBadge = o.onBadge || onBadge;
+      B = o.bridge; MASK = typeof o.mask === 'function' ? o.mask : null; onChange = o.onChange || onChange; toastLike = o.toast || toastLike; onAccounts = o.onAccounts || onAccounts; onBadge = o.onBadge || onBadge;
       if (B && B.onHarnessProgress) B.onHarnessProgress((p) => {
         LASTP[p.kind] = p;
         /* an update that waited for sessions to end has started: show its progress */
@@ -459,6 +483,7 @@
     available: () => !!(B && B.harnessRun),
     sectionHTML,
     loadAccounts,
+    loadSandbox,
     onClick,
     /* spec 012 FR-157: the same sign-in flow from the chat's sign-in card; resolves with {ok} when it ends (cancelled = not ok) */
     signIn(kind, name) {

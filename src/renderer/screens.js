@@ -377,6 +377,7 @@
       </section></details>${aboutSec}</div>`;
     if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(!!hsSec); /* spec 081 FR-016: the card is the announcement while it is on screen */
     if(hsSec)window.DurbarHarnesses.loadAccounts(acctAgain); /* spec 051 FR-014: the account lines fill in after the paint (Codex takes about 2 s) */
+    if(hsSec&&window.DurbarHarnesses.loadSandbox)window.DurbarHarnesses.loadSandbox(); /* spec 087 FR-012: the OS sandbox line per app, after the paint */
     wireHead();
     /* spec 051 FR-008: entry points open Settings at Agent apps */
     let atSec=false; /* a section was asked for (harnesses, mcp, schedules): its heading keeps the focus instead of the h2 */
@@ -1605,7 +1606,7 @@
   }
 
   window.DurbarScreens={oneShotCostLine,aiCredits,
-    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
+    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,mask:ctx.mask,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
     openSettings:(section)=>{mcp=null;X._acctRefresh=X._acctRefresh==='check'?'check':true;open('settings',section==='mcp'||section==='harnesses'||section==='schedules'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},

@@ -30,6 +30,33 @@ type ModelSwitchResult = import('../shared/modelswitch').ModelSwitchResult;
 type ContextTier = import('../shared/modelswitch').ContextTier;
 type ActivityRow = import('../shared/activity').ActivityRow;
 type EditInfo = import('../shared/edits').EditInfo;
+type SandboxState = import('../shared/api').SandboxState;
+
+/**
+ * Spec 087 FR-017: the simulated OS sandbox of each sim agent, from a fixed table (no real call): on per mechanism, off with a reason,
+ * checking, managed and kept until a new session, so the chip and its tooltip are checked with zero credits. A simulation, not a
+ * statement about the real apps.
+ */
+const SIM_SBX_WIN = "Claude Code has no OS sandbox on Windows; Durbar's own checks still apply (only WSL2 has one).";
+const SIM_SBX_COPILOT = 'Copilot says this computer cannot run its sandbox: bubblewrap 0.5.0 or later is needed (found 0.4.0).';
+function simCovers(kind: string): SandboxState['covers'] {
+  return kind === 'claude' ? ['shell'] : kind === 'codex' ? ['shell', 'files'] : ['shell', 'mcp'];
+}
+function simSandboxFor(i: number, kind: string, mode: string): SandboxState | undefined {
+  if (kind === 'basic') return undefined;
+  const covers = simCovers(kind);
+  if (mode === 'allow') {
+    if (kind === 'codex') return undefined;
+    if (i === 2) return { state: 'on', mechanism: 'seatbelt', managed: true, covers, verified: false }; // Allow all · Sandboxed (managed)
+    if (i === 5) return { state: 'on', mechanism: 'bubblewrap', untilNewSession: true, covers, verified: false }; // Allow all · Sandboxed (until a new session)
+    return undefined;
+  }
+  const writes = mode === 'ask' ? 'folders' : 'none';
+  if (kind === 'codex') return { state: 'on', mechanism: 'vendor', covers, writes: 'none', ...(mode === 'ask' ? { approvedMayLeave: true } : {}), verified: false };
+  if (i === 3 || i === 10) return { state: 'off', covers, writes, verified: false, reason: kind === 'claude' ? SIM_SBX_WIN : SIM_SBX_COPILOT }; // · Not sandboxed
+  if (i === 12) return { state: 'unknown', mechanism: 'bubblewrap', covers, writes, verified: false, reason: 'Waiting for the app to confirm its sandbox at the start.' }; // · Sandbox: checking
+  return { state: 'on', mechanism: i === 13 ? 'processcontainer' : i % 2 ? 'seatbelt' : 'bubblewrap', covers, writes, verified: false };
+}
 type SimNote = import('../shared/notes').Note;
 type SimNotesWrote = import('../shared/notes').NotesWrote;
 type SimNotesView = import('../shared/notes').NotesView;
@@ -211,6 +238,9 @@ interface SimOptions {
 type SimScope = { key: string; label: string };
 interface SimAgent {
   info: AgentInfo;
+  /** Spec 087: the person chose Continue without the OS sandbox (this session), or the note is waiting. */
+  sbxContinued?: boolean;
+  sbxHeld?: boolean;
   /** Spec 034 FR-020 (simretry=1): the agent app keeps retrying, so the background ticks leave this agent alone. */
   retryHold?: boolean;
   room: string;
@@ -540,6 +570,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     if (n < 12) rows = ROSTER.filter((r) => r[0] !== 'Hugo' && r[0] !== 'Priya' && r[0] !== 'Noor' && r[0] !== 'Omar').slice(0, n);
     while (rows.length < n) rows.push(['Agent' + (rows.length + 1), 'Worker', 'blog', 'working', 'Working through a queued task', 0, ['src/index.ts']]);
 
+    const simSbxAlways = new Set<string>(); // spec 087 FR-007c: the simulated stored Always continue choice (memory only)
     const crashIds = new Set<string>(); // spec 006 FR-046 (simcrash=N): the sessions the faked crash left mid-turn
     /* spec 006 FR-043/FR-044 (review of PR 720): under simcrash=N the bridge counts what the card makes it do, for the driver: every wake
        (and how many run at once: a wake then takes 150 ms), every prompt sent and every permission-mode change */
@@ -568,6 +599,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       // Jonas models the real adapter's state until Phase 3: the controls work but are flagged as not verified on a real account.
       if (name === 'Jonas') info.modelControl = { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true, unverified: true };
       if (i === 6) info.modelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
+      const sbx = simSandboxFor(i, info.adapterId ?? 'copilot', info.permMode); // spec 087 FR-017
+      if (sbx) info.sandbox = sbx;
       (info as AgentInfo & { roomName?: string; role?: string }).roomName = roomName;
       (info as AgentInfo & { roomName?: string; role?: string }).role = role;
       info.renameCap = caps(info.adapterId ?? 'copilot').renameSession; // spec 059: what a rename does in the agent app
@@ -2522,6 +2555,23 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         // spec 041 FR-065 delta (issue #608 review): `simsendfail=secret` fakes an app error that holds token shapes, also split by Markdown
         if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'secret')
           return { ok: false, error: 'The agent app refused the message: ' + SECRETS_TEXT + ' Also gh`p_' + SIM_TOK.ghp.slice(4) + '` and ' + SIM_TOK.ghp.slice(0, 24) + '**' + SIM_TOK.ghp.slice(24) + '** (split late).' };
+        // spec 087 FR-007: `simsendfail=sandbox-choice` fakes Claude Code's or Copilot's sandbox not starting: nothing is sent, the
+        // note offers Continue (and, for Claude on Windows, Always) beside Change mode…
+        const failParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simsendfail') : null;
+        const sbxKind = s.info.adapterId ?? 'copilot';
+        if (failParam === 'sandbox-choice' && s.info.permMode !== 'allow' && (sbxKind === 'claude' || sbxKind === 'copilot') && !s.sbxContinued) {
+          const reason = sbxKind === 'claude' ? SIM_SBX_WIN : SIM_SBX_COPILOT;
+          s.info.sandbox = { state: 'off', covers: simCovers(sbxKind), writes: s.info.permMode === 'ask' ? 'folders' : 'none', verified: false, reason };
+          window.setTimeout(() => {
+            emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: s.info.sandbox ?? null, notice: { text: `${sbxKind === 'claude' ? 'Claude Code' : 'Copilot'} could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Nothing was sent.`, actions: sbxKind === 'claude' && !simSbxAlways.has('claude') ? ['continue', 'always'] : ['continue'] } });
+            emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Not sent: the OS sandbox could not start' });
+          }, 200);
+          return { ok: true };
+        }
+        // spec 087 FR-019 + spec 012 FR-087: `simsendfail=sandbox` fakes a refused Read-only / Ask first: Codex's sandbox (the real Linux
+        // message), and for Claude Code and Copilot their sandbox under an organization policy that requires it (the existing refusal path)
+        if (failParam === 'sandbox' && s.info.permMode !== 'allow' && (sbxKind === 'claude' || sbxKind === 'copilot'))
+          return { ok: false, error: `${sbxKind === 'claude' ? 'Claude Code' : 'Copilot'} could not start its OS sandbox: ${(sbxKind === 'claude' ? SIM_SBX_WIN : SIM_SBX_COPILOT).replace(/[.\s]+$/, '')}. Read-only and Ask first need it on this computer (your organization's policy), so nothing was sent.` };
         // spec 012 FR-087: `simsendfail=sandbox` fakes Codex refusing Read-only / Ask first (the real Linux message), for the driver
         if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'sandbox' && s.info.permMode !== 'allow')
           return { ok: false, error: "Codex refused the session settings: fs sandbox helper failed: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox, so nothing ran. To allow it for bubblewrap, see the README (Codex)." };
@@ -2637,15 +2687,49 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: /^https?:\/\//i.test(url) };
       },
       setRoomClosed: async () => ({ ok: true }),
+      // spec 087 FR-007a/FR-007c/FR-012: the choices and the Settings line, simulated (no real call)
+      sandboxContinue: async (id, o) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        const kind = s.info.adapterId ?? 'copilot';
+        if (o?.always === true && kind !== 'claude') return { ok: false, error: 'Always continue is not offered for this app: its sandbox can be fixed on this computer.' };
+        s.sbxContinued = true;
+        s.sbxHeld = false;
+        if (o?.always === true) simSbxAlways.add(kind);
+        s.info.sandbox = { state: 'off', covers: simCovers(kind), writes: s.info.permMode === 'ask' ? 'folders' : 'none', verified: false, reason: 'You chose to continue without the OS sandbox for this session.' };
+        emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: s.info.sandbox });
+        return { ok: true };
+      },
+      sandboxHosts: async () => {
+        const out: Record<string, import('../shared/api').SandboxHostView> = {
+          claude: { available: false, reason: SIM_SBX_WIN, ...(simSbxAlways.has('claude') ? { alwaysContinue: true } : {}) },
+          copilot: { available: false, reason: SIM_SBX_COPILOT, fix: 'Install bubblewrap 0.5.0 or later and slirp4netns (for example `sudo apt install bubblewrap slirp4netns`). On Ubuntu 24.04+ AppArmor may also block bubblewrap: see the README (Safety model).' },
+          codex: { available: true, mechanism: 'bubblewrap', fix: 'Checked at each start; on Ubuntu 24.04+ AppArmor may block bubblewrap: see the README (Codex).' },
+        };
+        if (new URLSearchParams(location.search).get('simsandbox') === 'ok') { out.claude = { available: true, mechanism: 'seatbelt' }; out.copilot = { available: true, mechanism: 'seatbelt' }; }
+        return out;
+      },
+      sandboxAlwaysOff: async (app) => {
+        simSbxAlways.delete(String(app));
+        return { ok: true };
+      },
       setPermMode: async (id, mode, o) => {
         if (crashProbe.on) crashProbe.modeSets++;
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
         simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
+        const kept = mode === 'allow' && s.info.sandbox?.state === 'on' && (s.info.adapterId ?? 'copilot') === 'copilot'; // spec 087: Copilot keeps its floor until a new session
         s.info.permMode = mode;
         s.info.permRestored = undefined;
         s.info.permFrom = undefined;
+        { // spec 087 FR-013: the floor in force after the switch (the simulator applies it at once)
+          const kind = s.info.adapterId ?? 'copilot';
+          const next: SandboxState | undefined = kept ? { state: 'on', mechanism: s.info.sandbox?.mechanism, untilNewSession: true, covers: simCovers(kind), verified: false } : s.sbxContinued && mode !== 'allow' ? { state: 'off', covers: simCovers(kind), writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'You chose to continue without the OS sandbox for this session.' } : simSandboxFor(0, kind, mode);
+          if (next) s.info.sandbox = next;
+          else delete s.info.sandbox;
+          emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: next ?? null });
+        }
         if (o?.clearGrants && s.grants.size) { s.grants.clear(); grantsEvent(s); }
         let pending = s.perm ? 1 : 0;
         if (s.perm && ((mode === 'allow' && o?.approvePending) || mode === 'read-only')) {
