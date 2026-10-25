@@ -61,7 +61,12 @@ export class NotesOps {
   async list(agentId: unknown): Promise<NotesView | Refusal> {
     const t = this.target(agentId);
     if ('ok' in t) return t;
-    return t.store.list(t.key);
+    const v = await t.store.list(t.key);
+    if (!v.ok) return v;
+    // the chat's own session (main's `resumeIdFor`, never the window's), so the drawer can put "This session" first (FR-021); '' when it is unusable
+    const app = this.d.adapterIdOf(t.a.id) ?? t.a.adapterId ?? 'copilot';
+    const sid = this.d.resumeIdFor(t.a.id);
+    return { ...v, session: sessionIdOk(app, sid) ? sid : '' };
   }
 
   /** FR-009: the window sends the role, the message's place and the raw text; the app and the session are main's. */
