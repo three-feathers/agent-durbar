@@ -21,6 +21,8 @@ import { openInVSCode } from '../vscode';
 import type { AddWorkspace, EnsureLive, SendOp } from './types';
 
 export interface AgentsIpcDeps {
+  /** Spec 080 FR-023: the session's browser view and partition are destroyed when it ends or is removed. */
+  browserGone?(id: string): void;
   agents: Map<string, AgentInfo>;
   router: AdapterRouter;
   agentState: AgentStateTracker;
@@ -100,6 +102,7 @@ export function register(deps: AgentsIpcDeps): void {
     await endSession(id);
     sessionStarts.forget(id); // spec 085: the next session in this folder starts its own count
     deps.profileFreshness?.forget(id); // spec 043 FR-041
+    deps.browserGone?.(id); // spec 080 FR-023
   });
   /** Spec 058 FR-022: Restart session with these servers: End session, then the same id through the resume path; no prompt is sent. */
   const restartingSessions = new Set<string>();
@@ -175,6 +178,7 @@ export function register(deps: AgentsIpcDeps): void {
     checkpointStore()?.forget(a.id); // spec 065 FR-006
     sessionStarts.forget(a.id); // spec 085
     deps.profileFreshness?.forget(a.id); // spec 043 FR-041
+    deps.browserGone?.(a.id); // spec 080 FR-023
     agents.delete(a.id);
     agentState.remove(a.id);
     vsChatRefs.delete(a.id);

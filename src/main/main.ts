@@ -1,15 +1,17 @@
 import { destroyAllViews } from './browser/views';
+import { registerSimScheme } from './browser/simpages';
 import { FolderSetupStore } from './foldersetupstore';
 import { acceptedFor, hasFolderRules, scanFolderSetupCached } from './foldersetup';
 import type { FolderSetupStart } from '../shared/foldersetup';
 import type { McpServerSpec } from '../shared/mcp';
 import { copilotDir, copilotServerNames } from './mcpfiles'; // spec 061 FR-015: the explainer switches Copilot's own servers off
 import { parseEffort } from '../shared/effort';
-import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, protocol, screen, shell } from 'electron';
 import { register as registerActivityIpc } from './ipc/activity';
 import { register as registerAdaptersIpc } from './ipc/adapters';
 import { register as registerAgentsIpc } from './ipc/agents';
 import { register as registerAppIpc } from './ipc/app';
+import { register as registerBrowserIpc } from './ipc/browser';
 import { noteWindowZoom } from './titledblclick';
 import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
@@ -153,6 +155,7 @@ const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 /** Spec 010 FR-022: the simulator runs in the window only; main then never reaches a real agent app (FR-023 in ipcguard.ts, FR-024 here). */
 const SIMULATOR = simulatorOn(dev);
 initSimGuard(SIMULATOR); // spec 010 FR-031: ipcguard uses this decision; it runs before any register* below
+registerSimScheme(protocol, SIMULATOR); // spec 080 T018: the test pages' scheme exists only under DURBAR_SIM, and must be registered before the app is ready
 // spec 010 FR-030: under the simulator no child process starts at all (detection probes, git, VS Code, installs): each starter refuses and is counted
 const childSeal = SIMULATOR ? sealChildProcess(childProcess as unknown as Record<string, unknown>) : undefined;
 // spec 001 FR-084: simulator screenshots pin the clock (the page's), the time zone and the locale, so unchanged screens give the same pixels
@@ -699,11 +702,14 @@ registerAppIpc({
   },
   clearInterrupted: () => { interrupted = null; },
 });
+/** Spec 080 T014: the session browsers; ended, removed and folder-removed sessions destroy theirs (FR-023). */
+const browser = registerBrowserIpc({ agents, getWin: () => win, toRenderer, simulator: SIMULATOR, simAsksConsent: dev.DURBAR_SIM_BROWSER_CONSENT === 'ask', getSettingsStore: () => settingsStore });
+const browserGone = (id: string): void => void browser.destroy(id).catch(() => undefined);
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
-registerAgentsIpc({ agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory });
+registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory });
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
-registerPreviousIpc({ renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
+registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
@@ -753,7 +759,7 @@ registerSlashIpc({ agents, router, ensureLive }); // spec 073
 registerNotesIpc({ getOps: () => notesOps }); // spec 083
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey });
 registerAdaptersIpc({ adaptersList });
-registerFoldersIpc({ agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
+registerFoldersIpc({ browserGone, agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
 registerFloorsIpc({ agents, getFolderStore: () => folderStore, wsKey });
 /* Spec 061: a folder's own agent setup (scan, decide, explain), window-only (FR-013); the pure handler bodies are unit-tested. */
 registerFolderSetupIpc({
@@ -853,6 +859,7 @@ function createWindow(): void {
     if (!navigationAllowed(url, INDEX_HTML)) e.preventDefault();
   };
   win.webContents.on('will-navigate', guardNav);
+  win.webContents.on('did-start-loading', () => browser.detachAll()); // spec 080: a page that loads again has forgotten its Browser tab; no view stays on top of it
   win.webContents.on('will-redirect', guardNav);
   // spec 045 FR-005: Electron grants web permissions by default; this page needs only clipboard writes (Copy buttons) and notifications (spec 052 FR-059)
   win.webContents.session.setPermissionRequestHandler((_wc, permission, done) => done(permissionAllowed(permission)));

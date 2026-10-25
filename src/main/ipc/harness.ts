@@ -134,6 +134,7 @@ export function register(deps: HarnessIpcDeps): HarnessIpc {
   const checker: UpdateChecker = new UpdateChecker({
     detectEnv,
     exec: nodeExec,
+    trustedPath: (p: string) => process.platform === 'win32' || posixTrusted(p, (q) => fs.statSync(q).mode),
     lookup: makeLookupGet(electronRequestFactory()),
     copies: copiesNow,
     locate: (app) => { const at = harnessSetup.find(app); if (!at) return undefined; try { return fs.realpathSync(at); } catch { return undefined; } },

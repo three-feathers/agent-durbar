@@ -236,6 +236,24 @@ export interface CheckCmd {
 }
 
 export const npmCheck = (app: SetupKind): CheckCmd => ({ tool: 'npm', args: ['view', PACKAGES[app], 'version', '--json', '--no-update-notifier'], env: { npm_config_update_notifier: 'false' } });
+/**
+ * Spec 081 FR-042 (bug found on a Mac, v0.1.0-alpha.16: "exit 127"): npm is a script that starts with `#!/usr/bin/env node`. An app opened from
+ * the Dock or Finder has a PATH of only /usr/bin:/bin:/usr/sbin:/sbin, and Durbar finds npm in a version manager's folder (nvm, fnm, Volta) or
+ * in Homebrew's, so `env` cannot find `node` and the shell says 127. The `node` that ships beside an npm is the one that npm belongs to, so
+ * the folder of the npm Durbar runs goes first on that child's PATH, then the PATH it has, then the login shell's folders. The key keeps its
+ * spelling on Windows (names ignore case there). Pure; the result is added to that one child's environment.
+ */
+export function pathWithToolDir(base: Readonly<Record<string, string | undefined>>, toolFile: string, platform: string, loginDirs: readonly string[] = []): Record<string, string> {
+  const win = platform === 'win32';
+  const p = pathFor(platform);
+  const key = win ? Object.keys(base).find((k) => k.toLowerCase() === 'path') ?? 'Path' : 'PATH';
+  const sep = win ? ';' : ':';
+  const dirs = [p.dirname(toolFile), ...(base[key] ?? '').split(sep), ...loginDirs].filter((d) => d && p.isAbsolute(d));
+  const seen = new Set<string>();
+  const out = dirs.filter((d) => { const k = win ? d.toLowerCase() : d; return seen.has(k) ? false : (seen.add(k), true); });
+  return { [key]: out.join(sep) };
+}
+
 export const brewInfoCmd = (cask: string): CheckCmd => ({ tool: 'brew', args: ['info', '--cask', '--json=v2', cask], env: { HOMEBREW_NO_AUTO_UPDATE: '1' } });
 export const brewOutdatedCmd = (cask: string, greedy: boolean): CheckCmd => ({ tool: 'brew', args: ['outdated', '--cask', '--json=v2', ...(greedy ? ['--greedy'] : []), cask], env: { HOMEBREW_NO_AUTO_UPDATE: '1' } });
 /** The background check never accepts source agreements for the user; only an explicit check, after the terms note, adds the flag. */

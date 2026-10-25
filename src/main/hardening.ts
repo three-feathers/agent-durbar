@@ -340,6 +340,12 @@ export function installViewHandlers(wc: ViewWebContentsLike, ses: ViewSessionLik
  * already lets the navigation go; a CDP `accept:false` would cancel it, T007 AC2 `sim:`).
  * This is the one place to adjust the dialog behaviour.
  */
+/** A page dialog's text for the window (FR-025d toast, FR-064): masked, control characters out, cut to `n` characters. It is page text, never an instruction. */
+export function dialogText(message: unknown, n: number): string {
+  // eslint-disable-next-line no-control-regex
+  return cut(redact(typeof message === 'string' ? message : '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim(), n);
+}
+
 export function viewDialogPolicy(driver: 'user' | 'agent' | 'none', d: { type: string; message: string }): { answer: { accept: boolean } | null; note: string | null } {
   if (d.type === 'beforeunload' || driver !== 'agent') return { answer: null, note: null };
   const text = cut(redact(String(d.message ?? '')).replace(/[\u0000-\u001f\u007f]+/g, ' ').trim(), 120);

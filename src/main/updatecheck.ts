@@ -12,7 +12,7 @@ import type { DetectEnv, Exec } from '../adapters/detect';
 import { SETUP_NAMES } from '../shared/harnesssetup';
 import type { SetupKind } from '../shared/harnesssetup';
 import {
-  MAX_TOOL_OUTPUT, announceRule, brewInfoCmd, brewOutdatedCmd, classifyFailure, copilotVersionFromPath, decide, decideClaudeChannels, lookupLatest, npmCheck, npmOwns, parseBrewInfo, parseBrewOutdated,
+  MAX_TOOL_OUTPUT, announceRule, brewInfoCmd, brewOutdatedCmd, classifyFailure, copilotVersionFromPath, decide, decideClaudeChannels, lookupLatest, npmCheck, npmOwns, pathWithToolDir, parseBrewInfo, parseBrewOutdated,
   parseNpmView, parseVersionField, parseWingetList, pathFor, policyView, sourceLabel, sourceOf, startCheckAllowed, versionFromCaskroom, versionFromPackageJson, versionFromWingetPath, wingetCheck, WINGET_IDS, WINGET_TERMS_REASON,
 } from '../shared/updatecheck';
 import type { Announced, CheckCmd, CheckResult, LookupGet, PolicyView, UpdatePolicy, UpdateSource } from '../shared/updatecheck';
@@ -51,6 +51,8 @@ export interface CheckerDeps {
   findTool(name: 'npm' | 'brew' | 'winget'): string | undefined;
   /** At most `cap` bytes of a small text file, or undefined. */
   readText(file: string, cap: number): string | undefined;
+  /** The runner's trust rule for a found tool (`posixTrusted` on macOS and Linux; Windows is a `[KNOWN GAP]` there too); npm's folder goes on PATH only if it passes. */
+  trustedPath: (p: string) => boolean;
   policy(): UpdatePolicy;
   userSwitch(): boolean;
   simulator: boolean;
@@ -233,8 +235,14 @@ export class UpdateChecker {
 
   /** Runs one tool command with the owning tool's path (a missing tool is a short reason, never a guess). */
   private async tool(c: CheckCmd, file: string): Promise<string> {
-    const r = await execFound(file, c.args, this.d.detectEnv, this.d.exec, { timeoutMs: CHECK_LIMIT_MS, env: c.env });
+    const env = this.d.detectEnv;
+    // npm starts `node` through `env`: the folder of that npm (and the login shell's folders) go on this child's PATH (FR-042)
+    const trusted = c.tool !== 'npm' || this.d.trustedPath(file);
+    const childEnv = c.tool === 'npm' && trusted ? { ...c.env, ...pathWithToolDir(env.env, file, env.platform, env.loginPath ?? []) } : c.env;
+    const r = await execFound(file, c.args, env, this.d.exec, { timeoutMs: CHECK_LIMIT_MS, env: childEnv });
     if (r.timedOut) throw new Error('timed out');
+    // 127 = the shell could not find a program, ENOENT = the file itself is gone: say what to do, not a bare number (FR-042)
+    if (r.errorCode === 'ENOENT' || r.code === 127) throw new Error(`${c.tool === 'npm' ? 'npm or node' : c.tool} was not found${trusted ? '' : ', and the npm folder is not trusted'}`);
     if (r.errorCode || r.code !== 0) {
       const cls = classifyFailure({ code: r.code, errorCode: r.errorCode, text: `${r.stderr}\n${r.stdout}`.slice(-2000), platform: this.d.detectEnv.platform });
       throw new Error(cls === 'network' ? 'network problem' : cls === 'admin' ? 'not allowed' : `exit ${r.code ?? r.errorCode ?? '?'}`);
