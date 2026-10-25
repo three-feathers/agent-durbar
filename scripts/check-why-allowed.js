@@ -135,7 +135,7 @@ module.exports = async (ctx) => {
     await js(`(()=>{const c=[...document.querySelectorAll('#chat .chip')].find(c=>(c.querySelector(':scope>.why')||{}).textContent==='Allowed: session rules');if(!c.classList.contains('open'))c.click();})()`);
     assert.ok(await until(`!!document.querySelector('#chat .chip.open .why-undo')`, 5000), `${w}: the several-folder card offers Undo`);
     await js(`document.querySelector('#chat .chip.open .why-undo').click()`);
-    assert.ok(await until(`window.__revoked.length>=2`, 5000), `${w}: Undo revoked each rule: ${JSON.stringify(await js('window.__revoked'))}`);
+    assert.ok(await until(`window.__revoked.length>=2`, 5000), `${w}: Undo revoked each rule`);
     assert.deepStrictEqual(await js('window.__revoked.slice().sort()'), ['multi:a', 'multi:b'], `${w}: exactly the rules that allowed it, not the unrelated one`);
     await ev({ type: 'grants', grants: [{ key: 'ghost:key', kind: 'write', label: evil }] }); // back to the one rule the next checks use
     // a window that reloaded knows no rules: a rule it never saw is not "removed" (it was just reported as the reason)
