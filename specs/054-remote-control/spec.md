@@ -152,7 +152,7 @@ Owner answers on #298: Q1 test Copilot remote in a private repository; **Q2 "thi
 - **FR-061** `ClaudeAdapter.setRemote(id, on)` sends `remote_control` over the running CLI (`capabilities.remote: true`); the answer's `session_url` is the link when it is on claude.ai. Off sends `enabled: false`. The existing rules hold: only while the session runs, never in Allow all, and only after main's own confirmation (FR-011).
 - **FR-062** A Claude relaunch (a new mode, model or MCP set, which restarts the CLI process) turns Remote Control **back on** right after the new process starts, so a switch does not silently drop it. If that fails, the adapter emits the new normalized event `{type: "remote", on: false, reason}`; main forgets the state and tells the window, and the window shows the reason as a note (the same path as spec 012 FR-158).
 - **FR-063** Copilot's "not started" message no longer blames the folder: "Copilot did not start remote control and gave no reason. On a Copilot Free account it never started in our checks, in any folder; it may need a paid plan."
-- **FR-064** Codex (Q3): the README says Codex's own mobile access works through ChatGPT and cannot attach to a session Durbar runs, so Durbar offers none.
+- **FR-064** Codex (Q3): the README says Codex's own mobile access works through ChatGPT on a connected desktop or SSH host, and that Durbar's own per-session app-server did not show up there in one test (2026-10-24, see the dated result below), so Durbar offers none.
 
 
 ### 2026-10-20: Copilot remote control on Copilot Pro
