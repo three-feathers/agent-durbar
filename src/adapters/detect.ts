@@ -388,7 +388,7 @@ export function nodeDetectEnv(): DetectEnv {
 }
 
 /** Adds where the app was found, safe to show (`~/…` or only the file name, never the user name: `displayPath`). */
-const withWhere = (r: DetectResult & { path?: string }, env: DetectEnv): DetectResult => {
+export const withWhere = (r: DetectResult & { path?: string }, env: DetectEnv): DetectResult => {
   const { path: p, ...rest } = r;
   return p ? { ...rest, where: displayWhere(p, env) } : rest;
 };

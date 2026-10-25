@@ -331,7 +331,7 @@ export function parseWingetList(stdout: string, id: string): WingetAnswer {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Lookups on the vendors' release endpoints (FR-004, FR-042, plan D4)
+// Lookups on the vendors' release endpoints (FR-004, FR-026, plan D4)
 
 export interface Lookup {
   /** Exact https URL, exact host and path. */

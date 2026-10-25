@@ -183,7 +183,7 @@
           if (r.state === 'up-to-date' && r.installedNewer) out.push('<p class="scr-note small">Installed is newer than the source\'s latest.</p>');
           if (r.newerOnLatest) out.push(`<p class="scr-note small hs-quiet">A newer latest-channel build exists (${esc(r.newerOnLatest)}).</p>`);
         }
-        if (r.state === 'could-not-check') out.push(`<p class="scr-note small">Could not check: ${esc(r.reason || 'unexpected answer')}${r.reason === 'winget needs its terms accepted' ? '. Check for update asks you whether to accept them.' : r.reason === 'npm or node was not found' ? ". Durbar could not run npm with a node beside it: install Node.js (it brings npm), or start Durbar from a terminal where npm works, then choose Check for update." : ''}</p>`);
+        if (r.state === 'could-not-check') out.push(`<p class="scr-note small">Could not check: ${esc(r.reason || 'unexpected answer')}${r.reason === 'winget needs its terms accepted' ? '. Check for update asks you whether to accept them.' : /^npm or node was not found/.test(r.reason || '') ? ". Durbar could not run npm with a node beside it: install Node.js (it brings npm), or start Durbar from a terminal where npm works, then choose Check for update." : ''}</p>`);
         if (r.checkedAt) out.push(`<p class="scr-note small hs-when">Checked ${esc(timeOf(r.checkedAt))}</p>`);
       }
     } else if (busy) out.push(`<p class="scr-note small" aria-busy="true">${chip('checking')}</p>`);

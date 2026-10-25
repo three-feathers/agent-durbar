@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { displayWhere, killChildTree, makeExec } from '../src/adapters/detect';
+import { displayWhere, withWhere, killChildTree, makeExec } from '../src/adapters/detect';
 import type { DetectEnv, ExecResult } from '../src/adapters/detect';
 import { CASKS, PACKAGES } from '../src/shared/harnesssetup';
 import type { SetupKind } from '../src/shared/harnesssetup';
@@ -647,6 +647,25 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     assert.deepStrictEqual(pathWithToolDir({ PATH: '/usr/bin:/bin' }, '/opt/homebrew/bin/npm', 'darwin', ['/usr/bin', '/opt/x', 'rel']), { PATH: '/opt/homebrew/bin:/usr/bin:/bin:/opt/x' });
     assert.deepStrictEqual(pathWithToolDir({}, '/a/npm', 'linux'), { PATH: '/a' });
     assert.deepStrictEqual(pathWithToolDir({ Path: 'C:\\Windows;c:\\nodejs' }, 'C:\\Nodejs\\npm.cmd', 'win32'), { Path: 'C:\\Nodejs;C:\\Windows' });
+  }
+  {
+    // FR-042: the folder goes on PATH only when it passes the runner's trust rule (a folder anyone can write could plant its own `node`)
+    const real = '/home/u/.nvm/versions/node/v22.3.0/lib/node_modules/@github/copilot/index.js';
+    const npm = '/home/u/.nvm/versions/node/v22.3.0/bin/npm';
+    const mk = (trusted: boolean) => {
+      const t = checkerWith({ platform: 'darwin', real: { copilot: real }, copies: {}, tools: { npm }, texts: { '/home/u/.nvm/versions/node/v22.3.0/lib/node_modules/@github/copilot/package.json': '{"version":"1.0.98"}' }, answers: () => ({ code: 127, stdout: '', stderr: '' }) });
+      (t.checker['d'] as CheckerDeps).trustedPath = (p) => { assert.strictEqual(p, npm, 'the npm as found is checked'); return trusted; };
+      return t;
+    };
+    const bad = mk(false);
+    await bad.checker.checkApp('copilot');
+    assert.strictEqual(bad.calls[0].env?.PATH, undefined, 'untrusted folder: no PATH given');
+    assert.strictEqual(bad.checker.result('copilot')?.reason, 'npm or node was not found, and the npm folder is not trusted');
+    const good = mk(true);
+    await good.checker.checkApp('copilot');
+    assert.strictEqual(good.calls[0].env?.PATH, '/home/u/.nvm/versions/node/v22.3.0/bin');
+    // the detector wiring: a system path is shown in full in `where`
+    assert.strictEqual((withWhere({ state: 'ready', version: '1', hint: '', path: '/opt/homebrew/bin/codex' } as never, { platform: 'darwin', homedir: '/Users/v', env: {}, isFile: () => true }) as { where?: string }).where, '/opt/homebrew/bin/codex');
   }
   {
     // FR-042: "Found at" is a path (a system path in full, ~/ under home, only the name inside another person's folder)

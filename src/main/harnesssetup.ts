@@ -37,7 +37,7 @@ export interface PreparedRun {
   kind: SetupKind; op: SetupOp; file: string; args: string[]; spawnFile: string; spawnArgs: string[]; verbatim: boolean; paste: boolean; script?: OfficialScript; cleanupDir?: string;
   /** Spec 081: the app's own updater (`claude update` ...), `codex update` (curl-to-shell, official Codex only), the version it installs, what its route checks. */
   own?: SetupKind; codexUpdate?: boolean; pinned?: string; checked?: string; integrity?: string; sourceKind?: UpdateSource['kind'];
-  /** Spec 081 FR-042: the npm that runs; its folder is put first on that child's PATH so npm's `env node` finds the node beside it. */
+  /** Spec 081 FR-042: the npm (or an npm-installed CLI for a sign-in) as found, before realpath; its folder is put first on that child's PATH, when trusted, so `env node` finds the node beside it. */
   toolFile?: string;
 }
 export interface SetupDone {
@@ -271,7 +271,7 @@ export class HarnessSetup {
         const t = this.ownerTool(kind, plan.manager);
         if (typeof t === 'object') return { ok: false, error: t.error };
         file = t;
-        toolFile = t;
+        if (plan.manager === 'npm') toolFile = t; // npm only: brew is a Ruby script that needs no node
       } else file = this.find(plan.bin);
       if (!file) return { ok: false, error: `${plan.bin} was not found.` };
       args = [...plan.args];
@@ -341,7 +341,8 @@ export class HarnessSetup {
     const env = this.deps.detectEnv;
     let child: ChildLike;
     let childEnv = setupEnv(process.env, env.platform, !!job.script);
-    if (job.toolFile) childEnv = { ...childEnv, ...pathWithToolDir(childEnv, job.toolFile, env.platform, env.loginPath ?? []) };
+    // FR-042: the folder goes first on PATH only when it passes the same trust rule as a found tool (a folder anyone can write could plant its own `node`)
+    if (job.toolFile && (!this.deps.trustedPath || this.deps.trustedPath(job.toolFile))) childEnv = { ...childEnv, ...pathWithToolDir(childEnv, job.toolFile, env.platform, env.loginPath ?? []) };
     let cwd: string | undefined;
     if (job.codexUpdate) {
       // spec 081 FR-009: `codex update` runs OpenAI's installer through a shell Codex starts, so it gets no CODEX_MANAGED_BY_*, a fixed
