@@ -20,7 +20,7 @@
  *
  * Output: sandbox events, permission requests, tool calls, the answer, usage, Copilot event types (and `sandbox.decision`'s bounded
  * enum fields), whether the probe file exists. Every text goes through Durbar's `redact` and has the home folder masked; no session
- * id is written. Temp folders, the Copilot session and Claude's transcript of this session are removed in a `finally`. Exit 1 when
+ * id is written: `maskArgv` masks the value after `--session-id`/`--resume`, and every UUID-shaped run is masked (`sandbox-real-mask.ts`). Temp folders, the Copilot session and Claude's transcript of this session are removed in a `finally`. Exit 1 when
  * the run failed or the sandbox never came `on`. Run with `TMPDIR` and every `CLAUDE*` variable unset, outside your own tool's sandbox.
  */
 import * as fs from 'fs';
@@ -33,6 +33,7 @@ import { EventMapper } from '../src/adapters/map';
 import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { pathDirs } from '../src/shared/pathdirs';
 import { redact } from '../src/shared/redact';
+import { maskArgv, maskIds } from './sandbox-real-mask';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cp = require('child_process') as typeof import('child_process'); // the real module object (an import star is a read-only copy)
 
@@ -44,7 +45,7 @@ if (!['claude', 'copilot'].includes(app) || !outFile || (third !== undefined && 
 if (askOutside && app !== 'copilot') throw new Error('ask: Copilot only');
 if (spend && process.env.CI) throw new Error('refused: --spend never runs under CI');
 const HOME = os.homedir();
-const clean = (s: unknown, max = 400): string => redact(String(s ?? '')).split(HOME).join('~').slice(0, max);
+const clean = (s: unknown, max = 400): string => maskIds(redact(String(s ?? '')).split(HOME).join('~')).slice(0, max); // never a session id (review on PR 753)
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 let t0 = Date.now();
 const now = (): number => Date.now() - t0;
@@ -58,7 +59,7 @@ cpm.spawn = function (this: unknown, ...a: unknown[]): unknown {
   const list = Array.isArray(argv) ? argv.map(String) : [];
   const isVersion = list.length === 1 && list[0] === '--version';
   const replace = !spend && !isVersion;
-  if (!isVersion) spawns.push({ file: clean(file, 300), args: list.map((x) => clean(x, 4000)), replaced: replace });
+  if (!isVersion) spawns.push({ file: clean(file, 300), args: maskArgv(list).map((x) => clean(x, 4000)), replaced: replace });
   if (replace) return origSpawn.apply(this, [process.execPath, ['-e', 'process.exit(3)'], ...a.slice(2)]);
   return origSpawn.apply(this, a);
 };

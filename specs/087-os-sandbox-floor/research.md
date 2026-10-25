@@ -106,9 +106,9 @@ the user's full rights today), and any bug in Durbar's own checks. In Ask first 
   resolved and no `session.warning` came, but the one shell call was refused by Durbar's Read-only broker before it ran. The Ask
   first run (`real:` 2026-10-25 19:38 UTC, one prompt) then **contradicts or bypasses it**: an approved `touch` in a folder outside
   the session roots exited 0 and the file was created, with the state `on`; one `sandbox.decision` event came (variant not
-  recorded). A second run with `sandbox.decision`'s bounded fields (`real:` 2026-10-25, spec *Changes*) **settles K8 on Linux**:
+  recorded). A second run with `sandbox.decision`'s bounded fields (`real:` 2026-10-25, spec *Changes*) **settles K8 on Linux with Copilot CLI 1.0.101 / SDK 1.0.22** (not run on macOS or Windows, or another version):
   `policy_resolved` from `user_policy` with Durbar's flags (`allowBypass: false`, network off) and `enforcement_state: engaged`, so
-  the update applies to a created session; the write went through one read-write rule Durbar did not send (K15, narrowed).
+  the update applies to a created session; the write went through one read-write rule Durbar did not send (K15, narrowed; #755).
 - **Unavailable:** docs: the app "fails the shell with an unsupported-platform or unsupported-policy message. It does not run
   unsandboxed"; on Windows, denied paths that cannot be enforced make the command "fail with an explanation". Managed
   `sandbox.failIfUnavailable` keeps a server force-on so "the session fails loudly instead of quietly running unsandboxed"

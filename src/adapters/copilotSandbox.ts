@@ -15,7 +15,8 @@ export const COPILOT_SANDBOX_VERIFIED: readonly string[] = Object.freeze([]);
 /**
  * Spec 087 FR-021a (K15): the approval card's own line for a Copilot shell command in Ask first while the sandbox is on. `real:` T060
  * (2026-10-25, Linux, CLI 1.0.101 / SDK 1.0.22): an approved `touch` outside the session folder exited 0 and wrote the file although
- * the state was `on`; the cause is unknown, so the card does not promise the sandbox holds an approved command.
+ * the state was `on`. A second run's `sandbox.decision` showed why: the command ran inside an engaged sandbox built from Durbar's policy,
+ * with no bypass, whose effective policy had one read-write rule Durbar did not send (K15, issue #755).
  */
 export const COPILOT_SANDBOX_NOTE_COMMAND = 'If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25).';
 export const COPILOT_NO_REPORT = 'this Copilot cannot report its sandbox';
