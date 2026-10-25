@@ -729,7 +729,7 @@ fail closed per FR-012, locked UI per FR-014.
   `remoteControl` (spec 054), `durbarMcpServer` (spec 041), `officeAssistantModel` (spec 048's model layer; the free local layer stays),
   `profileAi` (spec 043 Create with AI), `themeMaker` (spec 040, same as `appearance.allowThemeMaker`), `vscodeChat` (specs 009/056),
   `chatChannels` (future chat channels such as Telegram, idea 485: any such feature must read this switch from its first version),
-  `scheduledPrompts` (spec 044). A running remote-control link or MCP server stops at once when its switch turns off on reload.
+  `scheduledPrompts` (spec 044), `agentAppUpdateCheck` (spec 081: the update check for the agent apps). A running remote-control link or MCP server stops at once when its switch turns off on reload.
 - **FR-159** Every new feature that sends data off the machine or lets something outside the window act must add a switch here in its
   own spec (a rule for future specs, checked in review).
 
@@ -776,6 +776,7 @@ fail closed per FR-012, locked UI per FR-014.
 - **FR-174** `updates.mode` (`off`, `notify`, `auto`) and `updates.feedUrl` (https, FR-120) govern Durbar's own updater from its first
   version; there is none today, so this key is reserved and listed as *No updater in this version* until one exists. `auto` with a
   `feedUrl` needs the updater to verify the package signature (FR-164).
+  `updates.mode: "off"` also turns off spec 081's agent-app update check (the start check, the *Check for updates* button, the per-card *Check*, the *Latest* lines and the start-check switch; owner decision Q6 = A, delta 2026-10-25). A value that is not `off`, `notify` or `auto` is treated as `off` (fail closed).
 - **FR-175** Agent-app updates follow `agentApps.allowInAppInstall` and the version range (FR-188).
 
 **A9 OS-native policy sources**

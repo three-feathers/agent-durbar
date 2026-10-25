@@ -10,24 +10,24 @@ description: "Tasks for spec 081: agent-app updates"
 
 **Format**: `[ID] [P?] [Story] Description`. **[P]** means the task can run in parallel with others (different files).
 
-Nothing here is started. The owner starts implementation after review.
+Built on branch `081-cli-updates-build` (2026-10-25). Ticked = built and tested on the simulator and with fake tools. **Open:** T036 (the vendor facts from the real runs), T037 (final gate, at the PR) and the real-machine checks T040-T042 (need the owner's own approval in the terminal or the team chat; none was run).
 
 Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered on 2026-10-25 and are folded in.
 
 ## Phase 1: Setup
 
-- [ ] T001 [P] Fixtures in `scripts/fixtures/updatecheck/`, each with a header naming its source (`read:` doc page, `real:` recorded run):
+- [x] T001 [P] Fixtures in `scripts/fixtures/updatecheck/`, each with a header naming its source (`read:` doc page, `real:` recorded run):
   - `npm view <pkg> version --json` for the three packages, plus an npm error whose text contains `node v22.11.0`;
   - `brew info --cask --json=v2` (with and without `outdated`) and `brew outdated --cask --json=v2` for `codex`, `claude-code`, `claude-code@latest` and `copilot-cli` (`auto_updates`);
   - the GitHub `Location` headers (`real:` 2026-10-24: `rust-v0.164.0`, `v1.0.103`), plus a **realistic-size** body (about 570 KB) to prove it is never read;
   - the two Claude channel texts (`real:` 2026-10-24);
   - winget tables, including the "source terms not accepted" answer, as placeholders marked "replace with a recorded run" (T041);
   - Copilot CLI copies on disk (npm `package.json`, Caskroom folder, `~/.copilot/pkg/<ver>`).
-- [ ] T002 [P] Add `test:updatecheck` to `package.json` (append to `test:serial`, keep `main`'s list).
+- [x] T002 [P] Add `test:updatecheck` to `package.json` (append to `test:serial`, keep `main`'s list).
 
 ## Phase 2: Foundational (blocks every story)
 
-- [ ] T003 `src/shared/updatecheck.ts` `sourceOf(realPath, platform, env)` (plan D2), on top of `routeOwning`:
+- [x] T003 `src/shared/updatecheck.ts` `sourceOf(realPath, platform, env)` (plan D2), on top of `routeOwning`:
   - npm (same Node bin folder, prefix match);
   - brew (prefix plus cask from `Caskroom/<cask>/`);
   - winget;
@@ -35,27 +35,27 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
   - outside (`/usr/bin` distro, `/snap/`, Scoop).
 
   Uses `path.win32` and `path.posix`, case-insensitive on Windows and macOS. Test a matrix per OS, a symlinked `/usr/local/bin` on an Intel Mac, look-alike paths and hostile long paths. Mutations: drop the realpath requirement for `/usr/local`; compare case-sensitively on win32.
-- [ ] T004 `src/shared/updatecheck.ts`: the check argv table (plan D3: `--no-update-notifier`, no winget agreement flags, a second brew run only when needed), the structured-field parsers through `parseVersionField`, and the decision.
+- [x] T004 `src/shared/updatecheck.ts`: the check argv table (plan D3: `--no-update-notifier`, no winget agreement flags, a second brew run only when needed), the structured-field parsers through `parseVersionField`, and the decision.
   - The compare is stable-first and pre-release-aware.
   - A source behind the installed version gives no Update.
   - Tests: every T001 fixture, hostile output (huge, markup, `__proto__` JSON, a version with HTML), a pre-release installed, the downgrade case.
   - Mutations: accept a 65-character version; parse the npm error line as a version; add `--accept-source-agreements` to the background check.
-- [ ] T005 `src/shared/updatecheck.ts` `classifyFailure` (plan D8, FR-014): admin, in-use, managed (policy, winget refusal, recorded vendor text only), `vendor-up-to-date` (`claude update` "up to date", never *Managed*), uac-cancelled, network, other. Test each class with fixtures per OS. Mutations: drop the Windows `EBUSY` pattern; classify "Claude is up to date" as managed.
-- [ ] T006 `src/shared/updatecheck.ts` `LOOKUPS` and `src/main/netget.ts` `LookupGet` over Electron **`net.request`** on the app session (FR-026, plan D4): `redirect: 'manual'`, `credentials: 'omit'`, `useSessionCookies: false`, `User-Agent: AgentDurbar`, 10 s, and a capped body reader (64 bytes for the Claude channels). For GitHub, read the `redirect` event's `statusCode` and `redirectUrl`, then `abort()`, never `followRedirect()`. `net.fetch` is not used ("Redirect was cancelled" in Electron 44, `real:` 2026-10-25).
+- [x] T005 `src/shared/updatecheck.ts` `classifyFailure` (plan D8, FR-014): admin, in-use, managed (policy, winget refusal, recorded vendor text only), `vendor-up-to-date` (`claude update` "up to date", never *Managed*), uac-cancelled, network, other. Test each class with fixtures per OS. Mutations: drop the Windows `EBUSY` pattern; classify "Claude is up to date" as managed.
+- [x] T006 `src/shared/updatecheck.ts` `LOOKUPS` and `src/main/netget.ts` `LookupGet` over Electron **`net.request`** on the app session (FR-026, plan D4): `redirect: 'manual'`, `credentials: 'omit'`, `useSessionCookies: false`, `User-Agent: AgentDurbar`, 10 s, and a capped body reader (64 bytes for the Claude channels). For GitHub, read the `redirect` event's `statusCode` and `redirectUrl`, then `abort()`, never `followRedirect()`. `net.fetch` is not used ("Redirect was cancelled" in Electron 44, `real:` 2026-10-25).
   - The fake models `net.request` as an event emitter (`redirect`, `response`, `error`).
   - Tests: a look-alike host, an off-list path, a redirect URL to another host or path, a `response` with no redirect, the 570 KB body never read (the request is aborted), an oversized channel body.
   - Mutations: call `followRedirect()`; allow any path on `github.com`; skip `abort()`.
-- [ ] T007 `src/main/settings.ts`: `announcedVersions` (an allowed app id and a valid version; anything else dropped) and `checkUpdatesAtStart` (a boolean, on by default per Q6 = A, only `false` written). Test a hostile matrix.
-- [ ] T008 Strict versions (FR-005, SC-008):
+- [x] T007 `src/main/settings.ts`: `announcedVersions` (an allowed app id and a valid version; anything else dropped) and `checkUpdatesAtStart` (a boolean, on by default per Q6 = A, only `false` written). Test a hostile matrix.
+- [x] T008 (built: `parseVersionField` and the one `MAX_VERSION_LENGTH = 64` and token pattern live in `src/shared/versionfield.ts`; PR #698's `detect.ts` `parseVersion` imports both, so there is one limit and one pattern) Strict versions (FR-005, SC-008):
   - **The detection path is fixed by PR #698** (spec 012 T133, FR-039 delta, `Closes #664`): a bounded `parseVersion` on the first line, cut to 200 characters, that rejects error prose and tokens cut off at the cap, with mutations and a CPU backstop. Spec 081 reuses it and does not reimplement it. If #698 has not merged when this task starts, wait for it or rebase onto it. If it was changed or closed, re-read spec 012 and only then decide.
   - **New here:** `parseVersionField` in `src/shared/updatecheck.ts`, for the structured fields that #698 does not cover (npm JSON, brew JSON, the redirect tag, the Claude channel text). A field **longer than 64 characters is rejected, never cut**; otherwise it is matched against `^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-[0-9A-Za-z.-]{1,40})?$`. Reuse #698's bounded token pattern if it fits instead of keeping a second one, and name the shared constant in the PR.
   - Tests for the field parser: 64 KiB of digits within a CPU-time limit (`process.cpuUsage`), the npm error line, `rust-v0.164.0`, `v1.0.103`, `2.1.308`, and a 65-character version.
   - Mutations: an unanchored field pattern; cutting to 64 instead of rejecting. A 65- to 71-character version with a valid-looking pre-release must be rejected.
-- [ ] T009 `src/adapters/detect.ts` `nodeExec`: an `env` option (merged for that child only) and a tree kill on timeout (Windows `taskkill /T /F /PID` from `%SystemRoot%\System32`; POSIX process group). Test with a fake `execFile`/`spawn` that a timeout kills the tree and that the env reaches only that child. Mutation: kill only the direct child.
+- [x] T009 `src/adapters/detect.ts` `nodeExec`: an `env` option (merged for that child only) and a tree kill on timeout (Windows `taskkill /T /F /PID` from `%SystemRoot%\System32`; POSIX process group). Test with a fake `execFile`/`spawn` that a timeout kills the tree and that the env reaches only that child. Mutation: kill only the direct child.
 
 ## Phase 3: US1 See whether an app is out of date (P1, MVP)
 
-- [ ] T010 [US1] `src/main/updatecheck.ts` `UpdateChecker`:
+- [x] T010 [US1] `src/main/updatecheck.ts` `UpdateChecker`:
   - one app at a time, a 30 s limit;
   - `nodeExec` with env for tools (brew `HOMEBREW_NO_AUTO_UPDATE=1`, npm `npm_config_update_notifier=false`), `LookupGet` for official;
   - in-memory results with monotonic and wall times;
@@ -64,11 +64,11 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
   - Claude records both channels, and `stable` decides (Q7 = C): `update-available` only below `stable`, plus `newerOnLatest` for the quiet note. Test the three positions (below `stable`, between, at or above `latest`). Mutation: decide by `latest`.
 
   Test with a fake exec and fake fetch: one run per app (two for brew at most), no doubling, results kept, no call for an `outside` source, and no spawn of `copilot`.
-- [ ] T011 [US1] Start scheduling (plan D6, FR-003, FR-022): `main.ts` calls `scheduleStart()` after the first `did-finish-load` and after `adaptersInfo`. It is skipped under the simulator, when the user's switch is off, when policy is unreadable (fail closed), or when policy disallows (`allowInAppInstall: false`, `features.agentAppUpdateCheck: false`, `updates.mode: "off"`; Q6 = A).
+- [x] T011 [US1] Start scheduling (plan D6, FR-003, FR-022): `main.ts` calls `scheduleStart()` after the first `did-finish-load` and after `adaptersInfo`. It is skipped under the simulator, when the user's switch is off, when policy is unreadable (fail closed), or when policy disallows (`allowInAppInstall: false`, `features.agentAppUpdateCheck: false`, `updates.mode: "off"`; Q6 = A).
   - Test with a runner-call counter: one check per installed app per start; none from opening Settings or starting a session; none with the switch off, any of the three policy keys off, or the policy unreadable (SC-002); a new install checks (the default is on).
   - Mutation: treat unreadable as allowed.
-- [ ] T012 [US1] IPC `harness:updates` (get the kept results, or `'check'` to check anew) and the event `harness:updatesChanged`. `preload.ts` gets `harnessUpdates` and `onHarnessUpdates`, and `scripts/test-ipc-channels` is updated. Sender-frame check, as the other harness calls have.
-- [ ] T013 [US1] `src/renderer/harnesses.js` card:
+- [x] T012 [US1] IPC `harness:updates` (get the kept results, or `'check'` to check anew) and the event `harness:updatesChanged`. `preload.ts` gets `harnessUpdates` and `onHarnessUpdates`, and `scripts/test-ipc-channels` is updated. Sender-frame check, as the other harness calls have.
+- [x] T013 [US1] `src/renderer/harnesses.js` card:
   - *Installed x · <source>*, and *Latest y (as Homebrew knows it)* or *latest a · stable b* for Claude native, with the quiet note *A newer latest-channel build exists* when `newerOnLatest` is set (Q7 = C);
   - the check time and a chip with a word;
   - *Check for updates*, plus *Check* on each card;
@@ -78,11 +78,11 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
   - every value escaped (test: a hostile version and source).
 
   Simulator driver `scripts/shots-081-updates.js`: waits on conditions, checks SC-007 (no delay to the office), and takes screenshots `081-updates-*` at 1440x900 and 1280x800.
-- [ ] T014 [US1] `src/renderer/sim.ts`: canned results (up to date, update available, could-not-check, outside, both Claude channels) and no network (FR-020). `test:simguard` still passes.
+- [x] T014 [US1] `src/renderer/sim.ts`: canned results (up to date, update available, could-not-check, outside, both Claude channels) and no network (FR-020). `test:simguard` still passes.
 
 ## Phase 4: US2 Update from the owning source (P1, MVP)
 
-- [ ] T020 [US2] `src/shared/harnesssetup.ts`:
+- [x] T020 [US2] `src/shared/harnesssetup.ts`:
   - npm and winget update argv pinned to the checked version (FR-023);
   - Copilot brew adds `--greedy`, and `claude-code@latest` updates that cask;
   - own-updater plans `claude update` and `copilot update`, plus `codex update` (undocumented) only for an official standalone Codex CLI (Q3 = C, limited). `isOfficialCodex` in `src/shared/updatecheck.ts` is the single place for the standalone rule (plan D3): `<CODEX_HOME>/packages/standalone/releases/` on every OS. The Windows `install.ps1` folder, every other Codex copy, and the fallback use the 060 installer plan with `CODEX_NON_INTERACTIVE=1`;
@@ -93,7 +93,7 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
   - official versus non-official Codex: the standalone root on each OS, the Windows `Programs\OpenAI\Codex\bin` folder (not official, goes to the 060 route), a look-alike `…/packages/standalonex/`, a link that leaves the root, a relative `CODEX_HOME`, a world-writable folder, a missing `codex-cli` label, npm and brew copies (own route, never `codex update`).
 
   Mutations: offer npm first for a brew copy; drop the pin; accept a prefix match without a path separator; skip the label check.
-- [ ] T021 [US2] `src/main/harnesssetup.ts`:
+- [x] T021 [US2] `src/main/harnesssetup.ts`:
   - `prepare` accepts an own-updater plan (the app's binary, real path, `trustedPath`);
   - the `isRoot` refusal covers own updaters and every official installer (FR-025);
   - Codex's official installer run sets `CODEX_NON_INTERACTIVE=1` in that child's environment only;
@@ -113,13 +113,13 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
   - the working folder is the temp folder and is removed.
 
   Mutations: check `isRoot` only for `plan.script`; retry `codex update` automatically; drop the command from the confirmation; pass `CODEX_MANAGED_BY_NPM` through; inherit `PATH`.
-- [ ] T022 [US2] Version drift and `max` (FR-023): a fresh check of that app before the confirmation; with a `max`, only pinnable routes, pinned and within range; a non-pinnable owning route gives the explanation. After the run, detection runs again, and the shadowing-copy message appears when relevant (FR-011). An `outside` copy gets a hint and no Update (FR-012). Test the decision table, including the source moving on between check and confirm. Driver: dialog, progress, new version.
-- [ ] T024 [US2] Spec 060 delta (2026-10-25): `src/main/officialinstall.ts` downloads through `netget.ts` (`net.request` on the app session), so the update fallback follows the proxy and the OS certificates (076 FR-155, FR-156). It keeps the per-hop allow-list (each redirect checked in the `redirect` event before `followRedirect()`), the 3-redirect limit, the 1 MB cap, the 30 s limit and the private file. Extend `test-officialinstall` with the fake `net.request`: an off-list hop is refused before it is followed. Mutation: follow before checking.
-- [ ] T023 [US2] SC-003: every path to `start` passes the native confirmation (own updater, Codex official, waiting update).
+- [x] T022 [US2] Version drift and `max` (FR-023): a fresh check of that app before the confirmation; with a `max`, only pinnable routes, pinned and within range; a non-pinnable owning route gives the explanation. After the run, detection runs again, and the shadowing-copy message appears when relevant (FR-011). An `outside` copy gets a hint and no Update (FR-012). Test the decision table, including the source moving on between check and confirm. Driver: dialog, progress, new version.
+- [x] T024 [US2] Spec 060 delta (2026-10-25): `src/main/officialinstall.ts` downloads through `netget.ts` (`net.request` on the app session), so the update fallback follows the proxy and the OS certificates (076 FR-155, FR-156). It keeps the per-hop allow-list (each redirect checked in the `redirect` event before `followRedirect()`), the 3-redirect limit, the 1 MB cap, the 30 s limit and the private file. Extend `test-officialinstall` with the fake `net.request`: an off-list hop is refused before it is followed. Mutation: follow before checking.
+- [x] T023 [US2] SC-003: every path to `start` passes the native confirmation (own updater, Codex official, waiting update).
 
 ## Phase 5: US3 Open sessions (P1, MVP)
 
-- [ ] T030 [US3] The update lock and gate (plan D5, FR-013):
+- [x] T030 [US3] The update lock and gate (plan D5, FR-013):
   - `updateLock[kind]` is taken on *Update…*, before the count, and held to the finish;
   - the lock blocks `agents:create`, `agents:start`, resume, and an `agents:send` or scheduled prompt **only when it would start or resume a session** (held and marked *held: <app> is updating*); sends and scheduled prompts to sessions that are still open go through, so *Update when they end* can finish;
   - `{needsGate, busy, pendingPermissions, heldPrompts}`;
@@ -129,22 +129,22 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
   - Copilot CLI: no gate.
 
   Tests with a fake session list and schedules: a resume or scheduled prompt during the confirmation is blocked, and the re-count sends the dialog back; no run while sessions are open (SC-004); cancel releases. A send to a live session goes through while the update waits; a send that would resume an ended session is held. Mutations: take the lock after the count; skip the re-count; skip `stopTurnOp`; block sends to live sessions.
-- [ ] T031 [US3] The gate dialog in `harnesses.js` uses the *End all sessions?* wording, through a helper shared with `app.js` `endAllSessions`. It adds pending permission requests and held prompts, and the card line *Update waiting for N sessions* with Cancel. Simulator driver with simulated sessions.
+- [x] T031 [US3] The gate dialog in `harnesses.js` uses the *End all sessions?* wording, through a helper shared with `app.js` `endAllSessions`. It adds pending permission requests and held prompts, and the card line *Update waiting for N sessions* with Cancel. Simulator driver with simulated sessions.
 
 ## Phase 6: US4 Failures (P2)
 
-- [ ] T032 [US4] Advice per class in `harnesses.js`:
+- [x] T032 [US4] Advice per class in `harnesses.js`:
   - admin: the command to copy, never an offer to elevate;
   - in-use, managed, uac-cancelled, network;
   - `vendor-up-to-date`: *Claude Code says it is up to date on its channel*, with no toast;
   - other: the last lines and the vendor page.
 
   Policy off shows *Updates are managed by your organization*. Test that each fixture shows its message (SC-005).
-- [ ] T033 [US4] Spec 076 hooks: `updatePolicy()` returns `none`, `ok` or `unreadable` with `allowInAppInstall`, `features.agentAppUpdateCheck`, `updates.mode` (`off` stops the start check, Q6 = A) and the range. It is a stub (`none`) until 076's reader lands, then wired in (FR-022, FR-032, FR-175, FR-188). Test with a fake policy, including `unreadable`, which stops the start check.
+- [x] T033 [US4] Spec 076 hooks: `updatePolicy()` returns `none`, `ok` or `unreadable` with `allowInAppInstall`, `features.agentAppUpdateCheck`, `updates.mode` (`off` stops the start check, Q6 = A) and the range. It is a stub (`none`) until 076's reader lands, then wired in (FR-022, FR-032, FR-175, FR-188). Test with a fake policy, including `unreadable`, which stops the start check.
 
 ## Phase 7: US5 Announce once (P3)
 
-- [ ] T034 [US5] The announce rule (plan D7, Q5 = B):
+- [x] T034 [US5] The announce rule (plan D7, Q5 = B):
   - a badge on the card and the Settings entry;
   - one toast per app and version, saved in `announcedVersions`;
   - no toast when Settings > Agent apps is visible, for a failed check, for `vendor-up-to-date`, or for a Claude `newerOnLatest` note (Q7 = C);
@@ -154,8 +154,8 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
 
 ## Phase 8: Docs and polish
 
-- [ ] T035 [P] README (*Safety model*, *Agent apps*): the start check and its switch, the FR-017 table (IP, time, User-Agent, npm's token and notifier, brew runs), the policy keys, the integrity per updater (FR-024), no root and no auto-accepted winget terms. Also `changelog.d/081-cli-updates.md`. Retake the linked Agent apps screenshots with `npm run shots:docs -- --only <setup driver>`.
-- [ ] T036 [P] `docs/agent-notes.md`: add an entry saying that `codex update` is curl-to-shell (used only for the official Codex CLI, Q3), that GitHub `releases/latest` is too big and the `Location` header gives the tag, and that `copilot` may update itself when started. Add the vendor updater facts with evidence once T040-T042 run. Spec 076: add `features.agentAppUpdateCheck` to its feature list (FR-158, FR-159), and update **FR-174** so `updates.mode: "off"` also turns off spec 081's start check and its *Check for updates* (Q6 = A); the dated delta is already in 076's `## Changes` (2026-10-25), so T036 edits the FR text to match it.
+- [x] T035 [P] README (*Safety model*, *Agent apps*): the start check and its switch, the FR-017 table (IP, time, User-Agent, npm's token and notifier, brew runs), the policy keys, the integrity per updater (FR-024), no root and no auto-accepted winget terms. Also `changelog.d/081-cli-updates.md`. Retake the linked Agent apps screenshots with `npm run shots:docs -- --only <setup driver>`.
+- [ ] T036 [P] (done: the `codex update`, GitHub `Location` and `copilot` entry in `docs/agent-notes.md`, spec 076 FR-158 and FR-174 text; **open:** the vendor updater facts from T040-T042) `docs/agent-notes.md`: add an entry saying that `codex update` is curl-to-shell (used only for the official Codex CLI, Q3), that GitHub `releases/latest` is too big and the `Location` header gives the tag, and that `copilot` may update itself when started. Add the vendor updater facts with evidence once T040-T042 run. Spec 076: add `features.agentAppUpdateCheck` to its feature list (FR-158, FR-159), and update **FR-174** so `updates.mode: "off"` also turns off spec 081's start check and its *Check for updates* (Q6 = A); the dated delta is already in 076's `## Changes` (2026-10-25), so T036 edits the FR text to match it.
 - [ ] T037 `npm run typecheck && npm run build && npm test`; run `docs/review-checklist.md`; `/speckit-converge`.
 
 ## Phase 9: Real-machine checks (owner-approved; each changes an installed app; 0 AI credits)
@@ -209,3 +209,5 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
 - SC-006: T013
 - SC-007: T013
 - SC-008: T008
+- [ ] T043 macOS (the owner's Mac, GUI-launched Durbar with nvm or Homebrew npm): confirm Settings > Agent apps > Copilot CLI checks (no "exit 127"), and that "Found at" shows a full path (FR-042). Built and unit-tested on Linux only.
+- [x] T044 FR-042: `pathWithToolDir` for the npm check, the npm update and sign-in runs (only from a trusted folder), the 127/ENOENT message, button names, `displayWhere` (tests in `scripts/test-updatecheck.ts`).

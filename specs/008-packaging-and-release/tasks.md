@@ -115,3 +115,7 @@
 ## 2026-10-24: check-parallel on macOS (issue #670)
 
 - [x] T106 (2026-10-24) macOS memory from `vm_stat` and a bounded wait [FR-125, FR-126]. Files: `scripts/check-parallel.js` (`parseVmStat`, `darwinAvailable`, `makeAvailable` with a 1 s cache, `waitForMemory`, the `active` count), `scripts/test-check-parallel.js` (new), `package.json` (`test:checkparallel`), `changelog.d/008-parallel-mac.md`. Done when the parse, the fallback and the bound are tested, each planted mutation fails, and `npm run typecheck && npm run build && npm test` pass. Ran on Paco's Mac (`check:themes` 14/14, vm_stat 2848 MB vs freemem 186 MB); the 120 s fallback was not exercised there (`test:` only).
+
+## 2026-10-24: macOS nightly UI regression (#683)
+
+- [x] T107: correct the macOS-only native text-editing assertions in `scripts/shots-074-navigator.js`: synthetic ⌘⌫ and ⌘A must reach the editable field without being prevented or closing the chat; verify normal Backspace edits text, while Windows/Linux continue to assert Ctrl+Backspace deletes a word and Ctrl+A selects all. Add the platform limitation to `docs/agent-notes.md` and a changelog fragment. Done: the navigator driver passes locally on macOS at both sizes, the planted app-interception mutation fails it, and `npm run typecheck && npm run build && npm test` pass. A post-merge nightly UI run on `main` remains required to close issue #683.

@@ -5,7 +5,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomInt } from 'crypto';
-import { parseCap, parseSettings, parseThemeId } from '../shared/credits';
+import { ANNOUNCE_APPS, parseAnnounced, parseCap, parseSettings, parseThemeId } from '../shared/credits';
 import type { AppSettings } from '../shared/credits';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
 import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
@@ -57,6 +57,17 @@ export class SettingsStore {
     return cap;
   }
 
+  /** Spec 080 FR-025d (Q2): the session browser's one-time note was accepted. */
+  get browserNoteAccepted(): boolean {
+    return this.s.browserNoteAccepted === true;
+  }
+
+  /** Remembers the acceptance for this app profile; never asked again. */
+  acceptBrowserNote(): void {
+    this.s = { ...this.s, browserNoteAccepted: true };
+    this.save();
+  }
+
   /** Serious mode (spec 034): off by default. */
   get seriousMode(): boolean {
     return this.s.seriousMode === true;
@@ -103,6 +114,37 @@ export class SettingsStore {
     this.s = next;
     this.save();
     return v;
+  }
+
+  /** Spec 081 FR-022 (Q6 = A): the agent-app update check at start is on by default; only `false` is written. */
+  get checkUpdatesAtStart(): boolean {
+    return this.s.checkUpdatesAtStart !== false;
+  }
+
+  /** Only a real boolean changes it; anything else keeps the current value. Returns the value now in force. */
+  setCheckUpdatesAtStart(v: unknown): boolean {
+    if (typeof v !== 'boolean') return this.checkUpdatesAtStart;
+    const next: AppSettings = { ...this.s };
+    if (v) delete next.checkUpdatesAtStart;
+    else next.checkUpdatesAtStart = false;
+    this.s = next;
+    this.save();
+    return v;
+  }
+
+  /** Spec 081 FR-016: the last announced version per agent app, a copy. */
+  get announcedVersions(): Record<string, string> {
+    return { ...(this.s.announcedVersions ?? {}) };
+  }
+
+  /** Saves one announced version (an allowed app id and a valid version; anything else changes nothing). Returns true when it was saved. */
+  setAnnouncedVersion(app: unknown, version: unknown): boolean {
+    if (typeof app !== 'string' || !(ANNOUNCE_APPS as readonly string[]).includes(app)) return false;
+    const ver = parseAnnounced({ [app]: version })[app];
+    if (typeof ver !== 'string') return false;
+    this.s = { ...this.s, announcedVersions: { ...(this.s.announcedVersions ?? {}), [app]: ver } };
+    this.save();
+    return true;
   }
 
   /** Active theme id (spec 037). Undefined = Clean Office; the renderer resolves unknown ids itself. */

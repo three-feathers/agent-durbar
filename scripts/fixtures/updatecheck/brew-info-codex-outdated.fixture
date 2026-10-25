@@ -1,0 +1,2 @@
+# source: read: brew info --cask --json=v2 shape (docs.brew.sh/Manpage, formulae.brew.sh/api/cask/codex.json); values are made up
+{"formulae":[],"casks":[{"token":"codex","full_token":"codex","tap":"homebrew/cask","name":["Codex"],"version":"0.164.0","installed":"0.163.0","outdated":true,"auto_updates":false,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]}

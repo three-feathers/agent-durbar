@@ -1,1 +1,0 @@
-- **Session browser groundwork** (spec 080, issue #556): address rules for the coming per-session Browser tab (web addresses only, only `mailto:` leaves the app, loopback detection) and a simulator probe of Electron's view behaviour, recorded in the spec. No visible change yet.

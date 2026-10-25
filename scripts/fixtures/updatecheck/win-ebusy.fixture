@@ -1,0 +1,5 @@
+# source: read: npm on Windows with a running exe (EBUSY shape)
+npm ERR! code EBUSY
+npm ERR! syscall rename
+npm ERR! errno -4082
+npm ERR! EBUSY: resource busy or locked, rename 'C:\Users\x\AppData\Roaming\npm\node_modules\@openai\codex'
