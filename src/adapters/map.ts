@@ -278,6 +278,18 @@ export class EventMapper {
           limit: positive(d.tokenLimit) ?? c.limit,
         });
       }
+      case 'session.truncation': {
+        // spec 015 FR-009 (issue #601, `read:` from the SDK types): the oldest messages were dropped, no summary. Counts are of messages, not the whole window.
+        if (agentId) return;
+        const count = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1e9 ? Math.round(v) : undefined);
+        return this.emit({
+          type: 'compaction',
+          phase: 'complete',
+          trigger: 'truncation',
+          tokensRemoved: count(d.tokensRemovedDuringTruncation),
+          limit: count(d.tokenLimit) || undefined,
+        });
+      }
       case 'session.mcp_servers_loaded':
         this.mcp.clear();
         this.derivedAuth.clear();
@@ -383,6 +395,8 @@ export class EventMapper {
         this.reasoningSeen.clear();
         this.edits.clear();
         if (!agentId) this.retries.reset();
+        // spec 015 FR-009b: an open compaction is NOT ended here: Copilot's automatic compaction runs in the background (from 80 %) and its `_complete`
+        // may come after the turn's idle, with the original trigger. The desk mark ends in the renderer at the idle; the chat line waits for the result.
         return this.emit({ type: 'status', status: 'idle', intent: d.aborted ? 'Aborted' : undefined });
       case 'session.error': {
         // spec 068 FR-002: a used-up quota or a rate limit that stopped the turn is a coffee break, not an error
