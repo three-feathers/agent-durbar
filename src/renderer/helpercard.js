@@ -112,7 +112,9 @@
     }
     /* the lines as markup; every agent-written character goes through `esc` (the page's escaper) */
     function html(v,esc){
-      const e=typeof esc==='function'?esc:t=>String(t);
+      /* fail closed: with no escaper (or one that is not a function) the module's own escaper runs, never the raw text */
+      const own=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+      const e=typeof esc==='function'?esc:own;
       return v.lines.map(l=>'<span class="hx-l hx-'+l.key+(l.reported?'':' hx-nr')+'"'+(l.tip?' title="'+e(l.tip)+'"':'')+'>'+(l.reported&&l.label?'<b>'+e(l.label)+'</b> ':'')+e(l.text)+'</span>').join('');
     }
     return {view,html};

@@ -188,6 +188,22 @@ eq(HC.HX_TIP, 200, 'the tooltip cut is the desk card\'s number');
   }
 }
 
+// ---- html() without an escaper fails closed; a tool name is masked like every other agent-written part ----
+{
+  const hostile = '<img src=x onerror=alert(1)>"\'';
+  const v = C.view(helper({ task: hostile, now: { kind: 'intent', text: hostile } }), 2);
+  for (const bad of [undefined, null, 'x', 5]) {
+    const out = C.html(v, bad as never);
+    ok(!/<img|<script/.test(out) && out.includes('&lt;img'), `html with esc=${String(bad)} escapes by itself: ${out.slice(0, 80)}`);
+  }
+  for (const level of [1, 2]) for (const simple of [false, true]) {
+    const t = C.view(helper({ task: 'T', now: { kind: 'search', tool: ghp, label: 'x' } }), level, { simple });
+    ok(!hasSecret(t.aria + t.title + t.lines.map((l) => l.text).join('|')), `a tool name that is a token is masked (level ${level}, simple ${simple})`);
+    const t2 = C.view(helper({ task: 'T', now: { kind: 'search', tool: 'a'.repeat(30) + ' ' + pat, label: '' } }), level, { simple });
+    ok(!hasSecret(t2.aria + t2.title + t2.lines.map((l) => l.text).join('|')), 'a long tool name with a token is masked before the cut');
+  }
+}
+
 // ---- one cap, end to end (HX_CHARS) and the tooltip (HX_TIP) ----
 {
   const long = 'word '.repeat(60000); // 300 KB

@@ -110,6 +110,8 @@ function helpers(ctx) {
     await ctx.win.loadFile(o.index || INDEX, { query });
     const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=15`;
     await ctx.waitFor(ready, o.readyMs || 15000);
+    /* issue #736: under xvfb Chromium reports hover:none, so every rename pencil shows; pictures for the docs (shots-docs.js pins a clock) hide them, drivers that assert pencils are not run with a pinned clock */
+    if (process.env.DURBAR_SIM_CLOCK) await js(`(()=>{const s=document.createElement('style');s.textContent='.ren,.ttl-pen{opacity:0!important}';document.head.append(s);})()`);
     if (o.settle !== false) await w.settle();
     if (o.focus) wc().focus();
   };

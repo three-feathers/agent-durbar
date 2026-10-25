@@ -423,7 +423,9 @@ module.exports = async (ctx) => {
       const off = await js(`(${BOXES.toString()})()`);
       await js(`window.__durbarSimUi.hxOff(false)`);
       sameBoxes(mine, off, tag).forEach((m) => failures.push(m));
-      /* the office page rules are not run here: this is today's layout, and at 900 px wide a lobby seat already sticks out of its place tile without this change */
+      /* the office page rules do not run at 900 px wide: a lobby seat already sticks out of its place tile there in today's layout (a pre-existing overflow, KNOWN GAP in the spec); they run at 1000x480, whichever level a font gives */
+      await hxLoad(2, 3, 1000, 480);
+      const pr = await page(); check(!pr.length, `${tag}, 1000x480: ${pr.slice(0, 4).join('; ')}`);
       rows.push(`${tag}: ${st.d} f=${st.gf}, compact tiles, boxes equal to the layout without the step (measured on main too: 14 boxes, 0 differences, at 1120x480, 1000x480 and 800x480; on Linux 1160x480 still takes level 1 and 1120x480 does not, on the Windows runner level 1 still fits at 1120x480, so the driver uses 900x480, far from the edge)`);
     }
     /* (7) the simulator's own 15 agents: compact tiles and main's densities, chat closed; the chat replaces the office, so "open" is closed -> open -> closed */
