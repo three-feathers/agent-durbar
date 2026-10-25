@@ -92,8 +92,8 @@ IV (no credits), V (layout unchanged), VI (per-OS logic in pure functions), VIII
 
 ```text
 specs/087-os-sandbox-floor/   spec.md plan.md research.md tasks.md checklists/requirements.md
-src/adapters/                 sandboxRoots.ts claudeSandbox.ts copilotSandbox.ts (new); claude.ts copilot.ts codex.ts types.ts
-src/shared/foldersetup.ts     sandbox block merge
+src/adapters/                 sandboxRoots.ts claudeSandbox.ts copilotSandbox.ts (new); claude.ts (sandbox key of --settings) copilot.ts codex.ts codexModes.ts
+src/shared/api.ts             SandboxState type (normalized, next to AgentInfo)
 src/renderer/                 chip, tooltip, Settings > Agent apps line
 scripts/                      test-sandbox-floor.ts (new), driver check for the chip
 ```
