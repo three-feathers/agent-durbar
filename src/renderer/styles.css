@@ -839,6 +839,42 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .composer{padding:8px max(16px,calc((100% - 880px)/2))}
 .ph{padding-left:max(16px,calc((100% - 1240px)/2));padding-right:max(16px,calc((100% - 1240px)/2))}
 .panel-in.viewing .composer,.panel-in.viewing .prev{display:none}
+/* spec 080 T015: the Chat | Browser tabs and the browser bar. Theme tokens only; text 11px or more (FR-006); state is icon plus word. */
+.ptabs{flex:none;display:flex;gap:4px;padding:0 max(16px,calc((100% - 1240px)/2));border-bottom:1px solid var(--line);background:var(--surface)}
+.ptab{height:30px;padding:0 12px;border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);font:inherit;font-size:var(--t4-size);font-weight:var(--t4-weight);cursor:pointer}
+.ptab:hover{color:var(--ink)}
+.ptab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--sage-ink);font-weight:650}
+.panel-in.on-browser #chat{flex:0 0 0;height:0;min-height:0;padding:0;overflow:hidden;visibility:hidden}
+.panel-in.on-browser .prev{display:none}
+.bpane{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--surface)}
+.bpane[hidden]{display:none}
+.bbar{flex:none;display:flex;align-items:center;gap:6px;padding:8px max(16px,calc((100% - 1240px)/2)) 4px}
+.bbtn{flex:none;width:var(--h-ctl);height:var(--h-ctl);display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--raised);color:var(--ink);cursor:pointer;padding:0}
+.bbtn svg{width:15px;height:15px}
+.bbtn:hover:not(:disabled){background:var(--surface-2)}
+.bbtn:disabled,.bchip:disabled{opacity:.45;cursor:default}
+.baddr{flex:1;min-width:0;height:var(--h-ctl);padding:0 10px;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--raised);color:var(--ink);font:inherit;font-size:var(--t4-size)}
+.bstat{flex:none;display:flex;align-items:center;gap:8px;padding:0 max(16px,calc((100% - 1240px)/2)) 6px;min-height:26px;font-size:var(--t5-size);line-height:var(--t5-lh);color:var(--muted)}
+.bnote{flex:none;display:inline-flex;align-items:center;gap:5px;max-width:60%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bnote:empty{display:none}
+.bnote svg{width:13px;height:13px;flex:none}
+.bnote span{overflow:hidden;text-overflow:ellipsis}
+.bnote[data-kind="error"]{color:var(--tone-bad-ink)}
+.btitle{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bacts{flex:none;margin-left:auto;display:inline-flex;align-items:center;gap:6px}
+.bchip{height:var(--h-chip);display:inline-flex;align-items:center;gap:5px;padding:0 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);color:var(--ink-2);font:inherit;font-size:var(--t5-size);cursor:pointer;white-space:nowrap}
+.bchip:hover:not(:disabled){border-color:var(--line-2)}
+.bchip svg{width:13px;height:13px;flex:none}
+.bview{flex:1;min-height:120px;border-top:1px solid var(--line);background:var(--surface-2)}
+.bview{position:relative}
+.bshot{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;pointer-events:none}
+.bnote[data-kind="dialog"] svg{color:var(--ink-2)}
+.dlg-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:5px;border:1px solid var(--tone-warn-line);border-radius:4px;background:var(--warn-bg);color:var(--amber-ink);font-size:var(--t5-size);font-weight:700;line-height:1}
+.stage .desk.card .dlg-mark,.stage .desk.shut .dlg-mark{position:absolute;left:2px;top:40px;margin:0;z-index:4}
+.pagetext{font-style:italic}
+.bspin{animation:bspin 1s linear infinite}
+@keyframes bspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.bspin{animation:none}}
 .nothink{font-size:11px;color:var(--muted)}
 .think.streaming .think-body:empty::before{content:"The model reasons privately first. A summary of its reasoning appears here when it finishes thinking.";color:var(--muted)}
 
