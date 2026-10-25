@@ -20,12 +20,17 @@ module.exports = async (ctx) => {
   const text = (sel) => H.text(sel, 'textContent');
   const count = (sel) => ctx.js(`document.querySelectorAll(${jsLiteral(sel)}).length`);
   const shot = (name, w, h) => H.shot(path.join(OUT, `m10-${name}-${w}x${h}.png`), { prep: 'calm', settle: true, delay: 250, tag: 'm10', what: `${name} ${w} ${h}` });
-  const closeScreen = () => click('#scrClose');
+  /* spec 021 FR-057 (review of #752): an assert waits on the condition it asserts, never on a fixed sleep */
+  const until = async (expr, what) => { assert.ok(await ctx.waitFor(expr, 10000), 'timed out waiting for ' + what); };
+  const textHas = (sel, re) => until(`(()=>{const e=document.querySelector(${jsLiteral(sel)});return !!e&&new RegExp(${jsLiteral(re.source)}).test(e.textContent)})()`, `${sel} to match ${re}`);
+  const selected = (id) => until(`document.getElementById(${jsLiteral(id)})&&document.getElementById(${jsLiteral(id)}).getAttribute('aria-selected')==='true'`, `#${id} selected`);
+  const gone = (sel) => until(`!document.querySelector(${jsLiteral(sel)})`, `${sel} to close`);
+  const closeScreen = async () => { await click('#scrClose'); await gone('#scrClose'); };
   const closeDlg = () => ctx.js(`(()=>{const d=document.getElementById('scrDlg');if(d&&d._close)d._close();})()`);
   const roomBtn = (name) => `[data-mcproom][aria-label="MCP extras for ${name}"]`;
   for (const [w, h] of SIZES) {
     ctx.win.setContentSize(w, h);
-    await ctx.sleep(2500);
+    await until(`document.querySelectorAll('[data-mcproom]').length>=4`, 'the room MCP buttons');
 
     // The office room headers carry an MCP button; nothing overlaps (npm run check:office covers the layout)
     assert.ok(await count('[data-mcproom]') >= 4, 'every room has an MCP extras button');
@@ -33,26 +38,27 @@ module.exports = async (ctx) => {
     await shot('office-mcp-buttons', w, h);
 
     // Settings: the Copilot CLI list is there with no setup; no add/import; extras explained
-    await click('#settingsBtn'); await ctx.sleep(500);
+    await click('#settingsBtn'); await until(`document.querySelectorAll('#ambList li.amb').length===3`, 'the three servers of the Settings list');
     assert.strictEqual(await count('#ambList li.amb'), 3, 'CLI list + built-in server');
     assert.match(await text('#ambList'), /Copilot CLI list/);
     assert.strictEqual(await count('#mcpAdd, #mcpImpCopilot, #mcpImpVs'), 0, 'no app-level add/import in Settings');
     assert.match(await text('#extH'), /Extras for one folder/);
     assert.match(await text('#screen'), /only per folder or workspace/);
     // the CLI list is the first thing the picture is about: scroll it into view and prove it is inside the window
-    await ctx.js(`(()=>{const d=document.getElementById('advMcp');if(d)d.open=true})()`); await ctx.sleep(200); /* spec 052: the MCP list sits in a collapsed section */
-    await ctx.js(`document.getElementById('ambList').scrollIntoView({block:'center',behavior:'instant'})`); await ctx.sleep(400);
+    await ctx.js(`(()=>{const d=document.getElementById('advMcp');if(d)d.open=true})()`); /* spec 052: the MCP list sits in a collapsed section */
+    await ctx.js(`document.getElementById('ambList').scrollIntoView({block:'center',behavior:'instant'})`);
+    await until(`(()=>{const r=document.getElementById('ambList').getBoundingClientRect();return r.top>=0&&r.bottom<=window.innerHeight&&r.left>=0&&r.right<=window.innerWidth})()`, 'the CLI list inside the window');
     assert.strictEqual(await ctx.js(`(()=>{const r=document.getElementById('ambList').getBoundingClientRect();return r.top>=0&&r.bottom<=window.innerHeight&&r.left>=0&&r.right<=window.innerWidth})()`), true, 'the CLI list is inside the window for the picture');
     await shot('settings-cli-list', w, h);
-    await closeScreen(); await ctx.sleep(300);
+    await closeScreen();
 
     // Tools: This session (default), then All time
-    await click('#toolsBtn'); await ctx.sleep(500);
+    await click('#toolsBtn'); await selected('perSession');
     assert.strictEqual(await ctx.js(`document.getElementById('perSession').getAttribute('aria-selected')`), 'true');
     assert.match(await text('.cfgsec'), /Configured MCP servers/);
     assert.match(await text('.cfgsec'), /github-mcp-server/);
     await shot('tools-this-session', w, h);
-    await click('#perAll'); await ctx.sleep(700);
+    await click('#perAll'); await selected('perAll'); await textHas('.scr-sum', /tool calls by \d+ agents since /);
     assert.strictEqual(await ctx.js(`document.getElementById('perAll').getAttribute('aria-selected')`), 'true');
     assert.match(await text('.scr-sum'), /tool calls by \d+ agents since /);
     assert.match(await text('#screen'), /Zoe · old-prototype/, 'history of agents that are gone is kept');
@@ -60,43 +66,45 @@ module.exports = async (ctx) => {
     assert.strictEqual(await count('#tabAgents'), 0, 'Models and context is a This session view');
     await shot('tools-all-time', w, h);
     // scope to one agent label
-    await ctx.js(`(()=>{const s=document.getElementById('toolScope');const o=[...s.options].find(o=>/^Ada · /.test(o.textContent));s.value=o.value;s.onchange({target:s});})()`); await ctx.sleep(600);
+    await ctx.js(`(()=>{const s=document.getElementById('toolScope');const o=[...s.options].find(o=>/^Ada · /.test(o.textContent));s.value=o.value;s.onchange({target:s});})()`); await textHas('.scr-sum', /by Ada · mcp-swiss/);
     assert.match(await text('.scr-sum'), /by Ada · mcp-swiss/);
     await shot('tools-all-time-agent', w, h);
-    await click('#perSession'); await ctx.sleep(500);
+    await click('#perSession'); await selected('perSession');
     assert.strictEqual(await ctx.js(`document.getElementById('perSession').getAttribute('aria-selected')`), 'true');
-    await closeScreen(); await ctx.sleep(300);
+    await closeScreen();
 
     // Folder extras from a room header: mcp-swiss has extras, blog has none, and they are labelled
-    await click(roomBtn('mcp-swiss')); await ctx.sleep(600);
+    await click(roomBtn('mcp-swiss')); await textHas('h2', /MCP extras · mcp-swiss/);
     assert.match(await text('h2'), /MCP extras · mcp-swiss/);
     assert.ok(await count('#srvList li.srv') === 2, 'two extras in mcp-swiss');
     assert.match(await text('#srvList'), /Extra, this folder only/);
     assert.match(await text('#legList'), /old-fetch/, 'old app-level server offered');
     await shot('folder-extras', w, h);
-    await click('li.srv[data-name="docs-search"] [data-act="toggle"]'); await ctx.sleep(400);
+    await click('li.srv[data-name="docs-search"] [data-act="toggle"]'); await textHas('#scrDlg', /Trust "docs-search" in mcp-swiss/);
     assert.match(await text('#scrDlg'), /Trust "docs-search" in mcp-swiss/);
     assert.match(await text('#scrDlg'), /may keep that sign-in in your system keychain/, 'spec 058 FR-076: a remote extra says a sign-in may outlive the session');
     await shot('folder-trust', w, h);
-    await closeDlg(); await ctx.sleep(200);
-    await closeScreen(); await ctx.sleep(300);
-    await click(roomBtn('blog')); await ctx.sleep(600);
+    await closeDlg(); await gone('#scrDlg');
+    await closeScreen();
+    await click(roomBtn('blog')); await textHas('h2', /MCP extras · blog/);
     assert.match(await text('h2'), /MCP extras · blog/);
     assert.strictEqual(await count('#srvList li.srv'), 0, 'extras of mcp-swiss are not in blog');
     assert.match(await text('.scr-empty'), /No extras for this folder/);
     await shot('folder-extras-empty', w, h);
-    await closeScreen(); await ctx.sleep(300);
+    await closeScreen();
 
     // Agent MCP menu: CLI list + this folder's extras, labelled
-    await click('#stage [data-id="sim-1"]'); await ctx.sleep(700);
-    await click('#mcpBtn'); await ctx.sleep(500);
+    await click('#stage [data-id="sim-1"]'); await until(`!!document.getElementById('mcpBtn')`, 'the chat header');
+    await click('#mcpBtn'); await textHas('#scrDlg', /Here you can only switch one off for Ada/);
+    /* the chips are elements: a Copilot / Claude Code chip from the app's list, a "Durbar folder" chip on a folder's extra (spec 069 FR-011) */
+    const chips = await ctx.js(`[...document.querySelectorAll('#scrDlg li.srv .mtag')].map(t=>t.className.replace(/\\s+/g,'.')+'='+t.textContent.trim())`);
+    assert.ok(chips.includes('mtag.src=Copilot'), "the agent apps' own list names its app in a source chip: " + JSON.stringify(chips));
+    assert.ok(chips.includes('mtag.extra=Durbar folder'), "a folder's extra carries the Durbar folder chip: " + JSON.stringify(chips));
+    assert.match(await text('#scrDlg'), /Here you can only switch one off for Ada/, 'the dialog says what it can do here');
     const dlg = await text('#scrDlg');
-    assert.match(dlg, /Copilot/, "the agent apps' own list names its app (spec 069 source chips)");
-    assert.match(dlg, /Durbar folder/, "a folder's extras carry the Durbar folder chip");
-    assert.match(dlg, /Here you can only switch one off for Ada/, 'the dialog says what it can do here');
     assert.match(dlg, /playwright/);
     await shot('agent-mcp', w, h);
-    await closeDlg(); await ctx.sleep(200);
-    await click('#backBtn'); await ctx.sleep(300);
+    await closeDlg(); await gone('#scrDlg');
+    await click('#backBtn'); await until(`!document.body.classList.contains('panel-open')`, 'the chat to close');
   }
 };

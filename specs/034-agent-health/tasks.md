@@ -7,7 +7,7 @@
 - [x] T005 Card accessible label and tooltip phrases [FR-003]
 - [x] T006 Settings "Serious mode" switch; serious mode turns the drawings off [FR-004]
 - [x] T007 Simulator: context bands, a failed-call streak, `simwaitold=1` [FR-006]
-- [x] T008 Checks and screenshots (`scripts/shots-034.js`, both sizes, Serious mode), `check:office`, README, CHANGELOG, specs index [FR-005, FR-007, SC-001, SC-002]
+- [x] T008 Checks and screenshots (`scripts/shots-034.js` (run by hand, not in CI: `NOT_IN_SUITE`, spec 021 FR-057), both sizes, Serious mode), `check:office`, README, CHANGELOG, specs index [FR-005, FR-007, SC-001, SC-002]
 - [x] T009 (2026-10-19, FR-014 and FR-015) (follow-up, not in this PR) Mood on the walking figure while an agent is at a place, and mood words in the List view (known gaps found in phase 3); the List view half is FR-014 (T009a)
 - [x] T009a (2026-10-19) Mood words in the List view [FR-014]
 
@@ -18,7 +18,7 @@
 - [x] T011 Room tones (`data-alert`, darker `--tint`/`--wall` per colour, every density) and the siren in the room header and on door plates; Serious mode; reduced motion [FR-009, FR-011]
 - [x] T012 Accessible words on the room section and door plate [FR-010]
 - [x] T013 Simulator: a room whose worst agent is heavy only [FR-012]
-- [x] T014 Driver `scripts/shots-034.js` extended, contrast check, screenshots at both sizes, `check:office`, README, CHANGELOG, specs index [FR-011, FR-013, SC-003, SC-004]
+- [x] T014 Driver `scripts/shots-034.js` (run by hand, not in CI: `NOT_IN_SUITE`, spec 021 FR-057) extended, contrast check, screenshots at both sizes, `check:office`, README, CHANGELOG, specs index [FR-011, FR-013, SC-003, SC-004]
 - [x] T015 Room header path text readable in every room: `#5c635e` instead of `--muted` (about 4.2:1 on `main`, now 5.17:1 in calm rooms); the driver checks 4.5:1 at every tone (done in this PR after review)
 
 ## 2026-10-23 delta: "Retrying" while the agent app retries (issue #600)

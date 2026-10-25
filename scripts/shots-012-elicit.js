@@ -21,19 +21,23 @@ module.exports = async (ctx) => {
       // (no sweep over every desk: docs/agent-notes.md)
       const o = await H.openSimAgent(`a=>a.question&&a.question.elicit`, '#chat .note.elicit');
       assert.ok(o.ok, `${w} ${mode}: an agent has the MCP request in its chat: ${JSON.stringify({ id: o.id, ...o.seen })}`);
-      await ctx.sleep(600);
-      await js(`(()=>{const c=document.querySelector('#chat .note.elicit');if(c)c.scrollIntoView({block:'center'});})()`); await ctx.sleep(300);
+      /* spec 021 FR-057 (review of #752): an assert waits on the condition it asserts */
+      const until = async (expr, what) => { assert.ok(await ctx.waitFor(expr, 10000), 'timed out waiting for ' + what); };
+      await until(`!!document.querySelector('#chat .note.elicit button')`, 'the form buttons');
+      await js(`(()=>{const c=document.querySelector('#chat .note.elicit');if(c)c.scrollIntoView({block:'center'});})()`);
       if (mode === '1') {
         const f = await js(`(()=>{const c=document.querySelector('#chat .note.elicit');return {select:!!c.querySelector('select'),number:!!c.querySelector('input[type=number]'),check:!!c.querySelector('input[type=checkbox]'),labels:[...c.querySelectorAll('label')].map(l=>l.textContent.trim()).filter(Boolean).length,btns:[...c.querySelectorAll('button')].map(b=>b.textContent.trim())}})()`);
         assert.ok(f.select && f.number && f.check, `${w}: the form shows a select, a number and a checkbox: ` + JSON.stringify(f));
         assert.ok(f.btns.includes('Submit') && f.btns.includes('Decline') && f.btns.includes('Cancel'), 'Submit / Decline / Cancel: ' + JSON.stringify(f.btns));
         await shot(`012-elicit-form-${w}x${h}.png`);
         // submitting with the required ticket empty shows a plain message and sends nothing
-        await js(`[...document.querySelectorAll('#chat .note.elicit button')].find(b=>b.textContent.trim()==='Submit').click()`); await ctx.sleep(300);
+        await js(`[...document.querySelectorAll('#chat .note.elicit button')].find(b=>b.textContent.trim()==='Submit').click()`);
+        await until(`document.querySelectorAll('#chat .note.elicit [aria-invalid="true"]').length>=1`, 'the empty required field to be flagged');
         const err = await js(`[...document.querySelectorAll('#chat .note.elicit [aria-invalid="true"]')].length`);
         assert.ok(err >= 1, 'a required empty field is flagged');
         await js(`(()=>{const c=document.querySelector('#chat .note.elicit');const sel=c.querySelector('select');sel.value=sel.options[1].value;sel.dispatchEvent(new Event('change',{bubbles:true}));const n=c.querySelector('input[type=number]');n.value='4521';n.dispatchEvent(new Event('input',{bubbles:true}));})()`);
-        await js(`[...document.querySelectorAll('#chat .note.elicit button')].find(b=>b.textContent.trim()==='Submit').click()`); await ctx.sleep(800);
+        await js(`[...document.querySelectorAll('#chat .note.elicit button')].find(b=>b.textContent.trim()==='Submit').click()`);
+        await until(`/submitted/.test((document.querySelector('#chat .note.elicit')||{}).textContent||'')`, 'the card to say submitted');
         const done = await js(`(document.querySelector('#chat .note.elicit')||{}).textContent||''`);
         assert.ok(/submitted/.test(done) && !/4521/.test(done), 'the card says submitted and never shows the values: ' + done.slice(0, 200));
       } else {
