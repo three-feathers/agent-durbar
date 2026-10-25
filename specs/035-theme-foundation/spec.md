@@ -106,3 +106,9 @@ status: **built** on branch `035-theme-foundation` (PR #137): loader, sanitizer,
 
 Owner (Vikram, team chat 2026-10-22 06:17 UTC): run theme layout, geometry and screenshot checks on pull requests only for Clean Office and Retro (dark, its own display font and art); the other styles change only what FR-010 allows, which `test:theme` checks statically on every PR. Nothing in FR-009..FR-013 changes; only where the FR-010 layout proof runs (spec 008 FR-111).
 
+
+### 2026-10-25: three asserts that could not fail (issue #749, found by Paco's agent's test audit)
+
+**Symptom.** `test-theme` compared the default pixel-map cell size with itself; `test-profilefiles` ran "a link is never written" only `if (r.ok)`, so a failed read skipped the security check; `test-markdown` ("hooks added once") could not see a hook added on every render. Each passed whatever the code did (mutation-verified).
+
+- **FR-014** `[IMPLEMENTED]` (tests only, no behaviour change) The tests assert the real value: the default cell size is 3 (`test:theme`); the link read must succeed before the write refusal is checked (`test:profilefiles`); one hook at creation and none per render, one sanitizer call per render, counted through a spy (`test:markdown`). Mutations that now fail: default cell 3 to 4; `readProfileFile` failing on a link; `addHook` inside `render`.
