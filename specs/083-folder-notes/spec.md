@@ -3,14 +3,14 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Notes (issue #699): save a message, a selection or a typed idea per folder and carry on with it; a Notes drawer in the chat (Ctrl+Shift+M), insert with one click or from the `/` list, a header count and a saved-message icon; stored masked in local data (0600), opt-in mirror to `.durbar/notes.md` per folder
-status: Draft (2026-10-24): spec, plan, research and tasks; owner decisions OD1..OD4 (Ruben) and coordinator decisions D1..D11 recorded; nothing built
+status: In progress (2026-10-25): foundation (store, masking, IPC, simulator; T010..T014) and the MVP in the window (a message's ⋯ and Save to notes, the Notes drawer, Insert, notes in the `/` list, Ctrl+Shift+M; T020..T024) built and checked on the simulator; the count, marker, search, selection save, per-folder screen and project file (T030..T050) are not built; owner decisions OD1..OD4 (Ruben) and coordinator decisions D1..D11 recorded
 -->
 
 **Feature Branch**: `083-folder-notes` (touches 005 chat panel and message actions, 073 the `/` list, 074 the shortcut list, 006 the folder menu, 010 simulator)
 
 **Created**: 2026-10-24
 
-**Status**: Draft (spec, plan, research and tasks; nothing built)
+**Status**: In progress (2026-10-25): T010..T024 built (store, masking, IPC, simulator, the MVP in the window); T030..T050 not built
 
 **Input**: Owner request (Ruben, 2026-10-24, issue #699): "While working in a session, I sometimes get an idea, a good answer from the agent, a plan or a list of next steps that I want to keep and come back to later, often to carry on in that same session or in a new one." Owner decisions in the issue's decision comment (Ruben, 2026-10-24), quoted below.
 
@@ -310,3 +310,20 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 - **(C)** FR-048: a removed folder's notes are kept by default; *Also delete its notes* is unticked.
 - **(Q1)** FR-041/D4: the SVG marker stays (Paco agrees), confirmed by Ruben 2026-10-24.
 - **(2026-10-25, decided by the coordinator under Ruben's delegation)** FR-008 test: the helper process of `test-notesstore` (`scripts/notes-worker.ts`) retries a *busy* answer (up to 30 times), as a user pressing the button again would. On the Windows runner four real processes can hold the lock past the store's 2 s deadline, and the store then answers *busy* by design (PR #695's CI run 40146239142: one worker exited 2); a worker that stopped at the first *busy* made the test depend on runner speed. Any other refusal still fails the worker, and the test still checks that none of the 40 notes is lost. [KNOWN GAP] not re-run on Windows.
+
+### 2026-10-25: the MVP in the window (T020..T024; decided by the coordinator under Ruben's delegation, ambiguities resolved by the implementer and recorded here)
+
+*Built:* the message `⋯` and *Save to notes* (FR-010, FR-011), the Notes drawer (FR-012..FR-014, FR-020..FR-026), Insert (FR-024), notes in the `/` list (FR-030, FR-031), Ctrl+Shift+M, and the simulator driver. Decisions on points the spec left open:
+
+- **The chat's own session** (FR-021) is main's, not the window's: `notes:list` now also answers `session` (main's `resumeIdFor`, checked with `sessionIdOk`, `''` when unusable), so the drawer can put *This session* first without the window knowing a session id.
+- **The message's place `ord`** (FR-009) is its index among that role's bubbles in the chat log's DOM at save time (an agent reply's `.bubble`, a user message's `.bubble`).
+- **A ⋯ per bubble, not per turn**: an agent turn that produced several reply bubbles has a `⋯` on each finished one; a thinking block, a tool chip and a request card have none (FR-010). The `⋯` is an SVG with no text, so a bubble's text is unchanged.
+- **`Show in notes`** is decided in the window: the menu opens with *Save to notes*; once the message's digest (SHA-256, `DurbarNotes.digestOf`, the same value as main's) is computed the item becomes *Show in notes* when a note of this session, role and digest exists. *Already in notes* (the toast of a second save) is main's `existing` answer.
+- **A stale `rev`** (FR-008): *Edit…* and *Rename…* that meet a different saved `rev` ask *This note changed* with **Use the saved one** / **Keep mine** (a second send with the saved `rev`).
+- **Insert masks once more** with `maskNoteText` (the shared mask, structure-keeping) and refuses to insert when it is not available (fail closed); *Edit…* shows the stored (already masked) text.
+- **Notes need a live chat in a main session**: a helper's chat, the read-only VS Code chat view and the non-live demo canned chats have no `⋯` and no drawer (FR-027); the simulator's agents are live, so demo mode works.
+- **The `/` list while the commands load** shows only *Looking for commands…* (notes join when they arrive), so the first row never starts on a note; with no commands in the app (`simslash=none` in the simulator, Priya's app) the list is named *Notes* and counts *2 notes*.
+- **Spec 074 FR-085, saved Go to key:** `loadCombo` keeps a saved Ctrl+Shift+M (it was free when saved); the Go to handler is matched first, so the Notes key then does nothing (`test-navigator`).
+- **Not built here** (next slice): the header count (FR-040), the saved-message marker (FR-041), search (FR-043), selection save (FR-042), the per-folder screen, export and *Delete all…* (FR-044..FR-048), the project file (FR-050..FR-054) and *Open source* (FR-046); the row's `⋯` therefore holds *Rename…*, *Copy* and *Delete…* only, and *Mark done* is not offered.
+
+*Evidence:* `test:` `scripts/test-notes.ts` (the window helpers), `test-navigator.ts`, `test-slashcommands.ts`; `sim:` `npm run check:notes` (US1 scenarios 1..6, SC-001's four actions, SC-002) and `check:office` with the drawer open; screenshots: [the drawer at 1440x900](../../docs/screenshots/083-notes-drawer-1440x900.png), [at 1280x800](../../docs/screenshots/083-notes-drawer-1280x800.png), [the `/` list at 1440x900](../../docs/screenshots/083-notes-slash-1440x900.png), [at 1280x800](../../docs/screenshots/083-notes-slash-1280x800.png). `[KNOWN GAP]` no real session and no screen reader were used: the ARIA roles and names are asserted, how a screen reader reads them was not heard.

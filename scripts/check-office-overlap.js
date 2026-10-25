@@ -624,6 +624,23 @@ async function driver(ctx) {
     }
     return P;
   };
+  /* spec 083 T024 AC2 / spec 005 FR-175: with the Notes drawer open (Ctrl+Shift+M) the header, the message box and the chat settings still
+     fit and do not overlap, the drawer is exactly the chat log's box, and its text is at least 10.5px */
+  const drawerCheck = () => {
+    const P = [], R = (e) => e.getBoundingClientRect();
+    const d = document.getElementById('notesDrawer'), c = document.getElementById('chat'), cm = document.querySelector('#panel .composer'), hd = document.getElementById('panelHead');
+    if (!d || d.hidden || !d.getClientRects().length) return ['the Notes drawer did not open'];
+    const dr = R(d), cr = R(c), mr = R(cm), hr = R(hd), pr = R(document.getElementById('panel'));
+    if (Math.abs(dr.top - cr.top) > 1.5 || Math.abs(dr.bottom - cr.bottom) > 1.5 || Math.abs(dr.left - cr.left) > 1.5 || Math.abs(dr.right - cr.right) > 1.5) P.push('the drawer is not the chat log\'s box');
+    if (dr.bottom > mr.top + 0.5) P.push('the drawer covers the message box');
+    if (dr.top < hr.bottom - 0.5) P.push('the drawer covers the header');
+    if (dr.left < pr.left - 1 || dr.right > pr.right + 1) P.push('the drawer leaves the panel');
+    const small = [...d.querySelectorAll('*')].filter((e) => e.getClientRects().length && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 10.5).map((e) => e.className || e.tagName);
+    if (small.length) P.push('text under 10.5px: ' + small.slice(0, 3).join());
+    const inp = document.getElementById('msgInput');
+    if (!inp || R(inp).height <= 0) P.push('the message box is not visible with the drawer open');
+    return P;
+  };
   /* spec 080 T015 AC4 / FR-090 (and spec 005 FR-058): the chat panel on its Browser tab at both sizes: the tab bar and the browser bar are inside the
      window, nothing overlaps, every text is 10.5px or more, the page area is not squeezed to nothing, and the native view sits on it */
   const browserTabCheck = () => {
@@ -671,6 +688,13 @@ async function driver(ctx) {
         const p = await ctx.js(`(${chatCheck.toString()})()`);
         total++;
         if (p.length) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id}: ${p.slice(0, 4).join('; ')}`); }
+        if (q === 'sim=15&simfreeze=1') { /* spec 083: the same with the Notes drawer open */
+          await ctx.js(`(async()=>{document.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyM',key:'M',ctrlKey:true,shiftKey:true,bubbles:true}));await new Promise(r=>setTimeout(r,250));return true})()`);
+          const pn = [...(await ctx.js(`(${chatCheck.toString()})()`)), ...(await ctx.js(`(${drawerCheck.toString()})()`))];
+          total++;
+          if (pn.length) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat with the Notes drawer ${w}x${h} ${q} agent ${id}: ${pn.slice(0, 4).join('; ')}`); }
+          await ctx.js(`(async()=>{const x=document.getElementById('ntClose');if(x)x.click();await new Promise(r=>setTimeout(r,60));return true})()`);
+        }
         await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
       }
       if (q === 'sim=15&simfreeze=1') {
