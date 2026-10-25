@@ -17,7 +17,7 @@
   /* Context window level for the bar colour; limit 0/undefined/unknown -> 'unknown'. */
   function ctxLevel(used,limit){
     if(typeof used!=='number'||typeof limit!=='number'||!(limit>0)||!(used>=0)||!Number.isFinite(limit))return {pct:null,level:'unknown'}; /* spec 015 FR-013: numbers only; NaN, Infinity and strings are unknown */
-    const pct=used===Infinity?100:Math.max(0,Math.min(100,Math.round(used/limit*100)));
+    const pct=Math.max(0,Math.min(100,Math.round(used/limit*100)));
     if(!Number.isFinite(pct))return {pct:null,level:'unknown'};
     return {pct,level:pct>90?'high':pct>=70?'warn':'ok'};
   }

@@ -89,7 +89,11 @@ const comp = (o: EventBody[]): string[] => o.filter((e) => e.type === 'compactio
   assert.deepStrictEqual(comp(run([item('item/started', 'userMessage'), item('item/started', 'contextCompactionX'), item('item/started', '__proto__')])), [], 'other item types are not compactions');
   assert.deepStrictEqual(comp(run([{ method: 'item/started', params: { threadId: 'th', item: { type: 'contextCompaction' } } }])), [], 'an item with no id is dropped, as every item');
   // a child thread (a helper) is not the main agent's compaction
-  const child = [{ method: 'thread/started', params: { thread: { id: 'kid' } } }, { method: 'item/started', params: { threadId: 'kid', turnId: 't', item: { type: 'contextCompaction', id: 'k1' } } }];
+  const child = [
+    { method: 'item/started', params: { threadId: 'th', turnId: 't1', item: { type: 'collabAgentToolCall', id: 'spawn1', tool: 'spawn_agent', receiverThreadIds: ['kid'], prompt: 'p' } } },
+    { method: 'item/started', params: { threadId: 'kid', turnId: 't', item: { type: 'contextCompaction', id: 'k1' } } },
+    { method: 'item/completed', params: { threadId: 'kid', turnId: 't', item: { type: 'contextCompaction', id: 'k1' } } },
+  ];
   assert.deepStrictEqual(comp(run(child)), [], "a helper thread's compaction is not shown");
   // reset
   const out: EventBody[] = [];
@@ -175,6 +179,11 @@ const comp = (o: EventBody[]): string[] => o.filter((e) => e.type === 'compactio
   assert.deepStrictEqual(ST.ctxLevel(90, 100), { pct: 90, level: 'warn' });
   assert.deepStrictEqual(ST.ctxLevel(91, 100), { pct: 91, level: 'high' }, 'red above 90');
   assert.deepStrictEqual(ST.ctxLevel(250, 100), { pct: 100, level: 'high' }, 'more than the window shows 100, not 250');
+  assert.deepStrictEqual(ST.ctxLevel('50', 100), { pct: null, level: 'unknown' }, 'a string is not a size');
+  assert.deepStrictEqual(ST.ctxLevel(50, '100'), { pct: null, level: 'unknown' });
+  assert.deepStrictEqual(ST.ctxLevel(Infinity, 100), { pct: 100, level: 'high' }, 'an infinite use is full');
+  assert.deepStrictEqual(ST.ctxLevel(5, Infinity), { pct: null, level: 'unknown' }, 'an infinite window is unknown');
+  assert.deepStrictEqual(ST.ctxLevel(Infinity, Infinity), { pct: null, level: 'unknown' });
   assert.deepStrictEqual(ST.ctxLevel(1, 0), { pct: null, level: 'unknown' });
   assert.deepStrictEqual(ST.ctxLevel(-5, 100), { pct: null, level: 'unknown' });
   assert.deepStrictEqual(ST.ctxLevel(NaN, 100), { pct: null, level: 'unknown' });
