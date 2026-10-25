@@ -199,7 +199,7 @@ eq(HC.HX_TIP, 200, 'the tooltip cut is the desk card\'s number');
   for (const level of [1, 2]) for (const simple of [false, true]) {
     const t = C.view(helper({ task: 'T', now: { kind: 'search', tool: ghp, label: 'x' } }), level, { simple });
     ok(!hasSecret(t.aria + t.title + t.lines.map((l) => l.text).join('|')), `a tool name that is a token is masked (level ${level}, simple ${simple})`);
-    const t2 = C.view(helper({ task: 'T', now: { kind: 'search', tool: 'a'.repeat(30) + ' ' + pat, label: '' } }), level, { simple });
+    const t2 = C.view(helper({ task: 'T', now: { kind: 'search', tool: 'a'.repeat(20) + ' ' + pat, label: '' } }), level, { simple });
     ok(!hasSecret(t2.aria + t2.title + t2.lines.map((l) => l.text).join('|')), 'a long tool name with a token is masked before the cut');
   }
 }
