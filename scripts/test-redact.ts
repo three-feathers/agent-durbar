@@ -33,6 +33,8 @@ const cpuMs = (f: () => void, capMs: number): number => {
 // in a worker and gives its CPU and wall time in ms.
 const FACTOR = 16;
 const MAX_RATIO = 40;
+// CPU timers tick in about 15.6 ms on Windows (as in test-browserurl), so a fast 1/16 baseline can read 0: never divide by less than one tick there
+const MIN_BASE_MS = process.platform === 'win32' ? 16 : 2;
 let worstGrowth = { ratio: 0, label: '' }; // the highest full/baseline ratio seen, printed at the end
 const assertLinearGrowth = (label: string, run: (input: string) => { cpu: number; wall: number }, input: string, floorMs = 100): void => {
   const small = input.slice(0, Math.ceil(input.length / FACTOR));
@@ -44,12 +46,12 @@ const assertLinearGrowth = (label: string, run: (input: string) => { cpu: number
     wall = Math.max(wall, f.wall);
     full = Math.min(full, f.cpu);
     base = Math.min(base, run(small).cpu);
-    if (full < Math.max(floorMs, Math.max(base, 2) * MAX_RATIO)) break;
+    if (full < Math.max(floorMs, Math.max(base, MIN_BASE_MS) * MAX_RATIO)) break;
   }
-  if (full / Math.max(base, 2) > worstGrowth.ratio && full >= floorMs) worstGrowth = { ratio: full / Math.max(base, 2), label };
+  if (full / Math.max(base, MIN_BASE_MS) > worstGrowth.ratio && full >= floorMs) worstGrowth = { ratio: full / Math.max(base, MIN_BASE_MS), label };
   assert.ok(full < 10_000, `${label}: ${full.toFixed(1)} ms CPU, backstop 10000 ms (catastrophic)`);
   assert.ok(wall < 10_000, `${label}: wall-time backstop: ${wall.toFixed(1)} ms wall for ${full.toFixed(1)} ms CPU, limit 10000 ms (a blocking wait?)`);
-  assert.ok(full < Math.max(floorMs, Math.max(base, 2) * MAX_RATIO), `${label}: ${full.toFixed(1)} ms CPU for ${input.length} chars, ${base.toFixed(1)} ms for ${small.length} chars (ratio ${(full / Math.max(base, 2)).toFixed(1)}, limit ${MAX_RATIO} for ${FACTOR}x input: linear is about ${FACTOR}, n log n about 30, quadratic over 65; floor ${floorMs} ms)`);
+  assert.ok(full < Math.max(floorMs, Math.max(base, MIN_BASE_MS) * MAX_RATIO), `${label}: ${full.toFixed(1)} ms CPU for ${input.length} chars, ${base.toFixed(1)} ms for ${small.length} chars (ratio ${(full / Math.max(base, MIN_BASE_MS)).toFixed(1)}, limit ${MAX_RATIO} for ${FACTOR}x input: linear is about ${FACTOR}, n log n about 30, quadratic over 65; floor ${floorMs} ms)`);
 };
 // One worker run of `code` (a worker script that writes CPU and wall ms into shared memory like the ones below): a worker that does not answer
 // in `waitMs` is stopped and the case retried once. The test stays synchronous (Atomics).
