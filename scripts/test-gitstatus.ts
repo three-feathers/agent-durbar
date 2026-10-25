@@ -75,8 +75,10 @@ async function main(): Promise<void> {
   process.env.GIT_DIR = '/elsewhere/.git';
   calls.length = 0;
   await fake('')(['-C', '/w/api', 'rev-list', '--count', 'HEAD']);
+  const expectEnv = gitEnv(process.env); // a plain object: on Windows its PATH key keeps its own case ("Path"), so compare whole objects
   if (saved === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = saved;
-  assert.ok(calls.every((c) => c.env.GIT_DIR === undefined && c.env.PATH === process.env.PATH), 'the runner builds its env with gitEnv');
+  assert.ok(calls.length === 2 && calls.every((c) => !Object.keys(c.env).some((k) => k.toUpperCase() === 'GIT_DIR')), 'no GIT_DIR reaches git');
+  for (const c of calls) assert.deepStrictEqual(c.env, expectEnv, 'the runner builds its env with gitEnv');
   calls.length = 0;
   await fake('')(['-C', '/w/api', 'status', '--porcelain=v1']);
   assert.deepStrictEqual(calls[1].argv.slice(calls[1].argv.indexOf('-C')), ['-C', '/w/api', 'status', '--ignore-submodules=dirty', '--porcelain=v1'], 'status: submodules not entered');
