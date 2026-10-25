@@ -119,6 +119,8 @@
 ## 2026-10-24: macOS nightly UI regression (#683)
 
 - [x] T107: correct the macOS-only native text-editing assertions in `scripts/shots-074-navigator.js`: synthetic ⌘⌫ and ⌘A must reach the editable field without being prevented or closing the chat; verify normal Backspace edits text, while Windows/Linux continue to assert Ctrl+Backspace deletes a word and Ctrl+A selects all. Add the platform limitation to `docs/agent-notes.md` and a changelog fragment. Done: the navigator driver passes locally on macOS at both sizes, the planted app-interception mutation fails it, and `npm run typecheck && npm run build && npm test` pass. A post-merge nightly UI run on `main` remains required to close issue #683.
+- [x] T109 (2026-10-25, #738) `check-ui-text` split into `check-ui-text light` and `check-ui-text dark` in `scripts/ui-suite.js` (`UITEXT_PART` in `scripts/check-ui-text.js`, `UITEXT_TIMING=1` for per-surface times) [FR-128]. Done: the union of the two parts' `[ui-text]` lines equals the one run's (420 surfaces, 0 violations), two planted text mutants (an early and a late surface) are still caught, and the two parts together take about half the time. Typecheck, build and test pass.
+
 
 ## 2026-10-25: fold branch names without dots
 

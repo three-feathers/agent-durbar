@@ -25,6 +25,10 @@ no merge freeze is needed:
 2. The release manager **tags a commit on `main`**. `release.yml`'s `verify` job checks the tag (on `main`, equal to
    `package.json`, the previous release already folded) and writes the draft's notes from exactly that commit's fragments:
    `node scripts/changelog.js build --release "<heading>" --stdout` prints the same section and edits nothing.
+   Before you tag, classify the release for the DORA records (AGENTS.md, *Bug and deployment incident triage*): list the
+   incidents with `gh issue list --label incident --state all`, decide whether this release is an unplanned corrective
+   response to one (`Yes`), an ordinary planned release (`No`) or unclear (`Unknown`), and once it is published record the
+   tag on each incident issue. A `-test.M` test build is not a deployment for DORA.
 3. A **doc-only fold PR**, from the tag, with the heading from the run's job summary:
 
    ```bash
