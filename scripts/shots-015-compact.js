@@ -108,7 +108,7 @@ module.exports = async (ctx) => {
     // a truncation is its own line and never "compacted"
     const n0 = (await lines()).length;
     await emit({ type: 'compaction', sessionId: c.id, timestamp: Date.now(), phase: 'complete', trigger: 'truncation', tokensRemoved: 30000, limit: 128000 });
-    await ok(`document.querySelectorAll('#chat .note.cline').length===${n0 + 1}`, 'the truncation adds its own line');
+    await ok(`document.querySelectorAll('#chat .note.cline').length===${jsLiteral(n0 + 1)}`, 'the truncation adds its own line');
     l = await lines();
     assert.strictEqual(l[l.length - 1], 'Older messages dropped to fit the window: 30k tokens removed.');
     assert.ok(await js(`document.querySelector('#panelHead [data-f=status]').textContent==='Working'`), 'a truncation is not a Compacting state');
