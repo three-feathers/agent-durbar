@@ -164,12 +164,12 @@ Started from scratch on the owner's decision (Vikram, 2026-10-25); nothing from 
 | Compact tile, strip, grouping | `helperTileHTML` (level 0, unchanged), `unitHTML` `.helpers.hstrip` with its connectors, `visibleHelpers` + `prio`, `moreHTML`, *Show fewer* | the strip gets `data-hx` and the cards a level; level 0 renders byte-for-byte as today |
 | Layout | `chooseLayout`, `probeSet`, `growSearch`, `DurbarProbe.pick`, `GR`, the helper boost (`HBOOST`), the layout key, `spreadOffice`, `headsFit` | one more step inside `chooseLayout`; one more field in the result (`hx`); the theme id added to the key |
 | Open, keys, names | the `[data-id]` click → `openPanel` → `buildSubTranscript`; `DESK_NAV`; the helper `aria-label` pattern | unchanged selectors, so `check:office` and the arrow-key code apply as they are |
-| Setting | *Live activity on desks* (`liveOn()`, FR-032) | governs the **Now:** line only (owner question 3) |
+| Setting | *Live activity on desks* (`liveOn()`, FR-032) | governs the **Now:** line only (owner decision 3, 2026-10-25) |
 | Simulator | `subRun` in `sim.ts` (task, activity, result, failure, `simreply=secrets` plants), `simrooms`, `simhelpers=0` | `simhelpers=<1..6>` and one Codex-shaped helper |
 | Checks | `check-office-fill.js` (sparse offices, page rules), `check-office-overlap.js`, `check-theme-geometry.js`, `check-done-desk-mask.js`, `test-probe.ts`, `test-safetext.ts`, `driver-helpers.js` (`until`, `openSimAgent`, `shot`), `shots-docs.js` | new cases in the existing drivers; no new driver |
 
 **New:** one pure UMD module `src/renderer/helpercard.js` (like `shutters.js`), because `app.js` is one IIFE and the field rules must be unit-tested in Node with the real masking:
-- `HX` constants: level heights and minimum widths (level 1: name line + 1 text line; level 2: name line + 2 + 2 + 1 lines; minimum widths about 220 and 260 px, maximum 460 px for the ~85-character measure), `HX_MIN_F` (1.4).
+- `HX` constants: level heights and minimum widths (level 1: name line + 1 text line; level 2: name line + 2 + 2 + 1 lines; minimum widths about 220 and 260 px, maximum 460 px for the ~85-character measure), `HX_MIN_F` (1.4, owner decision 1).
 - `lines(rec, level, {simple, live, mask, cut})` → `[{label, text, reported}]`: picks **Task**, **Now** / **Result** / **Failed**, facts; *not reported* when a field is absent; never substitutes one field for another; with no working `mask` only Durbar's own words (fail closed).
 - `label(rec, parts)` → the accessible name text (each part already masked) and `tip(...)` cut to the shared tooltip limit.
 Listed in `copy-assets.js` and `index.html` like `shutters.js`.
@@ -209,7 +209,7 @@ probe cleared; HX = 0
 | A task shown as the result (fabrication), or invented text | `lines` reads fields by name and writes *not reported* | `test:` `helpercard` (no result → *Result not reported*, never the task); mutation: fall back to the task |
 | A cached layout from another theme overlaps | theme id in the layout key | `check:office-fill` switches the theme through Settings and re-checks the page rules; mutation: key without the theme |
 | The 15-agent office changes | `card`/`mini`/`micro` never run the helper step | `check:office`, `check:office-fill` 15-agent cases (same density as `main`), `check:geometry` |
-| Desks shrink too far for helper detail | `HX_MIN_F` (owner question 1) | `test:probe` order cases |
+| Desks shrink too far for helper detail | `HX_MIN_F` = 1.4 (owner decision 1, 2026-10-25) | `test:probe` order cases |
 | A Claude helper never gets its result | FR-095: the spawning call is recognized by the `subagent` record | `test:` with Claude-shaped events (tool start before `subagent`, `Agent` / `Task` names) |
 | A helper that appears mid-turn | helper counts are already in the layout key | `check:office-fill`: a helper added after the first layout gets a card on the next search |
 | Collision with #631 (cabins) | hand-off in the spec | whichever lands second re-runs `check:office-fill` |
