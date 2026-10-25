@@ -98,15 +98,49 @@ assert.strictEqual(T.token('--chair'), cleanChair, 'a dropped token falls back t
 assert.ok(!String(T.token('--chair')).includes('<'), 'no markup reaches a token');
 T.setTheme('clean-office');
 
-// themes.css changes looks, never sizes (spec 035 FR-010): no width/height/padding/margin/gap/font-size/border-width rules
+// themes.css changes looks, never sizes (spec 035 FR-010, FR-015): an allow-list of properties, so a new way to size or move
+// something (flex, transform: scale, top/left, a custom property) is refused by default. DURBAR_THEMES_CSS points the test at a mutant copy.
 {
-  const css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'themes.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/min-width:0\b/g, ''); // min-width:0 only lets display text ellipsize
-  const sized = css.match(/(?:^|[;{])\s*(?:(?:min-|max-)?(?:width|height)|padding(?:-[a-z]+)?|margin(?:-[a-z]+)?|gap|row-gap|column-gap|font-size|line-height|border(?:-(?:top|right|bottom|left))?-width|border(?:-(?:top|right|bottom|left))?\s*:\s*[0-9.]+px)\s*:?/g);
-  assert.strictEqual(sized, null, 'themes.css sets a size: ' + (sized || []).join(' '));
-  // spec 008 FR-111: pull requests lay out Clean Office and Retro only, so these shorthands, which also carry sizes, are refused too
-  const shorthand = css.match(/(?:^|[;{])\s*(?:font|inset|border(?:-(?:top|right|bottom|left|block|inline))?|outline-offset|flex-basis|grid-template(?:-[a-z]+)?|zoom)\s*:[^;}]*?\b[0-9.]+(?:px|em|rem|%|ch|vw|vh)/g);
-  assert.strictEqual(shorthand, null, 'themes.css sets a size in a shorthand: ' + (shorthand || []).join(' '));
+  const cssPath = process.env.DURBAR_THEMES_CSS || path.join(__dirname, '..', '..', 'src', 'renderer', 'themes.css');
+  // Properties that only paint (colour, texture, shape of the corner, shadow, font face, case, ellipsis); any value.
+  const PAINT = new Set(['color', 'background', 'background-color', 'background-image', 'background-size', 'border-color', 'border-top-color', 'border-bottom-color',
+    'border-radius', 'box-shadow', 'text-shadow', 'outline-color', 'font-family', 'font-weight', 'text-transform', 'letter-spacing', 'overflow', 'text-overflow', 'z-index']);
+  // Properties allowed with one exact kind of value: they would size or move things with any other value.
+  const VALUE: Record<string, RegExp> = {
+    position: /^relative$/, // stacking only (z-index); never absolute/fixed + top/left
+    'min-width': /^0$/, // lets display text ellipsize
+    flex: /^0 1 auto$/, // the initial value; no flex-basis or grow
+    transform: /^translate\(-?[0-9]{1,2}px,-?[0-9]{1,2}px\)$/, // retro button press nudge; no scale, rotate or big moves
+  };
+  // Custom properties a style may declare (colours and a font family); a length in their value would feed a size.
+  const CUSTOM = new Set(['--ui-display', '--ui-top-ink', '--ui-top-ink-2', '--st-glyph']);
+  const LENGTH = /[0-9.]\s*(?:px|em|rem|%|ch|vw|vh|vmin|vmax|pt|cm|mm|in|ex)\b/i;
+  const css = fs.readFileSync(cssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const bad: string[] = [];
+  let nRules = 0, nDecls = 0;
+  for (const m of css.matchAll(/\{([^{}]*)\}/g)) {
+    nRules++;
+    // split on ';' outside quotes and parentheses (data: URLs hold ';')
+    const decls: string[] = [];
+    let cur = '', depth = 0, q = '';
+    for (const ch of m[1]) {
+      if (q) { if (ch === q) q = ''; } else if (ch === '"' || ch === "'") q = ch; else if (ch === '(') depth++; else if (ch === ')') depth--;
+      if (ch === ';' && !q && depth === 0) { decls.push(cur); cur = ''; } else cur += ch;
+    }
+    decls.push(cur);
+    for (const d of decls) {
+      if (!d.trim()) continue;
+      nDecls++;
+      const i = d.indexOf(':');
+      const prop = (i < 0 ? d : d.slice(0, i)).trim().toLowerCase();
+      const val = (i < 0 ? '' : d.slice(i + 1)).replace(/!important\s*$/i, '').replace(/\s+/g, ' ').replace(/ ?, ?/g, ',').trim();
+      if (prop.startsWith('--')) { if (!CUSTOM.has(prop) || LENGTH.test(val)) bad.push(prop + ':' + val); }
+      else if (VALUE[prop]) { if (!VALUE[prop].test(val)) bad.push(prop + ':' + val); }
+      else if (!PAINT.has(prop)) bad.push(prop + ':' + val);
+    }
+  }
+  assert.ok(nRules > 50 && nDecls > 100, 'the themes.css parse found rules (' + nRules + ' rules, ' + nDecls + ' declarations)');
+  assert.deepStrictEqual(bad, [], 'themes.css sets a property or value that is not allowed (spec 035 FR-015): ' + bad.join(' | '));
 }
 // UI styles (spec 035 FR-009): a fixed list; anything else is clean
 assert.strictEqual(T._validateManifest({ id: 'u1' }).ui, 'clean', 'no ui = clean');
@@ -144,7 +178,7 @@ for(const id of packs){
   assert.ok(T.word('place-terminal'),id+': word map');
   assert.ok(T.motion('wave'),id+': motion preset');
 }
-/* --- Art slots (stage D, spec 035 FR-013): built-in packs draw their people and furniture with a scene kit and carry
+/* --- Art slots (stage D, spec 035 FR-015): built-in packs draw their people and furniture with a scene kit and carry
    only room, door, lobby, place and plant art; the overlay slots stay for user themes on the office kit --- */
 const OVERLAY_SLOTS=['char-body','char-robe','char-headwear','char-collar','desk-back','desk-art','monitor-art','hair-acc'];
 const ROOM_SLOTS=['room-back-wall','room-back-window','room-floor'];
