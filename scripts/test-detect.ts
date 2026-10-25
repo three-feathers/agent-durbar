@@ -120,7 +120,7 @@ async function main(): Promise<void> {
   assert.strictEqual(parseVersion('1.2'), undefined);
   // The limit is the literal 64 (spec 081 FR-005), not only "relative to the constant": 64 accepted, 65 rejected (a 65 mutant must fail here).
   assert.strictEqual(MAX_VERSION_LENGTH, 64);
-  const t64 = '1.2.3-' + 'r'.repeat(58);
+  const t64 = '999999999.123456789.123456789-' + 'r'.repeat(34);
   assert.strictEqual(t64.length, 64);
   assert.strictEqual(parseVersion(t64), t64);
   assert.strictEqual(parseVersion('v' + t64), t64);
