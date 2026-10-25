@@ -21,6 +21,56 @@ const cpuMs = (f: () => void, capMs: number): number => {
   return cpu;
 };
 
+// Adversarial cases (sections 9 and 14e R12): no fixed millisecond limit, because a loaded machine pushes a linear rule past any one (#684, like
+// #657 and #668). Each case runs on the full input and, in the same run, on a baseline of the same shape (1/16 of it: the shapes repeat, so a
+// prefix has the same shape); the best CPU time of up to 3 tries each is compared. For 16x the input, linear growth is a ratio of about 16
+// (13-20 seen on this code, also under load), n log n about 30, n^1.5 about 64, quadratic about 256 (65-88 measured, because of the floor
+// and the fixed costs). The limit is 40: growth up to about n log n passes, n^1.5 and quadratic fail, with at least 60% between the limit and
+// the nearest failing mutant (a 4x factor with a limit of 12 left only 5-12% and linear code under load reached 8.6 of it). The floor
+// (`floorMs`) is far above timer steps and CI load but still under what a quadratic rule costs on these inputs. Two backstops for
+// catastrophic slowness only: 10 s of CPU and 10 s of wall time (the original wall limit of section 9; a blocking wait in the timed code
+// shows there, CPU time does not see it). A try that passes stops the loop, so the common case costs one pair of runs. `run` times one input
+// in a worker and gives its CPU and wall time in ms.
+const FACTOR = 16;
+const MAX_RATIO = 40;
+// CPU timers tick in about 15.6 ms on Windows (as in test-browserurl), so a fast 1/16 baseline can read 0: never divide by less than one tick there
+const MIN_BASE_MS = process.platform === 'win32' ? 16 : 2;
+let worstGrowth = { ratio: 0, label: '' }; // the highest full/baseline ratio seen, printed at the end
+const assertLinearGrowth = (label: string, run: (input: string) => { cpu: number; wall: number }, input: string, floorMs = 100): void => {
+  const small = input.slice(0, Math.ceil(input.length / FACTOR));
+  let full = Infinity;
+  let base = Infinity;
+  let wall = 0;
+  for (let i = 0; i < 3; i++) {
+    const f = run(input);
+    wall = Math.max(wall, f.wall);
+    full = Math.min(full, f.cpu);
+    base = Math.min(base, run(small).cpu);
+    if (full < Math.max(floorMs, Math.max(base, MIN_BASE_MS) * MAX_RATIO)) break;
+  }
+  if (full / Math.max(base, MIN_BASE_MS) > worstGrowth.ratio && full >= floorMs) worstGrowth = { ratio: full / Math.max(base, MIN_BASE_MS), label };
+  assert.ok(full < 10_000, `${label}: ${full.toFixed(1)} ms CPU, backstop 10000 ms (catastrophic)`);
+  assert.ok(wall < 10_000, `${label}: wall-time backstop: ${wall.toFixed(1)} ms wall for ${full.toFixed(1)} ms CPU, limit 10000 ms (a blocking wait?)`);
+  assert.ok(full < Math.max(floorMs, Math.max(base, MIN_BASE_MS) * MAX_RATIO), `${label}: ${full.toFixed(1)} ms CPU for ${input.length} chars, ${base.toFixed(1)} ms for ${small.length} chars (ratio ${(full / Math.max(base, MIN_BASE_MS)).toFixed(1)}, limit ${MAX_RATIO} for ${FACTOR}x input: linear is about ${FACTOR}, n log n about 30, quadratic over 65; floor ${floorMs} ms)`);
+};
+// One worker run of `code` (a worker script that writes CPU and wall ms into shared memory like the ones below): a worker that does not answer
+// in `waitMs` is stopped and the case retried once. The test stays synchronous (Atomics).
+const workerRun = (label: string, code: string, data: Record<string, unknown>, waitMs: number): { cpu: number; wall: number } => {
+  let why = '';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const sab = new SharedArrayBuffer(24);
+    const flag = new Int32Array(sab, 0, 1);
+    const worker = new Worker(code, { eval: true, workerData: { ...data, sab } });
+    const waited = Atomics.wait(flag, 0, 0, waitMs);
+    void worker.terminate();
+    if (waited === 'timed-out') { why = `no answer in ${waitMs / 1000} s`; continue; }
+    assert.strictEqual(Atomics.load(flag, 0), 1, `${label}: threw in the worker`);
+    const [cpu, wall] = new Float64Array(sab, 8, 2);
+    return { cpu, wall };
+  }
+  throw new assert.AssertionError({ message: `${label}: worker hung twice (${why})` });
+};
+
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
   GH_TOKEN: GH, // by name
@@ -438,7 +488,7 @@ for (const ok of ['the xox of it, xoxo, xoxo-friends xoxb- xoxb-short xapp- xapp
   assert.strictEqual(maskTokenShapes(ok, '[s]'), ok, `maskTokenShapes false positive stays: ${ok.slice(0, 40)}`);
 }
 
-// 9. adversarial 1 MB inputs: every pattern stays linear (each under a time limit)
+// 9. adversarial 1 MB inputs: every pattern stays linear (growth against a same-shape quarter-size input, no fixed time limit)
 {
   const MB = 1_000_000;
   const adversarial: Record<string, string> = {
@@ -536,7 +586,7 @@ for (const ok of ['the xox of it, xoxo, xoxo-friends xoxb- xoxb-short xapp- xapp
   };
   // Each case runs in a worker thread that times redact() itself with the thread's own CPU time (`process.threadCpuUsage()`, Node 22
   // and later; wall time from `hrtime` only on Node 20.19, which has no per-thread CPU time), so a busy runner cannot fail the test;
-  // the 1 s assertion is the real ReDoS check, and wall time has the 10 s backstop of `cpuMs` (spec 041 `## Changes` 2026-10-22,
+  // the growth ratio against a quarter-size input of the same shape is the real ReDoS check (`assertLinearGrowth`, #684), and wall time has a loose backstop (spec 041 `## Changes` 2026-10-22,
   // review of PR #527). Workers, not child processes: a child fed 1 MB on stdin hung for 30 s twice on a busy macOS runner (#303).
   // The test stays synchronous: the worker writes the time into shared memory and wakes this thread (Atomics), with a 30 s hang
   // guard; a worker that does not answer in time is stopped and the case retried once.
@@ -544,25 +594,7 @@ for (const ok of ['the xox of it, xoxo, xoxo-friends xoxb- xoxb-short xapp- xapp
   const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
     `try{const {redact}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
-  for (const [k, v] of Object.entries(adversarial)) {
-    let ms = NaN;
-    let wall = NaN;
-    let why = '';
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const sab = new SharedArrayBuffer(24);
-      const flag = new Int32Array(sab, 0, 1);
-      const worker = new Worker(code, { eval: true, workerData: { mod, input: v, sab } });
-      const waited = Atomics.wait(flag, 0, 0, 30000);
-      void worker.terminate();
-      if (waited === 'timed-out') { why = 'no answer in 30 s'; continue; }
-      assert.strictEqual(Atomics.load(flag, 0), 1, `adversarial ${k}: redact() threw in the worker`);
-      [ms, wall] = new Float64Array(sab, 8, 2);
-      break;
-    }
-    assert.ok(!Number.isNaN(ms), `adversarial ${k}: worker hung twice (${why})`);
-    assert.ok(ms < 1000, `adversarial ${k}: redact() took ${ms.toFixed(1)} ms, limit 1000 ms`);
-    assert.ok(wall < 10000, `adversarial ${k}: wall-time backstop: ${wall.toFixed(1)} ms wall for ${ms.toFixed(1)} ms CPU, limit 10000 ms (a blocking wait?)`);
-  }
+  for (const [k, v] of Object.entries(adversarial)) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v);
 }
 
 // 10. the cap never leaks part of a secret, and the sink always writes one valid JSON line
@@ -1539,8 +1571,8 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(maskSecretCommand(`srv @{token="${'a'.repeat(1500)}"}`), 'srv @{token="[redacted]"}', 'R12: a value of 1500 chars');
   assert.strictEqual(redact('see @{token=1} here'), 'see @{token=1} here', 'R12 is not part of redact(): free text keeps the pattern rules');
   // Adversarial runs: 1 MB in one arg when it has no space (the scanner and the arg path), and 50k through every path (split into words, command, -c payload).
-  // A worker times each with the thread's CPU time, like section 9. The words-and-spaces paths cost seconds per MB even without R12
-  // (the control rows of 14c and 14d run at 200k), so a text with spaces uses 50k; the 1 s limit is the same.
+  // A worker warms the code up on the first 5000 characters (so the baseline does not carry the cold start) and times each with the thread's CPU time, like section 9, and the growth check is the same. The words-and-spaces paths cost seconds per MB even without R12
+  // (the control rows of 14c and 14d run at 200k), so a text with spaces uses 50k.
   const MB = 1_000_000;
   const adv: Record<string, string> = {
     repeatOpen: '@{'.repeat(MB / 2),
@@ -1570,27 +1602,12 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   };
   const mod = require.resolve('../src/shared/redact');
   const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
-    `try{const {_uncappedForTest:u}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;[()=>u.maskSecretArgs([w.input]),()=>u.maskSecretArgs(['pwsh','-c',w.input]),()=>u.maskSecretArgs(w.input.split(' ')),()=>u.maskSecretCommand(w.input),()=>u.maskSecretCommand('pwsh -c '+JSON.stringify(w.input))][w.path]();const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
+    `try{const {_uncappedForTest:u}=require(w.mod);const go=(x)=>[()=>u.maskSecretArgs([x]),()=>u.maskSecretArgs(['pwsh','-c',x]),()=>u.maskSecretArgs(x.split(' ')),()=>u.maskSecretCommand(x),()=>u.maskSecretCommand('pwsh -c '+JSON.stringify(x))][w.path]();go(w.input.slice(0,5000));const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;go(w.input);const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   const cases = Object.entries(adv).flatMap(([k2, v2]) => (/\s/.test(v2) ? [] : [[k2, v2, 0]]).concat([0, 1, 2, 3, 4].map((i) => [k2 + '-50k', v2.slice(0, 50_000), i])) as Array<[string, string, number]>);
   for (const [k0, v, pi] of cases) {
-    const k = `${k0} (path ${pi})`;
-    let ms = NaN;
-    let wall = NaN;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const sab = new SharedArrayBuffer(24);
-      const flag = new Int32Array(sab, 0, 1);
-      const worker = new Worker(code, { eval: true, workerData: { mod, input: v, sab, path: pi } });
-      const waited = Atomics.wait(flag, 0, 0, 60000);
-      void worker.terminate();
-      if (waited === 'timed-out') continue;
-      assert.strictEqual(Atomics.load(flag, 0), 1, `R12 adversarial ${k}: threw in the worker`);
-      [ms, wall] = new Float64Array(sab, 8, 2);
-      break;
-    }
-    assert.ok(!Number.isNaN(ms), `R12 adversarial ${k}: worker hung twice`);
-    assert.ok(ms < 1000, `R12 adversarial ${k}: took ${ms.toFixed(1)} ms CPU, limit 1000 ms`);
-    assert.ok(wall < 10000, `R12 adversarial ${k}: wall-time backstop ${wall.toFixed(1)} ms`);
+    const k = `R12 adversarial ${k0} (path ${pi})`;
+    assertLinearGrowth(k, (input) => workerRun(k, code, { mod, input, path: pi }, 60000), v);
   }
   // growth: 4x the input costs about 4x (the same run, min CPU of 3 interleaved pairs, like the OAuth rule test), for the shapes that could go quadratic
   {
@@ -1612,9 +1629,10 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // an unclosed quote or a long bare value of a secret member hides the rest of the text, so the pattern rules do not run over 1 MB again
   // (they cost about 900 ms per MB on this path before; 46 ms on main without R12): a tighter limit than the 1 s above
   for (const [k, v] of [['unclosed double quote', '@{token="' + 'a'.repeat(MB)], ['unclosed single quote', "@{'api_key'='" + 'a'.repeat(MB)], ['long bare value', '@{ token = ' + 'a'.repeat(MB)]] as const) {
-    const ms = cpuMs(() => { _uncappedForTest.maskSecretCommand(v); _uncappedForTest.maskSecretArgs([v]); }, 2000);
+    const ms = Math.min(...[0, 1, 2].map(() => cpuMs(() => { _uncappedForTest.maskSecretCommand(v); _uncappedForTest.maskSecretArgs([v]); }, 2000))); // best of 3, like the growth checks
     assert.ok(ms < 300, `R12: ${k} on 1 MB took ${ms.toFixed(0)} ms CPU for the command and args paths, limit 300 ms`);
   }
 }
 
+console.log(`redact: worst growth ratio among the adversarial cases over the floor: ${worstGrowth.ratio.toFixed(1)} (${worstGrowth.label}; linear is about ${FACTOR}, limit ${MAX_RATIO})`);
 console.log('redact: all checks passed');
