@@ -3,14 +3,14 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Agent-app updates (owner request, issue #662): Settings > Agent apps shows "installed X, latest Y" per app, checked in the background at every Durbar start and on "Check for updates" (owner decision Q1 = C; organization policy can turn it off); a new version gets a badge and one toast; Update runs the updater of the source that installed the copy Durbar uses (no shell, argv, native confirmation, masked output); open sessions are warned about, ended or waited for; failures (admin rights, managed machines, locked files on Windows) say what to do
-status: Built on the simulator and with fake tools (2026-10-25): check, update, gate and failures; T008 waits for PR #698; real-machine checks T040-T042 not run; Q1-Q7 answered by Vikram
+status: Built on the simulator and with fake tools (2026-10-25): check, update, gate and failures; T008 is in PR #698 (detection uses the shared limit); real-machine checks T040-T042 not run; Q1-Q7 answered by Vikram
 -->
 
 **Feature Branch**: `081-cli-updates` (extends 051 harness setup, 060 platform parity and 012 detection; reads 076 managed config)
 
 **Created**: 2026-10-23
 
-**Status**: Built (2026-10-25) on the simulator and with fake tools, branch `081-cli-updates-build`. Q1-Q7 are answered by the owner. Requirements are `[IMPLEMENTED]` where tagged below and `sim:`/`test:` checked; **FR-005 for the detection path waits for PR #698 (T008)** and every real-machine statement is `[KNOWN GAP]` until T040-T042 run (nothing was run on a real Mac, Windows PC or against a real source).
+**Status**: Built (2026-10-25) on the simulator and with fake tools, branch `081-cli-updates-build`. Q1-Q7 are answered by the owner. Requirements are `[IMPLEMENTED]` where tagged below and `sim:`/`test:` checked; **FR-005 for the detection path is in PR #698 (T008; `test:` `scripts/test-detect.ts`)** and every real-machine statement is `[KNOWN GAP]` until T040-T042 run (nothing was run on a real Mac, Windows PC or against a real source).
 
 **Input**: Issue #662, owner request (Vikram, 2026-10-23, DM): "lets add support to check updates on cli and upgrade it". The CLIs are the agent apps Durbar drives: Codex CLI, Claude Code and the GitHub Copilot CLI. The trigger was a Codex 0.163.0 sandbox bug on macOS (Homebrew cask, `/opt/homebrew/bin/codex`): today the only way to get a fixed Codex is to leave Durbar and update it by hand, and Durbar does not even say that a newer version exists.
 
@@ -193,7 +193,7 @@ When the start check finds a new version, the Settings entry and the card get a 
       - The API's `releases/latest` JSON is about 570 KB (measured by Paco's agent, 2026-10-24), well over the 64 KiB cap, so it is not used.
     - **Claude Code native**: both channel files on `downloads.claude.ai` are read, `/claude-code-releases/stable` and `/claude-code-releases/latest`. Each is plain text holding one version (`real:` 2026-10-24: `2.1.308` and `2.1.309`; not a documented API, research R7). The card shows both (*latest 2.1.309 · stable 2.1.308*). **`stable` decides** (owner decision Q7 = C): *Update available* (with its badge and toast) only when the installed version is below `stable`. When the installed version is at or above `stable` but below `latest`, the card shows only a quiet note, *A newer latest-channel build exists (x.y.z)*, with no chip change, no badge and no toast. Durbar does not read Claude's settings to learn the user's `autoUpdatesChannel`.
     - **Claude Code from npm** uses npm. A source with no way to ask gives *Latest: cannot be checked for this install*, never a guess.
-- **FR-005** `[IMPLEMENTED]` for the structured fields (`parseVersionField`); `[PLANNED]` for the detection path until PR #698 merges (T008). **Strict version parsing** (review on #663: `parseVersion` is unanchored and quadratic on long digit runs, and it would take `22.11.0` out of `npm ERR! … node v22.11.0`). A version is accepted only like this:
+- **FR-005** `[IMPLEMENTED]` for the structured fields (`parseVersionField`); `[IMPLEMENTED]` for the detection path in PR #698 (T008: `parseVersion` in `src/adapters/detect.ts` uses the shared limit and token pattern; `test:` `scripts/test-detect.ts`; no real installed binary checked, see spec 012). **Strict version parsing** (review on #663: `parseVersion` is unanchored and quadratic on long digit runs, and it would take `22.11.0` out of `npm ERR! … node v22.11.0`). A version is accepted only like this:
   - Take the **structured field**: the JSON string (`npm view --json`, `brew info` `version`), the `Location` path segment, or the channel file's text after trimming. Never search free text.
   - **Reject anything longer than 64 characters** (never cut: a cut can leave a shortened pre-release that still matches; review on #663).
   - Match **one anchored, bounded pattern**: `^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-[0-9A-Za-z.-]{1,40})?$`. Homebrew's `,build` suffix is removed at the first comma, and the length check applies to the whole field before that.
@@ -205,7 +205,7 @@ When the start check finds a new version, the Settings entry and the card get a 
   - "Latest" is the newest **stable** version. Pre-releases count only when the installed one is a pre-release of the same line.
   - Versions are compared with `compareVersions` on the parsed parts.
 
-  The installed version from `--version` (detection, `src/adapters/detect.ts` `parseVersion`) gets the same treatment. Durbar reads the first line only, cut to 200 characters, and takes the version token with a bounded pattern delimited by start, space, `v` or `(` before it and end, space or `)` after it. The existing detection path is fixed by PR #698 (spec 012 T133, closes #664), which this feature reuses rather than reimplements (T008).
+  The installed version from `--version` (detection, `src/adapters/detect.ts` `parseVersion`) gets the same treatment. Durbar reads the first line only, cut to 200 characters, and takes the version token with a bounded pattern delimited by start, space, `v` or `(` before it and end, space or `)` after it. The detection path is fixed in PR #698 (spec 012 T133, closes #664): `parseVersion` uses the same limit and token pattern from `src/shared/versionfield.ts`, so this feature reuses rather than reimplements it (T008).
 
   Tests use hostile inputs: 64 KiB of digits within a CPU-time limit (agent-notes, *measure CPU time*), the npm error line, markup, and a 65-character version. A mutation that puts the old unanchored `parseVersion` back must fail a test.
 - **FR-006** `[IMPLEMENTED]` **The right tool for the copy:**
@@ -241,7 +241,7 @@ When the start check finds a new version, the Settings entry and the card get a 
           - Copies from npm (`node_modules/@openai/codex/`) and Homebrew (`Caskroom/codex/`) update through their own route (the npm and Homebrew rows), never through `codex update`.
         - `CODEX_HOME`, when set, is an absolute path, and the root is compared after resolving it (no `..`, no link that leaves it), case-insensitive on Windows and macOS;
         - the file passes the existing `trustedPath` check (not in a folder anyone can change) and is a regular file;
-        - `codex --version` (already run by detection) printed the official label `codex-cli <version>` through spec 012's bounded parse (PR #698).
+        - `codex --version` (already run by detection) printed the official label `codex-cli <version>` through spec 012's bounded parse (in PR #698).
         - A binary outside that root (a fork, a self-built copy, an unknown folder) never gets `codex update`.
       - **The child's environment and folder** (review on #663):
         - **`CODEX_MANAGED_BY_NPM`, `CODEX_MANAGED_BY_PNPM`, `CODEX_MANAGED_BY_BUN` and `CODEX_MANAGED_BY_VITE_PLUS` are removed** from the child's environment. Codex reads them before its path checks (`install-context/src/lib.rs` @970111f6), and with one set, `codex update` would run `npm`/`pnpm`/`bun`/`vp install -g` while the confirmation shows the installer script.
@@ -510,7 +510,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ### 2026-10-25: what the build changed against the plan (no owner decision involved)
 
-- **`src/shared/versionfield.ts`** holds `parseVersionField` and `MAX_VERSION_LENGTH` (a local 64 until #698's export exists), so settings can use them without the detection code. `updatecheck.ts` re-exports them.
+- **`src/shared/versionfield.ts`** is the one home of `MAX_VERSION_LENGTH` (64) and `VERSION_TOKEN_SOURCE` (the token pattern), with `parseVersionField`; `src/adapters/detect.ts` imports both constants, so the free-text and structured parsers cannot drift. Settings use it without the detection code. `updatecheck.ts` re-exports `MAX_VERSION_LENGTH` and `parseVersionField`.
 - **The lock and gate** are `src/main/updategate.ts` (pure of Electron; tested with fakes). `harness:run` gained a fourth argument (`'wait' | 'end' | 'cancel'`); `harness:updates` (get or `'check'`), `harness:visible` (is Settings > Agent apps on screen) and the event `harness:updatesChanged` are new; `settings:setCheckUpdatesAtStart` is the switch.
 - **Scheduled prompts** that would start or resume a session of an updating app are held (`Scheduler.heldBy`, outcome `held`, tried again every 5 s and at the release). A schedule *loop* (spec 072) is not held: its pass counts as failed `[KNOWN GAP]`.
 - **After an update** the card learns the new version from detection (`afterUpdate`), without contacting any source.
