@@ -9,7 +9,7 @@ import * as path from 'path';
 import { CLAUDE_SANDBOX_MIN_VERSION, claudeSandboxExit, claudeSandboxPrecheck, claudeSandboxSettings, claudeSandboxState, withSandboxSettings } from '../src/adapters/claudeSandbox';
 import { copilotHostSupport, copilotPathReadDirs, copilotSandboxConfig, copilotSandboxState } from '../src/adapters/copilotSandbox';
 import { CODEX_SANDBOX_NOTE_COMMAND, CODEX_SANDBOX_NOTE_FILE, codexModeSettings, codexPermission, codexSandboxState } from '../src/adapters/codexModes';
-import { HOME_SECRETS, sandboxRoots } from '../src/adapters/sandboxRoots';
+import { HOME_SECRETS, sandboxRoots, splitFolders } from '../src/adapters/sandboxRoots';
 import * as os from 'os';
 import { cleanSandboxState, sandboxReason } from '../src/shared/sandbox';
 import { requireOsSandbox, requireOsSandboxFrom } from '../src/main/sandboxpolicy';
@@ -164,6 +164,10 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.deepStrictEqual(sandboxRoots(['/link'], () => '/'), [], 'a link to / is dropped (resolved path checked)');
   assert.deepStrictEqual(sandboxRoots(['/gone'], () => { throw new Error('ENOENT'); }), [], 'a resolver error drops the root');
   assert.deepStrictEqual(sandboxRoots(undefined, ident), []);
+  // review round 5: splitFolders is an allow-list: kept only when the block holds it; everything else is named with why
+  const sp = splitFolders(['/w', '/', '/a/../..', '/x"y', '/gone', '/w/sub', '/home/me/.ssh'], '/w', ['/w', '/w/sub'], (p) => { if (p === '/gone') throw new Error('ENOENT'); return p; });
+  assert.deepStrictEqual(sp.kept, ['/w/sub']);
+  assert.deepStrictEqual(sp.leftOut, [{ folder: '/', why: 'unusable' }, { folder: '/a/../..', why: 'unusable' }, { folder: '/x"y', why: 'unusable' }, { folder: '/gone', why: 'unusable' }, { folder: '/home/me/.ssh', why: 'credential' }]);
   ok('T010: sandboxRoots drops what could widen the floor or break a settings string');
 }
 

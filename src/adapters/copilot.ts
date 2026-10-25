@@ -60,7 +60,7 @@ import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import { sweepStaleTempDirs } from '../shared/attachments';
 import { COPILOT_NO_REPORT, copilotHostSupport, copilotSandboxConfig, copilotSandboxHost, copilotSandboxState } from './copilotSandbox';
 import type { CopilotHostSupport } from './copilotSandbox';
-import { CREDENTIAL_FOLDER_REFUSAL, leftOutLine, sandboxRoots } from './sandboxRoots';
+import { CREDENTIAL_FOLDER_REFUSAL, leftOutLine, sandboxRoots, splitFolders } from './sandboxRoots';
 import { pathDirs as envPathDirs } from '../shared/pathdirs';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 
@@ -1154,13 +1154,17 @@ export class CopilotAdapter implements AgentAdapter {
     // review round 3 on PR 733: the credential filter dropped the session's OWN folder: refuse (FR-015) instead of a floor that fails there
     const own = sandboxRoots([live.cwd], this.sandboxRealpath)[0];
     const granted = sandboxConfig ? (mode === 'ask' ? sandboxConfig.userPolicy.filesystem.readwritePaths : sandboxConfig.userPolicy.filesystem.readonlyPaths) : [];
-    if (!sandboxConfig || (own !== undefined && !granted.includes(own))) {
+    if (own === undefined) {
+      live.sandboxHold = { reason: "Durbar could not limit Copilot's sandbox to this session's own folder. Read-only and Ask first need a usable folder, so nothing was sent.", refuse: true };
+      return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: "This session's own folder is not usable for the sandbox." });
+    }
+    if (!sandboxConfig || !granted.includes(own)) {
       const holds = !host.capabilities.includes('denied_paths');
       live.sandboxHold = { reason: CREDENTIAL_FOLDER_REFUSAL('Copilot', holds), refuse: true };
       return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: holds ? 'This folder is a credential folder, sits inside one or holds one, so the OS sandbox keeps its commands out of it.' : 'This folder is a credential folder or sits inside one, so the OS sandbox keeps its commands out of it.' });
     }
     // review round 4 on PR 733: the other session folders the floor leaves out are named, never dropped silently
-    const leftOut = roots.filter((r) => r !== own && !granted.includes(r));
+    const leftOut = splitFolders(live.folders ?? [live.cwd], live.cwd, granted, this.sandboxRealpath).leftOut;
     try {
       await this.timed(live.session.rpc.options.update({ sandboxConfig, sandboxConfigSource: 'session_flag' }), 'Copilot');
       live.sandboxFloor = true;

@@ -362,6 +362,38 @@ async function main(): Promise<void> {
     await until('spawned', () => wa.sp.calls.length === 1);
     assert.ok(wa.sp.calls[0].args.some((x) => x.includes('.aws')), 'Allow all: the folder stays an --add-dir');
     await wa.ad.dispose();
+    // review round 5: an ALLOW-LIST: a second folder dropped for any reason (a filesystem root, a link to it, a quote, unresolvable) is
+    // never an --add-dir and is named; Read-only -> Allow all passes the folders again (no floor)
+    const quoted = path.join(tmp, 'it"s');
+    fs.mkdirSync(quoted);
+    fs.symlinkSync('/', path.join(tmp, 'to-root'), 'dir');
+    const odd = [path.parse(tmp).root, quoted, path.join(tmp, 'missing'), path.join(tmp, 'to-root')];
+    const wsOdd = path.join(tmp, 'odd.code-workspace');
+    fs.writeFileSync(wsOdd, JSON.stringify({ folders: [{ path: path.join(home, 'proj') }, ...odd.map((p) => ({ path: p }))] }));
+    const o = make({ home, realpath: real });
+    const os1 = await o.ad.start({ workspace: wsOdd, quiet: true, permissionMode: 'read-only' });
+    await o.ad.send(os1, { text: 'x' });
+    await until('spawned', () => o.sp.calls.length === 1);
+    const oa = o.sp.calls[0].args;
+    assert.ok(!oa.includes('--add-dir'), 'none of the dropped folders is an --add-dir: ' + oa.filter((x, i) => oa[i - 1] === '--add-dir').join(','));
+    await until('on', () => lastState(o.events, os1)?.state === 'on');
+    const why = String(lastState(o.events, os1)?.reason);
+    for (const p of odd) assert.ok(why.includes(p) || why.includes(p.replace(/"/g, '')), `named: ${p} in ${why}`);
+    assert.match(why, /not a folder the sandbox can use/);
+    o.ad.setPermMode!(os1, 'allow');
+    await o.ad.send(os1, { text: 'y' });
+    await until('relaunch', () => o.sp.calls.length === 2);
+    const oa2 = o.sp.calls[1].args;
+    assert.ok(oa2.filter((x, i) => oa2[i - 1] === '--add-dir').length === odd.length, 'Allow all: the folders are --add-dir again (no floor)');
+    await o.ad.dispose();
+    // round 5: the session's OWN folder unusable (a link to the filesystem root): refused, nothing spawned
+    const wsRoot = path.join(tmp, 'rootfirst.code-workspace');
+    fs.writeFileSync(wsRoot, JSON.stringify({ folders: [{ path: path.join(tmp, 'to-root') }, { path: path.join(home, 'proj') }] }));
+    const rr = make({ home, realpath: real });
+    const rs = await rr.ad.start({ workspace: wsRoot, quiet: true, permissionMode: 'ask' });
+    await assert.rejects(rr.ad.send(rs, { text: 'x' }), /own folder.*Read-only and Ask first need/);
+    assert.strictEqual(rr.sp.calls.length, 0);
+    await rr.ad.dispose();
     const c = make({ home, realpath: real });
     const cs = await c.ad.start({ workspace: path.join(home, 'dot', 'ssh'), quiet: true, permissionMode: 'read-only' });
     await assert.rejects(c.ad.send(cs, { text: 'x' }), /credential folder or sits inside one \(for example ~\/\.ssh\).*Read-only and Ask first need/, 'its own folder is a credential folder: refused, in Claude\'s words (no "holds one")');

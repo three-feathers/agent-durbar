@@ -235,6 +235,28 @@ async function main(): Promise<void> {
     assert.strictEqual(last(m3.events, s3)?.state, 'on');
     assert.match(String(last(m3.events, s3)?.reason), /Left out of the sandbox.*\.ssh/, 'and the state names it');
     await m3.ad.dispose();
+    // review round 5: a second folder dropped for any other reason (a filesystem root, a quote, unresolvable) is named too
+    const q = path.join(H, 'it"s');
+    fs.mkdirSync(q);
+    const wsOdd = path.join(H, 'odd.code-workspace');
+    fs.writeFileSync(wsOdd, JSON.stringify({ folders: [{ path: path.join(H, 'proj') }, { path: path.parse(H).root }, { path: q }, { path: path.join(H, 'missing') }] }));
+    const m4 = make({ home: H });
+    m4.ad['sandboxRealpath' as never] = ((p: string) => fs.realpathSync.native(p)) as never;
+    const s4 = await m4.ad.start({ workspace: wsOdd, quiet: true, permissionMode: 'ask' });
+    assert.deepStrictEqual((updates(m4.fake, s4)[0].sandboxConfig as { userPolicy: { filesystem: Record<string, string[]> } }).userPolicy.filesystem.readwritePaths, [path.join(H, 'proj')]);
+    const why4 = String(last(m4.events, s4)?.reason);
+    for (const p of [path.parse(H).root, q, path.join(H, 'missing')]) assert.ok(why4.includes(p), `named: ${p} in ${why4}`);
+    await m4.ad.dispose();
+    // round 5: the session's OWN folder unusable (a link to the filesystem root): refused as FR-015, with that reason
+    fs.symlinkSync(path.parse(H).root, path.join(H, 'to-root'), 'dir');
+    const wsR = path.join(H, 'rootfirst.code-workspace');
+    fs.writeFileSync(wsR, JSON.stringify({ folders: [{ path: path.join(H, 'to-root') }, { path: path.join(H, 'proj') }] }));
+    const m5 = make({ home: H });
+    m5.ad['sandboxRealpath' as never] = ((p: string) => fs.realpathSync.native(p)) as never;
+    const s5 = await m5.ad.start({ workspace: wsR, quiet: true, permissionMode: 'read-only' });
+    await assert.rejects(m5.ad.send(s5, { text: 'x' }), /own folder.*Read-only and Ask first need/);
+    assert.strictEqual(sends(m5.fake, s5), 0);
+    await m5.ad.dispose();
     fs.rmSync(H, { recursive: true, force: true });
   }
 

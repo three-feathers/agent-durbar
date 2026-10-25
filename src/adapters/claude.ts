@@ -16,7 +16,8 @@ import type { OrgPolicy } from '../shared/orgpolicy';
 import { claudeSettingsJson } from '../shared/foldersetup';
 import { claudeSandboxExit, claudeSandboxHost, claudeSandboxPrecheck, claudeSandboxSettings, claudeSandboxState, withSandboxSettings } from './claudeSandbox';
 import type { ClaudeSandboxBlock, ClaudeSandboxFacts, ClaudeSandboxPre } from './claudeSandbox';
-import { CREDENTIAL_FOLDER_REFUSAL, leftOutLine, sandboxRoots } from './sandboxRoots';
+import { CREDENTIAL_FOLDER_REFUSAL, leftOutLine, sandboxRoots, splitFolders } from './sandboxRoots';
+import type { LeftOut } from './sandboxRoots';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 import { isAuthError, markAuthError } from './autherrors';
 import { spawn } from 'child_process';
@@ -641,8 +642,10 @@ interface Session {
   sandboxState?: SandboxState | null;
   /** Spec 087 FR-006: the classified reason of a sandbox exit of the current launch (before `init`). */
   sandboxExit?: string;
-  /** Spec 087 (review round 4 on PR 733): session folders (as given) the floor leaves out; never passed as `--add-dir` under the floor. */
-  sandboxLeftOut?: string[];
+  /** Spec 087 (review rounds 4-5 on PR 733): the session folders the floor left out, with why (named in the state). */
+  sandboxLeftOut?: LeftOut[];
+  /** Spec 087 (review round 5): under the floor, the ONLY `--add-dir` folders: the other folders the block holds (an allow-list). */
+  sandboxAddDirs?: string[];
   /** Spec 087 FR-007a (review on PR 733): the actions of the open sandbox note; Continue is accepted only while it is open. */
   sandboxNote?: ReadonlyArray<'continue' | 'always'>;
 }
@@ -1140,7 +1143,8 @@ export class ClaudeAdapter implements AgentAdapter {
       ...(o.folderSetup?.rules?.allow.length ? { folderAllow: o.folderSetup.rules.allow } : {}),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
       // spec 087 (review round 4 on PR 733): under the floor a folder it left out is not an `--add-dir` (Claude would grant it writes)
-      ...(s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd && !(s.sandboxBlock && s.sandboxLeftOut?.includes(r))) } : {}),
+      // under the floor only folders the block holds (review round 5: an allow-list, so a folder dropped for ANY reason is never added)
+      ...(s.sandboxBlock ? (s.sandboxAddDirs?.length ? { addDirs: [...s.sandboxAddDirs] } : {}) : s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd) } : {}),
       ...(s.capUsd !== undefined ? { maxBudgetUsd: s.capUsd - s.spentUsd } : {}),
       ...(claudeNameOk(s.pendingName) ? { name: s.pendingName } : {}),
     };
@@ -1613,13 +1617,18 @@ export class ClaudeAdapter implements AgentAdapter {
     // review round 3 on PR 733: the credential filter runs after the roots check; when it drops the session's OWN folder every sandboxed
     // command would fail there while the chip said Sandboxed, so refuse as FR-015 does (nothing sent, Change mode… offered)
     const own = sandboxRoots([s.cwd], this.deps.realpath ?? ((p) => fs.realpathSync.native(p)))[0];
-    if (!block || (own !== undefined && !block.filesystem.allowRead.includes(own))) {
+    if (own === undefined) {
+      s.sandboxBlock = undefined; // review round 5: the session's own folder is not usable (a root, "..", a quote, unresolvable): FR-015
+      throw new Error("Durbar could not limit Claude Code's sandbox to this session's own folder. Read-only and Ask first need a usable folder, so nothing was sent.");
+    }
+    if (!block || !block.filesystem.allowRead.includes(own)) {
       s.sandboxBlock = undefined;
       throw new Error(CREDENTIAL_FOLDER_REFUSAL('Claude Code'));
     }
-    // the other folders the filter left out: not in allowRead, never an --add-dir, named in the state's tooltip
-    const rp = this.deps.realpath ?? ((p: string) => fs.realpathSync.native(p));
-    s.sandboxLeftOut = s.roots.filter((r) => r !== s.cwd && (() => { const x = sandboxRoots([r], rp)[0]; return x !== undefined && !block.filesystem.allowRead.includes(x); })());
+    // the other folders: only those the block holds go on as --add-dir; every other one is named with why
+    const split = splitFolders(s.roots, s.cwd, block.filesystem.allowRead, this.deps.realpath ?? ((p: string) => fs.realpathSync.native(p)));
+    s.sandboxLeftOut = split.leftOut;
+    s.sandboxAddDirs = split.kept.filter((d) => d !== own);
     s.sandboxBlock = block;
     this.setSandbox(s, this.withLeftOut(s, claudeSandboxState({ mode, facts })));
     return true;

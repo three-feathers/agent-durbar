@@ -110,5 +110,27 @@ export const CREDENTIAL_FOLDER_REFUSAL = (app: string, holds = false): string =>
   `${app}: this session's folder ${holds ? 'is a credential folder, sits inside one or holds one (for example ~/.ssh or ~/.config)' : 'is a credential folder or sits inside one (for example ~/.ssh)'}, so the OS sandbox keeps its commands out of it. Read-only and Ask first need at least one usable folder, so nothing was sent.`;
 
 /** Spec 087 (review round 4 on PR 733): the state's line naming the other session folders the floor leaves out (shown in its tooltip). */
-export const leftOutLine = (folders: readonly string[]): string | undefined =>
-  folders.length ? `Left out of the sandbox, because they are or hold credential folders: ${folders.slice(0, 5).join(', ')}${folders.length > 5 ? ` and ${folders.length - 5} more` : ''}.` : undefined;
+export interface LeftOut {
+  folder: string;
+  why: 'credential' | 'unusable';
+}
+const WHY: Record<LeftOut['why'], string> = { credential: 'a credential folder, or holds one', unusable: 'not a folder the sandbox can use: a filesystem root, a path with "..", a quote or a control character, or one that cannot be resolved' };
+export const leftOutLine = (folders: readonly LeftOut[]): string | undefined =>
+  folders.length ? `Left out of the sandbox: ${folders.slice(0, 5).map((f) => `${f.folder} (${WHY[f.why]})`).join('; ')}${folders.length > 5 ? `; and ${folders.length - 5} more` : ''}.` : undefined;
+
+/**
+ * Spec 087 (review round 5 on PR 733): the session's other folders, each kept (its resolved path, the only form ever passed on, for
+ * example as Claude's `--add-dir`) or left out with its reason. An allow-list: a folder the sandbox does not hold is never passed on.
+ */
+export function splitFolders(folders: readonly string[], own: string, granted: readonly string[], realpath: (p: string) => string): { kept: string[]; leftOut: LeftOut[] } {
+  const kept: string[] = [];
+  const leftOut: LeftOut[] = [];
+  for (const f of folders) {
+    if (f === own) continue;
+    const real = sandboxRoots([f], realpath)[0];
+    if (real === undefined) leftOut.push({ folder: f, why: 'unusable' });
+    else if (!granted.includes(real)) leftOut.push({ folder: f, why: 'credential' });
+    else if (!kept.includes(real)) kept.push(real);
+  }
+  return { kept, leftOut };
+}

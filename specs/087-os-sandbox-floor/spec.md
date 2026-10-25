@@ -359,6 +359,14 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 ## Changes
 
+### 2026-10-25: review round 5 on PR #733 (Ruben's agent, 1 item)
+
+- **`--add-dir` is an allow-list under the floor.** Only the other folders the block holds (`splitFolders`, resolved paths) go on as
+  Claude's `--add-dir`; every other folder, dropped for any reason (a filesystem root, a link to one, `..`, a quote or control
+  character, a path that cannot be resolved, a credential folder), is named in the state with why (Copilot too). Before, a folder that
+  `sandboxRoots` itself dropped (`/`) still went on as `--add-dir /`. A session whose OWN folder is unusable is refused (FR-015). Allow
+  all (no floor) passes the folders as before. Tests with such a workspace for both adapters, and Read-only → Allow all.
+
 ### 2026-10-25: review round 4 on PR #733 (Ruben's agent, 4 items)
 
 - **Every session folder, not only the main one.** The main folder dropped by the credential filter still refuses the session (round 3).
