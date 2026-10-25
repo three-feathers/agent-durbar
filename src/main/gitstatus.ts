@@ -126,7 +126,7 @@ const AFTER: Record<string, string[]> = {
  * everything after `--` (paths).
  */
 export const GIT_CALLER_OPTIONS: Readonly<Record<string, readonly string[]>> = {
-  status: ['--porcelain=v1', '--branch', '-z', '--untracked-files=all'],
+  status: ['--porcelain=v1', '--branch', '-z', '--untracked-files=all', '--untracked-files=normal'],
   diff: ['--numstat', '--shortstat', '-z', '--no-ext-diff', '--no-textconv'],
   'rev-parse': ['--verify', '-q'],
   'rev-list': ['--count'],

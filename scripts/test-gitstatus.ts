@@ -92,7 +92,7 @@ async function main(): Promise<void> {
   for (const [sub, flag] of [['diff', '--textconv'], ['diff', '--ext-diff'], ['diff', '--submodule=diff'], ['diff', '--submodule'], ['diff', '--ignore-submodules=none'], ['diff', '--ignore-submodules'], ['diff', '-p'], ['diff', '--output=x'], ['status', '--ignore-submodules=none'], ['status', '--untracked-files=no'], ['status', '-uall'], ['rev-parse', '--git-path'], ['rev-list', '--all'], ['diff', '-c']]) await assert.rejects(fake('')(['-C', '/w', sub, flag, 'HEAD']), /option not allowed/, sub + ' ' + flag);
   assert.strictEqual(calls.length, 0, 'nothing ran for a refused call');
   // every call spec 063 and spec 085 make passes; revisions and anything after -- (paths) are not options
-  for (const ok of [['-C', '/w', 'status', '--porcelain=v1', '--branch', '-z', '--untracked-files=all'], ['-C', '/w', 'diff', 'HEAD', '--numstat', '-z'], ['-C', '/w', 'rev-parse', '--verify', '-q', 'HEAD'], ['-C', '/w', 'diff', '--no-ext-diff', '--no-textconv', '--shortstat', 'abc123', '--'], ['-C', '/w', 'diff', '--no-ext-diff', '--no-textconv', '--numstat', 'abc123', '--', '-odd-name'], ['-C', '/w', 'rev-list', '--count', 'abc123..HEAD'], ['-C', '/w', 'rev-list', '--count', 'HEAD']]) await fake('')(ok);
+  for (const ok of [['-C', '/w', 'status', '--porcelain=v1', '--branch', '-z', '--untracked-files=all'], ['-C', '/w', 'status', '--porcelain=v1', '-z', '--untracked-files=normal'], ['-C', '/w', 'status', '--porcelain=v1', '-z', '--untracked-files=all'], ['-C', '/w', 'diff', 'HEAD', '--numstat', '-z'], ['-C', '/w', 'rev-parse', '--verify', '-q', 'HEAD'], ['-C', '/w', 'diff', '--no-ext-diff', '--no-textconv', '--shortstat', 'abc123', '--'], ['-C', '/w', 'diff', '--no-ext-diff', '--no-textconv', '--numstat', 'abc123', '--', '-odd-name'], ['-C', '/w', 'rev-list', '--count', 'abc123..HEAD'], ['-C', '/w', 'rev-list', '--count', 'HEAD']]) await fake('')(ok);
   calls.length = 0;
   assert.strictEqual(calls.length, 0, 'nothing ran for a refused call');
   // a driver name -c cannot express is refused (git splits -c at the first "=")
@@ -266,8 +266,16 @@ async function realGitCheck(): Promise<void> {
 
     // every call the app makes, through the real runner
     const st = await folderGitStatus(repo, nodeGitExec);
-    await nodeGitExec(['-C', repo, 'rev-parse', '--verify', '-q', 'HEAD']);
-    await nodeGitExec(['-C', repo, 'rev-list', '--count', 'HEAD']);
+    // spec 085's calls exactly as #718 makes them (src/main/sessionsummary.ts on 085-session-summary, read 2026-10-25), each
+    // must pass the option allow-list (a refusal would show "could not read git" on every summary card)
+    await nodeGitExec(['-C', repo, 'status', '--porcelain=v1', '-z', '--untracked-files=normal']);
+    const ref = (await nodeGitExec(['-C', repo, 'rev-parse', '--verify', '-q', 'HEAD'])).trim();
+    assert.ok(/^[0-9a-f]{40,64}$/.test(ref), 'rev-parse through the runner');
+    await nodeGitExec(['-C', repo, 'diff', '--no-ext-diff', '--no-textconv', '--shortstat', ref, '--']);
+    await nodeGitExec(['-C', repo, 'diff', '--no-ext-diff', '--no-textconv', '--numstat', ref, '--']);
+    assert.strictEqual((await nodeGitExec(['-C', repo, 'rev-list', '--count', `${ref}..HEAD`])).trim(), '0');
+    assert.strictEqual((await nodeGitExec(['-C', repo, 'rev-list', '--count', 'HEAD'])).trim(), '1');
+    await nodeGitExec(['-C', repo, 'status', '--porcelain=v1', '-z', '--untracked-files=all']);
     await nodeGitExec(['-C', repo, 'diff', '--shortstat', 'HEAD', '--']).catch(() => '');
     await nodeGitExec(['-C', repo, 'diff', 'HEAD']).catch(() => ''); // a full patch: the diff that would run diff.external, the driver command and textconv
     await nodeGitExec(['-C', lazy, 'diff', 'HEAD', '--numstat', '-z']).catch(() => '');
