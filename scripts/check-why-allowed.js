@@ -128,15 +128,27 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`window.__pwn===undefined`), true, `${w}: the label ran nothing`);
     // a write in several folders: one card, every rule listed, Undo asks main to revoke each of them (and only those)
     await ev({ type: 'grants', grants: [{ key: 'multi:a', kind: 'write', label: 'write in a/' }, { key: 'multi:b', kind: 'write', label: 'write in b/' }, { key: 'multi:other', kind: 'write', label: 'write in other/' }] });
-    await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__revoked=[];const o=b.revokeGrant;b.revokeGrant=(i,k)=>{window.__revoked.push(k);return o.call(b,i,k);};})()`);
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__revoked=[];const o=b.revokeGrant;b.revokeGrant=(i,k,c)=>{window.__revoked.push(k+'|'+(c||''));return o.call(b,i,k,c);};})()`);
     await ev({ permission: { requestId: 'mk1', kind: 'write', summary: 'write a/x and b/y', state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: 'multi:a', keys: ['multi:a', 'multi:b'], label: 'write in a/, b/' } } });
     await js(`window.__durbarSimUi.emit({type:'toolCall',sessionId:${jsLiteral(id)},timestamp:Date.now(),callId:'mk1',tool:'bash',phase:'start',args:{command:'echo multi'}})`);
     assert.ok(await until(`[...document.querySelectorAll('#chat .chip')].some(c=>(c.querySelector(':scope>.why')||{}).textContent==='Allowed: session rules')`, 5000), `${w}: a several-folder write says rules (plural)`);
     await js(`(()=>{const c=[...document.querySelectorAll('#chat .chip')].find(c=>(c.querySelector(':scope>.why')||{}).textContent==='Allowed: session rules');if(!c.classList.contains('open'))c.click();})()`);
     assert.ok(await until(`!!document.querySelector('#chat .chip.open .why-undo')`, 5000), `${w}: the several-folder card offers Undo`);
     await js(`document.querySelector('#chat .chip.open .why-undo').click()`);
-    assert.ok(await until(`window.__revoked.length>=2`, 5000), `${w}: Undo revoked each rule`);
-    assert.deepStrictEqual(await js('window.__revoked.slice().sort()'), ['multi:a', 'multi:b'], `${w}: exactly the rules that allowed it, not the unrelated one`);
+    assert.ok(await until(`window.__revoked.length>=3`, 5000), `${w}: Undo asked main by call id, then (the simulator does not know this call) fell back to each listed rule`);
+    assert.strictEqual(await js('window.__revoked[0]'), 'multi:a|mk1', `${w}: the first ask names the call`);
+    assert.deepStrictEqual(await js('[...new Set(window.__revoked.slice(1).map(x=>x.split("|")[0]))].sort()'), ['multi:a', 'multi:b'], `${w}: exactly the rules that allowed it, not the unrelated one`);
+    // a call with rules beyond the listed ones: main did not confirm they are gone, so the card never says "removed"
+    await ev({ type: 'grants', grants: [{ key: 'big:a', kind: 'write', label: 'write in a/' }] });
+    await ev({ permission: { requestId: 'mk2', kind: 'write', summary: 'write many', state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: 'big:a', keys: ['big:a'], more: 10, label: 'write in a/ and 10 more folders' } } });
+    await js(`window.__durbarSimUi.emit({type:'toolCall',sessionId:${jsLiteral(id)},timestamp:Date.now(),callId:'mk2',tool:'bash',phase:'start',args:{command:'echo big'}})`);
+    assert.ok(await until(`[...document.querySelectorAll('#chat .chip')].some(c=>(c.querySelector('.why-l')||{}).textContent==='write in a/ and 10 more folders')`, 5000), `${w}: the big-call card is tagged`);
+    await js(`(()=>{const c=[...document.querySelectorAll('#chat .chip')].find(c=>(c.querySelector('.why-l')||{}).textContent==='write in a/ and 10 more folders');if(c&&!c.classList.contains('open'))c.click();})()`);
+    assert.ok(await until(`!!document.querySelector('#chat .chip.open .why-undo')`, 5000), `${w}: the big-call card offers Undo`);
+    await js(`document.querySelector('#chat .chip.open .why-undo').click()`);
+    assert.ok(await until(`window.__revoked.some(x=>x==='big:a|mk2')`, 5000), `${w}: Undo asked main for the whole call`);
+    assert.ok(await until(`!!document.querySelector('#chat .chip.open .why-undo:not(:disabled)')`, 8000), `${w}: the button comes back (the rules were not all confirmed gone)`);
+    assert.strictEqual(await js(`[...document.querySelectorAll('#chat .chip')].some(c=>(c.querySelector(':scope>.why')||{}).textContent==='Rule removed'&&(c.querySelector('.why-l')||{}).textContent==='write in a/ and 10 more folders')`), false, `${w}: unlisted rules are not confirmed gone: never "Rule removed"`);
     await ev({ type: 'grants', grants: [{ key: 'ghost:key', kind: 'write', label: evil }] }); // back to the one rule the next checks use
     // a window that reloaded knows no rules: a rule it never saw is not "removed" (it was just reported as the reason)
     await ev({ permission: { requestId: 'hx4', kind: 'shell', summary: 'run echo', state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: 'never:seen', label: 'run echo4' } } });
