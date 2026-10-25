@@ -196,4 +196,6 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 
 - [x] T133 Fix `src/adapters/detect.ts` `parseVersion` per the FR-039 delta using the existing detector path; add malformed/error/first-line/boundary/64 KiB CPU-budget and fake-exec regressions in `scripts/test-detect.ts`, retain Codex mode compatibility, prove the original parser mutation fails, update README/changelog/evidence, and run typecheck, build, full tests and convergence. No real sessions.
 
+- [x] T134 (2026-10-25, issue #684) `scripts/test-redact.ts` sections 9 and 14e (R12): the fixed 1000 ms CPU limits of the adversarial cases become a same-run growth check against a quarter-size input of the same shape (`assertLinearGrowth`, best of 3, ratio under 12 with a 100 ms floor, 10 s backstop); the R12 300 ms check takes the best of 3; mutation-checked (FR-080 delta 2026-10-25).
+
 T133 verification (2026-10-25, review on #698): typecheck, build and the offline suite re-run on Linux after adding the 64-character cap and the markup test; the exact sha is in the PR comment *checks run at <sha>*. The earlier macOS (Node 22.16.0) run covered the first version only. CI on the PR ran ubuntu and windows; no macOS run of this change. Manual Spec Kit analysis found full coverage for this delta. No UI change; no screenshots needed. No real sessions.
