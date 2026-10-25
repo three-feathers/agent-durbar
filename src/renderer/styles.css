@@ -511,7 +511,10 @@ body:has(#aiTryBar) #toasts{bottom:100px}
   .stats>.stat:not(.stat-aiu) span.l{display:none}
   .stats>.stat:not(.stat-aiu){padding:0 4px 0 3px}
   .topbar #defaultsBtn{max-width:200px}
+  body:not(.simple) .sched-top .st-word{display:none} /* spec 044 FR-027: like the counters' words, the word shows from 1920px (2040px on a Mac, below); it moves to the name and the title. Simple has room for it */
+  .topbar .sched-top{padding:0 10px}
 }
+@media (max-width:2039px){html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .sched-top .st-word{display:none}}
 @media (max-width:1599px){
   .inbox-btn .ib-word{display:none}
   .inbox-btn{padding:0 10px}
@@ -519,13 +522,22 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 /* spec 052 FR-164: room for + Folder and + Workspace (measured in DejaVu Sans, CI's font): a narrower defaults chip (its full text is in its
    title and label). Where the row still does not fit, app.js (fitTopbar) sets .tb-tight: the brand keeps its mark and its Live/Demo pill
    and the name moves to screen readers only (it is also the window's name) */
+/* spec 044 FR-034 (review on PR 560): the folder filter is narrowed only when the row would otherwise wrap, by fitTopbar, in this order: less padding
+   (the text "All folders" still shows whole), then the short value "All", then the brand name moves (tb-tight). A select has no ellipsis, so a cut is never used. */
+.topbar.tb-filter .select-wrap select{padding:0 20px 0 7px}
+.topbar.tb-filter .select-wrap::after{right:8px}
+.topbar.tb-filter2 .select-wrap select{max-width:80px}
 .topbar.tb-tight .brand h1{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:1799px){.topbar #defaultsBtn{max-width:170px}}
 @media (max-width:1599px){.topbar #defaultsBtn{max-width:130px}.topbar #defaultsBtn .dv-r{display:none}.topbar .select-wrap select{max-width:104px}} /* the mode word only ("Read-only"); the rest is in the title, the label and the popover */
+@media (max-width:1440px){ .topbar{column-gap:8px} .topbar .controls,.topbar #liveBar{gap:4px} .topbar .sched-top{padding:0 8px} } /* also the folder filter (a fitTopbar step below), the groups' gaps and the button's padding, so the brand name stays shown in Durbar European at 1440 (it needs 102px) */ /* spec 044 FR-034: room for Schedules at 1440x900 (the 1440 window), step 3 of the levers: the bar's gaps */
 @media (max-width:1439px){
   .topbar #liveBar .top-add .btn{padding:0 8px}
   .topbar .seg button{padding:0 7px}
-  .topbar #liveBar{gap:6px}
+  .topbar #liveBar{gap:4px}
+  /* spec 044 FR-034: room for Schedules at 1280x800 in Expert, measured in DejaVu Sans with floors and mixed agent apps, in the documented
+     order: the chip's cap (not binding there: the chip is 106px), the folder filter (to 80px; its full text is in its title), the gaps */
+  .topbar .sched-top{gap:4px}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
@@ -1392,11 +1404,23 @@ body.has-bridge:not(.simple) .folder-ctl #foldersBtn{border-top-left-radius:0;bo
 #topMoreMenu .tgl input{margin:2px 2px 0 0;align-self:flex-start}
 
 /* spec 052 FR-027 (#305): the Needs you inbox */
-.inbox-btn{height:32px;padding:0 12px;border-radius:999px;font-size:12.5px;gap:6px}
-/* FR-105: the counters and Needs you sit at the right end of the one row */
-.inbox-btn:not([hidden]),.inbox-btn[hidden]+.stats{margin-left:auto}
+.inbox-btn,.sched-top{height:32px;padding:0 12px;border-radius:999px;font-size:12.5px;gap:6px}
+/* FR-105: the counters and Needs you sit at the right end of the one row. Spec 044 FR-027: Schedules sits left of Needs you and takes
+   the auto margin when it is shown, so the left cluster does not move */
+.inbox-btn:not([hidden]),.inbox-btn[hidden]+.stats,.sched-top:not([hidden]){margin-left:auto}
+.sched-top:not([hidden])+.inbox-btn,.sched-top:not([hidden])+.inbox-btn[hidden]+.stats{margin-left:0}
 .inbox-btn b{font-variant-numeric:tabular-nums}
 .inbox-btn.attn{background:var(--warn-bg);border-color:var(--tone-warn-line);color:var(--amber-ink)}
+/* spec 044 FR-027..FR-029: a calm ghost button; the clock, the word (from 1920px, 2040px on a Mac, and in Simple) and the count of active schedules.
+   Pause all: dimmed with a pause glyph; a run that did not happen: a warning mark with a "!" (drawn, so it is never colour alone) */
+.sched-top{font-variant-numeric:tabular-nums}
+.sched-top .st-ico{position:relative;display:inline-flex;flex:none}
+.sched-top .st-mark,.sched-top .st-pause{display:none;position:absolute;pointer-events:none}
+.sched-top.trouble .st-mark{display:block;right:-5px;top:-4px;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--c-waiting);box-sizing:content-box;background:
+  linear-gradient(var(--st-glyph,var(--surface)),var(--st-glyph,var(--surface))) 50% 2px/1.5px 3.5px no-repeat,linear-gradient(var(--st-glyph,var(--surface)),var(--st-glyph,var(--surface))) 50% 6.5px/1.5px 1.5px no-repeat,currentColor} /* --st-glyph: Corporate, whose buttons are dark on a dark bar, sets it to the bar's colour (themes.css), so the "!" always inverts the disc */ /* the disc is the button's text colour (3:1 or more against the button in every theme, checked by check-sched-top); the amber ring gives the warning tone, the drawn "!" the meaning */
+.sched-top.paused{opacity:.62}
+.sched-top.paused .st-pause{display:block;right:-4px;bottom:-3px;width:7px;height:7px;background:linear-gradient(currentColor,currentColor) 0 0/2px 7px no-repeat,linear-gradient(currentColor,currentColor) 5px 0/2px 7px no-repeat}
+.sched-top.none b{display:none}
 /* FR-167: the inbox is an L dialog (class `l`) on the dialog padding tokens; the compact rows of round 10 stay */
 .inbox-dlg .dbody{max-height:min(64vh,620px);overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px}
 .inbox-row{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;padding:var(--row-pad);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--raised)}
@@ -1443,7 +1467,7 @@ body.simple #addWs,body.simple #foldersBtn,body.simple #vList{display:none!impor
 /* primary action: solid sage ink, now the base `.btn.primary` rule in every theme (spec 052 FR-053) */
 /* top-bar counters: one segmented strip in every style, see FR-103 at the .stats rule (round 10) */
 /* the Needs you button */
-html:not([data-ui]) .inbox-btn{border-radius:8px}
+html:not([data-ui]) .inbox-btn,html:not([data-ui]) .sched-top{border-radius:8px}
 html:not([data-ui]) .inbox-btn.attn{background:var(--tone-warn-soft);border-color:var(--c-waiting)}
 /* room-header controls: quiet at rest, shown when the room is hovered or holds focus (focus ring unchanged) */
 html:not([data-ui]) .room-new,html:not([data-ui]) .room-more,html:not([data-ui]) .room-mcp,html:not([data-ui]) .room-sched{border-color:transparent;background:transparent}
@@ -1597,9 +1621,9 @@ html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:
 .done-tick.draw{stroke-dasharray:16;animation:tickdraw .32s cubic-bezier(.2,.8,.2,1) both}
 @keyframes tickdraw{from{stroke-dashoffset:16}to{stroke-dashoffset:0}}
 /* FR-068: the Needs you count rolls in a fixed box (tabular digits, at least one digit wide: the width never changes between digits) */
-.inbox-btn b{flex:none;display:inline-block;position:relative;overflow:hidden;min-width:1ch;text-align:center;font-variant-numeric:tabular-nums}
-.inbox-btn b>span{display:block}
-.inbox-btn b>.roll-out{position:absolute;left:0;right:0;top:0}
+.inbox-btn b,.sched-top b{flex:none;display:inline-block;position:relative;overflow:hidden;min-width:1ch;text-align:center;font-variant-numeric:tabular-nums}
+.inbox-btn b>span,.sched-top b>span{display:block}
+.inbox-btn b>.roll-out,.sched-top b>.roll-out{position:absolute;left:0;right:0;top:0}
 .roll-in.up{animation:rollinup .22s ease-out both}.roll-out.up{animation:rolloutup .22s ease-out both}
 .roll-in.down{animation:rollindown .22s ease-out both}.roll-out.down{animation:rolloutdown .22s ease-out both}
 @keyframes rollinup{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:none}}
@@ -1669,7 +1693,15 @@ html[data-platform="darwin"] .notice-strip:not([hidden]) ~ .workspace .strip{pad
    flex item that is 78px minus the padding wide and takes back the gap after it. A notice strip that is the first row is at least 40px tall, so the
    Office button below it never reaches into the 78x40 box. */
 html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}
+@media (max-width:1440px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{margin-right:-8px}} /* spec 044 FR-034: the bar's column gap is 8px up to 1440px; the traffic-light room stays 78px */
 @media (max-width:1320px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}
+/* spec 044 FR-034: with the traffic-light room and the Schedules button, Expert at 1280..1400px was 54px short (the counters wrapped, measured in DejaVu Sans with floors and mixed agent apps): the buttons' side padding gives it back, after the room itself (above). Simple has room. */
+@media (max-width:1439px){
+  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .topbar :is(.sched-top,.inbox-btn){padding:0 6px}
+  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .topbar .top-add .btn{padding:0 5px}
+  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .topbar .seg button{padding:0 4px}
+  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .stats>.stat:not(.stat-aiu){padding:0 2px}
+}
 /* spec 052 FR-164: on a Mac the traffic lights take 58px more, so the counters keep their words only from 2040px and the defaults chip is
    narrower from 1600 to 1799px (the brand name gives way by measurement, .tb-tight) */
 @media (max-width:2039px){html[data-platform="darwin"]:not([data-fullscreen]) .stats>.stat:not(.stat-aiu) span.l{display:none}}

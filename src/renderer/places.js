@@ -249,9 +249,10 @@
     return n;
   }
   /* last run missed or failed (the flag), the count: active schedules, and done one-time ones (a one-time run missed while the app was
-     closed is marked done with outcome missed). A done repeating schedule is not counted. Same rule as #523's badge (review on #511): one-time = no `every` (undefined, as PR 560's `recurring`) and no rule.
-     Whichever of PR 511 and PR 560 lands second makes this call DurbarSchedTop.missedOrFailed (spec 001 FR-038). */
-  const postMissed=schedules=>(Array.isArray(schedules)?schedules:[]).filter(s=>s&&s.last&&(s.last.outcome==='missed'||s.last.outcome==='failed')&&(!s.done||(s.every===undefined&&!s.rule))).length;
+     closed is marked done with outcome missed). A done repeating schedule is not counted. The one predicate is DurbarSchedTop.missedOrFailed
+     (schedtop.js, loaded first; the top-bar Schedules button uses the same), so the Postbox and the button cannot drift (spec 001 FR-038, spec 044 FR-029). */
+  const schedTop=()=>typeof module==='object'&&module.exports?require('./schedtop.js'):window.DurbarSchedTop;
+  const postMissed=schedules=>(Array.isArray(schedules)?schedules:[]).filter(s=>schedTop().missedOrFailed(s)).length;
 
   /* Spec 001 FR-036/FR-039: how many initials entries a tile `tileW` px wide shows for `count` visitors. Everyone when they all fit; else
      as many as fit beside the "+N" (a bare 22 px circle in this mode), so a 96 px tile shows one figure and "+1" rather than only "+2". */

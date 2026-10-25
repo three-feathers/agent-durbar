@@ -46,6 +46,7 @@ const chatNoWords=a=>{const n=chatNoOf(a);return n?', chat '+n:'';};
 const INBOX_KEY=keyText(['mod','shift','A']), NEXT_KEY=keyText(['mod','shift','N']), PAL_KEY=keyText(['mod','K']);
 /* spec 006 FR-036: show or hide Previous sessions (H for history) */
 const PREV_KEYS=['mod','shift','H'], PREV_KEY=keyText(PREV_KEYS);
+const SCHED_KEY=keyText(['mod','shift','S']); /* spec 044 FR-031: the top-bar Schedules button */
 const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-164: + Folder, + Workspace (the Mac File menu has the same keys) */
 /* spec 052 FR-085: the window's platform from the preload (the Mac title bar styles are gated on html[data-platform="darwin"]) */
 if(window.agentDurbar&&window.agentDurbar.platform==='darwin')document.documentElement.dataset.platform='darwin';
@@ -337,7 +338,7 @@ function focusRequest(card){
   if(!card.hasAttribute('tabindex'))card.setAttribute('tabindex','-1');focusIn(card,{reveal:false});
 }
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#stage [data-pvopen]');if(b){openAtRequest(b.dataset.pvopen);return;}
-  const pb=e.target.closest&&e.target.closest('#stage [data-post]');if(pb)openSchedSettings();});
+  const pb=e.target.closest&&e.target.closest('#stage [data-post]');if(pb)openSchedulesView();});
 /* spec 001 FR-034: who goes to the Boss. A live main agent whose oldest pending request in its chat is a question ('q') or a permission ('p'):
    not the spending limit (the Bank, FR-035) or a coffee break (spec 068), not an error (that stays at the desk). Run before every render. */
 function bossKind(a){
@@ -746,7 +747,7 @@ const unesc=s=>String(s).replace(/&(amp|lt|gt|quot);/g,(m,k)=>({amp:'&',lt:'<',g
 /* ---------------- top bar ---------------- */
 function visibleAgents(){return agents.filter(a=>roomShown(roomOf(a))&&(ui.ws==='all'||wsOf(a)===ui.ws));}
 function renderStats(){
-  renderInboxBtn();
+  renderInboxBtn(); renderSchedTop();
   const list=visibleAgents().filter(a=>!a.parent); const c={working:0,waiting:0,idle:0,error:0,done:0};
   list.forEach(a=>{const s=vis(a); if(s==='working'||s==='thinking')c.working++; else c[s]++;});
   const defs=[['working','Working','working or thinking'],['waiting','Waiting','waiting for you'],['idle','Idle','idle or paused'],['error',c.error===1?'Error':'Errors','with errors'],['done','Done','done']];
@@ -757,6 +758,7 @@ function renderFilter(){
   if(ui.ws!=='all'&&!roomShown(ROOMS.find(r=>r.id===ui.ws)))ui.ws='all'; /* its floor went off or it was hidden */
   sel.innerHTML='<option value="all">All folders</option>'+roomsInOrder().filter(roomShown).map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
   sel.value=ui.ws;
+  fitTopbar(); /* the narrow value is reapplied to the new options */
 }
 const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thinking'].includes(vis(a)):vis(a)===ui.status);
 
@@ -1555,15 +1557,28 @@ if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{const s=d
    menu bar's). Measured, not guessed by width: the class is removed, the row measured, and set again only if the parts still wrap. */
 function fitTopbar(){
   const bar=document.querySelector('.topbar');if(!bar||!bar.getClientRects().length)return;
-  bar.classList.remove('tb-tight');
-  const kids=[...bar.children].filter(k=>k.getClientRects().length);if(kids.length<2)return;
-  const mid=k=>{const r=k.getBoundingClientRect();return (r.top+r.bottom)/2;};
-  const m0=mid(kids[0]);
-  if(kids.some(k=>Math.abs(mid(k)-m0)>8))bar.classList.add('tb-tight');
+  /* spec 044 FR-034: the steps, in order, each only if the row still wraps: the folder filter's padding, its short value "All", then the brand name */
+  const sel=$('wsFilter'), first=sel&&sel.options[0];
+  const label=short=>{if(first&&first.value==='all')first.textContent=short?'All':'All folders';};
+  bar.classList.remove('tb-tight','tb-filter','tb-filter2'); label(false);
+  const wraps=()=>{
+    const kids=[...bar.children].filter(k=>k.getClientRects().length);if(kids.length<2)return false;
+    const mid=k=>{const r=k.getBoundingClientRect();return (r.top+r.bottom)/2;};
+    const m0=mid(kids[0]);
+    return kids.some(k=>Math.abs(mid(k)-m0)>8);
+  };
+  if(!wraps())return;
+  bar.classList.add('tb-filter'); if(!wraps())return;
+  bar.classList.add('tb-filter2'); label(true); if(!wraps())return;
+  bar.classList.add('tb-tight');
 }
+/* fitTopbar changes classes and the filter's text, which resizes what the observer watches: from the observer and the window resize it runs in the next frame, one at a time
+   (inside the callback it raised "ResizeObserver loop completed with undelivered notifications"); renderFilter and DurbarFit call it directly */
+let fitTopbarFrame=0;
+const fitTopbarSoon=()=>{if(fitTopbarFrame)return;fitTopbarFrame=requestAnimationFrame(()=>{fitTopbarFrame=0;fitTopbar();});};
 {const bar=document.querySelector('.topbar');
-  if(bar&&window.ResizeObserver){const ro=new ResizeObserver(()=>fitTopbar());ro.observe(bar);bar.querySelectorAll(':scope > .controls, :scope > .stats').forEach(e=>ro.observe(e));}
-  window.addEventListener('resize',fitTopbar);
+  if(bar&&window.ResizeObserver){const ro=new ResizeObserver(fitTopbarSoon);ro.observe(bar);bar.querySelectorAll(':scope > .controls, :scope > .stats').forEach(e=>ro.observe(e));}
+  window.addEventListener('resize',fitTopbarSoon);
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fitTopbar).catch(()=>{});}
 window.DurbarFit=()=>{const s=document.getElementById('stage');if(s)fitUsage(s);fitTopbar();}; /* the layout checks refit after forcing a font */
 /* ---------------- list view ---------------- */
@@ -2509,6 +2524,8 @@ document.addEventListener('keydown',e=>{
   /* spec 006 FR-036: Ctrl+Shift+H (⇧⌘H) shows or hides Previous sessions in the open chat, also from the message box; not under a dialog */
   if(mod&&e.shiftKey&&!e.altKey&&e.code==='KeyH'&&ui.selected&&$('prevBtn')&&!modalOpen()){e.preventDefault();togglePrevByKey();return;}
   if(mod&&e.shiftKey&&!e.altKey&&(e.key==='N'||e.key==='n'||e.code==='KeyN')){e.preventDefault();closeInbox();openNextNeedsMe();return;}
+  /* spec 044 FR-031: Ctrl+Shift+S (⇧⌘S on a Mac) opens Schedules, from text fields and from a chat; not under a dialog, and only where the button is shown */
+  if(mod&&e.shiftKey&&!e.altKey&&(e.key==='S'||e.key==='s'||e.code==='KeyS')&&schedTopShown()&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openSchedulesView();return;}
   /* spec 052 FR-060: in an open chat, Alt+A allow once, Alt+S allow for this session, Alt+D deny (the request the answer bar shows), Alt+N the
      next agent that needs you. By the key's position (e.code). On a Mac it is Option+Command (FR-084): Option+letter alone types accents
      or dead keys there. Not while you type in a field with text, and not under a dialog. Windows and Linux have no app menu (FR-083). */
@@ -2654,8 +2671,52 @@ function renderInboxBtn(){
   rollCount(b.querySelector('b'),n);
   b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or '+INBOX_KEY+').':'Nobody needs you. Open the inbox (I or '+INBOX_KEY+').');
 }
-/* Settings > Schedules (spec 044 FR-011): the Settings screen, scrolled to its Schedules section */
-function openSchedSettings(){window.DurbarScreens.openSettings('schedules');} /* spec 001 FR-038, spec 052 FR-055: scrollInBody inside screens.js */
+/* spec 044 FR-027..FR-029, FR-033 (issue 523): the Schedules button left of Needs you. The facts and the words are in schedtop.js (unit-tested). */
+const SCHED_SEEN='durbar.schedSeen'; /* epoch ms of the last time Schedules was opened here; no prompt text, per computer (FR-029) */
+let schedSeenMem;
+function schedSeenAt(){
+  if(schedSeenMem===undefined){let v=null;try{const n=Number(localStorage.getItem(SCHED_SEEN));if(n>0&&isFinite(n))v=Math.min(n,Date.now()); /* a stamp from the future (clock change) is clamped */}catch(e){}schedSeenMem=v;}
+  return schedSeenMem;
+}
+function schedTopShown(){
+  try{return !!bridge&&!!bridge.listSchedules&&!demoOn&&(ROOMS.length>0||SCHED.schedules.length>0);}catch(e){return false;} /* SCHED is declared further down */
+}
+let schedTrouble=null; /* the badge count last drawn; null until the first schedule list has arrived (no announcement at start) */
+function renderSchedTop(fromList){
+  const b=$('schedTopBtn'); if(!b)return;
+  let doc; try{doc=SCHED;}catch(e){return;}
+  const show=schedTopShown(); b.hidden=!show; if(!show)return;
+  let t=window.DurbarSchedTop.topText(doc,schedSeenAt(),Date.now(),{keys:SCHED_KEY,clockOf:clock});
+  /* FR-029 (decision 2026-10-22): a miss or failure while the Schedules section is on screen is seen at once: no badge, no announcement */
+  if(t.trouble>0&&schedSectionShown()){markSchedSeen();t=window.DurbarSchedTop.topText(doc,schedSeenAt(),Date.now(),{keys:SCHED_KEY,clockOf:clock});}
+  rollCount(b.querySelector('b'),t.count);
+  b.classList.toggle('none',!t.count); b.classList.toggle('paused',t.paused); b.classList.toggle('trouble',t.trouble>0);
+  if(b.getAttribute('aria-label')!==t.label)b.setAttribute('aria-label',t.label);
+  if(b.title!==t.title)b.title=t.title;
+  if(schedTrouble===null){if(fromList)schedTrouble=t.trouble;}
+  else{if(t.trouble>schedTrouble)announce('A scheduled prompt did not run. See Schedules ('+SCHED_KEY+').');schedTrouble=t.trouble;}
+}
+function markSchedSeen(){schedSeenMem=Date.now();try{localStorage.setItem(SCHED_SEEN,String(schedSeenMem));}catch(e){}}
+/* the Schedules heading of Settings is inside Settings' own scroller, so the user can see it (not merely: Settings is open) */
+const schedHasFocus=()=>{const o=window.__durbarFocus;return SIM&&typeof o==='function'?o():document.hasFocus();}; /* the simulator's drivers can stand in for the focus */
+function schedSectionShown(){
+  if(!window.DurbarSchedTop.windowSees(document.visibilityState,schedHasFocus()))return false; /* FR-029: a hidden or unfocused window shows nothing */
+  const h=$('schH'),scr=$('screen'); if(!h||!scr||scr.hidden)return false;
+  const body=h.closest('.scr-body'); if(!body)return false;
+  const r=h.getBoundingClientRect(),c=body.getBoundingClientRect();
+  return r.height>0&&r.top>=c.top-1&&r.bottom<=c.bottom+1;
+}
+/* scrolling Settings (or Tab into the section) brings the heading into view: the badge clears then */
+document.addEventListener('scroll',e=>{const t=e.target;if(t&&t.classList&&t.classList.contains('scr-body')&&schedSectionShown())renderSchedTop();},true);
+/* the window comes back (focus or visible) with the heading in view: the badge clears then */
+window.addEventListener('focus',()=>renderSchedTop());
+document.addEventListener('visibilitychange',()=>renderSchedTop());
+/* FR-030: the one way in to "go to Schedules": Settings at its Schedules section, and the stamp that clears the badge */
+function openSchedulesView(){
+  window.DurbarScreens.openSettings('schedules');
+  markSchedSeen();
+  renderSchedTop();
+}
 /* spec 052 FR-068: the count rolls (old number out, new one in, 220ms) inside a box that keeps its width; up when it grows */
 function rollCount(box,n){
   if(!box)return; const txt=String(n), prev=box.dataset.n;
@@ -2771,6 +2832,7 @@ function palActions(){
   return [
     {label:'Needs you',hint:'The inbox of agents that need you ('+INBOX_KEY+')',kw:'inbox attention waiting approve',keys:['I'],run:openInbox},
     {label:'Next agent that needs you',hint:'Open the next waiting chat ('+NEXT_KEY+')',kw:'next waiting jump',keys:['N'],run:openNextNeedsMe},
+    {label:'Schedules',hint:"Every folder's scheduled prompts",kw:'schedule scheduled prompts timer every daily morning cron',keys:keyLabels(['mod','shift','S']),run:openSchedulesView,ok:schedTopShown}, /* spec 044 FR-032 */
     {label:'Office view',kw:'view office desks rooms',run:palClick('vOffice'),ok:()=>palUsable('vOffice')},
     {label:'List view',kw:'view list table rows',run:palClick('vList'),ok:()=>palUsable('vList')},
     {label:'Tools',kw:'tools usage mcp',run:palClick('toolsBtn'),ok:()=>palUsable('toolsBtn')},
@@ -2943,6 +3005,7 @@ function openKbdHelp(back){
     [['I'],'Needs you inbox',keyLabels(['mod','shift','A'])],
     [keyLabels(['mod','A']),'Needs you inbox, outside text (in a text box it selects all)'], /* spec 074 FR-021 */
     [['N'],'Next agent that needs you',keyLabels(['mod','shift','N'])],
+    ...(schedTopShown()?[[keyLabels(['mod','shift','S']),"Schedules: every folder's scheduled prompts"]]:[]), /* spec 044 FR-031 */
     ...(IS_MAC?[[keyLabels(['mod',',']),'Settings']]:[]), /* FR-083: the app menu's Settings… item */
     [['Ctrl','`'],'Back to the previous chat (on a Mac too: Control, not Cmd)'],
     [keyLabels(PREV_KEYS),SIMPLE?'Show or hide earlier chats in a chat':'Show or hide previous sessions in a chat'], /* spec 006 FR-036 */
@@ -5707,7 +5770,7 @@ function openSchedules(r,from,opts){
 }
 async function refreshSchedules(){if(!bridge.listSchedules)return;SCHED=await bridge.listSchedules();schedChanged();}
 /* everything that shows schedules: the Folders panel, the open dialog, room chips (office render), Settings (spec 044 FR-009..FR-011) */
-function schedChanged(){renderFolders();renderSchedDlg();renderSchedSettings();scheduleRender();if(ui.selected&&$('schedHdrBtn'))updatePanelHeader();}
+function schedChanged(){renderSchedTop(true);renderFolders();renderSchedDlg();renderSchedSettings();scheduleRender();if(ui.selected&&$('schedHdrBtn'))updatePanelHeader();}
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAll'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;schedChanged();}});
 if(bridge&&bridge.onSchedules){bridge.onSchedules(doc=>{SCHED=doc;schedChanged();});}
 /* spec 044 FR-011: Settings > Schedules, every folder's schedules in one list; pause, resume, delete, add (opens that folder's dialog), Pause all */
@@ -5721,6 +5784,7 @@ function renderSchedSettings(){
       +ss.map(s=>schedRow(s,'ss')).join('')+'</div>').join('')
       :'<p class="scr-note small">No schedules yet.</p>')
     +(without.length?`<div class="scr-tools"><label class="ss-add">Add a schedule to<select id="ssRoom">${without.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><button class="btn" type="button" data-ss="add">Add…</button></div>`:'');
+  renderSchedTop(); /* spec 044 FR-029: the section may be on screen as soon as it is painted */
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('#schedSet [data-ss]');if(!b)return;
@@ -6350,6 +6414,7 @@ if(bridge){
   document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.place-add'))window.DurbarScreens.placeDialog(null);});
   $('toolsBtn').onclick=()=>window.DurbarScreens.isOpen()?window.DurbarScreens.close():window.DurbarScreens.openTools(null);
   $('settingsBtn').onclick=()=>window.DurbarScreens.openSettings();
+  $('schedTopBtn').onclick=openSchedulesView; /* spec 044 FR-030 */
   /* spec 052 FR-083: Settings… (⌘,) in the macOS app menu. The real window's preload carries it, also under the simulator. */
   {const real=window.agentDurbar;if(real&&real.onMenuSettings)real.onMenuSettings(()=>window.DurbarScreens.openSettings());
     /* spec 052 FR-164: File > Add Folder… / Add VS Code Workspace… press the same top-bar buttons (one code path) */

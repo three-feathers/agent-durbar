@@ -555,3 +555,11 @@ Decided by the coordinator under Ruben's delegation, after Paco's review. A fold
 - **FR-029** `[IMPLEMENTED]` `folders:rename` refuses an invalid non-empty name with `{ ok: false, error }` (the rule's reason) instead of clearing the label and answering `ok:true`; an empty name still resets. `parseLabel` (also used when the file is read back) is the same rule and stays tolerant (an invalid saved label is ignored, the folder kept). The page shows the reason under the field (Enter) or as "Not renamed: ..." (blur, Tab), and under the dialog's input.
 - Evidence: `test:` `scripts/test-folders.ts` (`'Proj\x07x'`, `'Proj\u202eexe'`, `'zero\u200bwidth'`, C1, 41 characters, a token, empty, a static check that the IPC handler refuses), `scripts/test-sessionname.ts` (page mirror); `sim:` `check:rename-inline` (the field and the dialog refuse the three strings and send nothing; the fake `renameFolder` applies main's rule).
 - `[KNOWN GAP]` Not run against real main (the IPC handler is covered by the static check and the store tests, not by an Electron main process).
+
+### 2026-10-25: the focused-pencil driver step is deterministic on Windows CI (issue #715)
+
+Decided by the coordinator under Ruben's delegation. Product behaviour is unchanged: a keyboard-focused pencil is shown (`.unit:focus-within>.ren`,
+`.ren:focus`, opacity 1). `check-rename-inline` failed on Windows CI at "a focused pencil is shown" (the window did report OS focus), so the
+cause is the 0.12 s opacity transition not advancing in a CI window, not the rule. The driver now gives the window real focus for that step
+(`show`, `focus`, `webContents.focus`, wait for `document.hasFocus()`) and reads the rule's target opacity with the transition switched off for the
+read; the message says whether the OS gave focus. Task T079. `[KNOWN GAP]` Not re-run on Windows before the merge; Windows CI on the PR is the check.

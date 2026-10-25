@@ -1,0 +1,1 @@
+- Notes: the test helper retries a *busy* answer (up to 30 times), as a user pressing the button again would, so the four-process stale-lock test no longer depends on the Windows runner's speed (spec 083 FR-008 test; no product change).

@@ -1008,3 +1008,13 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
   (content only on explicit opt-in, visible), FR-081..FR-086, FR-100..FR-102, FR-142, FR-192, FR-194, FR-195 rewritten with the exact
   variables and keys; the former `[KNOWN GAP]`s for Copilot OTel and Claude Bedrock/Vertex names are closed; per-session acceptance
   checks stay `[KNOWN GAP]` (T100, T111); R9-R11 answered by Vikram the same day (option a each).
+
+### 2026-10-25: FR-158/FR-159 and FR-174 cover spec 081's agent-app update check (owner decision Q6 = A)
+
+- **FR-174** `updates.mode: "off"` now also turns off spec 081's agent-app update check. The check at Durbar's start, the *Check for updates* button, the per-card *Check*, the *Latest* lines and the start-check switch are hidden, with *Turned off by your organization*, and no update host is contacted.
+  - Owner decision Q6 = A on spec 081, Vikram, 2026-10-25. The hidden-button reading follows FR-158.
+  - `notify` and `auto` keep their meaning for Durbar's own updater. Neither one starts an automatic agent-app update.
+- **FR-158/FR-159**: a new feature switch, `features.agentAppUpdateCheck: false`, with the same effect as above (spec 081 FR-022).
+- **FR-032/FR-175** are unchanged. `agentApps.allowInAppInstall: false` turns off the start check and hides Update, and the read-only *Check for updates* stays.
+- **Unreadable policy**: a policy that cannot be read or validated turns spec 081's start check off (fail closed, spec 081 FR-022).
+- Status: `[PLANNED]` (spec 081 T033, T036). Nothing is built here.

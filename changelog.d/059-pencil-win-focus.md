@@ -1,0 +1,1 @@
+- **Rename in place check steadier on Windows** (spec 059, issue #715): the focused-pencil step of `check-rename-inline` gives the window focus and reads the pencil's final opacity, not a mid-transition value. No change to the app.
