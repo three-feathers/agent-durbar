@@ -226,10 +226,17 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
       Copilot keeps the session and sends without `sandboxConfig`. Durbar's own checks are unchanged in both. Nothing is re-sent:
       the person sends again.
     - **FR-007b** The session remembers *sandbox unavailable, continued* (in memory, for its life): the mode-switch relaunch
-      (spec 012 FR-116) and a resume do not try the sandbox again, so there is no exit-after-exit loop. A new session tries again.
-    - **FR-007c** Where the host can never sandbox that app (Claude on native Windows; Copilot `supported: false`), the note also
-      offers *Always continue on this computer for <App>*; the choice is stored with Durbar's settings (a choice, no path or
-      secret), shown in Settings > Agent apps (FR-012) and can be undone there.
+      (spec 012 FR-116) and a resume within the same run of Durbar do not try the sandbox again, so there is no exit-after-exit
+      loop. The memory is not saved: a **new session** (same folder or not) tries the sandbox again, and after **Durbar restarts** a
+      resume of the same session tries again and, if it is still unavailable, shows the note once more.
+    - **FR-007c** *Always continue on this computer for <App>* is offered **only where the host can never sandbox that app**:
+      today that is only Claude Code on native Windows (`win32`; research R2). It is **not** offered for a fixable cause (a missing
+      `bwrap`, `socat` or `slirp4netns`, an AppArmor block, an old Claude Code, a Windows 11 build without ProcessContainer, or any
+      Copilot `supported: false`). The stored choice (a choice, no path or secret; shown and undone in Settings > Agent apps,
+      FR-012) **only skips the note**: the pre-check (FR-006) and, where it passes, the sandbox attempt still run in every session,
+      so a host or an app version that becomes sandbox-capable is sandboxed again by itself and the choice no longer applies.
+    - **FR-007d** `permissions.requireOsSandbox` (FR-019) **ignores** a stored *Always continue* and a session's *Continue*: with
+      the key set, an unavailable sandbox is refused every time.
   - When an organization policy requires the sandbox (FR-019): **refused**, nothing runs; the refusal text contains "Read-only and
     Ask first need" so the existing `MODE_REFUSAL` / `modeRefusalAction` (spec 012 FR-087) adds the *Change mode…* button; no new
     refusal path.
@@ -332,8 +339,8 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 - **Q1 Sandbox unavailable: fail closed or warn?** **Decided (as recommended):** **warn, and the person chooses** for Claude Code and Copilot in
   Read-only and Ask first. Durbar always asks the app to fail if its sandbox cannot start (Claude `failIfUnavailable: true`); when it
   does, nothing is sent or re-sent, and the chat says why with *Continue without the OS sandbox* (this session, Durbar's own checks
-  still apply) or *Change mode…*; on a computer that can never sandbox that app, *Always continue on this computer* is offered
-  once. *Sandboxed* is shown only after the app confirmed it. **Fail closed** (no Continue button) only when the organization
+  still apply) or *Change mode…*; on a computer that can never sandbox that app (Claude on native Windows), *Always continue on this computer* is offered
+  once and only skips the note (round-3 review: it never turns the sandbox attempt off). *Sandboxed* is shown only after the app confirmed it. **Fail closed** (no Continue button) only when the organization
   policy key FR-019 says so; Codex stays fail closed. Why: native Windows has no Claude sandbox and most Windows builds lack Copilot's, so fail-closed by default
   would make Read-only unusable there although Durbar's checks still deny every write and shell call in it.
 - **Q2 Network for sandboxed commands in Ask first: off or ask?** **Decided (as recommended):** **off** in the first build (Claude
@@ -351,6 +358,12 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
   word on the office card (keeps the 15-agent layout).
 
 ## Changes
+
+### 2026-10-25: review round 3 on PR #728 (Ruben's agent, 2 items)
+
+- FR-007c: *Always continue* only for a host that can never sandbox the app (Claude on native Windows), and it only skips the
+  note; the pre-check and the attempt still run every session. FR-007d: the policy key ignores it. Within decision Q1.
+- FR-007b: resets are specified and tested (new session, resume after a Durbar restart).
 
 ### 2026-10-25: owner decisions Q1-Q5
 

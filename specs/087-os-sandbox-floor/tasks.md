@@ -46,15 +46,20 @@ description: "Tasks for spec 087: each agent app's OS sandbox as the floor under
 
 ## Phase 2: Adapters
 
-- [ ] T020 [US1] [US2] [US3] Claude adapter: pre-checks (version from `detectClaude`/`parseVersion`), the block set on the `--settings` JSON in `claude.ts` (not in `src/shared`), state `unknown` → `on` at `system`/`init` (`initSeen`); a classified sandbox exit before `init` → policy required: refusal; otherwise the note with *Continue without the OS sandbox* / *Change mode…*, nothing re-sent; *Continue* relaunches with the same argv minus the `sandbox` key; per-session "unavailable, continued" memory. [FR-003, FR-006, FR-007, FR-007a, FR-007b, FR-013]
+- [ ] T020 [US1] [US2] [US3] Claude adapter: pre-checks (version from `detectClaude`/`parseVersion`), the block set on the `--settings` JSON in `claude.ts` (not in `src/shared`), state `unknown` → `on` at `system`/`init` (`initSeen`); a classified sandbox exit before `init` → policy required: refusal; otherwise the note with *Continue without the OS sandbox* / *Change mode…*, nothing re-sent; *Continue* relaunches with the same argv minus the `sandbox` key; per-session "unavailable, continued" memory. [FR-003, FR-006, FR-007, FR-007a..FR-007d, FR-013]
   - AC1: `test-claude-adapter`: in Read-only and Ask first the `sandbox` key of the `--settings` JSON in argv is exactly Durbar's block; in Allow all there is no `sandbox` key; the folder-setup part of the JSON is unchanged.
   - AC2: with a fake CLI that exits with a sandbox error before `init`: **no prompt is written to any process** after the exit, and **no relaunch happens** until the *Continue* action; the note contains "Nothing was sent"; policy required → no Continue action and a refusal containing "Read-only and Ask first need".
   - AC3: after *Continue*: exactly one relaunch whose argv equals the first one except the `sandbox` key of `--settings` (same `--permission-mode`, tool lists, `--permission-prompt-tool stdio`, same `--session-id`, or `--resume <id>` once the session exists); a later mode switch (FR-116) or resume does not add the `sandbox` key again.
   - AC4: a fake CLI that exits before `init` with an unclassified error goes to the crash path text (*Send a message to resume*), state stays `unknown`, no Continue action and no relaunch.
-  - AC5: Claude on `win32` with *Always continue on this computer* stored: no note, state `off`, chip *Not sandboxed*; undoing it in Settings brings the note back. [FR-007c]
+  - AC5: Claude on `win32` with *Always continue on this computer* stored: no note, state `off`, chip *Not sandboxed*, but the pre-check still runs at every session start (the fake records it); undoing it in Settings brings the note back. [FR-007c]
+  - AC6: the *Always continue* action is offered only on `win32`; a Linux sandbox exit (missing `bwrap`, AppArmor) and an old version offer only *Continue* and *Change mode…*. With a stored choice and a pre-check that now passes (fake host fixed, or a fake Claude that sandboxes on `win32`), the next session carries the `sandbox` key and reaches `on`. [FR-007c]
+  - AC7: `permissions.requireOsSandbox: true` plus a stored *Always continue* → refused with "Read-only and Ask first need", no Continue action. [FR-007d]
+  - AC8: FR-007b resets: after *Continue*, a **new session** in the same folder has the `sandbox` key in its argv again; a fresh adapter (Durbar restart) resuming the same session id tries the sandbox again and, with the fake still failing, shows the note exactly once. [FR-007b]
 - [ ] T021 [US1] [US2] [US3] Copilot adapter: `getHostSupport()` once per runtime start; `options.update` after create/resume, before the first send; refusal when required; `session.warning` type `sandbox` updates the state; a switch to Allow all sends nothing and sets `untilNewSession`. [FR-004, FR-006, FR-007, FR-008, FR-013]
   - AC1: the fake client records the update before the first `send`; a rejected update holds the first `send` back (nothing sent), shows the note with *Continue without the OS sandbox* / *Change mode…* (or a refusal containing "Read-only and Ask first need" when required); after *Continue* the person's next send goes out without `sandboxConfig`.
   - AC2: after a switch to Allow all the fake client records no second update and the state has `untilNewSession: true`.
+  - AC3: Copilot never offers *Always continue* (any `supported: false` is treated as fixable); `requireOsSandbox: true` refuses. [FR-007c, FR-007d]
+  - AC4: FR-007b resets: after *Continue*, a new session sends `options.update` with `sandboxConfig` again; after a restart (fresh adapter) a resume does too and, with the fake still refusing, shows the note exactly once. [FR-007b]
 - [ ] T022 [P] [US1] [US2] Codex adapter: `SandboxState` from its existing checks; the FR-021 sentence on `commandExecution` and `fileChange` approval cards in Ask first. [FR-005, FR-011, FR-021]
   - AC1: `test-codex-modes`: `codexPermission` sets `sandboxNote` ("If you approve, Codex may run this outside its sandbox." for commands, "If you approve, Codex writes this outside its read-only sandbox." for file changes) and leaves `summary` unchanged; the Read-only path declines as before.
   - AC3: a sim driver waits with `until()` for a Codex Ask first card and checks that the whole `sandboxNote` text is visible (not clipped: `scrollWidth <= clientWidth`, no ellipsis) at 1440x900 and 1280x800.
@@ -80,6 +85,7 @@ description: "Tasks for spec 087: each agent app's OS sandbox as the floor under
 
 - [ ] T050 `permissions.requireOsSandbox` in the spec 076 loader (narrow-only; bad value → `true`). [FR-019]
   - AC1: policy tests: absent → `false`; `true` → refusals in T020/T021 fakes; `"yes"`, `1`, `null` → `true` (fail closed); a user layer cannot set it back to `false`.
+  - AC2: with the key `true`, a stored *Always continue* and a session *Continue* are ignored (refusal every time; T020 AC7, T021 AC3). [FR-007d]
 
 ## Phase 6: Real checks (owner's OK and budget first; constitution IV)
 
