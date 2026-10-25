@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ClaudeAdapter, claudeArgs } from '../src/adapters/claude';
+import { CLAUDE_SANDBOX_VERIFIED, claudeSandboxState, claudeSandboxVerified } from '../src/adapters/claudeSandbox';
 import type { ClaudeSandboxFacts } from '../src/adapters/claudeSandbox';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import { eventProblems } from '../src/adapters/eventguard';
@@ -109,7 +110,14 @@ async function main(): Promise<void> {
         assert.strictEqual(lastState(events, sid)?.state, 'on', `${mode}: on after init`);
         const states = sbx(events, sid).map((e) => e.sandbox?.state);
         assert.ok(states.indexOf('unknown') >= 0 && states.indexOf('unknown') < states.indexOf('on'), `${mode}: unknown (checking) before on`);
-        assert.strictEqual(lastState(events, sid)?.verified, false, 'not verified on a real session');
+        // T060 (spec 087, 2026-10-25) recorded Linux Read-only only: Ask first keeps "not verified" until a run covers it
+        assert.strictEqual(lastState(events, sid)?.verified, mode === 'read-only', `${mode} on Linux: verified only in Read-only`);
+        assert.strictEqual(claudeSandboxState({ mode, facts: { ...LINUX, platform: 'darwin' }, started: true })?.verified, false, `${mode} on macOS: not verified until T061`);
+      }
+      if (mode === 'allow') {
+        assert.deepStrictEqual(JSON.parse(JSON.stringify(CLAUDE_SANDBOX_VERIFIED)), { linux: ['read-only'] }, 'only Linux Read-only is recorded');
+        assert.strictEqual(claudeSandboxVerified('linux', 'read-only'), true);
+        for (const [p, m] of [['linux', 'ask'], ['linux', 'allow'], ['linux', 'bogus'], ['darwin', 'read-only'], ['win32', 'read-only'], ['__proto__', 'read-only'], ['toString', 'read-only']]) assert.strictEqual(claudeSandboxVerified(p, m), false, `${p} ${m}: not verified`);
       }
       assert.ok(JSON.stringify(settings).includes('npm test'), `${mode}: the folder-setup part of the JSON is kept`);
       await ad.dispose();

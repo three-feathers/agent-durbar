@@ -59,7 +59,7 @@ import { copilotAccount, copilotPlanLabel } from './accounts';
 import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
 import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import { sweepStaleTempDirs } from '../shared/attachments';
-import { COPILOT_NO_REPORT, copilotHostSupport, copilotSandboxConfig, copilotSandboxHost, copilotSandboxState } from './copilotSandbox';
+import { COPILOT_NO_REPORT, COPILOT_SANDBOX_NOTE_COMMAND, copilotHostSupport, copilotSandboxConfig, copilotSandboxHost, copilotSandboxState } from './copilotSandbox';
 import type { CopilotHostSupport } from './copilotSandbox';
 import { CREDENTIAL_FOLDER_REFUSAL, leftOutFields, sandboxRoots, splitFolders } from './sandboxRoots';
 import { pathDirs as envPathDirs } from '../shared/pathdirs';
@@ -733,8 +733,12 @@ export class CopilotAdapter implements AgentAdapter {
       },
     });
 
-    const onPermissionRequest = async (req: PermissionRequest): Promise<PermissionRequestResult> =>
-      broker.request(req as unknown as PermissionLike);
+    // spec 087 FR-021a (K15): a shell command asked for while the sandbox is on gets the card's own line (an approved one was seen
+    // running outside it on Linux); a copy of the request carries it, the runtime's object is not changed
+    const onPermissionRequest = async (req: PermissionRequest): Promise<PermissionRequestResult> => {
+      const note = String((req as { kind?: unknown }).kind) === 'shell' && this.sessions.get(sid)?.sandbox?.state === 'on';
+      return broker.request((note ? { ...req, sandboxNote: COPILOT_SANDBOX_NOTE_COMMAND } : req) as unknown as PermissionLike);
+    };
 
     // spec 066 FR-003: the runtime's plan (plan mode) waits for the user's answer; approve continues interactively (never autopilot)
     const onExitPlanModeRequest = async (req: { summary?: unknown; planContent?: unknown }): Promise<{ approved: boolean; selectedAction?: string; feedback?: string }> => {

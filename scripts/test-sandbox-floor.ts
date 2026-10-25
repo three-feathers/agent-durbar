@@ -7,7 +7,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CLAUDE_SANDBOX_MIN_VERSION, claudeSandboxExit, claudeSandboxPrecheck, claudeSandboxSettings, claudeSandboxState, withSandboxSettings } from '../src/adapters/claudeSandbox';
-import { copilotHostSupport, copilotPathReadDirs, copilotSandboxConfig, copilotSandboxState } from '../src/adapters/copilotSandbox';
+import { COPILOT_SANDBOX_NOTE_COMMAND, copilotHostSupport, copilotPathReadDirs, copilotSandboxConfig, copilotSandboxState } from '../src/adapters/copilotSandbox';
 import { CODEX_SANDBOX_NOTE_COMMAND, CODEX_SANDBOX_NOTE_FILE, codexModeSettings, codexPermission, codexSandboxState } from '../src/adapters/codexModes';
 import { HOME_SECRETS, leftOutFields, normalizeRoot, sandboxRoots, splitFolders } from '../src/adapters/sandboxRoots';
 import * as os from 'os';
@@ -319,6 +319,23 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
 // ---- FR-009/FR-010: the window's words (src/renderer/sandboxtext.js) ----
 {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // review on PR 753 (item 1): the real-run script's records never hold a session id
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { maskArgv, maskIds, ID_MASK } = require('./sandbox-real-mask') as typeof import('./sandbox-real-mask');
+    const id = '30447328-47f2-4f4c-8177-831c1b0f0031';
+    assert.deepStrictEqual(maskArgv(['-p', '--session-id', id, '--model', 'haiku']), ['-p', '--session-id', ID_MASK, '--model', 'haiku']);
+    assert.deepStrictEqual(maskArgv(['--resume', 'not-a-uuid-shape', '--resume=abc']), ['--resume', ID_MASK, `--resume=${ID_MASK}`], 'any value after an id flag');
+    assert.ok(!maskArgv(['--settings', `{"x":"${id.toUpperCase()}"}`]).join(' ').toLowerCase().includes(id), 'a UUID anywhere is masked');
+    assert.strictEqual(maskIds(`session ${id} done`), `session ${ID_MASK} done`);
+    assert.deepStrictEqual(maskArgv(['--model', 'haiku']), ['--model', 'haiku'], 'other args unchanged');
+  }
+  // FR-021a (K15): the Copilot state says it only in Ask first with the floor on; the card line is the agreed sentence
+  const host = { supported: true, capabilities: [] };
+  assert.strictEqual(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })?.approvedMayLeave, true, 'Ask first, on: may leave');
+  assert.strictEqual(copilotSandboxState({ mode: 'read-only', platform: 'linux', host, applied: true })?.approvedMayLeave, undefined, 'Read-only: never asks');
+  assert.strictEqual(copilotSandboxState({ mode: 'ask', platform: 'linux', host })?.approvedMayLeave, undefined, 'not on yet: no claim');
+  assert.strictEqual(COPILOT_SANDBOX_NOTE_COMMAND, 'If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25).');
   const T = require('../../src/renderer/sandboxtext.js') as { chipWord(s: unknown): string; tooltip(s: unknown, app: string, mask?: (t: string) => string): string; hostLine(v: unknown): string; NOT_VERIFIED: string };
   const on = { state: 'on', mechanism: 'bubblewrap', covers: ['shell'], writes: 'none', verified: false };
   assert.strictEqual(T.chipWord(on), 'Sandboxed');
@@ -333,6 +350,18 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.ok(/MCP servers, hooks, the status line, file reads and edits are outside it\./.test(tip), 'Claude: MCP not covered');
   assert.ok(!T.tooltip({ ...on, verified: true }, 'Claude Code').includes('not verified'), 'a verified state drops it');
   assert.ok(/Shell commands and MCP servers run in the macOS sandbox \(writes: this folder/.test(T.tooltip({ ...on, mechanism: 'seatbelt', covers: ['shell', 'mcp'], writes: 'folders' }, 'Copilot')));
+  // FR-021a (K15): Copilot in Ask first says an approved command may leave the sandbox, and still ends with the not-verified sentence
+  const cpAsk = T.tooltip({ ...on, covers: ['shell', 'mcp'], writes: 'folders', approvedMayLeave: true }, 'Copilot');
+  assert.ok(cpAsk.includes('(writes: not only this folder, network: off). File reads and edits are checked by Durbar. An approved command could write outside the folder (Copilot, seen on Linux, 2026-10-25).'), cpAsk);
+  assert.ok(!cpAsk.includes('writes: this folder'), 'no this-folder claim the run refuted');
+  assert.ok(cpAsk.endsWith(T.NOT_VERIFIED) && cpAsk.length <= 300, 'not cut: the not-verified sentence is kept');
+  const cpRo = T.tooltip({ ...on, covers: ['shell', 'mcp'] }, 'Copilot');
+  assert.ok(!cpRo.includes('An approved command'), 'Read-only: no such sentence');
+  assert.ok(cpRo.includes('(writes: none asked; Copilot may add one, network: off)') && !cpRo.includes('writes: none,'), `Read-only: no bare "writes: none" (K15): ${cpRo}`);
+  assert.ok(cpRo.endsWith(T.NOT_VERIFIED), 'Read-only keeps the not-verified ending');
+  const cpKept = T.tooltip({ ...on, covers: ['shell', 'mcp'], untilNewSession: true, managed: true }, 'Copilot');
+  assert.ok(cpKept.endsWith(T.NOT_VERIFIED) && cpKept.length <= 300, `the longest Copilot tooltip still ends with the not-verified sentence (${cpKept.length})`);
+  assert.ok(T.tooltip(on, 'Claude Code').includes('(writes: none, network: off)'), 'Claude keeps its own wording (its Read-only refusal was seen)');
   assert.ok(/Commands and file changes run in the Codex sandbox \(writes: none, network: off\)\. If you approve a command, Codex may run it outside the sandbox\./.test(T.tooltip({ state: 'on', mechanism: 'vendor', covers: ['shell', 'files'], approvedMayLeave: true, verified: false }, 'Codex')));
   const off = T.tooltip({ state: 'off', covers: ['shell'], verified: false, reason: 'no bwrap ghp_abcdefghijklmnopqrstuvwxyz0123456789' }, 'Claude Code', () => '');
   assert.ok(!off.includes('ghp_') && !off.includes('no bwrap'), 'no mask: the reason is not shown (fail closed)');
