@@ -7,10 +7,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  AREAS, FOOTER, MAX_NEW, SCHEMA_ID, buildClaudeArgv, fingerprint, ghRunner, issueBody, main, markersIn, planAndFile, readTokenFile,
+  AREAS, CLAUDE_ENV_KEYS, DEFAULT_BUDGET_USD, FOOTER, MAX_NEW, SCHEMA_ID, buildClaudeArgv, fingerprint, ghRunner, issueBody, main, markersIn, planAndFile, readTokenFile,
   renderPrompt, validateOutput, Finding, Gh,
 } from './weekly-test-audit';
-import { run as mutateRun, suiteSteps, targetPath } from './weekly-test-audit-mutate';
+import { addsForbidden, run as mutateRun, suiteSteps, targetPath } from './weekly-test-audit-mutate';
+import { spawnSync } from 'child_process';
 
 const ROOT = path.join(__dirname, '..', '..');
 const posix = process.platform !== 'win32';
@@ -60,7 +61,7 @@ const out = (findings: unknown[], extra: Record<string, unknown> = {}): string =
     assert.ok(v.rejected.length === 1 && v.rejected[0].index === 1 && v.rejected[0].errors.some((e) => re.test(e)), `${why}: ${JSON.stringify(v.rejected)}`);
   };
   drop({ ...good(), extra: 1 }, /unknown key/, 'an extra field');
-  drop(JSON.parse(JSON.stringify(good()).replace('{', '{"__proto__":{"x":1},')), /unknown key/, 'a __proto__ key');
+  drop(JSON.parse('{"__proto__":{"x":1},' + JSON.stringify(good()).slice(1)), /unknown key/, 'a __proto__ key');
   const { body: _b, ...noBody } = good();
   drop(noBody, /missing body/, 'a missing field');
   drop(good({ labels: ['bug', 'area:ci', 'spec:035', 'status:claimed'] }), /not in the taxonomy/, 'a flag label');
@@ -80,6 +81,22 @@ const out = (findings: unknown[], extra: Record<string, unknown> = {}): string =
   drop(good({ title: 'test-theme: one\nline two' }), /line break/, 'a two-line title');
   drop(good({ body: 'text with a ‮ bidi override in it, long enough' }), /control character/, 'a bidi control');
   drop(good({ id: 'Not Kebab' }), /kebab/, 'an id that is not kebab-case');
+  // no live links in an issue the team's agents read (review of PR #756): scheme, www, inline, reference, autolink, bare domain
+  for (const [body, why] of [
+    ['See [here](https://evil.example) for the fix, long enough text.', 'an inline link'],
+    ['See https://evil.example/x for the fix, long enough text here.', 'a bare URL'],
+    ['Long enough body text first.\n[ref]: https://evil.example/', 'a reference definition'],
+    ['Long enough body text, see [ref] (/relative/path) for it.', 'an inline link with a space'],
+    ['Long enough body text, see www.evil.test for the details.', 'a www host'],
+    ['Long enough body text, the fix is on evil.com somewhere.', 'a bare domain'],
+    ['Long enough body text, mail:<mailto:x@y> please do it.', 'an autolink'],
+    ['Long enough body text, see HTTP://EVIL.EXAMPLE now.', 'an upper-case scheme'],
+  ] as const) drop(good({ body }), /body has a link/, why);
+  drop(good({ title: 'test-x: see https://evil.example now' }), /title has a link/, 'a link in the title');
+  for (const title of ['test-x: ping @someone about it', 'test-x: <b>bold</b> title', 'test-x: `code` in the title', 'test-x: [x] brackets'])
+    drop(good({ title }), /title has a mention/, `title ${title}`);
+  assert.ok(validateOutput(out([good({ body: 'scripts/test-theme.ts and src/renderer/app.js are fine, and a.b(c) too.', evidence: 'evidence may keep https://example.com/x (fenced)' })])).ok
+    && (validateOutput(out([good({ body: 'scripts/test-theme.ts and src/renderer/app.js are fine, and a.b(c) too.', evidence: 'evidence may keep https://example.com/x (fenced)' })])) as { findings: unknown[] }).findings.length === 1, 'file names and calls are not links; the fenced evidence may keep a URL');
   drop(good({ file: '../etc/passwd' }), /relative path/, 'a path out of the repo');
   drop(good({ file: '/etc/passwd' }), /relative path/, 'an absolute path');
   drop(good({ file: 'scripts/../../x.ts' }), /relative path/, 'a .. segment');
@@ -112,13 +129,13 @@ const out = (findings: unknown[], extra: Record<string, unknown> = {}): string =
 
 // ---- the filer, with an injected gh
 type Call = string[];
-function fakeGh(opts: { issues?: { number: number; state: string; body: string }[]; labels?: string[]; searchFails?: boolean; createFails?: boolean } = {}): { gh: Gh; calls: Call[] } {
+function fakeGh(opts: { issues?: { number: number; state: string; body: string }[]; labels?: string[]; searchFails?: boolean; labelsFail?: boolean; createFails?: boolean } = {}): { gh: Gh; calls: Call[] } {
   const calls: Call[] = [];
   let n = 900;
   const gh: Gh = async (args) => {
     calls.push(args);
     if (args[0] === 'issue' && args[1] === 'list') return opts.searchFails ? { code: 1, stdout: '[]', stderr: 'boom' } : { code: 0, stdout: JSON.stringify(opts.issues || []), stderr: '' };
-    if (args[0] === 'label' && args[1] === 'list') return { code: 0, stdout: JSON.stringify((opts.labels || ['bug', 'task', 'area:ci', 'area:ui', 'spec:035', 'spec:021']).map((name) => ({ name }))), stderr: '' };
+    if (args[0] === 'label' && args[1] === 'list') return opts.labelsFail ? { code: 1, stdout: '[{"name":"bug"}]', stderr: 'denied' } : { code: 0, stdout: JSON.stringify((opts.labels || ['bug', 'task', 'area:ci', 'area:ui', 'spec:035', 'spec:021']).map((name) => ({ name }))), stderr: '' };
     if (args[0] === 'issue' && args[1] === 'create') return opts.createFails ? { code: 1, stdout: '', stderr: 'denied' } : { code: 0, stdout: `https://github.com/o/r/issues/${n++}\n`, stderr: '' };
     return { code: 1, stdout: '', stderr: 'unexpected' };
   };
@@ -183,6 +200,12 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     const s2 = await planAndFile({ findings: many(2), mode: 'file', gh: null, repo: 'o/r', env: {} });
     assert.ok(s2.error && /token file/.test(s2.error));
   }
+  // a failed label list files nothing (otherwise every label would be dropped silently)
+  {
+    const { gh, calls } = fakeGh({ labelsFail: true });
+    const s = await planAndFile({ findings: many(2), mode: 'file', gh, repo: 'o/r', env: {} });
+    assert.ok(s.error && /could not list labels; nothing filed/.test(s.error) && creates(calls).length === 0, JSON.stringify(s));
+  }
   // a spec label the repo lacks is dropped and said; a failed create is reported
   {
     const { gh, calls } = fakeGh({ labels: ['bug', 'area:ci'] });
@@ -217,6 +240,17 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     text = '';
     code = await main(['run', '--input', path.join(tmp, 'bad.txt'), '--file'], io({}));
     assert.ok(code === 1 && /output rejected: output is not JSON; nothing filed/.test(text), text);
+    // --max-age-hours: a stale answer is rejected and nothing is filed (the filing unit passes 6)
+    fs.writeFileSync(path.join(tmp, 'old.txt'), out([good()]));
+    const tenHoursAgo = new Date(Date.now() - 10 * 3_600_000);
+    fs.utimesSync(path.join(tmp, 'old.txt'), tenHoursAgo, tenHoursAgo);
+    text = '';
+    code = await main(['run', '--input', path.join(tmp, 'old.txt'), '--max-age-hours', '6'], io({}));
+    assert.ok(code === 1 && /older than 6 hours/.test(text), text);
+    fs.writeFileSync(path.join(tmp, 'fresh.txt'), out([good()]));
+    text = '';
+    code = await main(['run', '--input', path.join(tmp, 'fresh.txt'), '--max-age-hours', '6'], io({}));
+    assert.ok(code === 0 && /would file: 1/.test(text), text);
     // token file: checked, used only for gh, never printed
     const token = 'github_pat_' + 'Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3';
     const tf = path.join(tmp, 'token');
@@ -274,6 +308,9 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     assert.strictEqual(after('--permission-prompts'), 'none');
     assert.ok(argv.includes('--no-session-persistence'));
     assert.strictEqual(after('--model'), 'sonnet');
+    assert.strictEqual(after('--max-budget-usd'), String(DEFAULT_BUDGET_USD), 'a second cap next to the time limit');
+    assert.strictEqual(buildClaudeArgv({ model: 'sonnet', mutate, maxBudgetUsd: 2 })[argv.indexOf('--max-budget-usd') + 1], '2');
+    for (const b of [0, -1, NaN, 1000]) assert.throws(() => buildClaudeArgv({ model: 'sonnet', mutate, maxBudgetUsd: b }), /budget/);
     assert.ok(!argv.some((a) => /dangerously|bypassPermissions|--mcp-config|acceptEdits/.test(a)), 'nothing that skips permissions or adds MCP servers');
     assert.ok(!list('--allowedTools').some((t) => /^Bash$|Web|gh|git|curl|Edit|Write/.test(t)), 'no open Bash, network or edit tool is allowed');
     assert.throws(() => buildClaudeArgv({ model: 'sonnet; rm -rf ~', mutate }), /model/);
@@ -282,12 +319,83 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     let text = '';
     await main(['claude-argv', '--mutate', mutate], { out: (s) => { text += s; }, env: {} });
     assert.deepStrictEqual(text.split('\0').slice(0, -1), argv, 'the CLI prints the same argv, NUL-separated, default model sonnet');
-    // the shell script runs claude with that argv, without the token variables, under a lock and a time limit, dry run by default
-    const sh = fs.readFileSync(path.join(ROOT, 'scripts', 'weekly-test-audit.sh'), 'utf8');
-    assert.ok(/claude-argv --model "\$model" --mutate "\$mutate"/.test(sh) && /claude "\$\{args\[@\]\}"/.test(sh), 'the script uses the built argv');
-    assert.ok(/env -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u DURBAR_AUDIT_GH_TOKEN_FILE/.test(sh), 'claude runs without token variables');
-    assert.ok(/flock -n 9/.test(sh) && /timeout --kill-after=60 "\$limit"/.test(sh) && /^mode=dry-run$/m.test(sh), 'lock, time limit, dry run by default');
-    assert.ok(/trap cleanup EXIT/.test(sh) && /worktree add --quiet --detach "\$wt" origin\/main/.test(sh), 'a temp worktree of origin/main, removed on exit');
+  }
+  // ---- launch: claude gets only the allow-listed environment, the argv, the prompt on stdin, the worktree as cwd (POSIX: a node
+  // script with a shebang stands in for claude; the audit is a Linux tool)
+  if (posix) {
+    const mutate = '/tmp/x/weekly-test-audit-mutate.js';
+    const fake = path.join(tmp, 'fake-claude');
+    fs.writeFileSync(fake, `#!${process.execPath}\nlet s = ''; process.stdin.on('data', (d) => (s += d)).on('end', () => process.stdout.write(JSON.stringify({ env: process.env, argv: process.argv.slice(2), cwd: process.cwd(), stdin: s })));\n`, { mode: 0o700 });
+    const wt = fs.mkdtempSync(path.join(tmp, 'lwt-'));
+    const cfg = path.join(tmp, 'claude-config');
+    fs.writeFileSync(path.join(tmp, 'p.txt'), 'the prompt');
+    const leaky = { PATH: process.env.PATH || '/usr/bin', HOME: '/home/audit', TMPDIR: tmp, GH_TOKEN: 'github_pat_leak0123456789abcdefgh', GITHUB_TOKEN: 'x', DURBAR_AUDIT_GH_TOKEN_FILE: '/t',
+      SSH_AUTH_SOCK: '/run/ssh', ANTHROPIC_API_KEY: 'sk-ant-leak', AWS_SECRET_ACCESS_KEY: 'y', NODE_OPTIONS: '--require /evil.js', LD_PRELOAD: '/evil.so', GH_CONFIG_DIR: '/home/o/.config/gh' };
+    let text = '';
+    const code = await main(['launch', '--claude-bin', fake, '--worktree', wt, '--claude-config', cfg, '--mutate', mutate, '--prompt', path.join(tmp, 'p.txt'), '--out', path.join(tmp, 'o.txt'), '--err', path.join(tmp, 'e.txt'), '--timeout', '60'],
+      { out: (x) => { text += x; }, env: leaky });
+    assert.strictEqual(code, 0, text + fs.readFileSync(path.join(tmp, 'e.txt'), 'utf8'));
+    const seen = JSON.parse(fs.readFileSync(path.join(tmp, 'o.txt'), 'utf8')) as { env: Record<string, string>; argv: string[]; cwd: string; stdin: string };
+    assert.deepStrictEqual(Object.keys(seen.env).sort(), [...CLAUDE_ENV_KEYS].sort(), `only the allow-listed variables reach claude: ${Object.keys(seen.env).join(',')}`);
+    assert.strictEqual(seen.env.CLAUDE_CONFIG_DIR, cfg, 'its own Claude config, never ~/.claude');
+    assert.strictEqual(seen.env.DURBAR_AUDIT_WORKTREE, wt);
+    assert.strictEqual(seen.env.LANG, 'C.UTF-8');
+    assert.deepStrictEqual(seen.argv, buildClaudeArgv({ model: 'sonnet', mutate }), 'the built argv, nothing else');
+    assert.strictEqual(fs.realpathSync(seen.cwd), fs.realpathSync(wt), 'claude runs in the worktree');
+    assert.strictEqual(seen.stdin, 'the prompt', 'the prompt on stdin');
+    // the time limit: a claude that never ends is stopped and the launch says 124
+    const slow = path.join(tmp, 'slow-claude');
+    fs.writeFileSync(slow, `#!${process.execPath}\nprocess.on('SIGTERM', () => {}); setInterval(() => {}, 1000);\n`, { mode: 0o700 });
+    text = '';
+    const c2 = await main(['launch', '--claude-bin', slow, '--worktree', wt, '--claude-config', cfg, '--mutate', mutate, '--prompt', path.join(tmp, 'p.txt'), '--out', path.join(tmp, 'o2.txt'), '--err', path.join(tmp, 'e2.txt'), '--timeout', '1', '--grace-ms', '200'],
+      { out: (x) => { text += x; }, env: leaky });
+    assert.ok(c2 === 124 && /time limit/.test(text), `a hung claude is stopped (TERM ignored, then KILL): ${c2} ${text}`);
+    await assert.rejects(main(['launch', '--claude-bin', fake, '--worktree', 'rel', '--claude-config', cfg, '--mutate', mutate], { out: () => {}, env: leaky }), /absolute/);
+  }
+  // ---- the shell script's audit phase refuses to run with a token or a gh login (behaviour, POSIX bash), before it touches anything
+  if (posix) {
+    const sh = path.join(ROOT, 'scripts', 'weekly-test-audit.sh');
+    const home = fs.mkdtempSync(path.join(tmp, 'home-'));
+    // Safety: if a refusal were broken, the script would go on to clone, npm ci and launch claude. Fake git, npm, node and claude come
+    // first on PATH (each records the call and fails), and the remote does not exist, so a broken refusal fails fast and spends nothing.
+    const fakebin = fs.mkdtempSync(path.join(tmp, 'fakebin-'));
+    const called = path.join(tmp, 'fake-called.txt');
+    for (const b of ['git', 'npm', 'node', 'claude', 'gh']) fs.writeFileSync(path.join(fakebin, b), `#!/bin/sh\necho ${b} >> '${called}'\nexit 97\n`, { mode: 0o700 });
+    const base = { PATH: `${fakebin}:/usr/bin:/bin`, HOME: home, DURBAR_AUDIT_STATE_DIR: path.join(home, 'state'), DURBAR_AUDIT_REMOTE: path.join(tmp, 'no-such-remote') };
+    for (const [k, v] of [['GH_TOKEN', 'x'], ['GITHUB_TOKEN', 'x'], ['DURBAR_AUDIT_GH_TOKEN_FILE', '/t']]) {
+      const r = spawnSync('bash', [sh, 'audit'], { env: { ...base, [k]: v }, encoding: 'utf8' });
+      assert.ok(r.status === 2 && /token variable is set/.test(r.stderr), `${k}: ${r.status} ${r.stderr}`);
+    }
+    fs.mkdirSync(path.join(home, '.config', 'gh'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.config', 'gh', 'hosts.yml'), 'x');
+    const r = spawnSync('bash', [sh], { env: base, encoding: 'utf8' });
+    assert.ok(r.status === 2 && /gh login/.test(r.stderr), `a user with a gh login: ${r.status} ${r.stderr}`);
+    assert.ok(!fs.existsSync(path.join(home, 'state')), 'nothing was created before the refusal');
+    assert.ok(!fs.existsSync(called), 'no git, npm, node, claude or gh was run before the refusal');
+  }
+  // ---- the unit templates: the filer is never the audit's copy, the audit user sees no home and holds no token
+  {
+    const unit = (n: string): Record<string, string[]> => {
+      const kv: Record<string, string[]> = {};
+      for (const line of fs.readFileSync(path.join(ROOT, 'docs', 'agent-setup', n), 'utf8').split(/\r?\n/)) {
+        const m = /^([A-Za-z]+)=(.*)$/.exec(line);
+        if (m) (kv[m[1]] = kv[m[1]] || []).push(m[2]);
+      }
+      return kv;
+    };
+    const a = unit('durbar-weekly-audit.service'), f = unit('durbar-weekly-audit-file.service'), t = unit('durbar-weekly-audit.timer');
+    assert.deepStrictEqual(a.User, ['durbar-audit'], 'the audit phase runs as its own user');
+    assert.deepStrictEqual(a.ProtectHome, ['yes'], 'the audit phase sees no home folder (token, gh login, ssh, checkouts, the filer)');
+    assert.deepStrictEqual(a.ProtectSystem, ['strict']);
+    assert.ok(!(a.Environment || []).some((e) => /TOKEN|GH_/.test(e)) && !a.BindReadOnlyPaths && !a.BindPaths && !a.ReadWritePaths, 'no token, no extra paths for the audit phase');
+    assert.ok(/^\/var\/lib\/durbar-weekly-audit\/repo\/scripts\/weekly-test-audit\.sh audit$/.test(a.ExecStart[0]), 'the audit runs from its own clone');
+    assert.deepStrictEqual(a.OnSuccess, ['durbar-weekly-audit-file.service'], 'filing starts only after a successful audit');
+    assert.ok(f.User && f.User[0] !== 'durbar-audit', 'the filer is another user');
+    const exec = f.ExecStart[0];
+    assert.ok(/^\/usr\/bin\/node \/home\/<owner>\/\.local\/lib\/durbar-weekly-audit\/scripts\/weekly-test-audit\.js run /.test(exec) && !exec.includes('/var/lib/durbar-weekly-audit/repo') && / --file /.test(exec), `the filer runs the installed copy: ${exec}`);
+    assert.deepStrictEqual(f.ProtectHome, ['tmpfs']);
+    assert.ok((f.ReadOnlyPaths || []).join(' ') === '/var/lib/durbar-weekly-audit/outbox' && !f.ReadWritePaths, 'the filer only reads the outbox');
+    assert.ok((t.OnCalendar || [])[0] === 'Fri *-*-* 06:30 Europe/Madrid' && (t.Persistent || [])[0] === 'true');
   }
   // ---- the prompt
   {
@@ -306,6 +414,9 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     assert.match(String(suiteSteps(pkg, 'test:b')), /not "node <file>"/, 'a step that is not node <file> is refused');
     assert.match(String(suiteSteps(pkg, 'test:c')), /not in test:serial/);
     assert.match(String(suiteSteps(pkg, 'test:a; rm')), /test:\* script name/);
+    const pkg2 = { scripts: { 'test:serial': 'npm run test:x && npm run test:y', 'test:x': 'node scripts/a.js extra', 'test:y': 'npx scripts/a.js' } };
+    assert.match(String(suiteSteps(pkg2, 'test:x')), /not "node <file>"/, 'a node step with an extra argument');
+    assert.match(String(suiteSteps(pkg2, 'test:y')), /not "node <file>"/, 'a step that is not node');
     // a scratch worktree with one suite
     const wt = path.join(tmp, 'wt');
     fs.mkdirSync(path.join(wt, 'src'), { recursive: true });
@@ -331,7 +442,15 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     refused(['mutate', '--test', 'test:fake', '--file', 'package.json', '--find', 'a', '--replace', 'b'], /plain relative path/, 'package.json');
     refused(['mutate', '--test', 'test:fake', '--file', 'scripts/weekly-test-audit.prompt.md', '--find', 'x', '--replace', 'y'], /own files/, 'the audit\'s own files');
     refused(['mutate', '--test', 'test:fake', '--file', 'src/lib.js', '--find', 'a + b', '--replace', 'a + b'], /same/, 'a no-op');
-    refused(['mutate', '--test', 'test:fake', '--file', 'src/lib.js', '--find', 'x'.repeat(2001), '--replace', 'b'], /1\.\.2000/, 'a huge snippet');
+    refused(['mutate', '--test', 'test:fake', '--file', 'src/lib.js', '--find', 'x'.repeat(201), '--replace', 'b'], /1\.\.200 /, 'a long snippet');
+    refused(['mutate', '--test', 'test:fake', '--file', 'src/lib.js', '--find', 'a + b', '--replace', 'x'.repeat(201)], /at most 200/, 'a long replacement');
+    refused(['mutate', '--test', 'test:fake', '--file', 'src/lib.js', '--find', 'a + b', '--replace', 'a\n- b'], /printable ASCII/, 'a multi-line replacement');
+    // defence in depth: a mutant may not add a way to load code or reach the system (review of PR #756)
+    for (const rep of ["require('child_process').execSync('id')", 'process.env.HOME', "import('fs')", 'globalThis.x', 'new Function("x")', 'eval(a)', '`${a}`', 'fetch(a)', "'\\x41'", 'this.constructor'])
+      refused(['mutate', '--test', 'test:fake', '--file', 'src/lib.js', '--find', 'a + b', '--replace', rep], /adds .*defence in depth/, `a mutant with ${rep}`);
+    assert.deepStrictEqual(addsForbidden('const req = 1; uire', 'const requi = 1; re'), [], 'counting words: none added');
+    assert.ok(addsForbidden('x = a + b; // req uire', 'x = a + b; // require').length === 1, 'removing text that forms a forbidden word is refused too');
+    assert.strictEqual(fs.readFileSync(path.join(wt, 'src', 'lib.js'), 'utf8'), lib, 'refused mutants never touch the file');
     refused(['mutate', '--test', 'test:nope', '--file', 'src/lib.js', '--find', 'a + b', '--replace', 'a - b'], /not in test:serial/, 'an unknown suite');
     refused(['rm', '--test', 'test:fake'], /usage/, 'an unknown command');
     assert.strictEqual(mutateRun(['baseline', '--test', 'test:fake'], { DURBAR_AUDIT_WORKTREE: 'relative' }, 60_000).result, 'refused', 'the worktree must be absolute');

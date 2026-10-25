@@ -6,15 +6,31 @@
  *   node weekly-test-audit-mutate.js mutate --test test:theme --file scripts/test-theme.ts --find '<exact text>' --replace '<new text>'
  *
  * The worktree is DURBAR_AUDIT_WORKTREE (absolute; set by scripts/weekly-test-audit.sh, never by Claude). Only files under src/ or
- * scripts/ (not the audit's own files, not links) can change; a suite is run as its `node <file>` steps from package.json, without a
- * shell, with a time limit and without token variables. One run at a time (a lock file); the file is restored in a `finally`.
+ * scripts/ (not the audit's own files, not links) can change, by a small edit that adds no way to load code or reach the system
+ * (FORBIDDEN); a suite is run as its `node <file>` steps from package.json, without a shell, with a time limit and without token
+ * variables. One run at a time (a lock file); the file is restored in a `finally`. These checks are defence in depth: the test code it
+ * runs can still do anything the audit's unix user can, which is why that user has no token, no `gh` login and no view of the owner's home.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { redact } from '../src/shared/redact';
 
-export const MAX_SNIPPET = 2000;
+export const MAX_SNIPPET = 200;
+/**
+ * Defence in depth only (the real guard is the separate unix user, docs/agent-setup/README.md): a mutant is a small, single-site edit.
+ * It may not add a way to load code, reach the system or build code from text. Counted in the whole file, before and after, so removing
+ * text around a word cannot form one either.
+ */
+export const FORBIDDEN = [/\brequire\b/g, /\bimport\b/g, /\bprocess\b/g, /child_process/g, /\bfs\b/g, /\bfetch\b/g, /\beval\b/g, /\bFunction\b/g,
+  /\bglobalThis\b/g, /\bglobal\b/g, /\bmodule\b/g, /\bexports\b/g, /\bconstructor\b/g, /\bprototype\b/g, /__proto__/g, /\bBuffer\b/g, /\bspawn/g,
+  /\bexec/g, /\bWebSocket\b/g, /\bXMLHttpRequest\b/g, /\bnew\b/g, /\$\{/g, /`/g, /\\x/g, /\\u/g, /\bString\.fromCharCode\b/g, /\batob\b/g, /\bsetTimeout\b/g,
+  /\bsetInterval\b/g, /\bsetImmediate\b/g, /\bReflect\b/g, /\bProxy\b/g, /\bwith\b/g, /\bdebugger\b/g];
+/** The forbidden words the mutant adds to the file (empty when it adds none). */
+export function addsForbidden(before: string, after: string): string[] {
+  const count = (t: string, re: RegExp): number => (t.match(re) || []).length;
+  return FORBIDDEN.filter((re) => count(after, re) > count(before, re)).map((re) => re.source);
+}
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const TSC_PREFIX = /^tsc -p tsconfig\.scripts\.json\s*&&\s*/;
 const SECRET_ENV = /^(GH_|GITHUB_|DURBAR_AUDIT_GH_TOKEN|ANTHROPIC_|OPENAI_|COPILOT_)|TOKEN|SECRET|PASSWORD|CREDENTIAL/i;
@@ -98,6 +114,7 @@ export function run(argv: string[], env: NodeJS.ProcessEnv, timeoutMs = 300_000)
     if ('error' in t) return refuse(t.error);
     target = t;
     if (!find || find.length > MAX_SNIPPET || replace.length > MAX_SNIPPET) return refuse(`--find must be 1..${MAX_SNIPPET} characters and --replace at most ${MAX_SNIPPET}`);
+    if (!/^[\x20-\x7e]*$/.test(replace)) return refuse('--replace must be one line of printable ASCII');
     if (find === replace) return refuse('--find and --replace are the same');
   }
   const lock = path.join(root, '.weekly-audit-mutate.lock');
@@ -112,9 +129,12 @@ export function run(argv: string[], env: NodeJS.ProcessEnv, timeoutMs = 300_000)
     const text = original.toString('utf8');
     const count = text.split(find).length - 1;
     if (count !== 1) return { command, test, file: rel, result: 'refused', reason: `--find occurs ${count} times; it must occur exactly once` };
+    const mutated = text.replace(find, () => replace);
+    const added = addsForbidden(text, mutated);
+    if (added.length) return { command, test, file: rel, result: 'refused', reason: `the mutant adds ${added.join(', ')}; a mutant may only change logic (defence in depth)` };
     const isTs = rel.endsWith('.ts');
     try {
-      fs.writeFileSync(target!.abs, text.replace(find, () => replace));
+      fs.writeFileSync(target!.abs, mutated);
       if (isTs) {
         const c = compile(root, timeoutMs, env);
         if (c.timedOut || c.exit !== 0) return { command, test, file: rel, result: 'compile-error', exit: c.exit, output: tail(c.output) };

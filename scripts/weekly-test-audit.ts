@@ -4,15 +4,19 @@
  *
  *   node weekly-test-audit.js claude-argv --model sonnet --mutate <abs path of weekly-test-audit-mutate.js>   (NUL-separated argv)
  *   node weekly-test-audit.js prompt --template <file> --mutate <abs path> --sha <sha>                         (the rendered prompt)
- *   node weekly-test-audit.js run --input <claude output> [--file] [--repo owner/name] [--log <file>]
+ *   node weekly-test-audit.js launch --worktree <dir> --claude-config <dir> --mutate <abs path> --prompt <file> --out <file> --err <file>
+ *                                    [--model sonnet] [--timeout <s>] [--max-budget-usd <n>] [--claude-bin claude]
+ *   node weekly-test-audit.js run --input <claude output> [--file] [--repo owner/name] [--log <file>] [--max-age-hours <n>]
  *
  * `run` validates Claude's answer in full first, then (with `--file`) files at most MAX_NEW issues with `gh`, using a token read from the
  * file named by DURBAR_AUDIT_GH_TOKEN_FILE. Without `--file` it is a dry run: it prints what it would file and creates nothing.
- * Claude never sees the token; this file runs from a copy Claude cannot change (the shell script copies it out before Claude starts).
+ * `launch` runs `claude` with an allow-listed environment (CLAUDE_ENV_KEYS), never the caller's. The audit phase (`launch`) and the filing
+ * phase (`run --file`) run as different unix users (docs/agent-setup/README.md): the filer is a copy installed from reviewed `main`
+ * where the audit user cannot write, and the token is reachable only by the filing user.
  */
 import * as crypto from 'crypto';
 import * as fs from 'fs';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { redact } from '../src/shared/redact';
 
 export const SCHEMA_ID = 'durbar-weekly-audit/1';
@@ -38,6 +42,9 @@ export type Validated = { ok: false; error: string } | { ok: true; findings: Fin
 
 const own = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
 const isPlainObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
+/** A live link in Markdown: a URL scheme, `www.`, an inline link, a reference definition, an autolink or a bare domain. The evidence is
+ * fenced, so it may keep URLs (a code block renders no link). */
+export const LINKY = /[a-z][a-z0-9+.-]*:\/\/|\bwww\.|\]\s*\(|^\s*\[[^\]]*\]:|<[a-z][a-z0-9+.-]*:|\b[a-z0-9-]+\.(com|org|net|io|dev|app|example|xyz|ru|cn|gg)\b/im;
 // control characters other than newline and tab (titles also refuse those)
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
@@ -57,6 +64,8 @@ export function findingErrors(f: unknown): string[] {
   }
   if (typeof f.id === 'string' && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(f.id)) errs.push('id is not kebab-case');
   if (typeof f.title === 'string' && /[\r\n\t]/.test(f.title)) errs.push('title has a line break or tab');
+  if (typeof f.title === 'string' && /[@<>`[\]]/.test(f.title)) errs.push('title has a mention, HTML, a code mark or a bracket');
+  for (const k of ['title', 'body'] as const) if (typeof f[k] === 'string' && LINKY.test(f[k] as string)) errs.push(`${k} has a link`);
   if (typeof f.file === 'string') {
     const p = f.file;
     if (!/^(src|scripts|specs|docs)\/[A-Za-z0-9._\-/]+$/.test(p) || p.split('/').some((s) => s === '' || s === '.' || s === '..')) errs.push('file is not a plain relative path under src/, scripts/, specs/ or docs/');
@@ -227,12 +236,16 @@ export function formatSummary(s: Summary, v: Validated): string {
 
 const MUTATE_RE = /^\/[A-Za-z0-9._\-/]+\/weekly-test-audit-mutate\.js$/;
 const MODEL_RE = /^[A-Za-z0-9.\-[\]]{1,60}$/;
+/** A second cap next to the wall clock: Claude Code stops the session at this API cost (`--max-budget-usd`, print mode only). */
+export const DEFAULT_BUDGET_USD = 5;
 /**
  * The exact `claude` argv. No MCP servers or settings files (CLAUDE.md), restricted mode, only Read/Grep/Glob/Bash available, Bash
  * allowed only for the mutation helper, anything else denied without a prompt, no session saved.
  */
-export function buildClaudeArgv(opts: { model: string; mutate: string }): string[] {
+export function buildClaudeArgv(opts: { model: string; mutate: string; maxBudgetUsd?: number }): string[] {
   if (!MODEL_RE.test(opts.model)) throw new Error('bad model name');
+  const budget = opts.maxBudgetUsd ?? DEFAULT_BUDGET_USD;
+  if (!(Number.isFinite(budget) && budget > 0 && budget <= 100)) throw new Error('bad budget');
   if (!MUTATE_RE.test(opts.mutate)) throw new Error('the helper path must be absolute and plain');
   return [
     '-p',
@@ -246,6 +259,7 @@ export function buildClaudeArgv(opts: { model: string; mutate: string }): string
     '--no-session-persistence',
     '--disable-slash-commands',
     '--model', opts.model,
+    '--max-budget-usd', String(budget),
     '--output-format', 'text',
   ];
 }
@@ -274,6 +288,48 @@ export function ghRunner(token: string, bin = 'gh'): Gh {
   });
 }
 
+/** The only variables `claude` gets (fix round of PR #756): everything else in the caller's environment stays out. */
+export const CLAUDE_ENV_KEYS = ['PATH', 'HOME', 'LANG', 'TMPDIR', 'CLAUDE_CONFIG_DIR', 'DURBAR_AUDIT_WORKTREE'];
+export function claudeEnv(env: Env, o: { worktree: string; claudeConfig: string }): Record<string, string> {
+  return {
+    PATH: env.PATH || '/usr/local/bin:/usr/bin:/bin',
+    HOME: env.HOME || o.claudeConfig,
+    LANG: 'C.UTF-8',
+    TMPDIR: env.TMPDIR || '/tmp',
+    CLAUDE_CONFIG_DIR: o.claudeConfig,
+    DURBAR_AUDIT_WORKTREE: o.worktree,
+  };
+}
+
+/**
+ * Run `claude` in the worktree: the prompt on stdin, stdout and stderr to files, the allow-listed environment, its own process group,
+ * stopped (TERM, then KILL after `graceMs`) at the time limit. Resolves with the exit code and whether the limit hit.
+ */
+export function launchClaude(o: { bin: string; argv: string[]; env: Record<string, string>; cwd: string; promptFile: string; outFile: string; errFile: string;
+  timeoutMs: number; graceMs?: number }): Promise<{ code: number | null; timedOut: boolean }> {
+  const stdin = fs.openSync(o.promptFile, 'r');
+  const out = fs.openSync(o.outFile, 'w', 0o600);
+  const err = fs.openSync(o.errFile, 'w', 0o600);
+  return new Promise((resolve) => {
+    let timedOut = false;
+    let settled = false;
+    let force: NodeJS.Timeout | undefined;
+    const child = spawn(o.bin, o.argv, { cwd: o.cwd, env: o.env, stdio: [stdin, out, err], detached: process.platform !== 'win32', windowsHide: true });
+    const stop = (sig: NodeJS.Signals): void => { try { if (child.pid) process.kill(process.platform === 'win32' ? child.pid : -child.pid, sig); } catch { /* gone */ } };
+    const timer = setTimeout(() => { timedOut = true; stop('SIGTERM'); force = setTimeout(() => stop('SIGKILL'), o.graceMs ?? 60_000); }, o.timeoutMs);
+    const finish = (code: number | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (force) clearTimeout(force);
+      for (const fd of [stdin, out, err]) try { fs.closeSync(fd); } catch { /* closed */ }
+      resolve({ code, timedOut });
+    };
+    child.on('error', () => finish(127));
+    child.on('close', (code) => finish(code));
+  });
+}
+
 function flag(argv: string[], name: string): string | undefined {
   const i = argv.indexOf(name);
   return i >= 0 ? argv[i + 1] : undefined;
@@ -284,6 +340,21 @@ export async function main(argv: string[], io: { out: (s: string) => void; env: 
   if (cmd === 'claude-argv') {
     io.out(buildClaudeArgv({ model: flag(argv, '--model') || 'sonnet', mutate: flag(argv, '--mutate') || '' }).join('\0') + '\0');
     return 0;
+  }
+  if (cmd === 'launch') {
+    const worktree = flag(argv, '--worktree') || '', claudeConfig = flag(argv, '--claude-config') || '';
+    if (!worktree.startsWith('/') || !claudeConfig.startsWith('/')) throw new Error('--worktree and --claude-config must be absolute');
+    const timeoutS = Number(flag(argv, '--timeout') || 2700);
+    if (!(Number.isInteger(timeoutS) && timeoutS > 0)) throw new Error('bad --timeout');
+    const bin = flag(argv, '--claude-bin') || 'claude';
+    if (!/^[A-Za-z0-9._\-/]+$/.test(bin)) throw new Error('bad --claude-bin');
+    const budget = flag(argv, '--max-budget-usd');
+    const args = buildClaudeArgv({ model: flag(argv, '--model') || 'sonnet', mutate: flag(argv, '--mutate') || '', maxBudgetUsd: budget === undefined ? undefined : Number(budget) });
+    const graceMs = Number(flag(argv, '--grace-ms') || 60_000);
+    const r = await launchClaude({ bin, argv: args, env: claudeEnv(io.env, { worktree, claudeConfig }), cwd: worktree, graceMs,
+      promptFile: flag(argv, '--prompt') || '', outFile: flag(argv, '--out') || '', errFile: flag(argv, '--err') || '', timeoutMs: timeoutS * 1000 });
+    io.out(r.timedOut ? `claude stopped at the time limit (${timeoutS} s)\n` : `claude exited with ${r.code}\n`);
+    return r.timedOut ? 124 : r.code === 0 ? 0 : 1;
   }
   if (cmd === 'prompt') {
     io.out(renderPrompt(fs.readFileSync(flag(argv, '--template') || '', 'utf8'), { mutate: flag(argv, '--mutate') || '', sha: flag(argv, '--sha') || '' }));
@@ -296,7 +367,13 @@ export async function main(argv: string[], io: { out: (s: string) => void; env: 
     const input = flag(argv, '--input');
     let text = '';
     try { text = fs.readFileSync(input || '', 'utf8'); } catch { text = ''; }
-    const v = validateOutput(text);
+    let v = validateOutput(text);
+    const maxAge = flag(argv, '--max-age-hours');
+    if (maxAge !== undefined && v.ok) {
+      let age = Infinity;
+      try { age = (Date.now() - fs.statSync(input || '').mtimeMs) / 3_600_000; } catch { /* missing */ }
+      if (!(age <= Number(maxAge))) v = { ok: false, error: `the answer is older than ${maxAge} hours` };
+    }
     const tokenFile = io.env.DURBAR_AUDIT_GH_TOKEN_FILE;
     let gh: Gh | null = null;
     let tokenError = '';
@@ -324,7 +401,7 @@ export async function main(argv: string[], io: { out: (s: string) => void; env: 
     if (log) fs.appendFileSync(log, text2 + '\n', { mode: 0o600 });
     return !v.ok || summary.error || summary.outcomes.some((o) => o.status === 'failed') ? 1 : 0;
   }
-  throw new Error('usage: weekly-test-audit.js claude-argv|prompt|run ...');
+  throw new Error('usage: weekly-test-audit.js claude-argv|launch|prompt|run ...');
 }
 
 if (require.main === module) {
