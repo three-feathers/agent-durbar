@@ -33,3 +33,4 @@
 - [x] T036 (FR-104..FR-106) `scripts/check-why-allowed.js` in `ui-suite.js` (both sizes, `until()` waits), mutation checks, README Safety model, changelog fragment, screenshots, spec index.
 
 - [x] T037 (review of #729) Several-rule reasons and Undo for all of them; `attachment` reason, "folder read" only when checked; wording; "removed" only for a rule this window saw; `revokeGrantFor` tested; the simulator's quiet reads; FR-107 records why there is no "reason unknown" tag. [FR-099..FR-107]
+- [x] T038 (review of #729, round 3) Undo by call id: the broker remembers the rules per call (bounded), `agents:revokeGrant` takes a validated call id, "Rule removed" only on main's confirmation; tests on the real broker (60 folders, hostile ids, eviction) and the driver.
