@@ -205,6 +205,15 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     assert.strictEqual(g(d, 'status', '--porcelain'), status, 'no tracked file changed');
     const sum = rn.summary(r, opts.tag);
     assert.ok(sum.includes(`git switch -c <NNN>-fold-alpha-11 v0.1.0-alpha.11`) && !/\.\d+-fold|fold-0\.1/.test(sum) && sum.includes(`npm run changelog:build -- --release "${h}"`), 'the summary gives the fold PR commands, from the tag');
+    // the fold branch name must pass the Spec Kit gate for every release tag shape (a dotted name fails CI: PR #740)
+    const GATE = /^[0-9]{3}-[a-z0-9][a-z0-9-]*$/;
+    for (const [t, want] of [['v0.1.0-alpha.11', 'fold-alpha-11'], ['v1.2.3', 'fold-1-2-3'], ['v1.2.3-rc.2', 'fold-rc-2'], ['v2.0.0-beta.10', 'fold-beta-10']]) {
+      const s2 = rn.summary({ kind: 'release', heading: 'h', previous: 'p', source: 'fragments', commits: 0 }, t);
+      const m2 = /git switch -c <NNN>-(\S+) /.exec(s2);
+      assert.ok(m2, `the summary prints a fold branch for ${t}`);
+      assert.strictEqual(m2[1], want, `${t}: fold branch slug`);
+      assert.ok(GATE.test(`123-${m2[1]}`), `${t}: 123-${m2[1]} passes the Spec Kit gate`);
+    }
     assert.ok(!/git push/.test(sum), 'the summary never tells anyone to push to main');
     // the CLI writes --out and appends to --summary
     const out = path.join(d, '..', `${path.basename(d)}-notes.md`);
