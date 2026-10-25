@@ -1,0 +1,1 @@
+- **Nightly macOS navigator check** (specs 008 and 074): make the simulator test macOS native text-edit shortcuts without assuming Electron simulates Cocoa editing; verify the app does not intercept them. Targeted navigator driver passed locally on macOS.
