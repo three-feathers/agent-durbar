@@ -2986,7 +2986,8 @@ async function endAllSessions(anchor){
     buttons:[{label:'Cancel',value:null},{label:'End all sessions',value:'ok',cls:'primary danger'}]});
   if(!ok)return;
   const bad=[];
-  for(const a of list){try{const r=liveRoot(a),sum=await readSessionSummary(r);await (bridge.end||bridge.stop)(a.id);dropDraft(a.id);sessionSummaryNote(r,sum);}catch(err){bad.push(a.name);}}
+  const sums=await Promise.all(list.map(a=>readSessionSummary(liveRoot(a)))); // spec 085: read together, so 15 sessions wait at most 5 s, not 5 s each
+  for(const [i,a] of list.entries()){try{await (bridge.end||bridge.stop)(a.id);dropDraft(a.id);sessionSummaryNote(liveRoot(a),sums[i]);}catch(err){bad.push(a.name);}}
   const n=list.length-bad.length;
   toast(bad.length?'Could not end '+esc(bad.join(', '))+'.':(n===1?'1 session ended.':n+' sessions ended.')+' Sending a message resumes one.',4200).classList.add(bad.length?'err':'ok');
 }

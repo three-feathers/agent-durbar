@@ -2,7 +2,7 @@
  * Spec 085: what a session did, read from git when it ends. From the first message Durbar sends in this run, main keeps a start (time,
  * start commit, whether the tree was clean); `summarize` compares the folder with it. Read-only: `git` runs with an argument array (no
  * shell), `--no-optional-locks`, the limits of spec 063; the only value that reaches an argument is a commit id that main itself read
- * and checked to be hex. Nothing is stored on disk. Any failure is `{ repo: false }`, never an invented zero.
+ * and checked to be hex; `diff` runs with `--no-ext-diff --no-textconv`, so no diff helper configured for the folder runs. Nothing is stored on disk. Any failure is `{ repo: false }`, never an invented zero.
  */
 import { folderGitStatus, nodeGitExec } from './gitstatus';
 import type { GitExec } from './gitstatus';
@@ -95,8 +95,8 @@ export class SessionStarts {
     const ms = Math.max(0, Math.min(Math.round(this.now() - s.at), 366 * 24 * 3600 * 1000));
     if (!s.repo) return { ok: true, ms, git: { repo: false } };
     try {
-      const stat = s.ref ? parseShortstat(await this.exec(['-C', dir, 'diff', '--shortstat', s.ref, '--'])) : { files: 0, added: 0, removed: 0 }; // no commit at the start: no base to compare with
-      const bin = s.ref ? countBinary(await this.exec(['-C', dir, 'diff', '--numstat', s.ref, '--']).catch(() => '')) : 0;
+      const stat = s.ref ? parseShortstat(await this.exec(['-C', dir, 'diff', '--no-ext-diff', '--no-textconv', '--shortstat', s.ref, '--'])) : { files: 0, added: 0, removed: 0 }; // no commit at the start: no base to compare with
+      const bin = s.ref ? countBinary(await this.exec(['-C', dir, 'diff', '--no-ext-diff', '--no-textconv', '--numstat', s.ref, '--']).catch(() => '')) : 0;
       const commits = s.ref
         ? parseCount(await this.exec(['-C', dir, 'rev-list', '--count', `${s.ref}..HEAD`]).catch(() => '0'))
         : parseCount(await this.exec(['-C', dir, 'rev-list', '--count', 'HEAD']).catch(() => '0'));

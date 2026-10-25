@@ -71,7 +71,8 @@ async function main(): Promise<void> {
     assert.ok(!c.some((x) => /[;|&$`]/.test(x)), 'no shell characters in ' + c.join(' '));
   }
   const diff = g.calls.find((c) => c.includes('--shortstat'))!;
-  assert.deepStrictEqual(diff, ['-C', '/work', 'diff', '--shortstat', REF, '--'], 'tracked changes against the start commit');
+  assert.deepStrictEqual(diff, ['-C', '/work', 'diff', '--no-ext-diff', '--no-textconv', '--shortstat', REF, '--'], 'tracked changes against the start commit, no diff helper');
+  assert.ok(g.calls.filter((c) => c[2] === 'diff' && c.includes(REF)).every((c) => c.includes('--no-ext-diff') && c.includes('--no-textconv')), 'every diff against the start commit runs without a configured helper');
   assert.deepStrictEqual(g.calls.find((c) => c[2] === 'rev-list'), ['-C', '/work', 'rev-list', '--count', `${REF}..HEAD`]);
   assert.ok(g.calls.every((c) => !['commit', 'add', 'checkout', 'reset', 'stash', 'push', 'clean', 'restore'].includes(c[2])), 'read-only');
 
