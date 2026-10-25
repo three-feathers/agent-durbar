@@ -193,7 +193,7 @@
   async function askConsent(){
     if(!host.ask)return false;
     const r=await host.ask({title:'Open the session browser?',
-      body:'Each session gets its own private browser. It starts empty, is wiped when the session ends, and keeps its sound off. Links the agent prints open there. A page can show its own dialogs, which appear as system boxes; for a session whose chat is not showing, Durbar tells you which session asks and brings its chat forward. Nothing loads unless you open a Browser tab. You are asked this once.',
+      body:'Each session gets its own private browser. It starts empty, is wiped when the session ends, and keeps its sound off. Chat links will open there once that is built; for now you type an address yourself. A page can show its own dialogs, which appear as system boxes; for a session whose chat is not showing, Durbar tells you which session asks and brings its chat forward. Nothing loads unless you open a Browser tab. You are asked this once.',
       buttons:[{label:'Not now',value:null},{label:'Open the browser',value:'ok',cls:'primary'}]});
     if(!r||r.value!=='ok')return false;
     const a=await bridge.browserConsentAccept().catch(()=>null);

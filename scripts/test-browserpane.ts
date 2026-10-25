@@ -79,6 +79,7 @@ for (const needle of ['.dlg-ov', '[role="menu"]', '.mode-menu', '.more-menu', '#
 assert.ok(/overlay\(on\)/.test(src('src/renderer/browserpane.js')) && /bridge\.browserSnapshot\(id\)/.test(src('src/renderer/browserpane.js')) && /bridge\.browserOverlay\(id,true\)/.test(src('src/renderer/browserpane.js')), 'the pane takes a still picture, then hides the view');
 // FR-025d (Q2), FR-025e, FR-025d (Q3): consent, Leave and the hidden dialog, all through the shared askDialog and toast
 const pane2 = src('src/renderer/browserpane.js');
+assert.ok(/Chat links will open there once that is built; for now you type an address yourself\./.test(pane2) && !/Links the agent prints/.test(pane2), 'the note says only what is true now about chat links');
 assert.ok(/Nothing loads unless you open a Browser tab\./.test(pane2), 'the note says when the browser loads anything');
 assert.ok(/r\.needsConsent/.test(pane2) && /Not now/.test(pane2) && /Open the browser/.test(pane2) && /browserConsentAccept/.test(pane2), 'the consent: Not now / Open the browser, remembered through main');
 assert.ok(/title:'Leave this page\?'/.test(pane2) && /Leave, then click again\./.test(pane2) && /label:'Stay',value:null/.test(pane2) && /cls:'primary warn'/.test(pane2), 'the Leave box: Stay is the cancel (focused first), Leave is the warn choice');

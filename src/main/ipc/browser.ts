@@ -68,6 +68,7 @@ export function register(deps: BrowserIpcDeps): BrowserController {
   ipcHandle('browser:overlay', (e, id: unknown, open: unknown) => (fromApp(e) ? ctl.overlay(id, open) : { ok: false }));
   ipcHandle('browser:mute', (e, id: unknown, muted: unknown) => (fromApp(e) ? ctl.mute(id, muted) : REFUSED));
   ipcHandle('browser:openSystem', (e, id: unknown) => (fromApp(e) ? ctl.openSystem(id) : { ok: false }));
+  // records the consent with no proof the dialog was shown (any code in the app window can call it): inside the window's trust boundary, like the other settings channels
   ipcHandle('browser:consentAccept', (e) => {
     if (!fromApp(e)) return { ok: false };
     deps.getSettingsStore()?.acceptBrowserNote();
