@@ -54,6 +54,7 @@ const DOC_SHOTS = [
   { name: 'shots-044-templates', files: ['044-templates-1440x900.png'] },
   { name: 'shots-051-setup', files: ['051-harnesses-1440x900.png'] },
   { label: 'shots-051-setup win32', name: 'shots-051-setup', files: ['051-install-manual-win32-1440x900.png'] },
+  { name: 'shots-081-updates', files: ['081-updates-avail-1440x900.png'] },
   { name: 'shots-052-ux', files: ['052-office-1440x900.png'] },
   { name: 'shots-063-folder-status', files: ['063-folder-changes-1440x900.png'] },
   { name: 'shots-064-send-several', files: ['064-send-several-1440x900.png'] },

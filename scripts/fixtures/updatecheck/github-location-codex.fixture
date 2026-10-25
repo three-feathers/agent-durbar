@@ -1,0 +1,2 @@
+# source: real: 2026-10-24, a HEAD request to https://github.com/openai/codex/releases/latest answered 302 with this location (spec 081 FR-004)
+location: https://github.com/openai/codex/releases/tag/rust-v0.164.0
