@@ -4382,7 +4382,7 @@ function onLiveEvent(e){
     if(a.compacting&&(e.status==='idle'||e.status==='error'||e.status==='stopped')){
       a.compacting=false;
       const R=a.compRun;
-      if(e.status!=='idle'||e.intent==='Aborted'){if(R&&R.pending&&R.el){R.el.textContent='Compaction stopped.';R.pending=false;}}
+      if(e.status!=='idle'||e.intent==='Aborted'){if(R&&R.pending&&R.el){R.el.textContent='Compaction stopped.';a.compRun=null; /* a later result is a new line */}}
       updateCtxChip(a);scheduleRender();
     } /* spec 015 FR-010: a stop or an error ends the mark even if the adapter sent no end */
     const gaveUp=e.status==='error'?a.gaveUp:null; a.gaveUp=null; /* spec 034 FR-019: the line of a turn that gave up after retries */

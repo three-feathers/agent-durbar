@@ -139,6 +139,18 @@ module.exports = async (ctx) => {
     assert.ok(await js(`[...document.querySelectorAll('#chat .note.cline')].some(n=>/^Compacting the context/.test(n.textContent))&&![...document.querySelectorAll('#chat .note.cline')].some(n=>/failed/.test(n.textContent)&&n===[...document.querySelectorAll('#chat .note.cline')].pop())`), 'the line still says Compacting and nothing failed');
     await emit({ type: 'compaction', sessionId: c.id, timestamp: Date.now(), phase: 'complete', trigger: 'manual', tokensBefore: 100000, tokensAfter: 20000, limit: 200000 });
     await ok(`[...document.querySelectorAll('#chat .note.cline')].pop().textContent==='Context compacted (manual): 100k → 20k tokens.'`, 'the late result ends the line, with the manual trigger');
+    // a stop ends an open line as "stopped"; a late result is then a NEW line and the stopped one stays as it was
+    await emit({ type: 'compaction', sessionId: c.id, timestamp: Date.now(), phase: 'start', trigger: 'unknown' });
+    await ok(`document.querySelector('#panelHead [data-f=status]').textContent==='Compacting'`, 'Compacting before the second stop');
+    await emit({ type: 'status', sessionId: c.id, timestamp: Date.now(), status: 'idle', intent: 'Aborted' });
+    await ok(`[...document.querySelectorAll('#chat .note.cline')].pop().textContent==='Compaction stopped.'`, 'the stop turned the open line into "Compaction stopped."');
+    const nStop = (await lines()).length;
+    await emit({ type: 'compaction', sessionId: c.id, timestamp: Date.now(), phase: 'complete', trigger: 'auto', tokensBefore: 90000, tokensAfter: 20000, limit: 100000 });
+    await ok(`document.querySelectorAll('#chat .note.cline').length===${jsLiteral(nStop + 1)}`, 'a late complete after a stop adds a new line');
+    l = await lines();
+    assert.strictEqual(l[l.length - 1], 'Context compacted (automatic): 90k → 20k tokens.', 'the new line is last');
+    assert.strictEqual(l[l.length - 2], 'Compaction stopped.', 'the stopped line is unchanged');
+
     await closeChat();
     await ok(`!(${pillIs('Clara', 'Compacting')})`, 'the office agrees');
 
