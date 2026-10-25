@@ -48,3 +48,10 @@ export function sandboxRoots(roots: readonly unknown[] | undefined | null, realp
   }
   return out;
 }
+
+/**
+ * Spec 087 FR-004/FR-014 (review on PR 733): credential folders and files in the home folder that a sandboxed command must never read or
+ * write, also when the session folder is the home folder or a parent of it (Durbar allows that with a warning, spec 006 FR-016). Relative
+ * to the home folder. Claude Code: `denyRead`/`denyWrite` entries (`~/…`); Copilot: `deniedPaths` where the host reports `denied_paths`.
+ */
+export const HOME_SECRETS: readonly string[] = Object.freeze(['.ssh', '.aws', '.config/gh', '.gnupg', '.netrc', '.npmrc', '.git-credentials', '.docker', '.kube', '.azure', '.config/gcloud', '.claude', '.copilot', '.codex']);

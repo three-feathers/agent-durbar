@@ -9,6 +9,7 @@ import * as path from 'path';
 import { eventProblems } from '../src/adapters/eventguard';
 import type { AgentEvent, StartOptions } from '../src/adapters/types';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
+import { HOME_SECRETS } from '../src/adapters/sandboxRoots';
 
 const WS = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-copilot-sbx-')));
 
@@ -58,7 +59,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(c.userPolicy.network, { allowOutbound: false, allowLocalNetwork: false });
     assert.deepStrictEqual(c.userPolicy.filesystem.readwritePaths, [], 'Read-only: no writable path');
     assert.deepStrictEqual(c.userPolicy.filesystem.readonlyPaths, [WS, '/usr/bin', '/home/me/.local/bin'], 'roots, then PATH folders minus home, its ancestors and other profiles');
-    assert.deepStrictEqual(c.userPolicy.filesystem.deniedPaths, ['/home/me/.ssh', '/home/me/.aws', '/home/me/.config/gh'], 'with denied_paths: the credential folders');
+    assert.deepStrictEqual(c.userPolicy.filesystem.deniedPaths, HOME_SECRETS.map((x) => '/home/me/' + x), 'with denied_paths: the credential folders');
     assert.strictEqual(last(events, ro)?.state, 'on');
     assert.strictEqual(last(events, ro)?.mechanism, 'bubblewrap');
     assert.deepStrictEqual(last(events, ro)?.covers, ['shell', 'mcp']);
@@ -69,7 +70,7 @@ async function main(): Promise<void> {
     const ca = updates(fake, ask)[0].sandboxConfig as { userPolicy: { filesystem: Record<string, string[]> } };
     assert.deepStrictEqual(ca.userPolicy.filesystem.readwritePaths, [WS]);
     assert.deepStrictEqual(ca.userPolicy.filesystem.readonlyPaths, ['/usr/bin', '/home/me/.local/bin']);
-    assert.deepStrictEqual(ca.userPolicy.filesystem.deniedPaths, [path.join(WS, '.git', 'hooks'), path.join(WS, '.git', 'config'), '/home/me/.ssh', '/home/me/.aws', '/home/me/.config/gh'], 'Ask first: protected paths in each root');
+    assert.deepStrictEqual(ca.userPolicy.filesystem.deniedPaths, [path.join(WS, '.git', 'hooks'), path.join(WS, '.git', 'config'), ...HOME_SECRETS.map((x) => '/home/me/' + x)], 'Ask first: protected paths in each root');
     const all = await start(ad, 'allow');
     assert.strictEqual(updates(fake, all).length, 0, 'Allow all: nothing sent');
     assert.strictEqual(last(events, all), null, 'Allow all: nothing to show');
@@ -171,6 +172,43 @@ async function main(): Promise<void> {
     await m2.ad.dispose();
   }
 
+  // ---- review on PR 733 (2): Continue with no note open is refused; one-shot ----
+  {
+    const { ad, fake } = make();
+    const sid = await start(ad, 'read-only');
+    await assert.rejects(ad.continueWithoutSandbox!(sid), /no OS sandbox note/, 'a working floor is never switched off');
+    await ad.send(sid, { text: 'x' });
+    assert.strictEqual(sends(fake, sid), 1);
+    await ad.dispose();
+    const m = make({ prep: (c) => { c.sandboxHost = { supported: false, reason: 'no bwrap', capabilities: [] }; } });
+    const s2 = await start(m.ad, 'ask');
+    await assert.rejects(m.ad.continueWithoutSandbox!(s2), /no OS sandbox note/, 'no note shown yet: refused');
+    await m.ad.send(s2, { text: 'x' });
+    await m.ad.continueWithoutSandbox!(s2);
+    await assert.rejects(m.ad.continueWithoutSandbox!(s2), /no OS sandbox note/, 'one-shot');
+    await m.ad.dispose();
+  }
+
+  // ---- review on PR 733 (6): a send right after a mode switch goes out only after the switch's update has answered ----
+  {
+    const { ad, fake } = make();
+    const sid = await start(ad, 'read-only');
+    const fsn = fake.sessions.get(sid)!;
+    fsn.rpc.options.update = async (a: unknown) => { fsn.calls.push({ name: 'options.update', args: [a] }); await new Promise((r) => setTimeout(r, 30)); fsn.calls.push({ name: 'update-done', args: [] }); };
+    ad.setPermMode!(sid, 'ask');
+    await ad.send(sid, { text: 'now' });
+    const names = fsn.calls.map((c) => c.name);
+    assert.ok(names.indexOf('update-done') >= 0 && names.indexOf('update-done') < names.indexOf('send'), 'the send waits for the update: ' + names.join(','));
+    await ad.dispose();
+  }
+
+  // ---- review on PR 733 (7): the 15 s cap itself (the default, not the test's short one) ----
+  {
+    const fake = new FakeClient();
+    const plain = new FakeCopilot(fake) as unknown as { sandboxTimeoutMs: number };
+    assert.strictEqual(plain.sandboxTimeoutMs, 15_000, 'the cap is 15 s');
+  }
+
   // ---- AC2: a switch to Allow all sends nothing and keeps the floor until a new session; back to Ask first sends the new floor ----
   {
     const { ad, fake, events } = make();
@@ -214,8 +252,17 @@ async function main(): Promise<void> {
     assert.match(String(w.fix), /Windows 11 25H2/);
   }
   fs.rmSync(WS, { recursive: true, force: true });
+  done = true;
   console.log('copilot sandbox (spec 087 T021): all checks passed');
 }
+// review on PR 733 (7): a run that stops early (a never-answering fake, an unawaited path) must not exit 0
+let done = false;
+process.on('exit', (code) => {
+  if (!done && code === 0) {
+    console.error('copilot sandbox: the run ended before its last check');
+    process.exitCode = 1;
+  }
+});
 
 main().catch((e) => {
   console.error(e);

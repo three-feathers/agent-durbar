@@ -536,6 +536,10 @@ async function main(): Promise<void> {
     const rep = server.serverRequest('item/commandExecution/requestApproval', { threadId: sid, itemId: 'c1', command: 'npm test' }, child);
     void rep;
     await until('the pending state', () => pendingOf(events));
+    // spec 087 FR-021 (review on PR 733): the card's sandbox line reaches the pending permission, on its own field
+    const pendingPerm = events.find((e) => e.type === 'status' && e.status === 'needs-permission' && e.permission) as { permission?: { sandboxNote?: string; summary?: string } } | undefined;
+    assert.strictEqual(pendingPerm?.permission?.sandboxNote, 'If you approve, Codex may run this outside its sandbox.', 'the pending card carries the sandbox line');
+    assert.ok(!/sandbox/.test(pendingPerm?.permission?.summary ?? ''), 'and the summary does not');
     events.length = 0;
     child.stderrText(`fatal: token ${SECRET_KEY} and ${SECRET_ENV}\n`);
     child.exit(139, null);

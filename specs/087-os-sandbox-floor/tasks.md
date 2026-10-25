@@ -77,13 +77,13 @@ description: "Tasks for spec 087: each agent app's OS sandbox as the floor under
 
 ## Phase 4: Docs
 
-- [x] T040 README *Safety model* and known limits (per app and OS, what is covered, "not verified on a real session"); `changelog.d/087-os-sandbox-floor.md`; screenshots via `npm run shots:docs`; spec status and index block. [FR-020]
+- [x] T040 README *Safety model* and known limits (per app and OS, what is covered, "not verified on a real session"); `changelog.d/087-os-sandbox-build.md` (the build branch's fragment); screenshots via `npm run shots:docs`; spec status and index block. [FR-020]
   - AC1: `npm run changelog:check`, `npm run specs:check` and `test:site` pass; the README names, per app, the OS it is sandboxed on and that file tools are checked by Durbar.
   - AC2: every linked picture that shows the mode chip is retaken (`npm run shots:docs -- --only <drivers>`) and looked at.
 
 ## Phase 5: Policy
 
-- [x] T050 `permissions.requireOsSandbox` in the spec 076 loader (narrow-only; bad value → `true`). [FR-019]
+- [x] T050 `permissions.requireOsSandbox` as a rule over the policy layers (`requireOsSandboxFrom`, narrow-only; bad value → `true`); spec 076 has no loader yet, so reading `policy.json` is issue #734. [FR-019]
   - AC1: policy tests: absent → `false`; `true` → refusals in T020/T021 fakes; `"yes"`, `1`, `null` → `true` (fail closed); a user layer cannot set it back to `false`.
   - AC2: with the key `true`, a stored *Always continue* and a session *Continue* are ignored (refusal every time; T020 AC7, T021 AC3). [FR-007d]
 

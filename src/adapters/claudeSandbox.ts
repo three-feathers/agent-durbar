@@ -7,6 +7,7 @@ import type { SandboxHostView, SandboxState } from '../shared/api';
 import { sandboxReason } from '../shared/sandbox';
 import type { PermissionMode } from './capabilities';
 import { compareVersions, parseVersion } from './detect';
+import { HOME_SECRETS } from './sandboxRoots';
 
 /** FR-003: the newest key the block relies on (`network.strictAllowlist`, v2.1.219+, `read:` research R2); older or unreadable = unavailable. */
 export const CLAUDE_SANDBOX_MIN_VERSION = '2.1.219';
@@ -23,7 +24,7 @@ export interface ClaudeSandboxBlock {
   allowUnsandboxedCommands: false;
   autoAllowBashIfSandboxed: false;
   excludedCommands: [];
-  filesystem: { denyRead: string[]; allowRead: string[]; denyWrite?: string[] };
+  filesystem: { denyRead: string[]; allowRead: string[]; denyWrite: string[] };
   network: { allowedDomains: []; strictAllowlist: true };
 }
 
@@ -37,13 +38,16 @@ export interface ClaudeSandboxBlock {
 export function claudeSandboxSettings(mode: PermissionMode | string, roots: readonly string[]): ClaudeSandboxBlock | undefined {
   if (mode === 'allow') return undefined;
   const r = [...roots];
+  const secrets = HOME_SECRETS.map((x) => `~/${x}`);
   return {
     enabled: true,
     failIfUnavailable: true,
     allowUnsandboxedCommands: false,
     autoAllowBashIfSandboxed: false,
     excludedCommands: [],
-    filesystem: { denyRead: ['~/'], allowRead: r, ...(mode === 'ask' ? {} : { denyWrite: [...r] }) },
+    // the credential folders are denied even when a root is the home folder or a parent of it: for reads the narrower rule wins
+    // (`read:` docs "the rule with the narrower path applies"; a deny "holds inside a wider allow"); for writes the docs give no rule (K2)
+    filesystem: { denyRead: ['~/', ...secrets], allowRead: r, denyWrite: [...(mode === 'ask' ? [] : r), ...secrets] },
     network: { allowedDomains: [], strictAllowlist: true },
   };
 }

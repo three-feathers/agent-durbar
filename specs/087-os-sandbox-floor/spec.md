@@ -258,7 +258,7 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   the same text. Never colour alone; text at least 10.5px; the 15-agent layouts at 1440x900 and 1280x800 do not change (decision Q5).
 - **FR-010** `[IMPLEMENTED]` (sim: `scripts/check-sandbox-floor.js`; `src/renderer/sandboxtext.js`) The tooltip and the mode menu say exactly what is covered, per app: Copilot "Shell commands and MCP servers run in
   <mechanism> (writes: <none | this folder>, network: off). File reads and edits are checked by Durbar."; Claude Code "Shell
-  commands run in <mechanism> (…). MCP servers, file reads and edits are checked by Durbar, not the OS."; Codex "Commands and file
+  commands run in <mechanism> (…). MCP servers, hooks, the status line, file reads and edits are outside it."; Codex "Commands and file
   changes run in the Codex sandbox (writes: none, network: off). If you approve a command, Codex may run it outside the sandbox."
   Mechanism plain names: macOS sandbox, bubblewrap, Windows ProcessContainer, Codex sandbox. **Until a real check for that app and
   OS is recorded** (T060-T062; a constant list in the adapter, empty at first), the tooltip ends with "Requested; not verified on a
@@ -295,7 +295,7 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
 - **FR-018** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts`) Pure modules with unit tests: `claudeSandboxSettings(mode, roots)`, `claudeSandboxState({ platform, version,
   haveBwrap, haveSocat, startExit })`, `copilotSandboxConfig(mode, roots, pathDirs, host)`, `copilotSandboxState(host, warning?)`,
   Codex's state from its existing checks; every OS through injected platform values.
-- **FR-019** `[IMPLEMENTED]` for the rule (test: `scripts/test-sandbox-floor.ts` T050; adapter refusals in the T020/T021 tests) `[KNOWN GAP]` not reachable in the app: spec 076 has no policy reader yet, so `requireOsSandbox()` answers `false` Organization policy (spec 076): a new key `permissions.requireOsSandbox` (boolean, default `false`) makes FR-007
+- **FR-019** `[IMPLEMENTED]` for the rule (test: `scripts/test-sandbox-floor.ts` T050; adapter refusals in the T020/T021 tests) `[KNOWN GAP]` not reachable in the app: spec 076 has no policy reader yet, so `requireOsSandbox()` answers `false` (the reader: issue #734) Organization policy (spec 076): a new key `permissions.requireOsSandbox` (boolean, default `false`) makes FR-007
   refuse instead of warn. It can only narrow (spec 076's narrow-only rule); bad values count as `true` (fail closed). Confirmed by
   owner decision Q1.
 - **FR-020** `[KNOWN GAP]` T060-T062 open (no real session run) Real checks are separate tasks (constitution IV): one tiny read-only prompt per app and OS within the owner's budget
@@ -359,6 +359,30 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 ## Changes
 
+### 2026-10-25: review round 1 on PR #733 (Ruben's agent, 8 items)
+
+- **Continue only answers an open note** (FR-007a): main accepts *Continue* only for a session with an open sandbox note it forwarded
+  itself (`src/main/sandboxops.ts`, one-shot, closed by a new attempt), and the adapters check the same (Claude: the note's actions;
+  Copilot: a held send that showed its note). A stray call never switches off a working floor. `test:` `scripts/test-sandbox-ops.ts`,
+  the probe cases in `test-claude-sandbox.ts` and `test-copilot-sandbox.ts`.
+- **A session folder that is the home folder or a parent of it** (allowed with a warning, spec 006 FR-016): Claude's block always denies
+  the credential folders (`HOME_SECRETS`, `src/adapters/sandboxRoots.ts`: `~/.ssh`, `~/.aws`, `~/.config/gh`, `~/.gnupg`, `~/.netrc`,
+  `~/.npmrc`, `~/.git-credentials`, `~/.docker`, `~/.kube`, `~/.azure`, `~/.config/gcloud`, `~/.claude`, `~/.copilot`, `~/.codex`) in
+  `denyRead` and `denyWrite`; for reads the narrower rule wins (`read:` https://code.claude.com/docs/en/sandboxing.md, 2026-10-25: "When
+  read rules overlap, the rule with the narrower path applies", and a deny "holds inside a wider allow"). `[KNOWN GAP]` K13: the docs give
+  no allow/deny rule for writes, so whether `denyWrite` holds inside the working directory is not documented (the same open point as K2).
+  Copilot grants such a folder only where `denied_paths` lets it deny the same list inside it; without it the folder is left out (deny by
+  default), so the floor is enforced either way. `broadFolderKind` (spec 006) decides "home or a parent of it" for roots and `PATH`.
+- **`PATH` entries are resolved** (FR-004, FR-015): each entry and the home folder go through `realpath` before the home check; a link to
+  the home folder (or to a parent of it) is dropped, and so is an entry that cannot be resolved.
+- **Path syntax** (`read:` the same page): "`/tmp/build` is absolute and `~/.kube` is relative to your home directory", so Durbar's absolute
+  roots and `~/` entries are in the documented form.
+- **Outside Claude's sandbox** (`read:` the same page): hooks (a folder's accepted hooks too), local MCP servers, LSP servers and the
+  status line; the tooltip (FR-010) and the README say so.
+- **Tests** for a Continue with no note, an Allow all → Read-only relaunch, a remembered Continue under the policy, a stored Always on a
+  fixable cause, a send right after a Copilot mode switch, the IPC operations and the Codex card line on the pending permission; each new
+  suite fails when it stops before its last check. The policy reader is issue #734.
+
 ### 2026-10-25: built (T002-T050; T060-T062 open)
 
 Built on branch `087-os-sandbox-build`, simulator and fakes only (zero credits). What the build settled that the text above left open:
@@ -382,7 +406,7 @@ Built on branch `087-os-sandbox-build`, simulator and fakes only (zero credits).
   check that failed is not kept, so the next session asks again (a real `supported: false` answer is kept for the runtime's life). Protected
   paths are joined in the form of their root (CI on Windows, PR #733).
 - **Managed (US4 AC2).** No real surface reports a managed floor (FR-008, K12), so only the simulator shows *Sandboxed (managed)*.
-- **Policy (FR-019).** `requireOsSandboxFrom(layers)` is the rule; spec 076 has no reader yet, so the app passes no layer (`[KNOWN GAP]`).
+- **Policy (FR-019).** `requireOsSandboxFrom(layers)` is the rule; spec 076 has no reader yet, so the app passes no layer (`[KNOWN GAP]`; reading `policy.json` is issue #734).
 - **Settings.** *Always continue* is stored as `sandboxAlwaysContinue` (app ids only) in the settings file and undone from the app's
   Settings card; IPC `agents:sandboxContinue`, `adapters:sandboxHosts`, `adapters:sandboxAlwaysOff` (all owner-only, `fromApp`).
 - **Tooltips (spec 052 FR-168 limits).** The chip's own title stays short (static, 120); the sandbox segment carries the coverage tooltip

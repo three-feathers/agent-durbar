@@ -628,6 +628,8 @@ interface Session {
   sandboxState?: SandboxState | null;
   /** Spec 087 FR-006: the classified reason of a sandbox exit of the current launch (before `init`). */
   sandboxExit?: string;
+  /** Spec 087 FR-007a (review on PR 733): the actions of the open sandbox note; Continue is accepted only while it is open. */
+  sandboxNote?: ReadonlyArray<'continue' | 'always'>;
 }
 
 export class ClaudeAdapter implements AgentAdapter {
@@ -1523,6 +1525,8 @@ export class ClaudeAdapter implements AgentAdapter {
 
   /** FR-011: emit the state when it changed (and always with a notice). */
   private setSandbox(s: Session, st: SandboxState | null, notice?: { text: string; actions: Array<'continue' | 'always'>; refused?: boolean }): void {
+    if (notice) s.sandboxNote = notice.refused ? undefined : notice.actions;
+    else if (st && st.state !== 'off') s.sandboxNote = undefined; // a new attempt (checking, or on) closes the note
     const same = JSON.stringify(st) === JSON.stringify(s.sandboxState);
     s.sandboxState = st;
     if (!same || notice) this.emit(s.id, { type: 'sandbox', sandbox: st, ...(notice ? { notice } : {}) });
@@ -1587,6 +1591,10 @@ export class ClaudeAdapter implements AgentAdapter {
   async continueWithoutSandbox(sessionId: string, opts: { always?: boolean } = {}): Promise<void> {
     const s = this.mustGet(sessionId);
     if (s.options.requireOsSandbox) throw new Error('Your organization requires the OS sandbox in Read-only and Ask first, so Durbar cannot continue without it.');
+    const note = s.sandboxNote;
+    if (!note?.includes('continue')) throw new Error('There is no OS sandbox note to answer for this session.'); // never switch off a working floor
+    if (opts.always && !note.includes('always')) throw new Error('Always continue was not offered for this session.');
+    s.sandboxNote = undefined; // one-shot
     const facts = await this.sandboxFactsNow();
     const pre = this.deps.sdkTransport ? SDK_NO_SANDBOX : claudeSandboxPrecheck(facts);
     if (opts.always && (pre.try || !pre.permanent)) throw new Error("Always continue is offered only where this computer can never run Claude Code's sandbox.");

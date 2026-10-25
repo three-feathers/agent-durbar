@@ -42,6 +42,10 @@ the user's full rights today), and any bug in Durbar's own checks. In Ask first 
   `sandbox.filesystem.allowWrite`/`denyWrite`/`denyRead`/`allowRead`, `sandbox.network.allowedDomains`/`strictAllowlist`.
 - `[KNOWN GAP]` K1: whether a `sandbox` block given by `--settings <json>` is honoured when `--setting-sources ""` is also given
   (the docs describe both flags but not the pair). Managed settings still apply in any case (spec 076 research).
+- `read:` (same page, 2026-10-25, review of PR #733) path syntax: "`/tmp/build` is absolute and `~/.kube` is relative to your home
+  directory"; reads: "When read rules overlap, the rule with the narrower path applies" (a deny "holds inside a wider allow"); "Other
+  processes Claude Code starts: command hooks, local MCP servers, plugin monitors, LSP servers, and helper commands such as your status
+  line command and `apiKeyHelper` run with your full access". `[KNOWN GAP]` K13: no allow/deny rule is documented for writes.
 - `[KNOWN GAP]` K2: whether `denyWrite` on the working directory itself (`"."`) makes it read-only (Read-only needs that; the docs
   say "the narrower rule wins" only for `allowRead` inside `denyRead`).
 - `[KNOWN GAP]` K3: how a sandbox network prompt reaches a host that runs Claude with `--permission-prompt-tool stdio` (shape of

@@ -46,7 +46,7 @@ module.exports = async (ctx) => {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, query: { simkinds: 'mixed', simsendfail: 'sandbox-choice' } });
     // ---- FR-009/FR-010: each state, in words; the tooltip says what is covered and how far it was checked ----
-    const ada = await expectChip(w, 'sim-1', /Read-only · Sandboxed\b/, (c) => c.title.endsWith(NOT_VERIFIED) && /MCP servers, file reads and edits are checked by Durbar, not the OS/.test(c.title) && /writes: none, network: off/.test(c.title));
+    const ada = await expectChip(w, 'sim-1', /Read-only · Sandboxed\b/, (c) => c.title.endsWith(NOT_VERIFIED) && /MCP servers, hooks, the status line, file reads and edits are outside it/.test(c.title) && /writes: none, network: off/.test(c.title));
     await H.shot(path.join(OUT, `087-sandbox-chip-${w}x${h}.png`), { prep: 'mouse' });
     // the mode menu says it too
     await js(`document.getElementById('modeChip').click()`);

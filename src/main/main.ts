@@ -775,7 +775,8 @@ registerSlashIpc({ agents, router, ensureLive }); // spec 073
 registerNotesIpc({ getOps: () => notesOps }); // spec 083
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey });
 registerAdaptersIpc({ adaptersList });
-registerSandboxIpc({ agents, router, getSettingsStore: () => settingsStore, readyAdapterIds }); // spec 087
+const sandboxOps = registerSandboxIpc({ agents, router, getSettingsStore: () => settingsStore, readyAdapterIds }); // spec 087
+router.onEvent((e) => sandboxOps.onEvent(e)); // spec 087 FR-007a: Continue only answers a note main forwarded
 registerFoldersIpc({ browserGone, agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
 registerFloorsIpc({ agents, getFolderStore: () => folderStore, wsKey });
 /* Spec 061: a folder's own agent setup (scan, decide, explain), window-only (FR-013); the pure handler bodies are unit-tested. */

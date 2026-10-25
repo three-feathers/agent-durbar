@@ -31,7 +31,7 @@
     const where=mechName(s.mechanism,app), w=s.writes==='folders'?'this folder':'none';
     if(s.covers.includes('files'))return 'Commands and file changes run in '+where+' (writes: none, network: off).'+(s.approvedMayLeave?' If you approve a command, '+(app||'the app')+' may run it outside the sandbox.':'');
     if(s.covers.includes('mcp'))return 'Shell commands and MCP servers run in '+where+' (writes: '+w+', network: off). File reads and edits are checked by Durbar.';
-    return 'Shell commands run in '+where+' (writes: '+w+', network: off). MCP servers, file reads and edits are checked by Durbar, not the OS.';
+    return 'Shell commands run in '+where+' (writes: '+w+', network: off). MCP servers, hooks, the status line, file reads and edits are outside it.';
   }
   /* the tooltip (at most 300 characters: a data tooltip); `mask` is the window's masking, applied to the reason once more */
   function tooltip(s0,app,mask){const t=tip(s0,app,mask);return t.length>300?t.slice(0,299).replace(/\s+\S*$/,'')+'\u2026':t;}

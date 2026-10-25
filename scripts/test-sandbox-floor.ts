@@ -9,12 +9,21 @@ import * as path from 'path';
 import { CLAUDE_SANDBOX_MIN_VERSION, claudeSandboxExit, claudeSandboxPrecheck, claudeSandboxSettings, claudeSandboxState, withSandboxSettings } from '../src/adapters/claudeSandbox';
 import { copilotHostSupport, copilotPathReadDirs, copilotSandboxConfig, copilotSandboxState } from '../src/adapters/copilotSandbox';
 import { CODEX_SANDBOX_NOTE_COMMAND, CODEX_SANDBOX_NOTE_FILE, codexModeSettings, codexPermission, codexSandboxState } from '../src/adapters/codexModes';
-import { sandboxRoots } from '../src/adapters/sandboxRoots';
+import { HOME_SECRETS, sandboxRoots } from '../src/adapters/sandboxRoots';
+import * as os from 'os';
 import { cleanSandboxState, sandboxReason } from '../src/shared/sandbox';
 import { requireOsSandbox, requireOsSandboxFrom } from '../src/main/sandboxpolicy';
 import { parseSettings } from '../src/shared/credits';
 
 const ok = (m: string): void => console.log('ok - ' + m);
+// review on PR 733 (7): a run that stops early must not exit 0
+let FLOOR_DONE = false;
+process.on('exit', (code) => {
+  if (!FLOOR_DONE && code === 0) {
+    console.error('sandbox floor: the run ended before its last check');
+    process.exitCode = 1;
+  }
+});
 const ident = (p: string): string => p;
 const OSES = ['darwin', 'linux', 'win32'] as const;
 const MODES = ['read-only', 'ask', 'allow'] as const;
@@ -53,9 +62,9 @@ for (const os of OSES) {
         assert.ok(block, `${cell}: a block`);
         assert.strictEqual(block.failIfUnavailable, true, `${cell}: failIfUnavailable (FR-007)`);
         assert.strictEqual(block.enabled, true);
-        assert.deepStrictEqual(block.filesystem.denyRead, ['~/'], `${cell}: reads denied in home (Q4)`);
+        assert.deepStrictEqual(block.filesystem.denyRead, ['~/', ...HOME_SECRETS.map((x) => '~/' + x)], `${cell}: reads denied in home (Q4) and the credential folders always`);
         assert.deepStrictEqual(block.filesystem.allowRead, ROOTS[os]);
-        assert.deepStrictEqual(block.filesystem.denyWrite, mode === 'read-only' ? ROOTS[os] : undefined, `${cell}: Read-only denies writes to the roots (K2)`);
+        assert.deepStrictEqual(block.filesystem.denyWrite, [...(mode === 'read-only' ? ROOTS[os] : []), ...HOME_SECRETS.map((x) => '~/' + x)], `${cell}: Read-only denies writes to the roots (K2); the credential folders always`);
         assert.deepStrictEqual(block.network, { allowedDomains: [], strictAllowlist: true }, `${cell}: network off (Q2)`);
         scan(cell, block);
         assert.strictEqual(pre.try, os !== 'win32', `${cell}: tried except on native Windows`);
@@ -165,9 +174,37 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.deepStrictEqual(copilotPathReadDirs(['C:\\USERS', 'c:\\users\\ME', 'C:\\Users\\x', 'C:\\Windows'], 'C:\\Users\\me', 'win32'), ['C:\\Windows']);
   assert.deepStrictEqual(copilotPathReadDirs(['/users/ME', '/opt/homebrew/bin'], '/Users/me', 'darwin'), ['/opt/homebrew/bin'], 'macOS compares case-insensitively');
   assert.deepStrictEqual(copilotPathReadDirs(['/HOME/ME'], '/home/me', 'linux'), ['/HOME/ME'], 'Linux compares case-sensitively');
+  assert.deepStrictEqual(copilotPathReadDirs(['c:\\users\\OTHER', 'C:\\Tools'], 'C:\\Users\\me', 'win32'), ['C:\\Tools'], 'another user\'s profile root, in another case, is dropped on Windows');
+  assert.deepStrictEqual(copilotPathReadDirs(['/USERS/other', '/opt/x'], '/Users/me', 'darwin'), ['/opt/x'], 'and on macOS');
   assert.deepStrictEqual(copilotPathReadDirs(['/srv', '/srv/users', '/srv/users/me', '/srv/users/me/bin', '/srv/tools/bin'], '/srv/users/me', 'linux'), ['/srv/users/me/bin', '/srv/tools/bin'], 'a home outside /home: every ancestor of it is dropped');
   const winDenied = copilotSandboxConfig({ mode: 'ask', roots: ['C:\\w'], pathDirs: [], host: FULL_HOST, home: 'C:\\Users\\me', platform: 'linux' })!.userPolicy.filesystem.deniedPaths;
-  assert.deepStrictEqual(winDenied, ['C:\\w\\.git\\hooks', 'C:\\w\\.git\\config', 'C:\\Users\\me\\.ssh', 'C:\\Users\\me\\.aws', 'C:\\Users\\me\\.config\\gh'], 'protected paths are joined in the form of their root');
+  assert.deepStrictEqual(winDenied!.slice(0, 5), ['C:\\w\\.git\\hooks', 'C:\\w\\.git\\config', 'C:\\Users\\me\\.ssh', 'C:\\Users\\me\\.aws', 'C:\\Users\\me\\.config\\gh'], 'protected paths are joined in the form of their root');
+  // FR-004 + review on PR 733: a PATH entry that is a LINK to the home folder (or to a parent of it) is checked where it leads
+  {
+    const fs2 = require('fs') as typeof import('fs');
+    const tmp = fs2.realpathSync.native(fs2.mkdtempSync(path.join(os.tmpdir(), 'durbar-087-path-')));
+    const home = path.join(tmp, 'home', 'me');
+    fs2.mkdirSync(path.join(home, '.local', 'bin'), { recursive: true });
+    fs2.mkdirSync(path.join(tmp, 'opt'), { recursive: true });
+    fs2.symlinkSync(home, path.join(tmp, 'opt', 'bin'), 'dir');
+    fs2.symlinkSync(path.join(tmp, 'home'), path.join(tmp, 'opt', 'up'), 'dir');
+    const real = (p: string): string => fs2.realpathSync.native(p);
+    const plat = process.platform === 'win32' ? 'win32' : 'linux';
+    const got = copilotPathReadDirs([path.join(tmp, 'opt', 'bin'), path.join(tmp, 'opt', 'up'), path.join(home, '.local', 'bin'), path.join(tmp, 'gone')], home, plat, real);
+    assert.deepStrictEqual(got, [path.join(home, '.local', 'bin')], 'a link to home or to its parent is dropped; a missing entry is dropped; a folder under home is kept');
+    fs2.rmSync(tmp, { recursive: true, force: true });
+  }
+  // FR-004/Q4 + review on PR 733: a session folder that IS the home folder or a parent of it
+  {
+    const h = '/home/me';
+    const noDeny = copilotSandboxConfig({ mode: 'ask', roots: ['/home/me', '/home', '/work/p'], pathDirs: [], host: { supported: true, capabilities: ['shell'] }, home: h, platform: 'linux' })!;
+    assert.deepStrictEqual(noDeny.userPolicy.filesystem.readwritePaths, ['/work/p'], 'without denied_paths, home and its parents are never granted (deny by default)');
+    const withDeny = copilotSandboxConfig({ mode: 'read-only', roots: ['/home/me'], pathDirs: [], host: FULL_HOST, home: h, platform: 'linux' })!;
+    assert.deepStrictEqual(withDeny.userPolicy.filesystem.readonlyPaths, ['/home/me']);
+    assert.deepStrictEqual(withDeny.userPolicy.filesystem.deniedPaths, HOME_SECRETS.map((x) => path.posix.join(h, x)), 'with denied_paths: every credential folder denied inside it');
+    const cl = claudeSandboxSettings('ask', ['/home/me'])!;
+    assert.ok(cl.filesystem.allowRead.includes('/home/me') && ['~/.ssh', '~/.aws', '~/.config/gh'].every((x) => cl.filesystem.denyRead.includes(x)), 'Claude: the narrower deny keeps the credential folders out of a home root (read: docs)');
+  }
   ok('FR-004: PATH folders: home, its ancestors and any profile root dropped');
 }
 
@@ -247,7 +284,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.strictEqual(T.chipWord({ ...on, mechanism: 'landlock' }), '', 'malformed: nothing');
   const tip = T.tooltip(on, 'Claude Code');
   assert.ok(tip.endsWith(T.NOT_VERIFIED) && T.NOT_VERIFIED === 'Requested; not verified on a real session.', 'ends with the not-verified sentence');
-  assert.ok(/MCP servers, file reads and edits are checked by Durbar, not the OS\./.test(tip), 'Claude: MCP not covered');
+  assert.ok(/MCP servers, hooks, the status line, file reads and edits are outside it\./.test(tip), 'Claude: MCP not covered');
   assert.ok(!T.tooltip({ ...on, verified: true }, 'Claude Code').includes('not verified'), 'a verified state drops it');
   assert.ok(/Shell commands and MCP servers run in the macOS sandbox \(writes: this folder/.test(T.tooltip({ ...on, mechanism: 'seatbelt', covers: ['shell', 'mcp'], writes: 'folders' }, 'Copilot')));
   assert.ok(/Commands and file changes run in the Codex sandbox \(writes: none, network: off\)\. If you approve a command, Codex may run it outside the sandbox\./.test(T.tooltip({ state: 'on', mechanism: 'vendor', covers: ['shell', 'files'], approvedMayLeave: true, verified: false }, 'Codex')));
@@ -263,3 +300,4 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   ok('FR-009/FR-010: the chip words and the tooltip per app; the reason only through the mask');
 }
 console.log('sandbox floor (spec 087): all checks passed');
+FLOOR_DONE = true;

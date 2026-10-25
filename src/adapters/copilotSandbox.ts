@@ -7,7 +7,8 @@ import * as path from 'path';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 import { sandboxReason } from '../shared/sandbox';
 import type { PermissionMode } from './capabilities';
-import { normalizeRoot } from './sandboxRoots';
+import { HOME_SECRETS, normalizeRoot } from './sandboxRoots';
+import { broadFolderKind } from '../shared/broadfolder';
 
 /** FR-010/FR-020: platforms where a real session recorded that the floor held (T060-T062). Empty until then. */
 export const COPILOT_SANDBOX_VERIFIED: readonly string[] = Object.freeze([]);
@@ -56,11 +57,9 @@ const fold = (p: string, platform: string): string => (platform === 'win32' || p
  * parent), compared case-insensitively on Windows and macOS. So `~/.ssh` and `~/.aws` never become readable through `PATH`; a folder
  * under home such as `~/.local/bin` is kept (its contents become readable, said in the tooltip details).
  */
-export function copilotPathReadDirs(pathDirs: readonly unknown[], home: string, platform: string): string[] {
+export function copilotPathReadDirs(pathDirs: readonly unknown[], home: string, platform: string, realpath: (p: string) => string = (p) => p): string[] {
   const api = platform === 'win32' ? path.win32 : path.posix;
-  const h = normalizeRoot(home);
-  const homeKey = h ? fold(h.path, platform) : undefined;
-  const sep = platform === 'win32' ? '\\' : '/';
+  const h = realHome(home, realpath);
   const parents = new Set<string>();
   if (h) {
     const up = api.dirname(h.path);
@@ -74,10 +73,17 @@ export function copilotPathReadDirs(pathDirs: readonly unknown[], home: string, 
   const seen = new Set<string>();
   for (const d of Array.isArray(pathDirs) ? pathDirs : []) {
     if (typeof d !== 'string') continue;
-    const n = normalizeRoot(d);
+    // FR-015's rule, realpath included (review on PR 733): a link to the home folder is checked as the home folder; a resolver error drops it
+    const n0 = normalizeRoot(d);
+    let n: ReturnType<typeof normalizeRoot>;
+    try {
+      n = n0 ? normalizeRoot(realpath(n0.path)) : undefined;
+    } catch {
+      n = undefined;
+    }
     if (!n) continue;
     const k = fold(n.path, platform);
-    if (homeKey && (k === homeKey || homeKey.startsWith(k + sep))) continue; // home, or an ancestor of it
+    if (h && broadOf(n.path, h.path, platform)) continue; // the home folder or an ancestor of it (spec 006 FR-016's broadFolderKind)
     if (parents.has(k) || parents.has(fold(api.dirname(n.path), platform))) continue; // a profile parent, or some user's profile root
     if (seen.has(k)) continue;
     seen.add(k);
@@ -86,25 +92,45 @@ export function copilotPathReadDirs(pathDirs: readonly unknown[], home: string, 
   return out.slice(0, 200);
 }
 
+/** The home folder, resolved (a linked home is compared as where it leads); the path as given when it cannot be resolved. */
+const realHome = (home: string, realpath: (p: string) => string): ReturnType<typeof normalizeRoot> => {
+  const n = normalizeRoot(home);
+  if (!n) return undefined;
+  try {
+    return normalizeRoot(realpath(n.path)) ?? n;
+  } catch {
+    return n;
+  }
+};
+
+/** Spec 006 FR-016 `broadFolderKind` in the path form of the folder (a Windows-form path is compared as Windows, whatever the platform). */
+const broadOf = (folder: string, home: string, platform: string): boolean => {
+  const win = /^[A-Za-z]:[\\/]/.test(folder) || folder.startsWith('\\\\');
+  return !!broadFolderKind(folder, home, win ? path.win32 : path.posix, (win ? 'win32' : platform) as NodeJS.Platform);
+};
+
 /**
  * FR-001/FR-002/FR-004/FR-014: the config for a mode. Allow all: undefined (nothing is sent; the app default). Any other value is
  * Read-only. Never `allowBypass` (fail closed: omitting it offers no bypass), never credential injection (`auth` off, no `credentials`),
  * never `allowDevToolAccess` (it grants writes). `deniedPaths` only where the host reports `denied_paths` (else it is not claimed).
+ * A root that is the home folder or a parent of it (allowed with a warning, spec 006 FR-016) is granted only where `deniedPaths` can
+ * keep the credential folders (`HOME_SECRETS`) out; without `denied_paths` it is left out (deny by default), so a command there fails.
  */
-export function copilotSandboxConfig(i: { mode: PermissionMode | string; roots: readonly string[]; pathDirs: readonly unknown[]; host: CopilotHostSupport; home: string; platform: string }): CopilotSandboxConfig | undefined {
+export function copilotSandboxConfig(i: { mode: PermissionMode | string; roots: readonly string[]; pathDirs: readonly unknown[]; host: CopilotHostSupport; home: string; platform: string; realpath?: (p: string) => string }): CopilotSandboxConfig | undefined {
   if (i.mode === 'allow') return undefined;
   const ask = i.mode === 'ask';
-  const tools = copilotPathReadDirs(i.pathDirs, i.home, i.platform);
+  const tools = copilotPathReadDirs(i.pathDirs, i.home, i.platform, i.realpath);
   const denied = i.host.capabilities.includes('denied_paths');
-  const h = normalizeRoot(i.home);
+  const h = realHome(i.home, i.realpath ?? ((p) => p));
+  const roots = denied || !h ? [...i.roots] : i.roots.filter((r) => !broadOf(r, h.path, i.platform));
   const deniedPaths = denied
-    ? [...(ask ? i.roots.flatMap((r) => [joinAs(r, '.git', 'hooks'), joinAs(r, '.git', 'config')]) : []), ...(h ? [joinAs(h.path, '.ssh'), joinAs(h.path, '.aws'), joinAs(h.path, '.config', 'gh')] : [])]
+    ? [...(ask ? roots.flatMap((r) => [joinAs(r, '.git', 'hooks'), joinAs(r, '.git', 'config')]) : []), ...(h ? HOME_SECRETS.map((x) => joinAs(h.path, ...x.split('/'))) : [])]
     : undefined;
   return {
     enabled: true,
     addCurrentWorkingDirectory: false,
     userPolicy: {
-      filesystem: { readwritePaths: ask ? [...i.roots] : [], readonlyPaths: [...(ask ? [] : i.roots), ...tools], ...(deniedPaths ? { deniedPaths } : {}) },
+      filesystem: { readwritePaths: ask ? [...roots] : [], readonlyPaths: [...(ask ? [] : roots), ...tools], ...(deniedPaths ? { deniedPaths } : {}) },
       network: { allowOutbound: false, allowLocalNetwork: false },
     },
     sandboxMcpServers: true,

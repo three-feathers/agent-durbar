@@ -119,6 +119,8 @@ interface Live {
   sandboxFloor?: boolean;
   /** Spec 087 FR-019: the organization requires the sandbox (from the start options). */
   requireOsSandbox?: boolean;
+  /** Spec 087 FR-007a: the held send showed its note; Continue is accepted only while it is open (review on PR 733). */
+  sandboxNoteOpen?: boolean;
   /** Spec 087: an `options.update` for the floor that is still running (a send waits for it). */
   sandboxApplying?: Promise<void>;
 }
@@ -896,6 +898,7 @@ export class CopilotAdapter implements AgentAdapter {
     const hold = live.sandboxHold;
     if (hold && !(this.sandboxContinued.has(sessionId) && !live.requireOsSandbox)) {
       if (live.requireOsSandbox || hold.refuse) throw new Error(hold.refuse ? hold.reason : copilotSandboxRefusal(hold.reason));
+      live.sandboxNoteOpen = true;
       this.emit(sessionId, { type: 'sandbox', sandbox: live.sandbox ?? null, notice: { text: copilotSandboxNotice(hold.reason), actions: ['continue'] } });
       this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Not sent: the OS sandbox could not start' });
       return;
@@ -1113,10 +1116,12 @@ export class CopilotAdapter implements AgentAdapter {
     const platform = this.sandboxPlatform;
     if (mode === 'allow') {
       live.sandboxHold = undefined;
+      live.sandboxNoteOpen = false;
       return this.setSandbox(sid, live, copilotSandboxState({ mode, platform, keptFloor: live.sandboxFloor })); // nothing sent (edge cases)
     }
     if (this.sandboxContinued.has(sid) && !live.requireOsSandbox) {
       live.sandboxHold = undefined;
+      live.sandboxNoteOpen = false;
       return this.setSandbox(sid, live, copilotSandboxState({ mode, platform, host: { supported: true, capabilities: [] }, continued: true }));
     }
     // the session's own runtime client (never a new start here: a dispose during a start must not bring up another runtime)
@@ -1132,11 +1137,12 @@ export class CopilotAdapter implements AgentAdapter {
       live.sandboxHold = { reason: "Durbar could not limit Copilot's sandbox to this session's folders. Read-only and Ask first need at least one usable folder, so nothing was sent.", refuse: true };
       return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'No usable session folder for the sandbox.' });
     }
-    const sandboxConfig = copilotSandboxConfig({ mode, roots, pathDirs: this.sandboxPathDirs(), host, home: this.sandboxHome(), platform });
+    const sandboxConfig = copilotSandboxConfig({ mode, roots, pathDirs: this.sandboxPathDirs(), host, home: this.sandboxHome(), platform, realpath: this.sandboxRealpath });
     try {
       await this.timed(live.session.rpc.options.update({ sandboxConfig, sandboxConfigSource: 'session_flag' }), 'Copilot');
       live.sandboxFloor = true;
       live.sandboxHold = undefined;
+      live.sandboxNoteOpen = false;
       this.setSandbox(sid, live, copilotSandboxState({ mode, platform, host, applied: true }));
     } catch (e) {
       const st = copilotSandboxState({ mode, platform, host, refused: e instanceof Error ? e.message : String(e) });
@@ -1151,6 +1157,8 @@ export class CopilotAdapter implements AgentAdapter {
     if (live.requireOsSandbox) throw new Error('Your organization requires the OS sandbox in Read-only and Ask first, so Durbar cannot continue without it.');
     if (opts.always) throw new Error('Always continue is not offered for Copilot: its sandbox can be fixed on this computer.');
     if (live.sandboxHold?.refuse) throw new Error(live.sandboxHold.reason);
+    if (!live.sandboxHold || !live.sandboxNoteOpen) throw new Error('There is no OS sandbox note to answer for this session.'); // never switch off a working floor
+    live.sandboxNoteOpen = false; // one-shot
     this.sandboxContinued.add(sessionId);
     live.sandboxHold = undefined;
     this.setSandbox(sessionId, live, copilotSandboxState({ mode: live.broker.getMode(), platform: this.sandboxPlatform, host: { supported: true, capabilities: [] }, continued: true }));

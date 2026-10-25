@@ -12,6 +12,8 @@ import { createCliTransport } from '../src/adapters/claudeTransport';
 import { eventProblems } from '../src/adapters/eventguard';
 import type { AgentEvent, StartOptions } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn } from './fakes/claude-cli';
+import { HOME_SECRETS } from '../src/adapters/sandboxRoots';
+const SECRETS = HOME_SECRETS.map((x) => '~/' + x);
 
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 async function until<T>(what: string, f: () => T | undefined | false, ms = 3000): Promise<T> {
@@ -99,7 +101,7 @@ async function main(): Promise<void> {
       } else {
         const want: Record<string, unknown> = {
           enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: false, excludedCommands: [],
-          filesystem: { denyRead: ['~/'], allowRead: [WS], ...(mode === 'ask' ? {} : { denyWrite: [WS] }) },
+          filesystem: { denyRead: ['~/', ...SECRETS], allowRead: [WS], denyWrite: [...(mode === 'ask' ? [] : [WS]), ...SECRETS] },
           network: { allowedDomains: [], strictAllowlist: true },
         };
         assert.deepStrictEqual(settings.sandbox, want, `${mode}: the sandbox key is exactly Durbar's block`);
@@ -257,7 +259,7 @@ async function main(): Promise<void> {
       assert.match(n.notice!.text, re);
       assert.deepStrictEqual(n.notice!.actions, actions, `${facts.platform} ${facts.version}: actions`);
       assert.strictEqual(m.sp.calls.length, 0, 'nothing spawned');
-      if (facts.platform !== 'win32') await assert.rejects(m.ad.continueWithoutSandbox!(sid, { always: true }), /offered only/, 'Always is refused for a fixable cause');
+      if (facts.platform !== 'win32') await assert.rejects(m.ad.continueWithoutSandbox!(sid, { always: true }), /not offered|offered only/, 'Always is refused for a fixable cause');
       await m.ad.dispose();
     }
     // policy + pre-check: the send itself is refused with the MODE_REFUSAL text (the existing refusal path), nothing spawned
@@ -300,6 +302,70 @@ async function main(): Promise<void> {
     await m.ad.dispose();
   }
 
+  // ---- review on PR 733 (2): Continue with no note open is refused: a working floor is never switched off; Continue is one-shot ----
+  {
+    const m = make();
+    const sid = await start(m.ad, 'read-only');
+    await m.ad.send(sid, { text: 'x' });
+    await until('on', () => lastState(m.events, sid)?.state === 'on');
+    await assert.rejects(m.ad.continueWithoutSandbox!(sid), /no OS sandbox note/, 'no note: refused');
+    m.ad.setPermMode!(sid, 'ask');
+    await m.ad.send(sid, { text: 'y' });
+    await until('relaunch', () => m.sp.calls.length === 2);
+    assert.ok(sandboxOf(m.sp.calls[1].args), 'the floor stays after a refused Continue');
+    await m.ad.dispose();
+    const n = make({ behave: () => 'sandbox-exit-init' });
+    const nid = await start(n.ad, 'read-only');
+    await n.ad.send(nid, { text: 'x' });
+    await until('note', () => sbx(n.events, nid).find((e) => e.notice));
+    await n.ad.continueWithoutSandbox!(nid);
+    await assert.rejects(n.ad.continueWithoutSandbox!(nid), /no OS sandbox note/, 'a second Continue is refused (one-shot)');
+    await n.ad.dispose();
+  }
+
+  // ---- review on PR 733 (3): Allow all on a live CLI, then Read-only: the relaunch carries the block and starts as checking ----
+  {
+    const m = make();
+    const sid = await start(m.ad, 'allow');
+    await m.ad.send(sid, { text: 'x' });
+    await until('turn', () => m.events.some((e) => e.type === 'status' && e.sessionId === sid && (e as { status: string }).status === 'idle' && !(e as { intent?: string }).intent));
+    assert.ok(!sandboxOf(m.sp.calls[0].args));
+    const before = sbx(m.events, sid).length;
+    m.ad.setPermMode!(sid, 'read-only');
+    await m.ad.send(sid, { text: 'y' });
+    await until('relaunch', () => m.sp.calls.length === 2);
+    assert.ok(sandboxOf(m.sp.calls[1].args), 'the relaunch for Read-only carries the block');
+    await until('on after init', () => lastState(m.events, sid)?.state === 'on');
+    assert.deepStrictEqual(sbx(m.events, sid).slice(before).map((e) => e.sandbox?.state), ['unknown', 'on'], 'checking, then on');
+    await m.ad.dispose();
+  }
+
+  // ---- review on PR 733 (6): a Continue from before the policy does not survive into a session under the policy (FR-007d) ----
+  {
+    const m = make({ behave: () => 'sandbox-exit-init', exists: () => true });
+    const sid = await start(m.ad, 'read-only');
+    await m.ad.send(sid, { text: 'x' });
+    await until('note', () => sbx(m.events, sid).find((e) => e.notice));
+    await m.ad.continueWithoutSandbox!(sid);
+    await m.ad.stop(sid);
+    m.setBehave(() => 'ok');
+    await m.ad.start({ workspace: WS, quiet: true, permissionMode: 'read-only', resumeSessionId: sid, requireOsSandbox: true });
+    await m.ad.send(sid, { text: 'y' });
+    await until('second launch', () => m.sp.calls.length === 2);
+    assert.ok(sandboxOf(m.sp.calls[1].args), 'under the policy the remembered Continue is ignored: the block is back');
+    await m.ad.dispose();
+  }
+
+  // ---- review on PR 733 (6): a stored Always on a FIXABLE cause (Linux without bubblewrap) still shows the note; nothing is spawned ----
+  {
+    const m = make({ facts: () => ({ platform: 'linux', version: '2.1.300', haveBwrap: false, haveSocat: true }) });
+    const sid = await start(m.ad, 'read-only', { sandboxAlwaysContinue: true });
+    await m.ad.send(sid, { text: 'x' });
+    await until('note', () => sbx(m.events, sid).find((e) => e.notice));
+    assert.strictEqual(m.sp.calls.length, 0, 'the stored choice only applies where the host can never sandbox the app');
+    await m.ad.dispose();
+  }
+
   // ---- FR-012: the Settings line ----
   {
     assert.deepStrictEqual(await make().ad.sandboxHost!(), { available: true, mechanism: 'bubblewrap' });
@@ -308,8 +374,17 @@ async function main(): Promise<void> {
     assert.match(String(w.reason), /Windows/);
   }
   fs.rmSync(WS, { recursive: true, force: true });
+  done = true;
   console.log('claude sandbox (spec 087 T020): all checks passed');
 }
+// review on PR 733 (7): a run that stops early (a hang, an unawaited path) must not exit 0
+let done = false;
+process.on('exit', (code) => {
+  if (!done && code === 0) {
+    console.error('claude sandbox: the run ended before its last check');
+    process.exitCode = 1;
+  }
+});
 
 main().catch((e) => {
   console.error(e);
