@@ -225,4 +225,4 @@ Rerun after those fixes (run 39485719890, `d600c68`): `real:` **Codex official o
   - Every other install and update keeps FR-001's download-check-run-as-a-file path, and a missing or failing `codex update` falls back to it.
 - **The installer download moves to Chromium's network stack.** `src/main/officialinstall.ts` downloads with Electron `net.request` on the app session instead of Node's `https.get`, so it follows the system or organization proxy and the OS certificate store (spec 076 FR-155, FR-156).
   - It keeps the per-hop host allow-list, redirects handled one hop at a time through the `redirect` event, the 3-redirect limit, the 1 MB cap, the 30 s limit and the private file.
-  - Status: `[PLANNED]` in spec 081 (T024); `test-officialinstall` gets a fake `net.request` with the same matrix.
+  - Status: `[IMPLEMENTED]` in spec 081 (T024); `test-officialinstall` has a fake `net.request` with the same matrix.

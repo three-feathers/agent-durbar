@@ -16,7 +16,10 @@ import { register as registerCheckpointsIpc } from './ipc/checkpoints';
 import { register as registerFloorsIpc } from './ipc/floors';
 import { register as registerFoldersIpc } from './ipc/folders';
 import { register as registerFolderSetupIpc } from './ipc/foldersetupipc';
+import { startHeldBy } from './updategate';
 import { register as registerHarnessIpc } from './ipc/harness';
+import { SETUP_NAMES } from '../shared/harnesssetup';
+import type { SetupKind } from '../shared/harnesssetup';
 import { register as registerModelIpc } from './ipc/model';
 import { onAutoTierFailed } from './ipc/model';
 import { register as registerPreviousIpc } from './ipc/previous';
@@ -43,7 +46,7 @@ import { detectorFor, setLoginPath } from '../adapters/detect';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
-import { restorable, sendWithSlash, validMode } from './agentops';
+import { endSessionOp, restorable, sendWithSlash, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
@@ -338,6 +341,8 @@ async function addWorkspace(
   const picked = adapterForAdd(opts.adapterId, (() => { const f = folderStore?.get(wsr.workspaceFile ?? wsr.cwd); return f ? adapterOf(f) : undefined; })(), (i) => registry.has(i), registry.defaultId, opts.readyIds && ((i) => opts.readyIds!.has(i)));
   if ('error' in picked) throw new Error(picked.error); // nothing started, nothing written
   const adapterId = picked.id;
+  const blocked = updateBlocks(adapterId, false); // a new session is never live yet
+  if (blocked) throw new Error(blocked); // spec 081 FR-013: nothing starts while its app updates
   const ad = router.instance(adapterId);
   const draft = infoFor(workspace, permMode, '', model, effort, {}, ad);
   // Cap: explicit choice (null = none) > the folder's saved cap > the global default (spec 011); a dollar cap only when chosen (FR-150).
@@ -366,6 +371,8 @@ async function ensureLive(a: AgentInfo, opts: { quiet?: boolean } = {}): Promise
   const ad = router.forAgent(a.id);
   if (!ad) throw new Error('unknown agent');
   if (ad.isLive(a.id)) return;
+  const blocked = updateBlocks(router.adapterIdOf(a.id) ?? a.adapterId, ad.isLive(a.id)); // spec 081 FR-013: a resume is a start too; a session that is still open is not touched
+  if (blocked) throw new Error(blocked);
   let p = starting.get(a.id);
   if (!p) {
     p = (async () => {
@@ -496,12 +503,20 @@ const scheduleAgent = (s: { folder: string; target?: { session: string } }): Age
   const a = agents.get(s.target.session);
   return a && wsKey(a) === s.folder ? a : undefined;
 };
+/** Spec 081 FR-013: the sessions of one app's adapter that are open (live) now. */
+const liveSessionsOf = (kind: string): AgentInfo[] => [...agents.values()].filter((a) => router.adapterIdOf(a.id) === kind && router.forAgent(a.id)?.isLive(a.id) === true);
 const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
 const scheduleDeps = (file: string): SchedulerDeps => ({
   now: () => Date.now(),
   /* spec 068 FR-008: an agent on a coffee break is busy too (the rule and its test: schedules.ts scheduleBusy) */
   isBusy: (folder, session) => scheduleBusy(folder, session, { sessions: () => [...agents.values()].map((x) => ({ id: x.id, folder: wsKey(x) })), busy: busyStatus, breaks: agentState }),
   hasSession: (session) => agents.has(session),
+  /* spec 081 FR-013: a prompt that would start or resume a session of an app that is updating is held, and goes when the update has finished; a prompt to a session that is still open goes through */
+  heldBy: (s) => {
+    const a = scheduleAgent(s);
+    const kind = a ? router.adapterIdOf(a.id) : undefined;
+    return a && kind ? startHeldBy({ locked: harnessIpc.blocksStart(kind), live: router.forAgent(a.id)?.isLive(a.id) === true, name: SETUP_NAMES[kind as SetupKind] ?? kind }, 'schedule') : undefined;
+  },
   capUnitOf: (s) => {
     const a = scheduleAgent(s);
     const caps = a ? router.forAgent(a.id)?.capabilities : undefined;
@@ -673,7 +688,32 @@ registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => fold
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
 registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; } });
 registerThemesIpc({ dev, registry, router });
-registerHarnessIpc({ dev, registry, router, remoteOps, toRenderer, getWin: () => win, adaptersList });
+const harnessIpc = registerHarnessIpc({
+  dev, registry, router, remoteOps, toRenderer, getWin: () => win, adaptersList,
+  getSettingsStore: () => settingsStore,
+  // spec 081 FR-013: the open sessions of an app's adapter. A session counts as open while its adapter holds it live.
+  sessions: {
+    count: (kind) => {
+      const live = liveSessionsOf(kind);
+      return {
+        open: live.length,
+        busy: live.filter((a) => lastStatus.get(a.id) === 'working').length,
+        pendingPermissions: live.filter((a) => lastStatus.get(a.id) === 'needs-permission').length,
+        heldPrompts: scheduler?.heldFor((s) => { const a = scheduleAgent(s); return !!a && router.adapterIdOf(a.id) === kind; }) ?? 0,
+      };
+    },
+    // each running turn is interrupted first (stopTurnOp), then the session ends and stays resumable (endSessionOp does not interrupt by itself)
+    endAll: async (kind) => {
+      for (const a of liveSessionsOf(kind)) {
+        await stopTurnOp(opsDeps, a.id);
+        await endSessionOp({ release: (k) => remoteOps.release(k), router }, a.id);
+      }
+    },
+  },
+  lockReleased: () => scheduler?.releaseHeld(),
+});
+/** Spec 081 FR-013: while an update of an app's adapter holds the lock, none of its sessions starts or resumes. */
+const updateBlocks = (adapterId: string | undefined, live: boolean): string | undefined => (adapterId ? startHeldBy({ locked: harnessIpc.blocksStart(adapterId), live, name: SETUP_NAMES[adapterId as SetupKind] ?? adapterId }, 'start') : undefined);
 registerActivityIpc({ getActivityStore: () => activityStore, getWin: () => win });
 registerQuestionsIpc({ agents, router, elicitTracker });
 /**
@@ -844,6 +884,11 @@ function createWindow(): void {
     w.on('unmaximize', () => noteWindowZoom(Date.now()));
   }
   win.webContents.on('did-finish-load', () => agentState.clearPaused()); // a fresh page starts with nobody paused (Paused is window-only, spec 041 T014)
+  // spec 081 FR-003, plan D6: the start check for agent-app updates runs once, after the office is shown and detection has finished (never on the simulator)
+  // review on #721: a reload (or a crash) of the window drops any open-sessions dialog, so a lock waiting for its answer is released
+  win.webContents.on('did-start-navigation', (d) => { if (d.isMainFrame && !d.isSameDocument) harnessIpc.releaseAsking(); });
+  win.webContents.on('render-process-gone', () => harnessIpc.releaseAsking());
+  win.webContents.once('did-finish-load', () => { void adaptersList(false).then(() => harnessIpc.checker.scheduleStart()).catch(() => undefined); });
   void win.loadFile(INDEX_HTML, { query });
   // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.
   const shot = dev.DURBAR_SHOT;

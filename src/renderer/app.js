@@ -2982,7 +2982,7 @@ async function endAllSessions(anchor){
   const list=endAllTargets();
   if(!list.length){toast('No session is running.',2600);return;}
   const busyN=list.filter(a=>a.state==='working'||a.state==='thinking'||a.state==='waiting').length;
-  const ok=await askDialog({title:'End all sessions?',body:(list.length===1?'1 session ends':list.length+' sessions end')+' and frees '+(list.length===1?'its place':'their places')+(busyN?' ('+busyN+' still working: '+(busyN===1?'its reply stops':'their replies stop')+')':'')+'. The chats stay; send a message to pick up where you left off.',returnFocus:anchor,
+  const ok=await askDialog({title:'End all sessions?',body:DurbarDialog.endAllBody(list.length,busyN),returnFocus:anchor,
     buttons:[{label:'Cancel',value:null},{label:'End all sessions',value:'ok',cls:'primary danger'}]});
   if(!ok)return;
   const bad=[];
@@ -6281,6 +6281,13 @@ if(bridge){
   document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.place-add'))window.DurbarScreens.placeDialog(null);});
   $('toolsBtn').onclick=()=>window.DurbarScreens.isOpen()?window.DurbarScreens.close():window.DurbarScreens.openTools(null);
   $('settingsBtn').onclick=()=>window.DurbarScreens.openSettings();
+  /* spec 081 FR-003, FR-016: the agent-app update check runs in main (at start, or when asked); the window only shows what main keeps: the badge on Settings, and one toast per new version */
+  {const real=bridge; /* the simulator's own canned bridge under DURBAR_SIM (it never talks to main) */
+    if(real&&real.onHarnessUpdates&&real.harnessUpdates&&window.DurbarHarnesses){
+      const UPD_NAME={claude:'Claude Code',codex:'Codex',copilot:'The GitHub Copilot CLI'};
+      real.onHarnessUpdates(v=>{window.DurbarHarnesses.setUpdates(v);const a=v&&v.announce;if(a&&typeof a.version==='string'&&UPD_NAME[a.app])toast(esc(UPD_NAME[a.app]+' '+a.version)+' is available. Open Settings > Agent apps to update.',6000);});
+      real.harnessUpdates().then(v=>window.DurbarHarnesses.setUpdates(v),()=>undefined);
+    }}
   $('schedTopBtn').onclick=openSchedulesView; /* spec 044 FR-030 */
   /* spec 052 FR-083: Settings… (⌘,) in the macOS app menu. The real window's preload carries it, also under the simulator. */
   {const real=window.agentDurbar;if(real&&real.onMenuSettings)real.onMenuSettings(()=>window.DurbarScreens.openSettings());

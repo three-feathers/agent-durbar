@@ -1,0 +1,2 @@
+# source: read: the @github/copilot npm package.json (name, version)
+{"name":"@github/copilot","version":"1.0.100","bin":{"copilot":"index.js"}}
