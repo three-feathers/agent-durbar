@@ -47,7 +47,10 @@ the user's full rights today), and any bug in Durbar's own checks. In Ask first 
 - `[KNOWN GAP]` K3: how a sandbox network prompt reaches a host that runs Claude with `--permission-prompt-tool stdio` (shape of
   the request; whether it is a normal `can_use_tool` with a `WebFetch(domain:…)`-like name).
 - `[KNOWN GAP]` K4: the exact text/exit code of `failIfUnavailable` at start (needed to show a plain reason, like Codex's
-  `linuxSandboxHint`).
+  `linuxSandboxHint`), and whether it also catches an AppArmor-blocked `bwrap`, a missing ripgrep or seccomp helper (the docs say
+  it exits "if the sandbox can't run", including a missing dependency).
+- Minimum version: the docs mark `strictAllowlist` as v2.1.219+; spec 087 uses that as the minimum for the whole block (an older
+  CLI might ignore keys it does not know without an error). The version that introduced `failIfUnavailable` itself is not stated.
 - The Agent SDK transport (spec 012 FR-113, not a dependency) would take the same settings through its options; `[KNOWN GAP]` K5:
   the option name, not checked against the SDK declarations (the SDK is not installed here).
 
@@ -78,8 +81,9 @@ the user's full rights today), and any bug in Durbar's own checks. In Ask first 
   `bwrap` 0.5.0+ and `slirp4netns` on `PATH` (docs; `slirp4netns` only for the `network`/`network_filtering` capabilities per the
   SDK). Windows needs Windows 11 25H2 with KB5124010+ or 26H1 with KB5124006+ and the BaseContainer tier (docs).
 - **Policy:** deny by default; grants are read/write, read-only or denied; denied wins; the working directory is read/write
-  unless `addCurrentWorkingDirectory: false`; `allowDevToolAccess` (default true) adds read-only grants for `PATH` and toolchain
-  folders; network `allowOutbound` (default on), `allowLocalNetwork` (default off), `allowedHosts`/`blockedHosts`.
+  unless `addCurrentWorkingDirectory: false`; `allowDevToolAccess` (default true) adds read grants for `PATH` and toolchain
+  folders **and write grants** for scratch caches, the Unix gh CLI cache and Cargo's registry, git store and lock files (`read:`
+  SDK `rpc.d.ts`, `SandboxConfig.allowDevToolAccess`; review of PR #728), so spec 087 sets it `false`; network `allowOutbound` (default on), `allowLocalNetwork` (default off), `allowedHosts`/`blockedHosts`.
 - **SDK surface (all `@experimental`):** `client.rpc.sandbox.getHostSupport()` → `{ supported, reason?, capabilities[] }`
   (capability names `network`, `network_filtering`, `denied_paths`, `shell`, `filesystem_enumeration`);
   `sandbox.checkPlatformSupport`; `session.rpc.options.update({ sandboxConfig, sandboxConfigSource })`
@@ -99,6 +103,9 @@ the user's full rights today), and any bug in Durbar's own checks. In Ask first 
   cannot enforce it"). `[KNOWN GAP]` K9: what an SDK session with `enabled: true` from `session_flag` does on an unsupported host
   (fail the shell, or silently `unsupported_host`); Durbar therefore asks `getHostSupport()` itself first.
 - `[KNOWN GAP]` K10: whether the user's own `~/.copilot/settings.json` `sandbox` block already applies to SDK sessions.
+- `sandboxConfigSource` is only an input (`SessionUpdateOptionsParams`, `SessionOpenOptions`); no getter or event returns it. The
+  one runtime signal named is `session.warning` with `warningType: 'sandbox'` (`SandboxHostCapabilityName` doc). `[KNOWN GAP]` K12:
+  any other report of a lost sandbox (Copilot or Claude).
 
 ## R5 Summary per app and OS (what the floor can be)
 

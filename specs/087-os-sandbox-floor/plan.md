@@ -22,8 +22,9 @@ IV (no credits), V (layout unchanged), VI (per-OS logic in pure functions), VIII
 
 ## Reused capabilities (AGENTS.md: look for an existing capability first)
 
-- Claude's `--settings` JSON composer `claudeSettingsJson` (`src/shared/foldersetup.ts`, spec 061): the `sandbox` block is merged
-  there, Durbar's keys last so a folder's own `sandbox` keys cannot widen them.
+- Claude's `--settings` JSON: `claudeSettingsJson` (`src/shared/foldersetup.ts`, spec 061) is left as is; the Claude adapter
+  (`claude.ts`) parses its result and sets the `sandbox` key to the block from `src/adapters/claudeSandbox.ts`, so no vendor key is
+  added to `src/shared` (constitution II).
 - Claude's relaunch on a mode change (spec 012 FR-115/FR-116): carries the new floor; no new switch path.
 - Codex's root normalisation `codexWorkspaceRoots` and `codexReadRoot` (`src/adapters/codexModes.ts`): moved or shared into
   `src/adapters/sandboxRoots.ts` so all three use one rule (FR-015).
@@ -34,6 +35,10 @@ IV (no credits), V (layout unchanged), VI (per-OS logic in pure functions), VIII
 - Redaction `redact` (spec 012) for vendor reasons; executable lookup from spec 012 detection (`src/adapters/detect.ts`) for
   `bwrap`/`socat` on `PATH`, no shell.
 - Organization policy loader and narrow-only rule (spec 076) for `permissions.requireOsSandbox`.
+- Refusals: spec 012's `MODE_REFUSAL` / `modeRefusalAction` (`src/renderer/app.js`) adds *Change mode…* to a refusal note whose
+  text contains "Read-only and Ask first need"; the simulator fault `simsendfail=sandbox` (`src/renderer/sim.ts`) is extended to
+  Claude and Copilot sim agents. No new refusal path.
+- Codex approval cards: `codexPermission`'s `summary` (`src/adapters/codexModes.ts`) gets the FR-021 sentence.
 
 ## Constitution Check
 
@@ -57,17 +62,22 @@ IV (no credits), V (layout unchanged), VI (per-OS logic in pure functions), VIII
   all); `claudeSandboxState({ platform, haveBwrap, haveSocat, startError })` → `SandboxState`.
 - `copilotSandbox.ts`: `copilotSandboxConfig({ mode, roots, host })` → `SandboxConfig`-shaped object (local structural type, no SDK
   import in the pure module); `copilotSandboxState(host, source?)` → `SandboxState`.
-- `SandboxState` type in `src/adapters/types.ts` (normalized), carried on `AgentInfo` to the renderer.
+- `SandboxState` type in `src/shared/api.ts` next to `AgentInfo` (normalized: no vendor name or key), filled by the adapters.
 
 ### Adapters
 
-- **Claude** (`claude.ts`): at launch, compute the state; when available (or required), pass the block into
-  `claudeSettingsJson` so `--settings` is always sent in Read-only and Ask first; `failIfUnavailable` = policy requires. A start
-  that exits with the sandbox error is mapped to a plain reason (K4) and, when required, to a refusal.
+- **Claude** (`claude.ts`): at launch, the pre-checks (version ≥ 2.1.219, platform, `bwrap`/`socat`) decide whether to try; when
+  trying, `--settings` carries the block with `failIfUnavailable: true` and the state is `unknown`. Surviving the start sets `on`.
+  An exit for the sandbox is mapped to a plain reason (K4); then policy required → refusal (FR-007); otherwise one relaunch without
+  the block, a chat note and state `off`.
 - **Copilot** (`copilot.ts`): one `getHostSupport()` per runtime start (cached, refreshed on *Check again*); after
-  `createSession`/`resumeSession` and before the first `send`, `session.rpc.options.update(...)`. A thrown or `false` result →
-  state off with reason; refusal when required. Listen for `session.warning` type `sandbox` (FR-008).
-- **Codex**: report `SandboxState` from the existing checks (`on`, mechanism by platform, `covers: ['shell','files']`).
+  `createSession`/`resumeSession` and before the first `send`, `session.rpc.options.update(...)` with `allowDevToolAccess: false`
+  and the session's `PATH` folders as `readonlyPaths`. A thrown or `false` result → state off with reason; refusal when required.
+  Listen for `session.warning` type `sandbox` (FR-008). A switch to Allow all sends nothing (`untilNewSession`).
+- **Codex**: report `SandboxState` from the existing checks (`on`, mechanism by platform, `covers: ['shell','files']`,
+  `approvedMayLeave: true` in Ask first); the FR-021 sentence on its approval cards.
+- **Verified list**: a constant per adapter of `(platform)` entries with a recorded real check (empty until T060-T062); `verified`
+  in `SandboxState` comes from it and drives the tooltip's "Requested; not verified" ending (FR-010).
 
 ### Window
 
