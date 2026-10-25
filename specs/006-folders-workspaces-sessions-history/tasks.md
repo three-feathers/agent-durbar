@@ -65,3 +65,14 @@
 - [x] T054 Review on #497: Ctrl+Shift+H while the lists load says "Looking…" and opens once they are back, never a false "none"; `simprevdelay` in the simulator; driver check with a mutation [FR-034, FR-036]
 - [x] T055 Stack on PR #498 (composer toolbar, now the top of the night release stack): merge its branch, keep its header line without the old button, lower the `theme-literals.json` ratchet of #500 (styles.css 213 → 211 literal colours: `.prev-q` and `.prev-row` use tokens), run `npm test`, `check:composer-toolbar`, `shots-006-prevmarks`, `check:rename` and `check:office` on the combination [FR-033, FR-037]
 - [x] T056 Review on #497 (2026-10-22): a Ctrl+Shift+H pressed before leaving the chat is dropped (`initPrev` clears `wantOpen`), a list coming back keeps focus in the search; `shots-006-prevmarks` checks both with `simprevdelay` (each fails without its fix); merge `main` (#515: no ui-text allow file, the `span.ab-act` entry goes with it) and run `check:ui-text` light and dark; in the merge: `theme.js` checks #515's three button-text pairs too (spec 070 FR-021 keeps them equal to the AI maker's), the `theme-literals.json` ratchet goes down with #515's tokens (styles.css 209 → 155, screens.css 48 → 16, themes.css 59 → 52); the driver's default output folder is `os.tmpdir()` [FR-036, FR-037]
+
+## Changes 2026-10-25: resume interrupted sessions after a crash (issue #606)
+
+- [x] T057 Spec delta FR-038..FR-046 and plan section; reuse named (lazy restore, `agents:wake`, `notice-strip`, `busy()`)
+- [x] T058 `src/main/crashmarker.ts` (parse, serialize, `interruptedFrom`, `CrashMarker`) and `scripts/test-crashmarker.ts` registered in `test:serial` [FR-038..FR-040]
+- [x] T059 Main wiring: begin after restore, busy feed from status events, clear on exit, IPC `app:interrupted`/`app:dismissInterrupted`, preload and `api.ts`; no marker under `DURBAR_SIM` [FR-038, FR-040]
+- [x] T060 Renderer: `#crashStrip` (Resume all / Pick... / Dismiss), per-row Resume, `wakeLast` crash note, styles with tokens only [FR-041..FR-045]
+- [x] T061 Simulator: `simcrash=N`, `DURBAR_SIM_CRASH`, bridge `interrupted`/`dismissInterrupted` [FR-046]
+- [x] T062 Driver `scripts/shots-006-crash.js` at 1440x900 and 1280x800 (until() waits, assertions, mutation checks), registered in `ui-suite.js`; screenshots `docs/screenshots/006-crash-*.png` and `shots-docs.js` [FR-041..FR-046]
+- [x] T063 Docs: README, changelog fragment, `docs/agent-notes.md`, spec index status, `[IMPLEMENTED]`/`[KNOWN GAP]` tags
+
