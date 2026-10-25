@@ -119,6 +119,13 @@ async function main(): Promise<void> {
   assert.ok(d.ok && d.git.repo && d.git.dirtyAtStart && d.git.newFiles === 0);
   assert.ok(!g2.calls.some((c) => c.includes('--untracked-files=all')), 'untracked files are not listed when they would not be counted');
 
+  // a start whose only changes are untracked files is not clean: those files were already there, so they are not counted as new (review on #718)
+  const g8 = fake({ status: Z('?? old.ts'), 'rev-parse': REF, shortstat: '', numstat: '', 'rev-list': '0', statusAll: Z('?? old.ts', '?? new.ts') });
+  const S8 = new SessionStarts(g8.exec, now);
+  await S8.noteStart('o', '/w');
+  const o = await S8.summarize('o', '/w');
+  assert.ok(o.ok && o.git.repo === true && o.git.dirtyAtStart === true && o.git.newFiles === 0, 'untracked-only start: dirty, no new files: ' + JSON.stringify(o));
+
   // not a repository (git's own words) versus could not read (a time limit, too much output, git missing)
   assert.ok(isNotRepo(NOREPO) && !isNotRepo(TIMEOUT) && !isNotRepo(err('spawn git ENOENT', { code: 'ENOENT' })) && !isNotRepo(undefined));
   const g3 = fake({ status: NOREPO, 'rev-parse': NOREPO });
