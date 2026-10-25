@@ -359,6 +359,13 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 ## Changes
 
+### 2026-10-25: review round 8 on PR #733 (Ruben's agent, 6 items)
+
+- `shortFolder` cuts by graphemes (`Intl.Segmenter`, code points without it), never half an emoji or a combining sequence; both cuts
+  stop at a word boundary. The trailing space/dot rule applies to Windows-form paths only (a POSIX `/home/u/proj.` is a real folder).
+- The forwarding to the window goes through one function, `toWindowEvent` (`src/main/sandboxops.ts`); a source check pins `main.ts`'s
+  call to it. Main merged (#750, #631); every linked picture that shows the chip, menus or Settings retaken and looked at.
+
 ### 2026-10-25: review round 7 on PR #733 (Ruben's agent, 5 items)
 
 - A shortened left-out folder is masked first (the app's `redact`), then cut at a word boundary. The `sandbox` event that main forwards to
