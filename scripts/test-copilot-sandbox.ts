@@ -233,7 +233,7 @@ async function main(): Promise<void> {
     const fsys = (updates(m3.fake, s3)[0].sandboxConfig as { userPolicy: { filesystem: Record<string, string[]> } }).userPolicy.filesystem;
     assert.deepStrictEqual(fsys.readwritePaths, [path.join(H, 'proj')], 'the credential folder is not granted');
     assert.strictEqual(last(m3.events, s3)?.state, 'on');
-    assert.match(String(last(m3.events, s3)?.reason), /Left out of the sandbox.*\.ssh/, 'and the state names it');
+    assert.ok((last(m3.events, s3)?.leftOut ?? []).some((x) => /\.ssh \(credential folder\)$/.test(x)), 'and the state names it');
     await m3.ad.dispose();
     // review round 5: a second folder dropped for any other reason (a filesystem root, a quote, unresolvable) is named too
     const q = path.join(H, 'it"s');
@@ -244,8 +244,8 @@ async function main(): Promise<void> {
     m4.ad['sandboxRealpath' as never] = ((p: string) => fs.realpathSync.native(p)) as never;
     const s4 = await m4.ad.start({ workspace: wsOdd, quiet: true, permissionMode: 'ask' });
     assert.deepStrictEqual((updates(m4.fake, s4)[0].sandboxConfig as { userPolicy: { filesystem: Record<string, string[]> } }).userPolicy.filesystem.readwritePaths, [path.join(H, 'proj')]);
-    const why4 = String(last(m4.events, s4)?.reason);
-    for (const p of [path.parse(H).root, q, path.join(H, 'missing')]) assert.ok(why4.includes(p), `named: ${p} in ${why4}`);
+    const named4 = last(m4.events, s4)?.leftOut ?? [];
+    for (const p of [path.parse(H).root, q, path.join(H, 'missing')]) assert.ok(named4.includes(`${p} (not usable)`), `named: ${p} in ${JSON.stringify(named4)}`);
     await m4.ad.dispose();
     // round 5: the session's OWN folder unusable (a link to the filesystem root): refused as FR-015, with that reason
     fs.symlinkSync(path.parse(H).root, path.join(H, 'to-root'), 'dir');

@@ -14,7 +14,8 @@
     if(!STATES.includes(own('state'))||!Array.isArray(own('covers'))||own('covers').some(c=>!COVERS.includes(c)))return null;
     if(own('mechanism')!==undefined&&!MECHS.includes(own('mechanism')))return null;
     return {state:own('state'),mechanism:own('mechanism'),managed:own('managed')===true,untilNewSession:own('untilNewSession')===true,covers:own('covers').slice(0,3),
-      approvedMayLeave:own('approvedMayLeave')===true,writes:own('writes')==='folders'?'folders':'none',verified:own('verified')===true,reason:typeof own('reason')==='string'?own('reason').slice(0,200):''};
+      approvedMayLeave:own('approvedMayLeave')===true,writes:own('writes')==='folders'?'folders':'none',verified:own('verified')===true,reason:typeof own('reason')==='string'?own('reason').slice(0,200):'',
+      leftOut:Array.isArray(own('leftOut'))?own('leftOut').filter(x=>typeof x==='string').slice(0,10).map(x=>x.slice(0,200)):[],leftOutMore:Number.isInteger(own('leftOutMore'))&&own('leftOutMore')>0?own('leftOutMore'):0};
   }
   /* FR-009: the chip segment after the mode name; '' = nothing shown (Allow all with the app default, or no state) */
   function chipWord(s0){
@@ -37,7 +38,10 @@
   function tooltip(s0,app,mask){const t=tip(s0,app,mask);return t.length>300?t.slice(0,299).replace(/\s+\S*$/,'')+'\u2026':t;}
   /* the mode menu note: the tooltip and the details that do not fit in it (FR-004: what PATH grants) */
   /* review round 4 on PR 733: the state names session folders the floor left out (credential folders): short in the tooltip, in full here */
-  const leftOut=(s,mask)=>s.state!=='off'&&/^Left out of the sandbox/.test(s.reason)&&typeof mask==='function'?String(mask(s.reason)||''):'';
+  const leftOut=(s,mask)=>{ /* review round 6: a bounded list field, each entry masked again; a count for the rest */
+    if(s.state==='off'||!s.leftOut.length||typeof mask!=='function')return '';
+    const names=s.leftOut.map(x=>String(mask(x)||'')).filter(Boolean);
+    return names.length?'Left out of the sandbox: '+names.join('; ')+(s.leftOutMore?'; and '+s.leftOutMore+' more':'')+'.':'';};
   function details(s0,app,mask){const s=clean(s0);if(!s)return '';const l=leftOut(s,mask),t=tip(s0,app,mask).replace('Some session folders are left out (the mode menu names them). ','');return (l?l+' ':'')+(s.state!=='off'&&s.covers.includes('mcp')?t+' Sandboxed commands can read your PATH folders, also those in your home folder.':t);}
   function tip(s0,app,mask){
     const s=clean(s0); if(!s)return '';

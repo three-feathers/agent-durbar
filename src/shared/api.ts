@@ -109,6 +109,9 @@ export interface SandboxState {
   verified: boolean;
   /** Why it is off or unknown, in plain words (masked, at most 200 characters). */
   reason?: string;
+  /** Session folders the floor left out, each "<folder> (<why>)" (masked, cut), at most 10; `leftOutMore` counts the rest. */
+  leftOut?: string[];
+  leftOutMore?: number;
 }
 
 /** Spec 087 FR-012: one agent app's OS sandbox on this computer, for Settings > Agent apps. Plain words; `reason` masked and cut. */

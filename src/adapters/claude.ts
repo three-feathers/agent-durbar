@@ -16,7 +16,7 @@ import type { OrgPolicy } from '../shared/orgpolicy';
 import { claudeSettingsJson } from '../shared/foldersetup';
 import { claudeSandboxExit, claudeSandboxHost, claudeSandboxPrecheck, claudeSandboxSettings, claudeSandboxState, withSandboxSettings } from './claudeSandbox';
 import type { ClaudeSandboxBlock, ClaudeSandboxFacts, ClaudeSandboxPre } from './claudeSandbox';
-import { CREDENTIAL_FOLDER_REFUSAL, leftOutLine, sandboxRoots, splitFolders } from './sandboxRoots';
+import { CREDENTIAL_FOLDER_REFUSAL, leftOutFields, sandboxRoots, splitFolders } from './sandboxRoots';
 import type { LeftOut } from './sandboxRoots';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 import { isAuthError, markAuthError } from './autherrors';
@@ -1557,8 +1557,8 @@ export class ClaudeAdapter implements AgentAdapter {
 
   /** Review round 4 on PR 733: the state, with the folders the floor left out named in its reason (the tooltip shows it). */
   private withLeftOut(s: Session, st: SandboxState | null): SandboxState | null {
-    const line = leftOutLine(s.sandboxLeftOut ?? []);
-    return st && line && st.state !== 'off' ? { ...st, reason: line } : st;
+    const lo = leftOutFields(s.sandboxLeftOut ?? []);
+    return st && lo && st.state !== 'off' ? { ...st, ...lo } : st;
   }
 
   /** FR-011: emit the state when it changed (and always with a notice). */

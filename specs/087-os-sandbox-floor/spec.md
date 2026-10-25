@@ -359,6 +359,15 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 ## Changes
 
+### 2026-10-25: review round 6 on PR #733 (Ruben's agent, 4 items)
+
+- The left-out folders are a bounded list field of `SandboxState` (`leftOut`, at most 10 entries "<folder> (credential folder | not
+  usable)", each masked and cut by main; `leftOutMore` counts the rest), so the 200-character `reason` (now a short sentence) never
+  hides one. The mode menu names them; the tooltip says some are left out.
+- Windows extended-length and device forms: `\\?\UNC\srv\sh` is checked as the share `\\srv\sh` and `\\?\C:\` as the drive (both
+  dropped as roots); any other `\\?\` or `\\.\` form is dropped.
+- A test that an extra folder that is a link goes on as `--add-dir` in its resolved form.
+
 ### 2026-10-25: review round 5 on PR #733 (Ruben's agent, 1 item)
 
 - **`--add-dir` is an allow-list under the floor.** Only the other folders the block holds (`splitFolders`, resolved paths) go on as

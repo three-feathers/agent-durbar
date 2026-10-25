@@ -9,7 +9,7 @@ import * as path from 'path';
 import { CLAUDE_SANDBOX_MIN_VERSION, claudeSandboxExit, claudeSandboxPrecheck, claudeSandboxSettings, claudeSandboxState, withSandboxSettings } from '../src/adapters/claudeSandbox';
 import { copilotHostSupport, copilotPathReadDirs, copilotSandboxConfig, copilotSandboxState } from '../src/adapters/copilotSandbox';
 import { CODEX_SANDBOX_NOTE_COMMAND, CODEX_SANDBOX_NOTE_FILE, codexModeSettings, codexPermission, codexSandboxState } from '../src/adapters/codexModes';
-import { HOME_SECRETS, sandboxRoots, splitFolders } from '../src/adapters/sandboxRoots';
+import { HOME_SECRETS, leftOutFields, sandboxRoots, splitFolders } from '../src/adapters/sandboxRoots';
 import * as os from 'os';
 import { cleanSandboxState, sandboxReason } from '../src/shared/sandbox';
 import { requireOsSandbox, requireOsSandboxFrom } from '../src/main/sandboxpolicy';
@@ -164,6 +164,9 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.deepStrictEqual(sandboxRoots(['/link'], () => '/'), [], 'a link to / is dropped (resolved path checked)');
   assert.deepStrictEqual(sandboxRoots(['/gone'], () => { throw new Error('ENOENT'); }), [], 'a resolver error drops the root');
   assert.deepStrictEqual(sandboxRoots(undefined, ident), []);
+  // review round 6 (2): Windows extended-length and device forms: a share root or a drive root is dropped like `\\srv\sh` and `C:\`
+  assert.deepStrictEqual(sandboxRoots(['\\\\?\\UNC\\srv\\sh', '\\\\?\\UNC\\srv\\sh\\', '\\\\srv\\sh', '\\\\?\\C:\\', '\\\\.\\C:\\x', '\\\\?\\Volume{1}\\x', '//?/UNC/srv/sh'], ident), [], 'share roots, drive roots, device and volume forms dropped');
+  assert.deepStrictEqual(sandboxRoots(['\\\\?\\UNC\\srv\\sh\\p', '\\\\?\\C:\\w'], ident), ['\\\\srv\\sh\\p', 'C:\\w'], 'a folder below them is kept, in its plain form');
   // review round 5: splitFolders is an allow-list: kept only when the block holds it; everything else is named with why
   const sp = splitFolders(['/w', '/', '/a/../..', '/x"y', '/gone', '/w/sub', '/home/me/.ssh'], '/w', ['/w', '/w/sub'], (p) => { if (p === '/gone') throw new Error('ENOENT'); return p; });
   assert.deepStrictEqual(sp.kept, ['/w/sub']);
@@ -336,9 +339,23 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.ok(longest.length <= 300, 'a data tooltip: at most 300 characters (' + longest.length + ')');
   assert.ok(T.tooltip({ state: 'off', covers: ['shell'], verified: false, reason: 'x'.repeat(200) }, 'Claude Code', (t) => t).length <= 300);
   assert.ok(/PATH folders/.test((T as unknown as { details(s: unknown, a: string): string }).details({ ...on, covers: ['shell', 'mcp'] }, 'Copilot')), 'the mode menu says what PATH grants (FR-004)');
-  const lo = { ...on, reason: 'Left out of the sandbox, because they are or hold credential folders: /h/.aws.' };
+  const lo = { ...on, reason: 'Some session folders are left out of the sandbox: credential folders, or paths it cannot use.', leftOut: ['/h/.aws (credential folder)'] };
   assert.ok(/Some session folders are left out/.test(T.tooltip(lo, 'Claude Code', (t) => t)) && T.tooltip(lo, 'Claude Code', (t) => t).endsWith(T.NOT_VERIFIED), 'the tooltip says folders are left out and still ends as required');
-  assert.ok((T as unknown as { details(s: unknown, a: string, m: (t: string) => string): string }).details(lo, 'Claude Code', (t) => t).startsWith('Left out of the sandbox, because they are or hold credential folders: /h/.aws.'), 'the mode menu names them');
+  assert.ok((T as unknown as { details(s: unknown, a: string, m: (t: string) => string): string }).details(lo, 'Claude Code', (t) => t).startsWith('Left out of the sandbox: /h/.aws (credential folder).'), 'the mode menu names them');
+  // review round 6 (1): a long list: every folder up to the cap is named (no 200-character cut), the rest counted; masked per entry
+  const many = leftOutFields(Array.from({ length: 14 }, (_, i) => ({ folder: `/very/long/path/number/${i}/` + 'x'.repeat(60), why: i % 2 ? 'credential' as const : 'unusable' as const })))!;
+  assert.strictEqual(many.leftOut.length, 10);
+  assert.strictEqual(many.leftOutMore, 4);
+  assert.ok(many.reason.length <= 200);
+  const cleaned = cleanSandboxState({ ...on, ...many })!;
+  assert.strictEqual(cleaned.leftOut!.length, 10, 'main keeps all ten');
+  const d = (T as unknown as { details(s: unknown, a: string, m: (t: string) => string): string }).details(cleaned, 'Claude Code', (t) => t);
+  for (let i = 0; i < 10; i++) assert.ok(d.includes(`/very/long/path/number/${i}/`), 'named: ' + i);
+  assert.ok(/and 4 more/.test(d));
+  const three = leftOutFields([{ folder: '/', why: 'unusable' }, { folder: '/home/me/.aws', why: 'credential' }, { folder: '/home/me/x', why: 'unusable' }])!;
+  assert.deepStrictEqual(three.leftOut, ['/ (not usable)', '/home/me/.aws (credential folder)', '/home/me/x (not usable)'], 'the third folder is named too');
+  assert.strictEqual(cleanSandboxState({ ...on, leftOut: new Array(11).fill('x') }), undefined, 'over the cap: malformed');
+  assert.ok(!(T as unknown as { details(s: unknown, a: string, m: (t: string) => string): string }).details({ ...on, leftOut: ['/h/ghp_abcdefghijklmnopqrstuvwxyz0123456789 (not usable)'] }, 'C', () => '').includes('ghp_'), 'each entry only through the mask');
   ok('FR-009/FR-010: the chip words and the tooltip per app; the reason only through the mask');
 }
 console.log('sandbox floor (spec 087): all checks passed');

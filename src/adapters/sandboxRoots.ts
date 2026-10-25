@@ -4,12 +4,22 @@
  * and workspace folders); a root that could widen the floor or break a settings string is dropped, so the floor only narrows.
  */
 import * as path from 'path';
+import { LEFT_OUT_MAX } from '../shared/sandbox';
 
 /** Normalised absolute root and its compare key, or undefined when it must be dropped. Windows-form paths use `path.win32`, others `path.posix`. */
-export function normalizeRoot(r: string): { path: string; key: string } | undefined {
+export function normalizeRoot(r0: string): { path: string; key: string } | undefined {
   // a control character or a quote never goes into a settings JSON, a profile or argv (spec 087 edge cases): drop the root
   // eslint-disable-next-line no-control-regex
-  if (!r || /["\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(r)) return undefined;
+  if (!r0 || /["\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(r0)) return undefined;
+  // review round 6 on PR 733: Windows extended-length forms are checked as what they name (`\\?\UNC\srv\sh` is the share `\\srv\sh`,
+  // `\\?\C:\` the drive); any other `\\?\` or a device path (`\\.\`) is dropped
+  let r = r0;
+  if (/^[\\/]{2}[?.][\\/]/.test(r)) {
+    const rest = r.slice(4);
+    if (/^UNC[\\/]/i.test(rest) && r[2] === '?') r = '\\\\' + rest.slice(4);
+    else if (/^[A-Za-z]:[\\/]/.test(rest) && r[2] === '?') r = rest;
+    else return undefined;
+  }
   const win = /^[A-Za-z]:[\\/]/.test(r) || r.startsWith('\\\\');
   if (!win && !r.startsWith('/')) return undefined;
   const api = win ? path.win32 : path.posix;
@@ -114,9 +124,20 @@ export interface LeftOut {
   folder: string;
   why: 'credential' | 'unusable';
 }
-const WHY: Record<LeftOut['why'], string> = { credential: 'a credential folder, or holds one', unusable: 'not a folder the sandbox can use: a filesystem root, a path with "..", a quote or a control character, or one that cannot be resolved' };
-export const leftOutLine = (folders: readonly LeftOut[]): string | undefined =>
-  folders.length ? `Left out of the sandbox: ${folders.slice(0, 5).map((f) => `${f.folder} (${WHY[f.why]})`).join('; ')}${folders.length > 5 ? `; and ${folders.length - 5} more` : ''}.` : undefined;
+const WHY: Record<LeftOut['why'], string> = { credential: 'credential folder', unusable: 'not usable' };
+/** The longest folder shown in the list (its start and end are kept). */
+const FOLDER_SHOWN = 120;
+const shortFolder = (f: string): string => (f.length <= FOLDER_SHOWN ? f : `${f.slice(0, 40)}…${f.slice(-(FOLDER_SHOWN - 41))}`);
+/**
+ * Spec 087 (review rounds 4-6 on PR 733): the state fields that name the folders the floor left out: a short reason, and a bounded list
+ * (`LEFT_OUT_MAX` entries, each "<folder> (credential folder | not usable)", the folder shortened; main masks and cuts each) plus a count
+ * of the rest, so a long list never pushes a folder out of a 200-character reason.
+ */
+export function leftOutFields(folders: readonly LeftOut[]): { reason: string; leftOut: string[]; leftOutMore?: number } | undefined {
+  if (!folders.length) return undefined;
+  const shown = folders.slice(0, LEFT_OUT_MAX).map((f) => `${shortFolder(f.folder)} (${WHY[f.why]})`);
+  return { reason: 'Some session folders are left out of the sandbox: credential folders, or paths it cannot use.', leftOut: shown, ...(folders.length > LEFT_OUT_MAX ? { leftOutMore: folders.length - LEFT_OUT_MAX } : {}) };
+}
 
 /**
  * Spec 087 (review round 5 on PR 733): the session's other folders, each kept (its resolved path, the only form ever passed on, for

@@ -61,7 +61,7 @@ import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import { sweepStaleTempDirs } from '../shared/attachments';
 import { COPILOT_NO_REPORT, copilotHostSupport, copilotSandboxConfig, copilotSandboxHost, copilotSandboxState } from './copilotSandbox';
 import type { CopilotHostSupport } from './copilotSandbox';
-import { CREDENTIAL_FOLDER_REFUSAL, leftOutLine, sandboxRoots, splitFolders } from './sandboxRoots';
+import { CREDENTIAL_FOLDER_REFUSAL, leftOutFields, sandboxRoots, splitFolders } from './sandboxRoots';
 import { pathDirs as envPathDirs } from '../shared/pathdirs';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 
@@ -1178,8 +1178,8 @@ export class CopilotAdapter implements AgentAdapter {
       live.sandboxHold = undefined;
       live.sandboxNoteOpen = false;
       const st = copilotSandboxState({ mode, platform, host, applied: true });
-      const line = leftOutLine(leftOut);
-      this.setSandbox(sid, live, st && line ? { ...st, reason: line } : st);
+      const lo = leftOutFields(leftOut);
+      this.setSandbox(sid, live, st && lo ? { ...st, ...lo } : st);
     } catch (e) {
       const st = copilotSandboxState({ mode, platform, host, refused: e instanceof Error ? e.message : String(e) });
       live.sandboxHold = { reason: st?.reason ?? 'Copilot refused the sandbox settings.' };

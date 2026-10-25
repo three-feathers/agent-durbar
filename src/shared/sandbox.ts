@@ -7,6 +7,8 @@ import { redact } from './redact';
 
 /** The longest reason shown (FR-011). */
 export const SANDBOX_REASON_MAX = 200;
+/** Spec 087 (review round 6 on PR 733): at most this many left-out folders are named; the rest are counted. */
+export const LEFT_OUT_MAX = 10;
 const STATES = ['on', 'off', 'unknown'] as const;
 const MECHANISMS = ['seatbelt', 'bubblewrap', 'processcontainer', 'vendor'] as const;
 const COVERS = ['shell', 'mcp', 'files'] as const;
@@ -45,6 +47,11 @@ export function cleanSandboxState(x: unknown): SandboxState | undefined {
   const reason = own('reason');
   if (reason !== undefined && typeof reason !== 'string') return undefined;
   const r = reason === undefined ? undefined : sandboxReason(reason);
+  const lo = own('leftOut');
+  if (lo !== undefined && (!Array.isArray(lo) || lo.length > LEFT_OUT_MAX || lo.some((x) => typeof x !== 'string'))) return undefined;
+  const more = own('leftOutMore');
+  if (more !== undefined && (typeof more !== 'number' || !Number.isInteger(more) || more < 0 || more > 1e6)) return undefined;
+  const loClean = Array.isArray(lo) ? (lo as string[]).map((x) => sandboxReason(x)).filter((x): x is string => !!x) : [];
   return {
     state: state as SandboxState['state'],
     ...(mech ? { mechanism: mech as SandboxState['mechanism'] } : {}),
@@ -55,5 +62,7 @@ export function cleanSandboxState(x: unknown): SandboxState | undefined {
     ...(writes ? { writes: writes as SandboxState['writes'] } : {}),
     verified: own('verified') === true,
     ...(r ? { reason: r } : {}),
+    ...(loClean.length ? { leftOut: loClean } : {}),
+    ...(typeof more === 'number' && more > 0 ? { leftOutMore: more } : {}),
   };
 }

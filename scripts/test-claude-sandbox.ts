@@ -353,7 +353,7 @@ async function main(): Promise<void> {
     assert.ok(!addDirs.some((d) => d.includes('.aws')), 'the credential folder is not an --add-dir (no implicit write grant): ' + addDirs.join(','));
     assert.ok(!(sandboxOf(a2) as { filesystem: { allowRead: string[] } }).filesystem.allowRead.some((d) => d.includes('.aws')));
     await until('on', () => lastState(w.events, ws2)?.state === 'on');
-    assert.match(String(lastState(w.events, ws2)?.reason), /Left out of the sandbox.*\.aws/, 'the state names the folder it left out');
+    assert.ok((lastState(w.events, ws2)?.leftOut ?? []).some((x) => /\.aws \(credential folder\)$/.test(x)), 'the state names the folder it left out');
     await w.ad.dispose();
     // the same workspace in Allow all keeps both folders (no floor, nothing left out)
     const wa = make({ home, realpath: real });
@@ -377,15 +377,27 @@ async function main(): Promise<void> {
     const oa = o.sp.calls[0].args;
     assert.ok(!oa.includes('--add-dir'), 'none of the dropped folders is an --add-dir: ' + oa.filter((x, i) => oa[i - 1] === '--add-dir').join(','));
     await until('on', () => lastState(o.events, os1)?.state === 'on');
-    const why = String(lastState(o.events, os1)?.reason);
-    for (const p of odd) assert.ok(why.includes(p) || why.includes(p.replace(/"/g, '')), `named: ${p} in ${why}`);
-    assert.match(why, /not a folder the sandbox can use/);
+    const named = lastState(o.events, os1)?.leftOut ?? [];
+    for (const p of odd) assert.ok(named.includes(`${p} (not usable)`), `named: ${p} in ${JSON.stringify(named)}`);
+    assert.ok(String(lastState(o.events, os1)?.reason).length <= 200);
     o.ad.setPermMode!(os1, 'allow');
     await o.ad.send(os1, { text: 'y' });
     await until('relaunch', () => o.sp.calls.length === 2);
     const oa2 = o.sp.calls[1].args;
     assert.ok(oa2.filter((x, i) => oa2[i - 1] === '--add-dir').length === odd.length, 'Allow all: the folders are --add-dir again (no floor)');
     await o.ad.dispose();
+    // review round 6 (3): an extra folder that is a link goes on as --add-dir in its RESOLVED form (the form the block holds)
+    fs.mkdirSync(path.join(tmp, 'realextra'), { recursive: true });
+    fs.symlinkSync(path.join(tmp, 'realextra'), path.join(tmp, 'linkextra'), 'dir');
+    const wsLink = path.join(tmp, 'link.code-workspace');
+    fs.writeFileSync(wsLink, JSON.stringify({ folders: [{ path: path.join(home, 'proj') }, { path: path.join(tmp, 'linkextra') }] }));
+    const lk = make({ home, realpath: real });
+    const ls1 = await lk.ad.start({ workspace: wsLink, quiet: true, permissionMode: 'ask' });
+    await lk.ad.send(ls1, { text: 'x' });
+    await until('spawned', () => lk.sp.calls.length === 1);
+    const la = lk.sp.calls[0].args;
+    assert.deepStrictEqual(la.filter((x, i) => la[i - 1] === '--add-dir'), [path.join(tmp, 'realextra')], 'the resolved path, never the link');
+    await lk.ad.dispose();
     // round 5: the session's OWN folder unusable (a link to the filesystem root): refused, nothing spawned
     const wsRoot = path.join(tmp, 'rootfirst.code-workspace');
     fs.writeFileSync(wsRoot, JSON.stringify({ folders: [{ path: path.join(tmp, 'to-root') }, { path: path.join(home, 'proj') }] }));
