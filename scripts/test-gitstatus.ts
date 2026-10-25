@@ -129,7 +129,12 @@ async function main(): Promise<void> {
  * Without the hardening (main before FR-008) this run lists fsmonitor, filter, process and submodule markers.
  */
 async function realGitCheck(): Promise<void> {
-  try { execFileSync('git', ['--version'], { stdio: 'ignore', windowsHide: true }); } catch { console.log('gitstatus: real-git check SKIPPED (no git on PATH)'); return; }
+  try { execFileSync('git', ['--version'], { stdio: 'ignore', windowsHide: true }); } catch {
+    // every CI runner has git (the checkout needs it): there a missing git is a failure, so a green run proves the check ran
+    if (process.env.CI && !/^(0|false)$/i.test(process.env.CI)) throw new Error('git is not on PATH under CI: the real-git check must run');
+    console.log('gitstatus: real-git check SKIPPED (no git on PATH)');
+    return;
+  }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-git-'));
   try {
     const marks = path.join(root, 'marks');
