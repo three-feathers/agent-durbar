@@ -150,6 +150,19 @@ module.exports = async (ctx) => {
     assert.ok(await until(`window.__revoked.some(x=>x==='big:a|mk2')`, 5000), `${w}: Undo asked main for the whole call`);
     assert.ok(await until(`[...document.querySelectorAll('#chat .chip')].some(c=>/no longer remembers/.test((c.querySelector('.why-t')||{}).textContent||'')&&(c.querySelector('.why-l')||{}).textContent==='write in a/ and 10 more folders')`, 8000), `${w}: an unknown call says so`);
     assert.strictEqual(await js(`[...document.querySelectorAll('#chat .chip')].some(c=>(c.querySelector(':scope>.why')||{}).textContent==='Rule removed'&&(c.querySelector('.why-l')||{}).textContent==='write in a/ and 10 more folders')`), false, `${w}: unlisted rules are not confirmed gone: never "Rule removed"`);
+    // main answers "1 still live" (a newer rule for the same thing): "Newer rule active", and "Rule removed" once that rule goes too
+    await ev({ type: 'grants', grants: [{ key: 'nw:a', kind: 'write', label: 'write in a/' }] });
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();const o=b.revokeGrant;b.revokeGrant=(i,k,c)=>c==='mk4'?Promise.resolve(1):o.call(b,i,k,c);})()`);
+    await ev({ permission: { requestId: 'mk4', kind: 'write', summary: 'write nw', state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: 'nw:a', keys: ['nw:a'], label: 'write in nw/' } } });
+    await js(`window.__durbarSimUi.emit({type:'toolCall',sessionId:${jsLiteral(id)},timestamp:Date.now(),callId:'mk4',tool:'bash',phase:'start',args:{command:'echo nw'}})`);
+    const nwCard = `[...document.querySelectorAll('#chat .chip')].find(c=>(c.querySelector('.why-l')||{}).textContent==='write in nw/')`;
+    assert.ok(await until(`!!(${nwCard})`, 5000), `${w}: the card of the newer-rule case is tagged`);
+    await js(`(()=>{const c=${nwCard};c.dataset.nw='1';if(!c.classList.contains('open'))c.click();})()`);
+    assert.ok(await until(`!!document.querySelector('#chat .chip.open .why-undo')`, 5000), `${w}: it offers Undo`);
+    await js(`document.querySelector('#chat .chip.open .why-undo').click()`);
+    assert.ok(await until(`(document.querySelector('[data-nw]').querySelector(':scope>.why')||{}).textContent==='Newer rule active'`, 5000), `${w}: main says one is still live: Newer rule active, not removed`);
+    await ev({ type: 'grants', grants: [] }); // the newer rule is removed with its chip
+    assert.ok(await until(`(document.querySelector('[data-nw]').querySelector(':scope>.why')||{}).textContent==='Rule removed'`, 5000), `${w}: once the newer rule is gone too the card says removed`);
     await ev({ permission: { requestId: 'mk3', kind: 'write', summary: 'write huge', state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: 'big:a', keys: ['big:a'], more: 600, noUndo: true, label: 'write in a/ and 600 more folders' } } });
     await js(`window.__durbarSimUi.emit({type:'toolCall',sessionId:${jsLiteral(id)},timestamp:Date.now(),callId:'mk3',tool:'bash',phase:'start',args:{command:'echo huge'}})`);
     assert.ok(await until(`[...document.querySelectorAll('#chat .chip')].some(c=>(c.querySelector('.why-l')||{}).textContent==='write in a/ and 600 more folders'&&/too many to undo here/.test((c.querySelector('.why-t')||{}).textContent||'')&&!c.querySelector('.why-undo'))`, 5000), `${w}: a call with too many rules offers no Undo and promises no "all"`);

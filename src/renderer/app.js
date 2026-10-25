@@ -3526,7 +3526,7 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
   const chip=b.closest('.chip'),c=chip&&chip._whyC,d=c&&WHY?WHY.describe(c.whyBy,whyLive(c.aid),whyOpts(c)):null;
   if(!d||!d.undoKeys)return;
   b.disabled=true;c._refocus=true;c.undone=true;
-  /* FR-101: main removes every rule that allowed this call (it holds the full list) and says how many of them are still live; "removed" is shown only for 0. A call main does not know (-1) or a partial answer falls back to the listed keys, and a card with unlisted rules (more) then never says "removed". */
+  /* FR-101: main removes every rule that allowed this call (it holds the full list) and says how many of them are still live; "removed" is shown only for 0. Above 0 means a newer rule for the same key is active ("Newer rule active", until that one is removed too); -1 means main does not know the call: the card says so and nothing is removed by key. */
   Promise.resolve().then(async()=>{
     const left=c.whyCall?await bridge.revokeGrant(c.aid,d.undoKeys[0],c.whyCall):-1;
     c.undone=false;

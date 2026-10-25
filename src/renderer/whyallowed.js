@@ -38,9 +38,12 @@
         const noUndo=by.noUndo===true, label=cutLabel(by.label), many=keys.length>1||more>0;
         const anyLive=lv?keys.some(k=>lv.has(k)):true;
         const wasKnown=o.undone===true||(seen?keys.some(k=>seen.has(k)):false);
+        const goneCard={kind:'session-grant',pill:'Rule removed',sentence:'This was allowed by a session rule that you have since removed: Durbar asks again.',label,gone:true};
+        /* "newer rule active" lasts only while one of the call's keys is live; once the user removes that rule too, it is removed (unless unlisted rules leave that unknown) */
+        if(o.state==='newer'&&lv&&!anyLive&&more===0)return goneCard;
         if(o.state==='newer')return {kind:'session-grant',pill:'Newer rule active',sentence:'The rule that allowed this was removed, but you have since approved the same thing again: that newer rule is still active. Manage it with the grant chips.',label};
         if(o.state==='forgotten')return {kind:'session-grant',pill:many?'Allowed: session rules':'Allowed: session rule',sentence:'Durbar no longer remembers which rules allowed this call, so it removed nothing. Manage the session rules with the grant chips.',label};
-        if(o.confirmed===true||(lv&&!anyLive&&wasKnown&&more===0))return {kind:'session-grant',pill:'Rule removed',sentence:'This was allowed by a session rule that you have since removed: Durbar asks again.',label,gone:true};
+        if(o.confirmed===true||(lv&&!anyLive&&wasKnown&&more===0))return goneCard;
         const liveKeys=lv?keys.filter(k=>lv.has(k)):keys;
         return {kind:'session-grant',more,pill:many?'Allowed: session rules':'Allowed: session rule',
           sentence:many?'Allowed because you chose Approve for this session for each of these folders'+(more?' ('+more+' more rules are not listed: '+(noUndo?'too many to undo here: manage them with the grant chips':'Undo asks Durbar to remove all of them')+')':'')+': ':'Allowed because you chose Approve for this session for: ',label,undoKeys:noUndo?undefined:(liveKeys.length?liveKeys:keys)};

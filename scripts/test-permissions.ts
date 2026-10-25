@@ -495,6 +495,14 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
       assert.notStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { ...ev2, allowedBy: { kind: 'session-grant', key: 'k', label: 'l', more: 0 } } }).length, 0, 'and a bad count');
     }
 
+    // hostile noUndo values: the window fails closed (no tag at all) and the event guard refuses the event
+    for (const bad of ['true', 1, {}, [], null, false, 0]) {
+      const by = { kind: 'session-grant', key: 'k', label: 'l', noUndo: bad };
+      assert.strictEqual(W.describe(by, null), null, `window: noUndo ${JSON.stringify(bad)} shows no tag`);
+      assert.notStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { requestId: 'r', kind: 'write', summary: 's', state: 'approved', via: 'session', allowedBy: by } as never }).length, 0, `guard: noUndo ${JSON.stringify(bad)} refused`);
+    }
+    assert.ok(W.describe({ kind: 'session-grant', key: 'k', label: 'l', noUndo: true }, null), 'true is fine');
+
     // the cap boundary: 500 folders can be undone together, 501 are said to be too many and are never promised
     for (const [n, ok] of [[CALL_KEYS_MAX, true], [CALL_KEYS_MAX + 1, false]] as [number, boolean][]) {
       const mf = mkRoots2({ ask: true });
@@ -541,6 +549,12 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
       assert.strictEqual(mf.b.listGrants().length, 1, 'the newer rule is still live');
       assert.strictEqual(W.describe({ kind: 'session-grant', key, label: 'l' }, new Set([key]), { state: 'newer' })?.pill, 'Newer rule active');
       assert.strictEqual(W.describe({ kind: 'session-grant', key, label: 'l' }, new Set([key]), { state: 'forgotten' })?.undoKeys, undefined, 'a forgotten call offers no Undo and says so');
+      // the newer rule is removed later with the grant chip: the card then says removed
+      const live2 = new Set(mf.b.listGrants().map((g) => g.key));
+      const by = { kind: 'session-grant', key, label: 'l' };
+      assert.strictEqual(W.describe(by, live2, { state: 'newer' })?.pill, 'Newer rule active', 'while the newer rule is live');
+      assert.strictEqual(W.describe(by, new Set(), { state: 'newer' })?.pill, 'Rule removed', 'after the newer rule is removed too');
+      assert.strictEqual(W.describe({ ...by, more: 3 }, new Set(), { state: 'newer' })?.pill, 'Newer rule active', 'unlisted rules: not claimed removed');
       await mf.b.request(req('r4'));
       assert.strictEqual(mf.b.revokeCall('r4'), 0);
       assert.strictEqual(mf.b.listGrants().length, 0, 'the call that the newer rule allowed removes it');
