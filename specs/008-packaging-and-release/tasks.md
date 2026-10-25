@@ -122,4 +122,4 @@
 
 ## 2026-10-25: fold branch names without dots
 
-- [x] T108: fold branch name `NNN-fold-alpha-N` in `scripts/release-notes.js` (`foldSlug`) and its test in `scripts/test-changelog.js`; docs in `changelog.d/README.md` and `docs/collaboration.md`; notes on the historical plans of 082, 086, 088; `docs/agent-notes.md` entry [FR-121]
+- [x] T108: fold branch name `NNN-fold-alpha-N` in `scripts/release-notes.js` (`foldSlug`) and its test in `scripts/test-changelog.js`; docs in `changelog.d/README.md` and `docs/collaboration.md`; notes on the historical plans of 082, 086, 088; `docs/agent-notes.md` entry [FR-127]
