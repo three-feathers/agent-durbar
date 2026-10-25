@@ -247,7 +247,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .st-waiting{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} .st-idle{--pb:var(--pb-idle);--pc:var(--pc-idle);--pd:var(--c-idle)}
 .st-error{--pb:var(--pb-error);--pc:var(--red-ink);--pd:var(--c-error)} .st-done{--pb:var(--pb-done);--pc:var(--pc-done);--pd:var(--c-done)}
 .st-failing,.st-retrying{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} /* spec 052 FR-062: "Failing" reuses the waiting colours (no new status colour); spec 034 FR-018: "Retrying" too */
-.st-compacting{--pb:var(--pb-thinking);--pc:var(--pc-thinking);--pd:var(--c-thinking)} /* spec 015 FR-010 (issue #601): "Compacting" reuses the Thinking colours (no new status colour) */
+.st-compacting{--pb:var(--pb-thinking);--pc:var(--pc-thinking);--pd:var(--c-thinking)} /* spec 015 FR-010 (issue 601): "Compacting" reuses the Thinking colours (no new status colour) */
 .st-idle i{background:transparent;border:1.5px solid var(--c-idle)}
 /* spec 052 FR-101: on cards and list rows a status that needs nothing from you is a dot and the word in its colour; Waiting, Error,
    Failing and Limit reached (a waiting state) keep the filled pill. Only colours change: the pill keeps its height and padding */

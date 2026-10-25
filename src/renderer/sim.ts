@@ -1095,7 +1095,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
     /* spec 034 FR-020 (simretry=1): Clara's agent app is retrying a model call (attempt 3 of 10, servers busy, HTTP 529) and stays so;
        Tomas's retries twice for a rate limit and gives up before his error. Normalized `retry` events, as the adapters send them. */
-    /* spec 015 FR-014 (issue #601, simcompact=1): Clara's agent app is compacting the conversation (a Claude-style start: the trigger is not known) and stays so until a driver ends it */
+    /* spec 015 FR-014 (issue 601, simcompact=1): Clara's agent app is compacting the conversation (a Claude-style start: the trigger is not known) and stays so until a driver ends it */
     const simCompact = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simcompact') === '1';
     const simRetry = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simretry') === '1';
     const simRetries = (s: SimAgent, n: number, max: number | undefined, reason: 'overloaded' | 'rate-limit', httpStatus: number): void => {

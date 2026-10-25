@@ -153,7 +153,7 @@
     const span=nn(e.tokensBefore)&&nn(e.tokensAfter)?': '+fmtTokens(e.tokensBefore)+' → '+fmtTokens(e.tokensAfter)+' tokens'+(grew?' (too short to shrink)':''):nn(e.tokensRemoved)?': '+fmtTokens(e.tokensRemoved)+' tokens removed':nn(e.tokensBefore)?': it held '+fmtTokens(e.tokensBefore)+' tokens':'';
     return (e.trigger==='truncation'?'Older messages dropped to fit the window':'Context compacted'+how)+span+'.';
   }
-  /* spec 015 FR-010 (issue #601): is this agent compacting right now, for the desk, list, header and strip? A live, main, un-paused agent whose
+  /* spec 015 FR-010 (issue 601): is this agent compacting right now, for the desk, list, header and strip? A live, main, un-paused agent whose
      compaction is open; Waiting, Error and Done keep their own word (a compaction does not hide a question or a failure). Pure. */
   function compactingNow(a){
     return !!a&&!a.parent&&!!a.live&&!a.paused&&a.compacting===true&&a.state!=='waiting'&&a.state!=='error'&&a.state!=='done';
