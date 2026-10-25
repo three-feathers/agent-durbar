@@ -3,14 +3,14 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Agent-app updates (owner request, issue #662): Settings > Agent apps shows "installed X, latest Y" per app, checked in the background at every Durbar start and on "Check for updates" (owner decision Q1 = C; organization policy can turn it off); a new version gets a badge and one toast; Update runs the updater of the source that installed the copy Durbar uses (no shell, argv, native confirmation, masked output); open sessions are warned about, ended or waited for; failures (admin rights, managed machines, locked files on Windows) say what to do
-status: Draft (2026-10-25): spec, research, plan and tasks; Q1-Q5 answered by Vikram (C, A, C limited to the official Codex CLI, A, B); Q6-Q7 open after Paco's review of #663; nothing built
+status: Draft (2026-10-25): spec, research, plan and tasks; Q1-Q6 answered by Vikram (C, A, C limited to the official Codex CLI, A, B, A); Q7 open; nothing built
 -->
 
 **Feature Branch**: `081-cli-updates` (extends 051 harness setup, 060 platform parity and 012 detection; reads 076 managed config)
 
 **Created**: 2026-10-23
 
-**Status**: Draft. Spec, research, plan and tasks. Q1-Q5 are answered by the owner (Clarifications; Q3 asked again and answered on 2026-10-25). Q6 and Q7 are open after Paco's review of #663. Nothing is built. Every requirement is `[PLANNED]` unless tagged otherwise.
+**Status**: Draft. Spec, research, plan and tasks. Q1-Q6 are answered by the owner (Clarifications; Q3 asked again and answered, and Q6 answered, on 2026-10-25). Q7 is open. Nothing is built. Every requirement is `[PLANNED]` unless tagged otherwise.
 
 **Input**: Issue #662, owner request (Vikram, 2026-10-23, DM): "lets add support to check updates on cli and upgrade it". The CLIs are the agent apps Durbar drives: Codex CLI, Claude Code and the GitHub Copilot CLI. The trigger was a Codex 0.163.0 sandbox bug on macOS (Homebrew cask, `/opt/homebrew/bin/codex`): today the only way to get a fixed Codex is to leave Durbar and update it by hand, and Durbar does not even say that a newer version exists.
 
@@ -305,8 +305,8 @@ When the start check finds a new version, the Settings entry and the card get a 
 - **FR-020** `[PLANNED]` **Simulator** (constitution IV): canned installed and latest versions per app and source (one up to date, one with an update, one that cannot be checked), a canned update run, simulated sessions for US3; no network, no package manager.
 - **FR-021** `[PLANNED]` **No real update in tests.** `npm test` uses fixtures of each tool's output (captured from documentation or a recorded run, with the source named); a real update on a real machine is a separate, owner-approved task (it changes the user's installed app).
 - **FR-022** `[PLANNED]` **Turning the start check off** (spec 076 FR-159: a feature that sends requests off the machine needs its own switch).
-  - **The user's switch.** Settings > Agent apps has *Check for updates when Durbar starts*. Its default, and whether 076's `updates.mode: "off"` also turns it off, is [NEEDS CLARIFICATION: Q6]. It is saved with the other settings as a boolean. *Check for updates* (the button) always works.
-  - **The organization's switch.** 076 gets the key `features.agentAppUpdateCheck: false`, which locks the user's switch off and shows *Set by your organization*. `agentApps.allowInAppInstall: false` (FR-032, FR-175) also turns the start check off and hides Update; the button stays as a read-only check. Air-gapped machines (076 FR-162) set either key.
+  - **The user's switch.** Settings > Agent apps has *Check for updates when Durbar starts*. It is **on by default** (owner decision Q6 = A), saved with the other settings as a boolean (only `false` is written). *Check for updates* (the button) always works.
+  - **The organization's switch.** 076 gets the key `features.agentAppUpdateCheck: false`, which locks the user's switch off and shows *Set by your organization*. Spec 076's `updates.mode: "off"` (FR-174) also turns the start check off and locks the switch (Q6 = A). `agentApps.allowInAppInstall: false` (FR-032, FR-175) also turns the start check off and hides Update; the button stays as a read-only check. Air-gapped machines (076 FR-162) set any of these keys.
   - **Fail closed.** If the policy is present but cannot be read or validated (076's closed mode), the start check does not run, and the card says *Not checked: your organization's settings could not be read*.
   - Until spec 076's reader exists, `updatePolicy()` reads no policy and only the user's switch applies. This is stated as a `[KNOWN GAP]` and wired up in T033.
 - **FR-023** `[PLANNED]` **The version that gets installed** (review on #663: `@latest`, `brew upgrade`, `claude update` and `copilot update` install whatever is newest when they run).
@@ -378,7 +378,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 - `[KNOWN GAP]` winget's text output (language-dependent column names) is parsed from recorded fixtures only once a Windows run records them (research R4).
 - `[KNOWN GAP]` Windows ACLs are not read for the trust check (as in spec 051).
 
-## Questions *(Q1, Q2, Q4, Q5 answered by the owner on 2026-10-23; Q3 asked again and Q6-Q7 open, 2026-10-24)*
+## Questions *(Q1, Q2, Q4, Q5 answered on 2026-10-23; Q3 asked again and answered, and Q6 answered, on 2026-10-25; Q7 open)*
 
 - **Q1** (answered: **C**, changed from B) **When may Durbar contact the package sources?**
   - A: only when I choose *Check for updates*, plus the daily switch (off by default). *Recommended*: no surprise network use (constitution III, no telemetry), matches the request.
@@ -401,7 +401,7 @@ When the start check finds a new version, the Settings entry and the card get a 
   - B: also one toast per new version.
   - C: also a system notification.
 
-- **Q6** [NEEDS CLARIFICATION] **The user's switch *Check for updates when Durbar starts* (FR-022): its default, and whether spec 076's `updates.mode: "off"` also turns it off.**
+- **Q6** (answered: **A**, 2026-10-25) **The user's switch *Check for updates when Durbar starts* (FR-022): its default, and whether spec 076's `updates.mode: "off"` also turns it off.**
   - A: on by default (as Q1 = C reads), and `updates.mode: "off"` also turns it off.
   - B: on by default; only `features.agentAppUpdateCheck` and `agentApps.allowInAppInstall` turn it off (`updates.mode` stays about Durbar's own updater, 076 FR-174).
   - C: off by default (the check then runs at start only for users who turn it on).
@@ -446,6 +446,15 @@ When the start check finds a new version, the Settings entry and the card get a 
 - The root refusal applies (FR-025).
 - A missing or failing `codex update` falls back to the checked spec 060 installer route.
 - Recorded in FR-009 and Known limits, plan D3, and tasks T020-T021.
+
+### Session 2026-10-25: owner decision on Q6 (Vikram, 00:09 UTC)
+
+- Q6 → **A**: the user's switch *Check for updates when Durbar starts* is **on by default**. Any of these turns the start check off:
+  - spec 076's `updates.mode: "off"`, which also locks the switch;
+  - the feature key `features.agentAppUpdateCheck: false`;
+  - `agentApps.allowInAppInstall: false`;
+  - an unreadable policy (fail closed).
+- Recorded in FR-022, plan D6, and tasks T007, T011 and T033.
 
 ## Changes
 

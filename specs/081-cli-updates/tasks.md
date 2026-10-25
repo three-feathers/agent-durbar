@@ -12,7 +12,7 @@ description: "Tasks for spec 081: agent-app updates"
 
 Nothing here is started. The owner starts implementation after review.
 
-Revised on 2026-10-24 after Paco's review of #663. Tasks marked *(Q3)*, *(Q6)* or *(Q7)* change with the owner's answer.
+Revised on 2026-10-24 after Paco's review of #663. Q3 and Q6 were answered on 2026-10-25 and are folded in. Tasks marked *(Q7)* change with the owner's answer.
 
 ## Phase 1: Setup
 
@@ -44,7 +44,7 @@ Revised on 2026-10-24 after Paco's review of #663. Tasks marked *(Q3)*, *(Q6)* o
 - [ ] T006 `src/shared/updatecheck.ts` `LOOKUPS` and `src/main/updatecheck.ts` `LookupGet` over Electron `net.fetch` (FR-026, plan D4): `redirect: 'manual'`, `credentials: 'omit'`, `User-Agent: AgentDurbar`, 10 s, a capped body reader (64 bytes for the Claude channels, none for GitHub), and the anchored `Location` patterns.
   - Tests with a fake fetch: a look-alike host, an off-list path, a `Location` to another host or path, a 200 instead of a redirect, the 570 KB body never read, an oversized channel body.
   - Mutations: follow the redirect; allow any path on `github.com`.
-- [ ] T007 `src/main/settings.ts`: `announcedVersions` (an allowed app id and a valid version; anything else dropped) and `checkUpdatesAtStart` (a boolean; default per *(Q6)*). Test a hostile matrix.
+- [ ] T007 `src/main/settings.ts`: `announcedVersions` (an allowed app id and a valid version; anything else dropped) and `checkUpdatesAtStart` (a boolean, on by default per Q6 = A, only `false` written). Test a hostile matrix.
 - [ ] T008 Strict versions (FR-005, SC-008):
   - **The detection path is fixed by PR #698** (spec 012 T133, FR-039 delta, `Closes #664`): a bounded `parseVersion` on the first line, cut to 200 characters, that rejects error prose and tokens cut off at the cap, with mutations and a CPU backstop. Spec 081 reuses it and does not reimplement it. If #698 has not merged when this task starts, wait for it or rebase onto it. If it was changed or closed, re-read spec 012 and only then decide.
   - **New here:** `parseVersionField` in `src/shared/updatecheck.ts`, for the structured fields that #698 does not cover (npm JSON, brew JSON, the `Location` tag, the Claude channel text). A field is cut to 64 characters, then matched against `^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-[0-9A-Za-z.-]{1,40})?$`. Reuse #698's bounded token pattern if it fits instead of keeping a second one, and name the shared constant in the PR.
@@ -63,8 +63,8 @@ Revised on 2026-10-24 after Paco's review of #663. Tasks marked *(Q3)*, *(Q6)* o
   - Claude records both channels and decides with the *(Q7)* rule.
 
   Test with a fake exec and fake fetch: one run per app (two for brew at most), no doubling, results kept, no call for an `outside` source, and no spawn of `copilot`.
-- [ ] T011 [US1] Start scheduling (plan D6, FR-003, FR-022): `main.ts` calls `scheduleStart()` after the first `did-finish-load` and after `adaptersInfo`. It is skipped under the simulator, when the user's switch is off, when policy is unreadable (fail closed), or when policy disallows (*(Q6)* for `updates.mode`).
-  - Test with a runner-call counter: one check per installed app per start; none from opening Settings or starting a session; none with the switch off, the policy off or the policy unreadable (SC-002).
+- [ ] T011 [US1] Start scheduling (plan D6, FR-003, FR-022): `main.ts` calls `scheduleStart()` after the first `did-finish-load` and after `adaptersInfo`. It is skipped under the simulator, when the user's switch is off, when policy is unreadable (fail closed), or when policy disallows (`allowInAppInstall: false`, `features.agentAppUpdateCheck: false`, `updates.mode: "off"`; Q6 = A).
+  - Test with a runner-call counter: one check per installed app per start; none from opening Settings or starting a session; none with the switch off, any of the three policy keys off, or the policy unreadable (SC-002); a new install checks (the default is on).
   - Mutation: treat unreadable as allowed.
 - [ ] T012 [US1] IPC `harness:updates` (get the kept results, or `'check'` to check anew) and the event `harness:updatesChanged`. `preload.ts` gets `harnessUpdates` and `onHarnessUpdates`, and `scripts/test-ipc-channels` is updated. Sender-frame check, as the other harness calls have.
 - [ ] T013 [US1] `src/renderer/harnesses.js` card:
@@ -133,7 +133,7 @@ Revised on 2026-10-24 after Paco's review of #663. Tasks marked *(Q3)*, *(Q6)* o
   - other: the last lines and the vendor page.
 
   Policy off shows *Updates are managed by your organization*. Test that each fixture shows its message (SC-005).
-- [ ] T033 [US4] Spec 076 hooks: `updatePolicy()` returns `none`, `ok` or `unreadable` with `allowInAppInstall`, `features.agentAppUpdateCheck`, `updates.mode` *(Q6)* and the range. It is a stub (`none`) until 076's reader lands, then wired in (FR-022, FR-032, FR-175, FR-188). Test with a fake policy, including `unreadable`, which stops the start check.
+- [ ] T033 [US4] Spec 076 hooks: `updatePolicy()` returns `none`, `ok` or `unreadable` with `allowInAppInstall`, `features.agentAppUpdateCheck`, `updates.mode` (`off` stops the start check, Q6 = A) and the range. It is a stub (`none`) until 076's reader lands, then wired in (FR-022, FR-032, FR-175, FR-188). Test with a fake policy, including `unreadable`, which stops the start check.
 
 ## Phase 7: US5 Announce once (P3)
 

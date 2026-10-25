@@ -2,7 +2,7 @@
 
 **Branch**: `081-cli-updates` | **Date**: 2026-10-23 | **Spec**: [spec.md](spec.md) | **Research**: [research.md](research.md)
 
-**Input**: Feature specification from `specs/081-cli-updates/spec.md`, with the owner's answers (Clarifications, 2026-10-23: Q1 = C, Q2 = A, Q4 = A, Q5 = B) and Paco's review of #663 (2026-10-24, 15 items). Q3 is asked again, and Q6 and Q7 are open. Where the plan depends on them it says so, and it builds the spec's current default.
+**Input**: Feature specification from `specs/081-cli-updates/spec.md`, with the owner's answers (Clarifications, 2026-10-23: Q1 = C, Q2 = A, Q4 = A, Q5 = B) and Paco's review of #663 (2026-10-24, 15 items). Later answers (2026-10-25): Q3 = C, limited to the official Codex CLI, and Q6 = A. Q7 is open. Where the plan depends on Q7 it says so.
 
 ## Summary
 
@@ -16,7 +16,7 @@ This adds no parallel installer, runner, dialog or IPC family. It adds a pure *v
 
 - **Language and runtime**: TypeScript in `src/main`, `src/shared` and `src/adapters`. Plain JS in `src/renderer` (`harnesses.js`, `screens.js`). Electron main and preload.
 - **Dependencies**: none new. Child processes use Node's `child_process.execFile` through the existing `nodeExec` (checks) and `HarnessSetup` (updates). Durbar's own version lookups use Electron `net.fetch` on the app session, so they follow the system or organization proxy and the OS certificate store (spec 076 FR-155, FR-156). They are behind an injected `LookupGet` type with `redirect: 'manual'` and `credentials: 'omit'`, and the FR-026 allow-list. Node's `https.get` (`officialinstall.ts`) is not used for these lookups.
-- **Storage**: `SettingsStore` (`src/main/settings.ts`) gains `announcedVersions: Record<'claude'|'codex'|'copilot', string>` (version strings only) and `checkUpdatesAtStart: boolean` (FR-022; default per Q6). Results stay in memory.
+- **Storage**: `SettingsStore` (`src/main/settings.ts`) gains `announcedVersions: Record<'claude'|'codex'|'copilot', string>` (version strings only) and `checkUpdatesAtStart: boolean` (FR-022; on by default, Q6 = A; only `false` is written). Results stay in memory.
 - **Testing**: new `scripts/test-updatecheck.ts` (pure parsers, source detection, decision rules, announce rule, failure classes, start scheduling with fakes). It extends `scripts/test-harnesssetup.ts` (update argv per source with pinning, the root refusal for every updater, the update lock and session gate). A simulator driver `scripts/shots-081-updates.js` covers the card, dialog, badge and toast. All of this runs with 0 AI credits and no network: `nodeExec` and `LookupGet` are injected.
 - **Platforms**: Windows, macOS and Linux. Path logic is pure, with `path.win32` and `path.posix` and an injected environment, the same as `routeOwning` and `candidates`.
 - **Performance**: the start check must not delay first paint (SC-007). It runs one app at a time, with a 30 s limit each and output capped at 64 KiB. Per app and start it makes one npm or winget run, up to two local brew runs, one header-only request (Codex, Copilot), or two tiny requests (the Claude channels). Version parsing is linear and bounded (FR-005); a 64 KiB hostile answer is tested against a CPU-time limit.
@@ -53,7 +53,7 @@ No violations, so Complexity Tracking is empty.
 | renderer `toast()` (`app.js`) | the one toast per new version | none. |
 | `SettingsStore` | `announcedVersions` | new getter and setter with validation (an allowed app id and a version that matches `parseVersion`, at most 64 characters). |
 | `agentops.ts` `stopTurnOp`, `endSessionOp`, main's `agents` map, the schedules runner (spec 044) | counting, interrupting and ending a given app's sessions; holding scheduled prompts | a small `sessionsOf(adapterId)` helper in main. "End N sessions" calls `stopTurnOp`, then `endSessionOp`, for each (`endSessionOp` alone does not interrupt). The update lock (D5) is checked in the start, resume and send paths and in the schedules runner. |
-| spec 076 policy reader (when built) | `allowInAppInstall`, `features.agentAppUpdateCheck`, `updates.mode` (Q6), the version range | read through one function `updatePolicy()` that returns `{state:'none'|'ok'|'unreadable', ...}`. `unreadable` turns the start check off (fail closed, FR-022). Until 076 lands it returns `none` (`[KNOWN GAP]`, T033 wires it in). |
+| spec 076 policy reader (when built) | `allowInAppInstall`, `features.agentAppUpdateCheck`, `updates.mode` (`off` stops the start check, Q6 = A), the version range | read through one function `updatePolicy()` that returns `{state:'none'|'ok'|'unreadable', ...}`. `unreadable` turns the start check off (fail closed, FR-022). Until 076 lands it returns `none` (`[KNOWN GAP]`, T033 wires it in). |
 
 New files:
 - `src/shared/updatecheck.ts` (pure):
@@ -122,7 +122,7 @@ A waiting update lives in memory only.
 
 ### D6 Start check (Q1 = C)
 
-`UpdateChecker.scheduleStart()` is called from main after the window's first `did-finish-load` and after `adaptersInfo` resolves. A `setImmediate` chain then runs one app at a time. It is skipped when `SIMULATOR` is set (canned answers), when the user's `checkUpdatesAtStart` is off, when `updatePolicy()` is `unreadable` (fail closed), or when it says `allowInAppInstall: false` or `features.agentAppUpdateCheck: false` (and `updates.mode: 'off'`, if Q6 says so). Results go to memory, and `harness:updatesChanged` is sent. Errors set `could-not-check` with a short masked reason, and nothing else happens. A manual *Check for updates* while the start check runs joins it rather than doubling it.
+`UpdateChecker.scheduleStart()` is called from main after the window's first `did-finish-load` and after `adaptersInfo` resolves. A `setImmediate` chain then runs one app at a time. It is skipped when `SIMULATOR` is set (canned answers), when the user's `checkUpdatesAtStart` is off, when `updatePolicy()` is `unreadable` (fail closed), or when it says `allowInAppInstall: false` `features.agentAppUpdateCheck: false`, or `updates.mode: 'off'` (Q6 = A). Results go to memory, and `harness:updatesChanged` is sent. Errors set `could-not-check` with a short masked reason, and nothing else happens. A manual *Check for updates* while the start check runs joins it rather than doubling it.
 
 ### D7 Announce (Q5 = B)
 
