@@ -10,7 +10,9 @@ const slow = { ...fs, renameSync: (a: string, b: string) => { pause(4); fs.renam
 const store = new NotesStore(dir, { fs: slow });
 (async () => {
   for (let i = 0; i < Number(count); i++) {
-    const r = await store.add(folder, 'demo', { text: `${tag} note ${i}` });
+    /* "busy" is the store's honest answer when the lock stays taken for its 2 s deadline (four processes on a slow Windows runner do that); a user presses the button again, so the worker retries, and any other refusal is a failure */
+    let r = await store.add(folder, 'demo', { text: `${tag} note ${i}` });
+    for (let again = 0; !r.ok && /busy/.test(r.error) && again < 30; again++) r = await store.add(folder, 'demo', { text: `${tag} note ${i}` });
     if (!r.ok) { console.error(`${tag} ${i}: ${r.error}`); process.exit(2); }
   }
   process.exit(0);

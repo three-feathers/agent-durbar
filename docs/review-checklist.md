@@ -68,12 +68,15 @@ Do it **adversarially**: assume your diff is wrong, read the real diff (`git dif
 - [ ] **Undo restores the user's own choice, "none" included**, never the value in effect or a default (*Paco's agent*). *Evidence:* [#642](https://github.com/three-feathers/agent-durbar/pull/642).
 - [ ] **Map the vendor's failure event too**, not only the success one: a "requested" state shown without its failure path claims something untrue. *Evidence:* [#642](https://github.com/three-feathers/agent-durbar/pull/642) (`session.auto_tier_switch_failed`).
 - [ ] **Timers use a monotonic clock, and a bad value falls back to the most restrictive choice** (*Paco's agent*). *Evidence:* [#635](https://github.com/three-feathers/agent-durbar/pull/635) (monotonic sign-in clock, minimum for a broken time limit).
+- [ ] **Text guards that emulate a parser** (YAML, shell): use the parser's own whitespace (`[ \t]`, not JS `\s`, which also matches NBSP/U+3000) and refuse non-ASCII in the guarded file. *Evidence:* [#700](https://github.com/three-feathers/agent-durbar/pull/700).
 
 ### Tests
 
 - [ ] **Plant a mutation for each new rule and see a test fail:** remove the guard, swap the order, return early. If it survives, the rule is untested. Say in the PR which mutations you planted. *Evidence:* [#630](https://github.com/three-feathers/agent-durbar/pull/630), [#620](https://github.com/three-feathers/agent-durbar/pull/620), [#554](https://github.com/three-feathers/agent-durbar/pull/554).
 - [ ] **Test the behaviour, not the source text.** Source regexes and pure-mapping tests let wiring mutations through. *Evidence:* [#594](https://github.com/three-feathers/agent-durbar/pull/594), [#535](https://github.com/three-feathers/agent-durbar/pull/535).
 - [ ] **Drivers wait on a condition** (`until()` with a generous timeout), never a fixed sleep or a single read: Windows and loaded machines are slower. *Evidence:* [#622](https://github.com/three-feathers/agent-durbar/pull/622), [#597](https://github.com/three-feathers/agent-durbar/pull/597), [#572](https://github.com/three-feathers/agent-durbar/pull/572) (screenshot 200 ms after open).
+- [ ] **Drivers that check shortcuts branch on the platform's mod key** (Meta and the ⌘ label on macOS, Control and `Ctrl+...` elsewhere): the key they send, the label and `aria-keyshortcuts` they expect. A driver that hard-codes Ctrl can never pass on the macOS runner. *Evidence:* PR #560 (`check-sched-top.js`).
+- [ ] **No wall-clock limits in unit tests** (`Date.now`, `hrtime`): they flake under load. Measure CPU time or growth ratios. *Evidence:* [#527](https://github.com/three-feathers/agent-durbar/pull/527).
 - [ ] **No wall-clock limits in unit tests** (`Date.now`, `hrtime`): they flake under load. Measure CPU time or growth ratios against a baseline from the same run, with a generous floor; never a bare wall-clock bound. *Evidence:* [#527](https://github.com/three-feathers/agent-durbar/pull/527).
 - [ ] **A test that accepts the failure path proves nothing** ("passes on 'Could not copy' too"). *Evidence:* [#538](https://github.com/three-feathers/agent-durbar/pull/538).
 
