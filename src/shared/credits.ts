@@ -86,6 +86,13 @@ export interface AppSettings {
   announcedVersions?: Record<string, string>;
   /** Spec 081 FR-022 (Q6 = A): the start check for agent-app updates is on by default; only `false` is kept. */
   checkUpdatesAtStart?: false;
+  /** Spec 087 FR-007c: apps whose *Always continue without the OS sandbox on this computer* is stored (only offered where the host can never sandbox the app). */
+  sandboxAlwaysContinue?: string[];
+}
+
+/** Spec 087 FR-007c: only known app ids, each once; anything else is dropped. */
+export function parseSandboxAlways(v: unknown): string[] {
+  return Array.isArray(v) ? ANNOUNCE_APPS.filter((a) => v.includes(a)) : [];
 }
 
 /** Spec 081: the app ids that may carry an announced version. */
@@ -113,7 +120,7 @@ export function parseSettings(text: string): AppSettings {
     const places = parsePlaceMap((obj as { placeMap?: unknown }).placeMap, custom.map((p) => p.id));
     const theme = parseThemeId((obj as { theme?: unknown }).theme);
     const announced = parseAnnounced((obj as { announcedVersions?: unknown }).announcedVersions);
-    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}) };
+    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}), ...(parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue).length ? { sandboxAlwaysContinue: parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue) } : {}) };
   } catch {
     return {};
   }

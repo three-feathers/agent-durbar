@@ -11,6 +11,8 @@ import { copilotHostSupport, copilotPathReadDirs, copilotSandboxConfig, copilotS
 import { CODEX_SANDBOX_NOTE_COMMAND, CODEX_SANDBOX_NOTE_FILE, codexModeSettings, codexPermission, codexSandboxState } from '../src/adapters/codexModes';
 import { sandboxRoots } from '../src/adapters/sandboxRoots';
 import { cleanSandboxState, sandboxReason } from '../src/shared/sandbox';
+import { requireOsSandbox, requireOsSandboxFrom } from '../src/main/sandboxpolicy';
+import { parseSettings } from '../src/shared/credits';
 
 const ok = (m: string): void => console.log('ok - ' + m);
 const ident = (p: string): string => p;
@@ -206,5 +208,23 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.strictEqual(sandboxReason('  \u0007\n '), undefined);
   assert.strictEqual(sandboxReason('line1\nline2\u2028x'), 'line1 line2 x');
   ok('T013: the normalized state holds no vendor key; malformed states are dropped; reasons masked, then cut');
+}
+// ---- T050 (FR-019): permissions.requireOsSandbox: narrow-only, fail closed ----
+{
+  assert.strictEqual(requireOsSandboxFrom([]), false, 'no policy: not required');
+  assert.strictEqual(requireOsSandboxFrom([{}]), false, 'absent: false');
+  assert.strictEqual(requireOsSandboxFrom([{ permissions: {} }]), false);
+  assert.strictEqual(requireOsSandboxFrom([{ permissions: { requireOsSandbox: false } }]), false);
+  assert.strictEqual(requireOsSandboxFrom([{ permissions: { requireOsSandbox: true } }]), true);
+  for (const bad of ['yes', 1, null, 0, 'false', {}, []]) assert.strictEqual(requireOsSandboxFrom([{ permissions: { requireOsSandbox: bad } }]), true, `bad value ${JSON.stringify(bad)}: fail closed`);
+  assert.strictEqual(requireOsSandboxFrom([{ permissions: 'x' }]), true, 'a malformed permissions section: fail closed');
+  assert.strictEqual(requireOsSandboxFrom(['unreadable']), true, 'a policy that is present but unreadable: fail closed');
+  assert.strictEqual(requireOsSandboxFrom([{ permissions: { requireOsSandbox: true } }, { permissions: { requireOsSandbox: false } }]), true, 'a later layer cannot set it back to false');
+  assert.strictEqual(requireOsSandboxFrom([JSON.parse('{"__proto__":{"permissions":{"requireOsSandbox":true}}}')]), false, 'own properties only');
+  assert.strictEqual(requireOsSandbox(), false, 'no spec 076 reader yet: not required ([KNOWN GAP])');
+  // FR-007c: the stored choice: known app ids only
+  assert.deepStrictEqual(parseSettings(JSON.stringify({ sandboxAlwaysContinue: ['claude', 'evil', 'claude', 3] })).sandboxAlwaysContinue, ['claude']);
+  assert.strictEqual(parseSettings(JSON.stringify({ sandboxAlwaysContinue: 'claude' })).sandboxAlwaysContinue, undefined);
+  ok('T050: requireOsSandbox is narrow-only and fails closed; the stored Always choice keeps known app ids only');
 }
 console.log('sandbox floor (spec 087): all checks passed');

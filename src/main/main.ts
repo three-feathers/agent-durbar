@@ -74,6 +74,9 @@ import { appServerUrls } from './mcpsignin';
 import { globalFiles } from './mcpglobal';
 import { GlobalLists, sessionGlobalFor } from './mcpglobalio';
 import { register as registerMcpGlobalIpc } from './ipc/mcpglobal';
+import { register as registerSandboxIpc } from './ipc/sandbox';
+import { requireOsSandbox } from './sandboxpolicy';
+import { cleanSandboxState } from '../shared/sandbox';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
 import { Scheduler, loadSchedules, saveSchedules, scheduleBusy } from './schedules';
@@ -203,6 +206,16 @@ const toRenderer = (channel: string, payload: unknown): void => {
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
 const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too
 router.onEvent((e) => toRenderer('agent:event', outward(e)));
+// Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded
+// window gets it from agents:list; never saved
+router.onEvent((e) => {
+  if (e.type !== 'sandbox' || e.agentId) return;
+  const a = agents.get(e.sessionId);
+  if (!a) return;
+  const st = e.sandbox === null ? undefined : cleanSandboxState(e.sandbox);
+  if (st) a.sandbox = st;
+  else delete a.sandbox;
+});
 const maskHistory = <H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H => maskMcpHistory(h, mcp.secretValuesFor(id)); // FR-067: resume replies skip outward()
 /** Open MCP elicitations (spec 012 FR-151): main checks each answer against the fields it was asked with. */
 const elicitTracker = createElicitTracker();
@@ -331,8 +344,11 @@ function folderSetupStart(key: string, dirs: readonly string[], appId: string, t
 
 const startOptionsFor = (a: AgentInfo) => {
   const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)), ...mcp.optionsFor(a.id) };
-  const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId, new Set(Object.keys(base.mcpServers)));
-  return { ...base, mcpServers: { ...base.mcpServers, ...fs61.mcpServers }, ...(fs61.folderSetup ? { folderSetup: fs61.folderSetup } : {}) };
+  const appId = router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId;
+  const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], appId, new Set(Object.keys(base.mcpServers)));
+  // spec 087 FR-019 (the organization policy, read in main) and FR-007c (the stored choice); the adapter decides what they mean
+  const sbx = { ...(requireOsSandbox() ? { requireOsSandbox: true } : {}), ...(settingsStore?.sandboxAlwaysContinue(appId) ? { sandboxAlwaysContinue: true } : {}) };
+  return { ...base, mcpServers: { ...base.mcpServers, ...fs61.mcpServers }, ...(fs61.folderSetup ? { folderSetup: fs61.folderSetup } : {}), ...sbx };
 };
 
 async function addWorkspace(
@@ -753,6 +769,7 @@ registerSlashIpc({ agents, router, ensureLive }); // spec 073
 registerNotesIpc({ getOps: () => notesOps }); // spec 083
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey });
 registerAdaptersIpc({ adaptersList });
+registerSandboxIpc({ agents, router, getSettingsStore: () => settingsStore, readyAdapterIds }); // spec 087
 registerFoldersIpc({ agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
 registerFloorsIpc({ agents, getFolderStore: () => folderStore, wsKey });
 /* Spec 061: a folder's own agent setup (scan, decide, explain), window-only (FR-013); the pure handler bodies are unit-tested. */

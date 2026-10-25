@@ -722,6 +722,12 @@ export interface DurbarApi {
   openExternal?(url: string): Promise<{ ok: boolean }>;
   /** Change the permission mode of agent `id` now (applies to the next request). `clearGrants`: forget "Approve for this session"; `approvePending`: approve what is waiting. */
   setPermMode?(id: string, mode: PermMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): Promise<{ ok: boolean; error?: string; mode?: PermMode; pending?: number }>;
+  /** Spec 087 FR-007a/FR-007c: *Continue without the OS sandbox* for this session (`always`: on this computer, where offered). Nothing is sent. */
+  sandboxContinue?(id: string, opts?: { always?: boolean }): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 087 FR-012: per ready agent app, whether its OS sandbox can run here (Settings > Agent apps). */
+  sandboxHosts?(): Promise<Record<string, SandboxHostView>>;
+  /** Spec 087 FR-007c: undo *Always continue on this computer* for an app. */
+  sandboxAlwaysOff?(app: string): Promise<{ ok: boolean }>;
   /** Change the model, effort or context tier of agent `id` (spec 030). Validated in main; saved with the folder entry once applied. */
   setModel?(id: string, request: ModelSwitchRequest): Promise<{ ok: boolean; error?: string; result?: ModelSwitchResult }>;
   /** Remove a queued model switch (spec 030). */
