@@ -6,6 +6,7 @@ import type { AdapterRouter } from '../adapters/router';
 import type { AgentAdapter, AgentMessage, StartOptions } from '../adapters/types';
 import { interruptOf, refusesLive, setCapOf, setMcpEnabledOf, setPermModeOf } from '../adapters/router';
 import { parseCapIn } from '../shared/credits';
+import { answerTooLong, MAX_ANSWER, readAnswerPayload } from '../adapters/questions';
 import type { AgentInfo, PermMode } from '../shared/api';
 import { adapterOf, modeForSession } from './folders';
 import type { FolderStore, SavedFolder } from './folders';
@@ -97,6 +98,21 @@ export async function setCapOp(d: OpsDeps, id: unknown, credits: unknown): Promi
 export async function stopTurnOp(d: OpsDeps, id: string): Promise<{ ok: false; error: string } | undefined> {
   const ad = d.agents.has(id) ? d.router.forAgent(id) : undefined;
   if (ad && refusesLive(ad, id, await interruptOf(ad, id))) return { ok: false, error: NO_INTERRUPT };
+}
+
+/**
+ * `agents:answerQuestion` (spec 012 FR-128; spec 052 FR-178): the window's answer to an agent's question goes to the adapter as it was given.
+ * Strings only, capped (`readAnswerPayload`); `null` is a skip; an answer with nothing usable is refused, never turned into a skip.
+ */
+export function answerQuestionOp(d: Pick<OpsDeps, 'agents' | 'router'>, id: unknown, requestId: unknown, answers: unknown): { ok: boolean; error?: string } {
+  const a = typeof id === 'string' ? d.agents.get(id) : undefined;
+  const ad = a ? d.router.forAgent(a.id) : undefined;
+  if (!a || !ad?.answerQuestion || typeof requestId !== 'string' || requestId.length > 200) return { ok: false, error: 'unknown agent or question' };
+  if (answerTooLong(answers)) return { ok: false, error: `That answer is too long: ${MAX_ANSWER} characters at most. Shorten it and try again.` };
+  const clean = readAnswerPayload(answers);
+  if (clean === undefined) return { ok: false, error: 'That answer could not be read. Try again, or Skip.' };
+  ad.answerQuestion(a.id, requestId, clean);
+  return { ok: true };
 }
 
 /** `agents:setMcp`; `off` holds, per agent id, the servers switched off for this run. */

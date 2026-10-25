@@ -1,1 +1,0 @@
-- Bound agent version parsing (spec 012) to the first 200 characters of the first line, reject error prose and oversized tokens, and preserve Codex version prefixes and build metadata handling (offline regression tests; no real agent sessions).
