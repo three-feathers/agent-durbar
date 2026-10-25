@@ -1,7 +1,7 @@
 /** Unit test for the permission broker (no Copilot session, no AI credits): `npm run test:permissions`. */
 import * as assert from 'assert';
 import * as path from 'path';
-import { PermissionBroker, cleanGrantKey, grantScope, revokeGrantFor, revokeCallFor, CALLS_MAX, isInsideRoots } from '../src/adapters/permissions';
+import { PermissionBroker, cleanGrantKey, grantScope, revokeGrantFor, revokeCallFor, CALLS_MAX, CALL_KEYS_MAX, isInsideRoots } from '../src/adapters/permissions';
 import type { BrokerEvent } from '../src/adapters/permissions';
 import { eventProblems } from '../src/adapters/eventguard';
 import { ALLOWED_BY_KEYS_MAX } from '../src/adapters/types';
@@ -495,6 +495,32 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
       assert.notStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { ...ev2, allowedBy: { kind: 'session-grant', key: 'k', label: 'l', more: 0 } } }).length, 0, 'and a bad count');
     }
 
+    // the cap boundary: 500 folders can be undone together, 501 are said to be too many and are never promised
+    for (const [n, ok] of [[CALL_KEYS_MAX, true], [CALL_KEYS_MAX + 1, false]] as [number, boolean][]) {
+      const mf = mkRoots2({ ask: true });
+      const files = Array.from({ length: n }, (_, i) => `/w/d${i}/x.ts`);
+      const req = (id: string) => ({ kind: 'write', fileName: files[0], paths: files, toolCallId: id }) as never;
+      const p1 = mf.b.request(req('c1'));
+      await tick();
+      mf.b.resolve('c1', true, true);
+      await p1;
+      const m8 = mf.ev.length;
+      await mf.b.request(req('c2'));
+      const ab = perm(mf.ev, m8).find((x) => x.requestId === 'c2')!.allowedBy;
+      assert.ok(ab && ab.kind === 'session-grant');
+      const d = W.describe(ab, new Set(mf.b.listGrants().map((g) => g.key)), { seen: [] });
+      if (ok) {
+        assert.ok(ab.noUndo === undefined && !!d?.undoKeys, `${n} folders: Undo offered`);
+        assert.strictEqual(mf.b.revokeCall('c2'), 0);
+        assert.strictEqual(mf.b.listGrants().length, 0, `${n}: every rule gone`);
+      } else {
+        assert.strictEqual(ab.noUndo, true, `${n} folders: marked too many`);
+        assert.ok(d && d.undoKeys === undefined && /too many to undo here/.test(d.sentence) && !/remove all/.test(d.sentence), 'no promise of "all"');
+        assert.strictEqual(mf.b.revokeCall('c2'), -1, 'an uncovered call removes nothing');
+        assert.strictEqual(mf.b.listGrants().length, n, 'nothing was removed');
+      }
+    }
+
     // a rule granted again later under the same key is not the rule that allowed an older call: that card's Undo leaves it alone
     {
       const mf = mkRoots2({ ask: true });
@@ -511,8 +537,10 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
       mf.b.resolve('r3', true, true); // the same key granted again
       await p3;
       assert.strictEqual(mf.b.listGrants().length, 1);
-      assert.strictEqual(mf.b.revokeCall('r2'), 0, 'the old card: its own rule is already gone');
+      assert.strictEqual(mf.b.revokeCall('r2'), 1, 'the old card: its own rule is gone, but a newer rule for the same key is live: not 0, so never "removed"');
       assert.strictEqual(mf.b.listGrants().length, 1, 'the newer rule is still live');
+      assert.strictEqual(W.describe({ kind: 'session-grant', key, label: 'l' }, new Set([key]), { state: 'newer' })?.pill, 'Newer rule active');
+      assert.strictEqual(W.describe({ kind: 'session-grant', key, label: 'l' }, new Set([key]), { state: 'forgotten' })?.undoKeys, undefined, 'a forgotten call offers no Undo and says so');
       await mf.b.request(req('r4'));
       assert.strictEqual(mf.b.revokeCall('r4'), 0);
       assert.strictEqual(mf.b.listGrants().length, 0, 'the call that the newer rule allowed removes it');

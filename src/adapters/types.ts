@@ -161,7 +161,7 @@ export interface PermissionInfo {
 /** Spec 003 FR-102: most rule keys one `allowedBy` lists. The broker, `eventguard` and the window (`whyallowed.js` `KEYS_MAX`, same number, checked by test:permissions) all use it; more rules are counted in `more`, not dropped silently. */
 export const ALLOWED_BY_KEYS_MAX = 50;
 export type AllowedBy =
-  | { kind: 'session-grant'; key: string; label: string; keys?: string[]; more?: number }
+  | { kind: 'session-grant'; key: string; label: string; keys?: string[]; more?: number; noUndo?: boolean }
   | { kind: 'allow-all' }
   | { kind: 'in-folder' }
   | { kind: 'attachment' }

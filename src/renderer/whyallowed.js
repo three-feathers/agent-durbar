@@ -34,13 +34,16 @@
         }
         let more=0;
         if(by.more!==undefined){if(!Number.isInteger(by.more)||by.more<1||by.more>100000)return null;more=by.more;}
-        const label=cutLabel(by.label), many=keys.length>1||more>0;
+        if(by.noUndo!==undefined&&by.noUndo!==true)return null;
+        const noUndo=by.noUndo===true, label=cutLabel(by.label), many=keys.length>1||more>0;
         const anyLive=lv?keys.some(k=>lv.has(k)):true;
         const wasKnown=o.undone===true||(seen?keys.some(k=>seen.has(k)):false);
+        if(o.state==='newer')return {kind:'session-grant',pill:'Newer rule active',sentence:'The rule that allowed this was removed, but you have since approved the same thing again: that newer rule is still active. Manage it with the grant chips.',label};
+        if(o.state==='forgotten')return {kind:'session-grant',pill:many?'Allowed: session rules':'Allowed: session rule',sentence:'Durbar no longer remembers which rules allowed this call, so it removed nothing. Manage the session rules with the grant chips.',label};
         if(o.confirmed===true||(lv&&!anyLive&&wasKnown&&more===0))return {kind:'session-grant',pill:'Rule removed',sentence:'This was allowed by a session rule that you have since removed: Durbar asks again.',label,gone:true};
         const liveKeys=lv?keys.filter(k=>lv.has(k)):keys;
         return {kind:'session-grant',more,pill:many?'Allowed: session rules':'Allowed: session rule',
-          sentence:many?'Allowed because you chose Approve for this session for each of these folders'+(more?' ('+more+' more rules are not listed: Undo asks Durbar to remove all of them)':'')+': ':'Allowed because you chose Approve for this session for: ',label,undoKeys:liveKeys.length?liveKeys:keys};
+          sentence:many?'Allowed because you chose Approve for this session for each of these folders'+(more?' ('+more+' more rules are not listed: '+(noUndo?'too many to undo here: manage them with the grant chips':'Undo asks Durbar to remove all of them')+')':'')+': ':'Allowed because you chose Approve for this session for: ',label,undoKeys:noUndo?undefined:(liveKeys.length?liveKeys:keys)};
       }
       case 'allow-all':
         return {kind:'allow-all',pill:'Allowed: Allow all',sentence:'Allowed because this agent is in Allow all: it runs without asking. '+MODE_WHERE};

@@ -432,9 +432,10 @@ export class PermissionBroker {
     const hits = scope.folders ? scope.folders.map((x) => this.grants.get(x.key)) : [this.grants.get(scope.key) ?? (scope.broad ? this.grants.get(scope.broad.key) : undefined)];
     if (hits.length && hits.every((h) => h !== undefined)) {
       const keys = (hits as SessionGrant[]).map((h) => h.key);
+      const tooMany = keys.length > CALL_KEYS_MAX;
       this.rememberCall(requestId, keys);
       const label = scope.folders ? scope.label : (hits[0] as SessionGrant).label;
-      this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: keys[0], label, keys: keys.slice(0, ALLOWED_BY_KEYS_MAX), ...(keys.length > ALLOWED_BY_KEYS_MAX ? { more: keys.length - ALLOWED_BY_KEYS_MAX } : {}) } } });
+      this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: keys[0], label, keys: keys.slice(0, ALLOWED_BY_KEYS_MAX), ...(tooMany ? { noUndo: true } : {}), ...(keys.length > ALLOWED_BY_KEYS_MAX ? { more: keys.length - ALLOWED_BY_KEYS_MAX } : {}) } } });
       return this.approveWrite(req);
     }
     const info: PermissionInfo = { ...base, state: 'pending', ...(typeof req.diff === 'string' && req.diff ? { diff: req.diff } : {}) }; // spec 052 FR-063: the diff rides on the pending request only
@@ -483,7 +484,7 @@ export class PermissionBroker {
     const same = (x: { k: string; g: number }): boolean => this.grants.has(x.k) && this.grantGen.get(x.k) === x.g; // the very rule that allowed the call, not one granted again later
     for (const x of ks) if (same(x) && this.grants.delete(x.k)) changed = true;
     if (changed) this.opts.emit({ type: 'grants', grants: this.listGrants() });
-    return ks.filter(same).length;
+    return ks.filter((x) => this.grants.has(x.k)).length; // a key live in any generation counts: a newer rule for the same thing is still active (the window says so, never "removed")
   }
 
   revoke(key: string): boolean {

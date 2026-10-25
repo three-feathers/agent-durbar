@@ -3504,7 +3504,7 @@ function whySet(a,c,by,callId){
 }
 /* the rules this window knows (null until the first grants event: a window that reloaded with sessions running knows none, and must not call a rule removed) */
 function whyLive(aid){const a=byId(aid),r=a&&liveRoot(a);return r&&r.grantsKnown?new Set((r.grants||[]).map(g=>g.key)):null;}
-function whyOpts(c){const a=byId(c.aid),r=a&&liveRoot(a);return {seen:r&&r.grantSeen?r.grantSeen:null,undone:c.undone===true,confirmed:c.whyConfirmed===true};}
+function whyOpts(c){const a=byId(c.aid),r=a&&liveRoot(a);return {seen:r&&r.grantSeen?r.grantSeen:null,undone:c.undone===true,confirmed:c.whyConfirmed===true,state:c.whyState||null};}
 function whyPaint(c){
   const el=c.el;if(!el)return;
   el.querySelectorAll(':scope>.why,:scope>.whybody').forEach(x=>x.remove());
@@ -3529,8 +3529,11 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
   /* FR-101: main removes every rule that allowed this call (it holds the full list) and says how many of them are still live; "removed" is shown only for 0. A call main does not know (-1) or a partial answer falls back to the listed keys, and a card with unlisted rules (more) then never says "removed". */
   Promise.resolve().then(async()=>{
     const left=c.whyCall?await bridge.revokeGrant(c.aid,d.undoKeys[0],c.whyCall):-1;
-    if(left===0){c.whyConfirmed=true;whyPaint(c);return;}
-    await Promise.all(d.undoKeys.map(k=>bridge.revokeGrant(c.aid,k)));
+    c.undone=false;
+    if(left===0)c.whyConfirmed=true; /* main: none of the call's rules is live */
+    else if(typeof left==='number'&&left>0)c.whyState='newer'; /* a newer rule for the same thing is active */
+    else c.whyState='forgotten'; /* main does not know the call: nothing was removed, and the page does not guess by key */
+    whyPaint(c);
   }).catch(()=>{});
   setTimeout(()=>{if(c._refocus){c._refocus=false;c.undone=false;whyPaint(c);}},2000); /* a revoke that did not remove the rule: the button comes back */
 });
