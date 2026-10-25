@@ -173,6 +173,7 @@ const api: DurbarApi = {
   readVsChat: (id, key) => ipcRenderer.invoke('vschat:read', id, key),
   openInVSCode: (id) => ipcRenderer.invoke('agents:openInVSCode', id),
   gitStatus: (id) => ipcRenderer.invoke('agents:gitStatus', id),
+  sessionSummary: (id) => ipcRenderer.invoke('agents:sessionSummary', id),
   onEvent: (cb) => sub('agent:event', cb),
   onAgentAdded: (cb) => sub('agent:added', cb),
   onAgentRenamed: (cb) => sub('agents:renamed', cb),

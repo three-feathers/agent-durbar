@@ -2886,6 +2886,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         ];
         return { repo: true as const, branch: n % 3 === 1 ? 'feature/login' : 'main', ...(n % 4 === 1 ? { ahead: 2 } : {}), files: pool.slice(0, n % 5), more: 0 };
       },
+      // spec 085 FR-007: `simsummary=1` gives the card shown when a session ends fixed numbers: sim-1 a repository with changes, a commit and a
+      // reported pull request (a fixture: no adapter reports them yet), sim-2 a folder that is not git, sim-3 a folder that already had changes; others a repository with no changes
+      sessionSummary: async (id: string) => {
+        if (!simQuery.get('simsummary')) return { ok: false as const, error: 'not in the simulator' };
+        const n = Number(String(id).replace(/\D/g, '')) || 0;
+        if (n === 1) return { ok: true as const, ms: 25 * 60000 + 20000, pullRequests: 1, git: { repo: true as const, files: 12, added: 340, removed: 80, binary: 0, newFiles: 3, commits: 1, dirtyAtStart: false } };
+        if (n === 2) return { ok: true as const, ms: 3 * 60000, git: { repo: false as const } };
+        if (n === 3) return { ok: true as const, ms: 65 * 60000, git: { repo: true as const, files: 2, added: 5, removed: 1, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: true } };
+        return { ok: true as const, ms: 20000, git: { repo: true as const, files: 0, added: 0, removed: 0, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: false } };
+      },
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
       // spec 065 FR-007: `simcheckpoint=1` gives Ada (sim-1) a turn that changed three files; `=conflict` makes one of them changed since
       onCheckpoint: (cb) => {

@@ -970,6 +970,8 @@ export interface DurbarApi {
   openInVSCode(id: string): Promise<{ ok: boolean; error?: string; edition?: string }>;
   /** Spec 063: the git branch and uncommitted changes of the agent's folder (read-only). Optional: older bridges lack it. */
   gitStatus?(id: string): Promise<FolderGitStatus>;
+  /** Spec 085: what the session did since its first message in this run (time, git files and lines, commits), for the card shown when it ends. Optional: older bridges lack it. */
+  sessionSummary?(id: string): Promise<SessionSummaryInfo>;
   /** Earlier Copilot CLI/SDK sessions in this agent's folder (newest first). Optional: not in the simulator. */
   listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; pinned?: string[]; hidden?: string[]; names?: Record<string, string> }>;
   /** Pin, unpin, hide or unhide one row (spec 006 FR-026). `src` is the agent's adapter id or `vscode`; ids only, never a path. */
@@ -1003,6 +1005,11 @@ export interface DurbarApi {
 export type FolderGitStatus =
   | { repo: false }
   | { repo: true; branch: string; detached?: boolean; ahead?: number; behind?: number; files: Array<{ path: string; state: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict'; added?: number; removed?: number; binary?: boolean }>; more: number };
+
+/** Spec 085: what `sessionSummary` answers (mirrors `SessionSummary` in src/main/sessionsummary.ts; `unreadable`: git could not be read, which is not "not a git folder"). `pullRequests`: only when the adapter reports them (none does yet). */
+export type SessionSummaryInfo =
+  | { ok: false; error: string }
+  | { ok: true; ms: number; pullRequests?: number; git: { repo: false; unreadable?: true } | { repo: true; files: number; added: number; removed: number; binary: number; newFiles: number; commits: number; dirtyAtStart: boolean; noHead?: boolean; newFilesUnknown?: boolean } };
 
 /** Spec 065: the note after a turn whose file-edit tools changed files. */
 export interface CheckpointNote { id: string; turn: number; kind: 'turn' | 'undo'; files: { path: string; change: 'changed' | 'created' | 'deleted' }[]; notCovered: { path: string; why: string }[] }

@@ -112,7 +112,7 @@ for (const f of ipcFiles) {
 const FROM_APP = [
   'activity:clear', 'activity:export', 'activity:list',
   'adapters:sandboxAlwaysOff', 'adapters:sandboxHosts', 'agents:sandboxContinue', // spec 087: the OS sandbox choices and the Settings line
-  'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:mcpCancelSignIn', 'agents:mcpOpenSignIn', 'agents:mcpSignIn', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:setMode', 'agents:setRemote',
+  'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:mcpCancelSignIn', 'agents:mcpOpenSignIn', 'agents:mcpSignIn', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:sessionSummary', 'agents:setMode', 'agents:setRemote',
   'app:dismissInterrupted', 'app:dismissSinceAway', 'app:interrupted', 'app:sinceAway', // 'app:interrupted': spec 006 FR-041, ids and folder names of the sessions a crash left mid-turn
   'harness:accounts', 'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run', 'harness:updates', 'harness:visible',
   'notes:add', 'notes:delete', 'notes:deleteAll', 'notes:list', 'notes:save', 'notes:startOver', 'notes:update', // spec 083 FR-062: the folder's notes, by agent id
@@ -122,6 +122,18 @@ const FROM_APP = [
 assert.strictEqual(new Set(FROM_APP).size, FROM_APP.length, 'no channel twice in the list');
 // spec 043 FR-041 (review on #572): an ended or removed session is forgotten by the profile list freshness; a change prunes the rest
 for (const c of ['agents:end', 'agents:remove']) assert.ok(/profileFreshness\?\.forget\(/.test(regs.get(c)?.[0]?.block ?? ''), `"${c}" must forget the session's profile freshness`);
+// spec 085 (review on #718): the session-summary wiring. The start is noted before the turn is sent; the summary takes only the id and
+// main's own folder for that session; End and Remove forget the start, so the next session in the folder starts its own count.
+{
+  const send = regs.get('agents:send')?.[0]?.block ?? '';
+  const ns = send.search(/sessionStarts\.noteStart\(/), so = send.search(/\bsendOp\(/);
+  assert.ok(ns >= 0 && so > ns, '"agents:send" notes the session start before sendOp');
+  assert.ok(/await sessionStarts\.noteStart\(id, ag\.cwd\)/.test(send) && /const ag = agents\.get\(id\)/.test(send), '"agents:send" notes the start for main\'s own folder of that agent');
+  const sum = regs.get('agents:sessionSummary')?.[0]?.block ?? '';
+  assert.ok(/ipcHandle\('agents:sessionSummary', async \(e, id: unknown\)/.test(sum), '"agents:sessionSummary" takes only the id from the window');
+  assert.ok(/agents\.get\(id\)/.test(sum) && /sessionStarts\.summarize\(a\.id, a\.cwd\)/.test(sum), '"agents:sessionSummary" summarizes main\'s own folder for the session, never one the window sends');
+  for (const c of ['agents:end', 'agents:remove']) assert.ok(/sessionStarts\.forget\(/.test(regs.get(c)?.[0]?.block ?? ''), `"${c}" must forget the session start`);
+}
 assert.ok(/fresh\.prune\(/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'profiles.ts'), 'utf8')), 'profiles.ts prunes sessions no longer in the office on a change');
 for (const c of FROM_APP) {
   const r = regs.get(c);

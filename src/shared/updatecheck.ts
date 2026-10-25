@@ -9,7 +9,7 @@
 import * as path from 'path';
 import { compareVersions } from '../adapters/detect';
 import { CASKS, PACKAGES, routeOwning } from './harnesssetup';
-import { MAX_VERSION_LENGTH, parseVersionField } from './versionfield';
+import { MAX_VERSION_LENGTH, VERSION_TOKEN_SOURCE, parseVersionField } from './versionfield';
 import type { SetupKind } from './harnesssetup';
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -523,7 +523,7 @@ export function versionFromPackageJson(text: string): string | undefined {
 /** winget keeps a package in `Packages\GitHub.Copilot_<source>\`, so the version is not in its folder name in every layout: a best effort (`[KNOWN GAP]`, T041). */
 export function versionFromWingetPath(realPath: string): string | undefined {
   for (const s of realPath.replace(/\\/g, '/').split('/')) {
-    const m = /^[A-Za-z0-9.-]+?[_-]v?(\d{1,9}\.\d{1,9}\.\d{1,9}(?:-[0-9A-Za-z.-]{1,40})?)$/.exec(s.length > MAX_VERSION_LENGTH + 40 ? '' : s);
+    const m = new RegExp('^[A-Za-z0-9.-]+?[_-]v?(' + VERSION_TOKEN_SOURCE + ')$').exec(s.length > MAX_VERSION_LENGTH + 40 ? '' : s);
     if (m) return parseVersionField(m[1]);
   }
   return undefined;
