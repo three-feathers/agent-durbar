@@ -2,7 +2,8 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import { SessionStarts, countBinary, isNotRepo, parseCount, parseShortstat, validRef } from '../src/main/sessionsummary';
-import type { GitExec } from '../src/main/gitstatus';
+import { hardenedArgv, makeGitExec } from '../src/main/gitstatus';
+import type { GitExec, GitRun } from '../src/main/gitstatus';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'sessionsummary.js')) as { text: (s: unknown, c: unknown) => string; duration: (ms: unknown) => string; tip: string };
@@ -166,6 +167,39 @@ async function main(): Promise<void> {
   const h = await S5.summarize('h', '/w');
   assert.ok(h.ok && h.git.repo && h.git.noHead === true && h.git.files === 0, 'no checked commit: no comparison');
   assert.ok(g5.calls.every((c) => !c.some((x) => x.includes('evil'))), 'the hostile text never reaches an argument');
+
+  // every git call of this spec passes main's real runner allowlist (spec 063 `GIT_CALLER_OPTIONS`, `hardenedArgv`), not only the fake runner:
+  // a flag this spec uses that the runner refuses would turn every card into "could not read git" (cross-PR drift, review on #718/#722)
+  {
+    const all: string[][] = [];
+    for (const [start, sha] of [['', REF], [Z(' M a.ts'), REF], ['', '']] as Array<[string, string]>) {
+      const gx = fake({ status: start, 'rev-parse': sha || err('Command failed', { code: 1 }), shortstat: ' 1 file changed', numstat: '', 'rev-list': '1', statusAll: Z('?? n.ts') });
+      const SX = new SessionStarts(gx.exec, now);
+      await SX.noteStart('a', '/w');
+      await SX.summarize('a', '/w');
+      all.push(...gx.calls);
+    }
+    const kinds = new Set(all.map((c) => c.slice(2).filter((x) => x.startsWith('-')).join(' ') + ' ' + c[2]));
+    for (const want of ['status', 'rev-parse', 'rev-list']) assert.ok(all.some((c) => c[2] === want), 'covers ' + want);
+    assert.ok(all.some((c) => c.includes('--untracked-files=normal')) && all.some((c) => c.includes('--untracked-files=all')) && all.some((c) => c.includes('--shortstat')) && all.some((c) => c.includes('--numstat')) && all.some((c) => c.includes('HEAD') && c[2] === 'rev-list'), 'every call shape is covered: ' + [...kinds].join(' | '));
+    for (const c of all) assert.doesNotThrow(() => hardenedArgv(c, []), 'main\'s git runner allows ' + c.join(' '));
+    // and the whole flow through the real runner (makeGitExec over a recording run): the same numbers, never "could not read"
+    const seen: string[][] = [];
+    const run: GitRun = async (argv) => {
+      seen.push(argv);
+      if (argv.includes('config')) throw err('no filter', { code: 1 });
+      const sub = ['status', 'diff', 'rev-parse', 'rev-list'].find((x) => argv.includes(x));
+      if (sub === 'status') return argv.includes('--untracked-files=all') ? Z('?? n.ts') : '';
+      if (sub === 'rev-parse') return REF + '\n';
+      if (sub === 'diff') return argv.includes('--shortstat') ? ' 2 files changed, 3 insertions(+)' : '';
+      return '4\n';
+    };
+    const SR = new SessionStarts(makeGitExec(run), now);
+    await SR.noteStart('r', '/w');
+    const rr = await SR.summarize('r', '/w');
+    assert.deepStrictEqual(rr, { ok: true, ms: 0, git: { repo: true, files: 2, added: 3, removed: 0, binary: 0, newFiles: 1, commits: 4, dirtyAtStart: false } }, 'through the real runner: ' + JSON.stringify(rr));
+    assert.ok(seen.every((a) => a.includes('--no-optional-locks') || a.includes('config')), 'the hardened argv was used');
+  }
 
   // forget: the next session in the folder starts again
   S.forget('s1');

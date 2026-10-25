@@ -78,7 +78,7 @@ export class SessionStarts {
 
   /**
    * The first message of the session in this run; later calls return the same pending read. Two read-only calls run together, so the
-   * first message waits for at most one git time limit (4 s): `status` without untracked file names (is the tree clean?) and
+   * first message waits for at most two git time limits (the runner's config read, then the call: 8 s): `status` without untracked file names (is the tree clean?) and
    * `rev-parse` (the start commit). Never throws. The start is stored at once with its pending read, and `summarize` waits for it, so
    * an End right after the first message never sees a half-read start.
    */
@@ -115,7 +115,7 @@ export class SessionStarts {
     if (s.git === 'unreadable') return { ok: true, ms, git: UNREADABLE };
     const ref = s.ref;
     const noDiff = Promise.resolve('');
-    // the reads run together: the end waits for at most one git time limit
+    // the reads run together: the end waits for at most two git time limits (config read, then the call)
     const [stat, num, count, status] = await Promise.allSettled([
       ref ? this.exec(['-C', dir, 'diff', '--no-ext-diff', '--no-textconv', '--shortstat', ref, '--']) : noDiff, // no commit at the start: no base to compare with
       ref ? this.exec(['-C', dir, 'diff', '--no-ext-diff', '--no-textconv', '--numstat', ref, '--']) : noDiff,
