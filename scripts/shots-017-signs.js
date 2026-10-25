@@ -266,8 +266,33 @@ module.exports = async (ctx) => {
     const op = await js(`(${pageCheck.toString()})(false, 5)`);
     assert.deepStrictEqual(op.problems, [], `${w}: open office: office layout rules`);
     await H.shot(path.join(OUT, `017-open-office-${w}x${h}.png`), { prep: 'calm', tag: '017-signs', what: 'open office' });
+    /* FR-027 (review on PR 631): the usage line is fitted by the rule from before the cabins in an open office. Every token count is made
+       narrow (cut inside itself) and the office refitted; each usage line's step classes must then be the ones the pre-cabins rule gives
+       (recomputed here: the line and its cost fit, nothing about the token count itself). With cabins, a cut token count is dropped whole
+       (FR-007), so the same squeeze must drop at least one: the gate is what makes the two differ. */
+    const squeeze = `(()=>{const s=document.createElement('style');s.id='cmpTok';s.textContent='#stage .desk .use .tok{max-width:9px!important}';document.head.append(s);window.DurbarFit();})()`;
+    const unsqueeze = `(()=>{const s=document.getElementById('cmpTok');if(s)s.remove();window.DurbarFit();})()`;
+    const fitCheck = `(()=>{const STEPS=['no-tok','no-unit','short','no-cost'],out={n:0,cut:0,bad:[],dropped:0};
+      for(const u of document.querySelectorAll('#stage .desk .use')){if(!u.getClientRects().length)continue;out.n++;
+        const tok=u.querySelector('.tok');if(tok&&tok.getClientRects().length&&tok.scrollWidth>tok.clientWidth+0.5)out.cut++;
+        const app=STEPS.filter(c=>u.classList.contains(c));if(app.includes('no-tok'))out.dropped++;
+        u.classList.remove(...STEPS);const cost=u.querySelector('.aiu');
+        const fits=()=>{if(!cost||!cost.getClientRects().length)return u.scrollWidth<=u.clientWidth+0.5;const c=cost.getBoundingClientRect(),b=u.getBoundingClientRect();return u.scrollWidth<=u.clientWidth+0.5&&c.right<=b.right+0.5&&c.left>=b.left-0.5;};
+        for(const st of STEPS){if(fits())break;u.classList.add(st);}
+        const old=STEPS.filter(c=>u.classList.contains(c));u.classList.remove(...STEPS);u.classList.add(...app);
+        if(old.join()!==app.join())out.bad.push((u.closest('.desk').querySelector('.name')||{}).textContent+': '+app.join()+' vs '+old.join());}
+      return out;})()`;
+    await js(squeeze);
+    const fo = await js(fitCheck);
+    if (w === 1440) assert.ok(fo.n >= 5 && fo.cut >= 5, `${w}: open office: the squeeze cuts token counts (${JSON.stringify(fo)})`); // 1280x800 has mini desks: no usage line
+    assert.deepStrictEqual(fo.bad, [], `${w}: open office: usage lines fitted exactly by the pre-cabins rule`);
+    await js(unsqueeze);
     await toggle('cabins');
     assert.ok(await until(`document.querySelectorAll('#stage .cb-sign').length>=13`, 4000), `${w}: switch on: signs back`);
+    await js(squeeze);
+    const fc = await js(fitCheck);
+    if (w === 1440) assert.ok(fc.dropped >= 1 && fc.bad.length >= 1, `${w}: with cabins a cut token count is dropped whole (FR-007), unlike the open office: ${JSON.stringify(fc)}`);
+    await js(unsqueeze);
     console.log('[017-signs]', w, 'ok');
   }
   /* ---- review on #631 (Paco): a coffee break that resumes by itself, from the app's real sequence (simbreak: Tomas hits a 5-hour
