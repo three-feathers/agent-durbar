@@ -96,6 +96,10 @@ export function eventProblems(e: unknown): string[] {
       break;
     case 'compaction':
       if (!oneOf(e.phase, ['start', 'complete', 'failed'])) out.push(`compaction.phase ${String(e.phase)}`);
+      // spec 015 FR-006 (issue #601): the trigger is one of the normalized words and every number is a count
+      if (!oneOf(e.trigger, ['auto', 'manual', 'model-switch', 'overflow', 'truncation', 'unknown'])) out.push(`compaction.trigger ${String(e.trigger)}`);
+      for (const k of ['tokensBefore', 'tokensAfter', 'tokensRemoved', 'limit']) if (!optNum(e[k])) out.push(`compaction.${k} is not a non-negative number`);
+      if (!optStr(e.error)) out.push('compaction.error is not a string');
       break;
     case 'mcp':
       if (!Array.isArray(e.servers) || e.servers.some((s) => !isObj(s) || !str(s.name) || !str(s.status))) out.push('mcp.servers malformed');

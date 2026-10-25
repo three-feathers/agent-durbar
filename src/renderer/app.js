@@ -502,9 +502,12 @@ const isFailing = a => !!a&&!a.parent&&!!a.live&&!a.paused&&(a.state==='working'
 /* spec 034 FR-018 (issue 600): Working (or Thinking) while the agent app retries a failed model call reads "Retrying", like Failing (and before it:
    the model call is what is stuck); the full line is the pill's tooltip. Main agents only; a status, so Serious mode shows it too. */
 const isRetrying = a => !!RETRY&&!!a&&!a.parent&&!!a.live&&!a.paused&&!!a.retry&&(a.state==='working'||a.state==='thinking');
-const pillSt = a => isRetrying(a)?'retrying':isFailing(a)?'failing':vis(a);
-const stWord = (a,short) => isRetrying(a)?'Retrying':isFailing(a)?'Failing':label(a,short);
-const pillTip = a => isRetrying(a)?` title="${esc(RETRY.retryLine(a.retry))}"`:isFailing(a)?` title="${MOOD.failStreak(a.id)} tool calls failed in a row"`:'';
+/* spec 015 FR-010 (issue 601): Compacting while the agent app summarises the conversation (pure rule: DurbarModels.compactingNow); after Retrying, before Failing.
+   The Thinking colours, no attention flag: it needs nothing from the user. */
+const isCompacting = a => window.DurbarModels.compactingNow(a);
+const pillSt = a => isRetrying(a)?'retrying':isCompacting(a)?'compacting':isFailing(a)?'failing':vis(a);
+const stWord = (a,short) => isRetrying(a)?'Retrying':isCompacting(a)?'Compacting':isFailing(a)?'Failing':label(a,short);
+const pillTip = a => isRetrying(a)?` title="${esc(RETRY.retryLine(a.retry))}"`:isCompacting(a)?` title="${esc(window.DurbarModels.COMPACTING_LINE)}"`:isFailing(a)?` title="${MOOD.failStreak(a.id)} tool calls failed in a row"`:'';
 /* spec 052 FR-062: last activity, from the last event of the agent or its helpers (a.lastEventAt, the time it arrived); repainted by the 30 s tick */
 const sinceLast = a => {const r=a&&a.parent?byId(a.parent)||a:a;return r&&r.lastEventAt?Math.max(0,Date.now()-r.lastEventAt):null;};
 const lastTip = a => {const t=ACT.agoLong(sinceLast(a));return t?' · Last activity '+t:'';};
@@ -783,7 +786,7 @@ const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
 /* the readout to show now, or null: a live main agent that is Working or Thinking (Waiting, Error, Done and Idle keep their own text) */
 const liveShown=a=>liveOn()&&a&&!a.parent&&a.live&&!a.paused&&(a.state==='working'||a.state==='thinking')?LIVEACT.of(a.id):null;
-const deskLine=a=>{if(isRetrying(a))return RETRY.retryLine(a.retry); /* spec 034 FR-018: the retry line wins over the live readout and a place */
+const deskLine=a=>{if(isRetrying(a))return RETRY.retryLine(a.retry); if(isCompacting(a))return window.DurbarModels.COMPACTING_LINE; /* spec 015 FR-010 */ /* spec 034 FR-018: the retry line wins over the live readout and a place */
   if(GROW)return grownLine(a);const r=LIVE_SIDE?null:liveShown(a);return r?r.text:taskOf(a);};
 /* ---- spec 001 FR-041..FR-045: grown desks. With few agents a `roomy` card grows by a factor f (--gf and data-grow on the stage; chosen by
    growSearch in chooseLayout). GROW is set while grown cards are probed or shown: their text line is a box that holds more (FR-043). ---- */
@@ -901,7 +904,7 @@ function helperTileHTML(h){
 const visitPlace=a=>{const v=a.parent?null:VISITS.at(a.id);return v?v.place:(RETURNING.has(a.id)?null:null);};
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}${isRetrying(a)?' is-retrying':isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(deskTip(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+  return `<button class="desk card is-${st}${isRetrying(a)?' is-retrying':isCompacting(a)?' is-compacting':isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(deskTip(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1">${chatNoHTML(a)}${draftHTML(a)}${dialogHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</span>
     <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span>${GROW?grownSideHTML(a):''}</button>`;
@@ -1460,7 +1463,7 @@ window.DurbarFit=()=>{const s=document.getElementById('stage');if(s)fitUsage(s);
 /* spec 052 FR-064: sortable columns (click a header: ascending, then descending; in memory only), 34px rows. Unsorted it keeps the
    office order with waiting and errors first. A helper stays under its main agent; main agents sort by the column. */
 const LCOLS=[['name','Agent'],['app','Agent app'],['role','Role'],['folder','Folder'],['task','Current task'],['ago','Active'],['cost','Usage'],['status','Status']];
-const ST_ORDER={waiting:0,error:1,failing:2,retrying:2,working:3,thinking:4,idle:5,done:6};
+const ST_ORDER={waiting:0,error:1,failing:2,retrying:2,compacting:3,working:3,thinking:4,idle:5,done:6};
 let LSORT=null;
 const appOf=a=>{const r=a&&a.parent?byId(a.parent):a;return r&&r.live&&r.info?kindWord(r.info.adapterId):'';};
 /* the card's money words without the tokens: AIU as ≈ $, Claude's $ estimate; a kind with no price shows its tokens */
@@ -1761,7 +1764,7 @@ function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a
 function updatePanelHeader(){
   const a=byId(ui.selected); if(!a)return; const st=vis(a);
   const ph=$('panelHead'); if(!ph)return;
-  const sp=ph.querySelector('[data-f=status]'); const pst=pillSt(a); const toDone=pst==='done'&&sp.classList.contains('pill')&&!sp.classList.contains('st-done'); sp.className='pill st-'+pst; sp.innerHTML='<i></i>'+esc(stWord(a)); sp.title=isRetrying(a)?RETRY.retryLine(a.retry):isFailing(a)?MOOD.failStreak(a.id)+' tool calls failed in a row':''; /* spec 034 FR-018: the retry line */ if(toDone)pulseDone(sp); /* spec 052 FR-062, FR-067 */
+  const sp=ph.querySelector('[data-f=status]'); const pst=pillSt(a); const toDone=pst==='done'&&sp.classList.contains('pill')&&!sp.classList.contains('st-done'); sp.className='pill st-'+pst; sp.innerHTML='<i></i>'+esc(stWord(a)); sp.title=isRetrying(a)?RETRY.retryLine(a.retry):isCompacting(a)?window.DurbarModels.COMPACTING_LINE:isFailing(a)?MOOD.failStreak(a.id)+' tool calls failed in a row':''; /* spec 034 FR-018: the retry line */ if(toDone)pulseDone(sp); /* spec 052 FR-062, FR-067 */
   const ag=ph.querySelector('[data-f=ago]'); if(ag){const t=ACT.agoShort(sinceLast(a));ag.textContent=!t?'':t==='just now'?'active just now':'active '+t+' ago';ag.title=t?'Last activity '+ACT.agoLong(sinceLast(a)):'';}
   const t=ph.querySelector('[data-f=task]'); t.textContent=taskText(a); t.title=taskText(a);
   const ug=ph.querySelector('[data-f=usage]'); ug.textContent=usageLong(a); ug.title=ug.textContent.endsWith(' est.')?USD_TIP:'';
@@ -4341,13 +4344,14 @@ function ctxChipHTML(a){const c=window.DurbarScreens.ctxChip(a);
 /* spec 052 FR-081: Simple says "Memory 74% full" (same id, same click). FR-093: Simple shows it only from 70% full (class mem-low hides it) */
 /* spec 005 FR-051, FR-052 (issue 627): the figure for the ring and its token summary (src/renderer/ctxbreakdown.js); never estimated */
 function ctxSummary(a){ /* the window as the model chip has it (modelWindow: reported, else the model list's for this tier); the event's own limit wins in summary() */
-  return window.DurbarCtxBreakdown.summary(STATS.agent(a.id).ctx,{limit:modelWindow(a),app:kindWord(a.info&&a.info.adapterId),waiting:!!a.ctxWaiting});
+  return window.DurbarCtxBreakdown.summary(STATS.agent(a.id).ctx,{limit:modelWindow(a),app:kindWord(a.info&&a.info.adapterId),waiting:a.ctxWaiting||false});
 }
 /* the ring: a track and an arc filled clockwise by the share in use (pathLength 100); level colour from theme tokens (styles.css);
    above 90% a centre dot too, so the colour is never the only cue (the tooltip and the name carry the number) */
 function ctxRingHTML(a){
   const s=ctxSummary(a), lv=s.known&&s.pct!==null?s.level:'unk', p=lv==='unk'?0:Math.max(2,s.pct);
-  return `<button class="ctxchip ctxring ${lv}" id="ctxChip" type="button" aria-haspopup="dialog" aria-expanded="${!!document.getElementById('ctxMenu')}" aria-label="${esc(s.name)}" title="${esc(s.tip)}"><svg class="ring" viewBox="0 0 16 16" aria-hidden="true"><circle class="rt" cx="8" cy="8" r="6" pathLength="100"/>${lv==='unk'?'':`<circle class="rv" cx="8" cy="8" r="6" pathLength="100" stroke-dasharray="${p} 100" transform="rotate(-90 8 8)"/>`}${lv==='high'?'<circle class="rd" cx="8" cy="8" r="1.8"/>':''}</svg></button>`;
+  const cp=isCompacting(a)?window.DurbarModels.COMPACTING_LINE+' ':''; /* spec 015 FR-011 */
+  return `<button class="ctxchip ctxring ${lv}${cp?' compacting':''}" id="ctxChip" type="button" aria-haspopup="dialog" aria-expanded="${!!document.getElementById('ctxMenu')}" aria-label="${esc(cp+s.name)}" title="${esc(cp+s.tip)}"><svg class="ring" viewBox="0 0 16 16" aria-hidden="true"><circle class="rt" cx="8" cy="8" r="6" pathLength="100"/>${lv==='unk'?'':`<circle class="rv" cx="8" cy="8" r="6" pathLength="100" stroke-dasharray="${p} 100" transform="rotate(-90 8 8)"/>`}${lv==='high'?'<circle class="rd" cx="8" cy="8" r="1.8"/>':''}</svg></button>`;
 }
 function ctxChipBtn(a,c){
   if(!SIMPLE)return ctxRingHTML(a); /* Simple keeps its words (Memory N% full) and its menu */
@@ -4417,6 +4421,14 @@ function onLiveEvent(e){
   case 'user':{addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));return;}
   case 'status':{
     if(!main)return;
+    /* spec 015 FR-009b: the desk mark ends when the agent goes idle, stops or fails (a compaction in the background may still run: its line stays until the result);
+       a stop or an error also ends the line, honestly: "stopped", never "failed" */
+    if(a.compacting&&(e.status==='idle'||e.status==='error'||e.status==='stopped')){
+      a.compacting=false;
+      const R=a.compRun;
+      if(e.status!=='idle'||e.intent==='Aborted'){if(R&&R.pending&&R.el){R.el.textContent='Compaction stopped.';a.compRun=null; /* a later result is a new line */}}
+      updateCtxChip(a);scheduleRender();
+    } /* spec 015 FR-010: a stop or an error ends the mark even if the adapter sent no end */
     const gaveUp=e.status==='error'?a.gaveUp:null; a.gaveUp=null; /* spec 034 FR-019: the line of a turn that gave up after retries */
     if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files */
     /* spec 068: the turn that hit a usage limit ends quietly (the coffee break says why); working again, Stop or the end of the session end the break */
@@ -5296,6 +5308,13 @@ function onCompaction(a,e){
   /* spec 052 FR-163 (owner, 2026-10-21): compactions in a row (nothing else added to the chat in between) are one line that updates in
      place: "Context compacted 4 times · last 10:21: …". Its tooltip lists each one. The line is found by its place in the chat, not by
      isConnected: a chat that is not open is not in the page, and that check left a "Compacting the context…" line behind every time. */
+  /* spec 015 FR-009: dropped messages are not a summary: their own line, outside the run, and not counted as a compaction */
+  if(e.trigger==='truncation'){
+    a.compRun=null;
+    const el=document.createElement('div');el.className='note info cline';el.setAttribute('role','status');el.textContent=DM.compactionText(e);chat.el.appendChild(el);stickyScroll(chat);
+    if(e.tokensAfter===undefined){a.ctxWaiting='truncation';STATS.clearContext(a.id);} /* the message counts say nothing about the whole window: wait for the next context event */
+    updateCtxChip(a);scheduleRender();return;
+  }
   let R=a.compRun;
   if(!R||R.chat!==chat||!R.el||R.el.parentNode!==chat.el||(chat.el.lastElementChild!==R.el&&!(R.pending&&e.phase!=='start')))R=null; /* a started one ends on its own line */
   const line=t=>{const el=document.createElement('div');el.className='note info cline';el.setAttribute('role','status');el.textContent=t;chat.el.appendChild(el);return el;};
@@ -5314,10 +5333,12 @@ function onCompaction(a,e){
     if(e.phase==='complete'){
       a.compactions=(a.compactions||0)+1;a.compactFailed=false;
       const old=STATS.agent(a.id).ctx;
-      if(e.tokensAfter>=0)STATS.setContext(a.id,{tokens:e.tokensAfter,limit:e.limit>0?e.limit:(old&&old.limit)||0});
+      if(e.tokensAfter>=0){STATS.setContext(a.id,{tokens:e.tokensAfter,limit:e.limit>0?e.limit:(old&&old.limit)||0});a.ctxWaiting=false;}
+      else{a.ctxWaiting='compaction';STATS.clearContext(a.id);} /* spec 015 FR-012: the app did not say the new size (Claude, Codex): no stale figure, no "nearly full" note on it */
     }else a.compactFailed=true;
   }
-  updateCtxChip(a);if(e.phase!=='start')maybeSuggestFresh(a);
+  updateCtxChip(a);if(e.phase!=='start'&&!a.ctxWaiting)maybeSuggestFresh(a);
+  scheduleRender();updatePanelHeader(); /* spec 015 FR-010: the desk, list, strip and header say Compacting, or go back */
 }
 
 /* manual compaction: confirm what it costs, optional focus, then the result line comes from the compaction events */
