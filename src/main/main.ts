@@ -545,14 +545,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
   },
   /* spec 044 FR-110: a run for an agent behind a door the user closed is queued there (held): never sent, never dropped. A full queue
      (spec 017 FR-016, 200 runs) still answers true, so nothing goes out while the door is closed. */
-  hold: (s, now) => {
-    const a = scheduleAgent(s);
-    if (!a || !doors?.isClosed(doorKey(a))) return false;
-    const r = doors.hold(doorKey(a), { at: now, prompt: s.prompt, scheduleId: s.id });
-    if (r === 'full') doorsIpc.full(a); // review on #631: never dropped silently; the outcome says it too
-    doorsIpc.changed();
-    return r === 'held' ? true : 'full';
-  },
+  hold: (s, now) => doorsIpc.hold(scheduleAgent(s)?.id, { at: now, prompt: s.prompt, scheduleId: s.id }), // the rule: doorops.ts (tested)
   send: async (folder, prompt, s) => {
     const a = scheduleAgent(s);
     const ad = a ? router.forAgent(a.id) : undefined;
@@ -708,7 +701,7 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity, doorClosed: (id) => { const a = agents.get(id); return !!a && !!doors?.isClosed(doorKey(a)); } });
 /* spec 017 FR-017: a held run goes out through the same path as a scheduled one (the window shows it as the user's message) */
 /* spec 044 FR-111 (review on #631): Send all goes through the scheduler (Pause all, the schedule, its limit, busy incl. coffee breaks, credited) */
-const doorsIpc = registerDoorsIpc({ agents, router, doors: () => doors, keyOf: doorKey, remoteOps, toRenderer, release: (run: HeldRun) => (scheduler ? scheduler.releaseHeld(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)) });
+const doorsIpc = registerDoorsIpc({ agents, router, doors: () => doors, keyOf: doorKey, remoteOps, toRenderer, release: (run: HeldRun) => (scheduler ? scheduler.releaseDoorRun(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)) });
 registerAppIpc({
   getSinceAway: () => sinceAway,
   clearSinceAway: () => { sinceAway = null; },

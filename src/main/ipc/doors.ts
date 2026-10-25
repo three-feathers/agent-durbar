@@ -18,13 +18,13 @@ export interface DoorsIpcDeps {
   keyOf(a: AgentInfo): string;
   remoteOps: ReturnType<typeof createRemoteOps>;
   toRenderer(channel: string, payload: unknown): void;
-  /** The scheduler's release path (Scheduler.releaseHeld): Pause all, the schedule, its limit and busy checked; credited; recorded. */
+  /** The scheduler's release path (Scheduler.releaseDoorRun): Pause all, the schedule, its limit and busy checked; credited; recorded. */
   release(run: HeldRun): Promise<ReleaseResult>;
 }
 
 export type DoorsList = Record<string, { closed: boolean; held: number }>;
 
-export function register(deps: DoorsIpcDeps): { list(): DoorsList; changed(): void; full(a: AgentInfo): void } {
+export function register(deps: DoorsIpcDeps): { list(): DoorsList; changed(): void; hold: ReturnType<typeof createDoorOps>['hold'] } {
   const { agents, router } = deps;
   const list = (): DoorsList => {
     const d = deps.doors(), out: DoorsList = {};
@@ -47,18 +47,15 @@ export function register(deps: DoorsIpcDeps): { list(): DoorsList; changed(): vo
     release: deps.release,
     changed,
     stopped: (id, why) => deps.toRenderer('doors:stopped', { id, why }),
+    /* FR-016 (review on #631): a run that could not be kept at a full door is never dropped silently */
+    full: (id) => deps.toRenderer('doors:full', { id }),
   });
-  // the next held run goes when the agent is free again (its turn ended)
-  router.onEvent((e) => {
-    if (e.type !== 'status' || e.agentId || e.status !== 'idle') return;
-    if (agents.has(e.sessionId)) setTimeout(() => void ops.pump(e.sessionId), 0); // after main has noted the new status
-  });
+  // the next held run goes when the agent is free again (its turn ended); the rule is in doorops.ts (tested)
+  router.onEvent((e) => ops.onStatus(e));
   const okId = (id: unknown): id is string => typeof id === 'string' && id.length <= 200 && agents.has(id);
   ipcHandle('doors:list', (e) => (fromApp(e) ? list() : {}));
   ipcHandle('doors:held', (e, id: unknown) => (fromApp(e) && okId(id) ? ops.held(id) : []));
   ipcHandle('doors:set', (e, id: unknown, closed: unknown) => (fromApp(e) && okId(id) && typeof closed === 'boolean' ? ops.setDoor(id, closed) : { ok: false, error: 'invalid request' }));
   ipcHandle('doors:release', (e, id: unknown, action: unknown) => (fromApp(e) && okId(id) && (action === 'send' || action === 'discard') ? ops.release(id, action) : { ok: false, error: 'invalid request' }));
-  /* FR-016 (review on #631): a run that could not be kept at a full door is never dropped silently */
-  const full = (a: AgentInfo): void => deps.toRenderer('doors:full', { id: a.id });
-  return { list, changed, full };
+  return { list, changed, hold: ops.hold };
 }

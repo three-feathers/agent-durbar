@@ -821,7 +821,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     window.setInterval(() => {
       const now = Date.now();
       let any = false;
-      // Send all: the next held run goes when the agent is free again, through the schedule's rules (spec 044 FR-111, as main's Scheduler.releaseHeld)
+      // Send all: the next held run goes when the agent is free again, through the schedule's rules (spec 044 FR-111, as main's Scheduler.releaseDoorRun)
       simDoors.map.forEach((d, id) => {
         if (d.closed || !d.releasing) return;
         const s = sims.find((x) => x.info.id === id);

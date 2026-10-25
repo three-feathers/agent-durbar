@@ -144,24 +144,51 @@ async function main(): Promise<void> {
     doc2.schedules.push({ id: 'r1', folder: '/w', prompt: 'p', every: 30, next: h2.now + 99 * MIN, target: { session: 's1' } } as Schedule);
     const by = (id: string) => doc2.schedules.find((x) => x.id === id) as Schedule;
     h2.busy.add('s1');
-    assert.strictEqual(await h2.sch.releaseHeld('r1', 'held prompt'), 'busy', 'a busy agent: not now');
+    assert.strictEqual(await h2.sch.releaseDoorRun('r1', 'held prompt'), 'busy', 'a busy agent: not now');
     assert.deepStrictEqual(h2.sent, [], 'nothing sent to a busy agent (the busy gate)');
     h2.busy.delete('s1');
     doc2.pausedAll = true;
-    assert.strictEqual(await h2.sch.releaseHeld('r1', 'held prompt'), 'paused-all');
+    assert.strictEqual(await h2.sch.releaseDoorRun('r1', 'held prompt'), 'paused-all');
     doc2.pausedAll = false;
     by('r1').paused = true;
-    assert.strictEqual(await h2.sch.releaseHeld('r1', 'held prompt'), 'paused');
+    assert.strictEqual(await h2.sch.releaseDoorRun('r1', 'held prompt'), 'paused');
     by('r1').paused = false;
     by('r1').cap = { amount: 1, unit: 'aiu' } as never;
     by('r1').spent = 1;
-    assert.strictEqual(await h2.sch.releaseHeld('r1', 'held prompt'), 'cap', "the schedule's own limit stops it");
+    assert.strictEqual(await h2.sch.releaseDoorRun('r1', 'held prompt'), 'cap', "the schedule's own limit stops it");
     delete by('r1').cap; delete by('r1').spent;
-    assert.strictEqual(await h2.sch.releaseHeld('gone-id', 'held prompt'), 'gone', 'a deleted schedule');
+    assert.strictEqual(await h2.sch.releaseDoorRun('gone-id', 'held prompt'), 'gone', 'a deleted schedule');
     assert.deepStrictEqual(h2.sent, [], 'none of those sent anything');
-    assert.strictEqual(await h2.sch.releaseHeld('r1', 'held prompt'), 'sent');
+    assert.strictEqual(await h2.sch.releaseDoorRun('r1', 'held prompt'), 'sent');
     assert.deepStrictEqual(h2.sent, ['/w:held prompt'], 'sent through the schedule send path');
     assert.strictEqual(by('r1').last?.outcome, 'sent', 'and recorded on the schedule');
+    // review on #631 (Ruben): the ended-session check, the credit (FR-024) and the running guard
+    h2.sessions.delete('s1');
+    assert.strictEqual(await h2.sch.releaseDoorRun('r1', 'held prompt'), 'ended', 'its session ended: not sent');
+    h2.sessions.add('s1');
+    assert.strictEqual(h2.sent.length, 1, 'nothing sent to an ended session');
+    by('r1').cap = { amount: 5, unit: 'aiu' } as never;
+    by('r1').spent = 0;
+    h2.sch.noteUsage('s1', { nanoAiu: 2e9 });
+    assert.strictEqual(by('r1').spent, 2, "the released run's usage is credited to its schedule (attrib)");
+    h2.sch.turnEnded('s1');
+    h2.sch.noteUsage('s1', { nanoAiu: 1e9 });
+    assert.strictEqual(by('r1').spent, 2, 'not after its turn ended');
+    // another run in progress (the running guard): a second release waits
+    let open: (v: string) => void = () => undefined;
+    const doc4 = { pausedAll: false, schedules: [{ id: 'g1', folder: '/w', prompt: 'p', every: 30, next: h2.now + 99 * MIN, target: { session: 's1' } } as Schedule] };
+    const sent4: string[] = [];
+    const h4 = harness(doc4, undefined, { send: (_f, p) => { sent4.push(p); return new Promise((r) => { open = r; }); } });
+    const first = h4.sch.releaseDoorRun('g1', 'one');
+    const second = await Promise.race([h4.sch.releaseDoorRun('g1', 'two'), new Promise((r) => setTimeout(() => r('still waiting'), 50))]);
+    assert.strictEqual(second, 'busy', 'another run is going out: not now');
+    open('s1');
+    assert.strictEqual(await first, 'sent');
+    assert.deepStrictEqual(sent4, ['one'], 'only the first went');
+    // spec 081 FR-013: its agent app is updating
+    const h5 = harness({ pausedAll: false, schedules: [{ id: 'u1', folder: '/w', prompt: 'p', every: 30, next: h2.now + 99 * MIN, target: { session: 's1' } } as Schedule] }, undefined, { heldBy: () => 'updating' });
+    assert.strictEqual(await h5.sch.releaseDoorRun('u1', 'held prompt'), 'updating');
+    assert.deepStrictEqual(h5.sent, [], 'not sent while its agent app updates');
   }
 
   // ---- doorops (review on #631): remote off on close (and the window told), honest failure, Send all one by one ----
@@ -205,6 +232,47 @@ async function main(): Promise<void> {
     await ops.pump('a1');
     assert.deepStrictEqual([released, dd.view('key-a1').held, dd.releasing('key-a1'), stops], [['one', 'three'], 1, false, ['a1:paused-all']], 'Pause all: Send all stops, the run stays held and the window is told');
     assert.deepStrictEqual(await ops.release('a1', 'discard'), { ok: true, discarded: 1 });
+  }
+
+  // ---- review on #631 (Ruben): main's wiring, moved into doorops: the scheduler's hold and the pump when a turn ends ----
+  {
+    const dd = new Doors({ doors: {} }, () => undefined, () => `w${ids++}`);
+    const fulls: string[] = [], later: (() => void)[] = [], released: string[] = [];
+    let changed = 0;
+    const ops = createDoorOps({
+      doors: () => dd,
+      keyOf: (id) => (id.startsWith('a') ? 'key-' + id : undefined),
+      remote: { has: () => false, setRemote: async () => ({ ok: true }) },
+      remoteOff: () => undefined,
+      release: async (run) => (released.push(run.prompt), 'sent'),
+      changed: () => { changed++; },
+      full: (id) => fulls.push(id),
+      later: (fn) => later.push(fn),
+    });
+    const run = (prompt: string) => ({ at: 1, prompt, scheduleId: 's' });
+    assert.strictEqual(ops.hold('a1', run('x')), false, 'an open door: the run goes as usual');
+    assert.strictEqual(ops.hold(undefined, run('x')), false, 'no agent for the run');
+    assert.strictEqual(ops.hold('zz', run('x')), false, 'an unknown agent');
+    await ops.setDoor('a1', true);
+    const c0 = changed;
+    assert.strictEqual(ops.hold('a1', run('held-1')), true, 'a closed door holds the run (never sent)');
+    assert.ok(changed > c0, 'and the window is told');
+    for (let i = 1; i < MAX_HELD; i++) ops.hold('a1', run('h' + i));
+    assert.strictEqual(ops.hold('a1', run('over')), 'full', 'a full door: not kept');
+    assert.deepStrictEqual(fulls, ['a1'], 'and the window is told (doors:full)');
+    await ops.setDoor('a1', false);
+    await ops.release('a1', 'send');
+    assert.deepStrictEqual(released, ['held-1'], 'Send all sends the first');
+    ops.onStatus({ type: 'status', sessionId: 'a1', status: 'working' });
+    ops.onStatus({ type: 'status', sessionId: 'a1', agentId: 'sub', status: 'idle' });
+    ops.onStatus({ type: 'status', sessionId: 'zz', status: 'idle' });
+    ops.onStatus({ type: 'usage', sessionId: 'a1', status: 'idle' });
+    assert.strictEqual(later.length, 0, 'only the end of a main session\'s turn moves Send all on');
+    ops.onStatus({ type: 'status', sessionId: 'a1', status: 'idle' });
+    assert.strictEqual(later.length, 1, 'its turn ended: the next run is due');
+    later.shift()?.();
+    await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual(released, ['held-1', 'h1'], 'the next held run goes when the agent is free (Send all does not stop after one)');
   }
   console.log('doors tests passed');
 }

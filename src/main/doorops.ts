@@ -9,7 +9,7 @@
  */
 import type { Doors, HeldRun } from './doors';
 
-export type ReleaseResult = 'sent' | 'busy' | 'paused-all' | 'paused' | 'cap' | 'ended' | 'gone' | 'failed';
+export type ReleaseResult = 'sent' | 'busy' | 'paused-all' | 'paused' | 'cap' | 'ended' | 'updating' | 'gone' | 'failed';
 
 export interface DoorOpsDeps {
   doors(): Doors | undefined;
@@ -18,8 +18,12 @@ export interface DoorOpsDeps {
   remote: { has(id: string): boolean; setRemote(id: string, on: boolean): Promise<{ ok: boolean; error?: string }> };
   /** Tells the window that remote control went off for this agent (the existing `agents:remoteOff` event). */
   remoteOff(id: string, reason: string): void;
-  /** The scheduler's release path (Scheduler.releaseHeld). */
+  /** The scheduler's release path (Scheduler.releaseDoorRun). */
   release(run: HeldRun): Promise<ReleaseResult>;
+  /** A scheduled run could not be kept because the door's queue is full (the window says so). */
+  full?(id: string): void;
+  /** Runs `fn` after main has noted a new status (defaults to setTimeout 0). */
+  later?(fn: () => void): void;
   /** The doors changed (the window redraws). */
   changed(): void;
   /** Tells the window why Send all stopped (a run stays held). */
@@ -59,6 +63,24 @@ export function createDoorOps(deps: DoorOpsDeps) {
   };
   return {
     pump,
+    /**
+     * Spec 044 FR-110 (moved here from main.ts, review on #631): the scheduler's `hold` for the agent `id` of a due run. False when the
+     * door is open (or the agent is unknown): the run goes as usual. True: queued at the closed door. 'full': the door is closed but its
+     * queue is full, so the run is not kept and the window is told (never sent either).
+     */
+    hold(id: string | undefined, run: { at: number; prompt: string; scheduleId: string }): boolean | 'full' {
+      const d = deps.doors(), key = id === undefined ? undefined : deps.keyOf(id);
+      if (!d || !key || id === undefined || !d.isClosed(key)) return false;
+      const r = d.hold(key, run);
+      if (r === 'full') deps.full?.(id);
+      deps.changed();
+      return r === 'held' ? true : 'full';
+    },
+    /** A status event from the agents: when a main session's turn ended (idle), the next held run of a releasing door may go. */
+    onStatus(e: { type: string; agentId?: string; sessionId: string; status?: string }): void {
+      if (e.type !== 'status' || e.agentId || e.status !== 'idle' || deps.keyOf(e.sessionId) === undefined) return;
+      (deps.later ?? ((fn) => void setTimeout(fn, 0)))(() => void pump(e.sessionId));
+    },
     /** Closes or opens a door. Closing turns remote control off first; if that fails the door stays open. */
     async setDoor(id: string, closed: boolean): Promise<{ ok: true; closed: boolean; held: number; remoteOff?: boolean } | { ok: false; error: string }> {
       const d = deps.doors(), key = deps.keyOf(id);

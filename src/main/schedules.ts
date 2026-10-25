@@ -754,13 +754,14 @@ export class Scheduler {
    * scheduled run; it goes out through the same `send` (credited to the schedule, `schedule:ran`), and `last` records it.
    * 'gone': the schedule was deleted, so the run is dropped by the caller (the user deleted the schedule).
    */
-  async releaseHeld(scheduleId: string | undefined, prompt: string): Promise<'sent' | 'busy' | 'paused-all' | 'paused' | 'cap' | 'ended' | 'gone' | 'failed'> {
+  async releaseDoorRun(scheduleId: string | undefined, prompt: string): Promise<'sent' | 'busy' | 'paused-all' | 'paused' | 'cap' | 'ended' | 'updating' | 'gone' | 'failed'> {
     const s = typeof scheduleId === 'string' ? this.doc.schedules.find((x) => x.id === scheduleId) : undefined;
     if (!s) return 'gone';
     if (this.doc.pausedAll) return 'paused-all';
     if (s.paused) return 'paused';
     if (s.target && !this.deps.hasSession(s.target.session)) return 'ended';
     if (s.cap && (s.spent ?? 0) >= s.cap.amount) return 'cap';
+    if (this.deps.heldBy?.(s)) return 'updating'; // spec 081 FR-013: its agent app is updating
     if (this.running || this.deps.isBusy(s.folder, s.target?.session)) return 'busy';
     this.running = true;
     let r: boolean | string = false;
