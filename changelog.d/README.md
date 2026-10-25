@@ -28,11 +28,13 @@ no merge freeze is needed:
 3. A **doc-only fold PR**, from the tag, with the heading from the run's job summary:
 
    ```bash
-   git fetch origin --tags && git switch -c NNN-fold-0.1.0-alpha.N v0.1.0-alpha.N
+   git fetch origin --tags && git switch -c NNN-fold-alpha-N v0.1.0-alpha.N
    npm run changelog:build -- --release "v0.1.0-alpha.N ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.N), YYYY-MM-DD)"
    # add the release's intro paragraph and the README status block, commit
    git merge origin/main   # fragments that landed after the tag come back for the next release
    ```
+
+Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens, `NNN-slug`; no dots), so use `NNN-fold-alpha-N` rather than the tag's dots. A dotted name fails CI.
 
    `changelog:build` writes a new section under *Unreleased* with every fragment (by file name), then any bullet still under
    *Unreleased*, and deletes the fragments. The PR goes through the queue like any other; the workflow never pushes to `main`
