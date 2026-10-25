@@ -1007,3 +1007,11 @@ The owner asked that sessions be shared between Durbar and the Claude Code CLI. 
 - Owner decision (Vikram, team chat 2026-10-21): "I am using it daily on macOS and I looked at everything today with my colleague on Windows and you already have feedback. Issue #72 can be closed as well."
 - What the report adds for T070: `detect()` on a real Windows PC did not find or offer Copilot without Node.js (#467, fix in review in PR #469). Earlier real evidence stays: the spec 062 e2e run 39496442403 (detection, spawn and one turn of each adapter on macOS and Windows runners) and T044 (packaged build in CI on three OSes).
 - `[KNOWN GAP]` kept, not reported by the owner: the Codex sandbox on Windows (the `elevatedSandbox` setup step; Read-only and Ask first stay refused there, fail closed) and on an ordinary Mac (refused on GitHub's macOS runner; *2026-10-23:* re-attributed to a symlinked `codex`, fixed by FR-162, a full session not re-run); npm `.cmd` shims for Codex (D4); which build (packaged or source) and which adapters were used on the Windows PC was not recorded.
+
+- **2026-10-25, spec 087 (OS sandbox floor, issue #611).** Claude: in Read-only and Ask first the `--settings` JSON gets a `sandbox` key built
+  in `src/adapters/claudeSandbox.ts` (merged in `claude.ts`, never in `src/shared`): `failIfUnavailable: true`, no `autoAllowBashIfSandboxed`,
+  no `allowUnsandboxedCommands`, reads limited to the session's folders, network off; *Sandboxed* only after `system`/`init`; a sandbox exit
+  before `init` sends nothing and offers *Continue without the OS sandbox* / *Change mode…* (spec 087 FR-003, FR-006, FR-007). Codex: its
+  state is reported from the existing checks (FR-086..FR-091, FR-138, FR-140, FR-162 unchanged) and `codexPermission` sets `sandboxNote` on
+  command and file-change cards (spec 087 FR-005, FR-021). Root normalisation moved to `src/adapters/sandboxRoots.ts` (`codexWorkspaceRoots`
+  calls it; quotes and control characters now drop a root too). `test:` `scripts/test-claude-sandbox.ts`, `scripts/test-sandbox-floor.ts`.

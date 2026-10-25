@@ -1019,3 +1019,13 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
 - **FR-032/FR-175** are unchanged. `agentApps.allowInAppInstall: false` turns off the start check and hides Update, and the read-only *Check for updates* stays.
 - **Unreadable policy**: a policy that cannot be read or validated turns spec 081's start check off (fail closed, spec 081 FR-022).
 - Status: `[PLANNED]` (spec 081 T033, T036). Nothing is built here.
+
+### 2026-10-25: `permissions.requireOsSandbox` and FR-173 (spec 087)
+
+New key `permissions.requireOsSandbox` (boolean, default `false`; [spec 087](../087-os-sandbox-floor/spec.md) FR-019): when set, an agent app
+whose OS sandbox cannot start is refused in Read-only and Ask first, every time (a session's *Continue* and a stored *Always continue* are
+ignored, FR-007d). Narrow-only; a value that is not a boolean, a malformed `permissions` section or an unreadable policy count as `true`.
+The rule is built and tested (`requireOsSandboxFrom`, `src/main/sandboxpolicy.ts`), but this spec has no policy reader yet, so it is not
+reachable in the app (`[KNOWN GAP]`, as `updatepolicy.ts`). FR-173's open point is answered by spec 087: Claude Code's and Copilot's
+OS sandboxes now hold their shell commands in Read-only and Ask first, and Settings > Agent apps shows each app's sandbox line (spec 087
+FR-012); there is no Organization page yet for the pointer FR-012 asks for.

@@ -99,26 +99,6 @@
     return ACC;
   }
 
-  /* spec 087 FR-012: "OS sandbox: available (…)" or "not available: <reason>" with the fix, and the stored *Always continue* with its undo */
-  function sbxInner(id) {
-    const v = SBXH && Object.prototype.hasOwnProperty.call(SBXH, id) ? SBXH[id] : null;
-    const T = window.DurbarSandboxText;
-    if (!v || !T) return '';
-    const m = (t) => (typeof t === 'string' && t && MASK ? String(MASK(t.slice(0, 400)) || '') : '');
-    const line = T.hostLine({ available: v.available === true, mechanism: v.mechanism, reason: m(v.reason) });
-    return `<p class="scr-note small hs-sbx-line">${esc(line)}</p>${v.fix && m(v.fix) ? `<p class="scr-note small hs-sbx-fix">${esc(m(v.fix))}</p>` : ''}${v.alwaysContinue ? `<p class="scr-note small hs-sbx-always">Always continue without the OS sandbox on this computer is on. <button type="button" class="btn sm" data-hs="sbxundo" data-kind="${esc(id)}">Undo</button></p>` : ''}`;
-  }
-  function paintSandbox() {
-    document.querySelectorAll('.hs-sbx[data-sbx]').forEach((p) => { p.innerHTML = sbxInner(p.dataset.sbx); });
-  }
-  async function loadSandbox() {
-    if (!B || !B.sandboxHosts) return;
-    let r = null;
-    try { r = await B.sandboxHosts(); } catch (e) { r = null; }
-    SBXH = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
-    paintSandbox();
-  }
-
   /* the cards; `kinds` from listAdapters, `copilot` from copilotAuth (Copilot's detection itself is free of I/O, FR-007) */
   function sectionHTML(kinds, copilot) {
     const list = (kinds || []).filter((k) => SETUP_KINDS.includes(k.id));
@@ -439,6 +419,26 @@
   async function checkNow(kind) {
     /* FR-004: for winget's source terms main asks itself (a native dialog the page cannot answer); the window only asks for the check */
     await loadUpdates(true, kind);
+  }
+
+  /* spec 087 FR-012: "OS sandbox: available (…)" or "not available: <reason>" with the fix, and the stored *Always continue* with its undo */
+  function sbxInner(id) {
+    const v = SBXH && Object.prototype.hasOwnProperty.call(SBXH, id) ? SBXH[id] : null;
+    const T = window.DurbarSandboxText;
+    if (!v || !T) return '';
+    const m = (t) => (typeof t === 'string' && t && MASK ? String(MASK(t.slice(0, 400)) || '') : '');
+    const line = T.hostLine({ available: v.available === true, mechanism: v.mechanism, reason: m(v.reason) });
+    return `<p class="scr-note small hs-sbx-line">${esc(line)}</p>${v.fix && m(v.fix) ? `<p class="scr-note small hs-sbx-fix">${esc(m(v.fix))}</p>` : ''}${v.alwaysContinue ? `<p class="scr-note small hs-sbx-always">Always continue without the OS sandbox on this computer is on. <button type="button" class="btn sm" data-hs="sbxundo" data-kind="${esc(id)}">Undo</button></p>` : ''}`;
+  }
+  function paintSandbox() {
+    document.querySelectorAll('.hs-sbx[data-sbx]').forEach((p) => { p.innerHTML = sbxInner(p.dataset.sbx); });
+  }
+  async function loadSandbox() {
+    if (!B || !B.sandboxHosts) return;
+    let r = null;
+    try { r = await B.sandboxHosts(); } catch (e) { r = null; }
+    SBXH = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+    paintSandbox();
   }
 
   /* clicks inside the Settings screen */

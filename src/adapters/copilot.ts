@@ -1125,7 +1125,7 @@ export class CopilotAdapter implements AgentAdapter {
     }
     const sandboxConfig = copilotSandboxConfig({ mode, roots, pathDirs: this.sandboxPathDirs(), host, home: this.sandboxHome(), platform });
     try {
-      await live.session.rpc.options.update({ sandboxConfig, sandboxConfigSource: 'session_flag' } as never);
+      await live.session.rpc.options.update({ sandboxConfig, sandboxConfigSource: 'session_flag' });
       live.sandboxFloor = true;
       live.sandboxHold = undefined;
       this.setSandbox(sid, live, copilotSandboxState({ mode, platform, host, applied: true }));

@@ -36,7 +36,7 @@ module.exports = async (ctx) => {
   };
   const expectChip = async (w, id, re, more = () => true) => {
     await openAgent(id);
-    assert.ok(await until(`(()=>{const c=document.getElementById('modeChip');return !!c&&${re}.test(c.innerText.replace(/\\s+/g,' '))})()`, 8000), `${w}: ${id} chip ${re}: ${JSON.stringify(await chip())}`);
+    assert.ok(await until(`(()=>{const c=document.getElementById('modeChip');return !!c&&new RegExp(${jsLiteral(re.source)}).test(c.innerText.replace(/\\s+/g,' '))})()`, 8000), `${w}: ${id} chip ${re}: ${JSON.stringify(await chip())}`);
     const c = await chip();
     assert.ok(c.px >= 10.5 && c.inBox, `${w}: ${id}: the segment is legible text inside the chip: ${JSON.stringify(c)}`);
     assert.ok(more(c), `${w}: ${id}: tooltip ${c.title}`);

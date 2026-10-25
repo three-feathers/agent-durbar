@@ -3,14 +3,14 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: OS sandbox floor (issue #611): under Read-only and Ask first Durbar also turns on each agent app's own OS sandbox (Claude Code's bash sandbox, Copilot's local sandbox; Codex's read-limited profile already does it), so a command that slips past Durbar's checks still cannot write outside the folder or reach the network; Allow all keeps the app default; the chat header says Sandboxed or Not sandboxed, and why
-status: Draft (2026-10-25): spec, plan, research and tasks; review rounds 1 and 2 (Ruben's agent) folded in; vendor facts from docs and the SDK's declarations only (no real session); owner decisions Q1-Q5 recorded 2026-10-25 (Vikram, all as recommended); nothing built
+status: Built 2026-10-25 (simulator and fakes only): Claude Code and Copilot floors, Codex state and card line, the chip, tooltips, the sandbox note with Continue / Always / Change mode…, Settings > Agent apps line, the policy rule; not verified on a real session (T060-T062 open, about 5 prompts); the policy key is not reachable until spec 076 has a reader
 -->
 
 **Feature Branch**: `087-os-sandbox-floor` (touches 003 permission modes, 012 Claude and Codex adapters, 002 Copilot adapter, 018 mode switch, 076 organization policy, 081 Settings > Agent apps, 010 simulator)
 
 **Created**: 2026-10-25
 
-**Status**: Draft (spec, plan, research and tasks; nothing built)
+**Status**: Built (2026-10-25) on the simulator and with fakes; not verified on a real session (T060-T062 open). See *Changes*.
 
 **Input**: Issue #611, owner decision (Vikram, 2026-10-23, *go*): "Today Read-only / Ask first are enforced by Durbar's permission
 checks. Turn on each agent app's real OS sandbox underneath, so writes outside the folder or network calls are blocked by the OS
@@ -150,7 +150,7 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
 
 **A. The floor per mode**
 
-- **FR-001** The floor (what the OS lets a sandboxed process do) per Durbar mode, for every app that has a sandbox:
+- **FR-001** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts`, 27 cells) The floor (what the OS lets a sandboxed process do) per Durbar mode, for every app that has a sandbox:
 
   | Mode | Writes | Reads | Network | Run outside the sandbox |
   | --- | --- | --- | --- | --- |
@@ -158,11 +158,11 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   | Ask first | the session roots and the app's temp folder; protected paths (FR-014) never | as Read-only | off (decision Q2) | never |
   | Allow all | app default or managed policy | app default | app default | app default |
 
-- **FR-002** The floor is **under** Durbar's checks, never instead of them. Nothing in this spec approves a call that Durbar would
+- **FR-002** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts` scan of every cell) The floor is **under** Durbar's checks, never instead of them. Nothing in this spec approves a call that Durbar would
   deny or ask about today. In particular Claude Code's `autoAllowBashIfSandboxed` is always `false` (its default `true` would
   auto-approve sandboxed Bash; `read:` research R2), Claude's `allowUnsandboxedCommands` is `false`, and Copilot's `allowBypass` is
   never sent (fail closed, `read:` research R4).
-- **FR-003** **Claude Code** (CLI transport, `--settings` JSON): Read-only and Ask first add a `sandbox` block, built in the
+- **FR-003** `[IMPLEMENTED]` (test: `scripts/test-claude-sandbox.ts` AC1, `scripts/test-sandbox-floor.ts`) **Claude Code** (CLI transport, `--settings` JSON): Read-only and Ask first add a `sandbox` block, built in the
   Claude adapter (`src/adapters/claudeSandbox.ts`) and merged into the `--settings` JSON in `claude.ts`, never in `src/shared`
   (constitution II): `enabled: true`, `failIfUnavailable: true` (always, FR-007), `allowUnsandboxedCommands: false`,
   `autoAllowBashIfSandboxed: false`, `excludedCommands: []`; `filesystem.denyRead: ["~/"]` and `filesystem.allowRead` = the roots
@@ -171,7 +171,7 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   if it ever does, Durbar's block replaces it). Minimum Claude Code version: **2.1.219** (the newest key this block relies on,
   `strictAllowlist`, `read:` research R2); an older or unreadable version gets no block and counts as unavailable (FR-007).
   `[KNOWN GAP]` K1, K2, K4.
-- **FR-004** **Copilot** (SDK 1.0.22): before the first send of a created or resumed session, Durbar calls
+- **FR-004** `[IMPLEMENTED]` (test: `scripts/test-copilot-sandbox.ts`, `scripts/test-sandbox-floor.ts`) **Copilot** (SDK 1.0.22): before the first send of a created or resumed session, Durbar calls
   `session.rpc.options.update({ sandboxConfig, sandboxConfigSource: 'session_flag' })` with `enabled: true`,
   `addCurrentWorkingDirectory: false`, `userPolicy.filesystem` (Read-only: roots in `readonlyPaths`; Ask first: roots in
   `readwritePaths`, protected paths in `deniedPaths` when the host reports `denied_paths`), `userPolicy.network`
@@ -187,14 +187,14 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   cache (npm, Cargo, gh, pip) and a toolchain found only through an environment variable (`GOROOT`, `JAVA_HOME`, `VIRTUAL_ENV`) and
   not on `PATH` is not readable; such a command fails with the tool's own error. If the update is refused, the session is handled
   as *unavailable* (FR-007). `[KNOWN GAP]` K8, K9, K10.
-- **FR-005** **Codex**: unchanged (spec 012 FR-086..FR-091, FR-138, FR-140, FR-162). Ask first keeps `durbar_ro` and does not move
+- **FR-005** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts`, existing `test-codex-modes`) **Codex**: unchanged (spec 012 FR-086..FR-091, FR-138, FR-140, FR-162). Ask first keeps `durbar_ro` and does not move
   to `workspace-write`, because Codex runs writes inside writable roots without asking, which would break Ask first's "each request
   is left pending for the user" (constitution III; decision Q3). `[KNOWN GAP]` K6: whether an approved escalation runs unsandboxed; FR-021
   makes the card say so.
 
 **B. Detection and when there is none**
 
-- **FR-006** Each adapter answers, before a Read-only or Ask first session starts, whether its sandbox can run, as a normalized
+- **FR-006** `[IMPLEMENTED]` (test: `scripts/test-claude-sandbox.ts`, `scripts/test-copilot-sandbox.ts`) Each adapter answers, before a Read-only or Ask first session starts, whether its sandbox can run, as a normalized
   `SandboxState` (FR-011), from a pure function with injected facts (constitution VI):
   - Copilot: `client.rpc.sandbox.getHostSupport()` (`supported`, `reason`, `capabilities`); a missing method (older runtime) or an
     error counts as unavailable with reason "this Copilot cannot report its sandbox".
@@ -211,7 +211,7 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
     The version comes from the existing probe (`detectClaude` → `parseVersion`, `src/adapters/detect.ts`), compatible with the
     hardening in PR #698; an unparseable version counts as unavailable.
   - Codex: the existing `codexReadEnforceable` plus the start result.
-- **FR-007** **When the sandbox is unavailable** (owner decision Q1, 2026-10-25). Claude Code is always launched with
+- **FR-007** `[IMPLEMENTED]` (test: `scripts/test-claude-sandbox.ts` AC2-AC8, `scripts/test-copilot-sandbox.ts` AC1-AC4; sim: `scripts/check-sandbox-floor.js`) **When the sandbox is unavailable** (owner decision Q1, 2026-10-25). Claude Code is always launched with
   `failIfUnavailable: true` in Read-only and Ask first, so the CLI itself confirms the sandbox or exits; Durbar never shows
   *Sandboxed* on a guess.
   - Default (no policy): **the person decides; nothing runs without the sandbox until they do.** Nothing is re-sent, ever
@@ -243,65 +243,65 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   - Codex keeps failing closed (its sandbox is its only read limit).
   - Never: a silent fallback, an automatic relaunch without the sandbox, a re-sent prompt, an automatic switch to another mode,
     or weaker settings than "no sandbox, Durbar's checks".
-- **FR-008** A sandbox the app reports as lost during a session turns the chip to *Not sandboxed* with the app's reason at once;
+- **FR-008** `[IMPLEMENTED]` (test: `scripts/test-copilot-sandbox.ts`) A sandbox the app reports as lost during a session turns the chip to *Not sandboxed* with the app's reason at once;
   the session is not ended. The only surface named in the sources is Copilot's `session.warning` with `warningType: 'sandbox'`
   (`read:` SDK `rpc.d.ts`, `SandboxHostCapabilityName` doc); `sandboxConfigSource` is an input on the update and open params and
   has no getter or event, so it is not read. `[KNOWN GAP]` K12: whether Copilot or Claude report a lost sandbox in any other way.
 
 **C. What the person sees**
 
-- **FR-009** The chat header's mode chip (spec 018) shows the floor in words after the mode: *Read-only · Sandboxed*,
+- **FR-009** `[IMPLEMENTED]` (sim: `scripts/check-sandbox-floor.js`, both sizes) The chat header's mode chip (spec 018) shows the floor in words after the mode: *Read-only · Sandboxed*,
   *Ask first · Not sandboxed*, *Read-only · Sandbox: checking* (state `unknown`, until the start confirms it),
   *Allow all · Sandboxed (managed)*, *Allow all · Sandboxed (until a new session)*. `on` is shown only after the app confirmed it
   (FR-006, FR-007). Allow all with no sandbox shows nothing extra (it is the app
   default the person chose). The office card does not get a new word (layout, constitution V); the card's mode icon tooltip carries
   the same text. Never colour alone; text at least 10.5px; the 15-agent layouts at 1440x900 and 1280x800 do not change (decision Q5).
-- **FR-010** The tooltip and the mode menu say exactly what is covered, per app: Copilot "Shell commands and MCP servers run in
+- **FR-010** `[IMPLEMENTED]` (sim: `scripts/check-sandbox-floor.js`; `src/renderer/sandboxtext.js`) The tooltip and the mode menu say exactly what is covered, per app: Copilot "Shell commands and MCP servers run in
   <mechanism> (writes: <none | this folder>, network: off). File reads and edits are checked by Durbar."; Claude Code "Shell
   commands run in <mechanism> (…). MCP servers, file reads and edits are checked by Durbar, not the OS."; Codex "Commands and file
   changes run in the Codex sandbox (writes: none, network: off). If you approve a command, Codex may run it outside the sandbox."
   Mechanism plain names: macOS sandbox, bubblewrap, Windows ProcessContainer, Codex sandbox. **Until a real check for that app and
   OS is recorded** (T060-T062; a constant list in the adapter, empty at first), the tooltip ends with "Requested; not verified on a
   real session." (constitution VIII). No claim of a coverage the research does not back.
-- **FR-011** Adapters report a normalized `SandboxState`: `{ state: 'on' | 'off' | 'unknown', mechanism?: 'seatbelt' |
+- **FR-011** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts` T013) Adapters report a normalized `SandboxState`: `{ state: 'on' | 'off' | 'unknown', mechanism?: 'seatbelt' |
   'bubblewrap' | 'processcontainer' | 'vendor', managed?: boolean, untilNewSession?: boolean, covers: Array<'shell' | 'mcp' |
   'files'>, approvedMayLeave?: boolean, verified: boolean, reason?: string }`. The type is declared next to `AgentInfo` in
   `src/shared/api.ts` and holds no vendor name or vendor setting key; the vendor keys stay in `src/adapters/` (constitution II).
   `reason` is masked by the existing redaction and clipped to 200 characters. An adapter without the field shows nothing (the UI
   degrades, constitution II).
-- **FR-012** Settings > Agent apps (spec 081) shows one line per installed app: *OS sandbox: available (macOS sandbox)*, or
+- **FR-012** `[IMPLEMENTED]` (sim: `scripts/check-sandbox-floor.js`; `[KNOWN GAP]` there is no Organization page yet for the FR-173 pointer) Settings > Agent apps (spec 081) shows one line per installed app: *OS sandbox: available (macOS sandbox)*, or
   *not available: <reason>* with the fix (Linux packages, the Ubuntu AppArmor note already in the README for Codex, the Windows
   build Copilot needs). The Organization page's FR-173 note (spec 076) points to this line.
-- **FR-013** Mode switch (spec 018): the chip shows the floor in force, not the one asked for. Claude Code applies a new floor at the
+- **FR-013** `[IMPLEMENTED]` (test: `scripts/test-claude-sandbox.ts`, `scripts/test-copilot-sandbox.ts` AC2) Mode switch (spec 018): the chip shows the floor in force, not the one asked for. Claude Code applies a new floor at the
   next spawn (the existing relaunch with `--resume` at the next message, spec 012 FR-116; until then the hook keeps the stricter of
   the launched and current mode, FR-115), Copilot through `options.update` at the switch, Codex as today (FR-144).
 
 **D. Paths and safety**
 
-- **FR-014** Protected paths for Ask first: `.git/hooks`, `.git/config` inside each root, plus what the app already protects
+- **FR-014** `[IMPLEMENTED]` (test: `scripts/test-copilot-sandbox.ts`) Protected paths for Ask first: `.git/hooks`, `.git/config` inside each root, plus what the app already protects
   (Claude's list, Codex's `.git`/`.codex`/`.agents`/`.aws`). Durbar adds them to Copilot's `deniedPaths` only where `denied_paths`
   is reported; where it is not, the tooltip does not claim them.
-- **FR-015** Roots come only from the main process (the session's cwd and workspace folders, spec 006 FR-019), normalised like
+- **FR-015** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts` T010) Roots come only from the main process (the session's cwd and workspace folders, spec 006 FR-019), normalised like
   `codexWorkspaceRoots`; a filesystem root, a share root, a `..` or a control character drops that root; an empty list refuses
   Read-only and Ask first. No path from the renderer.
-- **FR-016** No secret goes into a sandbox setting. Durbar never turns on the vendors' credential injection (Copilot `auth.git`,
+- **FR-016** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts` scan; argv only) No secret goes into a sandbox setting. Durbar never turns on the vendors' credential injection (Copilot `auth.git`,
   `auth.gh`, `credentials`; Claude `credentials` masking) in these modes, never logs the settings JSON with paths outside debug,
   and spawns with argv only (no shell, constitution III).
 
 **E. Policy, simulator, tests, evidence**
 
-- **FR-017** The simulator gives sim agents each state (on per mechanism, off with a reason, managed) so the chip and tooltip are
+- **FR-017** `[IMPLEMENTED]` (sim: `scripts/check-sandbox-floor.js`) The simulator gives sim agents each state (on per mechanism, off with a reason, managed) so the chip and tooltip are
   checked with zero credits (constitution IV).
-- **FR-018** Pure modules with unit tests: `claudeSandboxSettings(mode, roots)`, `claudeSandboxState({ platform, version,
+- **FR-018** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts`) Pure modules with unit tests: `claudeSandboxSettings(mode, roots)`, `claudeSandboxState({ platform, version,
   haveBwrap, haveSocat, startExit })`, `copilotSandboxConfig(mode, roots, pathDirs, host)`, `copilotSandboxState(host, warning?)`,
   Codex's state from its existing checks; every OS through injected platform values.
-- **FR-019** Organization policy (spec 076): a new key `permissions.requireOsSandbox` (boolean, default `false`) makes FR-007
+- **FR-019** `[IMPLEMENTED]` for the rule (test: `scripts/test-sandbox-floor.ts` T050; adapter refusals in the T020/T021 tests) `[KNOWN GAP]` not reachable in the app: spec 076 has no policy reader yet, so `requireOsSandbox()` answers `false` Organization policy (spec 076): a new key `permissions.requireOsSandbox` (boolean, default `false`) makes FR-007
   refuse instead of warn. It can only narrow (spec 076's narrow-only rule); bad values count as `true` (fail closed). Confirmed by
   owner decision Q1.
-- **FR-020** Real checks are separate tasks (constitution IV): one tiny read-only prompt per app and OS within the owner's budget
+- **FR-020** `[KNOWN GAP]` T060-T062 open (no real session run) Real checks are separate tasks (constitution IV): one tiny read-only prompt per app and OS within the owner's budget
   (macOS, Linux, Windows), recording that a sandboxed command cannot write outside the folder or reach the network. Until then each
   claim is `sim:`/`test:` only, and both the tooltip (FR-010) and the README say "not verified on a real session".
-- **FR-021** **Codex approval cards in Ask first** say what approval may mean, in a line of its own that is never cut (a separate
+- **FR-021** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts`; sim: `scripts/check-sandbox-floor.js` whole line at both sizes) **Codex approval cards in Ask first** say what approval may mean, in a line of its own that is never cut (a separate
   normalized field on the permission, `sandboxNote`, not appended to the one-line `summary` that already carries file names and the
   undo note): `commandExecution` "If you approve, Codex may run this outside its sandbox."; `fileChange` "If you approve, Codex
   writes this outside its read-only sandbox." (filled in `codexPermission`, `src/adapters/codexModes.ts`),
@@ -358,6 +358,32 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
   word on the office card (keeps the 15-agent layout).
 
 ## Changes
+
+### 2026-10-25: built (T002-T050; T060-T062 open)
+
+Built on branch `087-os-sandbox-build`, simulator and fakes only (zero credits). What the build settled that the text above left open:
+
+- **Events and state.** Adapters emit a normalized `sandbox` event (`src/adapters/types.ts` `SandboxEvent`, checked by the event guard);
+  main keeps the cleaned state on `AgentInfo.sandbox` (`cleanSandboxState`, `src/shared/sandbox.ts`: own known fields, reason masked, then
+  cut to 200). A new capability `osSandbox` goes with `sandboxHost()` (all three) and `continueWithoutSandbox()` (Claude Code, Copilot).
+- **The note (FR-007)** is the `sandbox` event's `notice` (text plus the offered actions), not an error status: the message is marked *Not
+  sent*, the chat note has *Continue without the OS sandbox*, *Always continue on this computer* (Claude Code on `win32` only) and the
+  existing *Change mode…* (`changeModeButton`, split out of `modeRefusalAction`). The confirmation is the shared `askDialog`. A refusal
+  found before anything is spawned (the policy, or no usable root, FR-015) is thrown from `send`, so the existing send-failure note and
+  `modeRefusalAction` show it; a refusal at a sandbox exit is a `notice` with `refused: true` and no actions.
+- **Claude (FR-006, K4).** A sandbox exit is an exit before `init` with a stderr line that has the word "sandbox" and a failure word
+  (`claudeSandboxExit`); anything else is the crash path and the state stays `unknown`. The SDK transport (K5) counts as unavailable.
+  Host facts: `claude --version` through detection, `bwrap`/`socat` located with spec 012's candidate list (no shell), cached a minute.
+  A *Continue* is remembered per session id for the adapter's life (FR-007b); a new session id or a restart tries again.
+- **Copilot.** `getHostSupport()` once per runtime client; the floor is sent after create or resume (before `start` resolves, so before
+  the first send) and at each mode switch; *Sandboxed* after `options.update` resolved (the tooltip still says not verified, K8). The
+  home folder for FR-004 is `os.userInfo().homedir` (spec 076 FR-172), Windows and macOS compared case-insensitively.
+- **Managed (US4 AC2).** No real surface reports a managed floor (FR-008, K12), so only the simulator shows *Sandboxed (managed)*.
+- **Policy (FR-019).** `requireOsSandboxFrom(layers)` is the rule; spec 076 has no reader yet, so the app passes no layer (`[KNOWN GAP]`).
+- **Settings.** *Always continue* is stored as `sandboxAlwaysContinue` (app ids only) in the settings file and undone from the app's
+  Settings card; IPC `agents:sandboxContinue`, `adapters:sandboxHosts`, `adapters:sandboxAlwaysOff` (all owner-only, `fromApp`).
+- **Tests:** `scripts/test-sandbox-floor.ts`, `scripts/test-claude-sandbox.ts`, `scripts/test-copilot-sandbox.ts` (in `test:runtime`),
+  driver `scripts/check-sandbox-floor.js` (in `scripts/ui-suite.js`, both sizes). The README's Safety model and Known limits say all of this.
 
 ### 2026-10-25: review round 3 on PR #728 (Ruben's agent, 2 items)
 
