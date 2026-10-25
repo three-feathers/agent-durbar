@@ -15,7 +15,7 @@ This adds no parallel installer, runner, dialog or IPC family. It adds a pure *v
 ## Technical Context
 
 - **Language and runtime**: TypeScript in `src/main`, `src/shared` and `src/adapters`. Plain JS in `src/renderer` (`harnesses.js`, `screens.js`). Electron main and preload.
-- **Dependencies**: none new. Child processes use Node's `child_process.execFile` through the existing `nodeExec` (checks) and `HarnessSetup` (updates). Durbar's own version lookups use Electron `net.fetch` on the app session, so they follow the system or organization proxy and the OS certificate store (spec 076 FR-155, FR-156). They are behind an injected `LookupGet` type with `redirect: 'manual'` and `credentials: 'omit'`, and the FR-026 allow-list. Node's `https.get` (`officialinstall.ts`) is not used for these lookups.
+- **Dependencies**: none new. Child processes use Node's `child_process.execFile` through the existing `nodeExec` (checks) and `HarnessSetup` (updates). Durbar's own version lookups, and spec 060's installer download, use Electron `net.request` on the app session, so they follow the system or organization proxy and the OS certificate store (spec 076 FR-155, FR-156). They sit behind an injected `LookupGet` type with `redirect: 'manual'`, `credentials: 'omit'`, `useSessionCookies: false` and the FR-026 allow-list. For GitHub, the `redirect` event's URL is read and then `abort()` is called. `net.fetch` is not used, because with `redirect: 'manual'` it rejects with "Redirect was cancelled" in Electron 44 (`real:` 2026-10-25, re-reviews of #663).
 - **Storage**: `SettingsStore` (`src/main/settings.ts`) gains `announcedVersions: Record<'claude'|'codex'|'copilot', string>` (version strings only) and `checkUpdatesAtStart: boolean` (FR-022; on by default, Q6 = A; only `false` is written). Results stay in memory.
 - **Testing**: new `scripts/test-updatecheck.ts` (pure parsers, source detection, decision rules, announce rule, failure classes, start scheduling with fakes). It extends `scripts/test-harnesssetup.ts` (update argv per source with pinning, the root refusal for every updater, the update lock and session gate). A simulator driver `scripts/shots-081-updates.js` covers the card, dialog, badge and toast. All of this runs with 0 AI credits and no network: `nodeExec` and `LookupGet` are injected.
 - **Platforms**: Windows, macOS and Linux. Path logic is pure, with `path.win32` and `path.posix` and an injected environment, the same as `routeOwning` and `candidates`.
@@ -26,7 +26,7 @@ This adds no parallel installer, runner, dialog or IPC family. It adds a pure *v
 
 | Principle | How this plan complies |
 |---|---|
-| I Spec Kit | Spec, plan and tasks come before any `src/` change. Q1-Q5 are answered by the owner and recorded. |
+| I Spec Kit | Spec, plan and tasks come before any `src/` change. Q1-Q7 are answered by the owner and recorded; the `codex update` exception has dated deltas in specs 051 and 060. |
 | II Adapter boundary | Version, source and update knowledge for the CLIs lives in `src/shared/updatecheck.ts` (pure) and `src/main/updatecheck.ts`, beside the existing `harnesssetup` modules. The renderer sees only app ids, version strings, the source label and states. No vendor event names are involved. The bundled Copilot runtime stays pinned (FR-002). |
 | III Safe by default | Nothing updates without the native confirmation (SC-003), including a waiting update, which is confirmed again when it runs. Argv arrays only, `shell: false`. Curl-to-shell only with the owner's limited OK: `codex update` runs only for the official Codex CLI, refused as root, with the exact command shown, and anything else gets the checked installer. Fixed hosts and paths for the lookups, with no body read for GitHub. No credentials from Durbar: `.npmrc` is never read (npm may send its token; FR-017 says so), and `copilot` is never run to read a version. Every vendor updater is refused as root (FR-025). winget terms are never auto-accepted in the background. Output is masked. The start check is the owner's decision (Q1 = C), with a user switch and an organization key that fails closed (FR-022), and FR-017 lists everything it reveals. |
 | IV No AI credits | Checks and updates call package managers and the vendors' release endpoints, never a model. Tests use fixtures. A real update is a separate, owner-approved task (T040). |
@@ -46,7 +46,7 @@ No violations, so Complexity Tracking is empty.
 | `src/adapters/detect.ts` `parseVersion`, `compareVersions`, `detectBinary`, `candidates`, `displayPath`, `nodeExec` | installed version, version compare, finding the tool, running checks | `parseVersion` is the bounded first-line parse from PR #698 (spec 012 T133, closes #664), reused as is. `parseVersionField` (strict, structured field) is added in `updatecheck.ts` and reuses #698's token pattern where it fits (T008). `nodeExec` gains an `env` option, merged over `process.env` for that child only (`HOMEBREW_NO_AUTO_UPDATE`, `npm_config_update_notifier`). It also gains a **tree kill** on timeout: on Windows `taskkill /T /F /PID` from `%SystemRoot%\System32`, as `HarnessSetup` already does, because an `npm.cmd` run goes through `cmd.exe` and `execFile`'s timeout kills only `cmd.exe`; on POSIX the process group. A pre-release-aware compare goes in `updatecheck.ts` on top of `compareVersions`. |
 | `src/shared/harnesssetup.ts` `ROUTES`, `updatePlans`, `routeOwning`, `runRequest`, `lastLines`, `stripAnsi` | update argv per source, owning source, request validation, output | `routeOwning` learns Codex's `packages/standalone`, `~/.copilot/pkg`, Scoop (named, no route) and Linux `/usr/bin` / `/snap` (outside). It returns the cask name too (`claude-code` vs `claude-code@latest`). npm and winget updates take a checked version (pinned, FR-023). Copilot's brew update gains `--greedy`. Claude and Copilot official routes gain an *own updater* plan (`claude update`, `copilot update`). Codex's stays the 060 installer. winget's agreement flags are kept off checks (FR-004). |
 | `src/main/harnesssetup.ts` `HarnessSetup.plans`, `prepare`, `start`, `cancel`, `trustedPath`, `busy`, `isRoot` | the whole update run and its native confirmation | `prepare` accepts an own-updater plan: the binary is the app itself (real path, `trustedPath`) with fixed args. The `isRoot` refusal covers own updaters and every official installer (FR-025). The confirmation text shows the target version, whether it is pinned, the integrity line (FR-024) and, for `copilot update`, that it uses the GitHub sign-in. Before the confirmation, `prepare` calls the checker for a fresh check of that app (FR-023). |
-| `src/main/officialinstall.ts` allow-list style (`allowedScriptUrl`) | the pattern for the lookup allow-list | none to the file. The lookup allow-list (`LOOKUPS`, FR-026) lives in `src/shared/updatecheck.ts` with the same exact-host and path-prefix shape. The fetch is Electron `net.fetch` in `src/main/updatecheck.ts`. |
+| `src/main/officialinstall.ts` allow-list style (`allowedScriptUrl`) | the pattern for the lookup allow-list | The lookup allow-list (`LOOKUPS`, FR-026) lives in `src/shared/updatecheck.ts`, with the same exact-host and path-prefix shape. The installer download itself moves from `https.get` to `net.request` (one shared `netGet` helper in `src/main/netget.ts`, also used by the checker), keeping the per-hop allow-list and caps (spec 060 delta 2026-10-25, T024). |
 | `src/main/ipc/harness.ts`, `src/preload/preload.ts` | channels | new `harness:updates` (get the kept results, optionally `'check'`), the event `harness:updatesChanged`, and the op `'update'` on `harness:run` gaining the session-gate answer (D5). `scripts/test-ipc-channels` lists them. |
 | `src/renderer/harnesses.js` cards, plan dialog, progress modal | status line, chip, *Check for updates*, the start-check switch, Update…, session dialog | extended in place. No new dialog component: it uses `modal()`, the existing plan dialog, and `askDialog` with the *End all sessions?* wording from `app.js` `endAllSessions`, moved into a shared helper both use (FR-013). |
 | `src/renderer/screens.js` Settings entry | badge on *Settings > Agent apps* | a badge count from `harness:updates`. |
@@ -62,7 +62,7 @@ New files:
   - structured-field parsers for `npm view --json`, `brew info --json=v2` and `brew outdated --json=v2`, the winget table, and the Claude channel text, all through `parseVersionField` (FR-005);
   - the Copilot CLI version from the copy's files (FR-002);
   - the decision (`up-to-date`, `update-available`, `could-not-check`, `outside`), the pinning and `max` filter (FR-023), the announce rule, the failure classifier (FR-014, *Managed* only on vendor text) and the policy filter (FR-022).
-- `src/main/updatecheck.ts`: `UpdateChecker`, with the start scheduling, the queue (one app at a time), the in-memory results, the `net.fetch` lookups, the fresh check before a confirmation, and change events to the window.
+- `src/main/updatecheck.ts`: `UpdateChecker`, with the start scheduling, the queue (one app at a time), the in-memory results, the `net.request` lookups, the fresh check before a confirmation, and change events to the window.
 - `scripts/test-updatecheck.ts`, `scripts/fixtures/updatecheck/*` (outputs per source and OS, with where each one came from).
 
 ### D2 Source detection
@@ -88,27 +88,37 @@ It reuses `routeOwning` for the kind and adds the tool path, prefix and cask fro
   - winget: `['upgrade', '--id', id, '-e', '--source', 'winget', '--version', checked, ...agreementAfterNote]`.
   - brew: the existing `ROUTES[*].update` (plus `--greedy` for `copilot-cli`).
   - Own updaters: `['update']` for `claude` and `copilot`, run as the found binary of that copy (its real path, `trustedPath`, refused as root).
-  - Codex: `['update']` **only when `isOfficialCodex(realPath, env, versionLabel)`** says yes. That is a pure function in `src/shared/updatecheck.ts`:
-    - the real path is inside `<CODEX_HOME or ~/.codex>/packages/standalone/releases/`, or on Windows `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\`, compared after resolving links, with `path.win32`/`path.posix` and no case on Windows and macOS;
+  - Codex: `['update']` **only when `isOfficialCodex(realPath, env, versionLabel)`** says yes. That is a pure function in `src/shared/updatecheck.ts`, and the single place the standalone rule is written:
+    - the real path is inside `<CODEX_HOME or ~/.codex>/packages/standalone/releases/` on every OS, compared after resolving links, with a separator at the boundary, `path.win32`/`path.posix`, and no case on Windows and macOS;
     - `CODEX_HOME`, if set, is absolute;
     - `trustedPath` passes and the file is regular;
     - detection's label is `codex-cli`.
 
-    The confirmation text comes from one constant `CODEX_UPDATE_COMMAND` (`sh -c "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"` / the `irm … | iex` form on Windows), with its `read:` source (`update_action.rs` @970111f6), and says Durbar cannot see or check the script. Refused as root.
+    The Windows `install.ps1` folder is not standalone to Codex, so those copies use the 060 route directly. The child gets:
+    - an environment without `CODEX_MANAGED_BY_NPM`, `_PNPM`, `_BUN` and `_VITE_PLUS`;
+    - a fixed system `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`, or `%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\WindowsPowerShell\v1.0`);
+    - a fresh 0700 temp folder as the working folder, deleted afterwards.
+
+    The confirmation text comes from one constant, `CODEX_UPDATE_COMMAND`, with its `read:` source (`update_action.rs` @970111f6):
+    - POSIX: `sh -c "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"`;
+    - Windows: `powershell -ExecutionPolicy Bypass -c "$env:CODEX_NON_INTERACTIVE=1; irm https://chatgpt.com/codex/install.ps1 | iex"`.
+
+    It says the installed Codex decides what runs, and that Durbar cannot see or check the script. Refused as root.
   - Codex fallback, and every non-official Codex copy: the existing spec 060 plan (checked download, private file, size cap, root refusal) with `CODEX_NON_INTERACTIVE=1` in that child's environment only. `finish` reports `fallback: 'official'` when `codex update` exits with an unknown-subcommand answer, with "Could not detect the Codex installation method", or with another non-zero exit that is not *in-use* or *managed*. The window then offers the fallback with its own confirmation, and nothing retries by itself.
 
 ### D4 Lookups through Chromium
 
-`net.fetch(url, {method: 'HEAD' for GitHub / 'GET' for Claude, redirect: 'manual', credentials: 'omit', headers: {'User-Agent': 'AgentDurbar'}, signal: 10 s})` on the app's session.
+`net.request({url, method: 'HEAD' for GitHub / 'GET' for Claude, session: the app session, redirect: 'manual', credentials: 'omit', useSessionCookies: false})`, with the header `User-Agent: AgentDurbar` and a 10 s timer that calls `abort()`.
 
-- **GitHub**: the status must be 301/302/303/307/308, and `Location` must match the anchored pattern exactly (`https://github.com/openai/codex/releases/tag/rust-v` plus the version). The body is never read.
-- **Claude**: both channel files, with the body read up to 64 bytes through a capped reader. Each passes `parseVersionField`.
+- **GitHub**: the `redirect` event (`statusCode`, `method`, `redirectUrl`) gives the status, which must be 301, 302, 303, 307 or 308, and the URL, which must match the anchored pattern exactly (`https://github.com/openai/codex/releases/tag/rust-v` plus the version). Durbar then calls `abort()`, never `followRedirect()`. No `redirect` event (a `response` instead) counts as *Could not check*.
+- **Claude**: both channel files are read through a reader capped at 64 bytes. Each passes `parseVersionField`.
+- The T006 fake models `net.request` as an event emitter (`redirect`, `response`, `error`), so a test can tell a followed redirect from an aborted one.
 
 **`stable` decides** (Q7 = C): `update-available` only when installed < `stable`. When `stable` <= installed < `latest`, the result is `up-to-date` with `newerOnLatest: x.y.z`, which the card shows as a quiet note with no badge or toast. `[KNOWN GAP]`: the channel files are not a documented API.
 
 ### D5 Update lock and session gate (Q2 = A, review item 10)
 
-1. `harness:run(kind, 'update', idx, gate?)`. Main first takes `updateLock[kind]`, and returns `{busy}` if it is already held. The lock blocks every start, resume and send of that adapter (`agents:create`, `agents:start`, resume, `agents:send`) and the schedules runner. A due scheduled prompt is held and marked *held: <app> is updating* on its card.
+1. `harness:run(kind, 'update', idx, gate?)`. Main first takes `updateLock[kind]`, and returns `{busy}` if it is already held. The lock blocks every **start or resume** of that adapter: `agents:create`, `agents:start`, resume, and an `agents:send` or scheduled prompt **only when it would start or resume a session**. A send or scheduled prompt to a session that is still open goes through, because *Update when they end* waits for those sessions to finish (review on #663). A held scheduled prompt is marked *held: <app> is updating* on its card.
 2. Main counts `sessionsOf(adapter)`, where `claude` and `codex` map to their adapters and the `copilot` CLI has none:
    - `0`: go on to step 3.
    - more than 0 and no `gate`: return `{needsGate: n, busy: m, pendingPermissions: p, heldPrompts: q}` and keep the lock. The window shows the gate dialog with the shared *End all sessions?* wording.
@@ -148,7 +158,9 @@ src/main/harnesssetup.ts           (own-updater plan, codex fallback, session ga
 src/main/settings.ts               (announcedVersions)
 src/main/ipc/harness.ts            (harness:updates, gate arg)
 src/main/main.ts                   (start scheduling, sessionsOf, update lock in start/resume/send)
-src/main/schedules.ts              (hold due prompts while an update lock is held)
+src/main/schedules.ts              (hold due prompts that would start or resume a session while an update lock is held)
+src/main/netget.ts                 (new: net.request helper shared by the checker and officialinstall.ts)
+src/main/officialinstall.ts        (download through netget, per-hop allow-list kept; spec 060 delta)
 src/adapters/detect.ts             (nodeExec env and tree kill; the bounded parseVersion comes from PR #698)
 src/preload/preload.ts             (harnessUpdates, onHarnessUpdates)
 src/renderer/harnesses.js          (status line, chip, Check for updates, gate dialog, badge, toast)

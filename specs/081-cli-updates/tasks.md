@@ -41,15 +41,16 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
   - Tests: every T001 fixture, hostile output (huge, markup, `__proto__` JSON, a version with HTML), a pre-release installed, the downgrade case.
   - Mutations: accept a 65-character version; parse the npm error line as a version; add `--accept-source-agreements` to the background check.
 - [ ] T005 `src/shared/updatecheck.ts` `classifyFailure` (plan D8, FR-014): admin, in-use, managed (policy, winget refusal, recorded vendor text only), `vendor-up-to-date` (`claude update` "up to date", never *Managed*), uac-cancelled, network, other. Test each class with fixtures per OS. Mutations: drop the Windows `EBUSY` pattern; classify "Claude is up to date" as managed.
-- [ ] T006 `src/shared/updatecheck.ts` `LOOKUPS` and `src/main/updatecheck.ts` `LookupGet` over Electron `net.fetch` (FR-026, plan D4): `redirect: 'manual'`, `credentials: 'omit'`, `User-Agent: AgentDurbar`, 10 s, a capped body reader (64 bytes for the Claude channels, none for GitHub), and the anchored `Location` patterns.
-  - Tests with a fake fetch: a look-alike host, an off-list path, a `Location` to another host or path, a 200 instead of a redirect, the 570 KB body never read, an oversized channel body.
-  - Mutations: follow the redirect; allow any path on `github.com`.
+- [ ] T006 `src/shared/updatecheck.ts` `LOOKUPS` and `src/main/netget.ts` `LookupGet` over Electron **`net.request`** on the app session (FR-026, plan D4): `redirect: 'manual'`, `credentials: 'omit'`, `useSessionCookies: false`, `User-Agent: AgentDurbar`, 10 s, and a capped body reader (64 bytes for the Claude channels). For GitHub, read the `redirect` event's `statusCode` and `redirectUrl`, then `abort()`, never `followRedirect()`. `net.fetch` is not used ("Redirect was cancelled" in Electron 44, `real:` 2026-10-25).
+  - The fake models `net.request` as an event emitter (`redirect`, `response`, `error`).
+  - Tests: a look-alike host, an off-list path, a redirect URL to another host or path, a `response` with no redirect, the 570 KB body never read (the request is aborted), an oversized channel body.
+  - Mutations: call `followRedirect()`; allow any path on `github.com`; skip `abort()`.
 - [ ] T007 `src/main/settings.ts`: `announcedVersions` (an allowed app id and a valid version; anything else dropped) and `checkUpdatesAtStart` (a boolean, on by default per Q6 = A, only `false` written). Test a hostile matrix.
 - [ ] T008 Strict versions (FR-005, SC-008):
   - **The detection path is fixed by PR #698** (spec 012 T133, FR-039 delta, `Closes #664`): a bounded `parseVersion` on the first line, cut to 200 characters, that rejects error prose and tokens cut off at the cap, with mutations and a CPU backstop. Spec 081 reuses it and does not reimplement it. If #698 has not merged when this task starts, wait for it or rebase onto it. If it was changed or closed, re-read spec 012 and only then decide.
-  - **New here:** `parseVersionField` in `src/shared/updatecheck.ts`, for the structured fields that #698 does not cover (npm JSON, brew JSON, the `Location` tag, the Claude channel text). A field is cut to 64 characters, then matched against `^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-[0-9A-Za-z.-]{1,40})?$`. Reuse #698's bounded token pattern if it fits instead of keeping a second one, and name the shared constant in the PR.
+  - **New here:** `parseVersionField` in `src/shared/updatecheck.ts`, for the structured fields that #698 does not cover (npm JSON, brew JSON, the redirect tag, the Claude channel text). A field **longer than 64 characters is rejected, never cut**; otherwise it is matched against `^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-[0-9A-Za-z.-]{1,40})?$`. Reuse #698's bounded token pattern if it fits instead of keeping a second one, and name the shared constant in the PR.
   - Tests for the field parser: 64 KiB of digits within a CPU-time limit (`process.cpuUsage`), the npm error line, `rust-v0.164.0`, `v1.0.103`, `2.1.308`, and a 65-character version.
-  - Mutation: an unanchored field pattern must fail.
+  - Mutations: an unanchored field pattern; cutting to 64 instead of rejecting. A 65- to 71-character version with a valid-looking pre-release must be rejected.
 - [ ] T009 `src/adapters/detect.ts` `nodeExec`: an `env` option (merged for that child only) and a tree kill on timeout (Windows `taskkill /T /F /PID` from `%SystemRoot%\System32`; POSIX process group). Test with a fake `execFile`/`spawn` that a timeout kills the tree and that the env reaches only that child. Mutation: kill only the direct child.
 
 ## Phase 3: US1 See whether an app is out of date (P1, MVP)
@@ -72,6 +73,7 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
   - the check time and a chip with a word;
   - *Check for updates*, plus *Check* on each card;
   - the switch *Check for updates when Durbar starts* with its note (*Durbar checks for updates each time it starts*);
+  - with `features.agentAppUpdateCheck: false` or `updates.mode: "off"`: the button, *Check*, the *Latest* lines and the switch are hidden with *Turned off by your organization* (076 FR-158); with `allowInAppInstall: false`: the button stays, read-only (FR-022);
   - the Copilot runtime line plus the CLI line;
   - every value escaped (test: a hostile version and source).
 
@@ -83,19 +85,20 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
 - [ ] T020 [US2] `src/shared/harnesssetup.ts`:
   - npm and winget update argv pinned to the checked version (FR-023);
   - Copilot brew adds `--greedy`, and `claude-code@latest` updates that cask;
-  - own-updater plans `claude update` and `copilot update`, plus `codex update` only for an official Codex CLI (Q3 = C, limited). `isOfficialCodex` in `src/shared/updatecheck.ts` (plan D3). Every other Codex copy, and the fallback, uses the 060 installer plan with `CODEX_NON_INTERACTIVE=1`;
+  - own-updater plans `claude update` and `copilot update`, plus `codex update` (undocumented) only for an official standalone Codex CLI (Q3 = C, limited). `isOfficialCodex` in `src/shared/updatecheck.ts` is the single place for the standalone rule (plan D3): `<CODEX_HOME>/packages/standalone/releases/` on every OS. The Windows `install.ps1` folder, every other Codex copy, and the fallback use the 060 installer plan with `CODEX_NON_INTERACTIVE=1`;
   - for an update, only the owning route is shown, with the others behind *Show other ways* (FR-008).
 
   Extend `test-harnesssetup`, and test `isOfficialCodex` in `test-updatecheck`:
   - argv per source and OS, owning route only, the pin present;
-  - official versus non-official Codex: standalone root, Windows root, a look-alike `…/packages/standalonex/`, a link that leaves the root, a relative `CODEX_HOME`, a world-writable folder, a missing `codex-cli` label, npm and brew copies (own route, never `codex update`).
+  - official versus non-official Codex: the standalone root on each OS, the Windows `Programs\OpenAI\Codex\bin` folder (not official, goes to the 060 route), a look-alike `…/packages/standalonex/`, a link that leaves the root, a relative `CODEX_HOME`, a world-writable folder, a missing `codex-cli` label, npm and brew copies (own route, never `codex update`).
 
   Mutations: offer npm first for a brew copy; drop the pin; accept a prefix match without a path separator; skip the label check.
 - [ ] T021 [US2] `src/main/harnesssetup.ts`:
   - `prepare` accepts an own-updater plan (the app's binary, real path, `trustedPath`);
   - the `isRoot` refusal covers own updaters and every official installer (FR-025);
   - Codex's official installer run sets `CODEX_NON_INTERACTIVE=1` in that child's environment only;
-  - `codex update` gets the plain-words confirmation with the exact `CODEX_UPDATE_COMMAND` for the OS, and *Durbar cannot see or check that script*;
+  - `codex update` gets the plain-words confirmation with the exact `CODEX_UPDATE_COMMAND` for the OS (Windows: `powershell -ExecutionPolicy Bypass -c "$env:CODEX_NON_INTERACTIVE=1; irm https://chatgpt.com/codex/install.ps1 | iex"`), that the installed Codex decides what runs, and *Durbar cannot see or check that script*;
+  - the `codex update` child: `CODEX_MANAGED_BY_NPM`, `_PNPM`, `_BUN` and `_VITE_PLUS` removed from its environment, a fixed system `PATH` (POSIX `/usr/bin:/bin:/usr/sbin:/sbin`; Windows from an absolute `SystemRoot` only), and a fresh 0700 temp working folder deleted afterwards;
   - the fallback: `finish` reports `fallback: 'official'` for an unknown subcommand, "Could not detect the Codex installation method", or another failing exit that is not in-use or managed, and the window offers the 060 route with its own confirmation;
   - the confirmation shows the target version, pinned or not, the integrity line (FR-024) and Copilot's sign-in note.
 
@@ -104,24 +107,28 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
   - the env var only on that child;
   - each fallback trigger offers the 060 route and never retries by itself;
   - in-use gives no fallback;
-  - the confirmation text holds the exact command.
+  - the confirmation text holds the exact command;
+  - with each `CODEX_MANAGED_BY_*` set in Durbar's environment, the child has none;
+  - the child's `PATH` is the fixed list even when the user's `PATH` has a folder with a fake `sh` or `curl`;
+  - the working folder is the temp folder and is removed.
 
-  Mutations: check `isRoot` only for `plan.script`; retry `codex update` automatically; drop the command from the confirmation.
+  Mutations: check `isRoot` only for `plan.script`; retry `codex update` automatically; drop the command from the confirmation; pass `CODEX_MANAGED_BY_NPM` through; inherit `PATH`.
 - [ ] T022 [US2] Version drift and `max` (FR-023): a fresh check of that app before the confirmation; with a `max`, only pinnable routes, pinned and within range; a non-pinnable owning route gives the explanation. After the run, detection runs again, and the shadowing-copy message appears when relevant (FR-011). An `outside` copy gets a hint and no Update (FR-012). Test the decision table, including the source moving on between check and confirm. Driver: dialog, progress, new version.
+- [ ] T024 [US2] Spec 060 delta (2026-10-25): `src/main/officialinstall.ts` downloads through `netget.ts` (`net.request` on the app session), so the update fallback follows the proxy and the OS certificates (076 FR-155, FR-156). It keeps the per-hop allow-list (each redirect checked in the `redirect` event before `followRedirect()`), the 3-redirect limit, the 1 MB cap, the 30 s limit and the private file. Extend `test-officialinstall` with the fake `net.request`: an off-list hop is refused before it is followed. Mutation: follow before checking.
 - [ ] T023 [US2] SC-003: every path to `start` passes the native confirmation (own updater, Codex official, waiting update).
 
 ## Phase 5: US3 Open sessions (P1, MVP)
 
 - [ ] T030 [US3] The update lock and gate (plan D5, FR-013):
   - `updateLock[kind]` is taken on *Update…*, before the count, and held to the finish;
-  - the lock is checked in `agents:create`, `agents:start`, resume, `agents:send` and the schedules runner, where a due prompt is held and marked *held: <app> is updating*;
+  - the lock blocks `agents:create`, `agents:start`, resume, and an `agents:send` or scheduled prompt **only when it would start or resume a session** (held and marked *held: <app> is updating*); sends and scheduled prompts to sessions that are still open go through, so *Update when they end* can finish;
   - `{needsGate, busy, pendingPermissions, heldPrompts}`;
   - `wait` and `end` (`end` calls `stopTurnOp`, then `endSessionOp`);
   - count again after the confirmation;
   - release on finish, failure, cancel or quit;
   - Copilot CLI: no gate.
 
-  Tests with a fake session list and schedules: a resume or scheduled prompt during the confirmation is blocked, and the re-count sends the dialog back; no run while sessions are open (SC-004); cancel releases. Mutations: take the lock after the count; skip the re-count; skip `stopTurnOp`.
+  Tests with a fake session list and schedules: a resume or scheduled prompt during the confirmation is blocked, and the re-count sends the dialog back; no run while sessions are open (SC-004); cancel releases. A send to a live session goes through while the update waits; a send that would resume an ended session is held. Mutations: take the lock after the count; skip the re-count; skip `stopTurnOp`; block sends to live sessions.
 - [ ] T031 [US3] The gate dialog in `harnesses.js` uses the *End all sessions?* wording, through a helper shared with `app.js` `endAllSessions`. It adds pending permission requests and held prompts, and the card line *Update waiting for N sessions* with Cancel. Simulator driver with simulated sessions.
 
 ## Phase 6: US4 Failures (P2)
@@ -148,7 +155,7 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
 ## Phase 8: Docs and polish
 
 - [ ] T035 [P] README (*Safety model*, *Agent apps*): the start check and its switch, the FR-017 table (IP, time, User-Agent, npm's token and notifier, brew runs), the policy keys, the integrity per updater (FR-024), no root and no auto-accepted winget terms. Also `changelog.d/081-cli-updates.md`. Retake the linked Agent apps screenshots with `npm run shots:docs -- --only <setup driver>`.
-- [ ] T036 [P] `docs/agent-notes.md`: add an entry saying that `codex update` is curl-to-shell (used only for the official Codex CLI, Q3), that GitHub `releases/latest` is too big and the `Location` header gives the tag, and that `copilot` may update itself when started. Add the vendor updater facts with evidence once T040-T042 run. Spec 076: add `features.agentAppUpdateCheck` to its feature list (FR-159), in this PR or in 076's.
+- [ ] T036 [P] `docs/agent-notes.md`: add an entry saying that `codex update` is curl-to-shell (used only for the official Codex CLI, Q3), that GitHub `releases/latest` is too big and the `Location` header gives the tag, and that `copilot` may update itself when started. Add the vendor updater facts with evidence once T040-T042 run. Spec 076: add `features.agentAppUpdateCheck` to its feature list (FR-158, FR-159), and update **FR-174** so `updates.mode: "off"` also turns off spec 081's start check and its *Check for updates* (Q6 = A), in this PR or in 076's.
 - [ ] T037 `npm run typecheck && npm run build && npm test`; run `docs/review-checklist.md`; `/speckit-converge`.
 
 ## Phase 9: Real-machine checks (owner-approved; each changes an installed app; 0 AI credits)
@@ -189,11 +196,11 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
 - FR-019: T003, T041, T042
 - FR-020: T014
 - FR-021: T001, T040-T042
-- FR-022: T007, T011, T033
+- FR-022: T007, T011, T013, T033
 - FR-023: T020, T022
 - FR-024: T021, T035
 - FR-025: T021
-- FR-026: T006
+- FR-026: T006, T024
 - SC-001: T013
 - SC-002: T011
 - SC-003: T023

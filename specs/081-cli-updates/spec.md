@@ -64,7 +64,7 @@ On a card that says *Update available* I choose **Update…**. Durbar shows what
 
 1. **Given** Codex from the Homebrew cask, **When** I choose *Update…*, **Then** the dialog names Homebrew, the command `brew upgrade --cask codex`, the real path of `brew`, and *Update*; Cancel is the default; nothing runs until I confirm in the native confirmation (spec 051 FR-004b).
 2. **Given** I confirm, **Then** the output appears as the last lines, ANSI removed and masked (`redact()` and the OAuth mask), and on success detection runs again and the card shows the new version.
-3. **Given** Claude Code from the native installer, **Then** the update runs Claude Code's own updater (`claude update`) instead of downloading the installer again; the GitHub Copilot CLI from its install script runs `copilot update`; Codex from its installer gets the official installer again, through spec 060's allow-listed download, with `CODEX_NON_INTERACTIVE=1` (FR-009; Q3 asked again).
+3. **Given** Claude Code from the native installer, **Then** the update runs Claude Code's own updater (`claude update`) instead of downloading the installer again; the GitHub Copilot CLI from its install script runs `copilot update`; Codex in OpenAI's standalone layout runs `codex update` (undocumented, Q3 = C, limited), with a confirmation that shows the installer command it runs; any other Codex copy, and a failing `codex update`, gets spec 060's checked installer with `CODEX_NON_INTERACTIVE=1` (FR-009).
 4. **Given** the update ends but detection still finds the old version (another copy earlier on `PATH`), **Then** the card says *Updated, but Durbar still finds 0.163.0 at /usr/local/bin/codex* and names both paths.
 5. **Given** no update was ever asked for, **Then** Durbar never updates an app by itself (no automatic updates, not even after the start check finds one).
 
@@ -195,8 +195,8 @@ When the start check finds a new version, the Settings entry and the card get a 
     - **Claude Code from npm** uses npm. A source with no way to ask gives *Latest: cannot be checked for this install*, never a guess.
 - **FR-005** `[PLANNED]` **Strict version parsing** (review on #663: `parseVersion` is unanchored and quadratic on long digit runs, and it would take `22.11.0` out of `npm ERR! … node v22.11.0`). A version is accepted only like this:
   - Take the **structured field**: the JSON string (`npm view --json`, `brew info` `version`), the `Location` path segment, or the channel file's text after trimming. Never search free text.
-  - **Cut it to 64 characters.**
-  - Match **one anchored, bounded pattern**: `^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-[0-9A-Za-z.-]{1,40})?$`. Homebrew's `,build` suffix is cut at the first comma before the match.
+  - **Reject anything longer than 64 characters** (never cut: a cut can leave a shortened pre-release that still matches; review on #663).
+  - Match **one anchored, bounded pattern**: `^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-[0-9A-Za-z.-]{1,40})?$`. Homebrew's `,build` suffix is removed at the first comma, and the length check applies to the whole field before that.
   - Anything else gives *Could not check: unexpected answer*.
 
   Other rules:
@@ -234,27 +234,42 @@ When the start check finds a new version, the Settings entry and the card get a 
   - **Official installer**:
     - Claude Code native: `claude update` (documented).
     - GitHub Copilot CLI: `copilot update` (documented). The dialog says that it uses the user's GitHub sign-in to ask GitHub's release API (research R7).
-    - **Codex** (owner decision Q3 = C, limited, 2026-10-25: *"if it is official codex cli, it is ok"*): `codex update`, **only when the copy is the official Codex CLI**. Otherwise, and as the fallback, the official installer runs the way spec 060 FR-001 runs it: downloaded from the allow-listed hosts to a private file, size-capped, refused as root, with the native confirmation naming the URL, and `CODEX_NON_INTERACTIVE=1` set in that child's environment only, as OpenAI's own update hint does (research R3).
-      - **Official means all of these** (a pure check with an injected environment; anything else is refused, and the checked 060 route is offered instead):
-        - the binary's real path (symlinks resolved) lies inside an official vendor install root: `<CODEX_HOME>/packages/standalone/releases/<version>-<target>/` (default `~/.codex`; the standalone layout, research R1), or on Windows `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\` (OpenAI's `install.ps1`, spec 060 `real:` 2026-10-20). Copies from npm (`node_modules/@openai/codex/`) and Homebrew (`Caskroom/codex/`) are official too, but they update through their own route (FR-009 npm and Homebrew rows), never through `codex update`;
+    - **Codex** (owner decision Q3 = C, limited, 2026-10-25: *"if it is official codex cli, it is ok"*): `codex update`, which is **undocumented** (it is in Codex's source, `codex-rs/cli/src/main.rs`, not in OpenAI's docs). It runs **only when the copy is the official Codex CLI in OpenAI's standalone layout**. Every other Codex copy, and the fallback, uses the official installer the way spec 060 FR-001 runs it: downloaded from the allow-listed hosts to a private file, size-capped, refused as root, with the native confirmation naming the URL, and `CODEX_NON_INTERACTIVE=1` set in that child's environment only, as OpenAI's own update hint does (research R3).
+      - **The standalone rule, written once** (`isOfficialCodex`, a pure check with an injected environment). All of these must hold, and anything else gets the checked 060 route:
+        - the binary's real path (symlinks resolved) lies inside `<CODEX_HOME>/packages/standalone/releases/` on **every OS**, where `CODEX_HOME` defaults to `~/.codex`, with a path separator at the boundary. This is the only layout Codex itself counts as standalone (`read:` openai/codex @970111f6 `codex-rs/install-context/src/lib.rs:309-326`, review on #663).
+          - The Windows `install.ps1` folder `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\` (spec 060 `real:` 2026-10-20) is **not** in that layout: Codex would answer "Could not detect the Codex installation method", so those copies go straight to the checked 060 route.
+          - Copies from npm (`node_modules/@openai/codex/`) and Homebrew (`Caskroom/codex/`) update through their own route (the npm and Homebrew rows), never through `codex update`.
         - `CODEX_HOME`, when set, is an absolute path, and the root is compared after resolving it (no `..`, no link that leaves it), case-insensitive on Windows and macOS;
         - the file passes the existing `trustedPath` check (not in a folder anyone can change) and is a regular file;
         - `codex --version` (already run by detection) printed the official label `codex-cli <version>` through spec 012's bounded parse (PR #698).
-        - A binary outside those roots (a fork, a self-built copy, an unknown folder) never gets `codex update`.
-      - **The confirmation says plainly what runs.** *`codex update` downloads OpenAI's installer script and runs it: `sh -c "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"`*. On Windows it shows *`powershell -ExecutionPolicy Bypass -c "irm https://chatgpt.com/codex/install.ps1 | iex"`*. It also says *Durbar cannot see or check that script; `sh`, `curl` or `powershell` come from your PATH*, with the exact command copied from `update_action.rs` at the pinned commit and kept in one constant with its `read:` source.
+        - A binary outside that root (a fork, a self-built copy, an unknown folder) never gets `codex update`.
+      - **The child's environment and folder** (review on #663):
+        - **`CODEX_MANAGED_BY_NPM`, `CODEX_MANAGED_BY_PNPM`, `CODEX_MANAGED_BY_BUN` and `CODEX_MANAGED_BY_VITE_PLUS` are removed** from the child's environment. Codex reads them before its path checks (`install-context/src/lib.rs` @970111f6), and with one set, `codex update` would run `npm`/`pnpm`/`bun`/`vp install -g` while the confirmation shows the installer script.
+        - **`PATH` is a fixed system list**, so `sh`, `curl` and `powershell` cannot come from a user or hostile `PATH` entry. POSIX gets `/usr/bin:/bin:/usr/sbin:/sbin`. Windows gets `%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\WindowsPowerShell\v1.0`, built from `SystemRoot` only when it is an absolute path. Codex does the same on Windows itself (`cli/src/main.rs:831-846` @970111f6). A system without `curl` in those folders fails, and the fallback applies.
+        - **The working folder is a fresh private temp folder** (0700, from the OS temp folder), deleted when the run ends.
+        - `CODEX_HOME` is passed on unchanged only when it was used for the standalone check.
+      - **The confirmation says plainly what runs.** *`codex update` downloads OpenAI's installer script and runs it.* It shows the command for the OS, copied word for word from `update_action.rs` @970111f6 and kept in one constant with that `read:` source:
+        - POSIX: `sh -c "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"`;
+        - Windows: `powershell -ExecutionPolicy Bypass -c "$env:CODEX_NON_INTERACTIVE=1; irm https://chatgpt.com/codex/install.ps1 | iex"`.
+
+        It also says: *This is what Codex version @970111f6 runs; the Codex you have installed decides what actually runs. Durbar cannot see or check the script; `sh`, `curl` or `powershell` are found by Codex on the system PATH Durbar sets, and on Windows it runs with `-ExecutionPolicy Bypass`.*
       - **Root**: refused as root (FR-025).
       - **Fallback**: when `codex update` is missing (an unknown-subcommand answer), says "Could not detect the Codex installation method", or fails (non-zero exit that is not FR-014 *File in use* or *Managed*), the card offers the checked 060 installer route with its own native confirmation. It never retries `codex update` by itself.
-    - **Why it needs the limit** (`read:` openai/codex @970111f6 `codex-rs/tui/src/update_action.rs` (review on #663): for a standalone install it runs `sh -c "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"` (Windows: `powershell -ExecutionPolicy Bypass -c "irm …install.ps1 | iex"`), with `sh`, `curl` and `powershell` taken from `PATH`. That skips 060's host allow-list, private file, size cap and root refusal, and the confirmation could not show what runs. For an install method Codex cannot detect, it exits with "Could not detect the Codex installation method".)
+    - **Why it needs the limit** (`read:` openai/codex @970111f6 `codex-rs/tui/src/update_action.rs`, review on #663): the command runs a script that skips spec 060's host allow-list, private file, size cap and root refusal. This is the one exception to spec 051 D1 and spec 060 FR-001 ("nothing downloaded is piped into a shell"), recorded as dated deltas in both specs' `## Changes`.
   - **No elevation.** Never `sudo`, `runas` or an elevation of Durbar's own. winget may raise Windows' own UAC prompt for a machine-wide package.
   - **Root** (FR-025).
 - **FR-010** `[PLANNED]` **Output.** The existing masked last-lines view: ANSI stripped, `redact()`, the OAuth mask, 200 characters per line. The full output is never logged, saved or sent. Durbar's existing time limit and Cancel for a setup step apply, with the tree kill of plan D1, so a Windows `npm.cmd` run is ended with its children and not only `cmd.exe`.
 - **FR-011** `[PLANNED]` After the update, detection runs again (spec 051 FR-004). If the version did not change, or another copy is found first, the card names the copy that was updated and the one Durbar finds. Durbar does not remove or reorder copies.
 - **FR-012** `[PLANNED]` A copy installed outside Durbar's routes (unknown source, distribution packages, a hand-copied binary) gets no Update. When the real path says where it came from (`/usr/bin` with a Linux distribution, `/snap/`), the card names that tool (*Update it with your system's package manager*) and offers the vendor's page.
 - **FR-013** `[PLANNED]` **Open sessions** (US3, owner decision Q2 = A). The sessions that count are those whose adapter runs this app: Claude Code is the `claude` adapter, Codex is the `codex` adapter, and the GitHub Copilot CLI has none (FR-002).
-  - **The update lock is taken first and held to the end.** The moment *Update…* is chosen, main takes an update lock for that app. From then until the update finishes, fails or is cancelled, no session of that adapter starts or resumes, and no queued or scheduled prompt for one is sent. A start says why. A scheduled prompt that comes due is held and listed on its card as *held: Codex is updating*, then sent when the lock is released, or reported as missed if spec 044's rules say so. Only then does main count the open sessions.
+  - **The update lock is taken first and held to the end.** The moment *Update…* is chosen, main takes an update lock for that app. From then until the update finishes, fails or is cancelled:
+    - **no session of that adapter starts or resumes**, including a send or a scheduled prompt that would start one or resume an ended session. A start says why. Such a scheduled prompt is held and listed on its card as *held: Codex is updating*, then sent when the lock is released, or reported as missed if spec 044's rules say so;
+    - **messages and scheduled prompts to sessions that are still open go through.** *Update when they end* waits for those sessions to finish their work, so it must not stop them (review on #663).
+
+    Only then does main count the open sessions.
   - **When sessions are open**, the dialog says how many and offers *Update when they end* (the default), *End N sessions and update*, and Cancel. Cancel releases the lock.
   - ***Update when they end*** keeps the lock as a waiting update, shown on the card with Cancel. When the count reaches 0, the native confirmation appears again: consent is given at the moment of running, as spec 051 FR-004b requires. The waiting update is not saved across restarts.
-  - ***End N sessions and update*** uses the wording of the existing *End all sessions?* dialog (`askDialog` in `src/renderer/app.js` `endAllSessions`: "N sessions end and free their places (M still working: their replies stop). The chats stay; send a message to pick up where you left off."). It adds, when there are any, the number of pending permission requests (they are denied) and of queued or scheduled prompts for those sessions (they are held, as above). Each session's running turn is interrupted first (`stopTurnOp`), then the session ends (`endSessionOp`, which does not interrupt by itself), and it stays resumable.
+  - ***End N sessions and update*** uses the wording of the existing *End all sessions?* dialog (`askDialog` in `src/renderer/app.js` `endAllSessions`: "N sessions end and free their places (M still working: their replies stop). The chats stay; send a message to pick up where you left off."). It adds, when there are any, the number of pending permission requests (they are denied) and of queued or scheduled prompts for those sessions (they are not sent once the sessions have ended; one that would resume them is held, as above). Each session's running turn is interrupted first (`stopTurnOp`), then the session ends (`endSessionOp`, which does not interrupt by itself), and it stays resumable.
   - **Count again after the native confirmation.** If a session is open by then (one the lock could not stop, such as a session started from outside Durbar's own start path), the update does not start and the gate dialog comes back.
   - Durbar does not offer "update now anyway" while sessions are open.
 - **FR-014** `[PLANNED]` **Failure advice** (US4). A failed check or update is classified from the exit code, the error code and the masked output, by a pure function with fixtures per source and OS:
@@ -295,18 +310,23 @@ When the start check finds a new version, the Settings entry and the card get a 
   | Claude Code, native installer | `downloads.claude.ai` (`/claude-code-releases/stable` and `/latest`) | `User-Agent: AgentDurbar` | two small requests |
   | outside Durbar's routes | nothing | | |
 
-  Durbar's own requests (the last three rows) go through **Chromium's network stack** (Electron `net.fetch` on the app's session, `redirect: 'manual'`). They therefore follow the system or organization proxy and the OS certificate store (spec 076 FR-155, FR-156), not Node's `https.get`. Each request follows FR-026's host and path allow-list, a 10 s limit, a 64 KiB cap and no credentials or cookies (`credentials: 'omit'`). The child tools (npm, brew, winget) use their own proxy settings. Durbar keeps no log of the checks and saves nothing but the announced versions (FR-016). The bundled Copilot runtime is never checked, because it updates with Durbar.
+  Durbar's own requests (the last three rows) go through **Chromium's network stack** (Electron `net.request` on the app's session with `redirect: 'manual'`, `credentials: 'omit'` and `useSessionCookies: false`. For GitHub, the `redirect` event's URL is read and the request is aborted. `net.fetch` with `redirect: 'manual'` rejects with "Redirect was cancelled" in Electron 44, `real:` 2026-10-25 by Ruben's and Paco's agents). They therefore follow the system or organization proxy and the OS certificate store (spec 076 FR-155, FR-156), not Node's `https.get`. Each request follows FR-026's host and path allow-list, a 10 s limit, a 64 KiB cap and no credentials or cookies (`credentials: 'omit'`). The child tools (npm, brew, winget) use their own proxy settings. Durbar keeps no log of the checks and saves nothing but the announced versions (FR-016). The bundled Copilot runtime is never checked, because it updates with Durbar.
 - **FR-018** `[PLANNED]` **How commands run.**
   - Every command runs as an argv array with `shell: false`, through the existing runner (`HarnessSetup` for updates, `nodeExec` for checks).
   - Arguments come only from main's fixed table, plus a package name from that table and a checked version that passed FR-005.
   - The window sends nothing except the app id and a route index (existing `runRequest`).
   - Windows `.cmd` shims (npm) run the way spec 051 already runs them: verbatim arguments through `cmd.exe` with the fixed, checked argv.
+  - **One exception, inside the child:** Durbar starts `codex update` with argv and no shell, but Codex itself then starts a shell (`sh -c`, or `powershell -c`) for its installer command. FR-009 limits it to the official standalone Codex, with a fixed `PATH`, a temp folder and a cleaned environment.
 - **FR-019** `[PLANNED]` **Platforms** (constitution VI): macOS (Homebrew cask, npm, official installer), Linux (official installer, npm, Linuxbrew), Windows (winget, npm, official PowerShell installer; Scoop is detected and named but not run, [KNOWN GAP] until a route exists). Path checks use `path.win32`/`path.posix` in pure functions with an injected environment, case-insensitive on Windows and macOS. Not verified on a real Mac or Windows machine until a task records it (`[KNOWN GAP]` per platform).
 - **FR-020** `[PLANNED]` **Simulator** (constitution IV): canned installed and latest versions per app and source (one up to date, one with an update, one that cannot be checked), a canned update run, simulated sessions for US3; no network, no package manager.
 - **FR-021** `[PLANNED]` **No real update in tests.** `npm test` uses fixtures of each tool's output (captured from documentation or a recorded run, with the source named); a real update on a real machine is a separate, owner-approved task (it changes the user's installed app).
 - **FR-022** `[PLANNED]` **Turning the start check off** (spec 076 FR-159: a feature that sends requests off the machine needs its own switch).
-  - **The user's switch.** Settings > Agent apps has *Check for updates when Durbar starts*. It is **on by default** (owner decision Q6 = A), saved with the other settings as a boolean (only `false` is written). *Check for updates* (the button) always works.
-  - **The organization's switch.** 076 gets the key `features.agentAppUpdateCheck: false`, which locks the user's switch off and shows *Set by your organization*. Spec 076's `updates.mode: "off"` (FR-174) also turns the start check off and locks the switch (Q6 = A). `agentApps.allowInAppInstall: false` (FR-032, FR-175) also turns the start check off and hides Update; the button stays as a read-only check. Air-gapped machines (076 FR-162) set any of these keys.
+  - **The user's switch.** Settings > Agent apps has *Check for updates when Durbar starts*. It is **on by default** (owner decision Q6 = A), saved with the other settings as a boolean (only `false` is written). *Check for updates* (the button) works whatever the switch says, unless an organization key below hides the feature.
+  - **The organization's switches** (review on #663, 076 FR-158):
+    - `features.agentAppUpdateCheck: false` turns the whole check off, in main and in the window. The start check, the *Check for updates* button, *Check* on each card and the *Latest* lines are hidden, with *Turned off by your organization*, and nothing is contacted. Update… then appears only for `too-old`, as spec 051 does today, with spec 051's unpinned `@latest` argv.
+    - `updates.mode: "off"` (076 FR-174) does the same (Q6 = A). An air-gapped organization sets it to mean "no update traffic at all". T036 updates 076 FR-174 to say so.
+    - `agentApps.allowInAppInstall: false` (FR-032, FR-175) turns the start check off and hides Update. The button stays as a read-only check, because the organization blocked installs, not checks.
+    - Air-gapped machines (076 FR-162) set `updates.mode: "off"` or the feature key.
   - **Fail closed.** If the policy is present but cannot be read or validated (076's closed mode), the start check does not run, and the card says *Not checked: your organization's settings could not be read*.
   - Until spec 076's reader exists, `updatePolicy()` reads no policy and only the user's switch applies. This is stated as a `[KNOWN GAP]` and wired up in T033.
 - **FR-023** `[PLANNED]` **The version that gets installed** (review on #663: `@latest`, `brew upgrade`, `claude update` and `copilot update` install whatever is newest when they run).
@@ -330,7 +350,8 @@ When the start check finds a new version, the Settings entry and the card get a 
   - `github.com` `/openai/codex/releases/latest` and `/github/copilot-cli/releases/latest`. The answer must be a 3xx whose `Location` matches FR-004's anchored pattern, and the body is not read.
   - `downloads.claude.ai` `/claude-code-releases/stable` and `/claude-code-releases/latest`. The body is at most 64 bytes of text and passes FR-005.
 
-  The requests are made with Electron's `net.fetch` on the app session (proxy and OS certificates; spec 076 FR-155, FR-156), `credentials: 'omit'`, a 10 s limit and a 64 KiB cap. Tests: a look-alike host, an off-list path, a `Location` to another host or path, an oversized body, and a 64 KiB digit body within a CPU-time limit.
+  The requests are made with Electron's `net.request` on the app session (proxy and OS certificates; spec 076 FR-155, FR-156) with `redirect: 'manual'`, `credentials: 'omit'`, `useSessionCookies: false`, a 10 s limit and a 64 KiB cap. For GitHub, the `redirect` event gives the status and the new URL, and Durbar calls `abort()` right after reading it, so no body is fetched. Tests: a look-alike host, an off-list path, a redirect to another host or path, no redirect event (a 200), an oversized body, and a 64 KiB digit body within a CPU-time limit.
+  - **The update fallback uses the same stack.** Spec 060's installer download (`src/main/officialinstall.ts`, today Node's `https.get`) moves to `net.request` on the app session, so it also follows the proxy and the OS certificates (076 FR-155, FR-156). It keeps 060's per-hop allow-list, size cap, private file and time limit (a dated delta in spec 060).
 
 ### Out of scope
 
@@ -368,7 +389,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 - `[KNOWN GAP]` Not run on a real machine yet for any source; the parsers rely on documented output (`read:` in research.md) until a recorded run.
 - `[KNOWN GAP]` Homebrew's "latest" is as fresh as its local data (Q4 = A: no `brew update`).
-- `[KNOWN GAP]` `codex update` downloads and runs a script Durbar cannot see or check (Q3 = C, limited to the official Codex CLI; FR-009, FR-024). The *official* check is by install path, file trust and the version label, not by a code signature (not verified on macOS or Windows).
+- `[KNOWN GAP]` `codex update` is **undocumented** and downloads and runs a script Durbar cannot see or check (Q3 = C, limited to the official standalone Codex CLI; FR-009, FR-024). The command shown is a snapshot of `update_action.rs` @970111f6; a later Codex can change what it runs. `sh`, `curl` and `powershell` are found by Codex on the fixed system `PATH`, not as absolute paths given by Durbar, and Windows runs with `-ExecutionPolicy Bypass`. The *official* check is by install path, file trust and the version label, not by a code signature (not verified on macOS or Windows).
 - `[KNOWN GAP]` The Claude channel files (`downloads.claude.ai/claude-code-releases/stable|latest`) are not a documented API; a change shows as *Could not check*.
 - `[KNOWN GAP]` Integrity: `claude update`'s use of the signed manifest, `copilot update`'s checks and the official installers' own checks are *unconfirmed* (FR-024).
 - `[KNOWN GAP]` Until spec 076's reader exists, no organization policy can turn the start check off; only the user's switch does (FR-022).
@@ -459,6 +480,22 @@ When the start check finds a new version, the Settings entry and the card get a 
 ### Session 2026-10-25: owner decision on Q7 (Vikram, 00:10 UTC)
 
 - Q7 → **C**: for Claude Code native, *Update available* only when the installed version is below `stable`. When a newer `latest` exists, a quiet note (*A newer latest-channel build exists*) appears, with no badge and no toast. Recorded in FR-004, FR-014, plan D4, and tasks T010, T013 and T034.
+
+### Session 2026-10-25: Ruben's and Paco's re-reviews of #663 at 3cefdd3f
+
+- **Lookups use `net.request`**, reading the `redirect` event and then aborting (FR-017, FR-026). Both agents found that `net.fetch` with `redirect: 'manual'` throws "Redirect was cancelled" in Electron 44 (`real:` 2026-10-25).
+- **FR-005**: anything over 64 characters is rejected; nothing is cut.
+- **`codex update`**:
+  - the standalone rule is written once (`<CODEX_HOME>/packages/standalone/releases/` on every OS; the Windows `install.ps1` folder goes straight to the 060 route);
+  - `CODEX_MANAGED_BY_*` is stripped from the child's environment, with a fixed system `PATH` and a temp working folder;
+  - the exact Windows command;
+  - the snapshot and PATH limits in Known limits;
+  - the "undocumented" mark put back;
+  - FR-018 notes that Codex starts a shell itself;
+  - dated deltas in specs 051 and 060.
+- **The update fallback's download** moves to `net.request` (FR-026; a delta in spec 060).
+- **The update lock** blocks only new starts, resumes and sends that would resume an ended session; sends to live sessions go through (FR-013).
+- **`features.agentAppUpdateCheck: false` and `updates.mode: "off"`** hide the check entirely (076 FR-158); `allowInAppInstall: false` keeps the read-only button (FR-022). T036 updates 076 FR-174.
 
 ## Changes
 
