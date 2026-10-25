@@ -36,7 +36,7 @@ description: "Tasks for spec 087: each agent app's OS sandbox as the floor under
   - AC3: `startExit` = a sandbox exit → `off` with the masked reason; a start that survives → `on`; no input gives `on` without a surviving start.
 - [ ] T012 [P] [US1] [US2] `src/adapters/copilotSandbox.ts`: `copilotSandboxConfig` and `copilotSandboxState` (structural types, no SDK import). [FR-001, FR-002, FR-004, FR-006, FR-014]
   - AC1: Read-only: roots in `readonlyPaths`, `addCurrentWorkingDirectory: false`, network off; Ask first: roots in `readwritePaths`, protected paths in `deniedPaths` only with the `denied_paths` capability; both: `allowDevToolAccess: false`, never `allowBypass`, `auth` off.
-  - AC2: the `PATH` folders become `readonlyPaths` after FR-015's normalisation; the home folder itself, a filesystem root and a relative entry are dropped.
+  - AC2: the `PATH` folders become `readonlyPaths` after FR-015's normalisation; dropped: the home folder, any ancestor of it (`/home`, `/Users`, `C:\Users`, case-insensitive on Windows and macOS), a filesystem root and a relative entry; kept: `~/.local/bin`. With `denied_paths`, `~/.ssh`, `~/.aws`, `~/.config/gh` are in `deniedPaths`.
   - AC3: `supported: false` → `off` with the masked, clipped reason; missing method → `off` "this Copilot cannot report its sandbox"; a `session.warning` of type `sandbox` → `off`.
 - [ ] T013 [P] `SandboxState` in `src/shared/api.ts` next to `AgentInfo`, optional. [FR-011]
   - AC1: the type has no vendor name or vendor key (a test greps `src/shared/api.ts` for `autoAllowBash`, `sandboxConfig`, `durbar_ro`, `allowBypass` and finds none).
@@ -46,14 +46,18 @@ description: "Tasks for spec 087: each agent app's OS sandbox as the floor under
 
 ## Phase 2: Adapters
 
-- [ ] T020 [US1] [US2] [US3] Claude adapter: pre-checks, the block set on the `--settings` JSON in `claude.ts` (not in `src/shared`), state `unknown` → `on` after the start; a sandbox exit → policy required: refusal; otherwise one relaunch without the block, a chat note and `off`. [FR-003, FR-006, FR-007, FR-013]
+- [ ] T020 [US1] [US2] [US3] Claude adapter: pre-checks (version from `detectClaude`/`parseVersion`), the block set on the `--settings` JSON in `claude.ts` (not in `src/shared`), state `unknown` → `on` at `system`/`init` (`initSeen`); a classified sandbox exit before `init` → policy required: refusal; otherwise the note with *Continue without the OS sandbox* / *Change mode…*, nothing re-sent; *Continue* relaunches with the same argv minus the `sandbox` key; per-session "unavailable, continued" memory. [FR-003, FR-006, FR-007, FR-007a, FR-007b, FR-013]
   - AC1: `test-claude-adapter`: in Read-only and Ask first the `sandbox` key of the `--settings` JSON in argv is exactly Durbar's block; in Allow all there is no `sandbox` key; the folder-setup part of the JSON is unchanged.
-  - AC2: with a fake CLI that exits with a sandbox error: no policy → exactly one relaunch without the block and a note containing "runs Not sandboxed"; policy required → no relaunch and a refusal containing "Read-only and Ask first need".
+  - AC2: with a fake CLI that exits with a sandbox error before `init`: **no prompt is written to any process** after the exit, and **no relaunch happens** until the *Continue* action; the note contains "Nothing was sent"; policy required → no Continue action and a refusal containing "Read-only and Ask first need".
+  - AC3: after *Continue*: exactly one relaunch whose argv equals the first one except the `sandbox` key of `--settings` (same `--permission-mode`, tool lists, `--permission-prompt-tool stdio`, same `--session-id`, or `--resume <id>` once the session exists); a later mode switch (FR-116) or resume does not add the `sandbox` key again.
+  - AC4: a fake CLI that exits before `init` with an unclassified error goes to the crash path text (*Send a message to resume*), state stays `unknown`, no Continue action and no relaunch.
+  - AC5: Claude on `win32` with *Always continue on this computer* stored: no note, state `off`, chip *Not sandboxed*; undoing it in Settings brings the note back. [FR-007c]
 - [ ] T021 [US1] [US2] [US3] Copilot adapter: `getHostSupport()` once per runtime start; `options.update` after create/resume, before the first send; refusal when required; `session.warning` type `sandbox` updates the state; a switch to Allow all sends nothing and sets `untilNewSession`. [FR-004, FR-006, FR-007, FR-008, FR-013]
-  - AC1: the fake client records the update before the first `send`; a rejected update gives *Not sandboxed* with a note (or a refusal containing "Read-only and Ask first need" when required).
+  - AC1: the fake client records the update before the first `send`; a rejected update holds the first `send` back (nothing sent), shows the note with *Continue without the OS sandbox* / *Change mode…* (or a refusal containing "Read-only and Ask first need" when required); after *Continue* the person's next send goes out without `sandboxConfig`.
   - AC2: after a switch to Allow all the fake client records no second update and the state has `untilNewSession: true`.
 - [ ] T022 [P] [US1] [US2] Codex adapter: `SandboxState` from its existing checks; the FR-021 sentence on `commandExecution` and `fileChange` approval cards in Ask first. [FR-005, FR-011, FR-021]
-  - AC1: `test-codex-modes`: `codexPermission` summaries for both kinds end with "If you approve, Codex may run this outside its sandbox."; the Read-only path declines as before.
+  - AC1: `test-codex-modes`: `codexPermission` sets `sandboxNote` ("If you approve, Codex may run this outside its sandbox." for commands, "If you approve, Codex writes this outside its read-only sandbox." for file changes) and leaves `summary` unchanged; the Read-only path declines as before.
+  - AC3: a sim driver waits with `until()` for a Codex Ask first card and checks that the whole `sandboxNote` text is visible (not clipped: `scrollWidth <= clientWidth`, no ellipsis) at 1440x900 and 1280x800.
   - AC2: the state is `on` with `approvedMayLeave: true` in Ask first, `false` in Read-only; a refused start keeps today's refusal (no new path).
 
 ## Phase 3: Window and simulator

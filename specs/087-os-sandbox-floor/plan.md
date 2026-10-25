@@ -38,7 +38,10 @@ IV (no credits), V (layout unchanged), VI (per-OS logic in pure functions), VIII
 - Refusals: spec 012's `MODE_REFUSAL` / `modeRefusalAction` (`src/renderer/app.js`) adds *Change mode…* to a refusal note whose
   text contains "Read-only and Ask first need"; the simulator fault `simsendfail=sandbox` (`src/renderer/sim.ts`) is extended to
   Claude and Copilot sim agents. No new refusal path.
-- Codex approval cards: `codexPermission`'s `summary` (`src/adapters/codexModes.ts`) gets the FR-021 sentence.
+- Codex approval cards: `codexPermission` (`src/adapters/codexModes.ts`) fills a separate `sandboxNote` field (FR-021) that the
+  existing permission card shows on its own line, so the one-line `summary` is not lengthened.
+- The *Continue without the OS sandbox* confirmation uses the shared `askDialog`; the note's buttons sit in the same `note-actions`
+  row `modeRefusalAction` builds.
 
 ## Constitution Check
 
@@ -68,8 +71,11 @@ IV (no credits), V (layout unchanged), VI (per-OS logic in pure functions), VIII
 
 - **Claude** (`claude.ts`): at launch, the pre-checks (version ≥ 2.1.219, platform, `bwrap`/`socat`) decide whether to try; when
   trying, `--settings` carries the block with `failIfUnavailable: true` and the state is `unknown`. Surviving the start sets `on`.
-  An exit for the sandbox is mapped to a plain reason (K4); then policy required → refusal (FR-007); otherwise one relaunch without
-  the block, a chat note and state `off`.
+  `on` is set at the `system`/`init` message (`initSeen`). An exit before `init` that the pure classifier recognises as the
+  sandbox's is mapped to a plain reason (K4); others go to the existing `onExit` crash path. Then policy required → refusal
+  (FR-007); otherwise nothing is re-sent and the note offers *Continue* / *Change mode…*; *Continue* relaunches with the same argv
+  minus the `sandbox` key and sets the per-session "unavailable, continued" flag (FR-007a, FR-007b). Version from `detectClaude` /
+  `parseVersion` (`src/adapters/detect.ts`; PR #698 hardens it).
 - **Copilot** (`copilot.ts`): one `getHostSupport()` per runtime start (cached, refreshed on *Check again*); after
   `createSession`/`resumeSession` and before the first `send`, `session.rpc.options.update(...)` with `allowDevToolAccess: false`
   and the session's `PATH` folders as `readonlyPaths`. A thrown or `false` result → state off with reason; refusal when required.
