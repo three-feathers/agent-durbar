@@ -400,6 +400,7 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     const deferred: Array<() => void> = [];
     const deps: CheckerDeps = {
       detectEnv,
+      trustedPath: () => true,
       exec: async (file, args, opts) => { const c = { file, args: [...args], ...(opts.env ? { env: { ...opts.env } } : {}) }; calls.push(c); return o.answers ? o.answers(c) : { code: 0, stdout: '', stderr: '' }; },
       lookup: o.lookup ?? (async (url, opts) => { lookups.push(url + ' ' + opts.method); throw new Error('no network in this test'); }),
       copies: async () => o.copies,

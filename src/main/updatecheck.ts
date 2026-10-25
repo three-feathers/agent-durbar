@@ -51,8 +51,8 @@ export interface CheckerDeps {
   findTool(name: 'npm' | 'brew' | 'winget'): string | undefined;
   /** At most `cap` bytes of a small text file, or undefined. */
   readText(file: string, cap: number): string | undefined;
-  /** The runner's trust rule for a found tool (`posixTrusted` on macOS and Linux; Windows is a `[KNOWN GAP]` there too); when set, npm's folder goes on PATH only if it passes. */
-  trustedPath?: (p: string) => boolean;
+  /** The runner's trust rule for a found tool (`posixTrusted` on macOS and Linux; Windows is a `[KNOWN GAP]` there too); npm's folder goes on PATH only if it passes. */
+  trustedPath: (p: string) => boolean;
   policy(): UpdatePolicy;
   userSwitch(): boolean;
   simulator: boolean;
@@ -237,7 +237,7 @@ export class UpdateChecker {
   private async tool(c: CheckCmd, file: string): Promise<string> {
     const env = this.d.detectEnv;
     // npm starts `node` through `env`: the folder of that npm (and the login shell's folders) go on this child's PATH (FR-042)
-    const trusted = c.tool !== 'npm' || !this.d.trustedPath || this.d.trustedPath(file);
+    const trusted = c.tool !== 'npm' || this.d.trustedPath(file);
     const childEnv = c.tool === 'npm' && trusted ? { ...c.env, ...pathWithToolDir(env.env, file, env.platform, env.loginPath ?? []) } : c.env;
     const r = await execFound(file, c.args, env, this.d.exec, { timeoutMs: CHECK_LIMIT_MS, env: childEnv });
     if (r.timedOut) throw new Error('timed out');

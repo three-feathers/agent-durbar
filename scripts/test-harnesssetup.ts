@@ -196,7 +196,8 @@ void (async () => {
     assert.strictEqual(d.setup.paste('x').ok, false, 'Codex takes no pasted text');
   }
   // spec 081 FR-042: the spawned child's PATH has the folder of the npm-installed program first (its `env node` finds the node beside it)
-  {
+  // POSIX only: a Windows host keeps `Path` and a fake 'linux' platform would read `PATH`; the Windows spelling is covered by pathWithToolDir's own test (test-updatecheck)
+  if (process.platform !== 'win32') {
     const savedPath = process.env.PATH; process.env.PATH = '/zzz:/usr/bin'; // a GUI app's PATH, without the folder of the script
     try {
     const cop = mk('linux', ['/usr/local/nvmish/bin/copilot']);
@@ -545,6 +546,7 @@ void (async () => {
       assert.strictEqual(pl[0].owner, true);
       assert.strictEqual(pl[1].owner, undefined);
       assert.strictEqual(argvOf(u, 'codex').file, '/opt/homebrew/bin/brew');
+      assert.strictEqual((u.setup.prepare('codex', 'update', 0) as { job: { toolFile?: string } }).job.toolFile, undefined, 'FR-042: brew gets no node folder on PATH (it is not a node script)');
       const cl = mkU('darwin', ['/opt/homebrew/bin/claude', '/opt/homebrew/bin/brew'], { '/opt/homebrew/bin/claude': '/opt/homebrew/Caskroom/claude-code@latest/2.1.309/claude' }, {}, '/opt/homebrew/bin:/usr/bin');
       assert.deepStrictEqual(cl.setup.plans('claude', 'update').plans[0].args, ['upgrade', '--cask', 'claude-code@latest'], 'the cask of the path');
       const cs = mkU('darwin', ['/opt/homebrew/bin/claude', '/opt/homebrew/bin/brew'], { '/opt/homebrew/bin/claude': '/opt/homebrew/Caskroom/claude-code/2.1.308/claude' }, {}, '/opt/homebrew/bin:/usr/bin');
