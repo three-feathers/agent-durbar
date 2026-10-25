@@ -60,7 +60,7 @@ import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import { sweepStaleTempDirs } from '../shared/attachments';
 import { COPILOT_NO_REPORT, copilotHostSupport, copilotSandboxConfig, copilotSandboxHost, copilotSandboxState } from './copilotSandbox';
 import type { CopilotHostSupport } from './copilotSandbox';
-import { CREDENTIAL_FOLDER_REFUSAL, sandboxRoots } from './sandboxRoots';
+import { CREDENTIAL_FOLDER_REFUSAL, leftOutLine, sandboxRoots } from './sandboxRoots';
 import { pathDirs as envPathDirs } from '../shared/pathdirs';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 
@@ -1155,15 +1155,20 @@ export class CopilotAdapter implements AgentAdapter {
     const own = sandboxRoots([live.cwd], this.sandboxRealpath)[0];
     const granted = sandboxConfig ? (mode === 'ask' ? sandboxConfig.userPolicy.filesystem.readwritePaths : sandboxConfig.userPolicy.filesystem.readonlyPaths) : [];
     if (!sandboxConfig || (own !== undefined && !granted.includes(own))) {
-      live.sandboxHold = { reason: CREDENTIAL_FOLDER_REFUSAL('Copilot'), refuse: true };
-      return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'This folder is a credential folder or holds one, so the OS sandbox keeps its commands out of it.' });
+      const holds = !host.capabilities.includes('denied_paths');
+      live.sandboxHold = { reason: CREDENTIAL_FOLDER_REFUSAL('Copilot', holds), refuse: true };
+      return this.setSandbox(sid, live, { state: 'off', covers: ['shell', 'mcp'], writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: holds ? 'This folder is a credential folder, sits inside one or holds one, so the OS sandbox keeps its commands out of it.' : 'This folder is a credential folder or sits inside one, so the OS sandbox keeps its commands out of it.' });
     }
+    // review round 4 on PR 733: the other session folders the floor leaves out are named, never dropped silently
+    const leftOut = roots.filter((r) => r !== own && !granted.includes(r));
     try {
       await this.timed(live.session.rpc.options.update({ sandboxConfig, sandboxConfigSource: 'session_flag' }), 'Copilot');
       live.sandboxFloor = true;
       live.sandboxHold = undefined;
       live.sandboxNoteOpen = false;
-      this.setSandbox(sid, live, copilotSandboxState({ mode, platform, host, applied: true }));
+      const st = copilotSandboxState({ mode, platform, host, applied: true });
+      const line = leftOutLine(leftOut);
+      this.setSandbox(sid, live, st && line ? { ...st, reason: line } : st);
     } catch (e) {
       const st = copilotSandboxState({ mode, platform, host, refused: e instanceof Error ? e.message : String(e) });
       live.sandboxHold = { reason: st?.reason ?? 'Copilot refused the sandbox settings.' };

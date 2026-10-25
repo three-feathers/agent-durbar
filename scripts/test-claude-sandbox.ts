@@ -340,9 +340,31 @@ async function main(): Promise<void> {
     const blk = sandboxOf(m.sp.calls[0].args) as { filesystem: { denyRead: string[]; denyWrite: string[] } };
     assert.ok(blk.filesystem.denyRead.includes(path.join(home, 'dot', 'ssh')) && blk.filesystem.denyWrite.includes(path.join(home, 'dot', 'ssh')), 'the adapter denies the real target of a linked ~/.ssh');
     await m.ad.dispose();
+    // review round 4 (2): a SECOND session folder that is a credential folder is left out: not in allowRead, never an --add-dir, named
+    fs.mkdirSync(path.join(home, '.aws'), { recursive: true });
+    const wsFile = path.join(tmp, 'two.code-workspace');
+    fs.writeFileSync(wsFile, JSON.stringify({ folders: [{ path: path.join(home, 'proj') }, { path: path.join(home, '.aws') }] }));
+    const w = make({ home, realpath: real });
+    const ws2 = await w.ad.start({ workspace: wsFile, quiet: true, permissionMode: 'ask' });
+    await w.ad.send(ws2, { text: 'x' });
+    await until('spawned', () => w.sp.calls.length === 1);
+    const a2 = w.sp.calls[0].args;
+    const addDirs = a2.map((x, i) => (a2[i - 1] === '--add-dir' ? x : '')).filter(Boolean);
+    assert.ok(!addDirs.some((d) => d.includes('.aws')), 'the credential folder is not an --add-dir (no implicit write grant): ' + addDirs.join(','));
+    assert.ok(!(sandboxOf(a2) as { filesystem: { allowRead: string[] } }).filesystem.allowRead.some((d) => d.includes('.aws')));
+    await until('on', () => lastState(w.events, ws2)?.state === 'on');
+    assert.match(String(lastState(w.events, ws2)?.reason), /Left out of the sandbox.*\.aws/, 'the state names the folder it left out');
+    await w.ad.dispose();
+    // the same workspace in Allow all keeps both folders (no floor, nothing left out)
+    const wa = make({ home, realpath: real });
+    const wa2 = await wa.ad.start({ workspace: wsFile, quiet: true, permissionMode: 'allow' });
+    await wa.ad.send(wa2, { text: 'x' });
+    await until('spawned', () => wa.sp.calls.length === 1);
+    assert.ok(wa.sp.calls[0].args.some((x) => x.includes('.aws')), 'Allow all: the folder stays an --add-dir');
+    await wa.ad.dispose();
     const c = make({ home, realpath: real });
     const cs = await c.ad.start({ workspace: path.join(home, 'dot', 'ssh'), quiet: true, permissionMode: 'read-only' });
-    await assert.rejects(c.ad.send(cs, { text: 'x' }), /credential folder.*Read-only and Ask first need/, 'its own folder is a credential folder: refused');
+    await assert.rejects(c.ad.send(cs, { text: 'x' }), /credential folder or sits inside one \(for example ~\/\.ssh\).*Read-only and Ask first need/, 'its own folder is a credential folder: refused, in Claude\'s words (no "holds one")');
     assert.strictEqual(c.sp.calls.length, 0, 'nothing spawned');
     assert.notStrictEqual(lastState(c.events, cs)?.state, 'on', 'never shown as Sandboxed');
     await c.ad.dispose();

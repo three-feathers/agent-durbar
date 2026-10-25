@@ -218,12 +218,23 @@ async function main(): Promise<void> {
     const sid = await ad.start({ workspace: path.join(H, '.config'), quiet: true, permissionMode: 'ask' });
     assert.strictEqual(last(events, sid)?.state, 'off', 'not shown as Sandboxed');
     assert.match(String(last(events, sid)?.reason), /credential folder/);
-    await assert.rejects(ad.send(sid, { text: 'x' }), /credential folder.*Read-only and Ask first need/, 'refused, with the Change mode… text');
+    await assert.rejects(ad.send(sid, { text: 'x' }), /holds one \(for example ~\/\.ssh or ~\/\.config\).*Read-only and Ask first need/, 'refused, with the Change mode… text, in Copilot\'s words');
     assert.strictEqual(sends(fake, sid), 0);
     await assert.rejects(ad.continueWithoutSandbox!(sid), /credential folder/, 'no Continue past it');
     const s2 = await ad.start({ workspace: path.join(H, '.ssh'), quiet: true, permissionMode: 'read-only' });
     await assert.rejects(ad.send(s2, { text: 'x' }), /credential folder/);
     await ad.dispose();
+    // review round 4 (2): a SECOND folder that the filter drops is named in the state, never dropped silently
+    fs.mkdirSync(path.join(H, 'proj'), { recursive: true });
+    const wsFile = path.join(H, 'two.code-workspace');
+    fs.writeFileSync(wsFile, JSON.stringify({ folders: [{ path: path.join(H, 'proj') }, { path: path.join(H, '.ssh') }] }));
+    const m3 = make({ home: H });
+    const s3 = await m3.ad.start({ workspace: wsFile, quiet: true, permissionMode: 'ask' });
+    const fsys = (updates(m3.fake, s3)[0].sandboxConfig as { userPolicy: { filesystem: Record<string, string[]> } }).userPolicy.filesystem;
+    assert.deepStrictEqual(fsys.readwritePaths, [path.join(H, 'proj')], 'the credential folder is not granted');
+    assert.strictEqual(last(m3.events, s3)?.state, 'on');
+    assert.match(String(last(m3.events, s3)?.reason), /Left out of the sandbox.*\.ssh/, 'and the state names it');
+    await m3.ad.dispose();
     fs.rmSync(H, { recursive: true, force: true });
   }
 

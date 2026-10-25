@@ -16,7 +16,7 @@ import type { OrgPolicy } from '../shared/orgpolicy';
 import { claudeSettingsJson } from '../shared/foldersetup';
 import { claudeSandboxExit, claudeSandboxHost, claudeSandboxPrecheck, claudeSandboxSettings, claudeSandboxState, withSandboxSettings } from './claudeSandbox';
 import type { ClaudeSandboxBlock, ClaudeSandboxFacts, ClaudeSandboxPre } from './claudeSandbox';
-import { CREDENTIAL_FOLDER_REFUSAL, sandboxRoots } from './sandboxRoots';
+import { CREDENTIAL_FOLDER_REFUSAL, leftOutLine, sandboxRoots } from './sandboxRoots';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 import { isAuthError, markAuthError } from './autherrors';
 import { spawn } from 'child_process';
@@ -641,6 +641,8 @@ interface Session {
   sandboxState?: SandboxState | null;
   /** Spec 087 FR-006: the classified reason of a sandbox exit of the current launch (before `init`). */
   sandboxExit?: string;
+  /** Spec 087 (review round 4 on PR 733): session folders (as given) the floor leaves out; never passed as `--add-dir` under the floor. */
+  sandboxLeftOut?: string[];
   /** Spec 087 FR-007a (review on PR 733): the actions of the open sandbox note; Continue is accepted only while it is open. */
   sandboxNote?: ReadonlyArray<'continue' | 'always'>;
 }
@@ -1137,7 +1139,8 @@ export class ClaudeAdapter implements AgentAdapter {
       settingsJson: withSandboxSettings(claudeSettingsJson(o.folderSetup), s.sandboxBlock), // spec 087 FR-003: Durbar's block is the `sandbox` key
       ...(o.folderSetup?.rules?.allow.length ? { folderAllow: o.folderSetup.rules.allow } : {}),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
-      ...(s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd) } : {}),
+      // spec 087 (review round 4 on PR 733): under the floor a folder it left out is not an `--add-dir` (Claude would grant it writes)
+      ...(s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd && !(s.sandboxBlock && s.sandboxLeftOut?.includes(r))) } : {}),
       ...(s.capUsd !== undefined ? { maxBudgetUsd: s.capUsd - s.spentUsd } : {}),
       ...(claudeNameOk(s.pendingName) ? { name: s.pendingName } : {}),
     };
@@ -1182,7 +1185,7 @@ export class ClaudeAdapter implements AgentAdapter {
     if (m.type === 'system' && m.subtype === 'init') {
       s.initSeen = true;
       // spec 087 FR-006: `on` only here: the CLI started with the block (failIfUnavailable: true) and reached init
-      if (s.sandboxBlock && s.sandboxFacts && s.sandboxState?.state === 'unknown') this.setSandbox(s, claudeSandboxState({ mode: s.sandboxMode ?? 'read-only', facts: s.sandboxFacts, started: true }));
+      if (s.sandboxBlock && s.sandboxFacts && s.sandboxState?.state === 'unknown') this.setSandbox(s, this.withLeftOut(s, claudeSandboxState({ mode: s.sandboxMode ?? 'read-only', facts: s.sandboxFacts, started: true })));
     }
     if (m.type === 'result') {
       s.turnOpen = false;
@@ -1541,6 +1544,12 @@ export class ClaudeAdapter implements AgentAdapter {
     return facts;
   }
 
+  /** Review round 4 on PR 733: the state, with the folders the floor left out named in its reason (the tooltip shows it). */
+  private withLeftOut(s: Session, st: SandboxState | null): SandboxState | null {
+    const line = leftOutLine(s.sandboxLeftOut ?? []);
+    return st && line && st.state !== 'off' ? { ...st, reason: line } : st;
+  }
+
   /** FR-011: emit the state when it changed (and always with a notice). */
   private setSandbox(s: Session, st: SandboxState | null, notice?: { text: string; actions: Array<'continue' | 'always'>; refused?: boolean }): void {
     if (notice) s.sandboxNote = notice.refused ? undefined : notice.actions;
@@ -1608,8 +1617,11 @@ export class ClaudeAdapter implements AgentAdapter {
       s.sandboxBlock = undefined;
       throw new Error(CREDENTIAL_FOLDER_REFUSAL('Claude Code'));
     }
+    // the other folders the filter left out: not in allowRead, never an --add-dir, named in the state's tooltip
+    const rp = this.deps.realpath ?? ((p: string) => fs.realpathSync.native(p));
+    s.sandboxLeftOut = s.roots.filter((r) => r !== s.cwd && (() => { const x = sandboxRoots([r], rp)[0]; return x !== undefined && !block.filesystem.allowRead.includes(x); })());
     s.sandboxBlock = block;
-    this.setSandbox(s, claudeSandboxState({ mode, facts }));
+    this.setSandbox(s, this.withLeftOut(s, claudeSandboxState({ mode, facts })));
     return true;
   }
 

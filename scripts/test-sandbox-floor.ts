@@ -332,6 +332,9 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.ok(longest.length <= 300, 'a data tooltip: at most 300 characters (' + longest.length + ')');
   assert.ok(T.tooltip({ state: 'off', covers: ['shell'], verified: false, reason: 'x'.repeat(200) }, 'Claude Code', (t) => t).length <= 300);
   assert.ok(/PATH folders/.test((T as unknown as { details(s: unknown, a: string): string }).details({ ...on, covers: ['shell', 'mcp'] }, 'Copilot')), 'the mode menu says what PATH grants (FR-004)');
+  const lo = { ...on, reason: 'Left out of the sandbox, because they are or hold credential folders: /h/.aws.' };
+  assert.ok(/Some session folders are left out/.test(T.tooltip(lo, 'Claude Code', (t) => t)) && T.tooltip(lo, 'Claude Code', (t) => t).endsWith(T.NOT_VERIFIED), 'the tooltip says folders are left out and still ends as required');
+  assert.ok((T as unknown as { details(s: unknown, a: string, m: (t: string) => string): string }).details(lo, 'Claude Code', (t) => t).startsWith('Left out of the sandbox, because they are or hold credential folders: /h/.aws.'), 'the mode menu names them');
   ok('FR-009/FR-010: the chip words and the tooltip per app; the reason only through the mask');
 }
 console.log('sandbox floor (spec 087): all checks passed');

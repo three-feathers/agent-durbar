@@ -101,9 +101,14 @@ export function secretRelation(root: string, secrets: readonly string[], platfor
 }
 
 /**
- * Spec 087 (review round 3 on PR 733): the refusal when the credential filter drops the session's own folder (it is a credential folder,
- * sits inside one, or, for Copilot without `denied_paths`, holds one). Like FR-015's empty-roots refusal: nothing is sent, and the text
- * contains "Read-only and Ask first need" so the window offers Change mode…; Allow all is not limited by the floor.
+ * Spec 087 (review rounds 3-4 on PR 733): the refusal when the credential filter drops the session's own folder. Like FR-015's empty-roots
+ * refusal: nothing is sent, and the text contains "Read-only and Ask first need" so the window offers Change mode…. Per app: `holds` is
+ * true only where a folder that HOLDS a credential folder is also left out (Copilot without `denied_paths`); Claude Code drops only a
+ * folder that is a credential folder or inside one.
  */
-export const CREDENTIAL_FOLDER_REFUSAL = (app: string): string =>
-  `${app}: this session's folder is a credential folder or holds one (for example ~/.ssh or ~/.config), so the OS sandbox keeps its commands out of it. Read-only and Ask first need at least one usable folder, so nothing was sent.`;
+export const CREDENTIAL_FOLDER_REFUSAL = (app: string, holds = false): string =>
+  `${app}: this session's folder ${holds ? 'is a credential folder, sits inside one or holds one (for example ~/.ssh or ~/.config)' : 'is a credential folder or sits inside one (for example ~/.ssh)'}, so the OS sandbox keeps its commands out of it. Read-only and Ask first need at least one usable folder, so nothing was sent.`;
+
+/** Spec 087 (review round 4 on PR 733): the state's line naming the other session folders the floor leaves out (shown in its tooltip). */
+export const leftOutLine = (folders: readonly string[]): string | undefined =>
+  folders.length ? `Left out of the sandbox, because they are or hold credential folders: ${folders.slice(0, 5).join(', ')}${folders.length > 5 ? ` and ${folders.length - 5} more` : ''}.` : undefined;

@@ -359,6 +359,16 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 ## Changes
 
+### 2026-10-25: review round 4 on PR #733 (Ruben's agent, 4 items)
+
+- **Every session folder, not only the main one.** The main folder dropped by the credential filter still refuses the session (round 3).
+  Any **other** folder it drops is left out, not refused: refusing would block a whole workspace for one folder that a command must not
+  reach anyway, while leaving it out keeps the floor whole. A left-out folder is never passed to Claude as `--add-dir` (that would add
+  Claude's implicit write grant on the same path as a `denyWrite`: the undocumented K13 case), is never granted to Copilot, and the state's
+  reason names it (the mode menu shows the names; the tooltip says some folders are left out). Two-folder tests for both adapters.
+- The refusal text is per app: Claude Code "is a credential folder or sits inside one"; Copilot adds "or holds one" only without
+  `denied_paths`. README *Known limits* names K14.
+
 ### 2026-10-25: review round 3 on PR #733 (Ruben's agent, 7 items)
 
 - **A session whose own folder the credential filter drops is refused** (FR-015's rule, applied after the filter): a folder that is a
