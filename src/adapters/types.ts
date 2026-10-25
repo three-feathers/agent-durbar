@@ -610,6 +610,8 @@ export interface AgentAdapter {
   resolvePermission?(sessionId: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean): void;
   /** Forget one "Approve for this session" grant. Optional. */
   revokeGrant?(sessionId: string, key: string): void;
+  /** Spec 003 FR-101: forget every grant that allowed one tool call (its request id). Returns the call's rules still live (0 = all gone) or -1 when the call is unknown. Optional. */
+  revokeCall?(sessionId: string, callId: string): number;
   /** Change (or with `null` remove) the credit cap of a running session. Optional: adapters that cannot enforce a cap omit it (spec 011). */
   setCap?(sessionId: string, credits: number | null): Promise<void>;
   /** Answer a "limit reached" request: add credits, set a new cap, remove the cap or cancel the blocked request. Optional. */

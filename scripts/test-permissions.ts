@@ -1,7 +1,7 @@
 /** Unit test for the permission broker (no Copilot session, no AI credits): `npm run test:permissions`. */
 import * as assert from 'assert';
 import * as path from 'path';
-import { PermissionBroker, cleanGrantKey, grantScope, revokeGrantFor, isInsideRoots } from '../src/adapters/permissions';
+import { PermissionBroker, cleanGrantKey, grantScope, revokeGrantFor, revokeCallFor, CALLS_MAX, isInsideRoots } from '../src/adapters/permissions';
 import type { BrokerEvent } from '../src/adapters/permissions';
 import { eventProblems } from '../src/adapters/eventguard';
 import { ALLOWED_BY_KEYS_MAX } from '../src/adapters/types';
@@ -470,9 +470,27 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
       assert.ok(ab && ab.kind === 'session-grant' && ab.keys && ab.keys.length === ALLOWED_BY_KEYS_MAX && ab.more === 10, `capped list plus the count: ${JSON.stringify(ab && { n: ab.kind === 'session-grant' ? ab.keys?.length : 0, more: ab.kind === 'session-grant' ? ab.more : 0 })}`);
       assert.deepStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: ev2 }), [], 'the guard accepts what the broker emits');
       const d = W.describe(ab, new Set(mf.b.listGrants().map((g) => g.key)), { seen: [] });
-      assert.ok(d && d.undoKeys?.length === ALLOWED_BY_KEYS_MAX && /10 more rules/.test(d.sentence), 'the card says 10 more and Undo covers the listed ones');
-      for (const k of d?.undoKeys ?? []) mf.b.revoke(k);
-      assert.strictEqual(mf.b.listGrants().length, 10, 'Undo removed the listed rules; the other 10 are said to need Revoke all');
+      assert.ok(d && d.undoKeys?.length === ALLOWED_BY_KEYS_MAX && /10 more rules/.test(d.sentence), 'the card says 10 more');
+      // Undo by call id: main holds all 60 keys; the display list is only 50
+      assert.strictEqual(revokeCallFor((x) => x === 'a1', (_i, c) => mf.b.revokeCall(c), 'a1', 'g2'), 0, 'zero of the call\'s rules are live afterwards');
+      assert.strictEqual(mf.b.listGrants().length, 0, 'all 60 rules are gone, not only the 50 listed');
+      assert.strictEqual(W.describe(ab, new Set(), { seen: ['x'], undone: true })?.gone, undefined, 'unlisted rules and no confirmation from main: never "removed"');
+      assert.strictEqual(W.describe(ab, new Set(), { confirmed: true })?.gone, true, 'main confirmed 0 left: removed');
+      // hostile call ids do nothing
+      const p4 = mf.b.request(req('g3'));
+      await tick();
+      mf.b.resolve('g3', true, true);
+      await p4;
+      await mf.b.request(req('g4'));
+      const live = mf.b.listGrants().length;
+      for (const [i, c] of [['a1', 'unknown'], ['other', 'g4'], [5, 'g4'], ['a1', 5], ['a1', ''], ['a1', null], ['a1', { toString: () => 'g4' }], ['a1', 'x'.repeat(513)], ['a1', '__proto__'], ['a1', undefined]] as [unknown, unknown][])
+        assert.strictEqual(revokeCallFor((x) => x === 'a1', (_i, cc) => mf.b.revokeCall(cc), i, c), -1, `refused: ${JSON.stringify([i, c]).slice(0, 40)}`);
+      assert.strictEqual(mf.b.listGrants().length, live, 'a hostile call id removed nothing');
+      // memory is bounded: the oldest call is forgotten, and Undo then says so (-1) and removes nothing
+      for (let i = 0; i < CALLS_MAX; i++) await mf.b.request(req('h' + i));
+      assert.strictEqual(mf.b.revokeCall('g4'), -1, 'an evicted call is unknown');
+      assert.strictEqual(mf.b.listGrants().length, live, 'and nothing was removed');
+      assert.strictEqual(mf.b.revokeCall('h' + (CALLS_MAX - 1)), 0, 'a recent call still works');
       assert.notStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { ...ev2, allowedBy: { kind: 'session-grant', key: 'k', label: 'l', keys: Array.from({ length: ALLOWED_BY_KEYS_MAX + 1 }, (_, i) => 'k' + i) } } }).length, 0, 'the guard refuses a list over the limit');
       assert.notStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { ...ev2, allowedBy: { kind: 'session-grant', key: 'k', label: 'l', more: 0 } } }).length, 0, 'and a bad count');
     }

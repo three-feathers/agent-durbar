@@ -5,7 +5,7 @@ import type { AdapterRouter } from '../../adapters/router';
 import { historyOf } from '../../adapters/router';
 import type { AddResult, AgentInfo, PickedFile, ResumeResult, SessionOptions } from '../../shared/api';
 import { parseAmount, parseCapIn } from '../../shared/credits';
-import { revokeGrantFor } from '../../adapters/permissions';
+import { revokeCallFor, revokeGrantFor } from '../../adapters/permissions';
 import { endSessionOp, errText, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
 import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
@@ -213,8 +213,11 @@ export function register(deps: AgentsIpcDeps): void {
     if (agents.has(id)) router.forAgent(id)?.resolvePermission?.(id, String(requestId), approve === true, approve === true && remember === true, approve === true && remember === true && broad === true);
   });
 
-  ipcHandle('agents:revokeGrant', (_e, id: unknown, key: unknown) => {
-    revokeGrantFor((x) => agents.has(x), (x, k) => router.forAgent(x)?.revokeGrant?.(x, k), id, key); // spec 003 FR-102: known id, clean key; the broker removes only a rule it holds
+  ipcHandle('agents:revokeGrant', (_e, id: unknown, key: unknown, callId?: unknown): number => {
+    // spec 003 FR-101: with a call id, every rule that allowed that call goes (main holds the list; the page cannot name keys); the answer is how many of them are still live, or -1 (unknown call: nothing removed)
+    if (callId !== undefined) return revokeCallFor((x) => agents.has(x), (x, c) => router.forAgent(x)?.revokeCall?.(x, c) ?? -1, id, callId);
+    revokeGrantFor((x) => agents.has(x), (x, k) => router.forAgent(x)?.revokeGrant?.(x, k), id, key);
+    return -1; // spec 003 FR-102: known id, clean key; the broker removes only a rule it holds
   });
 
   // spec 063: the git branch and changed files of an agent's own folder (read-only; the window never passes a path)

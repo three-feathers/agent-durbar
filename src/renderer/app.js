@@ -3493,18 +3493,18 @@ function whyNote(a,p){
   const m=a.why||(a.why=new Map());m.set(p.requestId,p.allowedBy);
   while(m.size>WHY_KEEP)m.delete(m.keys().next().value);
   const c=a.turn&&a.turn.T.chipEls[p.requestId];
-  if(c)whySet(a,c,p.allowedBy);
+  if(c)whySet(a,c,p.allowedBy,p.requestId);
 }
-function whyAttach(a,T,callId){const by=a.why&&a.why.get(callId),c=T.chipEls[callId];if(by&&c)whySet(a,c,by);}
-function whySet(a,c,by){
-  c.whyBy=by;c.aid=a.id;
+function whyAttach(a,T,callId){const by=a.why&&a.why.get(callId),c=T.chipEls[callId];if(by&&c)whySet(a,c,by,callId);}
+function whySet(a,c,by,callId){
+  c.whyBy=by;c.whyCall=callId;c.aid=a.id;
   const set=a.whyCs||(a.whyCs=new Set());set.add(c);
   while(set.size>WHY_KEEP)set.delete(set.values().next().value);
   whyPaint(c);
 }
 /* the rules this window knows (null until the first grants event: a window that reloaded with sessions running knows none, and must not call a rule removed) */
 function whyLive(aid){const a=byId(aid),r=a&&liveRoot(a);return r&&r.grantsKnown?new Set((r.grants||[]).map(g=>g.key)):null;}
-function whyOpts(c){const a=byId(c.aid),r=a&&liveRoot(a);return {seen:r&&r.grantSeen?r.grantSeen:null,undone:c.undone===true};}
+function whyOpts(c){const a=byId(c.aid),r=a&&liveRoot(a);return {seen:r&&r.grantSeen?r.grantSeen:null,undone:c.undone===true,confirmed:c.whyConfirmed===true};}
 function whyPaint(c){
   const el=c.el;if(!el)return;
   el.querySelectorAll(':scope>.why,:scope>.whybody').forEach(x=>x.remove());
@@ -3526,7 +3526,12 @@ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest
   const chip=b.closest('.chip'),c=chip&&chip._whyC,d=c&&WHY?WHY.describe(c.whyBy,whyLive(c.aid),whyOpts(c)):null;
   if(!d||!d.undoKeys)return;
   b.disabled=true;c._refocus=true;c.undone=true;
-  Promise.resolve().then(()=>Promise.all(d.undoKeys.map(k=>bridge.revokeGrant(c.aid,k)))).catch(()=>{}); /* every rule that allowed it: the grant chips' own revoke, once per key */
+  /* FR-101: main removes every rule that allowed this call (it holds the full list) and says how many of them are still live; "removed" is shown only for 0. A call main does not know (-1) or a partial answer falls back to the listed keys, and a card with unlisted rules (more) then never says "removed". */
+  Promise.resolve().then(async()=>{
+    const left=c.whyCall?await bridge.revokeGrant(c.aid,d.undoKeys[0],c.whyCall):-1;
+    if(left===0){c.whyConfirmed=true;whyPaint(c);return;}
+    await Promise.all(d.undoKeys.map(k=>bridge.revokeGrant(c.aid,k)));
+  }).catch(()=>{});
   setTimeout(()=>{if(c._refocus){c._refocus=false;c.undone=false;whyPaint(c);}},2000); /* a revoke that did not remove the rule: the button comes back */
 });
 /* ---- spec 005 FR-020..FR-023: file edits as an edit row ("Editing app.js  src  +12 −3") and an inline diff below it ---- */

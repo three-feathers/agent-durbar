@@ -37,10 +37,10 @@
         const label=cutLabel(by.label), many=keys.length>1||more>0;
         const anyLive=lv?keys.some(k=>lv.has(k)):true;
         const wasKnown=o.undone===true||(seen?keys.some(k=>seen.has(k)):false);
-        if(lv&&!anyLive&&wasKnown)return {kind:'session-grant',pill:'Rule removed',sentence:'This was allowed by a session rule that you have since removed: Durbar asks again.',label,gone:true};
+        if(o.confirmed===true||(lv&&!anyLive&&wasKnown&&more===0))return {kind:'session-grant',pill:'Rule removed',sentence:'This was allowed by a session rule that you have since removed: Durbar asks again.',label,gone:true};
         const liveKeys=lv?keys.filter(k=>lv.has(k)):keys;
         return {kind:'session-grant',more,pill:many?'Allowed: session rules':'Allowed: session rule',
-          sentence:many?'Allowed because you chose Approve for this session for each of these folders'+(more?' ('+more+' more rules are not listed: Undo removes the listed ones, Revoke all removes the rest)':'')+': ':'Allowed because you chose Approve for this session for: ',label,undoKeys:liveKeys.length?liveKeys:keys};
+          sentence:many?'Allowed because you chose Approve for this session for each of these folders'+(more?' ('+more+' more rules are not listed: Undo asks Durbar to remove all of them)':'')+': ':'Allowed because you chose Approve for this session for: ',label,undoKeys:liveKeys.length?liveKeys:keys};
       }
       case 'allow-all':
         return {kind:'allow-all',pill:'Allowed: Allow all',sentence:'Allowed because this agent is in Allow all: it runs without asking. '+MODE_WHERE};

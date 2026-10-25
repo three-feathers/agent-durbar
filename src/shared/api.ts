@@ -935,7 +935,7 @@ export interface DurbarApi {
   /** `remember` = "Approve for this session" (ignored when denying); `broad` = the wider "any arguments" scope of a shell request (only if offered). */
   resolvePermission(id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean): Promise<void>;
   /** Forget one "Approve for this session" grant (key from the `grants` event). */
-  revokeGrant(id: string, key: string): Promise<void>;
+  revokeGrant(id: string, key: string, callId?: string): Promise<number | void>;
   openInVSCode(id: string): Promise<{ ok: boolean; error?: string; edition?: string }>;
   /** Spec 063: the git branch and uncommitted changes of the agent's folder (read-only). Optional: older bridges lack it. */
   gitStatus?(id: string): Promise<FolderGitStatus>;

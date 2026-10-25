@@ -1483,6 +1483,10 @@ export class CopilotAdapter implements AgentAdapter {
     this.sessions.get(sessionId)?.broker.revoke(key);
   }
 
+  revokeCall(sessionId: string, callId: string): number {
+    return this.sessions.get(sessionId)?.broker.revokeCall(callId) ?? -1;
+  }
+
   /** Stop all sessions and the shared runtime. */
   async dispose(): Promise<void> {
     await this.refreshing?.catch(() => undefined);

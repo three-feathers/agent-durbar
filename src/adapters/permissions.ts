@@ -263,6 +263,15 @@ function blockedMcp(req: PermissionLike, set: ReadonlySet<string> | undefined): 
 
 /** Spec 003 FR-102: the key of a grant to revoke, from a page: a non-empty string of at most 512 characters, else undefined (ignored). */
 export const GRANT_KEY_MAX = 512;
+/** Spec 003 FR-101: how many calls the broker remembers per session (oldest dropped first) and most keys it remembers for one call (a call with more is not remembered). */
+export const CALLS_MAX = 200;
+export const CALL_KEYS_MAX = 500;
+/** Spec 003 FR-101: the main-process side of Undo by call id (pure, testable): a known agent id and a clean call id, else -1 (nothing happened). Returns what the broker returns: the rules of that call still live (0 = all gone) or -1 (call unknown). */
+export function revokeCallFor(has: (id: string) => boolean, revokeCall: (id: string, callId: string) => number, id: unknown, callId: unknown): number {
+  const c = cleanGrantKey(callId);
+  if (typeof id !== 'string' || c === undefined || !has(id)) return -1;
+  return revokeCall(id, c);
+}
 /**
  * Spec 003 FR-102: the main-process side of the revoke IPC, pure so it can be tested: a known agent id (a string) and a clean key,
  * else nothing happens. The broker then removes only a rule it holds.
@@ -291,6 +300,8 @@ interface Pending {
 export class PermissionBroker {
   private seq = 0;
   private grants = new Map<string, SessionGrant>();
+  /** Spec 003 FR-101: per tool call (request id), every grant key that allowed it, so Undo can remove them all by call id. Insertion order = age: oldest evicted first. */
+  private callKeys = new Map<string, string[]>();
   private pending = new Map<string, Pending>();
   private stopped = false;
   private mode: BrokerMode;
@@ -418,6 +429,7 @@ export class PermissionBroker {
     const hits = scope.folders ? scope.folders.map((x) => this.grants.get(x.key)) : [this.grants.get(scope.key) ?? (scope.broad ? this.grants.get(scope.broad.key) : undefined)];
     if (hits.length && hits.every((h) => h !== undefined)) {
       const keys = (hits as SessionGrant[]).map((h) => h.key);
+      this.rememberCall(requestId, keys);
       const label = scope.folders ? scope.label : (hits[0] as SessionGrant).label;
       this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: keys[0], label, keys: keys.slice(0, ALLOWED_BY_KEYS_MAX), ...(keys.length > ALLOWED_BY_KEYS_MAX ? { more: keys.length - ALLOWED_BY_KEYS_MAX } : {}) } } });
       return this.approveWrite(req);
@@ -446,6 +458,27 @@ export class PermissionBroker {
     return true;
   }
 
+  private rememberCall(callId: string, keys: string[]): void {
+    this.callKeys.delete(callId);
+    if (keys.length > CALL_KEYS_MAX) return; // too many to remember: Undo for this call is honest about not knowing it
+    this.callKeys.set(callId, [...keys]);
+    while (this.callKeys.size > CALLS_MAX) this.callKeys.delete(this.callKeys.keys().next().value as string);
+  }
+
+  /**
+   * Spec 003 FR-101: remove every rule that allowed one tool call. Returns how many of that call's rules are still live afterwards
+   * (0 = all gone) or -1 when this broker does not know the call (never seen, forgotten, or too large): nothing is removed then.
+   */
+  revokeCall(callId: string): number {
+    const c = cleanGrantKey(callId);
+    const ks = c === undefined ? undefined : this.callKeys.get(c);
+    if (!ks) return -1;
+    let changed = false;
+    for (const k of ks) if (this.grants.delete(k)) changed = true;
+    if (changed) this.opts.emit({ type: 'grants', grants: this.listGrants() });
+    return ks.filter((k) => this.grants.has(k)).length;
+  }
+
   revoke(key: string): boolean {
     const k = cleanGrantKey(key);
     const had = k !== undefined && this.grants.delete(k);
@@ -464,6 +497,7 @@ export class PermissionBroker {
     for (const p of [...this.pending.values()]) p.resolve({ approve: false, remember: false, broad: false, via: 'stopped' });
     if (this.grants.size) {
       this.grants.clear();
+      this.callKeys.clear();
       this.opts.emit({ type: 'grants', grants: [] });
     }
   }

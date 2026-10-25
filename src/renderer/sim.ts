@@ -566,6 +566,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /* spec 006 FR-043/FR-044 (review of PR 720): under simcrash=N the bridge counts what the card makes it do, for the driver: every wake
        (and how many run at once: a wake then takes 150 ms), every prompt sent and every permission-mode change */
     const crashProbe: { on: boolean; wakes: string[]; inFlight: number; maxInFlight: number; sends: number; modeSets: number; sessions?: () => Array<{ id: string; mode: string; lazy: boolean; resumeLast: boolean }> } = { on: false, wakes: [], inFlight: 0, maxInFlight: 0, sends: 0, modeSets: 0 };
+    const simCallKeys = new Map<string, string[]>(); // spec 003 FR-101: like the broker, the rules that allowed each call
     const sims: SimAgent[] = rows.map((r, i) => {
       const [name, role, room0, state, intent, helpers0, files] = r;
       const k = simRooms ? Math.max(1, Math.min(SIM_ROOM_ORDER.length, Math.floor(simRooms))) : 0;
@@ -1056,6 +1057,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const base = { requestId, kind, summary, scopeKey: sc.key, scopeLabel: sc.label };
       const hitKey = sc.folders ? (sc.folders.every((x) => s.grants.has(x.key)) ? sc.folders[0].key : undefined) : s.grants.has(sc.key) ? sc.key : undefined;
       if (hitKey !== undefined) { // like the broker: every folder granted
+        simCallKeys.set(sid(s) + '|' + requestId, (sc.folders ? sc.folders.map((x) => x.key) : [sc.key]));
         emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: hitKey, label: s.grants.get(hitKey) ?? '' } } });
         simLog(s, 'auto-session-grant', summary);
         return true;
@@ -2654,8 +2656,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: (approve ? 'Allowed: ' : 'Denied: ') + file });
         if (cont === 'edit') { editTool(s, file, approve); finishReply(s, approve, file); } else toolStep(s, true);
       },
-      revokeGrant: async (id, key) => {
+      revokeGrant: async (id, key, callId) => {
         const s = sims.find((x) => x.info.id === id);
+        if (callId !== undefined) { // like main: every rule that allowed that call; -1 when the call is unknown
+          const ks = simCallKeys.get(id + '|' + callId);
+          if (!s || !ks) return -1;
+          let ch = false;
+          if (opts.grants !== 'stuck') for (const k of ks) if (s.grants.delete(k)) ch = true;
+          if (ch) grantsEvent(s);
+          return ks.filter((k) => s.grants.has(k)).length;
+        }
         if (opts.grants !== 'stuck' && s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
