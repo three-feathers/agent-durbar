@@ -1,0 +1,2 @@
+# source: read: brew outdated --cask --greedy --json=v2 shape; values are made up
+{"formulae":[],"casks":[{"name":"copilot-cli","installed_versions":["1.0.100"],"current_version":"1.0.103"}]}

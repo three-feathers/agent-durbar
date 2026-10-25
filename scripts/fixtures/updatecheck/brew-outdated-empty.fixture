@@ -1,0 +1,2 @@
+# source: read: brew outdated --cask --json=v2 with nothing outdated
+{"formulae":[],"casks":[]}
