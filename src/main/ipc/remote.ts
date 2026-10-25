@@ -12,6 +12,8 @@ export interface RemoteIpcDeps {
   toRenderer(channel: string, payload: unknown): void;
   getWin(): BrowserWindow | undefined;
   logActivity(a: AgentInfo, decision: ActivityDecision, action: string): void;
+  /** Spec 054 FR-040: the agent's door is closed by the user. */
+  doorClosed?(id: string): boolean;
 }
 
 /** Registers the handlers and returns the remote-control operations the rest of main uses (end a session, quit, sign-in). */
@@ -35,6 +37,7 @@ export function register(deps: RemoteIpcDeps): ReturnType<typeof createRemoteOps
       const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
       return r.response === 1;
     },
+    doorClosed: (id) => !!deps.doorClosed?.(id),
     record: (id, on) => {
       const a = agents.get(id);
       if (a) logActivity(a, on ? 'remote-on' : 'remote-off', on ? 'Remote control from GitHub turned on' : 'Remote control from GitHub turned off');

@@ -26,7 +26,7 @@ import type { McpServerSpec } from '../src/shared/mcp';
 import { SIGN_IN_MIN_TTL_MS as SHARED_MIN_TTL_MS, SIGN_IN_REQUEST_TIMEOUT_MS, signInTtlMs } from '../src/shared/mcp';
 import { CLAUDE_SIGN_IN_TIMEOUT_MS, ClaudeAdapter, claudeArgs } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
-import { fakeSpawn } from './fakes/claude-cli';
+import { fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
 import { McpStore } from '../src/main/mcpstore';
 
 const PAGE = 'https://auth.example.com/authorize?client_id=abc&state=SECRETSTATE123&code_challenge=PKCEPKCEPKCE';
@@ -743,7 +743,7 @@ async function main(): Promise<void> {
           }
         };
       };
-      const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+      const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
       let idle = false;
       ad.onEvent((e) => { if (e.type === 'status' && (e as { status: string }).status === 'idle') idle = true; });
       const sid = await ad.start({ workspace: ws, quiet: true, mcpServers: { notes: { type: 'http', url: 'https://mcp.example.com/mcp' } } });

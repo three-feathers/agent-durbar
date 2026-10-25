@@ -3,6 +3,7 @@
  * `npm run test:claudehistory`. No Claude data is read, no claude is run.
  */
 import * as assert from 'assert';
+import { SANDBOX_HOST_OK } from './fakes/claude-cli';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -90,7 +91,7 @@ function main(): void {
 
   // the adapter: capability and members agree (FR-027), and it reads from its config folder
   void (async () => {
-    const ad = new ClaudeAdapter({ claudePath: async () => undefined, configDir: CFG });
+    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => undefined, configDir: CFG });
     assert.strictEqual(ad.capabilities.history, true);
     assert.deepStrictEqual((await ad.listPreviousSessions(WS)).map((s) => s.id).sort(), [ID1, ID2]);
     assert.strictEqual((await ad.history(ID1)).items.length, 5);

@@ -32,6 +32,8 @@ export interface PermissionLike {
    * "Codex did not say which file"). Only the card text: the grant scope is still built from the fields above.
    */
   cardSummary?: string;
+  /** Spec 087 FR-021: the card's own line about the OS sandbox (see `PermissionInfo.sandboxNote`). */
+  sandboxNote?: string;
 }
 
 export type Decision = { kind: 'approve-once' } | { kind: 'reject'; feedback: string };
@@ -438,7 +440,7 @@ export class PermissionBroker {
       this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: keys[0], label, keys: keys.slice(0, ALLOWED_BY_KEYS_MAX), ...(tooMany ? { noUndo: true } : {}), ...(keys.length > ALLOWED_BY_KEYS_MAX ? { more: keys.length - ALLOWED_BY_KEYS_MAX } : {}) } } });
       return this.approveWrite(req);
     }
-    const info: PermissionInfo = { ...base, state: 'pending', ...(typeof req.diff === 'string' && req.diff ? { diff: req.diff } : {}) }; // spec 052 FR-063: the diff rides on the pending request only
+    const info: PermissionInfo = { ...base, state: 'pending', ...(typeof req.diff === 'string' && req.diff ? { diff: req.diff } : {}), ...(typeof req.sandboxNote === 'string' && req.sandboxNote ? { sandboxNote: req.sandboxNote.slice(0, 300) } : {}) }; // spec 052 FR-063: the diff rides on the pending request only; spec 087 FR-021: so does the sandbox line
     this.opts.emit({ type: 'pending', permission: info });
     const r = await new Promise<Answer>((resolve) => this.pending.set(requestId, { info, resolve }));
     this.pending.delete(requestId);

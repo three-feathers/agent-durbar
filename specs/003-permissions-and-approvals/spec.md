@@ -251,3 +251,10 @@ The mode names stay **Read-only / Ask first / Allow all** (internal `read-only` 
 - Not changed: what each mode allows (FR-001, FR-002), grants stay per session (FR-004, FR-027), the Approve/Deny note, Allow all's confirmation.
 - `[KNOWN GAP]` Not run on a real Copilot, Claude Code or Codex session (no credits spent). That a real adapter's permission `requestId` equals its tool call's `callId` is `read:` for Claude Code (`toolUseId`) and the fake adapter; for Copilot (the SDK's `toolCallId`) and Codex (`itemId`) it is read in the adapter code and not observed live: if they differ the tag simply does not appear.
 
+
+### 2026-10-25: the agent app's OS sandbox as a floor under Read-only and Ask first (spec 087)
+
+Under the three modes of this spec, [spec 087](../087-os-sandbox-floor/spec.md) (issue #611) turns on each agent app's own OS sandbox as a second
+lock in **Read-only** and **Ask first**: Claude Code's bash sandbox and Copilot's local sandbox (writes none or only the session's folders,
+network off), Codex's read-limited profile unchanged; **Allow all** keeps the app's default. Durbar's own checks (FR-001..FR-028) do not
+change and nothing here approves a call they would deny or ask about (spec 087 FR-002). Simulator and fakes only (spec 087 T060-T062 open).

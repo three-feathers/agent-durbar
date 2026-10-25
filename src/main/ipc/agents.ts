@@ -50,6 +50,8 @@ export interface AgentsIpcDeps {
   maskHistory<H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H;
   /** Spec 058: the secret values handed to an agent's session (its folder's MCP extras), masked out of errors. */
   mcpSecrets(id: string): string[];
+  /** Spec 087 FR-007a: an ended or removed session's open sandbox note is forgotten (main's one-shot Continue). */
+  forgetSandboxNote?(id: string): void;
   /** Spec 052 activity log row for Restart session (spec 058 FR-022). */
   logMcp(a: AgentInfo, action: string): void;
 }
@@ -103,6 +105,7 @@ export function register(deps: AgentsIpcDeps): void {
     await endSession(id);
     sessionStarts.forget(id); // spec 085: the next session in this folder starts its own count
     deps.profileFreshness?.forget(id); // spec 043 FR-041
+    deps.forgetSandboxNote?.(id); // spec 087
     deps.browserGone?.(id); // spec 080 FR-023
   });
   /** Spec 058 FR-022: Restart session with these servers: End session, then the same id through the resume path; no prompt is sent. */
@@ -179,6 +182,7 @@ export function register(deps: AgentsIpcDeps): void {
     checkpointStore()?.forget(a.id); // spec 065 FR-006
     sessionStarts.forget(a.id); // spec 085
     deps.profileFreshness?.forget(a.id); // spec 043 FR-041
+    deps.forgetSandboxNote?.(a.id); // spec 087
     deps.browserGone?.(a.id); // spec 080 FR-023
     agents.delete(a.id);
     agentState.remove(a.id);

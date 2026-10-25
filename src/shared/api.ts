@@ -82,6 +82,47 @@ export interface AgentInfo {
   defaultAgent?: string;
   /** Which adapter runs this agent (spec 012 FR-058), e.g. `copilot`. */
   adapterId: string;
+  /** Spec 087 FR-011: the agent app's OS sandbox under Durbar's checks, as the adapter last reported it; absent = nothing is shown. Never saved. */
+  sandbox?: SandboxState;
+}
+
+/**
+ * Spec 087 FR-011: the OS sandbox an agent app runs its commands in, normalized (no vendor name or vendor setting key; those stay in
+ * `src/adapters/`). `on` only after the agent app confirmed it; `unknown` while its start has not confirmed it yet. `reason` is masked
+ * and at most 200 characters.
+ */
+export interface SandboxState {
+  state: 'on' | 'off' | 'unknown';
+  /** How it is enforced: the macOS sandbox, bubblewrap, Windows ProcessContainer, or the agent app's own sandbox. */
+  mechanism?: 'seatbelt' | 'bubblewrap' | 'processcontainer' | 'vendor';
+  /** The organization's own policy keeps it on (Allow all). */
+  managed?: boolean;
+  /** Set in an earlier mode of this session and kept until a new session (a switch to Allow all does not clear it). */
+  untilNewSession?: boolean;
+  /** What runs inside it: shell commands, MCP servers, the app's own file tools. */
+  covers: Array<'shell' | 'mcp' | 'files'>;
+  /** An approved request may run outside the sandbox (spec 087 FR-021). */
+  approvedMayLeave?: boolean;
+  /** Read-only (no writes) or Ask first (the session's folders). */
+  writes?: 'none' | 'folders';
+  /** A real session on this app and OS checked it (spec 087 FR-020); false: "Requested; not verified on a real session." */
+  verified: boolean;
+  /** Why it is off or unknown, in plain words (masked, at most 200 characters). */
+  reason?: string;
+  /** Session folders the floor left out, each "<folder> (<why>)" (masked, cut), at most 10; `leftOutMore` counts the rest. */
+  leftOut?: string[];
+  leftOutMore?: number;
+}
+
+/** Spec 087 FR-012: one agent app's OS sandbox on this computer, for Settings > Agent apps. Plain words; `reason` masked and cut. */
+export interface SandboxHostView {
+  available: boolean;
+  mechanism?: SandboxState['mechanism'];
+  /** Why not (masked, at most 200 characters) and what would fix it. */
+  reason?: string;
+  fix?: string;
+  /** Spec 087 FR-007c: *Always continue on this computer* is stored for this app (shown and undone in Settings). */
+  alwaysContinue?: boolean;
 }
 
 /** Choices for a new session. */
@@ -227,7 +268,7 @@ export interface ScheduleInfo {
   /** Why the app paused it (FR-014, FR-015). */
   pausedReason?: 'cap' | 'session-ended';
   done?: boolean;
-  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' };
+  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'skipped-door-full' };
   /** FR-014: one session instead of the folder's agent. */
   target?: { session: string; agent: string; name?: string };
   /** FR-015: the schedule's own limit and what its runs spent. */
@@ -695,6 +736,12 @@ export interface DurbarApi {
   openExternal?(url: string): Promise<{ ok: boolean }>;
   /** Change the permission mode of agent `id` now (applies to the next request). `clearGrants`: forget "Approve for this session"; `approvePending`: approve what is waiting. */
   setPermMode?(id: string, mode: PermMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): Promise<{ ok: boolean; error?: string; mode?: PermMode; pending?: number }>;
+  /** Spec 087 FR-007a/FR-007c: *Continue without the OS sandbox* for this session (`always`: on this computer, where offered). Nothing is sent. */
+  sandboxContinue?(id: string, opts?: { always?: boolean }): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 087 FR-012: per ready agent app, whether its OS sandbox can run here (Settings > Agent apps). */
+  sandboxHosts?(): Promise<Record<string, SandboxHostView>>;
+  /** Spec 087 FR-007c: undo *Always continue on this computer* for an app. */
+  sandboxAlwaysOff?(app: string): Promise<{ ok: boolean }>;
   /** Change the model, effort or context tier of agent `id` (spec 030). Validated in main; saved with the folder entry once applied. */
   setModel?(id: string, request: ModelSwitchRequest): Promise<{ ok: boolean; error?: string; result?: ModelSwitchResult }>;
   /** Remove a queued model switch (spec 030). */
@@ -790,6 +837,17 @@ export interface DurbarApi {
   /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
   /** Remote control ended without the user (spec 012 FR-158, spec 054 FR-062): an agent id, or the id with a plain reason. */
   onRemoteOff?(cb: (p: string | { id: string; reason?: string }) => void): () => void;
+  /** Spec 017 FR-015..FR-017: per agent id, a door the user closed and how many runs are held there (only doors that are closed or hold something). */
+  doorsList?(): Promise<Record<string, { closed: boolean; held: number }>>;
+  setDoor?(id: string, closed: boolean): Promise<{ ok: true; closed: boolean; held: number; remoteOff?: boolean } | { ok: false; error: string }>;
+  releaseHeld?(id: string, action: 'send' | 'discard'): Promise<{ ok: true; queued?: number; sent?: number; discarded?: number } | { ok: false; error: string }>;
+  onDoorsChanged?(cb: (doors: Record<string, { closed: boolean; held: number }>) => void): () => void;
+  /** Review on #631: the held prompts of a door (the window masks and cuts them in the Send all dialog). */
+  doorsHeld?(id: string): Promise<{ prompt: string; at: number }[]>;
+  /** Send all stopped; the runs stay held (why: paused-all, paused, cap, ended, failed). */
+  onDoorsStopped?(cb: (p: { id: string; why: string }) => void): () => void;
+  /** A scheduled run could not be kept at a closed door whose queue is full. */
+  onDoorsFull?(cb: (p: { id: string }) => void): () => void;
   /** Spec 076 FR-203: a session started under advice of its agent app's organization policy; the words to show (no policy values). */
   onOrgNote?(cb: (p: { id: string; text: string }) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */

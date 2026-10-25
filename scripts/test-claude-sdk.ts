@@ -3,6 +3,7 @@
  * `npm run test:claudesdk`. The real SDK is not a dependency; no claude, no credits.
  */
 import * as assert from 'assert';
+import { SANDBOX_HOST_OK } from './fakes/claude-cli';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -125,7 +126,7 @@ async function main(): Promise<void> {
       ctl.emit({ type: 'assistant', message: { id: 'm-' + text, content: [{ type: 'text', text: 'hi' }], usage: { input_tokens: 3, output_tokens: 1 } } });
       ctl.emit({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.0002 });
     });
-    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (o) => createSdkTransport(sdk, o), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (o) => createSdkTransport(sdk, o), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     const ev: AgentEvent[] = [];
     ad.onEvent((e) => ev.push(e));
     const sid = await ad.start({ workspace: WS, permissionMode: 'ask', quiet: true });
@@ -158,7 +159,7 @@ async function main(): Promise<void> {
         close: () => undefined,
       }),
     };
-    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (o) => createSdkTransport(sdk, o), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (o) => createSdkTransport(sdk, o), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     const ev: AgentEvent[] = [];
     ad.onEvent((e) => ev.push(e));
     const sid = await ad.start({ workspace: WS, quiet: true });

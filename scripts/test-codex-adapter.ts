@@ -95,7 +95,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, planMode: true, effort: true, modelSwitch: { verified: true, contextTier: false },
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpToolFilter: true, mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any',
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpToolFilter: true, mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any', osSandbox: true,
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
@@ -444,9 +444,9 @@ async function main(): Promise<void> {
     const { server, ad, events } = make();
     const sid = await ad.start({ workspace: ws, permissionMode: 'read-only' });
     assert.strictEqual(sid, 'thr_1', 'the Durbar session id is the thread id');
-    assert.deepStrictEqual(events.filter((e) => e.type !== 'mcp').map((e) => [e.type, (e as { intent?: string }).intent]), [['status', `Ready in ${ws}`]], 'a loud start says Ready once (the thread/started idle is not doubled)');
+    assert.deepStrictEqual(events.filter((e) => e.type !== 'mcp' && e.type !== 'sandbox').map((e) => [e.type, (e as { intent?: string }).intent]), [['status', `Ready in ${ws}`]], 'a loud start says Ready once (the thread/started idle is not doubled)');
     await server.flush();
-    assert.strictEqual(events.filter((e) => e.type !== 'mcp').length, 1);
+    assert.strictEqual(events.filter((e) => e.type !== 'mcp' && e.type !== 'sandbox').length, 1);
     const named = await ad.start({ workspace: ws, sessionId: 'agent-7', permissionMode: 'read-only', quiet: true });
     assert.strictEqual(named, 'agent-7', 'a caller-named id is kept');
     await ad.send(named, { text: 'x' });
@@ -536,6 +536,10 @@ async function main(): Promise<void> {
     const rep = server.serverRequest('item/commandExecution/requestApproval', { threadId: sid, itemId: 'c1', command: 'npm test' }, child);
     void rep;
     await until('the pending state', () => pendingOf(events));
+    // spec 087 FR-021 (review on PR 733): the card's sandbox line reaches the pending permission, on its own field
+    const pendingPerm = events.find((e) => e.type === 'status' && e.status === 'needs-permission' && e.permission) as { permission?: { sandboxNote?: string; summary?: string } } | undefined;
+    assert.strictEqual(pendingPerm?.permission?.sandboxNote, 'If you approve, Codex may run this outside its sandbox.', 'the pending card carries the sandbox line');
+    assert.ok(!/sandbox/.test(pendingPerm?.permission?.summary ?? ''), 'and the summary does not');
     events.length = 0;
     child.stderrText(`fatal: token ${SECRET_KEY} and ${SECRET_ENV}\n`);
     child.exit(139, null);

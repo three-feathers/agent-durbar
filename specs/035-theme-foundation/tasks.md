@@ -18,3 +18,8 @@
 - [x] T014 Scene kits: `scene` in the manifest (renderer and main validation), `scenekits.js` with five kits, the office kit unchanged; `test:scenekits` (every kit, status, mood and look is valid SVG and keeps its cues) [FR-013]
 - [x] T015 Built-in packs carry no overlay slots their kits do not draw (25 entries removed, plus the never-drawn `chair-back`/`desk`/`monitor` defaults); overlay tests use a fixture user pack on the office kit; art keys limited to the slots the renderer draws (spec 040 FR-010)
 - [ ] T013 Owner review of the five looks (screenshots in PR #137)
+- [x] T016 Fix three asserts that could not fail: default cell size value, link-write refusal always checked, hook/sanitizer counts across renders (issue #749) [FR-014]
+
+## Changes 2026-10-25 (issue #747)
+
+- [x] T017 `test:theme` checks `themes.css` against a property allow-list (flex, transform, position/top/left, custom properties were not caught) and has mutation cases [FR-015]

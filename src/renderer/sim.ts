@@ -30,6 +30,33 @@ type ModelSwitchResult = import('../shared/modelswitch').ModelSwitchResult;
 type ContextTier = import('../shared/modelswitch').ContextTier;
 type ActivityRow = import('../shared/activity').ActivityRow;
 type EditInfo = import('../shared/edits').EditInfo;
+type SandboxState = import('../shared/api').SandboxState;
+
+/**
+ * Spec 087 FR-017: the simulated OS sandbox of each sim agent, from a fixed table (no real call): on per mechanism, off with a reason,
+ * checking, managed and kept until a new session, so the chip and its tooltip are checked with zero credits. A simulation, not a
+ * statement about the real apps.
+ */
+const SIM_SBX_WIN = "Claude Code has no OS sandbox on Windows; Durbar's own checks still apply (only WSL2 has one).";
+const SIM_SBX_COPILOT = 'Copilot says this computer cannot run its sandbox: bubblewrap 0.5.0 or later is needed (found 0.4.0).';
+function simCovers(kind: string): SandboxState['covers'] {
+  return kind === 'claude' ? ['shell'] : kind === 'codex' ? ['shell', 'files'] : ['shell', 'mcp'];
+}
+function simSandboxFor(i: number, kind: string, mode: string): SandboxState | undefined {
+  if (kind === 'basic') return undefined;
+  const covers = simCovers(kind);
+  if (mode === 'allow') {
+    if (kind === 'codex') return undefined;
+    if (i === 5) return { state: 'on', mechanism: 'seatbelt', managed: true, covers, verified: false }; // Allow all · Sandboxed (managed)
+    if (i === 14 && kind === 'copilot') return { state: 'on', mechanism: 'bubblewrap', untilNewSession: true, covers, verified: false }; // Allow all · Sandboxed (until a new session)
+    return undefined;
+  }
+  const writes = mode === 'ask' ? 'folders' : 'none';
+  if (kind === 'codex') return { state: 'on', mechanism: 'vendor', covers, writes: 'none', ...(mode === 'ask' ? { approvedMayLeave: true } : {}), verified: false };
+  if (i === 3 || i === 10) return { state: 'off', covers, writes, verified: false, reason: kind === 'claude' ? SIM_SBX_WIN : SIM_SBX_COPILOT }; // · Not sandboxed
+  if (i === 12) return { state: 'unknown', mechanism: 'bubblewrap', covers, writes, verified: false, reason: 'Waiting for the app to confirm its sandbox at the start.' }; // · Sandbox: checking
+  return { state: 'on', mechanism: i === 13 ? 'processcontainer' : i % 2 ? 'seatbelt' : 'bubblewrap', covers, writes, verified: false };
+}
 type SimNote = import('../shared/notes').Note;
 type SimNotesWrote = import('../shared/notes').NotesWrote;
 type SimNotesView = import('../shared/notes').NotesView;
@@ -211,6 +238,9 @@ interface SimOptions {
 type SimScope = { key: string; label: string };
 interface SimAgent {
   info: AgentInfo;
+  /** Spec 087: the person chose Continue without the OS sandbox (this session), or the note is waiting. */
+  sbxContinued?: boolean;
+  sbxHeld?: boolean;
   /** Spec 034 FR-020 (simretry=1): the agent app keeps retrying, so the background ticks leave this agent alone. */
   retryHold?: boolean;
   /** Spec 015 FR-014 (simcompact=1): a compaction that never ends by itself, so the background ticks leave this agent alone. */
@@ -562,6 +592,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     if (n < 12) rows = ROSTER.filter((r) => r[0] !== 'Hugo' && r[0] !== 'Priya' && r[0] !== 'Noor' && r[0] !== 'Omar').slice(0, n);
     while (rows.length < n) rows.push(['Agent' + (rows.length + 1), 'Worker', 'blog', 'working', 'Working through a queued task', 0, ['src/index.ts']]);
 
+    const simSbxAlways = new Set<string>(); // spec 087 FR-007c: the simulated stored Always continue choice (memory only)
     const crashIds = new Set<string>(); // spec 006 FR-046 (simcrash=N): the sessions the faked crash left mid-turn
     /* spec 006 FR-043/FR-044 (review of PR 720): under simcrash=N the bridge counts what the card makes it do, for the driver: every wake
        (and how many run at once: a wake then takes 150 ms), every prompt sent and every permission-mode change */
@@ -591,6 +622,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       // Jonas models the real adapter's state until Phase 3: the controls work but are flagged as not verified on a real account.
       if (name === 'Jonas') info.modelControl = { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true, unverified: true };
       if (i === 6) info.modelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
+      const sbx = simSandboxFor(i, info.adapterId ?? 'copilot', info.permMode); // spec 087 FR-017
+      if (sbx) info.sandbox = sbx;
       (info as AgentInfo & { roomName?: string; role?: string }).roomName = roomName;
       (info as AgentInfo & { roomName?: string; role?: string }).role = role;
       info.renameCap = caps(info.adapterId ?? 'copilot').renameSession; // spec 059: what a rename does in the agent app
@@ -648,6 +681,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (server) (simDoc.servers[server] ??= { calls: 0, failed: 0 })[f]++;
     };
     let simSchedHook: ((e: AgentEvent) => void) | undefined; // spec 044 FR-018: usage of a scheduled run counts toward its limit
+    const simDoorSubs: ((d: Record<string, { closed: boolean; held: number }>) => void)[] = []; // listeners can subscribe before the schedules start
+    const simDoorStopSubs: ((p: { id: string; why: string }) => void)[] = [];
+    const simRemoteOffSubs: ((p: { id: string; reason?: string }) => void)[] = []; // spec 054 FR-040: the door's remote-off event, as main sends it
+    let simDoorsRef: { map: Map<string, { closed: boolean; held: { prompt: string; at: number; scheduleId?: string }[]; releasing?: boolean }>; subs: ((d: Record<string, { closed: boolean; held: number }>) => void)[]; list(): Record<string, { closed: boolean; held: number }>; changed(): void } | undefined; // spec 017 FR-015 (set below, with the schedules)
     let selfMcp = false; /* the simulator's own `mcp` event, as opposed to one a driver reports */
     const emit = (e: AgentEvent): void => {
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
@@ -828,9 +865,39 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       else sc.spent = (sc.spent ?? 0) + amt;
       simSched.changed();
     };
+    /* spec 017 FR-015..FR-017, spec 044 FR-110: doors the user closed and the runs held there (memory only: the simulator keeps no profile) */
+    type SimHeld = { prompt: string; at: number; scheduleId?: string };
+    const simDoors = { map: new Map<string, { closed: boolean; held: SimHeld[]; releasing?: boolean }>(), subs: simDoorSubs,
+      list(): Record<string, { closed: boolean; held: number }> { const o: Record<string, { closed: boolean; held: number }> = {}; this.map.forEach((v, k) => { if (v.closed || v.held.length) o[k] = { closed: v.closed, held: v.held.length }; }); return o; },
+      changed() { const d = this.list(); this.subs.forEach((f) => f(d)); } };
+    simDoorsRef = simDoors;
+    const simIdle = (s: SimAgent): boolean => !(s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm);
     window.setInterval(() => {
       const now = Date.now();
       let any = false;
+      // Send all: the next held run goes when the agent is free again, through the schedule's rules (spec 044 FR-111, as main's Scheduler.releaseDoorRun)
+      simDoors.map.forEach((d, id) => {
+        if (d.closed || !d.releasing) return;
+        const s = sims.find((x) => x.info.id === id);
+        const r = d.held[0];
+        if (!s || !r) { d.releasing = false; simDoors.changed(); return; }
+        const sc = simSched.list.find((x) => x.id === r.scheduleId);
+        const stop = (why: string) => { d.releasing = false; simDoors.changed(); simDoorStopSubs.forEach((f) => f({ id, why })); };
+        if (!sc) { d.held.shift(); if (!d.held.length) d.releasing = false; simDoors.changed(); return; } // its schedule was deleted
+        if (simSched.pausedAll) return stop('paused-all');
+        if (sc.paused) return stop('paused');
+        if (sc.cap && (sc.spent ?? 0) >= sc.cap.amount) return stop('cap');
+        if (!simIdle(s) || (!!s.breakUntil && Date.now() < s.breakUntil)) return; // busy: next tick
+        d.held.shift();
+        if (!d.held.length) d.releasing = false;
+        emit({ type: 'user', sessionId: id, timestamp: now, text: r.prompt } as AgentEvent);
+        simSched.ran.forEach((f) => f({ agentId: id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
+        simSched.attrib.set(id, sc.id);
+        sc.last = { at: now, outcome: 'sent' };
+        void api.send(id, r.prompt, []);
+        simSched.changed();
+        simDoors.changed();
+      });
       for (const sc of simSched.list) {
         if (sc.target && !sc.done && !sc.paused && !sims.some((x) => x.info.id === sc.target?.session)) { sc.paused = true; sc.pausedReason = 'session-ended'; any = true; continue; } // FR-014
         const recurring = sc.every !== undefined || !!sc.rule;
@@ -839,7 +906,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         any = true;
         const s = simAgentOf(sc);
         const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm || (!!s.breakUntil && Date.now() < s.breakUntil)); // spec 068 FR-008: a coffee break counts as busy
-        const outcome = simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
+        const door = s ? simDoors.map.get(s.info.id) : undefined;
+        const outcome = simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : door?.closed ? 'held' : busy ? 'skipped-busy' : 'sent';
+        if (outcome === 'held' && door) { door.held.push({ prompt: sc.prompt, at: now, scheduleId: sc.id }); simDoors.changed(); } // spec 044 FR-110
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
           simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
@@ -1064,7 +1133,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }
       s.perm = { ...base, file, cont, ...(sc.folders ? { folders: sc.folders } : {}) };
       s.state = 'waiting';
-      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}) } });
+      // spec 087 FR-021: a Codex approval card in Ask first says what approving may mean for its sandbox (its own line, as codexPermission)
+      const sbxNote = (s.info.adapterId ?? 'copilot') === 'codex' ? (kind === 'shell' ? 'If you approve, Codex may run this outside its sandbox.' : 'If you approve, Codex writes this outside its read-only sandbox.') : undefined;
+      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}), ...(sbxNote ? { sandboxNote: sbxNote } : {}) } });
       return false;
     }
     function editTool(s: SimAgent, file: string, ok: boolean): void {
@@ -1988,6 +2059,35 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setSchedulesPaused: async (on) => { simSched.pausedAll = on === true; simSched.changed(); return { ok: true, pausedAll: simSched.pausedAll }; },
       onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
       onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },
+      // spec 017 FR-015..FR-017: doors the user closes (memory only in the simulator)
+      doorsList: async () => simDoorsRef?.list() ?? {},
+      setDoor: async (id, closed) => {
+        const D = simDoorsRef;
+        if (!D || !sims.some((x) => x.info.id === id) || typeof closed !== 'boolean') return { ok: false as const, error: 'invalid request' };
+        const d = D.map.get(id) ?? { closed: false, held: [] };
+        const remoteOff = closed && simRemote.has(id);
+        if (remoteOff) { simRemote.delete(id); simRemoteOffSubs.forEach((f) => f({ id, reason: 'the door is closed (Do not disturb)' })); } // spec 054 FR-040
+        d.closed = closed;
+        if (closed) d.releasing = false;
+        D.map.set(id, d);
+        D.changed();
+        return { ok: true as const, closed, held: d.held.length, ...(remoteOff ? { remoteOff: true } : {}) };
+      },
+      releaseHeld: async (id, action) => {
+        const d = simDoorsRef?.map.get(id);
+        if (!simDoorsRef || !d || (action !== 'send' && action !== 'discard')) return { ok: false as const, error: 'invalid request' };
+        if (d.closed) return { ok: false as const, error: 'Open the door first.' };
+        if (action === 'discard') { const n = d.held.length; d.held = []; simDoorsRef.changed(); return { ok: true as const, discarded: n }; }
+        const n = d.held.length;
+        d.releasing = n > 0;
+        simDoorsRef.changed();
+        return { ok: true as const, queued: n };
+      },
+      onDoorsChanged: (cb) => { simDoorSubs.push(cb); return () => undefined; },
+      onDoorsStopped: (cb) => { simDoorStopSubs.push(cb); return () => undefined; },
+      onDoorsFull: () => () => undefined,
+      onRemoteOff: (cb) => { simRemoteOffSubs.push(cb); return () => undefined; },
+      doorsHeld: async (id) => (simDoorsRef?.map.get(id)?.held ?? []).map((h) => ({ prompt: h.prompt, at: h.at })),
       resolvePlan: async (id: string, requestId: string, answer: { kind: string; feedback?: string }) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || !s.planReq || s.planReq.id !== requestId) return { ok: false, error: 'unknown plan' };
@@ -2167,6 +2267,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setRemote: async (id, on) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || typeof on !== 'boolean') return { ok: false, error: 'unknown agent' };
+        if (on && simDoorsRef?.map.get(id)?.closed) return { ok: false, error: 'The door is closed (Do not disturb). Open it first.' }; // spec 054 FR-040
         const k = caps(s.info.adapterId ?? 'copilot');
         if (!k.remote) return { ok: false, error: 'This agent app cannot be controlled remotely.' };
         await new Promise((r) => window.setTimeout(r, 600));
@@ -2570,6 +2671,23 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         // spec 041 FR-065 delta (issue #608 review): `simsendfail=secret` fakes an app error that holds token shapes, also split by Markdown
         if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'secret')
           return { ok: false, error: 'The agent app refused the message: ' + SECRETS_TEXT + ' Also gh`p_' + SIM_TOK.ghp.slice(4) + '` and ' + SIM_TOK.ghp.slice(0, 24) + '**' + SIM_TOK.ghp.slice(24) + '** (split late).' };
+        // spec 087 FR-007: `simsendfail=sandbox-choice` fakes Claude Code's or Copilot's sandbox not starting: nothing is sent, the
+        // note offers Continue (and, for Claude on Windows, Always) beside Change mode…
+        const failParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simsendfail') : null;
+        const sbxKind = s.info.adapterId ?? 'copilot';
+        if (failParam === 'sandbox-choice' && s.info.permMode !== 'allow' && (sbxKind === 'claude' || sbxKind === 'copilot') && !s.sbxContinued) {
+          const reason = sbxKind === 'claude' ? SIM_SBX_WIN : SIM_SBX_COPILOT;
+          s.info.sandbox = { state: 'off', covers: simCovers(sbxKind), writes: s.info.permMode === 'ask' ? 'folders' : 'none', verified: false, reason };
+          window.setTimeout(() => {
+            emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: s.info.sandbox ?? null, notice: { text: `${sbxKind === 'claude' ? 'Claude Code' : 'Copilot'} could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Nothing was sent.`, actions: sbxKind === 'claude' && !simSbxAlways.has('claude') ? ['continue', 'always'] : ['continue'] } });
+            emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Not sent: the OS sandbox could not start' });
+          }, 200);
+          return { ok: true };
+        }
+        // spec 087 FR-019 + spec 012 FR-087: `simsendfail=sandbox` fakes a refused Read-only / Ask first: Codex's sandbox (the real Linux
+        // message), and for Claude Code and Copilot their sandbox under an organization policy that requires it (the existing refusal path)
+        if (failParam === 'sandbox' && s.info.permMode !== 'allow' && (sbxKind === 'claude' || sbxKind === 'copilot'))
+          return { ok: false, error: `${sbxKind === 'claude' ? 'Claude Code' : 'Copilot'} could not start its OS sandbox: ${(sbxKind === 'claude' ? SIM_SBX_WIN : SIM_SBX_COPILOT).replace(/[.\s]+$/, '')}. Read-only and Ask first need it on this computer (your organization's policy), so nothing was sent.` };
         // spec 012 FR-087: `simsendfail=sandbox` fakes Codex refusing Read-only / Ask first (the real Linux message), for the driver
         if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'sandbox' && s.info.permMode !== 'allow')
           return { ok: false, error: "Codex refused the session settings: fs sandbox helper failed: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox, so nothing ran. To allow it for bubblewrap, see the README (Codex)." };
@@ -2700,6 +2818,32 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: /^https?:\/\//i.test(url) };
       },
       setRoomClosed: async () => ({ ok: true }),
+      // spec 087 FR-007a/FR-007c/FR-012: the choices and the Settings line, simulated (no real call)
+      sandboxContinue: async (id, o) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        const kind = s.info.adapterId ?? 'copilot';
+        if (o?.always === true && kind !== 'claude') return { ok: false, error: 'Always continue is not offered for this app: its sandbox can be fixed on this computer.' };
+        s.sbxContinued = true;
+        s.sbxHeld = false;
+        if (o?.always === true) simSbxAlways.add(kind);
+        s.info.sandbox = { state: 'off', covers: simCovers(kind), writes: s.info.permMode === 'ask' ? 'folders' : 'none', verified: false, reason: 'You chose to continue without the OS sandbox for this session.' };
+        emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: s.info.sandbox });
+        return { ok: true };
+      },
+      sandboxHosts: async () => {
+        const out: Record<string, import('../shared/api').SandboxHostView> = {
+          claude: { available: false, reason: SIM_SBX_WIN, ...(simSbxAlways.has('claude') ? { alwaysContinue: true } : {}) },
+          copilot: { available: false, reason: SIM_SBX_COPILOT, fix: 'Install bubblewrap 0.5.0 or later and slirp4netns (for example: sudo apt install bubblewrap slirp4netns). On Ubuntu 24.04+ AppArmor may also block bubblewrap: see the README (Safety model).' },
+          codex: { available: true, mechanism: 'bubblewrap', fix: 'Checked at each start; on Ubuntu 24.04+ AppArmor may block bubblewrap: see the README (Codex).' },
+        };
+        if (new URLSearchParams(location.search).get('simsandbox') === 'ok') { out.claude = { available: true, mechanism: 'seatbelt' }; out.copilot = { available: true, mechanism: 'seatbelt' }; }
+        return out;
+      },
+      sandboxAlwaysOff: async (app) => {
+        simSbxAlways.delete(String(app));
+        return { ok: true };
+      },
       setPermMode: async (id, mode, o) => {
         if (crashProbe.on) crashProbe.modeSets++;
         const s = sims.find((x) => x.info.id === id);
@@ -2708,9 +2852,17 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (org) return { ok: false, error: org + ': pick another permission mode.' };
         const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
         simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
+        const kept = mode === 'allow' && s.info.sandbox?.state === 'on' && (s.info.adapterId ?? 'copilot') === 'copilot'; // spec 087: Copilot keeps its floor until a new session
         s.info.permMode = mode;
         s.info.permRestored = undefined;
         s.info.permFrom = undefined;
+        { // spec 087 FR-013: the floor in force after the switch (the simulator applies it at once)
+          const kind = s.info.adapterId ?? 'copilot';
+          const next: SandboxState | undefined = kept ? { state: 'on', mechanism: s.info.sandbox?.mechanism, untilNewSession: true, covers: simCovers(kind), verified: false } : s.sbxContinued && mode !== 'allow' ? { state: 'off', covers: simCovers(kind), writes: mode === 'ask' ? 'folders' : 'none', verified: false, reason: 'You chose to continue without the OS sandbox for this session.' } : simSandboxFor(0, kind, mode);
+          if (next) s.info.sandbox = next;
+          else delete s.info.sandbox;
+          emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: next ?? null });
+        }
         if (o?.clearGrants && s.grants.size) { s.grants.clear(); grantsEvent(s); }
         let pending = s.perm ? 1 : 0;
         if (s.perm && ((mode === 'allow' && o?.approvePending) || mode === 'read-only')) {
