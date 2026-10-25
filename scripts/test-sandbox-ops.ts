@@ -56,6 +56,10 @@ async function main(): Promise<void> {
   ops.onEvent(note('s2', ['continue', 'always']));
   assert.deepStrictEqual(await ops.continueWithout(true, 's2', { always: true }), { ok: true });
   assert.deepStrictEqual(stored, [['claude', true]], 'stored only after the adapter accepted');
+  // review round 2 (6): a session that ends or is removed takes its note with it
+  ops.onEvent(note('s1', ['continue']));
+  ops.forget('s1');
+  assert.ok(!(await ops.continueWithout(true, 's1', {})).ok, 'forget closes the note');
   // the Settings line and the undo
   assert.deepStrictEqual(await ops.hosts(false), {}, 'owner-only');
   assert.deepStrictEqual(await ops.hosts(true), { claude: { available: false, reason: 'no sandbox here', alwaysContinue: true } }, 'ready apps with the capability; the stored choice shown');

@@ -7,7 +7,7 @@ import * as path from 'path';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 import { sandboxReason } from '../shared/sandbox';
 import type { PermissionMode } from './capabilities';
-import { HOME_SECRETS, normalizeRoot } from './sandboxRoots';
+import { homeSecretPaths, normalizeRoot, secretRelation } from './sandboxRoots';
 import { broadFolderKind } from '../shared/broadfolder';
 
 /** FR-010/FR-020: platforms where a real session recorded that the floor held (T060-T062). Empty until then. */
@@ -121,10 +121,20 @@ export function copilotSandboxConfig(i: { mode: PermissionMode | string; roots: 
   const ask = i.mode === 'ask';
   const tools = copilotPathReadDirs(i.pathDirs, i.home, i.platform, i.realpath);
   const denied = i.host.capabilities.includes('denied_paths');
-  const h = realHome(i.home, i.realpath ?? ((p) => p));
-  const roots = denied || !h ? [...i.roots] : i.roots.filter((r) => !broadOf(r, h.path, i.platform));
+  const rp = i.realpath ?? ((p: string) => p);
+  const h = realHome(i.home, rp);
+  // review round 2 on PR 733: the credential paths, and the real target of each one that is a link; a root that is one of them or inside
+  // one is never granted; a root that contains one (the home folder, a parent of it, `~/.config`) only where `deniedPaths` can keep them out
+  const hs = h ? homeSecretPaths(h.path, rp) : { literal: [], targets: [] };
+  const secretAll = [...hs.literal, ...hs.targets];
+  const roots = i.roots.filter((r) => {
+    const rel = secretRelation(r, secretAll, i.platform);
+    if (rel === 'inside') return false;
+    if (denied) return true;
+    return rel !== 'contains' && !(h && broadOf(r, h.path, i.platform));
+  });
   const deniedPaths = denied
-    ? [...(ask ? roots.flatMap((r) => [joinAs(r, '.git', 'hooks'), joinAs(r, '.git', 'config')]) : []), ...(h ? HOME_SECRETS.map((x) => joinAs(h.path, ...x.split('/'))) : [])]
+    ? [...(ask ? roots.flatMap((r) => [joinAs(r, '.git', 'hooks'), joinAs(r, '.git', 'config')]) : []), ...secretAll]
     : undefined;
   return {
     enabled: true,

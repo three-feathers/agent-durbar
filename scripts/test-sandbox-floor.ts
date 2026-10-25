@@ -194,6 +194,29 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     assert.deepStrictEqual(got, [path.join(home, '.local', 'bin')], 'a link to home or to its parent is dropped; a missing entry is dropped; a folder under home is kept');
     fs2.rmSync(tmp, { recursive: true, force: true });
   }
+  // review round 2 (2, 5): a credential folder that is a LINK is denied at its target too; a linked home folder is compared where it leads
+  {
+    const fs3 = require('fs') as typeof import('fs');
+    const tmp = fs3.realpathSync.native(fs3.mkdtempSync(path.join(os.tmpdir(), 'durbar-087-link-')));
+    const realHomeDir = path.join(tmp, 'var', 'home', 'me');
+    fs3.mkdirSync(path.join(realHomeDir, 'dotfiles', 'ssh'), { recursive: true });
+    fs3.mkdirSync(path.join(realHomeDir, '.local', 'bin'), { recursive: true });
+    fs3.symlinkSync(path.join(realHomeDir, 'dotfiles', 'ssh'), path.join(realHomeDir, '.ssh'), 'dir');
+    fs3.symlinkSync(path.join(tmp, 'var', 'home'), path.join(tmp, 'home'), 'dir');
+    const linkedHome = path.join(tmp, 'home', 'me');
+    const real = (p: string): string => fs3.realpathSync.native(p);
+    const plat = process.platform === 'win32' ? 'win32' : 'linux';
+    const target = path.join(realHomeDir, 'dotfiles', 'ssh');
+    const cl2 = claudeSandboxSettings('ask', [realHomeDir], linkedHome, real, plat)!;
+    assert.ok(cl2.filesystem.denyRead.includes('~/.ssh') && cl2.filesystem.denyRead.includes(target) && cl2.filesystem.denyWrite.includes(target), 'Claude: the link and its target are denied');
+    const cp2 = copilotSandboxConfig({ mode: 'read-only', roots: [realHomeDir], pathDirs: [], host: FULL_HOST, home: linkedHome, platform: plat, realpath: real })!;
+    assert.ok(cp2.userPolicy.filesystem.deniedPaths!.includes(target), 'Copilot: the target is denied too');
+    // the home folder is a link (/home -> /var/home): a PATH entry and a session folder in the other form are still the home folder
+    assert.deepStrictEqual(copilotPathReadDirs([realHomeDir, path.join(realHomeDir, '.local', 'bin')], linkedHome, plat, real), [path.join(realHomeDir, '.local', 'bin')], 'PATH: the home folder in its real form is dropped');
+    const cp3 = copilotSandboxConfig({ mode: 'ask', roots: [realHomeDir], pathDirs: [], host: { supported: true, capabilities: ['shell'] }, home: linkedHome, platform: plat, realpath: real })!;
+    assert.deepStrictEqual(cp3.userPolicy.filesystem.readwritePaths, [], 'the home folder in its real form is left out without denied_paths');
+    fs3.rmSync(tmp, { recursive: true, force: true });
+  }
   // FR-004/Q4 + review on PR 733: a session folder that IS the home folder or a parent of it
   {
     const h = '/home/me';
@@ -202,6 +225,14 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     const withDeny = copilotSandboxConfig({ mode: 'read-only', roots: ['/home/me'], pathDirs: [], host: FULL_HOST, home: h, platform: 'linux' })!;
     assert.deepStrictEqual(withDeny.userPolicy.filesystem.readonlyPaths, ['/home/me']);
     assert.deepStrictEqual(withDeny.userPolicy.filesystem.deniedPaths, HOME_SECRETS.map((x) => path.posix.join(h, x)), 'with denied_paths: every credential folder denied inside it');
+    // review round 2 (3): a session folder that CONTAINS a credential folder (~/.config) is treated like the home folder; one INSIDE a
+    // credential folder (~/.ssh itself) is never granted (an allow and a deny on one path: no documented rule)
+    const cfgNoDeny = copilotSandboxConfig({ mode: 'ask', roots: ['/home/me/.config', '/home/me/.ssh', '/home/me/work'], pathDirs: [], host: { supported: true, capabilities: ['shell'] }, home: h, platform: 'linux' })!;
+    assert.deepStrictEqual(cfgNoDeny.userPolicy.filesystem.readwritePaths, ['/home/me/work'], 'without denied_paths: ~/.config and ~/.ssh left out');
+    const cfgDeny = copilotSandboxConfig({ mode: 'ask', roots: ['/home/me/.config', '/home/me/.ssh'], pathDirs: [], host: FULL_HOST, home: h, platform: 'linux' })!;
+    assert.deepStrictEqual(cfgDeny.userPolicy.filesystem.readwritePaths, ['/home/me/.config'], 'with denied_paths: ~/.config kept (gh and gcloud denied inside), ~/.ssh never');
+    const clIn = claudeSandboxSettings('read-only', ['/home/me/.ssh', '/home/me/work'], h)!;
+    assert.deepStrictEqual(clIn.filesystem.allowRead, ['/home/me/work'], 'Claude: a root inside a credential folder is left out of allowRead');
     const cl = claudeSandboxSettings('ask', ['/home/me'])!;
     assert.ok(cl.filesystem.allowRead.includes('/home/me') && ['~/.ssh', '~/.aws', '~/.config/gh'].every((x) => cl.filesystem.denyRead.includes(x)), 'Claude: the narrower deny keeps the credential folders out of a home root (read: docs)');
   }

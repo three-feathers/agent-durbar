@@ -369,8 +369,12 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
   the credential folders (`HOME_SECRETS`, `src/adapters/sandboxRoots.ts`: `~/.ssh`, `~/.aws`, `~/.config/gh`, `~/.gnupg`, `~/.netrc`,
   `~/.npmrc`, `~/.git-credentials`, `~/.docker`, `~/.kube`, `~/.azure`, `~/.config/gcloud`, `~/.claude`, `~/.copilot`, `~/.codex`) in
   `denyRead` and `denyWrite`; for reads the narrower rule wins (`read:` https://code.claude.com/docs/en/sandboxing.md, 2026-10-25: "When
-  read rules overlap, the rule with the narrower path applies", and a deny "holds inside a wider allow"). `[KNOWN GAP]` K13: the docs give
-  no allow/deny rule for writes, so whether `denyWrite` holds inside the working directory is not documented (the same open point as K2).
+  read rules overlap, the rule with the narrower path applies", and a deny "holds inside a wider allow"). Writes: the docs list
+  `denyWrite` entries under "Denied within allowed" (research R2); `[KNOWN GAP]` K13 and K2: not run on a real session. Round 2: the docs
+  give no rule for an allow and a deny on the **same** path, so a root that is a credential folder or inside one is never allowed (Claude
+  `allowRead`, Copilot grants); a credential folder that is a link is denied at the link and at its real target (Claude follows a link on a
+  denied path only on macOS, per its docs); a Copilot root that contains a credential folder (`~/.config`) is treated like the home folder;
+  main forgets an ended or removed session's note.
   Copilot grants such a folder only where `denied_paths` lets it deny the same list inside it; without it the folder is left out (deny by
   default), so the floor is enforced either way. `broadFolderKind` (spec 006) decides "home or a parent of it" for roots and `PATH`.
 - **`PATH` entries are resolved** (FR-004, FR-015): each entry and the home folder go through `realpath` before the home check; a link to

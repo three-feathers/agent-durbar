@@ -55,3 +55,47 @@ export function sandboxRoots(roots: readonly unknown[] | undefined | null, realp
  * to the home folder. Claude Code: `denyRead`/`denyWrite` entries (`~/…`); Copilot: `deniedPaths` where the host reports `denied_paths`.
  */
 export const HOME_SECRETS: readonly string[] = Object.freeze(['.ssh', '.aws', '.config/gh', '.gnupg', '.netrc', '.npmrc', '.git-credentials', '.docker', '.kube', '.azure', '.config/gcloud', '.claude', '.copilot', '.codex']);
+
+/** Compare key of a normalised path: case-insensitive for Windows-form paths and on macOS and Windows (constitution VI). */
+const keyOf = (p: string, platform: string): string => (/^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\') || platform === 'win32' || platform === 'darwin' ? p.toLowerCase() : p);
+const sepOf = (p: string): string => (/^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\') ? '\\' : '/');
+
+/**
+ * Spec 087 (review round 2 on PR 733): the credential folders of `HOME_SECRETS` under `home` as absolute paths, and the real location of
+ * each one that exists and is a link elsewhere (a `~/.ssh -> ~/dotfiles/ssh`): Claude Code's docs say only macOS follows a link on a
+ * denied path, so Durbar denies both the link and its target itself. An entry whose `realpath` throws (it does not exist) has no target.
+ */
+export function homeSecretPaths(home: string, realpath: (p: string) => string): { literal: string[]; targets: string[] } {
+  const h = normalizeRoot(home);
+  if (!h) return { literal: [], targets: [] };
+  const api = sepOf(h.path) === '\\' ? path.win32 : path.posix;
+  const literal = HOME_SECRETS.map((x) => api.join(h.path, ...x.split('/')));
+  const targets: string[] = [];
+  for (const p of literal) {
+    let r: { path: string } | undefined;
+    try {
+      r = normalizeRoot(realpath(p));
+    } catch {
+      r = undefined;
+    }
+    if (r && r.path !== p && !targets.includes(r.path)) targets.push(r.path);
+  }
+  return { literal, targets };
+}
+
+/**
+ * How a session root relates to the credential paths: `inside` = the root is one of them or inside one (an allow and a deny would name
+ * the same region: Durbar leaves the root out); `contains` = a credential path lies inside the root (the root is opened only where the
+ * credential paths can be denied inside it); undefined = neither.
+ */
+export function secretRelation(root: string, secrets: readonly string[], platform: string): 'inside' | 'contains' | undefined {
+  const r = keyOf(root, platform);
+  const sep = sepOf(root);
+  let contains = false;
+  for (const s0 of secrets) {
+    const s = keyOf(s0, platform);
+    if (r === s || r.startsWith(s + sep)) return 'inside';
+    if (s.startsWith(r + sep)) contains = true;
+  }
+  return contains ? 'contains' : undefined;
+}

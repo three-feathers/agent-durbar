@@ -67,6 +67,7 @@ function make(o: { facts?: () => ClaudeSandboxFacts; behave?: () => Behave; exis
       return (o.facts ?? (() => LINUX))();
     },
     realpath: (p) => p,
+    home: '/nonexistent-home-087',
   });
   const events: AgentEvent[] = [];
   ad.onEvent((e) => {
@@ -321,6 +322,19 @@ async function main(): Promise<void> {
     await n.ad.continueWithoutSandbox!(nid);
     await assert.rejects(n.ad.continueWithoutSandbox!(nid), /no OS sandbox note/, 'a second Continue is refused (one-shot)');
     await n.ad.dispose();
+  }
+
+  // ---- review round 2 on PR 733 (4): the ADAPTER's note closes when a new attempt starts (not only main's copy) ----
+  {
+    const m = make({ behave: () => 'sandbox-exit-init' });
+    const sid = await start(m.ad, 'read-only');
+    await m.ad.send(sid, { text: 'x' });
+    await until('note', () => sbx(m.events, sid).find((e) => e.notice));
+    m.setBehave(() => 'ok');
+    await m.ad.send(sid, { text: 'try again' });
+    await until('a new attempt reaches on', () => lastState(m.events, sid)?.state === 'on');
+    await assert.rejects(m.ad.continueWithoutSandbox!(sid), /no OS sandbox note/, 'the note of the earlier attempt no longer answers');
+    await m.ad.dispose();
   }
 
   // ---- review on PR 733 (3): Allow all on a live CLI, then Read-only: the relaunch carries the block and starts as checking ----

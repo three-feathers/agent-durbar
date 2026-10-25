@@ -7,7 +7,7 @@ import type { SandboxHostView, SandboxState } from '../shared/api';
 import { sandboxReason } from '../shared/sandbox';
 import type { PermissionMode } from './capabilities';
 import { compareVersions, parseVersion } from './detect';
-import { HOME_SECRETS } from './sandboxRoots';
+import { HOME_SECRETS, homeSecretPaths, secretRelation } from './sandboxRoots';
 
 /** FR-003: the newest key the block relies on (`network.strictAllowlist`, v2.1.219+, `read:` research R2); older or unreadable = unavailable. */
 export const CLAUDE_SANDBOX_MIN_VERSION = '2.1.219';
@@ -35,10 +35,13 @@ export interface ClaudeSandboxBlock {
  * a command outside the sandbox. Reads: the home folder denied except the roots (decision Q4); Read-only also denies writes to the
  * roots (K2); network: no domain and a strict allow-list, so an unlisted host is refused, never asked (decision Q2).
  */
-export function claudeSandboxSettings(mode: PermissionMode | string, roots: readonly string[]): ClaudeSandboxBlock | undefined {
+export function claudeSandboxSettings(mode: PermissionMode | string, roots: readonly string[], home?: string, realpath: (p: string) => string = (p) => p, platform: string = process.platform): ClaudeSandboxBlock | undefined {
   if (mode === 'allow') return undefined;
-  const r = [...roots];
-  const secrets = HOME_SECRETS.map((x) => `~/${x}`);
+  // review round 2 on PR 733: a link in place of a credential folder is denied at its target too (Claude follows it only on macOS);
+  // a root that is a credential folder or inside one is left out of allowRead (the docs give no rule for an allow and a deny on one path)
+  const hs = home ? homeSecretPaths(home, realpath) : { literal: [], targets: [] };
+  const r = roots.filter((x) => secretRelation(x, [...hs.literal, ...hs.targets], platform) !== 'inside');
+  const secrets = [...HOME_SECRETS.map((x) => `~/${x}`), ...hs.targets];
   return {
     enabled: true,
     failIfUnavailable: true,
@@ -47,7 +50,7 @@ export function claudeSandboxSettings(mode: PermissionMode | string, roots: read
     excludedCommands: [],
     // the credential folders are denied even when a root is the home folder or a parent of it: for reads the narrower rule wins
     // (`read:` docs "the rule with the narrower path applies"; a deny "holds inside a wider allow"); for writes the docs give no rule (K2)
-    filesystem: { denyRead: ['~/', ...secrets], allowRead: r, denyWrite: [...(mode === 'ask' ? [] : r), ...secrets] },
+    filesystem: { denyRead: ['~/', ...secrets], allowRead: r, denyWrite: [...(mode === 'ask' ? [] : [...roots]), ...secrets] },
     network: { allowedDomains: [], strictAllowlist: true },
   };
 }

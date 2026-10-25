@@ -500,6 +500,8 @@ export interface ClaudeAdapterDeps {
   sandboxFacts?: () => Promise<ClaudeSandboxFacts>;
   /** Spec 087 FR-015: resolves a root before it goes into the sandbox block (tests inject one). Default `fs.realpathSync.native`. */
   realpath?: (p: string) => string;
+  /** Spec 087: the home folder the credential folders are under (tests inject one). Default the OS account record. */
+  home?: string;
 }
 
 /** Spec 087 FR-006: the real host facts: no shell; `claude --version` through detection, `bwrap`/`socat` located like spec 012's detection. */
@@ -511,6 +513,15 @@ export async function nodeClaudeSandboxFacts(): Promise<ClaudeSandboxFacts> {
   const linux = process.platform === 'linux';
   return { platform: process.platform, version: r?.version, haveBwrap: linux && have('bwrap'), haveSocat: linux && have('socat') };
 }
+
+/** The home folder from the OS account record (not HOME/USERPROFILE, spec 076 FR-172), else `os.homedir()`. */
+const homeDirOf = (): string => {
+  try {
+    return os.userInfo().homedir;
+  } catch {
+    return os.homedir();
+  }
+};
 
 /** Spec 087 FR-007: the note when the sandbox cannot start (nothing was sent), and the refusal when the organization requires it (FR-019). */
 export const claudeSandboxNotice = (reason: string): string => `Claude Code could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Nothing was sent.`;
@@ -1582,7 +1593,7 @@ export class ClaudeAdapter implements AgentAdapter {
     }
     const roots = sandboxRoots(s.roots, this.deps.realpath ?? ((p) => fs.realpathSync.native(p)));
     if (!roots.length) throw new Error("Durbar could not limit Claude Code's sandbox to this session's folders. Read-only and Ask first need at least one usable folder, so nothing was sent.");
-    s.sandboxBlock = claudeSandboxSettings(mode, roots);
+    s.sandboxBlock = claudeSandboxSettings(mode, roots, this.deps.home ?? homeDirOf(), this.deps.realpath ?? ((p) => fs.realpathSync.native(p)), facts.platform);
     this.setSandbox(s, claudeSandboxState({ mode, facts }));
     return true;
   }
