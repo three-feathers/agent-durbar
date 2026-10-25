@@ -21,6 +21,7 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.SHOTS_024 || os.tmpdir();
 const SIZES = [[1440, 900], [1280, 800]];
+const LOBBY_H = 58; // the tile height since spec 001 FR-034 (a header row and a row of who is there); it was 36 in spec 024's first version
 const LONG = ['Customer support desk 01', 'Customer support desk 02', 'Customer support desk 03'];
 
 module.exports = async (ctx) => {
@@ -31,10 +32,13 @@ module.exports = async (ctx) => {
   /* ctx.waitFor returns false on a timeout: a miss must fail the driver */
   const W = async (expr, ms, what) => { assert.ok(await ctx.waitFor(expr, ms), 'timed out waiting for ' + (what || expr)); };
   const settle = async () => { await W(`!document.querySelector('.walker.walking')`, 6000, 'the walks to end'); await ctx.sleep(250); };
-  const tiles = () => js(`[...document.querySelectorAll('#stage .place')].map(p=>({id:p.dataset.place,name:p.querySelector('.pn').textContent,label:p.getAttribute('aria-label'),title:p.title,clipped:p.querySelector('.pn').scrollWidth>p.querySelector('.pn').clientWidth,busy:p.classList.contains('busy')}))`);
+  /* the places of spec 024 only: the fixed tiles of spec 001 FR-034..FR-040 (Boss queue, Coffee, Bank, Postbox) are not places a server can map to */
+  const PLACES = '#stage .place:not([data-place="boss"],[data-place="coffee"],[data-place="bank"],[data-place="postbox"])';
+  const tiles = () => js(`[...document.querySelectorAll(${q(PLACES)})].map(p=>({id:p.dataset.place,name:p.querySelector('.pn').textContent,label:p.getAttribute('aria-label'),title:p.title,clipped:p.querySelector('.pn').scrollWidth>p.querySelector('.pn').clientWidth,busy:p.classList.contains('busy')}))`);
   const custom = async () => (await tiles()).filter((t) => /^c-/.test(t.id));
-  const card = (id) => js(`(()=>{const d=document.querySelector('#stage .desk[data-id=${q(id)}]');return d?{away:d.classList.contains('is-away'),text:((d.querySelector('.intent, .task')||{}).textContent||'').trim()}:null})()`);
-  const away = () => js(`[...document.querySelectorAll('#stage .desk.is-away')].map(d=>({id:d.dataset.id,text:((d.querySelector('.intent, .task')||{}).textContent||'').trim()}))`);
+  /* what the desk says about the agent's place: the title of its task line holds taskOf(), which the live readout ("Replying: ...") does not replace (spec 001 live activity) */
+  const card = (id) => js(`(()=>{const d=document.querySelector('#stage .desk[data-id=${q(id)}]');return d?{away:d.classList.contains('is-away'),text:((d.querySelector('.intent, .task')||{}).title||(d.querySelector('.intent, .task')||{}).textContent||'').trim()}:null})()`);
+  const away = () => js(`[...document.querySelectorAll('#stage .desk.is-away')].map(d=>({id:d.dataset.id,place:d.dataset.place||'',text:((d.querySelector('.intent, .task')||{}).title||(d.querySelector('.intent, .task')||{}).textContent||'').trim()}))`);
   const idle = (n, skip = []) => js(`[...document.querySelectorAll('#stage .desk:not(.is-away)')].filter(d=>/is-(idle|done)/.test(d.className)&&!${q(skip)}.includes(d.dataset.id)).slice(0,${n}).map(d=>d.dataset.id)`);
   let seq = 0;
   const call = (who, phase, server, tool, n) => js(`window.__durbarSimEmit({type:'toolCall',sessionId:${q(who)},timestamp:Date.now(),callId:${q('c024-' + n)},tool:${q(server + '-' + tool)},phase:${q(phase)},mcpServer:${q(server)},mcpTool:${q(tool)}})`);
@@ -81,16 +85,17 @@ module.exports = async (ctx) => {
       const t = await custom(); const long = t[2];
       assert.ok(long.label.startsWith('Data analytics reporting:') && long.title.startsWith('Data analytics reporting:'), 'the full 24-character name is in the tooltip and the label');
       assert.ok(long.clipped, `${w}: the 24-character name is ellipsized in its tile`);
-      const f = await lobbyFits(); assert.deepStrictEqual([f.h, f.rows, f.bad, f.fit], [36, 1, [], 'ok'], `${w}: one 36px row, every tile inside it, the office does not scroll: ` + JSON.stringify(f));
+      const f = await lobbyFits(); assert.deepStrictEqual([f.h, f.rows, f.bad, f.fit], [LOBBY_H, 1, [], 'ok'], `${w}: one ${LOBBY_H}px row, every tile inside it, the office does not scroll: ` + JSON.stringify(f));
       assert.deepStrictEqual(await onSlots(), [], `${w}: figures on slots`);
       await shot('seeded-lobby', w, h);
     }
     const vs = await away();
     console.log('[024c] seeded visits', JSON.stringify(vs.map((v) => v.text.slice(0, 40))));
-    assert.ok(vs.some((v) => /^At (Database|Ticket desk): (my-notes|playwright)/.test(v.text)), 'my-notes / playwright calls go to the seeded places');
-    assert.ok(!vs.some((v) => /^At Library: my-notes|^At Web: playwright/.test(v.text)), 'and not to their default places');
+    /* by the desk's data-place, not its words: with Live activity the card says the command ("At Database: registerTool options"), not the server */
+    assert.ok(vs.some((v) => cs.slice(0, 2).some((c) => c.id === v.place)), 'my-notes / playwright calls go to the seeded places');
+    assert.ok(!vs.some((v) => v.place === 'library' || v.place === 'web'), 'and not to their default places (Library, Web)');
     // delete them through Settings (the walk back, FR-025); the agent at Database goes home
-    const dbVisitor = vs.find((v) => /^At Database/.test(v.text));
+    const dbVisitor = vs.find((v) => v.place === cs[0].id);
     await openSettings();
     assert.deepStrictEqual((await myPlaces()).map((p) => p.name), ['Database', 'Ticket desk', 'Data analytics reporting']);
     assert.strictEqual(await js(`document.getElementById('plCapNote')&&document.getElementById('plCapNote').textContent`), 'Up to 3 places of your own.', 'at the cap Settings says so');
@@ -148,7 +153,7 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`[...document.querySelectorAll('#plList .plrow[data-srv="pg-tools"] option')].find(o=>o.value===${q(dbId)}).textContent`), 'Database', 'the dropdown shows the place by name');
   await setRow('pg-tools', dbId); await closeSettings();
   n = await visit(a1, 'pg-tools', 'query');
-  assert.strictEqual((await card(a1)).text.split(' · ')[0], 'At Database: pg-tools query', 'the next call walks to Database and the card says so: ' + (await card(a1)).text);
+  assert.match((await card(a1)).text.split(' · ')[0], /^At Database: pg-tools[- ]query$/, /* the tool's name, spelled as the visit labels it */ 'the next call walks to Database and the card says so: ' + (await card(a1)).text);
   assert.ok((await tiles()).find((x) => x.id === dbId).busy, 'the Database tile is busy');
   assert.deepStrictEqual(await onSlots(), [], 'figure on a slot');
 
@@ -161,7 +166,7 @@ module.exports = async (ctx) => {
   await closeSettings(); await ctx.sleep(300);
   assert.strictEqual(await js(`document.querySelectorAll('.walker.walking').length`), 0, 'no agent walks after a rename');
   assert.strictEqual((await tiles()).find((x) => x.id === dbId).name, 'Data warehouse', 'the tile shows the new name');
-  assert.strictEqual((await card(a1)).text.split(' · ')[0], 'At Data warehouse: pg-tools query', 'and so does the card');
+  assert.match((await card(a1)).text.split(' · ')[0], /^At Data warehouse: pg-tools[- ]query$/, 'and so does the card');
   assert.strictEqual((await card(a1)).away, true, 'the agent is still there');
   await finish(a1, 'pg-tools', 'query', n);
   n = await visit(a1, 'pg-tools', 'query'); assert.ok(/^At Data warehouse/.test((await card(a1)).text), 'the mapping survived the rename');
@@ -172,7 +177,8 @@ module.exports = async (ctx) => {
   const escS = await js(`({opt:[...document.querySelectorAll('#plList .plrow[data-srv="pg-tools"] option')].find(o=>o.value===${q(dbId)}).textContent,list:document.querySelector('#myPlaces .plname').textContent.trim(),bold:document.querySelectorAll('#myPlaces b, #plList b').length})`);
   assert.strictEqual(escS.opt, '<b>x</b> "q"', 'Settings option is text'); assert.strictEqual(escS.list, '<b>x</b> "q"', 'Settings list is text'); assert.strictEqual(escS.bold, 0);
   await closeSettings(); await ctx.sleep(300);
-  const esc1 = await js(`({pn:document.querySelector('#stage .place[data-place=${q(dbId)}] .pn').textContent,bold:document.querySelectorAll('#stage .lobby b, #stage .desk b').length,card:document.querySelector('#stage .desk[data-id=${q(a1)}] .intent, #stage .desk[data-id=${q(a1)}] .task').textContent,lbl:document.querySelector('#stage .place[data-place=${q(dbId)}]').getAttribute('aria-label')})`);
+  /* other <b> exist now (agent names in tiles and desks); the one the name would inject holds "x" */
+  const esc1 = await js(`({pn:document.querySelector('#stage .place[data-place=${q(dbId)}] .pn').textContent,bold:[...document.querySelectorAll('#stage b')].filter(b=>b.textContent==='x').length,card:document.querySelector('#stage .desk[data-id=${q(a1)}] .intent, #stage .desk[data-id=${q(a1)}] .task').textContent,lbl:document.querySelector('#stage .place[data-place=${q(dbId)}]').getAttribute('aria-label')})`);
   assert.strictEqual(esc1.pn, '<b>x</b> "q"', 'tile name is text'); assert.strictEqual(esc1.bold, 0, 'no element was made from the name');
   assert.ok(esc1.card.startsWith('At <b>x</b> "q": pg-tools'), 'card text is text: ' + esc1.card); 
   assert.ok(esc1.lbl.startsWith('<b>x</b> "q":'), 'accessible label is text');
@@ -214,7 +220,7 @@ module.exports = async (ctx) => {
   // placeLabel takes a built-in place's name from the theme's words (spec 036: themes rename places) and a custom place's from
   // DurbarPlaces.placeName, so both sources are marked; anything drawn without placeLabel stays unmarked and fails below
   await js(`(()=>{const P=window.DurbarPlaces,T=window.THEME;P.__orig=P.placeName;P.placeName=(id,c)=>P.__orig(id,c)+${q(MARK)};T.__origWord=T.word;T.word=(k)=>{const w=T.__origWord(k);return /^place-/.test(k)?w+${q(MARK)}:w};return 0})()`); await redraw();
-  const marked = await js(`[...document.querySelectorAll('#stage .place')].map(p=>({pn:p.querySelector('.pn').textContent,title:p.title,label:p.getAttribute('aria-label')}))`);
+  const marked = await js(`[...document.querySelectorAll(${q(PLACES)})].map(p=>({pn:p.querySelector('.pn').textContent,title:p.title,label:p.getAttribute('aria-label')}))`);
   assert.strictEqual(marked.length, 8);
   marked.forEach((m) => { assert.ok(m.pn.endsWith(MARK) && m.title.includes(MARK) && m.label.includes(MARK), 'the tile bypasses placeLabel: ' + JSON.stringify(m)); });
   await openSettings();
@@ -244,7 +250,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(cs.map((x) => x.name), LONG);
     cs.forEach((x) => { assert.ok(x.label.startsWith(x.name + ':') && x.title.startsWith(x.name + ':'), 'full name in label and tooltip'); });
     assert.ok(cs.every((x) => x.clipped) || w >= 1440, `${w}: long names ellipsize when the tile is narrow`);
-    const f = await lobbyFits(); assert.deepStrictEqual([f.h, f.rows, f.bad, f.fit], [36, 1, [], 'ok'], `${w}: one row, inside, no scrolling: ` + JSON.stringify(f));
+    const f = await lobbyFits(); assert.deepStrictEqual([f.h, f.rows, f.bad, f.fit], [LOBBY_H, 1, [], 'ok'], `${w}: one row, inside, no scrolling: ` + JSON.stringify(f));
     assert.deepStrictEqual(await onSlots(), [], `${w}: figures on slots`);
     assert.ok(cs.some((x) => x.busy), 'visitors are in the custom tiles');
     await shot('lobby', w, h);

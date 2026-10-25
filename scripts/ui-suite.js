@@ -98,10 +98,36 @@ const DRIVERS = [
   { name: 'check-browser-dialogs', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask' } }, // spec 080 T015 AC6: the once-per-app consent, Leave this page?, a hidden session's page dialog (toast, chat forward once, marker)
   { name: 'check-browser-dialogs', label: 'check-browser-dialogs 1280', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask', BROWSER_DIALOGS_SIZE: '1280x800' } }, // the same at 1280x800: the note, Leave this page?, the hidden dialog's toast
   { name: 'check-browser-tab' }, // spec 080 T014/T015/T018: Chat | Browser tabs, the bar, the native view's attach and detach, the simulator's test pages, two sessions' own views
+  // issue #748 (spec 021 FR-057): drivers that asserted but nothing ran, each passing alone on the simulator (seconds on a 4-core Linux box)
+  { name: 'check-checkpoints' }, // spec 065 FR-003/FR-004/FR-007: the note after a turn that changed files, preview, restore, Undo the undo, the refusal (~21 s)
+  { name: 'check-mode-refusal' }, // spec 012 FR-087: Codex refusing Read-only / Ask first (simsendfail=sandbox) (~14 s)
+  { name: 'check-plan-mode' }, // spec 066: Plan first (next message), the chip, the plan card with Approve / Revise / Reject (~18 s)
+  { name: 'shots-006-continue' }, // spec 006 FR-021: a folder continues its last session after a restart (~12 s)
+  { name: 'shots-006-remove' }, // spec 006 FR-022: removing a folder is easy to find, Cancel keeps it (~26 s)
+  { name: 'shots-012-elicit' }, // spec 012 FR-151..FR-155: an MCP elicitation as a form in the question card, and the URL mode (~28 s)
+  { name: 'shots-021' }, // spec 011 FR-026..FR-029: usage totals kept across restarts, the reset, "credits not reported" (~29 s)
+  { name: 'shots-030-handover' }, // spec 030 FR-042..FR-045: continue a conversation in another agent app (mixed agent apps) (~20 s)
+  { name: 'shots-043-default' }, // spec 043 FR-009: the folder's default agent in the New session dialog (~28 s)
+  { name: 'shots-061-foldersetup' }, // spec 061: the folder-setup dialog (simfoldersetup=1) (~18 s)
+  { name: 'shots-i7' }, // spec 020 FR-020..FR-031: the per-folder Import from VS Code action (~31 s)
+  { name: 'shots-m9' }, // spec 011: the credit cap (~29 s)
+  { name: 'shots-m10' }, // spec 020: Tools This session / All time, MCP extras per folder, the agent MCP dialog (~37 s)
 ];
 
+/**
+ * Drivers that assert, pass by hand on the simulator and are on purpose NOT in DRIVERS, each with the reason (issue #748, spec 021 FR-057).
+ * scripts/test-ui-suite.ts fails on an asserting scripts/check-*.js or shots-*.js that is in neither DRIVERS, shots-docs' DOC_SHOTS nor here,
+ * so a driver can no longer be written, cited as `sim:` evidence and never run. Moving one into DRIVERS is the way out of this list.
+ */
+const NOT_IN_SUITE = {
+  'shots-034': 'passes alone but takes about 124 s (fixed settles at both sizes, Serious mode, reduced motion, mini); CI is near its limit (#738). Needs its sleeps turned into until() waits before it joins the suite. Since spec 068 FR-005 it checks that the credit limit is a break, not a faint',
+  'shots-024-custom': 'passes alone with DURBAR_SIM_PLACES=3 but takes about 89 s (custom places: seeding, Add / Edit dialog, Settings, rename, delete at both sizes); too long for the suite today. Run it by hand: DURBAR_SIM_PLACES=3 as its header says',
+  'check-rename': 'npm run check:rename, about 140 s (spec 059, issue #372: rename a session, every kind and level, both sizes); check-rename-inline in DRIVERS covers the in-place rename on every surface',
+  'check-perf': 'npm run check:perf measures frame times and DOM growth under load; its limits depend on the machine, so it is a local check, not a gate on shared runners',
+};
+
 /** The screenshot variables the drivers read; all point at one folder. */
-const OUT_VARS = ['OUT', 'SHOTS_012', 'SHOTS_021', 'SHOTS_024', 'SHOTS_033', 'SHOTS_034', 'SHOTS_OUT', 'MODEL_OUT', 'CARDMENU_OUT', 'MODE_OUT', 'ABOUT_OUT', 'HERO_OUT', 'SHOTS_DIR'];
+const OUT_VARS = ['OUT', 'SHOTS_012', 'SHOTS_021', 'SHOTS_024', 'SHOTS_033', 'SHOTS_034', 'SHOTS_OUT', 'MODEL_OUT', 'CARDMENU_OUT', 'MODE_OUT', 'ABOUT_OUT', 'HERO_OUT', 'SHOTS_DIR', 'I7_OUT', 'M9_OUT', 'M10_OUT'];
 const TIMEOUT_MS = Number(process.env.UI_SUITE_TIMEOUT_MS || 600_000);
 
 function args(a = process.argv.slice(2)) {
@@ -196,5 +222,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { syntaxErrors, main, runOne, DRIVERS }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { syntaxErrors, main, runOne, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });

@@ -40,7 +40,7 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 - [x] T027 Activity log: `logActivity` writes the alias in `agent` when set; `test:activity` case; no row for a rename [FR-012] (Q4 A)
 - [x] T028 Simulator: `renameSession` in memory, kinds with `'any'`, `'next-turn'` and none, failure hook; `prev-1`/`prev-2` renameable
   [FR-015]
-- [x] T029 `scripts/check-rename.js` (`npm run check:rename`): every FR-001 surface shows the name, no runtime title in tooltips, Esc and
+- [x] T029 `scripts/check-rename.js` (run by hand, not in CI: `NOT_IN_SUITE`, spec 021 FR-057) (`npm run check:rename`): every FR-001 surface shows the name, no runtime title in tooltips, Esc and
   empty reset, both sizes, Simple and Expert; `check:office` with 15 agents carrying 60-character names; screenshots
   `docs/screenshots/059-rename-*.png` [FR-016, SC-001, SC-002, SC-005]
 

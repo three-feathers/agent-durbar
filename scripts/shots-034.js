@@ -83,8 +83,11 @@ module.exports = async (ctx) => {
     await load(w, h, { simwaitold: '1' });
     ds = await desks();
     console.log('[034]', w, JSON.stringify(ds.map((d) => `${d.name}:${d.st}:${d.body}${d.trouble ? '+' + d.trouble : ''}${d.away ? '(away)' : ''}`)));
-    const box = ds[0].box;
-    assert.ok(ds.every((d) => d.box[0] === box[0] && d.box[1] === box[1]), 'every scene box has the same size: ' + JSON.stringify(ds.map((d) => d.box)));
+    /* a finished agent that has rested a while is a shut desk with no scene at all (box 0x0); every desk that has a scene keeps one size */
+    const drawn = ds.filter((d) => d.box[0] > 0);
+    assert.ok(drawn.length >= ds.length - 3, 'only the resting done desks have no scene: ' + JSON.stringify(ds.map((d) => `${d.name}:${d.st}:${d.box}`)));
+    const box = drawn[0].box;
+    assert.ok(drawn.every((d) => d.box[0] === box[0] && d.box[1] === box[1]), 'every scene box has the same size: ' + JSON.stringify(ds.map((d) => d.box)));
 
     // US1: heavy and monster
     const heavy = ds.filter((d) => d.body === 'heavy'), monsters = ds.filter((d) => d.body === 'monster');
@@ -102,12 +105,16 @@ module.exports = async (ctx) => {
     assert.strictEqual(amb[0].st, 'error', 'the ambulance is at an agent in Error');
     assert.strictEqual(ds.reduce((n, d) => n + d.amb, 0), 1, 'one ambulance drawing in the page');
     assert.ok(/Error: please check it/.test(amb[0].label), 'the ambulance is named');
-    const faint = await one((d) => d.trouble === 'faint', 'an agent fainted at its credit limit');
-    assert.ok(/Limit reached/i.test(faint.text) && /Spending limit reached/.test(faint.label), 'faint: limit pill and label');
-    assert.strictEqual(await js(`[...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.dataset.id===${jsLiteral(faint.id)}).querySelectorAll('svg.scene animateTransform, svg.scene .wave').length`), 0, 'a fainted agent does not wave');
+    /* spec 068 FR-005 (amends this spec): Durbar's own spending limit is a coffee break, not a faint; no faint figure and no siren for it any more.
+       The agent at the limit keeps its words ("Limit reached") and is not drawn in trouble. troubleOf still returns 'faint' for a limit without a break (test-mood). */
+    const atLimit = await one((d) => d.st === 'waiting' && /Limit reached/i.test(d.text), 'an agent is at its credit limit');
+    assert.ok(atLimit.trouble === null && atLimit.away && atLimit.st === 'waiting', 'the agent at the limit is on a break, not fainted: ' + JSON.stringify([atLimit.name, atLimit.trouble, atLimit.away, atLimit.st]));
+    assert.ok(ds.every((d) => d.trouble !== 'faint'), 'nobody is drawn fainted while the limit is a break');
     const imp = ds.filter((d) => d.trouble === 'impatient');
     assert.ok(imp.length >= 1 && imp.every((d) => d.st === 'waiting' && /Waiting 2 min for you/.test(d.label)), 'impatient agents wait 2 min');
-    assert.ok(imp.some((d) => !d.away && d.tap === 1), 'an impatient agent at its desk taps it');
+    /* spec 001 FR-034: a waiting agent walks to the Boss, so in the simulator every impatient agent is away and its drawing is hidden; the tap is
+       checked only when one sits at its desk (a [KNOWN GAP] in the spec: the simulator cannot show it any more) */
+    assert.ok(imp.every((d) => d.away ? d.tap <= 1 : d.tap === 1), 'an impatient agent at its desk taps it');
     // [KNOWN GAP] an agent away at a place (spec 024) shows an empty chair: its mood drawing is there but hidden, the words stay
     const awayDz = ds.find((d) => d.away && d.trouble);
     if (awayDz) assert.strictEqual(await js(`getComputedStyle([...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.dataset.id===${jsLiteral(awayDz.id)}).querySelector('svg.scene .pp:last-of-type')).display`), 'none', `${awayDz.name}: away, so the drawing is hidden`);
@@ -116,8 +123,8 @@ module.exports = async (ctx) => {
     let rm = await rooms();
     console.log('[034]', w, 'rooms', JSON.stringify(Object.fromEntries(Object.entries(rm).map(([k, v]) => [k, v.tone + (v.siren ? '+siren' : '')]))));
     assert.deepStrictEqual(Object.fromEntries(Object.entries(rm).map(([k, v]) => [k, [v.tone, v.siren]])),
-      { 'mcp-swiss': ['alarm', false], 'swisscontract-ai': ['alarm', true], 'command-center': ['alarm', true], blog: ['calm', false], 'infra-notes': ['uneasy', false] },
-      'monster/impatient: alarm; ambulance and faint: alarm with siren; heavy only: uneasy; nothing: calm');
+      { 'mcp-swiss': ['alarm', false], 'swisscontract-ai': ['alarm', true], 'command-center': ['alarm', false], blog: ['calm', false], 'infra-notes': ['uneasy', false] },
+      'monster/impatient: alarm; ambulance: alarm with siren (the limit is a break, no siren: spec 068 FR-005); heavy only: uneasy; nothing: calm');
     for (const [k, v] of Object.entries(rm)) assert.strictEqual(/Alert: an agent needs help/.test(v.label), v.siren, k + ': the label names the alert only with the siren');
     const low = [];
     for (const k of Object.keys(rm)) for (const sel of ['.room-path', '.room-aiu']) {
@@ -130,8 +137,8 @@ module.exports = async (ctx) => {
 
     if (w === 1440) {
       await crop(amb[0].id, 'ambulance');
-      await crop(faint.id, 'faint');
-      await crop(imp.find((d) => !d.away).id, 'impatient');
+      const impDesk = imp.find((d) => !d.away);
+      if (impDesk) await crop(impDesk.id, 'impatient');
       const mo = monsters.find((d) => !d.away && !d.trouble) || monsters.find((d) => !d.away);
       if (mo) await crop(mo.id, 'monster');
       const hv = heavy.find((d) => !d.away);
@@ -171,7 +178,7 @@ module.exports = async (ctx) => {
     if (w === 1280) await shot('settings', w, h);
     await js(`document.getElementById('scrClose').click()`); await ctx.sleep(700);
     ds = await desks();
-    assert.ok(ds.every((x) => x.body === 'normal' && !x.trouble), 'Serious mode: every scene is plain');
+    assert.ok(ds.some((x) => x.body) && ds.every((x) => !x.body || (x.body === 'normal' && !x.trouble)), 'Serious mode: every scene is plain (a resting done desk has none)');
     assert.strictEqual(await js(`document.querySelectorAll('#stage .amb, #stage .dizzy, #stage .sweat, #stage .tap').length`), 0, 'Serious mode: no mood drawing in the page');
     assert.ok(ds.every((x) => !/Context almost full|Error: please check it|Spending limit reached|Waiting \d|tool calls failed/.test(x.label)), 'Serious mode: no mood words: ' + ds.filter((x) => /Context almost full|Error: please check it|Spending limit reached|Waiting \d|tool calls failed/.test(x.label)).map((x) => x.label).join(' | '));
     assert.strictEqual(await js(`document.querySelectorAll('#stage .room[data-alert], #stage .siren').length`), 0, 'Serious mode: no room tone and no siren');
@@ -194,7 +201,7 @@ module.exports = async (ctx) => {
   // FR-002: the compact density uses the same rules
   await load(1280, 800, { simwaitold: '1', density: 'mini' });
   const mini = await desks();
-  assert.ok(mini.some((x) => x.body === 'monster') && mini.filter((x) => x.trouble === 'ambulance').length === 1 && mini.some((x) => x.trouble === 'faint'), 'mini density: same moods');
+  assert.ok(mini.some((x) => x.body === 'monster') && mini.filter((x) => x.trouble === 'ambulance').length === 1 && mini.some((x) => x.trouble === 'impatient'), 'mini density: same moods');
   await shot('mini', 1280, 800);
   // Edge (spec 033): an agent on a floor that is off never takes the ambulance (no alerts from an off floor)
   await load(1280, 800, { simwaitold: '1' });

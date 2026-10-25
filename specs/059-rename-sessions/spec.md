@@ -284,7 +284,7 @@ FR-023) use the new name; Resume opens an agent with that name.
 ## Success Criteria *(mandatory)*
 
 - **SC-001** Every surface in FR-001 shows the user's name within one render after Rename, in the simulator, at both sizes, Simple and
-  Expert (`scripts/check-rename.js`).
+  Expert (`scripts/check-rename.js` (run by hand, not in CI: `NOT_IN_SUITE`, spec 021 FR-057)).
 - **SC-002** No surface shows the runtime title of a renamed session outside the Rename dialog and the chat history (same check).
 - **SC-003** The name rule refuses every case in its test table (controls, hidden characters, 61 characters, tokens) and accepts
   scripts and emoji up to 60 code points.

@@ -31,6 +31,32 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   assert.ok(src.indexOf('syntaxErrors([...new Set(') > 0 && src.indexOf('syntaxErrors([...new Set(') < src.indexOf('await Promise.all(Array.from({ length: jobs }, worker))'), 'the syntax pass runs before the first driver starts');
   // the real runner: a broken driver named with --only stops before Electron, at once, with the file and exit 1
 }
+// issue #748 (spec 021 FR-057): no asserting driver sits unrun. Every scripts/check-*.js and shots-*.js that asserts is in the suite, in
+// shots-docs' DOC_SHOTS (retaken by `npm run shots:docs`), or in NOT_IN_SUITE with a written reason
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { DRIVERS, NOT_IN_SUITE } = require(SUITE) as { DRIVERS: { name: string }[]; NOT_IN_SUITE: Record<string, string> };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { DOC_SHOTS } = require(path.join(ROOT, 'scripts', 'shots-docs.js')) as { DOC_SHOTS: { name: string }[] };
+  const inSuite = new Set(DRIVERS.map((d) => d.name)), inDocs = new Set(DOC_SHOTS.map((d) => d.name));
+  /** The names of the asserting drivers in `dir` that nothing runs and nothing explains. */
+  const orphans = (dir: string, listed: Record<string, string>): string[] => fs.readdirSync(dir).filter((f) => /^(check|shots)-.+\.js$/.test(f))
+    .map((f) => f.slice(0, -3))
+    .filter((n) => /\bassert\b/.test(fs.readFileSync(path.join(dir, n + '.js'), 'utf8')) && !inSuite.has(n) && !inDocs.has(n) && !(n in listed));
+  assert.deepStrictEqual(orphans(path.join(ROOT, 'scripts'), NOT_IN_SUITE), [], 'an asserting driver is in DRIVERS, in shots-docs DOC_SHOTS or in NOT_IN_SUITE with a reason (issue #748)');
+  for (const [n, why] of Object.entries(NOT_IN_SUITE)) {
+    assert.ok(fs.existsSync(path.join(ROOT, 'scripts', n + '.js')), `NOT_IN_SUITE names a driver that exists: ${n}`);
+    assert.ok(typeof why === 'string' && why.length >= 40, `NOT_IN_SUITE ${n} says why`);
+    assert.ok(!inSuite.has(n) && !inDocs.has(n), `${n} is run, so it leaves NOT_IN_SUITE`);
+  }
+  // the guard itself: a new asserting driver that is not listed is found, a listed one is not (what the mutation check relies on)
+  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-orphans-'));
+  fs.writeFileSync(path.join(tmp, 'check-new.js'), "const assert = require('assert');\nmodule.exports = async () => { assert.ok(true); };\n");
+  fs.writeFileSync(path.join(tmp, 'check-nothing.js'), 'module.exports = async () => {};\n');
+  assert.deepStrictEqual(orphans(tmp, {}), ['check-new'], 'an asserting driver nobody lists is reported; a script without asserts is not');
+  assert.deepStrictEqual(orphans(tmp, { 'check-new': 'a reason that is long enough to count here' }), [], 'and a listed one is not');
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
 // spec 001 FR-082/FR-083: every screenshot the README and the website link is retaken by `npm run shots:docs`, or has a reason
 {
   const DOCS = path.join(ROOT, 'scripts', 'shots-docs.js');
