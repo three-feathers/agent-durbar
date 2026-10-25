@@ -2009,7 +2009,7 @@ function wireAnswerBar(a){
     if(fit){
       const said=w=>{announce('Answered: '+w);const m=$('msgInput');if(m)focusIn(m);};
       for(const o of fit.opts){const lb=(o.querySelector('.q-lbl')||o).textContent;add(lb,'ab-opt',()=>{o.click();fit.ok.click();said(lb);},o.title);}
-      const box=document.createElement('input');box.type='text';box.className='ab-other';box.maxLength=500;box.placeholder='Other answer';box.setAttribute('aria-label','Other answer: '+fit.q);box.setAttribute('aria-keyshortcuts','Enter');box.title='Type your own answer; Enter sends it';
+      const box=document.createElement('input');box.type='text';box.className='ab-other';box.maxLength=window.exports.MAX_ANSWER;box.placeholder='Other answer';box.setAttribute('aria-label','Other answer: '+fit.q);box.setAttribute('aria-keyshortcuts','Enter');box.title='Type your own answer; Enter sends it';
       box.addEventListener('keydown',ev=>{if(ev.key!=='Enter'||ev.shiftKey||ev.isComposing||ev.altKey||ev.ctrlKey||ev.metaKey)return;ev.preventDefault();
         const v=box.value.replace(/\s+/g,' ').trim();if(!v){announce('Type an answer first, or choose an option.');return;}
         fit.other.value=v;fit.other.dispatchEvent(new Event('input',{bubbles:true}));fit.ok.click();said(v);});
@@ -4041,7 +4041,7 @@ function showQuestion(a,e){
         else{s.clear();s.add(o.label);opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked',String(x===b));x.classList.toggle('primary',x===b);});others[i].value='';others[i].classList.remove('chosen');others[i].style.height='';}};
       opts.appendChild(b);});
     /* spec 052 FR-160/FR-161: a box that grows with its text; typing chooses it; Enter sends the card (Answer's own handler), Shift+Enter adds a line */
-    const other=document.createElement('textarea');other.rows=1;other.maxLength=500;other.className='q-other';other.placeholder='Other answer (Enter to send)';other.setAttribute('aria-label','Other answer: '+q.question);
+    const other=document.createElement('textarea');other.rows=1;other.maxLength=window.exports.MAX_ANSWER;other.className='q-other';other.placeholder='Other answer (Enter to send)';other.setAttribute('aria-label','Other answer: '+q.question);
     const hint=document.createElement('span');hint.className='sr-only';hint.id='qh'+(++qFormSeq);hint.textContent='Enter sends this answer. Shift+Enter adds a line.';
     other.setAttribute('aria-describedby',hint.id);other.setAttribute('aria-keyshortcuts','Enter');
     const grow=()=>{other.style.height='auto';other.style.height=other.scrollHeight+2+'px';};
@@ -4055,14 +4055,17 @@ function showQuestion(a,e){
   const send=async answers=>{
     const r=await bridge.answerQuestion(a.id,e.requestId,answers).catch(err=>({ok:false,error:String(err&&err.message||err)}));
     if(!r||!r.ok){addNote(liveChat(a),'Could not answer: '+esc((r&&r.error)||'unknown error'),true);return;}
-    settleQuestion(a,answers);
+    settleQuestion(a,answers,undefined,e.requestId);
   };
   const ok=document.createElement('button');ok.type='button';ok.className='btn primary';ok.textContent='Answer';
   ok.onclick=()=>{const ans={};qs.forEach((q,i)=>{const o=others[i].value.replace(/\s+/g,' ').trim();const v=[...picks[i]].concat(o?[o]:[]).join(', ');if(v)ans[q.question]=v;});
-    if(Object.keys(ans).length<qs.length){const miss=qs.findIndex(q=>!ans[q.question]);focusIn(others[miss]||ok);toast('Choose an answer for each question, or Skip.',3500);return;}send(ans);};
-  const skip=document.createElement('button');skip.type='button';skip.className='btn danger';skip.textContent='Skip';skip.title='Do not answer; the agent decides itself';skip.onclick=()=>send(null);
+    if(Object.keys(ans).length<qs.length){const miss=qs.findIndex(q=>!ans[q.question]);focusIn(others[miss]||ok);toast('Choose an answer for each question, or Skip.',3500);return;}
+    /* spec 052 FR-178: an answer over the limit (several choices and a typed answer together) is not sent cut: say so and keep the card as it is */
+    const over=qs.findIndex(q=>ans[q.question].length>window.exports.MAX_ANSWER);if(over>=0){focusIn(others[over]||ok);toast('That answer is too long: '+window.exports.MAX_ANSWER+' characters at most. Choose fewer options or shorten it.',4500);return;}
+    send(ans);};
+  const skip=document.createElement('button');skip.type='button';skip.className='btn danger';skip.textContent='Skip';skip.title='Do not answer; the agent decides itself';skip.onclick=()=>{const Q=a.qs&&a.qs.get(e.requestId);if(Q)Q.said='user';send(null);};
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
-  a.question={requestId:e.requestId,n,row,st};
+  a.question={requestId:e.requestId,n,row,st};(a.qs||(a.qs=new Map())).set(e.requestId,a.question); /* spec 052 FR-178: every open question by request id (two can be open at once) */
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   announce(a.name+' asks: '+(safeMask((qs[0]&&qs[0].question)||'')||'a question'));renderInboxBtn();
 }
@@ -4108,7 +4111,7 @@ function showElicitation(a,e){
     if(!r||!r.ok){busy(false);const bad=r&&r.field?inputs.find(x=>x.f.name===r.field):null;
       if(bad){bad.err.textContent=r.error||'Check this field.';bad.el.setAttribute('aria-invalid','true');focusIn(bad.el);}
       else addNote(liveChat(a),'Could not answer: '+esc((r&&r.error)||'unknown error'),true);return;}
-    settleQuestion(a,null,action);
+    settleQuestion(a,null,action,e.requestId);
   };
   if(isUrl){
     const box=document.createElement('div');box.className='q-urlbox';
@@ -4166,19 +4169,28 @@ function showElicitation(a,e){
   row.appendChild(btn('Decline','danger','Say no to this request',()=>send('decline')));
   row.appendChild(btn('Cancel','ghost','Dismiss it without answering',()=>send('cancel')));
   n.appendChild(row);
-  a.question={requestId:e.requestId,n,row,st,elicit:isUrl?'url':'form'};
+  a.question={requestId:e.requestId,n,row,st,elicit:isUrl?'url':'form'};(a.qs||(a.qs=new Map())).set(e.requestId,a.question);
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   announce(a.name+': '+(R.source?R.source+' ':'an MCP server ')+(isUrl?'asks you to open a page on '+(R.host||'the web'):'asks for input')+'. '+safeExcerpt(R.message||'',160,''));renderInboxBtn();
 }
-function settleQuestion(a,answers,action){
-  const Q=a.question;if(!Q)return;a.question=null;
+/* spec 052 FR-178: why a question ended unanswered, in words for the card's tooltip (codes only, from the adapter's event or this window; never text of the question) */
+const SKIP_WHY={user:'you pressed Skip',stop:'the turn was stopped',interrupt:'the turn was stopped',reconnect:'the agent app was reconnected',exit:'the agent app ended',unreadable:'the agent app ended the question without an answer',aborted:'the agent app reported the turn as aborted'};
+function markSkipped(Q,why){const w=SKIP_WHY[why]?why:'unknown';Q.n.dataset.skipWhy=w;Q.n.title='Skipped: '+(SKIP_WHY[w]||'the reason was not reported')+'.';}
+/* spec 052 FR-178: the agent app was told "skipped" after the card said "answered" (a late cancelled event): the card is corrected, never left saying the opposite */
+function reSkipQuestion(a,rid,why){const Q=a.qDone&&a.qDone.get(rid);if(!Q||Q.done!=='answered'||Q.elicit)return false;Q.done='skipped';Q.st.textContent=' → skipped';Q.n.classList.remove('approved');Q.n.classList.add('denied');markSkipped(Q,why);announce('Skipped: '+(SKIP_WHY[why]||'the agent app ended the question')+'.');return true;}
+function settleQuestion(a,answers,action,rid,why){
+  /* spec 052 FR-178: the card that was answered is the one settled, by its request id; a second question open at once is neither settled by it nor lost */
+  const Q=(rid&&a.qs&&a.qs.get(rid))||a.question;if(!Q)return;if(a.qs)a.qs.delete(Q.requestId);if(a.question===Q)a.question=a.qs&&a.qs.size?[...a.qs.values()].pop():null;
   if(Q.row)Q.row.remove();Q.n.querySelectorAll('.q-opts,.q-form,.q-urlbox').forEach(x=>x.remove());
   /* spec 012 FR-151: an elicitation says what the user did, never the values (they can be secrets) */
   if(Q.elicit){const acc=action==='accept';Q.st.textContent=' → '+(acc?(Q.elicit==='url'?'done':'submitted'):action==='decline'?'declined':'cancelled');Q.n.classList.add('settled',acc?'approved':'denied');
-    if(a.state==='waiting')setState(a,'working',null,acc?'Answered':action==='decline'?'Declined':'Cancelled');updatePanelHeader();stickyScroll(liveChat(a));return;}
+    if(a.state==='waiting')setState(a,'working',null,acc?'Answered':action==='decline'?'Declined':'Cancelled');if(a.question&&a.state==='working')setState(a,'waiting',null,'The agent asks you a question');updatePanelHeader();stickyScroll(liveChat(a));return;}
   Q.st.textContent=answers?' → answered: '+Object.values(answers).join('; '):' → skipped';
+  if(!answers)markSkipped(Q,why||Q.said);
   Q.n.classList.add('settled',answers?'approved':'denied');
+  Q.done=answers?'answered':'skipped';(a.qDone||(a.qDone=new Map())).set(Q.requestId,Q);if(a.qDone.size>20)a.qDone.delete(a.qDone.keys().next().value); /* the last few settled cards: a late cancelled event can still correct one */
   if(a.state==='waiting')setState(a,'working',null,answers?'Answered':'Question skipped'); /* a Stop already set it idle */
+  if(a.question&&a.state==='working')setState(a,'waiting',null,'The agent asks you a question'); /* another question is still open */
   updatePanelHeader();stickyScroll(liveChat(a));
 }
 function settleLimit(a,action){
@@ -4607,7 +4619,7 @@ function onLiveEvent(e){
       ensureTurn(a); setState(a,'waiting',null,intentText(e.intent)||'Waiting for permission');
       if(e.permission)showPerm(a,e.permission);
     }
-    else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');if(a.question)settleQuestion(a,null,'cancel');if(a.pendingProfile){const n=a.pendingProfile.name;a.pendingProfile=undefined;updateAgentChip(a);addNote(chat,'The waiting switch to the agent '+esc(n)+' was dropped when you stopped the reply.');}const was=a.worked;a.worked=false;closeTurn(a);
+    else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');while(a.question)settleQuestion(a,null,'cancel',undefined,'aborted');if(a.pendingProfile){const n=a.pendingProfile.name;a.pendingProfile=undefined;updateAgentChip(a);addNote(chat,'The waiting switch to the agent '+esc(n)+' was dropped when you stopped the reply.');}const was=a.worked;a.worked=false;closeTurn(a);
       [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
       if(was)addNote(chat,'Stopped by you. The agent is ready for your next message.');
       /* real:(spec 030 T042) the runtime drops a switch that was still queued when the turn is stopped: say so, never leave "Next: ..." behind */
@@ -4641,8 +4653,9 @@ function onLiveEvent(e){
     else if(a.plan&&a.plan.requestId===e.requestId)settlePlan(a,e.action||'reject');
     return;
   case 'question': /* spec 012 FR-130 */
-    if(e.phase==='asked'){if(a.question&&a.question.requestId===e.requestId)return;showQuestion(a,e);setState(a,'waiting',null,'The agent asks you a question');updatePanelHeader();scheduleRender();}
-    else if(a.question&&a.question.requestId===e.requestId)settleQuestion(a,e.phase==='answered'?e.answers:null,a.question.elicit?(e.phase==='answered'?(e.elicitAction||'accept'):'cancel'):undefined);
+    if(e.phase==='asked'){if(a.qs&&a.qs.has(e.requestId))return;showQuestion(a,e);setState(a,'waiting',null,'The agent asks you a question');updatePanelHeader();scheduleRender();}
+    else if(a.qs&&a.qs.has(e.requestId)){const Q=a.qs.get(e.requestId);settleQuestion(a,e.phase==='answered'?e.answers:null,Q.elicit?(e.phase==='answered'?(e.elicitAction||'accept'):'cancel'):undefined,e.requestId,e.reason);}
+    else if(e.phase==='cancelled')reSkipQuestion(a,e.requestId,e.reason);
     return;
   case 'agentProfile':{ /* spec 043: the session's custom agent; details from the last list when the event has none */
     const p=e.profile?Object.assign({},(a.profileList||[]).find(x=>x.id===e.profile.id)||{},e.profile.source==='other'&&(a.profileList||[]).some(x=>x.id===e.profile.id)?{}:e.profile):null;

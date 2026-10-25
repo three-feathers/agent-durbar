@@ -486,6 +486,10 @@ async function main(): Promise<void> {
     assert.strictEqual(qs[1].options.length, 6, 'at most 6 options');
     assert.deepStrictEqual(cleanAnswers(qs, { 'Which colour?': '  Blue ', unknown: 'x', Q2: 5 }), { 'Which colour?': 'Blue' });
     assert.strictEqual(cleanAnswers(qs, { 'Which colour?': '   ' }), undefined);
+    // spec 052 FR-178 (issue 689): one question, one answer under another key (a differently cleaned text) is still its answer; two questions need their keys
+    assert.deepStrictEqual(cleanAnswers(qs.slice(0, 1), { 'Which  colour?\r\n': ' Teal ' }), { 'Which colour?': 'Teal' }, 'a single answer under a mismatching key');
+    assert.strictEqual(cleanAnswers(qs.slice(0, 2), { other: 'x' }), undefined, 'two questions: no guessing');
+    assert.strictEqual(cleanAnswers(qs.slice(0, 1), { a: 'x', b: 'y' }), undefined, 'two answers for one question: no guessing');
     assert.deepStrictEqual(parseQuestions(null), []);
     // spec 052 FR-160: long agent text reaches the card whole (bounded far above what agents send)
     {
@@ -539,12 +543,22 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(out.updatedInput.answers, { 'Which  colour?': 'Blue' }, "keyed by Claude's own question text");
     assert.ok(Array.isArray(out.updatedInput.questions), 'the rest of the input is kept');
     assert.ok(events.some((e) => e.type === 'question' && (e as { phase: string }).phase === 'answered'));
+    // spec 052 FR-178: the answer under a key that is not the question's text is still its answer (allow, never the skip's deny)
+    ask('q4', 'tu-q4');
+    await until('asked 4', () => events.find((e) => e.type === 'question' && (e as { requestId?: string }).requestId === 'tu-q4'));
+    ad.answerQuestion(sid, 'tu-q4', { 'not the question': 'Teal' });
+    await until('q4 answer', () => answers.q4);
+    assert.strictEqual((answers.q4.hookSpecificOutput as { permissionDecision: string }).permissionDecision, 'allow');
+    assert.deepStrictEqual((answers.q4.hookSpecificOutput as { updatedInput: { answers: unknown } }).updatedInput.answers, { 'Which  colour?': 'Teal' });
     // skip
     ask('q2', 'tu-q2');
     await until('asked 2', () => events.find((e) => e.type === 'question' && (e as { requestId?: string }).requestId === 'tu-q2'));
     ad.answerQuestion(sid, 'tu-q2', null);
     await until('q2 answer', () => answers.q2);
     assert.strictEqual((answers.q2.hookSpecificOutput as { permissionDecision: string }).permissionDecision, 'deny');
+    // spec 052 FR-178: the reason of each ending is a code on the event (user: Skip; interrupt: Stop below)
+    const reasonOf = (id: string): unknown => (events.find((e) => e.type === 'question' && (e as { requestId?: string; phase: string }).requestId === id && (e as { phase: string }).phase === 'cancelled') as { reason?: string } | undefined)?.reason;
+    assert.strictEqual(reasonOf('tu-q2'), 'user');
     // Stop while a question is open: answered deny, cancelled event
     ask('q3', 'tu-q3');
     await until('asked 3', () => events.find((e) => e.type === 'question' && (e as { requestId?: string }).requestId === 'tu-q3'));
@@ -552,11 +566,18 @@ async function main(): Promise<void> {
     await until('q3 answer', () => answers.q3);
     assert.strictEqual((answers.q3.hookSpecificOutput as { permissionDecision: string }).permissionDecision, 'deny');
     assert.ok(events.some((e) => e.type === 'question' && (e as { requestId?: string; phase: string }).requestId === 'tu-q3' && (e as { phase: string }).phase === 'cancelled'));
+    assert.strictEqual(reasonOf('tu-q3'), 'interrupt');
     // can_use_tool fallback asks too; an input that already has answers is allowed as it is
     cur!.send({ type: 'control_request', request_id: 'c1', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: { questions: [{ question: 'Q?', options: [{ label: 'A' }] }], answers: { 'Q?': 'A' } }, tool_use_id: 'tu-c1' } });
     await until('c1', () => answers.c1);
     assert.strictEqual(answers.c1.behavior, 'allow');
     ad.answerQuestion(sid, 'nope', { x: 'y' }); // unknown ids are ignored
+    // spec 052 FR-178: the agent app exiting while a question is open ends it as skipped with the reason `exit`
+    ask('q5', 'tu-q5');
+    await until('asked 5', () => events.find((e) => e.type === 'question' && (e as { requestId?: string }).requestId === 'tu-q5'));
+    cur!.exit(1, null);
+    await until('q5 cancelled', () => reasonOf('tu-q5'));
+    assert.strictEqual(reasonOf('tu-q5'), 'exit');
     await ad.stop(sid);
   }
 

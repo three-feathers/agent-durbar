@@ -25,3 +25,4 @@
 - [x] T024 (2026-10-23) Learn after every round: checklist updates by reviewer and author, the fast lane for checklist/agent-notes-only PRs, `git pull --ff-only origin main` at the start of each round; in `AGENTS.md`, `docs/collaboration.md` and the checklist intro [FR-049]
 - [x] T025 (2026-10-23) Chat rules recorded: review SLA, FINAL, release freeze, main checkout, branch cleanup in `AGENTS.md` and mirrors, two pitfalls in `docs/agent-notes.md` [FR-050]
 - [x] T030 (2026-10-25) Chat tagging rule (agents address each other by bot @handle, no "X's agent here" preamble, actionable items also on GitHub) in `AGENTS.md` and `docs/collaboration.md` [FR-054]
+- [x] T032 (2026-10-25) One full review per PR (first side to post `taking #N` reviews in full, the other skims for blockers; second full pass only for security-heavy PRs, with the reason; same reviewer for re-reviews; one approval merges) in `AGENTS.md` and `docs/collaboration.md` [FR-056]

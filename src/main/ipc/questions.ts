@@ -3,7 +3,7 @@ import { shell } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import type { AgentInfo } from '../../shared/api';
-import { errText } from '../agentops';
+import { answerQuestionOp, errText } from '../agentops';
 import { checkElicitAnswer, elicitHttpsUrl } from '../../shared/elicit';
 import type { createElicitTracker } from '../../shared/elicit';
 
@@ -16,18 +16,9 @@ export interface QuestionsIpcDeps {
 
 export function register(deps: QuestionsIpcDeps): void {
   const { agents, router, elicitTracker } = deps;
-  // spec 012 FR-128: the user's answer to an agent's question; strings only, capped; null = skipped
+  // spec 012 FR-128: the user's answer to an agent's question (the body is `answerQuestionOp`, testable without Electron)
   ipcHandle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, answers: unknown) => {
-    const a = typeof id === 'string' ? agents.get(id) : undefined;
-    const ad = a ? router.forAgent(a.id) : undefined;
-    if (!a || !ad?.answerQuestion || typeof requestId !== 'string' || requestId.length > 200) return { ok: false, error: 'unknown agent or question' };
-    let clean: Record<string, string> | null = null;
-    if (answers && typeof answers === 'object') {
-      clean = {};
-      for (const [k, v] of Object.entries(answers as Record<string, unknown>).slice(0, 4)) if (typeof v === 'string' && k.length <= 300) clean[k] = v.slice(0, 500);
-    }
-    ad.answerQuestion(a.id, requestId, clean);
-    return { ok: true };
+    return answerQuestionOp({ agents, router }, id, requestId, answers);
   });
 
   // spec 012 FR-151: the answer to an MCP elicitation, checked here against the open request (types, choices, lengths, required).

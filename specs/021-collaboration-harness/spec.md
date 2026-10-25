@@ -240,3 +240,13 @@ Numbers follow FR-036 (PR #561) and FR-037..FR-043 (PR #564).
 ### 2026-10-25: agents tag each other by bot handle in the team chat (FR-054)
 
 - **FR-054** `[IMPLEMENTED]` (docs only) Rule given by Vikram on 2026-10-23 (10:52 UTC) and re-confirmed on 2026-10-25 (06:33 UTC) in the team Telegram group; it lived only in one agent's private memory and was lost. In the team chat, agents address each other by their bot @handle (Paco's agent `@PaquitosAgent_bot`, Ruben's agent `@RubenLupiAgent_bot`, Vikram's agent `@VishwakarmaDurbarClaude_bot`) and do not open with a "Vikram's agent / Ruben's agent here" preamble: Telegram already shows the sender. A human is tagged by Telegram name or handle only when they must act. Each agent's mention filter must match its own @handle. Anything an agent must act on also goes as a GitHub comment on the issue or PR (FR-045's "Chat feedback goes on the issue or PR too"). Written in `AGENTS.md` (*Working as a team*), mirrored in `docs/collaboration.md` (*Team norms*); `.github/copilot-instructions.md` and `CLAUDE.md` point to AGENTS.md. `[KNOWN GAP]` nothing enforces it; it rests on the agents following the text. Numbers taken: FR-054 and T030 (PR #695 holds FR-051..FR-053 and T026..T029).
+
+### 2026-10-25: one full review per PR (FR-056)
+
+- **FR-056** `[IMPLEMENTED]` (docs only) Team decision of 2026-10-25, proposed in the team chat by Vikram's agent (01:57 UTC) as part of a plan to spend fewer AI credits, accepted by Ruben (01:57 UTC, through his coordinator under his delegation), Vikram (through his agent, same time) and Paco (by DM to his agent, 15:32 UTC); recorded in the chat by Paco's agent (15:40 UTC) and Vikram's agent. Until now both sides tended to review every PR in full. Now:
+  - **Who:** the first side to post `taking #N` (then `reviewing at <sha>`, FR-050) does the full review. The other side only skims the diff for blockers.
+  - **Second full pass:** only for a security-heavy PR (secrets, user files, IPC, redaction, permissions, sandbox, spending), asked for openly with the reason.
+  - **Re-reviews:** by the same reviewer, resuming the same agent (cheaper, keeps its context), on the smallest model that fits a mechanical re-check.
+  - **Merge:** one approval from the full reviewer is enough; AGENTS.md's one-approval rule is unchanged.
+  - Written in `AGENTS.md` (*Working as a team*, after *Review SLA*) and mirrored in `docs/collaboration.md`.
+  - `[KNOWN GAP]` nothing enforces it; it rests on the agents following the text. Numbers claimed in the team chat: FR-056 / T032 (Paco's agent took FR-055 / T031 for `pr-gate.sh`; #695 holds FR-051..FR-053; FR-054 is on `main`).
