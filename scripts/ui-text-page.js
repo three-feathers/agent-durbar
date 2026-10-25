@@ -455,5 +455,31 @@
     return bad;
   }
 
-  window.__uitext = { check, measureRule, tooltips, pairs, vis, darkControls: DARK_CONTROLS, measure: { probe, backdrop, contrast, rgba } };
+  /* spec 059 FR-025 (T077): the open rename-in-place field. `window.__inlBefore` = {sel, box} was written by the driver before the field opened.
+     Rule inline-edit-fit: the field is inside the window, inside the item (card, row, header) it edits or no wider than the window allows,
+     its text is at least 10.5px, and opening it moved no box (the item's box is the one written before). */
+  function inlineFit() {
+    const bad = [], T = 0.5, W = window.innerWidth, Hh = window.innerHeight;
+    const input = document.querySelector('.inl-input');
+    if (!input) return [{ rule: 'inline-edit-fit', el: '.inl-input', detail: 'no field is open' }];
+    const r = input.getBoundingClientRect();
+    if (r.left < -T || r.top < -T || r.right > W + T || r.bottom > Hh + T) bad.push({ rule: 'inline-edit-fit', el: '.inl-input', detail: `the field leaves the window: ${[r.left, r.top, r.right, r.bottom].map(Math.round)}` });
+    for (const e of document.querySelectorAll('.inl-input,.inl-err:not([hidden])')) {
+      const fs = parseFloat(getComputedStyle(e).fontSize);
+      if (fs < MIN_PX) bad.push({ rule: 'inline-edit-fit', el: desc(e), detail: `font-size ${fs}px under ${MIN_PX}px` });
+    }
+    const b = window.__inlBefore;
+    if (b) {
+      const el = document.querySelector(b.sel);
+      if (!el) bad.push({ rule: 'inline-edit-fit', el: b.sel, detail: 'the item is gone' });
+      else {
+        const n = el.getBoundingClientRect(), o = b.box;
+        if ([n.left, n.top, n.width, n.height].some((v, i) => Math.abs(v - o[i]) > T)) bad.push({ rule: 'inline-edit-fit', el: b.sel, detail: `opening the field moved the box: ${o.map(Math.round)} -> ${[n.left, n.top, n.width, n.height].map(Math.round)}` });
+        if (r.left < n.left - 4 || (r.right > n.right + 4 && r.width > 120.5)) bad.push({ rule: 'inline-edit-fit', el: b.sel, detail: `the field sticks out of its item: field ${[r.left, r.right].map(Math.round)} item ${[n.left, n.right].map(Math.round)}` });
+      }
+    }
+    return bad;
+  }
+
+  window.__uitext = { inlineFit, check, measureRule, tooltips, pairs, vis, darkControls: DARK_CONTROLS, measure: { probe, backdrop, contrast, rgba } };
 })();
