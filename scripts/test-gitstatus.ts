@@ -64,10 +64,10 @@ async function main(): Promise<void> {
     assert.ok(pairs(list.argv).includes(c), 'the config read overrides ' + c);
   }
   for (const d of ['evil', 'a.b']) for (const kv of ['clean=', 'smudge=', 'process=', 'required=false']) assert.ok(pairs(call.argv).includes(`filter.${d}.${kv}`), `filter ${d} ${kv}`);
-  assert.ok(!pairs(call.argv).some((c) => /^filter\.(lfs|crypt)\./.test(c)), "the user's own (global) and the system's drivers stay on (git-lfs, git-crypt)");
+  for (const d of ['lfs', 'crypt']) assert.ok(pairs(call.argv).includes(`filter.${d}.clean=`), `the user's own driver ${d} is off too (a trusted filter can still run the folder's config, round 3 on #722)`);
   assert.deepStrictEqual(call.argv.slice(0, 2), ['--no-pager', '--no-optional-locks'], 'global options first');
   assert.deepStrictEqual(call.argv.slice(call.argv.indexOf('-C')), ['-C', '/w/api', 'diff', '--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty', '--submodule=short', 'HEAD', '--numstat', '-z'], 'diff: no external diff, no textconv, submodules not entered');
-  assert.deepStrictEqual(list.argv.slice(list.argv.indexOf('-C')), ['-C', '/w/api', 'config', '-z', '--show-scope', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|smudge|process)$'], 'the driver names are read in the same folder, with their scope');
+  assert.deepStrictEqual(list.argv.slice(list.argv.indexOf('-C')), ['-C', '/w/api', 'config', '-z', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|smudge|process)$'], 'the driver names are read in the same folder, from every config file');
   for (const e of [list.env, call.env]) assert.deepStrictEqual([e.GIT_NO_LAZY_FETCH, e.GIT_ALLOW_PROTOCOL, e.GIT_TERMINAL_PROMPT, e.GIT_OPTIONAL_LOCKS], ['1', '', '0', '0'], 'env');
   // Durbar's own GIT_* variables (and SSH_ASKPASS) never reach git; other variables do; Windows names in any case
   const hostile = { PATH: '/bin', HOME: '/h', GIT_DIR: '/elsewhere/.git', GIT_WORK_TREE: '/e', GIT_INDEX_FILE: '/i', GIT_COMMON_DIR: '/c', GIT_OBJECT_DIRECTORY: '/o', GIT_ALTERNATE_OBJECT_DIRECTORIES: '/a', GIT_NAMESPACE: 'n', GIT_CONFIG: '/x', GIT_CONFIG_GLOBAL: '/x', GIT_CONFIG_PARAMETERS: "'core.fsmonitor'='x'", GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.pager', GIT_CONFIG_VALUE_0: 'x', GIT_EXTERNAL_DIFF: 'x', GIT_PAGER: 'x', GIT_ASKPASS: 'x', GIT_SSH_COMMAND: 'x', GIT_EXEC_PATH: '/x', GIT_CEILING_DIRECTORIES: '/', Git_Dir: '/mixed', SSH_ASKPASS: 'x', GIT_NO_LAZY_FETCH: '0', GIT_ALLOW_PROTOCOL: 'ext' };
@@ -98,9 +98,7 @@ async function main(): Promise<void> {
   assert.strictEqual(calls.length, 0, 'nothing ran for a refused call');
   // a driver name -c cannot express is refused (git splits -c at the first "=")
   await assert.rejects(fake('local\0filter.a=b.clean\0')(['-C', '/w', 'status']), /cannot be overridden/);
-  assert.strictEqual(await fake('global\0filter.a=b.clean\0')(['-C', '/w', 'status']), 'out', "a user's own odd name is not overridden, so not refused");
-  // scope pairs: local, worktree and any unknown scope are switched off; global and system kept; a redefined driver is off
-  assert.deepStrictEqual(filterDrivers('local\0filter.x.clean\0local\0filter.x.process\0worktree\0filter.y.z.process\0global\0filter.lfs.clean\0system\0filter.sys.smudge\0command\0filter.c.clean\0weird\0filter.w.clean\0global\0filter.both.clean\0local\0filter.both.smudge\0local\0filterx.clean\0local\0filter.r.required\0'), ['x', 'y.z', 'c', 'w', 'both']);
+  assert.deepStrictEqual(filterDrivers('filter.x.clean\0filter.x.process\0filter.y.z.process\0filter.lfs.clean\0filter.Sys.smudge\0filterx.clean\0filter.r.required\0'), ['x', 'y.z', 'lfs', 'Sys'], 'every driver with a command, whatever its config file');
   // "no filter at all" (git config exits 1) is fine; any other failure of the config read fails the call
   const exit = (code: number): GitExec => makeGitExec(async (argv) => { if (argv.includes('config')) throw Object.assign(new Error('x'), { code }); return 'ok'; });
   assert.strictEqual(await exit(1)(['-C', '/w', 'status']), 'ok');
@@ -112,7 +110,7 @@ async function main(): Promise<void> {
   assert.strictEqual(await fakeEf(['-C', '/w/api', 'diff', 'HEAD', '--numstat', '-z']), 'ok');
   const SAFE = ['--no-pager', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.useBuiltinFSMonitor=false', '-c', 'protocol.allow=never', '-c', 'protocol.file.allow=never', '-c', 'protocol.git.allow=never', '-c', 'protocol.ssh.allow=never', '-c', 'protocol.http.allow=never', '-c', 'protocol.https.allow=never', '-c', 'protocol.ext.allow=never', '-c', 'log.showSignature=false', '-c', 'credential.helper=', '-c', 'diff.submodule=short', '-c', 'status.submoduleSummary=false'];
   assert.deepStrictEqual(efCalls.map((c) => c.file), ['git', 'git']);
-  assert.deepStrictEqual(efCalls[0].argv, [...SAFE, '-C', '/w/api', 'config', '-z', '--show-scope', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|smudge|process)$'], 'exact argv: the driver-name read');
+  assert.deepStrictEqual(efCalls[0].argv, [...SAFE, '-C', '/w/api', 'config', '-z', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|smudge|process)$'], 'exact argv: the driver-name read');
   assert.deepStrictEqual(efCalls[1].argv, [...SAFE, '-c', 'filter.lfs.clean=', '-c', 'filter.lfs.smudge=', '-c', 'filter.lfs.process=', '-c', 'filter.lfs.required=false', '-C', '/w/api', 'diff', '--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty', '--submodule=short', 'HEAD', '--numstat', '-z'], 'exact argv: the call');
   for (const c of efCalls) {
     const { env, ...rest } = c.opts;
@@ -296,12 +294,17 @@ async function realGitCheck(): Promise<void> {
     await assert.rejects(nodeGitExec(['-C', repo, 'commit', '-m', 'x']), /not allowed/);
     await assert.rejects(nodeGitExec(['-C', repo, '-c', 'core.fsmonitor=x', 'status']), /not allowed/, 'a caller cannot add its own -c');
 
-    // the user's own filter drivers keep working (git-lfs, git-crypt live in ~/.gitconfig): only the folder's own are switched
-    // off (review on #722). c.txt is stored through the user's global driver (x -> X), d.txt has a driver from the folder's config;
-    // both files are touched (old time) so status must re-hash them through their filters
+    // every filter driver is off, the user's own too (round 3 on #722): git-lfs, trusted in ~/.gitconfig, still runs
+    // `lfs.extension.<name>.clean` from the folder's config as a command. Stand-in: a global filter that writes a marker and
+    // then runs the folder's lfs.extension.x.clean, as git-lfs does. c.txt is stored through it (x -> X), d.txt through a
+    // filter from the folder's own config; both are touched (old time) so status must re-hash them through their filters
     const home = path.join(root, 'home');
     fs.mkdirSync(home);
-    fs.writeFileSync(path.join(home, '.gitconfig'), '[filter "userlfs"]\n\tclean = tr x X\n\trequired = true\n');
+    const gcfg = path.join(home, '.gitconfig');
+    fs.writeFileSync(gcfg, '');
+    const gc = (k: string, v: string): string => g(root, 'config', '--file', gcfg, k, v);
+    gc('filter.userlfs.clean', `${cmd('globalfilter')}; eval "$(git config --get lfs.extension.x.clean)"; tr x X`);
+    gc('filter.userlfs.required', 'true');
     const own = path.join(root, 'own');
     fs.mkdirSync(own);
     g(own, 'init', '-q');
@@ -311,12 +314,14 @@ async function realGitCheck(): Promise<void> {
     g(own, '-c', 'filter.userlfs.clean=tr x X', 'add', '.');
     g(own, 'commit', '-qm', 'base');
     g(own, 'config', 'filter.localevil.clean', cmd('localclean') + '; cat');
+    g(own, 'config', 'lfs.extension.x.clean', cmd('lfsextension'));
     sameSize(path.join(own, 'c.txt'), 'x\n');
     sameSize(path.join(own, 'd.txt'), 'd\n');
     const savedHome = process.env.HOME;
     process.env.HOME = home;
     const stOwn = await folderGitStatus(own, nodeGitExec).finally(() => { if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome; });
-    assert.deepStrictEqual(stOwn.repo && stOwn.files, [], "the user's global filter still runs (c.txt stays clean), the folder's own is off: " + JSON.stringify(stOwn));
+    // the documented price (spec 063 FR-008, README): c.txt shows as changed, although plain git status (with the filter) is clean
+    assert.deepStrictEqual(stOwn.repo && stOwn.files.map((f) => `${f.state}:${f.path}`), ['modified:c.txt'], "the user's global filter is off too: " + JSON.stringify(stOwn));
 
     const ran = fs.readdirSync(marks).sort();
     assert.deepStrictEqual(ran, [], 'no command from the folder config ran: ' + ran.join(', '));
@@ -338,7 +343,7 @@ async function realGitCheck(): Promise<void> {
     const want = ['modified:a.txt', 'modified:b.txt', 'modified:s'];
     if (st.repo) assert.deepStrictEqual(st.files.map((f) => `${f.state}:${f.path}`).sort(), want, 'a.txt and b.txt changed, the moved submodule shows; its own changes are not read');
     assert.ok(stEnv.repo && stEnv.files.map((f) => `${f.state}:${f.path}`).sort().join() === want.join(), 'a GIT_DIR in Durbar\'s environment does not redirect the status: ' + JSON.stringify(stEnv));
-    console.log(`gitstatus: real git (${execFileSync('git', ['--version'], { encoding: 'utf8', windowsHide: true }).trim()}): ${plant.length + 13} planted settings, a remote helper and a GIT_DIR, none ran; the user's own filter kept; the protocol control fired`);
+    console.log(`gitstatus: real git (${execFileSync('git', ['--version'], { encoding: 'utf8', windowsHide: true }).trim()}): ${plant.length + 13} planted settings, a remote helper and a GIT_DIR, none ran; the user's own filter off too; the protocol control fired`);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

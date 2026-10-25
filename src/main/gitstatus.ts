@@ -132,23 +132,20 @@ export const GIT_CALLER_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   'rev-list': ['--count'],
 };
 
-/** The driver-name read: the scope and name of every filter command setting (`-z`: `scope\0name\0` pairs). */
-export const FILTER_LIST = ['config', '-z', '--show-scope', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|smudge|process)$'];
-/** Scopes Durbar trusts: the user's own (`~/.gitconfig`, XDG) and the system's. git-lfs and git-crypt live there and keep working. */
-const TRUSTED_SCOPES = ['global', 'system'];
+/** The driver-name read: every filter setting with a command (`-z`: one name per NUL), from any config file. */
+export const FILTER_LIST = ['config', '-z', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|smudge|process)$'];
 
 /**
- * The filter drivers to switch off, from the FILTER_LIST output: every driver with a command set anywhere but the user's
- * or the system's config (`local`, `worktree`, and anything else git may report), so the folder's own `.git/config`, its
- * `config.worktree` and any file it includes (git reports an included file with the scope of the file that includes it).
- * A driver the folder redefines is switched off even if the user's config defines it too. The name may hold dots.
+ * The filter drivers to switch off: **all of them**, the user's own (git-lfs, git-crypt in ~/.gitconfig) included. A trusted
+ * driver still reads the folder's config: git-lfs runs `lfs.extension.<name>.clean` from the folder's `.git/config` as a
+ * command (review on #722, round 3). The price: a touched file that such a filter stores differently can show as changed
+ * in Durbar while plain `git status` says clean (spec 063 FR-008, README). The name may hold dots.
  */
 export function filterDrivers(out: string): string[] {
   const names = new Set<string>();
-  const t = out.split('\0');
-  for (let i = 0; i + 1 < t.length; i += 2) {
-    const m = /^filter\.(.+)\.(?:clean|smudge|process)$/is.exec(t[i + 1]);
-    if (m && !TRUSTED_SCOPES.includes(t[i])) names.add(m[1]);
+  for (const k of out.split('\0')) {
+    const m = /^filter\.(.+)\.(?:clean|smudge|process)$/is.exec(k);
+    if (m) names.add(m[1]);
   }
   return [...names];
 }
@@ -184,7 +181,7 @@ export function hardenedArgv(args: string[], drivers: string[]): string[] {
 
 export type GitRun = (argv: string[], env: NodeJS.ProcessEnv) => Promise<string>;
 
-/** The runner over any `run` (tests pass a fake): first the folder's own filter drivers (reading config runs nothing; a git before 2.26 has no `--show-scope`, so the call fails and the folder shows nothing extra), then the call. */
+/** The runner over any `run` (tests pass a fake): first the filter driver names (reading config runs nothing), then the call. */
 export function makeGitExec(run: GitRun): GitExec {
   return async (args) => {
     const { at } = split(args);
