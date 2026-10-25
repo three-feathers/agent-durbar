@@ -14,7 +14,7 @@ export interface BusySession {
 export interface RunMarker {
   version: 1;
   startedAt: number;
-  /** The process that writes it (FR-038, review of #720): another Durbar on the same profile that is still running is not a crash. */
+  /** The process that writes it (FR-038, review of PR 720): another Durbar on the same profile that is still running is not a crash. */
   pid?: number;
   busy: BusySession[];
 }

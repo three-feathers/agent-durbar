@@ -540,7 +540,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     while (rows.length < n) rows.push(['Agent' + (rows.length + 1), 'Worker', 'blog', 'working', 'Working through a queued task', 0, ['src/index.ts']]);
 
     const crashIds = new Set<string>(); // spec 006 FR-046 (simcrash=N): the sessions the faked crash left mid-turn
-    /* spec 006 FR-043/FR-044 (review of #720): under simcrash=N the bridge counts what the card makes it do, for the driver: every wake
+    /* spec 006 FR-043/FR-044 (review of PR 720): under simcrash=N the bridge counts what the card makes it do, for the driver: every wake
        (and how many run at once: a wake then takes 150 ms), every prompt sent and every permission-mode change */
     const crashProbe: { on: boolean; wakes: string[]; inFlight: number; maxInFlight: number; sends: number; modeSets: number; sessions?: () => Array<{ id: string; mode: string; lazy: boolean; resumeLast: boolean }> } = { on: false, wakes: [], inFlight: 0, maxInFlight: 0, sends: 0, modeSets: 0 };
     const sims: SimAgent[] = rows.map((r, i) => {
